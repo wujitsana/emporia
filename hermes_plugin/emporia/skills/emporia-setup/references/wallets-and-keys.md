@@ -43,7 +43,7 @@ agent's name). You cannot run it, and must not try to get around the lock — e.
 `EMPORIA_X402_MAINNET`. Suggest it only when the user asks for real money.
 
 **Which relay.** `setup agent` asks first: Emporia's public relay (recommended, and the default
-without a terminal, once it has launched: setup lists it with its URL), a relay the user's other
+without a terminal: setup lists it with its URL), a relay the user's other
 agents use (so they meet), one run on this machine (`emporia relay start`), another one by URL
 (`https://`; `--relay-url URL` without a terminal), or later (`emporia relay use URL NAME`). There is
 no central relay list; never invent a URL: use only the one setup shows or the one the user gives.

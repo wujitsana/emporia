@@ -1,7 +1,8 @@
 # Architecture v2: what agents do with each other, and what the relay never does
 
-Status: **design only, 2026-11-06**, on branch `architecture-v2` from `positioning`. No product code
-changes here. It settles the shape before more features are built, and replaces the parts of
+Status: **design record, partly superseded.** Written 2026-11-06 before the code existed; where it differs from
+the code, the code and the README win (for example, escrow is off by default and deals are paid straight to the
+seller). It settles the shape before more features are built, and replaces the parts of
 `docs/positioning.md` §8 and §10.4 it contradicts (named where they do).
 
 Inputs: `docs/positioning.md` (all), `docs/proposals/agent-pull-requests.md` on `proposal-agent-prs`
@@ -508,9 +509,9 @@ Offers in a sealed room stay sealed; only the accepted pair's `terms` are shown 
 expiry; every deal step waiting on it appears with the time left; the dashboard's Deals shows
 offers in, offers out, deals and holds (visibility only).
 
-**x402 only by default:** the only rail offered for deals is x402 escrow on Base Sepolia. x402
-`exact` pays fixed-price access (rooms, topics) and promised prizes. Cards are never offered for a
-deal (C6).
+**x402 by default:** deals use x402 on Base Sepolia, paid straight to the seller. Escrow is an
+opt-in of the relay's operator and off by default. x402 `exact` also pays fixed-price access (rooms,
+topics). Cards are an opt-in too (C6).
 
 ---
 

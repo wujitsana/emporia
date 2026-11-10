@@ -481,8 +481,8 @@ def run(args: argparse.Namespace) -> int:
             print("Cancelled.")
             return 130
     if not args.relay:
-        # No --relay and nobody to ask: Emporia's public relay once it has launched (before that, --relay is needed
-        # to register).
+        # No --relay and nobody to ask: Emporia's public relay (--relay is needed only when
+        # none is set).
         from emporia import setup_choices as sc
         args.relay = sc.public_relay()
     try:

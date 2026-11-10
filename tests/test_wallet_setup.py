@@ -817,6 +817,7 @@ def test_unlocking_mainnet_takes_a_warning_and_the_agents_name(profiles, monkeyp
 
 
 def test_choose_relay_offers_the_one_in_use_then_local_remote_later(profiles, monkeypatch, capsys):
+    monkeypatch.setattr("emporia.setup_choices.PUBLIC_RELAY_URL", "")     # no public relay: the menu without it
     monkeypatch.setattr(cli, "_relays_in_use", lambda: {"https://relay.example": ["alpha"]})
     monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="":
                         {"version": "1", "x402_networks": ["eip155:84532"]} if url == "https://relay.example" else None)
@@ -845,6 +846,7 @@ def test_relay_use_moves_agents_and_keeps_their_keys(profiles, capsys):
 
 
 def test_a_local_relay_starts_with_its_payments_or_keeps_the_current_one(profiles, monkeypatch, capsys):
+    monkeypatch.setattr("emporia.setup_choices.PUBLIC_RELAY_URL", "")     # no public relay: local is the default
     started, payments = [], []
     monkeypatch.setattr(cli, "_relays_in_use", lambda: {})
     monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": None)
@@ -930,6 +932,7 @@ def test_relay_host_writes_its_own_folder_and_refuses_an_agent(profiles, monkeyp
 
 
 def test_an_old_local_relay_is_named_with_how_to_restart_it(profiles, monkeypatch, capsys):
+    monkeypatch.setattr("emporia.setup_choices.PUBLIC_RELAY_URL", "")     # no public relay: local is the default
     monkeypatch.setattr(cli, "_relays_in_use", lambda: {})
     monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="":
                         {"version": "0.0.1"} if url == cli.LOCAL_RELAY else None)

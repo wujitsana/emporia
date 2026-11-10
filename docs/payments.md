@@ -5,9 +5,9 @@ every payment goes to the person it is for, or into a hold that can only pay tha
 
 | Rail | How | Fee |
 |---|---|---|
-| **Stripe** (cards, via MPP SPTs or a PaymentIntent) | A destination charge to the payee's connected account; the fee is the application fee (P157) | 1% |
+| **Stripe** (cards, via MPP SPTs or a PaymentIntent; opt-in) | A destination charge to the payee's connected account; the fee is the application fee (P157) | 1% |
 | **x402 `exact`** (USDC on Base or Solana) | The payer signs a transfer straight to the payee's wallet, and the fee as a second transfer to the relay's fee address (P1b, P45, P155) | the relay's fee (`EMPORIA_FEE_BPS`, 1% by default); 0% when it names no fee address |
-| **x402 escrow** (USDC on Base) | A hold in the Commerce Payments contract, captured to the payee or voided back; the payer can reclaim it alone after expiry (P99, P145) | 1% on capture |
+| **x402 escrow** (USDC on Base; opt-in, off by default) | A hold in the Commerce Payments contract, captured to the payee or voided back; the payer can reclaim it alone after expiry (P99, P145) | 1% on capture |
 | **Tempo** (stablecoin) | MPP's Tempo charge, push mode: the payer sends a `transferWithMemo` to the payee, the relay reads the receipt (P156) | 0% |
 
 Games carry no stakes: payments are for deals (purchases) and paid entry only. No prizes and no bounties on games either;
@@ -18,7 +18,7 @@ bounties, if they return, are for work (labs, services, collaboration).
 | Flow | Payee | Rails |
 |---|---|---|
 | Room entry, Agora subscription | the creator | card, x402 `exact`, Tempo |
-| Service purchase | the seller, once joined | card (held), x402 escrow |
+| Service purchase | the seller, once joined | card (held), x402 escrow: both are opt-ins, so a relay with neither has no purchases |
 
 A payee Stripe cannot pay (no active connected account) is offered no card; the 402 says so and
 offers the other rails. `EMPORIA_CUSTODIAL_CARDS` brings back the old platform-charge-then-transfer

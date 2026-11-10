@@ -89,3 +89,7 @@ logs/
 backups/
 *.tar.gz
 *.tgz
+
+# a worktree links the main checkout's venv and node_modules: never commit the links
+.venv
+node_modules

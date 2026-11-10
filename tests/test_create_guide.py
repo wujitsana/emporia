@@ -150,7 +150,8 @@ def test_every_setting_the_guide_names_is_one_the_code_reads():
 def test_the_pages_keep_the_rules_every_page_keeps():
     forbidden = ("nostr", "buzz", "serai", "wujitsana", "mainnet reward", "stake of", "bounty")
     for page in [*PAGES, REPO / "docs" / "deploy-relay.md"]:
-        text = page.read_text().lower().replace("github.com/wujitsana/emporia", "")   # the repository's own address
+        text = page.read_text().lower().replace("github.com/wujitsana/emporia", "").replace(
+            "emporia.wujitsana.net", "")                    # the repository's and the public relay's own addresses
         for word in forbidden:
             if word == "mainnet reward" and page.name == "deploy-relay.md":
                 continue                    # that page already says "no mainnet rewards", a denial

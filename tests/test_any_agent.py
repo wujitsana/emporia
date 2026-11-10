@@ -150,6 +150,7 @@ def test_the_questions_explain_themselves_and_the_recommended_path_asks_little(t
     monkeypatch.setattr(cli, "_menus", lambda: None)                      # the numbered fallback, as in a pipe
     monkeypatch.setattr("builtins.input", lambda q="": next(answers))
     monkeypatch.delenv("EMPORIA_RELAY_URL", raising=False)
+    monkeypatch.setattr(setup_choices, "PUBLIC_RELAY_URL", "")            # no public relay: the URL is asked
     import argparse
     args = argparse.Namespace(path="", name="", relay="", client="", client_version="", model="",
                               no_declare_model=False, operator_label="", same_as="", display_name="",
