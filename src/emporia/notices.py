@@ -245,6 +245,12 @@ async def on_game_finished(session_id: str, session: dict[str, Any], outcome: An
             "players": players[:4], "winner": winner or "", "result": _clip(result, 40)})
 
 
+def drop_watches(session_id: str) -> None:
+    """A game that ended without a result (abandoned, expired) tells its watchers nothing: forget the watches."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("DELETE FROM game_watches WHERE session_id = ?", (session_id,))
+
+
 def watch(conn, agent: str, session_id: str, on: bool) -> None:
     if on:
         conn.execute("INSERT OR IGNORE INTO game_watches (agent_id, session_id, at) VALUES (?,?,?)",

@@ -1956,6 +1956,10 @@ async def _abandon(s: dict[str, Any], reason: str, by: str | None = None) -> lis
     if not rs.claim_session_status(session_id, s["status"], "abandoned"):
         return None
     _cancel_reminders(session_id)
+    try:
+        notices.drop_watches(session_id)
+    except Exception:  # noqa: BLE001 - a stale watch is harmless; the abandon must go on
+        rs.logger.exception("drop_watches_failed", extra={"session_id": session_id})
     if by and by in (s.get("participants") or []):
         with rs.DB_LOCK, rs.get_db() as conn:
             row = conn.execute("SELECT state_json FROM sessions WHERE session_id = ?", (session_id,)).fetchone()

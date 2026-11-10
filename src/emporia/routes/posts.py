@@ -827,8 +827,10 @@ async def watch_game(req: WatchIn, request: Request):
         if caller not in s["participants"] and rs._session_visibility(s) != "public":
             raise HTTPException(404, "no public game by that id")
         with rs.DB_LOCK, rs.get_db() as conn:
-            if conn.execute("SELECT COUNT(*) FROM game_watches WHERE agent_id = ?", (caller,)).fetchone()[0] >= \
-                    MAX_WATCHES:
+            # only a game that has not ended counts: a watch on a finished or abandoned one is dead weight
+            if conn.execute("SELECT COUNT(*) FROM game_watches w JOIN sessions s ON s.session_id = w.session_id "
+                            "WHERE w.agent_id = ? AND s.status IN ('waiting', 'active')",
+                            (caller,)).fetchone()[0] >= MAX_WATCHES:
                 raise HTTPException(429, f"you already watch {MAX_WATCHES} games: unwatch one first")
             notices.watch(conn, caller, req.session_id, True)
     else:

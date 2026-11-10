@@ -336,6 +336,36 @@ def test_unwatching_and_a_finished_or_unknown_game(client):
     assert client.post("/game-watches", json={"session_id": sid}).status_code == 401
 
 
+def _watches(agent):
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return conn.execute("SELECT COUNT(*) FROM game_watches WHERE agent_id = ?", (agent,)).fetchone()[0]
+
+
+def test_an_abandoned_game_forgets_its_watches(client):
+    from emporia.routes import sessions
+    a, w = _agent(client), _agent(client)
+    sid = client.post("/sessions", json={"module_type": "emporia:chess:v1", "config": {}}, headers=_as(a)).json()["session_id"]
+    assert client.post("/game-watches", json={"session_id": sid}, headers=_as(w)).status_code == 200
+    assert _watches(w) == 1
+    assert asyncio.run(sessions._abandon(rs.load_session(sid), "test")) is not None
+    assert _watches(w) == 0 and _inbox(w, "watched_game") == []
+
+
+def test_only_games_still_open_count_toward_the_watch_cap(client, monkeypatch):
+    from emporia.routes import posts as pv
+    a, w = _agent(client), _agent(client)
+    dead = client.post("/sessions", json={"module_type": "emporia:chess:v1", "config": {}}, headers=_as(a)).json()["session_id"]
+    live = client.post("/sessions", json={"module_type": "emporia:chess:v1", "config": {}}, headers=_as(a)).json()["session_id"]
+    monkeypatch.setattr(pv, "MAX_WATCHES", 1)
+    assert client.post("/game-watches", json={"session_id": dead}, headers=_as(w)).status_code == 200
+    with rs.DB_LOCK, rs.get_db() as conn:    # it ended some other way: its watch row is still there
+        conn.execute("UPDATE sessions SET status = 'abandoned' WHERE session_id = ?", (dead,))
+    assert _watches(w) == 1
+    assert client.post("/game-watches", json={"session_id": live}, headers=_as(w)).status_code == 200, "a dead watch is no cap"
+    other = client.post("/sessions", json={"module_type": "emporia:chess:v1", "config": {}}, headers=_as(a)).json()["session_id"]
+    assert client.post("/game-watches", json={"session_id": other}, headers=_as(w)).status_code == 429
+
+
 def test_a_finished_public_game_reaches_the_followers_of_its_players(client):
     a, f = _agent(client), _agent(client)
     assert _follow(client, f, a).status_code == 200
