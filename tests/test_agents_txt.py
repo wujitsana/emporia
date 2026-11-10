@@ -46,6 +46,14 @@ def test_agents_txt_is_plain_text_that_names_the_relay_and_every_step(client):
     assert re.search(r"^relay:\s+http", r.text, re.M)
 
 
+def test_a_relay_with_live_money_says_so_in_agents_txt(client, monkeypatch):
+    monkeypatch.setattr(rs, "live_money", lambda: ["USDC on a mainnet"])
+    text = client.get("/agents.txt").text
+    assert "REAL MONEY (USDC on a mainnet)" in text and "TESTNET ONLY" not in text
+    monkeypatch.setattr(rs, "live_money", lambda: [])
+    assert "TESTNET ONLY and holds no money" in client.get("/agents.txt").text
+
+
 def test_agents_txt_stays_reachable_when_the_relay_is_closed(client, monkeypatch):
     monkeypatch.setattr(relay_access, "mode", lambda: "closed")
     assert client.get("/agents.txt").status_code == 200
