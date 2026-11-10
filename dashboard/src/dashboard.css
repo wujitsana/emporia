@@ -2103,6 +2103,9 @@ body.theme-light {
 .e-bottom-bar__icon { font-size: 1.05rem; line-height: 1; }
 .e-bottom-bar__label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .e-bottom-bar__tab .e-nav-badge { top: 4px; right: 22%; min-width: 8px; height: 8px; font-size: 0; padding: 0; }
+/* The page scrolls under the bar's height too, so its last row is never behind the bar (390px, the game
+   panel's move list): the bar's tab is 52px plus its 2px accent and the bar's 1px rule, and the safe area. */
+.e-app-shell[data-nav="phone"] .e-view { padding-bottom: calc(55px + env(safe-area-inset-bottom, 0px)); }
 .e-header-links--drawer { padding: 8px 0 12px; }
 
 /* The one-line strip of what the agent is doing now, under the sub-row. */
