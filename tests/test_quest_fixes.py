@@ -208,11 +208,12 @@ def test_the_guided_path_ranks_above_the_weekly_quest_and_hello_is_listed_once()
     assert all(i["tool"] != "my_quests" or i["detail"]["quest"] != "week-open" for i in out)
 
 
-def test_the_weekly_debrief_is_a_post_in_the_debriefs_topic():
+def test_the_weekly_debrief_is_a_tagged_reply_to_a_game():
     week = {"id": "week-debrief", "title": "Tell the story", "xp": 10, "how": "a debrief", "weekly": True}
     out = N.rank(_quiet([week]), P.PRESETS["custom"], limit=20)
     item = next(i for i in out if i["kind"] == "quest")
-    assert item["tool"] == "post" and item["args"]["topic"] == "debriefs"
+    assert item["tool"] == "post" and item["args"]["reply_to"].startswith("session:")
+    assert item["args"]["tags"] == [["t", "debrief"]]
 
 
 def test_no_open_challenge_is_suggested_when_one_is_already_waiting():
@@ -251,13 +252,35 @@ def test_the_house_counts_for_no_xp_but_keeps_its_badge():
     assert out["xp"] >= B.QUESTS["first-set-play"]["xp"] + B.QUESTS["call"]["xp"] * 0
 
 
+def _debrief_post(g, at="2026-11-04T12:00:00+00:00", author=ME, tags=(("t", "debrief"),), text=None):
+    return {"author_id": author, "topic_slug": None, "visibility": "public", "kind": "note",
+            "created_at": at, "tags": [list(t) for t in tags], "title": "",
+            "reply_to": f"session:{g['session_id']}" if text is None else text,
+            "content": f"Game: {g['session_id']} (blotto) · One move I would change: x"}
+
+
 def test_a_debrief_of_a_house_game_pays_nothing():
     g = game("house")
-    p = {"author_id": ME, "topic_slug": "debriefs", "visibility": "public", "kind": "note",
-         "created_at": "2026-11-05", "content": f"after {g['session_id']} I would change this", "title": ""}
-    out = run(posts=[p], games=[g])
-    assert "debrief" in done(out) and out["xp"] == B.QUESTS["hello"]["xp"]
+    out = run(posts=[_debrief_post(g)], games=[g])
+    assert "debrief" not in done(out) and out["xp"] == 0, "a reply to a game is no hello either"
     assert out["weekly"]["done"] is False or out["weekly"]["id"] != "week-debrief"
+
+
+def test_a_debrief_counts_for_a_played_game_with_another_operator_only():
+    g = game("b1")
+    out = run(posts=[_debrief_post(g)], games=[g])
+    assert "debrief" in done(out) and next(q for q in out["quests"] if q["id"] == "debrief")["xp"] == 15
+    assert "debrief" not in done(run(posts=[_debrief_post(g, tags=())], games=[g])), "no debrief tag"
+    assert "debrief" not in done(run(posts=[_debrief_post(g, text="post:pst_x")], games=[g])), "not a reply to the game"
+    assert "debrief" not in done(run(posts=[_debrief_post(g, at="2026-11-06T12:00:00+00:00")], games=[g])), "a day late"
+    other = {**g, "participants": ["b1", "c1"]}
+    assert "debrief" not in done(run(posts=[_debrief_post(other)], games=[other])), "someone else's game"
+    same = {**g, "participants": [ME, "me2"]}
+    c = E.Ctx(operator=lambda a: "label:ME" if a in (ME, "me2") else a, house=frozenset({"house"}),
+              parts=frozenset({"pledges", "deals"}))
+    assert "debrief" not in done(run(c=c, posts=[_debrief_post(same)], games=[same])), "a same-operator game"
+    unplayed = {**g, "played": False}
+    assert "debrief" not in done(run(posts=[_debrief_post(unplayed)], games=[unplayed])), "nobody moved"
 
 
 def test_welcome_pays_its_arc_xp_only_for_a_game_that_is_not_the_houses():

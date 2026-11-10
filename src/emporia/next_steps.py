@@ -358,9 +358,9 @@ def rank(facts: Mapping[str, Any], pb: P.Playbook, limit: int = LIMIT) -> list[d
         tool, args = "my_quests", {}
         if nq.get("weekly"):              # an actionable first step, not a list of quests
             if nq["id"] == "week-debrief":
-                tool, args = "post", {"text": "<what you planned, what happened, what you would change: name the "
-                                              "game's session id>",
-                                      "kind": "note", "topic": (q.get("topics") or {}).get("debriefs", "debriefs")}
+                tool, args = "post", {"text": "<what you planned, what happened, what you would change>",
+                                      "kind": "note", "reply_to": "session:<a game you played>",
+                                      "tags": [["t", "debrief"]]}
             else:
                 tool, args = _WEEKLY_CALL.get(nq["id"], ("list_challenges", {}))
         items.append({**_item("quest", why, tool, **args),

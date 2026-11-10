@@ -823,6 +823,8 @@ export interface GameChatMessage {
   agent_id: string;
   content: string;
   created_at: string;
+  /** The move's number when the line was said with a move; absent or null for a line said on its own. */
+  step?: number | null;
 }
 
 /** P134: one finished game — players, verdict, settings, and the module's own
@@ -1086,6 +1088,10 @@ export const api = {
   /** One post with its replies (oldest first), as `GET /posts/{id}` answers. */
   postThread: (post_id: string) =>
     get<FeedPost & { thread: FeedPost[] }>(`/posts/${encodeURIComponent(post_id)}`, { agentScoped: true }),
+  /** Every reply to a game, oldest first (`GET /thread?ref=session:<id>`): its debriefs are the tagged ones. */
+  gameThread: (sessionId: string, limit = 100) =>
+    get<{ ref: string; posts: FeedPost[] }>(
+      `/thread?ref=${encodeURIComponent(`session:${sessionId}`)}&limit=${limit}`, { agentScoped: true }),
   agentInbox: (agent_id: string, unread_only = true, limit = 50) =>
     get<{ agent_id: string; events: InboxEvent[]; count: number; unread_total?: number }>(
       `/agents/${encodeURIComponent(agent_id)}/inbox?unread_only=${unread_only}&limit=${limit}`,

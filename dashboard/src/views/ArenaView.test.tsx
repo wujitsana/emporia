@@ -14,6 +14,13 @@ vi.mock("../hooks", () => ({
   useInterval: (fn: () => unknown) => {
     const src = String(fn);
     if (src.includes("agents")) return [{ agents: [{ agent_id: "alpha", address: "alpha@relay.example", about: "keeps its word; plays blotto" }], count: 1 }, false, null];
+    if (src.includes("gameChat")) return [{ chat_enabled: true, messages: [
+      { message_id: "m1", agent_id: "alpha", content: "I value spice most", created_at: "2026-11-05T12:00:00Z", step: 2 },
+      { message_id: "m2", agent_id: "beta", content: "a line said on its own", created_at: "1999-01-01T00:00:00Z", step: null }] }, false, null];
+    if (src.includes("gameThread")) return [{ ref: "session:x", posts: [
+      { post_id: "d1", author_id: "alpha", text: "Game: x (blotto) · Objective: win two fields · One move I would change: reserve more",
+        tags: [["t", "debrief"]], reply_to: "session:x" },
+      { post_id: "d2", author_id: "beta", text: "an ordinary reply", tags: [] }] }, false, null];
     if (src.includes("results")) return [{ results: [{ session_id: "r1", module_type: "emporia:chess:v1", participants: ["alpha", "beta"], winner: "alpha", outcome_type: "win", termination: "CHECKMATE", ended_at: "2026-11-05T13:00:00Z" }] }, false, null];
     return [null, false, null];
   },
@@ -34,7 +41,6 @@ vi.mock("../api", () => ({
 vi.mock("../transport", async (orig) => ({ ...(await orig<object>()), relaySocket: vi.fn(() => new Promise(() => {})) }));
 vi.mock("../ui/AuditBadge", () => ({ AuditBadge: () => null }));
 vi.mock("../ui/VerifyBadge", () => ({ VerifyBadge: () => <span>verified-badge</span> }));
-vi.mock("../ui/GameChat", () => ({ GameChat: ({ book }: { book?: Record<string, string> }) => <p>table talk here {book?.alpha}</p> }));
 vi.mock("../ui/Leaderboard", () => ({ Leaderboard: () => null }));
 vi.mock("../ui/ModelResults", () => ({ ModelResults: () => null }));
 vi.mock("./QuestArcs", () => ({ OpenChallenges: () => <p>OPEN CHALLENGES</p> }));
@@ -68,9 +74,23 @@ describe("names, not raw ids", () => {
     render(view(null, "results"));
     expect(screen.getByText(/alpha@relay\.example won by checkmate/)).toBeTruthy();
   });
-  it("hands the address book to the table talk", async () => {
+  it("has no separate table talk box: what was said sits with its move", async () => {
+    render(view(BLOTTO.session.session_id, "live", 2));
+    await waitFor(() => expect(stepText()).toContain("step 2 of 4"));
+    expect(screen.queryByText(/^Table talk/)).toBeNull();
+    // under the move in the list, and on the step line, quoted
+    expect(document.querySelector(".e-arena-steps")?.textContent).toContain("“I value spice most”");
+    expect(document.querySelector(".e-arena-stepline")?.textContent).toContain("“I value spice most”");
+    // a line with no step is placed by its time: before the first move here
+    expect(document.querySelector(".e-arena-steps li:first-child")?.textContent).toContain("“a line said on its own”");
+  });
+  it("lists the debriefs under the result, as the template's lines, and only the tagged replies", async () => {
     render(view(BLOTTO.session.session_id));
-    await waitFor(() => expect(screen.getByText(/table talk here alpha@relay\.example/)).toBeTruthy());
+    await waitFor(() => expect(stepText()).toContain("step 4 of 4"));
+    const after = screen.getByLabelText("After the game");
+    expect(after.textContent).toContain("Objective: win two fields");
+    expect(after.textContent).toContain("One move I would change: reserve more");
+    expect(after.textContent).not.toContain("an ordinary reply");
   });
 });
 
@@ -85,10 +105,9 @@ describe("a match header shows the players' bios", () => {
 });
 
 describe("a match opened by its address", () => {
-  it("opens at the step the link names, with the table talk beside the moves", async () => {
+  it("opens at the step the link names, with the moves beside it", async () => {
     render(view(BLOTTO.session.session_id, "live", 2));
     await waitFor(() => expect(stepText()).toContain("step 2 of 4"));
-    expect(screen.getByText(/table talk here/)).toBeTruthy();
     expect(screen.getByText(/moves · click to seek/)).toBeTruthy();
     // step 2: both committed, nothing revealed — sealed, and no allocation drawn
     expect(document.querySelectorAll(".e-arena-slot.is-sealed")).toHaveLength(2);

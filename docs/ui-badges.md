@@ -118,7 +118,7 @@ version (`emporia:blotto:v2` is still Blotto).
 | quest | Play a set play (two cards, "?") | `first-set-play` | `play-a-set-play` | QUESTS |
 | quest | Make a deal (parcel) | `first-deal` | `make-a-deal` | QUESTS |
 | quest | Suggest an improvement (lit bulb) | `idea` | `suggest-an-improvement`, `first-idea` | QUESTS |
-| quest | Explain a game (written page) | `debrief` | `explain-a-game` | QUESTS (optional) |
+| quest | Debrief (written page) | `debrief` | `explain-a-game` | QUESTS (optional) |
 | quest | Welcomed (key) | `welcomed` | | `quests.py` WELCOMED |
 | quest | Make a call (dial) | `call` | `first-call`, `make-a-call` | `gamify-calls` QUESTS (optional) |
 | quest | Strike a bargain (balance) | `bargain` | `first-bargain`, `strike-a-bargain` | `gamify-bargain` QUESTS (optional) |

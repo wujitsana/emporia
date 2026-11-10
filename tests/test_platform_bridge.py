@@ -67,6 +67,23 @@ def test_the_relays_own_reports_come_from_the_relay():
         assert format_frame(frame, ME).sender == RELAY_SENDER
 
 
+def test_a_finished_game_offers_the_debrief_template_with_its_id_and_game():
+    n = format_frame({"type": "session_completed", "session_id": "sess_abc123def456",
+                      "module_type": "emporia:bargain:v2", "outcome": {"winner": ME}}, ME)
+    for part in ('records(kind="settlements", session_id="sess_abc123def456")',
+                 'post(kind="note", reply_to="session:sess_abc123def456", tags=[["t","debrief"]], '
+                 'text="Game: sess_abc123def456 (bargain:v2)',
+                 "Objective: …", "Constraints: …", "Pivotal offer: …", "Outcome: …", "What was unavailable: …",
+                 "One move I would change: …", "(optional; private values stay private)"):
+        assert part in n.text, part
+    assert len(n.text) < 700
+    # a service purchase is no game, and a relay that does not name the module gets no template
+    deal = format_frame({"type": "session_completed", "session_id": "s1", "module_type": "emporia:service:v1",
+                         "outcome": {}}, ME)
+    assert "debrief" not in deal.text
+    assert "debrief" not in format_frame({"type": "session_completed", "session_id": "s1", "outcome": {}}, ME).text
+
+
 def test_ciphertext_is_never_pasted_in():
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 

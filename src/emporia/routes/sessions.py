@@ -1998,6 +1998,7 @@ async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -
     terminal_event: dict[str, Any] = {
         "type": "session_completed",
         "session_id": session_id,
+        "module_type": s["module_type"],
         "outcome": outcome,
         "settlement": settlement_record,
     }

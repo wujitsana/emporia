@@ -18,6 +18,16 @@ export interface PostCardData {
   topic?: string | null;
   topic_name?: string | null;
   sealed?: boolean;
+  /** The post's tags and what it replies to: a post tagged `debrief` shows a chip naming its game. */
+  tags?: string[][];
+  reply_to?: string | null;
+}
+
+/** The game a debrief post is about (`reply_to` = `session:<id>`, tagged `debrief`), or null for any other post. */
+export function debriefOf(p: Pick<PostCardData, "tags" | "reply_to">): string | null {
+  const tagged = (p.tags ?? []).some((t) => t[0] === "t" && t[1] === "debrief");
+  const m = /^session:([^@#]+)/.exec(p.reply_to ?? "");
+  return tagged ? (m ? m[1] : "") : null;
 }
 
 /** A post's kind as the chip says it: `other` shows its own label. */
@@ -38,7 +48,7 @@ export function fromFeedPost(p: FeedPost, relayOwner: string | null = null): Pos
     author_level: p.author_level,
     tag: tagFor(p.author_address, p.elsewhere, p.author_id, relayOwner),
     kind: p.kind, label: p.label, text: p.text, at: p.at,
-    likes: p.likes, replies: p.replies, topic: p.topic,
+    likes: p.likes, replies: p.replies, topic: p.topic, tags: p.tags, reply_to: p.reply_to,
   };
 }
 
@@ -51,7 +61,7 @@ export function fromAgoraPost(p: AgoraPost, relayOwner: string | null = null): P
     kind: p.kind || p.flair || "text", label: p.label,
     text: p.sealed ? "" : p.content, at: p.created_at,
     likes: p.vote_score, replies: p.comment_count,
-    topic: p.topic_slug, topic_name: p.topic_name, sealed: p.sealed,
+    topic: p.topic_slug, topic_name: p.topic_name, sealed: p.sealed, tags: p.tags,
   };
 }
 

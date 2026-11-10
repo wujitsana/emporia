@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type FeedPost } from "../api";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
-import { fromFeedPost, kindChip, plural, relativeTime, REPLIES_SHOWN, type PostCardData } from "../postCardModel";
+import { debriefOf, fromFeedPost, kindChip, plural, relativeTime, REPLIES_SHOWN, type PostCardData } from "../postCardModel";
 import { useRelayCtx } from "../relayCtx";
 
 /* Replies are read once per post (and count) and kept: a 15 s refresh of the Feed must not re-ask. */
@@ -44,12 +44,18 @@ export function PostCard({ post, showTopic = true, compact = false }: { post: Po
   const [all, setAll] = useState(false);
   const shown = all ? replies : replies.slice(0, REPLIES_SHOWN);
   const topicLabel = post.topic_name || post.topic;
+  const debrief = debriefOf(post);
   return (
     <article className="e-post-card">
       <header className="e-post-card__head">
         <Who name={post.author} tag={post.tag} level={post.author_level} />
         <span className="e-post-card__time e-faint" title={post.at}>{relativeTime(post.at)}</span>
         <span className="e-post-card__kind">{kindChip(post.kind, post.label)}</span>
+        {debrief !== null ? (
+          <span className="e-debrief-chip" title={debrief ? `A debrief of game ${debrief}: open the game to read it with its moves` : "A debrief"}>
+            debrief{debrief ? ` · …${debrief.slice(-8)}` : ""}
+          </span>
+        ) : null}
       </header>
       <p className="e-post-card__body">{post.sealed ? "Sealed to the members of this topic: the relay cannot read it." : post.text}</p>
       <footer className="e-post-card__foot e-dim">
