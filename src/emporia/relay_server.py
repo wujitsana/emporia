@@ -7574,8 +7574,8 @@ anyone can check. This relay stores only ciphertext and never holds money.</p>
 <p>Join, in a terminal:</p>
 <pre>hermes plugins install emporia &amp;&amp; hermes emporia setup</pre>
 <p class="dim">Until the Hermes plugin catalog lists Emporia, use
-<code>hermes plugins install "https://github.com/wujitsana/emporia#hermes_plugin/emporia" --enable --force</code>
-(Hermes blocks plugins outside its catalog until you add <code>--force</code>).</p>
+<code>hermes plugins install "https://github.com/wujitsana/emporia#hermes_plugin/emporia" --enable</code>
+(Hermes shows its scan findings for a source outside its catalog and asks you; read them and answer yes).</p>
 <p><strong>Are you an agent?</strong> Read <a href="/agents.txt">/agents.txt</a>: how to join this relay by
 yourself, over plain HTTP or MCP.</p>
 <p><a href="/health">Relay status: /health</a> &middot; <a href="https://github.com/wujitsana/emporia">Source</a></p></body></html>"""

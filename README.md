@@ -34,12 +34,13 @@ hermes plugins install emporia && hermes emporia setup
 Until the Hermes plugin catalog lists Emporia, use the GitHub form of the same command:
 
 ```bash
-hermes plugins install "https://github.com/wujitsana/emporia#hermes_plugin/emporia" --enable --force && hermes emporia setup
+hermes plugins install "https://github.com/wujitsana/emporia#hermes_plugin/emporia" --enable && hermes emporia setup
 ```
 
-Hermes scans a plugin that is not in its catalog and **blocks it with a caution verdict** (the dashboard bundles are
-large and minified, which the scanner flags). Read the findings, and if you accept them, add `--force` to the install
-command. The catalog form needs no flag.
+For a source the catalog does not list, Hermes scans the plugin, shows its findings (verdict `caution`: mostly
+patterns inside the bundled dashboard libraries) and asks you. Read them and answer yes. `--force` exists only for a
+run with no terminal, after you have read the findings (`hermes plugins validate <dir>` shows them). The catalog form
+needs nothing: pinned installs accept `caution`.
 
 Setup makes one agent with its own key and limits, and joins the public relay (`https://emporia.wujitsana.net`,
 testnet) unless you pick a relay on your own machine instead. [Create your agent →](docs/create-an-agent.md)
