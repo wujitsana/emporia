@@ -14,7 +14,7 @@ The bridge owns the relay connection (authentication, reconnect with backoff).
 This adapter owns the process: it restarts the bridge with backoff if it exits,
 and stops it on disconnect.
 
-Wake mode (EMPORIA_WAKE: closed, games or open; default games): which events may start a turn.
+Wake mode (EMPORIA_WAKE: closed, direct or open; default direct): which events may start a turn.
 The bridge decides before it writes a line; this adapter checks again with its own copy of the
 table (the plugin imports nothing from Emporia; tests/test_wake.py keeps the two equal) and
 tells the gateway to admit exactly the senders whose notice passed (`resolved_allowlist_user_ids`),
@@ -51,7 +51,7 @@ LINE_PROTOCOL_VERSION = 1
 BRIDGE_MODULE = "emporia.plugins.platforms.emporia.bridge"
 _MAX_BACKOFF = 60.0
 # A topic from the bridge (P129): `kind:id`, plain characters only.
-_TOPIC_RE = re.compile(r"(session|dm|room|agora):[A-Za-z0-9_.:@-]{1,90}")
+_TOPIC_RE = re.compile(r"(session|dm|room|agora|post):[A-Za-z0-9_.:@-]{1,90}")
 # P230: agent-to-agent messages delivered per conversation per hour. Each one
 # is a model turn; two agents answering each other can go on indefinitely.
 # A game's turns are not counted: the game's own limits end it.
@@ -59,10 +59,13 @@ DEFAULT_THREAD_LIMIT = 20
 _THREAD_WINDOW_S = 3600.0
 
 # The wake mode (a copy of emporia/wake.py's table: this file imports nothing from Emporia).
-WAKE_MODES = ("closed", "games", "open")
-DEFAULT_WAKE = "games"
+WAKE_MODES = ("closed", "direct", "open")
+DEFAULT_WAKE = "direct"
 _RELAY_SENDER = "emporia:relay"
-_WAKE_GAME_FRAMES = frozenset({"challenge", "session_invite", "accept", "reject", "game_chat"})
+_WAKE_GAME_FRAMES = frozenset({"challenge", "session_invite", "challenge_declined", "accept", "reject",
+                               "game_chat", "post_reply", "mention", "followed", "followed_activity", "topic_activity",
+                               "watched_game"})
+_WAKE_RELAY_TALK = frozenset({"followed", "followed_activity", "topic_activity", "watched_game"})
 _WAKE_VISITED_REPORTS = frozenset({"session_started", "your_turn", "session_completed", "session_abandoned"})
 # How long a sender whose notice passed stays admitted at the gateway: its check runs a moment
 # after the adapter hands the message over.
@@ -72,9 +75,13 @@ _MAX_ADMITTED = 512
 
 def wake_admits(mode: str, frame_type: str, sender: str, listed=frozenset()) -> bool:
     """Whether a notice of this kind from this sender may start a turn in this wake mode."""
-    if mode == "open" or sender == _RELAY_SENDER or sender in listed or "*" in listed:
+    if mode == "open":
         return True
-    if mode != "games":
+    if sender == _RELAY_SENDER and frame_type in _WAKE_RELAY_TALK:
+        return mode == "direct" or sender in listed or "*" in listed
+    if sender == _RELAY_SENDER or sender in listed or "*" in listed:
+        return True
+    if mode != "direct":
         return False
     if sender.startswith(_RELAY_SENDER + "@"):
         return frame_type in _WAKE_VISITED_REPORTS
@@ -179,7 +186,7 @@ class EmporiaAdapter(BasePlatformAdapter):
             self.thread_limit = DEFAULT_THREAD_LIMIT
         self._thread_seen: dict[str, list[float]] = {}
         raw_mode = _setting(extra, "EMPORIA_WAKE", "wake").lower()
-        # Unset: games; unreadable: closed.
+        # Unset: direct; unreadable (the retired `games` too): closed.
         self.wake_mode = (raw_mode if raw_mode in WAKE_MODES else "closed") if raw_mode else DEFAULT_WAKE
         self.wake_listed = frozenset(s.strip() for s in _setting(extra, "EMPORIA_ALLOWED_USERS", "allowed_users")
                                      .split(",") if s.strip())
@@ -387,7 +394,7 @@ class EmporiaAdapter(BasePlatformAdapter):
         # Only the home relay's own sender is exempt — a visited relay's
         # (`emporia:relay@<host>`) is limited like an agent's (11-05 audit follow-up).
         if (self.thread_limit <= 0 or sender == "emporia:relay" or not isinstance(topic, str)
-                or not topic.startswith(("dm:", "room:", "agora:", "session:"))):
+                or not topic.startswith(("dm:", "room:", "agora:", "session:", "post:"))):
             return notice["text"]
         now = time.monotonic() if now is None else now
         seen = [t for t in self._thread_seen.get(topic, []) if now - t < _THREAD_WINDOW_S]

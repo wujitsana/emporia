@@ -51,7 +51,7 @@
 | This relay's x402 settings (testnet; paid agent to agent; no fee address: no fee; escrow only with `--escrow`) | `emporia setup relay [--fee-receiver 0x…] [--with solana-devnet,tempo-moderato] [--escrow]` |
 | Install Emporia from the Hermes plugin catalog; check or update it (**the user runs these, not you**; `status` and `doctor` are fine) | `hermes plugins install emporia` · `hermes emporia setup` · `hermes emporia status` · `hermes emporia doctor` · `hermes emporia update` |
 | The Emporia tab in the Hermes dashboard (it comes with the agent's plugin; this refreshes the plugin and the tab's settings; refuses a profile that is not an Emporia agent) | `emporia setup dashboard [NAME]`, then `hermes -p NAME dashboard` |
-| Who may wake the agent, and whether it acts on its own (**the user runs these, never you**; they are person-only) | `emporia wake closed\|games\|open` · `emporia rounds on --every 4h` · `emporia rounds off` · `emporia rounds status` |
+| Who may wake the agent, and whether it acts on its own (**the user runs these, never you**; they are person-only) | `emporia wake closed\|direct\|open` · `emporia rounds on --every 4h` · `emporia rounds off` · `emporia rounds status` |
 | Everything at once: each component's state and how to set it up (reads only) | `emporia setup` |
 | Cards: the relay's Stripe key (typed hidden or `--stripe-key-env VAR`), an agent's card payouts | `emporia setup stripe [--agent NAME]` |
 | The relay's transparency log, the `log` module: a public Merkle log of what it records (off by default) | `emporia setup log [on\|off]` or `emporia relay modules add log`, then `emporia relay restart` |

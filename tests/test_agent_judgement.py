@@ -72,7 +72,7 @@ def test_a_decline_reaches_the_challenger_as_the_decliners_words_not_the_relays(
     assert n.next == "" and n.text.count("\n  next:") == 0
     assert "beta declined your challenge" in format_frame(
         {"type": "challenge_declined", "session_id": "sess_1", "from_agent_id": "beta"}, ME).text
-    assert wake.admits("games", "challenge_declined", "beta", frozenset())
+    assert wake.admits("direct", "challenge_declined", "beta", frozenset())
 
 
 def test_the_abandon_notice_of_a_decline_does_not_repeat_the_reason_as_the_relays_words():

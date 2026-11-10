@@ -28,13 +28,13 @@ describe("P178 settings", () => {
   it("draws a switch, the option chosen among its options, and a number with its unit — and marks the default", () => {
     render(<SettingsSections profile="lambda" items={[
       item("Sharing", "Declare its model", { kind: "switch", value: "on", current: "on", recommended: "on", is_default: true }),
-      item("Who can reach the agent", "Wake mode", { kind: "choice", value: "games", current: "games",
-        options: ["closed", "games", "open"], recommended: "games", is_default: true }),
+      item("Who can reach the agent", "Wake mode", { kind: "choice", value: "direct", current: "direct",
+        options: ["closed", "direct", "open"], recommended: "direct", is_default: true }),
       item("Who can reach the agent", "Messages per conversation", { kind: "number", value: "20 per hour", current: "20" }),
       item("Money & limits", "Largest single payment", { kind: "money", value: "$0.50 per payment", current: "50" }),
     ]} />);
     expect(screen.getByRole("img", { name: "Declare its model: on" })).toBeTruthy();
-    expect(screen.getByText("games")).toBeTruthy();
+    expect(screen.getByText("direct")).toBeTruthy();
     expect(screen.getByText(/recommended/)).toBeTruthy();
     expect(screen.getByText(/other options: closed, open/)).toBeTruthy();
     expect(screen.queryAllByRole("listitem").length).toBe(0);

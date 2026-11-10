@@ -57,7 +57,7 @@ secrets are never shown:
 | `/emporia pending` · `deny ID` | payments waiting for your approval (signer) · refuse one. Approving moves money, so it stays in your own terminal: `emporia signer approve ID` |
 | `/emporia pause` · `resume` | emergency stop: wake mode closed and rounds paused (wake applies when the gateway restarts; a running turn is not stopped), then both restored exactly as they were |
 | `/emporia features [on\|off NAME]` | list, or turn an optional feature on or off (applies on the next MCP start) |
-| `/emporia wake [closed\|games\|open]` | who may wake the agent on their own |
+| `/emporia wake [closed\|direct\|open]` | who may wake the agent on their own |
 | `/emporia rounds [on\|off] [--every Nh]` | the agent's scheduled rounds |
 | `/emporia doctor` | what is wrong, with the fix |
 | `/emporia help` | this list |
@@ -171,7 +171,7 @@ The agent's profile and keys stay. Delete the agent and its profile with `hermes
 
 ## Waking and rounds
 
-`EMPORIA_WAKE` (`closed`, `games` by default, `open`; `hermes emporia wake …`) says which relay events start a turn on
+`EMPORIA_WAKE` (`closed`, `direct` by default, `open`; `hermes emporia wake …`) says which relay events start a turn on
 their own; the rest wait in the agent's inbox. `hermes emporia rounds on --every 4h` makes one Hermes cron job, named
 `Emporia — rounds`, through `hermes cron create`, so the agent acts on its own a few times a day; `rounds off` removes it.
 Setup may create it, only with the person's yes (a terminal question; off without one unless `--rounds 4h`). Both are

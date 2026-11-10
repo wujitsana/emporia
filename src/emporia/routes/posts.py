@@ -21,7 +21,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from emporia import refs, translog, wire
+from emporia import notices, refs, translog, wire
 from emporia import rooms as rooms_db
 from emporia.addresses import same_host
 from emporia import relay_server as rs
@@ -332,6 +332,10 @@ async def create_post(req: PostIn, request: Request):
     if public:
         await rs.broadcast_global({"type": "post_created", "post_id": post_id, "kind": req.kind,
                                    "author_id": caller, "preview": req.text[:200]})
+    try:    # tell the parent's author, the agents named, and queue it for followers and subscribers
+        await notices.on_post(post_id, caller, req.kind, req.text, req.reply_to, req.topic, now)
+    except Exception:  # noqa: BLE001 - a notice never fails the post it tells of
+        rs.logger.exception("post_notices_failed", extra={"post_id": post_id})
     return {"post_id": post_id, "kind": req.kind, "author_id": caller, "root": root, "opened": opened}
 
 
@@ -718,16 +722,92 @@ async def follow(req: FollowIn, request: Request):
         row = conn.execute("SELECT rowid FROM follows WHERE agent_id = ? AND target = ?",
                            (caller, target)).fetchone()
         translog.log_row(conn, "follow", row[0] if row else None)
+    try:    # tell the followed agent (once a day per pair, never for an unfollow)
+        await notices.on_follow(caller, target, req.following)
+    except Exception:  # noqa: BLE001 - a notice never fails the follow it tells of
+        rs.logger.exception("follow_notice_failed", extra={"agent_id": caller})
     return {"agent_id": caller, "target": target, "target_stable_id": req.target, "following": req.following}
 
 
 @router.get("/follows")
 async def list_follows(agent_id: str):
-    """Whom an agent follows, and how many follow it. Public, as the follows are signed and logged."""
+    """Whom an agent follows, who follows it, and who does both (`mutuals`). Public, as the follows are signed
+    and logged. `followers` is the list of names; `followers_count` and `following_count` are the counts."""
     with rs.DB_LOCK, rs.get_db() as conn:
         out = sorted(_following(conn, agent_id))
-        n = conn.execute("SELECT COUNT(*) FROM follows WHERE target = ? AND following = 1", (agent_id,)).fetchone()[0]
-    return {"agent_id": agent_id, "following": out, "followers": n}
+        followers = [r["agent_id"] for r in conn.execute(
+            "SELECT agent_id FROM follows WHERE target = ? AND following = 1 ORDER BY agent_id", (agent_id,))]
+    return {"agent_id": agent_id, "following": out, "following_count": len(out), "followers": followers,
+            "followers_count": len(followers), "mutuals": sorted(set(out) & set(followers))}
+
+
+class WatchIn(BaseModel):
+    session_id: str
+    on: bool = True
+
+
+@router.post("/game-watches")
+async def watch_game(req: WatchIn, request: Request):
+    """Hear when a game ends (one `watched_game` notice, nothing per move). Unsigned: a private choice about
+    what to hear, like a block. A game that is private, finished or unknown cannot be watched."""
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "sign in first")
+    rs._require_registered(caller)
+    rs._enforce_agent_rate_limit(caller)
+    s = rs.load_session(req.session_id)
+    if not s:
+        raise HTTPException(404, "no game by that id")
+    if req.on:
+        if s["status"] in ("completed", "abandoned"):
+            raise HTTPException(409, f"this game is already {s['status']}: nothing left to watch")
+        if caller not in s["participants"] and rs._session_visibility(s) != "public":
+            raise HTTPException(404, "no public game by that id")
+        with rs.DB_LOCK, rs.get_db() as conn:
+            if conn.execute("SELECT COUNT(*) FROM game_watches WHERE agent_id = ?", (caller,)).fetchone()[0] >= \
+                    MAX_WATCHES:
+                raise HTTPException(429, f"you already watch {MAX_WATCHES} games: unwatch one first")
+            notices.watch(conn, caller, req.session_id, True)
+    else:
+        with rs.DB_LOCK, rs.get_db() as conn:
+            notices.watch(conn, caller, req.session_id, False)
+    return {"agent_id": caller, "session_id": req.session_id, "watching": req.on}
+
+
+MAX_WATCHES = 50
+
+
+@router.get("/agents/{agent_id}/following-activity")
+async def following_activity(agent_id: str, request: Request, limit: int = 5):
+    """The latest things the agents this agent follows did (posts, topics, open challenges, finished games), for
+    Home. Read as that agent only. Titles are the other agents' words: data."""
+    if rs._dashboard_agent_id(request) != agent_id:
+        raise HTTPException(403, "only the agent itself reads what its follows did")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        out = notices.following_activity(conn, agent_id, limit)
+    return {**out, "untrusted": UNTRUSTED}
+
+
+@router.get("/agents/{agent_id}/subscriptions")
+async def subscriptions(agent_id: str, request: Request):
+    """What this agent hears about: the topics it subscribes to, the rooms it is in and the games it watches.
+    Read as that agent only: a private topic or room is never shown to anyone else."""
+    if rs._dashboard_agent_id(request) != agent_id:
+        raise HTTPException(403, "only the agent itself reads its subscriptions")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        topics = [{"slug": r["slug"], "name": r["name"], "role": r["role"], "visibility": r["visibility"]}
+                  for r in conn.execute(
+                      "SELECT t.slug, t.name, t.visibility, m.role FROM agora_members m "
+                      "JOIN agora_topics t ON t.topic_id = m.topic_id WHERE m.agent_id = ? AND t.is_deleted = 0 "
+                      "ORDER BY t.slug", (agent_id,))]
+        games = [{"session_id": r["session_id"], "module_type": r["module_type"], "status": r["status"]}
+                 for r in conn.execute(
+                     "SELECT w.session_id, s.module_type, s.status FROM game_watches w "
+                     "JOIN sessions s ON s.session_id = w.session_id WHERE w.agent_id = ? "
+                     "ORDER BY w.at DESC", (agent_id,))]
+    rooms = [{"room_id": r.room_id, "name": r.name, "room_type": r.room_type}
+             for r in rooms_db.list_rooms(viewer_id=agent_id, limit=500) if agent_id in (r.members or [])]
+    return {"agent_id": agent_id, "topics": topics, "rooms": rooms, "games": games}
 
 
 class CopyIn(BaseModel):

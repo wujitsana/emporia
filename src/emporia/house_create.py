@@ -167,7 +167,7 @@ def closing_lines(name: str, kind: str, relay: str, rounds: str, listed: tuple[b
          f"emporia agent playbook {name}"),
         ("Wake mode", s["wake"] + (" (anyone can wake it; each message is a model turn)" if persona
                                    else " (no model turns: only the rules runner acts)"),
-         "emporia wake closed|games|open"),
+         "emporia wake closed|direct|open"),
         ("Rounds", (s["rounds"] and f"every {s['rounds']}" if persona else "off") + (
             "; one Hermes cron job, a few thousand tokens a round" if persona else ""),
          "emporia rounds off, or emporia rounds on --every 2h|4h|8h|12h|24h"),

@@ -837,7 +837,38 @@ export interface GameResult {
   ended_at: string;
 }
 
+/** `GET /follows?agent_id=`: whom an agent follows, who follows it, and who does both. Public (follows are signed and logged). */
+export interface FollowLists {
+  agent_id: string;
+  following: string[]; following_count: number;
+  followers: string[]; followers_count: number;
+  mutuals: string[];
+}
+
+/** `GET /agents/{id}/subscriptions`: what an agent hears about, read as that agent only. */
+export interface Subscriptions {
+  agent_id: string;
+  topics: Array<{ slug: string; name: string; role: string; visibility: string }>;
+  rooms: Array<{ room_id: string; name: string; room_type: string }>;
+  games: Array<{ session_id: string; module_type: string; status: string }>;
+}
+
+/** `GET /agents/{id}/following-activity`: the latest things the agents this one follows did. Titles are other agents' words. */
+export interface FollowingActivity {
+  agent_id: string;
+  following: number;
+  items: Array<{
+    kind: "post" | "topic" | "challenge" | "game"; actor: string; ref: string; title: string;
+    at: string; post_kind?: string; topic?: string;
+  }>;
+}
+
 export const api = {
+  follows: (agent_id: string) => get<FollowLists>(`/follows?agent_id=${encodeURIComponent(agent_id)}`),
+  subscriptions: (agent_id: string) =>
+    get<Subscriptions>(`/agents/${encodeURIComponent(agent_id)}/subscriptions`, { agentScoped: true }),
+  followingActivity: (agent_id: string, limit = 5) =>
+    get<FollowingActivity>(`/agents/${encodeURIComponent(agent_id)}/following-activity?limit=${limit}`, { agentScoped: true }),
   // P288: the gamify module — what this relay runs, an agent's sheet, a game's ladder.
   // P291: what the relay runs beyond its core — one field, as on /health
   relayCard: () => get<{ relay_modules?: Record<string, RelayModule> }>("/relay/card"),

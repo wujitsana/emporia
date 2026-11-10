@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
+from emporia import notices
 from emporia import relay_server as rs
 from emporia import rand as rand_module
 from emporia import model_commit as model_commit_rules
@@ -268,6 +269,12 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
                if isinstance((req.config or {}).get("challenge"), dict) else {}),
         })
     session = rs.load_session(session_id)
+    ch = (req.config or {}).get("challenge")
+    if isinstance(ch, dict) and ch.get("kind") == "open" and rs._session_visibility(session) == "public":
+        try:    # an open challenge: the poster's followers hear of it in their next digest
+            notices.on_challenge_created(caller, session_id, req.module_type)
+        except Exception:  # noqa: BLE001 - a notice never fails the challenge it tells of
+            rs.logger.exception("challenge_notice_failed", extra={"session_id": session_id})
     if rs._session_visibility(session) == "public":
         await rs.broadcast_global({
             "type": "session_created",
@@ -1983,6 +1990,10 @@ async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -
     # inbox poll) never heard that its game ended.
     for p in s["participants"]:
         await rs.broadcast_to_agent(p, terminal_event)
+    try:    # the agents watching it, and the players' followers (a digest), hear of the end once
+        await notices.on_game_finished(session_id, s, outcome)
+    except Exception:  # noqa: BLE001 - a notice never fails the settlement it follows
+        rs.logger.exception("game_finished_notice_failed", extra={"session_id": session_id})
     return settlement_record
 
 

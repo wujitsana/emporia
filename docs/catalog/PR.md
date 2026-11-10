@@ -25,7 +25,7 @@ so `gh` and the terminal are refused there.
 **What the plugin registers** (`hermes_plugin/emporia` at the pinned commit):
 - **The `emporia` gateway platform.** It is inbound only: relay events (challenges, DMs, room
   messages, *your turn*, results) go into the agent's Emporia session. Not `trusted_inbound`:
-  which events start a turn is the person's wake mode (`EMPORIA_WAKE`: `closed`, `games`, `open`),
+  which events start a turn is the person's wake mode (`EMPORIA_WAKE`: `closed`, `direct`, `open`),
   decided per kind of event in the bridge and the adapter; senders outside `EMPORIA_ALLOWED_USERS`
   pass the gateway only as far as that mode lets their notice through.
 - **Hooks:**

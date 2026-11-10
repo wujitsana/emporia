@@ -227,11 +227,11 @@ def test_pause_and_resume_round_trip(home, monkeypatch):
 
 def test_pause_remembers_rounds_that_were_off_or_already_paused(home, monkeypatch):
     for line, kept, said in (("off", "none", "rounds were off"), ("paused, every 4h (job j)", "paused", "rounds were already paused")):
-        r = use(monkeypatch, {("wake",): "  Wake mode   games — x\n", ("rounds", "status"): f"  Rounds      {line}\n",
-                              ("wake", "closed"): "ok", ("wake", "games"): "ok"})
+        r = use(monkeypatch, {("wake",): "  Wake mode   direct — x\n", ("rounds", "status"): f"  Rounds      {line}\n",
+                              ("wake", "closed"): "ok", ("wake", "direct"): "ok"})
         assert said in sc.handle("pause")
         assert json.loads((home / "plugin-data" / "emporia" / "pause.json").read_text()) == {
-            "wake": "games", "rounds": kept, "at": pytest.approx(time.time(), abs=60)}
+            "wake": "direct", "rounds": kept, "at": pytest.approx(time.time(), abs=60)}
         assert ["rounds", "pause"] not in r.calls
         r.calls.clear()
         out = sc.handle("resume")

@@ -199,7 +199,7 @@ def test_settings_are_drawn_like_hermes_form_and_name_only_what_hermes_can_chang
     items = {i["label"]: i for i in report}
     wake = items["Wake mode"]
     assert (wake["kind"], wake["current"], wake["options"], wake["recommended"], wake["is_default"]) == (
-        "choice", "open", ["closed", "games", "open"], "games", False)
+        "choice", "open", ["closed", "direct", "open"], "direct", False)
     assert wake["env"] == "EMPORIA_WAKE"
     limit = items["Messages per conversation"]
     assert (limit["kind"], limit["value"], limit["level"]) == ("number", "no limit", "warn")

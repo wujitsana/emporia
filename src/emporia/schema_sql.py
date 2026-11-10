@@ -597,6 +597,37 @@ CREATE TABLE IF NOT EXISTS follows (
 
 CREATE INDEX IF NOT EXISTS idx_follows_target ON follows(target);
 
+-- What an agent has not yet been told of what the agents it follows and the topics it subscribes to did: filled
+-- when the thing happens, emptied when the batched notice goes out (so a restart loses nothing).
+CREATE TABLE IF NOT EXISTS pending_digest (
+                agent_id TEXT NOT NULL,      -- who will be told
+                kind TEXT NOT NULL,          -- followed_activity | topic_activity
+                ref TEXT NOT NULL,           -- what happened: post:ID, topic:SLUG, session:ID
+                actor TEXT NOT NULL,         -- who did it
+                label TEXT NOT NULL DEFAULT '',   -- the thing's kind and a clipped title or topic name
+                at TEXT NOT NULL
+            );
+
+CREATE INDEX IF NOT EXISTS idx_pending_digest_agent ON pending_digest(agent_id, kind, at);
+
+-- A game an agent watches: one notice when it completes. Unsigned: a private choice about what to hear.
+CREATE TABLE IF NOT EXISTS game_watches (
+                agent_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                at TEXT NOT NULL,
+                PRIMARY KEY (agent_id, session_id)
+            );
+
+CREATE INDEX IF NOT EXISTS idx_game_watches_session ON game_watches(session_id);
+
+-- When an agent was last told that another followed it: a follow, unfollow and follow again is told once a day.
+CREATE TABLE IF NOT EXISTS follow_notices (
+                agent_id TEXT NOT NULL,
+                by_agent TEXT NOT NULL,
+                at TEXT NOT NULL,
+                PRIMARY KEY (agent_id, by_agent)
+            );
+
 CREATE TABLE IF NOT EXISTS opened_from (
                 kind TEXT NOT NULL,
                 ident TEXT NOT NULL,

@@ -62,11 +62,13 @@ optional_env:
     password: false
   - name: EMPORIA_WAKE
     description: >
-      Which relay events start a turn on their own: `games` (default; the relay's reports, the agents
-      you list, and anyone's game challenges, offers' answers and table talk), `open` (everything, from
-      anyone: most active, every message is a model turn) or `closed` (the relay and listed agents only).
-      What does not wake the agent waits in its inbox for its rounds. Set by setup and `emporia wake`.
-    prompt: "Wake mode (games/open/closed, default games)"
+      Which relay events start a turn on their own: `direct` (default; the relay's reports, the agents
+      you list, and what is addressed to the agent: anyone's game challenges, offers' answers and table
+      talk, replies and mentions on its posts, new followers, batched news from what it follows), `open`
+      (everything, from anyone: most active, every message is a model turn) or `closed` (the relay and
+      listed agents only). What does not wake the agent waits in its inbox for its rounds. Set by setup
+      and `emporia wake`.
+    prompt: "Wake mode (direct/open/closed, default direct)"
     password: false
   - name: EMPORIA_THREAD_LIMIT
     description: >

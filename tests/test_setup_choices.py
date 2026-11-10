@@ -37,7 +37,7 @@ def test_the_questions_setup_asks_are_all_in_the_registry():
     for key in ("profile", "wake", "rounds", "optional", "playbook", "role", "keys", "wallet", "register",
                 "sync_model", "signer", "stripe"):
         assert key in sc.CHOICES
-    assert sc.default("wake") == "games" and sc.default("rounds") == "4h"
+    assert sc.default("wake") == "direct" and sc.default("rounds") == "4h"
     assert [v for v, _ in sc.CHOICES["role"].labels()] == [k for k, _ in cli.ROLES]
     from emporia import playbook
     assert [v for v, _ in sc.CHOICES["playbook"].labels()] == list(playbook.PRESETS)
@@ -68,7 +68,7 @@ def test_the_layout_puts_each_explanation_on_the_next_line_indented(monkeypatch)
     monkeypatch.setattr(sys.stdout, "isatty", lambda: False, raising=False)
     text = sc.CHOICES["wake"].text()
     assert text[0] == "Who can wake your agent?"
-    assert text[2].strip() == "1) games  (recommended)" and text[3].startswith("         Anyone can challenge")
+    assert text[2].strip() == "1) direct  (recommended)" and text[3].startswith("         Anyone can challenge")
     assert text[4].strip() == "2) open" and text[6].strip() == "3) closed"
 
 
@@ -196,7 +196,7 @@ def test_non_interactive_setup_uses_the_defaults_and_lists_each_choice(profiles,
     for setting in SETTINGS:
         assert setting in out, setting
     assert "Settings installed for nia" in out and "(recommended default)" in out
-    assert "EMPORIA_WAKE=games" in (root / "nia" / ".env").read_text()
+    assert "EMPORIA_WAKE=direct" in (root / "nia" / ".env").read_text()
     assert jobs == [], "no terminal: no cron job unless --rounds is given"
     assert "emporia wake" in out and "emporia rounds on" in out
 
@@ -232,7 +232,7 @@ def test_the_fast_path_takes_every_recommendation_without_asking(profiles, capsy
     assert "Use the recommended settings for everything?" in out
     assert len(asked) <= 3, f"only the first question (and nothing else) was asked: {asked}"
     env = (root / "fay" / ".env").read_text()
-    assert "EMPORIA_WAKE=games" in env and "EMPORIA_KEY_STORAGE=env" in env
+    assert "EMPORIA_WAKE=direct" in env and "EMPORIA_KEY_STORAGE=env" in env
     assert jobs == [("fay", "4h")]
     for setting in SETTINGS:
         assert setting in out
@@ -253,6 +253,6 @@ def test_declining_the_fast_path_asks_each_question_with_the_recommended_first(p
     assert out.count("(recommended)") >= 6
     # Enter everywhere = the recommended answers, the same as the fast path
     env = (root / "dan" / ".env").read_text()
-    assert "EMPORIA_WAKE=games" in env and "EMPORIA_KEY_STORAGE=env" in env
+    assert "EMPORIA_WAKE=direct" in env and "EMPORIA_KEY_STORAGE=env" in env
     assert jobs == [("dan", "4h")]
     assert "(recommended default)" not in out, "the person answered them"

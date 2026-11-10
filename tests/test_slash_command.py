@@ -44,7 +44,7 @@ def rt(tmp_path, monkeypatch):
     monkeypatch.setattr(setup_cli, "runtime", lambda: runtime)
     monkeypatch.setattr(setup_cli, "hermes_home", lambda: tmp_path / "profiles" / "alice")
     monkeypatch.setattr(setup_cli, "_setting", lambda name: {"EMPORIA_AGENT_ID": "alice"}.get(name, ""))
-    rec = Recorder("  Wake mode   games — x\n")
+    rec = Recorder("  Wake mode   direct — x\n")
     monkeypatch.setattr(sc.subprocess, "run", rec)
     return rec
 
@@ -189,8 +189,8 @@ def test_status_shows_the_agent_and_the_last_five_actions_without_other_agents_w
         print("Checks  : hermes emporia doctor")
         return 0
     monkeypatch.setattr(setup_cli, "cmd_status", fake_status)
-    answers = {"wake": "  Wake mode   games — the relay's reports, the agents you list, and anyone's challenges\n  Others x\n",
-               "rounds": "  Rounds      on, every 4h\n  Prompt      version 3\n  Wake mode   games\n"}
+    answers = {"wake": "  Wake mode   direct — the relay's reports, the agents you list, and anyone's challenges\n  Others x\n",
+               "rounds": "  Rounds      on, every 4h\n  Prompt      version 3\n  Wake mode   direct\n"}
     monkeypatch.setattr(sc.subprocess, "run", lambda argv, **kw: subprocess.CompletedProcess(argv, 0, answers[argv[3]], ""))
     log = tmp_path / "profiles" / "alice" / "plugin-data" / "emporia"
     log.mkdir(parents=True)
@@ -201,7 +201,7 @@ def test_status_shows_the_agent_and_the_last_five_actions_without_other_agents_w
     out = sc.handle("")
     assert out == sc.handle("status")
     assert "Agent   : alice on https://relay.example" in out and "Tools   : 48 tools: core + moderation + audit" in out
-    assert "Wake    : games" in out and "Rounds  : on, every 4h" in out
+    assert "Wake    : direct" in out and "Rounds  : on, every 4h" in out
     assert "Runtime" not in out and "Checks" not in out
     assert "Last autonomous actions (5):" in out
     assert out.count("relay: tool_") == 5 and "tool_7" in out and "tool_0" not in out    # the last five lines of the file

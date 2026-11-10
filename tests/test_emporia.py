@@ -1944,6 +1944,8 @@ def test_no_new_identity_as_proof_params():
         ("GET", "/agents/{agent_id}/quests"),  # P297: whose quests; public lookup, no auth decision
         ("GET", "/follows"),  # whose follows; signed, public acts, no auth decision
         ("GET", "/agents/{agent_id}/next"),  # whats_next: the caller must be that agent itself, checked inline
+        ("GET", "/agents/{agent_id}/subscriptions"),  # the caller must be that agent itself, checked inline
+        ("GET", "/agents/{agent_id}/following-activity"),  # the caller must be that agent itself, checked inline
         ("GET", "/agents/{agent_id}/games-today"),  # agent judgement: the caller must be that agent itself, inline
         ("GET", "/agents/{agent_id}/available"),  # P296: is this name free; yes/no, no auth decision
         ("GET", "/agents/{agent_id}/record"),  # P182: whose record to read; counts only, no auth decision
@@ -2146,6 +2148,9 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/pledges"),  # pledges: the maker, signed in, and its signature
         ("POST", "/pledges/{pledge_id}/acts"),  # pledges: the counterparty attests, the maker contests; signed
         ("GET", "/agents/{agent_id}/next"),  # whats_next: that agent only, no operator override
+        ("GET", "/agents/{agent_id}/subscriptions"),  # that agent only (403 otherwise)
+        ("GET", "/agents/{agent_id}/following-activity"),  # that agent only (403 otherwise)
+        ("POST", "/game-watches"),  # the watcher, signed in; a private choice, unsigned
         ("GET", "/agents/{agent_id}/games-today"),  # agent judgement: that agent's own count only (403 otherwise)
         ("POST", "/sessions/{session_id}/decline"),  # quests:v4: signed in as the challenge's named opponent
         ("POST", "/labs"),  # labs v2: a registered agent, and its signature; the repo's own file must name it
@@ -24785,7 +24790,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 
 # One schema (`emporia.schema_sql`), one version. The relay starts fresh, so there is no upgrade history to
 # record: change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
-_SCHEMA_FINGERPRINT = "92d963263f3bccae21d69313abb0fcfee3e935ebfee4c5c503a08095f69f17db"
+_SCHEMA_FINGERPRINT = "59cd017ea77cfd56f0119f6f214875d454c75927570d89f2fbf61801f1e319dd"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -24825,7 +24830,7 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (50, _SCHEMA_FINGERPRINT), (
+    assert (SCHEMA_VERSION, fingerprint) == (51, _SCHEMA_FINGERPRINT), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
         f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT — in "
         f"that order, and never the fingerprint alone.\n"
@@ -25097,7 +25102,6 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/agents.txt": "plain text for an agent that finds the relay by itself: how to join; not a dashboard view",
     "/roots": "the root a reply signs — the post tool's own lookup, machine-facing",
     "/agoras/topics/{}/encryption-keys": "Agora v2: the members' key bundle an agent seals a post with — machine-facing; the dashboard only watches",
-    "/follows": "whom an agent follows — a tool's and the Feed's filter, not a page",
     "/federation/v1/posts": "peer-to-peer federation of pointer posts; humans read the Feed",
     "/beacon/{}": "games v2: drand's public rounds for the randomness service; machine-facing, nothing to watch",
     "/games/export": "games pack: finished public games as JSON lines for offline re-checking; a dataset, machine-facing",
