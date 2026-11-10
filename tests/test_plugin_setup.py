@@ -106,12 +106,32 @@ def test_the_new_profile_gets_the_plugin_commit_hermes_recorded_not_the_runtime_
     home = tmp_path / "home"
     (home / "plugins").mkdir(parents=True)
     (home / "plugins" / ".install-metadata.json").write_text(
-        '{"emporia": {"pinned": true, "revision": "' + "B" * 40 + '", "source": "x"}, "other": {}}')
+        '{"emporia": {"pinned": true, "revision": "' + "B" * 40
+        + '", "source": "https://github.com/o/r.git#hermes_plugin/emporia"}, "other": {}}')
     monkeypatch.setattr(setup_cli, "hermes_home", lambda: home)
     monkeypatch.setattr(setup_cli, "installed_ref", real_installed_ref)
     assert setup_cli.installed_ref() == "b" * 40
     assert setup_cli._install_plugin_into("shop") is True
     assert calls[-1][0][calls[-1][0].index("--ref") + 1] == "b" * 40
+
+
+def test_the_recorded_revision_is_trusted_only_for_this_releases_own_repo_and_pin(monkeypatch, tmp_path):
+    (tmp_path / "plugins").mkdir()
+    meta = tmp_path / "plugins" / ".install-metadata.json"
+
+    def record(source):
+        meta.write_text('{"emporia": {"revision": "' + "c" * 40 + '", "source": "' + source + '"}}')
+    pin = {"repo": "https://github.com/o/r", "sha": "a" * 40}
+    monkeypatch.setattr(setup_cli, "source", lambda: pin)
+    record("https://github.com/o/r")
+    assert setup_cli.installed_ref(tmp_path) == "c" * 40
+    record("https://github.com/someone-else/r"), "another repository"
+    assert setup_cli.installed_ref(tmp_path) == ""
+    record("")
+    assert setup_cli.installed_ref(tmp_path) == "", "no recorded source"
+    record("https://github.com/o/r")
+    monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://github.com/o/r", "sha": ""})
+    assert setup_cli.installed_ref(tmp_path) == "", "the installed plugin names no pin"
 
 
 def test_installed_ref_is_empty_without_a_full_commit(tmp_path):
