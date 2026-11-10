@@ -25,6 +25,7 @@ import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
 import { canSee, dealsAvailable, destById, destinationOf, navById, navForHotkey, siblingView, type ArenaLens, type Destination, type View } from "./navConfig";
 import { GatedNote } from "./ui/GatedNote";
 import { isNarrow, useNarrow, useOverlayFocus } from "./ui/overlayFocus";
+import { useNavLayout } from "./ui/navLayout";
 import { PageHeading, ViewBoundary } from "./ui/layout";
 import { isTyping } from "./keyTarget";
 import { sessionSection } from "./eventNav";
@@ -86,13 +87,16 @@ function AppInner() {
   const [navOpen, setNavOpen] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
   const narrow = useNarrow();
+  // The navigation follows the dashboard's own width, not the window's (ui/navLayout.ts).
+  const navLayout = useNavLayout(mainRef);
   const chatIsOpen = useSyncExternalStore(subscribeChatOpen, chatOpen);
   // The phone menu takes the focus while open and gives it back on close (ui/overlayFocus.ts).
   useOverlayFocus(navOpen, drawerRef);
-  // The menu exists below the header-nav width only: widening the window closes it,
+  // The menu exists in the phone layout only: widening the frame closes it,
   // or the view would stay inert behind a menu that is no longer drawn.
-  if (navOpen && !narrow) setNavOpen(false);
+  if (navOpen && navLayout !== "phone") setNavOpen(false);
   // What an overlay covers is out of reach of Tab and of a screen reader: the view under
   // the menu, and the view under full-page chat.
   const mainCovered = navOpen || (narrow && chatIsOpen);
@@ -326,7 +330,7 @@ function AppInner() {
 
   return (
     <RelayHealthCtx.Provider value={relayHealth}>
-    <div ref={shellRef} className={`e-app-shell e-dashboard-shell e-app-shell--header-nav${navOpen ? " is-nav-open" : ""}${chatBeside ? " has-chat" : ""}`}>
+    <div ref={shellRef} data-nav={navLayout} className={`e-app-shell e-dashboard-shell e-app-shell--header-nav${navOpen ? " is-nav-open" : ""}${chatBeside ? " has-chat" : ""}`}>
         <aside ref={drawerRef} className="e-app-drawer" aria-label="Menu" inert={!navOpen}>
           <MobileNavDrawer
             view={view}
@@ -347,7 +351,15 @@ function AppInner() {
           aria-label="Close menu"
           onClick={() => setNavOpen(false)}
         />
-        <main className="e-app-main" inert={mainCovered}>
+        <main ref={mainRef} className="e-app-main" inert={mainCovered}>
+          {/* Rail layout only (CSS): the five places as icons down the left edge. */}
+          <SectionTabs
+            view={view}
+            onGoDest={goToDest}
+            variant="rail"
+            badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined}
+          />
+          <div className="e-app-col">
           <header className="e-app-top">
             <div className="e-app-top__row">
               <Text className="e-brand-title e-brand-title--header"><BrandTitle replay={view} /></Text>
@@ -355,6 +367,7 @@ function AppInner() {
                 view={view}
                 onGoDest={goToDest}
                 variant="horizontal"
+                short={navLayout === "medium"}
                 badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined}
               />
               <div className="e-app-top__actions">
@@ -477,6 +490,7 @@ function AppInner() {
             <AnimaticHudFoot section={currentNav?.label.toLowerCase() ?? view} />
           </div>
           <BottomBar view={view} onGoDest={goToDest} badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined} />
+          </div>
         </main>
         {/* Full-page chat (a phone, a narrow tab) keeps the menu: its ☰ opens the same drawer, above it. */}
         <AgentChatDrawer onMenu={() => setNavOpen(true)} covered={navOpen} />

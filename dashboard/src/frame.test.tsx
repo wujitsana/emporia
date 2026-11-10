@@ -53,12 +53,14 @@ describe("the frame contains everything it overlays", () => {
   });
 
   it("puts the phone menu, its backdrop and full-page chat inside the frame, the menu above the chat", () => {
-    const drawer = find("dashboard.css", ".e-app-drawer", "position", /max-width/);
-    const backdrop = find("dashboard.css", ".e-app-shell.is-nav-open .e-app-backdrop", "position", /max-width/);
+    // The menu belongs to the phone layout, chosen from the frame's own width (data-nav), not the window's.
+    const PHONE = '.e-app-shell[data-nav="phone"]';
+    const drawer = find("dashboard.css", `${PHONE} .e-app-drawer`, "position");
+    const backdrop = find("dashboard.css", `${PHONE}.is-nav-open .e-app-backdrop`, "position");
     const chat = find("chat/ChatDrawer.module.css", ".root", "position", /max-width/);
     expect([drawer[0]?.value, backdrop[0]?.value, chat[0]?.value]).toEqual(["absolute", "absolute", "absolute"]);
-    const z = (f: string, s: string) => Number(find(f, s, "z-index", /max-width/)[0]?.value);
-    expect(z("dashboard.css", ".e-app-drawer")).toBeGreaterThan(z("chat/ChatDrawer.module.css", ".root"));
+    const zOf = (f: string, s: string, m?: RegExp) => Number(find(f, s, "z-index", m)[0]?.value);
+    expect(zOf("dashboard.css", `${PHONE} .e-app-drawer`)).toBeGreaterThan(zOf("chat/ChatDrawer.module.css", ".root", /max-width/));
   });
 
   it("uses position: fixed nowhere but the theme popover's click-catcher, which the frame contains", () => {
@@ -125,22 +127,28 @@ describe("the brand", () => {
   });
 });
 
-// P5: at 1280 px the chat beside the view leaves the header ~848 px for ~1000 px of content,
-// so it wrapped to a second row as the chat slid in. With the chat open it stays on one row.
-describe("the header with the chat open beside the view", () => {
-  const wide = /min-width: 901px/;
-  it("keeps one row: no wrap, the tabs scroll in their own row", () => {
-    expect(find("dashboard.css", ".e-app-shell.has-chat .e-app-top__row", "flex-wrap", wide)[0]?.value).toBe("nowrap");
-    expect(find("dashboard.css", ".e-app-shell.has-chat .e-section-tabs--horizontal", "flex-wrap", wide)[0]?.value).toBe("nowrap");
-    expect(find("dashboard.css", ".e-section-tabs", "overflow-x")[0]?.value).toBe("auto");
-    expect(find("dashboard.css", ".e-app-shell.has-chat .e-app-top__actions", "flex-shrink", wide)[0]?.value).toBe("0");
+// The header keeps one row at every width, and the main navigation never scrolls: the layout is
+// chosen from the dashboard's own width (ui/navLayout.ts), so a chat beside the view, or Hermes's
+// sidebar, makes it drop a tier by itself.
+describe("the header and the main navigation", () => {
+  it("keeps one row: no wrap, the five places never scroll", () => {
+    expect(find("dashboard.css", ".e-app-top__row", "flex-wrap").map((d) => d.value)).toContain("nowrap");
+    expect(find("dashboard.css", '.e-app-shell[data-nav="wide"] .e-section-tabs--horizontal,\n.e-app-shell[data-nav="medium"] .e-section-tabs--horizontal', "flex-wrap")[0]?.value).toBe("nowrap");
+    const scrolls = ALL.filter((d) => d.file === "dashboard.css" && /overflow(-x)?$/.test(d.prop) && /auto|scroll/.test(d.value)
+      && /e-section-tab/.test(d.sel) && !/drawer/.test(d.sel)).map((d) => d.sel);
+    expect(scrolls).toEqual([]);
+    expect(find("dashboard.css", ".e-app-top__actions", "flex-shrink").at(-1)?.value).toBe("0");
   });
 
-  it("drops the relay's host and version, never the relay and money chips", () => {
-    const hidden = ALL.filter((d) => d.prop === "display" && d.value === "none" && wide.test(d.media)
-      && d.sel.includes(".has-chat")).map((d) => d.sel).join(",");
-    expect(hidden).toMatch(/\.e-relay-status__host/);
+  it("drops the relay's version, never the relay and money chips", () => {
+    const hidden = ALL.filter((d) => d.prop === "display" && d.value === "none" && d.sel.includes("data-nav")).map((d) => d.sel).join(",");
     expect(hidden).toMatch(/\.e-relay-status__meta/);
-    expect(hidden).not.toMatch(/chip/);
+    expect(hidden).not.toMatch(/e-money-chip|status-chip__label--relay/);
+  });
+
+  it("gates no navigation on the window's width: only content padding and touch sizes use a media query", () => {
+    const nav = ALL.filter((d) => d.file === "dashboard.css" && /max-width|min-width/.test(d.media)
+      && /e-section-tab|e-bottom-bar|e-subnav|e-app-top|e-mobile-top|e-app-drawer|e-app-backdrop/.test(d.sel)).map((d) => d.sel);
+    expect(nav).toEqual([]);
   });
 });

@@ -45,6 +45,9 @@ export function TrustSafetySection() {
           <span className="e-kpi__lbl">min rationale</span>
         </div>
       </div>
+      <Text className="e-dim" style={{ fontSize: "0.72rem", margin: "4px 0 8px" }}>
+        Guardrails: with enforce, a message the firewall flags is refused; in any other mode it is let through.
+      </Text>
       <RelayLog />
       {stats?.bot_fingerprints && stats.bot_fingerprints.length > 0 && (
         <Text className="e-dim" style={{ marginTop: 8, fontSize: "0.72rem" }}>

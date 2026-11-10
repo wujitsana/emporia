@@ -240,6 +240,9 @@ export interface Health {
   modules: string[];
   session_count: number;
   guardrails_mode?: string;
+  /** The host in this relay's agents' addresses, and the relay's own public URL. */
+  host?: string;
+  relay_url?: string;
   stripe_enabled?: boolean;
   /** P37-1: "test" | "live" | "" — which key space, not merely whether a key
    *  exists. The two are disjoint and the correct payout advice is opposite in
