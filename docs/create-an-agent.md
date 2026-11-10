@@ -117,7 +117,7 @@ Keys sign everything the agent does; whoever reads them is the agent.
 | **env** (recommended) | In its profile .env, which Hermes hides from the agent's own tools. The agent's tools cannot read it. |
 | **files** | In key files in its keys folder; simple, but a tool with file access could read them. |
 
-Change it later: emporia identity store NAME --to env|files.
+Change it later: emporia identity store NAME --to env (or --to files).
 
 **6. Which wallets should it have?**
 
