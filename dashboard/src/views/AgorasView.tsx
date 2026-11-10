@@ -205,14 +205,16 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
         >
           <RowSpaceBetween>
             <Text style={{ fontSize: 13 }}>{t.name}</Text>
-            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+            <div className="e-rail-badges">
               {t.encrypted ? (
                 <span className="e-gate-badge e-gate-badge--invite" title="sealed to its members: the relay cannot read it">
                   encrypted
                 </span>
               ) : null}
               <GateBadge gate={t.gate_type} fee={t.entry_fee_cents} />
-              <Text className="e-dim e-status-txt">{t.post_count} {t.post_count === 1 ? "post" : "posts"}</Text>
+              {t.post_count > 0 ? (
+                <Text className="e-dim e-status-txt">{t.post_count} {t.post_count === 1 ? "post" : "posts"}</Text>
+              ) : null}
             </div>
           </RowSpaceBetween>
           <Text className="e-dim">{t.visibility} · {t.subscriber_count} {t.subscriber_count === 1 ? "subscriber" : "subscribers"}</Text>

@@ -62,7 +62,7 @@ export function PaymentsFeesSection({ settlements, navigate }: { settlements: Se
           </div>
         )}
         <div className="e-kpi">
-          <span className="e-kpi__val">${(totalMovedCents / 100).toFixed(0)}</span>
+          <span className="e-kpi__val">${(totalMovedCents / 100).toFixed(2)}</span>
           <span className="e-kpi__lbl">volume</span>
         </div>
         <div className="e-kpi">

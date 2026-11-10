@@ -72,7 +72,7 @@ function readTint(): Tint {
 /** The sub-tab last seen in each destination in this browser tab (navForHotkey ignores a name it does not know). */
 function recalledSections(): Partial<Record<Destination, View>> {
   const out: Partial<Record<Destination, View>> = {};
-  for (const d of ["home", "agora", "arena", "labs", "agent"] as const) {
+  for (const d of ["home", "messages", "agora", "arena", "agent"] as const) {
     const v = recall(`dest.${d}`);
     if (v) out[d] = v as View;
   }
@@ -243,7 +243,7 @@ function AppInner() {
     remember("arena.lens", l);
   }, []);
 
-  // Each destination reopens on the section last seen in it (Labs & Season → Season, if that was last);
+  // Each destination reopens on the section last seen in it (Arena → Season, if that was last);
   // kept for this browser tab, so a reload comes back to the same sub-tab.
   const lastInDest = useRef<Partial<Record<Destination, View>>>(recalledSections());
   useEffect(() => {
@@ -414,7 +414,6 @@ function AppInner() {
                 view={view}
                 onGoDest={goToDest}
                 variant="horizontal"
-                short={navLayout === "medium"}
                 badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined}
               />
               <div className="e-app-top__actions">

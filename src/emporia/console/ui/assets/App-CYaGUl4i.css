@@ -694,6 +694,11 @@ body.theme-light {
 .e-app-shell[data-nav="medium"] .e-app-top__actions,
 .e-app-shell[data-nav="rail"] .e-app-top__actions { gap: 10px; }
 .e-app-shell[data-nav="medium"] .e-section-tab { padding: 6px 8px; }
+.e-app-shell[data-nav="medium"] .e-section-tab__label { letter-spacing: 0; }
+/* The wordmark keeps its full size wherever the header has room (wide and medium); it only gives way in the
+   rail and phone layouts. */
+.e-app-shell[data-nav="wide"] .e-app-top .e-brand-title,
+.e-app-shell[data-nav="medium"] .e-app-top .e-brand-title { font-size: 1.5rem !important; letter-spacing: 0.08em; }
 .e-app-shell[data-nav="medium"] .e-relay-status__meta,
 .e-app-shell[data-nav="rail"] .e-relay-status__meta,
 .e-app-shell[data-nav="medium"] .e-header-link__word,
@@ -771,7 +776,8 @@ body.theme-light {
 .e-section-tab__icon  { font-size: 0.935rem; }
 .e-section-tab__label { letter-spacing: 0.02em; }
 .e-section-tabs--horizontal .e-section-tab__icon { display: none; }
-.e-app-shell[data-nav="medium"] .e-section-tabs--horizontal .e-section-tab__icon { display: inline; }
+/* The five places in the header row are words only, wide and medium: no icon beside a word (the rail has
+   icons and no words; the phone bar has an icon over a small word). */
 
 /* Drawer variant */
 .e-section-tabs--drawer {
@@ -927,6 +933,10 @@ body.theme-light {
   text-align: left;
   cursor: pointer;
 }
+/* badges on a rail row's first line: they wrap under each other instead of squeezing the name */
+.e-rail-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end; min-width: 0; text-align: right; }
+/* the second line of a rail row is secondary: smaller than the name above it, not larger */
+.e-rail-item .e-dim, .e-rail-item .e-faint { font-size: 12px; line-height: 1.45; }
 .e-rail-item:hover { color: var(--theme-focused-foreground); }
 .e-rail-item.is-selected,
 .e-rail-item:focus-visible { outline: none; }
@@ -1701,6 +1711,44 @@ body.theme-light {
   opacity: 0.45;
   font-variant-numeric: tabular-nums;
 }
+/* A list's own filter, at the top of its column: compact, the theme's colours, a clear button inside. */
+.e-list-filter { position: relative; padding: 8px 10px; border-bottom: 1px solid var(--e-rule, var(--theme-border-subdued)); }
+.e-list-filter input {
+  box-sizing: border-box; width: 100%; padding: 5px 26px 5px 8px; border: 1px solid var(--e-rule, currentColor); border-radius: 0;
+  background: transparent; color: inherit; font: inherit; font-size: 0.8rem;
+}
+.e-list-filter input::placeholder { color: var(--anim-faint, inherit); opacity: 1; }
+.e-list-filter input:focus { outline: none; border-color: var(--theme-focused-foreground); }
+.e-list-filter__clear {
+  position: absolute; right: 14px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; color: inherit;
+  font: inherit; font-size: 1rem; line-height: 1; cursor: pointer; opacity: 0.6; padding: 0 2px;
+}
+.e-list-filter__clear:hover { opacity: 1; color: var(--theme-focused-foreground); }
+/* A fold inside a card: one muted line that opens the facts only a close look needs. */
+.e-fold { margin-top: 8px; }
+.e-fold > summary { cursor: pointer; font-size: 0.72rem; letter-spacing: 0.04em; opacity: 0.65; list-style: none; padding: 2px 0; }
+.e-fold > summary::before { content: "▸ "; }
+.e-fold[open] > summary::before { content: "▾ "; }
+.e-fold > summary::-webkit-details-marker { display: none; }
+.e-fold > summary:hover, .e-fold[open] > summary { opacity: 1; color: var(--theme-focused-foreground); }
+/* "+N more": the rest of a row's chips, behind one small disclosure (progressive disclosure, nothing removed). */
+.e-more { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.e-more > summary { cursor: pointer; font-size: 0.7rem; opacity: 0.7; list-style: none; padding: 1px 4px; }
+.e-more > summary::-webkit-details-marker { display: none; }
+.e-more > summary:hover, .e-more[open] > summary { opacity: 1; color: var(--theme-focused-foreground); }
+/* A game's pixel glyph then its name: the one way every list says "this is a game". */
+.e-game-tag { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; vertical-align: middle; }
+.e-quiet-chip {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--e-rule, currentColor);
+  border-radius: 8px;
+  font-size: 0.64rem;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  opacity: 0.6;
+  white-space: nowrap;
+}
 .e-chat-line__content {
   font-size: 0.902rem;
   line-height: 1.45;
@@ -1784,6 +1832,29 @@ body.theme-light {
 .e-segment-tab.is-active { background: var(--e-accent-wash, transparent); font-weight: 400; }
 .e-segment-tab:hover { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
 .e-segment-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); font-weight: 600; }
+
+/* The Feed's filter chips, and "more ▾" for the rarer kinds: the same chip, opening a short list. */
+.e-feed-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; margin: 0 0 12px; }
+.e-feed-tabs .e-segment-tabs { margin: 0; }
+.e-feed-more { position: relative; }
+.e-feed-more > summary {
+  list-style: none; cursor: pointer; padding: 2px 11px; border: 1px solid var(--theme-border-subdued, currentColor);
+  border-radius: 999px; font-size: 0.68rem; letter-spacing: 0.02em; opacity: 0.75; user-select: none;
+}
+.e-feed-more > summary::-webkit-details-marker { display: none; }
+.e-feed-more > summary:hover, .e-feed-more[open] > summary, .e-feed-more > summary.is-active {
+  opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground);
+}
+.e-feed-more__menu {
+  position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 9rem; display: flex; flex-direction: column;
+  border: 1px solid var(--theme-border, var(--e-rule)); background: var(--theme-background);
+}
+.e-feed-more__menu button {
+  padding: 6px 12px; border: 0; border-bottom: 1px solid var(--e-rule, transparent); background: transparent; color: inherit;
+  font: inherit; font-size: 0.72rem; text-align: left; cursor: pointer;
+}
+.e-feed-more__menu button:last-child { border-bottom: 0; }
+.e-feed-more__menu button:hover, .e-feed-more__menu button.is-active { color: var(--theme-focused-foreground); }
 
 /* ─── 16. BADGES, PILLS & ENTITY CHIPS ──────────────────────────────────── */
 
@@ -2219,8 +2290,13 @@ body.theme-light {
   align-items: center; }
 .e-stats-bars__track { height: 8px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
 .e-stats-bars__fill { display: block; height: 100%; background: var(--theme-focused-foreground, currentColor); }
+/* the kit draws a marker before every list item; in the grid it became a fourth cell and shoved the row apart */
+.e-stats-bars__row, .e-stats-list li { padding-left: 0; text-indent: 0; }
+.e-stats-bars__row::before, .e-stats-list li::before { content: none; display: none; }
+.e-stats-bars__label { min-width: 0; overflow-wrap: anywhere; }
 .e-stats-money-note, .e-stats-missing { display: block; }
-.e-stats-table td { white-space: nowrap; }
+.e-stats .e-faint, .e-stats-toolbar .e-faint { font-size: 13px; line-height: 1.5; }
+.e-stats-table td, .e-stats-table th { white-space: nowrap; }
 @media (max-width: 700px) {
   .e-stats-bars__row { grid-template-columns: 1fr auto; }
   .e-stats-bars__track { grid-column: 1 / -1; grid-row: 2; }}
@@ -2927,6 +3003,11 @@ body.theme-light {
 .e-now__go { color: var(--theme-focused-foreground); }
 .e-now__sub { grid-column: 2 / 4; font-size: 0.75rem; opacity: 0.6; overflow-wrap: anywhere; }
 .e-now__live { color: var(--theme-focused-foreground); }
+/* On a phone the third cell (where it stands, "open →") drops under the text instead of squeezing it to one word a line. */
+@media (max-width: 520px) {
+  .e-now__row--stack { grid-template-columns: 9ch minmax(0, 1fr); }
+  .e-now__row--stack > .e-now__go { grid-column: 2; }
+}
 
 /* ─── 28. THEME / TINT CROSS-FADE ──────────────────────────────────────── */
 /* On only for the length of a theme or tint change (themeConfig.applyTheme),
@@ -3682,7 +3763,18 @@ body.e-look.theme-dark {
 .e-agent-card--compact { display: inline-flex; gap: 6px; align-items: flex-start; vertical-align: top; }
 .e-agent-card--compact .e-agent-card__about { display: block; }
 .e-agent-card__badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.e-arena-head__abouts { display: flex; flex-direction: column; gap: 4px; }.Text_text_1shpo {
+.e-arena-head__abouts { display: flex; flex-direction: column; gap: 4px; }
+
+/* ─── IN THE HERMES TAB ──────────────────────────────────────────────────────
+   Hermes already pads its own content frame (24px each side, 24px on top); the standalone console has no
+   such frame and keeps the page's own margins. Inside the tab (the plugin mounts into `.e-host-body`) the app
+   adds only a small inner margin, so it fills Hermes's area edge to edge and the page is not indented twice. */
+.e-host-body .e-view-body { padding-left: 8px; padding-right: 8px; padding-top: 12px; }
+.e-host-body.e-look .e-page-head,
+.e-host-body .e-look .e-page-head,
+.e-host-body .e-page-head { padding-left: 12px; padding-right: 12px; margin-top: 4px; max-width: 100%; }
+.e-host-body .e-app-top__row { padding-left: 8px; padding-right: 8px; }
+.e-host-body .e-now-strip, .e-host-body .e-home-lead { padding-left: 8px; padding-right: 8px; }.Text_text_1shpo {
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }
@@ -3712,6 +3804,134 @@ body.e-look.theme-dark {
   background: var(--theme-border);
   padding: 0 1ch 0 1ch;
 }
+/* ═══════════════════════════════════════════════════════════════
+   PIXEL BADGES — badges/Badge.tsx, docs/ui-badges.md
+   Two colour roles, no background:
+   - ink    = currentColor (the text colour where the badge sits);
+   - accent = --e-badge-accent, from the tint, darker on the light canvas
+     and lighter on the dark one (≥ 4.8:1 on canvas, panel and the row
+     wash in every theme and tint; badges.test.tsx holds it to that).
+   The accent is set on the element that carries the theme class (body in
+   the console, the app's container in the Hermes tab and on Desktop), so it
+   follows light/dark and the tint run without a re-render. The formulas
+   are mirrored in tokens.ts (ACCENT_CSS); keep the two the same.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* The dashboard has one style (ui-v2): the badge accent is the look's own accent-as-text. */
+.e-look {
+  --e-badge-accent: var(--theme-focused-foreground);
+}
+/* The gallery's panels each carry their own theme and tint: the same formula, worked out there.
+   (dashboard.css § 30 sets --theme-focused-foreground to exactly these on the app's root.) */
+.e-badge-panel.theme-light {
+  --e-badge-accent: oklch(from var(--tint, #f0a832) 0.45 min(c, 0.2) h);
+}
+.e-badge-panel.theme-dark {
+  --e-badge-accent: oklch(from var(--tint, #f0a832) max(l, 0.78) min(c, 0.22) h);
+}
+
+/* A row of small badges (Season › Quests: the ones earned). */
+.e-badge-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
+/* The sheet's head: the class badge beside the name and levels. */
+.e-sheet-head { display: flex; align-items: center; gap: 12px; }
+
+.e-badge {
+  display: inline-block;
+  flex: none;
+  line-height: 0;
+  vertical-align: middle;
+  color: inherit;
+}
+.e-badge > svg {
+  display: block;
+  overflow: visible;
+  image-rendering: pixelated;
+}
+/* On a fill (a chip, a caption bar) the accent would meet the fill: one role only. */
+.e-badge--mono .e-badge__accent { fill: currentColor !important; }
+
+/* The earn animation: a short pixel pop, in three hard steps. Arrivals only. */
+@keyframes e-badge-pop {
+  0% { transform: scale(0.5); }
+  45% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+.e-badge--pop {
+  animation: e-badge-pop 0.32s steps(3, jump-end) both;
+  transform-origin: 50% 60%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .e-badge--pop { animation: none; }
+}
+/* Capture mode (?capture=1): nothing moves. Badge.tsx also leaves the class off. */
+.e-capture .e-badge--pop { animation: none; }
+
+/* ─── the gallery (badges.html, ?capture=1 friendly) ─────────────────────── */
+
+.e-badge-gallery {
+  font-family: var(--font-family-mono, monospace);
+  padding: 16px;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+.e-badge-gallery__title {
+  font-family: "EmporiaPixel", var(--font-family-mono, monospace);
+  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);
+  letter-spacing: 0.04em;
+  margin: 8px 0 4px;
+}
+.e-badge-gallery__lede { max-width: 72ch; line-height: 1.5; margin: 0 0 16px; }
+.e-badge-gallery__bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 16px; }
+.e-badge-gallery__bar button {
+  font: inherit;
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentColor;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.e-badge-gallery__bar button[aria-pressed="true"] { background: var(--e-badge-accent); color: var(--theme-background, #fff); }
+.e-badge-gallery h2 {
+  font-family: "EmporiaPixel", var(--font-family-mono, monospace);
+  font-weight: 400;
+  font-size: 1.1rem;
+  letter-spacing: 0.04em;
+  margin: 24px 0 8px;
+}
+.e-badge-table { border-collapse: collapse; width: 100%; }
+.e-badge-table th, .e-badge-table td {
+  text-align: left;
+  vertical-align: middle;
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--theme-border, #ccc);
+  font-size: 0.85rem;
+}
+.e-badge-table code { font-size: 0.8rem; }
+.e-badge-table__scales { display: flex; gap: 12px; align-items: flex-end; }
+.e-badge-scroll { overflow-x: auto; }
+
+.e-badge-panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
+.e-badge-panel {
+  padding: 10px 12px 12px;
+  border: 1px solid var(--p-line);
+  background: var(--p-bg);
+  color: var(--p-ink);
+}
+.e-badge-panel.theme-light {
+  --p-bg: oklch(from var(--tint, #f0a832) 0.97 calc(c * 0.1) h);
+  --p-panel: oklch(from var(--tint, #f0a832) 0.92 calc(c * 0.18) h);
+  --p-ink: oklch(from var(--tint, #f0a832) 0.18 calc(c * 0.4) h);
+  --p-line: oklch(from var(--tint, #f0a832) 0.84 calc(c * 0.28) h);
+}
+.e-badge-panel.theme-dark {
+  --p-bg: oklch(from var(--tint, #f0a832) 0.14 calc(c * 0.18) h);
+  --p-panel: oklch(from var(--tint, #f0a832) 0.24 calc(c * 0.22) h);
+  --p-ink: oklch(from var(--tint, #f0a832) 0.94 calc(c * 0.12) h);
+  --p-line: oklch(from var(--tint, #f0a832) 0.4 calc(c * 0.28) h);
+}
+.e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }
+.e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }
 .Divider_gradient_hx4se {
   background: linear-gradient(to right, transparent, var(--theme-border), transparent);
   height: calc(var(--font-size) * var(--theme-line-height-base));
@@ -3736,85 +3956,6 @@ body.e-look.theme-dark {
   flex-shrink: 0;
   height: 2px;
   width: 100%;
-}
-.Input_root_zrgvd {
-  position: relative;
-  display: block;
-}
-
-.Input_label_zrgvd {
-  background: var(--theme-border);
-  display: block;
-}
-
-.Input_placeholder_zrgvd {
-  font-style: italic;
-  color: var(--theme-overlay);
-}
-
-.Input_displayed_zrgvd {
-  overflow: hidden;
-  white-space: nowrap;
-  pointer-events: none;
-  overflow-wrap: anywhere;
-  background: var(--theme-background-input);
-  box-shadow: inset 0 0 0 2px var(--theme-border);
-}
-
-.Input_focused_zrgvd {
-  .Input_block_zrgvd {
-    background: var(--theme-focused-foreground);
-  }
-
-  .Input_placeholder_zrgvd {
-    background: var(--theme-focused-foreground);
-  }
-}
-
-@keyframes Input_blink_zrgvd {
-  50% {
-    opacity: 0;
-  }
-}
-
-.Input_blink_zrgvd {
-  animation: Input_blink_zrgvd 1s step-start 0s infinite;
-}
-
-.Input_block_zrgvd {
-  display: inline-block;
-  min-width: 1ch;
-  background: var(--theme-text);
-  color: var(--theme-background);
-  height: calc(var(--font-size) * var(--theme-line-height-base));
-  vertical-align: bottom;
-}
-
-.Input_inputContainer_zrgvd {
-  position: relative;
-  display: block;
-}
-
-.Input_hidden_zrgvd {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  color: transparent;
-  background: transparent;
-  caret-color: transparent;
-  border: none;
-  outline: none;
-  overflow: hidden;
-  padding: 0;
-  margin: 0;
-  line-height: var(--theme-line-height-base);
-  font-size: var(--font-size);
-  font-family: inherit;
-
-  &:-webkit-autofill {
-    -webkit-box-shadow: 0 0 0px 1000px var(--theme-focused-foreground) inset;
-  }
 }
 .SidebarLayout_root_1g3qb {
   display: flex;
@@ -3998,134 +4139,6 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   padding: calc(var(--font-size) * var(--theme-line-height-base)) 2ch calc(var(--font-size) * var(--theme-line-height-base)) 2ch;
   font-weight: 400;
 }
-/* ═══════════════════════════════════════════════════════════════
-   PIXEL BADGES — badges/Badge.tsx, docs/ui-badges.md
-   Two colour roles, no background:
-   - ink    = currentColor (the text colour where the badge sits);
-   - accent = --e-badge-accent, from the tint, darker on the light canvas
-     and lighter on the dark one (≥ 4.8:1 on canvas, panel and the row
-     wash in every theme and tint; badges.test.tsx holds it to that).
-   The accent is set on the element that carries the theme class (body in
-   the console, the app's container in the Hermes tab and on Desktop), so it
-   follows light/dark and the tint run without a re-render. The formulas
-   are mirrored in tokens.ts (ACCENT_CSS); keep the two the same.
-   ═══════════════════════════════════════════════════════════════ */
-
-/* The dashboard has one style (ui-v2): the badge accent is the look's own accent-as-text. */
-.e-look {
-  --e-badge-accent: var(--theme-focused-foreground);
-}
-/* The gallery's panels each carry their own theme and tint: the same formula, worked out there.
-   (dashboard.css § 30 sets --theme-focused-foreground to exactly these on the app's root.) */
-.e-badge-panel.theme-light {
-  --e-badge-accent: oklch(from var(--tint, #f0a832) 0.45 min(c, 0.2) h);
-}
-.e-badge-panel.theme-dark {
-  --e-badge-accent: oklch(from var(--tint, #f0a832) max(l, 0.78) min(c, 0.22) h);
-}
-
-/* A row of small badges (Season › Quests: the ones earned). */
-.e-badge-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
-/* The sheet's head: the class badge beside the name and levels. */
-.e-sheet-head { display: flex; align-items: center; gap: 12px; }
-
-.e-badge {
-  display: inline-block;
-  flex: none;
-  line-height: 0;
-  vertical-align: middle;
-  color: inherit;
-}
-.e-badge > svg {
-  display: block;
-  overflow: visible;
-  image-rendering: pixelated;
-}
-/* On a fill (a chip, a caption bar) the accent would meet the fill: one role only. */
-.e-badge--mono .e-badge__accent { fill: currentColor !important; }
-
-/* The earn animation: a short pixel pop, in three hard steps. Arrivals only. */
-@keyframes e-badge-pop {
-  0% { transform: scale(0.5); }
-  45% { transform: scale(1.25); }
-  100% { transform: scale(1); }
-}
-.e-badge--pop {
-  animation: e-badge-pop 0.32s steps(3, jump-end) both;
-  transform-origin: 50% 60%;
-}
-@media (prefers-reduced-motion: reduce) {
-  .e-badge--pop { animation: none; }
-}
-/* Capture mode (?capture=1): nothing moves. Badge.tsx also leaves the class off. */
-.e-capture .e-badge--pop { animation: none; }
-
-/* ─── the gallery (badges.html, ?capture=1 friendly) ─────────────────────── */
-
-.e-badge-gallery {
-  font-family: var(--font-family-mono, monospace);
-  padding: 16px;
-  max-width: 1440px;
-  margin: 0 auto;
-}
-.e-badge-gallery__title {
-  font-family: "EmporiaPixel", var(--font-family-mono, monospace);
-  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);
-  letter-spacing: 0.04em;
-  margin: 8px 0 4px;
-}
-.e-badge-gallery__lede { max-width: 72ch; line-height: 1.5; margin: 0 0 16px; }
-.e-badge-gallery__bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 16px; }
-.e-badge-gallery__bar button {
-  font: inherit;
-  background: transparent;
-  color: inherit;
-  border: 1px solid currentColor;
-  padding: 2px 8px;
-  cursor: pointer;
-}
-.e-badge-gallery__bar button[aria-pressed="true"] { background: var(--e-badge-accent); color: var(--theme-background, #fff); }
-.e-badge-gallery h2 {
-  font-family: "EmporiaPixel", var(--font-family-mono, monospace);
-  font-weight: 400;
-  font-size: 1.1rem;
-  letter-spacing: 0.04em;
-  margin: 24px 0 8px;
-}
-.e-badge-table { border-collapse: collapse; width: 100%; }
-.e-badge-table th, .e-badge-table td {
-  text-align: left;
-  vertical-align: middle;
-  padding: 6px 10px 6px 0;
-  border-bottom: 1px solid var(--theme-border, #ccc);
-  font-size: 0.85rem;
-}
-.e-badge-table code { font-size: 0.8rem; }
-.e-badge-table__scales { display: flex; gap: 12px; align-items: flex-end; }
-.e-badge-scroll { overflow-x: auto; }
-
-.e-badge-panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
-.e-badge-panel {
-  padding: 10px 12px 12px;
-  border: 1px solid var(--p-line);
-  background: var(--p-bg);
-  color: var(--p-ink);
-}
-.e-badge-panel.theme-light {
-  --p-bg: oklch(from var(--tint, #f0a832) 0.97 calc(c * 0.1) h);
-  --p-panel: oklch(from var(--tint, #f0a832) 0.92 calc(c * 0.18) h);
-  --p-ink: oklch(from var(--tint, #f0a832) 0.18 calc(c * 0.4) h);
-  --p-line: oklch(from var(--tint, #f0a832) 0.84 calc(c * 0.28) h);
-}
-.e-badge-panel.theme-dark {
-  --p-bg: oklch(from var(--tint, #f0a832) 0.14 calc(c * 0.18) h);
-  --p-panel: oklch(from var(--tint, #f0a832) 0.24 calc(c * 0.22) h);
-  --p-ink: oklch(from var(--tint, #f0a832) 0.94 calc(c * 0.12) h);
-  --p-line: oklch(from var(--tint, #f0a832) 0.4 calc(c * 0.28) h);
-}
-.e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }
-.e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }
-.e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }
 .AskAgent_root_1tucs {
   display: inline-flex;
   align-items: center;
@@ -4334,7 +4347,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
    see. Below the header-nav width it covers the frame (absolute, inside the
    shell's `contain: layout paint`), never the Hermes app around it. */
 
-.ChatDrawer_root_58yj2 {
+.ChatDrawer_root_tg8j6 {
   display: none;
   flex: none;
   flex-direction: column;
@@ -4351,26 +4364,26 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   line-height: 1.5;
 }
 
-.ChatDrawer_open_58yj2 {
+.ChatDrawer_open_tg8j6 {
   display: flex;
 }
 
 /* ── head ─────────────────────────────────────────────────────────────── */
 
-.ChatDrawer_head_58yj2 {
+.ChatDrawer_head_tg8j6 {
   flex: none;
   padding: 12px 16px 10px;
   border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
 }
 
-.ChatDrawer_headRow_58yj2 {
+.ChatDrawer_headRow_tg8j6 {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.ChatDrawer_heading_58yj2 {
+.ChatDrawer_heading_tg8j6 {
   margin: 0;
   display: flex;
   align-items: baseline;
@@ -4382,16 +4395,16 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   text-transform: uppercase;
 }
 
-.ChatDrawer_headIcon_58yj2 {
+.ChatDrawer_headIcon_tg8j6 {
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_close_58yj2 {
+.ChatDrawer_close_tg8j6 {
   min-width: 40px !important;
   min-height: 40px !important;
 }
 
-.ChatDrawer_meta_58yj2 {
+.ChatDrawer_meta_tg8j6 {
   display: flex;
   flex-wrap: wrap;
   gap: 0 1ch;
@@ -4400,18 +4413,18 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   opacity: 0.62;
 }
 
-.ChatDrawer_conn_58yj2[data-conn="open"] {
+.ChatDrawer_conn_tg8j6[data-conn="open"] {
   color: var(--theme-focused-foreground);
   opacity: 1;
 }
 
-.ChatDrawer_sessionBar_58yj2 {
+.ChatDrawer_sessionBar_tg8j6 {
   display: flex;
   gap: 8px;
   margin-top: 10px;
 }
 
-.ChatDrawer_sessionPick_58yj2 {
+.ChatDrawer_sessionPick_tg8j6 {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -4428,18 +4441,18 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   cursor: pointer;
 }
 
-.ChatDrawer_sessionPick_58yj2:hover,
-.ChatDrawer_sessionPick_58yj2[aria-expanded="true"] {
+.ChatDrawer_sessionPick_tg8j6:hover,
+.ChatDrawer_sessionPick_tg8j6[aria-expanded="true"] {
   border-color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_sessionPickTitle_58yj2 {
+.ChatDrawer_sessionPickTitle_tg8j6 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ChatDrawer_smallButton_58yj2 {
+.ChatDrawer_smallButton_tg8j6 {
   flex: none;
   min-height: 36px;
   padding: 4px 12px;
@@ -4453,11 +4466,11 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   white-space: nowrap;
 }
 
-.ChatDrawer_smallButton_58yj2:hover {
+.ChatDrawer_smallButton_tg8j6:hover {
   border-color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_error_58yj2 {
+.ChatDrawer_error_tg8j6 {
   margin: 8px 0 0;
   font-size: 0.78rem;
   color: var(--theme-focused-foreground);
@@ -4465,7 +4478,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 
 /* ── transcript ───────────────────────────────────────────────────────── */
 
-.ChatDrawer_transcript_58yj2 {
+.ChatDrawer_transcript_tg8j6 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -4476,71 +4489,71 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   gap: 12px;
 }
 
-.ChatDrawer_intro_58yj2 {
+.ChatDrawer_intro_tg8j6 {
   border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
   border-left: 3px solid var(--theme-focused-foreground);
   padding: 10px 14px 12px;
   line-height: 1.55;
 }
 
-.ChatDrawer_intro_58yj2 p {
+.ChatDrawer_intro_tg8j6 p {
   margin: 0 0 6px;
 }
 
-.ChatDrawer_introTitle_58yj2 {
+.ChatDrawer_introTitle_tg8j6 {
   font-size: 0.72rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   opacity: 0.6;
 }
 
-.ChatDrawer_introNote_58yj2 {
+.ChatDrawer_introNote_tg8j6 {
   font-size: 0.78rem;
   opacity: 0.65;
 }
 
-.ChatDrawer_line_58yj2 {
+.ChatDrawer_line_tg8j6 {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
-.ChatDrawer_who_58yj2 {
+.ChatDrawer_who_tg8j6 {
   font-size: 0.68rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
 }
 
-.ChatDrawer_line_58yj2[data-who="you"] .ChatDrawer_who_58yj2 {
+.ChatDrawer_line_tg8j6[data-who="you"] .ChatDrawer_who_tg8j6 {
   color: var(--theme-focused-foreground);
   opacity: 1;
 }
 
-.ChatDrawer_line_58yj2[data-who="you"] .ChatDrawer_text_58yj2 {
+.ChatDrawer_line_tg8j6[data-who="you"] .ChatDrawer_text_tg8j6 {
   padding: 6px 10px;
   background: var(--e-accent-wash, rgba(128, 128, 128, 0.08));
   border-left: 2px solid var(--theme-focused-foreground);
 }
 
-.ChatDrawer_text_58yj2 {
+.ChatDrawer_text_tg8j6 {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.ChatDrawer_caret_58yj2 {
+.ChatDrawer_caret_tg8j6 {
   color: var(--theme-focused-foreground);
-  animation: ChatDrawer_blink_58yj2 1s steps(1) infinite;
+  animation: ChatDrawer_blink_tg8j6 1s steps(1) infinite;
 }
 
-@keyframes ChatDrawer_blink_58yj2 {
+@keyframes ChatDrawer_blink_tg8j6 {
   50% {
     opacity: 0;
   }
 }
 
-.ChatDrawer_working_58yj2 {
+.ChatDrawer_working_tg8j6 {
   display: flex;
   gap: 1ch;
   align-items: center;
@@ -4548,7 +4561,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   opacity: 0.7;
 }
 
-.ChatDrawer_notice_58yj2 {
+.ChatDrawer_notice_tg8j6 {
   font-size: 0.78rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -4559,29 +4572,29 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   overflow-y: auto;
 }
 
-.ChatDrawer_notice_58yj2[data-tone="error"] {
+.ChatDrawer_notice_tg8j6[data-tone="error"] {
   opacity: 1;
   border-left: 2px solid var(--theme-focused-foreground);
 }
 
-.ChatDrawer_notice_58yj2[data-tone="command"] {
+.ChatDrawer_notice_tg8j6[data-tone="command"] {
   border-left: 0;
   padding-left: 0;
   opacity: 0.9;
 }
 
-.ChatDrawer_prompt_58yj2 {
+.ChatDrawer_prompt_tg8j6 {
   color: var(--theme-focused-foreground);
 }
 
 /* ── tool cards ───────────────────────────────────────────────────────── */
 
-.ChatDrawer_tool_58yj2 {
+.ChatDrawer_tool_tg8j6 {
   border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
   min-width: 0;
 }
 
-.ChatDrawer_toolHead_58yj2 {
+.ChatDrawer_toolHead_tg8j6 {
   display: flex;
   align-items: center;
   gap: 1ch;
@@ -4597,28 +4610,28 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   cursor: pointer;
 }
 
-.ChatDrawer_toolHead_58yj2:hover .ChatDrawer_toolName_58yj2 {
+.ChatDrawer_toolHead_tg8j6:hover .ChatDrawer_toolName_tg8j6 {
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_toolMark_58yj2 {
+.ChatDrawer_toolMark_tg8j6 {
   flex: none;
   width: 1.5ch;
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_tool_58yj2[data-status="failed"] .ChatDrawer_toolMark_58yj2,
-.ChatDrawer_tool_58yj2[data-status="blocked"] .ChatDrawer_toolMark_58yj2 {
+.ChatDrawer_tool_tg8j6[data-status="failed"] .ChatDrawer_toolMark_tg8j6,
+.ChatDrawer_tool_tg8j6[data-status="blocked"] .ChatDrawer_toolMark_tg8j6 {
   color: inherit;
   opacity: 0.8;
 }
 
-.ChatDrawer_toolName_58yj2 {
+.ChatDrawer_toolName_tg8j6 {
   flex: none;
   font-weight: 600;
 }
 
-.ChatDrawer_toolContext_58yj2 {
+.ChatDrawer_toolContext_tg8j6 {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -4627,18 +4640,18 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   opacity: 0.65;
 }
 
-.ChatDrawer_toolTime_58yj2 {
+.ChatDrawer_toolTime_tg8j6 {
   flex: none;
   color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
   font-size: 0.72rem;
 }
 
-.ChatDrawer_toolCaret_58yj2 {
+.ChatDrawer_toolCaret_tg8j6 {
   flex: none;
   opacity: 0.5;
 }
 
-.ChatDrawer_toolOut_58yj2 {
+.ChatDrawer_toolOut_tg8j6 {
   margin: 0;
   padding: 8px 10px;
   border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
@@ -4651,16 +4664,16 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 }
 
 /* Relay content: dashed rule, a label that says so. */
-.ChatDrawer_untrusted_58yj2 {
+.ChatDrawer_untrusted_tg8j6 {
   border-style: dashed;
 }
 
-.ChatDrawer_line_58yj2.ChatDrawer_untrusted_58yj2 {
+.ChatDrawer_line_tg8j6.ChatDrawer_untrusted_tg8j6 {
   border: 1px dashed var(--e-rule, rgba(128, 128, 128, 0.35));
   padding: 6px 10px;
 }
 
-.ChatDrawer_untrustedLabel_58yj2 {
+.ChatDrawer_untrustedLabel_tg8j6 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -4670,11 +4683,11 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   opacity: 0.8;
 }
 
-.ChatDrawer_line_58yj2 .ChatDrawer_untrustedLabel_58yj2 {
+.ChatDrawer_line_tg8j6 .ChatDrawer_untrustedLabel_tg8j6 {
   padding: 0;
 }
 
-.ChatDrawer_untrustedLabel_58yj2 [class*="Badge_root"] {
+.ChatDrawer_untrustedLabel_tg8j6 [class*="Badge_root"] {
   font-size: 0.66rem;
   letter-spacing: 0.08em;
   background: transparent;
@@ -4683,14 +4696,14 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 
 /* ── approval / clarify ───────────────────────────────────────────────── */
 
-.ChatDrawer_approval_58yj2 {
+.ChatDrawer_approval_tg8j6 {
   border: 1px solid var(--theme-focused-foreground);
   border-left-width: 3px;
   padding: 10px 12px;
   background: var(--e-accent-wash, transparent);
 }
 
-.ChatDrawer_cardTitle_58yj2 {
+.ChatDrawer_cardTitle_tg8j6 {
   font-size: 0.72rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -4698,23 +4711,23 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   margin-bottom: 6px;
 }
 
-.ChatDrawer_cardText_58yj2 {
+.ChatDrawer_cardText_tg8j6 {
   margin: 0 0 6px;
 }
 
-.ChatDrawer_cardNote_58yj2 {
+.ChatDrawer_cardNote_tg8j6 {
   margin: 6px 0;
   font-size: 0.78rem;
   font-weight: 600;
 }
 
-.ChatDrawer_cardFoot_58yj2 {
+.ChatDrawer_cardFoot_tg8j6 {
   margin: 8px 0 0;
   font-size: 0.7rem;
   opacity: 0.6;
 }
 
-.ChatDrawer_command_58yj2 {
+.ChatDrawer_command_tg8j6 {
   margin: 0 0 8px;
   padding: 6px 8px;
   border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
@@ -4727,13 +4740,13 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   overflow: auto;
 }
 
-.ChatDrawer_choices_58yj2 {
+.ChatDrawer_choices_tg8j6 {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.ChatDrawer_choice_58yj2 {
+.ChatDrawer_choice_tg8j6 {
   min-height: 36px;
   padding: 4px 12px;
   border: 1px solid var(--theme-focused-foreground);
@@ -4744,45 +4757,50 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   cursor: pointer;
 }
 
-.ChatDrawer_choice_58yj2:hover:not(:disabled),
-.ChatDrawer_picked_58yj2 {
+.ChatDrawer_choice_tg8j6:hover:not(:disabled),
+.ChatDrawer_picked_tg8j6 {
   background: var(--theme-focused-foreground);
   color: var(--theme-background);
 }
 
-.ChatDrawer_choice_58yj2:disabled {
+.ChatDrawer_choice_tg8j6:disabled {
   opacity: 0.45;
   cursor: default;
 }
 
-.ChatDrawer_deny_58yj2 {
+.ChatDrawer_deny_tg8j6 {
   border-color: var(--e-rule, rgba(128, 128, 128, 0.4));
 }
 
-.ChatDrawer_answered_58yj2 {
+.ChatDrawer_answered_tg8j6 {
   font-size: 0.8rem;
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_question_58yj2 + .ChatDrawer_question_58yj2 {
+.ChatDrawer_question_tg8j6 + .ChatDrawer_question_tg8j6 {
   margin-top: 10px;
 }
 
-.ChatDrawer_answerInput_58yj2 {
+.ChatDrawer_answerInput_tg8j6 {
   box-sizing: border-box;
   width: 100%;
   margin-top: 6px;
   min-height: 36px;
+  max-height: calc(6 * 1.45em + 12px);
   padding: 4px 8px;
   border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.3));
   background: var(--theme-background);
   color: inherit;
   font: inherit;
+  line-height: 1.45;
+  resize: none;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
 }
 
 /* ── sessions ─────────────────────────────────────────────────────────── */
 
-.ChatDrawer_sessions_58yj2 {
+.ChatDrawer_sessions_tg8j6 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -4790,7 +4808,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   padding-bottom: 16px;
 }
 
-.ChatDrawer_sessionsHead_58yj2 {
+.ChatDrawer_sessionsHead_tg8j6 {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4798,13 +4816,13 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   padding: 4px 12px 4px 0;
 }
 
-.ChatDrawer_sessionList_58yj2 {
+.ChatDrawer_sessionList_tg8j6 {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.ChatDrawer_sessionRow_58yj2 {
+.ChatDrawer_sessionRow_tg8j6 {
   display: flex !important;
   flex-direction: column;
   align-items: flex-start;
@@ -4819,11 +4837,11 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   cursor: pointer;
 }
 
-.ChatDrawer_sessionRow_58yj2:hover .ChatDrawer_sessionTitle_58yj2 {
+.ChatDrawer_sessionRow_tg8j6:hover .ChatDrawer_sessionTitle_tg8j6 {
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_sessionTitle_58yj2 {
+.ChatDrawer_sessionTitle_tg8j6 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -4831,12 +4849,12 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   overflow-wrap: anywhere;
 }
 
-.ChatDrawer_sessionMeta_58yj2 {
+.ChatDrawer_sessionMeta_tg8j6 {
   font-size: 0.74rem;
   color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
 }
 
-.ChatDrawer_tag_58yj2 {
+.ChatDrawer_tag_tg8j6 {
   font-size: 0.64rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -4846,7 +4864,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   white-space: nowrap;
 }
 
-.ChatDrawer_empty_58yj2 {
+.ChatDrawer_empty_tg8j6 {
   padding: 8px 12px;
   margin: 0;
   font-size: 0.8rem;
@@ -4855,7 +4873,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 
 /* ── composer ─────────────────────────────────────────────────────────── */
 
-.ChatDrawer_composer_58yj2 {
+.ChatDrawer_composer_tg8j6 {
   position: relative;
   flex: none;
   padding: 8px 12px 10px;
@@ -4863,21 +4881,22 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   background: var(--theme-background);
 }
 
-.ChatDrawer_inputRow_58yj2 {
+.ChatDrawer_inputRow_tg8j6 {
   display: flex;
   align-items: flex-end;
   gap: 8px;
 }
 
 /* One slim line (42px) by default; it grows with the text (ChatDrawer's
-   layout effect) up to about four lines, then scrolls inside. */
-.ChatDrawer_input_58yj2 {
+   layout effect) up to six lines, then scrolls inside. */
+.ChatDrawer_input_tg8j6 {
   flex: 1;
   min-width: 0;
   box-sizing: border-box;
   height: 42px;
   min-height: 42px;
-  max-height: calc(4 * 1.45em + 20px);
+  max-height: calc(6 * 1.45em + 20px);
+  overflow-wrap: anywhere;
   padding: 10px 10px;
   border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.35));
   background: var(--theme-background);
@@ -4888,11 +4907,11 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   overflow-y: auto;
 }
 
-.ChatDrawer_input_58yj2:focus {
+.ChatDrawer_input_tg8j6:focus {
   border-color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_send_58yj2 {
+.ChatDrawer_send_tg8j6 {
   flex: none;
   box-sizing: border-box;
   min-width: 48px;
@@ -4908,7 +4927,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   cursor: pointer;
 }
 
-.ChatDrawer_send_58yj2:disabled {
+.ChatDrawer_send_tg8j6:disabled {
   background: transparent;
   color: inherit;
   border-color: var(--e-rule, rgba(128, 128, 128, 0.35));
@@ -4916,18 +4935,18 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   cursor: default;
 }
 
-.ChatDrawer_stop_58yj2 {
+.ChatDrawer_stop_tg8j6 {
   background: transparent;
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_readOnly_58yj2 {
+.ChatDrawer_readOnly_tg8j6 {
   margin: 0 0 8px;
   font-size: 0.78rem;
   opacity: 0.7;
 }
 
-.ChatDrawer_typeahead_58yj2 {
+.ChatDrawer_typeahead_tg8j6 {
   position: absolute;
   left: 16px;
   right: 16px;
@@ -4942,7 +4961,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   background: var(--theme-background);
 }
 
-.ChatDrawer_typeRow_58yj2 {
+.ChatDrawer_typeRow_tg8j6 {
   display: grid;
   grid-template-columns: auto auto 1fr;
   align-items: baseline;
@@ -4960,22 +4979,22 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   cursor: pointer;
 }
 
-.ChatDrawer_typeRow_58yj2[data-reach="terminal"],
-.ChatDrawer_typeRow_58yj2[data-reach="voice"],
-.ChatDrawer_typeRow_58yj2[data-reach="settings"] {
+.ChatDrawer_typeRow_tg8j6[data-reach="terminal"],
+.ChatDrawer_typeRow_tg8j6[data-reach="voice"],
+.ChatDrawer_typeRow_tg8j6[data-reach="settings"] {
   opacity: 0.6;
 }
 
-.ChatDrawer_typeRowOn_58yj2 {
+.ChatDrawer_typeRowOn_tg8j6 {
   background: var(--e-accent-wash, rgba(128, 128, 128, 0.1));
 }
 
-.ChatDrawer_typeName_58yj2 {
+.ChatDrawer_typeName_tg8j6 {
   color: var(--theme-focused-foreground);
   white-space: nowrap;
 }
 
-.ChatDrawer_typeMeta_58yj2 {
+.ChatDrawer_typeMeta_tg8j6 {
   grid-column: 1 / -1;
   font-size: 0.72rem;
   opacity: 0.6;
@@ -4986,7 +5005,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 
 /* ── back control (phone) ─────────────────────────────────────────────── */
 
-.ChatDrawer_back_58yj2 {
+.ChatDrawer_back_tg8j6 {
   display: flex;
   align-items: center;
   gap: 1ch;
@@ -5008,18 +5027,18 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 }
 
 /* "← back to the dashboard", then the menu: the full-page chat's top row. */
-.ChatDrawer_backRow_58yj2 {
+.ChatDrawer_backRow_tg8j6 {
   align-items: stretch;
   flex: none;
   border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
 }
 
-.ChatDrawer_backRow_58yj2 .ChatDrawer_back_58yj2 {
+.ChatDrawer_backRow_tg8j6 .ChatDrawer_back_tg8j6 {
   flex: 1;
   border-bottom: 0;
 }
 
-.ChatDrawer_menu_58yj2 {
+.ChatDrawer_menu_tg8j6 {
   flex: none;
   min-width: 48px;
   min-height: 44px;
@@ -5027,13 +5046,13 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
 }
 
-.ChatDrawer_phoneOnly_58yj2 {
+.ChatDrawer_phoneOnly_tg8j6 {
   display: none;
 }
 
 /* Below the header-nav breakpoint: one full-screen panel, "← back" on top. */
 @media (max-width: 900px) {
-  .ChatDrawer_root_58yj2 {
+  .ChatDrawer_root_tg8j6 {
     position: absolute;
     inset: 0;
     z-index: 120;
@@ -5042,64 +5061,64 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
     border-left: 0;
   }
 
-  .ChatDrawer_phoneOnly_58yj2 {
+  .ChatDrawer_phoneOnly_tg8j6 {
     display: flex;
   }
 
-  .ChatDrawer_close_58yj2 {
+  .ChatDrawer_close_tg8j6 {
     display: none !important;
   }
 
-  .ChatDrawer_sessionPick_58yj2,
-  .ChatDrawer_smallButton_58yj2,
-  .ChatDrawer_choice_58yj2,
-  .ChatDrawer_toolHead_58yj2,
-  .ChatDrawer_typeRow_58yj2 {
+  .ChatDrawer_sessionPick_tg8j6,
+  .ChatDrawer_smallButton_tg8j6,
+  .ChatDrawer_choice_tg8j6,
+  .ChatDrawer_toolHead_tg8j6,
+  .ChatDrawer_typeRow_tg8j6 {
     min-height: 44px;
   }
 
-  .ChatDrawer_sessionRow_58yj2 {
+  .ChatDrawer_sessionRow_tg8j6 {
     min-height: 48px;
   }
 
-  .ChatDrawer_input_58yj2,
-  .ChatDrawer_answerInput_58yj2 {
+  .ChatDrawer_input_tg8j6,
+  .ChatDrawer_answerInput_tg8j6 {
     font-size: 16px; /* no zoom-on-focus on a phone */
   }
 }
 
 /* The kit gives every `ul li` an inline :before spacer (global.css), which
    opens an empty line above a block button. Lists here are rows, not prose. */
-.ChatDrawer_typeahead_58yj2 > li::before,
-.ChatDrawer_sessionList_58yj2 > li::before {
+.ChatDrawer_typeahead_tg8j6 > li::before,
+.ChatDrawer_sessionList_tg8j6 > li::before {
   content: none;
   display: none;
 }
 
 /* A flex column shrinks its scrollable children to nothing when it overflows;
    transcript items keep their height and the transcript scrolls instead. */
-.ChatDrawer_transcript_58yj2 > * {
+.ChatDrawer_transcript_tg8j6 > * {
   flex-shrink: 0;
 }
 
 /* A short screen (the 540 × 540 capture frame, a phone held sideways): the
    "← back" row already says where you are, so the title row goes. */
 @media (max-width: 900px) and (max-height: 640px) {
-  .ChatDrawer_headRow_58yj2 {
+  .ChatDrawer_headRow_tg8j6 {
     display: none;
   }
 
-  .ChatDrawer_head_58yj2 {
+  .ChatDrawer_head_tg8j6 {
     padding-top: 8px;
   }
 
-  .ChatDrawer_sessionBar_58yj2 {
+  .ChatDrawer_sessionBar_tg8j6 {
     margin-top: 6px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ChatDrawer_caret_58yj2 {
+  .ChatDrawer_caret_tg8j6 {
     animation: none;
   }
 }

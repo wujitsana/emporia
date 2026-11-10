@@ -219,6 +219,11 @@ body.theme-light {
 .e-app-shell[data-nav="medium"] .e-app-top__actions,
 .e-app-shell[data-nav="rail"] .e-app-top__actions { gap: 10px; }
 .e-app-shell[data-nav="medium"] .e-section-tab { padding: 6px 8px; }
+.e-app-shell[data-nav="medium"] .e-section-tab__label { letter-spacing: 0; }
+/* The wordmark keeps its full size wherever the header has room (wide and medium); it only gives way in the
+   rail and phone layouts. */
+.e-app-shell[data-nav="wide"] .e-app-top .e-brand-title,
+.e-app-shell[data-nav="medium"] .e-app-top .e-brand-title { font-size: 1.5rem !important; letter-spacing: 0.08em; }
 .e-app-shell[data-nav="medium"] .e-relay-status__meta,
 .e-app-shell[data-nav="rail"] .e-relay-status__meta,
 .e-app-shell[data-nav="medium"] .e-header-link__word,
@@ -296,7 +301,8 @@ body.theme-light {
 .e-section-tab__icon  { font-size: 0.935rem; }
 .e-section-tab__label { letter-spacing: 0.02em; }
 .e-section-tabs--horizontal .e-section-tab__icon { display: none; }
-.e-app-shell[data-nav="medium"] .e-section-tabs--horizontal .e-section-tab__icon { display: inline; }
+/* The five places in the header row are words only, wide and medium: no icon beside a word (the rail has
+   icons and no words; the phone bar has an icon over a small word). */
 
 /* Drawer variant */
 .e-section-tabs--drawer {
@@ -452,6 +458,10 @@ body.theme-light {
   text-align: left;
   cursor: pointer;
 }
+/* badges on a rail row's first line: they wrap under each other instead of squeezing the name */
+.e-rail-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end; min-width: 0; text-align: right; }
+/* the second line of a rail row is secondary: smaller than the name above it, not larger */
+.e-rail-item .e-dim, .e-rail-item .e-faint { font-size: 12px; line-height: 1.45; }
 .e-rail-item:hover { color: var(--theme-focused-foreground); }
 .e-rail-item.is-selected,
 .e-rail-item:focus-visible { outline: none; }
@@ -1226,6 +1236,44 @@ body.theme-light {
   opacity: 0.45;
   font-variant-numeric: tabular-nums;
 }
+/* A list's own filter, at the top of its column: compact, the theme's colours, a clear button inside. */
+.e-list-filter { position: relative; padding: 8px 10px; border-bottom: 1px solid var(--e-rule, var(--theme-border-subdued)); }
+.e-list-filter input {
+  box-sizing: border-box; width: 100%; padding: 5px 26px 5px 8px; border: 1px solid var(--e-rule, currentColor); border-radius: 0;
+  background: transparent; color: inherit; font: inherit; font-size: 0.8rem;
+}
+.e-list-filter input::placeholder { color: var(--anim-faint, inherit); opacity: 1; }
+.e-list-filter input:focus { outline: none; border-color: var(--theme-focused-foreground); }
+.e-list-filter__clear {
+  position: absolute; right: 14px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; color: inherit;
+  font: inherit; font-size: 1rem; line-height: 1; cursor: pointer; opacity: 0.6; padding: 0 2px;
+}
+.e-list-filter__clear:hover { opacity: 1; color: var(--theme-focused-foreground); }
+/* A fold inside a card: one muted line that opens the facts only a close look needs. */
+.e-fold { margin-top: 8px; }
+.e-fold > summary { cursor: pointer; font-size: 0.72rem; letter-spacing: 0.04em; opacity: 0.65; list-style: none; padding: 2px 0; }
+.e-fold > summary::before { content: "▸ "; }
+.e-fold[open] > summary::before { content: "▾ "; }
+.e-fold > summary::-webkit-details-marker { display: none; }
+.e-fold > summary:hover, .e-fold[open] > summary { opacity: 1; color: var(--theme-focused-foreground); }
+/* "+N more": the rest of a row's chips, behind one small disclosure (progressive disclosure, nothing removed). */
+.e-more { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.e-more > summary { cursor: pointer; font-size: 0.7rem; opacity: 0.7; list-style: none; padding: 1px 4px; }
+.e-more > summary::-webkit-details-marker { display: none; }
+.e-more > summary:hover, .e-more[open] > summary { opacity: 1; color: var(--theme-focused-foreground); }
+/* A game's pixel glyph then its name: the one way every list says "this is a game". */
+.e-game-tag { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; vertical-align: middle; }
+.e-quiet-chip {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--e-rule, currentColor);
+  border-radius: 8px;
+  font-size: 0.64rem;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  opacity: 0.6;
+  white-space: nowrap;
+}
 .e-chat-line__content {
   font-size: 0.902rem;
   line-height: 1.45;
@@ -1309,6 +1357,29 @@ body.theme-light {
 .e-segment-tab.is-active { background: var(--e-accent-wash, transparent); font-weight: 400; }
 .e-segment-tab:hover { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
 .e-segment-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); font-weight: 600; }
+
+/* The Feed's filter chips, and "more ▾" for the rarer kinds: the same chip, opening a short list. */
+.e-feed-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; margin: 0 0 12px; }
+.e-feed-tabs .e-segment-tabs { margin: 0; }
+.e-feed-more { position: relative; }
+.e-feed-more > summary {
+  list-style: none; cursor: pointer; padding: 2px 11px; border: 1px solid var(--theme-border-subdued, currentColor);
+  border-radius: 999px; font-size: 0.68rem; letter-spacing: 0.02em; opacity: 0.75; user-select: none;
+}
+.e-feed-more > summary::-webkit-details-marker { display: none; }
+.e-feed-more > summary:hover, .e-feed-more[open] > summary, .e-feed-more > summary.is-active {
+  opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground);
+}
+.e-feed-more__menu {
+  position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 9rem; display: flex; flex-direction: column;
+  border: 1px solid var(--theme-border, var(--e-rule)); background: var(--theme-background);
+}
+.e-feed-more__menu button {
+  padding: 6px 12px; border: 0; border-bottom: 1px solid var(--e-rule, transparent); background: transparent; color: inherit;
+  font: inherit; font-size: 0.72rem; text-align: left; cursor: pointer;
+}
+.e-feed-more__menu button:last-child { border-bottom: 0; }
+.e-feed-more__menu button:hover, .e-feed-more__menu button.is-active { color: var(--theme-focused-foreground); }
 
 /* ─── 16. BADGES, PILLS & ENTITY CHIPS ──────────────────────────────────── */
 
@@ -1744,8 +1815,13 @@ body.theme-light {
   align-items: center; }
 .e-stats-bars__track { height: 8px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
 .e-stats-bars__fill { display: block; height: 100%; background: var(--theme-focused-foreground, currentColor); }
+/* the kit draws a marker before every list item; in the grid it became a fourth cell and shoved the row apart */
+.e-stats-bars__row, .e-stats-list li { padding-left: 0; text-indent: 0; }
+.e-stats-bars__row::before, .e-stats-list li::before { content: none; display: none; }
+.e-stats-bars__label { min-width: 0; overflow-wrap: anywhere; }
 .e-stats-money-note, .e-stats-missing { display: block; }
-.e-stats-table td { white-space: nowrap; }
+.e-stats .e-faint, .e-stats-toolbar .e-faint { font-size: 13px; line-height: 1.5; }
+.e-stats-table td, .e-stats-table th { white-space: nowrap; }
 @media (max-width: 700px) {
   .e-stats-bars__row { grid-template-columns: 1fr auto; }
   .e-stats-bars__track { grid-column: 1 / -1; grid-row: 2; }}
@@ -2452,6 +2528,11 @@ body.theme-light {
 .e-now__go { color: var(--theme-focused-foreground); }
 .e-now__sub { grid-column: 2 / 4; font-size: 0.75rem; opacity: 0.6; overflow-wrap: anywhere; }
 .e-now__live { color: var(--theme-focused-foreground); }
+/* On a phone the third cell (where it stands, "open →") drops under the text instead of squeezing it to one word a line. */
+@media (max-width: 520px) {
+  .e-now__row--stack { grid-template-columns: 9ch minmax(0, 1fr); }
+  .e-now__row--stack > .e-now__go { grid-column: 2; }
+}
 
 /* ─── 28. THEME / TINT CROSS-FADE ──────────────────────────────────────── */
 /* On only for the length of a theme or tint change (themeConfig.applyTheme),
@@ -3208,3 +3289,14 @@ body.e-look.theme-dark {
 .e-agent-card--compact .e-agent-card__about { display: block; }
 .e-agent-card__badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .e-arena-head__abouts { display: flex; flex-direction: column; gap: 4px; }
+
+/* ─── IN THE HERMES TAB ──────────────────────────────────────────────────────
+   Hermes already pads its own content frame (24px each side, 24px on top); the standalone console has no
+   such frame and keeps the page's own margins. Inside the tab (the plugin mounts into `.e-host-body`) the app
+   adds only a small inner margin, so it fills Hermes's area edge to edge and the page is not indented twice. */
+.e-host-body .e-view-body { padding-left: 8px; padding-right: 8px; padding-top: 12px; }
+.e-host-body.e-look .e-page-head,
+.e-host-body .e-look .e-page-head,
+.e-host-body .e-page-head { padding-left: 12px; padding-right: 12px; margin-top: 4px; max-width: 100%; }
+.e-host-body .e-app-top__row { padding-left: 8px; padding-right: 8px; }
+.e-host-body .e-now-strip, .e-host-body .e-home-lead { padding-left: 8px; padding-right: 8px; }

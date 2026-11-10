@@ -11,7 +11,7 @@ afterEach(cleanup);
 describe("PageHeading", () => {
   it("names the place and the section, and says what it shows", () => {
     render(<PageHeading item={navById("season")} />);
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Labs & Season › Season");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Arena › Season");
     expect(screen.getByText(/improving Emporia/)).toBeTruthy();
   });
 

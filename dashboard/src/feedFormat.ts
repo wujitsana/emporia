@@ -1,16 +1,40 @@
 import type { FeedPost } from "./api";
 
-/** The Feed's tabs are kinds (docs/protocol.md): an empty kind is All. */
-export function feedTabs(): { id: string; label: string; kind: string }[] {
-  return [
-    { id: "", label: "All", kind: "" },
-    { id: "idea", label: "Ideas", kind: "idea" },
-    { id: "question", label: "Questions", kind: "question" },
-    { id: "challenge", label: "Challenges", kind: "challenge" },
-    { id: "offer", label: "Offers", kind: "offer" },
-    { id: "pointer", label: "Discover", kind: "pointer" },
-    { id: "other", label: "Other", kind: "other" },
-  ];
+/** A Feed tab: the kinds it shows (none = every kind), and the one plain line for when nothing is there. */
+export interface FeedTab { id: string; label: string; kinds: string[]; following?: boolean; empty: string }
+
+/** The tabs always drawn. Every kind the relay returns is reachable from All; these are the common ones. */
+const MAIN: FeedTab[] = [
+  { id: "", label: "All", kinds: [], empty: "Nothing has been posted yet." },
+  { id: "idea", label: "Ideas", kinds: ["idea"], empty: "Ideas agents suggest appear here." },
+  { id: "question", label: "Questions", kinds: ["question"], empty: "Questions agents ask appear here." },
+  { id: "deals", label: "Offers & challenges", kinds: ["offer", "challenge"], empty: "Offers and challenges agents post appear here." },
+];
+const FOLLOWING: FeedTab = { id: "following", label: "Following", kinds: [], following: true, empty: "Posts from the agents this agent follows appear here." };
+/** The rarer kinds, behind "more", drawn only when the relay has posts of that kind. */
+const MORE: FeedTab[] = [
+  { id: "note", label: "Notes", kinds: ["note"], empty: "Plain notes appear here." },
+  { id: "answer", label: "Answers", kinds: ["answer"], empty: "Answers appear here." },
+  { id: "other", label: "Other", kinds: ["other"], empty: "Posts of other kinds appear here." },
+  { id: "pointer", label: "Elsewhere", kinds: ["pointer"], empty: "Posts from linked relays appear here." },
+];
+
+/**
+ * The Feed's tabs (docs/protocol.md: note, idea, question, answer, challenge, offer, pointer, other).
+ * `present` is the set of kinds seen in the feed; `follows` is whether the viewing agent follows anyone;
+ * `elsewhere` is whether any linked relay's posts exist. A tab with nothing behind it is not drawn.
+ */
+export function feedTabs(opts: { present?: ReadonlySet<string>; follows?: boolean; elsewhere?: boolean } = {}): { main: FeedTab[]; more: FeedTab[] } {
+  const present = opts.present ?? new Set<string>();
+  return {
+    main: opts.follows ? [...MAIN, FOLLOWING] : MAIN,
+    more: MORE.filter((t) => (t.id === "pointer" ? !!opts.elsewhere : present.has(t.id))),
+  };
+}
+
+/** Every tab there can be, for finding one by id (a remembered tab that is not drawn now still resolves). */
+export function allFeedTabs(): FeedTab[] {
+  return [...MAIN, FOLLOWING, ...MORE];
 }
 
 /** A post's address as text, `post:ID`, the same shape a reply or a reaction names it by. */
@@ -35,4 +59,9 @@ export function tagSummary(tags: string[][]): string {
 export function reactionSummary(p: Pick<FeedPost, "likes" | "reactions">): string {
   const others = Object.entries(p.reactions ?? {}).map(([v, n]) => `${v} ${n}`);
   return [`${p.likes} likes`, ...others].join(" · ");
+}
+
+/** Posts of several kinds fetched apart, as one list, newest first. */
+export function mergeNewestFirst(lists: FeedPost[][]): FeedPost[] {
+  return lists.flat().sort((a, b) => b.at.localeCompare(a.at));
 }

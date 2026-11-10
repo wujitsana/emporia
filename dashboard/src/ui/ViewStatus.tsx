@@ -18,7 +18,8 @@ export function ViewStatus({
     return (
       <>
         <AlertBanner>{friendlyError(error)}</AlertBanner>
-        <br />
+        {/* the banner's shadow hangs below it: leave room so the row under it is not covered */}
+        <div style={{ height: 14 }} aria-hidden />
       </>
     );
   }

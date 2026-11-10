@@ -9,17 +9,17 @@ const ids = (list: { id: string }[]) => list.map((n) => n.id);
 // Five places, two header-only ones; each section in exactly one.
 describe("the destinations", () => {
   it("are five, in order, keyed 1–5", () => {
-    expect(DESTINATIONS.map((d) => d.label)).toEqual(["Home", "Agora", "Arena", "Labs & Season", "Agent"]);
+    expect(DESTINATIONS.map((d) => d.label)).toEqual(["Home", "Messages", "Agora", "Arena", "Agent"]);
     expect(DESTINATIONS.map((d) => d.hotkey)).toEqual(["1", "2", "3", "4", "5"]);
   });
 
   it("hold the sections the layout names, and no Market, Offers, Talk or Badges tab", () => {
     const of = (id: string) => DESTINATIONS.find((d) => d.id === id)!.views;
     expect(of("home")).toEqual(["overview"]);
-    expect(of("agora")).toEqual(["feed", "agora", "rooms", "agents"]);
-    expect(of("arena")).toEqual(["games"]);
-    expect(of("labs")).toEqual(["labs", "season"]);
-    expect(of("agent")).toEqual(["profile", "messages", "stats", "fees", "settings", "deals"]);
+    expect(of("messages")).toEqual(["messages"]);
+    expect(of("agora")).toEqual(["feed", "agora", "rooms", "labs", "agents"]);
+    expect(of("arena")).toEqual(["games", "season"]);
+    expect(of("agent")).toEqual(["profile", "settings", "stats", "fees", "deals"]);
     expect(HEADER_DESTINATIONS.map((d) => d.views)).toEqual([["docs"], ["relay", "operator"]]);
     for (const gone of ["market", "talk", "you", "more", "agents"])
       expect(DESTINATIONS.map((d) => d.id as string)).not.toContain(gone);
@@ -52,8 +52,9 @@ describe("the destinations", () => {
     const dests = visibleDestinations({ isSpectator: true });
     expect(dests.length).toBe(5);
     expect(dests[0].items.map((n) => n.id)).toEqual(["overview"]);
-    expect(ids(dests.find((d) => d.id === "agora")!.items)).toEqual(["feed", "agora", "rooms", "agents"]);
-    expect(ids(dests.find((d) => d.id === "labs")!.items)).toEqual(["labs", "season"]);
+    expect(ids(dests.map((d) => ({ id: d.id })))).toEqual(["home", "messages", "agora", "arena", "agent"]);
+    expect(ids(dests.find((d) => d.id === "agora")!.items)).toEqual(["feed", "agora", "rooms", "labs", "agents"]);
+    expect(ids(dests.find((d) => d.id === "arena")!.items)).toEqual(["games", "season"]);
     expect(ids(dests.find((d) => d.id === "agent")!.items)).toEqual(["profile", "settings"]);
   });
 
@@ -85,15 +86,15 @@ describe("Deals gating", () => {
     expect(dealsAvailable({ x402_escrow_network: "eip155:84532" })).toBe(true);
     expect(dealsAvailable({ relay_modules: { money: { parts: ["x402", "escrow"] } } })).toBe(true);
     expect(dealsAvailable({ relay_modules: { money: { parts: ["x402"] } } })).toBe(false);
-    expect(dealsAvailable({ stripe_enabled: true, stripe_mode: "test" })).toBe(true);
-    expect(dealsAvailable({ stripe_enabled: true, stripe_mode: "live" })).toBe(true);
-    expect(dealsAvailable({ stripe_enabled: true, stripe_mode: "" })).toBe(false);
-    expect(dealsAvailable({ stripe_enabled: false, stripe_mode: "live" })).toBe(false);
+    // Cards alone are not deals: with escrow off (this release) the tab is not drawn.
+    expect(dealsAvailable({ stripe_enabled: true, stripe_mode: "test" })).toBe(false);
+    expect(dealsAvailable({ stripe_enabled: true, stripe_mode: "live" })).toBe(false);
+    expect(dealsAvailable({ relay_modules: { money: { parts: ["cards", "x402"] } } })).toBe(false);
   });
 
   it("puts Deals last in Agent, only when the relay can sell", () => {
-    expect(agent({ isSpectator: false })).toEqual(["profile", "messages", "stats", "fees", "settings"]);
-    expect(agent({ isSpectator: false, dealsOn: true })).toEqual(["profile", "messages", "stats", "fees", "settings", "deals"]);
+    expect(agent({ isSpectator: false })).toEqual(["profile", "settings", "stats", "fees"]);
+    expect(agent({ isSpectator: false, dealsOn: true })).toEqual(["profile", "settings", "stats", "fees", "deals"]);
     expect(agent({ isSpectator: true, dealsOn: true })).toEqual(["profile", "settings", "deals"]);
   });
 
@@ -103,18 +104,18 @@ describe("Deals gating", () => {
     expect(visibleNav(off).map((n) => n.id)).not.toContain("deals");
     expect(navForHotkey("5", off, { agent: "deals" })?.id).toBe("profile");
     expect(navForHotkey("5", on, { agent: "deals" })?.id).toBe("deals");
-    expect(siblingView("settings", 1, off)).toBe("profile");
-    expect(siblingView("settings", 1, on)).toBe("deals");
+    expect(siblingView("fees", 1, off)).toBe("profile");
+    expect(siblingView("fees", 1, on)).toBe("deals");
   });
 });
 
 // P35-2: the nav and the keys once filtered separately, so the sections the nav
 // hides from a spectator stayed one keypress away. Both go through visibleNav.
 describe("visibleNav", () => {
-  it("hides money, messages and stats from a spectator", () => {
+  it("hides money and stats from a spectator, but keeps Messages (its page says to pick an agent)", () => {
     const names = visibleNav({ isSpectator: true }).map((n) => n.id);
     expect(names).not.toContain("fees");
-    expect(names).not.toContain("messages");
+    expect(names).toContain("messages");
     expect(names).not.toContain("stats");
   });
 
@@ -128,11 +129,11 @@ describe("navForHotkey", () => {
   it("opens a destination's first section on its digit, or the one last seen there", () => {
     for (const spec of [true, false]) {
       expect(navForHotkey("1", { isSpectator: spec })?.id).toBe("overview");
-      expect(navForHotkey("2", { isSpectator: spec })?.id).toBe("feed");
-      expect(navForHotkey("3", { isSpectator: spec })?.id).toBe("games");
-      expect(navForHotkey("4", { isSpectator: spec })?.id).toBe("labs");
+      expect(navForHotkey("2", { isSpectator: spec })?.id).toBe("messages");
+      expect(navForHotkey("3", { isSpectator: spec })?.id).toBe("feed");
+      expect(navForHotkey("4", { isSpectator: spec })?.id).toBe("games");
       expect(navForHotkey("5", { isSpectator: spec })?.id).toBe("profile");
-      expect(navForHotkey("4", { isSpectator: spec }, { labs: "season" })?.id).toBe("season");
+      expect(navForHotkey("4", { isSpectator: spec }, { arena: "season" })?.id).toBe("season");
     }
     expect(navForHotkey("6", { isSpectator: false })).toBeUndefined();
     expect(navForHotkey("?", { isSpectator: false })?.id).toBe("docs");
@@ -140,7 +141,7 @@ describe("navForHotkey", () => {
 
   it("refuses a spectator the keys for sections the nav hides, even as a destination's last", () => {
     expect(navForHotkey("f", { isSpectator: true })).toBeUndefined();
-    expect(navForHotkey("5", { isSpectator: true }, { agent: "messages" })?.id).toBe("profile");
+    expect(navForHotkey("5", { isSpectator: true }, { agent: "stats" })?.id).toBe("profile");
     expect(navForHotkey("f", { isSpectator: false })?.id).toBe("fees");
     expect(navForHotkey(".", { isSpectator: false })).toBeUndefined();
     expect(navForHotkey(".", { isSpectator: false, isOperator: true })?.id).toBe("relay");
@@ -174,22 +175,31 @@ describe("siblingView ([ and ])", () => {
     expect(siblingView("feed", 1, viewer)).toBe("agora");
     expect(siblingView("agents", 1, viewer)).toBe("feed");
     expect(siblingView("feed", -1, viewer)).toBe("agents");
-    expect(siblingView("labs", 1, viewer)).toBe("season");
-    expect(siblingView("season", 1, viewer)).toBe("labs");
+    expect(siblingView("rooms", 1, viewer)).toBe("labs");
+    expect(siblingView("games", 1, viewer)).toBe("season");
+    expect(siblingView("season", 1, viewer)).toBe("games");
     expect(siblingView("overview", 1, viewer)).toBe("overview");
-    expect(siblingView("games", 1, viewer)).toBe("games");
+    expect(siblingView("messages", 1, viewer)).toBe("messages");
     expect(siblingView("relay", 1, { isSpectator: false, isOperator: true })).toBe("operator");
   });
 });
 
 describe("the stats section (Agent › Stats)", () => {
-  it("is the agent's own: in Agent after Messages, at #/agent/stats, never a spectator's", async () => {
+  it("is the agent's own: in Agent after Settings, at #/agent/stats, never a spectator's", async () => {
     const { hashForView, routeFromHash } = await import("./dashboardRoute");
     const viewer = { isSpectator: false };
     const agent = visibleDestinations(viewer).find((d) => d.id === "agent")!.items.map((n) => n.id);
-    expect(agent).toEqual(["profile", "messages", "stats", "fees", "settings"]);
+    expect(agent).toEqual(["profile", "settings", "stats", "fees"]);
     expect(hashForView("stats")).toBe("#/agent/stats");
     expect(routeFromHash("#/agent/stats").view).toBe("stats");
+    // Routes from before Messages and Season moved still open where they live now.
+    expect(routeFromHash("#/agent/messages").view).toBe("messages");
+    expect(routeFromHash("#/labs/season").view).toBe("season");
+    expect(routeFromHash("#/labs/labs").view).toBe("labs");
+    expect(routeFromHash("#/labs").view).toBe("labs");
+    expect(hashForView("messages")).toBe("#/messages");
+    expect(hashForView("labs")).toBe("#/agora/labs");
+    expect(hashForView("season")).toBe("#/arena/season");
     expect(routeFromHash("#/you/stats").view).toBe("stats");
     expect(routeFromHash("#/market/stats").view).toBe("stats");
     expect(navForHotkey("5", viewer, { agent: "stats" })?.id).toBe("stats");

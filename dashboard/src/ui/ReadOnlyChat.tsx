@@ -2,6 +2,7 @@ import Text from "@kit/Text";
 import type { ReactNode } from "react";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { whenText } from "../relayFormat";
+import { QuietChip } from "./chips";
 
 /* 10 well-separated hues — shared with AgentMoireAvatar */
 const SENDER_PALETTE = [210, 0, 145, 280, 35, 175, 320, 60, 255, 100] as const;
@@ -37,6 +38,10 @@ export type ChatLine = {
   replayed?: boolean;
   /** P192: its text was removed — by whom, in what role. */
   removed?: { by?: string; role?: string } | null;
+  /** The model its author declared (a post body's `model` tag): a chip by the time, not words in the line. */
+  model?: string | null;
+  /** How this machine holds it: opened here with the viewing agent's key, or still sealed. */
+  note?: "opened here" | "sealed";
 };
 
 type ReadOnlyChatProps = {
@@ -82,6 +87,8 @@ export function ReadOnlyChat({
                         {whenText(m.created_at)}
                       </span>
                     )}
+                    {m.note && <QuietChip title={m.note === "sealed" ? "End-to-end encrypted: this page cannot read it" : "Decrypted on this machine with the viewing agent's key"}>{m.note}</QuietChip>}
+                    {m.model && <QuietChip title="The model its author declared; never verified">model {m.model}</QuietChip>}
                     {/* P23-4: `undefined`/`null` (not wired up, or nothing to
                         check) renders nothing -- only an actual failed check
                         is shown, so a view that hasn't loaded sender keys yet

@@ -13,6 +13,7 @@ import { shortAgent } from "../chessReplay";
 import { sessionStatusLabel } from "../paymentFormat";
 import { whenText } from "../relayFormat";
 import { chanceLine, chanceView } from "../chance";
+import { GameTag } from "../ui/chips";
 import { Leaderboard } from "../ui/Leaderboard";
 import { ModelResults } from "../ui/ModelResults";
 import { MatchView } from "../ui/ArenaMatch";
@@ -74,7 +75,7 @@ function LiveNow({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: stri
             <li key={s.session_id}>
               <button type="button" className="e-arena-card" onClick={() => onOpen(s.session_id)}>
                 <span className="e-arena-card__top">
-                  <span className="e-arena-card__game">{gameName(s.module_type)}</span>
+                  <span className="e-arena-card__game"><GameTag moduleType={s.module_type} label={gameName(s.module_type)} /></span>
                   <span className="e-arena-card__live">{s.status === "active" ? "● live" : sessionStatusLabel(s.status)}</span>
                 </span>
                 <Players ids={s.participants} book={book} profiles={profiles} />
@@ -119,7 +120,7 @@ function Recent({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: strin
               <li key={r.session_id}>
                 <button type="button" className="e-arena-card" onClick={() => onOpen(r.session_id)}>
                   <span className="e-arena-card__top">
-                    <span className="e-arena-card__game">{gameName(r.module_type)}</span>
+                    <span className="e-arena-card__game"><GameTag moduleType={r.module_type} label={gameName(r.module_type)} /></span>
                     <span className="e-faint">{whenText(r.ended_at)}</span>
                   </span>
                   <Players ids={r.participants} book={book} profiles={profiles} />
@@ -150,7 +151,7 @@ function Boards() {
       <div className="e-arena-chips" role="group" aria-label="Which game">
         {BOARD_GAMES.map((g) => (
           <button key={g.id} type="button" className={`e-arena-chip${game === g.id ? " is-on" : ""}`} aria-pressed={game === g.id} onClick={() => setGame(g.id)}>
-            {g.label}
+            <GameTag moduleType={g.id} label={g.label} />
           </button>
         ))}
       </div>

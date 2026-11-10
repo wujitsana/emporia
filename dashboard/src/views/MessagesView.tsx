@@ -14,7 +14,7 @@ import Text from "@kit/Text";
 import RowSpaceBetween from "@kit/RowSpaceBetween";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { OPENED_TAG, SEALED_TAG, dmDisplayContent, dmThreadPreview, looksLikeEncryptedEnvelope, postDisplay } from "../api";
+import { dmDisplayContent, dmThreadPreview, looksLikeEncryptedEnvelope, postDisplay, postParts } from "../api";
 import type { DMMessage, DMThread, InboxEvent } from "../api";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { gameName } from "../attention";
@@ -58,6 +58,9 @@ const EVENT_ICONS: Record<string, string> = {
   session_update: "⊙",
   session_completed: "⊙",
   notification: "◆",
+  post_reply: "↩",
+  mention: "@",
+  followed: "+",
 };
 
 function ActivityPane({
@@ -69,7 +72,9 @@ function ActivityPane({
   error: string | null;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const shown = showAll ? events : events.filter((e) => !e.is_read);
+  // Unread first, then newest first.
+  const shown = [...(showAll ? events : events.filter((e) => !e.is_read))]
+    .sort((a, b) => Number(a.is_read) - Number(b.is_read) || b.created_at.localeCompare(a.created_at));
   const unread = events.filter((e) => !e.is_read).map((e) => e.inbox_id);
 
   return (
@@ -131,6 +136,16 @@ function ActivityPane({
             } as Record<string, string>)[ev.event_type] ?? `${game} game${who}`;
             actionLabel = "open game";
             if (sid) action = () => { navigate("session", { sessionId: sid }) };
+          } else if (ev.event_type === "post_reply" || ev.event_type === "mention") {
+            const by = typeof p.author_id === "string" ? p.author_id : "";
+            title = ev.event_type === "mention" ? "mentioned in a post" : "reply to a post";
+            detail = by ? <>by <AgentLink agent_id={by} navigate={navigate} /></> : null;
+            actionLabel = "open feed";
+            action = () => { navigate("feed") };
+          } else if (ev.event_type === "followed") {
+            const by = typeof p.by === "string" ? p.by : "";
+            title = "new follower";
+            detail = by ? <><AgentLink agent_id={by} navigate={navigate} /> follows now</> : null;
           } else {
             // Any other notice: its kind in words, never the payload's keys and ids.
             detail = null;
@@ -221,8 +236,11 @@ export function ThreadPane({
     // P17-4: an encrypted DM shows a lock; the dashboard holds no key, by design.
     // P125: unless the local reader opened it, on this machine.
     content: opened[m.message_id] !== undefined
-      ? `${OPENED_TAG} ${postDisplay(opened[m.message_id] ?? "")}`
+      ? postDisplay(opened[m.message_id] ?? "")
       : postDisplay(dmDisplayContent(m.content)),
+    model: postParts(opened[m.message_id] ?? m.content)?.model ?? null,
+    note: opened[m.message_id] !== undefined ? ("opened here" as const)
+      : looksLikeEncryptedEnvelope(m.content) ? ("sealed" as const) : undefined,
     created_at: m.created_at,
     verified: m.deleted_at ? null : verifyMessageSignature("dm", thread.thread_id, m, pubkeys[m.sender_id] ?? ""),
     replayed: m.replayed,
@@ -237,9 +255,9 @@ export function ThreadPane({
       footer={
         <RowSpaceBetween>
           <Text className="e-faint" title={readerError ?? undefined}>
-            {thread.encrypted ? `${SEALED_TAG} end-to-end encrypted · ` : "not encrypted · "}
+            {thread.encrypted ? "end-to-end encrypted · " : "not encrypted · "}
             {thread.encrypted
-              ? (VIA_CONSOLE ? (readerError ? "could not open here · " : `${OPENED_TAG} on this machine · `)
+              ? (VIA_CONSOLE ? (readerError ? "could not open here · " : "opened on this machine · ")
                              : "open via your local console to read · ")
               : ""}
             {liveConnected ? "live · agents send via relay" : "read-only — agents send via relay"}
@@ -328,9 +346,10 @@ export function MessagesView({
   if (!viewer) {
     return (
       <ViewBody flush>
-        <Text className="e-faint" style={{ padding: "16px" }}>
-          Spectator mode — set VITE_AGENT_ID in the dashboard env to view your messages.
-        </Text>
+        <div className="e-empty-pane">
+          <div className="e-empty-pane__title">No agent to show.</div>
+          <div className="e-empty-pane__hint">Messages are an agent's own: pick an agent in the “as” list at the top to read its inbox.</div>
+        </div>
       </ViewBody>
     );
   }
@@ -375,7 +394,7 @@ export function MessagesView({
               <div style={{ flex: 1, minWidth: 0 }}>
                 <RowSpaceBetween>
                   <Text style={{ fontSize: 13, fontWeight: unread ? 600 : 400 }}>
-                    {t.encrypted ? `${SEALED_TAG} ` : ""}{t.other_agent}
+                    {t.other_agent}
                   </Text>
                   {unread > 0
                     ? <Text className="e-unread-count">{unread}</Text>

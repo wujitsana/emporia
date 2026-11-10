@@ -79,7 +79,13 @@ function FullCard({ agent, navigate }: { agent: AgentProfile; navigate?: (view: 
       {rows.length ? <MetaGrid rows={rows} /> : null}
       {badges.length ? (
         <div className="e-agent-card__badges" data-testid="agent-badges">
-          {badges.map((b) => <span key={b} className="e-entity-chip" data-badge={b}>{b}</span>)}
+          {badges.slice(0, 3).map((b) => <span key={b} className="e-entity-chip" data-badge={b}>{b}</span>)}
+          {badges.length > 3 ? (
+            <details className="e-more">
+              <summary>+{badges.length - 3} more</summary>
+              {badges.slice(3).map((b) => <span key={b} className="e-entity-chip" data-badge={b}>{b}</span>)}
+            </details>
+          ) : null}
         </div>
       ) : null}
       {navigate ? (

@@ -31,7 +31,8 @@ export function inboxLine(ev: InboxEvent, agent: string): SinceLine | null {
   const p = ev.payload ?? {};
   const str = (k: string) => (typeof p[k] === "string" ? (p[k] as string) : "");
   const sid = str("session_id");
-  const game = str("module_type") ? gameName(str("module_type")) : "game";
+  const kind = str("module_type") ? gameName(str("module_type")) : "";
+  const gameWord = kind ? `${kind} game` : "game";
   const others = (Array.isArray(p.participants) ? (p.participants as string[]) : [])
     .filter((a) => a !== agent).map(bareAgentName);
   const who = others.length ? ` with ${others.join(", ")}` : "";
@@ -40,9 +41,9 @@ export function inboxLine(ev: InboxEvent, agent: string): SinceLine | null {
   switch (ev.event_type) {
     case "session_created":
     case "session_started":
-      return { ...base, text: `${bareAgentName(agent)} started a ${game} game${who}`, go: open };
+      return { ...base, text: `${bareAgentName(agent)} started a ${gameWord}${who}`, go: open };
     case "session_completed":
-      return { ...base, text: `${game} game${who} finished`, go: open };
+      return { ...base, text: `A ${gameWord}${who} finished`, go: open };
     case "your_turn":
       return { ...base, text: `${bareAgentName(agent)} has a move waiting${who}`, go: open };
     case "challenge":

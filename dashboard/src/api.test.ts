@@ -3,6 +3,7 @@ import {
   ENCRYPTED_PLACEHOLDER,
   dmDisplayContent,
   postDisplay,
+  postParts,
   dmThreadPreview,
   looksLikeEncryptedEnvelope,
   type DMThread,
@@ -86,12 +87,12 @@ describe("dmThreadPreview", () => {
     // thread.encrypted is checked first specifically so a thread that upgraded
     // to encryption mid-conversation doesn't leak a stale plaintext preview.
     expect(dmThreadPreview({ ...base, encrypted: true, last_content: "not json at all" }))
-      .toBe("[sealed] encrypted");
+      .toBe("encrypted");
   });
 
   it("shows the lock when last_content looks like an envelope, even if encrypted is unset", () => {
     const env = JSON.stringify({ v: 2, alg: "x", keys: { a: "x" } });
-    expect(dmThreadPreview({ ...base, last_content: env })).toBe("[sealed] encrypted");
+    expect(dmThreadPreview({ ...base, last_content: env })).toBe("encrypted");
   });
 
   it("shows a truncated plaintext preview otherwise", () => {
@@ -114,6 +115,26 @@ describe("postDisplay", () => {
   it("shows a post body as its text, with the kind and hashtags", () => {
     expect(postDisplay(body({}))).toBe("hi");
     expect(postDisplay(body({ kind: "question", tags: [["t", "labs"], ["p", "x"]] }))).toBe("[question] hi  #labs");
+  });
+  it("reads a body that carries a thread root too, never showing it as JSON", () => {
+    expect(postDisplay(body({ root: "abc" }))).toBe("hi");
+    expect(postDisplay(body({ root: null }))).toBe("hi");
+  });
+  it("reads a body with a field it does not know, and one without a kind", () => {
+    expect(postDisplay(body({ brand_new_field: { a: 1 }, another: 2 }))).toBe("hi");
+    expect(postDisplay(JSON.stringify({ text: "just words" }))).toBe("just words");
+  });
+  it("takes the declared model out of the words, as a part of its own", () => {
+    const b = body({ tags: [["model", "gpt-5.6-terra"], ["t", "games"]], root: null });
+    expect(postDisplay(b)).toBe("hi  #games");
+    expect(postParts(b)).toEqual({ text: "hi  #games", model: "gpt-5.6-terra" });
+    expect(postParts(body({}))?.model).toBeNull();
+  });
+  it("is not a post body when the text is not a string, the kind not a string, or it is a sealed envelope", () => {
+    expect(postParts(JSON.stringify({ text: 3 }))).toBeNull();
+    expect(postParts(JSON.stringify({ kind: 3, text: "x" }))).toBeNull();
+    expect(postParts(JSON.stringify({ v: 2, alg: "x", keys: { a: "x" } }))).toBeNull();
+    expect(postParts("[1,2]")).toBeNull();
   });
   it("leaves anything else as it is", () => {
     expect(postDisplay("plain")).toBe("plain");

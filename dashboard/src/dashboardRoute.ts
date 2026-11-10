@@ -11,6 +11,7 @@ const SESSION_ROUTES = new Set<View>(["games", "deals"]);
  */
 const LEGACY_DESTINATIONS: Record<string, View> = {
   play: "games", market: "rooms", season: "season",
+  labs: "labs",       // Labs & Season was one place; Labs is in Agora now, Season in Arena
   talk: "feed", agents: "agents", you: "profile", more: "docs",
 };
 /** Sections that no longer exist or were renamed, and where their content went. */

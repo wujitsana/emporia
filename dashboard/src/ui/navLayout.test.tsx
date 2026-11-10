@@ -12,7 +12,7 @@ import { readSubEdges } from "./navLayout";
 afterEach(cleanup);
 
 const WIDTHS = Array.from({ length: (1600 - 320) / 20 + 1 }, (_, i) => 320 + i * 20);
-const FIVE = ["Home", "Agora", "Arena", "Labs & Season", "Agent"];
+const FIVE = ["Home", "Messages", "Agora", "Arena", "Agent"];
 
 /** What each layout draws its five places with (what AppNav renders, and which of them CSS shows). */
 function drawn(layout: NavLayout): string[] {
@@ -21,7 +21,7 @@ function drawn(layout: NavLayout): string[] {
     const { container } = render(<BottomBar {...props} />);
     return [...container.querySelectorAll(".e-bottom-bar__tab")].map((b) => b.getAttribute("aria-label") ?? "");
   }
-  const { container } = render(<SectionTabs {...props} variant={layout === "rail" ? "rail" : "horizontal"} short={layout === "medium"} />);
+  const { container } = render(<SectionTabs {...props} variant={layout === "rail" ? "rail" : "horizontal"} />);
   return [...container.querySelectorAll(".e-section-tab")].map((b) => b.getAttribute("aria-label") ?? b.querySelector(".e-section-tab__label")?.textContent ?? "");
 }
 
@@ -51,8 +51,8 @@ describe("the width to layout mapping", () => {
       const layout = navLayoutFor(w);
       const names = drawn(layout);
       expect(names, `${w}px (${layout})`).toHaveLength(5);
-      // Medium shows "Season" for "Labs & Season" but still names it in full for a screen reader.
-      expect(names.map((n) => (layout === "wide" ? n : n === "Season" ? "Labs & Season" : n)), `${w}px`).toEqual(FIVE);
+      // Every layout names the same five places, in the same order.
+      expect(names, `${w}px`).toEqual(FIVE);
       cleanup();
     }
   });
@@ -87,7 +87,7 @@ describe("the width to layout mapping", () => {
     const { container } = render(<SectionTabs view="games" onGoDest={() => {}} variant="rail" />);
     const nav = container.querySelector("nav")!;
     expect(nav.getAttribute("aria-label")).toBe("Places");
-    expect(nav.querySelector("[aria-current=page]")?.getAttribute("aria-label")).toBe("Arena");
+    expect(nav.querySelector("[aria-current=page]")?.getAttribute("aria-label")).toBe("Arena");   // view "games" lives in Arena
     expect(nav.querySelectorAll(".e-section-tab__tip")).toHaveLength(5);
   });
 });

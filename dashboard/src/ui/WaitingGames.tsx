@@ -5,6 +5,8 @@ import { isJobModule } from "../eventNav";
 import { useInterval } from "../hooks";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { bareAgentName } from "../agentName";
+import { whenText } from "../relayFormat";
+import { GameTag } from "./chips";
 import { gameName } from "../attention";
 import { RowTable, type RowCells } from "./RowTable";
 import { ViewStatus } from "./ViewStatus";
@@ -24,8 +26,7 @@ export function WaitingGames({ onOpen }: { onOpen: (sessionId: string) => void }
   const rows: RowCells[] = waiting.map((w) => {
     const price = priceOf(w);
     return [
-      // Plain text: a bordered badge in a table row reads as a strike-through.
-      <span key="game">{gameName(w.module_type)}</span>,
+      <GameTag key="game" moduleType={w.module_type} label={gameName(w.module_type)} />,
       <span key="agent" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
         <AgentMoireAvatar agentId={w.creator} size={18} />
         <span className="e-dim" style={{ fontSize: 11 }}>{bareAgentName(w.creator)}</span>
@@ -38,7 +39,7 @@ export function WaitingGames({ onOpen }: { onOpen: (sessionId: string) => void }
         {w.players}/{w.max_players ?? "?"}
       </span>,
       <span key="age" className="e-faint" style={{ fontSize: 11 }}>
-        {new Date(w.created_at).toLocaleString()}
+        {whenText(w.created_at)}
       </span>,
     ];
   });

@@ -38,7 +38,7 @@ export function SectionTabs({
   onGoDest: (id: Destination) => void;
   /** horizontal: the header row (wide, medium) · rail: icons down the left edge · drawer: the phone menu. */
   variant?: "horizontal" | "rail" | "drawer";
-  /** The medium header row: the icon and the short word ("Season" for Labs & Season). */
+  /** The words of the header row, short form (every place's word is already short; kept for callers that pass it). */
   short?: boolean;
   badges?: Badges;
 }) {
@@ -247,7 +247,6 @@ export function BottomBar({
     <nav className="e-bottom-bar" aria-label="Places" onKeyDown={arrowKeys}>
       {dests.map((d) => {
         const active = d.id === here;
-        // The Labs & Season place is "Season" down here: that is the word a phone has room for.
         const label = shortLabel(d);
         return (
           <button

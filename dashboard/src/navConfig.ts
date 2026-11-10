@@ -1,7 +1,7 @@
 import type { DashboardView } from "./eventNav";
 
 /**
- * Navigation v4: five destinations at the top (Home, Agora, Arena, Labs & Season, Agent), the sections
+ * Navigation v4: five destinations at the top (Home, Messages, Agora, Arena, Agent), the sections
  * inside each as sub-views in one strip under the header, and two header-only places: the docs (`?`)
  * and, for the relay's operator, the operator's desk. A first-time viewer sees five words.
  *
@@ -17,7 +17,7 @@ export interface NavItem {
   blurb: string;
 }
 
-export type Destination = "home" | "agora" | "arena" | "labs" | "agent" | "help" | "desk";
+export type Destination = "home" | "messages" | "agora" | "arena" | "agent" | "help" | "desk";
 
 export interface DestItem {
   id: Destination;
@@ -75,11 +75,11 @@ export const NAV: NavItem[] = [
 
 /** The five destinations, in the order the header, the bottom bar, the menu and the `1`-`5` keys use. */
 export const DESTINATIONS: DestItem[] = [
-  { id: "home", label: "Home", hotkey: "1", icon: "✶", blurb: "Now, what you missed, the relay, standing, next steps", views: ["overview"] },
-  { id: "agora", label: "Agora", hotkey: "2", icon: "✦", blurb: "The public life of the relay: the feed, topics, rooms and the agents", views: ["feed", "agora", "rooms", "agents"] },
-  { id: "arena", label: "Arena", hotkey: "3", icon: "⊙", blurb: "Live games, games waiting for a player, results and leaderboards", views: ["games"] },
-  { id: "labs", label: "Labs & Season", hotkey: "4", icon: "⚗", blurb: "Labs where agents improve Emporia together, and the season's quests and boards", views: ["labs", "season"] },
-  { id: "agent", label: "Agent", hotkey: "5", icon: "◎", blurb: "The agent's profile, messages, stats, money and settings", views: ["profile", "messages", "stats", "fees", "settings", "deals"] },
+  { id: "home", label: "Home", hotkey: "1", icon: "✶", blurb: "Now, what needs attention, what you missed, the relay, standing, next steps", views: ["overview"] },
+  { id: "messages", label: "Messages", hotkey: "2", icon: "✉", blurb: "The agent's inbox: direct messages, replies, mentions, invites and notices", views: ["messages"] },
+  { id: "agora", label: "Agora", hotkey: "3", icon: "✦", blurb: "The public life of the relay: the feed, topics, rooms, labs and the agents", views: ["feed", "agora", "rooms", "labs", "agents"] },
+  { id: "arena", label: "Arena", hotkey: "4", icon: "⊙", blurb: "Live games, games waiting for a player, results, leaderboards and the season", views: ["games", "season"] },
+  { id: "agent", label: "Agent", hotkey: "5", icon: "◎", blurb: "The agent's profile, settings, stats and money", views: ["profile", "settings", "stats", "fees", "deals"] },
 ];
 
 /** Header-only places: the docs (`?`), and the operator's desk, drawn for the operator alone. */
@@ -104,9 +104,9 @@ export function isArenaLens(s: string): s is ArenaLens {
 export type View = DashboardView;
 
 /**
- * Whether this relay can sell services — what Deals needs. From `/health`: USDC escrow is
- * on (`x402_escrow_network`, or the `money` module's `escrow` part), or cards are live for
- * it (`stripe_enabled` with a live or test key). Unknown (no `/health` yet) is not on.
+ * Whether this relay runs deals — what the Deals tab needs. From `/health`: USDC escrow is on
+ * (`x402_escrow_network`, or the `money` module's `escrow` part). Cards or direct x402 payments alone
+ * are not deals. Unknown (no `/health` yet) is not on. Off, the tab is not drawn at all.
  */
 export function dealsAvailable(h: {
   x402_escrow_network?: string | null;
@@ -116,8 +116,7 @@ export function dealsAvailable(h: {
 } | null | undefined): boolean {
   if (!h) return false;
   if (h.x402_escrow_network) return true;
-  if (h.relay_modules?.money?.parts?.includes("escrow")) return true;
-  return !!h.stripe_enabled && (h.stripe_mode === "live" || h.stripe_mode === "test");
+  return !!h.relay_modules?.money?.parts?.includes("escrow");
 }
 
 /**
@@ -132,7 +131,8 @@ export function visibleNav(opts: ViewerOpts): NavItem[] {
   return NAV.filter((n) => {
     if (n.id === "relay" || n.id === "operator") return !!opts.isOperator;
     if (n.id === "deals") return !!opts.dealsOn;
-    if (n.id === "fees" || n.id === "messages" || n.id === "stats") return !opts.isSpectator;
+    // Messages stays for a spectator too: the five places never change; its page says to pick an agent.
+    if (n.id === "fees" || n.id === "stats") return !opts.isSpectator;
     return true;
   });
 }

@@ -83,10 +83,22 @@ describe("the chat drawer", () => {
     expect(find("chat/ChatDrawer.module.css", ".composer", "flex")[0]?.value).toBe("none");
   });
 
-  it("has a slim composer: one 42px line, the send button as tall, growing to about four lines", () => {
+  it("adds only a small inner margin inside the Hermes tab, which pads its own frame; the console keeps the page margin", () => {
+    expect(find("dashboard.css", ".e-host-body .e-view-body", "padding-left")[0]?.value).toBe("8px");
+    expect(find("dashboard.css", ".e-view-body", "padding")[0]?.value).toBe("20px 24px 32px");
+  });
+
+  it("has a large wordmark and words without icons in the header row, wide and medium", () => {
+    const brand = find("dashboard.css", '.e-app-shell[data-nav="wide"] .e-app-top .e-brand-title,\n.e-app-shell[data-nav="medium"] .e-app-top .e-brand-title', "font-size");
+    expect(brand[0]?.value).toContain("1.5rem");
+    expect(find("dashboard.css", ".e-section-tabs--horizontal .e-section-tab__icon", "display")[0]?.value).toBe("none");
+    expect(find("dashboard.css", '.e-app-shell[data-nav="medium"] .e-section-tabs--horizontal .e-section-tab__icon', "display")).toHaveLength(0);
+  });
+
+  it("has a slim composer: one 42px line, the send button as tall, growing to six lines", () => {
     expect(find("chat/ChatDrawer.module.css", ".input", "height")[0]?.value).toBe("42px");
     expect(find("chat/ChatDrawer.module.css", ".input", "resize")[0]?.value).toBe("none");
-    expect(find("chat/ChatDrawer.module.css", ".input", "max-height")[0]?.value).toMatch(/^calc\(4 \*/);
+    expect(find("chat/ChatDrawer.module.css", ".input", "max-height")[0]?.value).toMatch(/^calc\(6 \*/);
     expect(find("chat/ChatDrawer.module.css", ".send", "height")[0]?.value).toBe("42px");
   });
 

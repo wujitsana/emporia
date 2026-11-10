@@ -220,6 +220,33 @@ describe("agent chat drawer", () => {
     expect(sentMethods()).not.toContain("session.create");
   });
 
+  it("a long question put in the composer wraps and the box grows to hold all of it; Shift+Enter is a new line, Enter sends", async () => {
+    const long = "About the bargain session s-1 (completed): ".repeat(8) + "what did each side want, and what would you change?";
+    const desc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    Object.defineProperty(HTMLTextAreaElement.prototype, "scrollHeight", { configurable: true, get: () => 120 });
+    try {
+      render(
+        <>
+          <AskAgent prompt={long} />
+          <AgentChatDrawer />
+        </>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /ask agent/ }));
+      await waitFor(() => expect((screen.getByLabelText("Message to your agent") as HTMLTextAreaElement).value).toBe(long));
+      const box = screen.getByLabelText("Message to your agent") as HTMLTextAreaElement;
+      expect(box.tagName).toBe("TEXTAREA");
+      expect(box.style.height).toBe("122px");           // grown to its text, not one line
+      fireEvent.keyDown(box, { key: "Enter", shiftKey: true });
+      await new Promise((r) => setTimeout(r, 20));
+      expect(sentMethods()).not.toContain("prompt.submit");
+      fireEvent.keyDown(box, { key: "Enter" });
+      await waitFor(() => expect(sentMethods()).toContain("prompt.submit"));
+    } finally {
+      if (desc) Object.defineProperty(HTMLElement.prototype, "scrollHeight", desc);
+      delete (HTMLTextAreaElement.prototype as unknown as Record<string, unknown>).scrollHeight;
+    }
+  });
+
   // Review pass 2: opening the chat left the focus on the toggle, under full-page chat.
   it("takes the focus when it opens and gives it back to the toggle when it closes", async () => {
     render(

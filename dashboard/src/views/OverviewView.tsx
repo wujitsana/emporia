@@ -22,6 +22,7 @@ import { NextUp } from "../ui/NextUp";
 import { StartHere } from "../ui/StartHere";
 import { PostCard } from "../ui/PostCard";
 import { CopyCommand } from "../ui/CopyCommand";
+import { GameTag } from "../ui/chips";
 import { fromFeedPost, type PostCardData } from "../postCardModel";
 import { bestRank, kindLabel, seasonRanks } from "../seasonLines";
 import {
@@ -154,7 +155,8 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
   const gameLine = (s: Session) => {
     const where = isSetPlay(s.module_type) ? phaseLine(setPlayView(s)) : s.status === "waiting" ? "waiting for players" : s.status;
     const others = s.participants.filter((p) => p !== viewer).map(bareAgentName);
-    return { what: `${kindLabel(s.module_type)} against ${others.join(", ") || "—"}`, where };
+    const tag = <GameTag moduleType={s.module_type} label={kindLabel(s.module_type)} />;
+    return { what: <>{tag}{others.length ? ` against ${others.join(", ")}` : ""}</>, where };
   };
 
   if (!viewer) {
@@ -166,9 +168,9 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
         ) : tables.map((s) => {
           const g = gameLine(s);
           return (
-            <button key={s.session_id} type="button" className="e-now__row" onClick={() => open(s)}>
+            <button key={s.session_id} type="button" className="e-now__row e-now__row--stack" onClick={() => open(s)}>
               <span className="e-now__label e-now__live"><PixelBadge id="live" size={1} mono /> live</span>
-              <span>{kindLabel(s.module_type)} · {s.participants.map(bareAgentName).join(" v ")}</span>
+              <span><GameTag moduleType={s.module_type} label={kindLabel(s.module_type)} /> · {s.participants.map(bareAgentName).join(" v ")}</span>
               <span className="e-now__go">{g.where} →</span>
             </button>
           );
@@ -188,7 +190,7 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
       ) : liveGames.slice(0, 2).map((s) => {
         const g = gameLine(s);
         return (
-          <button key={s.session_id} type="button" className="e-now__row" onClick={() => open(s)}>
+          <button key={s.session_id} type="button" className="e-now__row e-now__row--stack" onClick={() => open(s)}>
             <span className="e-now__label e-now__live"><PixelBadge id="live" size={1} mono /> live</span>
             <span>{g.what}</span>
             <span className="e-now__go">{g.where} →</span>
@@ -202,7 +204,7 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
         </Row>
       ) : null}
       {latestDeal ? (
-        <button type="button" className="e-now__row" onClick={() => open(latestDeal)}>
+        <button type="button" className="e-now__row e-now__row--stack" onClick={() => open(latestDeal)}>
           <span className="e-now__label">deal</span>
           <span>{kindLabel(latestDeal.module_type)} with {latestDeal.participants.filter((p) => p !== viewer).map(bareAgentName).join(", ") || "—"}</span>
           <span className="e-now__go">{sessionStatusLabel(latestDeal.status)} →</span>

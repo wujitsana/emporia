@@ -44,11 +44,13 @@ function stripeAccountStatusLabel(registered: AgentProfile, stripeMode: string):
 
 function SettlementRow({ s, viewerId, navigate }: { s: Settlement; viewerId: string; navigate?: Navigate }) {
   const won = s.winner_id === viewerId;
-  const amount = won
-    ? `+${formatMicros(settlementPayoutMicros(s))}`
-    : s.total_price_cents > 0
+  const payout = won ? settlementPayoutMicros(s) : 0;
+  // A free game moved no money: say so, not "+$0.00" or "$0".
+  const amount = won && payout > 0
+    ? `+${formatMicros(payout)}`
+    : !won && s.total_price_cents > 0
     ? `-$${(s.total_price_cents / 100).toFixed(2)}`
-    : "$0";
+    : "free";
   return (
     <div className="e-txn-row">
       <span className={`e-txn-dot ${won ? "e-txn-dot--in" : "e-txn-dot--out"}`} />
@@ -123,6 +125,7 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
           </div>
 
           {registered ? (
+            <>
             <MetaGrid
               rows={[
                 // P42: extracted rather than written inline. `jsx-key` fires on
@@ -138,12 +141,21 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
                 ["Registered", new Date(registered.registered_at).toLocaleDateString()],
                 ["Sessions", String(registered.session_count)],
                 ["Wins", `${registered.win_count} (${registered.session_count > 0 ? Math.round((registered.win_count / registered.session_count) * 100) : 0}%)`],
-                ["Stripe payouts", stripeAccountStatusLabel(registered, stripeMode)],
-                ["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"],
-                ...(registered.payment_methods?.length ? [["Methods", registered.payment_methods.join(", ")] as [string, string]] : []),
-                ...(registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")] as [string, string]] : []),
               ]}
             />
+            {/* The payment set-up is for looking deeply: behind one line, not in the first screen. */}
+            <details className="e-fold">
+              <summary>Payment set-up</summary>
+              <MetaGrid
+                rows={[
+                  ["Stripe payouts", stripeAccountStatusLabel(registered, stripeMode)],
+                  ["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"],
+                  ...(registered.payment_methods?.length ? [["Methods", registered.payment_methods.join(", ")] as [string, string]] : []),
+                  ...(registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")] as [string, string]] : []),
+                ]}
+              />
+            </details>
+            </>
           ) : !isSpectator ? (
             <Text className="e-faint" style={{ marginTop: 10 }}>
               Not yet registered on this relay. Use the <code>register_agent</code> MCP tool to join.
@@ -167,9 +179,15 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
           <MetaGrid
             rows={[
               ["URL", relayUrl],
-              ["Relay ID", relayId ?? "—"],
               ["Operator", relayOwnerLabel],
-              ["Your role", isRelayOperator ? "operator" : isSpectator ? "spectator" : "member"],
+              ["Role here", isRelayOperator ? "operator" : isSpectator ? "spectator" : "member"],
+            ]}
+          />
+          <details className="e-fold">
+            <summary>More about this relay</summary>
+          <MetaGrid
+            rows={[
+              ["Relay ID", relayId ?? "—"],
               ["Agents", String(agentCount)],
               ["Active sessions", String(activeSessionCount)],
               ...(relayVersion ? [["Version", relayVersion] as [string, string]] : []),
@@ -180,6 +198,7 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
               ["Registration", requireChallenge ? "challenge required (proves key possession)" : "open — no key-possession proof"],
             ]}
           />
+          </details>
         </SlimCard>
 
         {/* My recent sessions */}
@@ -265,8 +284,8 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
         {/* Auth note — visible to all */}
         <Text className="e-faint" style={{ fontSize: "0.68rem", marginTop: 8 }}>
           {isRelayOperator
-            ? "You are the relay operator. Fees & settlement ledger visible in the Fees tab."
-            : "Transaction data is scoped to your agent. Production auth: Ed25519 challenge via MCP → relay issues dashboard JWT."}
+            ? "This agent runs the relay. The relay's fees and settlements are under Money."
+            : "Only this agent's own payments are listed here."}
         </Text>
 
       </Indent>

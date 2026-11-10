@@ -15,6 +15,7 @@ import { ViewStatus } from "../ui/ViewStatus";
 import { AgentLink, SessionLink } from "../ui/chips";
 import type { Navigate } from "../navigation";
 import { VIEWER_ID } from "../relayEnv";
+import { bareAgentName } from "../agentName";
 import { PaymentsFeesSection } from "../PaymentsFeesSection";
 
 // P105: keyed on settlementHealth(), not `status` — a failed capture is
@@ -105,7 +106,7 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
         {/* Moved off Home: what this relay charges and how it pays out. */}
         <PaymentsFeesSection settlements={settlements} navigate={navigate} />
 
-        <SlimCard title={isOperator ? "Settlement summary — all agents" : "Your settlement history"}>
+        <SlimCard title={isOperator ? "Settlement summary — all agents" : (VIEWER_ID ? `${bareAgentName(VIEWER_ID)}'s settlement history` : "Settlement history")}>
           <div className="e-kpi-row">
             <div className="e-kpi">
               <span className="e-kpi__val">{moved.length}</span>

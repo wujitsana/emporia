@@ -11,7 +11,8 @@ import { ViewStatus } from "../ui/ViewStatus";
 import { JoinableRooms } from "../ui/JoinableRooms";
 import { ViewBody } from "../ui/layout";
 import { EMPTY_ROOMS_HINT } from "../navigation";
-import { OPENED_TAG, SEALED_TAG, api, dmDisplayContent, looksLikeEncryptedEnvelope, postDisplay } from "../api";
+import { api, dmDisplayContent, looksLikeEncryptedEnvelope, postDisplay, postParts } from "../api";
+import { QuietChip } from "../ui/chips";
 import type { Room } from "../api";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Text from "@kit/Text";
@@ -96,8 +97,8 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
           >
             <RowSpaceBetween>
               <Text style={{ fontSize: 13 }}>{r.name}</Text>
-              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                {r.encrypted && <span title="Encrypted" style={{ fontSize: 11 }}>{SEALED_TAG}</span>}
+              <div className="e-rail-badges">
+                {r.encrypted && <QuietChip title="Encrypted: sealed to its members">sealed</QuietChip>}
                 <AdvertisedBadge advertised={r.advertised} />
                 {r.entry_fee_cents > 0 && (
                   <>
@@ -167,8 +168,11 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
     // Same helper the DM views use; the shape is identical, so the name is generic
     // rather than dm-specific in spirit even though it kept its original name.
     content: opened[m.message_id] !== undefined
-      ? `${OPENED_TAG} ${postDisplay(opened[m.message_id] ?? "")}`
+      ? postDisplay(opened[m.message_id] ?? "")
       : postDisplay(dmDisplayContent(m.content)),
+    model: postParts(opened[m.message_id] ?? m.content)?.model ?? null,
+    note: opened[m.message_id] !== undefined ? ("opened here" as const)
+      : looksLikeEncryptedEnvelope(m.content) ? ("sealed" as const) : undefined,
     msg_type: m.msg_type,
     created_at: m.created_at,
     // P23-4: verified against the *stored* content (m.content, pre-display-
