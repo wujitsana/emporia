@@ -19,7 +19,9 @@ vi.mock("../hooks", () => ({
       { message_id: "m2", agent_id: "beta", content: "a line said on its own", created_at: "1999-01-01T00:00:00Z", step: null }] }, false, null];
     if (src.includes("gameThread")) return [{ ref: "session:x", posts: [
       { post_id: "d1", author_id: "alpha", text: "Game: x (blotto) · Objective: win two fields · One move I would change: reserve more",
-        tags: [["t", "debrief"]], reply_to: "session:x" },
+        tags: [["t", "debrief"]], reply_to: "session:x", at: "2099-01-01T00:00:00Z" },
+      { post_id: "d3", author_id: "mallory", text: "Game: x · Objective: not a player's account",
+        tags: [["t", "debrief"]], reply_to: "session:x", at: "2099-01-01T00:00:00Z" },
       { post_id: "d2", author_id: "beta", text: "an ordinary reply", tags: [] }] }, false, null];
     if (src.includes("results")) return [{ results: [{ session_id: "r1", module_type: "emporia:chess:v1", participants: ["alpha", "beta"], winner: "alpha", outcome_type: "win", termination: "CHECKMATE", ended_at: "2026-11-05T13:00:00Z" }] }, false, null];
     return [null, false, null];
@@ -91,6 +93,7 @@ describe("names, not raw ids", () => {
     expect(after.textContent).toContain("Objective: win two fields");
     expect(after.textContent).toContain("One move I would change: reserve more");
     expect(after.textContent).not.toContain("an ordinary reply");
+    expect(after.textContent).not.toContain("not a player's account");
   });
 });
 

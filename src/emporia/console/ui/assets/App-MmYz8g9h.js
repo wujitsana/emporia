@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-DtEF-FBu.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-DrQtvpUt.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -17468,9 +17468,19 @@ function saidAt(messages, actions) {
 function isDebrief(p) {
 	return (p.tags ?? []).some((t) => t[0] === "t" && t[1] === "debrief");
 }
-/** The debriefs among a game's thread, oldest first. */
-function debriefsOf(posts) {
-	return posts.filter(isDebrief);
+/**
+* The debriefs among a game's thread, oldest first: written by a player of the game, after its last move.
+* Anyone may reply to a public game with the tag, so a debrief from a non-player, or one dated before the game
+* ended, is not shown as the players' account of it. With no known end (`endedAt` empty), only the author is checked.
+*/
+function debriefsOf(posts, game) {
+	const ended = game.endedAt ? Date.parse(game.endedAt) : NaN;
+	return posts.filter((p) => {
+		if (!isDebrief(p) || !game.participants.includes(p.author_id)) return false;
+		if (Number.isNaN(ended)) return true;
+		const at = Date.parse(p.at);
+		return !Number.isNaN(at) && at > ended;
+	});
 }
 /** A debrief's text as short lines: the template's headed fields, in the order written; other text as it is. */
 function debriefLines(text) {
@@ -17899,9 +17909,12 @@ function SaidLine({ m, opened, who }) {
 	});
 }
 /** The debriefs of a finished game: replies to it tagged `debrief`, each as short lines of the template. */
-function AfterTheGame({ sessionId, book }) {
+function AfterTheGame({ sessionId, book, participants, endedAt }) {
 	const [data] = useInterval(() => api.gameThread(sessionId), 6e5, [sessionId]);
-	const posts = debriefsOf(data?.posts ?? []);
+	const posts = debriefsOf(data?.posts ?? [], {
+		participants,
+		endedAt
+	});
 	if (posts.length === 0) return null;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
 		className: "e-after",
@@ -22186,7 +22199,9 @@ function GenericMatch({ session: initial, step, onStep, book, profiles, onBack }
 					}),
 					timeline.finished && at === last ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AfterTheGame, {
 						sessionId: session.session_id,
-						book
+						book,
+						participants: session.participants,
+						endedAt: actions[actions.length - 1]?.created_at
 					}) : null,
 					timeline.finished && at === last ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ModelReveal, {
 						session,

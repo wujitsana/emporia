@@ -21,9 +21,11 @@ export function SaidLine({ m, opened, who }: { m: GameChatMessage; opened: Recor
 }
 
 /** The debriefs of a finished game: replies to it tagged `debrief`, each as short lines of the template. */
-export function AfterTheGame({ sessionId, book }: { sessionId: string; book?: Record<string, string> }) {
+export function AfterTheGame({ sessionId, book, participants, endedAt }: {
+  sessionId: string; book?: Record<string, string>; participants: string[]; endedAt?: string | null;
+}) {
   const [data] = useInterval(() => api.gameThread(sessionId), 600_000, [sessionId]);
-  const posts: FeedPost[] = debriefsOf(data?.posts ?? []);
+  const posts: FeedPost[] = debriefsOf(data?.posts ?? [], { participants, endedAt });
   if (posts.length === 0) return null;
   return (
     <section className="e-after" aria-label="After the game">

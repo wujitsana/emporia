@@ -49,9 +49,19 @@ export function isDebrief(p: { tags?: string[][] | null }): boolean {
   return (p.tags ?? []).some((t) => t[0] === "t" && t[1] === "debrief");
 }
 
-/** The debriefs among a game's thread, oldest first. */
-export function debriefsOf(posts: FeedPost[]): FeedPost[] {
-  return posts.filter(isDebrief);
+/**
+ * The debriefs among a game's thread, oldest first: written by a player of the game, after its last move.
+ * Anyone may reply to a public game with the tag, so a debrief from a non-player, or one dated before the game
+ * ended, is not shown as the players' account of it. With no known end (`endedAt` empty), only the author is checked.
+ */
+export function debriefsOf(posts: FeedPost[], game: { participants: string[]; endedAt?: string | null }): FeedPost[] {
+  const ended = game.endedAt ? Date.parse(game.endedAt) : NaN;
+  return posts.filter((p) => {
+    if (!isDebrief(p) || !game.participants.includes(p.author_id)) return false;
+    if (Number.isNaN(ended)) return true;
+    const at = Date.parse(p.at);
+    return !Number.isNaN(at) && at > ended;
+  });
 }
 
 /** The session id a debrief replies to (`session:<id>`), or null. */
