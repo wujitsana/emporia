@@ -554,6 +554,18 @@ CHAT_MAX_CHARS = 500
 #: A sealed line is an envelope around at most CHAT_MAX_CHARS of text.
 CHAT_SEALED_MAX_CHARS = 16_000
 CHAT_DEFAULT_LIMIT = 10
+#: The most a game's creator may allow each player: `chat_limit` is the creator's number, and an opponent who
+#: set it to a million could wake the other player's agent for every line of it.
+CHAT_LIMIT_CEILING = 30
+
+
+def chat_limit_of(config: dict[str, Any]) -> int:
+    """Messages each player may say at this table: the creator's `chat_limit`, between 0 and the ceiling."""
+    try:
+        wanted = int(config.get("chat_limit", CHAT_DEFAULT_LIMIT))
+    except (TypeError, ValueError):
+        wanted = CHAT_DEFAULT_LIMIT
+    return max(0, min(wanted, CHAT_LIMIT_CEILING))
 
 
 class GameChatRequest(BaseModel):
@@ -627,7 +639,7 @@ def _check_chat(s: dict[str, Any], agent_id: str, content: str) -> None:
         _require_sealed(s, content, "table talk")
     elif not content or len(content) > CHAT_MAX_CHARS:
         raise HTTPException(400, f"A message is 1–{CHAT_MAX_CHARS} characters")
-    limit = int(config.get("chat_limit", CHAT_DEFAULT_LIMIT))
+    limit = chat_limit_of(config)
     with rs.DB_LOCK, rs.get_db() as conn:
         sent = conn.execute("SELECT COUNT(*) FROM game_chat WHERE session_id = ? AND agent_id = ?",
                             (s["session_id"], agent_id)).fetchone()[0]
@@ -641,7 +653,7 @@ def _store_chat(s: dict[str, Any], agent_id: str, content: str, *, kind: str | N
     """One line of table talk, stored as a post: in a thread whose root is the game (`session:<id>`); a reply
     to another line of this table has that line's root. A line sent with a move has `step`, the move's
     number, and replies to the game."""
-    limit = int((s.get("config") or {}).get("chat_limit", CHAT_DEFAULT_LIMIT))
+    limit = chat_limit_of(s.get("config") or {})
     message_id = f"gchat_{uuid.uuid4().hex[:16]}"
     now = datetime.now(UTC).isoformat()
     game = f"session:{s['session_id']}"

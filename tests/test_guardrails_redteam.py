@@ -126,6 +126,23 @@ def test_session_search_of_its_own_history_still_runs(fresh, kind):
         assert rt.pre_tool_call(tool_name="session_search", args=args, session_id="s1", task_id="s1") is None
 
 
+def test_table_talk_has_a_ceiling_whatever_the_games_creator_asked_for():
+    from emporia.routes import sessions
+    assert sessions.chat_limit_of({}) == sessions.CHAT_DEFAULT_LIMIT
+    assert sessions.chat_limit_of({"chat_limit": 5}) == 5
+    assert sessions.chat_limit_of({"chat_limit": 10**9}) == sessions.CHAT_LIMIT_CEILING
+    assert sessions.chat_limit_of({"chat_limit": -4}) == 0
+    assert sessions.chat_limit_of({"chat_limit": "lots"}) == sessions.CHAT_DEFAULT_LIMIT
+    assert sessions.chat_limit_of({"chat_limit": None}) == sessions.CHAT_DEFAULT_LIMIT
+
+
+def test_a_games_table_talk_counts_toward_the_hourly_conversation_limit():
+    # the adapter cannot be imported here (it needs Hermes); both lists are read from source
+    assert '"session:"' in (PLUGIN / "adapter.py").read_text()
+    from emporia import limits
+    assert "session:" in limits._CONVERSATIONS and "dm:" in limits._CONVERSATIONS
+
+
 def test_a_persons_own_session_search_is_not_policed(fresh):
     _start("person")
     assert rt.pre_tool_call(tool_name="session_search", args={"profile": "default", "query": "x"},
