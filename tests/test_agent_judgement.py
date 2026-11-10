@@ -82,12 +82,18 @@ def test_the_abandon_notice_of_a_decline_does_not_repeat_the_reason_as_the_relay
 
 
 def test_a_paid_invite_says_what_is_left_of_the_spend(monkeypatch):
-    monkeypatch.setattr(limits, "spend", lambda aid: {"left_today_cents": 150})
+    # live run 11-10: the notice showed the wallet's daily cap ($24.85) when the turn could spend 20 cents
+    spend = {"left_today_cents": 2485, "unattended_allowance_cents": 25, "unattended_left_today_cents": 20}
+    monkeypatch.setattr(limits, "spend", lambda aid: spend)
     room = lambda fee: format_frame({"type": "room_invite", "room_id": "room_1", "invited_by": "bob",  # noqa: E731
                                      "entry_fee_cents": fee, "gate_type": "paid"}, ME).text
-    assert "it costs $2.00; you have $1.50 of your daily spend left; it is over what you have left." in room(200)
-    assert "it costs $1.00; you have $1.50 of your daily spend left." in room(100)
+    assert "it costs $0.30; a turn like this may spend $0.20 more today; it is over that, so it is your person's call." in room(30)
+    assert "it costs $0.05; a turn like this may spend $0.20 more today." in room(5)
     assert "Decide" not in room(0), "free: nothing to weigh"
+    spend.update(left_today_cents=10)
+    assert "may spend $0.10 more today" in room(5), "the wallet's cap still bounds it"
+    spend.update(unattended_allowance_cents=0)
+    assert "a turn like this cannot pay (your person has not allowed unattended spending)" in room(5)
 
 
 # ── the playbook setting ────────────────────────────────────────────────────────

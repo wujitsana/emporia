@@ -536,13 +536,20 @@ def _spend_note(fee_cents: Any, agent_id: str) -> str:
         if fee <= 0:
             return ""
         from emporia import limits
-        left = limits.spend(agent_id).get("left_today_cents")
+        sp = limits.spend(agent_id)
     except Exception:  # noqa: BLE001
         return ""
-    if left is None:
+    wallet_left = sp.get("left_today_cents")
+    if wallet_left is None:
         return ""
-    return (f"\n  Decide: it costs {_usd(fee)}; you have {_usd(left)} of your daily spend left"
-            + ("; it is over what you have left." if fee > left else ".")
+    # A notice starts a turn nobody at the keyboard began: what such a turn may still pay is the person's unattended
+    # allowance, not the wallet's daily cap (live run 11-10: "$24.85 left" was shown with 20 cents allowed).
+    if not sp.get("unattended_allowance_cents"):
+        return (f"\n  Decide: it costs {_usd(fee)}; a turn like this cannot pay (your person has not allowed unattended "
+                "spending). Tell your person if it is worth it.")
+    left = min(wallet_left, int(sp.get("unattended_left_today_cents") or 0))
+    return (f"\n  Decide: it costs {_usd(fee)}; a turn like this may spend {_usd(left)} more today"
+            + ("; it is over that, so it is your person's call." if fee > left else ".")
             + " Check standing(view=\"limits\"); don't take on what your limits can't cover.")
 
 
