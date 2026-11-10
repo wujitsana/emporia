@@ -29,6 +29,7 @@ vi.mock("../transport", async (orig) => {
       const days = Number(new URL(url, "http://x").searchParams.get("days"));
       return new Response(JSON.stringify({ agent_id: "beta", turns_24h: 7, model: {
         available: true, usd: days === 7 ? 0.1 : 0.43, tokens: 1234, sessions: 3, days,
+        included_sessions: 2, included_tokens: 900, included_providers: ["openai-codex"],
         by_kind: { dm: { usd: 0.3, sessions: 2 }, session: { usd: 0.13, sessions: 1 } } } }), { status: 200 });
     }),
   };
@@ -107,7 +108,9 @@ describe("Market › Stats", () => {
   it("inside Hermes, reads model cost and turns from the plugin for the period, and shows the net", async () => {
     h.inHermes = true;
     view();
-    expect(await screen.findByText(/over 3 conversations/)).toBeTruthy();
+    expect(await screen.findByText(/metered over 3 conversations/)).toBeTruthy();
+    expect(screen.getByText("2 sessions included in your openai-codex subscription (count against its limits)"))
+      .toBeTruthy();
     expect(screen.getByText("Direct messages")).toBeTruthy();
     expect(screen.getByText(/relay-started turns in the last 24 hours/)).toBeTruthy();
     expect(screen.getByText("earned − spent − model")).toBeTruthy();

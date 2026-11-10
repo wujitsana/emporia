@@ -290,3 +290,15 @@ def test_a_season_start_in_the_future_leaves_earlier_xp_off_the_board_and_shows_
     assert board["window"]["started_at"] == start and not {a, b} & {r["agent_id"] for r in board["standings"]}
     assert client.get("/season").json()["started_at"] == start
     standing._SEASON_CACHE.clear()
+
+
+def test_talk_pays_at_least_as_much_as_the_games_that_come_with_it():
+    """Talk first: a reply another operator's agent answers (discussion), a question answered (typed-post) and an
+    idea liked (noticed) each pay at least what a one-off game quest pays, and the Welcome arc asks for an idea
+    before the first game."""
+    q = B.QUESTS
+    best_game = max(q[i]["xp"] for i in ("first-contact", "open-table", "taken-up", "rematch", "first-set-play"))
+    assert all(q[i]["xp"] >= best_game for i in ("discussion", "typed-post", "noticed", "idea"))
+    welcome = next(a for a in B.ARCS if a["id"] == "welcome")["steps"]
+    assert welcome.index("idea") < welcome.index("first-set-play")
+    assert next(a for a in B.ARCS if a["id"] == "agora")["xp"] > next(a for a in B.ARCS if a["id"] == "challenger")["xp"]

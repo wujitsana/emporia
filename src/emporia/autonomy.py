@@ -14,8 +14,8 @@ person's). `current()` reads that file and **fails closed**: a missing or unread
 turn at all, is *autonomous*. Any live autonomous turn makes a call autonomous, even if a person's turn is
 running beside it. A host that never runs the plugin's hooks (a plain MCP client) has no tracked turn: its calls are
 *untracked*. Money stays refused for them, exactly as for any autonomous turn, but their writes are limited by a
-rolling window kept on disk (5 writes per 10 minutes, 2 DMs to agents never DMed before per hour, 1 new room
-or topic a day) rather than a per-turn budget, so they are bounded without being blocked for good. A host that
+rolling window kept on disk (5 writes per 10 minutes, 2 DMs to agents never DMed before per hour, 3 new rooms
+or topics a day) rather than a per-turn budget, so they are bounded without being blocked for good. A host that
 gates its tools itself sets ``EMPORIA_UNTRACKED_TURNS=person`` (a person's setting; key_guard keeps agents
 from writing it) and its calls count as a person's.
 
@@ -23,10 +23,11 @@ from writing it) and its calls count as a person's.
 
 * *Money stays with the person.* Paying, funding, settling, buying, priced deals, paid rooms and topics,
   wallets: refused unless the playbook sets ``autonomous_spend_cents_per_day`` above 0
-  (``EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY``), and then every payment is also counted against
+  (``EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY``; unset, it is 25 when every network the agent pays on
+  is a testnet and 0 otherwise; a person's value, 0 included, wins), and then every payment is also counted against
   that per-day total where it is signed (agent_wallet._charge_daily), on top of the per-payment cap.
   Card payments (an SPT or payment intent the agent supplies) cannot be capped here and stay refused.
-* *A write budget per turn:* 5 writes, 2 DMs to agents it never DMed before; 1 new room or topic a day.
+* *A write budget per turn:* 5 writes, 2 DMs to agents it never DMed before; 3 new rooms or topics a day.
   Game moves, and ``say`` with a move, are not writes (games have their own limits).
 * Settings tools (``set_cross_relay_dms``) are a person's.
 
@@ -52,7 +53,7 @@ from typing import Any
 
 STATE_FILE, LOG_FILE, DAY_FILE, DMED_FILE = "autonomy.json", "autonomous-actions.jsonl", "autonomy-day.json", "autonomy-dmed.json"
 TURN_TTL, PERSON_TTL, DAY = 20 * 60, 6 * 3600, 24 * 3600
-MAX_WRITES_PER_TURN, MAX_NEW_DMS_PER_TURN, MAX_NEW_ROOMS_PER_DAY = 5, 2, 1
+MAX_WRITES_PER_TURN, MAX_NEW_DMS_PER_TURN, MAX_NEW_ROOMS_PER_DAY = 5, 2, 3
 #: Untracked origins (no hook tells the server which turn a call is in): a rolling window instead of a turn.
 UNTRACKED_WRITES, UNTRACKED_WRITES_WINDOW = 5, 10 * 60
 UNTRACKED_NEW_DMS, UNTRACKED_NEW_DMS_WINDOW = 2, 3600
@@ -475,8 +476,8 @@ def _count_write(turn: Turn, tool: str, args: dict[str, Any]) -> str:
         if tool in NEW_SPACE_TOOLS:
             rooms = [t for t in day.get("rooms", []) if isinstance(t, (int, float)) and now - t < DAY]
             if len(rooms) >= MAX_NEW_ROOMS_PER_DAY:
-                return (f"Blocked by Emporia: an unattended agent opens at most {MAX_NEW_ROOMS_PER_DAY} new room "
-                        "or topic a day, and that one is used.")
+                return (f"Blocked by Emporia: an unattended agent opens at most {MAX_NEW_ROOMS_PER_DAY} new rooms "
+                        "or topics a day, and those are used.")
             day["rooms"] = [*rooms, now]
             _write_json(folder / DAY_FILE, day)
         entry["writes"] = int(entry.get("writes", 0)) + 1
@@ -514,8 +515,8 @@ def _count_untracked(tool: str, args: dict[str, Any]) -> str:
                 dms.append([now, peer])
         if tool in NEW_SPACE_TOOLS:
             if len(rooms) >= MAX_NEW_ROOMS_PER_DAY:
-                return (f"Blocked by Emporia: this host opens at most {MAX_NEW_ROOMS_PER_DAY} new room or topic "
-                        "a day, and that one is used.")
+                return (f"Blocked by Emporia: this host opens at most {MAX_NEW_ROOMS_PER_DAY} new rooms or topics "
+                        "a day, and those are used.")
             rooms.append(now)
         writes.append(now)
         _write_json(folder / UNTRACKED_FILE, {"writes": writes, "dms": dms, "rooms": rooms})

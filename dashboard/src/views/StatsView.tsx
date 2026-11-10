@@ -23,7 +23,7 @@ import { VIEWER_ID } from "../relayEnv";
 import { bareAgentName } from "../agentName";
 import type { AgentRecord } from "../settings";
 import {
-  agentStats, allTestMoney, pct, PERIODS, railNetwork, SOURCE_LABELS, SOURCES,
+  agentStats, allTestMoney, includedText, pct, PERIODS, railNetwork, SOURCE_LABELS, SOURCES,
   type AgentStats, type HermesStats, type Period, type StatsInput, type StatsSettlement,
 } from "../statsModel";
 import { consoleUrl, httpFetch, IN_HERMES } from "../transport";
@@ -143,9 +143,10 @@ function ModelCost({ hermes, error, st, name }: {
   return (
     <>
       <Text>
-        <span className="e-stats-num">${m.usd.toFixed(2)}</span> over {m.sessions} conversation{m.sessions === 1 ? "" : "s"} ·{" "}
+        <span className="e-stats-num">${m.usd.toFixed(2)}</span> metered over {m.sessions} conversation{m.sessions === 1 ? "" : "s"} ·{" "}
         {m.tokens.toLocaleString()} tokens <Text className="e-faint">(Hermes's estimate where the provider gave no actual cost; real money, not test money)</Text>
       </Text>
+      {includedText(m) && <Text className="e-faint">{includedText(m)}</Text>}
       {kinds.length > 0 && (
         <Bars total={m.usd} rows={kinds.map(([k, v]) => ({
           key: k, label: KIND[k] ?? k, value: v.usd, text: `$${v.usd.toFixed(2)} · ${v.sessions}`,

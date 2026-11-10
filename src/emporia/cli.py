@@ -3210,7 +3210,12 @@ def _show_playbook(name: str, pb) -> None:
     print(f"  Answers     {pb.answers}   Sells {'yes' if pb.sells else 'no'}   Buys {'yes' if pb.buys else 'no'}"
           f"   Runs on {pb.runs}   Pledges {'yes' if pb.pledges else 'no'}")
     cap = pb.games_per_operator_per_day
-    print(f"  Per operator  {f'{cap} games a day' if cap else 'no cap'} against one operator's agents")
+    print(f"  Per operator  {f'{cap} games a day' if cap else 'no cap'} against one operator's agents"
+          f"   (change: emporia agent playbook {name} --games-per-operator N)")
+    spend = pb.autonomous_spend_cents_per_day
+    print(f"  Unattended    {f'up to {spend} cents a day' if spend else 'no spending'} when nobody is at the keyboard"
+          f" (25 by default on testnets only, 0 on mainnet; change: emporia agent playbook {name}"
+          " --unattended-spend-cents N)")
 
 
 def _setup_playbook(profile: Path, name: str, chosen: str, existing: bool) -> None:
@@ -3241,7 +3246,7 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
     preset = args.preset
     if not preset and _TTY and not any(getattr(args, a, None) is not None for a in
                                        ("games", "answers", "sells", "buys", "runs", "pledges",
-                                        "games_per_operator", "labs")):
+                                        "games_per_operator", "unattended_spend_cents", "labs")):
         heading(f"Playbook: {name}", "What it may do on its own. Its style stays its own (SOUL.md).")
         _show_playbook(name, P.resolve(dotenv))
         preset = choose_setting("playbook", default=list(P.PRESETS).index(P.resolve(dotenv).preset)
@@ -3256,7 +3261,8 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
                       ("answers", "EMPORIA_PLAYBOOK_ANSWERS"), ("sells", "EMPORIA_PLAYBOOK_SELLS"),
                       ("buys", "EMPORIA_PLAYBOOK_BUYS"), ("runs", "EMPORIA_PLAYBOOK_RUNS"),
                       ("pledges", "EMPORIA_PLAYBOOK_PLEDGES"),
-                      ("games_per_operator", "EMPORIA_PLAYBOOK_GAMES_PER_OPERATOR_PER_DAY")):
+                      ("games_per_operator", "EMPORIA_PLAYBOOK_GAMES_PER_OPERATOR_PER_DAY"),
+                      ("unattended_spend_cents", "EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY")):
         if getattr(args, attr, None) is not None:
             updates[var] = str(getattr(args, attr))
     try:
@@ -5440,9 +5446,14 @@ def doctor_autonomous_actions(rep: Report, profile: Path, dotenv: dict) -> None:
     """What this agent did on its own (turns another agent's message or the rounds started): the last 20
     actions from the plugin's local log. No message bodies, no secrets."""
     from emporia import autonomy
-    spend = (dotenv.get("EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY") or "").strip()
-    rep.ok("unattended turns may not spend money" if spend in ("", "0")
-           else f"unattended turns may spend up to {spend} cents a day (EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY)")
+    from emporia import playbook as _pb
+    try:
+        spend = _pb.resolve(dotenv).autonomous_spend_cents_per_day
+    except _pb.PlaybookError:
+        spend = 0
+    how = "change: emporia agent playbook NAME --unattended-spend-cents N"
+    rep.ok(f"unattended turns may spend up to {spend} cents a day ({how}; 25 by default on testnets only)" if spend
+           else f"unattended turns may not spend money ({how})")
     rows = autonomy.recent_actions(20, home_dir=profile)
     if not rows:
         rep.ok("autonomous actions: none recorded")
@@ -6767,6 +6778,7 @@ def agent_settings(profile: Path, agent_id: str) -> list[dict[str, Any]]:
     ]
 
     # ── Features & tools ────────────────────────────────────────────────────
+    from emporia import autonomy
     from emporia import features as _features
     from emporia import playbook as _pb
     try:
@@ -6807,6 +6819,16 @@ def agent_settings(profile: Path, agent_id: str) -> list[dict[str, Any]]:
              f"emporia agent playbook {name}", book_level, kind="choice", current=book.preset,
              options=tuple(_pb.PRESETS), recommended="custom",
              is_default=not (env.get("EMPORIA_PLAYBOOK") or "").strip(), env="EMPORIA_PLAYBOOK"),
+        item(_G_TOOLS, "Games per operator", f"{book.games_per_operator_per_day} a day"
+             if book.games_per_operator_per_day else "no cap",
+             "How many games it plays a day against one operator's agents; talking is not counted.",
+             f"emporia agent playbook {name} --games-per-operator 6", kind="number",
+             current=str(book.games_per_operator_per_day),
+             is_default=not (env.get("EMPORIA_PLAYBOOK_GAMES_PER_OPERATOR_PER_DAY") or "").strip(),
+             env="EMPORIA_PLAYBOOK_GAMES_PER_OPERATOR_PER_DAY"),
+        item(_G_TOOLS, "New rooms or topics", f"{autonomy.MAX_NEW_ROOMS_PER_DAY} a day",
+             "The most it opens a day when nobody is at the keyboard. Emporia sets it; it has no switch.",
+             "", kind="text"),
     ]
 
     # ── Money & limits ──────────────────────────────────────────────────────
@@ -6847,7 +6869,7 @@ def agent_settings(profile: Path, agent_id: str) -> list[dict[str, Any]]:
                  kind="money", current=str(approve_c), is_default=not approve,
                  env="EMPORIA_PAYMENT_APPROVAL_CENTS"),
             item(_G_MONEY, "Spending when you're away", f"${book.autonomous_spend_cents_per_day / 100:.2f} per day",
-                 "What its turns may spend when nobody is at the keyboard; nothing by default.",
+                 "Unattended spending: 25 cents by default on testnets only, nothing on mainnet. 0 turns it off.",
                  _hermes_set(name, "EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY", "0"), kind="money",
                  current=str(book.autonomous_spend_cents_per_day),
                  is_default=not (env.get("EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY") or "").strip(),
@@ -8790,7 +8812,10 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.add_argument("--pledges", default=None, choices=["yes", "no"],
                      help="playbook: may it sign pledges and attest others' (gamify pledges)")
     ag2.add_argument("--games-per-operator", dest="games_per_operator", default=None,
-                     help="playbook: games a day against one operator's agents (default 3; 0 = no cap)")
+                     help="playbook: games a day against one operator's agents (default 6; 0 = no cap)")
+    ag2.add_argument("--unattended-spend-cents", dest="unattended_spend_cents", default=None,
+                     help="playbook: cents a day its unattended turns may spend (default 25 on testnets only, "
+                          "0 on mainnet; 0 = none)")
     ag2.add_argument("--handle", default="", help="x-claim, x-link: the X handle (letters, digits, _; at most 15)")
     ag2.add_argument("--style", default="", choices=["", "plain", "arena", "lab"],
                      help="x-claim: which stock post (default plain)")

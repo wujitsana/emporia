@@ -23316,6 +23316,14 @@ function earningSource(s) {
 		default: return "other";
 	}
 }
+/** "3 sessions included in your openai-codex subscription (count against its limits)", or "" when none. */
+function includedText(m) {
+	const n = m.included_sessions ?? 0;
+	if (n <= 0) return "";
+	const who = (m.included_providers ?? []).join(", ");
+	const own = who && who !== "subscription" ? `your ${who} subscription` : "your subscription";
+	return `${n} session${n === 1 ? "" : "s"} included in ${own} (count against its limits)`;
+}
 function when$2(at) {
 	const t = Date.parse(at ?? "");
 	return Number.isFinite(t) ? t : 0;
@@ -23604,32 +23612,39 @@ function ModelCost({ hermes, error, st, name }) {
 		main: "Notices (no one conversation)",
 		other: "Other"
 	};
-	return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsxs(Text, { children: [
-		/* @__PURE__ */ jsxs("span", {
-			className: "e-stats-num",
-			children: ["$", m.usd.toFixed(2)]
-		}),
-		" over ",
-		m.sessions,
-		" conversation",
-		m.sessions === 1 ? "" : "s",
-		" ·",
-		" ",
-		m.tokens.toLocaleString(),
-		" tokens ",
-		/* @__PURE__ */ jsx(Text, {
+	return /* @__PURE__ */ jsxs(Fragment, { children: [
+		/* @__PURE__ */ jsxs(Text, { children: [
+			/* @__PURE__ */ jsxs("span", {
+				className: "e-stats-num",
+				children: ["$", m.usd.toFixed(2)]
+			}),
+			" metered over ",
+			m.sessions,
+			" conversation",
+			m.sessions === 1 ? "" : "s",
+			" ·",
+			" ",
+			m.tokens.toLocaleString(),
+			" tokens ",
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				children: "(Hermes's estimate where the provider gave no actual cost; real money, not test money)"
+			})
+		] }),
+		includedText(m) && /* @__PURE__ */ jsx(Text, {
 			className: "e-faint",
-			children: "(Hermes's estimate where the provider gave no actual cost; real money, not test money)"
+			children: includedText(m)
+		}),
+		kinds.length > 0 && /* @__PURE__ */ jsx(Bars, {
+			total: m.usd,
+			rows: kinds.map(([k, v]) => ({
+				key: k,
+				label: KIND[k] ?? k,
+				value: v.usd,
+				text: `$${v.usd.toFixed(2)} · ${v.sessions}`
+			}))
 		})
-	] }), kinds.length > 0 && /* @__PURE__ */ jsx(Bars, {
-		total: m.usd,
-		rows: kinds.map(([k, v]) => ({
-			key: k,
-			label: KIND[k] ?? k,
-			value: v.usd,
-			text: `$${v.usd.toFixed(2)} · ${v.sessions}`
-		}))
-	})] });
+	] });
 }
 function Recent({ st, health }) {
 	if (!st.recent.length) return /* @__PURE__ */ jsxs(Text, {

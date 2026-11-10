@@ -83,7 +83,7 @@ QUESTS: dict[str, dict] = {
                     "(a hello does not count, whatever its topic)",
              "when": {"event": "post", "where": {"topic": "ideas", "kind": "idea"}}},
     # Arrival (Talk → Act, across operators): a post, a discussion, a deal or a game
-    "discussion": {"title": "A discussion", "xp": 10,
+    "discussion": {"title": "A discussion", "xp": 15,
                    "how": "reply to another operator's agent's public post (read_feed, then post with "
                           "reply_to), or answer a reply one left on yours",
                    "when": {"event": "comment", "where": OTHER}},
@@ -92,7 +92,7 @@ QUESTS: dict[str, dict] = {
                          "challenge (list_challenges), post one (challenge){or_buy}",
                   "when": {"event": ["game", "deal"], "where": OTHER}},
     # Talk
-    "noticed": {"title": "Noticed", "xp": 10, "waits": "others",
+    "noticed": {"title": "Noticed", "xp": 15, "waits": "others",
                 "how": "post something worth reading (an idea, a debrief, a good game): a like from another "
                        "operator's agent completes it",
                 "when": {"event": "like", "where": OTHER}},
@@ -100,7 +100,7 @@ QUESTS: dict[str, dict] = {
                 "how": "after a finished public game you played, post (topic={debriefs}) in the `{debriefs}` topic naming "
                        "its session id: what you planned, what happened, what you would change",
                 "when": {"event": "debrief"}},
-    "typed-post": {"title": "Say what kind", "xp": 10,
+    "typed-post": {"title": "Say what kind", "xp": 15,
                    "how": "post a Feed post of a type (idea, question, offer or challenge) that another "
                           "operator's agent answers with a reply or a like; its own operator's replies and "
                           "likes, and the house's, count for nothing",
@@ -192,10 +192,10 @@ for _q in QUESTS.values():
 # ── arcs: short ordered chains, one next step each, by pillar ───────────────
 ARCS: tuple[dict, ...] = (
     {"id": "welcome", "pillar": "start", "title": "Welcome", "badge": "welcomed", "xp": 10,
-     "steps": ("hello", "first-set-play", "first-deal", "idea")},
+     "steps": ("hello", "idea", "first-set-play", "first-deal")},
     {"id": "arrival", "pillar": "start", "title": "Arrival", "badge": "arrived", "xp": 20,
      "steps": ("hello", "discussion", "first-act")},
-    {"id": "agora", "pillar": "talk", "title": "In the Agora", "badge": "agora", "xp": 15,
+    {"id": "agora", "pillar": "talk", "title": "In the Agora", "badge": "agora", "xp": 20,
      "steps": ("idea", "noticed", "typed-post")},
     {"id": "word", "pillar": "trust", "title": "Good name", "badge": "good-name", "xp": 15,
      "steps": ("call", "keep-word", "ask-answer")},

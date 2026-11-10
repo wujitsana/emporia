@@ -13,7 +13,8 @@ MCP tools (before a call reaches the relay) enforce it, so the bounds hold even
 if the model ignores them.
 
 Money in turns nobody at the keyboard started (a relay event's, the rounds) stays with the person:
-``autonomous_spend_cents_per_day`` is 0 (none) in every preset, and a person raises it deliberately; see
+``autonomous_spend_cents_per_day`` is 0 (none) unless every network the agent pays on is a testnet, where it
+defaults to 25 cents a day; a person-set value (0 included) always wins, and any mainnet network keeps 0; see
 ``autonomy.py``.
 
 Presets are starting points the person can then edit setting by setting.
@@ -24,9 +25,22 @@ behaves as before P297, inside its spending limits and turn cap.
 from __future__ import annotations
 
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field, replace
 
 from emporia import calls
+
+#: Unattended spending a day when the person has set nothing, and every network the agent pays on is a testnet.
+TESTNET_AUTONOMOUS_SPEND_CENTS = 25
+
+
+def default_autonomous_spend_cents(env: dict[str, str] | None = None) -> int:
+    """The default for ``autonomous_spend_cents_per_day``: 25 only when the agent pays on at least one network
+    and every network it lists is a known testnet (an unknown one counts as mainnet); 0 otherwise.
+    A value the person sets, 0 included, always replaces it."""
+    from emporia import networks
+    env = os.environ if env is None else env
+    nets = networks.resolve_list(env.get("EMPORIA_X402_PAY_NETWORKS") or "")
+    return TESTNET_AUTONOMOUS_SPEND_CENTS if nets and all(networks.is_testnet(n) for n in nets) else 0
 
 ALL = "all"
 NONE = "none"
@@ -46,10 +60,12 @@ class Playbook:
     runs: str                          # model turns, or rules (no model; the house agent)
     pledges: bool = True               # may sign pledges and attest others' (gamify pledges)
     autonomous_spend_cents_per_day: int = 0   # what turns nobody at the keyboard started may pay a day (0: none)
-    games_per_operator_per_day: int = 3       # games it plays against one operator's agents a day (UTC); 0: no cap
+    games_per_operator_per_day: int = 6       # games it plays against one operator's agents a day (UTC); 0: no cap
+    spend_default: int = field(default=0, compare=False)   # what the spending default was here (for `about`)
 
     def as_dict(self) -> dict:
         d = asdict(self)
+        d.pop("spend_default", None)
         d["games"] = list(self.games) if isinstance(self.games, tuple) else self.games
         return d
 
@@ -85,6 +101,8 @@ def about(pb: Playbook) -> str:
     preset's own line ("plays nothing") never contradicts the games it takes
     (found by the end-to-end run)."""
     base = PRESETS.get(pb.preset)
+    if base is not None:   # the testnet default is not the person's change
+        base = replace(base, autonomous_spend_cents_per_day=pb.spend_default)
     if base is None or base == pb:
         return ABOUT.get(pb.preset, "")
     changed = [w for f, w in _FIELD_WORDS.items() if getattr(pb, f) != getattr(base, f)]
@@ -138,6 +156,7 @@ def resolve(env: dict[str, str] | None = None) -> Playbook:
     if name not in PRESETS:
         raise PlaybookError(f"EMPORIA_PLAYBOOK={name!r}: not one of {', '.join(PRESETS)}")
     fields = asdict(PRESETS[name])
+    fields["spend_default"] = fields["autonomous_spend_cents_per_day"] = default_autonomous_spend_cents(env)
     for var, field in SETTINGS.items():
         raw = (env.get(var) or "").strip()
         if not raw:
