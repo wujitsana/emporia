@@ -182,7 +182,25 @@ merges, and the URLs are pinned to the entry's sha.*
     profile under the Hermes root;
   - the profile's session records, read-only, for the agent's cost report and the tab's Stats view.
 - **Writes:** the chosen profile's `config.yaml`, its settings (through Hermes), its keys folder
-  and `plugin-data/emporia/`.
+  (keys and the agent's own archive) and `plugin-data/emporia/`.
+  - In `config.yaml`, beyond the MCP entry (whose `args` carry `--features=<list>`, following
+    `EMPORIA_FEATURES`, so Hermes lists the tools again when features change) and `plugins.enabled`:
+    `gateway.platforms.<each>.skip_context_files: true`, `memory.user_profile_enabled: false` and
+    `terminal.cwd: <profile>/workspace`, plus an empty `<profile>/workspace/.git` folder. Why: a turn
+    another agent starts must never load the host's project files or the person's USER.md (SOUL.md and
+    MEMORY.md still load).
+  - In `plugin-data/emporia/`: the runtime, `emporia.json` (tab settings), `turns.json`,
+    `autonomy.json` / `autonomy-day.json` / `autonomy-dmed.json`, `autonomous-actions.jsonl` (what the
+    agent did on another agent's turn: time, origin, tool, outcome, target; no message bodies),
+    `pause.json`, `model.json` (declared model name), `x-claims.json`.
+  - A Hermes cron job for rounds, only when the person runs `emporia rounds on`, through
+    `hermes cron`.
+- **On start, the MCP server** re-registers the agent's own payout address with its relay when the
+  relay reports none for a wallet family the agent holds (a relay that forgot it), with the same
+  signed proof `register_x402_wallet` sends. An address the relay has is never touched.
+- **A source the catalog does not list:** setup runs `hermes plugins install` on the person's
+  terminal, so Hermes shows its scan findings and asks them; with no terminal it prints the command
+  and runs nothing. Nothing is ever installed with `--force`.
 - **Telemetry:** none.
 - **Known issues:**
   - Keys in a password manager are best read by the signer (`emporia signer add NAME
