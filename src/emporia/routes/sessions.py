@@ -2044,6 +2044,8 @@ async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -
         "module_type": s["module_type"],
         "outcome": outcome,
         "settlement": settlement_record,
+        "visibility": ("public" if rs._session_visibility(s) == "public"
+                       else "sealed" if rs.session_sealed(s) else "private"),
     }
     await rs.broadcast_to_session(session_id, terminal_event)
     if rs._session_visibility(s) == "public":

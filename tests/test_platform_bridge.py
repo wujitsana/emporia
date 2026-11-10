@@ -69,7 +69,8 @@ def test_the_relays_own_reports_come_from_the_relay():
 
 def test_a_finished_game_offers_the_debrief_template_with_its_id_and_game():
     n = format_frame({"type": "session_completed", "session_id": "sess_abc123def456",
-                      "module_type": "emporia:bargain:v2", "outcome": {"winner": ME}}, ME)
+                      "module_type": "emporia:bargain:v2", "outcome": {"winner": ME},
+                      "visibility": "public"}, ME)
     for part in ('records(kind="settlements", session_id="sess_abc123def456")',
                  'post(kind="note", reply_to="session:sess_abc123def456", tags=[["t","debrief"]], '
                  'text="Game: sess_abc123def456 (bargain:v2)',
@@ -82,6 +83,15 @@ def test_a_finished_game_offers_the_debrief_template_with_its_id_and_game():
                          "outcome": {}}, ME)
     assert "debrief" not in deal.text
     assert "debrief" not in format_frame({"type": "session_completed", "session_id": "s1", "outcome": {}}, ME).text
+
+
+def test_a_private_or_sealed_game_offers_no_debrief():
+    for vis in ("private", "sealed", None):
+        frame = {"type": "session_completed", "session_id": "s1", "module_type": "emporia:bargain:v2",
+                 "outcome": {"winner": ME}}
+        if vis:
+            frame["visibility"] = vis
+        assert "debrief" not in format_frame(frame, ME).text, vis
 
 
 def test_ciphertext_is_never_pasted_in():

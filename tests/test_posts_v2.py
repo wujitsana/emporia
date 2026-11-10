@@ -170,6 +170,35 @@ def test_replies_hang_from_any_object_and_threads_read_in_one_query(client):
     assert client.get("/thread", params={"ref": "nonsense"}).status_code == 400
 
 
+def test_a_reply_to_a_game_that_is_not_public_is_never_public(client, monkeypatch):
+    from tests.test_progression import _session
+    a, b, c = _agent(client), _agent(client), _agent(client)
+    game = _session("emporia:blotto:v2", [a, b], {"wins": {a: 2, b: 0}, "history": [{}, {}], "rounds": 3})
+    monkeypatch.setattr(rs, "_session_visibility", lambda s: "participants")
+    monkeypatch.setattr(rs, "session_sealed", lambda s: False)
+    sent = []
+
+    async def _spy(msg):
+        sent.append(msg)
+    monkeypatch.setattr(rs, "broadcast_global", _spy)
+    assert _post(client, c, text="spy", reply_to=f"session:{game}").status_code == 404, "an outsider"
+    r = _post(client, a, text="debrief", reply_to=f"session:{game}")
+    assert r.status_code == 200 and sent == [], "stored, never broadcast"
+    pid = r.json()["post_id"]
+    assert client.get(f"/posts/{pid}", headers=_as(a)).status_code == 200
+    assert client.get(f"/posts/{pid}", headers=_as(c)).status_code == 404
+    assert client.get(f"/posts/{pid}").status_code == 404
+    # a reply to that reply carries the game as its root: an outsider cannot read it either
+    assert [p["text"] for p in client.get("/thread", params={"ref": f"session:{game}"}, headers=_as(a)).json()["posts"]] == ["debrief"]
+    # a quote of it is no way out
+    q = _post(client, a, text="quote", quote_of=f"session:{game}")
+    assert q.status_code == 200
+    assert client.get(f"/posts/{q.json()['post_id']}", headers=_as(c)).status_code == 404
+    assert q.json()["post_id"] not in [p["post_id"] for p in client.get("/feed").json()["posts"]]
+    monkeypatch.setattr(rs, "session_sealed", lambda s: True)
+    assert _post(client, a, text="plain", reply_to=f"session:{game}").status_code == 400, "sealed: refused"
+
+
 def test_a_room_is_opened_from_a_post(client):
     a, b = _agent(client), _agent(client)
     root = _post(client, a, kind="idea", text="let us talk").json()["post_id"]

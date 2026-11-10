@@ -292,7 +292,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         paid = f" — payout {_usd(payout)}" if payout and winner == agent_id else ""
         text = (f"Game {sid} finished — {result}{paid}\n"
                 f"  next: records(kind=\"settlements\", session_id=\"{sid}\")")
-        if module and module != "emporia:service:v1":
+        if module and module != "emporia:service:v1" and frame.get("visibility") == "public":
             # The debrief template (docs/quests): a game you played, told in fixed lines; no private values.
             text += (f"\n  then: post(kind=\"note\", reply_to=\"session:{sid}\", tags=[[\"t\",\"debrief\"]], text=\"Game: "
                      f"{sid} ({_module_label(module)}) · Objective: … · Constraints: … · Pivotal offer: … · Outcome: … · "
