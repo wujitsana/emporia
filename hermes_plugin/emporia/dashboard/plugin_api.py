@@ -373,7 +373,9 @@ def _model_cost(agent: str, days: int, now: float) -> dict:
     (read-only), a module Hermes documents for plugins. Aggregates only: no title, preview or
     message leaves this function. The same figure as `standing(view="stats")` / `emporia stats NAME`."""
     out: dict = {"available": False, "usd": 0.0, "tokens": 0, "sessions": 0, "by_kind": {},
+                 "included_sessions": 0, "included_tokens": 0, "included_providers": [],
                  "days": days, "source": "hermes"}
+    providers: set[str] = set()
     try:
         from hermes_state import SessionDB
     except ImportError:
@@ -405,24 +407,33 @@ def _model_cost(agent: str, days: int, now: float) -> dict:
                 head = rest.split(":", 1)[0]
                 kind = head if head in _CONVERSATION_KINDS else ("main" if not rest else "other")
                 cost = row.get("actual_cost_usd")
-                usd = float(cost if cost is not None else row.get("estimated_cost_usd") or 0)
+                tokens = int(row.get("input_tokens") or 0) + int(row.get("output_tokens") or 0)
+                # Hermes marks a session a subscription pays for `cost_status = 'included'`: counted apart,
+                # never as money (it counts against the subscription's limits instead).
+                included = str(row.get("cost_status") or "").strip().lower() == "included"
+                usd = 0.0 if included else float(cost if cost is not None else row.get("estimated_cost_usd") or 0)
                 k = by_kind.setdefault(kind, {"usd": 0.0, "sessions": 0})
                 k["usd"] += usd
                 k["sessions"] += 1
                 out["usd"] += usd
-                out["tokens"] += int(row.get("input_tokens") or 0) + int(row.get("output_tokens") or 0)
+                out["tokens"] += tokens
                 out["sessions"] += 1
+                if included:
+                    out["included_sessions"] += 1
+                    out["included_tokens"] += tokens
+                    providers.add(str(row.get("billing_provider") or "").strip() or "subscription")
             if len(rows) < _PAGE:
                 done = True
             offset += _PAGE
     except Exception:
-        out.update({"usd": 0.0, "tokens": 0, "sessions": 0,
-                    "reason": "Hermes's session records could not be read"})
+        out.update({"usd": 0.0, "tokens": 0, "sessions": 0, "included_sessions": 0, "included_tokens": 0,
+                    "included_providers": [], "reason": "Hermes's session records could not be read"})
         return out
     finally:
         db.close()
     out["by_kind"] = {k: {"usd": round(v["usd"], 4), "sessions": v["sessions"]} for k, v in by_kind.items()}
     out["usd"] = round(out["usd"], 4)
+    out["included_providers"] = sorted(providers)
     out["available"] = True
     return out
 

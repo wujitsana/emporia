@@ -58,35 +58,62 @@ def collect(get: Callable[[str], tuple[int, Any]], agent_id: str) -> dict[str, A
 def model_cost(profile: Path, agent_id: str, since: float) -> dict[str, Any]:
     """Model spend on Emporia since `since`, from the profile's Hermes `state.db` (read-only):
     sessions with source 'emporia', by conversation kind (the bridge's chat id is
-    `emporia:<agent>[:<kind>:<id>]`)."""
+    `emporia:<agent>[:<kind>:<id>]`).
+
+    `usd` is what was metered: Hermes marks a session `cost_status = 'included'` when a subscription pays for it
+    (its `billing_provider`, e.g. openai-codex), and an estimate for those would be money nobody is charged. They
+    are counted apart (`included_sessions`, `included_tokens`, `included_providers`): they count against the
+    subscription's limits, not against a bill. `sessions` and `tokens` stay the total."""
     db = profile / "state.db"
-    result: dict[str, Any] = {"usd": 0.0, "tokens": 0, "sessions": 0, "by_kind": {}, "available": False}
+    result: dict[str, Any] = {"usd": 0.0, "tokens": 0, "sessions": 0, "by_kind": {}, "available": False,
+                              "included_sessions": 0, "included_tokens": 0, "included_providers": []}
     if not db.exists():
         return result
     try:
         conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
+        have = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}   # older Hermes: no status or provider
+        status = "COALESCE(cost_status, '')" if "cost_status" in have else "''"
+        provider = "COALESCE(billing_provider, '')" if "billing_provider" in have else "''"
         rows = conn.execute(
-            "SELECT chat_id, COALESCE(actual_cost_usd, estimated_cost_usd, 0), "
-            "COALESCE(input_tokens,0) + COALESCE(output_tokens,0) FROM sessions "
-            "WHERE source = 'emporia' AND started_at >= ?", (since,)).fetchall()
+            f"SELECT chat_id, COALESCE(actual_cost_usd, estimated_cost_usd, 0), "
+            f"COALESCE(input_tokens,0) + COALESCE(output_tokens,0), {status}, {provider} FROM sessions "
+            f"WHERE source = 'emporia' AND started_at >= ?", (since,)).fetchall()
         conn.close()
     except sqlite3.Error:
         return result
     by_kind: dict[str, dict[str, float]] = defaultdict(lambda: {"usd": 0.0, "sessions": 0})
+    providers: set[str] = set()
     prefix = f"emporia:{agent_id}"
-    for chat_id, usd, tokens in rows:
+    for chat_id, usd, tokens, cost_status, billing in rows:
         rest = str(chat_id or "").removeprefix(prefix).lstrip(":")
         head = rest.split(":", 1)[0]
         kind = head if head in _CONVERSATION_KINDS else ("main" if not rest else "other")
-        by_kind[kind]["usd"] += float(usd or 0)
+        included = str(cost_status or "").strip().lower() == "included"
+        metered = 0.0 if included else float(usd or 0)
+        by_kind[kind]["usd"] += metered
         by_kind[kind]["sessions"] += 1
-        result["usd"] += float(usd or 0)
+        result["usd"] += metered
         result["tokens"] += int(tokens or 0)
         result["sessions"] += 1
+        if included:
+            result["included_sessions"] += 1
+            result["included_tokens"] += int(tokens or 0)
+            providers.add(str(billing or "").strip() or "subscription")
     result["by_kind"] = {k: {"usd": round(v["usd"], 4), "sessions": int(v["sessions"])} for k, v in by_kind.items()}
     result["usd"] = round(result["usd"], 4)
+    result["included_providers"] = sorted(providers)
     result["available"] = True
     return result
+
+
+def included_text(m: dict[str, Any]) -> str:
+    """"3 sessions included in your openai-codex subscription (count against its limits)", or "" when none."""
+    n = int(m.get("included_sessions") or 0)
+    if not n:
+        return ""
+    who = ", ".join(m.get("included_providers") or []) or "subscription"
+    own = "your subscription" if who == "subscription" else f"your {who} subscription"
+    return f"{n} session{'s' if n != 1 else ''} included in {own} (count against its limits)"
 
 
 # P284: the plugin's turn counter — in its plugin-data now, at the profile's root before.
@@ -205,7 +232,9 @@ def render(st: dict[str, Any]) -> str:
     m = st["model"]
     if m.get("available"):
         kinds = ", ".join(f"{k} ${v['usd']:.2f} ({v['sessions']})" for k, v in sorted(m["by_kind"].items()))
-        lines.append(f"  model    ${m['usd']:.2f} over {m['sessions']} conversations ({kinds or 'none'})")
+        lines.append(f"  model    ${m['usd']:.2f} metered over {m['sessions']} conversations ({kinds or 'none'})")
+        if included_text(m):
+            lines.append(f"           {included_text(m)}")
     else:
         lines.append("  model    unknown (no Hermes state.db for this profile here)")
     if st["net_cents"] is not None:

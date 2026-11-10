@@ -50,8 +50,21 @@ export interface ModelCost {
   tokens: number;
   sessions: number;
   by_kind: Record<string, { usd: number; sessions: number }>;
+  /** Sessions a subscription pays for (Hermes `cost_status` "included"): in no dollar figure, but they count against its limits. */
+  included_sessions?: number;
+  included_tokens?: number;
+  included_providers?: string[];
   days?: number;
   reason?: string;
+}
+
+/** "3 sessions included in your openai-codex subscription (count against its limits)", or "" when none. */
+export function includedText(m: ModelCost): string {
+  const n = m.included_sessions ?? 0;
+  if (n <= 0) return "";
+  const who = (m.included_providers ?? []).join(", ");
+  const own = who && who !== "subscription" ? `your ${who} subscription` : "your subscription";
+  return `${n} session${n === 1 ? "" : "s"} included in ${own} (count against its limits)`;
 }
 
 export interface HermesStats {

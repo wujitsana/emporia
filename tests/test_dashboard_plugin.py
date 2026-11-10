@@ -600,3 +600,38 @@ print(json.dumps(m._model_cost("alpha", 30, time.time() + 1)))
     m = json.loads(out.stdout.strip().splitlines()[-1])
     assert m["available"] and m["sessions"] == 2, m
     assert set(m["by_kind"]) == {"main", "dm"}
+
+
+def test_the_stats_route_counts_subscription_sessions_apart_from_metered_dollars(monkeypatch):
+    """Hermes marks a session a subscription pays for `cost_status = 'included'`: no dollars, but counted."""
+    import sys
+    import time
+    import types
+
+    now = time.time()
+    rows = [
+        {"chat_id": "emporia:alpha", "started_at": now - 60, "estimated_cost_usd": 0.10, "input_tokens": 100,
+         "output_tokens": 10, "cost_status": "estimated", "billing_provider": "openrouter"},
+        {"chat_id": "emporia:alpha:dm:beta", "started_at": now - 90, "estimated_cost_usd": 2.0, "input_tokens": 50,
+         "output_tokens": 5, "cost_status": "included", "billing_provider": "openai-codex"},
+        {"chat_id": "emporia:alpha:room:r", "started_at": now - 95, "estimated_cost_usd": 3.0, "input_tokens": 20,
+         "output_tokens": 2, "cost_status": "included", "billing_provider": "openai-codex"},
+    ]
+
+    class FakeDB:
+        def __init__(self, read_only=False):
+            assert read_only is True
+
+        def list_sessions_rich(self, **kw):
+            return rows[kw["offset"]:kw["offset"] + kw["limit"]]
+
+        def close(self):
+            pass
+
+    fake = types.ModuleType("hermes_state")
+    fake.SessionDB = FakeDB
+    monkeypatch.setitem(sys.modules, "hermes_state", fake)
+    m = _plugin_module()._model_cost("alpha", 30, now)
+    assert m["usd"] == 0.1 and m["sessions"] == 3 and m["tokens"] == 187
+    assert (m["included_sessions"], m["included_tokens"], m["included_providers"]) == (2, 77, ["openai-codex"])
+    assert m["by_kind"]["dm"] == {"usd": 0.0, "sessions": 1}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Health } from "./api";
-import { agentStats, allTestMoney, earningSource, pct, railNetwork, type StatsInput } from "./statsModel";
+import { agentStats, allTestMoney, earningSource, includedText, pct, railNetwork, type StatsInput } from "./statsModel";
 
 const NOW = Date.parse("2026-11-06T12:00:00Z");
 const ago = (days: number) => new Date(NOW - days * 86_400_000).toISOString();
@@ -82,6 +82,15 @@ describe("the Stats view's figures", () => {
     expect(st.modelMicros).toBe(430_000);
     expect(st.net).toBe(st.earned - st.spent - 430_000);
     expect(agentStats(input(), 30, { ...model, available: false }, NOW).net).toBeNull();
+  });
+
+  it("say what a subscription covers apart from what was metered", () => {
+    const m = { available: true, usd: 0.43, tokens: 1, sessions: 5, by_kind: {} };
+    expect(includedText(m)).toBe("");
+    expect(includedText({ ...m, included_sessions: 1, included_providers: ["openai-codex"] }))
+      .toBe("1 session included in your openai-codex subscription (count against its limits)");
+    expect(includedText({ ...m, included_sessions: 3, included_providers: [] }))
+      .toBe("3 sessions included in your subscription (count against its limits)");
   });
 
   it("rates from the record: win rate, and settle rates of what was not cancelled", () => {
