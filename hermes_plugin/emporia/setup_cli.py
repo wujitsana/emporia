@@ -32,6 +32,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -404,12 +405,17 @@ def _install_packages(rt: Path, sha: str, uv: str | None, first: bool) -> None:
 
 # ── The commands ─────────────────────────────────────────────────────────────
 
+def _has_terminal() -> bool:
+    """Whether a person is at a terminal that can answer a question."""
+    return sys.stdin is not None and sys.stdin.isatty()
+
+
 def _emporia(rt: Path, *args: str) -> int:
     """Run the runtime's `emporia` CLI for this profile, attached to this terminal. Without
     one (cron, the gateway, a pipe) its stdin is /dev/null: a question it asks ends at once
     instead of waiting on a stdin nobody writes to (catalog rule 12)."""
     env = {**_clean_env(), "HERMES_HOME": str(hermes_home())}
-    stdin = None if sys.stdin is not None and sys.stdin.isatty() else subprocess.DEVNULL
+    stdin = None if _has_terminal() else subprocess.DEVNULL
     return subprocess.call([str(python_of(rt)), "-m", "emporia.cli", *args], env=env, stdin=stdin)
 
 
@@ -501,16 +507,22 @@ def _install_plugin_into(name: str, plugin_source: str = "emporia") -> bool:
     if plugin_source != "emporia":
         return False
     # The catalog does not list Emporia yet: the person installed this plugin from GitHub, so the new profile
-    # gets the same pinned commit from the same place (--force: Hermes's scan blocks any unreviewed source,
-    # and they already accepted that once to get here).
+    # gets the same pinned commit from the same place. Hermes shows its scan findings for a source the
+    # catalog does not list and asks; that question is the person's (catalog rule 12), so it is never
+    # forced past and never run without a terminal for them to answer on.
     src = source()
     sha = src.get("sha", "")
     if not sha:
         return False
     url = f"{src.get('repo', '')}#hermes_plugin/emporia"
-    print(f"  The catalog does not list Emporia yet; installing the same commit from GitHub ({url}, {sha[:12]}).")
-    r = subprocess.run([hermes, "-p", name, "plugins", "install", url, "--ref", sha, "--enable", "--force"],
-                       stdin=subprocess.DEVNULL, timeout=_TIMEOUT_S, env=_clean_env())
+    cmd = [hermes, "-p", name, "plugins", "install", url, "--ref", sha, "--enable"]
+    if not _has_terminal():
+        print(f"  The catalog does not list Emporia yet, and Hermes asks you to accept its scan findings for "
+              f"a source it does not list. Run this in a terminal:\n\n    {shlex.join(cmd)}\n")
+        return False
+    print(f"  The catalog does not list Emporia yet; installing the same commit from GitHub ({url}, {sha[:12]}). "
+          "Hermes shows its scan findings and asks you.")
+    r = subprocess.run(cmd, timeout=_TIMEOUT_S, env=_clean_env())
     return r.returncode == 0
 
 
