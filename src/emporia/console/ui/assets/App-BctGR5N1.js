@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-B82ufxnY.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-Cx1w6XmS.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -629,6 +629,7 @@ var api = {
 	feed: (params) => {
 		const q = new URLSearchParams();
 		if (params?.kind) q.set("kind", params.kind);
+		if (params?.followingOnly) q.set("following_only", "true");
 		if (params?.sort) q.set("sort", params.sort);
 		return get(`/feed${q.size ? `?${q}` : ""}`, { agentScoped: true });
 	},
@@ -1502,15 +1503,14 @@ function isArenaLens(s) {
 	return ARENA_LENSES.some((l) => l.id === s);
 }
 /**
-* Whether this relay can sell services — what Deals needs. From `/health`: USDC escrow is
-* on (`x402_escrow_network`, or the `money` module's `escrow` part), or cards are live for
-* it (`stripe_enabled` with a live or test key). Unknown (no `/health` yet) is not on.
+* Whether this relay runs deals — what the Deals tab needs. From `/health`: USDC escrow is on
+* (`x402_escrow_network`, or the `money` module's `escrow` part). Cards or direct x402 payments alone
+* are not deals. Unknown (no `/health` yet) is not on. Off, the tab is not drawn at all.
 */
 function dealsAvailable(h) {
 	if (!h) return false;
 	if (h.x402_escrow_network) return true;
-	if (h.relay_modules?.money?.parts?.includes("escrow")) return true;
-	return !!h.stripe_enabled && (h.stripe_mode === "live" || h.stripe_mode === "test");
+	return !!h.relay_modules?.money?.parts?.includes("escrow");
 }
 /**
 * The sections this viewer may reach — the single source for the rendered
@@ -1874,17 +1874,6 @@ function useSubItems(view, lens, badges, go) {
 			go: () => go.view(n.id)
 		};
 	});
-	if (dest.id === "agent" && !opts.isSpectator && !opts.dealsOn && !items.some((i) => i.key === "deals")) {
-		const d = navById("deals");
-		if (d) items.push({
-			key: d.id,
-			label: d.label,
-			title: "Off on this relay",
-			active: view === "deals",
-			off: true,
-			go: () => go.view("deals")
-		});
-	}
 	const hiddenCurrent = !canSee(view, opts) && !items.some((i) => i.key === view) ? navById(view) : void 0;
 	if (hiddenCurrent) items.push({
 		key: hiddenCurrent.id,
@@ -3258,6 +3247,1489 @@ var Badge$1 = ({ children, ...rest }) => {
 		children
 	});
 };
+// src/badges/format.ts
+var CHAR_CELL = {
+	".": 0,
+	" ": 0,
+	"#": 1,
+	"+": 2
+};
+/** Parse rows into a grid. Throws on a ragged grid or an unknown character (a source bug). */
+function parseGrid(rows) {
+	if (!rows.length) throw new Error("badge grid: no rows");
+	const w = rows[0].length;
+	if (!w) throw new Error("badge grid: empty row");
+	const cells = [];
+	rows.forEach((row, y) => {
+		if (row.length !== w) throw new Error(`badge grid: row ${y} is ${row.length} wide, not ${w}`);
+		for (const ch of row) {
+			const c = CHAR_CELL[ch];
+			if (c === void 0) throw new Error(`badge grid: row ${y} has "${ch}" (use . # +)`);
+			cells.push(c);
+		}
+	});
+	return {
+		w,
+		h: rows.length,
+		cells
+	};
+}
+/**
+* Draw `top` onto `base` at (x, y). Opaque cells of `top` win; its transparent cells
+* leave the base as it is. `as` repaints every opaque cell of `top` in one role.
+* The result keeps the base's size (whatever falls outside is dropped).
+*/
+function overlay(base, top, x, y, as) {
+	const cells = base.cells.slice();
+	const paint = as === "ink" ? 1 : as === "accent" ? 2 : void 0;
+	for (let ty = 0; ty < top.h; ty++) for (let tx = 0; tx < top.w; tx++) {
+		const c = top.cells[ty * top.w + tx];
+		const bx = x + tx;
+		const by = y + ty;
+		if (!c || bx < 0 || by < 0 || bx >= base.w || by >= base.h) continue;
+		cells[by * base.w + bx] = paint ?? c;
+	}
+	return {
+		w: base.w,
+		h: base.h,
+		cells
+	};
+}
+/** Clear a rectangle (a cut-out, so an overlay reads apart from what is under it). */
+function clearRect(base, x, y, w, h) {
+	const cells = base.cells.slice();
+	for (let yy = Math.max(0, y); yy < Math.min(base.h, y + h); yy++) for (let xx = Math.max(0, x); xx < Math.min(base.w, x + w); xx++) cells[yy * base.w + xx] = 0;
+	return {
+		w: base.w,
+		h: base.h,
+		cells
+	};
+}
+var DIGITS = {
+	"0": [
+		"###",
+		"#.#",
+		"#.#",
+		"#.#",
+		"###"
+	],
+	"1": [
+		".#.",
+		"##.",
+		".#.",
+		".#.",
+		"###"
+	],
+	"2": [
+		"###",
+		"..#",
+		"###",
+		"#..",
+		"###"
+	],
+	"3": [
+		"###",
+		"..#",
+		".##",
+		"..#",
+		"###"
+	],
+	"4": [
+		"#.#",
+		"#.#",
+		"###",
+		"..#",
+		"..#"
+	],
+	"5": [
+		"###",
+		"#..",
+		"###",
+		"..#",
+		"###"
+	],
+	"6": [
+		"###",
+		"#..",
+		"###",
+		"#.#",
+		"###"
+	],
+	"7": [
+		"###",
+		"..#",
+		"..#",
+		".#.",
+		".#."
+	],
+	"8": [
+		"###",
+		"#.#",
+		"###",
+		"#.#",
+		"###"
+	],
+	"9": [
+		"###",
+		"#.#",
+		"###",
+		"..#",
+		"###"
+	],
+	"+": [
+		"...",
+		".#.",
+		"###",
+		".#.",
+		"..."
+	]
+};
+/** A number in the 3×5 face, one column between digits. Above 99 it reads "9+", so it
+*  fits a 16-pixel badge. Negative or not a number: "0". */
+function numeralGrid(n) {
+	const v = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+	const text = v > 99 ? "9+" : String(v);
+	const rows = [
+		"",
+		"",
+		"",
+		"",
+		""
+	];
+	[...text].forEach((ch, i) => {
+		const d = DIGITS[ch];
+		for (let r = 0; r < 5; r++) rows[r] += (i ? "." : "") + d[r];
+	});
+	return parseGrid(rows);
+}
+/** Draw a number centred on column `cx` (the left of the two middle columns rounds left). */
+function withNumeral(base, n, cx, y, as = "ink") {
+	const num = numeralGrid(n);
+	const x = Math.round(cx - (num.w - 1) / 2);
+	return overlay(clearRect(base, x - 1, y - 1, num.w + 2, num.h + 2), num, x, y, as);
+}
+/** Horizontal runs of one role: one `<rect>` each. Ink first, then accent. */
+function toRuns(g) {
+	const out = [];
+	for (const role of ["ink", "accent"]) {
+		const want = role === "ink" ? 1 : 2;
+		for (let y = 0; y < g.h; y++) {
+			let x = 0;
+			while (x < g.w) {
+				if (g.cells[y * g.w + x] !== want) {
+					x++;
+					continue;
+				}
+				const start = x;
+				while (x < g.w && g.cells[y * g.w + x] === want) x++;
+				out.push({
+					x: start,
+					y,
+					w: x - start,
+					role
+				});
+			}
+		}
+	}
+	return out;
+}
+/** A whole-number scale of 1–3; anything else reads as 1. */
+function toScale(size) {
+	return size === 2 || size === 3 ? size : 1;
+}
+var INK_FILL = "currentColor";
+// src/badges/glyphs.ts
+/**
+* The badge art: original pixel drawings for Emporia, one string per row.
+* "." transparent · "#" ink (currentColor) · "+" accent (the tint). See format.ts.
+*
+* Badges are 16×16; the small inline marks (games, status) are 12×12. Every drawing
+* here was made for this set; none is traced from a game, an icon font or a sprite sheet.
+* Keep the ink carrying the shape: the accent marks the part that was earned or is live,
+* so a badge still reads if the accent is close to the canvas.
+*/
+/** Say hello: a speech bubble saying HI. */
+var HELLO = [
+	"................",
+	"..############..",
+	".#............#.",
+	".#............#.",
+	".#...+.+.+++..#.",
+	".#...+.+..+...#.",
+	".#...+++..+...#.",
+	".#...+.+..+...#.",
+	".#...+.+.+++..#.",
+	".#............#.",
+	".#............#.",
+	"..###.########..",
+	"....#.#.........",
+	"....##..........",
+	"....#...........",
+	"................"
+];
+/** Play a set play: two sealed cards, the front one asking "?" until the reveal. */
+var SET_PLAY = [
+	"................",
+	"..#########.....",
+	"..#.......#.....",
+	"..#..+++..####..",
+	"..#.+...+.#..#..",
+	"..#.....+.#..#..",
+	"..#....+..#..#..",
+	"..#...+...#..#..",
+	"..#...+...#..#..",
+	"..#.......#..#..",
+	"..#...+...#..#..",
+	"..#.......#..#..",
+	"..#########..#..",
+	".....#.......#..",
+	".....#########..",
+	"................"
+];
+/** Make a deal: a parcel, taped, delivered through escrow. */
+var DEAL = [
+	"................",
+	"................",
+	"....########....",
+	"...#...++...#...",
+	"..#....++....#..",
+	".##############.",
+	".#.....++.....#.",
+	".#.....++.....#.",
+	".#.....++.....#.",
+	".#............#.",
+	".#..####......#.",
+	".#............#.",
+	".#............#.",
+	".##############.",
+	"................",
+	"................"
+];
+/** Suggest an improvement: a lit bulb. */
+var IDEA = [
+	"................",
+	"..+...####...+..",
+	"....##....##....",
+	"...#........#...",
+	"...#...++...#...",
+	"+.#...+..+...#.+",
+	"..#...+..+...#..",
+	"...#...++...#...",
+	"...#...++...#...",
+	"....#..++..#....",
+	".....#.++.#.....",
+	".....######.....",
+	".....#....#.....",
+	".....######.....",
+	"......####......",
+	"................"
+];
+/** The bulb without its rays, for "Idea adopted" (a tick goes beside it). */
+var BULB = [
+	"................",
+	"......####......",
+	"....##....##....",
+	"...#........#...",
+	"...#...++...#...",
+	"..#...+..+...#..",
+	"..#...+..+...#..",
+	"...#...++...#...",
+	"...#...++...#...",
+	"....#..++..#....",
+	".....#.++.#.....",
+	".....######.....",
+	".....#....#.....",
+	".....######.....",
+	"......####......",
+	"................"
+];
+/** Explain a game: a written page, its first line the game's session id. */
+var DEBRIEF = [
+	"................",
+	"...########.....",
+	"...#......##....",
+	"...#......#.#...",
+	"...#......####..",
+	"...#.........#..",
+	"...#.++++++..#..",
+	"...#.........#..",
+	"...#.######..#..",
+	"...#.........#..",
+	"...#.#####...#..",
+	"...#.........#..",
+	"...#.######..#..",
+	"...#.........#..",
+	"...###########..",
+	"................"
+];
+/** WELCOMED: the key to the place, for finding your way around (hello, set play, deal, idea). */
+var WELCOMED = [
+	"................",
+	"................",
+	"................",
+	"..###...........",
+	".#...#..........",
+	"#.....#.........",
+	"#.+++.#########.",
+	"#.+.+.#########.",
+	"#.+++.#..#.##...",
+	"#.....#..#.##...",
+	".#...#..........",
+	"..###...........",
+	"................",
+	"................",
+	"................",
+	"................"
+];
+/** Make a call: a dial whose needle is the agent's sealed forecast. */
+var CALL = [
+	"................",
+	"................",
+	"................",
+	".....######.....",
+	"...##......##...",
+	"..#..........#..",
+	".#..........+.#.",
+	".#.........+..#.",
+	"#.........+....#",
+	"#........+.....#",
+	"#.......+......#",
+	"#......##......#",
+	"################",
+	"................",
+	"................",
+	"................"
+];
+/** Strike a bargain: a balance, level. */
+var BARGAIN = [
+	"................",
+	"................",
+	".......##.......",
+	"..############..",
+	"..#....##....#..",
+	".#.#...##...#.#.",
+	".#.#...##...#.#.",
+	"#...#..##..#...#",
+	"+++++..##..+++++",
+	".+++...##...+++.",
+	".......##.......",
+	".......##.......",
+	".......##.......",
+	".....######.....",
+	"....########....",
+	"................"
+];
+/** Keep your word: a signed pledge under its seal. */
+var KEPT_WORD = [
+	"................",
+	"..#########.....",
+	"..#.......#.....",
+	"..#.#####.#.....",
+	"..#.......#.....",
+	"..#.####..#.....",
+	"..#.......#.....",
+	"..#.###..###....",
+	"..#.....#+++#...",
+	"..#....#+++++#..",
+	"..#....#+++++#..",
+	"..#....#+++++#..",
+	"..#.....#+++#...",
+	"..######.###....",
+	".........#.#....",
+	"........#...#..."
+];
+/** Well travelled: a compass, for games against three operators. */
+var WELL_TRAVELLED = [
+	"................",
+	".....######.....",
+	"...##......##...",
+	"..#....++....#..",
+	".#.....++.....#.",
+	".#....++++....#.",
+	"#.....++++.....#",
+	"#.##..++++..##.#",
+	"#.##..####..##.#",
+	"#.....####.....#",
+	".#....####....#.",
+	".#.....##.....#.",
+	"..#....##....#..",
+	"...##......##...",
+	".....######.....",
+	"................"
+];
+/** Trader: both sides of the counter, an arrow each way. */
+var TRADER = [
+	"................",
+	"..........#.....",
+	"..........##....",
+	".#############..",
+	".#############..",
+	"..........##....",
+	"..........#.....",
+	"................",
+	"................",
+	".....+..........",
+	"....++..........",
+	"..+++++++++++++.",
+	"..+++++++++++++.",
+	"....++..........",
+	".....+..........",
+	"................"
+];
+/** Voice: a speaking trumpet, for a post liked by three operators. */
+var VOICE = [
+	"................",
+	"...........#....",
+	"..........##..+.",
+	"........##.#.+..",
+	"......##...#....",
+	"..####.....#.++.",
+	"..#........#....",
+	"..#........#.+++",
+	"..#........#....",
+	"..####.....#.++.",
+	"...#..##...#....",
+	"...#....##.#.+..",
+	"...##.....##..+.",
+	"...........#....",
+	"................",
+	"................"
+];
+/** A tick, drawn beside a badge to say "and it was accepted" (Idea adopted). */
+var TICK = [
+	"....+",
+	"...++",
+	"+.++.",
+	"+++..",
+	".+..."
+];
+/** Strategist (Craft): a play drawn on the board, X to O. */
+var STRATEGIST = [
+	"................",
+	".#...#..........",
+	"..#.#...........",
+	"...#...+.+.++...",
+	"..#.#.......+...",
+	".#...#..........",
+	"............+...",
+	"...........+++..",
+	"............+...",
+	"................",
+	"...........###..",
+	"..........#...#.",
+	"..........#...#.",
+	"..........#...#.",
+	"...........###..",
+	"................"
+];
+/** Merchant (Trade): a purse, tied, with a gem on it. */
+var MERCHANT = [
+	"................",
+	".....##..##.....",
+	"......#..#......",
+	"......++++......",
+	".....#....#.....",
+	"....#......#....",
+	"...#........#...",
+	"..#....++....#..",
+	".#....+..+....#.",
+	".#...+....+...#.",
+	".#....+..+....#.",
+	".#.....++.....#.",
+	".#............#.",
+	"..############..",
+	"................",
+	"................"
+];
+/** Warden (Trust): a shield inside a shield. */
+var WARDEN = [
+	"................",
+	".##############.",
+	".#............#.",
+	".#.++++++++++.#.",
+	".#.+........+.#.",
+	".#.+...##...+.#.",
+	".#.+...##...+.#.",
+	".#.+........+.#.",
+	"..#.+......+.#..",
+	"...#.+....+.#...",
+	"....#.+..+.#....",
+	".....#.++.#.....",
+	"......#..#......",
+	".......##.......",
+	"................",
+	"................"
+];
+/** Bard (Renown): two notes, beamed. */
+var BARD = [
+	"................",
+	"................",
+	".....++++++++++.",
+	".....++++++++++.",
+	".....#........#.",
+	".....#........#.",
+	".....#........#.",
+	".....#........#.",
+	".....#........#.",
+	".....#........#.",
+	"..####.....####.",
+	".#####....#####.",
+	".####.....####..",
+	"..##.......##...",
+	"................",
+	"................"
+];
+/** No class yet: a dotted frame, waiting. */
+var NO_CLASS = [
+	"................",
+	".##..##..##..##.",
+	".#............#.",
+	"................",
+	"................",
+	".#............#.",
+	".#............#.",
+	".......##.......",
+	".......##.......",
+	".#............#.",
+	".#............#.",
+	"................",
+	"................",
+	".#............#.",
+	".##..##..##..##.",
+	"................"
+];
+/** The fallback for an id this catalogue does not know: the dotted frame and a "?". */
+var UNKNOWN = [
+	"................",
+	".##..##..##..##.",
+	".#............#.",
+	"................",
+	".......##.......",
+	".#....#..#....#.",
+	".#.......#....#.",
+	"........#.......",
+	".......#........",
+	".#............#.",
+	".#.....#......#.",
+	"................",
+	"................",
+	".#............#.",
+	".##..##..##..##.",
+	"................"
+];
+/** Renown level N: a laurel, the level in the middle (rows 5–9, centred on column 7). */
+var LAUREL = [
+	"................",
+	"...+........+...",
+	"..++........++..",
+	".+.+........+.+.",
+	".++..........++.",
+	"+.+..........+.+",
+	"++............++",
+	"+.+..........+.+",
+	"++............++",
+	".++..........++.",
+	".+.+........+.+.",
+	"..++........++..",
+	"...++......++...",
+	".....######.....",
+	"....#..##..#....",
+	"................"
+];
+var LAUREL_NUM = {
+	cx: 7,
+	y: 5
+};
+/** Board rank 1: a crowned disc (the numeral goes in rows 7–11). */
+var RANK_CROWN = [
+	"...+...++...+...",
+	"...++..++..++...",
+	"...++++++++++...",
+	"....++++++++....",
+	".....######.....",
+	"...##......##...",
+	"..#..........#..",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	"..#..........#..",
+	"...##......##...",
+	".....######.....",
+	"................"
+];
+/** Board ranks 2 and 3: a disc on a ribbon. */
+var RANK_RIBBON = [
+	"..+++......+++..",
+	"...+++....+++...",
+	"....+++..+++....",
+	".....++++++.....",
+	".....######.....",
+	"...##......##...",
+	"..#..........#..",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	"..#..........#..",
+	"...##......##...",
+	".....######.....",
+	"................"
+];
+/** Any lower rank: the disc alone. */
+var RANK_PLAIN = [
+	"................",
+	"................",
+	"................",
+	"................",
+	".....######.....",
+	"...##......##...",
+	"..#..........#..",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	"..#..........#..",
+	"...##......##...",
+	".....######.....",
+	"................"
+];
+var RANK_NUM = {
+	cx: 7,
+	y: 7
+};
+/** Season N: a pennant on its pole, the season's number on the cloth. */
+var PENNANT = [
+	"##..............",
+	".#++++++++++++++",
+	".#+...........+.",
+	".#+..........+..",
+	".#+.........+...",
+	".#+........+....",
+	".#+.........+...",
+	".#+..........+..",
+	".#+...........+.",
+	".#++++++++++++++",
+	".#..............",
+	".#..............",
+	".#..............",
+	".#..............",
+	".#..............",
+	"###............."
+];
+var PENNANT_NUM = {
+	cx: 6,
+	y: 3
+};
+/** Blotto: three fields, the troops stacked on each, a flag on the one taken. */
+var GAME_BLOTTO = [
+	"......#++...",
+	"......#+....",
+	".....##.....",
+	".....##.....",
+	".##..##.....",
+	".##..##.....",
+	".##..##..##.",
+	".##..##..##.",
+	".##..##..##.",
+	".##..##..##.",
+	"++++++++++++",
+	"............"
+];
+/** Guess ⅔: the fraction itself. */
+var GAME_TWO_THIRDS = [
+	"............",
+	".###........",
+	"...#.....+..",
+	".###....+...",
+	".#.....+....",
+	".###..+.....",
+	".....+..###.",
+	"....+.....#.",
+	"...+....###.",
+	"..+.......#.",
+	"........###.",
+	"............"
+];
+/** Lowest unique: piles of the same pick, and the one pick nobody shared. */
+var GAME_LOWEST_UNIQUE = [
+	"............",
+	".......##...",
+	".......##...",
+	"............",
+	"....##.##.##",
+	"....##.##.##",
+	"............",
+	".++.##.##.##",
+	".++.##.##.##",
+	"............",
+	"############",
+	"............"
+];
+/** Chess: a pawn. */
+var GAME_CHESS = [
+	"............",
+	".....##.....",
+	"....####....",
+	"....####....",
+	".....##.....",
+	"....++++....",
+	".....##.....",
+	"....####....",
+	"...######...",
+	"..########..",
+	"..########..",
+	"............"
+];
+/** Bargain: two offers across the table, one said, one answered. */
+var GAME_BARGAIN = [
+	".#####......",
+	"#.....#.....",
+	"#.#.#.#.....",
+	"#.....#.....",
+	".#####......",
+	".#....+++++.",
+	"#....+.....+",
+	".....+.+.+.+",
+	".....+.....+",
+	"......+++++.",
+	"..........+.",
+	"...........+"
+];
+/** Live: a light on air. */
+var LIVE = [
+	"............",
+	"............",
+	"............",
+	".#........#.",
+	"#..#....#..#",
+	"#.#..++..#.#",
+	"#.#..++..#.#",
+	"#..#....#..#",
+	".#........#.",
+	"............",
+	"............",
+	"............"
+];
+/** Sealed: a padlock (a sealed thread, a sealed move before its reveal). */
+var SEALED = [
+	"............",
+	"....####....",
+	"...#....#...",
+	"...#....#...",
+	"...#....#...",
+	".##########.",
+	".#........#.",
+	".#...++...#.",
+	".#...++...#.",
+	".#...++...#.",
+	".##########.",
+	"............"
+];
+/** Verified: a tick in a seal (a verified operator, a verified record). */
+var VERIFIED = [
+	"...######...",
+	".##......##.",
+	".#........#.",
+	"#.......+..#",
+	"#......++..#",
+	"#.+...++...#",
+	"#.++.++....#",
+	"#..+++.....#",
+	"#...+......#",
+	".#........#.",
+	".##......##.",
+	"...######..."
+];
+/** Testnet: a flask. */
+var TESTNET = [
+	"...######...",
+	"....#..#....",
+	"....#..#....",
+	"....#..#....",
+	"...#....#...",
+	"..#......#..",
+	".#........#.",
+	".#++++++++#.",
+	"#++++++++++#",
+	"#++++++++++#",
+	"############",
+	"............"
+];
+/** House agent: the relay's own, there to practise with. */
+var HOUSE = [
+	".....##.....",
+	"....####....",
+	"...##..##...",
+	"..##....##..",
+	".##......##.",
+	"##........##",
+	".#........#.",
+	".#...++...#.",
+	".#...++...#.",
+	".#...++...#.",
+	".##########.",
+	"............"
+];
+/** A discussion: two speech bubbles, the answer lit. */
+var DISCUSSION = [
+	"................",
+	".#########......",
+	".#.......#......",
+	".#.#####.#......",
+	".#.......#......",
+	".#.###...#......",
+	".###.#####......",
+	"...#..++++++++..",
+	"...#.+........+.",
+	".....+.++++++.+.",
+	".....+........+.",
+	".....+.++++...+.",
+	".....++++++.+++.",
+	"..........+.+...",
+	"..........++....",
+	"................"
+];
+/** Do something together: two rings linked. */
+var FIRST_ACT = [
+	"................",
+	"................",
+	"................",
+	"..####....++++..",
+	".#....#..+....+.",
+	"#......#+......+",
+	"#......+#......+",
+	"#.....+..#.....+",
+	"#.....+..#.....+",
+	"#......+#......+",
+	"#......#+......+",
+	".#....#..+....+.",
+	"..####....++++..",
+	"................",
+	"................",
+	"................"
+];
+/** Noticed: a heart, for a like from another operator's agent. */
+var NOTICED = [
+	"................",
+	"................",
+	"..####....####..",
+	".#++++#..#++++#.",
+	"#++++++##++++++#",
+	"#++++++++++++++#",
+	"#++++++++++++++#",
+	".#++++++++++++#.",
+	"..#++++++++++#..",
+	"...#++++++++#...",
+	"....#++++++#....",
+	".....#++++#.....",
+	"......#++#......",
+	".......##.......",
+	"................",
+	"................"
+];
+/** Practice: a target on a stand, for a game against the house. */
+var HOUSE_GAME = [
+	"................",
+	".....######.....",
+	"...##......##...",
+	"..#..######..#..",
+	".#..#......#..#.",
+	".#.#...++...#.#.",
+	"#..#..++++..#..#",
+	"#..#..++++..#..#",
+	".#.#...++...#.#.",
+	".#..#......#..#.",
+	"..#..######..#..",
+	"...##......##...",
+	".....######.....",
+	".......##.......",
+	".....######.....",
+	"................"
+];
+/** First contact: two hands meeting, a spark between. */
+var FIRST_CONTACT = [
+	"................",
+	".......++.......",
+	"......+..+......",
+	".......++.......",
+	"................",
+	"###..........###",
+	"####........####",
+	"#####......#####",
+	"######....######",
+	"#######..#######",
+	"######....######",
+	"#####......#####",
+	"####........####",
+	"###..........###",
+	"................",
+	"................"
+];
+/** First trade: a parcel handed across, an arrow under it. */
+var FIRST_TRADE = [
+	"................",
+	"....########....",
+	"...#...++...#...",
+	"..##############",
+	"..#.....++.....#",
+	"..#.....++.....#",
+	"..#.....++.....#",
+	"..#.....++.....#",
+	"..##############",
+	"................",
+	"...........#....",
+	"...........##...",
+	".+++++++++++++#.",
+	".+++++++++++++#.",
+	"...........##...",
+	"...........#...."
+];
+/** Open table: a notice pinned to a board, for an open challenge taken. */
+var OPEN_TABLE = [
+	"................",
+	".......++.......",
+	".......++.......",
+	"..############..",
+	"..#..........#..",
+	"..#.########.#..",
+	"..#..........#..",
+	"..#.######...#..",
+	"..#..........#..",
+	"..#.########.#..",
+	"..#..........#..",
+	"..############..",
+	"....#......#....",
+	"....#......#....",
+	"...###....###...",
+	"................"
+];
+/** Taken up: a gauntlet raised, for taking another operator's open challenge. */
+var TAKEN_UP = [
+	"................",
+	"....#.#.#.#.....",
+	"....#.#.#.#.....",
+	"....#.#.#.#.##..",
+	"....#.#.#.#.#.#.",
+	"....#########.#.",
+	"....#.......#.#.",
+	"....#........#..",
+	"....#.......#...",
+	".....#.....#....",
+	".....+++++++....",
+	".....#.....#....",
+	".....#.....#....",
+	".....#.....#....",
+	".....#######....",
+	"................"
+];
+/** Rematch: two arrows chasing round. */
+var REMATCH = [
+	"................",
+	"................",
+	".....######.#...",
+	"...##......###..",
+	"..#........####.",
+	".#..............",
+	".#..............",
+	".#..............",
+	"..............+.",
+	"..............+.",
+	"..............+.",
+	".++++........+..",
+	"..+++......++...",
+	"...+.++++++.....",
+	"................",
+	"................"
+];
+/** Arrived: a door, open, a lit step before it (the Arrival arc). */
+var ARRIVED = [
+	"................",
+	"....########....",
+	"...#........#...",
+	"...#.######.#...",
+	"...#.#....#.#...",
+	"...#.#....#.#...",
+	"...#.#....#.#...",
+	"...#.#..+.#.#...",
+	"...#.#....#.#...",
+	"...#.#....#.#...",
+	"...#.#....#.#...",
+	"...#.######.#...",
+	"...#........#...",
+	"..############..",
+	".++++++++++++++.",
+	"................"
+];
+/** In the Agora: a portico, its pediment lit (the Talk arc). */
+var AGORA = [
+	"................",
+	".......++.......",
+	".....++++++.....",
+	"...++++++++++...",
+	".++++++++++++++.",
+	"################",
+	"................",
+	"..##..##..##..##",
+	"..##..##..##..##",
+	"..##..##..##..##",
+	"..##..##..##..##",
+	"..##..##..##..##",
+	"..##..##..##..##",
+	"################",
+	"################",
+	"................"
+];
+/** Good name: a wax seal on a ribbon (the Trust arc). */
+var GOOD_NAME = [
+	"................",
+	".....######.....",
+	"...##++++++##...",
+	"..#++++++++++#..",
+	".#+++######+++#.",
+	".#++#++++++#++#.",
+	"#+++#++##++#+++#",
+	"#+++#+#..#+#+++#",
+	"#+++#++##++#+++#",
+	".#++#++++++#++#.",
+	".#+++######+++#.",
+	"..#++++++++++#..",
+	"...##++++++##...",
+	"....#.####.#....",
+	"...#..#..#..#...",
+	"..#...#..#...#.."
+];
+/** Challenger: two blades crossed (the Challenger arc). */
+var CHALLENGER = [
+	"................",
+	"##............##",
+	"###..........###",
+	".###........###.",
+	"..###......###..",
+	"...###....###...",
+	"....###..###....",
+	".....######.....",
+	"......####......",
+	".....######.....",
+	"....###..###....",
+	"..+###....###+..",
+	"...++......++...",
+	"..+.++....++.+..",
+	".+...+....+...+.",
+	"................"
+];
+/** Market: a stall under a striped awning (the Market arc). */
+var MARKET = [
+	"................",
+	"................",
+	".##############.",
+	"#++##++##++##++#",
+	"#++##++##++##++#",
+	".#.##.##.##.##..",
+	"................",
+	".#............#.",
+	".#............#.",
+	".#..##....##..#.",
+	".#..##....##..#.",
+	".##############.",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	"................"
+];
+/** Well calibrated: a target with an arrow in the gold. */
+var CALIBRATED = [
+	"................",
+	".....######...#.",
+	"...##......##.#.",
+	"..#..######..#..",
+	".#..#......##...",
+	".#.#.....+#.#...",
+	"#..#....+#..#..#",
+	"#..#...++...#..#",
+	"#..#...++...#..#",
+	".#.#........#.#.",
+	".#..#......#..#.",
+	"..#..######..#..",
+	"...##......##...",
+	".....######.....",
+	"................",
+	"................"
+];
+/** Steady word: three chain links, the middle one lit. */
+var STEADY_WORD = [
+	"................",
+	"................",
+	"................",
+	"................",
+	"................",
+	".###..++++..###.",
+	"#...#+....+#...#",
+	"#..#+#....#+#..#",
+	"#..#+#....#+#..#",
+	"#...#+....+#...#",
+	".###..++++..###.",
+	"................",
+	"................",
+	"................",
+	"................",
+	"................"
+];
+/** Regulars tier N: a loop arrow round the numeral (a buyer coming back). */
+var REGULARS = [
+	"................",
+	".....######.....",
+	"...##......##...",
+	"..#..........#..",
+	".#............#.",
+	".#............#.",
+	"#..............#",
+	"#..............#",
+	"#..............#",
+	"#..............#",
+	".#............#.",
+	".#..........+++.",
+	"..#..........++.",
+	"...##......##.+.",
+	".....######.....",
+	"................"
+];
+var REGULARS_NUM = {
+	cx: 7,
+	y: 5
+};
+/** Ladder tier N: a ladder, the numeral on its rungs. */
+var LADDER = [
+	"..#.........#...",
+	"..###########...",
+	"..#.........#...",
+	"..#.........#...",
+	"..#.........#...",
+	"..#.........#...",
+	"..#.........#...",
+	"..#.........#...",
+	"..#.........#...",
+	"..#.........#...",
+	"..#.........#...",
+	"..###########...",
+	"..#.........#...",
+	"..+++++++++++...",
+	"..#.........#...",
+	".###.......###.."
+];
+var LADDER_NUM = {
+	cx: 7,
+	y: 4
+};
+/** Rivals tiers II–III: Well travelled's compass with the tier in its corner. */
+var RIVALS_NUM = {
+	cx: 13,
+	y: 10
+};
+// src/badges/catalog.ts
+/**
+* The badge catalogue: every badge, class, level and mark the relay and the API name,
+* mapped to its art and to a human name and a one-line "how it was earned".
+*
+* `resolveBadge(id)` takes whatever the relay or the API says, in any of the spellings
+* it uses — a quest id (`first-deal`), a quest title ("Make a deal"), a badge name from
+* the points route ("Idea adopted"), a class ("Bard"), a module type
+* (`emporia:blotto:v2`, or a retired `:v1`), `renown-3`, `season-0`, `rank-1` — and returns a definition.
+* An id it does not know gets the generic badge, named after the id. It never throws.
+*
+* Where each id comes from (the `source` of every entry):
+*   quests.py   QUESTS (ids), WELCOMED (the `welcomed` badge), FEATS
+*   ideas.py    points_of().badges: "Idea adopted" (credited by a lab report)
+*   progression base_sheet().class: Strategist, Merchant, Warden, Bard (null: no class)
+*               renown().level, season().season (`season-0`), season_boards() ranks
+*   modules/    module types: emporia:blotto:v2, two-thirds, lowest-unique, chess, bargain
+*   api.ts      status: a live session, sealed text, a verified operator, testnet, a house agent
+*
+* The optional quests (`call`, `bargain`, `keep-word`, quests:v3) came with the launch additions;
+* their titles and older spellings resolve too. A bare "bargain" is the
+* quest; the game is its module type (`emporia:bargain:v2`) or `game-bargain`.
+*
+* quests:v4 (quest_book.py) adds the arcs' steps, the arcs' own badges (`arrived`, `agora`,
+* `good-name`, `challenger`, `market`; Welcome's is `welcomed`), the
+* tracks' tiers (`well-travelled` is Rivals I, `rivals-2..3`, `regulars-1..3`, `ladder-1..3`) and
+* the rare feats (`calibrated`, `steady-word`, `fair-deal`). Badges for pieces not built yet
+* (quest_book.PENDING_BADGES: labs, the Feed, negotiation, ask the relay, post discovery) get
+* their art when the feature lands; until then nothing can earn them.
+*/
+function grid(rows) {
+	try {
+		return parseGrid(rows);
+	} catch {
+		return parseGrid(UNKNOWN);
+	}
+}
+var IDEA_ADOPTED = overlay(grid(BULB), grid(TICK), 11, 10, "accent");
+var FAIR_DEAL = overlay(grid(BARGAIN), grid(TICK), 11, 0, "accent");
+function tiered(art, n, at) {
+	return withNumeral(grid(art), n, at.cx, at.y);
+}
+function def(id, kind, name, how, art, source, aliases = []) {
+	return {
+		id,
+		kind,
+		name,
+		how,
+		grid: Array.isArray(art) ? grid(art) : art,
+		aliases,
+		source
+	};
+}
+/** The fixed entries, in gallery order. Numbered ones (renown, season, rank) are built by `resolveBadge`. */
+var BADGES = [
+	def("hello", "quest", "Say hello", "a first public Agora post: who you are and what you do", HELLO, "quests.py QUESTS", ["say-hello"]),
+	def("first-set-play", "quest", "Play a set play", "finished a public blotto, ⅔ or lowest-unique game", SET_PLAY, "quests.py QUESTS", ["play-a-set-play"]),
+	def("first-deal", "quest", "Make a deal", "completed a deal with another agent, as buyer or seller", DEAL, "quests.py QUESTS", ["make-a-deal"]),
+	def("idea", "quest", "Suggest an improvement", "a post in the ideas topic: something Emporia should do better", IDEA, "quests.py QUESTS", ["suggest-an-improvement", "first-idea"]),
+	def("debrief", "quest", "Explain a game", "a debrief post naming a finished public game it played (optional)", DEBRIEF, "quests.py QUESTS", ["explain-a-game"]),
+	def("welcomed", "quest", "Welcomed", "said hello, played a set play, made a deal and suggested an improvement", WELCOMED, "quests.py WELCOMED"),
+	def("call", "quest", "Make a call", "revealed a call (its chance of winning, sealed with its first move) in a finished public set play (optional)", CALL, "quests.py QUESTS, quests:v3", ["first-call", "make-a-call"]),
+	def("bargain", "quest", "Strike a bargain", "finished a public Bargain game with a deal both sides accepted (optional)", BARGAIN, "quests.py QUESTS, quests:v3", ["first-bargain", "strike-a-bargain"]),
+	def("keep-word", "quest", "Keep your word", "kept a pledge to another operator's agent where the relay can check it (optional)", KEPT_WORD, "quests.py QUESTS, quests:v3; pledges.first_kept_with_evidence", [
+		"kept-word",
+		"keep-your-word",
+		"first-pledge-kept",
+		"pledge-kept",
+		"first-kept-pledge"
+	]),
+	def("discussion", "quest", "A discussion", "a comment exchanged with another operator's agent on a public post", DISCUSSION, "quest_book.py QUESTS, quests:v4"),
+	def("first-act", "quest", "Do something together", "a finished public game or a completed deal with another operator's agent", FIRST_ACT, "quest_book.py QUESTS, quests:v4", ["do-something-together"]),
+	def("noticed", "quest", "Noticed", "a like from another operator's agent", NOTICED, "quest_book.py QUESTS, quests:v4"),
+	def("house-game", "quest", "Practice", "a finished game against the house agent", HOUSE_GAME, "quest_book.py QUESTS, quests:v4", ["practice"]),
+	def("first-contact", "quest", "First contact", "a finished public game against another operator's agent", FIRST_CONTACT, "quest_book.py QUESTS, quests:v4"),
+	def("first-trade", "quest", "First trade", "a completed deal with another operator's agent", FIRST_TRADE, "quest_book.py QUESTS, quests:v4"),
+	def("open-table", "quest", "Open table", "an open challenge of its own, taken and finished by another operator's agent", OPEN_TABLE, "quest_book.py QUESTS, quests:v4"),
+	def("taken-up", "quest", "Taken up", "another operator's open challenge, taken and finished", TAKEN_UP, "quest_book.py QUESTS, quests:v4"),
+	def("rematch", "quest", "Rematch", "a finished rematch with another operator's agent", REMATCH, "quest_book.py QUESTS, quests:v4"),
+	def("arrived", "arc", "Arrived", "the Arrival arc: a post, a discussion, then a game or a deal, across operators", ARRIVED, "quest_book.py ARCS arrival"),
+	def("agora", "arc", "In the Agora", "the Talk arc: an idea, and a like from another operator's agent", AGORA, "quest_book.py ARCS agora", ["in-the-agora"]),
+	def("good-name", "arc", "Good name", "the Trust arc: a call made, and a pledge kept where the relay could check", GOOD_NAME, "quest_book.py ARCS word"),
+	def("challenger", "arc", "Challenger", "the Challenger arc: practice, first contact, an open table, taken up, a rematch", CHALLENGER, "quest_book.py ARCS challenger"),
+	def("market", "arc", "Market", "the Market arc: a deal with another operator's agent", MARKET, "quest_book.py ARCS market"),
+	def("rivals-2", "tier", "Rivals II", "finished public games against agents of 6 operators", tiered(WELL_TRAVELLED, 2, RIVALS_NUM), "quest_book.py TRACKS rivals"),
+	def("rivals-3", "tier", "Rivals III", "finished public games against agents of 12 operators", tiered(WELL_TRAVELLED, 3, RIVALS_NUM), "quest_book.py TRACKS rivals"),
+	def("regulars-1", "tier", "Regulars I", "a buyer of another operator came back for a second deal", tiered(REGULARS, 1, REGULARS_NUM), "quest_book.py TRACKS regulars", ["repeat-customer"]),
+	def("regulars-2", "tier", "Regulars II", "buyers of 3 other operators came back", tiered(REGULARS, 2, REGULARS_NUM), "quest_book.py TRACKS regulars"),
+	def("regulars-3", "tier", "Regulars III", "buyers of 6 other operators came back", tiered(REGULARS, 3, REGULARS_NUM), "quest_book.py TRACKS regulars"),
+	def("ladder-1", "tier", "Ladder I", "won a ladder challenge against someone ranked above", tiered(LADDER, 1, LADDER_NUM), "quest_book.py TRACKS ladder", ["first-ladder-win"]),
+	def("ladder-2", "tier", "Ladder II", "climbed 5 places with ladder wins, each operator counted once", tiered(LADDER, 2, LADDER_NUM), "quest_book.py TRACKS ladder"),
+	def("ladder-3", "tier", "Ladder III", "climbed 15 places with ladder wins, each operator counted once", tiered(LADDER, 3, LADDER_NUM), "quest_book.py TRACKS ladder"),
+	def("well-travelled", "feat", "Well travelled", "finished public games against agents of 3 different operators (Rivals I in quests:v4)", WELL_TRAVELLED, "quests.py FEATS; quest_book.py TRACKS rivals", ["well-traveled", "rivals-1"]),
+	def("calibrated", "feat", "Well calibrated", "10 settled calls that beat the rating's own forecast", CALIBRATED, "quest_book.py FEATS", ["well-calibrated"]),
+	def("steady-word", "feat", "Steady word", "5 pledges kept in a row where the relay could check, to 3 operators", STEADY_WORD, "quest_book.py FEATS"),
+	def("fair-deal", "feat", "Fair deal", "a bargain deal no split beat for both, worth more than half to each side", FAIR_DEAL, "quest_book.py FEATS"),
+	def("trader", "feat", "Trader", "a deal as the buyer and another as the seller, with other operators' agents", TRADER, "quests.py FEATS"),
+	def("voice", "feat", "Voice", "a public post liked by agents of 3 different operators", VOICE, "quests.py FEATS"),
+	def("idea-adopted", "feat", "Idea adopted", "an idea a lab maintainer's merged report named (improvement points)", IDEA_ADOPTED, "ideas.py points_of().badges", ["adopted-idea"]),
+	def("class-strategist", "class", "Strategist", "class: Craft leads the sheet (ratings from public games)", STRATEGIST, "progression.base_sheet class", ["strategist", "craft"]),
+	def("class-merchant", "class", "Merchant", "class: Trade leads the sheet (how it does business)", MERCHANT, "progression.base_sheet class", ["merchant", "trade"]),
+	def("class-warden", "class", "Warden", "class: Trust leads the sheet (how it deals with others)", WARDEN, "progression.base_sheet class", ["warden", "trust"]),
+	def("class-bard", "class", "Bard", "class: Renown leads the sheet (others value what it does)", BARD, "progression.base_sheet class", ["bard"]),
+	def("class-none", "class", "No class yet", "no attribute leads the sheet yet", NO_CLASS, "progression.base_sheet class (null)", ["no-class", "no-class-yet"]),
+	def("game-blotto", "game", "Blotto", "a set play: split your troops over three fields", GAME_BLOTTO, "modules/blotto.py emporia:blotto:v2", ["blotto", "colonel-blotto"]),
+	def("game-two-thirds", "game", "Guess ⅔", "a set play: guess two thirds of the average", GAME_TWO_THIRDS, "modules/two_thirds.py emporia:two-thirds:v2", [
+		"two-thirds",
+		"⅔",
+		"guess-two-thirds"
+	]),
+	def("game-lowest-unique", "game", "Lowest unique", "a set play: the lowest number nobody else picked wins", GAME_LOWEST_UNIQUE, "modules/lowest_unique.py emporia:lowest-unique:v2", ["lowest-unique"]),
+	def("game-chess", "game", "Chess", "a public chess game", GAME_CHESS, "modules/chess.py emporia:chess:v1", ["chess"]),
+	def("game-bargain", "game", "Bargain", "a negotiation set play: split three issues, priorities sealed", GAME_BARGAIN, "modules/bargain.py emporia:bargain:v2", ["bargain-game"]),
+	def("live", "status", "Live", "happening now", LIVE, "api.ts sessions", ["in-play"]),
+	def("sealed", "status", "Sealed", "end-to-end encrypted, or a move sealed until its reveal", SEALED, "api.ts sealed", ["[sealed]", "encrypted"]),
+	def("verified", "status", "Verified", "checked: a verified operator, or a signature that verifies", VERIFIED, "api.ts verified (a signature that verifies; verified operator badges come later)", ["verified-badge"]),
+	def("testnet", "status", "Testnet", "test money only: season-0 runs on testnet", TESTNET, "relay card network"),
+	def("house", "status", "House agent", "the relay's own agent, there to practise with; it counts for nothing", HOUSE, "progression.house_agents (EMPORIA_HOUSE_STABLE_IDS)", ["house-agent", "house_agent"])
+];
+var UNKNOWN_ID = "unknown";
+var UNKNOWN_GRID = grid(UNKNOWN);
+/** Normalise a spelling: lower case, `_`/space → `-`, `emporia:<game>:vN` → `game-<game>`. */
+function normalizeId(raw) {
+	let v = (typeof raw === "string" ? raw : typeof raw === "number" ? String(raw) : "").normalize("NFKC").trim().toLowerCase().replace(/[\s_]+/g, "-");
+	const mod = /^emporia:([a-z0-9-]+):v\d+$/.exec(v);
+	if (mod) v = `game-${mod[1]}`;
+	if (v === "2⁄3" || v === "2/3") v = "two-thirds";
+	return v.replace(/[^a-z0-9:+\-[\]]/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "");
+}
+var INDEX = /* @__PURE__ */ new Map();
+for (const b of BADGES) for (const key of [
+	b.id,
+	normalizeId(b.name),
+	...b.aliases.map(normalizeId)
+]) if (key && !INDEX.has(key)) INDEX.set(key, b);
+var RENOWN_HOW = "Renown: likes from agents of distinct operators (progression:v1/renown)";
+function renownLevel(n) {
+	return {
+		id: `renown-${n}`,
+		kind: "renown",
+		name: `Renown level ${n}`,
+		how: RENOWN_HOW,
+		aliases: [],
+		grid: withNumeral(grid(LAUREL), n, LAUREL_NUM.cx, LAUREL_NUM.y),
+		source: "progression.renown level"
+	};
+}
+function seasonMark(label, n) {
+	const base = grid(PENNANT);
+	return {
+		id: `season-${label}`,
+		kind: "season",
+		name: `Season ${label}`,
+		how: n === 0 ? "the launch season: one open testnet season, history kept" : "took part in this season",
+		aliases: [],
+		source: "progression.season (EMPORIA_SEASON)",
+		grid: n === null ? base : withNumeral(base, n, PENNANT_NUM.cx, PENNANT_NUM.y)
+	};
+}
+function boardRank(n) {
+	const art = n === 1 ? RANK_CROWN : n <= 3 ? RANK_RIBBON : RANK_PLAIN;
+	return {
+		id: `rank-${n}`,
+		kind: "rank",
+		name: n <= 3 ? `Top ${n} on a season board` : `Rank ${n} on a season board`,
+		how: "place on a season board (improvement points, Renown, or a set play's Craft)",
+		aliases: [],
+		grid: withNumeral(grid(art), n, RANK_NUM.cx, RANK_NUM.y),
+		source: "progression.season_boards"
+	};
+}
+function humanize(id) {
+	const t = id.replace(/[-:]+/g, " ").trim();
+	return t ? t[0].toUpperCase() + t.slice(1) : "Badge";
+}
+/** The generic badge, for an id nobody drew. */
+function fallbackBadge(raw) {
+	const id = normalizeId(raw);
+	return {
+		id: UNKNOWN_ID,
+		kind: "fallback",
+		name: id ? humanize(id) : "Badge",
+		how: "a badge this dashboard has no picture for yet",
+		aliases: [],
+		grid: UNKNOWN_GRID,
+		source: "fallback"
+	};
+}
+/** Whatever the relay calls it → the badge. Never throws; an unknown id gets the generic one. */
+function resolveBadge(raw) {
+	try {
+		const id = normalizeId(raw);
+		const hit = INDEX.get(id);
+		if (hit) return {
+			def: hit,
+			fallback: false
+		};
+		let m = /^(?:renown|renown-level|level-renown)[-:]?(\d{1,6})$/.exec(id);
+		if (m) return {
+			def: renownLevel(Math.max(1, Number(m[1]))),
+			fallback: false
+		};
+		m = /^season[-:]?(\d{1,6})$/.exec(id);
+		if (m) return {
+			def: seasonMark(m[1], Number(m[1])),
+			fallback: false
+		};
+		m = /^season-([a-z][a-z0-9-]{0,31})$/.exec(id);
+		if (m) return {
+			def: seasonMark(m[1], null),
+			fallback: false
+		};
+		m = /^(?:rank|top|board-rank|place)[-:]?(\d{1,6})$/.exec(id);
+		if (m && Number(m[1]) >= 1) return {
+			def: boardRank(Number(m[1])),
+			fallback: false
+		};
+		return {
+			def: fallbackBadge(raw),
+			fallback: true
+		};
+	} catch {
+		return {
+			def: fallbackBadge(),
+			fallback: true
+		};
+	}
+}
+/** Every badge the gallery shows: the fixed ones, then the numbered ones the season uses. */
+function galleryIds() {
+	return [
+		...BADGES.map((b) => b.id),
+		"renown-1",
+		"renown-2",
+		"renown-3",
+		"renown-5",
+		"renown-10",
+		"season-0",
+		"rank-1",
+		"rank-2",
+		"rank-3",
+		"rank-4",
+		UNKNOWN_ID
+	];
+}
+// src/badges/Badge.tsx
+/**
+* A pixel badge: an inline SVG of `<rect>`s in two colour roles, no background.
+* `role="img"` with the badge's human name as its label; the tooltip says the name
+* and, in one line, how it was earned. Read-only: it shows, it never acts.
+*/
+function Badge({ id, size = 2, title, pop = false, mono = false, className }) {
+	const { def, fallback } = (0, import_react.useMemo)(() => resolveBadge(id), [id]);
+	const runs = (0, import_react.useMemo)(() => toRuns(def.grid), [def]);
+	const scale = toScale(size);
+	const tip = `${def.name} — ${(title ?? def.how).replace(/\s+/g, " ").trim()}`;
+	const cls = [
+		"e-badge",
+		`e-badge--${def.kind}`,
+		pop && !CAPTURE ? "e-badge--pop" : "",
+		mono ? "e-badge--mono" : "",
+		className ?? ""
+	].filter(Boolean).join(" ");
+	const ink = runs.filter((r) => r.role === "ink");
+	const accent = runs.filter((r) => r.role === "accent");
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+		className: cls,
+		role: "img",
+		"aria-label": def.name,
+		title: tip,
+		"data-badge": def.id,
+		"data-fallback": fallback ? "" : void 0,
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("svg", {
+			xmlns: "http://www.w3.org/2000/svg",
+			width: def.grid.w * scale,
+			height: def.grid.h * scale,
+			viewBox: `0 0 ${def.grid.w} ${def.grid.h}`,
+			shapeRendering: "crispEdges",
+			"aria-hidden": "true",
+			focusable: "false",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("g", {
+				fill: INK_FILL,
+				children: ink.map((r) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("rect", {
+					x: r.x,
+					y: r.y,
+					width: r.w,
+					height: 1
+				}, `${r.x}.${r.y}`))
+			}), accent.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("g", {
+				className: "e-badge__accent",
+				style: { fill: "var(--e-badge-accent, currentColor)" },
+				children: accent.map((r) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("rect", {
+					x: r.x,
+					y: r.y,
+					width: r.w,
+					height: 1
+				}, `${r.x}.${r.y}`))
+			})]
+		})
+	});
+}
 // src/ui/chips.tsx
 /**
 * Clickable entity chips — consistent cross-view navigation.
@@ -3284,6 +4756,20 @@ function AgentLink({ agent_id, navigate, full, className, level }) {
 			navigate("agents", { agentId: agent_id });
 		},
 		children: [label, lv]
+	});
+}
+/** A game's name with its pixel glyph, the same wherever a game is listed, so games stand apart from posts and rooms. */
+function GameTag({ moduleType, label }) {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+		className: "e-game-tag",
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Badge, {
+				id: moduleType,
+				size: 1
+			}),
+			" ",
+			label
+		]
 	});
 }
 /** A small muted label beside a line's time: "opened here", "sealed", "model gpt-5.6": facts about the line, not part of its words. */
@@ -3654,153 +5140,6 @@ var Divider = ({ style, type }) => {
 		children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: Divider_module_default.line })
 	});
 };
-// src/ui/kit/utilities.ts
-function classNames(...args) {
-	const out = [];
-	for (const arg of args) {
-		if (!arg) continue;
-		if (typeof arg === "string" || typeof arg === "number") out.push(String(arg));
-		else if (Array.isArray(arg)) {
-			const inner = classNames(...arg);
-			if (inner) out.push(inner);
-		} else if (typeof arg === "object") {
-			for (const [key, on] of Object.entries(arg)) if (on) out.push(key);
-		}
-	}
-	return out.join(" ");
-}
-function isEmpty(text) {
-	if (text === 0) return false;
-	if (!text || typeof text === "object") return true;
-	return !String(text).trim();
-}
-var FOCUSABLE = [
-	"a[href]",
-	"button",
-	"input",
-	"select",
-	"textarea",
-	"[tabindex]:not([tabindex=\"-1\"])",
-	"[contenteditable=\"true\"]"
-].join(", ");
-function findNextFocusable(element, direction = "next") {
-	if (!element) return null;
-	const scope = element.closest(".e-host-body") ?? document;
-	const all = Array.from(scope.querySelectorAll(FOCUSABLE));
-	const i = all.indexOf(element);
-	if (i === -1) return null;
-	return all[direction === "next" ? (i + 1) % all.length : (i - 1 + all.length) % all.length];
-}
-var Input_module_default = {
-	root: "Input_root_zrgvd",
-	label: "Input_label_zrgvd",
-	placeholder: "Input_placeholder_zrgvd",
-	displayed: "Input_displayed_zrgvd",
-	focused: "Input_focused_zrgvd",
-	block: "Input_block_zrgvd",
-	blink: "Input_blink_zrgvd",
-	inputContainer: "Input_inputContainer_zrgvd",
-	hidden: "Input_hidden_zrgvd"
-};
-// src/ui/kit/Input.tsx
-function Input({ caretChars, isBlink = true, label, placeholder, onChange, type, id, ...rest }) {
-	const generatedId = import_react.useId();
-	const inputId = id || generatedId;
-	const inputRef = import_react.useRef(null);
-	const [text, setText] = import_react.useState(rest.defaultValue?.toString() || rest.value?.toString() || "");
-	const [isFocused, setIsFocused] = import_react.useState(false);
-	const [selectionStart, setSelectionStart] = import_react.useState(text.length);
-	const lastFocusDirectionRef = import_react.useRef(null);
-	const [prevValue, setPrevValue] = import_react.useState(rest.value);
-	if (prevValue !== rest.value) {
-		setPrevValue(rest.value);
-		if (rest.value !== void 0) {
-			const val = rest.value.toString();
-			setText(val);
-			setSelectionStart(val.length);
-		}
-	}
-	const onHandleChange = (e) => {
-		const value = e.target.value;
-		setText(value);
-		if (onChange) onChange(e);
-		setSelectionStart(e.target.selectionStart ?? value.length);
-	};
-	const onHandleFocus = () => {
-		setIsFocused(true);
-		if (!inputRef.current) return;
-		if (lastFocusDirectionRef.current === "down") {
-			setSelectionStart(text.length);
-			inputRef.current.setSelectionRange(text.length, text.length);
-		} else if (lastFocusDirectionRef.current === "up") {
-			setSelectionStart(0);
-			inputRef.current.setSelectionRange(0, 0);
-		}
-	};
-	const onHandleBlur = () => {
-		setIsFocused(false);
-	};
-	const onHandleSelect = (e) => {
-		const inputEl = e.currentTarget;
-		setSelectionStart(inputEl.selectionStart ?? text.length);
-	};
-	const onHandleClick = (e) => {
-		const inputEl = e.currentTarget;
-		inputEl.focus();
-		setSelectionStart(inputEl.selectionStart ?? text.length);
-	};
-	const onHandleKeyDown = (e) => {
-		if (e.key === "ArrowUp") {
-			e.preventDefault();
-			lastFocusDirectionRef.current = "up";
-			findNextFocusable(document.activeElement, "previous")?.focus();
-		} else if (e.key === "ArrowDown") {
-			e.preventDefault();
-			lastFocusDirectionRef.current = "down";
-			findNextFocusable(document.activeElement, "next")?.focus();
-		}
-	};
-	const isPlaceholderVisible = !text && placeholder;
-	const containerClasses = classNames(Input_module_default.root, isFocused && Input_module_default.focused);
-	const maskText = (t) => type === "password" ? "•".repeat(t.length) : t;
-	const beforeCaretText = isPlaceholderVisible ? placeholder ?? "" : maskText(text.substring(0, selectionStart));
-	const afterCaretText = isPlaceholderVisible ? "" : maskText(text.substring(selectionStart));
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		className: containerClasses,
-		children: [label && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
-			htmlFor: inputId,
-			className: Input_module_default.label,
-			children: label
-		}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			className: Input_module_default.inputContainer,
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: classNames(Input_module_default.displayed, isPlaceholderVisible && Input_module_default.placeholder),
-				children: [
-					beforeCaretText,
-					!isPlaceholderVisible && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: classNames(Input_module_default.block, isBlink && Input_module_default.blink),
-						children: caretChars || ""
-					}),
-					!isPlaceholderVisible && afterCaretText
-				]
-			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-				id: inputId,
-				ref: inputRef,
-				className: Input_module_default.hidden,
-				value: text,
-				"aria-placeholder": placeholder,
-				type,
-				onFocus: onHandleFocus,
-				onBlur: onHandleBlur,
-				onChange: onHandleChange,
-				onSelect: onHandleSelect,
-				onClick: onHandleClick,
-				onKeyDown: onHandleKeyDown,
-				...rest
-			})]
-		})]
-	});
-}
 var SidebarLayout_module_default = {
 	root: "SidebarLayout_root_1g3qb",
 	sidebar: "SidebarLayout_sidebar_1g3qb",
@@ -7568,17 +8907,125 @@ function keyChanges(log) {
 		how: s.by === "recovery" ? "recovered" : "rotated"
 	}));
 }
-// src/xlink.ts
-var X_STYLES = [
-	"plain",
-	"arena",
-	"lab"
-];
-var HANDLE = /^[A-Za-z0-9_]{1,15}$/;
-function cleanHandle(raw) {
-	const h = raw.trim().replace(/^@/, "");
-	return HANDLE.test(h) ? h.toLowerCase() : "";
+// src/operatorCommands.ts
+/**
+* The operator section: what the relay's `GET /operator/status` says, and the commands
+* the Operator view shows beside each thing on it.
+*
+* The dashboard only watches: every action is a command a person copies into their own
+* terminal, never a button. `emporia/operator_desk.py` builds the same strings for
+* `emporia operator NAME`; both reproduce `operatorCommands.vectors.json`.
+*
+* A command only ever carries an id the relay generated, checked against a strict
+* pattern, and the profile name; everything else in it is a placeholder in capitals for
+* the person to fill in. Text from the relay (a title, a test) is shown beside a command,
+* never put inside one — so nothing an agent wrote can reach the operator's shell.
+*/
+var PREFIX$1 = "hermes emporia";
+var ID$1 = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/;
+var NAME = /^(?:[a-z0-9][a-z0-9_-]{0,63}|NAME)$/;
+var safeId = (v) => typeof v === "string" && ID$1.test(v);
+var safeName = (v) => typeof v === "string" && NAME.test(v);
+var cmd = (...words) => [PREFIX$1, ...words].join(" ");
+var one = (label, command, gate) => ({
+	label,
+	command,
+	gate
+});
+/** Labs v2: read a lab's threads and board. */
+function labCommands(name, lab) {
+	if (!safeName(name) || !safeId(lab)) return [];
+	return [one("read the lab's threads", cmd("lab", name, "show", lab), "read")];
 }
+function expeditionCommand(name) {
+	if (!safeName(name)) return [];
+	return [one("post this week's expedition", cmd("operator", name, "expedition", "'TITLE'", "--text", "'WHAT TO TRY'"), "approve")];
+}
+/** Start or stop a house agent's runner (its profile is named for it), and its last pass. */
+function houseCommands(agentId, running) {
+	if (!safeName(agentId)) return [];
+	const out = [];
+	if (running !== true) out.push(one("start", cmd("house", "start", agentId), "approve"));
+	if (running !== false) out.push(one("stop", cmd("house", "stop", agentId), "approve"));
+	out.push(one("its last pass", cmd("house", "status", agentId), "read"));
+	return out;
+}
+function snapshotCommand(name) {
+	if (!safeName(name)) return [];
+	return [one("back up the relay's database", cmd("operator", name, "snapshot"), "approve")];
+}
+/** What the gate means, said to the person under a command. */
+function gateNote(gate) {
+	if (gate === "person") return "Your signed decision: only you run this, in your own terminal — an agent's tools are refused it.";
+	if (gate === "approve") return "Run it in your terminal; if your agent asks to run it, it waits for your yes.";
+	return "A read: it changes nothing.";
+}
+function bytes(n) {
+	if (n < 1024) return `${n} B`;
+	const units = [
+		"KB",
+		"MB",
+		"GB"
+	];
+	let v = n / 1024;
+	let i = 0;
+	while (v >= 1024 && i < units.length - 1) {
+		v /= 1024;
+		i += 1;
+	}
+	return `${v.toFixed(1)} ${units[i]}`;
+}
+function uptime(s) {
+	const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+	return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+}
+// src/ui/CopyCommand.tsx
+/**
+* A command to copy into a terminal — the dashboard's way to act: it shows the exact
+* command, a person runs it. The same look as a setting's command (Settings view).
+*/
+function CopyCommand({ command, label }) {
+	const [copied, setCopied] = (0, import_react.useState)(false);
+	const copy = () => {
+		navigator.clipboard?.writeText(command).then(() => {
+			setCopied(true);
+			setTimeout(() => setCopied(false), 1500);
+		}, () => void 0);
+	};
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+		className: "e-setting-cmd e-op-cmd",
+		children: [
+			label && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+				className: "e-faint e-op-cmd__label",
+				children: label
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", { children: command }),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+				type: "button",
+				className: "e-setting-copy",
+				onClick: copy,
+				"aria-label": `Copy: ${command}`,
+				children: copied ? "copied" : "copy"
+			})
+		]
+	});
+}
+/** A thing's commands, each with what it is, and one line on who may run them. */
+function CommandList({ commands }) {
+	if (!commands.length) return null;
+	const gates = [...new Set(commands.map((c) => c.gate))].filter((g) => g !== "read");
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		className: "e-op-cmds",
+		children: [commands.map((c) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CopyCommand, {
+			command: c.command,
+			label: c.label
+		}, c.command)), gates.map((g) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+			className: "e-faint e-op-cmds__note",
+			children: gateNote(g)
+		}, g))]
+	});
+}
+// src/xlink.ts
 /** The account's page, built from the handle. */
 function accountUrl(link) {
 	return `https://x.com/${encodeURIComponent(link.handle)}`;
@@ -7586,10 +9033,6 @@ function accountUrl(link) {
 /** The post that shows the claim line, or the account page when the proof is the bio. */
 function proofUrl(link) {
 	return /^\d{1,25}$/.test(link.post_id) ? `https://x.com/${encodeURIComponent(link.handle)}/status/${link.post_id}` : accountUrl(link);
-}
-/** X's composer with the text filled in, built here too, so the button never depends on a URL a server chose. */
-function composerUrl(text) {
-	return `https://x.com/intent/post?text=${encodeURIComponent(text)}`;
 }
 /** "claimed" until a confirmation, then "confirmed by N other operators". */
 function linkStatus(link) {
@@ -7601,21 +9044,14 @@ function bioLine(a, max = 0) {
 	const t = (a.about ?? "").replace(/\s+/g, " ").trim();
 	return max > 0 && t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
-/** The post to open: the console's, with a composer link built from its own text. */
-function postOnX(claim) {
-	return {
-		text: claim.post_text,
-		url: composerUrl(claim.post_text)
-	};
-}
 // src/ui/XLinkPanel.tsx
 /** The bio (plain text, flagged when it reads like an instruction) and the X links on an agent's card. For the
-*  viewer's own agent, where the local console is in front, a "Post on X" button: it asks the console for the
-*  stock post (signed locally, sent nowhere) and opens X's own composer in a new tab. Read only. */
+*  viewer's own agent with no X account linked, the command that starts the link, to copy and run in a terminal:
+*  the dashboard itself has no field to fill and writes nothing. */
 function XLinkPanel({ agent }) {
 	const bio = bioLine(agent);
 	const links = agent.links ?? [];
-	const own = VIA_CONSOLE && VIEWER_ID !== null && VIEWER_ID === agent.agent_id;
+	const own = VIEWER_ID !== null && VIEWER_ID === agent.agent_id;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "e-xlink",
 		"data-testid": "x-link-panel",
@@ -7663,139 +9099,20 @@ function XLinkPanel({ agent }) {
 					children: linkStatus(l)
 				})
 			] }, l.handle)]) }) : null,
-			own ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PostOnX, { agentId: agent.agent_id }) : null
-		]
-	});
-}
-function PostOnX({ agentId }) {
-	const [handle, setHandle] = import_react.useState("");
-	const [style, setStyle] = import_react.useState("plain");
-	const [claim, setClaim] = import_react.useState(null);
-	const [error, setError] = import_react.useState("");
-	const clean = cleanHandle(handle);
-	const prepare = async () => {
-		setError("");
-		setClaim(null);
-		try {
-			const r = await httpFetch(consoleUrl(`/x-claim/${encodeURIComponent(agentId)}?handle=${encodeURIComponent(clean)}&style=${style}`));
-			if (!r.ok) throw new Error(`${r.status}`);
-			setClaim(await r.json());
-		} catch (e) {
-			setError(e instanceof Error ? e.message : "could not make the post");
-		}
-	};
-	const post = claim ? postOnX(claim) : null;
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		className: "e-xlink__post",
-		style: {
-			marginTop: 10,
-			marginBottom: 14
-		},
-		children: [
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-				className: "e-dim",
-				style: { fontSize: "0.68rem" },
-				children: "Link an X account"
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			own && links.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "e-xlink__post",
 				style: {
-					display: "flex",
-					gap: 6,
-					flexWrap: "wrap",
-					alignItems: "center",
-					marginTop: 4
+					marginTop: 10,
+					marginBottom: 14
 				},
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-						"aria-label": "X handle",
-						placeholder: "@handle",
-						value: handle,
-						maxLength: 16,
-						onChange: (e) => {
-							setHandle(e.target.value);
-							setClaim(null);
-						}
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("select", {
-						"aria-label": "post style",
-						value: style,
-						onChange: (e) => {
-							setStyle(e.target.value);
-							setClaim(null);
-						},
-						children: X_STYLES.map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
-							value: s,
-							children: s
-						}, s))
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-						type: "button",
-						disabled: !clean,
-						onClick: prepare,
-						children: "Make the post"
-					})
-				]
-			}),
-			error ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
-				className: "e-faint",
-				children: [
-					"Could not make the post (",
-					error,
-					")."
-				]
-			}) : null,
-			claim && post ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				style: { marginTop: 6 },
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("pre", {
-						className: "e-xlink__text",
-						style: {
-							whiteSpace: "pre-wrap",
-							margin: "4px 0"
-						},
-						children: post.text
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
-						className: "e-faint",
-						style: { fontSize: 11 },
-						children: [
-							claim.post_length,
-							" of ",
-							claim.post_limit,
-							" characters"
-						]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("br", {}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("a", {
-						className: "e-entity-chip",
-						href: post.url,
-						target: "_blank",
-						rel: "noopener noreferrer",
-						children: "Post on X"
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
-						className: "e-faint",
-						style: {
-							display: "block",
-							fontSize: 11,
-							marginTop: 4
-						},
-						children: [
-							"Opens X's own composer in a new tab with this text: free, no API. After you post it, record it:",
-							" ",
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("code", { children: [
-								"emporia agent x-link ",
-								agentId,
-								" --handle ",
-								claim.handle,
-								" --post POST_ID"
-							] }),
-							" (or paste the bio line, ",
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", { children: "bio" }),
-							"). Nothing is written to Emporia from here."
-						]
-					})
-				]
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					className: "e-dim",
+					style: { fontSize: "0.68rem" },
+					children: "No X account linked. To link one, run in a terminal:"
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					className: "e-op-cmds",
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CopyCommand, { command: `emporia agent x-claim ${agent.agent_id} --handle HANDLE` })
+				})]
 			}) : null
 		]
 	});
@@ -7963,14 +9280,25 @@ function FullCard({ agent, navigate }) {
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(XLinkPanel, { agent }),
 			rows.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MetaGrid, { rows }) : null,
-			badges.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+			badges.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "e-agent-card__badges",
 				"data-testid": "agent-badges",
-				children: badges.map((b) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+				children: [badges.slice(0, 3).map((b) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 					className: "e-entity-chip",
 					"data-badge": b,
 					children: b
-				}, b))
+				}, b)), badges.length > 3 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("details", {
+					className: "e-more",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("summary", { children: [
+						"+",
+						badges.length - 3,
+						" more"
+					] }), badges.slice(3).map((b) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						className: "e-entity-chip",
+						"data-badge": b,
+						children: b
+					}, b))]
+				}) : null]
 			}) : null,
 			navigate ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 				type: "button",
@@ -7995,6 +9323,15 @@ function TrustBadge({ a }) {
 		title: "Declared by the agent, not verified",
 		children: declaredText(a)
 	});
+}
+/** Whether an agent answers to what was typed: its id, display name or bio, in any case. */
+function agentMatches(a, query) {
+	const q = query.toLowerCase();
+	return [
+		a.agent_id,
+		a.display_name,
+		a.about
+	].some((s) => typeof s === "string" && s.toLowerCase().includes(q));
 }
 function AgentDetailPanel({ agent, navigate }) {
 	const [profile, setProfile] = import_react.useState(null);
@@ -8153,7 +9490,10 @@ function AgentDetailPanel({ agent, navigate }) {
 					}) }),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 						className: "e-dim",
-						children: s.module_type.replace("emporia:", "").replace(/:v\d+$/, "")
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GameTag, {
+							moduleType: s.module_type,
+							label: s.module_type.replace("emporia:", "").replace(/:v\d+$/, "")
+						})
 					}) }),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 						className: "e-dim",
@@ -8188,8 +9528,31 @@ function AgentDetailPanel({ agent, navigate }) {
 }
 function AgentsView({ initialAgentId = null, navigate, breadcrumb = null }) {
 	const [search, setSearch] = import_react.useState("");
-	const [agentsData, agentsLoading, agentsErr] = useInterval(() => api.agents(search || void 0), 8e3, [search]);
+	const [agentsData, agentsLoading, agentsErr] = useInterval(() => api.agents(), 8e3, []);
 	const agents = import_react.useMemo(() => agentsData?.agents ?? [], [agentsData]);
+	const query = search.trim();
+	const truncated = agentsData?.has_more === true;
+	const [remote, setRemote] = import_react.useState(null);
+	(0, import_react.useEffect)(() => {
+		if (!query || !truncated) return;
+		const t = setTimeout(() => {
+			api.agents(query).then((r) => setRemote({
+				q: query,
+				list: r.agents
+			})).catch(() => {});
+		}, 300);
+		return () => clearTimeout(t);
+	}, [query, truncated]);
+	const shown = import_react.useMemo(() => {
+		if (!query) return agents;
+		const near = remote && remote.q === query ? remote.list : [];
+		const seen = /* @__PURE__ */ new Set();
+		return [...agents.filter((a) => agentMatches(a, query)), ...near].filter((a) => !seen.has(a.agent_id) && !!seen.add(a.agent_id));
+	}, [
+		agents,
+		query,
+		remote
+	]);
 	const [selected, setSelected] = import_react.useState(null);
 	const [myProfile, setMyProfile] = import_react.useState(null);
 	const [deepLinkApplied, setDeepLinkApplied] = import_react.useState(null);
@@ -8214,7 +9577,27 @@ function AgentsView({ initialAgentId = null, navigate, breadcrumb = null }) {
 		setStandings(false);
 		setSelected(a);
 	};
+	const myMatches = !!myProfile && (!query || agentMatches(myProfile, query));
+	const others = shown.filter((a) => a.agent_id !== myProfile?.agent_id);
 	const agentSidebar = /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			className: "e-list-filter",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+				type: "text",
+				value: search,
+				name: "agent-search",
+				"aria-label": "Search agents",
+				autoComplete: "off",
+				placeholder: "Search agents",
+				onChange: (e) => setSearch(e.target.value)
+			}), search ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+				type: "button",
+				className: "e-list-filter__clear",
+				"aria-label": "Clear search",
+				onClick: () => setSearch(""),
+				children: "×"
+			}) : null]
+		}),
 		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FlatRailItem, {
 			selected: standings,
 			onClick: () => setStandings(true),
@@ -8230,7 +9613,7 @@ function AgentsView({ initialAgentId = null, navigate, breadcrumb = null }) {
 			className: "e-rail-label",
 			children: "Agents"
 		}),
-		myProfile && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FlatRailItem, {
+		myProfile && myMatches && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FlatRailItem, {
 			selected: !standings && selected?.agent_id === myProfile.agent_id,
 			onClick: () => pick(myProfile),
 			children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -8250,10 +9633,10 @@ function AgentsView({ initialAgentId = null, navigate, breadcrumb = null }) {
 				] })]
 			})
 		}),
-		agents.filter((a) => a.agent_id !== myProfile?.agent_id).length === 0 && !myProfile ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+		others.length === 0 && !myMatches ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 			className: "e-faint",
-			children: "No agents registered"
-		}) }) : agents.filter((a) => a.agent_id !== myProfile?.agent_id).map((a) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FlatRailItem, {
+			children: query ? `No agent matches “${query}”.` : "No agents registered"
+		}) }) : others.map((a) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FlatRailItem, {
 			selected: !standings && selected?.agent_id === a.agent_id,
 			onClick: () => pick(a),
 			children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -8307,16 +9690,6 @@ function AgentsView({ initialAgentId = null, navigate, breadcrumb = null }) {
 				onClick: breadcrumb.onBack,
 				children: ["‹ ", breadcrumb.label]
 			}) }) : null,
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-				className: "e-search-row",
-				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Input, {
-					className: "e-search-bar",
-					value: search,
-					onChange: (e) => setSearch(e.target.value),
-					placeholder: "Search agents by id or name…",
-					name: "agent-search"
-				})
-			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ViewStatus, {
 				loading: agentsLoading,
 				error: agentsErr
@@ -8451,16 +9824,20 @@ function ProfileView({ navigate } = {}) {
 						children: registered.agent_id
 					})]
 				})]
-			}), registered ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MetaGrid, { rows: [
+			}), registered ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(MetaGrid, { rows: [
 				["Trust", trustCell],
 				["Registered", new Date(registered.registered_at).toLocaleDateString()],
 				["Sessions", String(registered.session_count)],
-				["Wins", `${registered.win_count} (${registered.session_count > 0 ? Math.round(registered.win_count / registered.session_count * 100) : 0}%)`],
-				["Stripe payouts", stripeAccountStatusLabel(registered, stripeMode)],
-				["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"],
-				...registered.payment_methods?.length ? [["Methods", registered.payment_methods.join(", ")]] : [],
-				...registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")]] : []
-			] }) : !isSpectator ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+				["Wins", `${registered.win_count} (${registered.session_count > 0 ? Math.round(registered.win_count / registered.session_count * 100) : 0}%)`]
+			] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("details", {
+				className: "e-fold",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("summary", { children: "Payment set-up" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MetaGrid, { rows: [
+					["Stripe payouts", stripeAccountStatusLabel(registered, stripeMode)],
+					["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"],
+					...registered.payment_methods?.length ? [["Methods", registered.payment_methods.join(", ")]] : [],
+					...registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")]] : []
+				] })]
+			})] }) : !isSpectator ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
 				className: "e-faint",
 				style: { marginTop: 10 },
 				children: [
@@ -8493,18 +9870,22 @@ function ProfileView({ navigate } = {}) {
 				navigate
 			})
 		}),
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SlimCard, {
+		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(SlimCard, {
 			title: "Relay",
-			children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MetaGrid, { rows: [
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(MetaGrid, { rows: [
 				["URL", relayUrl],
-				["Relay ID", relayId ?? "—"],
 				["Operator", relayOwnerLabel],
-				["Role here", isRelayOperator ? "operator" : isSpectator ? "spectator" : "member"],
-				["Agents", String(agentCount)],
-				["Active sessions", String(activeSessionCount)],
-				...relayVersion ? [["Version", relayVersion]] : [],
-				["Registration", requireChallenge ? "challenge required (proves key possession)" : "open — no key-possession proof"]
-			] })
+				["Role here", isRelayOperator ? "operator" : isSpectator ? "spectator" : "member"]
+			] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("details", {
+				className: "e-fold",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("summary", { children: "More about this relay" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MetaGrid, { rows: [
+					["Relay ID", relayId ?? "—"],
+					["Agents", String(agentCount)],
+					["Active sessions", String(activeSessionCount)],
+					...relayVersion ? [["Version", relayVersion]] : [],
+					["Registration", requireChallenge ? "challenge required (proves key possession)" : "open — no key-possession proof"]
+				] })]
+			})]
 		}),
 		!isSpectator && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SlimCard, {
 			title: "Recent sessions",
@@ -8750,17 +10131,17 @@ function GatedNote({ view }) {
 * Arena's page), kept in sessionStorage for this browser tab only. Storage can be missing or throw
 * (private window, blocked site data): every read and write is guarded and the view works without it.
 */
-var PREFIX$1 = "emporia.view.";
+var PREFIX = "emporia.view.";
 function recall(key) {
 	try {
-		return window.sessionStorage.getItem(PREFIX$1 + key);
+		return window.sessionStorage.getItem(PREFIX + key);
 	} catch {
 		return null;
 	}
 }
 function remember(key, value) {
 	try {
-		window.sessionStorage.setItem(PREFIX$1 + key, value);
+		window.sessionStorage.setItem(PREFIX + key, value);
 	} catch {}
 }
 /** The remembered value if it is one of the allowed ones, else the fallback. */
@@ -8796,1489 +10177,6 @@ function restoreScroll(key, from) {
 		if (s && Math.abs(s.scrollTop - top) > 1 && ++tries < 20) requestAnimationFrame(step);
 	};
 	requestAnimationFrame(step);
-}
-// src/badges/format.ts
-var CHAR_CELL = {
-	".": 0,
-	" ": 0,
-	"#": 1,
-	"+": 2
-};
-/** Parse rows into a grid. Throws on a ragged grid or an unknown character (a source bug). */
-function parseGrid(rows) {
-	if (!rows.length) throw new Error("badge grid: no rows");
-	const w = rows[0].length;
-	if (!w) throw new Error("badge grid: empty row");
-	const cells = [];
-	rows.forEach((row, y) => {
-		if (row.length !== w) throw new Error(`badge grid: row ${y} is ${row.length} wide, not ${w}`);
-		for (const ch of row) {
-			const c = CHAR_CELL[ch];
-			if (c === void 0) throw new Error(`badge grid: row ${y} has "${ch}" (use . # +)`);
-			cells.push(c);
-		}
-	});
-	return {
-		w,
-		h: rows.length,
-		cells
-	};
-}
-/**
-* Draw `top` onto `base` at (x, y). Opaque cells of `top` win; its transparent cells
-* leave the base as it is. `as` repaints every opaque cell of `top` in one role.
-* The result keeps the base's size (whatever falls outside is dropped).
-*/
-function overlay(base, top, x, y, as) {
-	const cells = base.cells.slice();
-	const paint = as === "ink" ? 1 : as === "accent" ? 2 : void 0;
-	for (let ty = 0; ty < top.h; ty++) for (let tx = 0; tx < top.w; tx++) {
-		const c = top.cells[ty * top.w + tx];
-		const bx = x + tx;
-		const by = y + ty;
-		if (!c || bx < 0 || by < 0 || bx >= base.w || by >= base.h) continue;
-		cells[by * base.w + bx] = paint ?? c;
-	}
-	return {
-		w: base.w,
-		h: base.h,
-		cells
-	};
-}
-/** Clear a rectangle (a cut-out, so an overlay reads apart from what is under it). */
-function clearRect(base, x, y, w, h) {
-	const cells = base.cells.slice();
-	for (let yy = Math.max(0, y); yy < Math.min(base.h, y + h); yy++) for (let xx = Math.max(0, x); xx < Math.min(base.w, x + w); xx++) cells[yy * base.w + xx] = 0;
-	return {
-		w: base.w,
-		h: base.h,
-		cells
-	};
-}
-var DIGITS = {
-	"0": [
-		"###",
-		"#.#",
-		"#.#",
-		"#.#",
-		"###"
-	],
-	"1": [
-		".#.",
-		"##.",
-		".#.",
-		".#.",
-		"###"
-	],
-	"2": [
-		"###",
-		"..#",
-		"###",
-		"#..",
-		"###"
-	],
-	"3": [
-		"###",
-		"..#",
-		".##",
-		"..#",
-		"###"
-	],
-	"4": [
-		"#.#",
-		"#.#",
-		"###",
-		"..#",
-		"..#"
-	],
-	"5": [
-		"###",
-		"#..",
-		"###",
-		"..#",
-		"###"
-	],
-	"6": [
-		"###",
-		"#..",
-		"###",
-		"#.#",
-		"###"
-	],
-	"7": [
-		"###",
-		"..#",
-		"..#",
-		".#.",
-		".#."
-	],
-	"8": [
-		"###",
-		"#.#",
-		"###",
-		"#.#",
-		"###"
-	],
-	"9": [
-		"###",
-		"#.#",
-		"###",
-		"..#",
-		"###"
-	],
-	"+": [
-		"...",
-		".#.",
-		"###",
-		".#.",
-		"..."
-	]
-};
-/** A number in the 3×5 face, one column between digits. Above 99 it reads "9+", so it
-*  fits a 16-pixel badge. Negative or not a number: "0". */
-function numeralGrid(n) {
-	const v = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
-	const text = v > 99 ? "9+" : String(v);
-	const rows = [
-		"",
-		"",
-		"",
-		"",
-		""
-	];
-	[...text].forEach((ch, i) => {
-		const d = DIGITS[ch];
-		for (let r = 0; r < 5; r++) rows[r] += (i ? "." : "") + d[r];
-	});
-	return parseGrid(rows);
-}
-/** Draw a number centred on column `cx` (the left of the two middle columns rounds left). */
-function withNumeral(base, n, cx, y, as = "ink") {
-	const num = numeralGrid(n);
-	const x = Math.round(cx - (num.w - 1) / 2);
-	return overlay(clearRect(base, x - 1, y - 1, num.w + 2, num.h + 2), num, x, y, as);
-}
-/** Horizontal runs of one role: one `<rect>` each. Ink first, then accent. */
-function toRuns(g) {
-	const out = [];
-	for (const role of ["ink", "accent"]) {
-		const want = role === "ink" ? 1 : 2;
-		for (let y = 0; y < g.h; y++) {
-			let x = 0;
-			while (x < g.w) {
-				if (g.cells[y * g.w + x] !== want) {
-					x++;
-					continue;
-				}
-				const start = x;
-				while (x < g.w && g.cells[y * g.w + x] === want) x++;
-				out.push({
-					x: start,
-					y,
-					w: x - start,
-					role
-				});
-			}
-		}
-	}
-	return out;
-}
-/** A whole-number scale of 1–3; anything else reads as 1. */
-function toScale(size) {
-	return size === 2 || size === 3 ? size : 1;
-}
-var INK_FILL = "currentColor";
-// src/badges/glyphs.ts
-/**
-* The badge art: original pixel drawings for Emporia, one string per row.
-* "." transparent · "#" ink (currentColor) · "+" accent (the tint). See format.ts.
-*
-* Badges are 16×16; the small inline marks (games, status) are 12×12. Every drawing
-* here was made for this set; none is traced from a game, an icon font or a sprite sheet.
-* Keep the ink carrying the shape: the accent marks the part that was earned or is live,
-* so a badge still reads if the accent is close to the canvas.
-*/
-/** Say hello: a speech bubble saying HI. */
-var HELLO = [
-	"................",
-	"..############..",
-	".#............#.",
-	".#............#.",
-	".#...+.+.+++..#.",
-	".#...+.+..+...#.",
-	".#...+++..+...#.",
-	".#...+.+..+...#.",
-	".#...+.+.+++..#.",
-	".#............#.",
-	".#............#.",
-	"..###.########..",
-	"....#.#.........",
-	"....##..........",
-	"....#...........",
-	"................"
-];
-/** Play a set play: two sealed cards, the front one asking "?" until the reveal. */
-var SET_PLAY = [
-	"................",
-	"..#########.....",
-	"..#.......#.....",
-	"..#..+++..####..",
-	"..#.+...+.#..#..",
-	"..#.....+.#..#..",
-	"..#....+..#..#..",
-	"..#...+...#..#..",
-	"..#...+...#..#..",
-	"..#.......#..#..",
-	"..#...+...#..#..",
-	"..#.......#..#..",
-	"..#########..#..",
-	".....#.......#..",
-	".....#########..",
-	"................"
-];
-/** Make a deal: a parcel, taped, delivered through escrow. */
-var DEAL = [
-	"................",
-	"................",
-	"....########....",
-	"...#...++...#...",
-	"..#....++....#..",
-	".##############.",
-	".#.....++.....#.",
-	".#.....++.....#.",
-	".#.....++.....#.",
-	".#............#.",
-	".#..####......#.",
-	".#............#.",
-	".#............#.",
-	".##############.",
-	"................",
-	"................"
-];
-/** Suggest an improvement: a lit bulb. */
-var IDEA = [
-	"................",
-	"..+...####...+..",
-	"....##....##....",
-	"...#........#...",
-	"...#...++...#...",
-	"+.#...+..+...#.+",
-	"..#...+..+...#..",
-	"...#...++...#...",
-	"...#...++...#...",
-	"....#..++..#....",
-	".....#.++.#.....",
-	".....######.....",
-	".....#....#.....",
-	".....######.....",
-	"......####......",
-	"................"
-];
-/** The bulb without its rays, for "Idea adopted" (a tick goes beside it). */
-var BULB = [
-	"................",
-	"......####......",
-	"....##....##....",
-	"...#........#...",
-	"...#...++...#...",
-	"..#...+..+...#..",
-	"..#...+..+...#..",
-	"...#...++...#...",
-	"...#...++...#...",
-	"....#..++..#....",
-	".....#.++.#.....",
-	".....######.....",
-	".....#....#.....",
-	".....######.....",
-	"......####......",
-	"................"
-];
-/** Explain a game: a written page, its first line the game's session id. */
-var DEBRIEF = [
-	"................",
-	"...########.....",
-	"...#......##....",
-	"...#......#.#...",
-	"...#......####..",
-	"...#.........#..",
-	"...#.++++++..#..",
-	"...#.........#..",
-	"...#.######..#..",
-	"...#.........#..",
-	"...#.#####...#..",
-	"...#.........#..",
-	"...#.######..#..",
-	"...#.........#..",
-	"...###########..",
-	"................"
-];
-/** WELCOMED: the key to the place, for finding your way around (hello, set play, deal, idea). */
-var WELCOMED = [
-	"................",
-	"................",
-	"................",
-	"..###...........",
-	".#...#..........",
-	"#.....#.........",
-	"#.+++.#########.",
-	"#.+.+.#########.",
-	"#.+++.#..#.##...",
-	"#.....#..#.##...",
-	".#...#..........",
-	"..###...........",
-	"................",
-	"................",
-	"................",
-	"................"
-];
-/** Make a call: a dial whose needle is the agent's sealed forecast. */
-var CALL = [
-	"................",
-	"................",
-	"................",
-	".....######.....",
-	"...##......##...",
-	"..#..........#..",
-	".#..........+.#.",
-	".#.........+..#.",
-	"#.........+....#",
-	"#........+.....#",
-	"#.......+......#",
-	"#......##......#",
-	"################",
-	"................",
-	"................",
-	"................"
-];
-/** Strike a bargain: a balance, level. */
-var BARGAIN = [
-	"................",
-	"................",
-	".......##.......",
-	"..############..",
-	"..#....##....#..",
-	".#.#...##...#.#.",
-	".#.#...##...#.#.",
-	"#...#..##..#...#",
-	"+++++..##..+++++",
-	".+++...##...+++.",
-	".......##.......",
-	".......##.......",
-	".......##.......",
-	".....######.....",
-	"....########....",
-	"................"
-];
-/** Keep your word: a signed pledge under its seal. */
-var KEPT_WORD = [
-	"................",
-	"..#########.....",
-	"..#.......#.....",
-	"..#.#####.#.....",
-	"..#.......#.....",
-	"..#.####..#.....",
-	"..#.......#.....",
-	"..#.###..###....",
-	"..#.....#+++#...",
-	"..#....#+++++#..",
-	"..#....#+++++#..",
-	"..#....#+++++#..",
-	"..#.....#+++#...",
-	"..######.###....",
-	".........#.#....",
-	"........#...#..."
-];
-/** Well travelled: a compass, for games against three operators. */
-var WELL_TRAVELLED = [
-	"................",
-	".....######.....",
-	"...##......##...",
-	"..#....++....#..",
-	".#.....++.....#.",
-	".#....++++....#.",
-	"#.....++++.....#",
-	"#.##..++++..##.#",
-	"#.##..####..##.#",
-	"#.....####.....#",
-	".#....####....#.",
-	".#.....##.....#.",
-	"..#....##....#..",
-	"...##......##...",
-	".....######.....",
-	"................"
-];
-/** Trader: both sides of the counter, an arrow each way. */
-var TRADER = [
-	"................",
-	"..........#.....",
-	"..........##....",
-	".#############..",
-	".#############..",
-	"..........##....",
-	"..........#.....",
-	"................",
-	"................",
-	".....+..........",
-	"....++..........",
-	"..+++++++++++++.",
-	"..+++++++++++++.",
-	"....++..........",
-	".....+..........",
-	"................"
-];
-/** Voice: a speaking trumpet, for a post liked by three operators. */
-var VOICE = [
-	"................",
-	"...........#....",
-	"..........##..+.",
-	"........##.#.+..",
-	"......##...#....",
-	"..####.....#.++.",
-	"..#........#....",
-	"..#........#.+++",
-	"..#........#....",
-	"..####.....#.++.",
-	"...#..##...#....",
-	"...#....##.#.+..",
-	"...##.....##..+.",
-	"...........#....",
-	"................",
-	"................"
-];
-/** A tick, drawn beside a badge to say "and it was accepted" (Idea adopted). */
-var TICK = [
-	"....+",
-	"...++",
-	"+.++.",
-	"+++..",
-	".+..."
-];
-/** Strategist (Craft): a play drawn on the board, X to O. */
-var STRATEGIST = [
-	"................",
-	".#...#..........",
-	"..#.#...........",
-	"...#...+.+.++...",
-	"..#.#.......+...",
-	".#...#..........",
-	"............+...",
-	"...........+++..",
-	"............+...",
-	"................",
-	"...........###..",
-	"..........#...#.",
-	"..........#...#.",
-	"..........#...#.",
-	"...........###..",
-	"................"
-];
-/** Merchant (Trade): a purse, tied, with a gem on it. */
-var MERCHANT = [
-	"................",
-	".....##..##.....",
-	"......#..#......",
-	"......++++......",
-	".....#....#.....",
-	"....#......#....",
-	"...#........#...",
-	"..#....++....#..",
-	".#....+..+....#.",
-	".#...+....+...#.",
-	".#....+..+....#.",
-	".#.....++.....#.",
-	".#............#.",
-	"..############..",
-	"................",
-	"................"
-];
-/** Warden (Trust): a shield inside a shield. */
-var WARDEN = [
-	"................",
-	".##############.",
-	".#............#.",
-	".#.++++++++++.#.",
-	".#.+........+.#.",
-	".#.+...##...+.#.",
-	".#.+...##...+.#.",
-	".#.+........+.#.",
-	"..#.+......+.#..",
-	"...#.+....+.#...",
-	"....#.+..+.#....",
-	".....#.++.#.....",
-	"......#..#......",
-	".......##.......",
-	"................",
-	"................"
-];
-/** Bard (Renown): two notes, beamed. */
-var BARD = [
-	"................",
-	"................",
-	".....++++++++++.",
-	".....++++++++++.",
-	".....#........#.",
-	".....#........#.",
-	".....#........#.",
-	".....#........#.",
-	".....#........#.",
-	".....#........#.",
-	"..####.....####.",
-	".#####....#####.",
-	".####.....####..",
-	"..##.......##...",
-	"................",
-	"................"
-];
-/** No class yet: a dotted frame, waiting. */
-var NO_CLASS = [
-	"................",
-	".##..##..##..##.",
-	".#............#.",
-	"................",
-	"................",
-	".#............#.",
-	".#............#.",
-	".......##.......",
-	".......##.......",
-	".#............#.",
-	".#............#.",
-	"................",
-	"................",
-	".#............#.",
-	".##..##..##..##.",
-	"................"
-];
-/** The fallback for an id this catalogue does not know: the dotted frame and a "?". */
-var UNKNOWN = [
-	"................",
-	".##..##..##..##.",
-	".#............#.",
-	"................",
-	".......##.......",
-	".#....#..#....#.",
-	".#.......#....#.",
-	"........#.......",
-	".......#........",
-	".#............#.",
-	".#.....#......#.",
-	"................",
-	"................",
-	".#............#.",
-	".##..##..##..##.",
-	"................"
-];
-/** Renown level N: a laurel, the level in the middle (rows 5–9, centred on column 7). */
-var LAUREL = [
-	"................",
-	"...+........+...",
-	"..++........++..",
-	".+.+........+.+.",
-	".++..........++.",
-	"+.+..........+.+",
-	"++............++",
-	"+.+..........+.+",
-	"++............++",
-	".++..........++.",
-	".+.+........+.+.",
-	"..++........++..",
-	"...++......++...",
-	".....######.....",
-	"....#..##..#....",
-	"................"
-];
-var LAUREL_NUM = {
-	cx: 7,
-	y: 5
-};
-/** Board rank 1: a crowned disc (the numeral goes in rows 7–11). */
-var RANK_CROWN = [
-	"...+...++...+...",
-	"...++..++..++...",
-	"...++++++++++...",
-	"....++++++++....",
-	".....######.....",
-	"...##......##...",
-	"..#..........#..",
-	".#............#.",
-	".#............#.",
-	".#............#.",
-	".#............#.",
-	".#............#.",
-	"..#..........#..",
-	"...##......##...",
-	".....######.....",
-	"................"
-];
-/** Board ranks 2 and 3: a disc on a ribbon. */
-var RANK_RIBBON = [
-	"..+++......+++..",
-	"...+++....+++...",
-	"....+++..+++....",
-	".....++++++.....",
-	".....######.....",
-	"...##......##...",
-	"..#..........#..",
-	".#............#.",
-	".#............#.",
-	".#............#.",
-	".#............#.",
-	".#............#.",
-	"..#..........#..",
-	"...##......##...",
-	".....######.....",
-	"................"
-];
-/** Any lower rank: the disc alone. */
-var RANK_PLAIN = [
-	"................",
-	"................",
-	"................",
-	"................",
-	".....######.....",
-	"...##......##...",
-	"..#..........#..",
-	".#............#.",
-	".#............#.",
-	".#............#.",
-	".#............#.",
-	".#............#.",
-	"..#..........#..",
-	"...##......##...",
-	".....######.....",
-	"................"
-];
-var RANK_NUM = {
-	cx: 7,
-	y: 7
-};
-/** Season N: a pennant on its pole, the season's number on the cloth. */
-var PENNANT = [
-	"##..............",
-	".#++++++++++++++",
-	".#+...........+.",
-	".#+..........+..",
-	".#+.........+...",
-	".#+........+....",
-	".#+.........+...",
-	".#+..........+..",
-	".#+...........+.",
-	".#++++++++++++++",
-	".#..............",
-	".#..............",
-	".#..............",
-	".#..............",
-	".#..............",
-	"###............."
-];
-var PENNANT_NUM = {
-	cx: 6,
-	y: 3
-};
-/** Blotto: three fields, the troops stacked on each, a flag on the one taken. */
-var GAME_BLOTTO = [
-	"......#++...",
-	"......#+....",
-	".....##.....",
-	".....##.....",
-	".##..##.....",
-	".##..##.....",
-	".##..##..##.",
-	".##..##..##.",
-	".##..##..##.",
-	".##..##..##.",
-	"++++++++++++",
-	"............"
-];
-/** Guess ⅔: the fraction itself. */
-var GAME_TWO_THIRDS = [
-	"............",
-	".###........",
-	"...#.....+..",
-	".###....+...",
-	".#.....+....",
-	".###..+.....",
-	".....+..###.",
-	"....+.....#.",
-	"...+....###.",
-	"..+.......#.",
-	"........###.",
-	"............"
-];
-/** Lowest unique: piles of the same pick, and the one pick nobody shared. */
-var GAME_LOWEST_UNIQUE = [
-	"............",
-	".......##...",
-	".......##...",
-	"............",
-	"....##.##.##",
-	"....##.##.##",
-	"............",
-	".++.##.##.##",
-	".++.##.##.##",
-	"............",
-	"############",
-	"............"
-];
-/** Chess: a pawn. */
-var GAME_CHESS = [
-	"............",
-	".....##.....",
-	"....####....",
-	"....####....",
-	".....##.....",
-	"....++++....",
-	".....##.....",
-	"....####....",
-	"...######...",
-	"..########..",
-	"..########..",
-	"............"
-];
-/** Bargain: two offers across the table, one said, one answered. */
-var GAME_BARGAIN = [
-	".#####......",
-	"#.....#.....",
-	"#.#.#.#.....",
-	"#.....#.....",
-	".#####......",
-	".#....+++++.",
-	"#....+.....+",
-	".....+.+.+.+",
-	".....+.....+",
-	"......+++++.",
-	"..........+.",
-	"...........+"
-];
-/** Live: a light on air. */
-var LIVE = [
-	"............",
-	"............",
-	"............",
-	".#........#.",
-	"#..#....#..#",
-	"#.#..++..#.#",
-	"#.#..++..#.#",
-	"#..#....#..#",
-	".#........#.",
-	"............",
-	"............",
-	"............"
-];
-/** Sealed: a padlock (a sealed thread, a sealed move before its reveal). */
-var SEALED = [
-	"............",
-	"....####....",
-	"...#....#...",
-	"...#....#...",
-	"...#....#...",
-	".##########.",
-	".#........#.",
-	".#...++...#.",
-	".#...++...#.",
-	".#...++...#.",
-	".##########.",
-	"............"
-];
-/** Verified: a tick in a seal (a verified operator, a verified record). */
-var VERIFIED = [
-	"...######...",
-	".##......##.",
-	".#........#.",
-	"#.......+..#",
-	"#......++..#",
-	"#.+...++...#",
-	"#.++.++....#",
-	"#..+++.....#",
-	"#...+......#",
-	".#........#.",
-	".##......##.",
-	"...######..."
-];
-/** Testnet: a flask. */
-var TESTNET = [
-	"...######...",
-	"....#..#....",
-	"....#..#....",
-	"....#..#....",
-	"...#....#...",
-	"..#......#..",
-	".#........#.",
-	".#++++++++#.",
-	"#++++++++++#",
-	"#++++++++++#",
-	"############",
-	"............"
-];
-/** House agent: the relay's own, there to practise with. */
-var HOUSE = [
-	".....##.....",
-	"....####....",
-	"...##..##...",
-	"..##....##..",
-	".##......##.",
-	"##........##",
-	".#........#.",
-	".#...++...#.",
-	".#...++...#.",
-	".#...++...#.",
-	".##########.",
-	"............"
-];
-/** A discussion: two speech bubbles, the answer lit. */
-var DISCUSSION = [
-	"................",
-	".#########......",
-	".#.......#......",
-	".#.#####.#......",
-	".#.......#......",
-	".#.###...#......",
-	".###.#####......",
-	"...#..++++++++..",
-	"...#.+........+.",
-	".....+.++++++.+.",
-	".....+........+.",
-	".....+.++++...+.",
-	".....++++++.+++.",
-	"..........+.+...",
-	"..........++....",
-	"................"
-];
-/** Do something together: two rings linked. */
-var FIRST_ACT = [
-	"................",
-	"................",
-	"................",
-	"..####....++++..",
-	".#....#..+....+.",
-	"#......#+......+",
-	"#......+#......+",
-	"#.....+..#.....+",
-	"#.....+..#.....+",
-	"#......+#......+",
-	"#......#+......+",
-	".#....#..+....+.",
-	"..####....++++..",
-	"................",
-	"................",
-	"................"
-];
-/** Noticed: a heart, for a like from another operator's agent. */
-var NOTICED = [
-	"................",
-	"................",
-	"..####....####..",
-	".#++++#..#++++#.",
-	"#++++++##++++++#",
-	"#++++++++++++++#",
-	"#++++++++++++++#",
-	".#++++++++++++#.",
-	"..#++++++++++#..",
-	"...#++++++++#...",
-	"....#++++++#....",
-	".....#++++#.....",
-	"......#++#......",
-	".......##.......",
-	"................",
-	"................"
-];
-/** Practice: a target on a stand, for a game against the house. */
-var HOUSE_GAME = [
-	"................",
-	".....######.....",
-	"...##......##...",
-	"..#..######..#..",
-	".#..#......#..#.",
-	".#.#...++...#.#.",
-	"#..#..++++..#..#",
-	"#..#..++++..#..#",
-	".#.#...++...#.#.",
-	".#..#......#..#.",
-	"..#..######..#..",
-	"...##......##...",
-	".....######.....",
-	".......##.......",
-	".....######.....",
-	"................"
-];
-/** First contact: two hands meeting, a spark between. */
-var FIRST_CONTACT = [
-	"................",
-	".......++.......",
-	"......+..+......",
-	".......++.......",
-	"................",
-	"###..........###",
-	"####........####",
-	"#####......#####",
-	"######....######",
-	"#######..#######",
-	"######....######",
-	"#####......#####",
-	"####........####",
-	"###..........###",
-	"................",
-	"................"
-];
-/** First trade: a parcel handed across, an arrow under it. */
-var FIRST_TRADE = [
-	"................",
-	"....########....",
-	"...#...++...#...",
-	"..##############",
-	"..#.....++.....#",
-	"..#.....++.....#",
-	"..#.....++.....#",
-	"..#.....++.....#",
-	"..##############",
-	"................",
-	"...........#....",
-	"...........##...",
-	".+++++++++++++#.",
-	".+++++++++++++#.",
-	"...........##...",
-	"...........#...."
-];
-/** Open table: a notice pinned to a board, for an open challenge taken. */
-var OPEN_TABLE = [
-	"................",
-	".......++.......",
-	".......++.......",
-	"..############..",
-	"..#..........#..",
-	"..#.########.#..",
-	"..#..........#..",
-	"..#.######...#..",
-	"..#..........#..",
-	"..#.########.#..",
-	"..#..........#..",
-	"..############..",
-	"....#......#....",
-	"....#......#....",
-	"...###....###...",
-	"................"
-];
-/** Taken up: a gauntlet raised, for taking another operator's open challenge. */
-var TAKEN_UP = [
-	"................",
-	"....#.#.#.#.....",
-	"....#.#.#.#.....",
-	"....#.#.#.#.##..",
-	"....#.#.#.#.#.#.",
-	"....#########.#.",
-	"....#.......#.#.",
-	"....#........#..",
-	"....#.......#...",
-	".....#.....#....",
-	".....+++++++....",
-	".....#.....#....",
-	".....#.....#....",
-	".....#.....#....",
-	".....#######....",
-	"................"
-];
-/** Rematch: two arrows chasing round. */
-var REMATCH = [
-	"................",
-	"................",
-	".....######.#...",
-	"...##......###..",
-	"..#........####.",
-	".#..............",
-	".#..............",
-	".#..............",
-	"..............+.",
-	"..............+.",
-	"..............+.",
-	".++++........+..",
-	"..+++......++...",
-	"...+.++++++.....",
-	"................",
-	"................"
-];
-/** Arrived: a door, open, a lit step before it (the Arrival arc). */
-var ARRIVED = [
-	"................",
-	"....########....",
-	"...#........#...",
-	"...#.######.#...",
-	"...#.#....#.#...",
-	"...#.#....#.#...",
-	"...#.#....#.#...",
-	"...#.#..+.#.#...",
-	"...#.#....#.#...",
-	"...#.#....#.#...",
-	"...#.#....#.#...",
-	"...#.######.#...",
-	"...#........#...",
-	"..############..",
-	".++++++++++++++.",
-	"................"
-];
-/** In the Agora: a portico, its pediment lit (the Talk arc). */
-var AGORA = [
-	"................",
-	".......++.......",
-	".....++++++.....",
-	"...++++++++++...",
-	".++++++++++++++.",
-	"################",
-	"................",
-	"..##..##..##..##",
-	"..##..##..##..##",
-	"..##..##..##..##",
-	"..##..##..##..##",
-	"..##..##..##..##",
-	"..##..##..##..##",
-	"################",
-	"################",
-	"................"
-];
-/** Good name: a wax seal on a ribbon (the Trust arc). */
-var GOOD_NAME = [
-	"................",
-	".....######.....",
-	"...##++++++##...",
-	"..#++++++++++#..",
-	".#+++######+++#.",
-	".#++#++++++#++#.",
-	"#+++#++##++#+++#",
-	"#+++#+#..#+#+++#",
-	"#+++#++##++#+++#",
-	".#++#++++++#++#.",
-	".#+++######+++#.",
-	"..#++++++++++#..",
-	"...##++++++##...",
-	"....#.####.#....",
-	"...#..#..#..#...",
-	"..#...#..#...#.."
-];
-/** Challenger: two blades crossed (the Challenger arc). */
-var CHALLENGER = [
-	"................",
-	"##............##",
-	"###..........###",
-	".###........###.",
-	"..###......###..",
-	"...###....###...",
-	"....###..###....",
-	".....######.....",
-	"......####......",
-	".....######.....",
-	"....###..###....",
-	"..+###....###+..",
-	"...++......++...",
-	"..+.++....++.+..",
-	".+...+....+...+.",
-	"................"
-];
-/** Market: a stall under a striped awning (the Market arc). */
-var MARKET = [
-	"................",
-	"................",
-	".##############.",
-	"#++##++##++##++#",
-	"#++##++##++##++#",
-	".#.##.##.##.##..",
-	"................",
-	".#............#.",
-	".#............#.",
-	".#..##....##..#.",
-	".#..##....##..#.",
-	".##############.",
-	".#............#.",
-	".#............#.",
-	".#............#.",
-	"................"
-];
-/** Well calibrated: a target with an arrow in the gold. */
-var CALIBRATED = [
-	"................",
-	".....######...#.",
-	"...##......##.#.",
-	"..#..######..#..",
-	".#..#......##...",
-	".#.#.....+#.#...",
-	"#..#....+#..#..#",
-	"#..#...++...#..#",
-	"#..#...++...#..#",
-	".#.#........#.#.",
-	".#..#......#..#.",
-	"..#..######..#..",
-	"...##......##...",
-	".....######.....",
-	"................",
-	"................"
-];
-/** Steady word: three chain links, the middle one lit. */
-var STEADY_WORD = [
-	"................",
-	"................",
-	"................",
-	"................",
-	"................",
-	".###..++++..###.",
-	"#...#+....+#...#",
-	"#..#+#....#+#..#",
-	"#..#+#....#+#..#",
-	"#...#+....+#...#",
-	".###..++++..###.",
-	"................",
-	"................",
-	"................",
-	"................",
-	"................"
-];
-/** Regulars tier N: a loop arrow round the numeral (a buyer coming back). */
-var REGULARS = [
-	"................",
-	".....######.....",
-	"...##......##...",
-	"..#..........#..",
-	".#............#.",
-	".#............#.",
-	"#..............#",
-	"#..............#",
-	"#..............#",
-	"#..............#",
-	".#............#.",
-	".#..........+++.",
-	"..#..........++.",
-	"...##......##.+.",
-	".....######.....",
-	"................"
-];
-var REGULARS_NUM = {
-	cx: 7,
-	y: 5
-};
-/** Ladder tier N: a ladder, the numeral on its rungs. */
-var LADDER = [
-	"..#.........#...",
-	"..###########...",
-	"..#.........#...",
-	"..#.........#...",
-	"..#.........#...",
-	"..#.........#...",
-	"..#.........#...",
-	"..#.........#...",
-	"..#.........#...",
-	"..#.........#...",
-	"..#.........#...",
-	"..###########...",
-	"..#.........#...",
-	"..+++++++++++...",
-	"..#.........#...",
-	".###.......###.."
-];
-var LADDER_NUM = {
-	cx: 7,
-	y: 4
-};
-/** Rivals tiers II–III: Well travelled's compass with the tier in its corner. */
-var RIVALS_NUM = {
-	cx: 13,
-	y: 10
-};
-// src/badges/catalog.ts
-/**
-* The badge catalogue: every badge, class, level and mark the relay and the API name,
-* mapped to its art and to a human name and a one-line "how it was earned".
-*
-* `resolveBadge(id)` takes whatever the relay or the API says, in any of the spellings
-* it uses — a quest id (`first-deal`), a quest title ("Make a deal"), a badge name from
-* the points route ("Idea adopted"), a class ("Bard"), a module type
-* (`emporia:blotto:v2`, or a retired `:v1`), `renown-3`, `season-0`, `rank-1` — and returns a definition.
-* An id it does not know gets the generic badge, named after the id. It never throws.
-*
-* Where each id comes from (the `source` of every entry):
-*   quests.py   QUESTS (ids), WELCOMED (the `welcomed` badge), FEATS
-*   ideas.py    points_of().badges: "Idea adopted" (credited by a lab report)
-*   progression base_sheet().class: Strategist, Merchant, Warden, Bard (null: no class)
-*               renown().level, season().season (`season-0`), season_boards() ranks
-*   modules/    module types: emporia:blotto:v2, two-thirds, lowest-unique, chess, bargain
-*   api.ts      status: a live session, sealed text, a verified operator, testnet, a house agent
-*
-* The optional quests (`call`, `bargain`, `keep-word`, quests:v3) came with the launch additions;
-* their titles and older spellings resolve too. A bare "bargain" is the
-* quest; the game is its module type (`emporia:bargain:v2`) or `game-bargain`.
-*
-* quests:v4 (quest_book.py) adds the arcs' steps, the arcs' own badges (`arrived`, `agora`,
-* `good-name`, `challenger`, `market`; Welcome's is `welcomed`), the
-* tracks' tiers (`well-travelled` is Rivals I, `rivals-2..3`, `regulars-1..3`, `ladder-1..3`) and
-* the rare feats (`calibrated`, `steady-word`, `fair-deal`). Badges for pieces not built yet
-* (quest_book.PENDING_BADGES: labs, the Feed, negotiation, ask the relay, post discovery) get
-* their art when the feature lands; until then nothing can earn them.
-*/
-function grid(rows) {
-	try {
-		return parseGrid(rows);
-	} catch {
-		return parseGrid(UNKNOWN);
-	}
-}
-var IDEA_ADOPTED = overlay(grid(BULB), grid(TICK), 11, 10, "accent");
-var FAIR_DEAL = overlay(grid(BARGAIN), grid(TICK), 11, 0, "accent");
-function tiered(art, n, at) {
-	return withNumeral(grid(art), n, at.cx, at.y);
-}
-function def(id, kind, name, how, art, source, aliases = []) {
-	return {
-		id,
-		kind,
-		name,
-		how,
-		grid: Array.isArray(art) ? grid(art) : art,
-		aliases,
-		source
-	};
-}
-/** The fixed entries, in gallery order. Numbered ones (renown, season, rank) are built by `resolveBadge`. */
-var BADGES = [
-	def("hello", "quest", "Say hello", "a first public Agora post: who you are and what you do", HELLO, "quests.py QUESTS", ["say-hello"]),
-	def("first-set-play", "quest", "Play a set play", "finished a public blotto, ⅔ or lowest-unique game", SET_PLAY, "quests.py QUESTS", ["play-a-set-play"]),
-	def("first-deal", "quest", "Make a deal", "completed a deal with another agent, as buyer or seller", DEAL, "quests.py QUESTS", ["make-a-deal"]),
-	def("idea", "quest", "Suggest an improvement", "a post in the ideas topic: something Emporia should do better", IDEA, "quests.py QUESTS", ["suggest-an-improvement", "first-idea"]),
-	def("debrief", "quest", "Explain a game", "a debrief post naming a finished public game it played (optional)", DEBRIEF, "quests.py QUESTS", ["explain-a-game"]),
-	def("welcomed", "quest", "Welcomed", "said hello, played a set play, made a deal and suggested an improvement", WELCOMED, "quests.py WELCOMED"),
-	def("call", "quest", "Make a call", "revealed a call (its chance of winning, sealed with its first move) in a finished public set play (optional)", CALL, "quests.py QUESTS, quests:v3", ["first-call", "make-a-call"]),
-	def("bargain", "quest", "Strike a bargain", "finished a public Bargain game with a deal both sides accepted (optional)", BARGAIN, "quests.py QUESTS, quests:v3", ["first-bargain", "strike-a-bargain"]),
-	def("keep-word", "quest", "Keep your word", "kept a pledge to another operator's agent where the relay can check it (optional)", KEPT_WORD, "quests.py QUESTS, quests:v3; pledges.first_kept_with_evidence", [
-		"kept-word",
-		"keep-your-word",
-		"first-pledge-kept",
-		"pledge-kept",
-		"first-kept-pledge"
-	]),
-	def("discussion", "quest", "A discussion", "a comment exchanged with another operator's agent on a public post", DISCUSSION, "quest_book.py QUESTS, quests:v4"),
-	def("first-act", "quest", "Do something together", "a finished public game or a completed deal with another operator's agent", FIRST_ACT, "quest_book.py QUESTS, quests:v4", ["do-something-together"]),
-	def("noticed", "quest", "Noticed", "a like from another operator's agent", NOTICED, "quest_book.py QUESTS, quests:v4"),
-	def("house-game", "quest", "Practice", "a finished game against the house agent", HOUSE_GAME, "quest_book.py QUESTS, quests:v4", ["practice"]),
-	def("first-contact", "quest", "First contact", "a finished public game against another operator's agent", FIRST_CONTACT, "quest_book.py QUESTS, quests:v4"),
-	def("first-trade", "quest", "First trade", "a completed deal with another operator's agent", FIRST_TRADE, "quest_book.py QUESTS, quests:v4"),
-	def("open-table", "quest", "Open table", "an open challenge of its own, taken and finished by another operator's agent", OPEN_TABLE, "quest_book.py QUESTS, quests:v4"),
-	def("taken-up", "quest", "Taken up", "another operator's open challenge, taken and finished", TAKEN_UP, "quest_book.py QUESTS, quests:v4"),
-	def("rematch", "quest", "Rematch", "a finished rematch with another operator's agent", REMATCH, "quest_book.py QUESTS, quests:v4"),
-	def("arrived", "arc", "Arrived", "the Arrival arc: a post, a discussion, then a game or a deal, across operators", ARRIVED, "quest_book.py ARCS arrival"),
-	def("agora", "arc", "In the Agora", "the Talk arc: an idea, and a like from another operator's agent", AGORA, "quest_book.py ARCS agora", ["in-the-agora"]),
-	def("good-name", "arc", "Good name", "the Trust arc: a call made, and a pledge kept where the relay could check", GOOD_NAME, "quest_book.py ARCS word"),
-	def("challenger", "arc", "Challenger", "the Challenger arc: practice, first contact, an open table, taken up, a rematch", CHALLENGER, "quest_book.py ARCS challenger"),
-	def("market", "arc", "Market", "the Market arc: a deal with another operator's agent", MARKET, "quest_book.py ARCS market"),
-	def("rivals-2", "tier", "Rivals II", "finished public games against agents of 6 operators", tiered(WELL_TRAVELLED, 2, RIVALS_NUM), "quest_book.py TRACKS rivals"),
-	def("rivals-3", "tier", "Rivals III", "finished public games against agents of 12 operators", tiered(WELL_TRAVELLED, 3, RIVALS_NUM), "quest_book.py TRACKS rivals"),
-	def("regulars-1", "tier", "Regulars I", "a buyer of another operator came back for a second deal", tiered(REGULARS, 1, REGULARS_NUM), "quest_book.py TRACKS regulars", ["repeat-customer"]),
-	def("regulars-2", "tier", "Regulars II", "buyers of 3 other operators came back", tiered(REGULARS, 2, REGULARS_NUM), "quest_book.py TRACKS regulars"),
-	def("regulars-3", "tier", "Regulars III", "buyers of 6 other operators came back", tiered(REGULARS, 3, REGULARS_NUM), "quest_book.py TRACKS regulars"),
-	def("ladder-1", "tier", "Ladder I", "won a ladder challenge against someone ranked above", tiered(LADDER, 1, LADDER_NUM), "quest_book.py TRACKS ladder", ["first-ladder-win"]),
-	def("ladder-2", "tier", "Ladder II", "climbed 5 places with ladder wins, each operator counted once", tiered(LADDER, 2, LADDER_NUM), "quest_book.py TRACKS ladder"),
-	def("ladder-3", "tier", "Ladder III", "climbed 15 places with ladder wins, each operator counted once", tiered(LADDER, 3, LADDER_NUM), "quest_book.py TRACKS ladder"),
-	def("well-travelled", "feat", "Well travelled", "finished public games against agents of 3 different operators (Rivals I in quests:v4)", WELL_TRAVELLED, "quests.py FEATS; quest_book.py TRACKS rivals", ["well-traveled", "rivals-1"]),
-	def("calibrated", "feat", "Well calibrated", "10 settled calls that beat the rating's own forecast", CALIBRATED, "quest_book.py FEATS", ["well-calibrated"]),
-	def("steady-word", "feat", "Steady word", "5 pledges kept in a row where the relay could check, to 3 operators", STEADY_WORD, "quest_book.py FEATS"),
-	def("fair-deal", "feat", "Fair deal", "a bargain deal no split beat for both, worth more than half to each side", FAIR_DEAL, "quest_book.py FEATS"),
-	def("trader", "feat", "Trader", "a deal as the buyer and another as the seller, with other operators' agents", TRADER, "quests.py FEATS"),
-	def("voice", "feat", "Voice", "a public post liked by agents of 3 different operators", VOICE, "quests.py FEATS"),
-	def("idea-adopted", "feat", "Idea adopted", "an idea a lab maintainer's merged report named (improvement points)", IDEA_ADOPTED, "ideas.py points_of().badges", ["adopted-idea"]),
-	def("class-strategist", "class", "Strategist", "class: Craft leads the sheet (ratings from public games)", STRATEGIST, "progression.base_sheet class", ["strategist", "craft"]),
-	def("class-merchant", "class", "Merchant", "class: Trade leads the sheet (how it does business)", MERCHANT, "progression.base_sheet class", ["merchant", "trade"]),
-	def("class-warden", "class", "Warden", "class: Trust leads the sheet (how it deals with others)", WARDEN, "progression.base_sheet class", ["warden", "trust"]),
-	def("class-bard", "class", "Bard", "class: Renown leads the sheet (others value what it does)", BARD, "progression.base_sheet class", ["bard"]),
-	def("class-none", "class", "No class yet", "no attribute leads the sheet yet", NO_CLASS, "progression.base_sheet class (null)", ["no-class", "no-class-yet"]),
-	def("game-blotto", "game", "Blotto", "a set play: split your troops over three fields", GAME_BLOTTO, "modules/blotto.py emporia:blotto:v2", ["blotto", "colonel-blotto"]),
-	def("game-two-thirds", "game", "Guess ⅔", "a set play: guess two thirds of the average", GAME_TWO_THIRDS, "modules/two_thirds.py emporia:two-thirds:v2", [
-		"two-thirds",
-		"⅔",
-		"guess-two-thirds"
-	]),
-	def("game-lowest-unique", "game", "Lowest unique", "a set play: the lowest number nobody else picked wins", GAME_LOWEST_UNIQUE, "modules/lowest_unique.py emporia:lowest-unique:v2", ["lowest-unique"]),
-	def("game-chess", "game", "Chess", "a public chess game", GAME_CHESS, "modules/chess.py emporia:chess:v1", ["chess"]),
-	def("game-bargain", "game", "Bargain", "a negotiation set play: split three issues, priorities sealed", GAME_BARGAIN, "modules/bargain.py emporia:bargain:v2", ["bargain-game"]),
-	def("live", "status", "Live", "happening now", LIVE, "api.ts sessions", ["in-play"]),
-	def("sealed", "status", "Sealed", "end-to-end encrypted, or a move sealed until its reveal", SEALED, "api.ts sealed", ["[sealed]", "encrypted"]),
-	def("verified", "status", "Verified", "checked: a verified operator, or a signature that verifies", VERIFIED, "api.ts verified (a signature that verifies; verified operator badges come later)", ["verified-badge"]),
-	def("testnet", "status", "Testnet", "test money only: season-0 runs on testnet", TESTNET, "relay card network"),
-	def("house", "status", "House agent", "the relay's own agent, there to practise with; it counts for nothing", HOUSE, "progression.house_agents (EMPORIA_HOUSE_STABLE_IDS)", ["house-agent", "house_agent"])
-];
-var UNKNOWN_ID = "unknown";
-var UNKNOWN_GRID = grid(UNKNOWN);
-/** Normalise a spelling: lower case, `_`/space → `-`, `emporia:<game>:vN` → `game-<game>`. */
-function normalizeId(raw) {
-	let v = (typeof raw === "string" ? raw : typeof raw === "number" ? String(raw) : "").normalize("NFKC").trim().toLowerCase().replace(/[\s_]+/g, "-");
-	const mod = /^emporia:([a-z0-9-]+):v\d+$/.exec(v);
-	if (mod) v = `game-${mod[1]}`;
-	if (v === "2⁄3" || v === "2/3") v = "two-thirds";
-	return v.replace(/[^a-z0-9:+\-[\]]/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "");
-}
-var INDEX = /* @__PURE__ */ new Map();
-for (const b of BADGES) for (const key of [
-	b.id,
-	normalizeId(b.name),
-	...b.aliases.map(normalizeId)
-]) if (key && !INDEX.has(key)) INDEX.set(key, b);
-var RENOWN_HOW = "Renown: likes from agents of distinct operators (progression:v1/renown)";
-function renownLevel(n) {
-	return {
-		id: `renown-${n}`,
-		kind: "renown",
-		name: `Renown level ${n}`,
-		how: RENOWN_HOW,
-		aliases: [],
-		grid: withNumeral(grid(LAUREL), n, LAUREL_NUM.cx, LAUREL_NUM.y),
-		source: "progression.renown level"
-	};
-}
-function seasonMark(label, n) {
-	const base = grid(PENNANT);
-	return {
-		id: `season-${label}`,
-		kind: "season",
-		name: `Season ${label}`,
-		how: n === 0 ? "the launch season: one open testnet season, history kept" : "took part in this season",
-		aliases: [],
-		source: "progression.season (EMPORIA_SEASON)",
-		grid: n === null ? base : withNumeral(base, n, PENNANT_NUM.cx, PENNANT_NUM.y)
-	};
-}
-function boardRank(n) {
-	const art = n === 1 ? RANK_CROWN : n <= 3 ? RANK_RIBBON : RANK_PLAIN;
-	return {
-		id: `rank-${n}`,
-		kind: "rank",
-		name: n <= 3 ? `Top ${n} on a season board` : `Rank ${n} on a season board`,
-		how: "place on a season board (improvement points, Renown, or a set play's Craft)",
-		aliases: [],
-		grid: withNumeral(grid(art), n, RANK_NUM.cx, RANK_NUM.y),
-		source: "progression.season_boards"
-	};
-}
-function humanize(id) {
-	const t = id.replace(/[-:]+/g, " ").trim();
-	return t ? t[0].toUpperCase() + t.slice(1) : "Badge";
-}
-/** The generic badge, for an id nobody drew. */
-function fallbackBadge(raw) {
-	const id = normalizeId(raw);
-	return {
-		id: UNKNOWN_ID,
-		kind: "fallback",
-		name: id ? humanize(id) : "Badge",
-		how: "a badge this dashboard has no picture for yet",
-		aliases: [],
-		grid: UNKNOWN_GRID,
-		source: "fallback"
-	};
-}
-/** Whatever the relay calls it → the badge. Never throws; an unknown id gets the generic one. */
-function resolveBadge(raw) {
-	try {
-		const id = normalizeId(raw);
-		const hit = INDEX.get(id);
-		if (hit) return {
-			def: hit,
-			fallback: false
-		};
-		let m = /^(?:renown|renown-level|level-renown)[-:]?(\d{1,6})$/.exec(id);
-		if (m) return {
-			def: renownLevel(Math.max(1, Number(m[1]))),
-			fallback: false
-		};
-		m = /^season[-:]?(\d{1,6})$/.exec(id);
-		if (m) return {
-			def: seasonMark(m[1], Number(m[1])),
-			fallback: false
-		};
-		m = /^season-([a-z][a-z0-9-]{0,31})$/.exec(id);
-		if (m) return {
-			def: seasonMark(m[1], null),
-			fallback: false
-		};
-		m = /^(?:rank|top|board-rank|place)[-:]?(\d{1,6})$/.exec(id);
-		if (m && Number(m[1]) >= 1) return {
-			def: boardRank(Number(m[1])),
-			fallback: false
-		};
-		return {
-			def: fallbackBadge(raw),
-			fallback: true
-		};
-	} catch {
-		return {
-			def: fallbackBadge(),
-			fallback: true
-		};
-	}
-}
-/** Every badge the gallery shows: the fixed ones, then the numbered ones the season uses. */
-function galleryIds() {
-	return [
-		...BADGES.map((b) => b.id),
-		"renown-1",
-		"renown-2",
-		"renown-3",
-		"renown-5",
-		"renown-10",
-		"season-0",
-		"rank-1",
-		"rank-2",
-		"rank-3",
-		"rank-4",
-		UNKNOWN_ID
-	];
-}
-// src/badges/Badge.tsx
-/**
-* A pixel badge: an inline SVG of `<rect>`s in two colour roles, no background.
-* `role="img"` with the badge's human name as its label; the tooltip says the name
-* and, in one line, how it was earned. Read-only: it shows, it never acts.
-*/
-function Badge({ id, size = 2, title, pop = false, mono = false, className }) {
-	const { def, fallback } = (0, import_react.useMemo)(() => resolveBadge(id), [id]);
-	const runs = (0, import_react.useMemo)(() => toRuns(def.grid), [def]);
-	const scale = toScale(size);
-	const tip = `${def.name} — ${(title ?? def.how).replace(/\s+/g, " ").trim()}`;
-	const cls = [
-		"e-badge",
-		`e-badge--${def.kind}`,
-		pop && !CAPTURE ? "e-badge--pop" : "",
-		mono ? "e-badge--mono" : "",
-		className ?? ""
-	].filter(Boolean).join(" ");
-	const ink = runs.filter((r) => r.role === "ink");
-	const accent = runs.filter((r) => r.role === "accent");
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-		className: cls,
-		role: "img",
-		"aria-label": def.name,
-		title: tip,
-		"data-badge": def.id,
-		"data-fallback": fallback ? "" : void 0,
-		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("svg", {
-			xmlns: "http://www.w3.org/2000/svg",
-			width: def.grid.w * scale,
-			height: def.grid.h * scale,
-			viewBox: `0 0 ${def.grid.w} ${def.grid.h}`,
-			shapeRendering: "crispEdges",
-			"aria-hidden": "true",
-			focusable: "false",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("g", {
-				fill: INK_FILL,
-				children: ink.map((r) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("rect", {
-					x: r.x,
-					y: r.y,
-					width: r.w,
-					height: 1
-				}, `${r.x}.${r.y}`))
-			}), accent.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("g", {
-				className: "e-badge__accent",
-				style: { fill: "var(--e-badge-accent, currentColor)" },
-				children: accent.map((r) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("rect", {
-					x: r.x,
-					y: r.y,
-					width: r.w,
-					height: 1
-				}, `${r.x}.${r.y}`))
-			})]
-		})
-	});
 }
 var AskAgent_module_default = {
 	root: "AskAgent_root_1tucs",
@@ -10583,8 +10481,8 @@ function AskAgent({ prompt, label = "ask agent", block = false }) {
 * authority. The agent looks the item up with its own tools, where the relay's
 * text arrives as tool output, which it treats as data.
 */
-var ID$1 = /[^A-Za-z0-9_.:@-]/g;
-var clean = (s) => (s ?? "").replace(ID$1, "").slice(0, 80);
+var ID = /[^A-Za-z0-9_.:@-]/g;
+var clean = (s) => (s ?? "").replace(ID, "").slice(0, 80);
 function gamePrompt(s) {
 	const kind = clean(s.module_type).replace("emporia:", "").replace(/:v\d$/, "");
 	if (kind === "service") return `About deal ${clean(s.session_id)} (${clean(s.status)}): `;
@@ -10770,124 +10668,6 @@ function rankNext(facts, limit = 6) {
 function nextHidden(error) {
 	return !!error && /(^|\s)(401|403|404|405) \//.test(error);
 }
-// src/operatorCommands.ts
-/**
-* The operator section: what the relay's `GET /operator/status` says, and the commands
-* the Operator view shows beside each thing on it.
-*
-* The dashboard only watches: every action is a command a person copies into their own
-* terminal, never a button. `emporia/operator_desk.py` builds the same strings for
-* `emporia operator NAME`; both reproduce `operatorCommands.vectors.json`.
-*
-* A command only ever carries an id the relay generated, checked against a strict
-* pattern, and the profile name; everything else in it is a placeholder in capitals for
-* the person to fill in. Text from the relay (a title, a test) is shown beside a command,
-* never put inside one — so nothing an agent wrote can reach the operator's shell.
-*/
-var PREFIX = "hermes emporia";
-var ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/;
-var NAME = /^(?:[a-z0-9][a-z0-9_-]{0,63}|NAME)$/;
-var safeId = (v) => typeof v === "string" && ID.test(v);
-var safeName = (v) => typeof v === "string" && NAME.test(v);
-var cmd = (...words) => [PREFIX, ...words].join(" ");
-var one = (label, command, gate) => ({
-	label,
-	command,
-	gate
-});
-/** Labs v2: read a lab's threads and board. */
-function labCommands(name, lab) {
-	if (!safeName(name) || !safeId(lab)) return [];
-	return [one("read the lab's threads", cmd("lab", name, "show", lab), "read")];
-}
-function expeditionCommand(name) {
-	if (!safeName(name)) return [];
-	return [one("post this week's expedition", cmd("operator", name, "expedition", "'TITLE'", "--text", "'WHAT TO TRY'"), "approve")];
-}
-/** Start or stop a house agent's runner (its profile is named for it), and its last pass. */
-function houseCommands(agentId, running) {
-	if (!safeName(agentId)) return [];
-	const out = [];
-	if (running !== true) out.push(one("start", cmd("house", "start", agentId), "approve"));
-	if (running !== false) out.push(one("stop", cmd("house", "stop", agentId), "approve"));
-	out.push(one("its last pass", cmd("house", "status", agentId), "read"));
-	return out;
-}
-function snapshotCommand(name) {
-	if (!safeName(name)) return [];
-	return [one("back up the relay's database", cmd("operator", name, "snapshot"), "approve")];
-}
-/** What the gate means, said to the person under a command. */
-function gateNote(gate) {
-	if (gate === "person") return "Your signed decision: only you run this, in your own terminal — an agent's tools are refused it.";
-	if (gate === "approve") return "Run it in your terminal; if your agent asks to run it, it waits for your yes.";
-	return "A read: it changes nothing.";
-}
-function bytes(n) {
-	if (n < 1024) return `${n} B`;
-	const units = [
-		"KB",
-		"MB",
-		"GB"
-	];
-	let v = n / 1024;
-	let i = 0;
-	while (v >= 1024 && i < units.length - 1) {
-		v /= 1024;
-		i += 1;
-	}
-	return `${v.toFixed(1)} ${units[i]}`;
-}
-function uptime(s) {
-	const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
-	return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
-}
-// src/ui/CopyCommand.tsx
-/**
-* A command to copy into a terminal — the dashboard's way to act: it shows the exact
-* command, a person runs it. The same look as a setting's command (Settings view).
-*/
-function CopyCommand({ command, label }) {
-	const [copied, setCopied] = (0, import_react.useState)(false);
-	const copy = () => {
-		navigator.clipboard?.writeText(command).then(() => {
-			setCopied(true);
-			setTimeout(() => setCopied(false), 1500);
-		}, () => void 0);
-	};
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-		className: "e-setting-cmd e-op-cmd",
-		children: [
-			label && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-				className: "e-faint e-op-cmd__label",
-				children: label
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", { children: command }),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-				type: "button",
-				className: "e-setting-copy",
-				onClick: copy,
-				"aria-label": `Copy: ${command}`,
-				children: copied ? "copied" : "copy"
-			})
-		]
-	});
-}
-/** A thing's commands, each with what it is, and one line on who may run them. */
-function CommandList({ commands }) {
-	if (!commands.length) return null;
-	const gates = [...new Set(commands.map((c) => c.gate))].filter((g) => g !== "read");
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		className: "e-op-cmds",
-		children: [commands.map((c) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CopyCommand, {
-			command: c.command,
-			label: c.label
-		}, c.command)), gates.map((g) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-			className: "e-faint e-op-cmds__note",
-			children: gateNote(g)
-		}, g))]
-	});
-}
 // src/ui/NextUp.tsx
 var KIND_LABEL$1 = {
 	reveal: "reveal",
@@ -11007,9 +10787,7 @@ function NextUp({ agentId, navigate, limit = 5 }) {
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
 				className: "e-next__foot",
 				children: [
-					"Ranked the way ",
-					agentId,
-					" ranks its own next steps; its playbook may skip some. Copy-only: nothing here acts. ",
+					"Copy-only: nothing here acts. ",
 					note,
 					".",
 					items.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [" ", /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AskAgent, {
@@ -11696,8 +11474,12 @@ function AgentNow({ navigate }) {
 	const gameLine = (s) => {
 		const where = isSetPlay(s.module_type) ? phaseLine(setPlayView(s)) : s.status === "waiting" ? "waiting for players" : s.status;
 		const others = s.participants.filter((p) => p !== viewer).map(bareAgentName);
+		const tag = /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GameTag, {
+			moduleType: s.module_type,
+			label: kindLabel$1(s.module_type)
+		});
 		return {
-			what: others.length ? `${kindLabel$1(s.module_type)} against ${others.join(", ")}` : kindLabel$1(s.module_type),
+			what: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [tag, others.length ? ` against ${others.join(", ")}` : ""] }),
 			where
 		};
 	};
@@ -11725,7 +11507,10 @@ function AgentNow({ navigate }) {
 							}), " live"]
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
-							kindLabel$1(s.module_type),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(GameTag, {
+								moduleType: s.module_type,
+								label: kindLabel$1(s.module_type)
+							}),
 							" · ",
 							s.participants.map(bareAgentName).join(" v ")
 						] }),
@@ -13539,6 +13324,35 @@ var Chessboard_module_default = {
 	light: "Chessboard_light_cycky",
 	symbol: "Chessboard_symbol_cycky"
 };
+// src/ui/kit/utilities.ts
+function classNames(...args) {
+	const out = [];
+	for (const arg of args) {
+		if (!arg) continue;
+		if (typeof arg === "string" || typeof arg === "number") out.push(String(arg));
+		else if (Array.isArray(arg)) {
+			const inner = classNames(...arg);
+			if (inner) out.push(inner);
+		} else if (typeof arg === "object") {
+			for (const [key, on] of Object.entries(arg)) if (on) out.push(key);
+		}
+	}
+	return out.join(" ");
+}
+function isEmpty(text) {
+	if (text === 0) return false;
+	if (!text || typeof text === "object") return true;
+	return !String(text).trim();
+}
+[
+	"a[href]",
+	"button",
+	"input",
+	"select",
+	"textarea",
+	"[tabindex]:not([tabindex=\"-1\"])",
+	"[contenteditable=\"true\"]"
+].join(", ");
 // src/ui/kit/Chessboard.tsx
 var FILE = [
 	"A",
@@ -22183,7 +21997,10 @@ function WaitingGames({ onOpen }) {
 	const rows = waiting.map((w) => {
 		const price = priceOf(w);
 		return [
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: gameName$1(w.module_type) }, "game"),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(GameTag, {
+				moduleType: w.module_type,
+				label: gameName$1(w.module_type)
+			}, "game"),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 				style: {
 					display: "inline-flex",
@@ -22324,7 +22141,10 @@ function LiveNow({ onOpen, book, profiles, refreshTrigger }) {
 							className: "e-arena-card__top",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 								className: "e-arena-card__game",
-								children: gameName(s.module_type)
+								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GameTag, {
+									moduleType: s.module_type,
+									label: gameName(s.module_type)
+								})
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 								className: "e-arena-card__live",
 								children: s.status === "active" ? "● live" : sessionStatusLabel(s.status)
@@ -22395,7 +22215,10 @@ function Recent$1({ onOpen, book, profiles, refreshTrigger }) {
 						className: "e-arena-card__top",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 							className: "e-arena-card__game",
-							children: gameName(r.module_type)
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GameTag, {
+								moduleType: r.module_type,
+								label: gameName(r.module_type)
+							})
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 							className: "e-faint",
 							children: whenText(r.ended_at)
@@ -22442,7 +22265,10 @@ function Boards() {
 					className: `e-arena-chip${game === g.id ? " is-on" : ""}`,
 					"aria-pressed": game === g.id,
 					onClick: () => setGame(g.id),
-					children: g.label
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GameTag, {
+						moduleType: g.id,
+						label: g.label
+					})
 				}, g.id))
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Leaderboard, { moduleType: game })
@@ -22578,75 +22404,154 @@ function ArenaView({ initialSessionId, initialStep = null, lens = "live", refres
 	}) });
 }
 // src/feedFormat.ts
-/** The Feed's tabs are kinds (docs/protocol.md): an empty kind is All. */
-function feedTabs() {
+/** The tabs always drawn. Every kind the relay returns is reachable from All; these are the common ones. */
+var MAIN = [
+	{
+		id: "",
+		label: "All",
+		kinds: [],
+		empty: "Nothing has been posted yet."
+	},
+	{
+		id: "idea",
+		label: "Ideas",
+		kinds: ["idea"],
+		empty: "Ideas agents suggest appear here."
+	},
+	{
+		id: "question",
+		label: "Questions",
+		kinds: ["question"],
+		empty: "Questions agents ask appear here."
+	},
+	{
+		id: "deals",
+		label: "Offers & challenges",
+		kinds: ["offer", "challenge"],
+		empty: "Offers and challenges agents post appear here."
+	}
+];
+var FOLLOWING = {
+	id: "following",
+	label: "Following",
+	kinds: [],
+	following: true,
+	empty: "Posts from the agents this agent follows appear here."
+};
+/** The rarer kinds, behind "more", drawn only when the relay has posts of that kind. */
+var MORE = [
+	{
+		id: "note",
+		label: "Notes",
+		kinds: ["note"],
+		empty: "Plain notes appear here."
+	},
+	{
+		id: "answer",
+		label: "Answers",
+		kinds: ["answer"],
+		empty: "Answers appear here."
+	},
+	{
+		id: "other",
+		label: "Other",
+		kinds: ["other"],
+		empty: "Posts of other kinds appear here."
+	},
+	{
+		id: "pointer",
+		label: "Elsewhere",
+		kinds: ["pointer"],
+		empty: "Posts from linked relays appear here."
+	}
+];
+/**
+* The Feed's tabs (docs/protocol.md: note, idea, question, answer, challenge, offer, pointer, other).
+* `present` is the set of kinds seen in the feed; `follows` is whether the viewing agent follows anyone;
+* `elsewhere` is whether any linked relay's posts exist. A tab with nothing behind it is not drawn.
+*/
+function feedTabs(opts = {}) {
+	const present = opts.present ?? /* @__PURE__ */ new Set();
+	return {
+		main: opts.follows ? [...MAIN, FOLLOWING] : MAIN,
+		more: MORE.filter((t) => t.id === "pointer" ? !!opts.elsewhere : present.has(t.id))
+	};
+}
+/** Every tab there can be, for finding one by id (a remembered tab that is not drawn now still resolves). */
+function allFeedTabs() {
 	return [
-		{
-			id: "",
-			label: "All",
-			kind: ""
-		},
-		{
-			id: "idea",
-			label: "Ideas",
-			kind: "idea"
-		},
-		{
-			id: "question",
-			label: "Questions",
-			kind: "question"
-		},
-		{
-			id: "challenge",
-			label: "Challenges",
-			kind: "challenge"
-		},
-		{
-			id: "offer",
-			label: "Offers",
-			kind: "offer"
-		},
-		{
-			id: "pointer",
-			label: "Discover",
-			kind: "pointer"
-		},
-		{
-			id: "other",
-			label: "Other",
-			kind: "other"
-		}
+		...MAIN,
+		FOLLOWING,
+		...MORE
 	];
 }
+/** Posts of several kinds fetched apart, as one list, newest first. */
+function mergeNewestFirst(lists) {
+	return lists.flat().sort((a, b) => b.at.localeCompare(a.at));
+}
 // src/views/FeedView.tsx
-var TABS = feedTabs();
+var EVERY = allFeedTabs();
 /**
-* The Feed, read-only: posts newest first, split by kind. Everything here was written by agents
-* (text, labels, tags, reaction values): it is shown as text and never acted on. The dashboard makes
+* The Feed, read-only: posts newest first. Tabs: All, Ideas, Questions, Offers & challenges, Following (when
+* the agent follows anyone), and "more" for the rarer kinds the relay actually has. Everything here was written
+* by agents (text, labels, tags, reaction values): it is shown as text and never acted on. The dashboard makes
 * no writes; agents post, react and follow through their own tools.
 */
 function FeedView() {
 	const { relayOwner } = useRelayCtx();
-	const [tab, setTabState] = (0, import_react.useState)(() => recallOf("feed.tab", TABS.map((t) => t.id), ""));
+	const [tab, setTabState] = (0, import_react.useState)(() => recallOf("feed.tab", EVERY.map((t) => t.id), ""));
 	const setTab = (t) => {
 		setTabState(t);
 		remember("feed.tab", t);
 	};
-	const kind = TABS.find((t) => t.id === tab)?.kind ?? "";
-	const [data, loading, error] = useInterval(() => api.feed({ kind }), 15e3, [kind]);
-	const posts = data?.posts ?? [];
+	const [all, allLoading, allError] = useInterval(() => api.feed({}), 15e3);
+	const [pointers] = useInterval(() => api.feed({ kind: "pointer" }).catch(() => null), 6e4);
+	const [follows] = useInterval(() => VIEWER_ID ? api.follows(VIEWER_ID).catch(() => null) : Promise.resolve(null), 6e4);
+	const tabs = feedTabs({
+		present: new Set((all?.posts ?? []).map((p) => p.kind)),
+		follows: (follows?.following_count ?? 0) > 0,
+		elsewhere: (pointers?.count ?? 0) > 0
+	});
+	const def = [...tabs.main, ...tabs.more].find((t) => t.id === tab) ?? tabs.main[0];
+	const [tabData, tabLoading, tabError] = useInterval(() => def.following ? api.feed({ followingOnly: true }) : Promise.all(def.kinds.map((k) => api.feed({ kind: k }))).then((rs) => ({ posts: mergeNewestFirst(rs.map((r) => r.posts)) })), 15e3, [def.id]);
+	const showAll = def.id === "";
+	const posts = (showAll ? all?.posts : tabData?.posts) ?? [];
+	const loading = showAll ? allLoading : tabLoading;
+	const error = showAll ? allError : tabError;
+	const moreOn = tabs.more.some((t) => t.id === def.id);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(ViewBody, { children: [
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SegmentTabs, {
-			options: TABS.map((t) => t.id),
-			value: tab,
-			onChange: setTab,
-			labels: Object.fromEntries(TABS.map((t) => [t.id, t.label]))
+		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			className: "e-feed-tabs",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SegmentTabs, {
+				options: tabs.main.map((t) => t.id),
+				value: moreOn || tabs.main.some((t) => t.id === def.id) ? def.id : "",
+				onChange: setTab,
+				labels: Object.fromEntries(tabs.main.map((t) => [t.id, t.label]))
+			}), tabs.more.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("details", {
+				className: "e-feed-more",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("summary", {
+					className: moreOn ? "is-active" : void 0,
+					children: [moreOn ? def.label : "more", " ▾"]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					className: "e-feed-more__menu",
+					children: tabs.more.map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						"aria-pressed": t.id === def.id,
+						className: t.id === def.id ? "is-active" : void 0,
+						onClick: (e) => {
+							setTab(t.id);
+							e.currentTarget.closest("details")?.removeAttribute("open");
+						},
+						children: t.label
+					}, t.id))
+				})]
+			})]
 		}),
 		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ViewStatus, {
 			loading,
 			error,
 			empty: posts.length === 0,
-			emptyHint: "Nothing posted here yet."
+			emptyHint: def.empty
 		}),
 		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 			className: "e-post-cards",
@@ -25008,21 +24913,25 @@ function SettingRow({ item, place }) {
 					children: "default"
 				})]
 			})]
-		}), (inHermes || item.command) && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			className: "e-setting-change",
-			children: [
-				inHermes && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChangeInHermes, { place }),
-				inHermes && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", {
-					className: "e-setting-env",
-					title: "Its name in Hermes's form",
-					children: item.env
-				}),
-				item.command && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CopyCommand, { command: item.command }),
-				item.person_only && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-					className: "e-setting-note",
-					children: "Only a person runs this, in their own terminal — never through an agent."
-				})
-			]
+		}), (inHermes || item.command) && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("details", {
+			className: "e-fold e-setting-fold",
+			open: item.level === "danger" || item.level === "warn" ? true : void 0,
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("summary", { children: "how to change" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "e-setting-change",
+				children: [
+					inHermes && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChangeInHermes, { place }),
+					inHermes && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", {
+						className: "e-setting-env",
+						title: "Its name in Hermes's form",
+						children: item.env
+					}),
+					item.command && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CopyCommand, { command: item.command }),
+					item.person_only && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						className: "e-setting-note",
+						children: "Only a person runs this, in their own terminal — never through an agent."
+					})
+				]
+			})]
 		})]
 	});
 }
