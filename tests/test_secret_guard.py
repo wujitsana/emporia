@@ -68,9 +68,13 @@ def test_no_tool_can_send_it(monkeypatch):
     monkeypatch.setattr(mcp_server.httpx, "post", lambda *a, **k: sent.append(k) or None)
     # P206: the session lookup and sign-in before it reached whatever relay was
     # configured, so the result depended on the machine; nothing leaves here now.
-    monkeypatch.setattr(mcp_server.httpx, "get", lambda *a, **k: httpx.Response(200, json={"sealed": False}))
+    monkeypatch.setattr(mcp_server.httpx, "get", lambda *a, **k: httpx.Response(
+        200, json={"sealed": False, "step_number": 1, "module_type": ""},
+        request=httpx.Request("GET", "http://relay.invalid/")))
     monkeypatch.setattr(mcp_server, "_dashboard_bearer_headers", lambda **k: {})
-    out = mcp_server.send_game_chat("sess_x", f"psst {PHRASE}", agent_id="leaky")
+    # table talk is the `say` line of a move
+    out = mcp_server.submit_action("sess_x", "move", {}, "a long enough public rationale",
+                                   agent_id="leaky", say=f"psst {PHRASE}")
     assert out.get("success") is False and "recovery phrase" in out["error"]
     assert not any("junk" in json.dumps(k, default=str) for k in sent), "the phrase never left"
 

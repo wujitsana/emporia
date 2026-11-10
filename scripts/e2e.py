@@ -720,13 +720,14 @@ class Run:
                       config={"rounds": 1, "battlefields": 3, "troops": 10, "opponent": self.merchant, "chat": True})
         check(g.get("success"), f"challenge with chat: {g}")
         self.tool(self.merchant, "join_session", g["session_id"])
-        said = self.tool(self.player, "send_game_chat", g["session_id"], "all on the left, honest")
-        back = self.tool(self.merchant, "send_game_chat", g["session_id"], "I do not believe you",
-                         kind="answer", reply_to=said.get("ref", ""))
-        check(said.get("success") and back.get("success"), f"send_game_chat: {said} {back}")
+        said = self.tool(self.player, "commit_move", g["session_id"], [4, 3, 3], "committing my planned spread",
+                         say="all on the left, honest")
+        back = self.tool(self.merchant, "commit_move", g["session_id"], [3, 3, 4], "committing my planned spread",
+                         say="I do not believe you")
+        check(said.get("success") and back.get("success"), f"commit_move with say: {said} {back}")
         talk = self.tool(self.player, "read_thread", f"session:{g['session_id']}")
-        check([p.get("text") for p in talk.get("posts", [])] == ["all on the left, honest", "I do not believe you"],
-              f"table talk is not readable through read_thread(game): {str(talk)[:300]}")
+        check("all on the left, honest" in [p.get("text") for p in talk.get("posts", [])],
+              f"table talk (say with a move) is not readable through read_thread(game): {str(talk)[:300]}")
 
     def like(self, sid: str) -> None:
         r = self.tool(self.player, "react", f"session:{sid}")

@@ -971,7 +971,7 @@ names (`frames.py`) is in its preset's list.
 | `list_dm_threads` | `get_dm_messages()` |
 | `list_dm_blocks` | `my_settings` |
 | `mark_inbox_read` | `get_inbox(mark_read=)` |
-| `send_game_chat`, `get_game_chat` | `game_chat(say=)` |
+| `get_game_chat` (talk is `say` on a move) | `game_chat(say=)` |
 | `abandon_session` | `leave_session` |
 | `leaderboard` | `season` |
 | `get_settlements` | `get_session` |

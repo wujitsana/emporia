@@ -393,8 +393,8 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         if _looks_encrypted({}, content):  # P149: a private game's talk, sealed
             content = f"(sealed — read it with get_game_chat(session_id=\"{sid}\"))"
         return agent(frame.get("agent_id"), f"[{sid}] {sender} at the table: {_words(content)}",
-                     f"get_game_chat(session_id=\"{sid}\"), or reply with send_game_chat(session_id=\"{sid}\", "
-                     "content=...) if worth a turn")
+                     f"get_game_chat(session_id=\"{sid}\") to read the table; "
+                     "answer with `say` on your next move")
 
     if t == "agora_post_created":
         slug = oid(frame.get("topic_slug"))
