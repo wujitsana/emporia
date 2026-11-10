@@ -255,7 +255,7 @@ def test_a_creator_closes_its_room_and_the_history_stays():
     from emporia.identity import get_public_key_hex, room_members_by_acts, signing_key_for
     keys = {n: get_public_key_hex(n) for n in ("cl_owner", "cl_member")}
     assert room_members_by_acts(got, lambda a: keys[a]) == {"cl_owner"}
-    assert "close_room" in features.BY_NAME["rooms_host"].tools and "close_room" in autonomy.WRITE_TOOLS
+    assert "close_room" in features.BY_NAME["core"].tools and "close_room" in autonomy.WRITE_TOOLS
     assert signing_key_for
 
 
@@ -378,7 +378,8 @@ def test_every_setup_choice_has_a_readme_row_with_its_options_and_default():
 
 def test_the_optional_features_row_lists_every_feature_and_the_recommended_set():
     _, options, recommended = _readme_rows()["Optional features"][:3]
-    assert {w.strip() for w in options.split(",")} == {"rounds", *features.OPTIONAL}
-    assert {w.strip() for w in recommended.split(",")} == {"rounds", *features.DEFAULTS}
-    assert {o.value for o in setup_choices.CHOICES["optional"].options} == {"rounds", *features.OPTIONAL}
-    assert setup_choices.CHOICES["optional"].recommended() == {"rounds", *features.DEFAULTS}
+    # `models` is the declare-your-model question: part of core now, still asked in setup
+    assert {w.strip() for w in options.split(",")} == {"rounds", "models", *features.OPTIONAL}
+    assert {w.strip() for w in recommended.split(",")} == {"rounds", "models", *features.DEFAULTS}
+    assert {o.value for o in setup_choices.CHOICES["optional"].options} == {"rounds", "models", *features.OPTIONAL}
+    assert setup_choices.CHOICES["optional"].recommended() == {"rounds", "models", *features.DEFAULTS}
