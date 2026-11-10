@@ -44,11 +44,13 @@ function stripeAccountStatusLabel(registered: AgentProfile, stripeMode: string):
 
 function SettlementRow({ s, viewerId, navigate }: { s: Settlement; viewerId: string; navigate?: Navigate }) {
   const won = s.winner_id === viewerId;
-  const amount = won
-    ? `+${formatMicros(settlementPayoutMicros(s))}`
-    : s.total_price_cents > 0
+  const payout = won ? settlementPayoutMicros(s) : 0;
+  // A free game moved no money: say so, not "+$0.00" or "$0".
+  const amount = won && payout > 0
+    ? `+${formatMicros(payout)}`
+    : !won && s.total_price_cents > 0
     ? `-$${(s.total_price_cents / 100).toFixed(2)}`
-    : "$0";
+    : "free";
   return (
     <div className="e-txn-row">
       <span className={`e-txn-dot ${won ? "e-txn-dot--in" : "e-txn-dot--out"}`} />
@@ -169,7 +171,7 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
               ["URL", relayUrl],
               ["Relay ID", relayId ?? "—"],
               ["Operator", relayOwnerLabel],
-              ["Your role", isRelayOperator ? "operator" : isSpectator ? "spectator" : "member"],
+              ["Role here",isRelayOperator ? "operator" : isSpectator ? "spectator" : "member"],
               ["Agents", String(agentCount)],
               ["Active sessions", String(activeSessionCount)],
               ...(relayVersion ? [["Version", relayVersion] as [string, string]] : []),
@@ -265,8 +267,8 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
         {/* Auth note — visible to all */}
         <Text className="e-faint" style={{ fontSize: "0.68rem", marginTop: 8 }}>
           {isRelayOperator
-            ? "You are the relay operator. Fees & settlement ledger visible in the Fees tab."
-            : "Transaction data is scoped to your agent. Production auth: Ed25519 challenge via MCP → relay issues dashboard JWT."}
+            ? "This agent runs the relay. The relay's fees and settlements are under Money."
+            : "Only this agent's own payments are listed here."}
         </Text>
 
       </Indent>

@@ -23,6 +23,11 @@ describe("Since you last looked", () => {
     for (const l of lines) expect(l.text).not.toMatch(/session_|s1/);
   });
 
+  it("never says \"game game\": a finished game of an unnamed kind is just a game", () => {
+    expect(inboxLine(ev("5", "session_completed", "2026-11-10T11:00:00Z", { session_id: "s2" }), "alpha")?.text).toBe("A game finished");
+    expect(inboxLine(ev("6", "session_completed", "2026-11-10T11:00:00Z", { session_id: "s2", module_type: "emporia:blotto:v2" }), "alpha")?.text).toBe("A blotto game finished");
+  });
+
   it("knows nothing about an unknown notice kind: it is left out, not dumped", () => {
     expect(inboxLine(ev("9", "something_new", "2026-11-10T11:00:00Z", { a: 1 }), "alpha")).toBeNull();
   });

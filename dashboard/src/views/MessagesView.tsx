@@ -221,7 +221,7 @@ export function ThreadPane({
     // P17-4: an encrypted DM shows a lock; the dashboard holds no key, by design.
     // P125: unless the local reader opened it, on this machine.
     content: opened[m.message_id] !== undefined
-      ? `${OPENED_TAG} ${postDisplay(opened[m.message_id] ?? "")}`
+      ? postDisplay(opened[m.message_id] ?? "")   // the footer says they were opened here: no tag on every line
       : postDisplay(dmDisplayContent(m.content)),
     created_at: m.created_at,
     verified: m.deleted_at ? null : verifyMessageSignature("dm", thread.thread_id, m, pubkeys[m.sender_id] ?? ""),

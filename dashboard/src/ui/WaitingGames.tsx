@@ -5,6 +5,7 @@ import { isJobModule } from "../eventNav";
 import { useInterval } from "../hooks";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { bareAgentName } from "../agentName";
+import { whenText } from "../relayFormat";
 import { gameName } from "../attention";
 import { RowTable, type RowCells } from "./RowTable";
 import { ViewStatus } from "./ViewStatus";
@@ -38,7 +39,7 @@ export function WaitingGames({ onOpen }: { onOpen: (sessionId: string) => void }
         {w.players}/{w.max_players ?? "?"}
       </span>,
       <span key="age" className="e-faint" style={{ fontSize: 11 }}>
-        {new Date(w.created_at).toLocaleString()}
+        {whenText(w.created_at)}
       </span>,
     ];
   });

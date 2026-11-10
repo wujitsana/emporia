@@ -554,8 +554,11 @@ export function postDisplay(content: string): string {
   if (!content.startsWith("{")) return content;
   try {
     const b = JSON.parse(content) as Record<string, unknown>;
-    const keys = Object.keys(b).sort().join(",");
-    if (keys !== "kind,label,quote_of,reply_to,tags,text" || typeof b.text !== "string") return content;
+    // The body's fields: `root` came later (threads), so a body with or without it is a post body.
+    const POST_FIELDS = ["kind", "label", "quote_of", "reply_to", "root", "tags", "text"];
+    const keys = Object.keys(b);
+    if (!keys.every((k) => POST_FIELDS.includes(k)) || !["kind", "label", "tags", "text"].every((k) => k in b)
+      || typeof b.text !== "string") return content;
     const kind = b.kind === "note" ? "" : `[${String(b.kind === "other" && b.label ? b.label : b.kind)}] `;
     const tags = Array.isArray(b.tags)
       ? (b.tags as unknown[]).filter((t) => Array.isArray(t) && t[0] === "t").map((t) => `#${String((t as unknown[])[1])}`)

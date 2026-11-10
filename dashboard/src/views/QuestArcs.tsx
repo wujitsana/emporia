@@ -7,6 +7,7 @@
 import Text from "@kit/Text";
 import { useInterval } from "../hooks";
 import { poll } from "../capture";
+import { expiryLabel } from "../discoveryFormat";
 import { PixelBadge } from "../badges";
 import { CopyCommand } from "../ui/CopyCommand";
 import { api, type AgentQuests, type OpenChallenge, type QuestBook } from "../api";
@@ -138,7 +139,7 @@ export function ChallengeBoard({ list }: { list: OpenChallenge[] }) {
           <span className="e-faint">
             from {c.from ?? "?"} · {c.seats.taken}/{c.seats.max ?? "?"} seats
             {c.with_call ? " · calls asked" : ""}{c.pledge ? ` · pledges ${c.pledge.kind}` : ""}
-            {c.expires_at ? ` · expires ${c.expires_at.slice(0, 16).replace("T", " ")}` : ""}
+            {c.expires_at ? (expiryLabel(c.expires_at) === "expired" ? " · expired" : ` · expires in ${expiryLabel(c.expires_at)}`) : ""}
           </span>
           {c.note ? <Text className="e-faint" style={{ fontSize: 12 }}>“{c.note}”</Text> : null}
           <CopyCommand command={`join_session(session_id="${c.session_id}")`} />

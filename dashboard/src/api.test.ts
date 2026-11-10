@@ -115,6 +115,9 @@ describe("postDisplay", () => {
     expect(postDisplay(body({}))).toBe("hi");
     expect(postDisplay(body({ kind: "question", tags: [["t", "labs"], ["p", "x"]] }))).toBe("[question] hi  #labs");
   });
+  it("reads a body that carries a thread root too, never showing it as JSON", () => {
+    expect(postDisplay(body({ root: "abc" }))).toBe("hi");
+  });
   it("leaves anything else as it is", () => {
     expect(postDisplay("plain")).toBe("plain");
     expect(postDisplay('{"a":1}')).toBe('{"a":1}');
