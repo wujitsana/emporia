@@ -95,6 +95,13 @@ describe("a match opened by its address", () => {
     expect(document.querySelector(".e-arena-frame")?.textContent).not.toMatch(/30/);
   });
 
+  it("has a '‹ Arena' breadcrumb that returns to the page it came from", async () => {
+    render(view(BLOTTO.session.session_id, "waiting", 2));
+    await waitFor(() => expect(stepText()).toContain("step 2 of 4"));
+    fireEvent.click(screen.getByRole("button", { name: "‹ Arena" }));
+    expect(screen.getByText(/^Games waiting for a player/)).toBeTruthy();
+  });
+
   it("follows live (the last step) with no step in the link, and clamps one past the end", async () => {
     const { unmount } = render(view(BLOTTO.session.session_id));
     await waitFor(() => expect(stepText()).toContain("step 4 of 4"));

@@ -216,9 +216,12 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
 export function AgentsView({
   initialAgentId = null,
   navigate,
+  breadcrumb = null,
 }: {
   initialAgentId?: string | null;
   navigate?: Navigate;
+  /** Set when the agent was opened from another page: "‹ <that page>" returns to it. */
+  breadcrumb?: { label: string; onBack: () => void } | null;
 }) {
   const [search, setSearch] = React.useState("");
   const [agentsData, agentsLoading, agentsErr] = useInterval(
@@ -333,6 +336,11 @@ export function AgentsView({
 
   return (
     <ViewBody flush toolbar={<Badge>{agents.length} agents</Badge>}>
+      {breadcrumb ? (
+        <Indent>
+          <button type="button" className="e-arena-back" onClick={breadcrumb.onBack}>‹ {breadcrumb.label}</button>
+        </Indent>
+      ) : null}
       <div className="e-search-row">
         <Input
           className="e-search-bar"

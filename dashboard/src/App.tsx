@@ -25,6 +25,7 @@ import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
 import { ARENA_LENSES, canSee, dealsAvailable, destById, destinationOf, navById, navForHotkey, siblingView, type ArenaLens, type Destination, type View } from "./navConfig";
 import { GatedNote } from "./ui/GatedNote";
 import { recall, recallOf, remember } from "./viewMemory";
+import { restoreScroll, saveScroll } from "./scrollMemory";
 import { isNarrow, useNarrow, useOverlayFocus } from "./ui/overlayFocus";
 import { useNavLayout } from "./ui/navLayout";
 import { PageHeading, ViewBoundary } from "./ui/layout";
@@ -123,6 +124,7 @@ function AppInner() {
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [gameModuleType, setGameModuleType] = useState<string | null>(null);
+  const [cameFrom, setCameFrom] = useState<{ view: View; sessionId: string | null; step: number | null; lens: ArenaLens } | null>(null);
 
   const [sessionsRefresh, setSessionsRefresh] = useState(0);
   const [inboxUnread, setInboxUnread] = useState(0);
@@ -219,6 +221,7 @@ function AppInner() {
   const goToView = useCallback(
     (id: View) => {
       applyView(id);
+      setCameFrom(null);
       setNavOpen(false);
       // A section picked from the menu over full-page chat is shown; beside the drawer it stays open.
       if (isNarrow()) setChatOpen(false);
@@ -276,14 +279,37 @@ function AppInner() {
           .catch(() => applyView("games", id));   // Games says it could not be opened
         return;
       }
+      // An agent card opened from another page remembers that page, for its "‹ <page>" breadcrumb.
+      if (toView === "agents" && opts?.agentId && view !== "agents") {
+        saveScroll(`view.${view}`, mainRef.current?.firstElementChild ?? null);
+        setCameFrom({ view, sessionId: selectedSessionId, step: selectedStep, lens });
+      }
       applyView(toView, opts?.sessionId);
       if (opts?.sessionId !== undefined) setSelectedSessionId(opts.sessionId);
       if (opts?.roomId !== undefined) setSelectedRoomId(opts.roomId);
       if (opts?.agentId !== undefined) setSelectedAgentId(opts.agentId);
       if (opts?.gameModuleType !== undefined) setGameModuleType(opts.gameModuleType || null);
     },
-    [applyView],
+    [applyView, view, selectedSessionId, selectedStep, lens],
   );
+
+  // "‹ Arena" on an agent card opened from a game: back to that page, its match, lens and scroll.
+  const breadcrumb = cameFrom && view === "agents"
+    ? {
+      label: destinationOf(cameFrom.view).label,
+      onBack: () => {
+        const c = cameFrom;
+        setCameFrom(null);
+        setView(c.view);
+        setLens(c.lens);
+        setSelectedSessionId(c.sessionId);
+        setSelectedStep(c.step);
+        setSelectedAgentId(null);
+        syncHash(c.view, c.sessionId, c.step, c.lens);
+        restoreScroll(`view.${c.view}`, mainRef.current?.firstElementChild ?? null);
+      },
+    }
+    : null;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -478,7 +504,7 @@ function AppInner() {
             )}
             {view === "rooms" && <RoomsView initialRoomId={selectedRoomId} navigate={navigate} />}
             {view === "agents" && (
-              <AgentsView initialAgentId={selectedAgentId} navigate={navigate} />
+              <AgentsView initialAgentId={selectedAgentId} navigate={navigate} breadcrumb={breadcrumb} />
             )}
             {view === "feed" && <FeedView />}
             {view === "agora" && <AgorasView navigate={navigate} />}

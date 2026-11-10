@@ -76,7 +76,7 @@ function MatchHeader({ session, book, profiles, onBack, live, children }: {
   const name = SET_PLAY_NAMES[session.module_type] ?? session.module_type.replace("emporia:", "").replace(/:v\d+$/, "");
   return (
     <header className="e-arena-head">
-      {onBack ? <button type="button" className="e-arena-back" onClick={onBack}>← Arena</button> : null}
+      {onBack ? <button type="button" className="e-arena-back" onClick={onBack}>‹ Arena</button> : null}
       <div className="e-arena-head__row">
         <Text className="e-arena-head__title">{name}</Text>
         <Text className="e-dim e-status-txt">{live ? "live" : sessionStatusLabel(session.status)}</Text>

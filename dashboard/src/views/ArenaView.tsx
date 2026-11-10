@@ -1,5 +1,6 @@
 import Text from "@kit/Text";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { restoreScroll, saveScroll } from "../scrollMemory";
 import { api } from "../api";
 import type { AgentProfile, GameResult, Session } from "../api";
 import { AgentCard } from "../ui/AgentCard";
@@ -244,18 +245,21 @@ export function ArenaView({
 
   useEffect(() => { onSessionShown?.(openId, openId ? step : null); }, [openId, step, onSessionShown]);
 
-  const open = (id: string) => { setOpenId(id); setStep(null); };
+  const root = useRef<HTMLDivElement>(null);
+  const open = (id: string) => { saveScroll(`arena.${lens}`, root.current); setOpenId(id); setStep(null); };
+  // "‹ Arena": the page the person came from (same lens, same scroll).
+  const back = () => { setOpenId(null); setStep(null); restoreScroll(`arena.${lens}`, root.current); };
   const tab: Tab = openId ? "match" : "home";
   return (
     <ViewBody>
-      <div className="e-arena" data-tab={tab}>
+      <div className="e-arena" data-tab={tab} ref={root}>
         {tab === "home" ? (
           <ArenaHome lens={lens} onOpen={open} book={book} profiles={profiles} refreshTrigger={refreshTrigger} />
         ) : session && session.session_id === openId ? (
-          <MatchView key={session.session_id} session={session} step={step} onStep={setStep} book={book} profiles={profiles} onBack={() => { setOpenId(null); setStep(null); }} />
+          <MatchView key={session.session_id} session={session} step={step} onStep={setStep} book={book} profiles={profiles} onBack={back} />
         ) : (
           <div>
-            <button type="button" className="e-arena-back" onClick={() => { setOpenId(null); setStep(null); }}>← Arena</button>
+            <button type="button" className="e-arena-back" onClick={back}>‹ Arena</button>
             <Text className="e-faint" style={{ display: "block" }}>
               {miss ? `Game …${miss.slice(-8)} could not be opened. It may have been removed, or it may be private to its players.` : "Opening the game…"}
             </Text>
