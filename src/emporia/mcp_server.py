@@ -848,6 +848,18 @@ def visit_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
         return {"success": True, "relay": url, "note": "already visiting"}
     try:
         needs_yes = visits.visit_needs_yes(url, _linked_relays())
+        if needs_yes:
+            from emporia import autonomy
+            turn = autonomy.current()
+            if turn.origin in ("relay", "rounds"):
+                # A stranger's text may have named this URL: no request goes to it, and no approval prompt
+                # reaches the operator on its say-so. A relay the operator lists or links needs no yes at all.
+                autonomy.log_action(turn, "visit_relay", url[:80], "refused", "new relay in an unattended turn")
+                return {"error": (f"not visiting {url}: a relay this agent has not visited is for its person to "
+                                  "allow, not for a turn another agent's message (or the rounds) started. Decline in "
+                                  "one line; your person can allow it: " + localize(
+                                      f"emporia visits {aid} --allow {url}")),
+                        "success": False, "refused_by": "emporia-autonomy"}
         h = fetch.get(f"{url}/health", timeout=10).json()
     except PermissionError as e:
         return {"error": str(e), "success": False}

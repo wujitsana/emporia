@@ -143,6 +143,21 @@ def test_a_games_table_talk_counts_toward_the_hourly_conversation_limit():
     assert "session:" in limits._CONVERSATIONS and "dm:" in limits._CONVERSATIONS
 
 
+@pytest.mark.parametrize("origin", ["relay", "rounds"])
+def test_an_unattended_turn_neither_contacts_nor_asks_about_a_new_relay(monkeypatch, origin):
+    from emporia import autonomy, mcp_server
+    monkeypatch.setattr(autonomy, "current", lambda now=None: autonomy.Turn(True, origin, "mallory", "k"))
+    monkeypatch.setattr(autonomy, "log_action", lambda *a, **k: None)
+    monkeypatch.delenv("EMPORIA_VISIT_POLICY", raising=False)
+
+    def boom(*a, **k):
+        raise AssertionError("a request went to a URL a stranger named")
+    monkeypatch.setattr(mcp_server.fetch, "get", boom)
+    monkeypatch.setattr(mcp_server, "_ask_operator", boom)
+    out = mcp_server.visit_relay("http://169.254.169.254:80", agent_id="alice")
+    assert out["success"] is False and out["refused_by"] == "emporia-autonomy" and "its person" in out["error"]
+
+
 def test_a_persons_own_session_search_is_not_policed(fresh):
     _start("person")
     assert rt.pre_tool_call(tool_name="session_search", args={"profile": "default", "query": "x"},
