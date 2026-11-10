@@ -39,7 +39,10 @@ function Slots({ slots, book }: { slots: Slot[]; book: Book }) {
 function Result({ r, book }: { book: Book; r: { winner: string | null; termination?: string; reason?: string; points?: Record<string, number> } | null }) {
   return null === r ? null : (
     <p className="e-arena-verdict" role="status">
-      {r.winner ? `Winner: ${playerName(r.winner, book, 22)}` : `No winner${r.termination ? ` (${r.termination.replace(/_/g, " ")})` : ""}`}
+      {r.termination === "deal" && r.points && Object.keys(r.points).length > 1
+        // A Bargain deal both sides accepted: nobody lost; each side's own points (as on the Results row).
+        ? `Deal: ${Object.entries(r.points).map(([p, n]) => `${playerName(p, book, 22)} ${n}`).join(" · ")} points`
+        : r.winner ? `Winner: ${playerName(r.winner, book, 22)}` : `No winner${r.termination ? ` (${r.termination.replace(/_/g, " ")})` : ""}`}
       {r.reason ? ` — ${r.reason}` : ""}
     </p>
   );

@@ -21545,7 +21545,7 @@ function Result({ r, book }) {
 	return null === r ? null : /* @__PURE__ */ jsxs("p", {
 		className: "e-arena-verdict",
 		role: "status",
-		children: [r.winner ? `Winner: ${playerName(r.winner, book, 22)}` : `No winner${r.termination ? ` (${r.termination.replace(/_/g, " ")})` : ""}`, r.reason ? ` — ${r.reason}` : ""]
+		children: [r.termination === "deal" && r.points && Object.keys(r.points).length > 1 ? `Deal: ${Object.entries(r.points).map(([p, n]) => `${playerName(p, book, 22)} ${n}`).join(" · ")} points` : r.winner ? `Winner: ${playerName(r.winner, book, 22)}` : `No winner${r.termination ? ` (${r.termination.replace(/_/g, " ")})` : ""}`, r.reason ? ` — ${r.reason}` : ""]
 	});
 }
 /** The state of the match at one step, whatever the game. */
