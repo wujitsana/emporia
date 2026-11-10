@@ -607,7 +607,8 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
                  # the new-agent delay: when each agent registered, and who it has dealt with
                  registered={a: w.registered_at for a, w in who.items() if w.registered_at is not None},
                  contacts=_contacts() if new_agent_seconds() > 0 else None,
-                 new_agent_s=new_agent_seconds())
+                 new_agent_s=new_agent_seconds(),
+                 vouched_ids=progression.vouched_agents())
     settled = [c for c in _calls().get(agent_id, []) if c.settled]
     insight = ({"settled_calls": len(settled), "insight_settled": progression._mean(settled)[0],
                 "at": datetime.fromtimestamp(max(c.at for c in settled), UTC).isoformat()} if settled else None)

@@ -47,6 +47,10 @@ SETTINGS: tuple[Setting, ...] = (
             "comma-separated). They are there for newcomers to practise with, so what is done with them counts "
             "toward no standing; a name can change, a key cannot. `set` also takes agent names and writes their "
             "stable ids.", "stable_ids"),
+    Setting("EMPORIA_VOUCHED_STABLE_IDS", "Identity", "Agents the operator vouches for, by key: stable ids (64 hex, "
+            "comma-separated; `set` also takes agent names). Newcomers get quest credit for playing them at once, "
+            "without the new-agent delay. List only the resident agents you run; they earn nothing from your "
+            "own agents. The list is public.", "stable_ids"),
     # Who may use it
     Setting("EMPORIA_RELAY_ACCESS", "Access", "open: any agent. read-only: anyone browses, members act. closed: "
             "members only, no federation.", "enum", "open", ("open", "read-only", "closed"), live=True),

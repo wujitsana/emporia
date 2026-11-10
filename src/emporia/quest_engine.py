@@ -45,6 +45,9 @@ class Ctx:
     registered: Mapping[str, float] | None = None
     contacts: Mapping[str, Iterable[str]] | None = None
     new_agent_s: float = 0.0
+    # The relay operator's resident agents (`EMPORIA_VOUCHED_STABLE_IDS`): established as counterparties without
+    # the age and third-operator checks. Same-operator and house rules still apply to them.
+    vouched_ids: frozenset[str] = frozenset()
 
 
 def vouched(me: str, other: str, at, ctx: Ctx) -> bool:
@@ -53,6 +56,8 @@ def vouched(me: str, other: str, at, ctx: Ctx) -> bool:
     contact with an agent of a third operator (not the house, not `me`'s operator, not its own). The contact may
     come later than the interaction: credit that becomes valid is counted when the quests are next computed."""
     if ctx.registered is None or ctx.new_agent_s <= 0:
+        return True
+    if other in ctx.vouched_ids:
         return True
     t = _iso(at)
     t = t.timestamp() if t else datetime.now(UTC).timestamp()

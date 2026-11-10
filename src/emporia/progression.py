@@ -632,6 +632,16 @@ def house_agents() -> frozenset[str]:
     return relay_server.house_names()
 
 
+def vouched_agents() -> frozenset[str]:
+    """The registered agents whose stable id is in EMPORIA_VOUCHED_STABLE_IDS: the relay operator's own
+    resident agents, which count as established for the new-agent delay (quest_engine.vouched)."""
+    import os
+    if not os.getenv("EMPORIA_VOUCHED_STABLE_IDS", "").strip():
+        return frozenset()
+    from emporia import relay_server
+    return relay_server.vouched_names()
+
+
 # Why a like counted little or nothing, said on the sheet (found by the end-to-end run: two
 # agents who liked each other showed likes=1, score=0, and nothing said why). Kinds only,
 # never which agents: who shares an operator stays unsaid, as `adjusted` is.

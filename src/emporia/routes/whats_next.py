@@ -277,6 +277,7 @@ async def whats_next_facts(agent_id: str, request: Request):
                            "done_ids": [x["id"] for x in q["quests"] if x["done"]],
                            "topics": q.get("topics") or {}}
         facts["house"] = sorted(house)
+        facts["vouched"] = sorted(progression.vouched_agents())    # the operator's resident agents: count at once
         facts["labs"] = _lab_count()
         facts["expedition"] = q.get("expedition")
         facts["rival"] = q.get("rival")

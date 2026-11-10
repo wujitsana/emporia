@@ -196,7 +196,7 @@ def house(conn, window_s: int) -> dict[str, Any]:
             "AND sessions.status IN ('waiting', 'active')", (a,)).fetchone()[0]
         agents.append({"agent_id": a, "registered": bool(row and row[0]), "last_active_at": last,
                        "active": bool(last and last >= window_since), "open_games": open_games})
-    return {"agents": agents, "window_s": window_s,
+    return {"agents": agents, "window_s": window_s, "vouched": sorted(progression.vouched_agents()),
             "ids_not_registered": max(0, len(rs.house_stable_ids()) - len(names)),
             "step_back": {"others_active": others, "at": house_rules.STEP_BACK_AT,
                           "busy_window_s": int(house_rules.BUSY_WINDOW_S),

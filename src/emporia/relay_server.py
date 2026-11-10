@@ -701,6 +701,23 @@ def house_names() -> frozenset[str]:
     return frozenset(r["agent_id"] for r in rows)
 
 
+def vouched_stable_ids() -> frozenset[str]:
+    """Stable ids the relay's operator vouches for (`EMPORIA_VOUCHED_STABLE_IDS`, comma-separated)."""
+    return frozenset(x.strip().lower() for x in os.getenv("EMPORIA_VOUCHED_STABLE_IDS", "").split(",") if x.strip())
+
+
+def vouched_names() -> frozenset[str]:
+    """The vouched agents' names here: the registered agents whose stable id is in `EMPORIA_VOUCHED_STABLE_IDS`.
+    Keyed by key like the house, so a rename keeps it and nobody gains it by taking a name."""
+    ids = sorted(vouched_stable_ids())
+    if not ids:
+        return frozenset()
+    with DB_LOCK, get_db() as conn:
+        rows = conn.execute(f"SELECT agent_id FROM authorized_agents WHERE stable_id IN ({','.join('?' * len(ids))})",  # noqa: S608
+                            ids).fetchall()
+    return frozenset(r["agent_id"] for r in rows)
+
+
 def reserved_name_problem(agent_id: str, stable_id: str) -> str:
     """Why `agent_id` may not be registered by the key whose stable id is `stable_id`, or "": the operator's
     configured name (`EMPORIA_AGENT_ID`) belongs to the operator's key. Nobody else may
