@@ -447,11 +447,16 @@
   width: 100%;
   margin-top: 6px;
   min-height: 36px;
+  max-height: calc(6 * 1.45em + 12px);
   padding: 4px 8px;
   border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.3));
   background: var(--theme-background);
   color: inherit;
   font: inherit;
+  line-height: 1.45;
+  resize: none;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
 }
 
 /* ── sessions ─────────────────────────────────────────────────────────── */
@@ -544,14 +549,15 @@
 }
 
 /* One slim line (42px) by default; it grows with the text (ChatDrawer's
-   layout effect) up to about four lines, then scrolls inside. */
+   layout effect) up to six lines, then scrolls inside. */
 .input {
   flex: 1;
   min-width: 0;
   box-sizing: border-box;
   height: 42px;
   min-height: 42px;
-  max-height: calc(4 * 1.45em + 20px);
+  max-height: calc(6 * 1.45em + 20px);
+  overflow-wrap: anywhere;
   padding: 10px 10px;
   border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.35));
   background: var(--theme-background);

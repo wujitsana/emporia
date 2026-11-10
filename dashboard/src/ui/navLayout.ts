@@ -7,7 +7,7 @@
  * shell as `data-nav` for dashboard.css.
  *
  *   wide    five labels in the header row, the sub-tabs in the row below
- *   medium  five icons with a short label in the header row
+ *   medium  the same five labels, tighter, in the header row (no icons beside words)
  *   rail    a vertical icon rail on the left; labels on hover and focus
  *   phone   the bottom bar, and the menu behind the burger
  *

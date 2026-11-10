@@ -219,6 +219,11 @@ body.theme-light {
 .e-app-shell[data-nav="medium"] .e-app-top__actions,
 .e-app-shell[data-nav="rail"] .e-app-top__actions { gap: 10px; }
 .e-app-shell[data-nav="medium"] .e-section-tab { padding: 6px 8px; }
+.e-app-shell[data-nav="medium"] .e-section-tab__label { letter-spacing: 0; }
+/* The wordmark keeps its full size wherever the header has room (wide and medium); it only gives way in the
+   rail and phone layouts. */
+.e-app-shell[data-nav="wide"] .e-app-top .e-brand-title,
+.e-app-shell[data-nav="medium"] .e-app-top .e-brand-title { font-size: 1.5rem !important; letter-spacing: 0.08em; }
 .e-app-shell[data-nav="medium"] .e-relay-status__meta,
 .e-app-shell[data-nav="rail"] .e-relay-status__meta,
 .e-app-shell[data-nav="medium"] .e-header-link__word,
@@ -296,7 +301,8 @@ body.theme-light {
 .e-section-tab__icon  { font-size: 0.935rem; }
 .e-section-tab__label { letter-spacing: 0.02em; }
 .e-section-tabs--horizontal .e-section-tab__icon { display: none; }
-.e-app-shell[data-nav="medium"] .e-section-tabs--horizontal .e-section-tab__icon { display: inline; }
+/* The five places in the header row are words only, wide and medium: no icon beside a word (the rail has
+   icons and no words; the phone bar has an icon over a small word). */
 
 /* Drawer variant */
 .e-section-tabs--drawer {
@@ -1229,6 +1235,17 @@ body.theme-light {
   font-size: 0.682rem;
   opacity: 0.45;
   font-variant-numeric: tabular-nums;
+}
+.e-quiet-chip {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--e-rule, currentColor);
+  border-radius: 8px;
+  font-size: 0.64rem;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  opacity: 0.6;
+  white-space: nowrap;
 }
 .e-chat-line__content {
   font-size: 0.902rem;

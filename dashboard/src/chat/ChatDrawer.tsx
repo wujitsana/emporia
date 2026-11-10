@@ -98,6 +98,31 @@ function ApprovalCard({ item, onAnswer }: { item: Extract<ChatItem, { kind: "app
   );
 }
 
+/** Size a textarea to its text: one line by default, growing to its CSS max-height, then it scrolls. */
+function fitTextarea(el: HTMLTextAreaElement) {
+  el.style.height = "auto";
+  if (el.scrollHeight > el.clientHeight) el.style.height = `${el.scrollHeight + 2}px`;
+}
+
+/** The answer to a question the agent asks: wraps and grows with what is typed, like the composer. */
+function AnswerBox({ label, placeholder, value, onChange }: {
+  label: string; placeholder: string; value: string; onChange: (v: string) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => { if (ref.current) fitTextarea(ref.current); }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      className={styles.answerInput}
+      rows={1}
+      aria-label={label}
+      placeholder={placeholder}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+
 function ClarifyCard({
   item,
   onAnswer,
@@ -129,12 +154,11 @@ function ClarifyCard({
             </div>
           )}
           {!item.answered && (
-            <input
-              className={styles.answerInput}
-              aria-label={`Answer: ${q.question}`}
+            <AnswerBox
+              label={`Answer: ${q.question}`}
               placeholder={q.choices.length ? "or type an answer" : "type an answer"}
               value={answers[q.qid] ?? ""}
-              onChange={(e) => setAnswers((a) => ({ ...a, [q.qid]: e.target.value }))}
+              onChange={(v) => setAnswers((a) => ({ ...a, [q.qid]: v }))}
             />
           )}
         </div>
@@ -283,13 +307,20 @@ function Composer({
   const disabled = api.conn !== "open";
   const query = draft.trimStart();
 
-  // One slim line by default; it grows with the text up to a few lines (the CSS max-height),
-  // then scrolls inside.
+  // One slim line by default; it grows with the text up to six lines (the CSS max-height),
+  // then scrolls inside. A question put in while the drawer was shut is measured again when the
+  // box gets its width (the drawer opening, the frame resizing), so all of it shows.
   useLayoutEffect(() => {
     const el = inputRef.current;
     if (!el) return;
-    el.style.height = "auto";
-    if (el.scrollHeight > el.clientHeight) el.style.height = `${el.scrollHeight + 2}px`;
+    fitTextarea(el);
+    if (typeof ResizeObserver === "undefined") return;
+    const seen = { width: el.clientWidth };
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth !== seen.width) { seen.width = el.clientWidth; fitTextarea(el); }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [draft, inputRef]);
   const isCommandWord = query.startsWith("/") && !/\s/.test(query);
   // Rows show only for the text they were fetched for, until Escape dismisses them.

@@ -21,7 +21,7 @@ function drawn(layout: NavLayout): string[] {
     const { container } = render(<BottomBar {...props} />);
     return [...container.querySelectorAll(".e-bottom-bar__tab")].map((b) => b.getAttribute("aria-label") ?? "");
   }
-  const { container } = render(<SectionTabs {...props} variant={layout === "rail" ? "rail" : "horizontal"} short={layout === "medium"} />);
+  const { container } = render(<SectionTabs {...props} variant={layout === "rail" ? "rail" : "horizontal"} />);
   return [...container.querySelectorAll(".e-section-tab")].map((b) => b.getAttribute("aria-label") ?? b.querySelector(".e-section-tab__label")?.textContent ?? "");
 }
 
@@ -51,8 +51,10 @@ describe("the width to layout mapping", () => {
       const layout = navLayoutFor(w);
       const names = drawn(layout);
       expect(names, `${w}px (${layout})`).toHaveLength(5);
-      // Medium shows "Season" for "Labs & Season" but still names it in full for a screen reader.
-      expect(names.map((n) => (layout === "wide" ? n : n === "Season" ? "Labs & Season" : n)), `${w}px`).toEqual(FIVE);
+      // Every layout names the five places in full (the phone bar writes "Season" for the fourth, but labels it in full).
+      expect(names.map((n) => (n === "Season" ? "Labs & Season" : n)), `${w}px`).toEqual(FIVE);
+      // The header row (wide and medium) writes all five in full; only the phone bar says "Season".
+      if (layout === "wide" || layout === "medium") expect(names, `${w}px`).toEqual(FIVE);
       cleanup();
     }
   });

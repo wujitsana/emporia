@@ -414,7 +414,6 @@ function AppInner() {
                 view={view}
                 onGoDest={goToDest}
                 variant="horizontal"
-                short={navLayout === "medium"}
                 badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined}
               />
               <div className="e-app-top__actions">
