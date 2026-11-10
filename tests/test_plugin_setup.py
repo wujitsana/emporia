@@ -54,6 +54,7 @@ def _fake_install(monkeypatch, tty):
     monkeypatch.setattr(setup_cli.subprocess, "run", run)
     monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://github.com/o/r", "sha": "a" * 40})
     monkeypatch.setattr(setup_cli, "_has_terminal", lambda: tty)
+    monkeypatch.setattr(setup_cli, "installed_ref", lambda home=None: "")
     return calls
 
 
@@ -69,13 +70,55 @@ def test_the_github_fallback_never_forces_past_hermess_scan_question(monkeypatch
     assert kw.get("stdin") is None
 
 
-def test_the_github_fallback_without_a_terminal_prints_the_command_and_does_not_run(monkeypatch, capsys):
+def test_the_github_fallback_without_a_terminal_runs_with_no_stdin_and_never_forces(monkeypatch, capsys):
     calls = _fake_install(monkeypatch, False)
+    assert setup_cli._install_plugin_into("shop") is True
+    assert len(calls) == 2, calls                                  # the catalog attempt, then the fallback
+    argv, kw = calls[-1]
+    assert "--ref" in argv and "--force" not in argv
+    assert kw["stdin"] is setup_cli.subprocess.DEVNULL
+
+
+def test_the_github_fallback_failing_without_a_terminal_prints_hermess_reason_and_the_command(monkeypatch, capsys):
+    calls = []
+
+    def run(argv, **kw):
+        calls.append(list(argv))
+        if "--ref" in argv:
+            return type("R", (), {"returncode": 1, "stdout": "", "stderr": "\nBlocked: scan found caution\nmore"})()
+        return type("R", (), {"returncode": 1})()
+
+    monkeypatch.setattr(setup_cli.shutil, "which", lambda n: "/bin/hermes")
+    monkeypatch.setattr(setup_cli.subprocess, "run", run)
+    monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://github.com/o/r", "sha": "a" * 40})
+    monkeypatch.setattr(setup_cli, "installed_ref", lambda: "")
+    monkeypatch.setattr(setup_cli, "_has_terminal", lambda: False)
     assert setup_cli._install_plugin_into("shop") is False
-    assert len(calls) == 1, calls                                  # only the catalog attempt ran
     out = capsys.readouterr().out
+    assert "Blocked: scan found caution" in out and "more" not in out
     assert "hermes -p shop plugins install" in out and "--ref " + "a" * 40 in out
-    assert "--force" not in out
+    assert "runtime commit" in out and "--force" not in out
+
+
+def test_the_new_profile_gets_the_plugin_commit_hermes_recorded_not_the_runtime_commit(monkeypatch, tmp_path):
+    real_installed_ref = setup_cli.installed_ref
+    calls = _fake_install(monkeypatch, False)
+    home = tmp_path / "home"
+    (home / "plugins").mkdir(parents=True)
+    (home / "plugins" / ".install-metadata.json").write_text(
+        '{"emporia": {"pinned": true, "revision": "' + "B" * 40 + '", "source": "x"}, "other": {}}')
+    monkeypatch.setattr(setup_cli, "hermes_home", lambda: home)
+    monkeypatch.setattr(setup_cli, "installed_ref", real_installed_ref)
+    assert setup_cli.installed_ref() == "b" * 40
+    assert setup_cli._install_plugin_into("shop") is True
+    assert calls[-1][0][calls[-1][0].index("--ref") + 1] == "b" * 40
+
+
+def test_installed_ref_is_empty_without_a_full_commit(tmp_path):
+    assert setup_cli.installed_ref(tmp_path) == ""
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / ".install-metadata.json").write_text('{"emporia": {"revision": "abc"}}')
+    assert setup_cli.installed_ref(tmp_path) == ""
 
 
 def _option_strings(parser):

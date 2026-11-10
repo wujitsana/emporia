@@ -615,6 +615,18 @@ def test_rerunning_setup_keeps_the_role_and_key_storage(profiles):
     assert "EMPORIA_KEY_STORAGE" not in (root / "dev1" / ".env").read_text(), "its key storage unchanged"
 
 
+def test_a_half_made_profile_without_an_agent_takes_the_recommended_role_and_keys(profiles):
+    """A first unattended run that stopped after making the profile leaves a config.yaml and no agent;
+    the re-run must not read its full Hermes tools as a developer's choice (11-10 clean-room run)."""
+    root, _ = profiles
+    (root / "half").mkdir()
+    (root / "half" / "config.yaml").write_text("model: {}\n")
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "half"]) == 0
+    assert cli.profile_role(root / "half", False) == "marketplace"
+    assert _env_of(root / "half").get("EMPORIA_KEY_STORAGE") == "env"
+
+
 # -- P173: review fixes ------------------------------------------------------------
 
 def test_a_phrase_in_the_env_is_never_overwritten(tmp_path, monkeypatch):

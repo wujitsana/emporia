@@ -256,9 +256,10 @@ merges, and the URLs are pinned to the entry's sha.*
 - **On start, the MCP server** re-registers the agent's own payout address with its relay when the
   relay reports none for a wallet family the agent holds (a relay that forgot it), with the same
   signed proof `register_x402_wallet` sends. An address the relay has is never touched.
-- **A source the catalog does not list:** setup runs `hermes plugins install` on the person's
-  terminal, so Hermes shows its scan findings and asks them; with no terminal it prints the command
-  and runs nothing. Nothing is ever installed with `--force`.
+- **A source the catalog does not list:** setup runs `hermes plugins install` for the
+  same plugin commit the person installed, with stdin from the person's terminal or `/dev/null`
+  without one: Hermes scans it and blocks what needs a person; if it fails setup prints Hermes's
+  reason and the command. Nothing is ever installed with `--force`.
 - **Telemetry:** none.
 - **Known issues:**
   - Keys in a password manager are best read by the signer (`emporia signer add NAME

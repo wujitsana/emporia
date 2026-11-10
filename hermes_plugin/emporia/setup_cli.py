@@ -492,6 +492,20 @@ def choose_profile(args: argparse.Namespace, here: str, tty: bool, ask=input) ->
         print(f"  A profile name is {PROFILE_NAME_RULE}.")
 
 
+def installed_ref(home: Path | None = None) -> str:
+    """The commit Hermes recorded when this profile's plugin was installed: the `revision` of the
+    `emporia` row in `<home>/plugins/.install-metadata.json`, the profile-local, non-secret record
+    Hermes keeps of every plugin source (`hermes plugins list --json` shows only its first 8
+    characters). "" when there is no such row or it is not a full commit."""
+    path = (home or hermes_home()) / "plugins" / ".install-metadata.json"
+    try:
+        row = json.loads(path.read_text(encoding="utf-8-sig")).get("emporia")
+    except (OSError, ValueError, AttributeError):
+        return ""
+    rev = row.get("revision") if isinstance(row, dict) else None
+    return rev.lower() if isinstance(rev, str) and re.fullmatch(r"[0-9a-fA-F]{40}", rev) else ""
+
+
 def _install_plugin_into(name: str, plugin_source: str = "emporia") -> bool:
     """The plugin into a profile setup just created, through Hermes's own installer:
     the catalog entry, or `--plugin-source` (a git URL, `<url>#hermes_plugin/emporia`)."""
@@ -507,23 +521,29 @@ def _install_plugin_into(name: str, plugin_source: str = "emporia") -> bool:
     if plugin_source != "emporia":
         return False
     # The catalog does not list Emporia yet: the person installed this plugin from GitHub, so the new profile
-    # gets the same pinned commit from the same place. Hermes shows its scan findings for a source the
-    # catalog does not list and asks; that question is the person's (catalog rule 12), so it is never
-    # forced past and never run without a terminal for them to answer on.
+    # gets the same plugin commit from the same place (the one Hermes recorded for the person's install; the
+    # runtime commit in the pin file is the code commit before it, whose own pin is blank). Hermes scans it
+    # (a safe scan asks nothing) and blocks a source it will not install without a person; never `--force`.
     src = source()
-    sha = src.get("sha", "")
+    sha, how = installed_ref(), "the plugin commit installed here"
+    if not sha:
+        sha, how = src.get("sha", ""), "the runtime commit (the installed plugin commit was not found)"
     if not sha:
         return False
     url = f"{src.get('repo', '')}#hermes_plugin/emporia"
     cmd = [hermes, "-p", name, "plugins", "install", url, "--ref", sha, "--enable"]
-    if not _has_terminal():
-        print(f"  The catalog does not list Emporia yet, and Hermes asks you to accept its scan findings for "
-              f"a source it does not list. Run this in a terminal:\n\n    {shlex.join(cmd)}\n")
-        return False
-    print(f"  The catalog does not list Emporia yet; installing the same commit from GitHub ({url}, {sha[:12]}). "
-          "Hermes shows its scan findings and asks you.")
-    r = subprocess.run(cmd, timeout=_TIMEOUT_S, env=_clean_env())
-    return r.returncode == 0
+    print(f"  The catalog does not list Emporia yet; installing from GitHub ({url}, {sha[:12]}: {how}).")
+    if _has_terminal():
+        r = subprocess.run(cmd, timeout=_TIMEOUT_S, env=_clean_env())
+        return r.returncode == 0
+    r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                       timeout=_TIMEOUT_S, env=_clean_env())
+    if r.returncode == 0:
+        return True
+    lines = [ln.strip() for ln in f"{r.stderr or ''}\n{r.stdout or ''}".splitlines() if ln.strip()]
+    print(f"  ✗ Hermes did not install it without a terminal: {lines[0] if lines else 'no output'}\n"
+          f"    Run this in a terminal:\n\n    {shlex.join(cmd)}\n")
+    return False
 
 
 def _hermes_root() -> Path:
@@ -727,10 +747,10 @@ def _tools_line() -> str:
     rt = runtime()
     if rt is None:
         return "unknown (the runtime is not installed)"
-    code = ("from emporia import features as F; "
-            "print(F.summary(F.enabled_from_env()))")
+    code = ("import os; from emporia import features as F; "
+            "print(F.summary(F.enabled_from_env(), os.environ.get('EMPORIA_RELAY_URL', '')))")
     # The setting, and the switches that imply a feature when it was never chosen (a wallet, a card, an X link).
-    names = ("EMPORIA_FEATURES", "EMPORIA_X_LINK", "EMPORIA_KEYS_DIR", "STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID",
+    names = ("EMPORIA_FEATURES", "EMPORIA_RELAY_URL", "EMPORIA_X_LINK", "EMPORIA_KEYS_DIR", "STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID",
              "EMPORIA_X402_EVM_PRIVATE_KEY", "EMPORIA_X402_SOLANA_PRIVATE_KEY", "EMPORIA_X402_PHRASE_SECRET",
              "EMPORIA_X402_EVM_KEY_SOURCE", "EMPORIA_X402_SOLANA_KEY_SOURCE", "EMPORIA_X402_PHRASE_SOURCE")
     try:

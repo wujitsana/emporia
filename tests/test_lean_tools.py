@@ -149,7 +149,23 @@ def test_parse_render_and_defaults():
     assert F.render([]) == "none" and F.render(["x_link", "money"]) == "money,x_link"
     assert F.enabled_from({}) == list(F.DEFAULTS) and F.enabled_from({F.SETTING: "none"}) == []
     assert F.derive(wallet=True, stripe=True, x_link=True) == ["money", "stripe", "x_link"]
-    assert F.summary(F.DEFAULTS) == f"{len(F.BY_NAME[F.CORE].tools)} tools: core"
+    assert F.summary(F.DEFAULTS) == (f"up to {len(F.BY_NAME[F.CORE].tools)} tools: core "
+                                     "(the relay may hide some it does not run)")
+
+
+def test_summary_counts_after_what_an_answering_relay_hides(monkeypatch):
+    import httpx
+    from emporia import relay_modules
+    mods = {}
+    monkeypatch.setattr(httpx, "get", lambda url, timeout=0: type(
+        "R", (), {"status_code": 200, "json": staticmethod(lambda: {"relay_modules": mods})})())
+    want = len(F.tools_of([]) - relay_modules.tools_to_hide([mods]))
+    assert F.summary(F.DEFAULTS, "http://r.test") == f"{want} tools: core"
+
+    def down(url, timeout=0):
+        raise httpx.ConnectError("no")
+    monkeypatch.setattr(httpx, "get", down)
+    assert F.summary(F.DEFAULTS, "http://r.test").startswith("up to ")
 
 
 # ── the server registers only what an agent has ──────────────────────────────
@@ -347,7 +363,7 @@ def test_agent_init_writes_the_features_and_the_host_config_hands_them_on(tmp_pa
     res = agent_init.init_agent(name="lean_init", key_dir=tmp_path / "k", client="custom", register=False,
                                 features="archive,money")
     n = len(F.tools_of(["archive", "money"]))
-    assert res["features"] == "archive,money" and res["tools"].startswith(f"{n} tools: core + archive + money")
+    assert res["features"] == "archive,money" and res["tools"].startswith(f"up to {n} tools: core + archive + money")
     env = host_configs.settings_for("cursor", tmp_path / "k")
     assert env[F.SETTING] == "archive,money"
     again = agent_init.init_agent(name="lean_init", key_dir=tmp_path / "k", client="custom", register=False)

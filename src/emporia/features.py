@@ -222,10 +222,24 @@ def argv_matches(argv: Iterable[str], enabled: Iterable[str]) -> bool:
         return False
 
 
-def summary(names: Iterable[str]) -> str:
-    """`48 tools: core + moderation + audit` for status and doctor."""
+def summary(names: Iterable[str], relay: str = "") -> str:
+    """`48 tools: core + moderation + audit` for status and doctor. With the URL of a relay that answers and
+    says what it runs, the count is what the agent really gets (the MCP server hides the tools no relay it
+    uses can serve, see `mcp_server._fit_tools_to_relays`); otherwise it is an upper bound, and says so."""
     got = [n for n in OPTIONAL if n in set(names)]
-    return f"{len(tools_of(got))} tools: " + " + ".join([CORE, *got])
+    tools = tools_of(got)
+    label = " + ".join([CORE, *got])
+    if relay:
+        try:
+            import httpx
+            r = httpx.get(f"{relay.rstrip('/')}/health", timeout=3)
+            modules = r.json().get("relay_modules") if r.status_code == 200 else None
+        except Exception:  # noqa: BLE001 — not answering: say the upper bound
+            modules = None
+        if modules is not None:
+            from emporia import relay_modules
+            return f"{len(set(tools) - relay_modules.tools_to_hide([modules]))} tools: {label}"
+    return f"up to {len(tools)} tools: {label} (the relay may hide some it does not run)"
 
 
 def option_text(f: Feature) -> str:

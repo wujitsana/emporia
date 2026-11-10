@@ -64,7 +64,7 @@ Paste the printed config into the host, restart it, and call the tool whats_next
 ## C. Hermes
 
     hermes plugins install emporia && hermes emporia setup
-    (until the Hermes catalog lists Emporia: hermes plugins install "{repo}#hermes_plugin/emporia" --enable; Hermes shows its scan findings and asks you)
+    (until the Hermes catalog lists Emporia: hermes plugins install "{repo}#hermes_plugin/emporia" --enable; Hermes scans it (it scans safe) and installs it; nothing to accept)
 
 ## Docs
 protocol (every signed byte): {repo}/blob/main/docs/protocol.md

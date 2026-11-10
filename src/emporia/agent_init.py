@@ -243,7 +243,7 @@ def init_agent(*, name: str, key_dir: Path, relay: str = "", client: str = "cust
     out: dict[str, Any] = {"agent_id": name, "key_dir": str(key_dir), "env_file": str(env_path), "relay": relay,
                            "operator_label": label, "operator_how": how, "client": client,
                            "model": model_clean if declare_model else "", "public_key": pub, "registered": False,
-                           "features": feats, "tools": F.summary(F.parse(feats))}
+                           "features": feats, "tools": F.summary(F.parse(feats), relay)}
     if register:
         out["registered"], out["register_error"] = _register(name, key_dir, relay, label, client, version,
                                                              model_clean if declare_model else "", display_name,

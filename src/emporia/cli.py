@@ -3566,10 +3566,10 @@ def cmd_features(args: argparse.Namespace) -> int:
             print(f"  {f.title}: {verb} ({len(f.tools)} tools: {', '.join(f.tools)}; skill reference {n.replace('_', '-')}.md)")
         if new != now:
             save(F.render(new))
-            print(f"  Saved. {F.summary(new)}.")
+            print(f"  Saved. {F.summary(new, relay_url())}.")
             print(f"  It applies on the next MCP start: {restart}.")
         now = new
-    print(f"  Features    {F.summary(now)}")
+    print(f"  Features    {F.summary(now, relay_url())}")
     for f in F.FEATURES:
         if f.name == F.CORE:
             mark = "always"
@@ -3682,7 +3682,7 @@ def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing
         picked_features = F.derive(wallet=wallet, stripe=stripe, base=picked_features)
         merge_env_file(profile / ".env", {F.SETTING: F.render(picked_features)})
         installer().refresh_mcp_references(profile)       # the entry's --features= follows the setting
-        print("  " + F.summary(picked_features) + localize("  (change: emporia features on|off NAME)"))
+        print("  " + F.summary(picked_features, relay_url()) + localize("  (change: emporia features on|off NAME)"))
     if declare and (declare == "off" or installer().harvest_env(profile).get("EMPORIA_DECLARE_MODEL", "").lower() == "off"):
         merge_env_file(profile / ".env", {"EMPORIA_DECLARE_MODEL": declare})
     if x_link and (x_link == "on" or installer().harvest_env(profile).get("EMPORIA_X_LINK", "").lower() == "on"):
@@ -5119,8 +5119,10 @@ def doctor_first_run(rep: Report, profile: Path, entry: dict, h: dict | None) ->
     elif status == 404 and _signed_get(agent_id, key_dir, f"agents/{agent_id}")[0] == 200:
         # a relay with quests off answers 404 to /quests for a registered agent: its profile settles it
         rep.ok("registered on this relay (it runs no quests, so there is no level)")
-    elif status == 404:
-        rep.warn("not registered on this relay yet — it registers when its gateway or chat first starts",
+    elif status == 404 or (status == 0 and "404" in str(quests)):
+        # status 0 with a 404: signing in (POST /dashboard/session) failed because the relay does not know it yet
+        rep.warn("not registered on this relay yet: it registers when its gateway starts (hermes gateway restart) "
+                 "or its MCP server first runs",
                  "hermes gateway restart" if profile == this_profile() else f"hermes -p {name} gateway restart")
     else:
         rep.warn(f"could not ask the relay whether it is registered ({str(quests)[:80]})", "emporia relay status")
@@ -5298,7 +5300,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     dotenv = inst.harvest_env(profile)
     from emporia import features as _F
     try:
-        rep.ok(_F.summary(_F.enabled_from(dotenv, key_dir))
+        rep.ok(_F.summary(_F.enabled_from(dotenv, key_dir), dotenv.get("EMPORIA_RELAY_URL", ""))
                + ("" if dotenv.get(_F.SETTING) else " (none chosen yet: the recommended set plus what its settings imply)"))
     except _F.FeatureError as e:
         rep.fail(f"{_F.SETTING} is not readable: {e}", f"emporia features on NAME  (or set {_F.SETTING} in the profile's .env)")
@@ -6529,8 +6531,11 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     heading("Role and keys", "Its role decides which of its own tools could ever reach its keys.")
     # An existing agent keeps its role unless told otherwise: re-running setup
     # (to update its plugin, say) must not quietly take a developer's terminal.
+    # A profile with a config but no agent yet (a half-made one from a first run that stopped, or a bare
+    # Hermes profile) has no agent role to keep: its full tools are Hermes's default, not a choice.
+    holds_agent = existing and _holds_an_agent(profile)
     current_role = None
-    if existing:
+    if holds_agent:
         _, aid0, _ = _agent(name)
         current_role = profile_role(profile, _has_wallet(profile, aid0))
     keys = [k for k, _ in ROLES]
@@ -6552,7 +6557,7 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
             "  A wallet plus full tools on the `local` backend puts its keys in its tools' reach. Continue?",
             False):
         return 1
-    if existing and not args.keys and not _TTY:
+    if holds_agent and not args.keys and not _TTY:
         # Without a terminal, an existing agent's key storage is left as it is.
         args.keys = "env" if inst.harvest_env(profile).get("EMPORIA_KEY_STORAGE") == "env" else "files"
     storage = args.keys or choose_setting("keys")

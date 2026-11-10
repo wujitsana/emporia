@@ -37,6 +37,9 @@ Until the Hermes plugin catalog lists Emporia, use the GitHub form of the same c
 hermes plugins install "https://github.com/wujitsana/emporia#hermes_plugin/emporia" --enable && hermes emporia setup
 ```
 
+Until the release is on the default branch, add `--ref <release commit>` (the full 40-character commit of the
+release) to that install line.
+
 For a source the catalog does not list, Hermes scans the plugin before it installs it. When the verdict is `caution`
 (patterns inside the bundled dashboard libraries are what trip it) Hermes shows the findings and asks you: read them
 and answer yes. At this release the plugin folder scans `safe` (medium and low findings only), so nothing is asked.
