@@ -15742,9 +15742,10 @@ var EmporiaHermesPlugin = (function(exports) {
 			["As seller", `${s.sales} sales · ${s.paid} paid · ${s.disputed} disputed${s.never_delivered ? ` · ${s.never_delivered} never delivered` : ""}`]
 		];
 	}
-	var READ_ONLY_NOTE, dollars;
+	var READ_ONLY_NOTE, settingsCommand, dollars;
 	var init_settings = __esmMin((() => {
 		READ_ONLY_NOTE = "Read-only here. Change a setting in Hermes's settings page or with the command shown; the agent can't change these.";
+		settingsCommand = (profile) => `emporia agent settings ${profile}`;
 		dollars = (cents) => `$${(cents / 100).toFixed(2)}`;
 	}));
 	// src/ui/Leaderboard.tsx
@@ -37069,6 +37070,10 @@ var EmporiaHermesPlugin = (function(exports) {
 						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("p", {
 							className: "e-settings-intro",
 							children: READ_ONLY_NOTE
+						}),
+						agent && /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("p", {
+							className: "e-faint e-settings-hint",
+							children: ["Change these: ", /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("code", { children: settingsCommand(agent.profile) })]
 						}),
 						title && /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("h2", {
 							className: "e-settings-heading",

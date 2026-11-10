@@ -38,6 +38,9 @@ export function groupItems(items: SettingItem[]): [string, SettingItem[]][] {
 export const READ_ONLY_NOTE =
   "Read-only here. Change a setting in Hermes's settings page or with the command shown; the agent can't change these.";
 
+/** The one command that lists and changes an agent's own limits and behaviour, in the person's terminal. */
+export const settingsCommand = (profile: string) => `emporia agent settings ${profile}`;
+
 /** How to draw an item: what the console said, or (for the relay's plain items) what its value reads as. */
 export function kindOf(it: SettingItem): SettingKind {
   if (it.kind) return it.kind;

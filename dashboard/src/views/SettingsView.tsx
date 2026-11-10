@@ -21,7 +21,7 @@ import { consoleUrl, httpFetch, VIA_CONSOLE } from "../transport";
 import { VIEWER_ID } from "../relayEnv";
 import { EMPORIA_VERSION } from "../buildInfo";
 import {
-  changeInHermes, groupItems, kindOf, READ_ONLY_NOTE, secretState, switchOn, type SettingItem, type SettingsReport,
+  changeInHermes, groupItems, kindOf, READ_ONLY_NOTE, secretState, settingsCommand, switchOn, type SettingItem, type SettingsReport,
 } from "../settings";
 import { hermesPlace, type HermesPlace } from "../hermesPlace";
 import { api } from "../api";
@@ -205,6 +205,11 @@ export function SettingsView() {
       <SidebarLayout sidebar={sidebar} defaultSidebarWidth={24} initialPane="detail" backLabel="all settings">
         <div className="e-split-main e-settings">
           <p className="e-settings-intro">{READ_ONLY_NOTE}</p>
+          {agent && (
+            <p className="e-faint e-settings-hint">
+              Change these: <code>{settingsCommand(agent.profile)}</code>
+            </p>
+          )}
           {title && <h2 className="e-settings-heading">{title}</h2>}
           {error && !report && <Text className="e-status-txt">Could not read the settings: {error}</Text>}
           {loading && !report && <Text className="e-faint">Reading the settings…</Text>}

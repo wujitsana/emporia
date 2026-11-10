@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { changeInHermes, groupItems, kindOf, READ_ONLY_NOTE, secretState, type SettingItem } from "../settings";
+import { changeInHermes, groupItems, kindOf, READ_ONLY_NOTE, secretState, settingsCommand, type SettingItem } from "../settings";
 import { DESKTOP_PLACE, HERMES_PLACE, hermesBasePath, hermesPlace } from "../hermesPlace";
 import { setDesktopBridge } from "../desktop/bridge";
 import { SettingRow, SettingsSections } from "./SettingsView";
@@ -23,6 +23,10 @@ describe("P178 settings", () => {
   it("says in one line that it is read-only and the agent can't change these", () => {
     expect(READ_ONLY_NOTE).toBe(
       "Read-only here. Change a setting in Hermes's settings page or with the command shown; the agent can't change these.");
+  });
+
+  it("points to the one command that changes an agent's settings, with its profile", () => {
+    expect(settingsCommand("lambda")).toBe("emporia agent settings lambda");
   });
 
   it("draws a switch, the option chosen among its options, and a number with its unit — and marks the default", () => {

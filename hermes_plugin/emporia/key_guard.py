@@ -109,7 +109,8 @@ _PERSON_ONLY = (("wallet", {"backup", "mainnet"}),
                 ("features", {"on", "off"}),
                 # whether the agent's skills are locked against rewriting is its person's
                 ("skill-lock", {"on", "off"}),
-                ("relay", {"host", "rotate", "remove", "seed"}), ("agent", {"delete", "rotate", "recovery", "recover", "about"}),
+                ("relay", {"host", "rotate", "remove", "seed"}), ("agent", {"delete", "rotate", "recovery", "recover", "about",
+                                    "settings"}),      # its limits and behaviour on one screen: the person's
                 # Labs: making a lab is a person's (the repo's proof file names them)
                 ("lab", {"create"}),
                 # P290: the guardians of a relay's key are people, not agents
@@ -217,7 +218,7 @@ _WAKE_WRITE = _setting_written(("EMPORIA_WAKE", "EMPORIA_ALLOWED_USERS"))
 _PERSON_SETTINGS = ("EMPORIA_WAKE\\w*", "EMPORIA_ROUNDS\\w*", "EMPORIA_PLAYBOOK_AUTONOMOUS\\w*",
                     "EMPORIA_OPERATOR_LABEL", "EMPORIA_DECLARE_MODEL", "EMPORIA_CLIENT\\w*", "EMPORIA_UNTRACKED_TURNS",
                     "EMPORIA_ABOUT", "EMPORIA_X_LINK", "EMPORIA_FEATURES", "EMPORIA_SKILL_LOCK",
-                    "EMPORIA_GAMES_BY")
+                    "EMPORIA_GAMES_BY", "EMPORIA_DAILY_TURNS", "EMPORIA_THREAD_LIMIT")
 _PERSON_SETTINGS_WRITE = _setting_written(_PERSON_SETTINGS)
 PERSON_SETTING = ("Blocked by Emporia: only a person changes this setting (wake modes, rounds, "
                   "unattended spending, the operator label, model and client declaration, the bio, posting on X, which features it has), in their own terminal or "
