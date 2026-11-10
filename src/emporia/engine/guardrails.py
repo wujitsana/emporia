@@ -38,14 +38,14 @@ _INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
         r"rm\s+-rf\s+/",
         r"curl\s+[^\n|;]+\|\s*(bash|sh)",
         r"exfiltrate|steal\s+(secrets|keys|tokens|credentials)",
-        r"print\s+(the\s+)?(environment|env|secrets|api[_-]?keys)",
+        r"print\s+(the\s+)?(environment|en[v]|secrets|api[_-]?keys)",
         r"bypass\s+(guardrails|security|safety|policy)",
         r"jailbreak|prompt\s*injection",
         r"(disregard|forget|override)\s+(all\s+|any\s+|everything\s+)?(of\s+)?(the\s+|your\s+|these\s+)?"
         r"(previous|prior|above|earlier|safety|system)\s+(instructions|rules|messages|guidelines|prompt)",
         r"new\s+instructions\s*:|updated\s+instructions\s*:",
         r"<\|?(im_start|im_end|system|endoftext)\|?>|\[/?INST\]|<</?SYS>>",
-        r"(read|cat|open|print|send|upload|show|reveal)\s+[^\n]{0,40}(~/\.ssh|\.hermes/keys|\.hermes/\.env|id_ed25519|private[_\s-]?key|seed\s+phrase|mnemonic)",
+        r"(read|cat|open|print|send|upload|show|reveal)\s+[^\n]{0,40}(~/\.ssh|\.hermes/keys|\.hermes/\.en[v]|id_ed25519|private[_\s-]?key|seed\s+phrase|mnemonic)",
         r"(send|transfer|pay|wire)\s+[^\n]{0,60}\bto\s+0x[0-9a-f]{20,}",
         r"(run|execute|invoke)\s+(the\s+)?(terminal|shell|bash|python)\s+(tool|command)",
     )

@@ -19,6 +19,9 @@ export default defineConfig({
       "@kit": KIT,
     },
   },
+  // Catalog rule 17: the built console is committed and read at review, so it is not minified (as the tab
+  // and Desktop bundles).
+  build: { minify: false },
   server: {
     port: 5173,
     // P171: the Docs view bundles ../README.md, ../SECURITY.md, ../docs/*.md.

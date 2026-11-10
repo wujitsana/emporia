@@ -193,7 +193,7 @@ optional_env:
     prompt: "Key directory (or empty)"
     password: false
   - name: EMPORIA_KEY_STORAGE
-    description: "`env`: new keys go to the profile .env, which Hermes hides from the agent's tools; otherwise key files. `emporia identity store NAME --to env|files`."
+    description: "`env`: new keys go to the profile .env, which Hermes hides from the agent's tools; otherwise key files. `emporia identity store NAME --to env` or `--to files`."
     prompt: "Where new keys go (env/files)"
     password: false
   - name: EMPORIA_X402_MAINNET

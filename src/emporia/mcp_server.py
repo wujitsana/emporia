@@ -6144,8 +6144,23 @@ def _heal_x402_pay_to() -> None:
         logger.warning("x402_pay_to_restore_error", extra={"agent_id": AGENT_ID, "detail": str(e)[:200]})
 
 
+def _check_features_arg(argv: list[str] | None = None) -> bool:
+    """The entry that starts this server may carry `--features=<list>`: it makes Hermes, which caches the tool
+    list under a fingerprint of the entry's args, list the tools again when the features change. The argument
+    changes nothing here (EMPORIA_FEATURES is the source of truth, `_fit_tools_to_relays`); a mismatch is only
+    logged, and `emporia doctor` names the fix. Returns whether it matches (or there is none)."""
+    import sys
+    from emporia import features
+    ok = features.argv_matches(sys.argv[1:] if argv is None else argv, features.enabled_from_env())
+    if not ok:
+        logger.warning("features_arg_mismatch", extra={"detail": "the MCP entry's --features= differs from "
+                                                       "EMPORIA_FEATURES; run `emporia agent refresh NAME`"})
+    return ok
+
+
 def main() -> None:
     _auto_register()
+    _check_features_arg()
     _fit_tools_to_relays()
     transport = os.getenv("EMPORIA_MCP_TRANSPORT", "stdio").lower()
     # A host shows a stdio server's stderr to its person: no FastMCP banner, and no "update available" box (the

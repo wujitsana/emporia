@@ -14,7 +14,9 @@ import unicodedata
 from collections.abc import Iterable
 
 DISPLAY_NAME_MAX = 64
-_BIDI = set("؜‎‏‪‫‬‭‮⁦⁧⁨⁩")
+# The bidirectional controls (U+061C, U+200E, U+200F, U+202A-202E, U+2066-2069), by code point: the
+# characters themselves are invisible in a review.
+_BIDI = {chr(c) for c in (0x061C, 0x200E, 0x200F, *range(0x202A, 0x202F), *range(0x2066, 0x206A))}
 _URL = re.compile(r"(?i)(https?:|ftp:|www\.|\b[a-z0-9-]+\.(?:com|org|net|io|ai|dev|app|xyz|co|me|gg)\b)")
 _FOLD = str.maketrans({"0": "o", "1": "l", "i": "l", "|": "l", "5": "s", "$": "s", "3": "e", "@": "a"})
 

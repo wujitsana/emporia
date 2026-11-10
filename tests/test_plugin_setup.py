@@ -42,6 +42,42 @@ def test_without_a_terminal_it_asks_nothing_and_needs_the_choice_as_a_flag(capsy
     assert "--agent-profile shop" in out and "--profile shop" not in out.replace("--agent-profile", "")
 
 
+def _fake_install(monkeypatch, tty):
+    """Hermes stand-in: the catalog install fails (not listed), the GitHub fallback is recorded."""
+    calls = []
+
+    def run(argv, **kw):
+        calls.append((list(argv), kw))
+        return type("R", (), {"returncode": 1 if "emporia" in argv else 0})()
+
+    monkeypatch.setattr(setup_cli.shutil, "which", lambda n: "/bin/hermes")
+    monkeypatch.setattr(setup_cli.subprocess, "run", run)
+    monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://github.com/o/r", "sha": "a" * 40})
+    monkeypatch.setattr(setup_cli, "_has_terminal", lambda: tty)
+    return calls
+
+
+def test_the_github_fallback_never_forces_past_hermess_scan_question(monkeypatch, capsys):
+    """Catalog rule 12: with a terminal Hermes shows its findings and asks the person (their terminal is
+    its stdin); the install never carries --force."""
+    calls = _fake_install(monkeypatch, True)
+    assert setup_cli._install_plugin_into("shop") is True
+    argvs = [a for a, _ in calls]
+    assert all("--force" not in a for a in argvs), argvs
+    argv, kw = calls[-1]
+    assert "--ref" in argv and "--enable" in argv
+    assert kw.get("stdin") is None
+
+
+def test_the_github_fallback_without_a_terminal_prints_the_command_and_does_not_run(monkeypatch, capsys):
+    calls = _fake_install(monkeypatch, False)
+    assert setup_cli._install_plugin_into("shop") is False
+    assert len(calls) == 1, calls                                  # only the catalog attempt ran
+    out = capsys.readouterr().out
+    assert "hermes -p shop plugins install" in out and "--ref " + "a" * 40 in out
+    assert "--force" not in out
+
+
 def _option_strings(parser):
     for action in parser._actions:
         yield from action.option_strings
@@ -513,7 +549,7 @@ def test_a_profile_made_for_a_setup_that_failed_is_not_left_behind(monkeypatch, 
     assert removed == ["shop"]
 
 
-def test_removing_a_failed_profile_never_removes_an_agent(monkeypatch, tmp_path):
+def test_removing_a_failed_profile_never_removes_an_agent(monkeypatch, tmp_path, capsys):
     _catalog_setup(monkeypatch, tmp_path)
     prof = tmp_path / "hh" / "profiles" / "shop"
     (prof / "home" / ".hermes" / "keys").mkdir(parents=True)
@@ -522,8 +558,13 @@ def test_removing_a_failed_profile_never_removes_an_agent(monkeypatch, tmp_path)
     monkeypatch.setattr(setup_cli.shutil, "which", lambda name: "/x/hermes")
     monkeypatch.setattr(setup_cli.subprocess, "run", lambda argv, **kw: ran.append(argv) or
                         argparse.Namespace(returncode=0))
+    monkeypatch.setattr(setup_cli, "_has_terminal", lambda: False)
     setup_cli._remove_profile("shop")
-    assert ran == [["/x/hermes", "profile", "delete", "shop", "--yes"]]
+    assert ran == [], "no terminal: nothing is deleted behind the person's back; the command is printed"
+    assert "hermes profile delete shop" in capsys.readouterr().out
+    monkeypatch.setattr(setup_cli, "_has_terminal", lambda: True)
+    setup_cli._remove_profile("shop")
+    assert ran == [["/x/hermes", "profile", "delete", "shop"]], "with a terminal Hermes asks the person (no --yes)"
     (prof / "home" / ".hermes" / "keys" / "shop.priv").write_bytes(b"k" * 32)
     setup_cli._remove_profile("shop")
     (prof / "home" / ".hermes" / "keys" / "shop.priv").unlink()

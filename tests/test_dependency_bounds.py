@@ -27,6 +27,22 @@ def test_every_runtime_dependency_has_a_floor_and_an_upper_bound():
     assert not unbounded, f"bare floors (rule 10): {unbounded}"
 
 
+def test_the_dev_extra_and_dev_group_are_bounded_too():
+    """A reviewer reads the whole file (rule 10): no bare floor anywhere, dev tools included, and the
+    lock records the same specifiers."""
+    extras = PYPROJECT["project"].get("optional-dependencies", {})
+    dev = [Requirement(s) for s in extras.get("dev", []) + PYPROJECT.get("dependency-groups", {}).get("dev", [])]
+    assert dev
+    unbounded = [str(r) for r in dev if not any(s.operator in ("<", "<=", "==", "~=") for s in r.specifier)]
+    assert not unbounded, f"bare floors (rule 10): {unbounded}"
+    emporia = next(p for p in LOCK["package"] if p["name"] == "emporia")
+    recorded = [(d["name"], d.get("specifier", "")) for d in emporia["metadata"]["requires-dist"]
+                if d.get("marker") == "extra == 'dev'"]
+    recorded += [(d["name"], d.get("specifier", "")) for d in emporia["metadata"]["requires-dev"]["dev"]]
+    want = sorted((r.name, str(r.specifier)) for r in dev)
+    assert sorted((n, str(Requirement(f"{n}{s}").specifier)) for n, s in recorded) == want
+
+
 def test_the_locked_versions_are_inside_the_ranges():
     locked = {p["name"]: Version(p["version"]) for p in LOCK["package"] if "version" in p}
     outside = [f"{r.name} {locked[r.name]} not in {r.specifier}" for r in _runtime_requirements()

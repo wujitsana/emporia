@@ -86,6 +86,19 @@ def test_doctor_names_a_setting_the_entry_does_not_hand_over(tmp_path):
     assert agent_env.unreferenced(linked, agent_env.mcp_env(linked)) == []
 
 
+def test_an_entry_that_runs_the_script_gets_only_the_features_argument(tmp_path):
+    import yaml
+
+    from emporia import cli
+    profile = tmp_path / "profiles" / "zed"
+    profile.mkdir(parents=True)
+    (profile / "config.yaml").write_text(yaml.dump({"mcp_servers": {"emporia": {
+        "command": "/x/bin/emporia-mcp", "env": {"EMPORIA_RELAY_URL": "http://r"}}}}))
+    cli.installer().refresh_mcp_references(profile)
+    args = yaml.safe_load((profile / "config.yaml").read_text())["mcp_servers"]["emporia"]["args"]
+    assert len(args) == 1 and args[0].startswith("--features="), "no -m emporia.mcp_server for the script"
+
+
 def test_an_old_mcp_entry_is_given_its_references(tmp_path):
     import yaml
 

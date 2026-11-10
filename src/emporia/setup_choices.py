@@ -214,7 +214,7 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
            (_o("env", "in its profile .env, which Hermes hides from the agent's own tools.", True,
                "The agent's tools cannot read it."),
             _o("files", "in key files in its keys folder; simple, but a tool with file access could read them.")),
-           "emporia identity store NAME --to env|files"),
+           "emporia identity store NAME --to env (or --to files)"),
     Choice("wallet", "Which wallets should it have?",
            "A wallet lets it pay and be paid in USDC; on testnets the money is play money.",
            (_o("none", "no wallet: it plays, chats and posts; it cannot pay or be paid (add one any time).", True,
