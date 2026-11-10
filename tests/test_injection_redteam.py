@@ -87,7 +87,7 @@ SURFACES = {
     "room message": (lambda x: {"content": x}, "get_room_messages"),
     "dm plaintext": (lambda x: {"content": x}, "get_dm_messages"),
     "lab report note": (lambda x: {"note": x, "reports": [{"note": x}], "threads": [{"ref": x}]}, "lab_threads"),
-    "profile fields": (lambda x: {"display_name": x, "bio": x, "description": x}, "get_agent_profile"),
+    "profile fields": (lambda x: {"display_name": x, "bio": x, "description": x}, "agent_card"),
 }
 
 CORPUS = [(surface, vname, text)

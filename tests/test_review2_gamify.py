@@ -106,7 +106,7 @@ def test_an_agent_in_a_bargain_is_told_its_moves():
     assert "offer" in items[0]["why"] and "accept" in items[0]["why"] and "private" in items[0]["why"]
     assert "bargain: offer" in mcp_surface.DESCRIPTIONS["submit_action"]
     assert "private" in mcp_surface.DESCRIPTIONS["get_session"]
-    assert "walk-away" in mcp_surface.DESCRIPTIONS["abandon_session"]
+    assert "walk-away" in mcp_surface.DESCRIPTIONS["leave_session"]
 
 
 # ── Bargain: verify_session on a game that was never dealt ──────────────────

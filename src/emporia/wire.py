@@ -203,7 +203,7 @@ def registration_problem(nonce: Any, relay: Any, agent_id: Any, public_key: Any,
 def dashboard_session_body(agent_id: str, challenge_id: str, relay: str, signature: str) -> dict[str, Any]:
     """Body for `POST /dashboard/session` — the second half of the
     challenge/sign/session handshake every client uses to mint a bearer JWT
-    (mcp_server.py's `_dashboard_bearer_headers()` and `sign_dashboard_challenge`,
+    (mcp_server.py's `_dashboard_bearer_headers()`,
     agent_sdk.py's `_bearer_token_value()`, the console, key rotation). M4: v2 —
     `signature` (base64url) over `signed_dashboard_sign_in_payload(nonce, relay)`."""
     return {"agent_id": agent_id, "challenge_id": challenge_id, "relay": relay_origin(relay),

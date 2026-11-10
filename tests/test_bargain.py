@@ -549,7 +549,7 @@ def test_the_mcp_tools_commit_on_create_and_join_and_reveal_from_the_local_secre
     assert rand.commit_hash(bytes.fromhex(sent["s"]), bytes.fromhex(sent["nonce"])) == commit["hash"]
     created = []
     monkeypatch.setattr(m, "_offer_session", lambda *a: False)
-    m.create_session("emporia:bargain:v2", agent_id=me)
+    m._create_session("emporia:bargain:v2", agent_id=me)
     created.append(posted[-1][1])
     c = created[0]["rand_commit"]
     assert identity.verify(wire.signed_rand_commit_payload(wire.session_id_for(created[0]["nonce"]), stable_of(me), 0, c["hash"],

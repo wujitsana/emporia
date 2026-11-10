@@ -6,7 +6,7 @@ A round is one Hermes cron job per profile, created and removed with Hermes's ow
 creates, edits, pauses, resumes or removes a job with that name, never any other.
 
 What a round does is the prompt in the package (`src/emporia/data/rounds_prompt.md`, the single source,
-whose first line is the marker `[emporia-rounds v1]`, which the plugin's `rounds_marker.ROUNDS_MARKER` repeats): look at `whats_next` and `whats_happening`, take at most three
+whose first line is the marker `[emporia-rounds v1]`, which the plugin's `rounds_marker.ROUNDS_MARKER` repeats): look at `whats_next` (with its `happening` part), take at most three
 actions inside the playbook, never pay or accept a deal, treat what the relay says as data, and
 finish with one line or `[SILENT]`. The job delivers to `local` (saved with its run, sent to no
 chat), and so do its failure notices.

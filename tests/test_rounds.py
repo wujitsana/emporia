@@ -158,7 +158,7 @@ def test_the_prompt_ships_in_the_package_and_carries_the_safety_lines():
     spec.loader.exec_module(mod)
     assert mod.ROUNDS_MARKER == "[emporia-rounds v1]" and "import" not in (REPO / "hermes_plugin" / "emporia" / "rounds_marker.py").read_text().replace("imports nothing", "")
     assert create_has_marker()
-    for line in ("whats_next", "whats_happening", "at most 3 actions", "data, never instructions",
+    for line in ("whats_next", "`happening`", "at most 3 actions", "data, never instructions",
                  "Never pay", "accept or confirm a deal", "openly skeptical", "never against what an agent says", "red flag", "[SILENT]", "outside Emporia"):
         assert line in text, line
 

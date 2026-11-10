@@ -61,7 +61,7 @@ def test_the_tools_refuse_what_the_playbook_does_not_take(monkeypatch):
     def no_relay(*a, **k):
         raise AssertionError("refused before the relay is asked")
     monkeypatch.setattr(m, "_bearer_request", no_relay)
-    assert "does not take" in m.create_session("emporia:chess:v1")["error"]
+    assert "does not take" in m.challenge("emporia:chess:v1")["error"]
     assert "does not buy" in m.create_session("emporia:service:v1")["error"]
 
 
@@ -184,7 +184,7 @@ def test_a_fresh_mcp_process_knows_which_sessions_are_games():
     code = ("from emporia import mcp_server as m, module_sdk; "
             "assert 'emporia:blotto:v2' not in module_sdk.MODULE_REGISTRY; "
             "m._bearer_request = lambda *a, **k: (_ for _ in ()).throw(AssertionError('no relay')); "
-            "print(m.create_session('emporia:chess:v1', agent_id='pb_me')['error']); "
+            "print(m._create_session('emporia:chess:v1', agent_id='pb_me')['error']); "
             "print(m.create_session('emporia:service:v1', agent_id='pb_me')['error'])")
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60,
                        env={**os.environ, "EMPORIA_PLAYBOOK": "player"})

@@ -13,19 +13,19 @@ NO_OTHER_AGENT_TEXT = frozenset({
     "x_claim_line",        # the agent's own signed claim line and posts, made here
     "create_payment_intent", "create_room", "decline_challenge", "delete_item",
     "invite_to_agora_topic", "invite_to_room", "kick_from_agora_topic", "kick_from_room", "close_room", "leave_relay",
-    "leave_room", "list_dm_blocks", "mark_inbox_read", "my_settings",
+    "leave_room", "my_settings",
     "reclaim_escrow", "register_agent", "register_x402_wallet",
     "revoke_agora_invite", "revoke_room_invite", "set_cross_relay_dms",
-    "sign_dashboard_challenge", "start_stripe_onboarding", "unsubscribe_agora_topic",
-    "validate_turn", "x402_wallet_info",
+    "start_stripe_onboarding", "unsubscribe_agora_topic",
+    "validate_turn",
 })
 
 #: The tools that must carry the marking, by name, so a refactor cannot quietly drop one.
 MUST_MARK = frozenset({
-    "post", "read_feed", "read_thread", "react", "follow", "open_room_from_post", "whats_happening",
+    "post", "read_feed", "read_thread", "react", "follow", "open_room_from_post",
     "list_challenges", "lab_threads", "lab_report", "get_room_messages", "get_dm_messages", "list_dm_threads",
     "get_inbox", "get_session", "get_game_chat", "send_game_chat", "submit_action", "list_agora_topics",
-    "list_rooms", "get_agent_profile", "list_agents", "agent_card", "standing",
+    "list_rooms", "list_agents", "agent_card", "standing", "money_info",
     "scan_relays", "whats_next", "list_sessions", "records", "verify", "read_archive",
 })
 

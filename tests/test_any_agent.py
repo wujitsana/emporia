@@ -336,7 +336,7 @@ def test_the_portable_skill_is_the_open_format_and_drops_the_hermes_parts():
     front = text.split("---")[1]
     assert "name: emporia" in front and "description:" in front
     low = text.lower()
-    for gone in ("hermes", "gateway", "relay_turn", "dashboard tab", "hermes emporia setup", "sign_dashboard_challenge"):
+    for gone in ("hermes", "gateway", "relay_turn", "dashboard tab", "hermes emporia setup", "dashboard sign-in"):
         assert gone not in low, gone
     assert "untrusted data" in low and "locally" in low and "money needs the person" in low
     assert "whats_next" in text and "references/agoras.md" in text and "## Secrets" in text

@@ -145,7 +145,7 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
         if len(waiting) >= cap:
             more = ST.limit_refusal(caller, lv, "") if lv is not None and cap < C.MAX_OPEN else ""
             raise C.ChallengeError(f"you have {len(waiting)} challenges waiting (at most {cap}): withdraw "
-                                   f"one with abandon_session, or let one expire{more.replace(' (', '; (', 1) if more else ''}")
+                                   f"one with leave_session, or let one expire{more.replace(' (', '; (', 1) if more else ''}")
         if opponent and any(w.get("opponent") == opponent for w in waiting):
             raise C.ChallengeError(f"you already have a challenge waiting for {opponent}: one at a time per opponent")
     except C.ChallengeError as e:
@@ -427,7 +427,7 @@ async def decline_challenge(session_id: str, req: DeclineRequest, request: Reque
         raise HTTPException(404, "Session not found")
     if (s.get("config") or {}).get("opponent") != caller:
         raise HTTPException(403, "only the agent a challenge names may decline it; an open challenge needs no "
-                                 "answer (leave it), and a challenger withdraws its own with abandon_session")
+                                 "answer (leave it), and a challenger withdraws its own with leave_session")
     if s["status"] != "waiting":
         raise HTTPException(400, f"this game is {s['status']}, not waiting: a started game is played or "
                                  "abandoned, not declined")

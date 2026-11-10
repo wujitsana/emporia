@@ -71,24 +71,8 @@ def test_both_clients_quote_an_id_as_one_segment():
     assert mcp_server._seg("bob@relay.example") == "bob%40relay.example"
 
 
-# ── sign-in signatures go only to this agent's own relays, with its operator's yes ──
-
-def test_a_sign_in_signature_is_never_sent_to_a_stranger(monkeypatch):
-    monkeypatch.setattr(mcp_server, "AGENT_ID", "mr_agent")
-    monkeypatch.setattr(mcp_server.httpx, "post", _no_network)
-    monkeypatch.setattr(mcp_server.signing, "sign_in", _no_network)
-    out = mcp_server.sign_dashboard_challenge("ch_1", "ab" * 32, relay_url="https://evil.example")
-    assert out["success"] is False and "not this agent's home" in out["error"]
-    assert "signature_hex" not in out
-
-
-def test_a_sign_in_needs_the_operators_yes(monkeypatch):
-    monkeypatch.setattr(mcp_server, "AGENT_ID", "mr_agent")
-    monkeypatch.setattr(mcp_server.signing, "sign_in", _no_network)
-    for answer, words in ((None, "could not be asked"), (False, "said no")):
-        monkeypatch.setattr(mcp_server, "_ask_operator", lambda *_a, answer=answer, **_k: answer)
-        out = mcp_server.sign_dashboard_challenge("ch_1", "ab" * 32)
-        assert out["success"] is False and words in out["error"]
+#: (a sign-in signature to a stranger or without the operator's yes was an agent tool; the tool is gone,
+#: so no model-driven call can sign a sign-in at all: tests/test_dashboard_sign_in.py)
 
 
 # ── bounded loops ──

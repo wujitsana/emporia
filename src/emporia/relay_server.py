@@ -496,7 +496,6 @@ import hmac as _hmac
 
 _JWT_TTL_SECONDS = 3600                  # 1-hour sessions
 _CHALLENGE_STORE: dict[str, tuple[str, float]] = {}   # challenge_id → (nonce, expires_at)
-_PENDING_TOKENS: dict[str, str] = {}                  # challenge_id → jwt (consumed on poll)
 _CHALLENGE_TTL = 300.0  # 5-minute window to complete sign
 
 
@@ -4095,7 +4094,7 @@ SWEEP_STATS: dict[str, Any] = {
     "last_run_at": None,
     "last_error_at": None,
     "consecutive_failures": 0,
-    "evicted": {"rate_windows": 0, "pending_tokens": 0, "ws_connections": 0, "agent_rate_limits": 0},
+    "evicted": {"rate_windows": 0, "ws_connections": 0, "agent_rate_limits": 0},
 }
 
 
@@ -4104,7 +4103,7 @@ def _sweep_expired_state() -> dict[str, int]:
     synchronous so it can be tested directly without running the async loop;
     returns counts removed per dict for that purpose."""
     now = time.time()
-    removed = {"rate_windows": 0, "pending_tokens": 0, "ws_connections": 0, "agent_rate_limits": 0}
+    removed = {"rate_windows": 0, "ws_connections": 0, "agent_rate_limits": 0}
 
     # _RATE_WINDOWS: drain each key's deque against its own bucket's window (same logic
     # the middleware applies per-request), then drop the key if nothing survived — a key
@@ -4118,13 +4117,6 @@ def _sweep_expired_state() -> dict[str, int]:
         if not q:
             del _RATE_WINDOWS[key]
             removed["rate_windows"] += 1
-
-    # _PENDING_TOKENS: a JWT nobody polled for stays resident (and valid) past its own
-    # exp otherwise. _jwt_decode() already verifies signature + exp — reuse it rather
-    # than a second, unverified expiry check.
-    for challenge_id in [c for c, tok in _PENDING_TOKENS.items() if _jwt_decode(tok) is None]:
-        _PENDING_TOKENS.pop(challenge_id, None)
-        removed["pending_tokens"] += 1
 
     # ws_connections: sockets are already discarded from their set on disconnect
     # (every WS handler's `finally: ws_connections[key].discard(ws)`); this only drops
@@ -5040,10 +5032,10 @@ def _names_this_relay(origin: str) -> bool:
 
 @app.post("/dashboard/challenge")
 async def dashboard_challenge(request: Request):
-    """Step 1 of dashboard auth: get a nonce to sign.
+    """Step 1 of a signed session: get a nonce to sign.
 
-    The agent signs this nonce via the sign_dashboard_challenge MCP tool,
-    then submits the signature to POST /dashboard/session for a JWT.
+    The client (the local console, the SDK, key rotation) signs this nonce with the agent's key and
+    submits the signature to POST /dashboard/session for a JWT.
     """
     # Prune expired challenges
     now = time.time()
@@ -5060,10 +5052,8 @@ async def dashboard_challenge(request: Request):
         "expires_in": int(_CHALLENGE_TTL),
         "relay_id": relay_id(),
         "instructions": (
-            "Ask the agent to sign in: sign_dashboard_challenge(relay_url=<this relay's URL>, "
-            "challenge_id=..., nonce=...). It signs the nonce with this relay's origin "
-            "(emporia:dashboard-sign-in:v2) and completes POST /dashboard/session itself; "
-            "poll GET /dashboard/poll for the token."
+            "Sign the nonce with this relay's origin (emporia:dashboard-sign-in:v2) and send it to "
+            "POST /dashboard/session; the answer carries the token."
         ),
         "sign_in": "emporia:dashboard-sign-in:v2",
     }
@@ -5119,8 +5109,6 @@ async def dashboard_session(req: DashboardSessionRequest):
         "exp": int(now + _JWT_TTL_SECONDS),
         "jti": secrets.token_hex(12),          # its id: what sign-out revokes
     })
-    # Store under challenge_id so the polling dashboard can pick it up automatically
-    _PENDING_TOKENS[req.challenge_id] = jwt
     return {
         "token": jwt,
         "agent_id": req.agent_id,
@@ -5128,19 +5116,6 @@ async def dashboard_session(req: DashboardSessionRequest):
         "expires_in": _JWT_TTL_SECONDS,
         "token_type": "Bearer",
     }
-
-
-@app.get("/dashboard/poll")
-async def dashboard_poll(challenge_id: str):
-    """Dashboard polls this after initiating /dashboard/challenge.
-
-    Returns the JWT once the agent has completed signing (via sign_dashboard_challenge MCP tool).
-    Token is consumed on first successful read — the dashboard stores it in sessionStorage.
-    """
-    token = _PENDING_TOKENS.pop(challenge_id, None)
-    if not token:
-        return {"ready": False}
-    return {"ready": True, "token": token, "token_type": "Bearer", "expires_in": _JWT_TTL_SECONDS}
 
 
 @app.get("/modules")

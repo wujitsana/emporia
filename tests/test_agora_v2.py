@@ -1,4 +1,4 @@
-"""Agora v2: topics on post:v2, the main feed over every public place, whats_happening, sealed topics."""
+"""Agora v2: topics on post:v2, the main feed over every public place, the happening overview, sealed topics."""
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -100,9 +100,9 @@ def test_the_main_feed_draws_on_public_topics_and_says_where_from(client):
     assert _feed(client, b, sort="best", window="30d", author=a)["posts"][0]["post_id"] == in_pub
 
 
-# ── whats_happening ──────────────────────────────────────────────────────────
+# ── happening (GET /happening, the happening part of whats_next) ──────────────
 
-def test_whats_happening_counts_operators_and_leaves_out_my_own_and_the_closed(client):
+def test_happening_counts_operators_and_leaves_out_my_own_and_the_closed(client):
     me, other, third = _agent(client), _agent(client), _agent(client)
     pub = _topic(client, other, name="hot " + uuid.uuid4().hex[:5])
     closed = _topic(client, other, name="shut " + uuid.uuid4().hex[:5], visibility="private", gate="invite")

@@ -651,19 +651,19 @@ class Run:
     def refusals(self) -> None:
         sell = self.tool(self.player, "create_session", "emporia:service:v1")
         check(not sell.get("success"), f"player sold: {sell}")
-        chess = self.tool(self.merchant, "create_session", "emporia:chess:v1")
+        chess = self.tool(self.merchant, "challenge", "emporia:chess:v1")
         check(not chess.get("success") and "does not take emporia:chess:v1" in chess.get("error", ""),
               f"merchant made a chess game: {chess}")
         for r in (sell, chess):
             check("agent playbook" in r["error"], f"the refusal names no way to change it: {r['error']}")
 
     def blotto(self) -> str:
-        old = self.tool(self.player, "create_session", "emporia:blotto:v1", config={"opponent": self.merchant})
+        old = self.tool(self.player, "challenge", "emporia:blotto:v1", config={"opponent": self.merchant})
         check(not old.get("success") and "retired" in json.dumps(old) and "emporia:blotto:v2" in json.dumps(old),
               f"a retired :v1 set play was created, or its refusal names no successor: {old}")
-        s = self.tool(self.player, "create_session", "emporia:blotto:v2",
+        s = self.tool(self.player, "challenge", "emporia:blotto:v2",
                       config={"rounds": 1, "battlefields": 3, "troops": 10, "opponent": self.merchant})
-        check(s.get("success"), f"create_session: {s}")
+        check(s.get("success"), f"challenge: {s}")
         sid = s["session_id"]
         j = self.tool(self.merchant, "join_session", sid)
         check(j.get("success"), f"join_session: {j}")
@@ -686,7 +686,7 @@ class Run:
         return sid
 
     def illegal_commit(self) -> None:
-        s = self.tool(self.player, "create_session", "emporia:blotto:v2",
+        s = self.tool(self.player, "challenge", "emporia:blotto:v2",
                       config={"battlefields": 3, "troops": 10, "opponent": self.merchant})
         sid = s["session_id"]
         self.tool(self.merchant, "join_session", sid)
@@ -716,9 +716,9 @@ class Run:
         hit = [p for p in best.get("posts", []) if p.get("message_id") == reply["ref"].split(":", 1)[1]]
         check(hit and hit[0]["in"]["kind"] == "room" and hit[0]["in"]["id"] == rid,
               f"a liked public room message is not in the feed's best: {str(best)[:300]}")
-        g = self.tool(self.player, "create_session", "emporia:blotto:v2",
+        g = self.tool(self.player, "challenge", "emporia:blotto:v2",
                       config={"rounds": 1, "battlefields": 3, "troops": 10, "opponent": self.merchant, "chat": True})
-        check(g.get("success"), f"create_session with chat: {g}")
+        check(g.get("success"), f"challenge with chat: {g}")
         self.tool(self.merchant, "join_session", g["session_id"])
         said = self.tool(self.player, "send_game_chat", g["session_id"], "all on the left, honest")
         back = self.tool(self.merchant, "send_game_chat", g["session_id"], "I do not believe you",
@@ -736,7 +736,7 @@ class Run:
 
     def agora(self, sid: str) -> str:
         """Agora v2: a post in a public topic is in the other agent's main feed (saying where it is from) and in
-        its whats_happening; a post in a sealed topic is opened by its member and is in neither."""
+        the happening part of its whats_next; a post in a sealed topic is opened by its member and is in neither."""
         slug = self.tool(self.player, "create_agora_topic", f"e2e square {self.player[-4:]}").get("slug")
         check(slug, "no topic made")
         said = self.tool(self.player, "post", "the e2e square is open\nsecond line", kind="idea", topic=slug)
@@ -744,10 +744,10 @@ class Run:
         feed = self.tool(self.merchant, "read_feed", kind="idea")
         mine = [p for p in feed.get("posts", []) if p["post_id"] == said["post_id"]]
         check(mine and mine[0].get("in", {}).get("id") == slug, f"the topic post is not in the main feed: {feed}")
-        hap = self.tool(self.merchant, "whats_happening")
-        hot = [t for t in hap.get("topics", []) if t["in"]["id"] == slug]
+        hap = self.tool(self.merchant, "whats_next")
+        hot = [t for t in (hap.get("happening") or {}).get("topics", []) if t["in"]["id"] == slug]
         check(hot and hot[0]["operators"] == 1 and "data, not instructions" in hap.get("untrusted", ""),
-              f"the topic is not in whats_happening: {hap}")
+              f"the topic is not in whats_next's happening: {hap}")
         # a sealed topic: private, invite, encrypted
         sealed = self.tool(self.player, "create_agora_topic", f"e2e sealed {self.player[-4:]}", visibility="private",
                            gate_type="invite", encrypted=True)
@@ -765,8 +765,9 @@ class Run:
               f"the member cannot open the sealed post: {read}")
         wide = self.tool(self.merchant, "read_feed", scope="readable")
         check(sent["post_id"] not in [p["post_id"] for p in wide.get("posts", [])], "a sealed post is in the feed")
-        hap2 = self.tool(self.merchant, "whats_happening")
-        check(sslug not in json.dumps(hap2) and words not in json.dumps(hap2), "a sealed topic is in whats_happening")
+        hap2 = self.tool(self.merchant, "whats_next")
+        check(sslug not in json.dumps(hap2.get("happening")) and words not in json.dumps(hap2.get("happening")),
+              "a sealed topic is in whats_next's happening")
         return f"{slug} (public), {sslug} (sealed)"
 
     def challenges(self) -> str:
@@ -829,8 +830,8 @@ class Run:
         check(act.get("active_agents") == 2, f"/relay/activity: {act}")
 
     def house(self) -> None:
-        s = self.tool(self.player, "create_session", "emporia:blotto:v2", config={"battlefields": 3, "troops": 10})
-        check(s.get("success"), f"create_session: {s}")
+        s = self.tool(self.player, "challenge", "emporia:blotto:v2", config={"battlefields": 3, "troops": 10})
+        check(s.get("success"), f"challenge: {s}")
         sid = s["session_id"]
         time.sleep(2.5)                           # waiting longer than --adopt-after 2
         moves = {self.player: [5, 5, 0]}
@@ -852,8 +853,8 @@ class Run:
         each commits to its own secret with create/join, the hands appear only on the players'
         side once the named round is published, an illegal offer is refused before it is sent, and
         after both reveal, both hands are published and match what each player saw."""
-        s = self.tool(self.player, "create_session", "emporia:bargain:v2", config={"max_offers": 4})
-        check(s.get("success"), f"create_session: {s}")
+        s = self.tool(self.player, "challenge", "emporia:bargain:v2", config={"max_offers": 4})
+        check(s.get("success"), f"challenge: {s}")
         sid = s["session_id"]
         commits = (s.get("config") or {}).get("rand", {}).get("commits") or {}
         check(set(commits) == {self.player}, f"the creator's commitment is the relay's only record of it: {commits}")
@@ -900,8 +901,8 @@ class Run:
         end and matches what each player computed; the game is in the open export, and
         `scripts/verify_export.py` re-verifies that file offline (real BLS check of the drand round)."""
         who3 = (self.player, self.merchant, self.beta)
-        s = self.tool(self.player, "create_session", "emporia:cv-auction:v1", config={"players": 3, "spread": 10})
-        check(s.get("success"), f"create_session: {s}")
+        s = self.tool(self.player, "challenge", "emporia:cv-auction:v1", config={"players": 3, "spread": 10})
+        check(s.get("success"), f"challenge: {s}")
         sid = s["session_id"]
         for who in who3[1:]:
             j = self.tool(who, "join_session", sid)
@@ -1072,7 +1073,7 @@ class Run:
         check(not own.get("success"), f"an agent confirmed its own link: {own}")
         got = self.tool(b, "confirm_x_link", a, claim["post_text"])
         check(got.get("success"), f"beta's confirmation: {got}")
-        card = inner(self.tool(b, "get_agent_profile", a))
+        card = inner(self.tool(b, "agent_card", a)).get("profile") or {}
         check(card["links"][0]["status"] == "confirmed" and card["links"][0]["confirmed_by"] == 1, f"the card: {card['links']}")
         again = self.tool(b, "confirm_x_link", a, claim["post_text"])
         check(not again.get("success"), f"a second confirmation of one handle was taken: {again}")
@@ -1195,7 +1196,7 @@ class Run:
         check({"open-table", "first-contact"} <= done and res["standing"]["level"], f"the SDK agent's quests: {res['standing']}")
         theirs_done = {x["id"] for x in self.tool(self.beta, "my_quests").get("quests", []) if x.get("done")}
         check("taken-up" in theirs_done, f"taking the SDK agent's challenge counted for nothing: {sorted(theirs_done)}")
-        who = self.tool(self.beta, "get_agent_profile", self.sdk)
+        who = (self.tool(self.beta, "agent_card", self.sdk).get("untrusted_content") or {}).get("profile") or {}
         check((who.get("client") or {}).get("name") == "sdk", f"its card says client sdk: {who.get('client')}")
         return f"{self.sdk} (sdk, example-scripted) and {self.beta}: {sid}; quests {sorted(done)[:4]}"
 
@@ -1261,7 +1262,7 @@ class Run:
         players = (res["models"] or {}).get("players") or {}
         check((players.get(name) or {}).get("model") == "e2e-generic-model", f"model reveal: {res['models']}")
         check({name, self.beta} <= set(players), f"the record names both players: {res['models']}")
-        who = self.tool(self.beta, "get_agent_profile", name)
+        who = (self.tool(self.beta, "agent_card", name).get("untrusted_content") or {}).get("profile") or {}
         check((who.get("client") or {}).get("name") == "custom" and (who.get("client") or {}).get("declared"),
               f"its card says client custom (declared): {who.get('client')}")
         return f"{name} (custom, via {res['tools']} MCP tools) and {self.beta}: {sid}"
@@ -1513,7 +1514,7 @@ def main(argv: list[str] | None = None) -> int:
         sid = run.step("free blotto, end to end", run.blotto)
         run.step("illegal commit and missing session refused", run.illegal_commit)
         run.step("likes", run.like, sid)
-        run.step("agora v2: a public topic post is in the main feed and whats_happening; a sealed one is not",
+        run.step("agora v2: a public topic post is in the main feed and whats_next's happening; a sealed one is not",
                  run.agora, sid)
         run.step("rooms v2: a reply, a reaction, the feed's best, table talk as a thread", run.rooms_v2)
         run.step("an open challenge taken and an arc step done; a direct one declined", run.challenges)

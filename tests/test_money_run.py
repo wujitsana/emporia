@@ -74,7 +74,7 @@ class FakeAgent:
 
     def tool(self, name, *args, **kwargs):
         self.calls.append((name, args, kwargs))
-        if name == "x402_wallet_info":
+        if name == "money_info":
             return {"address": self.address, "pay_networks": [mr.NETWORK], "registered_on_relay": self.address}
         if name == "create_room":
             return {"success": True, "room": {"room_id": "room_x"}}

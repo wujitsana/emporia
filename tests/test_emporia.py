@@ -1252,12 +1252,6 @@ def test_sweep_expired_state_removes_empty_and_expired_but_not_live_entries():
     rs._RATE_WINDOWS[live_ip_key] = deque([now])          # inside window — must survive
     rs._RATE_WINDOWS[empty_ip_key] = deque([now - 9999])  # long past its window — must go
 
-    rs._PENDING_TOKENS.clear()
-    live_token = rs._jwt_encode({"agent_id": "a", "exp": int(now + 3600)})
-    expired_token = rs._jwt_encode({"agent_id": "b", "exp": int(now - 1)})
-    rs._PENDING_TOKENS["live_challenge"] = live_token
-    rs._PENDING_TOKENS["expired_challenge"] = expired_token
-
     class _FakeWS:
         pass
 
@@ -1272,16 +1266,14 @@ def test_sweep_expired_state_removes_empty_and_expired_but_not_live_entries():
     removed = rs._sweep_expired_state()
 
     assert removed == {
-        "rate_windows": 1, "pending_tokens": 1, "ws_connections": 1, "agent_rate_limits": 1,
+        "rate_windows": 1, "ws_connections": 1, "agent_rate_limits": 1,
     }
     # Removed:
     assert empty_ip_key not in rs._RATE_WINDOWS
-    assert "expired_challenge" not in rs._PENDING_TOKENS
     assert "session:empty" not in rs.ws_connections
     assert "idle_agent" not in rs.AGENT_REGISTRY.rate_limits
     # Survived — this is the half a removal-only test would miss:
     assert live_ip_key in rs._RATE_WINDOWS
-    assert "live_challenge" in rs._PENDING_TOKENS
     assert "session:live" in rs.ws_connections
     assert "live_agent" in rs.AGENT_REGISTRY.rate_limits
 
@@ -1323,7 +1315,7 @@ def test_sweep_loop_survives_and_recovers_from_a_failing_sweep():
         call_count["n"] += 1
         if call_count["n"] == 1:
             raise RuntimeError("simulated sweep failure")
-        return {"rate_windows": 0, "pending_tokens": 0, "ws_connections": 0, "agent_rate_limits": 0}
+        return {"rate_windows": 0, "ws_connections": 0, "agent_rate_limits": 0}
 
     rs.SWEEP_STATS["runs"] = 0
     rs.SWEEP_STATS["consecutive_failures"] = 0
@@ -2352,7 +2344,6 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/.well-known/agent-card.json"): "N10: hard-404 by design, not an A2A peer — see a2a_well_known_not_supported()",
         ("GET", "/ui-config"): "dashboard bootstrap config, read before any auth exists",
         ("POST", "/dashboard/challenge"): "bootstrap nonce issuance, no credential exists yet",
-        ("GET", "/dashboard/poll"): "bearer-secret model: gated by an unguessable challenge_id, not caller identity",
         ("GET", "/modules"): "static list of available game module types",
         ("GET", "/leaderboard"): "P72-3: public standings — wins/entries/modules only; per-agent earnings are deliberately excluded from the public shape (Standing.to_dict include_money)",
         ("POST", "/agents/challenge"): "bootstrap nonce issuance, no credential exists yet",
@@ -12844,7 +12835,7 @@ def test_a_websocket_agent_id_param_is_never_believed():
 
 def _dashboard_jwt(client, agent_id: str) -> str:
     """Full /dashboard/challenge -> sign -> /dashboard/session round trip, returning
-    the issued Bearer token, exactly as sign_dashboard_challenge (mcp_server.py) does it
+    the issued Bearer token, exactly as the agent's own bearer (mcp_server.py) does it
     (M4: the signature names the relay)."""
     from emporia import signing
     ch = client.post("/dashboard/challenge").json()
@@ -13133,9 +13124,9 @@ def test_agent_profile_reports_stripe_account_status(prod_client):
     assert r2.json()["stripe_account_status"] == "pending"
 
 
-def test_mcp_get_agent_profile_authenticates_under_prod_auth(prod_client):
+def test_mcp_agent_profile_authenticates_under_prod_auth(prod_client):
     """N4-3 made GET /agents/{id} require an authenticated caller.
-    mcp_server.get_agent_profile() called plain httpx.get() with no credential at all —
+    The profile part of agent_card called plain httpx.get() with no credential at all —
     found auditing every client of the endpoint this fix touched, same discipline as
     every prior pass's client-fallout sweep."""
     from emporia import mcp_server
@@ -13143,8 +13134,8 @@ def test_mcp_get_agent_profile_authenticates_under_prod_auth(prod_client):
     _register_keyed(prod_client, "n43_mcp_profile")
 
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
-    with patch.object(mcp_server, "httpx", adapter):
-        r = mcp_server.get_agent_profile("n43_mcp_profile", caller_id="n43_mcp_profile")
+    with patch.object(mcp_server, "httpx", adapter), patch.object(mcp_server, "AGENT_ID", "n43_mcp_profile"):
+        r = mcp_server._agent_profile("n43_mcp_profile")
     assert r.get("agent_id") == "n43_mcp_profile", r
     assert "stripe_account_id" not in r
 

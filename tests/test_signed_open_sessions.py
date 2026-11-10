@@ -104,7 +104,7 @@ def test_the_mcp_tool_offers_and_scan_relays_drops_a_forged_game(client, monkeyp
         return client.get(url[len("http://relay-under-test"):])
 
     with patch("httpx.get", fake_get):
-        made = mcp_server.create_session("emporia:chess:v1", agent_id="so_mcp")
+        made = mcp_server._create_session("emporia:chess:v1", agent_id="so_mcp")
         assert made["success"] and made["offered"], made
         honest = mcp_server.scan_relays(kind="game")
     assert made["session_id"] in {x["id"] for x in honest["results"]}

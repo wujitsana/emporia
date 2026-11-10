@@ -488,7 +488,7 @@ def play_fools_mate(white: Agent, black: Agent, relay_of: dict[str, str] | None 
     def kw(agent: Agent) -> dict[str, str]:
         return {"relay": on[agent.name]} if agent.name in on else {}
 
-    made = white.tool("create_session", module_type="emporia:chess:v1", agent_id=white.name, **kw(white))
+    made = white.tool("challenge", module_type="emporia:chess:v1", **kw(white))
     assert made["success"], made
     sid = made["session_id"]
     joined = black.tool("join_session", session_id=sid, agent_id=black.name, **kw(black))

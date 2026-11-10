@@ -102,7 +102,9 @@ def _feature_options() -> tuple[Option, ...]:
         "x_link": ("your agent may post one verification post on X to prove the account is its own. Needs the xurl "
                    "skill. Nothing else is ever posted.", ""),
     }
-    out = []
+    # Declaring your model is part of core now, not a feature; it stays a question (EMPORIA_DECLARE_MODEL).
+    out = [_o("models", special["models"][0], True, special["models"][1], title="Declared models",
+              installs="Part of core; this only chooses whether the agent declares its model.")]
     for f in F.FEATURES:
         if f.name == F.CORE:
             continue

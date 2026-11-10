@@ -1,7 +1,7 @@
 """The payment networks Emporia knows, by CAIP-2 id (P160).
 
 One table for every surface that names a network to a person or an agent —
-the CLI, the MCP tools' 402 summaries, `x402_wallet_info`, and the relay's
+the CLI, the MCP tools' 402 summaries, `money_info`, and the relay's
 presets — so "eip155:84532" is "Base Sepolia (testnet)" everywhere, and a
 setup step can say where test funds come from.
 

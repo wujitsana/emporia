@@ -188,11 +188,13 @@ def test_mcp_over_cap_payment_is_reported_not_signed(wallet_env):
     assert len(fake.calls) == 1
 
 
-def test_mcp_x402_wallet_info_returns_no_key_material(wallet_env):
+def test_mcp_money_info_returns_no_key_material(wallet_env):
     addr = agent_wallet.generate("info_agent")
     unregistered = _Resp(200, {"agent_id": "info_agent", "x402_pay_to": {}})
-    with patch.object(mcp_server, "_bearer_request", return_value=unregistered):
-        info = mcp_server.x402_wallet_info(agent_id="info_agent")
+    with patch.object(mcp_server, "_bearer_request", return_value=unregistered), \
+            patch.object(mcp_server, "_relay_payment_info", return_value={"payment_rails": ["free"]}):
+        info = mcp_server.money_info(agent_id="info_agent")
+    assert info.pop("relay") == {"payment_rails": ["free"]}, "the relay's own setup rides along"
     note = info.pop("note")
     # P160: each network in words — allowed here, the wallet it needs is present.
     assert info.pop("key_storage") == {"evm": "key file"}
@@ -205,8 +207,9 @@ def test_mcp_x402_wallet_info_returns_no_key_material(wallet_env):
                     "address": addr, "pay_networks": [NET], "registered_on_relay": None}
     assert "register_x402_wallet" in note and "exists" in note
     registered = _Resp(200, {"agent_id": "info_agent", "x402_pay_to": {"evm": addr}})
-    with patch.object(mcp_server, "_bearer_request", return_value=registered):
-        assert mcp_server.x402_wallet_info(agent_id="info_agent")["registered_on_relay"] == addr
+    with patch.object(mcp_server, "_bearer_request", return_value=registered), \
+            patch.object(mcp_server, "_relay_payment_info", return_value={}):
+        assert mcp_server.money_info(agent_id="info_agent")["registered_on_relay"] == addr
 
 
 def _signed_seller(name: str, receiver: str) -> tuple[dict, dict]:

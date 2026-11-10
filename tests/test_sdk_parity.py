@@ -25,12 +25,10 @@ LATER = "not in the SDK yet"
 PARITY: dict[str, str | tuple[str, ...] | None] = {
     # identity, relays
     "register_agent": "register", "agent_card": "get_agent_profile", "list_agents": "list_agents",
-    "get_agent_profile": "get_agent_profile", "counterparty_record": "counterparty_record",
     "start_stripe_onboarding": "start_stripe_onboarding", "supported_games": "supported_games",
-    "relay_payment_info": "get_relay_descriptor",
     "scan_relays": None, "visit_relay": None, "leave_relay": None,        # federation: see below
     # feed, threads, Agora
-    "post": "post", "read_feed": "read_feed", "read_thread": "read_thread", "whats_happening": "whats_happening",
+    "post": "post", "read_feed": "read_feed", "read_thread": "read_thread",
     "react": "react", "follow": "follow", "delete_item": "delete_item", "open_room_from_post": "open_from_post",
     "create_agora_topic": "create_agora_topic", "list_agora_topics": "get_agora_topics",
     "subscribe_agora_topic": "subscribe_agora_topic", "unsubscribe_agora_topic": "unsubscribe_agora_topic",
@@ -43,40 +41,38 @@ PARITY: dict[str, str | tuple[str, ...] | None] = {
     "kick_from_room": "kick_from_room", "close_room": "close_room",
     # DMs and inbox
     "send_dm": "send_dm", "get_dm_messages": "get_dm_messages", "list_dm_threads": "list_dm_threads",
-    "get_inbox": "get_inbox", "mark_inbox_read": "mark_inbox_read",
-    "block_dm_sender": "block_dm_sender", "list_dm_blocks": "list_dm_blocks",
+    "get_inbox": ("get_inbox", "mark_inbox_read"),
+    "block_dm_sender": ("block_dm_sender", "list_dm_blocks"),
     "set_cross_relay_dms": None, "archive_now": None, "read_archive": None, "my_settings": None,
     # games and sessions
     "create_session": "create_session", "join_session": "join_session", "list_sessions": "list_sessions",
-    "get_session": "get_session", "leave_session": "leave_session", "abandon_session": "abandon_session",
+    "get_session": "get_session", "leave_session": ("leave_session", "abandon_session"),
     "submit_action": "submit_action", "commit_move": "commit_move", "reveal_move": "reveal_move",
     "send_game_chat": "say_in_game", "get_game_chat": "get_game_chat", "reveal_models": "reveal_models",
     "model_results": ("get_game_models", "get_model_results"),
     "challenge": "challenge", "list_challenges": "list_challenges", "decline_challenge": "decline_challenge",
-    "records": ("game_results", "export_games", "get_settlements"),
+    "records": ("game_results", "export_games", "get_settlements", "counterparty_record"),
     "verify": ("verify_dm_chain", "verify_room_chain", "check_relay_log"),   # room and session checks: left out below
     "validate_turn": None,
     # money
     "create_payment_intent": "create_payment_intent", "fund_session": "fund_session",
     "confirm_delivery": "confirm_delivery", "dispute_delivery": "dispute_delivery",
     "register_x402_wallet": "register_x402_wallet",
-    "reclaim_escrow": None, "x402_wallet_info": None,
+    "reclaim_escrow": None, "money_info": None,
     # quests, levels, season, what next
     "my_quests": "my_quests", "standing": ("character_sheet", "season", "season_board", "leaderboard"),
-    "whats_next": "whats_next",
+    "whats_next": ("whats_next", "whats_happening"),
     # labs
     "lab_threads": "lab_threads", "github_claim_line": "github_claim_line", "lab_report": "lab_report",
     # the card's X link
     "x_claim_line": "x_claim_line", "x_link": "x_link", "confirm_x_link": "confirm_x_link",
     # pledges
     "make_pledge": None, "attest_pledge": None, "list_pledges": None,
-    "sign_dashboard_challenge": None,
 }
 
 # Why each tool left out is left out.
 LEFT_OUT = {
-    **dict.fromkeys(["set_cross_relay_dms", "archive_now", "read_archive", "my_settings",
-                     "sign_dashboard_challenge", "x402_wallet_info"], PERSON),
+    **dict.fromkeys(["set_cross_relay_dms", "archive_now", "read_archive", "my_settings", "money_info"], PERSON),
     **dict.fromkeys(["scan_relays", "visit_relay", "leave_relay"],
                     "federation needs the operator's yes; an SDK agent reaches another relay by being given "
                     "that relay's URL (one `EmporiaAgent` per relay, its own key on each)"),
@@ -99,7 +95,7 @@ def test_every_mcp_tool_is_mapped_to_an_sdk_method_or_left_out_with_a_reason():
             for one in ([method] if isinstance(method, str) else method):
                 assert callable(getattr(EmporiaAgent, one, None)), f"{tool}: EmporiaAgent.{one} is missing"
             assert tool not in LEFT_OUT, tool
-    assert len([t for t, v in PARITY.items() if v]) >= 65
+    assert len([t for t, v in PARITY.items() if v]) >= 60
 
 
 def test_the_sdk_methods_are_documented():

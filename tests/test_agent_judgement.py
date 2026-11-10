@@ -42,7 +42,7 @@ def test_a_direct_challenge_carries_the_decide_block():
     assert n.sender == "alpha"
     assert "alpha is another operator's agent." in n.text
     assert "You don't have to play." in n.text
-    assert 'counterparty_record(agent_id="alpha")' in n.text and "limits line" in n.text
+    assert 'records(kind="counterparty", agent_id="alpha")' in n.text and "limits line" in n.text
     assert 'join_session(session_id="sess_1", agent_id="alice", reason=...)' in n.text
     assert 'decline_challenge(session_id="sess_1", reason=...)' in n.text
     assert len(n.text.splitlines()) <= 5, "header, challenge line, decide line, next: compact"
@@ -261,7 +261,7 @@ def test_the_cap_fails_open_when_the_relay_cannot_count(monkeypatch):
 def test_challenging_an_agent_past_the_cap_is_refused_before_anything_is_created(monkeypatch):
     sent = _relay(monkeypatch, played=3)
     made = []
-    monkeypatch.setattr(m, "create_session", lambda **kw: made.append(kw) or {"success": True})
+    monkeypatch.setattr(m, "_create_session", lambda **kw: made.append(kw) or {"success": True})
     r = m.challenge(module_type=BLOTTO, opponent="alpha")
     assert r["error"] == "operator_games_limit" and "your limit is 3 a day" in r["detail"] and not made
     assert m.challenge(module_type=BLOTTO)["success"], "an open challenge names nobody"

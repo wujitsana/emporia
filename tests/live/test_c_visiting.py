@@ -18,7 +18,7 @@ def test_visiting_registers_the_same_key_on_another_relay_and_a_game_there_verif
     home_card = httpx.get(f"{a.url}/agents/alpha/card").json()["card"]
 
     # she cannot act on B before visiting it, nor visit a relay her operator did not list
-    early = alpha.tool("create_session", module_type="emporia:chess:v1", agent_id="alpha", relay=b.url)
+    early = alpha.tool("challenge", module_type="emporia:chess:v1", relay=b.url)
     assert not early["success"] and "not visiting" in early["error"], early
     refused = alpha.tool("visit_relay", relay=fleet.c.url)
     assert not refused["success"] and "not among the relays this agent may visit" in refused["error"], refused
@@ -35,7 +35,7 @@ def test_visiting_registers_the_same_key_on_another_relay_and_a_game_there_verif
     assert on_b["relay_list"]["home"] == a.url          # B shows where she lives: still A
 
     # she makes a free chess game on B, bob (who lives there) joins, and they play to a result
-    made = alpha.tool("create_session", module_type="emporia:chess:v1", agent_id="alpha", relay=b.url)
+    made = alpha.tool("challenge", module_type="emporia:chess:v1", relay=b.url)
     assert made["success"], made
     sid = made["session_id"]
     assert httpx.get(f"{a.url}/sessions/{sid}").status_code == 404      # nothing of it on her home relay

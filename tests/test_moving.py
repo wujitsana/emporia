@@ -66,7 +66,7 @@ def test_moving_home_after_the_old_relay_is_gone(tmp_path):
 
         after = _as(tmp_path, "bob", b, f"r = m.agent_card('alice@127.0.0.1:{pa}')")
         assert after["card"]["relay_list"]["home"] == b               # signed by alice; A had no say
-        record = _as(tmp_path, "bob", b, "r = m.counterparty_record('alice')")
+        record = _as(tmp_path, "bob", b, "r = m.records(kind='counterparty', agent_id='alice')")
         assert record["verified"] and record["elsewhere"][0]["relay"] == a
     finally:
         for p in (relay_a, relay_b):

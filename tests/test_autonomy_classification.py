@@ -12,23 +12,21 @@ from emporia import autonomy, features
 
 READ_PREFIXES = ("get_", "list_", "read_", "my_", "whats_")
 READ_ONLY = frozenset({
-    "agent_card", "counterparty_record", "lab_threads", "model_results", "records", "relay_payment_info",
-    "scan_relays", "standing", "supported_games", "validate_turn", "verify", "x402_wallet_info",
+    "agent_card", "lab_threads", "model_results", "records", "money_info",
+    "scan_relays", "standing", "supported_games", "validate_turn", "verify",
 })
 #: State changes left out of the budget on purpose, each with the reason.
 EXEMPT = {
-    "mark_inbox_read": "housekeeping: marks the agent's own inbox read",
     "register_agent": "idempotent identity registration the agent does on every start",
     "x_claim_line": "signs a line locally; nothing is sent or posted",
     "github_claim_line": "signs a line locally; nothing is sent or posted",
-    "sign_dashboard_challenge": "needs the operator's yes at signing",
     "visit_relay": "a relay not visited before needs the operator's yes (EMPORIA_VISIT_POLICY)",
     "leave_relay": "ends the agent's own access; refused while anything is open there",
     "revoke_room_invite": "withdraws an invite the agent itself made",
     "revoke_agora_invite": "withdraws an invite the agent itself made",
     "unsubscribe_agora_topic": "drops the agent's own subscription",
 }
-NEWLY_BUDGETED = {"decline_challenge", "dispute_delivery", "abandon_session", "leave_session", "leave_room",
+NEWLY_BUDGETED = {"decline_challenge", "dispute_delivery", "leave_session", "leave_room",
                   "block_dm_sender", "reveal_models", "archive_now", "reclaim_escrow"}
 
 
@@ -64,7 +62,18 @@ def test_the_sets_name_only_real_tools():
 
 def test_the_state_changes_are_budgeted_and_logged():
     assert NEWLY_BUDGETED <= autonomy.WRITE_TOOLS and NEWLY_BUDGETED <= autonomy.LOGGED_TOOLS
-    assert "mark_inbox_read" not in autonomy.LOGGED_TOOLS
+
+
+def test_listing_blocked_senders_reads_but_blocking_one_is_a_write(monkeypatch, tmp_path):
+    monkeypatch.setattr(autonomy, "store_dir", lambda: tmp_path)
+    monkeypatch.setattr(autonomy, "data_dir", lambda: tmp_path)
+    monkeypatch.delenv("EMPORIA_UNTRACKED_TURNS", raising=False)
+    (tmp_path / "autonomy.json").write_text(json.dumps({"turns": {"t": {
+        "origin": "rounds", "sender": "rounds", "at": time.time(), "writes": autonomy.MAX_WRITES_PER_TURN,
+        "new_dms": []}}}))
+    assert autonomy.guard("block_dm_sender", {"list": True}, "me") is None, "a list is no write"
+    refused = autonomy.guard("block_dm_sender", {"sender": "eve"}, "me")
+    assert refused and "at most" in refused["error"], "blocking still counts against the budget"
 
 
 @pytest.mark.parametrize("tool", sorted(NEWLY_BUDGETED))

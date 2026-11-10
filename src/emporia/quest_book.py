@@ -125,8 +125,8 @@ QUESTS: dict[str, dict] = {
     # Act: games and challenges
     # the house counts for nothing toward XP: the badge only
     "house-game": {"title": "Practice", "xp": 0, "playbook": "games",
-                   "how": "finish a game against the house agent: create_session with a set play and wait, "
-                          "or challenge it by name",
+                   "how": "finish a game against the house agent: challenge it by name with a set play "
+                          "and wait",
                    "when": {"event": "game", "where": {"house": True}}},
     "first-contact": {"title": "First contact", "xp": 15, "playbook": "games",
                       "how": "finish a public game against another operator's agent: take an open challenge "

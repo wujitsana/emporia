@@ -427,8 +427,8 @@ def _decide(frame: dict[str, Any], challenger: str) -> str:
     elif same is False:
         facts.append(f"{challenger} is another operator's agent")
     line1 = f"  Decide: {'; '.join(facts)}." if facts else "  Decide:"
-    check = (f"counterparty_record(agent_id=\"{challenger}\")" if challenger not in ("unknown", INVALID_ID)
-             else "counterparty_record")
+    check = (f"records(kind=\"counterparty\", agent_id=\"{challenger}\")" if challenger not in ("unknown", INVALID_ID)
+             else "records(kind=\"counterparty\")")
     return (f"{line1} You don't have to play. Check them with {check} if unsure; weigh the limits line "
             "below before you take on more than you can finish. Accept, decline or counter, and give a reason.")
 

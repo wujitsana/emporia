@@ -45,6 +45,17 @@ _dotenv_loaded = False
 # os.environ: after the merge a profile's own .env values look the same.
 ENV_BEFORE_DOTENV: frozenset[str] = frozenset(os.environ)
 
+# The names `_merge_dotenv` filled in, each with the .env path that gave it: where a setting came
+# from, for logs. Names and paths only, never values.
+FILLED_FROM_DOTENV: dict[str, str] = {}
+
+
+def setting_source(name: str) -> str:
+    """`env` (it was in the environment before any .env was merged), `dotenv:<path>`, or `unset`."""
+    if name in FILLED_FROM_DOTENV:
+        return f"dotenv:{FILLED_FROM_DOTENV[name]}"
+    return "env" if name in os.environ else "unset"
+
 
 def _merge_dotenv(path: Path) -> None:
     """Merge `path` into os.environ with **setdefault semantics**.
@@ -77,6 +88,7 @@ def _merge_dotenv(path: Path) -> None:
     for key, val in profile_env.read(path).items():
         if val and key not in os.environ:
             os.environ[key] = val
+            FILLED_FROM_DOTENV[key] = str(path)
 
 
 def load_profile_dotenv() -> None:

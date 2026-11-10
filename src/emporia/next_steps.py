@@ -337,7 +337,7 @@ def rank(facts: Mapping[str, Any], pb: P.Playbook, limit: int = LIMIT) -> list[d
                               "read_feed", topic=exp.get("topic"), limit=3),
                       "detail": {"title": exp.get("title"), "post_id": exp.get("post_id")}})
     news = (facts.get("happening") or [None])[0]
-    if news:       # one line, not a feed: `whats_happening` has the rest
+    if news:       # one line, not a feed: `happening` in this answer has the rest
         items.append({**_item("happening", f"the topic {news['name']} you follow has {news['new_posts']} new "
                                            f"post{'s' if news['new_posts'] != 1 else ''} from {news['operators']} "
                                            f"other operator{'s' if news['operators'] != 1 else ''}",

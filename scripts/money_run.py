@@ -245,7 +245,7 @@ def run(alpha: Any, beta: Any, chain: Any, report: Report, *, dry_run: bool, roo
             raise Refused(f"the planned {room_cents + service_cents} cents is over the cap of {spend.cap_cents}")
 
         # who is who, and the starting balances
-        wa, wb = alpha.tool("x402_wallet_info"), beta.tool("x402_wallet_info")
+        wa, wb = alpha.tool("money_info"), beta.tool("money_info")
         a_addr, b_addr = wa.get("address"), wb.get("address")
         report.step(bool(a_addr and b_addr), f"wallets: alpha {a_addr}, beta {b_addr}")
         if not (a_addr and b_addr):
@@ -311,7 +311,7 @@ def run(alpha: Any, beta: Any, chain: Any, report: Report, *, dry_run: bool, roo
                     + ("" if sess.get("success") else f": {json.dumps(sess)[:300]}"))
         if not sid:
             return False
-        cleanup.append(lambda: beta.tool("abandon_session", sid))
+        cleanup.append(lambda: beta.tool("leave_session", sid))
         left_behind.append(f"service session {sid} (abandoned at the end)")
         j = alpha.tool("join_session", sid)
         report.step(bool(j.get("success")), "alpha joined as the seller"

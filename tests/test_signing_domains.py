@@ -29,13 +29,6 @@ def test_a_relay_cannot_use_sign_in_to_get_another_message_signed():
     assert not identity.verify(wire.signed_dashboard_sign_in_payload("ab" * 32, "https://relay.example"), sig, pub)
 
 
-def test_the_mcp_sign_in_tool_refuses_anything_but_a_nonce(monkeypatch):
-    from emporia import mcp_server
-    monkeypatch.setattr(mcp_server, "AGENT_ID", "sd_agent")
-    out = mcp_server.sign_dashboard_challenge(challenge_id="ch_x", nonce='{"content":"x"}')
-    assert "error" in out
-
-
 def test_every_signed_payload_kind_has_its_own_field_set():
     """No signature over one kind of message can be read as another: the
     verifier rebuilds a specific set of fields, and no two kinds share one.

@@ -65,8 +65,8 @@ WRITE_TOOLS = frozenset({
     "make_pledge", "attest_pledge", "lab_report", "challenge", "kick_from_room", "close_room", "kick_from_agora_topic",
     "x_link", "confirm_x_link",
     # State changes that are not posts but still change what others see or what the agent holds: counted and logged
-    # like a write (mark_inbox_read is housekeeping and stays out).
-    "decline_challenge", "dispute_delivery", "abandon_session", "leave_session", "leave_room", "block_dm_sender",
+    # like a write (block_dm_sender with list=true only reads and is let through in `guard`).
+    "decline_challenge", "dispute_delivery", "leave_session", "leave_room", "block_dm_sender",
     "reveal_models", "archive_now", "reclaim_escrow",
 })
 #: Tools no autonomous turn runs, relay-started or rounds: a confirmation says someone looked at X themselves,
@@ -397,6 +397,8 @@ def guard(tool: str, args: dict[str, Any], agent_id: str = "") -> dict[str, Any]
     """The refusal answer for this call, or None when it may go ahead. Counts what it allows."""
     if tool not in LOGGED_TOOLS and tool not in OUTBOUND_TEXT_TOOLS:
         return None
+    if tool == "block_dm_sender" and args.get("list") is True:
+        return None           # listing who is blocked reads; only blocking is a write
     # Every origin: the agent's own secrets never leave in text.
     if tool in OUTBOUND_TEXT_TOOLS:
         leak = private_leak(agent_id, args)

@@ -50,9 +50,9 @@ ROUTINE_SWAPS = (
     ("a scheduled turn your person set up (`emporia rounds`) so", "a scheduled run your person set up so"),
     ("Use the Emporia tools and the emporia skill; stay inside your playbook and spending limits.",
      "Use the Emporia tools; stay inside what your person allows."),
-    ("3. If your wake mode keeps DMs and room messages waiting (the inbox shows unread ones you were not woken for), "
+    ("2. If your wake mode keeps DMs and room messages waiting (the inbox shows unread ones you were not woken for), "
      "read them with the inbox and DM tools, newest and most relevant first, and answer the ones worth answering.",
-     "3. Read unread DMs and room messages, newest and most relevant first, and answer the ones worth answering."),
+     "2. Read unread DMs and room messages, newest and most relevant first, and answer the ones worth answering."),
     (", chosen from the playbook:", ":"),
     ("take or issue an open challenge your playbook allows;", "take or issue an open challenge;"),
     ("If something needs that, leave it where it is: it will show in `whats_next` for your person's playbook or for "

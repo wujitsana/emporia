@@ -3303,7 +3303,7 @@ PEEK = {
     "games": _PEEK_FACTS + "res = m.game_results(agent_id=m.AGENT_ID, limit=5)\n"
              "print(json.dumps({'success': ok, 'sessions': d.get('sessions') or [], 'results': res}))",
     "quests": "import json\nfrom emporia import mcp_server as m\nprint(json.dumps(m.my_quests()))",
-    "card": "import json\nfrom emporia import mcp_server as m\nprint(json.dumps(m.get_agent_profile(m.AGENT_ID, m.AGENT_ID)))",
+    "card": "import json\nfrom emporia import mcp_server as m\nprint(json.dumps(m._agent_profile(m.AGENT_ID)))",
 }
 
 
@@ -3375,11 +3375,14 @@ def cmd_features(args: argparse.Namespace) -> int:
         held = installer().harvest_env(profile)
         key_dir = Path(held.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
         label = name
-        restart = (f"restart its MCP server: `/reload-mcp` in its chat, or "
-                   f"`hermes {'' if name == 'default' else f'-p {name} '}gateway restart`")
+        restart = (f"restart the gateway: `hermes {'' if name == 'default' else f'-p {name} '}gateway restart` "
+                   "(or `/reload-mcp` in its chat)")
 
         def save(value: str) -> None:
             merge_env_file(profile / ".env", {F.SETTING: value})
+            # Hermes keeps the tool list it last saw and does not key it on this setting.
+            if F.drop_mcp_schema_cache(profile):
+                print("  Dropped the profile's cached Emporia tool list (cache/mcp_schema_cache.json).")
     try:
         now = F.enabled_from(held, key_dir)
         asked =[w for raw in (args.names or []) for w in [x.strip() for x in raw.split(",") if x.strip()]]
@@ -3403,7 +3406,7 @@ def cmd_features(args: argparse.Namespace) -> int:
         if new != now:
             save(F.render(new))
             print(f"  Saved. {F.summary(new)}.")
-            print(f"  It applies on the next MCP start; {restart}.")
+            print(f"  It applies on the next MCP start: {restart}.")
         now = new
     print(f"  Features    {F.summary(now)}")
     for f in F.FEATURES:
@@ -3415,6 +3418,7 @@ def cmd_features(args: argparse.Namespace) -> int:
         print(f"    {f.name:<11} {mark:<6} {len(f.tools):>2} tools  {f.about}{rec}")
     print("  Turn one on or off: emporia features on|off NAME [NAME …]. A relay that does not run a feature's "
           "module hides its tools anyway.")
+    print("  " + F.OFF_TOOL_HINT)
     return 0
 
 
@@ -3506,6 +3510,7 @@ def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing
     if picked_features is not None:
         picked_features = F.derive(wallet=wallet, stripe=stripe, base=picked_features)
         merge_env_file(profile / ".env", {F.SETTING: F.render(picked_features)})
+        F.drop_mcp_schema_cache(profile)
         print("  " + F.summary(picked_features) + localize("  (change: emporia features on|off NAME)"))
     if declare and (declare == "off" or installer().harvest_env(profile).get("EMPORIA_DECLARE_MODEL", "").lower() == "off"):
         merge_env_file(profile / ".env", {"EMPORIA_DECLARE_MODEL": declare})

@@ -2,18 +2,15 @@
 
 The v1 sign-in signed the relay's nonce alone (`emporia:challenge:v1\\n` + nonce), so a
 signature taken for one relay's nonce was good wherever that nonce was issued, and
-`sign_dashboard_challenge` without `relay_url` handed the raw signature to the model,
-for whoever asked to talk it out. Now the agent signs `emporia:dashboard-sign-in:v2`
-`{type, nonce, relay}`, the relay accepts only its own origin, and the tool completes
-the sign-in itself, returning neither signature nor token."""
-import json
-from unittest.mock import patch
-
+the agent tool that signed it handed the raw signature to the model, for whoever asked to
+talk it out. Now the agent's own client signs `emporia:dashboard-sign-in:v2`
+`{type, nonce, relay}` and the relay accepts only its own origin. (The agent tool that did this for a
+browser dashboard is gone; the console and the SDK sign in themselves.)"""
 import pytest
 
 from emporia import signing, wire
 from tests import test_emporia
-from tests.test_emporia import _ASGIHttpxAdapter, _register_keyed
+from tests.test_emporia import _register_keyed
 
 prod_client = test_emporia.prod_client      # the fixture; bound, not imported, so no F811
 
@@ -57,28 +54,11 @@ def test_the_relay_takes_only_its_own_names_never_the_requests_host(prod_client,
     assert rs._names_this_relay("https://relay.example/") and rs._names_this_relay("http://testserver")
 
 
-def test_the_sign_in_tool_completes_it_and_returns_no_signature_or_token(prod_client, monkeypatch):
+def test_there_is_no_agent_tool_that_signs_a_dashboard_in(prod_client):
     from emporia import mcp_server
-    _register_keyed(prod_client, "m4_tool")
-    monkeypatch.setattr(mcp_server, "AGENT_ID", "m4_tool")
-    monkeypatch.setattr(mcp_server, "_ask_operator", lambda *a, **k: True)
-    ch = _challenge(prod_client)
-    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
-    with patch.object(mcp_server, "httpx", adapter):
-        out = mcp_server.sign_dashboard_challenge(ch["challenge_id"], ch["nonce"])   # relay_url omitted
-    assert out["success"] is True, out
-    said = json.dumps(out)
-    assert not {"signature", "signature_hex", "token"} & set(out), out
-    polled = prod_client.get("/dashboard/poll", params={"challenge_id": ch["challenge_id"]}).json()
-    assert polled["ready"] and polled["token"] not in said, "the dashboard picks it up; the model never sees it"
-
-
-def test_the_sign_in_tool_refuses_a_nonce_before_asking_anyone(monkeypatch):
-    from emporia import mcp_server
-    monkeypatch.setattr(mcp_server, "AGENT_ID", "m4_tool2")
-    monkeypatch.setattr(mcp_server, "_ask_operator", lambda *a, **k: (_ for _ in ()).throw(AssertionError))
-    out = mcp_server.sign_dashboard_challenge("ch_x", '{"content":"x"}')
-    assert out["success"] is False and "hex nonce" in out["error"]
+    assert not [t for t in mcp_server.mcp.local_provider._components.values()
+                if "dashboard" in getattr(t, "name", "")]
+    assert prod_client.get("/dashboard/poll", params={"challenge_id": "x"}).status_code in (404, 405)
 
 
 @pytest.mark.parametrize("nonce, relay", [('{"content":"x"}', "https://relay.example"),

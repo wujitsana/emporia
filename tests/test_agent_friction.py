@@ -7,7 +7,7 @@ from emporia import mcp_server as m
 
 SELF = {"register_agent": "agent_id", "create_room": "creator_id", "join_room": "agent_id",
         "send_room_message": "sender_id", "kick_from_room": "creator_id", "revoke_room_invite": "creator_id",
-        "get_inbox": "agent_id", "mark_inbox_read": "agent_id", "create_agora_topic": "creator_id",
+        "get_inbox": "agent_id", "create_agora_topic": "creator_id",
         "kick_from_agora_topic": "creator_id", "subscribe_agora_topic": "agent_id",
         "react": "agent_id", "follow": "agent_id"}
 
@@ -42,7 +42,7 @@ def test_my_settings_reads_what_agents_used_to_remember(monkeypatch):
     monkeypatch.setenv("EMPORIA_PAYMENT_APPROVAL_CENTS", "500")
     out = m.my_settings(agent_id="fr_me")
     assert out["daily_turns"] == 40 and out["asks_operator_above_cents"] == 500
-    assert {"pays_on", "max_payment_cents", "max_daily_cents"} <= set(out) and out["wallet"] == "x402_wallet_info"
+    assert {"pays_on", "max_payment_cents", "max_daily_cents"} <= set(out) and out["wallet"] == "money_info"
 
 
 @pytest.mark.parametrize("code,says", [(404, "no session sess_nope on this relay"),

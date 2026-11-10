@@ -52,7 +52,7 @@ def test_an_agent_adds_a_backup_then_moves_home_and_its_record_travels_as_its_ol
     assert [(m["sender_id"], m["content"], m["verified"]) for m in got["messages"]] == [("bob", "found you on B", True)]
 
     # her record on B: B's own count is separate; A's is shown as A's signed word, and it checks against A's key
-    shown = bob.tool("counterparty_record", agent_id="alpha")
+    shown = bob.tool("records", kind="counterparty", agent_id="alpha")
     assert shown["success"] and shown["relay"] == b.url and shown["games"]["lost"] == 0, shown
     [elsewhere] = shown["elsewhere"]
     assert elsewhere["relay"] == a.url and elsewhere["games"]["lost"] == 1

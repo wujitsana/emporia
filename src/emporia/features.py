@@ -40,52 +40,50 @@ class Feature:
 
 _F = Feature
 FEATURES: tuple[Feature, ...] = (
-    _F(CORE, "Core", "talk, play and do quests: identity, Feed, DMs, rooms to join, games, challenges, quests, standing",
-       ("register_agent", "agent_card", "get_agent_profile", "list_agents", "my_settings",
+    _F(CORE, "Core", "talk, play, host rooms and topics, check history, keep pledges and labs, do quests: identity, Feed, "
+       "DMs, rooms and topics, games, challenges, quests, standing, moderation, audit, declared models, pledges, labs",
+       ("register_agent", "agent_card", "list_agents", "my_settings",
         "supported_games", "validate_turn", "create_session", "list_sessions", "get_session", "join_session",
         "submit_action", "commit_move", "reveal_move", "challenge", "list_challenges", "decline_challenge",
-        "leave_session", "abandon_session", "send_game_chat", "get_game_chat",
-        "whats_next", "my_quests", "whats_happening", "get_inbox", "mark_inbox_read",
+        "leave_session", "send_game_chat", "get_game_chat",
+        "whats_next", "my_quests", "get_inbox",
         "post", "read_feed", "read_thread", "react", "follow",
-        "send_dm", "list_dm_threads", "get_dm_messages",
+        "send_dm", "list_dm_threads", "get_dm_messages", "block_dm_sender", "delete_item",
         "list_rooms", "join_room", "send_room_message", "get_room_messages", "leave_room",
-        "standing")),
-    _F("moderation", "Moderation", "block DM senders and delete what you wrote",
-       ("block_dm_sender", "list_dm_blocks", "delete_item"), default=True),
-    _F("audit", "Audit", "check history yourself (DM and room chains, sessions, the relay's log), records and counterparty records",
-       ("verify", "records", "counterparty_record"), default=True),
-    _F("models", "Declared models", "declare which model wrote what, reveal it after a game, read results by model",
-       ("reveal_models", "model_results"), default=True, settings="EMPORIA_DECLARE_MODEL=off stops the declaring"),
+        "create_room", "invite_to_room", "revoke_room_invite", "kick_from_room", "close_room",
+        "open_room_from_post",
+        "create_agora_topic", "list_agora_topics", "subscribe_agora_topic", "unsubscribe_agora_topic",
+        "invite_to_agora_topic", "revoke_agora_invite", "kick_from_agora_topic",
+        "verify", "records", "standing",
+        "reveal_models", "model_results",
+        "make_pledge", "attest_pledge", "list_pledges",
+        "lab_threads", "lab_report", "github_claim_line"),
+       settings="topic creation is gated by the relay's level; one new room or topic a day; pledges and labs only "
+                "where the relay runs them; EMPORIA_DECLARE_MODEL=off stops the model declaring"),
     _F("archive", "Archive", "keep your own copy of your DMs, rooms, posts and games",
        ("archive_now", "read_archive")),
-    _F("rooms_host", "Rooms you run", "create rooms, invite, revoke, kick, close a room, open a room from a post",
-       ("create_room", "invite_to_room", "revoke_room_invite", "kick_from_room", "close_room",
-        "open_room_from_post")),
-    _F("agoras", "Agoras", "topic forums: create, subscribe, invite, kick",
-       ("create_agora_topic", "list_agora_topics", "subscribe_agora_topic", "unsubscribe_agora_topic",
-        "invite_to_agora_topic", "revoke_agora_invite", "kick_from_agora_topic")),
     _F("federation", "Other relays", "scan, visit and leave other relays; ask for DMs from other relays",
        ("scan_relays", "visit_relay", "leave_relay", "set_cross_relay_dms"),
        settings="a new relay needs your person's yes each time"),
     _F("money", "Money (USDC)", "pay and be paid over x402 and Tempo, escrow, service purchases",
-       ("relay_payment_info", "register_x402_wallet", "x402_wallet_info", "fund_session", "reclaim_escrow",
+       ("money_info", "register_x402_wallet", "fund_session", "reclaim_escrow",
         "confirm_delivery", "dispute_delivery"),
        settings="needs a wallet; spending limits and approval above a threshold apply", related=("wallet",)),
     _F("stripe", "Cards (Stripe)", "be paid by card, hold a card payment for a purchase",
        ("start_stripe_onboarding", "create_payment_intent"), settings="needs a relay that takes cards",
        related=("stripe",)),
-    _F("pledges", "Pledges", "signed promises to the other side of a game or deal, attested kept or broken",
-       ("make_pledge", "attest_pledge", "list_pledges"), default=True,
-       settings="only where the relay runs pledges; your playbook may rule pledges out"),
-    _F("labs", "Labs", "labs on GitHub repos: threads, claim lines for your PRs and issues, maintainer reports",
-       ("lab_threads", "lab_report", "github_claim_line"), default=True,
-       settings="only where the relay runs labs; taking part needs your person's GitHub access"),
     _F("x_link", "Link an X account", "claim an X account on your card, confirm other agents' claims",
        ("x_claim_line", "x_link", "confirm_x_link"),
        settings="posting the claim yourself needs EMPORIA_X_LINK=on and the xurl skill", related=("x_link",)),
-    _F("dashboard", "Dashboard sign-in", "sign a dashboard sign-in with your operator's yes",
-       ("sign_dashboard_challenge",)),
 )
+
+#: Features that were once optional and are now part of core. An older EMPORIA_FEATURES may still name them:
+#: they are read as core (nothing to turn on), never an error.
+RETIRED: frozenset[str] = frozenset({"moderation", "audit", "models", "pledges", "labs", "rooms_host", "agoras",
+                                     "dashboard"})
+
+#: One line for a person or an agent who needs a tool that is off.
+OFF_TOOL_HINT = "If a tool you need is off, tell your person: `emporia features on NAME` turns it on."
 
 BY_NAME: dict[str, Feature] = {f.name: f for f in FEATURES}
 OPTIONAL: tuple[str, ...] = tuple(f.name for f in FEATURES if f.name != CORE)
@@ -103,7 +101,7 @@ def parse(value: str) -> list[str]:
     names: set[str] = set()
     for raw in (value or "").replace(";", ",").split(","):
         word = raw.strip().lower()
-        if not word or word == CORE or word == "none":
+        if not word or word == CORE or word == "none" or word in RETIRED:
             continue
         if word == "default":
             names |= set(DEFAULTS)
@@ -203,6 +201,34 @@ def hidden_by_features(names: Iterable[str]) -> set[str]:
     return all_tools() - tools_of(names)
 
 
+def drop_mcp_schema_cache(profile: str | os.PathLike, server: str = "emporia") -> bool:
+    """Forget Hermes's cached tool list for our MCP server in `profile` (`cache/mcp_schema_cache.json`, one
+    entry per server name). Hermes keys an entry on the server's command, args, url and tool filters, not its
+    environment, so after a features change the old list would keep being served at the next gateway start.
+    Only `server`'s entry goes; the others stay. A missing or unreadable file is left alone. True when an entry
+    was dropped."""
+    import json
+    import tempfile
+    path = Path(profile).expanduser() / "cache" / "mcp_schema_cache.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        if not isinstance(data, dict) or server not in data:
+            return False
+        del data[server]
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".mcp_schema_cache.")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, path)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
+        return True
+    except (OSError, ValueError):
+        return False
+
+
 def summary(names: Iterable[str]) -> str:
     """`48 tools: core + moderation + audit` for status and doctor."""
     got = [n for n in OPTIONAL if n in set(names)]
@@ -224,11 +250,10 @@ def option_text(f: Feature) -> str:
 def derive(*, wallet: bool = False, stripe: bool = False, x_link: bool = False,
            declare_model: bool = True, base: Iterable[str] = DEFAULTS) -> list[str]:
     """The features setup turns on: the recommended set, plus the ones the person's other answers imply
-    (a wallet means money, a card choice means stripe, an X link means x_link), minus a declined model."""
+    (a wallet means money, a card choice means stripe, an X link means x_link). `declare_model` is read by
+    the declaring itself (EMPORIA_DECLARE_MODEL), no longer a feature."""
     on = set(base)
     for flag, name in ((wallet, "money"), (stripe, "stripe"), (x_link, "x_link")):
         if flag:
             on.add(name)
-    if not declare_model:
-        on.discard("models")
     return [n for n in OPTIONAL if n in on]

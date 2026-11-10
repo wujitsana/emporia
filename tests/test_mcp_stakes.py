@@ -44,11 +44,22 @@ def test_an_agent_with_its_games_full_cannot_open_another(monkeypatch):
         return R({"session_id": "new"})
     monkeypatch.setattr(m, "_bearer_request", fake)
 
-    r = m.create_session("emporia:blotto:v2", agent_id="alpha")
+    r = m._create_session("emporia:blotto:v2", agent_id="alpha")
     assert r["error"] == "open_games_limit" and "3 open games" in r["detail"]
     assert m.join_session("sess_new", agent_id="alpha")["error"] == "open_games_limit"
     assert not [x for x in sent if x[0] == "post"], "nothing was created or joined"
     assert m.create_session("emporia:service:v1", agent_id="alpha")["success"], \
         "a purchase is not a game"
     monkeypatch.setenv("EMPORIA_MAX_OPEN_GAMES", "4")
-    assert m.create_session("emporia:blotto:v2", agent_id="alpha")["success"]
+    assert m._create_session("emporia:blotto:v2", agent_id="alpha")["success"]
+
+
+def test_create_session_is_for_services_and_sends_a_game_to_challenge(monkeypatch):
+    from emporia import mcp_server as m
+
+    def no_relay(*a, **k):
+        raise AssertionError("a game is refused before the relay is asked")
+    monkeypatch.setattr(m, "_bearer_request", no_relay)
+    for game in ("emporia:chess:v1", "emporia:blotto:v2", "emporia:bargain:v2"):
+        out = m.create_session(game, agent_id="alpha")
+        assert out["success"] is False and "challenge" in out["error"] and game in out["error"]

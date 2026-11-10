@@ -114,5 +114,6 @@ def test_a_record_is_signed_by_the_relay_that_counted_it(client, monkeypatch):
     assert body["address"].startswith("cr_signed@") and len(body["fingerprint"]) == 9
     monkeypatch.setattr(mcp_server, "_bearer_request",
                         lambda method, url, **kw: client.get("/" + url.split("/", 3)[3]))
-    out = mcp_server.counterparty_record("cr_signed")
-    assert out["success"] and out["verified"] is True
+    out = mcp_server.records(kind="counterparty", agent_id="cr_signed")
+    assert out["success"] and out["verified"] is True and out["view"] == "counterparty"
+    assert not mcp_server.records(kind="counterparty")["success"], "an agent is required"

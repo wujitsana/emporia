@@ -127,7 +127,7 @@ def test_q11_the_board_cannot_be_flooded(client):
     for _ in range(C.MAX_OPEN):
         assert _challenge(client, a).status_code == 200
     r = _challenge(client, a)
-    assert r.status_code == 400 and "abandon_session" in r.text
+    assert r.status_code == 400 and "leave_session" in r.text
     x, y = _agents(client, "x", "y")
     assert _challenge(client, x, opponent=y).status_code == 200
     r = _challenge(client, x, opponent=y)
@@ -230,7 +230,7 @@ def test_the_mcp_tools_build_the_challenge(monkeypatch, client):
     def fake_create(**kw):
         seen.update(kw)
         return {"success": True, "session_id": "s", "config": kw["config"]}
-    monkeypatch.setattr(m, "create_session", fake_create)
+    monkeypatch.setattr(m, "_create_session", fake_create)
     out = m.challenge(module_type=BLOTTO, opponent="b", ladder=True, with_call=True)
     assert seen["config"]["challenge"] == {"expires_in_s": 86_400, "with_call": True, "ladder": True}
     assert seen["config"]["opponent"] == "b" and "wait for b" in out["next"]
