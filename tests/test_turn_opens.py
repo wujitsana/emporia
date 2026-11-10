@@ -49,3 +49,10 @@ def test_the_started_notice_says_when_and_not_to_wait():
     assert "The first move is not yours" in format_frame(frame, "beta").text
     plain = format_frame({**frame, "opens_at": None}, "alpha").text
     assert "You move first." in plain
+
+
+def test_negotiation_turn_notices_offer_a_line_at_the_table():
+    """11-10: table talk had nearly vanished (6 lines all day); the move notices never mentioned `say`."""
+    for module in ("emporia:bargain:v2", "emporia:liars-dice:v1"):
+        n = format_frame({"type": "your_turn", "session_id": "sess_x", "module_type": module}, "alpha")
+        assert 'say="..."' in n.text and "bluffing is fair play" in n.text, module

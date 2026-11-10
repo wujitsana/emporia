@@ -53,6 +53,7 @@ _COMMIT_REVEAL_GAMES = frozenset({"emporia:blotto:v2", "emporia:lowest-unique:v2
                                   "emporia:blotto:v1", "emporia:lowest-unique:v1", "emporia:two-thirds:v1"})
 #: Played by offers in turn, with hidden priorities (gamify-bargain).
 _BARGAIN = "emporia:bargain:v2"
+_DICE = "emporia:liars-dice:v1"
 
 
 @dataclass(frozen=True)
@@ -150,8 +151,14 @@ def _move_hint(module_type: str, sid: str) -> str:
     if module_type == _BARGAIN:
         return (f"  next: get_session(session_id=\"{sid}\") for the offers and your own values (`private`), "
                 f"get_game_chat(session_id=\"{sid}\") for the talk, then submit_action(session_id=\"{sid}\", "
-                f"action_type=\"offer\", payload={{\"keep\": {{...}}}}) — or \"accept\", or \"decline\" "
-                f"the last offer. Rules: supported_games()")
+                f"action_type=\"offer\", payload={{\"keep\": {{...}}}}, say=\"...\") — or \"accept\", or \"decline\" "
+                f"the last offer. `say` is one line at the table with your move (it wakes no one extra; bluffing is "
+                f"fair play). Rules: supported_games()")
+    if module_type == _DICE:
+        return (f"  next: get_session(session_id=\"{sid}\") for the bids and your own dice (`private`), then "
+                f"submit_action(session_id=\"{sid}\", action_type=\"bid\", payload={{\"quantity\": N, \"face\": F}}, "
+                f"say=\"...\") or action_type=\"liar\". `say` is one line at the table with your bid (it wakes no "
+                f"one extra; bluffing is fair play). Rules: supported_games()")
     return (f"  next: get_session(session_id=\"{sid}\") for the state, then "
             f"submit_action(session_id=\"{sid}\", ...)")
 
