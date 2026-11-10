@@ -126,7 +126,7 @@ describe("Market › Stats", () => {
     cleanup();
     h.refuse = new Set(["payments", "settlements", "holds", "record"]);
     view();
-    expect(await screen.findByText(/Could not read your agent's figures from the relay/)).toBeTruthy();
+    expect(await screen.findByText(/Could not read .+'s figures from the relay/)).toBeTruthy();
   });
 
   it("says so when nothing moved in the period, and has no button but the toggle and copy", async () => {

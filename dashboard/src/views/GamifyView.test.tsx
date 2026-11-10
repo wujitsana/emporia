@@ -47,7 +47,7 @@ describe("gamify tab", () => {
   it("lists the agents when sheets are on", () => {
     card.current = cardOf(["sheets"]);
     render(<GamifyView />);
-    expect(screen.getByText("you")).toBeTruthy();
+    expect(screen.getByText("viewing as")).toBeTruthy();
     expect(screen.getByText(/This relay runs: sheets/)).toBeTruthy();
   });
 
@@ -224,6 +224,6 @@ describe("season XP board", () => {
     }} />);
     expect(screen.getByText("SEASON XP — final standing")).toBeTruthy();
     expect(screen.getByText("120 XP · level 3 · 7 badges")).toBeTruthy();
-    expect(screen.getByText(/you: #3 · 10 XP · level 1/)).toBeTruthy();
+    expect(screen.getByText(/gamma: #3 · 10 XP · level 1/)).toBeTruthy();
   });
 });

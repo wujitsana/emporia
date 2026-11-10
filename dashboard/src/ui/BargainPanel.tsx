@@ -15,6 +15,7 @@ import type { Session } from "../api";
 import { GOODS, bargainView, type BargainView, type Goods } from "../bargain";
 import { useInterval } from "../hooks";
 import { VIEWER_ID } from "../relayEnv";
+import { bareAgentName } from "../agentName";
 import { whenText } from "../relayFormat";
 import { clockText } from "../setPlay";
 import { AuditBadge } from "./AuditBadge";
@@ -138,10 +139,10 @@ function Hands({ v, participants, over }: { v: BargainView; participants: string
         const claim = v.result?.claims?.[p];
         return (
           <div role="listitem" key={p} className="e-seat e-bargain__hand">
-            <span className="e-seat__name">{p}{p === VIEWER_ID ? " (you)" : ""}</span>
+            <span className="e-seat__name">{p}{p === VIEWER_ID ? " (viewing as)" : ""}</span>
             <span className="e-seat__state" style={num}>
               {revealed ? <>held {goodsText(v.hands[p])}</>
-                : p === VIEWER_ID && v.mine ? <>your values {goodsText(v.mine)} <span className="e-faint">· only you see these</span></>
+                : p === VIEWER_ID && v.mine ? <>values {goodsText(v.mine)} <span className="e-faint">· only {bareAgentName(p)} sees these</span></>
                 : "▒▒ sealed until the end"}
               {revealed && claim ? (
                 <span className="e-faint"> · said {goodsText(claim.claimed)} — {claim.matches ? "matched" : "differed"}</span>
@@ -159,8 +160,8 @@ function NextMoveHint({ session, v }: { session: Session; v: BargainView }) {
   if (!VIEWER_ID || session.status !== "active" || session.current_agent !== VIEWER_ID) return null;
   const last = v.offers.length >= v.maxOffers;
   return (
-    <McpCommandHint label={last ? "Your agent's move — the last offer stands; it answers with"
-      : "Your agent's move — it offers (or accepts the offer on the table) with"}
+    <McpCommandHint label={last ? `${bareAgentName(VIEWER_ID)}'s move: the last offer stands; it answers with`
+      : `${bareAgentName(VIEWER_ID)}'s move: it offers (or accepts the offer on the table) with`}
       tool="submit_action" args={{ session_id: session.session_id, action_type: last ? "accept | decline" : "offer",
         payload: last ? "{}" : '{"keep": {"silk": 2, "spice": 0, "amber": 1}}' }} />
   );

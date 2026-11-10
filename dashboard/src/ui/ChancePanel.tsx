@@ -14,6 +14,7 @@ import type { Session } from "../api";
 import { chanceView, type AuctionView, type ChanceView, type DiceView } from "../chance";
 import { useInterval } from "../hooks";
 import { VIEWER_ID } from "../relayEnv";
+import { bareAgentName } from "../agentName";
 import { whenText } from "../relayFormat";
 import { clockText } from "../setPlay";
 import { AuditBadge } from "./AuditBadge";
@@ -152,7 +153,7 @@ function Seats({ v, participants, over }: { v: ChanceView; participants: string[
         const shown = over && mine !== undefined && (!Array.isArray(mine) || mine.length > 0);
         return (
           <div role="listitem" key={p} className="e-seat">
-            <span className="e-seat__name">{p}{p === VIEWER_ID ? " (you)" : ""}</span>
+            <span className="e-seat__name">{p}{p === VIEWER_ID ? " (viewing as)" : ""}</span>
             <span className="e-seat__state" style={num}>
               {shown ? (v.kind === "dice" ? <>held {(mine as number[]).join(" ")}</> : <>signal {mine as number}</>)
                 : over ? "never revealed" : v.kind === "dice" ? "▒▒ under the cup" : "▒▒ signal is private"}
@@ -167,19 +168,20 @@ function Seats({ v, participants, over }: { v: ChanceView; participants: string[
 
 function NextMoveHint({ session, v }: { session: Session; v: ChanceView }) {
   if (!VIEWER_ID || session.status !== "active" || v.result) return null;
+  const me = bareAgentName(VIEWER_ID);
   if (v.kind === "dice") {
-    if (v.call) return <McpCommandHint label="Your agent reveals its secret with" tool="submit_action"
+    if (v.call) return <McpCommandHint label={`${me} reveals its secret with`} tool="submit_action"
       args={{ session_id: session.session_id, action_type: "reveal", payload: "{}" }} />;
     if (v.toMove !== VIEWER_ID) return null;
-    return <McpCommandHint label="Your agent's move — it bids (or calls the last bid) with" tool="submit_action"
+    return <McpCommandHint label={`${me}'s move: it bids (or calls the last bid) with`} tool="submit_action"
       args={{ session_id: session.session_id, action_type: "bid | liar", payload: '{"quantity": 4, "face": 3}', say: "(table talk)" }} />;
   }
   if (v.phase === "commit" && !v.committed.includes(VIEWER_ID)) return <McpCommandHint
-    label="Your agent seals its bid with" tool="commit_move" args={{ session_id: session.session_id, move: "<0-300>" }} />;
+    label={`${me} seals its bid with`} tool="commit_move" args={{ session_id: session.session_id, move: "<0-300>" }} />;
   if (v.phase === "reveal" && !(VIEWER_ID in v.bids)) return <McpCommandHint
-    label="Your agent reveals its bid with" tool="reveal_move" args={{ session_id: session.session_id }} />;
+    label={`${me} reveals its bid with`} tool="reveal_move" args={{ session_id: session.session_id }} />;
   if (v.phase === "secrets" && !v.secrets.includes(VIEWER_ID)) return <McpCommandHint
-    label="Your agent reveals its secret with" tool="submit_action"
+    label={`${me} reveals its secret with`} tool="submit_action"
     args={{ session_id: session.session_id, action_type: "reveal", payload: "{}" }} />;
   return null;
 }

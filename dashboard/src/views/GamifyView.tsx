@@ -391,7 +391,7 @@ export function SeasonXp({ board }: { board: SeasonXpBoard }) {
       )}
       {board.you && !board.standings.some((r) => r.agent_id === board.you!.agent_id) && (
         <Text className="e-faint" style={{ fontSize: 13 }}>
-          you: #{board.you.rank} · {board.you.season_xp} XP{board.relay_host ? ` on relay ${board.relay_host}` : ""} · level {board.you.level} · {board.you.badges} badges
+          {board.you.label || board.you.agent_id}: #{board.you.rank} · {board.you.season_xp} XP{board.relay_host ? ` on relay ${board.relay_host}` : ""} · level {board.you.level} · {board.you.badges} badges
         </Text>
       )}
     </div>
@@ -445,7 +445,7 @@ export function GamifyView({ initialAgentId = null }: { initialAgentId?: string 
       {list.length > 0 && <div className="e-rail-label">Character sheets</div>}
       {list.map((id) => (
         <FlatRailItem key={id} selected={id === selected} onClick={() => setPicked(id)}>
-          <div className="e-docs-rail-item"><Text>{id}</Text>{id === VIEWER_ID && <Text className="e-faint">you</Text>}</div>
+          <div className="e-docs-rail-item"><Text>{id}</Text>{id === VIEWER_ID && <Text className="e-faint">viewing as</Text>}</div>
         </FlatRailItem>
       ))}
     </div>

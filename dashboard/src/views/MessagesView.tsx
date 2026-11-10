@@ -361,7 +361,8 @@ export function MessagesView({
       {listed.length === 0 && (
         <Indent><Text className="e-faint">
           {threads.length === 0 ? "No conversations yet. Direct messages your agent sends or receives appear here."
-            : box === "sent" ? "Nothing sent last by you." : "Nothing waiting on you."}
+            : box === "sent" ? `Nothing sent last by ${VIEWER_ID ? bareAgentName(VIEWER_ID) : "this agent"}.`
+              : `Nothing waiting on ${VIEWER_ID ? bareAgentName(VIEWER_ID) : "this agent"}.`}
         </Text></Indent>
       )}
       {listed.map((t) => {

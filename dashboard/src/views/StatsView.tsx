@@ -20,6 +20,7 @@ import { useRelayHealth } from "../healthCtx";
 import { formatMicros, networkWithKind } from "../paymentFormat";
 import { useProfileName } from "../profileName";
 import { VIEWER_ID } from "../relayEnv";
+import { bareAgentName } from "../agentName";
 import type { AgentRecord } from "../settings";
 import {
   agentStats, allTestMoney, pct, PERIODS, railNetwork, SOURCE_LABELS, SOURCES,
@@ -72,12 +73,12 @@ async function hermesStats(agentId: string, days: Period): Promise<HermesStats |
   return r.json();
 }
 
-const MISSING_NOTES: Record<AgentStats["missing"][number], string> = {
-  payments: "This relay does not report your agent's own payments to it (it predates `?mine=1`), so spending is not counted.",
-  settlements: "This relay did not report your agent's settlements, so earnings and what it is owed are not counted.",
+const missingNotes = (who: string): Record<AgentStats["missing"][number], string> => ({
+  payments: `This relay does not report ${who}'s own payments to it (it predates \`?mine=1\`), so spending is not counted.`,
+  settlements: `This relay did not report ${who}'s settlements, so earnings and what it is owed are not counted.`,
   holds: "This relay did not report held payments, so money still held is not shown.",
-  record: "This relay did not report your agent's record, so games and trades are not shown.",
-};
+  record: `This relay did not report ${who}'s record, so games and trades are not shown.`,
+});
 
 /** "x402 $1.50 (USDC on Base Sepolia testnet) · card $0.75 (card · Stripe test mode)". */
 function ByRail({ byRail, health }: { byRail: Record<string, number>; health: ReturnType<typeof useRelayHealth> }) {
@@ -183,6 +184,7 @@ export function StatsView() {
   const viewer = VIEWER_ID;
   const health = useRelayHealth();
   const name = useProfileName(viewer);
+  const who = viewer ? bareAgentName(viewer) : "the agent";
   const [parts, loading, error] = useInterval(
     () => (viewer ? relayParts(viewer) : Promise.resolve(null)),
     60_000,
@@ -198,7 +200,7 @@ export function StatsView() {
     <div className="e-stats-toolbar">
       <SegmentTabs options={PERIOD_KEYS} value={String(days) as "7" | "30"} onChange={(v) => setDays(Number(v) as Period)}
         labels={{ "7": "7 days", "30": "30 days" }} className="e-stats-period" />
-      <Text className="e-faint">Your agent only · counts and sums · read-only</Text>
+      <Text className="e-faint">{viewer ? `${who} only` : "One agent"} · counts and sums · read-only</Text>
     </div>
   );
 
@@ -215,7 +217,7 @@ export function StatsView() {
   if (!parts || parts.error) {
     return (
       <ViewBody toolbar={toolbar}>
-        <ViewStatus loading={loading} empty error={error ?? (parts?.error ? `Could not read your agent's figures from the relay: ${parts.error}` : null)} />
+        <ViewStatus loading={loading} empty error={error ?? (parts?.error ? `Could not read ${who}'s figures from the relay: ${parts.error}` : null)} />
       </ViewBody>
     );
   }
@@ -252,15 +254,15 @@ export function StatsView() {
           {rails.length ? rails.map((r) => railNetwork(r, health)).join(" · ") : "no payment rail on this relay"}.
           {" "}The model cost below is the one real-money figure.
         </Text>
-        {st.missing.map((m) => <Text key={m} className="e-faint e-stats-missing">{MISSING_NOTES[m]}</Text>)}
+        {st.missing.map((m) => <Text key={m} className="e-faint e-stats-missing">{missingNotes(who)[m]}</Text>)}
         {parts.input.settlementsTruncated && (
-          <Text className="e-faint e-stats-missing">The relay sends your newest 200 settlements; older ones are not counted.</Text>
+          <Text className="e-faint e-stats-missing">The relay sends {who}'s newest 200 settlements; older ones are not counted.</Text>
         )}
         {st.quiet && !st.missing.includes("settlements") && (
           <div className="e-empty-pane">
             <div className="e-empty-pane__title">Nothing earned or spent in the last {days} days.</div>
             <div className="e-empty-pane__hint">
-              Your agent earns by selling a service or charging an entry fee for a room or
+              {who} earns by selling a service or charging an entry fee for a room or
               topic it created. {days === 7 ? "Try 30 days." : ""}
             </div>
           </div>
@@ -272,7 +274,7 @@ export function StatsView() {
               key: k, label: SOURCE_LABELS[k], value: st.earnedBySource[k],
               text: formatMicros(st.earnedBySource[k]) + (k === "rooms_topics" && st.accessSales ? ` · ${st.accessSales} entr${st.accessSales === 1 ? "y" : "ies"}` : ""),
             }))} />
-          ) : <Text className="e-faint">Nothing paid out to your agent in this period.</Text>}
+          ) : <Text className="e-faint">Nothing paid out to {who} in this period.</Text>}
           <Text className="e-faint">By rail:</Text>
           <ByRail byRail={st.earnedByRail} health={health} />
           <Text className="e-faint">
@@ -318,7 +320,7 @@ export function StatsView() {
                 </div>
               )}
             </div>
-          ) : <Text className="e-faint">The relay did not report your agent's record.</Text>}
+          ) : <Text className="e-faint">The relay did not report {who}'s record.</Text>}
           <Text className="e-faint">Counts of what this relay saw (its newest 1000 sessions): evidence, not a verdict. Settle rate: paid or confirmed, of those not cancelled.</Text>
         </PanelCard>
 

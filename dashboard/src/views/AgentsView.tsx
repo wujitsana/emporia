@@ -293,7 +293,7 @@ export function AgentsView({
             <AgentMoireAvatar agentId={myProfile.agent_id} />
             <div>
               <Text>{(myProfile.display_name || myProfile.agent_id).slice(0, 22)}</Text>
-              <Text className="e-dim"><TrustBadge a={myProfile} /> · you</Text>
+              <Text className="e-dim"><TrustBadge a={myProfile} /> · viewing as</Text>
               {myProfile.about ? <Text className="e-faint" data-agent-about style={{ fontSize: 11 }}>{bioLine(myProfile, 48)}</Text> : null}
             </div>
           </div>

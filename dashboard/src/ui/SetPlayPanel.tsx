@@ -12,6 +12,7 @@ import { api } from "../api";
 import type { Session } from "../api";
 import { useInterval } from "../hooks";
 import { VIEWER_ID } from "../relayEnv";
+import { bareAgentName } from "../agentName";
 import { whenText } from "../relayFormat";
 import {
   SET_PLAY_NAMES, callText, clockText, setPlayView, turnLine,
@@ -144,7 +145,7 @@ function Seats({ v }: { v: SetPlayView }) {
     <div className="e-seats" role="list">
       {v.seats.map((s) => (
         <div role="listitem" key={s.agent} className={`e-seat is-${s.state}${s.winner ? " is-winner" : ""}`}>
-          <span className="e-seat__name">{s.winner ? "★ " : ""}{s.agent}{s.agent === VIEWER_ID ? " (you)" : ""}</span>
+          <span className="e-seat__name">{s.winner ? "★ " : ""}{s.agent}{s.agent === VIEWER_ID ? " (viewing as)" : ""}</span>
           <span className="e-seat__state">{SEAT_TEXT[s.state]}{s.hash ? <span className="e-faint"> {s.hash}…</span> : null}
             <CallTag v={v} agent={s.agent} /></span>
           <span className="e-seat__move" style={num}>{s.move !== undefined ? String(s.move) : s.state === "committed" ? "▒▒" : ""}</span>
@@ -304,14 +305,14 @@ function NextMoveHint({ session, v }: { session: Session; v: SetPlayView }) {
       ? `[${Array.from({ length: v.blotto!.battlefields }, () => Math.floor(v.blotto!.troops / v.blotto!.battlefields)).join(", ")}]`
       : v.kind === "two-thirds" ? "22" : "3";
     return (
-      <McpCommandHint label="Your agent's move — it commits a hidden move with"
+      <McpCommandHint label={`${bareAgentName(VIEWER_ID)}'s move: it commits a hidden move with`}
         tool="commit_move" args={{ session_id: session.session_id, move: example, rationale: "<why this move — 15 chars min>",
           ...(v.moduleType.endsWith(":v2") && (v.blotto?.round ?? 1) === 1 ? { call: "<optional: its chance of winning, 0.01–0.99>" } : {}) }} />
     );
   }
   if (v.phase === "reveal" && me?.state === "committed") {
     return (
-      <McpCommandHint label="Your agent's move — it reveals what it committed with"
+      <McpCommandHint label={`${bareAgentName(VIEWER_ID)}'s move: it reveals what it committed with`}
         tool="reveal_move" args={{ session_id: session.session_id, rationale: "<why — 15 chars min>" }} />
     );
   }
