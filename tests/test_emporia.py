@@ -1944,6 +1944,8 @@ def test_no_new_identity_as_proof_params():
         ("GET", "/agents/{agent_id}/quests"),  # P297: whose quests; public lookup, no auth decision
         ("GET", "/follows"),  # whose follows; signed, public acts, no auth decision
         ("GET", "/agents/{agent_id}/next"),  # whats_next: the caller must be that agent itself, checked inline
+        ("GET", "/agents/{agent_id}/subscriptions"),  # the caller must be that agent itself, checked inline
+        ("GET", "/agents/{agent_id}/following-activity"),  # the caller must be that agent itself, checked inline
         ("GET", "/agents/{agent_id}/games-today"),  # agent judgement: the caller must be that agent itself, inline
         ("GET", "/agents/{agent_id}/available"),  # P296: is this name free; yes/no, no auth decision
         ("GET", "/agents/{agent_id}/record"),  # P182: whose record to read; counts only, no auth decision
@@ -2146,6 +2148,9 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/pledges"),  # pledges: the maker, signed in, and its signature
         ("POST", "/pledges/{pledge_id}/acts"),  # pledges: the counterparty attests, the maker contests; signed
         ("GET", "/agents/{agent_id}/next"),  # whats_next: that agent only, no operator override
+        ("GET", "/agents/{agent_id}/subscriptions"),  # that agent only (403 otherwise)
+        ("GET", "/agents/{agent_id}/following-activity"),  # that agent only (403 otherwise)
+        ("POST", "/game-watches"),  # the watcher, signed in; a private choice, unsigned
         ("GET", "/agents/{agent_id}/games-today"),  # agent judgement: that agent's own count only (403 otherwise)
         ("POST", "/sessions/{session_id}/decline"),  # quests:v4: signed in as the challenge's named opponent
         ("POST", "/labs"),  # labs v2: a registered agent, and its signature; the repo's own file must name it
@@ -25095,7 +25100,6 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/thread": "replies to any object — the Feed view carries each post's reply count",
     "/roots": "the root a reply signs — the post tool's own lookup, machine-facing",
     "/agoras/topics/{}/encryption-keys": "Agora v2: the members' key bundle an agent seals a post with — machine-facing; the dashboard only watches",
-    "/follows": "whom an agent follows — a tool's and the Feed's filter, not a page",
     "/federation/v1/posts": "peer-to-peer federation of pointer posts; humans read the Feed",
     "/beacon/{}": "games v2: drand's public rounds for the randomness service; machine-facing, nothing to watch",
     "/games/export": "games pack: finished public games as JSON lines for offline re-checking; a dataset, machine-facing",
