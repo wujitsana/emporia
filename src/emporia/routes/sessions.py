@@ -833,6 +833,46 @@ def _first_turn_opens_at(data: dict[str, Any]) -> datetime | None:
     return at if at > datetime.now(UTC) + timedelta(seconds=1) else None
 
 
+#: The share of a move clock after which a player that has not moved is reminded once.
+REMIND_AT = 0.5
+
+
+def _remind_later(session_id: str, agents: list[str], step: int, data: dict[str, Any], reveal: bool = False) -> None:
+    """Once, at half the move (or reveal) clock, tell each player the game still waits on that it is their turn. A
+    model turn can fail for reasons nobody sees (a provider's error): without this the game simply timed out
+    (live run 11-10). No clock, no reminder."""
+    try:
+        limit = float(data.get("reveal_window_s" if reveal else "move_time_limit_s") or 0)
+    except (TypeError, ValueError):
+        return
+    if limit <= 0 or not agents:
+        return
+    try:
+        _schedule(_remind(session_id, list(agents), step, limit * REMIND_AT, reveal))
+    except RuntimeError:          # no running loop (a synchronous caller): no reminder
+        pass
+
+
+async def _remind(session_id: str, agents: list[str], step: int, delay_s: float, reveal: bool) -> None:
+    await asyncio.sleep(delay_s)
+    s = rs.load_session(session_id)
+    if not s or s.get("status") != "active":
+        return
+    data = ((s.get("state") or {}).get("data") or {})
+    if reveal:
+        done = set(((data.get("rand") or {}).get("reveals") or {}))
+        due = [a for a in agents if a not in done]
+    else:
+        if int(s.get("step_number") or 0) != step:
+            return
+        waiting = set(data.get("pending") or ([s["current_agent"]] if s.get("current_agent") else []))
+        due = [a for a in agents if a in waiting]
+    for agent in due:
+        await rs.broadcast_to_agent(agent, {"type": "your_turn", "session_id": session_id,
+                                            "module_type": s["module_type"], "step_number": step, "reminder": True,
+                                            **({"reveal": True, "reveal_by": data.get("reveal_by")} if reveal else {})})
+
+
 async def _tell_when_open(session_id: str, opens_at: datetime) -> None:
     """At `opens_at`, tell whoever the game waits on that it is their turn, if nobody has moved yet."""
     await asyncio.sleep(max(0.0, (opens_at - datetime.now(UTC)).total_seconds()) + 1.0)
@@ -846,6 +886,7 @@ async def _tell_when_open(session_id: str, opens_at: datetime) -> None:
     for agent in waiting:
         await rs.broadcast_to_agent(agent, {"type": "your_turn", "session_id": session_id,
                                             "module_type": s["module_type"], "step_number": 0})
+    _remind_later(session_id, list(waiting), 0, data)
 
 
 async def _start(session_id: str, s: dict[str, Any], participants: list[str],
@@ -1733,6 +1774,7 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
                 "last_action": last_action,
                 **({"reveal": True, "reveal_by": new_state.data.get("reveal_by")} if reveal_now else {}),
             })
+        _remind_later(session_id, waiting, s["step_number"] + 1, new_state.data, reveal=reveal_now)
     elif new_state.current_agent and new_state.current_agent != req.agent_id:
         # P92: nothing told an agent it was their move unless it was watching
         # the session socket, so an agent driven by its own channel waited on a
@@ -1745,6 +1787,7 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
             "step_number": s["step_number"] + 1,
             "last_action": last_action,
         })
+        _remind_later(session_id, [new_state.current_agent], s["step_number"] + 1, new_state.data)
     if said:
         # P148: a player woken by the move hears the line inside its notice;
         # only the others get it as table talk, so nobody wakes twice.

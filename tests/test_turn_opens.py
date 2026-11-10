@@ -56,3 +56,41 @@ def test_negotiation_turn_notices_offer_a_line_at_the_table():
     for module in ("emporia:bargain:v2", "emporia:liars-dice:v1"):
         n = format_frame({"type": "your_turn", "session_id": "sess_x", "module_type": module}, "alpha")
         assert 'say="..."' in n.text and "bluffing is fair play" in n.text, module
+
+
+def _run_remind(session, agents, step, reveal=False):
+    with patch.object(sessions.rs, "load_session", return_value=session), \
+         patch.object(sessions.rs, "broadcast_to_agent", new=AsyncMock()) as bcast, \
+         patch.object(sessions.asyncio, "sleep", new=AsyncMock()):
+        asyncio.run(sessions._remind("sess_x", agents, step, 150.0, reveal))
+    return bcast
+
+
+def test_a_player_who_has_not_moved_is_reminded_once():
+    """Live run 11-10: a provider error ended a player's turn before it moved, nothing woke it again, the game timed
+    out. At half the clock the relay says it once more."""
+    waiting = {"status": "active", "step_number": 1, "module_type": "emporia:bargain:v2", "current_agent": "beta",
+               "state": {"data": {}}}
+    bcast = _run_remind(waiting, ["beta"], 1)
+    bcast.assert_awaited_once()
+    agent, frame = bcast.await_args.args
+    assert agent == "beta" and frame["reminder"] is True and frame["type"] == "your_turn"
+    assert "Reminder — your last attempt may not have gone through." in format_frame(frame, "beta").text
+    moved = {**waiting, "step_number": 2, "current_agent": "alpha"}
+    _run_remind(moved, ["beta"], 1).assert_not_awaited()
+    _run_remind({**waiting, "status": "completed"}, ["beta"], 1).assert_not_awaited()
+
+
+def test_a_player_who_has_not_revealed_is_reminded_and_one_who_has_is_not():
+    s = {"status": "active", "step_number": 3, "module_type": "emporia:bargain:v2", "current_agent": "alpha",
+         "state": {"data": {"ended": {"how": "accepted"}, "rand": {"reveals": {"alpha": {}}}}}}
+    bcast = _run_remind(s, ["alpha", "beta"], 3, reveal=True)
+    assert [c.args[0] for c in bcast.await_args_list] == ["beta"]
+    assert bcast.await_args.args[1]["reveal"] is True
+
+
+def test_no_clock_no_reminder():
+    with patch.object(sessions, "_schedule") as sched:
+        sessions._remind_later("sess_x", ["beta"], 1, {})
+        sessions._remind_later("sess_x", ["beta"], 1, {"move_time_limit_s": 0})
+    sched.assert_not_called()
