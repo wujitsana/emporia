@@ -20,6 +20,7 @@ import { useRelayHealth } from "../healthCtx";
 import { formatMicros, networkWithKind } from "../paymentFormat";
 import { useProfileName } from "../profileName";
 import { VIEWER_ID } from "../relayEnv";
+import { whenText } from "../relayFormat";
 import { bareAgentName } from "../agentName";
 import type { AgentRecord } from "../settings";
 import {
@@ -166,7 +167,7 @@ function Recent({ st, health }: { st: AgentStats; health: ReturnType<typeof useR
         <tbody>
           {st.recent.map((p) => (
             <tr key={p.key}>
-              <td>{new Date(p.at).toLocaleString()}</td>
+              <td>{whenText(p.at)}</td>
               <td>{p.direction === "in" ? "in ↓" : "out ↑"}</td>
               <td className="e-stats-num">{formatMicros(p.micros)}</td>
               <td>{p.what}</td>

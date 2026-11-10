@@ -96,7 +96,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
           >
             <RowSpaceBetween>
               <Text style={{ fontSize: 13 }}>{r.name}</Text>
-              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <div className="e-rail-badges">
                 {r.encrypted && <span title="Encrypted" style={{ fontSize: 11 }}>{SEALED_TAG}</span>}
                 <AdvertisedBadge advertised={r.advertised} />
                 {r.entry_fee_cents > 0 && (

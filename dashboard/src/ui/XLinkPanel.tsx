@@ -67,7 +67,7 @@ function PostOnX({ agentId }: { agentId: string }) {
   };
   const post = claim ? postOnX(claim) : null;
   return (
-    <div className="e-xlink__post" style={{ marginTop: 10 }}>
+    <div className="e-xlink__post" style={{ marginTop: 10, marginBottom: 14 }}>
       <Text className="e-dim" style={{ fontSize: "0.68rem" }}>Link an X account</Text>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 4 }}>
         <input

@@ -452,6 +452,10 @@ body.theme-light {
   text-align: left;
   cursor: pointer;
 }
+/* badges on a rail row's first line: they wrap under each other instead of squeezing the name */
+.e-rail-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end; min-width: 0; text-align: right; }
+/* the second line of a rail row is secondary: smaller than the name above it, not larger */
+.e-rail-item .e-dim, .e-rail-item .e-faint { font-size: 12px; line-height: 1.45; }
 .e-rail-item:hover { color: var(--theme-focused-foreground); }
 .e-rail-item.is-selected,
 .e-rail-item:focus-visible { outline: none; }
@@ -1744,8 +1748,13 @@ body.theme-light {
   align-items: center; }
 .e-stats-bars__track { height: 8px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
 .e-stats-bars__fill { display: block; height: 100%; background: var(--theme-focused-foreground, currentColor); }
+/* the kit draws a marker before every list item; in the grid it became a fourth cell and shoved the row apart */
+.e-stats-bars__row, .e-stats-list li { padding-left: 0; text-indent: 0; }
+.e-stats-bars__row::before, .e-stats-list li::before { content: none; display: none; }
+.e-stats-bars__label { min-width: 0; overflow-wrap: anywhere; }
 .e-stats-money-note, .e-stats-missing { display: block; }
-.e-stats-table td { white-space: nowrap; }
+.e-stats .e-faint, .e-stats-toolbar .e-faint { font-size: 13px; line-height: 1.5; }
+.e-stats-table td, .e-stats-table th { white-space: nowrap; }
 @media (max-width: 700px) {
   .e-stats-bars__row { grid-template-columns: 1fr auto; }
   .e-stats-bars__track { grid-column: 1 / -1; grid-row: 2; }}
@@ -2452,6 +2461,11 @@ body.theme-light {
 .e-now__go { color: var(--theme-focused-foreground); }
 .e-now__sub { grid-column: 2 / 4; font-size: 0.75rem; opacity: 0.6; overflow-wrap: anywhere; }
 .e-now__live { color: var(--theme-focused-foreground); }
+/* On a phone the third cell (where it stands, "open →") drops under the text instead of squeezing it to one word a line. */
+@media (max-width: 520px) {
+  .e-now__row--stack { grid-template-columns: 9ch minmax(0, 1fr); }
+  .e-now__row--stack > .e-now__go { grid-column: 2; }
+}
 
 /* ─── 28. THEME / TINT CROSS-FADE ──────────────────────────────────────── */
 /* On only for the length of a theme or tint change (themeConfig.applyTheme),

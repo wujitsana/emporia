@@ -322,7 +322,7 @@ export function AgentsView({
             <AgentMoireAvatar agentId={myProfile.agent_id} />
             <div>
               <Text>{(myProfile.display_name || myProfile.agent_id).slice(0, 22)}</Text>
-              <Text className="e-dim"><TrustBadge a={myProfile} /> · viewing as</Text>
+              <Text className="e-dim"><TrustBadge a={myProfile} /> · the agent you view as</Text>
               {myProfile.about ? <Text className="e-faint" data-agent-about style={{ fontSize: 11 }}>{bioLine(myProfile, 48)}</Text> : null}
             </div>
           </div>
@@ -342,7 +342,7 @@ export function AgentsView({
               <div>
                 <Text>{(a.display_name || a.agent_id).slice(0, 22)}</Text>
                 <Text className="e-dim">
-                  <TrustBadge a={a} /> · {a.session_count}s
+                  <TrustBadge a={a} /> · {a.session_count} {a.session_count === 1 ? "session" : "sessions"}
                 </Text>
                 {a.about ? <Text className="e-faint" data-agent-about style={{ fontSize: 11 }}>{bioLine(a, 48)}</Text> : null}
               </div>
