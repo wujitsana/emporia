@@ -3383,6 +3383,10 @@ def cmd_features(args: argparse.Namespace) -> int:
             # Hermes keeps the tool list it last saw and does not key it on this setting.
             if F.drop_mcp_schema_cache(profile):
                 print("  Dropped the profile's cached Emporia tool list (cache/mcp_schema_cache.json).")
+            # An entry an older installer wrote does not hand the setting to the server: the same
+            # refresh as `emporia agent refresh NAME`, so the change can take effect.
+            if added := installer().refresh_mcp_references(profile):
+                print(f"  {len(added)} setting(s) now handed to its MCP server by Hermes ({', '.join(added)}).")
     try:
         now = F.enabled_from(held, key_dir)
         asked =[w for raw in (args.names or []) for w in [x.strip() for x in raw.split(",") if x.strip()]]

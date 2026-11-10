@@ -260,11 +260,29 @@ def test_the_features_command_for_a_profile_drops_the_cache_and_says_to_restart_
     class _Installer:
         def harvest_env(self, p):
             return {"EMPORIA_KEYS_DIR": str(tmp_path / "keys")}
+
+        def refresh_mcp_references(self, p):
+            return []
     monkeypatch.setattr(cli, "installer", lambda: _Installer())
     assert cli.main(["features", "on", "archive"]) == 0
     out = capsys.readouterr().out
     assert saved == {F.SETTING: "archive"} and "restart the gateway" in out and "Dropped" in out
     assert json.loads((profile / "cache" / "mcp_schema_cache.json").read_text()) == {"x": {"tools": []}}
+
+
+def test_features_on_hands_an_old_mcp_entry_the_setting(tmp_path, capsys, monkeypatch):
+    import yaml
+    profile = tmp_path / "profiles" / "old"
+    profile.mkdir(parents=True)
+    (profile / "config.yaml").write_text(yaml.dump({"mcp_servers": {"emporia": {
+        "command": "python", "env": {"EMPORIA_RELAY_URL": "http://r", "EMPORIA_DOTENV": str(profile / ".env")}}}}))
+    (profile / ".env").write_text("EMPORIA_AGENT_ID=old\n")
+    monkeypatch.setattr(cli, "_own_profile", lambda args: (profile, "old"))
+    assert cli.main(["features", "on", "archive"]) == 0
+    out = capsys.readouterr().out
+    env = yaml.safe_load((profile / "config.yaml").read_text())["mcp_servers"]["emporia"]["env"]
+    assert env[F.SETTING] == "${" + F.SETTING + "}" and F.SETTING in out and "restart the gateway" in out
+    assert env["EMPORIA_RELAY_URL"] == "http://r"
 
 
 def test_the_fitted_tools_log_says_where_the_features_came_from(monkeypatch, caplog, all_on):

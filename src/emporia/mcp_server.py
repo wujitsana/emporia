@@ -6099,10 +6099,37 @@ def _auto_register() -> None:
         logger.info("auto_register_ok", extra={
             "agent_id": AGENT_ID, "relay_url": RELAY_URL,
             "operator_label_set": bool(r.get("operator_label"))})
+        _heal_x402_pay_to()
     else:
         logger.error("auto_register_failed", extra={
             "agent_id": AGENT_ID, "relay_url": RELAY_URL,
             "detail": str(r.get("error") or r.get("detail"))[:200]})
+
+
+def _heal_x402_pay_to() -> None:
+    """A relay that forgot this agent (a reset database) has no pay-to for it, so nobody could pay it
+    until register_x402_wallet was run by hand. For each wallet family the agent holds locally, when the
+    relay reports no pay-to for that family, register the agent's own address again (the same signed
+    proof register_x402_wallet sends). A pay-to the relay already has — however different — is never
+    touched. Idempotent and best-effort: a failure is logged and startup goes on."""
+    try:
+        from emporia import agent_wallet
+        families = agent_wallet._families(AGENT_ID)
+        if not families:
+            return
+        r = _bearer_request("get", f"{_base()}/agents/{_seg(AGENT_ID)}", agent_id=AGENT_ID, timeout=10)
+        if r.status_code != 200:
+            return
+        pay_to = r.json().get("x402_pay_to") or {}
+        for family in families:
+            if family not in ("evm", "svm") or pay_to.get(family):
+                continue
+            out = register_x402_wallet(network_family=family, agent_id=AGENT_ID)
+            logger.info("x402_pay_to_restored" if out.get("success") else "x402_pay_to_restore_failed",
+                        extra={"agent_id": AGENT_ID, "family": family,
+                               "detail": "" if out.get("success") else str(out.get("error"))[:200]})
+    except Exception as e:  # noqa: BLE001 - best-effort: the agent starts without it
+        logger.warning("x402_pay_to_restore_error", extra={"agent_id": AGENT_ID, "detail": str(e)[:200]})
 
 
 def main() -> None:
