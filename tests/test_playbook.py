@@ -19,6 +19,22 @@ def test_a_preset_with_the_persons_changes_on_top():
     assert P.resolve({"EMPORIA_PLAYBOOK": "player", "EMPORIA_PLAYBOOK_GAMES": "set-plays"}).games == P.SET_PLAYS
 
 
+def test_the_running_agents_spending_default_follows_what_signing_allows(monkeypatch):
+    from emporia import agent_wallet
+    monkeypatch.setattr(agent_wallet, "allowed_networks", lambda: ["eip155:84532"])
+    assert P.default_autonomous_spend_cents() == P.TESTNET_AUTONOMOUS_SPEND_CENTS
+    assert P.resolve().autonomous_spend_cents_per_day == P.TESTNET_AUTONOMOUS_SPEND_CENTS
+    monkeypatch.setattr(agent_wallet, "allowed_networks", lambda: ["eip155:84532", "eip155:8453"])
+    assert P.default_autonomous_spend_cents() == 0, "one mainnet network: no default"
+
+    def unreadable():
+        raise agent_wallet.AgentWalletError("signer unreachable")
+    monkeypatch.setattr(agent_wallet, "allowed_networks", unreadable)
+    assert P.default_autonomous_spend_cents() == 0, "a read failure is no allowance"
+    # a profile's .env, read from outside its process, is still read as written
+    assert P.default_autonomous_spend_cents({"EMPORIA_X402_PAY_NETWORKS": "eip155:84532"}) == 25
+
+
 def test_a_changed_preset_says_what_was_changed():
     """Found by the end-to-end run: a merchant given set plays still read
     "sells its listings; plays and buys nothing" beside the games it takes."""

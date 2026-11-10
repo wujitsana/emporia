@@ -47,7 +47,8 @@ def test_soul_goes_in_only_when_asked_and_with_a_never_quote_instruction(tmp_pat
 @pytest.mark.parametrize("reply, want", [
     ('"Plays Blotto."', "Plays Blotto."),
     ("**Plays Blotto.**", "Plays Blotto."),
-    ("Bio: 'Plays Blotto.'\nsecond line", "Plays Blotto."),
+    ("Bio: 'Plays Blotto.'\nsession_id: 20261110_abc", "Plays Blotto."),
+    ("Warning: a plugin failed to load\nPlays Blotto.\nsession_id: 20261110_abc", "Plays Blotto."),
     ("\n\n- Plays Blotto.", "Plays Blotto."),
 ])
 def test_the_reply_is_cleaned_and_the_session_trailer_ignored(tmp_path, monkeypatch, reply, want):
@@ -82,7 +83,8 @@ def test_no_approval_bypass_env_reaches_hermes_and_the_call_is_one_shot(tmp_path
     assert "HERMES_YOLO_MODE" not in seen["env"] and "HERMES_ACCEPT_HOOKS" not in seen["env"]
     assert seen["stdin"] == subprocess.DEVNULL and seen["timeout"] == bio_draft.TIMEOUT_S
     assert seen["argv"][0] == "/bin/hermes-fake" and seen["argv"][1] == "-p"
-    assert seen["argv"][3:7] == ["chat", "-Q", "--ignore-rules", "-q"]
+    assert seen["argv"][3:10] == ["chat", "-Q", "--ignore-rules", "--toolsets", "none", "--max-turns", "1"]
+    assert seen["argv"][10] == "-q", "no tools and one iteration"
 
 
 # ── setup ────────────────────────────────────────────────────────────────────

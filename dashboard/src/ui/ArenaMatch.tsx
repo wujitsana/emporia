@@ -195,7 +195,7 @@ function GenericMatch({ session: initial, step, onStep, book, profiles, onBack }
                 ))}
               </Text>
               <ArenaFrame frame={frame} book={book} />
-              {timeline.finished && at === last ? <AfterTheGame sessionId={session.session_id} book={book} /> : null}
+              {timeline.finished && at === last ? <AfterTheGame sessionId={session.session_id} book={book} participants={session.participants} endedAt={actions[actions.length - 1]?.created_at} /> : null}
               {timeline.finished && at === last ? <ModelReveal session={session} book={book} /> : null}
             </>
           )}

@@ -69,7 +69,8 @@ def test_the_relays_own_reports_come_from_the_relay():
 
 def test_a_finished_game_offers_the_debrief_template_with_its_id_and_game():
     n = format_frame({"type": "session_completed", "session_id": "sess_abc123def456",
-                      "module_type": "emporia:bargain:v2", "outcome": {"winner": ME}}, ME)
+                      "module_type": "emporia:bargain:v2", "outcome": {"winner": ME},
+                      "visibility": "public"}, ME)
     for part in ('records(kind="settlements", session_id="sess_abc123def456")',
                  'post(kind="note", reply_to="session:sess_abc123def456", tags=[["t","debrief"]], '
                  'text="Game: sess_abc123def456 (bargain:v2)',
@@ -82,6 +83,15 @@ def test_a_finished_game_offers_the_debrief_template_with_its_id_and_game():
                          "outcome": {}}, ME)
     assert "debrief" not in deal.text
     assert "debrief" not in format_frame({"type": "session_completed", "session_id": "s1", "outcome": {}}, ME).text
+
+
+def test_a_private_or_sealed_game_offers_no_debrief():
+    for vis in ("private", "sealed", None):
+        frame = {"type": "session_completed", "session_id": "s1", "module_type": "emporia:bargain:v2",
+                 "outcome": {"winner": ME}}
+        if vis:
+            frame["visibility"] = vis
+        assert "debrief" not in format_frame(frame, ME).text, vis
 
 
 def test_ciphertext_is_never_pasted_in():
@@ -569,6 +579,61 @@ print(json.dumps({{"out": out, "turn": turn, "later": later, "default": default,
     assert r["default"] == 20
     # Only the home relay is exempt: a visited relay's sender is limited like an agent's.
     assert r["away"][:3] == ["hi"] * 3 and r["away"][4] is None
+
+
+@pytest.mark.skipif(not HERMES_PYTHON.exists(), reason="Hermes is not installed here")
+def test_many_senders_cannot_flood_the_talk_wakes_past_twelve_an_hour(tmp_path):
+    harness = tmp_path / "harness.py"
+    harness.write_text(f'''
+import importlib.util, json, sys
+from pathlib import Path
+d = Path({str(REPO / "hermes_plugin" / "emporia")!r})
+spec = importlib.util.spec_from_file_location("emporia_platform", d / "__init__.py",
+                                              submodule_search_locations=[str(d)])
+mod = importlib.util.module_from_spec(spec); sys.modules["emporia_platform"] = mod
+spec.loader.exec_module(mod)
+from gateway.platform_registry import PlatformEntry, platform_registry
+class Ctx:
+    def register_platform(self, **kw): platform_registry.register(PlatformEntry(**kw))
+    def register_hook(self, *a, **kw): pass
+    def register_skill(self, *a, **kw): pass
+    def register_cli_command(self, *a, **kw): pass
+    def register_command(self, *a, **kw): pass
+mod.register(Ctx())
+from gateway.config import PlatformConfig
+from emporia_platform.adapter import EmporiaAdapter
+a = EmporiaAdapter(PlatformConfig(enabled=True, extra={{"agent_id": "alpha", "python": "/x", "allowed_users": "friend"}}))
+def n(ft, topic): return {{"text": "t", "frame_type": ft, "topic": topic}}
+out = [a._within_limit(n("mention", "post:p%d" % i), "s%d" % i, now=i) for i in range(14)]
+relay = a._within_limit(n("followed", None), "emporia:relay", now=20)
+game = a._within_limit(n("your_turn", "session:s1"), "emporia:relay", now=21)
+chat = a._within_limit(n("game_chat", "session:s1"), "s99", now=22)
+listed = a._within_limit(n("mention", "post:pz"), "friend", now=23)
+b = EmporiaAdapter(PlatformConfig(enabled=True, extra={{"agent_id": "alpha", "python": "/x", "thread_limit": "2"}}))
+offers = [b._within_limit(n("accept", "session:s7"), "s%d" % i, now=i) for i in range(5)]
+talk = [b._within_limit(n("game_chat", "session:s8"), "s1", now=i) for i in range(4)]
+later = a._within_limit(n("mention", "post:pq"), "s50", now=4000)
+print(json.dumps({{"out": out, "relay": relay, "game": game, "chat": chat, "listed": listed, "later": later, "offers": offers, "talk": talk}}))
+''')
+    out = subprocess.run([str(HERMES_PYTHON), str(harness)], cwd="/opt/hermes",
+                         env={**os.environ, "HERMES_HOME": str(tmp_path / "home"), "PYTHONPATH": "/opt/hermes"},
+                         capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stderr[-2000:]
+    r = json.loads(out.stdout.strip().splitlines()[-1])
+    assert r["out"][:12] == ["t"] * 12
+    assert "whats_next" in r["out"][12] and r["out"][13] is None
+    assert r["relay"] is None, "the relay's followed frames count, past the cap"
+    assert r["game"] == "t" and r["chat"] == "t", "game frames are not talk"
+    assert r["listed"] == "t", "a listed sender is not capped"
+    assert r["later"] == "t", "an hour on, it is delivered again"
+    assert r["offers"] == ["t"] * 5, "accepts and the like in a session are not table talk"
+    assert r["talk"][:2] == ["t", "t"] and "don't reply" in r["talk"][2] and r["talk"][3] is None
+
+
+def test_the_talk_cap_constant_is_the_same_in_the_adapter_and_wake():
+    from emporia import wake
+    src = (REPO / "hermes_plugin" / "emporia" / "adapter.py").read_text()
+    assert f"TALK_WAKES_PER_HOUR = {wake.TALK_WAKES_PER_HOUR}\n" in src
 
 
 def test_the_bridge_brings_back_the_local_relay_and_waits_before_retrying_a_failed_start(monkeypatch):

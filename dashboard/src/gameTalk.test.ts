@@ -29,7 +29,15 @@ describe("debriefs", () => {
     expect(isDebrief(tagged)).toBe(true);
     expect(isDebrief({ tags: [["t", "idea"]] })).toBe(false);
     expect(isDebrief({})).toBe(false);
-    expect(debriefsOf([{ ...tagged, post_id: "a" }, { post_id: "b", tags: [] }] as FeedPost[]).map((p) => p.post_id)).toEqual(["a"]);
+    const game = { participants: ["alpha", "beta"], endedAt: "2026-11-05T11:00:00Z" };
+    const mk = (id: string, author_id: string, at: string, tags = tagged.tags) => ({ ...tagged, post_id: id, author_id, at, tags });
+    expect(debriefsOf([mk("a", "alpha", "2026-11-05T12:00:00Z"), mk("b", "alpha", "2026-11-05T12:00:00Z", [])] as FeedPost[], game)
+      .map((p) => p.post_id)).toEqual(["a"]);
+    // only a player's, and only from after the game ended
+    expect(debriefsOf([mk("spy", "mallory", "2026-11-05T12:00:00Z"), mk("early", "beta", "2026-11-05T10:00:00Z"),
+      mk("bad-time", "beta", "not a time"), mk("ok", "beta", "2026-11-05T11:00:01Z")] as FeedPost[], game)
+      .map((p) => p.post_id)).toEqual(["ok"]);
+    expect(debriefsOf([mk("x", "beta", "2026-11-05T10:00:00Z")] as FeedPost[], { participants: ["beta"] })).toHaveLength(1);
     expect(debriefGame(tagged)).toBe("sess_1");
     expect(debriefGame({ reply_to: "post:pst_x" })).toBeNull();
   });

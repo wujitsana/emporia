@@ -1,4 +1,4 @@
-const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/App-tL1Mv-KF.js","assets/App-CrwzmJts.css"])))=>i.map(i=>d[i]);
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/App-BtcUDZJX.js","assets/App-CrwzmJts.css"])))=>i.map(i=>d[i]);
 // \0rolldown/runtime.js
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -11624,7 +11624,7 @@ var __vitePreload = function preload(baseModule, deps, importerUrl) {
 // src/main.tsx
 ensureViewer(() => fetch("/agents", { credentials: "same-origin" }).then((r) => r.json()).then((d) => d.agents)).then(async () => {
 	const { default: App } = await __vitePreload(async () => {
-		const { default: App } = await import("./App-tL1Mv-KF.js");
+		const { default: App } = await import("./App-BtcUDZJX.js");
 		return { default: App };
 	}, __vite__mapDeps([0,1]));
 	(0, import_client.createRoot)(document.getElementById("root")).render(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_react.StrictMode, { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(App, {}) }));

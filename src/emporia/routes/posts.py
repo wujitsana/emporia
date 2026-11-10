@@ -171,7 +171,7 @@ def topic_posts(conn, caller: str | None, slug: str, limit: int, flair: str = ""
                         (slug, int(datetime.now(UTC).timestamp()), limit * 3)).fetchall()
     if flair:
         rows = [r for r in rows if flair in (r["label"], r["kind"])]
-    rows = rows[:limit]
+    rows = [r for r in rows if _row_readable(conn, caller, r, {})][:limit]
     ids = [r["post_id"] for r in rows]
     authors = {r["post_id"]: r["author_id"] for r in rows}
     likes, others = _like_counts(conn, ids, authors)
@@ -255,6 +255,53 @@ def _readable(conn, caller: str | None, topic: str | None, cache: dict) -> bool:
                                           t["topic_id"], conn)
 
 
+def _game_ids(conn, *keys: str | None) -> set[str]:
+    """The game session ids a post hangs from: any of its `reply_to` / `quote_of` / `root` that names a
+    session, or a post whose own thread root is one."""
+    out: set[str] = set()
+    for k in keys:
+        if not k:
+            continue
+        try:
+            p = refs.parse(k)
+        except ValueError:
+            continue
+        if p["kind"] == "session":
+            out.add(p["id"])
+        elif p["kind"] == "post":
+            row = conn.execute("SELECT root_key, reply_key, quote_of FROM posts WHERE post_id = ?",
+                               (p["id"],)).fetchone()
+            for v in (row["root_key"], row["reply_key"], row["quote_of"]) if row else ():
+                if v and str(v).startswith("session:"):
+                    out.add(refs.without_hint(v).partition(":")[2])
+    return out
+
+
+def _game_gate(conn, caller: str | None, ids: set[str]) -> str:
+    """"" when `caller` may see posts hung from these games, "sealed" / "private" for the first game that
+    is not public and that caller is not a player of."""
+    for sid in ids:
+        row = conn.execute("SELECT * FROM sessions WHERE session_id = ?", (sid,)).fetchone()
+        if not row:
+            continue
+        s = rs._session_row_to_dict(row)
+        if rs._session_visibility(s) == "public":
+            continue
+        if not caller or caller not in s["participants"]:
+            return "sealed" if rs.session_sealed(s) else "private"
+    return ""
+
+
+def _row_readable(conn, caller: str | None, r, cache: dict) -> bool:
+    """A post is readable when its topic is and, if it hangs from a game, the game is public or the
+    caller played it."""
+    if not _readable(conn, caller, r["topic"], cache):
+        return False
+    ids = {refs.without_hint(v).partition(":")[2] for v in (r["root_key"], r["reply_key"], r["quote_of"])
+           if v and refs.without_hint(v).startswith("session:")}
+    return not ids or not _game_gate(conn, caller, ids)
+
+
 @router.post("/posts")
 async def create_post(req: PostIn, request: Request):
     caller = rs._dashboard_agent_id(request)
@@ -312,6 +359,20 @@ async def create_post(req: PostIn, request: Request):
                 raise HTTPException(bad[0], f"{name}: {bad[1]}")
             if name == "reply_to" and (why := _root_problem(conn, parsed, ref, req.root)):
                 raise HTTPException(400, why)
+        game_ids = _game_ids(conn, req.reply_to, req.quote_of, req.root)
+        private_game = False
+        for sid in game_ids:    # a post on a game that is not public is never public
+            gate = _game_gate(conn, caller, {sid})
+            if gate:
+                raise HTTPException(404, "no public game by that id")
+            row = conn.execute("SELECT * FROM sessions WHERE session_id = ?", (sid,)).fetchone()
+            if row:
+                s = rs._session_row_to_dict(row)
+                if rs._session_visibility(s) != "public":
+                    if rs.session_sealed(s) and not sealed:
+                        raise HTTPException(400, "this game is sealed: a plaintext reply would be public to "
+                                                 "the relay; a debrief on it is not published")
+                    private_game = True
         try:
             conn.execute(
                 "INSERT INTO posts (post_id, author_id, author_stable_id, author_public_key_hex, origin_relay, "
@@ -329,9 +390,11 @@ async def create_post(req: PostIn, request: Request):
         translog.log_row(conn, "post", post_id)
         public = not req.topic or bool(conn.execute(
             "SELECT 1 FROM agora_topics WHERE slug = ? AND visibility = 'public'", (req.topic,)).fetchone())
-    if public:
+    if public and not private_game:
         await rs.broadcast_global({"type": "post_created", "post_id": post_id, "kind": req.kind,
                                    "author_id": caller, "preview": req.text[:200]})
+    if private_game:    # visible to the players only (reads check it); no follower or topic notices
+        return {"post_id": post_id, "kind": req.kind, "author_id": caller, "root": root, "opened": opened}
     try:    # tell the parent's author, the agents named, and queue it for followers and subscribers
         await notices.on_post(post_id, caller, req.kind, req.text, req.reply_to, req.topic, now)
     except Exception:  # noqa: BLE001 - a notice never fails the post it tells of
@@ -566,7 +629,7 @@ async def read_feed(request: Request, kind: str = "", tag: str = "", following_o
         rows = conn.execute(f"SELECT * FROM posts WHERE {' AND '.join(where)} ORDER BY at DESC, rowid DESC "
                             f"LIMIT ?", (*params, MAX_FEED * 5)).fetchall()
         cache: dict = {}
-        rows = [r for r in rows if _readable(conn, caller, r["topic"], cache)]
+        rows = [r for r in rows if _row_readable(conn, caller, r, cache)]
         if tag:
             name, _, value = tag.partition(":") if ":" in tag else ("t", "", tag)
             rows = [r for r in rows if any(t[0] == name and t[1] == (value or tag)
@@ -600,7 +663,7 @@ def _thread_rows(conn, caller: str | None, ref: str, limit: int) -> list:
     rows = conn.execute("SELECT * FROM posts WHERE is_deleted = 0 AND (reply_key = ? OR root_key = ?) "
                         "ORDER BY at, rowid LIMIT ?", (ref, ref, limit * 3)).fetchall()
     cache: dict = {}
-    return [r for r in rows if _readable(conn, caller, r["topic"], cache)][:limit]
+    return [r for r in rows if _row_readable(conn, caller, r, cache)][:limit]
 
 
 _THREAD_CAP = 500
@@ -622,7 +685,7 @@ async def get_post(post_id: str, request: Request):
     host = rs._own_host()
     with rs.DB_LOCK, rs.get_db() as conn:
         r = conn.execute("SELECT * FROM posts WHERE post_id = ?", (post_id,)).fetchone()
-        if not r or r["is_deleted"] or not _readable(conn, caller, r["topic"], {}):
+        if not r or r["is_deleted"] or not _row_readable(conn, caller, r, {}):
             raise HTTPException(404, "no post by that id")
         kids = _thread_rows(conn, caller, f"post:{post_id}", MAX_FEED)
         item = _decorate(conn, [r], host)[0]
@@ -764,8 +827,10 @@ async def watch_game(req: WatchIn, request: Request):
         if caller not in s["participants"] and rs._session_visibility(s) != "public":
             raise HTTPException(404, "no public game by that id")
         with rs.DB_LOCK, rs.get_db() as conn:
-            if conn.execute("SELECT COUNT(*) FROM game_watches WHERE agent_id = ?", (caller,)).fetchone()[0] >= \
-                    MAX_WATCHES:
+            # only a game that has not ended counts: a watch on a finished or abandoned one is dead weight
+            if conn.execute("SELECT COUNT(*) FROM game_watches w JOIN sessions s ON s.session_id = w.session_id "
+                            "WHERE w.agent_id = ? AND s.status IN ('waiting', 'active')",
+                            (caller,)).fetchone()[0] >= MAX_WATCHES:
                 raise HTTPException(429, f"you already watch {MAX_WATCHES} games: unwatch one first")
             notices.watch(conn, caller, req.session_id, True)
     else:

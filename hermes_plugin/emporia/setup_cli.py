@@ -38,6 +38,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 HERE = Path(__file__).resolve().parent
 SOURCE_FILE = HERE / "emporia_source.json"
@@ -503,7 +504,22 @@ def installed_ref(home: Path | None = None) -> str:
     except (OSError, ValueError, AttributeError):
         return ""
     rev = row.get("revision") if isinstance(row, dict) else None
-    return rev.lower() if isinstance(rev, str) and re.fullmatch(r"[0-9a-fA-F]{40}", rev) else ""
+    if not (isinstance(rev, str) and re.fullmatch(r"[0-9a-fA-F]{40}", rev)):
+        return ""
+    # The record is trusted only when it describes THIS release's own source: the installed plugin names a
+    # pinned commit, and the row was recorded for the same repository. Anything else (another repository, or a
+    # plugin that names no pin) falls back to the pin.
+    pin = source()
+    if not pin.get("sha") or not _same_repo(row.get("source"), pin.get("repo")):
+        return ""
+    return rev.lower()
+
+
+def _same_repo(recorded: Any, pinned: Any) -> bool:
+    def norm(url: Any) -> str:
+        u = str(url or "").split("#", 1)[0].strip().rstrip("/").lower()
+        return u[:-4] if u.endswith(".git") else u
+    return bool(norm(recorded)) and norm(recorded) == norm(pinned)
 
 
 def _install_plugin_into(name: str, plugin_source: str = "emporia") -> bool:

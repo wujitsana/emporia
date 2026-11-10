@@ -36,10 +36,20 @@ TESTNET_AUTONOMOUS_SPEND_CENTS = 25
 def default_autonomous_spend_cents(env: dict[str, str] | None = None) -> int:
     """The default for ``autonomous_spend_cents_per_day``: 25 only when the agent pays on at least one network
     and every network it lists is a known testnet (an unknown one counts as mainnet); 0 otherwise.
-    A value the person sets, 0 included, always replaces it."""
+    A value the person sets, 0 included, always replaces it.
+
+    With no `env` (the running agent) the networks come from the source signing uses (the signer's wallet when one
+    is configured, else the process's allowed networks): any failure reading them is 0. An `env` (a profile's
+    .env, read from outside its process by the settings screen) is read as written."""
     from emporia import networks
-    env = os.environ if env is None else env
-    nets = networks.resolve_list(env.get("EMPORIA_X402_PAY_NETWORKS") or "")
+    if env is None:
+        try:
+            from emporia import agent_wallet
+            nets = list(agent_wallet.allowed_networks())
+        except Exception:  # noqa: BLE001 - what signing could not read is no allowance
+            return 0
+    else:
+        nets = networks.resolve_list(env.get("EMPORIA_X402_PAY_NETWORKS") or "")
     return TESTNET_AUTONOMOUS_SPEND_CENTS if nets and all(networks.is_testnet(n) for n in nets) else 0
 
 ALL = "all"
@@ -151,12 +161,14 @@ def parse_games(raw: str) -> tuple[str, ...] | str:
 def resolve(env: dict[str, str] | None = None) -> Playbook:
     """The playbook in force: the preset, with each setting the person changed on top.
     A setting that cannot be read is an error, never quietly the preset's."""
+    running = env is None       # the running agent: its spending default follows what signing would allow
     env = os.environ if env is None else env
     name = (env.get("EMPORIA_PLAYBOOK") or "custom").strip().lower()
     if name not in PRESETS:
         raise PlaybookError(f"EMPORIA_PLAYBOOK={name!r}: not one of {', '.join(PRESETS)}")
     fields = asdict(PRESETS[name])
-    fields["spend_default"] = fields["autonomous_spend_cents_per_day"] = default_autonomous_spend_cents(env)
+    fields["spend_default"] = fields["autonomous_spend_cents_per_day"] = default_autonomous_spend_cents(
+        None if running else env)
     for var, field in SETTINGS.items():
         raw = (env.get(var) or "").strip()
         if not raw:

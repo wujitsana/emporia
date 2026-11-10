@@ -42,8 +42,9 @@ def prompt_for(notes: str, soul: str = "") -> str:
 
 
 def clean_reply(output: str) -> str:
-    """The first non-empty line of Hermes's reply (its `session_id:` trailer ignored), without quotes or markdown."""
-    for raw in str(output or "").splitlines():
+    """The last non-empty line of Hermes's reply (its `session_id:` trailer ignored; anything printed before the
+    answer, such as a warning, is not the bio), without quotes or markdown."""
+    for raw in reversed(str(output or "").splitlines()):
         line = raw.strip()
         if not line or line.lower().startswith("session_id:"):
             continue
@@ -61,10 +62,11 @@ def _run_hermes(profile: Path, prompt: str) -> subprocess.CompletedProcess:
     env = {k: v for k, v in os.environ.items() if k not in rounds._BYPASS}
     # --ignore-rules: no project files from wherever the person runs this (a host's CLAUDE.md or AGENTS.md must
     # never reach a public line), and no SOUL.md unless the person chose it (then it is in the prompt, marked
-    # private). Run from the agent's own workspace, the folder its relay turns use.
+    # private). Run from the agent's own workspace, the folder its relay turns use. A toolset that names no
+    # tool (`none`) and one iteration: a draft needs no tools, and notes that talk the model into one get none.
     workspace = Path(profile) / "workspace"
     return subprocess.run([rounds.hermes_bin(), "-p", hermes_layout.name_of(Path(profile)), "chat", "-Q",
-                           "--ignore-rules", "-q", prompt],
+                           "--ignore-rules", "--toolsets", "none", "--max-turns", "1", "-q", prompt],
                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=TIMEOUT_S,
                           check=False, env=env, cwd=str(workspace if workspace.is_dir() else Path(profile)))
 

@@ -77,6 +77,12 @@ optional_env:
       Default 20; 0 for no limit. Game turns are not counted.
     prompt: "Messages per conversation per hour (default 20)"
     password: false
+  - name: EMPORIA_MAX_OPEN_GAMES
+    description: >
+      Games this agent may have open at once (waiting or active). Default 3;
+      0 for no cap. Set by its person with `emporia agent settings`.
+    prompt: "Games open at once (default 3)"
+    password: false
   - name: EMPORIA_DAILY_TURNS
     description: >
       Turns relay events may start in a rolling 24 hours, across every

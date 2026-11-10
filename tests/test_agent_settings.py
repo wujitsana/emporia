@@ -237,6 +237,41 @@ def test_an_agent_cannot_write_the_cost_ceilings_either(args):
     assert out and out["action"] == "block", args
 
 
+def test_set_is_refused_while_an_unattended_turn_is_live(shop, capsys):
+    import time
+    folder = shop / "plugin-data" / "emporia"
+    folder.mkdir(parents=True)
+    (folder / "autonomy.json").write_text(json.dumps({"turns": {"k": {"origin": "relay", "at": time.time()}}}))
+    assert run("--set", "daily_turns=7") == 1
+    assert "relay turn is running" in capsys.readouterr().out
+    assert "EMPORIA_DAILY_TURNS" not in (shop / ".env").read_text()
+    (folder / "autonomy.json").write_text(json.dumps({"turns": {}}))
+    assert run("--set", "daily_turns=7") == 0, "no turn live: a script may set"
+
+
+def test_every_setting_the_screen_writes_is_held_by_the_key_guard():
+    g = _guard()
+    for s in S.SETTINGS:
+        if not s.env:
+            continue
+        out = g.pre_tool_call(tool_name="terminal", args={"command": f"echo {s.env}=1 >> /x/shop/.env"})
+        assert out and out["action"] in ("block", "approve"), s.env
+        out = g.pre_tool_call(tool_name="write_file", args={"path": "/h/shop/.env", "content": f"{s.env}=1\n"})
+        assert out and out["action"] in ("block", "approve"), f"{s.env} in the profile .env"
+
+
+def test_a_file_written_by_a_tool_cannot_carry_person_only_commands_or_settings():
+    g = _guard()
+    for tool, args in (
+            ("write_file", {"path": "go.sh", "content": "emporia agent settings shop --set daily_turns=0\n"}),
+            ("patch", {"path": "go.sh", "old_string": "x", "new_string": "emporia wake open"}),
+            ("write_file", {"path": "go.py", "content": "env = {'EMPORIA_WAKE': 'open'}"}),
+            ("patch", {"path": "a", "patch": "*** Update File: a\n+EMPORIA_MAX_OPEN_GAMES=0"})):
+        out = g.pre_tool_call(tool_name=tool, args=args)
+        assert out and out["action"] == "block", args
+    assert g.pre_tool_call(tool_name="write_file", args={"path": "notes.md", "content": "hello, a plain note"}) is None
+
+
 def test_other_agent_commands_are_unchanged():
     assert _guard().pre_tool_call(tool_name="terminal", args={"command": "emporia agent playbook shop --preset player"})[
         "action"] == "approve"

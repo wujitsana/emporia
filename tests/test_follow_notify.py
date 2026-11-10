@@ -243,6 +243,57 @@ def test_a_follower_who_also_subscribes_hears_a_topic_post_once_and_a_private_to
     assert [i["topic"] for i in digest["items"]] == [slug], "the closed topic's post is not told to a non-member"
 
 
+def test_a_digest_is_dropped_when_the_member_lost_the_topic_before_the_flush(client):
+    a, sub, kicked = _agent(client), _agent(client), _agent(client)
+    slug = _topic(a, [sub, kicked])
+    _post(client, a, kind="idea", text="a topic idea", topic=slug)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("DELETE FROM agora_members WHERE topic_id = ? AND agent_id = ?", (slug, kicked))
+        conn.execute("UPDATE agora_topics SET visibility = 'private', gate_type = 'invite' WHERE slug = ?", (slug,))
+        conn.execute("DELETE FROM agora_members WHERE topic_id = ? AND agent_id = ?", (slug, sub))
+        conn.execute("INSERT INTO agora_members (topic_id, agent_id, role, joined_at) VALUES (?,?,?,?)",
+                     (slug, sub, "subscriber", "2026-11-05T00:00:00+00:00"))
+    asyncio.run(notices.flush_digests(_later(61)))
+    assert _inbox(kicked, "topic_activity") == [], "no longer a member"
+    assert len(_inbox(sub, "topic_activity")) == 1, "still a member"
+    with rs.DB_LOCK, rs.get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM pending_digest WHERE agent_id = ?", (kicked,)).fetchone()[0] == 0
+
+
+def test_a_deactivated_agent_is_not_queued_and_leaving_drops_the_queue(client):
+    a, gone, leaver = _agent(client), _agent(client), _agent(client)
+    slug = _topic(a, [gone, leaver])
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET is_active = 0 WHERE agent_id = ?", (gone,))
+    _post(client, a, kind="idea", text="x", topic=slug)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM pending_digest WHERE agent_id = ?", (gone,)).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM pending_digest WHERE agent_id = ?", (leaver,)).fetchone()[0] == 1
+        notices.drop_topic_digests(conn, leaver, slug)
+        assert conn.execute("SELECT COUNT(*) FROM pending_digest WHERE agent_id = ?", (leaver,)).fetchone()[0] == 0
+
+
+def test_one_failed_send_does_not_drop_the_other_agents_batches(client, monkeypatch):
+    a, f1, f2 = _agent(client), _agent(client), _agent(client)
+    for f in (f1, f2):
+        assert _follow(client, f, a).status_code == 200
+    _post(client, a, text="a post")
+    real = rs.broadcast_to_agent
+
+    async def flaky(agent, frame):
+        if agent == f1 and frame.get("type") == "followed_activity":
+            raise RuntimeError("boom")
+        return await real(agent, frame)
+    monkeypatch.setattr(rs, "broadcast_to_agent", flaky)
+    assert asyncio.run(notices.flush_digests(_later(61))) == 1
+    assert len(_inbox(f2, "followed_activity")) == 1
+    with rs.DB_LOCK, rs.get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM pending_digest WHERE agent_id = ?", (f1,)).fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM pending_digest WHERE agent_id = ?", (f2,)).fetchone()[0] == 0
+    monkeypatch.setattr(rs, "broadcast_to_agent", real)
+    assert asyncio.run(notices.flush_digests(_later(61))) == 1, "the failed one goes next time"
+
+
 def test_a_topic_opened_and_an_open_challenge_reach_the_followers(client):
     a, f = _agent(client), _agent(client)
     assert _follow(client, f, a).status_code == 200
@@ -283,6 +334,36 @@ def test_unwatching_and_a_finished_or_unknown_game(client):
     assert _inbox(w, "watched_game") == []
     assert client.post("/game-watches", json={"session_id": "sess_nope"}, headers=_as(w)).status_code == 404
     assert client.post("/game-watches", json={"session_id": sid}).status_code == 401
+
+
+def _watches(agent):
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return conn.execute("SELECT COUNT(*) FROM game_watches WHERE agent_id = ?", (agent,)).fetchone()[0]
+
+
+def test_an_abandoned_game_forgets_its_watches(client):
+    from emporia.routes import sessions
+    a, w = _agent(client), _agent(client)
+    sid = client.post("/sessions", json={"module_type": "emporia:chess:v1", "config": {}}, headers=_as(a)).json()["session_id"]
+    assert client.post("/game-watches", json={"session_id": sid}, headers=_as(w)).status_code == 200
+    assert _watches(w) == 1
+    assert asyncio.run(sessions._abandon(rs.load_session(sid), "test")) is not None
+    assert _watches(w) == 0 and _inbox(w, "watched_game") == []
+
+
+def test_only_games_still_open_count_toward_the_watch_cap(client, monkeypatch):
+    from emporia.routes import posts as pv
+    a, w = _agent(client), _agent(client)
+    dead = client.post("/sessions", json={"module_type": "emporia:chess:v1", "config": {}}, headers=_as(a)).json()["session_id"]
+    live = client.post("/sessions", json={"module_type": "emporia:chess:v1", "config": {}}, headers=_as(a)).json()["session_id"]
+    monkeypatch.setattr(pv, "MAX_WATCHES", 1)
+    assert client.post("/game-watches", json={"session_id": dead}, headers=_as(w)).status_code == 200
+    with rs.DB_LOCK, rs.get_db() as conn:    # it ended some other way: its watch row is still there
+        conn.execute("UPDATE sessions SET status = 'abandoned' WHERE session_id = ?", (dead,))
+    assert _watches(w) == 1
+    assert client.post("/game-watches", json={"session_id": live}, headers=_as(w)).status_code == 200, "a dead watch is no cap"
+    other = client.post("/sessions", json={"module_type": "emporia:chess:v1", "config": {}}, headers=_as(a)).json()["session_id"]
+    assert client.post("/game-watches", json={"session_id": other}, headers=_as(w)).status_code == 429
 
 
 def test_a_finished_public_game_reaches_the_followers_of_its_players(client):

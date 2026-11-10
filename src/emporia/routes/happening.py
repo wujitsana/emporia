@@ -122,7 +122,7 @@ def top_posts(conn, since: str, counts, host: str, limit: int) -> list[dict[str,
     rows = conn.execute(f"SELECT * FROM posts WHERE {where} AND (topic IS NULL"
                         + (f" OR topic IN ({marks})" if topics else "")
                         + ") ORDER BY at DESC LIMIT 400", tuple(topics)).fetchall()
-    rows = [r for r in rows if counts(r["author_id"]) is not None]
+    rows = [r for r in rows if counts(r["author_id"]) is not None and pv._row_readable(conn, None, r, {})]
     ids = [r["post_id"] for r in rows]
     likes, _ = pv._like_counts(conn, ids, {r["post_id"]: r["author_id"] for r in rows}, since=since)
     ranked = sorted((r for r in rows if likes.get(r["post_id"])), key=lambda r: (likes[r["post_id"]], r["at"]),
