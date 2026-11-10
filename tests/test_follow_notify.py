@@ -243,6 +243,57 @@ def test_a_follower_who_also_subscribes_hears_a_topic_post_once_and_a_private_to
     assert [i["topic"] for i in digest["items"]] == [slug], "the closed topic's post is not told to a non-member"
 
 
+def test_a_digest_is_dropped_when_the_member_lost_the_topic_before_the_flush(client):
+    a, sub, kicked = _agent(client), _agent(client), _agent(client)
+    slug = _topic(a, [sub, kicked])
+    _post(client, a, kind="idea", text="a topic idea", topic=slug)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("DELETE FROM agora_members WHERE topic_id = ? AND agent_id = ?", (slug, kicked))
+        conn.execute("UPDATE agora_topics SET visibility = 'private', gate_type = 'invite' WHERE slug = ?", (slug,))
+        conn.execute("DELETE FROM agora_members WHERE topic_id = ? AND agent_id = ?", (slug, sub))
+        conn.execute("INSERT INTO agora_members (topic_id, agent_id, role, joined_at) VALUES (?,?,?,?)",
+                     (slug, sub, "subscriber", "2026-11-05T00:00:00+00:00"))
+    asyncio.run(notices.flush_digests(_later(61)))
+    assert _inbox(kicked, "topic_activity") == [], "no longer a member"
+    assert len(_inbox(sub, "topic_activity")) == 1, "still a member"
+    with rs.DB_LOCK, rs.get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM pending_digest WHERE agent_id = ?", (kicked,)).fetchone()[0] == 0
+
+
+def test_a_deactivated_agent_is_not_queued_and_leaving_drops_the_queue(client):
+    a, gone, leaver = _agent(client), _agent(client), _agent(client)
+    slug = _topic(a, [gone, leaver])
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET is_active = 0 WHERE agent_id = ?", (gone,))
+    _post(client, a, kind="idea", text="x", topic=slug)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM pending_digest WHERE agent_id = ?", (gone,)).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM pending_digest WHERE agent_id = ?", (leaver,)).fetchone()[0] == 1
+        notices.drop_topic_digests(conn, leaver, slug)
+        assert conn.execute("SELECT COUNT(*) FROM pending_digest WHERE agent_id = ?", (leaver,)).fetchone()[0] == 0
+
+
+def test_one_failed_send_does_not_drop_the_other_agents_batches(client, monkeypatch):
+    a, f1, f2 = _agent(client), _agent(client), _agent(client)
+    for f in (f1, f2):
+        assert _follow(client, f, a).status_code == 200
+    _post(client, a, text="a post")
+    real = rs.broadcast_to_agent
+
+    async def flaky(agent, frame):
+        if agent == f1 and frame.get("type") == "followed_activity":
+            raise RuntimeError("boom")
+        return await real(agent, frame)
+    monkeypatch.setattr(rs, "broadcast_to_agent", flaky)
+    assert asyncio.run(notices.flush_digests(_later(61))) == 1
+    assert len(_inbox(f2, "followed_activity")) == 1
+    with rs.DB_LOCK, rs.get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM pending_digest WHERE agent_id = ?", (f1,)).fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM pending_digest WHERE agent_id = ?", (f2,)).fetchone()[0] == 0
+    monkeypatch.setattr(rs, "broadcast_to_agent", real)
+    assert asyncio.run(notices.flush_digests(_later(61))) == 1, "the failed one goes next time"
+
+
 def test_a_topic_opened_and_an_open_challenge_reach_the_followers(client):
     a, f = _agent(client), _agent(client)
     assert _follow(client, f, a).status_code == 200

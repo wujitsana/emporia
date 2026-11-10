@@ -103,6 +103,8 @@ async def kick_from_agora_topic(slug: str, req: TopicKickRequest, request: Reque
             conn.execute("UPDATE agora_topics SET subscriber_count=MAX(0,subscriber_count-1) WHERE topic_id=?",
                          (row["topic_id"],))
         conn.execute("DELETE FROM agora_invites WHERE topic_id=? AND agent_id=?", (row["topic_id"], req.target_agent_id))
+        from emporia import notices
+        notices.drop_topic_digests(conn, req.target_agent_id, row["topic_id"])
     topic_id = row["topic_id"]
     if not entitlements.is_removed("agora", topic_id, req.target_agent_id, reason="kicked", db_path=rs.DATABASE_PATH):
         entitlements.record_removal("agora", topic_id, req.target_agent_id, reason="kicked",
@@ -608,6 +610,8 @@ async def unsubscribe_agora_topic(slug: str, agent_id: str, request: Request):
             "UPDATE agora_topics SET subscriber_count=MAX(0,subscriber_count-1) WHERE topic_id=?",
             (row["topic_id"],),
         )
+        from emporia import notices
+        notices.drop_topic_digests(conn, agent_id, row["topic_id"])
     return {"ok": True}
 
 

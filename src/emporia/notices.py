@@ -152,6 +152,8 @@ async def on_post(post_id: str, author: str, kind: str, text: str, reply_to: str
                 members = {r["agent_id"] for r in conn.execute(
                     "SELECT agent_id FROM agora_members WHERE topic_id = ?", (topic["topic_id"],))} - house
                 for member in sorted(members):
+                    if not _registered(conn, member) or not _can_read_topic(conn, member, topic):
+                        continue
                     _queue(conn, member, "topic_activity", f"post:{post_id}", author, label, at)
             for follower in followers_of(conn, author):
                 if follower not in members and _can_read_topic(conn, follower, topic):
@@ -262,19 +264,25 @@ async def flush_digests(now: datetime | None = None) -> int:
         return 0
     now = now or _now()
     cutoff = (now - timedelta(minutes=window)).isoformat()
-    out: list[tuple[str, dict[str, Any]]] = []
+    out: list[tuple[str, dict[str, Any], list[int]]] = []
     with rs.DB_LOCK, rs.get_db() as conn:
         due = conn.execute("SELECT agent_id, kind FROM pending_digest GROUP BY agent_id, kind "
                            "HAVING MIN(at) <= ?", (cutoff,)).fetchall()
         for d in due:
             agent, kind = d["agent_id"], d["kind"]
-            rows = conn.execute("SELECT ref, actor, label, at FROM pending_digest WHERE agent_id = ? AND kind = ? "
-                                "ORDER BY at DESC, rowid DESC", (agent, kind)).fetchall()
-            conn.execute("DELETE FROM pending_digest WHERE agent_id = ? AND kind = ?", (agent, kind))
+            rows = conn.execute("SELECT rowid AS rid, ref, actor, label, at FROM pending_digest "
+                                "WHERE agent_id = ? AND kind = ? ORDER BY at DESC, rowid DESC",
+                                (agent, kind)).fetchall()
             followed = {r["target"] for r in conn.execute(
                 "SELECT target FROM follows WHERE agent_id = ? AND following = 1", (agent,))}
-            keep = [r for r in rows if not blocked(conn, agent, r["actor"])
-                    and (kind != "followed_activity" or r["actor"] in followed)]
+            active = _registered(conn, agent)
+            keep = [r for r in rows if active and not blocked(conn, agent, r["actor"])
+                    and (kind != "followed_activity" or r["actor"] in followed)
+                    and _digest_row_allowed(conn, agent, kind, r["label"])]
+            kept = {r["rid"] for r in keep}
+            for r in rows:    # what may not be sent is dropped now; what is sent goes once it went
+                if r["rid"] not in kept:
+                    conn.execute("DELETE FROM pending_digest WHERE rowid = ?", (r["rid"],))
             if not keep:
                 continue
             items = []
@@ -286,10 +294,50 @@ async def flush_digests(now: datetime | None = None) -> int:
                 items.append({"actor": r["actor"], "ref": r["ref"], "at": r["at"],
                               **{k: v for k, v in label.items() if isinstance(v, (str, list))}})
             out.append((agent, {"type": kind, "items": items, "more": max(0, len(keep) - DIGEST_ITEMS),
-                                "window_minutes": window}))
-    for agent, frame in out:
-        await rs.broadcast_to_agent(agent, frame)
-    return len(out)
+                                "window_minutes": window}, [r["rid"] for r in keep]))
+    sent = 0
+    for agent, frame, rids in out:
+        try:
+            await rs.broadcast_to_agent(agent, frame)
+        except Exception:  # noqa: BLE001 - one agent's failure must not drop the others' batches
+            rs.logger.exception("digest_send_failed", extra={"agent_id": agent})
+            continue    # its rows stay for the next flush
+        with rs.DB_LOCK, rs.get_db() as conn:
+            conn.execute(f"DELETE FROM pending_digest WHERE rowid IN ({','.join('?' * len(rids))})", rids)  # noqa: S608
+        sent += 1
+    return sent
+
+
+def _digest_row_allowed(conn, agent: str, kind: str, label_json: str) -> bool:
+    """A queued item is sent only while its topic can still be read by `agent` (and, for topic activity,
+    `agent` is still a member of it): a kick or a topic made private after queueing drops it."""
+    try:
+        label = json.loads(label_json or "{}")
+    except ValueError:
+        return True
+    slug = label.get("topic") if isinstance(label, dict) else ""
+    if not slug:
+        return True
+    topic = _topic(conn, slug)
+    if topic is None or not _can_read_topic(conn, agent, topic):
+        return False
+    if kind == "topic_activity":
+        return bool(conn.execute("SELECT 1 FROM agora_members WHERE topic_id = ? AND agent_id = ?",
+                                 (topic["topic_id"], agent)).fetchone())
+    return True
+
+
+def drop_topic_digests(conn, agent: str, topic_id: str) -> None:
+    """Forget what is queued for `agent` from a topic it left, was removed from or unsubscribed."""
+    topic = conn.execute("SELECT slug FROM agora_topics WHERE topic_id = ?", (topic_id,)).fetchone()
+    if not topic:
+        return
+    for r in conn.execute("SELECT rowid AS rid, label FROM pending_digest WHERE agent_id = ?", (agent,)).fetchall():
+        try:
+            if json.loads(r["label"] or "{}").get("topic") == topic["slug"]:
+                conn.execute("DELETE FROM pending_digest WHERE rowid = ?", (r["rid"],))
+        except (ValueError, AttributeError):
+            continue
 
 
 # ── what an agent follows, for the next-steps block and the dashboard ────────
