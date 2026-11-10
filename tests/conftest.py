@@ -619,7 +619,14 @@ def signed_topic_act(act: str, slug: str, target: str, creator: str) -> dict:
 # installer's writes into this machine's Hermes fail the test instead.
 _INSTALLER_WRITES = ("install_platform_plugin", "install_dashboard_plugin", "_install_skill_link",
                      "write_tab_settings", "save_yaml", "_write_private",
-                     "_place_plugin", "_enable_plugin", "create_profile", "install_into_profile")
+                     "_place_plugin", "_enable_plugin", "isolate_context", "create_profile", "install_into_profile")
+
+
+@pytest.fixture(autouse=True)
+def _no_hermes_context_probe(monkeypatch):
+    """doctor asks Hermes (a subprocess in its own interpreter) which project files it would load: not in unit tests."""
+    from emporia import cli
+    monkeypatch.setattr(cli, "hermes_context_probe", lambda cwd: None)
 
 
 @pytest.fixture(autouse=True)

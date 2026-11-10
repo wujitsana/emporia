@@ -3084,6 +3084,10 @@ def cmd_agent_refresh(name: str) -> int:
         if added := inst.refresh_mcp_references(profile):
             print(f"  {profile.name}: {len(added)} setting(s) now handed to its MCP server by Hermes "
                   "(restart the gateway, or /reload-mcp)")
+        # Relay-started turns never load the host's project files (AGENTS.md, CLAUDE.md, .hermes.md).
+    for profile in targets:
+        if inst.isolate_context(profile):
+            print(f"  {profile.name}: restart the gateway so relay turns stop loading project files")
     if inst.from_catalog():
         print("agent refresh: the plugin and its skills came with the catalog — update them with "
               "`hermes plugins update emporia`, then `hermes emporia update`")
@@ -5297,6 +5301,98 @@ RISKY_TOOLSETS = frozenset({"terminal", "file", "code_execution", "browser", "co
                             "cronjob", "debugging", "coding", "hermes-cli"})
 
 
+_PROBE_CODE = (
+    "import json, sys\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "from agent.context_file_sources import list_context_file_sources as l\n"
+    "print(json.dumps([s['path'] for s in l(cwd=sys.argv[2], skip_soul=True) if s.get('loaded')]))\n"
+)
+
+
+def _hermes_python() -> tuple[str, str] | None:
+    """(Hermes's own interpreter, its install folder): the folder above the `hermes` command that holds
+    `agent/`, and its `.venv`."""
+    import shutil
+    exe = shutil.which("hermes")
+    if not exe:
+        return None
+    for parent in Path(exe).resolve().parents[:5]:
+        if (parent / "agent" / "context_file_sources.py").exists():
+            python = parent / ".venv" / "bin" / "python"
+            return (str(python), str(parent)) if python.exists() else None
+    return None
+
+
+def hermes_context_probe(cwd: str) -> list[str] | None:
+    """The project files Hermes's own listing (`agent.context_file_sources`) says it would load for `cwd`
+    when nothing skips them, asked of Hermes in its own interpreter; None when Hermes cannot be asked."""
+    found = _hermes_python()
+    if found is None:
+        return None
+    try:
+        out = subprocess.run([found[0], "-I", "-c", _PROBE_CODE, found[1], cwd], capture_output=True,
+                             text=True, timeout=30, stdin=subprocess.DEVNULL)
+        data = json.loads(out.stdout.strip().splitlines()[-1]) if out.returncode == 0 and out.stdout.strip() else None
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        return None
+    return [str(p) for p in data] if isinstance(data, list) else None
+
+
+def doctor_confinement(rep: Report, profile: Path, cfg: dict, dotenv: dict[str, str]) -> None:
+    """An Emporia agent is confined to its own profile: its turns start in a folder of the profile and never
+    load the host's project files (AGENTS.md, CLAUDE.md, .hermes.md), its tools are Emporia's, and what it
+    remembers is its own. Fails with the fix when relay-started turns could carry the host's notes."""
+    inst = installer()
+    name = profile.name
+    fix = f"emporia agent refresh {name}, then restart the gateway"
+    bad = inst.unisolated_platforms(cfg)
+    terminal = cfg.get("terminal") if isinstance(cfg.get("terminal"), dict) else {}
+    probe_cwd = str(terminal.get("cwd")) if inst.workspace_set(terminal.get("cwd")) else os.getcwd()
+    # Hermes's own listing (agent.context_file_sources) of what a gateway turn would load from that folder.
+    listed = hermes_context_probe(probe_cwd) if Path(probe_cwd).is_dir() else None
+    seen = (f" (Hermes would load: {', '.join(listed)})" if listed else "")
+    if "emporia" in bad:
+        rep.fail("relay-started turns on the emporia platform can load the project files of the folder the gateway "
+                 "runs in (AGENTS.md, CLAUDE.md, .hermes.md): any agent that messages this one could draw them out"
+                 + seen, fix)
+    else:
+        rep.ok("relay-started turns load no project files (AGENTS.md, CLAUDE.md, .hermes.md); SOUL.md still applies")
+        if listed:
+            rep.warn(f"Hermes finds project files from its working directory {probe_cwd}: {', '.join(listed)}; "
+                     "they are skipped for emporia turns by the setting above, not by the folder", fix)
+        elif listed == []:
+            rep.ok(f"Hermes's own listing (agent.context_file_sources) finds no project files from {probe_cwd}")
+    others = [p for p in bad if p != "emporia"]
+    if others:
+        rep.warn(f"turns on {', '.join(others)} still load project files from the folder the gateway runs in", fix)
+    if inst.user_profile_off(cfg):
+        rep.ok("user profile off (USER.md, which describes the operator, is never loaded); MEMORY.md still is")
+    else:
+        rep.fail("its prompt carries USER.md, the operator's profile: a stranger's turn would see it", fix)
+    if inst.workspace_confined(cfg, profile):
+        if inst.workspace_bounded(cfg, profile):
+            rep.ok("its working directory is a folder inside its own profile, and project-file search stops there")
+        else:
+            rep.fail("its working directory has no `.git` marker, so Hermes's project-file search walks on into "
+                     "the folders above the profile", fix)
+    else:
+        rep.fail("its working directory (terminal.cwd) is not a folder inside its own profile, so its tools and "
+                 "its prompt start wherever the gateway was launched", fix)
+    off = set(profile_role_off(cfg))
+    missing = [t for t in MARKETPLACE_OFF if t not in off]
+    if missing:
+        rep.warn(f"toolsets still on in its Hermes config: {', '.join(missing)}; a stranger's message reaches "
+                 "only Emporia's tools (relay-turn guard), but its own chats and jobs have these",
+                 f"emporia role {name} marketplace")
+    else:
+        rep.ok("terminal, file, code, computer-use, browser and cron toolsets are off")
+
+
+def profile_role_off(cfg: dict) -> list[str]:
+    raw = (cfg.get("agent") or {}).get("disabled_toolsets") or []
+    return [raw] if isinstance(raw, str) else list(raw)
+
+
 def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
     name = profile.name
     host = api_server_host(profile, dotenv)
@@ -5325,6 +5421,7 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
         rep.warn(f"platform_toolsets.emporia in config.yaml names {', '.join(wide)}: the emporia platform has "
                  "terminal, file-write, code or browser tools", "remove them from platform_toolsets.emporia "
                  "unless you want other agents' messages to be able to drive them")
+    doctor_confinement(rep, profile, cfg, dotenv)
     n = turns_in_24h(profile)
     shown = f"relay-started turns in 24 h: {n} / {cap if cap else 'no cap'}"
     if cap and n >= cap:
