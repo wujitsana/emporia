@@ -471,6 +471,8 @@ def transform_tool_result(tool_name: str = "", args: Any = None, result: Any = N
 def _other_profile(args: Any) -> bool:
     """Whether a `session_search` call names a profile (its `profile` argument, or a `profile/id` session link):
     Hermes then opens that profile's state database read-only, e.g. the host's main profile."""
+    if args is None:
+        return False                  # no arguments: the current profile
     if not isinstance(args, dict):
         return True                   # unreadable arguments: not let through
     profile = args.get("profile")

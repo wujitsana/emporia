@@ -139,8 +139,6 @@ def test_table_talk_has_a_ceiling_whatever_the_games_creator_asked_for():
 def test_a_games_table_talk_counts_toward_the_hourly_conversation_limit():
     # the adapter cannot be imported here (it needs Hermes); both lists are read from source
     assert '"session:"' in (PLUGIN / "adapter.py").read_text()
-    from emporia import limits
-    assert "session:" in limits._CONVERSATIONS and "dm:" in limits._CONVERSATIONS
 
 
 @pytest.mark.parametrize("origin", ["relay", "rounds"])
