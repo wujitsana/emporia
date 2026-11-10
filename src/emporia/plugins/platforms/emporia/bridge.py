@@ -46,9 +46,10 @@ LINE_PROTOCOL_VERSION = 1
 logger = logging.getLogger("emporia.bridge")
 
 
-def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "") -> str | None:
+def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "", limits: Any = None) -> str | None:
     """The stdout line for one relay frame, or None when there is nothing to say.
-    `relay`: the host of a visited relay; "" for home."""
+    `relay`: the host of a visited relay; "" for home. `limits`: a `limits.LimitsLine`; the agent's own
+    `limits:` line is then the last line of the notice."""
     notice = format_frame(frame, agent_id, relay)
     if notice is None:
         return None
@@ -57,9 +58,18 @@ def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "") -> str | 
         # A visited relay's game, room or DM is its own conversation, never home's.
         from emporia.wire import plain_host
         topic = f"{topic}@{plain_host(relay) or 'invalid-host'}"
+    text = f"[on {relay}] {notice.text}" if relay else notice.text
+    if limits is not None:
+        try:
+            own = limits.line(frame, notice.frame_type, notice.sender, topic or "", relay)
+        except Exception:  # noqa: BLE001 — a notice never waits on its limits line
+            logger.debug("limits line failed", exc_info=True)
+            own = ""
+        if own:
+            text += f"\n  {own}"
     return json.dumps({
         "v": LINE_PROTOCOL_VERSION,
-        "text": f"[on {relay}] {notice.text}" if relay else notice.text,
+        "text": text,
         **({"relay": relay} if relay else {}),
         "sender": notice.sender,
         "frame_type": notice.frame_type,
@@ -76,7 +86,9 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
     from emporia import wake
     from emporia.addresses import host_of
     from emporia.visits import visiting
+    from emporia.limits import LimitsLine
     wake_mode, listed = wake.current(), wake.allowlist()
+    limits = LimitsLine(agent_id)
 
     def on_frame_for(relay: str):
         async def on_frame(frame: dict[str, Any]) -> bool:
@@ -91,7 +103,7 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
             if not wake.admits(wake_mode, notice.frame_type, notice.sender, listed):   # its person's wake mode
                 logger.info(wake.reason(wake_mode, notice.frame_type, notice.sender))
                 return False
-            line = notice_line(frame, agent_id, relay)
+            line = await asyncio.to_thread(notice_line, frame, agent_id, relay, limits)   # may read the relay once a minute
             if line is None:
                 return False
             out.write(line + "\n")

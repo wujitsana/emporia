@@ -72,6 +72,102 @@ def turns(now: float | None = None) -> dict[str, Any]:
     return out
 
 
+#: Notices that can start a turn: each gets the agent's `limits:` line.
+LINE_FRAMES = frozenset({"challenge", "session_invite", "your_turn", "session_started", "dm_received",
+                         "room_message", "game_chat", "agora_post_created"})
+_CONVERSATIONS = ("dm:", "room:", "agora:")
+
+
+def _fetch_games_today(agent_id: str, other: str) -> int | None:
+    """One relay read: games this agent has played today against `other`'s operator."""
+    from emporia import mcp_server as m
+    r = m._bearer_request("get", f"{m._base()}/agents/{m._seg(agent_id)}/games-today", agent_id=agent_id,
+                          params={"with_agent": other}, timeout=5)
+    return int(r.json()["games_today"]) if r.status_code == 200 else None
+
+
+class LimitsLine:
+    """The one `limits:` line the bridge appends to a notice that can start a turn, from this agent's own numbers:
+    games against that operator today (the invite carries the count; otherwise one relay read, cached), the spend
+    left under its wallet's daily cap (and its approval threshold), writes per turn, and messages in this chat this
+    hour (counted here, as the adapter counts them). A part that is not known or does not apply is left out, and
+    a read that fails is not retried for TTL seconds. Nothing here is another agent's number."""
+
+    TTL = 60.0
+
+    def __init__(self, agent_id: str, fetch=None, clock=time.time, mono=time.monotonic) -> None:
+        self.agent_id = agent_id
+        self._fetch = fetch or _fetch_games_today
+        self._clock, self._mono = clock, mono
+        self._cache: dict[str, tuple[float, Any]] = {}
+        self._seen: dict[str, list[float]] = {}
+
+    def _cached(self, key: str, make):
+        now = self._clock()
+        hit = self._cache.get(key)
+        if hit and now - hit[0] < self.TTL:
+            return hit[1]
+        try:
+            value = make()
+        except Exception:  # noqa: BLE001 — unknown: the part is left out
+            value = None
+        self._cache[key] = (now, value)
+        return value
+
+    def _games(self, frame: dict[str, Any]) -> str:
+        from emporia import playbook
+        from emporia.wire import agent_ref
+        name = agent_ref(frame.get("from_agent_id") or frame.get("from_agent"), bare_only=True)
+        if not name:
+            return ""
+        played = frame.get("games_with_you_today")
+        if not isinstance(played, int) or isinstance(played, bool) or played < 0:
+            played = self._cached(f"games:{name}", lambda: self._fetch(self.agent_id, name))
+        if played is None:
+            return ""
+        cap = playbook.current().games_per_operator_per_day
+        return f"games vs {name} today {played}/{cap}" if cap else f"games vs {name} today {played}"
+
+    def _spend(self) -> str:
+        def read():
+            from emporia import agent_wallet
+            agent_wallet.address(self.agent_id)     # no wallet, no spend part
+            return spend(self.agent_id)
+        s = self._cached("spend", read)
+        if not isinstance(s, dict) or s.get("left_today_cents") is None:
+            return ""
+        out = f"spend left ${s['left_today_cents'] / 100:.2f} today"
+        if s.get("approval_above_cents") is not None:
+            out += f" (approval over ${s['approval_above_cents'] / 100:.2f})"
+        return out
+
+    def _chat(self, topic: str, sender: str) -> str:
+        from emporia import wake
+        limit = wake.thread_limit()
+        if limit <= 0 or sender == "emporia:relay" or not topic.startswith(_CONVERSATIONS):
+            return ""
+        now = self._mono()
+        seen = [t for t in self._seen.get(topic, []) if now - t < 3600.0]
+        seen.append(now)
+        self._seen[topic] = seen
+        return f"this chat {len(seen)}/{limit} this hour"
+
+    def line(self, frame: dict[str, Any], frame_type: str, sender: str, topic: str = "", relay: str = "") -> str:
+        """The line (without a newline), or "" when the notice takes none or nothing is known. Call once per
+        notice that is passed on: it counts the chat."""
+        if frame_type not in LINE_FRAMES:
+            return ""
+        parts = []
+        if not relay and frame_type in ("challenge", "session_invite"):
+            parts.append(self._games(frame))
+        parts.append(self._spend())
+        if sender != "emporia:relay" and not sender.startswith("emporia:relay@"):
+            parts.append(f"writes {autonomy.MAX_WRITES_PER_TURN} per turn")
+        parts.append(self._chat(topic, sender))
+        text = " · ".join(p for p in parts if p)
+        return f"limits: {text}"[:160] if text else ""
+
+
 def snapshot(agent_id: str) -> dict[str, Any]:
     """Every limit with what is left, for `standing(view="limits")`."""
     from emporia import playbook

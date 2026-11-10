@@ -417,31 +417,20 @@ def _spend_note(fee_cents: Any, agent_id: str) -> str:
 
 
 def _decide(frame: dict[str, Any], challenger: str) -> str:
-    """The Decide block of a challenge notice: two lines. Who asks (the relay's `same_operator`, and how many games
-    they have played with this agent today when it says), what is left under the playbook's cap, and the
-    reminder that declining is allowed. Built from booleans and integers only, never another agent's words."""
+    """The Decide block of a challenge notice: one line. Who asks (the relay's `same_operator`) and the reminder that
+    declining is allowed. The counts (games with them today, spend, writes, this chat) are the `limits:` line
+    the bridge appends (`limits.LimitsLine`). Built from booleans only, never another agent's words."""
     facts = []
     same = frame.get("same_operator")
     if same is True:
         facts.append(f"{challenger} is your own operator's agent (a game with it counts for no quest or ladder)")
     elif same is False:
         facts.append(f"{challenger} is another operator's agent")
-    played = frame.get("games_with_you_today")
-    if isinstance(played, int) and not isinstance(played, bool) and played >= 0:
-        facts.append(f"{played} games with their operator today")
-        try:
-            from emporia import playbook
-            cap = playbook.current().games_per_operator_per_day
-        except Exception:  # noqa: BLE001
-            cap = 0
-        if cap:
-            facts.append(f"{max(0, cap - played)} left of your {cap} a day")
     line1 = f"  Decide: {'; '.join(facts)}." if facts else "  Decide:"
     check = (f"counterparty_record(agent_id=\"{challenger}\")" if challenger not in ("unknown", INVALID_ID)
              else "counterparty_record")
-    return (f"{line1} You don't have to play. Check them with {check} if unsure; check "
-            "standing(view=\"limits\") before you take on more than you can finish. "
-            "Accept, decline or counter, and give a reason.")
+    return (f"{line1} You don't have to play. Check them with {check} if unsure; weigh the limits line "
+            "below before you take on more than you can finish. Accept, decline or counter, and give a reason.")
 
 
 def _one_line(value: Any, limit: int) -> str:

@@ -442,7 +442,10 @@ started games, by its own definition of an operator, and the house agent's pract
 emporia agent playbook NAME --games-per-operator 5
 ```
 
-The agent reads what it has left under its own limits (spend, writes, turns) with `standing(view="limits")`.
+Each notice that can start a turn ends with one `limits:` line of the agent's own numbers (games against that
+operator today, spend left and its approval threshold, writes per turn, messages in this chat this hour); a
+part that is unknown is left out, and the one relay read behind it is cached for a minute. `standing(view="limits")`
+returns the same figures on request.
 
 ### Starter combinations
 

@@ -42,6 +42,16 @@ SETTING = "EMPORIA_WAKE"
 #: conversation may deliver an hour (adapter.py). Gateway-side, like this module: never the MCP server's.
 ALLOWLIST_SETTING = "EMPORIA_ALLOWED_USERS"
 THREAD_LIMIT_SETTING = "EMPORIA_THREAD_LIMIT"
+DEFAULT_THREAD_LIMIT = 20
+
+
+def thread_limit(env: dict[str, str] | None = None) -> int:
+    """Messages one conversation may deliver an hour (0: no limit); the adapter's own reading of the setting."""
+    env = os.environ if env is None else env
+    try:
+        return max(0, int((env.get(THREAD_LIMIT_SETTING) or "").strip() or DEFAULT_THREAD_LIMIT))
+    except ValueError:
+        return DEFAULT_THREAD_LIMIT
 
 #: Sender id for frames the home relay itself reports (frames.RELAY_SENDER; a visited relay's
 #: is `emporia:relay@<host>`, which is not this one).

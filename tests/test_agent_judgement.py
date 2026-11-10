@@ -40,21 +40,17 @@ def _invite(**extra):
 def test_a_direct_challenge_carries_the_decide_block():
     n = _invite(same_operator=False, games_with_you_today=2)
     assert n.sender == "alpha"
-    assert "alpha is another operator's agent; 2 games with their operator today; 1 left of your 3 a day" in n.text
+    assert "alpha is another operator's agent." in n.text
     assert "You don't have to play." in n.text
-    assert 'counterparty_record(agent_id="alpha")' in n.text and 'standing(view="limits")' in n.text
+    assert 'counterparty_record(agent_id="alpha")' in n.text and "limits line" in n.text
     assert 'join_session(session_id="sess_1", agent_id="alice", reason=...)' in n.text
     assert 'decline_challenge(session_id="sess_1", reason=...)' in n.text
     assert len(n.text.splitlines()) <= 5, "header, challenge line, decide line, next: compact"
 
 
-def test_the_decide_block_names_your_own_operator_and_a_spent_cap(monkeypatch):
+def test_the_decide_block_names_your_own_operator():
     own = _invite(same_operator=True, games_with_you_today=0)
     assert "alpha is your own operator's agent" in own.text and "counts for no quest or ladder" in own.text
-    monkeypatch.setenv("EMPORIA_PLAYBOOK_GAMES_PER_OPERATOR_PER_DAY", "3")
-    assert "0 left of your 3 a day" in _invite(same_operator=False, games_with_you_today=5).text
-    monkeypatch.setenv("EMPORIA_PLAYBOOK_GAMES_PER_OPERATOR_PER_DAY", "0")
-    assert "left of your" not in _invite(same_operator=False, games_with_you_today=5).text, "no cap, no count left"
 
 
 def test_the_decide_block_survives_a_relay_that_says_nothing_of_it_and_hostile_values():
@@ -336,3 +332,110 @@ def test_standing_limits_is_the_agents_own_figures_not_marked_as_others_text(mon
     out = mcp_surface.shape("standing", {"success": True, "view": "limits", "spend": {"left_today_cents": 1}})
     assert out["spend"] == {"left_today_cents": 1} and "untrusted_content" not in out
     assert "limits" in m._STANDING_VIEWS
+
+
+# ── the limits line on each notice ──────────────────────────────────────────────
+
+class _Clock:
+    def __init__(self):
+        self.t = 1000.0
+
+    def __call__(self):
+        return self.t
+
+
+@pytest.fixture
+def wallet(monkeypatch):
+    from emporia import agent_wallet
+    monkeypatch.setattr(agent_wallet, "address", lambda aid: "0xabc")
+    monkeypatch.setattr(agent_wallet, "max_daily_cents", lambda: 500)
+    monkeypatch.setattr(agent_wallet, "max_payment_cents", lambda: 100)
+    monkeypatch.setattr(agent_wallet, "approval_threshold_cents", lambda: 50)
+    monkeypatch.setattr(agent_wallet, "spent_today_atomic", lambda aid: 455_0000)    # 455 cents
+    return agent_wallet
+
+
+def _line(ll, frame, topic="", relay=""):
+    from emporia.plugins.platforms.emporia.bridge import notice_line
+    out = json.loads(notice_line(frame, ME, relay, ll))
+    return out, out["text"].splitlines()[-1].strip()
+
+
+def test_a_direct_challenge_ends_with_the_agents_own_limits_line(wallet):
+    ll = limits.LimitsLine(ME, fetch=lambda a, o: pytest.fail("the invite carries the count"))
+    out, last = _line(ll, {"type": "session_invite", "session_id": "sess_1", "module_type": BLOTTO,
+                           "from_agent_id": "alpha", "games_with_you_today": 1})
+    assert last == "limits: games vs alpha today 1/3 · spend left $0.45 today (approval over $0.50) · writes 5 per turn"
+    assert out["text"].count("limits:") == 1 and len(last) <= 160
+
+
+def test_a_dm_gets_the_chat_count_and_a_relay_report_gets_no_writes_part(wallet):
+    ll = limits.LimitsLine(ME)
+    dm = {"type": "dm_received", "sender_id": "bob", "thread_id": "dm_1", "content": "hi"}
+    for n in (1, 2, 3):
+        _, last = _line(ll, dm)
+        assert last.endswith(f"this chat {n}/20 this hour"), last
+    _, turn = _line(ll, {"type": "your_turn", "session_id": "s1", "module_type": "emporia:chess:v1"})
+    assert turn == "limits: spend left $0.45 today (approval over $0.50)", "relay's own: no chat, no writes"
+
+
+def test_unknown_parts_are_left_out_and_unrelated_notices_get_no_line(monkeypatch):
+    from emporia import agent_wallet
+
+    def no_wallet(aid):
+        raise RuntimeError("no wallet")
+    monkeypatch.setattr(agent_wallet, "address", no_wallet)
+    monkeypatch.setenv(wake.THREAD_LIMIT_SETTING, "0")
+    ll = limits.LimitsLine(ME)
+    _, last = _line(ll, {"type": "dm_received", "sender_id": "bob", "thread_id": "dm_1", "content": "hi"})
+    assert last == "limits: writes 5 per turn"
+    out, last = _line(ll, {"type": "session_completed", "session_id": "s1", "outcome": {}})
+    assert "limits:" not in out["text"]
+    out, _ = _line(ll, {"type": "challenge", "from_agent": "bad name!", "payload": {"session_id": "s2"}})
+    assert "games vs" not in out["text"], "an invalid id is never put in a line"
+
+
+def test_the_games_count_is_one_cached_relay_read_a_minute_and_a_failure_is_not_retried(wallet, monkeypatch):
+    calls = []
+    clock = _Clock()
+
+    def fetch(agent, other):
+        calls.append(other)
+        return 2
+    ll = limits.LimitsLine(ME, fetch=fetch, clock=clock)
+    challenge = {"type": "challenge", "from_agent": "bob", "payload": {"session_id": "s1"}}
+    for _ in range(5):
+        assert "games vs bob today 2/3" in _line(ll, challenge)[1]
+    assert calls == ["bob"], "five notices, one read"
+    clock.t += 61
+    _line(ll, challenge)
+    assert calls == ["bob", "bob"], "read again after a minute"
+
+    def broken(agent, other):
+        calls.append("broken")
+        raise OSError("relay down")
+    bad = limits.LimitsLine(ME, fetch=broken, clock=clock)
+    for _ in range(3):
+        assert "games vs" not in _line(bad, challenge)[1]
+    assert calls.count("broken") == 1, "a failed read waits out the minute too"
+    monkeypatch.setenv("EMPORIA_PLAYBOOK_GAMES_PER_OPERATOR_PER_DAY", "0")
+    assert "games vs bob today 2 " in _line(limits.LimitsLine(ME, fetch=fetch, clock=clock), challenge)[1] + " "
+
+
+def test_the_line_costs_no_relay_call_for_notices_that_need_none(wallet):
+    ll = limits.LimitsLine(ME, fetch=lambda a, o: pytest.fail("no relay read"))
+    for frame in ({"type": "dm_received", "sender_id": "bob", "thread_id": "dm_1", "content": "hi"},
+                  {"type": "game_chat", "agent_id": "bob", "session_id": "s1", "content": "gg"},
+                  {"type": "room_message", "sender_id": "bob", "room_id": "r1", "content": "hi"},
+                  {"type": "session_started", "session_id": "s1", "participants": [ME, "bob"]}):
+        assert _line(ll, frame)[1].startswith("limits:")
+
+
+def test_a_failing_line_never_blocks_the_notice():
+    class Boom:
+        def line(self, *a, **k):
+            raise RuntimeError("x")
+    from emporia.plugins.platforms.emporia.bridge import notice_line
+    out = json.loads(notice_line({"type": "dm_received", "sender_id": "bob", "thread_id": "dm_1",
+                                  "content": "hi"}, ME, "", Boom()))
+    assert "DM from bob" in out["text"] and "limits:" not in out["text"]
