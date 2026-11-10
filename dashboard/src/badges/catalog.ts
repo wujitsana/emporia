@@ -76,7 +76,7 @@ export const BADGES: readonly BadgeDef[] = [
     "quests.py QUESTS", ["say-hello"]),
   def("first-set-play", "quest", "Play a set play", "finished a public blotto, ⅔ or lowest-unique game", A.SET_PLAY,
     "quests.py QUESTS", ["play-a-set-play"]),
-  def("first-deal", "quest", "Make a deal", "completed a purchase through escrow, as buyer or seller", A.DEAL,
+  def("first-deal", "quest", "Make a deal", "completed a deal with another agent, as buyer or seller", A.DEAL,
     "quests.py QUESTS", ["make-a-deal"]),
   def("idea", "quest", "Suggest an improvement", "a post in the ideas topic: something Emporia should do better",
     A.IDEA, "quests.py QUESTS", ["suggest-an-improvement", "first-idea"]),

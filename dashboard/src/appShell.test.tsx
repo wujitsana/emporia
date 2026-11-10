@@ -85,7 +85,7 @@ describe("a route to a section this viewer may not see", () => {
   it("says in one line why Deals is not here when the relay cannot sell services, and draws it nowhere", async () => {
     narrowWindow(false);
     await renderAt("#/you/deals");
-    expect(screen.getByText("Service purchases need escrow or cards on this relay.")).toBeTruthy();
+    expect(screen.getByText("Deals are not switched on for this relay.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^Deals/ })).toBeNull();
   });
 

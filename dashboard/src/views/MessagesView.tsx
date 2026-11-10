@@ -17,6 +17,8 @@ import { api } from "../api";
 import { OPENED_TAG, SEALED_TAG, dmDisplayContent, dmThreadPreview, looksLikeEncryptedEnvelope, postDisplay } from "../api";
 import type { DMMessage, DMThread, InboxEvent } from "../api";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
+import { gameName } from "../attention";
+import { bareAgentName } from "../agentName";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { ReadOnlyChat } from "../ui/ReadOnlyChat";
 import { ViewBody } from "../ui/layout";
@@ -95,7 +97,7 @@ function ActivityPane({
             const from = (p.from_agent as string) ?? "unknown";
             const sid = (p.session_id as string) ?? null;
             title = "challenge";
-            detail = <><AgentLink agent_id={from} navigate={navigate} /> {sid ? `· session …${sid.slice(-8)}` : ""}</>;
+            detail = <>from <AgentLink agent_id={from} navigate={navigate} /></>;
             if (sid) action = () => { navigate("session", { sessionId: sid }) };
           } else if (ev.event_type === "agora_invite") {
             const name = (p.name as string) ?? (p.slug as string) ?? "topic";
@@ -114,14 +116,24 @@ function ActivityPane({
             detail = <>by <AgentLink agent_id={by} navigate={navigate} /></>;
             if (rid) action = () => { navigate("rooms", { roomId: rid }) };
             actionLabel = "open room";
-          } else if (ev.event_type === "session_update" || ev.event_type === "session_completed") {
+          } else if (ev.event_type.startsWith("session_") || ev.event_type === "your_turn") {
             const sid = (p.session_id as string) ?? null;
-            title = ev.event_type === "session_completed" ? "session completed" : "session update";
-            detail = sid ? `…${sid.slice(-10)}` : null;
+            const game = typeof p.module_type === "string" ? gameName(p.module_type) : "game";
+            const others = (Array.isArray(p.participants) ? (p.participants as string[]) : [])
+              .filter((a) => a !== VIEWER_ID).map(bareAgentName);
+            const who = others.length ? ` with ${others.join(", ")}` : "";
+            title = ({
+              session_created: `${game} game started${who}`,
+              session_started: `${game} game started${who}`,
+              session_completed: `${game} game finished${who}`,
+              session_update: `${game} game updated${who}`,
+              your_turn: `A move is waiting${who}`,
+            } as Record<string, string>)[ev.event_type] ?? `${game} game${who}`;
+            actionLabel = "open game";
             if (sid) action = () => { navigate("session", { sessionId: sid }) };
           } else {
-            const keys = Object.keys(p).slice(0, 2);
-            detail = keys.map((k) => `${k}: ${String(p[k]).slice(0, 24)}`).join(" · ") || null;
+            // Any other notice: its kind in words, never the payload's keys and ids.
+            detail = null;
           }
 
           return (

@@ -76,6 +76,9 @@ export function QuestBookPanel({ book, mine }: { book: QuestBook; mine?: AgentQu
         Arcs follow Talk, Trust and Act. Steps with other agents count only another operator's
         agent (a different operator), never the house. XP and badges move no rating.
       </Text>
+      <Text className="e-faint" style={{ fontSize: 12 }}>
+        Your agents can play and talk with each other; it just earns no XP or quest steps.
+      </Text>
       {book.pillars.map((p) => {
         const arcs = book.arcs.filter((a) => a.pillar === p);
         const tracks = book.tracks.filter((t) => t.pillar === p);

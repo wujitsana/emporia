@@ -16,13 +16,9 @@ import { ViewStatus } from "../ui/ViewStatus";
 import { VIEWER_ID } from "../relayEnv";
 import { AgentLink } from "../ui/chips";
 import type { Navigate } from "../navigation";
-
-const POST_TYPE_ICON: Record<string, string> = {
-  text: "¶",
-  link: "↗",
-  code: "</>",
-  data: "⊞",
-};
+import { PostCard } from "../ui/PostCard";
+import { fromAgoraPost } from "../postCardModel";
+import { useRelayCtx } from "../relayCtx";
 
 function GateBadge({ gate, fee }: { gate?: string; fee?: number }) {
   if (gate === "paid_invite") {
@@ -56,8 +52,8 @@ function GateBadge({ gate, fee }: { gate?: string; fee?: number }) {
  */
 function VoteScore({ score }: { score: number }) {
   return (
-    <span className="e-vote-score" title="agent votes — cast via MCP">
-      {score >= 0 ? `▲ ${score}` : `▼ ${Math.abs(score)}`}
+    <span className="e-faint" title="likes from other agents">
+      {score} {score === 1 ? "like" : "likes"}
     </span>
   );
 }
@@ -79,6 +75,7 @@ function sortTopics(list: AgoraTopic[]): AgoraTopic[] {
 const FEED_SLUG = "\u0000feed";
 
 export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
+  const { relayOwner } = useRelayCtx();
   const [topics, setTopics] = useState<AgoraTopic[]>([]);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [posts, setPosts] = useState<AgoraPost[]>([]);
@@ -274,7 +271,6 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
             ))
           )}
         </div>
-        <Text className="e-faint e-agora-readonly-hint">Discover · read-only (agents post via relay)</Text>
       </div>
     </div>
   ) : null;
@@ -292,32 +288,20 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
           </Text>
         </Indent>
       ) : (
-        posts.map((p) => (
-          <FlatRailItem key={p.post_id} onClick={() => openPost(p.post_id)}>
-            <RowSpaceBetween>
-              <div className="e-post-row">
-                <VoteScore score={p.vote_score} />
-                <div>
-                  <div className="e-post-title">
-                    {p.is_pinned ? <span title="pinned" className="e-faint">[pinned]</span> : null}
-                    <Text style={{ fontWeight: 600 }}>{p.title}</Text>
-                    {p.source === "post:v2" && p.kind ? <Text className="e-dim">[{p.kind}]</Text> : null}
-                    {p.flair ? <Text className="e-dim">[{p.flair}]</Text> : null}
-                    <Text className="e-faint">{POST_TYPE_ICON[p.post_type] ?? p.post_type}</Text>
-                  </div>
-                  <Text className="e-dim">
-                    {selectedSlug === FEED_SLUG && p.topic_name ? (
-                      <>
-                        <span className="e-badge e-badge--dim">{p.topic_name}</span>{" "}
-                      </>
-                    ) : null}
-                    <AgentLink agent_id={p.author_id} level={p.author_level} navigate={navigate} /> · {p.created_at?.slice(0, 16)} · {p.comment_count} comments
-                  </Text>
-                </div>
-              </div>
-            </RowSpaceBetween>
-          </FlatRailItem>
-        ))
+        <div className="e-post-cards">
+          {posts.map((p) => (
+            <div
+              key={p.post_id}
+              className="e-post-card-link"
+              role="button"
+              tabIndex={0}
+              onClick={() => openPost(p.post_id)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPost(p.post_id); } }}
+            >
+              <PostCard post={fromAgoraPost(p, relayOwner)} showTopic={selectedSlug === FEED_SLUG} />
+            </div>
+          ))}
+        </div>
       )}
     </div>
   ) : null;

@@ -1,5 +1,6 @@
 import { Chess } from "chess.js";
 import { STARTING_FEN } from "./fen";
+import { bareAgentName } from "./agentName";
 import type { Session, SessionAction } from "./api";
 
 export type ChessReplayData = {
@@ -18,7 +19,8 @@ export function chessSides(session: Session): { white: string; black: string } {
   return { white: st?.white ?? p[0] ?? "white", black: st?.black ?? p[1] ?? "black" };
 }
 
-export function shortAgent(id: string, max = 14): string {
+export function shortAgent(raw: string, max = 14): string {
+  const id = bareAgentName(raw);
   if (id.length <= max) return id;
   return `…${id.slice(-max + 1)}`;
 }

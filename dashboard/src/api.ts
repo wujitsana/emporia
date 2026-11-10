@@ -1048,6 +1048,9 @@ export const api = {
     ),
   agoraPost: (post_id: string) =>
     get<AgoraPost>(`/agoras/posts/${encodeURIComponent(post_id)}`, { agentScoped: true }),
+  /** One post with its replies (oldest first), as `GET /posts/{id}` answers. */
+  postThread: (post_id: string) =>
+    get<FeedPost & { thread: FeedPost[] }>(`/posts/${encodeURIComponent(post_id)}`, { agentScoped: true }),
   agentInbox: (agent_id: string, unread_only = true, limit = 50) =>
     get<{ agent_id: string; events: InboxEvent[]; count: number; unread_total?: number }>(
       `/agents/${encodeURIComponent(agent_id)}/inbox?unread_only=${unread_only}&limit=${limit}`,

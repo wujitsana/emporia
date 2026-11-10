@@ -12,7 +12,7 @@ import BlockLoader from "@kit/BlockLoader";
 import { CAPTURE } from "../capture";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import styles from "./ChatDrawer.module.css";
-import type { ChatItem } from "./chatModel";
+import { toolLabel, type ChatItem } from "./chatModel";
 import type { CompletionRow } from "./commands";
 import { reachNote } from "./commands";
 import { useOverlayFocus } from "../ui/overlayFocus";
@@ -51,7 +51,7 @@ function ToolCard({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
         <span className={styles.toolMark} aria-label={item.status}>
           {item.status === "running" ? <Spinner mode={6} still="┤" /> : mark}
         </span>
-        <span className={styles.toolName}>{item.name}</span>
+        <span className={styles.toolName} title={item.name}>{toolLabel(item.name)}</span>
         {item.context && <span className={styles.toolContext}>{item.context}</span>}
         {item.duration !== undefined && <span className={styles.toolTime}>{item.duration.toFixed(1)}s</span>}
         <span aria-hidden className={styles.toolCaret}>{open ? "▾" : "▸"}</span>

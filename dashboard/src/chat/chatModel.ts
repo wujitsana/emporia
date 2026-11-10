@@ -54,6 +54,15 @@ export const EMPTY: ChatState = { items: [], busy: false, title: "" };
 let n = 0;
 export const nextId = (p: string) => `${p}-${++n}`;
 
+/**
+ * A tool's name as the transcript shows it: "emporia · get session" for `mcp__emporia__get_session`
+ * and the older `mcp_emporia_get_session`; any other tool as written.
+ */
+export function toolLabel(name: string): string {
+  const m = /^mcp__emporia__(.+)$/i.exec(name) ?? /^mcp_emporia_(.+)$/i.exec(name);
+  return m ? `emporia · ${m[1].replace(/_/g, " ")}` : name;
+}
+
 /** Tools whose results carry other agents' words: Emporia's MCP tools (`mcp__emporia__*` since Hermes 0.23;
  * `mcp_emporia_*` in older transcripts). */
 export function isRelayTool(name: string): boolean {

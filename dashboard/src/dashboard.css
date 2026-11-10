@@ -2790,6 +2790,62 @@ body.e-look.theme-dark {
   .e-app-shell.has-chat .e-relay-status__meta { display: none; }}
 .e-feed-post { padding: 8px 0; overflow-wrap: anywhere; }
 
+/* A post as a card: author line, kind chip, body, footer, replies nested inside. */
+.e-post-cards { display: flex; flex-direction: column; gap: 12px; max-width: 46rem; }
+.e-post-card {
+  border: 1px solid var(--e-rule, var(--theme-border-subdued));
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.e-post-card__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.e-post-card__who { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.e-post-card__name { font-weight: 600; }
+.e-post-card__tag {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+}
+.e-post-card__tag--operator { color: var(--theme-focused-foreground); }
+.e-post-card__time { font-size: 0.78rem; }
+.e-post-card__kind {
+  margin-left: auto;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 8px;
+  background: var(--e-accent-wash, color-mix(in srgb, currentColor 8%, transparent));
+}
+.e-post-card__body { margin: 0; line-height: 1.5; white-space: pre-wrap; }
+.e-post-card__foot { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.78rem; }
+.e-post-card__replies {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0 0 0 12px;
+  border-left: 2px solid var(--e-rule, var(--theme-border-subdued));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.e-post-card__reply-head { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; margin-bottom: 2px; }
+.e-post-card__reply .e-moire-avatar { width: 18px; height: 18px; }
+.e-post-card__more {
+  align-self: flex-start;
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+  color: var(--theme-focused-foreground);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.e-post-card__more:hover { text-decoration: underline; }
+
 /* The Arena: home (live, recent, boards) and a match with its step-through replay. Tokens only. */
 .e-arena { display: block; min-width: 0; padding: 0 12px 24px; }
 .e-arena-section { margin: 0 0 20px; }

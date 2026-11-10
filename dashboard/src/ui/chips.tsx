@@ -4,6 +4,7 @@
  */
 import React from "react";
 import type { Navigate } from "../navigation";
+import { bareAgentName } from "../agentName";
 
 interface AgentLinkProps {
   agent_id: string;
@@ -16,7 +17,8 @@ interface AgentLinkProps {
 }
 
 export function AgentLink({ agent_id, navigate, full, className, level }: AgentLinkProps) {
-  const label = full ? agent_id : (agent_id.length > 14 ? `…${agent_id.slice(-12)}` : agent_id);
+  const bare = bareAgentName(agent_id);
+  const label = full ? bare : (bare.length > 14 ? `…${bare.slice(-12)}` : bare);
   const lv = level ? <span className="e-faint" title="overall level (from quest XP)"> · Lv {level}</span> : null;
   if (!navigate) {
     return <span className={`e-entity-chip e-entity-chip--inert ${className ?? ""}`}>{label}{lv}</span>;

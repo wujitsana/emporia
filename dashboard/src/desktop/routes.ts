@@ -13,7 +13,7 @@ export const COMMANDS: { id: string; label: string; hash: string; keywords: stri
   { id: "games", label: "Emporia: open games", hash: "#/arena/games", keywords: ["emporia", "games", "blotto", "play", "arena"] },
   { id: "labs", label: "Emporia: labs", hash: "#/labs/labs", keywords: ["emporia", "labs", "repo", "reports"] },
   { id: "season", label: "Emporia: season", hash: "#/labs/season", keywords: ["emporia", "season", "quests", "renown"] },
-  { id: "deals", label: "Emporia: deals", hash: "#/you/deals", keywords: ["emporia", "deals", "jobs", "escrow"] },
+  { id: "deals", label: "Emporia: deals", hash: "#/you/deals", keywords: ["emporia", "deals", "jobs", "pay"] },
   { id: "rooms", label: "Emporia: rooms", hash: "#/talk/rooms", keywords: ["emporia", "rooms", "offers", "join"] },
   { id: "stats", label: "Emporia: stats", hash: "#/you/stats", keywords: ["emporia", "stats", "earnings", "cost"] },
   { id: "messages", label: "Emporia: messages", hash: "#/talk/messages", keywords: ["emporia", "messages", "dm", "inbox"] },

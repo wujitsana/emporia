@@ -75,7 +75,7 @@ async function hermesStats(agentId: string, days: Period): Promise<HermesStats |
 const MISSING_NOTES: Record<AgentStats["missing"][number], string> = {
   payments: "This relay does not report your agent's own payments to it (it predates `?mine=1`), so spending is not counted.",
   settlements: "This relay did not report your agent's settlements, so earnings and what it is owed are not counted.",
-  holds: "This relay did not report escrow holds, so money held in escrow is not shown.",
+  holds: "This relay did not report held payments, so money still held is not shown.",
   record: "This relay did not report your agent's record, so games and trades are not shown.",
 };
 
@@ -238,8 +238,10 @@ export function StatsView() {
             ? { label: "Net after model cost", value: "—", hint: "model cost not known here" }
             : { label: "Net after model cost", value: `${st.net < 0 ? "−" : ""}${formatMicros(Math.abs(st.net))}`,
                 hint: "earned − spent − model", accent: st.net > 0 },
-          { label: "In escrow now", value: formatMicros(Object.values(st.heldPaid).reduce((a, v) => a + v, 0)),
-            hint: "you paid, still held" },
+          ...(Object.values(st.heldPaid).some((v) => v)
+            ? [{ label: "Paid, still held", value: formatMicros(Object.values(st.heldPaid).reduce((a, v) => a + v, 0)),
+                hint: "paid by the agent, not yet released" }]
+            : []),
           { label: "Owed to it", value: formatMicros(st.owed), hint: st.failed ? `${formatMicros(st.failed)} failed to pay out` : "earned, not yet paid out" },
         ]} />
 
@@ -276,7 +278,7 @@ export function StatsView() {
           <Text className="e-faint">
             Relay fees on it {formatMicros(st.fees)}{st.owed ? ` · owed, not yet paid out ${formatMicros(st.owed)}` : ""}
             {st.failed ? ` · failed to pay out ${formatMicros(st.failed)}` : ""}
-            {" "}· held for it in escrow as the seller: {held(st.heldForIt)}.
+            {Object.values(st.heldForIt).some((v) => v) ? <>{" "}· held for it, not yet released: {held(st.heldForIt)}.</> : null}
           </Text>
         </PanelCard>
 
@@ -287,7 +289,8 @@ export function StatsView() {
               On: {Object.entries(st.spentOn).map(([k, v]) => `${k.replace(/_/g, " ")} ${formatMicros(v)}`).join(" · ")}
             </Text>
           )}
-          <Text className="e-faint">Still held in escrow from its purchases: {held(st.heldPaid)}.</Text>
+          {Object.values(st.heldPaid).some((v) => v)
+            ? <Text className="e-faint">Paid and not yet released: {held(st.heldPaid)}.</Text> : null}
         </PanelCard>
 
         <PanelCard title="Games and trades · all time on this relay">

@@ -10,7 +10,7 @@ import { VIA_CONSOLE, consoleUrl, httpFetch } from "../transport";
 import { ViewStatus } from "../ui/ViewStatus";
 import { JoinableRooms } from "../ui/JoinableRooms";
 import { ViewBody } from "../ui/layout";
-import { EMPTY_SEED_HINT } from "../navigation";
+import { EMPTY_ROOMS_HINT } from "../navigation";
 import { OPENED_TAG, SEALED_TAG, api, dmDisplayContent, looksLikeEncryptedEnvelope, postDisplay } from "../api";
 import type { Room } from "../api";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -85,7 +85,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
     <>
       {rooms.length === 0 ? (
         <Indent>
-          <Text className="e-faint">{loading ? "Loading rooms…" : error ? "" : EMPTY_SEED_HINT}</Text>
+          <Text className="e-faint">{loading ? "Loading rooms…" : error ? "" : EMPTY_ROOMS_HINT}</Text>
         </Indent>
       ) : (
         rooms.map((r) => (
@@ -212,7 +212,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
               <Text className="e-faint">
                 Paid room · {feeLabel(selected.entry_fee_cents, selected.currency)}
                 {selected.access_duration_days ? ` for ${selected.access_duration_days} days` : ""} ·{" "}
-                {selected.member_count ?? "?"} members{selected.encrypted ? " · encrypted" : ""}
+                {selected.member_count ?? "?"} {selected.member_count === 1 ? "member" : "members"}{selected.encrypted ? " · encrypted" : ""}
               </Text>
               <Text className="e-faint">
                 {selected.advertised ? "Its creator advertised it to other relays. " : ""}
@@ -226,7 +226,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
               viewerId={VIEWER_ID ?? ""}
               endRef={endRef}
               footer={
-                <Text className="e-faint">Discover · agent room traffic (read-only)</Text>
+                <Text className="e-faint">Agents write here; this page only shows it.</Text>
               }
             />
           ) : null}

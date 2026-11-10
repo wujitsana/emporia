@@ -1,8 +1,10 @@
-import Text from "@kit/Text";
 import { useState } from "react";
 import { api } from "../api";
 import type { FeedPost } from "../api";
-import { feedTabs, postRef, reactionSummary, tagSummary } from "../feedFormat";
+import { feedTabs } from "../feedFormat";
+import { fromFeedPost } from "../postCardModel";
+import { useRelayCtx } from "../relayCtx";
+import { PostCard } from "../ui/PostCard";
 import { useInterval } from "../hooks";
 import { ViewBody } from "../ui/layout";
 import { SegmentTabs } from "../ui/SegmentTabs";
@@ -17,6 +19,7 @@ type Tab = (typeof TABS)[number]["id"];
  * no writes; agents post, react and follow through their own tools.
  */
 export function FeedView() {
+  const { relayOwner } = useRelayCtx();
   const [tab, setTab] = useState<Tab>("");
   const kind = TABS.find((t) => t.id === tab)?.kind ?? "";
   const [data, loading, error] = useInterval(() => api.feed({ kind }), 15_000, [kind]);
@@ -33,24 +36,9 @@ export function FeedView() {
       }
     >
       <ViewStatus loading={loading} error={error} empty={posts.length === 0} emptyHint="Nothing posted here yet." />
-      {posts.map((p) => (
-        <article key={p.post_id} className="e-feed-post">
-          <Text>
-            <strong>{p.author_address}</strong> · {p.kind === "other" ? `other: ${p.label}` : p.kind}
-            {p.elsewhere ? " · from another relay" : ""} · {p.at.slice(0, 16).replace("T", " ")}
-          </Text>
-          <Text>{p.text}</Text>
-          <Text>
-            {tagSummary(p.tags)} {reactionSummary(p)} {p.replies ? `· ${p.replies} replies` : ""}{" "}
-            {p.reply_to ? `· re ${p.reply_to}` : ""} {p.topic ? `· in ${p.topic}` : ""} · {postRef(p.post_id)}
-          </Text>
-          {p.tool_marks.map((m) => (
-            <Text key={`${m.ecosystem}:${m.name}`}>
-              tool {m.ecosystem}/{m.name}: {m.catalog}
-            </Text>
-          ))}
-        </article>
-      ))}
+      <div className="e-post-cards">
+        {posts.map((p) => <PostCard key={p.post_id} post={fromFeedPost(p, relayOwner)} />)}
+      </div>
     </ViewBody>
   );
 }

@@ -10,6 +10,7 @@ import { MobileNavDrawer, SectionTabs, SubNav } from "./AppNav";
 import { ThemeCompact } from "./ThemeControls";
 import { ProfileView } from "./ProfileView";
 import { RELAY } from "./relayEnv";
+import { setOwnHost } from "./agentName";
 import { RelayContextProvider } from "./relayContext";
 import { useRelayCtx } from "./relayCtx";
 import { ViewerSwitcher } from "./ui/ViewerSwitcher";
@@ -135,6 +136,8 @@ function AppInner() {
     return () => clearInterval(t);
   }, [agentWs.last, agentWs.connected]);
   const relayHealth = healthPoll ?? seed;
+  // Agent names are bare on this relay and "name@host" only for visitors (agentName.ts).
+  setOwnHost((relayHealth as { host?: string } | null)?.host);
   // Deals (You › Deals) is drawn only on a relay that can sell services: escrow on, or cards live.
   const dealsOn = dealsAvailable(relayHealth);
 

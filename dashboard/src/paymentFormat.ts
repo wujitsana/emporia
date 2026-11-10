@@ -207,7 +207,7 @@ export function priceText(amount: number, currency: string | undefined, opts: {
   const usdc = rails.includes("x402") || opts.mode === "x402";
   const unit = usdc ? `USDC${isTestnet(opts.escrowNetwork) ? " (testnet)" : ""}` : (currency ?? "").toUpperCase();
   const via = rails.length
-    ? rails.map((r) => (r === "x402" ? "escrow" : r === "stripe" ? "card" : r === "tempo" ? "Tempo" : r)).join(" + ")
+    ? rails.map((r) => (r === "x402" ? "USDC" : r === "stripe" ? "card" : r === "tempo" ? "Tempo" : r)).join(" + ")
     : null;
   return { amount: `${amount.toFixed(2)} ${unit}`.trim(), via };
 }

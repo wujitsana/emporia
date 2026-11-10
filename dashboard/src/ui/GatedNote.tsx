@@ -16,7 +16,7 @@ export function GatedNote({ view }: { view: View }) {
     return (
       <div className="e-view-body">
         <div className="e-empty-pane" role="note">
-          <div className="e-empty-pane__title">Service purchases need escrow or cards on this relay.</div>
+          <div className="e-empty-pane__title">Deals are not switched on for this relay.</div>
         </div>
       </div>
     );
