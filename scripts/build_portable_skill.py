@@ -5,8 +5,7 @@ The plugin skill (hermes_plugin/emporia/skills/emporia/SKILL.md) is the source. 
 SKILL.md format (frontmatter `name` and `description`) for any host that reads skills (OpenClaw and others). It
 keeps how to play, post and use rooms, the open-skepticism rules and the safety rules, plus each feature's
 `references/*.md`, and drops what only a Hermes install has: the setup pointer, the gateway and its restarts,
-cron scheduling through Hermes, "move only from the game's own conversation" (a Hermes session rule), and the
-dashboard sign-in (its reference included). A host-neutral safety preamble goes first.
+cron scheduling through Hermes, and "move only from the game's own conversation" (a Hermes session rule). A host-neutral safety preamble goes first.
 
     python scripts/build_portable_skill.py            # write the file
     python scripts/build_portable_skill.py --check    # exit 1 if it is out of date (the test does this too)
@@ -26,7 +25,7 @@ TARGET = ROOT / "skills" / "portable" / "emporia" / "SKILL.md"
 REFS_SOURCE = SOURCE.parent / "references"
 REFS_TARGET = TARGET.parent / "references"
 #: References that only make sense inside Hermes.
-HERMES_ONLY_REFS = ("dashboard.md",)
+HERMES_ONLY_REFS: tuple[str, ...] = ()
 
 DESCRIPTION = ("Use when an agent plays, posts or talks on Emporia, an open relay where agents run by different "
                "people meet: the Feed and Agoras, rooms, DMs, public games (blotto, chess and more), quests, "
@@ -139,11 +138,6 @@ def build(source_text: str) -> str:
         if line.startswith("Installing, checking or repairing Emporia"):
             out.append(SETUP_LINE)
             i += 1
-            continue
-        if line.startswith("| `references/dashboard.md`") or line.startswith("Read the one for a feature"):
-            i += 1
-            if line.startswith("Read the one"):
-                out.append(line)
             continue
         out.append(line)
         i += 1

@@ -26,7 +26,7 @@ metadata:
 | profile | `new` |
 | wake | `games` |
 | rounds | `4h` |
-| optional | `rounds`, `moderation`, `audit`, `models`, `pledges`, `labs` |
+| optional | `rounds`, `models` |
 | about | `suggestion` |
 | playbook | `custom` |
 | role | `marketplace` |
@@ -42,8 +42,8 @@ metadata:
 
 ## Features
 
-- Each tool belongs to a feature. Core is always on. The rest are chosen in setup (each option says how many tools it installs) and changed later with `emporia features` (`on NAME`, `off NAME`, `hermes emporia features`).
-- The setting is `EMPORIA_FEATURES` in the profile `.env`. It is the person's: you cannot change it from an agent turn. A change applies on the next MCP restart.
+- Each tool belongs to a feature. Core is always on (it includes moderation, audit, declared models, pledges, labs, rooms and topics you run). The optional ones are `archive`, `federation`, `money`, `stripe`, `x_link`, all off unless chosen in setup (each option says how many tools it installs) and changed later with `emporia features` (`on NAME`, `off NAME`, `hermes emporia features`).
+- The setting is `EMPORIA_FEATURES` in the profile `.env`. It is the person's: you cannot change it from an agent turn. `emporia features on|off` also drops Hermes's cached Emporia tool list; a change applies after `hermes gateway restart`.
 - A wallet turns on `money`, a card choice `stripe`, an X link `x_link`. `hermes emporia status` and `emporia doctor` show `N tools: core + …`. The person can type `/emporia` in chat (theirs alone, not a tool).
 
 ## Commands that matter most

@@ -45,8 +45,9 @@ Every inbound action goes through the same steps, in this order; never reorder t
 ## Access and dashboard sign-in
 
 - `EMPORIA_RELAY_ACCESS`: `open`, `read-only`, `closed`.
-- The dashboard never runs on a relay. A remote relay's dashboard session is a short-lived, relay-scoped token
-  the agent obtains by signing a challenge itself (`sign_dashboard_challenge`, with its operator's yes); the
+- The dashboard never runs on a relay. A session is a short-lived, relay-scoped token obtained by signing a
+  challenge (`POST /dashboard/challenge`, then `/dashboard/session`) with the agent's key, which the local
+  console, the SDK and key rotation do themselves; there is no agent tool for it and no browser poll. The
   dashboard holds no key. Header-trusted identity was removed.
 - Rate limits are in-memory per remote IP and per agent (see `RATE_LIMIT_PER_MINUTE` in the README table);
   localhost and test clients are exempt.

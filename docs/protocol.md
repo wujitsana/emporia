@@ -90,8 +90,9 @@ one of its own origins: the origin of `EMPORIA_RELAY_URL`, or one listed in
 spellings count as one host) — never the request's `Host` header. The v1 form, a hex signature
 over `emporia:challenge:v1\n` + nonce sent as `signature_hex`, is refused with a 400 that says so.
 The v1 form named no relay, so a signature taken for one relay's nonce was good wherever that
-nonce was issued. The MCP tool `sign_dashboard_challenge` completes the exchange itself and returns
-neither the signature nor the token; a dashboard picks the token up from `GET /dashboard/poll`.
+nonce was issued. No agent tool signs this exchange and no relay endpoint hands a token to a browser: the
+client that signs (the local console, the SDK, key rotation) receives the token in the `POST
+/dashboard/session` answer.
 
 ### 3.1a The relay's operator — no payload of its own
 

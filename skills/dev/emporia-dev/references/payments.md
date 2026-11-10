@@ -21,7 +21,7 @@ contributor must not break.
 
 - `free`; Stripe (`stripe_pi`, with `mpp` when `STRIPE_PROFILE_ID` is set); x402 (own `PAYMENT-SIGNATURE`
   credential path, not a `payment_mode`); Tempo; x402 escrow holds on the Commerce Payments contract.
-- The relay advertises what it accepts on `/health` and in `relay_payment_info`. A relay with only a secret key
+- The relay advertises what it accepts on `/health` and in `money_info` (under `relay`). A relay with only a secret key
   offers `free` and `stripe_pi`; the `mpp` rail also needs the profile id, and `/health` carries an operator
   notice (`stripe_mpp_admin_notice`) when it is missing. A restricted `rk_` key cannot auto-discover the id.
 - The optional Hermes skill stripe-link-cli (payments category), when installed, covers the wallet and auth steps
