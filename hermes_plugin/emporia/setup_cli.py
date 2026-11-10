@@ -496,6 +496,21 @@ def _install_plugin_into(name: str, plugin_source: str = "emporia") -> bool:
     print(f"  Installing the Emporia plugin into {name} ({plugin_source})")
     r = subprocess.run([hermes, "-p", name, "plugins", "install", plugin_source, "--enable"],
                        stdin=subprocess.DEVNULL, timeout=_TIMEOUT_S, env=_clean_env())
+    if r.returncode == 0:
+        return True
+    if plugin_source != "emporia":
+        return False
+    # The catalog does not list Emporia yet: the person installed this plugin from GitHub, so the new profile
+    # gets the same pinned commit from the same place (--force: Hermes's scan blocks any unreviewed source,
+    # and they already accepted that once to get here).
+    src = source()
+    sha = src.get("sha", "")
+    if not sha:
+        return False
+    url = f"{src.get('repo', '')}#hermes_plugin/emporia"
+    print(f"  The catalog does not list Emporia yet; installing the same commit from GitHub ({url}, {sha[:12]}).")
+    r = subprocess.run([hermes, "-p", name, "plugins", "install", url, "--ref", sha, "--enable", "--force"],
+                       stdin=subprocess.DEVNULL, timeout=_TIMEOUT_S, env=_clean_env())
     return r.returncode == 0
 
 

@@ -11626,10 +11626,10 @@ var EmporiaHermesPlugin = (function(exports) {
 		BlockLoader_module_default = { root: root$9 };
 	}));
 	// src/ui/kit/BlockLoader.tsx
-	var import_react$52, import_jsx_runtime$89, SEQUENCES, BlockLoader;
+	var import_react$53, import_jsx_runtime$89, SEQUENCES, BlockLoader;
 	var init_BlockLoader = __esmMin((() => {
 		init_BlockLoader_module();
-		import_react$52 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$53 = /* @__PURE__ */ __toESM(require_react(), 1);
 		import_jsx_runtime$89 = require_jsx_runtime();
 		SEQUENCES = [
 			[
@@ -11735,10 +11735,10 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		];
 		BlockLoader = ({ mode = 0 }) => {
-			const [index, setIndex] = import_react$52.useState(0);
+			const [index, setIndex] = import_react$53.useState(0);
 			const frames = SEQUENCES[mode];
 			const length = frames ? frames.length : 0;
-			import_react$52.useEffect(() => {
+			import_react$53.useEffect(() => {
 				if (!length) return;
 				const timer = window.setInterval(() => setIndex((i) => (i + 1) % length), 100);
 				return () => clearInterval(timer);
@@ -12254,12 +12254,12 @@ var EmporiaHermesPlugin = (function(exports) {
 	* `deps` changes (use a version counter to force a refresh from outside).
 	*/
 	function useInterval(fn, ms, deps = []) {
-		const [data, setData] = (0, import_react$51.useState)(null);
-		const [loading, setLoading] = (0, import_react$51.useState)(true);
-		const [error, setError] = (0, import_react$51.useState)(null);
-		const fnRef = (0, import_react$51.useRef)(fn);
+		const [data, setData] = (0, import_react$52.useState)(null);
+		const [loading, setLoading] = (0, import_react$52.useState)(true);
+		const [error, setError] = (0, import_react$52.useState)(null);
+		const fnRef = (0, import_react$52.useRef)(fn);
 		fnRef.current = fn;
-		(0, import_react$51.useEffect)(() => {
+		(0, import_react$52.useEffect)(() => {
 			let mounted = true;
 			const run = () => fnRef.current().then((d) => {
 				if (mounted) {
@@ -12303,19 +12303,19 @@ var EmporiaHermesPlugin = (function(exports) {
 	* existing polls stay as a slow safety net for a dropped socket.
 	*/
 	function useAgentWs(relayUrl, agentId) {
-		const [connected, setConnected] = (0, import_react$51.useState)(false);
-		const [last, setLast] = (0, import_react$51.useState)(null);
-		const [eventCount, setEventCount] = (0, import_react$51.useState)(0);
-		const wsRef = (0, import_react$51.useRef)(null);
+		const [connected, setConnected] = (0, import_react$52.useState)(false);
+		const [last, setLast] = (0, import_react$52.useState)(null);
+		const [eventCount, setEventCount] = (0, import_react$52.useState)(0);
+		const wsRef = (0, import_react$52.useRef)(null);
 		const target = `${relayUrl}\n${agentId ?? ""}`;
-		const [prevTarget, setPrevTarget] = (0, import_react$51.useState)(target);
+		const [prevTarget, setPrevTarget] = (0, import_react$52.useState)(target);
 		if (prevTarget !== target) {
 			setPrevTarget(target);
 			setConnected(false);
 			setLast(null);
 			setEventCount(0);
 		}
-		(0, import_react$51.useEffect)(() => {
+		(0, import_react$52.useEffect)(() => {
 			if (!agentId) return;
 			const lifetime = new AbortController();
 			const isClosed = () => lifetime.signal.aborted;
@@ -12378,14 +12378,14 @@ var EmporiaHermesPlugin = (function(exports) {
 	* with exponential back-off on drop.
 	*/
 	function useRoomWs(relayUrl, roomId, agentId, fetchHistory) {
-		const [messages, setMessages] = (0, import_react$51.useState)([]);
-		const [connected, setConnected] = (0, import_react$51.useState)(false);
-		const wsRef = (0, import_react$51.useRef)(null);
-		const fetchRef = (0, import_react$51.useRef)(fetchHistory);
-		(0, import_react$51.useEffect)(() => {
+		const [messages, setMessages] = (0, import_react$52.useState)([]);
+		const [connected, setConnected] = (0, import_react$52.useState)(false);
+		const wsRef = (0, import_react$52.useRef)(null);
+		const fetchRef = (0, import_react$52.useRef)(fetchHistory);
+		(0, import_react$52.useEffect)(() => {
 			fetchRef.current = fetchHistory;
 		});
-		(0, import_react$51.useEffect)(() => {
+		(0, import_react$52.useEffect)(() => {
 			if (!roomId || connected || !fetchRef.current) return;
 			const lifetime = new AbortController();
 			const load = () => fetchRef.current?.(roomId).then((m) => {
@@ -12399,13 +12399,13 @@ var EmporiaHermesPlugin = (function(exports) {
 			};
 		}, [roomId, connected]);
 		const target = `${relayUrl}\n${roomId ?? ""}\n${agentId ?? ""}`;
-		const [prevTarget, setPrevTarget] = (0, import_react$51.useState)(target);
+		const [prevTarget, setPrevTarget] = (0, import_react$52.useState)(target);
 		if (prevTarget !== target) {
 			setPrevTarget(target);
 			setMessages([]);
 			setConnected(false);
 		}
-		(0, import_react$51.useEffect)(() => {
+		(0, import_react$52.useEffect)(() => {
 			if (!roomId) return;
 			const lifetime = new AbortController();
 			const isClosed = () => lifetime.signal.aborted;
@@ -12473,22 +12473,22 @@ var EmporiaHermesPlugin = (function(exports) {
 	* the first request lands never re-requests the same id.
 	*/
 	function useSenderPubkeys(senderIds, fetchPubkey) {
-		const [pubkeys, setPubkeys] = (0, import_react$51.useState)({});
-		const pubkeysRef = (0, import_react$51.useRef)(pubkeys);
-		(0, import_react$51.useEffect)(() => {
+		const [pubkeys, setPubkeys] = (0, import_react$52.useState)({});
+		const pubkeysRef = (0, import_react$52.useRef)(pubkeys);
+		(0, import_react$52.useEffect)(() => {
 			pubkeysRef.current = pubkeys;
 		});
-		const requestedRef = (0, import_react$51.useRef)(/* @__PURE__ */ new Set());
-		const fetchRef = (0, import_react$51.useRef)(fetchPubkey);
-		(0, import_react$51.useEffect)(() => {
+		const requestedRef = (0, import_react$52.useRef)(/* @__PURE__ */ new Set());
+		const fetchRef = (0, import_react$52.useRef)(fetchPubkey);
+		(0, import_react$52.useEffect)(() => {
 			fetchRef.current = fetchPubkey;
 		});
-		const unmountedRef = (0, import_react$51.useRef)(false);
-		(0, import_react$51.useEffect)(() => () => {
+		const unmountedRef = (0, import_react$52.useRef)(false);
+		(0, import_react$52.useEffect)(() => () => {
 			unmountedRef.current = true;
 		}, []);
 		const senderKey = [...new Set(senderIds)].sort().join(" ");
-		(0, import_react$51.useEffect)(() => {
+		(0, import_react$52.useEffect)(() => {
 			const unknown = (senderKey ? senderKey.split(" ") : []).filter((id) => !(id in pubkeysRef.current) && !requestedRef.current.has(id));
 			if (unknown.length === 0) return;
 			unknown.forEach((id) => requestedRef.current.add(id));
@@ -12508,10 +12508,10 @@ var EmporiaHermesPlugin = (function(exports) {
 	* to seed the Overview instantly before the first HTTP poll completes.
 	*/
 	function useGlobalEvents() {
-		const [events, setEvents] = (0, import_react$51.useState)([]);
-		const [seed, setSeed] = (0, import_react$51.useState)(null);
-		const [wsConnected, setWsConnected] = (0, import_react$51.useState)(false);
-		(0, import_react$51.useEffect)(() => {
+		const [events, setEvents] = (0, import_react$52.useState)([]);
+		const [seed, setSeed] = (0, import_react$52.useState)(null);
+		const [wsConnected, setWsConnected] = (0, import_react$52.useState)(false);
+		(0, import_react$52.useEffect)(() => {
 			let closed = false;
 			let retryMs = 1e3;
 			let ws;
@@ -12563,9 +12563,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			wsConnected
 		};
 	}
-	var import_react$51;
+	var import_react$52;
 	var init_hooks = __esmMin((() => {
-		import_react$51 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$52 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_transport();
 		init_api();
 	}));
@@ -13233,7 +13233,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	/** Whether the window is below the header-nav width, following resizes. */
 	function useNarrow() {
-		return (0, import_react$50.useSyncExternalStore)(subscribeNarrow, isNarrow, () => false);
+		return (0, import_react$51.useSyncExternalStore)(subscribeNarrow, isNarrow, () => false);
 	}
 	/** The first focusable element in `root` that is drawn (else the first at all: jsdom draws nothing). */
 	function firstFocusable(root) {
@@ -13245,11 +13245,11 @@ var EmporiaHermesPlugin = (function(exports) {
 	* focusable element); when it closes, back on what had it before.
 	*/
 	function useOverlayFocus(open, container, initial) {
-		const pick = (0, import_react$50.useRef)(initial);
-		(0, import_react$50.useEffect)(() => {
+		const pick = (0, import_react$51.useRef)(initial);
+		(0, import_react$51.useEffect)(() => {
 			pick.current = initial;
 		});
-		(0, import_react$50.useEffect)(() => {
+		(0, import_react$51.useEffect)(() => {
 			const el = container.current;
 			if (!open || !el) return;
 			const before = focusedWithin(el);
@@ -13259,9 +13259,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			};
 		}, [open, container]);
 	}
-	var import_react$50, NARROW, FOCUSABLE$1;
+	var import_react$51, NARROW, FOCUSABLE$1;
 	var init_overlayFocus = __esmMin((() => {
-		import_react$50 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$51 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_keyTarget();
 		NARROW = "(max-width: 900px)";
 		FOCUSABLE$1 = "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex=\"-1\"])";
@@ -13306,8 +13306,8 @@ var EmporiaHermesPlugin = (function(exports) {
 	* be measured, as in jsdom) it falls back to the window's own phone width.
 	*/
 	function useNavLayout(frame) {
-		const [width, setWidth] = (0, import_react$49.useState)(0);
-		(0, import_react$49.useLayoutEffect)(() => {
+		const [width, setWidth] = (0, import_react$50.useState)(0);
+		(0, import_react$50.useLayoutEffect)(() => {
 			const el = frame.current;
 			if (!el) return;
 			const read = () => setWidth(el.getBoundingClientRect().width);
@@ -13320,7 +13320,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			ro.observe(el);
 			return () => ro.disconnect();
 		}, [frame]);
-		(0, import_react$49.useEffect)(() => {
+		(0, import_react$50.useEffect)(() => {
 			const el = frame.current;
 			if (!el) return;
 			const t = setTimeout(() => setWidth(el.getBoundingClientRect().width), 120);
@@ -13328,9 +13328,9 @@ var EmporiaHermesPlugin = (function(exports) {
 		}, [frame]);
 		return navLayoutFor(width, isNarrow());
 	}
-	var import_react$49, NAV_MIN_WIDTH;
+	var import_react$50, NAV_MIN_WIDTH;
 	var init_navLayout = __esmMin((() => {
-		import_react$49 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$50 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_overlayFocus();
 		NAV_MIN_WIDTH = {
 			wide: 1240,
@@ -13341,11 +13341,11 @@ var EmporiaHermesPlugin = (function(exports) {
 	}));
 	// src/relayCtx.ts
 	function useRelayCtx() {
-		return (0, import_react$48.useContext)(RelayCtx);
+		return (0, import_react$49.useContext)(RelayCtx);
 	}
-	var import_react$48, DEFAULT, RelayCtx;
+	var import_react$49, DEFAULT, RelayCtx;
 	var init_relayCtx = __esmMin((() => {
-		import_react$48 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$49 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_relayEnv();
 		DEFAULT = {
 			viewerId: null,
@@ -13362,17 +13362,17 @@ var EmporiaHermesPlugin = (function(exports) {
 			setDashboardToken: () => {},
 			refresh: () => {}
 		};
-		RelayCtx = (0, import_react$48.createContext)(DEFAULT);
+		RelayCtx = (0, import_react$49.createContext)(DEFAULT);
 	}));
 	// src/healthCtx.ts
 	/** The current `/health` snapshot, or null before the first response. */
 	function useRelayHealth() {
-		return (0, import_react$47.useContext)(RelayHealthCtx);
+		return (0, import_react$48.useContext)(RelayHealthCtx);
 	}
-	var import_react$47, RelayHealthCtx;
+	var import_react$48, RelayHealthCtx;
 	var init_healthCtx = __esmMin((() => {
-		import_react$47 = /* @__PURE__ */ __toESM(require_react(), 1);
-		RelayHealthCtx = (0, import_react$47.createContext)(null);
+		import_react$48 = /* @__PURE__ */ __toESM(require_react(), 1);
+		RelayHealthCtx = (0, import_react$48.createContext)(null);
 	}));
 	// src/subNavItems.ts
 	/** What decides which pages this viewer may reach: who they are, and what the relay can do. */
@@ -13525,8 +13525,8 @@ var EmporiaHermesPlugin = (function(exports) {
 	* agents registered on the relay, with keys here and a Hermes profile.
 	*/
 	function HermesProfileSelect({ current }) {
-		const [ids, setIds] = import_react$46.useState([]);
-		import_react$46.useEffect(() => {
+		const [ids, setIds] = import_react$47.useState([]);
+		import_react$47.useEffect(() => {
 			let cancelled = false;
 			(async () => {
 				const local = await httpFetch(consoleUrl("/agents")).then((r) => r.json()).then((d) => d.agents ?? []).catch(() => []);
@@ -13601,9 +13601,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			})]
 		});
 	}
-	var import_react$46, import_jsx_runtime$86;
+	var import_react$47, import_jsx_runtime$86;
 	var init_ViewerSwitcher = __esmMin((() => {
-		import_react$46 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$47 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_hooks();
 		init_relayEnv();
@@ -13672,11 +13672,11 @@ var EmporiaHermesPlugin = (function(exports) {
 	* an entrance never shows its end state first.
 	*/
 	function useArrival(key, ms, moving, stepMs = 0) {
-		const [tick, setTick] = (0, import_react$45.useState)({
+		const [tick, setTick] = (0, import_react$46.useState)({
 			key: "",
 			at: 0
 		});
-		(0, import_react$45.useEffect)(() => {
+		(0, import_react$46.useEffect)(() => {
 			if (!moving) return;
 			const h = {
 				raf: 0,
@@ -13733,12 +13733,12 @@ var EmporiaHermesPlugin = (function(exports) {
 	*/
 	function BrandTitle({ replay = "" }) {
 		const moving = motionAllowed();
-		const first = (0, import_react$45.useRef)(true);
-		const [run, setRun] = (0, import_react$45.useState)({
+		const first = (0, import_react$46.useRef)(true);
+		const [run, setRun] = (0, import_react$46.useState)({
 			key: `open:${replay}`,
 			ms: 900
 		});
-		(0, import_react$45.useEffect)(() => {
+		(0, import_react$46.useEffect)(() => {
 			if (first.current) {
 				first.current = false;
 				return;
@@ -13777,8 +13777,8 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	/** The status line under the view: time since this dashboard opened, who it views as, and that it only watches. */
 	function AnimaticHudFoot({ section }) {
-		const [now, setNow] = (0, import_react$45.useState)(() => Date.now());
-		(0, import_react$45.useEffect)(() => {
+		const [now, setNow] = (0, import_react$46.useState)(() => Date.now());
+		(0, import_react$46.useEffect)(() => {
 			const t = setInterval(() => setNow(Date.now()), 1e3);
 			return () => clearInterval(t);
 		}, []);
@@ -13797,9 +13797,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			] })]
 		});
 	}
-	var import_react$45, import_jsx_runtime$85, SCRAMBLE_MS, ease, BRAND, BRAND_SCRAMBLED, OPENED;
+	var import_react$46, import_jsx_runtime$85, SCRAMBLE_MS, ease, BRAND, BRAND_SCRAMBLED, OPENED;
 	var init_LookChrome = __esmMin((() => {
-		import_react$45 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$46 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_relayEnv();
 		init_navConfig();
 		init_look();
@@ -13906,15 +13906,15 @@ var EmporiaHermesPlugin = (function(exports) {
 	* the same x everywhere (no destination label in front of the tabs; the page title names the place).
 	*/
 	function SubNav({ label, items, note }) {
-		const navRef = (0, import_react$44.useRef)(null);
-		const wrapRef = (0, import_react$44.useRef)(null);
-		const [edges, setEdges] = (0, import_react$44.useState)({
+		const navRef = (0, import_react$45.useRef)(null);
+		const wrapRef = (0, import_react$45.useRef)(null);
+		const [edges, setEdges] = (0, import_react$45.useState)({
 			left: false,
 			right: false,
 			hidden: []
 		});
-		const [open, setOpen] = (0, import_react$44.useState)(false);
-		(0, import_react$44.useLayoutEffect)(() => {
+		const [open, setOpen] = (0, import_react$45.useState)(false);
+		(0, import_react$45.useLayoutEffect)(() => {
 			const nav = navRef.current;
 			if (!nav) return;
 			const read = () => {
@@ -13932,13 +13932,13 @@ var EmporiaHermesPlugin = (function(exports) {
 		}, [items, note]);
 		const activeKey = items.find((i) => i.active)?.key;
 		const anyHidden = edges.hidden.length > 0;
-		(0, import_react$44.useLayoutEffect)(() => {
+		(0, import_react$45.useLayoutEffect)(() => {
 			const nav = navRef.current;
 			const tab = nav?.querySelector(".e-subnav__tab.is-active");
 			if (!nav || !tab || nav.scrollWidth <= nav.clientWidth) return;
 			nav.scrollLeft = Math.max(0, tab.offsetLeft - (nav.clientWidth - tab.offsetWidth) / 2);
 		}, [activeKey, anyHidden]);
-		(0, import_react$44.useEffect)(() => {
+		(0, import_react$45.useEffect)(() => {
 			if (!open) return;
 			const onKey = (e) => {
 				if (e.key === "Escape") setOpen(false);
@@ -14111,9 +14111,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	var import_react$44, import_jsx_runtime$84;
+	var import_react$45, import_jsx_runtime$84;
 	var init_AppNav = __esmMin((() => {
-		import_react$44 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$45 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_navConfig();
 		init_arrowKeys();
 		init_navLayout();
@@ -14568,7 +14568,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	*/
 	function NowStrip({ navigate }) {
 		const viewer = VIEWER_ID;
-		const [collapsed, setCollapsed] = (0, import_react$43.useState)(() => readPref(PREF) === "1");
+		const [collapsed, setCollapsed] = (0, import_react$44.useState)(() => readPref(PREF) === "1");
 		const [sessions] = useInterval(() => viewer ? api.agentSessions(viewer).then((r) => r.sessions) : Promise.resolve([]), poll(1e4), [viewer]);
 		if (!viewer) return null;
 		const line = nowLine(viewer, sessions ?? []);
@@ -14603,9 +14603,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			})]
 		});
 	}
-	var import_react$43, import_jsx_runtime$83, PREF;
+	var import_react$44, import_jsx_runtime$83, PREF;
 	var init_NowStrip = __esmMin((() => {
-		import_react$43 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$44 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_capture();
 		init_hooks();
@@ -14808,14 +14808,14 @@ var EmporiaHermesPlugin = (function(exports) {
 			})]
 		});
 	}
-	var import_react$41, import_jsx_runtime$80, ViewBoundary;
+	var import_react$42, import_jsx_runtime$80, ViewBoundary;
 	var init_layout = __esmMin((() => {
 		init_Text();
-		import_react$41 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$42 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_pageTitle();
 		init_LookChrome();
 		import_jsx_runtime$80 = require_jsx_runtime();
-		ViewBoundary = class extends import_react$41.Component {
+		ViewBoundary = class extends import_react$42.Component {
 			state = { error: null };
 			static getDerivedStateFromError(error) {
 				return { error };
@@ -15009,14 +15009,14 @@ var EmporiaHermesPlugin = (function(exports) {
 	}));
 	// src/ui/kit/Input.tsx
 	function Input({ caretChars, isBlink = true, label, placeholder, onChange, type, id, ...rest }) {
-		const generatedId = import_react$38.useId();
+		const generatedId = import_react$39.useId();
 		const inputId = id || generatedId;
-		const inputRef = import_react$38.useRef(null);
-		const [text, setText] = import_react$38.useState(rest.defaultValue?.toString() || rest.value?.toString() || "");
-		const [isFocused, setIsFocused] = import_react$38.useState(false);
-		const [selectionStart, setSelectionStart] = import_react$38.useState(text.length);
-		const lastFocusDirectionRef = import_react$38.useRef(null);
-		const [prevValue, setPrevValue] = import_react$38.useState(rest.value);
+		const inputRef = import_react$39.useRef(null);
+		const [text, setText] = import_react$39.useState(rest.defaultValue?.toString() || rest.value?.toString() || "");
+		const [isFocused, setIsFocused] = import_react$39.useState(false);
+		const [selectionStart, setSelectionStart] = import_react$39.useState(text.length);
+		const lastFocusDirectionRef = import_react$39.useRef(null);
+		const [prevValue, setPrevValue] = import_react$39.useState(rest.value);
 		if (prevValue !== rest.value) {
 			setPrevValue(rest.value);
 			if (rest.value !== void 0) {
@@ -15106,9 +15106,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			})]
 		});
 	}
-	var import_react$38, import_jsx_runtime$76;
+	var import_react$39, import_jsx_runtime$76;
 	var init_Input = __esmMin((() => {
-		import_react$38 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$39 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_utilities();
 		init_Input_module();
 		import_jsx_runtime$76 = require_jsx_runtime();
@@ -15136,17 +15136,17 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 	}));
 	// src/ui/kit/SidebarLayout.tsx
-	var import_react$37, import_jsx_runtime$75, CHARACTER_WIDTH, SidebarLayout;
+	var import_react$38, import_jsx_runtime$75, CHARACTER_WIDTH, SidebarLayout;
 	var init_SidebarLayout = __esmMin((() => {
 		init_SidebarLayout_module();
-		import_react$37 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$38 = /* @__PURE__ */ __toESM(require_react(), 1);
 		import_jsx_runtime$75 = require_jsx_runtime();
 		CHARACTER_WIDTH = 9.6;
 		SidebarLayout = ({ defaultSidebarWidth = 20, children, sidebar, isShowingHandle = false, isReversed = false, initialPane = "list", backLabel = "back to list", className, ...rest }) => {
-			const [sidebarWidth, setSidebarWidth] = import_react$37.useState(defaultSidebarWidth);
-			const [pane, setPane] = import_react$37.useState(initialPane);
-			const handleRef = import_react$37.useRef(null);
-			const rootRef = import_react$37.useRef(null);
+			const [sidebarWidth, setSidebarWidth] = import_react$38.useState(defaultSidebarWidth);
+			const [pane, setPane] = import_react$38.useState(initialPane);
+			const handleRef = import_react$38.useRef(null);
+			const rootRef = import_react$38.useRef(null);
 			const show = (next) => {
 				setPane(next);
 				requestAnimationFrame(() => {
@@ -15370,7 +15370,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	* a parallel write UI.
 	*/
 	function McpCommandHint({ label, tool, args }) {
-		const [copied, setCopied] = (0, import_react$34.useState)(false);
+		const [copied, setCopied] = (0, import_react$35.useState)(false);
 		const command = `${tool}(${Object.entries(args).map(([k, v]) => `${k}="${v}"`).join(", ")})`;
 		const copy = () => {
 			navigator.clipboard?.writeText(command).then(() => {
@@ -15406,9 +15406,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	var import_react$34, import_jsx_runtime$71;
+	var import_react$35, import_jsx_runtime$71;
 	var init_McpCommandHint = __esmMin((() => {
-		import_react$34 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$35 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
 		import_jsx_runtime$71 = require_jsx_runtime();
 	}));
@@ -18866,10 +18866,10 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 	}
 	function PostOnX({ agentId }) {
-		const [handle, setHandle] = import_react$32.useState("");
-		const [style, setStyle] = import_react$32.useState("plain");
-		const [claim, setClaim] = import_react$32.useState(null);
-		const [error, setError] = import_react$32.useState("");
+		const [handle, setHandle] = import_react$33.useState("");
+		const [style, setStyle] = import_react$33.useState("plain");
+		const [claim, setClaim] = import_react$33.useState(null);
+		const [error, setError] = import_react$33.useState("");
 		const clean = cleanHandle(handle);
 		const prepare = async () => {
 			setError("");
@@ -18995,9 +18995,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	var import_react$32, import_jsx_runtime$66;
+	var import_react$33, import_jsx_runtime$66;
 	var init_XLinkPanel = __esmMin((() => {
-		import_react$32 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$33 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
 		init_transport();
 		init_relayEnv();
@@ -19035,10 +19035,10 @@ var EmporiaHermesPlugin = (function(exports) {
 		return rows;
 	}
 	function useAgentExtras(id, on) {
-		const [q, setQ] = import_react$31.useState(null);
-		const [sheet, setSheet] = import_react$31.useState(null);
-		const [rec, setRec] = import_react$31.useState(null);
-		import_react$31.useEffect(() => {
+		const [q, setQ] = import_react$32.useState(null);
+		const [sheet, setSheet] = import_react$32.useState(null);
+		const [rec, setRec] = import_react$32.useState(null);
+		import_react$32.useEffect(() => {
 			if (!on) return;
 			let live = true;
 			Promise.resolve().then(() => api.quests(id)).then((r) => live && setQ(r)).catch(() => live && setQ(null));
@@ -19054,9 +19054,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			setRec
 		};
 	}
-	var import_react$31, LAB_QUESTS, say;
+	var import_react$32, LAB_QUESTS, say;
 	var init_agentCardModel = __esmMin((() => {
-		import_react$31 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$32 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		LAB_QUESTS = [
 			"lab-confirmed",
@@ -19125,7 +19125,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	function FullCard({ agent, navigate }) {
 		const { q, sheet, rec, setSheet, setRec } = useAgentExtras(agent.agent_id, true);
-		import_react$30.useEffect(() => {
+		import_react$31.useEffect(() => {
 			let live = true;
 			Promise.resolve().then(() => api.sheet(agent.agent_id)).then((r) => live && setSheet(r)).catch(() => live && setSheet(null));
 			Promise.resolve().then(() => api.agentRecord(agent.agent_id)).then((r) => live && setRec(r)).catch(() => live && setRec(null));
@@ -19191,9 +19191,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	var import_react$30, import_jsx_runtime$65;
+	var import_react$31, import_jsx_runtime$65;
 	var init_AgentCard = __esmMin((() => {
-		import_react$30 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$31 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
 		init_api();
 		init_AgentMoireAvatar();
@@ -19218,27 +19218,27 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 	}
 	function AgentDetailPanel({ agent, navigate }) {
-		const [profile, setProfile] = import_react$29.useState(null);
-		const [tab, setTab] = import_react$29.useState("profile");
-		const [sessions, setSessions] = import_react$29.useState([]);
-		const [posts, setPosts] = import_react$29.useState([]);
-		const agentRef = import_react$29.useRef(agent);
-		import_react$29.useEffect(() => {
+		const [profile, setProfile] = import_react$30.useState(null);
+		const [tab, setTab] = import_react$30.useState("profile");
+		const [sessions, setSessions] = import_react$30.useState([]);
+		const [posts, setPosts] = import_react$30.useState([]);
+		const agentRef = import_react$30.useRef(agent);
+		import_react$30.useEffect(() => {
 			agentRef.current = agent;
 		});
-		import_react$29.useEffect(() => {
+		import_react$30.useEffect(() => {
 			api.agentProfile(agent.agent_id).then(setProfile).catch(() => setProfile(agentRef.current));
 		}, [agent.agent_id]);
-		const [record, setRecord] = import_react$29.useState(null);
-		const [recordFor, setRecordFor] = import_react$29.useState(agent.agent_id);
+		const [record, setRecord] = import_react$30.useState(null);
+		const [recordFor, setRecordFor] = import_react$30.useState(agent.agent_id);
 		if (recordFor !== agent.agent_id) {
 			setRecordFor(agent.agent_id);
 			setRecord(null);
 		}
-		import_react$29.useEffect(() => {
+		import_react$30.useEffect(() => {
 			api.agentRecord(agent.agent_id).then(setRecord).catch(() => setRecord(null));
 		}, [agent.agent_id]);
-		import_react$29.useEffect(() => {
+		import_react$30.useEffect(() => {
 			if (tab === "games") api.agentSessions(agent.agent_id).then((r) => setSessions(r.sessions)).catch(() => {});
 			if (tab === "posts") api.agentPosts(agent.agent_id).then((r) => setPosts(r.posts)).catch(() => {});
 		}, [tab, agent.agent_id]);
@@ -19372,12 +19372,12 @@ var EmporiaHermesPlugin = (function(exports) {
 		] });
 	}
 	function AgentsView({ initialAgentId = null, navigate, breadcrumb = null }) {
-		const [search, setSearch] = import_react$29.useState("");
+		const [search, setSearch] = import_react$30.useState("");
 		const [agentsData, agentsLoading, agentsErr] = useInterval(() => api.agents(search || void 0), 8e3, [search]);
-		const agents = import_react$29.useMemo(() => agentsData?.agents ?? [], [agentsData]);
-		const [selected, setSelected] = import_react$29.useState(null);
-		const [myProfile, setMyProfile] = import_react$29.useState(null);
-		const [deepLinkApplied, setDeepLinkApplied] = import_react$29.useState(null);
+		const agents = import_react$30.useMemo(() => agentsData?.agents ?? [], [agentsData]);
+		const [selected, setSelected] = import_react$30.useState(null);
+		const [myProfile, setMyProfile] = import_react$30.useState(null);
+		const [deepLinkApplied, setDeepLinkApplied] = import_react$30.useState(null);
 		if (initialAgentId && agents.length && deepLinkApplied !== initialAgentId) {
 			const found = agents.find((a) => a.agent_id === initialAgentId);
 			if (found) {
@@ -19386,7 +19386,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			}
 		}
 		if (!initialAgentId && agents.length > 0 && selected === null) setSelected(agents[0]);
-		(0, import_react$29.useEffect)(() => {
+		(0, import_react$30.useEffect)(() => {
 			const id = VIEWER_ID;
 			if (!id) return;
 			api.agentProfile(id).then((p) => {
@@ -19394,7 +19394,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				setSelected((cur) => cur ?? p);
 			}).catch(() => {});
 		}, []);
-		const [standings, setStandings] = import_react$29.useState(false);
+		const [standings, setStandings] = import_react$30.useState(false);
 		const pick = (a) => {
 			setStandings(false);
 			setSelected(a);
@@ -19514,7 +19514,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	var import_react$29, import_jsx_runtime$64;
+	var import_react$30, import_jsx_runtime$64;
 	var init_AgentsView = __esmMin((() => {
 		init_Badge$1();
 		init_Divider();
@@ -19523,7 +19523,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_SidebarLayout();
 		init_SimpleTable();
 		init_Text();
-		import_react$29 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$30 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_AgentMoireAvatar();
 		init_FlatRailItem();
@@ -19601,15 +19601,15 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	function ProfileView({ navigate } = {}) {
 		const { viewerId, relayOwner, relayId, relayUrl, requireChallenge, isRelayOperator, isSpectator, agentCount, activeSessionCount, relayVersion } = useRelayCtx();
-		const [loadedProfile, setProfile] = (0, import_react$28.useState)(null);
+		const [loadedProfile, setProfile] = (0, import_react$29.useState)(null);
 		const profile = viewerId ? loadedProfile : null;
-		const [mySessions, setMySessions] = (0, import_react$28.useState)([]);
-		const [mySettlements, setMySettlements] = (0, import_react$28.useState)([]);
-		(0, import_react$28.useEffect)(() => {
+		const [mySessions, setMySessions] = (0, import_react$29.useState)([]);
+		const [mySettlements, setMySettlements] = (0, import_react$29.useState)([]);
+		(0, import_react$29.useEffect)(() => {
 			if (!viewerId) return;
 			api.agentProfile(viewerId).then(setProfile).catch(() => setProfile(null));
 		}, [viewerId]);
-		(0, import_react$28.useEffect)(() => {
+		(0, import_react$29.useEffect)(() => {
 			if (!viewerId) return;
 			api.agentSessions(viewerId).then((d) => setMySessions(d.sessions.slice(0, 5))).catch(() => {});
 			api.agentSettlements(viewerId).then((d) => setMySettlements(d.settlements.slice(0, 8))).catch(() => {});
@@ -19811,7 +19811,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			})
 		] }) });
 	}
-	var import_react$28, import_jsx_runtime$63;
+	var import_react$29, import_jsx_runtime$63;
 	var init_ProfileView = __esmMin((() => {
 		init_Indent();
 		init_Text();
@@ -19826,18 +19826,18 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_AgentsView();
 		init_McpCommandHint();
 		init_chips();
-		import_react$28 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$29 = /* @__PURE__ */ __toESM(require_react(), 1);
 		import_jsx_runtime$63 = require_jsx_runtime();
 	}));
 	// src/relayContext.tsx
 	function RelayContextProvider({ children }) {
-		const [cfg, setCfg] = (0, import_react$27.useState)(null);
-		const [tick, setTick] = (0, import_react$27.useState)(0);
-		const [dashboardToken, setDashboardTokenState] = (0, import_react$27.useState)(() => sessionStorage.getItem(SESSION_TOKEN_KEY));
-		(0, import_react$27.useEffect)(() => {
+		const [cfg, setCfg] = (0, import_react$28.useState)(null);
+		const [tick, setTick] = (0, import_react$28.useState)(0);
+		const [dashboardToken, setDashboardTokenState] = (0, import_react$28.useState)(() => sessionStorage.getItem(SESSION_TOKEN_KEY));
+		(0, import_react$28.useEffect)(() => {
 			api.uiConfig().then(setCfg).catch(() => {});
 		}, [tick]);
-		(0, import_react$27.useEffect)(() => {
+		(0, import_react$28.useEffect)(() => {
 			const id = setInterval(() => setTick((n) => n + 1), 3e4);
 			return () => clearInterval(id);
 		}, []);
@@ -19849,8 +19849,8 @@ var EmporiaHermesPlugin = (function(exports) {
 		const viewerId = VIEWER_ID;
 		const relayOwner = cfg?.owner_agent_id ?? null;
 		const claimsOperator = !!(viewerId && relayOwner && viewerId === relayOwner);
-		const [verifiedOperator, setVerifiedOperator] = (0, import_react$27.useState)(null);
-		(0, import_react$27.useEffect)(() => {
+		const [verifiedOperator, setVerifiedOperator] = (0, import_react$28.useState)(null);
+		(0, import_react$28.useEffect)(() => {
 			if (!claimsOperator) return;
 			let live = true;
 			api.operatorWhoami().then((w) => {
@@ -19889,9 +19889,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			children
 		});
 	}
-	var import_react$27, import_jsx_runtime$62;
+	var import_react$28, import_jsx_runtime$62;
 	var init_relayContext = __esmMin((() => {
-		import_react$27 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$28 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_relayEnv();
 		init_relayCtx();
@@ -21382,8 +21382,8 @@ var EmporiaHermesPlugin = (function(exports) {
 	* and, in one line, how it was earned. Read-only: it shows, it never acts.
 	*/
 	function Badge({ id, size = 2, title, pop = false, mono = false, className }) {
-		const { def, fallback } = (0, import_react$26.useMemo)(() => resolveBadge(id), [id]);
-		const runs = (0, import_react$26.useMemo)(() => toRuns(def.grid), [def]);
+		const { def, fallback } = (0, import_react$27.useMemo)(() => resolveBadge(id), [id]);
+		const runs = (0, import_react$27.useMemo)(() => toRuns(def.grid), [def]);
 		const scale = toScale(size);
 		const tip = `${def.name} — ${(title ?? def.how).replace(/\s+/g, " ").trim()}`;
 		const cls = [
@@ -21431,10 +21431,10 @@ var EmporiaHermesPlugin = (function(exports) {
 			})
 		});
 	}
-	var import_react$26, import_jsx_runtime$59;
+	var import_react$27, import_jsx_runtime$59;
 	var init_Badge = __esmMin((() => {
 		init_badges$1();
-		import_react$26 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$27 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_capture();
 		init_catalog();
 		init_format();
@@ -21446,14 +21446,18 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_catalog();
 	}));
 	// src/chat/AskAgent.module.css
-	var root$2, row$1, glyph$1, AskAgent_module_default;
+	var root$2, row$1, copy, note, glyph$1, AskAgent_module_default;
 	var init_AskAgent_module = __esmMin((() => {
-		root$2 = "AskAgent_root_n8p84";
-		row$1 = "AskAgent_row_n8p84";
-		glyph$1 = "AskAgent_glyph_n8p84";
+		root$2 = "AskAgent_root_1tucs";
+		row$1 = "AskAgent_row_1tucs";
+		copy = "AskAgent_copy_1tucs";
+		note = "AskAgent_note_1tucs";
+		glyph$1 = "AskAgent_glyph_1tucs";
 		AskAgent_module_default = {
 			root: root$2,
 			row: row$1,
+			copy,
+			note,
 			glyph: glyph$1
 		};
 	}));
@@ -21670,13 +21674,56 @@ var EmporiaHermesPlugin = (function(exports) {
 		listeners$1 = /* @__PURE__ */ new Set();
 	}));
 	// src/chat/AskAgent.tsx
+	/** The prompts end in ": " so the person can finish the sentence; a pasted question must stand alone. */
+	function standaloneQuestion(prompt) {
+		return prompt.trimEnd().endsWith(":") ? `${prompt}what happened here, and why did you decide as you did?` : prompt;
+	}
 	/**
 	* "Ask the agent about this": opens the chat with a question about what is on
 	* screen already typed in. It fills text only; the person decides to send it.
-	* Draws nothing where there is no chat (outside the Hermes tab).
+	* In the standalone console there is no chat by design (chatAccess.ts), so the
+	* button copies the same question to paste in the agent's own chat instead.
+	* Draws nothing anywhere else.
 	*/
 	function AskAgent({ prompt, label = "ask agent", block = false }) {
-		if (!chatAvailable()) return null;
+		const [copied, setCopied] = (0, import_react$26.useState)(false);
+		if (!chatAvailable()) {
+			if (MODE !== "console") return null;
+			const copy = () => {
+				const text = standaloneQuestion(prompt);
+				const done = () => {
+					setCopied(true);
+					setTimeout(() => setCopied(false), 2500);
+				};
+				if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done, done);
+				else done();
+			};
+			const copyButton = /* @__PURE__ */ (0, import_jsx_runtime$58.jsxs)("span", {
+				className: AskAgent_module_default.copy,
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$58.jsxs)("button", {
+					type: "button",
+					className: AskAgent_module_default.root,
+					onClick: copy,
+					title: "Copies a ready-made question about what is on screen. Nothing is sent anywhere.",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("span", {
+							"aria-hidden": true,
+							className: AskAgent_module_default.glyph,
+							children: "›_"
+						}),
+						" ",
+						copied ? "copied" : "ask your agent"
+					]
+				}), /* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("span", {
+					className: AskAgent_module_default.note,
+					children: "Paste it in your agent's own chat (Claude Desktop, Codex, …)."
+				})]
+			});
+			return block ? /* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("div", {
+				className: AskAgent_module_default.row,
+				children: copyButton
+			}) : copyButton;
+		}
 		const button = /* @__PURE__ */ (0, import_jsx_runtime$58.jsxs)("button", {
 			type: "button",
 			className: AskAgent_module_default.root,
@@ -21697,10 +21744,12 @@ var EmporiaHermesPlugin = (function(exports) {
 			children: button
 		}) : button;
 	}
-	var import_jsx_runtime$58;
+	var import_react$26, import_jsx_runtime$58;
 	var init_AskAgent = __esmMin((() => {
+		import_react$26 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_AskAgent_module();
 		init_chatAccess();
+		init_transport();
 		import_jsx_runtime$58 = require_jsx_runtime();
 	}));
 	// src/chat/askPrompts.ts

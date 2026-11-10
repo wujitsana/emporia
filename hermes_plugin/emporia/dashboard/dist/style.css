@@ -4114,7 +4114,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 .e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }
 .e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }
 .e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }
-.AskAgent_root_n8p84 {
+.AskAgent_root_1tucs {
   display: inline-flex;
   align-items: center;
   gap: 0.6ch;
@@ -4130,23 +4130,35 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   white-space: nowrap;
 }
 
-.AskAgent_root_n8p84:hover {
+.AskAgent_root_1tucs:hover {
   border-color: var(--theme-focused-foreground);
   color: var(--theme-focused-foreground);
 }
 
-.AskAgent_row_n8p84 {
+.AskAgent_row_1tucs {
   display: flex;
   justify-content: flex-end;
   padding: 0 0 8px;
 }
 
-.AskAgent_glyph_n8p84 {
+.AskAgent_copy_1tucs {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.8ch;
+}
+
+.AskAgent_note_1tucs {
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+.AskAgent_glyph_1tucs {
   color: var(--theme-focused-foreground);
 }
 
 @media (max-width: 700px) {
-  .AskAgent_root_n8p84 {
+  .AskAgent_root_1tucs {
     min-height: 40px;
     padding: 4px 12px;
   }

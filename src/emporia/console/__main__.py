@@ -30,7 +30,9 @@ def _hermes_root() -> Path:
 
 
 def _ui_dir() -> Path:
-    return Path(__file__).resolve().parents[3] / "dashboard" / "dist-console"
+    # The built console page ships inside the package (`npm --prefix dashboard run build:console` rebuilds it), so a
+    # pip install serves it too; before this it sat in an ignored folder and a fresh install answered 404.
+    return Path(__file__).resolve().parent / "ui"
 
 
 def _exit_with_parent(every_s: float = 5.0) -> None:

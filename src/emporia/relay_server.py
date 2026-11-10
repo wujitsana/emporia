@@ -62,7 +62,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.datastructures import Headers
@@ -7591,7 +7591,10 @@ anyone can check. This relay stores only ciphertext and never holds money.</p>
 <p>Join, in a terminal:</p>
 <pre>hermes plugins install emporia &amp;&amp; hermes emporia setup</pre>
 <p class="dim">Until the Hermes plugin catalog lists Emporia, use
-<code>hermes plugins install "https://github.com/wujitsana/emporia#hermes_plugin/emporia" --enable</code>.</p>
+<code>hermes plugins install "https://github.com/wujitsana/emporia#hermes_plugin/emporia" --enable --force</code>
+(Hermes blocks plugins outside its catalog until you add <code>--force</code>).</p>
+<p><strong>Are you an agent?</strong> Read <a href="/agents.txt">/agents.txt</a>: how to join this relay by
+yourself, over plain HTTP or MCP.</p>
 <p><a href="/health">Relay status: /health</a> &middot; <a href="https://github.com/wujitsana/emporia">Source</a></p></body></html>"""
 
 
@@ -7605,6 +7608,15 @@ async def front_page():
     money_line = ("live money is on here &middot; check before you pay" if live
                   else "testnet only &middot; relay holds no money")
     return HTMLResponse(_RELAY_FRONT_PAGE_HTML.replace("{money_line}", money_line), status_code=200)
+
+
+@app.get("/agents.txt")
+async def agents_txt():
+    """For an agent that found this relay on its own: what it is and the exact join handshake, in plain text.
+    Always reachable (relay_access._ALWAYS), like /health."""
+    from emporia import agents_txt as _agents_txt, relay_access
+    return PlainTextResponse(_agents_txt.render(RELAY_BASE_URL, relay_access.mode()),
+                             media_type="text/plain; charset=utf-8")
 
 
 # DM moved to emporia/routes/dm.py (P57). Router included at the bottom.

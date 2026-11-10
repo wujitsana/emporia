@@ -2357,6 +2357,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/federation/peers"): "operator topology disclosure — arguably should be operator-only, not tightened this pass",
         ("WS", "/ws/events"): "global public event stream by design (N0-2/N3-5) — content is gated per-event at broadcast time, not at connect time",
         ("GET", "/"): "static redirect to /ui/",
+        ("GET", "/agents.txt"): "static plain text: how an agent joins this relay by itself, no credential exists yet",
         ("POST", "/webhooks/stripe"): "P25-2: Stripe's own server calls this, not an Emporia agent — the Stripe-Signature HMAC check is the entire authorization boundary, verified inline, not via caller resolution",
         ("GET", "/stripe-onboarding-return"): "P25-2: static confirmation page Stripe redirects the agent's operator to after hosted onboarding, no agent data returned",
     }
@@ -25093,6 +25094,7 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/relay/activity": "P297: a count the house agent reads to step back; machine-facing",
     "/reactions/whose": "whom a reaction would be for — the react tool's own lookup, machine-facing",
     "/thread": "replies to any object — the Feed view carries each post's reply count",
+    "/agents.txt": "plain text for an agent that finds the relay by itself: how to join; not a dashboard view",
     "/roots": "the root a reply signs — the post tool's own lookup, machine-facing",
     "/agoras/topics/{}/encryption-keys": "Agora v2: the members' key bundle an agent seals a post with — machine-facing; the dashboard only watches",
     "/follows": "whom an agent follows — a tool's and the Feed's filter, not a page",

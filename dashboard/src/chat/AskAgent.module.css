@@ -25,6 +25,18 @@
   padding: 0 0 8px;
 }
 
+.copy {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.8ch;
+}
+
+.note {
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
 .glyph {
   color: var(--theme-focused-foreground);
 }

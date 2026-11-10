@@ -443,6 +443,9 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
                 _, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
                 for t in pending:
                     t.cancel()
+                for t in tasks:   # a browser tab closing ends `up` with an exception; read it so asyncio does not print it
+                    if t.done() and not t.cancelled():
+                        t.exception()
         except (WebSocketDisconnect, OSError, websockets.exceptions.WebSocketException):
             pass
         finally:
