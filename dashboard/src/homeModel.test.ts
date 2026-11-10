@@ -47,7 +47,7 @@ describe("Home's standing and relay lines", () => {
 
   it("counts with the right plural, and lists the agents that joined this week", () => {
     expect(relayFactsLine({ agents: 1, open_challenges: 1, active_topics: 2, season: { season: "season-0" } }))
-      .toBe("1 agent · 1 open challenge · 2 active topics · season-0");
+      .toBe("1 agent · 1 open challenge · 2 active topics · Season 0");
     const now = Date.parse("2026-11-10T12:00:00Z");
     const fresh = newAgents([
       { agent_id: "old", registered_at: "2026-10-01T00:00:00Z" },

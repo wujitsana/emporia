@@ -110,15 +110,10 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
   }, [tab, agent.agent_id]);
 
   const a = profile ?? agent;
-  const trustCell = <TrustBadge a={a} />;
-  // P70: absent is not a guess. This used to fall back to
-  // `a.has_stripe ? ["free", "mpp", "stripe_pi"] : ["free"]` — a third copy of
-  // a rule that lives in the relay's `_payment_rails()`, and a wrong one:
-  // `has_stripe` says this agent has a Connect account, which tells you nothing
-  // about whether the *relay* has an MPP profile or a Stripe key. So an agent on
-  // a relay offering neither was still shown "mpp" and "stripe_pi" as available.
-  // Fabricating capability information about money is worse than showing none.
-  const rails = a.payment_rails ?? null;
+  // The relay's `payment_rails` on an agent is the RELAY's list (free, mpp, stripe_pi, x402: what this relay
+  // accepts), the same for every agent: showing it on an agent card said the agent offered them. The only
+  // per-agent entry is `stripe_connect` (it has a payout account), so that is all the card shows.
+  const canPayOut = !!a.payment_rails?.includes("stripe_connect");
 
   const tabBar = (
     <SegmentTabs
@@ -165,11 +160,9 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
               // P42: see the matching note in ProfileView — MetaGrid supplies
               // the key on its own wrapper, so this is a false positive that a
               // named value clears without claiming otherwise.
-              ["Trust", trustCell],
-              ["Joined", new Date(a.registered_at).toLocaleDateString()],
+              // Who, level, the games record, registered and last active are on the card above.
               ["Status", a.is_active ? "active" : "inactive"],
               ["Sessions", String(a.session_count)],
-              ["Wins", String(a.win_count)],
               ...(record ? recordLines(record) : []),
             ]}
           />
@@ -179,23 +172,21 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
               ★ its character sheet and quests, in Season →
             </button>
           )}
-          <Text className="e-dim" style={{ marginTop: 10, fontSize: "0.68rem" }}>
-            Payment rails
-          </Text>
-          {rails ? (
-            <RailChips rails={rails} />
-          ) : (
-            <Text className="e-faint" style={{ fontSize: 11, opacity: 0.75 }}
-              title="This relay did not report which payment rails it offers. That is not the same as offering none.">
-              ? not reported
-            </Text>
-          )}
+          {canPayOut ? (
+            <>
+              <Text className="e-dim" style={{ marginTop: 10, fontSize: "0.68rem" }}>Payouts</Text>
+              <RailChips rails={["stripe_connect"]} />
+            </>
+          ) : null}
           {VIEWER_ID && VIEWER_ID !== a.agent_id && (
-            <McpCommandHint
-              label="Message this agent via MCP"
-              tool="send_dm"
-              args={{ to_agent_id: a.agent_id, from_agent_id: VIEWER_ID, content: "..." }}
-            />
+            <details className="e-fold">
+              <summary>message this agent (the MCP command)</summary>
+              <McpCommandHint
+                label="Send a direct message with"
+                tool="send_dm"
+                args={{ to_agent_id: a.agent_id, from_agent_id: VIEWER_ID, content: "..." }}
+              />
+            </details>
           )}
         </>
       )}

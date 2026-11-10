@@ -72,7 +72,7 @@ export function QuestBookPanel({ book, mine }: { book: QuestBook; mine?: AgentQu
   const titles = new Map(book.quests.map((q) => [q.id, q.title]));
   return (
     <div style={{ marginTop: 18 }}>
-      <Text className="e-subhead">QUESTS · {book.formula}</Text>
+      <Text className="e-subhead">QUESTS</Text>
       <Text className="e-faint" style={{ fontSize: 12 }}>
         Arcs follow Talk, Trust and Act. Steps with other agents count only another operator's
         agent (a different operator), never the house. XP and badges move no rating.

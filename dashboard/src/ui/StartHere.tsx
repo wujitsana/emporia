@@ -2,6 +2,7 @@ import { api } from "../api";
 import { poll } from "../capture";
 import { useInterval } from "../hooks";
 import type { Navigate } from "../navigation";
+import { seasonName } from "../homeModel";
 import { relayCounts, startModel, topThree } from "../startHere";
 import { CopyCommand } from "./CopyCommand";
 
@@ -56,7 +57,7 @@ export function StartHere({ agentId, navigate, part = "both" }: {
       {counts.length || top.length ? (
         <section className="e-now" aria-label="On this relay">
           <header className="e-now__head">
-            <span>On this relay</span><span>{summary?.season?.season ?? board?.season ?? ""}</span>
+            <span>On this relay</span><span>{seasonName(summary?.season?.season ?? board?.season)}</span>
           </header>
           {counts.length ? (
             <p className="e-now__row e-now__row--static">

@@ -3,6 +3,7 @@ import type { Frame, Slot } from "../arena";
 import { playerName } from "../arena";
 import type { BargainOffer, Goods } from "../bargain";
 import { GOODS } from "../bargain";
+import { FoldDetail } from "./FoldDetail";
 
 type Book = Record<string, string> | undefined;
 
@@ -50,6 +51,8 @@ export function ArenaFrame({ frame, book }: { frame: Frame; book: Book }) {
     const unit = frame.kind === "blotto" ? "fields" : "pick";
     return (
       <div className="e-arena-frame" data-kind={frame.kind}>
+        {frame.verdict ? <p className="e-arena-verdict" role="status">{frame.verdict.why}</p> : null}
+        <FoldDetail fold={!!frame.verdict} label="the moves, round by round">
         <Text className="e-dim">
           {frame.rounds > 1 ? `Round ${frame.round} of ${frame.rounds} · ` : ""}{frame.phase} phase
         </Text>
@@ -69,13 +72,15 @@ export function ArenaFrame({ frame, book }: { frame: Frame; book: Book }) {
             ))}
           </div>
         ) : null}
-        {frame.verdict ? <p className="e-arena-verdict" role="status">{frame.verdict.why}</p> : null}
+        </FoldDetail>
       </div>
     );
   }
   if (frame.kind === "dice") {
     return (
       <div className="e-arena-frame" data-kind="dice">
+        <Result r={frame.result} book={book} />
+        <FoldDetail fold={!!frame.result} label="the bids and the dice">
         {frame.bids.length === 0 ? <Text className="e-faint">No bid yet.</Text> : (
           <ol className="e-arena-bids">
             {frame.bids.map((b) => (
@@ -98,13 +103,15 @@ export function ArenaFrame({ frame, book }: { frame: Frame; book: Book }) {
             ))}
           </ul>
         ) : frame.call ? <Text className="e-faint" style={{ fontSize: 12 }}>dice stay hidden until the record reveals them</Text> : null}
-        <Result r={frame.result} book={book} />
+        </FoldDetail>
       </div>
     );
   }
   if (frame.kind === "auction") {
     return (
       <div className="e-arena-frame" data-kind="auction">
+        <Result r={frame.result} book={book} />
+        <FoldDetail fold={!!frame.result} label="the bids and the signals">
         <Slots slots={frame.slots} book={book} />
         {frame.secrets.length ? <Text className="e-faint" style={{ fontSize: 12 }}>secrets revealed: {frame.secrets.length}</Text> : null}
         {frame.value !== null ? (
@@ -113,13 +120,16 @@ export function ArenaFrame({ frame, book }: { frame: Frame; book: Book }) {
             {frame.signals ? ` · signals ${Object.entries(frame.signals).map(([p, v]) => `${playerName(p, book, 10)} ${v}`).join(", ")}` : ""}
           </p>
         ) : <Text className="e-faint" style={{ fontSize: 12 }}>V stays unknown until the secrets are revealed</Text>}
-        <Result r={frame.result} book={book} />
+        </FoldDetail>
       </div>
     );
   }
   if (frame.kind === "bargain") {
     return (
       <div className="e-arena-frame" data-kind="bargain">
+        <Result r={frame.result} book={book} />
+        {frame.result && frame.ended ? <p className="e-arena-verdict">{playerName(frame.ended.by, book)} {frame.ended.how} offer {frame.offers.length}.</p> : null}
+        <FoldDetail fold={!!frame.result} label={`the offers and the hands (${frame.offers.length})`}>
         {frame.offers.length === 0 ? <Text className="e-faint">No offer yet.</Text> : (
           <ol className="e-arena-bids">
             {frame.offers.map((o: BargainOffer) => (
@@ -133,13 +143,13 @@ export function ArenaFrame({ frame, book }: { frame: Frame; book: Book }) {
             ))}
           </ol>
         )}
-        {frame.ended ? <p className="e-arena-verdict">{playerName(frame.ended.by, book)} {frame.ended.how} offer {frame.offers.length}.</p> : null}
+        {frame.ended && !frame.result ? <p className="e-arena-verdict">{playerName(frame.ended.by, book)} {frame.ended.how} offer {frame.offers.length}.</p> : null}
         {frame.hands ? (
           <Text className="e-faint" style={{ fontSize: 12, display: "block" }}>
             hands: {Object.entries(frame.hands).map(([p, g]) => `${playerName(p, book, 10)} ${goods(g)}`).join("  |  ")}
           </Text>
         ) : null}
-        <Result r={frame.result} book={book} />
+        </FoldDetail>
       </div>
     );
   }

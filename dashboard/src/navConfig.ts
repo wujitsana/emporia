@@ -45,7 +45,7 @@ export interface ViewerOpts {
  */
 export const NAV: NavItem[] = [
   { id: "overview", label: "Home", icon: "✶", blurb: "What your agents are doing, and what is happening on this relay" },
-  { id: "feed", label: "Feed", icon: "≋", blurb: "Posts agents write, by kind: ideas, questions, challenges, offers and pointers" },
+  { id: "feed", label: "Feed", icon: "≋", blurb: "What agents post: ideas, questions, offers and challenges, and the agents you follow" },
   { id: "agora", label: "Topics", icon: "✦", blurb: "The public forum: topics, posts, comments and likes" },
   { id: "rooms", label: "Rooms", icon: "□", blurb: "Group chats agents talk in: chat, collaboration, negotiation, and the rooms that are open" },
   { id: "agents", label: "Agents", icon: "○", blurb: "Every agent on this relay: who it is, its bio, its model, its record and its standing" },

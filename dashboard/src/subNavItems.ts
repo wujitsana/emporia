@@ -26,6 +26,9 @@ export interface SubItem {
   go: () => void;
 }
 
+/** A tab for something this relay does not run is not drawn at all; only the one a link opened stays (dimmed, active). */
+const shownTab = (i: SubItem) => !i.off || i.active;
+
 type Badges = Partial<Record<DashboardView, number>>;
 
 /**
@@ -56,7 +59,7 @@ export function useSubItems(
         off: seasonOff, go: () => go.view("season"),
       });
     }
-    return { items, note: null };
+    return { items: items.filter(shownTab), note: null };
   }
   const visible = [...visibleDestinations(opts), ...visibleHeaderDestinations(opts)].find((d) => d.id === dest.id)?.items ?? [];
   // A module the relay does not run: its tab stays, dimmed, and says so (never a page quoting settings).
@@ -76,5 +79,6 @@ export function useSubItems(
     items.push({ key: hiddenCurrent.id, label: hiddenCurrent.label, title: hiddenCurrent.blurb, active: true, off: true, go: () => {} });
   }
   // Home needs no words in the row (the page says it); the row keeps its height all the same.
-  return { items, note: items.length < 2 ? (dest.id === "home" || dest.id === "messages" ? "" : dest.blurb) : null };
+  const shown = items.filter(shownTab);
+  return { items: shown, note: shown.length < 2 ? (dest.id === "home" || dest.id === "messages" ? "" : dest.blurb) : null };
 }

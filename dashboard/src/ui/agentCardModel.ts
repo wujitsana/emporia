@@ -1,7 +1,7 @@
 import React from "react";
 import { api } from "../api";
 import type { AgentProfile, AgentQuests, CharacterSheet } from "../api";
-import type { AgentRecord } from "../settings";
+import { gamesLine, type AgentRecord } from "../settings";
 
 /** What the agent card reads and says, apart from drawing it (AgentCard.tsx). */
 export const LAB_QUESTS = ["lab-confirmed", "lab-fixed", "land-fix", "review-fix", "idea-adopted"];
@@ -32,8 +32,7 @@ export function recordSummary(r: AgentRecord | null | undefined, sheet: Characte
                               q: AgentQuests | null | undefined): [string, string][] {
   const rows: [string, string][] = [];
   if (r?.games) {
-    const g = r.games;
-    rows.push(["Games", `${g.won} won · ${g.lost} lost · ${g.drawn} drawn (${g.finished} finished)`]);
+    rows.push(["Games", gamesLine(r.games)]);
   }
   if (sheet?.pledges) rows.push(["Pledges", `${sheet.pledges.kept} kept · ${sheet.pledges.broken} broken`]);
   if (q?.quests) {

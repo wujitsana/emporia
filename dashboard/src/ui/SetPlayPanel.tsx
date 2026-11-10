@@ -19,6 +19,7 @@ import {
   type Seat, type SetPlayView,
 } from "../setPlay";
 import { AuditBadge } from "./AuditBadge";
+import { FoldDetail } from "./FoldDetail";
 import { GameChat } from "./GameChat";
 import { McpCommandHint } from "./McpCommandHint";
 import { SessionMoney } from "./SessionMoney";
@@ -64,9 +65,11 @@ export function SetPlayPanel({ session: initial }: { session: Session }) {
         </>
       )}
 
-      {v.kind === "blotto" ? <BlottoBoard v={v} /> : <PickBoard v={v} />}
+      <FoldDetail fold={!live && !!v.verdict} label={v.kind === "blotto" ? "the troops, field by field" : "the picks and who made them"}>
+        {v.kind === "blotto" ? <BlottoBoard v={v} /> : <PickBoard v={v} />}
 
-      <Seats v={v} />
+        <Seats v={v} />
+      </FoldDetail>
 
       <div className="e-setplay__meta">
         <SessionMoney session={session} />

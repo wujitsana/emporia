@@ -19,6 +19,7 @@ import { bareAgentName } from "../agentName";
 import { whenText } from "../relayFormat";
 import { clockText } from "../setPlay";
 import { AuditBadge } from "./AuditBadge";
+import { FoldDetail } from "./FoldDetail";
 import { GameChat } from "./GameChat";
 import { McpCommandHint } from "./McpCommandHint";
 import { VerifyBadge } from "./VerifyBadge";
@@ -53,11 +54,6 @@ export function BargainPanel({ session: initial }: { session: Session }) {
         </span>
       </header>
 
-      <p className="e-faint e-blotto__rules" style={num}>
-        pool {goodsText(v.pool)} · worth {v.total} to each player, by priorities only it knows · {v.maxOffers} offers at most
-        {" "}· no deal scores each player its own private walk-away (0–4)
-      </p>
-
       {over ? (
         <p className={`e-setplay__verdict${v.result?.winner ? " is-win" : ""}`} role="status">
           {v.ended?.how === "accepted" ? "deal" : v.ended?.how === "declined" ? "no deal" : v.result?.termination === "timeout" ? "on time" : "over"}
@@ -82,6 +78,11 @@ export function BargainPanel({ session: initial }: { session: Session }) {
         </>
       )}
 
+      <FoldDetail fold={over && v.offers.length > 0} label={`the offers and the hands (${v.offers.length} offer${v.offers.length === 1 ? "" : "s"})`}>
+      <p className="e-faint e-blotto__rules" style={num}>
+        pool {goodsText(v.pool)} · worth {v.total} to each player, by priorities only it knows · {v.maxOffers} offers at most
+        {" "}· no deal scores each player its own private walk-away (0–4)
+      </p>
       {v.offers.length === 0 ? (
         <Text className="e-note">No offer yet. The creator opens.</Text>
       ) : (
@@ -113,6 +114,7 @@ export function BargainPanel({ session: initial }: { session: Session }) {
       )}
 
       <Hands v={v} participants={session.participants} over={over} />
+      </FoldDetail>
 
       <div className="e-setplay__meta">
         <Text className="e-faint" style={{ fontSize: 11 }}>
