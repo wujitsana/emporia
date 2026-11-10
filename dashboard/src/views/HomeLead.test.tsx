@@ -12,17 +12,21 @@ import { AgentNow, OverviewView } from "./OverviewView";
 // person last looked, what is on the relay, where the agent stands and what is next. It must read well with
 // no games and no gamify parts.
 const data: { sessions: Session[]; season: SeasonBoards | null; quests: AgentQuests | null; next: unknown; unread: number;
-  followed: unknown } = {
-  sessions: [], season: null, quests: null, next: null, unread: 0, followed: null,
+  followed: unknown; unreadEvents: unknown[]; events: unknown[]; happening: unknown } = {
+  sessions: [], season: null, quests: null, next: null, unread: 0, followed: null, unreadEvents: [], events: [], happening: null,
 };
 vi.mock("../hooks", () => ({
   useInterval: (fn: () => unknown) => {
     const src = String(fn);
     if (src.includes("agentSessions")) return [data.sessions, false, null];
-    if (src.includes("agentInbox")) return [src.includes("unread_total") ? data.unread : [], false, null];
+    if (src.includes("agentInbox")) {
+      if (src.includes("total:")) return [{ total: data.unread, events: data.unreadEvents }, false, null];
+      return [src.includes("unread_total") ? data.unread : data.events, false, null];
+    }
     if (src.includes("api.season")) return [data.season, false, null];
     if (src.includes("api.quests")) return [data.quests, false, null];
     if (src.includes("followingActivity")) return [data.followed, false, data.followed ? null : "Error: 404 /x"];
+    if (src.includes("api.happening")) return [data.happening, data.happening === null, null];
     if (src.includes("agentNext")) return [data.next, false, data.next ? null : "Error: 404 /agents/alpha/next"];
     return [null, true, null];
   },
@@ -39,6 +43,9 @@ afterEach(() => {
   data.next = null;
   data.unread = 0;
   data.followed = null;
+  data.unreadEvents = [];
+  data.events = [];
+  data.happening = null;
 });
 
 const now = Date.parse("2026-11-06T12:00:00Z");
@@ -63,7 +70,10 @@ const live: Session = {
   state: { data: { phase: "commit", commitments: {}, revealed: {}, battlefields: 5, troops: 100 } },
 } as Session;
 
-const withViewer = (node: ReactNode) =>
+/** A card's headline as read: the decode animation draws glyphs beside the real words (the screen-reader text). */
+const headOf = (e: Element) => e.querySelector(".e-sr")?.textContent ?? e.textContent;
+
+const withViewer =(node: ReactNode) =>
   <RelayCtx.Provider value={{ isSpectator: false, isRelayOperator: false } as RelayCtxValue}>{node}</RelayCtx.Provider>;
 
 describe("earnedBadges", () => {
@@ -160,32 +170,68 @@ describe("Home", () => {
     data.unread = 2;
     data.quests = quests;
     data.season = season;
-    data.followed = { agent_id: "alpha", following: 1, items: [
-      { kind: "post", actor: "bob", ref: "post:p1", title: "a fresh idea", at: "2026-11-06T11:00:00Z", post_kind: "idea" },
+    data.unreadEvents = [
+      { inbox_id: "i1", event_type: "post_reply", payload: { author_id: "beta", text: "Good point about debriefs" }, is_read: false,
+        created_at: "2026-11-06T11:30:00Z" },
+      { inbox_id: "i2", event_type: "dm", payload: { from_agent: "rt-probe", body: '{"v": 2, "alg": "x25519", "ct": "AAAA"}' }, is_read: false,
+        created_at: "2026-11-06T11:20:00Z" },
+    ];
+    data.followed = { agent_id: "alpha", following: 2, items: [
+      { kind: "post", actor: "bob", ref: "post:p1", title: "a fresh idea", at: "2026-11-06T11:00:00Z", post_kind: "idea", topic: "ideas" },
+      { kind: "game", actor: "carol", ref: "session:s9", title: "emporia:chess:v1", at: "2026-11-06T10:00:00Z" },
     ] };
     const nav = vi.fn();
     render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={nav} />));
     expect(screen.getByRole("group", { name: "Home view" }).querySelector("[aria-pressed=true]")?.textContent).toBe("cards");
-    expect(document.querySelectorAll(".e-cardrow").length).toBeGreaterThanOrEqual(4);
+    // Posts and messages lead: now, messages, posts, then games, topics, standing, next.
+    const order = ["alpha now", "Messages & replies", "New posts", "Games", "Topics & agents", "Standing"]
+      .map((n) => screen.getByRole("region", { name: n }));
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    // What was written to the agent comes before its turn, and the sender is named: the headline is the event.
     const now = screen.getByRole("region", { name: "alpha now" });
-    expect(now.querySelectorAll(".e-hcard--hero").length).toBeGreaterThanOrEqual(2);   // the live game and the unread count
-    expect(now.querySelector(".e-hcard__head")?.textContent).toMatch(/BLOTTO/i);
-    expect(now.querySelector(".e-hcard__caption")?.textContent).toMatch(/commit/);
-    fireEvent.click(now.querySelector(".e-hcard")!);
+    const heads = [...now.querySelectorAll(".e-hcard__head")].map(headOf);
+    expect(heads.slice(0, 2)).toEqual(["2 UNREAD", "YOUR TURN"]);
+    expect(now.querySelector(".e-hcard__caption")?.textContent).toBe("from 2 agents");
+    fireEvent.click(now.querySelectorAll(".e-hcard")[1]);
     expect(nav).toHaveBeenCalledWith("session", { sessionId: "s-live", gameModuleType: "emporia:blotto:v2" });
-    const followed = screen.getByRole("region", { name: "From agents alpha follows" });
-    expect(followed.querySelector(".e-hcard__head")?.textContent).toMatch(/BOB/i);
-    expect(followed.querySelector(".e-hcard__caption")?.textContent).toBe("a fresh idea");
+    const written = screen.getByRole("region", { name: "Messages & replies" });
+    expect(headOf(written.querySelector(".e-hcard__head")!)).toBe("REPLY");
+    expect(written.querySelector(".e-hcard__body")?.textContent).toBe("Good point about debriefs");
+    expect(written.querySelectorAll(".e-moire-avatar").length).toBe(2);
+    expect(written.textContent).toContain("SEALED");
+    expect(written.textContent).not.toContain("x25519");   // the ciphertext is never drawn
+    const posts = screen.getByRole("region", { name: "New posts" });
+    expect(headOf(posts.querySelector(".e-hcard__head")!)).toBe("NEW IDEA");
+    expect(posts.querySelector(".e-hcard__body")?.textContent).toBe("a fresh idea");
+    expect(posts.querySelector(".e-hcard__caption")?.textContent).toBe("bob · ideas");
+    const games = screen.getByRole("region", { name: "Games" });
+    expect(headOf(games.querySelector(".e-hcard__head")!)).toBe("GAME DONE");
+    expect(games.querySelector(".e-hcard__caption")?.textContent).toBe("carol · chess");
+    const standing = screen.getByRole("region", { name: "Standing" });
+    expect(headOf(standing.querySelector(".e-hcard__head")!)).toBe("LEVEL 2 → 3");
+    expect(standing.querySelector("[role=progressbar]")).toBeTruthy();
     // The switch gives the list back, and the list has its rows.
     fireEvent.click(screen.getByRole("button", { name: "list" }));
     expect(document.querySelectorAll(".e-cardrow")).toHaveLength(0);
     expect(document.querySelectorAll(".e-now__row").length).toBeGreaterThan(0);
   });
 
+  it("shows three starter cards, each with a call to copy, when the agent has not played, posted or followed", () => {
+    data.followed = { agent_id: "alpha", following: 0, items: [] };
+    data.quests = { ...quests, quests: quests.quests.map((q) => ({ ...q, done: false })) };
+    render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
+    const start = screen.getByRole("region", { name: "Start here" });
+    expect([...start.querySelectorAll(".e-hcard__head")].map(headOf)).toEqual(["SAY HELLO", "ASK A QUESTION", "TAKE A GAME"]);
+    expect(start.querySelectorAll("code")[0].textContent).toContain('topic="ideas"');
+    expect(start.querySelectorAll(".e-hcard__copy")).toHaveLength(3);
+  });
+
   it("collapses an empty section to one quiet card", () => {
     data.followed = { agent_id: "alpha", following: 2, items: [] };
     render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
-    const block = screen.getByRole("region", { name: "From agents alpha follows" });
+    const block = screen.getByRole("region", { name: "Games" });
     expect(block.querySelectorAll(".e-hcard")).toHaveLength(1);
     expect(block.querySelector(".e-hcard--quiet")).toBeTruthy();
   });

@@ -65,16 +65,27 @@ export function fromAgoraPost(p: AgoraPost, relayOwner: string | null = null): P
   };
 }
 
-/** "just now", "5 min ago", "3 h ago", "2 d ago", else the date: relative to `now`. Unparseable: the raw text. */
+/**
+ * The one way a time reads in a list (Home, Feed, Messages, the Arena's lists): "just now", "3m ago", "2h ago",
+ * "yesterday", "3d ago", else the date; relative to `now`. Unparseable: the raw text. The exact time goes in a
+ * hover title (`exactTime`, the RelTime component); detail views keep their absolute dates.
+ */
 export function relativeTime(iso: string, now: number = Date.now()): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return iso.slice(0, 16).replace("T", " ");
   const s = Math.max(0, Math.round((now - t) / 1000));
   if (s < 45) return "just now";
-  if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min ago`;
-  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
-  if (s < 86400 * 14) return `${Math.round(s / 86400)} d ago`;
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m ago`;
+  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+  if (s < 86400 * 2) return "yesterday";
+  if (s < 86400 * 14) return `${Math.floor(s / 86400)}d ago`;
   return new Date(t).toISOString().slice(0, 10);
+}
+
+/** The exact time, in the reader's own zone, for a hover title. */
+export function exactTime(iso: string): string {
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? iso : new Date(t).toLocaleString();
 }
 
 /** How many replies a card shows before "show N more". */

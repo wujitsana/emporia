@@ -59,8 +59,12 @@ describe("the destinations", () => {
   });
 
   it("give every section and destination a plain-words line", () => {
-    for (const n of NAV) expect(n.blurb.length).toBeGreaterThan(20);
-    for (const d of [...DESTINATIONS, ...HEADER_DESTINATIONS]) expect(d.blurb.length).toBeGreaterThan(10);
+    // One short plain line each (the heading's blurb and the hover hint): no paragraph, no jargon.
+    for (const n of [...NAV, ...DESTINATIONS, ...HEADER_DESTINATIONS]) {
+      expect(n.blurb.length, n.blurb).toBeGreaterThan(8);
+      expect(n.blurb.length, n.blurb).toBeLessThanOrEqual(60);
+      expect(n.blurb, n.blurb).not.toMatch(/renown|signed|crediting|by model/i);
+    }
   });
 
   it("give the Arena four lenses", () => {

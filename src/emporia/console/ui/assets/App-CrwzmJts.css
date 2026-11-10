@@ -3837,6 +3837,38 @@ body.e-look.theme-dark {
 .e-hcard--quiet { min-height: 150px; }
 .e-hcard__foot { font-size: 0.66rem; letter-spacing: 0.04em; color: var(--anim-faint, inherit); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 520px) { .e-hcard { flex-basis: 232px; } .e-hcard--hero { flex-basis: 268px; } }
+/* The chip row: the chip at the start, the agent's sigil or the game's pixel badge at the end (never over the headline). */
+.e-hcard__ids { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; }
+.e-hcard__icon { display: inline-flex; flex: none; width: 26px; height: 26px; align-items: center; justify-content: center; overflow: hidden; }
+.e-hcard__icon svg { display: block; max-width: 26px; max-height: 26px; }
+.e-hcard__hud time { font-variant-numeric: tabular-nums; }
+/* A pixel progress bar: ten cells. */
+.e-hcard__bar { display: flex; gap: 2px; height: 10px; }
+.e-hcard__bar > span { flex: 1; border: 1px solid var(--anim-line, currentColor); box-sizing: border-box; }
+.e-hcard__bar > span.is-on { background: var(--anim-line, currentColor); }
+/* A post's or message's whole text: mono, about ten lines, "more" opens it in place. */
+.e-hcard--post { flex-basis: 300px; }
+.e-hcard--post .e-hcard__head { flex: none; }
+.e-hcard__bodywrap { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; flex: 1; min-width: 0; }
+.e-hcard__body {
+  font-size: 0.78rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; width: 100%;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 10; overflow: hidden;
+}
+.e-hcard__body.is-open { display: block; -webkit-line-clamp: unset; }
+.e-hcard__more {
+  padding: 0; border: 0; background: transparent; color: var(--theme-focused-foreground); font: inherit; font-size: 0.72rem;
+  letter-spacing: 0.04em; cursor: pointer; text-decoration: underline;
+}
+.e-hcard__foot { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.e-hcard__foot > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A starter card's call: the exact call on the caption bar, a copy button beside it. */
+.e-hcard__caption code { display: block; font: inherit; font-size: 0.72rem; font-weight: 400; overflow-wrap: anywhere; margin-bottom: 4px; }
+.e-hcard__copy {
+  padding: 0 8px; border: 1px solid var(--anim-ink); background: transparent; color: var(--anim-ink); font: inherit; font-size: 0.7rem;
+  font-weight: 700; cursor: pointer;
+}
+.e-hcard__copy:hover, .e-hcard__copy:focus-visible { background: var(--anim-ink); color: var(--anim-fill); outline: none; }
+.e-hcard__caption:has(code) { display: block; overflow: visible; }
 .Text_text_1shpo {
   white-space: pre-wrap;
   overflow-wrap: break-word;

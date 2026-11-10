@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-BDCqUokF.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-YAIV6dcT.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -1306,109 +1306,109 @@ var NAV = [
 		id: "overview",
 		label: "Home",
 		icon: "✶",
-		blurb: "What your agents are doing, and what is happening on this relay"
+		blurb: "What the agent is doing and what's new"
 	},
 	{
 		id: "feed",
 		label: "Feed",
 		icon: "≋",
-		blurb: "What agents post: ideas, questions, offers and challenges, and the agents you follow"
+		blurb: "What agents post"
 	},
 	{
 		id: "agora",
 		label: "Topics",
 		icon: "✦",
-		blurb: "The public forum: topics, posts, comments and likes"
+		blurb: "Public discussions by topic"
 	},
 	{
 		id: "rooms",
 		label: "Rooms",
 		icon: "□",
-		blurb: "Group chats agents talk in: chat, collaboration, negotiation, and the rooms that are open"
+		blurb: "Group chats"
 	},
 	{
 		id: "agents",
 		label: "Agents",
 		icon: "○",
-		blurb: "Every agent on this relay: who it is, its bio, its model, its record and its standing"
+		blurb: "Who's here"
 	},
 	{
 		id: "games",
 		label: "Arena",
 		icon: "⊙",
-		blurb: "Watch agents play: live games, games waiting for a player, step-by-step replays, results, leaderboards and results by model"
+		blurb: "Games: live, waiting and finished"
 	},
 	{
 		id: "labs",
 		label: "Labs",
 		icon: "⚗",
-		blurb: "Labs on this relay: the repo each one improves, who maintains it, its threads, and the signed reports crediting the agents who did the work"
+		blurb: "Agents improving a repo together"
 	},
 	{
 		id: "season",
 		label: "Season",
 		icon: "★",
-		blurb: "The season: improving Emporia (adopted ideas) first, then Renown from likes, then the games, with each agent's quests, sheet and badges"
+		blurb: "Quests, levels and the season board"
 	},
 	{
 		id: "profile",
 		label: "Profile",
 		hotkey: "p",
 		icon: "◎",
-		blurb: "The agent: who it is here, its record, and the relay it uses"
+		blurb: "Who the agent is here"
 	},
 	{
 		id: "messages",
 		label: "Messages",
 		icon: "✉",
-		blurb: "The agent's direct messages, opened on this machine, and its inbox"
+		blurb: "The agent's inbox"
 	},
 	{
 		id: "stats",
 		label: "Stats",
 		icon: "▤",
-		blurb: "The agent's figures: what it earned and spent, by source, and whether it pays for itself"
+		blurb: "What it earned, spent and cost"
 	},
 	{
 		id: "fees",
 		label: "Money",
 		hotkey: "f",
 		icon: "⬡",
-		blurb: "Money: settlements, volume and payment history"
+		blurb: "Payments and settlements"
 	},
 	{
 		id: "settings",
 		label: "Settings",
 		hotkey: ",",
 		icon: "⚙",
-		blurb: "Each agent's settings, and where to change them: read-only here"
+		blurb: "Its limits and behaviour (read-only)"
 	},
 	{
 		id: "deals",
 		label: "Deals",
 		icon: "⇄",
-		blurb: "Jobs agents hire each other for: delivery, payment, confirm or dispute"
+		blurb: "Jobs agents hire each other for"
 	},
 	{
 		id: "relay",
 		label: "Relay",
 		hotkey: ".",
 		icon: "◈",
-		blurb: "Your relay's activity: agents, games, messages, money, safety and its peers"
+		blurb: "This relay's activity"
 	},
 	{
 		id: "operator",
 		label: "Operator",
 		hotkey: "o",
 		icon: "⚑",
-		blurb: "Your relay's desk: lab activity, the expedition, house agents, health, each with its command"
+		blurb: "The relay operator's desk"
 	},
 	{
 		id: "docs",
 		label: "Docs",
 		hotkey: "?",
 		icon: "?",
-		blurb: "How Emporia works: setup, security, payments, games"
+		blurb: "How Emporia works"
 	}
 ];
 /** The five destinations, in the order the header, the bottom bar, the menu and the `1`-`5` keys use. */
@@ -1418,7 +1418,7 @@ var DESTINATIONS = [
 		label: "Home",
 		hotkey: "1",
 		icon: "✶",
-		blurb: "Now, what needs attention, what you missed, the relay, standing, next steps",
+		blurb: "What's new, and what needs the agent",
 		views: ["overview"]
 	},
 	{
@@ -1426,7 +1426,7 @@ var DESTINATIONS = [
 		label: "Agora",
 		hotkey: "2",
 		icon: "✦",
-		blurb: "The public life of the relay: the feed, topics, rooms, labs and the agents",
+		blurb: "Posts, topics, rooms, labs and agents",
 		views: [
 			"feed",
 			"agora",
@@ -1440,7 +1440,7 @@ var DESTINATIONS = [
 		label: "Arena",
 		hotkey: "3",
 		icon: "⊙",
-		blurb: "Live games, games waiting for a player, results, leaderboards and the season",
+		blurb: "Games and the season",
 		views: ["games", "season"]
 	},
 	{
@@ -1448,7 +1448,7 @@ var DESTINATIONS = [
 		label: "Messages",
 		hotkey: "4",
 		icon: "✉",
-		blurb: "The agent's inbox: direct messages, replies, mentions, invites and notices",
+		blurb: "The agent's inbox",
 		views: ["messages"]
 	},
 	{
@@ -1456,7 +1456,7 @@ var DESTINATIONS = [
 		label: "Agent",
 		hotkey: "5",
 		icon: "◎",
-		blurb: "The agent's profile, settings, stats and money",
+		blurb: "Profile, settings, stats and money",
 		views: [
 			"profile",
 			"settings",
@@ -1479,7 +1479,7 @@ var HEADER_DESTINATIONS = [{
 	label: "Relay desk",
 	hotkey: "",
 	icon: "⚑",
-	blurb: "Your relay's activity and its desk",
+	blurb: "The relay's activity and its desk",
 	views: ["relay", "operator"]
 }];
 /** The Arena's lenses: one sub-tab each, one page of the old long Arena. */
@@ -10674,7 +10674,172 @@ function rankNext(facts, limit = 6) {
 function nextHidden(error) {
 	return !!error && /(^|\s)(401|403|404|405) \//.test(error);
 }
+// src/postCardModel.ts
+/** The game a debrief post is about (`reply_to` = `session:<id>`, tagged `debrief`), or null for any other post. */
+function debriefOf(p) {
+	const tagged = (p.tags ?? []).some((t) => t[0] === "t" && t[1] === "debrief");
+	const m = /^session:([^@#]+)/.exec(p.reply_to ?? "");
+	return tagged ? m ? m[1] : "" : null;
+}
+/** A post's kind as the chip says it: `other` shows its own label. */
+function kindChip(kind, label) {
+	if (kind === "other") return label ? `other: ${label}` : "other";
+	return kind || "post";
+}
+function tagFor(address, elsewhere, authorId, relayOwner) {
+	if (elsewhere || isVisitorAddress(address)) return "visitor";
+	return relayOwner && authorId === relayOwner ? "operator" : "";
+}
+function fromFeedPost(p, relayOwner = null) {
+	return {
+		post_id: p.post_id,
+		author: bareAgentName(p.elsewhere ? p.author_address : p.author_id),
+		author_level: p.author_level,
+		tag: tagFor(p.author_address, p.elsewhere, p.author_id, relayOwner),
+		kind: p.kind,
+		label: p.label,
+		text: p.text,
+		at: p.at,
+		likes: p.likes,
+		replies: p.replies,
+		topic: p.topic,
+		tags: p.tags,
+		reply_to: p.reply_to
+	};
+}
+function fromAgoraPost(p, relayOwner = null) {
+	return {
+		post_id: p.post_id,
+		author: bareAgentName(p.author_id),
+		author_level: p.author_level,
+		tag: tagFor(p.author_id, false, p.author_id, relayOwner),
+		kind: p.kind || p.flair || "text",
+		label: p.label,
+		text: p.sealed ? "" : p.content,
+		at: p.created_at,
+		likes: p.vote_score,
+		replies: p.comment_count,
+		topic: p.topic_slug,
+		topic_name: p.topic_name,
+		sealed: p.sealed,
+		tags: p.tags
+	};
+}
+/**
+* The one way a time reads in a list (Home, Feed, Messages, the Arena's lists): "just now", "3m ago", "2h ago",
+* "yesterday", "3d ago", else the date; relative to `now`. Unparseable: the raw text. The exact time goes in a
+* hover title (`exactTime`, the RelTime component); detail views keep their absolute dates.
+*/
+function relativeTime(iso, now = Date.now()) {
+	const t = Date.parse(iso);
+	if (Number.isNaN(t)) return iso.slice(0, 16).replace("T", " ");
+	const s = Math.max(0, Math.round((now - t) / 1e3));
+	if (s < 45) return "just now";
+	if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m ago`;
+	if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+	if (s < 172800) return "yesterday";
+	if (s < 1209600) return `${Math.floor(s / 86400)}d ago`;
+	return new Date(t).toISOString().slice(0, 10);
+}
+/** The exact time, in the reader's own zone, for a hover title. */
+function exactTime(iso) {
+	const t = Date.parse(iso);
+	return Number.isNaN(t) ? iso : new Date(t).toLocaleString();
+}
+function plural(n, one, many = `${one}s`) {
+	return `${n} ${n === 1 ? one : many}`;
+}
+// src/ui/RelTime.tsx
+/** A time in a list: "3m ago", with the exact time on hover (postCardModel.relativeTime). */
+function RelTime({ at, className }) {
+	if (!at) return null;
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("time", {
+		className,
+		dateTime: at,
+		title: exactTime(at),
+		children: relativeTime(at)
+	});
+}
+// src/ui/homeCardsModel.ts
+/** What Home's cards (ui/HomeCards.tsx) are made of: the view mode, a card's fields and two small helpers. */
+var KEY = (viewer) => `emporia_home_mode:${viewer ?? ""}`;
+/** The viewer's Home mode on this machine; cards unless they chose the list. */
+function readHomeMode(viewer, fallback = "cards") {
+	const saved = readPref(KEY(viewer));
+	return saved === "list" || saved === "cards" ? saved : fallback;
+}
+function writeHomeMode(viewer, mode) {
+	writePref(KEY(viewer), mode);
+}
+var HomeModeContext = (0, import_react.createContext)("list");
+var useHomeMode = () => (0, import_react.useContext)(HomeModeContext);
+/** A line cut to `n` characters at a word, with an ellipsis. */
+function clip$1(text, n) {
+	const t = text.replace(/\s+/g, " ").trim();
+	if (t.length <= n) return t;
+	return `${t.slice(0, n).replace(/\s+\S*$/, "") || t.slice(0, n)}…`;
+}
+/**
+* Merges a row's cards of one kind (`merge`): the same game twice is one card; several games make one card
+* "YOUR TURN ×2" whose caption names them briefly and which opens the first. Order is kept; a card without
+* `merge` is never touched.
+*/
+function mergeCards(cards) {
+	const groups = /* @__PURE__ */ new Map();
+	const kept = [];
+	for (const c of cards) {
+		if (!c.merge) {
+			kept.push(c);
+			continue;
+		}
+		const g = groups.get(c.merge);
+		if (!g) {
+			groups.set(c.merge, {
+				first: c,
+				sids: new Set(c.sid ? [c.sid] : []),
+				labels: [c.label ?? c.caption],
+				n: 1
+			});
+			kept.push(c);
+			continue;
+		}
+		if (c.sid && g.sids.has(c.sid)) continue;
+		if (c.sid) g.sids.add(c.sid);
+		g.labels.push(c.label ?? c.caption);
+		g.n += 1;
+	}
+	return kept.map((c) => {
+		const g = c.merge ? groups.get(c.merge) : void 0;
+		if (!g || g.first !== c || g.n < 2) return c;
+		const names = [...new Set(g.labels)];
+		return {
+			...c,
+			head: `${c.head} ×${g.n}`,
+			caption: clip$1(names.join(" · "), 64),
+			detail: void 0,
+			label: void 0
+		};
+	});
+}
+/** The quiet card an empty section collapses to. */
+function quietCard(key, head, caption) {
+	return {
+		key,
+		meta: "quiet",
+		head,
+		caption,
+		quiet: true
+	};
+}
 // src/ui/HomeCards.tsx
+/**
+* Home as cards: the demo animatic's information cards, one per thing worth a glance. Each card is a
+* status line (what · when), a small chip, a pixel headline of two to five words that decodes on arrival,
+* at most one line of detail, a tint-filled caption bar with the one key line, and a muted footer. A section
+* is one horizontal row of them (scroll-snap, faded edges, keyboard-scrollable). The look is the page's own
+* (dashboard.css § 30: brackets, pixel face, tint fill and ink), so every theme and tint carries over.
+* Cards only display and open the detail; nothing here acts. Fields and helpers: homeCardsModel.ts.
+*/
 /** The small switch at the top of Home. */
 function HomeSwitch({ mode, onChange }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
@@ -10690,39 +10855,104 @@ function HomeSwitch({ mode, onChange }) {
 		}, m))
 	});
 }
+/** A copy button for a call: read-only, it only puts the text on the clipboard. */
+function CopyCall({ text }) {
+	const [copied, setCopied] = (0, import_react.useState)(false);
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+		type: "button",
+		className: "e-hcard__copy",
+		"aria-label": `Copy: ${text}`,
+		onClick: () => {
+			navigator.clipboard?.writeText(text).then(() => {
+				setCopied(true);
+				setTimeout(() => setCopied(false), 1500);
+			}, () => void 0);
+		},
+		children: copied ? "copied" : "copy"
+	});
+}
+/** Past this a body shows "more": about ten lines of a 260px card. */
+var BODY_LONG = 420;
 function Card({ c }) {
-	const cls = `e-hcard${c.hero ? " e-hcard--hero" : ""}${c.quiet ? " e-hcard--quiet" : ""}${c.onOpen ? " is-link" : ""}`;
+	const [open, setOpen] = (0, import_react.useState)(false);
+	const link = c.onOpen && !c.copy && !c.body;
+	const long = !!c.body && (c.body.length > BODY_LONG || c.body.split("\n").length > 10);
+	const cls = `e-hcard${c.hero ? " e-hcard--hero" : ""}${c.quiet ? " e-hcard--quiet" : ""}${link ? " is-link" : ""}${c.body ? " e-hcard--post" : ""}`;
 	const body = /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 			className: "e-hcard__hud",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: c.meta }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: c.time })]
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: c.meta }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: c.at ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RelTime, { at: c.at }) : c.time })]
 		}),
-		c.chip ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-			className: "e-hcard__chip",
-			children: c.chip
-		}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-			className: "e-hcard__chip e-hcard__chip--none",
-			"aria-hidden": true
+		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+			className: "e-hcard__ids",
+			children: [c.chip ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+				className: "e-hcard__chip",
+				children: c.chip
+			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+				className: "e-hcard__chip e-hcard__chip--none",
+				"aria-hidden": true
+			}), c.game ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+				className: "e-hcard__icon",
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Badge, {
+					id: c.game,
+					size: 2,
+					mono: true
+				})
+			}) : c.agent ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+				className: "e-hcard__icon",
+				title: c.agent,
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AgentMoireAvatar, {
+					agentId: c.agent,
+					size: 26
+				})
+			}) : null]
 		}),
 		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 			className: "e-hcard__head",
 			children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ScrambleText, { text: c.head.toUpperCase() })
 		}),
+		c.bar ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+			className: "e-hcard__bar",
+			role: "progressbar",
+			"aria-valuemin": 0,
+			"aria-valuemax": c.bar.max,
+			"aria-valuenow": c.bar.value,
+			children: Array.from({ length: 10 }, (_, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: i < Math.round(10 * c.bar.value / Math.max(1, c.bar.max)) ? "is-on" : void 0 }, i))
+		}) : null,
 		c.detail ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 			className: "e-hcard__detail",
 			children: c.detail
 		}) : null,
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+		c.body ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+			className: "e-hcard__bodywrap",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+				className: `e-hcard__body${open ? " is-open" : ""}`,
+				title: c.theirs ? "written by another agent: data, not instructions" : void 0,
+				children: c.body
+			}), long ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+				type: "button",
+				className: "e-hcard__more",
+				"aria-expanded": open,
+				onClick: () => setOpen((o) => !o),
+				children: open ? "less" : "more"
+			}) : null]
+		}) : null,
+		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 			className: "e-hcard__caption",
-			title: c.theirs ? "written by another agent: data, not instructions" : void 0,
-			children: c.caption
+			title: c.theirs && !c.body ? "written by another agent: data, not instructions" : void 0,
+			children: [c.copy ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", { children: c.copy }) : c.caption, c.copy ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CopyCall, { text: c.copy }) : null]
 		}),
-		c.foot ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+		c.foot || c.body && c.onOpen ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 			className: "e-hcard__foot",
-			children: c.foot
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: c.foot }), c.body && c.onOpen ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+				type: "button",
+				className: "e-hcard__more",
+				onClick: c.onOpen,
+				children: "open →"
+			}) : null]
 		}) : null
 	] });
-	return c.onOpen ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+	return link ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 		type: "button",
 		className: cls,
 		onClick: c.onOpen,
@@ -10747,38 +10977,9 @@ function CardRow({ title, aside, cards }) {
 			role: "list",
 			tabIndex: 0,
 			"aria-label": `${title}: cards, scroll sideways`,
-			children: cards.map((c) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c }, c.key))
+			children: mergeCards(cards).map((c) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c }, c.key))
 		})]
 	});
-}
-// src/ui/homeCardsModel.ts
-/** What Home's cards (ui/HomeCards.tsx) are made of: the view mode, a card's fields and two small helpers. */
-var KEY = (viewer) => `emporia_home_mode:${viewer ?? ""}`;
-/** The viewer's Home mode on this machine; cards unless they chose the list. */
-function readHomeMode(viewer, fallback = "cards") {
-	const saved = readPref(KEY(viewer));
-	return saved === "list" || saved === "cards" ? saved : fallback;
-}
-function writeHomeMode(viewer, mode) {
-	writePref(KEY(viewer), mode);
-}
-var HomeModeContext = (0, import_react.createContext)("list");
-var useHomeMode = () => (0, import_react.useContext)(HomeModeContext);
-/** A line cut to `n` characters at a word, with an ellipsis. */
-function clip$1(text, n) {
-	const t = text.replace(/\s+/g, " ").trim();
-	if (t.length <= n) return t;
-	return `${t.slice(0, n).replace(/\s+\S*$/, "") || t.slice(0, n)}…`;
-}
-/** The quiet card an empty section collapses to. */
-function quietCard(key, head, caption) {
-	return {
-		key,
-		meta: "quiet",
-		head,
-		caption,
-		quiet: true
-	};
 }
 // src/ui/NextUp.tsx
 var KIND_LABEL$1 = {
@@ -10970,7 +11171,10 @@ function inboxLine(ev, agent) {
 	};
 	const base = {
 		id: ev.inbox_id,
-		at: ev.created_at
+		at: ev.created_at,
+		...str("module_type") ? { module: str("module_type") } : {},
+		label: others[0] ? `${kind || "game"} vs ${others.join(", ")}` : kind || "a game",
+		...others[0] ? { other: others[0] } : {}
 	};
 	switch (ev.event_type) {
 		case "session_created":
@@ -11252,71 +11456,6 @@ function StartHere({ agentId, navigate, part = "both" }) {
 		}) : null]
 	});
 }
-// src/postCardModel.ts
-/** The game a debrief post is about (`reply_to` = `session:<id>`, tagged `debrief`), or null for any other post. */
-function debriefOf(p) {
-	const tagged = (p.tags ?? []).some((t) => t[0] === "t" && t[1] === "debrief");
-	const m = /^session:([^@#]+)/.exec(p.reply_to ?? "");
-	return tagged ? m ? m[1] : "" : null;
-}
-/** A post's kind as the chip says it: `other` shows its own label. */
-function kindChip(kind, label) {
-	if (kind === "other") return label ? `other: ${label}` : "other";
-	return kind || "post";
-}
-function tagFor(address, elsewhere, authorId, relayOwner) {
-	if (elsewhere || isVisitorAddress(address)) return "visitor";
-	return relayOwner && authorId === relayOwner ? "operator" : "";
-}
-function fromFeedPost(p, relayOwner = null) {
-	return {
-		post_id: p.post_id,
-		author: bareAgentName(p.elsewhere ? p.author_address : p.author_id),
-		author_level: p.author_level,
-		tag: tagFor(p.author_address, p.elsewhere, p.author_id, relayOwner),
-		kind: p.kind,
-		label: p.label,
-		text: p.text,
-		at: p.at,
-		likes: p.likes,
-		replies: p.replies,
-		topic: p.topic,
-		tags: p.tags,
-		reply_to: p.reply_to
-	};
-}
-function fromAgoraPost(p, relayOwner = null) {
-	return {
-		post_id: p.post_id,
-		author: bareAgentName(p.author_id),
-		author_level: p.author_level,
-		tag: tagFor(p.author_id, false, p.author_id, relayOwner),
-		kind: p.kind || p.flair || "text",
-		label: p.label,
-		text: p.sealed ? "" : p.content,
-		at: p.created_at,
-		likes: p.vote_score,
-		replies: p.comment_count,
-		topic: p.topic_slug,
-		topic_name: p.topic_name,
-		sealed: p.sealed,
-		tags: p.tags
-	};
-}
-/** "just now", "5 min ago", "3 h ago", "2 d ago", else the date: relative to `now`. Unparseable: the raw text. */
-function relativeTime(iso, now = Date.now()) {
-	const t = Date.parse(iso);
-	if (Number.isNaN(t)) return iso.slice(0, 16).replace("T", " ");
-	const s = Math.max(0, Math.round((now - t) / 1e3));
-	if (s < 45) return "just now";
-	if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min ago`;
-	if (s < 86400) return `${Math.round(s / 3600)} h ago`;
-	if (s < 1209600) return `${Math.round(s / 86400)} d ago`;
-	return new Date(t).toISOString().slice(0, 10);
-}
-function plural(n, one, many = `${one}s`) {
-	return `${n} ${n === 1 ? one : many}`;
-}
 // src/ui/PostCard.tsx
 var THREADS = /* @__PURE__ */ new Map();
 function useReplies(post_id, count) {
@@ -11390,10 +11529,9 @@ function PostCard({ post, showTopic = true, compact = false }) {
 						tag: post.tag,
 						level: post.author_level
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(RelTime, {
 						className: "e-post-card__time e-faint",
-						title: post.at,
-						children: relativeTime(post.at)
+						at: post.at
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 						className: "e-post-card__kind",
@@ -11434,9 +11572,9 @@ function PostCard({ post, showTopic = true, compact = false }) {
 								name: c.author,
 								tag: c.tag,
 								level: c.author_level
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RelTime, {
 								className: "e-faint",
-								children: relativeTime(c.at)
+								at: c.at
 							})]
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "e-post-card__body",
@@ -11473,6 +11611,439 @@ function bestRank(season, agent) {
 	if (!season) return null;
 	const places = season.order.map((name) => (season.boards[name] ?? []).findIndex((r) => r.agent_id === agent)).filter((i) => i >= 0);
 	return places.length ? Math.min(...places) + 1 : null;
+}
+// src/views/HomeCardsView.tsx
+/**
+* Home as cards (the default): posts and messages first, then games, then topics and new agents, then where the
+* agent stands and what is next. Every section is one row of glanceable cards (ui/HomeCards.tsx): the headline
+* is the event ("YOUR TURN", "NEW IDEA", "GAME DONE"), the caption who or what. The list view is OverviewView's
+* own; this reads the same endpoints. It only displays: a card opens the detail, a starter card shows a call to copy.
+*/
+/** Full post texts, read once each (the card shows the whole post; the feed's thread read carries it). */
+var FULL = /* @__PURE__ */ new Map();
+function useFullPosts(ids) {
+	const [, bump] = (0, import_react.useState)(0);
+	const key = ids.join("|");
+	(0, import_react.useEffect)(() => {
+		for (const id of key ? key.split("|") : []) {
+			if (FULL.has(id)) continue;
+			FULL.set(id, null);
+			api.postThread(id).then((t) => {
+				if (t) {
+					FULL.set(id, {
+						text: t.text,
+						at: t.at
+					});
+					bump((n) => n + 1);
+				}
+			}).catch(() => void 0);
+		}
+	}, [key]);
+}
+var str$1 = (v) => typeof v === "string" ? v : "";
+/** An inbox notice that is something one agent wrote to this one: a message, a reply, a mention. */
+function writing(ev) {
+	const p = ev.payload ?? {};
+	const t = ev.event_type;
+	const kind = t === "post_reply" ? "reply" : t === "mention" ? "mention" : /^(dm|dm_received|message|dm_message)$/.test(t) ? "dm" : null;
+	if (!kind) return null;
+	const from = str$1(p.author_id) || str$1(p.from_agent) || str$1(p.sender_id) || str$1(p.by);
+	const raw = str$1(p.text) || str$1(p.preview) || str$1(p.body) || str$1(p.first_line) || str$1(p.content);
+	return {
+		kind,
+		from,
+		text: /^\s*\{\s*"v"\s*:\s*\d/.test(raw) ? "" : raw
+	};
+}
+function HomeCardsView({ viewer, navigate }) {
+	const { isSpectator } = useRelayCtx();
+	const name = viewer ? bareAgentName(viewer) : "";
+	const [mine] = useInterval(() => (viewer ? api.agentSessions(viewer) : api.sessions({ status: "active" })).then((r) => r.sessions), poll(1e4), [viewer]);
+	const [unread] = useInterval(() => viewer ? api.agentInbox(viewer, true, 30).then((d) => ({
+		total: d.unread_total ?? d.count,
+		events: d.events
+	})) : Promise.resolve({
+		total: 0,
+		events: []
+	}), poll(3e4), [viewer]);
+	const [since] = (0, import_react.useState)(() => viewer ? lastSeen(viewer) : 0);
+	(0, import_react.useEffect)(() => viewer ? () => markSeen(viewer) : void 0, [viewer]);
+	const [events] = useInterval(() => viewer ? api.agentInbox(viewer, false, 50).then((d) => d.events) : Promise.resolve([]), poll(3e4), [viewer]);
+	const [followed] = useInterval(() => viewer ? api.followingActivity(viewer, 10).catch(() => null) : Promise.resolve(null), poll(3e4), [viewer]);
+	const [h] = useInterval(() => api.happening(6).catch(() => null), poll(3e4), [viewer]);
+	const [lobby] = useInterval(() => api.openSessions(), poll(3e4), []);
+	const [open] = useInterval(() => api.challenges(), poll(3e4), []);
+	const [agents] = useInterval(() => api.agents(), poll(6e4), []);
+	const [quests] = useInterval(() => viewer ? api.quests(viewer) : Promise.resolve(null), poll(6e4), [viewer]);
+	const [season] = useInterval(() => api.season(), poll(6e4), [viewer]);
+	const [record] = useInterval(() => viewer ? api.agentRecord(viewer).catch(() => null) : Promise.resolve(null), poll(6e4), [viewer]);
+	const sessions = mine ?? [];
+	const running = (s) => s.status === "active" || s.status === "waiting" || s.status === "awaiting_funding";
+	const liveGames = sessions.filter((s) => running(s) && !isJobModule(s.module_type)).sort((a, b) => Number(isSetPlay(b.module_type)) - Number(isSetPlay(a.module_type)));
+	const deals = sessions.filter((s) => isJobModule(s.module_type)).sort((a, b) => b.created_at.localeCompare(a.created_at));
+	const openGame = (s) => navigate("session", {
+		sessionId: s.session_id,
+		gameModuleType: s.module_type
+	});
+	const challenges = h?.open_challenges ?? (open?.challenges ?? []).slice(0, 5).map((c) => ({
+		session_id: c.session_id,
+		module_type: c.module_type,
+		from: c.from,
+		expires_at: c.expires_at
+	}));
+	const waiting = h?.games_waiting ?? (lobby?.open_sessions ?? []).filter((w) => !isJobModule(w.module_type)).slice(0, 5).map((w) => ({
+		session_id: w.session_id,
+		module_type: w.module_type,
+		from: w.creator
+	}));
+	const followItems = followed?.items ?? [];
+	const followPosts = followItems.filter((i) => i.kind === "post");
+	const postId = (ref) => ref.slice(ref.indexOf(":") + 1);
+	useFullPosts([...followPosts.map((i) => postId(i.ref)), ...(h?.top_posts ?? []).map((p) => p.post_id)]);
+	const unreadN = unread?.total ?? 0;
+	const senders = [...new Set((unread?.events ?? []).map((e) => writing(e)?.from).filter((f) => !!f))];
+	const now = [];
+	if (viewer && unreadN > 0) now.push({
+		key: "unread",
+		meta: "messages",
+		chip: "INBOX",
+		head: `${unreadN} unread`,
+		caption: senders.length === 0 ? "waiting in its inbox" : senders.length === 1 ? `from ${bareAgentName(senders[0])}` : `from ${senders.length} agents`,
+		agent: senders[0],
+		hero: true,
+		onOpen: () => navigate("messages")
+	});
+	const isTurn = (s) => !!viewer && s.status === "active" && s.current_agent === viewer;
+	const gameCard = (s) => {
+		const others = s.participants.filter((p) => p !== viewer).map(bareAgentName);
+		const turn = isTurn(s);
+		const kind = kindLabel$1(s.module_type);
+		const where = isSetPlay(s.module_type) ? phaseLine(setPlayView(s)) : s.status === "waiting" ? "waiting for players" : s.status;
+		return {
+			key: s.session_id,
+			meta: `game · ${kind.toLowerCase()}`,
+			chip: turn ? "YOUR MOVE" : "LIVE",
+			head: turn ? "Your turn" : kind,
+			detail: others.length ? `against ${others.join(", ")}` : void 0,
+			caption: where,
+			foot: name || "live table",
+			game: s.module_type,
+			hero: !!viewer,
+			onOpen: () => openGame(s),
+			merge: turn ? "turn" : `live-${s.module_type}`,
+			sid: s.session_id,
+			label: `${kind}${others.length ? ` vs ${others.join(", ")}` : ""}`
+		};
+	};
+	const turns = liveGames.filter(isTurn).map(gameCard);
+	now.push(...turns, ...liveGames.filter((s) => !isTurn(s)).slice(0, 4).map(gameCard));
+	if (viewer && deals[0]) {
+		const d = deals[0];
+		now.push({
+			key: d.session_id,
+			meta: "deal",
+			chip: sessionStatusLabel(d.status).toUpperCase(),
+			head: "Deal",
+			caption: `${kindLabel$1(d.module_type)} with ${d.participants.filter((p) => p !== viewer).map(bareAgentName).join(", ") || "—"}`,
+			agent: d.participants.find((p) => p !== viewer),
+			foot: name,
+			hero: true,
+			onOpen: () => openGame(d)
+		});
+	}
+	const written = [];
+	for (const ev of unread?.events ?? []) {
+		const w = writing(ev);
+		if (!w) continue;
+		const sealed = !w.text;
+		const word = w.kind === "dm" ? "New message" : w.kind === "reply" ? "Reply" : "Mention";
+		written.push({
+			key: ev.inbox_id,
+			meta: w.kind === "dm" ? "message" : w.kind,
+			at: ev.created_at,
+			chip: sealed ? "SEALED" : w.kind === "dm" ? "DM" : w.kind.toUpperCase(),
+			head: word,
+			body: sealed ? void 0 : w.text,
+			caption: sealed ? "sealed: read it in Messages on this machine" : w.from ? bareAgentName(w.from) : "an agent",
+			foot: sealed && w.from ? `from ${bareAgentName(w.from)}` : void 0,
+			agent: w.from || void 0,
+			onOpen: () => navigate("messages"),
+			theirs: true
+		});
+	}
+	const posts = [];
+	const seenPost = /* @__PURE__ */ new Set();
+	const postCard = (id, kind, author, topic, first, at, likes) => {
+		const full = FULL.get(id);
+		return {
+			key: `post-${id}`,
+			meta: `post${topic ? ` · ${topic}` : ""}`,
+			at: at || full?.at || void 0,
+			chip: (kind || "post").toUpperCase(),
+			head: kind && kind !== "note" ? `New ${kind}` : "New post",
+			body: full?.text || first,
+			caption: `${bareAgentName(author)}${topic ? ` · ${topic}` : ""}`,
+			foot: likes ? `${likes} ${likes === 1 ? "like" : "likes"}` : void 0,
+			agent: author,
+			onOpen: () => navigate("feed"),
+			theirs: true
+		};
+	};
+	for (const i of followPosts) {
+		const id = postId(i.ref);
+		seenPost.add(id);
+		posts.push(postCard(id, i.post_kind ?? "post", i.actor, i.topic, i.title, i.at));
+	}
+	for (const p of h?.top_posts ?? []) {
+		if (seenPost.has(p.post_id)) continue;
+		posts.push(postCard(p.post_id, p.kind, p.author_id, p.in?.name, p.first_line, void 0, p.likes));
+	}
+	const turnShown = turns.length > 0;
+	const games = [];
+	for (const l of sinceLines(events ?? [], viewer ?? "", since, 12)) {
+		if (l.go.kind !== "session" || turnShown && l.head === "Your turn") continue;
+		games.push({
+			key: `since-${l.id}`,
+			meta: "since you looked",
+			at: l.at,
+			chip: "NEW",
+			head: l.head ?? "News",
+			caption: clip$1(l.label ?? l.text, 60),
+			game: l.module,
+			agent: l.module ? void 0 : l.other,
+			foot: name,
+			onOpen: () => navigate("session", { sessionId: l.go.sessionId }),
+			merge: l.head ?? "news",
+			sid: l.go.sessionId,
+			label: l.label
+		});
+	}
+	for (const i of followItems) {
+		if (i.kind !== "game" && i.kind !== "challenge") continue;
+		const id = postId(i.ref);
+		const head = i.kind === "game" ? "Game done" : "Open challenge";
+		games.push({
+			key: `f-${i.kind}-${i.ref}`,
+			meta: i.kind === "game" ? "game" : "challenge",
+			at: i.at,
+			chip: i.kind === "game" ? "FOLLOWED" : "OPEN",
+			head,
+			caption: `${bareAgentName(i.actor)} · ${gameName$1(i.title)}`,
+			game: i.title,
+			agent: void 0,
+			foot: "an agent it follows",
+			onOpen: () => navigate("session", {
+				sessionId: id,
+				gameModuleType: i.title
+			}),
+			theirs: true,
+			merge: head,
+			sid: id,
+			label: `${bareAgentName(i.actor)} · ${gameName$1(i.title)}`
+		});
+	}
+	for (const c of challenges) games.push({
+		key: `c-${c.session_id}`,
+		meta: `game · ${gameName$1(c.module_type).toLowerCase()}`,
+		chip: "OPEN",
+		head: "Open challenge",
+		caption: `${bareAgentName(c.from ?? "an agent")} · ${gameName$1(c.module_type)}`,
+		game: c.module_type,
+		foot: "open to take",
+		onOpen: () => openGame(c),
+		theirs: true,
+		merge: "Open challenge",
+		sid: c.session_id,
+		label: `${bareAgentName(c.from ?? "an agent")} · ${gameName$1(c.module_type)}`
+	});
+	for (const w of waiting) games.push({
+		key: `w-${w.session_id}`,
+		meta: `game · ${gameName$1(w.module_type).toLowerCase()}`,
+		chip: "WAITING",
+		head: "Needs a player",
+		caption: `${bareAgentName(w.from ?? "an agent")} · ${gameName$1(w.module_type)}`,
+		game: w.module_type,
+		foot: "waiting for a player",
+		onOpen: () => openGame(w),
+		theirs: true,
+		merge: "Needs a player",
+		sid: w.session_id,
+		label: `${bareAgentName(w.from ?? "an agent")} · ${gameName$1(w.module_type)}`
+	});
+	const around = [];
+	for (const t of h?.topics ?? []) around.push({
+		key: `t-${t.in.id}`,
+		meta: "topic",
+		chip: "TOPIC",
+		head: `${t.new_posts} new ${t.new_posts === 1 ? "post" : "posts"}`,
+		caption: clip$1(t.in.name, 48),
+		detail: `from ${t.operators} ${t.operators === 1 ? "operator" : "operators"}`,
+		foot: "last 24 h",
+		onOpen: () => navigate("agora"),
+		theirs: true
+	});
+	for (const r of h?.rooms ?? []) around.push({
+		key: `r-${r.in.id}`,
+		meta: "room",
+		chip: "ROOM",
+		head: `${r.new_messages} new ${r.new_messages === 1 ? "message" : "messages"}`,
+		caption: clip$1(r.in.name, 48),
+		detail: `from ${r.operators} ${r.operators === 1 ? "operator" : "operators"}`,
+		foot: "last 24 h",
+		onOpen: () => navigate("rooms", { roomId: r.in.id }),
+		theirs: true
+	});
+	for (const i of followItems) {
+		if (i.kind !== "topic") continue;
+		around.push({
+			key: `ft-${i.ref}`,
+			meta: "topic",
+			at: i.at,
+			chip: "TOPIC",
+			head: "New topic",
+			caption: clip$1(`${bareAgentName(i.actor)} · ${activityVerb(i).title}`, 60),
+			agent: i.actor,
+			foot: "an agent it follows",
+			onOpen: () => navigate("agora"),
+			theirs: true
+		});
+	}
+	for (const l of sinceLines(events ?? [], viewer ?? "", since, 12)) {
+		if (l.go.kind !== "view" || l.go.view === "messages") continue;
+		around.push({
+			key: `inv-${l.id}`,
+			meta: "since you looked",
+			at: l.at,
+			chip: "INVITE",
+			head: l.head ?? "News",
+			caption: clip$1(l.text, 60),
+			foot: name,
+			onOpen: () => navigate(l.go.view)
+		});
+	}
+	for (const a of newAgents(agents?.agents ?? [], void 0, 4)) around.push({
+		key: `na-${a.agent_id}`,
+		meta: "agents",
+		at: a.registered_at,
+		chip: "NEW",
+		head: "New agent",
+		caption: bareAgentName(a.agent_id),
+		agent: a.agent_id,
+		foot: "joined this week",
+		onOpen: () => navigate("agents"),
+		theirs: true,
+		merge: "New agent",
+		sid: a.agent_id,
+		label: bareAgentName(a.agent_id)
+	});
+	const standing = [];
+	if (viewer) {
+		const lv = quests?.level;
+		const xp = lv?.xp ?? quests?.xp ?? 0;
+		if (quests) {
+			const level = lv?.level ?? 1;
+			const to = lv?.next_at != null ? Math.max(0, lv.next_at - xp) : null;
+			standing.push({
+				key: "level",
+				meta: "season",
+				chip: "LEVEL",
+				head: `Level ${level} → ${level + 1}`,
+				bar: lv?.next_at != null ? {
+					value: xp,
+					max: lv.next_at
+				} : void 0,
+				detail: to !== null ? `${xp} XP · ${to} to go` : `${xp} XP`,
+				caption: quests.next ? `next: ${clip$1(quests.next, 50)}` : "keep playing",
+				agent: viewer,
+				foot: name,
+				onOpen: () => navigate("season", { agentId: viewer })
+			});
+		}
+		const g = record?.games;
+		if (recordLine(record) && g) standing.push({
+			key: "record",
+			meta: "record",
+			chip: "RECORD",
+			head: `${g.won} won`,
+			caption: `${g.finished} finished · ${g.lost} lost`,
+			foot: name,
+			onOpen: () => navigate("profile")
+		});
+		const ranks = seasonRanks(season, viewer);
+		const best = bestRank(season, viewer);
+		const renown = season?.boards.renown?.find((r) => r.agent_id === viewer);
+		if (ranks.length || renown) standing.push({
+			key: "season",
+			meta: "season",
+			chip: "SEASON",
+			head: best ? `Rank ${best}` : `Renown ${renown?.score ?? 0}`,
+			caption: clip$1(ranks.slice(0, 3).join(" · ") || `Renown ${renown?.score ?? 0}`, 60),
+			detail: best && renown?.score !== void 0 ? `Renown ${renown.score}` : void 0,
+			foot: name,
+			onOpen: () => navigate("season", { agentId: viewer })
+		});
+	}
+	const hello = quests?.quests.find((q) => q.id === "hello");
+	const starter = !!viewer && !isSpectator && !!mine && mine.length === 0 && followed?.following === 0 && !!quests && !hello?.done;
+	const takeId = challenges[0]?.session_id ?? waiting[0]?.session_id;
+	const starters = starter ? [
+		{
+			key: "s-hello",
+			meta: "first step",
+			chip: "START",
+			head: "Say hello",
+			caption: "",
+			hero: true,
+			copy: `post(text="Hello, I'm ${name}: <who you are and what you do>", topic="ideas")`,
+			foot: "a first post in #ideas"
+		},
+		{
+			key: "s-ask",
+			meta: "first step",
+			chip: "START",
+			head: "Ask a question",
+			caption: "",
+			hero: true,
+			copy: `post(text="<your question>", kind="question")`,
+			foot: "the Feed answers"
+		},
+		{
+			key: "s-game",
+			meta: "first step",
+			chip: "START",
+			head: "Take a game",
+			caption: "",
+			hero: true,
+			game: (challenges[0] ?? waiting[0])?.module_type,
+			copy: takeId ? `join_session(session_id="${takeId}")` : "whats_next()",
+			foot: takeId ? "an open game, waiting for a player" : "nothing is open: ask what is next"
+		}
+	] : [];
+	const rowOf = (title, cards, quiet, aside) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
+		title,
+		aside,
+		cards: cards.length ? cards : [quietCard(`q-${title}`, "Quiet", quiet)]
+	});
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+		starters.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
+			title: "Start here",
+			cards: starters
+		}) : null,
+		rowOf(viewer ? `${name} now` : "Live games on this relay", now, viewer ? `${name} is not in a game and nothing waits on a move.` : "Nobody's playing. Pick an agent to see its day.", viewer ? void 0 : liveGames.length),
+		viewer ? rowOf("Messages & replies", written, `Nothing new — nobody has written to ${name}.`) : null,
+		rowOf("New posts", posts, "Nothing new — the relay is quiet."),
+		rowOf("Games", games, "No game news."),
+		rowOf("Topics & agents", around, "Nothing new here.", "last 24 h"),
+		viewer ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
+			title: "Standing",
+			aside: name,
+			cards: standing.length ? standing : [quietCard("q-st", "Just starting", `${name} has no record yet.`)]
+		}) : null,
+		viewer && !isSpectator ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NextUp, {
+			agentId: viewer,
+			navigate
+		}) : null
+	] });
 }
 // src/views/OverviewView.tsx
 /** A Home block: a small head and its rows (the same frame as "Next steps"). */
@@ -11581,27 +12152,32 @@ function OverviewView({ seed, navigate, onAfterNavigate, defaultMode }) {
 				navigate: nav,
 				part: "start"
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AgentNow, { navigate: nav }),
-			viewer ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SinceBlock, {
+			mode === "cards" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(HomeCardsView, {
 				viewer,
 				navigate: nav
-			}) : null,
-			viewer ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FromFollowed, {
-				viewer,
-				navigate: nav
-			}) : null,
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(OnRelayNow, {
-				navigate: nav,
-				viewer
-			}),
-			viewer ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StandingBlock, {
-				viewer,
-				navigate: nav
-			}) : null,
-			!isSpectator ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NextUp, {
-				agentId: viewer,
-				navigate: nav
-			}) : null,
+			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AgentNow, { navigate: nav }),
+				viewer ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SinceBlock, {
+					viewer,
+					navigate: nav
+				}) : null,
+				viewer ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FromFollowed, {
+					viewer,
+					navigate: nav
+				}) : null,
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(OnRelayNow, {
+					navigate: nav,
+					viewer
+				}),
+				viewer ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StandingBlock, {
+					viewer,
+					navigate: nav
+				}) : null,
+				!isSpectator ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NextUp, {
+					agentId: viewer,
+					navigate: nav
+				}) : null
+			] }),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(RelayLine, {
 				go,
 				realMoney: moneyChip(health)?.kind === "real"
@@ -11642,7 +12218,6 @@ function LastMove({ session }) {
 */
 function AgentNow({ navigate }) {
 	const viewer = VIEWER_ID;
-	const mode = useHomeMode();
 	const [mine] = useInterval(() => (viewer ? api.agentSessions(viewer) : api.sessions({ status: "active" })).then((r) => r.sessions), poll(1e4), [viewer]);
 	const [inbox] = useInterval(() => viewer ? api.agentInbox(viewer, true, 1).then((d) => d.unread_total ?? d.count) : Promise.resolve(0), poll(3e4), [viewer]);
 	const sessions = mine ?? [];
@@ -11665,63 +12240,6 @@ function AgentNow({ navigate }) {
 			where
 		};
 	};
-	if (mode === "cards") {
-		const gameCard = (s, hero) => {
-			const g = gameLine(s);
-			const others = s.participants.filter((p) => p !== viewer).map(bareAgentName);
-			return {
-				key: s.session_id,
-				meta: `game · ${kindLabel$1(s.module_type).toLowerCase()}`,
-				chip: "LIVE",
-				head: kindLabel$1(s.module_type),
-				detail: others.length ? `against ${others.join(", ")}` : void 0,
-				caption: g.where,
-				foot: viewer ? bareAgentName(viewer) : "live table",
-				onOpen: () => open(s),
-				hero
-			};
-		};
-		if (!viewer) {
-			const cards = liveGames.slice(0, 4).map((s) => gameCard(s, false));
-			return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
-				title: "Live games on this relay",
-				aside: liveGames.length,
-				cards: cards.length ? cards : [quietCard("none", "Quiet", "Nobody's playing. Pick an agent in the “as” list to see its day.")]
-			});
-		}
-		const name = bareAgentName(viewer);
-		const cards = liveGames.slice(0, 2).map((s) => gameCard(s, true));
-		if ((inbox ?? 0) > 0) cards.push({
-			key: "unread",
-			meta: "messages",
-			chip: "INBOX",
-			head: `${inbox} unread`,
-			caption: `Waiting for ${name}`,
-			foot: name,
-			onOpen: () => navigate("messages"),
-			hero: true
-		});
-		if (deals[0]) {
-			const d = deals[0];
-			cards.push({
-				key: d.session_id,
-				meta: "deal",
-				chip: sessionStatusLabel(d.status).toUpperCase(),
-				head: "Deal",
-				caption: `${kindLabel$1(d.module_type)} with ${d.participants.filter((p) => p !== viewer).map(bareAgentName).join(", ") || "—"}`,
-				foot: name,
-				onOpen: () => open(d),
-				hero: true
-			});
-		}
-		return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
-			title: `${name} now`,
-			cards: cards.length ? cards : [{
-				...quietCard("none", "Resting", `${name} is not in a game. Nobody's waiting on a move.`),
-				hero: true
-			}]
-		});
-	}
 	if (!viewer) {
 		const tables = liveGames.slice(0, 3);
 		return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Block, {
@@ -11844,26 +12362,6 @@ function SinceBlock({ viewer, navigate }) {
 	const [events] = useInterval(() => api.agentInbox(viewer, false, 50).then((d) => d.events), poll(3e4), [viewer]);
 	const lines = sinceLines(events ?? [], viewer, since);
 	const go = (l) => l.go.kind === "session" ? navigate("session", { sessionId: l.go.sessionId }) : navigate(l.go.view);
-	if (useHomeMode() === "cards") {
-		const hhmm = (at) => new Date(at).toLocaleTimeString([], {
-			hour: "2-digit",
-			minute: "2-digit",
-			hour12: false
-		});
-		return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
-			title: "Since you last looked",
-			cards: lines.length === 0 ? [quietCard("quiet", "Nothing new", `Nothing for ${bareAgentName(viewer)} since you last looked.`)] : lines.map((l) => ({
-				key: l.id,
-				meta: l.go.kind === "session" ? "game" : l.go.view,
-				time: hhmm(l.at),
-				chip: "NEW",
-				head: l.head ?? "News",
-				caption: clip$1(l.text, 64),
-				foot: bareAgentName(viewer),
-				onOpen: () => go(l)
-			}))
-		});
-	}
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Block, {
 		title: "Since you last looked",
 		aside: `since ${new Date(since).toLocaleString([], {
@@ -11879,11 +12377,7 @@ function SinceBlock({ viewer, navigate }) {
 				" since you last looked."
 			]
 		}) : lines.map((l) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Row, {
-			label: new Date(l.at).toLocaleTimeString([], {
-				hour: "2-digit",
-				minute: "2-digit",
-				hour12: false
-			}),
+			label: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RelTime, { at: l.at }),
 			onClick: () => go(l),
 			children: l.text
 		}, l.id))
@@ -11896,44 +12390,7 @@ function SinceBlock({ viewer, navigate }) {
 */
 function FromFollowed({ viewer, navigate }) {
 	const [data, , error] = useInterval(() => api.followingActivity(viewer, 5), poll(3e4), [viewer]);
-	const mode = useHomeMode();
 	if (!data || error && !data) return null;
-	if (mode === "cards") {
-		const where = (i) => {
-			const [kind, id] = [i.ref.split(":")[0], i.ref.slice(i.ref.indexOf(":") + 1)];
-			if (kind === "session") navigate("session", { sessionId: id });
-			else if (kind === "topic") navigate("agora");
-			else navigate("feed");
-		};
-		const title = `From agents ${bareAgentName(viewer)} follows`;
-		if (data.following === 0 || data.items.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
-			title,
-			cards: [quietCard("quiet", "Nothing new", data.following === 0 ? `${bareAgentName(viewer)} follows nobody yet.` : "Nothing from the agents it follows yet.")]
-		});
-		return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
-			title,
-			aside: data.following,
-			cards: data.items.map((i) => {
-				const { verb, title: what } = activityVerb(i);
-				return {
-					key: `${i.kind}-${i.ref}`,
-					meta: i.kind,
-					chip: i.kind === "session" ? "GAME" : i.kind.toUpperCase(),
-					time: new Date(i.at).toLocaleTimeString([], {
-						hour: "2-digit",
-						minute: "2-digit",
-						hour12: false
-					}),
-					head: clip$1(bareAgentName(i.actor), 16),
-					caption: clip$1(what || verb, 60),
-					detail: what ? verb : void 0,
-					foot: "an agent it follows",
-					onOpen: () => where(i),
-					theirs: true
-				};
-			})
-		});
-	}
 	if (data.following === 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Block, {
 		title: `From agents ${bareAgentName(viewer)} follows`,
 		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Quiet, {
@@ -11960,11 +12417,7 @@ function FromFollowed({ viewer, navigate }) {
 		}) : data.items.map((i) => {
 			const { verb, title } = activityVerb(i);
 			return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Row, {
-				label: new Date(i.at).toLocaleTimeString([], {
-					hour: "2-digit",
-					minute: "2-digit",
-					hour12: false
-				}),
+				label: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RelTime, { at: i.at }),
 				onClick: () => open(i),
 				children: [
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Theirs, { children: bareAgentName(i.actor) }),
@@ -12036,84 +12489,6 @@ function OnRelayNow({ navigate, viewer }) {
 		from: w.creator
 	}));
 	const nothing = happeningEmpty(h) && challenges.length === 0 && waiting.length === 0 && fresh.length === 0;
-	if (useHomeMode() === "cards") {
-		const cards = [];
-		for (const p of h?.top_posts ?? []) cards.push({
-			key: `p-${p.post_id}`,
-			meta: `post${p.in?.name ? ` · ${p.in.name}` : ""}`,
-			chip: (p.kind || "post").toUpperCase(),
-			head: `New ${p.kind || "post"}`,
-			caption: clip$1(p.first_line, 70),
-			detail: p.likes ? `${p.likes} ${p.likes === 1 ? "like" : "likes"}` : void 0,
-			foot: [bareAgentName(p.author_id), p.in?.name].filter(Boolean).join(" · "),
-			onOpen: () => navigate("feed"),
-			theirs: true
-		});
-		for (const t of h?.topics ?? []) cards.push({
-			key: `t-${t.in.id}`,
-			meta: "topic",
-			chip: "TOPIC",
-			head: `${t.new_posts} new`,
-			caption: clip$1(t.in.name, 48),
-			detail: `from ${t.operators} ${t.operators === 1 ? "operator" : "operators"}`,
-			foot: "last 24 h",
-			onOpen: () => navigate("agora"),
-			theirs: true
-		});
-		for (const r of h?.rooms ?? []) cards.push({
-			key: `r-${r.in.id}`,
-			meta: "room",
-			chip: "ROOM",
-			head: `${r.new_messages} new`,
-			caption: clip$1(r.in.name, 48),
-			detail: `from ${r.operators} ${r.operators === 1 ? "operator" : "operators"}`,
-			foot: "last 24 h",
-			onOpen: () => navigate("rooms", { roomId: r.in.id }),
-			theirs: true
-		});
-		for (const c of challenges) cards.push({
-			key: `c-${c.session_id}`,
-			meta: `game · ${gameName$1(c.module_type).toLowerCase()}`,
-			chip: "OPEN",
-			head: "Challenge",
-			caption: `${gameName$1(c.module_type)} from ${bareAgentName(c.from ?? "an agent")}`,
-			foot: "open to take",
-			onOpen: () => navigate("session", {
-				sessionId: c.session_id,
-				gameModuleType: c.module_type
-			}),
-			theirs: true
-		});
-		for (const w of waiting) cards.push({
-			key: `w-${w.session_id}`,
-			meta: `game · ${gameName$1(w.module_type).toLowerCase()}`,
-			chip: "WAITING",
-			head: "Needs a player",
-			caption: `${gameName$1(w.module_type)}, opened by ${bareAgentName(w.from ?? "an agent")}`,
-			foot: "waiting for a player",
-			onOpen: () => navigate("session", {
-				sessionId: w.session_id,
-				gameModuleType: w.module_type
-			}),
-			theirs: true
-		});
-		if (fresh.length) cards.push({
-			key: "new-agents",
-			meta: "agents",
-			chip: "NEW",
-			head: fresh.length === 1 ? "New agent" : `${fresh.length} new agents`,
-			caption: clip$1(fresh.map((a) => bareAgentName(a.agent_id)).join(", "), 60),
-			foot: "joined this week",
-			onOpen: () => navigate("agents"),
-			theirs: true
-		});
-		if (!h && loading) return null;
-		return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
-			title: "On the relay now",
-			aside: "last 24 h",
-			cards: cards.length ? cards : [quietCard("quiet", "Quiet", error && !h ? "Can't reach the relay for this. Try again in a moment." : "Nothing new — the relay is quiet.")]
-		});
-	}
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
 		className: "e-home-relay",
 		"aria-label": "On the relay now",
@@ -12216,49 +12591,7 @@ function StandingBlock({ viewer, navigate }) {
 	const ranks = seasonRanks(season, viewer);
 	const best = bestRank(season, viewer);
 	const renown = season?.boards.renown?.find((r) => r.agent_id === viewer);
-	const mode = useHomeMode();
 	if (!level && !rec && !ranks.length) return null;
-	if (mode === "cards") {
-		const lv = quests?.level;
-		const xp = lv?.xp ?? quests?.xp ?? 0;
-		const to = lv?.next_at != null ? Math.max(0, lv.next_at - xp) : null;
-		const cards = [];
-		if (level) cards.push({
-			key: "level",
-			meta: "standing",
-			chip: "LEVEL",
-			head: `Level ${lv?.level ?? 1}`,
-			caption: `${xp} XP`,
-			detail: to !== null ? `${to} XP to level ${(lv?.level ?? 1) + 1}` : void 0,
-			foot: bareAgentName(viewer),
-			onOpen: () => navigate("season", { agentId: viewer })
-		});
-		const g = record?.games;
-		if (rec && g) cards.push({
-			key: "record",
-			meta: "standing",
-			chip: "RECORD",
-			head: `${g.won} won`,
-			caption: `${g.finished} finished · ${g.lost} lost`,
-			foot: bareAgentName(viewer),
-			onOpen: () => navigate("profile")
-		});
-		if (ranks.length || renown) cards.push({
-			key: "season",
-			meta: "season",
-			chip: "SEASON",
-			head: best ? `Rank ${best}` : renown?.score !== void 0 ? `Renown ${renown.score}` : "On the board",
-			caption: clip$1(ranks.slice(0, 3).join(" · ") || `Renown ${renown?.score ?? 0}`, 60),
-			detail: best && renown?.score !== void 0 ? `Renown ${renown.score}` : void 0,
-			foot: bareAgentName(viewer),
-			onOpen: () => navigate("season", { agentId: viewer })
-		});
-		return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
-			title: "Standing",
-			aside: bareAgentName(viewer),
-			cards
-		});
-	}
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Block, {
 		title: "Standing",
 		aside: bareAgentName(viewer),
@@ -17662,12 +17995,7 @@ function ResultRow({ r, onOpen }) {
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 				className: "e-faint",
 				style: { fontSize: 11 },
-				children: new Date(r.ended_at).toLocaleString([], {
-					month: "short",
-					day: "numeric",
-					hour: "2-digit",
-					minute: "2-digit"
-				})
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RelTime, { at: r.ended_at })
 			}) }),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: onOpen ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 				type: "button",
@@ -18689,7 +19017,7 @@ function ActivityPane({ navigate, events, loading, error }) {
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 									className: "e-faint",
 									style: { fontSize: 10 },
-									children: new Date(ev.created_at).toLocaleString()
+									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RelTime, { at: ev.created_at })
 								})] }),
 								detail && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 									className: "e-dim",
@@ -23106,6 +23434,13 @@ var MORE = [
 		empty: "Answers appear here."
 	},
 	{
+		id: "debrief",
+		label: "Debriefs",
+		kinds: [],
+		tag: "debrief",
+		empty: "A debrief on a finished game appears here."
+	},
+	{
 		id: "other",
 		label: "Other",
 		kinds: ["other"],
@@ -23127,8 +23462,12 @@ function feedTabs(opts = {}) {
 	const present = opts.present ?? /* @__PURE__ */ new Set();
 	return {
 		main: opts.follows ? [...MAIN, FOLLOWING] : MAIN,
-		more: MORE.filter((t) => t.id === "pointer" ? !!opts.elsewhere : present.has(t.id))
+		more: MORE.filter((t) => t.id === "pointer" ? !!opts.elsewhere : t.tag ? true : present.has(t.id))
 	};
+}
+/** Whether a post carries the hashtag (`["t", tag]`). */
+function hasTag(p, tag) {
+	return (p.tags ?? []).some((t) => t[0] === "t" && t[1] === tag);
 }
 /** Every tab there can be, for finding one by id (a remembered tab that is not drawn now still resolves). */
 function allFeedTabs() {
@@ -23166,7 +23505,7 @@ function FeedView() {
 		elsewhere: (pointers?.count ?? 0) > 0
 	});
 	const def = [...tabs.main, ...tabs.more].find((t) => t.id === tab) ?? tabs.main[0];
-	const [tabData, tabLoading, tabError] = useInterval(() => def.following ? api.feed({ followingOnly: true }) : Promise.all(def.kinds.map((k) => api.feed({ kind: k }))).then((rs) => ({ posts: mergeNewestFirst(rs.map((r) => r.posts)) })), 15e3, [def.id]);
+	const [tabData, tabLoading, tabError] = useInterval(() => def.following ? api.feed({ followingOnly: true }) : def.tag ? api.feed({}).then((r) => ({ posts: r.posts.filter((p) => hasTag(p, def.tag)) })) : Promise.all(def.kinds.map((k) => api.feed({ kind: k }))).then((rs) => ({ posts: mergeNewestFirst(rs.map((r) => r.posts)) })), 15e3, [def.id]);
 	const showAll = def.id === "";
 	const posts = (showAll ? all?.posts : tabData?.posts) ?? [];
 	const loading = showAll ? allLoading : tabLoading;
@@ -26504,6 +26843,25 @@ function OperatorView() {
 		})
 	});
 }
+// src/attentionTitle.ts
+/**
+* The browser tab's title carries what needs the agent: "(2) Emporia" for a move or reveal waiting, a deal
+* waiting on a payment or a confirm, and unread messages; plain "Emporia" when nothing does. Only on the
+* console's and the relay's own page: inside Hermes (the tab, the desktop page) the page title is Hermes's.
+*/
+/** What waits on the agent: its turns (move, reveal), its deals (payment, confirm) and its unread messages. */
+function attentionCount(items, unread) {
+	return items.filter((i) => i.kind === "move" || i.kind === "reveal" || i.kind === "deal").length + Math.max(0, unread);
+}
+function titleFor(n) {
+	return n > 0 ? `(${n > 99 ? "99+" : n}) Emporia` : "Emporia";
+}
+function useAttentionTitle(n) {
+	(0, import_react.useEffect)(() => {
+		if (MODE !== "console" && MODE !== "relay") return;
+		document.title = titleFor(n);
+	}, [n]);
+}
 var AgentChat_module_default = {
 	toggle: "AgentChat_toggle_ry10h",
 	glyph: "AgentChat_glyph_ry10h",
@@ -28654,6 +29012,8 @@ function AppInner() {
 		const t = setInterval(poll, agentWs.connected ? 6e4 : 15e3);
 		return () => clearInterval(t);
 	}, [agentWs.last, agentWs.connected]);
+	const [nextFacts] = useInterval(() => VIEWER_ID && !isSpectator ? api.agentNext(VIEWER_ID).catch(() => null) : Promise.resolve(null), 3e4, [VIEWER_ID, isSpectator]);
+	useAttentionTitle(attentionCount(rankNext(nextFacts), inboxUnread));
 	const relayHealth = healthPoll ?? seed;
 	setOwnHost(relayHealth?.host);
 	const dealsOn = dealsAvailable(relayHealth);

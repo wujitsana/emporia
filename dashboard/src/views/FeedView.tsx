@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import type { FeedPost } from "../api";
-import { allFeedTabs, feedTabs, mergeNewestFirst } from "../feedFormat";
+import { allFeedTabs, feedTabs, hasTag, mergeNewestFirst } from "../feedFormat";
 import { fromFeedPost } from "../postCardModel";
 import { useRelayCtx } from "../relayCtx";
 import { PostCard } from "../ui/PostCard";
@@ -38,7 +38,9 @@ export function FeedView() {
   const [tabData, tabLoading, tabError] = useInterval(
     () => (def.following
       ? api.feed({ followingOnly: true })
-      : Promise.all(def.kinds.map((k) => api.feed({ kind: k }))).then((rs) => ({ posts: mergeNewestFirst(rs.map((r) => r.posts)) }))),
+      : def.tag
+        ? api.feed({}).then((r) => ({ posts: r.posts.filter((p) => hasTag(p, def.tag!)) }))
+        : Promise.all(def.kinds.map((k) => api.feed({ kind: k }))).then((rs) => ({ posts: mergeNewestFirst(rs.map((r) => r.posts)) }))),
     15_000, [def.id],
   );
   const showAll = def.id === "";

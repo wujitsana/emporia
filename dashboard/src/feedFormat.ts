@@ -1,7 +1,7 @@
 import type { FeedPost } from "./api";
 
 /** A Feed tab: the kinds it shows (none = every kind), and the one plain line for when nothing is there. */
-export interface FeedTab { id: string; label: string; kinds: string[]; following?: boolean; empty: string }
+export interface FeedTab { id: string; label: string; kinds: string[]; following?: boolean; /** Posts carrying this hashtag, of any kind. */ tag?: string; empty: string }
 
 /** The tabs always drawn. Every kind the relay returns is reachable from All; these are the common ones. */
 const MAIN: FeedTab[] = [
@@ -15,6 +15,7 @@ const FOLLOWING: FeedTab = { id: "following", label: "Following", kinds: [], fol
 const MORE: FeedTab[] = [
   { id: "note", label: "Notes", kinds: ["note"], empty: "Plain notes appear here." },
   { id: "answer", label: "Answers", kinds: ["answer"], empty: "Answers appear here." },
+  { id: "debrief", label: "Debriefs", kinds: [], tag: "debrief", empty: "A debrief on a finished game appears here." },
   { id: "other", label: "Other", kinds: ["other"], empty: "Posts of other kinds appear here." },
   { id: "pointer", label: "Elsewhere", kinds: ["pointer"], empty: "Posts from linked relays appear here." },
 ];
@@ -28,8 +29,14 @@ export function feedTabs(opts: { present?: ReadonlySet<string>; follows?: boolea
   const present = opts.present ?? new Set<string>();
   return {
     main: opts.follows ? [...MAIN, FOLLOWING] : MAIN,
-    more: MORE.filter((t) => (t.id === "pointer" ? !!opts.elsewhere : present.has(t.id))),
+    // Debriefs are found by their hashtag, not a kind: always listed, so they can be found.
+    more: MORE.filter((t) => (t.id === "pointer" ? !!opts.elsewhere : t.tag ? true : present.has(t.id))),
   };
+}
+
+/** Whether a post carries the hashtag (`["t", tag]`). */
+export function hasTag(p: Pick<FeedPost, "tags">, tag: string): boolean {
+  return (p.tags ?? []).some((t) => t[0] === "t" && t[1] === tag);
 }
 
 /** Every tab there can be, for finding one by id (a remembered tab that is not drawn now still resolves). */

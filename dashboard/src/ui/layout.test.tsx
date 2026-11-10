@@ -12,7 +12,7 @@ describe("PageHeading", () => {
   it("names the place and the section, and says what it shows", () => {
     render(<PageHeading item={navById("season")} />);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Arena › Season");
-    expect(screen.getByText(/improving Emporia/)).toBeTruthy();
+    expect(screen.getByText(/season board/)).toBeTruthy();
   });
 
   it("names the viewed agent on the Agent's pages, and 'Agent' when there is none", () => {

@@ -4,6 +4,7 @@ import { api } from "../api";
 import type { GameResult } from "../api";
 import { shortAgent } from "../chessReplay";
 import { verdict } from "../resultsFormat";
+import { RelTime } from "./RelTime";
 
 /**
  * Finished games on this relay (P134) — the record behind the standings.
@@ -47,7 +48,7 @@ function ResultRow({ r, onOpen }: { r: GameResult; onOpen?: (sessionId: string) 
     <>
       <tr>
         <td><Text className="e-faint" style={{ fontSize: 11 }}>
-          {new Date(r.ended_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+          <RelTime at={r.ended_at} />
         </Text></td>
         <td>
           {onOpen ? (

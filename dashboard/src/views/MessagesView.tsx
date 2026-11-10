@@ -17,6 +17,7 @@ import { api } from "../api";
 import { dmDisplayContent, dmThreadPreview, looksLikeEncryptedEnvelope, postDisplay, postParts } from "../api";
 import type { DMMessage, DMThread, InboxEvent } from "../api";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
+import { RelTime } from "../ui/RelTime";
 import { gameName } from "../attention";
 import { bareAgentName } from "../agentName";
 import { FlatRailItem } from "../ui/FlatRailItem";
@@ -157,7 +158,7 @@ function ActivityPane({
               <div className="e-inbox-event__body">
                 <RowSpaceBetween>
                   <Text style={{ fontWeight: ev.is_read ? 400 : 600, fontSize: 13 }}>{title}</Text>
-                  <Text className="e-faint" style={{ fontSize: 10 }}>{new Date(ev.created_at).toLocaleString()}</Text>
+                  <Text className="e-faint" style={{ fontSize: 10 }}><RelTime at={ev.created_at} /></Text>
                 </RowSpaceBetween>
                 {detail && <Text className="e-dim" style={{ fontSize: 12, marginTop: 2 }}>{detail}</Text>}
                 <div style={{ display: "flex", gap: 6, marginTop: 4 }}>

@@ -47,6 +47,8 @@ import {
 import { VIEWER_ID } from "./relayEnv";
 import { currentHash, onRouteChange, routeFromHash, stepFromHash, syncHash } from "./dashboardRoute";
 import { CAPTURE, PARAM_THEME, PARAM_TINT } from "./capture";
+import { attentionCount, useAttentionTitle } from "./attentionTitle";
+import { rankNext } from "./nextUp";
 import { AnimaticHudFoot, BrandTitle } from "./ui/LookChrome";
 import { AgentChatDrawer, ChatMenuItem, ChatToggle } from "./chat/AgentChat";
 import { chatOpen, setChatOpen, subscribeChatOpen } from "./chat/chatAccess";
@@ -155,6 +157,12 @@ function AppInner() {
     const t = setInterval(poll, agentWs.connected ? 60_000 : 15_000);
     return () => clearInterval(t);
   }, [agentWs.last, agentWs.connected]);
+  // What waits on the agent, for the browser tab's title (console and relay pages only).
+  const [nextFacts] = useInterval(
+    () => (VIEWER_ID && !isSpectator ? api.agentNext(VIEWER_ID).catch(() => null) : Promise.resolve(null)),
+    30_000, [VIEWER_ID, isSpectator],
+  );
+  useAttentionTitle(attentionCount(rankNext(nextFacts), inboxUnread));
   const relayHealth = healthPoll ?? seed;
   // Agent names are bare on this relay and "name@host" only for visitors (agentName.ts).
   setOwnHost((relayHealth as { host?: string } | null)?.host);

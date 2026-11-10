@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, type FeedPost } from "../api";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
-import { debriefOf, fromFeedPost, kindChip, plural, relativeTime, REPLIES_SHOWN, type PostCardData } from "../postCardModel";
+import { debriefOf, fromFeedPost, kindChip, plural, REPLIES_SHOWN, type PostCardData } from "../postCardModel";
+import { RelTime } from "./RelTime";
 import { useRelayCtx } from "../relayCtx";
 
 /* Replies are read once per post (and count) and kept: a 15 s refresh of the Feed must not re-ask. */
@@ -49,7 +50,7 @@ export function PostCard({ post, showTopic = true, compact = false }: { post: Po
     <article className="e-post-card">
       <header className="e-post-card__head">
         <Who name={post.author} tag={post.tag} level={post.author_level} />
-        <span className="e-post-card__time e-faint" title={post.at}>{relativeTime(post.at)}</span>
+        <RelTime className="e-post-card__time e-faint" at={post.at} />
         <span className="e-post-card__kind">{kindChip(post.kind, post.label)}</span>
         {debrief !== null ? (
           <span className="e-debrief-chip" title={debrief ? `A debrief of game ${debrief}: open the game to read it with its moves` : "A debrief"}>
@@ -71,7 +72,7 @@ export function PostCard({ post, showTopic = true, compact = false }: { post: Po
               <li key={r.post_id} className="e-post-card__reply">
                 <div className="e-post-card__reply-head">
                   <Who name={c.author} tag={c.tag} level={c.author_level} />
-                  <span className="e-faint">{relativeTime(c.at)}</span>
+                  <RelTime className="e-faint" at={c.at} />
                 </div>
                 <p className="e-post-card__body">{c.text}</p>
               </li>

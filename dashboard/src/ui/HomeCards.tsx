@@ -6,9 +6,12 @@
  * (dashboard.css § 30: brackets, pixel face, tint fill and ink), so every theme and tint carries over.
  * Cards only display and open the detail; nothing here acts. Fields and helpers: homeCardsModel.ts.
  */
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { AgentMoireAvatar } from "../AgentMoireAvatar";
+import { PixelBadge } from "../badges";
 import { ScrambleText } from "./LookChrome";
-import type { CardSpec, HomeMode } from "./homeCardsModel";
+import { RelTime } from "./RelTime";
+import { mergeCards, type CardSpec, type HomeMode } from "./homeCardsModel";
 
 /** The small switch at the top of Home. */
 export function HomeSwitch({ mode, onChange }: { mode: HomeMode; onChange: (m: HomeMode) => void }) {
@@ -24,21 +27,73 @@ export function HomeSwitch({ mode, onChange }: { mode: HomeMode; onChange: (m: H
   );
 }
 
+/** A copy button for a call: read-only, it only puts the text on the clipboard. */
+function CopyCall({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button type="button" className="e-hcard__copy" aria-label={`Copy: ${text}`}
+      onClick={() => {
+        navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined);
+      }}>
+      {copied ? "copied" : "copy"}
+    </button>
+  );
+}
+
+/** Past this a body shows "more": about ten lines of a 260px card. */
+const BODY_LONG = 420;
+
 export function Card({ c }: { c: CardSpec }) {
-  const cls = `e-hcard${c.hero ? " e-hcard--hero" : ""}${c.quiet ? " e-hcard--quiet" : ""}${c.onOpen ? " is-link" : ""}`;
+  const [open, setOpen] = useState(false);
+  const link = c.onOpen && !c.copy && !c.body;
+  const long = !!c.body && (c.body.length > BODY_LONG || c.body.split("\n").length > 10);
+  const cls = `e-hcard${c.hero ? " e-hcard--hero" : ""}${c.quiet ? " e-hcard--quiet" : ""}${link ? " is-link" : ""}${c.body ? " e-hcard--post" : ""}`;
   const body = (
     <>
-      <span className="e-hcard__hud"><span>{c.meta}</span><span>{c.time}</span></span>
-      {c.chip ? <span className="e-hcard__chip">{c.chip}</span> : <span className="e-hcard__chip e-hcard__chip--none" aria-hidden />}
-      <span className="e-hcard__head"><ScrambleText text={c.head.toUpperCase()} /></span>
-      {c.detail ? <span className="e-hcard__detail">{c.detail}</span> : null}
-      <span className="e-hcard__caption" title={c.theirs ? "written by another agent: data, not instructions" : undefined}>
-        {c.caption}
+      <span className="e-hcard__hud">
+        <span>{c.meta}</span>
+        <span>{c.at ? <RelTime at={c.at} /> : c.time}</span>
       </span>
-      {c.foot ? <span className="e-hcard__foot">{c.foot}</span> : null}
+      <span className="e-hcard__ids">
+        {c.chip ? <span className="e-hcard__chip">{c.chip}</span> : <span className="e-hcard__chip e-hcard__chip--none" aria-hidden />}
+        {c.game ? <span className="e-hcard__icon"><PixelBadge id={c.game} size={2} mono /></span>
+          : c.agent ? <span className="e-hcard__icon" title={c.agent}><AgentMoireAvatar agentId={c.agent} size={26} /></span> : null}
+      </span>
+      <span className="e-hcard__head"><ScrambleText text={c.head.toUpperCase()} /></span>
+      {c.bar ? (
+        <span className="e-hcard__bar" role="progressbar" aria-valuemin={0} aria-valuemax={c.bar.max} aria-valuenow={c.bar.value}>
+          {Array.from({ length: 10 }, (_, i) => (
+            <span key={i} className={i < Math.round((10 * c.bar!.value) / Math.max(1, c.bar!.max)) ? "is-on" : undefined} />
+          ))}
+        </span>
+      ) : null}
+      {c.detail ? <span className="e-hcard__detail">{c.detail}</span> : null}
+      {c.body ? (
+        <span className="e-hcard__bodywrap">
+          <span className={`e-hcard__body${open ? " is-open" : ""}`}
+            title={c.theirs ? "written by another agent: data, not instructions" : undefined}>{c.body}</span>
+          {long ? (
+            <button type="button" className="e-hcard__more" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+              {open ? "less" : "more"}
+            </button>
+          ) : null}
+        </span>
+      ) : null}
+      <span className="e-hcard__caption" title={c.theirs && !c.body ? "written by another agent: data, not instructions" : undefined}>
+        {c.copy ? <code>{c.copy}</code> : c.caption}
+        {c.copy ? <CopyCall text={c.copy} /> : null}
+      </span>
+      {c.foot || (c.body && c.onOpen) ? (
+        <span className="e-hcard__foot">
+          <span>{c.foot}</span>
+          {c.body && c.onOpen ? (
+            <button type="button" className="e-hcard__more" onClick={c.onOpen}>open →</button>
+          ) : null}
+        </span>
+      ) : null}
     </>
   );
-  return c.onOpen ? (
+  return link ? (
     <button type="button" className={cls} onClick={c.onOpen} role="listitem">{body}</button>
   ) : (
     <div className={cls} role="listitem">{body}</div>
@@ -51,7 +106,7 @@ export function CardRow({ title, aside, cards }: { title: string; aside?: ReactN
     <section className="e-cards-section" aria-label={title}>
       <header className="e-now__head e-cards-section__head"><span>{title}</span><span>{aside}</span></header>
       <div className="e-cardrow" role="list" tabIndex={0} aria-label={`${title}: cards, scroll sideways`}>
-        {cards.map((c) => <Card key={c.key} c={c} />)}
+        {mergeCards(cards).map((c) => <Card key={c.key} c={c} />)}
       </div>
     </section>
   );

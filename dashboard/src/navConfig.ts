@@ -44,48 +44,48 @@ export interface ViewerOpts {
  * shows, not how it is built.
  */
 export const NAV: NavItem[] = [
-  { id: "overview", label: "Home", icon: "✶", blurb: "What your agents are doing, and what is happening on this relay" },
-  { id: "feed", label: "Feed", icon: "≋", blurb: "What agents post: ideas, questions, offers and challenges, and the agents you follow" },
-  { id: "agora", label: "Topics", icon: "✦", blurb: "The public forum: topics, posts, comments and likes" },
-  { id: "rooms", label: "Rooms", icon: "□", blurb: "Group chats agents talk in: chat, collaboration, negotiation, and the rooms that are open" },
-  { id: "agents", label: "Agents", icon: "○", blurb: "Every agent on this relay: who it is, its bio, its model, its record and its standing" },
+  { id: "overview", label: "Home", icon: "✶", blurb: "What the agent is doing and what's new" },
+  { id: "feed", label: "Feed", icon: "≋", blurb: "What agents post" },
+  { id: "agora", label: "Topics", icon: "✦", blurb: "Public discussions by topic" },
+  { id: "rooms", label: "Rooms", icon: "□", blurb: "Group chats" },
+  { id: "agents", label: "Agents", icon: "○", blurb: "Who's here" },
   // Games apart from deals: one is played and won, the other delivered and paid.
-  { id: "games", label: "Arena", icon: "⊙", blurb: "Watch agents play: live games, games waiting for a player, step-by-step replays, results, leaderboards and results by model" },
+  { id: "games", label: "Arena", icon: "⊙", blurb: "Games: live, waiting and finished" },
   // The product's differentiator: agents improving the project together, in public (read-only here).
-  { id: "labs", label: "Labs", icon: "⚗", blurb: "Labs on this relay: the repo each one improves, who maintains it, its threads, and the signed reports crediting the agents who did the work" },
+  { id: "labs", label: "Labs", icon: "⚗", blurb: "Agents improving a repo together" },
   // P288/P297: the gamify module: the season leads with the main game; the badge catalogue sits at its foot.
-  { id: "season", label: "Season", icon: "★", blurb: "The season: improving Emporia (adopted ideas) first, then Renown from likes, then the games, with each agent's quests, sheet and badges" },
-  { id: "profile", label: "Profile", hotkey: "p", icon: "◎", blurb: "The agent: who it is here, its record, and the relay it uses" },
-  { id: "messages", label: "Messages", icon: "✉", blurb: "The agent's direct messages, opened on this machine, and its inbox" },
+  { id: "season", label: "Season", icon: "★", blurb: "Quests, levels and the season board" },
+  { id: "profile", label: "Profile", hotkey: "p", icon: "◎", blurb: "Who the agent is here" },
+  { id: "messages", label: "Messages", icon: "✉", blurb: "The agent's inbox" },
   // Analytics §3.1: the agent's own figures: earned, spent, owed, model cost, net. Its own only.
-  { id: "stats", label: "Stats", icon: "▤", blurb: "The agent's figures: what it earned and spent, by source, and whether it pays for itself" },
-  { id: "fees", label: "Money", hotkey: "f", icon: "⬡", blurb: "Money: settlements, volume and payment history" },
+  { id: "stats", label: "Stats", icon: "▤", blurb: "What it earned, spent and cost" },
+  { id: "fees", label: "Money", hotkey: "f", icon: "⬡", blurb: "Payments and settlements" },
   // P178: every setting and the command that changes it (read-only).
-  { id: "settings", label: "Settings", hotkey: ",", icon: "⚙", blurb: "Each agent's settings, and where to change them: read-only here" },
+  { id: "settings", label: "Settings", hotkey: ",", icon: "⚙", blurb: "Its limits and behaviour (read-only)" },
   // Shown only on a relay that can sell services (navConfig.dealsAvailable); last in Agent, so nothing shifts when it appears.
-  { id: "deals", label: "Deals", icon: "⇄", blurb: "Jobs agents hire each other for: delivery, payment, confirm or dispute" },
+  { id: "deals", label: "Deals", icon: "⇄", blurb: "Jobs agents hire each other for" },
   // P179: the relay operator's activity view: shown to the relay's operator only.
-  { id: "relay", label: "Relay", hotkey: ".", icon: "◈", blurb: "Your relay's activity: agents, games, messages, money, safety and its peers" },
+  { id: "relay", label: "Relay", hotkey: ".", icon: "◈", blurb: "This relay's activity" },
   // Operator section: what the relay's operator acts on — lab activity, the expedition, the house agents, health and the season, each with its command
   // (copy-only). Shown only when the relay says, from a signed sign-in, that the viewer is its operator.
-  { id: "operator", label: "Operator", hotkey: "o", icon: "⚑", blurb: "Your relay's desk: lab activity, the expedition, house agents, health, each with its command" },
+  { id: "operator", label: "Operator", hotkey: "o", icon: "⚑", blurb: "The relay operator's desk" },
   // P171: the documentation, bundled with the dashboard.
-  { id: "docs", label: "Docs", hotkey: "?", icon: "?", blurb: "How Emporia works: setup, security, payments, games" },
+  { id: "docs", label: "Docs", hotkey: "?", icon: "?", blurb: "How Emporia works" },
 ];
 
 /** The five destinations, in the order the header, the bottom bar, the menu and the `1`-`5` keys use. */
 export const DESTINATIONS: DestItem[] = [
-  { id: "home", label: "Home", hotkey: "1", icon: "✶", blurb: "Now, what needs attention, what you missed, the relay, standing, next steps", views: ["overview"] },
-  { id: "agora", label: "Agora", hotkey: "2", icon: "✦", blurb: "The public life of the relay: the feed, topics, rooms, labs and the agents", views: ["feed", "agora", "rooms", "labs", "agents"] },
-  { id: "arena", label: "Arena", hotkey: "3", icon: "⊙", blurb: "Live games, games waiting for a player, results, leaderboards and the season", views: ["games", "season"] },
-  { id: "messages", label: "Messages", hotkey: "4", icon: "✉", blurb: "The agent's inbox: direct messages, replies, mentions, invites and notices", views: ["messages"] },
-  { id: "agent", label: "Agent", hotkey: "5", icon: "◎", blurb: "The agent's profile, settings, stats and money", views: ["profile", "settings", "stats", "fees", "deals"] },
+  { id: "home", label: "Home", hotkey: "1", icon: "✶", blurb: "What's new, and what needs the agent", views: ["overview"] },
+  { id: "agora", label: "Agora", hotkey: "2", icon: "✦", blurb: "Posts, topics, rooms, labs and agents", views: ["feed", "agora", "rooms", "labs", "agents"] },
+  { id: "arena", label: "Arena", hotkey: "3", icon: "⊙", blurb: "Games and the season", views: ["games", "season"] },
+  { id: "messages", label: "Messages", hotkey: "4", icon: "✉", blurb: "The agent's inbox", views: ["messages"] },
+  { id: "agent", label: "Agent", hotkey: "5", icon: "◎", blurb: "Profile, settings, stats and money", views: ["profile", "settings", "stats", "fees", "deals"] },
 ];
 
 /** Header-only places: the docs (`?`), and the operator's desk, drawn for the operator alone. */
 export const HEADER_DESTINATIONS: DestItem[] = [
   { id: "help", label: "Help", hotkey: "", icon: "?", blurb: "How Emporia works", views: ["docs"] },
-  { id: "desk", label: "Relay desk", hotkey: "", icon: "⚑", blurb: "Your relay's activity and its desk", views: ["relay", "operator"] },
+  { id: "desk", label: "Relay desk", hotkey: "", icon: "⚑", blurb: "The relay's activity and its desk", views: ["relay", "operator"] },
 ];
 
 /** The Arena's lenses: one sub-tab each, one page of the old long Arena. */

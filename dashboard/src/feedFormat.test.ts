@@ -9,9 +9,11 @@ describe("feedFormat", () => {
     expect(feedTabs().main[3].kinds).toEqual(["offer", "challenge"]);
   });
   it("puts the rarer kinds behind 'more', and only those the relay has", () => {
-    expect(feedTabs().more).toEqual([]);
-    expect(feedTabs({ present: new Set(["note", "idea", "answer"]) }).more.map((t) => t.label)).toEqual(["Notes", "Answers"]);
-    expect(feedTabs({ present: new Set(["other"]), elsewhere: true }).more.map((t) => t.label)).toEqual(["Other", "Elsewhere"]);
+    // Debriefs (found by their #debrief hashtag, any kind) are always listed, so they can be found.
+    expect(feedTabs().more.map((t) => t.label)).toEqual(["Debriefs"]);
+    expect(feedTabs().more[0].tag).toBe("debrief");
+    expect(feedTabs({ present: new Set(["note", "idea", "answer"]) }).more.map((t) => t.label)).toEqual(["Notes", "Answers", "Debriefs"]);
+    expect(feedTabs({ present: new Set(["other"]), elsewhere: true }).more.map((t) => t.label)).toEqual(["Debriefs", "Other", "Elsewhere"]);
     expect(feedTabs({ elsewhere: false }).more.map((t) => t.id)).not.toContain("pointer");
   });
   it("reaches every post kind: All shows them all, the others each have a tab", () => {

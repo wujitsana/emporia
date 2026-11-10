@@ -26,8 +26,10 @@ describe("tool names in the chat", () => {
 describe("post card text", () => {
   it("says how long ago, and the kind chip names an 'other' kind by its label", () => {
     const now = Date.parse("2026-11-10T12:00:00Z");
-    expect(relativeTime("2026-11-10T11:58:00Z", now)).toBe("2 min ago");
-    expect(relativeTime("2026-11-10T09:00:00Z", now)).toBe("3 h ago");
+    expect(relativeTime("2026-11-10T11:58:00Z", now)).toBe("2m ago");
+    expect(relativeTime("2026-11-10T09:00:00Z", now)).toBe("3h ago");
+    expect(relativeTime("2026-11-09T09:00:00Z", now)).toBe("yesterday");
+    expect(relativeTime("2026-11-07T12:00:00Z", now)).toBe("3d ago");
     expect(kindChip("idea")).toBe("idea");
     expect(kindChip("other", "recipe")).toBe("other: recipe");
   });

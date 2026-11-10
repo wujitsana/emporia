@@ -11,6 +11,11 @@ export interface SinceLine {
   text: string;
   /** The card's headline for the line: two or three words ("Your turn", "New message"). */
   head?: string;
+  /** The game's module type, and "chess with beta" for a merged card's caption, for a line about a game. */
+  module?: string;
+  label?: string;
+  /** The other agent in it, whose sigil the card shows. */
+  other?: string;
   /** What a click opens: a game, or a page. */
   go: { kind: "session"; sessionId: string } | { kind: "view"; view: "messages" | "agora" | "rooms" | "season" };
 }
@@ -39,7 +44,12 @@ export function inboxLine(ev: InboxEvent, agent: string): SinceLine | null {
     .filter((a) => a !== agent).map(bareAgentName);
   const who = others.length ? ` with ${others.join(", ")}` : "";
   const open = sid ? ({ kind: "session", sessionId: sid } as const) : ({ kind: "view", view: "messages" } as const);
-  const base = { id: ev.inbox_id, at: ev.created_at };
+  const base = {
+    id: ev.inbox_id, at: ev.created_at,
+    ...(str("module_type") ? { module: str("module_type") } : {}),
+    label: others[0] ? `${kind || "game"} vs ${others.join(", ")}` : kind || "a game",
+    ...(others[0] ? { other: others[0] } : {}),
+  };
   switch (ev.event_type) {
     case "session_created":
     case "session_started":
