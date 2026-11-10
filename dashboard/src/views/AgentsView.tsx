@@ -1,7 +1,6 @@
 import Badge from "@kit/Badge";
 import Divider from "@kit/Divider";
 import Indent from "@kit/Indent";
-import Input from "@kit/Input";
 import SidebarLayout from "@kit/SidebarLayout";
 import SimpleTable from "@kit/SimpleTable";
 import Text from "@kit/Text";
@@ -17,7 +16,7 @@ import { countsLine, relationToViewer } from "../followModel";
 import { FollowPanel } from "../ui/FollowPanel";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { FlatRailItem } from "../ui/FlatRailItem";
-import { SessionLink } from "../ui/chips";
+import { GameTag, SessionLink } from "../ui/chips";
 import { McpCommandHint } from "../ui/McpCommandHint";
 import { VIEWER_ID } from "../relayEnv";
 import type { Navigate } from "../navigation";
@@ -51,6 +50,12 @@ export function TrustBadge({ a }: { a: AgentProfile }) {
 }
 
 type AgentTab = "profile" | "follows" | "games" | "posts";
+
+/** Whether an agent answers to what was typed: its id, display name or bio, in any case. */
+function agentMatches(a: AgentProfile, query: string): boolean {
+  const q = query.toLowerCase();
+  return [a.agent_id, a.display_name, a.about].some((s) => typeof s === "string" && s.toLowerCase().includes(q));
+}
 
 export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; navigate?: Navigate }) {
   const [profile, setProfile] = React.useState<AgentProfile | null>(null);
@@ -211,7 +216,7 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
                 {sessions.map((s) => (
                   <tr key={s.session_id}>
                     <td><SessionLink session_id={s.session_id} navigate={navigate} /></td>
-                    <td><Text className="e-dim">{s.module_type.replace("emporia:", "").replace(/:v\d+$/, "")}</Text></td>
+                    <td><Text className="e-dim"><GameTag moduleType={s.module_type} label={s.module_type.replace("emporia:", "").replace(/:v\d+$/, "")} /></Text></td>
                     <td><Text className="e-dim">{s.status}</Text></td>
                     <td><Text className="e-faint">{s.step_number}</Text></td>
                     <td><Text className="e-faint">{new Date(s.created_at).toLocaleDateString()}</Text></td>
@@ -253,15 +258,30 @@ export function AgentsView({
   breadcrumb?: { label: string; onBack: () => void } | null;
 }) {
   const [search, setSearch] = React.useState("");
-  const [agentsData, agentsLoading, agentsErr] = useInterval(
-    () => api.agents(search || undefined),
-    8_000,
-    [search],
-  );
+  const [agentsData, agentsLoading, agentsErr] = useInterval(() => api.agents(), 8_000, []);
   // P41-2: memoised — a fresh array each render made all three effects below
   // re-run on every render, which is what let the deep link fight the default
   // selection (see the next two notes).
   const agents = React.useMemo(() => agentsData?.agents ?? [], [agentsData]);
+
+  // The search filters what is loaded as the person types. Only when the loaded list is a cut of a longer
+  // one does it also ask the relay (after a short pause), and the two answers are joined.
+  const query = search.trim();
+  const truncated = agentsData?.has_more === true;
+  const [remote, setRemote] = React.useState<{ q: string; list: AgentProfile[] } | null>(null);
+  useEffect(() => {
+    if (!query || !truncated) return;
+    const t = setTimeout(() => {
+      api.agents(query).then((r) => setRemote({ q: query, list: r.agents })).catch(() => {});
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query, truncated]);
+  const shown = React.useMemo(() => {
+    if (!query) return agents;
+    const near = remote && remote.q === query ? remote.list : [];
+    const seen = new Set<string>();
+    return [...agents.filter((a) => agentMatches(a, query)), ...near].filter((a) => !seen.has(a.agent_id) && !!seen.add(a.agent_id));
+  }, [agents, query, remote]);
 
   const [selected, setSelected] = React.useState<AgentProfile | null>(null);
   const [myProfile, setMyProfile] = React.useState<AgentProfile | null>(null);
@@ -304,8 +324,18 @@ export function AgentsView({
   const [standings, setStandings] = React.useState(false);
   const pick = (a: AgentProfile) => { setStandings(false); setSelected(a); };
 
+  const myMatches = !!myProfile && (!query || agentMatches(myProfile, query));
+  const others = shown.filter((a) => a.agent_id !== myProfile?.agent_id);
   const agentSidebar = (
     <>
+      <div className="e-list-filter">
+        <input
+          type="text" value={search} name="agent-search" aria-label="Search agents" autoComplete="off"
+          placeholder="Search agents"
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        {search ? <button type="button" className="e-list-filter__clear" aria-label="Clear search" onClick={() => setSearch("")}>×</button> : null}
+      </div>
       <FlatRailItem selected={standings} onClick={() => setStandings(true)}>
         <div className="e-docs-rail-item">
           <Text>Standings</Text>
@@ -313,7 +343,7 @@ export function AgentsView({
         </div>
       </FlatRailItem>
       <div className="e-rail-label">Agents</div>
-      {myProfile && (
+      {myProfile && myMatches && (
         <FlatRailItem
           selected={!standings && selected?.agent_id === myProfile.agent_id}
           onClick={() => pick(myProfile)}
@@ -328,10 +358,10 @@ export function AgentsView({
           </div>
         </FlatRailItem>
       )}
-      {agents.filter((a) => a.agent_id !== myProfile?.agent_id).length === 0 && !myProfile ? (
-        <Indent><Text className="e-faint">No agents registered</Text></Indent>
+      {others.length === 0 && !myMatches ? (
+        <Indent><Text className="e-faint">{query ? `No agent matches “${query}”.` : "No agents registered"}</Text></Indent>
       ) : (
-        agents.filter((a) => a.agent_id !== myProfile?.agent_id).map((a) => (
+        others.map((a) => (
           <FlatRailItem
             key={a.agent_id}
             selected={!standings && selected?.agent_id === a.agent_id}
@@ -370,15 +400,6 @@ export function AgentsView({
           <button type="button" className="e-arena-back" onClick={breadcrumb.onBack}>‹ {breadcrumb.label}</button>
         </Indent>
       ) : null}
-      <div className="e-search-row">
-        <Input
-          className="e-search-bar"
-          value={search}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-          placeholder="Search agents by id or name…"
-          name="agent-search"
-        />
-      </div>
       <Indent>
         <ViewStatus loading={agentsLoading} error={agentsErr} />
       </Indent>

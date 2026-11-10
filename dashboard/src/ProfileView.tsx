@@ -125,6 +125,7 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
           </div>
 
           {registered ? (
+            <>
             <MetaGrid
               rows={[
                 // P42: extracted rather than written inline. `jsx-key` fires on
@@ -140,12 +141,21 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
                 ["Registered", new Date(registered.registered_at).toLocaleDateString()],
                 ["Sessions", String(registered.session_count)],
                 ["Wins", `${registered.win_count} (${registered.session_count > 0 ? Math.round((registered.win_count / registered.session_count) * 100) : 0}%)`],
-                ["Stripe payouts", stripeAccountStatusLabel(registered, stripeMode)],
-                ["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"],
-                ...(registered.payment_methods?.length ? [["Methods", registered.payment_methods.join(", ")] as [string, string]] : []),
-                ...(registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")] as [string, string]] : []),
               ]}
             />
+            {/* The payment set-up is for looking deeply: behind one line, not in the first screen. */}
+            <details className="e-fold">
+              <summary>Payment set-up</summary>
+              <MetaGrid
+                rows={[
+                  ["Stripe payouts", stripeAccountStatusLabel(registered, stripeMode)],
+                  ["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"],
+                  ...(registered.payment_methods?.length ? [["Methods", registered.payment_methods.join(", ")] as [string, string]] : []),
+                  ...(registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")] as [string, string]] : []),
+                ]}
+              />
+            </details>
+            </>
           ) : !isSpectator ? (
             <Text className="e-faint" style={{ marginTop: 10 }}>
               Not yet registered on this relay. Use the <code>register_agent</code> MCP tool to join.
@@ -169,9 +179,15 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
           <MetaGrid
             rows={[
               ["URL", relayUrl],
-              ["Relay ID", relayId ?? "—"],
               ["Operator", relayOwnerLabel],
               ["Role here", isRelayOperator ? "operator" : isSpectator ? "spectator" : "member"],
+            ]}
+          />
+          <details className="e-fold">
+            <summary>More about this relay</summary>
+          <MetaGrid
+            rows={[
+              ["Relay ID", relayId ?? "—"],
               ["Agents", String(agentCount)],
               ["Active sessions", String(activeSessionCount)],
               ...(relayVersion ? [["Version", relayVersion] as [string, string]] : []),
@@ -182,6 +198,7 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
               ["Registration", requireChallenge ? "challenge required (proves key possession)" : "open — no key-possession proof"],
             ]}
           />
+          </details>
         </SlimCard>
 
         {/* My recent sessions */}

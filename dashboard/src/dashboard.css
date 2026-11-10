@@ -1236,6 +1236,33 @@ body.theme-light {
   opacity: 0.45;
   font-variant-numeric: tabular-nums;
 }
+/* A list's own filter, at the top of its column: compact, the theme's colours, a clear button inside. */
+.e-list-filter { position: relative; padding: 8px 10px; border-bottom: 1px solid var(--e-rule, var(--theme-border-subdued)); }
+.e-list-filter input {
+  box-sizing: border-box; width: 100%; padding: 5px 26px 5px 8px; border: 1px solid var(--e-rule, currentColor); border-radius: 0;
+  background: transparent; color: inherit; font: inherit; font-size: 0.8rem;
+}
+.e-list-filter input::placeholder { color: var(--anim-faint, inherit); opacity: 1; }
+.e-list-filter input:focus { outline: none; border-color: var(--theme-focused-foreground); }
+.e-list-filter__clear {
+  position: absolute; right: 14px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; color: inherit;
+  font: inherit; font-size: 1rem; line-height: 1; cursor: pointer; opacity: 0.6; padding: 0 2px;
+}
+.e-list-filter__clear:hover { opacity: 1; color: var(--theme-focused-foreground); }
+/* A fold inside a card: one muted line that opens the facts only a close look needs. */
+.e-fold { margin-top: 8px; }
+.e-fold > summary { cursor: pointer; font-size: 0.72rem; letter-spacing: 0.04em; opacity: 0.65; list-style: none; padding: 2px 0; }
+.e-fold > summary::before { content: "▸ "; }
+.e-fold[open] > summary::before { content: "▾ "; }
+.e-fold > summary::-webkit-details-marker { display: none; }
+.e-fold > summary:hover, .e-fold[open] > summary { opacity: 1; color: var(--theme-focused-foreground); }
+/* "+N more": the rest of a row's chips, behind one small disclosure (progressive disclosure, nothing removed). */
+.e-more { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.e-more > summary { cursor: pointer; font-size: 0.7rem; opacity: 0.7; list-style: none; padding: 1px 4px; }
+.e-more > summary::-webkit-details-marker { display: none; }
+.e-more > summary:hover, .e-more[open] > summary { opacity: 1; color: var(--theme-focused-foreground); }
+/* A game's pixel glyph then its name: the one way every list says "this is a game". */
+.e-game-tag { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; vertical-align: middle; }
 .e-quiet-chip {
   display: inline-block;
   padding: 0 6px;
@@ -1330,6 +1357,29 @@ body.theme-light {
 .e-segment-tab.is-active { background: var(--e-accent-wash, transparent); font-weight: 400; }
 .e-segment-tab:hover { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
 .e-segment-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); font-weight: 600; }
+
+/* The Feed's filter chips, and "more ▾" for the rarer kinds: the same chip, opening a short list. */
+.e-feed-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; margin: 0 0 12px; }
+.e-feed-tabs .e-segment-tabs { margin: 0; }
+.e-feed-more { position: relative; }
+.e-feed-more > summary {
+  list-style: none; cursor: pointer; padding: 2px 11px; border: 1px solid var(--theme-border-subdued, currentColor);
+  border-radius: 999px; font-size: 0.68rem; letter-spacing: 0.02em; opacity: 0.75; user-select: none;
+}
+.e-feed-more > summary::-webkit-details-marker { display: none; }
+.e-feed-more > summary:hover, .e-feed-more[open] > summary, .e-feed-more > summary.is-active {
+  opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground);
+}
+.e-feed-more__menu {
+  position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 9rem; display: flex; flex-direction: column;
+  border: 1px solid var(--theme-border, var(--e-rule)); background: var(--theme-background);
+}
+.e-feed-more__menu button {
+  padding: 6px 12px; border: 0; border-bottom: 1px solid var(--e-rule, transparent); background: transparent; color: inherit;
+  font: inherit; font-size: 0.72rem; text-align: left; cursor: pointer;
+}
+.e-feed-more__menu button:last-child { border-bottom: 0; }
+.e-feed-more__menu button:hover, .e-feed-more__menu button.is-active { color: var(--theme-focused-foreground); }
 
 /* ─── 16. BADGES, PILLS & ENTITY CHIPS ──────────────────────────────────── */
 

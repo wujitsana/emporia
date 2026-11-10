@@ -108,16 +108,20 @@ export function SettingRow({ item, place }: { item: SettingItem; place: HermesPl
         </div>
       </div>
       {(inHermes || item.command) && (
-        <div className="e-setting-change">
-          {inHermes && <ChangeInHermes place={place} />}
-          {inHermes && <code className="e-setting-env" title="Its name in Hermes's form">{item.env}</code>}
-          {item.command && <CopyCommand command={item.command} />}
-          {item.person_only && (
-            <span className="e-setting-note">
-              Only a person runs this, in their own terminal — never through an agent.
-            </span>
-          )}
-        </div>
+        // How to change it is one line away, not on every row: a setting that is a risk or needs a look keeps it open.
+        <details className="e-fold e-setting-fold" open={item.level === "danger" || item.level === "warn" ? true : undefined}>
+          <summary>how to change</summary>
+          <div className="e-setting-change">
+            {inHermes && <ChangeInHermes place={place} />}
+            {inHermes && <code className="e-setting-env" title="Its name in Hermes's form">{item.env}</code>}
+            {item.command && <CopyCommand command={item.command} />}
+            {item.person_only && (
+              <span className="e-setting-note">
+                Only a person runs this, in their own terminal — never through an agent.
+              </span>
+            )}
+          </div>
+        </details>
       )}
     </div>
   );

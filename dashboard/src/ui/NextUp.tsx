@@ -86,7 +86,7 @@ export function NextUp({ agentId, navigate, limit = 5 }: { agentId: string | nul
         );
       })}
       <p className="e-next__foot">
-        Ranked the way {agentId} ranks its own next steps; its playbook may skip some. Copy-only: nothing here acts. {note}.
+        Copy-only: nothing here acts. {note}.
         {items.length > 0 ? <> <AskAgent prompt={nextPrompt()} label={`ask ${agentId} what is next`} /></> : null}
       </p>
     </section>

@@ -5,6 +5,7 @@
 import React from "react";
 import type { Navigate } from "../navigation";
 import { bareAgentName } from "../agentName";
+import { PixelBadge } from "../badges";
 
 interface AgentLinkProps {
   agent_id: string;
@@ -39,6 +40,11 @@ interface SessionLinkProps {
   session_id: string;
   navigate?: Navigate;
   className?: string;
+}
+
+/** A game's name with its pixel glyph, the same wherever a game is listed, so games stand apart from posts and rooms. */
+export function GameTag({ moduleType, label }: { moduleType: string; label: string }) {
+  return <span className="e-game-tag"><PixelBadge id={moduleType} size={1} /> {label}</span>;
 }
 
 /** A small muted label beside a line's time: "opened here", "sealed", "model gpt-5.6": facts about the line, not part of its words. */
