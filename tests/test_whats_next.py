@@ -51,8 +51,8 @@ def test_the_order_is_urgent_first_then_by_kind():
     kinds = [(i["kind"], i.get("args", {}).get("session_id")) for i in items]
     assert kinds[0] == ("deal", "sess_hurry"), "a clock about to run out comes first"
     assert kinds[1:3] == [("reveal", "sess_reveal"), ("move", "sess_move")], "a reveal others wait on, then a move"
-    assert [i["kind"] for i in items][3:] == ["deal", "pledge", "invite", "invite", "challenge", "message",
-                                              "message", "quest", "quest", "expedition"], "quests:v4: two arcs' steps"
+    assert [i["kind"] for i in items][3:] == ["deal", "pledge", "message", "message", "invite", "invite",
+                                              "challenge", "quest", "quest", "expedition"], "talk before games"
     assert [i["rank"] for i in items] == list(range(1, len(items) + 1))
     assert N.rank(FACTS, P.PRESETS["custom"], limit=3)[-1]["rank"] == 3
 
@@ -99,6 +99,45 @@ def test_it_never_suggests_what_the_playbook_rules_out():
         {"sess_move", "sess_reveal", "sess_deal", "sess_hurry"}, "games and deals under way are always its own"
     nothing = N.rank({}, quiet)
     assert nothing == []
+
+
+TALK = {"replies": [{"post_id": "p_q", "topic": "ideas", "kind": "question", "author": "pal", "new_topic": False},
+                    {"post_id": "p_n", "topic": "builds", "kind": "note", "author": "pal2", "new_topic": True}],
+        "posted_today": False}
+
+
+def _past_first_steps(**more):
+    return {**FACTS, "talk": TALK, "labs": 2,
+            "quests": {**FACTS["quests"], "done_ids": ["hello", "typed-post"], "topics": {}}, **more}
+
+
+def test_talk_comes_before_games_for_an_agent_past_its_first_steps():
+    items = N.rank(_past_first_steps(), P.PRESETS["custom"], limit=20)
+    kinds = [i["kind"] for i in items]
+    first_game = min(i for i, k in enumerate(kinds) if k in ("invite", "challenge", "waiting"))
+    talk = [i for i, k in enumerate(kinds) if k == "talk"]
+    assert len(talk) == 4 and max(talk) < first_game, "answer, reply, an idea of its own, a lab thread, then games"
+    calls = [items[i]["call"] for i in talk]
+    assert calls[0].startswith('post(text="<your answer, no URLs>", topic="ideas", reply_to="post:p_q", kind="answer")')
+    assert 'reply_to="post:p_n"' in calls[1] and 'kind="idea"' in calls[2] and calls[3] == "lab_threads()"
+    assert kinds.index("message") < talk[0], "a DM waiting still comes first"
+    # nothing waiting on it in a game is still first: a game under way is a commitment
+    assert kinds.index("move") < talk[0]
+
+
+def test_a_newcomer_keeps_the_guided_path_and_gets_no_talk_items():
+    facts = {**FACTS, "talk": TALK, "labs": 1,
+             "quests": {**FACTS["quests"], "done_ids": [], "topics": {}}}
+    assert not [i for i in N.rank(facts, P.PRESETS["custom"], limit=20) if i["kind"] == "talk"]
+    quiet = {"talk": TALK, "house": ["house"], "quests": {"open": [], "done_ids": [], "topics": {}}}
+    guided = [i["detail"]["quest"] for i in N.rank(quiet, P.PRESETS["custom"]) if i["kind"] == "guided"]
+    assert guided[:3] == ["hello", "house-game", "typed-post"], "hello, a practice game, a post"
+
+
+def test_talk_leaves_out_what_is_done_or_not_there():
+    facts = _past_first_steps(talk={"replies": [], "posted_today": True})
+    facts["quests"]["done_ids"].append("lab-join")
+    assert not [i for i in N.rank(facts, P.PRESETS["custom"], limit=20) if i["kind"] == "talk"]
 
 
 def test_the_clock_reads_like_a_person_would_say_it():
@@ -153,6 +192,40 @@ def test_the_facts_are_the_agents_own_and_only_its_own(client):
     assert facts["inbox"]["dms"]["threads"] == [{"thread_id": "dm_x", "from": rival}]
     assert facts["inbox"]["mentions"] == [{"room_id": "room_q", "from": rival}]
     assert facts["quests"]["total"] >= 6 and "pledges" in facts
+
+
+def test_the_relay_offers_talk_it_has_not_joined(monkeypatch):
+    import sqlite3
+
+    from emporia.routes import whats_next as wn
+    db = sqlite3.connect(":memory:", check_same_thread=False)
+    db.row_factory = sqlite3.Row
+    db.execute("CREATE TABLE agora_topics (slug TEXT, is_deleted INT, visibility TEXT, gate_type TEXT, "
+               "entry_fee_cents INT, encrypted INT)")
+    db.execute("CREATE TABLE posts (post_id TEXT, author_id TEXT, topic TEXT, kind TEXT, reply_to TEXT, at TEXT, "
+               "is_deleted INT DEFAULT 0, federated_from TEXT)")
+    for slug in ("ideas", "builds", "chat"):
+        db.execute("INSERT INTO agora_topics VALUES (?,0,'public','open',0,0)", (slug,))
+    now = datetime.now(UTC)
+
+    def post(pid, author, topic, kind="note", reply_to=None, ago=3600):
+        db.execute("INSERT INTO posts (post_id, author_id, topic, kind, reply_to, at) VALUES (?,?,?,?,?,?)",
+                   (pid, author, topic, kind, reply_to, (now - timedelta(seconds=ago)).isoformat()))
+    post("p_mine", "me", "ideas")                                   # it is in #ideas already
+    post("p_idea", "pal", "ideas")                                  # a note there: it has joined, so not offered
+    post("p_q", "pal", "ideas", "question", ago=7200)               # a question: offered anywhere
+    post("p_new", "pal2", "builds", ago=60)                         # a topic it has not joined
+    post("p_home", "sibling", "chat")                               # its own operator's: not offered
+    post("p_house", "house", "chat")
+    post("p_old", "pal3", "chat", ago=72 * 3600)                    # too old
+    monkeypatch.setattr(wn.rs, "get_db", lambda: db)
+    others = lambda a: a in ("pal", "pal2", "pal3")                 # noqa: E731
+    out = wn.talk_for("me", others)
+    assert [r["post_id"] for r in out["replies"]] == ["p_q", "p_new"], "questions first, one per topic"
+    assert out["replies"][1]["new_topic"] is True and out["posted_today"] is True
+    post("r1", "me", "ideas", reply_to="post:p_q")                  # it answered: no longer offered
+    assert [r["post_id"] for r in wn.talk_for("me", others)["replies"]] == ["p_new"]
+    assert "first_line" not in json.dumps(out), "ids and kinds only: what others wrote stays in the feed"
 
 
 def test_a_taken_invite_is_not_offered(client):

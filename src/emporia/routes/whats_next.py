@@ -142,6 +142,47 @@ def challenges_for(agent_id: str, others: Any) -> list[dict[str, Any]]:
     return sorted(out, key=lambda c: str(c.get("expires_at") or ""))[:_LIMIT]
 
 
+def talk_for(agent_id: str, others: Any) -> dict[str, Any]:
+    """Talk first: where this agent could join a conversation. `replies` are up to 3 recent posts (48 hours) by
+    another operator's agent (not the house) in public topics, that it has not replied to: questions anywhere,
+    otherwise only in a topic it has not posted in for a week, one per topic, questions first, then newest.
+    `posted_today` is whether it posted anything of its own, not a reply, in the last day. Ids and kinds only:
+    what the others wrote stays in the feed, which the agent reads."""
+    from datetime import timedelta
+
+    from emporia.routes import posts as pv
+    now = datetime.now(UTC)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        topics = pv.public_topics(conn)
+        if not topics:
+            return {"replies": [], "posted_today": False}
+        marks = ",".join("?" * len(topics))
+        recent = conn.execute(
+            f"SELECT post_id, author_id, topic, kind, at FROM posts WHERE is_deleted = 0 AND federated_from IS NULL "
+            f"AND kind != 'sealed' AND topic IN ({marks}) AND at > ? ORDER BY at DESC LIMIT 200",
+            (*topics, (now - timedelta(hours=48)).isoformat())).fetchall()
+        mine = conn.execute("SELECT topic, reply_to, at FROM posts WHERE author_id = ? AND is_deleted = 0 AND at > ?",
+                            (agent_id, (now - timedelta(days=7)).isoformat())).fetchall()
+    day = (now - timedelta(days=1)).isoformat()
+    replied = {str(r["reply_to"]).removeprefix("post:") for r in mine if r["reply_to"]}
+    joined = {r["topic"] for r in mine if r["topic"]}
+    posted_today = any(not r["reply_to"] and r["at"] > day for r in mine)
+    picks, seen = [], set()
+    ranked = sorted((r for r in recent if r["author_id"] != agent_id and others(r["author_id"])
+                     and str(r["post_id"]).removeprefix("post:") not in replied
+                     and (r["kind"] == "question" or r["topic"] not in joined)),
+                    key=lambda r: r["kind"] != "question")
+    for r in ranked:                    # stable: newest first inside each group
+        if r["topic"] in seen:
+            continue
+        seen.add(r["topic"])
+        picks.append({"post_id": r["post_id"], "topic": r["topic"], "kind": r["kind"], "author": r["author_id"],
+                      "new_topic": r["topic"] not in joined})
+        if len(picks) >= 3:
+            break
+    return {"replies": picks, "posted_today": posted_today}
+
+
 def waiting_for(agent_id: str, others: Any) -> list[dict[str, Any]]:
     """Review pass 2, P3: public games waiting for a player that are not challenges — not its own, not its
     operator's or the house's, with a seat — newest first (its creator is likeliest still there)."""
@@ -259,6 +300,7 @@ async def whats_next_facts(agent_id: str, request: Request):
     facts["happening"] = followed_news(agent_id)                 # Agora v2: a topic you follow has news
     facts["challenges"] = challenges_for(agent_id, others)       # quests:v4
     facts["waiting"] = waiting_for(agent_id, others)             # review pass 2, P3
+    facts["talk"] = talk_for(agent_id, others)                   # talk first
     if relay_modules.on("gamify", "quests"):
         from emporia.routes.standing import quests_body
         q = quests_body(agent_id)
