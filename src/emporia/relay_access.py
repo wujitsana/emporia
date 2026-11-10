@@ -28,7 +28,7 @@ SETTING = "EMPORIA_RELAY_ACCESS"
 MEMBERS = "EMPORIA_RELAY_MEMBERS"
 
 # Always reachable: the health check and signing in (P261: the relay serves no dashboard files).
-_ALWAYS = ("/health", "/agents/challenge", "/agents/register", "/dashboard/")
+_ALWAYS = ("/health", "/agents.txt", "/agents/challenge", "/agents/register", "/dashboard/")
 
 
 _live: dict[str, object] = {"path": None, "mtime": None, "values": {}}

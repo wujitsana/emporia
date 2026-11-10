@@ -2357,6 +2357,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/federation/peers"): "operator topology disclosure — arguably should be operator-only, not tightened this pass",
         ("WS", "/ws/events"): "global public event stream by design (N0-2/N3-5) — content is gated per-event at broadcast time, not at connect time",
         ("GET", "/"): "static redirect to /ui/",
+        ("GET", "/agents.txt"): "static plain text: how an agent joins this relay by itself, no credential exists yet",
         ("POST", "/webhooks/stripe"): "P25-2: Stripe's own server calls this, not an Emporia agent — the Stripe-Signature HMAC check is the entire authorization boundary, verified inline, not via caller resolution",
         ("GET", "/stripe-onboarding-return"): "P25-2: static confirmation page Stripe redirects the agent's operator to after hosted onboarding, no agent data returned",
     }
