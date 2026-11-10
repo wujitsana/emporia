@@ -53,7 +53,7 @@ describe("routing on the Desktop page", () => {
     const off = route.onRouteChange(heard);
     route.goToHash("#/arena/games/s-1");
     expect(heard).toHaveBeenCalledTimes(1);
-    expect(route.routeFromHash()).toEqual({ view: "games", sessionId: "s-1" });
+    expect(route.routeFromHash()).toEqual({ view: "games", sessionId: "s-1", lens: null });
     route.syncHash("season");                      // the app recording where it is: silent
     expect(heard).toHaveBeenCalledTimes(1);
     expect(route.currentHash()).toBe("#/labs/season");
@@ -91,7 +91,7 @@ describe("the profile on the Desktop page", () => {
     const sheet = document.querySelector(".e-desktop-root > style")!.textContent!;
     expect(sheet.indexOf("all: revert")).toBeGreaterThan(-1);
     expect(sheet.indexOf("all: revert")).toBeLessThan(sheet.indexOf("__EMPORIA_DESKTOP_CSS__"));
-    goToHash("#/talk/messages");
+    goToHash("#/agent/messages");
 
     view.rerender(page("beta"));
     // Between the switch and the console's answer, nobody: alpha's thread is gone at once.
@@ -169,7 +169,7 @@ describe("the Desktop page's routes", () => {
     for (const f of ["views.tsx", "routes.ts", "chip.tsx"]) {
       const text = fs.readFileSync(`${proc.cwd()}/src/desktop/${f}`, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
       const routes = [...text.matchAll(/["`](#\/[a-z]+)/g)].map((m) => m[1]);
-      expect(routes.filter((r) => !["#/home", "#/talk", "#/arena", "#/labs", "#/agents", "#/you", "#/more"].includes(r))).toEqual([]);
+      expect(routes.filter((r) => !["#/home", "#/agora", "#/arena", "#/labs", "#/agent", "#/help", "#/desk"].includes(r))).toEqual([]);
     }
   });
 });

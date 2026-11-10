@@ -20,6 +20,7 @@ import { WaitingGames } from "../ui/WaitingGames";
 import { ViewBody } from "../ui/layout";
 import { OpenChallenges } from "./QuestArcs";
 import { GAME_TYPES } from "../gameTypes";
+import type { ArenaLens } from "../navConfig";
 
 const gameName = (moduleType: string) =>
   SET_PLAY_NAMES[moduleType] ?? GAME_TYPES.find((g) => gameBase(g.id) === gameBase(moduleType))?.label
@@ -108,7 +109,7 @@ function Recent({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: strin
   const rows: GameResult[] = (data?.results ?? []).filter((r) => !isJobModule(r.module_type));
   return (
     <section className="e-arena-section" aria-labelledby="arena-recent">
-      <Text className="e-subhead" id="arena-recent">Recent</Text>
+      <Text className="e-subhead" id="arena-recent">Results</Text>
       {error && !data ? <Text className="e-faint" title={error}>? results unavailable — the relay did not answer. This is not an empty list.</Text>
         : loading && !data ? <Text className="e-faint">… loading</Text>
         : rows.length === 0 ? <Text className="e-faint">No finished public match yet.</Text> : (
@@ -158,21 +159,29 @@ function Boards() {
 }
 
 /** The Arena at rest: what is live, what just finished, what anyone may take, who is winning, and with which model. */
-function ArenaHome({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: string) => void; book?: Record<string, string>; profiles?: Record<string, AgentProfile>; refreshTrigger: number }) {
+function ArenaHome({ lens, onOpen, book, profiles, refreshTrigger }: { lens: ArenaLens; onOpen: (id: string) => void; book?: Record<string, string>; profiles?: Record<string, AgentProfile>; refreshTrigger: number }) {
   return (
     <div className="e-arena-home">
-      <LiveNow onOpen={onOpen} book={book} profiles={profiles} refreshTrigger={refreshTrigger} />
-      <WaitingGames onOpen={onOpen} />
-      <Recent onOpen={onOpen} book={book} profiles={profiles} refreshTrigger={refreshTrigger} />
-      {/* The board carries its own heading: OPEN CHALLENGES · anyone may take one. */}
-      <section className="e-arena-section" aria-label="Open challenges">
-        <OpenChallenges />
-      </section>
-      <Boards />
-      <section className="e-arena-section" aria-labelledby="arena-models">
-        <Text className="e-subhead" id="arena-models">Results by model</Text>
-        <ModelResults />
-      </section>
+      {lens === "live" ? <LiveNow onOpen={onOpen} book={book} profiles={profiles} refreshTrigger={refreshTrigger} /> : null}
+      {lens === "waiting" ? (
+        <>
+          <WaitingGames onOpen={onOpen} />
+          {/* The board carries its own heading: OPEN CHALLENGES · anyone may take one. */}
+          <section className="e-arena-section" aria-label="Open challenges">
+            <OpenChallenges />
+          </section>
+        </>
+      ) : null}
+      {lens === "results" ? <Recent onOpen={onOpen} book={book} profiles={profiles} refreshTrigger={refreshTrigger} /> : null}
+      {lens === "boards" ? (
+        <>
+          <Boards />
+          <section className="e-arena-section" aria-labelledby="arena-models">
+            <Text className="e-subhead" id="arena-models">Results by model</Text>
+            <ModelResults />
+          </section>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -187,10 +196,13 @@ type Tab = "home" | "match";
 export function ArenaView({
   initialSessionId,
   initialStep = null,
+  lens = "live",
   refreshTrigger,
   onSessionShown,
 }: {
   initialSessionId: string | null;
+  /** Which page of the Arena the sub-row picked: live, waiting, results or boards. */
+  lens?: ArenaLens;
   initialStep?: number | null;
   refreshTrigger: number;
   /** Told which match is open and at which step (null = live / the end), so the route can name it. */
@@ -238,7 +250,7 @@ export function ArenaView({
     <ViewBody>
       <div className="e-arena" data-tab={tab}>
         {tab === "home" ? (
-          <ArenaHome onOpen={open} book={book} profiles={profiles} refreshTrigger={refreshTrigger} />
+          <ArenaHome lens={lens} onOpen={open} book={book} profiles={profiles} refreshTrigger={refreshTrigger} />
         ) : session && session.session_id === openId ? (
           <MatchView key={session.session_id} session={session} step={step} onStep={setStep} book={book} profiles={profiles} onBack={() => { setOpenId(null); setStep(null); }} />
         ) : (

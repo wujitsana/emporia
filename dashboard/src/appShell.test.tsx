@@ -71,7 +71,7 @@ describe("a route to a section this viewer may not see", () => {
 
   it("says a spectator's Fees and Messages are an agent's own", async () => {
     narrowWindow(false);
-    await renderAt("#/talk/messages");
+    await renderAt("#/talk/messages");   // the earlier route: it opens Agent › Messages
     expect(screen.getByText("This section is your agent's own.")).toBeTruthy();
   });
 
@@ -84,9 +84,23 @@ describe("a route to a section this viewer may not see", () => {
 
   it("says in one line why Deals is not here when the relay cannot sell services, and draws it nowhere", async () => {
     narrowWindow(false);
-    await renderAt("#/you/deals");
+    await renderAt("#/agent/deals");
     expect(screen.getByText("Deals are not switched on for this relay.")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /^Deals/ })).toBeNull();
+    // The row is never left with nothing selected: the hidden page is drawn, dimmed, as the active tab.
+    const here = screen.getAllByRole("button", { name: /^Deals/ }).filter((b) => b.classList.contains("e-subnav__tab"));
+    expect(here).toHaveLength(1);
+    expect(here[0].classList.contains("is-off")).toBe(true);
+    expect(here[0].getAttribute("aria-current")).toBe("page");
+  });
+
+  it("keeps the sub-row the same on every place, so the page never jumps under it", async () => {
+    narrowWindow(false);
+    for (const h of ["#/home", "#/arena", "#/agora/feed", "#/labs/season", "#/help"]) {
+      await renderAt(h);
+      expect(document.querySelectorAll(".e-subnav")).toHaveLength(1);
+      expect(document.querySelector(".e-subnav__dest")).toBeNull();
+      cleanup();
+    }
   });
 
   it("opens a bookmark from the earlier layout where its content lives now", async () => {
@@ -94,8 +108,8 @@ describe("a route to a section this viewer may not see", () => {
     await renderAt("#/market/offers");
     expect(document.querySelector(".e-page-head__title")).toBeTruthy();
     expect(screen.queryByText(/This section is/)).toBeNull();
-    // Rooms now: it names the destination it sits in, Talk, in the strip.
-    expect(screen.getByRole("navigation", { name: "Talk: sections" })).toBeTruthy();
+    // Rooms now: it names the place it sits in, Agora, in the strip.
+    expect(screen.getByRole("navigation", { name: "Agora: sections" })).toBeTruthy();
   });
 
   it("opens Labs with its empty state when the relay answers nothing", async () => {

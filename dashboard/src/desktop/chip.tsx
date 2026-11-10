@@ -15,7 +15,7 @@ import { CHIP_POLL_MS, fetchAttention, type Attention } from "./attentionFetch";
 
 export interface ChipProps {
   profile: string;
-  /** Open the page on a route (`#/talk/messages`, `#/play/games/<id>`). */
+  /** Open the page on a route (`#/agent/messages`, `#/play/games/<id>`). */
   open: (hash: string) => void;
   /** Called with each game that became the agent's turn since the last poll. */
   onNewTurn?: (s: Session) => void;
@@ -52,7 +52,7 @@ export function AttentionChip({ profile, open, onNewTurn, pollMs = CHIP_POLL_MS 
   if (!state) return null;
   const { text, urgent } = attentionLabel(state.turns.length, state.unread);
   const target = state.turns[0] ? `#/arena/games/${encodeURIComponent(state.turns[0].session_id)}`
-    : state.unread > 0 ? "#/talk/messages" : "#/home";
+    : state.unread > 0 ? "#/agent/messages" : "#/home";
   return (
     <button
       type="button"

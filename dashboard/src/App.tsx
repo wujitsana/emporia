@@ -6,7 +6,8 @@ import { RelayStrip } from "./RelayStrip";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api } from "./api";
-import { MobileNavDrawer, SectionTabs, SubNav } from "./AppNav";
+import { BottomBar, HeaderLinks, MobileNavDrawer, SectionTabs, SubRow } from "./AppNav";
+import { NowStrip } from "./ui/NowStrip";
 import { ThemeCompact } from "./ThemeControls";
 import { ProfileView } from "./ProfileView";
 import { RELAY } from "./relayEnv";
@@ -21,7 +22,7 @@ import { DESKTOP_ROOT } from "./shadowScope";
 import { RelayHealthCtx } from "./healthCtx";
 import { applyTheme, nextTint, toggleTheme, THEMES, TINTS, type Theme, type Tint } from "./themeConfig";
 import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
-import { canSee, dealsAvailable, destById, destinationOf, navById, navForHotkey, siblingView, type Destination, type View } from "./navConfig";
+import { canSee, dealsAvailable, destById, destinationOf, navById, navForHotkey, siblingView, type ArenaLens, type Destination, type View } from "./navConfig";
 import { GatedNote } from "./ui/GatedNote";
 import { isNarrow, useNarrow, useOverlayFocus } from "./ui/overlayFocus";
 import { PageHeading, ViewBoundary } from "./ui/layout";
@@ -78,6 +79,8 @@ function AppInner() {
   // P234: inside Hermes, a profile that is no agent shows nothing of the relay.
   const hermesNonAgent = hermesProfile()?.isAgent === false;
   const [view, setView] = useState<View>(() => routeFromHash().view);
+  // The Arena's page (Live, Waiting, Results, Boards): the route's, `#/arena/waiting`.
+  const [lens, setLens] = useState<ArenaLens>(() => routeFromHash().lens ?? "live");
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [tint, setTint] = useState<Tint>(readTint);
   const [navOpen, setNavOpen] = useState(false);
@@ -176,8 +179,8 @@ function AppInner() {
 
   const applyView = useCallback((id: View, sessionId?: string | null) => {
     setView(id);
-    syncHash(id, sessionId);
-  }, []);
+    syncHash(id, sessionId, null, lens);
+  }, [lens]);
 
   // A route that names a session (`#/arena/games/<id>`) opens it — on load and on a
   // route change (a hash change; on the Desktop page, a palette command).
@@ -185,7 +188,10 @@ function AppInner() {
     const onHash = () => {
       const r = routeFromHash();
       setView(r.view);
+      setLens(r.lens ?? "live");
       if (r.sessionId) setSelectedSessionId(r.sessionId);
+      // Back to a page with no match named: close the match that was open.
+      else if (r.view === "games") { setSelectedSessionId(null); setSelectedStep(null); }
       setSelectedStep(r.sessionId ? stepFromHash() : null);
       setNavOpen(false);
     };
@@ -207,6 +213,16 @@ function AppInner() {
     },
     [applyView],
   );
+
+  // A lens of the Arena (Live, Waiting, Results, Boards): its own page; an open match is left.
+  const goToLens = useCallback((l: ArenaLens) => {
+    setView("games");
+    setLens(l);
+    setSelectedSessionId(null);
+    setSelectedStep(null);
+    setNavOpen(false);
+    syncHash("games", null, null, l);
+  }, []);
 
   // Each destination reopens on the section last seen in it (Labs & Season → Season, if that was last).
   const lastInDest = useRef<Partial<Record<Destination, View>>>({});
@@ -294,7 +310,18 @@ function AppInner() {
   const shown = canSee(view, { isSpectator, isOperator: isRelayOperator, dealsOn });
   // Picking a game or a deal names it in the route, so the address opens that session.
   const onSessionShown = useCallback((id: string | null, step?: number | null) => {
-    if (view === "games" || view === "deals") syncHash(view, id, step);
+    if (view === "games" || view === "deals") syncHash(view, id, step, lens);
+  }, [view, lens]);
+
+  // After a page change from the tabs, the focus goes to the page title (and is read out), not left on the tab.
+  const firstView = useRef(true);
+  useEffect(() => {
+    if (firstView.current) { firstView.current = false; return; }
+    const el = shellRef.current?.querySelector<HTMLElement>("#e-page-title");
+    // Only when the focus was on a tab or nothing: never steal it from a field someone is typing in.
+    const active = shellRef.current?.getRootNode() instanceof ShadowRoot
+      ? (shellRef.current.getRootNode() as ShadowRoot).activeElement : document.activeElement;
+    if (el && (!active || active === document.body || active.closest?.("nav, .e-bottom-bar"))) el.focus({ preventScroll: true });
   }, [view]);
 
   return (
@@ -304,6 +331,7 @@ function AppInner() {
           <MobileNavDrawer
             view={view}
             onGoDest={goToDest}
+            onGoView={goToView}
             onClose={() => setNavOpen(false)}
             theme={theme}
             tint={tint}
@@ -337,6 +365,7 @@ function AppInner() {
                   onTint={setTintAndApply}
                 />
                 <ViewerSwitcher />
+                <HeaderLinks view={view} onGo={goToView} />
                 <ChatToggle compact={chatBeside} />
                 <RelayStrip
                   relayUrl={RELAY}
@@ -370,11 +399,18 @@ function AppInner() {
               compact
             />
           </div>
-          {/* The sections inside this destination (Feed · Agora · Rooms · Messages), on every width. */}
-          <SubNav view={view} onGo={goToView} badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined} />
+          {/* The pages inside this place (Feed · Topics · Rooms · Agents), one strip, on every width and every place. */}
+          <SubRow
+            view={view}
+            lens={lens}
+            badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined}
+            onGoView={goToView}
+            onGoLens={goToLens}
+          />
+          {!hermesNonAgent && VIEWER_ID && view !== "overview" ? <NowStrip navigate={navigate} /> : null}
           <div className="e-view">
             <NotAnAgentNote />
-            {!hermesNonAgent && <PageHeading item={currentNav} />}
+            {!hermesNonAgent && <PageHeading item={currentNav} agent={VIEWER_ID} />}
             {/* P234: a Hermes profile that is no agent shows nothing of the relay. */}
             {!hermesNonAgent && !shown && <GatedNote view={view} />}
             {!hermesNonAgent && shown && (<ViewBoundary key={view} name={currentNav?.label ?? "This section"}>
@@ -392,6 +428,7 @@ function AppInner() {
               <ArenaView
                 initialSessionId={selectedSessionId}
                 initialStep={selectedStep}
+                lens={lens}
                 refreshTrigger={sessionsRefresh}
                 onSessionShown={onSessionShown}
               />
@@ -422,14 +459,24 @@ function AppInner() {
             {view === "stats" && !isSpectator && <StatsView />}
             {view === "profile" && <ProfileView navigate={navigate} />}
             {view === "docs" && <DocsView />}
-            {view === "badges" && <div className="e-view-body"><BadgeGallery embedded /></div>}
             {view === "settings" && <SettingsView />}
             {view === "relay" && isRelayOperator && <RelayView />}
             {view === "operator" && isRelayOperator && <OperatorView />}
-            {view === "season" && <GamifyView initialAgentId={selectedAgentId} />}
+            {view === "season" && (
+              <>
+                <GamifyView initialAgentId={selectedAgentId} />
+                <div className="e-view-body">
+                  <details className="e-badge-fold">
+                    <summary>All badges and how each is earned</summary>
+                    <BadgeGallery embedded />
+                  </details>
+                </div>
+              </>
+            )}
             </ViewBoundary>)}
-            <AnimaticHudFoot section={view} />
+            <AnimaticHudFoot section={currentNav?.label.toLowerCase() ?? view} />
           </div>
+          <BottomBar view={view} onGoDest={goToDest} badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined} />
         </main>
         {/* Full-page chat (a phone, a narrow tab) keeps the menu: its ☰ opens the same drawer, above it. */}
         <AgentChatDrawer onMenu={() => setNavOpen(true)} covered={navOpen} />

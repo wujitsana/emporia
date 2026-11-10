@@ -1,23 +1,19 @@
 import Text from "@kit/Text";
 import { Component, type ReactNode } from "react";
 import type { NavItem } from "../navConfig";
-import { AnimaticHudTop, ScrambleText, TypedText } from "./LookChrome";
+import { pageTitle } from "../pageTitle";
+import { ScrambleText } from "./LookChrome";
 
-/**
- * The section's own heading: its name, and one line on what it shows. Every
- * section opens with it, so a first-time viewer always knows where they are —
- * on a phone the tabs are folded into the menu and this is the only label.
- */
-export function PageHeading({ item }: { item: NavItem | undefined }) {
+/** The page title (pageTitle.ts) and one line on what the page shows; focus lands on the title after a section change. */
+export function PageHeading({ item, agent }: { item: NavItem | undefined; agent?: string | null }) {
   if (!item) return null;
+  const title = pageTitle(item, agent);
   return (
     <header className="e-page-head">
-      {/* The look's status line, pixel title and typed line (LookChrome.tsx). */}
-      <AnimaticHudTop item={item} />
-      <h1 className="e-page-head__title">
-        <ScrambleText text={item.label} />
+      <h1 className="e-page-head__title" id="e-page-title" tabIndex={-1}>
+        <ScrambleText text={title} />
       </h1>
-      <p className="e-page-head__blurb"><TypedText text={item.blurb} /></p>
+      <p className="e-page-head__blurb">{item.blurb}</p>
     </header>
   );
 }
