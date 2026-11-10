@@ -44,12 +44,19 @@ export function useSubItems(
   const health = useRelayHealth();
   const dest = destinationOf(view);
   if (dest.id === "arena") {
-    return {
-      items: ARENA_LENSES.map((l) => ({
-        key: l.id, label: l.label, title: `Arena: ${l.label.toLowerCase()}`, active: l.id === lens, go: () => go.lens(l.id),
-      })),
-      note: null,
-    };
+    // The four pages of the games, then the season (its own page: quests, ladders and the badge catalogue).
+    const seasonOff = !!health?.relay_modules && !health.relay_modules.gamify;
+    const season = navById("season");
+    const items: SubItem[] = ARENA_LENSES.map((l) => ({
+      key: l.id, label: l.label, title: `Arena: ${l.label.toLowerCase()}`, active: view !== "season" && l.id === lens, go: () => go.lens(l.id),
+    }));
+    if (season) {
+      items.push({
+        key: season.id, label: season.label, title: seasonOff ? "Off on this relay" : season.blurb, active: view === "season",
+        off: seasonOff, go: () => go.view("season"),
+      });
+    }
+    return { items, note: null };
   }
   const visible = [...visibleDestinations(opts), ...visibleHeaderDestinations(opts)].find((d) => d.id === dest.id)?.items ?? [];
   // A module the relay does not run: its tab stays, dimmed, and says so (never a page quoting settings).
@@ -72,5 +79,5 @@ export function useSubItems(
     items.push({ key: hiddenCurrent.id, label: hiddenCurrent.label, title: hiddenCurrent.blurb, active: true, off: true, go: () => {} });
   }
   // Home needs no words in the row (the page says it); the row keeps its height all the same.
-  return { items, note: items.length < 2 ? (dest.id === "home" ? "" : dest.blurb) : null };
+  return { items, note: items.length < 2 ? (dest.id === "home" || dest.id === "messages" ? "" : dest.blurb) : null };
 }

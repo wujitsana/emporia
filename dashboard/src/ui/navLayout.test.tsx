@@ -12,7 +12,7 @@ import { readSubEdges } from "./navLayout";
 afterEach(cleanup);
 
 const WIDTHS = Array.from({ length: (1600 - 320) / 20 + 1 }, (_, i) => 320 + i * 20);
-const FIVE = ["Home", "Agora", "Arena", "Labs & Season", "Agent"];
+const FIVE = ["Home", "Messages", "Agora", "Arena", "Agent"];
 
 /** What each layout draws its five places with (what AppNav renders, and which of them CSS shows). */
 function drawn(layout: NavLayout): string[] {
@@ -51,10 +51,8 @@ describe("the width to layout mapping", () => {
       const layout = navLayoutFor(w);
       const names = drawn(layout);
       expect(names, `${w}px (${layout})`).toHaveLength(5);
-      // Every layout names the five places in full (the phone bar writes "Season" for the fourth, but labels it in full).
-      expect(names.map((n) => (n === "Season" ? "Labs & Season" : n)), `${w}px`).toEqual(FIVE);
-      // The header row (wide and medium) writes all five in full; only the phone bar says "Season".
-      if (layout === "wide" || layout === "medium") expect(names, `${w}px`).toEqual(FIVE);
+      // Every layout names the same five places, in the same order.
+      expect(names, `${w}px`).toEqual(FIVE);
       cleanup();
     }
   });
@@ -89,7 +87,7 @@ describe("the width to layout mapping", () => {
     const { container } = render(<SectionTabs view="games" onGoDest={() => {}} variant="rail" />);
     const nav = container.querySelector("nav")!;
     expect(nav.getAttribute("aria-label")).toBe("Places");
-    expect(nav.querySelector("[aria-current=page]")?.getAttribute("aria-label")).toBe("Arena");
+    expect(nav.querySelector("[aria-current=page]")?.getAttribute("aria-label")).toBe("Arena");   // view "games" lives in Arena
     expect(nav.querySelectorAll(".e-section-tab__tip")).toHaveLength(5);
   });
 });

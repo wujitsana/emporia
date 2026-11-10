@@ -56,7 +56,7 @@ describe("routing on the Desktop page", () => {
     expect(route.routeFromHash()).toEqual({ view: "games", sessionId: "s-1", lens: null });
     route.syncHash("season");                      // the app recording where it is: silent
     expect(heard).toHaveBeenCalledTimes(1);
-    expect(route.currentHash()).toBe("#/labs/season");
+    expect(route.currentHash()).toBe("#/arena/season");
     expect(window.location.hash).toBe("");
     route.resetRoute();
     expect(route.currentHash()).toBe("#/home");
@@ -151,7 +151,7 @@ describe("register(ctx)", () => {
     expect(desktopBridge()).not.toBeNull();
 
     palette.find((p) => p.label === "Emporia: season")!.run();
-    expect(currentHash()).toBe("#/labs/season");
+    expect(currentHash()).toBe("#/arena/season");
     expect(sdk.navigated.at(-1)).toBe("/emporia");
 
     disposers.forEach((fn) => fn());
@@ -169,7 +169,7 @@ describe("the Desktop page's routes", () => {
     for (const f of ["views.tsx", "routes.ts", "chip.tsx"]) {
       const text = fs.readFileSync(`${proc.cwd()}/src/desktop/${f}`, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
       const routes = [...text.matchAll(/["`](#\/[a-z]+)/g)].map((m) => m[1]);
-      expect(routes.filter((r) => !["#/home", "#/agora", "#/arena", "#/labs", "#/agent", "#/help", "#/desk"].includes(r))).toEqual([]);
+      expect(routes.filter((r) => !["#/home", "#/messages", "#/agora", "#/arena", "#/agent", "#/help", "#/desk"].includes(r))).toEqual([]);
     }
   });
 });

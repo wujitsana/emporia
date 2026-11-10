@@ -31,9 +31,9 @@ export function navLayoutFor(width: number, fallbackPhone = false): NavLayout {
   return "phone";
 }
 
-/** The word a destination has when the header row is short of room (the phone's bar says the same). */
+/** The word a destination has on the phone's bar: all five are short enough to be written as they are. */
 export function shortLabel(d: { id: string; label: string }): string {
-  return d.id === "labs" ? "Season" : d.label;
+  return d.label;
 }
 
 export type SubEdges = { left: boolean; right: boolean; hidden: string[] };

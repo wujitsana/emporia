@@ -69,15 +69,20 @@ describe("a route to a section this viewer may not see", () => {
     expect(screen.getByText("This section is for the relay's operator.")).toBeTruthy();
   });
 
-  it("says a spectator's Fees and Messages are an agent's own", async () => {
+  it("says a spectator's Money is an agent's own, while Messages stays and says to pick an agent", async () => {
     narrowWindow(false);
-    await renderAt("#/talk/messages");   // the earlier route: it opens Agent › Messages
+    await renderAt("#/you/fees");   // the earlier route: it opens Agent › Money
     expect(screen.getByText("This section is your agent's own.")).toBeTruthy();
+    cleanup();
+    await renderAt("#/talk/messages");   // the earlier route: it opens Messages
+    expect(screen.queryByText("This section is your agent's own.")).toBeNull();
+    expect(document.querySelector(".e-subnav-wrap")).toBeNull();   // a one-page place has no sub-row, like Home
+    expect(screen.getByText("No agent to show.")).toBeTruthy();
   });
 
   it("shows a section the viewer may see as before", async () => {
     narrowWindow(false);
-    await renderAt("#/labs/season");
+    await renderAt("#/labs/season");   // the earlier route: Season is in the Arena now
     expect(screen.queryByText(/This section is/)).toBeNull();
     expect(await screen.findByText(/the relay did not answer|asking the relay/)).toBeTruthy();
   });
@@ -95,12 +100,27 @@ describe("a route to a section this viewer may not see", () => {
 
   it("keeps the sub-row the same on every place, so the page never jumps under it", async () => {
     narrowWindow(false);
-    for (const h of ["#/arena", "#/agora/feed", "#/labs/season", "#/help"]) {
+    for (const h of ["#/arena", "#/agora/feed", "#/arena/season", "#/help"]) {
       await renderAt(h);
       expect(document.querySelectorAll(".e-subnav")).toHaveLength(1);
       expect(document.querySelector(".e-subnav__dest")).toBeNull();
       cleanup();
     }
+  });
+
+  it("lists Live, Waiting, Results, Boards and Season in the Arena, Labs in Agora, and the five places in the header", async () => {
+    narrowWindow(false);
+    await renderAt("#/arena/season");
+    const strip = screen.getByRole("navigation", { name: "Arena: sections" });
+    expect([...strip.querySelectorAll("button")].map((b) => b.textContent?.replace(/\s+/g, " ").trim())).toEqual(
+      expect.arrayContaining(["Live", "Waiting", "Results", "Boards", "Season"]));
+    expect(strip.querySelector("button.is-active")?.textContent).toMatch(/Season/);
+    cleanup();
+    await renderAt("#/agora/labs");
+    const agora = screen.getByRole("navigation", { name: "Agora: sections" });
+    expect(agora.textContent).toMatch(/Labs/);
+    const places = screen.getAllByRole("navigation", { name: "Places" })[0];
+    expect(places.textContent).toMatch(/Home.*Messages.*Agora.*Arena.*Agent/s);
   });
 
   it("draws no empty band under the header on Home, which has no sub-tabs", async () => {
@@ -121,8 +141,8 @@ describe("a route to a section this viewer may not see", () => {
 
   it("opens Labs with its empty state when the relay answers nothing", async () => {
     narrowWindow(false);
-    await renderAt("#/labs");
-    expect(screen.getByRole("navigation", { name: "Labs & Season: sections" })).toBeTruthy();
+    await renderAt("#/labs");   // the earlier route: Labs is in Agora now
+    expect(screen.getByRole("navigation", { name: "Agora: sections" })).toBeTruthy();
   });
 
   it("has no cards that repeat the navigation, and a spectator's Home has no agent blocks", async () => {

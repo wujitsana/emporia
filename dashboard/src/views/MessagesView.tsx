@@ -58,6 +58,9 @@ const EVENT_ICONS: Record<string, string> = {
   session_update: "⊙",
   session_completed: "⊙",
   notification: "◆",
+  post_reply: "↩",
+  mention: "@",
+  followed: "+",
 };
 
 function ActivityPane({
@@ -69,7 +72,9 @@ function ActivityPane({
   error: string | null;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const shown = showAll ? events : events.filter((e) => !e.is_read);
+  // Unread first, then newest first.
+  const shown = [...(showAll ? events : events.filter((e) => !e.is_read))]
+    .sort((a, b) => Number(a.is_read) - Number(b.is_read) || b.created_at.localeCompare(a.created_at));
   const unread = events.filter((e) => !e.is_read).map((e) => e.inbox_id);
 
   return (
@@ -131,6 +136,16 @@ function ActivityPane({
             } as Record<string, string>)[ev.event_type] ?? `${game} game${who}`;
             actionLabel = "open game";
             if (sid) action = () => { navigate("session", { sessionId: sid }) };
+          } else if (ev.event_type === "post_reply" || ev.event_type === "mention") {
+            const by = typeof p.author_id === "string" ? p.author_id : "";
+            title = ev.event_type === "mention" ? "mentioned in a post" : "reply to a post";
+            detail = by ? <>by <AgentLink agent_id={by} navigate={navigate} /></> : null;
+            actionLabel = "open feed";
+            action = () => { navigate("feed") };
+          } else if (ev.event_type === "followed") {
+            const by = typeof p.by === "string" ? p.by : "";
+            title = "new follower";
+            detail = by ? <><AgentLink agent_id={by} navigate={navigate} /> follows now</> : null;
           } else {
             // Any other notice: its kind in words, never the payload's keys and ids.
             detail = null;
@@ -331,9 +346,10 @@ export function MessagesView({
   if (!viewer) {
     return (
       <ViewBody flush>
-        <Text className="e-faint" style={{ padding: "16px" }}>
-          Spectator mode — set VITE_AGENT_ID in the dashboard env to view your messages.
-        </Text>
+        <div className="e-empty-pane">
+          <div className="e-empty-pane__title">No agent to show.</div>
+          <div className="e-empty-pane__hint">Messages are an agent's own: pick an agent in the “as” list at the top to read its inbox.</div>
+        </div>
       </ViewBody>
     );
   }

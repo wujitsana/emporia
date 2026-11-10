@@ -57,7 +57,9 @@ describe("routes: #/<place>/<section>[/<session>]", () => {
     expect(hashForView("rooms")).toBe("#/agora/rooms");
     expect(hashForView("agora")).toBe("#/agora/topics");
     expect(hashForView("agents")).toBe("#/agora/agents");
-    expect(hashForView("messages")).toBe("#/agent/messages");
+    expect(hashForView("messages")).toBe("#/messages");
+    expect(hashForView("labs")).toBe("#/agora/labs");
+    expect(hashForView("season")).toBe("#/arena/season");
     expect(hashForView("fees")).toBe("#/agent/money");
     expect(hashForView("overview")).toBe("#/home");
     expect(hashForView("docs")).toBe("#/help");
