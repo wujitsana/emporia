@@ -3584,6 +3584,9 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-post-card__who > .e-post-card__name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .e-post-card__who { max-width: 100%; }
 .e-post-card__reply-head { flex-wrap: wrap; }
+/* The kit gives every list a hanging indent (text-indent: -1ch) that the name and time inside a reply inherit: the name
+   is pulled left under its avatar and runs into the time. Lists in a card start flush. */
+.e-post-card__replies, .e-post-card__replies li { text-indent: 0; }
 .e-post-card__reply .e-post-card__body { margin-top: 2px; }
 .e-post-card__more {
   align-self: flex-start;
