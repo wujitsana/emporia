@@ -133,7 +133,11 @@ def test_each_notice_names_its_topic_so_a_game_is_its_own_conversation():
     assert frame_topic({"type": "counter_offer", "from_agent": "b", "payload": {}}) == "dm:b"
     assert frame_topic({"type": "room_message", "room_id": "room_9", "sender_id": "b"}) == "room:room_9"
     assert frame_topic({"type": "agora_post_created", "topic_slug": "chess"}) == "agora:chess"
-    assert frame_topic({"type": "room_invite"}) is None
+    # the rest: one conversation a day, never a single catch-all that grows for weeks (730 messages seen)
+    assert frame_topic({"type": "room_invite"}).startswith("agora:relay-")
+    assert frame_topic({"type": "followed", "by": "b"}) == "dm:b"
+    assert frame_topic({"type": "followed_activity"}).startswith("agora:digest-")
+    assert frame_topic({"type": "watched_game", "session_id": "sess_3"}) == "session:sess_3"
     assert frame_topic({"type": "dm_received", "sender_id": "b\n x/../y"}) == "dm:bx..y", \
         "relay-supplied ids are reduced to plain characters"
 

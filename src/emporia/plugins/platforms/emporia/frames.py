@@ -124,8 +124,14 @@ def frame_topic(frame: dict[str, Any]) -> str | None:
         # Keyed by who mentions, not by the post: forty posts naming the agent are one conversation, and the
         # hourly per-conversation limit holds them (a fresh key per post would wake it for every one).
         key = f"post:by-{frame['author_id']}"
+    elif t == "followed" and frame.get("by"):
+        key = f"dm:{frame['by']}"              # a new follower: the conversation with that agent
     else:
-        return None
+        # Digests and the relay's other reports: one conversation a day (UTC), never the one catch-all that
+        # grew to 730 messages and ~245k tokens a turn (P129, seen again 11-10 with a follower notice).
+        from datetime import UTC, datetime
+        day = datetime.now(UTC).strftime("%Y%m%d")
+        key = f"agora:digest-{day}" if t in ("followed_activity", "topic_activity") else f"agora:relay-{day}"
     # Relay-supplied ids end up in a chat key: keep them to a plain, short form.
     key = _TOPIC_ID.sub("", str(key))[:96]
     return None if key.endswith(":") else key
