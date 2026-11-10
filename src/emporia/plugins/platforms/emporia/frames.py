@@ -249,6 +249,14 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
                    f"get_game_chat(session_id=\"{sid}\")")
         else:
             by += "." if last else ""
+        if frame.get("reveal"):
+            # The game is over and waits on reveals (Bargain, Liar's Dice): no more offers or bids.
+            by_when = f" by {_when(frame.get('reveal_by'))}" if frame.get("reveal_by") else ""
+            return relay_notice(
+                f"Game {sid} ({_module_label(module)}) is over:{by} — now reveal{by_when}, or you forfeit "
+                f"(you score 0).\n"
+                f"  next: submit_action(session_id=\"{sid}\", action_type=\"reveal\", payload={{}}) "
+                f"(your tools fill in the secret you committed)")
         return relay_notice(
             f"Your turn in {_module_label(module)} game {sid}.{by}\n"
             + _move_hint(module, sid)

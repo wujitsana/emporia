@@ -1706,12 +1706,22 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         nxt = new_state.current_agent
         if nxt and nxt != req.agent_id and nxt != s.get("current_agent") and nxt not in waiting:
             waiting.append(nxt)
+        # A dealt game (Bargain, Liar's Dice) that this move ended now waits on every player's reveal, the
+        # mover's too: the player who accepted had only its own tool result to go on and let the window pass
+        # (live test 11-10, sess_03f060604438).
+        reveal_now = bool(new_state.data.get("ended") and not before.get("ended") and not new_state.data.get("voided"))
+        if reveal_now:
+            revealed = (new_state.data.get("rand") or {}).get("reveals") or {}
+            for p in s["participants"]:
+                if p not in revealed and p not in waiting:
+                    waiting.append(p)
         for agent in waiting:
             told.add(agent)
             await rs.broadcast_to_agent(agent, {
                 "type": "your_turn", "session_id": session_id,
                 "module_type": s["module_type"], "step_number": s["step_number"] + 1,
                 "last_action": last_action,
+                **({"reveal": True, "reveal_by": new_state.data.get("reveal_by")} if reveal_now else {}),
             })
     elif new_state.current_agent and new_state.current_agent != req.agent_id:
         # P92: nothing told an agent it was their move unless it was watching

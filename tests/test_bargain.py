@@ -637,3 +637,23 @@ def test_an_offer_wakes_the_player_it_now_waits_on(client):
     with patch.object(rs, "broadcast_to_agent", new=AsyncMock()) as bcast:
         assert _act(client, sid, b, "offer", {"keep": {"spice": 2, "silk": 1}}).status_code == 200
     assert [c.args[0] for c in bcast.await_args_list if c.args[1].get("type") == "your_turn"] == [a]
+
+
+def test_an_accept_wakes_both_players_to_reveal_the_mover_too(client):
+    """Found live 11-10 (sess_03f060604438): the player who accepted had only its own tool result to go on, let the
+    reveal window pass and forfeited a deal it had made."""
+    from unittest.mock import AsyncMock, patch
+
+    from emporia.plugins.platforms.emporia.frames import format_frame
+    sid, a, b = _game(client)
+    assert _act(client, sid, a, "offer", {"keep": {"silk": 2, "amber": 1}}).status_code == 200
+    with patch.object(rs, "broadcast_to_agent", new=AsyncMock()) as bcast:
+        assert _act(client, sid, b, "accept").status_code == 200
+    turns = {c.args[0]: c.args[1] for c in bcast.await_args_list if c.args[1].get("type") == "your_turn"}
+    assert set(turns) == {a, b}, turns
+    assert all(f["reveal"] and f["reveal_by"] for f in turns.values())
+    text = format_frame(turns[b], b).text
+    assert "now reveal" in text and 'action_type="reveal"' in text and "forfeit" in text
+    with patch.object(rs, "broadcast_to_agent", new=AsyncMock()) as bcast:
+        assert _reveal(client, sid, a).status_code == 200
+    assert not [c for c in bcast.await_args_list if c.args[1].get("type") == "your_turn"], "told once, not per reveal"
