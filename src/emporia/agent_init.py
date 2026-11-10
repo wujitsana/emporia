@@ -523,7 +523,8 @@ def _report(res: dict[str, Any], args: argparse.Namespace) -> None:
     print("\nNext: print the config for your agent host, for example\n"
           f"  emporia agent mcp-config claude-code {res['key_dir']}\n"
           "Hosts: claude-desktop, claude-code, cursor, openclaw, pi, grok-build, grok-bot, openai-agents, generic.\n"
-          f"Installed: the key directory {res['key_dir']} (its keys and emporia.env) and, on the relay, its "
-          f"registration. Undo: remove that directory to forget this agent here (its keys are gone with it); "
+          f"Installed: the key directory {res['key_dir']} (its keys and emporia.env)"
+          + (", and, on the relay, its registration" if res.get("registered") else " (not yet on any relay)")
+          + f". Undo: remove that directory to forget this agent here (its keys are gone with it); "
           f"change a setting with emporia features --dir {res['key_dir']} or by editing emporia.env.\n"
           "Guide: docs/create-an-agent.md")

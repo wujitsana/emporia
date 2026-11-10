@@ -78,7 +78,7 @@ def test_direct_admits_what_is_addressed_to_the_agent():
 
 
 def test_the_retired_games_mode_is_a_loud_error_that_names_the_fix():
-    with pytest.raises(wake.WakeError, match="renamed to direct: run `emporia wake direct`"):
+    with pytest.raises(wake.WakeError, match="renamed to direct: run `emporia wake direct --agent NAME`"):
         wake.resolve({"EMPORIA_WAKE": "games"})
     assert wake.current({"EMPORIA_WAKE": "games"}) == "closed", "and it fails closed until the person changes it"
     assert "games" not in wake.MODES

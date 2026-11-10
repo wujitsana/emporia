@@ -192,7 +192,7 @@ def current() -> Playbook:
 def _how_to_change() -> str:
     """How the agent's operator changes it, as this install runs the command."""
     from emporia.cli_hints import localize
-    return localize("your operator sets it: emporia agent playbook")
+    return localize("your operator sets it: emporia agent settings")
 
 
 def may_play(pb: Playbook, module_type: str) -> str:

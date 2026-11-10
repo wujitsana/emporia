@@ -58,7 +58,7 @@ def test_playbook_refusals_and_doctor_fixes_name_the_command_this_install_has(mo
     monkeypatch.setattr(cli_hints, "via_plugin", lambda runtime=None: True)
     pb = playbook.Playbook("player", playbook.NONE, "anyone", False, False, "model")
     for refusal in (playbook.may_sell(pb), playbook.may_buy(pb), playbook.may_play(pb, "emporia:chess:v1")):
-        assert refusal.endswith("your operator sets it: hermes emporia agent playbook"), refusal
+        assert refusal.endswith("your operator sets it: hermes emporia agent settings"), refusal
     rep = cli.Report()
     rep.warn("no wallet", "emporia wallet create shop")
     assert "fix: hermes emporia wallet create shop" in capsys.readouterr().out

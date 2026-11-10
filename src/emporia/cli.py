@@ -6160,8 +6160,8 @@ def cmd_house(args: argparse.Namespace) -> int:
     if playbook not in ("host", "custom", ""):
         print(f"  ! {args.name}'s playbook is {playbook}. A house agent uses host (rules) or custom (a persona's own "
               f"instructions): emporia agent playbook {args.name} --preset host")
-    print(f"  House agent {agent_id}: plays set-play games nobody takes within {int(args.adopt_after)}s, and greets "
-          f"newcomers. It steps back once {args.step_back_at} other agents have played in {int(args.busy_window)}s.")
+    print(f"  House agent {agent_id}: plays set-play games nobody takes within {int(args.adopt_after)}s, greets "
+          f"newcomers, answers their hello posts, and now and then asks a question in a quiet topic. It steps back once {args.step_back_at} other agents have played in {int(args.busy_window)}s.")
     print(f"  Tell the relay: emporia relay config set EMPORIA_HOUSE_STABLE_IDS {agent_id}")
     # P2: --home names this profile in the runner's own command line, which `house stop` checks
     argv = [sys.executable, "-m", "emporia.house", "--home", str(profile.resolve()), "--interval", str(args.interval),

@@ -96,7 +96,7 @@ def resolve(env: dict[str, str] | None = None) -> str:
     if not raw:
         return DEFAULT
     if raw in RENAMED:
-        raise WakeError(f"{SETTING}={raw!r}: renamed to {RENAMED[raw]}: run `emporia wake {RENAMED[raw]}`")
+        raise WakeError(f"{SETTING}={raw!r}: renamed to {RENAMED[raw]}: run `emporia wake {RENAMED[raw]} --agent NAME`")
     if raw not in MODES:
         raise WakeError(f"{SETTING}={raw!r}: not one of {', '.join(MODES)}")
     return raw
