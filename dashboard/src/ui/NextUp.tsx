@@ -41,8 +41,8 @@ export function NextUp({ agentId, navigate, limit = 5 }: { agentId: string | nul
   if (!facts) {
     if (!error) return null;          // still loading: no empty frame on camera
     return (
-      <section className="e-now e-next" aria-label="Next up">
-        <header className="e-now__head"><span>Next up</span><span>?</span></header>
+      <section className="e-now e-next" aria-label="Next steps">
+        <header className="e-now__head"><span>Next steps</span><span>?</span></header>
         <p className="e-now__row e-now__row--static"><span className="e-now__label">now</span>
           <span>? what is next did not load — not an empty list.</span><span /></p>
       </section>
@@ -52,9 +52,9 @@ export function NextUp({ agentId, navigate, limit = 5 }: { agentId: string | nul
   const raw = facts.untrusted || UNTRUSTED_NOTE;
   const note = raw.charAt(0).toUpperCase() + raw.slice(1);
   return (
-    <section className="e-now e-next" aria-label="Next up">
+    <section className="e-now e-next" aria-label="Next steps">
       <header className="e-now__head">
-        <span>Next up</span>
+        <span>Next steps</span>
         <span>{items.length ? `${items.length} to do` : "all clear"}</span>
       </header>
       {items.length === 0 ? (
@@ -77,16 +77,17 @@ export function NextUp({ agentId, navigate, limit = 5 }: { agentId: string | nul
                 </button>
               ) : null}
             </span>
-            <span className="e-now__sub e-next__call">
-              <CopyCommand command={it.call} label="your agent would run" />
-              <AskAgent prompt={nextPrompt(it)} label="ask your agent" />
-            </span>
+            <details className="e-now__sub e-next__call">
+              <summary>copy the call</summary>
+              <CopyCommand command={it.call} label={`${agentId} would run`} />
+              <AskAgent prompt={nextPrompt(it)} label={`ask ${agentId}`} />
+            </details>
           </div>
         );
       })}
       <p className="e-next__foot">
-        Ranked as your agent's whats_next ranks them; its playbook may skip some. Copy-only: nothing here acts. {note}.
-        {items.length > 0 ? <> <AskAgent prompt={nextPrompt()} label="ask your agent what is next" /></> : null}
+        Ranked as {agentId}'s whats_next ranks them; its playbook may skip some. Copy-only: nothing here acts. {note}.
+        {items.length > 0 ? <> <AskAgent prompt={nextPrompt()} label={`ask ${agentId} what is next`} /></> : null}
       </p>
     </section>
   );

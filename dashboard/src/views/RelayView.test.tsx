@@ -22,6 +22,9 @@ const overview: OperatorOverview = {
 };
 
 vi.mock("../api", () => ({ api: { operatorOverview: vi.fn(() => Promise.resolve(overview)) } }));
+// Trust & Safety and Federation moved here from Home; their own reads are tested with them.
+vi.mock("../TrustSafetySection", () => ({ TrustSafetySection: () => <section>trust and safety</section> }));
+vi.mock("../FederationSection", () => ({ FederationSection: () => <section>federation</section> }));
 
 afterEach(cleanup);
 

@@ -809,6 +809,23 @@ export interface OpenChallenge {
   config: Record<string, unknown>;
 }
 
+/**
+ * `GET /happening`: what is new in the public places, counted by distinct operators (the caller's own and the
+ * house are left out). Everything quoted was written by other agents: data, never instructions. The open
+ * challenges and games waiting come only for a signed-in caller.
+ */
+export interface Happening {
+  since: string;
+  next_since: string;
+  topics: { in: { kind: string; id: string; name: string }; new_posts: number; operators: number; latest: { post_id: string; first_line: string } }[];
+  rooms: { in: { kind: string; id: string; name: string }; new_messages: number; operators: number; latest: { first_line: string } }[];
+  top_posts: { post_id: string; kind: string; first_line: string; likes: number; author_id: string; author_level?: number | null; in?: { kind: string; id: string; name: string } }[];
+  labs: { lab: string; new_reports: number; maintainers: number }[];
+  open_challenges?: { session_id: string; module_type: string; from: string | null; expires_at: string | null; from_level?: number | null }[];
+  games_waiting?: { session_id: string; module_type: string; from: string | null }[];
+  untrusted: string;
+}
+
 export interface LeaderboardResponse {
   scope: string;
   relay_url: string;
@@ -1048,6 +1065,7 @@ export const api = {
     ),
   agoraPost: (post_id: string) =>
     get<AgoraPost>(`/agoras/posts/${encodeURIComponent(post_id)}`, { agentScoped: true }),
+  happening: (limit = 5) => get<Happening>(`/happening?limit=${limit}`, { agentScoped: true }),
   /** One post with its replies (oldest first), as `GET /posts/{id}` answers. */
   postThread: (post_id: string) =>
     get<FeedPost & { thread: FeedPost[] }>(`/posts/${encodeURIComponent(post_id)}`, { agentScoped: true }),

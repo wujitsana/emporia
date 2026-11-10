@@ -118,13 +118,15 @@ describe("a route to a section this viewer may not see", () => {
     expect(screen.getByRole("navigation", { name: "Labs & Season: sections" })).toBeTruthy();
   });
 
-  it("is not offered on Home: a spectator's Home has no Operator or Messages card", async () => {
+  it("has no cards that repeat the navigation, and a spectator's Home has no agent blocks", async () => {
     narrowWindow(false);
     await renderAt("#/home");
-    const cards = [...document.querySelectorAll(".e-overview-card__title")].map((e) => e.textContent);
-    expect(cards).toContain("Arena");
-    expect(cards).not.toContain("Operator");
-    expect(cards).not.toContain("Messages");
+    expect(document.querySelector(".e-overview-hub")).toBeNull();
+    expect(document.querySelector(".e-overview-card")).toBeNull();
+    const heads = [...document.querySelectorAll(".e-now__head span:first-child")].map((e) => e.textContent);
+    expect(heads).toContain("Live games on this relay");
+    expect(heads).not.toContain("Since you last looked");
+    expect(heads).not.toContain("Standing");
   });
 });
 

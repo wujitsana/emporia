@@ -8,15 +8,17 @@ import { earnedBadges } from "../gamifyFormat";
 import { RelayCtx, type RelayCtxValue } from "../relayCtx";
 import { AgentNow, OverviewView } from "./OverviewView";
 
-// P2/P3: Home's first frame is the agent — its live game first, its earned badges — then
-// what Emporia is. It must read well with no games, no badges, and no gamify parts.
-const data: { sessions: Session[]; season: SeasonBoards | null; quests: AgentQuests | null; next: unknown } = {
-  sessions: [], season: null, quests: null, next: null,
+// Home's first frame is the agent, by name: its live game first, who it waits on, then what happened since the
+// person last looked, what is on the relay, where the agent stands and what is next. It must read well with
+// no games and no gamify parts.
+const data: { sessions: Session[]; season: SeasonBoards | null; quests: AgentQuests | null; next: unknown; unread: number } = {
+  sessions: [], season: null, quests: null, next: null, unread: 0,
 };
 vi.mock("../hooks", () => ({
   useInterval: (fn: () => unknown) => {
     const src = String(fn);
     if (src.includes("agentSessions")) return [data.sessions, false, null];
+    if (src.includes("agentInbox")) return [src.includes("unread_total") ? data.unread : [], false, null];
     if (src.includes("api.season")) return [data.season, false, null];
     if (src.includes("api.quests")) return [data.quests, false, null];
     if (src.includes("agentNext")) return [data.next, false, data.next ? null : "Error: 404 /agents/alpha/next"];
@@ -33,6 +35,7 @@ afterEach(() => {
   data.season = null;
   data.quests = null;
   data.next = null;
+  data.unread = 0;
 });
 
 const now = Date.parse("2026-11-06T12:00:00Z");
@@ -45,6 +48,7 @@ const quests: AgentQuests = {
     { id: "idea", title: "Suggest an improvement", xp: 10, done: false, at: "" },
   ],
   feats: [],
+  level: { formula: "level:v1", level: 2, xp: 40, next_at: 100, crossed: true, table: [] },
 };
 const season: SeasonBoards = {
   season: "season-0", started_at: null, ends_at: null, formula: "season:v1", order: ["renown"],
@@ -73,58 +77,59 @@ describe("earnedBadges", () => {
   });
 });
 
-describe("your agent now", () => {
-  it("leads with the live game, then the badges the agent earned", () => {
+describe("the agent now", () => {
+  it("is named, and leads with the live game and where it is", () => {
     data.sessions = [live];
-    data.quests = quests;
-    data.season = season;
     render(withViewer(<AgentNow navigate={() => {}} />));
+    expect(screen.getByRole("region", { name: "alpha now" })).toBeTruthy();
     const rows = [...document.querySelectorAll(".e-now__row")];
-    expect(rows[0].textContent).toMatch(/live.*blotto v beta/);
-    expect(rows[1].classList.contains("e-now__row--badges")).toBe(true);
-    expect(screen.getAllByRole("img", { name: "Welcomed" })).toHaveLength(1);
-    expect(rows[1].querySelectorAll(".e-badge")).toHaveLength(4);
+    expect(rows[0].textContent).toMatch(/live.*blotto against beta/);
+    expect(rows[0].textContent).toMatch(/commit · 0 of 2/);
   });
 
-  it("reads well with no game and no badges yet", () => {
-    data.quests = { ...quests, badges: [] };
+  it("says the agent is not in a game, by name, when it is not", () => {
     render(withViewer(<AgentNow navigate={() => {}} />));
-    expect(screen.getByText("Not in a game right now.")).toBeTruthy();
-    expect(screen.getByText("None yet: each quest done earns one.")).toBeTruthy();
-  });
-
-  it("has no badges row on a relay that runs no gamify parts", () => {
-    render(withViewer(<AgentNow navigate={() => {}} />));
-    expect(document.querySelector(".e-now__row--badges")).toBeNull();
-    expect(screen.getByText("Not in a game right now.")).toBeTruthy();
+    expect(screen.getByText(/alpha is not in a game/)).toBeTruthy();
     expect(document.querySelectorAll(".e-now__row")).toHaveLength(1);
   });
 
-  it("opens the agent's sheet from the badges row", () => {
-    data.quests = quests;
+  it("says how many messages wait, and opens them", () => {
+    data.unread = 2;
     const nav = vi.fn();
     render(withViewer(<AgentNow navigate={nav} />));
-    fireEvent.click(document.querySelector(".e-now__row--badges")!);
-    expect(nav).toHaveBeenCalledWith("season", { agentId: "alpha" });
+    fireEvent.click(screen.getByText(/2 unread for alpha/));
+    expect(nav).toHaveBeenCalledWith("messages");
+  });
+
+  it("opens the game from its row", () => {
+    data.sessions = [live];
+    const nav = vi.fn();
+    render(withViewer(<AgentNow navigate={nav} />));
+    fireEvent.click(document.querySelector(".e-now__row")!);
+    expect(nav).toHaveBeenCalledWith("session", { sessionId: "s-live", gameModuleType: "emporia:blotto:v2" });
   });
 });
 
-describe("Home's first frame", () => {
-  it("is the agent and what is next, before the intro; the pipeline is one chip", () => {
+describe("Home", () => {
+  it("runs now, since you last looked, the relay, standing and next steps, in that order", () => {
+    data.quests = quests;
+    data.season = season;
     data.next = { agent_id: "alpha", sessions: [{ session_id: "s-live", module_type: "emporia:blotto:v2", move: "commit", clock_left_s: 90 }] };
     render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
-    const lead = document.querySelector(".e-home-lead")!;
-    const intro = document.querySelector(".e-intro")!;
-    expect(lead.compareDocumentPosition(intro) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(lead.querySelector('[aria-label="Your agent now"]')).toBeTruthy();
-    expect(lead.querySelector('[aria-label="Next up"]')).toBeTruthy();
-    expect(screen.getByText("6 checks on every move").tagName).toBe("SUMMARY");
-    expect(document.querySelector(".e-pipeline-strip")).toBeNull();
+    const order = ["alpha now", "Since you last looked", "On the relay now", "Standing", "Next steps"]
+      .map((name) => document.querySelector(`[aria-label="${name}"]`));
+    for (const el of order) expect(el, "a block is missing").toBeTruthy();
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(screen.getByText(/Level 2 · 40 XP · 60 XP to level 3/)).toBeTruthy();
+    expect(document.querySelector(".e-overview-hub")).toBeNull();
+    expect(document.querySelector(".e-pipeline-chip")).toBeNull();
   });
 
-  it("draws no Next up on a relay that does not serve the route", () => {
+  it("draws no Next steps on a relay that does not serve the route", () => {
     render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
-    expect(document.querySelector('[aria-label="Next up"]')).toBeNull();
-    expect(document.querySelector('.e-home-lead [aria-label="Your agent now"]')).toBeTruthy();
+    expect(document.querySelector('[aria-label="Next steps"]')).toBeNull();
+    expect(document.querySelector('[aria-label="alpha now"]')).toBeTruthy();
   });
 });

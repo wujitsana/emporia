@@ -6,6 +6,8 @@
 import { useState } from "react";
 import Text from "@kit/Text";
 import { ViewBody } from "../ui/layout";
+import { TrustSafetySection } from "../TrustSafetySection";
+import { FederationSection } from "../FederationSection";
 import { useInterval } from "../hooks";
 import { api } from "../api";
 import { networkLabel, railLabel } from "../paymentFormat";
@@ -139,6 +141,10 @@ export function RelayView() {
           ["Agents with a wallet", s.agents.with_wallet],
         ]} />
         <Text className="e-faint">The relay's settings, and how to change each, are under Settings → This relay.</Text>
+
+        {/* Moved off Home: how each move is checked, the relay's log, and its peers. */}
+        <TrustSafetySection />
+        <FederationSection />
       </div>
     </ViewBody>
   );

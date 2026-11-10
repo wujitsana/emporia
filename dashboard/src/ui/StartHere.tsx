@@ -11,10 +11,15 @@ import { CopyCommand } from "./CopyCommand";
  * for everyone: counts of what is on the relay and the season board's top three. Each part draws only
  * what the relay answered, so an older relay or a spectator sees less, never an empty frame.
  */
-export function StartHere({ agentId, navigate }: { agentId: string | null; navigate: Navigate }) {
+export function StartHere({ agentId, navigate, part = "both" }: {
+  agentId: string | null;
+  navigate: Navigate;
+  /** "start": only the first-steps card (Home draws the relay's facts itself). */
+  part?: "start" | "both";
+}) {
   const [quests] = useInterval(() => (agentId ? api.quests(agentId) : Promise.resolve(null)), poll(60_000), [agentId]);
-  const [summary] = useInterval(() => api.relaySummary(), poll(30_000), []);
-  const [board] = useInterval(() => api.seasonBoard(), poll(60_000), []);
+  const [summary] = useInterval(() => (part === "both" ? api.relaySummary() : Promise.resolve(null)), poll(30_000), [part]);
+  const [board] = useInterval(() => (part === "both" ? api.seasonBoard() : Promise.resolve(null)), poll(60_000), [part]);
   const start = startModel(quests);
   const counts = relayCounts(summary);
   const top = topThree(board);
@@ -23,7 +28,7 @@ export function StartHere({ agentId, navigate }: { agentId: string | null; navig
     <div className="e-start">
       {start ? (
         <section className="e-now" aria-label="Start here">
-          <header className="e-now__head"><span>Start here</span><span>{agentId}</span></header>
+          <header className="e-now__head"><span>First steps</span><span>{agentId}</span></header>
           <p className="e-now__row e-now__row--static">
             <span className="e-now__label">level</span>
             <span>
@@ -43,7 +48,7 @@ export function StartHere({ agentId, navigate }: { agentId: string | null; navig
           ) : null}
           <div className="e-now__row e-now__row--static">
             <span className="e-now__label">ask</span>
-            <CopyCommand command={start.prompt} label="paste to your agent" />
+            <CopyCommand command={start.prompt} label={`paste to ${agentId ?? "your agent"}`} />
             <span />
           </div>
         </section>

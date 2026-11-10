@@ -2805,6 +2805,21 @@ body.e-look.theme-dark {
   align-items: start;
 }
 .e-now__row--badges { align-items: center; }
+
+/* Home: "On the relay now" is a head, the cards, then rows; the foot is one line of facts and one of what this is. */
+.e-home-relay { margin-bottom: 16px; }
+.e-home-relay__head { border: 1px solid var(--e-rule); margin-bottom: 10px; }
+.e-home-relay .e-post-cards { margin-bottom: 10px; }
+.e-home-relay__rows { margin-bottom: 0; }
+.e-home-foot { margin-top: 4px; }
+.e-home-foot__facts { margin: 0 0 8px; font-size: 0.8rem; }
+.e-intro--line { border: 0; border-left: 3px solid var(--theme-focused-foreground); padding: 4px 12px; margin: 0; font-size: 0.82rem; max-width: 78ch; }
+.e-intro__link-inline {
+  background: transparent; border: 0; padding: 0; font: inherit; color: var(--theme-focused-foreground); cursor: pointer;
+}
+.e-intro__link-inline:hover { text-decoration: underline; }
+.e-badge-fold > summary { cursor: pointer; padding: 8px 0; }
+.e-next__call > summary { cursor: pointer; font-size: 0.78rem; }
 .e-now__badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
 .e-now__more { font-size: 0.75rem; }
 
