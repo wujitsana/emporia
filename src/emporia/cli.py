@@ -6869,8 +6869,7 @@ def agent_settings(profile: Path, agent_id: str) -> list[dict[str, Any]]:
                  kind="money", current=str(approve_c), is_default=not approve,
                  env="EMPORIA_PAYMENT_APPROVAL_CENTS"),
             item(_G_MONEY, "Spending when you're away", f"${book.autonomous_spend_cents_per_day / 100:.2f} per day",
-                 "What its turns may spend when nobody is at the keyboard: 25 cents by default when it pays on "
-                 "testnets only, nothing when any network is mainnet. 0 turns it off.",
+                 "Unattended spending: 25 cents by default on testnets only, nothing on mainnet. 0 turns it off.",
                  _hermes_set(name, "EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY", "0"), kind="money",
                  current=str(book.autonomous_spend_cents_per_day),
                  is_default=not (env.get("EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY") or "").strip(),
