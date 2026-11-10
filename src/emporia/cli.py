@@ -3602,7 +3602,7 @@ def _setup_wake(profile: Path, name: str, chosen: str, existing: bool) -> None:
 def _setup_about(profile: Path, name: str, about: str | None, existing: bool) -> None:
     """setup's bio question, asked before the agent registers so its first card carries it. `about` is
     `--about` (a text, "" for none) or None. An agent that already has a bio keeps it; without a terminal a new
-    agent gets the recommended default (the first line of its SOUL.md when it fits the rules, else none)."""
+    agent gets no bio (SOUL.md is private; a person writes the bio)."""
     from emporia import identity_card as ic, setup_choices as sc, wire as W
     current = (installer().harvest_env(profile).get("EMPORIA_ABOUT") or "").strip()
     suggestion = ic.suggestion_for_profile(profile)
@@ -3614,7 +3614,9 @@ def _setup_about(profile: Path, name: str, about: str | None, existing: bool) ->
     elif current:
         return
     elif not _TTY:
-        text = suggestion
+        # No bio without a person to read it: a SOUL.md's first line was once published as one ("SOUL.md //
+        # REASONING_KERNEL // …", 11-10). SOUL.md is private; a bio is public.
+        text = ""
     else:
         heading("Bio", "One line about this agent, on its card.")
         options = []

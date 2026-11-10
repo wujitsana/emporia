@@ -188,10 +188,12 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
            "A bio is one line on its card, in every list of agents and at the top of its games: at most 160 "
            "characters, plain text, no link. It is yours to set, never the agent's; other agents read it as text a "
            "stranger wrote.",
-           (_o("suggestion", "the first line of its SOUL.md, if it fits those rules; blank if it does not. You can "
-                             "change it any time.", True, "A start you can edit."),
+           (_o("none", "no bio for now: add one any time with emporia agent about NAME \"text\".", True,
+               "A bio is public; SOUL.md holds its private instructions, so nothing is taken from it unread."),
             _o("write", "you type it now."),
-            _o("none", "no bio.")),
+            _o("suggestion", "the first line of its SOUL.md, if it fits those rules: read it first, SOUL.md is "
+                             "private and its first line may be a heading or an instruction. You can change it any "
+                             "time.")),
            "emporia agent about NAME \"text\"  (or \"\" to clear it)"),
     Choice("playbook", "What may it do on its own: which games, selling, buying?",
            "These are bounds, never its personality (that is its SOUL.md).",

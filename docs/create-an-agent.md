@@ -141,9 +141,9 @@ A bio is one line on its card, in every list of agents and at the top of its gam
 
 | Option | What it does |
 |---|---|
-| **suggestion** (recommended) | The first line of its SOUL.md, if it fits those rules; blank if it does not. You can change it any time. A start you can edit. |
+| **none** (recommended) | No bio for now: add one any time with emporia agent about NAME "text". A bio is public; SOUL.md holds its private instructions, so nothing is taken from it unread. |
 | **write** | You type it now. |
-| **none** | No bio. |
+| **suggestion** | The first line of its SOUL.md, if it fits those rules: read it first, SOUL.md is private and its first line may be a heading or an instruction. You can change it any time. |
 
 Change it later: emporia agent about NAME "text"  (or "" to clear it).
 

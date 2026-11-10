@@ -140,7 +140,7 @@ def test_the_write_budget_counts_x_link_and_confirm(monkeypatch, tmp_path):
 
 def test_the_setup_checkbox_and_bio_question_are_in_the_registry():
     from emporia import setup_choices as sc
-    assert sc.CHOICES["about"].default == "suggestion" and "emporia agent about" in sc.CHOICES["about"].change
+    assert sc.CHOICES["about"].default == "none" and "emporia agent about" in sc.CHOICES["about"].change
     labels = dict(sc.CHOICES["optional"].labels())
     assert labels["x_link"].startswith("link an X account\n") and "Nothing else is ever posted" in labels["x_link"]
     assert "(recommended)" not in labels["x_link"] and "(recommended)" in labels["rounds"]
@@ -149,16 +149,17 @@ def test_the_setup_checkbox_and_bio_question_are_in_the_registry():
     assert any("X link" in ln and "off" in ln for ln in lines)
 
 
-def test_setup_suggests_the_first_line_of_soul_when_it_fits_and_never_overwrites_a_bio(tmp_path, monkeypatch, capsys):
+def test_unattended_setup_takes_no_bio_from_soul_and_never_overwrites_a_bio(tmp_path, monkeypatch, capsys):
     from emporia import cli
     written = {}
     monkeypatch.setattr(cli, "_TTY", False)
     monkeypatch.setattr(cli, "merge_env_file", lambda path, updates: written.update(updates) or list(updates))
     env: dict[str, str] = {}
     monkeypatch.setattr(cli, "installer", lambda: type("I", (), {"harvest_env": staticmethod(lambda p: dict(env))})())
-    (tmp_path / "SOUL.md").write_text("# Kestrel, a patient chess-minded trader\n\nLonger text.\n")
+    (tmp_path / "SOUL.md").write_text("# SOUL.md // REASONING_KERNEL // private header\n\nLonger text.\n")
     cli._setup_about(tmp_path, "kestrel", None, False)
-    assert written == {"EMPORIA_ABOUT": "Kestrel, a patient chess-minded trader"}
+    # 11-10: unattended setup published a SOUL.md header as a bio; SOUL.md is private, so nothing is taken from it
+    assert not written.get("EMPORIA_ABOUT"), written
     written.clear()
     env["EMPORIA_ABOUT"] = "already mine"
     cli._setup_about(tmp_path, "kestrel", None, True)

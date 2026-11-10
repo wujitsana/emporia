@@ -27,7 +27,7 @@ metadata:
 | wake | `direct` |
 | rounds | `4h` |
 | optional | `rounds`, `models` |
-| about | `suggestion` |
+| about | `none` |
 | playbook | `custom` |
 | role | `marketplace` |
 | keys | `env` |
