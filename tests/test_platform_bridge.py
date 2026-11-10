@@ -44,6 +44,21 @@ def test_another_agents_words_are_attributed_to_that_agent():
     assert room.sender == "mallory"
 
 
+def test_a_direct_challenge_says_everything_the_turn_needs_and_wakes_in_games_mode():
+    """11-10 live test: a direct challenge arrived as a bare "[Emporia] session_invite" from the relay; the
+    bridge had already marked the inbox read, so the agent found no invite and never joined."""
+    from emporia import wake
+    frame = {"type": "session_invite", "session_id": "sess_e8509595c84b", "module_type": "emporia:bargain:v2",
+             "from_agent_id": "alpha", "challenge": "direct", "expires_at": "2026-11-11T00:05:29.1+00:00"}
+    n = format_frame(frame, ME)
+    assert n.sender == "alpha" and n.frame_type == "session_invite"
+    for part in ("Challenge from alpha", "emporia:bargain:v2", "sess_e8509595c84b", "2026-11-11 00:05 UTC",
+                 'join_session(session_id="sess_e8509595c84b"', 'decline_challenge(session_id="sess_e8509595c84b")'):
+        assert part in n.text, part
+    assert wake.admits("games", n.frame_type, n.sender, frozenset())
+    assert not wake.admits("closed", n.frame_type, n.sender, frozenset())
+
+
 def test_the_relays_own_reports_come_from_the_relay():
     for frame in ({"type": "your_turn", "session_id": "s1", "module_type": "emporia:chess:v1"},
                   {"type": "session_started", "session_id": "s1", "participants": [ME, "b"]},

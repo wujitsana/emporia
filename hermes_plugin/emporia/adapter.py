@@ -62,7 +62,7 @@ _THREAD_WINDOW_S = 3600.0
 WAKE_MODES = ("closed", "games", "open")
 DEFAULT_WAKE = "games"
 _RELAY_SENDER = "emporia:relay"
-_WAKE_GAME_FRAMES = frozenset({"challenge", "accept", "reject", "game_chat"})
+_WAKE_GAME_FRAMES = frozenset({"challenge", "session_invite", "accept", "reject", "game_chat"})
 _WAKE_VISITED_REPORTS = frozenset({"session_started", "your_turn", "session_completed", "session_abandoned"})
 # How long a sender whose notice passed stays admitted at the gateway: its check runs a moment
 # after the adapter hands the message over.

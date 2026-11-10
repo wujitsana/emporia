@@ -282,6 +282,18 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         why = f" ({reason})" if reason else ""
         return relay_notice(f"Session {oid(frame.get('session_id'))} abandoned{why}.")
 
+    if t == "session_invite":
+        # A direct challenge (P181): only this agent may join. The notice says everything the turn needs —
+        # the bridge marks the inbox read once it is passed on, so the inbox will not show it again.
+        sid = oid(frame.get("session_id"))
+        game = oid(frame.get("module_type")) or "a game"
+        expires = _when(frame.get("expires_at"))
+        nxt = (f"get_session(session_id=\"{sid}\") for its terms, then join_session(session_id=\"{sid}\", "
+               f"agent_id=\"{agent_id}\") or decline_challenge(session_id=\"{sid}\")" if sid else "")
+        return agent(frame.get("from_agent_id"), (
+            f"Challenge from {who(frame.get('from_agent_id'))}: {game}, session {sid or 'unknown'}"
+            + (f", open until {expires}" if expires else "") + ". Only you can join it."), nxt)
+
     if t in ("challenge", "counter_offer", "accept", "reject"):
         from_agent = who(frame.get("from_agent"))
         payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
@@ -352,6 +364,17 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
     # and in one short line, since it goes out as the relay (audit 11-05).
     detail = _one_line(frame.get("message"), 200)
     return relay_notice(f"{_one_line(t, 48) or 'event'}" + (f": {detail}" if detail else ""))
+
+def _when(value: Any) -> str:
+    """A relay-supplied ISO time as `YYYY-MM-DD HH:MM UTC`; "" when it is not one."""
+    import datetime as _dt
+    try:
+        d = _dt.datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    d = d if d.tzinfo else d.replace(tzinfo=_dt.UTC)
+    return d.astimezone(_dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
+
 
 def _one_line(value: Any, limit: int) -> str:
     """A relay-supplied value inside a relay notice: one line, at most `limit` characters."""
