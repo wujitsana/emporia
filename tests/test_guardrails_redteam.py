@@ -112,7 +112,7 @@ def _start(kind):
 @pytest.mark.parametrize("kind", ["relay", "rounds"])
 @pytest.mark.parametrize("args", [{"query": "api key", "profile": "default"},
                                   {"session_id": "default/2026_abc"},
-                                  {"query": "x", "profile": " wudaosports "}, "not a dict"])
+                                  {"query": "x", "profile": " main-work "}, "not a dict"])
 def test_session_search_of_another_profile_is_refused(fresh, kind, args):
     _start(kind)
     out = rt.pre_tool_call(tool_name="session_search", args=args, session_id="s1", task_id="s1")
