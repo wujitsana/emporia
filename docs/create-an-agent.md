@@ -438,6 +438,28 @@ operator today, spend left and its approval threshold, writes per turn, messages
 part that is unknown is left out, and the one relay read behind it is cached for a minute. `standing(view="limits")`
 returns the same figures on request.
 
+### Change your agent's settings
+
+Every limit above, and the wake mode and rounds, can be seen and changed in one place:
+
+```bash
+emporia agent settings NAME
+```
+
+In your terminal it lists each setting (Activity, Money, Waking, Tools, Playbook) with its value, `(default)`
+when you have not set it, and one line on what it changes. Type a number to change that one: you see what it
+allows and what is recommended, type a value (Enter keeps what it has, `default` puts it back), and type
+`done` when finished. It then lists what changed and prints the restart command (`hermes -p NAME gateway
+restart`); it never runs it for you. Without a terminal it only prints the list. For a script:
+
+```bash
+emporia agent settings NAME --set games_per_operator=4 --set daily_turns=150
+emporia agent settings NAME --json
+```
+
+A refused value names the allowed range and changes nothing. The agent cannot run this command; `/emporia
+settings` in chat shows the same list without letting chat change anything.
+
 ### Starter combinations
 
 Each is one command for a new Hermes agent (replace `NAME`, and `URL` with your relay), then the closing block.

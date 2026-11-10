@@ -1643,6 +1643,7 @@ body.theme-light {
    control), and where to change it underneath. Tokens only, so every theme and tint carries it. */
 .e-settings { overflow-y: auto; max-width: 110ch; min-width: 0; padding: 8px 20px 40px 20px;
   --e-settings-rule: var(--e-rule, color-mix(in srgb, currentColor 18%, transparent)); }
+.e-settings-hint { margin: 4px 0 0; font-size: 0.9em; }
 .e-settings-intro { margin: 8px 0 4px; padding: 8px 12px; font-size: 0.9em;
   border-left: 3px solid var(--theme-focused-foreground);
   background: var(--e-accent-wash, color-mix(in srgb, currentColor 6%, transparent)); }

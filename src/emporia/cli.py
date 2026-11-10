@@ -3280,6 +3280,152 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
     return 0
 
 
+def _settings_choices(key: str) -> list[tuple[str, str]]:
+    """The options a choice setting offers: setup's own question (what each does, the recommended one marked)."""
+    from emporia import setup_choices as sc
+    if key == "rounds":
+        return [*sc.CHOICES["rounds"].labels(), ("off", "off\nNo rounds: it acts only when someone writes to it.")]
+    return sc.CHOICES[{"wake": "wake", "playbook": "playbook"}[key]].labels()
+
+
+def _settings_ask(s, row: dict) -> str | None:
+    """The new value for one setting, typed or chosen; None keeps what it has."""
+    import re as _re
+    if s.kind in ("wake", "preset", "rounds"):
+        options = _settings_choices("playbook" if s.kind == "preset" else s.kind)
+        keys = [k for k, _ in options]
+        now = row["value"]
+        if s.kind == "rounds":
+            m = _re.search(r"every (\d+h)", now)
+            now = m.group(1) if m else "off"
+        picked = choose(f"{s.label}?", options, keys.index(now) if now in keys else 0)
+        return None if picked == now else picked
+    typed = prompt("New value (Enter keeps it; `default` puts it back)", "")
+    return typed or None
+
+
+def cmd_agent_settings(name: str, args: argparse.Namespace) -> int:
+    """`emporia agent settings [NAME] [--set KEY=VALUE ...] [--json]`: an agent's own limits and behaviour on one
+    screen. In a person's terminal it is a numbered list to pick from; without one it prints the table and
+    changes nothing. Values are checked by the code the runtime reads them with and written by the same
+    writer as `agent playbook` (merge_env_file). A person's settings: the key guard holds this command."""
+    from emporia import agent_settings as S, rounds as R
+    if not name:
+        found = _own_profile(argparse.Namespace(agent=""))
+        name = found[1] if found else ""
+    profile, _aid, env = _agent(name)
+    if not env:
+        print(f"agent settings: {name or '(none)'} is not an Emporia agent profile")
+        return 1
+
+    def rounds_text() -> str:
+        return R.status_line(name).split(";")[0][:70]
+
+    def table() -> list[dict]:
+        return S.rows(installer().harvest_env(profile), name, rounds_text())
+
+    def restart(changed_env: bool) -> None:
+        if changed_env:
+            print(f"  They apply when its gateway next starts. To restart it yourself:\n"
+                  f"      {S.restart_command(name)}\n"
+                  f"  (or, if one gateway serves every profile: hermes gateway restart)")
+
+    def diff(before: list[dict], after: list[dict]) -> list[str]:
+        was = {r["key"]: r["value"] + (" (default)" if r["default"] else "") for r in before}
+        return [f"  {r['label']}: {was[r['key']]} -> {r['value']}{' (default)' if r['default'] else ''}"
+                for r in after if was[r["key"]] != r["value"] + (" (default)" if r["default"] else "")]
+
+    sets = getattr(args, "settings_set", None) or []
+    want_json = bool(getattr(args, "json", False))
+    before = table()
+    pending: dict[str, str] = {}
+    rounds_to = None
+    if sets:
+        current = installer().harvest_env(profile)
+        for item in sets:
+            key, eq, value = item.partition("=")
+            key = key.strip().lower().replace("-", "_")
+            if not eq:
+                print(f"agent settings: --set takes KEY=VALUE (keys: {', '.join(S.EDITABLE)})")
+                return 1
+            try:
+                if key == "rounds":
+                    rounds_to = S.rounds_value(value)
+                else:
+                    pending.update(S.plan(key, value, {**current, **pending}, name))
+            except S.SettingError as e:
+                print(f"agent settings: {e}")
+                return 1
+        changed_env = bool(pending and merge_env_file(profile / ".env", pending))
+        if rounds_to is not None:
+            try:
+                if rounds_to == "off":
+                    R.turn_off(name)
+                else:
+                    R.turn_on(name, rounds_to)
+            except R.RoundsError as e:
+                print(f"agent settings: rounds: {e}")
+                return 1
+        after = table()
+        lines = diff(before, after)
+        if want_json:
+            print(json.dumps({"agent": name, "changed": [a["key"] for a, b in zip(after, before)
+                                           if (a["value"], a["default"]) != (b["value"], b["default"])],
+                              "restart": S.restart_command(name), "settings": after}, indent=2))
+            return 0
+        print("\n".join(lines) if lines else "  Nothing changed.")
+        restart(changed_env)
+        return 0
+    if want_json:
+        print(json.dumps({"agent": name, "restart": S.restart_command(name), "settings": before}, indent=2))
+        return 0
+    print(S.render(before, name))
+    if not _persons_terminal():
+        print(f"\nRead-only here. To change one: emporia agent settings {name} --set KEY=VALUE "
+              f"(keys: {', '.join(S.EDITABLE)}), or run it without --set in your own terminal.")
+        return 0
+    changed_env = False
+    while True:
+        rows = table()
+        pick = prompt("\nChange which? Type its number (`list` shows them again; Enter when done)", "").lower()
+        if pick in ("", "d", "done", "q", "quit"):
+            break
+        if pick in ("l", "list"):
+            print(S.render(rows, name))
+            continue
+        if not pick.isdigit() or not 1 <= int(pick) <= len(rows):
+            print("  Type a number from the list, or press Enter when done.")
+            continue
+        row = rows[int(pick) - 1]
+        s = S.BY_KEY[row["key"]]
+        if not s.editable:
+            print(f"\n{row['label']}: {row['value']}\n  {row['about']}"
+                  + (f"\n  Change it: {row['change']}" if row["change"] else ""))
+            continue
+        print(f"\n{row['label']}: now {row['value']}{' (default)' if row['default'] else ''}")
+        print(f"  {row['about']}\n  Allowed: {row['allowed']}\n  Recommended: {row['recommended']}")
+        value = _settings_ask(s, row)
+        if value is None:
+            print("  Kept.")
+            continue
+        try:
+            if s.kind == "rounds":
+                (R.turn_off(name) if S.rounds_value(value) == "off" else R.turn_on(name, S.rounds_value(value)))
+            else:
+                changed_env = bool(merge_env_file(profile / ".env",
+                                                  S.plan(s.key, value, installer().harvest_env(profile), name))) or changed_env
+        except (S.SettingError, R.RoundsError) as e:
+            print(f"  {e}")
+            continue
+        rows = table()
+        print("\n".join(diff([r for r in before if r["key"] == s.key], [r for r in rows if r["key"] == s.key])
+                        or ["  Unchanged."]))
+    lines = diff(before, table())
+    print("\nChanged:\n" + "\n".join(lines) if lines else "\nNothing changed.")
+    restart(changed_env)
+    return 0
+
+
 # ─── wake mode and rounds ────────────────────────────────────────────────────
 
 def this_profile_name(profile: Path) -> str:
@@ -8797,8 +8943,8 @@ def build_parser() -> argparse.ArgumentParser:
                                        "or its identity key changed (rotate-key), given a recovery key "
                                        "(recovery-key) or replaced with it when lost (recover)")
     ag2.add_argument("action", choices=["leave", "delete", "secure", "refresh", "inbox-clear", "rotate-key",
-                                        "rotate-encryption-key", "recovery-key", "recover", "playbook", "init", "mcp-config",
-                                        "about", "x-claim", "x-link"])
+                                        "rotate-encryption-key", "recovery-key", "recover", "playbook", "settings", "init",
+                                        "mcp-config", "about", "x-claim", "x-link"])
     ag2.add_argument("url_or_name", nargs="?", default="",
                      help="leave: the relay's URL; delete, secure, refresh, inbox-clear, rotate-key: "
                           "the agent (secure, refresh, inbox-clear: or all)")
@@ -8827,6 +8973,8 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.add_argument("--unattended-spend-cents", dest="unattended_spend_cents", default=None,
                      help="playbook: cents a day its unattended turns may spend (default 25 on testnets only, "
                           "0 on mainnet; 0 = none)")
+    ag2.add_argument("--set", dest="settings_set", action="append", default=None, metavar="KEY=VALUE",
+                     help="settings: change one setting without the menu (repeat for more); `default` puts it back")
     ag2.add_argument("--handle", default="", help="x-claim, x-link: the X handle (letters, digits, _; at most 15)")
     ag2.add_argument("--style", default="", choices=["", "plain", "arena", "lab"],
                      help="x-claim: which stock post (default plain)")
@@ -8852,6 +9000,7 @@ def build_parser() -> argparse.ArgumentParser:
                      cmd_agent_recover(a.agent or a.url_or_name, a.recovery_key_file, a.recovery_key_source,
                                        a.compromised_since, a.yes) if a.action == "recover" else
                      cmd_agent_inbox_clear(a.url_or_name) if a.action == "inbox-clear" else
+                     cmd_agent_settings(a.url_or_name, a) if a.action == "settings" else
                      cmd_agent_playbook(a.url_or_name, a) if a.action == "playbook" else cmd_agent(
         argparse.Namespace(action=a.action, url=a.url_or_name if a.action == "leave" else "",
                            name=(a.name or "") if a.action == "leave" else a.url_or_name, home=a.home)))

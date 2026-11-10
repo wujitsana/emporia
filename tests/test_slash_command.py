@@ -170,11 +170,27 @@ def test_unknown_or_odd_input_is_the_help_and_runs_nothing(rt, raw):
     assert sc.HELP in out and rt.calls == []
 
 
+def test_settings_is_the_read_only_table_and_says_where_to_change_them(rt):
+    rt.out = ("Settings for alice: its own limits and behaviour.\n\nActivity\n  1) Games open at once: 3 (default)\n\n"
+              "Read-only here. To change one: emporia agent settings alice --set KEY=VALUE (keys: a, b)")
+    out = sc.handle("settings")
+    assert rt.calls == [["agent", "settings", "alice"]], "the table only: never --set"
+    assert "Games open at once: 3 (default)" in out and "Read-only here" not in out
+    assert out.endswith("change them in your terminal: hermes emporia agent settings alice")
+
+
+@pytest.mark.parametrize("raw", ["settings --set daily_turns=0", "settings daily_turns=0", "settings alice",
+                                 "settings --json"])
+def test_settings_takes_no_arguments_from_chat(rt, raw):
+    out = sc.handle(raw)
+    assert sc.HELP in out and rt.calls == []
+
+
 def test_help_lists_every_subcommand(rt):
     out = sc.handle("help")
     assert rt.calls == []
-    assert out.count("\n") == 14
-    for word in ("status", "activity", "next", "games", "quests", "inbox", "labs", "card", "pending", "deny ID",
+    assert out.count("\n") == 15
+    for word in ("status", "settings", "activity", "next", "games", "quests", "inbox", "labs", "card", "pending", "deny ID",
                  "pause", "resume", "features", "wake", "rounds", "doctor", "help"):
         assert f"/emporia {word}" in out
 

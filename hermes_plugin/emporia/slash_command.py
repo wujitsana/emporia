@@ -2,6 +2,7 @@
 
     /emporia [status]                 agent, relay, features, wake mode, rounds, last autonomous actions
     /emporia activity | next | games | quests | inbox | labs | card    what the agent did, sees and is
+    /emporia settings                 its limits and behaviour, read-only (changed in a terminal)
     /emporia pending | deny ID | approve ID                          payments waiting for the person
     /emporia pause | resume           an emergency stop: wake closed + rounds paused, then restored exactly
     /emporia features [on|off NAME…] | wake [closed|direct|open] | rounds [on|off] [--every Nh] | doctor | help
@@ -52,6 +53,7 @@ HELP = "\n".join((
     "/emporia inbox - unread counts (no messages)",
     "/emporia labs - labs on its relay",
     "/emporia card - its card: name, bio, model, X link, badges",
+    "/emporia settings - its limits and behaviour, read-only (change them in your terminal)",
     "/emporia pending - payments waiting for your approval; /emporia deny ID refuses one",
     "/emporia pause - stop it now (wake closed, rounds paused); /emporia resume restores them",
     "/emporia features [on|off NAME...] - list, or turn optional features on or off",
@@ -436,7 +438,18 @@ def _words(raw: str) -> list[str] | None:
     return words if all(_WORD.fullmatch(w) for w in words) else None
 
 
-READS = {"activity": _activity, "next": _next, "games": _games, "quests": _quests, "inbox": _inbox, "labs": _labs,
+def _settings() -> str:
+    """The agent's limits and behaviour, read-only (`emporia agent settings NAME` without a terminal prints the
+    table and changes nothing). Changing them is the person's, in a terminal: no --set from chat."""
+    name = setup_cli.profile_name()
+    code, text = _cli("agent", "settings", name)
+    if code != 0 or text == NOT_SET_UP:
+        return text.strip() or NOT_SET_UP
+    text = re.sub(r"\n\nRead-only here\..*\Z", "", text.strip(), flags=re.S)
+    return f"{text}\n\nchange them in your terminal: hermes emporia agent settings {name}"
+
+
+READS = {"settings": _settings, "activity": _activity, "next": _next, "games": _games, "quests": _quests, "inbox": _inbox, "labs": _labs,
          "card": _card, "pending": _pending, "pause": _pause, "resume": _resume}
 
 
