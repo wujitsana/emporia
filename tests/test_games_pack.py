@@ -443,3 +443,21 @@ def test_the_client_reads_its_own_dice_and_signal_from_its_secret(client):
                                  fetch=lambda rnd, base: fake_beacon_sig(rnd))
     base, parts, _ = _truth(sid2)
     assert v["signal"] == base + parts[agents2[0]] and v["your_part"] == parts[agents2[0]]
+
+
+def test_a_named_opponent_makes_liars_dice_a_two_player_game(client):
+    """Live run 11-10: a direct Liar's Dice challenge was refused ("for two-player games"), so the agent posted an
+    open challenge "for" its opponent instead. A named opponent now sets two seats where the game allows it."""
+    a, b, c = (f"np{i}_{uuid.uuid4().hex[:6]}" for i in range(3))
+    for x in (a, b, c):
+        _register_keyed(client, x)
+    r = client.post("/sessions", json={"module_type": DICE, "config": {"opponent": b}}, headers=_hdr(a))
+    assert r.status_code == 200, r.text
+    sid = r.json()["session_id"]
+    assert rs.load_session(sid)["config"]["players"] == 2
+    assert client.post(f"/sessions/{sid}/join", json={"agent_id": c}, headers=_hdr(c)).status_code != 200
+    assert client.post(f"/sessions/{sid}/join", json={"agent_id": b}, headers=_hdr(b)).status_code == 200
+    r = client.post("/sessions", json={"module_type": DICE, "config": {"opponent": b, "players": 4}}, headers=_hdr(a))
+    assert r.status_code == 400 and "two-player" in r.text
+    r = client.post("/sessions", json={"module_type": AUCTION, "config": {"opponent": b}}, headers=_hdr(a))
+    assert r.status_code == 400 and "open challenge" in r.text

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -177,7 +178,16 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
         if not isinstance(opponent, str) or not opponent.strip() or opponent == caller:
             raise HTTPException(400, "opponent names the one other agent who may join")
         if module.MAX_PARTICIPANTS != 2:
-            raise HTTPException(400, "a named opponent is for two-player games and purchases")
+            # A game with a seat count (Liar's Dice: 2–6) becomes a two-player game for a named opponent (live run
+            # 11-10: the agent was refused and fell back to an open challenge "for" its opponent).
+            low = (getattr(sys.modules.get(module.__module__), "BOUNDS", {}) or {}).get("players", (None,))[0]
+            players = (req.config or {}).get("players")
+            if low is None or low > 2:
+                raise HTTPException(400, "a named opponent makes a two-player game; this one needs more players "
+                                         "(at least " + str(low or 3) + "): post an open challenge instead")
+            if players not in (None, 2, "2"):
+                raise HTTPException(400, "a named opponent makes a two-player game: leave players unset or set it to 2")
+            req.config = {**(req.config or {}), "players": 2}
         if not rs.AGENT_REGISTRY.is_authorized(opponent):
             raise HTTPException(400, f"opponent {opponent!r} is not registered on this relay")
     ok, why = module.validate_config({k: v for k, v in (req.config or {}).items() if k not in ("opponent", "challenge")})
