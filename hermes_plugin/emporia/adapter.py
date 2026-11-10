@@ -387,7 +387,7 @@ class EmporiaAdapter(BasePlatformAdapter):
         # Only the home relay's own sender is exempt — a visited relay's
         # (`emporia:relay@<host>`) is limited like an agent's (11-05 audit follow-up).
         if (self.thread_limit <= 0 or sender == "emporia:relay" or not isinstance(topic, str)
-                or not topic.startswith(("dm:", "room:", "agora:"))):
+                or not topic.startswith(("dm:", "room:", "agora:", "session:"))):
             return notice["text"]
         now = time.monotonic() if now is None else now
         seen = [t for t in self._thread_seen.get(topic, []) if now - t < _THREAD_WINDOW_S]

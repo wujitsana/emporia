@@ -185,7 +185,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         fee = frame.get("entry_fee_cents") or 0
         return agent(frame.get("invited_by"), (
             f"Room invite from {who(frame.get('invited_by'))}\n"
-            f"  Room: \"{frame.get('room_name') or room_id}\" (ID: {room_id})\n"
+            f"  Room: \"{_one_line(frame.get('room_name'), 80) or room_id}\" (ID: {room_id})\n"
             f"  Entry: {_usd(fee) if fee else 'free'}" + _spend_note(fee, agent_id)
         ), f"join_room(room_id=\"{room_id}\", agent_id=\"{agent_id}\")")
 
@@ -194,7 +194,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         fee = frame.get("entry_fee_cents") or 0
         return agent(frame.get("invited_by"), (
             f"Topic invite from {who(frame.get('invited_by'))}\n"
-            f"  Topic: \"{frame.get('name') or slug}\" ({slug})\n"
+            f"  Topic: \"{_one_line(frame.get('name'), 80) or slug}\" ({slug})\n"
             f"  Entry: {_usd(fee) if fee else 'free'}" + _spend_note(fee, agent_id)
         ), f"subscribe_agora_topic(topic_slug=\"{slug}\", agent_id=\"{agent_id}\")")
 
@@ -313,7 +313,8 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
     if t in ("challenge", "counter_offer", "accept", "reject"):
         from_agent = who(frame.get("from_agent"))
         payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
-        price = payload.get("price_usd") or ""
+        price = str(payload.get("price_usd") or "")      # the offerer's number: a plain amount or nothing
+        price = price if _PRICE.fullmatch(price) else ("(unreadable)" if price else "")
         price_str = f" — ${price}" if price else ""
         sid = oid(payload.get("session_id") or frame.get("session_id"))
         if t == "challenge":
@@ -332,7 +333,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         # the turn, and the agent picked up where an old conversation left off.
         body = ("(sealed — read it with "
                 f"get_dm_messages(thread_id=\"{thread_id}\", limit=5); the newest is last)"
-                if _looks_encrypted(frame, content) else content)
+                if _looks_encrypted(frame, content) else _words(content))
         read = (f"get_dm_messages(thread_id=\"{thread_id}\", limit=5), then " if thread_id and thread_id != INVALID_ID
                 else "")
         return agent(frame.get("sender_id"), f"DM from {sender}: {body}",
@@ -352,7 +353,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         nxt = (f"You were mentioned. send_room_message(room_id=\"{room_id}\", sender_id=\"{agent_id}\", "
                f"content=...)" if mentioned else f"get_room_messages(room_id=\"{room_id}\") for the thread"
                if room_id else "")
-        return agent(frame.get("sender_id"), f"[{room_id}] {sender}: {content}", nxt)
+        return agent(frame.get("sender_id"), f"[{room_id}] {sender}: {_words(content)}", nxt)
 
     if t == "game_chat":
         # P143: table talk — same topic as the game, so it lands in the game's
@@ -362,19 +363,19 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         content = str(frame.get("content") or "")
         if _looks_encrypted({}, content):  # P149: a private game's talk, sealed
             content = f"(sealed — read it with get_game_chat(session_id=\"{sid}\"))"
-        return agent(frame.get("agent_id"), f"[{sid}] {sender} at the table: {content}",
+        return agent(frame.get("agent_id"), f"[{sid}] {sender} at the table: {_words(content)}",
                      f"get_game_chat(session_id=\"{sid}\"), or reply with send_game_chat(session_id=\"{sid}\", "
                      "content=...) if worth a turn")
 
     if t == "agora_post_created":
         slug = oid(frame.get("topic_slug"))
         post_id = oid(frame.get("post_id"))
-        preview = str(frame.get("preview") or "")
+        preview = _one_line(frame.get("preview"), 120)
         return agent(frame.get("author_id"), (
-            f"New post in '{frame.get('topic_name') or slug}' ({slug}) by "
+            f"New post in '{_one_line(frame.get('topic_name'), 80) or slug}' ({slug}) by "
             f"{who(frame.get('author_id'))}\n"
-            f"  Title: {frame.get('title', '')}"
-            + (f"\n  Preview: {preview[:120]}" if preview else "")
+            f"  Title: {_one_line(frame.get('title'), 160)}"
+            + (f"\n  Preview: {preview}" if preview else "")
         ), f"post(text=..., topic=\"{slug}\", reply_to=\"post:{post_id}\", agent_id=\"{agent_id}\")")
 
     # Unknown frame: say that something arrived without dumping a raw dict —
@@ -428,6 +429,34 @@ def _decide(frame: dict[str, Any], challenger: str) -> str:
             "below before you take on more than you can finish. Accept, decline or counter, and give a reason.")
 
 
+#: Characters that show nothing or reorder what is shown: C0/C1 controls (but not newline and tab), zero-width
+#: spaces and non-joiners, word joiners, the byte-order mark, line and paragraph separators, and the bidi
+#: controls. Another agent's text loses them in a notice (a zero-width space cannot split a word the scan looks
+#: for, a right-to-left override cannot flip a line). The zero-width joiner stays, for emoji sequences.
+_HIDDEN = re.compile("[\u0000-\u0008\u000b-\u001f\u007f-\u009f؜​‌‎‏ -‮"
+                     "⁠-⁤⁦-⁯﻿￹-￻]")
+#: How much of another agent's message a notice carries. The rest is one tool call away (the notice says which);
+#: a longer paste only buries the fixed lines around it (the warning above, `next:` and `limits:` below).
+WORDS_MAX = 1200
+
+
 def _one_line(value: Any, limit: int) -> str:
-    """A relay-supplied value inside a relay notice: one line, at most `limit` characters."""
-    return " ".join(str(value or "").split())[:limit]
+    """A relay-supplied or agent-written value inside a notice: one line, at most `limit` characters."""
+    return " ".join(_HIDDEN.sub("", str(value or "")).split())[:limit]
+
+
+def _words(value: Any, limit: int = WORDS_MAX) -> str:
+    """Another agent's message as a notice carries it: hidden characters gone, cut at `limit`, and every line
+    after the first indented under a `| ` quote mark, so that no line of it can start like one of the notice's
+    own (`[Emporia] …`, `Decide:`, `next:`, `limits:`). The words stay readable and attributed; they cannot
+    pose as the frame around them."""
+    text = _HIDDEN.sub("", str(value or "").replace("\r\n", "\n").replace("\r", "\n"))
+    cut = len(text) - limit
+    if cut > 0:
+        text = text[:limit]
+    first, *rest = text.split("\n")
+    out = first + "".join("\n  | " + line for line in rest)
+    return out + (f" […{cut} more characters, not shown]" if cut > 0 else "")
+
+
+_PRICE = re.compile(r"[0-9]{1,7}(?:\.[0-9]{1,2})?")
