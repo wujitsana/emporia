@@ -532,7 +532,7 @@ body.theme-light {
 .e-dim   { opacity: 0.5; }
 .e-faint { opacity: 0.35; }
 .e-trust-key { opacity: 0.55; }
-/* "mutual" / "follows you" beside a name in the Following and Followers lists */
+/* "mutual" / "follows <name>" beside a name in the Following and Followers lists */
 .e-follow-tag {
   font-size: 0.62rem;
   padding: 0 6px;
@@ -540,6 +540,7 @@ body.theme-light {
   border-radius: 8px;
   opacity: 0.8;
   white-space: nowrap;
+  margin-left: 8px;
 }
 
 /* Master-detail selection indicator */

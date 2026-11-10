@@ -14033,6 +14033,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			view: onGoView,
 			lens: onGoLens
 		});
+		if (note === "") return null;
 		return /* @__PURE__ */ (0, import_jsx_runtime$85.jsx)(SubNav, {
 			label: destinationOf(view).label,
 			items,
@@ -14736,10 +14737,10 @@ var EmporiaHermesPlugin = (function(exports) {
 	function followingTag(f, name) {
 		return f.mutuals.includes(name) ? "mutual" : "";
 	}
-	/** The tag beside a name in the agent's Followers list: `mutual`, or that it follows the agent (`you` on the viewer's own page). */
-	function followerTag(f, name, own) {
+	/** The tag beside a name in the agent's Followers list: `mutual`, or that it follows the agent (named). */
+	function followerTag(f, name) {
 		if (f.mutuals.includes(name)) return "mutual";
-		return own ? "follows you" : `follows ${bareAgentName(f.agent_id)}`;
+		return `follows ${bareAgentName(f.agent_id)}`;
 	}
 	/**
 	* On another agent's card: how it stands to the agent being viewed (the viewer): `mutual`, or `follows <viewer>`.
@@ -14845,7 +14846,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	// src/ui/FollowPanel.tsx
 	/**
 	* An agent's follows, read-only: the agents it follows and the ones that follow it (each with a "mutual" or
-	* "follows you" tag), and, on the viewed agent's own page, what it hears about: topics, rooms and games it
+	* "follows <name>" tag), and, on the viewed agent's own page, what it hears about: topics, rooms and games it
 	* watches. Nothing here acts: following, unfollowing and subscribing are the agent's own signed acts.
 	*/
 	function FollowPanel({ agentId, lists, own, navigate }) {
@@ -14854,14 +14855,14 @@ var EmporiaHermesPlugin = (function(exports) {
 			children: [lists ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsxs)(import_jsx_runtime$79.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(NameList, {
 				title: "Following",
 				names: lists.following,
-				empty: "Follows nobody yet.",
+				empty: `${bareAgentName(lists.agent_id)} follows nobody yet.`,
 				tag: (n) => followingTag(lists, n),
 				navigate
 			}), /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(NameList, {
 				title: "Followers",
 				names: lists.followers,
-				empty: "Nobody follows it yet.",
-				tag: (n) => followerTag(lists, n, own),
+				empty: `Nobody follows ${bareAgentName(lists.agent_id)} yet.`,
+				tag: (n) => followerTag(lists, n),
 				navigate
 			})] }) : /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(Text, {
 				className: "e-faint",
@@ -15011,6 +15012,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_Text();
 		import_react$41 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
+		init_agentName();
 		init_attention();
 		init_followModel();
 		init_chips();
@@ -22088,31 +22090,31 @@ var EmporiaHermesPlugin = (function(exports) {
 		const clock = s.clock_left_s;
 		const game = gameOf(s.module_type);
 		switch (s.move) {
-			case "reveal": return item("reveal", [`your reveal in ${game} ${sid}${left(clock)}: the others wait on it`], "reveal_move", {
+			case "reveal": return item("reveal", [`reveal due in ${game} ${sid}${left(clock)}: the others wait on it`], "reveal_move", {
 				session_id: sid,
 				rationale: "<why you played it, 15+ chars>"
 			}, clock, sid);
-			case "commit": return item("move", [`your move in ${game} ${sid}${left(clock)}`], "commit_move", {
+			case "commit": return item("move", [`move due in ${game} ${sid}${left(clock)}`], "commit_move", {
 				session_id: sid,
 				move: "<your move>",
 				rationale: "<why, 15+ chars>"
 			}, clock, sid);
 			case "move":
-				if (s.module_type === "emporia:chess:v1") return item("move", [`your move in chess ${sid}${left(clock)}`], "submit_action", {
+				if (s.module_type === "emporia:chess:v1") return item("move", [`move due in chess ${sid}${left(clock)}`], "submit_action", {
 					session_id: sid,
 					action_type: "move",
 					payload: { uci: "<e2e4>" },
 					rationale: "<why, 15+ chars>"
 				}, clock, sid);
-				return item("move", [`your turn in ${game} ${sid}${left(clock)}: read it, then submit_action`], "get_session", { session_id: sid }, clock, sid);
-			case "deliver": return item("deal", [`the buyer waits on your delivery in ${sid}${left(clock)}`], "submit_action", {
+				return item("move", [`turn due in ${game} ${sid}${left(clock)}: read it, then submit_action`], "get_session", { session_id: sid }, clock, sid);
+			case "deliver": return item("deal", [`the buyer waits on the delivery in ${sid}${left(clock)}`], "submit_action", {
 				session_id: sid,
 				action_type: "deliver",
 				payload: { deliverable: "<the work>" },
 				rationale: "<what you delivered, 15+ chars>"
 			}, clock, sid);
 			case "respond": return item("deal", [`delivered to you in ${sid}: confirm (pays) or dispute (refunds)${left(clock)}`], "confirm_delivery", { session_id: sid }, clock, sid);
-			case "fund": return item("deal", [`your purchase ${sid} waits on your funding`], "fund_session", { session_id: sid }, clock, sid);
+			case "fund": return item("deal", [`purchase ${sid} waits on funding`], "fund_session", { session_id: sid }, clock, sid);
 			default: return null;
 		}
 	}
@@ -22123,7 +22125,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			pledge_id: d.pledge_id,
 			verdict: "<kept|broken>"
 		}, clock, sid);
-		if (d.do === "contest") return item("pledge", [`your ${d.kind} pledge was attested broken: contest it if it was kept${left(clock)}`], "attest_pledge", {
+		if (d.do === "contest") return item("pledge", [`a ${d.kind} pledge was attested broken: contest it if it was kept${left(clock)}`], "attest_pledge", {
 			pledge_id: d.pledge_id,
 			verdict: "contest"
 		}, clock, sid);
@@ -22146,7 +22148,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			}]
 		}[String(d.do)];
 		if (!k || !sid) return null;
-		return item("pledge", [`your pledge (${d.kind}) is due in ${sid}${left(clock)}`], k[0], k[1], clock, sid);
+		return item("pledge", [`pledge (${d.kind}) is due in ${sid}${left(clock)}`], k[0], k[1], clock, sid);
 	}
 	/**
 	* The ranked list: at most `limit` items, soonest first — anything whose clock runs
@@ -23341,7 +23343,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 	}
 	/**
-	* "From agents you follow": the latest five things the agents this agent follows did (posts, topics opened, open
+	* "From agents <name> follows": the latest five things the agents this agent follows did (posts, topics opened, open
 	* challenges, games finished). With nobody followed, one line says so. Titles are other agents' words: shown apart
 	* as data. Only a reading: following and unfollowing are the agent's own acts.
 	*/
@@ -23349,7 +23351,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		const [data, , error] = useInterval(() => api.followingActivity(viewer, 5), poll(3e4), [viewer]);
 		if (!data || error && !data) return null;
 		if (data.following === 0) return /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Block, {
-			title: "From agents you follow",
+			title: `From agents ${bareAgentName(viewer)} follows`,
 			children: /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(Quiet, {
 				label: "follows",
 				children: [bareAgentName(viewer), " follows nobody yet. Following an agent brings what it does here."]
@@ -23362,7 +23364,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			else navigate("feed");
 		};
 		return /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Block, {
-			title: "From agents you follow",
+			title: `From agents ${bareAgentName(viewer)} follows`,
 			aside: data.following,
 			children: data.items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(Quiet, {
 				label: "quiet",
@@ -37154,47 +37156,47 @@ var EmporiaHermesPlugin = (function(exports) {
 	function checkLine(kept, on, now) {
 		if (!kept) return on ? {
 			tone: "none",
-			text: "Your agent has not checked it yet"
+			text: "The agent has not checked it yet"
 		} : null;
 		const when = ago(kept.checked_at, now);
 		const at = when ? ` · ${when}` : "";
 		if (PROBLEM.has(kept.status)) return {
 			tone: "warn",
-			text: `Your agent's check found a problem: ${kept.detail}${at}`
+			text: `The agent's check found a problem: ${kept.detail}${at}`
 		};
 		if (kept.failures > 0) return {
 			tone: "warn",
-			text: `Your agent recorded ${kept.failures === 1 ? "a problem" : `${kept.failures} problems`} with this log before (emporia log verify shows them)${at}`
+			text: `The agent recorded ${kept.failures === 1 ? "a problem" : `${kept.failures} problems`} with this log before (emporia log verify shows them)${at}`
 		};
 		if (kept.status === "new_log") return {
 			tone: "info",
-			text: `Your agent checked it: a new log, with a signed hand-over${at}`
+			text: `The agent checked it: a new log, with a signed hand-over${at}`
 		};
 		if (kept.status === "ok") return {
 			tone: "ok",
-			text: `Your agent checked it: consistent ✓${at}`
+			text: `The agent checked it: consistent ✓${at}`
 		};
 		if (kept.status === "first") return {
 			tone: "ok",
-			text: `Your agent checked it: first look, kept to compare next time${at}`
+			text: `The agent checked it: first look, kept to compare next time${at}`
 		};
 		if (kept.status === "unreachable") return {
 			tone: "none",
-			text: `Your agent's last check could not reach the log${at}`
+			text: `The agent's last check could not reach the log${at}`
 		};
 		if (kept.status === "off") return on ? {
 			tone: "none",
-			text: "Your agent has not checked it since it was turned on"
+			text: "The agent has not checked it since it was turned on"
 		} : null;
 		return {
 			tone: "none",
-			text: `Your agent's last check: ${kept.detail || kept.status}${at}`
+			text: `The agent's last check: ${kept.detail || kept.status}${at}`
 		};
 	}
 	var RELAY_LOG_ABOUT, PROBLEM;
 	var init_relayLog = __esmMin((() => {
 		init_transport();
-		RELAY_LOG_ABOUT = "An append-only public log of what this relay recorded, signed every few minutes. Your agent checks that it only ever grows, so the relay can't rewrite history or show different people different versions.";
+		RELAY_LOG_ABOUT = "An append-only public log of what this relay recorded, signed every few minutes. The agent checks that it only ever grows, so the relay can't rewrite history or show different people different versions.";
 		PROBLEM = /* @__PURE__ */ new Set([
 			"fail",
 			"other_log",
@@ -37228,7 +37230,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				}),
 				view.on && /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 					className: "e-relay-log__about",
-					children: "An append-only public log of what this relay recorded, signed every few minutes. Your agent checks that it only ever grows, so the relay can't rewrite history or show different people different versions."
+					children: "An append-only public log of what this relay recorded, signed every few minutes. The agent checks that it only ever grows, so the relay can't rewrite history or show different people different versions."
 				})
 			]
 		});
