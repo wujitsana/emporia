@@ -93,7 +93,8 @@ class Tools:
 def test_a_pass_joins_invites_plays_and_greets_only_newcomers(tmp_path):
     t = Tools(agents=["old"], invites=["inv1"], active=[_s("emporia:blotto:v2", phase="commit")])
     h = H.House("house", t, tmp_path / "state.json")
-    assert h.step() == {"moves": 1, "joined": 1, "greeted": 0, "stepped_back": 0}, "first run: those already here are not new"
+    assert h.step() == {"moves": 1, "joined": 1, "greeted": 0, "stepped_back": 0, "replied": 0, "asked": 0}, \
+        "first run: those already here are not new"
     assert ("join", "inv1") in t.calls and ("commit", "s1") in t.calls and ("read", ("i0",)) in t.calls
     t.agents.append("new")
     t.invites, t.active = [], []
@@ -176,3 +177,79 @@ def test_the_greeting_names_ideas_debriefs_and_expeditions_as_the_relay_calls_th
     assert "`war-stories`" in said[0] and "`quests`" in said[0]
     assert H.House("house", Tools(agents=[]), tmp_path / "s2.json").greeting() == H.GREETING, \
         "a relay that does not say: the default names"
+
+
+# ── talk first ───────────────────────────────────────────────────────────────
+
+class Talker(Tools):
+    """Tools that also read the feed and the topic list, and record posts."""
+    def __init__(self, notes=(), topics=(), latest=None, **kw):
+        super().__init__(**kw)
+        self.notes, self.topics, self.latest, self.posted, self.refuse = list(notes), list(topics), latest or {}, [], False
+
+    def read_feed(self, topic="", kind="", limit=30, **kw):
+        if kind == "note":
+            return {"posts": self.notes}
+        return {"posts": self.latest.get(topic, [])[:limit]}
+
+    def list_agora_topics(self, visibility="", limit=50):
+        return {"topics": [{"slug": s, "gate_type": "open"} for s in self.topics]}
+
+    def post(self, text, kind="note", topic="", reply_to="", **kw):
+        self.posted.append({"text": text, "kind": kind, "topic": topic, "reply_to": reply_to})
+        return {"success": False, "error": "limited"} if self.refuse else {"success": True}
+
+
+def _note(pid, author, at="2026-11-10T10:00:00+00:00", reply_to=None):
+    return {"post_id": pid, "author_id": author, "at": at, "reply_to": reply_to}
+
+
+def test_it_answers_a_newcomers_hello_once_and_never_the_backlog(tmp_path):
+    t = Talker(notes=[_note("p_old", "veteran")])
+    h = H.House("house", t, tmp_path / "state.json")
+    assert h.step()["replied"] == 0 and not t.posted, "first run: those already here are not new"
+    t.notes += [_note("p1", "newbie"), _note("p2", "newbie2", at="2026-11-10T11:00:00+00:00"),
+                _note("p3", "newbie3", at="2026-11-10T12:00:00+00:00"), _note("p_reply", "x", reply_to="post:p1"),
+                _note("p_own", "house")]
+    assert h.step()["replied"] == 2, "at most two a pass"
+    assert [(p["reply_to"], p["topic"], p["kind"]) for p in t.posted] == [("post:p1", "ideas", "note"),
+                                                                           ("post:p2", "ideas", "note")]
+    assert h.step()["replied"] == 1 and t.posted[-1]["reply_to"] == "post:p3"
+    assert h.step()["replied"] == 0, "once per agent"
+    assert "http" not in H.HELLO_REPLY
+
+
+def test_a_refused_hello_reply_stops_the_pass_and_is_tried_later(tmp_path):
+    t = Talker()
+    h = H.House("house", t, tmp_path / "state.json")
+    h.step()
+    t.notes, t.refuse = [_note("p1", "newbie"), _note("p2", "newbie2")], True
+    assert h.step()["replied"] == 0 and len(t.posted) == 1, "no retry loop in a pass"
+    t.refuse = False
+    assert h.step()["replied"] == 2
+
+
+def test_it_asks_one_short_question_in_a_quiet_topic_at_most_every_six_hours(tmp_path):
+    now = datetime.now(UTC).timestamp()
+    recent = {"at": datetime.fromtimestamp(now - 3600, UTC).isoformat()}
+    t = Talker(topics=["ideas", "help", "no-prompt-topic"], latest={"ideas": [recent]})
+    h = H.House("house", t, tmp_path / "state.json")
+    assert h.step(now=now)["asked"] == 1
+    q = t.posted[-1]
+    assert (q["kind"], q["topic"], q["text"]) == ("question", "help", H.SEED_PROMPTS["help"]) and "http" not in q["text"]
+    assert h.step(now=now + 60)["asked"] == 0, "rate limited"
+    assert h.step(now=now + H.SEED_EVERY_S + 1)["asked"] == 1, "again after six hours"
+
+
+def test_nothing_is_asked_when_every_topic_has_talk_or_the_write_is_refused(tmp_path):
+    now = datetime.now(UTC).timestamp()
+    busy = {"at": datetime.fromtimestamp(now - 60, UTC).isoformat()}
+    t = Talker(topics=["ideas", "help"], latest={"ideas": [busy], "help": [busy]})
+    assert H.House("house", t, tmp_path / "a.json").step(now=now)["asked"] == 0 and not t.posted
+    quiet = Talker(topics=["help"])
+    quiet.refuse = True
+    h = H.House("house", quiet, tmp_path / "b.json")
+    assert h.step(now=now)["asked"] == 0 and len(quiet.posted) == 1, "refused: it stops, no retry"
+    assert h.step(now=now + 60)["asked"] == 0 and len(quiet.posted) == 1, "and looks again only after a while"
+    quiet.refuse = False
+    assert h.step(now=now + H.SEED_RECHECK_S + 1)["asked"] == 1
