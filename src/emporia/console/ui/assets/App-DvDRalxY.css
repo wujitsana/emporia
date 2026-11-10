@@ -1,0 +1,5094 @@
+/* srcl's global.css (github.com/internet-development/www-sacred), MIT — see LICENSE-srcl. */
+/*
+NOTE(jimmylee):
+Color palette for Sacred Computer. The root source of truth for color is the
+Simulacrum CLI palette in scripts/cli/colors.json — those are the true, terminal-
+tested colors, the ones a real terminal actually renders. The --ansi-* primitives
+below mirror that palette in CSS, so every value must be one a terminal can show:
+Standard (SGR 30-37, 90-97), 256-color (SGR 38;5;n), the grayscale ramp (232-255),
+or 24-bit true color (SGR 38;2;r;g;b). Do not add a color outside that spec.
+
+The OKLCH tint themes further down are a WEB-ONLY behavior. A terminal cannot run
+OKLCH math; it exists purely so the React surface can derive tinted variants while
+staying inside the same perceptual band as the terminal-tested primitives. OKLCH is
+a projection of the root palette, never a new source of color.
+*/
+
+a,
+abbr,
+acronym,
+address,
+applet,
+article,
+aside,
+audio,
+b,
+big,
+blockquote,
+body,
+canvas,
+caption,
+center,
+cite,
+code,
+dd,
+del,
+details,
+dfn,
+div,
+dl,
+dt,
+embed,
+em,
+figure,
+figcaption,
+fieldset,
+footer,
+form,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+header,
+hgroup,
+html,
+i,
+iframe,
+img,
+ins,
+kbd,
+label,
+legend,
+li,
+mark,
+menu,
+nav,
+object,
+ol,
+output,
+p,
+pre,
+q,
+ruby,
+s,
+samp,
+section,
+small,
+span,
+strike,
+strong,
+sub,
+summary,
+sup,
+table,
+tbody,
+td,
+tfoot,
+th,
+thead,
+time,
+tr,
+tt,
+u,
+ul,
+var,
+video {
+  border: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  vertical-align: baseline;
+}
+
+a {
+  background: var(--theme-border-subdued);
+  color: var(--theme-text);
+
+  &:hover {
+    background: var(--theme-focused-foreground);
+    color: var(--theme-text);
+  }
+
+  &:focus {
+    background: var(--theme-focused-foreground);
+    color: var(--theme-text);
+    outline: 0;
+  }
+
+  &:active {
+    background: var(--theme-focused-foreground);
+    color: var(--theme-text);
+  }
+}
+
+ul {
+  list-style-position: inside;
+  list-style-type: '▪';
+  text-indent: -1ch;
+}
+
+ol {
+  list-style-type: '';
+  list-style-position: inside;
+  counter-reset: cupcake;
+  text-indent: -1ch;
+}
+
+ul ul,
+ul ol,
+ol ul,
+ol ol {
+  padding-left: 2ch;
+}
+
+ol li {
+  padding-left: 1ch;
+  counter-increment: cupcake;
+}
+
+ul li:before {
+  content: ' ';
+  display: inline-block;
+  width: 1ch;
+  height: 0;
+  visibility: hidden;
+}
+
+ol li:before {
+  content: counters(cupcake, '.') '. ';
+}
+
+article,
+aside,
+details,
+figcaption,
+figure,
+footer,
+header,
+hgroup,
+menu,
+nav,
+section {
+  display: block;
+}
+
+html,
+body {
+  /* ------------------------------------------------------------------ */
+  /* Standard 16 Colors (SGR 38;5;0-15)                                 */
+  /* ------------------------------------------------------------------ */
+  --ansi-0-black: #000000;
+  --ansi-1-maroon: #800000;
+  --ansi-2-green: #008000;
+  --ansi-3-olive: #808000;
+  --ansi-4-navy: #000080;
+  --ansi-5-purple: #800080;
+  --ansi-6-teal: #008080;
+  --ansi-7-silver: #c0c0c0;
+  --ansi-8-gray: #808080;
+  --ansi-9-red: #ff0000;
+  --ansi-10-lime: #00ff00;
+  --ansi-11-yellow: #ffff00;
+  --ansi-12-blue: #0000ff;
+  --ansi-13-fuchsia: #ff00ff;
+  --ansi-14-aqua: #00ffff;
+  --ansi-15-white: #ffffff;
+
+  /* ------------------------------------------------------------------ */
+  /* 216 Color Cube (SGR 38;5;16-231)                                   */
+  /* Channels: 0x00, 0x5F, 0x87, 0xAF, 0xD7, 0xFF                       */
+  /* ------------------------------------------------------------------ */
+  --ansi-100-yellow4a: #878700;
+  --ansi-148-yellow3a: #afd700;
+  --ansi-232-gray-3: #080808;
+  --ansi-235-gray-15: #262626;
+  --ansi-237-gray-23: #3a3a3a;
+  --ansi-240-gray-35: #585858;
+  --ansi-242-gray-42: #6c6c6c;
+  --ansi-245-gray-54: #8a8a8a;
+  --ansi-248-gray-66: #a8a8a8;
+  --ansi-251-gray-78: #c6c6c6;
+  --ansi-254-gray-89: #e4e4e4;
+  --ansi-255-gray-93: #eeeeee;
+
+  /* ------------------------------------------------------------------ */
+  /* Bright Colors (SGR 90-97) — overlap with ansi-8..15 in some terms  */
+  /* but the SGR 90-97 renditions use these distinct hex values.        */
+  /* ------------------------------------------------------------------ */
+  --ansi-bright-green: #55ff55;
+
+  /* ------------------------------------------------------------------ */
+  /* 24-bit True Color (SGR 38;2;r;g;b) — outside the 256 palette       */
+  /* ------------------------------------------------------------------ */
+  --ansi-true-brand: #e4f221;
+
+  /* ------------------------------------------------------------------ */
+  /* Semantic Color Aliases                                              */
+  /* All values reference the ANSI palette above.                       */
+  /* ------------------------------------------------------------------ */
+  --color-black: var(--ansi-0-black);
+  --color-white: var(--ansi-15-white);
+  --color-green: var(--ansi-2-green);
+  --color-lime: var(--ansi-10-lime);
+  --color-bright-green: var(--ansi-bright-green);
+  --color-brand: var(--ansi-true-brand);
+
+  --color-gray-93: var(--ansi-255-gray-93);
+  --color-gray-89: var(--ansi-254-gray-89);
+  --color-gray-78: var(--ansi-251-gray-78);
+  --color-gray-66: var(--ansi-248-gray-66);
+  --color-gray-54: var(--ansi-245-gray-54);
+  --color-gray-42: var(--ansi-242-gray-42);
+  --color-gray-35: var(--ansi-240-gray-35);
+  --color-gray-23: var(--ansi-237-gray-23);
+  --color-gray-15: var(--ansi-235-gray-15);
+  --color-gray-3: var(--ansi-232-gray-3);
+
+  /* ------------------------------------------------------------------ */
+  /* Web-only Alpha Variants (no ANSI equivalent — CSS rendering only)  */
+  /* Used for translucent overlays and subdued borders.                  */
+  /* ------------------------------------------------------------------ */
+  --color-black-alpha-40: rgba(0, 0, 0, 0.4);
+  --color-white-alpha-40: rgba(255, 255, 255, 0.4);
+  --color-gray-89-border-alpha: rgba(228, 228, 228, 0.6);
+  --color-gray-23-border-alpha: rgba(58, 58, 58, 0.3);
+  --color-brand-alpha-50: rgba(228, 242, 33, 0.5);
+
+  --font-family-mono: 'GeistMono-Regular', Consolas, monaco, monospace;
+
+  --theme-line-height-base: 1.25;
+  --font-size: 16px;
+
+  --z-index-page: 1;
+  --z-index-page-select: 3;
+  --z-index-page-tooltips: 4;
+  --z-index-page-popover: 5;
+  --z-index-page-dropdown-menus: 6;
+  --z-index-page-modals: 10;
+
+  background: var(--theme-background);
+  color: var(--theme-text);
+  font-family: var(--font-family-mono);
+  line-height: calc(var(--theme-line-height-base) * 1rem);
+
+  font-size: var(--font-size);
+  font-optical-sizing: auto;
+  text-rendering: geometricPrecision;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums lining-nums;
+
+  &::-webkit-scrollbar {
+    background: transparent;
+    height: calc(var(--theme-line-height-base) * 1rem);
+    width: 1ch;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: var(--theme-background);
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--theme-border);
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--theme-border);
+  }
+}
+
+body.theme-light {
+  --theme-overlay: var(--color-black-alpha-40);
+  --theme-background: var(--color-white);
+  --theme-background-modal: var(--color-gray-89);
+  --theme-background-modal-footer: var(--color-gray-66);
+  --theme-background-input: var(--color-gray-89);
+  --theme-border: var(--color-gray-89);
+  --theme-border-subdued: var(--color-gray-89-border-alpha);
+  --theme-text: var(--color-black);
+  --theme-button: var(--color-black);
+  --theme-button-text: var(--color-white);
+  --theme-button-foreground: var(--color-gray-78);
+  --theme-button-background: var(--color-gray-89);
+  --theme-focused-foreground: var(--color-bright-green);
+  --theme-focused-foreground-subdued: var(--color-brand-alpha-50);
+  /*
+  NOTE(jimmylee):
+  Window-specific tones — body sits one step darker than --theme-background so the
+  window reads as a "lifted" panel, and the shadow sits one step darker still so the
+  drop shadow is unambiguously darker than the window body. The CLI mirror lives in
+  scripts/cli/colors.json (windowBg / shadow).
+  */
+  --theme-window-background: var(--color-gray-89);
+  --theme-window-shadow: var(--color-gray-66);
+}
+
+body.theme-dark {
+  --theme-overlay: var(--color-black-alpha-40);
+  --theme-background: var(--color-black);
+  --theme-background-modal: var(--color-gray-23);
+  --theme-background-modal-footer: var(--color-gray-35);
+  --theme-background-input: var(--color-gray-23);
+  --theme-border: var(--color-gray-23);
+  --theme-border-subdued: var(--color-gray-23-border-alpha);
+  --theme-text: var(--color-white);
+  --theme-button: var(--color-white);
+  --theme-button-text: var(--color-black);
+  --theme-button-foreground: var(--color-gray-15);
+  --theme-button-background: var(--color-gray-23);
+  --theme-focused-foreground: oklch(from var(--ansi-13-fuchsia) 0.55 c h);
+  --theme-focused-foreground-subdued: oklch(from var(--ansi-13-fuchsia) 0.55 c h / 0.5);
+  /*
+  NOTE(jimmylee):
+  Window body is gray-23 (#3a3a3a) so it lifts off the gray-3 (#080808) page
+  background, and the shadow is gray-15 (#262626) — a hair lighter than the page
+  but visibly darker than the window body, preserving the "shadow darker than the
+  body" contract while staying inside the ANSI gray ramp.
+  */
+  --theme-window-background: var(--color-gray-23);
+  --theme-window-shadow: var(--color-gray-15);
+}
+
+/*
+NOTE(jimmylee):
+OKLCH tint themes — web-only. These have no terminal equivalent (Simulacrum renders
+the fixed colors.json palette, never derived tints). They are recalibrated against
+the --ansi-* base so the saturation and lightness ramps fall in the same perceptual
+range as the ANSI gray scale (#eeeeee → #262626) and the brand color (#e4f221). Each
+tint sets only --tint, and the body.theme-light.tint-* / body.theme-dark.tint-*
+selectors below derive every --theme-* token from that tint via OKLCH math.
+*/
+
+body.tint-green {
+  --tint: #39ff44;
+}
+
+body.tint-blue {
+  --tint: #0047ff;
+}
+
+body.tint-red {
+  --tint: #ff0000;
+}
+
+body.tint-yellow {
+  --tint: var(--ansi-true-brand);
+}
+
+body.tint-purple {
+  --tint: #8000ff;
+}
+
+body.tint-orange {
+  --tint: #ffac1c;
+}
+
+body.tint-pink {
+  --tint: #ff00ff;
+}
+
+body.theme-light.tint-green,
+body.theme-light.tint-blue,
+body.theme-light.tint-red,
+body.theme-light.tint-yellow,
+body.theme-light.tint-purple,
+body.theme-light.tint-orange,
+body.theme-light.tint-pink {
+  /*
+  NOTE(jimmylee):
+  Light tint ramp is anchored to the ANSI light grays:
+    --theme-background          ≈ ansi-255-gray-93 (#eeeeee)
+    --theme-background-modal    ≈ ansi-254-gray-89 (#e4e4e4)
+    --theme-background-input    ≈ ansi-255-gray-93 (#eeeeee)
+    --theme-border              ≈ ansi-251-gray-78 (#c6c6c6)
+    --theme-text                ≈ ansi-232-gray-3  (#080808)
+  Each token uses oklch(from var(--tint) L C H) so it tints toward the source
+  color while staying within the ANSI lightness band.
+  */
+  --theme-overlay: var(--color-black-alpha-40);
+  --theme-background: oklch(from var(--tint) 0.97 calc(c * 0.1) h);
+  --theme-background-modal: oklch(from var(--tint) 0.92 calc(c * 0.18) h);
+  --theme-background-modal-footer: oklch(from var(--tint) 0.86 calc(c * 0.22) h);
+  --theme-background-input: oklch(from var(--tint) 0.97 calc(c * 0.1) h);
+  --theme-border: oklch(from var(--tint) 0.84 calc(c * 0.28) h);
+  --theme-border-subdued: oklch(from var(--tint) 0.92 calc(c * 0.18) h);
+  --theme-text: oklch(from var(--tint) 0.18 calc(c * 0.4) h);
+  --theme-button: oklch(from var(--tint) 0.18 calc(c * 0.4) h);
+  --theme-button-text: oklch(from var(--tint) 0.97 calc(c * 0.1) h);
+  --theme-button-foreground: oklch(from var(--tint) 0.86 calc(c * 0.22) h);
+  --theme-button-background: oklch(from var(--tint) 0.92 calc(c * 0.18) h);
+  --theme-focused-foreground: oklch(from var(--tint) 0.62 c h);
+  --theme-focused-foreground-subdued: oklch(from var(--tint) 0.62 c h / 0.5);
+  /*
+  NOTE(jimmylee):
+  Window body matches background-modal so the panel sits one step darker than the
+  page background, and the shadow drops to L=0.70 — a third step down so the
+  drop shadow stays visibly darker than the window body across every tint.
+  */
+  --theme-window-background: oklch(from var(--tint) 0.92 calc(c * 0.18) h);
+  --theme-window-shadow: oklch(from var(--tint) 0.7 calc(c * 0.28) h);
+}
+
+body.theme-dark.tint-green,
+body.theme-dark.tint-blue,
+body.theme-dark.tint-red,
+body.theme-dark.tint-yellow,
+body.theme-dark.tint-purple,
+body.theme-dark.tint-orange,
+body.theme-dark.tint-pink {
+  /*
+  NOTE(jimmylee):
+  Dark tint ramp is anchored to the ANSI dark grays:
+    --theme-background          ≈ ansi-232-gray-3  (#080808)
+    --theme-background-modal    ≈ ansi-235-gray-15 (#262626)
+    --theme-background-input    ≈ ansi-237-gray-23 (#3a3a3a)
+    --theme-border              ≈ ansi-237-gray-23 (#3a3a3a)
+    --theme-text                ≈ ansi-15-white    (#ffffff)
+  */
+  --theme-overlay: var(--color-black-alpha-40);
+  --theme-background: oklch(from var(--tint) 0.14 calc(c * 0.18) h);
+  --theme-background-modal: oklch(from var(--tint) 0.24 calc(c * 0.22) h);
+  --theme-background-modal-footer: oklch(from var(--tint) 0.3 calc(c * 0.24) h);
+  --theme-background-input: oklch(from var(--tint) 0.28 calc(c * 0.2) h);
+  --theme-border: oklch(from var(--tint) 0.4 calc(c * 0.28) h);
+  --theme-border-subdued: oklch(from var(--tint) 0.4 calc(c * 0.28) h / 0.6);
+  --theme-text: oklch(from var(--tint) 0.92 calc(c * 0.18) h);
+  --theme-button: oklch(from var(--tint) 0.92 calc(c * 0.18) h);
+  --theme-button-text: oklch(from var(--tint) 0.14 calc(c * 0.18) h);
+  --theme-button-foreground: oklch(from var(--tint) 0.3 calc(c * 0.22) h);
+  --theme-button-background: oklch(from var(--tint) 0.24 calc(c * 0.22) h);
+  --theme-focused-foreground: oklch(from var(--tint) 0.72 c h);
+  --theme-focused-foreground-subdued: oklch(from var(--tint) 0.72 c h / 0.5);
+  /*
+  NOTE(jimmylee):
+  Window body matches background-modal (L=0.24) so it sits one step lighter than
+  the L=0.14 page background, and the shadow drops to L=0.18 — a hair lighter than
+  the page but darker than the window body, preserving the "shadow darker than the
+  body" contract under every dark tint.
+  */
+  --theme-window-background: oklch(from var(--tint) 0.24 calc(c * 0.22) h);
+  --theme-window-shadow: oklch(from var(--tint) 0.18 calc(c * 0.2) h);
+}
+
+#__next {
+}
+/* ═══════════════════════════════════════════════════════════════
+   EMPORIA DASHBOARD — single consolidated stylesheet
+   Sections:
+   1.  Variables & tokens
+   2.  Utility classes
+   3.  App shell layout
+   4.  Header & section nav
+   5.  Mobile drawer
+   6.  View body / ViewBody component
+   7.  Sidebar rail
+   8.  Component kit (slim card, meta-grid, KPIs, hero stats, empty pane)
+   9.  Overview — dashboard, stat strip, feed
+   10. Theme picker
+   11. Relay strip
+   12. Agent / profile row components
+   13. Chat & ReadOnlyChat
+   14. Agora — votes, posts
+   15. Navigation chips — SegmentTabs, section tabs
+   16. Badges, pills, entity chips
+   17. Tables — compact, listings
+   18. Toolbar & search
+   19. Action timeline
+   20. Session & transaction rows
+   21. Messages / inbox sub-view
+   22. SRCL component overrides (flat canvas + chrome)
+   23. Responsive breakpoints
+═══════════════════════════════════════════════════════════════ */
+
+/* ─── 1. VARIABLES & TOKENS ─────────────────────────────────────────────── */
+
+body.theme-dark {
+  --theme-focused-foreground: #f5b84a;
+}
+
+body.theme-dark,
+body.theme-light {
+  overflow-x: clip;
+}
+
+/* Flat canvas — all emporia surfaces transparent within the shell */
+.e-dashboard-shell {
+  --font-size: 16px; /* 100% SRCL root — no html 110% zoom */
+  --theme-background-modal: var(--theme-background);
+  --theme-background-modal-footer: var(--theme-background);
+  --theme-background-input: var(--theme-background);
+  --theme-window-background: var(--theme-background);
+  --theme-window-shadow: transparent;
+  --theme-button-background: transparent;
+  --theme-button-foreground: transparent;
+  --emporia-surface: transparent;
+  --emporia-surface-raised: transparent;
+  --emporia-nav-active: transparent;
+}
+
+/* ─── 2. UTILITY CLASSES ─────────────────────────────────────────────────── */
+
+.e-dim   { opacity: 0.5; }
+.e-faint { opacity: 0.35; }
+.e-trust-key { opacity: 0.55; }
+
+/* Master-detail selection indicator */
+.e-sel   { border-left: 2px solid var(--theme-focused-foreground); padding-left: 8px; }
+
+.e-status-txt {
+  font-size: 0.682rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* ─── 3. APP SHELL LAYOUT ────────────────────────────────────────────────── */
+
+/* The app is one frame: the header, the section strip, the view (which
+   scrolls) and the chat drawer all live inside it, and so does every overlay
+   (the phone menu and its backdrop, full-page chat, popovers). `contain:
+   layout paint` makes the frame the containing block of anything positioned
+   inside it, so nothing reaches past it into the page around it: inside the
+   Hermes tab the frame is the tab's own container (hermesPlugin.tsx sizes it to
+   what is visible, --e-frame-h: 100%), on the Desktop page the page's pane,
+   standalone the window. */
+.e-app-shell {
+  display: flex;
+  height: var(--e-frame-h, 100dvh);
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
+  position: relative;
+  overflow: hidden;
+  contain: layout paint;
+}
+.e-nav-row-hotkey { font-size: 0.715rem; opacity: 0.5; font-variant-numeric: tabular-nums; }
+
+.e-sidebar-group { display: flex; flex-direction: column; gap: 0; }
+.e-sidebar-group + .e-sidebar-group { margin-top: 6px; }
+.e-sidebar-group-label {
+  font-size: 0.638rem;
+  letter-spacing: 0.12em;
+  opacity: 0.45;
+  padding: 6px 10px 4px;
+  user-select: none;
+}
+.e-sidebar-key {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 2px;
+  background: transparent;
+  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  font-size: 0.715rem;
+}
+.e-sidebar-key:hover,
+.e-sidebar-key:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }
+.e-sidebar-key__k { opacity: 0.55; font-variant-numeric: tabular-nums; }
+
+.e-app-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--theme-background);
+  overflow-x: clip;
+}
+
+.e-app-backdrop { display: none; }
+
+/* The rail layout puts the five places beside the page; every other layout stacks them. */
+.e-app-shell[data-nav="rail"] .e-app-main { flex-direction: row; }
+.e-app-col {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.e-view {
+  flex: 1;
+  scrollbar-gutter: stable;
+  height: auto;
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+/* ─── 4. HEADER & SECTION NAV ────────────────────────────────────────────── */
+
+.e-app-top {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
+  background: var(--theme-background);
+}
+
+.e-app-top__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 20px;
+  min-height: 52px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.e-app-top__actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.e-brand-title { font-size: 1.155rem !important; letter-spacing: 0.06em; }
+.e-brand-title--header { font-size: 1.1rem; font-weight: 600; }
+
+/* Destinations (nav v2): six tabs in the header row, beside the brand. */
+.e-section-tabs {
+  display: none;
+  gap: 2px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+/* The layout is chosen from the dashboard's OWN width (ui/navLayout.ts writes it as data-nav on the
+   shell), never from the window's: inside the Hermes tab the window is wider than the dashboard.
+   wide: labels in the header row · medium: icon + short label · rail: icons down the left edge ·
+   phone: the bottom bar. The main navigation never scrolls; every range draws all five places. */
+.e-app-shell[data-nav="wide"] .e-section-tabs--horizontal,
+.e-app-shell[data-nav="medium"] .e-section-tabs--horizontal {
+  /* Never wraps: a wrapped header grows and moves everything under it (the audit's A3). */
+  display: flex; flex: 1; min-width: 0; flex-wrap: nowrap;
+}
+/* Past the first tier the header's own controls shrink: "as" before the viewer, the select narrower. */
+.e-app-shell[data-nav="medium"] .e-app-top .e-viewer-switch > .e-faint,
+.e-app-shell[data-nav="rail"] .e-app-top .e-viewer-switch > .e-faint { display: none; }
+.e-app-shell[data-nav="medium"] .e-app-top .e-viewer-switch select,
+.e-app-shell[data-nav="rail"] .e-app-top .e-viewer-switch select { max-width: 7rem; }
+.e-app-top__row { flex-wrap: nowrap; }
+.e-app-top__actions { flex-shrink: 0; }
+/* Medium and rail: the header gives up what it can spare, so it stays on one row. */
+.e-app-shell[data-nav="medium"] .e-app-top__row,
+.e-app-shell[data-nav="rail"] .e-app-top__row { gap: 10px; padding-left: 14px; padding-right: 14px; }
+.e-app-shell[data-nav="medium"] .e-app-top__actions,
+.e-app-shell[data-nav="rail"] .e-app-top__actions { gap: 10px; }
+.e-app-shell[data-nav="medium"] .e-section-tab { padding: 6px 8px; }
+.e-app-shell[data-nav="medium"] .e-relay-status__meta,
+.e-app-shell[data-nav="rail"] .e-relay-status__meta,
+.e-app-shell[data-nav="medium"] .e-header-link__word,
+.e-app-shell[data-nav="rail"] .e-header-link__word { display: none; }
+/* The live chip keeps its dot and its title; its word is for a roomy header only. */
+.e-app-shell[data-nav="medium"] .e-status-chip__label--live,
+.e-app-shell[data-nav="rail"] .e-status-chip__label--live,
+.e-app-shell[data-nav="phone"] .e-status-chip__label--live {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.e-app-shell[data-nav="medium"] .e-status-chip__label--relay { max-width: 22ch; }
+.e-app-shell[data-nav="rail"] .e-status-chip__label--relay { max-width: 22ch; }
+
+/* The rail: the five places as icons down the left edge, the word on hover and focus. */
+.e-section-tabs--rail { display: none; }
+.e-app-shell[data-nav="rail"] .e-section-tabs--rail {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 52px;
+  padding: 8px 4px;
+  border-right: 1px solid var(--e-rule, var(--theme-border-subdued));
+  background: var(--theme-background);
+  position: relative;
+  z-index: 30;
+}
+.e-section-tabs--rail .e-section-tab {
+  justify-content: center;
+  min-height: 44px;
+  padding: 0;
+  opacity: 0.85;
+}
+.e-section-tabs--rail .e-section-tab__icon { font-size: 1.15rem; }
+.e-section-tabs--rail .e-section-tab__label { display: none; }
+.e-section-tabs--rail .e-section-tab .e-nav-badge { position: absolute; top: 4px; right: 4px; margin: 0; }
+.e-section-tab__tip {
+  display: none;
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 4px 8px;
+  border: 1px solid var(--theme-border, var(--e-rule));
+  background: var(--theme-background);
+  color: var(--theme-text);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 40;
+}
+.e-section-tabs--rail .e-section-tab:hover .e-section-tab__tip,
+.e-section-tabs--rail .e-section-tab:focus-visible .e-section-tab__tip { display: block; }
+
+.e-section-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 0 !important;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.792rem;
+  cursor: pointer;
+  white-space: nowrap;
+  opacity: 0.75;
+  transition: background 0.12s, opacity 0.12s, border-color 0.12s;
+}
+.e-section-tab:hover  { opacity: 1; border-color: var(--theme-border-subdued, rgba(255,255,255,0.12)); background: transparent; }
+.e-section-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); background: transparent; color: var(--theme-focused-foreground); }
+.e-section-tab__icon  { font-size: 0.935rem; }
+.e-section-tab__label { letter-spacing: 0.02em; }
+.e-section-tabs--horizontal .e-section-tab__icon { display: none; }
+.e-app-shell[data-nav="medium"] .e-section-tabs--horizontal .e-section-tab__icon { display: inline; }
+
+/* Drawer variant */
+.e-section-tabs--drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 0;
+  flex: 1;
+  overflow-y: auto;
+}
+.e-section-tabs--drawer .e-section-tab { width: 100%; justify-content: flex-start; padding: 10px 14px; }
+.e-section-tabs--drawer .e-section-tab__key { margin-left: auto; opacity: 0.5; }
+.e-section-tabs--drawer .e-section-tab.is-active { background: transparent !important; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
+
+/* Nav unread badge */
+.e-nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  margin-left: 4px;
+  border-radius: 7px;
+  background: var(--theme-focused-foreground);
+  color: var(--theme-background);
+  font-size: 10px;
+  font-weight: 700;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+/* A tab's unread count sits on its corner, so it never widens the tab or moves its neighbours. */
+.e-section-tabs--horizontal .e-section-tab .e-nav-badge,
+.e-bottom-bar__tab .e-nav-badge,
+.e-subnav__tab .e-nav-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  margin: 0;
+}
+.e-subnav__tab { position: relative; }
+.e-subnav__tab .e-nav-badge { top: 6px; right: 2px; }
+
+/* Header-only places: Help (?) and, for the operator, the relay's desk. */
+.e-header-links { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.e-header-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 2px 9px;
+  border: 1px solid var(--e-rule, var(--theme-border-subdued));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.e-header-link:hover { border-color: var(--theme-focused-foreground); }
+.e-header-link.is-active { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
+.e-header-link__icon { font-weight: 700; }
+
+/* ─── 5. MOBILE DRAWER ───────────────────────────────────────────────────── */
+
+.e-mobile-top {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
+  position: sticky;
+  top: 0;
+  background: var(--theme-background);
+  z-index: 20;
+  flex-wrap: wrap;
+}
+
+.e-app-drawer { display: none; }
+
+.e-mobile-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px 12px;
+}
+
+/* ─── 6. VIEW BODY ───────────────────────────────────────────────────────── */
+
+.e-view-body {
+  padding: 20px 24px 32px;
+  margin: 0 auto;
+  width: 100%;
+  max-width: min(1440px, 100%);
+  box-sizing: border-box;
+  min-width: 0;
+}
+.e-view-body__inner { min-height: 40vh; }
+
+.e-view-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Flush variant — fills remaining height for split views */
+.e-view-body--flush {
+  padding: 0;
+  max-width: none;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.e-view-body--flush .e-view-body__inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.e-view-body--flush .e-view-toolbar {
+  padding: 10px 16px;
+  margin: 0;
+  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
+  background: var(--emporia-surface);
+}
+.e-view-body--flush .e-search-row { margin: 0; }
+
+/* ─── 7. SIDEBAR RAIL ────────────────────────────────────────────────────── */
+
+.e-dashboard-shell [class*="SidebarLayout_sidebar"] {
+  background: var(--theme-background) !important;
+}
+.e-dashboard-shell [class*="SidebarLayout_root"] {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Rail item — custom flat sidebar list button */
+.e-rail-item {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 6px 8px 6px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.05));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.e-rail-item:hover { color: var(--theme-focused-foreground); }
+.e-rail-item.is-selected,
+.e-rail-item:focus-visible { outline: none; }
+.e-rail-item:focus-visible { color: var(--theme-focused-foreground); }
+
+.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="Badge_root"] {
+  background: transparent !important;
+  padding: 0 !important;
+  font-size: 0.682rem;
+  letter-spacing: 0.06em;
+  color: var(--theme-focused-foreground);
+  opacity: 0.9;
+}
+.e-dashboard-shell [class*="SidebarLayout_sidebar"] .e-segment-tabs { margin: 4px 0 8px; }
+.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="Divider_gradient"] {
+  background: linear-gradient(to right, transparent, var(--theme-border-subdued, rgba(255,255,255,0.08)), transparent) !important;
+  height: 1px !important;
+}
+.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="Divider_line"] { height: 1px !important; opacity: 0.35; }
+
+/* ─── 8. COMPONENT KIT ───────────────────────────────────────────────────── */
+
+/* Slim card */
+.e-slim-card {
+  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));
+  border-radius: 4px;
+  background: transparent;
+  margin-bottom: 12px;
+}
+.e-slim-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));
+}
+.e-slim-card__title {
+  font-size: 0.682rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  font-family: var(--font-family-mono, ui-monospace, monospace);
+}
+.e-slim-card__body { padding: 10px 12px; }
+.e-slim-card__foot {
+  padding: 6px 10px;
+  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));
+  font-size: 0.748rem;
+  opacity: 0.45;
+}
+
+/* Panel card (used in overview sections) */
+.e-panel-card {
+  border-radius: 4px;
+  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));
+  background: transparent;
+  margin-bottom: 12px;
+}
+.e-panel-card__head { padding: 6px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06)); }
+.e-panel-card__title {
+  font-size: 0.792rem !important;
+  letter-spacing: 0.04em;
+  opacity: 0.5;
+}
+.e-panel-card__body { padding: 8px 10px; }
+
+/* Meta grid (agent detail, listing detail) */
+.e-meta-grid {
+  margin: 0;
+  display: grid;
+  gap: 6px 12px;
+}
+.e-meta-grid__row {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+.e-meta-grid dt {
+  margin: 0;
+  font-size: 0.682rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.45;
+  font-family: var(--font-family-mono, ui-monospace, monospace);
+}
+.e-meta-grid dd { margin: 0; font-size: 0.858rem; word-break: break-word; }
+
+/* Empty pane */
+.e-empty-pane {
+  padding: 20px 16px;
+  border: 1px dashed var(--theme-border-subdued, rgba(255,255,255,0.12));
+  border-radius: 4px;
+  max-width: 28rem;
+}
+.e-empty-pane__title { font-size: 0.902rem; opacity: 0.7; }
+.e-empty-pane__hint { margin-top: 6px; font-size: 0.792rem; opacity: 0.45; line-height: 1.45; }
+
+/* KPI strip (fees view) */
+.e-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.e-kpi { padding: 5px 8px; border-radius: 4px; }
+.e-kpi__val { display: block; font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.e-kpi__lbl { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.65; }
+
+/* Chess session — board + controls share one centered column (board width) */
+.e-chess-main {
+  padding: 18px 20px 20px 9px;
+  box-sizing: border-box;
+}
+.e-chess-column {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: fit-content;
+  max-width: 100%;
+  gap: 12px;
+}
+.e-chess-stage {
+  display: grid;
+  justify-items: center;
+  width: 100%;
+  max-width: 100%;
+  vertical-align: top;
+  gap: 6px;
+  padding-top: 0;
+}
+.e-chess-stage > table {
+  display: inline-table;
+}
+.e-chess-moves-block {
+  width: 100%;
+}
+.e-chess-moves-label {
+  display: block;
+  font-size: 0.7rem;
+  margin-bottom: 6px;
+}
+
+.e-chess-players {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+  margin-top: 0;
+  margin-bottom: 0;
+  font-family: var(--font-family-mono);
+  box-sizing: border-box;
+}
+.e-chess-players__side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.e-chess-players__piece {
+  font-size: 1.55rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.e-chess-players__piece--dark { opacity: 0.88; }
+.e-chess-players__name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.e-chess-players__vs { opacity: 0.45; font-size: 0.72rem; }
+
+.e-chess-ctrl-move {
+  margin-left: 8px;
+  font-family: var(--font-family-mono);
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+
+.e-chess-movelist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin-top: 0;
+  width: 100%;
+  max-width: 100%;
+  font-family: var(--font-family-mono);
+  font-size: 0.68rem;
+}
+.e-chess-movelist__btn {
+  border: none;
+  background: transparent;
+  color: inherit;
+  opacity: 0.72;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.e-chess-movelist__btn:hover { opacity: 1; background: var(--theme-border-subdued, rgba(255,255,255,0.06)); }
+.e-chess-movelist__btn--on {
+  opacity: 1;
+  font-weight: 600;
+  color: var(--theme-focused-foreground, inherit);
+}
+
+.e-chess-warn { font-size: 0.68rem; margin-top: 6px; }
+
+.e-chess-ctrl-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.e-chess-ctrl-icons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.e-chess-ctrl-status {
+  text-align: center;
+  font-family: var(--font-family-mono, ui-monospace, monospace);
+  font-size: 0.72rem;
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.e-chess-replay-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.e-chess-live-mark {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--theme-focused-foreground);
+  opacity: 1;
+}
+.e-chess-icon-btn {
+  appearance: none;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.e-chess-icon-btn__glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  box-shadow: inset 0 0 0 1px var(--theme-border-subdued, rgba(255, 255, 255, 0.12));
+  transition: color 0.1s, box-shadow 0.1s;
+}
+.e-chess-icon-btn .e-chess-svg {
+  display: block;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.e-chess-icon-btn:hover .e-chess-icon-btn__glyph,
+.e-chess-icon-btn:focus-visible .e-chess-icon-btn__glyph {
+  color: var(--theme-focused-foreground);
+  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground);
+}
+.e-chess-icon-btn:focus-visible {
+  outline: none;
+}
+.e-chess-move-idx,
+.e-chess-speed__lbl {
+  font-size: 0.792rem;
+  opacity: 0.55;
+}
+.e-chess-speed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 6px 0 2px;
+  box-sizing: border-box;
+}
+.e-chess-speed__range {
+  width: min(9rem, 42vw);
+  max-width: 140px;
+  accent-color: var(--theme-focused-foreground);
+}
+
+/* Hero stats (overview) */
+.e-hero-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+@media (min-width: 720px) { .e-hero-stats { grid-template-columns: repeat(4, 1fr); }}
+
+.e-hero-stat {
+  padding: 16px 18px;
+  background: transparent;
+  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+  overflow: hidden;
+}
+.e-hero-stat::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--theme-border-subdued, rgba(255,255,255,0.15));
+}
+.e-hero-stat--accent::before { background: linear-gradient(90deg, var(--theme-focused-foreground), transparent); }
+.e-hero-stat__value { font-size: 1.925rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.e-hero-stat--accent .e-hero-stat__value { color: var(--theme-focused-foreground); }
+.e-hero-stat__label { font-size: 0.715rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.55; }
+.e-hero-stat__hint  { font-size: 0.748rem; opacity: 0.4; }
+
+/* MCP command hint — "show the tool call" write-action affordance */
+.e-mcp-hint {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border: 1px dashed var(--theme-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.e-mcp-hint__label { font-size: 0.682rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.e-mcp-hint__code {
+  font-family: var(--font-family-mono);
+  font-size: 0.77rem;
+  color: var(--theme-focused-foreground);
+  cursor: pointer;
+  word-break: break-all;
+}
+.e-mcp-hint__code:hover { text-decoration: underline; }
+
+/* Rail chips (payment rail badges) */
+.e-rail-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.e-rail-chip {
+  font-size: 0.682rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  opacity: 0.85;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--theme-focused-foreground);
+  background: transparent !important;
+}
+
+/* Outline pill for longer status text (e.g. NIM model name) — a solid-fill
+   badge (.e-trust-verified) reads as an alert/highlight at this length. */
+.e-status-pill {
+  font-size: 0.682rem;
+  font-family: var(--font-family-mono);
+  padding: 2px 7px;
+  border: 1px solid var(--theme-border);
+  background: transparent !important;
+  white-space: nowrap;
+}
+.e-status-pill--off { opacity: 0.45; }
+
+/* ─── 9. OVERVIEW ────────────────────────────────────────────────────────── */
+
+/* Hub grid — overview nav cards */
+.e-overview-status {
+  display: block;
+  font-size: 0.748rem;
+  margin-bottom: 12px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.e-pipeline-strip {
+  display: block;
+  font-size: 0.726rem;
+  letter-spacing: 0.02em;
+  margin-bottom: 14px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.e-overview-hub {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 20px;
+  min-width: 0;
+}
+@media (min-width: 560px)  { .e-overview-hub { grid-template-columns: repeat(3, minmax(0, 1fr)); }}
+@media (min-width: 900px)  { .e-overview-hub { grid-template-columns: repeat(4, minmax(0, 1fr)); }}
+@media (min-width: 1300px) { .e-overview-hub { grid-template-columns: repeat(5, minmax(0, 1fr)); }}
+
+.e-overview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 10px 12px 12px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+  min-width: 0;
+  max-width: 100%;
+}
+.e-overview-card:hover,
+.e-overview-card:focus-visible {
+  border-color: var(--theme-focused-foreground);
+  outline: none;
+}
+
+.e-overview-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  margin-bottom: 6px;
+  min-width: 0;
+}
+.e-overview-card__topline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.e-overview-card__icon  { font-size: 1.1rem; line-height: 1; flex-shrink: 0; }
+.e-overview-card__title { font-size: 0.858rem; font-weight: 500; }
+/* P69: a collection whose fetch rejected, as distinct from one that came back
+   empty. The snapshot is allSettled, so a single failing endpoint used to
+   render "—" — the same glyph as "not loaded yet" — beside cards showing real
+   numbers, which reads as "there is nothing there". Muted rather than alarming:
+   the relay is up and answering for the other panels, so this is one endpoint
+   to go and look at, not an outage. */
+.e-overview-card--failed .e-overview-card__sub {
+  color: var(--theme-warning, #c33);
+  opacity: 1;
+  letter-spacing: 0.02em;
+}
+.e-overview-card--failed .e-overview-card__body { opacity: 0.55; }
+
+.e-overview-card__sub   {
+  font-size: 0.715rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--theme-focused-foreground);
+  opacity: 0.85;
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+}
+.e-overview-card__body { }
+.e-overview-card__body p {
+  margin: 0 0 3px;
+  font-size: 0.748rem;
+  line-height: 1.4;
+  opacity: 0.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.e-nav-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px 16px;
+  text-align: left;
+  background: var(--theme-background);
+  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  min-height: 5.5rem;
+  transition: border-color 0.15s ease;
+}
+.e-nav-card:hover,
+.e-nav-card:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }
+.e-nav-card[data-active="true"] { border-color: var(--theme-focused-foreground); box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }
+.e-nav-card__hotkey {
+  position: absolute;
+  top: 10px; right: 10px;
+  font-size: 0.66rem;
+  opacity: 0.4;
+  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));
+  padding: 2px 5px;
+}
+
+/* Stat strip */
+.e-stat-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.e-stat-strip__lbl { font-size: 0.682rem; opacity: 0.55; }
+
+/* Live event feed */
+.e-feed-panel { max-height: min(70vh, 520px); overflow-y: auto; }
+
+.e-feed-panel--v2 { max-height: min(65vh, 480px); margin: -4px 0; }
+
+.e-feed-row {
+  cursor: pointer;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));
+}
+.e-feed-row:hover { color: var(--theme-focused-foreground); }
+.e-feed-row:last-child { border-bottom: none; }
+
+.e-feed-row--v2 {
+  padding: 12px 12px 12px 14px;
+  margin: 0 -4px;
+  border-radius: 0;
+  border-bottom: none;
+  border-left: 3px solid transparent;
+  transition: border-color 0.12s ease;
+}
+.e-feed-row--v2.is-clickable:hover { border-left-color: var(--theme-focused-foreground); }
+
+.e-feed-type {
+  display: inline-block;
+  font-size: 0.682rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--theme-focused-foreground);
+  margin-bottom: 4px;
+}
+.e-feed-detail  { font-size: 0.902rem !important; }
+.e-feed-time    { font-size: 0.748rem !important; font-variant-numeric: tabular-nums; }
+.e-feed-jump    { font-size: 0.715rem !important; opacity: 0.45; margin-top: 4px; }
+
+/* ─── 10. THEME PICKER ───────────────────────────────────────────────────── */
+
+.e-theme-compact { position: relative; }
+.e-theme-compact--inline { display: flex; align-items: center; }
+/* Fixed, but inside the frame's `contain: layout paint`: it covers the frame, never the page around it. */
+.e-theme-compact__backdrop { position: fixed; inset: 0; z-index: 200; border: 0; background: transparent; }
+
+.e-theme-duo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 5px 9px;
+  border: 1px solid var(--theme-border-subdued, rgba(255, 255, 255, 0.18));
+  border-radius: 0;
+  background: transparent;
+}
+.e-theme-duo__rule {
+  width: 1px;
+  align-self: stretch;
+  min-height: 14px;
+  margin: 2px 8px;
+  background: var(--theme-border-subdued, rgba(255, 255, 255, 0.18));
+  flex-shrink: 0;
+}
+.e-theme-duo__btn {
+  display: block;
+}
+.e-theme-circle {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.4);
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+.e-theme-circle:hover,
+.e-theme-circle:focus-visible {
+  transform: scale(1.1);
+  outline: none;
+  opacity: 0.92;
+}
+.e-theme-circle--mode[data-mode="theme-light"] { background: #f2f2f2; }
+.e-theme-circle--mode[data-mode="theme-dark"]  { background: #121212; }
+.e-theme-circle--accent { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
+.e-mode-toggle {
+  width: 26px; height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.858rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.45;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+.e-mode-toggle.is-active {
+  opacity: 1;
+  background: var(--theme-background) !important;
+  color: var(--theme-focused-foreground);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+/* ─── 11. RELAY STRIP ────────────────────────────────────────────────────── */
+
+.e-relay-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  font-size: 0.792rem;
+  background: transparent !important;
+}
+.e-relay-status--compact {
+  gap: 12px;
+}
+.e-relay-status__chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.e-relay-status__host {
+  color: var(--theme-text-subdued, #888);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 2px;
+}
+.e-relay-status__meta { color: var(--theme-text-subdued, #666); font-size: 0.715rem; }
+.e-badge--ok,
+.e-relay-status .e-badge--ok { color: var(--theme-focused-foreground) !important; }
+
+/* The relay chip carries the relay's name: a long host is cut with an ellipsis (its title has it all). */
+.e-status-chip__label--relay { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e-app-shell[data-nav="phone"] .e-status-chip__label--relay { max-width: 14ch; }
+.e-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 9px;
+  border: 1px solid var(--theme-border-subdued, rgba(255, 255, 255, 0.18));
+  border-radius: 0;
+  background: var(--theme-border, rgba(255, 255, 255, 0.06));
+  font-size: 0.748rem;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.e-status-chip.is-ok {
+  color: var(--theme-focused-foreground);
+}
+.e-status-chip:not(.is-ok) {
+  opacity: 0.7;}
+.e-status-chip__label {
+  letter-spacing: 0.02em;
+}
+.e-status-chip__loader {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1ch;
+  min-width: 1.1ch;
+  color: inherit;
+}
+.e-status-chip.is-ok .e-status-chip__loader {
+  color: var(--theme-focused-foreground);
+}
+
+.e-status-chip__dot {
+  display: inline-block;
+  width: 1ch;
+  text-align: center;
+}
+@keyframes e-status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* ─── 12. AGENT / PROFILE ROW ────────────────────────────────────────────── */
+
+.e-agent-row { display: flex; gap: 8px; align-items: center; }
+.e-moire-avatar { flex-shrink: 0; border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12)); }
+.e-profile-agent { display: flex; gap: 12px; align-items: center; }
+
+/* Settlement list */
+.e-settlement-list { list-style: none; margin: 16px 0 0; padding: 0; font-size: 0.825rem; background: transparent !important; }
+/* P105: the inherited list marker is a ::before box, and in a grid it takes a
+   cell — pushing every row's status onto the next line. */
+.e-settlement-list__item::before { content: none !important; display: none !important; }
+.e-settlement-list__item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));
+  background: transparent !important;
+}
+
+/* ─── 13. CHAT & READ-ONLY CHAT ──────────────────────────────────────────── */
+
+.e-chat-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.e-chat-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 16px;
+}
+.e-chat-footer {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
+}
+.e-chat-meta { display: block; font-size: 0.748rem; margin-bottom: 2px; }
+
+/* Transcript chat line — avatar + content */
+.e-chat-line {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.e-chat-line__body {
+  flex: 1;
+  min-width: 0;
+}
+.e-chat-line__meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.e-chat-line__name {
+  font-size: 0.792rem;
+  font-weight: 600;
+  word-break: break-all;
+}
+.e-chat-line__type,
+.e-chat-line__time {
+  font-size: 0.682rem;
+  opacity: 0.45;
+  font-variant-numeric: tabular-nums;
+}
+.e-chat-line__content {
+  font-size: 0.902rem;
+  line-height: 1.45;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+/* Agora detail pane (also used for events detail) */
+.e-split-main { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 8px 0 16px 0; }
+.e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main {
+  padding-left: 4px;
+}
+.e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main:has(.e-chess-main) {
+  padding-left: 0;}
+.e-agora-detail { overflow: hidden; }
+.e-agora-detail__scroll { flex: 1; overflow-y: auto; padding: 16px; }
+.e-agora-detail__title { font-size: 1.1rem; font-weight: 600; margin-bottom: 4px; display: block; }
+.e-agora-detail__meta  { font-size: 0.792rem; margin-bottom: 12px; display: block; }
+.e-agora-detail__body  { display: block; margin-top: 12px; white-space: pre-wrap; }
+.e-agora-readonly-hint { display: block; margin-top: 24px; font-size: 0.715rem; }
+
+.e-agora-comment { padding: 6px 0; border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06)); }
+
+/* ─── 14. AGORA ──────────────────────────────────────────────────────────── */
+
+.e-agora-pane {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.e-agora-posts,
+.e-agora-sidebar { overflow-y: auto; flex: 1; }
+
+.e-post-row { display: flex; gap: 10px; align-items: flex-start; flex: 1; }
+.e-post-title { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.e-vote-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  opacity: 0.45;
+  color: inherit;
+  transition: opacity 0.15s, color 0.15s;
+}
+.e-vote-btn:hover { opacity: 1; }
+.e-vote-score { font-size: 13px; min-width: 20px; text-align: center; }
+
+/* ─── 15. SEGMENT TABS ───────────────────────────────────────────────────── */
+
+.e-segment-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.e-segment-tabs--grow .e-segment-tab { flex: 1; min-width: 0; text-align: center; }
+
+.e-segment-tab {
+  appearance: none;
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));
+  border-radius: 0 !important;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-family: var(--font-family-mono, ui-monospace, monospace);
+  font-size: 0.748rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 0.75;
+  transition: border-color 0.1s, color 0.1s, opacity 0.1s;
+}
+/* View filters are chips, not tabs: pills, smaller, no underline; they sit left, directly above their list. */
+.e-segment-tabs { justify-content: flex-start; margin: 0 0 12px; }
+.e-segment-tab {
+  border-radius: 999px !important;
+  padding: 2px 11px;
+  font-size: 0.68rem;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.e-segment-tab.is-active { background: var(--e-accent-wash, transparent); font-weight: 400; }
+.e-segment-tab:hover { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
+.e-segment-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); font-weight: 600; }
+
+/* ─── 16. BADGES, PILLS & ENTITY CHIPS ──────────────────────────────────── */
+
+.e-badge { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 12px; font-family: var(--font-family-mono); border: 1px solid currentColor; white-space: nowrap; }
+.e-badge--dim { opacity: 0.5; }
+
+.e-role-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid currentColor; }
+.e-role-pill--operator  { color: var(--theme-focused-foreground); }
+.e-role-pill--member    { opacity: 0.6; }
+.e-role-pill--spectator { opacity: 0.4; }
+
+.e-gate-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.e-gate-badge--invite { background: rgba(128,128,255,0.15); color: #8888ff; }
+.e-gate-badge--paid   { background: rgba(80,200,120,0.15);  color: #4caf7a; }
+.e-gate-badge--advert { background: rgba(255,190,80,0.15);  color: #d9a441; }
+
+.e-outcome-pill {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.e-outcome-pill--game   { background: rgba(255,180,0,0.12);   color: #c89a00; }
+.e-outcome-pill--room   { background: rgba(0,180,255,0.12);   color: #0099cc; }
+.e-outcome-pill--agora  { background: rgba(128,128,255,0.12); color: #7777dd; }
+.e-outcome-pill--refund { background: rgba(200,50,50,0.12);   color: #cc4444; }
+
+/* Entity chips — clickable agent / session cross-nav links */
+.e-entity-chip {
+  display: inline-block;
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+  padding: 1px 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: default;
+  white-space: nowrap;
+}
+.e-entity-chip--inert { opacity: 0.55; }
+.e-entity-chip--agent,
+.e-entity-chip--session {
+  cursor: pointer;
+  border-color: rgba(128,128,128,0.2);
+  color: var(--theme-focused-foreground);
+  opacity: 0.8;
+  transition: opacity 0.1s, background 0.1s;
+}
+.e-entity-chip--agent:hover,
+.e-entity-chip--session:hover { opacity: 1; background: rgba(128,128,128,0.08); }
+
+/* Room → session link */
+.e-room-session-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 3px;
+  padding: 1px 6px;
+  border: 1px solid rgba(128,128,128,0.2);
+  background: transparent;
+  color: var(--theme-focused-foreground);
+  font-size: 11px;
+  font-family: var(--font-family-mono);
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.1s;
+}
+.e-room-session-link:hover { opacity: 1; background: rgba(128,128,128,0.08); }
+
+/* ─── 17. TABLES ─────────────────────────────────────────────────────────── */
+
+.e-compact-table { overflow-x: auto; }
+
+.e-compact-table table,
+.e-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-family-mono, ui-monospace, monospace);
+  font-size: 0.792rem;
+}
+
+/* Header row — keep the SRCL gray bar */
+.e-dashboard-shell .e-compact-table thead td,
+.e-dashboard-shell table thead td,
+.e-table thead td {
+  background: var(--ansi-240-gray-35, #585858) !important;
+  color: var(--color-white, #fff);
+  padding: 4px 8px;
+  font-size: 0.682rem;
+  letter-spacing: 0.06em;
+}
+
+.e-table tbody td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));
+}
+.e-dashboard-shell table tbody tr { background: transparent !important; }
+.e-dashboard-shell table tbody tr:hover { background: transparent !important; }
+
+.e-table-row { cursor: pointer; }
+.e-table-row:hover td { border-left: 2px solid var(--theme-focused-foreground); padding-left: 6px; }
+.e-table-row:focus-visible { outline: 1px solid var(--theme-focused-foreground); }
+
+/* ─── 18. TOOLBAR & SEARCH ───────────────────────────────────────────────── */
+
+.e-toolbar-h {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));
+  overflow-x: auto;
+}
+.e-toolbar-h--wrap { flex-wrap: wrap; }
+
+.e-search-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
+}
+/* The kit Input draws its text in a display layer and puts the real <input>
+   (which gets this class) transparent on top. So the box lives on the display
+   layer, and the input just covers it exactly — styling the input itself drew
+   a second, empty box under the placeholder. */
+.e-search-row > [class*="Input_root"] { flex: 1; min-width: 0; }
+.e-search-row [class*="Input_displayed"] {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 12px;
+  box-sizing: border-box;
+}
+.e-search-bar {
+  height: 100%;
+  padding: 0 12px !important;
+  box-sizing: border-box;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+/* ─── 19. ACTION TIMELINE ────────────────────────────────────────────────── */
+
+.e-action-timeline { display: flex; flex-direction: column; gap: 2px; }
+.e-action-row { padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.e-action-row:last-child { border-bottom: none; }
+.e-action-row--terminal .e-action-row__outcome { color: var(--theme-focused-foreground); }
+.e-action-row__meta { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 2px; }
+.e-action-row__icon { font-size: 14px; min-width: 16px; text-align: center; }
+.e-action-row__body { font-size: 13px; opacity: 0.75; padding-left: 24px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.e-action-row__outcome { font-size: 12px; padding-left: 24px; opacity: 0.6; margin-top: 2px; }
+
+/* ─── 20. SESSION & TRANSACTION ROWS ────────────────────────────────────── */
+
+.e-txn-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid rgba(128,128,128,0.1); }
+.e-txn-row:last-child { border-bottom: none; }
+.e-txn-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.e-txn-dot--in  { background: var(--theme-focused-foreground); }
+.e-txn-dot--out { background: rgba(128,128,128,0.4); }
+
+.e-session-status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: rgba(128,128,128,0.4); }
+.e-session-status-dot--active    { background: var(--theme-focused-foreground); }
+.e-session-status-dot--completed { background: rgba(128,128,128,0.6); }
+.e-session-status-dot--abandoned { background: rgba(180,80,80,0.5); }
+/* ─── 21. MESSAGES / INBOX ───────────────────────────────────────────────── */
+
+.e-messages-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.e-messages-pane__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--theme-border-color, rgba(128,128,128,0.12));
+  flex-shrink: 0;
+}
+.e-inbox-list { display: flex; flex-direction: column; gap: 0; }
+.e-inbox-event {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--theme-border-color, rgba(128,128,128,0.12));
+}
+.e-inbox-event:last-child { border-bottom: none; }
+.e-inbox-event--read { opacity: 0.55; }
+.e-inbox-event__icon { flex-shrink: 0; width: 22px; text-align: center; font-size: 15px; padding-top: 2px; opacity: 0.7; }
+.e-inbox-event__body { flex: 1; min-width: 0; }
+
+/* ─── 22. SRCL COMPONENT OVERRIDES ──────────────────────────────────────── */
+
+/* ActionButton — outline style, no fills */
+.e-dashboard-shell [class*="ActionButton_content"] {
+  background: transparent !important;
+  box-shadow: inset 0 0 0 1px var(--theme-border-subdued, rgba(255,255,255,0.12)) !important;
+  border-radius: 0 !important;
+}
+.e-dashboard-shell [class*="ActionButton_hotkey"] { background: transparent !important; }
+.e-dashboard-shell [class*="ActionButton_root"]:hover [class*="ActionButton_content"] {
+  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground) !important;
+  color: var(--theme-focused-foreground);
+}
+.e-dashboard-shell [class*="ActionButton_root"].selected [class*="ActionButton_content"],
+.e-dashboard-shell [class*="ActionButton_selected"] [class*="ActionButton_content"] {
+  background: transparent !important;
+  color: var(--theme-focused-foreground) !important;
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground) !important;
+}
+.e-dashboard-shell [class*="ActionButton_root"]:focus,
+.e-dashboard-shell [class*="ActionButton_root"]:active { background: transparent !important; }
+
+/* Badges — square */
+.e-dashboard-shell [class*="Badge_root"] { border-radius: 0 !important; }
+
+/* Input */
+.e-dashboard-shell [class*="Input_root"] input { background: transparent !important; }
+
+/* Kill all surfaces from panels and stat blocks */
+.e-dashboard-shell .e-app-top,
+.e-dashboard-shell .e-mobile-top { background: var(--theme-background) !important; }
+.e-dashboard-shell .e-app-drawer,
+.e-dashboard-shell .e-mobile-drawer { background: var(--theme-background) !important; box-shadow: none; }
+.e-dashboard-shell .e-panel-card,
+.e-dashboard-shell .e-panel-card__head,
+.e-dashboard-shell .e-panel-card__body,
+.e-dashboard-shell .e-slim-card,
+.e-dashboard-shell .e-hero-stat,
+.e-dashboard-shell .e-kpi,
+.e-dashboard-shell .e-empty-pane { background: transparent !important; }
+
+/* ─── 23. RESPONSIVE ─────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .e-view-body { padding: 14px 12px 24px; }}
+/* The phone layout (the frame under 600 px): top bar, menu behind the burger, bottom bar. */
+.e-app-shell[data-nav="phone"] .e-app-top { display: none; }
+.e-app-shell[data-nav="phone"] .e-mobile-top { display: flex; }
+.e-app-shell[data-nav="phone"] .e-app-drawer {
+  display: flex;
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  z-index: 140;     /* above full-page chat (120): the chat's ☰ opens it */
+  width: min(85%, 16rem);
+  transform: translateX(-105%);
+  transition: transform 0.2s ease;
+  background: var(--theme-background);
+  border-right: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
+}
+.e-app-shell[data-nav="phone"].is-nav-open .e-app-drawer { transform: translateX(0); }
+.e-app-shell[data-nav="phone"].is-nav-open .e-app-backdrop {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 130;
+  background: rgba(0,0,0,0.55);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* Narrow screens: SidebarLayout itself (kit module CSS) turns rail-beside-detail
+   into list-then-detail with a back control — see ui/kit/SidebarLayout.tsx. */
+
+@media (min-width: 901px) {
+  .e-hero-stats { grid-template-columns: repeat(4, 1fr); }}
+
+/* P121: unread count on a conversation or on Activity. */
+.e-unread-count {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--theme-focused-foreground, #3c3);
+  color: var(--theme-background, #000);
+}
+
+/* P123: view-as switcher (local relays only). */
+.e-viewer-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.e-viewer-switch select {
+  font: inherit; font-size: 12px; padding: 2px 6px;
+  background: var(--theme-background, transparent); color: inherit;
+  border: 1px solid var(--theme-border, rgba(128,128,128,0.4)); border-radius: 4px;
+}
+/* A phone (the switcher sits in the menu): under 16px, iOS zooms the page when the select takes focus. */
+@media (max-width: 900px) {
+  .e-viewer-switch select { font-size: 16px; min-height: 40px; }}
+
+/* P124: inbox / sent / all above the conversation list. */
+.e-messages-boxes { padding: 8px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(128,128,128,0.12)); }
+
+/* P171: the Docs view. */
+.e-docs-rail { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; }
+.e-docs-search { width: 100%; margin: 0 0 6px 0; padding: 6px 8px; font: inherit; background: transparent;
+  color: inherit; border: 1px solid currentColor; opacity: 0.8; }
+.e-docs-rail-item { display: flex; flex-direction: column; gap: 2px; text-align: left; }
+.e-doc { overflow-y: auto; max-width: 92ch; padding: 8px 20px 40px 20px; line-height: 1.55; }
+.e-doc .e-doc-h { margin: 1.4em 0 0.5em 0; line-height: 1.25; scroll-margin-top: 8px; }
+.e-doc p, .e-doc .e-doc-list, .e-doc .e-doc-quote { margin: 0.6em 0; }
+.e-doc .e-doc-list { padding-left: 1.6em; }
+.e-doc code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 0 0.25em;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); }
+.e-doc .e-doc-code { overflow-x: auto; padding: 10px 12px; margin: 0.8em 0;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
+.e-doc .e-doc-code code { border: 0; padding: 0; }
+.e-doc .e-doc-table-wrap { overflow-x: auto; margin: 0.8em 0; }
+.e-doc .e-doc-table { border-collapse: collapse; font-size: 0.94em; }
+.e-doc .e-doc-table th, .e-doc .e-doc-table td { text-align: left; vertical-align: top; padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
+.e-doc .e-doc-quote { padding-left: 12px; border-left: 3px solid color-mix(in srgb, currentColor 35%, transparent); }
+.e-doc .e-doc-link { text-decoration: underline; cursor: pointer; }
+.e-doc .e-doc-path { font-family: var(--font-family-mono, monospace); font-size: 0.92em; opacity: 0.8; }
+
+/* P178: the Settings view (read-only), laid out like Hermes's config page: sections of rows, the
+   label and its plain words on the left, the value drawn as Hermes's form would on the right (never a
+   control), and where to change it underneath. Tokens only, so every theme and tint carries it. */
+.e-settings { overflow-y: auto; max-width: 110ch; min-width: 0; padding: 8px 20px 40px 20px;
+  --e-settings-rule: var(--e-rule, color-mix(in srgb, currentColor 18%, transparent)); }
+.e-settings-intro { margin: 8px 0 4px; padding: 8px 12px; font-size: 0.9em;
+  border-left: 3px solid var(--theme-focused-foreground);
+  background: var(--e-accent-wash, color-mix(in srgb, currentColor 6%, transparent)); }
+.e-settings-heading { font-size: 1.2em; margin: 16px 0 0; overflow-wrap: anywhere; }
+.e-settings-group { margin: 0 0 6px 0; }
+.e-settings-title { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  margin: 18px 0 6px; opacity: 0.8; }
+.e-settings-card { border: 1px solid var(--e-settings-rule); }
+.e-setting { padding: 10px 14px; border-top: 1px solid var(--e-settings-rule);
+  display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.e-setting:first-child { border-top: 0; }
+.e-setting-warn { box-shadow: inset 3px 0 0 var(--theme-focused-foreground); }
+.e-setting-danger { box-shadow: inset 3px 0 0 currentColor; }
+.e-setting-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto); gap: 4px 16px; align-items: start; }
+.e-setting-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.e-setting-label { font-weight: 600; overflow-wrap: anywhere; }
+.e-setting-mark { display: inline-block; min-width: 1.1em; margin-right: 4px; font-weight: 700;
+  color: var(--theme-focused-foreground); }
+.e-setting-about { font-size: 0.88em; opacity: 0.75; }
+.e-setting-control { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end;
+  max-width: 48ch; min-width: 0; }
+.e-setting-value, .e-setting-number, .e-setting-list { font-family: var(--font-family-mono, monospace);
+  font-size: 0.9em; overflow-wrap: anywhere; text-align: right; }
+.e-setting-number { font-variant-numeric: tabular-nums; font-weight: 600; }
+.e-setting-tag { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 1px 6px;
+  border: 1px dashed color-mix(in srgb, currentColor 45%, transparent); }
+/* Read-only values are plain text: no border, fill, hover or pointer, so nothing looks pressable. */
+.e-setting-plain { font-size: 0.9em; font-weight: 600; cursor: default; opacity: 0.7; }
+.e-setting-plain.is-on { opacity: 1; }
+.e-setting-choices { display: inline; text-align: right; cursor: default; }
+.e-setting-rec { font-weight: 400; font-size: 0.82em; }
+/* Where to change it: Hermes's own page, the command, and who may run it. */
+.e-setting-change { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 0.88em; min-width: 0; }
+.e-setting-hermes { font: inherit; color: var(--theme-focused-foreground); background: transparent; cursor: pointer;
+  border: 1px solid currentColor; padding: 1px 8px; text-decoration: none; white-space: nowrap; }
+.e-setting-hermes:hover,
+.e-setting-hermes:focus-visible { background: color-mix(in srgb, var(--theme-focused-foreground) 14%, transparent); outline: none; }
+.e-setting-hermes-text { opacity: 0.85; }
+.e-setting-env { font-family: var(--font-family-mono, monospace); font-size: 0.85em; opacity: 0.7; overflow-wrap: anywhere; }
+.e-setting-cmd { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+.e-setting-cmd code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); overflow-wrap: anywhere; }
+.e-setting-copy { font: inherit; font-size: 0.85em; padding: 1px 8px; background: transparent; color: inherit;
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent); cursor: pointer; }
+.e-setting-note { flex-basis: 100%; opacity: 0.75; }
+@media (max-width: 640px) {
+  .e-settings { padding: 4px 12px 32px; }
+  .e-setting { padding: 10px; }
+  .e-setting-main { grid-template-columns: minmax(0, 1fr); }
+  .e-setting-control { justify-content: flex-start; max-width: none; }
+  .e-setting-value, .e-setting-number, .e-setting-list { text-align: left; }
+  .e-setting-choices { justify-content: flex-start; }
+}
+
+/* P281: the relay's transparency log and this agent's own check of it, one compact block (Trust & Safety). */
+.e-relay-log { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-top: 10px; padding-top: 8px;
+  border-top: 1px solid var(--e-rule, color-mix(in srgb, currentColor 18%, transparent)); font-size: 0.82rem; min-width: 0; }
+.e-relay-log__name { font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-size: 0.72rem; }
+.e-relay-log__facts { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.e-relay-log.is-off .e-relay-log__facts { opacity: 0.7; }
+.e-relay-log__check { overflow-wrap: anywhere; }
+.e-relay-log__check.is-ok { color: var(--theme-focused-foreground); }
+.e-relay-log__check.is-none, .e-relay-log__check.is-info { opacity: 0.8; }
+.e-relay-log__check.is-warn { font-weight: 700; padding: 1px 6px; border: 1px solid currentColor; }
+.e-relay-log__about { flex-basis: 100%; font-size: 0.72rem; opacity: 0.7; }
+
+/* P179: the relay operator's Relay view. */
+.e-relay { overflow-y: auto; max-width: 110ch; padding: 8px 20px 40px 20px; }
+.e-relay h3 { font-size: 1.05em; margin: 18px 0 8px 0; }
+.e-relay-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.e-relay-tile { padding: 10px 12px; border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  display: flex; flex-direction: column; gap: 2px; }
+.e-relay-tile-value { font-size: 1.6em; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.e-relay-tile-sub { font-size: 0.85em; }
+.e-relay-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.e-relay-charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.e-relay-chart { margin: 0; }
+.e-relay-chart figcaption { margin-bottom: 4px; }
+.e-relay-chart svg { width: 100%; height: 64px; display: block; }
+.e-relay-bar { fill: currentColor; opacity: 0.75; }
+.e-relay-chart g:hover .e-relay-bar { opacity: 1; }
+.e-relay-axis { stroke: currentColor; opacity: 0.25; stroke-width: 1; }
+.e-relay-table { border-collapse: collapse; font-size: 0.94em; margin: 4px 0 10px 0; font-variant-numeric: tabular-nums; }
+.e-relay-table th, .e-relay-table td { text-align: left; padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
+
+/* Rooms › "Rooms you can join": folded above the chat until opened. */
+.e-joinable { margin: 0 0 10px; border: 1px solid var(--theme-border-subdued, currentColor); padding: 6px 10px; }
+.e-joinable > summary { cursor: pointer; font-size: 0.85rem; opacity: 0.8; }
+.e-joinable[open] > summary { margin-bottom: 6px; }
+/* You › Stats: the agent's own figures. Bars are decoration: every value is also text. */
+.e-stats-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.e-stats-num { font-variant-numeric: tabular-nums; }
+.e-stats-list { list-style: none; margin: 4px 0 8px 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.e-stats-bars { list-style: none; margin: 4px 0 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.e-stats-bars__row { display: grid; grid-template-columns: minmax(12ch, 16rem) minmax(60px, 1fr) auto; gap: 10px;
+  align-items: center; }
+.e-stats-bars__track { height: 8px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
+.e-stats-bars__fill { display: block; height: 100%; background: var(--theme-focused-foreground, currentColor); }
+.e-stats-money-note, .e-stats-missing { display: block; }
+.e-stats-table td { white-space: nowrap; }
+@media (max-width: 700px) {
+  .e-stats-bars__row { grid-template-columns: 1fr auto; }
+  .e-stats-bars__track { grid-column: 1 / -1; grid-row: 2; }}
+
+/* ─── 24. RETROMOD ───────────────────────────────────────────────────────────
+   The terminal look, kept and made consistent: monospace, hairline boxes, the
+   theme's accent as the one highlight. Modern where it helps reading and
+   touching: smooth type, clear focus, one heading per section, 44px targets on
+   a phone, list-then-detail split views, tables that scroll in their own box.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+.e-dashboard-shell {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  --e-rule: var(--theme-border-subdued, rgba(128, 128, 128, 0.22));
+  --e-accent-wash: color-mix(in srgb, var(--theme-focused-foreground) 9%, transparent);
+}
+
+/* One focus ring, everywhere — keyboard users always see where they are. */
+.e-dashboard-shell :focus-visible,
+.e-dashboard-shell .e-rail-item:focus-visible,
+.e-dashboard-shell .e-theme-circle:focus-visible {
+  outline: 2px solid var(--theme-focused-foreground);
+  outline-offset: 2px;
+}
+.e-dashboard-shell .e-rail-item:focus-visible { outline-offset: -2px; }
+
+/* Section heading: ▍Name, then the plain-words line on what it shows. */
+.e-page-head {
+  padding: 14px 24px 12px;
+  border-bottom: 1px solid var(--e-rule);
+  max-width: min(1440px, 100%);
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+.e-page-head__title {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 1ch;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.3;
+}
+.e-page-head__blurb {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  opacity: 0.62;
+  max-width: 80ch;
+}
+
+/* Sub-heading inside a view: CAPS label with a box-drawing rule after it. */
+.e-subhead {
+  display: flex;
+  align-items: center;
+  gap: 1ch;
+  margin: 18px 0 6px;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+.e-subhead::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--e-rule);
+}
+.e-subhead:first-child { margin-top: 4px; }
+.e-note { font-size: 0.8rem; line-height: 1.5; opacity: 0.6; margin: 2px 0 0; }
+
+.e-section-tabs--horizontal { align-items: center; }
+.e-section-tab.is-active { background: var(--e-accent-wash) !important; }
+
+/* The menu: the six destinations, each with its sections named under it. */
+.e-section-tabs--drawer .e-section-tab {
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: "icon label key" "icon sub key";
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 0;
+  text-align: left;
+}
+.e-section-tabs--drawer .e-section-tab__icon { grid-area: icon; }
+.e-section-tabs--drawer .e-section-tab__label { grid-area: label; font-size: 0.95rem; }
+.e-section-tabs--drawer .e-section-tab__key { grid-area: key; }
+.e-section-tab__sub {
+  grid-area: sub;
+  font-size: 0.72rem;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  white-space: normal;
+}
+
+/* The sections inside the current destination: one strip under the header, every width. */
+/* The strip may scroll (it is the page's sections, not the main navigation), but never silently:
+   a fade at each cut edge and a "n ▾" button listing the tabs that are cut off. */
+.e-subnav-wrap {
+  flex: none;
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--e-rule);
+  background: var(--theme-background);
+}
+.e-subnav-box { position: relative; flex: 1; min-width: 0; display: flex; }
+.e-subnav {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 16px;
+  min-height: 40px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--theme-background);
+}
+.e-subnav::-webkit-scrollbar { display: none; }
+.e-subnav-fade {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 28px;
+  pointer-events: none;
+  visibility: hidden;
+}
+.e-subnav-fade--left { left: 0; background: linear-gradient(to right, var(--theme-background), transparent); }
+.e-subnav-fade--right { right: 0; background: linear-gradient(to left, var(--theme-background), transparent); }
+.e-subnav-box.has-left .e-subnav-fade--left,
+.e-subnav-box.has-right .e-subnav-fade--right { visibility: visible; }
+.e-subnav-more {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-left: 1px solid var(--e-rule);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.e-subnav-more:hover, .e-subnav-more[aria-expanded="true"] { color: var(--theme-focused-foreground); }
+.e-subnav-more:focus-visible, .e-subnav-menu__item:focus-visible { outline: 2px solid var(--theme-focused-foreground); outline-offset: -2px; }
+.e-subnav-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 50;
+  min-width: 11rem;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--theme-border, var(--e-rule));
+  background: var(--theme-background);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+}
+.e-subnav-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 1px solid var(--e-rule);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+.e-subnav-menu__item:last-child { border-bottom: 0; }
+.e-subnav-menu__item:hover, .e-subnav-menu__item.is-active { color: var(--theme-focused-foreground); }
+.e-subnav__dest {
+  display: inline-flex;
+  align-items: center;
+  padding-right: 10px;
+  margin-right: 4px;
+  border-right: 1px solid var(--e-rule);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  white-space: nowrap;
+}
+.e-subnav__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.e-subnav__tab:hover { border-bottom-color: var(--theme-border); }
+/* Active is marked by the rule under the tab, never by weight: bold would widen the tab and move its neighbours. */
+.e-subnav__tab.is-active { border-bottom-color: var(--theme-focused-foreground); }
+.e-subnav__tab.is-off { opacity: 0.7; font-style: italic; }
+.e-subnav__tab.is-off-relay::after {
+  content: "off on this relay";
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-style: normal;
+  white-space: nowrap;
+}
+.e-subnav__note {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px;
+  font-size: 0.78rem;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  white-space: nowrap;
+}
+.e-subnav__tab:focus-visible, .e-section-tab:focus-visible, .e-header-link:focus-visible, .e-bottom-bar__tab:focus-visible {
+  outline: 2px solid var(--theme-focused-foreground);
+  outline-offset: -2px;
+}
+.e-app-shell[data-nav="phone"] .e-subnav { padding: 0 8px; min-height: 44px; }
+.e-app-shell[data-nav="phone"] .e-subnav__tab { min-height: 44px; padding: 0 14px; }
+
+/* Phone: the five places as a bar at the foot, under the view. */
+.e-bottom-bar { display: none; }
+.e-app-shell[data-nav="phone"] .e-bottom-bar {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border-top: 1px solid var(--e-rule, var(--theme-border-subdued));
+  background: var(--theme-background);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.e-bottom-bar__tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 52px;
+  padding: 4px 2px;
+  border: 0;
+  border-top: 2px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+  min-width: 0;
+}
+.e-bottom-bar__tab.is-active { border-top-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
+.e-bottom-bar__icon { font-size: 1.05rem; line-height: 1; }
+.e-bottom-bar__label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e-bottom-bar__tab .e-nav-badge { top: 4px; right: 22%; min-width: 8px; height: 8px; font-size: 0; padding: 0; }
+.e-header-links--drawer { padding: 8px 0 12px; }
+
+/* The one-line strip of what the agent is doing now, under the sub-row. */
+.e-now-strip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 2px 16px;
+  border-bottom: 1px solid var(--e-rule, var(--theme-border-subdued));
+  font-size: 0.78rem;
+  min-width: 0;
+}
+.e-now-strip__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 4px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.e-now-strip__main:disabled { cursor: default; }
+.e-now-strip__live { color: var(--theme-focused-foreground); }
+.e-now-strip__toggle { background: transparent; border: 0; color: inherit; font: inherit; cursor: pointer; opacity: 0.7; padding: 4px 6px; }
+.e-now-strip.is-collapsed { min-height: 22px; justify-content: flex-end; }
+/* The whole menu scrolls as one, so the foot never covers the last sections. */
+.e-section-tabs--drawer { flex: none; overflow: visible; }
+.e-mobile-drawer { overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; width: 100%; }
+.e-mobile-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--e-rule);
+}
+.e-mobile-drawer__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--e-rule);
+}
+.e-icon-button,
+.e-menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--e-rule);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.e-icon-button:hover,
+.e-menu-button:hover { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
+.e-menu-button .e-nav-badge { margin-left: 0; }
+
+/* Phone top bar: one row — menu, where you are, relay state. */
+.e-mobile-top { flex-wrap: nowrap !important; gap: 10px; padding: 6px 12px; }
+/* Brand above, the section you are in below it — both always fit. */
+.e-mobile-top__where {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.e-mobile-top__where .e-brand-title { font-size: 0.8rem !important; line-height: 1.2; opacity: 0.75; }
+.e-mobile-top__section {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.85rem;
+  line-height: 1.25;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--theme-focused-foreground);
+}
+.e-mobile-top__section::before { content: "▸ "; opacity: 0.6; }
+
+/* The brand: the word, decoded (LookChrome.BrandTitle); a fixed width so the
+   header never shifts while glyphs change. */
+.e-brand { display: inline-block; min-width: 7.2ch; font-variant-numeric: tabular-nums; }
+.e-mobile-top .e-relay-status__host { display: none; }
+.e-mobile-top .e-relay-status__chips { gap: 6px; }
+.e-mobile-top .e-status-chip { padding: 4px 6px; }
+
+/* A label above a run of rail rows ("Which game", "Character sheets"). */
+.e-rail-label {
+  padding: 12px 12px 4px;
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.5;
+}
+
+/* Rail rows: room to breathe, the selected one washed in the accent. */
+.e-rail-item { padding: 8px 10px 8px 12px; min-height: 40px; }
+.e-rail-item.is-selected { background: var(--e-accent-wash); }
+.e-dashboard-shell [class*="SidebarLayout_sidebar"] {
+  border-right: 1px solid var(--e-rule);
+  box-sizing: border-box;
+}
+.e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main { padding: 12px 16px 24px 20px; }
+.e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main:has(.e-chess-main) { padding-left: 8px;}
+
+/* What-you-are-looking-at box on the Overview. */
+.e-intro {
+  border: 1px solid var(--e-rule);
+  border-left: 3px solid var(--theme-focused-foreground);
+  padding: 12px 16px 14px;
+  margin-bottom: 16px;
+  line-height: 1.55;
+}
+.e-intro__title {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin: 0 0 6px;
+}
+.e-intro__text { margin: 0; font-size: 0.9rem; max-width: 78ch; }
+.e-intro__go { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.e-intro__link {
+  flex: 1 1 13rem;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--e-rule);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.e-intro__link:hover { border-color: var(--theme-focused-foreground); }
+.e-intro__link-label { color: var(--theme-focused-foreground); font-size: 0.85rem; }
+.e-intro__link-hint { font-size: 0.72rem; opacity: 0.6; }
+
+/* The toolbar line above a split view is context, not content — keep it small. */
+.e-view-body--flush .e-view-toolbar,
+.e-view-body--flush .e-view-toolbar p { font-size: 0.78rem; line-height: 1.45; }
+
+/* Leaderboard-style tables size to their content instead of spreading three
+   short columns across a wide screen. */
+.e-table.e-board { width: auto; min-width: min(100%, 34rem); }
+
+/* Replay status line (ply, started, audit, verify) wraps instead of running off the edge. */
+.e-chess-replay-status { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
+
+/* ─── 25. PHONE (≤ 700px) ───────────────────────────────────────────────── */
+
+@media (max-width: 700px) {
+  .e-page-head { padding: 12px 16px 10px; }
+  .e-page-head__blurb { font-size: 0.78rem; }
+  .e-view-toolbar { justify-content: flex-start; }
+  .e-view-body { padding: 12px 16px 24px; }
+  .e-dashboard-shell [class*="SidebarLayout_sidebar"] { border-right: 0; }
+  .e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main { padding: 12px 16px 24px; }
+
+  /* Tables scroll inside their own box; short cells stay on one line. */
+  .e-table,
+  .e-relay-table,
+  .e-compact-table table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .e-table td,
+  .e-relay-table td,
+  .e-relay-table th { white-space: nowrap; }
+
+  /* Comfortable targets. */
+  .e-rail-item { min-height: 48px; padding: 10px 16px; }
+  /* Filters (data-keep-list) become a row of chips, so the list itself is near the top. */
+  .e-rail-item[data-keep-list] {
+    display: inline-flex;
+    align-items: center;
+    width: auto;
+    min-height: 40px;
+    margin: 4px 0 4px 8px;
+    padding: 6px 12px !important;
+    border: 1px solid var(--e-rule) !important;
+  }
+  .e-rail-item[data-keep-list].is-selected { border-color: var(--theme-focused-foreground) !important; }
+  .e-segment-tab { min-height: 40px; padding: 6px 12px; }
+  .e-dashboard-shell [class*="ActionButton_root"] { min-height: 40px; }
+  .e-search-row [class*="Input_displayed"] { min-height: 44px; }
+  .e-theme-duo { padding: 12px 14px; }
+  .e-theme-circle { width: 20px; height: 20px; }
+  .e-theme-duo__rule { margin: 0 12px; }
+  .e-viewer-switch select { min-height: 40px; font-size: 14px; }
+  .e-meta-grid__row { grid-template-columns: 6rem 1fr; }}
+
+@media (pointer: coarse) {
+  .e-section-tab { min-height: 44px; }
+  .e-rail-item { min-height: 48px; }
+  .e-segment-tab { min-height: 40px; }}
+
+/* ─── 26. SET PLAYS (blotto, ⅔, lowest unique) ─────────────────────────── */
+
+.e-setplay { padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.e-setplay__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.e-setplay__game {
+  margin: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--theme-focused-foreground);
+}
+.e-setplay__players { margin: 2px 0 0; font-size: 1.05rem; }
+.e-setplay__status {
+  flex: none;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border: 1px solid var(--e-rule);
+  opacity: 0.75;
+}
+.e-setplay__status.is-live {
+  opacity: 1;
+  border-color: var(--theme-focused-foreground);
+  color: var(--theme-focused-foreground);
+}
+.e-setplay__status.is-live::before { content: "● "; }
+.e-setplay__verdict { margin: 0; font-size: 0.95rem; }
+.e-setplay__verdict.is-win { color: var(--theme-focused-foreground); font-weight: 600; }
+.e-setplay__why { color: var(--theme-text); opacity: 0.6; font-size: 0.82rem; font-weight: 400; }
+.e-setplay__wait { margin: 0; font-size: 0.82rem; line-height: 1.5; opacity: 0.7; max-width: 72ch; }
+.e-setplay__meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding-top: 8px; border-top: 1px solid var(--e-rule); }
+.e-setplay__badges { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; }
+.e-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* commit → reveal → winner */
+.e-phase-strip { list-style: none; display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; font-size: 0.78rem; }
+.e-phase-strip__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 0;
+  opacity: 0.4;
+  white-space: nowrap;
+}
+.e-phase-strip__step + .e-phase-strip__step::before {
+  content: "";
+  width: clamp(12px, 4vw, 56px);
+  height: 1px;
+  margin-right: 10px;
+  background: currentColor;
+  opacity: 0.6;
+}
+.e-phase-strip__step.is-done { opacity: 0.75; }
+.e-phase-strip__step.is-now { opacity: 1; color: var(--theme-focused-foreground); }
+.e-phase-strip__n {
+  display: inline-grid;
+  place-items: center;
+  width: 1.7em;
+  height: 1.7em;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 0.72rem;
+}
+.e-phase-strip__step.is-now .e-phase-strip__n {
+  background: var(--theme-focused-foreground);
+  color: var(--theme-background);
+  border-color: var(--theme-focused-foreground);
+}
+.e-phase-strip__who { font-weight: 600; }
+
+/* Seats (pick games) */
+.e-seats { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--e-rule); }
+.e-seat {
+  display: grid;
+  grid-template-columns: minmax(8ch, 1fr) minmax(12ch, 1.4fr) 5ch;
+  gap: 8px;
+  align-items: baseline;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--e-rule);
+  font-size: 0.85rem;
+}
+.e-seat__state { opacity: 0.65; font-size: 0.78rem; }
+.e-seat__move { text-align: right; font-size: 1rem; }
+.e-seat.is-to_commit { opacity: 0.55; }
+.e-seat.is-out { opacity: 0.45; text-decoration: line-through; }
+.e-seat.is-winner {
+  background: color-mix(in srgb, var(--theme-focused-foreground) 16%, transparent);
+  box-shadow: inset 3px 0 0 var(--theme-focused-foreground);
+}
+.e-seat.is-winner .e-seat__name,
+.e-seat.is-winner .e-seat__move { color: var(--theme-focused-foreground); font-weight: 600; }
+
+/* Blotto: a row per player, a column per field */
+.e-blotto__rules, .e-lowest__rules, .e-twothirds__rules { margin: 0 0 8px; font-size: 0.75rem; line-height: 1.5; }
+.e-blotto__scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.e-blotto__grid { border-collapse: collapse; font-size: 0.95rem; }
+.e-blotto__grid th, .e-blotto__grid td { padding: 8px 10px; border: 1px solid var(--e-rule); text-align: center; }
+.e-blotto__grid thead th { font-size: 0.68rem; letter-spacing: 0.1em; font-weight: 400; opacity: 0.6; border-top: 0; }
+.e-blotto__grid thead th:first-child { border-left: 0; }
+.e-blotto__grid tbody th { text-align: left; font-weight: 400; min-width: 12ch; border-left: 0; }
+.e-blotto__name { display: block; }
+.e-blotto__state { display: block; font-size: 0.68rem; opacity: 0.6; white-space: nowrap; }
+.e-blotto__grid td { min-width: 3.2ch; }
+.e-blotto__grid td.is-hidden { opacity: 0.4; }
+.e-blotto__grid td.is-won {
+  background: var(--theme-focused-foreground);
+  color: var(--theme-background);
+  font-weight: 700;
+}
+.e-blotto__grid tr.is-winner th { color: var(--theme-focused-foreground); font-weight: 600; }
+.e-blotto__took { font-weight: 600; }
+.e-blotto__history { margin-top: 8px; font-size: 0.78rem; }
+.e-blotto__history summary { cursor: pointer; opacity: 0.7; }
+
+/* Guess ⅔: one number line */
+.e-numline {
+  --rows: 1;
+  position: relative;
+  margin: 28px 12px 4px;
+  height: calc(40px + var(--rows) * 30px);
+}
+.e-numline__axis { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--theme-text); opacity: 0.5; }
+.e-numline__tick { position: absolute; top: -6px; width: 1px; height: 14px; background: var(--theme-text); opacity: 0.45; }
+.e-numline__tick > span { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 0.68rem; }
+.e-numline__mark { position: absolute; top: -8px; bottom: 0; width: 0; border-left: 2px dashed var(--theme-text); opacity: 0.55; }
+.e-numline__mark > span { position: absolute; bottom: -2px; left: 5px; font-size: 0.7rem; white-space: nowrap; }
+/* The target (⅔ of the average) is always left of the average: label it on its left. */
+.e-numline__mark--target > span { left: auto; right: 5px; }
+.e-numline__mark--target.is-low > span { left: 5px; right: auto; bottom: 16px; }
+.e-numline__mark--target { border-left-color: var(--theme-focused-foreground); opacity: 1; }
+.e-numline__mark--target > span { color: var(--theme-focused-foreground); font-weight: 600; }
+.e-numline__pick { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 1; }
+.e-numline__pin { width: 2px; height: calc(10px + var(--row, 0) * 30px); background: var(--theme-text); opacity: 0.6; }
+.e-numline__label { font-size: 0.75rem; white-space: nowrap; padding: 1px 4px; border: 1px solid var(--e-rule); background: var(--theme-background); }
+.e-numline__pick.is-winner .e-numline__pin { background: var(--theme-focused-foreground); opacity: 1; width: 3px; }
+.e-numline__pick.is-winner .e-numline__label {
+  background: var(--theme-focused-foreground);
+  color: var(--theme-background);
+  border-color: var(--theme-focused-foreground);
+  font-weight: 700;
+}
+
+/* Lowest unique: a box per number */
+.e-lowest__row { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr)); gap: 6px; margin: 0; padding: 0; }
+.e-lowest__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 4.6rem;
+  padding: 6px 8px;
+  border: 1px solid var(--e-rule);
+  font-size: 0.78rem;
+}
+.e-lowest__n { font-size: 1.05rem; }
+.e-lowest__cell.is-empty { opacity: 0.4; }
+.e-lowest__cell.is-taken .e-lowest__who { text-decoration: line-through; opacity: 0.6; }
+.e-lowest__cell.is-unique { border-color: var(--theme-text); }
+.e-lowest__tag { margin-top: auto; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.55; }
+.e-lowest__cell.is-winner {
+  background: var(--theme-focused-foreground);
+  color: var(--theme-background);
+  border-color: var(--theme-focused-foreground);
+  font-weight: 700;
+}
+.e-lowest__cell.is-winner .e-lowest__tag { opacity: 0.85; }
+
+/* Game rows in the Games rail */
+.e-game-row { display: flex; flex-direction: column; gap: 1px; min-width: 0; text-align: left; }
+.e-game-row__top { display: flex; justify-content: space-between; gap: 8px; }
+.e-game-row__kind { font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--theme-focused-foreground); }
+.e-game-row__phase { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; white-space: nowrap; }
+
+/* ─── 27. OVERVIEW: YOUR AGENT NOW ─────────────────────────────────────── */
+
+.e-now { border: 1px solid var(--e-rule); margin-bottom: 16px; }
+.e-now__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--e-rule);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.e-now__head > span:first-child { opacity: 0.6; }
+.e-now__row {
+  display: grid;
+  grid-template-columns: 11ch minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  align-items: baseline;
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--e-rule);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+.e-now__row:last-child { border-bottom: 0; }
+.e-now__row:hover { background: color-mix(in srgb, var(--theme-focused-foreground) 8%, transparent); }
+.e-now__row--static { cursor: default; }
+.e-now__row--static:hover { background: transparent; }
+.e-now__label { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55; }
+.e-now__go { color: var(--theme-focused-foreground); }
+.e-now__sub { grid-column: 2 / 4; font-size: 0.75rem; opacity: 0.6; overflow-wrap: anywhere; }
+.e-now__live { color: var(--theme-focused-foreground); }
+
+/* ─── 28. THEME / TINT CROSS-FADE ──────────────────────────────────────── */
+/* On only for the length of a theme or tint change (themeConfig.applyTheme),
+   so hovers and other transitions are untouched the rest of the time. A run
+   through the tints reads as one surface changing colour, not a flash. */
+@media (prefers-reduced-motion: no-preference) {
+  .e-theme-anim,
+  .e-theme-anim *,
+  .e-theme-anim *::before,
+  .e-theme-anim *::after {
+    transition-property: color, background-color, border-color, outline-color, fill, stroke, box-shadow, text-decoration-color !important;
+    transition-duration: 0.35s !important;
+    transition-timing-function: ease-out !important;
+    transition-delay: 0s !important;
+  }}
+
+/* ─── 29. CAPTURE MODE (?capture=1, src/capture.ts) ────────────────────── */
+/* For filming: nothing moves between frames, so a tint switched on the beat
+   lands in one frame; the relay's host:port is not on screen. */
+.e-capture,
+.e-capture *,
+.e-capture *::before,
+.e-capture *::after {
+  transition: none !important;
+  animation: none !important;
+}
+.e-capture .e-capture-hide { display: none !important; }
+/* The capture frame (540 × 540 CSS px) is the phone layout; scale it so the
+   smallest text on screen (0.65rem / 11px labels) is at least 13 CSS px. */
+@media (max-width: 700px) {
+  .e-capture .e-app-shell { zoom: 1.25; height: calc(var(--e-frame-h, 100dvh) / 1.25); }}
+
+.e-quest-next { margin: 4px 0 10px; font-size: 0.85rem; line-height: 1.5; }
+.e-quest-next code { font-size: 0.78rem; overflow-wrap: anywhere; opacity: 0.8; }
+
+@media (max-width: 700px) {
+  /* On a detail screen, the list's own controls (search, counts, the toolbar
+     line) belong to the list: hide them so the detail starts at the top. */
+  .e-view-body:has([data-pane-shown="detail"]) .e-view-toolbar,
+  .e-view-body__inner:has(> [data-pane-shown="detail"]) > .e-search-row { display: none; }
+  /* Keep commit → reveal → winner on one line; the verdict line names the winner. */
+  .e-phase-strip { flex-wrap: nowrap; }
+  .e-phase-strip__step { padding-right: 6px; gap: 5px; }
+  .e-phase-strip__step + .e-phase-strip__step::before { width: 14px; margin-right: 6px; }
+  .e-phase-strip__who { display: none; }
+  .e-setplay { padding: 12px 16px 24px; }
+  .e-blotto__grid th, .e-blotto__grid td { padding: 8px 6px; }
+  .e-blotto__grid tbody th { min-width: 9ch; }}
+
+@media (prefers-reduced-motion: reduce) {
+  .e-dashboard-shell *,
+  .e-app-drawer { transition: none !important; animation: none !important; }}
+
+/* Calls (:v2 set plays): a forecast sealed with the first move — "called · sealed", then its percent. */
+.e-call-tag { margin-left: 8px; padding: 0 6px; font-size: 0.72rem; letter-spacing: 0.04em; white-space: nowrap;
+  border: 1px dashed var(--e-rule); opacity: 0.8; }
+.e-call-tag.is-revealed { border-style: solid; border-color: var(--theme-focused-foreground);
+  color: var(--theme-focused-foreground); opacity: 1; }
+/* Bargain: the offers table (blotto's grid, wider cells) and each hand, sealed until the end. */
+.e-bargain__offers td, .e-bargain__offers th { text-align: left; white-space: nowrap; font-size: 0.85rem; }
+.e-bargain__hand { grid-template-columns: minmax(8ch, 1fr) minmax(16ch, 3fr) 4ch; }
+
+/* Operator section: the operator's desk — cards and commands from the views it sits beside. */
+.e-op { display: flex; flex-direction: column; gap: 14px; }
+.e-op-list { display: flex; flex-direction: column; gap: 10px; }
+.e-op-cmds { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.e-op .e-setting-cmd.e-op-cmd { padding-left: 0; }
+.e-op-cmd__label { min-width: 12ch; }
+.e-op-cmds__note { font-size: 0.85em; }
+
+/* Launch additions: the operator's current expedition, under an agent's quests — the theme's accent, a quiet rule. */
+.e-gamify-expedition { margin-top: 12px; padding: 6px 0 6px 10px;
+  border-left: 2px solid var(--theme-focused-foreground); display: flex; flex-direction: column; gap: 2px; }
+
+/* ═══════════════════════════════════════════════════════════════
+   30. THE LOOK — the one style (the demo animatic's information cards)
+   Pixel headings (Silkscreen) that unscramble, mono lines typed with
+   a block cursor, corner brackets, status lines above and below,
+   and the tint as a FILL with dark ink on it, never as text on the
+   light canvas. It was the "animatic" style beside "retromod"
+   (docs/ui-style-experimental.md, now history); since ui-v2 it is
+   the only one. `.e-look` is on the app's root with the theme and
+   tint classes (themeConfig.applyTheme), so these rules keep their
+   weight over the older ones above without a switch.
+   - It follows light/dark and all eight tints: every colour comes
+     from the tint (--tint; amber when there is none).
+   - Motion: arrivals only, 0.35–0.45 s, ease-out. Nothing moves with
+     prefers-reduced-motion or in capture mode (?capture=1).
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── 0. THE PIXEL FACE ─────────────────────────────────────────────────────
+   Silkscreen (SIL OFL 1.1, assets/fonts/OFL-Silkscreen.txt), bundled: the
+   dashboard makes no third-party requests. Latin only; anything else falls
+   back to the mono stack. Not fetched until a pixel heading is on screen. */
+@font-face {
+  font-family: "EmporiaPixel";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/assets/Silkscreen-Regular-CtPo2yA5.woff2") format("woff2");
+}
+
+/* ─── 1. TOKENS ─────────────────────────────────────────────────────────── */
+
+.e-look {
+  --anim-tint: var(--tint, #f0a832);                                   /* amber when no tint is set */
+  --anim-ink: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);       /* text on a fill, both themes */
+  --anim-fill: oklch(from var(--anim-tint) max(l, 0.86) c h);         /* caption bands, chips, the won cells */
+  /* brackets, rules, ticks: graphics only. P10: L 0.58, not 0.62, so it clears 3:1 on the light
+     canvas in every tint (green measured 2.89:1); textContrast.test.ts holds it there. */
+  --anim-line: oklch(from var(--anim-tint) 0.58 c h);
+  --anim-pixel: "EmporiaPixel", var(--font-family-mono, monospace);
+  --anim-bracket: 12px;
+  --anim-bracket-w: 2px;
+  --anim-ease: cubic-bezier(0.33, 1, 0.68, 1);                          /* power2.out */
+}
+
+/* The light canvas for every tint, amber included : white with a breath of the tint, near-black ink.
+   The accent used AS TEXT is darker than the graphics accent so it reads
+   (≥ 4.5:1 on the canvas). */
+body.e-look.theme-light {
+  --theme-background: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);
+  --theme-background-modal: oklch(from var(--anim-tint) 0.92 calc(c * 0.18) h);
+  --theme-background-input: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);
+  --theme-border: oklch(from var(--anim-tint) 0.84 calc(c * 0.28) h);
+  --theme-border-subdued: oklch(from var(--anim-tint) 0.88 calc(c * 0.22) h);
+  --theme-text: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);
+  --theme-button: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);
+  --theme-button-text: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);
+  --theme-focused-foreground: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h);
+  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h / 0.5);
+}
+
+/* The dark variant: the same cards on a near-black tinted canvas. */
+body.e-look.theme-dark {
+  --theme-background: oklch(from var(--anim-tint) 0.14 calc(c * 0.18) h);
+  --theme-background-modal: oklch(from var(--anim-tint) 0.24 calc(c * 0.22) h);
+  --theme-background-input: oklch(from var(--anim-tint) 0.28 calc(c * 0.2) h);
+  --theme-border: oklch(from var(--anim-tint) 0.4 calc(c * 0.28) h);
+  --theme-border-subdued: oklch(from var(--anim-tint) 0.32 calc(c * 0.26) h);
+  --theme-text: oklch(from var(--anim-tint) 0.94 calc(c * 0.12) h);
+  --theme-button: oklch(from var(--anim-tint) 0.94 calc(c * 0.12) h);
+  --theme-button-text: oklch(from var(--anim-tint) 0.14 calc(c * 0.18) h);
+  --theme-focused-foreground: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h);
+  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h / 0.5);
+  --anim-line: oklch(from var(--anim-tint) 0.72 c h);
+}
+
+.e-look .e-dashboard-shell {
+  --e-rule: var(--theme-border-subdued);
+  --anim-wash: color-mix(in srgb, var(--anim-fill) 45%, transparent);
+  --e-accent-wash: var(--anim-wash);
+}
+/* On the dark canvas a strong wash would sit under light text: keep it faint. */
+.e-look.theme-dark .e-dashboard-shell { --anim-wash: color-mix(in srgb, var(--anim-fill) 14%, transparent); }
+
+/* ─── 2. CORNER BRACKETS ─────────────────────────────────────────────────
+   Four L-shaped corners drawn as background images, so no element and no
+   ::before/::after is taken from the other rules. On panels only: the
+   frame around data, never over it. */
+.e-look .e-page-head,
+.e-look .e-now,
+.e-look .e-intro,
+.e-look .e-panel-card,
+.e-look .e-overview-card,
+.e-look .e-setplay,
+.e-look .e-empty-pane {
+  background-image:
+    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),
+    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),
+    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),
+    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line));
+  background-size:
+    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),
+    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),
+    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),
+    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket);
+  background-position: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%;
+  background-repeat: no-repeat;
+  background-origin: border-box;
+  border-radius: 0;
+}
+.e-look .e-page-head { --anim-bracket: 18px; --anim-bracket-w: 3px; }
+
+/* ─── 3. THE SECTION HEADING: status line, pixel title, typed line ─────── */
+
+.e-look .e-page-head {
+  position: relative;
+  padding: 12px 24px 16px;
+  margin-top: 10px;
+  border-bottom: 0;
+  max-width: min(1440px, calc(100% - 32px));
+}
+.e-look .e-page-head__title {
+  font-family: var(--anim-pixel);
+  font-weight: 400;
+  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);
+  line-height: 1.05;
+  letter-spacing: 0.04em;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+.e-look .e-page-head__blurb {
+  margin-top: 10px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  opacity: 0.86;
+  max-width: 72ch;
+}
+
+/* The block cursor at the end of a typed line. */
+.e-look .e-anim-cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1em;
+  margin-left: 0.15em;
+  vertical-align: -0.14em;
+  background: currentColor;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .e-look .e-anim-cursor { animation: e-anim-blink 1.06s steps(1, end) infinite; }}
+@keyframes e-anim-blink { 50% { opacity: 0; } }
+
+/* Status lines: `emporia ~ hermes plugin · [1] · 01 / 14 · overview` above,
+   `T+00:28 · as alpha · watch only` below. Small, but ink at 80 %, not faint. */
+.e-look .e-anim-hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  letter-spacing: 0.05em;
+  color: color-mix(in srgb, var(--theme-text) 80%, var(--theme-background));
+  font-variant-numeric: tabular-nums;
+}
+.e-look .e-anim-hud__key {
+  padding: 1px 8px;
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+  font-weight: 700;
+}
+.e-look .e-anim-hud--foot {
+  max-width: min(1440px, calc(100% - 32px));
+  margin: 8px auto 12px;
+  padding: 8px 24px 0;
+  border-top: 1px solid var(--theme-border-subdued);
+  box-sizing: border-box;
+}
+
+/* The beat flash: an ink bar along the heading's top edge, once per section. */
+.e-look .e-anim-flash {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6px;
+  height: 4px;
+  background: var(--anim-ink);
+  opacity: 0;
+  pointer-events: none;
+}
+.e-look.theme-dark .e-anim-flash { background: var(--anim-fill); }
+@media (prefers-reduced-motion: no-preference) {
+  .e-look .e-anim-flash { animation: e-anim-flash 0.42s var(--anim-ease) both; }}
+@keyframes e-anim-flash {
+  0% { opacity: 1; transform: scaleX(0.2); transform-origin: left; }
+  45% { opacity: 1; transform: scaleX(1); transform-origin: left; }
+  100% { opacity: 0; transform: scaleX(1); transform-origin: left; }
+}
+
+/* ─── 4. HEADER, NAV, MENU ──────────────────────────────────────────────── */
+
+.e-look .e-brand-title {
+  font-family: var(--anim-pixel);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.e-look .e-section-tab { opacity: 0.8; }
+.e-look .e-section-tab.is-active {
+  background: var(--anim-fill) !important;
+  color: var(--anim-ink);
+  border-color: var(--anim-fill);
+}
+.e-look .e-section-tab.is-active .e-section-tab__icon { color: var(--anim-ink); }
+.e-look .e-section-tab.is-active .e-section-tab__sub { color: var(--anim-ink); }
+.e-look .e-subnav__tab.is-active { border-bottom-color: var(--anim-line); }
+.e-look .e-mobile-top__section {
+  font-family: var(--anim-pixel);
+  color: var(--theme-text);
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+}
+.e-look .e-mobile-top__section::before { content: "> "; opacity: 0.8; }
+.e-look .e-section-tab__key { opacity: 1; color: color-mix(in srgb, var(--theme-text) 80%, var(--theme-background)); }
+.e-look .e-section-tab.is-active .e-section-tab__key { color: var(--anim-ink); }
+
+/* Relay / live: square chips, the live one filled. */
+.e-look .e-status-chip { border-color: var(--theme-border); background: transparent; }
+.e-look .e-status-chip.is-ok {
+  background: var(--anim-fill);
+  border-color: var(--anim-fill);
+  color: var(--anim-ink);
+  font-weight: 700;
+}
+.e-look .e-status-chip.is-ok .e-status-chip__loader{ color: var(--anim-ink); }
+
+/* ─── 5. CAPTION BARS AND CHIPS ─────────────────────────────────────────
+   The animatic's two text-on-fill shapes: a small bold chip (its
+   `CARD · build now` badge) for labels, and a bold band (its captions)
+   for the one line that says what happened. */
+.e-look .e-intro__title,
+.e-look .e-now__head > span:first-child,
+.e-look .e-now__label {
+  display: inline-block;
+  width: fit-content;
+  padding: 2px 8px;
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+  font-weight: 700;
+  opacity: 1;
+}
+.e-look .e-now__label { padding: 1px 6px; font-size: 0.66rem; }
+.e-look .e-now__go,
+.e-look .e-now__live,
+.e-look .e-intro__link-label { color: var(--theme-focused-foreground); font-weight: 600; }
+.e-look .e-now__live { color: var(--anim-ink); }
+.e-look .e-now__head { align-items: center; }
+.e-look .e-now__head > span:last-child { font-family: var(--anim-pixel); font-size: 0.9rem; letter-spacing: 0.06em; }
+.e-look .e-intro { border-left-width: 1px; }
+.e-look .e-intro__text { font-size: 0.95rem; }
+
+/* Sub-headings inside a view, in the pixel face: the QUESTS card. */
+.e-look .e-subhead {
+  font-family: var(--anim-pixel);
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  opacity: 1;
+  margin-top: 22px;
+}
+.e-look .e-subhead::after { background: var(--anim-line); opacity: 0.6; }
+.e-look .e-panel-card__title { opacity: 0.85; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.e-look .e-overview-card__title { font-family: var(--anim-pixel); letter-spacing: 0.05em; text-transform: uppercase; }
+.e-look .e-rail-label { opacity: 0.8; font-weight: 700; }
+.e-look .e-rail-item.is-selected {
+  background: var(--e-accent-wash);
+  box-shadow: inset 3px 0 0 var(--anim-line);
+}
+
+/* Quests read like the animatic's QUESTS card: `>` lines, the done ones ticked. */
+.e-look .e-quest-row { font-size: 0.95rem !important; line-height: 1.7; opacity: 1; }
+.e-look .e-quest-row::before { content: "> "; color: var(--theme-focused-foreground); font-weight: 700; }
+.e-look .e-quest-row:not(.is-done) { color: color-mix(in srgb, var(--theme-text) 74%, var(--theme-background));}
+.e-look .e-quest-next .e-now__label { margin-right: 4px; }
+
+/* ─── 6. SET PLAYS ───────────────────────────────────────────────────── */
+
+.e-look .e-setplay { padding: 18px 20px 22px; }
+.e-look .e-setplay__game {
+  font-family: var(--anim-pixel);
+  font-size: clamp(1.4rem, 1rem + 1.4vw, 2rem);
+  line-height: 1.05;
+  letter-spacing: 0.05em;
+  color: var(--theme-text);
+}
+.e-look .e-setplay__players { font-size: 1.05rem; margin-top: 6px; }
+.e-look .e-setplay__status { opacity: 1; border-color: var(--theme-border); font-weight: 700; }
+.e-look .e-setplay__status.is-live {
+  background: var(--anim-fill);
+  border-color: var(--anim-fill);
+  color: var(--anim-ink);
+}
+/* The verdict is the caption band. */
+.e-look .e-setplay__verdict.is-win {
+  padding: 8px 12px;
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.e-look .e-setplay__verdict.is-win .e-setplay__why { color: var(--anim-ink); opacity: 0.85; }
+.e-look .e-setplay__wait { opacity: 0.86; font-size: 0.86rem; }
+
+/* commit → reveal → winner: square steps, the current one a filled pixel label. */
+.e-look .e-phase-strip__n { border-radius: 0; }
+.e-look .e-phase-strip__step.is-now {
+  opacity: 1;
+  color: var(--anim-ink);
+  background: var(--anim-fill);
+  padding: 3px 10px 3px 4px;
+  font-family: var(--anim-pixel);
+  letter-spacing: 0.05em;
+}
+.e-look .e-phase-strip__step.is-now .e-phase-strip__n {
+  background: var(--anim-ink);
+  border-color: var(--anim-ink);
+  color: var(--anim-fill);
+  font-family: var(--font-family-mono, monospace);
+}
+.e-look .e-phase-strip__step + .e-phase-strip__step::before { background: var(--anim-line); opacity: 0.8; }
+
+/* Won cells, winning seats and picks: the fill with ink on it. */
+.e-look .e-blotto__grid td.is-won,
+.e-look .e-lowest__cell.is-winner,
+.e-look .e-numline__pick.is-winner .e-numline__label {
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+  border-color: var(--anim-line);
+}
+.e-look .e-blotto__grid tr.is-winner th,
+.e-look .e-seat.is-winner .e-seat__name,
+.e-look .e-seat.is-winner .e-seat__move { color: var(--theme-text); font-weight: 700; }
+.e-look .e-seat.is-winner {
+  background: var(--anim-wash);
+  box-shadow: inset 3px 0 0 var(--anim-line);
+}
+.e-look .e-numline__pick.is-winner .e-numline__pin { background: var(--anim-line); }
+.e-look .e-numline__mark--target { border-left-color: var(--anim-line); }
+.e-look .e-numline__mark--target > span { color: var(--theme-text); }
+.e-look .e-game-row__kind { color: var(--theme-text); font-weight: 700; }
+.e-look .e-blotto__grid thead th,
+.e-look .e-blotto__state,
+.e-look .e-seat__state { opacity: 0.8; }
+
+/* ─── 7. A CALMER FAINT ──────────────────────────────────────────────────
+   Secondary text used to dim to 35–50 % opacity, which falls under
+   4.5:1 on a tinted canvas. Faint is a colour at about 4.6:1 or more. */
+.e-look {
+  --anim-faint: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+}
+.e-look .e-faint,
+.e-look .e-dim,
+.e-look .e-rail-item .e-faint,
+.e-look .e-relay-status__host,
+.e-look .e-relay-status__meta,
+.e-look .e-game-row__phase,
+.e-look .e-chat-line__time,
+.e-look .e-chat-line__type,
+.e-look .e-badge--dim,
+.e-look .e-slim-card__title,
+.e-look .e-blotto__grid td.is-hidden,
+.e-look .e-phase-strip__step.is-next,
+/* Review pass 2: labels and hints still dimmed by opacity (2.9–4.0:1 on light green). */
+.e-look .e-meta-grid dt,
+.e-look .e-overview-card__body p,
+.e-look .e-overview-card--failed .e-overview-card__body,
+.e-look .e-empty-pane__hint,
+.e-look .e-slim-card__foot,
+.e-look .e-hero-stat__label,
+.e-look .e-hero-stat__hint,
+.e-look .e-chess-players__vs,
+.e-look .e-chess-speed__lbl,
+.e-look .e-lowest__tag,
+.e-look .e-chess-move-idx,
+.e-look .e-role-pill--spectator,
+.e-look .e-entity-chip--inert,
+.e-look .e-inbox-event--read,
+.e-look .e-seat.is-to_commit,
+.e-look .e-trust-key,
+.e-look [style*="opacity: 0.4"],
+.e-look [style*="opacity: 0.5"],
+.e-look [style*="opacity: 0.6"] {
+  opacity: 1 !important;
+  color: var(--anim-faint);
+}
+.e-look .e-phase-strip__step.is-done { opacity: 1; }
+/* Names in a chat are ink, so they read on the tint. */
+.e-look .e-chat-line__name { color: var(--theme-text) !important; }
+.e-look .e-entity-chip--agent,
+.e-look .e-entity-chip--session { opacity: 1; color: var(--theme-focused-foreground); }
+
+/* ─── 8. MOTION ─────────────────────────────────────────────────────────
+   Panels arrive with a short rise when a section opens (they mount with it).
+   Off with reduced motion; capture mode turns every animation off anyway. */
+@media (prefers-reduced-motion: no-preference) {
+  .e-look .e-page-head,
+  .e-look .e-now,
+  .e-look .e-intro,
+  .e-look .e-setplay {
+    animation: e-anim-rise 0.38s var(--anim-ease) both;
+  }
+  .e-look .e-now { animation-delay: 0.05s; }
+  .e-look .e-setplay { animation-delay: 0.04s; }}
+@keyframes e-anim-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ─── 10. PHONE ──────────────────────────────────────────────────────── */
+@media (max-width: 700px) {
+  .e-look .e-page-head { padding: 10px 16px 14px; margin-top: 8px; max-width: calc(100% - 16px); }
+  .e-look .e-page-head__title { font-size: 1.55rem; }
+  .e-look .e-page-head__blurb { font-size: 0.84rem; }
+  .e-look .e-anim-hud { font-size: 0.7rem; }
+  .e-look .e-anim-hud--top .e-anim-hud__where { flex-basis: 100%; }
+  .e-look .e-anim-hud--foot { padding: 8px 16px 0; max-width: calc(100% - 16px); }
+  .e-look .e-setplay__game { font-size: 1.4rem; }}
+
+/* ─── 11. HOME'S FIRST FRAME, THE MONEY CHIP, PLEDGES (review pass 2: P2, P3, P5, P6) ── */
+
+/* Home leads with the agent: "your agent now" beside "next up" (one column when narrow,
+   or when next up is not shown: auto-fit drops the empty track). */
+.e-home-lead {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: 0 16px;
+  align-items: start;
+}
+.e-now__row--badges { align-items: center; }
+
+/* Home: "On the relay now" is a head, the cards, then rows; the foot is one line of facts and one of what this is. */
+.e-home-relay { margin-bottom: 16px; }
+.e-home-relay__head { border: 1px solid var(--e-rule); margin-bottom: 10px; }
+.e-home-relay .e-post-cards { margin-bottom: 10px; }
+.e-home-relay__rows { margin-bottom: 0; }
+.e-home-foot { margin-top: 4px; }
+.e-home-foot__facts { margin: 0 0 8px; font-size: 0.8rem; }
+.e-intro--line { border: 0; border-left: 3px solid var(--theme-focused-foreground); padding: 4px 12px; margin: 0; font-size: 0.82rem; max-width: 78ch; }
+.e-intro__link-inline {
+  background: transparent; border: 0; padding: 0; font: inherit; color: var(--theme-focused-foreground); cursor: pointer;
+}
+.e-intro__link-inline:hover { text-decoration: underline; }
+.e-badge-fold > summary { cursor: pointer; padding: 8px 0; }
+.e-next__call > summary { cursor: pointer; font-size: 0.78rem; }
+.e-now__badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.e-now__more { font-size: 0.75rem; }
+
+/* Next up: one row per thing to do, its clock, and the exact call (copy-only). */
+.e-next__why { overflow-wrap: anywhere; }
+.e-next__clock {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.e-next__row.is-urgent .e-next__clock { color: var(--theme-focused-foreground); font-weight: 700; }
+.e-next__open {
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--theme-focused-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+.e-next__call { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; opacity: 1; }
+.e-next__call code { overflow-wrap: anywhere; }
+.e-next__foot {
+  margin: 0;
+  padding: 8px 14px 10px;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+}
+/* Text another agent wrote: quoted and underlined as data, never styled as the dashboard's own words. */
+.e-untrusted { font-style: italic; border-bottom: 1px dotted currentColor; }
+/* Another agent's words are told apart by the italic and the dotted rule, not by quote marks around names and titles. */
+
+/* The relay's pipeline, folded to one chip beside the status line; it opens to the sentence. */
+.e-overview-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 14px;
+}
+.e-overview-status-row .e-overview-status { margin-bottom: 0; }
+.e-pipeline-chip { font-size: 0.726rem; max-width: 100%; }
+.e-pipeline-chip > summary {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid var(--e-rule);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  list-style: none;
+}
+.e-pipeline-chip > summary::-webkit-details-marker { display: none; }
+.e-pipeline-chip > summary::after { content: " +"; }
+.e-pipeline-chip[open] > summary::after { content: " \2212"; }
+.e-pipeline-chip__text {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+}
+.e-look .e-pipeline-chip > summary { background: var(--anim-fill); color: var(--anim-ink); font-weight: 700; border-color: transparent; }
+
+/* P6: what kind of money the amounts are, beside the relay chip. */
+.e-money-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid var(--theme-border-subdued, rgba(128, 128, 128, 0.3));
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.e-money-chip--test { background: var(--theme-border, transparent); }
+.e-money-chip--real { border-color: currentColor; }
+.e-look .e-money-chip--test { background: var(--anim-fill); color: var(--anim-ink); border-color: transparent; }
+
+/* The agent's pledges, under its Word line on the sheet. */
+.e-pledges { margin-top: 6px; }
+.e-pledge__status { white-space: nowrap; }
+.e-pledge.is-kept .e-pledge__status { color: var(--theme-focused-foreground); }
+.e-pledge.is-broken .e-pledge__status,
+.e-pledge.is-disputed .e-pledge__status { font-weight: 700; }
+
+/* P5: with the chat open beside the view the frame is narrower, so the layout (data-nav) drops
+   a tier by itself; the header never wraps. */
+.e-brand-title--header { flex-shrink: 0; }
+.e-relay-status { flex-wrap: nowrap; }
+.e-feed-post { padding: 8px 0; overflow-wrap: anywhere; }
+
+/* A post as a card: author line, kind chip, body, footer, replies nested inside. */
+.e-post-cards { display: flex; flex-direction: column; gap: 12px; max-width: 46rem; }
+.e-post-card {
+  border: 1px solid var(--e-rule, var(--theme-border-subdued));
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.e-post-card__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.e-post-card__who { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.e-post-card__name { font-weight: 600; }
+.e-post-card__tag {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+}
+.e-post-card__tag--operator { color: var(--theme-focused-foreground); }
+.e-post-card__time { font-size: 0.78rem; }
+.e-post-card__kind {
+  margin-left: auto;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 8px;
+  background: var(--e-accent-wash, color-mix(in srgb, currentColor 8%, transparent));
+}
+.e-post-card__body { margin: 0; line-height: 1.5; white-space: pre-wrap; }
+.e-post-card__foot { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.78rem; }
+.e-post-card__replies {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0 0 0 12px;
+  border-left: 2px solid var(--e-rule, var(--theme-border-subdued));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.e-post-card__reply-head { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; margin-bottom: 2px; }
+.e-post-card__reply .e-moire-avatar { width: 18px; height: 18px; }
+/* gap already spaces the items; no extra margins. The name is the only part that shrinks (ellipsis), so the tag and level never sit on top of it. */
+.e-post-card__who > * { flex: none; }
+.e-post-card__who > .e-post-card__name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e-post-card__who { max-width: 100%; }
+.e-post-card__reply-head { flex-wrap: wrap; }
+/* The kit gives every list a hanging indent (text-indent: -1ch) that the name and time inside a reply inherit: the name
+   is pulled left under its avatar and runs into the time. Lists in a card start flush. */
+.e-post-card__replies, .e-post-card__replies li { text-indent: 0; }
+.e-post-card__reply .e-post-card__body { margin-top: 2px; }
+.e-post-card__more {
+  align-self: flex-start;
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+  color: var(--theme-focused-foreground);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.e-post-card__more:hover { text-decoration: underline; }
+
+/* The Arena: home (live, recent, boards) and a match with its step-through replay. Tokens only. */
+.e-arena { display: block; min-width: 0; padding: 0 12px 24px; }
+.e-arena-section { margin: 0 0 20px; }
+.e-arena-cards { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); }
+.e-arena-card {
+  display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left; cursor: pointer;
+  font: inherit; color: inherit; background: transparent; padding: 8px 10px;
+  border: 1px solid var(--e-rule); border-radius: 0;
+}
+.e-arena-card:hover, .e-arena-card:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }
+.e-arena-card__top { display: flex; justify-content: space-between; gap: 8px; }
+.e-arena-card__game { font-weight: 600; }
+.e-arena-card__live { color: var(--theme-focused-foreground); font-size: 0.75rem; }
+.e-arena-card__result { font-size: 0.85rem; }
+.e-arena-card__models { font-size: 0.7rem; }
+.e-arena-players { overflow-wrap: anywhere; }
+/* An id or name: one line, monospace, ellipsis at its box edge (full value in the title); the only place a break "anywhere" is allowed. */
+.e-id { display: inline-block; max-width: 100%; vertical-align: bottom; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-family-mono, monospace); overflow-wrap: anywhere; }
+.e-arena-slot__who { min-width: 0; max-width: 100%; }
+.e-arena-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.e-arena-chip { font: inherit; font-size: 0.8rem; color: inherit; background: transparent; padding: 3px 8px; border: 1px solid var(--e-rule); cursor: pointer; }
+.e-arena-chip.is-on { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
+.e-arena-back { display: block; text-align: left; margin: 0 0 6px; font: inherit; font-size: 0.8rem; color: var(--theme-focused-foreground); background: transparent; border: 0; padding: 4px 0; cursor: pointer; }
+.e-arena-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.e-arena-head__row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.e-arena-head__title { font-weight: 600; font-size: 1.05rem; }
+.e-arena-head__players { min-width: 0; }
+.e-arena-head__badges { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.e-arena-cols { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 900px) { .e-arena-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }}
+.e-arena-stage { min-width: 0; }
+.e-arena-slider { width: 100%; margin: 8px 0; accent-color: var(--theme-focused-foreground); }
+.e-arena-stepline { display: block; margin: 4px 0 10px; overflow-wrap: anywhere; }
+.e-arena-frame { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--e-rule); }
+.e-arena-slots, .e-arena-bids { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.e-arena-slot, .e-arena-bids li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--e-rule); }
+.e-arena-slot__who { min-width: 8ch; }
+.e-arena-move { font-variant-numeric: tabular-nums; font-family: var(--font-family-mono); }
+.e-arena-sealed { opacity: 0.6; font-family: var(--font-family-mono); }
+.e-arena-slot.is-revealed .e-arena-move { color: var(--theme-focused-foreground); }
+.e-arena-bids li.is-called { border-bottom-color: var(--theme-focused-foreground); }
+.e-arena-call { color: var(--theme-focused-foreground); font-size: 0.8rem; }
+.e-arena-verdict { margin: 0; color: var(--theme-focused-foreground); overflow-wrap: anywhere; }
+.e-arena-models { margin-top: 12px; }
+.e-arena-side { min-width: 0; }
+.e-arena-side__label { display: block; font-size: 0.68rem; margin-bottom: 4px; }
+.e-arena-steps { list-style: none; margin: 0 0 8px; padding: 0; max-height: 18rem; overflow-y: auto; }
+.e-arena-step { display: block; width: 100%; text-align: left; font: inherit; font-size: 0.8rem; color: inherit; background: transparent; border: 0; border-left: 2px solid transparent; padding: 3px 6px; cursor: pointer; overflow-wrap: anywhere; }
+.e-arena-step.is-now { border-left-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
+.e-arena-step:hover, .e-arena-step:focus-visible { background: var(--theme-border-subdued); outline: none; }
+@media (max-width: 600px) { .e-arena { padding: 0 8px 20px; } .e-arena-steps { max-height: 12rem; }}
+/* The kit's list markers (ul ▪, ol counters) are not wanted in the Arena's lists. */
+.e-arena ul, .e-arena ol { list-style: none; text-indent: 0; padding-left: 0; }
+.e-arena li { padding-left: 0; }
+.e-arena li::before { content: none; display: none; }
+/* No horizontal page scroll at phone width: every Arena box may shrink, every long name may wrap. */
+.e-arena, .e-arena * { min-width: 0; overflow-wrap: anywhere; }
+.e-arena { max-width: 100%; box-sizing: border-box; }
+.e-arena-slot, .e-arena-bids li, .e-arena-head__row, .e-arena-head__badges { min-width: 0; }
+.e-arena-slider, .e-arena-frame, .e-arena-cards { max-width: 100%; box-sizing: border-box; }
+@media (max-width: 600px) { .e-arena { padding-left: 0; padding-right: 0; } .e-arena-slot__who { min-width: 0; }}
+
+/* The agent card: one component, full on the agent page, compact in headers and lists. Plain text, wraps at any width. */
+.e-agent-card { overflow-wrap: anywhere; max-width: 100%; }
+.e-agent-card__head { display: flex; gap: 10px; align-items: center; }
+.e-agent-card__text { min-width: 0; }
+.e-agent-card--compact { display: inline-flex; gap: 6px; align-items: flex-start; vertical-align: top; }
+.e-agent-card--compact .e-agent-card__about { display: block; }
+.e-agent-card__badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.e-arena-head__abouts { display: flex; flex-direction: column; gap: 4px; }.Text_text_1shpo {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.BlockLoader_root_1fkyl {
+  display: inline-block;
+  width: 1ch;
+  color: inherit;
+  height: calc(var(--font-size) * var(--theme-line-height-base));
+  vertical-align: bottom;
+}
+.Indent_root_9k7l5 {
+  display: block;
+  padding: 0 0 0 1ch;
+}
+.Badge_root_1obhs {
+  display: inline-block;
+  vertical-align: top;
+  text-align: center;
+  font-weight: 400;
+  margin: 0;
+  outline: 0;
+  border: 0;
+  font-family: var(--font-family-mono);
+  min-height: calc(var(--theme-line-height-base) * var(--font-size));
+  text-transform: uppercase;
+  transition: 200ms ease all;
+  background: var(--theme-border);
+  padding: 0 1ch 0 1ch;
+}
+.Divider_gradient_hx4se {
+  background: linear-gradient(to right, transparent, var(--theme-border), transparent);
+  height: calc(var(--font-size) * var(--theme-line-height-base));
+  width: 100%;
+}
+
+.Divider_divider_hx4se {
+  align-items: center;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  height: calc(var(--font-size) * var(--theme-line-height-base));
+  justify-content: center;
+  outline: 0;
+  width: 100%;
+}
+
+.Divider_line_hx4se {
+  background: var(--theme-text);
+  display: block;
+  flex-shrink: 0;
+  height: 2px;
+  width: 100%;
+}
+.Input_root_zrgvd {
+  position: relative;
+  display: block;
+}
+
+.Input_label_zrgvd {
+  background: var(--theme-border);
+  display: block;
+}
+
+.Input_placeholder_zrgvd {
+  font-style: italic;
+  color: var(--theme-overlay);
+}
+
+.Input_displayed_zrgvd {
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+  overflow-wrap: anywhere;
+  background: var(--theme-background-input);
+  box-shadow: inset 0 0 0 2px var(--theme-border);
+}
+
+.Input_focused_zrgvd {
+  .Input_block_zrgvd {
+    background: var(--theme-focused-foreground);
+  }
+
+  .Input_placeholder_zrgvd {
+    background: var(--theme-focused-foreground);
+  }
+}
+
+@keyframes Input_blink_zrgvd {
+  50% {
+    opacity: 0;
+  }
+}
+
+.Input_blink_zrgvd {
+  animation: Input_blink_zrgvd 1s step-start 0s infinite;
+}
+
+.Input_block_zrgvd {
+  display: inline-block;
+  min-width: 1ch;
+  background: var(--theme-text);
+  color: var(--theme-background);
+  height: calc(var(--font-size) * var(--theme-line-height-base));
+  vertical-align: bottom;
+}
+
+.Input_inputContainer_zrgvd {
+  position: relative;
+  display: block;
+}
+
+.Input_hidden_zrgvd {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  color: transparent;
+  background: transparent;
+  caret-color: transparent;
+  border: none;
+  outline: none;
+  overflow: hidden;
+  padding: 0;
+  margin: 0;
+  line-height: var(--theme-line-height-base);
+  font-size: var(--font-size);
+  font-family: inherit;
+
+  &:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0px 1000px var(--theme-focused-foreground) inset;
+  }
+}
+.SidebarLayout_root_1g3qb {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  white-space: pre-wrap;
+}
+
+.SidebarLayout_sidebar_1g3qb {
+  align-self: stretch;
+  flex-shrink: 0;
+  width: 20ch;
+}
+
+.SidebarLayout_handle_1g3qb {
+  align-self: stretch;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3ch;
+  outline: 0;
+  border: 0;
+  cursor: col-resize;
+
+  &:hover {
+    .SidebarLayout_line_1g3qb {
+      background: var(--theme-focused-foreground);
+    }
+  }
+
+  &:focus {
+    outline: 0;
+    border: 0;
+
+    .SidebarLayout_line_1g3qb {
+      background: var(--theme-focused-foreground);
+    }
+  }
+
+  &:active {
+    .SidebarLayout_line_1g3qb {
+      background: var(--theme-focused-foreground);
+    }
+  }
+}
+
+.SidebarLayout_line_1g3qb {
+  align-self: stretch;
+  width: 2px;
+  background: var(--theme-text);
+
+  &:first-child {
+    margin-left: 1px;
+    margin-right: 2px;
+  }
+}
+
+.SidebarLayout_content_1g3qb {
+  min-width: 10%;
+  width: 100%;
+}
+
+/* Narrow screens only: the back control and the list-then-detail panes. */
+.SidebarLayout_back_1g3qb {
+  display: none;
+}
+
+/* Which pane a narrow screen shows; no effect on a wide one. */
+.SidebarLayout_showList_1g3qb,
+.SidebarLayout_showDetail_1g3qb {
+  min-width: 0;
+}
+
+@media (max-width: 700px) {
+  .SidebarLayout_root_1g3qb {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .SidebarLayout_root_1g3qb > .SidebarLayout_sidebar_1g3qb {
+    width: 100% !important;
+    max-width: 100%;
+  }
+
+  .SidebarLayout_handle_1g3qb {
+    display: none;
+  }
+
+  .SidebarLayout_content_1g3qb {
+    min-width: 0;
+  }
+
+  .SidebarLayout_showList_1g3qb > .SidebarLayout_content_1g3qb {
+    display: none;
+  }
+
+  .SidebarLayout_showDetail_1g3qb > .SidebarLayout_sidebar_1g3qb {
+    display: none;
+  }
+
+  .SidebarLayout_back_1g3qb {
+    display: flex;
+    align-items: center;
+    gap: 1ch;
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+    padding: 0 16px;
+    border: 0;
+    border-bottom: 1px solid var(--theme-border-subdued, rgba(128, 128, 128, 0.2));
+    background: transparent;
+    color: var(--theme-focused-foreground);
+    font: inherit;
+    font-size: 0.85rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: left;
+    cursor: pointer;
+  }
+}
+/*
+NOTE(jimmylee):
+Simple fluid table for Sacred Computer. The CLI framework's `formatRow` +
+`cardHeaderRow` primitives map onto this exact CSS surface, so the React port and
+the terminal port render the same rows from the same data array. Background tokens
+reference the ANSI palette in global.css so the colors are byte-equal to
+scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
+*/
+
+.SimpleTable_scrollWrapper_x98rn {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.SimpleTable_root_x98rn {
+  padding: 0;
+  border-collapse: collapse;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  width: 100%;
+}
+
+.SimpleTable_root_x98rn td {
+  padding: 0 2ch 0 0;
+  vertical-align: top;
+}
+
+.SimpleTable_root_x98rn td:last-child {
+  padding-right: 0;
+}
+
+.SimpleTable_root_x98rn thead td {
+  background: var(--ansi-240-gray-35);
+  color: var(--color-white);
+  font-weight: 400;
+}
+
+.SimpleTable_root_x98rn tbody tr:focus {
+  background: var(--theme-focused-foreground);
+  outline: 0;
+}
+
+.SimpleTable_alignRight_x98rn {
+  text-align: right;
+}
+
+.SimpleTable_statusOk_x98rn {
+  color: var(--ansi-10-lime);
+  font-weight: 700;
+}
+
+.SimpleTable_statusOff_x98rn {
+  color: var(--ansi-248-gray-66);
+}
+.AlertBanner_root_l7zgu {
+  display: block;
+  background: var(--theme-border);
+  box-shadow: 1ch 1ch 0 0 var(--theme-border-subdued);
+  padding: calc(var(--font-size) * var(--theme-line-height-base)) 2ch calc(var(--font-size) * var(--theme-line-height-base)) 2ch;
+  font-weight: 400;
+}
+/* ═══════════════════════════════════════════════════════════════
+   PIXEL BADGES — badges/Badge.tsx, docs/ui-badges.md
+   Two colour roles, no background:
+   - ink    = currentColor (the text colour where the badge sits);
+   - accent = --e-badge-accent, from the tint, darker on the light canvas
+     and lighter on the dark one (≥ 4.8:1 on canvas, panel and the row
+     wash in every theme and tint; badges.test.tsx holds it to that).
+   The accent is set on the element that carries the theme class (body in
+   the console, the app's container in the Hermes tab and on Desktop), so it
+   follows light/dark and the tint run without a re-render. The formulas
+   are mirrored in tokens.ts (ACCENT_CSS); keep the two the same.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* The dashboard has one style (ui-v2): the badge accent is the look's own accent-as-text. */
+.e-look {
+  --e-badge-accent: var(--theme-focused-foreground);
+}
+/* The gallery's panels each carry their own theme and tint: the same formula, worked out there.
+   (dashboard.css § 30 sets --theme-focused-foreground to exactly these on the app's root.) */
+.e-badge-panel.theme-light {
+  --e-badge-accent: oklch(from var(--tint, #f0a832) 0.45 min(c, 0.2) h);
+}
+.e-badge-panel.theme-dark {
+  --e-badge-accent: oklch(from var(--tint, #f0a832) max(l, 0.78) min(c, 0.22) h);
+}
+
+/* A row of small badges (Season › Quests: the ones earned). */
+.e-badge-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
+/* The sheet's head: the class badge beside the name and levels. */
+.e-sheet-head { display: flex; align-items: center; gap: 12px; }
+
+.e-badge {
+  display: inline-block;
+  flex: none;
+  line-height: 0;
+  vertical-align: middle;
+  color: inherit;
+}
+.e-badge > svg {
+  display: block;
+  overflow: visible;
+  image-rendering: pixelated;
+}
+/* On a fill (a chip, a caption bar) the accent would meet the fill: one role only. */
+.e-badge--mono .e-badge__accent { fill: currentColor !important; }
+
+/* The earn animation: a short pixel pop, in three hard steps. Arrivals only. */
+@keyframes e-badge-pop {
+  0% { transform: scale(0.5); }
+  45% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+.e-badge--pop {
+  animation: e-badge-pop 0.32s steps(3, jump-end) both;
+  transform-origin: 50% 60%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .e-badge--pop { animation: none; }
+}
+/* Capture mode (?capture=1): nothing moves. Badge.tsx also leaves the class off. */
+.e-capture .e-badge--pop { animation: none; }
+
+/* ─── the gallery (badges.html, ?capture=1 friendly) ─────────────────────── */
+
+.e-badge-gallery {
+  font-family: var(--font-family-mono, monospace);
+  padding: 16px;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+.e-badge-gallery__title {
+  font-family: "EmporiaPixel", var(--font-family-mono, monospace);
+  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);
+  letter-spacing: 0.04em;
+  margin: 8px 0 4px;
+}
+.e-badge-gallery__lede { max-width: 72ch; line-height: 1.5; margin: 0 0 16px; }
+.e-badge-gallery__bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 16px; }
+.e-badge-gallery__bar button {
+  font: inherit;
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentColor;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.e-badge-gallery__bar button[aria-pressed="true"] { background: var(--e-badge-accent); color: var(--theme-background, #fff); }
+.e-badge-gallery h2 {
+  font-family: "EmporiaPixel", var(--font-family-mono, monospace);
+  font-weight: 400;
+  font-size: 1.1rem;
+  letter-spacing: 0.04em;
+  margin: 24px 0 8px;
+}
+.e-badge-table { border-collapse: collapse; width: 100%; }
+.e-badge-table th, .e-badge-table td {
+  text-align: left;
+  vertical-align: middle;
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--theme-border, #ccc);
+  font-size: 0.85rem;
+}
+.e-badge-table code { font-size: 0.8rem; }
+.e-badge-table__scales { display: flex; gap: 12px; align-items: flex-end; }
+.e-badge-scroll { overflow-x: auto; }
+
+.e-badge-panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
+.e-badge-panel {
+  padding: 10px 12px 12px;
+  border: 1px solid var(--p-line);
+  background: var(--p-bg);
+  color: var(--p-ink);
+}
+.e-badge-panel.theme-light {
+  --p-bg: oklch(from var(--tint, #f0a832) 0.97 calc(c * 0.1) h);
+  --p-panel: oklch(from var(--tint, #f0a832) 0.92 calc(c * 0.18) h);
+  --p-ink: oklch(from var(--tint, #f0a832) 0.18 calc(c * 0.4) h);
+  --p-line: oklch(from var(--tint, #f0a832) 0.84 calc(c * 0.28) h);
+}
+.e-badge-panel.theme-dark {
+  --p-bg: oklch(from var(--tint, #f0a832) 0.14 calc(c * 0.18) h);
+  --p-panel: oklch(from var(--tint, #f0a832) 0.24 calc(c * 0.22) h);
+  --p-ink: oklch(from var(--tint, #f0a832) 0.94 calc(c * 0.12) h);
+  --p-line: oklch(from var(--tint, #f0a832) 0.4 calc(c * 0.28) h);
+}
+.e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }
+.e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }
+.AskAgent_root_1tucs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6ch;
+  min-height: 32px;
+  padding: 2px 10px;
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.AskAgent_root_1tucs:hover {
+  border-color: var(--theme-focused-foreground);
+  color: var(--theme-focused-foreground);
+}
+
+.AskAgent_row_1tucs {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0 8px;
+}
+
+.AskAgent_copy_1tucs {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.8ch;
+}
+
+.AskAgent_note_1tucs {
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+.AskAgent_glyph_1tucs {
+  color: var(--theme-focused-foreground);
+}
+
+@media (max-width: 700px) {
+  .AskAgent_root_1tucs {
+    min-height: 40px;
+    padding: 4px 12px;
+  }
+}
+.RowSpaceBetween_row_1rf1p {
+  display: flex;
+  justify-content: space-between;
+  outline: 0;
+  border: 0;
+}
+.Chessboard_board_cycky {
+  display: inline-table;
+  border-collapse: collapse;
+  touch-action: none;
+}
+
+.Chessboard_corner_cycky {
+  width: 1ch;
+  height: calc(var(--theme-line-height-base) * 1rem);
+}
+
+.Chessboard_cell_cycky {
+  width: 1ch;
+  height: calc(var(--theme-line-height-base) * 1rem);
+  background-color: var(--theme-border-subdued);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.Chessboard_square_cycky {
+  height: calc(var(--theme-line-height-base) * 2rem);
+  text-align: center;
+  vertical-align: middle;
+  width: 3ch;
+}
+
+.Chessboard_dark_cycky {
+  background-color: var(--theme-focused-foreground);
+}
+
+.Chessboard_light_cycky {
+  background-color: var(--theme-focused-foreground-subdued);
+}
+
+.Chessboard_symbol_cycky {
+  font-size: 40px;
+  line-height: calc(var(--theme-line-height-base) * 2rem);
+}
+.ActionButton_hotkey_fa94z {
+  background: var(--theme-button-foreground);
+  color: var(--theme-text);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-weight: 400;
+  padding: 0 1ch 0 1ch;
+  text-indent: 0ch;
+  user-select: none;
+}
+
+.ActionButton_content_fa94z {
+  background: var(--theme-button-background);
+  box-shadow: inset 0 0 0 2px var(--theme-button-foreground);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-weight: 400;
+  padding: 0 1ch 0 1ch;
+  text-indent: 0ch;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.ActionButton_root_fa94z {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  outline: 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size);
+  flex-shrink: 0;
+
+  &:hover .ActionButton_hotkey_fa94z {
+    background: var(--theme-focused-foreground);
+  }
+
+  &:hover .ActionButton_content_fa94z {
+    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);
+  }
+
+  &:focus {
+    background: var(--theme-focused-foreground);
+  }
+
+  &:focus .ActionButton_hotkey_fa94z {
+    background: var(--theme-focused-foreground);
+  }
+
+  &:focus .ActionButton_content_fa94z {
+    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);
+  }
+
+  &:active {
+    background: var(--theme-focused-foreground);
+  }
+
+  &:active .ActionButton_hotkey_fa94z {
+    background: var(--theme-focused-foreground);
+  }
+
+  &:active .ActionButton_content_fa94z {
+    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);
+  }
+}
+
+.ActionButton_selected_fa94z {
+  .ActionButton_content_fa94z {
+    background: var(--theme-focused-foreground);
+  }
+}
+.AgentChat_toggle_ry10h {
+  font-size: 0.85rem !important;
+  letter-spacing: 0.04em;
+}
+
+.AgentChat_glyph_ry10h {
+  color: var(--theme-focused-foreground);
+}
+
+.AgentChat_label_ry10h {
+  text-transform: lowercase;
+}
+
+.AgentChat_menuItem_ry10h {
+  padding: 12px 0 0;
+  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+}
+
+.AgentChat_menuItem_ry10h .e-section-tab {
+  width: 100%;
+  min-height: 44px;
+  justify-content: flex-start;
+  padding: 10px 14px;
+  opacity: 1;
+}
+
+.AgentChat_on_ry10h {
+  border-color: var(--theme-focused-foreground) !important;
+  background: var(--e-accent-wash, transparent) !important;
+}
+/* The agent chat drawer: monospace, hairline rules, the theme's accent as the
+   one highlight, 40–48px targets on a phone. Tokens only (--theme-*, --e-rule,
+   --e-accent-wash); no colours of its own.
+
+   It is sized to the app's own frame, never to the browser window: inside the
+   Hermes tab the frame is the tab's container (hermesPlugin.tsx), so the
+   transcript scrolls and the composer stays pinned at the bottom of what you
+   see. Below the header-nav width it covers the frame (absolute, inside the
+   shell's `contain: layout paint`), never the Hermes app around it. */
+
+.ChatDrawer_root_58yj2 {
+  display: none;
+  flex: none;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(27rem, 40%);
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  align-self: stretch;
+  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: var(--theme-background);
+  color: var(--theme-text);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.ChatDrawer_open_58yj2 {
+  display: flex;
+}
+
+/* ── head ─────────────────────────────────────────────────────────────── */
+
+.ChatDrawer_head_58yj2 {
+  flex: none;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+}
+
+.ChatDrawer_headRow_58yj2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ChatDrawer_heading_58yj2 {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 1ch;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ChatDrawer_headIcon_58yj2 {
+  color: var(--theme-focused-foreground);
+}
+
+.ChatDrawer_close_58yj2 {
+  min-width: 40px !important;
+  min-height: 40px !important;
+}
+
+.ChatDrawer_meta_58yj2 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1ch;
+  margin-top: 2px;
+  font-size: 0.74rem;
+  opacity: 0.62;
+}
+
+.ChatDrawer_conn_58yj2[data-conn="open"] {
+  color: var(--theme-focused-foreground);
+  opacity: 1;
+}
+
+.ChatDrawer_sessionBar_58yj2 {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ChatDrawer_sessionPick_58yj2 {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1ch;
+  min-height: 36px;
+  padding: 4px 10px;
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ChatDrawer_sessionPick_58yj2:hover,
+.ChatDrawer_sessionPick_58yj2[aria-expanded="true"] {
+  border-color: var(--theme-focused-foreground);
+}
+
+.ChatDrawer_sessionPickTitle_58yj2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ChatDrawer_smallButton_58yj2 {
+  flex: none;
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: transparent;
+  color: var(--theme-focused-foreground);
+  font: inherit;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ChatDrawer_smallButton_58yj2:hover {
+  border-color: var(--theme-focused-foreground);
+}
+
+.ChatDrawer_error_58yj2 {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  color: var(--theme-focused-foreground);
+}
+
+/* ── transcript ───────────────────────────────────────────────────────── */
+
+.ChatDrawer_transcript_58yj2 {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ChatDrawer_intro_58yj2 {
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  border-left: 3px solid var(--theme-focused-foreground);
+  padding: 10px 14px 12px;
+  line-height: 1.55;
+}
+
+.ChatDrawer_intro_58yj2 p {
+  margin: 0 0 6px;
+}
+
+.ChatDrawer_introTitle_58yj2 {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.ChatDrawer_introNote_58yj2 {
+  font-size: 0.78rem;
+  opacity: 0.65;
+}
+
+.ChatDrawer_line_58yj2 {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ChatDrawer_who_58yj2 {
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
+}
+
+.ChatDrawer_line_58yj2[data-who="you"] .ChatDrawer_who_58yj2 {
+  color: var(--theme-focused-foreground);
+  opacity: 1;
+}
+
+.ChatDrawer_line_58yj2[data-who="you"] .ChatDrawer_text_58yj2 {
+  padding: 6px 10px;
+  background: var(--e-accent-wash, rgba(128, 128, 128, 0.08));
+  border-left: 2px solid var(--theme-focused-foreground);
+}
+
+.ChatDrawer_text_58yj2 {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ChatDrawer_caret_58yj2 {
+  color: var(--theme-focused-foreground);
+  animation: ChatDrawer_blink_58yj2 1s steps(1) infinite;
+}
+
+@keyframes ChatDrawer_blink_58yj2 {
+  50% {
+    opacity: 0;
+  }
+}
+
+.ChatDrawer_working_58yj2 {
+  display: flex;
+  gap: 1ch;
+  align-items: center;
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
+
+.ChatDrawer_notice_58yj2 {
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  opacity: 0.75;
+  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  padding: 2px 0 2px 10px;
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.ChatDrawer_notice_58yj2[data-tone="error"] {
+  opacity: 1;
+  border-left: 2px solid var(--theme-focused-foreground);
+}
+
+.ChatDrawer_notice_58yj2[data-tone="command"] {
+  border-left: 0;
+  padding-left: 0;
+  opacity: 0.9;
+}
+
+.ChatDrawer_prompt_58yj2 {
+  color: var(--theme-focused-foreground);
+}
+
+/* ── tool cards ───────────────────────────────────────────────────────── */
+
+.ChatDrawer_tool_58yj2 {
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  min-width: 0;
+}
+
+.ChatDrawer_toolHead_58yj2 {
+  display: flex;
+  align-items: center;
+  gap: 1ch;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ChatDrawer_toolHead_58yj2:hover .ChatDrawer_toolName_58yj2 {
+  color: var(--theme-focused-foreground);
+}
+
+.ChatDrawer_toolMark_58yj2 {
+  flex: none;
+  width: 1.5ch;
+  color: var(--theme-focused-foreground);
+}
+
+.ChatDrawer_tool_58yj2[data-status="failed"] .ChatDrawer_toolMark_58yj2,
+.ChatDrawer_tool_58yj2[data-status="blocked"] .ChatDrawer_toolMark_58yj2 {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.ChatDrawer_toolName_58yj2 {
+  flex: none;
+  font-weight: 600;
+}
+
+.ChatDrawer_toolContext_58yj2 {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.65;
+}
+
+.ChatDrawer_toolTime_58yj2 {
+  flex: none;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
+  font-size: 0.72rem;
+}
+
+.ChatDrawer_toolCaret_58yj2 {
+  flex: none;
+  opacity: 0.5;
+}
+
+.ChatDrawer_toolOut_58yj2 {
+  margin: 0;
+  padding: 8px 10px;
+  border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  max-height: 16rem;
+  overflow: auto;
+  font: inherit;
+  font-size: 0.76rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Relay content: dashed rule, a label that says so. */
+.ChatDrawer_untrusted_58yj2 {
+  border-style: dashed;
+}
+
+.ChatDrawer_line_58yj2.ChatDrawer_untrusted_58yj2 {
+  border: 1px dashed var(--e-rule, rgba(128, 128, 128, 0.35));
+  padding: 6px 10px;
+}
+
+.ChatDrawer_untrustedLabel_58yj2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 1ch;
+  padding: 0 10px 6px;
+  font-size: 0.7rem;
+  opacity: 0.8;
+}
+
+.ChatDrawer_line_58yj2 .ChatDrawer_untrustedLabel_58yj2 {
+  padding: 0;
+}
+
+.ChatDrawer_untrustedLabel_58yj2 [class*="Badge_root"] {
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  background: transparent;
+  border: 1px solid currentColor;
+}
+
+/* ── approval / clarify ───────────────────────────────────────────────── */
+
+.ChatDrawer_approval_58yj2 {
+  border: 1px solid var(--theme-focused-foreground);
+  border-left-width: 3px;
+  padding: 10px 12px;
+  background: var(--e-accent-wash, transparent);
+}
+
+.ChatDrawer_cardTitle_58yj2 {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--theme-focused-foreground);
+  margin-bottom: 6px;
+}
+
+.ChatDrawer_cardText_58yj2 {
+  margin: 0 0 6px;
+}
+
+.ChatDrawer_cardNote_58yj2 {
+  margin: 6px 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.ChatDrawer_cardFoot_58yj2 {
+  margin: 8px 0 0;
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+
+.ChatDrawer_command_58yj2 {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: var(--theme-background);
+  font: inherit;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 10rem;
+  overflow: auto;
+}
+
+.ChatDrawer_choices_58yj2 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ChatDrawer_choice_58yj2 {
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid var(--theme-focused-foreground);
+  background: var(--theme-background);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.ChatDrawer_choice_58yj2:hover:not(:disabled),
+.ChatDrawer_picked_58yj2 {
+  background: var(--theme-focused-foreground);
+  color: var(--theme-background);
+}
+
+.ChatDrawer_choice_58yj2:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ChatDrawer_deny_58yj2 {
+  border-color: var(--e-rule, rgba(128, 128, 128, 0.4));
+}
+
+.ChatDrawer_answered_58yj2 {
+  font-size: 0.8rem;
+  color: var(--theme-focused-foreground);
+}
+
+.ChatDrawer_question_58yj2 + .ChatDrawer_question_58yj2 {
+  margin-top: 10px;
+}
+
+.ChatDrawer_answerInput_58yj2 {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 6px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.3));
+  background: var(--theme-background);
+  color: inherit;
+  font: inherit;
+}
+
+/* ── sessions ─────────────────────────────────────────────────────────── */
+
+.ChatDrawer_sessions_58yj2 {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 16px;
+}
+
+.ChatDrawer_sessionsHead_58yj2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 12px 4px 0;
+}
+
+.ChatDrawer_sessionList_58yj2 {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ChatDrawer_sessionRow_58yj2 {
+  display: flex !important;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ChatDrawer_sessionRow_58yj2:hover .ChatDrawer_sessionTitle_58yj2 {
+  color: var(--theme-focused-foreground);
+}
+
+.ChatDrawer_sessionTitle_58yj2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 1ch;
+  overflow-wrap: anywhere;
+}
+
+.ChatDrawer_sessionMeta_58yj2 {
+  font-size: 0.74rem;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
+}
+
+.ChatDrawer_tag_58yj2 {
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0 0.6ch;
+  border: 1px solid currentColor;
+  color: var(--theme-focused-foreground);
+  white-space: nowrap;
+}
+
+.ChatDrawer_empty_58yj2 {
+  padding: 8px 12px;
+  margin: 0;
+  font-size: 0.8rem;
+  opacity: 0.6;
+}
+
+/* ── composer ─────────────────────────────────────────────────────────── */
+
+.ChatDrawer_composer_58yj2 {
+  position: relative;
+  flex: none;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: var(--theme-background);
+}
+
+.ChatDrawer_inputRow_58yj2 {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* One slim line (42px) by default; it grows with the text (ChatDrawer's
+   layout effect) up to about four lines, then scrolls inside. */
+.ChatDrawer_input_58yj2 {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 42px;
+  min-height: 42px;
+  max-height: calc(4 * 1.45em + 20px);
+  padding: 10px 10px;
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.35));
+  background: var(--theme-background);
+  color: inherit;
+  font: inherit;
+  line-height: 1.45;
+  resize: none;
+  overflow-y: auto;
+}
+
+.ChatDrawer_input_58yj2:focus {
+  border-color: var(--theme-focused-foreground);
+}
+
+.ChatDrawer_send_58yj2 {
+  flex: none;
+  box-sizing: border-box;
+  min-width: 48px;
+  height: 42px;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--theme-focused-foreground);
+  background: var(--theme-focused-foreground);
+  color: var(--theme-background);
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.ChatDrawer_send_58yj2:disabled {
+  background: transparent;
+  color: inherit;
+  border-color: var(--e-rule, rgba(128, 128, 128, 0.35));
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ChatDrawer_stop_58yj2 {
+  background: transparent;
+  color: var(--theme-focused-foreground);
+}
+
+.ChatDrawer_readOnly_58yj2 {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
+
+.ChatDrawer_typeahead_58yj2 {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 100%;
+  z-index: 5;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 18rem;
+  overflow-y: auto;
+  border: 1px solid var(--theme-focused-foreground);
+  background: var(--theme-background);
+}
+
+.ChatDrawer_typeRow_58yj2 {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 0 1ch;
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ChatDrawer_typeRow_58yj2[data-reach="terminal"],
+.ChatDrawer_typeRow_58yj2[data-reach="voice"],
+.ChatDrawer_typeRow_58yj2[data-reach="settings"] {
+  opacity: 0.6;
+}
+
+.ChatDrawer_typeRowOn_58yj2 {
+  background: var(--e-accent-wash, rgba(128, 128, 128, 0.1));
+}
+
+.ChatDrawer_typeName_58yj2 {
+  color: var(--theme-focused-foreground);
+  white-space: nowrap;
+}
+
+.ChatDrawer_typeMeta_58yj2 {
+  grid-column: 1 / -1;
+  font-size: 0.72rem;
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── back control (phone) ─────────────────────────────────────────────── */
+
+.ChatDrawer_back_58yj2 {
+  display: flex;
+  align-items: center;
+  gap: 1ch;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: transparent;
+  color: var(--theme-focused-foreground);
+  font: inherit;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+  flex: none;
+}
+
+/* "← back to the dashboard", then the menu: the full-page chat's top row. */
+.ChatDrawer_backRow_58yj2 {
+  align-items: stretch;
+  flex: none;
+  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+}
+
+.ChatDrawer_backRow_58yj2 .ChatDrawer_back_58yj2 {
+  flex: 1;
+  border-bottom: 0;
+}
+
+.ChatDrawer_menu_58yj2 {
+  flex: none;
+  min-width: 48px;
+  min-height: 44px;
+  border: 0;
+  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+}
+
+.ChatDrawer_phoneOnly_58yj2 {
+  display: none;
+}
+
+/* Below the header-nav breakpoint: one full-screen panel, "← back" on top. */
+@media (max-width: 900px) {
+  .ChatDrawer_root_58yj2 {
+    position: absolute;
+    inset: 0;
+    z-index: 120;
+    width: 100%;
+    height: 100%;
+    border-left: 0;
+  }
+
+  .ChatDrawer_phoneOnly_58yj2 {
+    display: flex;
+  }
+
+  .ChatDrawer_close_58yj2 {
+    display: none !important;
+  }
+
+  .ChatDrawer_sessionPick_58yj2,
+  .ChatDrawer_smallButton_58yj2,
+  .ChatDrawer_choice_58yj2,
+  .ChatDrawer_toolHead_58yj2,
+  .ChatDrawer_typeRow_58yj2 {
+    min-height: 44px;
+  }
+
+  .ChatDrawer_sessionRow_58yj2 {
+    min-height: 48px;
+  }
+
+  .ChatDrawer_input_58yj2,
+  .ChatDrawer_answerInput_58yj2 {
+    font-size: 16px; /* no zoom-on-focus on a phone */
+  }
+}
+
+/* The kit gives every `ul li` an inline :before spacer (global.css), which
+   opens an empty line above a block button. Lists here are rows, not prose. */
+.ChatDrawer_typeahead_58yj2 > li::before,
+.ChatDrawer_sessionList_58yj2 > li::before {
+  content: none;
+  display: none;
+}
+
+/* A flex column shrinks its scrollable children to nothing when it overflows;
+   transcript items keep their height and the transcript scrolls instead. */
+.ChatDrawer_transcript_58yj2 > * {
+  flex-shrink: 0;
+}
+
+/* A short screen (the 540 × 540 capture frame, a phone held sideways): the
+   "← back" row already says where you are, so the title row goes. */
+@media (max-width: 900px) and (max-height: 640px) {
+  .ChatDrawer_headRow_58yj2 {
+    display: none;
+  }
+
+  .ChatDrawer_head_58yj2 {
+    padding-top: 8px;
+  }
+
+  .ChatDrawer_sessionBar_58yj2 {
+    margin-top: 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ChatDrawer_caret_58yj2 {
+    animation: none;
+  }
+}
