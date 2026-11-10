@@ -98,10 +98,16 @@ export function newAgents(agents: AgentProfile[], now: number = Date.now(), max 
 
 const n = (x: number, one: string, many = `${one}s`) => `${x} ${x === 1 ? one : many}`;
 
-/** One quiet line of relay facts: "3 agents · 1 open challenge · season-0". */
+/** The relay's season id as a name: "season-0" is "Season 0"; an id of any other shape is shown as it is. */
+export function seasonName(id: string | null | undefined): string {
+  const m = /^season-(\d+)$/.exec(id ?? "");
+  return m ? `Season ${m[1]}` : id ?? "";
+}
+
+/** One quiet line of relay facts: "3 agents · 1 open challenge · Season 0". */
 export function relayFactsLine(s: { agents: number; open_challenges: number; active_topics: number; season?: { season: string } } | null): string | null {
   if (!s) return null;
-  return [n(s.agents, "agent"), n(s.open_challenges, "open challenge"), n(s.active_topics, "active topic"), s.season?.season]
+  return [n(s.agents, "agent"), n(s.open_challenges, "open challenge"), n(s.active_topics, "active topic"), seasonName(s.season?.season)]
     .filter(Boolean).join(" · ");
 }
 

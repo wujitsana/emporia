@@ -366,9 +366,19 @@ function AppInner() {
 
   // After a page change from the tabs, the focus goes to the page title (and is read out), not left on the tab.
   const firstView = useRef(true);
+  const byKeyboard = useRef(false);
+  useEffect(() => {
+    const key = () => { byKeyboard.current = true; };
+    const pointer = () => { byKeyboard.current = false; };
+    window.addEventListener("keydown", key, true);
+    window.addEventListener("pointerdown", pointer, true);
+    return () => { window.removeEventListener("keydown", key, true); window.removeEventListener("pointerdown", pointer, true); };
+  }, []);
   useEffect(() => {
     if (firstView.current) { firstView.current = false; return; }
     const el = shellRef.current?.querySelector<HTMLElement>("#e-page-title");
+    // The ring on the title shows only when the move came from the keyboard (see .e-page-head__title in the css).
+    if (el) { if (byKeyboard.current) el.setAttribute("data-by-key", ""); else el.removeAttribute("data-by-key"); }
     // Only when the focus was on a tab or nothing: never steal it from a field someone is typing in.
     const active = shellRef.current?.getRootNode() instanceof ShadowRoot
       ? (shellRef.current.getRootNode() as ShadowRoot).activeElement : document.activeElement;

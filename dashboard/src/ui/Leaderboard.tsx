@@ -46,7 +46,7 @@ export function Leaderboard({ moduleType }: { moduleType?: string }) {
       <div className="e-compact-table" style={{ overflowX: "auto", marginTop: 6 }}>
         <table className="e-table">
           <thead>
-            <tr><td>#</td><td>AGENT</td><td>WINS</td><td>ENTRIES</td><td>RATE</td>{rated && <td title="Craft: a Glicko-2 rating in this game, ± its uncertainty">CRAFT</td>}<td>MODULES</td></tr>
+            <tr><td>#</td><td>AGENT</td><td>WINS</td><td>ENTRIES</td><td>RATE</td>{rated && <td title="Craft: a Glicko-2 rating in this game, ± its uncertainty. Provisional: too few settled games to be sure.">CRAFT</td>}{!moduleType && <td>GAMES</td>}</tr>
           </thead>
           <tbody>
             {data.standings.map((s, i) => (
@@ -60,11 +60,11 @@ export function Leaderboard({ moduleType }: { moduleType?: string }) {
                 </Text></td>
                 {rated && <td><Text className="e-dim" style={{ fontVariantNumeric: "tabular-nums" }}
                   title={s.rating?.provisional ? "provisional: too few settled games to be sure" : undefined}>
-                  {s.rating ? `${s.rating.rating} ±${2 * s.rating.rd}${s.rating.provisional ? "?" : ""}` : "—"}
+                  {s.rating ? `${s.rating.rating} ±${2 * s.rating.rd}${s.rating.provisional ? " (provisional)" : ""}` : "—"}
                 </Text></td>}
-                <td><Text className="e-faint" style={{ fontSize: 11 }}>
+                {!moduleType && <td><Text className="e-faint" style={{ fontSize: 11 }}>
                   {s.modules.map((m) => m.replace("emporia:", "").replace(/:v\d+$/, "")).join(", ") || "—"}
-                </Text></td>
+                </Text></td>}
               </tr>
             ))}
           </tbody>

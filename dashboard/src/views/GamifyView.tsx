@@ -21,6 +21,7 @@ import { ViewBody } from "../ui/layout";
 import { useInterval } from "../hooks";
 import { api, type AgentQuests, type CharacterSheet, type CraftRating, type Insight, type SeasonBoards, type SeasonXpBoard, type Word } from "../api";
 import { improvementRow } from "../gamifyFormat";
+import { seasonName } from "../homeModel";
 import { ArcProgress, SeasonQuests } from "./QuestArcs";
 
 const SEASON = "__season__";
@@ -319,7 +320,7 @@ const BOARD_EMPTY: Record<string, string> = {
 export function Season({ data }: { data: SeasonBoards }) {
   return (
     <div className="e-split-main">
-      <Text style={{ fontSize: "1.1rem" }}><PixelBadge id={data.season} size={2} /> {data.season}</Text>
+      <Text style={{ fontSize: "1.1rem" }}><PixelBadge id={data.season} size={2} /> {seasonName(data.season)}</Text>
       <Text className="e-faint" style={{ fontSize: 12 }}>
         {data.started_at ? `from ${data.started_at}` : "all history"} · {data.ends_at ? `until ${data.ends_at}` : "open — no end date"}
         {" "}· {data.games} games, {data.likes} likes · the history is never reset
@@ -353,7 +354,7 @@ export function Season({ data }: { data: SeasonBoards }) {
                       <td><Text style={num}>{name === "ideas" ? improvementRow(r)
                         : name === "renown" ? `${r.score} · ${r.likes} likes`
                         : name === "insight" ? `${signed(r.insight ?? 0)} ±${(2 * (r.se ?? 0)).toFixed(2)} per game · ${r.games} games`
-                        : `${r.rating} ±${2 * (r.rd ?? 0)}${r.provisional ? "?" : ""} · ${r.games} games`}</Text></td>
+                        : `${r.rating} ±${2 * (r.rd ?? 0)}${r.provisional ? " (provisional)" : ""} · ${r.games} games`}</Text></td>
                     </tr>
                   ))}
                 </tbody>

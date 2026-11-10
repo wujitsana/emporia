@@ -25,6 +25,7 @@ import {
 } from "../chessReplay";
 import { ChessMoveLine, ChessPlayersBar } from "../ui/chessMatch";
 import { resolveDeepLinkedSession, shouldShowDeliveryActions } from "../sessionSelect";
+import { FoldDetail } from "../ui/FoldDetail";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
 import { isJobModule } from "../eventNav";
@@ -87,6 +88,7 @@ export function ChessReplayPanel({ session, initialStep = null, onStepChange, bo
   const wantStep = useRef<number | null>(initialStep);
   const loadedOnce = useRef(false);
 
+  const inArena = !!onStepChange;
   const fallbackFen = (session.state as { board_fen?: string } | undefined)?.board_fen;
   const startFen = (session.state as { start_fen?: string } | undefined)?.start_fen;
 
@@ -227,9 +229,10 @@ export function ChessReplayPanel({ session, initialStep = null, onStepChange, bo
               <span className="e-chess-replay-status">
                 <ChessReplayStatus live={wsLive} idx={idx} total={fens.length} />
                 <span className="e-chess-ctrl-move">{moveLabel}</span>
-                {session.created_at && <span className="e-faint">started {whenText(session.created_at)}</span>}
-                <AuditBadge sessionId={session.session_id} />
-                <VerifyBadge sessionId={session.session_id} live={session.status === "active"} />
+                {/* In the Arena the match header already says who, when and the chain check. */}
+                {!inArena && session.created_at && <span className="e-faint">started {whenText(session.created_at)}</span>}
+                {!inArena && <AuditBadge sessionId={session.session_id} />}
+                {!inArena && <VerifyBadge sessionId={session.session_id} live={session.status === "active"} />}
               </span>
             }
           />
@@ -239,19 +242,21 @@ export function ChessReplayPanel({ session, initialStep = null, onStepChange, bo
           ) : null}
         </div>
         {sans.length > 0 ? (
-          <div className="e-chess-moves-block">
-            <Text className="e-dim e-chess-moves-label">moves · click to seek</Text>
-            <ChessMoveLine
-              sans={sans}
-              idx={idx}
-              onPick={(frame) => {
-                stopReplay();
-                setIdx(frame);
-              }}
-            />
-          </div>
+          <FoldDetail fold={inArena && !sessionIsActive(session.status)} label={`the moves (${sans.length}), click to seek`}>
+            <div className="e-chess-moves-block">
+              <Text className="e-dim e-chess-moves-label">moves · click to seek</Text>
+              <ChessMoveLine
+                sans={sans}
+                idx={idx}
+                onPick={(frame) => {
+                  stopReplay();
+                  setIdx(frame);
+                }}
+              />
+            </div>
+          </FoldDetail>
         ) : null}
-        <ChessPlayersBar session={session} />
+        {inArena ? null : <ChessPlayersBar session={session} />}
         <SessionMoney session={session} />
         <GameChat book={book} sessionId={session.session_id} live={session.status === "active" || session.status === "waiting"} />
       </div>

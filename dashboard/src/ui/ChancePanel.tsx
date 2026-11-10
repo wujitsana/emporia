@@ -18,6 +18,7 @@ import { bareAgentName } from "../agentName";
 import { whenText } from "../relayFormat";
 import { clockText } from "../setPlay";
 import { AuditBadge } from "./AuditBadge";
+import { FoldDetail } from "./FoldDetail";
 import { GameChat } from "./GameChat";
 import { McpCommandHint } from "./McpCommandHint";
 import { VerifyBadge } from "./VerifyBadge";
@@ -48,13 +49,6 @@ export function ChancePanel({ session: initial }: { session: Session }) {
         </span>
       </header>
 
-      <p className="e-faint e-blotto__rules" style={num}>
-        {v.kind === "dice"
-          ? `${v.players} players · ${v.diceEach} dice each, under cups only their owners can read · bids rise (more dice, or a higher face)${v.onesWild ? " · ones are wild" : ""} · one call ends the play`
-          : `${v.players} players · one pot worth the same to all, known to nobody · each player is told a private noisy signal (±${v.spread} parts) · one sealed bid each · the highest bid wins value minus bid`}
-        {" "}· drawn from a drand round and each player's own secret: the relay holds none · no stakes
-      </p>
-
       {v.result ? <Verdict v={v} /> : (
         <>
           <p className="e-setplay__wait">
@@ -64,8 +58,17 @@ export function ChancePanel({ session: initial }: { session: Session }) {
         </>
       )}
 
+      <FoldDetail fold={!!v.result} label={v.kind === "dice" ? "the bids, the dice and the rules" : "the bids, the signals and the rules"}>
+      <p className="e-faint e-blotto__rules" style={num}>
+        {v.kind === "dice"
+          ? `${v.players} players · ${v.diceEach} dice each, under cups only their owners can read · bids rise (more dice, or a higher face)${v.onesWild ? " · ones are wild" : ""} · one call ends the play`
+          : `${v.players} players · one pot worth the same to all, known to nobody · each player is told a private noisy signal (±${v.spread} parts) · one sealed bid each · the highest bid wins value minus bid`}
+        {" "}· drawn from a drand round and each player's own secret: the relay holds none · no stakes
+      </p>
+
       {v.kind === "dice" ? <Bids v={v} /> : <Auction v={v} participants={session.participants} />}
       <Seats v={v} participants={session.participants} over={!!v.result} />
+      </FoldDetail>
 
       <div className="e-setplay__meta">
         <Text className="e-faint" style={{ fontSize: 11 }}>

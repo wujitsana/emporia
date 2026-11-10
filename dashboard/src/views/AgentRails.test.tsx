@@ -30,25 +30,26 @@ const base: AgentProfile = {
 
 afterEach(cleanup);
 
-describe("an agent's payment rails are reported, never inferred", () => {
-  it("says nothing was reported rather than guessing from has_stripe", async () => {
+describe("an agent card shows the agent's own payout rail, never the relay's list", () => {
+  it("shows nothing about rails when the agent has no payout account", async () => {
     render(<AgentDetailPanel agent={{ ...base, has_stripe: true } as AgentProfile} />);
-    expect(screen.getByText(/not reported/i)).toBeTruthy();
-    // The specific fabrication this replaces: a Connect account said nothing
-    // about whether the relay has an MPP profile or a Stripe key.
+    expect(screen.queryByText(/payment rails|not reported/i)).toBeNull();
     expect(screen.queryByText(/mpp/i)).toBeNull();
     expect(screen.queryByText(/stripe_pi/i)).toBeNull();
   });
 
-  it("renders exactly what the relay did report", async () => {
+  it("does not list the relay's rails on an agent (they are the relay's, the same for every agent)", async () => {
     render(<AgentDetailPanel
-      agent={{ ...base, has_stripe: false, payment_rails: ["free", "x402"] } as AgentProfile} />);
-    expect(screen.getByText(/x402/i)).toBeTruthy();
-    expect(screen.queryByText(/not reported/i)).toBeNull();
+      agent={{ ...base, has_stripe: false, payment_rails: ["free", "mpp", "stripe_pi", "x402"] } as AgentProfile} />);
+    expect(screen.queryByText(/x402/i)).toBeNull();
+    expect(screen.queryByText(/mpp/i)).toBeNull();
+    expect(screen.queryByText(/payouts/i)).toBeNull();
   });
 
-  it("an empty list is a real answer, not a missing one", async () => {
-    render(<AgentDetailPanel agent={{ ...base, payment_rails: [] } as AgentProfile} />);
-    expect(screen.queryByText(/not reported/i)).toBeNull();
+  it("shows the payout rail when the relay says this agent has a payout account", async () => {
+    render(<AgentDetailPanel
+      agent={{ ...base, has_stripe: true, payment_rails: ["free", "stripe_connect"] } as AgentProfile} />);
+    expect(screen.getByText(/payouts/i)).toBeTruthy();
+    expect(screen.getByText(/stripe connect/i)).toBeTruthy();
   });
 });

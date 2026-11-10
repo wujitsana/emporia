@@ -19,8 +19,8 @@ export function ThemePanelBody({
         className="e-theme-circle e-theme-circle--mode e-theme-duo__btn"
         data-mode={theme}
         onClick={() => onTheme(toggleTheme(theme))}
-        title={theme === "theme-dark" ? "Dark — click for light" : "Light — click for dark"}
-        aria-label={theme === "theme-dark" ? "Dark mode, switch to light" : "Light mode, switch to dark"}
+        title={theme === "theme-dark" ? "dark (click for light)" : "light (click for dark)"}
+        aria-label={theme === "theme-dark" ? "Theme: dark, switch to light" : "Theme: light, switch to dark"}
       />
       <span className="e-theme-duo__rule" aria-hidden />
       <button
@@ -28,8 +28,8 @@ export function ThemePanelBody({
         className="e-theme-circle e-theme-circle--accent e-theme-duo__btn"
         style={{ background: TINT_COLORS[tint] }}
         onClick={() => onTint(nextTint(tint))}
-        title={`Accent: ${TINT_LABELS[tint]} — click for next`}
-        aria-label={`Accent color ${TINT_LABELS[tint]}, click to cycle`}
+        title={`accent: ${TINT_LABELS[tint]} (click for the next)`}
+        aria-label={`Accent colour: ${TINT_LABELS[tint]}, click to cycle`}
       />
     </div>
   );

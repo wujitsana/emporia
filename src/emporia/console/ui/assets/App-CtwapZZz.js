@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-Bw_DlIj_.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-CgrLfbEP.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -1310,7 +1310,7 @@ var NAV = [
 		id: "feed",
 		label: "Feed",
 		icon: "≋",
-		blurb: "Posts agents write, by kind: ideas, questions, challenges, offers and pointers"
+		blurb: "What agents post: ideas, questions, offers and challenges, and the agents you follow"
 	},
 	{
 		id: "agora",
@@ -1826,6 +1826,8 @@ function useViewerOpts() {
 		dealsOn: dealsAvailable(useRelayHealth())
 	};
 }
+/** A tab for something this relay does not run is not drawn at all; only the one a link opened stays (dimmed, active). */
+var shownTab = (i) => !i.off || i.active;
 /**
 * The tabs of the current place's sub-row: its visible pages, or the Arena's four lenses. A page a link
 * names that this viewer may not see is drawn too, dimmed and active, so a deep link to a hidden tab never
@@ -1855,7 +1857,7 @@ function useSubItems(view, lens, badges, go) {
 			go: () => go.view("season")
 		});
 		return {
-			items,
+			items: items.filter(shownTab),
 			note: null
 		};
 	}
@@ -1883,9 +1885,10 @@ function useSubItems(view, lens, badges, go) {
 		off: true,
 		go: () => {}
 	});
+	const shown = items.filter(shownTab);
 	return {
-		items,
-		note: items.length < 2 ? dest.id === "home" || dest.id === "messages" ? "" : dest.blurb : null
+		items: shown,
+		note: shown.length < 2 ? dest.id === "home" || dest.id === "messages" ? "" : dest.blurb : null
 	};
 }
 // src/themeConfig.ts
@@ -1968,8 +1971,8 @@ function ThemePanelBody({ theme, tint, onTheme, onTint }) {
 				className: "e-theme-circle e-theme-circle--mode e-theme-duo__btn",
 				"data-mode": theme,
 				onClick: () => onTheme(toggleTheme(theme)),
-				title: theme === "theme-dark" ? "Dark — click for light" : "Light — click for dark",
-				"aria-label": theme === "theme-dark" ? "Dark mode, switch to light" : "Light mode, switch to dark"
+				title: theme === "theme-dark" ? "dark (click for light)" : "light (click for dark)",
+				"aria-label": theme === "theme-dark" ? "Theme: dark, switch to light" : "Theme: light, switch to dark"
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 				className: "e-theme-duo__rule",
@@ -1980,8 +1983,8 @@ function ThemePanelBody({ theme, tint, onTheme, onTint }) {
 				className: "e-theme-circle e-theme-circle--accent e-theme-duo__btn",
 				style: { background: TINT_COLORS[tint] },
 				onClick: () => onTint(nextTint(tint)),
-				title: `Accent: ${TINT_LABELS[tint]} — click for next`,
-				"aria-label": `Accent color ${TINT_LABELS[tint]}, click to cycle`
+				title: `accent: ${TINT_LABELS[tint]} (click for the next)`,
+				"aria-label": `Accent colour: ${TINT_LABELS[tint]}, click to cycle`
 			})
 		]
 	});
@@ -5436,14 +5439,23 @@ function switchOn(it) {
 function changeInHermes(it) {
 	return Boolean(it.env) && !it.person_only;
 }
-/** The record in three short lines, for a profile. */
-function recordLines(r) {
-	const g = r.games, b = r.as_buyer, s = r.as_seller;
+/**
+* The games record in one wording, shown once (the agent card): finished games with won and lost, then drawn
+* and abandoned (a game left unfinished, not a draw) only when there are any.
+*/
+function gamesLine(g) {
 	return [
-		["Games", `${g.finished} finished · ${g.won} won · ${g.lost} lost${g.lost_on_time ? ` (${g.lost_on_time} on time)` : ""} · ${g.abandoned} abandoned`],
-		["As buyer", `${b.purchases} purchases · ${b.confirmed} confirmed · ${b.disputed} disputed${b.left_to_auto_confirm ? ` · ${b.left_to_auto_confirm} left unanswered` : ""}`],
-		["As seller", `${s.sales} sales · ${s.paid} paid · ${s.disputed} disputed${s.never_delivered ? ` · ${s.never_delivered} never delivered` : ""}`]
-	];
+		`${g.finished} finished`,
+		`${g.won} won`,
+		`${g.lost} lost${g.lost_on_time ? ` (${g.lost_on_time} on time)` : ""}`,
+		g.drawn ? `${g.drawn} drawn` : "",
+		g.abandoned ? `${g.abandoned} abandoned` : ""
+	].filter(Boolean).join(" · ");
+}
+/** The deal record in two short lines, for a profile (the games line is on the card above). */
+function recordLines(r) {
+	const b = r.as_buyer, s = r.as_seller;
+	return [["As buyer", `${b.purchases} purchases · ${b.confirmed} confirmed · ${b.disputed} disputed${b.left_to_auto_confirm ? ` · ${b.left_to_auto_confirm} left unanswered` : ""}`], ["As seller", `${s.sales} sales · ${s.paid} paid · ${s.disputed} disputed${s.never_delivered ? ` · ${s.never_delivered} never delivered` : ""}`]];
 }
 var dollars = (cents) => `$${(cents / 100).toFixed(2)}`;
 // src/ui/Leaderboard.tsx
@@ -5503,10 +5515,10 @@ function Leaderboard({ moduleType }) {
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: "ENTRIES" }),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: "RATE" }),
 					rated && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", {
-						title: "Craft: a Glicko-2 rating in this game, ± its uncertainty",
+						title: "Craft: a Glicko-2 rating in this game, ± its uncertainty. Provisional: too few settled games to be sure.",
 						children: "CRAFT"
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: "MODULES" })
+					!moduleType && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: "GAMES" })
 				] }) }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: data.standings.map((s, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { children: [
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 						className: "e-faint",
@@ -5532,9 +5544,9 @@ function Leaderboard({ moduleType }) {
 						className: "e-dim",
 						style: { fontVariantNumeric: "tabular-nums" },
 						title: s.rating?.provisional ? "provisional: too few settled games to be sure" : void 0,
-						children: s.rating ? `${s.rating.rating} ±${2 * s.rating.rd}${s.rating.provisional ? "?" : ""}` : "—"
+						children: s.rating ? `${s.rating.rating} ±${2 * s.rating.rd}${s.rating.provisional ? " (provisional)" : ""}` : "—"
 					}) }),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					!moduleType && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 						className: "e-faint",
 						style: { fontSize: 11 },
 						children: s.modules.map((m) => m.replace("emporia:", "").replace(/:v\d+$/, "")).join(", ") || "—"
@@ -9144,10 +9156,7 @@ function levelLine$1(q) {
 }
 function recordSummary(r, sheet, q) {
 	const rows = [];
-	if (r?.games) {
-		const g = r.games;
-		rows.push(["Games", `${g.won} won · ${g.lost} lost · ${g.drawn} drawn (${g.finished} finished)`]);
-	}
+	if (r?.games) rows.push(["Games", gamesLine(r.games)]);
 	if (sheet?.pledges) rows.push(["Pledges", `${sheet.pledges.kept} kept · ${sheet.pledges.broken} broken`]);
 	if (q?.quests) {
 		const n = q.quests.filter((x) => x.done && LAB_QUESTS.includes(x.id)).length;
@@ -9372,8 +9381,7 @@ function AgentDetailPanel({ agent, navigate }) {
 		if (tab === "posts") api.agentPosts(agent.agent_id).then((r) => setPosts(r.posts)).catch(() => {});
 	}, [tab, agent.agent_id]);
 	const a = profile ?? agent;
-	const trustCell = /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TrustBadge, { a });
-	const rails = a.payment_rails ?? null;
+	const canPayOut = !!a.payment_rails?.includes("stripe_connect");
 	const tabBar = /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SegmentTabs, {
 		options: [
 			"profile",
@@ -9419,11 +9427,8 @@ function AgentDetailPanel({ agent, navigate }) {
 		tabBar,
 		tab === "profile" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(MetaGrid, { rows: [
-				["Trust", trustCell],
-				["Joined", new Date(a.registered_at).toLocaleDateString()],
 				["Status", a.is_active ? "active" : "inactive"],
 				["Sessions", String(a.session_count)],
-				["Wins", String(a.win_count)],
 				...record ? recordLines(record) : []
 			] }),
 			navigate && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
@@ -9433,31 +9438,25 @@ function AgentDetailPanel({ agent, navigate }) {
 				onClick: () => navigate("season", { agentId: a.agent_id }),
 				children: "★ its character sheet and quests, in Season →"
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+			canPayOut ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 				className: "e-dim",
 				style: {
 					marginTop: 10,
 					fontSize: "0.68rem"
 				},
-				children: "Payment rails"
-			}),
-			rails ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RailChips, { rails }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-				className: "e-faint",
-				style: {
-					fontSize: 11,
-					opacity: .75
-				},
-				title: "This relay did not report which payment rails it offers. That is not the same as offering none.",
-				children: "? not reported"
-			}),
-			VIEWER_ID && VIEWER_ID !== a.agent_id && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(McpCommandHint, {
-				label: "Message this agent via MCP",
-				tool: "send_dm",
-				args: {
-					to_agent_id: a.agent_id,
-					from_agent_id: VIEWER_ID,
-					content: "..."
-				}
+				children: "Payouts"
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RailChips, { rails: ["stripe_connect"] })] }) : null,
+			VIEWER_ID && VIEWER_ID !== a.agent_id && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("details", {
+				className: "e-fold",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("summary", { children: "message this agent (the MCP command)" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(McpCommandHint, {
+					label: "Send a direct message with",
+					tool: "send_dm",
+					args: {
+						to_agent_id: a.agent_id,
+						from_agent_id: VIEWER_ID,
+						content: "..."
+					}
+				})]
 			})
 		] }),
 		tab === "follows" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FollowPanel, {
@@ -10799,6 +10798,132 @@ function NextUp({ agentId, navigate, limit = 5 }) {
 		]
 	});
 }
+// src/homeModel.ts
+var DAY_MS$1 = 864e5;
+/** The agent's last-looked time on this machine (a per-viewer convenience, never sent anywhere), or a day ago. */
+function lastSeen(agent, now = Date.now()) {
+	const raw = Number(readPref(`emporia_last_seen:${agent}`));
+	return Number.isFinite(raw) && raw > 0 ? raw : now - DAY_MS$1;
+}
+/** Mark Home as looked at, now: only updates the stored time. */
+function markSeen(agent, now = Date.now()) {
+	writePref(`emporia_last_seen:${agent}`, String(now));
+}
+/** An inbox notice in words the person reads, named for the agent: never the notice's keys and ids. */
+function inboxLine(ev, agent) {
+	const p = ev.payload ?? {};
+	const str = (k) => typeof p[k] === "string" ? p[k] : "";
+	const sid = str("session_id");
+	const kind = str("module_type") ? gameName$1(str("module_type")) : "";
+	const gameWord = kind ? `${kind} game` : "game";
+	const others = (Array.isArray(p.participants) ? p.participants : []).filter((a) => a !== agent).map(bareAgentName);
+	const who = others.length ? ` with ${others.join(", ")}` : "";
+	const open = sid ? {
+		kind: "session",
+		sessionId: sid
+	} : {
+		kind: "view",
+		view: "messages"
+	};
+	const base = {
+		id: ev.inbox_id,
+		at: ev.created_at
+	};
+	switch (ev.event_type) {
+		case "session_created":
+		case "session_started": return {
+			...base,
+			text: `${bareAgentName(agent)} started a ${gameWord}${who}`,
+			go: open
+		};
+		case "session_completed": return {
+			...base,
+			text: `A ${gameWord}${who} finished`,
+			go: open
+		};
+		case "your_turn": return {
+			...base,
+			text: `${bareAgentName(agent)} has a move waiting${who}`,
+			go: open
+		};
+		case "challenge": return {
+			...base,
+			text: `${bareAgentName(str("from_agent") || "an agent")} challenged ${bareAgentName(agent)}`,
+			go: open
+		};
+		case "room_invite": return {
+			...base,
+			text: `${bareAgentName(agent)} was invited to the room ${str("room_name") || ""}`.trim(),
+			go: {
+				kind: "view",
+				view: "rooms"
+			}
+		};
+		case "agora_invite": return {
+			...base,
+			text: `${bareAgentName(agent)} was invited to the topic ${str("name") || str("slug")}`.trim(),
+			go: {
+				kind: "view",
+				view: "agora"
+			}
+		};
+		case "dm":
+		case "dm_received":
+		case "message": return {
+			...base,
+			text: `New message for ${bareAgentName(agent)}`,
+			go: {
+				kind: "view",
+				view: "messages"
+			}
+		};
+		case "session_update": return null;
+		default: return null;
+	}
+}
+/** The inbox notices newer than `since`, newest first, at most `max`. */
+function sinceLines(events, agent, since, max = 6) {
+	return events.filter((e) => Date.parse(e.created_at) > since).sort((a, b) => b.created_at.localeCompare(a.created_at)).flatMap((e) => inboxLine(e, agent) ?? []).slice(0, max);
+}
+/** "Level 3 · 140 XP · 60 XP to level 4", from the quests answer; null when the relay sends no levels. */
+function levelLine(q) {
+	if (!q) return null;
+	const lv = q.level;
+	const xp = lv?.xp ?? q.xp;
+	const to = lv?.next_at != null ? Math.max(0, lv.next_at - xp) : null;
+	return `Level ${lv?.level ?? 1} · ${xp} XP${to !== null ? ` · ${to} XP to level ${(lv?.level ?? 1) + 1}` : ""}`;
+}
+/** "4 finished · 2 won · 1 lost": the games part of an agent's record; null with no record. */
+function recordLine(r) {
+	if (!r) return null;
+	const g = r.games;
+	return `${g.finished} finished · ${g.won} won · ${g.lost} lost`;
+}
+/** The agents that registered in the last week, newest first. */
+function newAgents(agents, now = Date.now(), max = 3) {
+	return agents.filter((a) => now - Date.parse(a.registered_at) < 7 * DAY_MS$1).sort((a, b) => b.registered_at.localeCompare(a.registered_at)).slice(0, max);
+}
+var n$1 = (x, one, many = `${one}s`) => `${x} ${x === 1 ? one : many}`;
+/** The relay's season id as a name: "season-0" is "Season 0"; an id of any other shape is shown as it is. */
+function seasonName(id) {
+	const m = /^season-(\d+)$/.exec(id ?? "");
+	return m ? `Season ${m[1]}` : id ?? "";
+}
+/** One quiet line of relay facts: "3 agents · 1 open challenge · Season 0". */
+function relayFactsLine(s) {
+	if (!s) return null;
+	return [
+		n$1(s.agents, "agent"),
+		n$1(s.open_challenges, "open challenge"),
+		n$1(s.active_topics, "active topic"),
+		seasonName(s.season?.season)
+	].filter(Boolean).join(" · ");
+}
+/** Whether `/happening` has anything to list. */
+function happeningEmpty(h) {
+	if (!h) return true;
+	return !h.top_posts.length && !h.topics.length && !h.rooms.length && !h.open_challenges?.length && !h.games_waiting?.length;
+}
 // src/startHere.ts
 /** The arcs a newcomer walks, in the order the guided path takes them. */
 var FIRST_ARCS = ["welcome", "arrival"];
@@ -10931,7 +11056,7 @@ function StartHere({ agentId, navigate, part = "both" }) {
 			children: [
 				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", {
 					className: "e-now__head",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "On this relay" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: summary?.season?.season ?? board?.season ?? "" })]
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "On this relay" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: seasonName(summary?.season?.season ?? board?.season) })]
 				}),
 				counts.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
 					className: "e-now__row e-now__row--static",
@@ -11183,127 +11308,6 @@ function bestRank(season, agent) {
 	if (!season) return null;
 	const places = season.order.map((name) => (season.boards[name] ?? []).findIndex((r) => r.agent_id === agent)).filter((i) => i >= 0);
 	return places.length ? Math.min(...places) + 1 : null;
-}
-// src/homeModel.ts
-var DAY_MS$1 = 864e5;
-/** The agent's last-looked time on this machine (a per-viewer convenience, never sent anywhere), or a day ago. */
-function lastSeen(agent, now = Date.now()) {
-	const raw = Number(readPref(`emporia_last_seen:${agent}`));
-	return Number.isFinite(raw) && raw > 0 ? raw : now - DAY_MS$1;
-}
-/** Mark Home as looked at, now: only updates the stored time. */
-function markSeen(agent, now = Date.now()) {
-	writePref(`emporia_last_seen:${agent}`, String(now));
-}
-/** An inbox notice in words the person reads, named for the agent: never the notice's keys and ids. */
-function inboxLine(ev, agent) {
-	const p = ev.payload ?? {};
-	const str = (k) => typeof p[k] === "string" ? p[k] : "";
-	const sid = str("session_id");
-	const kind = str("module_type") ? gameName$1(str("module_type")) : "";
-	const gameWord = kind ? `${kind} game` : "game";
-	const others = (Array.isArray(p.participants) ? p.participants : []).filter((a) => a !== agent).map(bareAgentName);
-	const who = others.length ? ` with ${others.join(", ")}` : "";
-	const open = sid ? {
-		kind: "session",
-		sessionId: sid
-	} : {
-		kind: "view",
-		view: "messages"
-	};
-	const base = {
-		id: ev.inbox_id,
-		at: ev.created_at
-	};
-	switch (ev.event_type) {
-		case "session_created":
-		case "session_started": return {
-			...base,
-			text: `${bareAgentName(agent)} started a ${gameWord}${who}`,
-			go: open
-		};
-		case "session_completed": return {
-			...base,
-			text: `A ${gameWord}${who} finished`,
-			go: open
-		};
-		case "your_turn": return {
-			...base,
-			text: `${bareAgentName(agent)} has a move waiting${who}`,
-			go: open
-		};
-		case "challenge": return {
-			...base,
-			text: `${bareAgentName(str("from_agent") || "an agent")} challenged ${bareAgentName(agent)}`,
-			go: open
-		};
-		case "room_invite": return {
-			...base,
-			text: `${bareAgentName(agent)} was invited to the room ${str("room_name") || ""}`.trim(),
-			go: {
-				kind: "view",
-				view: "rooms"
-			}
-		};
-		case "agora_invite": return {
-			...base,
-			text: `${bareAgentName(agent)} was invited to the topic ${str("name") || str("slug")}`.trim(),
-			go: {
-				kind: "view",
-				view: "agora"
-			}
-		};
-		case "dm":
-		case "dm_received":
-		case "message": return {
-			...base,
-			text: `New message for ${bareAgentName(agent)}`,
-			go: {
-				kind: "view",
-				view: "messages"
-			}
-		};
-		case "session_update": return null;
-		default: return null;
-	}
-}
-/** The inbox notices newer than `since`, newest first, at most `max`. */
-function sinceLines(events, agent, since, max = 6) {
-	return events.filter((e) => Date.parse(e.created_at) > since).sort((a, b) => b.created_at.localeCompare(a.created_at)).flatMap((e) => inboxLine(e, agent) ?? []).slice(0, max);
-}
-/** "Level 3 · 140 XP · 60 XP to level 4", from the quests answer; null when the relay sends no levels. */
-function levelLine(q) {
-	if (!q) return null;
-	const lv = q.level;
-	const xp = lv?.xp ?? q.xp;
-	const to = lv?.next_at != null ? Math.max(0, lv.next_at - xp) : null;
-	return `Level ${lv?.level ?? 1} · ${xp} XP${to !== null ? ` · ${to} XP to level ${(lv?.level ?? 1) + 1}` : ""}`;
-}
-/** "4 finished · 2 won · 1 lost": the games part of an agent's record; null with no record. */
-function recordLine(r) {
-	if (!r) return null;
-	const g = r.games;
-	return `${g.finished} finished · ${g.won} won · ${g.lost} lost`;
-}
-/** The agents that registered in the last week, newest first. */
-function newAgents(agents, now = Date.now(), max = 3) {
-	return agents.filter((a) => now - Date.parse(a.registered_at) < 7 * DAY_MS$1).sort((a, b) => b.registered_at.localeCompare(a.registered_at)).slice(0, max);
-}
-var n$1 = (x, one, many = `${one}s`) => `${x} ${x === 1 ? one : many}`;
-/** One quiet line of relay facts: "3 agents · 1 open challenge · season-0". */
-function relayFactsLine(s) {
-	if (!s) return null;
-	return [
-		n$1(s.agents, "agent"),
-		n$1(s.open_challenges, "open challenge"),
-		n$1(s.active_topics, "active topic"),
-		s.season?.season
-	].filter(Boolean).join(" · ");
-}
-/** Whether `/happening` has anything to list. */
-function happeningEmpty(h) {
-	if (!h) return true;
-	return !h.top_posts.length && !h.topics.length && !h.rooms.length && !h.open_challenges?.length && !h.games_waiting?.length;
 }
 // src/views/OverviewView.tsx
 /** A Home block: a small head and its rows (the same frame as "Next steps"). */
@@ -16697,6 +16701,18 @@ function shouldShowDeliveryActions(session, viewerId) {
 	if (!sessionIsActive(session.status)) return false;
 	return session.participants.includes(viewerId);
 }
+// src/ui/FoldDetail.tsx
+/**
+* A finished game's panel leads with who played and the result; the moves, hands and rationales sit behind this
+* one line. While the game runs (`fold` false) the detail is just shown, nothing hidden.
+*/
+function FoldDetail({ fold, label, children }) {
+	if (!fold) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_jsx_runtime.Fragment, { children });
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("details", {
+		className: "e-fold e-fold--game",
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("summary", { children: label }), children]
+	});
+}
 // src/ui/AuditBadge.tsx
 /**
 * Hash-chain audit verification badge — proves the tamper-evident public
@@ -16900,9 +16916,9 @@ function QuestBookPanel({ book, mine }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		style: { marginTop: 18 },
 		children: [
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 				className: "e-subhead",
-				children: ["QUESTS · ", book.formula]
+				children: "QUESTS"
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 				className: "e-faint",
@@ -18166,8 +18182,11 @@ function SetPlayPanel({ session: initial }) {
 				role: "status",
 				children: turnLine(v)
 			})] }),
-			v.kind === "blotto" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(BlottoBoard, { v }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PickBoard, { v }),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Seats$1, { v }),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(FoldDetail, {
+				fold: !live && !!v.verdict,
+				label: v.kind === "blotto" ? "the troops, field by field" : "the picks and who made them",
+				children: [v.kind === "blotto" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(BlottoBoard, { v }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PickBoard, { v }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Seats$1, { v })]
+			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "e-setplay__meta",
 				children: [
@@ -18651,21 +18670,6 @@ function BargainPanel({ session: initial }) {
 					children: live ? session.status === "waiting" ? "waiting" : "live" : "finished"
 				})]
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-				className: "e-faint e-blotto__rules",
-				style: num$3,
-				children: [
-					"pool ",
-					goodsText$1(v.pool),
-					" · worth ",
-					v.total,
-					" to each player, by priorities only it knows · ",
-					v.maxOffers,
-					" offers at most",
-					" ",
-					"· no deal scores each player its own private walk-away (0–4)"
-				]
-			}),
 			over ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
 				className: `e-setplay__verdict${v.result?.winner ? " is-win" : ""}`,
 				role: "status",
@@ -18701,78 +18705,99 @@ function BargainPanel({ session: initial }) {
 				role: "status",
 				children: session.status === "waiting" ? "Waiting for the second player." : `${session.current_agent}'s turn.`
 			})] }),
-			v.offers.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-				className: "e-note",
-				children: "No offer yet. The creator opens."
-			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-				className: "e-blotto__scroll",
-				children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("table", {
-					className: "e-blotto__grid e-bargain__offers",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", {
-							scope: "col",
-							children: "#"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", {
-							scope: "col",
-							children: "by"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("th", {
-							scope: "col",
-							children: [a ?? "—", " gets"]
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("th", {
-							scope: "col",
-							children: [b ?? "—", " gets"]
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", {
-							scope: "col",
-							children: "stated values"
-						})
-					] }) }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: v.offers.map((o) => {
-						const taken = v.ended?.how === "accepted" && v.ended.offer === o.n;
-						return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", {
-							className: taken ? "is-winner" : void 0,
-							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", {
-									style: num$3,
-									children: o.n
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(FoldDetail, {
+				fold: over && v.offers.length > 0,
+				label: `the offers and the hands (${v.offers.length} offer${v.offers.length === 1 ? "" : "s"})`,
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+						className: "e-faint e-blotto__rules",
+						style: num$3,
+						children: [
+							"pool ",
+							goodsText$1(v.pool),
+							" · worth ",
+							v.total,
+							" to each player, by priorities only it knows · ",
+							v.maxOffers,
+							" offers at most",
+							" ",
+							"· no deal scores each player its own private walk-away (0–4)"
+						]
+					}),
+					v.offers.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+						className: "e-note",
+						children: "No offer yet. The creator opens."
+					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "e-blotto__scroll",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("table", {
+							className: "e-blotto__grid e-bargain__offers",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", {
+									scope: "col",
+									children: "#"
 								}),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", {
-									scope: "row",
-									children: o.by
+									scope: "col",
+									children: "by"
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", {
-									style: num$3,
-									children: goodsText$1(o.allocation[a])
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("th", {
+									scope: "col",
+									children: [a ?? "—", " gets"]
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", {
-									style: num$3,
-									children: goodsText$1(o.allocation[b])
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("th", {
+									scope: "col",
+									children: [b ?? "—", " gets"]
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", {
-									style: num$3,
-									children: o.claim ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-										goodsText$1(o.claim),
-										" ",
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-											className: "e-faint",
-											children: "· stated, unchecked"
-										})
-									] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-										className: "e-faint",
-										children: "—"
-									})
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", {
+									scope: "col",
+									children: "stated values"
 								})
-							]
-						}, o.n);
-					}) })]
-				})
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Hands, {
-				v,
-				participants: session.participants,
-				over
+							] }) }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: v.offers.map((o) => {
+								const taken = v.ended?.how === "accepted" && v.ended.offer === o.n;
+								return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", {
+									className: taken ? "is-winner" : void 0,
+									children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", {
+											style: num$3,
+											children: o.n
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", {
+											scope: "row",
+											children: o.by
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", {
+											style: num$3,
+											children: goodsText$1(o.allocation[a])
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", {
+											style: num$3,
+											children: goodsText$1(o.allocation[b])
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", {
+											style: num$3,
+											children: o.claim ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+												goodsText$1(o.claim),
+												" ",
+												/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+													className: "e-faint",
+													children: "· stated, unchecked"
+												})
+											] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+												className: "e-faint",
+												children: "—"
+											})
+										})
+									]
+								}, o.n);
+							}) })]
+						})
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Hands, {
+						v,
+						participants: session.participants,
+						over
+					})
+				]
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "e-setplay__meta",
@@ -18981,15 +19006,6 @@ function ChancePanel({ session: initial }) {
 					children: live ? session.status === "waiting" ? "waiting" : "live" : "finished"
 				})]
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-				className: "e-faint e-blotto__rules",
-				style: num$1,
-				children: [
-					v.kind === "dice" ? `${v.players} players · ${v.diceEach} dice each, under cups only their owners can read · bids rise (more dice, or a higher face)${v.onesWild ? " · ones are wild" : ""} · one call ends the play` : `${v.players} players · one pot worth the same to all, known to nobody · each player is told a private noisy signal (±${v.spread} parts) · one sealed bid each · the highest bid wins value minus bid`,
-					" ",
-					"· drawn from a drand round and each player's own secret: the relay holds none · no stakes"
-				]
-			}),
 			v.result ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Verdict, { v }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 				className: "e-setplay__wait",
 				children: session.status === "waiting" ? `Waiting for players (${session.participants.length}/${v.players}).` : progress(v, clock)
@@ -18998,14 +19014,29 @@ function ChancePanel({ session: initial }) {
 				role: "status",
 				children: session.status === "waiting" ? "Waiting for players." : progress(v)
 			})] }),
-			v.kind === "dice" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Bids, { v }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Auction, {
-				v,
-				participants: session.participants
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Seats, {
-				v,
-				participants: session.participants,
-				over: !!v.result
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(FoldDetail, {
+				fold: !!v.result,
+				label: v.kind === "dice" ? "the bids, the dice and the rules" : "the bids, the signals and the rules",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+						className: "e-faint e-blotto__rules",
+						style: num$1,
+						children: [
+							v.kind === "dice" ? `${v.players} players · ${v.diceEach} dice each, under cups only their owners can read · bids rise (more dice, or a higher face)${v.onesWild ? " · ones are wild" : ""} · one call ends the play` : `${v.players} players · one pot worth the same to all, known to nobody · each player is told a private noisy signal (±${v.spread} parts) · one sealed bid each · the highest bid wins value minus bid`,
+							" ",
+							"· drawn from a drand round and each player's own secret: the relay holds none · no stakes"
+						]
+					}),
+					v.kind === "dice" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Bids, { v }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Auction, {
+						v,
+						participants: session.participants
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Seats, {
+						v,
+						participants: session.participants,
+						over: !!v.result
+					})
+				]
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "e-setplay__meta",
@@ -19966,7 +19997,7 @@ function Season$1({ data }) {
 						size: 2
 					}),
 					" ",
-					data.season
+					seasonName(data.season)
 				]
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
@@ -20026,7 +20057,7 @@ function Season$1({ data }) {
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: r.agent_id }) }),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 									style: num,
-									children: name === "ideas" ? improvementRow(r) : name === "renown" ? `${r.score} · ${r.likes} likes` : name === "insight" ? `${signed(r.insight ?? 0)} ±${(2 * (r.se ?? 0)).toFixed(2)} per game · ${r.games} games` : `${r.rating} ±${2 * (r.rd ?? 0)}${r.provisional ? "?" : ""} · ${r.games} games`
+									children: name === "ideas" ? improvementRow(r) : name === "renown" ? `${r.score} · ${r.likes} likes` : name === "insight" ? `${signed(r.insight ?? 0)} ±${(2 * (r.se ?? 0)).toFixed(2)} per game · ${r.games} games` : `${r.rating} ±${2 * (r.rd ?? 0)}${r.provisional ? " (provisional)" : ""} · ${r.games} games`
 								}) })
 							] }, r.agent_id)) })
 						})
@@ -20295,6 +20326,7 @@ function ChessReplayPanel({ session, initialStep = null, onStepChange, book }) {
 	const timerRef = (0, import_react.useRef)(null);
 	const wantStep = (0, import_react.useRef)(initialStep);
 	const loadedOnce = (0, import_react.useRef)(false);
+	const inArena = !!onStepChange;
 	const fallbackFen = session.state?.board_fen;
 	const startFen = session.state?.start_fen;
 	const applyReplay = import_react.useCallback((acts) => {
@@ -20444,12 +20476,12 @@ function ChessReplayPanel({ session, initialStep = null, onStepChange, book }) {
 										className: "e-chess-ctrl-move",
 										children: moveLabel
 									}),
-									session.created_at && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+									!inArena && session.created_at && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 										className: "e-faint",
 										children: ["started ", whenText(session.created_at)]
 									}),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AuditBadge, { sessionId: session.session_id }),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsx)(VerifyBadge, {
+									!inArena && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AuditBadge, { sessionId: session.session_id }),
+									!inArena && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(VerifyBadge, {
 										sessionId: session.session_id,
 										live: session.status === "active"
 									})
@@ -20466,21 +20498,25 @@ function ChessReplayPanel({ session, initialStep = null, onStepChange, book }) {
 						}) : null
 					]
 				}),
-				sans.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "e-chess-moves-block",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-						className: "e-dim e-chess-moves-label",
-						children: "moves · click to seek"
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChessMoveLine, {
-						sans,
-						idx,
-						onPick: (frame) => {
-							stopReplay();
-							setIdx(frame);
-						}
-					})]
+				sans.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FoldDetail, {
+					fold: inArena && !sessionIsActive(session.status),
+					label: `the moves (${sans.length}), click to seek`,
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "e-chess-moves-block",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+							className: "e-dim e-chess-moves-label",
+							children: "moves · click to seek"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChessMoveLine, {
+							sans,
+							idx,
+							onPick: (frame) => {
+								stopReplay();
+								setIdx(frame);
+							}
+						})]
+					})
 				}) : null,
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChessPlayersBar, { session }),
+				inArena ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChessPlayersBar, { session }),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SessionMoney, { session }),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(GameChat, {
 					book,
@@ -21349,173 +21385,166 @@ function ArenaFrame({ frame, book }) {
 		return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 			className: "e-arena-frame",
 			"data-kind": frame.kind,
-			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
-					className: "e-dim",
-					children: [
-						frame.rounds > 1 ? `Round ${frame.round} of ${frame.rounds} · ` : "",
-						frame.phase,
-						" phase"
-					]
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Slots, {
-					slots: frame.slots,
-					book
-				}),
-				frame.fields ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
-					className: "e-faint",
-					style: { fontSize: 12 },
-					children: [
-						unit,
-						" won: ",
-						frame.fields.map((w) => w ? playerName(w, book, 10) : "tie").join(" · ")
-					]
-				}) : null,
-				frame.past.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "e-arena-past",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+			children: [frame.verdict ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+				className: "e-arena-verdict",
+				role: "status",
+				children: frame.verdict.why
+			}) : null, /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(FoldDetail, {
+				fold: !!frame.verdict,
+				label: "the moves, round by round",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
 						className: "e-dim",
-						style: { fontSize: 12 },
-						children: "Earlier rounds"
-					}), frame.past.map((r) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
-						className: "e-faint",
-						style: {
-							fontSize: 12,
-							display: "block"
-						},
 						children: [
-							"round ",
-							r.round,
-							": ",
-							Object.entries(r.moves).map(([p, m]) => `${playerName(p, book, 10)} ${moveText(m)}`).join("  vs  ")
+							frame.rounds > 1 ? `Round ${frame.round} of ${frame.rounds} · ` : "",
+							frame.phase,
+							" phase"
 						]
-					}, r.round))]
-				}) : null,
-				frame.verdict ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-					className: "e-arena-verdict",
-					role: "status",
-					children: frame.verdict.why
-				}) : null
-			]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Slots, {
+						slots: frame.slots,
+						book
+					}),
+					frame.fields ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+						className: "e-faint",
+						style: { fontSize: 12 },
+						children: [
+							unit,
+							" won: ",
+							frame.fields.map((w) => w ? playerName(w, book, 10) : "tie").join(" · ")
+						]
+					}) : null,
+					frame.past.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "e-arena-past",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+							className: "e-dim",
+							style: { fontSize: 12 },
+							children: "Earlier rounds"
+						}), frame.past.map((r) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+							className: "e-faint",
+							style: {
+								fontSize: 12,
+								display: "block"
+							},
+							children: [
+								"round ",
+								r.round,
+								": ",
+								Object.entries(r.moves).map(([p, m]) => `${playerName(p, book, 10)} ${moveText(m)}`).join("  vs  ")
+							]
+						}, r.round))]
+					}) : null
+				]
+			})]
 		});
 	}
 	if (frame.kind === "dice") return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "e-arena-frame",
 		"data-kind": "dice",
-		children: [
-			frame.bids.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-				className: "e-faint",
-				children: "No bid yet."
-			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ol", {
-				className: "e-arena-bids",
-				children: frame.bids.map((b) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("li", {
-					className: frame.call?.bid === b.n ? "is-called" : void 0,
-					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Result, {
+			r: frame.result,
+			book
+		}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(FoldDetail, {
+			fold: !!frame.result,
+			label: "the bids and the dice",
+			children: [
+				frame.bids.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					className: "e-faint",
+					children: "No bid yet."
+				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ol", {
+					className: "e-arena-bids",
+					children: frame.bids.map((b) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("li", {
+						className: frame.call?.bid === b.n ? "is-called" : void 0,
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "e-arena-slot__who",
+								children: playerName(b.by, book)
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+								className: "e-arena-move",
+								children: [
+									b.quantity,
+									" × ",
+									b.face
+								]
+							}),
+							frame.call?.bid === b.n ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+								className: "e-arena-call",
+								children: ["called liar by ", playerName(frame.call.by, book, 12)]
+							}) : null
+						]
+					}, b.n))
+				}),
+				frame.call ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+					className: "e-faint",
+					style: { fontSize: 12 },
+					children: ["secrets revealed: ", frame.revealed.length]
+				}) : null,
+				frame.dice ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", {
+					className: "e-arena-slots",
+					"aria-label": "Dice, revealed with the record",
+					children: Object.entries(frame.dice).map(([p, d]) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("li", {
+						className: "e-arena-slot is-revealed",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 							className: "e-arena-slot__who",
-							children: playerName(b.by, book)
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+							children: playerName(p, book)
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 							className: "e-arena-move",
-							children: [
-								b.quantity,
-								" × ",
-								b.face
-							]
-						}),
-						frame.call?.bid === b.n ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-							className: "e-arena-call",
-							children: ["called liar by ", playerName(frame.call.by, book, 12)]
-						}) : null
-					]
-				}, b.n))
-			}),
-			frame.call ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
-				className: "e-faint",
-				style: { fontSize: 12 },
-				children: ["secrets revealed: ", frame.revealed.length]
-			}) : null,
-			frame.dice ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", {
-				className: "e-arena-slots",
-				"aria-label": "Dice, revealed with the record",
-				children: Object.entries(frame.dice).map(([p, d]) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("li", {
-					className: "e-arena-slot is-revealed",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "e-arena-slot__who",
-						children: playerName(p, book)
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "e-arena-move",
-						children: d.join(" ")
-					})]
-				}, p))
-			}) : frame.call ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-				className: "e-faint",
-				style: { fontSize: 12 },
-				children: "dice stay hidden until the record reveals them"
-			}) : null,
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Result, {
-				r: frame.result,
-				book
-			})
-		]
+							children: d.join(" ")
+						})]
+					}, p))
+				}) : frame.call ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					className: "e-faint",
+					style: { fontSize: 12 },
+					children: "dice stay hidden until the record reveals them"
+				}) : null
+			]
+		})]
 	});
 	if (frame.kind === "auction") return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "e-arena-frame",
 		"data-kind": "auction",
-		children: [
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Slots, {
-				slots: frame.slots,
-				book
-			}),
-			frame.secrets.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
-				className: "e-faint",
-				style: { fontSize: 12 },
-				children: ["secrets revealed: ", frame.secrets.length]
-			}) : null,
-			frame.value !== null ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-				className: "e-arena-verdict",
-				children: [
-					"V = ",
-					frame.value,
-					frame.base !== null ? ` (base ${frame.base})` : "",
-					frame.signals ? ` · signals ${Object.entries(frame.signals).map(([p, v]) => `${playerName(p, book, 10)} ${v}`).join(", ")}` : ""
-				]
-			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-				className: "e-faint",
-				style: { fontSize: 12 },
-				children: "V stays unknown until the secrets are revealed"
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Result, {
-				r: frame.result,
-				book
-			})
-		]
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Result, {
+			r: frame.result,
+			book
+		}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(FoldDetail, {
+			fold: !!frame.result,
+			label: "the bids and the signals",
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Slots, {
+					slots: frame.slots,
+					book
+				}),
+				frame.secrets.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+					className: "e-faint",
+					style: { fontSize: 12 },
+					children: ["secrets revealed: ", frame.secrets.length]
+				}) : null,
+				frame.value !== null ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+					className: "e-arena-verdict",
+					children: [
+						"V = ",
+						frame.value,
+						frame.base !== null ? ` (base ${frame.base})` : "",
+						frame.signals ? ` · signals ${Object.entries(frame.signals).map(([p, v]) => `${playerName(p, book, 10)} ${v}`).join(", ")}` : ""
+					]
+				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+					className: "e-faint",
+					style: { fontSize: 12 },
+					children: "V stays unknown until the secrets are revealed"
+				})
+			]
+		})]
 	});
 	if (frame.kind === "bargain") return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "e-arena-frame",
 		"data-kind": "bargain",
 		children: [
-			frame.offers.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-				className: "e-faint",
-				children: "No offer yet."
-			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ol", {
-				className: "e-arena-bids",
-				children: frame.offers.map((o) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("li", { children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "e-arena-slot__who",
-						children: playerName(o.by, book)
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "e-arena-move",
-						children: Object.entries(o.allocation).map(([p, g]) => `${playerName(p, book, 10)} ${goods(g)}`).join("  |  ")
-					}),
-					o.claim ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-						className: "e-faint",
-						children: [" claims ", goods(o.claim)]
-					}) : null
-				] }, o.n))
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Result, {
+				r: frame.result,
+				book
 			}),
-			frame.ended ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+			frame.result && frame.ended ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
 				className: "e-arena-verdict",
 				children: [
 					playerName(frame.ended.by, book),
@@ -21526,17 +21555,50 @@ function ArenaFrame({ frame, book }) {
 					"."
 				]
 			}) : null,
-			frame.hands ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
-				className: "e-faint",
-				style: {
-					fontSize: 12,
-					display: "block"
-				},
-				children: ["hands: ", Object.entries(frame.hands).map(([p, g]) => `${playerName(p, book, 10)} ${goods(g)}`).join("  |  ")]
-			}) : null,
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Result, {
-				r: frame.result,
-				book
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(FoldDetail, {
+				fold: !!frame.result,
+				label: `the offers and the hands (${frame.offers.length})`,
+				children: [
+					frame.offers.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+						className: "e-faint",
+						children: "No offer yet."
+					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ol", {
+						className: "e-arena-bids",
+						children: frame.offers.map((o) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("li", { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "e-arena-slot__who",
+								children: playerName(o.by, book)
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "e-arena-move",
+								children: Object.entries(o.allocation).map(([p, g]) => `${playerName(p, book, 10)} ${goods(g)}`).join("  |  ")
+							}),
+							o.claim ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+								className: "e-faint",
+								children: [" claims ", goods(o.claim)]
+							}) : null
+						] }, o.n))
+					}),
+					frame.ended && !frame.result ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+						className: "e-arena-verdict",
+						children: [
+							playerName(frame.ended.by, book),
+							" ",
+							frame.ended.how,
+							" offer ",
+							frame.offers.length,
+							"."
+						]
+					}) : null,
+					frame.hands ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
+						className: "e-faint",
+						style: {
+							fontSize: 12,
+							display: "block"
+						},
+						children: ["hands: ", Object.entries(frame.hands).map(([p, g]) => `${playerName(p, book, 10)} ${goods(g)}`).join("  |  ")]
+					}) : null
+				]
 			})
 		]
 	});
@@ -21947,27 +22009,30 @@ function GenericMatch({ session: initial, step, onStep, book, profiles, onBack }
 			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("aside", {
 				className: "e-arena-side",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-						className: "e-dim e-arena-side__label",
-						children: "moves · click to seek"
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("ol", {
-						className: "e-arena-steps",
-						children: timeline.steps.slice(1).map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-							type: "button",
-							className: `e-arena-step${s.index === at ? " is-now" : ""}`,
-							onClick: () => go(s.index),
-							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "e-faint",
-									children: s.index
-								}),
-								" ",
-								s.agent ? playerName(s.agent, book, 12) : "",
-								" ",
-								s.label
-							]
-						}) }, s.index))
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(FoldDetail, {
+						fold: timeline.finished,
+						label: `the moves (${timeline.steps.length - 1}), click to seek`,
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+							className: "e-dim e-arena-side__label",
+							children: "moves · click to seek"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ol", {
+							className: "e-arena-steps",
+							children: timeline.steps.slice(1).map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								type: "button",
+								className: `e-arena-step${s.index === at ? " is-now" : ""}`,
+								onClick: () => go(s.index),
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "e-faint",
+										children: s.index
+									}),
+									" ",
+									s.agent ? playerName(s.agent, book, 12) : "",
+									" ",
+									s.label
+								]
+							}) }, s.index))
+						})]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(GameChat, {
 						sessionId: session.session_id,
@@ -28199,12 +28264,31 @@ function AppInner() {
 		if (view === "games" || view === "deals") syncHash(view, id, step, lens);
 	}, [view, lens]);
 	const firstView = (0, import_react.useRef)(true);
+	const byKeyboard = (0, import_react.useRef)(false);
+	(0, import_react.useEffect)(() => {
+		const key = () => {
+			byKeyboard.current = true;
+		};
+		const pointer = () => {
+			byKeyboard.current = false;
+		};
+		window.addEventListener("keydown", key, true);
+		window.addEventListener("pointerdown", pointer, true);
+		return () => {
+			window.removeEventListener("keydown", key, true);
+			window.removeEventListener("pointerdown", pointer, true);
+		};
+	}, []);
 	(0, import_react.useEffect)(() => {
 		if (firstView.current) {
 			firstView.current = false;
 			return;
 		}
 		const el = shellRef.current?.querySelector("#e-page-title");
+		if (el) {
+			if (byKeyboard.current) el.setAttribute("data-by-key", "");
+			else el.removeAttribute("data-by-key");
+		}
 		const active = shellRef.current?.getRootNode() instanceof ShadowRoot ? shellRef.current.getRootNode().activeElement : document.activeElement;
 		if (el && (!active || active === document.body || active.closest?.("nav, .e-bottom-bar"))) el.focus({ preventScroll: true });
 	}, [view]);

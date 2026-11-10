@@ -12,6 +12,7 @@ import { ArenaFrame } from "./ArenaFrames";
 import { ChessTransport } from "./chessControls";
 import { AuditBadge } from "./AuditBadge";
 import { VerifyBadge } from "./VerifyBadge";
+import { FoldDetail } from "./FoldDetail";
 import { GameChat } from "./GameChat";
 import { useLiveMatch } from "./useLiveMatch";
 
@@ -192,6 +193,7 @@ function GenericMatch({ session: initial, step, onStep, book, profiles, onBack }
           )}
         </section>
         <aside className="e-arena-side">
+          <FoldDetail fold={timeline.finished} label={`the moves (${timeline.steps.length - 1}), click to seek`}>
           <Text className="e-dim e-arena-side__label">moves · click to seek</Text>
           <ol className="e-arena-steps">
             {timeline.steps.slice(1).map((s) => (
@@ -202,6 +204,7 @@ function GenericMatch({ session: initial, step, onStep, book, profiles, onBack }
               </li>
             ))}
           </ol>
+          </FoldDetail>
           <GameChat sessionId={session.session_id} live={live} book={book} />
           {!(timeline.finished && at === last) ? <ModelReveal session={session} book={book} /> : null}
         </aside>

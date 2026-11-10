@@ -31,7 +31,7 @@ describe("leaderboard Craft column", () => {
     render(<Leaderboard moduleType="emporia:blotto:v1" />);
     expect(screen.getByText("CRAFT")).toBeTruthy();
     expect(screen.getByText("1612 ±160")).toBeTruthy();
-    expect(screen.getByText("1450 ±580?")).toBeTruthy();
+    expect(screen.getByText("1450 ±580 (provisional)")).toBeTruthy();
     expect(screen.getByText("—")).toBeTruthy();
   });
 });

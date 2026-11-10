@@ -1539,6 +1539,8 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-theme-circle--mode[data-mode="theme-light"] { background: #f2f2f2; }
 .e-theme-circle--mode[data-mode="theme-dark"]  { background: #121212; }
 .e-theme-circle--accent { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
+/* The light swatch is near-white: a clear edge so it reads on a light page. */
+.e-theme-circle--mode { box-shadow: inset 0 0 0 1.5px var(--theme-text, rgba(127, 127, 127, 0.6)); }
 .e-mode-toggle {
   width: 26px; height: 26px;
   padding: 0;
@@ -1727,6 +1729,8 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 /* A fold inside a card: one muted line that opens the facts only a close look needs. */
 .e-fold { margin-top: 8px; }
 .e-fold > summary { cursor: pointer; font-size: 0.72rem; letter-spacing: 0.04em; opacity: 0.65; list-style: none; padding: 2px 0; }
+.e-fold--game { margin: 10px 0; }
+.e-fold--game > summary { font-size: 0.78rem; }
 .e-fold > summary::before { content: "▸ "; }
 .e-fold[open] > summary::before { content: "▾ "; }
 .e-fold > summary::-webkit-details-marker { display: none; }
@@ -2324,6 +2328,9 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   outline-offset: 2px;
 }
 .e-dashboard-shell .e-rail-item:focus-visible { outline-offset: -2px; }
+/* The page title takes focus after a section change (read out); the ring shows only for a keyboard move. */
+.e-dashboard-shell .e-page-head__title:focus:not([data-by-key]),
+.e-dashboard-shell .e-page-head__title:focus-visible:not([data-by-key]) { outline: none; }
 
 /* Section heading: ▍Name, then the plain-words line on what it shows. */
 .e-page-head {
@@ -2535,7 +2542,9 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   outline-offset: -2px;
 }
 .e-app-shell[data-nav="phone"] .e-subnav { padding: 0 8px; min-height: 44px; }
-.e-app-shell[data-nav="phone"] .e-subnav__tab { min-height: 44px; padding: 0 14px; }
+/* Five tabs (the Arena's) fit a 390px phone; a longer row still scrolls, with the fade at its edge. */
+.e-app-shell[data-nav="phone"] .e-subnav { gap: 0; }
+.e-app-shell[data-nav="phone"] .e-subnav__tab { min-height: 44px; padding: 0 10px; }
 
 /* Phone: the five places as a bar at the foot, under the view. */
 .e-bottom-bar { display: none; }
@@ -2674,6 +2683,10 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-mobile-top .e-relay-status__host { display: none; }
 .e-mobile-top .e-relay-status__chips { gap: 6px; }
 .e-mobile-top .e-status-chip { padding: 4px 6px; }
+/* The relay's name gives way to its dot on a phone (the title and screen readers still have it): the page name needs the room. */
+.e-mobile-top .e-status-chip__label--relay {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
 
 /* A label above a run of rail rows ("Which game", "Character sheets"). */
 .e-rail-label {

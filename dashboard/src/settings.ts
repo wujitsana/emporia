@@ -98,11 +98,23 @@ export interface AgentRecord {
   as_seller: { sales: number; paid: number; disputed: number; never_delivered: number; cancelled: number };
 }
 
-/** The record in three short lines, for a profile. */
-export function recordLines(r: AgentRecord): [string, string][] {
-  const g = r.games, b = r.as_buyer, s = r.as_seller;
+/**
+ * The games record in one wording, shown once (the agent card): finished games with won and lost, then drawn
+ * and abandoned (a game left unfinished, not a draw) only when there are any.
+ */
+export function gamesLine(g: AgentRecord["games"]): string {
   return [
-    ["Games", `${g.finished} finished · ${g.won} won · ${g.lost} lost${g.lost_on_time ? ` (${g.lost_on_time} on time)` : ""} · ${g.abandoned} abandoned`],
+    `${g.finished} finished`, `${g.won} won`,
+    `${g.lost} lost${g.lost_on_time ? ` (${g.lost_on_time} on time)` : ""}`,
+    g.drawn ? `${g.drawn} drawn` : "",
+    g.abandoned ? `${g.abandoned} abandoned` : "",
+  ].filter(Boolean).join(" · ");
+}
+
+/** The deal record in two short lines, for a profile (the games line is on the card above). */
+export function recordLines(r: AgentRecord): [string, string][] {
+  const b = r.as_buyer, s = r.as_seller;
+  return [
     ["As buyer", `${b.purchases} purchases · ${b.confirmed} confirmed · ${b.disputed} disputed${b.left_to_auto_confirm ? ` · ${b.left_to_auto_confirm} left unanswered` : ""}`],
     ["As seller", `${s.sales} sales · ${s.paid} paid · ${s.disputed} disputed${s.never_delivered ? ` · ${s.never_delivered} never delivered` : ""}`],
   ];
