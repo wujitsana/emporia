@@ -219,8 +219,8 @@ body.theme-light {
 .e-app-shell[data-nav="phone"] .e-status-chip__label--live {
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
 }
-.e-app-shell[data-nav="medium"] .e-status-chip__label--relay { max-width: 11ch; }
-.e-app-shell[data-nav="rail"] .e-status-chip__label--relay { max-width: 18ch; }
+.e-app-shell[data-nav="medium"] .e-status-chip__label--relay { max-width: 22ch; }
+.e-app-shell[data-nav="rail"] .e-status-chip__label--relay { max-width: 22ch; }
 
 /* The rail: the five places as icons down the left edge, the word on hover and focus. */
 .e-section-tabs--rail { display: none; }
@@ -1100,7 +1100,7 @@ body.theme-light {
 
 /* The relay chip carries the relay's name: a long host is cut with an ellipsis (its title has it all). */
 .e-status-chip__label--relay { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.e-app-shell[data-nav="phone"] .e-status-chip__label--relay { max-width: 9ch; }
+.e-app-shell[data-nav="phone"] .e-status-chip__label--relay { max-width: 14ch; }
 .e-status-chip {
   display: inline-flex;
   align-items: center;
