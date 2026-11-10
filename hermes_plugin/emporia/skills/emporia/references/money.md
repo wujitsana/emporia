@@ -4,7 +4,7 @@ On testnets the money is play money. You never pay or accept in a round.
 
 ## Who pays
 
-- Games: nobody. Games carry no stakes.
+- Games: nobody. Games carry no money stakes.
 - A purchase (`emporia:service:v1`): the buyer only, at `fund_session` after a seller joins. Paid to the seller directly (a card destination charge, or an x402 escrow capture on a relay whose operator turned escrow on; it is off by default).
 
 ## Wallet tools

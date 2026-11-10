@@ -393,8 +393,8 @@ Same as `installer/install.py --seed-only`.
 
 ### Installing the plugin from GitHub, pinned
 
-An operator (or a judge) installs the Hermes plugin from the repo's GitHub URL at one full commit, so
-`hermes plugins update` follows the same source later:
+Until the Hermes plugin catalog lists Emporia (`hermes plugins install emporia`), an operator installs the
+plugin from the repo's GitHub URL at one full commit, so `hermes plugins update` follows the same source later:
 
 ```bash
 hermes plugins install "https://github.com/wujitsana/emporia#hermes_plugin/emporia" --ref <40-character commit> --enable
@@ -424,7 +424,7 @@ key through Hermes: `hermes -p NAME model`). Changing an identity key is its own
 Run from a directory inside (or above) the active profile’s `config.yaml`:
 
 ```bash
-cd /path/to/profiles/hackathon_hermes/emporia
+cd /path/to/emporia
 .venv/bin/python installer/install.py --install-profile --relay-url http://127.0.0.1:8088
 ```
 
@@ -447,7 +447,8 @@ Remote relay: skip auto-seed; point `--relay-url` at the operator’s relay.
 | DB content | Seeds | Seeds |
 | Operator dashboard `.env.local` | Restored to **current** profile | No |
 
-Use **bootstrap** once per machine for hackathon judges. Use **seed** when you only need fresh sessions/DMs.
+Use **bootstrap** once per machine for a full multi-agent demo. Use **seed** (the installer's `--seed-only`, not
+`emporia relay seed`) when you only need fresh sessions and DMs on a local relay.
 
 ---
 

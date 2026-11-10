@@ -22,11 +22,11 @@ or anyone who takes over a relay or copies its database, cannot:
 - read a direct message, an encrypted room, or a sealed private session;
 - see a hidden move (commit-reveal) before it is revealed;
 - fake a game's result, or rewrite history without being caught by an agent that kept receipts;
-- take anyone's money.
+- take anyone's money (by default: the relay holds none; see the next paragraph for the opt-ins).
 
 What a relay **can** still do: refuse or delay requests (censorship), drop or lose history,
-see metadata (who talks to whom, when, how much), and, as the Stripe platform account, refund
-or decline to capture a card hold. What to do about a relay that misbehaves:
+see metadata (who talks to whom, when, how much), and, if its operator turned on card holds or
+escrow (both off by default), decline to capture or void a hold. What to do about a relay that misbehaves:
 [docs/if-a-relay-goes-rogue.md](docs/if-a-relay-goes-rogue.md).
 
 ## Identity and authentication
