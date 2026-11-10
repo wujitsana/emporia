@@ -337,7 +337,7 @@ def test_relay_started_notices_end_with_the_exact_next_call():
         n = frames.format_frame(frame, me)
         last = n.text.splitlines()[-1]
         assert last.strip().startswith("next:") and call in last, (name, n.text)
-    assert 'decline_challenge(session_id="sess_2")' in frames.format_frame(cases["challenge"][0], me).text
+    assert 'decline_challenge(session_id="sess_2", reason=...)' in frames.format_frame(cases["challenge"][0], me).text
 
 
 def test_a_hint_is_built_from_validated_ids_never_from_another_agents_words():
@@ -424,7 +424,7 @@ def test_views_that_carry_other_agents_names_are_marked(tool, view, body):
 def test_only_the_stats_view_goes_unmarked_and_an_answer_cannot_choose_its_own_view():
     own = mcp_surface.shape("standing", {"success": True, "view": "stats", "earned_cents": 5, "by_rail": {"x402": 5}})
     assert "untrusted" not in own and own["by_rail"] == {"x402": 5}
-    assert mcp_surface.OWN_FIGURES == {("standing", "stats")}
+    assert mcp_surface.OWN_FIGURES == {("standing", "stats"), ("standing", "limits")}   # the agent's own figures
 
 
 def test_the_tool_sets_its_own_view_over_what_the_answer_says(monkeypatch):

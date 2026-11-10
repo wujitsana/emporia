@@ -53,6 +53,32 @@ def _price(payment_rules: dict[str, Any]) -> tuple[int, str]:
     return int(float(price) * 100), (payment_rules.get("currency") or "usd").lower()
 
 
+def games_today_with(me: str, other: str) -> tuple[bool, int]:
+    """(whether `other` is `me`'s own operator, games `me` has played today (UTC) against any agent of
+    `other`'s operator). Started games only (active or finished); the house's practice games count for
+    nothing, and neither do purchases. One definition of operator: `operators.of_agents`."""
+    from emporia import operators
+    house = rs.house_names()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        ops = operators.of_agents(conn)
+        mine, theirs = ops.get(me), ops.get(other)
+        same = bool(mine) and mine == theirs
+        if other in house:
+            return same, 0
+        peers = ({a for a, o in ops.items() if o == theirs and a != me} if theirs else {other}) - house
+        if not peers:
+            return same, 0
+        midnight = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        marks = ",".join("?" * len(peers))
+        row = conn.execute(
+            "SELECT COUNT(DISTINCT s.session_id) AS n FROM sessions s "   # noqa: S608 — placeholders only
+            "JOIN participants a ON a.session_id = s.session_id AND a.agent_id = ? "
+            f"JOIN participants b ON b.session_id = s.session_id AND b.agent_id IN ({marks}) "
+            "WHERE s.created_at >= ? AND s.status IN ('active', 'completed') AND s.module_type != ?",
+            (me, *sorted(peers), midnight, SERVICE_MODULE)).fetchone()
+    return same, int(row["n"] if row else 0)
+
+
 GAME_STAKES_REFUSAL = (
     "{mt} takes no stakes: games on Emporia carry none (no money, no XP, no Nerve). "
     "Play it for the result. No prizes or bounties either: for paid work, create an emporia:service:v1 deal."
@@ -227,7 +253,13 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
         "module_type": req.module_type,
     })
     if opponent:   # P181: they are told; nobody else may join
+        try:    # what the invitee weighs: is the challenger its own operator, and how often it has played them today
+            same_op, played_today = await run_in_threadpool(games_today_with, opponent, caller)
+            decide = {"same_operator": same_op, "games_with_you_today": played_today}
+        except Exception:  # noqa: BLE001 — the invite goes out without it
+            decide = {}
         await rs.broadcast_to_agent(opponent, {
+            **decide,
             "type": "session_invite",
             "session_id": session_id,
             "module_type": req.module_type,
@@ -370,6 +402,19 @@ class DeclineRequest(BaseModel):
     reason: str | None = None
 
 
+@router.get("/agents/{agent_id}/games-today")
+async def games_today(agent_id: str, request: Request, with_agent: str):
+    """Games the caller has played today (UTC) against `with_agent`'s operator, and whether that is the
+    caller's own. The caller's own figures only; the house's practice games count for nothing."""
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    if caller != agent_id:
+        raise HTTPException(403, "an agent reads its own count")
+    same, n = await run_in_threadpool(games_today_with, caller, with_agent)
+    return {"agent_id": caller, "with": with_agent, "same_operator": same, "games_today": n}
+
+
 @router.post("/sessions/{session_id}/decline")
 async def decline_challenge(session_id: str, req: DeclineRequest, request: Request):
     """quests:v4: the named opponent declines a challenge (or any game naming it) that has not started.
@@ -386,7 +431,9 @@ async def decline_challenge(session_id: str, req: DeclineRequest, request: Reque
     if s["status"] != "waiting":
         raise HTTPException(400, f"this game is {s['status']}, not waiting: a started game is played or "
                                  "abandoned, not declined")
-    reason = (req.reason or "").strip()[:200]
+    reason = " ".join((req.reason or "").split())[:140]
+    if _wire.has_url(reason):
+        raise HTTPException(400, "reason has a link in it; a reason carries no URLs")
     if await _abandon(s, reason=f"declined by {caller}" + (f": {reason}" if reason else "")) is None:
         raise HTTPException(409, "the game changed meanwhile: read it again with get_session")
     with rs.DB_LOCK, rs.get_db() as conn:

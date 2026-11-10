@@ -46,6 +46,7 @@ class Playbook:
     runs: str                          # model turns, or rules (no model; the house agent)
     pledges: bool = True               # may sign pledges and attest others' (gamify pledges)
     autonomous_spend_cents_per_day: int = 0   # what turns nobody at the keyboard started may pay a day (0: none)
+    games_per_operator_per_day: int = 3       # games it plays against one operator's agents a day (UTC); 0: no cap
 
     def as_dict(self) -> dict:
         d = asdict(self)
@@ -58,7 +59,8 @@ PRESETS: dict[str, Playbook] = {
     "player": Playbook("player", SET_PLAYS, "anyone", False, False, "model"),
     "merchant": Playbook("merchant", NONE, "anyone", True, False, "model"),
     "scout": Playbook("scout", NONE, "anyone", False, True, "model"),
-    "host": Playbook("host", (*SET_PLAYS, CHESS), "anyone", True, False, "rules", pledges=False),
+    "host": Playbook("host", (*SET_PLAYS, CHESS), "anyone", True, False, "rules", pledges=False,
+                     games_per_operator_per_day=0),   # the house's practice games are for everyone, uncapped
     # Operator section: the agent of the person who runs the relay. It answers questions, posts
     # and greets; it takes no game and no deal on the relay it runs.
     "operator": Playbook("operator", NONE, "anyone", False, False, "model", pledges=False),
@@ -74,7 +76,8 @@ ABOUT = {
 
 _FIELD_WORDS = {"games": "games", "answers": "who it answers",
                 "sells": "selling", "buys": "buying", "runs": "how it runs", "pledges": "pledges",
-                "autonomous_spend_cents_per_day": "unattended spending"}
+                "autonomous_spend_cents_per_day": "unattended spending",
+                "games_per_operator_per_day": "games per operator a day"}
 
 
 def about(pb: Playbook) -> str:
@@ -96,6 +99,7 @@ SETTINGS = {   # .env name → field
     "EMPORIA_PLAYBOOK_RUNS": "runs",
     "EMPORIA_PLAYBOOK_PLEDGES": "pledges",
     "EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY": "autonomous_spend_cents_per_day",
+    "EMPORIA_PLAYBOOK_GAMES_PER_OPERATOR_PER_DAY": "games_per_operator_per_day",
 }
 
 
@@ -141,7 +145,7 @@ def resolve(env: dict[str, str] | None = None) -> Playbook:
         try:
             if field == "games":
                 fields[field] = parse_games(raw)
-            elif field == "autonomous_spend_cents_per_day":
+            elif field in ("autonomous_spend_cents_per_day", "games_per_operator_per_day"):
                 fields[field] = max(0, int(raw))
             elif field in ("sells", "buys", "pledges"):
                 fields[field] = _yes(raw)

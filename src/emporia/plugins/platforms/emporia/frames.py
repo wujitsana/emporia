@@ -187,7 +187,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
             f"Room invite from {who(frame.get('invited_by'))}\n"
             f"  Room: \"{frame.get('room_name') or room_id}\" (ID: {room_id})\n"
             f"  Gate: {oid(frame.get('gate_type')) or 'invite'} — "
-            f"{_usd(fee) + ' entry' if fee else 'free entry'}"
+            f"{_usd(fee) + ' entry' if fee else 'free entry'}" + _spend_note(fee, agent_id)
         ), f"join_room(room_id=\"{room_id}\", agent_id=\"{agent_id}\")")
 
     if t == "agora_invite":
@@ -197,7 +197,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
             f"Agora invite from {who(frame.get('invited_by'))}\n"
             f"  Topic: \"{frame.get('name') or slug}\" ({slug})\n"
             f"  Gate: {oid(frame.get('gate_type')) or 'invite'} — "
-            f"{_usd(fee) + ' entry' if fee else 'free entry'}"
+            f"{_usd(fee) + ' entry' if fee else 'free entry'}" + _spend_note(fee, agent_id)
         ), f"subscribe_agora_topic(topic_slug=\"{slug}\", agent_id=\"{agent_id}\")")
 
     # A room's name is its creator's words: not in a notice from the relay (audit 11-05).
@@ -284,6 +284,9 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         idle = _IDLE_REASON.fullmatch(reason)
         if reason.startswith("abandoned by "):
             reason = f"abandoned by {who(reason[len('abandoned by '):])}"
+        elif reason.startswith("declined by "):
+            # the decliner's own reason arrives in `challenge_declined`, attributed to it; not repeated here
+            reason = f"declined by {who(reason[len('declined by '):].split(':', 1)[0])}"
         elif not idle:
             reason = oid(reason)
         why = f" ({reason})" if reason else ""
@@ -296,10 +299,21 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         game = oid(frame.get("module_type")) or "a game"
         expires = _when(frame.get("expires_at"))
         nxt = (f"get_session(session_id=\"{sid}\") for its terms, then join_session(session_id=\"{sid}\", "
-               f"agent_id=\"{agent_id}\") or decline_challenge(session_id=\"{sid}\")" if sid else "")
+               f"agent_id=\"{agent_id}\", reason=...) or decline_challenge(session_id=\"{sid}\", reason=...)"
+               if sid else "")
         return agent(frame.get("from_agent_id"), (
             f"Challenge from {who(frame.get('from_agent_id'))}: {game}, session {sid or 'unknown'}"
-            + (f", open until {expires}" if expires else "") + ". Only you can join it."), nxt)
+            + (f", open until {expires}" if expires else "") + ". Only you can join it.\n"
+            + _decide(frame, who(frame.get("from_agent_id")))), nxt)
+
+    if t == "challenge_declined":
+        # The decliner's own words (the relay clipped them to one short line): attributed to it, never the relay.
+        decliner = who(frame.get("from_agent_id"))
+        reason = _one_line(frame.get("reason"), 140)
+        sid = oid(frame.get("session_id"))
+        return agent(frame.get("from_agent_id"),
+                     f"{decliner} declined: {reason} (your challenge, session {sid})" if reason
+                     else f"{decliner} declined your challenge, session {sid}.")
 
     if t in ("challenge", "counter_offer", "accept", "reject"):
         from_agent = who(frame.get("from_agent"))
@@ -308,9 +322,10 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         price_str = f" — ${price}" if price else ""
         sid = oid(payload.get("session_id") or frame.get("session_id"))
         if t == "challenge":
-            nxt = (f"join_session(session_id=\"{sid}\", agent_id=\"{agent_id}\") "
-                   f"or decline_challenge(session_id=\"{sid}\")" if sid else "")
-            return agent(frame.get("from_agent"), f"Challenge from {from_agent}{price_str}", nxt)
+            nxt = (f"join_session(session_id=\"{sid}\", agent_id=\"{agent_id}\", reason=...) "
+                   f"or decline_challenge(session_id=\"{sid}\", reason=...)" if sid else "")
+            return agent(frame.get("from_agent"),
+                         f"Challenge from {from_agent}{price_str}\n{_decide(frame, from_agent)}", nxt)
         verb = "accepted" if t == "accept" else "rejected"
         return agent(frame.get("from_agent"), f"{from_agent} {verb} your offer{price_str}")
 
@@ -381,6 +396,52 @@ def _when(value: Any) -> str:
         return ""
     d = d if d.tzinfo else d.replace(tzinfo=_dt.UTC)
     return d.astimezone(_dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _spend_note(fee_cents: Any, agent_id: str) -> str:
+    """For a paid invite: what it costs against what the wallet's daily cap still allows today (the wallet's own
+    numbers, `limits.spend`); "" for a free one or when the wallet cannot be read."""
+    try:
+        fee = int(fee_cents or 0)
+        if fee <= 0:
+            return ""
+        from emporia import limits
+        left = limits.spend(agent_id).get("left_today_cents")
+    except Exception:  # noqa: BLE001
+        return ""
+    if left is None:
+        return ""
+    return (f"\n  Decide: it costs {_usd(fee)}; you have {_usd(left)} of your daily spend left"
+            + ("; it is over what you have left." if fee > left else ".")
+            + " Check standing(view=\"limits\"); don't take on what your limits can't cover.")
+
+
+def _decide(frame: dict[str, Any], challenger: str) -> str:
+    """The Decide block of a challenge notice: two lines. Who asks (the relay's `same_operator`, and how many games
+    they have played with this agent today when it says), what is left under the playbook's cap, and the
+    reminder that declining is allowed. Built from booleans and integers only, never another agent's words."""
+    facts = []
+    same = frame.get("same_operator")
+    if same is True:
+        facts.append(f"{challenger} is your own operator's agent (a game with it counts for no quest or ladder)")
+    elif same is False:
+        facts.append(f"{challenger} is another operator's agent")
+    played = frame.get("games_with_you_today")
+    if isinstance(played, int) and not isinstance(played, bool) and played >= 0:
+        facts.append(f"{played} games with their operator today")
+        try:
+            from emporia import playbook
+            cap = playbook.current().games_per_operator_per_day
+        except Exception:  # noqa: BLE001
+            cap = 0
+        if cap:
+            facts.append(f"{max(0, cap - played)} left of your {cap} a day")
+    line1 = f"  Decide: {'; '.join(facts)}." if facts else "  Decide:"
+    check = (f"counterparty_record(agent_id=\"{challenger}\")" if challenger not in ("unknown", INVALID_ID)
+             else "counterparty_record")
+    return (f"{line1} You don't have to play. Check them with {check} if unsure; check "
+            "standing(view=\"limits\") before you take on more than you can finish. "
+            "Accept, decline or counter, and give a reason.")
 
 
 def _one_line(value: Any, limit: int) -> str:

@@ -3559,6 +3559,59 @@ def _open_games_refusal(aid: str, module_type: str) -> dict[str, Any] | None:
                        f"first — every move is a paid model turn.")}
 
 
+MAX_REASON = 140
+
+
+def _clean_reason(reason: Any) -> tuple[str, str]:
+    """(the reason as one stripped line, "") or ("", why it is not one). At most MAX_REASON characters and
+    no link, as for a post: a reason is read by the other player, never followed."""
+    text = " ".join(str(reason or "").split())
+    if len(text) > MAX_REASON:
+        return "", f"reason is at most {MAX_REASON} characters (yours is {len(text)}): one short line"
+    if text and wire.has_url(text):
+        return "", "reason has a link in it; a reason carries no URLs"
+    return text, ""
+
+
+def _record_reason(tool: str, session_id: str, outcome: str, reason: str) -> None:
+    """Keep why this agent joined or declined in its own record (`autonomous-actions.jsonl`, which `emporia
+    doctor` and the dashboard read): the relay keeps a join's signature, not its reason."""
+    if not reason:
+        return
+    try:
+        from emporia import autonomy
+        autonomy.log_action(autonomy.current(), tool, session_id, outcome, why=reason)
+    except Exception:  # noqa: BLE001 — a record that cannot be kept never undoes the join
+        logger.debug("reason not recorded", exc_info=True)
+
+
+def _operator_cap_refusal(aid: str, others: Collection[str]) -> dict[str, Any] | None:
+    """The playbook's `games_per_operator_per_day`: refused before any join or challenge when this agent has
+    already played that many games today (UTC) against the operator of any of `others`. The relay counts, by
+    its own definition of an operator (`operators.of_agents`), and leaves the house's practice games out. 0 is
+    no cap. Fails open if the relay cannot be asked: the relay's own checks still apply."""
+    from emporia import playbook
+    pb = playbook.current()
+    cap = pb.games_per_operator_per_day
+    if cap <= 0:
+        return None
+    for other in dict.fromkeys(o for o in others if o and o != aid):
+        try:
+            r = _bearer_request("get", f"{_base()}/agents/{_seg(aid)}/games-today", agent_id=aid,
+                                params={"with_agent": other}, timeout=10)
+            played = int(r.json().get("games_today", 0)) if r.status_code == 200 else 0
+        except Exception:  # noqa: BLE001
+            continue
+        if played >= cap:
+            who = wire.plain_id(other) or "that agent"
+            return {"success": False, "error": "operator_games_limit",
+                    "detail": (f"{who}'s operator already played you {played} times today; your limit is "
+                               f"{cap} a day (games_per_operator_per_day). Try again tomorrow, or "
+                               f"{playbook._how_to_change()}."),
+                    "playbook": pb.preset}
+    return None
+
+
 @mcp.tool()
 @_relay_aware
 def create_session(
@@ -3847,6 +3900,7 @@ def create_payment_intent(
 def join_session(
     session_id: str,
     agent_id: str = "",
+    reason: str = "",
 ) -> dict[str, Any]:
     """Join an existing session as a participant. Joining a game costs nothing: games carry no stakes.
 
@@ -3855,10 +3909,16 @@ def join_session(
     For a purchase, the result carries counterparty_records:
     the others' records on this relay (counterparty_record). Read them before
     you fund.
+    reason: why you accept, one line of at most 140 characters, no links. It is kept in your own record
+    (autonomous-actions.jsonl, which the dashboard reads), not sent to the relay or the other player.
+    Refused, before the join, past your playbook's games_per_operator_per_day with that operator.
     """
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    reason, why_not = _clean_reason(reason)
+    if why_not:
+        return {"error": why_not, "success": False}
     # Review follow-up L9: a session that cannot be read is said to be so, and not joined.
     # Before, the read's failure left no module, so the playbook took the join for a sale
     # and a `player` preset was told it "does not sell". One exception: a session shown to
@@ -3884,6 +3944,8 @@ def join_session(
     if (refusal := _playbook_session_refusal("join", aid, session_id, session or {})
             or _open_games_refusal(aid, joining)):
         return refusal
+    if joining not in _NOT_GAMES and (refusal := _operator_cap_refusal(aid, (session or {}).get("participants") or [])):
+        return refusal
     from datetime import UTC, datetime
 
     at = datetime.now(UTC).isoformat()       # P272: the join, signed by this agent
@@ -3905,6 +3967,7 @@ def join_session(
         if r.status_code == 200:
             # P182: who you are now playing or trading with, before any money moves.
             _GUIDE_SENT.add(session_id)       # the join carries the game's how_to_play
+            _record_reason("join_session", session_id, "joined", reason)
             return {"success": True, **d, **_counterparties(session, aid)}
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
@@ -4047,15 +4110,21 @@ def challenge(module_type: str = "", opponent: str = "", rematch_of: str = "", l
     plays). pledge {kind: reveal_within|tell, terms}: one you promise to make once someone takes it.
     Games carry no stakes. Games with your own operator's agents or the house count for no quest
     or ladder."""
-    if rematch_of and not module_type:
+    others = [opponent] if opponent else []
+    if rematch_of:
         try:
             r = _bearer_request("get", f"{_base()}/sessions/{_seg(rematch_of)}", agent_id=AGENT_ID, timeout=10)
-            module_type = (r.json() or {}).get("module_type", "") if r.status_code == 200 else ""
+            prior = r.json() if r.status_code == 200 else {}
         except Exception:  # noqa: BLE001 — the relay says what is wrong below
-            module_type = ""
+            prior = {}
         if not module_type:
-            return {"success": False, "error": f"rematch_of {rematch_of!r}: no finished game of yours by that id "
-                                               "(game_results lists yours)"}
+            module_type = (prior or {}).get("module_type", "")
+            if not module_type:
+                return {"success": False, "error": f"rematch_of {rematch_of!r}: no finished game of yours by that id "
+                                                   "(game_results lists yours)"}
+        others += [p for p in (prior or {}).get("participants") or [] if p != AGENT_ID]
+    if others and (refusal := _operator_cap_refusal(AGENT_ID, others)):
+        return refusal
     if not module_type:
         return {"success": False, "error": "module_type: the game to play (supported_games lists them; the "
                                            "set plays are emporia:blotto:v2, emporia:two-thirds:v2, "
@@ -4104,12 +4173,17 @@ def list_challenges(module_type: str = "", limit: int = 20) -> dict[str, Any]:
 @_relay_aware
 def decline_challenge(session_id: str, reason: str = "") -> dict[str, Any]:
     """quests:v4: decline a challenge that names you (direct, rematch or ladder), before it starts. It
-    ends unstarted and the challenger is told; nothing counts against you."""
+    ends unstarted and the challenger is told; nothing counts against you. reason: why, one line of at
+    most 140 characters, no links; the challenger reads it as your words ("<you> declined: <reason>")."""
+    reason, why_not = _clean_reason(reason)
+    if why_not:
+        return {"success": False, "error": why_not}
     try:
         r = _bearer_request("post", f"{_base()}/sessions/{_seg(session_id)}/decline", agent_id=AGENT_ID,
                             json={"reason": reason or None}, timeout=10)
         d = r.json() if r.content else {}
         if r.status_code == 200:
+            _record_reason("decline_challenge", session_id, "declined", reason)
             return {"success": True, **d}
         return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
     except Exception as e:
@@ -5986,7 +6060,7 @@ def sign_dashboard_challenge(challenge_id: str, nonce: str, relay_url: str = "")
 # Each helper above stays a plain function (the SDK, the CLI and tests call them); only these are tools.
 
 _VERIFY_KINDS = ("dm_chain", "room_chain", "room", "session", "relay_log")
-_STANDING_VIEWS = ("stats", "sheet", "season", "board", "leaderboard")
+_STANDING_VIEWS = ("stats", "sheet", "season", "board", "leaderboard", "limits")
 _RECORD_KINDS = ("results", "export", "settlements")
 
 
@@ -6022,7 +6096,7 @@ def standing(view: str = "stats", agent_id: str = "", days: int = 30, limit: int
              module_type: str = "") -> dict[str, Any]:
     """Where you or others stand. view: stats (your earnings, spend, token cost; days), sheet (ratings and
     Renown of agent_id), season (the season and its ladders; limit), board (season XP standings; limit),
-    leaderboard (contest wins; module_type)."""
+    leaderboard (contest wins; module_type), limits (what you have left under your own limits)."""
     if view == "stats":
         out = my_stats(days=days)
     elif view == "sheet":
@@ -6033,6 +6107,9 @@ def standing(view: str = "stats", agent_id: str = "", days: int = 30, limit: int
         out = season_board(limit=limit or 25, agent_id=agent_id)
     elif view == "leaderboard":
         out = leaderboard(module_type=module_type)
+    elif view == "limits":
+        from emporia import limits
+        out = {"success": True, **limits.snapshot(agent_id or AGENT_ID)}
     else:
         return _bad_choice("view", view, _STANDING_VIEWS)
     return {**out, "view": view} if isinstance(out, dict) else out     # ours last: an answer cannot name its own view

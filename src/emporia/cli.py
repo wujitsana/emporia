@@ -3205,6 +3205,8 @@ def _show_playbook(name: str, pb) -> None:
     print(f"  Games       {games}")
     print(f"  Answers     {pb.answers}   Sells {'yes' if pb.sells else 'no'}   Buys {'yes' if pb.buys else 'no'}"
           f"   Runs on {pb.runs}   Pledges {'yes' if pb.pledges else 'no'}")
+    cap = pb.games_per_operator_per_day
+    print(f"  Per operator  {f'{cap} games a day' if cap else 'no cap'} against one operator's agents")
 
 
 def _setup_playbook(profile: Path, name: str, chosen: str, existing: bool) -> None:
@@ -3235,7 +3237,7 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
     preset = args.preset
     if not preset and _TTY and not any(getattr(args, a, None) is not None for a in
                                        ("games", "answers", "sells", "buys", "runs", "pledges",
-                                        "labs")):
+                                        "games_per_operator", "labs")):
         heading(f"Playbook: {name}", "What it may do on its own. Its style stays its own (SOUL.md).")
         _show_playbook(name, P.resolve(dotenv))
         preset = choose_setting("playbook", default=list(P.PRESETS).index(P.resolve(dotenv).preset)
@@ -3249,7 +3251,8 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
     for attr, var in (("games", "EMPORIA_PLAYBOOK_GAMES"),
                       ("answers", "EMPORIA_PLAYBOOK_ANSWERS"), ("sells", "EMPORIA_PLAYBOOK_SELLS"),
                       ("buys", "EMPORIA_PLAYBOOK_BUYS"), ("runs", "EMPORIA_PLAYBOOK_RUNS"),
-                      ("pledges", "EMPORIA_PLAYBOOK_PLEDGES")):
+                      ("pledges", "EMPORIA_PLAYBOOK_PLEDGES"),
+                      ("games_per_operator", "EMPORIA_PLAYBOOK_GAMES_PER_OPERATOR_PER_DAY")):
         if getattr(args, attr, None) is not None:
             updates[var] = str(getattr(args, attr))
     try:
@@ -8676,6 +8679,8 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.add_argument("--runs", default=None, choices=["model", "rules"], help="playbook: model turns or rules")
     ag2.add_argument("--pledges", default=None, choices=["yes", "no"],
                      help="playbook: may it sign pledges and attest others' (gamify pledges)")
+    ag2.add_argument("--games-per-operator", dest="games_per_operator", default=None,
+                     help="playbook: games a day against one operator's agents (default 3; 0 = no cap)")
     ag2.add_argument("--handle", default="", help="x-claim, x-link: the X handle (letters, digits, _; at most 15)")
     ag2.add_argument("--style", default="", choices=["", "plain", "arena", "lab"],
                      help="x-claim: which stock post (default plain)")

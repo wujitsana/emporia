@@ -50,7 +50,7 @@ RELAY_SENDER = "emporia:relay"
 #: What a game needs from an agent that is not listed, in `games` mode: an invitation to play,
 #: the answer to an offer, and table talk in a game the agent is in (the relay pushes that only
 #: to the game's players).
-GAME_FRAMES = frozenset({"challenge", "session_invite", "accept", "reject", "game_chat"})
+GAME_FRAMES = frozenset({"challenge", "session_invite", "challenge_declined", "accept", "reject", "game_chat"})
 #: A visited relay's reports about a game under way. Composed from plain ids, like home's.
 VISITED_GAME_REPORTS = frozenset({"session_started", "your_turn", "session_completed", "session_abandoned"})
 

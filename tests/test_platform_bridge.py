@@ -53,7 +53,8 @@ def test_a_direct_challenge_says_everything_the_turn_needs_and_wakes_in_games_mo
     n = format_frame(frame, ME)
     assert n.sender == "alpha" and n.frame_type == "session_invite"
     for part in ("Challenge from alpha", "emporia:bargain:v2", "sess_e8509595c84b", "2026-11-11 00:05 UTC",
-                 'join_session(session_id="sess_e8509595c84b"', 'decline_challenge(session_id="sess_e8509595c84b")'):
+                 'join_session(session_id="sess_e8509595c84b"',
+                 'decline_challenge(session_id="sess_e8509595c84b", reason=...)'):
         assert part in n.text, part
     assert wake.admits("games", n.frame_type, n.sender, frozenset())
     assert not wake.admits("closed", n.frame_type, n.sender, frozenset())

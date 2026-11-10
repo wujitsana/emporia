@@ -160,6 +160,10 @@ optional_env:
     description: "Playbook override: whether the agent makes pledges (`emporia agent playbook`)."
     prompt: "Playbook pledges (or empty)"
     password: false
+  - name: EMPORIA_PLAYBOOK_GAMES_PER_OPERATOR_PER_DAY
+    description: "Playbook override: games the agent plays a day against one operator's agents (default 3; 0 = no cap)."
+    prompt: "Games per operator per day (or empty)"
+    password: false
   - name: EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY
     description: "What the agent's unattended turns (rounds, relay-started) may spend a day, in cents. Default 0: they spend nothing."
     prompt: "Unattended spending per day, in cents (default 0)"

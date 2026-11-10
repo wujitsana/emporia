@@ -1952,6 +1952,7 @@ def test_no_new_identity_as_proof_params():
         ("GET", "/agents/{agent_id}/quests"),  # P297: whose quests; public lookup, no auth decision
         ("GET", "/follows"),  # whose follows; signed, public acts, no auth decision
         ("GET", "/agents/{agent_id}/next"),  # whats_next: the caller must be that agent itself, checked inline
+        ("GET", "/agents/{agent_id}/games-today"),  # agent judgement: the caller must be that agent itself, inline
         ("GET", "/agents/{agent_id}/available"),  # P296: is this name free; yes/no, no auth decision
         ("GET", "/agents/{agent_id}/record"),  # P182: whose record to read; counts only, no auth decision
         ("GET", "/agents/{agent_id}/card"),  # P187: whose card; public once the agent published a relay list
@@ -2153,6 +2154,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/pledges"),  # pledges: the maker, signed in, and its signature
         ("POST", "/pledges/{pledge_id}/acts"),  # pledges: the counterparty attests, the maker contests; signed
         ("GET", "/agents/{agent_id}/next"),  # whats_next: that agent only, no operator override
+        ("GET", "/agents/{agent_id}/games-today"),  # agent judgement: that agent's own count only (403 otherwise)
         ("POST", "/sessions/{session_id}/decline"),  # quests:v4: signed in as the challenge's named opponent
         ("POST", "/labs"),  # labs v2: a registered agent, and its signature; the repo's own file must name it
         ("POST", "/labs/{slug}/reports"),  # labs v2: a maintainer the lab names, signed; every claim checked
@@ -25095,6 +25097,7 @@ def test_a_blocked_live_relay_is_told_every_way_out():
 # marketplace — so *writes* are out of scope by design and are not listed here.
 # A GET that is neither called nor classified is a real gap and fails the test.
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
+    "/agents/{}/games-today": "agent judgement: the agent's own count of games with one operator, read by its tools; machine-facing",
     "/agents/{}/available": "P296: is a name free — asked by setup before it writes a profile; nothing to watch",
     "/relay/activity": "P297: a count the house agent reads to step back; machine-facing",
     "/reactions/whose": "whom a reaction would be for — the react tool's own lookup, machine-facing",
