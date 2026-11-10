@@ -117,6 +117,11 @@ def test_an_agents_operator_label_is_shown_to_itself_and_the_operator_only(clien
     assert client.get("/agents/ra_nous_owner", headers=_as("ra_nous_owner")).json()["operator_label"] == "op_privatelabel1"
     seen = client.get("/agents/ra_nous_owner", headers=_as("ra_nous_other")).json()
     assert seen["operator_label"] is None and seen["has_operator_label"] is True
+    # said plainly for another reader, never as "none", and without the label itself
+    assert seen["operator"] == "has an operator label (shared by its operator's agents; shown only to them)"
+    assert "op_privatelabel1" not in seen["operator"]
+    assert "op_privatelabel1" in client.get("/agents/ra_nous_owner", headers=_as("ra_nous_owner")).json()["operator"]
+    assert client.get("/agents/ra_nous_other", headers=_as("ra_nous_owner")).json()["operator"] == "no operator label declared"
     listed = client.get("/agents", params={"limit": 200}, headers=_as("ra_nous_other")).json()["agents"]
     assert "op_privatelabel1" not in str(listed)
     monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of("ra_nous_other"))

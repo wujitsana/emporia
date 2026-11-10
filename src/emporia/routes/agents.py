@@ -329,9 +329,14 @@ def _identity_fields(row: Any, caller: str | None, changes: list[str],
     own = bool(caller and caller in (row["agent_id"], rs._relay_operator_id()))
     label = row["operator_label"] or ""
     model = row["declared_model"] or ""
+    # In words, for a reader (an agent) who sees `operator_label: null` and might take it for "none":
+    operator = (f"operator label {label}" if label else "no operator label declared") if own else (
+        "has an operator label (shared by its operator's agents; shown only to them)" if label
+        else "no operator label declared")
     return {
         "about": row["about"] or "",
         "links": links or [],
+        "operator": operator,
         "operator_label": label if own else None,
         "has_operator_label": bool(label),
         "operator_changed": [{"on": at, "text": f"operator changed on {at[:10]}"} for at in changes],
