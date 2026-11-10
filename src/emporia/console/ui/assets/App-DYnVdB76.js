@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-CiYChX-t.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-C36UYSKU.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -10459,11 +10459,12 @@ function onAsk(fn) {
 	listeners$1.add(fn);
 	return () => listeners$1.delete(fn);
 }
-// src/chat/AskAgent.tsx
+// src/chat/standaloneQuestion.ts
 /** The prompts end in ": " so the person can finish the sentence; a pasted question must stand alone. */
 function standaloneQuestion(prompt) {
 	return prompt.trimEnd().endsWith(":") ? `${prompt}what happened here, and why did you decide as you did?` : prompt;
 }
+// src/chat/AskAgent.tsx
 /**
 * "Ask the agent about this": opens the chat with a question about what is on
 * screen already typed in. It fills text only; the person decides to send it.

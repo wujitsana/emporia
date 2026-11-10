@@ -2,11 +2,8 @@ import { useState } from "react";
 import styles from "./AskAgent.module.css";
 import { askAgent, chatAvailable } from "./chatAccess";
 import { MODE } from "../transport";
+import { standaloneQuestion } from "./standaloneQuestion";
 
-/** The prompts end in ": " so the person can finish the sentence; a pasted question must stand alone. */
-export function standaloneQuestion(prompt: string): string {
-  return prompt.trimEnd().endsWith(":") ? `${prompt}what happened here, and why did you decide as you did?` : prompt;
-}
 
 /**
  * "Ask the agent about this": opens the chat with a question about what is on

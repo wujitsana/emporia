@@ -10670,6 +10670,7 @@ function onAsk(fn) {
 	listeners.add(fn);
 	return () => listeners.delete(fn);
 }
+// src/chat/AskAgent.tsx
 /**
 * "Ask the agent about this": opens the chat with a question about what is on
 * screen already typed in. It fills text only; the person decides to send it.

@@ -21962,11 +21962,13 @@ var EmporiaHermesPlugin = (function(exports) {
 		openSubs = /* @__PURE__ */ new Set();
 		listeners$1 = /* @__PURE__ */ new Set();
 	}));
-	// src/chat/AskAgent.tsx
+	// src/chat/standaloneQuestion.ts
 	/** The prompts end in ": " so the person can finish the sentence; a pasted question must stand alone. */
 	function standaloneQuestion(prompt) {
 		return prompt.trimEnd().endsWith(":") ? `${prompt}what happened here, and why did you decide as you did?` : prompt;
 	}
+	var init_standaloneQuestion = __esmMin((() => {}));
+	// src/chat/AskAgent.tsx
 	/**
 	* "Ask the agent about this": opens the chat with a question about what is on
 	* screen already typed in. It fills text only; the person decides to send it.
@@ -22039,6 +22041,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_AskAgent_module();
 		init_chatAccess();
 		init_transport();
+		init_standaloneQuestion();
 		import_jsx_runtime$58 = require_jsx_runtime();
 	}));
 	// src/chat/askPrompts.ts

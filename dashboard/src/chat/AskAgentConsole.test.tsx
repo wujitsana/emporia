@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../transport", async (orig) => ({ ...(await orig<object>()), MODE: "console" }));
 
-import { AskAgent, standaloneQuestion } from "./AskAgent";
+import { AskAgent } from "./AskAgent";
+import { standaloneQuestion } from "./standaloneQuestion";
 
 afterEach(() => {
   delete (window as unknown as Record<string, unknown>).__EMPORIA_HERMES_SDK__;
