@@ -828,6 +828,8 @@ export interface GameResult {
   winner: string | null;
   outcome_type: string | null;
   termination: string | null;
+  /** Bargain: each side's own points. */
+  points?: Record<string, number>;
   config: Record<string, unknown>;
   /** P153: the rails any payment on it was made on ("stripe", "x402"). */
   paid_by?: string[];

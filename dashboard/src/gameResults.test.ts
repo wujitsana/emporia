@@ -9,6 +9,12 @@ describe("game results (P134)", () => {
     expect(verdict({ winner: "alpha", outcome_type: "won", termination: "timeout" })).toBe("alpha won on time");
     expect(verdict({ winner: "beta", outcome_type: "won", termination: "Termination.CHECKMATE" })).toBe("beta won by checkmate");
   });
+
+  it("reads an accepted Bargain deal as points each, not won and lost", () => {
+    expect(verdict({ winner: "beta", outcome_type: "won", termination: "deal", participants: ["alpha", "beta"],
+      points: { alpha: 4, beta: 6 } })).toBe("deal: 4 vs 6 points");
+    expect(verdict({ winner: null, outcome_type: "draw", termination: "no_deal" })).toBe("draw");
+  });
 });
 
 describe("chess settings on the board (P131)", () => {
