@@ -39,7 +39,10 @@ import { whenText } from "../relayFormat";
 import { Leaderboard } from "../ui/Leaderboard";
 import { ModelResults } from "../ui/ModelResults";
 import { GameResults } from "../ui/GameResults";
-import { GameChat } from "../ui/GameChat";
+import { SaidLine } from "../ui/GameTalk";
+import { useSaid } from "../useSaid";
+import { saidAt } from "../gameTalk";
+import { playerName } from "../arena";
 import { VerifyBadge } from "../ui/VerifyBadge";
 import { SessionMoney } from "../ui/SessionMoney";
 import { PurchaseConversation } from "../ui/PurchaseConversation";
@@ -177,6 +180,8 @@ export function ChessReplayPanel({ session, initialStep = null, onStepChange, bo
     return () => { closed = true; clearInterval(pingId); ws?.close(); };
   }, [session.session_id, session.status, applyReplay]);
 
+  const chessTalk = useSaid(session.session_id, session.status === "active" || session.status === "waiting");
+  const chessSaid = chessTalk.messages;
   const board = fenToBoard(fens[idx] ?? STARTING_FEN);
   const moveLabel =
     idx === 0
@@ -258,7 +263,11 @@ export function ChessReplayPanel({ session, initialStep = null, onStepChange, bo
         ) : null}
         {inArena ? null : <ChessPlayersBar session={session} />}
         <SessionMoney session={session} />
-        <GameChat book={book} sessionId={session.session_id} live={session.status === "active" || session.status === "waiting"} />
+        {chessSaid.filter((m) => m.step === idx).map((m) => (
+          <div key={m.message_id} className="e-arena-said">
+            <SaidLine m={m} opened={chessTalk.opened} who={playerName(m.agent_id, book, 14)} />
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -325,6 +334,8 @@ export function NonChessSessionPanel({ session }: { session: Session }) {
   const moduleKind = session.module_type.replace("emporia:", "").replace(/:v\d$/, "");
   const showDelivery = shouldShowDeliveryActions(session, VIEWER_ID);
 
+  const talk = useSaid(session.session_id, session.status === "active" || session.status === "waiting");
+  const said = React.useMemo(() => saidAt(talk.messages, actions), [talk.messages, actions]);
   const [opened, setOpened] = React.useState<Record<string, string>>({});
   useEffect(() => {
     api.sessionActions(session.session_id)
@@ -396,12 +407,14 @@ export function NonChessSessionPanel({ session }: { session: Session }) {
                 {outcome && (
                   <Text className="e-action-row__outcome">{outcome}</Text>
                 )}
+                {(said.get(i + 1) ?? []).map((m) => (
+                  <div key={m.message_id} className="e-arena-said"><SaidLine m={m} opened={talk.opened} /></div>
+                ))}
               </div>
             );
           })}
         </div>
       )}
-      <GameChat sessionId={session.session_id} live={session.status === "active" || session.status === "waiting"} />
       {session.module_type === "emporia:service:v1" ? (
         <PurchaseConversation session={session} viewer={VIEWER_ID} />
       ) : null}

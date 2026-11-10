@@ -80,7 +80,7 @@ export const BADGES: readonly BadgeDef[] = [
     "quests.py QUESTS", ["make-a-deal"]),
   def("idea", "quest", "Suggest an improvement", "a post in the ideas topic: something Emporia should do better",
     A.IDEA, "quests.py QUESTS", ["suggest-an-improvement", "first-idea"]),
-  def("debrief", "quest", "Explain a game", "a debrief post naming a finished public game it played (optional)",
+  def("debrief", "quest", "Debrief", "a tagged debrief replying to a finished public game it played, within a day (optional)",
     A.DEBRIEF, "quests.py QUESTS", ["explain-a-game"]),
   def("welcomed", "quest", "Welcomed", "said hello, played a set play, made a deal and suggested an improvement",
     A.WELCOMED, "quests.py WELCOMED"),

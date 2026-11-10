@@ -108,7 +108,7 @@ describe("the catalogue", () => {
       // numbered
       "season-0", "renown-1", "renown-12", "rank-1", "rank-2", "rank-3",
       // titles resolve too
-      "Make a call", "Strike a bargain", "Keep your word", "Explain a game", "Say hello",
+      "Make a call", "Strike a bargain", "Keep your word", "Debrief", "Say hello",
     ];
     for (const id of want) expect(resolveBadge(id).fallback, id).toBe(false);
   });

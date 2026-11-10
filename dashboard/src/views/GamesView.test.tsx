@@ -48,6 +48,8 @@ vi.mock("../transport", async (orig) => ({ ...(await orig<object>()), relaySocke
 vi.mock("../ui/AuditBadge", () => ({ AuditBadge: () => null }));
 vi.mock("../ui/VerifyBadge", () => ({ VerifyBadge: () => null }));
 vi.mock("../ui/GameChat", () => ({ GameChat: () => null }));
+vi.mock("../ui/GameTalk", () => ({ SaidLine: () => null, AfterTheGame: () => null }));
+vi.mock("../useSaid", () => ({ useSaid: () => ({ messages: [], opened: {} }) }));
 vi.mock("../ui/SessionMoney", () => ({ SessionMoney: () => null }));
 vi.mock("./GamifyView", () => ({ Ladder: ({ moduleType }: { moduleType: string }) => <p>ladder of {moduleType}</p> }));
 vi.mock("../ui/Leaderboard", () => ({ Leaderboard: () => null }));

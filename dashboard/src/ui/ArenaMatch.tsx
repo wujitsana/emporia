@@ -13,7 +13,9 @@ import { ChessTransport } from "./chessControls";
 import { AuditBadge } from "./AuditBadge";
 import { VerifyBadge } from "./VerifyBadge";
 import { FoldDetail } from "./FoldDetail";
-import { GameChat } from "./GameChat";
+import { AfterTheGame, SaidLine } from "./GameTalk";
+import { useSaid } from "../useSaid";
+import { saidAt } from "../gameTalk";
 import { useLiveMatch } from "./useLiveMatch";
 
 /** Playback speed: one step per this many ms. Fixed on purpose — the slider is for going somewhere. */
@@ -125,6 +127,8 @@ function GenericMatch({ session: initial, step, onStep, book, profiles, onBack }
   const live = session.status === "active" || session.status === "waiting";
   const timeline = useMemo(() => buildTimeline(session, actions), [session, actions]);
   const last = timeline.steps.length - 1;
+  const { messages, opened } = useSaid(session.session_id, live);
+  const said = useMemo(() => saidAt(messages, actions), [messages, actions]);
   const explicit = clampStep(step, timeline.steps.length);
   const at = explicit ?? last;
   const [playing, setPlaying] = useState(false);
@@ -186,8 +190,12 @@ function GenericMatch({ session: initial, step, onStep, book, profiles, onBack }
               <Text className="e-arena-stepline">
                 <span className="e-faint">step {at}</span>{" "}
                 {stepInfo.agent ? <span className="e-dim">{playerName(stepInfo.agent, book, 20)}</span> : null} {stepInfo.label}
+                {(said.get(at) ?? []).map((m) => (
+                  <React.Fragment key={m.message_id}> — <SaidLine m={m} opened={opened} who={m.agent_id !== stepInfo.agent ? playerName(m.agent_id, book, 14) : undefined} /></React.Fragment>
+                ))}
               </Text>
               <ArenaFrame frame={frame} book={book} />
+              {timeline.finished && at === last ? <AfterTheGame sessionId={session.session_id} book={book} /> : null}
               {timeline.finished && at === last ? <ModelReveal session={session} book={book} /> : null}
             </>
           )}
@@ -196,16 +204,23 @@ function GenericMatch({ session: initial, step, onStep, book, profiles, onBack }
           <FoldDetail fold={timeline.finished} label={`the moves (${timeline.steps.length - 1}), click to seek`}>
           <Text className="e-dim e-arena-side__label">moves · click to seek</Text>
           <ol className="e-arena-steps">
+            {(said.get(0) ?? []).map((m) => (
+              <li key={m.message_id} className="e-arena-said"><SaidLine m={m} opened={opened} who={playerName(m.agent_id, book, 12)} /></li>
+            ))}
             {timeline.steps.slice(1).map((s) => (
               <li key={s.index}>
                 <button type="button" className={`e-arena-step${s.index === at ? " is-now" : ""}`} onClick={() => go(s.index)}>
                   <span className="e-faint">{s.index}</span> {s.agent ? playerName(s.agent, book, 12) : ""} {s.label}
                 </button>
+                {(said.get(s.index) ?? []).map((m) => (
+                  <div key={m.message_id} className="e-arena-said">
+                    <SaidLine m={m} opened={opened} who={m.agent_id !== s.agent ? playerName(m.agent_id, book, 12) : undefined} />
+                  </div>
+                ))}
               </li>
             ))}
           </ol>
           </FoldDetail>
-          <GameChat sessionId={session.session_id} live={live} book={book} />
           {!(timeline.finished && at === last) ? <ModelReveal session={session} book={book} /> : null}
         </aside>
       </div>

@@ -3758,6 +3758,16 @@ body.e-look.theme-dark {
 .e-arena-step.is-now { border-left-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
 .e-arena-step:hover, .e-arena-step:focus-visible { background: var(--theme-border-subdued); outline: none; }
 @media (max-width: 600px) { .e-arena { padding: 0 8px 20px; } .e-arena-steps { max-height: 12rem; }}
+/* What a player said with a move: the agent's own words, quoted and muted, never styled as the relay's. */
+.e-said { color: var(--theme-text-subdued, inherit); opacity: 0.8; font-style: italic; }
+.e-said__who { font-style: normal; opacity: 0.8; }
+.e-arena-said { font-size: 0.76rem; padding: 0 6px 3px 12px; border-left: 2px solid transparent; }
+.e-after { margin-top: 12px; border-top: 1px dashed var(--theme-border-subdued); padding-top: 8px; }
+.e-after__debrief { margin: 6px 0 10px; }
+.e-after__who { font-size: 0.8rem; }
+.e-after__lines { margin: 2px 0 0; font-size: 0.78rem; }
+.e-after__lines li { padding: 1px 0; }
+.e-debrief-chip { font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 0 6px; border: 1px solid currentColor; opacity: 0.8; }
 /* The kit's list markers (ul ▪, ol counters) are not wanted in the Arena's lists. */
 .e-arena ul, .e-arena ol { list-style: none; text-indent: 0; padding-left: 0; }
 .e-arena li { padding-left: 0; }
