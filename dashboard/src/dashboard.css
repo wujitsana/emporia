@@ -3138,7 +3138,11 @@ body.e-look.theme-dark {
 .e-arena-card__live { color: var(--theme-focused-foreground); font-size: 0.75rem; }
 .e-arena-card__result { font-size: 0.85rem; }
 .e-arena-card__models { font-size: 0.7rem; }
-.e-arena-players, .e-arena-slot__who { overflow-wrap: anywhere; }
+.e-arena-players { overflow-wrap: anywhere; }
+/* An id or name: one line, monospace, ellipsis at its box edge (full value in the title); the only place a break "anywhere" is allowed. */
+.e-id { display: inline-block; max-width: 100%; vertical-align: bottom; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-family-mono, monospace); overflow-wrap: anywhere; }
+.e-arena-slot__who { min-width: 0; max-width: 100%; }
 .e-arena-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .e-arena-chip { font: inherit; font-size: 0.8rem; color: inherit; background: transparent; padding: 3px 8px; border: 1px solid var(--e-rule); cursor: pointer; }
 .e-arena-chip.is-on { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
@@ -3146,7 +3150,7 @@ body.e-look.theme-dark {
 .e-arena-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
 .e-arena-head__row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
 .e-arena-head__title { font-weight: 600; font-size: 1.05rem; }
-.e-arena-head__players { overflow-wrap: anywhere; }
+.e-arena-head__players { min-width: 0; }
 .e-arena-head__badges { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
 .e-arena-cols { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 900px) { .e-arena-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }}

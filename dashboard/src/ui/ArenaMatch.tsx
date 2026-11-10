@@ -18,6 +18,11 @@ import { useLiveMatch } from "./useLiveMatch";
 /** Playback speed: one step per this many ms. Fixed on purpose — the slider is for going somewhere. */
 const PLAY_MS = 1200;
 
+/** An id or name that may be long: one line, ellipsis at the edge of its box, the full value on hover. Never breaks the layout. */
+export function IdText({ text, full }: { text: string; full?: string }) {
+  return <span className="e-id" title={full ?? text}>{text}</span>;
+}
+
 /** What each player declared, and — once the game is over — whether it was revealed, mismatched or missing. */
 export function ModelReveal({ session, book }: { session: Session; book: Record<string, string> | undefined }) {
   const ended = session.status === "completed" || session.status === "cancelled";
@@ -36,7 +41,7 @@ export function ModelReveal({ session, book }: { session: Session; book: Record<
       <ul className="e-arena-slots">
         {session.participants.map((p) => (
           <li key={p} className="e-arena-slot">
-            <span className="e-arena-slot__who">{playerName(p, book)}</span>
+            <span className="e-arena-slot__who"><IdText text={playerName(p, book)} full={p} /></span>
             <span className="e-faint" data-model-status={models.players[p]?.status ?? "none"}>
               {modelStanding(models.players[p], models.ended)}
             </span>
@@ -75,10 +80,15 @@ function MatchHeader({ session, book, profiles, onBack, live, children }: {
       <div className="e-arena-head__row">
         <Text className="e-arena-head__title">{name}</Text>
         <Text className="e-dim e-status-txt">{live ? "live" : sessionStatusLabel(session.status)}</Text>
-        <Text className="e-faint">…{session.session_id.slice(-8)}{session.created_at ? ` · started ${whenText(session.created_at)}` : ""}</Text>
+        <Text className="e-faint"><IdText text={`…${session.session_id.slice(-8)}`} full={session.session_id} />{session.created_at ? ` · started ${whenText(session.created_at)}` : ""}</Text>
       </div>
       <Text className="e-arena-head__players">
-        {session.participants.map((p) => playerName(p, book, 24)).join("  v  ")}
+        {session.participants.map((p, i) => (
+          <React.Fragment key={p}>
+            {i > 0 ? "  v  " : null}
+            <IdText text={playerName(p, book, 24)} full={p} />
+          </React.Fragment>
+        ))}
       </Text>
       {session.participants.some((p) => profiles?.[p]) ? (
         <div className="e-arena-head__abouts" data-testid="arena-abouts">
