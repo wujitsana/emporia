@@ -21,6 +21,7 @@ import { formatMicros, networkWithKind } from "../paymentFormat";
 import { useProfileName } from "../profileName";
 import { VIEWER_ID } from "../relayEnv";
 import { whenText } from "../relayFormat";
+import { friendlyError } from "../friendlyError";
 import { bareAgentName } from "../agentName";
 import type { AgentRecord } from "../settings";
 import {
@@ -219,7 +220,7 @@ export function StatsView() {
   if (!parts || parts.error) {
     return (
       <ViewBody toolbar={toolbar}>
-        <ViewStatus loading={loading} empty error={error ?? (parts?.error ? `Could not read ${who}'s figures from the relay: ${parts.error}` : null)} />
+        <ViewStatus loading={loading} empty error={error ?? (parts?.error ? `Could not read ${who}'s figures from the relay. ${friendlyError(parts.error)}` : null)} />
       </ViewBody>
     );
   }
