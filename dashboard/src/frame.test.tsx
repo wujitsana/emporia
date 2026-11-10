@@ -83,6 +83,11 @@ describe("the chat drawer", () => {
     expect(find("chat/ChatDrawer.module.css", ".composer", "flex")[0]?.value).toBe("none");
   });
 
+  it("adds only a small inner margin inside the Hermes tab, which pads its own frame; the console keeps the page margin", () => {
+    expect(find("dashboard.css", ".e-host-body .e-view-body", "padding-left")[0]?.value).toBe("8px");
+    expect(find("dashboard.css", ".e-view-body", "padding")[0]?.value).toBe("20px 24px 32px");
+  });
+
   it("has a large wordmark and words without icons in the header row, wide and medium", () => {
     const brand = find("dashboard.css", '.e-app-shell[data-nav="wide"] .e-app-top .e-brand-title,\n.e-app-shell[data-nav="medium"] .e-app-top .e-brand-title', "font-size");
     expect(brand[0]?.value).toContain("1.5rem");
