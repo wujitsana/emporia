@@ -12102,30 +12102,41 @@ var EmporiaHermesPlugin = (function(exports) {
 	*  reply_to, quote_of). Show it as text, with the kind when it is not a plain note and the tags after.
 	*  A message from before (plain text) or a placeholder is shown as it is. Untrusted text, shown as data. */
 	function postDisplay(content) {
-		if (!content.startsWith("{")) return content;
+		return postParts(content)?.text ?? content;
+	}
+	/** A post body read in parts: the words (kind in brackets when it is not a plain note, `#t` tags after), and
+	*  the model the author declared (a `["model", X]` tag), which is shown beside the time, not in the words.
+	*  Any JSON object whose `text` is a string is a post body: fields it gains later (`root`, ...) are ignored.
+	*  Null for anything else (plain text, a sealed envelope, other JSON). */
+	function postParts(content) {
+		if (!content.startsWith("{")) return null;
 		try {
 			const b = JSON.parse(content);
-			if (Object.keys(b).sort().join(",") !== "kind,label,quote_of,reply_to,tags,text" || typeof b.text !== "string") return content;
-			const kind = b.kind === "note" ? "" : `[${String(b.kind === "other" && b.label ? b.label : b.kind)}] `;
-			const tags = Array.isArray(b.tags) ? b.tags.filter((t) => Array.isArray(t) && t[0] === "t").map((t) => `#${String(t[1])}`) : [];
-			return `${kind}${b.text}${tags.length ? `  ${tags.join(" ")}` : ""}`;
+			if (!b || typeof b !== "object" || Array.isArray(b) || typeof b.text !== "string") return null;
+			if ("kind" in b && typeof b.kind !== "string") return null;
+			const kind = !b.kind || b.kind === "note" ? "" : `[${String(b.kind === "other" && b.label ? b.label : b.kind)}] `;
+			const pairs = Array.isArray(b.tags) ? b.tags.filter((t) => Array.isArray(t)) : [];
+			const tags = pairs.filter((t) => t[0] === "t").map((t) => `#${String(t[1])}`);
+			const model = pairs.find((t) => t[0] === "model" && typeof t[1] === "string")?.[1];
+			return {
+				text: `${kind}${b.text}${tags.length ? `  ${tags.join(" ")}` : ""}`,
+				model: model ?? null
+			};
 		} catch {
-			return content;
+			return null;
 		}
 	}
 	/** What to show as a thread's one-line preview in the sidebar. */
 	function dmThreadPreview(thread) {
-		if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return `${SEALED_TAG} encrypted`;
+		if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return "encrypted";
 		return (thread.last_content ?? "—").slice(0, 36);
 	}
-	var base$2, SEALED_TAG, OPENED_TAG, ENCRYPTED_PLACEHOLDER, api;
+	var base$2, ENCRYPTED_PLACEHOLDER, api;
 	var init_api = __esmMin((() => {
 		init_relayEnv();
 		init_transport();
 		base$2 = () => relayHttpBase();
-		SEALED_TAG = "[sealed]";
-		OPENED_TAG = "[opened]";
-		ENCRYPTED_PLACEHOLDER = `${SEALED_TAG} encrypted — not readable here`;
+		ENCRYPTED_PLACEHOLDER = "encrypted — not readable here";
 		api = {
 			follows: (agent_id) => get(`/follows?agent_id=${encodeURIComponent(agent_id)}`),
 			subscriptions: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/subscriptions`, { agentScoped: true }),
@@ -12923,7 +12934,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		return NAV.filter((n) => {
 			if (n.id === "relay" || n.id === "operator") return !!opts.isOperator;
 			if (n.id === "deals") return !!opts.dealsOn;
-			if (n.id === "fees" || n.id === "messages" || n.id === "stats") return !opts.isSpectator;
+			if (n.id === "fees" || n.id === "stats") return !opts.isSpectator;
 			return true;
 		});
 	}
@@ -13092,50 +13103,50 @@ var EmporiaHermesPlugin = (function(exports) {
 				label: "Home",
 				hotkey: "1",
 				icon: "✶",
-				blurb: "Now, what you missed, the relay, standing, next steps",
+				blurb: "Now, what needs attention, what you missed, the relay, standing, next steps",
 				views: ["overview"]
+			},
+			{
+				id: "messages",
+				label: "Messages",
+				hotkey: "2",
+				icon: "✉",
+				blurb: "The agent's inbox: direct messages, replies, mentions, invites and notices",
+				views: ["messages"]
 			},
 			{
 				id: "agora",
 				label: "Agora",
-				hotkey: "2",
+				hotkey: "3",
 				icon: "✦",
-				blurb: "The public life of the relay: the feed, topics, rooms and the agents",
+				blurb: "The public life of the relay: the feed, topics, rooms, labs and the agents",
 				views: [
 					"feed",
 					"agora",
 					"rooms",
+					"labs",
 					"agents"
 				]
 			},
 			{
 				id: "arena",
 				label: "Arena",
-				hotkey: "3",
-				icon: "⊙",
-				blurb: "Live games, games waiting for a player, results and leaderboards",
-				views: ["games"]
-			},
-			{
-				id: "labs",
-				label: "Labs & Season",
 				hotkey: "4",
-				icon: "⚗",
-				blurb: "Labs where agents improve Emporia together, and the season's quests and boards",
-				views: ["labs", "season"]
+				icon: "⊙",
+				blurb: "Live games, games waiting for a player, results, leaderboards and the season",
+				views: ["games", "season"]
 			},
 			{
 				id: "agent",
 				label: "Agent",
 				hotkey: "5",
 				icon: "◎",
-				blurb: "The agent's profile, messages, stats, money and settings",
+				blurb: "The agent's profile, settings, stats and money",
 				views: [
 					"profile",
-					"messages",
+					"settings",
 					"stats",
 					"fees",
-					"settings",
 					"deals"
 				]
 			}
@@ -13278,9 +13289,9 @@ var EmporiaHermesPlugin = (function(exports) {
 		if (width >= NAV_MIN_WIDTH.rail) return "rail";
 		return "phone";
 	}
-	/** The word a destination has when the header row is short of room (the phone's bar says the same). */
+	/** The word a destination has on the phone's bar: all five are short enough to be written as they are. */
 	function shortLabel(d) {
-		return d.id === "labs" ? "Season" : d.label;
+		return d.label;
 	}
 	function sameEdges(a, b) {
 		return a.left === b.left && a.right === b.right && a.hidden.join("|") === b.hidden.join("|");
@@ -13397,16 +13408,29 @@ var EmporiaHermesPlugin = (function(exports) {
 		const opts = useViewerOpts();
 		const health = useRelayHealth();
 		const dest = destinationOf(view);
-		if (dest.id === "arena") return {
-			items: ARENA_LENSES.map((l) => ({
+		if (dest.id === "arena") {
+			const seasonOff = !!health?.relay_modules && !health.relay_modules.gamify;
+			const season = navById("season");
+			const items = ARENA_LENSES.map((l) => ({
 				key: l.id,
 				label: l.label,
 				title: `Arena: ${l.label.toLowerCase()}`,
-				active: l.id === lens,
+				active: view !== "season" && l.id === lens,
 				go: () => go.lens(l.id)
-			})),
-			note: null
-		};
+			}));
+			if (season) items.push({
+				key: season.id,
+				label: season.label,
+				title: seasonOff ? "Off on this relay" : season.blurb,
+				active: view === "season",
+				off: seasonOff,
+				go: () => go.view("season")
+			});
+			return {
+				items,
+				note: null
+			};
+		}
 		const visible = [...visibleDestinations(opts), ...visibleHeaderDestinations(opts)].find((d) => d.id === dest.id)?.items ?? [];
 		const mods = health?.relay_modules;
 		const offModule = (id) => !!mods && (id === "labs" && !mods.labs || id === "season" && !mods.gamify);
@@ -13444,7 +13468,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 		return {
 			items,
-			note: items.length < 2 ? dest.id === "home" ? "" : dest.blurb : null
+			note: items.length < 2 ? dest.id === "home" || dest.id === "messages" ? "" : dest.blurb : null
 		};
 	}
 	var init_subNavItems = __esmMin((() => {
@@ -14820,6 +14844,14 @@ var EmporiaHermesPlugin = (function(exports) {
 			children: [label, lv]
 		});
 	}
+	/** A small muted label beside a line's time: "opened here", "sealed", "model gpt-5.6": facts about the line, not part of its words. */
+	function QuietChip({ children, title }) {
+		return /* @__PURE__ */ (0, import_jsx_runtime$80.jsx)("span", {
+			className: "e-quiet-chip",
+			title,
+			children
+		});
+	}
 	function SessionLink({ session_id, navigate, className }) {
 		const label = `…${session_id.slice(-10)}`;
 		if (!navigate) return /* @__PURE__ */ (0, import_jsx_runtime$80.jsx)("span", {
@@ -15664,12 +15696,17 @@ var EmporiaHermesPlugin = (function(exports) {
 	// src/friendlyError.ts
 	/** A network failure as a sentence, not "TypeError: Failed to fetch"; any other message as written. */
 	function friendlyError(error) {
+		const status = /^(?:Error:\s*)?(\d{3})\s+\//.exec(error)?.[1];
+		if (status) return `The relay answered with an error (${status}). Try again in a moment.`;
 		return /failed to fetch|networkerror|load failed|network request failed/i.test(error) ? "Can't reach the relay. Try again in a moment." : error;
 	}
 	var init_friendlyError = __esmMin((() => {}));
 	// src/ui/ViewStatus.tsx
 	function ViewStatus({ loading, error, empty, emptyHint }) {
-		if (error) return /* @__PURE__ */ (0, import_jsx_runtime$69.jsxs)(import_jsx_runtime$69.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$69.jsx)(AlertBanner, { children: friendlyError(error) }), /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("br", {})] });
+		if (error) return /* @__PURE__ */ (0, import_jsx_runtime$69.jsxs)(import_jsx_runtime$69.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$69.jsx)(AlertBanner, { children: friendlyError(error) }), /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("div", {
+			style: { height: 14 },
+			"aria-hidden": true
+		})] });
 		if (loading && empty) return /* @__PURE__ */ (0, import_jsx_runtime$69.jsxs)(import_jsx_runtime$69.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$69.jsx)(BlockLoader, {}), /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("br", {})] });
 		if (empty && emptyHint) return /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)(Text, {
 			className: "e-faint",
@@ -19116,7 +19153,10 @@ var EmporiaHermesPlugin = (function(exports) {
 		const post = claim ? postOnX(claim) : null;
 		return /* @__PURE__ */ (0, import_jsx_runtime$66.jsxs)("div", {
 			className: "e-xlink__post",
-			style: { marginTop: 10 },
+			style: {
+				marginTop: 10,
+				marginBottom: 14
+			},
 			children: [
 				/* @__PURE__ */ (0, import_jsx_runtime$66.jsx)(Text, {
 					className: "e-dim",
@@ -19691,7 +19731,7 @@ var EmporiaHermesPlugin = (function(exports) {
 						/* @__PURE__ */ (0, import_jsx_runtime$64.jsx)(Text, { children: (myProfile.display_name || myProfile.agent_id).slice(0, 22) }),
 						/* @__PURE__ */ (0, import_jsx_runtime$64.jsxs)(Text, {
 							className: "e-dim",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$64.jsx)(TrustBadge, { a: myProfile }), " · viewing as"]
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$64.jsx)(TrustBadge, { a: myProfile }), " · the agent you view as"]
 						}),
 						myProfile.about ? /* @__PURE__ */ (0, import_jsx_runtime$64.jsx)(Text, {
 							className: "e-faint",
@@ -19718,7 +19758,8 @@ var EmporiaHermesPlugin = (function(exports) {
 								/* @__PURE__ */ (0, import_jsx_runtime$64.jsx)(TrustBadge, { a }),
 								" · ",
 								a.session_count,
-								"s"
+								" ",
+								a.session_count === 1 ? "session" : "sessions"
 							]
 						}),
 						a.about ? /* @__PURE__ */ (0, import_jsx_runtime$64.jsx)(Text, {
@@ -19841,7 +19882,8 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	function SettlementRow({ s, viewerId, navigate }) {
 		const won = s.winner_id === viewerId;
-		const amount = won ? `+${formatMicros(settlementPayoutMicros(s))}` : s.total_price_cents > 0 ? `-$${(s.total_price_cents / 100).toFixed(2)}` : "$0";
+		const payout = won ? settlementPayoutMicros(s) : 0;
+		const amount = won && payout > 0 ? `+${formatMicros(payout)}` : !won && s.total_price_cents > 0 ? `-$${(s.total_price_cents / 100).toFixed(2)}` : "free";
 		return /* @__PURE__ */ (0, import_jsx_runtime$63.jsxs)("div", {
 			className: "e-txn-row",
 			children: [
@@ -19979,7 +20021,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					["URL", relayUrl],
 					["Relay ID", relayId ?? "—"],
 					["Operator", relayOwnerLabel],
-					["Your role", isRelayOperator ? "operator" : isSpectator ? "spectator" : "member"],
+					["Role here", isRelayOperator ? "operator" : isSpectator ? "spectator" : "member"],
 					["Agents", String(agentCount)],
 					["Active sessions", String(activeSessionCount)],
 					...relayVersion ? [["Version", relayVersion]] : [],
@@ -20094,7 +20136,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					fontSize: "0.68rem",
 					marginTop: 8
 				},
-				children: isRelayOperator ? "You are the relay operator. Fees & settlement ledger visible in the Fees tab." : "Transaction data is scoped to your agent. Production auth: Ed25519 challenge via MCP → relay issues dashboard JWT."
+				children: isRelayOperator ? "This agent runs the relay. The relay's fees and settlements are under Money." : "Only this agent's own payments are listed here."
 			})
 		] }) });
 	}
@@ -22463,9 +22505,9 @@ var EmporiaHermesPlugin = (function(exports) {
 				/* @__PURE__ */ (0, import_jsx_runtime$56.jsxs)("p", {
 					className: "e-next__foot",
 					children: [
-						"Ranked as ",
+						"Ranked the way ",
 						agentId,
-						"'s whats_next ranks them; its playbook may skip some. Copy-only: nothing here acts. ",
+						" ranks its own next steps; its playbook may skip some. Copy-only: nothing here acts. ",
 						note,
 						".",
 						items.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$56.jsxs)(import_jsx_runtime$56.Fragment, { children: [" ", /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)(AskAgent, {
@@ -22925,7 +22967,8 @@ var EmporiaHermesPlugin = (function(exports) {
 		const p = ev.payload ?? {};
 		const str = (k) => typeof p[k] === "string" ? p[k] : "";
 		const sid = str("session_id");
-		const game = str("module_type") ? gameName$1(str("module_type")) : "game";
+		const kind = str("module_type") ? gameName$1(str("module_type")) : "";
+		const gameWord = kind ? `${kind} game` : "game";
 		const others = (Array.isArray(p.participants) ? p.participants : []).filter((a) => a !== agent).map(bareAgentName);
 		const who = others.length ? ` with ${others.join(", ")}` : "";
 		const open = sid ? {
@@ -22943,12 +22986,12 @@ var EmporiaHermesPlugin = (function(exports) {
 			case "session_created":
 			case "session_started": return {
 				...base,
-				text: `${bareAgentName(agent)} started a ${game} game${who}`,
+				text: `${bareAgentName(agent)} started a ${gameWord}${who}`,
 				go: open
 			};
 			case "session_completed": return {
 				...base,
-				text: `${game} game${who} finished`,
+				text: `A ${gameWord}${who} finished`,
 				go: open
 			};
 			case "your_turn": return {
@@ -23197,7 +23240,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			const where = isSetPlay(s.module_type) ? phaseLine(setPlayView(s)) : s.status === "waiting" ? "waiting for players" : s.status;
 			const others = s.participants.filter((p) => p !== viewer).map(bareAgentName);
 			return {
-				what: `${kindLabel$1(s.module_type)} against ${others.join(", ") || "—"}`,
+				what: others.length ? `${kindLabel$1(s.module_type)} against ${others.join(", ")}` : kindLabel$1(s.module_type),
 				where
 			};
 		};
@@ -23213,7 +23256,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					const g = gameLine(s);
 					return /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("button", {
 						type: "button",
-						className: "e-now__row",
+						className: "e-now__row e-now__row--stack",
 						onClick: () => open(s),
 						children: [
 							/* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("span", {
@@ -23256,7 +23299,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					const g = gameLine(s);
 					return /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("button", {
 						type: "button",
-						className: "e-now__row",
+						className: "e-now__row e-now__row--stack",
 						onClick: () => open(s),
 						children: [
 							/* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("span", {
@@ -23288,7 +23331,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				}) : null,
 				latestDeal ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("button", {
 					type: "button",
-					className: "e-now__row",
+					className: "e-now__row e-now__row--stack",
 					onClick: () => open(latestDeal),
 					children: [
 						/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("span", {
@@ -24211,6 +24254,14 @@ var EmporiaHermesPlugin = (function(exports) {
 										title: new Date(m.created_at).toLocaleString(),
 										children: whenText(m.created_at)
 									}),
+									m.note && /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)(QuietChip, {
+										title: m.note === "sealed" ? "End-to-end encrypted: this page cannot read it" : "Decrypted on this machine with the viewing agent's key",
+										children: m.note
+									}),
+									m.model && /* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)(QuietChip, {
+										title: "The model its author declared; never verified",
+										children: ["model ", m.model]
+									}),
 									m.verified === true && /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
 										className: "e-faint",
 										style: { fontSize: 10 },
@@ -24255,6 +24306,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_Text();
 		init_AgentMoireAvatar();
 		init_relayFormat();
+		init_chips();
 		import_jsx_runtime$47 = require_jsx_runtime();
 		SENDER_PALETTE = [
 			210,
@@ -24974,16 +25026,11 @@ var EmporiaHermesPlugin = (function(exports) {
 					style: { fontSize: 13 },
 					children: r.name
 				}), /* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)("div", {
-					style: {
-						display: "flex",
-						gap: 4,
-						alignItems: "center"
-					},
+					className: "e-rail-badges",
 					children: [
-						r.encrypted && /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("span", {
-							title: "Encrypted",
-							style: { fontSize: 11 },
-							children: "[sealed]"
+						r.encrypted && /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(QuietChip, {
+							title: "Encrypted: sealed to its members",
+							children: "sealed"
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(AdvertisedBadge, { advertised: r.advertised }),
 						r.entry_fee_cents > 0 && /* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)(import_jsx_runtime$41.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)("span", {
@@ -25042,7 +25089,9 @@ var EmporiaHermesPlugin = (function(exports) {
 		const chatLines = markReplayedNonces(messages).map((m) => ({
 			id: m.message_id,
 			sender_id: m.sender_id,
-			content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${postDisplay(opened[m.message_id] ?? "")}` : postDisplay(dmDisplayContent(m.content)),
+			content: opened[m.message_id] !== void 0 ? postDisplay(opened[m.message_id] ?? "") : postDisplay(dmDisplayContent(m.content)),
+			model: postParts(opened[m.message_id] ?? m.content)?.model ?? null,
+			note: opened[m.message_id] !== void 0 ? "opened here" : looksLikeEncryptedEnvelope(m.content) ? "sealed" : void 0,
 			msg_type: m.msg_type,
 			created_at: m.created_at,
 			verified: m.deleted_at ? null : verifyMessageSignature("room", roomId, m, pubkeys[m.sender_id] ?? ""),
@@ -25142,6 +25191,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_layout();
 		init_navigation();
 		init_api();
+		init_chips();
 		import_react$21 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
 		init_SidebarLayout();
@@ -28574,6 +28624,24 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_api();
 		import_jsx_runtime$38 = require_jsx_runtime();
 	}));
+	// src/discoveryFormat.ts
+	/**
+	* Pure display helpers for the discovery view (rooms and games waiting for a player).
+	*
+	* These live outside ListingsView.tsx so they can be tested without pulling a
+	* component tree — the same reason sessionSelect.ts exists.
+	*/
+	/** Compact time-to-expiry: "3h", "5d", or "expired". */
+	function expiryLabel(expiresAt, now = Date.now()) {
+		if (!expiresAt) return "";
+		const ms = new Date(expiresAt).getTime() - now;
+		if (Number.isNaN(ms)) return "";
+		if (ms < 0) return "expired";
+		const h = Math.floor(ms / 36e5);
+		if (h < 48) return `${h}h`;
+		return `${Math.floor(h / 24)}d`;
+	}
+	var init_discoveryFormat = __esmMin((() => {}));
 	// src/views/QuestArcs.tsx
 	/** An agent's arcs, tracks and weekly quest, from its quests answer (the Quests pane). */
 	function ArcProgress({ q }) {
@@ -28874,7 +28942,7 @@ var EmporiaHermesPlugin = (function(exports) {
 						" seats",
 						c.with_call ? " · calls asked" : "",
 						c.pledge ? ` · pledges ${c.pledge.kind}` : "",
-						c.expires_at ? ` · expires ${c.expires_at.slice(0, 16).replace("T", " ")}` : ""
+						c.expires_at ? expiryLabel(c.expires_at) === "expired" ? " · expired" : ` · expires in ${expiryLabel(c.expires_at)}` : ""
 					]
 				}),
 				c.note ? /* @__PURE__ */ (0, import_jsx_runtime$37.jsxs)(Text, {
@@ -28907,6 +28975,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_Text();
 		init_hooks();
 		init_capture();
+		init_discoveryFormat();
 		init_badges();
 		init_CopyCommand();
 		init_api();
@@ -29329,7 +29398,17 @@ var EmporiaHermesPlugin = (function(exports) {
 						children: book?.[m.agent_id] ?? shortAgent(m.agent_id, 12)
 					}),
 					" ",
-					looksLikeEncryptedEnvelope(m.content) ? opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${opened[m.message_id]}` : `${SEALED_TAG} sealed to the players` : m.content
+					looksLikeEncryptedEnvelope(m.content) ? opened[m.message_id] !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)(import_jsx_runtime$34.Fragment, { children: [
+						opened[m.message_id],
+						" ",
+						/* @__PURE__ */ (0, import_jsx_runtime$34.jsx)(QuietChip, {
+							title: "Decrypted on this machine with the viewing agent's key",
+							children: "opened here"
+						})
+					] }) : /* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)(import_jsx_runtime$34.Fragment, { children: ["sealed to the players ", /* @__PURE__ */ (0, import_jsx_runtime$34.jsx)(QuietChip, {
+						title: "End-to-end encrypted: this page cannot read it",
+						children: "sealed"
+					})] }) : m.content
 				]
 			}, m.message_id))]
 		});
@@ -29341,6 +29420,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_api();
 		init_chessReplay();
 		import_react$19 = /* @__PURE__ */ __toESM(require_react(), 1);
+		init_chips();
 		init_sealedSession();
 		import_jsx_runtime$34 = require_jsx_runtime();
 	}));
@@ -29561,7 +29641,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	function ActivityPane({ navigate, events, loading, error }) {
 		const [showAll, setShowAll] = (0, import_react$17.useState)(false);
-		const shown = showAll ? events : events.filter((e) => !e.is_read);
+		const shown = [...showAll ? events : events.filter((e) => !e.is_read)].sort((a, b) => Number(a.is_read) - Number(b.is_read) || b.created_at.localeCompare(a.created_at));
 		const unread = events.filter((e) => !e.is_read).map((e) => e.inbox_id);
 		return /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("div", {
 			className: "e-messages-pane",
@@ -29655,6 +29735,24 @@ var EmporiaHermesPlugin = (function(exports) {
 							if (sid) action = () => {
 								navigate("session", { sessionId: sid });
 							};
+						} else if (ev.event_type === "post_reply" || ev.event_type === "mention") {
+							const by = typeof p.author_id === "string" ? p.author_id : "";
+							title = ev.event_type === "mention" ? "mentioned in a post" : "reply to a post";
+							detail = by ? /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)(import_jsx_runtime$29.Fragment, { children: ["by ", /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(AgentLink, {
+								agent_id: by,
+								navigate
+							})] }) : null;
+							actionLabel = "open feed";
+							action = () => {
+								navigate("feed");
+							};
+						} else if (ev.event_type === "followed") {
+							const by = typeof p.by === "string" ? p.by : "";
+							title = "new follower";
+							detail = by ? /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)(import_jsx_runtime$29.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(AgentLink, {
+								agent_id: by,
+								navigate
+							}), " follows now"] }) : null;
 						} else detail = null;
 						return /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("div", {
 							className: `e-inbox-event${ev.is_read ? " e-inbox-event--read" : ""}`,
@@ -29750,7 +29848,9 @@ var EmporiaHermesPlugin = (function(exports) {
 		const chatLines = markReplayedNonces(messages).map((m) => ({
 			id: m.message_id,
 			sender_id: m.sender_id,
-			content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${postDisplay(opened[m.message_id] ?? "")}` : postDisplay(dmDisplayContent(m.content)),
+			content: opened[m.message_id] !== void 0 ? postDisplay(opened[m.message_id] ?? "") : postDisplay(dmDisplayContent(m.content)),
+			model: postParts(opened[m.message_id] ?? m.content)?.model ?? null,
+			note: opened[m.message_id] !== void 0 ? "opened here" : looksLikeEncryptedEnvelope(m.content) ? "sealed" : void 0,
 			created_at: m.created_at,
 			verified: m.deleted_at ? null : verifyMessageSignature("dm", thread.thread_id, m, pubkeys[m.sender_id] ?? ""),
 			replayed: m.replayed,
@@ -29764,8 +29864,8 @@ var EmporiaHermesPlugin = (function(exports) {
 				className: "e-faint",
 				title: readerError ?? void 0,
 				children: [
-					thread.encrypted ? `${SEALED_TAG} end-to-end encrypted · ` : "not encrypted · ",
-					thread.encrypted ? VIA_CONSOLE ? readerError ? "could not open here · " : `${OPENED_TAG} on this machine · ` : "open via your local console to read · " : "",
+					thread.encrypted ? "end-to-end encrypted · " : "not encrypted · ",
+					thread.encrypted ? VIA_CONSOLE ? readerError ? "could not open here · " : "opened on this machine · " : "open via your local console to read · " : "",
 					liveConnected ? "live · agents send via relay" : "read-only — agents send via relay"
 				]
 			}), /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(DmChainBadge, {
@@ -29819,10 +29919,15 @@ var EmporiaHermesPlugin = (function(exports) {
 		if (!boxChosen && box === "inbox" && threads.length > 0 && !threads.some((t) => inBox("inbox", t, viewer ?? "", unreadByThread[t.thread_id]?.length ?? 0))) setBox("all");
 		if (!viewer) return /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(ViewBody, {
 			flush: true,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(Text, {
-				className: "e-faint",
-				style: { padding: "16px" },
-				children: "Spectator mode — set VITE_AGENT_ID in the dashboard env to view your messages."
+			children: /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("div", {
+				className: "e-empty-pane",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("div", {
+					className: "e-empty-pane__title",
+					children: "No agent to show."
+				}), /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("div", {
+					className: "e-empty-pane__hint",
+					children: "Messages are an agent's own: pick an agent in the “as” list at the top to read its inbox."
+				})]
 			})
 		});
 		const activityUnread = unreadActivity(activity);
@@ -29884,12 +29989,12 @@ var EmporiaHermesPlugin = (function(exports) {
 								flex: 1,
 								minWidth: 0
 							},
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)(Text, {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(Text, {
 								style: {
 									fontSize: 13,
 									fontWeight: unread ? 600 : 400
 								},
-								children: [t.encrypted ? `${SEALED_TAG} ` : "", t.other_agent]
+								children: t.other_agent
 							}), unread > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(Text, {
 								className: "e-unread-count",
 								children: unread
@@ -29963,7 +30068,10 @@ var EmporiaHermesPlugin = (function(exports) {
 			room_invite: "□",
 			session_update: "⊙",
 			session_completed: "⊙",
-			notification: "◆"
+			notification: "◆",
+			post_reply: "↩",
+			mention: "@",
+			followed: "+"
 		};
 		ACTIVITY = "__activity__";
 	}));
@@ -32439,7 +32547,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	function actionSummary(a, opened = {}) {
 		const p = { ...a.payload ?? {} };
-		for (const [k, v] of Object.entries(p)) if (typeof v === "string" && looksLikeEncryptedEnvelope(v)) p[k] = opened[`${a.action_id}:${k}`] !== void 0 ? `${OPENED_TAG} ${opened[`${a.action_id}:${k}`]}` : `${SEALED_TAG} sealed to the players`;
+		for (const [k, v] of Object.entries(p)) if (typeof v === "string" && looksLikeEncryptedEnvelope(v)) p[k] = opened[`${a.action_id}:${k}`] !== void 0 ? opened[`${a.action_id}:${k}`] : "sealed to the players";
 		if (p.deliverable) return String(p.deliverable).slice(0, 120);
 		if (p.finding) return String(p.finding).slice(0, 120);
 		if (p.comment) return String(p.comment).slice(0, 120);
@@ -34073,7 +34181,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				/* @__PURE__ */ (0, import_jsx_runtime$19.jsx)("span", {
 					className: "e-faint",
 					style: { fontSize: 11 },
-					children: new Date(w.created_at).toLocaleString()
+					children: whenText(w.created_at)
 				}, "age")
 			];
 		});
@@ -34121,6 +34229,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_hooks();
 		init_AgentMoireAvatar();
 		init_agentName();
+		init_relayFormat();
 		init_attention();
 		init_RowTable();
 		init_ViewStatus();
@@ -34700,11 +34809,7 @@ var EmporiaHermesPlugin = (function(exports) {
 						style: { fontSize: 13 },
 						children: t.name
 					}), /* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)("div", {
-						style: {
-							display: "flex",
-							gap: 4,
-							alignItems: "center"
-						},
+						className: "e-rail-badges",
 						children: [
 							t.encrypted ? /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("span", {
 								className: "e-gate-badge e-gate-badge--invite",
@@ -34715,14 +34820,14 @@ var EmporiaHermesPlugin = (function(exports) {
 								gate: t.gate_type,
 								fee: t.entry_fee_cents
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)(Text, {
+							t.post_count > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)(Text, {
 								className: "e-dim e-status-txt",
 								children: [
 									t.post_count,
 									" ",
 									t.post_count === 1 ? "post" : "posts"
 								]
-							})
+							}) : null
 						]
 					})] }),
 					/* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)(Text, {
@@ -35001,7 +35106,7 @@ var EmporiaHermesPlugin = (function(exports) {
 							className: "e-kpi",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("span", {
 								className: "e-kpi__val",
-								children: ["$", (totalMovedCents / 100).toFixed(0)]
+								children: ["$", (totalMovedCents / 100).toFixed(2)]
 							}), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "volume"
@@ -35157,7 +35262,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				navigate
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime$14.jsxs)(SlimCard, {
-				title: isOperator ? "Settlement summary — all agents" : "Your settlement history",
+				title: isOperator ? "Settlement summary — all agents" : VIEWER_ID ? `${bareAgentName(VIEWER_ID)}'s settlement history` : "Settlement history",
 				children: [/* @__PURE__ */ (0, import_jsx_runtime$14.jsxs)("div", {
 					className: "e-kpi-row",
 					children: [
@@ -35481,6 +35586,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_ViewStatus();
 		init_chips();
 		init_relayEnv();
+		init_agentName();
 		init_PaymentsFeesSection();
 		import_jsx_runtime$14 = require_jsx_runtime();
 	}));
@@ -35876,7 +35982,7 @@ var EmporiaHermesPlugin = (function(exports) {
 						/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)("th", { children: "State" })
 					] }) }),
 					/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)("tbody", { children: st.recent.map((p) => /* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)("tr", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)("td", { children: new Date(p.at).toLocaleString() }),
+						/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)("td", { children: whenText(p.at) }),
 						/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)("td", { children: p.direction === "in" ? "in ↓" : "out ↑" }),
 						/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)("td", {
 							className: "e-stats-num",
@@ -35932,7 +36038,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			children: /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(ViewStatus, {
 				loading,
 				empty: true,
-				error: error ?? (parts?.error ? `Could not read ${who}'s figures from the relay: ${parts.error}` : null)
+				error: error ?? (parts?.error ? `Could not read ${who}'s figures from the relay. ${friendlyError(parts.error)}` : null)
 			})
 		});
 		const current = hermes && (hermes.model.days === void 0 || hermes.model.days === days) ? hermes : null;
@@ -36219,6 +36325,8 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_paymentFormat();
 		init_profileName();
 		init_relayEnv();
+		init_relayFormat();
+		init_friendlyError();
 		init_agentName();
 		init_statsModel();
 		init_transport();
@@ -36497,6 +36605,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			play: "games",
 			market: "rooms",
 			season: "season",
+			labs: "labs",
 			talk: "feed",
 			agents: "agents",
 			you: "profile",
@@ -37979,78 +38088,78 @@ var EmporiaHermesPlugin = (function(exports) {
 	// src/chat/ChatDrawer.module.css
 	var root, open, head, headRow, heading, headIcon, close, meta, conn, sessionBar, sessionPick, sessionPickTitle, smallButton, error, transcript, intro, introTitle, introNote, line, who, text, caret, blink, working, notice, prompt, tool, toolHead, toolName, toolMark, toolContext, toolTime, toolCaret, toolOut, untrusted, untrustedLabel, approval, cardTitle, cardText, cardNote, cardFoot, command, choices, choice, picked, deny, answered, question, answerInput, sessions, sessionsHead, sessionList, sessionRow, sessionTitle, sessionMeta, tag, empty, composer, inputRow, input, send, stop, readOnly, typeahead, typeRow, typeRowOn, typeName, typeMeta, back, backRow, menu, phoneOnly, ChatDrawer_module_default;
 	var init_ChatDrawer_module = __esmMin((() => {
-		root = "ChatDrawer_root_58yj2";
-		open = "ChatDrawer_open_58yj2";
-		head = "ChatDrawer_head_58yj2";
-		headRow = "ChatDrawer_headRow_58yj2";
-		heading = "ChatDrawer_heading_58yj2";
-		headIcon = "ChatDrawer_headIcon_58yj2";
-		close = "ChatDrawer_close_58yj2";
-		meta = "ChatDrawer_meta_58yj2";
-		conn = "ChatDrawer_conn_58yj2";
-		sessionBar = "ChatDrawer_sessionBar_58yj2";
-		sessionPick = "ChatDrawer_sessionPick_58yj2";
-		sessionPickTitle = "ChatDrawer_sessionPickTitle_58yj2";
-		smallButton = "ChatDrawer_smallButton_58yj2";
-		error = "ChatDrawer_error_58yj2";
-		transcript = "ChatDrawer_transcript_58yj2";
-		intro = "ChatDrawer_intro_58yj2";
-		introTitle = "ChatDrawer_introTitle_58yj2";
-		introNote = "ChatDrawer_introNote_58yj2";
-		line = "ChatDrawer_line_58yj2";
-		who = "ChatDrawer_who_58yj2";
-		text = "ChatDrawer_text_58yj2";
-		caret = "ChatDrawer_caret_58yj2";
-		blink = "ChatDrawer_blink_58yj2";
-		working = "ChatDrawer_working_58yj2";
-		notice = "ChatDrawer_notice_58yj2";
-		prompt = "ChatDrawer_prompt_58yj2";
-		tool = "ChatDrawer_tool_58yj2";
-		toolHead = "ChatDrawer_toolHead_58yj2";
-		toolName = "ChatDrawer_toolName_58yj2";
-		toolMark = "ChatDrawer_toolMark_58yj2";
-		toolContext = "ChatDrawer_toolContext_58yj2";
-		toolTime = "ChatDrawer_toolTime_58yj2";
-		toolCaret = "ChatDrawer_toolCaret_58yj2";
-		toolOut = "ChatDrawer_toolOut_58yj2";
-		untrusted = "ChatDrawer_untrusted_58yj2";
-		untrustedLabel = "ChatDrawer_untrustedLabel_58yj2";
-		approval = "ChatDrawer_approval_58yj2";
-		cardTitle = "ChatDrawer_cardTitle_58yj2";
-		cardText = "ChatDrawer_cardText_58yj2";
-		cardNote = "ChatDrawer_cardNote_58yj2";
-		cardFoot = "ChatDrawer_cardFoot_58yj2";
-		command = "ChatDrawer_command_58yj2";
-		choices = "ChatDrawer_choices_58yj2";
-		choice = "ChatDrawer_choice_58yj2";
-		picked = "ChatDrawer_picked_58yj2";
-		deny = "ChatDrawer_deny_58yj2";
-		answered = "ChatDrawer_answered_58yj2";
-		question = "ChatDrawer_question_58yj2";
-		answerInput = "ChatDrawer_answerInput_58yj2";
-		sessions = "ChatDrawer_sessions_58yj2";
-		sessionsHead = "ChatDrawer_sessionsHead_58yj2";
-		sessionList = "ChatDrawer_sessionList_58yj2";
-		sessionRow = "ChatDrawer_sessionRow_58yj2";
-		sessionTitle = "ChatDrawer_sessionTitle_58yj2";
-		sessionMeta = "ChatDrawer_sessionMeta_58yj2";
-		tag = "ChatDrawer_tag_58yj2";
-		empty = "ChatDrawer_empty_58yj2";
-		composer = "ChatDrawer_composer_58yj2";
-		inputRow = "ChatDrawer_inputRow_58yj2";
-		input = "ChatDrawer_input_58yj2";
-		send = "ChatDrawer_send_58yj2";
-		stop = "ChatDrawer_stop_58yj2";
-		readOnly = "ChatDrawer_readOnly_58yj2";
-		typeahead = "ChatDrawer_typeahead_58yj2";
-		typeRow = "ChatDrawer_typeRow_58yj2";
-		typeRowOn = "ChatDrawer_typeRowOn_58yj2";
-		typeName = "ChatDrawer_typeName_58yj2";
-		typeMeta = "ChatDrawer_typeMeta_58yj2";
-		back = "ChatDrawer_back_58yj2";
-		backRow = "ChatDrawer_backRow_58yj2";
-		menu = "ChatDrawer_menu_58yj2";
-		phoneOnly = "ChatDrawer_phoneOnly_58yj2";
+		root = "ChatDrawer_root_tg8j6";
+		open = "ChatDrawer_open_tg8j6";
+		head = "ChatDrawer_head_tg8j6";
+		headRow = "ChatDrawer_headRow_tg8j6";
+		heading = "ChatDrawer_heading_tg8j6";
+		headIcon = "ChatDrawer_headIcon_tg8j6";
+		close = "ChatDrawer_close_tg8j6";
+		meta = "ChatDrawer_meta_tg8j6";
+		conn = "ChatDrawer_conn_tg8j6";
+		sessionBar = "ChatDrawer_sessionBar_tg8j6";
+		sessionPick = "ChatDrawer_sessionPick_tg8j6";
+		sessionPickTitle = "ChatDrawer_sessionPickTitle_tg8j6";
+		smallButton = "ChatDrawer_smallButton_tg8j6";
+		error = "ChatDrawer_error_tg8j6";
+		transcript = "ChatDrawer_transcript_tg8j6";
+		intro = "ChatDrawer_intro_tg8j6";
+		introTitle = "ChatDrawer_introTitle_tg8j6";
+		introNote = "ChatDrawer_introNote_tg8j6";
+		line = "ChatDrawer_line_tg8j6";
+		who = "ChatDrawer_who_tg8j6";
+		text = "ChatDrawer_text_tg8j6";
+		caret = "ChatDrawer_caret_tg8j6";
+		blink = "ChatDrawer_blink_tg8j6";
+		working = "ChatDrawer_working_tg8j6";
+		notice = "ChatDrawer_notice_tg8j6";
+		prompt = "ChatDrawer_prompt_tg8j6";
+		tool = "ChatDrawer_tool_tg8j6";
+		toolHead = "ChatDrawer_toolHead_tg8j6";
+		toolName = "ChatDrawer_toolName_tg8j6";
+		toolMark = "ChatDrawer_toolMark_tg8j6";
+		toolContext = "ChatDrawer_toolContext_tg8j6";
+		toolTime = "ChatDrawer_toolTime_tg8j6";
+		toolCaret = "ChatDrawer_toolCaret_tg8j6";
+		toolOut = "ChatDrawer_toolOut_tg8j6";
+		untrusted = "ChatDrawer_untrusted_tg8j6";
+		untrustedLabel = "ChatDrawer_untrustedLabel_tg8j6";
+		approval = "ChatDrawer_approval_tg8j6";
+		cardTitle = "ChatDrawer_cardTitle_tg8j6";
+		cardText = "ChatDrawer_cardText_tg8j6";
+		cardNote = "ChatDrawer_cardNote_tg8j6";
+		cardFoot = "ChatDrawer_cardFoot_tg8j6";
+		command = "ChatDrawer_command_tg8j6";
+		choices = "ChatDrawer_choices_tg8j6";
+		choice = "ChatDrawer_choice_tg8j6";
+		picked = "ChatDrawer_picked_tg8j6";
+		deny = "ChatDrawer_deny_tg8j6";
+		answered = "ChatDrawer_answered_tg8j6";
+		question = "ChatDrawer_question_tg8j6";
+		answerInput = "ChatDrawer_answerInput_tg8j6";
+		sessions = "ChatDrawer_sessions_tg8j6";
+		sessionsHead = "ChatDrawer_sessionsHead_tg8j6";
+		sessionList = "ChatDrawer_sessionList_tg8j6";
+		sessionRow = "ChatDrawer_sessionRow_tg8j6";
+		sessionTitle = "ChatDrawer_sessionTitle_tg8j6";
+		sessionMeta = "ChatDrawer_sessionMeta_tg8j6";
+		tag = "ChatDrawer_tag_tg8j6";
+		empty = "ChatDrawer_empty_tg8j6";
+		composer = "ChatDrawer_composer_tg8j6";
+		inputRow = "ChatDrawer_inputRow_tg8j6";
+		input = "ChatDrawer_input_tg8j6";
+		send = "ChatDrawer_send_tg8j6";
+		stop = "ChatDrawer_stop_tg8j6";
+		readOnly = "ChatDrawer_readOnly_tg8j6";
+		typeahead = "ChatDrawer_typeahead_tg8j6";
+		typeRow = "ChatDrawer_typeRow_tg8j6";
+		typeRowOn = "ChatDrawer_typeRowOn_tg8j6";
+		typeName = "ChatDrawer_typeName_tg8j6";
+		typeMeta = "ChatDrawer_typeMeta_tg8j6";
+		back = "ChatDrawer_back_tg8j6";
+		backRow = "ChatDrawer_backRow_tg8j6";
+		menu = "ChatDrawer_menu_tg8j6";
+		phoneOnly = "ChatDrawer_phoneOnly_tg8j6";
 		ChatDrawer_module_default = {
 			root,
 			open,
@@ -38639,6 +38748,27 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
+	/** Size a textarea to its text: one line by default, growing to its CSS max-height, then it scrolls. */
+	function fitTextarea(el) {
+		el.style.height = "auto";
+		if (el.scrollHeight > el.clientHeight) el.style.height = `${el.scrollHeight + 2}px`;
+	}
+	/** The answer to a question the agent asks: wraps and grows with what is typed, like the composer. */
+	function AnswerBox({ label, placeholder, value, onChange }) {
+		const ref = (0, import_react$4.useRef)(null);
+		(0, import_react$4.useLayoutEffect)(() => {
+			if (ref.current) fitTextarea(ref.current);
+		}, [value]);
+		return /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("textarea", {
+			ref,
+			className: ChatDrawer_module_default.answerInput,
+			rows: 1,
+			"aria-label": label,
+			placeholder,
+			value,
+			onChange: (e) => onChange(e.target.value)
+		});
+	}
 	function ClarifyCard({ item, onAnswer }) {
 		const [answers, setAnswers] = (0, import_react$4.useState)({});
 		const ready = item.questions.every((q) => (answers[q.qid] ?? "").trim());
@@ -38671,14 +38801,13 @@ var EmporiaHermesPlugin = (function(exports) {
 								children: c
 							}, c))
 						}),
-						!item.answered && /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("input", {
-							className: ChatDrawer_module_default.answerInput,
-							"aria-label": `Answer: ${q.question}`,
+						!item.answered && /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(AnswerBox, {
+							label: `Answer: ${q.question}`,
 							placeholder: q.choices.length ? "or type an answer" : "type an answer",
 							value: answers[q.qid] ?? "",
-							onChange: (e) => setAnswers((a) => ({
+							onChange: (v) => setAnswers((a) => ({
 								...a,
-								[q.qid]: e.target.value
+								[q.qid]: v
 							}))
 						})
 					]
@@ -38864,8 +38993,17 @@ var EmporiaHermesPlugin = (function(exports) {
 		(0, import_react$4.useLayoutEffect)(() => {
 			const el = inputRef.current;
 			if (!el) return;
-			el.style.height = "auto";
-			if (el.scrollHeight > el.clientHeight) el.style.height = `${el.scrollHeight + 2}px`;
+			fitTextarea(el);
+			if (typeof ResizeObserver === "undefined") return;
+			const seen = { width: el.clientWidth };
+			const ro = new ResizeObserver(() => {
+				if (el.clientWidth !== seen.width) {
+					seen.width = el.clientWidth;
+					fitTextarea(el);
+				}
+			});
+			ro.observe(el);
+			return () => ro.disconnect();
 		}, [draft, inputRef]);
 		const isCommandWord = query.startsWith("/") && !/\s/.test(query);
 		const rows = isCommandWord && completion.for === query && dismissed !== query ? completion.rows : [];
@@ -40120,9 +40258,9 @@ var EmporiaHermesPlugin = (function(exports) {
 		const out = {};
 		for (const d of [
 			"home",
+			"messages",
 			"agora",
 			"arena",
-			"labs",
 			"agent"
 		]) {
 			const v = recall(`dest.${d}`);
@@ -40433,7 +40571,6 @@ var EmporiaHermesPlugin = (function(exports) {
 												view,
 												onGoDest: goToDest,
 												variant: "horizontal",
-												short: navLayout === "medium",
 												badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0
 											}),
 											/* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("div", {
