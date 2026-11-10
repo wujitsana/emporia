@@ -129,6 +129,16 @@ body.theme-light {
 
 .e-app-backdrop { display: none; }
 
+/* The rail layout puts the five places beside the page; every other layout stacks them. */
+.e-app-shell[data-nav="rail"] .e-app-main { flex-direction: row; }
+.e-app-col {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .e-view {
   flex: 1;
   scrollbar-gutter: stable;
@@ -174,22 +184,85 @@ body.theme-light {
 .e-section-tabs {
   display: none;
   gap: 2px;
-  overflow-x: auto;
   max-width: 100%;
   box-sizing: border-box;
 }
-@media (min-width: 901px) {
+/* The layout is chosen from the dashboard's OWN width (ui/navLayout.ts writes it as data-nav on the
+   shell), never from the window's: inside the Hermes tab the window is wider than the dashboard.
+   wide: labels in the header row · medium: icon + short label · rail: icons down the left edge ·
+   phone: the bottom bar. The main navigation never scrolls; every range draws all five places. */
+.e-app-shell[data-nav="wide"] .e-section-tabs--horizontal,
+.e-app-shell[data-nav="medium"] .e-section-tabs--horizontal {
   /* Never wraps: a wrapped header grows and moves everything under it (the audit's A3). */
-  .e-section-tabs--horizontal { display: flex; flex: 1; min-width: 0; flex-wrap: nowrap; }
-  .e-app-top__row { flex-wrap: nowrap; }
-  .e-app-top__actions { flex-shrink: 0; }}
-/* Between the phone layout and a roomy desktop the header gives up its relay host and version first. */
-@media (min-width: 901px) and (max-width: 1180px) {
-  .e-app-top__row { gap: 10px; padding-left: 14px; padding-right: 14px; }
-  .e-app-top__actions { gap: 10px; }
-  .e-section-tab { padding: 6px 8px; }
-  .e-relay-status__host, .e-relay-status__meta { display: none; }
-  .e-header-link__word { display: none; }}
+  display: flex; flex: 1; min-width: 0; flex-wrap: nowrap;
+}
+/* Past the first tier the header's own controls shrink: "as" before the viewer, the select narrower. */
+.e-app-shell[data-nav="medium"] .e-app-top .e-viewer-switch > .e-faint,
+.e-app-shell[data-nav="rail"] .e-app-top .e-viewer-switch > .e-faint { display: none; }
+.e-app-shell[data-nav="medium"] .e-app-top .e-viewer-switch select,
+.e-app-shell[data-nav="rail"] .e-app-top .e-viewer-switch select { max-width: 7rem; }
+.e-app-top__row { flex-wrap: nowrap; }
+.e-app-top__actions { flex-shrink: 0; }
+/* Medium and rail: the header gives up what it can spare, so it stays on one row. */
+.e-app-shell[data-nav="medium"] .e-app-top__row,
+.e-app-shell[data-nav="rail"] .e-app-top__row { gap: 10px; padding-left: 14px; padding-right: 14px; }
+.e-app-shell[data-nav="medium"] .e-app-top__actions,
+.e-app-shell[data-nav="rail"] .e-app-top__actions { gap: 10px; }
+.e-app-shell[data-nav="medium"] .e-section-tab { padding: 6px 8px; }
+.e-app-shell[data-nav="medium"] .e-relay-status__meta,
+.e-app-shell[data-nav="rail"] .e-relay-status__meta,
+.e-app-shell[data-nav="medium"] .e-header-link__word,
+.e-app-shell[data-nav="rail"] .e-header-link__word { display: none; }
+/* The live chip keeps its dot and its title; its word is for a roomy header only. */
+.e-app-shell[data-nav="medium"] .e-status-chip__label--live,
+.e-app-shell[data-nav="rail"] .e-status-chip__label--live,
+.e-app-shell[data-nav="phone"] .e-status-chip__label--live {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.e-app-shell[data-nav="medium"] .e-status-chip__label--relay { max-width: 11ch; }
+.e-app-shell[data-nav="rail"] .e-status-chip__label--relay { max-width: 18ch; }
+
+/* The rail: the five places as icons down the left edge, the word on hover and focus. */
+.e-section-tabs--rail { display: none; }
+.e-app-shell[data-nav="rail"] .e-section-tabs--rail {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 52px;
+  padding: 8px 4px;
+  border-right: 1px solid var(--e-rule, var(--theme-border-subdued));
+  background: var(--theme-background);
+  position: relative;
+  z-index: 30;
+}
+.e-section-tabs--rail .e-section-tab {
+  justify-content: center;
+  min-height: 44px;
+  padding: 0;
+  opacity: 0.85;
+}
+.e-section-tabs--rail .e-section-tab__icon { font-size: 1.15rem; }
+.e-section-tabs--rail .e-section-tab__label { display: none; }
+.e-section-tabs--rail .e-section-tab .e-nav-badge { position: absolute; top: 4px; right: 4px; margin: 0; }
+.e-section-tab__tip {
+  display: none;
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 4px 8px;
+  border: 1px solid var(--theme-border, var(--e-rule));
+  background: var(--theme-background);
+  color: var(--theme-text);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 40;
+}
+.e-section-tabs--rail .e-section-tab:hover .e-section-tab__tip,
+.e-section-tabs--rail .e-section-tab:focus-visible .e-section-tab__tip { display: block; }
 
 .e-section-tab {
   position: relative;
@@ -213,6 +286,7 @@ body.theme-light {
 .e-section-tab__icon  { font-size: 0.935rem; }
 .e-section-tab__label { letter-spacing: 0.02em; }
 .e-section-tabs--horizontal .e-section-tab__icon { display: none; }
+.e-app-shell[data-nav="medium"] .e-section-tabs--horizontal .e-section-tab__icon { display: inline; }
 
 /* Drawer variant */
 .e-section-tabs--drawer {
@@ -1024,6 +1098,9 @@ body.theme-light {
 .e-badge--ok,
 .e-relay-status .e-badge--ok { color: var(--theme-focused-foreground) !important; }
 
+/* The relay chip carries the relay's name: a long host is cut with an ellipsis (its title has it all). */
+.e-status-chip__label--relay { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e-app-shell[data-nav="phone"] .e-status-chip__label--relay { max-width: 9ch; }
 .e-status-chip {
   display: inline-flex;
   align-items: center;
@@ -1473,35 +1550,32 @@ body.theme-light {
 /* ─── 23. RESPONSIVE ─────────────────────────────────────────────────────── */
 
 @media (max-width: 900px) {
-  .e-app-top { display: none; }
-  .e-mobile-top { display: flex; }
-  .e-mobile-top { flex-wrap: wrap; }
-  .e-view-body { padding: 14px 12px 24px; }
-  .e-app-drawer {
-    display: flex;
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    z-index: 140;     /* above full-page chat (120): the chat's ☰ opens it */
-    width: min(85%, 16rem);
-    transform: translateX(-105%);
-    transition: transform 0.2s ease;
-    background: var(--theme-background);
-    border-right: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-  }
-  .e-app-shell.is-nav-open .e-app-drawer { transform: translateX(0); }
-  .e-app-backdrop {
-    display: none;
-  }
-  .e-app-shell.is-nav-open .e-app-backdrop {
-    display: block;
-    position: absolute;
-    inset: 0;
-    z-index: 130;
-    background: rgba(0,0,0,0.55);
-    border: 0;
-    padding: 0;
-    cursor: pointer;
-  }}
+  .e-view-body { padding: 14px 12px 24px; }}
+/* The phone layout (the frame under 600 px): top bar, menu behind the burger, bottom bar. */
+.e-app-shell[data-nav="phone"] .e-app-top { display: none; }
+.e-app-shell[data-nav="phone"] .e-mobile-top { display: flex; }
+.e-app-shell[data-nav="phone"] .e-app-drawer {
+  display: flex;
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  z-index: 140;     /* above full-page chat (120): the chat's ☰ opens it */
+  width: min(85%, 16rem);
+  transform: translateX(-105%);
+  transition: transform 0.2s ease;
+  background: var(--theme-background);
+  border-right: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
+}
+.e-app-shell[data-nav="phone"].is-nav-open .e-app-drawer { transform: translateX(0); }
+.e-app-shell[data-nav="phone"].is-nav-open .e-app-backdrop {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 130;
+  background: rgba(0,0,0,0.55);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
 
 /* Narrow screens: SidebarLayout itself (kit module CSS) turns rail-beside-detail
    into list-then-detail with a back control — see ui/kit/SidebarLayout.tsx. */
@@ -1777,8 +1851,20 @@ body.theme-light {
 }
 
 /* The sections inside the current destination: one strip under the header, every width. */
-.e-subnav {
+/* The strip may scroll (it is the page's sections, not the main navigation), but never silently:
+   a fade at each cut edge and a "n ▾" button listing the tabs that are cut off. */
+.e-subnav-wrap {
   flex: none;
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--e-rule);
+  background: var(--theme-background);
+}
+.e-subnav-box { position: relative; flex: 1; min-width: 0; display: flex; }
+.e-subnav {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: stretch;
   gap: 2px;
@@ -1786,9 +1872,68 @@ body.theme-light {
   min-height: 40px;
   overflow-x: auto;
   scrollbar-width: none;
-  border-bottom: 1px solid var(--e-rule);
   background: var(--theme-background);
 }
+.e-subnav::-webkit-scrollbar { display: none; }
+.e-subnav-fade {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 28px;
+  pointer-events: none;
+  visibility: hidden;
+}
+.e-subnav-fade--left { left: 0; background: linear-gradient(to right, var(--theme-background), transparent); }
+.e-subnav-fade--right { right: 0; background: linear-gradient(to left, var(--theme-background), transparent); }
+.e-subnav-box.has-left .e-subnav-fade--left,
+.e-subnav-box.has-right .e-subnav-fade--right { visibility: visible; }
+.e-subnav-more {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-left: 1px solid var(--e-rule);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.e-subnav-more:hover, .e-subnav-more[aria-expanded="true"] { color: var(--theme-focused-foreground); }
+.e-subnav-more:focus-visible, .e-subnav-menu__item:focus-visible { outline: 2px solid var(--theme-focused-foreground); outline-offset: -2px; }
+.e-subnav-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 50;
+  min-width: 11rem;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--theme-border, var(--e-rule));
+  background: var(--theme-background);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+}
+.e-subnav-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 1px solid var(--e-rule);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+.e-subnav-menu__item:last-child { border-bottom: 0; }
+.e-subnav-menu__item:hover, .e-subnav-menu__item.is-active { color: var(--theme-focused-foreground); }
 .e-subnav__dest {
   display: inline-flex;
   align-items: center;
@@ -1842,44 +1987,41 @@ body.theme-light {
   outline: 2px solid var(--theme-focused-foreground);
   outline-offset: -2px;
 }
-@media (max-width: 900px) {
-  .e-subnav { padding: 0 8px; min-height: 44px; }
-  .e-subnav__tab { min-height: 44px; padding: 0 14px; }}
+.e-app-shell[data-nav="phone"] .e-subnav { padding: 0 8px; min-height: 44px; }
+.e-app-shell[data-nav="phone"] .e-subnav__tab { min-height: 44px; padding: 0 14px; }
 
 /* Phone: the five places as a bar at the foot, under the view. */
 .e-bottom-bar { display: none; }
-@media (max-width: 900px) {
-  .e-bottom-bar {
-    flex: none;
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    border-top: 1px solid var(--e-rule, var(--theme-border-subdued));
-    background: var(--theme-background);
-    padding-bottom: env(safe-area-inset-bottom, 0);
-  }
-  .e-bottom-bar__tab {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-    min-height: 52px;
-    padding: 4px 2px;
-    border: 0;
-    border-top: 2px solid transparent;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    font-size: 0.7rem;
-    cursor: pointer;
-    min-width: 0;
-  }
-  .e-bottom-bar__tab.is-active { border-top-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
-  .e-bottom-bar__icon { font-size: 1.05rem; line-height: 1; }
-  .e-bottom-bar__label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .e-bottom-bar__tab .e-nav-badge { top: 4px; right: 22%; min-width: 8px; height: 8px; font-size: 0; padding: 0; }
+.e-app-shell[data-nav="phone"] .e-bottom-bar {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border-top: 1px solid var(--e-rule, var(--theme-border-subdued));
+  background: var(--theme-background);
+  padding-bottom: env(safe-area-inset-bottom, 0);
 }
+.e-bottom-bar__tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 52px;
+  padding: 4px 2px;
+  border: 0;
+  border-top: 2px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+  min-width: 0;
+}
+.e-bottom-bar__tab.is-active { border-top-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
+.e-bottom-bar__icon { font-size: 1.05rem; line-height: 1; }
+.e-bottom-bar__label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e-bottom-bar__tab .e-nav-badge { top: 4px; right: 22%; min-width: 8px; height: 8px; font-size: 0; padding: 0; }
 .e-header-links--drawer { padding: 8px 0 12px; }
 
 /* The one-line strip of what the agent is doing now, under the sub-row. */
@@ -2928,19 +3070,10 @@ body.e-look.theme-dark {
 .e-pledge.is-broken .e-pledge__status,
 .e-pledge.is-disputed .e-pledge__status { font-weight: 700; }
 
-/* P5: with the chat open beside the view the header keeps one row: it drops the relay's host
-   and version and the chat button's word, tightens its gaps, and lets the tabs scroll in
-   their own row rather than wrap (App sets .has-chat only above the header-nav width). */
-@media (min-width: 901px) {
-  .e-app-shell.has-chat .e-app-top__row { flex-wrap: nowrap; gap: 10px; padding-left: 14px; padding-right: 14px; }
-  .e-app-shell.has-chat .e-brand-title--header { flex-shrink: 0; }
-  .e-app-shell.has-chat .e-section-tabs--horizontal { flex-wrap: nowrap; }
-  .e-app-shell.has-chat .e-section-tab { padding: 6px 7px; }
-  .e-app-shell.has-chat .e-app-top__actions { flex-shrink: 0; gap: 10px; }
-  .e-app-shell.has-chat .e-relay-status { gap: 8px; flex-wrap: nowrap; }
-  .e-app-shell.has-chat .e-relay-status__chips { gap: 6px; }
-  .e-app-shell.has-chat .e-relay-status__host,
-  .e-app-shell.has-chat .e-relay-status__meta { display: none; }}
+/* P5: with the chat open beside the view the frame is narrower, so the layout (data-nav) drops
+   a tier by itself; the header never wraps. */
+.e-brand-title--header { flex-shrink: 0; }
+.e-relay-status { flex-wrap: nowrap; }
 .e-feed-post { padding: 8px 0; overflow-wrap: anywhere; }
 
 /* A post as a card: author line, kind chip, body, footer, replies nested inside. */

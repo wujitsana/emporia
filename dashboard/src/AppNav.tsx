@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   destinationOf, visibleDestinations, visibleHeaderDestinations,
   type ArenaLens, type Destination, type View,
 } from "./navConfig";
 import { arrowKeys } from "./arrowKeys";
+import { readSubEdges, sameEdges, shortLabel, type SubEdges } from "./ui/navLayout";
 import { useSubItems, useViewerOpts, type SubItem } from "./subNavItems";
 import { ThemePanelBody } from "./ThemeControls";
 import { ViewerSwitcher } from "./ui/ViewerSwitcher";
@@ -30,11 +31,15 @@ export function SectionTabs({
   view,
   onGoDest,
   variant = "horizontal",
+  short = false,
   badges = {},
 }: {
   view: View;
   onGoDest: (id: Destination) => void;
-  variant?: "horizontal" | "drawer";
+  /** horizontal: the header row (wide, medium) · rail: icons down the left edge · drawer: the phone menu. */
+  variant?: "horizontal" | "rail" | "drawer";
+  /** The medium header row: the icon and the short word ("Season" for Labs & Season). */
+  short?: boolean;
   badges?: Badges;
 }) {
   const dests = visibleDestinations(useViewerOpts());
@@ -49,11 +54,15 @@ export function SectionTabs({
             type="button"
             className={`e-section-tab${active ? " is-active" : ""}`}
             onClick={() => onGoDest(d.id)}
-            title={d.blurb}
+            title={variant === "rail" ? undefined : d.blurb}
+            aria-label={variant === "rail" || short ? d.label : undefined}
             aria-current={active ? "page" : undefined}
           >
             <span className="e-section-tab__icon" aria-hidden>{d.icon}</span>
-            <span className="e-section-tab__label">{d.label}</span>
+            <span className="e-section-tab__label">{short ? shortLabel(d) : d.label}</span>
+            {variant === "rail" ? (
+              <span className="e-section-tab__tip" aria-hidden>{d.label}  <kbd>{d.hotkey}</kbd></span>
+            ) : null}
             <Count n={destBadge(d.views, badges)} />
             {variant === "drawer" ? (
               <>
@@ -99,23 +108,111 @@ export function HeaderLinks({ view, onGo, drawer = false }: { view: View; onGo: 
  * the same x everywhere (no destination label in front of the tabs; the page title names the place).
  */
 export function SubNav({ label, items, note }: { label: string; items: SubItem[]; note: string | null }) {
+  const navRef = useRef<HTMLElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState<SubEdges>({ left: false, right: false, hidden: [] });
+  const [open, setOpen] = useState(false);
+
+  // What the strip hides is measured, not guessed: the fades and the "more" menu follow the strip's
+  // own width (and the tabs' count), so nothing is cut off without a sign.
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const read = () => {
+      const next = readSubEdges(nav);
+      setEdges((cur) => (sameEdges(cur, next) ? cur : next));
+    };
+    read();
+    nav.addEventListener("scroll", read, { passive: true });
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(read);
+    ro?.observe(nav);
+    return () => {
+      nav.removeEventListener("scroll", read);
+      ro?.disconnect();
+    };
+  }, [items, note]);
+
+  // The tab you are on is brought into view when the page (or the strip's width) changes.
+  const activeKey = items.find((i) => i.active)?.key;
+  const anyHidden = edges.hidden.length > 0;
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    const tab = nav?.querySelector<HTMLElement>(".e-subnav__tab.is-active");
+    if (!nav || !tab || nav.scrollWidth <= nav.clientWidth) return;
+    nav.scrollLeft = Math.max(0, tab.offsetLeft - (nav.clientWidth - tab.offsetWidth) / 2);
+  }, [activeKey, anyHidden]);
+
+  // The menu closes on Escape and on a press outside the strip.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    const onDown = (e: Event) => {
+      const wrap = wrapRef.current;
+      if (wrap && !e.composedPath().includes(wrap)) setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onDown);
+    };
+  }, [open]);
+
+  const hiddenItems = items.filter((i) => edges.hidden.includes(i.key));
+  const more = note === null && hiddenItems.length > 0;
   return (
-    <nav className="e-subnav" aria-label={`${label}: sections`} onKeyDown={arrowKeys}>
-      {note !== null ? <span className="e-subnav__note">{note}</span> : items.map((it) => (
+    <div className="e-subnav-wrap" ref={wrapRef}>
+      <div className={`e-subnav-box${edges.left ? " has-left" : ""}${edges.right ? " has-right" : ""}`}>
+      <nav ref={navRef} className="e-subnav" aria-label={`${label}: sections`} onKeyDown={arrowKeys}>
+        {note !== null ? <span className="e-subnav__note">{note}</span> : items.map((it) => (
+          <button
+            key={it.key}
+            type="button"
+            data-key={it.key}
+            className={`e-subnav__tab${it.active ? " is-active" : ""}${it.off ? " is-off" : ""}${it.title === "Off on this relay" ? " is-off-relay" : ""}`}
+            onClick={it.go}
+            title={it.title}
+            aria-current={it.active ? "page" : undefined}
+            aria-disabled={it.off || undefined}
+          >
+            {it.label}
+            <Count n={it.badge ?? 0} />
+          </button>
+        ))}
+      </nav>
+      <span className="e-subnav-fade e-subnav-fade--left" aria-hidden />
+      <span className="e-subnav-fade e-subnav-fade--right" aria-hidden />
+      </div>
+      {more ? (
         <button
-          key={it.key}
           type="button"
-          className={`e-subnav__tab${it.active ? " is-active" : ""}${it.off ? " is-off" : ""}${it.title === "Off on this relay" ? " is-off-relay" : ""}`}
-          onClick={it.go}
-          title={it.title}
-          aria-current={it.active ? "page" : undefined}
-          aria-disabled={it.off || undefined}
+          className="e-subnav-more"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={`${hiddenItems.length} more sections`}
+          title={`${hiddenItems.length} more: ${hiddenItems.map((i) => i.label).join(", ")}`}
+          onClick={() => setOpen((o) => !o)}
         >
-          {it.label}
-          <Count n={it.badge ?? 0} />
+          <span aria-hidden>{hiddenItems.length} ▾</span>
         </button>
-      ))}
-    </nav>
+      ) : null}
+      {more && open ? (
+        <div className="e-subnav-menu" role="menu" aria-label={`${label}: more sections`} onKeyDown={arrowKeys}>
+          {hiddenItems.map((it) => (
+            <button
+              key={it.key}
+              type="button"
+              role="menuitem"
+              className={`e-subnav-menu__item${it.active ? " is-active" : ""}`}
+              onClick={() => { setOpen(false); it.go(); }}
+            >
+              {it.label}
+              <Count n={it.badge ?? 0} />
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -150,7 +247,7 @@ export function BottomBar({
       {dests.map((d) => {
         const active = d.id === here;
         // The Labs & Season place is "Season" down here: that is the word a phone has room for.
-        const label = d.id === "labs" ? "Season" : d.label;
+        const label = shortLabel(d);
         return (
           <button
             key={d.id}

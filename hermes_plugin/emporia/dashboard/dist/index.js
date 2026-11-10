@@ -11626,10 +11626,10 @@ var EmporiaHermesPlugin = (function(exports) {
 		BlockLoader_module_default = { root: root$9 };
 	}));
 	// src/ui/kit/BlockLoader.tsx
-	var import_react$50, import_jsx_runtime$89, SEQUENCES, BlockLoader;
+	var import_react$52, import_jsx_runtime$89, SEQUENCES, BlockLoader;
 	var init_BlockLoader = __esmMin((() => {
 		init_BlockLoader_module();
-		import_react$50 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$52 = /* @__PURE__ */ __toESM(require_react(), 1);
 		import_jsx_runtime$89 = require_jsx_runtime();
 		SEQUENCES = [
 			[
@@ -11735,10 +11735,10 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		];
 		BlockLoader = ({ mode = 0 }) => {
-			const [index, setIndex] = import_react$50.useState(0);
+			const [index, setIndex] = import_react$52.useState(0);
 			const frames = SEQUENCES[mode];
 			const length = frames ? frames.length : 0;
-			import_react$50.useEffect(() => {
+			import_react$52.useEffect(() => {
 				if (!length) return;
 				const timer = window.setInterval(() => setIndex((i) => (i + 1) % length), 100);
 				return () => clearInterval(timer);
@@ -12254,12 +12254,12 @@ var EmporiaHermesPlugin = (function(exports) {
 	* `deps` changes (use a version counter to force a refresh from outside).
 	*/
 	function useInterval(fn, ms, deps = []) {
-		const [data, setData] = (0, import_react$49.useState)(null);
-		const [loading, setLoading] = (0, import_react$49.useState)(true);
-		const [error, setError] = (0, import_react$49.useState)(null);
-		const fnRef = (0, import_react$49.useRef)(fn);
+		const [data, setData] = (0, import_react$51.useState)(null);
+		const [loading, setLoading] = (0, import_react$51.useState)(true);
+		const [error, setError] = (0, import_react$51.useState)(null);
+		const fnRef = (0, import_react$51.useRef)(fn);
 		fnRef.current = fn;
-		(0, import_react$49.useEffect)(() => {
+		(0, import_react$51.useEffect)(() => {
 			let mounted = true;
 			const run = () => fnRef.current().then((d) => {
 				if (mounted) {
@@ -12303,19 +12303,19 @@ var EmporiaHermesPlugin = (function(exports) {
 	* existing polls stay as a slow safety net for a dropped socket.
 	*/
 	function useAgentWs(relayUrl, agentId) {
-		const [connected, setConnected] = (0, import_react$49.useState)(false);
-		const [last, setLast] = (0, import_react$49.useState)(null);
-		const [eventCount, setEventCount] = (0, import_react$49.useState)(0);
-		const wsRef = (0, import_react$49.useRef)(null);
+		const [connected, setConnected] = (0, import_react$51.useState)(false);
+		const [last, setLast] = (0, import_react$51.useState)(null);
+		const [eventCount, setEventCount] = (0, import_react$51.useState)(0);
+		const wsRef = (0, import_react$51.useRef)(null);
 		const target = `${relayUrl}\n${agentId ?? ""}`;
-		const [prevTarget, setPrevTarget] = (0, import_react$49.useState)(target);
+		const [prevTarget, setPrevTarget] = (0, import_react$51.useState)(target);
 		if (prevTarget !== target) {
 			setPrevTarget(target);
 			setConnected(false);
 			setLast(null);
 			setEventCount(0);
 		}
-		(0, import_react$49.useEffect)(() => {
+		(0, import_react$51.useEffect)(() => {
 			if (!agentId) return;
 			const lifetime = new AbortController();
 			const isClosed = () => lifetime.signal.aborted;
@@ -12378,14 +12378,14 @@ var EmporiaHermesPlugin = (function(exports) {
 	* with exponential back-off on drop.
 	*/
 	function useRoomWs(relayUrl, roomId, agentId, fetchHistory) {
-		const [messages, setMessages] = (0, import_react$49.useState)([]);
-		const [connected, setConnected] = (0, import_react$49.useState)(false);
-		const wsRef = (0, import_react$49.useRef)(null);
-		const fetchRef = (0, import_react$49.useRef)(fetchHistory);
-		(0, import_react$49.useEffect)(() => {
+		const [messages, setMessages] = (0, import_react$51.useState)([]);
+		const [connected, setConnected] = (0, import_react$51.useState)(false);
+		const wsRef = (0, import_react$51.useRef)(null);
+		const fetchRef = (0, import_react$51.useRef)(fetchHistory);
+		(0, import_react$51.useEffect)(() => {
 			fetchRef.current = fetchHistory;
 		});
-		(0, import_react$49.useEffect)(() => {
+		(0, import_react$51.useEffect)(() => {
 			if (!roomId || connected || !fetchRef.current) return;
 			const lifetime = new AbortController();
 			const load = () => fetchRef.current?.(roomId).then((m) => {
@@ -12399,13 +12399,13 @@ var EmporiaHermesPlugin = (function(exports) {
 			};
 		}, [roomId, connected]);
 		const target = `${relayUrl}\n${roomId ?? ""}\n${agentId ?? ""}`;
-		const [prevTarget, setPrevTarget] = (0, import_react$49.useState)(target);
+		const [prevTarget, setPrevTarget] = (0, import_react$51.useState)(target);
 		if (prevTarget !== target) {
 			setPrevTarget(target);
 			setMessages([]);
 			setConnected(false);
 		}
-		(0, import_react$49.useEffect)(() => {
+		(0, import_react$51.useEffect)(() => {
 			if (!roomId) return;
 			const lifetime = new AbortController();
 			const isClosed = () => lifetime.signal.aborted;
@@ -12473,22 +12473,22 @@ var EmporiaHermesPlugin = (function(exports) {
 	* the first request lands never re-requests the same id.
 	*/
 	function useSenderPubkeys(senderIds, fetchPubkey) {
-		const [pubkeys, setPubkeys] = (0, import_react$49.useState)({});
-		const pubkeysRef = (0, import_react$49.useRef)(pubkeys);
-		(0, import_react$49.useEffect)(() => {
+		const [pubkeys, setPubkeys] = (0, import_react$51.useState)({});
+		const pubkeysRef = (0, import_react$51.useRef)(pubkeys);
+		(0, import_react$51.useEffect)(() => {
 			pubkeysRef.current = pubkeys;
 		});
-		const requestedRef = (0, import_react$49.useRef)(/* @__PURE__ */ new Set());
-		const fetchRef = (0, import_react$49.useRef)(fetchPubkey);
-		(0, import_react$49.useEffect)(() => {
+		const requestedRef = (0, import_react$51.useRef)(/* @__PURE__ */ new Set());
+		const fetchRef = (0, import_react$51.useRef)(fetchPubkey);
+		(0, import_react$51.useEffect)(() => {
 			fetchRef.current = fetchPubkey;
 		});
-		const unmountedRef = (0, import_react$49.useRef)(false);
-		(0, import_react$49.useEffect)(() => () => {
+		const unmountedRef = (0, import_react$51.useRef)(false);
+		(0, import_react$51.useEffect)(() => () => {
 			unmountedRef.current = true;
 		}, []);
 		const senderKey = [...new Set(senderIds)].sort().join(" ");
-		(0, import_react$49.useEffect)(() => {
+		(0, import_react$51.useEffect)(() => {
 			const unknown = (senderKey ? senderKey.split(" ") : []).filter((id) => !(id in pubkeysRef.current) && !requestedRef.current.has(id));
 			if (unknown.length === 0) return;
 			unknown.forEach((id) => requestedRef.current.add(id));
@@ -12508,10 +12508,10 @@ var EmporiaHermesPlugin = (function(exports) {
 	* to seed the Overview instantly before the first HTTP poll completes.
 	*/
 	function useGlobalEvents() {
-		const [events, setEvents] = (0, import_react$49.useState)([]);
-		const [seed, setSeed] = (0, import_react$49.useState)(null);
-		const [wsConnected, setWsConnected] = (0, import_react$49.useState)(false);
-		(0, import_react$49.useEffect)(() => {
+		const [events, setEvents] = (0, import_react$51.useState)([]);
+		const [seed, setSeed] = (0, import_react$51.useState)(null);
+		const [wsConnected, setWsConnected] = (0, import_react$51.useState)(false);
+		(0, import_react$51.useEffect)(() => {
 			let closed = false;
 			let retryMs = 1e3;
 			let ws;
@@ -12563,44 +12563,41 @@ var EmporiaHermesPlugin = (function(exports) {
 			wsConnected
 		};
 	}
-	var import_react$49;
+	var import_react$51;
 	var init_hooks = __esmMin((() => {
-		import_react$49 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$51 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_transport();
 		init_api();
 	}));
-	// src/relayFormat.ts
-	function relayHost(url) {
-		if (!url) return "";
-		let host;
+	// src/relayLabel.ts
+	function hostnameOf(raw) {
+		const text = raw.trim();
+		if (!text) return "";
 		try {
-			host = new URL(url).host || url;
+			return new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `http://${text}`).hostname.toLowerCase();
 		} catch {
-			host = url.replace(/^https?:\/\//, "");
+			return "";
 		}
-		return host.slice(0, MAX_HOST_CHARS);
 	}
-	/** P228: when something happened, readable at a glance — the time alone for
-	*  today, the date as well for anything older (chat lines showed a bare clock
-	*  time, so yesterday's 21:04 read like today's). "" for a missing or bad value. */
-	function whenText(iso, now = /* @__PURE__ */ new Date()) {
-		if (!iso) return "";
-		const t = new Date(iso);
-		if (Number.isNaN(t.getTime())) return "";
-		const time = t.toLocaleTimeString([], {
-			hour: "2-digit",
-			minute: "2-digit"
-		});
-		if (t.toDateString() === now.toDateString()) return time;
-		return `${t.toLocaleDateString([], {
-			month: "short",
-			day: "numeric",
-			...t.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }
-		})}, ${time}`;
+	function isLocalHost$1(name) {
+		return LOCAL.has(name) || /^127\./.test(name) || name.endsWith(".localhost");
 	}
-	var MAX_HOST_CHARS;
-	var init_relayFormat = __esmMin((() => {
-		MAX_HOST_CHARS = 48;
+	/** "local relay", the relay's public host, or "relay" while it has not said who it is. */
+	function relayLabel(health) {
+		if (!health) return "relay";
+		const name = hostnameOf(health.relay_url ?? "") || hostnameOf(health.host ?? "");
+		if (!name && !health.relay_url && !health.host) return "relay";
+		return isLocalHost$1(name) ? "local relay" : name;
+	}
+	var LOCAL;
+	var init_relayLabel = __esmMin((() => {
+		LOCAL = /* @__PURE__ */ new Set([
+			"localhost",
+			"0.0.0.0",
+			"::1",
+			"[::1]",
+			""
+		]);
 	}));
 	// src/paymentFormat.ts
 	function settlementHealth(s) {
@@ -12799,7 +12796,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	function relayEventsWsUrl(httpRelay) {
 		return `${relayWsOrigin(httpRelay)}/ws/events`;
 	}
-	function StatusChip({ ok, label, title, loading, liveLoader }) {
+	function StatusChip({ ok, label, labelClass, title, loading, liveLoader }) {
 		let indicator;
 		if (loading) indicator = /* @__PURE__ */ (0, import_jsx_runtime$88.jsx)("span", {
 			className: "e-status-chip__loader",
@@ -12820,24 +12817,24 @@ var EmporiaHermesPlugin = (function(exports) {
 			className: `e-status-chip${ok ? " is-ok" : ""}`,
 			title,
 			children: [indicator, /* @__PURE__ */ (0, import_jsx_runtime$88.jsx)("span", {
-				className: "e-status-chip__label",
+				className: `e-status-chip__label${labelClass ? ` ${labelClass}` : ""}`,
 				children: label
 			})]
 		});
 	}
 	/**
 	* Relay connectivity in the header.
-	* - REST / “API”: HTTP GET /health (relay up, version, guardrails).
+	* - REST / “API”: HTTP GET /health (relay up, its name, version).
 	* - events: WebSocket /ws/events (live session pushes to the dashboard).
 	*/
 	function RelayStrip({ relayUrl, wsConnected, health, compact = false, showWs = false }) {
 		const online = health?.status === "ok";
 		const resolved = relayUrl && relayUrl.length > 0 ? relayUrl : resolveRelayUrl();
-		const host = MODE === "desktop" ? "via Hermes" : relayHost(resolved);
+		const name = relayLabel(health);
 		const wsEvents = relayEventsWsUrl(resolved);
-		const meta = [health?.version ? `v${health.version}` : null, health?.guardrails_mode].filter(Boolean).join(" · ");
-		const restTitle = online ? `Relay is up — its API answers (${resolved}/health)` : health ? `Relay HTTP unreachable (${resolved})` : `Checking relay health…`;
-		const wsTitle = wsConnected ? `Live updates on: new games and deals appear as they happen (${wsEvents})` : !socketsCarried() ? "Live updates off: this Hermes profile runs the plugin in its plugin host, which carries no websockets yet. The dashboard refreshes on a timer." : `Live updates off — the dashboard still refreshes on a timer (${wsEvents})`;
+		const meta = health?.version ? `v${health.version}` : "";
+		const restTitle = online ? "The relay is up and answering" : health ? "Can't reach the relay" : `Checking relay health…`;
+		const wsTitle = wsConnected ? "Live updates on: new games and deals appear as they happen" : !socketsCarried() ? "Live updates off: this Hermes profile runs the plugin in its plugin host, which carries no websockets yet. The dashboard refreshes on a timer." : "Live updates off: the dashboard still refreshes on a timer";
 		const money = moneyChip(health);
 		const chips = /* @__PURE__ */ (0, import_jsx_runtime$88.jsxs)("span", {
 			className: "e-relay-status__chips",
@@ -12852,34 +12849,27 @@ var EmporiaHermesPlugin = (function(exports) {
 				}) : null,
 				/* @__PURE__ */ (0, import_jsx_runtime$88.jsx)(StatusChip, {
 					ok: online,
-					label: "relay",
-					title: restTitle,
+					label: name,
+					labelClass: "e-status-chip__label--relay",
+					title: `${name}. ${restTitle}`,
 					loading: health === null
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$88.jsx)(StatusChip, {
 					ok: wsConnected,
 					label: "live",
+					labelClass: "e-status-chip__label--live",
 					title: wsTitle,
 					liveLoader: wsConnected
 				})
 			]
 		});
-		if (compact) return /* @__PURE__ */ (0, import_jsx_runtime$88.jsxs)("span", {
+		if (compact) return /* @__PURE__ */ (0, import_jsx_runtime$88.jsx)("span", {
 			className: "e-relay-status e-relay-status--compact",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$88.jsx)("span", {
-				className: "e-relay-status__host e-capture-hide",
-				title: resolved,
-				children: host
-			}), chips]
+			children: chips
 		});
 		return /* @__PURE__ */ (0, import_jsx_runtime$88.jsxs)("span", {
 			className: "e-relay-status",
-			title: resolved,
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$88.jsx)("span", {
-					className: "e-relay-status__host e-capture-hide",
-					children: host
-				}),
 				meta ? /* @__PURE__ */ (0, import_jsx_runtime$88.jsx)("span", {
 					className: "e-relay-status__meta",
 					children: meta
@@ -12898,7 +12888,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_Text();
 		init_hooks();
 		init_relayEnv();
-		init_relayFormat();
+		init_relayLabel();
 		init_transport();
 		init_moneyChip();
 		import_jsx_runtime$88 = require_jsx_runtime();
@@ -13203,6 +13193,152 @@ var EmporiaHermesPlugin = (function(exports) {
 		tabs[e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : (at + (e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 1) + tabs.length) % tabs.length].focus();
 	}
 	var init_arrowKeys = __esmMin((() => {}));
+	// src/keyTarget.ts
+	/** A key pressed on this element is text being typed, not a section shortcut. */
+	function isTypingTarget(t) {
+		if (typeof HTMLElement === "undefined" || !(t instanceof HTMLElement)) return false;
+		return t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || t.isContentEditable === true || t.getAttribute("contenteditable") === "true";
+	}
+	/**
+	* The element that has focus in the tree `inside` belongs to. Inside the Hermes
+	* tab the app lives in a *closed* shadow root: a window key listener sees the
+	* host element as the target, and composedPath() hides the root's insides from
+	* it. The app can still ask its own root node — it holds a node within it.
+	*/
+	function focusedWithin(inside) {
+		const root = inside?.getRootNode?.();
+		return root && "activeElement" in root ? root.activeElement : null;
+	}
+	/** Whether a key event is someone typing: at its target, or at the focus inside the app's own root. */
+	function isTyping(e, appNode) {
+		return isTypingTarget(e.target) || isTypingTarget(focusedWithin(appNode));
+	}
+	var init_keyTarget = __esmMin((() => {}));
+	// src/ui/overlayFocus.ts
+	function narrowList() {
+		try {
+			return typeof window !== "undefined" && window.matchMedia ? window.matchMedia(NARROW) : null;
+		} catch {
+			return null;
+		}
+	}
+	function isNarrow() {
+		return narrowList()?.matches ?? false;
+	}
+	function subscribeNarrow(fn) {
+		const mq = narrowList();
+		if (!mq) return () => {};
+		mq.addEventListener?.("change", fn);
+		return () => mq.removeEventListener?.("change", fn);
+	}
+	/** Whether the window is below the header-nav width, following resizes. */
+	function useNarrow() {
+		return (0, import_react$50.useSyncExternalStore)(subscribeNarrow, isNarrow, () => false);
+	}
+	/** The first focusable element in `root` that is drawn (else the first at all: jsdom draws nothing). */
+	function firstFocusable(root) {
+		const all = [...root.querySelectorAll(FOCUSABLE$1)];
+		return all.find((el) => el.getClientRects().length > 0) ?? all[0] ?? null;
+	}
+	/**
+	* While `open`, the focus is inside `container` (on `initial()`, else its first
+	* focusable element); when it closes, back on what had it before.
+	*/
+	function useOverlayFocus(open, container, initial) {
+		const pick = (0, import_react$50.useRef)(initial);
+		(0, import_react$50.useEffect)(() => {
+			pick.current = initial;
+		});
+		(0, import_react$50.useEffect)(() => {
+			const el = container.current;
+			if (!open || !el) return;
+			const before = focusedWithin(el);
+			(pick.current?.() ?? firstFocusable(el))?.focus();
+			return () => {
+				if (before instanceof HTMLElement && before.isConnected && !before.closest("[inert]")) before.focus();
+			};
+		}, [open, container]);
+	}
+	var import_react$50, NARROW, FOCUSABLE$1;
+	var init_overlayFocus = __esmMin((() => {
+		import_react$50 = /* @__PURE__ */ __toESM(require_react(), 1);
+		init_keyTarget();
+		NARROW = "(max-width: 900px)";
+		FOCUSABLE$1 = "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex=\"-1\"])";
+	}));
+	// src/ui/navLayout.ts
+	/** The layout for a frame `width` px wide. Not a measurement yet (0, NaN): `fallbackPhone` decides. */
+	function navLayoutFor(width, fallbackPhone = false) {
+		if (!Number.isFinite(width) || width <= 0) return fallbackPhone ? "phone" : "wide";
+		if (width >= NAV_MIN_WIDTH.wide) return "wide";
+		if (width >= NAV_MIN_WIDTH.medium) return "medium";
+		if (width >= NAV_MIN_WIDTH.rail) return "rail";
+		return "phone";
+	}
+	/** The word a destination has when the header row is short of room (the phone's bar says the same). */
+	function shortLabel(d) {
+		return d.id === "labs" ? "Season" : d.label;
+	}
+	function sameEdges(a, b) {
+		return a.left === b.left && a.right === b.right && a.hidden.join("|") === b.hidden.join("|");
+	}
+	/**
+	* What the sub-tab strip cuts off at its left and right edge, read from its own geometry. A tab counts
+	* as cut off when under 90 % of it shows; the strip lists those in its "more" menu.
+	*/
+	function readSubEdges(nav) {
+		const view = nav.clientWidth;
+		const hidden = [];
+		nav.querySelectorAll(".e-subnav__tab").forEach((tab) => {
+			const left = tab.offsetLeft - nav.scrollLeft;
+			const right = left + tab.offsetWidth;
+			const shown = Math.min(right, view) - Math.max(left, 0);
+			if (tab.offsetWidth > 0 && shown < tab.offsetWidth * .9) hidden.push(tab.dataset.key ?? "");
+		});
+		return {
+			left: nav.scrollLeft > 1,
+			right: nav.scrollLeft + view < nav.scrollWidth - 1,
+			hidden
+		};
+	}
+	/**
+	* The layout of `frame`, following its width. Before the first measurement (and where nothing can
+	* be measured, as in jsdom) it falls back to the window's own phone width.
+	*/
+	function useNavLayout(frame) {
+		const [width, setWidth] = (0, import_react$49.useState)(0);
+		(0, import_react$49.useLayoutEffect)(() => {
+			const el = frame.current;
+			if (!el) return;
+			const read = () => setWidth(el.getBoundingClientRect().width);
+			read();
+			if (typeof ResizeObserver === "undefined") {
+				window.addEventListener("resize", read);
+				return () => window.removeEventListener("resize", read);
+			}
+			const ro = new ResizeObserver(read);
+			ro.observe(el);
+			return () => ro.disconnect();
+		}, [frame]);
+		(0, import_react$49.useEffect)(() => {
+			const el = frame.current;
+			if (!el) return;
+			const t = setTimeout(() => setWidth(el.getBoundingClientRect().width), 120);
+			return () => clearTimeout(t);
+		}, [frame]);
+		return navLayoutFor(width, isNarrow());
+	}
+	var import_react$49, NAV_MIN_WIDTH;
+	var init_navLayout = __esmMin((() => {
+		import_react$49 = /* @__PURE__ */ __toESM(require_react(), 1);
+		init_overlayFocus();
+		NAV_MIN_WIDTH = {
+			wide: 1240,
+			medium: 1e3,
+			rail: 680,
+			phone: 0
+		};
+	}));
 	// src/relayCtx.ts
 	function useRelayCtx() {
 		return (0, import_react$48.useContext)(RelayCtx);
@@ -13690,7 +13826,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	* The five destinations (navConfig.ts): a row of tabs in the desktop header, or the menu's list on a
 	* phone. A destination opens its last section, else its first.
 	*/
-	function SectionTabs({ view, onGoDest, variant = "horizontal", badges = {} }) {
+	function SectionTabs({ view, onGoDest, variant = "horizontal", short = false, badges = {} }) {
 		const dests = visibleDestinations(useViewerOpts());
 		const here = destinationOf(view).id;
 		return /* @__PURE__ */ (0, import_jsx_runtime$84.jsx)("nav", {
@@ -13703,7 +13839,8 @@ var EmporiaHermesPlugin = (function(exports) {
 					type: "button",
 					className: `e-section-tab${active ? " is-active" : ""}`,
 					onClick: () => onGoDest(d.id),
-					title: d.blurb,
+					title: variant === "rail" ? void 0 : d.blurb,
+					"aria-label": variant === "rail" || short ? d.label : void 0,
 					"aria-current": active ? "page" : void 0,
 					children: [
 						/* @__PURE__ */ (0, import_jsx_runtime$84.jsx)("span", {
@@ -13713,8 +13850,17 @@ var EmporiaHermesPlugin = (function(exports) {
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime$84.jsx)("span", {
 							className: "e-section-tab__label",
-							children: d.label
+							children: short ? shortLabel(d) : d.label
 						}),
+						variant === "rail" ? /* @__PURE__ */ (0, import_jsx_runtime$84.jsxs)("span", {
+							className: "e-section-tab__tip",
+							"aria-hidden": true,
+							children: [
+								d.label,
+								"  ",
+								/* @__PURE__ */ (0, import_jsx_runtime$84.jsx)("kbd", { children: d.hotkey })
+							]
+						}) : null,
 						/* @__PURE__ */ (0, import_jsx_runtime$84.jsx)(Count, { n: destBadge(d.views, badges) }),
 						variant === "drawer" ? /* @__PURE__ */ (0, import_jsx_runtime$84.jsxs)(import_jsx_runtime$84.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$84.jsx)("span", {
 							className: "e-section-tab__sub",
@@ -13760,22 +13906,122 @@ var EmporiaHermesPlugin = (function(exports) {
 	* the same x everywhere (no destination label in front of the tabs; the page title names the place).
 	*/
 	function SubNav({ label, items, note }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$84.jsx)("nav", {
-			className: "e-subnav",
-			"aria-label": `${label}: sections`,
-			onKeyDown: arrowKeys,
-			children: note !== null ? /* @__PURE__ */ (0, import_jsx_runtime$84.jsx)("span", {
-				className: "e-subnav__note",
-				children: note
-			}) : items.map((it) => /* @__PURE__ */ (0, import_jsx_runtime$84.jsxs)("button", {
-				type: "button",
-				className: `e-subnav__tab${it.active ? " is-active" : ""}${it.off ? " is-off" : ""}${it.title === "Off on this relay" ? " is-off-relay" : ""}`,
-				onClick: it.go,
-				title: it.title,
-				"aria-current": it.active ? "page" : void 0,
-				"aria-disabled": it.off || void 0,
-				children: [it.label, /* @__PURE__ */ (0, import_jsx_runtime$84.jsx)(Count, { n: it.badge ?? 0 })]
-			}, it.key))
+		const navRef = (0, import_react$44.useRef)(null);
+		const wrapRef = (0, import_react$44.useRef)(null);
+		const [edges, setEdges] = (0, import_react$44.useState)({
+			left: false,
+			right: false,
+			hidden: []
+		});
+		const [open, setOpen] = (0, import_react$44.useState)(false);
+		(0, import_react$44.useLayoutEffect)(() => {
+			const nav = navRef.current;
+			if (!nav) return;
+			const read = () => {
+				const next = readSubEdges(nav);
+				setEdges((cur) => sameEdges(cur, next) ? cur : next);
+			};
+			read();
+			nav.addEventListener("scroll", read, { passive: true });
+			const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(read);
+			ro?.observe(nav);
+			return () => {
+				nav.removeEventListener("scroll", read);
+				ro?.disconnect();
+			};
+		}, [items, note]);
+		const activeKey = items.find((i) => i.active)?.key;
+		const anyHidden = edges.hidden.length > 0;
+		(0, import_react$44.useLayoutEffect)(() => {
+			const nav = navRef.current;
+			const tab = nav?.querySelector(".e-subnav__tab.is-active");
+			if (!nav || !tab || nav.scrollWidth <= nav.clientWidth) return;
+			nav.scrollLeft = Math.max(0, tab.offsetLeft - (nav.clientWidth - tab.offsetWidth) / 2);
+		}, [activeKey, anyHidden]);
+		(0, import_react$44.useEffect)(() => {
+			if (!open) return;
+			const onKey = (e) => {
+				if (e.key === "Escape") setOpen(false);
+			};
+			const onDown = (e) => {
+				const wrap = wrapRef.current;
+				if (wrap && !e.composedPath().includes(wrap)) setOpen(false);
+			};
+			window.addEventListener("keydown", onKey);
+			window.addEventListener("pointerdown", onDown);
+			return () => {
+				window.removeEventListener("keydown", onKey);
+				window.removeEventListener("pointerdown", onDown);
+			};
+		}, [open]);
+		const hiddenItems = items.filter((i) => edges.hidden.includes(i.key));
+		const more = note === null && hiddenItems.length > 0;
+		return /* @__PURE__ */ (0, import_jsx_runtime$84.jsxs)("div", {
+			className: "e-subnav-wrap",
+			ref: wrapRef,
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$84.jsxs)("div", {
+					className: `e-subnav-box${edges.left ? " has-left" : ""}${edges.right ? " has-right" : ""}`,
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$84.jsx)("nav", {
+							ref: navRef,
+							className: "e-subnav",
+							"aria-label": `${label}: sections`,
+							onKeyDown: arrowKeys,
+							children: note !== null ? /* @__PURE__ */ (0, import_jsx_runtime$84.jsx)("span", {
+								className: "e-subnav__note",
+								children: note
+							}) : items.map((it) => /* @__PURE__ */ (0, import_jsx_runtime$84.jsxs)("button", {
+								type: "button",
+								"data-key": it.key,
+								className: `e-subnav__tab${it.active ? " is-active" : ""}${it.off ? " is-off" : ""}${it.title === "Off on this relay" ? " is-off-relay" : ""}`,
+								onClick: it.go,
+								title: it.title,
+								"aria-current": it.active ? "page" : void 0,
+								"aria-disabled": it.off || void 0,
+								children: [it.label, /* @__PURE__ */ (0, import_jsx_runtime$84.jsx)(Count, { n: it.badge ?? 0 })]
+							}, it.key))
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime$84.jsx)("span", {
+							className: "e-subnav-fade e-subnav-fade--left",
+							"aria-hidden": true
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime$84.jsx)("span", {
+							className: "e-subnav-fade e-subnav-fade--right",
+							"aria-hidden": true
+						})
+					]
+				}),
+				more ? /* @__PURE__ */ (0, import_jsx_runtime$84.jsx)("button", {
+					type: "button",
+					className: "e-subnav-more",
+					"aria-haspopup": "menu",
+					"aria-expanded": open,
+					"aria-label": `${hiddenItems.length} more sections`,
+					title: `${hiddenItems.length} more: ${hiddenItems.map((i) => i.label).join(", ")}`,
+					onClick: () => setOpen((o) => !o),
+					children: /* @__PURE__ */ (0, import_jsx_runtime$84.jsxs)("span", {
+						"aria-hidden": true,
+						children: [hiddenItems.length, " ▾"]
+					})
+				}) : null,
+				more && open ? /* @__PURE__ */ (0, import_jsx_runtime$84.jsx)("div", {
+					className: "e-subnav-menu",
+					role: "menu",
+					"aria-label": `${label}: more sections`,
+					onKeyDown: arrowKeys,
+					children: hiddenItems.map((it) => /* @__PURE__ */ (0, import_jsx_runtime$84.jsxs)("button", {
+						type: "button",
+						role: "menuitem",
+						className: `e-subnav-menu__item${it.active ? " is-active" : ""}`,
+						onClick: () => {
+							setOpen(false);
+							it.go();
+						},
+						children: [it.label, /* @__PURE__ */ (0, import_jsx_runtime$84.jsx)(Count, { n: it.badge ?? 0 })]
+					}, it.key))
+				}) : null
+			]
 		});
 	}
 	/** The sub-row for the current place: it reads the viewer and the relay itself, so App just drops it in. */
@@ -13800,7 +14046,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			onKeyDown: arrowKeys,
 			children: dests.map((d) => {
 				const active = d.id === here;
-				const label = d.id === "labs" ? "Season" : d.label;
+				const label = shortLabel(d);
 				return /* @__PURE__ */ (0, import_jsx_runtime$84.jsxs)("button", {
 					type: "button",
 					className: `e-bottom-bar__tab${active ? " is-active" : ""}`,
@@ -13865,10 +14111,12 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	var import_jsx_runtime$84;
+	var import_react$44, import_jsx_runtime$84;
 	var init_AppNav = __esmMin((() => {
+		import_react$44 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_navConfig();
 		init_arrowKeys();
+		init_navLayout();
 		init_subNavItems();
 		init_ThemeControls();
 		init_ViewerSwitcher();
@@ -14320,7 +14568,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	*/
 	function NowStrip({ navigate }) {
 		const viewer = VIEWER_ID;
-		const [collapsed, setCollapsed] = (0, import_react$44.useState)(() => readPref(PREF) === "1");
+		const [collapsed, setCollapsed] = (0, import_react$43.useState)(() => readPref(PREF) === "1");
 		const [sessions] = useInterval(() => viewer ? api.agentSessions(viewer).then((r) => r.sessions) : Promise.resolve([]), poll(1e4), [viewer]);
 		if (!viewer) return null;
 		const line = nowLine(viewer, sessions ?? []);
@@ -14355,9 +14603,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			})]
 		});
 	}
-	var import_react$44, import_jsx_runtime$83, PREF;
+	var import_react$43, import_jsx_runtime$83, PREF;
 	var init_NowStrip = __esmMin((() => {
-		import_react$44 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$43 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_capture();
 		init_hooks();
@@ -14560,14 +14808,14 @@ var EmporiaHermesPlugin = (function(exports) {
 			})]
 		});
 	}
-	var import_react$42, import_jsx_runtime$80, ViewBoundary;
+	var import_react$41, import_jsx_runtime$80, ViewBoundary;
 	var init_layout = __esmMin((() => {
 		init_Text();
-		import_react$42 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$41 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_pageTitle();
 		init_LookChrome();
 		import_jsx_runtime$80 = require_jsx_runtime();
-		ViewBoundary = class extends import_react$42.Component {
+		ViewBoundary = class extends import_react$41.Component {
 			state = { error: null };
 			static getDerivedStateFromError(error) {
 				return { error };
@@ -14718,14 +14966,14 @@ var EmporiaHermesPlugin = (function(exports) {
 	function findNextFocusable(element, direction = "next") {
 		if (!element) return null;
 		const scope = element.closest(".e-host-body") ?? document;
-		const all = Array.from(scope.querySelectorAll(FOCUSABLE$1));
+		const all = Array.from(scope.querySelectorAll(FOCUSABLE));
 		const i = all.indexOf(element);
 		if (i === -1) return null;
 		return all[direction === "next" ? (i + 1) % all.length : (i - 1 + all.length) % all.length];
 	}
-	var FOCUSABLE$1;
+	var FOCUSABLE;
 	var init_utilities = __esmMin((() => {
-		FOCUSABLE$1 = [
+		FOCUSABLE = [
 			"a[href]",
 			"button",
 			"input",
@@ -14761,14 +15009,14 @@ var EmporiaHermesPlugin = (function(exports) {
 	}));
 	// src/ui/kit/Input.tsx
 	function Input({ caretChars, isBlink = true, label, placeholder, onChange, type, id, ...rest }) {
-		const generatedId = import_react$39.useId();
+		const generatedId = import_react$38.useId();
 		const inputId = id || generatedId;
-		const inputRef = import_react$39.useRef(null);
-		const [text, setText] = import_react$39.useState(rest.defaultValue?.toString() || rest.value?.toString() || "");
-		const [isFocused, setIsFocused] = import_react$39.useState(false);
-		const [selectionStart, setSelectionStart] = import_react$39.useState(text.length);
-		const lastFocusDirectionRef = import_react$39.useRef(null);
-		const [prevValue, setPrevValue] = import_react$39.useState(rest.value);
+		const inputRef = import_react$38.useRef(null);
+		const [text, setText] = import_react$38.useState(rest.defaultValue?.toString() || rest.value?.toString() || "");
+		const [isFocused, setIsFocused] = import_react$38.useState(false);
+		const [selectionStart, setSelectionStart] = import_react$38.useState(text.length);
+		const lastFocusDirectionRef = import_react$38.useRef(null);
+		const [prevValue, setPrevValue] = import_react$38.useState(rest.value);
 		if (prevValue !== rest.value) {
 			setPrevValue(rest.value);
 			if (rest.value !== void 0) {
@@ -14858,9 +15106,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			})]
 		});
 	}
-	var import_react$39, import_jsx_runtime$76;
+	var import_react$38, import_jsx_runtime$76;
 	var init_Input = __esmMin((() => {
-		import_react$39 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$38 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_utilities();
 		init_Input_module();
 		import_jsx_runtime$76 = require_jsx_runtime();
@@ -14888,17 +15136,17 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 	}));
 	// src/ui/kit/SidebarLayout.tsx
-	var import_react$38, import_jsx_runtime$75, CHARACTER_WIDTH, SidebarLayout;
+	var import_react$37, import_jsx_runtime$75, CHARACTER_WIDTH, SidebarLayout;
 	var init_SidebarLayout = __esmMin((() => {
 		init_SidebarLayout_module();
-		import_react$38 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$37 = /* @__PURE__ */ __toESM(require_react(), 1);
 		import_jsx_runtime$75 = require_jsx_runtime();
 		CHARACTER_WIDTH = 9.6;
 		SidebarLayout = ({ defaultSidebarWidth = 20, children, sidebar, isShowingHandle = false, isReversed = false, initialPane = "list", backLabel = "back to list", className, ...rest }) => {
-			const [sidebarWidth, setSidebarWidth] = import_react$38.useState(defaultSidebarWidth);
-			const [pane, setPane] = import_react$38.useState(initialPane);
-			const handleRef = import_react$38.useRef(null);
-			const rootRef = import_react$38.useRef(null);
+			const [sidebarWidth, setSidebarWidth] = import_react$37.useState(defaultSidebarWidth);
+			const [pane, setPane] = import_react$37.useState(initialPane);
+			const handleRef = import_react$37.useRef(null);
+			const rootRef = import_react$37.useRef(null);
 			const show = (next) => {
 				setPane(next);
 				requestAnimationFrame(() => {
@@ -15122,7 +15370,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	* a parallel write UI.
 	*/
 	function McpCommandHint({ label, tool, args }) {
-		const [copied, setCopied] = (0, import_react$35.useState)(false);
+		const [copied, setCopied] = (0, import_react$34.useState)(false);
 		const command = `${tool}(${Object.entries(args).map(([k, v]) => `${k}="${v}"`).join(", ")})`;
 		const copy = () => {
 			navigator.clipboard?.writeText(command).then(() => {
@@ -15158,9 +15406,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	var import_react$35, import_jsx_runtime$71;
+	var import_react$34, import_jsx_runtime$71;
 	var init_McpCommandHint = __esmMin((() => {
-		import_react$35 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$34 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
 		import_jsx_runtime$71 = require_jsx_runtime();
 	}));
@@ -18618,10 +18866,10 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 	}
 	function PostOnX({ agentId }) {
-		const [handle, setHandle] = import_react$33.useState("");
-		const [style, setStyle] = import_react$33.useState("plain");
-		const [claim, setClaim] = import_react$33.useState(null);
-		const [error, setError] = import_react$33.useState("");
+		const [handle, setHandle] = import_react$32.useState("");
+		const [style, setStyle] = import_react$32.useState("plain");
+		const [claim, setClaim] = import_react$32.useState(null);
+		const [error, setError] = import_react$32.useState("");
 		const clean = cleanHandle(handle);
 		const prepare = async () => {
 			setError("");
@@ -18747,9 +18995,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	var import_react$33, import_jsx_runtime$66;
+	var import_react$32, import_jsx_runtime$66;
 	var init_XLinkPanel = __esmMin((() => {
-		import_react$33 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$32 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
 		init_transport();
 		init_relayEnv();
@@ -18787,10 +19035,10 @@ var EmporiaHermesPlugin = (function(exports) {
 		return rows;
 	}
 	function useAgentExtras(id, on) {
-		const [q, setQ] = import_react$32.useState(null);
-		const [sheet, setSheet] = import_react$32.useState(null);
-		const [rec, setRec] = import_react$32.useState(null);
-		import_react$32.useEffect(() => {
+		const [q, setQ] = import_react$31.useState(null);
+		const [sheet, setSheet] = import_react$31.useState(null);
+		const [rec, setRec] = import_react$31.useState(null);
+		import_react$31.useEffect(() => {
 			if (!on) return;
 			let live = true;
 			Promise.resolve().then(() => api.quests(id)).then((r) => live && setQ(r)).catch(() => live && setQ(null));
@@ -18806,9 +19054,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			setRec
 		};
 	}
-	var import_react$32, LAB_QUESTS, say;
+	var import_react$31, LAB_QUESTS, say;
 	var init_agentCardModel = __esmMin((() => {
-		import_react$32 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$31 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		LAB_QUESTS = [
 			"lab-confirmed",
@@ -18877,7 +19125,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	function FullCard({ agent, navigate }) {
 		const { q, sheet, rec, setSheet, setRec } = useAgentExtras(agent.agent_id, true);
-		import_react$31.useEffect(() => {
+		import_react$30.useEffect(() => {
 			let live = true;
 			Promise.resolve().then(() => api.sheet(agent.agent_id)).then((r) => live && setSheet(r)).catch(() => live && setSheet(null));
 			Promise.resolve().then(() => api.agentRecord(agent.agent_id)).then((r) => live && setRec(r)).catch(() => live && setRec(null));
@@ -18943,9 +19191,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	var import_react$31, import_jsx_runtime$65;
+	var import_react$30, import_jsx_runtime$65;
 	var init_AgentCard = __esmMin((() => {
-		import_react$31 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$30 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
 		init_api();
 		init_AgentMoireAvatar();
@@ -18970,27 +19218,27 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 	}
 	function AgentDetailPanel({ agent, navigate }) {
-		const [profile, setProfile] = import_react$30.useState(null);
-		const [tab, setTab] = import_react$30.useState("profile");
-		const [sessions, setSessions] = import_react$30.useState([]);
-		const [posts, setPosts] = import_react$30.useState([]);
-		const agentRef = import_react$30.useRef(agent);
-		import_react$30.useEffect(() => {
+		const [profile, setProfile] = import_react$29.useState(null);
+		const [tab, setTab] = import_react$29.useState("profile");
+		const [sessions, setSessions] = import_react$29.useState([]);
+		const [posts, setPosts] = import_react$29.useState([]);
+		const agentRef = import_react$29.useRef(agent);
+		import_react$29.useEffect(() => {
 			agentRef.current = agent;
 		});
-		import_react$30.useEffect(() => {
+		import_react$29.useEffect(() => {
 			api.agentProfile(agent.agent_id).then(setProfile).catch(() => setProfile(agentRef.current));
 		}, [agent.agent_id]);
-		const [record, setRecord] = import_react$30.useState(null);
-		const [recordFor, setRecordFor] = import_react$30.useState(agent.agent_id);
+		const [record, setRecord] = import_react$29.useState(null);
+		const [recordFor, setRecordFor] = import_react$29.useState(agent.agent_id);
 		if (recordFor !== agent.agent_id) {
 			setRecordFor(agent.agent_id);
 			setRecord(null);
 		}
-		import_react$30.useEffect(() => {
+		import_react$29.useEffect(() => {
 			api.agentRecord(agent.agent_id).then(setRecord).catch(() => setRecord(null));
 		}, [agent.agent_id]);
-		import_react$30.useEffect(() => {
+		import_react$29.useEffect(() => {
 			if (tab === "games") api.agentSessions(agent.agent_id).then((r) => setSessions(r.sessions)).catch(() => {});
 			if (tab === "posts") api.agentPosts(agent.agent_id).then((r) => setPosts(r.posts)).catch(() => {});
 		}, [tab, agent.agent_id]);
@@ -19124,12 +19372,12 @@ var EmporiaHermesPlugin = (function(exports) {
 		] });
 	}
 	function AgentsView({ initialAgentId = null, navigate }) {
-		const [search, setSearch] = import_react$30.useState("");
+		const [search, setSearch] = import_react$29.useState("");
 		const [agentsData, agentsLoading, agentsErr] = useInterval(() => api.agents(search || void 0), 8e3, [search]);
-		const agents = import_react$30.useMemo(() => agentsData?.agents ?? [], [agentsData]);
-		const [selected, setSelected] = import_react$30.useState(null);
-		const [myProfile, setMyProfile] = import_react$30.useState(null);
-		const [deepLinkApplied, setDeepLinkApplied] = import_react$30.useState(null);
+		const agents = import_react$29.useMemo(() => agentsData?.agents ?? [], [agentsData]);
+		const [selected, setSelected] = import_react$29.useState(null);
+		const [myProfile, setMyProfile] = import_react$29.useState(null);
+		const [deepLinkApplied, setDeepLinkApplied] = import_react$29.useState(null);
 		if (initialAgentId && agents.length && deepLinkApplied !== initialAgentId) {
 			const found = agents.find((a) => a.agent_id === initialAgentId);
 			if (found) {
@@ -19138,7 +19386,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			}
 		}
 		if (!initialAgentId && agents.length > 0 && selected === null) setSelected(agents[0]);
-		(0, import_react$30.useEffect)(() => {
+		(0, import_react$29.useEffect)(() => {
 			const id = VIEWER_ID;
 			if (!id) return;
 			api.agentProfile(id).then((p) => {
@@ -19146,7 +19394,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				setSelected((cur) => cur ?? p);
 			}).catch(() => {});
 		}, []);
-		const [standings, setStandings] = import_react$30.useState(false);
+		const [standings, setStandings] = import_react$29.useState(false);
 		const pick = (a) => {
 			setStandings(false);
 			setSelected(a);
@@ -19260,7 +19508,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	var import_react$30, import_jsx_runtime$64;
+	var import_react$29, import_jsx_runtime$64;
 	var init_AgentsView = __esmMin((() => {
 		init_Badge$1();
 		init_Divider();
@@ -19269,7 +19517,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_SidebarLayout();
 		init_SimpleTable();
 		init_Text();
-		import_react$30 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$29 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_AgentMoireAvatar();
 		init_FlatRailItem();
@@ -19347,15 +19595,15 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	function ProfileView({ navigate } = {}) {
 		const { viewerId, relayOwner, relayId, relayUrl, requireChallenge, isRelayOperator, isSpectator, agentCount, activeSessionCount, relayVersion } = useRelayCtx();
-		const [loadedProfile, setProfile] = (0, import_react$29.useState)(null);
+		const [loadedProfile, setProfile] = (0, import_react$28.useState)(null);
 		const profile = viewerId ? loadedProfile : null;
-		const [mySessions, setMySessions] = (0, import_react$29.useState)([]);
-		const [mySettlements, setMySettlements] = (0, import_react$29.useState)([]);
-		(0, import_react$29.useEffect)(() => {
+		const [mySessions, setMySessions] = (0, import_react$28.useState)([]);
+		const [mySettlements, setMySettlements] = (0, import_react$28.useState)([]);
+		(0, import_react$28.useEffect)(() => {
 			if (!viewerId) return;
 			api.agentProfile(viewerId).then(setProfile).catch(() => setProfile(null));
 		}, [viewerId]);
-		(0, import_react$29.useEffect)(() => {
+		(0, import_react$28.useEffect)(() => {
 			if (!viewerId) return;
 			api.agentSessions(viewerId).then((d) => setMySessions(d.sessions.slice(0, 5))).catch(() => {});
 			api.agentSettlements(viewerId).then((d) => setMySettlements(d.settlements.slice(0, 8))).catch(() => {});
@@ -19557,7 +19805,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			})
 		] }) });
 	}
-	var import_react$29, import_jsx_runtime$63;
+	var import_react$28, import_jsx_runtime$63;
 	var init_ProfileView = __esmMin((() => {
 		init_Indent();
 		init_Text();
@@ -19572,18 +19820,18 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_AgentsView();
 		init_McpCommandHint();
 		init_chips();
-		import_react$29 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$28 = /* @__PURE__ */ __toESM(require_react(), 1);
 		import_jsx_runtime$63 = require_jsx_runtime();
 	}));
 	// src/relayContext.tsx
 	function RelayContextProvider({ children }) {
-		const [cfg, setCfg] = (0, import_react$28.useState)(null);
-		const [tick, setTick] = (0, import_react$28.useState)(0);
-		const [dashboardToken, setDashboardTokenState] = (0, import_react$28.useState)(() => sessionStorage.getItem(SESSION_TOKEN_KEY));
-		(0, import_react$28.useEffect)(() => {
+		const [cfg, setCfg] = (0, import_react$27.useState)(null);
+		const [tick, setTick] = (0, import_react$27.useState)(0);
+		const [dashboardToken, setDashboardTokenState] = (0, import_react$27.useState)(() => sessionStorage.getItem(SESSION_TOKEN_KEY));
+		(0, import_react$27.useEffect)(() => {
 			api.uiConfig().then(setCfg).catch(() => {});
 		}, [tick]);
-		(0, import_react$28.useEffect)(() => {
+		(0, import_react$27.useEffect)(() => {
 			const id = setInterval(() => setTick((n) => n + 1), 3e4);
 			return () => clearInterval(id);
 		}, []);
@@ -19595,8 +19843,8 @@ var EmporiaHermesPlugin = (function(exports) {
 		const viewerId = VIEWER_ID;
 		const relayOwner = cfg?.owner_agent_id ?? null;
 		const claimsOperator = !!(viewerId && relayOwner && viewerId === relayOwner);
-		const [verifiedOperator, setVerifiedOperator] = (0, import_react$28.useState)(null);
-		(0, import_react$28.useEffect)(() => {
+		const [verifiedOperator, setVerifiedOperator] = (0, import_react$27.useState)(null);
+		(0, import_react$27.useEffect)(() => {
 			if (!claimsOperator) return;
 			let live = true;
 			api.operatorWhoami().then((w) => {
@@ -19635,9 +19883,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			children
 		});
 	}
-	var import_react$28, import_jsx_runtime$62;
+	var import_react$27, import_jsx_runtime$62;
 	var init_relayContext = __esmMin((() => {
-		import_react$28 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$27 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_relayEnv();
 		init_relayCtx();
@@ -19719,79 +19967,6 @@ var EmporiaHermesPlugin = (function(exports) {
 	var import_jsx_runtime$60;
 	var init_GatedNote = __esmMin((() => {
 		import_jsx_runtime$60 = require_jsx_runtime();
-	}));
-	// src/keyTarget.ts
-	/** A key pressed on this element is text being typed, not a section shortcut. */
-	function isTypingTarget(t) {
-		if (typeof HTMLElement === "undefined" || !(t instanceof HTMLElement)) return false;
-		return t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || t.isContentEditable === true || t.getAttribute("contenteditable") === "true";
-	}
-	/**
-	* The element that has focus in the tree `inside` belongs to. Inside the Hermes
-	* tab the app lives in a *closed* shadow root: a window key listener sees the
-	* host element as the target, and composedPath() hides the root's insides from
-	* it. The app can still ask its own root node — it holds a node within it.
-	*/
-	function focusedWithin(inside) {
-		const root = inside?.getRootNode?.();
-		return root && "activeElement" in root ? root.activeElement : null;
-	}
-	/** Whether a key event is someone typing: at its target, or at the focus inside the app's own root. */
-	function isTyping(e, appNode) {
-		return isTypingTarget(e.target) || isTypingTarget(focusedWithin(appNode));
-	}
-	var init_keyTarget = __esmMin((() => {}));
-	// src/ui/overlayFocus.ts
-	function narrowList() {
-		try {
-			return typeof window !== "undefined" && window.matchMedia ? window.matchMedia(NARROW) : null;
-		} catch {
-			return null;
-		}
-	}
-	function isNarrow() {
-		return narrowList()?.matches ?? false;
-	}
-	function subscribeNarrow(fn) {
-		const mq = narrowList();
-		if (!mq) return () => {};
-		mq.addEventListener?.("change", fn);
-		return () => mq.removeEventListener?.("change", fn);
-	}
-	/** Whether the window is below the header-nav width, following resizes. */
-	function useNarrow() {
-		return (0, import_react$27.useSyncExternalStore)(subscribeNarrow, isNarrow, () => false);
-	}
-	/** The first focusable element in `root` that is drawn (else the first at all: jsdom draws nothing). */
-	function firstFocusable(root) {
-		const all = [...root.querySelectorAll(FOCUSABLE)];
-		return all.find((el) => el.getClientRects().length > 0) ?? all[0] ?? null;
-	}
-	/**
-	* While `open`, the focus is inside `container` (on `initial()`, else its first
-	* focusable element); when it closes, back on what had it before.
-	*/
-	function useOverlayFocus(open, container, initial) {
-		const pick = (0, import_react$27.useRef)(initial);
-		(0, import_react$27.useEffect)(() => {
-			pick.current = initial;
-		});
-		(0, import_react$27.useEffect)(() => {
-			const el = container.current;
-			if (!open || !el) return;
-			const before = focusedWithin(el);
-			(pick.current?.() ?? firstFocusable(el))?.focus();
-			return () => {
-				if (before instanceof HTMLElement && before.isConnected && !before.closest("[inert]")) before.focus();
-			};
-		}, [open, container]);
-	}
-	var import_react$27, NARROW, FOCUSABLE;
-	var init_overlayFocus = __esmMin((() => {
-		import_react$27 = /* @__PURE__ */ __toESM(require_react(), 1);
-		init_keyTarget();
-		NARROW = "(max-width: 900px)";
-		FOCUSABLE = "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex=\"-1\"])";
 	}));
 	// src/badges/badges.css
 	var init_badges$1 = __esmMin((() => {}));
@@ -23063,6 +23238,39 @@ var EmporiaHermesPlugin = (function(exports) {
 		return `${room.type === "public" && room.gate === "open" ? "open room" : "private room"}${room.encrypted ? ", encrypted" : ""}`;
 	}
 	var init_labsFormat = __esmMin((() => {}));
+	// src/relayFormat.ts
+	function relayHost(url) {
+		if (!url) return "";
+		let host;
+		try {
+			host = new URL(url).host || url;
+		} catch {
+			host = url.replace(/^https?:\/\//, "");
+		}
+		return host.slice(0, MAX_HOST_CHARS);
+	}
+	/** P228: when something happened, readable at a glance — the time alone for
+	*  today, the date as well for anything older (chat lines showed a bare clock
+	*  time, so yesterday's 21:04 read like today's). "" for a missing or bad value. */
+	function whenText(iso, now = /* @__PURE__ */ new Date()) {
+		if (!iso) return "";
+		const t = new Date(iso);
+		if (Number.isNaN(t.getTime())) return "";
+		const time = t.toLocaleTimeString([], {
+			hour: "2-digit",
+			minute: "2-digit"
+		});
+		if (t.toDateString() === now.toDateString()) return time;
+		return `${t.toLocaleDateString([], {
+			month: "short",
+			day: "numeric",
+			...t.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }
+		})}, ${time}`;
+	}
+	var MAX_HOST_CHARS;
+	var init_relayFormat = __esmMin((() => {
+		MAX_HOST_CHARS = 48;
+	}));
 	// src/ui/RowTable.tsx
 	/**
 	* A compact table whose rows may be opened. `onOpen` is optional: a table with no
@@ -36577,6 +36785,14 @@ var EmporiaHermesPlugin = (function(exports) {
 						})
 					]
 				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Text, {
+					className: "e-dim",
+					style: {
+						fontSize: "0.72rem",
+						margin: "4px 0 8px"
+					},
+					children: "Guardrails: with enforce, a message the firewall flags is refused; in any other mode it is let through."
+				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(RelayLog, {}),
 				stats?.bot_fingerprints && stats.bot_fingerprints.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(Text, {
 					className: "e-dim",
@@ -39373,10 +39589,12 @@ var EmporiaHermesPlugin = (function(exports) {
 		const [navOpen, setNavOpen] = (0, import_react.useState)(false);
 		const shellRef = (0, import_react.useRef)(null);
 		const drawerRef = (0, import_react.useRef)(null);
+		const mainRef = (0, import_react.useRef)(null);
 		const narrow = useNarrow();
+		const navLayout = useNavLayout(mainRef);
 		const chatIsOpen = (0, import_react.useSyncExternalStore)(subscribeChatOpen, chatOpen);
 		useOverlayFocus(navOpen, drawerRef);
-		if (navOpen && !narrow) setNavOpen(false);
+		if (navOpen && navLayout !== "phone") setNavOpen(false);
 		const mainCovered = navOpen || narrow && chatIsOpen;
 		const chatBeside = chatIsOpen && !narrow;
 		const [selectedSessionId, setSelectedSessionId] = (0, import_react.useState)(() => routeFromHash().sessionId);
@@ -39565,6 +39783,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			value: relayHealth,
 			children: /* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("div", {
 				ref: shellRef,
+				"data-nav": navLayout,
 				className: `e-app-shell e-dashboard-shell e-app-shell--header-nav${navOpen ? " is-nav-open" : ""}${chatBeside ? " has-chat" : ""}`,
 				children: [
 					/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("aside", {
@@ -39592,170 +39811,180 @@ var EmporiaHermesPlugin = (function(exports) {
 						onClick: () => setNavOpen(false)
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("main", {
+						ref: mainRef,
 						className: "e-app-main",
 						inert: mainCovered,
-						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("header", {
-								className: "e-app-top",
-								children: /* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("div", {
-									className: "e-app-top__row",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(SectionTabs, {
+							view,
+							onGoDest: goToDest,
+							variant: "rail",
+							badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0
+						}), /* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("div", {
+							className: "e-app-col",
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("header", {
+									className: "e-app-top",
+									children: /* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("div", {
+										className: "e-app-top__row",
+										children: [
+											/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(Text, {
+												className: "e-brand-title e-brand-title--header",
+												children: /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(BrandTitle, { replay: view })
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(SectionTabs, {
+												view,
+												onGoDest: goToDest,
+												variant: "horizontal",
+												short: navLayout === "medium",
+												badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("div", {
+												className: "e-app-top__actions",
+												children: [
+													/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(ThemeCompact, {
+														theme,
+														tint,
+														onTheme: setThemeAndApply,
+														onTint: setTintAndApply
+													}),
+													/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(ViewerSwitcher, {}),
+													/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(HeaderLinks, {
+														view,
+														onGo: goToView
+													}),
+													/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(ChatToggle, { compact: chatBeside }),
+													/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(RelayStrip, {
+														relayUrl: RELAY$1,
+														wsConnected,
+														health: relayHealth
+													})
+												]
+											})
+										]
+									})
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("div", {
+									className: "e-mobile-top",
 									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(Text, {
-											className: "e-brand-title e-brand-title--header",
-											children: /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(BrandTitle, { replay: view })
+										/* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("button", {
+											type: "button",
+											className: "e-menu-button",
+											onClick: () => setNavOpen(true),
+											"aria-expanded": navOpen,
+											"aria-label": "Open menu",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("span", {
+												"aria-hidden": true,
+												children: "☰"
+											}), inboxUnread > 0 && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("span", {
+												className: "e-nav-badge",
+												children: inboxUnread > 99 ? "99+" : inboxUnread
+											})]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(SectionTabs, {
-											view,
-											onGoDest: goToDest,
-											variant: "horizontal",
-											badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0
+										/* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("span", {
+											className: "e-mobile-top__where",
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(Text, {
+												className: "e-brand-title",
+												children: /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(BrandTitle, { replay: view })
+											}), currentNav && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("span", {
+												className: "e-mobile-top__section",
+												children: currentNav.label
+											})]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("div", {
-											className: "e-app-top__actions",
-											children: [
-												/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(ThemeCompact, {
-													theme,
-													tint,
-													onTheme: setThemeAndApply,
-													onTint: setTintAndApply
-												}),
-												/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(ViewerSwitcher, {}),
-												/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(HeaderLinks, {
-													view,
-													onGo: goToView
-												}),
-												/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(ChatToggle, { compact: chatBeside }),
-												/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(RelayStrip, {
-													relayUrl: RELAY$1,
-													wsConnected,
-													health: relayHealth
-												})
-											]
+										/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(ChatToggle, { compact: true }),
+										/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(RelayStrip, {
+											relayUrl: RELAY$1,
+											wsConnected,
+											health: relayHealth,
+											compact: true
 										})
 									]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(SubRow, {
+									view,
+									lens,
+									badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0,
+									onGoView: goToView,
+									onGoLens: goToLens
+								}),
+								!hermesNonAgent && VIEWER_ID && view !== "overview" ? /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(NowStrip, { navigate }) : null,
+								/* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("div", {
+									className: "e-view",
+									children: [
+										/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(NotAnAgentNote, {}),
+										!hermesNonAgent && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(PageHeading, {
+											item: currentNav,
+											agent: VIEWER_ID
+										}),
+										!hermesNonAgent && !shown && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(GatedNote, { view }),
+										!hermesNonAgent && shown && /* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)(ViewBoundary, {
+											name: currentNav?.label ?? "This section",
+											children: [
+												view === "overview" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(OverviewView, {
+													events,
+													seed,
+													wsConnected,
+													navigate,
+													onAfterNavigate: () => setNavOpen(false)
+												}),
+												view === "labs" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(LabsView, {}),
+												view === "games" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(ArenaView, {
+													initialSessionId: selectedSessionId,
+													initialStep: selectedStep,
+													lens,
+													refreshTrigger: sessionsRefresh,
+													onSessionShown
+												}),
+												view === "deals" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(GamesView, {
+													section: view,
+													initialSessionId: selectedSessionId,
+													initialGameModule: gameModuleType,
+													refreshTrigger: sessionsRefresh,
+													onSessionShown
+												}),
+												view === "rooms" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(RoomsView, {
+													initialRoomId: selectedRoomId,
+													navigate
+												}),
+												view === "agents" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(AgentsView, {
+													initialAgentId: selectedAgentId,
+													navigate
+												}),
+												view === "feed" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(FeedView, {}),
+												view === "agora" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(AgorasView, { navigate }),
+												view === "messages" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(MessagesView, {
+													navigate,
+													liveEvent: agentWs.last,
+													liveConnected: agentWs.connected
+												}),
+												view === "fees" && !isSpectator && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(FeesView, {
+													navigate,
+													isOperator: isRelayOperator
+												}),
+												view === "stats" && !isSpectator && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(StatsView, {}),
+												view === "profile" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(ProfileView, { navigate }),
+												view === "docs" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(DocsView, {}),
+												view === "settings" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(SettingsView, {}),
+												view === "relay" && isRelayOperator && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(RelayView, {}),
+												view === "operator" && isRelayOperator && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(OperatorView, {}),
+												view === "season" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)(import_jsx_runtime$1.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(GamifyView, { initialAgentId: selectedAgentId }), /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("div", {
+													className: "e-view-body",
+													children: /* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("details", {
+														className: "e-badge-fold",
+														children: [/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("summary", { children: "All badges and how each is earned" }), /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(BadgeGallery, { embedded: true })]
+													})
+												})] })
+											]
+										}, view),
+										/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(AnimaticHudFoot, { section: currentNav?.label.toLowerCase() ?? view })
+									]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(BottomBar, {
+									view,
+									onGoDest: goToDest,
+									badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0
 								})
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("div", {
-								className: "e-mobile-top",
-								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("button", {
-										type: "button",
-										className: "e-menu-button",
-										onClick: () => setNavOpen(true),
-										"aria-expanded": navOpen,
-										"aria-label": "Open menu",
-										children: [/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("span", {
-											"aria-hidden": true,
-											children: "☰"
-										}), inboxUnread > 0 && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("span", {
-											className: "e-nav-badge",
-											children: inboxUnread > 99 ? "99+" : inboxUnread
-										})]
-									}),
-									/* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("span", {
-										className: "e-mobile-top__where",
-										children: [/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(Text, {
-											className: "e-brand-title",
-											children: /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(BrandTitle, { replay: view })
-										}), currentNav && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("span", {
-											className: "e-mobile-top__section",
-											children: currentNav.label
-										})]
-									}),
-									/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(ChatToggle, { compact: true }),
-									/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(RelayStrip, {
-										relayUrl: RELAY$1,
-										wsConnected,
-										health: relayHealth,
-										compact: true
-									})
-								]
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(SubRow, {
-								view,
-								lens,
-								badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0,
-								onGoView: goToView,
-								onGoLens: goToLens
-							}),
-							!hermesNonAgent && VIEWER_ID && view !== "overview" ? /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(NowStrip, { navigate }) : null,
-							/* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("div", {
-								className: "e-view",
-								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(NotAnAgentNote, {}),
-									!hermesNonAgent && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(PageHeading, {
-										item: currentNav,
-										agent: VIEWER_ID
-									}),
-									!hermesNonAgent && !shown && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(GatedNote, { view }),
-									!hermesNonAgent && shown && /* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)(ViewBoundary, {
-										name: currentNav?.label ?? "This section",
-										children: [
-											view === "overview" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(OverviewView, {
-												events,
-												seed,
-												wsConnected,
-												navigate,
-												onAfterNavigate: () => setNavOpen(false)
-											}),
-											view === "labs" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(LabsView, {}),
-											view === "games" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(ArenaView, {
-												initialSessionId: selectedSessionId,
-												initialStep: selectedStep,
-												lens,
-												refreshTrigger: sessionsRefresh,
-												onSessionShown
-											}),
-											view === "deals" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(GamesView, {
-												section: view,
-												initialSessionId: selectedSessionId,
-												initialGameModule: gameModuleType,
-												refreshTrigger: sessionsRefresh,
-												onSessionShown
-											}),
-											view === "rooms" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(RoomsView, {
-												initialRoomId: selectedRoomId,
-												navigate
-											}),
-											view === "agents" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(AgentsView, {
-												initialAgentId: selectedAgentId,
-												navigate
-											}),
-											view === "feed" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(FeedView, {}),
-											view === "agora" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(AgorasView, { navigate }),
-											view === "messages" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(MessagesView, {
-												navigate,
-												liveEvent: agentWs.last,
-												liveConnected: agentWs.connected
-											}),
-											view === "fees" && !isSpectator && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(FeesView, {
-												navigate,
-												isOperator: isRelayOperator
-											}),
-											view === "stats" && !isSpectator && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(StatsView, {}),
-											view === "profile" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(ProfileView, { navigate }),
-											view === "docs" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(DocsView, {}),
-											view === "settings" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(SettingsView, {}),
-											view === "relay" && isRelayOperator && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(RelayView, {}),
-											view === "operator" && isRelayOperator && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(OperatorView, {}),
-											view === "season" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)(import_jsx_runtime$1.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(GamifyView, { initialAgentId: selectedAgentId }), /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("div", {
-												className: "e-view-body",
-												children: /* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("details", {
-													className: "e-badge-fold",
-													children: [/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("summary", { children: "All badges and how each is earned" }), /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(BadgeGallery, { embedded: true })]
-												})
-											})] })
-										]
-									}, view),
-									/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(AnimaticHudFoot, { section: currentNav?.label.toLowerCase() ?? view })
-								]
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(BottomBar, {
-								view,
-								onGoDest: goToDest,
-								badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0
-							})
-						]
+							]
+						})]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(AgentChatDrawer, {
 						onMenu: () => setNavOpen(true),
@@ -39792,6 +40021,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_navConfig();
 		init_GatedNote();
 		init_overlayFocus();
+		init_navLayout();
 		init_layout();
 		init_keyTarget();
 		init_eventNav();

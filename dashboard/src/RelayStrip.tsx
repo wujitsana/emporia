@@ -4,8 +4,8 @@ import type { ReactNode } from "react";
 import type { RelayHealth } from "./hooks";
 import { toWsUrl } from "./hooks";
 import { resolveRelayUrl } from "./relayEnv";
-import { relayHost } from "./relayFormat";
-import { MODE, socketsCarried } from "./transport";
+import { relayLabel } from "./relayLabel";
+import { socketsCarried } from "./transport";
 import { moneyChip } from "./moneyChip";
 
 // P42: internal to this file — see the note on trustBadge in AgentsView.
@@ -21,12 +21,14 @@ function relayEventsWsUrl(httpRelay?: string): string {
 function StatusChip({
   ok,
   label,
+  labelClass,
   title,
   loading,
   liveLoader,
 }: {
   ok: boolean;
   label: string;
+  labelClass?: string;
   title: string;
   loading?: boolean;
   /** When connected/ok, show the kit's BlockLoader instead of a static dot (events stream). */
@@ -56,14 +58,14 @@ function StatusChip({
   return (
     <span className={`e-status-chip${ok ? " is-ok" : ""}`} title={title}>
       {indicator}
-      <span className="e-status-chip__label">{label}</span>
+      <span className={`e-status-chip__label${labelClass ? ` ${labelClass}` : ""}`}>{label}</span>
     </span>
   );
 }
 
 /**
  * Relay connectivity in the header.
- * - REST / “API”: HTTP GET /health (relay up, version, guardrails).
+ * - REST / “API”: HTTP GET /health (relay up, its name, version).
  * - events: WebSocket /ws/events (live session pushes to the dashboard).
  */
 export function RelayStrip({
@@ -81,25 +83,24 @@ export function RelayStrip({
 }) {
   const online = health?.status === "ok";
   const resolved = relayUrl && relayUrl.length > 0 ? relayUrl : resolveRelayUrl();
-  // The Desktop page has no address of its own: it reaches the relay through Hermes.
-  const host = MODE === "desktop" ? "via Hermes" : relayHost(resolved);
+  // The relay's own name (its public host, or "local relay"), as it says it in /health. Never the
+  // address this page came from: in the Hermes tab that is the Hermes dashboard's.
+  const name = relayLabel(health);
   const wsEvents = relayEventsWsUrl(resolved);
 
-  const meta = [health?.version ? `v${health.version}` : null, health?.guardrails_mode]
-    .filter(Boolean)
-    .join(" · ");
+  const meta = health?.version ? `v${health.version}` : "";
 
   const restTitle = online
-    ? `Relay is up — its API answers (${resolved}/health)`
+    ? "The relay is up and answering"
     : health
-      ? `Relay HTTP unreachable (${resolved})`
+      ? "Can't reach the relay"
       : `Checking relay health…`;
 
   const wsTitle = wsConnected
-    ? `Live updates on: new games and deals appear as they happen (${wsEvents})`
+    ? "Live updates on: new games and deals appear as they happen"
     : !socketsCarried()
       ? "Live updates off: this Hermes profile runs the plugin in its plugin host, which carries no websockets yet. The dashboard refreshes on a timer."
-      : `Live updates off — the dashboard still refreshes on a timer (${wsEvents})`;
+      : "Live updates off: the dashboard still refreshes on a timer";
 
   // P6: what kind of money the amounts on screen are — test money on a testnet relay.
   const money = moneyChip(health);
@@ -112,28 +113,25 @@ export function RelayStrip({
       ) : null}
       <StatusChip
         ok={online}
-        label="relay"
-        title={restTitle}
+        label={name}
+        labelClass="e-status-chip__label--relay"
+        title={`${name}. ${restTitle}`}
         loading={health === null}
       />
-      <StatusChip ok={wsConnected} label="live" title={wsTitle} liveLoader={wsConnected} />
+      <StatusChip ok={wsConnected} label="live" labelClass="e-status-chip__label--live" title={wsTitle} liveLoader={wsConnected} />
     </span>
   );
 
   if (compact) {
     return (
       <span className="e-relay-status e-relay-status--compact">
-        <span className="e-relay-status__host e-capture-hide" title={resolved}>
-          {host}
-        </span>
         {chips}
       </span>
     );
   }
 
   return (
-    <span className="e-relay-status" title={resolved}>
-      <span className="e-relay-status__host e-capture-hide">{host}</span>
+    <span className="e-relay-status">
       {meta ? <span className="e-relay-status__meta">{meta}</span> : null}
       {chips}
       {showWs ? <Text className="e-faint">{wsEvents}</Text> : null}
