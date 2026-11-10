@@ -83,7 +83,7 @@ def test_no_approval_bypass_env_reaches_hermes_and_the_call_is_one_shot(tmp_path
     assert "HERMES_YOLO_MODE" not in seen["env"] and "HERMES_ACCEPT_HOOKS" not in seen["env"]
     assert seen["stdin"] == subprocess.DEVNULL and seen["timeout"] == bio_draft.TIMEOUT_S
     assert seen["argv"][0] == "/bin/hermes-fake" and seen["argv"][1] == "-p"
-    assert seen["argv"][3:10] == ["chat", "-Q", "--ignore-rules", "--toolsets", "none", "--max-turns", "1"]
+    assert seen["argv"][3:10] == ["chat", "-Q", "--ignore-rules", "--toolsets", "todo", "--max-turns", "1"]
     assert seen["argv"][10] == "-q", "no tools and one iteration"
 
 
