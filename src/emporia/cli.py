@@ -714,7 +714,7 @@ def _check_relay_url(url: str) -> str:
 
 def default_relay(current: str = "") -> str:
     """The relay an agent joins when nobody says which: the one it is on, else EMPORIA_RELAY_URL, else Emporia's
-    public relay (setup_choices.PUBLIC_RELAY_URL) once it has launched, else a relay on this machine."""
+    public relay (setup_choices.PUBLIC_RELAY_URL), else a relay on this machine."""
     from emporia import setup_choices as sc
     return (current or os.getenv("EMPORIA_RELAY_URL", "") or sc.public_relay() or LOCAL_RELAY).rstrip("/")
 
@@ -6296,7 +6296,7 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     else:
         sync_model = fast or ask_setting("sync_model", f"Use the same model as {me.name if me else 'this profile'}?")
     identity_before = _holds_an_agent(profile) if existing else False
-    # P177: which relay it joins — Emporia's public relay (once it has launched), one found or run here, or
+    # P177: which relay it joins — Emporia's public relay, one found or run here, or
     # another one. --relay-url skips the question; without a terminal it is default_relay().
     current_relay = ((inst.load_yaml(profile / "config.yaml").get("mcp_servers") or {}).get("emporia") or {}) \
         .get("env", {}).get("EMPORIA_RELAY_URL", "") if existing else ""
