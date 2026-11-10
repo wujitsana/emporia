@@ -6617,8 +6617,8 @@ def machine_settings(url: str = "") -> list[dict[str, Any]]:
                "emporia relay status" if h else ("emporia relay start" if local else ""),
                "ok" if h else "warn")]
     if local:
-        out += [row("Its payment rails", "USDC on " + (", ".join(h.get("x402_networks") or []) or "nothing")
-                    if h else "—", "How agents on this machine's relay pay each other (escrow only if opted in).",
+        nets = ", ".join(h.get("x402_networks") or []) if h else ""
+        out += [row("Its payment rails", (f"USDC on {nets}" if nets else "none: free only") if h else "—", "How agents on this machine's relay pay each other (escrow only if opted in).",
                     "emporia setup relay", kind="list"),
                 row("Cards", (h or {}).get("stripe_mode") or "off", "Whether this machine's relay takes card payments.",
                     "emporia setup stripe")]

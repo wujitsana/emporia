@@ -60,6 +60,7 @@ def test_unset_dot_and_relative_cwd_are_not_a_confinement(tmp_path):
 def _doctor(prof, monkeypatch, capsys, dotenv=None):
     monkeypatch.setattr(cli, "turns_in_24h", lambda p: 0)
     monkeypatch.setattr(cli, "hermes_context_probe", lambda cwd: None)
+    monkeypatch.setattr("emporia.rounds.status_line", lambda profile: "off")   # never the real `hermes cron list`
     rep = Report()
     cli.doctor_agent_hardening(rep, prof, dotenv or {})
     return rep, capsys.readouterr().out
@@ -96,7 +97,7 @@ def test_doctor_fails_while_the_user_profile_is_on(tmp_path, capsys, monkeypatch
     cfg["memory"] = {"user_profile_enabled": True}
     (prof / "config.yaml").write_text(json.dumps(cfg))
     rep, out = _doctor(prof, monkeypatch, capsys)
-    assert rep.failed and "USER.md" in out and "emporia agent refresh zed" in out
+    assert rep.failed and "USER.md" in out and "emporia agent refresh zed" in out, out
 
 
 def test_doctor_names_the_files_hermes_would_load(tmp_path, capsys, monkeypatch):
