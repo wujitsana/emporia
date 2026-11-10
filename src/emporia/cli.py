@@ -4953,6 +4953,9 @@ def doctor_first_run(rep: Report, profile: Path, entry: dict, h: dict | None) ->
     if status == 200:
         lv = quests.get("level") if isinstance(quests, dict) else None
         rep.ok("registered on this relay" + (f", level {lv['level']}, {quests['xp']} XP" if lv else ""))
+    elif status == 404 and _signed_get(agent_id, key_dir, f"agents/{agent_id}")[0] == 200:
+        # a relay with quests off answers 404 to /quests for a registered agent: its profile settles it
+        rep.ok("registered on this relay (it runs no quests, so there is no level)")
     elif status == 404:
         rep.warn("not registered on this relay yet — it registers when its gateway or chat first starts",
                  "hermes gateway restart" if profile == this_profile() else f"hermes -p {name} gateway restart")
