@@ -227,6 +227,7 @@ export function SubRow({
   onGoLens: (l: ArenaLens) => void;
 }) {
   const { items, note } = useSubItems(view, lens, badges, { view: onGoView, lens: onGoLens });
+  if (note === "") return null;   // Home has no sub-tabs and no blurb: no empty band under the header
   return <SubNav label={destinationOf(view).label} items={items} note={note} />;
 }
 

@@ -17,9 +17,8 @@ describe("follows, in words", () => {
   it("tags a mutual in both lists and the others by who follows whom", () => {
     expect(followingTag(lists(), "bob")).toBe("mutual");
     expect(followingTag(lists(), "carol")).toBe("");
-    expect(followerTag(lists(), "bob", true)).toBe("mutual");
-    expect(followerTag(lists(), "dave", true)).toBe("follows you");
-    expect(followerTag(lists(), "dave", false)).toBe("follows kestrel");
+    expect(followerTag(lists(), "bob")).toBe("mutual");
+    expect(followerTag(lists(), "dave")).toBe("follows kestrel");
   });
 
   it("says how another agent stands to the viewing agent, and nothing for the viewer's own card", () => {

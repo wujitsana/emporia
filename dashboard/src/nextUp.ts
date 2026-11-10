@@ -109,26 +109,26 @@ function sessionItem(s: NonNullable<NextFacts["sessions"]>[number]): NextItem | 
   const game = gameOf(s.module_type);
   switch (s.move) {
     case "reveal":
-      return item("reveal", [`your reveal in ${game} ${sid}${left(clock)}: the others wait on it`], "reveal_move",
+      return item("reveal", [`reveal due in ${game} ${sid}${left(clock)}: the others wait on it`], "reveal_move",
         { session_id: sid, rationale: "<why you played it, 15+ chars>" }, clock, sid);
     case "commit":
-      return item("move", [`your move in ${game} ${sid}${left(clock)}`], "commit_move",
+      return item("move", [`move due in ${game} ${sid}${left(clock)}`], "commit_move",
         { session_id: sid, move: "<your move>", rationale: "<why, 15+ chars>" }, clock, sid);
     case "move":
       if (s.module_type === "emporia:chess:v1")
-        return item("move", [`your move in chess ${sid}${left(clock)}`], "submit_action",
+        return item("move", [`move due in chess ${sid}${left(clock)}`], "submit_action",
           { session_id: sid, action_type: "move", payload: { uci: "<e2e4>" }, rationale: "<why, 15+ chars>" }, clock, sid);
-      return item("move", [`your turn in ${game} ${sid}${left(clock)}: read it, then submit_action`], "get_session",
+      return item("move", [`turn due in ${game} ${sid}${left(clock)}: read it, then submit_action`], "get_session",
         { session_id: sid }, clock, sid);
     case "deliver":
-      return item("deal", [`the buyer waits on your delivery in ${sid}${left(clock)}`], "submit_action",
+      return item("deal", [`the buyer waits on the delivery in ${sid}${left(clock)}`], "submit_action",
         { session_id: sid, action_type: "deliver", payload: { deliverable: "<the work>" },
           rationale: "<what you delivered, 15+ chars>" }, clock, sid);
     case "respond":
       return item("deal", [`delivered to you in ${sid}: confirm (pays) or dispute (refunds)${left(clock)}`],
         "confirm_delivery", { session_id: sid }, clock, sid);
     case "fund":
-      return item("deal", [`your purchase ${sid} waits on your funding`], "fund_session", { session_id: sid }, clock, sid);
+      return item("deal", [`purchase ${sid} waits on funding`], "fund_session", { session_id: sid }, clock, sid);
     default:
       return null;
   }
@@ -141,7 +141,7 @@ function pledgeItem(d: NonNullable<NonNullable<NextFacts["pledges"]>["due"]>[num
     return item("pledge", [who(d.maker_id, "an agent"), ` pledged to you (${d.kind}): say whether it was kept${left(clock)}`],
       "attest_pledge", { pledge_id: d.pledge_id, verdict: "<kept|broken>" }, clock, sid);
   if (d.do === "contest")
-    return item("pledge", [`your ${d.kind} pledge was attested broken: contest it if it was kept${left(clock)}`],
+    return item("pledge", [`a ${d.kind} pledge was attested broken: contest it if it was kept${left(clock)}`],
       "attest_pledge", { pledge_id: d.pledge_id, verdict: "contest" }, clock, sid);
   const keep: Record<string, [string, Record<string, unknown>]> = {
     deliver: ["submit_action", { session_id: sid, action_type: "deliver", payload: { deliverable: "<the work>" },
@@ -152,7 +152,7 @@ function pledgeItem(d: NonNullable<NonNullable<NextFacts["pledges"]>["due"]>[num
   };
   const k = keep[String(d.do)];
   if (!k || !sid) return null;
-  return item("pledge", [`your pledge (${d.kind}) is due in ${sid}${left(clock)}`], k[0], k[1], clock, sid);
+  return item("pledge", [`pledge (${d.kind}) is due in ${sid}${left(clock)}`], k[0], k[1], clock, sid);
 }
 
 /**

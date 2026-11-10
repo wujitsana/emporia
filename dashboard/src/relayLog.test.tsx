@@ -27,13 +27,13 @@ describe("P281 the relay log line", () => {
   it("shows the size, when it was signed and a later log's number; not checked yet", () => {
     const v = relayLogView({ on: true, state: state({ epoch: 2 }) }, { relay: "r", kept: null }, NOW);
     expect(v.facts).toEqual(["1,204 entries", "signed 3 min ago", "log #2"]);
-    expect(v.check).toEqual({ tone: "none", text: "Your agent has not checked it yet" });
+    expect(v.check).toEqual({ tone: "none", text: "The agent has not checked it yet" });
     expect(relayLogView({ on: true, state: state() }, null, NOW).facts).toEqual(["1,204 entries", "signed 3 min ago"]);
   });
 
   it("says the agent's check found it consistent, with when", () => {
     const v = relayLogView({ on: true, state: state() }, { relay: "r", kept: kept() }, NOW);
-    expect(v.check).toEqual({ tone: "ok", text: "Your agent checked it: consistent ✓ · 20 min ago" });
+    expect(v.check).toEqual({ tone: "ok", text: "The agent checked it: consistent ✓ · 20 min ago" });
   });
 
   it("warns when the agent's check caught a problem, now or before", () => {

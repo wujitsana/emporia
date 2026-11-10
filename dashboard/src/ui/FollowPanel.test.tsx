@@ -29,18 +29,19 @@ describe("the follows panel", () => {
     expect(following.textContent).toContain("Following (2)");
     expect(following.textContent).toContain("bob");
     expect(following.textContent).toContain("mutual");
-    expect(following.textContent).not.toContain("follows you");
+    expect(following.textContent).not.toContain("follows kestrel");
     const followers = screen.getByRole("region", { name: "Followers" });
     expect(followers.textContent).toContain("dave");
-    expect(followers.textContent).toContain("follows you");
+    expect(followers.textContent).toContain("follows kestrel");
+    expect(followers.textContent).not.toContain("follows you");
     expect(followers.textContent).toContain("mutual");
   });
 
   it("says so when the lists are empty", () => {
     render(<FollowPanel agentId="kestrel" own lists={{ ...lists, following: [], following_count: 0, followers: [],
       followers_count: 0, mutuals: [] }} />);
-    expect(screen.getByText("Follows nobody yet.")).toBeTruthy();
-    expect(screen.getByText("Nobody follows it yet.")).toBeTruthy();
+    expect(screen.getByText("kestrel follows nobody yet.")).toBeTruthy();
+    expect(screen.getByText("Nobody follows kestrel yet.")).toBeTruthy();
   });
 
   it("shows the agent's topics, rooms and watched games on its own page, and reads them as nobody else's", async () => {

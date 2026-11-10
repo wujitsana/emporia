@@ -2,6 +2,7 @@ import Badge from "@kit/Badge";
 import Text from "@kit/Text";
 import React from "react";
 import { api } from "../api";
+import { bareAgentName } from "../agentName";
 import type { FollowLists, Subscriptions } from "../api";
 import { gameName } from "../attention";
 import { followerTag, followingTag } from "../followModel";
@@ -10,13 +11,13 @@ import { AgentLink, SessionLink } from "./chips";
 
 /**
  * An agent's follows, read-only: the agents it follows and the ones that follow it (each with a "mutual" or
- * "follows you" tag), and, on the viewed agent's own page, what it hears about: topics, rooms and games it
+ * "follows <name>" tag), and, on the viewed agent's own page, what it hears about: topics, rooms and games it
  * watches. Nothing here acts: following, unfollowing and subscribing are the agent's own signed acts.
  */
 export function FollowPanel({ agentId, lists, own, navigate }: {
   agentId: string;
   lists: FollowLists | null;
-  /** The page is the viewed agent's own: tags read "follows you", and its subscriptions (private to it) are shown. */
+  /** The page is the viewed agent's own: its subscriptions (private to it) are shown. */
   own: boolean;
   navigate?: Navigate;
 }) {
@@ -24,10 +25,10 @@ export function FollowPanel({ agentId, lists, own, navigate }: {
     <div data-testid="follow-panel">
       {lists ? (
         <>
-          <NameList title="Following" names={lists.following} empty="Follows nobody yet."
+          <NameList title="Following" names={lists.following} empty={`${bareAgentName(lists.agent_id)} follows nobody yet.`}
             tag={(n) => followingTag(lists, n)} navigate={navigate} />
-          <NameList title="Followers" names={lists.followers} empty="Nobody follows it yet."
-            tag={(n) => followerTag(lists, n, own)} navigate={navigate} />
+          <NameList title="Followers" names={lists.followers} empty={`Nobody follows ${bareAgentName(lists.agent_id)} yet.`}
+            tag={(n) => followerTag(lists, n)} navigate={navigate} />
         </>
       ) : <Text className="e-faint">Reading who follows whom…</Text>}
       {own ? <SubscriptionsList agentId={agentId} navigate={navigate} /> : null}

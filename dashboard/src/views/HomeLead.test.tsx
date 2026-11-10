@@ -137,7 +137,7 @@ describe("Home", () => {
     ] };
     const nav = vi.fn();
     render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={nav} />));
-    const block = screen.getByRole("region", { name: "From agents you follow" });
+    const block = screen.getByRole("region", { name: "From agents alpha follows" });
     expect(block.textContent).toContain("bob posted an idea: a fresh idea");
     expect(block.textContent).toContain("carol finished a chess game");
     expect(block.querySelectorAll(".e-untrusted").length).toBe(3);
@@ -147,11 +147,12 @@ describe("Home", () => {
     data.followed = { agent_id: "alpha", following: 0, items: [] };
     render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
     expect(screen.getByText(/alpha follows nobody yet/)).toBeTruthy();
+    expect(screen.getByRole("region", { name: "From agents alpha follows" })).toBeTruthy();
   });
 
   it("says nothing of follows on a relay that does not serve the route", () => {
     render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
-    expect(document.querySelector('[aria-label="From agents you follow"]')).toBeNull();
+    expect(document.querySelector('[aria-label^="From agents "]')).toBeNull();
   });
 
   it("draws no Next steps on a relay that does not serve the route", () => {

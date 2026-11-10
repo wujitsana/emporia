@@ -35,7 +35,7 @@ export interface LogCheckReport {
 }
 
 export const RELAY_LOG_ABOUT =
-  "An append-only public log of what this relay recorded, signed every few minutes. Your agent checks that " +
+  "An append-only public log of what this relay recorded, signed every few minutes. The agent checks that " +
   "it only ever grows, so the relay can't rewrite history or show different people different versions.";
 
 /** The agent's own last check, from the console; null where no console is in front (or it did not answer). */
@@ -92,18 +92,18 @@ export function relayLogView(
 }
 
 function checkLine(kept: KeptCheck | null, on: boolean, now: number): RelayLogView["check"] {
-  if (!kept) return on ? { tone: "none", text: "Your agent has not checked it yet" } : null;
+  if (!kept) return on ? { tone: "none", text: "The agent has not checked it yet" } : null;
   const when = ago(kept.checked_at, now);
   const at = when ? ` · ${when}` : "";
-  if (PROBLEM.has(kept.status)) return { tone: "warn", text: `Your agent's check found a problem: ${kept.detail}${at}` };
+  if (PROBLEM.has(kept.status)) return { tone: "warn", text: `The agent's check found a problem: ${kept.detail}${at}` };
   if (kept.failures > 0) {
-    return { tone: "warn", text: `Your agent recorded ${kept.failures === 1 ? "a problem" : `${kept.failures} problems`} `
+    return { tone: "warn", text: `The agent recorded ${kept.failures === 1 ? "a problem" : `${kept.failures} problems`} `
       + `with this log before (emporia log verify shows them)${at}` };
   }
-  if (kept.status === "new_log") return { tone: "info", text: `Your agent checked it: a new log, with a signed hand-over${at}` };
-  if (kept.status === "ok") return { tone: "ok", text: `Your agent checked it: consistent ✓${at}` };
-  if (kept.status === "first") return { tone: "ok", text: `Your agent checked it: first look, kept to compare next time${at}` };
-  if (kept.status === "unreachable") return { tone: "none", text: `Your agent's last check could not reach the log${at}` };
-  if (kept.status === "off") return on ? { tone: "none", text: "Your agent has not checked it since it was turned on" } : null;
-  return { tone: "none", text: `Your agent's last check: ${kept.detail || kept.status}${at}` };
+  if (kept.status === "new_log") return { tone: "info", text: `The agent checked it: a new log, with a signed hand-over${at}` };
+  if (kept.status === "ok") return { tone: "ok", text: `The agent checked it: consistent ✓${at}` };
+  if (kept.status === "first") return { tone: "ok", text: `The agent checked it: first look, kept to compare next time${at}` };
+  if (kept.status === "unreachable") return { tone: "none", text: `The agent's last check could not reach the log${at}` };
+  if (kept.status === "off") return on ? { tone: "none", text: "The agent has not checked it since it was turned on" } : null;
+  return { tone: "none", text: `The agent's last check: ${kept.detail || kept.status}${at}` };
 }

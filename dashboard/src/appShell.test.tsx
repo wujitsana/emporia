@@ -95,12 +95,19 @@ describe("a route to a section this viewer may not see", () => {
 
   it("keeps the sub-row the same on every place, so the page never jumps under it", async () => {
     narrowWindow(false);
-    for (const h of ["#/home", "#/arena", "#/agora/feed", "#/labs/season", "#/help"]) {
+    for (const h of ["#/arena", "#/agora/feed", "#/labs/season", "#/help"]) {
       await renderAt(h);
       expect(document.querySelectorAll(".e-subnav")).toHaveLength(1);
       expect(document.querySelector(".e-subnav__dest")).toBeNull();
       cleanup();
     }
+  });
+
+  it("draws no empty band under the header on Home, which has no sub-tabs", async () => {
+    narrowWindow(false);
+    await renderAt("#/home");
+    expect(document.querySelector(".e-subnav-wrap")).toBeNull();
+    expect(document.querySelector(".e-subnav")).toBeNull();
   });
 
   it("opens a bookmark from the earlier layout where its content lives now", async () => {

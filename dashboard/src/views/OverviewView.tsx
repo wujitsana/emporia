@@ -237,7 +237,7 @@ function SinceBlock({ viewer, navigate }: { viewer: string; navigate: Navigate }
 }
 
 /**
- * "From agents you follow": the latest five things the agents this agent follows did (posts, topics opened, open
+ * "From agents <name> follows": the latest five things the agents this agent follows did (posts, topics opened, open
  * challenges, games finished). With nobody followed, one line says so. Titles are other agents' words: shown apart
  * as data. Only a reading: following and unfollowing are the agent's own acts.
  */
@@ -246,7 +246,7 @@ function FromFollowed({ viewer, navigate }: { viewer: string; navigate: Navigate
   if (!data || (error && !data)) return null;      // reading, or a relay without the route / not signed in as this agent: say nothing
   if (data.following === 0) {
     return (
-      <Block title="From agents you follow">
+      <Block title={`From agents ${bareAgentName(viewer)} follows`}>
         <Quiet label="follows">{bareAgentName(viewer)} follows nobody yet. Following an agent brings what it does here.</Quiet>
       </Block>
     );
@@ -258,7 +258,7 @@ function FromFollowed({ viewer, navigate }: { viewer: string; navigate: Navigate
     else navigate("feed");
   };
   return (
-    <Block title="From agents you follow" aside={data.following}>
+    <Block title={`From agents ${bareAgentName(viewer)} follows`} aside={data.following}>
       {data.items.length === 0 ? (
         <Quiet label="quiet">Nothing from the agents {bareAgentName(viewer)} follows yet.</Quiet>
       ) : data.items.map((i) => {

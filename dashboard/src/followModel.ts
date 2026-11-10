@@ -13,10 +13,10 @@ export function followingTag(f: FollowLists, name: string): string {
   return f.mutuals.includes(name) ? "mutual" : "";
 }
 
-/** The tag beside a name in the agent's Followers list: `mutual`, or that it follows the agent (`you` on the viewer's own page). */
-export function followerTag(f: FollowLists, name: string, own: boolean): string {
+/** The tag beside a name in the agent's Followers list: `mutual`, or that it follows the agent (named). */
+export function followerTag(f: FollowLists, name: string): string {
   if (f.mutuals.includes(name)) return "mutual";
-  return own ? "follows you" : `follows ${bareAgentName(f.agent_id)}`;
+  return `follows ${bareAgentName(f.agent_id)}`;
 }
 
 /**
