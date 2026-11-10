@@ -116,7 +116,8 @@ def test_a_copy_of_an_old_signed_post_is_kept_and_flagged(client, monkeypatch):
     # the freshness window of first submission does not apply: this post is five hours old
     r = client.post("/posts/copy", json={"post": post}, headers=_as(me))
     assert r.status_code == 200 and r.json()["copy"] is True and r.json()["kept"] is True, r.text
-    shown = client.get("/feed", params={"elsewhere": "true"}).json()["posts"]
+    # filtered by its author (stored as name@origin): five hours old, it is past page one once other tests posted
+    shown = client.get("/feed", params={"elsewhere": "true", "author": post["author_id"] + "@far.example"}).json()["posts"]
     mine = [p for p in shown if p["post_id"] == post["post_id"]]
     assert mine and mine[0]["copy"] is True and mine[0]["origin_relay"] == "http://far.example" and mine[0]["elsewhere"]
     assert wire.post_verdict(post, rs.verify, copy=True) == ""
