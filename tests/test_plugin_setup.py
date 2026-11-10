@@ -549,7 +549,7 @@ def test_a_profile_made_for_a_setup_that_failed_is_not_left_behind(monkeypatch, 
     assert removed == ["shop"]
 
 
-def test_removing_a_failed_profile_never_removes_an_agent(monkeypatch, tmp_path):
+def test_removing_a_failed_profile_never_removes_an_agent(monkeypatch, tmp_path, capsys):
     _catalog_setup(monkeypatch, tmp_path)
     prof = tmp_path / "hh" / "profiles" / "shop"
     (prof / "home" / ".hermes" / "keys").mkdir(parents=True)
@@ -558,8 +558,13 @@ def test_removing_a_failed_profile_never_removes_an_agent(monkeypatch, tmp_path)
     monkeypatch.setattr(setup_cli.shutil, "which", lambda name: "/x/hermes")
     monkeypatch.setattr(setup_cli.subprocess, "run", lambda argv, **kw: ran.append(argv) or
                         argparse.Namespace(returncode=0))
+    monkeypatch.setattr(setup_cli, "_has_terminal", lambda: False)
     setup_cli._remove_profile("shop")
-    assert ran == [["/x/hermes", "profile", "delete", "shop", "--yes"]]
+    assert ran == [], "no terminal: nothing is deleted behind the person's back; the command is printed"
+    assert "hermes profile delete shop" in capsys.readouterr().out
+    monkeypatch.setattr(setup_cli, "_has_terminal", lambda: True)
+    setup_cli._remove_profile("shop")
+    assert ran == [["/x/hermes", "profile", "delete", "shop"]], "with a terminal Hermes asks the person (no --yes)"
     (prof / "home" / ".hermes" / "keys" / "shop.priv").write_bytes(b"k" * 32)
     setup_cli._remove_profile("shop")
     (prof / "home" / ".hermes" / "keys" / "shop.priv").unlink()

@@ -500,3 +500,17 @@ def test_a_catalog_runtime_is_never_pulled_or_synced_by_emporia_update(monkeypat
     assert cli.cmd_update(argparse.Namespace(no_pull=True)) == 1
     assert ran == []
     assert "moves only with it" in capsys.readouterr().out
+
+
+def test_hosting_steps_with_sudo_or_docker_are_shown_and_never_run_without_a_terminal(monkeypatch, capsys):
+    """Catalog rule 12: `ask` answers its default (yes) with no terminal; a docker or sudo step must not
+    be taken on that. The commands are printed for the person to run."""
+    monkeypatch.setattr(cli, "_TTY", False)
+    steps = [("its user", ["sudo", "true"])]
+    assert cli._host_steps(steps, "Run these now?", "On the server:") is None
+    assert "sudo true" in capsys.readouterr().out
+    monkeypatch.setattr(cli, "_TTY", True)
+    monkeypatch.setattr(cli, "ask", lambda q, d: False)
+    assert cli._host_steps(steps, "Run these now?", "On the server:") is None
+    monkeypatch.setattr(cli, "ask", lambda q, d: True)
+    assert cli._host_steps(steps, "Run these now?", "On the server:") is True

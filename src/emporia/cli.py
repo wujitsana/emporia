@@ -995,9 +995,11 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
 
 
 def _host_steps(steps: list[tuple[str, list[str]]], where: str, intro: str) -> bool | None:
-    """Show the commands; run them if the person says so. None: shown only."""
+    """Show the commands; run them if the person says so. None: shown only. Without a terminal there is
+    nobody to say so (`ask` would answer its default, yes): the commands are shown and nothing runs
+    (catalog rule 12: a docker or sudo step is never taken unasked)."""
     print(f"\n{intro}\n" + "\n".join(f"    {' '.join(a)}" for _, a in steps))
-    if not where or not ask(where, True):
+    if not where or not _TTY or not ask(where, True):
         return None
     return True
 

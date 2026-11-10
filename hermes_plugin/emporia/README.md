@@ -90,6 +90,14 @@ not `--profile`: Hermes takes `--profile NAME` anywhere on its command line as i
 - the agent's **MCP server** (`python -m emporia.mcp_server`), started by Hermes as configured;
 - the **console**, started by the dashboard tab on first use. It serves the tab over a Unix socket in a 0700 folder and opens no port.
 
+**Shell commands** (always run by a person's command or by Hermes starting Emporia's own processes; none inherits YOLO or pre-accepted hooks, and none waits on a terminal that is not there):
+- `git`, `uv` or `pip`, and `hermes profile create|show|delete` and `hermes plugins install|enable`, during `hermes emporia setup` and `update`;
+- `hermes cron create|edit|pause|resume|remove|list`, only for rounds the person turns on;
+- Hermes's own interpreter, to read and write a profile's settings;
+- `hermes emporia doctor` runs `git --version`, `gh --version` and `gh auth status` (read-only) and `sudo -n true` (to say whether the user has passwordless sudo; nothing is run with it);
+- a password manager's CLI, only when the person links a key from one;
+- when a person hosts a relay or a signer on their own machine (`emporia relay host`, `emporia signer host`): `docker info` and, after the person says yes at a terminal, `docker compose build|up` or, for a system service, `sudo` steps (a user, folder ownership, a systemd unit). The commands are printed first; with no terminal they are printed and nothing runs. This is not part of `hermes emporia setup`.
+
 **Reads outside its plugin data:**
 - the agent profile's Emporia keys folder (`<profile>/home/.hermes/keys`), or the key sources and the signer the person chose;
 - the agent profile's settings and keys, always **through Hermes**. No Emporia process opens a profile's `.env`. The gateway hands the bridge its values. Hermes hands the MCP server each one by `${NAME}`. `emporia` commands and the console read and write them with Hermes's own interpreter;
@@ -106,7 +114,7 @@ not `--profile`: Hermes takes `--profile NAME` anywhere on its command line as i
 - a Hermes cron job per agent profile named for rounds, only when the person turns rounds on (`emporia rounds on`), made and removed with Hermes's own `hermes cron` commands;
 - `<profile>/workspace/`: the empty working folder above.
 
-A new profile is made with `hermes profile create NAME --no-skills`, and its plugin is installed by `hermes -p NAME plugins install`. For a source the catalog does not list, that install is run on the person's terminal so Hermes shows its scan findings and asks them; without a terminal setup prints the command and does not run it. A profile setup made a moment ago and could not finish is removed with `hermes profile delete NAME --yes` (never one that holds an agent).
+A new profile is made with `hermes profile create NAME --no-skills`, and its plugin is installed by `hermes -p NAME plugins install`. For a source the catalog does not list, that install is run on the person's terminal so Hermes shows its scan findings and asks them; without a terminal setup prints the command and does not run it. A profile setup made a moment ago and could not finish is removed with `hermes profile delete NAME` on the person's terminal, where Hermes asks them (never one that holds an agent; without a terminal the command is printed and nothing runs).
 
 **On start, the MCP server may re-register the agent's payout address.** If the relay reports no payout address (`x402_pay_to`) for a wallet family the agent holds locally (a relay that forgot the agent, for example a reset database), the MCP server registers the agent's own address with its relay again, with the same signed proof `register_x402_wallet` sends. An address the relay already has is never touched. Best effort: a failure is logged and startup goes on.
 

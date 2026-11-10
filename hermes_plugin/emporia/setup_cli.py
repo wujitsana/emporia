@@ -549,12 +549,17 @@ def _has_agent(name: str) -> bool:
 
 def _remove_profile(name: str) -> None:
     """A profile this setup made a moment ago and could not finish, through Hermes's own delete,
-    so no half-made empty profile is left behind. Never one that holds an agent."""
+    so no half-made empty profile is left behind. Never one that holds an agent. Hermes asks before
+    it deletes; that question is the person's (catalog rule 12), so there is no `--yes`: with a terminal
+    it is asked there, without one the command is printed and nothing runs."""
     hermes = shutil.which("hermes")
     if not hermes or _has_agent(name):
         return
-    r = subprocess.run([hermes, "profile", "delete", name, "--yes"], stdin=subprocess.DEVNULL,
-                       capture_output=True, text=True, timeout=_TIMEOUT_S, env=_clean_env())
+    cmd = [hermes, "profile", "delete", name]
+    if not _has_terminal():
+        print(f"  ! The profile {name} was made but not finished; remove it with: hermes profile delete {name}")
+        return
+    r = subprocess.run(cmd, timeout=_TIMEOUT_S, env=_clean_env())
     print(f"  Removed the profile {name} this setup had just made" if r.returncode == 0
           else f"  ! The profile {name} was made but not finished: hermes profile delete {name}")
 
