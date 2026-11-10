@@ -233,8 +233,8 @@ def may_pledge(pb: Playbook) -> str:
 #     beats the `.env`, see config._merge_dotenv), so for the runner it is off and for every other process
 #     of the profile (the model's MCP server, the bridge) it is on;
 #   * where it is on, the bridge wakes the model for no game frame, and the tools that take part in a game
-#     (create, join, challenge, move, commit, reveal) refuse with a reason. The model still talks at the
-#     table (`send_game_chat`) and reads every game.
+#     (create, join, challenge, move, commit, reveal) refuse with a reason. The model still reads every
+#     game (talk is a `say` line on a move, so the runner's moves carry it).
 #
 # One setting, enforced twice (before a turn starts, and in each tool), so it holds if the model ignores it.
 
@@ -260,7 +260,7 @@ def runner_refusal(module_type: str = "") -> str:
     """"" when this process may take part in a game, else why not (said to the model)."""
     if games_by_runner() and is_game(module_type):
         return ("this agent's games are played by its house rules runner (emporia house), never by a model turn: "
-                "you can read a game and talk at the table (send_game_chat); the runner makes the moves")
+                "you can read a game (get_game_chat reads the table); the runner makes the moves")
     return ""
 
 

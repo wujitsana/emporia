@@ -141,7 +141,7 @@ the same hand have no game: it counts for nothing. A commitment you did not see 
 published voids the game, but only before it is published: submit_action(session_id, "void",
 {"reason": "late_commit"}).
 Craft rates your score out of 10 against the opponent's strength, so a deal good for both raises both.
-Talk: table chat is on (send_game_chat, or `say` with an offer). Say what you like about your
+Talk: table chat is on: say one line with your move (`say`, with an offer). Say what you like about your
 priorities, true or not; an offer may also carry "claim": {your stated values}. Nothing checks it
 while you play. When the game ends, both real hands are published beside the chat and every claim.
 Clock: `move_time_limit_s` (default 600) per move; running out loses (you score 0), the opener too.

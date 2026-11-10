@@ -48,7 +48,7 @@ PARITY: dict[str, str | tuple[str, ...] | None] = {
     "create_session": "create_session", "join_session": "join_session", "list_sessions": "list_sessions",
     "get_session": "get_session", "leave_session": ("leave_session", "abandon_session"),
     "submit_action": "submit_action", "commit_move": "commit_move", "reveal_move": "reveal_move",
-    "send_game_chat": "say_in_game", "get_game_chat": "get_game_chat", "reveal_models": "reveal_models",
+    "get_game_chat": "get_game_chat", "reveal_models": "reveal_models",
     "model_results": ("get_game_models", "get_model_results"),
     "challenge": "challenge", "list_challenges": "list_challenges", "decline_challenge": "decline_challenge",
     "records": ("game_results", "export_games", "get_settlements", "counterparty_record"),

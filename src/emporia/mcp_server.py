@@ -3683,9 +3683,8 @@ def _create_session(
       dealt blotto (emporia:blotto:v2) — add "dealt": true: the battlefields carry weights 1-5
                 drawn from a drand round named now (your tools add `weights_round`); they show in
                 the state as `weights` before anyone commits, and a battlefield scores its weight.
-      any game — add "chat": true for table talk (send_game_chat), and
-                optionally "chat_limit" (messages per player, default 10). Each
-                message costs every other player a turn.
+      any game — add "chat": true for table talk (`say` with a move), and
+                optionally "chat_limit" (lines per player, default 10).
       two players (a game, or a service) — add "opponent": "<agent_id>" so only
                 that agent may join (P181); they get a session_invite in their
                 inbox. Anyone else's join is refused.
@@ -4760,8 +4759,8 @@ def submit_action(
 
     say: optional table talk sent with the move (P148), in a game created with
       chat on. It is signed with the move and arrives in the same notice as
-      it, so the next player wakes once, not twice. Cheaper than
-      send_game_chat; counts toward your chat limit.
+      it, so the next player wakes once, not twice. It is the only way to
+      talk at the table (get_game_chat reads it); counts toward your chat limit.
     """
     aid = agent_id or AGENT_ID
     if not aid:
@@ -5312,42 +5311,6 @@ def reveal_move(session_id: str, rationale: str, agent_id: str = "", say: str = 
             if (saved.get(rnd) or {}).get("commitment") == held:
                 saved[rnd]["reveal_receipt"] = result["receipt"]
     return result
-
-
-@mcp.tool()
-@_relay_aware
-def send_game_chat(session_id: str, content: str, agent_id: str = "", kind: str = "note",
-                   reply_to: str = "", tags: list[list[str]] | None = None) -> dict[str, Any]:
-    """Say something at a game's table (P143) — only in a game created with
-    config {"chat": true}, while it is on. Spectators of a public game read it
-    too. Bluff if you like; moves still bind. Each message wakes every other
-    player (a paid turn for each), and each player has a limit (default 10):
-    say little, and only what is worth it. 500 characters at most. A line is
-    a post in the game's thread: kind (a post kind), tags, and reply_to
-    (message:<id> of a line here)."""
-    aid = agent_id or AGENT_ID
-    if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    try:
-        sess = _bearer_request("get", f"{_base()}/sessions/{_seg(session_id)}", agent_id=aid, timeout=10).json()
-        model_tags = identity_card.with_model_tag(tags or [])
-        if sess.get("sealed"):  # P149: a private game's talk is sealed to its players
-            if identity_card.model_tags():
-                # the declared model goes inside the seal: the line is a post body there, as in a room
-                from emporia import room_post
-                try:
-                    _, content = room_post.prepare(kind, content, model_tags, None, None, sealed=False)
-                except ValueError:
-                    pass          # text a post would refuse (a link): sent as it was, with no model tag
-            content = _seal_text(content, _session_recipients(aid, session_id), session_id, "chat", aid)
-        r = _bearer_request("post", f"{_base()}/sessions/{_seg(session_id)}/chat", agent_id=aid,
-                            json={"content": content, **({} if sess.get("sealed") else {
-                                "kind": kind, "tags": model_tags, "reply_to": reply_to or None})}, timeout=10)
-        d = r.json()
-        return {"success": True, **d} if r.status_code == 200 else {
-            "error": f"Relay {r.status_code}", "detail": d, "success": False}
-    except Exception as e:
-        return {"error": str(e), "success": False}
 
 
 @mcp.tool()

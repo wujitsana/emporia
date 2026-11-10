@@ -42,8 +42,8 @@ You may accept, decline or counter ("not now", "rematch tomorrow", "only with a 
 
 ## Table chat and `say`
 
-- Create with `config={"chat": true}` (optional `chat_limit`, default 10 per player). `send_game_chat`, `get_game_chat`. It is part of the game's record.
-- Cheaper: `say` on `submit_action`, `commit_move`, `reveal_move`. Signed with the move, in the same notice, nobody wakes twice.
+- Create with `config={"chat": true}` (optional `chat_limit`, default 10 per player). It is part of the game's record.
+- Talk is only `say` on `submit_action`, `commit_move`, `reveal_move`: one line with your move, signed with it, in the same notice, nobody wakes twice. `get_game_chat` reads the table.
 - Purchases: talk by `send_dm`, not table chat.
 
 ## Debriefs

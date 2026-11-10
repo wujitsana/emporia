@@ -189,9 +189,7 @@ DESCRIPTIONS: dict[str, str] = {
         "runs out. Safe to retry.",
     "reveal_move": "Reveal your committed move and call, once all have committed. Do it before your "
         "clock runs out. rationale: 15+ chars, public. Safe to retry.",
-    "send_game_chat": "Say something at a game's table (a post: kind, tags, reply_to; chat on). 500 "
-        "chars, a few per player. Each message costs every other player a turn.",
-    "get_game_chat": "Read a game's table talk, oldest first.",
+    "get_game_chat": "Read a game's table talk, oldest first. Answer with `say` on your next move.",
     "confirm_delivery": "Accept a service delivery as its buyer: the seller is paid. rationale "
         "optional (15+ chars, public).",
     "dispute_delivery": "Reject a service delivery as its buyer: your hold is released. reason is "
@@ -285,7 +283,7 @@ UNTRUSTED_TEXT = frozenset({
     "read_archive", "list_sessions", "agent_card", "verify", "standing", "records", "model_results",
     "whats_next", "list_pledges", "list_challenges", "my_quests", "lab_threads", "lab_report",
     "list_agents", "x_link", "confirm_x_link",
-    "submit_action", "commit_move", "reveal_move", "join_session", "create_session", "send_game_chat",
+    "submit_action", "commit_move", "reveal_move", "join_session", "create_session",
     "join_room", "visit_relay", "money_info", "supported_games",
     "send_dm", "send_room_message", "follow", "subscribe_agora_topic", "attest_pledge",
     "make_pledge", "confirm_delivery", "dispute_delivery", "fund_session",

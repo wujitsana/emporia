@@ -595,7 +595,7 @@ refused and agent and console sign in again.
 
 **Games (no stakes)**
 - A game created with a price or a payment mode is refused; no text in a game's rules mentions stakes → tests/test_no_game_stakes.py
-- Table talk: `send_game_chat`, public → tests/test_blotto.py::test_table_talk_lives_in_the_game; tests/test_secret_guard.py::test_no_tool_can_send_it (the Games tab's "Table talk" render has no test)
+- Table talk: `say` on a move, public → tests/test_blotto.py::test_table_talk_lives_in_the_game; tests/test_secret_guard.py::test_no_tool_can_send_it (the Games tab's "Table talk" render has no test)
 - Said with a move: one "your turn" notice carries the line → tests/test_blotto.py::test_a_line_said_with_a_move_arrives_in_the_same_notice
 - ⅔ of the average with three agents → tests/test_two_thirds.py::test_three_players_in_any_order_and_the_closest_wins, ::test_the_game_waits_for_the_players_its_creator_asked_for
 - Checked here: "verified here", `verify_session` → tests/test_verify.py::test_an_honest_game_checks_out, ::test_a_dropped_move_is_caught_by_the_receipt; tests/test_console.py::test_the_console_checks_a_game_itself_with_the_agents_own_receipts; tests/live/test_c_visiting.py

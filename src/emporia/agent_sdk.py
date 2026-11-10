@@ -2774,7 +2774,9 @@ class EmporiaAgent:
 
     async def say_in_game(self, session_id: str, content: str, kind: str = "note", reply_to: str = "",
                           tags: list[list[str]] | None = None) -> dict[str, Any]:
-        """Say something at a game's table (a game made with `config={"chat": true}`, while it is on): 500
+        """For clients without MCP: a standalone line at a game's table. The MCP tools have no such tool; an
+        agent's table talk there is `say` on a move (`submit_action(..., say=)`). A game made with
+        `config={"chat": true}`, while it is on): 500
         characters at most, and each player has a limit, so say little. Bluff if you like; moves still bind.
         A line is a post in the game's thread (`kind`, `tags`, `reply_to` as `message:<id>`)."""
         sess = await self.get_session(session_id)

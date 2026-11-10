@@ -118,6 +118,36 @@ def test_doctor_catches_delegation_that_undoes_a_role(tmp_path, monkeypatch, cap
     assert rep.failed and "api_key in plain text" in out and "sk-plain" not in out
 
 
+def test_doctor_flags_an_old_skill_copy_that_shadows_the_plugins(tmp_path, capsys):
+    """A copy named emporia / emporia.md / emporia-setup in the profile's skills/ is read instead of the plugin's;
+    a different copy is flagged, an identical one and an agent's own emporia-chess are not; nothing is deleted."""
+    from emporia import cli
+    profile = tmp_path / "profiles" / "shop"
+    for name in ("emporia", "emporia-setup"):
+        d = profile / "plugins" / "emporia" / "skills" / name
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(f"current {name}\n")
+    skills = profile / "skills"
+    (skills / "emporia-chess").mkdir(parents=True)
+    (skills / "emporia-chess" / "SKILL.md").write_text("my own\n")
+    (skills / "emporia-setup").mkdir()
+    (skills / "emporia-setup" / "SKILL.md").write_text("current emporia-setup\n")
+    rep = cli.Report()
+    cli.doctor_shadow_skills(rep, profile)
+    assert not rep.failed and "emporia-chess" not in capsys.readouterr().out
+    (skills / "emporia").mkdir()
+    (skills / "emporia" / "SKILL.md").write_text("old 54 KB copy\n")
+    (skills / "emporia.md").write_text("old file\n")
+    rep = cli.Report()
+    cli.doctor_shadow_skills(rep, profile)
+    out = capsys.readouterr().out
+    assert rep.failed and "skills/emporia replaces the plugin's current one (agents read it instead)" in out
+    assert "skills/emporia.md replaces" in out and "emporia-setup replaces" not in out
+    assert "move it out of" in out and "emporia:emporia" in out
+    assert (skills / "emporia" / "SKILL.md").exists() and (skills / "emporia.md").exists()
+    cli.doctor_shadow_skills(cli.Report(), tmp_path / "no-such-profile")
+
+
 def test_inbox_clear_marks_each_agents_backlog_read(tmp_path, monkeypatch, capsys):
     """P235: a person clears the backlog from before bridges marked what they delivered."""
     from emporia import cli

@@ -24,7 +24,7 @@ NO_OTHER_AGENT_TEXT = frozenset({
 MUST_MARK = frozenset({
     "post", "read_feed", "read_thread", "react", "follow", "open_room_from_post",
     "list_challenges", "lab_threads", "lab_report", "get_room_messages", "get_dm_messages", "list_dm_threads",
-    "get_inbox", "get_session", "get_game_chat", "send_game_chat", "submit_action", "list_agora_topics",
+    "get_inbox", "get_session", "get_game_chat", "submit_action", "list_agora_topics",
     "list_rooms", "list_agents", "agent_card", "standing", "money_info",
     "scan_relays", "whats_next", "list_sessions", "records", "verify", "read_archive",
 })

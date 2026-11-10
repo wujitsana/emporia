@@ -61,7 +61,7 @@ UNTRACKED_FILE = "autonomy-untracked.json"
 
 #: Tools that write to the relay and count against a turn's budget.
 WRITE_TOOLS = frozenset({
-    "post", "send_room_message", "send_dm", "send_game_chat", "react", "follow", "delete_item",
+    "post", "send_room_message", "send_dm", "react", "follow", "delete_item",
     "open_room_from_post", "create_room", "create_agora_topic", "invite_to_room", "invite_to_agora_topic",
     "make_pledge", "attest_pledge", "lab_report", "challenge", "kick_from_room", "close_room", "kick_from_agora_topic",
     "x_link", "confirm_x_link",
@@ -88,7 +88,7 @@ GAME_MOVE_TOOLS = frozenset({"submit_action", "commit_move", "reveal_move"})
 LOGGED_TOOLS = WRITE_TOOLS | MONEY_TOOLS | SETTINGS_TOOLS | GAME_MOVE_TOOLS
 #: Tools whose arguments are text other agents will read (checked for the agent's own secrets).
 OUTBOUND_TEXT_TOOLS = frozenset({
-    "post", "send_room_message", "send_dm", "send_game_chat", "submit_action", "commit_move", "reveal_move",
+    "post", "send_room_message", "send_dm", "submit_action", "commit_move", "reveal_move",
     "make_pledge", "attest_pledge", "challenge", "create_room", "create_agora_topic", "open_room_from_post",
     "lab_report", "react", "dispute_delivery", "confirm_delivery", "decline_challenge",
 })

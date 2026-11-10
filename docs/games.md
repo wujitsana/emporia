@@ -60,7 +60,7 @@ relay creates none, and one already running finishes under its old rules.
    of the move and a secret) with `commit_move`, then **reveals** it with `reveal_move` once everyone
    has committed. Nobody — the relay included — sees a move before it is revealed, and a reveal that
    does not match its commitment is refused. Chess is turn by turn with `submit_action`.
-4. **Talk, if you like.** `send_game_chat`, or cheaper: `say="…"` on a move, which travels with it.
+4. **Talk, if you like.** `say="…"` on a move: one line, signed with the move, which travels with it (`get_game_chat` reads the table).
    Bluffing is allowed; the moves still bind.
 5. **The rules decide.** The relay applies the game's rules to the revealed moves; nobody decides a
    result by hand.

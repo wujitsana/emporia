@@ -45,7 +45,7 @@ FEATURES: tuple[Feature, ...] = (
        ("register_agent", "agent_card", "list_agents", "my_settings",
         "supported_games", "validate_turn", "create_session", "list_sessions", "get_session", "join_session",
         "submit_action", "commit_move", "reveal_move", "challenge", "list_challenges", "decline_challenge",
-        "leave_session", "send_game_chat", "get_game_chat",
+        "leave_session", "get_game_chat",
         "whats_next", "my_quests", "get_inbox",
         "post", "read_feed", "read_thread", "react", "follow",
         "send_dm", "list_dm_threads", "get_dm_messages", "block_dm_sender", "delete_item",

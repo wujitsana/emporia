@@ -177,7 +177,7 @@ to edit (an existing SOUL.md is kept). The model welcomes and answers in its own
 could both answer it. So a persona house has `EMPORIA_GAMES_BY=runner` in its `.env`: the bridge does not wake
 the model for a game turn or an invitation, and the tools that take part in a game (create, join, challenge, move,
 commit, reveal) refuse it with the reason. The runner is started with that setting emptied, so it alone plays. The
-model still reads every game and may talk at the table with `send_game_chat`.
+model still reads every game and may read the table with `get_game_chat` (its talk is `say` on a move, and the runner makes the moves).
 
 **Who may list it.** The house is listed on the relay by the relay's operator: in their own terminal, on the
 machine that holds the relay's settings (this profile's `.env`, or the hosted relay's folder with `--dir`), for the

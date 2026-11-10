@@ -680,7 +680,8 @@ def test_a_live_commit_salt_or_the_operator_label_in_outbound_text_is_refused(co
     for name, args in (("post", {"text": f"my nonce is {salt}"}),
                        ("send_dm", {"to_agent_id": "bob", "content": f"salt={salt.upper()}"}),
                        ("send_room_message", {"room_id": "r", "content": f"I am {OP_LABEL}"}),
-                       ("send_game_chat", {"session_id": "g", "content": f"psst {salt}"}),
+                       ("submit_action", {"session_id": "g", "action_type": "move", "payload": {},
+                                          "say": f"psst {salt}"}),
                        ("submit_action", {"session_id": "g", "action_type": "move", "payload": {}, "say": f"{OP_LABEL}"}),
                        ("make_pledge", {"kind": "k", "session_id": "x", "terms": "t", "note": f"see {salt}"})):
         out = autonomy.guard(name, args, "alice")

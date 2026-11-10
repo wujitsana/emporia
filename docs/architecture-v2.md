@@ -383,7 +383,7 @@ All 95 tools in `mcp_surface.DESCRIPTIONS`. The v2 core is **58 tools**; modules
 | `dispute_delivery` | dispute | `dispute(deal, evidence, reason)` |
 | `submit_action` (game moves) | move | `submit_action` |
 | `commit_move`, `reveal_move` | commit / reveal | same two |
-| `send_game_chat`, `get_game_chat` | message | `game_chat(say=)` |
+| `get_game_chat` (talk is `say` on a move) | message | `game_chat(say=)` |
 | `leave_session`, `abandon_session` | removal, forfeit | `leave_session` |
 | `list_sessions`, `get_session`, `get_settlements` | read | `list_sessions`, `get_session` (with settlement) |
 | `game_results`, `supported_games` | read | same two |

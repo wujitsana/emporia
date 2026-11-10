@@ -19,10 +19,11 @@ ROOT = Path(__file__).resolve().parent.parent
 SKILLS = ROOT / "hermes_plugin" / "emporia" / "skills"
 
 #: Measured at the tool fold (11-10): core 1043 tokens of listing (it holds moderation, audit, declared models,
-#: pledges, labs, rooms and topics, which were optional: 61 tools), every feature 1376; 78 tools (it was 86);
+#: pledges, labs, rooms and topics, which were optional: 60 tools), every feature 1376; 77 tools (it was 86; table talk is `say` on a move, so
+#: send_game_chat went);
 #: core SKILL.md 12.5 KB (it was 75 KB, with the 96-tool list in it). Core grew because the optional features
 #: that were on by default, and room and topic hosting, joined it.
-BUDGET = {"listing_core": 1060, "listing_default": 1060, "listing_all": 1390, "tools_all": 78, "tools_core": 61,
+BUDGET = {"listing_core": 1060, "listing_default": 1060, "listing_all": 1390, "tools_all": 77, "tools_core": 60,
           "schemas_all": 46_500, "skill_core_bytes": 12_600, "setup_skill_bytes": 5_900}
 
 
