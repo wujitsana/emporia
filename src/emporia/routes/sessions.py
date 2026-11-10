@@ -7,6 +7,7 @@ scratchpad/extract_router.py's main_defs(). Shared helpers stay in
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
@@ -733,6 +734,44 @@ FUNDING = "funding"
 SERVICE_MODULE = "emporia:service:v1"
 
 
+_PENDING_TASKS: set[asyncio.Task] = set()
+
+
+def _schedule(coro) -> None:
+    """Run `coro` in the background, holding a reference so it is not collected mid-sleep."""
+    task = asyncio.get_running_loop().create_task(coro)
+    _PENDING_TASKS.add(task)
+    task.add_done_callback(_PENDING_TASKS.discard)
+
+
+def _first_turn_opens_at(data: dict[str, Any]) -> datetime | None:
+    """When a new game's first turn opens, if that is later than now (a game dealt from a public draw)."""
+    raw = data.get("turn_started_at") or data.get("phase_started_at")
+    try:
+        at = datetime.fromisoformat(str(raw).replace("Z", "+00:00")) if raw else None
+    except ValueError:
+        return None
+    if at is None:
+        return None
+    at = at if at.tzinfo else at.replace(tzinfo=UTC)
+    return at if at > datetime.now(UTC) + timedelta(seconds=1) else None
+
+
+async def _tell_when_open(session_id: str, opens_at: datetime) -> None:
+    """At `opens_at`, tell whoever the game waits on that it is their turn, if nobody has moved yet."""
+    await asyncio.sleep(max(0.0, (opens_at - datetime.now(UTC)).total_seconds()) + 1.0)
+    s = rs.load_session(session_id)
+    if not s or s.get("status") != "active" or int(s.get("step_number") or 0) != 0:
+        return
+    data = ((s.get("state") or {}).get("data") or {})
+    # Whom the game waits on: a simultaneous phase's pending players, else the one whose turn it is (bargain and
+    # liar's dice say TURN_ORDER = False because a reveal is anyone's, but their offers and bids go in turn).
+    waiting = data.get("pending") or ([s["current_agent"]] if s.get("current_agent") else s.get("participants") or [])
+    for agent in waiting:
+        await rs.broadcast_to_agent(agent, {"type": "your_turn", "session_id": session_id,
+                                            "module_type": s["module_type"], "step_number": 0})
+
+
 async def _start(session_id: str, s: dict[str, Any], participants: list[str],
                  payment_rules: dict[str, Any]) -> None:
     """Build the opening state and tell every participant the session began."""
@@ -751,6 +790,7 @@ async def _start(session_id: str, s: dict[str, Any], participants: list[str],
         created_at=s["created_at"],
         updated_at=datetime.now(UTC).isoformat(),
     )
+    opens_at = _first_turn_opens_at(state.data)
     for p in participants:
         await rs.broadcast_to_agent(p, {
             "type": "session_started",
@@ -760,7 +800,14 @@ async def _start(session_id: str, s: dict[str, Any], participants: list[str],
             # P92: who moves first, so the first mover is told it is their turn
             # without having to fetch the session to find out.
             "current_agent": state.current_agent,
+            **({"opens_at": opens_at.isoformat()} if opens_at else {}),
         })
+    if opens_at:
+        # 11-10 live test: a game that deals from a public draw (bargain, liar's dice) opens its first turn when
+        # the draw publishes, about a minute later. The first mover was told "you move first" at once, found
+        # nothing dealt, and nothing woke it again: it timed out. Tell the players when the turn really opens.
+        _schedule(_tell_when_open(session_id, opens_at))
+        return
     if not module.TURN_ORDER:
         # P136: a simultaneous game waits on everyone from the first move.
         for p in state.data.get("pending") or participants:

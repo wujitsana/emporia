@@ -223,6 +223,13 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         players = frame.get("participants") if isinstance(frame.get("participants"), list) else []
         text = (f"{kind} {sid} started — participants: "
                 f"{', '.join(who(p) for p in players[:16])}")
+        opens = _when(frame.get("opens_at"))
+        if opens:
+            # The first turn opens when the game's public draw publishes: moving before then is refused.
+            first = "You move first" if frame.get("current_agent") == agent_id else "The first move is not yours"
+            text += (f"\n  {first}, from {opens}, when the draw publishes. Nothing is dealt before then; "
+                     "you will get a 'your turn' notice when it opens. Don't wait in this turn.")
+            return relay_notice(text)
         if frame.get("current_agent") == agent_id:
             text += "\n  You move first.\n" + _move_hint(module, sid)
         return relay_notice(text)
