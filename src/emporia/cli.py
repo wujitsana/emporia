@@ -3329,7 +3329,7 @@ def cmd_peek(args: argparse.Namespace) -> int:
 
 
 def cmd_wake(args: argparse.Namespace) -> int:
-    """`emporia wake [closed|games|open]`: which relay events start a turn without being asked (a person's
+    """`emporia wake [closed|direct|open]`: which relay events start a turn without being asked (a person's
     setting, in the profile's .env, held from the agent's tools by the key guard)."""
     from emporia import wake as W
     found = _own_profile(args)
@@ -3431,7 +3431,7 @@ def cmd_features(args: argparse.Namespace) -> int:
 
 
 def _setup_wake(profile: Path, name: str, chosen: str, existing: bool) -> None:
-    """setup's wake question: a new agent is asked (games first); an existing one keeps its own
+    """setup's wake question: a new agent is asked (direct first); an existing one keeps its own
     unless --wake says otherwise; without a terminal a new agent gets the default, written down."""
     from emporia import wake as W
     current = installer().harvest_env(profile).get(W.SETTING, "")
@@ -6754,7 +6754,7 @@ def agent_settings(profile: Path, agent_id: str) -> list[dict[str, Any]]:
     out += [
         item(_G_REACH, "Wake mode", mode,
              "Which messages wake it at once; the rest wait in its inbox for its next round.",
-             "emporia wake closed|games|open --agent " + name, mode_level, kind="choice", current=mode,
+             "emporia wake closed|direct|open --agent " + name, mode_level, kind="choice", current=mode,
              options=_wake.MODES, recommended=_wake.DEFAULT, is_default=not (env.get(_wake.SETTING) or "").strip(),
              env=_wake.SETTING),
         item(_G_REACH, "Allowed senders", "everyone" if "*" in listed else ", ".join(listed) or "the relay only",
@@ -8952,8 +8952,8 @@ def build_parser() -> argparse.ArgumentParser:
     ft.add_argument("--dir", default="", metavar="KEYDIR", help="an agent Hermes does not run: its key directory")
     ft.set_defaults(func=cmd_features)
 
-    wk = sub.add_parser("wake", help="which relay events start a turn: closed, games or open (a person's setting)")
-    wk.add_argument("mode", nargs="?", choices=["closed", "games", "open"], default=None)
+    wk = sub.add_parser("wake", help="which relay events start a turn: closed, direct or open (a person's setting)")
+    wk.add_argument("mode", nargs="?", choices=["closed", "direct", "open"], default=None)
     wk.add_argument("--agent", default="", help="the agent's profile (default: this one)")
     wk.set_defaults(func=cmd_wake)
 
@@ -9008,8 +9008,8 @@ def build_parser() -> argparse.ArgumentParser:
     ag.add_argument("--playbook", choices=["custom", "player", "merchant", "scout", "host", "operator"], default="",
                     help="what it may do on its own (P297; default custom: no bounds beyond its limits). "
                          "Change it later with `emporia agent playbook NAME`")
-    ag.add_argument("--wake", choices=["closed", "games", "open"], default="",
-                    help="which relay events start its turns (default games; change later with `emporia wake`)")
+    ag.add_argument("--wake", choices=["closed", "direct", "open"], default="",
+                    help="which relay events start its turns (default direct; change later with `emporia wake`)")
     ag.add_argument("--about", default=None, help="the agent's bio on its card: at most 160 characters, plain text, "
                                                  "no link (\"\" for none; default: the first line of its SOUL.md "
                                                  "when it fits). Change later with `emporia agent about NAME`")

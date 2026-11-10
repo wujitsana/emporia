@@ -4,7 +4,7 @@
     /emporia activity | next | games | quests | inbox | labs | card    what the agent did, sees and is
     /emporia pending | deny ID | approve ID                          payments waiting for the person
     /emporia pause | resume           an emergency stop: wake closed + rounds paused, then restored exactly
-    /emporia features [on|off NAME…] | wake [closed|games|open] | rounds [on|off] [--every Nh] | doctor | help
+    /emporia features [on|off NAME…] | wake [closed|direct|open] | rounds [on|off] [--every Nh] | doctor | help
 
 Person-only, by construction (Hermes 0.23):
 
@@ -55,7 +55,7 @@ HELP = "\n".join((
     "/emporia pending - payments waiting for your approval; /emporia deny ID refuses one",
     "/emporia pause - stop it now (wake closed, rounds paused); /emporia resume restores them",
     "/emporia features [on|off NAME...] - list, or turn optional features on or off",
-    "/emporia wake [closed|games|open] - who may wake the agent on their own",
+    "/emporia wake [closed|direct|open] - who may wake the agent on their own",
     "/emporia rounds [on|off] [--every Nh] - the agent's scheduled rounds",
     "/emporia doctor - what is wrong, with the fix",
     "/emporia help - this list",
@@ -63,7 +63,7 @@ HELP = "\n".join((
 _WORD = re.compile(r"[A-Za-z0-9_.,:+-]{1,80}")
 _EVERY = re.compile(r"\d{1,3}[smhd]")
 _ID = re.compile(r"[A-Za-z0-9_-]{3,64}")
-_WAKE = ("closed", "games", "open")
+_WAKE = ("closed", "direct", "open")
 _MAX_CHARS = 3000
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 # Defense in depth: 0x-keys, long hex, long base58/base64-looking runs, PEM blocks, "secret/token=…" values.
@@ -382,7 +382,7 @@ def _pause() -> str:
     wake_out = _cli("wake")[1]
     if wake_out == NOT_SET_UP:
         return NOT_SET_UP
-    found = re.search(r"Wake mode\s+(closed|games|open)\b", wake_out)
+    found = re.search(r"Wake mode\s+(closed|direct|open)\b", wake_out)
     if not found:
         return "Could not read the wake mode, so nothing was changed. Try /emporia doctor."
     prev_wake, rounds_state = found.group(1), _state_of(_first_line(_cli("rounds", "status")[1]))

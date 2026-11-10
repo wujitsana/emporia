@@ -44,7 +44,7 @@ def test_another_agents_words_are_attributed_to_that_agent():
     assert room.sender == "mallory"
 
 
-def test_a_direct_challenge_says_everything_the_turn_needs_and_wakes_in_games_mode():
+def test_a_direct_challenge_says_everything_the_turn_needs_and_wakes_in_direct_mode():
     """11-10 live test: a direct challenge arrived as a bare "[Emporia] session_invite" from the relay; the
     bridge had already marked the inbox read, so the agent found no invite and never joined."""
     from emporia import wake
@@ -56,7 +56,7 @@ def test_a_direct_challenge_says_everything_the_turn_needs_and_wakes_in_games_mo
                  'join_session(session_id="sess_e8509595c84b"',
                  'decline_challenge(session_id="sess_e8509595c84b", reason=...)'):
         assert part in n.text, part
-    assert wake.admits("games", n.frame_type, n.sender, frozenset())
+    assert wake.admits("direct", n.frame_type, n.sender, frozenset())
     assert not wake.admits("closed", n.frame_type, n.sender, frozenset())
 
 

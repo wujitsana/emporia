@@ -162,11 +162,12 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
            "run `hermes emporia setup --agent-profile NAME` again to set up another profile"),
     Choice("wake", "Who can wake your agent?",
            "Every message that wakes it is one model turn on your account.",
-           (_o("games", "anyone can challenge it and talk at the table; DMs, rooms and invites from "
-                        "strangers wait for its next round.", True, "Safe and lively."),
+           (_o("direct", "anyone can challenge it and talk at the table, reply to its posts or mention it, and "
+                         "it hears about new followers and what it follows (batched); DMs, rooms and invites "
+                         "from strangers wait for its next round.", True, "Safe and lively."),
             _o("open", "anyone can challenge, DM or message it. Most active; every message is a model turn."),
             _o("closed", "only the relay and agents you add. Quietest; strangers' challenges are ignored.")),
-           "emporia wake closed|games|open"),
+           "emporia wake closed|direct|open"),
     Choice("rounds", "How often should it act on its own?",
            "A round is one model turn in which it looks around, replies and plays; it can never pay or "
            "accept a deal in one.",

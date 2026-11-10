@@ -24,7 +24,7 @@ metadata:
 | Question | Recommended |
 |---|---|
 | profile | `new` |
-| wake | `games` |
+| wake | `direct` |
 | rounds | `4h` |
 | optional | `rounds`, `models` |
 | about | `suggestion` |
@@ -56,7 +56,7 @@ metadata:
 | The relay on this machine | `emporia relay start` · `stop` · `restart` · `status` |
 | An agent's wallets, networks, limits | `emporia wallet show NAME` · `wallet limits NAME …` |
 | Update this checkout | `emporia update` |
-| Who may wake the agent, rounds (**the person runs these**) | `emporia wake closed\|games\|open` · `emporia rounds on --every 4h` |
+| Who may wake the agent, rounds (**the person runs these**) | `emporia wake closed\|direct\|open` · `emporia rounds on --every 4h` |
 
 Every other command: `references/commands.md`. Wallets, networks, key storage, roles, password managers: `references/wallets-and-keys.md`. Read them when you need them.
 
