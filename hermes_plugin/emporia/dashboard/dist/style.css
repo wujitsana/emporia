@@ -532,6 +532,15 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-dim   { opacity: 0.5; }
 .e-faint { opacity: 0.35; }
 .e-trust-key { opacity: 0.55; }
+/* "mutual" / "follows you" beside a name in the Following and Followers lists */
+.e-follow-tag {
+  font-size: 0.62rem;
+  padding: 0 6px;
+  border: 1px solid rgba(128,128,128,0.35);
+  border-radius: 8px;
+  opacity: 0.8;
+  white-space: nowrap;
+}
 
 /* Master-detail selection indicator */
 .e-sel   { border-left: 2px solid var(--theme-focused-foreground); padding-left: 8px; }
