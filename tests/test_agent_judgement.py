@@ -93,7 +93,7 @@ def test_a_paid_invite_says_what_is_left_of_the_spend(monkeypatch):
 # ── the playbook setting ────────────────────────────────────────────────────────
 
 def test_the_playbook_setting_defaults_to_three_and_zero_is_no_cap():
-    assert P.resolve({}).games_per_operator_per_day == 3
+    assert P.resolve({}).games_per_operator_per_day == 6
     assert P.resolve({"EMPORIA_PLAYBOOK_GAMES_PER_OPERATOR_PER_DAY": "5"}).games_per_operator_per_day == 5
     assert P.resolve({"EMPORIA_PLAYBOOK_GAMES_PER_OPERATOR_PER_DAY": "0"}).games_per_operator_per_day == 0
     assert P.PRESETS["host"].games_per_operator_per_day == 0, "the house's practice games are uncapped"
@@ -106,7 +106,7 @@ def test_the_playbook_setting_defaults_to_three_and_zero_is_no_cap():
 def test_agent_playbook_shows_and_sets_it(capsys):
     from emporia import cli
     cli._show_playbook("x", P.resolve({}))
-    assert "3 games a day" in capsys.readouterr().out
+    assert "6 games a day" in capsys.readouterr().out
     cli._show_playbook("x", P.resolve({"EMPORIA_PLAYBOOK_GAMES_PER_OPERATOR_PER_DAY": "0"}))
     assert "no cap" in capsys.readouterr().out
 
@@ -223,10 +223,10 @@ def _relay(monkeypatch, played, participants=("alpha",), module=BLOTTO):
 
 
 def test_past_the_cap_join_session_refuses_before_any_join(monkeypatch):
-    sent = _relay(monkeypatch, played=3)
+    sent = _relay(monkeypatch, played=6)
     r = m.join_session("sess_1", agent_id="me")
     assert r["success"] is False and r["error"] == "operator_games_limit"
-    assert "alpha's operator already played you 3 times today; your limit is 3 a day" in r["detail"]
+    assert "alpha's operator already played you 6 times today; your limit is 6 a day" in r["detail"]
     assert not [x for x in sent if x[0] == "post"], "nothing reached the join route"
 
 
@@ -259,13 +259,13 @@ def test_the_cap_fails_open_when_the_relay_cannot_count(monkeypatch):
 
 
 def test_challenging_an_agent_past_the_cap_is_refused_before_anything_is_created(monkeypatch):
-    sent = _relay(monkeypatch, played=3)
+    sent = _relay(monkeypatch, played=6)
     made = []
     monkeypatch.setattr(m, "_create_session", lambda **kw: made.append(kw) or {"success": True})
     r = m.challenge(module_type=BLOTTO, opponent="alpha")
-    assert r["error"] == "operator_games_limit" and "your limit is 3 a day" in r["detail"] and not made
+    assert r["error"] == "operator_games_limit" and "your limit is 6 a day" in r["detail"] and not made
     assert m.challenge(module_type=BLOTTO)["success"], "an open challenge names nobody"
-    sent = _relay(monkeypatch, played=3, participants=("me", "alpha"))
+    sent = _relay(monkeypatch, played=6, participants=("me", "alpha"))
     assert m.challenge(module_type=BLOTTO, rematch_of="sess_1")["error"] == "operator_games_limit", "a rematch too"
 
 
@@ -312,7 +312,7 @@ def test_limits_reads_the_guards_and_changes_none(monkeypatch):
     assert (spend["daily_cap_cents"], spend["spent_today_cents"], spend["left_today_cents"]) == (5000, 125, 4875)
     assert spend["per_payment_cap_cents"] == 1000 and spend["approval_above_cents"] == 50
     assert spend["unattended_allowance_cents"] == 0
-    assert snap["games_per_operator_per_day"] == 3 and snap["open_games_cap"] == 3
+    assert snap["games_per_operator_per_day"] == 6 and snap["open_games_cap"] == 3
     assert snap["writes"]["per_unattended_turn"] == autonomy.MAX_WRITES_PER_TURN
     assert snap["turns"]["daily_cap"] == 300
 
@@ -365,7 +365,7 @@ def test_a_direct_challenge_ends_with_the_agents_own_limits_line(wallet):
     ll = limits.LimitsLine(ME, fetch=lambda a, o: pytest.fail("the invite carries the count"))
     out, last = _line(ll, {"type": "session_invite", "session_id": "sess_1", "module_type": BLOTTO,
                            "from_agent_id": "alpha", "games_with_you_today": 1})
-    assert last == "limits: games vs alpha today 1/3 · spend left $0.45 today (approval over $0.50) · writes 5 per turn"
+    assert last == "limits: games vs alpha today 1/6 · spend left $0.45 today (approval over $0.50) · writes 5 per turn"
     assert out["text"].count("limits:") == 1 and len(last) <= 160
 
 
@@ -405,7 +405,7 @@ def test_the_games_count_is_one_cached_relay_read_a_minute_and_a_failure_is_not_
     ll = limits.LimitsLine(ME, fetch=fetch, clock=clock)
     challenge = {"type": "challenge", "from_agent": "bob", "payload": {"session_id": "s1"}}
     for _ in range(5):
-        assert "games vs bob today 2/3" in _line(ll, challenge)[1]
+        assert "games vs bob today 2/6" in _line(ll, challenge)[1]
     assert calls == ["bob"], "five notices, one read"
     clock.t += 61
     _line(ll, challenge)

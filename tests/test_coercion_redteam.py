@@ -454,6 +454,53 @@ def test_the_playbook_allowance_defaults_to_none_and_parses():
         playbook.resolve({"EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY": "lots"})
 
 
+TESTNETS = "eip155:84532,solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1,eip155:42431"
+SPEND = "EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY"
+
+
+def test_unattended_spend_defaults_to_25_cents_on_testnets_only():
+    d = playbook.resolve
+    assert d({"EMPORIA_X402_PAY_NETWORKS": TESTNETS}).autonomous_spend_cents_per_day == 25
+    assert d({"EMPORIA_X402_PAY_NETWORKS": "base-sepolia"}).autonomous_spend_cents_per_day == 25
+    # any mainnet network (or one we do not know) keeps it at none
+    assert d({"EMPORIA_X402_PAY_NETWORKS": "eip155:84532,eip155:8453"}).autonomous_spend_cents_per_day == 0
+    assert d({"EMPORIA_X402_PAY_NETWORKS": "eip155:99999"}).autonomous_spend_cents_per_day == 0
+    # no wallet networks: nothing to default on
+    assert d({}).autonomous_spend_cents_per_day == 0
+    # the person's value wins, 0 included, and a bigger one too
+    assert d({"EMPORIA_X402_PAY_NETWORKS": TESTNETS, SPEND: "0"}).autonomous_spend_cents_per_day == 0
+    assert d({"EMPORIA_X402_PAY_NETWORKS": TESTNETS, SPEND: "100"}).autonomous_spend_cents_per_day == 100
+    assert d({"EMPORIA_X402_PAY_NETWORKS": "eip155:8453", SPEND: "40"}).autonomous_spend_cents_per_day == 40
+    assert "unattended spending" not in playbook.about(d({"EMPORIA_X402_PAY_NETWORKS": TESTNETS}))
+
+
+def test_testnet_default_is_still_capped_and_counted(monkeypatch):
+    from emporia import agent_wallet
+    monkeypatch.setenv("EMPORIA_X402_PAY_NETWORKS", "eip155:84532")
+    monkeypatch.delenv(SPEND, raising=False)
+    start("relay")
+    agent_wallet._charge_daily("alice", 200_000)                                      # $0.20 of $0.25
+    with pytest.raises(agent_wallet.AgentWalletError, match="daily allowance"):
+        agent_wallet._charge_daily("alice", 100_000)                                  # +$0.10 > $0.25
+    monkeypatch.setenv("EMPORIA_X402_PAY_NETWORKS", "eip155:8453")
+    with pytest.raises(agent_wallet.AgentWalletError, match="allows no autonomous spending"):
+        agent_wallet._charge_daily("alice", 10_000)
+    monkeypatch.setenv("EMPORIA_X402_PAY_NETWORKS", "eip155:84532")
+    monkeypatch.setenv(SPEND, "0")
+    with pytest.raises(agent_wallet.AgentWalletError, match="allows no autonomous spending"):
+        agent_wallet._charge_daily("alice", 10_000)
+
+
+def test_per_payment_approval_still_asks_with_the_testnet_default(monkeypatch):
+    from emporia import agent_wallet
+    monkeypatch.setenv("EMPORIA_X402_PAY_NETWORKS", "eip155:84532")
+    monkeypatch.setenv("EMPORIA_PAYMENT_APPROVAL_CENTS", "10")
+    monkeypatch.setattr(agent_wallet, "APPROVER", None)
+    with pytest.raises(agent_wallet.AgentWalletError):
+        agent_wallet.require_approval("alice", 200_000, "a test payment")             # $0.20 > 10 cents, no approver
+    agent_wallet.require_approval("alice", 50_000, "a test payment")                  # $0.05: under the limit
+
+
 def test_a_payment_where_it_is_signed_is_gated_and_counted_per_day(monkeypatch):
     from emporia import agent_wallet
     start("relay")
@@ -524,13 +571,17 @@ def test_an_untracked_host_gets_a_rolling_write_window_and_no_money(monkeypatch)
     assert autonomy.guard("post", {"text": "again"}, "alice") is None
 
 
-def test_an_untracked_host_may_dm_two_new_agents_an_hour_and_open_one_room_a_day(monkeypatch):
+def test_an_untracked_host_may_dm_two_new_agents_an_hour_and_open_three_rooms_a_day(monkeypatch):
     results = [autonomy.guard("send_dm", {"to_agent_id": f"stranger{i}", "content": "hi"}, "alice") for i in range(3)]
     assert [r is None for r in results] == [True, True, False] and "per hour" in results[2]["error"]
     assert autonomy.guard("send_dm", {"to_agent_id": "stranger0", "content": "again"}, "alice") is None
     assert autonomy.guard("create_room", {"name": "a"}, "alice") is None
-    assert "a day" in autonomy.guard("create_agora_topic", {"name": "b"}, "alice")["error"]
-    later = time.time() + 3601
+    assert autonomy.guard("create_agora_topic", {"name": "b"}, "alice") is None
+    now = time.time()
+    monkeypatch.setattr(autonomy.time, "time", lambda: now + 601)             # the 10-minute write window passed
+    assert autonomy.guard("create_room", {"name": "c"}, "alice") is None
+    assert "a day" in autonomy.guard("create_agora_topic", {"name": "d"}, "alice")["error"]
+    later = now + 3601 + 601
     monkeypatch.setattr(autonomy.time, "time", lambda: later)
     assert autonomy.guard("send_dm", {"to_agent_id": "stranger9", "content": "hi"}, "alice") is None
 
@@ -583,11 +634,14 @@ def test_ten_strangers_get_two_dms_the_rest_refused():
     assert autonomy.guard("send_dm", {"to_agent_id": "old-friend", "content": "hi"}, "alice") is None
 
 
-def test_one_new_room_or_topic_a_day():
+def test_three_new_rooms_or_topics_a_day():
     start("rounds")
+    assert autonomy.MAX_NEW_ROOMS_PER_DAY == 3
     assert autonomy.guard("create_room", {"name": "a"}, "alice") is None
-    out = autonomy.guard("create_agora_topic", {"name": "b"}, "alice")
-    assert out and "new room or topic a day" in out["error"]
+    assert autonomy.guard("create_agora_topic", {"name": "b"}, "alice") is None
+    assert autonomy.guard("create_room", {"name": "c"}, "alice") is None
+    out = autonomy.guard("create_agora_topic", {"name": "d"}, "alice")
+    assert out and "3 new rooms or topics a day" in out["error"]
     start("rounds", "s2")
     assert autonomy.guard("open_room_from_post", {"post_id": "p"}, "alice")["success"] is False
 
