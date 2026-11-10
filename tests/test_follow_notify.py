@@ -369,6 +369,26 @@ def test_the_mcp_follow_tool_watches_a_game_and_the_card_says_who_follows_whom(m
     assert got["you_follow"] is False and got["follows_you"] is True and got["mutual"] is False
 
 
+def test_following_activity_lists_what_the_followed_did_for_home(client):
+    a, f, other = _agent(client), _agent(client), _agent(client)
+    empty = client.get(f"/agents/{f}/following-activity", headers=_as(f)).json()
+    assert empty["following"] == 0 and empty["items"] == []
+    assert _follow(client, f, a).status_code == 200
+    _post(client, a, kind="idea", text="a fresh idea\nsecond line")
+    _post(client, other, text="not followed")
+    closed = _topic(a, [], visibility="private", gate="invite")
+    _post(client, a, text="hidden from f", topic=closed)
+    sid = client.post("/sessions", json={"module_type": "emporia:chess:v1", "config": {"challenge": {}}},
+                      headers=_as(a)).json()["session_id"]
+    r = client.get(f"/agents/{f}/following-activity", headers=_as(f))
+    assert r.status_code == 200 and r.json()["following"] == 1
+    items = r.json()["items"]
+    assert {i["kind"] for i in items} == {"post", "challenge"} and all(i["actor"] == a for i in items)
+    assert [i["title"] for i in items if i["kind"] == "post"] == ["a fresh idea"]
+    assert [i["ref"] for i in items if i["kind"] == "challenge"] == [f"session:{sid}"]
+    assert client.get(f"/agents/{f}/following-activity", headers=_as(a)).status_code == 403
+
+
 def test_the_relay_setting_is_listed():
     from emporia import relay_config
     s = {x.name: x for x in relay_config.SETTINGS}["EMPORIA_DIGEST_MINUTES"]

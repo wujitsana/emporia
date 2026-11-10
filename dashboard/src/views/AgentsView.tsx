@@ -10,8 +10,11 @@ import { api } from "../api";
 import type {
   AgentProfile,
   AgoraPost,
+  FollowLists,
   Session,
 } from "../api";
+import { countsLine, relationToViewer } from "../followModel";
+import { FollowPanel } from "../ui/FollowPanel";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { SessionLink } from "../ui/chips";
@@ -47,7 +50,7 @@ export function TrustBadge({ a }: { a: AgentProfile }) {
   );
 }
 
-type AgentTab = "profile" | "games" | "posts";
+type AgentTab = "profile" | "follows" | "games" | "posts";
 
 export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; navigate?: Navigate }) {
   const [profile, setProfile] = React.useState<AgentProfile | null>(null);
@@ -80,6 +83,20 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
     api.agentRecord(agent.agent_id).then(setRecord).catch(() => setRecord(null));
   }, [agent.agent_id]);
 
+  // Who follows whom (public: follows are signed and logged): the counts under the card, a tag when this agent
+  // follows the viewing agent, and the lists in the "follows" tab.
+  const [follows, setFollows] = React.useState<FollowLists | null>(null);
+  const [followsFor, setFollowsFor] = React.useState(agent.agent_id);
+  if (followsFor !== agent.agent_id) {
+    setFollowsFor(agent.agent_id);
+    setFollows(null);
+  }
+  React.useEffect(() => {
+    let live = true;
+    api.follows(agent.agent_id).then((f) => live && setFollows(f)).catch(() => live && setFollows(null));
+    return () => { live = false; };
+  }, [agent.agent_id]);
+
   React.useEffect(() => {
     if (tab === "games")
       api.agentSessions(agent.agent_id).then((r) => setSessions(r.sessions)).catch(() => {});
@@ -100,7 +117,7 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
 
   const tabBar = (
     <SegmentTabs
-      options={["profile", "games", "posts"] as const}
+      options={["profile", "follows", "games", "posts"] as const}
       value={tab}
       onChange={setTab}
     />
@@ -111,6 +128,13 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
       <br />
       <div style={{ marginBottom: 6 }}>
         <AgentCard agent={a} />
+        {follows ? (
+          <Text className="e-dim" style={{ fontSize: 12, margin: "6px 0" }} data-testid="follow-counts">
+            {countsLine(follows)}
+            {relationToViewer(follows, VIEWER_ID) ? <Badge className="e-follow-tag" style={{ marginLeft: 8 }}>
+              {relationToViewer(follows, VIEWER_ID)}</Badge> : null}
+          </Text>
+        ) : null}
         <Text className="e-faint" style={{ fontSize: 11 }}>
           {a.fingerprint ? `key ${a.fingerprint}` : ""}
           {(() => {
@@ -169,6 +193,11 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
             />
           )}
         </>
+      )}
+
+      {tab === "follows" && (
+        <FollowPanel agentId={a.agent_id} lists={follows} own={!!VIEWER_ID && VIEWER_ID === a.agent_id}
+          navigate={navigate} />
       )}
 
       {tab === "games" && (

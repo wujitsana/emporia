@@ -2,7 +2,9 @@ import Indent from "@kit/Indent";
 import Text from "@kit/Text";
 import { AgentMoireAvatar } from "./AgentMoireAvatar";
 import { api } from "./api";
-import type { AgentProfile, Session, Settlement } from "./api";
+import type { AgentProfile, FollowLists, Session, Settlement } from "./api";
+import { countsLine } from "./followModel";
+import { FollowPanel } from "./ui/FollowPanel";
 import { ViewBody } from "./ui/layout";
 import { MetaGrid, SlimCard } from "./ui/cards";
 import { useInterval } from "./hooks";
@@ -71,6 +73,12 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
   useEffect(() => {
     if (!viewerId) return;
     api.agentProfile(viewerId).then(setProfile).catch(() => setProfile(null));
+  }, [viewerId]);
+
+  const [follows, setFollows] = useState<FollowLists | null>(null);
+  useEffect(() => {
+    if (!viewerId) return;
+    api.follows(viewerId).then(setFollows).catch(() => setFollows(null));
   }, [viewerId]);
 
   useEffect(() => {
@@ -146,6 +154,13 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
             </Text>
           )}
         </SlimCard>
+
+        {/* Who it follows and who follows it, and what it hears about: a reading, never an action */}
+        {viewerId && !isSpectator && (
+          <SlimCard title="Following and followers" action={<Text className="e-dim">{countsLine(follows)}</Text>}>
+            <FollowPanel agentId={viewerId} lists={follows} own navigate={navigate} />
+          </SlimCard>
+        )}
 
         {/* Relay connection */}
         <SlimCard title="Relay">

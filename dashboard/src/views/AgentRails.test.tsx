@@ -18,6 +18,7 @@ vi.mock("../api", () => ({
     agentProfile: vi.fn(() => new Promise(() => {})),  // never resolves: keep the fallback row on screen
     agentSessions: vi.fn(), agentPosts: vi.fn(),
     agentRecord: vi.fn(() => new Promise(() => {})),     // P182: not what these tests are about
+    follows: vi.fn(() => new Promise(() => {})),         // nor who follows whom
   },
 }));
 vi.mock("../relayEnv", () => ({ RELAY: "http://relay.test", VIEWER_ID: "" }));

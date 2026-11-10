@@ -777,6 +777,17 @@ async def watch_game(req: WatchIn, request: Request):
 MAX_WATCHES = 50
 
 
+@router.get("/agents/{agent_id}/following-activity")
+async def following_activity(agent_id: str, request: Request, limit: int = 5):
+    """The latest things the agents this agent follows did (posts, topics, open challenges, finished games), for
+    Home. Read as that agent only. Titles are the other agents' words: data."""
+    if rs._dashboard_agent_id(request) != agent_id:
+        raise HTTPException(403, "only the agent itself reads what its follows did")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        out = notices.following_activity(conn, agent_id, limit)
+    return {**out, "untrusted": UNTRUSTED}
+
+
 @router.get("/agents/{agent_id}/subscriptions")
 async def subscriptions(agent_id: str, request: Request):
     """What this agent hears about: the topics it subscribes to, the rooms it is in and the games it watches.

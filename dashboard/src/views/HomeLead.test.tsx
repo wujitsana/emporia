@@ -11,8 +11,9 @@ import { AgentNow, OverviewView } from "./OverviewView";
 // Home's first frame is the agent, by name: its live game first, who it waits on, then what happened since the
 // person last looked, what is on the relay, where the agent stands and what is next. It must read well with
 // no games and no gamify parts.
-const data: { sessions: Session[]; season: SeasonBoards | null; quests: AgentQuests | null; next: unknown; unread: number } = {
-  sessions: [], season: null, quests: null, next: null, unread: 0,
+const data: { sessions: Session[]; season: SeasonBoards | null; quests: AgentQuests | null; next: unknown; unread: number;
+  followed: unknown } = {
+  sessions: [], season: null, quests: null, next: null, unread: 0, followed: null,
 };
 vi.mock("../hooks", () => ({
   useInterval: (fn: () => unknown) => {
@@ -21,6 +22,7 @@ vi.mock("../hooks", () => ({
     if (src.includes("agentInbox")) return [src.includes("unread_total") ? data.unread : [], false, null];
     if (src.includes("api.season")) return [data.season, false, null];
     if (src.includes("api.quests")) return [data.quests, false, null];
+    if (src.includes("followingActivity")) return [data.followed, false, data.followed ? null : "Error: 404 /x"];
     if (src.includes("agentNext")) return [data.next, false, data.next ? null : "Error: 404 /agents/alpha/next"];
     return [null, true, null];
   },
@@ -36,6 +38,7 @@ afterEach(() => {
   data.quests = null;
   data.next = null;
   data.unread = 0;
+  data.followed = null;
 });
 
 const now = Date.parse("2026-11-06T12:00:00Z");
@@ -125,6 +128,30 @@ describe("Home", () => {
     expect(screen.getByText(/Level 2 · 40 XP · 60 XP to level 3/)).toBeTruthy();
     expect(document.querySelector(".e-overview-hub")).toBeNull();
     expect(document.querySelector(".e-pipeline-chip")).toBeNull();
+  });
+
+  it("lists what the agents it follows did, apart as other agents' words, or says it follows nobody yet", () => {
+    data.followed = { agent_id: "alpha", following: 2, items: [
+      { kind: "post", actor: "bob", ref: "post:p1", title: "a fresh idea", at: "2026-11-06T11:00:00Z", post_kind: "idea" },
+      { kind: "game", actor: "carol", ref: "session:s9", title: "emporia:chess:v1", at: "2026-11-06T10:00:00Z" },
+    ] };
+    const nav = vi.fn();
+    render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={nav} />));
+    const block = screen.getByRole("region", { name: "From agents you follow" });
+    expect(block.textContent).toContain("bob posted an idea: a fresh idea");
+    expect(block.textContent).toContain("carol finished a chess game");
+    expect(block.querySelectorAll(".e-untrusted").length).toBe(3);
+    fireEvent.click(block.querySelectorAll(".e-now__row")[1]);
+    expect(nav).toHaveBeenCalledWith("session", { sessionId: "s9" });
+    cleanup();
+    data.followed = { agent_id: "alpha", following: 0, items: [] };
+    render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
+    expect(screen.getByText(/alpha follows nobody yet/)).toBeTruthy();
+  });
+
+  it("says nothing of follows on a relay that does not serve the route", () => {
+    render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
+    expect(document.querySelector('[aria-label="From agents you follow"]')).toBeNull();
   });
 
   it("draws no Next steps on a relay that does not serve the route", () => {
