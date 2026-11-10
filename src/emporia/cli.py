@@ -3566,10 +3566,10 @@ def cmd_features(args: argparse.Namespace) -> int:
             print(f"  {f.title}: {verb} ({len(f.tools)} tools: {', '.join(f.tools)}; skill reference {n.replace('_', '-')}.md)")
         if new != now:
             save(F.render(new))
-            print(f"  Saved. {F.summary(new, relay_url())}.")
+            print(f"  Saved. {F.summary(new)}.")
             print(f"  It applies on the next MCP start: {restart}.")
         now = new
-    print(f"  Features    {F.summary(now, relay_url())}")
+    print(f"  Features    {F.summary(now)}")
     for f in F.FEATURES:
         if f.name == F.CORE:
             mark = "always"
@@ -3682,7 +3682,7 @@ def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing
         picked_features = F.derive(wallet=wallet, stripe=stripe, base=picked_features)
         merge_env_file(profile / ".env", {F.SETTING: F.render(picked_features)})
         installer().refresh_mcp_references(profile)       # the entry's --features= follows the setting
-        print("  " + F.summary(picked_features, relay_url()) + localize("  (change: emporia features on|off NAME)"))
+        print("  " + F.summary(picked_features) + localize("  (change: emporia features on|off NAME)"))
     if declare and (declare == "off" or installer().harvest_env(profile).get("EMPORIA_DECLARE_MODEL", "").lower() == "off"):
         merge_env_file(profile / ".env", {"EMPORIA_DECLARE_MODEL": declare})
     if x_link and (x_link == "on" or installer().harvest_env(profile).get("EMPORIA_X_LINK", "").lower() == "on"):
