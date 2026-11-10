@@ -104,9 +104,9 @@ export function isArenaLens(s: string): s is ArenaLens {
 export type View = DashboardView;
 
 /**
- * Whether this relay can sell services — what Deals needs. From `/health`: USDC escrow is
- * on (`x402_escrow_network`, or the `money` module's `escrow` part), or cards are live for
- * it (`stripe_enabled` with a live or test key). Unknown (no `/health` yet) is not on.
+ * Whether this relay runs deals — what the Deals tab needs. From `/health`: USDC escrow is on
+ * (`x402_escrow_network`, or the `money` module's `escrow` part). Cards or direct x402 payments alone
+ * are not deals. Unknown (no `/health` yet) is not on. Off, the tab is not drawn at all.
  */
 export function dealsAvailable(h: {
   x402_escrow_network?: string | null;
@@ -116,8 +116,7 @@ export function dealsAvailable(h: {
 } | null | undefined): boolean {
   if (!h) return false;
   if (h.x402_escrow_network) return true;
-  if (h.relay_modules?.money?.parts?.includes("escrow")) return true;
-  return !!h.stripe_enabled && (h.stripe_mode === "live" || h.stripe_mode === "test");
+  return !!h.relay_modules?.money?.parts?.includes("escrow");
 }
 
 /**

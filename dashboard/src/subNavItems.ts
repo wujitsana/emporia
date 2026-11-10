@@ -69,11 +69,8 @@ export function useSubItems(
       go: () => go.view(n.id),
     };
   });
-  // Deals sits last in Agent, drawn dimmed on a relay that does not sell services.
-  if (dest.id === "agent" && !opts.isSpectator && !opts.dealsOn && !items.some((i) => i.key === "deals")) {
-    const d = navById("deals");
-    if (d) items.push({ key: d.id, label: d.label, title: "Off on this relay", active: view === "deals", off: true, go: () => go.view("deals") });
-  }
+  // Deals is drawn only on a relay that runs them (escrow on); a link to it on one that does not still opens
+  // the page, as a dimmed active tab (hiddenCurrent below), so nothing is left with no tab selected.
   const hiddenCurrent = !canSee(view, opts) && !items.some((i) => i.key === view) ? navById(view) : undefined;
   if (hiddenCurrent) {
     items.push({ key: hiddenCurrent.id, label: hiddenCurrent.label, title: hiddenCurrent.blurb, active: true, off: true, go: () => {} });

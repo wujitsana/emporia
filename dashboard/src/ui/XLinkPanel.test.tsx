@@ -1,28 +1,15 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentProfile } from "../api";
 
-const fetched: string[] = [];
-vi.mock("../transport", () => ({
-  VIA_CONSOLE: true,
-  consoleUrl: (p: string) => p,
-  httpFetch: vi.fn((url: string) => {
-    fetched.push(url);
-    return Promise.resolve({ ok: true, json: () => Promise.resolve({
-      handle: "kestrel_x", claim_line: "emporia·me@h·T", style: "arena", post_length: 90, post_limit: 280,
-      post_text: "EMP0R!A // new signal\nme is in the arena ▮\nemporia·me@h·T", bio_text: "emporia·me@h·T",
-      intent_url: "https://evil.example/",
-    }) });
-  }),
-}));
 vi.mock("../relayEnv", () => ({ VIEWER_ID: "me" }));
 
 import { XLinkPanel } from "./XLinkPanel";
 
 const base = { display_name: "", registered_at: "", is_active: true, has_stripe: false, session_count: 0, win_count: 0 };
 const agent = (over: Partial<AgentProfile>): AgentProfile => ({ ...base, agent_id: "other", ...over } as AgentProfile);
-afterEach(() => { cleanup(); fetched.length = 0; });
+afterEach(() => { cleanup(); });
 
 describe("the bio and X links on an agent page", () => {
   it("shows the bio as text, with its links built from the handle, and the status", () => {
@@ -46,22 +33,18 @@ describe("the bio and X links on an agent page", () => {
     expect(screen.getByText("in its bio")).toBeTruthy();
   });
 
-  it("offers Post on X only for the viewer's own agent, and only opens X's composer from the console's text", async () => {
-    const { unmount } = render(<XLinkPanel agent={agent({ agent_id: "other" })} />);
-    expect(screen.queryByText("Make the post")).toBeNull();
-    unmount();
+  it("has no field and no button: for the viewer's own agent it shows the command that starts a link, to copy", () => {
+    render(<XLinkPanel agent={agent({ agent_id: "other" })} />);
+    expect(screen.queryByText(/emporia agent x-claim/)).toBeNull();
+    cleanup();
     render(<XLinkPanel agent={agent({ agent_id: "me" })} />);
-    expect((screen.getByText("Make the post") as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText("X handle"), { target: { value: "@Kestrel_X" } });
-    fireEvent.change(screen.getByLabelText("post style"), { target: { value: "arena" } });
-    fireEvent.click(screen.getByText("Make the post"));
-    await waitFor(() => expect(screen.getByText("Post on X")).toBeTruthy());
-    expect(fetched).toEqual(["/x-claim/me?handle=kestrel_x&style=arena"]);           // a GET: nothing is written
-    const a = screen.getByText("Post on X") as HTMLAnchorElement;
-    expect(a.getAttribute("target")).toBe("_blank");
-    expect(a.getAttribute("rel")).toContain("noopener");
-    expect(a.getAttribute("href")!.startsWith("https://x.com/intent/post?text=")).toBe(true);
-    expect(a.getAttribute("href")).not.toContain("evil.example");
-    expect(decodeURIComponent(a.getAttribute("href")!)).toContain("EMP0R!A // new signal");
+    expect(screen.getByText("emporia agent x-claim me --handle HANDLE")).toBeTruthy();
+    expect(document.querySelector("input, select")).toBeNull();
+    expect(screen.queryByText("Make the post")).toBeNull();
+  });
+
+  it("shows nothing to start once an account is linked", () => {
+    render(<XLinkPanel agent={agent({ agent_id: "me", links: [{ site: "x", handle: "k", post_id: "9", status: "claimed", confirmed_by: 0 }] })} />);
+    expect(screen.queryByText(/emporia agent x-claim/)).toBeNull();
   });
 });

@@ -86,10 +86,10 @@ describe("Deals gating", () => {
     expect(dealsAvailable({ x402_escrow_network: "eip155:84532" })).toBe(true);
     expect(dealsAvailable({ relay_modules: { money: { parts: ["x402", "escrow"] } } })).toBe(true);
     expect(dealsAvailable({ relay_modules: { money: { parts: ["x402"] } } })).toBe(false);
-    expect(dealsAvailable({ stripe_enabled: true, stripe_mode: "test" })).toBe(true);
-    expect(dealsAvailable({ stripe_enabled: true, stripe_mode: "live" })).toBe(true);
-    expect(dealsAvailable({ stripe_enabled: true, stripe_mode: "" })).toBe(false);
-    expect(dealsAvailable({ stripe_enabled: false, stripe_mode: "live" })).toBe(false);
+    // Cards alone are not deals: with escrow off (this release) the tab is not drawn.
+    expect(dealsAvailable({ stripe_enabled: true, stripe_mode: "test" })).toBe(false);
+    expect(dealsAvailable({ stripe_enabled: true, stripe_mode: "live" })).toBe(false);
+    expect(dealsAvailable({ relay_modules: { money: { parts: ["cards", "x402"] } } })).toBe(false);
   });
 
   it("puts Deals last in Agent, only when the relay can sell", () => {

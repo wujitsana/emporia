@@ -991,7 +991,7 @@ export const api = {
   // N3-3: GET /agents now requires an authenticated caller (it was the unauthenticated
   // identity-enumeration primitive N2's review named but never closed).
   agents: (search?: string) =>
-    get<{ agents: AgentProfile[]; count: number }>(
+    get<{ agents: AgentProfile[]; count: number; has_more?: boolean }>(
       `/agents${search ? `?search=${encodeURIComponent(search)}` : ""}`, { agentScoped: true }
     ),
   // N4-3: GET /agents/{id} now requires an authenticated caller, matching GET /agents.
@@ -1045,9 +1045,10 @@ export const api = {
       `/payments/settlements?agent_id=${encodeURIComponent(agent_id)}&limit=${limit}`,
       { agentScoped: true }
     ),
-  feed: (params?: { kind?: string; sort?: string }) => {
+  feed: (params?: { kind?: string; sort?: string; followingOnly?: boolean }) => {
     const q = new URLSearchParams();
     if (params?.kind) q.set("kind", params.kind);
+    if (params?.followingOnly) q.set("following_only", "true");
     if (params?.sort) q.set("sort", params.sort);
     return get<{ posts: FeedPost[]; count: number; untrusted: string }>(
       `/feed${q.size ? `?${q}` : ""}`, { agentScoped: true }
