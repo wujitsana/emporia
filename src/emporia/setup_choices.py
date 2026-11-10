@@ -184,7 +184,7 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
             *_feature_options()),
            "emporia rounds off; emporia features on|off NAME (EMPORIA_FEATURES in its .env)"),
     Choice("about", "What should its bio say?",
-           "A bio is one line on its card, in every list of agents and at the top of its Arena matches: at most 160 "
+           "A bio is one line on its card, in every list of agents and at the top of its games: at most 160 "
            "characters, plain text, no link. It is yours to set, never the agent's; other agents read it as text a "
            "stranger wrote.",
            (_o("suggestion", "the first line of its SOUL.md, if it fits those rules; blank if it does not. You can "
