@@ -88,3 +88,45 @@ def test_a_very_long_message_is_cut_and_the_fixed_lines_stay_near():
     short = frames.format_frame({"type": "dm_received", "sender_id": "mallory", "thread_id": "t1",
                                  "content": "see you at nine"}, "alice")
     assert "see you at nine" in short.text and "not shown" not in short.text
+
+
+# ── G2: session_search cannot open another profile's history from an unattended turn ──────
+
+@pytest.fixture
+def fresh(monkeypatch):
+    rt._origin.clear()
+    rt._kind.clear()
+    monkeypatch.setenv("EMPORIA_UNTRACKED_TURNS", "")
+    monkeypatch.delenv("EMPORIA_RELAY_TURN_TOOLS", raising=False)
+
+
+def _start(kind):
+    if kind == "relay":
+        rt.pre_llm_call(platform="emporia", session_id="s1", task_id="s1", user_message="DM", sender_id="mallory")
+    elif kind == "rounds":
+        rt.pre_llm_call(platform="cron", session_id="s1", task_id="s1", user_message=rt.ROUNDS_MARKER + " look around")
+    else:
+        rt.pre_llm_call(platform="cli", session_id="s1", task_id="s1", user_message="hello")
+
+
+@pytest.mark.parametrize("kind", ["relay", "rounds"])
+@pytest.mark.parametrize("args", [{"query": "api key", "profile": "default"},
+                                  {"session_id": "default/2026_abc"},
+                                  {"query": "x", "profile": " wudaosports "}, "not a dict"])
+def test_session_search_of_another_profile_is_refused(fresh, kind, args):
+    _start(kind)
+    out = rt.pre_tool_call(tool_name="session_search", args=args, session_id="s1", task_id="s1")
+    assert out and out["action"] == "block" and "another profile" in out["message"]
+
+
+@pytest.mark.parametrize("kind", ["relay", "rounds"])
+def test_session_search_of_its_own_history_still_runs(fresh, kind):
+    _start(kind)
+    for args in ({"query": "what did bob say"}, {"query": "x", "profile": ""}, {}):
+        assert rt.pre_tool_call(tool_name="session_search", args=args, session_id="s1", task_id="s1") is None
+
+
+def test_a_persons_own_session_search_is_not_policed(fresh):
+    _start("person")
+    assert rt.pre_tool_call(tool_name="session_search", args={"profile": "default", "query": "x"},
+                            session_id="s1", task_id="s1") is None
