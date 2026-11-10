@@ -3082,7 +3082,7 @@ def cmd_agent_refresh(name: str) -> int:
     # Catalog rule 11: each agent's MCP entry names every setting Hermes hands its server.
     for profile in targets:
         if added := inst.refresh_mcp_references(profile):
-            print(f"  {profile.name}: {len(added)} setting(s) now handed to its MCP server by Hermes "
+            print(f"  {profile.name}: {len(added)} item(s) in its MCP entry updated for Hermes ({', '.join(added)}) "
                   "(restart the gateway, or /reload-mcp)")
         # Relay-started turns never load the host's project files (AGENTS.md, CLAUDE.md, .hermes.md).
     for profile in targets:
@@ -3384,13 +3384,12 @@ def cmd_features(args: argparse.Namespace) -> int:
 
         def save(value: str) -> None:
             merge_env_file(profile / ".env", {F.SETTING: value})
-            # Hermes keeps the tool list it last saw and does not key it on this setting.
-            if F.drop_mcp_schema_cache(profile):
-                print("  Dropped the profile's cached Emporia tool list (cache/mcp_schema_cache.json).")
-            # An entry an older installer wrote does not hand the setting to the server: the same
-            # refresh as `emporia agent refresh NAME`, so the change can take effect.
+            # The same refresh as `emporia agent refresh NAME`: an entry an older installer wrote does not
+            # hand the setting to the server, and its `--features=` argument must follow the setting. Hermes
+            # keys its cached tool list on the entry's args, so the changed argument makes it list the tools
+            # again by itself (no file of Hermes's is touched).
             if added := installer().refresh_mcp_references(profile):
-                print(f"  {len(added)} setting(s) now handed to its MCP server by Hermes ({', '.join(added)}).")
+                print(f"  {len(added)} item(s) in its MCP entry updated for Hermes ({', '.join(added)}).")
     try:
         now = F.enabled_from(held, key_dir)
         asked =[w for raw in (args.names or []) for w in [x.strip() for x in raw.split(",") if x.strip()]]
@@ -3518,7 +3517,7 @@ def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing
     if picked_features is not None:
         picked_features = F.derive(wallet=wallet, stripe=stripe, base=picked_features)
         merge_env_file(profile / ".env", {F.SETTING: F.render(picked_features)})
-        F.drop_mcp_schema_cache(profile)
+        installer().refresh_mcp_references(profile)       # the entry's --features= follows the setting
         print("  " + F.summary(picked_features) + localize("  (change: emporia features on|off NAME)"))
     if declare and (declare == "off" or installer().harvest_env(profile).get("EMPORIA_DECLARE_MODEL", "").lower() == "off"):
         merge_env_file(profile / ".env", {"EMPORIA_DECLARE_MODEL": declare})
@@ -5822,6 +5821,12 @@ def doctor_mcp_references(rep: Report, profile: Path, dotenv: dict[str, str]) ->
         rep.fail("its MCP server still reads the profile's .env itself",
                  f"emporia agent refresh {profile.name}   (Hermes hands it its settings instead)")
         return
+    want = installer().features_arg(profile)
+    got = [str(a) for a in (entry.get("args") or []) if str(a).startswith(installer().FEATURES_ARG)]
+    if got != [want]:
+        rep.warn(f"its MCP entry's {installer().FEATURES_ARG}… argument does not match its feature setting "
+                 f"(entry: {got[0] if got else 'none'}, setting: {want}); Hermes would keep a stale tool list",
+                 f"emporia agent refresh {profile.name}")
     missing = agent_env.unreferenced(dotenv, env)
     if missing:
         rep.fail(f"settings its MCP server is not handed: {', '.join(missing)}",

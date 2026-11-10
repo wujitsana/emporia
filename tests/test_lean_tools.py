@@ -232,27 +232,27 @@ def test_features_command_turns_one_on_and_off_and_says_what_changes(tmp_path, c
     assert "tools: core + money" in listed and F.OFF_TOOL_HINT in listed
 
 
-def test_features_on_off_drops_only_our_entry_of_the_hermes_schema_cache(tmp_path):
-    cache = tmp_path / "cache"
-    cache.mkdir()
-    path = cache / "mcp_schema_cache.json"
-    other = {"fingerprint": "f", "tools": [{"name": "t"}]}
-    path.write_text(json.dumps({"emporia": {"fingerprint": "x", "tools": []}, "other": other}))
-    assert F.drop_mcp_schema_cache(tmp_path) is True
-    assert json.loads(path.read_text()) == {"other": other}, "other servers' entries stay"
-    assert (path.stat().st_mode & 0o777) == 0o600
-    assert F.drop_mcp_schema_cache(tmp_path) is False, "nothing left to drop"
-    path.write_text("not json")
-    assert F.drop_mcp_schema_cache(tmp_path) is False and path.read_text() == "not json"
-    assert F.drop_mcp_schema_cache(tmp_path / "no-such-profile") is False
-    assert list(cache.glob(".mcp_schema_cache.*")) == [], "no temp file left behind"
+def test_the_features_argument_is_read_and_checked_against_the_setting():
+    assert F.features_from_argv(["-m", "emporia.mcp_server"]) is None
+    assert F.features_from_argv(["-m", "emporia.mcp_server", "--features=archive,money"]) == "archive,money"
+    assert F.argv_matches(["-m", "x"], ["money"]), "no argument: nothing to compare"
+    assert F.argv_matches(["--features=money,archive"], ["archive", "money"]), "order does not matter"
+    assert F.argv_matches(["--features=none"], [])
+    assert not F.argv_matches(["--features=archive"], ["money"])
+    assert not F.argv_matches(["--features=nope"], [])
 
 
-def test_the_features_command_for_a_profile_drops_the_cache_and_says_to_restart_the_gateway(tmp_path, capsys,
-                                                                                          monkeypatch):
+def test_the_mcp_server_only_logs_a_features_argument_that_differs_from_the_setting(monkeypatch):
+    monkeypatch.setenv(F.SETTING, "money")
+    assert mcp_server._check_features_arg(["-m", "emporia.mcp_server", "--features=money"]) is True
+    assert mcp_server._check_features_arg(["--features=archive"]) is False
+    assert mcp_server._check_features_arg([]) is True
+
+
+def test_the_features_command_for_a_profile_refreshes_the_entry_and_says_to_restart_the_gateway(tmp_path, capsys,
+                                                                                              monkeypatch):
     profile = tmp_path / "prof"
-    (profile / "cache").mkdir(parents=True)
-    (profile / "cache" / "mcp_schema_cache.json").write_text(json.dumps({"emporia": {"tools": []}, "x": {"tools": []}}))
+    profile.mkdir()
     saved = {}
     monkeypatch.setattr(cli, "_own_profile", lambda args: (profile, "lean"))
     monkeypatch.setattr(cli, "merge_env_file", lambda p, updates: saved.update(updates))
@@ -262,12 +262,30 @@ def test_the_features_command_for_a_profile_drops_the_cache_and_says_to_restart_
             return {"EMPORIA_KEYS_DIR": str(tmp_path / "keys")}
 
         def refresh_mcp_references(self, p):
-            return []
+            return ["--features"]
     monkeypatch.setattr(cli, "installer", lambda: _Installer())
     assert cli.main(["features", "on", "archive"]) == 0
     out = capsys.readouterr().out
-    assert saved == {F.SETTING: "archive"} and "restart the gateway" in out and "Dropped" in out
-    assert json.loads((profile / "cache" / "mcp_schema_cache.json").read_text()) == {"x": {"tools": []}}
+    assert saved == {F.SETTING: "archive"} and "restart the gateway" in out and "--features" in out
+
+
+def test_a_features_change_changes_the_entrys_args_so_hermes_lists_the_tools_again(tmp_path):
+    """Hermes keys its cached tool list on the entry's command/args; the args carry the feature set."""
+    import yaml
+    inst = cli.installer()
+    profile = tmp_path / "prof"
+    profile.mkdir()
+    (profile / ".env").write_text("EMPORIA_AGENT_ID=lean\nEMPORIA_FEATURES=archive\n")
+    (profile / "config.yaml").write_text(yaml.dump({"mcp_servers": {"emporia": {
+        "command": "python", "args": ["-m", "emporia.mcp_server"], "env": {}}}}))
+    inst.refresh_mcp_references(profile)
+    args = yaml.safe_load((profile / "config.yaml").read_text())["mcp_servers"]["emporia"]["args"]
+    assert args == ["-m", "emporia.mcp_server", "--features=archive"]
+    (profile / ".env").write_text("EMPORIA_AGENT_ID=lean\nEMPORIA_FEATURES=archive,money\n")
+    assert "--features" in inst.refresh_mcp_references(profile)
+    args = yaml.safe_load((profile / "config.yaml").read_text())["mcp_servers"]["emporia"]["args"]
+    assert args == ["-m", "emporia.mcp_server", "--features=archive,money"]
+    assert "--features" not in inst.refresh_mcp_references(profile), "nothing changed, nothing rewritten"
 
 
 def test_features_on_hands_an_old_mcp_entry_the_setting(tmp_path, capsys, monkeypatch):

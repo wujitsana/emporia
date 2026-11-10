@@ -577,9 +577,34 @@ def mcp_references(profile_dir: Path, entry_env: dict[str, str]) -> dict[str, st
     return {k: v for k, v in refs.items() if k not in entry_env or k == "EMPORIA_NO_DOTENV"}
 
 
+MCP_MODULE_ARGS = ["-m", "emporia.mcp_server"]
+FEATURES_ARG = "--features="
+
+
+def features_arg(profile_dir: Path) -> str:
+    """`--features=archive,money`: the profile's feature set (EMPORIA_FEATURES, else the recommended set and what
+    its other switches imply), carried in the MCP entry's args. Hermes caches the server's tool list under a
+    fingerprint of its command, args, url and tool filters, so a features change that changes this argument
+    makes Hermes list the tools again by itself. The setting stays the source of truth; the server checks the
+    argument against it (mcp_server.main) and doctor flags a mismatch."""
+    from emporia import features
+    held = harvest_env(profile_dir)
+    key_dir = held.get("EMPORIA_KEYS_DIR") or str(profile_dir / "home" / ".hermes" / "keys")
+    try:
+        names = features.enabled_from(held, key_dir)
+    except features.FeatureError:
+        names = list(features.DEFAULTS)
+    return FEATURES_ARG + features.render(names)
+
+
+def mcp_args(profile_dir: Path | None) -> list[str]:
+    return [*MCP_MODULE_ARGS, features_arg(profile_dir)] if profile_dir else list(MCP_MODULE_ARGS)
+
+
 def refresh_mcp_references(profile_dir: Path, dry_run: bool = False) -> list[str]:
-    """The profile's `emporia` MCP entry given every reference it lacks (mcp_references);
-    the names added. Nothing else in config.yaml changes."""
+    """The profile's `emporia` MCP entry given every reference it lacks (mcp_references) and the
+    `--features=` argument that matches its feature setting; the names added (the argument is named
+    `--features`). Nothing else in config.yaml changes."""
     config_path = profile_dir / "config.yaml"
     if not config_path.exists():
         return []
@@ -589,10 +614,22 @@ def refresh_mcp_references(profile_dir: Path, dry_run: bool = False) -> list[str
         return []
     env = dict(entry.get("env") or {})
     added = {k: v for k, v in mcp_references(profile_dir, env).items() if env.get(k) != v}
-    if added and not dry_run:
-        entry["env"] = {**env, **added}
+    changed = bool(added)
+    names = sorted(added)
+    old_args = [str(a) for a in (entry.get("args") or [])]
+    new_args = [a for a in old_args if not a.startswith(FEATURES_ARG)]
+    if not new_args:
+        new_args = list(MCP_MODULE_ARGS)
+    new_args.append(features_arg(profile_dir))
+    if new_args != old_args:
+        changed = True
+        names.append("--features")
+    if changed and not dry_run:
+        if added:
+            entry["env"] = {**env, **added}
+        entry["args"] = new_args
         save_yaml(config_path, config)
-    return sorted(added)
+    return names
 
 
 # Hermes 0.23 MCP price declarations (`tool_costs`, `spend_limit`, `cost_unit` on an `mcp_servers` entry;
@@ -675,7 +712,7 @@ def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "", profi
         env["EMPORIA_HERMES_BIN"] = hermes_bin
     entry = {
         "command": _venv_python(),
-        "args": ["-m", "emporia.mcp_server"],
+        "args": mcp_args(profile_dir),
         "env": env,
     }
     apply_mcp_costs(entry, harvest_env(profile_dir) if profile_dir else {})

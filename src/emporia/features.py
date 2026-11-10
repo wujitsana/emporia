@@ -201,31 +201,24 @@ def hidden_by_features(names: Iterable[str]) -> set[str]:
     return all_tools() - tools_of(names)
 
 
-def drop_mcp_schema_cache(profile: str | os.PathLike, server: str = "emporia") -> bool:
-    """Forget Hermes's cached tool list for our MCP server in `profile` (`cache/mcp_schema_cache.json`, one
-    entry per server name). Hermes keys an entry on the server's command, args, url and tool filters, not its
-    environment, so after a features change the old list would keep being served at the next gateway start.
-    Only `server`'s entry goes; the others stay. A missing or unreadable file is left alone. True when an entry
-    was dropped."""
-    import json
-    import tempfile
-    path = Path(profile).expanduser() / "cache" / "mcp_schema_cache.json"
-    try:
-        data = json.loads(path.read_text(encoding="utf-8-sig"))
-        if not isinstance(data, dict) or server not in data:
-            return False
-        del data[server]
-        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".mcp_schema_cache.")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(data, f)
-            os.chmod(tmp, 0o600)
-            os.replace(tmp, path)
-        except BaseException:
-            Path(tmp).unlink(missing_ok=True)
-            raise
+def features_from_argv(argv: Iterable[str]) -> str | None:
+    """The value of a `--features=…` argument in `argv` (the MCP entry carries it so Hermes, which caches the
+    tool list under a fingerprint of the entry's args, lists the tools again when the features change), or
+    None when there is none. Informative only: the setting is the source of truth."""
+    for a in argv:
+        if a.startswith("--features="):
+            return a.split("=", 1)[1]
+    return None
+
+
+def argv_matches(argv: Iterable[str], enabled: Iterable[str]) -> bool:
+    """Whether the `--features=` argument (if any) names the features that are really on."""
+    given = features_from_argv(argv)
+    if given is None:
         return True
-    except (OSError, ValueError):
+    try:
+        return parse(given) == [n for n in OPTIONAL if n in set(enabled)]
+    except FeatureError:
         return False
 
 
