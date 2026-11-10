@@ -1544,6 +1544,110 @@ def _enable_plugin(profile_dir: Path) -> None:
         print(f"  + plugins.enabled: {PLUGIN_KEY}")
 
 
+WORKSPACE_DIR = "workspace"     # an empty folder in the profile: the profile dir itself holds config.yaml and .env
+
+
+def workspace_set(cwd: Any) -> bool:
+    """True for an absolute terminal.cwd (a person's own choice is kept, `.` or unset is not one)."""
+    return isinstance(cwd, str) and cwd.strip() not in ("", ".", "auto", "~") and Path(cwd).expanduser().is_absolute()
+
+
+def workspace_confined(config: dict, profile_dir: Path) -> bool:
+    """True when terminal.cwd is a folder inside the profile."""
+    terminal = config.get("terminal") if isinstance(config.get("terminal"), dict) else {}
+    cwd = terminal.get("cwd")
+    if not workspace_set(cwd):
+        return False
+    try:
+        Path(cwd).expanduser().resolve().relative_to(profile_dir.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def user_profile_off(config: dict) -> bool:
+    """True when Hermes is told not to load USER.md (the operator's profile) into the agent's prompt."""
+    memory = config.get("memory") if isinstance(config.get("memory"), dict) else {}
+    return memory.get("user_profile_enabled") is False
+
+
+def workspace_bounded(config: dict, profile_dir: Path) -> bool:
+    """True when the confined working directory holds a `.git` marker, where Hermes's project-file search stops."""
+    if not workspace_confined(config, profile_dir):
+        return False
+    return (Path(config["terminal"]["cwd"]).expanduser() / ".git").exists()
+
+
+def unisolated_platforms(config: dict) -> list[str]:
+    """Platforms in the profile's gateway config (and emporia) whose turns would still load project files."""
+    gateway = config.get("gateway") if isinstance(config.get("gateway"), dict) else {}
+    platforms = gateway.get("platforms")
+    keys = list(dict.fromkeys([PLUGIN_KEY, *(platforms if isinstance(platforms, dict) else [])]))
+    return [k for k in keys if not (isinstance(platforms, dict) and isinstance(platforms.get(k), dict)
+                                    and platforms[k].get("skip_context_files") is True)]
+
+
+def context_isolated(config: dict) -> bool:
+    """True when the profile's config tells Hermes not to load project context files
+    (AGENTS.md, CLAUDE.md, .hermes.md, .cursorrules) for turns on the `emporia` platform."""
+    gateway = config.get("gateway") if isinstance(config.get("gateway"), dict) else {}
+    platforms = gateway.get("platforms")
+    entry = platforms.get(PLUGIN_KEY) if isinstance(platforms, dict) else None
+    return isinstance(entry, dict) and entry.get("skip_context_files") is True
+
+
+def isolate_context(profile_dir: Path) -> bool:
+    """Set `gateway.platforms.emporia.skip_context_files: true` in the profile's config.yaml.
+
+    Without it a relay-started turn resolves its working directory to wherever the gateway was
+    launched, and Hermes loads that directory's project files into the agent's prompt, where any
+    agent that messages it can draw them out. SOUL.md is not a project file: it still applies.
+    Returns True when the file changed. A `gateway.platforms` list (Hermes's own setup shape) is
+    left alone; doctor reports it."""
+    config_path = profile_dir / "config.yaml"
+    config = load_yaml(config_path) if config_path.exists() else {}
+    changed: list[str] = []
+    gateway = config.get("gateway") if isinstance(config.get("gateway"), dict) else {}
+    platforms = gateway.get("platforms") if gateway.get("platforms") is not None else {}
+    if isinstance(platforms, dict):
+        # The emporia platform always; any other platform already named in the profile's gateway too
+        # (Hermes has no global switch: the CLI's own is the --ignore-rules flag).
+        for key in dict.fromkeys([PLUGIN_KEY, *platforms]):
+            entry = platforms.get(key) if isinstance(platforms.get(key), dict) else {}
+            if entry.get("skip_context_files") is not True:
+                entry["skip_context_files"] = True
+                platforms[key] = entry
+                changed.append(f"gateway.platforms.{key}.skip_context_files: true")
+        gateway["platforms"] = platforms
+        config["gateway"] = gateway
+    if not user_profile_off(config):
+        # USER.md describes the operator, and a stranger's turn must never carry it; MEMORY.md (the agent's own
+        # notes) stays. Hermes reads this profile-wide (tools/memory_tool.py:get_builtin_memory_store_flags).
+        memory = config.get("memory") if isinstance(config.get("memory"), dict) else {}
+        memory["user_profile_enabled"] = False
+        config["memory"] = memory
+        changed.append("memory.user_profile_enabled: false")
+    terminal = config.get("terminal") if isinstance(config.get("terminal"), dict) else {}
+    if not workspace_set(terminal.get("cwd")):
+        workspace = profile_dir / WORKSPACE_DIR
+        workspace.mkdir(mode=0o700, parents=True, exist_ok=True)
+        terminal["cwd"] = str(workspace)
+        config["terminal"] = terminal
+        changed.append(f"terminal.cwd: {workspace}")
+    # Hermes looks for project files from the working directory up to the nearest `.git`: an empty `.git`
+    # folder in the agent's own workspace is where that search stops, before any parent repository.
+    own = Path(terminal["cwd"]).expanduser() if workspace_confined(config, profile_dir) else None
+    if own is not None and not (own / ".git").exists():
+        (own / ".git").mkdir(mode=0o700, parents=True, exist_ok=True)
+        changed.append(f"{own}/.git (an empty marker: project-file search stops here)")
+    if not changed:
+        return False
+    save_yaml(config_path, config)
+    print("  + " + "; ".join(changed) + " (its turns start in its own profile folder and never load the "
+          "host's project files; SOUL.md still applies)")
+    return True
+
+
 def print_safety_next_steps(name: str) -> None:
     """P172: the installer wires a profile; the choices that keep its keys out
     of its own tools' reach are made by `emporia setup agent`. Say so."""
@@ -1604,6 +1708,7 @@ def install_platform_plugin(profile_dir: Path, dry_run: bool = False) -> None:
     elif not from_catalog():
         print(f"  = Emporia plugin: {dst} (unchanged)")
     _enable_plugin(profile_dir)
+    isolate_context(profile_dir)
 
     env_file = profile_dir / ".env"
     from emporia import profile_env          # catalog rule 11: through Hermes for a profile's .env
