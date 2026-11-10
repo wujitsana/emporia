@@ -26,10 +26,10 @@ Exact shape (nothing of this is in our manifest yet):
 config_schema:
   wake:
     type: str
-    choices: [closed, games, open]       # renders as an enum
-    default: games
+    choices: [closed, direct, open]      # renders as an enum
+    default: direct
     label: Who can wake the agent
-    description: "closed: the relay and listed agents only; games: ...; open: anyone"
+    description: "closed: the relay and listed agents only; direct: ...; open: anyone"
   thread_limit: {type: int, default: 20, description: "Messages per conversation per hour (0 = no limit)"}
   x_link:        {type: bool, default: false, description: "May post one X verification post"}
   identity_key:  {type: secret, env: EMPORIA_IDENTITY_PRIVATE_KEY}
