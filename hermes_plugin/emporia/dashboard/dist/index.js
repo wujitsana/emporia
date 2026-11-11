@@ -36971,6 +36971,36 @@ var EmporiaHermesPlugin = (function(exports) {
 		FEED_SLUG = "\0feed";
 		plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 	}));
+	// src/paymentKind.ts
+	/** What a settlement paid for: the relay's outcome type, else what its id names (a room's entry is
+	* filed under the room's id, a topic's under the topic's), so a room payment is never shown as a game. */
+	function paidFor(s) {
+		const t = s.outcome_type ?? "";
+		if (t) return t;
+		if (s.session_id.startsWith("room_")) return "room_entry";
+		if (s.session_id.startsWith("tpc_")) return "agora_subscribe";
+		return "";
+	}
+	function outcomeLabel(s) {
+		const t = paidFor(s);
+		if (t === "refund" || s.status === "refunded") return {
+			label: "refund",
+			cls: "e-outcome-pill--refund"
+		};
+		if (t === "room_entry") return {
+			label: "room",
+			cls: "e-outcome-pill--room"
+		};
+		if (t === "agora_subscribe") return {
+			label: "agora",
+			cls: "e-outcome-pill--agora"
+		};
+		return {
+			label: "game",
+			cls: "e-outcome-pill--game"
+		};
+	}
+	var init_paymentKind = __esmMin((() => {}));
 	// src/PaymentsFeesSection.tsx
 	function PaymentsFeesSection({ settlements, navigate }) {
 		const health = useRelayHealth();
@@ -37120,25 +37150,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			title: tx,
 			children: label
 		});
-	}
-	function outcomeLabel(s) {
-		const t = s.outcome_type ?? "";
-		if (t === "refund" || s.status === "refunded") return {
-			label: "refund",
-			cls: "e-outcome-pill--refund"
-		};
-		if (t === "room_entry") return {
-			label: "room",
-			cls: "e-outcome-pill--room"
-		};
-		if (t === "agora_subscribe") return {
-			label: "agora",
-			cls: "e-outcome-pill--agora"
-		};
-		return {
-			label: "game",
-			cls: "e-outcome-pill--game"
-		};
 	}
 	function FeesView({ navigate, isOperator = false } = {}) {
 		const [data, loading, error] = useInterval(() => isOperator ? api.settlements() : VIEWER_ID ? api.agentSettlements(VIEWER_ID) : Promise.resolve({
@@ -37310,7 +37321,13 @@ var EmporiaHermesPlugin = (function(exports) {
 						] }) }), /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("tbody", { children: settlements.map((s) => {
 							const { label, cls } = outcomeLabel(s);
 							return /* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)("tr", { children: [
-								/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(SessionLink, {
+								/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("td", { children: paidFor(s) === "room_entry" && navigate ? /* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)("button", {
+									type: "button",
+									className: "e-entity-chip e-entity-chip--session",
+									title: s.session_id,
+									onClick: () => navigate("rooms", { roomId: s.session_id }),
+									children: ["room …", s.session_id.slice(-10)]
+								}) : /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(SessionLink, {
 									session_id: s.session_id,
 									navigate
 								}) }),
@@ -37331,7 +37348,7 @@ var EmporiaHermesPlugin = (function(exports) {
 									style: { fontSize: 11 },
 									children: railLabel(s.rail, s.transfer_status)
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("td", { children: s.winner_id ? /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(AgentLink, {
+								/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("td", { children: s.winner_id && !["room_entry", "agora_subscribe"].includes(paidFor(s)) ? /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(AgentLink, {
 									agent_id: s.winner_id,
 									navigate,
 									full: true
@@ -37501,6 +37518,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_layout();
 		init_ViewStatus();
 		init_chips();
+		init_paymentKind();
 		init_relayEnv();
 		init_agentName();
 		init_PaymentsFeesSection();

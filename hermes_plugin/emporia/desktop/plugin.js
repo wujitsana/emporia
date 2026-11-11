@@ -24853,6 +24853,35 @@ function AgorasView({ navigate, topicSlug = null } = {}) {
 		})
 	});
 }
+// src/paymentKind.ts
+/** What a settlement paid for: the relay's outcome type, else what its id names (a room's entry is
+* filed under the room's id, a topic's under the topic's), so a room payment is never shown as a game. */
+function paidFor(s) {
+	const t = s.outcome_type ?? "";
+	if (t) return t;
+	if (s.session_id.startsWith("room_")) return "room_entry";
+	if (s.session_id.startsWith("tpc_")) return "agora_subscribe";
+	return "";
+}
+function outcomeLabel(s) {
+	const t = paidFor(s);
+	if (t === "refund" || s.status === "refunded") return {
+		label: "refund",
+		cls: "e-outcome-pill--refund"
+	};
+	if (t === "room_entry") return {
+		label: "room",
+		cls: "e-outcome-pill--room"
+	};
+	if (t === "agora_subscribe") return {
+		label: "agora",
+		cls: "e-outcome-pill--agora"
+	};
+	return {
+		label: "game",
+		cls: "e-outcome-pill--game"
+	};
+}
 // src/PaymentsFeesSection.tsx
 function PaymentsFeesSection({ settlements, navigate }) {
 	const health = useRelayHealth();
@@ -24993,25 +25022,6 @@ function TxLink({ network, tx, label }) {
 		title: tx,
 		children: label
 	});
-}
-function outcomeLabel(s) {
-	const t = s.outcome_type ?? "";
-	if (t === "refund" || s.status === "refunded") return {
-		label: "refund",
-		cls: "e-outcome-pill--refund"
-	};
-	if (t === "room_entry") return {
-		label: "room",
-		cls: "e-outcome-pill--room"
-	};
-	if (t === "agora_subscribe") return {
-		label: "agora",
-		cls: "e-outcome-pill--agora"
-	};
-	return {
-		label: "game",
-		cls: "e-outcome-pill--game"
-	};
 }
 function FeesView({ navigate, isOperator = false } = {}) {
 	const [data, loading, error] = useInterval(() => isOperator ? api.settlements() : VIEWER_ID ? api.agentSettlements(VIEWER_ID) : Promise.resolve({
@@ -25183,7 +25193,13 @@ function FeesView({ navigate, isOperator = false } = {}) {
 					] }) }), /* @__PURE__ */ jsx("tbody", { children: settlements.map((s) => {
 						const { label, cls } = outcomeLabel(s);
 						return /* @__PURE__ */ jsxs("tr", { children: [
-							/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(SessionLink, {
+							/* @__PURE__ */ jsx("td", { children: paidFor(s) === "room_entry" && navigate ? /* @__PURE__ */ jsxs("button", {
+								type: "button",
+								className: "e-entity-chip e-entity-chip--session",
+								title: s.session_id,
+								onClick: () => navigate("rooms", { roomId: s.session_id }),
+								children: ["room …", s.session_id.slice(-10)]
+							}) : /* @__PURE__ */ jsx(SessionLink, {
 								session_id: s.session_id,
 								navigate
 							}) }),
@@ -25204,7 +25220,7 @@ function FeesView({ navigate, isOperator = false } = {}) {
 								style: { fontSize: 11 },
 								children: railLabel(s.rail, s.transfer_status)
 							}),
-							/* @__PURE__ */ jsx("td", { children: s.winner_id ? /* @__PURE__ */ jsx(AgentLink, {
+							/* @__PURE__ */ jsx("td", { children: s.winner_id && !["room_entry", "agora_subscribe"].includes(paidFor(s)) ? /* @__PURE__ */ jsx(AgentLink, {
 								agent_id: s.winner_id,
 								navigate,
 								full: true

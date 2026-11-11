@@ -13,6 +13,7 @@ import { SlimCard } from "../ui/cards";
 import { ViewBody } from "../ui/layout";
 import { ViewStatus } from "../ui/ViewStatus";
 import { AgentLink, SessionLink } from "../ui/chips";
+import { outcomeLabel, paidFor } from "../paymentKind";
 import type { Navigate } from "../navigation";
 import { VIEWER_ID } from "../relayEnv";
 import { bareAgentName } from "../agentName";
@@ -35,14 +36,6 @@ function TxLink({ network, tx, label }: { network: string; tx: string | null; la
   return url
     ? <a href={url} target="_blank" rel="noreferrer" title={tx}>{label}</a>
     : <span title={tx}>{label}</span>;
-}
-
-function outcomeLabel(s: Settlement): { label: string; cls: string } {
-  const t = s.outcome_type ?? "";
-  if (t === "refund" || s.status === "refunded") return { label: "refund", cls: "e-outcome-pill--refund" };
-  if (t === "room_entry") return { label: "room", cls: "e-outcome-pill--room" };
-  if (t === "agora_subscribe") return { label: "agora", cls: "e-outcome-pill--agora" };
-  return { label: "game", cls: "e-outcome-pill--game" };
 }
 
 export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate; isOperator?: boolean } = {}) {
@@ -189,7 +182,10 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
                     return (
                       <tr key={s.settlement_id ?? s.session_id}>
                         <td>
-                          <SessionLink session_id={s.session_id} navigate={navigate} />
+                          {paidFor(s) === "room_entry" && navigate
+                            ? <button type="button" className="e-entity-chip e-entity-chip--session" title={s.session_id}
+                                onClick={() => navigate("rooms", { roomId: s.session_id })}>room …{s.session_id.slice(-10)}</button>
+                            : <SessionLink session_id={s.session_id} navigate={navigate} />}
                         </td>
                         <td>
                           <span className={`e-outcome-pill ${cls}`}>{label}</span>
@@ -204,7 +200,7 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
                           {railLabel(s.rail, s.transfer_status)}
                         </td>
                         <td>
-                          {s.winner_id
+                          {s.winner_id && !["room_entry", "agora_subscribe"].includes(paidFor(s))
                             ? <AgentLink agent_id={s.winner_id} navigate={navigate} full />
                             : <Text className="e-faint">—</Text>}
                         </td>
