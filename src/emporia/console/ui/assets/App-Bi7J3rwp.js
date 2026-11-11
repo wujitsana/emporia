@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-CVC0NT4N.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-tl4Lyos2.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -10922,16 +10922,20 @@ function Card({ c }) {
 	const link = c.onOpen && !c.copy && !c.body;
 	const long = !!c.body && (c.body.length > BODY_LONG || c.body.split("\n").length > 6);
 	const cls = `e-hcard${c.hero ? " e-hcard--hero" : ""}${c.quiet ? " e-hcard--quiet" : ""}${link ? " is-link" : ""}${c.body ? " e-hcard--post" : ""}`;
+	const same = (a, b) => !!a && !!b && (a.includes(b) || b.includes(a));
+	const headLow = c.head.toLowerCase();
+	const chip = c.chip && !same(c.chip.toLowerCase(), headLow) ? c.chip : void 0;
+	const meta = c.meta && !same(c.meta.toLowerCase(), (c.chip ?? "").toLowerCase()) && !same(c.meta.toLowerCase(), headLow) ? c.meta : "";
 	const body = /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 			className: "e-hcard__hud",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: c.meta }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: c.at ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RelTime, { at: c.at }) : c.time })]
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: meta }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: c.at ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RelTime, { at: c.at }) : c.time })]
 		}),
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 			className: "e-hcard__ids",
-			children: [c.chip ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+			children: [chip ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 				className: "e-hcard__chip",
-				children: c.chip
+				children: chip
 			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 				className: "e-hcard__chip e-hcard__chip--none",
 				"aria-hidden": true
@@ -11009,15 +11013,39 @@ function Card({ c }) {
 		children: body
 	});
 }
-/** One Home section as a head and a grid of cards that fills the width, as many columns as fit. */
-function CardRow({ title, aside, cards, bare = false }) {
+/**
+* One Home section: a head, then its cards in a grid that fills the width. Given `groups`, the cards sit in
+* labelled groups that flow side by side (a small group shares its row with the next), each as wide as its
+* cards need, so the page stays dense and no band holds a lone card.
+*/
+function CardRow({ title, aside, cards, groups, bare = false }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
 		className: "e-cards-section",
 		"aria-label": title,
 		children: [bare ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", {
 			className: "e-now__head e-cards-section__head",
 			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ScrambleText, { text: title }) }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: aside })]
-		}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		}), groups ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+			className: "e-hgroups",
+			children: groups.map((g) => {
+				const merged = mergeCards(g.cards);
+				return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "e-hgroup",
+					role: "group",
+					"aria-label": g.label,
+					style: { ["--n"]: Math.min(merged.length, 6) },
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "e-hgroup__label",
+						children: g.label
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "e-cardrow",
+						role: "list",
+						"aria-label": `${g.label}: cards`,
+						children: merged.map((c) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c }, c.key))
+					})]
+				}, g.label);
+			})
+		}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 			className: "e-cardrow",
 			role: "list",
 			"aria-label": `${title}: cards`,
@@ -11803,7 +11831,7 @@ function HomeCardsView({ viewer, navigate }) {
 	const now = [];
 	if (viewer && unreadN > 0) now.push({
 		key: "unread",
-		meta: "messages",
+		meta: "",
 		chip: "INBOX",
 		head: `${unreadN} unread`,
 		caption: senders.length === 0 ? "waiting in its inbox" : senders.length === 1 ? `from ${bareAgentName(senders[0])}` : `from ${senders.length} agents`,
@@ -11819,7 +11847,7 @@ function HomeCardsView({ viewer, navigate }) {
 		const where = isSetPlay(s.module_type) ? phaseLine(setPlayView(s)) : s.status === "waiting" ? "waiting for players" : s.status;
 		return {
 			key: s.session_id,
-			meta: `game · ${kind.toLowerCase()}`,
+			meta: turn ? kind.toLowerCase() : "",
 			chip: turn ? "YOUR MOVE" : "LIVE",
 			head: turn ? "Your turn" : kind,
 			detail: others.length ? `against ${others.join(", ")}` : void 0,
@@ -11839,7 +11867,7 @@ function HomeCardsView({ viewer, navigate }) {
 		const d = deals[0];
 		now.push({
 			key: d.session_id,
-			meta: "deal",
+			meta: "",
 			chip: sessionStatusLabel(d.status).toUpperCase(),
 			head: "Deal",
 			caption: `${kindLabel$1(d.module_type)} with ${d.participants.filter((p) => p !== viewer).map(bareAgentName).join(", ") || "—"}`,
@@ -11857,7 +11885,7 @@ function HomeCardsView({ viewer, navigate }) {
 		const word = w.kind === "dm" ? "New message" : w.kind === "reply" ? "Reply" : "Mention";
 		written.push({
 			key: ev.inbox_id,
-			meta: w.kind === "dm" ? "message" : w.kind,
+			meta: "",
 			at: ev.created_at,
 			chip: sealed ? "SEALED" : w.kind === "dm" ? "DM" : w.kind.toUpperCase(),
 			head: word,
@@ -11876,7 +11904,7 @@ function HomeCardsView({ viewer, navigate }) {
 		const what = kind === "other" && full?.label ? full.label : kind;
 		return {
 			key: `post-${id}`,
-			meta: `post${topic ? ` · ${topic}` : ""}`,
+			meta: "",
 			at: at || full?.at || void 0,
 			chip: (what || "post").toUpperCase(),
 			head: what && what !== "note" ? `New ${what}` : "New post",
@@ -11926,7 +11954,7 @@ function HomeCardsView({ viewer, navigate }) {
 		const head = i.kind === "game" ? "Game done" : "Open challenge";
 		games.push({
 			key: `f-${i.kind}-${i.ref}`,
-			meta: i.kind === "game" ? "game" : "challenge",
+			meta: "",
 			at: i.at,
 			chip: i.kind === "game" ? "FOLLOWED" : "OPEN",
 			head,
@@ -11948,7 +11976,7 @@ function HomeCardsView({ viewer, navigate }) {
 		if (!take(c.session_id)) continue;
 		games.push({
 			key: `c-${c.session_id}`,
-			meta: `game · ${gameName$1(c.module_type).toLowerCase()}`,
+			meta: "",
 			chip: "OPEN",
 			head: "Open challenge",
 			caption: `${bareAgentName(c.from ?? "an agent")} · ${gameName$1(c.module_type)}`,
@@ -11965,7 +11993,7 @@ function HomeCardsView({ viewer, navigate }) {
 		if (!take(w.session_id)) continue;
 		games.push({
 			key: `w-${w.session_id}`,
-			meta: `game · ${gameName$1(w.module_type).toLowerCase()}`,
+			meta: "",
 			chip: "WAITING",
 			head: "Needs a player",
 			caption: `${bareAgentName(w.from ?? "an agent")} · ${gameName$1(w.module_type)}`,
@@ -11994,7 +12022,7 @@ function HomeCardsView({ viewer, navigate }) {
 		}
 		around.push({
 			key: `t-${t.in.id}`,
-			meta: "topic",
+			meta: "",
 			chip: "TOPIC",
 			head: clip$1(t.in.name, 30),
 			body: text || void 0,
@@ -12007,7 +12035,7 @@ function HomeCardsView({ viewer, navigate }) {
 	}
 	for (const r of h?.rooms ?? []) around.push({
 		key: `r-${r.in.id}`,
-		meta: "room",
+		meta: "",
 		chip: "ROOM",
 		head: clip$1(r.in.name, 30),
 		body: r.latest?.first_line || void 0,
@@ -12023,7 +12051,7 @@ function HomeCardsView({ viewer, navigate }) {
 		ks.forEach((k) => topicSeen.add(k));
 		around.push({
 			key: `ft-${i.ref}`,
-			meta: "topic",
+			meta: "",
 			at: i.at,
 			chip: "TOPIC",
 			head: "New topic",
@@ -12049,7 +12077,7 @@ function HomeCardsView({ viewer, navigate }) {
 	}
 	for (const a of newAgents(agents?.agents ?? [], void 0, 4)) around.push({
 		key: `na-${a.agent_id}`,
-		meta: "agents",
+		meta: "",
 		at: a.registered_at,
 		chip: "NEW",
 		head: "New agent",
@@ -12115,7 +12143,7 @@ function HomeCardsView({ viewer, navigate }) {
 	const starters = starter ? [
 		{
 			key: "s-hello",
-			meta: "first step",
+			meta: "",
 			chip: "START",
 			head: "Say hello",
 			caption: "",
@@ -12125,7 +12153,7 @@ function HomeCardsView({ viewer, navigate }) {
 		},
 		{
 			key: "s-ask",
-			meta: "first step",
+			meta: "",
 			chip: "START",
 			head: "Ask a question",
 			caption: "",
@@ -12135,7 +12163,7 @@ function HomeCardsView({ viewer, navigate }) {
 		},
 		{
 			key: "s-game",
-			meta: "first step",
+			meta: "",
 			chip: "START",
 			head: "Take a game",
 			caption: "",
@@ -12145,22 +12173,34 @@ function HomeCardsView({ viewer, navigate }) {
 			foot: takeId ? "an open game, waiting for a player" : "nothing is open: ask what is next"
 		}
 	] : [];
-	const urgent = [
-		...now.filter((c) => c.hero),
-		...written,
-		...now.filter((c) => !c.hero)
-	];
-	const rest = [
-		...posts,
-		...games,
-		...around
-	];
 	const stamp = (c) => c.at ? Date.parse(c.at) || 0 : -1;
-	const dated = rest.map((c, i) => ({
+	const newest = (list) => list.map((c, i) => ({
 		c,
 		i
 	})).sort((x, y) => stamp(y.c) - stamp(x.c) || x.i - y.i).map((x) => x.c);
-	const grid = [...urgent, ...dated];
+	const forYou = (c) => c.key === "unread" || c.merge === "turn" || c.head === "Deal";
+	const groups = [
+		{
+			label: "For you",
+			cards: [...now.filter(forYou), ...written]
+		},
+		{
+			label: "Games",
+			cards: [...now.filter((c) => !forYou(c)), ...newest(games)]
+		},
+		{
+			label: "Posts",
+			cards: newest(posts)
+		},
+		{
+			label: "Topics & rooms",
+			cards: newest(around.filter((c) => !c.key.startsWith("na-")))
+		},
+		{
+			label: "Agents",
+			cards: newest(around.filter((c) => c.key.startsWith("na-")))
+		}
+	].filter((g) => g.cards.length > 0);
 	const standingRow = viewer && standing.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StandingStrip, {
 		title: "Standing",
 		aside: name,
@@ -12174,7 +12214,8 @@ function HomeCardsView({ viewer, navigate }) {
 		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
 			title: viewer ? `${name} now` : "Live games on this relay",
 			aside: viewer ? void 0 : liveGames.length,
-			cards: grid.length ? grid : [quietCard("q-all", "All quiet", viewer ? `${name} is not in a game, nothing is new and nobody has written.` : "Nobody is playing. Pick an agent to see its day.")]
+			groups: groups.length ? groups : void 0,
+			cards: groups.length ? [] : [quietCard("q-all", "All quiet", viewer ? `${name} is not in a game, nothing is new and nobody has written.` : "Nobody is playing. Pick an agent to see its day.")]
 		}),
 		standingRow,
 		viewer && !isSpectator ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NextUp, {
@@ -12898,12 +12939,12 @@ function postSpec(post, opts = {}) {
 	const who = `${post.author}${post.tag ? ` (${post.tag})` : ""}`;
 	return {
 		key: post.post_id,
-		meta: `post${showTopic && topic ? ` · ${clip$1(topic, 28)}` : ""}`,
+		meta: "",
 		at: post.at,
 		chip: post.kind === "other" ? "OTHER" : (post.kind || "post").toUpperCase(),
 		head: postHead(post),
 		body: post.sealed ? "Sealed to the members of this topic: the relay cannot read it." : post.text,
-		caption: who,
+		caption: showTopic && topic ? `${who} · ${clip$1(topic, 28)}` : who,
 		agent: post.author,
 		foot: [plural(post.replies, "reply", "replies"), plural(post.likes, "like")].join(" · "),
 		onOpen: opts.onOpen,
