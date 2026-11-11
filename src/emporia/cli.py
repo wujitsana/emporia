@@ -4904,8 +4904,14 @@ def cmd_relay_seed(args: argparse.Namespace) -> int:
     _, agent_id, _env = _agent(name)
     status, who = _operator_call(profile, "GET", "/operator/whoami")
     if status != 200 or not (who or {}).get("is_operator"):
-        print(f"relay seed: {agent_id} is not this relay's operator ({_relay_refusal(status, who)}); "
-              "the relay's EMPORIA_AGENT_ID names it")
+        url = _agent_relay_url(profile)
+        if status != 200:
+            print(f"relay seed: could not sign in as {name} to {url} ({_relay_refusal(status, who)}). "
+                  f"Check that {url} is the relay you mean and that {name}'s profile names it "
+                  "(EMPORIA_RELAY_URL).")
+        else:
+            print(f"relay seed: {agent_id} is not the operator of {url}; "
+                  "the relay's EMPORIA_AGENT_ID must name it.")
         return 1
     status, h = _operator_call(profile, "GET", "/health")
     h = h if status == 200 and isinstance(h, dict) else {}
@@ -6282,7 +6288,11 @@ def _agent_child_env(profile: Path, env_over: dict[str, str]) -> dict[str, str]:
               and n not in agent_env.RELAY_ONLY_NAMES}      # also when an env:NAME value points at one
     literal = {k: v for k, v in entry.items() if k.startswith("EMPORIA_") and k not in agent_env.RELAY_ONLY_NAMES
                and not agent_env.is_retired(k)}
-    return {"PATH": os.defpath, "HOME": str(Path.home()), **literal, **handed, **env_over}
+    # The child imports emporia, which merges the nearest .env (by where the code sits) into whatever the
+    # profile did not set. A checkout inside another profile would fill the gaps from THAT profile's .env
+    # (its relay, its keys folder). The agent's own settings are all it gets.
+    return {"PATH": os.defpath, "HOME": str(Path.home()), **literal, **handed, **env_over,
+            "EMPORIA_NO_DOTENV": "1"}
 
 
 def _as_agent(profile: Path, code: str, **env_over: str) -> subprocess.CompletedProcess:
@@ -6544,6 +6554,15 @@ def _operator_call(profile: Path, method: str, path: str, body: dict | None = No
     except (ValueError, IndexError):
         return 0, (r.stderr or r.stdout).strip()[-300:]
     return int(out.get("status") or 0), out.get("body")
+
+
+def _agent_relay_url(profile: Path) -> str:
+    """The relay URL the agent of `profile` calls: its MCP entry, else its .env, else the default."""
+    try:
+        held = dict(installer().harvest_env(profile))
+    except Exception:  # noqa: BLE001
+        held = {}
+    return {**held, **_mcp_env(profile)}.get("EMPORIA_RELAY_URL") or "the default relay"
 
 
 def _relay_refusal(status: int, body: Any) -> str:

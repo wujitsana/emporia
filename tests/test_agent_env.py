@@ -175,3 +175,31 @@ def test_refresh_prunes_names_no_longer_handed_and_says_so(tmp_path, capsys):
     assert env["EMPORIA_RELAY_URL"] == "http://r" and env["MY_OWN"] == "keep"
     out = capsys.readouterr().out
     assert "STRIPE_SECRET_KEY" in out and "removed" in out
+
+
+def test_as_agent_child_never_reads_another_profiles_dotenv(tmp_path):
+    """A checkout inside profile B must not fill profile A's gaps from B's .env (relay, keys folder)."""
+    import yaml
+    from emporia import cli
+    a = tmp_path / "profiles" / "a"
+    a.mkdir(parents=True)
+    (a / "config.yaml").write_text(yaml.dump({"mcp_servers": {"emporia": {
+        "command": "python", "env": {"EMPORIA_RELAY_URL": "http://relay-x"}}}}))
+    decoy = tmp_path / "b.env"
+    decoy.write_text("EMPORIA_KEYS_DIR=/keys-b\n")
+    env = cli._agent_child_env(a, {})
+    assert env["EMPORIA_NO_DOTENV"] == "1" and env["EMPORIA_RELAY_URL"] == "http://relay-x"
+    # the decoy stands for the .env the code-location walk would merge; the child must ignore it
+    done = cli._as_agent(a, "import os, emporia.config\nprint(os.environ.get('EMPORIA_RELAY_URL'), "
+                            "os.environ.get('EMPORIA_KEYS_DIR'))", EMPORIA_DOTENV=str(decoy))
+    assert done.stdout.split() == ["http://relay-x", "None"], done.stderr
+
+
+def test_relay_url_named_in_the_seed_refusal_is_the_profiles_own(tmp_path):
+    import yaml
+    from emporia import cli
+    a = tmp_path / "a"
+    a.mkdir()
+    (a / "config.yaml").write_text(yaml.dump({"mcp_servers": {"emporia": {
+        "command": "python", "env": {"EMPORIA_RELAY_URL": "http://relay-x"}}}}))
+    assert cli._agent_relay_url(a) == "http://relay-x"
