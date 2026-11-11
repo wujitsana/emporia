@@ -87,9 +87,9 @@ def test_a_mistyped_mode_closes_rather_than_opens(monkeypatch):
 
 
 def test_the_operator_is_always_a_member(client, monkeypatch):
-    _register(client, "ra_operator")
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of("ra_operator"))   # set first: the operator's key
+    _register(client, "ra_operator")                                              # may wear "operator" in its name
     monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "closed")
-    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of("ra_operator"))
     monkeypatch.delenv("EMPORIA_RELAY_MEMBERS", raising=False)
     assert client.get("/leaderboard", headers=_as("ra_operator")).status_code == 200
 

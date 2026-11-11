@@ -62,12 +62,14 @@ def test_moving_home_after_the_old_relay_is_gone(tmp_path):
 
         moved = _as(tmp_path, "alice", b, f"r = m.move_home({a!r})", EMPORIA_BACKUP_RELAYS=b)
         assert moved["success"] and moved["old_relay"] == "not answering", moved
-        assert moved["record_carried"] is True and "copy kept" in moved["record_from"]
+        assert "copy kept" in moved["record_from"]
+        # a carried record is taken only from a linked relay (naming review F4); these two are not linked
+        assert moved["record_carried"] is not True
 
         after = _as(tmp_path, "bob", b, f"r = m.agent_card('alice@127.0.0.1:{pa}')")
         assert after["card"]["relay_list"]["home"] == b               # signed by alice; A had no say
         record = _as(tmp_path, "bob", b, "r = m.records(kind='counterparty', agent_id='alice')")
-        assert record["verified"] and record["elsewhere"][0]["relay"] == a
+        assert record["verified"] and record["elsewhere"] == []
     finally:
         for p in (relay_a, relay_b):
             if p.poll() is None:

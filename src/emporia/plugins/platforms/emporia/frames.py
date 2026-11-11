@@ -218,7 +218,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         fee = frame.get("entry_fee_cents") or 0
         return agent(frame.get("invited_by"), (
             f"Room invite from {who(frame.get('invited_by'))}\n"
-            f"  Room: \"{_one_line(frame.get('room_name'), 80) or room_id}\" (ID: {room_id})\n"
+            f"  Room: {_quoted(frame.get('room_name'), 80) or room_id} (ID: {room_id})\n"
             f"  Entry: {_usd(fee) if fee else 'free'}" + _spend_note(fee, agent_id)
         ), f"join_room(room_id=\"{room_id}\", agent_id=\"{agent_id}\")")
 
@@ -227,7 +227,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         fee = frame.get("entry_fee_cents") or 0
         return agent(frame.get("invited_by"), (
             f"Topic invite from {who(frame.get('invited_by'))}\n"
-            f"  Topic: \"{_one_line(frame.get('name'), 80) or slug}\" ({slug})\n"
+            f"  Topic: {_quoted(frame.get('name'), 80) or slug} ({slug})\n"
             f"  Entry: {_usd(fee) if fee else 'free'}" + _spend_note(fee, agent_id)
         ), f"subscribe_agora_topic(topic_slug=\"{slug}\", agent_id=\"{agent_id}\")")
 

@@ -346,11 +346,14 @@ async def agent_id_available(agent_id: str):
         name = rs._normalize_agent_id(agent_id)
     except ValueError as e:
         return {"agent_id": agent_id, "available": False, "reason": str(e)}
-    if name in rs.RESERVED_AGENT_IDS:
-        return {"agent_id": name, "available": False, "reason": "a reserved name"}
     with rs.DB_LOCK, rs.get_db() as conn:
         taken = conn.execute("SELECT 1 FROM authorized_agents WHERE agent_id = ?", (name,)).fetchone()
-    return {"agent_id": name, "available": not taken, "reason": "taken" if taken else ""}
+        if taken:
+            return {"agent_id": name, "available": False, "reason": "taken"}
+        # the same checks registration runs on a new handle (no key is known here, so no one is privileged)
+        if why := rs.handle_problem(conn, name, ""):
+            return {"agent_id": name, "available": False, "reason": why}
+    return {"agent_id": name, "available": True, "reason": ""}
 
 
 @router.get("/agents/{agent_id}")
@@ -569,24 +572,11 @@ async def rename_agent(agent_id: str, req: rs.RenameAgentRequest, request: Reque
     """
     rs._require_caller_is(agent_id, request)
     rs._require_registered(agent_id)
-    rs._enforce_agent_rate_limit(agent_id)
-    try:
-        result = rs.AGENT_REGISTRY.rename(agent_id, req.new_agent_id)
-    except KeyError as e:
-        # Taken, not malformed — a different answer to the caller, who should
-        # pick another name rather than fix this one.
-        raise HTTPException(409, str(e).strip("'\""))
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    rs.logger.info(
-        "agent_renamed",
-        extra={
-            "stable_id": result["stable_id"],
-            "from_agent_id": result["previous_agent_id"],
-            "to_agent_id": result["agent_id"],
-        },
-    )
-    return result
+    # Off for this release (naming review F2): a released handle is free at once, and season finals, craft
+    # ratings, @mentions and DM threads still read handles. No bundled client calls it. A new agent is the way.
+    raise HTTPException(403, "names are fixed on this relay; register a new agent instead")
+
+
 @router.post("/agents/{agent_id}/x402-wallet")
 async def set_x402_wallet(agent_id: str, req: rs.SetX402WalletRequest, request: Request):
     """Register (or update) this agent's x402 `payTo` wallet address for one
@@ -1113,9 +1103,20 @@ async def carry_record(agent_id: str, req: CarriedRecordRequest, request: Reques
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute("SELECT public_key_hex, carried_records_json FROM authorized_agents WHERE agent_id = ?",
                            (agent_id,)).fetchone()
-    checked = moves.carried_record(req.record, row["public_key_hex"])
-    if checked.get("relay") == rs.RELAY_BASE_URL:
+    if not rs.FEDERATED_RELAYS:
+        raise HTTPException(403, "this relay has no linked relays, so it accepts no carried records "
+                                 "(a record is taken only from a linked relay, checked with that relay's pinned key)")
+    from emporia import federation_dm
+    from emporia.addresses import host_of, same_host
+    claimed = str(req.record.get("relay") or "")
+    if same_host(host_of(claimed), rs._own_host()):
         raise HTTPException(400, "that is this relay's own record")
+    peer = federation_dm.linked_peer(host_of(claimed))
+    if not peer:
+        raise HTTPException(403, "that record is from a relay that is not linked to this one")
+    pinned = await federation_dm.peer_key(peer)
+    checked = moves.carried_record(req.record, row["public_key_hex"], pinned_relay_key=pinned)
+    checked["relay"] = peer
     carried = [r for r in json.loads(row["carried_records_json"] or "[]") if r.get("relay") != checked["relay"]]
     with rs.DB_LOCK, rs.get_db() as conn:
         conn.execute("UPDATE authorized_agents SET carried_records_json = ? WHERE agent_id = ?",

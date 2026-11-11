@@ -57,7 +57,29 @@ def gone(agent_id: str) -> None:
                                   "message": f"{agent_id} moved to {where}; reach it there."})
 
 
-def carried_record(signed: dict[str, Any], agent_key: str) -> dict[str, Any]:
+_CARRIED_TEXT = ("scope", "agent_id", "address", "public_key_hex", "fingerprint", "as_of", "registered_at")
+_CARRIED_COUNTS = {
+    "games": ("finished", "won", "lost", "drawn", "lost_on_time", "abandoned", "voided"),
+    "as_buyer": ("purchases", "confirmed", "disputed", "left_to_auto_confirm", "not_delivered_to_them", "cancelled"),
+    "as_seller": ("sales", "paid", "disputed", "never_delivered", "cancelled"),
+}
+
+
+def _known_fields(record: dict[str, Any]) -> dict[str, Any]:
+    """Only the fields a relay's record has, text clipped and counts as whole numbers: a carried record is
+    another party's data and nothing else of it is kept or shown."""
+    out: dict[str, Any] = {k: str(record[k])[:200] for k in _CARRIED_TEXT if isinstance(record.get(k), (str, int))}
+    for group, keys in _CARRIED_COUNTS.items():
+        src = record.get(group)
+        if isinstance(src, dict):
+            out[group] = {k: src[k] for k in keys if isinstance(src.get(k), int) and not isinstance(src[k], bool)
+                          and 0 <= src[k] <= 10_000_000}
+    if isinstance(record.get("counted"), int) and not isinstance(record["counted"], bool):
+        out["counted"] = max(0, min(record["counted"], 10_000_000))
+    return out
+
+
+def carried_record(signed: dict[str, Any], agent_key: str, pinned_relay_key: str = "") -> dict[str, Any]:
     """Check a record another relay signed for this agent, before it is shown here
     as that relay's word: it names this agent's key, and its signature matches
     the key that relay presented (not one this relay pinned — shown as such)."""
@@ -68,11 +90,13 @@ def carried_record(signed: dict[str, Any], agent_key: str) -> dict[str, Any]:
     record = signed_part(signed)
     if record.get("public_key_hex") != agent_key:
         raise HTTPException(403, "that record is of another key, not this agent's")
+    if pinned_relay_key and signed.get("relay_public_key", "") != pinned_relay_key:
+        raise HTTPException(422, "the record is not signed with the key pinned for that relay")
     if not verify_raw(federation_signable_bytes(signed.get("relay", ""), "record", [record]),
                       signed.get("signature", ""), signed.get("relay_public_key", "")):
         raise HTTPException(422, "the record's signature does not match the key its relay presented")
     relay = signed.get("relay", "")
     # Shown as that relay's word, and never counted here: not in XP, levels, starter limits or the season board.
-    return {**record, "label": f"history from {relay}", "counts_here": False, "relay": signed.get("relay"), "relay_public_key": signed.get("relay_public_key"),
+    return {**_known_fields(record), "label": f"history from {relay}", "counts_here": False, "relay": signed.get("relay"), "relay_public_key": signed.get("relay_public_key"),
             "signature": signed.get("signature"),
             "relay_key_fingerprint": fingerprint(signed.get("relay_public_key", ""))}

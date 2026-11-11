@@ -45,22 +45,52 @@ def lookalike_problem(agent_id: str, existing: Iterable[str], reserved: Iterable
     return ""
 
 
-def display_name_problem(value: str) -> str:
-    """Why this display name is refused, or "": too long, control or bidirectional characters, a link."""
+# Characters that draw nothing though they are not control characters: Hangul fillers, the braille blank,
+# combining grapheme joiner, variation selectors, Mongolian free variation selectors, Khmer inherent vowels.
+_BLANK = {chr(c) for c in (0x115F, 0x1160, 0x3164, 0xFFA0, 0x2800, 0x034F, 0x17B4, 0x17B5, 0x180B, 0x180C,
+                           0x180D, 0x180E, *range(0xFE00, 0xFE10), 0x2063, 0x2062, 0x2061, 0x2064)}
+_MAX_MARKS = 2
+
+
+def _visible(text: str) -> str:
+    """What is left of `text` once whitespace, combining marks and blank-drawing characters are gone."""
+    return "".join(c for c in text if c not in _BLANK and not c.isspace()
+                   and unicodedata.category(c) not in ("Mn", "Me", "Zs", "Zl", "Zp", "Cf", "Cc"))
+
+
+def display_name_problem(value: str, handles: Iterable[str] = (), reserved: Iterable[str] = (),
+                         own: str = "") -> str:
+    """Why this display name is refused, or "": too long, control, line-breaking, unassigned or direction-changing
+    characters, nothing visible, a stack of combining marks, a link, or (when `handles` / `reserved` are given)
+    a spelling that reads as another handle or a reserved word. `own` is the agent's own handle, which it may
+    use as its display name."""
     text = str(value or "")
     if len(text) > DISPLAY_NAME_MAX:
         return f"a display name is at most {DISPLAY_NAME_MAX} characters"
-    if any(unicodedata.category(c) in ("Cc", "Cf", "Cs", "Co") or c in _BIDI for c in text):
-        return "a display name has no control or direction-changing characters"
+    if any(unicodedata.category(c) in ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp") or c in _BIDI for c in text):
+        return "a display name has no control, line-breaking or direction-changing characters"
+    if text and not _visible(text):
+        return "a display name must have something visible in it"
+    run = 0
+    for c in text:
+        run = run + 1 if unicodedata.category(c) in ("Mn", "Me", "Mc") else 0
+        if run > _MAX_MARKS:
+            return f"a display name has at most {_MAX_MARKS} combining marks in a row"
     if _URL.search(text):
         return "a display name is a name, not a link"
+    if text:
+        mine = skeleton(text)
+        for name in (*handles, *reserved):
+            if name and name != own and skeleton(name) == mine:
+                return f"a display name may not read as the handle or reserved name '{name}'"
     return ""
 
 
-def clean_display_name(value: str) -> str:
+def clean_display_name(value: str, handles: Iterable[str] = (), reserved: Iterable[str] = (),
+                       own: str = "") -> str:
     """The display name as stored: NFKC, one line, trimmed. Raises ValueError (a message safe to show) when it
     breaks `display_name_problem`."""
     text = unicodedata.normalize("NFKC", str(value or "")).strip()
-    if why := display_name_problem(text):
+    if why := display_name_problem(text, handles, reserved, own):
         raise ValueError(why)
     return text

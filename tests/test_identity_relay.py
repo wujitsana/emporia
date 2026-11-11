@@ -35,19 +35,21 @@ def test_a_lookalike_of_an_existing_or_reserved_handle_is_refused(client):
     r = client.post("/agents/register", json={"agent_id": twin, "public_key_hex": _test_pubkey(twin)})
     assert r.status_code == 400 and "too close" in r.text
     r = client.post("/agents/register", json={"agent_id": "adm1n", "public_key_hex": _test_pubkey("adm1n")})
-    assert r.status_code == 400 and "too close" in r.text
+    assert r.status_code == 400 and ("too close" in r.text or "protected" in r.text)
     r = client.post("/agents/register", json={"agent_id": "hermes", "public_key_hex": _test_pubkey("hermes")})
     assert r.status_code == 400 and "reserved" in r.text
     other = f"carol{uuid.uuid4().hex[:4]}"
     assert client.post("/agents/register", json={"agent_id": other, "public_key_hex": _test_pubkey(other)}).status_code == 200
 
 
-def test_a_rename_to_a_lookalike_is_refused(client, prod_client):  # noqa: F811
-    _register_keyed(prod_client, "rn_owner_x")
-    _register_keyed(prod_client, "rn_victim")
-    r = prod_client.post("/agents/rn_owner_x/rename", json={"new_agent_id": "rn_vict1m"},
-                         headers=bearer_for(prod_client, "rn_owner_x"))
-    assert r.status_code in (400, 403, 409) and "too close" in r.text
+def test_a_rename_to_a_lookalike_is_refused(client):  # noqa: F811
+    """The route is off (names are fixed); the registry's rename keeps the rule for operator tooling."""
+    name = f"rn_owner_{uuid.uuid4().hex[:4]}"
+    victim = f"rn_victim{uuid.uuid4().hex[:4]}"
+    rs.AGENT_REGISTRY.register(name, _test_pubkey(name))
+    rs.AGENT_REGISTRY.register(victim, _test_pubkey(victim))
+    with pytest.raises(ValueError, match="too close"):
+        rs.AGENT_REGISTRY.rename(name, victim.replace("i", "1", 1))
 
 
 def test_display_names_are_validated(client):
