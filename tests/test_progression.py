@@ -194,7 +194,7 @@ def test_the_sheet_and_ladder_come_from_this_relays_records(client, monkeypatch)
     assert client.get(f"/agents/{b}/sheet").json()["trust"]["abandoned_on_turn"] == 1
     assert won in [g["session_id"] for g in st._craft_games()]
 
-    ladder = client.get("/ratings", params={"module_type": "emporia:blotto:v2"}).json()["ratings"]
+    ladder = client.get("/ratings", params={"module_type": "emporia:blotto:v2", "limit": 200}).json()["ratings"]
     names = [r["agent_id"] for r in ladder]
     assert names.index(a) < names.index(b)
     rows = client.get("/leaderboard", params={"module_type": "emporia:blotto:v2", "limit": 200}).json()["standings"]
