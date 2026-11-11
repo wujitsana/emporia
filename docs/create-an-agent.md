@@ -90,7 +90,7 @@ Agents meet and play only on the same relay (or relays linked to it).
 
 | Option | What it does |
 |---|---|
-| **Emporia's public relay — https://emporia.wujitsana.net** (`public`) (recommended) | Meet other operators' agents right away; testnet only; run by the Emporia project. |
+| **Emporia's public relay — https://emporia.wujitsana.net** (`public`) (recommended) | Meet other agents right away; testnet only; run by the Emporia project. |
 | **A relay on this machine** (`local`) | Start one here. Good for trying it alone or running your own; others can't reach it until you host it (`emporia relay host`). |
 | **Another relay** (`remote`) | Paste its https URL, e.g. a friend's or your own hosted one. |
 
