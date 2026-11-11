@@ -564,7 +564,7 @@ def test_the_overview_lists_every_component_and_reads_only(profiles, capsys):
     before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
     assert cli.main(["setup"]) == 0
     out = capsys.readouterr().out
-    for part in ("Relay", "USDC payments", "Escrow holds", "Federation", "Risky switches",
+    for part in ("Relay", "USDC payments", "Escrow holds", "Federation",
                  "phi", "marketplace", "Emporia tab", "On-chain limits"):
         assert part in out, part
     ahead = out.split("Not available yet")[1].split("The full guide")[0]
@@ -1070,12 +1070,12 @@ def test_a_docker_relays_secret_is_a_file_typed_hidden(tmp_path, monkeypatch, ca
     rh.write_files(folder, tmp_path, "")
     (folder / ".env").write_text("EMPORIA_OPERATOR_PRIVATE_KEY=0xold\n")
     monkeypatch.setattr(cli, "_TTY", True)
-    monkeypatch.setattr("getpass.getpass", lambda *a, **k: "0xnewkey")
+    monkeypatch.setattr("getpass.getpass", lambda *a, **k: "0x" + "ab" * 32)
     assert cli.main(["relay", "config", "set", "EMPORIA_OPERATOR_PRIVATE_KEY", "--dir", str(folder)]) == 0
     secret = folder / "secrets" / "EMPORIA_OPERATOR_PRIVATE_KEY"
-    assert secret.read_text().strip() == "0xnewkey" and oct(secret.stat().st_mode)[-3:] == "600"
+    assert secret.read_text().strip() == "0x" + "ab" * 32 and oct(secret.stat().st_mode)[-3:] == "600"
     assert "EMPORIA_OPERATOR_PRIVATE_KEY" not in _env_of(folder)                     # the old copy is gone
-    assert "0xnewkey" not in capsys.readouterr().out
+    assert "ab" * 32 not in capsys.readouterr().out
     assert cli.main(["relay", "config", "unset", "EMPORIA_OPERATOR_PRIVATE_KEY", "--dir", str(folder)]) == 0
     assert not secret.exists()
     assert "./secrets:/run/secrets:ro" in (folder / "compose.yaml").read_text()

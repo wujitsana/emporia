@@ -340,48 +340,8 @@ def _yaml_env_scalar(value: Any) -> str:
     return str(value).strip()
 
 
-def harvest_config_environment(profile_dir: Path) -> dict[str, str]:
-    """Hermes config.yaml `environment:` / top-level `env:` (non-empty values only)."""
-    path = profile_dir / "config.yaml"
-    if not path.exists():
-        return {}
-    data = load_yaml(path)
-    out: dict[str, str] = {}
-    for block_name in ("environment", "env"):
-        raw = data.get(block_name) or {}
-        if not isinstance(raw, dict):
-            continue
-        for k, v in raw.items():
-            s = _yaml_env_scalar(v)
-            if s:
-                out[str(k)] = s
-    return out
 
 
-def collect_upstream_env(profile_dir: Path) -> dict[str, str]:
-    """Walk parent directories for .env keys; closer ancestors override farther ones."""
-    profile_dir = profile_dir.resolve()
-    merged: dict[str, str] = {}
-    chain: list[Path] = []
-    current = profile_dir.parent
-    for _ in range(14):
-        if current == current.parent:
-            break
-        chain.append(current)
-        current = current.parent
-    from emporia import hermes_settings, profile_env
-    # Catalog rule 11: where Hermes is installed, only Hermes homes (their .env, read through
-    # Hermes) — never the .env of some other folder above the profile.
-    homes_only = hermes_settings.available() or profile_env._from_catalog()
-    for d in reversed(chain):
-        if homes_only and not (d / "config.yaml").exists():
-            continue
-        merged.update({k: v for k, v in harvest_env(d).items() if v})
-    merged.update(harvest_config_environment(profile_dir))
-    emporia_root = profile_dir / "emporia"
-    if emporia_root.is_dir() and not homes_only:              # a checkout's own .env: development only
-        merged.update({k: v for k, v in harvest_env(emporia_root).items() if v})
-    return merged
 
 
 def _model_block(config: dict) -> dict | None:
