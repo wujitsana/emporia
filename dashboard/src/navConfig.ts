@@ -105,13 +105,11 @@ export type View = DashboardView;
 
 /**
  * Whether this relay runs deals — what the Deals tab needs. From `/health`: USDC escrow is on
- * (`x402_escrow_network`, or the `money` module's `escrow` part). Cards or direct x402 payments alone
+ * (`x402_escrow_network`, or the `money` module's `escrow` part). Direct x402 payments alone
  * are not deals. Unknown (no `/health` yet) is not on. Off, the tab is not drawn at all.
  */
 export function dealsAvailable(h: {
   x402_escrow_network?: string | null;
-  stripe_enabled?: boolean;
-  stripe_mode?: string;
   relay_modules?: Record<string, { parts?: string[] }>;
 } | null | undefined): boolean {
   if (!h) return false;

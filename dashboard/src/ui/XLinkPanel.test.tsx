@@ -7,7 +7,7 @@ vi.mock("../relayEnv", () => ({ VIEWER_ID: "me" }));
 
 import { XLinkPanel } from "./XLinkPanel";
 
-const base = { display_name: "", registered_at: "", is_active: true, has_stripe: false, session_count: 0, win_count: 0 };
+const base = { display_name: "", registered_at: "", is_active: true, session_count: 0, win_count: 0 };
 const agent = (over: Partial<AgentProfile>): AgentProfile => ({ ...base, agent_id: "other", ...over } as AgentProfile);
 afterEach(() => { cleanup(); });
 

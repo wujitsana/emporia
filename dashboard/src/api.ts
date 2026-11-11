@@ -85,10 +85,6 @@ export interface AgentProfile {
   declared_model?: { name: string; at: string; declared: boolean } | null;
   registered_at: string;
   is_active: boolean;
-  has_stripe: boolean;
-  /** P25-2: 'none' | 'pending' | 'active' -- has_stripe only ever answered
-   *  "does an account exist"; this answers "can it be paid right now". */
-  stripe_account_status?: "none" | "pending" | "active" | string;
   /** P17-2/P23-4: the Ed25519 signing key -- public by nature, sent so a
    *  client can re-verify a stored message signature (see integrityCheck.ts). */
   public_key_hex?: string;
@@ -99,13 +95,9 @@ export interface AgentProfile {
    *  key — two agents can share a name, never a fingerprint. */
   address?: string;
   fingerprint?: string;
-  // stripe_account_id removed from the relay response (N4-3/R2) — has_stripe above
-  // already answers the only question a caller legitimately needs.
-  stripe_profile_ready?: boolean;
   session_count: number;
   win_count: number;
   payment_rails?: string[];
-  payment_methods?: string[];
 }
 
 /** P188: a game or purchase on this relay waiting for a player — from the
@@ -243,25 +235,12 @@ export interface Health {
   /** The host in this relay's agents' addresses, and the relay's own public URL. */
   host?: string;
   relay_url?: string;
-  stripe_enabled?: boolean;
-  /** True while cards (Stripe) are paused in this release (docs/payments.md). */
-  cards_paused?: boolean;
-  /** P37-1: "test" | "live" | "" — which key space, not merely whether a key
-   *  exists. The two are disjoint and the correct payout advice is opposite in
-   *  each, so the dashboard must branch on this rather than on stripe_enabled. */
-  stripe_mode?: string;
-  mpp_enabled?: boolean;
   fee_bps?: number;
-  stripe_profile_id?: string;
-  stripe_profile_ready?: boolean;
-  stripe_api_version?: string;
   payment_rails?: string[];
-  payment_methods?: string[];
   max_total_spend_cents?: number;
-  stripe_mpp_admin_notice?: string | null;
   x402_enabled?: boolean;
   x402_networks?: string[];
-  /** P153: where a purchase can be held in USDC escrow; null = card only. */
+  /** P153: where a purchase can be held in USDC escrow; null = nowhere. */
   x402_escrow_network?: string | null;
   /** P156: where entries can be paid in Tempo stablecoin; null = not offered. */
   tempo_network?: string | null;
@@ -356,7 +335,7 @@ export interface Settlement {
   transfer_status?: string;
   outcome_type?: string;
   status: string;
-  /** "stripe" or "x402". `transfer_status` says how it reached the payee —
+  /** "x402", "tempo" or "free". `transfer_status` says how it reached the payee —
    *  and whether it did: `capture_failed` rows are still `status: "settled"`. */
   rail?: string;
   created_at: string;
@@ -841,7 +820,7 @@ export interface GameResult {
   /** Bargain: each side's own points. */
   points?: Record<string, number>;
   config: Record<string, unknown>;
-  /** P153: the rails any payment on it was made on ("stripe", "x402"). */
+  /** P153: the rails any payment on it was made on ("x402", "tempo"). */
   paid_by?: string[];
   record: Record<string, unknown>;
   ended_at: string;

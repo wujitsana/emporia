@@ -11,18 +11,17 @@ import type { Settlement } from "./api";
 
 export type SettlementHealth = "settled" | "pending" | "failed" | "refunded";
 
-const FAILED_TRANSFERS = new Set(["capture_failed", "transfer_failed"]);
-// The money reached the payee without a relay transfer: a direct x402 payment,
-// a captured escrow hold, a Stripe destination charge.
-const DIRECT_TRANSFERS = new Set(["direct", "escrow_captured", "destination", "transferred"]);
+const FAILED_TRANSFERS = new Set(["capture_failed"]);
+// The money reached the payee without a relay transfer: a direct x402 or Tempo payment,
+// a captured escrow hold.
+const DIRECT_TRANSFERS = new Set(["direct", "escrow_captured"]);
 
 export function settlementHealth(s: Pick<Settlement, "status" | "transfer_status">): SettlementHealth {
   if (s.status === "refunded") return "refunded";
   const t = s.transfer_status ?? "";
-  // A session payout that raised is written `transfer_failed: <reason>` (payments.settle).
-  if (FAILED_TRANSFERS.has(t) || t.startsWith("capture_failed") || t.startsWith("transfer_failed")) return "failed";
+  if (FAILED_TRANSFERS.has(t) || t.startsWith("capture_failed")) return "failed";
   if (DIRECT_TRANSFERS.has(t) || t === "no_payment") return "settled";
-  // pending_connect*, no_stripe_account: owed, not yet paid out.
+  // anything else: owed, not yet paid out.
   return t ? "pending" : "settled";
 }
 
@@ -43,7 +42,6 @@ export function settlementHealthTitle(s: Pick<Settlement, "status" | "transfer_s
 export function railLabel(rail: string | undefined, transferStatus?: string): string {
   if (!rail) return "—";
   if (rail === "x402") return transferStatus === "escrow_captured" ? "x402 escrow" : "x402";
-  if (rail === "stripe") return transferStatus === "destination" ? "card (direct)" : "card";
   return rail;
 }
 
@@ -143,11 +141,9 @@ export type MoneyMove = "entry" | "purchase";
 
 export function acceptsLabel(
   move: MoneyMove,
-  h: { stripe_enabled?: boolean; x402_enabled?: boolean; x402_networks?: string[];
-       x402_escrow_network?: string | null; tempo_network?: string | null;
-       custodial_cards?: boolean } | null,
+  h: { x402_enabled?: boolean; x402_networks?: string[];
+       x402_escrow_network?: string | null; tempo_network?: string | null } | null,
 ): string {
-  const card = !!h?.stripe_enabled;
   const usdc = !!h?.x402_enabled;
   // P160: name the networks, so a reader knows which wallet and which chain.
   const on = (nets: (string | null | undefined)[]) => {
@@ -156,13 +152,11 @@ export function acceptsLabel(
   };
   const ways: string[] = [];
   switch (move) {
-    case "entry":            // a room or an Agora: card, or stablecoin straight to its creator
-      if (card) ways.push("card");
+    case "entry":            // a room or an Agora: stablecoin straight to its creator
       if (usdc) ways.push(`USDC${on(h?.x402_networks ?? [])}`);
       if (h?.tempo_network) ways.push(`Tempo${on([h.tempo_network])}`);
       break;
-    case "purchase":         // card held for the seller, or USDC held in escrow where the relay runs it (opt-in)
-      if (card) ways.push("card");
+    case "purchase":         // USDC held in escrow where the relay runs it (opt-in)
       if (h?.x402_escrow_network) ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
       break;
   }
@@ -195,7 +189,7 @@ export function networkWithKind(network: string): string {
 
 /**
  * The money line under a deal, in two parts: what is paid
- * ("1.00 USDC (testnet)") and how it is held ("escrow", "card"), or null when
+ * ("1.00 USDC (testnet)") and how it is held ("escrow"), or null when
  * nobody has paid yet. Escrow is opt-in: a deal takes USDC only on a relay that
  * runs it, and then it is held there; every other USDC payment goes straight
  * from agent to agent (x402) and the relay never holds it.
@@ -207,7 +201,7 @@ export function priceText(amount: number, currency: string | undefined, opts: {
   const usdc = rails.includes("x402") || opts.mode === "x402";
   const unit = usdc ? `USDC${isTestnet(opts.escrowNetwork) ? " (testnet)" : ""}` : (currency ?? "").toUpperCase();
   const via = rails.length
-    ? rails.map((r) => (r === "x402" ? "USDC" : r === "stripe" ? "card" : r === "tempo" ? "Tempo" : r)).join(" + ")
+    ? rails.map((r) => (r === "x402" ? "USDC" : r === "tempo" ? "Tempo" : r)).join(" + ")
     : null;
   return { amount: `${amount.toFixed(2)} ${unit}`.trim(), via };
 }

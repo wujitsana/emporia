@@ -55,8 +55,8 @@ vi.mock("../api", () => ({
 
 import { StatsView } from "./StatsView";
 
-const health = { x402_networks: ["eip155:84532"], x402_escrow_network: "eip155:84532", stripe_mode: "test",
-  payment_rails: ["stripe", "x402"] } as Health;
+const health = { x402_networks: ["eip155:84532"], x402_escrow_network: "eip155:84532",
+  payment_rails: ["x402"] } as Health;
 
 const view = () => render(<RelayHealthCtx.Provider value={health}><StatsView /></RelayHealthCtx.Provider>);
 
@@ -70,7 +70,7 @@ beforeEach(() => {
       status: "settled", transfer_status: "direct", rail: "x402", created_at: ago(2) },
     { settlement_id: "s2", session_id: "sess_1", winner_id: "beta", kind: "service",
       total_price_cents: 200, platform_fee_cents: 5, winner_payout_cents: 195, platform_fee_bps: 250,
-      status: "settled", transfer_status: "destination", rail: "stripe", created_at: ago(20) },
+      status: "settled", transfer_status: "direct", rail: "tempo", created_at: ago(20) },
   ];
 });
 afterEach(cleanup);

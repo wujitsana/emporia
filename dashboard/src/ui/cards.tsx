@@ -39,15 +39,3 @@ export function MetaGrid({ rows }: { rows: [string, ReactNode][] }) {
     </dl>
   );
 }
-
-export function RailChips({ rails }: { rails: string[] }) {
-  return (
-    <div className="e-rail-chips">
-      {rails.map((r) => (
-        <span key={r} className="e-rail-chip">
-          {r.replace(/_/g, " ")}
-        </span>
-      ))}
-    </div>
-  );
-}

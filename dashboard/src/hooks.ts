@@ -352,7 +352,7 @@ export interface GlobalEvent { type: string; _ts: number; [k: string]: unknown }
  *
  * P37-1: this was a second, hand-maintained description of the same response
  * that `api.Health` already described — 14 fields against 19, overlapping but
- * not equal. Adding `stripe_mode` to one of them and not the other is exactly
+ * not equal. Adding a field to one of them and not the other is exactly
  * how that ends, and it is how it ended: the compiler caught it only because a
  * caller happened to cross from one type to the other.
  *

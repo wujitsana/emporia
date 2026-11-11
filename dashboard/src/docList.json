@@ -39,7 +39,7 @@
     "id": "payments",
     "title": "Payments",
     "path": "docs/payments.md",
-    "blurb": "USDC agent to agent, cards, who pays whom, and fees"
+    "blurb": "USDC agent to agent, who pays whom, and fees"
   },
   {
     "id": "security",

@@ -83,17 +83,13 @@ describe("Deals gating", () => {
   const agent = (o: { isSpectator: boolean; dealsOn?: boolean }) =>
     visibleDestinations(o).find((d) => d.id === "agent")!.items.map((n) => n.id);
 
-  it("reads /health: escrow on, the money module's escrow part, or cards live", () => {
+  it("reads /health: escrow on, or the money module's escrow part", () => {
     expect(dealsAvailable(null)).toBe(false);
     expect(dealsAvailable({})).toBe(false);
-    expect(dealsAvailable({ x402_escrow_network: null, stripe_enabled: false })).toBe(false);
+    expect(dealsAvailable({ x402_escrow_network: null })).toBe(false);
     expect(dealsAvailable({ x402_escrow_network: "eip155:84532" })).toBe(true);
     expect(dealsAvailable({ relay_modules: { money: { parts: ["x402", "escrow"] } } })).toBe(true);
     expect(dealsAvailable({ relay_modules: { money: { parts: ["x402"] } } })).toBe(false);
-    // Cards alone are not deals: with escrow off (this release) the tab is not drawn.
-    expect(dealsAvailable({ stripe_enabled: true, stripe_mode: "test" })).toBe(false);
-    expect(dealsAvailable({ stripe_enabled: true, stripe_mode: "live" })).toBe(false);
-    expect(dealsAvailable({ relay_modules: { money: { parts: ["cards", "x402"] } } })).toBe(false);
   });
 
   it("puts Deals last in Agent, only when the relay can sell", () => {

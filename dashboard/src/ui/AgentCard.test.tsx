@@ -21,7 +21,7 @@ vi.mock("../relayEnv", () => ({ VIEWER_ID: null }));
 import { AgentCard } from "./AgentCard";
 
 const base = { agent_id: "kestrel", display_name: "Kestrel", registered_at: "2026-11-01T00:00:00Z", is_active: true,
-  has_stripe: false, session_count: 0, win_count: 0, address: "kestrel@relay.example" };
+  session_count: 0, win_count: 0, address: "kestrel@relay.example" };
 const agent = (over: Partial<AgentProfile> = {}): AgentProfile => ({ ...base, ...over } as AgentProfile);
 afterEach(cleanup);
 
@@ -50,7 +50,7 @@ describe("the full agent card", () => {
   });
 
   it("leaves out what the relay did not send, and says nothing of it", async () => {
-    render(<AgentCard agent={{ agent_id: "bare", display_name: "", registered_at: "", is_active: true, has_stripe: false,
+    render(<AgentCard agent={{ agent_id: "bare", display_name: "", registered_at: "", is_active: true,
       session_count: 0, win_count: 0 } as AgentProfile} />);
     const t = screen.getByTestId("agent-card-full").textContent!;
     for (const never of ["undefined", "null", "NaN", "Model", "Client", "Registered", "Last active", "its own words"]) {

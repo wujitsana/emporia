@@ -53,7 +53,7 @@ describe("P178 settings", () => {
   it("shows a secret only as set or not set, whatever the report holds", () => {
     const leaked = item("Keys & signer", "Signer token", { kind: "secret", value: "tok-123456", current: "tok-123456" });
     expect(secretState(leaked)).toBe("not set");
-    expect(kindOf(item("Cards", "Stripe webhook secret", { value: "set" }))).toBe("secret");
+    expect(kindOf(item("USDC", "Operator key", { value: "set" }))).toBe("secret");
     const { container } = render(<SettingRow item={leaked} place={{ text: HERMES_PLACE }} />);
     expect(container.textContent).not.toContain("tok-123456");
     expect(container.textContent).toContain("not set");

@@ -16,19 +16,19 @@ const input = (): StatsInput => ({
     { payment_id: "p1", agent_id: "beta", amount_cents: 100, currency: "usd", payment_intent_id: "pi1",
       payment_type: "session_price", status: "confirmed", rail: "x402", created_at: ago(1) },
     { payment_id: "p2", agent_id: "beta", amount_cents: 25, currency: "usd", payment_intent_id: "pi2",
-      payment_type: "room_entry", status: "confirmed", rail: "stripe", created_at: ago(10) },
+      payment_type: "room_entry", status: "confirmed", rail: "tempo", created_at: ago(10) },
     { payment_id: "p3", agent_id: "beta", amount_cents: 50, currency: "usd", payment_intent_id: "pi3",
-      payment_type: "room_entry", status: "refunded", rail: "stripe", created_at: ago(1) },
+      payment_type: "room_entry", status: "refunded", rail: "tempo", created_at: ago(1) },
   ],
   settlements: [
     settlement({ kind: "game", winner_payout_cents: 195, platform_fee_cents: 5, rail: "x402", transfer_status: "escrow_captured",
       winner_payout_atomic: "1950000", platform_fee_atomic: "50000" }),
-    settlement({ kind: "service", winner_payout_cents: 98, platform_fee_cents: 2, rail: "stripe", transfer_status: "pending_connect" }),
+    settlement({ kind: "service", winner_payout_cents: 98, platform_fee_cents: 2, rail: "x402", transfer_status: "pending" }),
     // A room's entry fee: the creator's earnings (relay_server's ?agent_id= third arm).
     settlement({ kind: "room", payer_id: "[redacted]", winner_payout_cents: 150, rail: "x402", transfer_status: "direct" }),
-    settlement({ kind: "topic", payer_id: "[redacted]", winner_payout_cents: 75, rail: "stripe", transfer_status: "transferred",
+    settlement({ kind: "topic", payer_id: "[redacted]", winner_payout_cents: 75, rail: "tempo", transfer_status: "direct",
       created_at: ago(12) }),
-    settlement({ kind: "service", winner_payout_cents: 60, rail: "stripe", transfer_status: "transfer_failed: declined" }),
+    settlement({ kind: "service", winner_payout_cents: 60, rail: "x402", transfer_status: "capture_failed" }),
     settlement({ winner_id: "alpha", winner_payout_cents: 500, transfer_status: "direct" }),
     settlement({ kind: "game", status: "refunded", transfer_status: "refunded" }),
   ],
@@ -56,9 +56,9 @@ describe("the Stats view's figures", () => {
     expect(st.earned).toBe(1_950_000 + 1_500_000 + 750_000);           // the escrow's exact split, in micros
     expect(st.earnedBySource).toEqual({ services: 0, games: 1_950_000, rooms_topics: 2_250_000, other: 0 });
     expect(st.accessSales).toBe(2);
-    expect(st.earnedByRail).toEqual({ x402: 3_450_000, stripe: 750_000 });
-    expect(st.owed).toBe(980_000);                                       // pending_connect: earned, not paid out
-    expect(st.failed).toBe(600_000);                                     // transfer_failed: <reason>
+    expect(st.earnedByRail).toEqual({ x402: 3_450_000, tempo: 750_000 });
+    expect(st.owed).toBe(980_000);                                       // pending: earned, not paid out
+    expect(st.failed).toBe(600_000);                                     // capture_failed
     expect(st.fees).toBe(50_000 + 20_000);
   });
 
@@ -124,16 +124,14 @@ describe("the Stats view's figures", () => {
 });
 
 describe("rails, networks and test money", () => {
-  const health = { x402_networks: ["eip155:84532"], x402_escrow_network: "eip155:84532", stripe_mode: "test",
+  const health = { x402_networks: ["eip155:84532"], x402_escrow_network: "eip155:84532",
     tempo_network: "eip155:42431" } as Health;
 
   it("say each rail's network, and that it is a test one", () => {
     expect(railNetwork("x402", health)).toBe("USDC (x402) on Base Sepolia testnet");
-    expect(railNetwork("stripe", health)).toBe("card · Stripe test mode");
     expect(railNetwork("tempo", health)).toBe("Tempo on Tempo Moderato testnet");
     expect(railNetwork("x402", null)).toBe("USDC (x402) on a testnet");
     expect(allTestMoney(health)).toBe(true);
     expect(allTestMoney({ ...health, x402_networks: ["eip155:8453"] } as Health)).toBe(false);
-    expect(allTestMoney({ ...health, stripe_mode: "live" } as Health)).toBe(false);
   });
 });

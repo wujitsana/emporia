@@ -22,25 +22,6 @@ function RolePill({ isOperator, isSpectator }: { isOperator: boolean; isSpectato
   return <span className="e-role-pill e-role-pill--member">Member</span>;
 }
 
-/** P25-2: has_stripe alone only ever answered "does an account exist" --
- *  distinguish the live-mode "created but not payable yet" state, and hint
- *  at the MCP tool that starts onboarding, matching this file's existing
- *  MCP-hint pattern rather than adding a signing
- *  write-flow to the dashboard itself. */
-function stripeAccountStatusLabel(registered: AgentProfile, stripeMode: string): string {
-  const status = registered.stripe_account_status ?? (registered.has_stripe ? "active" : "none");
-  if (status === "active") return "connected";
-  if (status === "pending") return "onboarding pending — Stripe confirms automatically";
-  // P37-2: the advice is opposite in the two key spaces, and this used to give
-  // the live-mode one unconditionally. In test mode the relay auto-provisions a
-  // Connected Account at registration and POST /agents/{id}/stripe-onboarding
-  // *rejects* the call — so "run start_stripe_onboarding" was an instruction
-  // that could only produce a 400.
-  if (stripeMode === "test") return "not connected — test mode provisions an account at registration";
-  if (stripeMode !== "live") return "not connected — this relay has no Stripe key configured";
-  return "not connected — needs Stripe onboarding for live payouts";
-}
-
 function SettlementRow({ s, viewerId, navigate }: { s: Settlement; viewerId: string; navigate?: Navigate }) {
   const won = s.winner_id === viewerId;
   const payout = won ? settlementPayoutMicros(s) : 0;
@@ -91,7 +72,6 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
   const [agentsData] = useInterval(() => api.agents(), 30_000);
   // P43-2: was a fourth independent /health poll; App polls it once.
   const health = useRelayHealth();
-  const stripeMode = health?.stripe_mode ?? "";
   const agents = agentsData?.agents ?? [];
   const registered = profile ?? agents.find((a) => a.agent_id === viewerId) ?? null;
   const displayName = registered?.display_name || registered?.agent_id || viewerId || "Spectator";
@@ -147,11 +127,6 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
               <summary>Payment set-up</summary>
               <MetaGrid
                 rows={[
-                  ...(stripeMode ? [
-                    ["Stripe payouts", stripeAccountStatusLabel(registered, stripeMode)] as [string, string],
-                    ["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"] as [string, string],
-                  ] : []),
-                  ...(registered.payment_methods?.length ? [["Methods", registered.payment_methods.join(", ")] as [string, string]] : []),
                   ...(registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")] as [string, string]] : []),
                 ]}
               />
@@ -230,8 +205,6 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
           </SlimCard>
         )}
 
-        {/* Cards (Stripe) are paused in this release (docs/payments.md): no payout-onboarding prompt. */}
-
         {/* My settlement history */}
         {!isSpectator && (
           <SlimCard
@@ -246,8 +219,7 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
           >
             {mySettlements.length === 0 ? (
               <Text className="e-faint">
-                No settled transactions yet.{" "}
-                {!registered?.stripe_profile_ready && "Paid sessions are paid in USDC over x402 or Tempo (a wallet — register_x402_wallet)."}
+                No settled transactions yet. Paid sessions are paid in USDC over x402 or Tempo (a wallet — register_x402_wallet).
               </Text>
             ) : (
               <div className="e-compact-table">

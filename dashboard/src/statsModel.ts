@@ -168,9 +168,9 @@ export function agentStats(input: StatsInput, days: Period, model: ModelCost | n
     if (p.agent_id !== agentId || when(p.created_at) < since) continue;
     if (!SPENT_STATES.has(p.status || "confirmed")) continue;
     const micros = (p.amount_cents || 0) * 10_000;
-    add(spentByRail, p.rail || "stripe", micros);
+    add(spentByRail, p.rail || "x402", micros);
     add(spentOn, p.payment_type || "other", micros);
-    recent.push({ key: `p:${p.payment_id}`, at: p.created_at, direction: "out", micros, rail: p.rail || "stripe",
+    recent.push({ key: `p:${p.payment_id}`, at: p.created_at, direction: "out", micros, rail: p.rail || "x402",
       what: PAYMENT_LABELS[p.payment_type] ?? p.payment_type.replace(/_/g, " "), state: p.status || "confirmed" });
   }
 
@@ -186,13 +186,13 @@ export function agentStats(input: StatsInput, days: Period, model: ModelCost | n
     if (health === "failed") failed += micros;
     else if (health === "pending") owed += micros;
     else {
-      add(earnedByRail, s.rail || "stripe", micros);
+      add(earnedByRail, s.rail || "x402", micros);
       earnedBySource[source] += micros;
     }
     if (source === "rooms_topics") accessSales += 1;
     fees += settlementFeeMicros(s);
     if (micros > 0 || health !== "settled") {
-      recent.push({ key: `s:${s.settlement_id}`, at: s.created_at, direction: "in", micros, rail: s.rail || "stripe",
+      recent.push({ key: `s:${s.settlement_id}`, at: s.created_at, direction: "in", micros, rail: s.rail || "x402",
         what: KIND_LABELS[s.kind ?? ""] ?? (source === "rooms_topics" ? "entry fee" : "session"),
         state: health === "pending" ? "owed" : health });
     }
@@ -231,22 +231,21 @@ export function agentStats(input: StatsInput, days: Period, model: ModelCost | n
   };
 }
 
-/** "x402 · USDC on Base Sepolia testnet", "card · Stripe test mode": a rail, and where its money is. */
+/** "x402 · USDC on Base Sepolia testnet", "Tempo on Tempo Moderato testnet": a rail, and where its money is. */
 export function railNetwork(rail: string, health: Health | null): string {
   if (rail === "x402") {
     const nets = [...new Set([...(health?.x402_networks ?? []), ...(health?.x402_escrow_network ? [health.x402_escrow_network] : [])])];
     return `USDC (x402) on ${nets.length ? nets.map(networkWithKind).join(", ") : "a testnet"}`;
   }
-  if (rail === "stripe") return health?.stripe_mode === "live" ? "card · Stripe live mode" : "card · Stripe test mode";
   if (rail === "tempo") return `Tempo on ${health?.tempo_network ? networkWithKind(health.tempo_network) : "a testnet"}`;
   return rail;
 }
 
-/** Whether every rail this relay offers moves test money: testnets, and Stripe in test mode. */
+/** Whether every rail this relay offers moves test money: testnets only. */
 export function allTestMoney(health: Health | null): boolean {
   const nets = [...(health?.x402_networks ?? []), health?.x402_escrow_network, health?.tempo_network]
     .filter((n): n is string => !!n);
-  return nets.every((n) => isTestnet(n)) && health?.stripe_mode !== "live";
+  return nets.every((n) => isTestnet(n));
 }
 
 /** A share as "62 %", or "—". */

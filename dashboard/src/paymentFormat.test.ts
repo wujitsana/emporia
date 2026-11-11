@@ -16,15 +16,13 @@ import {
 describe("settlementHealth", () => {
   it("a failed capture is a failure, even though the row says settled", () => {
     expect(settlementHealth({ status: "settled", transfer_status: "capture_failed" })).toBe("failed");
-    expect(settlementHealth({ status: "settled", transfer_status: "transfer_failed" })).toBe("failed");
-    expect(settlementHealth({ status: "settled", transfer_status: "transfer_failed: card declined" })).toBe("failed");
   });
   it("money that reached the payee directly is settled", () => {
-    for (const t of ["direct", "escrow_captured", "destination", "transferred"])
+    for (const t of ["direct", "escrow_captured"])
       expect(settlementHealth({ status: "settled", transfer_status: t })).toBe("settled");
   });
   it("owed but not paid out is pending", () => {
-    expect(settlementHealth({ status: "settled", transfer_status: "pending_connect_not_active" })).toBe("pending");
+    expect(settlementHealth({ status: "settled", transfer_status: "pending" })).toBe("pending");
   });
   it("a refund is a refund", () => {
     expect(settlementHealth({ status: "refunded", transfer_status: "refunded" })).toBe("refunded");
@@ -35,7 +33,6 @@ describe("labels", () => {
   it("names the rail", () => {
     expect(railLabel("x402", "escrow_captured")).toBe("x402 escrow");
     expect(railLabel("x402", "direct")).toBe("x402");
-    expect(railLabel("stripe", "destination")).toBe("card (direct)");
     expect(railLabel(undefined)).toBe("—");
   });
   it("links Base transactions only", () => {
@@ -82,18 +79,18 @@ describe("settlement split (P129)", () => {
 });
 
 describe("what pays for what (P153)", () => {
-  const both = { stripe_enabled: true, x402_enabled: true, x402_escrow_network: "eip155:84532" };
+  const both = { x402_enabled: true, x402_escrow_network: "eip155:84532" };
   it("says before paying what is accepted", () => {
-    expect(acceptsLabel("entry", both)).toBe("accepts card · USDC");
-    expect(acceptsLabel("purchase", both)).toBe("accepts card · USDC escrow (Base Sepolia testnet)");
-    expect(acceptsLabel("purchase", { ...both, x402_escrow_network: null })).toBe("accepts card");
+    expect(acceptsLabel("entry", both)).toBe("accepts USDC");
+    expect(acceptsLabel("purchase", both)).toBe("accepts USDC escrow (Base Sepolia testnet)");
+    expect(acceptsLabel("purchase", { ...both, x402_escrow_network: null })).toBe("no payment rail on this relay");
     expect(acceptsLabel("entry", {})).toBe("no payment rail on this relay");
     expect(acceptsLabel("entry", { ...both, tempo_network: "eip155:42431" }))
-      .toBe("accepts card · USDC · Tempo (Tempo Moderato testnet)");
+      .toBe("accepts USDC · Tempo (Tempo Moderato testnet)");
   });
   it("names the networks USDC is taken on (P160)", () => {
     const nets = { ...both, x402_networks: ["eip155:84532", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"] };
-    expect(acceptsLabel("entry", nets)).toBe("accepts card · USDC (Base Sepolia testnet, Solana devnet)");
+    expect(acceptsLabel("entry", nets)).toBe("accepts USDC (Base Sepolia testnet, Solana devnet)");
   });
 });
 
@@ -105,8 +102,8 @@ describe("priceText", () => {
     expect(priceText(2, "usd", { mode: "x402" })).toEqual({ amount: "2.00 USDC (testnet)", via: null });
   });
 
-  it("does not call a real-money network a testnet, and leaves card prices in their currency", () => {
+  it("does not call a real-money network a testnet, and leaves other prices in their currency", () => {
     expect(priceText(1, "usd", { rails: ["x402"], escrowNetwork: "eip155:8453" }).amount).toBe("1.00 USDC");
-    expect(priceText(3, "usd", { rails: ["stripe"] })).toEqual({ amount: "3.00 USD", via: "card" });
+    expect(priceText(3, "usd", { rails: ["tempo"] })).toEqual({ amount: "3.00 USD", via: "Tempo" });
   });
 });

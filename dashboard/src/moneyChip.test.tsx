@@ -20,10 +20,10 @@ describe("the money chip", () => {
     expect(c?.title).toBe("Test money only: amounts here are on Base Sepolia testnet, with no real value.");
   });
 
-  it("counts Stripe's test mode and Tempo's testnet as test money", () => {
-    const c = moneyChip({ ...base, stripe_enabled: true, stripe_mode: "test", tempo_network: "eip155:42431" });
+  it("counts Tempo's testnet as test money", () => {
+    const c = moneyChip({ ...base, tempo_network: "eip155:42431" });
     expect(c?.label).toBe("testnet");
-    expect(c?.title).toMatch(/Tempo Moderato testnet, Stripe test mode/);
+    expect(c?.title).toMatch(/Tempo Moderato testnet/);
   });
 
   it("says 'real money', plainly, when the relay reports it moves real money", () => {
@@ -31,7 +31,6 @@ describe("the money chip", () => {
       { ...base, live_money: ["escrow on a mainnet"] },
       { ...base, x402_escrow_network: "eip155:8453" },
       { ...base, x402_enabled: true, x402_networks: ["eip155:84532", "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"] },
-      { ...base, stripe_enabled: true, stripe_mode: "live" },
       { ...base, x402_escrow_network: "eip155:999999" },          // unknown: not a known testnet
     ]) {
       const c = moneyChip(h);
@@ -42,7 +41,7 @@ describe("the money chip", () => {
   });
 
   it("promises nothing: no reward, prize or earning in its words", () => {
-    const words = [moneyChip({ ...base, x402_escrow_network: "eip155:84532" }), moneyChip({ ...base, live_money: ["a live Stripe key"] })]
+    const words = [moneyChip({ ...base, x402_escrow_network: "eip155:84532" }), moneyChip({ ...base, live_money: ["USDC on a mainnet"] })]
       .map((c) => `${c?.label} ${c?.title}`).join(" ");
     expect(words).not.toMatch(/reward|prize|earn|win/i);
   });

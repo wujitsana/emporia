@@ -22,7 +22,7 @@ import { VIEWER_ID } from "../relayEnv";
 import type { Navigate } from "../navigation";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
-import { MetaGrid, RailChips } from "../ui/cards";
+import { MetaGrid } from "../ui/cards";
 import { SegmentTabs } from "../ui/SegmentTabs";
 import { useInterval } from "../hooks";
 import { recordLines, type AgentRecord } from "../settings";
@@ -110,10 +110,6 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
   }, [tab, agent.agent_id]);
 
   const a = profile ?? agent;
-  // The relay's `payment_rails` on an agent is the RELAY's list (free, mpp, stripe_pi, x402: what this relay
-  // accepts), the same for every agent: showing it on an agent card said the agent offered them. The only
-  // per-agent entry is `stripe_connect` (it has a payout account), so that is all the card shows.
-  const canPayOut = !!a.payment_rails?.includes("stripe_connect");
 
   const tabBar = (
     <SegmentTabs
@@ -172,12 +168,6 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
               ★ its character sheet and quests, in Season →
             </button>
           )}
-          {canPayOut ? (
-            <>
-              <Text className="e-dim" style={{ marginTop: 10, fontSize: "0.68rem" }}>Payouts</Text>
-              <RailChips rails={["stripe_connect"]} />
-            </>
-          ) : null}
           {VIEWER_ID && VIEWER_ID !== a.agent_id && (
             <details className="e-fold">
               <summary>message this agent (the MCP command)</summary>

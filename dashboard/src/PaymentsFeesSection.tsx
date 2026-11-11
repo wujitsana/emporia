@@ -21,18 +21,13 @@ export function PaymentsFeesSection({ settlements, navigate }: { settlements: Se
   const totalFeeMicros = moved.reduce((s, r) => s + settlementFeeMicros(r), 0);
   const feeBps = health?.fee_bps ?? 0;
   const feeLabel = `${(feeBps / 100).toFixed(1)}%`;
-  const methods = health?.payment_methods?.join(", ") || "none";
+  const rails = health?.payment_rails?.join(", ") || "none";
   const cap = health?.max_total_spend_cents;
-  const stripeState = health?.stripe_enabled
-    ? health?.stripe_profile_ready
-      ? "ready"
-      : "key only"
-    : health?.cards_paused ? "paused" : "off";
 
   return (
     <SlimCard
       title="Payments"
-      foot={`x402 (USDC) and Tempo; cards are paused in this release. Total spend limit: ${cap && cap > 0 ? `$${(cap / 100).toFixed(2)}` : "unlimited"}` }
+      foot={`x402 (USDC) and Tempo. Total spend limit: ${cap && cap > 0 ? `$${(cap / 100).toFixed(2)}` : "unlimited"}` }
     >
       <div className="e-kpi-row">
         <div className="e-kpi">
@@ -40,16 +35,8 @@ export function PaymentsFeesSection({ settlements, navigate }: { settlements: Se
           <span className="e-kpi__lbl">fee</span>
         </div>
         <div className="e-kpi">
-          <span className="e-kpi__val">{health?.mpp_enabled ? "on" : "off"}</span>
-          <span className="e-kpi__lbl">mpp</span>
-        </div>
-        <div className="e-kpi">
-          <span className="e-kpi__val">{methods}</span>
-          <span className="e-kpi__lbl">methods</span>
-        </div>
-        <div className="e-kpi">
-          <span className="e-kpi__val">{stripeState}</span>
-          <span className="e-kpi__lbl">stripe profile</span>
+          <span className="e-kpi__val">{rails}</span>
+          <span className="e-kpi__lbl">rails</span>
         </div>
         <div className="e-kpi">
           <span className="e-kpi__val">{moved.length}</span>
@@ -70,11 +57,6 @@ export function PaymentsFeesSection({ settlements, navigate }: { settlements: Se
           <span className="e-kpi__lbl">fees</span>
         </div>
       </div>
-      {health?.stripe_mpp_admin_notice ? (
-        <Text className="e-dim" style={{ marginTop: 8, fontSize: "0.72rem", color: "var(--e-warn, #c9a227)" }}>
-          {health.stripe_mpp_admin_notice}
-        </Text>
-      ) : null}
       {settlements.length > 0 ? (
         <ul className="e-settlement-list">
           {settlements.slice(0, 5).map((s) => (

@@ -82,7 +82,7 @@ const missingNotes = (who: string): Record<AgentStats["missing"][number], string
   record: `This relay did not report ${who}'s record, so games and trades are not shown.`,
 });
 
-/** "x402 $1.50 (USDC on Base Sepolia testnet) · card $0.75 (card · Stripe test mode)". */
+/** "x402 $1.50 (USDC on Base Sepolia testnet) · tempo $0.75 (Tempo on Tempo Moderato testnet)". */
 function ByRail({ byRail, health }: { byRail: Record<string, number>; health: ReturnType<typeof useRelayHealth> }) {
   const rows = Object.entries(byRail).filter(([, v]) => v);
   if (!rows.length) return <Text className="e-faint">None in this period.</Text>;
