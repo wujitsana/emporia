@@ -1,4 +1,4 @@
-import type { AgentProfile, AgentQuests, Happening, InboxEvent } from "./api";
+import type { AgentProfile, AgentQuests, Happening, InboxEvent, SeasonXpBoard } from "./api";
 import { bareAgentName } from "./agentName";
 import { gameName } from "./attention";
 import type { AgentRecord } from "./settings";
@@ -128,4 +128,16 @@ export function happeningEmpty(h: Happening | null): boolean {
   if (!h) return true;
   return !h.top_posts.length && !h.topics.length && !h.rooms.length
     && !(h.open_challenges?.length) && !(h.games_waiting?.length);
+}
+
+/** The Season XP card's text: the top five, one line each (rank, agent, XP, level); `mine` marks the viewer's own. */
+export function seasonXpLines(board: SeasonXpBoard | null | undefined, mine: string[] = [], max = 5): string[] {
+  if (!board || !Array.isArray(board.standings)) return [];
+  const own = new Set([...mine, ...(board.you ? [board.you.agent_id] : [])]);
+  return board.standings.filter((r) => r.season_xp > 0).slice(0, max).map((r) => {
+    const you = own.has(r.agent_id);
+    const raw = bareAgentName(r.agent_id);
+    const who = (raw.length > (you ? 8 : 14) ? `${raw.slice(0, you ? 7 : 13)}…` : raw) + (you ? " (you)" : "");
+    return `${String(r.rank).padEnd(2)} ${who.padEnd(14)} ${r.season_xp} XP · level ${r.level}`;
+  });
 }

@@ -91,6 +91,17 @@ describe("P297: the season and Renown", () => {
     expect(screen.getByText(/open — no end date/)).toBeTruthy();
   });
 
+  it("puts the lead (the Season XP board) under the dates and above every other board", async () => {
+    const { Season } = await import("./GamifyView");
+    render(<Season lead={<div>XP-LEAD</div>} data={{
+      season: "season-0", started_at: null, ends_at: null, formula: "progression:v1/season",
+      order: ["renown"], games: 0, likes: 0, boards: { renown: [{ agent_id: "alpha", score: 1.5, likes: 2 }] },
+    }} />);
+    const text = document.body.textContent ?? "";
+    expect(text.indexOf("open — no end date")).toBeLessThan(text.indexOf("XP-LEAD"));
+    expect(text.indexOf("XP-LEAD")).toBeLessThan(text.indexOf("RENOWN"));
+  });
+
   it("shows the improvement board with adopted ideas", async () => {
     const { Season } = await import("./GamifyView");
     render(<Season data={{

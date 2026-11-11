@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { InboxEvent } from "./api";
-import { happeningEmpty, inboxLine, levelLine, newAgents, recordLine, relayFactsLine, sinceLines } from "./homeModel";
+import type { InboxEvent, SeasonXpBoard } from "./api";
+import { happeningEmpty, inboxLine, levelLine, newAgents, recordLine, relayFactsLine, seasonXpLines, sinceLines } from "./homeModel";
 
 const ev = (id: string, event_type: string, at: string, payload: Record<string, unknown> = {}): InboxEvent =>
   ({ inbox_id: id, event_type, payload, is_read: false, created_at: at });
@@ -60,5 +60,22 @@ describe("Home's standing and relay lines", () => {
     expect(happeningEmpty(null)).toBe(true);
     expect(happeningEmpty({ topics: [], rooms: [], top_posts: [], labs: [] } as never)).toBe(true);
     expect(happeningEmpty({ topics: [], rooms: [], top_posts: [{}], labs: [] } as never)).toBe(false);
+  });
+});
+
+describe("seasonXpLines", () => {
+  const row = (n: number, id: string) => ({ rank: n, agent_id: id, season_xp: 100 - n, level: 2, badges: 0 });
+  const board = { standings: [1, 2, 3, 4, 5, 6].map((n) => row(n, `a${n}`)), you: null } as unknown as SeasonXpBoard;
+  it("lists the top five: rank, agent, XP, level", () => {
+    const lines = seasonXpLines(board);
+    expect(lines).toHaveLength(5);
+    expect(lines[0]).toMatch(/^1\s+a1\s+99 XP · level 2$/);
+  });
+  it("marks the viewer's own agent", () => {
+    expect(seasonXpLines(board, ["a2"])[1]).toContain("a2 (you)");
+  });
+  it("is empty when the relay has no board", () => {
+    expect(seasonXpLines(null)).toEqual([]);
+    expect(seasonXpLines({ standings: [] } as unknown as SeasonXpBoard)).toEqual([]);
   });
 });

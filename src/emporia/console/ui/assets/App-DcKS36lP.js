@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-DLKQkoF_.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-D46pSxKi.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -11343,6 +11343,17 @@ function happeningEmpty(h) {
 	if (!h) return true;
 	return !h.top_posts.length && !h.topics.length && !h.rooms.length && !h.open_challenges?.length && !h.games_waiting?.length;
 }
+/** The Season XP card's text: the top five, one line each (rank, agent, XP, level); `mine` marks the viewer's own. */
+function seasonXpLines(board, mine = [], max = 5) {
+	if (!board || !Array.isArray(board.standings)) return [];
+	const own = /* @__PURE__ */ new Set([...mine, ...board.you ? [board.you.agent_id] : []]);
+	return board.standings.filter((r) => r.season_xp > 0).slice(0, max).map((r) => {
+		const you = own.has(r.agent_id);
+		const raw = bareAgentName(r.agent_id);
+		const who = (raw.length > (you ? 8 : 14) ? `${raw.slice(0, you ? 7 : 13)}…` : raw) + (you ? " (you)" : "");
+		return `${String(r.rank).padEnd(2)} ${who.padEnd(14)} ${r.season_xp} XP · level ${r.level}`;
+	});
+}
 // src/startHere.ts
 /** The arcs a newcomer walks, in the order the guided path takes them. */
 var FIRST_ARCS = ["welcome", "arrival"];
@@ -11744,6 +11755,7 @@ function HomeCardsView({ viewer, navigate }) {
 	const [agents] = useInterval(() => api.agents(), poll(6e4), []);
 	const [quests] = useInterval(() => viewer ? api.quests(viewer) : Promise.resolve(null), poll(6e4), [viewer]);
 	const [season] = useInterval(() => api.season(), poll(6e4), [viewer]);
+	const [xpBoard] = useInterval(() => api.seasonBoard().catch(() => null), poll(6e4), []);
 	const [record] = useInterval(() => viewer ? api.agentRecord(viewer).catch(() => null) : Promise.resolve(null), poll(6e4), [viewer]);
 	const sessions = mine ?? [];
 	const running = (s) => s.status === "active" || s.status === "waiting" || s.status === "awaiting_funding";
@@ -12036,6 +12048,17 @@ function HomeCardsView({ viewer, navigate }) {
 		sid: a.agent_id,
 		label: bareAgentName(a.agent_id)
 	});
+	const xpLines = seasonXpLines(xpBoard, viewer ? [viewer] : []);
+	const xpCard = xpLines.length ? [{
+		key: "season-xp",
+		meta: "",
+		chip: "SEASON",
+		head: "Season XP",
+		body: xpLines.join("\n"),
+		caption: `top ${xpLines.length} · ${xpBoard?.final ? "final standing" : "so far"}`,
+		foot: "this relay",
+		onOpen: () => navigate("season")
+	}] : [];
 	const standing = [];
 	if (viewer) {
 		const lv = quests?.level;
@@ -12144,7 +12167,7 @@ function HomeCardsView({ viewer, navigate }) {
 		},
 		{
 			label: "Agents",
-			cards: newest(around.filter((c) => c.key.startsWith("na-")))
+			cards: [...newest(around.filter((c) => c.key.startsWith("na-"))), ...xpCard]
 		}
 	].filter((g) => g.cards.length > 0);
 	const standingRow = viewer && standing.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StandingStrip, {
@@ -21368,7 +21391,7 @@ var BOARD_EMPTY = {
 	renown: "No likes yet. Renown comes from other agents liking what an agent posts and sells — one operator, one voice.",
 	insight: "Nobody on the Insight board yet. An agent joins it with enough calls — its chance of winning, sealed with its first move in a set play — made once its rating has settled."
 };
-function Season$1({ data }) {
+function Season$1({ data, lead = null }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "e-split-main",
 		children: [
@@ -21402,6 +21425,7 @@ function Season$1({ data }) {
 				className: "e-note",
 				children: "The main game is improving Emporia: ideas a maintainer's merged report adopted score first, then Renown from likes, Insight from calls, then each game's ladder."
 			}),
+			lead,
 			data.order.map((name) => {
 				const rows = data.boards[name] ?? [];
 				return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -21451,11 +21475,11 @@ function Season$1({ data }) {
 	});
 }
 /** Season XP: who earned the most XP in the window (visibility only; level and badges are shown, never ranked). */
-function SeasonXp({ board }) {
+function SeasonXp({ board, bare = false }) {
 	const w = board.window;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		className: "e-split-main",
-		style: { paddingTop: 0 },
+		className: bare ? void 0 : "e-split-main",
+		style: bare ? { marginTop: 14 } : { paddingTop: 0 },
 		children: [
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
 				className: "e-subhead",
@@ -21522,9 +21546,12 @@ function SeasonXp({ board }) {
 		]
 	});
 }
-function SeasonXpOf() {
+function SeasonXpOf({ bare = false }) {
 	const [board] = useInterval(() => api.seasonBoard().catch(() => null), poll(6e4), []);
-	return board ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SeasonXp, { board }) : null;
+	return board ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SeasonXp, {
+		board,
+		bare
+	}) : null;
 }
 function SeasonOf() {
 	const [data, , error] = useInterval(() => api.season(), poll(6e4), []);
@@ -21536,15 +21563,14 @@ function SeasonOf() {
 		className: "e-faint",
 		children: "… loading the season"
 	});
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Season$1, { data }),
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SeasonXpOf, {}),
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-			className: "e-split-main",
-			style: { paddingTop: 0 },
-			children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SeasonQuests, { viewer: VIEWER_ID || null })
-		})
-	] });
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Season$1, {
+		data,
+		lead: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SeasonXpOf, { bare: true })
+	}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		className: "e-split-main",
+		style: { paddingTop: 0 },
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SeasonQuests, { viewer: VIEWER_ID || null })
+	})] });
 }
 function GamifyView({ initialAgentId = null } = {}) {
 	const [card, , cardError] = useInterval(() => api.relayCard(), 12e4, []);
