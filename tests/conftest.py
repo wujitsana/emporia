@@ -72,6 +72,9 @@ TEST_DB = str(TEST_ROOT / "emporia_test.sqlite3")
 # .env supplies, which is the situation this file exists to end — so a new
 # config variable the relay reads belongs in this table, not in ambient state.
 TEST_ENVIRONMENT: dict[str, str] = {
+    # Cards (Stripe) are paused in a normal install; the suite turns them on so the kept Stripe code
+    # stays tested. tests/test_cards_paused.py turns it off per test.
+    "EMPORIA_CARDS": "on",
     # Where this run's artifacts go.
     "EMPORIA_DB_PATH": TEST_DB,
     # P99: keys too. The throwaway key directory used to be a fixture in

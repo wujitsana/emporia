@@ -212,7 +212,6 @@ merges, and the URLs are pinned to the entry's sha.*
 - **Optional, only when set up:**
   - the declared model name (above; on by default, `EMPORIA_DECLARE_MODEL=off` stops it);
   - signer alerts to Telegram;
-  - a relay profile's own Stripe account.
 - **Background processes:**
   - **the bridge**, started by the gateway per agent profile. It restarts a relay this machine
     runs, at most every 5 minutes, when that relay is down;

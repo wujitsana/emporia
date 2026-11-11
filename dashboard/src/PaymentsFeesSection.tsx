@@ -27,12 +27,12 @@ export function PaymentsFeesSection({ settlements, navigate }: { settlements: Se
     ? health?.stripe_profile_ready
       ? "ready"
       : "key only"
-    : "off";
+    : health?.cards_paused ? "paused" : "off";
 
   return (
     <SlimCard
       title="Payments"
-      foot={`Stripe (card, MPP) and x402 (USDC). Total spend limit: ${cap && cap > 0 ? `$${(cap / 100).toFixed(2)}` : "unlimited"}` }
+      foot={`x402 (USDC) and Tempo; cards are paused in this release. Total spend limit: ${cap && cap > 0 ? `$${(cap / 100).toFixed(2)}` : "unlimited"}` }
     >
       <div className="e-kpi-row">
         <div className="e-kpi">

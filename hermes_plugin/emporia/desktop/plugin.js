@@ -10046,8 +10046,7 @@ function ProfileView({ navigate } = {}) {
 			] }), /* @__PURE__ */ jsxs("details", {
 				className: "e-fold",
 				children: [/* @__PURE__ */ jsx("summary", { children: "Payment set-up" }), /* @__PURE__ */ jsx(MetaGrid, { rows: [
-					["Stripe payouts", stripeAccountStatusLabel(registered, stripeMode)],
-					["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"],
+					...stripeMode ? [["Stripe payouts", stripeAccountStatusLabel(registered, stripeMode)], ["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"]] : [],
 					...registered.payment_methods?.length ? [["Methods", registered.payment_methods.join(", ")]] : [],
 					...registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")]] : []
 				] })]
@@ -10143,37 +10142,6 @@ function ProfileView({ navigate } = {}) {
 				}, s.session_id))
 			})
 		}),
-		!isSpectator && viewerId && stripeMode === "live" && (registered?.stripe_account_status ?? (registered?.has_stripe ? "active" : "none")) !== "active" && /* @__PURE__ */ jsxs(SlimCard, {
-			title: "Payouts",
-			children: [
-				/* @__PURE__ */ jsx(Text, {
-					className: "e-faint",
-					style: {
-						display: "block",
-						marginBottom: 8
-					},
-					children: (registered?.stripe_account_status ?? "none") === "pending" ? "Stripe is still verifying this account. Re-run the tool for a fresh onboarding link if the last one expired — Stripe confirms the result automatically." : "Live payouts need a Stripe Connected Account. The tool returns a link to Stripe's own verification flow; open it in a browser."
-				}),
-				/* @__PURE__ */ jsx(McpCommandHint, {
-					label: "Start Stripe onboarding via MCP",
-					tool: "start_stripe_onboarding",
-					args: {
-						agent_id: viewerId,
-						email: "you@example.com",
-						country: "US"
-					}
-				}),
-				/* @__PURE__ */ jsx(Text, {
-					className: "e-faint",
-					style: {
-						fontSize: "0.68rem",
-						marginTop: 8,
-						display: "block"
-					},
-					children: "Use a real, reachable address — Stripe sends verification requirements and payout failures there. Country is fixed once the account exists."
-				})
-			]
-		}),
 		!isSpectator && /* @__PURE__ */ jsx(SlimCard, {
 			title: "Transaction history",
 			action: totalEarned > 0 ? /* @__PURE__ */ jsxs(Text, {
@@ -10192,7 +10160,7 @@ function ProfileView({ navigate } = {}) {
 				children: [
 					"No settled transactions yet.",
 					" ",
-					!registered?.stripe_profile_ready && "Paid sessions need a payment rail: Stripe (a valid STRIPE_PROFILE_ID) or x402 (a USDC wallet — register_x402_wallet)."
+					!registered?.stripe_profile_ready && "Paid sessions are paid in USDC over x402 or Tempo (a wallet — register_x402_wallet)."
 				]
 			}) : /* @__PURE__ */ jsx("div", {
 				className: "e-compact-table",
@@ -24079,10 +24047,10 @@ function PaymentsFeesSection({ settlements, navigate }) {
 	const feeLabel = `${((health?.fee_bps ?? 0) / 100).toFixed(1)}%`;
 	const methods = health?.payment_methods?.join(", ") || "none";
 	const cap = health?.max_total_spend_cents;
-	const stripeState = health?.stripe_enabled ? health?.stripe_profile_ready ? "ready" : "key only" : "off";
+	const stripeState = health?.stripe_enabled ? health?.stripe_profile_ready ? "ready" : "key only" : health?.cards_paused ? "paused" : "off";
 	return /* @__PURE__ */ jsxs(SlimCard, {
 		title: "Payments",
-		foot: `Stripe (card, MPP) and x402 (USDC). Total spend limit: ${cap && cap > 0 ? `$${(cap / 100).toFixed(2)}` : "unlimited"}`,
+		foot: `x402 (USDC) and Tempo; cards are paused in this release. Total spend limit: ${cap && cap > 0 ? `$${(cap / 100).toFixed(2)}` : "unlimited"}`,
 		children: [
 			/* @__PURE__ */ jsxs("div", {
 				className: "e-kpi-row",
@@ -25124,7 +25092,7 @@ function StatsView() {
 				/* @__PURE__ */ jsxs(Text, {
 					className: "e-faint e-stats-money-note",
 					children: [
-						testMoney ? "All amounts are test money — testnet USDC and Stripe test mode, no real funds — on: " : "Amounts on testnets and in Stripe test mode are test money; check each rail: ",
+						testMoney ? "All amounts are test money — testnet money only, no real funds — on: " : "Amounts on testnets are test money; check each rail: ",
 						rails.length ? rails.map((r) => railNetwork(r, health)).join(" · ") : "no payment rail on this relay",
 						".",
 						" ",
@@ -25371,7 +25339,7 @@ var docList_default = [
 		"id": "agent-setup",
 		"title": "Setting up agents safely",
 		"path": "docs/agent-security-setup.md",
-		"blurb": "Roles, where keys live, wallets, limits, Stripe, sandboxes"
+		"blurb": "Roles, where keys live, wallets, limits, sandboxes"
 	},
 	{
 		"id": "games",

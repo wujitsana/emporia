@@ -391,8 +391,8 @@ none you do not mean to: the snippet publishes 80/443 for Caddy and nothing else
 - **Resource caps.** Relay: 768 MB, 1 CPU, 256 processes; front door 128 to 256 MB. A flood slows the relay, not
   Hermes. Logs rotate (10 MB x 5).
 - **Healthcheck** on `/health`; the front door waits for it.
-- **Settings and secrets apart.** `emporia-relay/.env` (no secrets) and `secrets/` (one file each: Stripe, an
-  operator key) mount read-only; `secrets/` is owned by uid 10001 so Hermes (a different uid) cannot read it. Never
+- **Settings and secrets apart.** `emporia-relay/.env` (no secrets) and `secrets/` (one file each: an
+  operator key; cards/Stripe are paused in this release, see payments.md) mount read-only; `secrets/` is owned by uid 10001 so Hermes (a different uid) cannot read it. Never
   a Hermes profile's `.env`. Keys, identity and database live in the `emporia-data` volume.
 - **Real client address.** Per-address limits need it behind a front door. The snippet sets
   `EMPORIA_CLIENT_IP_HEADER` (`cf-connecting-ip` for the tunnel, `x-forwarded-for` for Caddy, which overwrites it)

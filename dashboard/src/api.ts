@@ -244,6 +244,8 @@ export interface Health {
   host?: string;
   relay_url?: string;
   stripe_enabled?: boolean;
+  /** True while cards (Stripe) are paused in this release (docs/payments.md). */
+  cards_paused?: boolean;
   /** P37-1: "test" | "live" | "" — which key space, not merely whether a key
    *  exists. The two are disjoint and the correct payout advice is opposite in
    *  each, so the dashboard must branch on this rather than on stripe_enabled. */

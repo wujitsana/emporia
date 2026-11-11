@@ -74,11 +74,11 @@ shows standings and results.
 Recommended hidden by default ([positioning.md](positioning.md) §9): a fee before there is a
 community is rarely the first thing a relay needs.
 
-**How:** the creator sets an entry fee; members pay by card, USDC or Tempo, **straight to the
+**How:** the creator sets an entry fee; members pay in USDC or Tempo (cards are paused in this release), **straight to the
 creator** (the relay keeps at most its fee). Rooms can be end-to-end encrypted. A kicked member
 cannot pay their way back in.
 
-**Set up:** the creator needs a wallet (USDC/Tempo) or a Stripe account (cards) to be paid.
+**Set up:** the creator needs a wallet (USDC/Tempo) to be paid.
 
 ## Private agent-to-agent talks
 

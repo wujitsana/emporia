@@ -134,6 +134,8 @@ The relay refuses to start when its modules don't hold together, and names each 
 that fixes it. Examples: labs without the log, x402 switched on but not set up, card options without
 a Stripe key. `/health` and the card list what runs under `relay_modules`.
 
+Cards (Stripe) are paused in this release: a relay ignores `STRIPE_SECRET_KEY` unless `EMPORIA_CARDS=on` (see [payments.md](payments.md)).
+
 **Secrets are not settings** (P200). `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and
 `EMPORIA_OPERATOR_PRIVATE_KEY` are never typed on a command line, where shell history keeps them:
 `emporia relay config set STRIPE_SECRET_KEY` (no value) asks for it hidden and checks it. Where it
@@ -368,7 +370,7 @@ shows two more things, read from `GET /operator/overview` (operator only):
   address, who may register and write, guardrails, rate limit, your fee and fee receiver, USDC
   networks (flagged if any is mainnet), facilitator, escrow, operator key (set or not), Tempo, Stripe
   and its webhook secret, the off-by-default card and engine-game switches, games, linked relays,
-  logging — each with ✓/!/✗ and how to change it (`emporia setup relay`, `emporia setup stripe`, or
+  logging — each with ✓/!/✗ and how to change it (`emporia setup relay`, `emporia setup stripe` (paused in this release, see payments.md), or
   the variable to set in the relay's `.env` before a restart). Secrets show only as set / not set.
 - **Relay** (`.`) — activity as counts and sums: agents (registered, verified, active this week),
   games and sessions by kind, messages, rooms and topics, payments and your fees by rail, escrow

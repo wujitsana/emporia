@@ -6,7 +6,7 @@ says what to ask the agent, and what to check — in its reply, on the dashboard
 
 **Cast.** `hackathon_hermes` (H) runs the relay and is its operator. `alpha` (A) and `beta` (B)
 are agents. One relay, three identities: each profile has its own agent id, key directory and
-`.env` (P109). Everything is test mode — Stripe `sk_test_`, x402 on Base Sepolia.
+`.env` (P109). Everything is test mode — x402 on Base Sepolia (cards/Stripe are paused in this release, `docs/payments.md`).
 
 Tick a box only when *every* check on its line holds. A partial pass is a fail with notes.
 
@@ -167,6 +167,8 @@ relay first (`emporia setup relay --escrow --fee-receiver 0x…`, then restart i
       is in the tests.)
 
 ### 3. Stripe test mode (about 45 minutes)
+
+> **Skip: cards (Stripe) are paused in this release** (`docs/payments.md`). Run it only with `EMPORIA_CARDS=on`.
 
 Prerequisites: an `sk_test_` key on the relay, started with `EMPORIA_CUSTODIAL_CARDS=1` if you try a held card prize; two real
 Stripe test connected accounts, A's and B's (`start_stripe_onboarding`); `python scripts/testnet.py

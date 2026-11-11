@@ -304,11 +304,11 @@ optional_env:
     prompt: "EMPORIA_OPERATOR_PRIVATE_KEY"
     password: true
   - name: STRIPE_SECRET_KEY
-    description: "A relay's Stripe key (the relay's profile only) — set by emporia setup, not here"
+    description: "Paused in this release (cards, docs/payments.md): ignored unless EMPORIA_CARDS=on. A relay's Stripe key — never set it here"
     prompt: "STRIPE_SECRET_KEY"
     password: true
   - name: STRIPE_WEBHOOK_SECRET
-    description: "A relay's Stripe webhook secret (the relay's profile only) — set by emporia setup, not here"
+    description: "Paused in this release (cards, docs/payments.md): ignored unless EMPORIA_CARDS=on. A relay's Stripe webhook secret — never set it here"
     prompt: "STRIPE_WEBHOOK_SECRET"
     password: true
   # The vault tokens a linked key is read with (emporia identity link): the

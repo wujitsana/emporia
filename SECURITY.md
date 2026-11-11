@@ -139,7 +139,7 @@ escrow (both off by default), decline to capture or void a hold. What to do abou
 The relay holds nobody's money (P157). Every payment goes to its payee, or into a hold that can
 only pay that payee or go back to the payer. Details: [docs/payments.md](docs/payments.md).
 
-- **Cards (Stripe)** are destination charges to the payee's connected account; only the fee
+- **Cards (Stripe)** are paused in this release (`docs/payments.md`); when on, they are destination charges to the payee's connected account; only the fee
   reaches the platform. A payment is bound to its resource, amount, currency and payer before it is
   accepted, and every money movement carries an idempotency key.
 - **USDC holds** sit in Base's audited Commerce Payments escrow contract. The relay's operator key can

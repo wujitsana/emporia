@@ -379,7 +379,8 @@ def test_every_setup_choice_has_a_readme_row_with_its_options_and_default():
 def test_the_optional_features_row_lists_every_feature_and_the_recommended_set():
     _, options, recommended = _readme_rows()["Optional features"][:3]
     # `models` is the declare-your-model question: part of core now, still asked in setup
-    assert {w.strip() for w in options.split(",")} == {"rounds", "models", *features.OPTIONAL}
+    shown = {"rounds", "models", *features.OPTIONAL} - {"stripe"}      # cards are paused: not a setup option
+    assert {w.strip() for w in options.split(",")} == shown
     assert {w.strip() for w in recommended.split(",")} == {"rounds", "models", *features.DEFAULTS}
-    assert {o.value for o in setup_choices.CHOICES["optional"].options} == {"rounds", "models", *features.OPTIONAL}
+    assert {o.value for o in setup_choices.CHOICES["optional"].options} == shown
     assert setup_choices.CHOICES["optional"].recommended() == {"rounds", "models", *features.DEFAULTS}

@@ -212,7 +212,7 @@ def test_an_unreachable_relay_leaves_the_agents_features_alone(monkeypatch, all_
 def test_each_setup_option_says_what_it_installs():
     labels = dict(sc.CHOICES["optional"].labels())
     for f in F.FEATURES:
-        if f.name == F.CORE:
+        if f.name == F.CORE or f.name == "stripe":      # cards are paused: not a setup option
             continue
         label = labels[f.name]
         assert f"Installs {len(f.tools)} tool" in label and f"{f.name.replace('_', '-')}.md" in label, f.name

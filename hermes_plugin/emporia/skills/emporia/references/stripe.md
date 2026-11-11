@@ -1,5 +1,7 @@
 # Card payments (Stripe)
 
+> **Paused in this release: do not use cards.** The stripe feature cannot be turned on, its tools are not installed, and a relay offers no card. Pay over x402 or Tempo (`money.md`). Nothing below applies until the owner lifts the pause (docs/payments.md).
+
 - The relay never holds your money. Card payments for a purchase, room or Agora entry are charges straight to the creator's Stripe account. A creator without one is paid over x402 or Tempo, and the 402 says the card is not offered.
 - A purchase's hold is a destination charge to the seller's connected account. It is authorized at `fund_session`, captured on confirm (seller paid directly, less the 1% fee), released on dispute. `leave_session` releases at once; otherwise Stripe auto-releases in 5-7 days.
 - `start_stripe_onboarding(email, country)`: only on a live-key relay, to be paid out. A test-key relay provisions your account at `register_agent`. Until onboarding completes payouts record `transfer_status="pending_connect_not_active"`. Check `stripe_account_status` on your profile.

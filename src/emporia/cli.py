@@ -37,6 +37,7 @@ from emporia.cli_hints import localize, via_plugin
 from typing import Any
 
 from emporia import __version__
+from emporia.cards import PAUSED_LINE, cards_paused
 
 REPO = Path(__file__).resolve().parents[2]
 _RELAY_ONLY = ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID", "STRIPE_API_VERSION",
@@ -522,7 +523,7 @@ def cmd_relay(args: argparse.Namespace) -> int:
         if not h:
             print(f"relay: not answering at {relay_url()}")
             return 1
-        print(f"relay: up at {relay_url()} — v{h.get('version')}, Stripe {h.get('stripe_mode') or 'off'}, "
+        print(f"relay: up at {relay_url()} — v{h.get('version')}, {'cards paused' if h.get('cards_paused') else 'Stripe ' + (h.get('stripe_mode') or 'off')}, "
               f"x402 {'on ' + ','.join(h.get('x402_networks') or []) if h.get('x402_enabled') else 'off'}, "
               f"fee {h.get('fee_bps', 0) / 100:.1f}%")
         return 0
@@ -717,7 +718,7 @@ def _relay_brief(h: dict) -> str:
     money = ("no wallet payments" if not nets else
              f"pays on {', '.join(label(n) for n in nets)}"
              + ("" if all(is_testnet(n) for n in nets) else " — REAL MONEY"))
-    return (f"v{h.get('version', '?')}, {money}, cards {h.get('stripe_mode') or 'off'}, "
+    return (f"v{h.get('version', '?')}, {money}, cards {'paused' if h.get('cards_paused') else h.get('stripe_mode') or 'off'}, "
             f"fee {h.get('fee_bps', 0) / 100:.1f}%")
 
 
@@ -1169,7 +1170,7 @@ def _module_items(items: list[str]) -> dict[str, set[str]] | None:
         parts = {p.strip() for p in raw.split(",") if p.strip()}
         if parts and name == "money":
             print("  money's parts are its ways to pay, set up by their own commands: "
-                  "emporia setup relay (x402, Tempo; escrow with --escrow) · emporia setup stripe (cards)")
+                  "emporia setup relay (x402, Tempo; escrow with --escrow); cards are paused in this release")
             return None
         if bad := sorted(parts - set(rm.BY_NAME[name].parts)):
             print(f"  {name} has no part called {', '.join(bad)} — its parts: {', '.join(rm.BY_NAME[name].parts) or 'none'}")
@@ -3612,6 +3613,9 @@ def cmd_features(args: argparse.Namespace) -> int:
     except F.FeatureError as e:
         print(f"features: {e}")
         return 1
+    if args.action == "on" and any(w in F.paused() for w in asked):
+        print(PAUSED_LINE)
+        return 1
     if args.action in ("on", "off"):
         if not asked:
             print(f"features: name what to turn {args.action}: {', '.join(F.OPTIONAL)}")
@@ -5093,7 +5097,10 @@ def doctor_relay(rep: Report) -> dict | None:
         rep.fail(f"the relay runs older code than this checkout ({stale})",
                  "emporia relay restart")
     mode = h.get("stripe_mode")
-    if not h.get("stripe_enabled"):
+    if cards_paused() or h.get("cards_paused"):
+        rep.ok("Cards (Stripe) paused in this release — see docs/payments.md"
+               + ("; a Stripe key is set and ignored" if h.get("stripe_key_ignored") else ""))
+    elif not h.get("stripe_enabled"):
         rep.warn("Stripe off", "set STRIPE_SECRET_KEY (an sk_test_ key for testing) in the relay's .env")
     elif mode == "live":
         rep.warn("Stripe is in LIVE mode", "use an sk_test_ key unless this relay is in production")
@@ -6536,6 +6543,9 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
 
 
 def _setup_agent_body(args: argparse.Namespace) -> int:
+    if getattr(args, "stripe", False) and cards_paused():
+        print(PAUSED_LINE)
+        return 1
     inst = installer()
     me = this_profile()
     name = args.name or prompt("Agent name (its Hermes profile; lowercase, digits, - or _)")
@@ -6748,7 +6758,7 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
         print(localize(f"  Optional: keep its wallet behind the signer — the operator runs `emporia signer add {name}`."))
     # P169: card payouts — only matters if the relay takes cards.
     stripe_on = False
-    if role != "developer" and (health() or {}).get("stripe_enabled") and (
+    if role != "developer" and not cards_paused() and (health() or {}).get("stripe_enabled") and (
             args.stripe or (_TTY and ask_setting("stripe"))):
         _agent_stripe(profile, name)
         stripe_on = True
@@ -6893,8 +6903,9 @@ def machine_settings(url: str = "") -> list[dict[str, Any]]:
         nets = ", ".join(h.get("x402_networks") or []) if h else ""
         out += [row("Its payment rails", (f"USDC on {nets}" if nets else "none: free only") if h else "—", "How agents on this machine's relay pay each other (escrow only if opted in).",
                     "emporia setup relay", kind="list"),
-                row("Cards", (h or {}).get("stripe_mode") or "off", "Whether this machine's relay takes card payments.",
-                    "emporia setup stripe")]
+                row("Cards", "paused in this release" if cards_paused() else (h or {}).get("stripe_mode") or "off",
+                    "Whether this machine's relay takes card payments.",
+                    "" if cards_paused() else "emporia setup stripe")]
     if h and "relay_modules" in h and local:
         mods = h["relay_modules"] or {}
         out.append(row("Modules", _modules_line(mods) or "the core only",
@@ -7141,7 +7152,7 @@ def agent_settings(profile: Path, agent_id: str) -> list[dict[str, Any]]:
         out.append(item(_G_MONEY, "Wallets", "none — it cannot pay or be paid",
                         "It still plays free games, talks and joins open rooms.",
                         "" if role == "developer" else f"emporia wallet create {name}"))
-    if role != "developer":
+    if role != "developer" and not cards_paused():
         out.append(item(_G_MONEY, "Card payouts (Stripe)", "see its Stripe status",
                         "Whether it can be paid by card, where the relay takes cards.",
                         f"emporia setup stripe --agent {name}"))
@@ -7555,6 +7566,9 @@ def _stripe_relay_settings(me: Path, args: argparse.Namespace) -> dict[str, str]
 
 def cmd_setup_stripe(args: argparse.Namespace) -> int:
     """This relay's Stripe settings, then (optionally) each agent's card payouts."""
+    if cards_paused():
+        print(PAUSED_LINE)
+        return 1
     me = this_profile()
     if me is None:
         print("setup stripe: run it from the relay profile's emporia checkout")
@@ -8902,11 +8916,14 @@ def setup_overview() -> None:
     tempo_net = h.get("tempo_network") or relay_env.get("EMPORIA_TEMPO_NETWORK")
     line("✓" if tempo_net else "·", "Tempo", label(tempo_net) if tempo_net else "off",
          "" if tempo_net else "emporia setup relay --with tempo-moderato")
-    stripe = ("test mode" if h.get("stripe_mode") == "test" else "LIVE mode" if h.get("stripe_mode") == "live"
-              else "off") if h else ("key set" if relay_env.get("STRIPE_SECRET_KEY") else "off")
-    line("✓" if stripe not in ("off",) else "·", "Cards (Stripe)",
-         stripe + ("" if relay_env.get("STRIPE_PROFILE_ID") or stripe == "off" else "; no profile id (no card tokens)"),
-         "emporia setup stripe" if stripe == "off" or not relay_env.get("STRIPE_PROFILE_ID") else "")
+    if cards_paused():
+        line("·", "Cards (Stripe)", "paused in this release", "see docs/payments.md")
+    else:
+        stripe = ("test mode" if h.get("stripe_mode") == "test" else "LIVE mode" if h.get("stripe_mode") == "live"
+                  else "off") if h else ("key set" if relay_env.get("STRIPE_SECRET_KEY") else "off")
+        line("✓" if stripe not in ("off",) else "·", "Cards (Stripe)",
+             stripe + ("" if relay_env.get("STRIPE_PROFILE_ID") or stripe == "off" else "; no profile id (no card tokens)"),
+             "emporia setup stripe" if stripe == "off" or not relay_env.get("STRIPE_PROFILE_ID") else "")
     public = relay_url()
     line("✓" if "localhost" not in public and "127.0.0.1" not in public else "·", "Reachable from outside",
          public if "localhost" not in public else "local only — agents on other machines cannot connect",
@@ -8968,9 +8985,9 @@ def cmd_setup_menu(args: argparse.Namespace) -> int:
     if not _TTY:
         return 0
     what = choose("\nSet up:", [
-        ("agent", "An agent — role, keys, wallets, limits, card payouts"),
+        ("agent", "An agent — role, keys, wallets, limits" + ("" if cards_paused() else ", card payouts")),
         ("relay", "This relay's USDC payments (x402; Solana, Tempo), its fee, and escrow if you opt in"),
-        ("stripe", "Cards (Stripe) — the relay's key, and agents' card payouts"),
+        *([("stripe", "Cards (Stripe) — the relay's key, and agents' card payouts")] if not cards_paused() else []),
         ("log", "The transparency log — public proof of what this relay recorded (on or off)"),
         ("dashboard", "The Emporia tab in the Hermes dashboard"),
         ("done", "Nothing now"),

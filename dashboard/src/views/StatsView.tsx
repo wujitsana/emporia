@@ -252,8 +252,8 @@ export function StatsView() {
 
         <Text className="e-faint e-stats-money-note">
           {testMoney
-            ? "All amounts are test money — testnet USDC and Stripe test mode, no real funds — on: "
-            : "Amounts on testnets and in Stripe test mode are test money; check each rail: "}
+            ? "All amounts are test money — testnet money only, no real funds — on: "
+            : "Amounts on testnets are test money; check each rail: "}
           {rails.length ? rails.map((r) => railNetwork(r, health)).join(" · ") : "no payment rail on this relay"}.
           {" "}The model cost below is the one real-money figure.
         </Text>

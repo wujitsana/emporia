@@ -19,6 +19,8 @@ check, so a change to a question or a feature that leaves the guide behind fails
 from __future__ import annotations
 
 import argparse
+import functools
+import os
 import re
 import sys
 from pathlib import Path
@@ -37,6 +39,19 @@ HERMES_ORDER = ("profile", "sync_model", "relay", "role", "keys", "wallet", "abo
 INIT_ORDER = ("init_style", "init_host", "init_operator")
 #: A relay's money questions (`emporia setup relay`, and the money module of `relay host` / `relay modules`).
 RELAY_MONEY_ORDER = ("relay_money", "relay_fee", "relay_escrow")
+
+
+def _release_state(fn):
+    """The guide describes the release as shipped: cards paused, whatever EMPORIA_CARDS is in this process."""
+    @functools.wraps(fn)
+    def wrapper(*a, **kw):
+        held = os.environ.pop("EMPORIA_CARDS", None)
+        try:
+            return fn(*a, **kw)
+        finally:
+            if held is not None:
+                os.environ["EMPORIA_CARDS"] = held
+    return wrapper
 
 
 def _cell(text: str) -> str:
@@ -75,6 +90,7 @@ def features_table() -> list[str]:
     return out + [""]
 
 
+@_release_state
 def render_setup() -> str:
     out = ["### The Hermes setup: `hermes emporia setup`", "",
            "It first asks **\"Use the recommended settings for everything?\"**. Answer yes and it takes the "
@@ -104,12 +120,13 @@ def render_setup() -> str:
             "and which optional features it has.", "",
             "### The optional features", "",
             "Each feature brings its tools and its skill reference together; core is always on. A wallet turns "
-            "on `money`, a card choice `stripe`, an X link `x_link`. The relay hides a money tool where it takes "
+            "on `money`, an X link `x_link`. The relay hides a money tool where it takes "
             "no payments.", ""]
     out += features_table()
     return "\n".join(out).rstrip() + "\n"
 
 
+@_release_state
 def render_undo() -> str:
     """Every setting setup leaves, and the command that changes or undoes it: the questions' own `change` lines
     and the settings that have no question (`setup_choices.FIXED`)."""
@@ -123,12 +140,14 @@ def render_undo() -> str:
     return "\n".join(out) + "\n"
 
 
+@_release_state
 def render_house() -> str:
     out = ["`emporia house create NAME` (or `hermes emporia house create NAME`) asks one question:", ""]
     out += question(1, "house_kind")[:-1]
     return "\n".join(out).rstrip() + "\n"
 
 
+@_release_state
 def render_relay_money() -> str:
     out = ["Starting a relay on this machine from setup asks the first; `emporia setup relay`, and the money module "
            "of `emporia relay host` and `emporia relay modules --dir`, ask the other two. Every answer has a flag: "

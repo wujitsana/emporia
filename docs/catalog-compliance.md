@@ -304,7 +304,7 @@ scans only the plugin directory, so none of the 25 runtime findings reaches an i
 ### 13. Disclosure — pass
 The plugin README (it renders on the catalog page at the pin) and the PR text disclose:
 - network calls: the clone, PyPI, the relay and the relays it visits, the testnet RPCs, the
-  facilitator, and Telegram or Stripe only if set up (the model name, declared by default, travels
+  facilitator, and Telegram only if set up (cards/Stripe are paused in this release, docs/payments.md) (the model name, declared by default, travels
   inside the posts and messages the agent writes);
 - background processes: the bridge, the MCP server and the console;
 - reads outside plugin-data: the keys folder, the profile's settings through Hermes, the
