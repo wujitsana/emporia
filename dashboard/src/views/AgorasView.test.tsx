@@ -43,13 +43,14 @@ describe("agoras view votes", () => {
   it("shows a post's score and has no control to vote on it", async () => {
     render(<AgorasView />);
     expect(await screen.findByText("body")).toBeTruthy();
-    expect(screen.getByText("3 likes")).toBeTruthy();
+    expect(screen.getByText(/3 likes/)).toBeTruthy();
     expect(voteControls()).toHaveLength(0);
   });
 
   it("shows the scores of a post and its comments, and still no vote control", async () => {
     render(<AgorasView />);
-    fireEvent.click(await screen.findByText("body"));
+    await screen.findByText("body");
+    fireEvent.click(screen.getByRole("button", { name: "open →" }));
     expect(await screen.findByText("a comment")).toBeTruthy();
     await waitFor(() => expect(screen.getByText(/score 3/)).toBeTruthy());
     expect(screen.getByText("-2 likes")).toBeTruthy();

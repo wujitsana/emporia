@@ -23,7 +23,7 @@ import { lastSeen, markSeen, newAgents, recordLine, sinceLines } from "../homeMo
 import { useRelayCtx } from "../relayCtx";
 
 /** Full post texts, read once each (the card shows the whole post; the feed's thread read carries it). */
-const FULL = new Map<string, { text: string; at: string } | null>();
+const FULL = new Map<string, { text: string; at: string; author: string; label: string } | null>();
 function useFullPosts(ids: string[]): void {
   const [, bump] = useState(0);
   const key = ids.join("|");
@@ -32,7 +32,7 @@ function useFullPosts(ids: string[]): void {
       if (FULL.has(id)) continue;
       FULL.set(id, null);
       api.postThread(id)
-        .then((t) => { if (t) { FULL.set(id, { text: t.text, at: t.at }); bump((n) => n + 1); } })
+        .then((t) => { if (t) { FULL.set(id, { text: t.text, at: t.at, author: t.author_id ?? "", label: t.label ?? "" }); bump((n) => n + 1); } })
         .catch(() => undefined);
     }
   }, [key]);
@@ -91,7 +91,11 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   const followItems: FollowingActivity["items"] = followed?.items ?? [];
   const followPosts = followItems.filter((i) => i.kind === "post");
   const postId = (ref: string) => ref.slice(ref.indexOf(":") + 1);
-  useFullPosts([...followPosts.map((i) => postId(i.ref)), ...(h?.top_posts ?? []).map((p) => p.post_id)]);
+  useFullPosts([
+    ...followPosts.map((i) => postId(i.ref)),
+    ...(h?.top_posts ?? []).map((p) => p.post_id),
+    ...(h?.topics ?? []).flatMap((t) => (t.latest ? [t.latest.post_id] : [])),
+  ]);
 
   // ── The agent now: what was written to it first, then its turn, then the rest ──
   const unreadN = unread?.total ?? 0;
@@ -151,9 +155,11 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   const seenPost = new Set<string>();
   const postCard = (id: string, kind: string, author: string, topic: string | undefined, first: string, at: string | undefined, likes?: number): CardSpec => {
     const full = FULL.get(id);
+    // A post of kind "other" says what it is (its label): that is its name here.
+    const what = kind === "other" && full?.label ? full.label : kind;
     return {
       key: `post-${id}`, meta: `post${topic ? ` · ${topic}` : ""}`, at: at || full?.at || undefined,
-      chip: (kind || "post").toUpperCase(), head: kind && kind !== "note" ? `New ${kind}` : "New post",
+      chip: (what || "post").toUpperCase(), head: what && what !== "note" ? `New ${what}` : "New post",
       body: full?.text || first, caption: `${bareAgentName(author)}${topic ? ` · ${topic}` : ""}`,
       foot: likes ? `${likes} ${likes === 1 ? "like" : "likes"}` : undefined,
       agent: author, onOpen: () => navigate("feed"), theirs: true,
@@ -172,8 +178,11 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   // ── Games: since the agent last looked, from the agents it follows, on the relay ──
   const turnShown = turns.length > 0;
   const games: CardSpec[] = [];
+  // One game, one card on this page: a game already under "now", or in an earlier line below, is not drawn again.
+  const taken = new Set<string>(liveGames.map((g) => g.session_id));
+  const take = (sid: string): boolean => (taken.has(sid) ? false : (taken.add(sid), true));
   for (const l of sinceLines(events ?? [], viewer ?? "", since, 12)) {
-    if (l.go.kind !== "session" || (turnShown && l.head === "Your turn")) continue;
+    if (l.go.kind !== "session" || (turnShown && l.head === "Your turn") || !take(l.go.sessionId)) continue;
     games.push({
       key: `since-${l.id}`, meta: "since you looked", at: l.at, chip: "NEW", head: l.head ?? "News",
       caption: clip(l.label ?? l.text, 60), game: l.module, agent: l.module ? undefined : l.other, foot: name,
@@ -184,6 +193,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   for (const i of followItems) {
     if (i.kind !== "game" && i.kind !== "challenge") continue;
     const id = postId(i.ref);
+    if (!take(id)) continue;
     const head = i.kind === "game" ? "Game done" : "Open challenge";
     games.push({
       key: `f-${i.kind}-${i.ref}`, meta: i.kind === "game" ? "game" : "challenge", at: i.at, chip: i.kind === "game" ? "FOLLOWED" : "OPEN",
@@ -193,6 +203,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
     });
   }
   for (const c of challenges) {
+    if (!take(c.session_id)) continue;
     games.push({
       key: `c-${c.session_id}`, meta: `game · ${gameName(c.module_type).toLowerCase()}`, chip: "OPEN", head: "Open challenge",
       caption: `${bareAgentName(c.from ?? "an agent")} · ${gameName(c.module_type)}`, game: c.module_type, foot: "open to take",
@@ -201,6 +212,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
     });
   }
   for (const w of waiting) {
+    if (!take(w.session_id)) continue;
     games.push({
       key: `w-${w.session_id}`, meta: `game · ${gameName(w.module_type).toLowerCase()}`, chip: "WAITING", head: "Needs a player",
       caption: `${bareAgentName(w.from ?? "an agent")} · ${gameName(w.module_type)}`, game: w.module_type, foot: "waiting for a player",
@@ -211,22 +223,41 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
 
   // ── Topics, rooms, new agents, invites ──
   const around: CardSpec[] = [];
+  const topicSeen = new Set<string>();
+  const topicKeys = (...v: (string | undefined)[]) => v.filter((x): x is string => !!x).map((x) => x.trim().toLowerCase());
   for (const t of h?.topics ?? []) {
+    topicKeys(t.in.id, t.in.name).forEach((k) => topicSeen.add(k));
+    const latest = t.latest;
+    const known = latest ? FULL.get(latest.post_id) : null;
+    const text = known?.text || latest?.first_line || "";
+    const author = known?.author || "";
+    // The newest post is already a card under New posts: that card says how many more the topic has.
+    const same = latest ? posts.find((x) => x.key === `post-${latest.post_id}`) : undefined;
+    if (same) {
+      if (t.new_posts > 1) same.foot = [same.foot, `${t.new_posts} new in ${clip(t.in.name, 24)}`].filter(Boolean).join(" · ");
+      continue;
+    }
     around.push({
-      key: `t-${t.in.id}`, meta: "topic", chip: "TOPIC", head: `${t.new_posts} new ${t.new_posts === 1 ? "post" : "posts"}`,
-      caption: clip(t.in.name, 48), detail: `from ${t.operators} ${t.operators === 1 ? "operator" : "operators"}`, foot: "last 24 h",
+      key: `t-${t.in.id}`, meta: "topic", chip: "TOPIC", head: clip(t.in.name, 30), body: text || undefined,
+      caption: text ? `${author ? `${bareAgentName(author)} · ` : ""}${t.new_posts} new` : `${t.new_posts} new ${t.new_posts === 1 ? "post" : "posts"}`,
+      agent: author || undefined, foot: `from ${t.operators} ${t.operators === 1 ? "operator" : "operators"} · last 24 h`,
       onOpen: () => navigate("agora"), theirs: true,
     });
   }
   for (const r of h?.rooms ?? []) {
     around.push({
-      key: `r-${r.in.id}`, meta: "room", chip: "ROOM", head: `${r.new_messages} new ${r.new_messages === 1 ? "message" : "messages"}`,
-      caption: clip(r.in.name, 48), detail: `from ${r.operators} ${r.operators === 1 ? "operator" : "operators"}`, foot: "last 24 h",
+      key: `r-${r.in.id}`, meta: "room", chip: "ROOM", head: clip(r.in.name, 30), body: r.latest?.first_line || undefined,
+      caption: `${r.new_messages} new ${r.new_messages === 1 ? "message" : "messages"}`,
+      foot: `from ${r.operators} ${r.operators === 1 ? "operator" : "operators"} · last 24 h`,
       onOpen: () => navigate("rooms", { roomId: r.in.id }), theirs: true,
     });
   }
   for (const i of followItems) {
     if (i.kind !== "topic") continue;
+    // A topic the relay's news already shows (by its slug or its name) is not drawn a second time.
+    const ks = topicKeys(i.topic, i.ref.slice(i.ref.indexOf(":") + 1), i.title);
+    if (ks.some((k) => topicSeen.has(k))) continue;
+    ks.forEach((k) => topicSeen.add(k));
     around.push({
       key: `ft-${i.ref}`, meta: "topic", at: i.at, chip: "TOPIC", head: "New topic", caption: clip(`${bareAgentName(i.actor)} · ${activityVerb(i).title}`, 60),
       agent: i.actor, foot: "an agent it follows", onOpen: () => navigate("agora"), theirs: true,
@@ -294,19 +325,25 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
       foot: takeId ? "an open game, waiting for a player" : "nothing is open: ask what is next" },
   ] : [];
 
-  const rowOf = (title: string, cards: CardSpec[], quiet: string, aside?: string | number) => (
-    <CardRow title={title} aside={aside} cards={cards.length ? cards : [quietCard(`q-${title}`, "Quiet", quiet)]} />
-  );
+  // An empty section is not drawn: one quiet card at the foot names them all, never one quiet card per section.
+  const quiet: string[] = [];
+  const rowOf = (title: string, cards: CardSpec[], idle: string, aside?: string | number) => {
+    if (!cards.length) { quiet.push(idle); return null; }
+    return <CardRow title={title} aside={aside} cards={cards} />;
+  };
+  const standingRow = viewer && standing.length ? <CardRow title="Standing" aside={name} cards={standing} /> : null;
+  if (viewer && !standing.length) quiet.push(`${name} has no record yet`);
   return (
     <>
       {starters.length ? <CardRow title="Start here" cards={starters} /> : null}
       {rowOf(viewer ? `${name} now` : "Live games on this relay", now,
-        viewer ? `${name} is not in a game and nothing waits on a move.` : "Nobody's playing. Pick an agent to see its day.", viewer ? undefined : liveGames.length)}
-      {viewer ? rowOf("Messages & replies", written, `Nothing new — nobody has written to ${name}.`) : null}
-      {rowOf("New posts", posts, "Nothing new — the relay is quiet.")}
-      {rowOf("Games", games, "No game news.")}
-      {rowOf("Topics & agents", around, "Nothing new here.", "last 24 h")}
-      {viewer ? <CardRow title="Standing" aside={name} cards={standing.length ? standing : [quietCard("q-st", "Just starting", `${name} has no record yet.`)]} /> : null}
+        viewer ? `${name} is not in a game and nothing waits on a move` : "nobody is playing", viewer ? undefined : liveGames.length)}
+      {viewer ? rowOf("Messages & replies", written, `nobody has written to ${name}`) : null}
+      {rowOf("New posts", posts, "no new posts")}
+      {rowOf("Games", games, "no game news")}
+      {rowOf("Topics & agents", around, "no new topics or agents", "last 24 h")}
+      {standingRow}
+      {quiet.length ? <CardRow title="Quiet" cards={[quietCard("q-all", "All quiet", `Nothing else new: ${quiet.join("; ")}.`)]} /> : null}
       {viewer && !isSpectator ? <NextUp agentId={viewer} navigate={navigate} /> : null}
     </>
   );

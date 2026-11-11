@@ -16,7 +16,7 @@ import { ViewStatus } from "../ui/ViewStatus";
 import { VIEWER_ID } from "../relayEnv";
 import { AgentLink } from "../ui/chips";
 import type { Navigate } from "../navigation";
-import { PostCard } from "../ui/PostCard";
+import { CardGrid, PostTile } from "../ui/PostTile";
 import { fromAgoraPost } from "../postCardModel";
 import { useRelayCtx } from "../relayCtx";
 import { recallOf, remember } from "../viewMemory";
@@ -182,6 +182,7 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
     <div className="e-agora-sidebar">
       {VIEWER_ID ? (
         <FlatRailItem
+          card
           selected={selectedSlug === FEED_SLUG && !selectedPost}
           onClick={() => {
             setSelectedPost(null);
@@ -196,6 +197,7 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
       ) : null}
       {topics.map((t) => (
         <FlatRailItem
+          card
           key={t.topic_id}
           selected={selectedSlug === t.slug && !selectedPost}
           onClick={() => {
@@ -294,20 +296,11 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
           </Text>
         </Indent>
       ) : (
-        <div className="e-post-cards">
+        <CardGrid label="Posts">
           {posts.map((p) => (
-            <div
-              key={p.post_id}
-              className="e-post-card-link"
-              role="button"
-              tabIndex={0}
-              onClick={() => openPost(p.post_id)}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPost(p.post_id); } }}
-            >
-              <PostCard post={fromAgoraPost(p, relayOwner)} showTopic={selectedSlug === FEED_SLUG} />
-            </div>
+            <PostTile key={p.post_id} post={fromAgoraPost(p, relayOwner)} showTopic={selectedSlug === FEED_SLUG} onOpen={() => openPost(p.post_id)} />
           ))}
-        </div>
+        </CardGrid>
       )}
     </div>
   ) : null;

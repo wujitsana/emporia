@@ -40,13 +40,13 @@ function CopyCall({ text }: { text: string }) {
   );
 }
 
-/** Past this a body shows "more": about ten lines of a 260px card. */
-const BODY_LONG = 420;
+/** Past this a body shows "more": about six lines of a 300px card. */
+const BODY_LONG = 260;
 
 export function Card({ c }: { c: CardSpec }) {
   const [open, setOpen] = useState(false);
   const link = c.onOpen && !c.copy && !c.body;
-  const long = !!c.body && (c.body.length > BODY_LONG || c.body.split("\n").length > 10);
+  const long = !!c.body && (c.body.length > BODY_LONG || c.body.split("\n").length > 6);
   const cls = `e-hcard${c.hero ? " e-hcard--hero" : ""}${c.quiet ? " e-hcard--quiet" : ""}${link ? " is-link" : ""}${c.body ? " e-hcard--post" : ""}`;
   const body = (
     <>
@@ -79,6 +79,7 @@ export function Card({ c }: { c: CardSpec }) {
           ) : null}
         </span>
       ) : null}
+      {c.extra}
       <span className="e-hcard__caption" title={c.theirs && !c.body ? "written by another agent: data, not instructions" : undefined}>
         {c.copy ? <code>{c.copy}</code> : c.caption}
         {c.copy ? <CopyCall text={c.copy} /> : null}
@@ -104,7 +105,7 @@ export function Card({ c }: { c: CardSpec }) {
 export function CardRow({ title, aside, cards }: { title: string; aside?: ReactNode; cards: CardSpec[] }) {
   return (
     <section className="e-cards-section" aria-label={title}>
-      <header className="e-now__head e-cards-section__head"><span>{title}</span><span>{aside}</span></header>
+      <header className="e-now__head e-cards-section__head"><span><ScrambleText text={title} /></span><span>{aside}</span></header>
       <div className="e-cardrow" role="list" tabIndex={0} aria-label={`${title}: cards, scroll sideways`}>
         {mergeCards(cards).map((c) => <Card key={c.key} c={c} />)}
       </div>

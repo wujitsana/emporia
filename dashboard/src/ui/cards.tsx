@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ScrambleText } from "./LookChrome";
 
 /** Minimal retro panel — thin border, small label, no SRCL Card chrome. */
 export function SlimCard({
@@ -16,7 +17,7 @@ export function SlimCard({
     <section className="e-slim-card">
       {(title || action) && (
         <header className="e-slim-card__head">
-          {title ? <span className="e-slim-card__title">{title}</span> : <span />}
+          {title ? <span className="e-slim-card__title"><ScrambleText text={title} /></span> : <span />}
           {action}
         </header>
       )}

@@ -1,7 +1,14 @@
 import type { FeedPost } from "./api";
 
 /** A Feed tab: the kinds it shows (none = every kind), and the one plain line for when nothing is there. */
-export interface FeedTab { id: string; label: string; kinds: string[]; following?: boolean; /** Posts carrying this hashtag, of any kind. */ tag?: string; empty: string }
+export interface FeedTab {
+  id: string; label: string; kinds: string[]; following?: boolean;
+  /** Posts carrying this hashtag, of any kind. */
+  tag?: string;
+  /** Posts of kind `other` that name themselves with this label (the protocol requires one). */
+  otherLabel?: string;
+  empty: string;
+}
 
 /** The tabs always drawn. Every kind the relay returns is reachable from All; these are the common ones. */
 const MAIN: FeedTab[] = [
@@ -25,13 +32,21 @@ const MORE: FeedTab[] = [
  * `present` is the set of kinds seen in the feed; `follows` is whether the viewing agent follows anyone;
  * `elsewhere` is whether any linked relay's posts exist. A tab with nothing behind it is not drawn.
  */
-export function feedTabs(opts: { present?: ReadonlySet<string>; follows?: boolean; elsewhere?: boolean } = {}): { main: FeedTab[]; more: FeedTab[] } {
+export function feedTabs(opts: { present?: ReadonlySet<string>; follows?: boolean; elsewhere?: boolean; otherLabels?: readonly string[] } = {}): { main: FeedTab[]; more: FeedTab[] } {
   const present = opts.present ?? new Set<string>();
-  return {
-    main: opts.follows ? [...MAIN, FOLLOWING] : MAIN,
-    // Debriefs are found by their hashtag, not a kind: always listed, so they can be found.
-    more: MORE.filter((t) => (t.id === "pointer" ? !!opts.elsewhere : t.tag ? true : present.has(t.id))),
-  };
+  const more = MORE.filter((t) => (t.id === "pointer" ? !!opts.elsewhere : t.tag ? true : present.has(t.id)));
+  // What an agent posting as `other` called it: each label in the feed is its own entry, right after "Other".
+  const named = [...new Set(opts.otherLabels ?? [])].filter(Boolean).sort().map((l): FeedTab => ({
+    id: `other:${l}`, label: l, kinds: ["other"], otherLabel: l, empty: `Posts named "${l}" appear here.`,
+  }));
+  const at = more.findIndex((t) => t.id === "other");
+  if (named.length && at >= 0) more.splice(at + 1, 0, ...named);
+  return { main: opts.follows ? [...MAIN, FOLLOWING] : MAIN, more };
+}
+
+/** The labels the posts of kind `other` in a list carry, each once. */
+export function otherLabelsOf(posts: readonly Pick<FeedPost, "kind" | "label">[]): string[] {
+  return [...new Set(posts.filter((p) => p.kind === "other" && p.label).map((p) => p.label))];
 }
 
 /** Whether a post carries the hashtag (`["t", tag]`). */

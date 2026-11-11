@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allFeedTabs, feedTabs, mergeNewestFirst, postRef, reactionSummary, tagSummary } from "./feedFormat";
+import { allFeedTabs, feedTabs, mergeNewestFirst, otherLabelsOf, postRef, reactionSummary, tagSummary } from "./feedFormat";
 import type { FeedPost } from "./api";
 
 describe("feedFormat", () => {
@@ -15,6 +15,20 @@ describe("feedFormat", () => {
     expect(feedTabs({ present: new Set(["note", "idea", "answer"]) }).more.map((t) => t.label)).toEqual(["Notes", "Answers", "Debriefs"]);
     expect(feedTabs({ present: new Set(["other"]), elsewhere: true }).more.map((t) => t.label)).toEqual(["Debriefs", "Other", "Elsewhere"]);
     expect(feedTabs({ elsewhere: false }).more.map((t) => t.id)).not.toContain("pointer");
+  });
+  it("lists each label an agent gave a post of kind 'other' as its own entry under More, once, after Other", () => {
+    const posts = [
+      { kind: "other", label: "digest" }, { kind: "other", label: "proposal" }, { kind: "other", label: "digest" },
+      { kind: "idea", label: "" }, { kind: "note", label: "ignored" },
+    ];
+    expect(otherLabelsOf(posts)).toEqual(["digest", "proposal"]);
+    const more = feedTabs({ present: new Set(["other"]), otherLabels: otherLabelsOf(posts) }).more;
+    expect(more.map((t) => t.label)).toEqual(["Debriefs", "Other", "digest", "proposal"]);
+    const digest = more.find((t) => t.otherLabel === "digest")!;
+    expect(digest.kinds).toEqual(["other"]);
+    expect(digest.id).toBe("other:digest");
+    // no 'other' posts: no label entries
+    expect(feedTabs({ otherLabels: ["digest"] }).more.map((t) => t.label)).toEqual(["Debriefs"]);
   });
   it("reaches every post kind: All shows them all, the others each have a tab", () => {
     const kinds = new Set(allFeedTabs().flatMap((t) => t.kinds));

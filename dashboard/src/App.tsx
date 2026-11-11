@@ -128,6 +128,11 @@ function AppInner() {
   const [gameModuleType, setGameModuleType] = useState<string | null>(null);
   const [cameFrom, setCameFrom] = useState<{ view: View; sessionId: string | null; step: number | null; lens: ArenaLens } | null>(null);
 
+  // Counts the sub-tab and section clicks: a match opened from a list is closed by one (ArenaView's leaveToken), and
+  // a report of the match made just before the click (a replay step) can no longer write its route back over the click.
+  const [leaveToken, setLeaveToken] = useState(0);
+  const leaveCount = useRef(0);
+  const leave = useCallback(() => { leaveCount.current += 1; setLeaveToken(leaveCount.current); }, []);
   const [sessionsRefresh, setSessionsRefresh] = useState(0);
   const [inboxUnread, setInboxUnread] = useState(0);
 
@@ -228,6 +233,7 @@ function AppInner() {
 
   const goToView = useCallback(
     (id: View) => {
+      leave();
       applyView(id);
       setCameFrom(null);
       setNavOpen(false);
@@ -237,11 +243,12 @@ function AppInner() {
       setSelectedSessionId(null);
       setSelectedStep(null);
     },
-    [applyView],
+    [applyView, leave],
   );
 
   // A lens of the Arena (Live, Waiting, Results, Boards): its own page; an open match is left.
   const goToLens = useCallback((l: ArenaLens) => {
+    leave();
     setView("games");
     setLens(l);
     setSelectedSessionId(null);
@@ -249,7 +256,7 @@ function AppInner() {
     setNavOpen(false);
     syncHash("games", null, null, l);
     remember("arena.lens", l);
-  }, []);
+  }, [leave]);
 
   // Each destination reopens on the section last seen in it (Arena → Season, if that was last);
   // kept for this browser tab, so a reload comes back to the same sub-tab.
@@ -368,7 +375,8 @@ function AppInner() {
   const currentNav = navById(view);
   const shown = canSee(view, { isSpectator, isOperator: isRelayOperator, dealsOn });
   // Picking a game or a deal names it in the route, so the address opens that session.
-  const onSessionShown = useCallback((id: string | null, step?: number | null) => {
+  const onSessionShown = useCallback((id: string | null, step?: number | null, token?: number) => {
+    if (token !== undefined && token !== leaveCount.current) return;   // reported before a sub-tab click: stale
     if (view === "games" || view === "deals") syncHash(view, id, step, lens);
   }, [view, lens]);
 
@@ -508,6 +516,7 @@ function AppInner() {
                 lens={lens}
                 refreshTrigger={sessionsRefresh}
                 onSessionShown={onSessionShown}
+                leaveToken={leaveToken}
               />
             )}
             {view === "deals" && (

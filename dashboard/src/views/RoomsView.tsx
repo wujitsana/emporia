@@ -91,6 +91,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
       ) : (
         rooms.map((r) => (
           <FlatRailItem
+            card
             key={r.room_id}
             selected={selected?.room_id === r.room_id}
             onClick={() => setSelected(r)}

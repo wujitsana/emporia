@@ -29,7 +29,7 @@ vi.mock("../hooks", () => ({
 }));
 vi.mock("../api", () => ({
   api: {
-    session: vi.fn((id: string) => Promise.resolve(byId(id).session as Session)),
+    session: vi.fn((id: string) => (byId(id) ? Promise.resolve(byId(id).session as Session) : Promise.reject(new Error("404")))),
     sessionActions: vi.fn((id: string) => Promise.resolve({ session_id: id, actions: byId(id).actions as SessionAction[] })),
     sessionModels: vi.fn((id: string) => Promise.resolve({
       session_id: id, ended: true,
@@ -68,6 +68,37 @@ describe("the Arena home", () => {
       for (const t of titles) expect(screen.getByText(new RegExp(`^${t}`))).toBeTruthy();
       cleanup();
     }
+  });
+});
+
+describe("leaving a match by a sub-tab", () => {
+  const results = (token: number, lens: ArenaLens = "results") =>
+    <ArenaView initialSessionId={null} initialStep={null} lens={lens} refreshTrigger={0} leaveToken={token} />;
+
+  it("closes a match the person opened from a list (the route never named it) when a sub-tab is picked, even on the page it is on", () => {
+    const { rerender } = render(results(0));
+    fireEvent.click(screen.getByText(/won by checkmate/));
+    expect(document.querySelector(".e-arena")?.getAttribute("data-tab")).toBe("match");
+    // the sub-tab for the very page it is on (same lens, same route): only the token tells the Arena
+    rerender(results(1));
+    expect(document.querySelector(".e-arena")?.getAttribute("data-tab")).toBe("home");
+    expect(screen.queryByRole("button", { name: "‹ Arena" })).toBeNull();
+  });
+
+  it("stays in the match when nothing was clicked: a re-render with the same token keeps it", () => {
+    const { rerender } = render(results(2));
+    fireEvent.click(screen.getByText(/won by checkmate/));
+    rerender(results(2));
+    expect(document.querySelector(".e-arena")?.getAttribute("data-tab")).toBe("match");
+  });
+
+  it("names the token with each report, so a report made before the click can be told from one after it", async () => {
+    const shown = vi.fn();
+    const { rerender } = render(<ArenaView initialSessionId={BLOTTO.session.session_id} initialStep={2} lens="live" refreshTrigger={0} leaveToken={3} onSessionShown={shown} />);
+    await waitFor(() => expect(stepText()).toContain("step 2 of 4"));
+    expect(shown).toHaveBeenCalledWith(BLOTTO.session.session_id, 2, 3);
+    rerender(<ArenaView initialSessionId={null} initialStep={null} lens="waiting" refreshTrigger={0} leaveToken={4} onSessionShown={shown} />);
+    expect(shown).toHaveBeenLastCalledWith(null, null, 4);
   });
 });
 
@@ -138,11 +169,11 @@ describe("a match opened by its address", () => {
     await waitFor(() => expect(stepText()).toContain("step 4 of 4"));
     fireEvent.click(screen.getByRole("button", { name: "Previous move" }));
     await waitFor(() => expect(stepText()).toContain("step 3 of 4"));
-    expect(shown).toHaveBeenLastCalledWith(BLOTTO.session.session_id, 3);
+    expect(shown).toHaveBeenLastCalledWith(BLOTTO.session.session_id, 3, 0);
     fireEvent.change(screen.getByLabelText("Step"), { target: { value: "1" } });
-    expect(shown).toHaveBeenLastCalledWith(BLOTTO.session.session_id, 1);
+    expect(shown).toHaveBeenLastCalledWith(BLOTTO.session.session_id, 1, 0);
     fireEvent.click(screen.getByRole("button", { name: "Jump to latest" }));
-    expect(shown).toHaveBeenLastCalledWith(BLOTTO.session.session_id, null);
+    expect(shown).toHaveBeenLastCalledWith(BLOTTO.session.session_id, null, 0);
   });
 
   it("keeps a sealed move hidden until its reveal step, and shows it then", async () => {

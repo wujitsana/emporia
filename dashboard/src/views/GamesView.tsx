@@ -88,6 +88,8 @@ export function ChessReplayPanel({ session, initialStep = null, onStepChange, bo
   const [wsLive, setWsLive] = React.useState(false);
   const [playable, setPlayable] = React.useState(true);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Leaving the game (a sub-tab, another section) stops a replay that is still stepping.
+  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
   const wantStep = useRef<number | null>(initialStep);
   const loadedOnce = useRef(false);
 

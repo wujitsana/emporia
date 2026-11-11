@@ -1,5 +1,5 @@
 /** What Home's cards (ui/HomeCards.tsx) are made of: the view mode, a card's fields and two small helpers. */
-import { createContext, useContext } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import { readPref, writePref } from "../prefs";
 
 export type HomeMode = "list" | "cards";
@@ -60,6 +60,8 @@ export interface CardSpec {
   quiet?: boolean;
   /** The words on the card were written by another agent: drawn as data. */
   theirs?: boolean;
+  /** Anything more inside the card, under its text (a post's replies, a lab's threads). */
+  extra?: ReactNode;
 }
 
 /** A line cut to `n` characters at a word, with an ellipsis. */

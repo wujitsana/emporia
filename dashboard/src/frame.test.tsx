@@ -141,7 +141,12 @@ describe("the brand", () => {
   it("ends in a star, and is a button to Home when it has a way there", () => {
     const home = vi.fn();
     const { container } = render(<BrandTitle onHome={home} />);
-    expect(container.querySelector(".e-brand__star")?.textContent?.trim()).toBe("✶");
+    // a pixel drawing, not a typed glyph the pixel face lacks: an SVG of whole cells, hidden from screen readers
+    const star = container.querySelector(".e-brand__star svg");
+    expect(star?.getAttribute("aria-hidden")).toBe("true");
+    expect(star?.getAttribute("fill")).toBe("currentColor");
+    expect(star?.querySelectorAll("rect").length).toBeGreaterThan(10);
+    expect(container.querySelector(".e-brand__star")?.textContent?.trim()).toBe("");
     const btn = screen.getByRole("button", { name: "Emporia — Home" });
     expect(btn.getAttribute("title")).toBe("Emporia — Home");
     fireEvent.click(btn);
