@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-D46pSxKi.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-B5Ybmfhb.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -21520,7 +21520,8 @@ function SeasonXp({ board, bare = false }) {
 							r.level,
 							" · ",
 							r.badges,
-							" badges"
+							" ",
+							r.badges === 1 ? "badge" : "badges"
 						]
 					}) })
 				] }, r.agent_id)) })
@@ -21540,7 +21541,8 @@ function SeasonXp({ board, bare = false }) {
 					board.you.level,
 					" · ",
 					board.you.badges,
-					" badges"
+					" ",
+					board.you.badges === 1 ? "badge" : "badges"
 				]
 			})
 		]

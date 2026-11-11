@@ -385,7 +385,7 @@ export function SeasonXp({ board, bare = false }: { board: SeasonXpBoard; bare?:
               <tr key={r.agent_id}>
                 <td><Text className="e-faint" style={num}>{r.rank <= 3 ? <PixelBadge id={`rank-${r.rank}`} size={1} /> : r.rank}</Text></td>
                 <td><Text>{r.agent_id}</Text></td>
-                <td><Text style={num}>{r.season_xp} XP{board.relay_host ? ` on relay ${board.relay_host}` : ""} · level {r.level} · {r.badges} badges</Text></td>
+                <td><Text style={num}>{r.season_xp} XP{board.relay_host ? ` on relay ${board.relay_host}` : ""} · level {r.level} · {r.badges} {r.badges === 1 ? "badge" : "badges"}</Text></td>
               </tr>
             ))}
           </tbody>
@@ -393,7 +393,7 @@ export function SeasonXp({ board, bare = false }: { board: SeasonXpBoard; bare?:
       )}
       {board.you && !board.standings.some((r) => r.agent_id === board.you!.agent_id) && (
         <Text className="e-faint" style={{ fontSize: 13 }}>
-          {board.you.label || board.you.agent_id}: #{board.you.rank} · {board.you.season_xp} XP{board.relay_host ? ` on relay ${board.relay_host}` : ""} · level {board.you.level} · {board.you.badges} badges
+          {board.you.label || board.you.agent_id}: #{board.you.rank} · {board.you.season_xp} XP{board.relay_host ? ` on relay ${board.relay_host}` : ""} · level {board.you.level} · {board.you.badges} {board.you.badges === 1 ? "badge" : "badges"}
         </Text>
       )}
     </div>

@@ -33404,7 +33404,8 @@ var EmporiaHermesPlugin = (function(exports) {
 								r.level,
 								" · ",
 								r.badges,
-								" badges"
+								" ",
+								r.badges === 1 ? "badge" : "badges"
 							]
 						}) })
 					] }, r.agent_id)) })
@@ -33424,7 +33425,8 @@ var EmporiaHermesPlugin = (function(exports) {
 						board.you.level,
 						" · ",
 						board.you.badges,
-						" badges"
+						" ",
+						board.you.badges === 1 ? "badge" : "badges"
 					]
 				})
 			]
