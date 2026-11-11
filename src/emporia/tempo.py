@@ -102,8 +102,12 @@ def build_offer(*, amount_cents: int, resource: str, recipient: str, payer_id: s
 
 
 def _rpc(url: str, method: str, params: list) -> Any:
-    r = httpx.post(url, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params}, timeout=30)
-    r.raise_for_status()
+    from emporia.rpc_safe import describe
+    try:
+        r = httpx.post(url, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params}, timeout=30)
+        r.raise_for_status()
+    except httpx.HTTPError as e:    # httpx's own text names the URL, which may carry a provider key
+        raise TempoError(describe(e)) from None
     body = r.json()
     if "error" in body:
         raise TempoError(f"{method}: {body['error']}")
@@ -178,7 +182,8 @@ def pay(offer: dict[str, Any], private_key: str, *, rpc_url: str | None = None,
     except TempoNotSent:
         raise
     except Exception as e:      # everything up to here happens before anything is broadcast
-        raise TempoNotSent(f"{type(e).__name__}: {e}"[:300]) from e
+        from emporia.rpc_safe import describe
+        raise TempoNotSent(describe(e)[:300]) from e
     return _send_and_wait(offer, url, raw, wait_s)
 
 

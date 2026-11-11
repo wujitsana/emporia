@@ -81,19 +81,19 @@ def test_seeded_policy_is_printed(capsys):
 
 # SI-5
 def test_audit_fields_lose_control_characters():
-    assert cli._audit_text("x\r\x1b[1A\x1b[2K forged\n") == "x?[1A?[2K forged?"[:0] + cli._audit_text("x\r\x1b[1A\x1b[2K forged\n")
     out = cli._audit_text("x\r\x1b[1A\x1b[2K forged\n")
     assert "\x1b" not in out and "\r" not in out and "\n" not in out
 
 
 def test_refusals_do_not_rotate_payment_records_out(tmp_path, monkeypatch):
     monkeypatch.setenv("EMPORIA_SIGNER_DIR", str(tmp_path / "s"))
-    signer.audit("alice", "x402", "signed", "0.05 USDC")
-    monkeypatch.setattr(signer, "AUDIT_MAX_BYTES", 2000, raising=False)
-    for i in range(500):
-        signer.audit("alice", "x402", "refused", "x" * 100)
-    assert any(r.get("outcome") == "signed" or r.get("why") == "0.05 USDC" or "signed" in str(r)
-               for r in signer.log("alice", 1000)), "the payment record survived the refusals"
+    monkeypatch.setattr(signer, "AUDIT_MAX_BYTES", 2000)
+    signer.signer_dir().mkdir(parents=True)
+    signer.audit({"agent": "alice", "op": "x402", "result": "signed", "amount_atomic": 50000})
+    for _ in range(500):
+        signer.audit({"agent": "alice", "op": "x402", "result": "refused", "why": "x" * 100})
+    rows = signer.log("alice", 10000)
+    assert any(r["result"] == "signed" for r in rows), "the payment record survived the refusals"
 
 
 # SI-8
@@ -106,6 +106,24 @@ def test_rpc_errors_do_not_carry_the_url():
                                 request=req, response=httpx.Response(429, request=req))
     msg = sg._safe_error(err)
     assert "SECRETKEY" not in msg and "rpc.example" not in msg and "429" in msg
+
+
+def test_the_rpc_helpers_raise_without_the_url(monkeypatch):
+    import httpx
+
+    from emporia import tempo, x402_svm
+    url = "https://rpc.example/v2/SECRETKEY"
+
+    def boom(u, **kw):
+        req = httpx.Request("POST", u)
+        return httpx.Response(429, request=req)
+    monkeypatch.setattr(httpx, "post", boom)
+    with pytest.raises(tempo.TempoError) as t:
+        tempo._rpc(url, "eth_call", [])
+    with pytest.raises(x402_svm.SvmPayError) as v:
+        x402_svm._recent_blockhash("solana:x", {}, url)
+    assert "SECRETKEY" not in str(t.value) and "SECRETKEY" not in str(v.value)
+    assert "429" in str(t.value)
 
 
 # SI-7

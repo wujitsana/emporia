@@ -2279,14 +2279,13 @@ def _signer_audit(name: str = "") -> int:
 
     from emporia import signer
     path = signer.signer_dir() / "audit.jsonl"
-    rows = [_json.loads(ln) for ln in (path.read_text().splitlines() if path.exists() else []) if ln.strip()]
-    rows = [r for r in rows if not name or r.get("agent") == name][-40:]
+    rows = [r for r in signer.audit_rows() if not name or r.get("agent") == name][-40:]
     for r in rows:
         detail = (f"{r['amount_atomic'] / 1e6:.2f} USDC" if r.get("result") == "signed" and r.get("amount_atomic")
                   else r.get("intent") or r.get("why", ""))
         op = f"{r.get('op', '')}:{r['kind']}" if r.get("kind") else r.get("op", "")
-        print(f"  {time.strftime('%m-%d %H:%M:%S', time.localtime(r['at']))}  {r.get('agent', ''):16} "
-              f"{op:22} {r.get('result', ''):8} {detail}")
+        print(f"  {time.strftime('%m-%d %H:%M:%S', time.localtime(r['at']))}  {_audit_text(r.get('agent', ''), 16):16} "
+              f"{_audit_text(op, 40):22} {_audit_text(r.get('result', ''), 12):8} {_audit_text(detail)}")
     print(f"{len(rows)} shown ({path})" if rows else "signer: nothing signed or refused yet")
     return 0
 
@@ -2635,7 +2634,9 @@ def _signer_add_make(args: argparse.Namespace, url: str) -> int:
         print(f"signer add --make: {e}")
         return 1
     rules = {**env, **{k: v for k, v in _mcp_env(profile).items() if k in signer.SIGNING_POLICY}}
-    signer.save_policy(name, {k: rules.get(k, "") for k in signer.POLICY_NAMES if k != "EMPORIA_X402_MAINNET"})
+    seeded = {k: rules.get(k, "") for k in signer.POLICY_NAMES if k != "EMPORIA_X402_MAINNET"}
+    signer.save_policy(name, seeded)
+    _print_seeded_policy(name, seeded)
     token = signer.new_agent_token(name)
     if added := signer.add_settings(env):
         print(f"  The signer takes {name}'s network settings: {', '.join(added)} (in {signer.settings_path()})")
@@ -2732,7 +2733,9 @@ def _signer_add_sources(args: argparse.Namespace, url: str) -> int:
     for role, ref in refs.items():
         signer.set_route(name, role, "vault", ref)
     rules = {**env, **{k: v for k, v in _mcp_env(profile).items() if k in signer.SIGNING_POLICY}}
-    signer.save_policy(name, {k: rules.get(k, "") for k in signer.POLICY_NAMES if k != "EMPORIA_X402_MAINNET"})
+    seeded = {k: rules.get(k, "") for k in signer.POLICY_NAMES if k != "EMPORIA_X402_MAINNET"}
+    signer.save_policy(name, seeded)
+    _print_seeded_policy(name, seeded)
     token = signer.new_agent_token(name)
     signer.add_settings(env)
     signer.own(signer.agent_dir(name))
@@ -2871,15 +2874,17 @@ def _signer_policy(args: argparse.Namespace) -> int:
             return 1
         cap, day = env.get("EMPORIA_X402_MAX_PAYMENT_CENTS", "1000"), env.get("EMPORIA_X402_MAX_DAILY_CENTS", "5000")
         print(f"  Mainnet means real money. Caps: ${int(cap) / 100:.2f} a payment, ${int(day) / 100:.2f} a day; "
-              f"payments above ${int(env.get('EMPORIA_PAYMENT_APPROVAL_CENTS', '0')) / 100:.2f} wait for "
-              f"`emporia signer approve`. Fund its wallet with only what you are ready to lose.")
-        nets = prompt("Mainnet networks it may pay on (e.g. eip155:8453,solana:mainnet)", "")
+              f"{_approval_phrase(env)}. Fund its wallet with only what you are ready to lose.")
+        nets = prompt("Mainnet networks it may pay on, named by you now (e.g. eip155:8453,solana:mainnet)", "")
+        # A mainnet network the seeded list already held was inert while locked; it goes live only when named here.
+        kept = [n for n in resolve_list(env.get("EMPORIA_X402_PAY_NETWORKS", "")) if is_testnet(n)]
+        final = list(dict.fromkeys(kept + resolve_list(nets)))
+        print(f"  Networks it will pay on after this: {', '.join(final) or 'none'}.")
         if prompt(f"Type the agent's name ({name}) to let it pay real money").strip() != name:
             print("Not unlocked.")
             return 1
         env["EMPORIA_X402_MAINNET"] = "1"
-        env["EMPORIA_X402_PAY_NETWORKS"] = ",".join(
-            dict.fromkeys(resolve_list(env.get("EMPORIA_X402_PAY_NETWORKS", "")) + resolve_list(nets)))
+        env["EMPORIA_X402_PAY_NETWORKS"] = ",".join(final)
         signer.save_policy(name, env)
         print(f"{name}: mainnet unlocked in the signer — {env['EMPORIA_X402_PAY_NETWORKS']}.")
         return 0
@@ -2996,7 +3001,9 @@ def _signer_add(args: argparse.Namespace, url: str) -> int:
         for fam, hexkey in keys.items():
             _write_secret_atomically(targets[fam], bytes.fromhex(hexkey))
     rules = {**dotenv, **{k: v for k, v in _mcp_env(profile).items() if k in signer.SIGNING_POLICY}}
-    signer.save_policy(name, {k: rules.get(k, "") for k in signer.POLICY_NAMES if k != "EMPORIA_X402_MAINNET"})
+    seeded = {k: rules.get(k, "") for k in signer.POLICY_NAMES if k != "EMPORIA_X402_MAINNET"}
+    signer.save_policy(name, seeded)
+    _print_seeded_policy(name, seeded)
     token = signer.new_agent_token(name)
     if added := signer.add_settings(dotenv):   # P206: the RPCs it paid through
         print(f"  The signer takes {name}'s network settings: {', '.join(added)} (in {signer.settings_path()})")
@@ -6137,6 +6144,39 @@ def _as_agent(profile: Path, code: str, **env_over: str) -> subprocess.Completed
     env = _agent_child_env(profile, env_over)
     return subprocess.run([sys.executable, "-I", "-c", code], env=env, capture_output=True, text=True,
                           timeout=120)
+
+
+def _audit_text(value, limit: int = 300) -> str:
+    """An audit field as a person may be shown it: agent-supplied text with control characters and escape
+    sequences replaced (printable ASCII only), so it cannot forge or hide lines on the terminal."""
+    from emporia.agent_wallet import plain_text
+    return plain_text(value, limit)
+
+
+def _approval_phrase(env: dict[str, str]) -> str:
+    """What the mainnet unlock says about approvals, true to what the signer enforces."""
+    try:
+        cents = int(str(env.get("EMPORIA_PAYMENT_APPROVAL_CENTS", "") or "").strip() or 0)
+    except ValueError:
+        cents = 0
+    if cents <= 0:
+        return "no approval threshold: payments up to the caps are signed without asking"
+    return f"payments above ${cents / 100:.2f} wait for `emporia signer approve`"
+
+
+def _print_seeded_policy(name: str, policy: dict[str, str]) -> None:
+    """Show the rules the signer took from the profile (the profile is agent-writable, so the person sees them)."""
+    labels = (("EMPORIA_X402_MAX_PAYMENT_CENTS", "per payment (cents)"), ("EMPORIA_X402_MAX_DAILY_CENTS", "per day (cents)"),
+              ("EMPORIA_PAYMENT_APPROVAL_CENTS", "approval threshold (cents)"),
+              ("EMPORIA_X402_PAY_NETWORKS", "pay networks"), ("EMPORIA_PAYOUT_ADDRESSES", "payout addresses"),
+              ("EMPORIA_RELAY_URL", "home relay"), ("EMPORIA_BACKUP_RELAYS", "backup relays"),
+              ("EMPORIA_VISIT_RELAYS", "visit relays"))
+    print(f"  These became {name}'s rules in the signer (copied from its profile; check them: "
+          f"emporia signer policy {name}):")
+    for key, label in labels:
+        print(f"    {label}: {policy.get(key) or 'not set'}")
+    if not policy.get("EMPORIA_PAYMENT_APPROVAL_CENTS"):
+        print("    (no approval threshold: nothing waits for approval)")
 
 
 def _unsafe_profile_key_dir(profile: Path, key_dir: Path) -> str:
