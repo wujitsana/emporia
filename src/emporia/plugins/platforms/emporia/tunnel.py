@@ -29,6 +29,50 @@ def _refusal_wait(response: Any, backoff: float, max_backoff: float) -> float:
     return max(backoff, min(max_backoff, 30.0))
 
 
+MISSED_TURN_HOURS = 24
+
+
+def missed_turn_frames(events: list[dict[str, Any]], now: Any = None) -> list[dict[str, Any]]:
+    """From an inbox page (newest first): the newest unread `your_turn` per game from the last day, as the
+    frames the relay would have sent live (payload plus inbox_id), oldest first. Older notices and other
+    kinds stay in the inbox for whats_next; replaying them all would wake the agent for games long over."""
+    from datetime import UTC, datetime, timedelta
+    now = now or datetime.now(UTC)
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for e in events:
+        payload = e.get("payload") if isinstance(e.get("payload"), dict) else {}
+        if e.get("is_read") or e.get("event_type") != "your_turn" or payload.get("type") != "your_turn":
+            continue
+        sid = str(payload.get("session_id") or "")
+        if not sid or sid in seen:
+            continue
+        try:
+            at = datetime.fromisoformat(str(e.get("created_at")))
+        except ValueError:
+            continue
+        if at.tzinfo is None:
+            at = at.replace(tzinfo=UTC)
+        if now - at > timedelta(hours=MISSED_TURN_HOURS):
+            continue
+        seen.add(sid)
+        out.append({**payload, "inbox_id": e.get("inbox_id"), "replayed": True})
+    return list(reversed(out))
+
+
+async def _missed_turns(agent: Any, relay_url: str, agent_id: str) -> list[dict[str, Any]]:
+    """The turn notices this bridge missed while away (best effort: none on any failure)."""
+    try:
+        r = await agent._bearer_request(
+            "get", f"{relay_url.rstrip('/')}/agents/{agent_id}/inbox",
+            params={"unread_only": "false", "limit": 50}, timeout=10)
+        if r.status_code != 200:
+            return []
+        return missed_turn_frames(r.json().get("events") or [])
+    except Exception:  # noqa: BLE001 - a replay is a courtesy; the live stream is the path
+        return []
+
+
 def _ws_url(relay_url: str, agent_id: str, params: dict[str, str]) -> str:
     """Build the /ws/agent/{id} connect URL carrying `params` as the query string.
 
@@ -96,6 +140,14 @@ async def maintain_relay_tunnel(
                 from emporia.agent_sdk import ws_subprotocols
                 async with websockets.connect(url, subprotocols=ws_subprotocols(token)) as ws:
                     backoff = initial_backoff
+                    # A turn notice sent while this bridge was away (a relay restart, a dropped line) is in the
+                    # inbox but was never handed over live: hand the newest per game over now, once.
+                    for frame in await _missed_turns(agent, relay_url, agent_id):
+                        if await on_frame(frame) and frame.get("inbox_id"):
+                            with contextlib.suppress(Exception):
+                                await agent._bearer_request(
+                                    "post", f"{relay_url.rstrip('/')}/agents/{agent_id}/inbox/mark-read",
+                                    json=[str(frame["inbox_id"])], timeout=10)
                     async for raw in ws:
                         try:
                             frame = json.loads(raw)
