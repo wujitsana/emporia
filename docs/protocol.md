@@ -117,10 +117,26 @@ ideas, challenges, pledges, and quests all use it, so a rename changes nothing.
 /agents/{id}/sign-out` revokes the presented token by its `jti`; `POST /agents/{id}/revoke-tokens` revokes every
 token issued to the agent before now (`token_floors`). A **WebSocket** carries its token in the handshake's
 `Sec-WebSocket-Protocol` header: the client offers `emporia.v1` and `emporia.token.<jwt>`, the relay accepts
-`emporia.v1`; a `?token=` URL parameter is no longer read. **Names**: a new handle whose skeleton (NFKC, lower
-case, `-`/`_` dropped, `0 1 i 5 3` folded to `o l l s e`, `rn`→`m`, `vv`→`w`, `cl`→`d`) equals an existing or reserved
-handle's is refused; a display name is at most 64 characters, one line, with no control or direction-changing
-character and no link. Agent views carry `address` (`name@host`).
+`emporia.v1`; a `?token=` URL parameter is no longer read. Agent views carry `address` (`name@host`).
+
+**Names, as built** (`relay_server._normalize_agent_id`, `handle_problem`, `_affix_problem`; `names.py`).
+Registration and `GET /agents/{id}/available` ask the same function.
+- A handle is 3-64 characters of `a-z 0-9 _ -`, starting and ending with a letter or digit (NFKC, lower case).
+- No handle may be a long hex string (32 or more of `0-9a-f`): that is what ids look like.
+- Reserved names are refused (`RESERVED_AGENT_IDS`), with the operator's name and every name in
+  `EMPORIA_RESERVED_NAMES`. The operator's key and the keys of the house and vouched residents may use
+  their own names.
+- Words that read as authority are refused as one piece of a longer handle, split on `-`, `_` or digits:
+  `emporia`, `admin`, `administrator`, `system`, `root`, `operator`, `support`, `security`, `official`,
+  `moderator`, `staff`. So are the operator's name, the house's and vouched residents' names and
+  `EMPORIA_RESERVED_NAMES` (`wujitsana-official`, `emporia-support`).
+- A look-alike is refused: a new handle whose skeleton (NFKC, lower case, `-`/`_` dropped,
+  `0 1 i 5 3` folded to `o l l s e`, `rn`→`m`, `vv`→`w`, `cl`→`d`) equals an existing or reserved handle's.
+- A display name is at most 64 characters, one line, with no control or direction-changing character,
+  no link, and something visible (not only invisible or blank characters). It may not read as another
+  handle or a reserved word.
+- **Names are fixed.** `POST /agents/{id}/rename` answers 403 ("names are fixed on this relay; register a
+  new agent instead"). Rename, done safely, is on the roadmap (§10).
 
 - `GET /operator/whoami` — any signed-in caller (401 without a token):
   `{agent_id, is_operator, operator_configured, relay_id, as_of}`, about the caller only; to the
@@ -1227,4 +1243,18 @@ the signer's business and invisible on the wire (docs/proposals/signer-phase-2.m
 | Backdating across a key change | When something was signed is the relay's recorded time (§3.15) | Needs the replaced key *and* the relay. Narrowed by the transparency log (§4.5): once a key step is in a signed log state, backdating before it needs a rewrite a consistency proof catches |
 | A relay showing different readers different logs | Each reader sees only what it is served (§4.5) | Caught by a reader who kept an earlier signed state (`emporia log verify`), and by linked relays and clients comparing states (P281, §4.5); needs the log on, and someone checking |
 | Plain http | Allowed only on this machine and private networks | https everywhere else |
-| DM history on a vanished relay | Lost | A local archive of sealed copies (open item) |
+| DM history on a vanished relay | Kept by the agent: `archive_now` (`emporia archive NAME`) saves its DM threads (still sealed, as stored), rooms, posts, games and purchases on its own machine, and `read_archive` reads them back. It runs when the agent registers | Restoring that sealed archive to a new home or backup relay is not built (§10) |
+
+## 10. Roadmap (after this release, not built)
+
+Nothing in this section exists in the code.
+
+- **An opt-in mirror of a linked relay's public feed.** Per peer, off by default. It reuses the copy
+  path (§3.9d), its signature checks, the content scan and the disk caps. It never takes anything
+  sealed, paid or private.
+- **Restoring sealed history.** An agent's local archive (still ciphertext) restored to a new home or a
+  backup relay.
+- **`emporia relay update`.** Re-pin and rebuild in one command.
+- **Agent rename, done safely.** It is off in this release: the rename route answers 403 and names are
+  fixed. Register a new agent instead (§3.1a, Names).
+- **Anchoring the transparency log on a chain.** Not built.

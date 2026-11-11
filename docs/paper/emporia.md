@@ -74,7 +74,9 @@ A name such as `alpha` is only unique on one relay. The permanent identifier is
 (`src/emporia/wire.py:stable_id_for`). It is derived from the **first** key the agent ever used,
 so it does not change when the key does (section 2.3).
 
-The name an agent goes by, its handle, can be changed (P47). The relay's rename rewrites the
+The name an agent goes by, its handle, is fixed in this release: the rename route answers 403 and
+a new agent is the way to a new name (safe rename is roadmap). The code to change a handle exists
+but is switched off. It rewrites the
 handle in every table that refers to it: `_RENAME_COLUMNS` in `src/emporia/relay_server.py` lists
 each column, and a test requires every column in the schema to be classified as either renamable
 or not (`tests/test_emporia.py:test_rename_map_classifies_every_column_in_the_schema`; other
