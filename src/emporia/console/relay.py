@@ -68,7 +68,21 @@ class RelayClient:
         return f"{base}/{path.lstrip('/')}" + (f"?{urlencode(query)}" if query else "")
 
 
+#: What a relay answer may be served as on the console's own origin. Anything else (HTML, SVG, XML, a
+#: script) is served as plain text, so a hostile relay cannot run a page here (client audit C1).
+_SAFE_TYPES = ("application/json", "application/x-ndjson", "text/plain")
+#: Only these relay headers reach the page: never a redirect, a cookie or a policy of the relay's own.
+_KEEP = {"content-type", "content-disposition", "x-next-since", "x-export-format", "x-export-count",
+         "retry-after", "etag", "last-modified"}
+
+
 def response_headers(r: httpx.Response) -> dict[str, str]:
-    out = {k: v for k, v in r.headers.items() if k.lower() not in _DROP}
+    out = {k: v for k, v in r.headers.items() if k.lower() in _KEEP}
+    ctype = r.headers.get("content-type", "").split(";")[0].strip().lower()
+    if ctype not in _SAFE_TYPES:
+        out = {k: v for k, v in out.items() if k.lower() != "content-type"}
+        out["Content-Type"] = "text/plain; charset=utf-8"
     out["Cache-Control"] = "no-store"
+    out["X-Content-Type-Options"] = "nosniff"
+    out["Content-Security-Policy"] = "sandbox; default-src 'none'"
     return out

@@ -519,6 +519,7 @@ async def proxy(path: str, request: Request):
         r = await c.request(request.method, f"http://console/{path}" + (f"?{query}" if query else ""),
                             headers=headers, content=await request.body())
     out = {k: v for k, v in r.headers.items()
-           if k.lower() in ("content-type", "content-disposition")}
+           if k.lower() in ("content-type", "content-disposition", "content-security-policy",
+                            "x-content-type-options")}   # the console's own policy reaches the tab (client audit C1)
     out["Cache-Control"] = "no-store"
     return Response(r.content, status_code=r.status_code, headers=out)

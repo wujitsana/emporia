@@ -208,6 +208,9 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
             response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers.update(security_headers)
+        if request.url.path.startswith("/relay/"):
+            # Client audit C1: a relay's answer is data, never a page — no script runs from it here.
+            response.headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
         return response
 
     @app.get("/session")
