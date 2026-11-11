@@ -35,7 +35,6 @@ vi.mock("../api", () => ({
     agoraTopics: vi.fn(() => Promise.resolve({ topics, count: topics.length })),
     agoraPosts: vi.fn(() => Promise.resolve({ posts: [], count: 0 })),
     agoraFeed: vi.fn(() => Promise.resolve({ posts: [] })),
-    agoraPost: vi.fn(),
   },
   dmDisplayContent: (c: string) => c,
   looksLikeEncryptedEnvelope: () => false,

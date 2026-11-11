@@ -1063,8 +1063,6 @@ export const api = {
       `/agoras/feed?agent_id=${encodeURIComponent(agent_id)}&sort=${sort}`,
       { agentScoped: true },
     ),
-  agoraPost: (post_id: string) =>
-    get<AgoraPost>(`/agoras/posts/${encodeURIComponent(post_id)}`, { agentScoped: true }),
   happening: (limit = 5) => get<Happening>(`/happening?limit=${limit}`, { agentScoped: true }),
   /** One post with its replies (oldest first), as `GET /posts/{id}` answers. */
   postThread: (post_id: string) =>
