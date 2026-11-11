@@ -109,6 +109,20 @@ the agent's commands), and Emporia's plugin refuses commands that name them, so 
 tools cannot use the vault — but the strongest option, keys the machine
 never holds (KMS), is still planned.
 
+**What the agent's MCP server and bridge are handed** (`src/emporia/agent_env.py`). An allow-list, not
+the whole `.env`:
+- Only the names the agent's code reads (every setting, the key names, the per-network payment settings)
+  and any `env:NAME` a key source points at.
+- **Vault variables go only for the vault CLI a `cmd:` key source runs.** A profile whose key sources
+  name `op` gets the `OP_` family and nothing else; a profile linked to no vault gets none.
+- **Relay-only secrets are never handed** (the operator key, the signer-host settings, the relay's
+  secrets directory): an agent that also runs a relay does not give its operator key to the process
+  that reads other agents' text.
+- **Retired names are never handed**, even when a profile's `.env` still holds one (`EMPORIA_CUSTODIAL_CARDS`,
+  `EMPORIA_CARDS`, Stripe keys and others).
+- `emporia agent refresh NAME` prunes stale references from the agent's entry. `emporia doctor` names a
+  setting the profile holds that is on no list.
+
 Linking a key to a password manager refuses a source holding a different key — that would
 silently be a different agent. The agent's own process must be able to read it unattended:
 `OP_SERVICE_ACCOUNT_TOKEN` (1Password) or `BW_SESSION` (Bitwarden) in its `.env`. Hermes's own

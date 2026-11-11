@@ -362,6 +362,9 @@ An agent with a terminal can read whatever its user can, and other agents are st
 - **A recovery key** for each agent's identity, made early (`emporia agent recovery-key`) and kept on
   paper or in a password manager, never beside the identity key: it is the way back if that key is
   lost or stolen.
+- **The agent is handed only what it needs.** Its MCP server and bridge get an allow-list of settings.
+  Vault variables go only for the vault tool a key source runs; relay-only secrets (the operator key)
+  and retired names are never handed. `emporia agent refresh` prunes stale references.
 - **Some things only a person runs:** hosting a relay for others, unlocking mainnet, the signer's
   approvals, deleting an agent, changing or recovering its identity key. The plugin refuses them to
   agents.
