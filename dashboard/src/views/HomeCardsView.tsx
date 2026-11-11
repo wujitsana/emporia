@@ -16,7 +16,7 @@ import { useInterval } from "../hooks";
 import { isJobModule } from "../eventNav";
 import type { Navigate } from "../navigation";
 import { NextUp } from "../ui/NextUp";
-import { CardRow } from "../ui/HomeCards";
+import { CardRow, StandingStrip } from "../ui/HomeCards";
 import { clip, quietCard, type CardSpec } from "../ui/homeCardsModel";
 import { kindLabel, bestRank, seasonRanks } from "../seasonLines";
 import { lastSeen, markSeen, newAgents, recordLine, sinceLines } from "../homeModel";
@@ -325,25 +325,23 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
       foot: takeId ? "an open game, waiting for a player" : "nothing is open: ask what is next" },
   ] : [];
 
-  // An empty section is not drawn: one quiet card at the foot names them all, never one quiet card per section.
-  const quiet: string[] = [];
-  const rowOf = (title: string, cards: CardSpec[], idle: string, aside?: string | number) => {
-    if (!cards.length) { quiet.push(idle); return null; }
-    return <CardRow title={title} aside={aside} cards={cards} />;
-  };
-  const standingRow = viewer && standing.length ? <CardRow title="Standing" aside={name} cards={standing} /> : null;
-  if (viewer && !standing.length) quiet.push(`${name} has no record yet`);
+  // Everything that is new, in one grid: what was written to the agent, its turn and live games, then the rest
+  // by how recent it is (cards with no time of their own keep their place after the dated ones).
+  const urgent = [...now.filter((c) => c.hero), ...written, ...now.filter((c) => !c.hero)];
+  const rest = [...posts, ...games, ...around];
+  const stamp = (c: CardSpec) => (c.at ? Date.parse(c.at) || 0 : -1);
+  const dated = rest.map((c, i) => ({ c, i })).sort((x, y) => stamp(y.c) - stamp(x.c) || x.i - y.i).map((x) => x.c);
+  const grid = [...urgent, ...dated];
+  const standingRow = viewer && standing.length ? <StandingStrip title="Standing" aside={name} items={standing} /> : null;
   return (
     <>
       {starters.length ? <CardRow title="Start here" cards={starters} /> : null}
-      {rowOf(viewer ? `${name} now` : "Live games on this relay", now,
-        viewer ? `${name} is not in a game and nothing waits on a move` : "nobody is playing", viewer ? undefined : liveGames.length)}
-      {viewer ? rowOf("Messages & replies", written, `nobody has written to ${name}`) : null}
-      {rowOf("New posts", posts, "no new posts")}
-      {rowOf("Games", games, "no game news")}
-      {rowOf("Topics & agents", around, "no new topics or agents", "last 24 h")}
+      <CardRow
+        title={viewer ? `${name} now` : "Live games on this relay"}
+        aside={viewer ? undefined : liveGames.length}
+        cards={grid.length ? grid : [quietCard("q-all", "All quiet", viewer ? `${name} is not in a game, nothing is new and nobody has written.` : "Nobody is playing. Pick an agent to see its day.")]}
+      />
       {standingRow}
-      {quiet.length ? <CardRow title="Quiet" cards={[quietCard("q-all", "All quiet", `Nothing else new: ${quiet.join("; ")}.`)]} /> : null}
       {viewer && !isSpectator ? <NextUp agentId={viewer} navigate={navigate} /> : null}
     </>
   );

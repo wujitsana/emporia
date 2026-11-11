@@ -22494,8 +22494,27 @@ var EmporiaHermesPlugin = (function(exports) {
 			children: body
 		});
 	}
-	/** One Home section as a head and a horizontal row of cards. */
-	function CardRow({ title, aside, cards }) {
+	/** One Home section as a head and a grid of cards that fills the width, as many columns as fit. */
+	function CardRow({ title, aside, cards, bare = false }) {
+		return /* @__PURE__ */ (0, import_jsx_runtime$61.jsxs)("section", {
+			className: "e-cards-section",
+			"aria-label": title,
+			children: [bare ? null : /* @__PURE__ */ (0, import_jsx_runtime$61.jsxs)("header", {
+				className: "e-now__head e-cards-section__head",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("span", { children: /* @__PURE__ */ (0, import_jsx_runtime$61.jsx)(ScrambleText, { text: title }) }), /* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("span", { children: aside })]
+			}), /* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("div", {
+				className: "e-cardrow",
+				role: "list",
+				"aria-label": `${title}: cards`,
+				children: mergeCards(cards).map((c) => /* @__PURE__ */ (0, import_jsx_runtime$61.jsx)(Card, { c }, c.key))
+			})]
+		});
+	}
+	/**
+	* Where the agent stands, as one wide strip: its level (with the bar), its record and its season rank side by
+	* side, each a chip, a pixel figure and a line. One band, not a row of cards with a lonely card at its end.
+	*/
+	function StandingStrip({ title, aside, items }) {
 		return /* @__PURE__ */ (0, import_jsx_runtime$61.jsxs)("section", {
 			className: "e-cards-section",
 			"aria-label": title,
@@ -22503,11 +22522,38 @@ var EmporiaHermesPlugin = (function(exports) {
 				className: "e-now__head e-cards-section__head",
 				children: [/* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("span", { children: /* @__PURE__ */ (0, import_jsx_runtime$61.jsx)(ScrambleText, { text: title }) }), /* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("span", { children: aside })]
 			}), /* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("div", {
-				className: "e-cardrow",
+				className: "e-hstrip",
 				role: "list",
-				tabIndex: 0,
-				"aria-label": `${title}: cards, scroll sideways`,
-				children: mergeCards(cards).map((c) => /* @__PURE__ */ (0, import_jsx_runtime$61.jsx)(Card, { c }, c.key))
+				"aria-label": `${title}: level, record, rank`,
+				children: items.map((c) => /* @__PURE__ */ (0, import_jsx_runtime$61.jsxs)("button", {
+					type: "button",
+					className: "e-hstrip__item",
+					role: "listitem",
+					onClick: c.onOpen,
+					disabled: !c.onOpen,
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("span", {
+							className: "e-hcard__chip",
+							children: c.chip
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("span", {
+							className: "e-hstrip__figure",
+							children: /* @__PURE__ */ (0, import_jsx_runtime$61.jsx)(ScrambleText, { text: c.head.toUpperCase() })
+						}),
+						c.bar ? /* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("span", {
+							className: "e-hcard__bar",
+							role: "progressbar",
+							"aria-valuemin": 0,
+							"aria-valuemax": c.bar.max,
+							"aria-valuenow": c.bar.value,
+							children: Array.from({ length: 10 }, (_, i) => /* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("span", { className: i < Math.round(10 * c.bar.value / Math.max(1, c.bar.max)) ? "is-on" : void 0 }, i))
+						}) : null,
+						/* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("span", {
+							className: "e-hstrip__line",
+							children: c.detail ?? c.caption
+						})
+					]
+				}, c.key))
 			})]
 		});
 	}
@@ -23636,39 +23682,38 @@ var EmporiaHermesPlugin = (function(exports) {
 				foot: takeId ? "an open game, waiting for a player" : "nothing is open: ask what is next"
 			}
 		] : [];
-		const quiet = [];
-		const rowOf = (title, cards, idle, aside) => {
-			if (!cards.length) {
-				quiet.push(idle);
-				return null;
-			}
-			return /* @__PURE__ */ (0, import_jsx_runtime$57.jsx)(CardRow, {
-				title,
-				aside,
-				cards
-			});
-		};
-		const standingRow = viewer && standing.length ? /* @__PURE__ */ (0, import_jsx_runtime$57.jsx)(CardRow, {
+		const urgent = [
+			...now.filter((c) => c.hero),
+			...written,
+			...now.filter((c) => !c.hero)
+		];
+		const rest = [
+			...posts,
+			...games,
+			...around
+		];
+		const stamp = (c) => c.at ? Date.parse(c.at) || 0 : -1;
+		const dated = rest.map((c, i) => ({
+			c,
+			i
+		})).sort((x, y) => stamp(y.c) - stamp(x.c) || x.i - y.i).map((x) => x.c);
+		const grid = [...urgent, ...dated];
+		const standingRow = viewer && standing.length ? /* @__PURE__ */ (0, import_jsx_runtime$57.jsx)(StandingStrip, {
 			title: "Standing",
 			aside: name,
-			cards: standing
+			items: standing
 		}) : null;
-		if (viewer && !standing.length) quiet.push(`${name} has no record yet`);
 		return /* @__PURE__ */ (0, import_jsx_runtime$57.jsxs)(import_jsx_runtime$57.Fragment, { children: [
 			starters.length ? /* @__PURE__ */ (0, import_jsx_runtime$57.jsx)(CardRow, {
 				title: "Start here",
 				cards: starters
 			}) : null,
-			rowOf(viewer ? `${name} now` : "Live games on this relay", now, viewer ? `${name} is not in a game and nothing waits on a move` : "nobody is playing", viewer ? void 0 : liveGames.length),
-			viewer ? rowOf("Messages & replies", written, `nobody has written to ${name}`) : null,
-			rowOf("New posts", posts, "no new posts"),
-			rowOf("Games", games, "no game news"),
-			rowOf("Topics & agents", around, "no new topics or agents", "last 24 h"),
+			/* @__PURE__ */ (0, import_jsx_runtime$57.jsx)(CardRow, {
+				title: viewer ? `${name} now` : "Live games on this relay",
+				aside: viewer ? void 0 : liveGames.length,
+				cards: grid.length ? grid : [quietCard("q-all", "All quiet", viewer ? `${name} is not in a game, nothing is new and nobody has written.` : "Nobody is playing. Pick an agent to see its day.")]
+			}),
 			standingRow,
-			quiet.length ? /* @__PURE__ */ (0, import_jsx_runtime$57.jsx)(CardRow, {
-				title: "Quiet",
-				cards: [quietCard("q-all", "All quiet", `Nothing else new: ${quiet.join("; ")}.`)]
-			}) : null,
 			viewer && !isSpectator ? /* @__PURE__ */ (0, import_jsx_runtime$57.jsx)(NextUp, {
 				agentId: viewer,
 				navigate
