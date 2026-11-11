@@ -4863,7 +4863,8 @@ def seed_welcome(slug: str) -> str:
 
 def _seed_run(profile: Path, code: str) -> Any:
     """Run `code` as the operator's agent (its own env and keys); the last stdout line is JSON."""
-    r = _as_agent(profile, "import json\nfrom emporia import mcp_server as m\n" + code, EMPORIA_NO_ARCHIVE="1")
+    r = _as_agent(profile, _PRIME_SESSION + "import json\nfrom emporia import mcp_server as m\n" + code,
+                  EMPORIA_NO_ARCHIVE="1", **_session_env(profile))
     try:
         return json.loads(r.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
@@ -5013,6 +5014,8 @@ def _seed_lab(profile: Path, agent_id: str, name: str, h: dict, args: argparse.N
         return False
     lab_args = argparse.Namespace(repo=repo, branch="main", commit=commit, name="Emporia", checker=None,
                                   subject=None, maintainer=None,
+                                  # an open, unsealed room: anyone can read the lab's threads and board
+                                  room_type="public", gate="open", entry_fee_cents=0, encrypted=False,
                                   licence="MIT")
 
     def call(method: str, path: str, body: dict | None = None, params: dict | None = None) -> Any:
@@ -6494,6 +6497,36 @@ def cmd_house(args: argparse.Namespace) -> int:
     return 0
 
 
+# One sign-in per operator command, not one per call: each call runs in a fresh process as the agent, and a
+# sign-in per process spent the relay's per-address sign-in budget (the seed made ~16 in a few seconds and
+# its later steps went out unsigned). The token goes to each child in its environment (never its argv) and
+# is put into the MCP client's own cache there; it is the agent's own session, for this command only.
+_SESSION_TOKENS: dict[str, tuple[str, float]] = {}
+_PRIME_SESSION = ("import os as _os, time as _time\nfrom emporia import mcp_server as _m\n"
+                  "_t = _os.environ.pop('EMPORIA_CLI_SESSION', '')\n"
+                  "if _t:\n    _m._dashboard_token_cache[f'{_m._base()}|{_m.AGENT_ID}'] = (_t, _time.time() + 1500)\n")
+
+
+def _session_env(profile: Path) -> dict[str, str]:
+    """{"EMPORIA_CLI_SESSION": token} for the agent of `profile`, signing in once (and again near expiry)."""
+    import time as _time
+    key = str(profile)
+    held = _SESSION_TOKENS.get(key)
+    if not held or held[1] < _time.time() + 60:
+        code = ("import json\nfrom emporia import mcp_server as m\n"
+                "h = m._dashboard_bearer_headers()\n"
+                "print(json.dumps({'token': h.get('Authorization', '')[len('Bearer '):]}))")
+        r = _as_agent(profile, code, EMPORIA_NO_ARCHIVE="1")
+        try:
+            token = str(json.loads(r.stdout.strip().splitlines()[-1]).get("token") or "")
+        except (ValueError, IndexError, AttributeError):
+            token = ""
+        if not token:
+            return {}
+        held = _SESSION_TOKENS[key] = (token, _time.time() + 1500)
+    return {"EMPORIA_CLI_SESSION": held[0]}
+
+
 def _operator_call(profile: Path, method: str, path: str, body: dict | None = None,
                    params: dict | None = None) -> tuple[int, Any]:
     """Operator section: one call to the agent's own relay, signed in as the agent, the way
@@ -6505,7 +6538,7 @@ def _operator_call(profile: Path, method: str, path: str, body: dict | None = No
             + (f", params={params!r}" if params else "") + ")\n"
             "try:\n    d = r.json() if r.content else None\nexcept ValueError:\n    d = r.text[-300:]\n"
             "print(json.dumps({'status': r.status_code, 'body': d}))")
-    r = _as_agent(profile, code, EMPORIA_NO_ARCHIVE="1")
+    r = _as_agent(profile, _PRIME_SESSION + code, EMPORIA_NO_ARCHIVE="1", **_session_env(profile))
     try:
         out = json.loads(r.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):

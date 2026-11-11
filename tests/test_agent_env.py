@@ -38,7 +38,7 @@ def _named_in_source(skip: frozenset[str] = frozenset()) -> set[str]:
 
 
 def test_every_name_the_runtime_reads_is_handed_to_its_mcp_server():
-    missing = sorted(_named_in_source(frozenset(_GATEWAY_SIDE)) - agent_env.known_with_relay())
+    missing = sorted(_named_in_source(frozenset(_GATEWAY_SIDE)) - agent_env.known_with_relay() - set(agent_env.CLI_ONLY_NAMES))
     assert not missing, ("names the runtime reads that Hermes would not hand its MCP server; add them to "
                          f"agent_env.LITERAL_NAMES: {missing}")
 

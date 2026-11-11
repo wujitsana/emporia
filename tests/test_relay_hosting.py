@@ -720,3 +720,26 @@ def test_the_seed_lab_request_has_every_field_lab_create_reads():
     seed = seed[:seed.index(")") + 1]
     missing = [a for a in read if f"{a}=" not in seed]
     assert not missing, missing
+
+
+def test_operator_commands_sign_in_once(monkeypatch, tmp_path):
+    """An operator command (the seed) signs in once and hands the session to each call's child process."""
+    import subprocess
+
+    from emporia import cli
+    cli._SESSION_TOKENS.clear()
+    runs = []
+
+    def fake(profile, code, **env):
+        runs.append((code, env))
+        if "_dashboard_bearer_headers()" in code and "status_code" not in code:
+            return subprocess.CompletedProcess([], 0, '{"token": "tok123"}\n', "")
+        return subprocess.CompletedProcess([], 0, '{"status": 200, "body": {}}\n', "")
+    monkeypatch.setattr(cli, "_as_agent", fake)
+    for _ in range(5):
+        assert cli._operator_call(tmp_path, "GET", "/health")[0] == 200
+    sign_ins = [r for r in runs if "status_code" not in r[0]]
+    calls = [r for r in runs if "status_code" in r[0]]
+    assert len(sign_ins) == 1 and len(calls) == 5
+    assert all(env.get("EMPORIA_CLI_SESSION") == "tok123" for _code, env in calls)
+    assert all("tok123" not in code for code, _env in runs), "the token never goes in a child's argv"
