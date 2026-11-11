@@ -388,6 +388,13 @@ folder of your Hermes compose file (`up -d`, not `restart`: a restart keeps the 
 copies are gone after the install step, and `config set --dir` refuses a staging folder that has no `.env` (it would
 create a one-line `.env`, and installing that over the real one drops the relay's settings, so a closed relay opens).
 
+**Updating the relay to a newer commit.** The image is built from the commit pinned in `"$D/compose.snippet.yaml"`
+(`emporia.git#<commit>`). To move it: put the new commit there, the **full 40-character** hash (Docker refuses a
+short one), already pushed to GitHub; then, from the folder of your Hermes compose file,
+`sudo docker compose up -d --build emporia-relay`. The relay's identity and database live in `"$D/data"` and
+stay as they are: check that `/health` names the same `relay_id` and `relay_public_key` before and after. Keep a
+copy of the snippet before editing it (`sudo cp -a "$D/compose.snippet.yaml" "$D/compose.snippet.yaml.bak"`).
+
 **Front door, pick one** (asked as "Front door"):
 
 | | Effect |
