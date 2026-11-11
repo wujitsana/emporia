@@ -64,6 +64,27 @@ def test_a_cmd_source_in_the_mcp_entry_is_refused_as_root(tmp_path, monkeypatch)
         cli._agent_child_env(prof, {})
 
 
+def test_as_agent_env_carries_vault_and_env_key_names(tmp_path, monkeypatch):
+    monkeypatch.setattr(os, "getuid", lambda: 1000)
+    prof = _plain_profile(tmp_path, {
+        "EMPORIA_RELAY_URL": "http://r",
+        "EMPORIA_IDENTITY_KEY_SOURCE": "cmd:op read op://V/i/f",
+        "OP_SERVICE_ACCOUNT_TOKEN": "tok", "AWS_SECRET_ACCESS_KEY": "other",
+        "EMPORIA_ENCRYPTION_KEY_SOURCE": "env:MY_ENC_KEY", "MY_ENC_KEY": "k",
+        "PYTHONPATH": "/evil", "EMPORIA_OPERATOR_PRIVATE_KEY": "relay-held"})
+    env = cli._agent_child_env(prof, {})
+    assert env["OP_SERVICE_ACCOUNT_TOKEN"] == "tok" and env["MY_ENC_KEY"] == "k"
+    assert not {"AWS_SECRET_ACCESS_KEY", "PYTHONPATH", "EMPORIA_OPERATOR_PRIVATE_KEY"} & set(env)
+    assert env["PATH"] == os.defpath
+
+
+def test_as_agent_as_root_with_a_cmd_source_is_a_clean_failure(tmp_path, monkeypatch):
+    prof = _plain_profile(tmp_path, {"EMPORIA_IDENTITY_KEY_SOURCE": "cmd:/agent/script"})
+    monkeypatch.setattr(os, "getuid", lambda: 0)
+    done = cli._as_agent(prof, "print(1)")
+    assert done.returncode == 1 and "cmd:" in done.stderr and "not run as root" in done.stderr
+
+
 # SI-3
 def test_the_mainnet_unlock_text_is_true_without_a_threshold():
     assert "no approval threshold" in cli._approval_phrase({})
