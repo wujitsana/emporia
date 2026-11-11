@@ -2214,7 +2214,6 @@ def build_relay_descriptor(
         "capabilities": capabilities or [],
         "endpoints": {
             "sessions": f"{base}/sessions",
-            "messages": f"{base}/messages",
             "dm": f"{base}/dm",
             "open_sessions": f"{base}/federation/v1/open-sessions",
             "rooms": f"{base}/rooms",

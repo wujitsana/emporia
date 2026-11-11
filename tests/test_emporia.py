@@ -616,7 +616,7 @@ def test_build_relay_descriptor():
     assert card["agent_id"] == "test_agent"
     assert "emporia:chess:v1" in card["capabilities"]
     assert card["publicKey"] == "a" * 64
-    assert card["endpoints"]["messages"] == "http://localhost:8088/messages"
+    assert "messages" not in card["endpoints"]   # POST /messages retired 11-11
     assert "inbox" not in card["endpoints"]  # was a bogus route (R2), never real
 
 
