@@ -12,11 +12,11 @@ from tests.test_emporia import _register_keyed, _p45_requirement, _P45_PAYER_KEY
 @pytest.fixture(autouse=True)
 def _clean_state():
     rs._DAILY_WRITE_BUDGET.clear()
-    rs._DAILY_WRITE_TOTAL[:] = ["", 0]
+    rs._DAILY_WRITE_TOTAL[:] = ["", 0, False]
     rs._DISK_CACHE[0] = 0.0
     yield
     rs._DAILY_WRITE_BUDGET.clear()
-    rs._DAILY_WRITE_TOTAL[:] = ["", 0]
+    rs._DAILY_WRITE_TOTAL[:] = ["", 0, False]
     rs._DISK_CACHE[0] = 0.0
 
 
@@ -70,19 +70,34 @@ def test_low_disk_refuses_with_507_and_is_cached(monkeypatch):
     rs._charge_write_bytes("f3_e", 5)
 
 
-def test_relay_wide_daily_total_refuses_everyone(monkeypatch):
-    monkeypatch.setenv("EMPORIA_DAILY_WRITE_MB_TOTAL", "1")
-    monkeypatch.setenv("EMPORIA_DAILY_WRITE_MB_PER_AGENT", "5")
-    for who in ("f3_t1", "f3_t2", "f3_t3", "f3_t4", "f3_t5"):
-        rs._charge_write_bytes(who, 200_000)
-    with pytest.raises(HTTPException) as e:
-        rs._charge_write_bytes("f3_t6", 200_000)
-    assert e.value.status_code == 429 and "This relay" in e.value.detail
+def test_relay_wide_daily_total_warns_once_and_never_refuses(monkeypatch, caplog):
+    import logging
+    monkeypatch.setattr(rs, "_daily_write_warn_bytes", lambda: 500_000)
+    monkeypatch.setenv("EMPORIA_DAILY_WRITE_MB_PER_AGENT", "10")
+    with caplog.at_level(logging.WARNING, logger="emporia.relay"):
+        for who in ("f3_t1", "f3_t2", "f3_t3", "f3_t4", "f3_t5", "f3_t6"):
+            rs._charge_write_bytes(who, 200_000)         # 1.2 MB in all: nobody is refused
+    assert [r.getMessage() for r in caplog.records].count("write_volume_high") == 1
 
 
-def test_defaults_are_5_mb_per_agent_500_total_2048_free():
-    assert rs._daily_write_budget_bytes() == 5 * 1024 * 1024
-    assert rs._daily_write_total_bytes() == 500 * 1024 * 1024
+def test_data_near_cap_warns_once_per_measurement(monkeypatch, caplog):
+    import logging
+    monkeypatch.setenv("EMPORIA_MAX_DATA_GB", "10")
+    monkeypatch.setattr(rs, "relay_data_bytes", lambda: 9 * 1024 ** 3)
+    _DC = rs._DATA_CACHE
+    _DC[:] = [1.0, 0.0, -1.0]
+    with caplog.at_level(logging.WARNING, logger="emporia.relay"):
+        rs._charge_write_bytes("f3_n", 5)       # 90% of the cap: warns, still writes
+        rs._charge_write_bytes("f3_n", 5)
+    assert [r.getMessage() for r in caplog.records].count("data_near_cap") == 1
+
+
+def test_defaults(monkeypatch):
+    for v in ("DAILY_WRITE_MB_PER_AGENT", "DAILY_WRITE_MB_TOTAL", "MAX_DATA_GB", "MIN_FREE_DISK_MB", "DAILY_WRITE_WARN_GB"):
+        monkeypatch.delenv("EMPORIA_" + v, raising=False)
+    assert rs._daily_write_budget_bytes() == 10 * 1024 * 1024
+    assert rs._daily_write_warn_bytes() == 2 * 1024 ** 3
+    assert rs.max_data_bytes() == 40 * 1024 ** 3
 
 
 def test_audit_log_rolls_at_the_size_limit(monkeypatch, tmp_path):
@@ -201,3 +216,43 @@ def test_games_export_cached_and_still_ndjson(monkeypatch):
     assert a.headers["content-type"].startswith("application/x-ndjson")
     assert a.text == b.text
     assert any(k[0] == "games_export" for k in standing._PUBLIC_CACHE)
+
+
+def test_data_cap_refuses_content_writes_only(monkeypatch):
+    monkeypatch.setattr(rs, "relay_data_bytes", lambda: 50 * 1024 ** 3)
+    with pytest.raises(HTTPException) as e:
+        rs._charge_write_bytes("cap_a", 5)
+    assert e.value.status_code == 507 and "EMPORIA_MAX_DATA_GB" in e.value.detail
+    monkeypatch.setenv("EMPORIA_MAX_DATA_GB", "0")
+    rs._charge_write_bytes("cap_a", 5)
+    # reads and sign-in are not content writes
+    client = TestClient(app, client=("127.0.0.1", 51708))
+    monkeypatch.setenv("EMPORIA_MAX_DATA_GB", "1")
+    assert client.get("/health").status_code == 200
+    assert client.post("/dashboard/challenge").status_code == 200
+
+
+def test_relay_data_bytes_counts_db_and_logs(monkeypatch, tmp_path):
+    d = tmp_path / "data"
+    d.mkdir()
+    (d / "x.sqlite3").write_bytes(b"a" * 100)
+    (d / "x.sqlite3-wal").write_bytes(b"b" * 50)
+    (d / "logs").mkdir()
+    (d / "logs" / "l.jsonl").write_bytes(b"c" * 25)
+    monkeypatch.setattr(rs, "DATABASE_PATH", d / "x.sqlite3")
+    monkeypatch.setattr(rs, "LOG_DIR", d / "logs")
+    rs._DATA_CACHE[0] = 0.0
+    assert rs.relay_data_bytes() == 175
+    rs._DATA_CACHE[0] = 0.0
+
+
+def test_relay_watch_flags_disk_and_volume_events():
+    import json
+    from emporia import relay_watch
+    from datetime import UTC, datetime, timedelta
+    now = datetime.now(UTC).isoformat()
+    lines = [json.dumps({"ts": now, "msg": m}) for m in ("write_volume_high", "data_near_cap")]
+    summary = relay_watch.summarize(lines, since=timedelta(hours=1))
+    line, attention = relay_watch.verdict(summary, None)
+    assert attention and "write_volume_high" in line
+    assert "disk:" in relay_watch.render(summary, None, line)

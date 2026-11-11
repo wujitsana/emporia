@@ -86,6 +86,7 @@ def summarize(lines: Iterable[str], *, since: timedelta, now: datetime | None = 
     settled = failed = 0
     cents_settled = 0
     ws: Counter = Counter()
+    disk: Counter = Counter()
     clients: Counter = Counter()
     for line in lines:
         rec = _json_of(line)
@@ -126,6 +127,8 @@ def summarize(lines: Iterable[str], *, since: timedelta, now: datetime | None = 
             cents_settled += int(rec.get("cents") or 0)
         elif msg == "payment_failed":
             failed += 1
+        elif msg in ("write_volume_high", "data_near_cap", "data_cap_reached", "disk_low"):
+            disk[str(msg)] += 1
         elif msg == "ws_rejected":
             ws[str(rec.get("reason", "?"))] += 1
     requested = max(since.total_seconds() / 60, 1 / 60)
@@ -160,6 +163,7 @@ def summarize(lines: Iterable[str], *, since: timedelta, now: datetime | None = 
         "signin_failures_expected": signin_expected,
         "payments": {"settled": settled, "failed": failed, "cents_settled": cents_settled},
         "ws_rejected": dict(ws),
+        "disk_events": dict(disk),
         "busiest_clients": [{"client": c, "count": n} for c, n in clients.most_common(3)],
     }
 
@@ -175,6 +179,8 @@ def verdict(summary: dict[str, Any], health: dict[str, Any] | None) -> tuple[str
     f = summary["payments"]["failed"]
     if f:
         why.append(f"{f} payment{'s' if f != 1 else ''} failed")
+    if d := summary.get("disk_events"):
+        why.append("disk and write volume: " + ", ".join(f"{k} x{v}" for k, v in sorted(d.items())))
     if why:
         return "attention: " + "; ".join(why), True
     return "all normal", False
@@ -216,6 +222,8 @@ def render(summary: dict[str, Any], health: dict[str, Any] | None, line: str) ->
     out.append(f"payments:  {p['settled']} settled ({p['cents_settled']} cents), {p['failed']} failed")
     ws = summary["ws_rejected"]
     out.append(f"websocket: {sum(ws.values())} rejected" + (f" ({_top(ws)})" if ws else ""))
+    if summary.get("disk_events"):
+        out.append("disk:      " + _top(summary["disk_events"]))
     if summary["busiest_clients"]:
         out.append("clients:   " + ", ".join(f"{c['client']} x{c['count']}" for c in summary["busiest_clients"]))
     out.append(f"verdict:   {line}")

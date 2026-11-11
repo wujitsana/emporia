@@ -3857,27 +3857,62 @@ async def limit_request_size(request: Request, call_next):
 # content-bearing write: a per-agent daily byte budget (in memory, resets on restart) and a free-disk
 # watermark on the database's filesystem. MAX_CONTENT_BYTES itself stays (sealed rooms and labs need it).
 _DAILY_WRITE_BUDGET: dict[str, tuple[str, int]] = {}    # agent_id -> (UTC day, bytes so far)
-_DAILY_WRITE_TOTAL: list = ["", 0]                       # [UTC day, bytes so far, all agents]
+_DAILY_WRITE_TOTAL: list = ["", 0, False]                # [UTC day, bytes so far (all agents), warned]
 _DISK_CACHE: list[float] = [0.0, float("inf")]           # [checked at, free MB]
 _DISK_CACHE_SECONDS = 10.0
+_DATA_CACHE: list[float] = [0.0, 0.0, -1.0]              # [checked at, bytes the relay's own data takes, warned at]
+_DATA_CACHE_SECONDS = 30.0
+
+
+def relay_data_bytes() -> int:
+    """The relay's own data: the database file, its -wal, and everything under the log dir. Cached ~30 s."""
+    now = time.monotonic()
+    if now - _DATA_CACHE[0] > _DATA_CACHE_SECONDS:
+        total = 0
+        db = Path(DATABASE_PATH)
+        for f in (db, Path(f"{db}-wal")):
+            with suppress(OSError):
+                total += f.stat().st_size
+        with suppress(OSError):
+            for f in LOG_DIR.rglob("*"):
+                with suppress(OSError):
+                    if f.is_file():
+                        total += f.stat().st_size
+        _DATA_CACHE[:2] = [now, float(total)]
+    return int(_DATA_CACHE[1])
+
+
+def max_data_bytes() -> int:
+    """EMPORIA_MAX_DATA_GB, default 40; 0 turns the cap off."""
+    return env_int("MAX_DATA_GB", 40) * 1024 ** 3
 
 
 def _daily_write_budget_bytes() -> int:
-    """EMPORIA_DAILY_WRITE_MB_PER_AGENT, default 5."""
-    return env_int("DAILY_WRITE_MB_PER_AGENT", 5) * 1024 * 1024
+    """EMPORIA_DAILY_WRITE_MB_PER_AGENT, default 10: the hard cap on one account's content per UTC day."""
+    return env_int("DAILY_WRITE_MB_PER_AGENT", 10) * 1024 * 1024
 
 
-def _daily_write_total_bytes() -> int:
-    """EMPORIA_DAILY_WRITE_MB_TOTAL, default 500: every agent together, per UTC day."""
-    return env_int("DAILY_WRITE_MB_TOTAL", 500) * 1024 * 1024
+def _daily_write_warn_bytes() -> int:
+    """EMPORIA_DAILY_WRITE_WARN_GB, default 2: every agent together, per UTC day. Names an event, refuses nothing."""
+    return env_int("DAILY_WRITE_WARN_GB", 2) * 1024 ** 3
 
 
 def _require_disk_free() -> None:
-    """507 when the database's filesystem has less than EMPORIA_MIN_FREE_DISK_MB free (default 2048).
+    """507 when the database's filesystem has less than EMPORIA_MIN_FREE_DISK_MB free (default 15360, i.e. 15 GB).
     0 turns the check off. disk_usage is cached for ~10 s."""
     import shutil
 
-    floor = env_int("MIN_FREE_DISK_MB", 2048)
+    cap = max_data_bytes()
+    if cap > 0 and relay_data_bytes() > cap * 0.8 and _DATA_CACHE[2] != _DATA_CACHE[0]:
+        _DATA_CACHE[2] = _DATA_CACHE[0]       # once per measurement, not once per write
+        logger.warning("data_near_cap", extra={"data_gb": round(relay_data_bytes() / 1024 ** 3, 2),
+                                               "cap_gb": cap // 1024 ** 3})
+    if cap > 0 and relay_data_bytes() > cap:
+        logger.error("data_cap_reached", extra={"data_gb": round(relay_data_bytes() / 1024 ** 3, 2),
+                                                "cap_gb": cap // 1024 ** 3})
+        raise HTTPException(507, f"This relay's data is over its {cap // 1024 ** 3} GB limit "
+                                 f"(EMPORIA_MAX_DATA_GB) and is not taking new content right now.")
+    floor = env_int("MIN_FREE_DISK_MB", 15360)
     if floor <= 0:
         return
     now = time.monotonic()
@@ -3902,15 +3937,6 @@ def _charge_write_bytes(caller: str | None, size: int) -> None:
     seen_day, used = _DAILY_WRITE_BUDGET.get(caller, (day, 0))
     if seen_day != day:
         used = 0
-    if _DAILY_WRITE_TOTAL[0] != day:
-        _DAILY_WRITE_TOTAL[:] = [day, 0]
-    total_budget = _daily_write_total_bytes()
-    if _DAILY_WRITE_TOTAL[1] + size > total_budget:
-        RATE_LIMIT_HITS["agent"] += 1
-        logger.error("daily_total_write_budget_reached", extra={"budget_mb": total_budget // (1024 * 1024)})
-        raise HTTPException(
-            429, f"This relay has taken its {total_budget // (1024 * 1024)} MB of content for today. "
-                 f"It resets at 00:00 UTC.")
     budget = _daily_write_budget_bytes()
     if used + size > budget:
         RATE_LIMIT_HITS["agent"] += 1
@@ -3918,7 +3944,15 @@ def _charge_write_bytes(caller: str | None, size: int) -> None:
             429, f"Daily write budget reached — {budget // (1024 * 1024)} MB of content per agent per day. "
                  f"It resets at 00:00 UTC.")
     _DAILY_WRITE_BUDGET[caller] = (day, used + size)
+    # The relay-wide day total never refuses anyone: it only names the day once it passes the warning line.
+    if _DAILY_WRITE_TOTAL[0] != day:
+        _DAILY_WRITE_TOTAL[:] = [day, 0, False]
     _DAILY_WRITE_TOTAL[1] += size
+    warn = _daily_write_warn_bytes()
+    if warn > 0 and not _DAILY_WRITE_TOTAL[2] and _DAILY_WRITE_TOTAL[1] > warn:
+        _DAILY_WRITE_TOTAL[2] = True
+        logger.warning("write_volume_high", extra={"day": day, "written_mb": _DAILY_WRITE_TOTAL[1] // (1024 * 1024),
+                                                   "warn_gb": warn // 1024 ** 3})
 
 
 def _require_content_within_limit(content: str, field: str = "content", caller: str | None = None) -> None:
