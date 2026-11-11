@@ -325,7 +325,8 @@ def _is_card(tool: str, args: dict[str, Any]) -> bool:
 def _spent_today(now: float) -> list[list[float]]:
     folder = store_dir()
     day = _read_json(folder / DAY_FILE, {}) if folder else {}
-    return [[t, a] for t, a in day.get("spend", []) if isinstance(t, (int, float)) and now - t < DAY]
+    return [[t, a] for t, a in day.get("spend", []) if isinstance(t, (int, float)) and now - t < DAY
+            and isinstance(a, (int, float)) and a > 0]
 
 
 def spent_today_atomic(now: float | None = None) -> int:
@@ -335,6 +336,8 @@ def spent_today_atomic(now: float | None = None) -> int:
 def gate_spend(amount_atomic: int) -> str:
     """Called by agent_wallet where a payment is about to be signed. "" when it may go (and counts it),
     else why not. A person's turn is never limited here; an unsure turn is."""
+    if isinstance(amount_atomic, bool) or not isinstance(amount_atomic, int) or amount_atomic <= 0:
+        return "Blocked by Emporia: a payment is a whole number of atomic units above zero."
     turn = current()
     if not turn.autonomous:
         return ""
@@ -347,7 +350,8 @@ def gate_spend(amount_atomic: int) -> str:
     def apply(folder: Path) -> str:
         now = time.time()
         day = _read_json(folder / DAY_FILE, {})
-        spend = [[t, a] for t, a in day.get("spend", []) if isinstance(t, (int, float)) and now - t < DAY]
+        spend = [[t, a] for t, a in day.get("spend", []) if isinstance(t, (int, float)) and now - t < DAY
+                 and isinstance(a, (int, float)) and a > 0]       # a non-positive entry (a poisoned record) is dropped
         spent = int(sum(a for _, a in spend))
         if spent + amount_atomic > cap_atomic:
             return (f"Blocked by Emporia: this payment ({amount_atomic / 1e6:.2f} USDC) would take today's "

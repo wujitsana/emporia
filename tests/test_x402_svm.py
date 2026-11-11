@@ -22,6 +22,12 @@ FEE_PAYER = str(Keypair().pubkey())
 PAY_TO = str(Keypair().pubkey())
 
 
+@pytest.fixture(autouse=True)
+def _own_blockhash(monkeypatch):
+    """The payer takes the blockhash from its own RPC, never from the relay's hint (money-safety S-5)."""
+    monkeypatch.setattr(x402_svm, "_recent_blockhash", lambda network, extra, rpc_url: "11111111111111111111111111111111")
+
+
 def _requirement(amount=250_000, **extra):
     return {"scheme": "exact", "network": DEVNET, "asset": USDC_DEVNET, "payTo": PAY_TO,
             "amount": str(amount), "maxTimeoutSeconds": 300,
