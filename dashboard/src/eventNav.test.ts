@@ -4,7 +4,7 @@ import { hashForView, routeFromHash } from "./dashboardRoute";
 import { sessionSection, viewForEvent } from "./eventNav";
 
 const ev = (type: string, extra: Record<string, unknown> = {}) => ({ type, _ts: 1, ...extra });
-const r = (view: string, sessionId: string | null = null, lens: string | null = null) => ({ view, sessionId, lens });
+const r = (view: string, sessionId: string | null = null, lens: string | null = null) => ({ view, sessionId, lens, postId: null, replyId: null, topicSlug: null, labSlug: null });
 
 describe("a session opens in Games or Deals by what it is", () => {
   it("routes set plays and chess to Games, jobs to Deals", () => {
@@ -29,6 +29,9 @@ describe("live feed event → where it opens", () => {
     expect(viewForEvent(ev("room_message", { room_id: "r1" }))).toEqual({ view: "rooms", opts: { roomId: "r1" } });
     expect(viewForEvent(ev("room_invite", { room_id: "r1" }))?.view).toBe("messages");
     expect(viewForEvent(ev("agora_post_created"))?.view).toBe("agora");
+    // an event that names its post opens that post; one that names a topic opens that topic
+    expect(viewForEvent(ev("agora_post_created", { post_id: "pst_9" }))).toEqual({ view: "post", opts: { postId: "pst_9" } });
+    expect(viewForEvent(ev("agora_post_created", { slug: "games" }))).toEqual({ view: "agora", opts: { topicSlug: "games" } });
     expect(viewForEvent(ev("agora_invite"))?.view).toBe("messages");
     expect(viewForEvent(ev("dm_received"))?.view).toBe("messages");
     expect(viewForEvent(ev("challenge"))?.view).toBe("messages");

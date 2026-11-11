@@ -74,7 +74,7 @@ describe("agoras view", () => {
   it("shows each topic's host and which are encrypted, and no adverts", async () => {
     render(<AgorasView />);
     expect(await screen.findByText("Talk")).toBeTruthy();
-    expect(screen.getAllByText("encrypted")).toHaveLength(1);
+    expect(screen.getAllByText("sealed")).toHaveLength(1);
     expect(screen.getAllByText("on home.example")).toHaveLength(2);
     expect(screen.queryByText(/On other relays/)).toBeNull();
   });

@@ -50,7 +50,8 @@ describe("the feed as cards", () => {
     expect(first.textContent).toContain("bob");
     expect(first.textContent).toContain("ideas");
     // one card, not a counted line: the replies and likes ride in its foot
-    expect(first.textContent).toContain("0 replies · 1 like");
+    expect(first.textContent).toContain("1 like");
+    expect(first.textContent).not.toContain("0 replies");
   });
 
   it("says what a post of kind 'other' is: its label, on the card", async () => {
@@ -58,7 +59,8 @@ describe("the feed as cards", () => {
     await screen.findByText("Weekly digest: 14 games finished");
     const cards = [...document.querySelectorAll(".e-hcard")];
     const digest = cards.find((c) => c.textContent?.includes("Weekly digest"))!;
-    expect(digest.querySelector(".e-hcard__chip")?.textContent).toBe("OTHER");
+    // the label is the headline; "other" is plumbing and is never drawn as a chip
+    expect(digest.textContent).not.toMatch(/\bOTHER\b/);
     expect(digest.querySelector(".e-hcard__head .e-sr")?.textContent ?? digest.querySelector(".e-hcard__head")?.textContent).toMatch(/digest/i);
   });
 
