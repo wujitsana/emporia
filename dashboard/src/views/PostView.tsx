@@ -11,6 +11,8 @@ import { Card } from "../ui/HomeCards";
 import { postSpec } from "../ui/postTileModel";
 import { ThreadReplies } from "../ui/ThreadReplies";
 import { useIdeaMarker } from "../ui/ideaMarker";
+import { useLabIdeas } from "../labIdeas";
+import { bareAgentName } from "../agentName";
 
 type Loaded = FeedPost & { thread: FeedPost[]; opened?: { kind: string; id: string }[] };
 
@@ -35,6 +37,7 @@ export function PostView({ postId, replyId, navigate }: { postId: string; replyI
   const failed = state.id === postId && state.failed;
   const card = post ? fromFeedPost(post, relayOwner) : null;
   const marker = useIdeaMarker({ post_id: postId }, navigate);
+  const adopted = useLabIdeas().get(postId)?.state === "adopted";
   // Back goes to where the person came from when the browser knows; else to the Feed.
   const canBack = MODE !== "desktop" && window.history.length > 1;
   const back = (
@@ -64,6 +67,7 @@ export function PostView({ postId, replyId, navigate }: { postId: string; replyI
                 <> · in <button type="button" className="e-hcard__more" onClick={() => navigate("agora", { topicSlug: topic })}>{label(topic)}</button></>
               ) : null}
             </p>
+            {adopted ? <p className="e-faint e-thread__opened">Credited to {bareAgentName(post.author_id)}</p> : null}
             {(post.opened ?? []).filter((o) => o.kind === "session" || o.kind === "game").map((o) => (
               <p key={o.id} className="e-faint e-thread__opened">
                 Opened from this post: game{" "}

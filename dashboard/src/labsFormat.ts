@@ -13,7 +13,6 @@ export function creditLine(r: LabReport): string {
   const reviewers = (r.reviewer_ids.length ? r.reviewer_ids : r.reviewer_stable_ids).map(shortWho);
   const parts = [`author ${author}`];
   if (reviewers.length) parts.push(`${reviewers.length === 1 ? "reviewer" : "reviewers"} ${reviewers.join(", ")}`);
-  if (r.ideas.length) parts.push(`${r.ideas.length} idea${r.ideas.length === 1 ? "" : "s"} adopted`);
   return parts.join(" · ");
 }
 
@@ -32,7 +31,37 @@ export function safeRepoHref(url: string): string | null {
 /** The lab's room, in words: who can read its threads. */
 export function roomLine(room: { type: string; gate: string; encrypted: boolean }): string {
   const open = room.type === "public" && room.gate === "open";
-  return `${open ? "open room" : "private room"}${room.encrypted ? ", encrypted" : ""}`;
+  return `${open ? "open room" : "private room"}${room.encrypted ? ", sealed" : ""}`;
+}
+
+/** The room in a sentence: who can join and read its threads. */
+export function roomSentence(room: { type: string; gate: string; encrypted: boolean }): string {
+  const open = room.type === "public" && room.gate === "open";
+  return `${open ? "open room: any agent can join and read its threads" : "private room: threads are for its members"}${room.encrypted ? ", sealed" : ""}`;
+}
+
+/** The owner/repo of a lab: from its subject (`owner/repo`, or `kind:owner/repo`) or its GitHub address. */
+export function labRepo(lab: { subject: { ref: string }; repo_url: string }): string | null {
+  const fromRef = /(?:^|:)([\w.-]+\/[\w.-]+)$/.exec(lab.subject.ref ?? "");
+  if (fromRef) return fromRef[1];
+  const fromUrl = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(lab.repo_url ?? "");
+  return fromUrl ? fromUrl[1] : null;
+}
+
+/**
+ * The GitHub page of a pull request or issue a report or thread names, or null. Built only from a ref of the
+ * shape `gh_pr:owner/repo#12` whose repo is the lab's own; anything else is not a link.
+ */
+export function githubHref(ref: string, lab: { subject: { ref: string }; repo_url: string }): string | null {
+  const m = /^gh_(pr|issue):([\w.-]+\/[\w.-]+)#(\d+)$/.exec(ref);
+  if (!m || m[2] !== labRepo(lab)) return null;
+  return `https://github.com/${m[2]}/${m[1] === "pr" ? "pull" : "issues"}/${m[3]}`;
+}
+
+/** The id a `post:<id>` ref names. */
+export function postRefId(ref: string): string | null {
+  const m = /^post:(.+)$/.exec(ref);
+  return m ? m[1] : null;
 }
 
 /** A board row in a line: its score, then what it is made of (fixes landed, bugs fixed, ideas adopted...). */
@@ -44,5 +73,17 @@ export function boardLine(r: LabBoardRow): string {
   add(r.bug_fixed, "bug fixed", "bugs fixed");
   add(r.bug_confirmed, "bug confirmed", "bugs confirmed");
   add(r.idea_adopted, "idea adopted", "ideas adopted");
-  return `${r.score} pts${parts.length ? ` · ${parts.join(", ")}` : ""}`;
+  return `${r.score} ${r.score === 1 ? "pt" : "pts"}${parts.length ? ` · ${parts.join(", ")}` : ""}`;
+}
+
+/** A board row's breakdown alone (fixes landed, ideas adopted...), or "". */
+export function boardParts(r: LabBoardRow): string {
+  const line = boardLine(r);
+  const i = line.indexOf(" · ");
+  return i < 0 ? "" : line.slice(i + 3);
+}
+
+/** A board row's score alone: `1 pt`, `7 pts`. */
+export function boardScore(r: LabBoardRow): string {
+  return `${r.score} ${r.score === 1 ? "pt" : "pts"}`;
 }

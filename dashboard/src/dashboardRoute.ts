@@ -36,6 +36,8 @@ export interface Route {
   replyId: string | null;
   /** The topic a `#/agora/topics/<slug>` route names, if any (`_feed` is the subscribed-topics feed). */
   topicSlug: string | null;
+  /** The lab a `#/agora/labs/<slug>` route names, if any. */
+  labSlug: string | null;
 }
 
 const ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
@@ -115,12 +117,12 @@ export function onRouteChange(fn: () => void): () => void {
 export function routeFromHash(hash: string = currentHash()): Route {
   const parts = hash.replace(/^#\/?/, "").split("?")[0].trim().split("/");
   const first = (parts[0] ?? "").toLowerCase();
-  const none = { postId: null, replyId: null, topicSlug: null };
+  const none = { postId: null, replyId: null, topicSlug: null, labSlug: null };
   // The post page: `#/agora/post/<post_id>[?reply=<reply_id>]`. It is a state of the Feed.
   if (first === "agora" && (parts[1] ?? "").toLowerCase() === "post") {
     const pid = safeDecode(parts[2] ?? "");
     const rid = new URLSearchParams(hash.split("?")[1] ?? "").get("reply") ?? "";
-    if (ID_RE.test(pid)) return { view: "feed", sessionId: null, lens: null, postId: pid, replyId: ID_RE.test(rid) ? rid : null, topicSlug: null };
+    if (ID_RE.test(pid)) return { view: "feed", sessionId: null, lens: null, postId: pid, replyId: ID_RE.test(rid) ? rid : null, topicSlug: null, labSlug: null };
   }
   let view: View | null = null;
   let rawId: string | undefined;
@@ -148,7 +150,7 @@ export function routeFromHash(hash: string = currentHash()): Route {
   if (!view) return { view: "overview", sessionId: null, lens: null, ...none };
   const id = rawId ? safeDecode(rawId) : "";
   const ok = ID_RE.test(id);
-  return { view, sessionId: SESSION_ROUTES.has(view) && ok ? id : null, lens, ...none, topicSlug: view === "agora" && ok ? id : null };
+  return { view, sessionId: SESSION_ROUTES.has(view) && ok ? id : null, lens, ...none, topicSlug: view === "agora" && ok ? id : null, labSlug: view === "labs" && ok ? id : null };
 }
 
 function safeDecode(s: string): string {
@@ -171,6 +173,11 @@ export function stepFromHash(hash: string = currentHash()): number | null {
 /** The post's page: `#/agora/post/<id>`, with `?reply=<id>` to mark one reply. */
 export function hashForPost(postId: string, replyId?: string | null): string {
   return `#/agora/post/${encodeURIComponent(postId)}${replyId ? `?reply=${encodeURIComponent(replyId)}` : ""}`;
+}
+
+/** A lab's page: `#/agora/labs/<slug>`. */
+export function hashForLab(slug: string): string {
+  return `#/agora/labs/${encodeURIComponent(slug)}`;
 }
 
 /** A topic's page: `#/agora/topics/<slug>`. */

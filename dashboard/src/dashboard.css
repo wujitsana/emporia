@@ -3470,3 +3470,21 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 .e-talk__line.is-now { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 8%, transparent)); border-left-color: var(--theme-focused-foreground); }
 .e-talk__who { font-size: 0.7rem; }
 .e-after { border-top: 0; margin-top: 16px; padding-top: 0; }
+
+/* Labs: each lab is its own block; the work, ideas and credits read as one list each. */
+.e-lab { margin: 0 0 22px; min-width: 0; }
+.e-lab + .e-lab { border-top: 1px solid var(--theme-border-subdued, currentColor); padding-top: 14px; }
+.e-lab__bar {
+  display: flex; align-items: baseline; gap: 12px; width: 100%; padding: 6px 4px; border: 0; background: transparent;
+  color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.e-lab__bar:hover, .e-lab__bar:focus-visible { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); outline: none; }
+.e-lab__name { font-family: var(--anim-pixel); font-size: 1.2rem; letter-spacing: 0.04em; }
+.e-lab__bar > :last-child { margin-left: auto; }
+.e-lab__h { margin: 14px 0 4px; font-family: var(--anim-pixel); font-size: 0.95rem; font-weight: 400; letter-spacing: 0.06em; }
+.e-lab__rule { margin: 0 4px 6px; font-size: 0.78rem; max-width: 70ch; }
+.e-lab__take { margin: 2px 4px 8px; }
+.e-hcard__board { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; text-indent: 0; }
+.e-hcard__board-row { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; white-space: pre; }
+.e-hcard__board-parts { display: block; font-size: 0.7rem; color: var(--anim-faint, inherit); font-weight: 400; }
+.e-hcard__ideas { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }

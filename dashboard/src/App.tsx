@@ -130,6 +130,7 @@ function AppInner() {
     return r.postId ? { postId: r.postId, replyId: r.replyId } : null;
   });
   const [topicSlug, setTopicSlug] = useState<string | null>(() => routeFromHash().topicSlug);
+  const [labSlug, setLabSlug] = useState<string | null>(() => routeFromHash().labSlug);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [gameModuleType, setGameModuleType] = useState<string | null>(null);
@@ -228,6 +229,7 @@ function AppInner() {
       setLens(r.lens ?? "live");
       setPostRoute(r.postId ? { postId: r.postId, replyId: r.replyId } : null);
       setTopicSlug(r.topicSlug);
+      setLabSlug(r.labSlug);
       if (r.sessionId) setSelectedSessionId(r.sessionId);
       // Back to a page with no match named: close the match that was open.
       else if (r.view === "games") { setSelectedSessionId(null); setSelectedStep(null); }
@@ -246,6 +248,7 @@ function AppInner() {
       applyView(id);
       setPostRoute(null);
       setTopicSlug(null);
+      setLabSlug(null);
       setCameFrom(null);
       setNavOpen(false);
       // A section picked from the menu over full-page chat is shown; beside the drawer it stays open.
@@ -525,7 +528,7 @@ function AppInner() {
                 onAfterNavigate={() => setNavOpen(false)}
               />
             )}
-            {view === "labs" && <LabsView />}
+            {view === "labs" && <LabsView slug={labSlug} />}
             {view === "games" && (
               <ArenaView
                 initialSessionId={selectedSessionId}
