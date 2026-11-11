@@ -128,6 +128,7 @@ def test_q11_the_board_cannot_be_flooded(client):
         assert _challenge(client, a).status_code == 200
     r = _challenge(client, a)
     assert r.status_code == 400 and "leave_session" in r.text
+    assert r.text.count("sess_") >= 1, "the refusal names the challenges that count (live 11-10: an agent could not find them)"
     x, y = _agents(client, "x", "y")
     assert _challenge(client, x, opponent=y).status_code == 200
     r = _challenge(client, x, opponent=y)

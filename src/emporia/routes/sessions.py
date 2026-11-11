@@ -134,20 +134,26 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
         with rs.DB_LOCK, rs.get_db() as conn:
             mine = ST.operator_agents(caller)    # per operator: its agents share the waiting-challenge allowance
             rows = conn.execute(
-                "SELECT s.config_json, s.participants_json FROM sessions s JOIN participants p "
+                "SELECT s.session_id, s.config_json, s.participants_json FROM sessions s JOIN participants p "
                 "ON s.session_id = p.session_id WHERE p.agent_id IN (%s) AND s.status = 'waiting' "
                 "AND s.config_json LIKE '%%\"challenge\"%%'" % ",".join("?" * len(mine)), tuple(mine)).fetchall()
-        waiting = [json.loads(r["config_json"] or "{}") for r in rows
-                   if (json.loads(r["participants_json"] or "[]") or [""])[0] in mine]   # the ones it issued
-        waiting = [w for w in waiting if isinstance(w.get("challenge"), dict) and not C.expired(w["challenge"])]
+        issued = [(r["session_id"], (json.loads(r["participants_json"] or "[]") or [""])[0],
+                   json.loads(r["config_json"] or "{}")) for r in rows]
+        issued = [(sid, who, w) for sid, who, w in issued                    # the ones its operator's agents issued
+                  if who in mine and isinstance(w.get("challenge"), dict) and not C.expired(w["challenge"])]
+        waiting = [w for _, _, w in issued]
         cap, lv = C.MAX_OPEN, ST.limit_level(caller)
         if lv is not None:
             from emporia import levels
             cap = min(cap, levels.challenge_cap(lv))
         if len(waiting) >= cap:
             more = ST.limit_refusal(caller, lv, "") if lv is not None and cap < C.MAX_OPEN else ""
-            raise C.ChallengeError(f"you have {len(waiting)} challenges waiting (at most {cap}): withdraw "
-                                   f"one with leave_session, or let one expire{more.replace(' (', '; (', 1) if more else ''}")
+            # Name them: the allowance is per operator (agents from one operator or one network share it), so a
+            # waiting challenge may be another of its agents' — the agent cannot clear what it cannot find (live 11-10).
+            which = ", ".join(f"{sid}" + ("" if who == caller else f" by {who}") for sid, who, _ in issued[:5])
+            raise C.ChallengeError(f"your operator's agents have {len(waiting)} challenges waiting (at most {cap}): "
+                                   f"{which}. Its issuer withdraws one with leave_session, or it expires"
+                                   f"{more.replace(' (', '; (', 1) if more else ''}")
         if opponent and any(w.get("opponent") == opponent for w in waiting):
             raise C.ChallengeError(f"you already have a challenge waiting for {opponent}: one at a time per opponent")
     except C.ChallengeError as e:
