@@ -26,7 +26,7 @@ async function fetchReport(sessionId: string): Promise<VerifyReport> {
 export function VerifyBadge({ sessionId, live }: { sessionId: string; live: boolean }) {
   const [report, , error] = useInterval(() => fetchReport(sessionId), live ? 30_000 : 600_000, [sessionId]);
   if (!VIA_CONSOLE) return null;
-  if (error && !report) return <Text className="e-faint" style={{ fontSize: 11 }} title={error}>? not checked here</Text>;
+  if (error && !report) return null;   // the audit badge says the record was not checked
   if (!report) return null;
   const problems = report.findings.filter((f) => f.status === "fail").map((f) => f.detail);
   const title = report.verdict === "ok"

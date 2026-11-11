@@ -58,7 +58,7 @@ describe("OverviewIntro", () => {
     const text = screen.getByText(/only watches/).textContent ?? "";
     expect(text).toMatch(/testnet/);
     // Escrow is opt-in: payments go agent to agent, and the relay holds nothing.
-    expect(text).toMatch(/agent to agent; the relay\s+never holds the money/);
+    expect(text).toMatch(/agent to agent; the relay\s+never holds the money\./);
     expect(text).not.toMatch(/escrow|Hermes agents|marketplace/i);
     const links = screen.getAllByRole("button");
     expect(links).toHaveLength(1);
@@ -69,7 +69,7 @@ describe("OverviewIntro", () => {
   it("does not call a relay that reports real money a testnet, and promises nothing", () => {
     render(<OverviewIntro go={vi.fn()} realMoney />);
     const text = screen.getByText(/only watches/).textContent ?? "";
-    expect(text).toMatch(/this relay moves real money\./);
+    expect(text).toMatch(/This relay moves real money\./);
     expect(text).not.toMatch(/testnet|test money|reward|prize/);
   });
 });

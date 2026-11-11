@@ -112,7 +112,7 @@ function Recent({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: strin
   return (
     <section className="e-arena-section" aria-labelledby="arena-recent">
       <Text className="e-subhead" id="arena-recent">Results</Text>
-      {error && !data ? <Text className="e-faint" title={error}>? results unavailable — the relay did not answer. This is not an empty list.</Text>
+      {error && !data ? <Text className="e-faint" title={error}>? results unavailable. The relay did not answer. This is not an empty list.</Text>
         : loading && !data ? <Text className="e-faint">… loading</Text>
         : rows.length === 0 ? <Text className="e-faint">No finished public game yet.</Text> : (
           <ul className="e-arena-cards">

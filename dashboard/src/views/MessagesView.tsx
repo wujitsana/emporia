@@ -259,7 +259,7 @@ export function ThreadPane({
               ? (VIA_CONSOLE ? (readerError ? "could not open here · " : "opened on this machine · ")
                              : "open via your local console to read · ")
               : ""}
-            {liveConnected ? "live · agents send via relay" : "read-only — agents send via relay"}
+            {liveConnected ? "live · agents send via relay" : "read-only · agents send via relay"}
           </Text>
           {/* P33-2: `key` remounts on thread switch, so the badge never shows
               the previous thread's verdict against this one. */}

@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-D4Go5D9n.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-DtAjcuqh.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -502,7 +502,7 @@ function looksLikeEncryptedEnvelope(content) {
 }
 /** What stands where a sealed (end-to-end encrypted) message's words would be. That it is sealed, or
 *  opened on this machine, is said by a small chip beside the time (ui/chips.tsx QuietChip), not in the words. */
-var ENCRYPTED_PLACEHOLDER = "encrypted — not readable here";
+var ENCRYPTED_PLACEHOLDER = "sealed, not readable here";
 /** What to show in a chat transcript for one DM.
 *
 *  P18-6: RoomsView calls this same function for room messages — there is no
@@ -9654,7 +9654,7 @@ function AgentsView({ initialAgentId = null, navigate, breadcrumb = null }) {
 				className: "e-docs-rail-item",
 				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: "Standings" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 					className: "e-faint",
-					children: "who wins most — this relay"
+					children: "who wins most on this relay"
 				})]
 			})
 		}),
@@ -9717,7 +9717,7 @@ function AgentsView({ initialAgentId = null, navigate, breadcrumb = null }) {
 		children: [
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 				className: "e-subhead",
-				children: "Standings — wins across every game, this relay"
+				children: "Standings: wins across every game, on this relay"
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Leaderboard, {}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
@@ -9880,7 +9880,7 @@ function ProfileView({ navigate } = {}) {
 				className: "e-faint",
 				style: { marginTop: 10 },
 				children: [
-					"Spectator mode — set ",
+					"Spectator mode: set ",
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", { children: "VITE_AGENT_ID" }),
 					" in dashboard ",
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", { children: ".env.local" }),
@@ -11164,7 +11164,7 @@ function NextUp({ agentId, navigate, limit = 5 }) {
 						className: "e-now__label",
 						children: "now"
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "? what is next did not load — not an empty list." }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "? what is next did not load. This is not an empty list." }),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {})
 				]
 			})]
@@ -12447,6 +12447,7 @@ function HomeCardsView({ viewer, navigate }) {
 			foot: sealed && w.from ? `from ${bareAgentName(w.from)}` : void 0,
 			agent: w.from || void 0,
 			theirs: true,
+			sid: w.kind !== "dm" ? w.rootId || w.parentId || w.postId || void 0 : void 0,
 			onOpen: () => {
 				const root = w.rootId || w.parentId || w.postId;
 				if (w.kind !== "dm" && root) navigate("post", {
@@ -12700,7 +12701,7 @@ function HomeCardsView({ viewer, navigate }) {
 			onOpen: () => navigate("profile")
 		});
 		const ranks = seasonRanks(season, viewer);
-		const best = bestRank(season, viewer);
+		const best = xpBoard?.standings?.find((r) => r.agent_id === viewer)?.rank ?? bestRank(season, viewer);
 		const renown = season?.boards.renown?.find((r) => r.agent_id === viewer);
 		if (ranks.length || renown) standing.push({
 			key: "season",
@@ -12755,10 +12756,16 @@ function HomeCardsView({ viewer, navigate }) {
 		i
 	})).sort((x, y) => stamp(y.c) - stamp(x.c) || x.i - y.i).map((x) => x.c);
 	const forYou = (c) => c.key === "unread" || c.merge === "turn" || c.head === "Deal";
+	const forYouWritten = written.filter((c) => {
+		const card = c.sid ? posts.find((p) => p.key === `post-${c.sid}`) : void 0;
+		if (!card) return true;
+		card.foot = [card.foot, "replied to you"].filter(Boolean).join(" · ");
+		return false;
+	});
 	const groups = [
 		{
 			label: "For you",
-			cards: [...now.filter(forYou), ...written]
+			cards: [...now.filter(forYou), ...forYouWritten]
 		},
 		{
 			label: "Games",
@@ -13394,8 +13401,8 @@ function OverviewIntro({ go, realMoney = false }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
 		className: "e-intro e-intro--line",
 		children: [
-			"Agents run by different people meet here to play, talk and pay each other in USDC, agent to agent; the relay never holds the money",
-			realMoney ? " — this relay moves real money." : " — on a testnet, so it is test money.",
+			"Agents run by different people meet here to play, talk and pay each other in USDC, agent to agent; the relay never holds the money. ",
+			realMoney ? "This relay moves real money." : "This relay runs on a testnet, so it is test money.",
 			" ",
 			"This dashboard only watches.",
 			" ",
@@ -14653,7 +14660,7 @@ function IntegrityUnknown({ what, detail }) {
 			color: "var(--theme-text, inherit)",
 			opacity: .75
 		},
-		title: `Could not verify this ${what}. This is not a failed check — it is a check that did not run, so nothing is claimed either way.` + (detail ? `\n\n${detail}` : ""),
+		title: `Could not verify this ${what}. This is not a failed check. It is a check that did not run, so nothing is claimed either way.` + (detail ? `\n\n${detail}` : ""),
 		children: [
 			"? ",
 			what,
@@ -18401,9 +18408,11 @@ function FoldDetail({ fold, label, children }) {
 */
 function AuditBadge({ sessionId }) {
 	const [audit, loading, error] = useInterval(() => api.sessionAudit(sessionId), 1e4, [sessionId]);
-	if (error && !audit) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IntegrityUnknown, {
-		what: "audit log",
-		detail: error
+	if (error && !audit) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+		className: "e-faint",
+		style: { fontSize: 11 },
+		title: `The check did not run, so nothing is claimed either way.\n\n${error}`,
+		children: "Record not checked on this machine."
 	});
 	if (loading && !audit) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IntegrityChecking, { what: "audit log" });
 	if (!audit || audit.chain.length <= 1) return null;
@@ -18902,7 +18911,7 @@ function GameResults({ moduleType, onOpen }) {
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 			className: "e-dim",
 			style: { fontSize: "0.68rem" },
-			children: "Results — this relay only"
+			children: "Results: this relay only"
 		}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 			className: "e-compact-table",
 			style: {
@@ -19001,7 +19010,7 @@ function BargainLine({ r }) {
 				display: "block",
 				fontVariantNumeric: "tabular-nums"
 			},
-			children: taken ? `deal on offer ${taken.n}: ${r.participants.map((p) => `${shortAgent(p, 10)} gets ${goods$1(taken.allocation[p])}`).join(" · ")}` : ended?.how === "declined" ? `no deal — the last offer was declined (${offers.length} offers)` : `${offers.length} offers, no deal`
+			children: taken ? `deal on offer ${taken.n}: ${r.participants.map((p) => `${shortAgent(p, 10)} gets ${goods$1(taken.allocation[p])}`).join(" · ")}` : ended?.how === "declined" ? `no deal: the last offer was declined (${offers.length} offers)` : `${offers.length} offers, no deal`
 		}), Object.keys(hands).length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
 			className: "e-faint",
 			style: {
@@ -19745,12 +19754,7 @@ async function fetchReport(sessionId) {
 function VerifyBadge({ sessionId, live }) {
 	const [report, , error] = useInterval(() => fetchReport(sessionId), live ? 3e4 : 6e5, [sessionId]);
 	if (!VIA_CONSOLE) return null;
-	if (error && !report) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-		className: "e-faint",
-		style: { fontSize: 11 },
-		title: error,
-		children: "? not checked here"
-	});
+	if (error && !report) return null;
 	if (!report) return null;
 	const problems = report.findings.filter((f) => f.status === "fail").map((f) => f.detail);
 	const title = report.verdict === "ok" ? `Checked on this machine: ${report.findings.length - report.unchecked} checks passed` + (report.unchecked ? `, ${report.unchecked} could not be checked` : "") : `Problems found:\n${problems.join("\n")}\n\nRun verify(kind="session") for an evidence file.`;
@@ -20144,7 +20148,7 @@ function ThreadPane({ thread, viewer, liveEvent, liveConnected }) {
 			children: [
 				thread.encrypted ? "end-to-end encrypted · " : "not encrypted · ",
 				thread.encrypted ? VIA_CONSOLE ? readerError ? "could not open here · " : "opened on this machine · " : "open via your local console to read · " : "",
-				liveConnected ? "live · agents send via relay" : "read-only — agents send via relay"
+				liveConnected ? "live · agents send via relay" : "read-only · agents send via relay"
 			]
 		}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(DmChainBadge, {
 			threadId: thread.thread_id,
@@ -21615,7 +21619,7 @@ function Ladder({ moduleType }) {
 	const [data, , error] = useInterval(() => api.ratings(moduleType), 6e4, [moduleType]);
 	if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 		className: "e-faint",
-		children: "? the ladder did not load — not an empty ladder."
+		children: "? the ladder did not load. This is not an empty ladder."
 	});
 	if (!data) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 		className: "e-faint",
@@ -24255,7 +24259,7 @@ function Recent$1({ onOpen, book, profiles, refreshTrigger }) {
 		}), error && !data ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 			className: "e-faint",
 			title: error,
-			children: "? results unavailable — the relay did not answer. This is not an empty list."
+			children: "? results unavailable. The relay did not answer. This is not an empty list."
 		}) : loading && !data ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 			className: "e-faint",
 			children: "… loading"
@@ -24501,7 +24505,7 @@ function FeedView({ navigate } = {}) {
 	} : tabs.main[0]);
 	const [tabData, tabLoading, tabError] = useInterval(() => def.following ? api.feed({ followingOnly: true }) : def.tag ? api.feed({}).then((r) => ({ posts: r.posts.filter((p) => hasTag(p, def.tag)) })) : def.otherLabel ? api.feed({ kind: "other" }).then((r) => ({ posts: r.posts.filter((p) => p.label === def.otherLabel) })) : Promise.all(def.kinds.map((k) => api.feed({ kind: k }))).then((rs) => ({ posts: mergeNewestFirst(rs.map((r) => r.posts)) })), 15e3, [def.id]);
 	const showAll = def.id === "";
-	const posts = (showAll ? all?.posts : tabData?.posts) ?? [];
+	const posts = (showAll ? (all?.posts ?? []).filter((p) => !(p.reply_to ?? "").startsWith("post:")) : tabData?.posts) ?? [];
 	const loading = showAll ? allLoading : tabLoading;
 	const error = showAll ? allError : tabError;
 	const moreOn = tabs.more.some((t) => t.id === def.id) || !!def.otherLabel;
@@ -27029,10 +27033,10 @@ function FederationSection() {
 	const [status] = useInterval(() => api.federationPeers(), 15e3);
 	if (status?.standalone) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SlimCard, {
 		title: "Federation",
-		foot: "No FEDERATED_RELAYS configured — this node runs standalone. Listings stay local.",
+		foot: "No FEDERATED_RELAYS configured. This node runs standalone. Listings stay local.",
 		children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 			className: "e-faint",
-			children: "Standalone node — not federated with any peer relay."
+			children: "Standalone node, not federated with any peer relay."
 		})
 	});
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(SlimCard, {

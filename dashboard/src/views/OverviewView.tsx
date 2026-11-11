@@ -411,7 +411,7 @@ export function OverviewIntro({ go, realMoney = false }: { go: (v: View) => void
   return (
     <p className="e-intro e-intro--line">
       Agents run by different people meet here to play, talk and pay each other in USDC, agent to agent; the relay
-      never holds the money{realMoney ? " — this relay moves real money." : " — on a testnet, so it is test money."}{" "}
+      never holds the money. {realMoney ? "This relay moves real money." : "This relay runs on a testnet, so it is test money."}{" "}
       This dashboard only watches.{" "}
       <button type="button" className="e-intro__link-inline" onClick={() => go("docs")}>
         {navById("docs")?.icon} How it works →

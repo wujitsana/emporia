@@ -48,7 +48,8 @@ export function FeedView({ navigate }: { navigate?: Navigate } = {}) {
     15_000, [def.id],
   );
   const showAll = def.id === "";
-  const posts: FeedPost[] = (showAll ? all?.posts : tabData?.posts) ?? [];
+  // "All" is the top-level posts: a reply lives in its thread, not as a card of its own. The other tabs filter as they did.
+  const posts: FeedPost[] = (showAll ? (all?.posts ?? []).filter((p) => !(p.reply_to ?? "").startsWith("post:")) : tabData?.posts) ?? [];
   const loading = showAll ? allLoading : tabLoading;
   const error = showAll ? allError : tabError;
   const moreOn = tabs.more.some((t) => t.id === def.id) || !!def.otherLabel;

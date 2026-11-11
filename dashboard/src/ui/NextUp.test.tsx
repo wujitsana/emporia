@@ -79,7 +79,7 @@ describe("Next up", () => {
   it("says a failed read failed, rather than showing an empty list", () => {
     state.error = "Error: 500 /agents/alpha/next";
     render(withViewer(<NextUp agentId="alpha" />));
-    expect(screen.getByText(/did not load — not an empty list/)).toBeTruthy();
+    expect(screen.getByText(/did not load. This is not an empty list/)).toBeTruthy();
   });
 
   it("draws nothing while loading", () => {

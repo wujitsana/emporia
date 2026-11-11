@@ -67,7 +67,7 @@ export function NextUp({ agentId, navigate, limit = 5 }: { agentId: string | nul
       <section className="e-now e-next" aria-label="Next steps">
         <header className="e-now__head"><span>Next steps</span><span>?</span></header>
         <p className="e-now__row e-now__row--static"><span className="e-now__label">now</span>
-          <span>? what is next did not load — not an empty list.</span><span /></p>
+          <span>? what is next did not load. This is not an empty list.</span><span /></p>
       </section>
     );
   }

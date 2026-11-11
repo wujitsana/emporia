@@ -3349,7 +3349,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
    their reports are a grid of them; topics and rooms are rail rows drawn as the same card. */
 .e-card-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 10px;
-  padding: 4px 4px 12px; min-width: 0; align-items: stretch;
+  padding: 4px 4px 12px; min-width: 0; align-items: start;
 }
 .e-card-grid > .e-hcard { flex: none; min-width: 0; }
 .e-card-grid--wide { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }

@@ -149,7 +149,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
       body: sealed ? undefined : w.text,
       caption: sealed ? "sealed: read it in Messages on this machine" : w.from ? bareAgentName(w.from) : "an agent",
       foot: sealed && w.from ? `from ${bareAgentName(w.from)}` : undefined,
-      agent: w.from || undefined, theirs: true,
+      agent: w.from || undefined, theirs: true, sid: w.kind !== "dm" ? (w.rootId || w.parentId || w.postId) || undefined : undefined,
       onOpen: () => {
         // A reply or mention opens the thread with that reply marked; a message opens Messages.
         const root = w.rootId || w.parentId || w.postId;
@@ -325,7 +325,9 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
         foot: name, onOpen: () => navigate("profile") });
     }
     const ranks = seasonRanks(season, viewer);
-    const best = bestRank(season, viewer);
+    // One rank on the page: the Season XP board's, the same number as the card beside it.
+    const xpRank = xpBoard?.standings?.find((r) => r.agent_id === viewer)?.rank;
+    const best = xpRank ?? bestRank(season, viewer);
     const renown = season?.boards.renown?.find((r) => r.agent_id === viewer);
     if (ranks.length || renown) {
       standing.push({ key: "season", meta: "season", chip: "SEASON", head: best ? `Rank ${best}` : `Renown ${renown?.score ?? 0}`,
@@ -355,8 +357,15 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   const stamp = (c: CardSpec) => (c.at ? Date.parse(c.at) || 0 : -1);
   const newest = (list: CardSpec[]) => list.map((c, i) => ({ c, i })).sort((x, y) => stamp(y.c) - stamp(x.c) || x.i - y.i).map((x) => x.c);
   const forYou = (c: CardSpec) => c.key === "unread" || c.merge === "turn" || c.head === "Deal";
+  // A reply to a post that already has a card under Posts is that card's foot ("replied to you"), not a second card.
+  const forYouWritten = written.filter((c) => {
+    const card = c.sid ? posts.find((p) => p.key === `post-${c.sid}`) : undefined;
+    if (!card) return true;
+    card.foot = [card.foot, "replied to you"].filter(Boolean).join(" · ");
+    return false;
+  });
   const groups: CardGroup[] = [
-    { label: "For you", cards: [...now.filter(forYou), ...written] },
+    { label: "For you", cards: [...now.filter(forYou), ...forYouWritten] },
     { label: "Games", cards: [...now.filter((c) => !forYou(c)), ...newest(games)] },
     { label: "Posts", cards: newest(posts) },
     { label: "Topics & rooms", cards: newest(around.filter((c) => !c.key.startsWith("na-"))) },

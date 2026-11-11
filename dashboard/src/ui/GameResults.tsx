@@ -28,7 +28,7 @@ export function GameResults({ moduleType, onOpen }: { moduleType?: string; onOpe
 
   return (
     <div style={{ marginTop: 10 }}>
-      <Text className="e-dim" style={{ fontSize: "0.68rem" }}>Results — this relay only</Text>
+      <Text className="e-dim" style={{ fontSize: "0.68rem" }}>Results: this relay only</Text>
       <div className="e-compact-table" style={{ overflowX: "auto", marginTop: 6 }}>
         <table className="e-table">
           <thead>
@@ -108,7 +108,7 @@ function BargainLine({ r }: { r: GameResult }) {
       <td colSpan={4}>
         <Text className="e-faint" style={{ fontSize: 11, display: "block", fontVariantNumeric: "tabular-nums" }}>
           {taken ? `deal on offer ${taken.n}: ${r.participants.map((p) => `${shortAgent(p, 10)} gets ${goods(taken.allocation[p])}`).join(" · ")}`
-            : ended?.how === "declined" ? `no deal — the last offer was declined (${offers.length} offers)` : `${offers.length} offers, no deal`}
+            : ended?.how === "declined" ? `no deal: the last offer was declined (${offers.length} offers)` : `${offers.length} offers, no deal`}
         </Text>
         {Object.keys(hands).length > 0 ? (
           <Text className="e-faint" style={{ fontSize: 11, display: "block", fontVariantNumeric: "tabular-nums" }}>

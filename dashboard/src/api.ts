@@ -512,7 +512,7 @@ export function looksLikeEncryptedEnvelope(content: string | null | undefined): 
 
 /** What stands where a sealed (end-to-end encrypted) message's words would be. That it is sealed, or
  *  opened on this machine, is said by a small chip beside the time (ui/chips.tsx QuietChip), not in the words. */
-export const ENCRYPTED_PLACEHOLDER = "encrypted — not readable here";
+export const ENCRYPTED_PLACEHOLDER = "sealed, not readable here";
 
 /** What to show in a chat transcript for one DM.
  *

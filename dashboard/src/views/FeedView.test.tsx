@@ -76,4 +76,15 @@ describe("the feed as cards", () => {
     expect(screen.queryByText("A shared glossary of game terms")).toBeNull();
     expect(screen.getByText("Another digest line")).toBeTruthy();
   });
+
+  it("leaves replies out of All: they live in their thread", async () => {
+    const reply = { ...post("r", "answer", "", "A reply that belongs to a thread", "carol"), reply_to: "post:a" };
+    POSTS.push(reply);
+    try {
+      render(<FeedView />);
+      await screen.findByText("Rank cards by wins");
+      expect(screen.queryByText("A reply that belongs to a thread")).toBeNull();
+      expect(document.querySelectorAll(".e-card-grid > .e-hcard")).toHaveLength(4);
+    } finally { POSTS.pop(); }
+  });
 });

@@ -1,6 +1,6 @@
 import Text from "@kit/Text";
 import { useInterval } from "../hooks";
-import { IntegrityChecking, IntegrityUnknown } from "./IntegrityState";
+import { IntegrityChecking } from "./IntegrityState";
 import { api } from "../api";
 
 /**
@@ -12,7 +12,7 @@ export function AuditBadge({ sessionId }: { sessionId: string }) {
   const [audit, loading, error] = useInterval(() => api.sessionAudit(sessionId), 10_000, [sessionId]);
 
   // P68: see IntegrityState.tsx.
-  if (error && !audit) return <IntegrityUnknown what="audit log" detail={error} />;
+  if (error && !audit) return <Text className="e-faint" style={{ fontSize: 11 }} title={`The check did not run, so nothing is claimed either way.\n\n${error}`}>Record not checked on this machine.</Text>;
   if (loading && !audit) return <IntegrityChecking what="audit log" />;
   if (!audit || audit.chain.length <= 1) return null;
 
