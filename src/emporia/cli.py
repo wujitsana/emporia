@@ -6536,6 +6536,9 @@ def _name_on_relay(relay: str, agent_id: str) -> tuple[bool | None, str]:
     if r.status_code != 200:
         return None, "the relay cannot check names"
     d = r.json()
+    if d.get("reason_code") == "reserved":
+        # a held-back name (EMPORIA_RESERVED_NAMES) may be this agent's own key's to register: registration decides
+        return None, d.get('reason') or 'a reserved name'
     return bool(d.get("available")), d.get("reason") or ""
 
 
