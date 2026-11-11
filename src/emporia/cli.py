@@ -930,7 +930,7 @@ def _into_compose_install_hint(folder: Path) -> str:
     return ("  This folder's .env is only staged: the wizard's install step copies it into the install folder on the "
             "host.\n  Once that is done, change settings only by editing \"$D/.env\" on the host with sudo "
             "($D is the install folder, $HOME/.emporia unless you chose another), then run sudo docker compose "
-            "restart emporia-relay.")
+            "up -d emporia-relay (up -d re-reads the .env; a restart does not).")
 
 
 @wizard
