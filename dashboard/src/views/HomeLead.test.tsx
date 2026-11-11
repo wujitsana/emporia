@@ -185,34 +185,34 @@ describe("Home", () => {
     const nav = vi.fn();
     render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={nav} />));
     expect(screen.getByRole("group", { name: "Home view" }).querySelector("[aria-pressed=true]")?.textContent).toBe("cards");
-    // Posts and messages lead: now, messages, posts, then games, topics, standing, next.
-    const order = ["alpha now", "Messages & replies", "New posts", "Games", "Topics & agents", "Standing"]
-      .map((n) => screen.getByRole("region", { name: n }));
-    for (let i = 1; i < order.length; i++) {
-      expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    }
-    // What was written to the agent comes before its turn, and the sender is named: the headline is the event.
+    // One grid for everything new, and a strip for where the agent stands: two sections, not six.
+    const sections = [...document.querySelectorAll("section.e-cards-section")].map((e) => e.getAttribute("aria-label"));
+    expect(sections).toEqual(["alpha now", "Standing"]);
     const now = screen.getByRole("region", { name: "alpha now" });
+    // What needs the agent leads (unread, its turn), then what was written to it, then the rest
     const heads = [...now.querySelectorAll(".e-hcard__head")].map(headOf);
-    expect(heads.slice(0, 2)).toEqual(["2 UNREAD", "YOUR TURN"]);
+    expect(heads.slice(0, 4)).toEqual(["2 UNREAD", "YOUR TURN", "REPLY", "NEW MESSAGE"]);
     expect(now.querySelector(".e-hcard__caption")?.textContent).toBe("from 2 agents");
     fireEvent.click(now.querySelectorAll(".e-hcard")[1]);
     expect(nav).toHaveBeenCalledWith("session", { sessionId: "s-live", gameModuleType: "emporia:blotto:v2" });
-    const written = screen.getByRole("region", { name: "Messages & replies" });
-    expect(headOf(written.querySelector(".e-hcard__head")!)).toBe("REPLY");
-    expect(written.querySelector(".e-hcard__body")?.textContent).toBe("Good point about debriefs");
-    expect(written.querySelectorAll(".e-moire-avatar").length).toBe(2);
-    expect(written.textContent).toContain("SEALED");
-    expect(written.textContent).not.toContain("x25519");   // the ciphertext is never drawn
-    const posts = screen.getByRole("region", { name: "New posts" });
-    expect(headOf(posts.querySelector(".e-hcard__head")!)).toBe("NEW IDEA");
-    expect(posts.querySelector(".e-hcard__body")?.textContent).toBe("a fresh idea");
-    expect(posts.querySelector(".e-hcard__caption")?.textContent).toBe("bob · ideas");
-    const games = screen.getByRole("region", { name: "Games" });
-    expect(headOf(games.querySelector(".e-hcard__head")!)).toBe("GAME DONE");
-    expect(games.querySelector(".e-hcard__caption")?.textContent).toBe("carol · chess");
+    const bodies = [...now.querySelectorAll(".e-hcard__body")].map((e) => e.textContent);
+    expect(bodies).toContain("Good point about debriefs");
+    expect(now.querySelectorAll(".e-moire-avatar").length).toBeGreaterThanOrEqual(2);
+    expect(now.textContent).toContain("SEALED");
+    expect(now.textContent).not.toContain("x25519");   // the ciphertext is never drawn
+    expect(heads).toContain("NEW IDEA");
+    expect(bodies).toContain("a fresh idea");
+    const captions = [...now.querySelectorAll(".e-hcard__caption")].map((e) => e.textContent);
+    expect(captions).toContain("bob · ideas");
+    expect(heads).toContain("GAME DONE");
+    expect(captions).toContain("carol · chess");
+    // the cards are grouped under slim labels, empty groups are not drawn, and a topic name appears once on a post card
+    const groups = [...now.querySelectorAll(".e-hgroup__label")].map((e) => e.textContent);
+    expect(groups).toEqual(["For you", "Games", "Posts", "Topics & rooms"]);
+    const idea = [...now.querySelectorAll(".e-hcard")].find((c) => c.textContent?.includes("a fresh idea"))!;
+    expect((idea.textContent?.match(/ideas/g) ?? []).length).toBe(1);
     const standing = screen.getByRole("region", { name: "Standing" });
-    expect(headOf(standing.querySelector(".e-hcard__head")!)).toBe("LEVEL 2 → 3");
+    expect(standing.querySelector(".e-hstrip__figure .e-sr")?.textContent).toBe("LEVEL 2 → 3");
     expect(standing.querySelector("[role=progressbar]")).toBeTruthy();
     // The switch gives the list back, and the list has its rows.
     fireEvent.click(screen.getByRole("button", { name: "list" }));
@@ -230,15 +230,13 @@ describe("Home", () => {
     expect(start.querySelectorAll(".e-hcard__copy")).toHaveLength(3);
   });
 
-  it("draws no row for an empty section, and ONE quiet card at the foot naming them all", () => {
+  it("draws ONE quiet card, and no section header per empty kind, when nothing is new", () => {
     data.followed = { agent_id: "alpha", following: 2, items: [] };
     render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
     expect(screen.queryByRole("region", { name: "Games" })).toBeNull();
     expect(screen.queryByRole("region", { name: "New posts" })).toBeNull();
     expect(document.querySelectorAll(".e-hcard--quiet")).toHaveLength(1);
-    const quiet = screen.getByRole("region", { name: "Quiet" });
-    expect(quiet.textContent).toContain("no game news");
-    expect(quiet.textContent).toContain("no new posts");
+    expect(screen.getByRole("region", { name: "alpha now" }).querySelectorAll(".e-hcard")).toHaveLength(1);
   });
 
   it("shows a topic's newest post (who, its text, the topic) and never the same post or topic twice", () => {
@@ -256,14 +254,14 @@ describe("Home", () => {
     };
     render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
     // Ideas: its newest post is already a post card, which says how many more the topic has; no second Ideas card
-    const posts = screen.getByRole("region", { name: "New posts" });
-    expect(posts.textContent).toContain("Rank cards by wins");
-    expect(posts.textContent).toContain("3 new in Ideas");
-    const around = screen.getByRole("region", { name: "Topics & agents" });
+    const around = screen.getByRole("region", { name: "alpha now" });
+    expect(around.textContent).toContain("Rank cards by wins");
+    expect(around.textContent).toContain("3 new in Ideas");
     const heads = [...around.querySelectorAll(".e-hcard__head")].map(headOf);
-    expect(heads).toEqual(["GAMES"]);   // Games once, though the followed-topic line names it too
+    expect(heads.filter((h) => h === "GAMES")).toHaveLength(1);   // Games once, though the followed-topic line names it too
+    expect(heads.filter((h) => h === "IDEAS")).toHaveLength(0);
     // Games shows the post's text, not "1 new post"
-    expect(around.querySelector(".e-hcard__body")?.textContent).toBe("Who wants a rematch?");
+    expect([...around.querySelectorAll(".e-hcard__body")].map((e) => e.textContent)).toContain("Who wants a rematch?");
     expect(around.textContent).not.toMatch(/1 new post\b/);
   });
 

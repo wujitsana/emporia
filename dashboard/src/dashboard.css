@@ -3318,20 +3318,15 @@ body.e-look.theme-dark {
 }
 .e-home-switch__opt.is-on { background: var(--anim-fill, var(--theme-focused-foreground)); color: var(--anim-ink, var(--theme-background)); opacity: 1; font-weight: 700; }
 .e-home-switch__opt:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: -2px; }
-.e-cards-section { margin: 0 0 6px; min-width: 0; }
+.e-cards-section { margin: 0 0 2px; min-width: 0; }
 .e-cards-section__head { margin-bottom: 2px; }
 .e-cardrow {
-  display: flex; gap: 10px; align-items: stretch;
-  overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory;
-  padding: 6px 20px 8px 12px; margin: 0; scroll-padding-left: 12px;
-  scrollbar-width: thin; scrollbar-color: var(--anim-line, currentColor) transparent;
-  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 22px), transparent 100%);
-  mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 22px), transparent 100%);
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 8px;
+  align-items: stretch; padding: 4px 4px 8px; margin: 0;
 }
-.e-cardrow:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: -1px; }
 .e-hcard {
   --anim-bracket: 9px; --anim-bracket-w: 2px;
-  flex: 0 0 260px; box-sizing: border-box; scroll-snap-align: start;
+  min-width: 0; box-sizing: border-box;
   display: flex; flex-direction: column; align-items: stretch; gap: 5px;
   min-height: 0; padding: 9px 12px; text-align: left;
   border: 0; border-radius: 0; color: inherit; font: inherit;
@@ -3340,7 +3335,7 @@ body.e-look.theme-dark {
 .e-hcard.is-link { cursor: pointer; }
 .e-hcard.is-link:hover, .e-hcard.is-link:focus-visible { background-color: var(--anim-wash, transparent); outline: none; }
 .e-hcard.is-link:focus-visible { box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }
-.e-hcard--hero { flex-basis: 300px; }
+
 .e-hcard__hud {
   display: flex; justify-content: space-between; gap: 8px; font-size: 0.68rem; letter-spacing: 0.05em;
   color: color-mix(in srgb, var(--theme-text) 78%, var(--theme-background)); font-variant-numeric: tabular-nums;
@@ -3364,7 +3359,7 @@ body.e-look.theme-dark {
 .e-hcard--quiet .e-hcard__caption { background: transparent; color: var(--anim-faint, inherit); font-weight: 400; padding-left: 0; }
 .e-hcard--quiet { min-height: 0; }
 .e-hcard__foot { font-size: 0.66rem; letter-spacing: 0.04em; color: var(--anim-faint, inherit); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 520px) { .e-hcard { flex-basis: 232px; } .e-hcard--hero { flex-basis: 268px; } }
+
 /* The chip row: the chip at the start, the agent's sigil or the game's pixel badge at the end (never over the headline). */
 .e-hcard__ids { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; }
 .e-hcard__icon { display: inline-flex; flex: none; width: 26px; height: 26px; align-items: center; justify-content: center; overflow: hidden; }
@@ -3375,7 +3370,7 @@ body.e-look.theme-dark {
 .e-hcard__bar > span { flex: 1; border: 1px solid var(--anim-line, currentColor); box-sizing: border-box; }
 .e-hcard__bar > span.is-on { background: var(--anim-line, currentColor); }
 /* A post's or message's whole text: mono, about ten lines, "more" opens it in place. */
-.e-hcard--post { flex-basis: 300px; }
+
 .e-hcard--post .e-hcard__head { flex: none; }
 .e-hcard__bodywrap { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; flex: 1; min-width: 0; }
 .e-hcard__body {
@@ -3444,3 +3439,30 @@ body.e-look.theme-dark {
 .e-hcard__sub-block a { color: var(--theme-focused-foreground); overflow-wrap: anywhere; }
 .e-lab { margin-bottom: 18px; }
 .e-lab .e-card-grid > .e-hcard--hero { grid-column: auto; }
+
+/* ─── 32. HOME, DENSE: one grid for what is new, one strip for where the agent stands ─────────── */
+.e-hstrip {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 0; margin: 4px 4px 10px;
+  border: 1px solid var(--anim-line, currentColor); background-color: color-mix(in srgb, var(--theme-text) 4%, transparent);
+}
+.e-hstrip__item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 12px; margin: 0; min-width: 0;
+  border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.e-hstrip__item:disabled { cursor: default; }
+.e-hstrip__item + .e-hstrip__item { border-left: 1px solid var(--anim-line, currentColor); }
+@media (max-width: 520px) { .e-hstrip__item + .e-hstrip__item { border-left: 0; border-top: 1px solid var(--anim-line, currentColor); } }
+.e-hstrip__item:hover:not(:disabled), .e-hstrip__item:focus-visible { background-color: var(--anim-wash, transparent); outline: none; }
+.e-hstrip__figure { font-family: var(--anim-pixel); text-transform: uppercase; font-size: 1.15rem; line-height: 1.1; letter-spacing: 0.04em; overflow-wrap: anywhere; }
+.e-hstrip__line { font-size: 0.74rem; color: var(--anim-faint, inherit); overflow-wrap: anywhere; }
+.e-hstrip .e-hcard__bar { width: 100%; }
+.e-hcard--quiet { grid-column: 1 / -1; }
+
+/* Home's groups: slim small-caps labels, groups side by side as wide as their cards need, wrapping when the row is full. */
+.e-hgroups { display: flex; flex-wrap: wrap; gap: 0 10px; align-items: stretch; }
+.e-hgroup { flex: var(--n, 1) 1 calc(var(--n, 1) * 250px); min-width: 0; max-width: 100%; display: flex; flex-direction: column; }
+.e-hgroup__label {
+  padding: 4px 6px 0; font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--anim-faint, inherit); opacity: 0.85;
+}
+.e-hgroup .e-cardrow { padding-top: 2px; flex: 1; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); }

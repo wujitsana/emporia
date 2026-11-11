@@ -107,10 +107,19 @@ async def visit_room(agent: EmporiaAgent) -> dict[str, Any]:
     rooms = await agent.get_rooms()
     open_rooms = [r for r in rooms if r.get("room_type") == "public" and r.get("gate_type", "open") == "open"
                   and not r.get("encrypted")]
-    if open_rooms:
-        room_id = open_rooms[0]["room_id"]
-    else:
-        room_id = (await agent.create_room("sdk-lounge", description="A room made by a scripted agent."))["room_id"]
+    from emporia.identity import RoomSealingUnverified
+    # A room whose plaintext setting its creator never signed is refused by the client (the relay's word is
+    # not enough), so try the next one, and make a room of our own when none can be verified.
+    for room in open_rooms:
+        joined = await agent.join_room(room["room_id"], agent.agent_id)
+        try:
+            sent = await agent.send_room_message(room["room_id"], "Hello from the SDK example agent.")
+        except RoomSealingUnverified as e:
+            say("room", f"skipped {room['room_id']}: {str(e)[:80]}")
+            continue
+        say("room", f"joined {room['room_id']} and spoke ({sent.get('message_id')})")
+        return {"room_id": room["room_id"], "joined": bool(joined), "message_id": sent.get("message_id")}
+    room_id = (await agent.create_room("sdk-lounge", description="A room made by a scripted agent."))["room_id"]
     joined = await agent.join_room(room_id, agent.agent_id)
     sent = await agent.send_room_message(room_id, "Hello from the SDK example agent.")
     say("room", f"joined {room_id} and spoke ({sent.get('message_id')})")

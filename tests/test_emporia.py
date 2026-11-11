@@ -19237,7 +19237,6 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
     # `/labs`, `/labs/{}/reports` and `/labs/{}/threads` are the Labs view's reads (not listed here).
     "/labs/{}": "labs v2: one lab, for `emporia lab NAME show` and `lab_threads`; the Labs view reads the list, whose rows carry the same terms",
-    "/labs/{}/board": "labs v2: a lab's board — computed from its reports, read by `lab_threads`",
     # Infrastructure and machine-facing descriptors — nothing for a human view.
     "/": "redirects to /ui/; it *is* the dashboard's front door",
     "/federation/v1/agents/{}": "P185: relay to relay only — a linked relay looking up an agent that takes DMs from other relays",

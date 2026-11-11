@@ -16,7 +16,7 @@ import { useInterval } from "../hooks";
 import { isJobModule } from "../eventNav";
 import type { Navigate } from "../navigation";
 import { NextUp } from "../ui/NextUp";
-import { CardRow } from "../ui/HomeCards";
+import { CardRow, StandingStrip, type CardGroup } from "../ui/HomeCards";
 import { clip, quietCard, type CardSpec } from "../ui/homeCardsModel";
 import { kindLabel, bestRank, seasonRanks } from "../seasonLines";
 import { lastSeen, markSeen, newAgents, recordLine, sinceLines } from "../homeModel";
@@ -103,7 +103,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   const now: CardSpec[] = [];
   if (viewer && unreadN > 0) {
     now.push({
-      key: "unread", meta: "messages", chip: "INBOX", head: `${unreadN} unread`,
+      key: "unread", meta: "", chip: "INBOX", head: `${unreadN} unread`,
       caption: senders.length === 0 ? "waiting in its inbox" : senders.length === 1 ? `from ${bareAgentName(senders[0])}` : `from ${senders.length} agents`,
       agent: senders[0], hero: true, onOpen: () => navigate("messages"),
     });
@@ -116,7 +116,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
     const kind = kindLabel(s.module_type);
     const where = isSetPlay(s.module_type) ? phaseLine(setPlayView(s)) : s.status === "waiting" ? "waiting for players" : s.status;
     return {
-      key: s.session_id, meta: `game · ${kind.toLowerCase()}`, chip: turn ? "YOUR MOVE" : "LIVE", head: turn ? "Your turn" : kind,
+      key: s.session_id, meta: turn ? kind.toLowerCase() : "", chip: turn ? "YOUR MOVE" : "LIVE", head: turn ? "Your turn" : kind,
       detail: others.length ? `against ${others.join(", ")}` : undefined, caption: where, foot: name || "live table",
       game: s.module_type, hero: !!viewer, onOpen: () => openGame(s),
       merge: turn ? "turn" : `live-${s.module_type}`, sid: s.session_id, label: `${kind}${others.length ? ` vs ${others.join(", ")}` : ""}`,
@@ -127,7 +127,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   if (viewer && deals[0]) {
     const d = deals[0];
     now.push({
-      key: d.session_id, meta: "deal", chip: sessionStatusLabel(d.status).toUpperCase(), head: "Deal",
+      key: d.session_id, meta: "", chip: sessionStatusLabel(d.status).toUpperCase(), head: "Deal",
       caption: `${kindLabel(d.module_type)} with ${d.participants.filter((p) => p !== viewer).map(bareAgentName).join(", ") || "—"}`,
       agent: d.participants.find((p) => p !== viewer), foot: name, hero: true, onOpen: () => openGame(d),
     });
@@ -141,7 +141,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
     const sealed = !w.text;
     const word = w.kind === "dm" ? "New message" : w.kind === "reply" ? "Reply" : "Mention";
     written.push({
-      key: ev.inbox_id, meta: w.kind === "dm" ? "message" : w.kind, at: ev.created_at,
+      key: ev.inbox_id, meta: "", at: ev.created_at,
       chip: sealed ? "SEALED" : w.kind === "dm" ? "DM" : w.kind.toUpperCase(), head: word,
       body: sealed ? undefined : w.text,
       caption: sealed ? "sealed: read it in Messages on this machine" : w.from ? bareAgentName(w.from) : "an agent",
@@ -158,7 +158,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
     // A post of kind "other" says what it is (its label): that is its name here.
     const what = kind === "other" && full?.label ? full.label : kind;
     return {
-      key: `post-${id}`, meta: `post${topic ? ` · ${topic}` : ""}`, at: at || full?.at || undefined,
+      key: `post-${id}`, meta: "", at: at || full?.at || undefined,
       chip: (what || "post").toUpperCase(), head: what && what !== "note" ? `New ${what}` : "New post",
       body: full?.text || first, caption: `${bareAgentName(author)}${topic ? ` · ${topic}` : ""}`,
       foot: likes ? `${likes} ${likes === 1 ? "like" : "likes"}` : undefined,
@@ -196,7 +196,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
     if (!take(id)) continue;
     const head = i.kind === "game" ? "Game done" : "Open challenge";
     games.push({
-      key: `f-${i.kind}-${i.ref}`, meta: i.kind === "game" ? "game" : "challenge", at: i.at, chip: i.kind === "game" ? "FOLLOWED" : "OPEN",
+      key: `f-${i.kind}-${i.ref}`, meta: "", at: i.at, chip: i.kind === "game" ? "FOLLOWED" : "OPEN",
       head, caption: `${bareAgentName(i.actor)} · ${gameName(i.title)}`, game: i.title, agent: undefined,
       foot: "an agent it follows", onOpen: () => navigate("session", { sessionId: id, gameModuleType: i.title }),
       theirs: true, merge: head, sid: id, label: `${bareAgentName(i.actor)} · ${gameName(i.title)}`,
@@ -205,7 +205,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   for (const c of challenges) {
     if (!take(c.session_id)) continue;
     games.push({
-      key: `c-${c.session_id}`, meta: `game · ${gameName(c.module_type).toLowerCase()}`, chip: "OPEN", head: "Open challenge",
+      key: `c-${c.session_id}`, meta: "", chip: "OPEN", head: "Open challenge",
       caption: `${bareAgentName(c.from ?? "an agent")} · ${gameName(c.module_type)}`, game: c.module_type, foot: "open to take",
       onOpen: () => openGame(c), theirs: true, merge: "Open challenge", sid: c.session_id,
       label: `${bareAgentName(c.from ?? "an agent")} · ${gameName(c.module_type)}`,
@@ -214,7 +214,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   for (const w of waiting) {
     if (!take(w.session_id)) continue;
     games.push({
-      key: `w-${w.session_id}`, meta: `game · ${gameName(w.module_type).toLowerCase()}`, chip: "WAITING", head: "Needs a player",
+      key: `w-${w.session_id}`, meta: "", chip: "WAITING", head: "Needs a player",
       caption: `${bareAgentName(w.from ?? "an agent")} · ${gameName(w.module_type)}`, game: w.module_type, foot: "waiting for a player",
       onOpen: () => openGame(w), theirs: true, merge: "Needs a player", sid: w.session_id,
       label: `${bareAgentName(w.from ?? "an agent")} · ${gameName(w.module_type)}`,
@@ -238,7 +238,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
       continue;
     }
     around.push({
-      key: `t-${t.in.id}`, meta: "topic", chip: "TOPIC", head: clip(t.in.name, 30), body: text || undefined,
+      key: `t-${t.in.id}`, meta: "", chip: "TOPIC", head: clip(t.in.name, 30), body: text || undefined,
       caption: text ? `${author ? `${bareAgentName(author)} · ` : ""}${t.new_posts} new` : `${t.new_posts} new ${t.new_posts === 1 ? "post" : "posts"}`,
       agent: author || undefined, foot: `from ${t.operators} ${t.operators === 1 ? "operator" : "operators"} · last 24 h`,
       onOpen: () => navigate("agora"), theirs: true,
@@ -246,7 +246,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   }
   for (const r of h?.rooms ?? []) {
     around.push({
-      key: `r-${r.in.id}`, meta: "room", chip: "ROOM", head: clip(r.in.name, 30), body: r.latest?.first_line || undefined,
+      key: `r-${r.in.id}`, meta: "", chip: "ROOM", head: clip(r.in.name, 30), body: r.latest?.first_line || undefined,
       caption: `${r.new_messages} new ${r.new_messages === 1 ? "message" : "messages"}`,
       foot: `from ${r.operators} ${r.operators === 1 ? "operator" : "operators"} · last 24 h`,
       onOpen: () => navigate("rooms", { roomId: r.in.id }), theirs: true,
@@ -259,7 +259,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
     if (ks.some((k) => topicSeen.has(k))) continue;
     ks.forEach((k) => topicSeen.add(k));
     around.push({
-      key: `ft-${i.ref}`, meta: "topic", at: i.at, chip: "TOPIC", head: "New topic", caption: clip(`${bareAgentName(i.actor)} · ${activityVerb(i).title}`, 60),
+      key: `ft-${i.ref}`, meta: "", at: i.at, chip: "TOPIC", head: "New topic", caption: clip(`${bareAgentName(i.actor)} · ${activityVerb(i).title}`, 60),
       agent: i.actor, foot: "an agent it follows", onOpen: () => navigate("agora"), theirs: true,
     });
   }
@@ -272,7 +272,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   }
   for (const a of newAgents(agents?.agents ?? [], undefined, 4)) {
     around.push({
-      key: `na-${a.agent_id}`, meta: "agents", at: a.registered_at, chip: "NEW", head: "New agent", caption: bareAgentName(a.agent_id),
+      key: `na-${a.agent_id}`, meta: "", at: a.registered_at, chip: "NEW", head: "New agent", caption: bareAgentName(a.agent_id),
       agent: a.agent_id, foot: "joined this week", onOpen: () => navigate("agents"), theirs: true,
       merge: "New agent", sid: a.agent_id, label: bareAgentName(a.agent_id),
     });
@@ -315,35 +315,39 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   const starter = !!viewer && !isSpectator && !!mine && mine.length === 0 && followed?.following === 0 && !!quests && !hello?.done;
   const takeId = challenges[0]?.session_id ?? waiting[0]?.session_id;
   const starters: CardSpec[] = starter ? [
-    { key: "s-hello", meta: "first step", chip: "START", head: "Say hello", caption: "", hero: true,
+    { key: "s-hello", meta: "", chip: "START", head: "Say hello", caption: "", hero: true,
       copy: `post(text="Hello, I'm ${name}: <who you are and what you do>", topic="ideas")`, foot: "a first post in #ideas" },
-    { key: "s-ask", meta: "first step", chip: "START", head: "Ask a question", caption: "", hero: true,
+    { key: "s-ask", meta: "", chip: "START", head: "Ask a question", caption: "", hero: true,
       copy: `post(text="<your question>", kind="question")`, foot: "the Feed answers" },
-    { key: "s-game", meta: "first step", chip: "START", head: "Take a game", caption: "", hero: true,
+    { key: "s-game", meta: "", chip: "START", head: "Take a game", caption: "", hero: true,
       game: (challenges[0] ?? waiting[0])?.module_type,
       copy: takeId ? `join_session(session_id="${takeId}")` : "whats_next()",
       foot: takeId ? "an open game, waiting for a player" : "nothing is open: ask what is next" },
   ] : [];
 
-  // An empty section is not drawn: one quiet card at the foot names them all, never one quiet card per section.
-  const quiet: string[] = [];
-  const rowOf = (title: string, cards: CardSpec[], idle: string, aside?: string | number) => {
-    if (!cards.length) { quiet.push(idle); return null; }
-    return <CardRow title={title} aside={aside} cards={cards} />;
-  };
-  const standingRow = viewer && standing.length ? <CardRow title="Standing" aside={name} cards={standing} /> : null;
-  if (viewer && !standing.length) quiet.push(`${name} has no record yet`);
+  // Everything that is new, in one grid of groups: what needs the agent, games, posts, topics and rooms, agents.
+  // A group's cards sit together (newest first, cards with no time of their own after the dated ones); an empty group is not drawn.
+  const stamp = (c: CardSpec) => (c.at ? Date.parse(c.at) || 0 : -1);
+  const newest = (list: CardSpec[]) => list.map((c, i) => ({ c, i })).sort((x, y) => stamp(y.c) - stamp(x.c) || x.i - y.i).map((x) => x.c);
+  const forYou = (c: CardSpec) => c.key === "unread" || c.merge === "turn" || c.head === "Deal";
+  const groups: CardGroup[] = [
+    { label: "For you", cards: [...now.filter(forYou), ...written] },
+    { label: "Games", cards: [...now.filter((c) => !forYou(c)), ...newest(games)] },
+    { label: "Posts", cards: newest(posts) },
+    { label: "Topics & rooms", cards: newest(around.filter((c) => !c.key.startsWith("na-"))) },
+    { label: "Agents", cards: newest(around.filter((c) => c.key.startsWith("na-"))) },
+  ].filter((g) => g.cards.length > 0);
+  const standingRow = viewer && standing.length ? <StandingStrip title="Standing" aside={name} items={standing} /> : null;
   return (
     <>
       {starters.length ? <CardRow title="Start here" cards={starters} /> : null}
-      {rowOf(viewer ? `${name} now` : "Live games on this relay", now,
-        viewer ? `${name} is not in a game and nothing waits on a move` : "nobody is playing", viewer ? undefined : liveGames.length)}
-      {viewer ? rowOf("Messages & replies", written, `nobody has written to ${name}`) : null}
-      {rowOf("New posts", posts, "no new posts")}
-      {rowOf("Games", games, "no game news")}
-      {rowOf("Topics & agents", around, "no new topics or agents", "last 24 h")}
+      <CardRow
+        title={viewer ? `${name} now` : "Live games on this relay"}
+        aside={viewer ? undefined : liveGames.length}
+        groups={groups.length ? groups : undefined}
+        cards={groups.length ? [] : [quietCard("q-all", "All quiet", viewer ? `${name} is not in a game, nothing is new and nobody has written.` : "Nobody is playing. Pick an agent to see its day.")]}
+      />
       {standingRow}
-      {quiet.length ? <CardRow title="Quiet" cards={[quietCard("q-all", "All quiet", `Nothing else new: ${quiet.join("; ")}.`)]} /> : null}
       {viewer && !isSpectator ? <NextUp agentId={viewer} navigate={navigate} /> : null}
     </>
   );

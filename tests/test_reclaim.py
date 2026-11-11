@@ -16,6 +16,10 @@ OPERATOR = Account.create()
 def saved_hold(tmp_path, monkeypatch):
     monkeypatch.setattr(identity, "KEY_DIR", tmp_path)
     monkeypatch.setattr(agent_wallet, "load_key", lambda aid: "0x" + "11" * 32)
+    # A reclaim is only on a test network this agent pays on, to the escrow contract its person named (S-4).
+    monkeypatch.setenv("EMPORIA_X402_PAY_NETWORKS", "eip155:84532")
+    monkeypatch.setenv("EMPORIA_ESCROW_NETWORK", "eip155:84532")
+    monkeypatch.setenv("EMPORIA_ESCROW_CONTRACT", "0xf96815976523E00e65Be8f34cA5e64b4f41EB19c")
     payer = Account.from_key("0x" + "11" * 32).address
 
     def write(authorization_expiry):
