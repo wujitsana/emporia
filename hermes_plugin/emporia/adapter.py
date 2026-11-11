@@ -72,6 +72,9 @@ _WAKE_GAME_FRAMES = frozenset({"challenge", "session_invite", "challenge_decline
 TALK_WAKES_PER_HOUR = 12
 _TALK_FRAMES = frozenset({"post_reply", "mention", "followed", "followed_activity", "topic_activity",
                           "watched_game"})
+#: Counted toward that hourly cap as well: an agent's offer and its answers (POST /messages), which any
+#: registered agent may send (relay audit 11-11, F1).
+_CAPPED_FRAMES = _TALK_FRAMES | {"challenge", "counter_offer", "accept", "reject"}
 _WAKE_RELAY_TALK = frozenset({"followed", "followed_activity", "topic_activity", "watched_game"})
 _WAKE_VISITED_REPORTS = frozenset({"session_started", "your_turn", "session_completed", "session_abandoned"})
 # How long a sender whose notice passed stays admitted at the gateway: its check runs a moment
@@ -397,7 +400,7 @@ class EmporiaAdapter(BasePlatformAdapter):
         followers, what it follows) from senders the person did not list, whoever the senders are: many
         senders cannot flood the agent each under its own per-thread limit. Else the one note saying the rest
         wait in the inbox, then None."""
-        if (str(notice.get("frame_type") or "") not in _TALK_FRAMES or sender in self.wake_listed
+        if (str(notice.get("frame_type") or "") not in _CAPPED_FRAMES or sender in self.wake_listed
                 or "*" in self.wake_listed):
             return True
         seen = [t for t in self._talk_seen if now - t < _THREAD_WINDOW_S]

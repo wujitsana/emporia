@@ -8067,18 +8067,18 @@ def test_send_message_requires_authentication(prod_client):
     payload = {"text": "hi"}
 
     r = prod_client.post("/messages", json={
-        "to_agent": "msg_send_recipient", "type": "chat", "payload": payload,
+        "to_agent": "msg_send_recipient", "type": "counter_offer", "payload": payload,
     })
     assert r.status_code == 401
 
     signed_envelope = {
-        "to_agent": "msg_send_recipient", "type": "chat",
+        "to_agent": "msg_send_recipient", "type": "counter_offer",
         "session_id": None, "payload": payload,
     }
     r = prod_client.post(
         "/messages",
         json={
-            "to_agent": "msg_send_recipient", "type": "chat", "payload": payload,
+            "to_agent": "msg_send_recipient", "type": "counter_offer", "payload": payload,
             "signature": sign(signed_envelope, "msg_send_owner"),
         },
         headers=bearer_for(prod_client, "msg_send_owner"),
@@ -8711,13 +8711,13 @@ def test_send_message_signature_mandatory(prod_client):
     _register_keyed(prod_client, "sig_msg_recipient")
     payload = {"text": "hello"}
     signed_envelope = {
-        "to_agent": "sig_msg_recipient", "type": "chat",
+        "to_agent": "sig_msg_recipient", "type": "counter_offer",
         "session_id": None, "payload": payload,
     }
 
     r = prod_client.post(
         "/messages",
-        json={"to_agent": "sig_msg_recipient", "type": "chat", "payload": payload},
+        json={"to_agent": "sig_msg_recipient", "type": "counter_offer", "payload": payload},
         headers=bearer_for(prod_client, "sig_msg_sender"),
     )
     assert r.status_code == 401
@@ -8725,7 +8725,7 @@ def test_send_message_signature_mandatory(prod_client):
     r = prod_client.post(
         "/messages",
         json={
-            "to_agent": "sig_msg_recipient", "type": "chat", "payload": payload,
+            "to_agent": "sig_msg_recipient", "type": "counter_offer", "payload": payload,
             "signature": sign(signed_envelope, "sig_msg_recipient"),  # wrong key
         },
         headers=bearer_for(prod_client, "sig_msg_sender"),
@@ -8735,12 +8735,34 @@ def test_send_message_signature_mandatory(prod_client):
     r = prod_client.post(
         "/messages",
         json={
-            "to_agent": "sig_msg_recipient", "type": "chat", "payload": payload,
+            "to_agent": "sig_msg_recipient", "type": "counter_offer", "payload": payload,
             "signature": sign(signed_envelope, "sig_msg_sender"),
         },
         headers=bearer_for(prod_client, "sig_msg_sender"),
     )
     assert r.status_code == 200
+
+
+def test_send_message_only_offer_kinds_to_registered_unblocking_agents(prod_client):
+    """Relay audit 11-11 (F1): POST /messages took any `type` to any name, and the recipient's bridge
+    rendered `your_turn`, `funding_required` and unknown types in the relay's own voice. Only an offer's
+    kinds pass now, to a registered agent that has not blocked the sender."""
+    from emporia.identity import sign
+    _register_keyed(prod_client, "f1_sender")
+    _register_keyed(prod_client, "f1_victim")
+
+    def send(to, kind):
+        env = {"to_agent": to, "type": kind, "session_id": "s-forged", "payload": {}}
+        return prod_client.post("/messages", json={**env, "signature": sign(env, "f1_sender")},
+                                headers=bearer_for(prod_client, "f1_sender"))
+
+    for forged in ("your_turn", "funding_required", "session_completed", "kicked_from_room", "made_up"):
+        assert send("f1_victim", forged).status_code == 400, forged
+    assert send("f1_nobody", "challenge").status_code == 404
+    assert send("f1_victim", "challenge").status_code == 200
+    assert prod_client.post("/agents/f1_victim/dm-blocks", json={"agent": "f1_sender"},
+                            headers=bearer_for(prod_client, "f1_victim")).status_code == 200
+    assert send("f1_victim", "challenge").status_code == 403
 
 
 def test_room_message_signature_mandatory(prod_client):
@@ -8857,20 +8879,20 @@ def test_send_message_signature_not_replayable_across_recipients(prod_client):
 
     payload = {"text": "same payload"}
     sig_for_a = sign(
-        {"to_agent": "replay_msg_recipient_a", "type": "chat", "session_id": None, "payload": payload},
+        {"to_agent": "replay_msg_recipient_a", "type": "counter_offer", "session_id": None, "payload": payload},
         "replay_msg_sender",
     )
 
     r = prod_client.post(
         "/messages",
-        json={"to_agent": "replay_msg_recipient_a", "type": "chat", "payload": payload, "signature": sig_for_a},
+        json={"to_agent": "replay_msg_recipient_a", "type": "counter_offer", "payload": payload, "signature": sig_for_a},
         headers=bearer_for(prod_client, "replay_msg_sender"),
     )
     assert r.status_code == 200
 
     replayed = prod_client.post(
         "/messages",
-        json={"to_agent": "replay_msg_recipient_b", "type": "chat", "payload": payload, "signature": sig_for_a},
+        json={"to_agent": "replay_msg_recipient_b", "type": "counter_offer", "payload": payload, "signature": sig_for_a},
         headers=bearer_for(prod_client, "replay_msg_sender"),
     )
     assert replayed.status_code == 403
@@ -10342,7 +10364,7 @@ def test_relay_server_verifies_dm_signature_via_wire_contract():
 
             with _wire_spy("signed_dm_envelope", "dm-envelope") as dm_spy:
                 result = await sender.send_message(
-                    "p10_3_dm_recipient", "chat", {"text": "hi from P10-3"},
+                    "p10_3_dm_recipient", "counter_offer", {"text": "hi from P10-3"},
                 )
             assert result, result
             assert dm_spy.call_count >= 2
@@ -10350,7 +10372,7 @@ def test_relay_server_verifies_dm_signature_via_wire_contract():
             verifier_call = dm_spy.call_args_list[-1]
             assert signer_call.args == verifier_call.args
             assert signer_call.args[0] == "p10_3_dm_recipient"
-            assert signer_call.args[1] == "chat"
+            assert signer_call.args[1] == "counter_offer"
         finally:
             await sender._http.aclose()
             await recipient._http.aclose()
@@ -15131,7 +15153,7 @@ def test_content_limit_now_covers_every_content_bearing_route(client):
 
     r = client.post(
         "/messages",
-        json={"to_agent": "p19_lim_a", "type": "chat", "payload": {"text": big}, "signature": "aa"},
+        json={"to_agent": "p19_lim_a", "type": "counter_offer", "payload": {"text": big}, "signature": "aa"},
         headers={"X-Emporia-Agent-Id": "p19_lim_a"},
     )
     assert r.status_code == 400 and "payload" in r.text, r.text

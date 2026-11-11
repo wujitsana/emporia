@@ -4599,6 +4599,10 @@ class SubmitActionRequest(BaseModel):
     say_tags: list[list[str]] = Field(default_factory=list)
 
 
+#: What POST /messages carries: an offer and its answers, from one agent to another (relay audit 11-11, F1).
+NEGOTIATION_MESSAGE_TYPES = frozenset({"challenge", "counter_offer", "accept", "reject"})
+
+
 class SendMessageRequest(BaseModel):
     to_agent: str
     session_id: str | None = None
@@ -6759,6 +6763,15 @@ async def send_message(req: SendMessageRequest, request: Request):
         raise HTTPException(401, "Authentication required")
     _require_registered(caller)
     _enforce_agent_rate_limit(caller)
+    # Relay audit 11-11 (F1): only an offer's own kinds travel here. Any other type reached the recipient's
+    # bridge as a relay-voiced notice (`your_turn`, `funding_required`, ...), admitted in every wake mode.
+    if req.type not in NEGOTIATION_MESSAGE_TYPES:
+        raise HTTPException(400, f"type must be one of {', '.join(sorted(NEGOTIATION_MESSAGE_TYPES))}")
+    if not AGENT_REGISTRY.is_authorized(req.to_agent):
+        raise HTTPException(404, f"Agent '{req.to_agent}' is not registered on this relay")
+    from emporia.routes.agents import dm_blocked
+    if dm_blocked(req.to_agent, caller):
+        raise HTTPException(403, f"{req.to_agent} takes no messages from {caller}")
     # P19-7 (M4): payload is a dict, not a str — bound its serialized size, same
     # budget every other content-bearing field now gets.
     _require_content_within_limit(json.dumps(req.payload), "payload")

@@ -109,7 +109,11 @@ def frame_topic(frame: dict[str, Any]) -> str | None:
     payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
     sid = frame.get("session_id") or payload.get("session_id")
     room_id = frame.get("room_id") or payload.get("room_id")
-    if sid:
+    if t in _AGENT_MESSAGE_TYPES and frame.get("from_agent"):
+        # An agent's message (POST /messages): its sender's conversation, whatever session it names, so a
+        # fresh session id per message does not make each one a new conversation (relay audit 11-11, F1).
+        key = f"dm:{frame['from_agent']}"
+    elif sid:
         key = f"session:{sid}"
     elif t == "dm_received":
         key = f"dm:{frame.get('sender_id') or ''}"
@@ -163,6 +167,10 @@ def _move_hint(module_type: str, sid: str) -> str:
             f"submit_action(session_id=\"{sid}\", ...)")
 
 
+#: The kinds an agent's message (POST /messages) may have: an offer and its answers.
+_AGENT_MESSAGE_TYPES = frozenset({"challenge", "counter_offer", "accept", "reject"})
+
+
 def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notice | None:
     """The notice for one relay frame, or None when there is nothing to say.
 
@@ -175,6 +183,10 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
 
     t = str(frame.get("type") or "")
     if t in _SILENT:
+        return None
+    if "from_agent" in frame and t not in _AGENT_MESSAGE_TYPES:
+        # Only an agent's message carries `from_agent`; under any other type it would be read in the relay's
+        # voice (relay audit 11-11, F1). The relay refuses those now; one from an older relay is dropped.
         return None
     host = (plain_host(relay) or "invalid-host") if relay else ""
     relay_sender = f"{RELAY_SENDER}@{host}" if host else RELAY_SENDER
