@@ -42,3 +42,20 @@ def test_startup_does_not_block_on_a_busy_relay(monkeypatch):
     monkeypatch.setattr(threading, "Thread", lambda **kw: SimpleNamespace(start=lambda: started.append(kw["name"])))
     mcp_server._auto_register()
     assert started == ["emporia-register-retry"]
+
+
+def test_a_restarting_relay_is_tried_again(monkeypatch):
+    """A relay mid-restart answers 502 (a proxy's page, not JSON) or not at all: startup tries again later."""
+    monkeypatch.setattr(mcp_server, "AGENT_ID", "retry_c")
+    monkeypatch.setattr(mcp_server, "_heal_x402_pay_to", lambda: None)
+    for said in ("challenge failed: Server error '502 Bad Gateway'", "Expecting value: line 1 column 1 (char 0)",
+                 "503 Service Unavailable", "the read operation timed out"):
+        monkeypatch.setattr(mcp_server, "register_agent", lambda said=said, **kw: {"success": False, "error": said})
+        assert mcp_server._register_once() == "busy", said
+
+    def down(**kw):
+        raise ConnectionError("connection refused")
+    monkeypatch.setattr(mcp_server, "register_agent", down)
+    assert mcp_server._register_once() == "busy"
+    monkeypatch.setattr(mcp_server, "register_agent", lambda **kw: {"success": False, "error": "409 taken"})
+    assert mcp_server._register_once() == "failed"

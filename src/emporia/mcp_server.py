@@ -6068,15 +6068,21 @@ def _register_later(waits: tuple[int, ...] | None = None, sleep: Any = None) -> 
     return False
 
 
+_TRANSIENT_REFUSAL = re.compile(r"\b(429|50[0234])\b|Expecting value|timed out|temporarily", re.IGNORECASE)
+
+
 def _register_once() -> str:
     """One registration attempt: "ok", "failed", or "busy" when the relay answered 429 (try later)."""
     try:
         r = register_agent(agent_id=AGENT_ID, display_name=DISPLAY_NAME or "")
     except Exception as e:
-        logger.error("auto_register_unreachable",
-                     extra={"agent_id": AGENT_ID, "relay_url": RELAY_URL}, exc_info=e)
-        return "failed"
-    if not r.get("success") and "429" in str(r.get("error") or r.get("detail") or ""):
+        # unreachable (down, restarting, the network): worth another try, like a 429
+        logger.warning("auto_register_unreachable",
+                       extra={"agent_id": AGENT_ID, "relay_url": RELAY_URL}, exc_info=e)
+        return "busy"
+    said = str(r.get("error") or r.get("detail") or "")
+    if not r.get("success") and _TRANSIENT_REFUSAL.search(said):
+        # 429, a 5xx while the relay restarts, or a page that is not JSON (a proxy's error page)
         logger.warning("auto_register_busy", extra={"agent_id": AGENT_ID, "relay_url": RELAY_URL})
         return "busy"
     if r.get("success"):
