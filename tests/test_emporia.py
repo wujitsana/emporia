@@ -1966,7 +1966,6 @@ def test_no_new_identity_as_proof_params():
         ("GET", "/federation/v1/agents/{agent_id}"),  # P185: a linked relay's signed request; 404 unless opted in
         ("GET", "/payments/settlements"),  # agent_id: filter, but gated by inline auth check
         ("DELETE", "/agoras/topics/{slug}/subscribe"),  # agent_id: _require_caller_is-checked
-        ("GET", "/messages"),  # agent_id: _require_caller_is-checked (N1-5)
         ("GET", "/agoras/feed"),  # agent_id: _require_caller_is-checked (N1-6)
         ("GET", "/dm"),  # agent_id: _require_caller_is-checked (N1-6)
         ("GET", "/dm/{thread_id}/messages"),  # agent_id: _require_caller_is-checked (N1-6)
@@ -2215,8 +2214,6 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/sessions/{session_id}/offer"),  # P241: the creator only
         # P4-5: operator-only, same _require_operator() gate as federation sync above.
         ("DELETE", "/admin/sessions/{session_id}"),
-        ("POST", "/messages"),
-        ("GET", "/messages"),
         ("WS", "/ws/agent/{agent_id}"),
         ("POST", "/rooms"),
         ("POST", "/agents/{agent_id}/key-rotations"),  # P245: the agent, signing with its current key
@@ -2483,25 +2480,6 @@ def test_no_route_shadowing():
 # ============================================================================
 # Session-read bypass fixes (N1-5)
 # ============================================================================
-
-def test_messages_endpoint_requires_own_identity(client):
-    """GET /messages trusted its agent_id query param as identity with no auth check —
-    anyone could read any agent's full message payload history. Now uses
-    _require_caller_is, same as /agents/{id}/inbox."""
-    _register(client, "msgs_owner")
-    _register(client, "msgs_stranger")
-    assert client.get("/messages", params={"agent_id": "msgs_owner"}).status_code == 403
-    r = client.get(
-        "/messages", params={"agent_id": "msgs_owner"},
-        headers={"x-emporia-agent-id": "msgs_stranger"},
-    )
-    assert r.status_code == 403
-    r = client.get(
-        "/messages", params={"agent_id": "msgs_owner"},
-        headers={"x-emporia-agent-id": "msgs_owner"},
-    )
-    assert r.status_code == 200
-
 
 def test_payment_records_gated_by_session_visibility(client):
     """GET /payments/records?session_id= had no auth at all. Now mirrors
@@ -2937,9 +2915,7 @@ def test_delete_session_audit_write_does_not_hold_db_lock(client):
     """P6-1: P5-3 moved the audit write before the row deletes, but left it
     running INSIDE the `with DB_LOCK, get_db() as conn:` block — a local
     file append now happening while the relay's global write lock is held.
-    log_message() (this file's only other _write_audit_line() caller)
-    deliberately writes its audit line AFTER releasing DB_LOCK — direct
-    precedent this endpoint should have followed. Same shape of mistake
+    The audit line belongs outside the lock. Same shape of mistake
     this codebase already fixed once for Agora subscribe/the Stripe
     round-trip (docs/archive/roadmap-hackathon-era.md), just with a file write instead of a network
     call. Verified by asserting DB_LOCK._is_owned() is False at the moment
@@ -8054,45 +8030,6 @@ def test_dm_requires_own_identity(client):
 # old attack (claim someone else's id, get 200) is no longer expressible.
 # ============================================================================
 
-def test_send_message_requires_authentication(prod_client):
-    """Regression for N2-4 tranche 1 (R1): POST /messages used to trust a bare from_agent
-    body field as the sender, with `if req.signature:` making even signature verification
-    optional — omit it and anything could forge a message into any agent's inbox as any
-    agent. from_agent is now gone from the body entirely. Confirms unauthenticated -> 401,
-    and that the logged from_agent is the real authenticated caller.
-    """
-    from emporia.identity import sign
-    _register_keyed(prod_client, "msg_send_owner")
-    _register_keyed(prod_client, "msg_send_recipient")
-    payload = {"text": "hi"}
-
-    r = prod_client.post("/messages", json={
-        "to_agent": "msg_send_recipient", "type": "counter_offer", "payload": payload,
-    })
-    assert r.status_code == 401
-
-    signed_envelope = {
-        "to_agent": "msg_send_recipient", "type": "counter_offer",
-        "session_id": None, "payload": payload,
-    }
-    r = prod_client.post(
-        "/messages",
-        json={
-            "to_agent": "msg_send_recipient", "type": "counter_offer", "payload": payload,
-            "signature": sign(signed_envelope, "msg_send_owner"),
-        },
-        headers=bearer_for(prod_client, "msg_send_owner"),
-    )
-    assert r.status_code == 200
-
-    r = prod_client.get(
-        "/messages", params={"agent_id": "msg_send_owner"},
-        headers=bearer_for(prod_client, "msg_send_owner"),
-    )
-    assert r.status_code == 200
-    assert any(m["from_agent"] == "msg_send_owner" for m in r.json()["messages"])
-
-
 def test_room_message_caller_must_be_sender(prod_client):
     """Regression for N2-4 tranche 1 (R1) headline attack: POST /rooms/{id}/message used
     to check membership on a *claimed* sender_id body field, with signature verification
@@ -8700,71 +8637,6 @@ def test_create_payment_intent_requires_authentication(prod_client):
 # N2-5 — mandatory signatures on /messages and /rooms/{id}/message
 # ============================================================================
 
-def test_send_message_signature_mandatory(prod_client):
-    """Regression for N2-5: POST /messages gated signature verification on
-    `if req.signature:` — omit the signature entirely and the message went through
-    unverified anyway. Matches submit_action's shape: 401 when signature is absent, 403
-    when it fails to verify, 200 only with a valid one.
-    """
-    from emporia.identity import sign
-    _register_keyed(prod_client, "sig_msg_sender")
-    _register_keyed(prod_client, "sig_msg_recipient")
-    payload = {"text": "hello"}
-    signed_envelope = {
-        "to_agent": "sig_msg_recipient", "type": "counter_offer",
-        "session_id": None, "payload": payload,
-    }
-
-    r = prod_client.post(
-        "/messages",
-        json={"to_agent": "sig_msg_recipient", "type": "counter_offer", "payload": payload},
-        headers=bearer_for(prod_client, "sig_msg_sender"),
-    )
-    assert r.status_code == 401
-
-    r = prod_client.post(
-        "/messages",
-        json={
-            "to_agent": "sig_msg_recipient", "type": "counter_offer", "payload": payload,
-            "signature": sign(signed_envelope, "sig_msg_recipient"),  # wrong key
-        },
-        headers=bearer_for(prod_client, "sig_msg_sender"),
-    )
-    assert r.status_code == 403
-
-    r = prod_client.post(
-        "/messages",
-        json={
-            "to_agent": "sig_msg_recipient", "type": "counter_offer", "payload": payload,
-            "signature": sign(signed_envelope, "sig_msg_sender"),
-        },
-        headers=bearer_for(prod_client, "sig_msg_sender"),
-    )
-    assert r.status_code == 200
-
-
-def test_send_message_only_offer_kinds_to_registered_unblocking_agents(prod_client):
-    """Relay audit 11-11 (F1): POST /messages took any `type` to any name, and the recipient's bridge
-    rendered `your_turn`, `funding_required` and unknown types in the relay's own voice. Only an offer's
-    kinds pass now, to a registered agent that has not blocked the sender."""
-    from emporia.identity import sign
-    _register_keyed(prod_client, "f1_sender")
-    _register_keyed(prod_client, "f1_victim")
-
-    def send(to, kind):
-        env = {"to_agent": to, "type": kind, "session_id": "s-forged", "payload": {}}
-        return prod_client.post("/messages", json={**env, "signature": sign(env, "f1_sender")},
-                                headers=bearer_for(prod_client, "f1_sender"))
-
-    for forged in ("your_turn", "funding_required", "session_completed", "kicked_from_room", "made_up"):
-        assert send("f1_victim", forged).status_code == 400, forged
-    assert send("f1_nobody", "challenge").status_code == 404
-    assert send("f1_victim", "challenge").status_code == 200
-    assert prod_client.post("/agents/f1_victim/dm-blocks", json={"agent": "f1_sender"},
-                            headers=bearer_for(prod_client, "f1_victim")).status_code == 200
-    assert send("f1_victim", "challenge").status_code == 403
-
-
 def test_room_message_signature_mandatory(prod_client):
     """Regression for N2-5: POST /rooms/{id}/message gated signature verification on
     `if req.signature:` — omit the signature entirely and the message went through
@@ -8861,39 +8733,6 @@ def test_room_message_signature_not_replayable_across_rooms(prod_client):
         f"/rooms/{room_b}/message",
         json={"content": _N(content), "signature": sig_for_room_a, "nonce": nonce},
         headers=bearer_for(prod_client, "replay_owner"),
-    )
-    assert replayed.status_code == 403
-
-
-def test_send_message_signature_not_replayable_across_recipients(prod_client):
-    """Regression for N3-8 (R7): the /messages signature used to cover only {payload} —
-    to_agent, type, and session_id sat outside the signed envelope yet drove routing, so
-    a signature minted for one recipient/type was valid for any other. Sign a message
-    addressed to one recipient and replay the identical signature+payload addressed to a
-    different recipient: must now be rejected.
-    """
-    from emporia.identity import sign
-    _register_keyed(prod_client, "replay_msg_sender")
-    _register_keyed(prod_client, "replay_msg_recipient_a")
-    _register_keyed(prod_client, "replay_msg_recipient_b")
-
-    payload = {"text": "same payload"}
-    sig_for_a = sign(
-        {"to_agent": "replay_msg_recipient_a", "type": "counter_offer", "session_id": None, "payload": payload},
-        "replay_msg_sender",
-    )
-
-    r = prod_client.post(
-        "/messages",
-        json={"to_agent": "replay_msg_recipient_a", "type": "counter_offer", "payload": payload, "signature": sig_for_a},
-        headers=bearer_for(prod_client, "replay_msg_sender"),
-    )
-    assert r.status_code == 200
-
-    replayed = prod_client.post(
-        "/messages",
-        json={"to_agent": "replay_msg_recipient_b", "type": "counter_offer", "payload": payload, "signature": sig_for_a},
-        headers=bearer_for(prod_client, "replay_msg_sender"),
     )
     assert replayed.status_code == 403
 
@@ -10324,58 +10163,6 @@ def test_relay_server_verifies_signed_action_and_room_message_via_wire_contract(
         finally:
             await buyer._http.aclose()
             await seller._http.aclose()
-
-    asyncio.run(scenario())
-
-
-def test_relay_server_verifies_dm_signature_via_wire_contract():
-    """P10-3: send_message()'s signed_envelope (the DM/routing contract —
-    N3-8's original R7 finding, "bound to to_agent/type/session_id") now
-    also comes from wire.signed_dm_envelope() on both the agent_sdk.py
-    signer and the relay_server.py verifier — the fourth signed contract,
-    and like the action/room-message ones above, the first time the
-    verifier side is single-sourced too, not just the two clients. Pinned
-    the same way: a real DM through the ASGI-transport pattern, with a spy
-    on the shared function proving both sides call it with identical args."""
-    import asyncio
-
-    import httpx as httpx_module
-
-    from emporia.agent_sdk import EmporiaAgent
-    from emporia.identity import get_public_key_hex
-    from emporia.relay_server import app as relay_app
-
-    def _wired(agent_id: str) -> EmporiaAgent:
-        a = EmporiaAgent(
-            relay_url="http://testserver", agent_id=agent_id,
-            public_key_hex=get_public_key_hex(agent_id),
-        )
-        a._http = httpx_module.AsyncClient(
-            transport=httpx_module.ASGITransport(app=relay_app), base_url="http://testserver",
-        )
-        return a
-
-    async def scenario():
-        sender = _wired("p10_3_dm_sender")
-        recipient = _wired("p10_3_dm_recipient")
-        try:
-            await sender.register()
-            await recipient.register()
-
-            with _wire_spy("signed_dm_envelope", "dm-envelope") as dm_spy:
-                result = await sender.send_message(
-                    "p10_3_dm_recipient", "counter_offer", {"text": "hi from P10-3"},
-                )
-            assert result, result
-            assert dm_spy.call_count >= 2
-            signer_call = dm_spy.call_args_list[0]
-            verifier_call = dm_spy.call_args_list[-1]
-            assert signer_call.args == verifier_call.args
-            assert signer_call.args[0] == "p10_3_dm_recipient"
-            assert signer_call.args[1] == "counter_offer"
-        finally:
-            await sender._http.aclose()
-            await recipient._http.aclose()
 
     asyncio.run(scenario())
 
@@ -15151,12 +14938,6 @@ def test_content_limit_now_covers_every_content_bearing_route(client):
     r = v2_post(client, "p19_lim_a", slug, big, reply_to=f"post:{post['post_id']}")
     assert r.status_code == 400 and "text" in r.text, r.text
 
-    r = client.post(
-        "/messages",
-        json={"to_agent": "p19_lim_a", "type": "counter_offer", "payload": {"text": big}, "signature": "aa"},
-        headers={"X-Emporia-Agent-Id": "p19_lim_a"},
-    )
-    assert r.status_code == 400 and "payload" in r.text, r.text
 
 
 def test_max_request_bytes_falls_back_on_a_malformed_env_var(client):
@@ -18947,7 +18728,6 @@ _ACTION_SIGNED_ROUTES = [
     "/sessions/{session_id}/action",
     "/sessions/{session_id}/confirm-delivery",
     "/sessions/{session_id}/dispute-delivery",
-    "/messages",
     "/rooms/{room_id}/message",
     "/dm/{thread_id}/send",
 ]
@@ -25151,7 +24931,6 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/modules": "module registry; the session views name their module inline",
 
     # Agent-only by design, or nothing a human could read anyway.
-    "/messages": "agent-to-agent messaging; the dashboard is not an agent",
     "/rooms/{}/encryption-keys": "same; membership coverage data, not content",
 
     # Detail endpoints whose data the dashboard already has from the list plus

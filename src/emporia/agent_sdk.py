@@ -1085,41 +1085,6 @@ class EmporiaAgent:
         return resp.json().get("sessions", [])
 
     # ------------------------------------------------------------------ #
-    # Messaging
-    # ------------------------------------------------------------------ #
-
-    async def send_message(
-        self,
-        to_agent: str,
-        msg_type: str,
-        body: dict[str, Any],
-        session_id: str | None = None,
-    ) -> dict[str, Any]:
-        # Bug fix: renamed param from `payload` to `body` to avoid shadowing
-        # the local `envelope` dict that wraps it.
-        # Signature is mandatory — the relay rejects an unsigned /messages POST (N2-5).
-        # Signed envelope binds to_agent/type/session_id too, not just the payload
-        # (N3-8/R7) — a payload-only signature was valid for delivery to any
-        # recipient/type, since those fields drove routing without being signed.
-        signed_payload, signature = self._signed("dm-envelope", to_agent, msg_type, session_id, body)
-        resp = await self._bearer_request(
-            "post", f"{self.relay_url}/messages",
-            json={**signed_payload, "signature": signature},
-        )
-        resp.raise_for_status()
-        return resp.json()
-
-    async def get_messages(
-        self, session_id: str | None = None, limit: int = 50
-    ) -> list[dict[str, Any]]:
-        params: dict[str, Any] = {"agent_id": self.agent_id, "limit": limit}
-        if session_id:
-            params["session_id"] = session_id
-        resp = await self._bearer_request("get", f"{self.relay_url}/messages", params=params)
-        resp.raise_for_status()
-        return resp.json().get("messages", [])
-
-    # ------------------------------------------------------------------ #
     # Direct Messages
     # ------------------------------------------------------------------ #
 

@@ -3292,36 +3292,6 @@ class AgentRegistry:
         self.rate_limits[agent_id].append(now)
         return True
 
-    def log_message(
-        self,
-        from_agent: str,
-        to_agent: str,
-        session_id: str | None,
-        msg_type: str,
-        payload: dict[str, Any],
-        signature: str | None = None,
-    ) -> str:
-        message_id = f"msg_{uuid.uuid4().hex[:12]}"
-        created_at = datetime.now(UTC).isoformat()
-        with DB_LOCK, get_db() as conn:
-            conn.execute(
-                "INSERT INTO messages "
-                "(message_id, from_agent, to_agent, session_id, type, payload_json, signature, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (message_id, from_agent, to_agent, session_id,
-                 msg_type, json.dumps(payload), signature, created_at),
-            )
-        # JSONL audit line
-        _write_audit_line({
-            "timestamp": created_at,
-            "from_agent": from_agent,
-            "to_agent": to_agent,
-            "session_id": session_id,
-            "type": msg_type,
-            "payload": payload,
-        })
-        return message_id
-
 
 AGENT_REGISTRY = AgentRegistry()
 
@@ -4597,18 +4567,6 @@ class SubmitActionRequest(BaseModel):
     model_commit: str = ""
     # tags of the `say` line (the declared model), signed with the move; none for a sealed line
     say_tags: list[list[str]] = Field(default_factory=list)
-
-
-#: What POST /messages carries: an offer and its answers, from one agent to another (relay audit 11-11, F1).
-NEGOTIATION_MESSAGE_TYPES = frozenset({"challenge", "counter_offer", "accept", "reject"})
-
-
-class SendMessageRequest(BaseModel):
-    to_agent: str
-    session_id: str | None = None
-    type: str
-    payload: dict[str, Any] = Field(default_factory=dict)
-    signature: str | None = None
 
 
 class CreateRoomRequest(BaseModel):
@@ -6624,9 +6582,7 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
     # request with nothing touched, rather than a deletion nothing recorded.
     #
     # P6-1: but _write_audit_line() must NOT run while DB_LOCK is held.
-    # log_message() (this file's only other caller, above) deliberately
-    # writes its audit line after releasing DB_LOCK — direct precedent that
-    # this function doesn't belong under the lock. P5-3 put it there anyway.
+    # It belongs outside the lock, and P5-3 put it there anyway.
     # Nothing here awaits, so this isn't the same async-starvation class as
     # the Agora/Stripe DB_LOCK-across-a-network-round-trip bug this codebase
     # already fixed once (docs/archive/roadmap-hackathon-era.md § Architecture cleanup) — but it's the
@@ -6748,89 +6704,6 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
         "retained": retained,
         "rooms_still_linked": unlinked,
         "message": "Payments and settlements are never deleted — see this endpoint's docstring.",
-    }
-
-
-# ============================================================================
-# Messaging / Negotiation
-# ============================================================================
-
-
-@app.post("/messages")
-async def send_message(req: SendMessageRequest, request: Request):
-    caller = _dashboard_agent_id(request)
-    if not caller:
-        raise HTTPException(401, "Authentication required")
-    _require_registered(caller)
-    _enforce_agent_rate_limit(caller)
-    # Relay audit 11-11 (F1): only an offer's own kinds travel here. Any other type reached the recipient's
-    # bridge as a relay-voiced notice (`your_turn`, `funding_required`, ...), admitted in every wake mode.
-    if req.type not in NEGOTIATION_MESSAGE_TYPES:
-        raise HTTPException(400, f"type must be one of {', '.join(sorted(NEGOTIATION_MESSAGE_TYPES))}")
-    if not AGENT_REGISTRY.is_authorized(req.to_agent):
-        raise HTTPException(404, f"Agent '{req.to_agent}' is not registered on this relay")
-    from emporia.routes.agents import dm_blocked
-    if dm_blocked(req.to_agent, caller):
-        raise HTTPException(403, f"{req.to_agent} takes no messages from {caller}")
-    # P19-7 (M4): payload is a dict, not a str — bound its serialized size, same
-    # budget every other content-bearing field now gets.
-    _require_content_within_limit(json.dumps(req.payload), "payload")
-    if not req.signature:
-        raise HTTPException(401, "Signature required")
-    # N3-8 (R7): bound to the routing envelope (to_agent/type/session_id), not just
-    # payload — a payload-only signature was valid for delivery to *any* recipient/type,
-    # since those fields sit outside what was signed yet drive routing (:3339 below).
-    from emporia.wire import signed_dm_envelope
-    signed_envelope = signed_dm_envelope(req.to_agent, req.type, req.session_id, req.payload)
-    if not AGENT_REGISTRY.verify_signature(caller, signed_envelope, req.signature):
-        raise HTTPException(403, "Invalid signature")
-
-    try:
-        await _assert_payload_safe_counted(req.payload)
-    except PermissionError as e:
-        raise HTTPException(403, str(e))
-
-    msg_id = AGENT_REGISTRY.log_message(
-        from_agent=caller,
-        to_agent=req.to_agent,
-        session_id=req.session_id,
-        msg_type=req.type,
-        payload=req.payload,
-        signature=req.signature,
-    )
-    await broadcast_to_agent(req.to_agent, {
-        "type": req.type,
-        "from_agent": caller,
-        "session_id": req.session_id,
-        "payload": req.payload,
-        "message_id": msg_id,
-    })
-    return {"status": "sent", "message_id": msg_id}
-
-
-@app.get("/messages")
-async def get_messages(agent_id: str, request: Request, session_id: str | None = None, limit: int = 50):
-    """The raw messages audit table: this agent's messages, newest first."""
-    _require_caller_is(agent_id, request)
-    limit = _clamp_limit(limit)
-    with DB_LOCK, get_db() as conn:
-        if session_id:
-            rows = conn.execute(
-                "SELECT * FROM messages WHERE (to_agent = ? OR from_agent = ?) "
-                "AND session_id = ? ORDER BY created_at DESC LIMIT ?",
-                (agent_id, agent_id, session_id, limit),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM messages WHERE to_agent = ? OR from_agent = ? "
-                "ORDER BY created_at DESC LIMIT ?",
-                (agent_id, agent_id, limit),
-            ).fetchall()
-    return {
-        "messages": [
-            {**dict(r), "payload": json.loads(r["payload_json"])}
-            for r in rows
-        ],
     }
 
 
