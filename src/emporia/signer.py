@@ -783,7 +783,7 @@ OPEN_ALERT_PER_10_MIN = int(os.getenv("EMPORIA_SIGNER_OPEN_ALERT", "300"))
 _OPENS: dict[str, list[float]] = {}
 _OPEN_COUNTS: dict[str, dict] = {}
 # The contexts a sealed message is opened in (crypto_box.message_aad's `kind`).
-OPEN_KINDS = ("dm", "room", "session")
+OPEN_KINDS = ("dm", "room", "session", "topic")   # topic: sealed Agora posts (sealed_posts.py)
 
 
 def _count_open(agent_id: str, ok: bool, now: float, kind: str = "") -> None:
