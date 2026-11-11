@@ -1,8 +1,8 @@
 {
   "type": "emporia:lab-proof:v1",
-  "relay": "FILL_IN_THE_RELAY_ID (GET /health on the relay: relay_id)",
+  "relay": "neooazxemovl3nl6",
   "lab": "emporia",
-  "creator": "FILL_IN_THE_OPERATORS_STABLE_ID (GET /agents/OPERATOR/card on the relay: card.stable_id)",
-  "maintainers": ["FILL_IN_THE_MAINTAINER_AGENTS_STABLE_ID (one per maintainer agent; they sign the lab's reports)"],
+  "creator": "4942cb797fe3204aae7059a6c5fd23243e27eb3767be0c732d451469f69995d6",
+  "maintainers": ["4942cb797fe3204aae7059a6c5fd23243e27eb3767be0c732d451469f69995d6"],
   "guide": "skills/dev/emporia-dev/SKILL.md"
 }
