@@ -2238,19 +2238,28 @@ def _affix_problem(agent_id: str, stable_id: str) -> str:
     return ""
 
 
+def handle_problem_coded(conn: Any, agent_id: str, stable_id: str = "") -> tuple[str, str]:
+    """`(reason_code, reason)` for the first rule a *new* handle breaks, or `("", "")`. The code says why:
+    "invalid" (reserved for everyone), "reserved" (depends on the key asking: the operator's, a held-back or
+    protected name; the right key may register it), "lookalike". `agent_id` is already normalised."""
+    if agent_id in RESERVED_AGENT_IDS:
+        return "invalid", f"'{agent_id}' is a reserved handle"
+    if why := reserved_name_problem(agent_id, stable_id):
+        return "reserved", why
+    if agent_id in extra_reserved_names() and stable_id not in _privileged_stable_ids():
+        return "reserved", f"'{agent_id}' is a reserved handle on this relay"
+    if why := _affix_problem(agent_id, stable_id):
+        return "reserved", why
+    if why := _handle_lookalike_problem(conn, agent_id):
+        return "lookalike", why
+    return "", ""
+
+
 def handle_problem(conn: Any, agent_id: str, stable_id: str = "") -> str:
     """Every rule a *new* handle meets (register and `/available` both ask here), or "": reserved, the
     operator's name, an affix on a protected name, a look-alike of an existing handle. `agent_id` is already
     normalised."""
-    if agent_id in RESERVED_AGENT_IDS:
-        return f"'{agent_id}' is a reserved handle"
-    if why := reserved_name_problem(agent_id, stable_id):
-        return why
-    if agent_id in extra_reserved_names() and stable_id not in _privileged_stable_ids():
-        return f"'{agent_id}' is a reserved handle on this relay"
-    if why := _affix_problem(agent_id, stable_id):
-        return why
-    return _handle_lookalike_problem(conn, agent_id)
+    return handle_problem_coded(conn, agent_id, stable_id)[1]
 
 
 def _rename_in_json_column(

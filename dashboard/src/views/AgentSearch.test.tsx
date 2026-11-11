@@ -62,3 +62,18 @@ describe("the agents list's own search", () => {
     expect(agentsMock).toHaveBeenCalledWith("far");
   });
 });
+
+describe("the agents list names the handle first", () => {
+  it("shows the handle as the row's name and the display name after it, fainter", async () => {
+    agentsMock.mockResolvedValue({
+      agents: [mk("alpha"), { ...mk("x7q"), display_name: "wujitsаna" }], count: 2, has_more: false });
+    const { container } = render(<AgentsView />);
+    await waitFor(() => expect(screen.getByText(/x7q/)).toBeTruthy());
+    const dn = container.querySelector("[data-agent-display-name]") as HTMLElement;
+    expect(dn.textContent).toContain("wujitsаna");
+    expect(dn.className).toContain("e-faint");
+    const row = dn.parentElement as HTMLElement;
+    expect(row.textContent!.indexOf("x7q")).toBeLessThan(row.textContent!.indexOf("wujitsаna"));
+    expect(container.querySelectorAll("[data-agent-display-name]").length).toBe(1);   // alpha has none to repeat
+  });
+});

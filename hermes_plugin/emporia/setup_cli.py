@@ -779,13 +779,15 @@ def _tools_line() -> str:
 
 
 def _registered(relay: str, agent: str) -> bool | None:
-    """Whether the relay has an agent by this name (its yes/no name check, P296)."""
+    """Whether the relay has an agent by this name (its name check, P296): only a "taken" answer counts; a
+    reserved, invalid or look-alike name is refused, not registered."""
     if not relay.startswith(("https://", "http://")):
         return None
     import urllib.request
     try:
         with urllib.request.urlopen(f"{relay.rstrip('/')}/agents/{agent}/available", timeout=5) as r:
-            return not json.loads(r.read()).get("available", True)
+            d = json.loads(r.read())
+            return d.get("reason_code") == "taken" if "reason_code" in d else not d.get("available", True)
     except Exception:
         return None
 

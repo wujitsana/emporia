@@ -21,10 +21,19 @@ _URL = re.compile(r"(?i)(https?:|ftp:|www\.|\b[a-z0-9-]+\.(?:com|org|net|io|ai|d
 _FOLD = str.maketrans({"0": "o", "1": "l", "i": "l", "|": "l", "5": "s", "$": "s", "3": "e", "@": "a"})
 
 
+# Cyrillic and Greek letters that draw as a Latin one, folded to it (a small table, not a dependency).
+_CONFUSABLES = str.maketrans({
+    "а": "a", "в": "b", "е": "e", "ё": "e", "к": "k", "м": "m", "н": "h", "о": "o", "р": "p", "с": "c", "т": "t",
+    "у": "y", "х": "x", "і": "i", "ї": "i", "ј": "j", "ѕ": "s", "һ": "h", "ԁ": "d", "ԛ": "q", "ԝ": "w", "ѡ": "w",
+    "ӏ": "l", "ь": "b", "ο": "o", "α": "a", "β": "b", "ε": "e", "ι": "i", "κ": "k", "ν": "v", "ρ": "p", "τ": "t",
+    "υ": "u", "χ": "x", "γ": "y", "η": "n", "ω": "w", "ϲ": "c", "ѵ": "v", "ɡ": "g", "ɑ": "a", "ⅼ": "l",
+})
+
+
 def skeleton(name: str) -> str:
-    """The spelling two look-alike handles share: NFKC, lowercase, separators gone, `0 1 i 5 3` folded to
-    `o l l s e`, `rn` to `m`, `vv` to `w`, `cl` to `d`."""
-    folded = unicodedata.normalize("NFKC", str(name)).lower()
+    """The spelling two look-alike handles share: NFKC, lowercase, Cyrillic/Greek look-alikes folded to Latin,
+    separators gone, `0 1 i 5 3` folded to `o l l s e`, `rn` to `m`, `vv` to `w`, `cl` to `d`."""
+    folded = unicodedata.normalize("NFKC", str(name)).lower().translate(_CONFUSABLES)
     folded = re.sub(r"[-_.\s]+", "", folded).translate(_FOLD)
     for pair, one in (("rn", "m"), ("vv", "w"), ("cl", "d")):
         folded = folded.replace(pair, one)
@@ -79,10 +88,35 @@ def display_name_problem(value: str, handles: Iterable[str] = (), reserved: Iter
     if _URL.search(text):
         return "a display name is a name, not a link"
     if text:
-        mine = skeleton(text)
-        for name in (*handles, *reserved):
-            if name and name != own and skeleton(name) == mine:
-                return f"a display name may not read as the handle or reserved name '{name}'"
+        return _display_name_impersonation(text, handles, reserved, own)
+    return ""
+
+
+# Reserved words that are ordinary words in a longer name ("Alpha Bot", "Team Rocket"): refused only when the
+# whole display name is one, not when one word of it is.
+_ORDINARY_WORDS = frozenset({"official", "api", "www", "null", "none", "undefined", "me", "self", "everyone",
+                             "anonymous", "house", "bot", "mod", "team", "help", "owner", "founder", "bank",
+                             "wallet", "escrow", "treasury", "signer"})
+
+
+def _display_name_impersonation(text: str, handles: Iterable[str], reserved: Iterable[str], own: str) -> str:
+    """The whole display name (leading `@` and end punctuation dropped), and each word of it, against every
+    handle and reserved word by skeleton, so `wujitsаna`, `@wujitsana`, `Wujitsana!` and `wujitsana official`
+    all read as the handle they wear. The agent's own handle is exempt."""
+    whole = re.sub(r"^[\W_]+|[\W_]+$", "", text)
+    words = [w for w in re.split(r"[\W_]+", text) if w]
+    handles, reserved = [h for h in handles if h], [r for r in reserved if r]
+    for name in (*handles, *reserved):
+        if name == own:
+            continue
+        target = skeleton(name)
+        parts = [text, whole]
+        # a handle as one word of a short name ("wujitsana official") reads as that agent; in a longer
+        # sentence ("Alice the Bold") it is just a word. An authority word counts wherever it stands.
+        if (name in handles and len(words) <= 2) or (name in reserved and name not in _ORDINARY_WORDS):
+            parts += words
+        if any(p and skeleton(p) == target for p in parts):
+            return f"a display name may not read as the handle or reserved name '{name}'"
     return ""
 
 

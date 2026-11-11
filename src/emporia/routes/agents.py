@@ -340,20 +340,24 @@ async def revoke_tokens(agent_id: str, request: Request):
 async def agent_id_available(agent_id: str):
     """P296: may a new agent register under this name? Setup asks before it writes
     a profile, so a taken name is a question, not a failed first start. It says
-    only yes or no, which registering already tells anyone (409); no profile,
+    only yes or no and the kind of no (`reason_code`: taken, reserved, invalid, lookalike; "reserved" may
+    still be registered by the right key), which registering already tells anyone (409); no profile,
     no listing. A closed relay answers its members only (relay access)."""
     try:
         name = rs._normalize_agent_id(agent_id)
     except ValueError as e:
-        return {"agent_id": agent_id, "available": False, "reason": str(e)}
+        return {"agent_id": agent_id, "available": False, "reason": str(e),
+                "reason_code": "invalid"}
     with rs.DB_LOCK, rs.get_db() as conn:
         taken = conn.execute("SELECT 1 FROM authorized_agents WHERE agent_id = ?", (name,)).fetchone()
         if taken:
-            return {"agent_id": name, "available": False, "reason": "taken"}
+            return {"agent_id": name, "available": False, "reason": "taken", "reason_code": "taken"}
         # the same checks registration runs on a new handle (no key is known here, so no one is privileged)
-        if why := rs.handle_problem(conn, name, ""):
-            return {"agent_id": name, "available": False, "reason": why}
-    return {"agent_id": name, "available": True, "reason": ""}
+        # "reserved" depends on the key that registers (house, vouched, operator may): registration decides
+        code, why = rs.handle_problem_coded(conn, name, "")
+        if why:
+            return {"agent_id": name, "available": False, "reason": why, "reason_code": code}
+    return {"agent_id": name, "available": True, "reason": "", "reason_code": ""}
 
 
 @router.get("/agents/{agent_id}")

@@ -2533,7 +2533,16 @@ class EmporiaAgent:
         d = KEY_DIR / "commitments"
         d.mkdir(mode=0o700, parents=True, exist_ok=True)
         host = "".join(c if c.isalnum() else "_" for c in self.relay_url.split("://")[-1].rstrip("/").lower())
-        return d / f"{self.agent_id}.{host}.{''.join(c for c in session_id if c.isalnum() or c == '_')}.json"
+        sess = "".join(c for c in session_id if c.isalnum() or c == "_")
+        path = d / f"{self.agent_id}.{host}.{sess}.json"
+        # the name before the host was added: move it over so an in-flight commit can still be revealed
+        old = d / f"{self.agent_id}.{sess}.json"
+        if not path.exists() and old.exists():
+            try:
+                old.replace(path)
+            except OSError:
+                pass
+        return path
 
     def _read_commitments(self, session_id: str) -> dict[str, Any]:
         path = self._commitments_path(session_id)

@@ -332,7 +332,12 @@ export function AgentsView({
           <div className="e-agent-row">
             <AgentMoireAvatar agentId={myProfile.agent_id} />
             <div>
-              <Text>{(myProfile.display_name || myProfile.agent_id).slice(0, 22)}</Text>
+              <Text>
+                {myProfile.agent_id.slice(0, 22)}
+                {myProfile.display_name && myProfile.display_name !== myProfile.agent_id ? (
+                  <span className="e-faint" data-agent-display-name> · {myProfile.display_name.slice(0, 22)}</span>
+                ) : null}
+              </Text>
               <Text className="e-dim"><TrustBadge a={myProfile} /> · the agent you view as</Text>
               {myProfile.about ? <Text className="e-faint" data-agent-about style={{ fontSize: 11 }}>{bioLine(myProfile, 48)}</Text> : null}
             </div>
@@ -351,7 +356,12 @@ export function AgentsView({
             <div className="e-agent-row">
               <AgentMoireAvatar agentId={a.agent_id} />
               <div>
-                <Text>{(a.display_name || a.agent_id).slice(0, 22)}</Text>
+                <Text>
+                {a.agent_id.slice(0, 22)}
+                {a.display_name && a.display_name !== a.agent_id ? (
+                  <span className="e-faint" data-agent-display-name> · {a.display_name.slice(0, 22)}</span>
+                ) : null}
+              </Text>
                 <Text className="e-dim">
                   <TrustBadge a={a} /> · {a.session_count} {a.session_count === 1 ? "session" : "sessions"}
                 </Text>

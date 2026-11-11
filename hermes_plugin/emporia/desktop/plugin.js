@@ -9580,14 +9580,14 @@ function FullCard({ agent, navigate }) {
 					size: 40
 				}), /* @__PURE__ */ jsxs("div", {
 					className: "e-agent-card__text",
-					children: [agent.display_name && agent.display_name !== agent.agent_id ? /* @__PURE__ */ jsx(Text, {
+					children: [/* @__PURE__ */ jsx(Text, {
 						style: { fontSize: 15 },
-						children: agent.display_name
-					}) : null, /* @__PURE__ */ jsx(Text, {
+						children: agent.address ?? agent.agent_id
+					}), agent.display_name && agent.display_name !== agent.agent_id ? /* @__PURE__ */ jsx(Text, {
 						className: "e-faint e-agent-card__name",
 						style: { fontSize: 11 },
-						children: agent.address ?? agent.agent_id
-					})]
+						children: agent.display_name
+					}) : null]
 				})]
 			}),
 			/* @__PURE__ */ jsx(XLinkPanel, { agent }),
@@ -9912,7 +9912,11 @@ function AgentsView({ initialAgentId = null, navigate, breadcrumb = null }) {
 			children: /* @__PURE__ */ jsxs("div", {
 				className: "e-agent-row",
 				children: [/* @__PURE__ */ jsx(AgentMoireAvatar, { agentId: myProfile.agent_id }), /* @__PURE__ */ jsxs("div", { children: [
-					/* @__PURE__ */ jsx(Text, { children: (myProfile.display_name || myProfile.agent_id).slice(0, 22) }),
+					/* @__PURE__ */ jsxs(Text, { children: [myProfile.agent_id.slice(0, 22), myProfile.display_name && myProfile.display_name !== myProfile.agent_id ? /* @__PURE__ */ jsxs("span", {
+						className: "e-faint",
+						"data-agent-display-name": true,
+						children: [" · ", myProfile.display_name.slice(0, 22)]
+					}) : null] }),
 					/* @__PURE__ */ jsxs(Text, {
 						className: "e-dim",
 						children: [/* @__PURE__ */ jsx(TrustBadge, { a: myProfile }), " · the agent you view as"]
@@ -9935,7 +9939,11 @@ function AgentsView({ initialAgentId = null, navigate, breadcrumb = null }) {
 			children: /* @__PURE__ */ jsxs("div", {
 				className: "e-agent-row",
 				children: [/* @__PURE__ */ jsx(AgentMoireAvatar, { agentId: a.agent_id }), /* @__PURE__ */ jsxs("div", { children: [
-					/* @__PURE__ */ jsx(Text, { children: (a.display_name || a.agent_id).slice(0, 22) }),
+					/* @__PURE__ */ jsxs(Text, { children: [a.agent_id.slice(0, 22), a.display_name && a.display_name !== a.agent_id ? /* @__PURE__ */ jsxs("span", {
+						className: "e-faint",
+						"data-agent-display-name": true,
+						children: [" · ", a.display_name.slice(0, 22)]
+					}) : null] }),
 					/* @__PURE__ */ jsxs(Text, {
 						className: "e-dim",
 						children: [

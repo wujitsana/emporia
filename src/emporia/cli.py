@@ -6225,19 +6225,35 @@ _CMD_SOURCE_VARS = ("EMPORIA_IDENTITY_KEY_SOURCE", "EMPORIA_ENCRYPTION_KEY_SOURC
 
 
 def _agent_child_env(profile: Path, env_over: dict[str, str]) -> dict[str, str]:
-    """The environment `_as_agent` runs with: a fixed allow-list. From the profile's MCP entry only EMPORIA_*
-    names (never PYTHONPATH, PYTHONSTARTUP, LD_*, PATH ...: the person may run this as root), and a `cmd:` key
-    source from that entry is refused here as it is for the .env."""
-    entry = {k: v for k, v in _mcp_env(profile).items() if k.startswith("EMPORIA_")}
+    """The environment `_as_agent` runs with: a fixed allow-list, the names the MCP server is handed
+    (`agent_env.names`: EMPORIA_*, the vault family of a linked `cmd:` source, each `env:NAME` a key source
+    points at), with values from the profile's MCP entry or settings. Never PYTHON*, LD_*, PATH (the person
+    may run this as root), nor a relay-only or retired name. A `cmd:` key source in the MCP entry is refused
+    as root, as it is for the .env."""
+    from emporia import agent_env
+    entry = _mcp_env(profile)
     bad = [k for k in _CMD_SOURCE_VARS if entry.get(k, "").strip().startswith("cmd:")]
     if bad and os.getuid() == 0:
         raise RuntimeError(f"{', '.join(bad)} in the profile's MCP entry is a cmd: source; not run as root")
-    return {"PATH": os.defpath, "HOME": str(Path.home()), **entry, **env_over}
+    try:
+        held = dict(installer().harvest_env(profile))
+    except Exception:
+        held = {}
+    values = {**held, **entry}
+    handed = {n: values[n] for n in agent_env.names(values)
+              if values.get(n) and not n.startswith(("PYTHON", "LD_")) and n not in ("PATH", "HOME")}
+    literal = {k: v for k, v in entry.items() if k.startswith("EMPORIA_") and k not in agent_env.RELAY_ONLY_NAMES
+               and not agent_env.is_retired(k)}
+    return {"PATH": os.defpath, "HOME": str(Path.home()), **literal, **handed, **env_over}
 
 
 def _as_agent(profile: Path, code: str, **env_over: str) -> subprocess.CompletedProcess:
-    """Run `code` the way the agent's MCP server runs: its own EMPORIA settings, nothing else."""
-    env = _agent_child_env(profile, env_over)
+    """Run `code` the way the agent's MCP server runs: its own EMPORIA settings, nothing else. A refused
+    environment comes back as a failed result carrying the reason, not as a traceback."""
+    try:
+        env = _agent_child_env(profile, env_over)
+    except RuntimeError as e:
+        return subprocess.CompletedProcess([], 1, "", f"refused: {e}")
     return subprocess.run([sys.executable, "-I", "-c", code], env=env, capture_output=True, text=True,
                           timeout=120)
 
@@ -6614,6 +6630,9 @@ def _name_on_relay(relay: str, agent_id: str) -> tuple[bool | None, str]:
     if r.status_code != 200:
         return None, "the relay cannot check names"
     d = r.json()
+    if d.get("reason_code") == "reserved":
+        # a held-back name (EMPORIA_RESERVED_NAMES) may be this agent's own key's to register: registration decides
+        return None, d.get('reason') or 'a reserved name'
     return bool(d.get("available")), d.get("reason") or ""
 
 
