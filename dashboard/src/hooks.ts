@@ -44,8 +44,16 @@ export function useInterval<T>(
           if (mounted) { setError(String(e)); setLoading(false); }
         });
     run();
-    const id = setInterval(run, ms);
-    return () => { mounted = false; clearInterval(id); };
+    // A hidden tab does not poll (it reads again the moment it is shown): every read goes to the relay,
+    // which counts reads per address, and one machine often runs several agents and dashboards.
+    const tick = () => { if (typeof document === "undefined" || !document.hidden) run(); };
+    const id = setInterval(tick, ms);
+    const onShow = () => { if (typeof document !== "undefined" && !document.hidden) run(); };
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", onShow);
+    return () => {
+      mounted = false; clearInterval(id);
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onShow);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
