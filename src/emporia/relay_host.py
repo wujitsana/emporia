@@ -187,7 +187,7 @@ def source_pin(repo: Path) -> tuple[str, str]:
         sha = out.stdout.strip()
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("no commit to build the relay from: this is not a git checkout, and the runtime pin "
-                         "names none (--commit takes a full 40-character commit)")
+                         "names none (a full 40-character commit is needed)")
     return url, sha
 
 
@@ -222,6 +222,9 @@ def install_dir_problem(host_dir: str) -> str:
                 f"like the default ({INSTALL_DIR}).")
     if not host_dir.startswith("/") or "$" in host_dir:
         return f"--host-dir must be an absolute path on the host, like /srv/emporia-relay (not {host_dir!r})."
+    if not re.fullmatch(r"[A-Za-z0-9/._-]+", host_dir):
+        return (f"--host-dir {host_dir!r} has a character outside A-Z a-z 0-9 / . _ - : the printed commands "
+                f"cannot carry it. Use a plainer folder name, like /srv/emporia-relay.")
     return ""
 
 
@@ -428,27 +431,47 @@ def old_layout(text: str) -> dict | None:
 
 
 STAGING_DEFAULT = "$HOME/.hermes/emporia-relay"
-SESSION_NOTE = ("Keep this one terminal for all the steps: `D` and `S` stay set in it. In a new terminal, run the "
-                "first two lines again.")
-COMPOSE_HOME_NOTE = ("If your own Hermes compose file uses ${HOME} in its paths, run compose as `sudo HOME=\"$HOME\" "
-                     "docker compose ...` or put absolute paths in that file. This snippet never needs it.")
+SESSION_NOTE = ("Keep this one terminal for all the steps: D and S stay set in it. In a new terminal, run the "
+                "folder lines again before anything else.")
+COMPOSE_HOME_NOTE = ("If your own Hermes compose file uses ${HOME} in its paths, run compose as sudo HOME=\"$HOME\" "
+                     "docker compose (and the rest of the command) or put absolute paths in that file. This snippet "
+                     "never needs it. Compose needs sudo here: the relay's .env is readable by root and the relay "
+                     "only.")
+_PROSE = "     "      # prose sits at 5 spaces; commands at 8, so pasting a block never runs prose
+_CMD = "        "
+_DIR_CHECK = ('case "$D$S" in *[!A-Za-z0-9/._-]*) echo "STOP: D or S has a character outside A-Z a-z 0-9 / . _ -";; '
+              '*) echo "folders ok: $D  <-  $S";; esac')
+
+
+def _cmds(lines: list[str]) -> str:
+    return "\n".join(f"{_CMD}{l}" for l in lines)
+
+
+def _vars_lines(host_dir: str, staging: str) -> list[str]:
+    return ["# Where the relay lives. A root-only VPS gives /root/.emporia, which is fine.",
+            f"D=\"{host_dir}\"",
+            "# Where the wizard staged its files, inside the Hermes folder.",
+            f"S=\"{staging.replace('${HOME}', '$HOME')}\"",
+            _DIR_CHECK]
 
 
 def _vars_step(host_dir: str, staging: str) -> str:
-    return ("Fix the folders once, in your own shell (as your normal user, not inside `sudo -i`). Every later command "
-            "uses them, already expanded before sudo runs, so sudo's own HOME never matters:\n"
-            f"        D=\"{host_dir}\"   # where the relay lives; a root-only VPS gives /root/.emporia, which is fine\n"
-            f"        S=\"{staging.replace('${HOME}', '$HOME')}\"   # where the wizard staged its files, inside the Hermes folder\n"
-            f"        {SESSION_NOTE}")
+    return ("Fix the folders once, in your own bash shell (as your normal user, not inside sudo -i). Every later "
+            "command uses them, already expanded before sudo runs, so sudo's own HOME never matters:\n"
+            + _cmds(_vars_lines(host_dir, staging)) + f"\n{_PROSE}{SESSION_NOTE}")
+
+
+def _subshell(body: list[str], extra: str = "") -> list[str]:
+    return ["(", "set -euo pipefail", ': "${D:?}" "${S:?}"' + extra, *body, ")"]
 
 
 def into_compose_steps(front_door: str, host_dir: str, domain: str, needs_key: bool, secrets: list[str],
                        staging: str = STAGING_DEFAULT, snippet_name: str = SNIPPET) -> list[str]:
     """What the person does by hand, in order, with the exact commands. `host_dir` is the install
     folder and `staging` the folder the wizard wrote into, as the host's shell spells them; the
-    commands use "$D" and "$S". The relay's uid owns what only it may read; the tunnel's owns the
-    token. `needs_key`: escrow is on and has no operator key yet — money alone (x402, paid
-    directly) needs none."""
+    commands use "$D" and "$S", guarded so an empty one stops the command instead of aiming it at /.
+    The relay's uid owns what only it may read; the tunnel's owns the token. `needs_key`: escrow is on
+    and has no operator key yet; money alone (x402, paid directly) needs none."""
     tunnel = front_door == "tunnel"
     door = "emporia-cloudflared" if tunnel else "emporia-caddy"
     steps = [_vars_step(host_dir, staging), _install_step(front_door, snippet_name)]
@@ -459,28 +482,31 @@ def into_compose_steps(front_door: str, host_dir: str, domain: str, needs_key: b
             f"Public hostname {domain} -> http://emporia-relay:8088. The domain's DNS must be on Cloudflare, proxied "
             f"(orange cloud). Turn WebSockets on.")
         steps.append(
-            f"Save the token on the host. Run this, paste only the token, press Enter, then Ctrl-D. Nothing "
-            f"echoes, and the token is a secret: never share it. It goes straight into the install folder, never "
-            f"into the Hermes folder.\n"
-            f"        sudo install -d -o {CLOUDFLARED_UID} -g {CLOUDFLARED_UID} -m 700 \"$D/cloudflared\"\n"
-            f"        sudo install -m 400 -o {CLOUDFLARED_UID} -g {CLOUDFLARED_UID} /dev/stdin \"$D/cloudflared/token\"")
+            "Save the token on the host. Run the two lines, paste only the token, press Enter, then Ctrl-D. The "
+            "token is a secret: never share it. It goes straight into the install folder, never into the Hermes "
+            "folder.\n" + _cmds([
+                f"sudo install -d -o {CLOUDFLARED_UID} -g {CLOUDFLARED_UID} -m 700 \"${{D:?}}/cloudflared\"",
+                f"sudo install -m 400 -o {CLOUDFLARED_UID} -g {CLOUDFLARED_UID} /dev/stdin \"${{D:?}}/cloudflared/token\""]))
     else:
         steps.append(f"DNS: an A record for {domain} to this VPS. Firewall: allow 22, 80 and 443 only\n"
                      f"        sudo ufw default deny incoming && sudo ufw allow 22,80,443/tcp && sudo ufw enable")
-    steps.append(_include_step(snippet_name=SNIPPET))
+    steps.append(_include_step())
     if secrets or needs_key:
-        steps.append(f"Give the relay's user its secrets, and nobody else (one file per secret in \"$D/secrets\"):\n"
-                     f"        sudo chown -R {RELAY_UID}:{RELAY_UID} \"$D/secrets\" && sudo chmod 700 \"$D/secrets\""
-                     f" && sudo chmod 600 \"$D\"/secrets/*")
+        steps.append("Give the relay's user its secrets, and nobody else (one file per secret in the install "
+                     "folder's secrets/):\n" + _cmds([
+                         f"sudo chown -R {RELAY_UID}:{RELAY_UID} \"${{D:?}}/secrets\"",
+                         "sudo chmod 700 \"${D:?}/secrets\"",
+                         "sudo find \"${D:?}/secrets\" -type f -exec chmod 600 {} +"]))
     if needs_key:
         steps.append("Make the escrow operator key inside the relay's data folder, then put the address it prints in the "
-                     "relay's .env (\"$D/.env\") as EMPORIA_OPERATOR_ADDRESS=0x…:\n"
+                     "relay's .env (\"$D/.env\") as EMPORIA_OPERATOR_ADDRESS=0x...:\n"
                      "        sudo docker compose run --rm --no-deps emporia-relay python -m emporia.operator_signer generate")
-    steps.append(f"Start it (the first build pulls the pinned commit from GitHub):\n"
+    steps.append("Start it, from the folder of your Hermes compose file (the first build pulls the pinned commit "
+                 "from GitHub):\n"
                  f"        sudo docker compose up -d --build emporia-relay {door}\n"
-                 f"        (without sudo if your user is in the docker group.) {COMPOSE_HOME_NOTE}")
+                 f"{_PROSE}{COMPOSE_HOME_NOTE}")
     steps.append(f"Check: curl -s https://{domain}/health   (status ok). Then move your agents to it: "
-                 f"emporia relay use https://{domain} NAME …")
+                 f"emporia relay use https://{domain} NAME ...")
     steps.append(_tail_step(front_door))
     steps.append(_settings_step())
     return steps
@@ -495,84 +521,166 @@ def _tail_step(front_door: str) -> str:
             "sets, and EMPORIA_TRUSTED_PROXIES to its address, in the relay's .env.")
 
 
-def _include_step(snippet_name: str = SNIPPET) -> str:
-    return (f"In your Hermes compose file, add the snippet under `include:`, with its absolute path. This prints the "
-            f"line to add:\n        echo \"include: [ $D/{SNIPPET} ]\"\n"
-            f"        Do not copy the services, volumes or networks over.")
+def _include_step() -> str:
+    return ("In your Hermes compose file, add the snippet under include: with its absolute path. This prints the "
+            f"line to add:\n        echo \"include: [ ${{D:?}}/{SNIPPET} ]\"\n"
+            f"{_PROSE}Do not copy the services, volumes or networks over.")
 
 
 def _settings_step() -> str:
-    return ("Change a setting later: edit the relay's .env on the host (`sudo nano \"$D/.env\"`), then "
-            "`sudo docker compose restart emporia-relay`. Or run `emporia relay config set NAME VALUE --dir "
-            "<the wizard's folder>` in Hermes and re-run the `.env` install line from step 2.")
+    return ("Change a setting later, only this way: edit the relay's .env in the install folder, on the host, with "
+            "sudo, then restart the relay from the folder of your Hermes compose file. (In a new terminal, run the "
+            "folder lines from step 1 first.) The staged copies are gone by then, so there is nothing else to "
+            "re-install:\n" + _cmds(['sudo nano "${D:?}/.env"', "sudo docker compose restart emporia-relay"]))
 
 
 def _install_step(front_door: str, snippet_name: str) -> str:
-    """Copy what the wizard staged into the install folder with owners and modes, then remove the
-    staged copies."""
-    lines = [
-        "sudo install -d -o root -g root -m 755 \"$D\"",
-        f"sed \"s#{DIR_PLACEHOLDER}#$D#g\" \"$S/{snippet_name}\" | sudo tee \"$D/{SNIPPET}\" >/dev/null"
-        f" && sudo chmod 644 \"$D/{SNIPPET}\"",
-        f"sudo install -o root -g {RELAY_UID} -m 640 \"$S/.env\" \"$D/.env\"",
-        f"sudo install -d -o {RELAY_UID} -g {RELAY_UID} -m 700 \"$D/secrets\" \"$D/data\"",
-        f"for f in \"$S\"/secrets/*; do [ -f \"$f\" ] && sudo install -o {RELAY_UID} -g {RELAY_UID} -m 600 \"$f\" \"$D/secrets/\"; done",
+    """Copy what the wizard staged into the install folder with owners and modes, check each file
+    arrived, and only then remove the staged copies. One subshell: it stops at the first failure."""
+    body = [
+        'sudo install -d -o root -g root -m 755 "$D"',
+        f'sudo sed "s#{DIR_PLACEHOLDER}#$D#g" "$S/{snippet_name}" | sudo tee "$D/{SNIPPET}" >/dev/null',
+        f'sudo chmod 644 "$D/{SNIPPET}"',
+        'sudo grep -qF -- "- $D/data:/data" "$D/' + SNIPPET + '" || { echo "STOP: the snippet did not install"; exit 1; }',
+        f'sudo install -o root -g {RELAY_UID} -m 640 "$S/.env" "$D/.env"',
+        f'sudo install -d -o {RELAY_UID} -g {RELAY_UID} -m 700 "$D/secrets" "$D/data"',
+        'sudo cp -a "$S/secrets/." "$D/secrets/"',
+        f'sudo chown -R {RELAY_UID}:{RELAY_UID} "$D/secrets"',
+        'sudo find "$D/secrets" -type f -exec chmod 600 {} +',
     ]
-    staged = [f"\"$S/.env\"", f"\"$S/{snippet_name}\"", "\"$S/secrets\""]
+    staged = ['"$S/.env"', f'"$S/{snippet_name}"', '"$S/secrets"']
     if front_door != "tunnel":
-        lines.append("sudo install -o root -g root -m 644 \"$S/Caddyfile\" \"$D/Caddyfile\"")
-        staged.append("\"$S/Caddyfile\"")
-    lines.append(f"sudo rm -rf {' '.join(staged)}")
+        body.append('sudo install -o root -g root -m 644 "$S/Caddyfile" "$D/Caddyfile"')
+        body.append('sudo test -s "$D/Caddyfile" || { echo "STOP: the Caddyfile did not install"; exit 1; }')
+        staged.append('"$S/Caddyfile"')
+    body.append('sudo test -s "$D/.env" || { echo "STOP: .env did not install"; exit 1; }')
+    body.append('echo "installed and checked; removing the staged copies"')
+    body.append(f"sudo rm -rf -- {' '.join(staged)}")
+    body.append('echo "STEP DONE"')
     return ("Install what the wizard staged into the install folder, outside the Hermes folder, with the right "
-            "owners and modes, then remove the staged copies (Hermes can read and edit its own folder, so it must not "
-            "hold the relay's files):\n" + "\n".join(f"        {l}" for l in lines))
+            "owners and modes. It stops at the first failure, and removes the staged copies only after every file "
+            "is checked (Hermes can read and edit its own folder, so it must not hold the relay's files):\n"
+            + _cmds(_subshell(body)))
+
+
+ID_CMD = ("import json,urllib.request as u; h=json.load(u.urlopen(\"http://127.0.0.1:8088/health\",timeout=5)); "
+          "print(h.get(\"relay_id\"), h.get(\"relay_public_key\"))")
 
 
 def move_steps(front_door: str, host_dir: str, domain: str, staging: str, snippet_name: str,
-               volume: str = "<project>_emporia-data") -> list[str]:
+               relay: str = "emporia-relay", door_container: str = "", pin: tuple[str, str] = ("", "")) -> list[str]:
     """Moving an existing relay (old layout: its folder inside the Hermes data folder, its database in
-    the `emporia-data` volume) to the install folder. Keeps its .env, secrets, tunnel token and
-    database, so the relay keeps its identity and key. Nothing here prints a secret."""
+    the `emporia-data` volume) to the install folder, in stages the person pastes one at a time. Keeps
+    its .env, secrets, tunnel token and database, so the relay keeps its identity and key. Nothing
+    here prints a secret. `relay`/`door_container`: the container names. `pin`: (old, new) commit."""
     tunnel = front_door == "tunnel"
     door = "emporia-cloudflared" if tunnel else "emporia-caddy"
-    keep = [f"sudo install -o root -g {RELAY_UID} -m 640 \"$S/.env\" \"$D/.env\"",
-            f"sudo install -d -o {RELAY_UID} -g {RELAY_UID} -m 700 \"$D/secrets\" \"$D/data\"",
-            f"sudo cp -a \"$S/secrets/.\" \"$D/secrets/\" && sudo chown -R {RELAY_UID}:{RELAY_UID} \"$D/secrets\""
-            f" && sudo chmod 700 \"$D/secrets\" && { 'sudo chmod 600 \"$D\"/secrets/* 2>/dev/null; true' }"]
-    if tunnel:
-        keep += [f"sudo cp -a \"$S/cloudflared\" \"$D/\" && sudo chown -R {CLOUDFLARED_UID}:{CLOUDFLARED_UID} \"$D/cloudflared\""
-                 f" && sudo chmod 700 \"$D/cloudflared\" && sudo chmod 400 \"$D/cloudflared/token\""]
-    else:
-        keep += ["sudo install -o root -g root -m 644 \"$S/Caddyfile\" \"$D/Caddyfile\""]
-    old = ["\"$S/.env\"", "\"$S/secrets\"", f"\"$S/{SNIPPET}\""]
-    if snippet_name != SNIPPET:
-        old.append(f"\"$S/{snippet_name}\"")
-    old.append("\"$S/cloudflared\"" if tunnel else "\"$S/Caddyfile\"")
-    return [
-        _vars_step(host_dir, staging),
-        f"Note who the relay is now: curl -s https://{domain}/health   (write down the relay_id it shows, if any, "
-        f"and its relay_url). It must be the same after the move.",
-        f"Stop it, from the folder of your Hermes compose file:\n        sudo docker compose stop emporia-relay {door}",
-        "Install the new snippet and keep the relay's .env, secrets and tunnel token (nothing is printed) in the "
-        "install folder:\n"
-        "        sudo install -d -o root -g root -m 755 \"$D\"\n"
-        f"        sed \"s#{DIR_PLACEHOLDER}#$D#g\" \"$S/{snippet_name}\" | sudo tee \"$D/{SNIPPET}\" >/dev/null"
-        f" && sudo chmod 644 \"$D/{SNIPPET}\"\n" + "\n".join(f"        {l}" for l in keep),
-        f"Copy the database out of the old Docker volume. Find its name: `docker volume ls | grep emporia-data` "
-        f"(the project name comes first; use it where this says {volume}). This keeps the relay's identity and key:\n"
-        f"        sudo docker run --rm -v {volume}:/from -v \"$D/data\":/to alpine sh -c 'cp -a /from/. /to/'\n"
-        f"        sudo chown -R {RELAY_UID}:{RELAY_UID} \"$D/data\"",
-        f"In your Hermes compose file, change the `include:` line that lists the old folder's {SNIPPET} to the new "
-        f"one. This prints the line:\n        echo \"include: [ $D/{SNIPPET} ]\"",
-        f"Start it:\n        sudo docker compose up -d --build emporia-relay {door}\n"
-        f"        (without sudo if your user is in the docker group.) {COMPOSE_HOME_NOTE}",
-        f"Check: curl -s https://{domain}/health. It must show the same relay_id (or relay_url) you noted. If it "
-        f"does not, stop it and keep the old volume: nothing was deleted yet.",
-        f"Only when that matches, remove the old volume and the old files:\n"
-        f"        sudo docker volume rm {volume}\n"
-        f"        sudo rm -rf {' '.join(old)}",
-        _settings_step(),
+    door_container = door_container or door
+    old_pin, new_pin = pin
+    last = ('sudo test -f "${S:?}/cloudflared/token" && echo "staging ok" || echo "STOP: staged snippet, .env or '
+            'token missing in the staging folder"' if tunnel else
+            'sudo test -f "${S:?}/Caddyfile" && echo "staging ok" || echo "STOP: staged snippet, .env or '
+            'Caddyfile missing in the staging folder"')
+    pin_line = (f"The staged snippet builds the relay from the current release commit {new_pin[:12]}"
+                + (f" (the old relay was pinned to {old_pin[:12]})" if old_pin and old_pin != new_pin else "")
+                + ". Stage 4 builds that image once on the host, so the host must reach GitHub then. The identity "
+                  "and database come from the old volume, not from the image, so the relay stays the same one."
+                if new_pin else "")
+    stage0 = ("Stage 0: folders and checks. Run it again in any new terminal. Before this, in the Hermes container, "
+              "emporia relay host --move-out --dir <the relay's folder> staged the new snippet there.\n"
+              + _cmds(["# ---- Stage 0: folders ----",
+                       *_vars_lines(host_dir, staging),
+                       'sudo test -s "${S:?}/' + snippet_name + '" && sudo test -f "${S:?}/.env" && ' + last])
+              + f"\n{_PROSE}{SESSION_NOTE}" + (f"\n{_PROSE}{pin_line}" if pin_line else ""))
+    stage1 = ("Stage 1: who the relay is, and how it is wired (the relay is still running). Write down the before: "
+              "line, and project=, dir= and files=; stage 3 needs them.\n"
+              + _cmds(["# ---- Stage 1 ----",
+                       "V=\"$(sudo docker inspect -f '{{range .Mounts}}{{if eq .Destination \"/data\"}}{{.Name}}{{end}}{{end}}' "
+                       f"{relay})\"",
+                       'echo "old volume: ${V:?STOP: ' + relay + ' has no named volume at /data}"',
+                       "sudo docker inspect -f 'project={{index .Config.Labels \"com.docker.compose.project\"}}  "
+                       "dir={{index .Config.Labels \"com.docker.compose.project.working_dir\"}}  "
+                       "files={{index .Config.Labels \"com.docker.compose.project.config_files\"}}' " + relay,
+                       f"ID_CMD='{ID_CMD}'",
+                       f'BEFORE="$(sudo docker exec {relay} python -c "$ID_CMD")"',
+                       'echo "before: ${BEFORE:?STOP: could not read the relay id}"']))
+    keep = [
+        'sudo install -d -o root -g root -m 755 "$D"',
+        f'sudo install -d -o {RELAY_UID} -g {RELAY_UID} -m 700 "$D/secrets" "$D/data"',
+        '[ -z "$(sudo ls -A "$D/data")" ] || { echo "STOP: $D/data is not empty"; exit 1; }',
+        f'sudo sed "s#{DIR_PLACEHOLDER}#$D#g" "$S/{snippet_name}" | sudo tee "$D/{SNIPPET}" >/dev/null',
+        f'sudo chmod 644 "$D/{SNIPPET}"',
+        'sudo grep -qF -- "- $D/data:/data" "$D/' + SNIPPET + '" || { echo "STOP: the snippet did not install"; exit 1; }',
+        "if sudo grep -qF -e '" + DIR_PLACEHOLDER + "' -e '${HOME}' \"$D/" + SNIPPET + "\"; then "
+        "echo \"STOP: placeholder left in the snippet\"; exit 1; fi",
+        f'sudo install -o root -g {RELAY_UID} -m 640 "$S/.env" "$D/.env"',
+        'sudo cp -a "$S/secrets/." "$D/secrets/"',
+        f'sudo chown -R {RELAY_UID}:{RELAY_UID} "$D/secrets"',
+        'sudo chmod 700 "$D/secrets"',
+        'sudo find "$D/secrets" -type f -exec chmod 600 {} +',
     ]
+    if tunnel:
+        keep += [f'sudo install -d -o {CLOUDFLARED_UID} -g {CLOUDFLARED_UID} -m 700 "$D/cloudflared"',
+                 f'sudo install -o {CLOUDFLARED_UID} -g {CLOUDFLARED_UID} -m 400 "$S/cloudflared/token" "$D/cloudflared/token"']
+    else:
+        keep += ['sudo install -o root -g root -m 644 "$S/Caddyfile" "$D/Caddyfile"']
+    keep += [
+        "sudo docker run --rm -v \"$V\":/from:ro -v \"$D\":/to alpine sh -c "
+        "'umask 077; tar czf /to/emporia-data-before-move.tgz -C /from .'",
+        "sudo docker run --rm -v \"$V\":/from:ro -v \"$D/data\":/to alpine sh -c "
+        "'cp -a /from/. /to/ && diff -r /from /to && echo COPY-VERIFIED'",
+        f'sudo chown -R {RELAY_UID}:{RELAY_UID} "$D/data"',
+        'sudo chmod 700 "$D/data"',
+        'sudo test -s "$D/data/emporia.sqlite3" || echo "WARNING: no $D/data/emporia.sqlite3 (fine only if the .env '
+        'names another database path)"',
+        'echo "STAGE 2 DONE: files and database are in $D; the old volume $V is untouched"',
+    ]
+    stop = [f"sudo docker stop {door_container} {relay}",
+            f"[ \"$(sudo docker inspect -f '{{{{.State.Running}}}}' {relay})\" = false ] || "
+            "{ echo \"STOP: the relay is still running\"; exit 1; }"]
+    stage2 = ("Stage 2: stop, back up, copy, verify. It stops at the first failure.\n"
+              + _cmds(["# ---- Stage 2 ----", *_subshell([*stop, *keep], ' "${V:?}"')])
+              + f"\n{_PROSE}Go on only after COPY-VERIFIED and STAGE 2 DONE. If it stopped part-way, the relay is "
+                f"stopped and nothing is lost: sudo docker start {relay} {door_container} brings the old one back. "
+                f"The backup $D/emporia-data-before-move.tgz (root, 600) holds the identity key: keep it.")
+    stage3 = ("Stage 3: point the Hermes compose file at the new snippet, by hand. Edit it (in the dir= folder from "
+              "stage 1) according to project=, dir= and files= from stage 1:\n"
+              + _cmds(["# ---- Stage 3 ----", 'echo "include: [ ${D:?}/' + SNIPPET + ' ]"',
+                       "sudo grep -c '^EMPORIA_ESCROW_NETWORK=' \"${D:?}/.env\" || true"])
+              + f"\n{_PROSE}- It has an include: naming the old snippet: replace that entry with the line printed above.\n"
+                f"{_PROSE}- The relay services were pasted into it: delete the emporia-relay and {door} services, "
+                f"the emporia-data volume and the emporia-edge network from it, then add the include line.\n"
+                f"{_PROSE}- files= listed the old snippet (started with two -f): add the include line, or keep -f "
+                f"and name \"$D/{SNIPPET}\" as the second file in stage 4.\n"
+                f"{_PROSE}- project= is not the Hermes project: first run sudo docker rm {door_container} {relay} and "
+                f"sudo docker network rm PROJECT_emporia-edge (the project name from project=). The volume stays.\n"
+                f"{_PROSE}The grep -c prints a count. It should be 0 (escrow stays off for this release); if it is 1, "
+                f"comment that line out in \"$D/.env\" with sudo nano before stage 4.")
+    stage4 = ("Stage 4: start and compare. Run it from the Hermes compose folder (dir= from stage 1), in the same "
+              "terminal as stage 1 (BEFORE and ID_CMD must still be set).\n"
+              + _cmds(["# ---- Stage 4 ----",
+                       f"sudo HOME=\"$HOME\" docker compose up -d emporia-relay {door}",
+                       f'AFTER="$(sudo docker exec {relay} python -c "$ID_CMD")"',
+                       'echo "before: $BEFORE"; echo "after:  $AFTER"',
+                       '[ -n "$BEFORE" ] && [ "$BEFORE" = "$AFTER" ] && echo "SAME RELAY" || echo "NOT THE SAME '
+                       f'(or unreadable): sudo docker stop {door_container} {relay}, and remove nothing"',
+                       f"sudo docker inspect -f '{{{{range .Mounts}}}}{{{{.Source}}}} -> {{{{.Destination}}}}  {{{{end}}}}' {relay}",
+                       f"curl -s https://{domain}/health"])
+              + f"\n{_PROSE}Expect SAME RELAY, mounts that all start with the install folder, and \"status\":\"ok\" "
+                f"from the public address. Both the relay_id and the public key are compared; a matching "
+                f"relay_url alone proves nothing, so it is not used. To go back before stage 5: undo the compose "
+                f"file edit and run sudo docker compose up -d again; the old volume and the old files are still there.")
+    gone = (['"${S:?}/.env"', '"${S:?}/secrets"', '"${S:?}/cloudflared"'] if tunnel
+            else ['"${S:?}/.env"', '"${S:?}/secrets"', '"${S:?}/Caddyfile"'])
+    gone.append('"${S:?}/' + SNIPPET + '"')
+    if snippet_name != SNIPPET:
+        gone.append('"${S:?}/' + snippet_name + '"')
+    stage5 = ("Stage 5: only after SAME RELAY (a day later is fine). Removes the old volume and the old files.\n"
+              + _cmds(["# ---- Stage 5 ----", 'sudo docker volume rm "${V:?}"', "sudo rm -rf -- " + " ".join(gone)])
+              + f"\n{_PROSE}In a new terminal V is gone, and stage 1 would now find no named volume: set V by hand to "
+                f"the old volume name that stage 1 printed. After the move, change settings only by editing "
+                f"\"$D/.env\" on the host with sudo, then restart the relay.")
+    return [stage0, stage1, stage2, stage3, stage4, stage5]
 
 
 SERVICE = "emporia-relay.service"
