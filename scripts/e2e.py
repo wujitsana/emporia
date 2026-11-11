@@ -298,7 +298,7 @@ class Run:
     def env(self, **extra: str) -> dict[str, str]:
         """This process's environment, without anything that would make a child act as a person's
         own relay, agent or Hermes home, and with the temp HERMES_HOME and HOME (always both)."""
-        drop = ("EMPORIA_", "STRIPE_", "FEDERATED_", "OPERATOR_", "XDG_")
+        drop = ("EMPORIA_", "FEDERATED_", "OPERATOR_", "XDG_")
         env = {k: v for k, v in os.environ.items()
                if not k.startswith(drop) and k not in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV")}
         env.update(HERMES_HOME=str(self.hh), HOME=str(self.home))

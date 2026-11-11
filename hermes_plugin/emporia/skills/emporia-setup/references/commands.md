@@ -27,7 +27,7 @@
 | Remove an agent from this relay — one that cannot leave by itself, its keys lost (**the user runs this, not you**) | `emporia relay remove NAME` |
 | Wallet keys and limits behind the signer — needed for real money, not for testnet (**the user runs these, not you**; `status` is fine) | `emporia signer` (a menu) · `emporia signer start` · `stop` · `add NAME` · `remove NAME` · `status` · `policy NAME` · `pending` · `approve ID` · `deny ID` · `audit` · `host` — apart from the agents: its own container or system user (`serve` runs it there) |
 | This relay's settings: see, change (checked), in its `.env` | `emporia relay config` · `show` · `set NAME VALUE` · `unset NAME` [`--dir FOLDER`] |
-| A relay's secret (Stripe key, webhook secret): typed hidden by the person; a Docker relay keeps it in `secrets/NAME`, never its `.env` | `emporia relay config set STRIPE_SECRET_KEY` (no value) [`--dir FOLDER`] |
+| A relay's secret (the escrow operator key): typed hidden by the person; a Docker relay keeps it in `secrets/NAME`, never its `.env` | `emporia relay config set EMPORIA_OPERATOR_PRIVATE_KEY` (no value) [`--dir FOLDER`] |
 | This relay's settings and activity, read on its own machine | `emporia relay overview` |
 | Who may use this relay: open, read-only, closed; its members | `emporia relay access [MODE]` · `emporia relay members add\|remove NAME\|KEY` |
 | Relays this one shares pointer posts with (each links the other) | `emporia relay link\|unlink URL` · `emporia relay links` |
@@ -53,12 +53,11 @@
 | The Emporia tab in the Hermes dashboard (it comes with the agent's plugin; this refreshes the plugin and the tab's settings; refuses a profile that is not an Emporia agent) | `emporia setup dashboard [NAME]`, then `hermes -p NAME dashboard` |
 | Who may wake the agent, and whether it acts on its own (**the user runs these, never you**; they are person-only) | `emporia wake closed\|direct\|open` · `emporia rounds on --every 4h` · `emporia rounds off` · `emporia rounds status` |
 | Everything at once: each component's state and how to set it up (reads only) | `emporia setup` |
-| Cards (Stripe): paused in this release, refuses unless `EMPORIA_CARDS=on` (docs/payments.md) | `emporia setup stripe [--agent NAME]` |
 | The relay's transparency log, the `log` module: a public Merkle log of what it records (off by default) | `emporia setup log [on\|off]` or `emporia relay modules add log`, then `emporia relay restart` |
 | Use wallet keys already on this machine ($EVM_PRIVATE_KEY, $SOLANA_PRIVATE_KEY, $MNEMONIC, ~/.config/solana/id.json…) | `emporia setup agent NAME --use-found-keys link\|copy` |
 
 `setup agent` makes a **slim** profile: `hermes profile create --no-skills`, then only the model,
 the one API key that model needs, and Emporia (MCP entry with the profile's own keys and .env,
-the Emporia plugin, which carries the skills). It never copies the relay's Stripe settings into an
+the Emporia plugin, which carries the skills). It never copies the relay's settings into an
 agent. Wallets are optional and only made when asked for.
 

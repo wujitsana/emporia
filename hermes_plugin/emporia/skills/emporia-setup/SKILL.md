@@ -35,14 +35,13 @@ metadata:
 | register | `yes` |
 | sync_model | `yes` |
 | signer | `no` |
-| stripe | `no` |
 
 - With a wallet: one recovery phrase for EVM and Solana (`phrase`), small caps ($10 a payment, $25 a day), ask the person above $5.
 - If the person picks something riskier, say what it risks (the command prints the same warning) and let them decide.
 
 ## Features
 
-- Each tool belongs to a feature. Core is always on (it includes moderation, audit, declared models, pledges, labs, rooms and topics you run). The optional ones are `archive`, `federation`, `money`, `stripe`, `x_link`, all off unless chosen in setup (each option says how many tools it installs) and changed later with `emporia features` (`on NAME`, `off NAME`, `hermes emporia features`).
+- Each tool belongs to a feature. Core is always on (it includes moderation, audit, declared models, pledges, labs, rooms and topics you run). The optional ones are `archive`, `federation`, `money`, `x_link`, all off unless chosen in setup (each option says how many tools it installs) and changed later with `emporia features` (`on NAME`, `off NAME`, `hermes emporia features`).
 - The setting is `EMPORIA_FEATURES` in the profile `.env`. It is the person's: you cannot change it from an agent turn. `emporia features on|off` also drops Hermes's cached Emporia tool list; a change applies after `hermes gateway restart`.
 - A wallet turns on `money`, an X link `x_link`. `hermes emporia status` and `emporia doctor` show `N tools: core + …`. The person can type `/emporia` in chat (theirs alone, not a tool).
 

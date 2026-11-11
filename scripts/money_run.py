@@ -316,7 +316,7 @@ def run(alpha: Any, beta: Any, chain: Any, report: Report, *, dry_run: bool, roo
         price = f"{service_cents / 100:.2f}"
         sess = beta.tool("create_session", "emporia:service:v1", config={
             "description": f"money run {stamp}: a testnet service", "requirements": ["reply with any text"],
-            "deadline_hours": 24}, payment_mode="stripe_link", price=price, currency="USD")
+            "deadline_hours": 24}, payment_mode="x402", price=price, currency="USD")
         sid = sess.get("session_id")
         report.step(bool(sess.get("success") and sid), f"beta opened the service session {sid} ({service_cents} cents)"
                     + ("" if sess.get("success") else f": {json.dumps(sess)[:300]}"))

@@ -620,10 +620,7 @@ def _create_profile(name: str) -> str:
 
 def cmd_setup(args: argparse.Namespace) -> int:
     rest = list(args.rest or [])
-    if rest[:1] == ["stripe"] and (os.environ.get("EMPORIA_CARDS") or "").strip().lower() not in ("on", "1", "true", "yes"):
-        print("Cards (Stripe) are paused in this release — see docs/payments.md")
-        return 1
-    if rest[:1] and rest[0] in SETUP_PASSTHROUGH:          # `emporia setup relay|stripe|dashboard|log …`
+    if rest[:1] and rest[0] in SETUP_PASSTHROUGH:          # `emporia setup relay|dashboard|log …`
         return cmd_passthrough(argparse.Namespace(emporia_command="setup", cli_args=rest))
     print("Emporia setup")
     here = profile_name()
@@ -768,8 +765,8 @@ def _tools_line() -> str:
         return "unknown (the runtime is not installed)"
     code = ("import os; from emporia import features as F; "
             "print(F.summary(F.enabled_from_env(), os.environ.get('EMPORIA_RELAY_URL', '')))")
-    # The setting, and the switches that imply a feature when it was never chosen (a wallet, a card, an X link).
-    names = ("EMPORIA_FEATURES", "EMPORIA_RELAY_URL", "EMPORIA_X_LINK", "EMPORIA_KEYS_DIR", "STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID",
+    # The setting, and the switches that imply a feature when it was never chosen (a wallet, an X link).
+    names = ("EMPORIA_FEATURES", "EMPORIA_RELAY_URL", "EMPORIA_X_LINK", "EMPORIA_KEYS_DIR",
              "EMPORIA_X402_EVM_PRIVATE_KEY", "EMPORIA_X402_SOLANA_PRIVATE_KEY", "EMPORIA_X402_PHRASE_SECRET",
              "EMPORIA_X402_EVM_KEY_SOURCE", "EMPORIA_X402_SOLANA_KEY_SOURCE", "EMPORIA_X402_PHRASE_SOURCE")
     try:
@@ -864,10 +861,10 @@ def _profiles_running(rt: Path) -> list[str]:
 # for the person's yes. An agent with a terminal could already run the runtime's CLI
 # (`$EMPORIA_PYTHON -m emporia.cli`, guarded the same way); this adds no reach.
 PASSTHROUGH = ("agent", "archive", "delete", "dms", "features", "guardians", "house", "identity", "lab", "log",
-               "operator", "peek", "relay", "role", "rounds", "sheet", "signer", "skill-lock", "stats", "visits", "wake",
+               "operator", "peek", "relay", "role", "rounds", "sheet", "signer", "stats", "visits", "wake",
                "wallet", "welcome")
 # `emporia setup <these>` passes through too: the plugin's setup is the agent's.
-SETUP_PASSTHROUGH = ("relay", "stripe", "dashboard", "log")
+SETUP_PASSTHROUGH = ("relay", "dashboard", "log")
 
 
 def cmd_passthrough(args: argparse.Namespace) -> int:

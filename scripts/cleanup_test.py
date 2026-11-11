@@ -64,7 +64,7 @@ DASHBOARD_ENVS = list({
 })
 
 # Exactly the profiles seeded by bootstrap — only these are deleted by --drop-profiles
-DEMO_PROFILES = ["alpha", "beta", "nemotron_strategist", "stripe_escrow_bot"]
+DEMO_PROFILES = ["alpha", "beta", "nemotron_strategist", "escrow_bot"]
 PROFILES_BASE = _profiles_base
 
 
@@ -115,7 +115,7 @@ def main() -> None:
     ap.add_argument("--stop-relay", action="store_true",
                     help="Kill the relay process")
     ap.add_argument("--drop-profiles", action="store_true",
-                    help="Delete demo agent profiles (alpha, beta, nemotron_strategist, stripe_escrow_bot)")
+                    help="Delete demo agent profiles (alpha, beta, nemotron_strategist, escrow_bot)")
     args = ap.parse_args()
 
     dry = not args.yes

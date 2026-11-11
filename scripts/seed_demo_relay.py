@@ -66,7 +66,6 @@ import httpx
 
 from emporia.agent_sdk import EmporiaAgent
 from emporia.identity import get_public_key_hex
-from emporia.payments import create_test_spt
 
 RELAY = os.getenv("EMPORIA_RELAY_URL", "http://localhost:8088").rstrip("/")
 GATEWAY = os.getenv("HERMES_DEMO_GATEWAY_URL", "https://hermes-agent.nousresearch.com")
@@ -79,7 +78,7 @@ DEMO_AGENTS = [
     ("alpha", "Alpha"),
     ("beta", "Beta"),
     ("nemotron_strategist", "Nemotron Strategist"),
-    ("stripe_escrow_bot", "Stripe Escrow Demo"),
+    ("escrow_bot", "Escrow Demo"),
 ]
 
 
@@ -208,16 +207,16 @@ async def _ensure_topics(http: httpx.AsyncClient, agents: dict[str, EmporiaAgent
     specs = [
         (
             "Hackathon Build Log",
-            "PTGS + Emporia relay progress for NVIDIA × Stripe × Nous hackathon.",
+            "PTGS + Emporia relay progress for Nous hackathon.",
             "public",
             "hackathon_hermes",
             "hackathon-build-log",
         ),
         (
             "Agent Commerce",
-            "Escrow, MPP/SPT patterns for autonomous agents.",
+            "Escrow and x402 payment patterns for autonomous agents.",
             "public",
-            "stripe_escrow_bot",
+            "escrow_bot",
             "agent-commerce",
         ),
         (
@@ -235,7 +234,7 @@ async def _ensure_topics(http: httpx.AsyncClient, agents: dict[str, EmporiaAgent
             continue
         t = await agents[creator].create_agora_topic(
             name=name, description=desc, visibility=vis, slug=slug,
-            flair_options=["demo", "architecture", "stripe"],
+            flair_options=["demo", "architecture", "payments"],
         )
         out.append(t)
     return out
@@ -305,8 +304,8 @@ async def seed() -> None:
                         RELAY, "nemotron_strategist", _pub("nemotron_strategist"), "nemotron_strategist"
                     ) as nemotron,
                     EmporiaAgent(
-                        RELAY, "stripe_escrow_bot", _pub("stripe_escrow_bot"), "stripe_escrow_bot"
-                    ) as stripe_bot,
+                        RELAY, "escrow_bot", _pub("escrow_bot"), "escrow_bot"
+                    ) as escrow_agent,
                 ):
                     # Every demo sender authenticates as itself (N2-4: the relay now resolves
                     # the writer's identity from the bearer credential, not a body field).
@@ -315,7 +314,7 @@ async def seed() -> None:
                         "alpha": alpha,
                         "beta": beta,
                         "nemotron_strategist": nemotron,
-                        "stripe_escrow_bot": stripe_bot,
+                        "escrow_bot": escrow_agent,
                     }
 
                     # --- Agora ---
@@ -365,11 +364,8 @@ async def seed() -> None:
 
                     # --- Free-mode service contract (always seeded) ---
                     # P37-3: the delivery half of the marketplace -- confirm and
-                    # dispute -- had no demo to appear in. The paid variant below
-                    # needs a real Stripe test key and an MPP gateway, so on a
-                    # plain `seed_demo_relay.py` run the service module produced
-                    # nothing at all and the flow could not be shown. Free mode
-                    # exercises the same session/actions path without payments.
+                    # dispute -- had no demo to appear in. Free mode exercises the
+                    # session/actions path without payments.
                     svc = await hermes.create_session(
                         "emporia:service:v1",
                         config={"description": "Logo redraw — 2 rounds, free-mode demo"},
@@ -379,41 +375,7 @@ async def seed() -> None:
                     await beta.join_session(svc_sid)
                     summary["service_sessions"] = 1
 
-                    # --- Paid Stripe MPP demo session (sandbox only) ---
-                    # P64: optional, and its failure is not the seed's failure.
-                    # `create_test_spt()` calls Stripe's `test_helpers` API for
-                    # real, so it needs a genuine `sk_test_` key with test-helper
-                    # permission — which most people setting Emporia up for the
-                    # first time do not have. A 401 here used to abort the whole
-                    # run and print an httpx traceback under "Seed failed",
-                    # after five agents, two rooms, three Agora
-                    # topics and six sessions had already been created. The
-                    # demo content was fine; only the report said otherwise.
                     summary["paid_sessions"] = 0
-                    if os.getenv("STRIPE_SECRET_KEY", "").startswith("sk_test_"):
-                        try:
-                            paid = await hermes.create_session(
-                                "emporia:service:v1",
-                                config={"description": "Sandbox-paid MPP demo"},
-                                payment_rules={"mode": "mpp", "price": "1.00", "currency": "usd"},
-                                gateway_url=GATEWAY,
-                            )
-                            paid_sid = paid["session_id"]
-                            # P95: the seller (beta) joins free; the buyer
-                            # (hermes, the creator) funds it, as a hold that
-                            # pays beta directly when the delivery is confirmed.
-                            await beta.join_session(paid_sid, gateway_url=GATEWAY)
-                            spt = await create_test_spt(100, "usd")
-                            await hermes.fund_session(paid_sid, mpp_spt=spt["id"])
-                            summary["paid_sessions"] = 1
-                        except Exception as exc:
-                            # Named, not swallowed: the operator should know the
-                            # paid lane was skipped and why, without being told
-                            # the seed failed.
-                            summary["paid_sessions"] = 0
-                            summary["paid_session_skipped"] = (
-                                f"{type(exc).__name__}: {str(exc)[:160]}"
-                            )
 
                     # --- DMs ---
                     dm_threads = 0
@@ -451,9 +413,9 @@ async def seed() -> None:
                     await _dm_conversation(
                         agents,
                         "beta",
-                        "stripe_escrow_bot",
+                        "escrow_bot",
                         [
-                            ("stripe_escrow_bot", "MPP sandbox session is optional when sk_test is set."),
+                            ("escrow_bot", "Paid deals are optional: they need a wallet on a testnet."),
                             ("beta", "Free chess stays the hero path for the video."),
                         ],
                     )

@@ -12622,7 +12622,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	function settlementHealth(s) {
 		if (s.status === "refunded") return "refunded";
 		const t = s.transfer_status ?? "";
-		if (FAILED_TRANSFERS.has(t) || t.startsWith("capture_failed") || t.startsWith("transfer_failed")) return "failed";
+		if (FAILED_TRANSFERS.has(t) || t.startsWith("capture_failed")) return "failed";
 		if (DIRECT_TRANSFERS.has(t) || t === "no_payment") return "settled";
 		return t ? "pending" : "settled";
 	}
@@ -12638,7 +12638,6 @@ var EmporiaHermesPlugin = (function(exports) {
 	function railLabel(rail, transferStatus) {
 		if (!rail) return "—";
 		if (rail === "x402") return transferStatus === "escrow_captured" ? "x402 escrow" : "x402";
-		if (rail === "stripe") return transferStatus === "destination" ? "card (direct)" : "card";
 		return rail;
 	}
 	/** A block-explorer link for a transaction, or null on a network without one. */
@@ -12697,7 +12696,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		return status;
 	}
 	function acceptsLabel(move, h) {
-		const card = !!h?.stripe_enabled;
 		const usdc = !!h?.x402_enabled;
 		const on = (nets) => {
 			const names = nets.filter((n) => !!n).map(networkWithKind);
@@ -12706,13 +12704,10 @@ var EmporiaHermesPlugin = (function(exports) {
 		const ways = [];
 		switch (move) {
 			case "entry":
-				if (card) ways.push("card");
 				if (usdc) ways.push(`USDC${on(h?.x402_networks ?? [])}`);
 				if (h?.tempo_network) ways.push(`Tempo${on([h.tempo_network])}`);
 				break;
-			case "purchase":
-				if (card) ways.push("card");
-				if (h?.x402_escrow_network) ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
+			case "purchase": if (h?.x402_escrow_network) ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
 		}
 		return ways.length ? `accepts ${ways.join(" · ")}` : "no payment rail on this relay";
 	}
@@ -12736,7 +12731,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	/**
 	* The money line under a deal, in two parts: what is paid
-	* ("1.00 USDC (testnet)") and how it is held ("escrow", "card"), or null when
+	* ("1.00 USDC (testnet)") and how it is held ("escrow"), or null when
 	* nobody has paid yet. Escrow is opt-in: a deal takes USDC only on a relay that
 	* runs it, and then it is held there; every other USDC payment goes straight
 	* from agent to agent (x402) and the relay never holds it.
@@ -12744,7 +12739,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	function priceText(amount, currency, opts) {
 		const rails = opts.rails ?? [];
 		const unit = rails.includes("x402") || opts.mode === "x402" ? `USDC${isTestnet(opts.escrowNetwork) ? " (testnet)" : ""}` : (currency ?? "").toUpperCase();
-		const via = rails.length ? rails.map((r) => r === "x402" ? "USDC" : r === "stripe" ? "card" : r === "tempo" ? "Tempo" : r).join(" + ") : null;
+		const via = rails.length ? rails.map((r) => r === "x402" ? "USDC" : r === "tempo" ? "Tempo" : r).join(" + ") : null;
 		return {
 			amount: `${amount.toFixed(2)} ${unit}`.trim(),
 			via
@@ -12752,13 +12747,8 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	var FAILED_TRANSFERS, DIRECT_TRANSFERS, EXPLORERS, NETWORK_NAMES, TESTNETS;
 	var init_paymentFormat = __esmMin((() => {
-		FAILED_TRANSFERS = /* @__PURE__ */ new Set(["capture_failed", "transfer_failed"]);
-		DIRECT_TRANSFERS = /* @__PURE__ */ new Set([
-			"direct",
-			"escrow_captured",
-			"destination",
-			"transferred"
-		]);
+		FAILED_TRANSFERS = /* @__PURE__ */ new Set(["capture_failed"]);
+		DIRECT_TRANSFERS = /* @__PURE__ */ new Set(["direct", "escrow_captured"]);
 		EXPLORERS = {
 			"eip155:8453": "https://basescan.org",
 			"eip155:84532": "https://sepolia.basescan.org"
@@ -12786,18 +12776,13 @@ var EmporiaHermesPlugin = (function(exports) {
 			...h.x402_enabled ? h.x402_networks ?? [] : []
 		].filter((n) => typeof n === "string" && n.length > 0);
 		const unique = [...new Set(nets)];
-		const stripe = h.stripe_enabled ? h.stripe_mode || "" : "";
-		const real = [
-			...h.live_money ?? [],
-			...unique.filter((n) => !isKnownTestnet(n)).map((n) => `USDC on ${networkWithKind(n)}`),
-			...stripe === "live" ? ["a live Stripe key"] : []
-		];
+		const real = [...h.live_money ?? [], ...unique.filter((n) => !isKnownTestnet(n)).map((n) => `USDC on ${networkWithKind(n)}`)];
 		if (real.length) return {
 			kind: "real",
 			label: "real money",
 			title: `This relay moves real money (${[...new Set(real)].join(", ")}). Amounts shown here are real.`
 		};
-		const where = [...unique.map(networkWithKind), ...stripe === "test" ? ["Stripe test mode"] : []];
+		const where = [...unique.map(networkWithKind)];
 		if (!where.length) return null;
 		return {
 			kind: "test",
@@ -12918,7 +12903,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	/**
 	* Whether this relay runs deals — what the Deals tab needs. From `/health`: USDC escrow is on
-	* (`x402_escrow_network`, or the `money` module's `escrow` part). Cards or direct x402 payments alone
+	* (`x402_escrow_network`, or the `money` module's `escrow` part). Direct x402 payments alone
 	* are not deals. Unknown (no `/health` yet) is not on. Off, the tab is not drawn at all.
 	*/
 	function dealsAvailable(h) {
@@ -16708,15 +16693,6 @@ var EmporiaHermesPlugin = (function(exports) {
 				className: "e-meta-grid__row",
 				children: [/* @__PURE__ */ (0, import_jsx_runtime$81.jsx)("dt", { children: k }), /* @__PURE__ */ (0, import_jsx_runtime$81.jsx)("dd", { children: v })]
 			}, k))
-		});
-	}
-	function RailChips({ rails }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$81.jsx)("div", {
-			className: "e-rail-chips",
-			children: rails.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$81.jsx)("span", {
-				className: "e-rail-chip",
-				children: r.replace(/_/g, " ")
-			}, r))
 		});
 	}
 	var import_jsx_runtime$81;
@@ -20864,7 +20840,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			if (tab === "posts") api.agentPosts(agent.agent_id).then((r) => setPosts(r.posts)).catch(() => {});
 		}, [tab, agent.agent_id]);
 		const a = profile ?? agent;
-		const canPayOut = !!a.payment_rails?.includes("stripe_connect");
 		const tabBar = /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)(SegmentTabs, {
 			options: [
 				"profile",
@@ -20921,14 +20896,6 @@ var EmporiaHermesPlugin = (function(exports) {
 					onClick: () => navigate("season", { agentId: a.agent_id }),
 					children: "★ its character sheet and quests, in Season →"
 				}),
-				canPayOut ? /* @__PURE__ */ (0, import_jsx_runtime$68.jsxs)(import_jsx_runtime$68.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$68.jsx)(Text, {
-					className: "e-dim",
-					style: {
-						marginTop: 10,
-						fontSize: "0.68rem"
-					},
-					children: "Payouts"
-				}), /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)(RailChips, { rails: ["stripe_connect"] })] }) : null,
 				VIEWER_ID && VIEWER_ID !== a.agent_id && /* @__PURE__ */ (0, import_jsx_runtime$68.jsxs)("details", {
 					className: "e-fold",
 					children: [/* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("summary", { children: "message this agent (the MCP command)" }), /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)(McpCommandHint, {
@@ -21229,19 +21196,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			children: "Member"
 		});
 	}
-	/** P25-2: has_stripe alone only ever answered "does an account exist" --
-	*  distinguish the live-mode "created but not payable yet" state, and hint
-	*  at the MCP tool that starts onboarding, matching this file's existing
-	*  MCP-hint pattern rather than adding a signing
-	*  write-flow to the dashboard itself. */
-	function stripeAccountStatusLabel(registered, stripeMode) {
-		const status = registered.stripe_account_status ?? (registered.has_stripe ? "active" : "none");
-		if (status === "active") return "connected";
-		if (status === "pending") return "onboarding pending — Stripe confirms automatically";
-		if (stripeMode === "test") return "not connected — test mode provisions an account at registration";
-		if (stripeMode !== "live") return "not connected — this relay has no Stripe key configured";
-		return "not connected — needs Stripe onboarding for live payouts";
-	}
 	function SettlementRow({ s, viewerId, navigate }) {
 		const won = s.winner_id === viewerId;
 		const payout = won ? settlementPayoutMicros(s) : 0;
@@ -21293,7 +21247,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			api.agentSettlements(viewerId).then((d) => setMySettlements(d.settlements.slice(0, 8))).catch(() => {});
 		}, [viewerId]);
 		const [agentsData] = useInterval(() => api.agents(), 3e4);
-		const stripeMode = useRelayHealth()?.stripe_mode ?? "";
+		useRelayHealth();
 		const agents = agentsData?.agents ?? [];
 		const registered = profile ?? agents.find((a) => a.agent_id === viewerId) ?? null;
 		const displayName = registered?.display_name || registered?.agent_id || viewerId || "Spectator";
@@ -21342,11 +21296,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					["Wins", `${registered.win_count} (${registered.session_count > 0 ? Math.round(registered.win_count / registered.session_count * 100) : 0}%)`]
 				] }), /* @__PURE__ */ (0, import_jsx_runtime$67.jsxs)("details", {
 					className: "e-fold",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$67.jsx)("summary", { children: "Payment set-up" }), /* @__PURE__ */ (0, import_jsx_runtime$67.jsx)(MetaGrid, { rows: [
-						...stripeMode ? [["Stripe payouts", stripeAccountStatusLabel(registered, stripeMode)], ["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"]] : [],
-						...registered.payment_methods?.length ? [["Methods", registered.payment_methods.join(", ")]] : [],
-						...registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")]] : []
-					] })]
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$67.jsx)("summary", { children: "Payment set-up" }), /* @__PURE__ */ (0, import_jsx_runtime$67.jsx)(MetaGrid, { rows: [...registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")]] : []] })]
 				})] }) : !isSpectator ? /* @__PURE__ */ (0, import_jsx_runtime$67.jsxs)(Text, {
 					className: "e-faint",
 					style: { marginTop: 10 },
@@ -21452,13 +21402,9 @@ var EmporiaHermesPlugin = (function(exports) {
 						" earned"
 					]
 				}) : void 0,
-				children: mySettlements.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$67.jsxs)(Text, {
+				children: mySettlements.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$67.jsx)(Text, {
 					className: "e-faint",
-					children: [
-						"No settled transactions yet.",
-						" ",
-						!registered?.stripe_profile_ready && "Paid sessions are paid in USDC over x402 or Tempo (a wallet — register_x402_wallet)."
-					]
+					children: "No settled transactions yet. Paid sessions are paid in USDC over x402 or Tempo (a wallet — register_x402_wallet)."
 				}) : /* @__PURE__ */ (0, import_jsx_runtime$67.jsx)("div", {
 					className: "e-compact-table",
 					children: mySettlements.map((s) => /* @__PURE__ */ (0, import_jsx_runtime$67.jsx)(SettlementRow, {
@@ -36201,136 +36147,103 @@ var EmporiaHermesPlugin = (function(exports) {
 		const totalMovedCents = moved.reduce((s, r) => s + r.total_price_cents, 0);
 		const totalFeeMicros = moved.reduce((s, r) => s + settlementFeeMicros(r), 0);
 		const feeLabel = `${((health?.fee_bps ?? 0) / 100).toFixed(1)}%`;
-		const methods = health?.payment_methods?.join(", ") || "none";
+		const rails = health?.payment_rails?.join(", ") || "none";
 		const cap = health?.max_total_spend_cents;
-		const stripeState = health?.stripe_enabled ? health?.stripe_profile_ready ? "ready" : "key only" : health?.cards_paused ? "paused" : "off";
 		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(SlimCard, {
 			title: "Payments",
-			foot: `x402 (USDC) and Tempo; cards are paused in this release. Total spend limit: ${cap && cap > 0 ? `$${(cap / 100).toFixed(2)}` : "unlimited"}`,
-			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
-					className: "e-kpi-row",
+			foot: `x402 (USDC) and Tempo. Total spend limit: ${cap && cap > 0 ? `$${(cap / 100).toFixed(2)}` : "unlimited"}`,
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
+				className: "e-kpi-row",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
+						className: "e-kpi",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
+							className: "e-kpi__val",
+							children: feeLabel
+						}), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
+							className: "e-kpi__lbl",
+							children: "fee"
+						})]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
+						className: "e-kpi",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
+							className: "e-kpi__val",
+							children: rails
+						}), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
+							className: "e-kpi__lbl",
+							children: "rails"
+						})]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
+						className: "e-kpi",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
+							className: "e-kpi__val",
+							children: moved.length
+						}), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
+							className: "e-kpi__lbl",
+							children: "settled"
+						})]
+					}),
+					failedCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
+						className: "e-kpi",
+						title: "Captures that failed: nothing was paid out on these.",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
+							className: "e-kpi__val",
+							style: { color: "var(--theme-warning, #c33)" },
+							children: failedCount
+						}), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
+							className: "e-kpi__lbl",
+							children: "failed"
+						})]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
+						className: "e-kpi",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("span", {
+							className: "e-kpi__val",
+							children: ["$", (totalMovedCents / 100).toFixed(2)]
+						}), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
+							className: "e-kpi__lbl",
+							children: "volume"
+						})]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
+						className: "e-kpi",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
+							className: "e-kpi__val",
+							children: formatMicros(totalFeeMicros)
+						}), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
+							className: "e-kpi__lbl",
+							children: "fees"
+						})]
+					})
+				]
+			}), settlements.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("ul", {
+				className: "e-settlement-list",
+				children: settlements.slice(0, 5).map((s) => /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("li", {
+					className: "e-settlement-list__item",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
-							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
-								className: "e-kpi__val",
-								children: feeLabel
-							}), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
-								className: "e-kpi__lbl",
-								children: "fee"
-							})]
+						/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(SessionLink, {
+							session_id: s.session_id,
+							navigate
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
-							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
-								className: "e-kpi__val",
-								children: health?.mpp_enabled ? "on" : "off"
-							}), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
-								className: "e-kpi__lbl",
-								children: "mpp"
-							})]
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
-							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
-								className: "e-kpi__val",
-								children: methods
-							}), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
-								className: "e-kpi__lbl",
-								children: "methods"
-							})]
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
-							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
-								className: "e-kpi__val",
-								children: stripeState
-							}), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
-								className: "e-kpi__lbl",
-								children: "stripe profile"
-							})]
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
-							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
-								className: "e-kpi__val",
-								children: moved.length
-							}), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
-								className: "e-kpi__lbl",
-								children: "settled"
-							})]
-						}),
-						failedCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
-							className: "e-kpi",
-							title: "Captures that failed: nothing was paid out on these.",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
-								className: "e-kpi__val",
-								style: { color: "var(--theme-warning, #c33)" },
-								children: failedCount
-							}), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
-								className: "e-kpi__lbl",
-								children: "failed"
-							})]
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
-							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("span", {
-								className: "e-kpi__val",
-								children: ["$", (totalMovedCents / 100).toFixed(2)]
-							}), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
-								className: "e-kpi__lbl",
-								children: "volume"
-							})]
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
-							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
-								className: "e-kpi__val",
-								children: formatMicros(totalFeeMicros)
-							}), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
-								className: "e-kpi__lbl",
-								children: "fees"
-							})]
+						/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, { children: s.status === "refunded" ? "refund" : settlementHealth(s) === "failed" ? "not paid" : formatMicros(settlementPayoutMicros(s)) }),
+						/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
+							className: "e-faint",
+							title: settlementHealthTitle(s),
+							style: settlementHealth(s) === "failed" ? { color: "var(--theme-warning, #c33)" } : void 0,
+							children: settlementHealth(s)
 						})
 					]
-				}),
-				health?.stripe_mpp_admin_notice ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-					className: "e-dim",
-					style: {
-						marginTop: 8,
-						fontSize: "0.72rem",
-						color: "var(--e-warn, #c9a227)"
-					},
-					children: health.stripe_mpp_admin_notice
-				}) : null,
-				settlements.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("ul", {
-					className: "e-settlement-list",
-					children: settlements.slice(0, 5).map((s) => /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("li", {
-						className: "e-settlement-list__item",
-						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(SessionLink, {
-								session_id: s.session_id,
-								navigate
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, { children: s.status === "refunded" ? "refund" : settlementHealth(s) === "failed" ? "not paid" : formatMicros(settlementPayoutMicros(s)) }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-								className: "e-faint",
-								title: settlementHealthTitle(s),
-								style: settlementHealth(s) === "failed" ? { color: "var(--theme-warning, #c33)" } : void 0,
-								children: settlementHealth(s)
-							})
-						]
-					}, s.session_id))
-				}) : /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-					className: "e-dim",
-					style: {
-						marginTop: 8,
-						fontSize: "0.72rem"
-					},
-					children: "No settlements recorded yet — appears when deals and paid entries settle."
-				})
-			]
+				}, s.session_id))
+			}) : /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
+				className: "e-dim",
+				style: {
+					marginTop: 8,
+					fontSize: "0.72rem"
+				},
+				children: "No settlements recorded yet — appears when deals and paid entries settle."
+			})]
 		});
 	}
 	var import_jsx_runtime$15;
@@ -36831,14 +36744,14 @@ var EmporiaHermesPlugin = (function(exports) {
 			if (p.agent_id !== agentId || when$2(p.created_at) < since) continue;
 			if (!SPENT_STATES.has(p.status || "confirmed")) continue;
 			const micros = (p.amount_cents || 0) * 1e4;
-			add(spentByRail, p.rail || "stripe", micros);
+			add(spentByRail, p.rail || "x402", micros);
 			add(spentOn, p.payment_type || "other", micros);
 			recent.push({
 				key: `p:${p.payment_id}`,
 				at: p.created_at,
 				direction: "out",
 				micros,
-				rail: p.rail || "stripe",
+				rail: p.rail || "x402",
 				what: PAYMENT_LABELS[p.payment_type] ?? p.payment_type.replace(/_/g, " "),
 				state: p.status || "confirmed"
 			});
@@ -36855,7 +36768,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			if (health === "failed") failed += micros;
 			else if (health === "pending") owed += micros;
 			else {
-				add(earnedByRail, s.rail || "stripe", micros);
+				add(earnedByRail, s.rail || "x402", micros);
 				earnedBySource[source] += micros;
 			}
 			if (source === "rooms_topics") accessSales += 1;
@@ -36865,7 +36778,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				at: s.created_at,
 				direction: "in",
 				micros,
-				rail: s.rail || "stripe",
+				rail: s.rail || "x402",
 				what: KIND_LABELS[s.kind ?? ""] ?? (source === "rooms_topics" ? "entry fee" : "session"),
 				state: health === "pending" ? "owed" : health
 			});
@@ -36912,23 +36825,22 @@ var EmporiaHermesPlugin = (function(exports) {
 			quiet: earned === 0 && spent === 0 && owed === 0 && failed === 0 && sum(heldPaid) === 0 && sum(heldForIt) === 0
 		};
 	}
-	/** "x402 · USDC on Base Sepolia testnet", "card · Stripe test mode": a rail, and where its money is. */
+	/** "x402 · USDC on Base Sepolia testnet", "Tempo on Tempo Moderato testnet": a rail, and where its money is. */
 	function railNetwork(rail, health) {
 		if (rail === "x402") {
 			const nets = [.../* @__PURE__ */ new Set([...health?.x402_networks ?? [], ...health?.x402_escrow_network ? [health.x402_escrow_network] : []])];
 			return `USDC (x402) on ${nets.length ? nets.map(networkWithKind).join(", ") : "a testnet"}`;
 		}
-		if (rail === "stripe") return health?.stripe_mode === "live" ? "card · Stripe live mode" : "card · Stripe test mode";
 		if (rail === "tempo") return `Tempo on ${health?.tempo_network ? networkWithKind(health.tempo_network) : "a testnet"}`;
 		return rail;
 	}
-	/** Whether every rail this relay offers moves test money: testnets, and Stripe in test mode. */
+	/** Whether every rail this relay offers moves test money: testnets only. */
 	function allTestMoney(health) {
 		return [
 			...health?.x402_networks ?? [],
 			health?.x402_escrow_network,
 			health?.tempo_network
-		].filter((n) => !!n).every((n) => isTestnet(n)) && health?.stripe_mode !== "live";
+		].filter((n) => !!n).every((n) => isTestnet(n));
 	}
 	/** A share as "62 %", or "—". */
 	function pct(r) {
@@ -37014,7 +36926,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		if (!r.ok) throw new Error(`${r.status} /_hermes_stats`);
 		return r.json();
 	}
-	/** "x402 $1.50 (USDC on Base Sepolia testnet) · card $0.75 (card · Stripe test mode)". */
+	/** "x402 $1.50 (USDC on Base Sepolia testnet) · tempo $0.75 (Tempo on Tempo Moderato testnet)". */
 	function ByRail({ byRail, health }) {
 		const rows = Object.entries(byRail).filter(([, v]) => v);
 		if (!rows.length) return /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Text, {
@@ -37558,7 +37470,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				"id": "payments",
 				"title": "Payments",
 				"path": "docs/payments.md",
-				"blurb": "USDC agent to agent, cards, who pays whom, and fees"
+				"blurb": "USDC agent to agent, who pays whom, and fees"
 			},
 			{
 				"id": "security",
@@ -38097,7 +38009,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	// src/buildInfo.ts
 	var EMPORIA_VERSION;
 	var init_buildInfo = __esmMin((() => {
-		EMPORIA_VERSION = "1.0.0";
+		EMPORIA_VERSION = "2.0.0";
 	}));
 	// src/hermesPlace.ts
 	/** Hermes's prefix, normalised the way its own dashboard does (leading slash, no trailing one). */

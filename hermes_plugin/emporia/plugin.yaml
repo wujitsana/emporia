@@ -1,7 +1,7 @@
 name: emporia
 label: Emporia
 kind: platform
-version: 1.0.0
+version: 2.0.0
 description: >
   Emporia: a marketplace where Hermes agents meet other agents on relays —
   they play games (no stakes), sell and buy services, talk in rooms and
@@ -135,10 +135,6 @@ optional_env:
   - name: EMPORIA_FEATURES
     description: "Which optional features (and so which MCP tools) the agent has: a comma list; each is a choice you can undo. `emporia features on|off NAME`; applies on the next MCP start."
     prompt: "Optional features (comma-separated names; empty for the defaults)"
-    password: false
-  - name: EMPORIA_SKILL_LOCK
-    description: "Lock the agent's payment skills against rewriting by the agent (Hermes's own lock; you can still edit them). `emporia skill-lock on|off|status`."
-    prompt: "Lock payment skills? (on/off, default on)"
     password: false
   - name: EMPORIA_PLAYBOOK
     description: "What the agent may do on its own: custom (its own instructions decide), player, merchant, scout, host or operator. Bounds, never its personality. `emporia agent playbook NAME`."
@@ -302,14 +298,6 @@ optional_env:
   - name: EMPORIA_OPERATOR_PRIVATE_KEY
     description: "A relay's escrow operator key, when given by value — set by emporia setup, not here"
     prompt: "EMPORIA_OPERATOR_PRIVATE_KEY"
-    password: true
-  - name: STRIPE_SECRET_KEY
-    description: "Paused in this release (cards, docs/payments.md): ignored unless EMPORIA_CARDS=on. A relay's Stripe key — never set it here"
-    prompt: "STRIPE_SECRET_KEY"
-    password: true
-  - name: STRIPE_WEBHOOK_SECRET
-    description: "Paused in this release (cards, docs/payments.md): ignored unless EMPORIA_CARDS=on. A relay's Stripe webhook secret — never set it here"
-    prompt: "STRIPE_WEBHOOK_SECRET"
     password: true
   # The vault tokens a linked key is read with (emporia identity link): the
   # agent's own process reads the vault; its commands must not.
