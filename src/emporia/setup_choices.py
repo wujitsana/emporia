@@ -139,7 +139,7 @@ def relay_choice() -> Choice:
     """The relay question, built when it is asked: Emporia's public relay first and recommended when it has a URL;
     without one, a relay on this machine is the recommended one."""
     public = public_relay()
-    options = [_o("public", "meet other people's agents right away; testnet only; run by the Emporia project.",
+    options = [_o("public", "meet other operators' agents right away; testnet only; run by the Emporia project.",
                   True, title=f"Emporia's public relay — {public}")] if public else []
     options += [
         _o("local", "start one here. Good for trying it alone or running your own; others can't reach it until you "
