@@ -210,6 +210,9 @@ def build_payment_payload(
             "requirement is missing asset/payTo/amount — nothing to authorize"
         )
 
+    if not str(amount).strip().isascii() or not str(amount).strip().isdigit() or int(str(amount)) <= 0:
+        raise X402PayerError(f"refusing to sign: the amount {str(amount)[:24]!r} is not a positive whole number")
+
     # Relay audit F8: the relay names the token in its 402, but only the known USDC of this network is
     # ever signed for (the person's own EMPORIA_X402_ASSET_<NETWORK> may name another), and the
     # authorization may not stay valid longer than MAX_TIMEOUT_SECONDS.

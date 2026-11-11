@@ -119,24 +119,43 @@ def clean(text: str) -> str:
     return text[:DETAIL_MAX]
 
 
+_ADDRESS_RE = re.compile(r"0x[0-9a-fA-F]{40}\b|\b[1-9A-HJ-NP-Za-km-z]{32,44}\b")
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+REFUSAL_MAX = 160
+
+
+def clean_refusal(text: str) -> str:
+    """A refusal's text as it may go to the person: it carries the caller's own words (a kind, an address, a
+    label), so no address and none of the 'how to allow it' advice a caller could plant; control characters
+    out, short. The audit log has the full reason."""
+    text = _CONTROL_RE.sub(" ", str(text))
+    for marker in (" they add it", " add it with", "emporia signer policy"):
+        text = text.split(marker, 1)[0]
+    text = _ADDRESS_RE.sub("an address not on its list (see `emporia signer log`)", text)
+    return clean(text)[:REFUSAL_MAX]
+
+
 def _line(agent_id: str, event: str, detail: str) -> str:
-    return f"Emporia signer · {agent_id} · {event}: {clean(detail)}"
+    return f"Emporia signer · {agent_id} · {event}: {clean(clean_refusal(detail) if event == 'refused' else detail)}"
 
 
-def _allow(agent_id: str) -> str | None:
-    """The text to send, or None when over the hourly cap (one notice per hour)."""
+def _allow(agent_id: str, event: str = "refused") -> str | None:
+    """The text to send, or None when over the hourly cap (one notice per hour). The cap is per agent AND
+    per kind of alert: refusals, which a caller can make for free, cannot use up the room a payout-wallet,
+    key or relay-list alert needs."""
     now = time.time()
+    bucket = f"{agent_id}\x00{event}"
     with _LOCK:
-        recent = [t for t in _SENT.get(agent_id, []) if now - t < 3600]
+        recent = [t for t in _SENT.get(bucket, []) if now - t < 3600]
         if len(recent) < MAX_PER_HOUR:
             recent.append(now)
-            _SENT[agent_id] = recent
+            _SENT[bucket] = recent
             return ""
-        _SENT[agent_id] = recent
-        if now - _CAPPED.get(agent_id, 0) < 3600:
+        _SENT[bucket] = recent
+        if now - _CAPPED.get(bucket, 0) < 3600:
             return None
-        _CAPPED[agent_id] = now
-        return f"Emporia signer · {agent_id} · more refused, see `emporia signer log {agent_id}`"
+        _CAPPED[bucket] = now
+        return f"Emporia signer · {agent_id} · more {event} alerts, see `emporia signer log {agent_id}`"
 
 
 def _deliver(name: str, cfg: dict, text: str) -> tuple[bool, str]:
@@ -174,7 +193,7 @@ def _prepare(agent_id: str, event: str, detail: str) -> tuple[str | None, dict]:
         return None, {}
     text = _line(agent_id, event, detail)
     if event != "test":
-        capped = _allow(agent_id)
+        capped = _allow(agent_id, event)
         if capped is None:
             return None, {}
         if capped:

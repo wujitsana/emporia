@@ -36,8 +36,17 @@ OFFER_TTL_S = 15 * 60
 HEADER = "PAYMENT-TEMPO"
 
 
+#: The most a payer lets one transfer cost in fees (gas limit x max fee per gas, in the fee unit of
+#: 18 decimals): $0.10. The fee comes from an RPC, which is not trusted to name it.
+MAX_FEE_ATTO = 10**17
+
+
 class TempoError(RuntimeError):
     """A Tempo payment could not be offered, made or verified; the message says why."""
+
+
+class TempoNotSent(TempoError):
+    """The payment failed before any transaction was broadcast: nothing can have been collected."""
 
 
 def config() -> dict[str, Any] | None:
@@ -146,14 +155,38 @@ def pay(offer: dict[str, Any], private_key: str, *, rpc_url: str | None = None,
     """The payer's side: send the transferWithMemo the offer asks for, wait for
     it, and return the credential for the retry. The agent wallet applies its
     caps before calling this."""
+    req = offer["request"]
+    chain_id = int(req["methodDetails"]["chainId"])
+    network = str(offer.get("network") or "")
+    if network:       # S-3: the chain is the network's, never the request's own word
+        try:
+            net_chain = int(network.split(":", 1)[1])
+        except (IndexError, ValueError):
+            raise TempoNotSent(f"cannot read a chain id out of network {network!r}") from None
+        if net_chain != chain_id:
+            raise TempoNotSent(f"the offer is for {network} but asks to be signed for chain {chain_id}")
+    if int(req["amount"]) <= 0:
+        raise TempoNotSent("the amount must be more than zero")
+    own_rpc = os.getenv("EMPORIA_TEMPO_RPC_URL", "") if (
+        not network or os.getenv("EMPORIA_TEMPO_NETWORK", "").strip() == network) else ""
+    url = rpc_url or own_rpc or PUBLIC_RPC.get(chain_id, "")
+    if not url:
+        raise TempoNotSent(f"no RPC for Tempo chain {chain_id}: set EMPORIA_TEMPO_RPC_URL")
+    try:
+        acct, tx = _prepare(offer, private_key, url, chain_id)
+        raw = "0x" + bytes(acct.sign_transaction(tx)).hex()
+    except TempoNotSent:
+        raise
+    except Exception as e:      # everything up to here happens before anything is broadcast
+        raise TempoNotSent(f"{type(e).__name__}: {e}"[:300]) from e
+    return _send_and_wait(offer, url, raw, wait_s)
+
+
+def _prepare(offer, private_key, url, chain_id):
     from eth_abi import encode
     from eth_utils import keccak, to_checksum_address
 
     req = offer["request"]
-    chain_id = int(req["methodDetails"]["chainId"])
-    url = rpc_url or os.getenv("EMPORIA_TEMPO_RPC_URL", "") or PUBLIC_RPC.get(chain_id, "")
-    if not url:
-        raise TempoError(f"no RPC for Tempo chain {chain_id}: set EMPORIA_TEMPO_RPC_URL")
     from emporia.operator_signer import as_evm_signer
     acct = as_evm_signer(private_key)      # P293: a key here, or the signer's back end
     token = to_checksum_address(req["currency"])
@@ -168,7 +201,14 @@ def pay(offer: dict[str, Any], private_key: str, *, rpc_url: str | None = None,
     tx = {"type": 2, "chainId": chain_id, "to": token, "value": 0, "data": "0x" + data.hex(),
           "gas": int(gas * 1.3), "maxFeePerGas": base * 2 + tip, "maxPriorityFeePerGas": tip,
           "nonce": int(_rpc(url, "eth_getTransactionCount", [acct.address, "pending"]), 16)}
-    tx_hash = _rpc(url, "eth_sendRawTransaction", ["0x" + bytes(acct.sign_transaction(tx)).hex()])
+    if tx["gas"] * tx["maxFeePerGas"] > MAX_FEE_ATTO:
+        raise TempoNotSent(f"the RPC's fee for this transfer ({tx['gas'] * tx['maxFeePerGas']}) is above the "
+                           f"ceiling this client allows ({MAX_FEE_ATTO}); not sent")
+    return acct, tx
+
+
+def _send_and_wait(offer, url, raw, wait_s):
+    tx_hash = _rpc(url, "eth_sendRawTransaction", [raw])
     deadline = time.time() + wait_s
     while time.time() < deadline:
         receipt = _rpc(url, "eth_getTransactionReceipt", [tx_hash])

@@ -195,7 +195,9 @@ _CONFIG_FILE = re.compile(r"(?:^|[/\s'\"])(?:config\.ya?ml|\.env)\b|\bhermes\b[^
 _MAINNET_SETTING = ("EMPORIA_X402_MAINNET",)
 _LIMIT_SETTINGS = ("EMPORIA_X402_PAY_NETWORKS", "EMPORIA_X402_MAX_PAYMENT_CENTS", "EMPORIA_X402_MAX_DAILY_CENTS",
                    "EMPORIA_PAYMENT_APPROVAL_CENTS", "EMPORIA_SIGN_LIMITS", "EMPORIA_PAYOUT_ADDRESSES",
-                   "EMPORIA_PLAYBOOK", r"EMPORIA_PLAYBOOK_(?!AUTONOMOUS)\w+")
+                   "EMPORIA_PLAYBOOK", r"EMPORIA_PLAYBOOK_(?!AUTONOMOUS)\w+",
+                   # which token contract / escrow contract / Tempo chain and RPC this agent trusts for a payment
+                   r"EMPORIA_X402_ASSET_\w+", r"EMPORIA_ESCROW_\w+", r"EMPORIA_TEMPO_\w+")
 
 
 def _setting_written(names: tuple[str, ...]):

@@ -27,6 +27,7 @@ Source: github.com/base/commerce-payments v1.1.0 (`src/AuthCaptureEscrow.sol`,
 from __future__ import annotations
 
 import secrets
+import time
 from dataclasses import asdict, dataclass
 
 from eth_abi import encode
@@ -243,8 +244,55 @@ def recover_payer(info: PaymentInfo, signature: bytes, *, chain_id: int, escrow:
     return Account.recover_message(encode_typed_data(full_message=msg), signature=signature)
 
 
+def _check_offer_terms(offer: dict, info: PaymentInfo, network: str, contracts: dict | None, *,
+                       now: int | None = None) -> None:
+    """S-4: what the signature is bound to — chain, token, collector, escrow contract, expiries — is the
+    network's and the person's, never the offer's own word. `contracts` is {"escrow": addr, "collector": addr}
+    the person set for this network (EMPORIA_ESCROW_CONTRACT / _COLLECTOR with EMPORIA_ESCROW_NETWORK);
+    with none set, nothing is signed."""
+    import os
+    import re
+
+    from emporia import networks as _networks
+    try:
+        chain_id = int(offer["chain_id"])
+        want_chain = int(network.split(":", 1)[1])
+    except (KeyError, IndexError, TypeError, ValueError):
+        raise EscrowError("the offer names no readable chain id") from None
+    if chain_id != want_chain:
+        raise EscrowError(f"the offer is for {network} but asks to be signed for chain {chain_id}")
+    known = _networks.NETWORKS.get(network)
+    tokens = {known.usdc.lower()} if known and known.usdc else set()
+    own = os.getenv("EMPORIA_X402_ASSET_" + re.sub(r"[:-]", "_", network.upper()), "").strip().lower()
+    if own:
+        tokens.add(own)
+    if str(info.token).lower() not in tokens:
+        raise EscrowError(f"the hold is in token {info.token}, which is not the USDC this client knows for {network}")
+    if contracts is None:
+        contracts = {}
+        if os.getenv("EMPORIA_ESCROW_NETWORK", "").strip() == network:
+            contracts = {"escrow": os.getenv("EMPORIA_ESCROW_CONTRACT", ""),
+                         "collector": os.getenv("EMPORIA_ESCROW_COLLECTOR", "")}
+    for field in ("escrow", "collector"):
+        pinned = str(contracts.get(field) or "").strip().lower()
+        if not pinned or str(offer.get(field) or "").strip().lower() != pinned:
+            raise EscrowError(f"the offer's {field} contract is not one this agent was told to trust for {network} "
+                              f"(EMPORIA_ESCROW_NETWORK, EMPORIA_ESCROW_CONTRACT, EMPORIA_ESCROW_COLLECTOR)")
+    now = int(time.time()) if now is None else now
+    if not (now < info.pre_approval_expiry <= now + PRE_APPROVAL_WINDOW + _SKEW):
+        raise EscrowError("pre_approval_expiry (how long the signature is good for) is outside the short window "
+                          "this client signs")
+    if not (info.pre_approval_expiry <= info.authorization_expiry <= info.refund_expiry):
+        raise EscrowError("expiries are not ordered")
+    if info.authorization_expiry > now + AUTHORIZATION_WINDOW + PRE_APPROVAL_WINDOW + _SKEW:
+        raise EscrowError("the hold would last longer than this client signs for")
+    if info.refund_expiry > info.authorization_expiry + REFUND_WINDOW + _SKEW:
+        raise EscrowError("the refund window is longer than this client signs for")
+
+
 def sign_offer(offer: dict, private_key: str, *, expected_amount: int,
-               allowed_networks: list[str] | None = None, max_fee_bps: int = 1_000) -> str:
+               allowed_networks: list[str] | None = None, max_fee_bps: int = 1_000,
+               contracts: dict | None = None) -> str:
     """The payer's side: complete a relay's escrow offer and sign it, returning
     the PAYMENT-ESCROW header value.
 
@@ -257,9 +305,14 @@ def sign_offer(offer: dict, private_key: str, *, expected_amount: int,
     import base64
     import json
 
-
     if allowed_networks is not None and offer.get("network") not in allowed_networks:
         raise EscrowError(f"network {offer.get('network')!r} is not one this agent pays on")
+    network = str(offer.get("network") or "")
+    from emporia import networks as _networks
+    if not _networks.is_testnet(network):      # S-4: escrow is off for release; a payer signs it on testnets only
+        raise EscrowError(f"escrow holds are signed on test networks only, not {network!r}")
+    if isinstance(expected_amount, bool) or not isinstance(expected_amount, int) or expected_amount <= 0:
+        raise EscrowError("the hold amount must be a whole number above zero")
     from emporia.operator_signer import as_evm_signer
     account = as_evm_signer(private_key)      # P293: a key here, or the signer's back end
     info = PaymentInfo.from_json({**offer["payment_info"], "payer": account.address})
@@ -267,6 +320,7 @@ def sign_offer(offer: dict, private_key: str, *, expected_amount: int,
         raise EscrowError(f"offer is for {info.max_amount}, expected {expected_amount}")
     if info.max_fee_bps > max_fee_bps:
         raise EscrowError(f"fee of {info.max_fee_bps} bps exceeds the {max_fee_bps} bps cap")
+    _check_offer_terms(offer, info, network, contracts)
     msg = receive_with_authorization_message(
         info, chain_id=int(offer["chain_id"]), escrow=offer["escrow"],
         collector=offer["collector"], token_name=offer["token_name"],
