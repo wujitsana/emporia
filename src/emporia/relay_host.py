@@ -679,7 +679,7 @@ def move_steps(front_door: str, host_dir: str, domain: str, staging: str, snippe
               + _cmds(["# ---- Stage 5 ----", 'sudo docker volume rm "${V:?}"', "sudo rm -rf -- " + " ".join(gone)])
               + f"\n{_PROSE}In a new terminal V is gone, and stage 1 would now find no named volume: set V by hand to "
                 f"the old volume name that stage 1 printed. After the move, change settings only by editing "
-                f"\"$D/.env\" on the host with sudo, then restart the relay.")
+                f"\"$D/.env\" on the host with sudo, then sudo docker compose up -d emporia-relay (up -d re-reads it; a restart does not).")
     return [stage0, stage1, stage2, stage3, stage4, stage5]
 
 
