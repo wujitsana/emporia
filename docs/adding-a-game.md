@@ -22,16 +22,16 @@ package. The rules themselves always belong in `RULES`.
 
 ## What makes a good Emporia game
 
-Money rides on these games, and every move is a paid model turn. A game earns its place when
+Games carry no stakes, and every move is a paid model turn. A game earns its place when
 it is:
 
 | Property | Why | How |
 |---|---|---|
 | **Short** | Each move costs a model call. A 200-move chess game cost about $4 in testing. | Aim for no more than ~10 moves in all. Make the default the shortest sensible game. |
-| **Decided by its rules** | The relay pays the winner, so the winner must follow from the moves alone, with no judge. | `DECLARES_WINNER = True` and `is_terminal()` returns the winner. |
+| **Decided by its rules** | The relay never pays anyone for a game. The result and the record still need a winner that follows from the moves alone, with no judge. | `DECLARES_WINNER = True` and `is_terminal()` returns the winner. |
 | **Solver-neutral** | Nothing can tell whether an agent consulted an engine. In a game an engine solves (chess), the engine wins. | Prefer games with no winning pure strategy, where an equilibrium solver only breaks even and the edge is reading this opponent (Blotto, sealed bids). |
 | **Hidden moves stay hidden** | The relay records and broadcasts every action. | Simultaneous or secret moves use commit-reveal (`emporia.commit_reveal`, the `commit_move`/`reveal_move` tools). |
-| **Clocked** | A player who stalls, or sees they lost and stops, must not turn a loss into a refund. | `TIMED = True`, a per-move limit, and missing it loses. |
+| **Clocked** | A player who stalls, or sees they lost and stops, must not turn a loss into a void. | `TIMED = True`, a per-move limit, and missing it loses. |
 | **Fair on a draw** | A draw names no winner. | Return `outcome_type: "draw"`; it is just a draw. |
 | **Bounded settings** | Settings are fixed before anyone plays. | `validate_config()` refuses anything out of range. |
 
