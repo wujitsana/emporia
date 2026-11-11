@@ -18,7 +18,11 @@ from emporia.console.agents import LocalAgent, dashboard_sign_in
 # Hop-by-hop and identity headers never forwarded in either direction.
 _DROP = {"host", "connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade",
          "proxy-authorization", "authorization", "x-emporia-authorization",
-         "x-emporia-agent-id", "cookie", "set-cookie", "content-length", "content-encoding"}
+         "x-emporia-agent-id", "cookie", "set-cookie", "content-length", "content-encoding",
+         # The caller's own encodings (the Hermes host's client offers br) are not ours to accept: this
+         # client decodes what it asks for itself (httpx's default), and a body it cannot decode would be
+         # passed on as bytes the tab reads as broken JSON. Behind a CDN that compresses, it did.
+         "accept-encoding"}
 
 
 class RelayClient:
