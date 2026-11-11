@@ -481,7 +481,7 @@ class EmporiaAgent:
                 keys = await self._bearer_request("get", f"{self.relay_url}/agoras/topics/{_seg(topic)}/encryption-keys")
                 keys.raise_for_status()
                 recipients = topic_recipients(card.json(), keys.json().get("keys", {}), self.agent_id,
-                                              self.profile_id, self.relay_url)
+                                              self.profile_id, self.relay_url, self.relay_url)
                 text = sealed_posts.seal(recipients, topic, self.agent_id, nonce, kind, label, text, tags, quote_of)
                 kind, label, tags, quote_of = SEALED_KIND, "", [], None
         signature = self._sign("post", await self._signing_identity(), origin, nonce, kind, label, text, tags,
@@ -1209,7 +1209,7 @@ class EmporiaAgent:
         return trust_peer_encryption_key(
             agent_id, body.get("encryption_public_key", ""), body.get("signature", ""),
             body.get("public_key_hex", ""), self.relay_url, body.get("stable_id", ""), body.get("key_log"),
-            at=body.get("at", ""),
+            at=body.get("at", ""), home_url=self.relay_url,
         )
 
     async def _thread_recipients(self, thread: dict[str, Any], peer: str) -> dict[str, str]:
@@ -1515,7 +1515,7 @@ class EmporiaAgent:
         )
         resp.raise_for_status()
         room = await self.get_room(room_id)
-        return room_recipients(room, resp.json().get("keys", {}), self.agent_id, self.profile_id, self.relay_url)
+        return room_recipients(room, resp.json().get("keys", {}), self.agent_id, self.profile_id, self.relay_url, self.relay_url)
 
     async def _seal_private_fields(self, session: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
         """P149: a private session's free text, sealed to its players before it
@@ -1529,7 +1529,7 @@ class EmporiaAgent:
         resp = await self._bearer_request("get", f"{self.relay_url}/sessions/{_seg(sid)}/encryption-keys")
         resp.raise_for_status()
         # P274: each player checked against its own signed join, as the MCP tools do
-        recipients = session_recipients(sid, resp.json(), self.agent_id, self.profile_id, self.relay_url)
+        recipients = session_recipients(sid, resp.json(), self.agent_id, self.profile_id, self.relay_url, self.relay_url)
         out = dict(payload)
         for f in session.get("private_text_fields", []):
             v = out.get(f)
@@ -2739,7 +2739,7 @@ class EmporiaAgent:
                 pass          # text a post would refuse (a link): sent as it was, with no model tag
         keys = await self._bearer_request("get", f"{self.relay_url}/sessions/{_seg(sid)}/encryption-keys")
         keys.raise_for_status()
-        recipients = session_recipients(sid, keys.json(), self.agent_id, self.profile_id, self.relay_url)
+        recipients = session_recipients(sid, keys.json(), self.agent_id, self.profile_id, self.relay_url, self.relay_url)
         secret_guard.check(self.agent_id, text)
         return json.dumps(crypto_box.seal(text, recipients, crypto_box.session_aad(sid, "chat")))
 

@@ -1257,12 +1257,12 @@ def topic_members_by_acts(topic: dict[str, Any], key_of: Any) -> set[str]:
 
 
 def topic_recipients(topic: dict[str, Any], bundle: dict[str, Any], me: str, profile_id: str,
-                     relay_url: str) -> dict[str, str]:
+                     relay_url: str, home_url: str = "") -> dict[str, str]:
     """`{member: encryption key}` to seal a post to an encrypted topic, from the relay's key bundle
     (`GET /agoras/topics/{slug}/encryption-keys`) and the topic with its signed acts. Every peer key goes
     through `trust_peer_encryption_key()`, as for a room; and every member must be one the creator's signed
     acts put there, else this refuses, naming them, rather than seal to one the relay added."""
-    recipients = _trusted_bundle(bundle, me, profile_id, relay_url)
+    recipients = _trusted_bundle(bundle, me, profile_id, relay_url, home_url)
     key_of = _bundle_key_of(bundle, me, profile_id, relay_url)
     unproven = sorted(set(recipients) - topic_members_by_acts(topic, key_of))
     if unproven:
@@ -1272,7 +1272,7 @@ def topic_recipients(topic: dict[str, Any], bundle: dict[str, Any], me: str, pro
     return recipients
 
 
-def _trusted_bundle(bundle: dict[str, Any], me: str, profile_id: str, relay_url: str) -> dict[str, str]:
+def _trusted_bundle(bundle: dict[str, Any], me: str, profile_id: str, relay_url: str, home_url: str = "") -> dict[str, str]:
     """`{member: encryption key}` from a relay's key bundle, every peer key
     through `trust_peer_encryption_key()`, as on the DM path."""
     out: dict[str, str] = {}
@@ -1280,7 +1280,7 @@ def _trusted_bundle(bundle: dict[str, Any], me: str, profile_id: str, relay_url:
         out[member] = (get_encryption_public_key_hex(profile_id) if member == me else trust_peer_encryption_key(
             member, entry.get("encryption_public_key", ""), entry.get("signature", ""),
             entry.get("public_key_hex", ""), relay_url, entry.get("stable_id", ""), entry.get("key_log"),
-            at=entry.get("at", "")))
+            at=entry.get("at", ""), home_url=home_url))
     return out
 
 
@@ -1304,7 +1304,7 @@ def _bundle_key_of(bundle: dict[str, Any], me: str, profile_id: str, relay_url: 
 
 
 def room_recipients(room: dict[str, Any], bundle: dict[str, Any], me: str, profile_id: str,
-                    relay_url: str) -> dict[str, str]:
+                    relay_url: str, home_url: str = "") -> dict[str, str]:
     """`{member: encryption key}` to seal a room message to, from the relay's
     key bundle (`GET /rooms/{id}/encryption-keys`) and the room with its signed
     acts (`GET /rooms/{id}`). Both clients call this one function.
@@ -1313,7 +1313,7 @@ def room_recipients(room: dict[str, Any], bundle: dict[str, Any], me: str, profi
     path. P273: and every member must be one the signed acts put in the room
     (`room_members_by_acts`) — else this refuses, naming them, rather than seal
     to a member the relay added on its own."""
-    recipients = _trusted_bundle(bundle, me, profile_id, relay_url)
+    recipients = _trusted_bundle(bundle, me, profile_id, relay_url, home_url)
     key_of = _bundle_key_of(bundle, me, profile_id, relay_url)
     unproven = sorted(set(recipients) - room_members_by_acts(room, key_of))
     if unproven:
@@ -1395,12 +1395,12 @@ def game_terms(session_id: str, served: dict[str, Any], me: str, profile_id: str
 
 
 def session_recipients(session_id: str, served: dict[str, Any], me: str, profile_id: str,
-                       relay_url: str) -> dict[str, str]:
+                       relay_url: str, home_url: str = "") -> dict[str, str]:
     """P274: `{player: encryption key}` to seal a private game's text to. Every
     key trusted as on the DM path, and every player one its own signed join
     seats (`session_players_by_acts`) — else this refuses, naming them."""
     bundle = served.get("keys") or {}
-    recipients = _trusted_bundle(bundle, me, profile_id, relay_url)
+    recipients = _trusted_bundle(bundle, me, profile_id, relay_url, home_url)
     unproven = sorted(set(recipients) - session_players_by_acts(
         session_id, served, _bundle_key_of(bundle, me, profile_id, relay_url)))
     if unproven:
