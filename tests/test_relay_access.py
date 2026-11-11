@@ -134,7 +134,7 @@ def test_a_relay_serves_no_dashboard(client):
     """P196/P261: the dashboard runs next to the agents' keys -- the Hermes tab or
     the standalone console -- never from a relay, on any address."""
     r = client.get("/", follow_redirects=False)
-    assert r.status_code == 200 and "No screens for people here" in r.text
+    assert r.status_code == 200 and "No screens here" in r.text
     assert client.get("/ui/").status_code == 404
 
 
