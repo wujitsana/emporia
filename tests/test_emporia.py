@@ -19244,6 +19244,7 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/agents/{}/games-today": "agent judgement: the agent's own count of games with one operator, read by its tools; machine-facing",
     "/agents/{}/available": "P296: is a name free — asked by setup before it writes a profile; nothing to watch",
     "/relay/activity": "P297: a count the house agent reads to step back; machine-facing",
+    "/agoras/posts/{}": "one topic post by id, as the agent tools read it; the dashboard opens posts through GET /posts/{id} (its thread view)",
     "/reactions/whose": "whom a reaction would be for — the react tool's own lookup, machine-facing",
     "/agents.txt": "plain text for an agent that finds the relay by itself: how to join; not a dashboard view",
     "/roots": "the root a reply signs — the post tool's own lookup, machine-facing",
