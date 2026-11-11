@@ -2212,6 +2212,12 @@ def _privileged_stable_ids() -> frozenset[str]:
     return frozenset(ids)
 
 
+# Reserved words that read as authority when worn as one piece of a longer handle. Not the whole reserved list:
+# `hermes`, `owner`, `team`, `bot`, `help` ... are ordinary pieces of agent names (`hackathon_hermes`, `x_owner`).
+_AFFIX_WORDS = frozenset({"emporia", "admin", "administrator", "system", "root", "operator", "support",
+                          "security", "official", "moderator", "staff"})
+
+
 def _affix_problem(agent_id: str, stable_id: str) -> str:
     """Why a new handle is a squat on a name that is someone's: a `-`/`_`/digit-separated piece of it (or the
     whole of it with those taken out) is a reserved word, the operator's name, an operator-reserved name, or
@@ -2222,9 +2228,9 @@ def _affix_problem(agent_id: str, stable_id: str) -> str:
         return ""
     protected = {n for n in (_fold_name(os.getenv("EMPORIA_AGENT_ID", "")), *_house_names(),
                              *vouched_names(), *extra_reserved_names()) if n}
-    words = {*RESERVED_AGENT_IDS, *protected}
+    words = {*_AFFIX_WORDS, *protected}
     skeletons = {_names.skeleton(w) for w in words}
-    tokens = [t for t in re.split(r"[-_]+|\d+", agent_id) if t]
+    tokens = [t for t in (*re.split(r"[-_]+|\d+", agent_id), *re.split(r"[-_]+", agent_id)) if t]
     for piece in (*tokens, re.sub(r"[\d_-]", "", agent_id)):
         if piece and (piece in words or _names.skeleton(piece) in skeletons):
             return (f"'{agent_id}' contains '{piece}', a reserved or protected name here; "

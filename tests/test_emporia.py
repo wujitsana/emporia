@@ -546,11 +546,11 @@ def test_agent_id_rejects_cyrillic_homoglyph_of_existing_agent(client):
     Cyrillic а isn't in the now-enforced [a-z0-9_-] charset, so it's rejected outright —
     not accepted as a distinct name."""
     r = client.post("/agents/register", json={
-        "agent_id": "support_official", "public_key_hex": _test_pubkey("support_official"),
+        "agent_id": "quiet_harbour", "public_key_hex": _test_pubkey("quiet_harbour"),
     })
     assert r.status_code == 200
 
-    homoglyph = "support_officiаl"  # Cyrillic а (U+0430) in place of the Latin a
+    homoglyph = "quiet_harbouг"  # Cyrillic а (U+0430) in place of the Latin a
     r = client.post("/agents/register", json={
         "agent_id": homoglyph, "public_key_hex": _test_pubkey(homoglyph),
     })
@@ -17612,6 +17612,7 @@ def _p47_occurrences(agent_id: str) -> dict[str, int]:
     return found
 
 
+@pytest.mark.skip(reason="the rename route is off (naming review F2: names are fixed); see tests/test_naming_fixes.py")
 def test_rename_moves_every_reference_and_keeps_the_identity(client):
     """The core of P47b. Asserted as an exhaustive sweep, not a spot check of
     the rooms table: the failure mode is one column being forgotten, so a test
@@ -17653,6 +17654,7 @@ def test_rename_moves_every_reference_and_keeps_the_identity(client):
     assert room.json()["creator_id"] == "p47_renamed"
 
 
+@pytest.mark.skip(reason="the rename route is off (naming review F2: names are fixed); see tests/test_naming_fixes.py")
 def test_rename_rewrites_every_mapped_column(client):
     """The exhaustive half. The API-driven test above reaches 8 of the 33 mapped
     references — the rest need payments, sessions, DMs or federation to exist —
@@ -17729,6 +17731,7 @@ def test_rename_rewrites_every_mapped_column(client):
                 assert "someone_else" in members
 
 
+@pytest.mark.skip(reason="the rename route is off (naming review F2: names are fixed); see tests/test_naming_fixes.py")
 def test_rename_releases_the_old_handle_and_the_claimer_inherits_nothing(client):
     """"Names claimable when available" cuts both ways: a released handle has to
     be genuinely available, and genuinely empty. A claimer that inherited the
@@ -17760,6 +17763,7 @@ def test_rename_releases_the_old_handle_and_the_claimer_inherits_nothing(client)
     }, "the claimer inherited references belonging to the previous holder"
 
 
+@pytest.mark.skip(reason="the rename route is off (naming review F2: names are fixed); see tests/test_naming_fixes.py")
 def test_rename_refuses_a_handle_someone_else_holds(client):
     """First-come stays first-come. Rename is a claim on a free name, not a
     way to take one."""
@@ -17773,6 +17777,7 @@ def test_rename_refuses_a_handle_someone_else_holds(client):
     assert "p47_target_holder" in r.text
 
 
+@pytest.mark.skip(reason="the rename route is off (naming review F2: names are fixed); see tests/test_naming_fixes.py")
 def test_rename_applies_the_same_normalization_registration_does(client):
     """A rename that skipped `_normalize_agent_id()` would be a second door into
     the namespace with different rules — the homoglyph and charset defences N2-7
@@ -17800,6 +17805,7 @@ def test_rename_applies_the_same_normalization_registration_does(client):
     assert r.json()["agent_id"] == "p47_wide"
 
 
+@pytest.mark.skip(reason="the rename route is off (naming review F2: names are fixed); see tests/test_naming_fixes.py")
 def test_rename_refuses_a_reserved_handle(client):
     """A small denylist, because some names are load-bearing elsewhere in the
     system and a first-come namespace has no other way to protect them — the
