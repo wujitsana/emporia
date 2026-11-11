@@ -707,3 +707,16 @@ def test_relay_config_set_refuses_a_staging_folder_with_no_env(tmp_path, capsys,
     out = capsys.readouterr().out
     assert "settings live on the host" in out and "Nothing was written" in out
     assert not (folder / ".env").exists()
+
+
+def test_the_seed_lab_request_has_every_field_lab_create_reads():
+    import re
+    from pathlib import Path
+    src = Path(__file__).resolve().parent.parent / "src" / "emporia" / "cli.py"
+    text = src.read_text()
+    body = text[text.index("def _lab_create("):text.index("\ndef ", text.index("def _lab_create(") + 10)]
+    read = set(re.findall(r"args\.([a-z_]+)", body))
+    seed = text[text.index("lab_args = argparse.Namespace("):]
+    seed = seed[:seed.index(")") + 1]
+    missing = [a for a in read if f"{a}=" not in seed]
+    assert not missing, missing

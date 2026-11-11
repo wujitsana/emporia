@@ -5012,6 +5012,7 @@ def _seed_lab(profile: Path, agent_id: str, name: str, h: dict, args: argparse.N
         print(f"    steps: {how}")
         return False
     lab_args = argparse.Namespace(repo=repo, branch="main", commit=commit, name="Emporia", checker=None,
+                                  subject=None, maintainer=None,
                                   licence="MIT")
 
     def call(method: str, path: str, body: dict | None = None, params: dict | None = None) -> Any:
