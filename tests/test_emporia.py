@@ -18733,7 +18733,7 @@ def test_only_one_module_resolves_the_database_path():
     )
 
 
-def test_every_store_opens_the_same_database_whatever_the_import_order():
+def test_every_store_opens_the_same_database_whatever_the_import_order(tmp_path):
     """The defect itself, reproduced the only way it can be: in a fresh process,
     with `EMPORIA_DB_PATH` unset, importing the stores *before* `relay_server`.
 
@@ -18759,6 +18759,8 @@ def test_every_store_opens_the_same_database_whatever_the_import_order():
         "print(len(set(paths.values())), sorted(set(paths.values())))\n"
     )
     env = {k: v for k, v in os.environ.items() if k != "EMPORIA_DB_PATH"}
+    env["HOME"] = str(tmp_path)          # the default file is under ~/.hermes: a scratch home, made here, not the real one
+    (tmp_path / ".hermes").mkdir()
     out = subprocess.run(
         [sys.executable, "-c", probe], capture_output=True, text=True,
         env=env, cwd=str(Path(__file__).resolve().parent.parent),
@@ -18812,7 +18814,7 @@ def test_no_call_site_relies_on_a_store_default_it_cannot_see():
     )
 
 
-def test_a_store_imported_alone_still_finds_the_relays_database():
+def test_a_store_imported_alone_still_finds_the_relays_database(tmp_path):
     """The other half of P55, and the half the agreement test cannot see.
 
     Moving the profile-dotenv merge into `emporia.config` is what makes a store
@@ -18831,6 +18833,8 @@ def test_a_store_imported_alone_still_finds_the_relays_database():
 
     root = str(Path(__file__).resolve().parent.parent)
     env = {k: v for k, v in os.environ.items() if k != "EMPORIA_DB_PATH"}
+    env["HOME"] = str(tmp_path)          # as above: a scratch home holds the default file
+    (tmp_path / ".hermes").mkdir()
 
     def _resolve(script: str) -> str:
         out = subprocess.run([sys.executable, "-c", script], capture_output=True,

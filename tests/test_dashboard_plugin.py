@@ -114,6 +114,7 @@ m._stop_console()
 
 
 
+@pytest.mark.skipif(not HERMES_PYTHON.exists(), reason="needs a Hermes install at /opt/hermes")
 def test_the_tab_in_a_profile_without_an_agent_says_to_run_setup(tmp_path):
     """P296: no settings in plugin-data → a 503 the tab turns into `hermes emporia setup`."""
     harness = tmp_path / "harness.py"
