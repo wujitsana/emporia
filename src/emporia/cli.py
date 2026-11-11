@@ -878,41 +878,59 @@ def _set_agent_relay(profile: Path, url: str) -> None:
             os.replace(tmp, tab)
 
 
-def _print_move(rh, folder: Path, old: dict, host_dir: str, domain: str, snippet_name: str, written: list) -> None:
-    """The steps that move an existing relay out of the Hermes folder. Nothing secret is read or printed."""
-    if snippet_name == rh.SNIPPET or not (folder / snippet_name).exists():
+def _print_move(rh, folder: Path, old: dict, host_dir: str, domain: str, snippet_name: str, written: list,
+                pin: tuple[str, str] = ("", "")) -> None:
+    """The stages that move an existing relay out of the Hermes folder. Nothing secret is read or printed.
+    `pin`: (repo url, commit) the staged snippet builds from: the current release, not the old relay's."""
+    if not written:
         # --move-out writes no questions' answers, only the new-layout staged snippet
         try:
-            rh.write_into_compose_files(folder, old["front_door"], rh.DIR_PLACEHOLDER, old["url"] or rh.REPO_URL,
-                                        old["sha"], domain, rh.STAGED_SNIPPET, old["keep"])
+            rh.write_into_compose_files(folder, old["front_door"], rh.DIR_PLACEHOLDER,
+                                        pin[0] or old["url"] or rh.REPO_URL, pin[1] or old["sha"], domain,
+                                        rh.STAGED_SNIPPET, old["keep"])
             snippet_name = rh.STAGED_SNIPPET
         except FileExistsError as e:
             print(f"relay host: {e}")
             return
-    print(f"\nMoving this relay out of the Hermes folder ({folder}). Its files there stay until the last step. "
+    keep = old.get("keep") or {}
+    relay = (keep.get("emporia-relay") or {}).get("container_name") or "emporia-relay"
+    door = "emporia-cloudflared" if old["front_door"] == "tunnel" else "emporia-caddy"
+    door_name = (keep.get(door) or {}).get("container_name") or door
+    print(f"\nMoving this relay out of the Hermes folder ({folder}). Its files there stay until stage 5. "
           f"The new snippet is staged as {folder / snippet_name}.")
-    print("Do these on the host, in order:")
-    for i, step in enumerate(rh.move_steps(old["front_door"], host_dir, domain, rh.host_path(folder), snippet_name), 1):
-        print(f"  {i}. {step}")
+    print("Do these on the host, in one bash terminal, as your normal user. Paste ONE stage at a time and read its "
+          "last lines before the next:")
+    for step in rh.move_steps(old["front_door"], host_dir, domain, rh.host_path(folder), snippet_name,
+                              relay, door_name, (old["sha"], pin[1])):
+        print(f"\n  {step}")
     print("\n  Why: the Hermes container can read and edit everything in its data folder. "
           "docs/deploy-relay.md, \"Moving an existing relay out of the Hermes folder\".")
 
 
-def _into_compose_install_hint(folder: Path) -> str:
-    """For a relay hosted beside Hermes (`relay host --into-compose`), this folder only stages its .env:
-    the relay reads the copy in its install folder. Say how to install the change; "" for any other folder."""
+def _is_into_compose_folder(folder: Path) -> bool:
+    """True for a folder holding one of our snippets for a relay hosted beside Hermes."""
     from emporia import relay_host as rh
     for name in (rh.SNIPPET, rh.STAGED_SNIPPET):
         snip = folder / name
-        if snip.is_file() and rh.MARK in snip.read_text() and "emporia-relay:" in snip.read_text():
-            break
-    else:
+        try:
+            if snip.is_file():
+                text = snip.read_text()
+                if rh.MARK in text and "emporia-relay:" in text:
+                    return True
+        except OSError:
+            pass
+    return False
+
+
+def _into_compose_install_hint(folder: Path) -> str:
+    """For a relay hosted beside Hermes (`relay host --into-compose`), this folder only stages its .env
+    until the wizard's install step moves it to the install folder. "" for any other folder."""
+    if not _is_into_compose_folder(folder):
         return ""
-    return ("  This folder only stages the relay's .env. To apply it, on the host, as your normal user:\n"
-            f"    sudo install -o root -g {rh.RELAY_UID} -m 640 \"{rh.host_path(folder)}/.env\" \"$D/.env\" "
-            "&& sudo docker compose restart emporia-relay\n"
-            f"  ($D is the install folder, {rh.INSTALL_DIR} unless you chose another. Or edit \"$D/.env\" there "
-            "directly.)")
+    return ("  This folder's .env is only staged: the wizard's install step copies it into the install folder on the "
+            "host.\n  Once that is done, change settings only by editing \"$D/.env\" on the host with sudo "
+            "($D is the install folder, $HOME/.emporia unless you chose another), then run sudo docker compose "
+            "restart emporia-relay.")
 
 
 @wizard
@@ -976,15 +994,25 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
             print("relay host: --move-out could not read the relay's domain from its snippet; add --domain "
                   "relay.example.com")
             return 1
-        _print_move(rh, folder, old, host_dir_arg, domain, snippet_name, written=[])
+        try:
+            pin = rh.source_pin(REPO)
+        except ValueError as e:
+            print(f"relay host: {e}")
+            return 1
+        _print_move(rh, folder, old, host_dir_arg, domain, snippet_name, written=[], pin=pin)
         return 0
     if into:
         heading("Its front door", "How the internet reaches the relay. Either way the relay publishes no port itself: "
                 "only the front door's container reaches it, over a network Hermes is not on.")
         if old and old["front_door"] and old["sha"]:
-            print(f"  Found a relay with the old layout in {folder}. It keeps its pinned commit, container names and "
-                  "limits; this moves its files out of the Hermes folder.")
-            front_door, repo_url, sha = old["front_door"], old["url"] or rh.REPO_URL, old["sha"]
+            print(f"  Found a relay with the old layout in {folder}. It keeps its container names and limits and is "
+                  "rebuilt from the current release commit; this moves its files out of the Hermes folder.")
+            front_door = old["front_door"]
+            try:
+                repo_url, sha = rh.source_pin(REPO)      # the move builds from the current release, not the old pin
+            except ValueError as e:
+                print(f"relay host: {e}")
+                return 1
         else:
             old = None
             snippet_name = rh.SNIPPET
@@ -1088,7 +1116,7 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
     if into:
         needs_key = escrow and "EMPORIA_OPERATOR_ADDRESS" not in installer().harvest_env(folder)
         if old:
-            _print_move(rh, folder, old, host_dir, domain, snippet_name, written=written)
+            _print_move(rh, folder, old, host_dir, domain, snippet_name, written=written, pin=(repo_url, sha))
             return 0
         print(f"\nThe staged snippet ({folder / snippet_name}). The step that installs it swaps "
               f"{rh.DIR_PLACEHOLDER} for the real folder:\n")
@@ -4548,6 +4576,11 @@ def cmd_relay_config(args: argparse.Namespace) -> int:
     if env_path is None:
         print("relay config: run it from the relay profile's emporia checkout, or give --dir for a hosted relay")
         return 1
+    if not env_path.exists() and _is_into_compose_folder(env_path.parent):
+        print(f"relay config: {env_path.parent} only stages a relay's files: this relay's settings live on the host, "
+              "in its install folder ($HOME/.emporia unless you chose another). Edit \"$D/.env\" there with sudo, "
+              "then run sudo docker compose restart emporia-relay. Nothing was written.")
+        return 1
     current = installer().harvest_env(env_path.parent) if env_path.exists() else {}
     # A relay in Docker reads secrets from files (its folder's secrets/, mounted
     # at /run/secrets); one on this machine's Python, from its .env.
@@ -6241,7 +6274,8 @@ def _agent_child_env(profile: Path, env_over: dict[str, str]) -> dict[str, str]:
         held = {}
     values = {**held, **entry}
     handed = {n: values[n] for n in agent_env.names(values)
-              if values.get(n) and not n.startswith(("PYTHON", "LD_")) and n not in ("PATH", "HOME")}
+              if values.get(n) and not n.startswith(("PYTHON", "LD_")) and n not in ("PATH", "HOME")
+              and n not in agent_env.RELAY_ONLY_NAMES}      # also when an env:NAME value points at one
     literal = {k: v for k, v in entry.items() if k.startswith("EMPORIA_") and k not in agent_env.RELAY_ONLY_NAMES
                and not agent_env.is_retired(k)}
     return {"PATH": os.defpath, "HOME": str(Path.home()), **literal, **handed, **env_over}
@@ -9084,7 +9118,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="host --into-compose: Cloudflare Tunnel (recommended) or Caddy on 80/443")
     r.add_argument("--host-dir", default="",
                    help="host --into-compose: the install folder on the host, outside the Hermes data folder "
-                        "(default: /srv/emporia-relay)")
+                        "(default: $HOME/.emporia; letters, digits and / . _ - only)")
     r.add_argument("--transparency-log", choices=["on", "off"], default="",
                    help="host: keep a transparency log")
     r.add_argument("--modules", default="",

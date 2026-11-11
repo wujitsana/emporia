@@ -159,7 +159,7 @@ def test_the_steps_name_the_commands_the_person_runs():
     assert "Tunnels" in steps and "http://emporia-relay:8088" in steps and "WebSockets" in steps
     assert "operator_signer generate" in steps and "chown -R 10001" in steps
     assert "starts eyJ" in steps and "Ctrl-D" in steps
-    assert "sudo docker compose up -d --build emporia-relay emporia-cloudflared" in steps
+    assert "sudo docker compose up -d --build emporia-relay emporia-cloudflared" in steps and "docker group" not in steps
     assert "sudo HOME=$HOME docker compose up" not in steps and "sudo HOME=\"$HOME\" docker compose up" not in \
         [ln.strip() for ln in steps.splitlines() if ln.strip().startswith("sudo")]
     caddy = steps_of("caddy")
@@ -180,23 +180,27 @@ def test_the_first_step_fixes_the_folders_once_and_names_a_one_terminal_rule():
 def test_the_steps_install_with_owners_and_modes_then_remove_the_staged_copies():
     lines = [ln.strip() for ln in steps_of("tunnel").splitlines()]
     assert 'sudo install -d -o root -g root -m 755 "$D"' in lines
-    assert any(ln.startswith('sed "s#__EMPORIA_DIR__#$D#g" "$S/compose.snippet.yaml" | sudo tee "$D/compose.snippet.yaml"')
-               and ln.endswith('sudo chmod 644 "$D/compose.snippet.yaml"') for ln in lines)
+    assert 'sudo sed "s#__EMPORIA_DIR__#$D#g" "$S/compose.snippet.yaml" | sudo tee "$D/compose.snippet.yaml" >/dev/null' in lines
+    assert 'sudo chmod 644 "$D/compose.snippet.yaml"' in lines
+    assert 'sudo grep -qF -- "- $D/data:/data" "$D/compose.snippet.yaml" || { echo "STOP: the snippet did not install"; exit 1; }' in lines
     assert 'sudo install -o root -g 10001 -m 640 "$S/.env" "$D/.env"' in lines
     assert 'sudo install -d -o 10001 -g 10001 -m 700 "$D/secrets" "$D/data"' in lines
-    assert any("-m 600" in ln and '"$S"/secrets/*' in ln and '"$D/secrets/"' in ln for ln in lines)
-    assert 'sudo rm -rf "$S/.env" "$S/compose.snippet.yaml" "$S/secrets"' in lines
-    assert 'sudo rm -rf "$S/.env" "$S/compose.snippet.yaml" "$S/secrets" "$S/Caddyfile"' in \
+    assert 'sudo cp -a "$S/secrets/." "$D/secrets/"' in lines
+    assert 'sudo find "$D/secrets" -type f -exec chmod 600 {} +' in lines
+    assert not any("secrets/*" in ln for ln in lines)                # a glob a non-root shell cannot expand
+    assert 'sudo rm -rf -- "$S/.env" "$S/compose.snippet.yaml" "$S/secrets"' in lines
+    assert 'sudo rm -rf -- "$S/.env" "$S/compose.snippet.yaml" "$S/secrets" "$S/Caddyfile"' in \
         [ln.strip() for ln in steps_of("caddy").splitlines()]
-    # install comes before removal
+    # install and verify come before removal
     text = steps_of("tunnel")
-    assert text.index('-m 640 "$S/.env"') < text.index("sudo rm -rf")
+    assert text.index('-m 640 "$S/.env"') < text.index('sudo test -s "$D/.env"') < text.index("sudo rm -rf")
 
 
 def test_the_token_goes_straight_to_the_install_folder():
     steps = steps_of("tunnel")
-    assert 'sudo install -d -o 65532 -g 65532 -m 700 "$D/cloudflared"' in steps
-    assert 'sudo install -m 400 -o 65532 -g 65532 /dev/stdin "$D/cloudflared/token"' in steps
+    assert 'sudo install -d -o 65532 -g 65532 -m 700 "${D:?}/cloudflared"' in steps
+    assert 'sudo install -m 400 -o 65532 -g 65532 /dev/stdin "${D:?}/cloudflared/token"' in steps
+    assert "Nothing echoes" not in steps and "paste only the token, press Enter, then Ctrl-D" in steps
     token_lines = [ln for ln in steps.splitlines() if "token" in ln and "sudo" in ln]
     assert token_lines and not any("$S" in ln or ".hermes" in ln for ln in token_lines)
 
@@ -214,14 +218,14 @@ def test_every_path_in_the_printed_commands_starts_at_D_or_S_or_is_absolute():
 
 def test_the_include_step_prints_an_absolute_path_command():
     steps = steps_of("tunnel")
-    assert 'echo "include: [ $D/compose.snippet.yaml ]"' in steps
+    assert 'echo "include: [ ${D:?}/compose.snippet.yaml ]"' in steps
     assert "uncomment" not in steps
 
 
 def test_the_steps_say_how_to_change_settings_later():
     steps = steps_of("tunnel")
-    assert 'sudo nano "$D/.env"' in steps and "sudo docker compose restart emporia-relay" in steps
-    assert "relay config set" in steps and "--dir" in steps
+    assert 'sudo nano "${D:?}/.env"' in steps and "sudo docker compose restart emporia-relay" in steps
+    assert "relay config set" not in steps and "--dir" not in steps and "docker group" not in steps
 
 
 def test_into_compose_writes_only_the_staged_snippet(tmp_path):
@@ -528,8 +532,17 @@ def test_an_old_snippet_is_recognised_and_a_new_one_is_not():
     assert relay_host.old_layout("services: {}") is None
 
 
+NEW_SHA = "1111111111111111111111111111111111111111"
+
+
+@pytest.fixture
+def current_pin(monkeypatch):
+    monkeypatch.setattr(relay_host, "source_pin", lambda repo: (OLD_URL, NEW_SHA))
+
+
 @pytest.mark.parametrize("door", ["tunnel", "caddy"])
-def test_move_out_prints_the_move_steps_and_keeps_the_old_pin_names_and_limits(tmp_path, capsys, monkeypatch, door):
+def test_move_out_prints_the_staged_steps_and_builds_from_the_current_pin(tmp_path, capsys, monkeypatch, door,
+                                                                          current_pin):
     import yaml
     folder = tmp_path / "old"
     make_old_relay(folder, door)
@@ -539,32 +552,125 @@ def test_move_out_prints_the_move_steps_and_keeps_the_old_pin_names_and_limits(t
     assert cli.main(["relay", "host", "--move-out", "--dir", str(folder)]) == 0
     out = capsys.readouterr().out
     assert "SECRET-KEY-VALUE" not in out and "eyJSECRET-TOKEN" not in out
-    for needle in ("Moving this relay out of the Hermes folder", "docker volume ls | grep emporia-data",
-                   "docker run --rm -v <project>_emporia-data:/from", "sudo docker compose stop emporia-relay",
-                   "same relay_id", "docker volume rm <project>_emporia-data", 'D="$HOME/.emporia"',
-                   'echo "include: [ $D/compose.snippet.yaml ]"'):
+    for needle in ("Moving this relay out of the Hermes folder", "Stage 0", "Stage 1", "Stage 2", "Stage 3", "Stage 4",
+                   "Stage 5", "sudo docker inspect -f", "com.docker.compose.project.working_dir", "relay_public_key",
+                   "docker exec my-relay python -c", "sudo docker stop", "my-relay", "diff -r /from /to",
+                   "emporia-data-before-move.tgz", ":/from:ro", "SAME RELAY", 'D="$HOME/.emporia"',
+                   'echo "include: [ ${D:?}/compose.snippet.yaml ]"', "set -euo pipefail"):
         assert needle in out
-    assert "Do these on the host" in out and "Cloudflare: Zero Trust" not in out
+    assert "<project>" not in out and "--build" not in out
+    assert "Cloudflare: Zero Trust" not in out
+    # the pin: the current release, with the old one named for reference
+    assert NEW_SHA[:12] in out and OLD_SHA[:12] in out and "current release commit" in out
     staged = folder / relay_host.STAGED_SNIPPET
     spec = yaml.safe_load(staged.read_text().replace(relay_host.DIR_PLACEHOLDER, INSTALL))
     relay = spec["services"]["emporia-relay"]
-    assert relay["build"] == f"{OLD_URL}#{OLD_SHA}" and relay["container_name"] == "my-relay"
+    assert relay["build"] == f"{OLD_URL}#{NEW_SHA}" and relay["container_name"] == "my-relay"
     assert relay["mem_limit"] == "3g" and f"{INSTALL}/data:/data" in relay["volumes"]
     assert "emporia-data" not in (spec.get("volumes") or {})
     assert (folder / relay_host.SNIPPET).read_text() == old_snippet(door)       # the live include is untouched
     assert (folder / "secrets" / "operator_key").read_text() == "SECRET-KEY-VALUE"
     if door == "tunnel":
-        assert 'sudo cp -a "$S/cloudflared" "$D/"' in out and "sudo chmod 400" in out
+        assert 'sudo install -o 65532 -g 65532 -m 400 "$S/cloudflared/token" "$D/cloudflared/token"' in out
 
 
-def test_the_wizard_on_an_old_relay_prints_move_steps_not_fresh_install_steps(tmp_path, capsys, monkeypatch):
+def move_stages(door="tunnel"):
+    return relay_host.move_steps(door, relay_host.INSTALL_DIR, "relay.example.org", STAGING,
+                                 relay_host.STAGED_SNIPPET, pin=(OLD_SHA, NEW_SHA))
+
+
+def command_lines(step: str) -> list[str]:
+    """What a person pastes: the lines at command indentation (8 spaces)."""
+    return [ln[8:] for ln in step.splitlines() if ln.startswith("        ") and not ln.startswith("         ")]
+
+
+def all_steps():
+    for door in ("tunnel", "caddy"):
+        yield f"fresh-{door}", relay_host.into_compose_steps(door, relay_host.INSTALL_DIR, "relay.example.com", True,
+                                                             ["k"], STAGING)
+        yield f"move-{door}", move_stages(door)
+
+
+def test_every_sudo_or_rm_line_with_D_or_S_is_guarded():
+    import re
+    for name, steps in all_steps():
+        for step in steps:
+            inside, guarded = False, False
+            for ln in command_lines(step):
+                if ln == "(":
+                    inside, guarded = True, False
+                elif ln == ")":
+                    inside = False
+                elif ln.startswith(': "${D:?}" "${S:?}"') and inside:
+                    guarded = True
+                elif ("sudo" in ln or re.search(r"\brm\b", ln)) and re.search(r"\$[DS]\b", ln):
+                    assert inside and guarded, f"{name}: unguarded: {ln}"
+
+
+def test_no_project_placeholder_no_comment_after_an_assignment_no_prose_at_command_indent():
+    import re
+    for name, steps in all_steps():
+        assert "<project>" not in "\n".join(steps), name
+        for step in steps:
+            for ln in command_lines(step):
+                assert not re.match(r"^[A-Za-z_]+=.*\s#\s", ln), f"{name}: comment on an assignment: {ln}"
+                assert "`" not in ln, f"{name}: prose at command indentation: {ln}"
+
+
+def test_every_printed_command_block_passes_bash_n():
+    import shutil
+    import subprocess
+    if not shutil.which("bash"):
+        pytest.skip("no bash")
+    for name, steps in all_steps():
+        for i, step in enumerate(steps):
+            cmds = command_lines(step)
+            if cmds:
+                r = subprocess.run(["bash", "-n"], input="\n".join(cmds) + "\n", text=True, capture_output=True)
+                assert r.returncode == 0, f"{name} step {i}: {r.stderr}"
+
+
+def test_the_move_stages_are_ordered_and_stage_2_backs_up_copies_and_verifies():
+    st = move_stages()
+    assert len(st) == 6 and [s_.split(":")[0] for s_ in st] == [f"Stage {i}" for i in range(6)]
+    s1, s2, s4, s5 = st[1], st[2], st[4], st[5]
+    assert "docker inspect -f '{{range .Mounts}}{{if eq .Destination \"/data\"}}" in s1
+    assert "${V:?STOP" in s1 and "com.docker.compose.project" in s1 and "relay_public_key" in s1
+    assert "127.0.0.1:8088/health" in s1
+    cmds2 = command_lines(s2)
+    assert cmds2[1] == "(" and cmds2[-1] == ")" and "set -euo pipefail" in cmds2
+    assert any(ln.startswith("sudo docker stop") for ln in cmds2)
+    assert any("State.Running" in ln for ln in cmds2)
+    tgz = next(i for i, ln in enumerate(cmds2) if "tar czf /to/emporia-data-before-move.tgz" in ln)
+    cp = next(i for i, ln in enumerate(cmds2) if "diff -r /from /to" in ln)
+    assert tgz < cp and all(":/from:ro" in ln for ln in cmds2 if '-v "$V"' in ln)
+    assert "sudo find" in s2 and "secrets/*" not in s2
+    assert "up -d emporia-relay" in s4 and "--build" not in s4 and '"$BEFORE" = "$AFTER"' in s4
+    assert "SAME RELAY" in s4
+    assert "docker volume rm" in s5 and "${V:?}" in s5 and "SAME RELAY" in s5
+    # nothing destructive before stage 5
+    for early in st[:5]:
+        assert "docker volume rm" not in early and "sudo rm -rf" not in early
+
+
+def test_the_wizard_on_an_old_relay_prints_move_steps_not_fresh_install_steps(tmp_path, capsys, monkeypatch,
+                                                                              current_pin):
     folder = tmp_path / "old"
     make_old_relay(folder)
     assert run_wizard(monkeypatch, folder) == 0
     out = capsys.readouterr().out
     assert "Found a relay with the old layout" in out and "Moving this relay out of the Hermes folder" in out
     assert "Save the token on the host" not in out and "SECRET-KEY-VALUE" not in out and "eyJSECRET" not in out
-    assert f"{OLD_SHA}" in (folder / relay_host.STAGED_SNIPPET).read_text()
+    assert f"{NEW_SHA}" in (folder / relay_host.STAGED_SNIPPET).read_text()
+
+
+def test_host_dir_with_a_character_the_sed_line_cannot_carry_is_refused(tmp_path, capsys, monkeypatch):
+    for bad in ("/srv/a#b", "/srv/a&b", "/srv/a b", "/srv/a;b"):
+        assert "character outside" in relay_host.install_dir_problem(bad)
+    assert relay_host.install_dir_problem("/srv/emporia-relay_1.x") == ""
+    rc = run_wizard(monkeypatch, tmp_path / "er", "--front-door", "tunnel", "--host-dir", "/srv/a#b")
+    assert rc == 1 and "character outside" in capsys.readouterr().out
+    assert not (tmp_path / "er").exists()
 
 
 def test_move_out_refuses_a_folder_without_an_old_relay(tmp_path, capsys, monkeypatch):
@@ -575,7 +681,8 @@ def test_move_out_refuses_a_folder_without_an_old_relay(tmp_path, capsys, monkey
     assert "no relay with the old layout" in capsys.readouterr().out
 
 
-def test_relay_config_set_prints_the_install_line_for_a_staged_folder(tmp_path, capsys, monkeypatch):
+def test_relay_config_set_on_a_staged_folder_points_at_the_host_env_and_has_no_install_line(tmp_path, capsys,
+                                                                                               monkeypatch):
     from emporia import cli
     monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
     monkeypatch.setattr(cli, "_TTY", False)
@@ -585,5 +692,18 @@ def test_relay_config_set_prints_the_install_line_for_a_staged_folder(tmp_path, 
     (folder / ".env").write_text("EMPORIA_RELAY_ACCESS=open\n")
     assert cli.main(["relay", "config", "set", "EMPORIA_LABS", "1", "--dir", str(folder)]) == 0
     out = capsys.readouterr().out
-    assert 'sudo install -o root -g 10001 -m 640' in out and '"$D/.env"' in out
-    assert "sudo docker compose restart emporia-relay" in out
+    assert "sudo install" not in out and "config set" not in out
+    assert '"$D/.env"' in out and "sudo docker compose restart emporia-relay" in out
+
+
+def test_relay_config_set_refuses_a_staging_folder_with_no_env(tmp_path, capsys, monkeypatch):
+    from emporia import cli
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setattr(cli, "_TTY", False)
+    folder = tmp_path / "er"
+    relay_host.write_into_compose_files(folder, "tunnel", relay_host.DIR_PLACEHOLDER, relay_host.REPO_URL, SHA,
+                                        "relay.example.org")
+    assert cli.main(["relay", "config", "set", "EMPORIA_LABS", "1", "--dir", str(folder)]) == 1
+    out = capsys.readouterr().out
+    assert "settings live on the host" in out and "Nothing was written" in out
+    assert not (folder / ".env").exists()

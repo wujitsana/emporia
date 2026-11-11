@@ -275,6 +275,7 @@ def test_old_name_commitment_file_is_found_by_the_sdk(tmp_path, monkeypatch):
     from emporia import identity
     from emporia.agent_sdk import EmporiaAgent
     monkeypatch.setattr(identity, "KEY_DIR", tmp_path)
+    monkeypatch.setenv("EMPORIA_RELAY_URL", "https://one.example")      # this is the home relay
     d = tmp_path / "commitments"
     d.mkdir()
     (d / "bob.sess_1.json").write_text('{"1": {"move": "rock"}}')

@@ -377,14 +377,16 @@ compose file with its absolute path (the step prints the line with `echo`); do n
 networks over. Or pass it as a second `-f` (one project either way). The relay image
 builds from `https://github.com/wujitsana/emporia.git#<40-char commit>`, the commit of the runtime pin or this
 checkout: the host must reach GitHub, and that commit must be pushed there. Then:
-`sudo docker compose up -d --build emporia-relay emporia-cloudflared` (or `emporia-caddy`; no `sudo` if your user is in
-the `docker` group). The containers are named `emporia-relay` and `emporia-cloudflared`. The snippet needs no `HOME`.
+`sudo docker compose up -d --build emporia-relay emporia-cloudflared` (or `emporia-caddy`; keep the `sudo`: the relay's `.env` is
+readable by root and the relay only). The containers are named `emporia-relay` and `emporia-cloudflared`. The snippet needs no `HOME`.
 If your own Hermes compose file uses `${HOME}` in its paths, run `sudo HOME="$HOME" docker compose ...` or put
 absolute paths in that file.
 
-**Changing a setting later.** Edit `~/.emporia/.env` on the host (`sudo nano ~/.emporia/.env`), then
-`sudo docker compose restart emporia-relay`. Or run `emporia relay config set NAME VALUE --dir <the staging folder>`
-in Hermes: it prints the `sudo install` line for `.env` to run on the host, then the restart.
+**Changing a setting later.** Only this way: edit `"$D/.env"` on the host (`$D` is the install folder, `~/.emporia`
+unless you chose another) with `sudo nano "$D/.env"`, then `sudo docker compose restart emporia-relay` from the
+folder of your Hermes compose file. Do not use `emporia relay config set --dir` for this relay: the wizard's staged
+copies are gone after the install step, and `config set --dir` refuses a staging folder that has no `.env` (it would
+create a one-line `.env`, and installing that over the real one drops the relay's settings, so a closed relay opens).
 
 **Front door, pick one** (asked as "Front door"):
 
@@ -396,7 +398,7 @@ in Hermes: it prints the `sudo install` line for `.env` to run on the host, then
 *Cloudflare side (tunnel).* Zero Trust > Networks > Tunnels: create a tunnel, or open an existing one (Configure shows
 the token again). Copy only the token, the long string that starts `eyJ`, not the whole command. Store it
 with the `sudo install -m 400 -o 65532 … "$D/cloudflared/token"` command the setup prints: paste only the token, press
-Enter, then Ctrl-D. Nothing echoes. It is a file, never an environment variable, and a secret: never share it.
+Enter, then Ctrl-D. It is a file, never an environment variable, and a secret: never share it.
 Public hostname: `relay.example.com`, service `http://emporia-relay:8088`; the DNS record is proxied.
 Network: WebSockets on. Security > WAF > Rate limiting rules (the free plan has one), for example:
 `(http.host eq "relay.example.com" and http.request.uri.path in {"/agents/register" "/agents/challenge"
@@ -465,35 +467,33 @@ Server: `EMPORIA_MAX_CONNECTIONS` 512 (more get 503; keep it above the WebSocket
 tunnel token and the snippet inside the Hermes data folder, and their database in the `emporia-data` Docker volume.
 The Hermes container can read and edit all of that, so move it. In the Hermes container run
 `emporia relay host --move-out --dir <the relay's folder>` (or re-run `emporia relay host --into-compose`; it spots the
-old layout): it keeps the pinned commit, container names and limits, stages a new snippet and prints the steps below
-with your values. Nothing secret is printed. By hand, on the host, as your normal user (not inside `sudo -i`):
+old layout). It keeps the container names and limits, stages a new snippet built from the **current release commit**
+(the old relay's pin is printed for reference; the identity and database come from the old volume, not from the image),
+and prints six stages with your values. Nothing secret is printed. On the host, as your normal user (not inside
+`sudo -i`), in one bash terminal, paste one stage at a time and read its last lines before the next:
 
-```bash
-D="$HOME/.emporia"
-S="$HOME/.hermes/profiles/NAME/emporia-relay"      # the old folder
-curl -s https://relay.example.com/health            # note the relay_id; it must not change
-sudo docker compose stop emporia-relay emporia-cloudflared    # or emporia-caddy
-sudo install -d -o root -g root -m 755 "$D"
-sudo install -o root -g 10001 -m 640 "$S/.env" "$D/.env"
-sudo install -d -o 10001 -g 10001 -m 700 "$D/secrets" "$D/data"
-sudo cp -a "$S/secrets/." "$D/secrets/" && sudo chown -R 10001:10001 "$D/secrets" && sudo chmod 600 "$D"/secrets/*
-sudo cp -a "$S/cloudflared" "$D/" && sudo chown -R 65532:65532 "$D/cloudflared"    # tunnel; Caddy: copy Caddyfile, root 644
-sudo cp "$S/compose.snippet.yaml" "$D/" && sudo chown root:root "$D/compose.snippet.yaml" && sudo chmod 644 "$D/compose.snippet.yaml"
-# the old snippet spells the folder as ${HOME}/.hermes/...: swap it, and the named volume, for absolute paths
-sudo sed -i -e 's#${HOME}/.hermes/profiles/NAME/emporia-relay#'"$D"'#g' -e 's#- emporia-data:/data#- '"$D"'/data:/data#' "$D/compose.snippet.yaml"
-docker volume ls | grep emporia-data                       # the volume's name: <project>_emporia-data
-sudo docker run --rm -v <project>_emporia-data:/from -v "$D/data":/to alpine sh -c 'cp -a /from/. /to/'
-sudo chown -R 10001:10001 "$D/data"
-```
+0. **Folders and checks.** Sets `D` (the install folder) and `S` (the staged folder), refuses characters outside
+   `A-Za-z0-9/._-`, and checks the staged snippet, `.env` and token exist.
+1. **Who the relay is.** Reads the old volume's real name with `docker inspect` (never a placeholder), prints the
+   compose project, folder and files from the container's labels, and reads `relay_id` and `relay_public_key` from
+   inside the container (`127.0.0.1`), as `BEFORE`.
+2. **Stop, back up, copy, verify.** One `( set -euo pipefail ... )` subshell: stops the containers and checks they are
+   stopped, installs the snippet (`sudo sed`, then checks it), `.env`, secrets and token, writes a tgz backup of the
+   volume to `$D/emporia-data-before-move.tgz` (root, 600; it holds the identity key), copies the database with the
+   volume mounted `:ro` and checks it with `diff -r` (`COPY-VERIFIED`). It stops at the first failure; the relay is then
+   only stopped, and `sudo docker start emporia-relay emporia-cloudflared` brings it back.
+3. **Point Hermes at the new snippet, by hand.** Replace the `include:` entry, or remove the pasted services, or swap
+   the second `-f`, according to the labels from stage 1; another project name needs the old containers and network
+   removed first (the volume stays).
+4. **Start and compare.** `sudo docker compose up -d` (no `--build`: compose builds the new image once if it is not
+   there), then reads `relay_id` and `relay_public_key` again. Only `SAME RELAY` counts; a matching `relay_url` proves
+   nothing, because it comes from the copied `.env`.
+5. **Clean up, only after SAME RELAY.** Removes the old volume and the old files, every path guarded with `${S:?}`.
+   Keep the tgz backup until the relay has run for a while.
 
-Then delete the snippet's top-level `emporia-data:` volume (the last `volumes:` block, and its header if nothing else is
-in it) and check no `${HOME}` is left in `"$D/compose.snippet.yaml"` (`grep HOME "$D/compose.snippet.yaml"` prints
-nothing). Point the `include:` line in your Hermes compose file at `"$D/compose.snippet.yaml"` (`echo "include: [ $D/compose.snippet.yaml ]"`),
-then `sudo docker compose up -d emporia-relay emporia-cloudflared`. Check `curl -s https://relay.example.com/health`
-shows the same relay_id. Keep the old volume until it does; only then `sudo docker volume rm <project>_emporia-data`
-and `sudo rm -rf "$S/.env" "$S/secrets" "$S/cloudflared" "$S/compose.snippet.yaml"`. Why: the Hermes container can read
-and edit anything in its data folder, so a relay's settings, secrets and snippet must not sit there. Running
-`--move-out` is simpler: its snippet already has the new paths.
+After the move, change settings only by editing `"$D/.env"` on the host (see "Changing a setting later"). Why: the
+Hermes container can read and edit anything in its data folder, so a relay's settings, secrets and snippet must not
+sit there.
 
 **Moving an existing relay's data in.** The relay's identity key must come with its database, or it is a different
 relay to everyone who pinned the old one. Run it once, and never keep the old relay running after:
