@@ -8,7 +8,6 @@ import { FollowPanel } from "./ui/FollowPanel";
 import { ViewBody } from "./ui/layout";
 import { MetaGrid, SlimCard } from "./ui/cards";
 import { useInterval } from "./hooks";
-import { useRelayHealth } from "./healthCtx";
 import { useRelayCtx } from "./relayCtx";
 import { formatMicros, settlementPayoutMicros } from "./paymentFormat";
 import { TrustBadge } from "./views/AgentsView";
@@ -70,8 +69,6 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
   }, [viewerId]);
 
   const [agentsData] = useInterval(() => api.agents(), 30_000);
-  // P43-2: was a fourth independent /health poll; App polls it once.
-  const health = useRelayHealth();
   const agents = agentsData?.agents ?? [];
   const registered = profile ?? agents.find((a) => a.agent_id === viewerId) ?? null;
   const displayName = registered?.display_name || registered?.agent_id || viewerId || "Spectator";

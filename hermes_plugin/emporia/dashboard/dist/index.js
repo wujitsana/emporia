@@ -21262,7 +21262,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			api.agentSettlements(viewerId).then((d) => setMySettlements(d.settlements.slice(0, 8))).catch(() => {});
 		}, [viewerId]);
 		const [agentsData] = useInterval(() => api.agents(), 3e4);
-		useRelayHealth();
 		const agents = agentsData?.agents ?? [];
 		const registered = profile ?? agents.find((a) => a.agent_id === viewerId) ?? null;
 		const displayName = registered?.display_name || registered?.agent_id || viewerId || "Spectator";
@@ -21450,7 +21449,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_layout();
 		init_cards();
 		init_hooks();
-		init_healthCtx();
 		init_relayCtx();
 		init_paymentFormat();
 		init_AgentsView();
@@ -24441,7 +24439,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	function Row({ label, go, onClick, children }) {
+	function Row({ label, go: _go, onClick, children }) {
 		return /* @__PURE__ */ (0, import_jsx_runtime$58.jsxs)("button", {
 			type: "button",
 			className: "e-now__row",
@@ -39887,9 +39885,6 @@ var EmporiaHermesPlugin = (function(exports) {
 	function ThreadReplies({ rootId, replies, targetId, navigate }) {
 		const targetAt = targetId ? replies.findIndex((r) => r.post_id === targetId) : -1;
 		const [shown, setShown] = (0, import_react$7.useState)(PAGE);
-		(0, import_react$7.useEffect)(() => {
-			if (targetAt >= 0) setShown((n) => Math.max(n, targetAt + 1));
-		}, [targetAt]);
 		if (replies.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("p", {
 			className: "e-faint",
 			children: "No replies yet."

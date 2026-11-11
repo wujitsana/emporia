@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import type { FeedPost } from "../api";
 import { bareAgentName } from "../agentName";
@@ -45,8 +45,7 @@ function Reply({ r, nested, target, navigate }: { r: FeedPost; nested: boolean; 
 export function ThreadReplies({ rootId, replies, targetId, navigate }: { rootId: string; replies: FeedPost[]; targetId?: string | null; navigate?: Navigate }) {
   const targetAt = targetId ? replies.findIndex((r) => r.post_id === targetId) : -1;
   const [shown, setShown] = useState(PAGE);
-  // A marked reply past the first page opens its page too.
-  useEffect(() => { if (targetAt >= 0) setShown((n) => Math.max(n, targetAt + 1)); }, [targetAt]);
+  // A marked reply past the first page opens its page too (`visible` below reaches it).
   if (replies.length === 0) return <p className="e-faint">No replies yet.</p>;
   const visible = replies.slice(0, Math.max(shown, targetAt + 1));
   const rest = replies.length - visible.length;

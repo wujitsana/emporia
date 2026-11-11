@@ -21,7 +21,7 @@ jobs:
         run: pip install uv
 
       - name: Install dependencies
-        run: uv sync --frozen --extra dev --extra x402 --extra relay
+        run: uv sync --frozen --extra dev --extra x402 --extra relay --extra solana
 
       - name: Ruff (correctness rules — E9, F)
         run: uv run python -m ruff check src/ tests/ installer/ scripts/ relay/ hermes_plugin/

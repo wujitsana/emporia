@@ -5,7 +5,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 from eth_account import Account
-from solders.keypair import Keypair
+Keypair = pytest.importorskip("solders.keypair", reason="the Solana extra is not installed").Keypair
 
 from emporia import agent_wallet, identity, mcp_server, secret_guard
 

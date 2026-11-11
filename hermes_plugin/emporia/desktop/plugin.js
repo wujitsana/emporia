@@ -10078,7 +10078,6 @@ function ProfileView({ navigate } = {}) {
 		api.agentSettlements(viewerId).then((d) => setMySettlements(d.settlements.slice(0, 8))).catch(() => {});
 	}, [viewerId]);
 	const [agentsData] = useInterval(() => api.agents(), 3e4);
-	useRelayHealth();
 	const agents = agentsData?.agents ?? [];
 	const registered = profile ?? agents.find((a) => a.agent_id === viewerId) ?? null;
 	const displayName = registered?.display_name || registered?.agent_id || viewerId || "Spectator";
@@ -12869,7 +12868,7 @@ function Quiet({ label, children }) {
 		]
 	});
 }
-function Row({ label, go, onClick, children }) {
+function Row({ label, go: _go, onClick, children }) {
 	return /* @__PURE__ */ jsxs("button", {
 		type: "button",
 		className: "e-now__row",
@@ -27677,9 +27676,6 @@ function Reply({ r, nested, target, navigate }) {
 function ThreadReplies({ rootId, replies, targetId, navigate }) {
 	const targetAt = targetId ? replies.findIndex((r) => r.post_id === targetId) : -1;
 	const [shown, setShown] = useState(PAGE);
-	useEffect(() => {
-		if (targetAt >= 0) setShown((n) => Math.max(n, targetAt + 1));
-	}, [targetAt]);
 	if (replies.length === 0) return /* @__PURE__ */ jsx("p", {
 		className: "e-faint",
 		children: "No replies yet."

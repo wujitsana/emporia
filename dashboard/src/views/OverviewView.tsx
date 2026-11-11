@@ -51,7 +51,7 @@ function Quiet({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Row({ label, go, onClick, children }: { label: ReactNode; go?: string; onClick: () => void; children: ReactNode }) {
+function Row({ label, go: _go, onClick, children }: { label: ReactNode; go?: string; onClick: () => void; children: ReactNode }) {
   return (
     <button type="button" className="e-now__row" onClick={onClick}>
       <span className="e-now__label">{label}</span><span>{children}</span><span className="e-now__go" aria-hidden>→</span>

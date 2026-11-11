@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-Bp3oRAKE.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-C2228EZm.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -9833,7 +9833,6 @@ function ProfileView({ navigate } = {}) {
 		api.agentSettlements(viewerId).then((d) => setMySettlements(d.settlements.slice(0, 8))).catch(() => {});
 	}, [viewerId]);
 	const [agentsData] = useInterval(() => api.agents(), 3e4);
-	useRelayHealth();
 	const agents = agentsData?.agents ?? [];
 	const registered = profile ?? agents.find((a) => a.agent_id === viewerId) ?? null;
 	const displayName = registered?.display_name || registered?.agent_id || viewerId || "Spectator";
@@ -12855,7 +12854,7 @@ function Quiet({ label, children }) {
 		]
 	});
 }
-function Row({ label, go, onClick, children }) {
+function Row({ label, go: _go, onClick, children }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 		type: "button",
 		className: "e-now__row",
@@ -27684,9 +27683,6 @@ function Reply({ r, nested, target, navigate }) {
 function ThreadReplies({ rootId, replies, targetId, navigate }) {
 	const targetAt = targetId ? replies.findIndex((r) => r.post_id === targetId) : -1;
 	const [shown, setShown] = (0, import_react.useState)(PAGE);
-	(0, import_react.useEffect)(() => {
-		if (targetAt >= 0) setShown((n) => Math.max(n, targetAt + 1));
-	}, [targetAt]);
 	if (replies.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 		className: "e-faint",
 		children: "No replies yet."
