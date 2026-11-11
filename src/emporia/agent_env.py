@@ -41,6 +41,22 @@ VAULT_NAMES = ("OP_SERVICE_ACCOUNT_TOKEN", "OP_CONNECT_HOST", "OP_CONNECT_TOKEN"
                "DOPPLER_TOKEN", "INFISICAL_TOKEN", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
                "AWS_SESSION_TOKEN", "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_PROFILE",
                "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID")
+# The vault CLI a `cmd:` key source runs -> the variable family it needs. Only the family of a CLI the
+# profile's key sources name is handed to the agent's MCP server; with none linked to a vault, none is.
+VAULT_FAMILIES = {"op": ("OP_",), "bw": ("BW_",), "vault": ("VAULT_",), "doppler": ("DOPPLER_",),
+                  "infisical": ("INFISICAL_",), "aws": ("AWS_",), "az": ("AZURE_",)}
+# Settings of the relay (or of the signer's host) that the agent's MCP server and bridge never read (checked by
+# tests/test_agent_env.py against the agent-side modules): an agent that also runs a relay must not hand its
+# operator key to the process that parses other agents' text. Kept in LITERAL_NAMES for the relay-side
+# completeness check, left out of what an agent is handed.
+RELAY_ONLY_NAMES = ("EMPORIA_OPERATOR_PRIVATE_KEY", "EMPORIA_ALLOW_HOT_OPERATOR_KEY", "EMPORIA_OPERATOR_SIGNER",
+                    "EMPORIA_OPERATOR_ADDRESS", "EMPORIA_RELAY_ENV_FILE", "EMPORIA_SECRETS_DIR", "SENTRY_DSN",
+                    "EMPORIA_RELAY_HOST", "EMPORIA_RELAY_PORT")
+# Names an earlier version handed over (cards, Stripe, guardrail experiments) that no code reads any more:
+# never handed, even when a profile's .env still holds one; `emporia agent refresh` prunes them from the entry.
+RETIRED_NAMES = ("EMPORIA_TESTNET_STRIPE_KEY", "EMPORIA_GUARDRAILS_MODE", "EMPORIA_NOUS_JWT", "EMPORIA_CUSTODIAL_CARDS",
+                 "EMPORIA_CARDS", "EMPORIA_SKILL_LOCK", "EMPORIA_EMPORIA_MAX_WEBSOCKETS_PER_ADDRESS")
+RETIRED_PREFIXES = ("STRIPE_", "EMPORIA_NEMO_")
 NETWORK_PREFIXES = ("EMPORIA_X402_ASSET_", "EMPORIA_X402_EXTRA_", "EMPORIA_X402_RPC_")
 _ENV_REF = re.compile(r"^\s*env:\s*([A-Z][A-Z0-9_]*)\s*$")
 
@@ -62,7 +78,7 @@ LITERAL_NAMES = (
     "EMPORIA_PUBLIC_CACHE_SECONDS",
     "EMPORIA_NETWORK_GROUPING", "EMPORIA_NETWORK_GROUP_DAYS", "EMPORIA_NEW_AGENT_HOURS",    "EMPORIA_CORS_ORIGINS", "EMPORIA_DAILY_TURNS",
     "EMPORIA_DASHBOARD_BASE_URL", "EMPORIA_DB_PATH", "EMPORIA_DISPLAY_NAME",
-    "EMPORIA_DM_RETENTION_DAYS", "EMPORIA_DOTENV", "EMPORIA_EMPORIA_MAX_WEBSOCKETS_PER_ADDRESS",
+    "EMPORIA_DM_RETENTION_DAYS", "EMPORIA_DOTENV",
     "EMPORIA_ENCRYPTION_KEY_SOURCE", "EMPORIA_ENCRYPTION_PRIVATE_KEY",
     "EMPORIA_ENCRYPTION_RETIRED_KEYS", "EMPORIA_ESCROW_COLLECTOR",
     "EMPORIA_ESCROW_CONTRACT", "EMPORIA_ESCROW_NETWORK",
@@ -124,9 +140,37 @@ def key_names() -> list[str]:
     return [*ENV_KEY_NAMES.values(), *SOURCE_VARS.values(), STORAGE_VAR, RETIRED_ENC_KEYS_VAR]
 
 
+def is_retired(name: str) -> bool:
+    return name in RETIRED_NAMES or name.startswith(RETIRED_PREFIXES)
+
+
+def vault_prefixes(values: Mapping[str, str] | None = None) -> tuple[str, ...]:
+    """The variable families of the vault CLIs this profile's key sources run (`cmd:op read ...` -> OP_)."""
+    import os
+    import shlex
+    from emporia.key_source import SOURCE_VARS
+    out: list[str] = []
+    for name in SOURCE_VARS.values():
+        v = str((values or {}).get(name, "")).strip()
+        if not v.startswith("cmd:"):
+            continue
+        try:
+            argv = shlex.split(v[4:])
+        except ValueError:
+            continue
+        out += VAULT_FAMILIES.get(os.path.basename(argv[0]) if argv else "", ())
+    return tuple(dict.fromkeys(out))
+
+
 def known() -> set[str]:
-    """Every name on the lists above (not what a profile holds)."""
-    return {*LITERAL_NAMES, *network_names(), *key_names(), *VAULT_NAMES}
+    """Every name the runtime reads that an agent may be handed (not what a profile holds, and without the
+    vault names, which only a linked vault's key source brings: see names())."""
+    return {*LITERAL_NAMES, *network_names(), *key_names()} - set(RELAY_ONLY_NAMES)
+
+
+def known_with_relay() -> set[str]:
+    """known() plus the relay-side names: what the runtime reads anywhere (the completeness test's list)."""
+    return known() | set(RELAY_ONLY_NAMES) | set(VAULT_NAMES)
 
 
 def names(values: Mapping[str, str] | None = None) -> list[str]:
@@ -134,14 +178,29 @@ def names(values: Mapping[str, str] | None = None) -> list[str]:
     point at, and every EMPORIA_* or vault name `values` (the profile's .env) holds."""
     values = values or {}
     out = known()
+    fam = vault_prefixes(values)
+    out |= {n for n in VAULT_NAMES if n.startswith(fam)} if fam else set()
     out |= {m.group(1) for v in values.values() if (m := _ENV_REF.match(str(v)))}
-    out |= {k for k in values if k.startswith("EMPORIA_") or k.startswith(VAULT_PREFIXES)}
-    return sorted(n for n in out if n not in LITERAL_IN_ENTRY and n not in GATEWAY_ONLY and not n.endswith("_"))
+    out |= {k for k in values if (k.startswith("EMPORIA_") or (fam and k.startswith(fam)))
+            and k not in RELAY_ONLY_NAMES}
+    return sorted(n for n in out if n not in LITERAL_IN_ENTRY and n not in GATEWAY_ONLY and not n.endswith("_")
+                  and not is_retired(n))
 
 
 def mcp_env(values: Mapping[str, str] | None = None) -> dict[str, str]:
     """`${NAME}` for each name, and EMPORIA_NO_DOTENV=1: the MCP entry's references."""
     return {**{n: f"${{{n}}}" for n in names(values)}, "EMPORIA_NO_DOTENV": "1"}
+
+
+def stale(values: Mapping[str, str], entry_env: Mapping[str, str]) -> list[str]:
+    """The names in an MCP entry's env that are a whole `${NAME}` reference to a name no longer handed
+    (retired, relay-only, or a vault the profile does not link): what a refresh removes. A literal value
+    or a name Emporia never wrote (no `${NAME}` of its own) is left alone."""
+    want = set(names(values))
+    return sorted(k for k, v in entry_env.items()
+                  if str(v).strip() == f"${{{k}}}" and k not in want and k not in LITERAL_IN_ENTRY
+                  and k != "EMPORIA_NO_DOTENV" and (k.startswith(("EMPORIA_", "STRIPE_", "SENTRY_", *VAULT_PREFIXES))
+                                                    or is_retired(k)))
 
 
 def unreferenced(values: Mapping[str, str], entry_env: Mapping[str, str]) -> list[str]:

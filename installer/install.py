@@ -384,6 +384,13 @@ def mcp_references(profile_dir: Path, entry_env: dict[str, str]) -> dict[str, st
     return {k: v for k, v in refs.items() if k not in entry_env or k == "EMPORIA_NO_DOTENV"}
 
 
+def prune_mcp_references(profile_dir: Path, entry_env: dict[str, str]) -> list[str]:
+    """The `${NAME}` references in an entry's env that agent_env no longer hands the agent (retired
+    cards/Stripe names, relay-only secrets, a vault the profile does not link): the names to remove."""
+    from emporia import agent_env
+    return agent_env.stale(harvest_env(profile_dir), entry_env)
+
+
 MCP_MODULE_ARGS = ["-m", "emporia.mcp_server"]
 FEATURES_ARG = "--features="
 
@@ -421,7 +428,8 @@ def refresh_mcp_references(profile_dir: Path, dry_run: bool = False) -> list[str
         return []
     env = dict(entry.get("env") or {})
     added = {k: v for k, v in mcp_references(profile_dir, env).items() if env.get(k) != v}
-    changed = bool(added)
+    removed = prune_mcp_references(profile_dir, env)
+    changed = bool(added) or bool(removed)
     names = sorted(added)
     old_args = [str(a) for a in (entry.get("args") or [])]
     new_args = [a for a in old_args if not a.startswith(FEATURES_ARG)]
@@ -434,10 +442,12 @@ def refresh_mcp_references(profile_dir: Path, dry_run: bool = False) -> list[str
         changed = True
         names.append("--features")
     if changed and not dry_run:
-        if added:
-            entry["env"] = {**env, **added}
+        entry["env"] = {**{k: v for k, v in env.items() if k not in removed}, **added}
         entry["args"] = new_args
         save_yaml(config_path, config)
+    if removed:
+        print(f"  {profile_dir.name}: {'would remove' if dry_run else 'removed'} from its MCP entry (no longer "
+              f"handed to the agent): {', '.join(removed)}")
     return names
 
 
@@ -699,6 +709,11 @@ def install_into_profile(
             existing_env.update(added)
             changed = True
             print(f"  ~ mcp_servers.{MCP_TOOL_NAME}.env: {len(added)} setting(s) now handed over by Hermes")
+        if gone := prune_mcp_references(profile_dir, existing_env):
+            for k in gone:
+                existing_env.pop(k, None)
+            changed = True
+            print(f"  - mcp_servers.{MCP_TOOL_NAME}.env: no longer handed to the agent, removed: {', '.join(gone)}")
         mcp_servers[MCP_TOOL_NAME]["env"] = existing_env
         if apply_mcp_costs(mcp_servers[MCP_TOOL_NAME], harvest_env(profile_dir)):
             changed = True

@@ -137,6 +137,30 @@ _APPROVAL_BYPASS_VARS = frozenset({"HERMES_YOLO_MODE", "HERMES_YOLO", "HERMES_AC
 # What a linked key's vault CLI needs besides EMPORIA_* (its token, its address): the
 # profile's own values, never the launching profile's.
 _VAULT_PREFIXES = ("OP_", "BW_", "VAULT_", "DOPPLER_", "INFISICAL_", "AWS_", "AZURE_")
+# Only the family of the vault CLI a `cmd:` key source runs is handed on (as emporia.agent_env.vault_prefixes),
+# and never the relay-side secrets or the retired card/Stripe names the bridge does not read.
+_VAULT_FAMILIES = {"op": ("OP_",), "bw": ("BW_",), "vault": ("VAULT_",), "doppler": ("DOPPLER_",),
+                   "infisical": ("INFISICAL_",), "aws": ("AWS_",), "az": ("AZURE_",)}
+_SOURCE_VARS = ("EMPORIA_IDENTITY_KEY_SOURCE", "EMPORIA_ENCRYPTION_KEY_SOURCE", "EMPORIA_X402_EVM_KEY_SOURCE",
+                "EMPORIA_X402_SOLANA_KEY_SOURCE", "EMPORIA_X402_PHRASE_SOURCE")
+_NOT_THE_BRIDGES = frozenset({"EMPORIA_OPERATOR_PRIVATE_KEY", "EMPORIA_ALLOW_HOT_OPERATOR_KEY",
+                              "EMPORIA_OPERATOR_SIGNER", "EMPORIA_OPERATOR_ADDRESS", "EMPORIA_RELAY_ENV_FILE",
+                              "EMPORIA_SECRETS_DIR", "EMPORIA_TESTNET_STRIPE_KEY", "EMPORIA_NOUS_JWT",
+                              "EMPORIA_CUSTODIAL_CARDS", "EMPORIA_SKILL_LOCK", "EMPORIA_GUARDRAILS_MODE"})
+
+
+def _vault_families(values: dict[str, str]) -> tuple[str, ...]:
+    import shlex
+    out: list[str] = []
+    for name in _SOURCE_VARS:
+        v = str(values.get(name, "")).strip()
+        if v.startswith("cmd:"):
+            try:
+                argv = shlex.split(v[4:])
+            except ValueError:
+                continue
+            out += _VAULT_FAMILIES.get(os.path.basename(argv[0]) if argv else "", ())
+    return tuple(dict.fromkeys(out))
 # A key linked by name (`EMPORIA_IDENTITY_KEY_SOURCE=env:MY_KEY`): the bridge signs in with
 # that key, so it is handed too, whatever its name (as agent_env.names() does for the MCP server).
 _ENV_REF = re.compile(r"^\s*env:\s*([A-Z][A-Z0-9_]*)\s*$")
@@ -160,10 +184,16 @@ def _profile_values() -> dict[str, str]:
         scope = None
     names = set(scope) if scope is not None else set(os.environ)
     out: dict[str, str] = {}
-    for name in sorted(n for n in names if n.startswith("EMPORIA_") or n.startswith(_VAULT_PREFIXES)):
+    for name in sorted(n for n in names if n.startswith("EMPORIA_") and n not in _NOT_THE_BRIDGES
+                       and not n.startswith("EMPORIA_NEMO_")):
         value = _get_scoped_secret(name, "")
         if value not in (None, ""):
             out[name] = str(value)
+    if fam := _vault_families(out):
+        for name in sorted(n for n in names if n.startswith(fam)):
+            value = _get_scoped_secret(name, "")
+            if value not in (None, ""):
+                out[name] = str(value)
     for name in sorted(_linked_names(out) - set(out)):
         value = _get_scoped_secret(name, "")
         if value not in (None, ""):
