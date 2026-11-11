@@ -143,6 +143,10 @@ TEST_ENVIRONMENT: dict[str, str] = {
     # The new-agent delay (24 h by default) would hold back every test that registers two agents and has
     # them play at once: it is off here and switched on by the tests of the delay itself.
     "EMPORIA_NEW_AGENT_HOURS": "0",
+    # Relay audit F3/F9: no free-disk floor on a test machine, and no answer cache between a test's
+    # write and its read; tests/test_relay_audit_fixes.py switches both on for itself.
+    "EMPORIA_MIN_FREE_DISK_MB": "0",
+    "EMPORIA_PUBLIC_CACHE_SECONDS": "0",
 }
 
 os.environ.update(TEST_ENVIRONMENT)

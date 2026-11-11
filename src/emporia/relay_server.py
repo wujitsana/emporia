@@ -2743,6 +2743,13 @@ class AgentRegistry:
                 # left to the unique index so the message names the actual
                 # conflict instead of surfacing an IntegrityError.
                 derived_stable_id = stable_id_for(public_key_hex)
+                # Relay audit F5: an agent the operator removed (`emporia relay remove`) stays out. Kept in
+                # access_removals under the key's stable id; an agent's own leave writes no such row.
+                held = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?",
+                                    (agent_id,)).fetchone()
+                if conn.execute("SELECT 1 FROM access_removals WHERE resource_type = 'relay' AND agent_id = ?",
+                                ((held["stable_id"] if held and held["stable_id"] else derived_stable_id),)).fetchone():
+                    raise ValueError("This relay's operator removed that agent; it cannot register here again.")
                 if not existing_row:
                     if why := _handle_lookalike_problem(conn, agent_id):
                         raise ValueError(why)
@@ -3813,11 +3820,63 @@ async def limit_request_size(request: Request, call_next):
     return await call_next(request)
 
 
-def _require_content_within_limit(content: str, field: str = "content") -> None:
+# Relay audit F3: ordinary writes at the per-field limit can fill the disk. Two guards on every
+# content-bearing write: a per-agent daily byte budget (in memory, resets on restart) and a free-disk
+# watermark on the database's filesystem. MAX_CONTENT_BYTES itself stays (sealed rooms and labs need it).
+_DAILY_WRITE_BUDGET: dict[str, tuple[str, int]] = {}    # agent_id -> (UTC day, bytes so far)
+_DISK_CACHE: list[float] = [0.0, float("inf")]           # [checked at, free MB]
+_DISK_CACHE_SECONDS = 10.0
+
+
+def _daily_write_budget_bytes() -> int:
+    return env_int("DAILY_WRITE_MB", 20) * 1024 * 1024
+
+
+def _require_disk_free() -> None:
+    """507 when the database's filesystem has less than EMPORIA_MIN_FREE_DISK_MB free (default 1024).
+    0 turns the check off. disk_usage is cached for ~10 s."""
+    import shutil
+
+    floor = env_int("MIN_FREE_DISK_MB", 1024)
+    if floor <= 0:
+        return
+    now = time.monotonic()
+    if now - _DISK_CACHE[0] > _DISK_CACHE_SECONDS:
+        try:
+            probe = Path(DATABASE_PATH).resolve().parent
+            _DISK_CACHE[1] = shutil.disk_usage(probe).free / (1024 * 1024)
+        except OSError:
+            _DISK_CACHE[1] = float("inf")     # cannot tell: do not lock everyone out
+        _DISK_CACHE[0] = now
+    if _DISK_CACHE[1] < floor:
+        logger.error("disk_low", extra={"free_mb": int(_DISK_CACHE[1]), "floor_mb": floor})
+        raise HTTPException(507, "This relay is low on disk space and is not taking new content right now.")
+
+
+def _charge_write_bytes(caller: str | None, size: int) -> None:
+    """Count `size` bytes of content against `caller`'s daily budget (429 over it) and check the disk."""
+    _require_disk_free()
+    if not caller:
+        return
+    day = datetime.now(UTC).strftime("%Y-%m-%d")
+    seen_day, used = _DAILY_WRITE_BUDGET.get(caller, (day, 0))
+    if seen_day != day:
+        used = 0
+    budget = _daily_write_budget_bytes()
+    if used + size > budget:
+        RATE_LIMIT_HITS["agent"] += 1
+        raise HTTPException(
+            429, f"Daily write budget reached — {budget // (1024 * 1024)} MB of content per agent per day. "
+                 f"It resets at 00:00 UTC.")
+    _DAILY_WRITE_BUDGET[caller] = (day, used + size)
+
+
+def _require_content_within_limit(content: str, field: str = "content", caller: str | None = None) -> None:
     """P18-1: bound one text field, in bytes. Separate from the request-size
     middleware because a body can sit under the general ceiling while its content
     field is still far past what a message should be — and because a 413 that names
-    nothing is a poor answer to "why was my message rejected"."""
+    nothing is a poor answer to "why was my message rejected". With `caller`, the size also
+    counts against that agent's daily byte budget (relay audit F3)."""
     from emporia.wire import MAX_CONTENT_BYTES
 
     size = len(content.encode("utf-8"))
@@ -3828,6 +3887,7 @@ def _require_content_within_limit(content: str, field: str = "content") -> None:
             f"On an encrypted thread this budget covers the ciphertext, which runs "
             f"larger than the plaintext it carries.",
         )
+    _charge_write_bytes(caller, size)
 
 
 def _require_payload_content_within_limit(payload: dict[str, Any]) -> None:
@@ -6774,7 +6834,7 @@ async def send_message(req: SendMessageRequest, request: Request):
         raise HTTPException(403, f"{req.to_agent} takes no messages from {caller}")
     # P19-7 (M4): payload is a dict, not a str — bound its serialized size, same
     # budget every other content-bearing field now gets.
-    _require_content_within_limit(json.dumps(req.payload), "payload")
+    _require_content_within_limit(json.dumps(req.payload), "payload", caller)
     if not req.signature:
         raise HTTPException(401, "Signature required")
     # N3-8 (R7): bound to the routing envelope (to_agent/type/session_id), not just

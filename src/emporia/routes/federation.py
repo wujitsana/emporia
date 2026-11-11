@@ -209,6 +209,7 @@ async def federated_dm_in(request: Request):
         raise HTTPException(404, "not found")
     rs._require_valid_msg_type(req.msg_type, sealed=True)
     rs._require_content_within_limit(req.content)
+    rs._require_disk_free()
     if not rs._NONCE_RE.fullmatch(req.nonce):
         raise HTTPException(400, "nonce must be 32-64 hex characters")
     try:

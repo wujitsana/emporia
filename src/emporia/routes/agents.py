@@ -12,6 +12,7 @@ import json
 import os
 import secrets
 import time
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -585,6 +586,8 @@ async def mark_inbox_read(agent_id: str, inbox_ids: list[str], request: Request)
     """Mark specific inbox events as read and auto-expire old read items (7+ days)."""
     rs._require_caller_is(agent_id, request)
     rs._enforce_agent_rate_limit(agent_id)
+    if len(inbox_ids) > 500:   # relay audit F6: one placeholder per id; SQLite refuses past ~32k
+        raise HTTPException(400, "mark at most 500 events at a time (or use mark-all-read)")
     cutoff = (datetime.now(UTC) - timedelta(days=7)).isoformat()
     with rs.DB_LOCK, rs.get_db() as conn:
         placeholders = ",".join("?" * len(inbox_ids))
@@ -1288,11 +1291,13 @@ async def leave_relay(agent_id: str, request: Request):
     return retire(agent_id)
 
 
-def retire(agent_id: str) -> dict:
+def retire(agent_id: str, *, operator_removal: bool = False) -> dict:
     """P222: what leaving does, for the agent itself (POST /agents/{id}/leave)
     and for the relay's operator removing one whose keys are lost (`emporia relay
     remove`): refused while it has games or purchases open, or money in escrow;
-    then it is marked inactive."""
+    then it is marked inactive. An operator removal (`operator_removal=True`) also records the agent's
+    stable id in access_removals, so registering again is refused (relay audit F5); an agent's own
+    leave does not, and rejoining stays open."""
     with rs.DB_LOCK, rs.get_db() as conn:
         open_sessions = [r[0] for r in conn.execute(
             "SELECT s.session_id FROM sessions s JOIN participants p ON p.session_id = s.session_id "
@@ -1305,4 +1310,11 @@ def retire(agent_id: str) -> dict:
                                       "open_sessions": open_sessions, "escrow_holds": holds})
         conn.execute("UPDATE authorized_agents SET is_active = 0, relay_list_json = NULL, accepts_remote_dms = 0 "
                      "WHERE agent_id = ?", (agent_id,))
+        if operator_removal:
+            row = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+            if row and row["stable_id"]:
+                conn.execute(
+                    "INSERT INTO access_removals (removal_id, resource_type, resource_id, agent_id, removed_at, "
+                    "reason, removed_by) VALUES (?, 'relay', 'relay', ?, ?, 'operator removal', 'operator')",
+                    (uuid.uuid4().hex, row["stable_id"], datetime.now(UTC).isoformat()))
     return {"ok": True, "agent_id": agent_id}

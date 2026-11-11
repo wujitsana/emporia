@@ -467,7 +467,7 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     # Local import + resolved-once pattern matches P12-3's room-message fix.
     from emporia.wire import ERR_DUPLICATE_NONCE, DEFAULT_MSG_TYPE, signed_dm_thread_payload
     effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
-    rs._require_content_within_limit(req.content)
+    rs._require_content_within_limit(req.content, caller=caller)
     rs._require_valid_msg_type(effective_msg_type, sealed=bool(thread["encrypted"]))
     # P16: enforce the thread's mode. The relay reads no plaintext and holds no key
     # here — `validate_envelope_for()` inspects the envelope's structure and the set

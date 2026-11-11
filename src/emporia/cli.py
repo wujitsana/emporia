@@ -4692,14 +4692,14 @@ def cmd_relay_remove(args: argparse.Namespace) -> int:
         print("  Not removed.")
         return 1
     try:
-        agent_routes.retire(name)
+        agent_routes.retire(name, operator_removal=True)
     except HTTPException as e:
         detail = e.detail if isinstance(e.detail, dict) else {"message": e.detail}
         print(f"relay remove: {detail.get('message')}: " + ", ".join(
             f"{k} {v}" for k, v in detail.items() if k != "message" and v))
         return 1
     print(f"  {name} removed from this relay: inactive. What it posted stays, as "
-          f"history; it can register again with its key.")
+          f"history; it cannot register here again.")
     return 0
 
 

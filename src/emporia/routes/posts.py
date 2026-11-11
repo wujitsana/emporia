@@ -309,6 +309,7 @@ async def create_post(req: PostIn, request: Request):
         raise HTTPException(401, "Authentication required")
     rs._require_registered(caller)
     rs._enforce_agent_rate_limit(caller)
+    rs._charge_write_bytes(caller, len(req.text.encode("utf-8")))
     if not rs._NONCE_RE.fullmatch(req.nonce):
         raise HTTPException(400, "nonce must be 32-64 hex characters")
     sealed = req.kind == wire.SEALED_KIND

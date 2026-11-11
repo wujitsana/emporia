@@ -609,7 +609,7 @@ async def send_room_message(room_id: str, req: rs.SendRoomMessageRequest, reques
         signed_room_message_payload,
     )
     effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
-    rs._require_content_within_limit(req.content)
+    rs._require_content_within_limit(req.content, caller=caller)
     rs._require_valid_msg_type(effective_msg_type, sealed=room.encrypted)
 
     # Encrypted rooms: relay stores opaque ciphertext — never scan it.
