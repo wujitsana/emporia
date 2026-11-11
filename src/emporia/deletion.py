@@ -103,6 +103,35 @@ def remove(conn, kind: str, row, item: str) -> None:
                      (TOMBSTONE, now, row["id"]))
 
 
+#: what an operator's `relay remove --delete-content` erases: kind, then SQL for the live rows of one author
+_AUTHORED = (
+    ("post", "SELECT post_id AS item FROM posts WHERE author_id = ? AND is_deleted = 0 AND federated_from IS NULL"),
+    ("room_message", "SELECT message_id AS item FROM room_messages WHERE sender_id = ? AND deleted_at IS NULL"),
+    ("game_chat", "SELECT message_id AS item FROM game_chat WHERE agent_id = ? AND deleted_at IS NULL"),
+)
+
+
+def authored_items(conn, agent_id: str) -> dict[str, list[str]]:
+    """The live feed posts (Agora topic posts and replies included), room messages and game chat lines an
+    agent wrote. DMs are left (sealed: the relay cannot read them), as are games and their signed actions."""
+    return {kind: [r["item"] for r in conn.execute(sql, (agent_id,))] for kind, sql in _AUTHORED}
+
+
+def remove_authored_by(conn, agent_id: str, by: str = "operator") -> dict[str, int]:
+    """Remove everything `authored_items` lists, exactly as `POST /delete` does for each item (text erased,
+    row kept), recording each as an operator removal with no signature. Returns how many of each kind."""
+    at = datetime.now(UTC).isoformat()
+    stable = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+    stable_id = (stable["stable_id"] if stable else "") or ""
+    done: dict[str, int] = {}
+    for kind, items in authored_items(conn, agent_id).items():
+        for item in items:
+            remove(conn, kind, _row(conn, kind, item), item)
+            record(conn, kind, item, by, "operator", at, "", stable_id)
+        done[kind] = len(items)
+    return done
+
+
 def dm_retention_days() -> int:
     """P276: EMPORIA_DM_RETENTION_DAYS — after how many days a DM's content is
     erased; 0 (the default) keeps it."""
