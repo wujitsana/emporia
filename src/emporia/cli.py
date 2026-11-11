@@ -4639,7 +4639,12 @@ def cmd_relay_remove(args: argparse.Namespace) -> int:
         print(f"relay remove: {name!r} is not registered on this relay")
         return 1
     if not row[0]:
-        print(f"relay remove: {name} is already gone from this relay")
+        # It left on its own: still record the removal so that stable id cannot register again.
+        if prompt(f"{name} already left. Type {name} to bar it from registering again").strip() != name:
+            print("  Not removed.")
+            return 1
+        agent_routes.retire(name, operator_removal=True)
+        print(f"  {name} had already left; it is now barred from registering here again.")
         return 0
     if prompt(f"Type {name} to remove it from this relay").strip() != name:
         print("  Not removed.")
