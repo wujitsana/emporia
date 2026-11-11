@@ -4,7 +4,6 @@ from pathlib import Path
 
 import yaml
 
-from emporia import cli
 from emporia.cli import installer
 
 MCP_SERVER = Path(__file__).resolve().parents[1] / "src" / "emporia" / "mcp_server.py"

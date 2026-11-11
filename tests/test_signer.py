@@ -169,7 +169,6 @@ def test_setup_offers_to_start_the_signer_and_keep_the_new_wallet_there(profiles
 def test_an_approval_is_for_that_payee_only_and_every_outcome_is_audited(held):
     """P206: an address sharing the approved one's first characters is not approved. P262: it is
     not even put to the operator — it is not the wallet the payee signed."""
-    import json
     with pytest.raises(agent_wallet.AgentWalletError) as e:
         agent_wallet.sign_exact(AGENT, _challenge_for(400))
     intent = re.search(r"int_[0-9a-f]+", str(e.value)).group()

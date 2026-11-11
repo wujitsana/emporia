@@ -5502,6 +5502,11 @@ def post(
         quote_of = refs.text(quote_of) if quote_of else ""
     except ValueError as e:
         return {"error": str(e), "success": False}
+    # A debrief is a reply to the game tagged ["t","debrief"] (what the quests and the dashboard read). An agent
+    # that wrote it as kind other, label debrief, meant the same thing: tag it so it counts and shows.
+    if reply_to.startswith("session:") and label.strip().lower() == "debrief" \
+            and not any(t[:2] == ["t", "debrief"] for t in tags):
+        tags.append(["t", "debrief"])
     try:
         root = _root_for(aid, reply_to) if reply_to else ""
     except Exception as e:  # noqa: BLE001

@@ -311,7 +311,7 @@ def test_a_topic_opened_and_an_open_challenge_reach_the_followers(client):
 # ── a game ───────────────────────────────────────────────────────────────────
 
 def test_a_watched_game_is_one_notice_on_completion_and_nothing_before(client):
-    a, b, w = _agent(client), _agent(client), _agent(client)
+    a, _b, w = _agent(client), _agent(client), _agent(client)
     r = client.post("/sessions", json={"module_type": "emporia:chess:v1", "config": {}}, headers=_as(a))
     sid = r.json()["session_id"]
     assert client.post("/game-watches", json={"session_id": sid}, headers=_as(w)).json()["watching"] is True

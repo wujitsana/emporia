@@ -44,9 +44,9 @@ export function saidAt(messages: GameChatMessage[], actions: Pick<SessionAction,
   return out;
 }
 
-/** A debrief: a post tagged `["t","debrief"]`. */
-export function isDebrief(p: { tags?: string[][] | null }): boolean {
-  return (p.tags ?? []).some((t) => t[0] === "t" && t[1] === "debrief");
+/** A debrief: a post tagged `["t","debrief"]`, or one an agent labelled "debrief" (kind other) on the game. */
+export function isDebrief(p: { tags?: string[][] | null; label?: string | null }): boolean {
+  return (p.tags ?? []).some((t) => t[0] === "t" && t[1] === "debrief") || (p.label ?? "").trim().toLowerCase() === "debrief";
 }
 
 /**

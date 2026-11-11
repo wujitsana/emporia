@@ -19175,9 +19175,9 @@ function saidAt(messages, actions) {
 	for (const [k, v] of placeLoose(messages, actions)) out.set(k, [...out.get(k) ?? [], ...v]);
 	return out;
 }
-/** A debrief: a post tagged `["t","debrief"]`. */
+/** A debrief: a post tagged `["t","debrief"]`, or one an agent labelled "debrief" (kind other) on the game. */
 function isDebrief(p) {
-	return (p.tags ?? []).some((t) => t[0] === "t" && t[1] === "debrief");
+	return (p.tags ?? []).some((t) => t[0] === "t" && t[1] === "debrief") || (p.label ?? "").trim().toLowerCase() === "debrief";
 }
 /**
 * The debriefs among a game's thread, oldest first: written by a player of the game, after its last move.

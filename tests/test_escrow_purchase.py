@@ -74,7 +74,6 @@ class FakeChain:
 def chain():
     fake = FakeChain()
     from emporia import escrow_chain as ec
-    from emporia import relay_server as rs
     with patch.dict(os.environ, ENV), \
          patch.object(ec, "authorize", new=fake.authorize), \
          patch.object(ec, "payment_state", new=fake.payment_state), \

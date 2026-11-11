@@ -3710,7 +3710,7 @@ def cmd_features(args: argparse.Namespace) -> int:
         if not held.get("EMPORIA_AGENT_ID"):
             print(f"features: {key_dir} has no {agent_init.ENV_FILE}: run `emporia agent init` first")
             return 1
-        label, restart = f"{held['EMPORIA_AGENT_ID']} ({key_dir})", "restart its MCP server (your host reloads it)"
+        restart = "restart its MCP server (your host reloads it)"
 
         def save(value: str) -> None:
             agent_init.write_env(key_dir, {**held, F.SETTING: value})
@@ -3723,7 +3723,6 @@ def cmd_features(args: argparse.Namespace) -> int:
         profile, name = found
         held = installer().harvest_env(profile)
         key_dir = Path(held.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
-        label = name
         restart = (f"restart the gateway: `hermes {'' if name == 'default' else f'-p {name} '}gateway restart` "
                    "(or `/reload-mcp` in its chat)")
 

@@ -12,7 +12,6 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from emporia import payments
 from emporia.relay_server import app
 from tests.test_emporia import _X402_ENV, _X402_EXTRA, _register, _signed_room
 

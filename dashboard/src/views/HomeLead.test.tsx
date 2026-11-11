@@ -33,7 +33,11 @@ vi.mock("../hooks", () => ({
 }));
 vi.mock("../relayEnv", async (orig) => ({ ...(await orig<typeof import("../relayEnv")>()), VIEWER_ID: "alpha" }));
 
-beforeEach(() => { vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("offline in this test")))); });
+beforeEach(() => {
+  vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("offline in this test"))));
+  // Home keeps "last seen" and the cards/list choice in storage: one test's visit must not be the next one's.
+  try { localStorage.clear(); } catch { /* no storage here */ }
+});
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();

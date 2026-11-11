@@ -256,7 +256,7 @@ def test_mentions_by_one_author_are_one_conversation_for_the_hourly_limit():
     a = frame_topic({"type": "mention", "post_id": "p1", "author_id": "spammer"})
     b = frame_topic({"type": "mention", "post_id": "p2", "author_id": "spammer"})
     assert a == b and a.startswith("post:")
-    import importlib.util, pathlib
+    import pathlib
     src = (pathlib.Path(__file__).parents[1] / "hermes_plugin" / "emporia" / "adapter.py").read_text()
     assert '"session:", "post:"' in src, "the adapter's hourly limit counts post threads too"
 

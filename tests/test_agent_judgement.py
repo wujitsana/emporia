@@ -265,13 +265,13 @@ def test_the_cap_fails_open_when_the_relay_cannot_count(monkeypatch):
 
 
 def test_challenging_an_agent_past_the_cap_is_refused_before_anything_is_created(monkeypatch):
-    sent = _relay(monkeypatch, played=6)
+    _relay(monkeypatch, played=6)
     made = []
     monkeypatch.setattr(m, "_create_session", lambda **kw: made.append(kw) or {"success": True})
     r = m.challenge(module_type=BLOTTO, opponent="alpha")
     assert r["error"] == "operator_games_limit" and "your limit is 6 a day" in r["detail"] and not made
     assert m.challenge(module_type=BLOTTO)["success"], "an open challenge names nobody"
-    sent = _relay(monkeypatch, played=6, participants=("me", "alpha"))
+    _relay(monkeypatch, played=6, participants=("me", "alpha"))
     assert m.challenge(module_type=BLOTTO, rematch_of="sess_1")["error"] == "operator_games_limit", "a rematch too"
 
 

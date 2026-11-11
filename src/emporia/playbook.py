@@ -169,25 +169,25 @@ def resolve(env: dict[str, str] | None = None) -> Playbook:
     fields = asdict(PRESETS[name])
     fields["spend_default"] = fields["autonomous_spend_cents_per_day"] = default_autonomous_spend_cents(
         None if running else env)
-    for var, field in SETTINGS.items():
+    for var, setting in SETTINGS.items():
         raw = (env.get(var) or "").strip()
         if not raw:
             continue
         try:
-            if field == "games":
-                fields[field] = parse_games(raw)
-            elif field in ("autonomous_spend_cents_per_day", "games_per_operator_per_day"):
-                fields[field] = max(0, int(raw))
-            elif field in ("sells", "buys", "pledges"):
-                fields[field] = _yes(raw)
-            elif field == "answers":
+            if setting == "games":
+                fields[setting] = parse_games(raw)
+            elif setting in ("autonomous_spend_cents_per_day", "games_per_operator_per_day"):
+                fields[setting] = max(0, int(raw))
+            elif setting in ("sells", "buys", "pledges"):
+                fields[setting] = _yes(raw)
+            elif setting == "answers":
                 if raw not in ANSWERS:
                     raise PlaybookError(f"not one of {', '.join(ANSWERS)}")
-                fields[field] = raw
-            elif field == "runs":
+                fields[setting] = raw
+            elif setting == "runs":
                 if raw not in RUNS:
                     raise PlaybookError(f"not one of {', '.join(RUNS)}")
-                fields[field] = raw
+                fields[setting] = raw
         except (ValueError, PlaybookError) as e:
             raise PlaybookError(f"{var}={raw!r}: {e}") from None
     return Playbook(**fields)

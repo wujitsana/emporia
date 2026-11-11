@@ -6,7 +6,6 @@ import base64
 import json
 import os
 import re
-import threading
 import time
 from unittest.mock import patch
 
@@ -259,7 +258,7 @@ def _turns(monkeypatch, *, agent_side_autonomous: bool, signer_side_autonomous: 
     monkeypatch.setattr(autonomy, "current", current)
 
 
-def test_s1_a_relay_turn_behind_a_signer_is_held_to_the_allowance_in_the_agents_own_process(held, monkeypatch):
+def test_s1_a_relay_turn_behind_a_signer_is_held_to_the_allowance_in_the_agents_own_process(held, monkeypatch):  # noqa: F811 (the fixture imported above)
     _turns(monkeypatch, agent_side_autonomous=True, signer_side_autonomous=False)   # signer env says "person"
     with pytest.raises(AgentWalletError, match="unattended|allowance"):
         agent_wallet.sign_exact(AGENT, _challenge_for(250))        # $2.50 > the 25 cents a day
@@ -270,14 +269,14 @@ def test_s1_a_relay_turn_behind_a_signer_is_held_to_the_allowance_in_the_agents_
     assert autonomy.spent_today_atomic() == 200_000
 
 
-def test_s1_the_signers_own_environment_is_never_the_agents_turn(held, monkeypatch):
+def test_s1_the_signers_own_environment_is_never_the_agents_turn(held, monkeypatch):  # noqa: F811 (the fixture imported above)
     _turns(monkeypatch, agent_side_autonomous=False, signer_side_autonomous=True)   # signer env: "unknown"
     assert agent_wallet.sign_exact(AGENT, _challenge_for(250))     # a person's turn pays, within the signer's caps
     with pytest.raises(AgentWalletError, match="per-payment cap"):
         agent_wallet.sign_exact(AGENT, _challenge_for(600))        # the signer's own caps still hold
 
 
-def test_s1_a_refused_hand_off_gives_the_allowance_back(held, monkeypatch):
+def test_s1_a_refused_hand_off_gives_the_allowance_back(held, monkeypatch):  # noqa: F811 (the fixture imported above)
     _turns(monkeypatch, agent_side_autonomous=True, signer_side_autonomous=False)
     from emporia import signer_client
     with patch.object(signer_client.Client, "call", side_effect=AgentWalletError("the signer says no")):
@@ -293,7 +292,7 @@ def _post(app, path, body):
     return app.post(path, json=body, headers={"authorization": f"Bearer {token}", "x-emporia-agent": AGENT})
 
 
-def test_s6_a_fee_leg_through_the_signer_needs_the_creator_leg_it_signed(held):
+def test_s6_a_fee_leg_through_the_signer_needs_the_creator_leg_it_signed(held):  # noqa: F811 (the fixture imported above)
     _, app = held
     signer._CREATOR_LEGS.clear()
     fee = _challenge_for(10)["x402"]
@@ -307,8 +306,7 @@ def test_s6_a_fee_leg_through_the_signer_needs_the_creator_leg_it_signed(held):
     assert r.status_code == 403 and "fee" in json.dumps(r.json()), r.text
 
 
-def test_s6_a_paid_entry_still_pays_both_legs_through_the_signer(held):
-    from conftest import payee_for
+def test_s6_a_paid_entry_still_pays_both_legs_through_the_signer(held):  # noqa: F811 (the fixture imported above)
     body = _challenge_for(200)
     fee_to = Account.create().address
     fee = {"x402Version": 2, "resource": {"url": "http://relay/r"}, "accepts": [dict(
@@ -318,7 +316,7 @@ def test_s6_a_paid_entry_still_pays_both_legs_through_the_signer(held):
     assert set(headers) == {"PAYMENT-SIGNATURE", "PAYMENT-SIGNATURE-FEE"}
 
 
-def test_s6_the_paying_routes_run_off_the_event_loop_and_reclaim_answers(held):
+def test_s6_the_paying_routes_run_off_the_event_loop_and_reclaim_answers(held):  # noqa: F811 (the fixture imported above)
     _, app = held
     seen = {}
 
@@ -339,7 +337,7 @@ def test_s6_the_paying_routes_run_off_the_event_loop_and_reclaim_answers(held):
 
 # ---- S-7: what a person approves ---------------------------------------------------------------------
 
-def test_s7_an_approval_is_shown_from_the_signers_terms_with_control_characters_stripped(held):
+def test_s7_an_approval_is_shown_from_the_signers_terms_with_control_characters_stripped(held):  # noqa: F811 (the fixture imported above)
     from emporia import cli
     _, app = held
     body = _challenge_for(400)

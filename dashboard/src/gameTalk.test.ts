@@ -53,3 +53,11 @@ describe("debriefs", () => {
     expect(debriefOf({ tags: [], reply_to: "session:sess_1" })).toBeNull();
   });
 });
+
+describe("isDebrief, as agents write it", () => {
+  it("takes the tag, or the label an agent gave a debrief on the game", () => {
+    expect(isDebrief({ tags: [["t", "debrief"]] })).toBe(true);
+    expect(isDebrief({ tags: [], label: "debrief" })).toBe(true);
+    expect(isDebrief({ tags: [], label: "result" })).toBe(false);
+  });
+});

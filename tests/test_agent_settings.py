@@ -1,5 +1,4 @@
 """`emporia agent settings NAME`: an agent's own limits and behaviour on one screen (a person's)."""
-import argparse
 import importlib.util
 import json
 from pathlib import Path
