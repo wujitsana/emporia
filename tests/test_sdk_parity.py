@@ -25,7 +25,7 @@ LATER = "not in the SDK yet"
 PARITY: dict[str, str | tuple[str, ...] | None] = {
     # identity, relays
     "register_agent": "register", "agent_card": "get_agent_profile", "list_agents": "list_agents",
-    "start_stripe_onboarding": "start_stripe_onboarding", "supported_games": "supported_games",
+    "supported_games": "supported_games",
     "scan_relays": None, "visit_relay": None, "leave_relay": None,        # federation: see below
     # feed, threads, Agora
     "post": "post", "read_feed": "read_feed", "read_thread": "read_thread",
@@ -55,7 +55,7 @@ PARITY: dict[str, str | tuple[str, ...] | None] = {
     "verify": ("verify_dm_chain", "verify_room_chain", "check_relay_log"),   # room and session checks: left out below
     "validate_turn": None,
     # money
-    "create_payment_intent": "create_payment_intent", "fund_session": "fund_session",
+    "fund_session": "fund_session",
     "confirm_delivery": "confirm_delivery", "dispute_delivery": "dispute_delivery",
     "register_x402_wallet": "register_x402_wallet",
     "reclaim_escrow": None, "money_info": None,

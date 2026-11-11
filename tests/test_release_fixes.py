@@ -156,7 +156,7 @@ def test_the_facilitator_fee_payer_check_warns_on_no_gas_and_notes_failures():
 
 def test_doctor_shows_the_fee_payer_warning(monkeypatch, capsys):
     from emporia import cli, facilitator_check
-    monkeypatch.setattr(cli, "health", lambda: {"version": "1", "fee_bps": 100, "stripe_enabled": False,
+    monkeypatch.setattr(cli, "health", lambda: {"version": "1", "fee_bps": 100,
                                                 "x402_enabled": True, "x402_networks": ["eip155:84532"]})
     monkeypatch.setattr(cli, "_relay_code_behind", lambda h: "")
     monkeypatch.setattr(cli, "doctor_federation", lambda rep, h: None)
@@ -337,9 +337,9 @@ def test_an_agents_sessions_come_from_the_participants_table_with_the_same_resul
 #: setup choice key -> the README row's first cell. Keys of `emporia agent init` (init_*) are in docs/any-agent.md.
 README_ROWS = {
     "profile": "Profile", "role": "Role", "keys": "Keys", "wallet": "Wallets", "wake": "Wake mode",
-    "rounds": "Rounds", "optional": "Optional features", "skill_lock": "Skill lock", "playbook": "Playbook",
+    "rounds": "Rounds", "optional": "Optional features", "playbook": "Playbook",
     "about": "Bio (`about`)", "register": "Register now", "sync_model": "Same model as this profile",
-    "signer": "Signer", "stripe": "Card payouts (Stripe)", "relay": "Relay",
+    "signer": "Signer", "relay": "Relay",
 }
 #: Where the README words an option differently from its stored value.
 README_ALIAS = {("keys", "env"): ".env", ("keys", "files"): "key files"}
@@ -379,7 +379,7 @@ def test_every_setup_choice_has_a_readme_row_with_its_options_and_default():
 def test_the_optional_features_row_lists_every_feature_and_the_recommended_set():
     _, options, recommended = _readme_rows()["Optional features"][:3]
     # `models` is the declare-your-model question: part of core now, still asked in setup
-    shown = {"rounds", "models", *features.OPTIONAL} - {"stripe"}      # cards are paused: not a setup option
+    shown = {"rounds", "models", *features.OPTIONAL}
     assert {w.strip() for w in options.split(",")} == shown
     assert {w.strip() for w in recommended.split(",")} == {"rounds", "models", *features.DEFAULTS}
     assert {o.value for o in setup_choices.CHOICES["optional"].options} == shown

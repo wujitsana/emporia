@@ -76,19 +76,16 @@ def test_a_profiles_env_goes_through_hermes_and_is_never_opened(profile, through
 
 def test_the_runtimes_readers_and_writers_go_through_it(profile, through_hermes):
     store, _ = through_hermes
-    store[str(profile)] = {"EMPORIA_SIGNER_URL": "unix:/s", "STRIPE_PROFILE_ID": "profile_test_abc"}
+    store[str(profile)] = {"EMPORIA_SIGNER_URL": "unix:/s", "EMPORIA_PLAYBOOK": "scout"}
     (profile / ".env").write_text("")          # the file Hermes keeps (its content is Hermes's to read)
     from emporia import cli, key_source
-    from emporia.stripe_profile_discovery import scan_stripe_profile_id_in_tree
     assert cli.installer().harvest_env(profile)["EMPORIA_SIGNER_URL"] == "unix:/s"
     key_source.set_env_lines(profile / ".env", {"EMPORIA_KEY_STORAGE": "env"})
     key_source.unset_env_lines(profile / ".env", ["EMPORIA_SIGNER_URL"])
     assert cli.merge_env_file(profile / ".env", {"EMPORIA_PLAYBOOK": "host"}) == ["EMPORIA_PLAYBOOK"]
-    assert store[str(profile)] == {"STRIPE_PROFILE_ID": "profile_test_abc", "EMPORIA_KEY_STORAGE": "env",
-                                   "EMPORIA_PLAYBOOK": "host"}
+    assert store[str(profile)] == {"EMPORIA_KEY_STORAGE": "env", "EMPORIA_PLAYBOOK": "host"}
     assert not (profile / ".env-backups").exists(), "no copy of a Hermes profile's .env"
     assert cli._dotenv_names(str(profile / ".env")) == set(store[str(profile)])
-    assert scan_stripe_profile_id_in_tree(profile) == "profile_test_abc"
 
 
 def test_a_catalog_runtime_without_hermes_reads_and_writes_nothing(profile, monkeypatch):

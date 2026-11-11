@@ -35,7 +35,7 @@ def test_every_question_has_one_recommended_option_equal_to_its_default(key):
 
 def test_the_questions_setup_asks_are_all_in_the_registry():
     for key in ("profile", "wake", "rounds", "optional", "playbook", "role", "keys", "wallet", "register",
-                "sync_model", "signer", "stripe"):
+                "sync_model", "signer"):
         assert key in sc.CHOICES
     assert sc.default("wake") == "direct" and sc.default("rounds") == "4h"
     assert [v for v, _ in sc.CHOICES["role"].labels()] == [k for k, _ in cli.ROLES]

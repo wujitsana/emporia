@@ -291,7 +291,7 @@ def test_games_of_chance_take_no_stake(client):
     a = f"gs_{uuid.uuid4().hex[:6]}"
     _register_keyed(client, a)
     for mt in (DICE, AUCTION):
-        r = client.post("/sessions", json={"module_type": mt, "payment_rules": {"mode": "stripe_pi",
+        r = client.post("/sessions", json={"module_type": mt, "payment_rules": {"mode": "x402",
                                                                                "price": "5"}},
                         headers=_hdr(a))
         assert r.status_code == 400 and "takes no stake" in r.text

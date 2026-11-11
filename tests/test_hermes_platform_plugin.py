@@ -14,7 +14,7 @@ def test_every_key_emporia_can_keep_in_a_profile_env_is_declared_secret():
     entries = manifest.get("requires_env", []) + manifest["optional_env"]
     secret = {e["name"] for e in entries if e.get("password") is True}
     expected = set(ENV_KEY_NAMES.values()) | {"EMPORIA_OPERATOR_PRIVATE_KEY",
-                                              "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET",
+                                              "EMPORIA_OPERATOR_PRIVATE_KEY",
                                               "OP_SERVICE_ACCOUNT_TOKEN", "BW_SESSION", "VAULT_TOKEN",
                                               "EMPORIA_SIGNER_TOKEN"}
     assert expected <= secret, expected - secret
@@ -36,14 +36,14 @@ def test_doctor_finds_secrets_in_config_yaml_and_secure_moves_them(tmp_path, mon
     rep = cli.Report()
     cli.doctor_profile_secrets(rep, profile, {})
     assert not rep.failed and "owner-only" in capsys.readouterr().out
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_from_the_profile_env")
+    monkeypatch.setenv("EMPORIA_OPERATOR_PRIVATE_KEY", "0xfrom_the_profile_env")
     from emporia import config
     monkeypatch.setattr(config, "ENV_BEFORE_DOTENV", frozenset())       # merged from a .env: not the container's
     cli.doctor_machine_secrets(rep)
     assert "no relay secret in the container's environment" in capsys.readouterr().out
-    monkeypatch.setattr(config, "ENV_BEFORE_DOTENV", frozenset({"STRIPE_SECRET_KEY"}))   # given by compose
+    monkeypatch.setattr(config, "ENV_BEFORE_DOTENV", frozenset({"EMPORIA_OPERATOR_PRIVATE_KEY"}))   # given by compose
     cli.doctor_machine_secrets(rep)
-    assert "STRIPE_SECRET_KEY set for the whole container" in capsys.readouterr().out
+    assert "EMPORIA_OPERATOR_PRIVATE_KEY set for the whole container" in capsys.readouterr().out
 
 
 def test_doctor_fails_an_older_copy_of_the_plugin(tmp_path, capsys):

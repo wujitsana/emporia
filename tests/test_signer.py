@@ -313,11 +313,11 @@ def test_doctor_fails_a_live_relay_whose_keys_the_agents_user_could_reach(monkey
     from emporia import cli
     monkeypatch.setattr(cli, "_reachable_anyway", lambda in_container: ["this user has sudo without a password"])
     monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": {
-        "version": "x", "live_money": ["a live Stripe key"], "in_container": True})
+        "version": "x", "live_money": ["USDC on a mainnet"], "in_container": True})
     monkeypatch.setattr(cli, "doctor_federation", lambda rep, h: None)
     rep = cli.Report()
     cli.doctor_relay(rep)
-    assert rep.failed and "takes real money (a live Stripe key)" in capsys.readouterr().out
+    assert rep.failed and "takes real money (USDC on a mainnet)" in capsys.readouterr().out
 
 
 def test_the_admin_service_finds_hermes_data_however_it_is_mounted():

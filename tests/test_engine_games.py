@@ -15,7 +15,7 @@ def test_a_staked_chess_game_is_refused_before_any_payment():
     _register_keyed(client, a)
     r = client.post("/sessions", json={
         "module_type": "emporia:chess:v1", "creator_agent_id": a,
-        "payment_rules": {"mode": "stripe_pi", "price": "1.00", "currency": "usd"}},
+        "payment_rules": {"mode": "x402", "price": "1.00", "currency": "usd"}},
         headers={"x-emporia-agent-id": a})
     assert r.status_code == 400 and "takes no stakes" in r.text
     free = client.post("/sessions", json={"module_type": "emporia:chess:v1", "creator_agent_id": a},

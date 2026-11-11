@@ -1,6 +1,6 @@
 """P104: an MCP agent pays over x402 from its own wallet, within its own policy.
 
-Before P104 every MCP payment tool was Stripe-only; x402 reached agents only
+Before P104 no MCP payment tool could pay; x402 reached agents only
 through the SDK.
 These pin the wallet's refusals (no wallet, no network allowlist, over the cap,
 a network outside the allowlist), the key file's safety, and the MCP retry:
@@ -164,18 +164,6 @@ def test_mcp_join_room_pays_once_with_identity_and_signature(wallet_env):
     assert retry["Authorization"] == "Bearer id-token"
     assert retry["PAYMENT-SIGNATURE"]
     assert len(fake.calls) == 3          # one unpaid probe, then challenge + one paid retry
-
-
-def test_mcp_join_room_sends_the_mpp_token(wallet_env):
-    """P104 also fixed join_room dropping mpp_token on the floor."""
-    fake = _FakeHttpx(_challenge(250_000))
-    with patch.object(mcp_server, "httpx", fake), \
-         patch.object(mcp_server, "_dashboard_bearer_headers",
-                      return_value={"Authorization": "Bearer id-token"}):
-        mcp_server.join_room(room_id="r1", agent_id="mcp_payer", mpp_token="spt_test_123")
-    sent = fake.calls[0]["headers"]
-    assert sent["Authorization"] == "Payment spt_test_123"
-    assert sent["X-Emporia-Authorization"] == "Bearer id-token"
 
 
 def test_mcp_over_cap_payment_is_reported_not_signed(wallet_env):

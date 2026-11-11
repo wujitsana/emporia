@@ -66,9 +66,9 @@ def _visible(monkeypatch, value: str | None) -> set[str]:
 
 
 def _no_implied_switches(monkeypatch, tmp_path=None) -> None:
-    """The settings that imply a feature (a wallet, a card, an X link), out of the environment; the key
+    """The settings that imply a feature (a wallet, an X link), out of the environment; the key
     directory an empty one."""
-    for var in ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID", "EMPORIA_X_LINK", *F._WALLET_VARS):
+    for var in ("EMPORIA_X_LINK", *F._WALLET_VARS):
         monkeypatch.delenv(var, raising=False)
     import tempfile
 
@@ -85,11 +85,10 @@ def test_an_agent_that_never_chose_keeps_what_its_switches_imply(monkeypatch, tm
     assert "money" in F.enabled_from({"EMPORIA_X402_PHRASE_SOURCE": "env:PHRASE"}, tmp_path)
     (tmp_path / "me.x402.secp256k1").write_text("k")
     assert "money" in F.enabled_from({}, tmp_path)
-    assert "stripe" in F.enabled_from({"STRIPE_SECRET_KEY": "sk_test_x"}, tmp_path / "none")
     assert "x_link" in F.enabled_from({"EMPORIA_X_LINK": "on"}, tmp_path / "none")
     assert "x_link" not in F.enabled_from({"EMPORIA_X_LINK": "off"}, tmp_path / "none")
     # a recorded choice is exactly the choice: nothing is added to it
-    assert F.enabled_from({F.SETTING: "archive", "EMPORIA_X_LINK": "on", "STRIPE_SECRET_KEY": "k"}, tmp_path) == ["archive"]
+    assert F.enabled_from({F.SETTING: "archive", "EMPORIA_X_LINK": "on"}, tmp_path) == ["archive"]
     assert F.DEFAULTS == (), "every optional feature is off until a person chooses it"
     # a setting written before moderation, audit, models, pledges, labs, rooms and topics joined core still reads
     assert F.enabled_from({F.SETTING: "moderation,audit,models,money,pledges,labs,rooms_host,agoras"}, tmp_path) == ["money"]
@@ -126,7 +125,7 @@ def test_core_holds_what_used_to_be_optional_and_the_dashboard_sign_in_is_gone()
     assert {"block_dm_sender", "delete_item", "verify", "records", "reveal_models", "model_results",
             "make_pledge", "lab_threads", "create_room", "create_agora_topic", "kick_from_agora_topic",
             "open_room_from_post", "leave_session", "money_info"} - core == {"money_info"}
-    assert F.OPTIONAL == ("archive", "federation", "money", "stripe", "x_link")
+    assert F.OPTIONAL == ("archive", "federation", "money", "x_link")
     assert not any("dashboard" in t for t in F.all_tools())
     gone = {"sign_dashboard_challenge", "mark_inbox_read", "get_agent_profile", "counterparty_record",
             "abandon_session", "relay_payment_info", "x402_wallet_info", "whats_happening", "list_dm_blocks"}
@@ -148,7 +147,7 @@ def test_parse_render_and_defaults():
         F.parse("money,bogus")
     assert F.render([]) == "none" and F.render(["x_link", "money"]) == "money,x_link"
     assert F.enabled_from({}) == list(F.DEFAULTS) and F.enabled_from({F.SETTING: "none"}) == []
-    assert F.derive(wallet=True, stripe=True, x_link=True) == ["money", "stripe", "x_link"]
+    assert F.derive(wallet=True, x_link=True) == ["money", "x_link"]
     assert F.summary(F.DEFAULTS) == (f"up to {len(F.BY_NAME[F.CORE].tools)} tools: core "
                                      "(the relay may hide some it does not run)")
 
@@ -176,7 +175,6 @@ def test_the_server_registers_the_tools_of_enabled_features_only(monkeypatch, al
     assert not only_core & set(F.BY_NAME["money"].tools) and "post" in only_core
     with_money = _visible(monkeypatch, "money,archive")
     assert set(F.BY_NAME["money"].tools) <= with_money and set(F.BY_NAME["archive"].tools) <= with_money
-    assert not with_money & set(F.BY_NAME["stripe"].tools)
     assert _visible(monkeypatch, "all") == set(F.all_tools())
     assert _visible(monkeypatch, None) == set(F.tools_of(F.DEFAULTS))
 
@@ -212,7 +210,7 @@ def test_an_unreachable_relay_leaves_the_agents_features_alone(monkeypatch, all_
 def test_each_setup_option_says_what_it_installs():
     labels = dict(sc.CHOICES["optional"].labels())
     for f in F.FEATURES:
-        if f.name == F.CORE or f.name == "stripe":      # cards are paused: not a setup option
+        if f.name == F.CORE:
             continue
         label = labels[f.name]
         assert f"Installs {len(f.tools)} tool" in label and f"{f.name.replace('_', '-')}.md" in label, f.name
@@ -449,19 +447,16 @@ def test_the_setup_skills_recommendations_are_the_ones_in_setup_choices():
 
 
 def test_no_skill_that_does_not_exist_is_linked_locked_or_recommended():
-    for path in ("installer/install.py", "src/emporia/skill_lock.py", "skills/dev/emporia-dev/SKILL.md",
+    for path in ("installer/install.py", "skills/dev/emporia-dev/SKILL.md",
                  "skills/dev/emporia-dev/references/payments.md", "docs/catalog/emporia.yaml",
                  "ARCHITECTURE.md", "README.md"):
         assert "mpp-agent" not in (ROOT / path).read_text(), path
-    from emporia import skill_lock
-    assert skill_lock.PAYMENT_SKILLS == ("stripe-link-cli", "stripe-projects")
 
 
 def test_the_core_skill_frontmatter_is_ours_and_names_no_missing_skill():
     head = (SKILLS / "emporia" / "SKILL.md").read_text().split("---")[1]
-    assert "author: Emporia" in head and "mpp-agent" not in head and "stripe-link-cli" not in head
-    stripe = (SKILLS / "emporia" / "references" / "stripe.md").read_text()
-    assert "optional Hermes skill" in stripe and "mpp-agent" not in stripe
+    assert "author: Emporia" in head and "mpp-agent" not in head
+    assert not (SKILLS / "emporia" / "references" / "stripe.md").exists(), "the card rail was removed"
 
 
 # ── next-tool hints ──────────────────────────────────────────────────────────

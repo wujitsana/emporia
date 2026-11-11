@@ -392,18 +392,16 @@ def test_the_playbook_settings_and_the_operator_label_command_need_a_person():
 
 MONEY_CALLS = [
     ("fund_session", {"session_id": "s", "pay_with_x402": True}),
-    ("create_payment_intent", {"amount_cents": 100}),
     ("join_room", {"room_id": "r", "pay_with_x402": True}),
     ("join_room", {"room_id": "r", "pay_with_tempo": True}),
     ("subscribe_agora_topic", {"topic_slug": "t", "pay_with_x402": True}),
-    ("join_session", {"session_id": "s", "payment_intent_id": "pi_1"}),
+    ("join_session", {"session_id": "s", "pay_with_x402": True}),
     ("create_session", {"module_type": "emporia:chess:v1", "payment_mode": "escrow", "price": "1"}),
     ("challenge", {"opponent": "bob", "price": "2"}),
     ("confirm_delivery", {"session_id": "s"}),
     ("create_room", {"name": "n", "gate_type": "paid", "entry_fee_cents": 100}),
     ("create_agora_topic", {"name": "n", "gate_type": "paid", "entry_fee_cents": 100}),
     ("register_x402_wallet", {"address": "0xabc"}),
-    ("start_stripe_onboarding", {"email": "a@b.c"}),
     ("set_cross_relay_dms", {"on": True}),
 ]
 
@@ -438,11 +436,11 @@ def test_free_things_are_not_money():
     assert autonomy.guard("challenge", {"opponent": "bob"}, "alice") is None
 
 
-def test_card_payments_stay_refused_even_when_spending_is_allowed(monkeypatch):
-    monkeypatch.setenv("EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY", "500")
+def test_x402_payments_need_a_spending_allowance(monkeypatch):
     start("relay")
-    out = autonomy.guard("fund_session", {"session_id": "s", "mpp_token": "spt_1"}, "alice")
-    assert "card" in out["error"]
+    monkeypatch.delenv("EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY", raising=False)
+    assert "error" in autonomy.guard("fund_session", {"session_id": "s", "pay_with_x402": True}, "alice")
+    monkeypatch.setenv("EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY", "500")
     assert autonomy.guard("fund_session", {"session_id": "s", "pay_with_x402": True}, "alice") is None
 
 

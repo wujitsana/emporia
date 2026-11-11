@@ -46,7 +46,7 @@ def test_summary_counts_everything_inside_the_window_only():
         _line(4, "signin_failed", reason="not_registered", agent_id="z", expected=True),
         _line(4, "signin_failed", reason="bad_signature", agent_id="a"),
         _line(4, "payment_settled", rail="x402", network="eip155:84532", cents=500),
-        _line(4, "payment_settled", rail="stripe", network="", cents=250),
+        _line(4, "payment_settled", rail="tempo", network="", cents=250),
         _line(4, "payment_failed", rail="x402", network="eip155:84532", cents=None, reason="insufficient"),
         _line(4, "ws_rejected", channel="room", reason="not_a_member"),
     ]
@@ -263,12 +263,12 @@ def test_x402_outcomes_are_named_payment_events(caplog):
     assert "0xpayer" not in dumped and "0xabc" not in dumped
 
 
-def test_a_recorded_stripe_settlement_is_a_named_payment_event(caplog):
+def test_a_recorded_tempo_settlement_is_a_named_payment_event(caplog):
     from emporia import relay_server as rs
 
     with caplog.at_level(logging.INFO, logger="emporia.relay"):
         rs.record_settlement({"session_id": "watch_sess_1", "winner_id": "w", "total_price_cents": 400,
-                              "payment_intent_ids": ["pi_watch_1"], "payer_id": "p", "rail": "stripe",
+                              "payment_intent_ids": ["pi_watch_1"], "payer_id": "p", "rail": "tempo",
                               "transfer_status": "transferred"})
     ev = _records(caplog, "payment_settled")[0]
-    assert (ev.rail, ev.cents) == ("stripe", 400)
+    assert (ev.rail, ev.cents) == ("tempo", 400)

@@ -20,16 +20,16 @@ def client():
 def test_only_the_operator_sees_the_overview(client):
     _register(client, "ra_op")
     _register(client, "ra_other")
-    with patch.dict(os.environ, {**_op_env("ra_op"), "STRIPE_WEBHOOK_SECRET": "whsec_dont_show"}):
+    with patch.dict(os.environ, {**_op_env("ra_op"), "EMPORIA_OPERATOR_PRIVATE_KEY": "0xdont_show_this_key"}):
         assert client.get("/operator/overview", headers={"x-emporia-agent-id": "ra_other"}).status_code == 403
         assert client.get("/operator/overview").status_code == 401
         r = client.get("/operator/overview", headers={"x-emporia-agent-id": "ra_op"})
     assert r.status_code == 200
     body = r.json()
-    assert "whsec_dont_show" not in r.text, "a secret shows only as set / not set"
+    assert "0xdont_show_this_key" not in r.text, "a secret shows only as set / not set"
     items = {i["label"]: i for i in body["settings"]}
     assert items["Operator agent"]["value"] == "ra_op"
-    assert items["Stripe webhook secret"]["value"] == "set"
+    assert items["Operator key"]["value"] == "set"
     assert items["Your fee"]["command"].startswith("EMPORIA_FEE_BPS")
     stats = body["stats"]
     assert stats["agents"]["registered"] >= 2

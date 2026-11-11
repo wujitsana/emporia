@@ -20,13 +20,13 @@ def test_figures_from_payments_settlements_holds_and_record():
             {"agent_id": "beta", "amount_cents": 100, "rail": "x402", "payment_type": "purchase", "created_at": _iso(NOW - DAY)},
             {"agent_id": "beta", "amount_cents": 25, "rail": "x402", "payment_type": "room_entry", "created_at": _iso(NOW - 2 * DAY)},
             {"agent_id": "beta", "amount_cents": 999, "rail": "x402", "created_at": _iso(NOW - 40 * DAY)},   # outside
-            {"agent_id": "beta", "amount_cents": 50, "rail": "stripe", "status": "refunded", "created_at": _iso(NOW - DAY)},
+            {"agent_id": "beta", "amount_cents": 50, "rail": "tempo", "status": "refunded", "created_at": _iso(NOW - DAY)},
         ],
         "settlements": [
             {"winner_id": "beta", "winner_payout_cents": 195, "platform_fee_cents": 5, "rail": "x402",
              "transfer_status": "captured", "status": "settled", "created_at": _iso(NOW - DAY)},
-            {"winner_id": "beta", "winner_payout_cents": 98, "platform_fee_cents": 2, "rail": "stripe",
-             "transfer_status": "pending_connect", "status": "settled", "created_at": _iso(NOW - DAY)},
+            {"winner_id": "beta", "winner_payout_cents": 98, "platform_fee_cents": 2, "rail": "tempo",
+             "transfer_status": "pending", "status": "settled", "created_at": _iso(NOW - DAY)},
             {"winner_id": "beta", "winner_payout_cents": 0, "status": "refunded", "created_at": _iso(NOW - DAY)},
             {"winner_id": "alpha", "winner_payout_cents": 500, "status": "settled", "created_at": _iso(NOW - DAY)},
         ],
@@ -118,7 +118,7 @@ def test_room_and_topic_entry_fees_count_as_the_creators_earnings():
                      "created_at) VALUES (?, ?, 'Stats', 'paid_invite', 75, ?, ?)",
                      (topic_id, "stats-paid", creator, datetime.now(UTC).isoformat()))
     for resource, cents, rail, transfer in ((room_id, 150, "x402", "direct"),
-                                            (topic_id, 75, "stripe", "transferred")):
+                                            (topic_id, 75, "tempo", "direct")):
         record_settlement({
             "session_id": resource, "winner_id": creator, "outcome_type": "room_entry",
             "status": "settled", "total_price_cents": cents, "platform_fee_cents": 0,
@@ -148,7 +148,7 @@ def test_room_and_topic_entry_fees_count_as_the_creators_earnings():
 
     relay = analytics.collect(lambda path: get(creator, path), creator)
     st = analytics.agent_stats(creator, relay, days=7)
-    assert st["earned_cents"] == 225 and st["earned_by_rail"] == {"x402": 150, "stripe": 75}
+    assert st["earned_cents"] == 225 and st["earned_by_rail"] == {"x402": 150, "tempo": 75}
     assert st["earned_by_source"] == {"rooms": 150, "topics": 75}
     assert st["access_sales"] == {"rooms": 1, "topics": 1}
     assert "from   rooms $1.50, topics $0.75" in analytics.render(st)
@@ -179,10 +179,10 @@ def test_earnings_by_source_and_payout_states_from_settlement_kinds():
     t = _iso(NOW - DAY)
     rows = [
         {"winner_id": "a", "winner_payout_cents": 100, "kind": "game", "transfer_status": "escrow_captured", "created_at": t},
-        {"winner_id": "a", "winner_payout_cents": 200, "kind": "service", "transfer_status": "destination", "created_at": t},
+        {"winner_id": "a", "winner_payout_cents": 200, "kind": "service", "transfer_status": "direct", "created_at": t},
         {"winner_id": "a", "winner_payout_cents": 40, "payer_id": "[redacted]", "transfer_status": "direct", "created_at": t},
-        {"winner_id": "a", "winner_payout_cents": 50, "kind": "room", "transfer_status": "no_stripe_account", "created_at": t},
-        {"winner_id": "a", "winner_payout_cents": 60, "kind": "topic", "transfer_status": "transfer_failed: x", "created_at": t},
+        {"winner_id": "a", "winner_payout_cents": 50, "kind": "room", "transfer_status": "pending", "created_at": t},
+        {"winner_id": "a", "winner_payout_cents": 60, "kind": "topic", "transfer_status": "capture_failed: x", "created_at": t},
     ]
     st = analytics.agent_stats("a", {"settlements": rows}, now=NOW)
     assert st["earned_by_source"] == {"games": 100, "services": 200, "rooms_topics": 40}

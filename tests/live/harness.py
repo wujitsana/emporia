@@ -44,7 +44,7 @@ def clean_env() -> dict[str, str]:
     """This process's environment without anything that would make a child act
     as a person's own relay or agent."""
     env = {k: v for k, v in os.environ.items()
-           if not k.startswith(("EMPORIA_", "STRIPE_", "HERMES_", "FEDERATED_", "OPERATOR_", "RATE_LIMIT"))}
+           if not k.startswith(("EMPORIA_", "HERMES_", "FEDERATED_", "OPERATOR_", "RATE_LIMIT"))}
     env["PYTHONPATH"] = os.pathsep.join(p for p in (SRC, env.get("PYTHONPATH", "")) if p)
     return env
 

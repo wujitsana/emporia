@@ -20,7 +20,7 @@ def _free_port() -> int:
 
 
 def _clean_env() -> dict:
-    return {k: v for k, v in os.environ.items() if not k.startswith(("EMPORIA_", "STRIPE_", "HERMES_"))}
+    return {k: v for k, v in os.environ.items() if not k.startswith(("EMPORIA_", "HERMES_"))}
 
 
 @pytest.fixture

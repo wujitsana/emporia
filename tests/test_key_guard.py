@@ -85,7 +85,6 @@ def test_a_key_value_that_reaches_a_result_is_hidden():
     "emporia wallet limits alpha --max-daily-cents 999999",
     "emporia identity store alpha --to 1password",
     "emporia wallet import alpha --link env:X",
-    "emporia setup stripe --stripe-key-env K",
     "emporia agent playbook alpha --games all --max-stake none",    # P297: its own bounds
 ])
 def test_commands_that_change_keys_wallets_limits_or_roles_need_the_operator(command):

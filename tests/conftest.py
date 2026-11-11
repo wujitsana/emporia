@@ -3,11 +3,10 @@
 `test_emporia.py` already pinned five permissive flags at module scope, with a
 comment noting "profile .env may have stricter settings". That was right about
 the flags and stopped short of the rest. Measured: on a developer machine the
-profile `.env` injects **ten** further variables into every test run, three of
+profile `.env` injects **ten** further variables into every test run, some of
 them live credentials —
 
-    STRIPE_SECRET_KEY   NVIDIA_API_KEY
-    OPENROUTER_API_KEY  STRIPE_PROFILE_ID   STRIPE_API_VERSION
+    NVIDIA_API_KEY      OPENROUTER_API_KEY
     EMPORIA_AGENT_ID    EMPORIA_RELAY_URL
     EMPORIA_GUARDRAILS_MODE
 
@@ -19,11 +18,9 @@ Two consequences, and the second is what P51r ran into:
    real key. Pinning obvious dummies means a missed mock fails loudly on
    authentication instead of quietly succeeding against someone's account.
 
-2. **The suite behaves differently in CI, where none of these exist.** P51r
-   found three reconciler tests that passed locally and would have done nothing
-   at all in CI, because `_reconcile_owed_payouts()` returns early without
-   `STRIPE_SECRET_KEY` and the developer's environment happened to supply one.
-   Those three now set it explicitly; this stops the next three from happening.
+2. **The suite behaves differently in CI, where none of these exist.** A test
+   that passes locally only because the developer's environment supplies a
+   setting does nothing in CI; pinning the environment here stops that.
 
 Why this works: since P55, `emporia.config.load_profile_dotenv()` merges with
 **setdefault** semantics — a value already in the environment always wins. A
@@ -72,9 +69,6 @@ TEST_DB = str(TEST_ROOT / "emporia_test.sqlite3")
 # .env supplies, which is the situation this file exists to end — so a new
 # config variable the relay reads belongs in this table, not in ambient state.
 TEST_ENVIRONMENT: dict[str, str] = {
-    # Cards (Stripe) are paused in a normal install; the suite turns them on so the kept Stripe code
-    # stays tested. tests/test_cards_paused.py turns it off per test.
-    "EMPORIA_CARDS": "on",
     # Where this run's artifacts go.
     "EMPORIA_DB_PATH": TEST_DB,
     # P99: keys too. The throwaway key directory used to be a fixture in
@@ -97,10 +91,6 @@ TEST_ENVIRONMENT: dict[str, str] = {
     # Credentials: obviously-fake, never blank. A blank key makes a forgotten
     # mock fail with "not configured", which reads like a test-setup problem; a
     # visibly fake one fails at the remote end, which reads like what it is.
-    # `sk_test_` matters beyond looking right — the relay branches on that
-    # prefix to decide it is in test mode (see _stripe_key_mode).
-    "STRIPE_SECRET_KEY": "sk_test_emporia_suite_not_a_real_key",
-    "STRIPE_PROFILE_ID": "prof_emporia_suite",
     # P108: and no profile .env at all — the suite runs here as it runs in CI,
     # where none exists. Pins above stay as the suite's own explicit values.
     "EMPORIA_NO_DOTENV": "1",
@@ -111,9 +101,6 @@ TEST_ENVIRONMENT: dict[str, str] = {
     # P281: the transparency log is off by default; the suite keeps it on so every
     # write path is still tested with its leaf. test_translog checks the default.
     "EMPORIA_TRANSPARENCY_LOG": "on",
-    # P106: named in the docstring above and never actually pinned, so the
-    # profile .env's value reached the suite — and the live SPT lane sent it.
-    "STRIPE_API_VERSION": "2026-04-22.preview",
     "NVIDIA_API_KEY": "",
     "OPENROUTER_API_KEY": "",
     # The card's operator label and declared model are the person's: none leaks into a test from a profile.
@@ -163,10 +150,9 @@ def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
 #
 # Measured before it was added: blocking outbound connections changed nothing
 # about the result (863 passed either way) and took the run from 130s to 58s.
-# That difference is real traffic to api.stripe.com, made in paths that swallow
-# the failure by design — `payments.find_settlement_transfer()` catches every
-# exception and reports "couldn't ask", which is correct behaviour in production
-# and indistinguishable from "mocked" in a test. Nothing failed, so nothing said.
+# That difference is real traffic, made in paths that swallow the failure by
+# design, which is correct behaviour in production and indistinguishable from
+# "mocked" in a test. Nothing failed, so nothing said.
 #
 # Blocking it makes the suite deterministic, runnable offline, twice as fast,
 # and turns any future unmocked call into an immediate error naming the host
@@ -684,19 +670,6 @@ def _scratch_hermes_home(monkeypatch, tmp_path):
 
 
 @pytest.fixture
-def stripe():
-    """A fake Stripe (tests/test_price_models.FakeStripe) behind httpx, with a test key."""
-    from unittest.mock import AsyncMock, patch
-
-    from tests.test_price_models import FakeStripe
-    fake = FakeStripe()
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_price_models"}), \
-         patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=fake.post), \
-         patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=fake.get):
-        yield fake
-
-
-@pytest.fixture
 def client():
     """A client of the relay app, from loopback."""
     from fastapi.testclient import TestClient
@@ -716,7 +689,7 @@ def profiles(tmp_path, monkeypatch):
     op.mkdir(parents=True)
     (op / "config.yaml").write_text(yaml.dump(
         {"model": {"provider": "openrouter", "default": "deepseek/deepseek-v4-flash-0731"}}))
-    (op / ".env").write_text("OPENROUTER_API_KEY=sk-or-x\nSTRIPE_SECRET_KEY=sk_test_relay\n")
+    (op / ".env").write_text("OPENROUTER_API_KEY=sk-or-x\n")
     monkeypatch.setattr(cli, "this_profile", lambda: op)
     monkeypatch.setattr(cli, "health", lambda timeout=3.0: None)
     inst = cli.installer()

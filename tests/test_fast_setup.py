@@ -16,9 +16,9 @@ sys.modules["emporia_setup_cli_fast"] = setup_cli
 spec.loader.exec_module(setup_cli)
 
 #: Importable names (top-level) of the packages only a relay uses: its faster event loop and HTTP
-#: parser (uvicorn[standard]), Sentry, the stripe SDK (nothing imports it). Not chess: the house
+#: parser (uvicorn[standard]), and Sentry. Not chess: the house
 #: agent's runner and local turn validation use it on an agent.
-RELAY_ONLY_MODULES = ("sentry_sdk", "uvloop", "httptools", "watchfiles", "stripe")
+RELAY_ONLY_MODULES = ("sentry_sdk", "uvloop", "httptools", "watchfiles")
 
 
 def _names(specs):
@@ -29,12 +29,11 @@ def _names(specs):
 def test_the_base_dependencies_are_the_agents_and_the_relay_extra_holds_the_servers():
     base = PYPROJECT["project"]["dependencies"]
     relay = PYPROJECT["project"]["optional-dependencies"]["relay"]
-    assert not ({"sentry-sdk", "py-ecc", "stripe"} & _names(base)), base
+    assert not ({"sentry-sdk", "py-ecc"} & _names(base)), base
     assert {"sentry-sdk", "py-ecc"} <= _names(relay)
     assert "chess" in _names(base) and "chess" not in _names(relay), "the house runner needs chess on an agent"
     assert not any(s.startswith("uvicorn[standard]") for s in base), "the agent's console needs plain uvicorn only"
     assert any(s.startswith("uvicorn[standard]") for s in relay)
-    assert "stripe" not in _names(base + relay), "the stripe SDK was never imported; cards use HTTP"
 
 
 _BLOCKED_IMPORT_PROBE = """
@@ -90,7 +89,7 @@ def test_the_agents_install_asks_for_no_relay_extra():
     export = (REPO / "scripts" / "pin_plugin_runtime.py").read_text()
     assert '"--extra", "x402"' in export and '"relay"' not in export, "the pip path's lock export is the agent set"
     requirements = (REPO / setup_cli.LOCKED_REQUIREMENTS).read_text()
-    for dist in ("sentry-sdk", "uvloop", "stripe"):
+    for dist in ("sentry-sdk", "uvloop"):
         assert f"\n{dist}==" not in "\n" + requirements, dist
     for dist in ("fastmcp", "eth-account", "fastapi", "uvicorn", "chess"):
         assert f"\n{dist}==" in "\n" + requirements, dist

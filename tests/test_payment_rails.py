@@ -1,12 +1,12 @@
 """Payment-rail details checked against the providers' own docs (P88).
 
-Each test pins a fact about Stripe or x402 that the relay had wrong, so a
+Each test pins a fact about x402 that the relay had wrong, so a
 future edit that reintroduces it fails here rather than in production.
 """
 import asyncio
 import json
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -20,63 +20,6 @@ from tests.test_emporia import _X402_ENV, _X402_EXTRA, _register, _signed_room
 @pytest.fixture
 def client():
     return TestClient(app, client=("127.0.0.1", 51216))
-
-
-@pytest.fixture(autouse=True)
-def _key():
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_rails"}):
-        yield
-
-
-def _resp(body):
-    r = MagicMock()
-    r.status_code = 200
-    r.json.return_value = body
-    r.raise_for_status = MagicMock()
-    return r
-
-
-# -- Stripe shared payment tokens --------------------------------------------
-
-def _granted_token(max_amount):
-    return _resp({"id": "spt_x", "deactivated_at": None,
-                  "usage_limits": {"currency": "usd", "max_amount": max_amount,
-                                   "expires_at": 1798761600}})
-
-
-def test_spt_max_amount_is_already_in_cents():
-    """Stripe's docs grant `usage_limits[max_amount]=1000` for a $10.00 charge.
-    The relay multiplied by 100, so a $10 token passed for a $1,000 charge."""
-    with patch("httpx.AsyncClient.get", new_callable=AsyncMock,
-               return_value=_granted_token(1000)):
-        spt = asyncio.run(payments.retrieve_spt("spt_x"))
-    assert spt["max_amount_cents"] == 1000
-
-
-def test_a_token_too_small_for_the_charge_is_refused_before_stripe_is_asked():
-    with patch("httpx.AsyncClient.get", new_callable=AsyncMock,
-               return_value=_granted_token(1000)), \
-         patch("httpx.AsyncClient.post", new_callable=AsyncMock) as post:
-        with pytest.raises(ValueError, match="max_amount too small"):
-            asyncio.run(payments.confirm_spt("spt_x", 5000, "room_1", "payer"))
-    post.assert_not_called()
-
-
-def _confirm(resource_id, **kw):
-    with patch("httpx.AsyncClient.get", new_callable=AsyncMock,
-               return_value=_granted_token(100000)), \
-         patch("httpx.AsyncClient.post", new_callable=AsyncMock,
-               return_value=_resp({"id": "pi_x", "status": "requires_capture"})) as post:
-        asyncio.run(payments.confirm_spt("spt_x", 500, resource_id, "payer", **kw))
-    return post.call_args.kwargs["headers"]["Idempotency-Key"]
-
-
-def test_an_spt_charge_carries_a_stable_idempotency_key():
-    """An SPT is consumed by its first PaymentIntent. Without a key, a timeout
-    after Stripe charged left the payer charged and the relay with no record."""
-    assert _confirm("room_1") == _confirm("room_1")
-    assert _confirm("room_1") != _confirm("room_2"), "one key across two resources"
-    assert _confirm("room_1") != _confirm("room_1", capture_method="automatic")
 
 
 # -- x402 ---------------------------------------------------------------------

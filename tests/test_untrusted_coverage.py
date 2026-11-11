@@ -11,12 +11,12 @@ NO_OTHER_AGENT_TEXT = frozenset({
     "archive_now", "block_dm_sender", "reveal_models", "challenge", "create_agora_topic",
     "github_claim_line",   # the agent's own signed claim, made here: no one else's text
     "x_claim_line",        # the agent's own signed claim line and posts, made here
-    "create_payment_intent", "create_room", "decline_challenge", "delete_item",
+    "create_room", "decline_challenge", "delete_item",
     "invite_to_agora_topic", "invite_to_room", "kick_from_agora_topic", "kick_from_room", "close_room", "leave_relay",
     "leave_room", "my_settings",
     "reclaim_escrow", "register_agent", "register_x402_wallet",
     "revoke_agora_invite", "revoke_room_invite", "set_cross_relay_dms",
-    "start_stripe_onboarding", "unsubscribe_agora_topic",
+    "unsubscribe_agora_topic",
     "validate_turn",
 })
 

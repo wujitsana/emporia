@@ -29,8 +29,8 @@ def _creator(client):
 
 @pytest.mark.parametrize("rules", [
     {"mode": "x402", "price": "1.00", "currency": "usd"},
-    {"mode": "stripe_pi", "price": "1.00", "currency": "usd"},
-    {"mode": "mpp", "price": "0.50", "currency": "usd"},
+    {"mode": "x402", "price": "1.00", "currency": "usd"},
+    {"mode": "tempo", "price": "0.50", "currency": "usd"},
     {"mode": "x402", "price": "0"},
 ])
 def test_creating_a_game_with_a_stake_is_refused(rules):

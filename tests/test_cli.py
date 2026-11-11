@@ -31,7 +31,7 @@ def test_setup_agent_makes_a_slim_profile_with_its_own_wallet(profiles, capsys):
     mcp_env = yaml.safe_load((prof / "config.yaml").read_text())["mcp_servers"]["emporia"]["env"]
     assert mcp_env["EMPORIA_DOTENV"] == str(prof / ".env")
     dotenv = (prof / ".env").read_text()
-    assert "sk-or-x" not in dotenv and "STRIPE_SECRET_KEY" not in dotenv, "no credential is copied"
+    assert "sk-or-x" not in dotenv, "no credential is copied"
     assert "EMPORIA_X402_PAY_NETWORKS=eip155:84532" in dotenv
     assert "EMPORIA_X402_MAX_DAILY_CENTS=700" in dotenv
     wallet = prof / "home" / ".hermes" / "keys" / "gamma.x402.secp256k1"
@@ -70,7 +70,6 @@ def test_doctor_names_each_problem_with_its_fix(profiles, capsys, monkeypatch):
     bad.mkdir()
     (bad / "config.yaml").write_text(yaml.dump(
         {"mcp_servers": {"emporia": {"env": {"EMPORIA_AGENT_ID": "legacy"}}}}))
-    (bad / ".env").write_text("STRIPE_SECRET_KEY=sk_live_relays\n")
     keys = bad / "home" / ".hermes" / "keys"
     keys.mkdir(parents=True)
     (keys / "legacy.priv").write_bytes(b"x" * 32)
@@ -80,8 +79,6 @@ def test_doctor_names_each_problem_with_its_fix(profiles, capsys, monkeypatch):
     assert rc == 1
     assert "✗ not answering" in out and "emporia relay start" in out
     assert "lacks EMPORIA_DOTENV, EMPORIA_KEYS_DIR, EMPORIA_HERMES_BIN" in out
-    assert "holds the relay's settings: STRIPE_SECRET_KEY" in out
-    assert "sk_live_relays" not in out, "doctor never prints a secret"
 
 
 def test_setup_relay_writes_the_testnet_preset_and_makes_an_operator_key_only_with_escrow(profiles, monkeypatch):
@@ -92,7 +89,7 @@ def test_setup_relay_writes_the_testnet_preset_and_makes_an_operator_key_only_wi
     with patch.dict(os.environ, {"EMPORIA_OPERATOR_PRIVATE_KEY": "", "EMPORIA_OPERATOR_ADDRESS": ""}):
         assert cli.main(["setup", "relay", "--fee-receiver", "0x" + "ab" * 20, "--yes"]) == 0
     dotenv = (op / ".env").read_text()
-    assert "STRIPE_SECRET_KEY=sk_test_relay" in dotenv, "other lines are kept"
+    assert "OPENROUTER_API_KEY=sk-or-x" in dotenv, "other lines are kept"
     assert "EMPORIA_X402_FACILITATOR_URL=https://facilitator.payai.network" in dotenv
     assert "EMPORIA_ESCROW" not in dotenv and not (keys / "relay_operator.secp256k1").exists(), \
         "money alone: x402 paid directly, no escrow, no operator key"
@@ -420,18 +417,6 @@ def test_doctor_checks_each_agent_against_its_own_relay(profiles, capsys, monkey
     for name, port in (("ann", 7001), ("bob", 7002), ("cy", 7003)):
         relay_at, agent_at = out.index(f"Relay  http://127.0.0.1:{port}"), out.index(f"Agent  {name}")
         assert relay_at < agent_at, "each relay's section comes before its agents"
-
-
-@pytest.mark.parametrize("cards,says", [(True, "no wallet — can pay by card only"),
-                                        (False, "no wallet — it cannot pay here (this relay takes no cards)")])
-def test_doctor_says_card_only_only_where_the_relay_takes_cards(profiles, capsys, monkeypatch, cards, says):
-    root, _ = profiles
-    _agent_profile(root)
-    monkeypatch.setattr(cli, "health", lambda timeout=3.0: {"stripe_enabled": cards, "version": "x"})
-    monkeypatch.setattr(cli, "_signed_get", lambda *a, **k: (404, None))
-    out = _doctor(root, capsys, monkeypatch)
-    assert says in out
-    assert ("by card only" in out) is cards
 
 
 def test_doctor_says_where_the_plugin_came_from(tmp_path):

@@ -9,7 +9,6 @@ Covers (per plan):
   - Federation pull/merge (mocked peer)
   - PoR rationale rejection (short + fingerprint)
   - Session lifecycle (create, join, action, terminal)
-  - Stripe intent mocked + arbitrate_and_refund
   - dual-track audit chain verify
   - identity registry operator-label recording
 
@@ -50,14 +49,6 @@ def _stable_of(agent: str) -> str:
     """The stable id of a test agent: the relay's, once it holds one, else the hash of its key."""
     from tests.ids import stable_of
     return stable_of(agent)
-
-
-@pytest.fixture(autouse=True)
-def _custodial_cards(monkeypatch):
-    """P157: this file tests the card flows that hold money on the operator's
-    balance (platform charges, transfer-to-winner) — the opt-in
-    path. The default, non-custodial one: tests/test_noncustodial_cards.py."""
-    monkeypatch.setenv("EMPORIA_CUSTODIAL_CARDS", "1")
 
 
 # _init_test_db moved to conftest.py (P72-4) — a session fixture in a test
@@ -104,31 +95,8 @@ def test_health(client):
     assert "modules" in data
 
 
-def test_health_requires_stripe_profile_for_mpp(client):
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_only", "STRIPE_PROFILE_ID": ""}, clear=False):
-        r = client.get("/health")
-    assert r.status_code == 200
-    data = r.json()
-    assert data["stripe_enabled"] is True
-    assert data["stripe_profile_ready"] is False
-    assert data["mpp_enabled"] is False
-    assert "stripe" not in data["payment_methods"]
-    assert "stripe_pi" in data["payment_rails"]
 
 
-@patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_only", "STRIPE_PROFILE_ID": ""}, clear=False)
-def test_agent_profile_key_only_stripe_does_not_expose_mpp(client):
-    _register(client, "stripe_key_only_agent")
-    # N4-3: GET /agents/{id} now requires an authenticated caller.
-    r = client.get(
-        "/agents/stripe_key_only_agent", headers={"x-emporia-agent-id": "stripe_key_only_agent"}
-    )
-    assert r.status_code == 200
-    data = r.json()
-    assert data["stripe_profile_ready"] is False
-    assert "stripe" not in data["payment_methods"]
-    assert "mpp" not in data["payment_rails"]
-    assert "stripe_pi" in data["payment_rails"]
 
 
 # A fully configured x402 rail, as five tests across this file need it. P45 moved
@@ -169,106 +137,33 @@ def test_health_advertises_x402_config(client):
     assert "x402" in r_on.json()["payment_rails"]
 
 
-def test_payment_rails_helper_pins_health_and_agent_variants_across_flag_combinations():
-    """P3/P70: one definition of payment_rails/payment_methods for /health and
-    GET /agents/{id}. P152: Tempo is no longer advertised — nothing settled
-    it — so "mpp" means the Stripe SPT path only."""
-    from emporia.relay_server import _payment_rails
-
-    with patch("emporia.relay_server._stripe_profile_ready", return_value=False):
-        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": ""}, clear=False):
-            assert _payment_rails() == (["free"], [])
-            assert _payment_rails(has_stripe=True) == (["free"], [])
-        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_only"}, clear=False):
-            assert _payment_rails() == (["free", "stripe_pi"], [])
-            assert _payment_rails(has_stripe=False) == (["free", "stripe_pi"], [])
-    with patch("emporia.relay_server._stripe_profile_ready", return_value=True):
-        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_only"}, clear=False):
-            assert _payment_rails() == (["free", "mpp", "stripe_pi"], ["stripe"])
-            assert _payment_rails(has_stripe=True) == (
-                ["free", "mpp", "stripe_pi", "stripe_connect"], ["stripe"],
-            ), "stripe_connect only appears for an agent with a stored Connect account"
-    with patch("emporia.relay_server._stripe_profile_ready", return_value=False):
-        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "", **_X402_ENV}, clear=False):
-            assert _payment_rails() == (["free", "x402"], [])
-            assert _payment_rails(has_stripe=True) == (["free", "x402"], [])
 
 
-def test_tempo_is_not_advertised_until_something_settles_it(monkeypatch):
-    """P152: EMPORIA_MPP_TEMPO_ENABLED added "tempo" to payment_methods while no
-    code could settle a Tempo payment — a relay claiming a method it cannot
-    take. The setting is gone, and the setting does nothing."""
-    from emporia.relay_server import _payment_rails
-    monkeypatch.setenv("EMPORIA_MPP_TEMPO_ENABLED", "1")
-    with patch("emporia.relay_server._stripe_profile_ready", return_value=True), \
-         patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_only"}, clear=False):
-        assert "tempo" not in _payment_rails()[1]
 
 
-def test_both_doors_agree_on_every_rail_except_stripe_connect():
-    """P70, the guard that keeps the seam a seam.
-
-    The P3 divergence was not caught by any test asserting a specific value —
-    both formulas had their own passing assertions, and nothing required the
-    two to *agree*. That is the shape of the defect: a rail's availability is
-    a relay-wide fact, so an agent asking `/health` and an agent asking
-    `GET /agents/{id}` must never get different answers about it. The one
-    legitimate exception is `stripe_connect`, which is a claim about a
-    specific agent's payout account rather than about the relay.
-
-    Written as "who may differ", not "do these two values match" — the whole
-    8-cell cross-product is swept, so a rail added to one formula and not the
-    other fails here regardless of which flags it keys off. This is what makes
-    a third settlement rail a local edit instead of a matching pair of edits.
-    """
-    from emporia.relay_server import _payment_rails
-    from itertools import product
-
-    checked = 0
-    for ready, key, x402 in product([False, True], repeat=3):
-        env = {"STRIPE_SECRET_KEY": "sk_test_only" if key else ""}
-        env.update(_X402_ENV if x402 else {})
-        with patch("emporia.relay_server._stripe_profile_ready", return_value=ready), \
-             patch.dict(os.environ, env, clear=False):
-            wide_rails, wide_methods = _payment_rails()
-            for has_stripe in (False, True):
-                agent_rails, agent_methods = _payment_rails(has_stripe=has_stripe)
-                flags = f"ready={ready} key={key} x402={x402} has_stripe={has_stripe}"
-                assert agent_methods == wide_methods, \
-                    f"payment_methods is relay-wide and must not vary by agent ({flags})"
-                assert [r for r in agent_rails if r != "stripe_connect"] == wide_rails, \
-                    f"the two doors disagree about a relay-wide rail ({flags}): " \
-                    f"/health={wide_rails} /agents={agent_rails}"
-                assert ("stripe_connect" in agent_rails) == bool(has_stripe and ready), \
-                    f"stripe_connect must track this agent's own payout account ({flags})"
-                checked += 1
-    assert checked == 16, f"expected the full cross-product, swept {checked}"
 
 
 def test_health_and_agent_profile_route_through_the_shared_payment_rails_helper(client):
     """P3 (item 5): HTTP-level confirmation that both endpoints actually call
-    _payment_rails() rather than each keeping its own inline copy — patches
-    the helper to a spy and confirms both routes invoke it with the
-    documented has_stripe contract (None for /health, an explicit bool for
-    /agents/{id})."""
+    _payment_rails() rather than each keeping its own inline copy: patches the
+    helper to a spy and confirms both routes invoke it."""
     from emporia import relay_server
 
     _register(client, "p3_rails_spy_agent")
     calls = []
     real = relay_server._payment_rails
 
-    def spy(*, has_stripe=None):
-        calls.append(has_stripe)
-        return real(has_stripe=has_stripe)
+    def spy():
+        calls.append(1)
+        return real()
 
     with patch.object(relay_server, "_payment_rails", spy):
         r1 = client.get("/health")
         r2 = client.get("/agents/p3_rails_spy_agent",
             headers={"x-emporia-agent-id": "p3_rails_spy_agent"})
     assert r1.status_code == 200 and r2.status_code == 200
-    assert calls == [None, False], \
-        f"/health must call _payment_rails() with no has_stripe, /agents/{{id}} with an " \
-        f"explicit bool — got {calls}"
+    assert len(calls) == 2, f"both /health and /agents/{{id}} must call _payment_rails() — got {len(calls)}"
+    assert r1.json()["payment_rails"] == r2.json()["payment_rails"]
 
 
 def test_relay_card_well_formed(client):
@@ -286,9 +181,9 @@ def test_relay_card_well_formed(client):
 def test_relay_card_uses_shared_builder(client):
     """N10-2 (R2): the endpoint's response must equal identity.build_relay_descriptor()'s
     output for the same inputs — a single definition, not two hand-written copies that can
-    drift (same class of gap as N8-5/R4). P1b-7 adds payment_rails/payment_methods on top
-    of the shared builder's own output (identity.py stays payments-independent), so those
-    two keys are merged in separately here rather than expected to come from the builder."""
+    drift (same class of gap as N8-5/R4). P1b-7 adds payment_rails on top of the shared
+    builder's own output (identity.py stays payments-independent), so that key is merged
+    in separately here rather than expected to come from the builder."""
     from emporia.identity import build_relay_descriptor
     from emporia.relay_server import _payment_rails
 
@@ -304,9 +199,7 @@ def test_relay_card_uses_shared_builder(client):
         display_name=r.json()["display_name"],
         capabilities=r.json()["capabilities"],
     )
-    payment_rails, payment_methods = _payment_rails()
-    expected["payment_rails"] = payment_rails
-    expected["payment_methods"] = payment_methods
+    expected["payment_rails"] = _payment_rails()
     assert r.json() == expected
 
 
@@ -323,9 +216,8 @@ def test_relay_card_advertises_payment_rails(client):
         r = client.get("/relay-card")
     assert r.status_code == 200
     card = r.json()
-    expected_rails, expected_methods = _payment_rails()
-    assert card["payment_rails"] == expected_rails
-    assert card["payment_methods"] == expected_methods
+    assert card["payment_rails"] == _payment_rails()
+    assert "payment_methods" not in card
 
 
 @pytest.mark.parametrize("path", ["/.well-known/agent.json", "/.well-known/agent-card.json"])
@@ -654,11 +546,11 @@ def test_agent_id_rejects_cyrillic_homoglyph_of_existing_agent(client):
     Cyrillic а isn't in the now-enforced [a-z0-9_-] charset, so it's rejected outright —
     not accepted as a distinct name."""
     r = client.post("/agents/register", json={
-        "agent_id": "stripe_official", "public_key_hex": _test_pubkey("stripe_official"),
+        "agent_id": "support_official", "public_key_hex": _test_pubkey("support_official"),
     })
     assert r.status_code == 200
 
-    homoglyph = "stripe_officiаl"  # Cyrillic а (U+0430) in place of the Latin a
+    homoglyph = "support_officiаl"  # Cyrillic а (U+0430) in place of the Latin a
     r = client.post("/agents/register", json={
         "agent_id": homoglyph, "public_key_hex": _test_pubkey(homoglyph),
     })
@@ -722,7 +614,7 @@ def test_seeded_demo_agent_ids_still_validate(client):
     """The seed script's demo agent set must keep registering, or scripts/seed_demo_relay.py
     and every fixture built on it break the moment this validator ships."""
     from emporia.identity import get_public_key_hex
-    for agent_id in ["hackathon_hermes", "alpha", "beta", "nemotron_strategist", "stripe_escrow_bot"]:
+    for agent_id in ["hackathon_hermes", "alpha", "beta", "nemotron_strategist", "escrow_bot"]:
         r = client.post("/agents/register", json={
             "agent_id": agent_id, "public_key_hex": get_public_key_hex(agent_id),
         })
@@ -1018,20 +910,6 @@ def _signed_comment(agent_id: str, post_id: str, body: dict) -> dict:
         post_id, body.get("parent_comment_id"), body["content"], nonce), agent_id)}
 
 
-@contextmanager
-def _stripe_account_active(account_id: str):
-    """P25-2: mocks a creator having a working, already-active Connected
-    Account for a real (mocked-Stripe) paid room/Agora flow. Before P25-2 a
-    bare get_stripe_account mock was sufficient to make _settle_access_
-    payment() attempt a transfer; the new pre-check there also reads
-    get_stripe_account_status(), so a test simulating "this creator can be
-    paid" must mock both together or the transfer is now correctly skipped
-    as pending_connect_not_active — which is real, desired behavior, not a
-    gap this helper papers over (see test_settle_skips_transfer_when_winner_
-    stripe_account_status_not_active for that behavior's own direct test)."""
-    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value=account_id), \
-         patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account_status", return_value="active"):
-        yield
 
 
 def _x402_payment_signature_header(accepted: dict, payload: dict | None = None) -> str:
@@ -1351,64 +1229,6 @@ def test_sweep_task_shutdown_is_clean_after_a_sweep_failure():
 
 
 
-def test_mpp_payment_path_does_not_rate_limit_unproven_identity(client):
-    """N12-5 (R5): the three routes guarded by _require_caller_unless_mpp_payment
-    (join_session, join_room, subscribe_agora_topic) skip identity verification by
-    design when an MPP payment credential is presented — the two share the
-    Authorization header, so identity genuinely can't be resolved on that branch.
-    N11-4 wired _enforce_agent_rate_limit(req.agent_id) into all three unconditionally,
-    keyed on that same unproven agent_id — letting an MPP-token holder burn any
-    registered agent's write budget just by naming them in the request body. Exercises
-    join_room: a flood of MPP-path requests naming a victim agent must never 429 (the
-    budget was never proven to be theirs to spend), while a genuinely authenticated
-    join from a *different* agent on the same route, same low limit, still does —
-    confirming the fix didn't just disable rate-limiting for the route altogether."""
-    from emporia import relay_server as rs
-
-    _register_keyed(client, "room_creator_mpp")
-    _register(client, "victim_agent_mpp")
-    _register(client, "control_agent_mpp")
-
-    def _open_room(name: str) -> str:
-        r = client.post(
-            "/rooms", json=_signed_room("room_creator_mpp", {"name": name}),
-            headers={"x-emporia-agent-id": "room_creator_mpp"},
-        )
-        assert r.status_code == 200, r.text
-        return r.json()["room_id"]
-
-    # Rooms are created outside the low-limit patch below — POST /rooms itself is
-    # rate-limited per creator, and that's not what this test is about.
-    victim_room = _open_room("test room one")
-    room1 = _open_room("test room two")
-    room2 = _open_room("test room three")
-
-    from conftest import header_shim_off
-    with patch.object(rs.AGENT_REGISTRY, "max_per_minute", 1):
-        # P273: a join is now signed by the joining agent, so one naming the
-        # victim without its signature is refused before it reaches the
-        # victim's budget — as often as it is tried, never a 429.
-        with header_shim_off():
-            for _ in range(5):
-                r = client.post(
-                    f"/rooms/{victim_room}/join",
-                    json={"agent_id": "victim_agent_mpp"},
-                    headers={"Authorization": "Payment fake_spt_test_token"},
-                )
-                assert r.status_code == 401, r.text
-
-        r = client.post(
-            f"/rooms/{room1}/join",
-            json={"agent_id": "control_agent_mpp"},
-            headers={"x-emporia-agent-id": "control_agent_mpp"},
-        )
-        assert r.status_code == 200, r.text
-        r = client.post(
-            f"/rooms/{room2}/join",
-            json={"agent_id": "control_agent_mpp"},
-            headers={"x-emporia-agent-id": "control_agent_mpp"},
-        )
-        assert r.status_code == 429
 
 
 # Events and tournaments are gone: no routes, no table.
@@ -2035,9 +1855,6 @@ def test_no_new_identity_as_proof_params():
         ("GET", "/agents/{agent_id}/sheet"),
         # agent_id (path): whose improvement points to count — a public read.
         ("GET", "/agents/{agent_id}/points"),
-        # agent_id (path): _require_caller_is-checked (P25-2), same posture as
-        # /agents/{agent_id}/x402-wallet just above.
-        ("POST", "/agents/{agent_id}/stripe-onboarding"),
         # agent_id (path): the link is the agent's own (inline caller check, signed record); a confirmation
         # names its target by stable id in the signed body and the path name is only checked against it.
         ("POST", "/agents/{agent_id}/links"),
@@ -2190,8 +2007,6 @@ def test_every_route_has_a_reviewed_auth_posture():
         # P47b: _require_caller_is, same posture as x402-wallet. Renaming someone
         # else is taking their name away from them, so there is no weaker tier.
         ("POST", "/agents/{agent_id}/rename"),
-        # P25-2: _require_caller_is, same posture as x402-wallet just above.
-        ("POST", "/agents/{agent_id}/stripe-onboarding"),
         # P16-3: _require_caller_is on publish; authenticated-caller on fetch. Key
         # discovery stays a feature, it just doesn't happen anonymously — same
         # reasoning as N4-3 applied to GET /agents/{agent_id}.
@@ -2360,8 +2175,6 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("WS", "/ws/events"): "global public event stream by design (N0-2/N3-5) — content is gated per-event at broadcast time, not at connect time",
         ("GET", "/"): "static redirect to /ui/",
         ("GET", "/agents.txt"): "static plain text: how an agent joins this relay by itself, no credential exists yet",
-        ("POST", "/webhooks/stripe"): "P25-2: Stripe's own server calls this, not an Emporia agent — the Stripe-Signature HMAC check is the entire authorization boundary, verified inline, not via caller resolution",
-        ("GET", "/stripe-onboarding-return"): "P25-2: static confirmation page Stripe redirects the agent's operator to after hosted onboarding, no agent data returned",
     }
     # Zero caller resolution, actively being closed this pass — same drain-to-empty
     # mechanic as _KNOWN_VIOLATIONS above. Delete a line (and add the route to its real
@@ -2730,104 +2543,6 @@ def test_delete_session_force_deletes_non_terminal(client):
     assert after["participants"] == 0
 
 
-def test_delete_session_operator_deletes_terminal_session_retains_money_rows(client):
-    """P4-5: the core cascade-delete contract. A completed session's
-    participants/actions/messages/sessions rows are hard-deleted, but its
-    payments and settlements rows — the record that real money moved — are
-    retained and reported, never deleted. Also confirms one audit line is
-    appended recording the deletion."""
-    from emporia.relay_server import (
-        DATABASE_PATH, load_session, record_action, record_payment, record_settlement,
-    )
-
-    _register(client, "p4_5_full_creator")
-    _register(client, "p4_5_full_seller")
-    _register(client, "p4_5_full_op")
-
-    r = client.post("/sessions", json={
-        "module_type": "emporia:service:v1", "creator_agent_id": "p4_5_full_creator",
-        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
-    },
-        headers={"x-emporia-agent-id": "p4_5_full_creator"})
-    session_id = r.json()["session_id"]
-    client.post(
-        f"/sessions/{session_id}/join", json={"agent_id": "p4_5_full_seller"},
-        headers={"x-emporia-agent-id": "p4_5_full_seller"},
-    )
-    # Written directly rather than through POST .../action — that endpoint's
-    # signature/turn-order requirements are a different test's job; this test
-    # only needs one real actions row to prove the cascade deletes it.
-    record_action(session_id, "p4_5_full_creator", "note", {})
-
-    record_payment(
-        payment_intent_id=f"pi_{session_id}", agent_id="p4_5_full_creator",
-        amount_cents=100, payment_type="stake", session_id=session_id, rail="stripe",
-    )
-    record_settlement({
-        "session_id": session_id, "winner_id": "p4_5_full_seller", "outcome_type": "won",
-        "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
-        "winner_payout_cents": 100, "platform_fee_bps": 0,
-        "payment_intent_ids": [f"pi_{session_id}"], "transfer_id": None,
-        "transfer_status": "no_stripe_account",
-    })
-
-    import sqlite3
-    from datetime import UTC, datetime
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.execute(
-        "UPDATE sessions SET status='completed', updated_at=? WHERE session_id=?",
-        (datetime.now(UTC).isoformat(), session_id),
-    )
-    conn.commit()
-    conn.close()
-    assert load_session(session_id)["status"] == "completed"
-
-    before = _p4_5_query_counts(session_id)
-    assert before["participants"] == 2
-    assert before["actions"] == 1
-    assert before["payments"] == 1
-    assert before["settlements"] == 1
-
-    import glob
-    from emporia.relay_server import LOG_DIR
-    audit_files_before = set(glob.glob(str(LOG_DIR / "messages_*.jsonl")))
-    audit_lines_before = sum(
-        1 for f in audit_files_before for _ in open(f, encoding="utf-8")
-    )
-
-    with patch.dict(os.environ, {**_op_env("p4_5_full_op")}):
-        r = client.delete(
-            f"/admin/sessions/{session_id}", headers={"x-emporia-agent-id": "p4_5_full_op"},
-        )
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["deleted"]["sessions"] == 1
-    assert body["deleted"]["participants"] == 2
-    assert body["deleted"]["actions"] == 1
-    assert body["retained"] == {"payments": 1, "settlements": 1}
-
-    after = _p4_5_query_counts(session_id)
-    assert after["participants"] == 0
-    assert after["actions"] == 0
-    assert after["sessions"] == 0
-    assert after["payments"] == 1, "payments must never be deleted"
-    assert after["settlements"] == 1, "settlements must never be deleted"
-    assert load_session(session_id) is None
-
-    audit_files_after = set(glob.glob(str(LOG_DIR / "messages_*.jsonl")))
-    audit_lines_after = sum(
-        1 for f in audit_files_after for _ in open(f, encoding="utf-8")
-    )
-    assert audit_lines_after == audit_lines_before + 1, (
-        "exactly one new audit line must be appended for the deletion — "
-        "no existing audit lines rewritten or removed"
-    )
-    last_line = json.loads(
-        open(sorted(audit_files_after)[-1], encoding="utf-8").readlines()[-1]
-    )
-    assert last_line["type"] == "admin_session_deleted"
-    assert last_line["session_id"] == session_id
-    assert last_line["operator"] == "p4_5_full_op"
 
 
 def test_delete_session_clears_linked_room_without_deleting_it(client):
@@ -2916,7 +2631,7 @@ def test_delete_session_audit_write_does_not_hold_db_lock(client):
     running INSIDE the `with DB_LOCK, get_db() as conn:` block — a local
     file append now happening while the relay's global write lock is held.
     The audit line belongs outside the lock. Same shape of mistake
-    this codebase already fixed once for Agora subscribe/the Stripe
+    this codebase already fixed once for Agora subscribe/the network
     round-trip (docs/archive/roadmap-hackathon-era.md), just with a file write instead of a network
     call. Verified by asserting DB_LOCK._is_owned() is False at the moment
     _write_audit_line() runs — must fail pre-fix (True: lock held)."""
@@ -3320,183 +3035,15 @@ def test_audit_chain_detects_tampering():
                     assert not ok
 
 
-# ============================================================================
-# Stripe (mocked)
-# ============================================================================
-
-@pytest.mark.asyncio
-async def test_create_stake_intent_mocked():
-    from emporia.payments import create_price_intent
-    mock_response = {
-        "id": "pi_test_123",
-        "client_secret": "pi_test_123_secret",
-        "status": "requires_payment_method",
-    }
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            mock_resp = MagicMock()
-            mock_resp.json.return_value = mock_response
-            mock_resp.raise_for_status = MagicMock()
-            mock_post.return_value = mock_resp
-            result = await create_price_intent("sess_001", 1000, "alpha", "beta", "chess")
-    assert result["payment_intent_id"] == "pi_test_123"
-    assert result["amount_cents"] == 1000
 
 
-@pytest.mark.asyncio
-async def test_arbitrate_and_refund_mocked():
-    from emporia.payments import arbitrate_and_refund
-    mock_refund = {"id": "re_test_001", "status": "succeeded"}
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            mock_resp = MagicMock()
-            mock_resp.json.return_value = mock_refund
-            mock_resp.raise_for_status = MagicMock()
-            mock_post.return_value = mock_resp
-            result = await arbitrate_and_refund("sess_001", "ch_test_001", "fraudulent")
-    assert result["refund_id"] == "re_test_001"
-    assert result["status"] == "succeeded"
 
 
-@pytest.mark.asyncio
-async def test_payout_winner_sends_deterministic_idempotency_key():
-    """P1a-3 (R3): payout_winner()'s POST /transfers sent no Idempotency-Key at all —
-    a retry after a timeout or mid-flight crash could move money twice. The key must
-    be deterministic from the logical payout (not random), so a genuine retry of the
-    *same* payout reuses it and a genuinely *different* payout does not collide. The
-    bug is invisible from the response (a bare mock always returns 200), so this
-    asserts on the outgoing request header directly."""
-    from emporia.payments import payout_winner
-    mock_transfer = {"id": "tr_test_001"}
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            mock_resp = MagicMock()
-            mock_resp.json.return_value = mock_transfer
-            mock_resp.raise_for_status = MagicMock()
-            mock_post.return_value = mock_resp
-
-            await payout_winner(
-                "winner_a", "acct_a", 100, "room_idem_test",
-                idempotency_key="emporia:payout:room_idem_test:payer_a",
-            )
-            await payout_winner(
-                "winner_a", "acct_a", 100, "room_idem_test",
-                idempotency_key="emporia:payout:room_idem_test:payer_a",
-            )
-            await payout_winner(
-                "winner_a", "acct_a", 100, "room_idem_test",
-                idempotency_key="emporia:payout:room_idem_test:payer_b",
-            )
-
-    keys = [call.kwargs["headers"]["Idempotency-Key"] for call in mock_post.call_args_list]
-    assert keys[0] == keys[1], \
-        f"two calls for the same logical payout must send the identical Idempotency-Key, got {keys}"
-    assert keys[0] != keys[2], \
-        f"two calls for genuinely different payouts must not share an Idempotency-Key, got {keys}"
 
 
-@pytest.mark.asyncio
-async def test_settle_derives_payout_idempotency_key_from_payment_intent_ids():
-    """P1r-2 (R1): settle()'s payout_winner() call previously derived its
-    Idempotency-Key from session_id alone (`f"emporia:payout:{session_id}:"`)
-    with no payment digest — the same (resource, payer)-not-(resource, payer,
-    payment) gap fixed at the room/Agora call sites, here in its session-escrow
-    form. Now derived via settlement_dedupe_key() like every other site, so two
-    settle() calls for the same session but a genuinely different PI set don't
-    collide. Filters mock_post's calls down to the /transfers ones (settle() also
-    calls capture_payment_intent() per PI first, which sends no Idempotency-Key
-    at all — captures are safe to retry via Stripe's own state check, see that
-    function's docstring)."""
-    from emporia.payments import settle
-    mock_transfer = {"id": "tr_settle_test"}
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            mock_resp = MagicMock()
-            mock_resp.json.return_value = mock_transfer
-            mock_resp.raise_for_status = MagicMock()
-            mock_post.return_value = mock_resp
-
-            # P26-9: winner_stripe_account_status is now required and
-            # keyword-only -- "active" here keeps this test's original intent
-            # (a payable winner), stated explicitly instead of defaulted.
-            for pi in ("pi_settle_a", "pi_settle_a", "pi_settle_b"):
-                await settle(
-                    "sess_settle_idem", "winner_settle", 200, [pi], "acct_settle",
-                    winner_stripe_account_status="active",
-                )
-
-    keys = [
-        call.kwargs["headers"]["Idempotency-Key"]
-        for call in mock_post.call_args_list
-        if "Idempotency-Key" in call.kwargs.get("headers", {})
-    ]
-    assert len(keys) == 3, f"expected exactly 3 transfer calls (one per settle()), got {keys}"
-    assert keys[0] == keys[1], \
-        f"two settle() calls for the same session and same PI set must send the identical " \
-        f"Idempotency-Key, got {keys}"
-    assert keys[0] != keys[2], \
-        f"two settle() calls for the same session but a genuinely different PI set must not " \
-        f"share an Idempotency-Key, got {keys}"
 
 
-@pytest.mark.asyncio
-async def test_settle_pays_a_winner_who_never_paid_in(monkeypatch):
-    monkeypatch.setenv("EMPORIA_FEE_ADDRESS", "0x" + "fe" * 20)    # the relay has a fee once it has an address
-    """P72 phase 01: the asymmetric shape — one funder escrows, a different agent is paid.
 
-    Every settlement this codebase has shipped is a *wager*: N participants each
-    escrow a stake, one wins, the pot moves. A deal is asymmetric — one buyer
-    puts up the price and the seller is paid. The spec called this the one structural
-    unknown, because if `settle()` requires the winner to be among the payers,
-    it would be a payments change rather than assembly.
-
-    It does not. `settle()` captures whatever PaymentIntents it is handed and
-    transfers to whatever account it is handed; the two are independent
-    arguments, and the session route derives payers from the session's payment
-    rows while looking the winner's account up separately. This test pins that
-    independence so a future "tighten settlement" pass cannot quietly close the
-    door on deals without a failing test explaining what it broke.
-
-    Asserted at the wire, not the return value: the funder's hold is the PI that
-    gets captured, and the transfer is addressed to the winner's account.
-    """
-    from emporia.payments import settle
-
-    captured: list[str] = []
-    transfers: list[dict] = []
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            def _record(url, *a, **kw):
-                if "/capture" in url:
-                    captured.append(url.rsplit("/payment_intents/", 1)[-1].split("/")[0])
-                elif url.endswith("/transfers"):
-                    transfers.append(kw.get("data", {}))
-                resp = MagicMock()
-                resp.json.return_value = {"id": "tr_asym", "status": "succeeded"}
-                resp.raise_for_status = MagicMock()
-                return resp
-            mock_post.side_effect = _record
-
-            result = await settle(
-                "asym_sess_1",
-                "entrant_who_paid_nothing",          # winner
-                5000,                                 # the funder's prize, in cents
-                ["pi_funder_hold"],                   # the ONLY payer is the funder
-                "acct_entrant",                       # winner's Connect account
-                winner_stripe_account_status="active",
-            )
-
-    assert captured == ["pi_funder_hold"], \
-        f"the funder's hold is what gets captured, got {captured}"
-    assert transfers and transfers[0].get("destination") == "acct_entrant", \
-        f"the payout must be addressed to the winner, who never paid in: {transfers}"
-    assert result["winner_id"] == "entrant_who_paid_nothing"
-    assert result["transfer_status"] == "transferred"
-    # 1% of 5000 = 50; the winner nets the prize less the operator fee.
-    assert result["platform_fee_cents"] == 50
-    assert result["winner_payout_cents"] == 4950, \
-        "a payout is the amount less EMPORIA_FEE_BPS, same as any settlement"
 
 
 def test_all_three_win_counters_agree_that_a_refund_is_not_a_win(client):
@@ -3575,57 +3122,12 @@ def test_all_three_win_counters_agree_that_a_refund_is_not_a_win(client):
     assert board["scope"] == "this_relay", "a local table must say it is local"
 
 
-def test_a_price_the_rail_cannot_charge_is_refused_by_the_relay(client):
-    """P74: `settle()` claimed "Requires total_price_cents >=
-    STRIPE_MIN_CHARGE_CENTS (50c) — enforced upstream" and cited a constant
-    this codebase never defined. Nothing upstream enforced anything; the only
-    amount guard was `amount_cents <= 0`.
-
-    So a room priced at a penny passed every relay check, reached Stripe, and
-    came back a raw provider error — the agent meeting a payment-provider
-    rejection for a decision the relay could have made itself, about a price
-    its own operator had set. The mistake is the operator's and the message now
-    says so.
-
-    Asserted at 1c and at 49c (the boundary), and confirmed that a free room is
-    untouched: zero is not "below the minimum", it is a different thing
-    entirely, and folding the two together would break every free resource.
-    """
-    import uuid
-
-    from emporia import relay_server as rs
-    from emporia.payments import STRIPE_MIN_CHARGE_CENTS
-
-    assert STRIPE_MIN_CHARGE_CENTS == 50
-
-    agent = "p74_" + uuid.uuid4().hex[:6]
-    _register(client, agent)
-
-    from emporia import rooms as rooms_db
-
-    for cents in (1, STRIPE_MIN_CHARGE_CENTS - 1):
-        # Created through the real writer, not raw SQL — a room this test
-        # inserted by hand would prove nothing about a room the relay made.
-        room = rooms_db.create_room(
-            name="Underpriced", creator_id=agent, room_type="private",
-            gate_type="paid", entry_fee_cents=cents, currency="usd",
-            db_path=rs.DATABASE_PATH,
-        )
-        room_id = room.room_id
-        r = client.post("/payments/create-intent", json={
-            "room_id": room_id, "amount_cents": cents, "service_type": "emporia:room_entry",
-            "seller_id": agent,
-        }, headers={"x-emporia-agent-id": agent})
-        assert r.status_code == 400, f"{cents}c must be refused by the relay, got {r.status_code}"
-        detail = r.json()["detail"]
-        assert "minimum" in detail and "operator" in detail, \
-            f"the message must name whose mistake this is: {detail}"
 
 
 def test_settlement_dedupe_key_never_hashes_the_rail_tag():
     """P3, landmine L1: settlement_dedupe_key() is both settlements.dedupe_key
-    (a UNIQUE index, ON CONFLICT target) and the base of every Stripe
-    Idempotency-Key for real money movement — so if PaymentRef's rail tag
+    (a UNIQUE index, ON CONFLICT target) and the base of every payment
+    reference — so if PaymentRef's rail tag
     ever reached the hashed string, every one of those would silently change
     value, breaking in-flight idempotency and requiring a unique-index
     rebuild. The function's own signature only ever took bare reference
@@ -3649,365 +3151,32 @@ def test_settlement_dedupe_key_never_hashes_the_rail_tag():
         "if this fails, something now hashes more than the bare reference string"
 
 
-@patch("emporia.payments.refund_payment_intent", new_callable=AsyncMock)
-@patch("emporia.payments.reverse_transfer", new_callable=AsyncMock)
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_room_join_payout_idempotency_key_unaffected_by_paymentref_rail_tag(
-    mock_verify, mock_payout, mock_reverse, mock_refund, client
-):
-    """P3, landmine L1, integration-level: join_room's payout call derives its
-    Idempotency-Key from settlement_dedupe_key(room_id, agent_id,
-    [confirmed_pi.reference]) — PaymentRef.reference, not the PaymentRef
-    object itself and not PaymentRef.rail. Proves the actual idempotency key
-    sent to Stripe on a real (mocked) paid-room join matches the same value
-    settlement_dedupe_key() itself produces for the bare id, pinning that the
-    PaymentRef wrapper introduced in this pass changed nothing about what
-    reaches Stripe."""
-    from emporia.payments import settlement_dedupe_key
-
-    owner, payer = "p3_l1_owner", "p3_l1_payer"
-    _register_keyed(client, owner)
-    _register(client, payer)
-    mock_payout.return_value = {"transfer_id": "tr_p3_l1"}
-
-    r = client.post("/rooms", json=_signed_room(owner, {
-        "name": "P3 L1 Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    mock_verify.return_value = {
-        "status": "succeeded", "payment_intent_id": "pi_p3_l1",
-        "amount": 100, "currency": "usd", "capture_method": "automatic",
-        "metadata": {"resource_type": "room", "resource_id": room_id, "buyer_agent_id": payer},
-    }
-    with _stripe_account_active("acct_p3_l1"):
-        joined = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": payer, "payment_intent_id": "pi_p3_l1"},
-            headers={"x-emporia-agent-id": payer})
-    assert joined.status_code == 200, joined.text
-
-    mock_payout.assert_called_once()
-    actual_key = mock_payout.call_args.kwargs["idempotency_key"]
-    expected_key = "emporia:payout:" + settlement_dedupe_key(room_id, payer, ["pi_p3_l1"])
-    assert actual_key == expected_key, \
-        f"payout idempotency key must be derived from the bare reference alone, " \
-        f"got {actual_key!r}, expected {expected_key!r}"
-
-
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_room_join_persists_rail_to_all_three_tables(mock_verify, mock_payout, client):
-    """P3 (item 3): the PaymentRef minted by _verify_and_confirm_payment()
-    must actually reach storage on all three payment-bearing tables via a
-    real (mocked-Stripe) paid-room join — payments.rail (record_payment),
-    access_entitlements.rail (entitlements.grant), and settlements.rail
-    (record_settlement) must each read back 'stripe', not the column's bare
-    DDL default going unexercised."""
-    from emporia.relay_server import get_db, DATABASE_PATH
-    from emporia import rooms as rooms_db
-
-    owner, payer = "p3_rail_owner", "p3_rail_payer"
-    _register_keyed(client, owner)
-    _register(client, payer)
-    mock_payout.return_value = {"transfer_id": "tr_p3_rail"}
-
-    r = client.post("/rooms", json=_signed_room(owner, {
-        "name": "P3 Rail Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    mock_verify.return_value = {
-        "status": "succeeded", "payment_intent_id": "pi_p3_rail",
-        "amount": 100, "currency": "usd", "capture_method": "automatic",
-        "metadata": {"resource_type": "room", "resource_id": room_id, "buyer_agent_id": payer},
-    }
-    with _stripe_account_active("acct_p3_rail"):
-        joined = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": payer, "payment_intent_id": "pi_p3_rail"},
-            headers={"x-emporia-agent-id": payer})
-    assert joined.status_code == 200, joined.text
-    assert rooms_db.is_member(room_id, payer, db_path=DATABASE_PATH)
-
-    with get_db() as conn:
-        payment_rail = conn.execute(
-            "SELECT rail FROM payments WHERE payment_intent_id = 'pi_p3_rail'"
-        ).fetchone()
-        settlement_rail = conn.execute(
-            "SELECT rail FROM settlements WHERE session_id = ? AND payer_id = ?",
-            (room_id, payer),
-        ).fetchone()
-        entitlement_rail = conn.execute(
-            "SELECT rail FROM access_entitlements WHERE resource_type='room' "
-            "AND resource_id=? AND agent_id=?",
-            (room_id, payer),
-        ).fetchone()
-    assert payment_rail["rail"] == "stripe", "payments.rail must be persisted"
-    assert settlement_rail["rail"] == "stripe", "settlements.rail must be persisted"
-    assert entitlement_rail["rail"] == "stripe", "access_entitlements.rail must be persisted"
-
-
-@pytest.mark.asyncio
-async def test_arbitrate_and_refund_sends_deterministic_idempotency_key():
-    """P1a-3 (R3): same property as payout_winner() for the refund call — derived
-    deterministically from session_id + charge_id, the two pieces that already fully
-    identify "the refund for this charge.\""""
-    from emporia.payments import arbitrate_and_refund
-    mock_refund = {"id": "re_test_002", "status": "succeeded"}
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            mock_resp = MagicMock()
-            mock_resp.json.return_value = mock_refund
-            mock_resp.raise_for_status = MagicMock()
-            mock_post.return_value = mock_resp
-
-            await arbitrate_and_refund("sess_idem_test", "ch_idem_test")
-            await arbitrate_and_refund("sess_idem_test", "ch_idem_test")
-            await arbitrate_and_refund("sess_idem_test", "ch_idem_other")
-
-    keys = [call.kwargs["headers"]["Idempotency-Key"] for call in mock_post.call_args_list]
-    assert keys[0] == keys[1], \
-        f"two calls for the same charge must send the identical Idempotency-Key, got {keys}"
-    assert keys[0] != keys[2], \
-        f"two calls for different charges must not share an Idempotency-Key, got {keys}"
-
-
-def test_stripe_key_not_set_raises():
-    from emporia.payments import _stripe_key
-    with patch.dict(os.environ, {}, clear=True):
-        # Remove key if set
-        os.environ.pop("STRIPE_SECRET_KEY", None)
-        with pytest.raises(RuntimeError, match="STRIPE_SECRET_KEY"):
-            _stripe_key()
-
-
-def test_create_payment_intent_rejects_amount_mismatch(client):
-    _register(client, "pi_creator")
-    r = client.post("/sessions", json={
-        "module_type": "emporia:service:v1",
-        "creator_agent_id": "pi_creator",
-        "config": {"description": "Amount mismatch test"},
-        "payment_rules": {"mode": "stripe_link", "price": "1.00", "currency": "usd"},
-    },
-        headers={"x-emporia-agent-id": "pi_creator"})
-    session_id = r.json()["session_id"]
-
-    r2 = client.post(
-        "/payments/create-intent",
-        json={"session_id": session_id, "amount_cents": 99},
-        headers={"x-emporia-agent-id": "pi_creator"},
-    )
-    assert r2.status_code == 400
-    assert "amount_cents must match relay pricing" in r2.text
 
 
 
 
 
 
-@patch("emporia.payments.confirm_stripe_intent", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_join_room_rejects_uncaptured_payment_intent(mock_verify, mock_confirm, client):
-    """P60: `confirm_stripe_intent` is mocked here, and has to be.
-
-    `_verify_and_confirm_payment()` auto-confirms on a `sk_test_` key — by
-    design — so a PaymentIntent left in `requires_capture` sends the relay to
-    Stripe's live API. This test mocked only `verify_payment_intent` and so made
-    a real, unmocked call to `api.stripe.com` on every run, passing because the
-    developer's profile `.env` supplied a working key and asserting on Stripe's
-    own response to a fabricated PI id. The suite's pinned dummy key turned that
-    into a 401 and surfaced it. The subject here is the relay's 402, so the
-    remote call is mocked into a no-op and `verify_payment_intent` keeps
-    returning `requires_capture`.
-    """
-    _register_keyed(client, "room_owner")
-    _register(client, "room_joiner")
-    r = client.post("/rooms", json=_signed_room("room_owner", {
-        "name": "Paid Room",
-        "creator_id": "room_owner",
-        "room_type": "private",
-        "gate_type": "paid",
-        "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": "room_owner"})
-    room_id = r.json()["room_id"]
-    mock_verify.return_value = {
-        "status": "requires_capture",
-        "payment_intent_id": "pi_room_hold_test",
-        "amount": 100,
-        "currency": "usd",
-        "capture_method": "manual",
-        "metadata": {"resource_type": "room", "resource_id": room_id},
-    }
-
-    r2 = client.post(
-        f"/rooms/{room_id}/join",
-        json={"agent_id": "room_joiner", "payment_intent_id": "pi_room_hold_test"},
-        headers={"x-emporia-agent-id": "room_joiner"},
-    )
-    assert r2.status_code == 402
-    assert "Payment not confirmed" in r2.text
 
 
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_join_room_accepts_bound_payment_intent(mock_verify, client):
-    """Happy path through _verify_and_confirm_payment for a paid room — full join with a
-    valid, correctly-bound PaymentIntent should succeed, add the member, and settle."""
-    _register_keyed(client, "paidroom_owner")
-    _register(client, "paidroom_joiner")
-    r = client.post("/rooms", json=_signed_room("paidroom_owner", {
-        "name": "Paid Room 2",
-        "creator_id": "paidroom_owner",
-        "room_type": "private",
-        "gate_type": "paid",
-        "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": "paidroom_owner"})
-    room_id = r.json()["room_id"]
-    mock_verify.return_value = {
-        "status": "succeeded",
-        "payment_intent_id": "pi_room_paid_test",
-        "amount": 100,
-        "currency": "usd",
-        "capture_method": "automatic",
-        "metadata": {
-            "resource_type": "room", "resource_id": room_id,
-            "buyer_agent_id": "paidroom_joiner",
-        },
-    }
-
-    r2 = client.post(
-        f"/rooms/{room_id}/join",
-        json={"agent_id": "paidroom_joiner", "payment_intent_id": "pi_room_paid_test"},
-        headers={"x-emporia-agent-id": "paidroom_joiner"},
-    )
-    assert r2.status_code == 200, r2.text
-    assert r2.json()["status"] == "joined"
-
-    from emporia.rooms import is_member
-    from emporia.relay_server import DATABASE_PATH
-    assert is_member(room_id, "paidroom_joiner", db_path=DATABASE_PATH)
 
 
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_agora_subscription_accepts_bound_payment_intent(mock_verify, client):
-    _register(client, "agora_owner")
-    _register(client, "agora_member")
-    r = client.post("/agoras/topics", json={
-        "name": "Paid Research",
-        "description": "Private research topic",
-        "visibility": "private",
-        "gate_type": "paid_invite",
-        "entry_fee_cents": 100,
-        "creator_id": "agora_owner",
-    },
-        headers={"x-emporia-agent-id": "agora_owner"})
-    assert r.status_code == 200, r.text
-    slug = r.json()["slug"]
 
-    r2 = client.post(
-        f"/agoras/topics/{slug}/invite", json={"invitee_id": "agora_member"},
-        headers={"x-emporia-agent-id": "agora_owner"},
-    )
-    assert r2.status_code == 200, r2.text
-    topic_id = r.json()["topic_id"]
-    mock_verify.return_value = {
-        "status": "succeeded",
-        "payment_intent_id": "pi_agora_paid_test",
-        "amount": 100,
-        "currency": "usd",
-        "capture_method": "automatic",
-        "metadata": {
-            "resource_type": "agora", "resource_id": topic_id,
-            "buyer_agent_id": "agora_member",
-        },
-    }
 
-    r3 = client.post(
-        f"/agoras/topics/{slug}/subscribe",
-        json={"agent_id": "agora_member", "payment_intent_id": "pi_agora_paid_test"},
-        headers={"x-emporia-agent-id": "agora_member"},
-    )
-    assert r3.status_code == 200, r3.text
-    assert r3.json()["gate_type"] == "paid_invite"
+
+
+
+
+
+
 
 
 # ============================================================================
 # P1a-1 — bind a payment to its payer, not just its resource (R1)
 # ============================================================================
 
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_join_room_rejects_payment_intent_from_different_payer(mock_verify, client):
-    """P1a-1 (R1): _assert_payment_intent_matches() checked amount/currency/capture-
-    method/resource but never who paid. A correctly-bound, fully valid PaymentIntent
-    id — genuinely paid for by one registered agent — could be presented by a second
-    registered agent on the direct-payment_intent_id branch (where the caller *is*
-    authenticated) and pass every prior check. The N4 review's R1 was a working
-    exploit built on this gap. Both PI-minting paths already stamp
-    metadata[buyer_agent_id]; this is the first check that reads it."""
-    _register(client, "payer_owner")
-    _register_keyed(client, "payer_owner2")
-    _register(client, "payer_impersonator")
-    r = client.post("/rooms", json=_signed_room("payer_owner2", {
-        "name": "Payer Binding Room", "creator_id": "payer_owner2", "room_type": "private",
-        "gate_type": "paid", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": "payer_owner2"})
-    room_id = r.json()["room_id"]
-    mock_verify.return_value = {
-        "status": "succeeded", "payment_intent_id": "pi_payer_binding_test",
-        "amount": 100, "currency": "usd", "capture_method": "automatic",
-        "metadata": {
-            "resource_type": "room", "resource_id": room_id,
-            "buyer_agent_id": "payer_owner",
-        },
-    }
-
-    r2 = client.post(
-        f"/rooms/{room_id}/join",
-        json={"agent_id": "payer_impersonator", "payment_intent_id": "pi_payer_binding_test"},
-        headers={"x-emporia-agent-id": "payer_impersonator"},
-    )
-    assert r2.status_code == 402, r2.text
-    assert "not bound to this payer" in r2.text
-
-    from emporia.relay_server import DATABASE_PATH
-    from emporia.rooms import is_member
-    assert not is_member(room_id, "payer_impersonator", db_path=DATABASE_PATH)
 
 
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_join_room_rejects_payment_intent_missing_payer_metadata(mock_verify, client):
-    """P1a-1 (R1): a PI with no buyer_agent_id at all must be rejected when a payer is
-    expected, not waved through as if unclaimed metadata were trustworthy. Emporia
-    stamps this field on every PI it accepts — "absent" means "not ours.\""""
-    _register_keyed(client, "no_payer_meta_owner")
-    _register(client, "no_payer_meta_joiner")
-    r = client.post("/rooms", json=_signed_room("no_payer_meta_owner", {
-        "name": "No Payer Metadata Room", "creator_id": "no_payer_meta_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": "no_payer_meta_owner"})
-    room_id = r.json()["room_id"]
-    mock_verify.return_value = {
-        "status": "succeeded", "payment_intent_id": "pi_no_payer_meta_test",
-        "amount": 100, "currency": "usd", "capture_method": "automatic",
-        "metadata": {"resource_type": "room", "resource_id": room_id},
-    }
-
-    r2 = client.post(
-        f"/rooms/{room_id}/join",
-        json={"agent_id": "no_payer_meta_joiner", "payment_intent_id": "pi_no_payer_meta_test"},
-        headers={"x-emporia-agent-id": "no_payer_meta_joiner"},
-    )
-    assert r2.status_code == 402, r2.text
-    assert "not bound to this payer" in r2.text
 
 
 def test_record_payment_is_idempotent_and_rejects_reuse():
@@ -4020,7 +3189,7 @@ def test_record_payment_is_idempotent_and_rejects_reuse():
         payment_type="session_price",
         session_id="sess_idempotent",
         currency="usd",
-        rail="stripe",
+        rail="x402",
     )
     second = record_payment(
         payment_intent_id="pi_idempotent_test",
@@ -4029,7 +3198,7 @@ def test_record_payment_is_idempotent_and_rejects_reuse():
         payment_type="session_price",
         session_id="sess_idempotent",
         currency="usd",
-        rail="stripe",
+        rail="x402",
     )
     assert second["payment_id"] == first["payment_id"]
 
@@ -4041,7 +3210,7 @@ def test_record_payment_is_idempotent_and_rejects_reuse():
             payment_type="session_price",
             session_id="sess_other",
             currency="usd",
-            rail="stripe",
+            rail="x402",
         )
 
 
@@ -4051,734 +3220,28 @@ def test_record_payment_is_idempotent_and_rejects_reuse():
 
 
 
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_join_room_payment_intent_replay_returns_402(mock_verify, client):
-    """Same property as test_join_session_payment_intent_replay_returns_402 for
-    POST /rooms/{id}/join — a captured PI replayed against a second paid room. See that
-    test's docstring for why joiner2 is now caught by the P1a-1 payer-binding check
-    rather than record_payment()'s own dedupe-by-id defense."""
-    _register_keyed(client, "n42_room_owner1")
-    _register_keyed(client, "n42_room_owner2")
-    _register(client, "n42_room_joiner1")
-    _register(client, "n42_room_joiner2")
 
-    room_ids = []
-    for owner in ("n42_room_owner1", "n42_room_owner2"):
-        r = client.post("/rooms", json=_signed_room(owner, {
-            "name": "Paid Room", "creator_id": owner, "room_type": "private",
-            "gate_type": "paid", "entry_fee_cents": 100,
-        }),
-            headers={"x-emporia-agent-id": owner})
-        room_ids.append(r.json()["room_id"])
 
-    mock_verify.side_effect = [
-        {
-            "status": "succeeded", "payment_intent_id": "pi_n42_room_shared",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_ids[0],
-                "buyer_agent_id": "n42_room_joiner1",
-            },
-        },
-        {
-            "status": "succeeded", "payment_intent_id": "pi_n42_room_shared",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_ids[1],
-                "buyer_agent_id": "n42_room_joiner1",
-            },
-        },
-    ]
 
-    r1 = client.post(
-        f"/rooms/{room_ids[0]}/join",
-        json={"agent_id": "n42_room_joiner1", "payment_intent_id": "pi_n42_room_shared"},
-        headers={"x-emporia-agent-id": "n42_room_joiner1"},
-    )
-    assert r1.status_code == 200, r1.text
 
-    r2 = client.post(
-        f"/rooms/{room_ids[1]}/join",
-        json={"agent_id": "n42_room_joiner2", "payment_intent_id": "pi_n42_room_shared"},
-        headers={"x-emporia-agent-id": "n42_room_joiner2"},
-    )
-    assert r2.status_code == 402, r2.text
-    assert "not bound to this payer" in r2.text
 
-    from emporia.relay_server import DATABASE_PATH
-    from emporia.rooms import is_member
-    assert not is_member(room_ids[1], "n42_room_joiner2", db_path=DATABASE_PATH)
 
 
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_agora_paid_subscribe_composed_bypass_closed(mock_verify, client):
-    """Regression for N4 review R1 — the composed exploit: (a) GET
-    /payments/settlements/{session_id} had no auth of any kind and leaked a paid Agora
-    topic's PaymentIntent id to anyone who knew the topic_id, and (b)
-    subscribe_agora_topic wrote membership BEFORE recording payment (get_db()'s `with`
-    commits on normal exit), so a replayed PI's rejection came too late — the attacker
-    was already a committed member. Both must now be closed: the settlement read
-    requires authorization, and a replay is rejected before membership is written.
-    """
-    _register(client, "n42_agora_owner")
-    _register(client, "n42_agora_legit")
-    _register(client, "n42_agora_attacker")
 
-    r = client.post("/agoras/topics", json={
-        "name": "N42 Paid Research", "description": "d", "visibility": "private",
-        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": "n42_agora_owner",
-    },
-        headers={"x-emporia-agent-id": "n42_agora_owner"})
-    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
-    for invitee in ("n42_agora_legit", "n42_agora_attacker"):
-        client.post(
-            f"/agoras/topics/{slug}/invite", json={"invitee_id": invitee},
-            headers={"x-emporia-agent-id": "n42_agora_owner"},
-        )
 
-    mock_verify.return_value = {
-        "status": "succeeded", "payment_intent_id": "pi_n42_agora_captured",
-        "amount": 100, "currency": "usd", "capture_method": "automatic",
-        "metadata": {
-            "resource_type": "agora", "resource_id": topic_id,
-            "buyer_agent_id": "n42_agora_legit",
-        },
-    }
-    r_legit = client.post(
-        f"/agoras/topics/{slug}/subscribe",
-        json={"agent_id": "n42_agora_legit", "payment_intent_id": "pi_n42_agora_captured"},
-        headers={"x-emporia-agent-id": "n42_agora_legit"},
-    )
-    assert r_legit.status_code == 200, r_legit.text
 
-    # (a) The settlement — and its payment_intent_ids — must not be anonymously
-    # readable. Pre-fix this was a bare 200 with the real PI id in the body.
-    leak = client.get(f"/payments/settlements/{topic_id}")
-    assert leak.status_code == 403, leak.text
-    leak_list = client.get("/payments/settlements", params={"session_id": topic_id})
-    assert leak_list.status_code == 403, leak_list.text
 
-    # (b) Even with the PI id in hand (e.g. leaked before this fix, or observed some
-    # other way), replaying it must be rejected BEFORE membership is granted.
-    r_attacker = client.post(
-        f"/agoras/topics/{slug}/subscribe",
-        json={"agent_id": "n42_agora_attacker", "payment_intent_id": "pi_n42_agora_captured"},
-        headers={"x-emporia-agent-id": "n42_agora_attacker"},
-    )
-    assert r_attacker.status_code == 402, r_attacker.text
 
-    from emporia.relay_server import get_db
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT 1 FROM agora_members WHERE topic_id=? AND agent_id=?",
-            (topic_id, "n42_agora_attacker"),
-        ).fetchone()
-    assert row is None, "attacker must not be a topic member after a rejected PI replay"
 
 
-@contextmanager
-def _fail_once_on(get_conn_target: str, sql_fragment: str):
-    """Make the next sqlite3 statement containing `sql_fragment` raise, then let every
-    later statement through normally — simulates a crash mid-transaction (e.g. the
-    process dying, or an unrelated constraint error) right after the statements that
-    ran before it in program order have already committed. sqlite3.Connection is a C
-    type and can't be monkeypatched directly, so this wraps whatever connection
-    `get_conn_target` (e.g. "emporia.relay_server.get_db") hands out."""
-    import sqlite3
-    state = {"armed": True}
 
-    class _FlakyConn:
-        def __init__(self, real):
-            self._real = real
 
-        def execute(self, sql, *args, **kwargs):
-            if state["armed"] and sql_fragment in sql:
-                state["armed"] = False
-                raise sqlite3.OperationalError(f"simulated failure: {sql_fragment}")
-            return self._real.execute(sql, *args, **kwargs)
 
-        def __enter__(self):
-            self._real.__enter__()
-            return self
 
-        def __exit__(self, *exc):
-            return self._real.__exit__(*exc)
 
-        def __getattr__(self, name):
-            return getattr(self._real, name)
 
-    import importlib
-    module_path, func_name = get_conn_target.rsplit(".", 1)
-    orig_func = getattr(importlib.import_module(module_path), func_name)
 
-    def wrapped(*args, **kwargs):
-        return _FlakyConn(orig_func(*args, **kwargs))
 
-    with patch(get_conn_target, wrapped):
-        yield
-
-
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_agora_subscribe_retry_does_not_double_pay(mock_verify, mock_payout, client):
-    """N5 review R2: subscribe_agora_topic used to write membership (and consume the
-    invite) AFTER payout_winner + record_settlement. record_payment() is genuinely
-    idempotent on a replayed PaymentIntent (returns the existing row rather than
-    raising), but payout_winner is a real, non-idempotent Stripe transfer. If the
-    membership write crashes (process death, unrelated DB error) after the payout has
-    already fired, the invite is still unconsumed and the caller isn't a member yet —
-    a retry re-passes the gate, record_payment replays idempotently, and (pre-fix)
-    payout_winner fires again. The fix moves membership+invite consumption before the
-    payout, so the crash now happens *before* any money moves, and the retry's
-    already_subscribed short-circuit (once membership is written) prevents a further
-    replay from doing anything at all. Asserts the property that matters: call count
-    across the crashed attempt + the retry, not either call's status code."""
-    _register(client, "n53_agora_owner")
-    _register(client, "n53_agora_payer")
-    mock_payout.return_value = {"transfer_id": "tr_n53_agora"}
-
-    r = client.post("/agoras/topics", json={
-        "name": "N53 Agora Retry Topic", "description": "d", "visibility": "public",
-        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": "n53_agora_owner",
-    },
-        headers={"x-emporia-agent-id": "n53_agora_owner"})
-    assert r.status_code == 200, r.text
-    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
-    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "n53_agora_payer"},
-        headers={"x-emporia-agent-id": "n53_agora_owner"})
-
-    with _stripe_account_active("acct_n53"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_n53_agora_retry",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "agora", "resource_id": topic_id,
-                "buyer_agent_id": "n53_agora_payer",
-            },
-        }
-        subscribe_body = {"agent_id": "n53_agora_payer", "payment_intent_id": "pi_n53_agora_retry"}
-
-        with _fail_once_on("emporia.relay_server.get_db", "INSERT INTO agora_members"):
-            with pytest.raises(Exception):  # the simulated crash propagates through TestClient
-                client.post(f"/agoras/topics/{slug}/subscribe", json=subscribe_body,
-                    headers={"x-emporia-agent-id": "n53_agora_payer"})
-
-        r2 = client.post(f"/agoras/topics/{slug}/subscribe", json=subscribe_body,
-            headers={"x-emporia-agent-id": "n53_agora_payer"})
-    assert r2.status_code == 200, r2.text
-
-    assert mock_payout.call_count == 1, \
-        f"payout_winner must fire exactly once across the crashed attempt + retry, fired {mock_payout.call_count}x"
-
-    from emporia.relay_server import get_db
-    with get_db() as conn:
-        settlements = conn.execute(
-            "SELECT COUNT(*) c FROM settlements WHERE session_id=?", (topic_id,)
-        ).fetchone()
-    assert settlements["c"] == 1, "exactly one settlement row must exist after the retry"
-
-
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_join_room_retry_does_not_double_pay(mock_verify, mock_payout, client):
-    """Sibling of test_agora_subscribe_retry_does_not_double_pay: join_room has the
-    identical shape (payment recorded before membership, since N4's R1(b) fix), and
-    its pre-existing already_member short-circuit only catches a retry AFTER
-    add_member has already committed. Before this fix, add_member ran after
-    payout_winner + record_settlement, so a crash in add_member after a successful
-    payout left the retry free to re-pass the gate and pay out again. The fix moves
-    add_member before the payout, so the existing short-circuit now actually closes
-    the window — see _fail_once_on for how the crash is simulated."""
-    _register_keyed(client, "n53_room_owner")
-    _register(client, "n53_room_payer")
-    mock_payout.return_value = {"transfer_id": "tr_n53_room"}
-
-    r = client.post("/rooms", json=_signed_room("n53_room_owner", {
-        "name": "N53 Room Retry Room", "creator_id": "n53_room_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": "n53_room_owner"})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    with _stripe_account_active("acct_n53_room"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_n53_room_retry",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "n53_room_payer",
-            },
-        }
-        join_body = {"agent_id": "n53_room_payer", "payment_intent_id": "pi_n53_room_retry"}
-
-        with _fail_once_on("emporia.rooms._connect", "UPDATE rooms SET members_json"):
-            with pytest.raises(Exception):  # the simulated crash propagates through TestClient
-                client.post(f"/rooms/{room_id}/join", json=join_body,
-                    headers={"x-emporia-agent-id": "n53_room_payer"})
-
-        r2 = client.post(f"/rooms/{room_id}/join", json=join_body,
-            headers={"x-emporia-agent-id": "n53_room_payer"})
-    assert r2.status_code == 200, r2.text
-    assert r2.json()["status"] == "joined", r2.text
-
-    assert mock_payout.call_count == 1, \
-        f"payout_winner must fire exactly once across the crashed attempt + retry, fired {mock_payout.call_count}x"
-
-    from emporia.relay_server import get_db
-    with get_db() as conn:
-        settlements = conn.execute(
-            "SELECT COUNT(*) c FROM settlements WHERE session_id=?", (room_id,)
-        ).fetchone()
-    assert settlements["c"] == 1, "exactly one settlement row must exist after the retry"
-
-
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_rejoin_after_entitlement_expires_charges_again_with_its_own_settlement(
-    mock_verify, mock_payout, client
-):
-    """P2-4 (R1): supersedes the pre-P2-4 test of the same scenario
-    (test_join_kick_rejoin_records_both_payments_and_pays_out_both, P1r-1/P1r-2),
-    whose premise — every rejoin is a second genuine payment — this pass retires
-    by product decision: a payment now buys access until it expires, so a
-    same-window rejoin is free (see
-    test_rejoin_within_entitlement_window_is_free_and_pays_out_once below). What
-    P1r-1's dedupe-key fix still needs covering is the case that *is* a second
-    genuine payment: rejoining *after* the entitlement's own window has closed.
-    That must charge again, producing its own settlement row and its own
-    distinct payout Idempotency-Key — exercising the exact
-    settlement_dedupe_key() machinery P1r-1 built, just reached through expiry
-    instead of a same-window replay."""
-    from emporia.relay_server import get_db, DATABASE_PATH
-    import sqlite3
-    from datetime import UTC, datetime, timedelta
-
-    _register_keyed(client, "p24_expiry_owner")
-    _register(client, "p24_expiry_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p24_expiry"}
-
-    r = client.post("/rooms", json=_signed_room("p24_expiry_owner", {
-        "name": "P2-4 Expiry Room", "creator_id": "p24_expiry_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-        "access_duration_days": 1,
-    }),
-        headers={"x-emporia-agent-id": "p24_expiry_owner"})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    with _stripe_account_active("acct_p24_expiry"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_EXPIRY_ONE",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p24_expiry_payer",
-            },
-        }
-        r1 = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p24_expiry_payer", "payment_intent_id": "pi_EXPIRY_ONE"},
-            headers={"x-emporia-agent-id": "p24_expiry_payer"})
-        assert r1.status_code == 200, r1.text
-
-        # Simulate the window closing: back-date the just-granted entitlement's
-        # expires_at, then remove membership the way a disconnect or kick would
-        # (direct DB manipulation — decoupled from kick_from_room()'s own
-        # semantics, which P2-6 changes).
-        conn = sqlite3.connect(DATABASE_PATH)
-        conn.execute(
-            "UPDATE access_entitlements SET expires_at = ? "
-            "WHERE resource_type='room' AND resource_id=? AND agent_id=?",
-            ((datetime.now(UTC) - timedelta(hours=1)).isoformat(), room_id, "p24_expiry_payer"),
-        )
-        conn.commit()
-        conn.close()
-        from emporia import rooms as rooms_db
-        rooms_db.remove_member(room_id, "p24_expiry_payer", db_path=DATABASE_PATH)
-
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_EXPIRY_TWO",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p24_expiry_payer",
-            },
-        }
-        r2 = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p24_expiry_payer", "payment_intent_id": "pi_EXPIRY_TWO"},
-            headers={"x-emporia-agent-id": "p24_expiry_payer"})
-        assert r2.status_code == 200, r2.text
-
-    with get_db() as conn:
-        payments = conn.execute(
-            "SELECT payment_intent_id FROM payments WHERE room_id=? ORDER BY payment_intent_id",
-            (room_id,),
-        ).fetchall()
-        settlements = conn.execute(
-            "SELECT payment_intent_ids FROM settlements WHERE session_id=? ORDER BY created_at",
-            (room_id,),
-        ).fetchall()
-    assert [p["payment_intent_id"] for p in payments] == ["pi_EXPIRY_ONE", "pi_EXPIRY_TWO"], \
-        "a rejoin after the entitlement window closes is a genuine second payment"
-    assert len(settlements) == 2, \
-        f"an expired-then-repurchased entitlement must get its own settlement row, " \
-        f"got {len(settlements)}"
-
-    assert mock_payout.call_count == 2, \
-        f"the creator must be paid out for both the original purchase and the " \
-        f"post-expiry repurchase, payout fired {mock_payout.call_count}x"
-    keys = [call.kwargs["idempotency_key"] for call in mock_payout.call_args_list]
-    assert keys[0] != keys[1], \
-        f"two genuinely different payouts must not share an Idempotency-Key, got {keys}"
-
-
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_rejoin_within_entitlement_window_is_free_and_pays_out_once(mock_verify, mock_payout, client):
-    """P2-4 (R1): the case the whole pass is about. A payer joins a paid room,
-    is removed (kick, disconnect — modeled here as a direct remove_member() to
-    stay decoupled from kick_from_room()'s own semantics, which P2-6 changes),
-    and rejoins with no PaymentIntent at all while their entitlement is still
-    active. Must succeed for free, and the creator's payout must fire exactly
-    once total — not once per join. Must fail pre-fix: the rejoin either 402s
-    (no payment_intent_id supplied and _verify_and_confirm_payment has nothing
-    to confirm) or, if a stale PI were supplied instead, record_payment's
-    idempotent replay would let it through but payout_winner would still fire
-    a second real transfer."""
-    from emporia.relay_server import get_db, DATABASE_PATH
-    from emporia import rooms as rooms_db
-
-    _register_keyed(client, "p24_free_owner")
-    _register(client, "p24_free_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p24_free"}
-
-    r = client.post("/rooms", json=_signed_room("p24_free_owner", {
-        "name": "P2-4 Free Rejoin Room", "creator_id": "p24_free_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": "p24_free_owner"})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    with _stripe_account_active("acct_p24_free"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_FREE_ONE",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p24_free_payer",
-            },
-        }
-        r1 = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p24_free_payer", "payment_intent_id": "pi_FREE_ONE"},
-            headers={"x-emporia-agent-id": "p24_free_payer"})
-        assert r1.status_code == 200, r1.text
-
-        rooms_db.remove_member(room_id, "p24_free_payer", db_path=DATABASE_PATH)
-
-        # No payment_intent_id at all — the rejoin must not need one.
-        r2 = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p24_free_payer"},
-            headers={"x-emporia-agent-id": "p24_free_payer"})
-        assert r2.status_code == 200, r2.text
-
-    with get_db() as conn:
-        payments = conn.execute(
-            "SELECT payment_intent_id FROM payments WHERE room_id=?", (room_id,)
-        ).fetchall()
-        settlements = conn.execute(
-            "SELECT payment_intent_ids FROM settlements WHERE session_id=?", (room_id,)
-        ).fetchall()
-    assert [p["payment_intent_id"] for p in payments] == ["pi_FREE_ONE"], \
-        "a free rejoin must not create a second payment record"
-    assert len(settlements) == 1, \
-        f"a free rejoin must not create a second settlement, got {len(settlements)}"
-    assert mock_payout.call_count == 1, \
-        f"the creator must be paid out exactly once for one purchase, " \
-        f"payout fired {mock_payout.call_count}x across both joins"
-
-
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_rejoin_within_entitlement_window_ignores_a_replayed_payment_intent(
-    mock_verify, mock_payout, client
-):
-    """P2-4 (R1): sibling of the free-rejoin test above, but the client (an
-    agent that doesn't yet know it doesn't need to) still supplies its old
-    PaymentIntent id on rejoin. The entitlement check must short-circuit before
-    that PI is ever looked at — still exactly one payout, one settlement, no
-    second call to verify_payment_intent for the rejoin."""
-    from emporia.relay_server import get_db, DATABASE_PATH
-    from emporia import rooms as rooms_db
-
-    _register_keyed(client, "p24_replay_owner")
-    _register(client, "p24_replay_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p24_replay"}
-
-    r = client.post("/rooms", json=_signed_room("p24_replay_owner", {
-        "name": "P2-4 Replay Rejoin Room", "creator_id": "p24_replay_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": "p24_replay_owner"})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    with _stripe_account_active("acct_p24_replay"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_REPLAY_ONE",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p24_replay_payer",
-            },
-        }
-        r1 = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p24_replay_payer", "payment_intent_id": "pi_REPLAY_ONE"},
-            headers={"x-emporia-agent-id": "p24_replay_payer"})
-        assert r1.status_code == 200, r1.text
-        verify_calls_after_first_join = mock_verify.call_count
-
-        rooms_db.remove_member(room_id, "p24_replay_payer", db_path=DATABASE_PATH)
-
-        r2 = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p24_replay_payer", "payment_intent_id": "pi_REPLAY_ONE"},
-            headers={"x-emporia-agent-id": "p24_replay_payer"})
-        assert r2.status_code == 200, r2.text
-
-    assert mock_verify.call_count == verify_calls_after_first_join, \
-        "an entitled rejoin must not re-verify a PaymentIntent at all, even a stale one"
-    with get_db() as conn:
-        settlements = conn.execute(
-            "SELECT payment_intent_ids FROM settlements WHERE session_id=?", (room_id,)
-        ).fetchall()
-    assert len(settlements) == 1
-    assert mock_payout.call_count == 1
-
-
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_agora_resubscribe_within_entitlement_window_is_free_and_needs_no_invite(
-    mock_verify, mock_payout, client
-):
-    """P2-4 (R1): the Agora sibling of test_rejoin_within_entitlement_window_is_free_
-    and_pays_out_once. subscribe_agora_topic() has the identical per-subscribe
-    payment-gate shape join_room() had, and Agora additionally has a *unilateral*
-    unsubscribe (DELETE /agoras/topics/{slug}/subscribe — no creator involvement
-    needed), so the free-resubscribe path is reachable by the paying agent alone.
-    A resubscribe within the entitlement window must need neither a fresh
-    PaymentIntent nor a fresh invite from the creator — the agent already bought
-    in. Must fail pre-fix: without an invite, the gate's `has_invite` check 403s
-    before payment is even considered; with a stale PI supplied instead, the
-    request would 200 but fire a second payout."""
-    from emporia.relay_server import get_db
-
-    _register(client, "p24_agora_owner")
-    _register(client, "p24_agora_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p24_agora_free"}
-
-    r = client.post("/agoras/topics", json={
-        "name": "P2-4 Free Resubscribe Topic", "description": "d", "visibility": "public",
-        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": "p24_agora_owner",
-    },
-        headers={"x-emporia-agent-id": "p24_agora_owner"})
-    assert r.status_code == 200, r.text
-    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
-    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "p24_agora_payer"},
-        headers={"x-emporia-agent-id": "p24_agora_owner"})
-
-    with _stripe_account_active("acct_p24_agora"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_AGORA_FREE_ONE",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "agora", "resource_id": topic_id,
-                "buyer_agent_id": "p24_agora_payer",
-            },
-        }
-        r1 = client.post(f"/agoras/topics/{slug}/subscribe",
-            json={"agent_id": "p24_agora_payer", "payment_intent_id": "pi_AGORA_FREE_ONE"},
-            headers={"x-emporia-agent-id": "p24_agora_payer"})
-        assert r1.status_code == 200, r1.text
-
-        unsub = client.delete(f"/agoras/topics/{slug}/subscribe",
-            params={"agent_id": "p24_agora_payer"},
-            headers={"x-emporia-agent-id": "p24_agora_payer"})
-        assert unsub.status_code == 200, unsub.text
-
-        # No invite re-issued, no PaymentIntent supplied — must still succeed.
-        r2 = client.post(f"/agoras/topics/{slug}/subscribe",
-            json={"agent_id": "p24_agora_payer"},
-            headers={"x-emporia-agent-id": "p24_agora_payer"})
-        assert r2.status_code == 200, r2.text
-
-    with get_db() as conn:
-        settlements = conn.execute(
-            "SELECT payment_intent_ids FROM settlements WHERE session_id=?", (topic_id,)
-        ).fetchall()
-    assert len(settlements) == 1, \
-        f"a free resubscribe must not create a second settlement, got {len(settlements)}"
-    assert mock_payout.call_count == 1, \
-        f"the creator must be paid out exactly once for one purchase, " \
-        f"payout fired {mock_payout.call_count}x across both subscribes"
-
-
-def _p2r2_expire_agora_entitlement(topic_id: str, agent_id: str) -> None:
-    """Backdate an Agora entitlement's expires_at, deterministic (no sleep)."""
-    import sqlite3
-    from datetime import UTC, datetime, timedelta
-    from emporia.relay_server import DATABASE_PATH
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.execute(
-        "UPDATE access_entitlements SET expires_at = ? "
-        "WHERE resource_type='agora' AND resource_id=? AND agent_id=?",
-        ((datetime.now(UTC) - timedelta(hours=1)).isoformat(), topic_id, agent_id),
-    )
-    conn.commit()
-    conn.close()
-
-
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_agora_renews_after_expiry_while_still_subscribed(mock_verify, mock_payout, client):
-    """P2r-2 (R2): the finding — before this, an expired paid_invite
-    subscriber had no path back in at all. P2-4's invite waiver was gated on
-    an *active* entitlement (already_entitled); once the window closed, the
-    original invite was already consumed (subscribe deletes it), so the
-    renewal request 403'd at the invite gate before payment was ever
-    considered — even holding a fresh, valid PaymentIntent. Must fail
-    pre-fix: the second subscribe (still a member, entitlement expired)
-    returns 403 'Invite required'."""
-    from emporia.relay_server import get_db
-
-    _register(client, "p2r2_still_owner")
-    _register(client, "p2r2_still_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p2r2_still"}
-
-    r = client.post("/agoras/topics", json={
-        "name": "P2r-2 Still-Subscribed Renewal", "description": "d", "visibility": "public",
-        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": "p2r2_still_owner",
-        "access_duration_days": 30,
-    },
-        headers={"x-emporia-agent-id": "p2r2_still_owner"})
-    assert r.status_code == 200, r.text
-    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
-    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "p2r2_still_payer"},
-        headers={"x-emporia-agent-id": "p2r2_still_owner"})
-
-    with _stripe_account_active("acct_p2r2_still"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_p2r2_still_one",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "agora", "resource_id": topic_id,
-                "buyer_agent_id": "p2r2_still_payer",
-            },
-        }
-        first = client.post(f"/agoras/topics/{slug}/subscribe",
-            json={"agent_id": "p2r2_still_payer", "payment_intent_id": "pi_p2r2_still_one"},
-            headers={"x-emporia-agent-id": "p2r2_still_payer"})
-        assert first.status_code == 200, first.text
-
-        _p2r2_expire_agora_entitlement(topic_id, "p2r2_still_payer")
-
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_p2r2_still_two",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "agora", "resource_id": topic_id,
-                "buyer_agent_id": "p2r2_still_payer",
-            },
-        }
-        renewal = client.post(f"/agoras/topics/{slug}/subscribe",
-            json={"agent_id": "p2r2_still_payer", "payment_intent_id": "pi_p2r2_still_two"},
-            headers={"x-emporia-agent-id": "p2r2_still_payer"})
-        assert renewal.status_code == 200, renewal.text
-
-    with get_db() as conn:
-        payments = conn.execute(
-            "SELECT payment_intent_id FROM payments WHERE room_id=?", (topic_id,)
-        ).fetchall()
-        settlements = conn.execute(
-            "SELECT payment_intent_ids FROM settlements WHERE session_id=?", (topic_id,)
-        ).fetchall()
-    assert [p["payment_intent_id"] for p in payments] == ["pi_p2r2_still_one", "pi_p2r2_still_two"], \
-        "the renewal is a genuine second payment and must be recorded"
-    assert len(settlements) == 2, \
-        f"the renewal must get its own settlement row, got {len(settlements)}"
-    assert mock_payout.call_count == 2, \
-        f"the creator must be paid out for both the original purchase and the " \
-        f"renewal, payout fired {mock_payout.call_count}x"
-    keys = [call.kwargs["idempotency_key"] for call in mock_payout.call_args_list]
-    assert keys[0] != keys[1], \
-        f"the original purchase and the renewal are different payouts and must not " \
-        f"share an Idempotency-Key, got {keys}"
-
-
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_agora_renews_after_expiry_and_unsubscribe(mock_verify, mock_payout, client):
-    """P2r-2 (R2): sibling of the still-subscribed renewal test — the agent
-    unsubscribed after their entitlement expired, so already_member is also
-    False on the renewal attempt. Proves the fix isn't accidentally coupled
-    to the already_member short-circuit's own P2-5 purchase-in-flight rule."""
-    from emporia.relay_server import get_db
-
-    _register(client, "p2r2_unsub_owner")
-    _register(client, "p2r2_unsub_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p2r2_unsub"}
-
-    r = client.post("/agoras/topics", json={
-        "name": "P2r-2 Unsubscribed Renewal", "description": "d", "visibility": "public",
-        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": "p2r2_unsub_owner",
-        "access_duration_days": 30,
-    },
-        headers={"x-emporia-agent-id": "p2r2_unsub_owner"})
-    assert r.status_code == 200, r.text
-    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
-    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "p2r2_unsub_payer"},
-        headers={"x-emporia-agent-id": "p2r2_unsub_owner"})
-
-    with _stripe_account_active("acct_p2r2_unsub"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_p2r2_unsub_one",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "agora", "resource_id": topic_id,
-                "buyer_agent_id": "p2r2_unsub_payer",
-            },
-        }
-        first = client.post(f"/agoras/topics/{slug}/subscribe",
-            json={"agent_id": "p2r2_unsub_payer", "payment_intent_id": "pi_p2r2_unsub_one"},
-            headers={"x-emporia-agent-id": "p2r2_unsub_payer"})
-        assert first.status_code == 200, first.text
-
-        _p2r2_expire_agora_entitlement(topic_id, "p2r2_unsub_payer")
-
-        unsub = client.delete(f"/agoras/topics/{slug}/subscribe",
-            params={"agent_id": "p2r2_unsub_payer"},
-            headers={"x-emporia-agent-id": "p2r2_unsub_payer"})
-        assert unsub.status_code == 200, unsub.text
-
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_p2r2_unsub_two",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "agora", "resource_id": topic_id,
-                "buyer_agent_id": "p2r2_unsub_payer",
-            },
-        }
-        renewal = client.post(f"/agoras/topics/{slug}/subscribe",
-            json={"agent_id": "p2r2_unsub_payer", "payment_intent_id": "pi_p2r2_unsub_two"},
-            headers={"x-emporia-agent-id": "p2r2_unsub_payer"})
-        assert renewal.status_code == 200, renewal.text
-
-    with get_db() as conn:
-        settlements = conn.execute(
-            "SELECT payment_intent_ids FROM settlements WHERE session_id=?", (topic_id,)
-        ).fetchall()
-    assert len(settlements) == 2, \
-        f"the renewal after unsubscribe must get its own settlement row, got {len(settlements)}"
-    assert mock_payout.call_count == 2
 
 
 def test_agora_subscribe_stranger_without_invite_or_entitlement_still_refused(client):
@@ -4803,164 +3266,10 @@ def test_agora_subscribe_stranger_without_invite_or_entitlement_still_refused(cl
     assert refused.status_code == 403, refused.text
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_expired_room_entitlement_blocks_private_room_read_over_http(mock_verify, mock_payout, client):
-    """P2-5, HTTP-level: a private paid room whose member's
-    entitlement has expired must actually deny GET /rooms/{id} through the
-    real request path, not just at the rooms.is_member() unit level. Backdates
-    the entitlement's expires_at directly (deterministic, no sleep)."""
-    import sqlite3
-    from emporia.relay_server import DATABASE_PATH
-    from datetime import UTC, datetime, timedelta
-
-    _register_keyed(client, "p25_room_owner")
-    _register(client, "p25_room_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p25_room"}
-
-    r = client.post("/rooms", json=_signed_room("p25_room_owner", {
-        "name": "P2-5 Expiry Room", "creator_id": "p25_room_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-        "access_duration_days": 1,
-    }),
-        headers={"x-emporia-agent-id": "p25_room_owner"})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    with _stripe_account_active("acct_p25_room"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_p25_room",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p25_room_payer",
-            },
-        }
-        joined = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p25_room_payer", "payment_intent_id": "pi_p25_room"},
-            headers={"x-emporia-agent-id": "p25_room_payer"})
-        assert joined.status_code == 200, joined.text
-
-    still_in = client.get(f"/rooms/{room_id}", headers={"x-emporia-agent-id": "p25_room_payer"})
-    assert still_in.status_code == 200, still_in.text
-
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.execute(
-        "UPDATE access_entitlements SET expires_at = ? "
-        "WHERE resource_type='room' AND resource_id=? AND agent_id='p25_room_payer'",
-        ((datetime.now(UTC) - timedelta(hours=1)).isoformat(), room_id),
-    )
-    conn.commit()
-    conn.close()
-
-    expired = client.get(f"/rooms/{room_id}", headers={"x-emporia-agent-id": "p25_room_payer"})
-    assert expired.status_code == 403, expired.text
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_expired_room_entitlement_drops_out_of_room_listing_and_roster(
-    mock_verify, mock_payout, client
-):
-    """P2r-4 (R4): list_rooms() and Room.to_dict() compared against
-    room.members directly, bypassing is_member() entirely — so P2-5's own
-    "every membership-gated read routes through is_member()" claim wasn't
-    actually true for these two. Proved: GET /rooms/{id} correctly 403s an
-    expired member, but GET /rooms still returned the private room to them
-    with its full member roster. Must fail pre-fix: the room appears in the
-    listing and its 'members' field is not empty for the expired agent."""
-    from emporia.relay_server import DATABASE_PATH
-    import sqlite3
-    from datetime import UTC, datetime, timedelta
-
-    _register_keyed(client, "p2r4_owner")
-    _register(client, "p2r4_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p2r4_list"}
-
-    r = client.post("/rooms", json=_signed_room("p2r4_owner", {
-        "name": "P2r-4 Listing Room", "creator_id": "p2r4_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-        "access_duration_days": 1,
-    }),
-        headers={"x-emporia-agent-id": "p2r4_owner"})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    with _stripe_account_active("acct_p2r4_list"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_p2r4_list",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p2r4_payer",
-            },
-        }
-        joined = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p2r4_payer", "payment_intent_id": "pi_p2r4_list"},
-            headers={"x-emporia-agent-id": "p2r4_payer"})
-        assert joined.status_code == 200, joined.text
-
-    still_listed = client.get("/rooms", headers={"x-emporia-agent-id": "p2r4_payer"})
-    assert still_listed.status_code == 200, still_listed.text
-    assert any(rm["room_id"] == room_id for rm in still_listed.json()["rooms"]), \
-        "test setup: an active member must see the room in the listing"
-
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.execute(
-        "UPDATE access_entitlements SET expires_at = ? "
-        "WHERE resource_type='room' AND resource_id=? AND agent_id='p2r4_payer'",
-        ((datetime.now(UTC) - timedelta(hours=1)).isoformat(), room_id),
-    )
-    conn.commit()
-    conn.close()
-
-    expired_listing = client.get("/rooms", headers={"x-emporia-agent-id": "p2r4_payer"})
-    assert expired_listing.status_code == 200, expired_listing.text
-    assert not any(rm["room_id"] == room_id for rm in expired_listing.json()["rooms"]), \
-        "an expired member must no longer see this private room in GET /rooms"
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_current_member_and_creator_unaffected_by_listing_expiry_check(
-    mock_verify, mock_payout, client
-):
-    """P2r-4: sibling regression guard — an active (non-expired) member and
-    the room's creator must still see the private paid room in GET /rooms
-    with its full roster, both before and after the P2r-4 fix."""
-    _register_keyed(client, "p2r4_scope_owner")
-    _register(client, "p2r4_scope_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p2r4_scope"}
-
-    r = client.post("/rooms", json=_signed_room("p2r4_scope_owner", {
-        "name": "P2r-4 Scope Room", "creator_id": "p2r4_scope_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": "p2r4_scope_owner"})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    with _stripe_account_active("acct_p2r4_scope"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_p2r4_scope",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p2r4_scope_payer",
-            },
-        }
-        joined = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p2r4_scope_payer", "payment_intent_id": "pi_p2r4_scope"},
-            headers={"x-emporia-agent-id": "p2r4_scope_payer"})
-        assert joined.status_code == 200, joined.text
-
-    payer_view = client.get("/rooms", headers={"x-emporia-agent-id": "p2r4_scope_payer"})
-    payer_room = next(rm for rm in payer_view.json()["rooms"] if rm["room_id"] == room_id)
-    assert payer_room["members"] == ["p2r4_scope_owner", "p2r4_scope_payer"]
-
-    owner_view = client.get("/rooms", headers={"x-emporia-agent-id": "p2r4_scope_owner"})
-    owner_room = next(rm for rm in owner_view.json()["rooms"] if rm["room_id"] == room_id)
-    assert owner_room["members"] == ["p2r4_scope_owner", "p2r4_scope_payer"]
 
 
 def test_free_room_member_unaffected_by_listing_expiry_check(client):
@@ -4987,241 +3296,12 @@ def test_free_room_member_unaffected_by_listing_expiry_check(client):
     assert room["members"] == ["p2r4_free_owner", "p2r4_free_member"]
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_expired_agora_entitlement_blocks_private_topic_read_over_http(mock_verify, mock_payout, client):
-    """P2-5, Agora sibling of the room HTTP-level expiry test — a private
-    paid_invite topic's subscriber loses read access once their entitlement
-    window closes."""
-    import sqlite3
-    from emporia.relay_server import DATABASE_PATH
-    from datetime import UTC, datetime, timedelta
-
-    _register(client, "p25_agora_owner")
-    _register(client, "p25_agora_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p25_agora"}
-
-    r = client.post("/agoras/topics", json={
-        "name": "P2-5 Expiry Topic", "description": "d", "visibility": "private",
-        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": "p25_agora_owner",
-        "access_duration_days": 1,
-    },
-        headers={"x-emporia-agent-id": "p25_agora_owner"})
-    assert r.status_code == 200, r.text
-    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
-    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "p25_agora_payer"},
-        headers={"x-emporia-agent-id": "p25_agora_owner"})
-
-    with _stripe_account_active("acct_p25_agora"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_p25_agora",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "agora", "resource_id": topic_id,
-                "buyer_agent_id": "p25_agora_payer",
-            },
-        }
-        subscribed = client.post(f"/agoras/topics/{slug}/subscribe",
-            json={"agent_id": "p25_agora_payer", "payment_intent_id": "pi_p25_agora"},
-            headers={"x-emporia-agent-id": "p25_agora_payer"})
-        assert subscribed.status_code == 200, subscribed.text
-
-    still_in = client.get(f"/agoras/topics/{slug}", headers={"x-emporia-agent-id": "p25_agora_payer"})
-    assert still_in.status_code == 200, still_in.text
-
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.execute(
-        "UPDATE access_entitlements SET expires_at = ? "
-        "WHERE resource_type='agora' AND resource_id=? AND agent_id='p25_agora_payer'",
-        ((datetime.now(UTC) - timedelta(hours=1)).isoformat(), topic_id),
-    )
-    conn.commit()
-    conn.close()
-
-    expired = client.get(f"/agoras/topics/{slug}", headers={"x-emporia-agent-id": "p25_agora_payer"})
-    assert expired.status_code == 403, expired.text
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_expired_room_entitlement_drops_settlement_session_view_but_keeps_own_receipt(
-    mock_verify, mock_payout, client
-):
-    """P2-5: _settlement_resource_viewer_allowed() routes a private
-    paid room's ?session_id= access through rooms.is_member(), so an
-    expired entitlement must also revoke that membership-gated view of the
-    resource's full settlement history — while the payer's own receipt stays
-    reachable via the separate ?agent_id= path (payments-join, not
-    membership-gated), exactly as it already does for a kicked member
-    (test_kicked_room_member_can_still_read_own_receipt). Both properties in
-    one test so a fix to one path can't accidentally regress the other."""
-    import sqlite3
-    from emporia.relay_server import DATABASE_PATH
-    from datetime import UTC, datetime, timedelta
-
-    _register_keyed(client, "p25_view_owner")
-    _register(client, "p25_view_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p25_view"}
-
-    r = client.post("/rooms", json=_signed_room("p25_view_owner", {
-        "name": "P2-5 Settlement View Room", "creator_id": "p25_view_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-        "access_duration_days": 1,
-    }),
-        headers={"x-emporia-agent-id": "p25_view_owner"})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    with _stripe_account_active("acct_p25_view"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_p25_view",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p25_view_payer",
-            },
-        }
-        joined = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p25_view_payer", "payment_intent_id": "pi_p25_view"},
-            headers={"x-emporia-agent-id": "p25_view_payer"})
-        assert joined.status_code == 200, joined.text
-
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.execute(
-        "UPDATE access_entitlements SET expires_at = ? "
-        "WHERE resource_type='room' AND resource_id=? AND agent_id='p25_view_payer'",
-        ((datetime.now(UTC) - timedelta(hours=1)).isoformat(), room_id),
-    )
-    conn.commit()
-    conn.close()
-
-    session_view = client.get(f"/payments/settlements/{room_id}",
-        headers={"x-emporia-agent-id": "p25_view_payer"})
-    assert session_view.status_code == 403, session_view.text
-
-    own_receipt = client.get("/payments/settlements", params={"agent_id": "p25_view_payer"},
-        headers={"x-emporia-agent-id": "p25_view_payer"})
-    assert own_receipt.status_code == 200, own_receipt.text
-    assert any(s["session_id"] == room_id for s in own_receipt.json()["settlements"]), \
-        "an agent whose entitlement expired must still be able to read their own receipt"
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_kicked_room_member_can_still_read_own_receipt(mock_verify, mock_payout, client):
-    """N5 review R3: the ?agent_id= branch of list_settlements only joined through
-    `participants`, which has no rows for room settlements at all — so there was
-    zero path to your own receipt for a room payment, and a kicked member lost even
-    the theoretical membership-based path. Now joins through `payments` too, which
-    has a real agent_id column populated by every recorded payment regardless of
-    current membership."""
-    _register_keyed(client, "n54_room_owner")
-    _register(client, "n54_room_payer")
-    _register(client, "n54_room_stranger")
-    mock_payout.return_value = {"transfer_id": "tr_n54_room"}
-
-    r = client.post("/rooms", json=_signed_room("n54_room_owner", {
-        "name": "N54 Room Receipt Room", "creator_id": "n54_room_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": "n54_room_owner"})
-    room_id = r.json()["room_id"]
-
-    with _stripe_account_active("acct_n54_room"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_n54_room_receipt",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "n54_room_payer",
-            },
-        }
-        r2 = client.post(
-            f"/rooms/{room_id}/join",
-            json={"agent_id": "n54_room_payer", "payment_intent_id": "pi_n54_room_receipt"},
-            headers={"x-emporia-agent-id": "n54_room_payer"},
-        )
-    assert r2.status_code == 200, r2.text
-
-    kicked = client.post(f"/rooms/{room_id}/kick", json=_signed_kick("n54_room_owner", room_id, {"target_agent_id": "n54_room_payer"}),
-        headers={"x-emporia-agent-id": "n54_room_owner"})
-    assert kicked.status_code == 200, kicked.text
-
-    own_receipt = client.get("/payments/settlements", params={"agent_id": "n54_room_payer"},
-        headers={"x-emporia-agent-id": "n54_room_payer"})
-    assert own_receipt.status_code == 200, own_receipt.text
-    assert any(s["session_id"] == room_id for s in own_receipt.json()["settlements"]), \
-        "a kicked room member must still be able to read their own receipt"
-
-    stranger_view = client.get("/payments/settlements", params={"agent_id": "n54_room_payer"},
-        headers={"x-emporia-agent-id": "n54_room_stranger"})
-    assert stranger_view.status_code == 403, stranger_view.text
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_kicked_payer_cannot_rejoin_with_a_fresh_payment(mock_verify, mock_payout, client):
-    """P2-6 (R2): a kick is permanent, by product decision — the user's own
-    words: 'if someone gets kicked from a room they shouldn't be allowed
-    back in.' Before this, a kicked payer in a paid room could
-    rejoin by presenting a fresh, genuinely valid PaymentIntent — remove_member()
-    alone never recorded that they'd been kicked, so join_room()'s gate had
-    nothing to check against. Must fail pre-fix: the second join succeeds and
-    fires a second payout."""
-    from emporia.relay_server import get_db
-
-    _register_keyed(client, "p26_kick_owner")
-    _register(client, "p26_kick_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p26_kick"}
-
-    r = client.post("/rooms", json=_signed_room("p26_kick_owner", {
-        "name": "P2-6 Kick Room", "creator_id": "p26_kick_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": "p26_kick_owner"})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    with _stripe_account_active("acct_p26_kick"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_p26_kick_one",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p26_kick_payer",
-            },
-        }
-        r1 = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p26_kick_payer", "payment_intent_id": "pi_p26_kick_one"},
-            headers={"x-emporia-agent-id": "p26_kick_payer"})
-        assert r1.status_code == 200, r1.text
-
-        kicked = client.post(f"/rooms/{room_id}/kick",
-            json=_signed_kick("p26_kick_owner", room_id, {"target_agent_id": "p26_kick_payer"}),
-            headers={"x-emporia-agent-id": "p26_kick_owner"})
-        assert kicked.status_code == 200, kicked.text
-
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_p26_kick_two",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p26_kick_payer",
-            },
-        }
-        r2 = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p26_kick_payer", "payment_intent_id": "pi_p26_kick_two"},
-            headers={"x-emporia-agent-id": "p26_kick_payer"})
-        assert r2.status_code == 403, r2.text
-
-    assert mock_payout.call_count == 1, \
-        f"a kicked payer's rejected rejoin must not trigger a second payout, " \
-        f"fired {mock_payout.call_count}x"
-    with get_db() as conn:
-        settlements = conn.execute(
-            "SELECT COUNT(*) c FROM settlements WHERE session_id=?", (room_id,)
-        ).fetchone()
-    assert settlements["c"] == 1
 
 
 def test_kicked_invitee_cannot_rejoin_with_the_stale_invite(client):
@@ -5321,443 +3401,24 @@ def test_non_kicked_agent_can_still_join_a_free_open_room(client):
     assert r2.status_code == 200, r2.text
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_non_kicked_agent_can_still_join_the_room(mock_verify, mock_payout, client):
-    """P2-6: the ban check must be scoped to the specific (room, agent) pair —
-    kicking one agent must not lock out anyone else."""
-    _register_keyed(client, "p26_scope_owner")
-    _register(client, "p26_scope_kicked")
-    _register(client, "p26_scope_other")
-    mock_payout.return_value = {"transfer_id": "tr_p26_scope"}
-
-    r = client.post("/rooms", json=_signed_room("p26_scope_owner", {
-        "name": "P2-6 Scope Room", "creator_id": "p26_scope_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": "p26_scope_owner"})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    with _stripe_account_active("acct_p26_scope"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_p26_scope_kicked",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p26_scope_kicked",
-            },
-        }
-        r1 = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p26_scope_kicked", "payment_intent_id": "pi_p26_scope_kicked"},
-            headers={"x-emporia-agent-id": "p26_scope_kicked"})
-        assert r1.status_code == 200, r1.text
-
-        client.post(f"/rooms/{room_id}/kick", json=_signed_kick("p26_scope_owner", room_id, {"target_agent_id": "p26_scope_kicked"}),
-            headers={"x-emporia-agent-id": "p26_scope_owner"})
-
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_p26_scope_other",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p26_scope_other",
-            },
-        }
-        r2 = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p26_scope_other", "payment_intent_id": "pi_p26_scope_other"},
-            headers={"x-emporia-agent-id": "p26_scope_other"})
-        assert r2.status_code == 200, r2.text
 
 
-def _p27_paid_room_with_kicked_payer(client, mock_verify, mock_payout, *, suffix: str):
-    """Shared setup for the P2-7 refund-on-kick tests: register owner+payer,
-    create a paid room, join (transfer succeeds), return the ids the
-    test needs. Not a fixture — needs mock_verify/mock_payout already active."""
-    owner, payer = f"p27_owner_{suffix}", f"p27_payer_{suffix}"
-    _register_keyed(client, owner)
-    _register(client, payer)
-    mock_payout.return_value = {"transfer_id": f"tr_p27_{suffix}"}
-
-    r = client.post("/rooms", json=_signed_room(owner, {
-        "name": f"P2-7 Room {suffix}", "creator_id": owner,
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    mock_verify.return_value = {
-        "status": "succeeded", "payment_intent_id": f"pi_p27_{suffix}",
-        "amount": 100, "currency": "usd", "capture_method": "automatic",
-        "metadata": {"resource_type": "room", "resource_id": room_id, "buyer_agent_id": payer},
-    }
-    joined = client.post(f"/rooms/{room_id}/join",
-        json={"agent_id": payer, "payment_intent_id": f"pi_p27_{suffix}"},
-        headers={"x-emporia-agent-id": payer})
-    assert joined.status_code == 200, joined.text
-    return owner, payer, room_id, f"tr_p27_{suffix}", f"pi_p27_{suffix}"
 
 
-@patch("emporia.payments.refund_payment_intent", new_callable=AsyncMock)
-@patch("emporia.payments.reverse_transfer", new_callable=AsyncMock)
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_kick_with_refund_reverses_transfer_then_refunds_payment(
-    mock_verify, mock_payout, mock_reverse, mock_refund, client
-):
-    """P2-7: kick(refund=true) on a paying member must reverse the creator's
-    transfer *before* refunding the payer's charge — refunding first would
-    leave the platform eating the creator's already-paid-out share. Both
-    calls must carry a settlement_dedupe_key()-derived Idempotency-Key (the
-    same contract P1r-2 established for payout/refund elsewhere), and the
-    endpoint's own response must report the outcome."""
-    with _stripe_account_active("acct_p27_refund"):
-        owner, payer, room_id, transfer_id, pi_id = _p27_paid_room_with_kicked_payer(
-            client, mock_verify, mock_payout, suffix="refund"
-        )
-        mock_reverse.return_value = {"transfer_id": transfer_id, "reversal_id": "trr_p27_refund"}
-        mock_refund.return_value = {"payment_intent_id": pi_id, "refund_id": "re_p27_refund"}
-
-        kicked = client.post(f"/rooms/{room_id}/kick",
-            json=_signed_kick(owner, room_id, {"target_agent_id": payer, "refund": True}),
-            headers={"x-emporia-agent-id": owner})
-    assert kicked.status_code == 200, kicked.text
-    body = kicked.json()
-    assert body["refund"] == {
-        "refunded": True, "refund_id": "re_p27_refund", "reversal_id": "trr_p27_refund",
-    }, body
-
-    mock_reverse.assert_called_once()
-    assert mock_reverse.call_args.args[0] == transfer_id
-    reversal_key = mock_reverse.call_args.kwargs["idempotency_key"]
-    assert reversal_key.startswith("emporia:reversal:")
-
-    mock_refund.assert_called_once()
-    assert mock_refund.call_args.args[0] == pi_id
-    refund_key = mock_refund.call_args.kwargs["idempotency_key"]
-    assert refund_key.startswith("emporia:refund:")
-    assert refund_key.removeprefix("emporia:refund:") == reversal_key.removeprefix("emporia:reversal:"), \
-        "the reversal and refund must be derived from the same settlement_dedupe_key(), " \
-        "identifying the same purchase"
-
-    # P2r-3 (R3): the outcome must be persisted, not just returned in the response.
-    from emporia.relay_server import get_db
-    with get_db() as conn:
-        settlement = conn.execute(
-            "SELECT transfer_status, refund_id, reversal_id FROM settlements "
-            "WHERE session_id=? AND payer_id=?", (room_id, payer),
-        ).fetchone()
-        payment = conn.execute(
-            "SELECT status FROM payments WHERE payment_intent_id=?", (pi_id,),
-        ).fetchone()
-    assert settlement["transfer_status"] == "refunded", \
-        f"settlement transfer_status must reflect the refund, got {settlement['transfer_status']!r}"
-    assert settlement["refund_id"] == "re_p27_refund"
-    assert settlement["reversal_id"] == "trr_p27_refund"
-    assert payment["status"] == "refunded", \
-        f"the payment row must reflect the refund, got {payment['status']!r}"
 
 
-@patch("emporia.payments.refund_payment_intent", new_callable=AsyncMock)
-@patch("emporia.payments.reverse_transfer", new_callable=AsyncMock)
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_kick_refund_survives_a_db_write_failure_after_stripe_succeeds(
-    mock_verify, mock_payout, mock_reverse, mock_refund, client
-):
-    """S1: Stripe's refund+reversal succeed, but the settlement/payments write
-    that persists that outcome raises (lock contention, disk full, whatever).
-    Real money already moved -- the endpoint must still report 200 with the
-    true Stripe outcome (refunded, refund_id, reversal_id) plus
-    persisted=False, not 500 the caller into believing the kick itself
-    failed. Must fail pre-fix: today that write has no try/except, so the
-    exception propagates straight through kick_from_room() into a 500."""
-    import sqlite3
-
-    from emporia.relay_server import get_db as real_get_db
-
-    class _FailingConn:
-        def __init__(self, conn):
-            self._conn = conn
-
-        def execute(self, sql, *args, **kwargs):
-            if "UPDATE settlements SET transfer_status='refunded'" in sql:
-                raise sqlite3.OperationalError("database is locked")
-            return self._conn.execute(sql, *args, **kwargs)
-
-        def __enter__(self):
-            self._conn.__enter__()
-            return self
-
-        def __exit__(self, *exc):
-            return self._conn.__exit__(*exc)
-
-        def __getattr__(self, name):
-            return getattr(self._conn, name)
-
-    with _stripe_account_active("acct_p2r6_s1"):
-        owner, payer, room_id, transfer_id, pi_id = _p27_paid_room_with_kicked_payer(
-            client, mock_verify, mock_payout, suffix="s1_write_fail"
-        )
-        mock_reverse.return_value = {"transfer_id": transfer_id, "reversal_id": "trr_s1"}
-        mock_refund.return_value = {"payment_intent_id": pi_id, "refund_id": "re_s1"}
-
-        with patch(
-            "emporia.relay_server.get_db",
-            side_effect=lambda: _FailingConn(real_get_db()),
-        ):
-            kicked = client.post(f"/rooms/{room_id}/kick",
-                json=_signed_kick(owner, room_id, {"target_agent_id": payer, "refund": True}),
-                headers={"x-emporia-agent-id": owner})
-
-    assert kicked.status_code == 200, kicked.text
-    body = kicked.json()["refund"]
-    assert body["refunded"] is True, \
-        "Stripe's refund genuinely succeeded -- the response must say so even though the local write failed"
-    assert body["refund_id"] == "re_s1"
-    assert body["reversal_id"] == "trr_s1"
-    assert body["persisted"] is False, \
-        "a failed local write must be surfaced, not silently swallowed"
-
-    # The kick itself (membership removal, ban, revoke) went through in an
-    # earlier, separate transaction -- unaffected by this later write failure.
-    from emporia.entitlements import is_revoked
-    from emporia.relay_server import DATABASE_PATH
-    from emporia import rooms as rooms_db
-    assert not rooms_db.is_member(room_id, payer, db_path=DATABASE_PATH)
-    assert is_revoked("room", room_id, payer, reason="kicked", db_path=DATABASE_PATH)
 
 
-def test_kick_refund_ids_redacted_for_a_co_payer(client):
-    """P2r-3 (R3): refund_id/reversal_id are per-payment Stripe identifiers,
-    the same class transfer_id already is (N7-R4) — a co-payer reading the
-    room's settlements must not see another payer's refund/reversal ids any
-    more than they'd see their transfer_id. Sets refund_id/reversal_id
-    directly on a record_settlement()-created row (mirrors
-    test_settlement_row_dict_never_leaks_internal_columns_to_a_co_payer's
-    setup) rather than driving a full kick+refund flow, since the property
-    under test is the redaction, not the refund mechanics."""
-    import sqlite3
-    from emporia.relay_server import record_settlement, DATABASE_PATH
-    from emporia import rooms as rooms_db
-
-    owner = "p2r3_redact_owner"
-    payer_a = "p2r3_redact_payer_a"
-    payer_b = "p2r3_redact_payer_b"
-    _register_keyed(client, owner)
-    _register(client, payer_a)
-    _register(client, payer_b)
-
-    r = client.post("/rooms", json=_signed_room(owner, {
-        "name": "P2r-3 Redact Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    rooms_db.add_member(room_id, payer_a, db_path=DATABASE_PATH)
-    rooms_db.add_member(room_id, payer_b, db_path=DATABASE_PATH)
-    for payer, pi in ((payer_a, "pi_p2r3_redact_a"), (payer_b, "pi_p2r3_redact_b")):
-        record_settlement({
-            "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
-            "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
-            "winner_payout_cents": 100, "platform_fee_bps": 0,
-            "payment_intent_ids": [pi], "transfer_id": f"tr_{pi}",
-            "transfer_status": "transferred", "payer_id": payer,
-        })
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.execute(
-        "UPDATE settlements SET transfer_status='refunded', refund_id=?, reversal_id=? "
-        "WHERE session_id=? AND payer_id=?",
-        ("re_p2r3_redact_b", "trr_p2r3_redact_b", room_id, payer_b),
-    )
-    conn.commit()
-    conn.close()
-
-    resp = client.get(f"/payments/settlements/{room_id}", headers={"x-emporia-agent-id": payer_a})
-    assert resp.status_code == 200, resp.text
-    rows = resp.json()["settlements"]
-    b_row = next(s for s in rows if s["payer_id"] == "[redacted]")
-
-    assert b_row["refund_id"] == "[redacted]", \
-        f"payer B's refund_id must be redacted for payer A, got {b_row['refund_id']!r}"
-    assert b_row["reversal_id"] == "[redacted]", \
-        f"payer B's reversal_id must be redacted for payer A, got {b_row['reversal_id']!r}"
 
 
-@patch("emporia.payments.refund_payment_intent", new_callable=AsyncMock)
-@patch("emporia.payments.reverse_transfer", new_callable=AsyncMock)
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_kick_refund_partial_failure_records_reversal_without_refund(
-    mock_verify, mock_payout, mock_reverse, mock_refund, client
-):
-    """P2r-3 (R3): reversal succeeds, refund fails — a real intermediate state
-    (the creator's payout has genuinely been clawed back even though the
-    payer hasn't been made whole) that must be persisted distinctly from
-    "nothing happened," so an operator can see it and finish the refund
-    manually. Must fail pre-fix: nothing is written on any outcome, so the
-    settlement stays 'transferred' regardless."""
-    mock_refund.side_effect = RuntimeError("stripe refund failed")
-    with _stripe_account_active("acct_p2r3_partial"):
-        owner, payer, room_id, transfer_id, pi_id = _p27_paid_room_with_kicked_payer(
-            client, mock_verify, mock_payout, suffix="partial"
-        )
-        mock_reverse.return_value = {"transfer_id": transfer_id, "reversal_id": "trr_p2r3_partial"}
-        kicked = client.post(f"/rooms/{room_id}/kick",
-            json=_signed_kick(owner, room_id, {"target_agent_id": payer, "refund": True}),
-            headers={"x-emporia-agent-id": owner})
-    assert kicked.status_code == 200, kicked.text
-    assert kicked.json()["refund"]["refunded"] is False
-    assert kicked.json()["refund"]["reversal_id"] == "trr_p2r3_partial"
-
-    from emporia.relay_server import get_db
-    with get_db() as conn:
-        settlement = conn.execute(
-            "SELECT transfer_status, refund_id, reversal_id FROM settlements "
-            "WHERE session_id=? AND payer_id=?", (room_id, payer),
-        ).fetchone()
-    assert settlement["transfer_status"] == "reversed_pending_refund", \
-        f"a successful reversal with a failed refund must be its own persisted " \
-        f"state, got {settlement['transfer_status']!r}"
-    assert settlement["reversal_id"] == "trr_p2r3_partial"
-    assert settlement["refund_id"] is None, "no refund happened — refund_id must stay NULL"
 
 
-@patch("emporia.payments.refund_payment_intent", new_callable=AsyncMock)
-@patch("emporia.payments.reverse_transfer", new_callable=AsyncMock)
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_kick_without_refund_flag_moves_no_money(
-    mock_verify, mock_payout, mock_reverse, mock_refund, client
-):
-    """P2-7: refund defaults to False — an ordinary kick must never touch
-    Stripe. Checks the default (omitted) and the explicit False both take
-    this path."""
-    with _stripe_account_active("acct_p27_noref"):
-        owner, payer, room_id, _tr, _pi = _p27_paid_room_with_kicked_payer(
-            client, mock_verify, mock_payout, suffix="noref"
-        )
-        kicked = client.post(f"/rooms/{room_id}/kick",
-            json=_signed_kick(owner, room_id, {"target_agent_id": payer}),
-            headers={"x-emporia-agent-id": owner})
-    assert kicked.status_code == 200, kicked.text
-    assert kicked.json()["refund"] is None
-    mock_reverse.assert_not_called()
-    mock_refund.assert_not_called()
 
 
-@patch("emporia.payments.refund_payment_intent", new_callable=AsyncMock)
-@patch("emporia.payments.reverse_transfer", new_callable=AsyncMock)
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_kick_refund_failure_still_leaves_agent_kicked_and_revoked(
-    mock_verify, mock_payout, mock_reverse, mock_refund, client
-):
-    """P2-7: a Stripe failure during the refund step must not undo the kick
-    that already happened — the agent stays removed and banned from
-    rejoining, and the failure is reported in the response rather than
-    raised."""
-    from emporia.entitlements import is_revoked
-    from emporia.relay_server import DATABASE_PATH
-    from emporia import rooms as rooms_db
-
-    mock_reverse.side_effect = RuntimeError("stripe reversal failed")
-    with _stripe_account_active("acct_p27_fail"):
-        owner, payer, room_id, _tr, _pi = _p27_paid_room_with_kicked_payer(
-            client, mock_verify, mock_payout, suffix="fail"
-        )
-        kicked = client.post(f"/rooms/{room_id}/kick",
-            json=_signed_kick(owner, room_id, {"target_agent_id": payer, "refund": True}),
-            headers={"x-emporia-agent-id": owner})
-    assert kicked.status_code == 200, kicked.text
-    assert kicked.json()["refund"]["refunded"] is False
-    assert "transfer_reversal_failed" in kicked.json()["refund"]["reason"]
-    mock_refund.assert_not_called()
-
-    assert not rooms_db.is_member(room_id, payer, db_path=DATABASE_PATH)
-    assert is_revoked("room", room_id, payer, reason="kicked", db_path=DATABASE_PATH)
 
 
-def test_kick_with_refund_on_free_room_member_is_a_clean_noop(client):
-    """P2-7: kicking a member of a free (non-paid) room with refund=true must
-    not attempt any Stripe call or 500 — there is no settlement row to refund
-    against, and that's a legitimate, common case (most rooms aren't paid),
-    not an error."""
-    _register_keyed(client, "p27_free_owner")
-    _register(client, "p27_free_member")
-
-    r = client.post("/rooms", json=_signed_room("p27_free_owner", {
-        "name": "P2-7 Free Room", "creator_id": "p27_free_owner",
-        "room_type": "public", "gate_type": "open",
-    }),
-        headers={"x-emporia-agent-id": "p27_free_owner"})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    joined = client.post(f"/rooms/{room_id}/join", json={"agent_id": "p27_free_member"},
-        headers={"x-emporia-agent-id": "p27_free_member"})
-    assert joined.status_code == 200, joined.text
-
-    kicked = client.post(f"/rooms/{room_id}/kick",
-        json=_signed_kick("p27_free_owner", room_id, {"target_agent_id": "p27_free_member", "refund": True}),
-        headers={"x-emporia-agent-id": "p27_free_owner"})
-    assert kicked.status_code == 200, kicked.text
-    assert kicked.json()["refund"] == {"refunded": False, "reason": "no_payment_found"}
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_unsubscribed_agora_member_can_still_read_own_receipt(mock_verify, mock_payout, client):
-    """Sibling of test_kicked_room_member_can_still_read_own_receipt for Agora: an
-    agent who unsubscribes from a paid_invite topic they paid for must still be able
-    to find their own settlement via ?agent_id=."""
-    _register(client, "n54_agora_owner")
-    _register(client, "n54_agora_payer")
-    _register(client, "n54_agora_stranger")
-    mock_payout.return_value = {"transfer_id": "tr_n54_agora"}
-
-    r = client.post("/agoras/topics", json={
-        "name": "N54 Agora Receipt Topic", "description": "d", "visibility": "private",
-        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": "n54_agora_owner",
-    },
-        headers={"x-emporia-agent-id": "n54_agora_owner"})
-    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
-    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "n54_agora_payer"},
-        headers={"x-emporia-agent-id": "n54_agora_owner"})
-
-    with _stripe_account_active("acct_n54_agora"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_n54_agora_receipt",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "agora", "resource_id": topic_id,
-                "buyer_agent_id": "n54_agora_payer",
-            },
-        }
-        r2 = client.post(
-            f"/agoras/topics/{slug}/subscribe",
-            json={"agent_id": "n54_agora_payer", "payment_intent_id": "pi_n54_agora_receipt"},
-            headers={"x-emporia-agent-id": "n54_agora_payer"},
-        )
-    assert r2.status_code == 200, r2.text
-
-    unsub = client.request("DELETE", f"/agoras/topics/{slug}/subscribe",
-        params={"agent_id": "n54_agora_payer"},
-        headers={"x-emporia-agent-id": "n54_agora_payer"})
-    assert unsub.status_code == 200, unsub.text
-
-    own_receipt = client.get("/payments/settlements", params={"agent_id": "n54_agora_payer"},
-        headers={"x-emporia-agent-id": "n54_agora_payer"})
-    assert own_receipt.status_code == 200, own_receipt.text
-    assert any(s["session_id"] == topic_id for s in own_receipt.json()["settlements"]), \
-        "an unsubscribed Agora member must still be able to read their own receipt"
-
-    stranger_view = client.get("/payments/settlements", params={"agent_id": "n54_agora_payer"},
-        headers={"x-emporia-agent-id": "n54_agora_stranger"})
-    assert stranger_view.status_code == 403, stranger_view.text
 
 
 def _settlement_matrix_session(client, module_type, payment_mode):
@@ -5784,7 +3445,7 @@ def _settlement_matrix_session(client, module_type, payment_mode):
         "status": "settled", "total_price_cents": 0, "platform_fee_cents": 0,
         "winner_payout_cents": 0, "platform_fee_bps": 0,
         "payment_intent_ids": [f"pi_{session_id}"], "transfer_id": None,
-        "transfer_status": "no_stripe_account",
+        "transfer_status": "direct",
     })
     return session_id, creator, stranger
 
@@ -5795,7 +3456,7 @@ def _settlement_matrix_agora(client, visibility, gate_type):
     exercised — N6 review R3: this used to skip the real subscribe and only invite,
     so no test ever proved a payer could read their own Agora receipt), and directly
     record a settlement (mirrors what subscribe_agora_topic itself writes for
-    paid_invite — avoids needing to mock a Stripe payment here). Returns
+    paid_invite — avoids needing a real payment here). Returns
     (topic_id, payer_id, stranger_id)."""
     from emporia.relay_server import record_settlement, get_db, DB_LOCK
     from datetime import datetime, UTC
@@ -5825,7 +3486,7 @@ def _settlement_matrix_agora(client, visibility, gate_type):
         client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": payer},
             headers={"x-emporia-agent-id": owner})
     if gate_type == "paid_invite":
-        # Real subscribe needs a mocked Stripe payment — out of scope for this
+        # Real subscribe needs a payment — out of scope for this
         # visibility-only fixture. Grant membership directly instead, same
         # simplification record_settlement below already makes for the payment
         # itself (subscribe_agora_topic would have written both together).
@@ -5843,7 +3504,7 @@ def _settlement_matrix_agora(client, visibility, gate_type):
         "status": "settled", "total_price_cents": entry_fee, "platform_fee_cents": 0,
         "winner_payout_cents": entry_fee, "platform_fee_bps": 0,
         "payment_intent_ids": [f"pi_{topic_id}"], "transfer_id": None,
-        "transfer_status": "no_stripe_account", "payer_id": payer,
+        "transfer_status": "direct", "payer_id": payer,
     })
     return topic_id, payer, stranger
 
@@ -5851,7 +3512,7 @@ def _settlement_matrix_agora(client, visibility, gate_type):
 def _settlement_matrix_room(client, room_type, gate_type):
     """Create a room with the given room_type/gate_type, add a payer as a member
     (real /join for the free "open" gate; direct rooms_db.add_member for
-    "paid" to avoid mocking Stripe here — same simplification
+    "paid" to avoid a real payment here — same simplification
     _settlement_matrix_agora makes for paid_invite), and directly record a
     settlement. Returns (room_id, payer_id, stranger_id).
 
@@ -5888,7 +3549,7 @@ def _settlement_matrix_room(client, room_type, gate_type):
         "status": "settled", "total_price_cents": entry_fee, "platform_fee_cents": 0,
         "winner_payout_cents": entry_fee, "platform_fee_bps": 0,
         "payment_intent_ids": [f"pi_{room_id}"], "transfer_id": None,
-        "transfer_status": "no_stripe_account", "payer_id": payer,
+        "transfer_status": "direct", "payer_id": payer,
     })
     return room_id, payer, stranger
 
@@ -6040,73 +3701,6 @@ def test_agora_topic_entry_fee_requires_paid_invite_gate(client):
     assert "paid_invite" in r.text
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_public_paid_invite_topic_entry_fee_gates_reads_and_posts(mock_verify, mock_payout, client):
-    """P1b-1: flips test_public_paid_invite_topic_entry_fee_gates_nothing_for_reads_or_posts
-    (P2r-5 R5's pin). Resolved in the P1b planning round: `visibility="public"` on a
-    paid_invite topic now means discoverable/listed, not readable — `_topic_can_read()`
-    checks the entitlement for paid topics regardless of visibility, matching the rule
-    `_settlement_resource_viewer_allowed()` already applied to these same topics (N5-R1)
-    instead of contradicting it. Provisional, not final — see docs/archive/roadmap-hackathon-era.md § Payments for
-    the revisit trigger (real usage data on whether paid communities want a free-to-read
-    shopfront).
-
-    Covers: a never-paid stranger is now denied both read and write; the topic listing
-    itself stays visible (public still means discoverable); the creator (auto-subscribed
-    as owner) is unaffected; a paying member gets both read and write back."""
-    _register(client, "p1b1_owner")
-    _register_keyed(client, "p1b1_stranger")
-    _register_keyed(client, "p1b1_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p1b1"}
-
-    r = client.post("/agoras/topics", json={
-        "name": "P1b-1 Public Paid Topic", "description": "d", "visibility": "public",
-        "gate_type": "paid_invite", "entry_fee_cents": 500, "creator_id": "p1b1_owner",
-    },
-        headers={"x-emporia-agent-id": "p1b1_owner"})
-    assert r.status_code == 200, r.text
-    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
-
-    stranger_read = client.get(f"/agoras/topics/{slug}/posts",
-        headers={"x-emporia-agent-id": "p1b1_stranger"})
-    assert stranger_read.status_code == 403, stranger_read.text
-
-    from tests.topic_posts import v2_post
-    stranger_post = v2_post(client, "p1b1_stranger", slug, "never paid a cent")
-    assert stranger_post.status_code == 403, stranger_post.text
-
-    # "public" still means discoverable — the topic listing itself is unaffected.
-    listing = client.get("/agoras/topics", headers={"x-emporia-agent-id": "p1b1_stranger"})
-    assert listing.status_code == 200
-    assert any(t["slug"] == slug for t in listing.json()["topics"])
-
-    # the creator (auto-subscribed as owner on topic creation) is unaffected.
-    owner_read = client.get(f"/agoras/topics/{slug}/posts", headers={"x-emporia-agent-id": "p1b1_owner"})
-    assert owner_read.status_code == 200
-
-    # a paying member gets read and write back.
-    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "p1b1_payer"},
-        headers={"x-emporia-agent-id": "p1b1_owner"})
-    with _stripe_account_active("acct_p1b1"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_p1b1_payer",
-            "amount": 500, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "agora", "resource_id": topic_id,
-                "buyer_agent_id": "p1b1_payer",
-            },
-        }
-        sub = client.post(f"/agoras/topics/{slug}/subscribe",
-            json={"agent_id": "p1b1_payer", "payment_intent_id": "pi_p1b1_payer"},
-            headers={"x-emporia-agent-id": "p1b1_payer"})
-        assert sub.status_code == 200, sub.text
-
-    payer_read = client.get(f"/agoras/topics/{slug}/posts", headers={"x-emporia-agent-id": "p1b1_payer"})
-    assert payer_read.status_code == 200, payer_read.text
-
-    payer_post = v2_post(client, "p1b1_payer", slug, "paid up")
-    assert payer_post.status_code == 200, payer_post.text
 
 
 def test_settlement_co_payer_cannot_see_others_payment_intent_ids_room(client):
@@ -6215,7 +3809,7 @@ def test_settlement_payer_id_redacted_for_non_owned_rows(client):
             "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
             "winner_payout_cents": 100, "platform_fee_bps": 0,
             "payment_intent_ids": [pi], "transfer_id": None,
-            "transfer_status": "no_stripe_account", "payer_id": payer,
+            "transfer_status": "direct", "payer_id": payer,
         })
 
     for path, params in (
@@ -6273,20 +3867,11 @@ def test_known_rails_covers_every_persisted_rail_value():
     with get_db() as conn:
         for table in ("payments", "settlements", "access_entitlements"):
             values = {r[0] for r in conn.execute(f"SELECT DISTINCT rail FROM {table}").fetchall()}
-            unknown = values - KNOWN_RAILS
+            unknown = values - KNOWN_RAILS - ({"free"} if table == "settlements" else set())   # a free session's outcome
             assert not unknown, \
                 f"{table}.rail has unrecognized value(s) {unknown} — not in KNOWN_RAILS={sorted(KNOWN_RAILS)}"
 
 
-def test_known_rails_widens_to_include_x402():
-    """P1b-3: the second rail P3's seam was built for. KNOWN_RAILS must widen
-    to exactly {stripe, x402} — no silent removal of stripe, no accidental
-    third value."""
-    from emporia.payments import RAIL_STRIPE, RAIL_TEMPO, RAIL_X402, KNOWN_RAILS
-
-    assert RAIL_X402 == "x402"
-    # P156 added the third deliberately: Tempo, paid straight to the payee.
-    assert KNOWN_RAILS == frozenset({RAIL_STRIPE, RAIL_X402, RAIL_TEMPO})
 
 
 def test_x402_config_accessors_require_every_condition_before_enabling():
@@ -6414,7 +3999,7 @@ def test_settlement_row_dict_never_leaks_internal_columns_to_a_co_payer(client):
             "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
             "winner_payout_cents": 100, "platform_fee_bps": 0,
             "payment_intent_ids": [pi], "transfer_id": None,
-            "transfer_status": "no_stripe_account", "payer_id": payer,
+            "transfer_status": "direct", "payer_id": payer,
         })
 
     resp = client.get(f"/payments/settlements/{room_id}", headers={"x-emporia-agent-id": payer_a})
@@ -6465,7 +4050,7 @@ def test_settlements_agent_id_and_unfiltered_branches_never_return_internal_colu
         "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
         "winner_payout_cents": 100, "platform_fee_bps": 0,
         "payment_intent_ids": ["pi_p2_2_leak"], "transfer_id": None,
-        "transfer_status": "no_stripe_account", "payer_id": payer,
+        "transfer_status": "direct", "payer_id": payer,
     })
 
     own_receipt = client.get("/payments/settlements", params={"agent_id": payer},
@@ -6485,79 +4070,12 @@ def test_settlements_agent_id_and_unfiltered_branches_never_return_internal_colu
         f"unfiltered (operator) branch returned internal column(s) {leaked} — {op_row.keys()}"
 
 
-def test_settlements_agent_id_and_unfiltered_branches_return_refund_ids_in_plaintext(client):
-    """S2 (P2r-6): `refund_id`/`reversal_id` are public columns
-    (`_SETTLEMENT_PUBLIC_COLUMNS`) at `list_settlements()`'s `?agent_id=` and
-    unfiltered-operator branches, by design — those branches' SQL is already
-    ownership/operator-scoped, so they return every public column in
-    plaintext for the owning caller (see `_settlement_public_dict`'s
-    docstring). `test_settlements_agent_id_and_unfiltered_branches_never_return_internal_columns`
-    only proves the *internal* set (`dedupe_key`) is excluded there — it can't
-    catch a regression that also excluded `refund_id`/`reversal_id` from those
-    same branches, since they're not internal. No source fix: this closes
-    that evidentiary blind spot for the two newest columns, the way P2-2
-    closed it for `dedupe_key`. `test_kick_refund_ids_redacted_for_a_co_payer`
-    covers the complementary case (a *non-owning* caller must see
-    `[redacted]`, via `_settlement_row_dict`) — this test is its sibling for
-    the two branches that skip that redaction on purpose."""
-    import sqlite3
-
-    from emporia.relay_server import record_settlement, DATABASE_PATH
-    from emporia import rooms as rooms_db
-
-    owner = "s2_pub_owner"
-    payer = "s2_pub_payer"
-    _register_keyed(client, owner)
-    _register(client, payer)
-
-    r = client.post("/rooms", json=_signed_room(owner, {
-        "name": "S2 Public Refund Ids Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    rooms_db.add_member(room_id, payer, db_path=DATABASE_PATH)
-    record_settlement({
-        "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
-        "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
-        "winner_payout_cents": 100, "platform_fee_bps": 0,
-        "payment_intent_ids": ["pi_s2_pub"], "transfer_id": "tr_s2_pub",
-        "transfer_status": "transferred", "payer_id": payer,
-    })
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.execute(
-        "UPDATE settlements SET transfer_status='refunded', refund_id=?, reversal_id=? "
-        "WHERE session_id=? AND payer_id=?",
-        ("re_s2_pub", "trr_s2_pub", room_id, payer),
-    )
-    conn.commit()
-    conn.close()
-
-    own_receipt = client.get("/payments/settlements", params={"agent_id": payer},
-        headers={"x-emporia-agent-id": payer})
-    assert own_receipt.status_code == 200, own_receipt.text
-    own_row = next(s for s in own_receipt.json()["settlements"] if s["session_id"] == room_id)
-    assert own_row["refund_id"] == "re_s2_pub", \
-        f"?agent_id= branch must return the owning payer's own refund_id in plaintext, got {own_row!r}"
-    assert own_row["reversal_id"] == "trr_s2_pub", \
-        f"?agent_id= branch must return the owning payer's own reversal_id in plaintext, got {own_row!r}"
-
-    with patch.dict(os.environ, {**_op_env(owner)}):
-        operator_view = client.get("/payments/settlements", headers={"x-emporia-agent-id": owner})
-    assert operator_view.status_code == 200, operator_view.text
-    op_row = next(s for s in operator_view.json()["settlements"] if s["session_id"] == room_id)
-    assert op_row["refund_id"] == "re_s2_pub", \
-        f"unfiltered (operator) branch must return refund_id in plaintext, got {op_row!r}"
-    assert op_row["reversal_id"] == "trr_s2_pub", \
-        f"unfiltered (operator) branch must return reversal_id in plaintext, got {op_row!r}"
 
 
 def test_record_settlement_rejects_unknown_rail():
     """P3 (item 2): sibling of the entitlements.grant() rail validation — an
     unrecognized `rail` value in a settlement dict must be rejected rather
-    than silently written to storage. Defaults to RAIL_STRIPE when omitted
+    than silently written to storage. Defaults to x402 when omitted
     (every caller today; PaymentRef threading lands in item 3), but a bad
     explicit value must not reach the INSERT."""
     from emporia.relay_server import record_settlement
@@ -6595,7 +4113,7 @@ def test_settlement_payer_id_null_stays_null_for_session_rows(client):
         "status": "settled", "total_price_cents": 0, "platform_fee_cents": 0,
         "winner_payout_cents": 0, "platform_fee_bps": 0,
         "payment_intent_ids": [f"pi_{session_id}"], "transfer_id": None,
-        "transfer_status": "no_stripe_account",
+        "transfer_status": "direct",
         # payer_id intentionally omitted — stays NULL, the session-aggregate case.
     })
 
@@ -6746,7 +4264,7 @@ def test_settlement_agent_id_query_does_not_drop_owned_rows_past_candidate_limit
             "INSERT INTO settlements (settlement_id, session_id, winner_id, total_price_cents, "
             "platform_fee_cents, winner_payout_cents, platform_fee_bps, payment_intent_ids, "
             "transfer_id, transfer_status, status, created_at, payer_id) "
-            "VALUES (?, ?, ?, 100, 0, 100, 0, ?, NULL, 'no_stripe_account', 'settled', ?, ?)",
+            "VALUES (?, ?, ?, 100, 0, 100, 0, ?, NULL, 'direct', 'settled', ?, ?)",
             (f"stl_{uuid.uuid4().hex[:16]}", room_id, owner, json.dumps([pi]), ts, agent_id),
         )
 
@@ -6958,7 +4476,7 @@ def test_settlement_reads_report_has_more(client):
             "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
             "winner_payout_cents": 100, "platform_fee_bps": 0,
             "payment_intent_ids": [f"pi_n7page_{i}"], "transfer_id": None,
-            "transfer_status": "no_stripe_account", "payer_id": f"n7page_payer_{i}",
+            "transfer_status": "direct", "payer_id": f"n7page_payer_{i}",
         })
 
     with patch.dict(os.environ, {**_op_env(owner)}):
@@ -7007,7 +4525,7 @@ def test_settlement_agent_id_and_global_reads_report_has_more(client):
             "total_price_cents": 100, "platform_fee_cents": 0,
             "winner_payout_cents": 100, "platform_fee_bps": 0,
             "payment_intent_ids": [f"pi_n8hm_{i}"], "transfer_id": None,
-            "transfer_status": "no_stripe_account", "payer_id": payer,
+            "transfer_status": "direct", "payer_id": payer,
         })
 
     truncated = client.get("/payments/settlements", params={"agent_id": payer, "limit": 2},
@@ -7030,95 +4548,6 @@ def test_settlement_agent_id_and_global_reads_report_has_more(client):
         assert global_truncated.json()["has_more"] is True, global_truncated.text
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_settlement_co_payer_cannot_see_others_payment_intent_ids_agora(mock_verify, mock_payout, client):
-    """Sibling of the room co-payer test for Agora — subscribe_agora_topic has the
-    identical one-row-per-payer shape."""
-    owner = "n6co_agora_owner"
-    payer_a = "n6co_agora_payer_a"
-    payer_b = "n6co_agora_payer_b"
-    _register(client, owner)
-    _register(client, payer_a)
-    _register(client, payer_b)
-    # Distinct transfer_id per subscriber (not a shared value) so the transfer_id
-    # redaction assertion below actually distinguishes "payer A's own" from
-    # "payer B's, must be hidden" rather than trivially matching either way.
-    mock_payout.side_effect = [
-        {"transfer_id": "tr_n6co_agora_a"},
-        {"transfer_id": "tr_n6co_agora_b"},
-    ]
-
-    r = client.post("/agoras/topics", json={
-        "name": "N6 Co-Payer Topic", "description": "d", "visibility": "public",
-        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": owner,
-    },
-        headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
-
-    with _stripe_account_active("acct_n6co"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_n6co_agora_a",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "agora", "resource_id": topic_id,
-                "buyer_agent_id": payer_a,
-            },
-        }
-        for invitee in (payer_a, payer_b):
-            client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": invitee},
-                headers={"x-emporia-agent-id": owner})
-        sub_a = client.post(f"/agoras/topics/{slug}/subscribe",
-            json={"agent_id": payer_a, "payment_intent_id": "pi_n6co_agora_a"},
-            headers={"x-emporia-agent-id": payer_a})
-        assert sub_a.status_code == 200, sub_a.text
-
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_n6co_agora_b",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "agora", "resource_id": topic_id,
-                "buyer_agent_id": payer_b,
-            },
-        }
-        sub_b = client.post(f"/agoras/topics/{slug}/subscribe",
-            json={"agent_id": payer_b, "payment_intent_id": "pi_n6co_agora_b"},
-            headers={"x-emporia-agent-id": payer_b})
-        assert sub_b.status_code == 200, sub_b.text
-
-    own = client.get("/payments/settlements", params={"agent_id": payer_a},
-        headers={"x-emporia-agent-id": payer_a})
-    assert own.status_code == 200, own.text
-    own_settlements = own.json()["settlements"]
-    leaked_pis = {pid for s in own_settlements for pid in s["payment_intent_ids"]}
-    assert "pi_n6co_agora_b" not in leaked_pis, \
-        f"agent_id={payer_a}'s own settlement query must not include payer B's " \
-        f"payment_intent_ids — leaked: {leaked_pis}"
-    leaked_transfers = {s["transfer_id"] for s in own_settlements}
-    assert "tr_n6co_agora_b" not in leaked_transfers, \
-        f"agent_id={payer_a}'s own settlement query must not include payer B's " \
-        f"transfer_id (N7 review R4) — leaked: {leaked_transfers}"
-    assert "tr_n6co_agora_a" in leaked_transfers, \
-        f"agent_id={payer_a}'s own settlement query must still include their own " \
-        f"transfer_id — got: {leaked_transfers}"
-
-    # ?agent_id= already fully excludes non-owned rows via payer_id (N7-2) — it
-    # never needs to redact anything, only omit. transfer_id redaction (N7-4) only
-    # actually matters on ?session_id=/{id}, which returns every row for a
-    # resource the caller may see, redacting the ones they don't own.
-    by_resource = client.get(f"/payments/settlements/{topic_id}",
-        headers={"x-emporia-agent-id": payer_a})
-    assert by_resource.status_code == 200, by_resource.text
-    b_row = next(s for s in by_resource.json()["settlements"]
-        if s["payment_intent_ids"] == ["[redacted]"])
-    assert b_row["transfer_id"] == "[redacted]", \
-        f"/payments/settlements/{topic_id} as payer A must see payer B's transfer_id " \
-        f"redacted, not exposed (N7 review R4) — got: {b_row['transfer_id']}"
-    a_row = next(s for s in by_resource.json()["settlements"]
-        if s["payment_intent_ids"] == ["pi_n6co_agora_a"])
-    assert a_row["transfer_id"] == "tr_n6co_agora_a", \
-        f"payer A must still see their own transfer_id unredacted — got: {a_row['transfer_id']}"
 
 
 def test_settlement_redaction_does_not_blind_the_operator(client):
@@ -7153,7 +4582,7 @@ def test_settlement_redaction_does_not_blind_the_operator(client):
             "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
             "winner_payout_cents": 100, "platform_fee_bps": 0,
             "payment_intent_ids": [pi], "transfer_id": None,
-            "transfer_status": "no_stripe_account", "payer_id": payer,
+            "transfer_status": "direct", "payer_id": payer,
         })
 
     with patch.dict(os.environ, {**_op_env(owner)}):
@@ -7173,52 +4602,6 @@ def test_settlement_redaction_does_not_blind_the_operator(client):
         assert payments_view.status_code == 200, payments_view.text
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_payment_records_redacts_other_payers_in_room(mock_verify, mock_payout, client):
-    """Sibling of the settlement co-payer tests for list_payment_records' ?room_id=
-    branch: a room member sees the room's payment activity exists, but another
-    payer's agent_id/payment_intent_id are redacted rather than fully exposed."""
-    owner = "n6pr_room_owner"
-    payer_a = "n6pr_room_payer_a"
-    payer_b = "n6pr_room_payer_b"
-    _register_keyed(client, owner)
-    _register(client, payer_a)
-    _register(client, payer_b)
-    mock_payout.return_value = {"transfer_id": "tr_n6pr_room"}
-
-    r = client.post("/rooms", json=_signed_room(owner, {
-        "name": "N6 Payment Records Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    with _stripe_account_active("acct_n6pr"):
-        for payer, pi in ((payer_a, "pi_n6pr_a"), (payer_b, "pi_n6pr_b")):
-            mock_verify.return_value = {
-                "status": "succeeded", "payment_intent_id": pi,
-                "amount": 100, "currency": "usd", "capture_method": "automatic",
-                "metadata": {
-                    "resource_type": "room", "resource_id": room_id,
-                    "buyer_agent_id": payer,
-                },
-            }
-            jr = client.post(f"/rooms/{room_id}/join",
-                json={"agent_id": payer, "payment_intent_id": pi},
-                headers={"x-emporia-agent-id": payer})
-            assert jr.status_code == 200, jr.text
-
-    as_a = client.get("/payments/records", params={"room_id": room_id},
-        headers={"x-emporia-agent-id": payer_a})
-    assert as_a.status_code == 200, as_a.text
-    rows_by_pi = {p["payment_intent_id"]: p for p in as_a.json()["payments"]
-                  if p["payment_intent_id"] != "[redacted]"}
-    assert "pi_n6pr_a" in rows_by_pi, as_a.text
-    redacted = [p for p in as_a.json()["payments"] if p["payment_intent_id"] == "[redacted]"]
-    assert redacted, "payer B's row must appear redacted, not omitted, to a fellow room member"
-    assert all(p["agent_id"] == "[redacted]" for p in redacted)
 
 
 
@@ -7389,7 +4772,7 @@ def test_is_member_expired_entitlement_blocks_paid_room_access(rooms_db_path):
                        access_duration_days=1, db_path=rooms_db_path)
     add_member(room.room_id, "agent_payer", db_path=rooms_db_path)
     grant("room", room.room_id, "agent_payer", "pi_expiring", duration_days=1,
-          rail="stripe", db_path=rooms_db_path)
+          rail="x402", db_path=rooms_db_path)
     assert is_member(room.room_id, "agent_payer", db_path=rooms_db_path), \
         "a fresh grant must not be immediately blocked"
 
@@ -7460,7 +4843,7 @@ def test_is_member_regrant_after_expiry_restores_access(rooms_db_path):
                        access_duration_days=1, db_path=rooms_db_path)
     add_member(room.room_id, "agent_payer", db_path=rooms_db_path)
     grant("room", room.room_id, "agent_payer", "pi_first", duration_days=1,
-          rail="stripe", db_path=rooms_db_path)
+          rail="x402", db_path=rooms_db_path)
     conn = sqlite3.connect(rooms_db_path)
     conn.execute(
         "UPDATE access_entitlements SET expires_at = ? "
@@ -7472,7 +4855,7 @@ def test_is_member_regrant_after_expiry_restores_access(rooms_db_path):
     assert not is_member(room.room_id, "agent_payer", db_path=rooms_db_path)
 
     grant("room", room.room_id, "agent_payer", "pi_second", duration_days=1,
-          rail="stripe", db_path=rooms_db_path)
+          rail="x402", db_path=rooms_db_path)
     assert is_member(room.room_id, "agent_payer", db_path=rooms_db_path), \
         "a fresh grant must restore access even though an earlier one expired"
 
@@ -7742,41 +5125,7 @@ def test_room_create_list_get(client):
     assert r3.json()["name"] == "Test Room"
 
 
-def test_room_gate_type_stripe_payment_is_rejected_paid_is_the_spelling(client):
-    """P3-1: `gate_type` used to bake a rail name into an agent-facing enum
-    ('stripe_payment') — actively wrong once a second rail exists, since a
-    room paid for over x402 would not be a "stripe_payment" room. Renamed to
-    'paid', breaking, no alias (explicit user decision — no backward
-    compatibility needed for this rename). The old spelling must now 400,
-    not silently normalize or keep working. Must fail pre-fix: pre-rename
-    code accepts 'stripe_payment' and rejects 'paid'."""
-    _register_keyed(client, "p3_gate_owner")
 
-    old_spelling = client.post("/rooms", json=_signed_room("p3_gate_owner", {
-        "name": "Old Spelling Room", "creator_id": "p3_gate_owner",
-        "room_type": "private", "gate_type": "stripe_payment", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": "p3_gate_owner"})
-    assert old_spelling.status_code == 400, old_spelling.text
-    assert "paid" in old_spelling.json()["detail"], \
-        f"error message must name the current spelling — got {old_spelling.json()['detail']!r}"
-
-    new_spelling = client.post("/rooms", json=_signed_room("p3_gate_owner", {
-        "name": "New Spelling Room", "creator_id": "p3_gate_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": "p3_gate_owner"})
-    assert new_spelling.status_code == 200, new_spelling.text
-    assert new_spelling.json()["gate_type"] == "paid"
-
-    # gate_type='paid' still requires a positive entry fee — the rename must not
-    # have loosened this validation.
-    no_fee = client.post("/rooms", json=_signed_room("p3_gate_owner", {
-        "name": "No Fee Paid Room", "creator_id": "p3_gate_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 0,
-    }),
-        headers={"x-emporia-agent-id": "p3_gate_owner"})
-    assert no_fee.status_code == 400, no_fee.text
 
 
 def test_room_join_open(client):
@@ -8614,29 +5963,6 @@ def test_attributed_content_creation_requires_authentication(prod_client):
 # endpoints (votes, /payments/create-intent).
 # ============================================================================
 
-def test_create_payment_intent_requires_authentication(prod_client):
-    """Regression for N2-4 tranche 4 (R1): POST /payments/create-intent trusted a claimed
-    buyer_id body field with no registration check at all — burn any registered agent's
-    MAX_TOTAL_SPEND_CENTS budget by naming them as buyer_id repeatedly, so their real join
-    later 402s. buyer_id is now gone from the body; the relay resolves the buyer from the
-    authenticated caller, and _assert_agent_budget runs against that caller, not a claim.
-    """
-    _register_keyed(prod_client, "pi_auth_creator")
-
-    r = prod_client.post(
-        "/sessions",
-        json=__import__("conftest").signed_session_body("pi_auth_creator", {
-            "module_type": "emporia:service:v1", "config": {},
-            "payment_rules": {"mode": "stripe_link", "price": "1.00", "currency": "usd"},
-        }),
-        headers=bearer_for(prod_client, "pi_auth_creator"),
-    )
-    session_id = r.json()["session_id"]
-
-    r = prod_client.post("/payments/create-intent", json={
-        "session_id": session_id, "amount_cents": 100,
-    })
-    assert r.status_code == 401
 
 
 # ============================================================================
@@ -9034,65 +6360,19 @@ def test_service_module_dispute_path():
 
 
 # ============================================================================
-# End-to-end: full service payment flow (Stripe mocked)
+# End-to-end: full service flow
 # ============================================================================
 
-def _mock_stripe_responses():
-    """Context manager patching all Stripe httpx calls for e2e tests."""
-    from unittest.mock import AsyncMock, MagicMock, patch
-
-    def make_resp(body: dict, status: int = 200):
-        m = MagicMock()
-        m.json.return_value = body
-        m.status_code = status
-        m.is_success = status < 400
-        m.raise_for_status = MagicMock()
-        return m
-
-    async def smart_post(url, *args, **kwargs):
-        if "payment_intents" in url and "capture" in url:
-            return make_resp({"id": url.split("/")[-2], "status": "succeeded"})
-        if "payment_intents" in url and "cancel" in url:
-            return make_resp({"id": url.split("/")[-2], "status": "canceled"})
-        if "test_helpers" in url:
-            pi_id = url.split("/")[-2]
-            return make_resp({"id": pi_id, "status": "requires_capture"})
-        if "payment_intents" in url:
-            return make_resp({
-                "id": "pi_e2e_test_001",
-                "client_secret": "pi_e2e_test_001_secret",
-                "status": "requires_payment_method",
-                "capture_method": "manual",
-            })
-        if "transfers" in url:
-            return make_resp({"id": "tr_e2e_test_001", "amount": 975, "status": "pending"})
-        if "accounts" in url:
-            return make_resp({"id": "acct_e2e_test_001", "type": "custom"})
-        return make_resp({"id": "generic_mock"})
-
-    async def smart_get(url, *args, **kwargs):
-        if "payment_intents" in url:
-            return make_resp({
-                "id": url.split("/")[-1],
-                "status": "requires_capture",
-                "capture_method": "manual",
-            })
-        return make_resp({})
-
-    return (
-        patch("httpx.AsyncClient.post", new_callable=lambda: lambda: AsyncMock(side_effect=smart_post)),
-        patch("httpx.AsyncClient.get", new_callable=lambda: lambda: AsyncMock(side_effect=smart_get)),
-    )
 
 
 def test_service_session_confirm_delivery_e2e(client):
     """Full flow: register agents → create service session → join with payment →
-    seller delivers → buyer confirms → settlement recorded (Stripe mocked).
+    seller delivers → buyer confirms → settlement recorded.
     """
     _register_keyed(client, "e2e_buyer")
     _register_keyed(client, "e2e_seller")
 
-    # Create service session (free mode to avoid Stripe in join — payment tested separately)
+    # Create service session (free mode — payment is tested separately)
     r = client.post("/sessions", json={
         "module_type": "emporia:service:v1",
         "creator_agent_id": "e2e_buyer",
@@ -10423,7 +7703,7 @@ def test_mcp_kick_from_room_bans_the_target(prod_client):
         )
         assert kicked.get("success") is True, kicked
         assert kicked["status"] == "kicked"
-        assert kicked["refund"] is None, "refund defaults to False and must move nothing"
+        assert "refund" not in kicked, "a kick moves no money and says nothing of refunds"
 
         rejoin = mcp_server.join_room(room_id=room_id, agent_id="mcpkick_target")
         assert rejoin.get("success") is False, rejoin
@@ -10624,7 +7904,7 @@ def test_mcp_get_settlements_authenticates_under_prod_auth(prod_client):
         "session_id": session_id, "winner_id": "mcpsettle_buyer", "outcome_type": "won",
         "status": "settled", "total_price_cents": 0, "platform_fee_cents": 0,
         "winner_payout_cents": 0, "platform_fee_bps": 0,
-        "payment_intent_ids": [], "transfer_id": None, "transfer_status": "no_stripe_account",
+        "payment_intent_ids": [], "transfer_id": None, "transfer_status": "direct",
     })
 
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
@@ -10638,61 +7918,6 @@ def test_mcp_get_settlements_authenticates_under_prod_auth(prod_client):
 
 
 
-def test_agent_sdk_join_room_surfaces_402_detail_via_payment_required_error():
-    """P8-2: join_room() had the same gap join_session() did before P7-2 —
-    a bare resp.raise_for_status() on a 402, discarding the challenge body
-    (see test_room_join_402_is_byte_identical_when_x402_unconfigured for the
-    MPP body's shape: error/message/amount_cents/resource/protocol).
-    mcp_server.join_room() already returns this as `detail` (:775). Simpler
-    scenario than the x402 one above — a plain unpaid join against a
-    gate_type:"paid" room is enough to hit the 402 and exercises the common
-    case, not just the x402-declined edge. Must fail pre-fix (bare
-    HTTPStatusError, no .detail) and pass post-fix. Also pins that
-    PaymentRequiredError stays catchable as httpx.HTTPStatusError, so an
-    existing caller catching that broad type keeps working unchanged."""
-    import asyncio
-
-    import httpx as httpx_module
-
-    from emporia.agent_sdk import EmporiaAgent, PaymentRequiredError
-    from emporia.identity import get_public_key_hex
-    from emporia.relay_server import app as relay_app
-
-    def _wired(agent_id: str) -> EmporiaAgent:
-        a = EmporiaAgent(
-            relay_url="http://testserver", agent_id=agent_id,
-            public_key_hex=get_public_key_hex(agent_id),
-        )
-        a._http = httpx_module.AsyncClient(
-            transport=httpx_module.ASGITransport(app=relay_app), base_url="http://testserver",
-        )
-        return a
-
-    async def scenario():
-        owner = _wired("p8_2_sdk_room_owner")
-        joiner = _wired("p8_2_sdk_room_joiner")
-        try:
-            await owner.register()
-            await joiner.register()
-
-            room = await owner.create_room(
-                name="P8-2 SDK Wire Room", room_type="private",
-                gate_type="paid", entry_fee_cents=250,
-            )
-            room_id = room["room_id"]
-
-            with pytest.raises(PaymentRequiredError) as exc_info:
-                await joiner.join_room(room_id, "p8_2_sdk_room_joiner")
-
-            assert isinstance(exc_info.value, httpx_module.HTTPStatusError)
-            assert exc_info.value.detail["resource"] == f"emporia:room:{room_id}"
-            assert exc_info.value.detail["amount_cents"] == 250
-            assert exc_info.value.www_authenticate
-        finally:
-            await owner._http.aclose()
-            await joiner._http.aclose()
-
-    asyncio.run(scenario())
 
 
 def test_agent_sdk_subscribe_agora_topic_surfaces_402_detail_via_payment_required_error():
@@ -10740,7 +7965,6 @@ def test_agent_sdk_subscribe_agora_topic_surfaces_402_detail_via_payment_require
             assert isinstance(exc_info.value, httpx_module.HTTPStatusError)
             assert exc_info.value.detail["resource"] == f"emporia:agora:{topic['topic_id']}"
             assert exc_info.value.detail["amount_cents"] == 100
-            assert exc_info.value.www_authenticate
         finally:
             await owner._http.aclose()
             await joiner._http.aclose()
@@ -10828,7 +8052,7 @@ def test_agent_sdk_kick_from_room_posts_to_the_relay_kick_endpoint():
     all — POST /rooms/{id}/kick (fully implemented server-side since P2-6/P2r-1)
     was unreachable from the SDK's own auth/retry machinery, forcing an
     SDK-based room creator to hand-roll a raw httpx call. Asserts the new
-    method reaches the right URL with target_agent_id/refund in the body, via
+    method reaches the right URL with target_agent_id in the body, via
     _bearer_request like every other mutating SDK call. Must fail pre-fix:
     EmporiaAgent has no kick_from_room attribute (AttributeError)."""
     import asyncio
@@ -10837,15 +8061,15 @@ def test_agent_sdk_kick_from_room_posts_to_the_relay_kick_endpoint():
     agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_kicker", public_key_hex="ab" * 32)
     agent._http = MagicMock()
     resp = MagicMock(status_code=200)
-    resp.json.return_value = {"status": "kicked", "agent_id": "sdk_kick_target", "refund": None}
+    resp.json.return_value = {"status": "kicked", "agent_id": "sdk_kick_target"}
     agent._http.post = AsyncMock(return_value=resp)
     agent._bearer_headers = AsyncMock(return_value={"Authorization": "Bearer x"})
 
-    result = asyncio.run(agent.kick_from_room("room_1", "sdk_kick_target", refund=True))
+    result = asyncio.run(agent.kick_from_room("room_1", "sdk_kick_target"))
 
     assert agent._http.post.call_args.args[0] == "http://fake.invalid/rooms/room_1/kick"
     body = agent._http.post.call_args.kwargs["json"]
-    assert {k: body[k] for k in ("target_agent_id", "refund")} == {"target_agent_id": "sdk_kick_target", "refund": True}
+    assert {k: body[k] for k in ("target_agent_id", "refund")} == {"target_agent_id": "sdk_kick_target", "refund": False}
     assert body["at"] and body["signature"]    # P243: the creator's signed act
     agent._bearer_headers.assert_awaited()
     assert result["status"] == "kicked"
@@ -11170,225 +8394,20 @@ def test_stream_session_events_wraps_connection_failure():
     asyncio.run(_run())
 
 
-def test_stripe_profile_discovery_nested_id():
-    from emporia.stripe_profile_discovery import find_profile_id_in_data
-
-    assert (
-        find_profile_id_in_data({"settings": {"default_profile": "profile_test_abc123"}})
-        == "profile_test_abc123"
-    )
-    assert find_profile_id_in_data({"id": "profile_live_xyz"}) == "profile_live_xyz"
-
-
-def test_stripe_profile_discovery_skips_restricted_key():
-    from emporia.stripe_profile_discovery import (
-        discover_stripe_profile_id_from_api,
-        stripe_mpp_admin_notice,
-    )
-
-    assert discover_stripe_profile_id_from_api("rk_live_abc") is None
-    msg = stripe_mpp_admin_notice("rk_live_x", profile_ready=False)
-    assert msg and "ADMIN:" in msg and "rk_*" in msg
-    assert stripe_mpp_admin_notice("rk_live_x", profile_ready=True) is None
 
 
 
 
-def test_room_join_402_is_byte_identical_when_x402_unconfigured(client):
-    """P1b-4: x402 disabled (the default — no env vars set) must produce the
-    exact same 402 body/headers as before this pass: no "x402" body key, no
-    PAYMENT-REQUIRED header, every existing MPP field untouched. This is the
-    item's whole contract — a client that has never heard of x402 must see
-    zero difference."""
-    owner = "p1b4_off_owner"
-    payer = "p1b4_off_payer"
-    _register_keyed(client, owner)
-    _register(client, payer)
-
-    r = client.post("/rooms", json=_signed_room(owner, {
-        "name": "P1b-4 Off Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
-    }),
-        headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    with patch.dict(os.environ, {}, clear=False):
-        # explicitly ensure x402 reads as unconfigured regardless of the ambient environment
-        os.environ.pop("EMPORIA_X402_ENABLED", None)
-        resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
-            headers={"x-emporia-agent-id": payer})
-
-    assert resp.status_code == 402, resp.text
-    body = resp.json()
-    assert set(body.keys()) == {"error", "message", "amount_cents", "resource", "protocol"}
-    assert body["resource"] == f"emporia:room:{room_id}"
-    assert body["protocol"] == "emporia:v1+mpp"
-    header_names = {k.lower() for k in resp.headers.keys()}
-    assert "payment-required" not in header_names
-    assert "www-authenticate" in header_names
-
-
-def test_room_join_402_offers_x402_alongside_mpp_when_configured(client):
-    """P1b-4: with x402 enabled and the creator holding a wallet for a
-    configured network, the 402 gains a nested "x402" body key and a
-    PAYMENT-REQUIRED header carrying the same payload base64-encoded — every
-    existing MPP field stays untouched alongside it (both rails, one 402).
-    Also pins the atomic-unit conversion: entry_fee_cents=250 ($2.50) at
-    USDC's 6 decimals is "2500000" atomic units, not "250" or "2.50"."""
-    import base64 as _b64
-    import json as _json
-
-    owner = "p1b4_on_owner"
-    payer = "p1b4_on_payer"
-    _register_keyed(client, owner)
-    _register(client, payer)
-
-    wallet = client.post(f"/agents/{owner}/x402-wallet",
-        json=__import__("conftest").signed_wallet_body(owner, "evm", "0x" + "cd" * 20),
-        headers={"x-emporia-agent-id": owner})
-    assert wallet.status_code == 200, wallet.text
-
-    r = client.post("/rooms", json=_signed_room(owner, {
-        "name": "P1b-4 On Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
-    }),
-        headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    with patch.dict(os.environ, {
-        **_X402_ENV,
-    }, clear=False):
-        resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
-            headers={"x-emporia-agent-id": payer})
-
-    assert resp.status_code == 402, resp.text
-    body = resp.json()
-    # existing MPP fields untouched
-    assert body["resource"] == f"emporia:room:{room_id}"
-    assert body["protocol"] == "emporia:v1+mpp"
-    assert body["amount_cents"] == 250
-
-    x402_body = body["x402"]
-    assert x402_body["x402Version"] == 2
-    assert x402_body["resource"] == {"url": f"emporia:room:{room_id}"}
-    assert x402_body["accepts"] == [{
-        "scheme": "exact",
-        "network": "eip155:8453",
-        "amount": "2500000",
-        "asset": "0xUSDCFAKE",
-        "payTo": "0x" + "cd" * 20,
-        "maxTimeoutSeconds": 300,
-        # P45: without this the entry is well-formed and unsignable — an
-        # `exact`-EVM payer has nowhere else to read the EIP-712 domain from.
-        "extra": _X402_EXTRA,
-    }]
-
-    header_names = {k.lower(): k for k in resp.headers.keys()}
-    assert "payment-required" in header_names, "PAYMENT-REQUIRED header must be present when x402 is offered"
-    decoded = _json.loads(_b64.urlsafe_b64decode(
-        resp.headers[header_names["payment-required"]] + "=="
-    ))
-    assert decoded == x402_body, "PAYMENT-REQUIRED header must carry the same payload as body['x402']"
-    assert "www-authenticate" in header_names, "MPP header must still be present alongside x402"
-
-
-@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
-@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
-def test_x402_credential_declined_explicitly_when_x402_disabled(mock_verify, mock_settle, client):
-    """P1br-1: a real gap in P1b-5 — the x402 branch used to route on the
-    header's mere presence with no _x402_enabled() check, so a disabled
-    relay still tried to verify and 402'd three layers down on an unrelated
-    mismatch, silently swallowing the Stripe fallback. Now: a
-    PAYMENT-SIGNATURE header submitted while x402 is disabled is declined
-    explicitly (never routed into _verify_x402_payment at all — proven by
-    mock.assert_not_called(), not just the eventual response), and the
-    decline still carries the ordinary MPP headers so the agent can retry
-    with a method this relay actually supports. Not "fall through to
-    Stripe silently" — the payer explicitly chose x402; the relay doesn't
-    get to override that choice."""
-    owner = "p1br1_off_owner"
-    payer = "p1br1_off_payer"
-    _register_keyed(client, owner)
-    _register(client, payer)
-
-    r = client.post("/rooms", json=_signed_room(owner, {
-        "name": "P1br-1 Off Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
-    }),
-        headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    header = _x402_payment_signature_header({
-        "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
-        "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
-        "extra": _X402_EXTRA,
-    })
-
-    with patch.dict(os.environ, {}, clear=False):
-        os.environ.pop("EMPORIA_X402_ENABLED", None)
-        resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
-            headers={"x-emporia-agent-id": payer, "PAYMENT-SIGNATURE": header})
-
-    assert resp.status_code == 402, resp.text
-    body = resp.json()
-    assert "x402 payment declined" in body["message"]
-    assert "not enabled" in body["message"]
-    assert "x402" not in body, "nothing to offer — the x402 body key must be absent, not empty"
-    assert body["declined"] == {"rail": "x402", "reason": "x402_disabled"}
-    header_names = {k.lower() for k in resp.headers.keys()}
-    assert "www-authenticate" in header_names, "MPP fallback must still be offered"
-    assert "payment-required" not in header_names
-    mock_verify.assert_not_called()
-    mock_settle.assert_not_called()
 
 
 
 
-@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
-@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
-def test_x402_credential_declined_explicitly_when_creator_has_no_wallet(mock_verify, mock_settle, client):
-    """P1br-1: x402 enabled relay-wide, but this creator never registered a
-    payout wallet. The credential must be declined explicitly (the same
-    merged-402 shape, re-advertising the Stripe MPP fallback), not routed
-    into _verify_x402_payment's generic requirement-mismatch path — that
-    path produces a flat HTTPException detail body with no MPP headers,
-    which would leave the agent with no visible way to retry."""
-    owner = "p1br1_nowallet_owner"
-    payer = "p1br1_nowallet_payer"
-    _register_keyed(client, owner)
-    _register(client, payer)
-    # no wallet registered for owner
 
-    r = client.post("/rooms", json=_signed_room(owner, {
-        "name": "P1br-1 No Wallet Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
-    }),
-        headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
 
-    header = _x402_payment_signature_header({
-        "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
-        "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
-        "extra": _X402_EXTRA,
-    })
 
-    with patch.dict(os.environ, _X402_ENV, clear=False):
-        resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
-            headers={"x-emporia-agent-id": payer, "PAYMENT-SIGNATURE": header})
 
-    assert resp.status_code == 402, resp.text
-    body = resp.json()
-    assert "x402 payment declined" in body["message"]
-    assert "x402" not in body
-    assert body["declined"] == {"rail": "x402", "reason": "no_payout_wallet"}
-    header_names = {k.lower() for k in resp.headers.keys()}
-    assert "www-authenticate" in header_names, "Stripe MPP fallback must still be offered"
-    mock_verify.assert_not_called()
-    mock_settle.assert_not_called()
+
+
 
 
 @patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
@@ -11553,74 +8572,6 @@ def test_x402_challenge_output_round_trips_through_verification_without_mismatch
     mock_verify.assert_called_once()
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_agent_posts_reuses_one_connection_per_request_not_per_row(mock_verify, mock_payout, client):
-    """P1br-3: self-review finding — P1b-1's rewrite of _topic_can_read()
-    made a public *paid* Agora topic run the full entitlement check per
-    row (before P1b-1, public topics short-circuited to True with zero
-    queries). _agora_is_member() called entitlements.has_access(), which
-    opened its OWN sqlite connection — GET /agents/{id}/posts filters
-    per-row in a loop, so N visible posts meant N extra connections, not
-    counting has_any_grant()'s further potential connection.
-
-    Counted directly (entitlements._connect patched with a counting
-    wrapper), not timed — the point is the connection count stays constant
-    as the row count grows, not that it's fast. Must fail pre-fix with
-    count == 5 (one has_access() call per post row, each opening its own
-    connection); post-fix the caller's already-open request connection is
-    reused instead."""
-    from emporia import entitlements
-
-    owner = "p1br3_conn_owner"
-    viewer = "p1br3_conn_viewer"
-    _register_keyed(client, owner)
-    _register(client, viewer)
-
-    r = client.post("/agoras/topics", json={
-        "name": "P1br-3 Conn Topic", "description": "d", "visibility": "public",
-        "gate_type": "paid_invite", "entry_fee_cents": 100, "creator_id": owner,
-    },
-        headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
-
-    for i in range(5):
-        from tests.topic_posts import v2_post
-        post = v2_post(client, owner, slug, f"post {i}")
-        assert post.status_code == 200, post.text
-
-    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": viewer},
-        headers={"x-emporia-agent-id": owner})
-    mock_payout.return_value = {"transfer_id": "tr_p1br3"}
-    mock_verify.return_value = {
-        "status": "succeeded", "payment_intent_id": "pi_p1br3_conn",
-        "amount": 100, "currency": "usd", "capture_method": "automatic",
-        "metadata": {"resource_type": "agora", "resource_id": topic_id, "buyer_agent_id": viewer},
-    }
-    with _stripe_account_active("acct_p1br3"):
-        sub = client.post(f"/agoras/topics/{slug}/subscribe",
-            json={"agent_id": viewer, "payment_intent_id": "pi_p1br3_conn"},
-            headers={"x-emporia-agent-id": viewer})
-    assert sub.status_code == 200, sub.text
-
-    call_count = {"n": 0}
-    original_connect = entitlements._connect
-
-    def counting_connect(db_path=None):
-        call_count["n"] += 1
-        return original_connect(db_path)
-
-    with patch.object(entitlements, "_connect", side_effect=counting_connect):
-        resp = client.get(f"/agents/{owner}/posts", headers={"x-emporia-agent-id": viewer})
-    assert resp.status_code == 200, resp.text
-    assert len(resp.json()["posts"]) == 5, \
-        "sanity: all 5 posts must be visible to the entitled viewer"
-    assert call_count["n"] == 0, (
-        "expected zero entitlements._connect() calls — the viewer's active "
-        f"entitlement should be checked via the already-open request "
-        f"connection, got {call_count['n']} for 5 posts"
-    )
 
 
 def test_entitlements_query_is_single_sourced_between_conn_paths(tmp_path):
@@ -11647,7 +8598,7 @@ def test_entitlements_query_is_single_sourced_between_conn_paths(tmp_path):
     setup_conn.commit()
     setup_conn.close()
 
-    entitlements.grant("room", "r1", "agent1", "pi_1", rail="stripe", db_path=db_path)
+    entitlements.grant("room", "r1", "agent1", "pi_1", rail="x402", db_path=db_path)
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -11704,11 +8655,11 @@ def test_entitlements_conn_and_db_path_paths_agree_across_all_states(tmp_path, s
     if state == "no_grant":
         pass
     elif state == "active":
-        entitlements.grant("room", resource_id, "agent1", "pi_1", rail="stripe", db_path=db_path)
+        entitlements.grant("room", resource_id, "agent1", "pi_1", rail="x402", db_path=db_path)
     elif state == "expired":
         entitlements.grant(
             "room", resource_id, "agent1", "pi_1", duration_days=1,
-            rail="stripe", db_path=db_path,
+            rail="x402", db_path=db_path,
         )
         backdate_conn = sqlite3.connect(db_path)
         backdate_conn.execute(
@@ -11719,7 +8670,7 @@ def test_entitlements_conn_and_db_path_paths_agree_across_all_states(tmp_path, s
         backdate_conn.commit()
         backdate_conn.close()
     elif state == "revoked":
-        entitlements.grant("room", resource_id, "agent1", "pi_1", rail="stripe", db_path=db_path)
+        entitlements.grant("room", resource_id, "agent1", "pi_1", rail="x402", db_path=db_path)
         entitlements.revoke("room", resource_id, "agent1", reason="kicked", db_path=db_path)
 
     conn = sqlite3.connect(db_path)
@@ -12123,8 +9074,8 @@ def test_verify_x402_payment_happy_path_returns_payment_ref(mock_verify, mock_se
 # anywhere calls either function unpatched. So the two functions' own bodies
 # (the URL join, the outbound JSON keys, resp.json()) were entirely
 # unexercised; the suite would stay green with any of it wrong. These tests
-# patch httpx.AsyncClient.post instead — the pattern the Stripe tests above
-# already use — to cover that layer directly.
+# patch httpx.AsyncClient.post instead — the pattern
+# the payment tests use — to cover that layer directly.
 #
 # The wire shape was re-verified against the x402 v2 specification during
 # this audit (2026-08-12) and is correct as shipped: `accepts` entries are
@@ -12216,7 +9167,7 @@ async def test_x402_verify_payment_facilitator_error_surfaces_as_402(client):
     """P1brr-4 (A4): a facilitator 5xx/timeout propagates out of
     raise_for_status() and must surface as the documented 402 — the same
     "infrastructure failure reported as a payment failure" convention the
-    Stripe branches already use (SPT validation failed / Payment
+    payment verification already uses (Payment
     verification failed), not a 500. Exercises the real
     x402_verify_payment() body (httpx mocked, not the function itself), so
     this is the one test proving _verify_x402_payment()'s try/except
@@ -12322,8 +9273,8 @@ async def test_verify_x402_payment_forwards_relay_computed_requirements_not_clie
 def test_record_payment_is_idempotent_for_x402_rail():
     """P1b-5: the plan's stated replay-protection claim, confirmed rather
     than assumed — a replayed x402 transaction hash hits record_payment()'s
-    existing UNIQUE-index idempotency exactly like a replayed Stripe
-    PaymentIntent id does, now that x402 is a KNOWN_RAILS member (item 3)."""
+    existing UNIQUE-index idempotency like any replayed payment
+    reference, now that x402 is a KNOWN_RAILS member (item 3)."""
     from emporia.relay_server import record_payment
 
     first = record_payment(
@@ -12397,109 +9348,8 @@ def test_room_join_via_x402_credential_persists_rail_x402(mock_verify, mock_sett
     assert row["rail"] == "x402"
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
-@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
-def test_x402_room_join_settlement_is_non_custodial_direct_no_fee(mock_verify, mock_settle, mock_payout, client):
-    """P1b-6: an x402-paid room join records a settlement with
-    platform_fee_cents=0, winner_payout_cents == the full amount,
-    platform_fee_bps=0, transfer_id=None, transfer_status="direct" — and
-    payout_winner (the Stripe transfer) is never called at all, proving the
-    non-custodial branch genuinely skips the transfer hop rather than
-    attempting one that happens to no-op."""
-    owner = "p1b6_owner"
-    payer = "p1b6_payer"
-    _register_keyed(client, owner)
-    _register(client, payer)
-
-    wallet = client.post(f"/agents/{owner}/x402-wallet",
-        json=__import__("conftest").signed_wallet_body(owner, "evm", "0x" + "dd" * 20),
-        headers={"x-emporia-agent-id": owner})
-    assert wallet.status_code == 200, wallet.text
-
-    r = client.post("/rooms", json=_signed_room(owner, {
-        "name": "P1b-6 Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 400,
-    }),
-        headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    mock_verify.return_value = {"isValid": True, "payer": "0x" + "cc" * 20}
-    mock_settle.return_value = {"success": True, "transaction": "0xp1b6_tx", "network": "eip155:8453"}
-
-    header = _x402_payment_signature_header({
-        "scheme": "exact", "network": "eip155:8453", "amount": "4000000",
-        "asset": "0xUSDCFAKE", "payTo": "0x" + "dd" * 20, "maxTimeoutSeconds": 300,
-        "extra": _X402_EXTRA,
-    })
-
-    with patch.dict(os.environ, _X402_ENV, clear=False):
-        resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
-            headers={"x-emporia-agent-id": payer, "PAYMENT-SIGNATURE": header})
-    assert resp.status_code == 200, resp.text
-
-    from emporia.relay_server import get_db
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT platform_fee_cents, winner_payout_cents, platform_fee_bps, "
-            "transfer_id, transfer_status, rail FROM settlements WHERE session_id=?",
-            (room_id,),
-        ).fetchone()
-    assert row is not None
-    assert row["rail"] == "x402"
-    assert row["platform_fee_cents"] == 0
-    assert row["winner_payout_cents"] == 400
-    assert row["platform_fee_bps"] == 0
-    assert row["transfer_id"] is None
-    assert row["transfer_status"] == "direct"
-    mock_payout.assert_not_called()
 
 
-@pytest.mark.asyncio
-@patch.dict(os.environ, {"EMPORIA_FEE_ADDRESS": "0x" + "fe" * 20})
-async def test_escrow_capture_and_transfer_mocked():
-    """settle() captures PI first (escrow → platform), then transfers to winner."""
-    from emporia.payments import settle
-
-    captured = []
-    transferred = []
-
-    async def mock_post(url, *args, **kwargs):
-        m = MagicMock()
-        m.raise_for_status = MagicMock()
-        m.status_code = 200
-        m.is_success = True
-        if "capture" in url:
-            captured.append(url)
-            m.json.return_value = {"id": "pi_test_capture", "status": "succeeded"}
-        elif "transfers" in url:
-            transferred.append(url)
-            m.json.return_value = {"id": "tr_test_001", "amount": 975}
-        return m
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=mock_post):
-            result = await settle(
-                session_id="sess_escrow_test",
-                winner_id="seller_agent",
-                total_price_cents=1000,
-                payment_intent_ids=["pi_buyer_hold", "pi_seller_hold"],
-                winner_stripe_account="acct_seller_001",
-                winner_stripe_account_status="active",  # P26-9: now required
-            )
-
-    # Both PIs were captured
-    assert len(captured) == 2
-    assert any("pi_buyer_hold/capture" in u for u in captured)
-    assert any("pi_seller_hold/capture" in u for u in captured)
-
-    # Transfer happened after capture
-    assert len(transferred) == 1
-    assert result["status"] == "settled"
-    assert result["winner_payout_cents"] == 990  # 99% of 1000
-    assert result["platform_fee_cents"] == 10   # 1%
-    assert result["transfer_id"] == "tr_test_001"
 
 
 # ============================================================================
@@ -12903,46 +9753,8 @@ def test_agents_list_requires_authentication(prod_client):
     assert r.status_code == 200
 
 
-def test_agent_profile_requires_authentication_and_omits_stripe_account_id(prod_client):
-    """Regression for N4-3 (N4 review R2): GET /agents/{id} had no `request` param at
-    all — the exact primitive N3-3 gated GET /agents for ("the enumeration primitive"),
-    one route over, and returning strictly more per-agent data than that now-gated list
-    endpoint, including the raw Stripe Connect account id. Confirms unauthenticated ->
-    401, authenticated -> 200, and that stripe_account_id is gone from the response
-    shape entirely regardless of auth (has_stripe already answers the real question)."""
-    _register_keyed(prod_client, "n43_profile_owner")
-
-    r = prod_client.get("/agents/n43_profile_owner")
-    assert r.status_code == 401
-
-    r = prod_client.get(
-        "/agents/n43_profile_owner", headers=bearer_for(prod_client, "n43_profile_owner")
-    )
-    assert r.status_code == 200
-    assert "stripe_account_id" not in r.json()
-    assert "has_stripe" in r.json()
 
 
-def test_agent_profile_reports_stripe_account_status(prod_client):
-    """P25-2: has_stripe only ever answered "does an account exist" -- a
-    fresh registration (no Stripe configured in this test env) must report
-    the new stripe_account_status as 'none', distinguishing "no account" from
-    a live-mode account still awaiting onboarding ('pending')."""
-    from emporia.relay_server import AGENT_REGISTRY
-    _register_keyed(prod_client, "p25_profile_status")
-
-    r = prod_client.get(
-        "/agents/p25_profile_status", headers=bearer_for(prod_client, "p25_profile_status")
-    )
-    assert r.status_code == 200, r.text
-    assert r.json()["stripe_account_status"] == "none"
-
-    AGENT_REGISTRY.set_stripe_account("p25_profile_status", "acct_p25_profile_status")
-    AGENT_REGISTRY.set_stripe_account_status("acct_p25_profile_status", "pending")
-    r2 = prod_client.get(
-        "/agents/p25_profile_status", headers=bearer_for(prod_client, "p25_profile_status")
-    )
-    assert r2.json()["stripe_account_status"] == "pending"
 
 
 def test_mcp_agent_profile_authenticates_under_prod_auth(prod_client):
@@ -12958,7 +9770,7 @@ def test_mcp_agent_profile_authenticates_under_prod_auth(prod_client):
     with patch.object(mcp_server, "httpx", adapter), patch.object(mcp_server, "AGENT_ID", "n43_mcp_profile"):
         r = mcp_server._agent_profile("n43_mcp_profile")
     assert r.get("agent_id") == "n43_mcp_profile", r
-    assert "stripe_account_id" not in r
+    assert "payment_methods" not in r
 
 
 def test_agents_list_limit_is_clamped(prod_client):
@@ -13101,7 +9913,7 @@ def test_entitlement_grant_and_has_access(entitlements_db_path):
     from emporia.entitlements import grant, has_access
 
     assert not has_access("room", "room_ent_1", "ent_payer_a", db_path=entitlements_db_path)
-    grant("room", "room_ent_1", "ent_payer_a", "pi_ent_1", rail="stripe", db_path=entitlements_db_path)
+    grant("room", "room_ent_1", "ent_payer_a", "pi_ent_1", rail="x402", db_path=entitlements_db_path)
     assert has_access("room", "room_ent_1", "ent_payer_a", db_path=entitlements_db_path)
     # A different agent, or a different resource, must not be affected.
     assert not has_access("room", "room_ent_1", "ent_payer_b", db_path=entitlements_db_path)
@@ -13138,7 +9950,7 @@ def test_entitlement_expires_after_duration(entitlements_db_path):
     from emporia.entitlements import grant, has_access
 
     ent = grant("room", "room_ent_exp", "ent_payer", "pi_ent_exp",
-                duration_days=1, rail="stripe", db_path=entitlements_db_path)
+                duration_days=1, rail="x402", db_path=entitlements_db_path)
     assert has_access("room", "room_ent_exp", "ent_payer", db_path=entitlements_db_path)
 
     # Backdate this grant's window to have closed 1 hour ago.
@@ -13160,7 +9972,7 @@ def test_entitlement_revoke_blocks_access(entitlements_db_path):
     """P2-3: revoke() ends access immediately, even with no expiry set."""
     from emporia.entitlements import grant, has_access, revoke
 
-    grant("room", "room_ent_rev", "ent_payer", "pi_ent_rev", rail="stripe", db_path=entitlements_db_path)
+    grant("room", "room_ent_rev", "ent_payer", "pi_ent_rev", rail="x402", db_path=entitlements_db_path)
     assert has_access("room", "room_ent_rev", "ent_payer", db_path=entitlements_db_path)
 
     revoked = revoke("room", "room_ent_rev", "ent_payer", reason="kicked",
@@ -13186,12 +9998,12 @@ def test_entitlement_newest_grant_wins_over_older_revoke(entitlements_db_path):
     grant for the same resource/agent was revoked."""
     from emporia.entitlements import grant, has_access, revoke
 
-    grant("room", "room_ent_newest", "ent_payer", "pi_ent_first", rail="stripe", db_path=entitlements_db_path)
+    grant("room", "room_ent_newest", "ent_payer", "pi_ent_first", rail="x402", db_path=entitlements_db_path)
     revoke("room", "room_ent_newest", "ent_payer", reason="expired_manually",
            db_path=entitlements_db_path)
     assert not has_access("room", "room_ent_newest", "ent_payer", db_path=entitlements_db_path)
 
-    grant("room", "room_ent_newest", "ent_payer", "pi_ent_second", rail="stripe", db_path=entitlements_db_path)
+    grant("room", "room_ent_newest", "ent_payer", "pi_ent_second", rail="x402", db_path=entitlements_db_path)
     assert has_access("room", "room_ent_newest", "ent_payer", db_path=entitlements_db_path), \
         "a later grant must restore access regardless of an earlier revoke"
 
@@ -13202,7 +10014,7 @@ def test_entitlement_is_revoked_checks_reason(entitlements_db_path):
     ever added) without conflating the two."""
     from emporia.entitlements import grant, is_revoked, revoke
 
-    grant("room", "room_ent_ban", "ent_payer", "pi_ent_ban", rail="stripe", db_path=entitlements_db_path)
+    grant("room", "room_ent_ban", "ent_payer", "pi_ent_ban", rail="x402", db_path=entitlements_db_path)
     assert not is_revoked("room", "room_ent_ban", "ent_payer", reason="kicked",
                            db_path=entitlements_db_path)
 
@@ -13263,7 +10075,7 @@ def test_entitlement_resource_type_keeps_room_and_agora_separate(entitlements_db
     codebase has been burned by overloading across resource kinds before."""
     from emporia.entitlements import grant, has_access
 
-    grant("room", "shared_id_123", "ent_payer", "pi_room", rail="stripe", db_path=entitlements_db_path)
+    grant("room", "shared_id_123", "ent_payer", "pi_room", rail="x402", db_path=entitlements_db_path)
     assert has_access("room", "shared_id_123", "ent_payer", db_path=entitlements_db_path)
     assert not has_access("agora", "shared_id_123", "ent_payer", db_path=entitlements_db_path)
 
@@ -17448,36 +14260,6 @@ def test_mcp_verify_room_chain_fails_closed_on_a_malformed_pin_entry(prod_client
     assert "malformed" in result["reason"].lower(), result
 
 
-# ============================================================================
-# P25-2: Stripe Connect live-mode onboarding. Test mode auto-provisions a
-# Connected Account at registration and it's immediately usable (Stripe
-# skips verification) -- live mode had no path to an account at all. This
-# section adds: account-status tracking (AGENT_REGISTRY), a live-mode
-# account-creation + Account Link endpoint, a signed webhook that's the only
-# thing allowed to mark an account 'active', and a pre-check that skips a
-# doomed transfer attempt against an account that isn't active yet.
-# ============================================================================
-
-def test_register_agent_test_mode_marks_stripe_account_active_immediately(client):
-    """Test-mode auto-provisioning must set stripe_account_status='active'
-    right away, not leave it at the new column's 'none' default -- Stripe
-    auto-approves a Custom account's capabilities in test mode, so there is
-    no webhook to wait for, and the new pre-check (below) would otherwise
-    wrongly block every test-mode payout that used to work."""
-    from emporia.relay_server import AGENT_REGISTRY
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            mock_resp = MagicMock()
-            mock_resp.json.return_value = {"id": "acct_test_active_001"}
-            mock_resp.raise_for_status = MagicMock()
-            mock_post.return_value = mock_resp
-            r = client.post("/agents/register", json={
-                "agent_id": "p25_stripe_testmode_a", "public_key_hex": _test_pubkey("p25_stripe_testmode_a"),
-            })
-    assert r.status_code == 200, r.text
-    assert r.json()["stripe_account_id"] == "acct_test_active_001"
-    assert AGENT_REGISTRY.get_stripe_account_status("p25_stripe_testmode_a") == "active"
 
 
 # ============================================================================
@@ -17490,709 +14272,58 @@ def test_register_agent_test_mode_marks_stripe_account_active_immediately(client
 
 
 
-@pytest.mark.parametrize("bad_header,label", [
-    ("t=" + "9" * 400 + ",v1=abc", "timestamp too large for float conversion"),
-    ("t={now},v1=é", "non-ASCII in the v1 signature"),
-    ("t={now},v1=", "empty v1 value"),
-    ("t=,v1=abc", "empty timestamp"),
-])
-def test_p26_webhook_verifier_never_raises_on_a_malformed_header(bad_header, label):
-    """P26-H2: /webhooks/stripe is unauthenticated and internet-reachable --
-    the signature check IS the authorization boundary, and P25 documented it
-    as "any parse error is a reject, not a skip." Two paths broke that
-    contract by raising instead of returning False: a 400-digit `t` raised
-    OverflowError from `abs(time.time() - ts)`, and a non-ASCII `v1` raised
-    TypeError from hmac.compare_digest. With no exception handler registered
-    anywhere in the app, both became a 500 + traceback for any anonymous
-    caller -- a log-flood/alert-noise primitive."""
-    import time as _time
-
-    from emporia.relay_server import _verify_stripe_webhook_signature
-
-    header = bad_header.replace("{now}", str(int(_time.time())))
-    assert _verify_stripe_webhook_signature(b'{"x":1}', header, "whsec_test_p26") is False, label
-
-
-def test_p26_webhook_route_returns_403_not_500_on_a_malformed_header(client):
-    """The route-level half of H2: malformed headers must surface as a clean
-    403, never an unhandled 500.
-
-    The non-ASCII case is sent as raw latin-1 bytes deliberately -- httpx
-    refuses to encode a non-ASCII str into a header, but Starlette *decodes*
-    incoming header bytes as latin-1, so a non-compliant client (or anything
-    speaking raw HTTP) genuinely can deliver `v1=é` to this endpoint. Passing
-    str here would have made the test unreachable-by-construction rather than
-    actually exercising the TypeError path."""
-    payload = json.dumps({"id": "evt_p26", "type": "account.updated"}).encode()
-    headers = [
-        b"t=" + b"9" * 400 + b",v1=abc",
-        ("t=%d,v1=" % int(time.time())).encode() + "é".encode("latin-1"),
-    ]
-    with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": "whsec_test_p26"}):
-        for header in headers:
-            r = client.post(
-                "/webhooks/stripe", content=payload,
-                # A list of raw byte pairs bypasses httpx's own str header encoder.
-                headers=[(b"content-type", b"application/json"), (b"stripe-signature", header)],
-            )
-            assert r.status_code == 403, (header[:40], r.status_code, r.text)
-
-
-def _p26_send_webhook(client, body: dict, secret: str = "whsec_test_p26"):
-    payload = json.dumps(body).encode()
-    with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": secret}):
-        return client.post(
-            "/webhooks/stripe", content=payload,
-            headers={
-                "Content-Type": "application/json",
-                "Stripe-Signature": _stripe_signed_header(payload, secret),
-            },
-        )
-
-
-@pytest.mark.parametrize("body,label", [
-    ({"type": "account.updated", "data": []}, "data is a list"),
-    ({"type": "account.updated", "data": {"object": "acct_x"}}, "object is a string"),
-    ({"type": "account.updated", "data": {"object": {"id": "a", "capabilities": "active"}}},
-     "capabilities is a string"),
-    ({"type": "account.updated", "data": {"object": {"id": "a", "capabilities": []}}},
-     "capabilities is a list"),
-    ({"type": "account.updated"}, "no data key at all"),
-    ({"type": "account.updated", "data": {"object": {}}}, "object has no id"),
-])
-def test_p26_webhook_survives_unexpected_payload_shapes(client, body, label):
-    """P26-M3: every one of these has a VALID signature, so it reaches the
-    parsing code. P25 assumed dicts throughout (`.get("object") or {}` doesn't
-    help when `object` is a *string*), so a Stripe API-version change that
-    reshapes any of these fields would turn into a 500 -- and because Stripe
-    retries non-2xx, an infinite retry loop, exactly what the
-    unrecognized-account test was written to prevent."""
-    r = _p26_send_webhook(client, body)
-    assert r.status_code == 200, (label, r.status_code, r.text)
-
-
-def test_p26_webhook_deauthorized_account_loses_active_status(client):
-    """P26-L10: once 'active', P25's account stayed 'active' forever -- even
-    after the operator disconnected it in Stripe. A deauthorized account
-    cannot receive transfers, so continuing to treat it as payable puts it
-    right back in the doomed-transfer case the pre-check exists to avoid."""
-    from emporia.relay_server import AGENT_REGISTRY
-    _register(client, "p26_deauth_agent")
-    AGENT_REGISTRY.set_stripe_account("p26_deauth_agent", "acct_p26_deauth")
-    AGENT_REGISTRY.set_stripe_account_status("acct_p26_deauth", "active")
-
-    r = _p26_send_webhook(client, {
-        "type": "account.application.deauthorized",
-        "account": "acct_p26_deauth",
-        "data": {"object": {"id": "ca_someapp"}},
-    })
-    assert r.status_code == 200, r.text
-    assert AGENT_REGISTRY.get_stripe_account_status("p26_deauth_agent") == "none"
-
-
-def test_p26_webhook_ignores_an_event_from_the_other_stripe_mode(client):
-    """P26-L10: a test-mode event (`livemode: false`) must not drive state on a
-    relay running a live key. Stripe delivers both to the same endpoint if both
-    are configured, and acting on the wrong one would mark a live account
-    payable on the strength of a test-mode capability report."""
-    from emporia.relay_server import AGENT_REGISTRY
-    _register(client, "p26_livemode_agent")
-    AGENT_REGISTRY.set_stripe_account("p26_livemode_agent", "acct_p26_livemode")
-    AGENT_REGISTRY.set_stripe_account_status("acct_p26_livemode", "pending")
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
-        r = _p26_send_webhook(client, {
-            "type": "account.updated",
-            "livemode": False,
-            "data": {"object": {
-                "id": "acct_p26_livemode",
-                "capabilities": {"transfers": "active", "card_payments": "active"},
-            }},
-        })
-    assert r.status_code == 200, r.text
-    assert AGENT_REGISTRY.get_stripe_account_status("p26_livemode_agent") == "pending"
-
-
-def test_p26_live_onboarding_does_not_reuse_a_test_mode_account(client):
-    """P26-4 (M4): the mode-switch case P25's own pre-check was built for but
-    didn't cover. An operator who ran in test mode has agents holding
-    `acct_...` ids that exist ONLY in Stripe's test key space, marked 'active'.
-    Switch STRIPE_SECRET_KEY to a live key and P25 would (a) POST
-    /account_links for a test acct id with a live key -- a Stripe error -- and
-    worse (b) leave that stale 'active' status making settle() attempt REAL
-    live transfers to an account that doesn't exist in live mode. A live
-    onboarding call must mint a genuinely new live account instead."""
-    from emporia.relay_server import AGENT_REGISTRY
-    _register(client, "p26_modeswitch")
-    AGENT_REGISTRY.set_stripe_account("p26_modeswitch", "acct_test_leftover", mode="test")
-    AGENT_REGISTRY.set_stripe_account_status("acct_test_leftover", "active")
-
-    created = []
-
-    def mock_post_side_effect(url, *args, **kwargs):
-        m = MagicMock()
-        m.raise_for_status = MagicMock()
-        if url.endswith("/accounts"):
-            created.append(url)
-            m.json.return_value = {"id": "acct_live_fresh"}
-        elif url.endswith("/account_links"):
-            m.json.return_value = {"url": "https://connect.stripe.com/setup/e/p26"}
-        return m
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=mock_post_side_effect):
-            r = client.post(
-                "/agents/p26_modeswitch/stripe-onboarding",
-                json={"email": "operator@example.com"},
-                headers={"x-emporia-agent-id": "p26_modeswitch"},
-            )
-    assert r.status_code == 200, r.text
-    assert created, "a live-mode onboarding must create a real live account, not reuse the test one"
-    assert r.json()["stripe_account_id"] == "acct_live_fresh"
-    assert AGENT_REGISTRY.get_stripe_account("p26_modeswitch") == "acct_live_fresh"
-    assert AGENT_REGISTRY.get_stripe_account_status("p26_modeswitch") == "pending"
-
-
-@pytest.mark.asyncio
-async def test_p26_settle_refuses_to_pay_an_account_from_the_other_stripe_mode():
-    """P26-4 (M4), the money half: even if a stale 'active' status survives
-    somewhere, a transfer must never be attempted against an account belonging
-    to the other key space."""
-    from emporia.payments import settle
-
-    async def mock_post(url, *args, **kwargs):
-        m = MagicMock()
-        m.raise_for_status = MagicMock()
-        m.json.return_value = {"id": "pi_x", "status": "succeeded"}
-        return m
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=mock_post) as mp:
-            result = await settle(
-                session_id="sess_p26_mode", winner_id="w", total_price_cents=1000,
-                payment_intent_ids=["pi_p26_mode"],
-                winner_stripe_account="acct_test_leftover",
-                winner_stripe_account_status="active",
-                winner_stripe_account_mode="test",   # live key, test account
-            )
-    assert result["transfer_status"] == "pending_connect_wrong_mode", result
-    assert result["transfer_id"] is None, result
-    assert [c for c in mp.call_args_list if "transfers" in c.args[0]] == []
-
-
-def test_p26_reregister_does_not_desync_stripe_account_id_from_status(client):
-    """P26-5 (M5): register_agent()'s UPSERT nulls stripe_account_id but does
-    not touch stripe_account_status, so a re-register left 'active' with no
-    account id. In live mode the next start_stripe_onboarding then creates a
-    SECOND real Connected Account -- a second real KYC, orphaning the first and
-    any balance on it. Idempotent re-registration is explicitly supported
-    ("safe to call on every start"), so this is reachable on an ordinary
-    restart, not just an edge case."""
-    from emporia.relay_server import AGENT_REGISTRY
-    _register(client, "p26_rereg")
-    AGENT_REGISTRY.set_stripe_account("p26_rereg", "acct_p26_rereg", mode="live")
-    AGENT_REGISTRY.set_stripe_account_status("acct_p26_rereg", "active")
-
-    # Re-register with no Stripe configured, so nothing re-provisions.
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": ""}):
-        r = client.post("/agents/register", json={
-            "agent_id": "p26_rereg", "public_key_hex": _test_pubkey("p26_rereg"),
-        })
-    assert r.status_code == 200, r.text
-
-    assert AGENT_REGISTRY.get_stripe_account("p26_rereg") == "acct_p26_rereg", \
-        "a re-register must not discard an existing Connected Account id"
-    assert AGENT_REGISTRY.get_stripe_account_status("p26_rereg") == "active"
-
-
-@pytest.mark.asyncio
-async def test_p26_create_live_connected_account_uses_a_real_email_and_country():
-    """P26-6 (M6): P25 hardcoded `{agent_id}@emporia.local` and country US.
-    `.local` is unroutable by design, so Stripe's verification-requirement,
-    payout-failure and account-restriction emails -- for a REAL account
-    handling REAL money -- all bounce into a void. Country is worse than
-    cosmetic: it is immutable after account creation, so a non-US operator's
-    only recovery is deleting the account and redoing KYC."""
-    from emporia.payments import create_live_connected_account
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            m = MagicMock()
-            m.raise_for_status = MagicMock()
-            m.json.return_value = {"id": "acct_live_email"}
-            mock_post.return_value = m
-            await create_live_connected_account(
-                "p26_agent", email="operator@example.com", country="GB",
-            )
-    body = mock_post.call_args.kwargs["data"]
-    assert body["email"] == "operator@example.com", body
-    assert body["country"] == "GB", body
-    assert not any(k.startswith("tos_acceptance") for k in body), body
-
-
-def test_p26_live_onboarding_requires_a_real_email(client):
-    """The endpoint half of M6: live mode must not silently fall back to the
-    unroutable placeholder. Absent a real email, refuse rather than create a
-    real account nobody can be contacted about."""
-    _register(client, "p26_email_required")
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
-        r = client.post(
-            "/agents/p26_email_required/stripe-onboarding",
-            headers={"x-emporia-agent-id": "p26_email_required"},
-        )
-    assert r.status_code == 400, r.text
-    assert "email" in r.text.lower()
-
-
-@pytest.mark.asyncio
-async def test_create_live_connected_account_omits_tos_acceptance():
-    """The entire safety property of create_live_connected_account() vs. its
-    test-mode sibling: Stripe auto-approves a test-mode Custom account's ToS
-    acceptance, so create_connected_account() may legitimately auto-fill it --
-    but doing that for a real account would be fabricating a real legal
-    event's evidence. This must never send tos_acceptance[*] fields."""
-    from emporia.payments import create_live_connected_account
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            mock_resp = MagicMock()
-            mock_resp.json.return_value = {"id": "acct_live_001"}
-            mock_resp.raise_for_status = MagicMock()
-            mock_post.return_value = mock_resp
-            result = await create_live_connected_account(
-                "p25_live_agent", email="live@example.com",
-            )
-    assert result["stripe_account_id"] == "acct_live_001"
-    body = mock_post.call_args.kwargs["data"]
-    assert not any(k.startswith("tos_acceptance") for k in body), body
-    assert body["capabilities[transfers][requested]"] == "true"
-
-
-@pytest.mark.asyncio
-async def test_create_account_onboarding_link_posts_account_onboarding_type():
-    from emporia.payments import create_account_onboarding_link
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            mock_resp = MagicMock()
-            mock_resp.json.return_value = {"url": "https://connect.stripe.com/setup/e/abc"}
-            mock_resp.raise_for_status = MagicMock()
-            mock_post.return_value = mock_resp
-            url = await create_account_onboarding_link(
-                "acct_live_001", "https://relay.example/refresh", "https://relay.example/return",
-            )
-    assert url == "https://connect.stripe.com/setup/e/abc"
-    body = mock_post.call_args.kwargs["data"]
-    assert body == {
-        "account": "acct_live_001",
-        "refresh_url": "https://relay.example/refresh",
-        "return_url": "https://relay.example/return",
-        "type": "account_onboarding",
-    }
-
-
-def test_start_stripe_onboarding_rejects_wrong_caller_test_mode_and_unconfigured(client):
-    _register(client, "p25_onboard_wrongcaller")
-    _register(client, "p25_onboard_other")
-
-    wrong_caller = client.post(
-        "/agents/p25_onboard_wrongcaller/stripe-onboarding",
-        headers={"x-emporia-agent-id": "p25_onboard_other"},
-    )
-    assert wrong_caller.status_code == 403, wrong_caller.text
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock"}):
-        test_mode = client.post(
-            "/agents/p25_onboard_wrongcaller/stripe-onboarding",
-            headers={"x-emporia-agent-id": "p25_onboard_wrongcaller"},
-        )
-    assert test_mode.status_code == 400, test_mode.text
-    assert "test mode" in test_mode.text.lower()
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": ""}):
-        unconfigured = client.post(
-            "/agents/p25_onboard_wrongcaller/stripe-onboarding",
-            headers={"x-emporia-agent-id": "p25_onboard_wrongcaller"},
-        )
-    assert unconfigured.status_code == 400, unconfigured.text
-
-
-def test_start_stripe_onboarding_creates_account_and_link_in_live_mode(client):
-    _register(client, "p25_onboard_live")
-    from emporia.relay_server import AGENT_REGISTRY
-
-    def mock_post_side_effect(url, *args, **kwargs):
-        m = MagicMock()
-        m.raise_for_status = MagicMock()
-        if url.endswith("/accounts"):
-            m.json.return_value = {"id": "acct_p25_live_001"}
-        elif url.endswith("/account_links"):
-            m.json.return_value = {"url": "https://connect.stripe.com/setup/e/p25test"}
-        return m
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=mock_post_side_effect):
-            r = client.post(
-                "/agents/p25_onboard_live/stripe-onboarding",
-                json={"email": "live@example.com", "country": "US"},
-                headers={"x-emporia-agent-id": "p25_onboard_live"},
-            )
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["stripe_account_id"] == "acct_p25_live_001"
-    assert body["onboarding_url"] == "https://connect.stripe.com/setup/e/p25test"
-    assert AGENT_REGISTRY.get_stripe_account("p25_onboard_live") == "acct_p25_live_001"
-    assert AGENT_REGISTRY.get_stripe_account_status("p25_onboard_live") == "pending"
-
-
-def test_start_stripe_onboarding_reuses_existing_account_without_resetting_active_status(client):
-    """An operator re-requesting an onboarding link for an already-active
-    account (e.g. to update banking details) must not silently regress its
-    status back to 'pending' -- only a verified webhook may change status,
-    and this endpoint must not touch it when reusing an existing account."""
-    _register(client, "p25_onboard_reuse")
-    from emporia.relay_server import AGENT_REGISTRY
-    AGENT_REGISTRY.set_stripe_account("p25_onboard_reuse", "acct_p25_reuse_existing")
-    AGENT_REGISTRY.set_stripe_account_status("acct_p25_reuse_existing", "active")
-
-    calls = []
-
-    def mock_post_side_effect(url, *args, **kwargs):
-        calls.append(url)
-        m = MagicMock()
-        m.raise_for_status = MagicMock()
-        m.json.return_value = {"url": "https://connect.stripe.com/setup/e/p25reuse"}
-        return m
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=mock_post_side_effect):
-            r = client.post(
-                "/agents/p25_onboard_reuse/stripe-onboarding",
-                headers={"x-emporia-agent-id": "p25_onboard_reuse"},
-            )
-    assert r.status_code == 200, r.text
-    assert r.json()["stripe_account_id"] == "acct_p25_reuse_existing"
-    assert not any(u.endswith("/accounts") for u in calls), calls
-    assert AGENT_REGISTRY.get_stripe_account_status("p25_onboard_reuse") == "active"
-
-
-@pytest.mark.asyncio
-async def test_settle_skips_transfer_when_winner_stripe_account_status_not_active():
-    """The pre-check itself, at the settle() unit level: a non-'active'
-    status must skip the Stripe transfer call entirely (not merely relabel a
-    failure after attempting it) and report the new pending_connect_not_
-    active status, while the default (unspecified) status keeps every
-    pre-P25 caller's behavior unchanged (see test_escrow_capture_and_
-    transfer_mocked above, which passes no status kwarg at all)."""
-    from emporia.payments import settle
-
-    async def mock_post(url, *args, **kwargs):
-        m = MagicMock()
-        m.raise_for_status = MagicMock()
-        if "capture" in url:
-            m.json.return_value = {"id": "pi_test_capture", "status": "succeeded"}
-        elif "transfers" in url:
-            m.json.return_value = {"id": "tr_should_not_happen"}
-        return m
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=mock_post) as mock_post_obj:
-            result = await settle(
-                session_id="sess_p25_pending",
-                winner_id="p25_settle_pending_winner",
-                total_price_cents=1000,
-                payment_intent_ids=["pi_p25_pending_hold"],
-                winner_stripe_account="acct_p25_pending",
-                winner_stripe_account_status="pending",
-            )
-
-    assert result["transfer_status"] == "pending_connect_not_active", result
-    assert result["transfer_id"] is None, result
-    transfer_calls = [c for c in mock_post_obj.call_args_list if "transfers" in c.args[0]]
-    assert transfer_calls == [], transfer_calls
-
-
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_settle_access_payment_skips_transfer_when_creator_stripe_status_not_active(mock_verify, client):
-    """End-to-end (mocked-Stripe) parity for the unit test above, through
-    the real join -> _settle_access_payment() path. Deliberately does NOT
-    use _stripe_account_active() -- get_stripe_account_status is left at its
-    real (unmocked) DB value, 'none', simulating a creator whose Connected
-    Account was created but hasn't finished live-mode onboarding yet."""
-    from emporia.relay_server import get_db
-
-    owner, payer = "p25_pending_owner", "p25_pending_payer"
-    _register_keyed(client, owner)
-    _register(client, payer)
-
-    r = client.post("/rooms", json=_signed_room(owner, {
-        "name": "P25 Pending Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }),
-        headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    mock_verify.return_value = {
-        "status": "succeeded", "payment_intent_id": "pi_p25_pending",
-        "amount": 100, "currency": "usd", "capture_method": "automatic",
-        "metadata": {"resource_type": "room", "resource_id": room_id, "buyer_agent_id": payer},
-    }
-    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account", return_value="acct_p25_pending"):
-        with patch("emporia.payments.payout_winner", new_callable=AsyncMock) as mock_payout:
-            joined = client.post(f"/rooms/{room_id}/join",
-                json={"agent_id": payer, "payment_intent_id": "pi_p25_pending"},
-                headers={"x-emporia-agent-id": payer})
-    assert joined.status_code == 200, joined.text
-    mock_payout.assert_not_called()
-
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT transfer_status, transfer_id FROM settlements "
-            "WHERE session_id = ? AND payer_id = ?",
-            (room_id, payer),
-        ).fetchone()
-    assert row["transfer_status"] == "pending_connect_not_active", dict(row)
-    assert row["transfer_id"] is None, dict(row)
-
-
-def test_stripe_onboarding_return_page_serves_html(client):
-    r = client.get("/stripe-onboarding-return")
-    assert r.status_code == 200
-    assert "text/html" in r.headers["content-type"]
-    assert "Onboarding step complete" in r.text
-
-
-def test_sdk_start_stripe_onboarding_returns_onboarding_url():
-    """agent_sdk.EmporiaAgent.start_stripe_onboarding() (P25-2) is a thin
-    wrapper around POST /agents/{id}/stripe-onboarding, already covered
-    end-to-end above -- this pins the SDK's own call shape and response
-    passthrough. Patches emporia.payments' two Stripe-facing functions
-    directly rather than httpx.AsyncClient.post: _sdk_wired() gives the
-    agent a real httpx.AsyncClient (ASGI-transported into the relay app), so
-    a blanket httpx.AsyncClient.post patch would also intercept the SDK's
-    own outbound bearer request, not just the relay's server-side calls to
-    Stripe."""
-    import asyncio
-
-    async def run():
-        a = _sdk_wired("p25_sdk_onboard_a")
-        try:
-            await a.register()
-            with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
-                with patch(
-                    "emporia.payments.create_live_connected_account", new_callable=AsyncMock,
-                    return_value={
-                        "stripe_account_id": "acct_p25_sdk",
-                        "agent_id": "p25_sdk_onboard_a", "status": "created",
-                    },
-                ), patch(
-                    "emporia.payments.create_account_onboarding_link", new_callable=AsyncMock,
-                    return_value="https://connect.stripe.com/setup/e/sdk",
-                ):
-                    return await a.start_stripe_onboarding(email="sdk@example.com")
-        finally:
-            await a.__aexit__()
-
-    result = asyncio.run(run())
-    assert result["onboarding_url"] == "https://connect.stripe.com/setup/e/sdk"
-    assert result["stripe_account_id"] == "acct_p25_sdk"
-
-
-def test_mcp_start_stripe_onboarding_returns_onboarding_url(prod_client):
-    """MCP parity for test_sdk_start_stripe_onboarding_returns_onboarding_url."""
-    from emporia import mcp_server
-
-    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
-    with patch.object(mcp_server, "httpx", adapter):
-        mcp_server.register_agent(agent_id="p25_mcp_onboard_a")
-        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
-            with patch(
-                "emporia.payments.create_live_connected_account", new_callable=AsyncMock,
-                return_value={
-                    "stripe_account_id": "acct_p25_mcp",
-                    "agent_id": "p25_mcp_onboard_a", "status": "created",
-                },
-            ), patch(
-                "emporia.payments.create_account_onboarding_link", new_callable=AsyncMock,
-                return_value="https://connect.stripe.com/setup/e/mcp",
-            ):
-                result = mcp_server.start_stripe_onboarding(
-                    agent_id="p25_mcp_onboard_a", email="mcp@example.com",
-                )
-    assert result["success"] is True, result
-    assert result["onboarding_url"] == "https://connect.stripe.com/setup/e/mcp"
-    assert result["stripe_account_id"] == "acct_p25_mcp"
-
-
-def _stripe_signed_header(payload: bytes, secret: str, ts: int | None = None) -> str:
-    """Test-side signer for Stripe's Stripe-Signature scheme — there's no
-    real Stripe to sign against in this offline suite, so the test acts as
-    Stripe would, using the same primitives the implementation verifies
-    with. `ts` defaults to now; pass an old one to build a stale header."""
-    import hashlib as _hashlib
-    import hmac as _hmac_test
-    import time as _time
-
-    t = str(ts if ts is not None else int(_time.time()))
-    signed_payload = f"{t}.".encode() + payload
-    v1 = _hmac_test.new(secret.encode(), signed_payload, _hashlib.sha256).hexdigest()
-    return f"t={t},v1={v1}"
-
-
-def test_verify_stripe_webhook_signature_accepts_valid_rejects_everything_else():
-    """Direct unit test of the pure verifier -- the receiver route below is
-    tested for its DB effects, this pins the actual crypto: a correct
-    signature passes, and a wrong secret, a tampered body, a stale
-    timestamp, and a missing/malformed header are each rejected on their
-    own (not accidentally passing because some other check masks them)."""
-    from emporia.relay_server import _verify_stripe_webhook_signature
-
-    secret = "whsec_test_p25"
-    payload = b'{"id":"evt_1","type":"account.updated"}'
-    valid = _stripe_signed_header(payload, secret)
-    assert _verify_stripe_webhook_signature(payload, valid, secret) is True
-
-    wrong_secret = _stripe_signed_header(payload, "whsec_wrong")
-    assert _verify_stripe_webhook_signature(payload, wrong_secret, secret) is False
-
-    tampered_payload = b'{"id":"evt_1","type":"account.updated","extra":"x"}'
-    assert _verify_stripe_webhook_signature(tampered_payload, valid, secret) is False
-
-    stale = _stripe_signed_header(payload, secret, ts=int(time.time()) - 600)
-    assert _verify_stripe_webhook_signature(payload, stale, secret) is False
-
-    assert _verify_stripe_webhook_signature(payload, "", secret) is False
-    assert _verify_stripe_webhook_signature(payload, "not,even=parseable", secret) is False
-    assert _verify_stripe_webhook_signature(payload, valid, "") is False
-
-
-def test_stripe_webhook_rejects_unsigned_request_without_touching_db(client):
-    from emporia.relay_server import AGENT_REGISTRY
-    _register(client, "p25_webhook_unsigned")
-    AGENT_REGISTRY.set_stripe_account("p25_webhook_unsigned", "acct_p25_unsigned")
-    AGENT_REGISTRY.set_stripe_account_status("acct_p25_unsigned", "pending")
-
-    payload = json.dumps({
-        "id": "evt_unsigned", "type": "account.updated",
-        "data": {"object": {
-            "id": "acct_p25_unsigned",
-            "capabilities": {"transfers": "active", "card_payments": "active"},
-        }},
-    }).encode()
-
-    # P26-8 (M7): this used `t=1,v1=bogus`. t=1 is 1970, so the *timestamp*
-    # check rejected it before the HMAC was ever computed -- the test passed
-    # identically with the signature comparison deleted, i.e. it never
-    # exercised the thing its name claims. A current timestamp with a wrong
-    # signature is the case that actually pins the HMAC branch.
-    with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": "whsec_test_p25"}):
-        r = client.post(
-            "/webhooks/stripe", content=payload,
-            headers={
-                "Content-Type": "application/json",
-                "Stripe-Signature": f"t={int(time.time())},v1={'0' * 64}",
-            },
-        )
-    assert r.status_code == 403, r.text
-    assert AGENT_REGISTRY.get_stripe_account_status("p25_webhook_unsigned") == "pending"
-
-    # And a *correctly* signed body for the same payload must be accepted --
-    # otherwise "rejects the wrong signature" could pass by rejecting
-    # everything, which is a different bug wearing this test's clothes.
-    with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": "whsec_test_p25"}):
-        ok = client.post(
-            "/webhooks/stripe", content=payload,
-            headers={
-                "Content-Type": "application/json",
-                "Stripe-Signature": _stripe_signed_header(payload, "whsec_test_p25"),
-            },
-        )
-    assert ok.status_code == 200, ok.text
-    assert AGENT_REGISTRY.get_stripe_account_status("p25_webhook_unsigned") == "active"
-
-
-def test_stripe_webhook_marks_account_active_only_when_both_capabilities_active(client):
-    from emporia.relay_server import AGENT_REGISTRY
-    _register(client, "p25_webhook_partial")
-    AGENT_REGISTRY.set_stripe_account("p25_webhook_partial", "acct_p25_partial")
-    AGENT_REGISTRY.set_stripe_account_status("acct_p25_partial", "pending")
-
-    secret = "whsec_test_p25"
-
-    def send(capabilities: dict):
-        payload = json.dumps({
-            "id": "evt_partial", "type": "account.updated",
-            "data": {"object": {"id": "acct_p25_partial", "capabilities": capabilities}},
-        }).encode()
-        with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": secret}):
-            header = _stripe_signed_header(payload, secret)
-            return client.post(
-                "/webhooks/stripe", content=payload,
-                headers={"Content-Type": "application/json", "Stripe-Signature": header},
-            )
-
-    # P26-8 (L8): this covered only transfers=active/card_payments=pending, so
-    # it passed even with the `transfers == "active"` half of the condition
-    # deleted -- half of the "both" in its own name was unverified. Both
-    # one-sided cases are now checked, in both orders.
-    #
-    # P27-6 flipped the first case's expectation: requiring `card_payments`
-    # for a payout that only uses `transfers` stranded money (see
-    # test_p27_transfers_active_alone_makes_an_account_payable). Recording the
-    # change rather than quietly editing the assertion -- this test's rigor
-    # (each capability checked in isolation, in both orders) is the part worth
-    # keeping, and `transfers` is still pinned by the two cases below.
-    r1 = send({"transfers": "active", "card_payments": "pending"})
-    assert r1.status_code == 200, r1.text
-    assert AGENT_REGISTRY.get_stripe_account_status("p25_webhook_partial") == "active"
-
-    # Reset, so the one-sided cases below can't pass on a stale 'active'.
-    send({"transfers": "pending", "card_payments": "pending"})
-    r_mirror = send({"transfers": "pending", "card_payments": "active"})
-    assert r_mirror.status_code == 200, r_mirror.text
-    assert AGENT_REGISTRY.get_stripe_account_status("p25_webhook_partial") == "pending"
-
-    r_missing = send({})
-    assert r_missing.status_code == 200, r_missing.text
-    assert AGENT_REGISTRY.get_stripe_account_status("p25_webhook_partial") == "pending"
-
-    r2 = send({"transfers": "active", "card_payments": "active"})
-    assert r2.status_code == 200, r2.text
-    assert AGENT_REGISTRY.get_stripe_account_status("p25_webhook_partial") == "active"
-
-
-def test_stripe_webhook_200s_and_logs_on_unrecognized_account(client):
-    """Stripe retries non-2xx responses -- an event for an account id this
-    relay has no row for must not become an endless retry loop, so this
-    still returns 200 (logged, not rejected)."""
-    secret = "whsec_test_p25"
-    payload = json.dumps({
-        "id": "evt_unknown", "type": "account.updated",
-        "data": {"object": {
-            "id": "acct_p25_never_seen",
-            "capabilities": {"transfers": "active", "card_payments": "active"},
-        }},
-    }).encode()
-    with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": secret}):
-        header = _stripe_signed_header(payload, secret)
-        r = client.post(
-            "/webhooks/stripe", content=payload,
-            headers={"Content-Type": "application/json", "Stripe-Signature": header},
-        )
-    assert r.status_code == 200, r.text
-
-
-def test_require_stripe_webhook_secret_if_needed_fails_loud_in_live_mode_only():
-    from emporia.relay_server import _require_stripe_webhook_secret_if_needed
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock", "STRIPE_WEBHOOK_SECRET": ""}):
-        with pytest.raises(RuntimeError, match="STRIPE_WEBHOOK_SECRET"):
-            _require_stripe_webhook_secret_if_needed()
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock", "STRIPE_WEBHOOK_SECRET": ""}):
-        _require_stripe_webhook_secret_if_needed()  # warns, does not raise
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock", "STRIPE_WEBHOOK_SECRET": "whsec_x"}):
-        _require_stripe_webhook_secret_if_needed()  # configured — does not raise
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # ============================================================================
@@ -18370,37 +14501,6 @@ def test_request_context_logs_request_line_with_matching_request_id(client, capl
     assert matches[0].path == "/federation/peers"
 
 
-def test_request_context_logs_unhandled_exception_preserving_500_shape(caplog):
-    """A genuine unhandled exception (not an HTTPException -- those are handled
-    responses, not exceptions from request_context's point of view) must still
-    produce Starlette's ordinary 500, and the middleware's own logger.exception
-    call must carry a request_id distinguishing it from any other in-flight
-    request. Uses raise_server_exceptions=False since the default TestClient
-    behavior is to re-raise, per Starlette's own ServerErrorMiddleware contract
-    (see the request_context docstring in relay_server.py)."""
-    from emporia import relay_server
-
-    tc = TestClient(app, client=("127.0.0.1", 51216), raise_server_exceptions=False)
-    with patch.object(relay_server, "_stripe_profile_ready", side_effect=RuntimeError("boom")):
-        with caplog.at_level(logging.ERROR, logger="emporia.relay"):
-            r1 = tc.get("/health")
-            r2 = tc.get("/health")
-    assert r1.status_code == 500
-    assert r2.status_code == 500
-    exc_records = [
-        rec for rec in caplog.records
-        if rec.name == "emporia.relay" and rec.message == "unhandled_error"
-    ]
-    assert len(exc_records) == 2, caplog.records
-    assert exc_records[0].exception_type == "RuntimeError"
-    rid1, rid2 = exc_records[0].request_id, exc_records[1].request_id
-    assert rid1 != "-" and rid2 != "-"
-    assert rid1 != rid2
-    assert exc_records[0].exc_info is not None
-    # P22: known, structural limitation (documented in relay_server.py) --
-    # Starlette's ServerErrorMiddleware builds this response *outside* every
-    # app.add_middleware()-registered layer, so X-Request-Id never reaches it.
-    assert "x-request-id" not in r1.headers
 
 
 def test_request_context_resets_contextvar_after_each_request(client):
@@ -18848,52 +14948,8 @@ def test_dashboard_has_no_client_for_an_action_signed_endpoint():
     )
 
 
-def test_health_reports_the_stripe_key_mode(monkeypatch):
-    """P37-1: `/health` said `stripe_enabled` but never which key space the
-    relay is configured for, and the two are completely disjoint. Without it
-    the dashboard cannot tell an operator whether payout onboarding even
-    applies: `POST /agents/{id}/stripe-onboarding` *rejects* test-mode relays
-    with "a Connected Account was already auto-provisioned at registration and
-    needs no onboarding", yet ProfileView told every agent without an account
-    to run that exact tool. Wrong instruction, in the one area where being
-    wrong costs money.
-
-    Public on purpose: a counterparty deciding whether to transact is entitled
-    to know the relay is in test mode, and `stripe_enabled` / `payment_rails`
-    are already there."""
-    import emporia.payments as payments
-    from emporia.relay_server import app
-
-    client = TestClient(app)
-
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_" + "x" * 20)
-    body = client.get("/health").json()
-    assert "stripe_mode" in body, "/health must report which Stripe key space it uses"
-    assert body["stripe_mode"] == "test"
-
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_live_" + "x" * 20)
-    assert client.get("/health").json()["stripe_mode"] == "live"
-
-    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
-    assert client.get("/health").json()["stripe_mode"] == ""
-
-    # Single-sourced, not a second copy of the prefix rule -- the drift this
-    # codebase has now found in five separate passes.
-    assert payments.stripe_key_mode() == ""
 
 
-def test_dashboard_payout_guidance_is_mode_aware():
-    """P37-2, the client half. The label that tells an operator what to do about
-    payouts must branch on the relay's Stripe mode, because the advice is
-    opposite in the two modes: in test mode the account already exists and the
-    onboarding tool refuses to run."""
-    src = (
-        Path(__file__).parent.parent / "dashboard" / "src" / "ProfileView.tsx"
-    ).read_text()
-    assert "stripeMode" in src, (
-        "ProfileView's payout guidance ignores the relay's Stripe mode -- it "
-        "told test-mode operators to run a tool that 400s at them"
-    )
 
 
 def test_dashboard_signposts_the_delivery_actions():
@@ -19027,156 +15083,12 @@ def test_relay_server_hardcodes_no_version_literal():
 
 
 
-def test_p27_stripe_rejecting_account_creation_is_a_502_not_a_500(client):
-    """P27-2: P26 wrapped the *second* Stripe call on this route (the Account
-    Link) so an upstream failure reports as 502 rather than a 500 in our own
-    code -- and left the first one, account creation, unwrapped. Both are the
-    same class of event, and creation is the likelier to fail: it is the call
-    that carries operator-supplied `country` and `email`, so a country Stripe
-    doesn't support for Custom accounts lands here. An upstream rejection must
-    not be reported to the agent as a relay bug.
-    """
-    import httpx
-
-    from emporia.relay_server import AGENT_REGISTRY
-    _register(client, "p27_stripe_rejects")
-    AGENT_REGISTRY.set_stripe_account("p27_stripe_rejects", "", mode="")
-
-    def mock_post_side_effect(url, *args, **kwargs):
-        m = MagicMock()
-        if url.endswith("/accounts"):
-            m.status_code = 400
-            m.raise_for_status = MagicMock(
-                side_effect=httpx.HTTPStatusError(
-                    "400 Bad Request", request=MagicMock(), response=MagicMock(),
-                )
-            )
-            return m
-        m.raise_for_status = MagicMock()
-        m.json.return_value = {"url": "https://connect.stripe.com/setup/e/p27"}
-        return m
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=mock_post_side_effect):
-            r = client.post(
-                "/agents/p27_stripe_rejects/stripe-onboarding",
-                json={"email": "operator@example.com", "country": "ZZ"},
-                headers={"x-emporia-agent-id": "p27_stripe_rejects"},
-            )
-    assert r.status_code == 502, f"expected an upstream-failure 502, got {r.status_code}: {r.text}"
 
 
-@pytest.mark.parametrize("email,country,why", [
-    ("agent@emporia.LOCAL", "US", "the .local guard is case-sensitive; DNS is not"),
-    ("agent@emporia.Local", "US", "mixed case reaches the same unroutable TLD"),
-    ("operator@example.com", "ÉÉ", "str.isalpha() is true for non-ASCII letters"),
-])
-def test_p27_live_onboarding_validation_is_not_bypassable_by_case_or_unicode(
-    client, email, country, why,
-):
-    """P27-3: both P26 guards on this route are checked against a narrower
-    input space than they accept. `email.endswith('.local')` is case-sensitive
-    while DNS is not, so `@emporia.LOCAL` -- the exact address P26 removed for
-    being unroutable -- passes. And `country.isalpha()` is true for any
-    Unicode letter, so a 2-char non-ASCII string reaches Stripe as an ISO
-    country code. Neither is a privilege boundary; both create a REAL
-    money-handling account whose country Stripe then treats as immutable, so
-    the cost of a bad value is deleting the account and redoing KYC.
-    """
-    _register(client, f"p27_val_{abs(hash(email + country)) % 10000}")
-    aid = f"p27_val_{abs(hash(email + country)) % 10000}"
-
-    def mock_post_side_effect(url, *args, **kwargs):
-        m = MagicMock()
-        m.raise_for_status = MagicMock()
-        m.json.return_value = (
-            {"id": "acct_should_not_exist"} if url.endswith("/accounts")
-            else {"url": "https://connect.stripe.com/setup/e/p27"}
-        )
-        return m
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=mock_post_side_effect) as mp:
-            r = client.post(
-                f"/agents/{aid}/stripe-onboarding",
-                json={"email": email, "country": country},
-                headers={"x-emporia-agent-id": aid},
-            )
-    assert r.status_code == 400, f"{why} -- got {r.status_code}: {r.text}"
-    assert not mp.called, f"{why} -- no Stripe account may be created for a rejected input"
 
 
-def test_p27_webhook_stamps_the_mode_it_just_proved(client):
-    """P27-5: the mode-mismatch guard can never protect a row whose mode is
-    unknown, and P25-era accounts are exactly those rows -- P25 had no mode
-    column, so anything it created reads ''. The backfill deliberately can't
-    help them either: it only repairs 'none' rows, and a P25 live account sits
-    at 'pending' or 'active'.
-
-    So such a row stays permanently unknown-mode, and the guard's whole
-    scenario -- operator switches STRIPE_SECRET_KEY to the other key space --
-    finds nothing to compare and lets the doomed transfer through. The webhook
-    can close that for free: livemode filtering directly above has *already*
-    established that this event's key space matches the relay's, so recording
-    it is publishing a fact the handler just proved, not inferring one.
-    """
-    from emporia.relay_server import AGENT_REGISTRY
-    _register(client, "p27_mode_stamp")
-    # A P25-era live account: real, payable, mode unknown.
-    AGENT_REGISTRY.set_stripe_account("p27_mode_stamp", "acct_p25_era", mode="")
-    AGENT_REGISTRY.set_stripe_account_status("acct_p25_era", "pending")
-    assert AGENT_REGISTRY.get_stripe_account_mode("p27_mode_stamp") == ""
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
-        r = _p26_send_webhook(client, {
-            "type": "account.updated",
-            "livemode": True,
-            "data": {"object": {"id": "acct_p25_era", "capabilities": {"transfers": "active"}}},
-        })
-    assert r.status_code == 200, r.text
-    assert AGENT_REGISTRY.get_stripe_account_status("p27_mode_stamp") == "active"
-    assert AGENT_REGISTRY.get_stripe_account_mode("p27_mode_stamp") == "live", (
-        "the handler had already proved this account's key space via livemode "
-        "filtering; leaving it '' keeps the mismatch guard blind to this row"
-    )
 
 
-def test_p27_transfers_active_alone_makes_an_account_payable(client):
-    """P27-6: P26 hardened the webhook to require BOTH `transfers` and
-    `card_payments` to be active before an account counts as payable. That
-    gates the payout on a capability the payout does not use.
-
-    The payout is `POST /v1/transfers` with `destination=acct_...`
-    (payments.py::payout_winner) -- a transfer INTO the connected account,
-    which needs the `transfers` capability and nothing else. `card_payments`
-    governs the connected account accepting card charges directly, which this
-    codebase never does: every charge is created on the platform account, and
-    no call anywhere passes `destination`/`on_behalf_of` on a charge.
-
-    So an account Stripe has approved for transfers but restricted for card
-    payments -- an ordinary outcome for one that only ever receives money --
-    sits at 'pending' forever. Every settlement then takes
-    `pending_connect_not_active`: the payer is charged, the payee is never
-    paid, and nothing retries. That is H1's failure mode exactly, reached
-    through P26's own fix rather than through the migration.
-    """
-    from emporia.relay_server import AGENT_REGISTRY
-    _register(client, "p27_payee_only")
-    AGENT_REGISTRY.set_stripe_account("p27_payee_only", "acct_payee_only", mode="live")
-    AGENT_REGISTRY.set_stripe_account_status("acct_payee_only", "pending")
-
-    r = _p26_send_webhook(client, {
-        "type": "account.updated",
-        "data": {"object": {
-            "id": "acct_payee_only",
-            "capabilities": {"transfers": "active", "card_payments": "inactive"},
-        }},
-    })
-    assert r.status_code == 200, r.text
-    assert AGENT_REGISTRY.get_stripe_account_status("p27_payee_only") == "active", (
-        "transfers=active is exactly the capability a /v1/transfers payout "
-        "requires; withholding 'active' here strands the payee's money"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -19184,65 +15096,6 @@ def test_p27_transfers_active_alone_makes_an_account_payable(client):
 # ---------------------------------------------------------------------------
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_p28_a_full_paid_room_refuses_before_taking_the_money(
-    mock_verify, mock_payout, client,
-):
-    """P28-1: /rooms/{id}/join confirms and records the entry fee BEFORE calling
-    add_member(), which is where "Room is full" is raised. So joining a full
-    paid room charges the payer -- `capture_method="automatic"`,
-    `allowed_statuses=("succeeded",)`, so the money is genuinely captured, not
-    held -- and then answers 403 with no membership, no entitlement and no
-    refund. The fee buys nothing.
-
-    Pre-existing on the operator-set `max_members` path, and the reason it has
-    to be fixed in this pass rather than after it: P28-2's automatic cap on
-    encrypted rooms makes "the room is full" reachable without any operator
-    ever setting a limit.
-    """
-    from emporia import rooms as rooms_db
-    from emporia.relay_server import DATABASE_PATH, get_db
-
-    owner, payer = "p28_full_owner", "p28_full_payer"
-    _register_keyed(client, owner)
-    _register(client, payer)
-    mock_payout.return_value = {"transfer_id": "tr_p28_full"}
-
-    r = client.post("/rooms", json=_signed_room(owner, {
-        "name": "P28 Full Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-        "max_members": 1,  # creator only -- already full
-    }),
-        headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    mock_verify.return_value = {
-        "status": "succeeded", "payment_intent_id": "pi_p28_full",
-        "amount": 100, "currency": "usd", "capture_method": "automatic",
-        "metadata": {"resource_type": "room", "resource_id": room_id, "buyer_agent_id": payer},
-    }
-    with _stripe_account_active("acct_p28_full"):
-        joined = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": payer, "payment_intent_id": "pi_p28_full"},
-            headers={"x-emporia-agent-id": payer})
-
-    assert joined.status_code == 403, joined.text
-    assert not rooms_db.is_member(room_id, payer, db_path=DATABASE_PATH)
-
-    with get_db() as conn:
-        charged = conn.execute(
-            "SELECT 1 FROM payments WHERE payment_intent_id = 'pi_p28_full'"
-        ).fetchone()
-    assert charged is None, (
-        "the join was refused, so the entry fee must never have been captured -- "
-        "a recorded payment here is money taken for access that was denied"
-    )
-    assert not mock_verify.called, (
-        "capacity is knowable before any payment work; confirming the "
-        "PaymentIntent first is what captures the money"
-    )
 
 
 def test_p28_encrypted_room_membership_is_capped(rooms_db_path):
@@ -21498,299 +17351,19 @@ def test_sdk_x402_retry_is_shared_by_the_exact_scheme_paid_methods():
         "escrow holds are signed in one place, escrow.sign_offer()"
 
 
-# ============================================================================
-# P46 — the Stripe lanes get an integration tier, and one of them was broken
-#
-# P45's lesson was that a mocked counterparty tests only the half you wrote.
-# P46 pointed the same question at Stripe and got an answer immediately:
-# `confirm_stripe_intent()`'s test-mode branch POSTs to
-# `/v1/test_helpers/payment_intents/{id}/confirm`, and that route does not
-# exist at Stripe. Probed directly (2026-09-02): a real test_helpers route
-# with no API key answers "You did not provide an API key"; this one answers
-# "Unrecognized request URL (POST: ...)", the same as a path invented on the
-# spot. `/v1/payment_intents/{id}/confirm` — the branch the live path already
-# uses — is the real one, and Stripe's documented way to confirm in test mode
-# is that endpoint with a test payment method such as `pm_card_visa`.
-#
-# The function had no test of any kind: a repo-wide search found zero
-# references outside its own definition and its two call sites, both of which
-# are real auto-confirm paths (a join whose PaymentIntent isn't yet confirmed,
-# and `retry_with_stripe_auth()`). So the whole test-mode auto-confirm
-# convenience — advertised in the dev skill's payment-testing table and in this
-# function's own docstring — had never worked and nothing could have said so.
-# ============================================================================
-
-_STRIPE_TEST_KEY_ENV = {"STRIPE_SECRET_KEY": "sk_test_p46fake"}
 
 
-@pytest.mark.asyncio
-async def test_confirm_stripe_intent_posts_to_an_endpoint_stripe_actually_has():
-    """P46-1. The URL is asserted literally, against the path Stripe answers
-    on, because that is precisely what a mock cannot check for you — every
-    possible URL "works" against `patch("httpx.AsyncClient.post")`, which is
-    why this defect survived a rail that is otherwise heavily tested.
-
-    Test mode is not a separate endpoint at Stripe; it is the same endpoint
-    under a test key, with a test payment method. `pm_card_visa` is Stripe's
-    own always-succeeds token — no card details exist in this repo.
-    """
-    from emporia.payments import confirm_stripe_intent
-
-    with patch.dict(os.environ, _STRIPE_TEST_KEY_ENV, clear=False):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            mock_resp = MagicMock()
-            mock_resp.json.return_value = {"status": "succeeded", "latest_charge": "ch_p46"}
-            mock_resp.raise_for_status = MagicMock()
-            mock_post.return_value = mock_resp
-
-            result = await confirm_stripe_intent("pi_p46test")
-
-    url = mock_post.call_args.args[0]
-    assert url == "https://api.stripe.com/v1/payment_intents/pi_p46test/confirm", (
-        f"POSTs to {url!r}; /v1/test_helpers/payment_intents/{{id}}/confirm is not a "
-        "route Stripe serves — it answers 'Unrecognized request URL' there"
-    )
-    assert mock_post.call_args.kwargs["data"]["payment_method"] == "pm_card_visa", (
-        "a confirm with no payment method leaves the intent in requires_payment_method"
-    )
-    assert result == {
-        "status": "succeeded", "payment_intent_id": "pi_p46test", "receipt": "ch_p46",
-    }
 
 
-@pytest.mark.asyncio
-async def test_confirm_stripe_intent_lets_the_caller_choose_the_payment_method():
-    """The live path's whole reason for existing: a real payer supplies a real
-    `pm_...` (from Stripe Link, or stored). `pm_card_visa` is the default, not
-    the only option — a default that couldn't be overridden would make the live
-    branch untestable and the test branch a lie about what production does."""
-    from emporia.payments import confirm_stripe_intent
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_p46fake"}, clear=False):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            mock_resp = MagicMock()
-            mock_resp.json.return_value = {"status": "succeeded", "id": "pi_live"}
-            mock_resp.raise_for_status = MagicMock()
-            mock_post.return_value = mock_resp
-
-            await confirm_stripe_intent("pi_live", payment_method_id="pm_realcard")
-
-    assert mock_post.call_args.kwargs["data"]["payment_method"] == "pm_realcard"
-    assert mock_post.call_args.args[0].endswith("/v1/payment_intents/pi_live/confirm"), \
-        "test and live must reach the same endpoint — the difference is the key and the method"
 
 
-def test_no_source_or_doc_still_calls_the_nonexistent_test_helper_route():
-    """P46-1 left two copies of the wrong URL: the code, and the dev skill's
-    payment-testing table that documented it as a working tier. A source-shape
-    check because the second copy is the one a person would follow by hand and
-    then debug as a Stripe outage.
-
-    Matches how the URL would be *used*, not every mention of it — both files
-    now describe the defect in prose, and a check that forbade the string
-    outright would forbid explaining what was fixed."""
-    code = (_DOC_ROOT / "src/emporia/payments.py").read_text()
-    assert "STRIPE_API_BASE}/test_helpers/payment_intents" not in code, \
-        "payments.py still builds a /v1/test_helpers/payment_intents/... URL"
-
-    skill = (_DOC_ROOT / "skills/dev/emporia-dev/SKILL.md").read_text()
-    assert "`POST /test_helpers/payment_intents" not in skill, \
-        "the dev skill still documents that route as one to call"
 
 
-# ─── the Stripe lanes on the integration tier (P46, W2/W3) ──────────────────
-# Same posture as P45's x402 lane: real Stripe, test mode only, skip when
-# unconfigured. `sk_test_` is required and asserted rather than assumed — this
-# tier creates and confirms PaymentIntents, and doing that against a live key
-# by accident is not a mistake worth leaving room for.
-
-_TESTNET_STRIPE_KEY = os.getenv("EMPORIA_TESTNET_STRIPE_KEY", "").strip()
-_TESTNET_STRIPE_PROFILE = os.getenv("EMPORIA_TESTNET_STRIPE_PROFILE_ID", "").strip()
-_TESTNET_SPT = os.getenv("EMPORIA_TESTNET_SPT", "").strip()
-
-_needs_stripe_test_key = pytest.mark.skipif(
-    not _TESTNET_STRIPE_KEY.startswith("sk_test_"),
-    reason="set EMPORIA_TESTNET_STRIPE_KEY to an sk_test_ key (docs/testnet.md)",
-)
 
 
-@pytest.mark.testnet
-@_needs_stripe_test_key
-@pytest.mark.asyncio
-async def test_testnet_stripe_confirm_reaches_a_real_endpoint():
-    """P46-1's regression test, against the API that has the opinion. The
-    offline test pins the URL string; only this one proves Stripe answers on
-    it. A 404 here is the exact defect coming back.
-
-    Deliberately the narrowest possible live test — create an intent, confirm
-    it — so that when it fails, it fails about the endpoint and not about a
-    room, an entitlement, or a settlement three layers away.
-    """
-    import httpx as httpx_module
-
-    from emporia.payments import STRIPE_API_BASE, confirm_stripe_intent
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": _TESTNET_STRIPE_KEY}, clear=False):
-        async with httpx_module.AsyncClient(timeout=30) as c:
-            created = await c.post(
-                f"{STRIPE_API_BASE}/payment_intents",
-                auth=(_TESTNET_STRIPE_KEY, ""),
-                data={"amount": "100", "currency": "usd",
-                      "payment_method_types[]": "card"},
-            )
-            created.raise_for_status()
-            pi_id = created.json()["id"]
-
-        result = await confirm_stripe_intent(pi_id)
-
-    assert result["status"] == "succeeded", (
-        f"Stripe refused the confirm: {result} — if this is a 404, the "
-        "test_helpers URL is back (P46-1)"
-    )
-    assert result["receipt"], "a confirmed intent must carry a charge to reference"
 
 
-@pytest.mark.testnet
-@_needs_stripe_test_key
-async def test_testnet_spt_mints_retrieves_and_holds():
-    """Lane 2b (P106): our SPT code against Stripe itself, no MPP profile needed.
 
-    Mint a test token, read its limits back, pay with it as a manual-capture
-    hold, release the hold. Its first live run found create_test_spt() sending
-    a parameter Stripe does not know and omitting one it requires.
-    """
-    import uuid
-
-    from emporia.payments import cancel_payment_hold, confirm_spt, create_test_spt, retrieve_spt
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": _TESTNET_STRIPE_KEY}, clear=False):
-        spt = (await create_test_spt(500, "usd"))["id"]
-        assert spt.startswith("spt_")
-        limits = await retrieve_spt(spt)
-        assert limits["max_amount_cents"] == 500, limits
-        paid = await confirm_spt(spt, 300, f"lane2b_{uuid.uuid4().hex[:8]}", "lane2b_payer")
-        assert paid["status"] == "requires_capture", paid
-        released = await cancel_payment_hold(paid["payment_intent_id"])
-        assert released.get("status") == "canceled", released
-
-
-@pytest.mark.testnet
-@_needs_stripe_test_key
-def test_testnet_paid_room_join_settles_through_stripe(client, monkeypatch):
-    """The PaymentIntent lane end to end, unmocked: the relay mints an intent
-    bound to the room and payer, the payer confirms it with a test card, the
-    join verifies it and grants access.
-
-    This lane needed no new payer code — `POST /payments/create-intent` and the
-    SDK's `create_payment_intent()` already existed, which is worth stating
-    plainly next to P45: x402 was missing a payer, Stripe was missing only a
-    test that talked to Stripe. What it did have was a broken auto-confirm
-    (P46-1), on this exact path, which nothing had ever executed.
-    """
-    import asyncio
-
-    monkeypatch.setenv("STRIPE_SECRET_KEY", _TESTNET_STRIPE_KEY)
-
-    owner, payer = "p46_stripe_owner", "p46_stripe_payer"
-    _register_keyed(client, owner)
-    _register(client, payer)
-
-    r = client.post("/rooms", json=_signed_room(owner, {
-        "name": "P46 Stripe room", "creator_id": owner,
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }), headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    intent = client.post("/payments/create-intent", json={
-        "amount_cents": 100, "room_id": room_id, "service_type": "emporia:room_entry",
-    }, headers={"x-emporia-agent-id": payer})
-    assert intent.status_code == 200, intent.text
-    pi_id = intent.json()["payment_intent_id"]
-
-    from emporia.payments import confirm_stripe_intent
-    confirmed = asyncio.run(confirm_stripe_intent(pi_id))
-    assert confirmed["status"] == "succeeded", confirmed
-
-    joined = client.post(f"/rooms/{room_id}/join",
-        json={"agent_id": payer, "payment_intent_id": pi_id},
-        headers={"x-emporia-agent-id": payer})
-    assert joined.status_code == 200, joined.text
-
-    from emporia.entitlements import has_access
-    assert has_access("room", room_id, payer), "Stripe settled but granted no access"
-
-    from emporia.relay_server import get_db
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT rail, payment_intent_id FROM payments WHERE payment_intent_id = ?",
-            (pi_id,),
-        ).fetchone()
-    assert row is not None and row["rail"] == "stripe"
-
-
-@pytest.mark.testnet
-@pytest.mark.skipif(
-    not (_TESTNET_STRIPE_KEY.startswith("sk_test_") and _TESTNET_STRIPE_PROFILE.startswith("profile_")),
-    reason="MPP needs EMPORIA_TESTNET_STRIPE_KEY plus a profile_test_... "
-           "EMPORIA_TESTNET_STRIPE_PROFILE_ID (docs/testnet.md)",
-)
-def test_testnet_paid_room_join_settles_through_mpp_spt(client, monkeypatch):
-    """The MPP lane: a Shared Payment Token in `Authorization: Payment <spt>`,
-    which the relay turns into a PaymentIntent via `confirm_spt()`.
-
-    The token comes from Stripe's own test helper
-    (`POST /v1/test_helpers/shared_payment/granted_tokens` — probed and
-    confirmed to exist), so this lane is automated rather than depending on
-    link-cli. `EMPORIA_TESTNET_SPT` overrides it for anyone who wants to test a
-    token a real wallet minted; the plan expected that to be the only option.
-
-    SPTs are single-use, so a supplied one works exactly once — a second run
-    with the same `EMPORIA_TESTNET_SPT` fails at Stripe, not here.
-    """
-    monkeypatch.setenv("STRIPE_SECRET_KEY", _TESTNET_STRIPE_KEY)
-    monkeypatch.setenv("STRIPE_PROFILE_ID", _TESTNET_STRIPE_PROFILE)
-
-    spt = _TESTNET_SPT
-    if not spt:
-        # P106: through create_test_spt(), whose parameters the live API has
-        # now checked (lane 2b) — this copy lacked payment_method and the
-        # required usage_limits[expires_at].
-        import asyncio
-
-        from emporia.payments import create_test_spt
-        spt = asyncio.run(create_test_spt(1000, "usd"))["id"]
-    assert spt.startswith("spt_"), spt
-
-    owner, payer = "p46_mpp_owner", "p46_mpp_payer"
-    _register_keyed(client, owner)
-    _register(client, payer)
-
-    r = client.post("/rooms", json=_signed_room(owner, {
-        "name": "P46 MPP room", "creator_id": owner,
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }), headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    # The SPT travels in Authorization, displacing the identity bearer — the two
-    # share that header and cannot both be sent, which is exactly why the relay
-    # treats `agent_id` as unproven on this branch (_require_caller_unless_mpp_payment).
-    joined = client.post(f"/rooms/{room_id}/join",
-        json={"agent_id": payer},
-        headers={"Authorization": f"Payment {spt}"})
-    assert joined.status_code == 200, joined.text
-
-    from emporia.entitlements import has_access
-    assert has_access("room", room_id, payer), "the SPT settled but granted no access"
-
-    from emporia.relay_server import get_db
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT rail FROM payments WHERE agent_id = ? ORDER BY rowid DESC LIMIT 1",
-            (payer,),
-        ).fetchone()
-    assert row is not None and row["rail"] == "stripe"
 
 
 # ============================================================================
@@ -22596,135 +18169,8 @@ def test_an_unspent_authorization_is_only_retried_once_it_can_no_longer_land(
     )
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
-@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
-def test_the_intent_retires_when_the_entitlement_it_bought_exists(
-    mock_verify, mock_settle, mock_payout, client,
-):
-    """The intent guards an unfinished purchase, so it has to stop guarding a
-    finished one. The entitlement is the retirement trigger because it is what
-    the payment bought: while it is absent the purchase is incomplete and the
-    intent must hold; once it exists the payment path isn't entered at all.
-
-    Without retirement the bug is a slow one and points the other way — a
-    re-purchase after the first entitlement expires would collide with the
-    settled intent and be handed free access, months later.
-    """
-    from emporia.relay_server import DB_LOCK, get_db
-
-    creator, payer = "p48_retire_creator", "p48_retire_payer"
-    _register_keyed(client, creator)
-    _register(client, payer)
-    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
-    mock_verify.return_value = {"isValid": True}
-    mock_settle.return_value = {"success": True, "transaction": "0xretire"}
-
-    with patch.dict(os.environ, _P48_ENV, clear=False):
-        r = client.post("/rooms", json=_signed_room(creator, {
-            "name": "P48 Retire Room", "creator_id": creator,
-            "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-        }), headers={"x-emporia-agent-id": creator})
-        assert r.status_code == 200, r.text
-        room_id = r.json()["room_id"]
-
-        header = _x402_payment_signature_header(
-            {"scheme": "exact", "network": "eip155:84532", "amount": "1000000",
-             "asset": _P48_ENV["EMPORIA_X402_ASSET_EIP155_84532"],
-             "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
-             "extra": {"name": "USDC", "version": "2"}},
-            {"signature": "0xsig", "authorization": {
-                "from": "0x" + "19" * 20, "nonce": "0x" + "0a" * 32,
-                "validBefore": str(int(time.time()) + 300)}},
-        )
-        join = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
-            headers={"x-emporia-agent-id": payer, "PAYMENT-SIGNATURE": header})
-    assert join.status_code == 200, join.text
-
-    with DB_LOCK, get_db() as conn:
-        left = conn.execute(
-            "SELECT COUNT(*) AS n FROM x402_settle_intents WHERE resource_id = ?",
-            (room_id,),
-        ).fetchone()["n"]
-    assert left == 0, (
-        "a completed purchase must leave no intent behind — a stale settled "
-        "intent hands the next legitimate re-purchase free access"
-    )
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
-@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
-def test_the_crash_window_survives_a_real_join_request_not_just_a_direct_call(
-    mock_verify, mock_settle, mock_payout, client,
-):
-    """The same guarantee, driven through POST /rooms/{id}/join instead of
-    _verify_x402_payment() directly — because the direct call proves the
-    function is correct and says nothing about whether the route reaches it
-    with the arguments that make it correct. The intent is keyed on
-    (payer, resource, amount), and all three are threaded down from the route;
-    a wrong one there is invisible to every unit test above.
-
-    The crash is real rather than simulated at the seam: record_payment()
-    raises, which is precisely the window — settled at the facilitator,
-    unrecorded here — and the payer then retries the join exactly as they
-    would have to.
-    """
-
-    creator, payer = "p48_route_creator", "p48_route_payer"
-    _register_keyed(client, creator)
-    _register(client, payer)
-    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
-    mock_verify.return_value = {"isValid": True}
-    mock_settle.return_value = {"success": True, "transaction": "0xroutefirst"}
-
-    def _credential(nonce: str) -> str:
-        return _x402_payment_signature_header(
-            {"scheme": "exact", "network": "eip155:84532", "amount": "1000000",
-             "asset": _P48_ENV["EMPORIA_X402_ASSET_EIP155_84532"],
-             "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
-             "extra": {"name": "USDC", "version": "2"}},
-            {"signature": "0xsig", "authorization": {
-                "from": "0x" + "19" * 20, "nonce": nonce,
-                "validBefore": str(int(time.time()) + 300)}},
-        )
-
-    with patch.dict(os.environ, _P48_ENV, clear=False):
-        r = client.post("/rooms", json=_signed_room(creator, {
-            "name": "P48 Route Room", "creator_id": creator,
-            "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-        }), headers={"x-emporia-agent-id": creator})
-        assert r.status_code == 200, r.text
-        room_id = r.json()["room_id"]
-
-        with patch("emporia.relay_server.record_payment",
-                   side_effect=RuntimeError("process killed")):
-            with pytest.raises(RuntimeError):
-                client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
-                    headers={"x-emporia-agent-id": payer,
-                             "PAYMENT-SIGNATURE": _credential("0x" + "0b" * 32)})
-
-        mock_settle.return_value = {"success": True, "transaction": "0xroutesecond"}
-        retry = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
-            headers={"x-emporia-agent-id": payer,
-                     "PAYMENT-SIGNATURE": _credential("0x" + "0c" * 32)})
-
-    assert retry.status_code == 200, retry.text
-    assert mock_settle.call_count == 1, (
-        "the retry after the crash must resume the settled purchase, not buy it "
-        f"a second time — /settle was called {mock_settle.call_count} times"
-    )
-
-    from emporia.relay_server import DB_LOCK, get_db
-    with DB_LOCK, get_db() as conn:
-        paid = conn.execute(
-            "SELECT payment_intent_id FROM payments WHERE agent_id = ? AND room_id = ?",
-            (payer, room_id),
-        ).fetchall()
-    assert [r["payment_intent_id"] for r in paid] == ["0xroutefirst"], (
-        "exactly one payment, recorded against the transaction that actually "
-        f"moved the money; got {[dict(r) for r in paid]}"
-    )
 
 
 def test_eip3009_constants_are_the_keccak_of_their_own_signatures():
@@ -22919,522 +18365,16 @@ async def test_testnet_the_log_window_is_a_bound_not_an_answer(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_a_paid_room_join_that_crashes_at_the_grant_is_repaired_by_the_retry(
-    mock_verify, mock_payout, client,
-):
-    """The window P48 left open, driven through the real route. The relay dies
-    between the membership write and the entitlement grant; the payer retries
-    with a fresh PaymentIntent, exactly as a real client would.
-
-    Before the fix the retry returns 200 `already_member` and repairs nothing:
-    the payer is charged and holds no entitlement, the creator is never paid,
-    and there is no settlement row. `already_member` is only a safe answer if
-    membership implies the purchase completed, and it does not.
-    """
-    from emporia import entitlements
-    from emporia.relay_server import DATABASE_PATH, get_db
-
-    _register_keyed(client, "p50_room_owner")
-    _register(client, "p50_room_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p50_room"}
-
-    r = client.post("/rooms", json=_signed_room("p50_room_owner", {
-        "name": "P50 Room", "creator_id": "p50_room_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-        "access_duration_days": 1,
-    }), headers={"x-emporia-agent-id": "p50_room_owner"})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    def _pi(pi_id: str) -> dict:
-        return {
-            "status": "succeeded", "payment_intent_id": pi_id,
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p50_room_payer",
-            },
-        }
-
-    def _join(pi_id: str):
-        return client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p50_room_payer", "payment_intent_id": pi_id},
-            headers={"x-emporia-agent-id": "p50_room_payer"})
-
-    with _stripe_account_active("acct_p50_room"):
-        mock_verify.return_value = _pi("pi_P50_ROOM_ONE")
-        with patch.object(entitlements, "grant", side_effect=RuntimeError("relay died mid-grant")):
-            with pytest.raises(RuntimeError):
-                _join("pi_P50_ROOM_ONE")
-
-        with get_db() as conn:
-            captured = conn.execute(
-                "SELECT 1 FROM payments WHERE payment_intent_id=?", ("pi_P50_ROOM_ONE",),
-            ).fetchone()
-        assert captured, (
-            "precondition: the money is captured and recorded before the grant, "
-            "which is what makes the crash cost something"
-        )
-        assert not entitlements.has_access(
-            "room", room_id, "p50_room_payer", db_path=DATABASE_PATH,
-        ), "precondition: the grant is the statement that crashed"
-
-        mock_verify.return_value = _pi("pi_P50_ROOM_TWO")
-        r2 = _join("pi_P50_ROOM_TWO")
-        assert r2.status_code == 200, r2.text
-
-    assert mock_payout.call_count == 1, (
-        f"the grant is the first statement in _settle_access_payment(), so a crash "
-        f"there is also before the payout: the payer's money is captured and the "
-        f"creator is never paid. Payout fired {mock_payout.call_count}x"
-    )
-    with get_db() as conn:
-        settlements = conn.execute(
-            "SELECT payment_intent_ids FROM settlements WHERE session_id=?", (room_id,),
-        ).fetchall()
-    assert len(settlements) == 1, (
-        f"one captured payment, one settlement row, got {len(settlements)}"
-    )
-    assert entitlements.has_access(
-        "room", room_id, "p50_room_payer", db_path=DATABASE_PATH,
-    ), (
-        "the payer paid for a timed entitlement and the retry must leave them "
-        "holding one — membership alone starts no expiry clock and is not what "
-        "the money bought"
-    )
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_a_paid_agora_subscribe_that_crashes_at_the_grant_is_repaired_by_the_retry(
-    mock_verify, mock_payout, client,
-):
-    """The Agora sibling, which fails in a nastier way than the room does.
-
-    A crash at the grant leaves this subscriber a member with no entitlement
-    row at all — and that is exactly the state P2-5's `not ever_entitled`
-    rule reads as "a purchase in flight", so the short-circuit admits them,
-    and (before P50) never finished the purchase. Only the payment record
-    says whether the purchase completed, and nothing was consulting it.
-    """
-    from emporia import entitlements
-    from emporia.relay_server import DATABASE_PATH, get_db
-
-    _register(client, "p50_agora_owner")
-    _register(client, "p50_agora_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p50_agora"}
-
-    r = client.post("/agoras/topics", json={
-        "name": "P50 Agora", "description": "d", "visibility": "public",
-        "gate_type": "paid_invite", "entry_fee_cents": 100,
-        "creator_id": "p50_agora_owner", "access_duration_days": 30,
-    }, headers={"x-emporia-agent-id": "p50_agora_owner"})
-    assert r.status_code == 200, r.text
-    slug, topic_id = r.json()["slug"], r.json()["topic_id"]
-    client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": "p50_agora_payer"},
-        headers={"x-emporia-agent-id": "p50_agora_owner"})
-
-    def _pi(pi_id: str) -> dict:
-        return {
-            "status": "succeeded", "payment_intent_id": pi_id,
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "agora", "resource_id": topic_id,
-                "buyer_agent_id": "p50_agora_payer",
-            },
-        }
-
-    def _subscribe(pi_id: str):
-        return client.post(f"/agoras/topics/{slug}/subscribe",
-            json={"agent_id": "p50_agora_payer", "payment_intent_id": pi_id},
-            headers={"x-emporia-agent-id": "p50_agora_payer"})
-
-    with _stripe_account_active("acct_p50_agora"):
-        mock_verify.return_value = _pi("pi_P50_AGORA_ONE")
-        with patch.object(entitlements, "grant", side_effect=RuntimeError("relay died mid-grant")):
-            with pytest.raises(RuntimeError):
-                _subscribe("pi_P50_AGORA_ONE")
-
-        assert not entitlements.has_any_grant(
-            "agora", topic_id, "p50_agora_payer", db_path=DATABASE_PATH,
-        ), (
-            "precondition: no entitlement row at all — the in-flight state "
-            "the short-circuit admits"
-        )
-
-        mock_verify.return_value = _pi("pi_P50_AGORA_TWO")
-        r2 = _subscribe("pi_P50_AGORA_TWO")
-        assert r2.status_code == 200, r2.text
-
-    assert mock_payout.call_count == 1, (
-        f"the creator must be paid for the one captured payment; payout fired "
-        f"{mock_payout.call_count}x"
-    )
-    assert entitlements.has_access(
-        "agora", topic_id, "p50_agora_payer", db_path=DATABASE_PATH,
-    ), "the 30-day window the subscriber paid for must actually start"
-    with get_db() as conn:
-        settlements = conn.execute(
-            "SELECT payment_intent_ids FROM settlements WHERE session_id=?", (topic_id,),
-        ).fetchall()
-    assert len(settlements) == 1, f"one purchase, one settlement row, got {len(settlements)}"
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_an_ordinary_repeat_join_settles_nothing_a_second_time(
-    mock_verify, mock_payout, client,
-):
-    """The control for the fix, not for the defect. The repair runs on every
-    already-member join, so the thing that could go wrong now is it firing
-    when nothing is broken — a second payout, a duplicate entitlement receipt,
-    a second settlement row for one purchase.
-
-    `_settle_access_payment()` is exactly-once per payment because the
-    settlement row it writes last is the key it checks first; this pins that
-    property at the route, where a member simply re-joins a room they already
-    paid for.
-    """
-    from emporia import entitlements
-    from emporia.relay_server import DATABASE_PATH, get_db
-
-    _register_keyed(client, "p50_repeat_owner")
-    _register(client, "p50_repeat_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p50_repeat"}
-
-    r = client.post("/rooms", json=_signed_room("p50_repeat_owner", {
-        "name": "P50 Repeat Room", "creator_id": "p50_repeat_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-        "access_duration_days": 7,
-    }), headers={"x-emporia-agent-id": "p50_repeat_owner"})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    with _stripe_account_active("acct_p50_repeat"):
-        mock_verify.return_value = {
-            "status": "succeeded", "payment_intent_id": "pi_P50_REPEAT",
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p50_repeat_payer",
-            },
-        }
-        first = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p50_repeat_payer", "payment_intent_id": "pi_P50_REPEAT"},
-            headers={"x-emporia-agent-id": "p50_repeat_payer"})
-        assert first.status_code == 200, first.text
-
-        for _ in range(3):
-            again = client.post(f"/rooms/{room_id}/join",
-                json={"agent_id": "p50_repeat_payer"},
-                headers={"x-emporia-agent-id": "p50_repeat_payer"})
-            assert again.status_code == 200, again.text
-            assert again.json()["status"] == "already_member", again.text
-
-    assert mock_payout.call_count == 1, (
-        f"three repeat joins must not pay the creator again; payout fired "
-        f"{mock_payout.call_count}x"
-    )
-    with get_db() as conn:
-        settlements = conn.execute(
-            "SELECT 1 FROM settlements WHERE session_id=?", (room_id,),
-        ).fetchall()
-        grants = conn.execute(
-            "SELECT 1 FROM access_entitlements WHERE resource_type='room' "
-            "AND resource_id=? AND agent_id=?", (room_id, "p50_repeat_payer"),
-        ).fetchall()
-    assert len(settlements) == 1, f"one purchase, one settlement row, got {len(settlements)}"
-    assert len(grants) == 1, (
-        f"one payment buys one entitlement receipt — a repeat join must not "
-        f"insert another, got {len(grants)}"
-    )
-    assert entitlements.has_access(
-        "room", room_id, "p50_repeat_payer", db_path=DATABASE_PATH,
-    )
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
-@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
-def test_the_x402_intent_retires_when_the_retry_finishes_the_purchase(
-    mock_verify, mock_settle, mock_payout, client,
-):
-    """The half of the window P48 named and could not close from its own side.
-
-    P48 retires the intent when the entitlement exists, because the entitlement
-    is what the payment bought. A crash at the grant therefore stranded the
-    intent in `settled` forever: the entitlement never appeared, the retry
-    short-circuited on membership, and nothing else retires intents. A stuck
-    settled intent is not inert — it is what a *later* legitimate re-purchase
-    of the same resource collides with, and being handed free access months
-    later is the same defect inverted and slower.
-
-    Driven through the route on the x402 rail so the intent is real, and the
-    crash is at the grant rather than simulated at the seam.
-    """
-    from emporia import entitlements
-    from emporia.relay_server import DATABASE_PATH, DB_LOCK, get_db
-
-    creator, payer = "p50_x402_creator", "p50_x402_payer"
-    _register_keyed(client, creator)
-    _register(client, payer)
-    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
-    mock_verify.return_value = {"isValid": True}
-    mock_settle.return_value = {"success": True, "transaction": "0xp50first"}
-    mock_payout.return_value = {"transfer_id": "tr_p50_x402"}
-
-    def _credential(nonce: str) -> str:
-        return _x402_payment_signature_header(
-            {"scheme": "exact", "network": "eip155:84532", "amount": "1000000",
-             "asset": _P48_ENV["EMPORIA_X402_ASSET_EIP155_84532"],
-             "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
-             "extra": {"name": "USDC", "version": "2"}},
-            {"signature": "0xsig", "authorization": {
-                "from": "0x" + "19" * 20, "nonce": nonce,
-                "validBefore": str(int(time.time()) + 300)}},
-        )
-
-    with patch.dict(os.environ, _P48_ENV, clear=False):
-        r = client.post("/rooms", json=_signed_room(creator, {
-            "name": "P50 x402 Room", "creator_id": creator,
-            "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-            "access_duration_days": 30,
-        }), headers={"x-emporia-agent-id": creator})
-        assert r.status_code == 200, r.text
-        room_id = r.json()["room_id"]
-
-        with patch.object(entitlements, "grant", side_effect=RuntimeError("relay died mid-grant")):
-            with pytest.raises(RuntimeError):
-                client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
-                    headers={"x-emporia-agent-id": payer,
-                             "PAYMENT-SIGNATURE": _credential("0x" + "5a" * 32)})
-
-        with DB_LOCK, get_db() as conn:
-            stuck = conn.execute(
-                "SELECT status FROM x402_settle_intents WHERE payer_id=? AND resource_id=?",
-                (payer, room_id),
-            ).fetchall()
-        assert [i["status"] for i in stuck] == ["settled"], (
-            f"precondition: the settled intent is stranded by the crash, got "
-            f"{[dict(i) for i in stuck]}"
-        )
-
-        retry = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
-            headers={"x-emporia-agent-id": payer,
-                     "PAYMENT-SIGNATURE": _credential("0x" + "5b" * 32)})
-        assert retry.status_code == 200, retry.text
-
-    assert mock_settle.call_count == 1, (
-        f"one purchase reaches /settle once; it was called {mock_settle.call_count}x"
-    )
-    assert entitlements.has_access("room", room_id, payer, db_path=DATABASE_PATH), (
-        "the retry must leave the payer holding the 30-day entitlement they bought"
-    )
-    with DB_LOCK, get_db() as conn:
-        left = conn.execute(
-            "SELECT 1 FROM x402_settle_intents WHERE payer_id=? AND resource_id=?",
-            (payer, room_id),
-        ).fetchall()
-    assert left == [], (
-        "the entitlement exists, so the intent guarding that purchase must be "
-        "retired — a stuck settled intent hands the payer's next genuine "
-        "re-purchase of this room free access"
-    )
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_a_crash_after_the_grant_is_finished_without_issuing_a_second_receipt(
-    mock_verify, mock_payout, client,
-):
-    """The other half of the interrupted purchase, and the reason the resume
-    path cannot simply re-grant.
-
-    Here the grant landed and the settlement row did not, so the retry
-    genuinely re-enters `_settle_access_payment()` past its exactly-once
-    check. `entitlements.grant()` always inserts — one row per payment is the
-    receipt property that table exists for — so an unconditional re-grant
-    would hand this payer a second entitlement for one payment and restart
-    their 30-day window from the retry. The skip has to be keyed on *this
-    payment* (`has_grant_for_payment`), not on "holds any grant here", which a
-    genuine re-purchase after expiry also satisfies.
-    """
-    from emporia import entitlements, relay_server
-    from emporia.relay_server import DATABASE_PATH, get_db
-
-    _register_keyed(client, "p50_payout_owner")
-    _register(client, "p50_payout_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p50_payout"}
-
-    r = client.post("/rooms", json=_signed_room("p50_payout_owner", {
-        "name": "P50 Payout Room", "creator_id": "p50_payout_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-        "access_duration_days": 30,
-    }), headers={"x-emporia-agent-id": "p50_payout_owner"})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    real_record_settlement = relay_server.record_settlement
-    attempts = {"n": 0}
-
-    def _dies_before_recording(settlement):
-        attempts["n"] += 1
-        if attempts["n"] == 1:
-            raise RuntimeError("relay died before the settlement was recorded")
-        return real_record_settlement(settlement)
-
-    def _pi(pi_id: str) -> dict:
-        return {
-            "status": "succeeded", "payment_intent_id": pi_id,
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p50_payout_payer",
-            },
-        }
-
-    with _stripe_account_active("acct_p50_payout"):
-        mock_verify.return_value = _pi("pi_P50_PAYOUT_ONE")
-        with patch.object(relay_server, "record_settlement", _dies_before_recording):
-            with pytest.raises(RuntimeError):
-                client.post(f"/rooms/{room_id}/join",
-                    json={"agent_id": "p50_payout_payer",
-                          "payment_intent_id": "pi_P50_PAYOUT_ONE"},
-                    headers={"x-emporia-agent-id": "p50_payout_payer"})
-
-        with get_db() as conn:
-            settled = conn.execute(
-                "SELECT 1 FROM settlements WHERE session_id=?", (room_id,),
-            ).fetchall()
-        assert settled == [], "precondition: the settlement row never landed"
-        assert entitlements.has_access(
-            "room", room_id, "p50_payout_payer", db_path=DATABASE_PATH,
-        ), "precondition: the grant did land — this is the state past the first guard"
-
-        again = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p50_payout_payer"},
-            headers={"x-emporia-agent-id": "p50_payout_payer"})
-        assert again.status_code == 200, again.text
-
-    with get_db() as conn:
-        grants = conn.execute(
-            "SELECT payment_intent_id FROM access_entitlements "
-            "WHERE resource_type='room' AND resource_id=? AND agent_id=?",
-            (room_id, "p50_payout_payer"),
-        ).fetchall()
-        settlements = conn.execute(
-            "SELECT 1 FROM settlements WHERE session_id=?", (room_id,),
-        ).fetchall()
-    assert len(grants) == 1, (
-        f"one payment buys one entitlement receipt; the resume must not insert "
-        f"a second, got {[dict(g) for g in grants]}"
-    )
-    assert grants[0]["payment_intent_id"] == "pi_P50_PAYOUT_ONE", (
-        "the receipt names the payment that actually bought it"
-    )
-    assert len(settlements) == 1, (
-        f"the resume finishes the settlement the crash lost, once; got {len(settlements)}"
-    )
-    keys = [c.kwargs["idempotency_key"] for c in mock_payout.call_args_list]
-    assert len(set(keys)) == 1, (
-        f"the resumed payout is the same payout, so it must reuse the same "
-        f"Idempotency-Key and be a no-op at Stripe; got {keys}"
-    )
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_a_repurchase_after_expiry_gets_the_entitlement_it_paid_for(
-    mock_verify, mock_payout, client,
-):
-    """The pin the post-expiry rejoin tests were missing, found by
-    reintroducing the defect it guards: every one of them checked the ledger —
-    payments, settlement rows, payout count, distinct Idempotency-Keys — and
-    none checked that the payer ended up with the access those payments bought.
-
-    That gap is load-bearing now. P50's resume skips the grant when *this
-    payment* already bought one; keying that skip on `has_any_grant()` instead
-    would look identical on the happy path and silently withhold the grant from
-    every renewal, because a renewing payer holds an expired row and satisfies
-    "has ever been granted anything here". The suite could not tell the
-    difference.
-    """
-    import sqlite3
-    from datetime import UTC, datetime, timedelta
-
-    from emporia import entitlements
-    from emporia.relay_server import DATABASE_PATH, get_db
-
-    _register_keyed(client, "p50_renew_owner")
-    _register(client, "p50_renew_payer")
-    mock_payout.return_value = {"transfer_id": "tr_p50_renew"}
-
-    r = client.post("/rooms", json=_signed_room("p50_renew_owner", {
-        "name": "P50 Renewal Room", "creator_id": "p50_renew_owner",
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-        "access_duration_days": 1,
-    }), headers={"x-emporia-agent-id": "p50_renew_owner"})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    def _pi(pi_id: str) -> dict:
-        return {
-            "status": "succeeded", "payment_intent_id": pi_id,
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {
-                "resource_type": "room", "resource_id": room_id,
-                "buyer_agent_id": "p50_renew_payer",
-            },
-        }
-
-    with _stripe_account_active("acct_p50_renew"):
-        mock_verify.return_value = _pi("pi_P50_RENEW_ONE")
-        first = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p50_renew_payer", "payment_intent_id": "pi_P50_RENEW_ONE"},
-            headers={"x-emporia-agent-id": "p50_renew_payer"})
-        assert first.status_code == 200, first.text
-
-        # Close the window and drop the membership, the way an expiry plus a
-        # leave/kick does — direct DB writes, to stay decoupled from
-        # kick_from_room()'s own semantics.
-        conn = sqlite3.connect(DATABASE_PATH)
-        conn.execute(
-            "UPDATE access_entitlements SET expires_at = ? "
-            "WHERE resource_type='room' AND resource_id=? AND agent_id=?",
-            ((datetime.now(UTC) - timedelta(hours=1)).isoformat(), room_id, "p50_renew_payer"),
-        )
-        conn.commit()
-        conn.close()
-        from emporia import rooms as rooms_db
-        rooms_db.remove_member(room_id, "p50_renew_payer", db_path=DATABASE_PATH)
-        assert not entitlements.has_access(
-            "room", room_id, "p50_renew_payer", db_path=DATABASE_PATH,
-        ), "precondition: the first window is closed"
-
-        mock_verify.return_value = _pi("pi_P50_RENEW_TWO")
-        second = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p50_renew_payer", "payment_intent_id": "pi_P50_RENEW_TWO"},
-            headers={"x-emporia-agent-id": "p50_renew_payer"})
-        assert second.status_code == 200, second.text
-
-    assert entitlements.has_access(
-        "room", room_id, "p50_renew_payer", db_path=DATABASE_PATH,
-    ), (
-        "the renewal payment must buy a fresh entitlement — the payer is "
-        "charged for access, so 'already has a lapsed row here' can never be "
-        "the reason to withhold it"
-    )
-    with get_db() as conn:
-        grants = conn.execute(
-            "SELECT payment_intent_id FROM access_entitlements "
-            "WHERE resource_type='room' AND resource_id=? AND agent_id=? "
-            "ORDER BY granted_at", (room_id, "p50_renew_payer"),
-        ).fetchall()
-    assert [g["payment_intent_id"] for g in grants] == [
-        "pi_P50_RENEW_ONE", "pi_P50_RENEW_TWO",
-    ], f"two payments, two receipts, in order; got {[dict(g) for g in grants]}"
 
 
 # ---------------------------------------------------------------------------
@@ -23442,393 +18382,20 @@ def test_a_repurchase_after_expiry_gets_the_entitlement_it_paid_for(
 # ---------------------------------------------------------------------------
 
 
-@patch("emporia.payments.payout_winner", new_callable=AsyncMock)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_a_creator_who_onboards_after_their_first_sale_is_still_owed_it(
-    mock_verify, mock_payout, client,
-):
-    """The defect, reproduced with nothing crashing and no error path taken.
-
-    `_settle_access_payment()` records five distinct "the creator's money did
-    not move" states — `pending_connect`, `pending_connect_not_active`,
-    `pending_connect_wrong_mode`, `no_stripe_account`, `transfer_failed`. Each
-    is written correctly and deliberately (P25-2 and P26-4 both exist to skip a
-    doomed Stripe call rather than fail against it). Nothing in the repo ever
-    reads any of them again.
-
-    So the ordinary marketplace sequence — register, list a paid room, make a
-    sale, *then* finish Stripe onboarding — strands that first sale's money on
-    the platform balance permanently. Nothing is broken, nothing is logged as
-    wrong, and the settlement row says exactly what happened. It is simply
-    never looked at.
-    """
-    from emporia.relay_server import get_db
-
-    owner, payer = "p51_late_owner", "p51_late_payer"
-    _register_keyed(client, owner)
-    _register(client, payer)
-    mock_payout.return_value = {"transfer_id": "tr_p51_late"}
-
-    r = client.post("/rooms", json=_signed_room(owner, {
-        "name": "P51 Late Onboarding Room", "creator_id": owner,
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
-    }), headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-
-    def _pi(pi_id: str, buyer: str) -> dict:
-        return {
-            "status": "succeeded", "payment_intent_id": pi_id,
-            "amount": 100, "currency": "usd", "capture_method": "automatic",
-            "metadata": {"resource_type": "room", "resource_id": room_id,
-                         "buyer_agent_id": buyer},
-        }
-
-    # Sale one: the Connected Account exists but onboarding isn't finished.
-    mock_verify.return_value = _pi("pi_p51_late_one", payer)
-    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account",
-               return_value="acct_p51_late"):
-        first = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": payer, "payment_intent_id": "pi_p51_late_one"},
-            headers={"x-emporia-agent-id": payer})
-    assert first.status_code == 200, first.text
-    assert mock_payout.call_count == 0, "precondition: the doomed transfer is skipped"
-
-    # The creator finishes onboarding. A second buyer arrives and is paid out
-    # normally, which is what makes the first sale's silence visible: the relay
-    # is working, and that one payment is simply gone from its attention.
-    _register(client, "p51_late_payer_two")
-    mock_verify.return_value = _pi("pi_p51_late_two", "p51_late_payer_two")
-    with _stripe_account_active("acct_p51_late"):
-        second = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": "p51_late_payer_two",
-                  "payment_intent_id": "pi_p51_late_two"},
-            headers={"x-emporia-agent-id": "p51_late_payer_two"})
-    assert second.status_code == 200, second.text
-
-    with get_db() as conn:
-        rows = conn.execute(
-            "SELECT payer_id, transfer_status, transfer_id, winner_payout_cents "
-            "FROM settlements WHERE session_id=? ORDER BY created_at", (room_id,),
-        ).fetchall()
-    owed = [dict(r) for r in rows if r["transfer_status"] != "transferred"]
-    assert [r["transfer_status"] for r in rows] == [
-        "pending_connect_not_active", "transferred",
-    ], f"precondition: one sale owed, one paid; got {[dict(r) for r in rows]}"
-    assert mock_payout.call_count == 1, (
-        f"only the second sale ever reached a transfer; the first is owed "
-        f"{owed[0]['winner_payout_cents']}c and nothing will ever pay it"
-    )
 
 
-def _p51_strand_a_sale(client, mock_verify, *, owner, payer, pi_id, fee_cents=100):
-    """A completed paid join whose payout was correctly skipped, leaving the
-    creator owed. Returns the room id."""
-    _register_keyed(client, owner)
-    _register(client, payer)
-    r = client.post("/rooms", json=_signed_room(owner, {
-        "name": f"P51 {owner}", "creator_id": owner,
-        "room_type": "private", "gate_type": "paid", "entry_fee_cents": fee_cents,
-    }), headers={"x-emporia-agent-id": owner})
-    assert r.status_code == 200, r.text
-    room_id = r.json()["room_id"]
-    mock_verify.return_value = {
-        "status": "succeeded", "payment_intent_id": pi_id,
-        "amount": fee_cents, "currency": "usd", "capture_method": "automatic",
-        "metadata": {"resource_type": "room", "resource_id": room_id,
-                     "buyer_agent_id": payer},
-    }
-    with patch("emporia.relay_server.AGENT_REGISTRY.get_stripe_account",
-               return_value=f"acct_{owner}"):
-        joined = client.post(f"/rooms/{room_id}/join",
-            json={"agent_id": payer, "payment_intent_id": pi_id},
-            headers={"x-emporia-agent-id": payer})
-    assert joined.status_code == 200, joined.text
-    return room_id
 
 
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_the_reconciler_pays_a_sale_the_creator_had_not_yet_onboarded_for(
-    mock_verify, client,
-):
-    """The pin for the defect above: once the creator's Connected Account is
-    active, the sale that was skipped is paid, with the same Idempotency-Key the
-    original attempt would have used."""
-    import asyncio
-
-    from emporia.relay_server import _reconcile_owed_payouts, get_db
-
-    room_id = _p51_strand_a_sale(
-        client, mock_verify, owner="p51_fix_owner", payer="p51_fix_payer",
-        pi_id="pi_p51_fix",
-    )
-
-    # Explicit, not ambient: the reconciler returns early with no Stripe
-    # credentials configured (P51r), so a test that relied on the
-    # developer's own environment having a key would pass here and do
-    # nothing at all in CI.
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_p51"}, clear=False), \
-         _stripe_account_active("acct_p51_fix_owner"):
-        with patch("emporia.payments.find_settlement_transfer",
-                   new_callable=AsyncMock, return_value=(True, None)):
-            with patch("emporia.payments.payout_winner", new_callable=AsyncMock) as payout:
-                payout.return_value = {"transfer_id": "tr_p51_reconciled"}
-                counts = asyncio.run(_reconcile_owed_payouts())
-
-    # Counts are asserted as ">= 1", not "== 1": the reconciler is a global
-    # sweep and the suite shares one database, so earlier tests' deliberately
-    # stranded sales are legitimately in scope here. That is the feature
-    # working, not a harness quirk — so this test pins its own row instead.
-    assert counts["paid"] >= 1, f"the owed sale must be paid, got {counts}"
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT transfer_status, transfer_id, dedupe_key FROM settlements "
-            "WHERE session_id=?", (room_id,),
-        ).fetchone()
-    assert row["transfer_status"] == "transferred", dict(row)
-    assert row["transfer_id"] == "tr_p51_reconciled", dict(row)
-    keys = [c.kwargs["idempotency_key"] for c in payout.call_args_list]
-    assert "emporia:payout:" + row["dedupe_key"] in keys, (
-        "the reconciled payout must reuse the settlement's own key, so a "
-        f"same-day replay is a no-op at Stripe rather than a second transfer; "
-        f"got {keys}"
-    )
 
 
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_an_unanswerable_stripe_lookup_never_becomes_a_second_payout(
-    mock_verify, client,
-):
-    """P48's rule, on the Stripe ledger. `transfer_failed` means only that the
-    API call raised — the transfer may have been created and the response lost.
-    A reconciler that reads "couldn't ask" as "not paid" is how one crash turns
-    into two transfers, and Stripe's Idempotency-Key has already expired by the
-    time this loop runs (24 hours), so nothing downstream would catch it.
-    """
-    import asyncio
-
-    from emporia.relay_server import _reconcile_owed_payouts, get_db
-
-    room_id = _p51_strand_a_sale(
-        client, mock_verify, owner="p51_unknown_owner", payer="p51_unknown_payer",
-        pi_id="pi_p51_unknown",
-    )
-
-    # Explicit, not ambient: the reconciler returns early with no Stripe
-    # credentials configured (P51r), so a test that relied on the
-    # developer's own environment having a key would pass here and do
-    # nothing at all in CI.
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_p51"}, clear=False), \
-         _stripe_account_active("acct_p51_unknown_owner"):
-        with patch("emporia.payments.find_settlement_transfer",
-                   new_callable=AsyncMock, return_value=(False, None)):
-            with patch("emporia.payments.payout_winner", new_callable=AsyncMock) as payout:
-                counts = asyncio.run(_reconcile_owed_payouts())
-
-    assert counts["unknown"] >= 1 and counts["paid"] == 0, counts
-    payout.assert_not_called()
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT transfer_status, transfer_id FROM settlements WHERE session_id=?",
-            (room_id,),
-        ).fetchone()
-    assert row["transfer_status"] == "pending_connect_not_active", (
-        f"an unanswerable lookup must leave the row exactly as it was, got {dict(row)}"
-    )
-    assert row["transfer_id"] is None, dict(row)
 
 
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_a_transfer_that_already_landed_is_recovered_not_repaid(mock_verify, client):
-    """The reason the lookup exists at all. Stripe says the transfer is there;
-    the relay adopts it and moves no money."""
-    import asyncio
-
-    from emporia.relay_server import _reconcile_owed_payouts, get_db
-
-    room_id = _p51_strand_a_sale(
-        client, mock_verify, owner="p51_found_owner", payer="p51_found_payer",
-        pi_id="pi_p51_found",
-    )
-
-    # Explicit, not ambient: the reconciler returns early with no Stripe
-    # credentials configured (P51r), so a test that relied on the
-    # developer's own environment having a key would pass here and do
-    # nothing at all in CI.
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_p51"}, clear=False), \
-         _stripe_account_active("acct_p51_found_owner"):
-        with patch("emporia.payments.find_settlement_transfer",
-                   new_callable=AsyncMock, return_value=(True, "tr_already_there")):
-            with patch("emporia.payments.payout_winner", new_callable=AsyncMock) as payout:
-                counts = asyncio.run(_reconcile_owed_payouts())
-
-    assert counts["recovered"] >= 1 and counts["paid"] == 0, counts
-    payout.assert_not_called()
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT transfer_status, transfer_id FROM settlements WHERE session_id=?",
-            (room_id,),
-        ).fetchone()
-    assert (row["transfer_status"], row["transfer_id"]) == ("transferred", "tr_already_there"), \
-        dict(row)
 
 
-def test_the_owed_sweep_matches_the_escrow_lanes_status_string_too():
-    """`payments.settle()` writes `f"transfer_failed: {e}"`; `_settle_access_
-    payment()` writes a bare `"transfer_failed"`. Two lanes, one column, two
-    shapes — an `==` check would have reconciled every room and Agora sale and
-    silently skipped every session-escrow one, which is the lane where the
-    largest amounts sit. The prefix match is what makes the drift harmless;
-    this is what keeps it that way.
-    """
-    import json
-    import uuid as _uuid
-
-    from emporia.relay_server import DB_LOCK, _owed_payout_rows, get_db
-
-    marker = _uuid.uuid4().hex[:8]
-    rows = [
-        # (transfer_status, transfer_id, should_be_swept)
-        ("transfer_failed: 500 Server Error for url .../transfers", None, True),
-        ("transfer_failed", None, True),
-        ("pending_connect", None, True),
-        ("pending_connect_not_active", None, True),
-        ("pending_connect_wrong_mode", None, True),
-        ("no_stripe_account", None, True),
-        # Terminal, and the ones a re-payment would be a real second transfer:
-        ("transferred", "tr_done", False),
-        # The contradictory row, and the reason the sweep is guarded on
-        # `transfer_id IS NULL` and not on the status string alone: an owed-
-        # looking status with a transfer id against it means a transfer exists.
-        # Trusting the status here would post a second one.
-        ("transfer_failed", "tr_landed_anyway", False),
-        ("reversed_pending_refund", "tr_reversed", False),
-        ("refunded", "tr_refunded", False),
-        ("direct", None, False),  # x402: nothing was ever platform-held
-    ]
-    with DB_LOCK, get_db() as conn:
-        for i, (status, transfer_id, _) in enumerate(rows):
-            conn.execute(
-                "INSERT INTO settlements (settlement_id, session_id, winner_id, "
-                "winner_payout_cents, payment_intent_ids, transfer_id, transfer_status, "
-                "status, created_at, payer_id, dedupe_key, rail) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                (f"stl_{marker}_{i}", f"room_{marker}", f"owner_{marker}", 97,
-                 json.dumps([f"pi_{marker}_{i}"]), transfer_id, status, "settled",
-                 "2026-01-01T00:00:00+00:00", f"payer_{marker}",
-                 f"dk_{marker}_{i}", "direct" if status == "direct" else "stripe"),
-            )
-
-    swept = {r["settlement_id"] for r in _owed_payout_rows()}
-    for i, (status, _, should_sweep) in enumerate(rows):
-        sid = f"stl_{marker}_{i}"
-        assert (sid in swept) is should_sweep, (
-            f"{status!r} should {'be' if should_sweep else 'not be'} swept as owed"
-        )
 
 
-def test_a_reconciled_payout_can_be_found_again_under_the_key_it_was_posted_with():
-    """The lookup only works because the transfer carries the settlement's own
-    natural key. `payout_winner()` derives `metadata[dedupe_key]` from the
-    `idempotency_key` it was handed rather than taking it as a second argument,
-    so the two cannot drift — a transfer findable under a key it was not posted
-    under would be worse than one that is not findable at all.
-    """
-    import asyncio
-
-    from emporia.payments import find_settlement_transfer, payout_winner
-
-    posted = {}
-
-    async def _capture_post(url, *args, **kwargs):
-        posted.update(kwargs.get("data") or {})
-        m = MagicMock()
-        m.raise_for_status = MagicMock()
-        m.json.return_value = {"id": "tr_meta_check", "amount": 97,
-                               "destination": "acct_meta", "created": 0}
-        return m
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_meta"}):
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock,
-                   side_effect=_capture_post):
-            asyncio.run(payout_winner(
-                winner_id="meta_winner", stripe_account_id="acct_meta",
-                amount_cents=97, session_id="room_meta",
-                idempotency_key="emporia:payout:room_meta:payer:abc123",
-            ))
-
-    assert posted["metadata[dedupe_key]"] == "room_meta:payer:abc123", posted
-    assert posted["transfer_group"] == "room_meta", posted
-
-    # And the lookup finds it by exactly that value.
-    async def _list_page(url, *args, **kwargs):
-        m = MagicMock()
-        m.raise_for_status = MagicMock()
-        m.json.return_value = {"has_more": False, "data": [
-            {"id": "tr_someone_else", "metadata": {"dedupe_key": "room_meta:other:zzz"}},
-            {"id": "tr_meta_check", "metadata": {"dedupe_key": posted["metadata[dedupe_key]"]}},
-        ]}
-        return m
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_meta"}):
-        with patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=_list_page):
-            known, transfer_id = asyncio.run(find_settlement_transfer(
-                transfer_group="room_meta", dedupe_key="room_meta:payer:abc123",
-            ))
-    assert (known, transfer_id) == (True, "tr_meta_check"), (known, transfer_id)
 
 
-def test_the_transfer_lookup_reports_unknown_rather_than_absent_when_it_cannot_finish():
-    """Two ways the question goes unanswered, and neither may be reported as
-    "no transfer". P48 learned the second one against Base's 10,000-block
-    `eth_getLogs` cap: a search window is a bound, not an answer.
-    """
-    import asyncio
-
-    from emporia import payments
-    from emporia.payments import find_settlement_transfer
-
-    async def _boom(url, *args, **kwargs):
-        raise RuntimeError("stripe unreachable")
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_unknown"}):
-        with patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=_boom):
-            assert asyncio.run(find_settlement_transfer(
-                transfer_group="room_x", dedupe_key="dk_x",
-            )) == (False, None), "an unreachable API is unknown, never absent"
-
-    # Always another page, never a match: the bound is hit, and the honest
-    # answer is still "couldn't finish asking".
-    async def _endless(url, *args, **kwargs):
-        m = MagicMock()
-        m.raise_for_status = MagicMock()
-        m.json.return_value = {"has_more": True, "data": [
-            {"id": "tr_page", "metadata": {"dedupe_key": "not_the_one"}},
-        ]}
-        return m
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_unknown"}):
-        with patch.object(payments, "TRANSFER_SEARCH_PAGE_LIMIT", 3):
-            with patch("httpx.AsyncClient.get", new_callable=AsyncMock,
-                       side_effect=_endless) as get:
-                assert asyncio.run(find_settlement_transfer(
-                    transfer_group="room_x", dedupe_key="dk_x",
-                )) == (False, None), "exhausting the page bound is unknown, never absent"
-    assert get.await_count == 3, f"the bound must actually bound, got {get.await_count}"
-
-    # A complete listing with no match *is* an answer, and the only one that
-    # licenses a retry.
-    async def _one_page(url, *args, **kwargs):
-        m = MagicMock()
-        m.raise_for_status = MagicMock()
-        m.json.return_value = {"has_more": False, "data": []}
-        return m
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_unknown"}):
-        with patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=_one_page):
-            assert asyncio.run(find_settlement_transfer(
-                transfer_group="room_x", dedupe_key="dk_x",
-            )) == (True, None), "a complete listing with no match is a real 'no'"
 
 
 def test_payout_reconcile_task_starts_and_cancels_cleanly_on_shutdown():
@@ -23869,7 +18436,7 @@ def test_safety_stats_reports_the_reconciler_is_alive_without_reporting_what_it_
 #
 # P43 pinned MCP tool names and counts, P49 pinned REST routes. The third
 # source-to-docs surface is the environment: 52 distinct variables decide where
-# the keys live, where the audit trail goes, which Stripe host is called, how
+# the keys live, where the audit trail goes, which facilitator is called, how
 # many requests a minute an agent gets, and whether the relay starts at all.
 # Nothing checked that any of them were written down, in either direction.
 # ---------------------------------------------------------------------------
@@ -23928,11 +18495,9 @@ def _env_vars_documented() -> set[str]:
 
 
 def test_every_environment_variable_the_relay_reads_is_documented():
-    """The gap this pass measured: 13 of 52, including `STRIPE_WEBHOOK_SECRET`
-    — which the relay *refuses to start* without on a live key, explained
-    nowhere but in the exception it raises — `RATE_LIMIT_PER_MINUTE`, which is
-    a security control, `EMPORIA_KEYS_DIR`, which is where private keys live,
-    and `STRIPE_API_BASE`, which points every Stripe call at a different host.
+    """The gap this pass measured: 13 of 52, including `RATE_LIMIT_PER_MINUTE`,
+    which is a security control, and `EMPORIA_KEYS_DIR`, which is where private
+    keys live.
     """
     read = _env_vars_read_by_source()
     documented = _env_vars_documented()
@@ -23988,106 +18553,8 @@ def test_every_documented_environment_variable_is_actually_read():
     )
 
 
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_the_reconciler_is_a_quiet_no_op_on_a_relay_with_no_stripe_credentials(
-    mock_verify, client,
-):
-    """Found by starting the relay, not by the suite (P51r).
-
-    Every reconciler test above reaches Stripe through a mock, so none of them
-    could observe what an unconfigured relay does: `payments._stripe_key()`
-    raises when `STRIPE_SECRET_KEY` is unset, and it is called *before* the
-    request that `find_settlement_transfer()` guards. The raise escaped to the
-    loop, which logged a traceback and incremented `consecutive_failures` —
-    every tick, forever, for a permanent and entirely benign condition. The
-    liveness counter added for operators would have reported a broken relay on
-    every free-only deployment holding a legacy owed row.
-    """
-    import asyncio
-
-    from emporia.relay_server import _reconcile_owed_payouts, get_db
-
-    room_id = _p51_strand_a_sale(
-        client, mock_verify, owner="p51r_nokey_owner", payer="p51r_nokey_payer",
-        pi_id="pi_p51r_nokey",
-    )
-
-    env = {k: v for k, v in os.environ.items() if k != "STRIPE_SECRET_KEY"}
-    with patch.dict(os.environ, env, clear=True):
-        counts = asyncio.run(_reconcile_owed_payouts())
-
-    assert counts["failed"] == 0 and counts["owed"] == 0, (
-        f"no credentials is nothing to do, not a failure to report: {counts}"
-    )
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT transfer_status, transfer_id FROM settlements WHERE session_id=?",
-            (room_id,),
-        ).fetchone()
-    assert (row["transfer_status"], row["transfer_id"]) == \
-        ("pending_connect_not_active", None), \
-        f"and the owed row is left exactly as it was, got {dict(row)}"
 
 
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_one_unreconcilable_row_does_not_take_the_rest_of_the_sweep_with_it(
-    mock_verify, client,
-):
-    """N12-1's rule, one level down. That review established a raise must not
-    end the background *loop*; P51 applied it there and not to the row loop
-    inside, so a single row that threw aborted every row behind it — silently,
-    permanently, and in row order, which means the same creators every time.
-
-    The row that throws here is the one whose creator lookup explodes; the
-    second row is a perfectly ordinary owed payout that must still be paid.
-    """
-    import asyncio
-
-    from emporia.relay_server import AGENT_REGISTRY, _reconcile_owed_payouts, get_db
-
-    bad_room = _p51_strand_a_sale(
-        client, mock_verify, owner="p51r_bad_owner", payer="p51r_bad_payer",
-        pi_id="pi_p51r_bad",
-    )
-    good_room = _p51_strand_a_sale(
-        client, mock_verify, owner="p51r_good_owner", payer="p51r_good_payer",
-        pi_id="pi_p51r_good",
-    )
-
-    real_get_account = AGENT_REGISTRY.get_stripe_account
-
-    def _explodes_for_one_creator(agent_id):
-        if agent_id == "p51r_bad_owner":
-            raise RuntimeError("registry read blew up for this creator")
-        if agent_id == "p51r_good_owner":
-            return "acct_p51r_good"
-        return real_get_account(agent_id)
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_p51r"}, clear=False), \
-         patch.object(AGENT_REGISTRY, "get_stripe_account", _explodes_for_one_creator), \
-         patch.object(AGENT_REGISTRY, "get_stripe_account_status", return_value="active"), \
-         patch("emporia.payments.find_settlement_transfer",
-               new_callable=AsyncMock, return_value=(True, None)), \
-         patch("emporia.payments.payout_winner", new_callable=AsyncMock) as payout:
-        payout.return_value = {"transfer_id": "tr_p51r_good"}
-        counts = asyncio.run(_reconcile_owed_payouts())
-
-    assert counts["failed"] >= 1, f"the bad row must be counted as failed: {counts}"
-    with get_db() as conn:
-        bad = conn.execute(
-            "SELECT transfer_status FROM settlements WHERE session_id=?", (bad_room,),
-        ).fetchone()
-        good = conn.execute(
-            "SELECT transfer_status, transfer_id FROM settlements WHERE session_id=?",
-            (good_room,),
-        ).fetchone()
-    assert bad["transfer_status"] == "pending_connect_not_active", (
-        f"the row that threw is left owed, unchanged, got {dict(bad)}"
-    )
-    assert (good["transfer_status"], good["transfer_id"]) == ("transferred", "tr_p51r_good"), (
-        "the row *behind* the one that threw must still be paid — that is the "
-        f"whole point; got {dict(good)}"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -24151,7 +18618,7 @@ def test_every_key_the_installer_writes_into_a_users_config_is_read_by_something
                 read.add(next(g for g in m.groups() if g))
 
     written = {k for k in _installer_written_env_keys()
-               if k.startswith(("EMPORIA_", "STRIPE_", "NVIDIA_"))}
+               if k.startswith(("EMPORIA_", "NVIDIA_"))}
     orphans = sorted(written - read)
     assert not orphans, (
         "installer/install.py writes these into the user's configuration and "
@@ -24542,7 +19009,7 @@ def test_access_active_state_matrix(tmp_path, is_member, gate_has_expiry, is_exe
 
     if grant in ("active", "expired"):
         entitlements.grant("agora", "t1", "a1", "pi_1", duration_days=1,
-                           rail="stripe", db_path=db)
+                           rail="x402", db_path=db)
         if grant == "expired":
             c = _sqlite3.connect(db)
             c.execute("UPDATE access_entitlements SET expires_at = ?",
@@ -24604,7 +19071,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 
 # One schema (`emporia.schema_sql`), one version. The relay starts fresh, so there is no upgrade history to
 # record: change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
-_SCHEMA_FINGERPRINT = "59cd017ea77cfd56f0119f6f214875d454c75927570d89f2fbf61801f1e319dd"
+_SCHEMA_FINGERPRINT = "b692ce4226040a677c7642b8669abe5fd45fe9691a798957c6e9b4e4d707723f"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -24644,7 +19111,7 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (51, _SCHEMA_FINGERPRINT), (
+    assert (SCHEMA_VERSION, fingerprint) == (52, _SCHEMA_FINGERPRINT), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
         f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT — in "
         f"that order, and never the fingerprint alone.\n"
@@ -24734,169 +19201,16 @@ def test_a_database_from_a_newer_relay_is_refused_rather_than_migrated():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("key,expected_mode", [
-    ("sk_live_abc", "live"),
-    ("rk_live_abc", "live"),   # restricted, live — the shape Stripe recommends
-    ("sk_test_abc", "test"),
-    ("rk_test_abc", "test"),
-    ("", ""),
-    ("garbage", ""),
-])
-def test_stripe_key_mode_knows_restricted_keys(key, expected_mode):
-    """`rk_` is Stripe's *restricted* key prefix — same test/live segment, fewer
-    permissions. `stripe_key_mode()` only knew `sk_`, so a restricted key
-    returned "" (unknown) and every protection keyed on mode quietly switched
-    off. The symptom was visible and unread: `/health` reports
-    `stripe_mode: ""` on a relay that is very much in live mode.
-    """
-    from emporia.payments import stripe_key_mode
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": key}, clear=False):
-        assert stripe_key_mode() == expected_mode
 
 
-def test_a_restricted_live_key_still_refuses_to_start_without_a_webhook_secret():
-    """The guard exists because `POST /webhooks/stripe` is the only thing that
-    ever marks a live Connected Account payable, and it never fails open — so a
-    live relay without the signing secret can never pay a creator. It checked
-    `sk_live_` by prefix, so a `rk_live_` key walked straight past it and the
-    relay started into exactly the state the guard was written to prevent.
-
-    Backwards, specifically: it fired for the *less* safe key shape and not the
-    more safe one.
-    """
-    from emporia import relay_server as rs
-
-    for key in ("sk_live_abc", "rk_live_abc"):
-        env = {k: v for k, v in os.environ.items() if k != "STRIPE_WEBHOOK_SECRET"}
-        env["STRIPE_SECRET_KEY"] = key
-        with patch.dict(os.environ, env, clear=True):
-            with pytest.raises(RuntimeError, match="STRIPE_WEBHOOK_SECRET"):
-                rs._require_stripe_webhook_secret_if_needed()
-
-    # A test-mode key of either shape warns rather than refuses — unchanged.
-    for key in ("sk_test_abc", "rk_test_abc"):
-        env = {k: v for k, v in os.environ.items() if k != "STRIPE_WEBHOOK_SECRET"}
-        env["STRIPE_SECRET_KEY"] = key
-        with patch.dict(os.environ, env, clear=True):
-            rs._require_stripe_webhook_secret_if_needed()
 
 
-def test_a_restricted_key_detects_an_account_from_the_other_key_space():
-    """P26-4 refuses a transfer to an `acct_` from the other key space, because
-    the two namespaces are disjoint and the call is guaranteed to fail. It only
-    fires when both modes are *known* — correctly, since guessing would block
-    legitimate transfers — so a restricted key reporting "" disabled it.
-    """
-    from emporia.payments import stripe_account_mode_mismatch
-
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "rk_live_abc"}, clear=False):
-        assert stripe_account_mode_mismatch("test") is True
-        assert stripe_account_mode_mismatch("live") is False
-        assert stripe_account_mode_mismatch("") is False, "unknown stays unknown"
 
 
-def test_a_restricted_test_key_is_test_mode_at_the_registration_sites(client):
-    """P75: `rk_test_` fell into a gap where the relay treated it as neither
-    test nor live.
-
-    Two bare `startswith("sk_test_")` checks in the agent routes: registration
-    skipped auto-provisioning a Connect account, and then the onboarding route —
-    whose whole job is to say "you are in test mode, an account already
-    exists" — did not recognise the key either, and waved the operator into the
-    **live** onboarding flow holding a test key. Neither half of the pair
-    applied, which is worse than either being wrong alone.
-
-    Both now ask `stripe_key_mode()`. Safe for a different reason in each: the
-    provisioning block swallows its own exceptions, so a restricted key that
-    lacks account-creation permission fails exactly as a non-test key does
-    today; and the onboarding route only chooses which message to return.
-
-    The auto-confirm branch is deliberately NOT widened — see
-    test_test_mode_capabilities_stay_gated_on_a_full_secret_key, which caught
-    this pass trying to.
-    """
-    import uuid
-
-    agent = "p75_" + uuid.uuid4().hex[:6]
-    _register(client, agent)
-
-    for key in ("sk_test_full_not_real", "rk_test_restricted_not_real"):
-        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": key}, clear=False):
-            r = client.post(f"/agents/{agent}/stripe-onboarding", json={},
-                            headers={"x-emporia-agent-id": agent})
-            assert r.status_code == 400, f"{key} must be refused as test mode"
-            assert "test mode" in r.json()["detail"], (
-                f"{key} is test mode and the refusal must say so — got "
-                f"{r.json()['detail']!r}"
-            )
 
 
-def test_test_mode_capabilities_stay_gated_on_a_full_secret_key():
-    """The distinction the fix must not lose: **mode is not capability.**
-
-    A `rk_test_` key is test *mode*, but a restricted key may not carry the
-    permissions these branches need. They stay gated on `sk_test_` on purpose,
-    so the relay does not attempt a call a restricted key cannot make and then
-    report the 403 as a payment failure.
-
-    **Correction (P75): one of the two reasons this test gave was stale.** It
-    described auto-confirming a PaymentIntent as a `test_helpers` route. It is
-    not, and has not been since P46 — that pass found the invented
-    `/v1/test_helpers/payment_intents/{id}/confirm` path and moved it to the
-    ordinary `/v1/payment_intents/{id}/confirm`. So the gate rests on
-    permissions alone now, not on the endpoint family. It still holds: a
-    restricted key may lack `payment_intents:write`, and this branch is not
-    wrapped in a swallow, so a 403 would reach the caller as a payment failure.
-
-    Minting an SPT is the genuine `test_helpers` case and needs no
-    qualification.
-
-    P75 widened the two *registration* sites (Connect auto-provision, and the
-    onboarding route's test-mode refusal) to `stripe_key_mode()`, which is safe
-    for a different reason in each: the first swallows its own exceptions, and
-    the second only chooses a message.
-    """
-    from pathlib import Path as _Path
-
-    payments_src = _Path("src/emporia/payments.py").read_text()
-    relay_src = _Path("src/emporia/relay_server.py").read_text()
-    assert 'if not key.startswith("sk_test_")' in payments_src, \
-        "the SPT test-helper route must still require a full test secret key"
-    assert 'stripe_secret_key().startswith("sk_test_")' in relay_src, \
-        "PaymentIntent auto-confirm must still require a full test secret key"
 
 
-def test_a_blocked_live_relay_is_told_every_way_out():
-    """P65: P62 widened the live-key refusal to restricted keys, which is
-    correct and immediately blocked a real relay — an `rk_live_` key with no
-    webhook secret, on a machine doing development.
-
-    The refusal stays: a live relay without the signing secret can never mark a
-    Connected Account payable, and that fails silently. What was wrong was the
-    message, written for full `sk_live_` production keys. An operator blocked by
-    this is usually not running production at all, and the two exits that fit
-    their case — use a test key, or drop Stripe entirely — were not mentioned.
-
-    Dropping Stripe is the one worth pinning: it is not obvious that unsetting
-    the key lets the relay start with rooms, Agoras, DMs and x402 intact.
-    """
-    from emporia import relay_server as rs
-
-    env = {k: v for k, v in os.environ.items() if k != "STRIPE_WEBHOOK_SECRET"}
-    env["STRIPE_SECRET_KEY"] = "rk_live_blocked"
-    with patch.dict(os.environ, env, clear=True):
-        with pytest.raises(RuntimeError) as excinfo:
-            rs._require_stripe_webhook_secret_if_needed()
-    message = str(excinfo.value)
-    for expected in ("sk_test_", "unset STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "rk_live_"):
-        assert expected in message, f"the refusal must name {expected!r}: {message}"
-
-    # And the no-Stripe exit has to actually work.
-    env = {k: v for k, v in os.environ.items()
-           if k not in ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET")}
-    with patch.dict(os.environ, env, clear=True):
-        rs._require_stripe_webhook_secret_if_needed()
 
 
 # ---------------------------------------------------------------------------
@@ -24938,7 +19252,6 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/.well-known/agent-card.json": "A2A descriptor, machine-facing",
     "/.well-known/agent.json": "A2A descriptor, machine-facing",
     "/relay-card": "relay descriptor for peers, machine-facing",
-    "/stripe-onboarding-return": "HTML landing page Stripe redirects a browser to",
     "/modules": "module registry; the session views name their module inline",
 
     # Agent-only by design, or nothing a human could read anyway.
@@ -25105,3 +19418,730 @@ def room_post_text(content: str) -> str:
     """The text of a room message's post body (rooms v2)."""
     from emporia import room_post
     return room_post.view("note", content)["text"]
+
+
+
+# ============================================================================
+# Restored after the card rail was removed: x402, entitlement and security checks that
+# only failed because of a Stripe mock or an MPP header.
+# ============================================================================
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_the_intent_retires_when_the_entitlement_it_bought_exists(
+    mock_verify, mock_settle, client,
+):
+    """The intent guards an unfinished purchase, so it has to stop guarding a
+    finished one. The entitlement is the retirement trigger because it is what
+    the payment bought: while it is absent the purchase is incomplete and the
+    intent must hold; once it exists the payment path isn't entered at all.
+
+    Without retirement the bug is a slow one and points the other way — a
+    re-purchase after the first entitlement expires would collide with the
+    settled intent and be handed free access, months later.
+    """
+    from emporia.relay_server import DB_LOCK, get_db
+
+    creator, payer = "p48_retire_creator", "p48_retire_payer"
+    _register_keyed(client, creator)
+    _register(client, payer)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
+    mock_verify.return_value = {"isValid": True}
+    mock_settle.return_value = {"success": True, "transaction": "0xretire"}
+
+    with patch.dict(os.environ, _P48_ENV, clear=False):
+        r = client.post("/rooms", json=_signed_room(creator, {
+            "name": "P48 Retire Room", "creator_id": creator,
+            "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+        }), headers={"x-emporia-agent-id": creator})
+        assert r.status_code == 200, r.text
+        room_id = r.json()["room_id"]
+
+        header = _x402_payment_signature_header(
+            {"scheme": "exact", "network": "eip155:84532", "amount": "1000000",
+             "asset": _P48_ENV["EMPORIA_X402_ASSET_EIP155_84532"],
+             "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+             "extra": {"name": "USDC", "version": "2"}},
+            {"signature": "0xsig", "authorization": {
+                "from": "0x" + "19" * 20, "nonce": "0x" + "0a" * 32,
+                "validBefore": str(int(time.time()) + 300)}},
+        )
+        join = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer, "PAYMENT-SIGNATURE": header})
+    assert join.status_code == 200, join.text
+
+    with DB_LOCK, get_db() as conn:
+        left = conn.execute(
+            "SELECT COUNT(*) AS n FROM x402_settle_intents WHERE resource_id = ?",
+            (room_id,),
+        ).fetchone()["n"]
+    assert left == 0, (
+        "a completed purchase must leave no intent behind — a stale settled "
+        "intent hands the next legitimate re-purchase free access"
+    )
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_the_crash_window_survives_a_real_join_request_not_just_a_direct_call(
+    mock_verify, mock_settle, client,
+):
+    """The same guarantee, driven through POST /rooms/{id}/join instead of
+    _verify_x402_payment() directly — because the direct call proves the
+    function is correct and says nothing about whether the route reaches it
+    with the arguments that make it correct. The intent is keyed on
+    (payer, resource, amount), and all three are threaded down from the route;
+    a wrong one there is invisible to every unit test above.
+
+    The crash is real rather than simulated at the seam: record_payment()
+    raises, which is precisely the window — settled at the facilitator,
+    unrecorded here — and the payer then retries the join exactly as they
+    would have to.
+    """
+
+    creator, payer = "p48_route_creator", "p48_route_payer"
+    _register_keyed(client, creator)
+    _register(client, payer)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
+    mock_verify.return_value = {"isValid": True}
+    mock_settle.return_value = {"success": True, "transaction": "0xroutefirst"}
+
+    def _credential(nonce: str) -> str:
+        return _x402_payment_signature_header(
+            {"scheme": "exact", "network": "eip155:84532", "amount": "1000000",
+             "asset": _P48_ENV["EMPORIA_X402_ASSET_EIP155_84532"],
+             "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+             "extra": {"name": "USDC", "version": "2"}},
+            {"signature": "0xsig", "authorization": {
+                "from": "0x" + "19" * 20, "nonce": nonce,
+                "validBefore": str(int(time.time()) + 300)}},
+        )
+
+    with patch.dict(os.environ, _P48_ENV, clear=False):
+        r = client.post("/rooms", json=_signed_room(creator, {
+            "name": "P48 Route Room", "creator_id": creator,
+            "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+        }), headers={"x-emporia-agent-id": creator})
+        assert r.status_code == 200, r.text
+        room_id = r.json()["room_id"]
+
+        with patch("emporia.relay_server.record_payment",
+                   side_effect=RuntimeError("process killed")):
+            with pytest.raises(RuntimeError):
+                client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+                    headers={"x-emporia-agent-id": payer,
+                             "PAYMENT-SIGNATURE": _credential("0x" + "0b" * 32)})
+
+        mock_settle.return_value = {"success": True, "transaction": "0xroutesecond"}
+        retry = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer,
+                     "PAYMENT-SIGNATURE": _credential("0x" + "0c" * 32)})
+
+    assert retry.status_code == 200, retry.text
+    assert mock_settle.call_count == 1, (
+        "the retry after the crash must resume the settled purchase, not buy it "
+        f"a second time — /settle was called {mock_settle.call_count} times"
+    )
+
+    from emporia.relay_server import DB_LOCK, get_db
+    with DB_LOCK, get_db() as conn:
+        paid = conn.execute(
+            "SELECT payment_intent_id FROM payments WHERE agent_id = ? AND room_id = ?",
+            (payer, room_id),
+        ).fetchall()
+    assert [r["payment_intent_id"] for r in paid] == ["0xroutefirst"], (
+        "exactly one payment, recorded against the transaction that actually "
+        f"moved the money; got {[dict(r) for r in paid]}"
+    )
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_the_x402_intent_retires_when_the_retry_finishes_the_purchase(
+    mock_verify, mock_settle, client,
+):
+    """The half of the window P48 named and could not close from its own side.
+
+    P48 retires the intent when the entitlement exists, because the entitlement
+    is what the payment bought. A crash at the grant therefore stranded the
+    intent in `settled` forever: the entitlement never appeared, the retry
+    short-circuited on membership, and nothing else retires intents. A stuck
+    settled intent is not inert — it is what a *later* legitimate re-purchase
+    of the same resource collides with, and being handed free access months
+    later is the same defect inverted and slower.
+
+    Driven through the route on the x402 rail so the intent is real, and the
+    crash is at the grant rather than simulated at the seam.
+    """
+    from emporia import entitlements
+    from emporia.relay_server import DATABASE_PATH, DB_LOCK, get_db
+
+    creator, payer = "p50_x402_creator", "p50_x402_payer"
+    _register_keyed(client, creator)
+    _register(client, payer)
+    __import__("conftest").give_wallet(creator, "evm", "0x" + "aa" * 20)
+    mock_verify.return_value = {"isValid": True}
+    mock_settle.return_value = {"success": True, "transaction": "0xp50first"}
+
+    def _credential(nonce: str) -> str:
+        return _x402_payment_signature_header(
+            {"scheme": "exact", "network": "eip155:84532", "amount": "1000000",
+             "asset": _P48_ENV["EMPORIA_X402_ASSET_EIP155_84532"],
+             "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+             "extra": {"name": "USDC", "version": "2"}},
+            {"signature": "0xsig", "authorization": {
+                "from": "0x" + "19" * 20, "nonce": nonce,
+                "validBefore": str(int(time.time()) + 300)}},
+        )
+
+    with patch.dict(os.environ, _P48_ENV, clear=False):
+        r = client.post("/rooms", json=_signed_room(creator, {
+            "name": "P50 x402 Room", "creator_id": creator,
+            "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+            "access_duration_days": 30,
+        }), headers={"x-emporia-agent-id": creator})
+        assert r.status_code == 200, r.text
+        room_id = r.json()["room_id"]
+
+        with patch.object(entitlements, "grant", side_effect=RuntimeError("relay died mid-grant")):
+            with pytest.raises(RuntimeError):
+                client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+                    headers={"x-emporia-agent-id": payer,
+                             "PAYMENT-SIGNATURE": _credential("0x" + "5a" * 32)})
+
+        with DB_LOCK, get_db() as conn:
+            stuck = conn.execute(
+                "SELECT status FROM x402_settle_intents WHERE payer_id=? AND resource_id=?",
+                (payer, room_id),
+            ).fetchall()
+        assert [i["status"] for i in stuck] == ["settled"], (
+            f"precondition: the settled intent is stranded by the crash, got "
+            f"{[dict(i) for i in stuck]}"
+        )
+
+        retry = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer,
+                     "PAYMENT-SIGNATURE": _credential("0x" + "5b" * 32)})
+        assert retry.status_code == 200, retry.text
+
+    assert mock_settle.call_count == 1, (
+        f"one purchase reaches /settle once; it was called {mock_settle.call_count}x"
+    )
+    assert entitlements.has_access("room", room_id, payer, db_path=DATABASE_PATH), (
+        "the retry must leave the payer holding the 30-day entitlement they bought"
+    )
+    with DB_LOCK, get_db() as conn:
+        left = conn.execute(
+            "SELECT 1 FROM x402_settle_intents WHERE payer_id=? AND resource_id=?",
+            (payer, room_id),
+        ).fetchall()
+    assert left == [], (
+        "the entitlement exists, so the intent guarding that purchase must be "
+        "retired — a stuck settled intent hands the payer's next genuine "
+        "re-purchase of this room free access"
+    )
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_x402_room_join_settlement_is_non_custodial_direct_no_fee(mock_verify, mock_settle, client):
+    """P1b-6: an x402-paid room join records a settlement with
+    platform_fee_cents=0, winner_payout_cents == the full amount,
+    platform_fee_bps=0, transfer_id=None, transfer_status="direct" — and
+    the relay transfers nothing: the payer paid the payee directly."""
+    owner = "p1b6_owner"
+    payer = "p1b6_payer"
+    _register_keyed(client, owner)
+    _register(client, payer)
+
+    wallet = client.post(f"/agents/{owner}/x402-wallet",
+        json=__import__("conftest").signed_wallet_body(owner, "evm", "0x" + "dd" * 20),
+        headers={"x-emporia-agent-id": owner})
+    assert wallet.status_code == 200, wallet.text
+
+    r = client.post("/rooms", json=_signed_room(owner, {
+        "name": "P1b-6 Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 400,
+    }),
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    mock_verify.return_value = {"isValid": True, "payer": "0x" + "cc" * 20}
+    mock_settle.return_value = {"success": True, "transaction": "0xp1b6_tx", "network": "eip155:8453"}
+
+    header = _x402_payment_signature_header({
+        "scheme": "exact", "network": "eip155:8453", "amount": "4000000",
+        "asset": "0xUSDCFAKE", "payTo": "0x" + "dd" * 20, "maxTimeoutSeconds": 300,
+        "extra": _X402_EXTRA,
+    })
+
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer, "PAYMENT-SIGNATURE": header})
+    assert resp.status_code == 200, resp.text
+
+    from emporia.relay_server import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT platform_fee_cents, winner_payout_cents, platform_fee_bps, "
+            "transfer_id, transfer_status, rail FROM settlements WHERE session_id=?",
+            (room_id,),
+        ).fetchone()
+    assert row is not None
+    assert row["rail"] == "x402"
+    assert row["platform_fee_cents"] == 0
+    assert row["winner_payout_cents"] == 400
+    assert row["platform_fee_bps"] == 0
+    assert row["transfer_id"] is None
+    assert row["transfer_status"] == "direct"
+
+
+def test_room_join_402_is_plain_when_x402_unconfigured(client):
+    """P1b-4: x402 disabled (the default — no env vars set) must produce the
+    exact same 402 body/headers as before this pass: no "x402" body key, no
+    PAYMENT-REQUIRED header, no WWW-Authenticate. This is the
+    item's whole contract — a client that has never heard of x402 must see
+    zero difference."""
+    owner = "p1b4_off_owner"
+    payer = "p1b4_off_payer"
+    _register_keyed(client, owner)
+    _register(client, payer)
+
+    r = client.post("/rooms", json=_signed_room(owner, {
+        "name": "P1b-4 Off Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+    }),
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    with patch.dict(os.environ, {}, clear=False):
+        # explicitly ensure x402 reads as unconfigured regardless of the ambient environment
+        os.environ.pop("EMPORIA_X402_ENABLED", None)
+        resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer})
+
+    assert resp.status_code == 402, resp.text
+    body = resp.json()
+    assert set(body.keys()) == {"error", "message", "amount_cents", "resource", "protocol"}
+    assert body["resource"] == f"emporia:room:{room_id}"
+    assert body["protocol"] == "emporia:v1"
+    header_names = {k.lower() for k in resp.headers.keys()}
+    assert "payment-required" not in header_names
+    assert "www-authenticate" not in header_names
+
+
+def test_room_join_402_offers_x402_when_configured(client):
+    """P1b-4: with x402 enabled and the creator holding a wallet for a
+    configured network, the 402 gains a nested "x402" body key and a
+    PAYMENT-REQUIRED header carrying the same payload base64-encoded — every
+    existing MPP field stays untouched alongside it (both rails, one 402).
+    Also pins the atomic-unit conversion: entry_fee_cents=250 ($2.50) at
+    USDC's 6 decimals is "2500000" atomic units, not "250" or "2.50"."""
+    import base64 as _b64
+    import json as _json
+
+    owner = "p1b4_on_owner"
+    payer = "p1b4_on_payer"
+    _register_keyed(client, owner)
+    _register(client, payer)
+
+    wallet = client.post(f"/agents/{owner}/x402-wallet",
+        json=__import__("conftest").signed_wallet_body(owner, "evm", "0x" + "cd" * 20),
+        headers={"x-emporia-agent-id": owner})
+    assert wallet.status_code == 200, wallet.text
+
+    r = client.post("/rooms", json=_signed_room(owner, {
+        "name": "P1b-4 On Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+    }),
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    with patch.dict(os.environ, {
+        **_X402_ENV,
+    }, clear=False):
+        resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer})
+
+    assert resp.status_code == 402, resp.text
+    body = resp.json()
+    # the plain 402 fields
+    assert body["resource"] == f"emporia:room:{room_id}"
+    assert body["protocol"] == "emporia:v1"
+    assert body["amount_cents"] == 250
+
+    x402_body = body["x402"]
+    assert x402_body["x402Version"] == 2
+    assert x402_body["resource"] == {"url": f"emporia:room:{room_id}"}
+    assert x402_body["accepts"] == [{
+        "scheme": "exact",
+        "network": "eip155:8453",
+        "amount": "2500000",
+        "asset": "0xUSDCFAKE",
+        "payTo": "0x" + "cd" * 20,
+        "maxTimeoutSeconds": 300,
+        # P45: without this the entry is well-formed and unsignable — an
+        # `exact`-EVM payer has nowhere else to read the EIP-712 domain from.
+        "extra": _X402_EXTRA,
+    }]
+
+    header_names = {k.lower(): k for k in resp.headers.keys()}
+    assert "payment-required" in header_names, "PAYMENT-REQUIRED header must be present when x402 is offered"
+    decoded = _json.loads(_b64.urlsafe_b64decode(
+        resp.headers[header_names["payment-required"]] + "=="
+    ))
+    assert decoded == x402_body, "PAYMENT-REQUIRED header must carry the same payload as body['x402']"
+    assert "www-authenticate" not in header_names
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_x402_credential_declined_explicitly_when_x402_disabled(mock_verify, mock_settle, client):
+    """P1br-1: a real gap in P1b-5 — the x402 branch used to route on the
+    header's mere presence with no _x402_enabled() check, so a disabled
+    relay still tried to verify and 402'd three layers down on an unrelated
+    mismatch. Now: a
+    PAYMENT-SIGNATURE header submitted while x402 is disabled is declined
+    explicitly (never routed into _verify_x402_payment at all — proven by
+    mock.assert_not_called(), not just the eventual response), and the
+    decline still carries the ordinary MPP headers so the agent can retry
+    with a method this relay actually supports. Not "fall through to
+    Stripe silently" — the payer explicitly chose x402; the relay doesn't
+    get to override that choice."""
+    owner = "p1br1_off_owner"
+    payer = "p1br1_off_payer"
+    _register_keyed(client, owner)
+    _register(client, payer)
+
+    r = client.post("/rooms", json=_signed_room(owner, {
+        "name": "P1br-1 Off Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+    }),
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    header = _x402_payment_signature_header({
+        "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
+        "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+        "extra": _X402_EXTRA,
+    })
+
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("EMPORIA_X402_ENABLED", None)
+        resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer, "PAYMENT-SIGNATURE": header})
+
+    assert resp.status_code == 402, resp.text
+    body = resp.json()
+    assert "x402 payment declined" in body["message"]
+    assert "not enabled" in body["message"]
+    assert "x402" not in body, "nothing to offer — the x402 body key must be absent, not empty"
+    assert body["declined"] == {"rail": "x402", "reason": "x402_disabled"}
+    header_names = {k.lower() for k in resp.headers.keys()}
+    assert "www-authenticate" not in header_names
+    assert "payment-required" not in header_names
+    mock_verify.assert_not_called()
+    mock_settle.assert_not_called()
+
+
+@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
+@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
+def test_x402_credential_declined_explicitly_when_creator_has_no_wallet(mock_verify, mock_settle, client):
+    """P1br-1: x402 enabled relay-wide, but this creator never registered a
+    payout wallet. The credential must be declined explicitly (the same
+    merged-402 shape, re-advertising the Stripe MPP fallback), not routed
+    into _verify_x402_payment's generic requirement-mismatch path — that
+    path produces a flat HTTPException detail body with no MPP headers,
+    which would leave the agent with no visible way to retry."""
+    owner = "p1br1_nowallet_owner"
+    payer = "p1br1_nowallet_payer"
+    _register_keyed(client, owner)
+    _register(client, payer)
+    # no wallet registered for owner
+
+    r = client.post("/rooms", json=_signed_room(owner, {
+        "name": "P1br-1 No Wallet Room", "creator_id": owner,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 250,
+    }),
+        headers={"x-emporia-agent-id": owner})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+
+    header = _x402_payment_signature_header({
+        "scheme": "exact", "network": "eip155:8453", "amount": "2500000",
+        "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
+        "extra": _X402_EXTRA,
+    })
+
+    with patch.dict(os.environ, _X402_ENV, clear=False):
+        resp = client.post(f"/rooms/{room_id}/join", json={"agent_id": payer},
+            headers={"x-emporia-agent-id": payer, "PAYMENT-SIGNATURE": header})
+
+    assert resp.status_code == 402, resp.text
+    body = resp.json()
+    assert "x402 payment declined" in body["message"]
+    assert "x402" not in body
+    assert body["declined"] == {"rail": "x402", "reason": "no_payout_wallet"}
+    header_names = {k.lower() for k in resp.headers.keys()}
+    assert "www-authenticate" not in header_names
+    mock_verify.assert_not_called()
+    mock_settle.assert_not_called()
+
+
+def test_known_rails_widens_to_include_x402():
+    """P1b-3: the second rail P3's seam was built for. KNOWN_RAILS must widen
+    to exactly {x402, tempo} — no accidental third value (the card rail was removed)."""
+    from emporia.payments import RAIL_TEMPO, RAIL_X402, KNOWN_RAILS
+
+    assert RAIL_X402 == "x402"
+    # P156 added the third deliberately: Tempo, paid straight to the payee.
+    assert KNOWN_RAILS == frozenset({RAIL_X402, RAIL_TEMPO})
+
+
+def test_request_context_logs_unhandled_exception_preserving_500_shape(caplog):
+    """A genuine unhandled exception (not an HTTPException -- those are handled
+    responses, not exceptions from request_context's point of view) must still
+    produce Starlette's ordinary 500, and the middleware's own logger.exception
+    call must carry a request_id distinguishing it from any other in-flight
+    request. Uses raise_server_exceptions=False since the default TestClient
+    behavior is to re-raise, per Starlette's own ServerErrorMiddleware contract
+    (see the request_context docstring in relay_server.py)."""
+    from emporia import relay_server
+
+    tc = TestClient(app, client=("127.0.0.1", 51216), raise_server_exceptions=False)
+    with patch.object(relay_server, "_payment_rails", side_effect=RuntimeError("boom")):
+        with caplog.at_level(logging.ERROR, logger="emporia.relay"):
+            r1 = tc.get("/health")
+            r2 = tc.get("/health")
+    assert r1.status_code == 500
+    assert r2.status_code == 500
+    exc_records = [
+        rec for rec in caplog.records
+        if rec.name == "emporia.relay" and rec.message == "unhandled_error"
+    ]
+    assert len(exc_records) == 2, caplog.records
+    assert exc_records[0].exception_type == "RuntimeError"
+    rid1, rid2 = exc_records[0].request_id, exc_records[1].request_id
+    assert rid1 != "-" and rid2 != "-"
+    assert rid1 != rid2
+    assert exc_records[0].exc_info is not None
+    # P22: known, structural limitation (documented in relay_server.py) --
+    # Starlette's ServerErrorMiddleware builds this response *outside* every
+    # app.add_middleware()-registered layer, so X-Request-Id never reaches it.
+    assert "x-request-id" not in r1.headers
+
+
+def test_agent_profile_requires_authentication_and_names_no_payment_account(prod_client):
+    """Regression for N4-3 (N4 review R2): GET /agents/{id} had no `request` param at
+    all — the exact primitive N3-3 gated GET /agents for ("the enumeration primitive"),
+    one route over, and returning strictly more per-agent data than that now-gated list
+    endpoint, including the raw Stripe Connect account id. Confirms unauthenticated ->
+    401, authenticated -> 200, and that stripe_account_id is gone from the response
+    shape entirely regardless of auth (has_stripe already answers the real question)."""
+    _register_keyed(prod_client, "n43_profile_owner")
+
+    r = prod_client.get("/agents/n43_profile_owner")
+    assert r.status_code == 401
+
+    r = prod_client.get(
+        "/agents/n43_profile_owner", headers=bearer_for(prod_client, "n43_profile_owner")
+    )
+    assert r.status_code == 200
+    assert not {"stripe_account_id", "has_stripe", "payment_methods"} & set(r.json())
+
+
+def test_agent_sdk_join_room_surfaces_402_detail_via_payment_required_error():
+    """P8-2: join_room() had the same gap join_session() did before P7-2 —
+    a bare resp.raise_for_status() on a 402, discarding the challenge body
+    (error/message/amount_cents/resource/protocol).
+    mcp_server.join_room() already returns this as `detail` (:775). Simpler
+    scenario than the x402 one above — a plain unpaid join against a
+    gate_type:"paid" room is enough to hit the 402 and exercises the common
+    case, not just the x402-declined edge. Must fail pre-fix (bare
+    HTTPStatusError, no .detail) and pass post-fix. Also pins that
+    PaymentRequiredError stays catchable as httpx.HTTPStatusError, so an
+    existing caller catching that broad type keeps working unchanged."""
+    import asyncio
+
+    import httpx as httpx_module
+
+    from emporia.agent_sdk import EmporiaAgent, PaymentRequiredError
+    from emporia.identity import get_public_key_hex
+    from emporia.relay_server import app as relay_app
+
+    def _wired(agent_id: str) -> EmporiaAgent:
+        a = EmporiaAgent(
+            relay_url="http://testserver", agent_id=agent_id,
+            public_key_hex=get_public_key_hex(agent_id),
+        )
+        a._http = httpx_module.AsyncClient(
+            transport=httpx_module.ASGITransport(app=relay_app), base_url="http://testserver",
+        )
+        return a
+
+    async def scenario():
+        owner = _wired("p8_2_sdk_room_owner")
+        joiner = _wired("p8_2_sdk_room_joiner")
+        try:
+            await owner.register()
+            await joiner.register()
+
+            room = await owner.create_room(
+                name="P8-2 SDK Wire Room", room_type="private",
+                gate_type="paid", entry_fee_cents=250,
+            )
+            room_id = room["room_id"]
+
+            with pytest.raises(PaymentRequiredError) as exc_info:
+                await joiner.join_room(room_id, "p8_2_sdk_room_joiner")
+
+            assert isinstance(exc_info.value, httpx_module.HTTPStatusError)
+            assert exc_info.value.detail["resource"] == f"emporia:room:{room_id}"
+            assert exc_info.value.detail["amount_cents"] == 250
+        finally:
+            await owner._http.aclose()
+            await joiner._http.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_room_gate_type_naming_a_rail_is_rejected_paid_is_the_spelling(client):
+    """P3-1: `gate_type` used to bake a rail name into an agent-facing enum
+    ('card_payment') — actively wrong once a second rail exists, since a
+    room paid for over x402 would not be a "card_payment" room. Renamed to
+    'paid', breaking, no alias (explicit user decision — no backward
+    compatibility needed for this rename). The old spelling must now 400,
+    not silently normalize or keep working. Must fail pre-fix: pre-rename
+    code accepts 'card_payment' and rejects 'paid'."""
+    _register_keyed(client, "p3_gate_owner")
+
+    old_spelling = client.post("/rooms", json=_signed_room("p3_gate_owner", {
+        "name": "Old Spelling Room", "creator_id": "p3_gate_owner",
+        "room_type": "private", "gate_type": "card_payment", "entry_fee_cents": 100,
+    }),
+        headers={"x-emporia-agent-id": "p3_gate_owner"})
+    assert old_spelling.status_code == 400, old_spelling.text
+    assert "paid" in old_spelling.json()["detail"], \
+        f"error message must name the current spelling — got {old_spelling.json()['detail']!r}"
+
+    new_spelling = client.post("/rooms", json=_signed_room("p3_gate_owner", {
+        "name": "New Spelling Room", "creator_id": "p3_gate_owner",
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 100,
+    }),
+        headers={"x-emporia-agent-id": "p3_gate_owner"})
+    assert new_spelling.status_code == 200, new_spelling.text
+    assert new_spelling.json()["gate_type"] == "paid"
+
+    # gate_type='paid' still requires a positive entry fee — the rename must not
+    # have loosened this validation.
+    no_fee = client.post("/rooms", json=_signed_room("p3_gate_owner", {
+        "name": "No Fee Paid Room", "creator_id": "p3_gate_owner",
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 0,
+    }),
+        headers={"x-emporia-agent-id": "p3_gate_owner"})
+    assert no_fee.status_code == 400, no_fee.text
+
+
+def test_delete_session_operator_deletes_terminal_session_retains_money_rows(client):
+    """P4-5: the core cascade-delete contract. A completed session's
+    participants/actions/messages/sessions rows are hard-deleted, but its
+    payments and settlements rows — the record that real money moved — are
+    retained and reported, never deleted. Also confirms one audit line is
+    appended recording the deletion."""
+    from emporia.relay_server import (
+        DATABASE_PATH, load_session, record_action, record_payment, record_settlement,
+    )
+
+    _register(client, "p4_5_full_creator")
+    _register(client, "p4_5_full_seller")
+    _register(client, "p4_5_full_op")
+
+    r = client.post("/sessions", json={
+        "module_type": "emporia:service:v1", "creator_agent_id": "p4_5_full_creator",
+        "config": {"description": "d"}, "payment_rules": {"mode": "free"},
+    },
+        headers={"x-emporia-agent-id": "p4_5_full_creator"})
+    session_id = r.json()["session_id"]
+    client.post(
+        f"/sessions/{session_id}/join", json={"agent_id": "p4_5_full_seller"},
+        headers={"x-emporia-agent-id": "p4_5_full_seller"},
+    )
+    # Written directly rather than through POST .../action — that endpoint's
+    # signature/turn-order requirements are a different test's job; this test
+    # only needs one real actions row to prove the cascade deletes it.
+    record_action(session_id, "p4_5_full_creator", "note", {})
+
+    record_payment(
+        payment_intent_id=f"pi_{session_id}", agent_id="p4_5_full_creator",
+        amount_cents=100, payment_type="stake", session_id=session_id, rail="x402",
+    )
+    record_settlement({
+        "session_id": session_id, "winner_id": "p4_5_full_seller", "outcome_type": "won",
+        "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
+        "winner_payout_cents": 100, "platform_fee_bps": 0,
+        "payment_intent_ids": [f"pi_{session_id}"], "transfer_id": None,
+        "transfer_status": "direct",
+    })
+
+    import sqlite3
+    from datetime import UTC, datetime
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.execute(
+        "UPDATE sessions SET status='completed', updated_at=? WHERE session_id=?",
+        (datetime.now(UTC).isoformat(), session_id),
+    )
+    conn.commit()
+    conn.close()
+    assert load_session(session_id)["status"] == "completed"
+
+    before = _p4_5_query_counts(session_id)
+    assert before["participants"] == 2
+    assert before["actions"] == 1
+    assert before["payments"] == 1
+    assert before["settlements"] == 1
+
+    import glob
+    from emporia.relay_server import LOG_DIR
+    audit_files_before = set(glob.glob(str(LOG_DIR / "messages_*.jsonl")))
+    audit_lines_before = sum(
+        1 for f in audit_files_before for _ in open(f, encoding="utf-8")
+    )
+
+    with patch.dict(os.environ, {**_op_env("p4_5_full_op")}):
+        r = client.delete(
+            f"/admin/sessions/{session_id}", headers={"x-emporia-agent-id": "p4_5_full_op"},
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["deleted"]["sessions"] == 1
+    assert body["deleted"]["participants"] == 2
+    assert body["deleted"]["actions"] == 1
+    assert body["retained"] == {"payments": 1, "settlements": 1}
+
+    after = _p4_5_query_counts(session_id)
+    assert after["participants"] == 0
+    assert after["actions"] == 0
+    assert after["sessions"] == 0
+    assert after["payments"] == 1, "payments must never be deleted"
+    assert after["settlements"] == 1, "settlements must never be deleted"
+    assert load_session(session_id) is None
+
+    audit_files_after = set(glob.glob(str(LOG_DIR / "messages_*.jsonl")))
+    audit_lines_after = sum(
+        1 for f in audit_files_after for _ in open(f, encoding="utf-8")
+    )
+    assert audit_lines_after == audit_lines_before + 1, (
+        "exactly one new audit line must be appended for the deletion — "
+        "no existing audit lines rewritten or removed"
+    )
+    last_line = json.loads(
+        open(sorted(audit_files_after)[-1], encoding="utf-8").readlines()[-1]
+    )
+    assert last_line["type"] == "admin_session_deleted"
+    assert last_line["session_id"] == session_id
+    assert last_line["operator"] == "p4_5_full_op"

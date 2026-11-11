@@ -245,58 +245,6 @@ def test_the_installer_generates_the_profile_key_where_the_mcp_server_signs_from
     assert len(bytes.fromhex(pub_hex)) == 32
 
 
-def test_an_agent_profile_never_gets_the_relays_stripe_settings(tmp_path, monkeypatch):
-    """P107: create_profile() copied the relay's STRIPE_SECRET_KEY (live, on the
-    deployment that found this), STRIPE_PROFILE_ID and STRIPE_API_VERSION into
-    every agent profile. An agent reads none of them — it pays through the relay
-    with an SPT or its x402 wallet — so they are never written, and an existing
-    agent profile that has them loses them on the next run."""
-    import yaml
-
-    for k in ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID", "STRIPE_API_VERSION"):
-        monkeypatch.delenv(k, raising=False)
-    relay = tmp_path / "profiles" / "relay_profile"
-    agent = tmp_path / "profiles" / "agent_one"
-    for d in (relay, agent):
-        d.mkdir(parents=True)
-    relay_secrets = ("STRIPE_SECRET_KEY=sk_live_relay_only\nSTRIPE_PROFILE_ID=profile_relay\n"
-                     "STRIPE_API_VERSION=2026-04-22.preview\nOPENROUTER_API_KEY=or-shared\n")
-    (relay / ".env").write_text(relay_secrets)
-    (relay / "config.yaml").write_text(yaml.dump({"env": {"STRIPE_SECRET_KEY": "sk_live_relay_only"}}))
-    (agent / "config.yaml").write_text(yaml.dump({"env": {"STRIPE_SECRET_KEY": "sk_live_old_copy",
-                                                          "STRIPE_PROFILE_ID": "profile_old"}}))
-    (agent / ".env").write_text("STRIPE_SECRET_KEY=sk_live_old_copy\n")
-    monkeypatch.setattr(installer, "install_platform_plugin", lambda *a, **k: None)
-    monkeypatch.setattr(installer, "_install_skill_link", lambda *a, **k: None)
-
-    import os
-    from unittest.mock import patch
-
-    # create_profile() exports EMPORIA_AGENT_ID & co. into this process for the
-    # installer's later steps; patch.dict puts the suite's environment back.
-    with patch.dict(os.environ):
-        installer.create_profile(name="agent_one", relay_url="http://127.0.0.1:8088",
-                                 current_profile_dir=relay)
-
-    env_text = (agent / ".env").read_text()
-    config_env = yaml.safe_load((agent / "config.yaml").read_text())["env"]
-    for k in ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID", "STRIPE_API_VERSION"):
-        assert f"{k}=" not in env_text, k
-        assert k not in config_env, k
-    assert "sk_live" not in env_text + yaml.dump(config_env)
-    assert config_env["EMPORIA_AGENT_ID"] == "agent_one"
-    assert "or-shared" not in env_text, "no credential is inherited from the person's profile"
-    assert "OPENROUTER_API_KEY" not in config_env, "P201: secrets only in the .env"
-    assert oct((agent / ".env").stat().st_mode)[-3:] == "600" == oct((agent / "config.yaml").stat().st_mode)[-3:]
-
-
-def _jwt(exp: float) -> str:
-    import base64
-    import json as _json
-    body = base64.urlsafe_b64encode(_json.dumps({"exp": int(exp)}).encode()).decode().rstrip("=")
-    return f"h.{body}.s"
-
-
 def test_the_operator_label_is_given_reused_or_minted(tmp_path, monkeypatch):
     """The installer resolves one operator label per agent profile: the one given; else the profile's own;
     else one an Emporia profile under the same Hermes root holds (one person's agents share it); else a new
@@ -329,7 +277,7 @@ def test_each_agent_profile_shares_the_relay_but_owns_its_identity(tmp_path, mon
     """P109: one relay, separate identities. create_profile() built the MCP
     entry without the profile dir, so it carried no key dir or .env; Hermes
     gives an MCP server only that `env`, and the server then loaded the .env
-    beside its code — the relay profile's keys and Stripe secret."""
+    beside its code — the relay profile's keys and secrets."""
     import os
     from unittest.mock import patch
 
@@ -393,9 +341,9 @@ def test_emporia_dotenv_names_the_only_env_file_loaded(tmp_path, monkeypatch):
 
 def test_re_running_the_installer_keeps_the_operators_own_env_lines(tmp_path):
     """P115: create_profile() wrote the .env whole, dropping anything added by
-    hand. Managed keys are replaced, other lines kept, relay Stripe keys never."""
+    hand. Managed keys are replaced, other lines kept."""
     env = tmp_path / ".env"
-    env.write_text("# my note\nMY_OWN=1\nEMPORIA_AGENT_ID=old\nSTRIPE_SECRET_KEY=sk_live_x\n")
+    env.write_text("# my note\nMY_OWN=1\nEMPORIA_AGENT_ID=old\n")
     merged = installer._merge_profile_env(env, ["EMPORIA_AGENT_ID=alpha", "EMPORIA_RELAY_URL=u"])
     assert merged == ["EMPORIA_AGENT_ID=alpha", "EMPORIA_RELAY_URL=u", "# my note", "MY_OWN=1"]
     assert installer._merge_profile_env(tmp_path / "absent.env", ["A=1"]) == ["A=1"]
@@ -441,13 +389,13 @@ def test_a_new_profile_gets_the_model_when_asked_and_never_a_key(tmp_path, monke
 
     import yaml
 
-    for k in ("OPENROUTER_API_KEY", "STRIPE_SECRET_KEY", "ANTHROPIC_API_KEY", "NOUS_API_KEY", "SOME_TOKEN"):
+    for k in ("OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "NOUS_API_KEY", "SOME_TOKEN"):
         monkeypatch.delenv(k, raising=False)
     relay = tmp_path / "profiles" / "relay_profile"
     relay.mkdir(parents=True)
     (relay / "config.yaml").write_text(yaml.dump({"model": {
         "provider": "openrouter", "default": "deepseek/deepseek-v4-flash-0731"}}))
-    (relay / ".env").write_text("OPENROUTER_API_KEY=sk-or-test\nSTRIPE_SECRET_KEY=sk_live_x\n"
+    (relay / ".env").write_text("OPENROUTER_API_KEY=sk-or-test\n"
                                 "ANTHROPIC_API_KEY=sk-ant-unrelated\nSOME_TOKEN=tok\nNOUS_API_KEY=nk\n")
     _quiet_installer(monkeypatch)
     for name, sync in (("kept_bare", False), ("fresh_agent", True)):
@@ -457,7 +405,7 @@ def test_a_new_profile_gets_the_model_when_asked_and_never_a_key(tmp_path, monke
             installer.create_profile(name=name, relay_url="http://127.0.0.1:8088",
                                      current_profile_dir=relay, sync_model=sync)
         dotenv = (agent / ".env").read_text()
-        for secret in ("sk-or-test", "sk_live_x", "sk-ant-unrelated", "tok", "nk"):
+        for secret in ("sk-or-test", "sk-ant-unrelated", "tok", "nk"):
             assert secret not in dotenv, (name, secret)
         names = {ln.split("=", 1)[0] for ln in dotenv.splitlines() if "=" in ln}
         assert not [n for n in names if n.endswith(("_API_KEY", "_TOKEN", "_SECRET_KEY"))], names
@@ -610,21 +558,21 @@ def test_the_emporia_command_is_linked_onto_path_once(tmp_path, monkeypatch):
 
 def test_setting_up_the_relays_own_profile_keeps_the_relays_settings(tmp_path, monkeypatch):
     """P217: `emporia setup agent hackathon_hermes` — the relay's own profile, set up as
-    an agent — dropped the relay's Stripe key: the rule for *other* agents applied."""
+    an agent — dropped the relay's settings: the rule for *other* agents applied."""
     import os
     from unittest.mock import patch
     relay = tmp_path / "profiles" / "relayhost"
     relay.mkdir(parents=True)
-    (relay / ".env").write_text("STRIPE_SECRET_KEY=sk_test_relay_keeps\nSTRIPE_PROFILE_ID=profile_test_x\n")
-    (relay / "config.yaml").write_text(yaml.dump({"env": {"STRIPE_SECRET_KEY": "sk_test_relay_keeps"}}))
+    (relay / ".env").write_text("EMPORIA_OPERATOR_PRIVATE_KEY=0xrelay_keeps\nEMPORIA_FEE_BPS=50\n")
+    (relay / "config.yaml").write_text(yaml.dump({"env": {"EMPORIA_OPERATOR_PRIVATE_KEY": "0xrelay_keeps"}}))
     monkeypatch.setattr(installer, "install_platform_plugin", lambda *a, **k: None)
     monkeypatch.setattr(installer, "_install_skill_link", lambda *a, **k: None)
     monkeypatch.setattr(installer, "_hermes_profile_create", lambda name: None)
     with patch.dict(os.environ):
         installer.create_profile(name="relayhost", relay_url="http://127.0.0.1:8088", current_profile_dir=relay)
     env_text = (relay / ".env").read_text()
-    assert "STRIPE_SECRET_KEY=sk_test_relay_keeps" in env_text and "STRIPE_PROFILE_ID=profile_test_x" in env_text
-    assert "sk_test" not in (relay / "config.yaml").read_text()          # still never in config.yaml
+    assert "EMPORIA_OPERATOR_PRIVATE_KEY=0xrelay_keeps" in env_text and "EMPORIA_FEE_BPS=50" in env_text
+    assert "0xrelay_keeps" not in (relay / "config.yaml").read_text()          # still never in config.yaml
 
 
 def test_every_dependency_install_takes_the_x402_extra():

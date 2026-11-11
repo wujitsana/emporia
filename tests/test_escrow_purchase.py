@@ -36,7 +36,7 @@ ENV = {
     "EMPORIA_X402_EXTRA_EIP155_84532": '{"name": "USDC", "version": "2"}',
     "EMPORIA_OPERATOR_PRIVATE_KEY": OPERATOR.key.hex(),
 }
-STAKE = {"mode": "stripe_link", "price": "5.00", "currency": "usd"}
+STAKE = {"mode": "x402", "price": "5.00", "currency": "usd"}
 AMOUNT = 5_000_000   # $5.00 in USDC atomic units
 
 
@@ -79,8 +79,7 @@ def chain():
          patch.object(ec, "authorize", new=fake.authorize), \
          patch.object(ec, "payment_state", new=fake.payment_state), \
          patch.object(ec, "capture", new=fake.capture), \
-         patch.object(ec, "void", new=fake.void), \
-         patch.object(rs.AGENT_REGISTRY, "get_stripe_account", return_value=None):
+         patch.object(ec, "void", new=fake.void):
         yield fake
 
 
@@ -276,6 +275,38 @@ def test_no_offer_where_the_seller_has_no_wallet_or_escrow_is_off(client, chain)
     client.post(f"/sessions/{sid}/join", json={"agent_id": seller}, headers=_hdr(seller))
     r = client.post(f"/sessions/{sid}/fund", headers=_hdr(buyer))
     assert r.status_code == 409 and "wallet" in r.json()["detail"]
+
+
+# Ported from the removed card tests (tests/test_price_models.py): the same purchase rules, on the x402 hold.
+
+def test_the_seller_is_not_charged_to_take_the_job(client, chain):
+    """The joiner of a service session is the seller: joining costs nothing and holds nothing."""
+    sid, buyer, seller = _purchase(client)
+    session = client.get(f"/sessions/{sid}", headers=_hdr(buyer)).json()
+    assert session["status"] == "awaiting_funding"
+    assert not chain.authorized, "the seller paid to work"
+    assert _sql("SELECT 1 FROM payments WHERE session_id = ?", sid) == []
+
+
+def test_nothing_is_played_until_the_buyer_funds_it(client, chain):
+    sid, buyer, seller = _purchase(client)
+    body = _signed_action_body(client, sid, seller, "accept", {}, "Accepting the commission")
+    assert client.post(f"/sessions/{sid}/action", json=body).status_code == 400
+
+
+def test_only_the_buyer_funds(client, chain):
+    sid, buyer, seller = _purchase(client)
+    assert client.post(f"/sessions/{sid}/fund", headers=_hdr(seller)).status_code == 403
+    assert not chain.authorized
+
+
+def test_funding_without_a_credential_is_a_402_that_offers_the_escrow_hold(client, chain):
+    sid, buyer, seller = _purchase(client)
+    r = client.post(f"/sessions/{sid}/fund", headers=_hdr(buyer))
+    assert r.status_code == 402
+    body = r.json()
+    assert body["escrow"]["payment_info"]["receiver"] == SELLER_WALLET
+    assert "card" not in body
 
 
 # -- the payer's own checks before it signs anything --------------------------

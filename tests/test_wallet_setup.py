@@ -81,12 +81,11 @@ def test_mainnet_is_locked_until_unlocked(wallet_env):
 def test_a_402_lists_its_options_in_words():
     resp = MagicMock(headers={})
     detail = {**_challenge(BASE, SOL), "tempo": {"network": "eip155:42431"},
-              "card": {"offered": False, "reason": "no Stripe account"}}
+              }
     options = mcp_server._payment_options(detail, resp)
-    assert options[0] == "card: not offered here (no Stripe account)"
-    assert "USDC on Base Sepolia (testnet)" in options[1] and f"pay_network='{BASE}'" in options[1]
-    assert "Solana devnet" in options[2]
-    assert "Tempo Moderato" in options[3] and "pay_with_tempo=True" in options[3]
+    assert "USDC on Base Sepolia (testnet)" in options[0] and f"pay_network='{BASE}'" in options[0]
+    assert "Solana devnet" in options[1]
+    assert "Tempo Moderato" in options[2] and "pay_with_tempo=True" in options[2]
     escrow = mcp_server._payment_options({"escrow": {"network": BASE}}, MagicMock(headers={}))
     assert escrow == ["USDC escrow hold on Base Sepolia (testnet): pay_with_x402=True"]
 
@@ -556,22 +555,7 @@ def test_a_string_that_is_not_a_key_is_not_offered(profiles, monkeypatch, tmp_pa
     assert cli.byo_candidates(root / "x") == []
 
 
-# -- P169: Stripe and the overview ------------------------------------------------
-
-def test_setup_stripe_writes_the_key_from_an_env_var_and_never_prints_it(profiles, monkeypatch, capsys):
-    _, op = profiles
-    monkeypatch.setenv("MY_STRIPE", "sk_test_" + "k" * 24)
-    assert cli.main(["setup", "stripe", "--stripe-key-env", "MY_STRIPE",
-                     "--stripe-profile-id", "profile_test_x"]) == 0
-    env = _env_of(op)
-    assert env["STRIPE_SECRET_KEY"] == "sk_test_" + "k" * 24 and env["STRIPE_PROFILE_ID"] == "profile_test_x"
-    out = capsys.readouterr().out
-    assert "k" * 24 not in out and "Accounts v1" in out
-    monkeypatch.setenv("NOT_STRIPE", "hello")
-    assert cli.main(["setup", "stripe", "--stripe-key-env", "NOT_STRIPE"]) == 0
-    assert "not a Stripe secret key" in capsys.readouterr().out
-    assert _env_of(op)["STRIPE_SECRET_KEY"] == "sk_test_" + "k" * 24, "unchanged"
-
+# -- the overview ------------------------------------------------
 
 def test_the_overview_lists_every_component_and_reads_only(profiles, capsys):
     root, op = profiles
@@ -580,7 +564,7 @@ def test_the_overview_lists_every_component_and_reads_only(profiles, capsys):
     before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
     assert cli.main(["setup"]) == 0
     out = capsys.readouterr().out
-    for part in ("Relay", "USDC payments", "Escrow holds", "Cards (Stripe)", "Federation", "Risky switches",
+    for part in ("Relay", "USDC payments", "Escrow holds", "Federation", "Risky switches",
                  "phi", "marketplace", "Emporia tab", "On-chain limits"):
         assert part in out, part
     ahead = out.split("Not available yet")[1].split("The full guide")[0]
@@ -1059,8 +1043,8 @@ def test_relay_config_shows_checks_and_writes_settings(tmp_path, monkeypatch, ca
     assert run("set", "EMPORIA_RELAY_ACCESS", "wide-open") == 1
     assert run("set", "FEDERATED_RELAYS", "https://b.example/,https://c.example") == 0
     assert _env_of(folder)["FEDERATED_RELAYS"] == "https://b.example,https://c.example"
-    assert run("set", "STRIPE_SECRET_KEY", "sk_live_x") == 1                  # never on the command line
-    assert "type it hidden" in capsys.readouterr().out and "sk_live_x" not in _env_of(folder).values()
+    assert run("set", "EMPORIA_OPERATOR_PRIVATE_KEY", "0xdeadbeef") == 1                  # never on the command line
+    assert "type it hidden" in capsys.readouterr().out and "0xdeadbeef" not in _env_of(folder).values()
     assert run("set", "NOT_A_SETTING", "x") == 1
     assert run("unset", "EMPORIA_FEE_BPS") == 0 and "EMPORIA_FEE_BPS" not in _env_of(folder)
     assert run("show") == 0
@@ -1084,32 +1068,30 @@ def test_a_docker_relays_secret_is_a_file_typed_hidden(tmp_path, monkeypatch, ca
     from emporia import relay_host as rh
     folder = tmp_path / "docker-relay"
     rh.write_files(folder, tmp_path, "")
-    (folder / ".env").write_text("STRIPE_SECRET_KEY=sk_test_old\n")
+    (folder / ".env").write_text("EMPORIA_OPERATOR_PRIVATE_KEY=0xold\n")
     monkeypatch.setattr(cli, "_TTY", True)
-    monkeypatch.setattr("getpass.getpass", lambda *a, **k: "sk_test_new")
-    assert cli.main(["relay", "config", "set", "STRIPE_SECRET_KEY", "--dir", str(folder)]) == 0
-    secret = folder / "secrets" / "STRIPE_SECRET_KEY"
-    assert secret.read_text().strip() == "sk_test_new" and oct(secret.stat().st_mode)[-3:] == "600"
-    assert "STRIPE_SECRET_KEY" not in _env_of(folder)                     # the old copy is gone
-    assert "sk_test_new" not in capsys.readouterr().out
-    monkeypatch.setattr("getpass.getpass", lambda *a, **k: "not-a-key")
-    assert cli.main(["relay", "config", "set", "STRIPE_WEBHOOK_SECRET", "--dir", str(folder)]) == 1
-    assert cli.main(["relay", "config", "unset", "STRIPE_SECRET_KEY", "--dir", str(folder)]) == 0
+    monkeypatch.setattr("getpass.getpass", lambda *a, **k: "0xnewkey")
+    assert cli.main(["relay", "config", "set", "EMPORIA_OPERATOR_PRIVATE_KEY", "--dir", str(folder)]) == 0
+    secret = folder / "secrets" / "EMPORIA_OPERATOR_PRIVATE_KEY"
+    assert secret.read_text().strip() == "0xnewkey" and oct(secret.stat().st_mode)[-3:] == "600"
+    assert "EMPORIA_OPERATOR_PRIVATE_KEY" not in _env_of(folder)                     # the old copy is gone
+    assert "0xnewkey" not in capsys.readouterr().out
+    assert cli.main(["relay", "config", "unset", "EMPORIA_OPERATOR_PRIVATE_KEY", "--dir", str(folder)]) == 0
     assert not secret.exists()
     assert "./secrets:/run/secrets:ro" in (folder / "compose.yaml").read_text()
 
 
 def test_the_relay_reads_secrets_from_files_and_the_environment_wins(tmp_path, monkeypatch):
     from emporia import config
-    (tmp_path / "STRIPE_SECRET_KEY").write_text("sk_test_from_file\n")
-    (tmp_path / "STRIPE_WEBHOOK_SECRET").write_text("whsec_file\n")
+    (tmp_path / "EMPORIA_OPERATOR_PRIVATE_KEY").write_text("0xfrom_file\n")
     monkeypatch.setenv("EMPORIA_SECRETS_DIR", str(tmp_path))
-    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_env")
-    assert config.load_secret_files() == ["STRIPE_SECRET_KEY"]
+    monkeypatch.delenv("EMPORIA_OPERATOR_PRIVATE_KEY", raising=False)
+    assert config.load_secret_files() == ["EMPORIA_OPERATOR_PRIVATE_KEY"]
     import os
-    assert os.environ["STRIPE_SECRET_KEY"] == "sk_test_from_file" and os.environ["STRIPE_WEBHOOK_SECRET"] == "whsec_env"
-    monkeypatch.delenv("STRIPE_SECRET_KEY")
+    assert os.environ["EMPORIA_OPERATOR_PRIVATE_KEY"] == "0xfrom_file"
+    monkeypatch.setenv("EMPORIA_OPERATOR_PRIVATE_KEY", "0xfrom_env")
+    assert config.load_secret_files() == [] and os.environ["EMPORIA_OPERATOR_PRIVATE_KEY"] == "0xfrom_env"
+    monkeypatch.delenv("EMPORIA_OPERATOR_PRIVATE_KEY")
 
 
 def test_the_relay_drops_root_only_when_asked_and_only_as_root():

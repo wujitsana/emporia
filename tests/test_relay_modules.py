@@ -8,8 +8,7 @@ from emporia import cli, features, relay_modules as rm
 from emporia import relay_server as rs
 
 _SWITCHES = ("EMPORIA_TRANSPARENCY_LOG", "EMPORIA_GAMIFY", "EMPORIA_FEDERATED_DMS", "EMPORIA_X402_ENABLED",
-             "EMPORIA_ESCROW_NETWORK", "EMPORIA_TEMPO_NETWORK", "STRIPE_SECRET_KEY", "EMPORIA_CUSTODIAL_CARDS",
-             "EMPORIA_RELAY_ACCESS")
+             "EMPORIA_ESCROW_NETWORK", "EMPORIA_TEMPO_NETWORK", "EMPORIA_RELAY_ACCESS")
 
 
 @pytest.fixture
@@ -28,13 +27,12 @@ def test_the_core_alone_runs_no_module(core):
 def test_each_module_is_on_when_its_settings_say_so(core):
     core.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
     core.setenv("EMPORIA_GAMIFY", "sheets,quests")
-    core.setenv("STRIPE_SECRET_KEY", "sk_test_x")
     ads = rm.advertise(["https://peer.example"])
     assert ads["log"] == {"v": 1, "parts": []}
     assert ads["gamify"]["parts"] == ["quests", "sheets"] and ads["gamify"]["formulas"]
-    assert ads["money"]["parts"] == ["cards"] and ads["money"]["cards"] == "test"
+    assert "money" not in ads
     assert ads["federation"] == {"v": 1, "parts": [], "links": ["https://peer.example"]}
-    assert rm.describe(ads) == "money (cards) · log · federation · gamify (quests, sheets)"
+    assert rm.describe(ads) == "log · federation · gamify (quests, sheets)"
 
 
 def test_a_part_without_its_dependency_is_off_and_the_relay_refuses_to_start(core):
@@ -52,11 +50,10 @@ def test_a_part_without_its_dependency_is_off_and_the_relay_refuses_to_start(cor
 
 def test_half_set_up_money_and_federation_are_refused_by_name(core):
     core.setenv("EMPORIA_X402_ENABLED", "1")            # no facilitator, no network
-    core.setenv("EMPORIA_CUSTODIAL_CARDS", "1")         # no Stripe key
     core.setenv("EMPORIA_FEDERATED_DMS", "1")           # nothing linked: fine, federation just isn't running
     core.setenv("EMPORIA_GAMIFY", "sheets,raids")
     wrong = "\n".join(rm.problems())
-    for said in ("EMPORIA_X402_ENABLED is on", "EMPORIA_CUSTODIAL_CARDS is on", "no part called raids"):
+    for said in ("EMPORIA_X402_ENABLED is on", "no part called raids"):
         assert said in wrong
     assert "money" not in rm.running() and "no relay is linked" not in wrong
 
@@ -88,7 +85,7 @@ def test_agents_see_only_the_tools_their_relays_serve():
     # a module's tools show when any relay it uses runs it — home or a visit
     both = rm.tools_to_hide([{"log": {"parts": []}}, {"money": {"parts": ["x402", "escrow"]}}])
     assert not both & {"register_x402_wallet", "reclaim_escrow"}
-    assert {"create_payment_intent", "my_quests"} <= both
+    assert "my_quests" in both
 
 
 def test_every_tool_a_module_names_is_a_real_tool():

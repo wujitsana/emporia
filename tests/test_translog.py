@@ -101,7 +101,7 @@ def test_a_later_state_is_consistent_with_an_earlier_one(client):
 
 
 def test_a_payment_goes_in_as_a_commitment_its_holder_can_find(client):
-    pay = rs.record_payment("pi_tl_1", "tl-payer", 250, "room_entry", room_id="room_tl", rail="stripe")
+    pay = rs.record_payment("pi_tl_1", "tl-payer", 250, "room_entry", room_id="room_tl", rail="x402")
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute("SELECT * FROM payments WHERE payment_id = ?", (pay["payment_id"],)).fetchone()
         c = translog.commitment_for(conn, "payment", pay["payment_id"], {k: row[k] for k in translog.PAYMENT_FIELDS})
@@ -236,7 +236,7 @@ def test_a_relay_used_without_a_log_starts_one_with_everything_it_holds(tmp_path
         CREATE TABLE payments (payment_id, agent_id, amount_cents, currency, payment_type, session_id, room_id,
                                rail, created_at);""")
     conn.execute("INSERT INTO agora_topics VALUES ('t1', 'old', 'Old', '', 'public', 'a', '2026-01-01')")
-    conn.execute("INSERT INTO payments VALUES ('pay1', 'a', 5, 'usd', 'room_entry', NULL, 'r', 'stripe', '2026-01-03')")
+    conn.execute("INSERT INTO payments VALUES ('pay1', 'a', 5, 'usd', 'room_entry', NULL, 'r', 'x402', '2026-01-03')")
     translog.init_schema(conn)                          # the log arrives on a relay months old
     state = translog.sign_state(conn, lambda b: "sig", "ab" * 32)
     kinds = sorted(e["record"]["kind"] for e in translog.entries(conn, 0, limit=1000))
@@ -249,7 +249,7 @@ def test_turned_off_the_relay_logs_nothing_and_says_so(client, monkeypatch):
     monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "off")
     with rs.DB_LOCK, rs.get_db() as conn:
         before = translog.size(conn)
-    rs.record_payment("pi_tl_off", "tl-payer", 100, "room_entry", room_id="room_tl", rail="stripe")
+    rs.record_payment("pi_tl_off", "tl-payer", 100, "room_entry", room_id="room_tl", rail="x402")
     assert rs.sign_log_state() is None
     with rs.DB_LOCK, rs.get_db() as conn:
         assert translog.size(conn) == before
@@ -324,7 +324,7 @@ def test_a_row_taking_a_removed_rows_rowid_is_still_logged(tmp_path):
 def test_a_refund_is_a_new_entry_not_a_silent_edit(tmp_path):
     conn = _fresh_log(tmp_path, "CREATE TABLE payments (payment_id, agent_id, amount_cents, currency, payment_type, "
                                 "session_id, room_id, rail, status, created_at);")
-    conn.execute("INSERT INTO payments VALUES ('pay1', 'a', 500, 'usd', 'room_entry', NULL, 'r', 'stripe', "
+    conn.execute("INSERT INTO payments VALUES ('pay1', 'a', 500, 'usd', 'room_entry', NULL, 'r', 'x402', "
                  "'confirmed', 'now')")
     translog.fold_all(conn)
     first = translog.size(conn)
@@ -411,7 +411,7 @@ def test_a_row_saved_again_by_replace_is_one_record_that_changed_or_did_not(tmp_
 
 def test_a_renamed_agent_is_the_old_record_gone_and_a_new_one(tmp_path):
     conn = _fresh_log(tmp_path, "CREATE TABLE authorized_agents (agent_id TEXT PRIMARY KEY, public_key_hex, stable_id, "
-                                "display_name, is_active, x402_pay_to_json, stripe_account_id, encryption_public_key, "
+                                "display_name, is_active, x402_pay_to_json, encryption_public_key, "
                                 "encryption_key_signature, accepts_remote_dms, relay_list_json, x402_pay_to_proofs_json);")
     conn.execute("INSERT INTO authorized_agents (agent_id, public_key_hex, stable_id) VALUES ('old_name', 'k', 's')")
     translog.fold_all(conn)

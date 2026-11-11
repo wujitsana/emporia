@@ -104,7 +104,7 @@ def test_every_setting_it_names_is_read_by_the_code_or_is_in_the_readme_table():
     bad = []
     for doc in _docs():
         for tok in _tokens(doc):
-            if re.fullmatch(r"(EMPORIA|STRIPE)_[A-Z0-9_<>]+", tok):
+            if re.fullmatch(r"EMPORIA_[A-Z0-9_<>]+", tok):
                 name = tok.split("<")[0]
                 if f"`{tok}`" not in readme and name not in _code():
                     bad.append(f"{doc.name}: {tok}")

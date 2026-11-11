@@ -24,8 +24,8 @@ def _chunks(total: int, size: int = 64 * 1024):
         yield b"a" * n
 
 
-def test_chunked_body_over_the_limit_is_413_on_the_unauthenticated_webhook():
-    r = _client().post("/webhooks/stripe", content=_chunks(MAX_REQUEST_BYTES * 4))
+def test_chunked_body_over_the_limit_is_413_on_an_unauthenticated_route():
+    r = _client().post("/agents/register", content=_chunks(MAX_REQUEST_BYTES * 4))
     assert r.status_code == 413, r.status_code
     assert "too large" in r.json()["detail"]
 
@@ -37,7 +37,7 @@ def test_chunked_body_over_the_limit_is_413_on_any_post():
 
 
 def test_chunked_body_under_the_limit_still_reaches_the_handler():
-    r = _client().post("/webhooks/stripe", content=_chunks(2048))
+    r = _client().post("/agents/register", content=_chunks(2048))
     assert r.status_code != 413, r.status_code
 
 
