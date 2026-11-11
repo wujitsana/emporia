@@ -15,12 +15,12 @@ export function postSpec(post: PostCardData, opts: { showTopic?: boolean; onOpen
   const who = `${post.author}${post.tag ? ` (${post.tag})` : ""}`;
   return {
     key: post.post_id,
-    meta: `post${showTopic && topic ? ` · ${clip(topic, 28)}` : ""}`,
+    meta: "",
     at: post.at,
     chip: post.kind === "other" ? "OTHER" : (post.kind || "post").toUpperCase(),
     head: postHead(post),
     body: post.sealed ? "Sealed to the members of this topic: the relay cannot read it." : post.text,
-    caption: who,
+    caption: showTopic && topic ? `${who} · ${clip(topic, 28)}` : who,
     agent: post.author,
     foot: [plural(post.replies, "reply", "replies"), plural(post.likes, "like")].join(" · "),
     onOpen: opts.onOpen,

@@ -206,6 +206,11 @@ describe("Home", () => {
     expect(captions).toContain("bob · ideas");
     expect(heads).toContain("GAME DONE");
     expect(captions).toContain("carol · chess");
+    // the cards are grouped under slim labels, empty groups are not drawn, and a topic name appears once on a post card
+    const groups = [...now.querySelectorAll(".e-hgroup__label")].map((e) => e.textContent);
+    expect(groups).toEqual(["For you", "Games", "Posts", "Topics & rooms"]);
+    const idea = [...now.querySelectorAll(".e-hcard")].find((c) => c.textContent?.includes("a fresh idea"))!;
+    expect((idea.textContent?.match(/ideas/g) ?? []).length).toBe(1);
     const standing = screen.getByRole("region", { name: "Standing" });
     expect(standing.querySelector(".e-hstrip__figure .e-sr")?.textContent).toBe("LEVEL 2 → 3");
     expect(standing.querySelector("[role=progressbar]")).toBeTruthy();

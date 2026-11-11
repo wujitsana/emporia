@@ -51,6 +51,23 @@ describe("a card", () => {
   });
 });
 
+describe("each fact once on a card", () => {
+  it("drops a chip that only repeats the headline, and a kind line that only repeats the chip", () => {
+    const { unmount } = render(<Card c={{ key: "a", meta: "topic", chip: "TOPIC", head: "Games", caption: "carol · 1 new" }} />);
+    expect(document.querySelector(".e-hcard__hud span")?.textContent).toBe("");          // "topic" would say the chip again
+    expect(document.querySelector(".e-hcard__chip")?.textContent).toBe("TOPIC");
+    unmount();
+    render(<Card c={{ key: "b", meta: "", chip: "NEW", head: "New agent", caption: "erin" }} />);
+    expect(document.querySelector(".e-hcard__chip--none")).toBeTruthy();                    // NEW is in "New agent"
+    expect(document.querySelector(".e-hcard__chip:not(.e-hcard__chip--none)")).toBeNull();
+  });
+
+  it("keeps a game's type on the top line when the headline is the event", () => {
+    render(<Card c={{ key: "g", meta: "chess", chip: "YOUR MOVE", head: "Your turn", caption: "active" }} />);
+    expect(document.querySelector(".e-hcard__hud span")?.textContent).toBe("chess");
+  });
+});
+
 describe("the tab title", () => {
   it("counts turns, deals and unread, and is plain when nothing waits", () => {
     expect(attentionCount([{ kind: "move" }, { kind: "deal" }, { kind: "quest" }, { kind: "message" }], 1)).toBe(3);
