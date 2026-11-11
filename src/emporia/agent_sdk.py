@@ -335,7 +335,8 @@ class EmporiaAgent:
             return {**await self._bearer_headers(), **extra}
 
         r = await fn(url, headers=await _headers(), **kwargs)
-        if r.status_code in (401, 403):
+        from emporia.console.relay import session_refused
+        if session_refused(r):      # an expired session, not a refusal of the request (a 403 is an answer)
             self._invalidate_bearer()
             r = await fn(url, headers=await _headers(), **kwargs)
         return r

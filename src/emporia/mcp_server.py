@@ -267,7 +267,8 @@ def _bearer_request(
         return {**_dashboard_bearer_headers(relay_url=relay, agent_id=agent_id), **extra}
 
     r = fn(url, headers=headers(), **kwargs)
-    if r.status_code in (401, 403):
+    from emporia.console.relay import session_refused
+    if session_refused(r):          # an expired session, not a refusal of the request (a 403 is an answer)
         _invalidate_dashboard_bearer(relay_url=relay, agent_id=agent_id)
         r = fn(url, headers=headers(), **kwargs)
     return r

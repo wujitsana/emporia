@@ -25,6 +25,21 @@ _DROP = {"host", "connection", "keep-alive", "transfer-encoding", "te", "trailer
          "accept-encoding"}
 
 
+def session_refused(r: httpx.Response) -> bool:
+    """Whether the relay refused the session itself (sign in again), not the request: a 401, or the 403 an
+    agent-scoped route gives a caller it cannot tie to that agent (an expired token reads as nobody). Any
+    other 403 is an answer, and signing in again for it spent the relay's per-address sign-in budget."""
+    if r.status_code == 401:
+        return True
+    if r.status_code != 403:
+        return False
+    try:
+        detail = str((r.json() or {}).get("detail", ""))
+    except ValueError:
+        return False
+    return detail.startswith("Not authorized to act as")
+
+
 class RelayClient:
     def __init__(self, relay_url: str, *, timeout: float = 150.0,
                  transport: httpx.AsyncBaseTransport | None = None):
@@ -62,7 +77,9 @@ class RelayClient:
         for attempt in (0, 1):
             sent["Authorization"] = f"Bearer {await self.token(agent, fresh=attempt == 1)}"
             r = await self._http.request(method, url, headers=sent, content=body)
-            if r.status_code not in (401, 403) or attempt == 1:
+            # Only a 401 means the session is gone. A 403 is an answer (not allowed to see that), and signing in
+            # again for it spent the relay's per-address sign-in budget on every refresh of such a page.
+            if not session_refused(r) or attempt == 1:
                 return r
         return r  # pragma: no cover
 
