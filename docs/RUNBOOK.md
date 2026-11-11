@@ -113,7 +113,7 @@ emporia relay config                      # in a terminal: pick a setting, see i
 emporia relay config show                 # every setting, its value, now or at restart
 emporia relay config set EMPORIA_FEE_BPS 300
 emporia relay config unset EMPORIA_FEE_BPS
-emporia relay config --dir ~/emporia-relay   # a hosted relay's folder
+emporia relay config --dir ~/emporia-relay   # a hosted relay's folder (beside Hermes: its staging folder; the printed install line applies it)
 ```
 
 Who may use it and its members apply within seconds; everything else at the next restart (the
@@ -353,9 +353,13 @@ Only a person runs `emporia relay host`: the Emporia plugin blocks it, and `dock
 prints the steps, in order. Pick a front door: a Cloudflare Tunnel (a connector dials out; no port open) or Caddy on
 80 and 443. For the tunnel: create or reuse a tunnel, copy only the `eyJ...` token, point the public hostname at
 `http://emporia-relay:8088`, save the token (paste only the token, Enter, Ctrl-D; nothing echoes; never share it).
-For Caddy: an A record, ufw on 22, 80 and 443. Then uncomment the `include:` line in your Hermes compose file and run
-`docker compose up -d --build emporia-relay emporia-cloudflared` (or `emporia-caddy`); with `sudo docker compose`
-use `sudo HOME=$HOME docker compose ...`. Behind nginx or Traefik, set `EMPORIA_CLIENT_IP_HEADER` and
+For Caddy: an A record, ufw on 22, 80 and 443. Then add the installed snippet to `include:` in your Hermes compose file (absolute path) and run
+`sudo docker compose up -d --build emporia-relay emporia-cloudflared` (or `emporia-caddy`); the snippet needs no
+`HOME`. The relay's files live in `~/.emporia` on the host (settings, secrets, `data/`, the token), outside the Hermes
+folder: the wizard stages them in the profile and the first printed steps install them there and remove the copies.
+Change a setting later by editing `~/.emporia/.env` and `sudo docker compose restart emporia-relay`. A relay made
+before this layout: `emporia relay host --move-out --dir <its folder>` prints the move steps
+(deploy-relay.md, "Moving an existing relay out of the Hermes folder"). Behind nginx or Traefik, set `EMPORIA_CLIENT_IP_HEADER` and
 `EMPORIA_TRUSTED_PROXIES`. The relay container gets 1536 MB and 2 CPUs. Full steps, the Cloudflare settings and what is
 hardened: [deploy-relay.md](deploy-relay.md) section 9.
 

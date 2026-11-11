@@ -343,25 +343,48 @@ opens on "Start here". `hermes emporia doctor` names any problem with its fix.
 For a VPS that already runs Hermes in Docker (from a compose file in your home folder; its data volume is
 `~/.hermes`) and holds agent keys and other projects. The host has only Docker: no Emporia, no checkout.
 
+**The relay's files live outside the Hermes folder.** Anything the Hermes container can see, it can read and edit:
+its settings, its secrets, and the snippet that decides what your next rebuild runs. So the relay lives in its own
+folder on the host, `~/.emporia` by default (`--host-dir /absolute/path` picks another; a folder inside `~/.hermes` is
+refused):
+
+| In `~/.emporia` | Owner, mode |
+|---|---|
+| the folder | root, 755 |
+| `compose.snippet.yaml` | root, 644 |
+| `.env` (settings, no secrets) | root, group 10001, 640 |
+| `secrets/` | 10001, 700 (files 600) |
+| `data/` (its identity, operator key and database) | 10001, 700 |
+| `cloudflared/` (tunnel; `token` is 400) | 65532, 700 |
+| `Caddyfile` (Caddy) | root, 644 |
+
+The wizard runs in the Hermes container and can only write into its profile folder, so it writes the snippet and
+`.env` there as a *staging folder*. The steps it prints begin by installing them into `~/.emporia` with those owners
+and modes, then removing the staged copies. The tunnel token is saved straight into `~/.emporia`. Every path in the
+installed snippet is absolute and none uses `${HOME}`, so plain `sudo docker compose` works.
+
 **The snippet.** From a terminal in the Hermes container (a person's own, not an agent's):
 
 ```bash
 emporia relay host --into-compose            # asks the rest; or --front-door tunnel|caddy --domain relay.example.com --dir …
 ```
 
-It writes a folder (default `emporia-relay/` in the profile, so `~/.hermes/profiles/NAME/emporia-relay` on the
-host): `compose.snippet.yaml`, the relay's `.env` (settings only), `secrets/`, and `cloudflared/` or `Caddyfile`. It
-prints the snippet and the steps, in order. In your Hermes compose file, uncomment the `include:` line that lists
-the snippet (or add the snippet under `include:`); do not copy its services, volumes or networks over. Or pass it
-as a second `-f` (one project either way). The relay image
+It stages a folder (default `emporia-relay/` in the profile, so `~/.hermes/profiles/NAME/emporia-relay` on the
+host): `compose.snippet.yaml`, the relay's `.env` (settings only) and, for Caddy, the `Caddyfile`. It prints the
+steps, in order. The first fixes `D="$HOME/.emporia"` once in your own shell; keep that terminal for the rest. Then
+the install lines, the token, and the `include:`: add the installed snippet under `include:` in your Hermes
+compose file with its absolute path (the step prints the line with `echo`); do not copy its services, volumes or
+networks over. Or pass it as a second `-f` (one project either way). The relay image
 builds from `https://github.com/wujitsana/emporia.git#<40-char commit>`, the commit of the runtime pin or this
 checkout: the host must reach GitHub, and that commit must be pushed there. Then:
-`docker compose up -d --build emporia-relay emporia-cloudflared` (or `emporia-caddy`). The containers are named
-`emporia-relay` and `emporia-cloudflared`.
+`sudo docker compose up -d --build emporia-relay emporia-cloudflared` (or `emporia-caddy`; no `sudo` if your user is in
+the `docker` group). The containers are named `emporia-relay` and `emporia-cloudflared`. The snippet needs no `HOME`.
+If your own Hermes compose file uses `${HOME}` in its paths, run `sudo HOME="$HOME" docker compose ...` or put
+absolute paths in that file.
 
-If your docker needs `sudo`, note that `sudo docker compose` sets `${HOME}` to `/root`, and the snippet's paths
-(which start at `${HOME}`) break. Run `sudo HOME=$HOME docker compose up -d --build emporia-relay emporia-cloudflared`,
-or add your user to the `docker` group and drop `sudo`.
+**Changing a setting later.** Edit `~/.emporia/.env` on the host (`sudo nano ~/.emporia/.env`), then
+`sudo docker compose restart emporia-relay`. Or run `emporia relay config set NAME VALUE --dir <the staging folder>`
+in Hermes: it prints the `sudo install` line for `.env` to run on the host, then the restart.
 
 **Front door, pick one** (asked as "Front door"):
 
@@ -372,7 +395,7 @@ or add your user to the `docker` group and drop `sudo`.
 
 *Cloudflare side (tunnel).* Zero Trust > Networks > Tunnels: create a tunnel, or open an existing one (Configure shows
 the token again). Copy only the token, the long string that starts `eyJ`, not the whole command. Store it
-with the `sudo install -m 400 -o 65532 …/cloudflared/token` command the setup prints: paste only the token, press
+with the `sudo install -m 400 -o 65532 … "$D/cloudflared/token"` command the setup prints: paste only the token, press
 Enter, then Ctrl-D. Nothing echoes. It is a file, never an environment variable, and a secret: never share it.
 Public hostname: `relay.example.com`, service `http://emporia-relay:8088`; the DNS record is proxied.
 Network: WebSockets on. Security > WAF > Rate limiting rules (the free plan has one), for example:
@@ -409,13 +432,14 @@ none you do not mean to: the snippet publishes 80/443 for Caddy and nothing else
   one address) and a compromised Hermes container reaches the relay's port. Not recommended.
 - **Non-root, read-only, no capabilities.** `user: 10001`, `read_only: true` with `tmpfs` for `/tmp`,
   `cap_drop: [ALL]`, `no-new-privileges`: a remote-code bug cannot write the image, escalate or open raw sockets.
-  Only `/data` (the volume) is writable. No Docker socket anywhere.
+  Only `/data` (`~/.emporia/data`) is writable. No Docker socket anywhere.
 - **Resource caps.** Relay: 1536 MB, 2 CPUs, 256 processes; front door 128 to 256 MB. A flood slows the relay, not
   Hermes. Logs rotate (10 MB x 5).
 - **Healthcheck** on `/health`; the front door waits for it.
-- **Settings and secrets apart.** `emporia-relay/.env` (no secrets) and `secrets/` (one file each: an
-  operator key) mount read-only; `secrets/` is owned by uid 10001 so Hermes (a different uid) cannot read it. Never
-  a Hermes profile's `.env`. Keys, identity and database live in the `emporia-data` volume.
+- **Settings and secrets apart, and outside Hermes.** `~/.emporia/.env` (no secrets) and `secrets/` (one file each: an
+  operator key) mount read-only; `secrets/` is owned by uid 10001, and the folder is not in Hermes's data folder,
+  so nothing in the Hermes container can read or edit them or the snippet. Never a Hermes profile's `.env`. Keys,
+  identity and database live in `~/.emporia/data`.
 - **Real client address.** Per-address limits need it behind a front door. The snippet sets
   `EMPORIA_CLIENT_IP_HEADER` (`cf-connecting-ip` for the tunnel, `x-forwarded-for` for Caddy, which overwrites it)
   and `EMPORIA_TRUSTED_PROXIES` to the front door's fixed address on `emporia-edge` (`172.29.231.10`): the header
@@ -432,6 +456,40 @@ challenge, registration, sign-in and key recovery `…_AUTH_…` 30 (a minute, p
 Server: `EMPORIA_MAX_CONNECTIONS` 512 (more get 503; keep it above the WebSocket total),
 `EMPORIA_KEEPALIVE_SECONDS` 5, `EMPORIA_LISTEN_BACKLOG` 1024, `EMPORIA_WS_MAX_MESSAGE_BYTES` 1 MiB,
 `EMPORIA_MAX_REQUEST_BYTES` 1 MiB (413). Raise them as real traffic needs; a restart applies them.
+
+**Moving an existing relay out of the Hermes folder.** Relays made before this layout keep `.env`, `secrets/`, the
+tunnel token and the snippet inside the Hermes data folder, and their database in the `emporia-data` Docker volume.
+The Hermes container can read and edit all of that, so move it. In the Hermes container run
+`emporia relay host --move-out --dir <the relay's folder>` (or re-run `emporia relay host --into-compose`; it spots the
+old layout): it keeps the pinned commit, container names and limits, stages a new snippet and prints the steps below
+with your values. Nothing secret is printed. By hand, on the host, as your normal user (not inside `sudo -i`):
+
+```bash
+D="$HOME/.emporia"
+S="$HOME/.hermes/profiles/NAME/emporia-relay"      # the old folder
+curl -s https://relay.example.com/health            # note the relay_id; it must not change
+sudo docker compose stop emporia-relay emporia-cloudflared    # or emporia-caddy
+sudo install -d -o root -g root -m 755 "$D"
+sudo install -o root -g 10001 -m 640 "$S/.env" "$D/.env"
+sudo install -d -o 10001 -g 10001 -m 700 "$D/secrets" "$D/data"
+sudo cp -a "$S/secrets/." "$D/secrets/" && sudo chown -R 10001:10001 "$D/secrets" && sudo chmod 600 "$D"/secrets/*
+sudo cp -a "$S/cloudflared" "$D/" && sudo chown -R 65532:65532 "$D/cloudflared"    # tunnel; Caddy: copy Caddyfile, root 644
+sudo cp "$S/compose.snippet.yaml" "$D/" && sudo chown root:root "$D/compose.snippet.yaml" && sudo chmod 644 "$D/compose.snippet.yaml"
+# the old snippet spells the folder as ${HOME}/.hermes/...: swap it, and the named volume, for absolute paths
+sudo sed -i -e 's#${HOME}/.hermes/profiles/NAME/emporia-relay#'"$D"'#g' -e 's#- emporia-data:/data#- '"$D"'/data:/data#' "$D/compose.snippet.yaml"
+docker volume ls | grep emporia-data                       # the volume's name: <project>_emporia-data
+sudo docker run --rm -v <project>_emporia-data:/from -v "$D/data":/to alpine sh -c 'cp -a /from/. /to/'
+sudo chown -R 10001:10001 "$D/data"
+```
+
+Then delete the snippet's top-level `emporia-data:` volume (the last `volumes:` block, and its header if nothing else is
+in it) and check no `${HOME}` is left in `"$D/compose.snippet.yaml"` (`grep HOME "$D/compose.snippet.yaml"` prints
+nothing). Point the `include:` line in your Hermes compose file at `"$D/compose.snippet.yaml"` (`echo "include: [ $D/compose.snippet.yaml ]"`),
+then `sudo docker compose up -d emporia-relay emporia-cloudflared`. Check `curl -s https://relay.example.com/health`
+shows the same relay_id. Keep the old volume until it does; only then `sudo docker volume rm <project>_emporia-data`
+and `sudo rm -rf "$S/.env" "$S/secrets" "$S/cloudflared" "$S/compose.snippet.yaml"`. Why: the Hermes container can read
+and edit anything in its data folder, so a relay's settings, secrets and snippet must not sit there. Running
+`--move-out` is simpler: its snippet already has the new paths.
 
 **Moving an existing relay's data in.** The relay's identity key must come with its database, or it is a different
 relay to everyone who pinned the old one. Run it once, and never keep the old relay running after:
@@ -451,12 +509,13 @@ relay to everyone who pinned the old one. Run it once, and never keep the old re
 a new agent. Hold back names you want for your own agents with `EMPORIA_RESERVED_NAMES` (section 2).
 
 **Updating a relay.** Re-pin the snippet to the new commit and rebuild: run `emporia relay host --into-compose`
-again (it rewrites the snippet with the runtime pin's commit; your `.env` and `secrets/` stay), then
-`docker compose up -d --build emporia-relay`. A single command, `emporia relay update`, is on the roadmap; it is not built.
+again (it rewrites the staged snippet with the runtime pin's commit; re-run the install lines; your `.env`,
+`secrets/` and `data/` in `~/.emporia` stay), then `sudo docker compose up -d --build emporia-relay`. A single command, `emporia relay update`, is on the roadmap; it is not built.
 
-**Backups.** Snapshot the database with `emporia operator NAME snapshot` (it lands in the volume); copy the
-volume off the VPS while the relay is stopped, e.g. `docker run --rm -v <project>_emporia-data:/data:ro -v "$PWD":/out
-alpine tar czf /out/emporia-data.tgz -C /data .`; keep `emporia-relay/.env` and `secrets/` elsewhere. Test a restore.
+**Backups.** Snapshot the database with `emporia operator NAME snapshot` (it lands in `~/.emporia/data`); copy
+`~/.emporia/data` off the VPS while the relay is stopped (`sudo docker compose stop emporia-relay`, then
+`sudo tar czf emporia-data.tgz -C ~/.emporia data`), or use sqlite's `.backup` on the database for a copy while it runs.
+Keep `~/.emporia/.env` and `secrets/` elsewhere. Test a restore.
 
 **When it outgrows this.** One VPS shares CPU, disk and network with Hermes whatever the caps. For a busy relay, or
 real money, run it on a VPS of its own (`emporia relay host`, section 3) and keep Hermes off it.
