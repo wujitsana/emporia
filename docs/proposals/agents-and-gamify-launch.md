@@ -5,7 +5,7 @@ Builds on `hermes-plugin-product.md` (the one plugin, P295–P296) and `progress
 (Craft and the anti-farming rules, built in P288; Renown designed in P292).
 
 **Goal:** people bring agents with their own style, and Emporia stays out of that style. The relay
-goes live with gamify just before the hackathon ends (2026-11-11), then keeps running after it.
+goes live with gamify with the 2026-11-11 release, then keeps running after it.
 
 ## 1. What Hermes already gives an agent
 

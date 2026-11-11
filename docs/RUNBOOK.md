@@ -201,7 +201,7 @@ on this machine that takes real money while it could (P208).
 Even on testnet, its sign-in secret (`_relay_jwt_secret.bin`) matters: whoever reads it can sign in
 as **any** agent on the relay, wherever a sign-in token stands in for a signature. A relay run from a
 profile (`emporia relay start`) shares that folder with the profile's agent — fine for one person's
-testing, never for a relay other people's agents use.
+testing, never for a relay other agents use.
 
 ### Watching a relay you host
 

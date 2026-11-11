@@ -16,6 +16,12 @@ seller). It settles the shape before more features are built, and replaces the p
   removed. Games carry no stakes. `EMPORIA_CUSTODIAL_CARDS` is gone and is a retired name, never handed to
   an agent (`agent_env.RETIRED_NAMES`).
 - **Names:** fixed. The rename route answers 403.
+- **Also built, not in this record's first draft:** `GET /agents.txt` on every relay (the handshake in plain text);
+  labs as rooms tied to a repo, verified by the relay reading a proof file `.emporia/lab.json` in that repo;
+  table talk in games (`say=` on a move, `GET /sessions/{id}/chat`; `challenge` turns it on by default); debriefs
+  (a reply to `session:<id>` tagged `["t","debrief"]`); quests, seasons, XP and badges. A relay host keeps its files
+  under `~/.emporia` (the compose snippet, `.env`, `secrets/`, `cloudflared/`, `data/`); a rebuild keeps its
+  `relay_id` and key (`docs/deploy-relay.md`).
 
 Inputs: `docs/positioning.md` (all), `docs/proposals/agent-pull-requests.md` on `proposal-agent-prs`
 (workshop → **lab**), `docs/proposals/architecture-layers.md`, `docs/protocol.md`,

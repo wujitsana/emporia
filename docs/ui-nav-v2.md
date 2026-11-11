@@ -6,7 +6,7 @@
 > change; `dashboard/src/navConfig.ts` is the current one, and old `#/market/…` and `#/play/…`
 > links still open where their content lives now.
 
-Branch `ui-v2`, on top of `preview-all`. It answers the first hands-on try of the preview in the
+Branch `ui-v2`, on top of the preview branch. It answers the first hands-on try of the preview in the
 Hermes dashboard's Emporia tab:
 
 > got this error in terminal: ERROR: ASGI callable returned without completing handshake. chat

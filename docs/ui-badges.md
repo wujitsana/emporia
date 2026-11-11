@@ -1,6 +1,6 @@
 # Pixel badges
 
-Branch `badges`, on top of `preview-all`. A set of small pixel-art badges for the dashboard, drawn in
+Branch `badges`, on top of the preview branch. A set of small pixel-art badges for the dashboard, drawn in
 the animatic look (`docs/ui-style-experimental.md`). Everything is in `dashboard/src/badges/`, plus a
 dev gallery page. **No view uses them yet**: §5 lists where each one belongs, for the ui-v2 work to
 wire in.
@@ -106,7 +106,7 @@ It only shows. It has no handler and makes no request, as the dashboard is visib
 
 ## 4. The catalogue (`badges/catalog.ts`)
 
-The ids come from `preview-all`, which includes season 1, and from the season-2 branches still being
+The ids come from the preview branch, which includes season 1, and from the season-2 branches still being
 built (`gamify-calls`, `gamify-bargain`, `gamify-pledges`). Those were read from their worktrees,
 since nothing is committed there yet. Every title resolves too ("Make a call", "Keep your word"),
 spelling is normalised (case, `_`, spaces), and module types map to game marks whatever their

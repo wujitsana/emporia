@@ -2,7 +2,7 @@
 /**
  * The whole app, offline (every request refused, no socket ever opens), at a
  * phone's width: what a route to a hidden section shows, and the phone menu's
- * focus (review pass 2, docs/review-pass-2026-11-06-ui.md).
+ * focus (review pass 2, docs/archive/review-pass-2026-11-06-ui.md).
  */
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentType } from "react";

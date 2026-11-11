@@ -2,7 +2,7 @@
 
 > This is a historical snapshot, not the current state. For what is current, read the README, ROADMAP.md and RUNBOOK.md.
 
-> **The card rail (Stripe) was removed in this release** — see [docs/payments.md](payments.md). Where this handoff mentions cards, Stripe Connect or a Stripe key, it is history.
+> **The card rail (Stripe) was removed in this release** — see [docs/payments.md](../payments.md). Where this handoff mentions cards, Stripe Connect or a Stripe key, it is history.
 
 > **11-06:** the hackathon entry is built on `preview-2` (`hackathon-v2` with the waiting branches:
 > gamify-all, the ui-v2 dashboard, the Desktop page). Its release checklist and the decisions still
@@ -180,30 +180,30 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   (`GamesView.test.tsx`), `docs/manual-testing.md` restructured.
 
 **3. Proposals for decision (design only):**
-- [agents-and-gamify-launch.md](proposals/agents-and-gamify-launch.md) (P297, agreed in outline 11-05) — bring
+- [agents-and-gamify-launch.md](../proposals/agents-and-gamify-launch.md) (P297, agreed in outline 11-05) — bring
   your own agent (`hermes profile install` + `hermes emporia setup`), posture and playbook, the memory
   fixes, the house agent, gamify live before 11-11: one open testnet season, reactions not downvotes,
   history kept. §7 is the build order.
-- [guilds-and-relay-identity.md](proposals/guilds-and-relay-identity.md) — decentralized agentic
+- [guilds-and-relay-identity.md](../proposals/guilds-and-relay-identity.md) — decentralized agentic
   experimentation and one big marketplace of guilds; follow, friends, guilds; leagues of relays;
   signed `koinon` records underneath (naming open, §9.8); where a relay runs (practice / apart /
   remote tiers, the operator agent); co-op relays; directories, not a registry. §3 (relay
   identity) is built as P286.
-- [progression-module.md](proposals/progression-module.md) — the gamify module, every part optional
+- [progression-module.md](../proposals/progression-module.md) — the gamify module, every part optional
   per relay (`EMPORIA_GAMIFY=sheets,seasons,quests,points,boosts,anchor`); attributes
   Craft/Trade/Trust; quests with non-money rewards; points and boosts a relay or guild may sell
   (attributes never for sale); on-chain options undecided; "worlds": a relay on its own, in one
   league, or in several.
-- [analytics-module.md](proposals/analytics-module.md) — four audiences; step 1 built as P287;
+- [analytics-module.md](../proposals/analytics-module.md) — four audiences; step 1 built as P287;
   dashboard Stats view next.
-- Still open: [agent-names-and-identity.md](proposals/agent-names-and-identity.md) (names per Nous
+- Still open: [agent-names-and-identity.md](../proposals/agent-names-and-identity.md) (names per Nous
   account, hold after release, reserved list, verified mark),
-  [relay-transparency-log.md](proposals/relay-transparency-log.md) step 4 and
-  [robinhood-chain.md](proposals/robinhood-chain.md) (which chain, how often, spend cap; any
+  [relay-transparency-log.md](../proposals/relay-transparency-log.md) step 4 and
+  [robinhood-chain.md](../proposals/robinhood-chain.md) (which chain, how often, spend cap; any
   transaction needs the user's say-so), range-based set reconciliation in the federation proposal
   (yes/no).
 
-**4. Build next:** the priority plan at the top of [ROADMAP.md](../ROADMAP.md) (11-04). Phase A
+**4. Build next:** the priority plan at the top of [ROADMAP.md](../../ROADMAP.md) (11-04). Phase A
 first: the signer sittings (phase 1 by hand), then **signer phase 2** (no key left in any agent's
 process — a security fix, so it comes before the remaining hand checks, which then test its final
 shape), then the other checks, the two-host test with a second operator, and `main`. Then multi-party (friends, guilds
@@ -609,7 +609,7 @@ is published.
 ## Hermes behaviours this code works around
 
 Checked against Hermes's code (commit `0c74cc6`); details and the one issue draft in
-[hermes-notes.md](hermes-notes.md):
+[hermes-notes.md](../hermes-notes.md):
 - A plugin's **websockets are refused in any profile but the launch one**: documented in Hermes
   ("does not carry websockets yet"). The tab polls instead (P236). Nothing to file.
 - `/api/plugins/*` requests carry **no `?profile=`**: by design; plugins read the

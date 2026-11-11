@@ -4,7 +4,7 @@ An audit of the Emporia Hermes plugin (`hermes_plugin/emporia/`) against the 18 
 rules in Hermes's `plugin-catalog/README.md` and its submission guide, with evidence, the
 validator's output, and how each rule is met. Re-derived on 2026-11-10 against the catalog README
 as installed with Hermes v0.23.0 (the first derivation was 2026-11-06, see
-`docs/review-pass-2026-11-06-release.md`). Every rule is treated as a hard requirement: nothing below is
+`docs/archive/review-pass-2026-11-06-release.md`). Every rule is treated as a hard requirement: nothing below is
 a "defensible risk".
 
 - The draft entry is in [`docs/catalog/emporia.yaml`](catalog/emporia.yaml).

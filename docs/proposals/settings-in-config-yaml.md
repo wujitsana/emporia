@@ -102,7 +102,7 @@ there would weaken the guard unless it also:
 
 ## Recommendation and estimate
 
-Do not migrate before the hackathon. The `optional_env` declaration (done here) already gives the person a labelled form for
+Do not migrate yet. The `optional_env` declaration (done here) already gives the person a labelled form for
 every setting in setup and the dashboard env page, with secrets masked, and keeps the `.env` + key-guard protection and the
 MCP hand-off unchanged. A `config_schema` form is a Desktop-only nicety that costs the guard's strongest property.
 
