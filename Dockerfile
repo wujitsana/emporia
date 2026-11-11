@@ -14,6 +14,10 @@
 # ── Relay runtime ─────────────────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
 
+# git: the labs module reads a repo's proof file (.emporia/lab.json) at its branch tip, read-only, with no
+# checkout and no hooks (lab_proof.py). Without it no lab verifies on a containerised relay.
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir uv
 
 WORKDIR /app
