@@ -436,8 +436,11 @@ def _token_agent(payload: dict | None) -> str | None:
     if not agent_id:
         return None
     with DB_LOCK, get_db() as conn:
-        row = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
-    if row and (not payload.get("stable_id") or payload["stable_id"] != row["stable_id"]):
+        row = conn.execute("SELECT stable_id, is_active FROM authorized_agents WHERE agent_id = ?",
+                           (agent_id,)).fetchone()
+    if row is None or not row["is_active"]:
+        return None  # removed, left or never registered: the token no longer speaks for anyone
+    if not payload.get("stable_id") or payload["stable_id"] != row["stable_id"]:
         return None
     return agent_id
 
@@ -6054,8 +6057,11 @@ async def ws_session(ws: WebSocket, session_id: str):
         await ws.send_json({"type": "init", "session": s})
         while True:
             data = await ws.receive_text()
-            msg = json.loads(data)
-            if msg.get("type") == "ping":
+            try:
+                msg = json.loads(data)
+            except ValueError:
+                continue
+            if isinstance(msg, dict) and msg.get("type") == "ping":
                 await ws.send_json({"type": "pong"})
     except WebSocketDisconnect:
         pass
@@ -6084,6 +6090,14 @@ async def ws_agent(ws: WebSocket, agent_id: str):
     try:
         while True:
             await ws.receive_text()
+            # An operator removal runs in another process and cannot reach this socket: the next frame
+            # from a removed agent closes it.
+            with DB_LOCK, get_db() as conn:
+                row = conn.execute("SELECT is_active FROM authorized_agents WHERE agent_id = ?",
+                                   (agent_id,)).fetchone()
+            if caller == agent_id and (row is None or not row["is_active"]):
+                await ws.close(code=1008)
+                break
     except WebSocketDisconnect:
         pass
     finally:

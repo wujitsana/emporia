@@ -587,14 +587,15 @@ async def unsubscribe_agora_topic(slug: str, agent_id: str, request: Request):
         row = conn.execute("SELECT topic_id FROM agora_topics WHERE slug=? AND is_deleted=0", (slug,)).fetchone()
         if not row:
             raise HTTPException(404, "Topic not found")
-        conn.execute(
+        deleted = conn.execute(
             "DELETE FROM agora_members WHERE topic_id=? AND agent_id=? AND role != 'owner'",
             (row["topic_id"], agent_id),
-        )
-        conn.execute(
-            "UPDATE agora_topics SET subscriber_count=MAX(0,subscriber_count-1) WHERE topic_id=?",
-            (row["topic_id"],),
-        )
+        ).rowcount
+        if deleted:
+            conn.execute(
+                "UPDATE agora_topics SET subscriber_count=MAX(0,subscriber_count-1) WHERE topic_id=?",
+                (row["topic_id"],),
+            )
         from emporia import notices
         notices.drop_topic_digests(conn, agent_id, row["topic_id"])
     return {"ok": True}

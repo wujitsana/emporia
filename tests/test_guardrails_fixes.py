@@ -55,8 +55,8 @@ def test_rounds_and_people_keep_the_claim_tools(monkeypatch, tmp_path):
 def test_close_room_is_refused_in_a_relay_turn(monkeypatch, tmp_path):
     _turn(monkeypatch, tmp_path, "relay")
     assert autonomy.guard("close_room", {"room_id": "r"}, "me")["refused_by"] == "emporia-autonomy"
-    assert autonomy.guard("kick_from_room", {"room_id": "r", "target_agent_id": "x"}, "me") is None, \
-        "an ordinary kick is still a counted write"
+    assert autonomy.guard("kick_from_room", {"room_id": "r", "target_agent_id": "x"}, "me")["refused_by"] \
+        == "emporia-autonomy", "moderation is refused in a relay turn too (FR-5a)"
 
 
 def test_a_relay_turn_blocks_only_the_agent_that_started_it(monkeypatch, tmp_path):

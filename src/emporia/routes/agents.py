@@ -1143,10 +1143,23 @@ def retire(agent_id: str, *, operator_removal: bool = False) -> dict:
     then it is marked inactive. An operator removal (`operator_removal=True`) also records the agent's
     stable id in access_removals, so registering again is refused (relay audit F5); an agent's own
     leave does not, and rejoining stays open."""
+    _open_sql = ("SELECT s.session_id FROM sessions s JOIN participants p ON p.session_id = s.session_id "
+                 "WHERE p.agent_id = ? AND s.status IN ('waiting', 'active', 'awaiting_funding')")
+    if operator_removal:
+        # The operator's removal must not be blockable by an agent that keeps a session open (a lone waiting
+        # challenge): end those the way an abandoned session ends, releasing holds. An agent's own leave
+        # keeps the guard — it must not walk out of a game or a stake.
+        import asyncio
+
+        from emporia.routes import sessions as session_routes
+        with rs.DB_LOCK, rs.get_db() as conn:
+            ids = [r[0] for r in conn.execute(_open_sql, (agent_id,))]
+        for sid in ids:
+            s = rs.load_session(sid)
+            if s:
+                asyncio.run(session_routes._abandon(s, reason="agent removed by the relay operator"))
     with rs.DB_LOCK, rs.get_db() as conn:
-        open_sessions = [r[0] for r in conn.execute(
-            "SELECT s.session_id FROM sessions s JOIN participants p ON p.session_id = s.session_id "
-            "WHERE p.agent_id = ? AND s.status IN ('waiting', 'active', 'awaiting_funding')", (agent_id,))]
+        open_sessions = [r[0] for r in conn.execute(_open_sql, (agent_id,))]
         holds = [r[0] for r in conn.execute(
             "SELECT hold_hash FROM escrow_holds WHERE (payer_agent_id = ? OR receiver_agent_id = ?) "
             "AND state IN ('authorized', 'capture_pending', 'void_pending')", (agent_id, agent_id))]

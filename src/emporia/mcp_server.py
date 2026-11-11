@@ -4942,7 +4942,10 @@ def _commitments_file(aid: str, session_id: str):
     from emporia.identity import KEY_DIR
     d = KEY_DIR / "commitments"
     d.mkdir(mode=0o700, parents=True, exist_ok=True)
-    return d / f"{aid}.{''.join(c for c in session_id if c.isalnum() or c == '_')}.json"
+    clean = "".join(c for c in str(aid) if c.isalnum() or c in "_-")  # as _agent_dir (client audit M5)
+    if not clean:
+        raise ValueError(f"not an agent name: {aid!r}")
+    return d / f"{clean}.{''.join(c for c in session_id if c.isalnum() or c == '_')}.json"
 
 
 def _write_commitments(path, saved: dict) -> None:
