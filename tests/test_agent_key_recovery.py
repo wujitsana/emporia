@@ -333,7 +333,7 @@ def test_a_thiefs_rotation_after_the_loss_is_undone_and_only_later_signatures_st
     assert r.json()["superseded"] == body["key_log_superseded"]
     # P255: the relay's log has each change: the recovery key set, the thief's rotation, the recovery
     seen = [(r.getMessage(), r.key_changes) for r in caplog.records if getattr(r, "agent_id", "") == "kc_thief"
-            and r.getMessage().startswith("agent_")]
+            and r.getMessage().startswith("agent_") and hasattr(r, "key_changes")]
     assert seen == [("agent_recovery_key_set", 0), ("agent_key_rotated", 1), ("agent_key_recovered", 1)]
     recovered = next(r for r in caplog.records if r.getMessage() == "agent_key_recovered")
     assert recovered.undone == 1 and recovered.compromised_since == since

@@ -32,6 +32,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from emporia import identity, lab_proof, labs, refs, translog, wire
+from emporia.logging_config import mark_expected
 from emporia import relay_server as rs
 from emporia import rooms as rooms_db
 
@@ -74,6 +75,7 @@ def _now() -> str:
 def _on() -> None:
     from emporia import relay_modules
     if why := relay_modules.off_because("labs", "reports"):
+        mark_expected()   # a module this relay switched off: clients probe it, and the 404 is the answer
         raise HTTPException(404, why)
 
 

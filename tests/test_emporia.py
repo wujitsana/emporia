@@ -18580,9 +18580,10 @@ def test_request_context_logs_unhandled_exception_preserving_500_shape(caplog):
     assert r2.status_code == 500
     exc_records = [
         rec for rec in caplog.records
-        if rec.name == "emporia.relay" and rec.message == "unhandled_exception"
+        if rec.name == "emporia.relay" and rec.message == "unhandled_error"
     ]
     assert len(exc_records) == 2, caplog.records
+    assert exc_records[0].exception_type == "RuntimeError"
     rid1, rid2 = exc_records[0].request_id, exc_records[1].request_id
     assert rid1 != "-" and rid2 != "-"
     assert rid1 != rid2

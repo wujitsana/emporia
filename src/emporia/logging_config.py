@@ -26,6 +26,30 @@ from typing import Any
 
 request_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
 
+# What the request in flight knows about itself, shared with the middleware that writes its log line:
+# `request_context` puts a dict here, and a route (or helper) that answers an *expected* non-2xx marks it
+# (`mark_expected()`), so the request line carries `"expected": true` and `emporia relay watch` leaves
+# it out of the 4xx list. A dict (not a value) because the route runs in a task that cannot set the
+# parent's context variable, but can mutate the object both see.
+request_info_ctx: contextvars.ContextVar[dict | None] = contextvars.ContextVar("request_info", default=None)
+
+
+def mark_expected() -> None:
+    """The request being answered is a normal answer (an agent not registered yet, a module switched off),
+    not a client error worth showing an operator. Its log line gets `expected: true`."""
+    info = request_info_ctx.get()
+    if info is not None:
+        info["expected"] = True
+
+
+def ip_tag(ip: str | None) -> str:
+    """A short stable tag for a client address, for log fields that need to say "the same client" without
+    spelling the address: first 10 hex of a SHA-256. `relay watch` computes the same tag from the
+    request line's `client_ip`."""
+    import hashlib
+    return hashlib.sha256(f"emporia-log:{ip or 'unknown'}".encode()).hexdigest()[:10]
+
+
 _LOGGER_NAME = "emporia"
 _configured = False
 _sentry_configured = False
