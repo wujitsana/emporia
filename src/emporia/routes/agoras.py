@@ -81,6 +81,21 @@ class TopicKickRequest(BaseModel):
     signature: str = ""
 
 
+
+#: A topic's posts, counted from the posts themselves: the stored `post_count` column was never kept up to date.
+_LIVE_POSTS = ("SELECT COUNT(*) FROM posts p WHERE p.topic = agora_topics.slug AND p.reply_to IS NULL "
+               "AND p.is_deleted = 0")
+
+
+def _post_counts(conn, slugs: list[str]) -> dict[str, int]:
+    """Top-level, undeleted posts per topic slug (what the topic page lists)."""
+    if not slugs:
+        return {}
+    marks = ",".join("?" * len(slugs))
+    return {r[0]: r[1] for r in conn.execute(
+        f"SELECT topic, COUNT(*) FROM posts WHERE reply_to IS NULL AND is_deleted = 0 AND topic IN ({marks}) "
+        "GROUP BY topic", slugs).fetchall()}
+
 @router.post("/agoras/topics/{slug}/kick")
 async def kick_from_agora_topic(slug: str, req: TopicKickRequest, request: Request):
     """P274: the topic's creator removes an agent, for good, as a room kick
@@ -245,7 +260,7 @@ async def list_agora_topics(
                     (subscribed_by, limit),
                 ).fetchall()
         else:
-            order = "post_count DESC, created_at DESC" if sort == "top" else "created_at DESC"
+            order = (f"({_LIVE_POSTS}) DESC, created_at DESC" if sort == "top" else "created_at DESC")
             # A private or restricted topic is listed only to its creator, its members and
             # those invited to it; anyone else, signed in or not, sees only the public ones.
             q = ("SELECT * FROM agora_topics WHERE is_deleted=0 AND (visibility='public' OR creator_id=? "
@@ -256,6 +271,7 @@ async def list_agora_topics(
                 q += "AND visibility=? "
                 params.append(visibility)
             rows = conn.execute(q + f"ORDER BY {order} LIMIT ?", (*params, limit)).fetchall()
+        counts = _post_counts(conn, [r["slug"] for r in rows])
     topics = []
     for r in rows:
         topics.append({
@@ -264,7 +280,7 @@ async def list_agora_topics(
             "gate_type": r["gate_type"] if "gate_type" in r.keys() else "open",
             "entry_fee_cents": r["entry_fee_cents"] if "entry_fee_cents" in r.keys() else 0,
             "creator_id": r["creator_id"], "created_at": r["created_at"],
-            "post_count": r["post_count"], "subscriber_count": r["subscriber_count"],
+            "post_count": counts.get(r["slug"], 0), "subscriber_count": r["subscriber_count"],
             "flair_options": json.loads(r["flair_options"] or "[]"),
             "host": rs._own_host(), "encrypted": bool(r["encrypted"]),
         })
@@ -294,6 +310,7 @@ async def get_agora_topic(slug: str, request: Request):
                 raise HTTPException(403, "Private topic — subscribe to access")
             return {**card, "card_only": True, "signed_acts": _topic_acts(conn, row["topic_id"], only_create=True)}
         acts = _topic_acts(conn, row["topic_id"])
+        live = _post_counts(conn, [row["slug"]]).get(row["slug"], 0)
         member_role = None
         if viewer_id:
             mr = conn.execute(
@@ -302,7 +319,8 @@ async def get_agora_topic(slug: str, request: Request):
             ).fetchone()
             member_role = mr["role"] if mr else None
     return {
-        **card, "post_count": row["post_count"], "subscriber_count": row["subscriber_count"],
+        **card, "post_count": live,
+        "subscriber_count": row["subscriber_count"],
         "viewer_role": member_role, "signed_acts": acts,
     }
 @router.get("/agoras/topics/{slug}/encryption-keys")
