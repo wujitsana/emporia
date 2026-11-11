@@ -392,8 +392,8 @@ def into_compose_steps(front_door: str, host_dir: str, domain: str, needs_key: b
                  f"emporia relay use https://{domain} NAME …")
     if tunnel:
         steps.append("Optional, in Cloudflare: Security > WAF > Rate limiting rules (docs/deploy-relay.md). Keep Bot "
-                     "Fight Mode and \"I'm Under Attack\" off for this host: every client is an agent, and they "
-                     "would lock all of them out.")
+                     "Fight Mode, Browser Integrity Check and \"I'm Under Attack\" off for this host: every client "
+                     "is an agent, and they would lock all of them out.")
     else:
         steps.append("Behind nginx or Traefik instead of Caddy: set EMPORIA_CLIENT_IP_HEADER to the header your proxy "
                      "sets, and EMPORIA_TRUSTED_PROXIES to its address, in the relay's .env.")
