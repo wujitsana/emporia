@@ -2607,6 +2607,9 @@ def _signer_add_make(args: argparse.Namespace, url: str) -> int:
                   f"agent that has none yet. To move the keys it has: emporia signer add {name} --identity")
             return 1
     key_dir = Path(env.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    if why := _unsafe_profile_key_dir(profile, key_dir):
+        print(f"signer add --make: refused: {why}.")
+        return 1
     stem = _keyfile_stem(name)
     have = [f.name for f in (key_dir.glob(f"{stem}.*") if key_dir.is_dir() else [])
             if f.is_file() and not f.name.endswith(".signer.pub")
@@ -2640,10 +2643,11 @@ def _signer_add_make(args: argparse.Namespace, url: str) -> int:
     key_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     for marker, value in ((key_dir / f"{stem}.signer.pub", made["identity"]),
                           (key_dir / f"{stem}.x25519.signer.pub", made["encryption"])):
-        marker.write_text(value + "\n")
-        if os.getuid() == 0:
-            owner = profile.stat()
-            os.chown(marker, owner.st_uid, owner.st_gid)
+        try:
+            _write_profile_marker(profile, marker, value)
+        except OSError as e:
+            print(f"signer add --make: refused to write {marker}: {e.strerror or e} (a symbolic link there?)")
+            return 1
     merge_env_file(profile / ".env", {"EMPORIA_SIGNER_URL": url, "EMPORIA_SIGNER_TOKEN": token})
     where_said = {r: where.get(r, "local") for r in made}
     print(f"{name}: its keys were made in the signer and never existed in its profile:")
@@ -2736,7 +2740,11 @@ def _signer_add_sources(args: argparse.Namespace, url: str) -> int:
         key_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         for marker, value in ((key_dir / f"{stem}.signer.pub", publics["identity"]),
                               (key_dir / f"{stem}.x25519.signer.pub", publics["encryption"])):
-            marker.write_text(value + "\n")
+            try:
+                _write_profile_marker(profile, marker, value)
+            except OSError as e:
+                print(f"signer add --key-source: refused to write {marker}: {e.strerror or e} (a symbolic link?)")
+                return 1
     unset_env_lines(profile / ".env", [SOURCE_VARS[r] for r in refs] + ["EMPORIA_X402_MAINNET"])
     left = [v for v in SOURCE_VARS.values() if installer().harvest_env(profile).get(v, "").startswith("cmd:")]
     vault_vars = [v for v in ("OP_SERVICE_ACCOUNT_TOKEN", "BW_SESSION", "BW_CLIENTID", "BW_CLIENTSECRET")
@@ -2953,8 +2961,9 @@ def _signer_add(args: argparse.Namespace, url: str) -> int:
               + ("" if (signer.identity_path(name)).exists() else
                  f" — its identity key can follow: emporia signer add {name} --identity"))
         return 1
-    if any(str(dotenv.get(v, "")).startswith("cmd:") for v in ("EMPORIA_X402_EVM_KEY_SOURCE",
-                                                               "EMPORIA_X402_SOLANA_KEY_SOURCE")):
+    held_all = {**dotenv, **_mcp_env(profile)}
+    if any(str(held_all.get(v, "")).strip().startswith("cmd:") for v in _CMD_SOURCE_VARS
+           if v != "EMPORIA_IDENTITY_KEY_SOURCE" and v != "EMPORIA_ENCRYPTION_KEY_SOURCE"):
         print(f"signer add: {name}'s wallet is linked to a password manager; the signer reads only its own "
               f"key files for now. Not moved.")
         return 1
@@ -2999,23 +3008,22 @@ def _signer_add(args: argparse.Namespace, url: str) -> int:
     # folder in the profiles is still within the agents' reach. The 24-hour spend
     # log goes with the keys, or the move would reset the daily cap.
     key_dir = Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    if why := _unsafe_profile_key_dir(profile, key_dir):
+        print(f"signer add: refused: {why}; the old key files were left in place.")
+        return 1
     with agent_wallet.scope(scope):
         if any(targets[f].read_bytes() != bytes.fromhex(h) for f, h in keys.items()):
             print("signer add: the signer's copy does not read back as written; nothing removed from the profile.")
             return 1
         ledger = agent_wallet._ledger_path(name)
     from emporia.identity import _keyfile_stem
-    old = [f for f in key_dir.glob(f"{_keyfile_stem(name)}.x402.*") if f.is_file()]
+    old = [f for f in key_dir.glob(f"{_keyfile_stem(name)}.x402.*") if f.is_file() and not f.is_symlink()]
     for f in old:
         if f.name.endswith(".spend.json"):
             _write_secret_atomically(ledger, f.read_bytes())
     signer.own(signer.agent_dir(name))
     for f in old:
-        with open(f, "r+b") as out:     # overwrite, then unlink
-            out.write(b"\0" * f.stat().st_size)
-            out.flush()
-            os.fsync(out.fileno())
-        f.unlink()
+        _zero_and_unlink(f)     # overwrite, then unlink; never through a link
     unset_env_lines(profile / ".env", ["EMPORIA_X402_EVM_PRIVATE_KEY", "EMPORIA_X402_SOLANA_PRIVATE_KEY",
                                        "EMPORIA_X402_EVM_KEY_SOURCE", "EMPORIA_X402_SOLANA_KEY_SOURCE",
                                        "EMPORIA_X402_MAINNET"])
@@ -3050,13 +3058,16 @@ def _signer_add_identity(profile: Path, name: str) -> int:
         print(f"signer add: the signer already holds {name}'s identity key")
         return 1
     key_dir = Path(env.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    if why := _unsafe_profile_key_dir(profile, key_dir):
+        print(f"signer add: refused: {why}; nothing moved.")
+        return 1
     src = key_dir / f"{_keyfile_stem(name)}.priv"
-    if not src.is_file() or src.stat().st_size != 32:
+    if src.is_symlink() or not src.is_file() or src.stat().st_size != 32:
         print(f"signer add: no identity key file for {name} at {src}; nothing moved.")
         return 1
     enc_src = key_dir / f"{_keyfile_stem(name)}.x25519.priv"
     enc_retired = key_dir / f"{_keyfile_stem(name)}.x25519.retired"
-    if not enc_src.is_file() or enc_src.stat().st_size != 32:
+    if enc_src.is_symlink() or not enc_src.is_file() or enc_src.stat().st_size != 32:
         print(f"signer add: no encryption key file for {name} at {enc_src}; nothing moved.")
         return 1
     raw = src.read_bytes()
@@ -3076,17 +3087,14 @@ def _signer_add_identity(profile: Path, name: str) -> int:
     signer.own(signer.agent_dir(name))
     for marker, value in ((key_dir / f"{_keyfile_stem(name)}.signer.pub", pub),
                           (key_dir / f"{_keyfile_stem(name)}.x25519.signer.pub", enc_pub)):
-        marker.write_text(value + "\n")
-        if os.getuid() == 0:
-            owner = profile.stat()
-            os.chown(marker, owner.st_uid, owner.st_gid)
+        try:
+            _write_profile_marker(profile, marker, value)
+        except OSError as e:
+            print(f"signer add: refused to write {marker}: {e.strerror or e} (a symbolic link there?)")
+            return 1
     for f in (src, enc_src, enc_retired):   # overwrite, then unlink: the signer's copies are the only ones
-        if f.is_file():
-            with open(f, "r+b") as out:
-                out.write(b"\0" * f.stat().st_size)
-                out.flush()
-                os.fsync(out.fileno())
-            f.unlink()
+        if f.is_file() and not f.is_symlink():
+            _zero_and_unlink(f)
     print(f"{name}: its identity and encryption keys are now held by the signer; the profile keeps only their "
           f"public halves ({pub[:12]}…, {enc_pub[:12]}…). Every signature is the signer's, within its rules, and "
           f"every sealed message is opened there — emporia signer policy {name} shows the rules, "
@@ -6109,11 +6117,64 @@ def cmd_log_verify(args: argparse.Namespace) -> int:
     return 0
 
 
+_CMD_SOURCE_VARS = ("EMPORIA_IDENTITY_KEY_SOURCE", "EMPORIA_ENCRYPTION_KEY_SOURCE", "EMPORIA_X402_EVM_KEY_SOURCE",
+                    "EMPORIA_X402_SOLANA_KEY_SOURCE", "EMPORIA_X402_PHRASE_SOURCE")
+
+
+def _agent_child_env(profile: Path, env_over: dict[str, str]) -> dict[str, str]:
+    """The environment `_as_agent` runs with: a fixed allow-list. From the profile's MCP entry only EMPORIA_*
+    names (never PYTHONPATH, PYTHONSTARTUP, LD_*, PATH ...: the person may run this as root), and a `cmd:` key
+    source from that entry is refused here as it is for the .env."""
+    entry = {k: v for k, v in _mcp_env(profile).items() if k.startswith("EMPORIA_")}
+    bad = [k for k in _CMD_SOURCE_VARS if entry.get(k, "").strip().startswith("cmd:")]
+    if bad and os.getuid() == 0:
+        raise RuntimeError(f"{', '.join(bad)} in the profile's MCP entry is a cmd: source; not run as root")
+    return {"PATH": os.defpath, "HOME": str(Path.home()), **entry, **env_over}
+
+
 def _as_agent(profile: Path, code: str, **env_over: str) -> subprocess.CompletedProcess:
-    """Run `code` the way the agent's MCP server runs: its own env, nothing else."""
-    env = {"PATH": os.defpath, "HOME": str(Path.home()), **_mcp_env(profile), **env_over}
-    return subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True,
+    """Run `code` the way the agent's MCP server runs: its own EMPORIA settings, nothing else."""
+    env = _agent_child_env(profile, env_over)
+    return subprocess.run([sys.executable, "-I", "-c", code], env=env, capture_output=True, text=True,
                           timeout=120)
+
+
+def _unsafe_profile_key_dir(profile: Path, key_dir: Path) -> str:
+    """Why root must not do file work in `key_dir` for `profile` ('' when it may): the folder is a link, or
+    (as root) it resolves outside the profile, so a planted link could aim the writes at the signer's files."""
+    if key_dir.is_symlink():
+        return f"{key_dir} is a symbolic link"
+    if os.getuid() == 0:
+        try:
+            key_dir.resolve().relative_to(profile.resolve())
+        except ValueError:
+            return f"{key_dir} is outside the profile {profile}"
+    return ""
+
+
+def _write_profile_marker(profile: Path, path: Path, value: str) -> None:
+    """Write a public-key marker in a profile's key folder without following a link, owned by the profile's
+    owner when run as root. Raises OSError (ELOOP) when `path` is a symlink."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+    fd = os.open(path, flags, 0o644)
+    try:
+        if os.getuid() == 0:
+            owner = profile.stat()
+            os.fchown(fd, owner.st_uid, owner.st_gid)
+        os.write(fd, (value + "\n").encode())
+    finally:
+        os.close(fd)
+
+
+def _zero_and_unlink(path: Path) -> None:
+    """Overwrite a regular file with zeros, then unlink it; never through a link."""
+    fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW)
+    try:
+        os.write(fd, b"\0" * os.fstat(fd).st_size)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    path.unlink()
 
 
 def _house_files(profile: Path) -> tuple[Path, Path, Path]:
