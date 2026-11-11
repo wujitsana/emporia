@@ -6032,12 +6032,38 @@ def _auto_register() -> None:
     """
     if not AGENT_ID:
         return
+    if _register_once() == "busy":
+        # The relay's per-IP sign-in budget is shared by every agent behind one address, and a gateway starts
+        # them all at once: try again in the background, spaced out, so the server still starts on time.
+        import threading
+        threading.Thread(target=_register_later, name="emporia-register-retry", daemon=True).start()
+
+
+#: Waits (seconds) between background registration attempts after a 429, about ten minutes in all.
+REGISTER_RETRY_WAITS = (20, 40, 60, 90, 120, 180, 180)
+
+
+def _register_later(waits: tuple[int, ...] | None = None, sleep: Any = None) -> bool:
+    import random
+    import time as _time
+    for wait in (REGISTER_RETRY_WAITS if waits is None else waits):
+        (sleep or _time.sleep)(wait + random.uniform(0, wait / 4))
+        if _register_once() != "busy":
+            return True
+    return False
+
+
+def _register_once() -> str:
+    """One registration attempt: "ok", "failed", or "busy" when the relay answered 429 (try later)."""
     try:
         r = register_agent(agent_id=AGENT_ID, display_name=DISPLAY_NAME or "")
     except Exception as e:
         logger.error("auto_register_unreachable",
                      extra={"agent_id": AGENT_ID, "relay_url": RELAY_URL}, exc_info=e)
-        return
+        return "failed"
+    if not r.get("success") and "429" in str(r.get("error") or r.get("detail") or ""):
+        logger.warning("auto_register_busy", extra={"agent_id": AGENT_ID, "relay_url": RELAY_URL})
+        return "busy"
     if r.get("success"):
         logger.info("auto_register_ok", extra={
             "agent_id": AGENT_ID, "relay_url": RELAY_URL,
@@ -6047,6 +6073,8 @@ def _auto_register() -> None:
         logger.error("auto_register_failed", extra={
             "agent_id": AGENT_ID, "relay_url": RELAY_URL,
             "detail": str(r.get("error") or r.get("detail"))[:200]})
+        return "failed"
+    return "ok"
 
 
 def _heal_x402_pay_to() -> None:

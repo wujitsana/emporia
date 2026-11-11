@@ -9,8 +9,24 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+
+import httpx
 import urllib.parse
 from typing import Any, Awaitable, Callable
+
+
+def _refusal_wait(response: Any, backoff: float, max_backoff: float) -> float:
+    """How long to wait after the relay refused a sign-in: its Retry-After on a 429, at least a minute while
+    the agent is not registered (404), else the ordinary backoff."""
+    status = getattr(response, "status_code", 0)
+    if status == 429:
+        try:
+            return max(float(response.headers.get("retry-after", "")), backoff, 5.0)
+        except ValueError:
+            return max(backoff, 30.0)
+    if status == 404:
+        return max(backoff, 60.0)
+    return max(backoff, min(max_backoff, 30.0))
 
 
 def _ws_url(relay_url: str, agent_id: str, params: dict[str, str]) -> str:
@@ -114,3 +130,10 @@ async def maintain_relay_tunnel(
                     await agent._invalidate_bearer_and_remint()
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, max_backoff)
+            except httpx.HTTPStatusError as e:
+                # Sign-in itself was refused. Not registered yet (404: the MCP server registers it) or over the
+                # relay's per-IP sign-in budget (429): retrying at once only spends that budget, which every agent
+                # behind the same address shares — so wait as asked, and never less than a minute for a 404.
+                wait = _refusal_wait(e.response, backoff, max_backoff)
+                await asyncio.sleep(wait)
+                backoff = min(max(backoff * 2, wait), max_backoff * 5)
