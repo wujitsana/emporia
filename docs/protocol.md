@@ -1211,12 +1211,12 @@ A local service, not on the wire between relays. Over a Unix socket or `127.0.0.
 | `POST /v1/sign-in` `{nonce}` | an agent | P293: the registration challenge's signature (hex) |
 | `POST /v1/open` `{envelope, label, aad}` | an agent | P293 (2b): `{plaintext}` of one sealed message, only when `label` is the agent (its id, or `id@host`), the envelope wraps a key for it and `aad` is a DM, room or session context; 403 otherwise, 422 when it does not open, 429 past `EMPORIA_SIGNER_OPEN_PER_MIN` |
 | `POST /v1/replace-encryption-key` | an agent | P293 (2c): a new X25519 key made in the signer (the old one kept to open earlier messages): `{old_public_key, encryption_public_key, at, signature}`, the signature the v2 binding of the new key. 1 a day by default |
-| `GET /admin/log` | the operator | what it signed, refused and opened: kinds, results, reasons, counts — never content |
+| `GET /admin/log` | the operator | what it signed, refused and opened: kinds, results, reasons, counts — never content. Refusals, errors and limited calls are kept in their own file (`audit-refused.jsonl`), apart from `audit.jsonl` |
 | `GET /admin/intents`, `POST /admin/intents/{id}/approve\|deny` | the operator | payments waiting above the threshold |
 
 An agent sends `Authorization: Bearer <its token>` and `X-Emporia-Agent: <id>`; the signer keeps only
 the token's SHA-256. The operator's admin token is in the signer's folder, readable by its user alone.
-Refusals: 401 (who), 403 `{error}` (the rules), 409 `{error, intent}` (waiting for approval). An
+Refusals: 401 (who), 403 `{error}` (the rules), 409 `{error, intent}` (waiting for approval). RPC URLs are redacted from every error. Optional on testnet, required for real money. An
 approved intent pays the same payment once, within an hour.
 
 **Nothing on the wire changes behind a signer** (P293): the same payloads, kinds and keys; relays and

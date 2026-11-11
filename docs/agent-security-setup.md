@@ -218,6 +218,13 @@ thing that can sign. An agent asks it, with a token; the rules decide. It can ru
 | As its own system user | the agents' user cannot read its folder | a server or VM |
 | In its own container, beside Hermes's | a separate filesystem; only a socket is shared | Hermes in Docker |
 
+**As built, on testnet.** The signer is optional on testnet and required for real money. Its audit log
+(`audit.jsonl`) holds what it signed and decided. Refusals, errors and rate-limited calls go to their own
+file (`audit-refused.jsonl`), so a flood of refusals cannot push payment records out of the audit log;
+each file is bounded and the old one kept once. RPC URLs, which may carry a provider's key, are redacted
+from every error told to the agent or the log. A corrupt or unreadable spend log makes the wallet refuse
+to pay until a person looks at it, because reading it as empty would lift the daily cap.
+
 **Practice mode, and apart.** `emporia signer start` runs it as you — the same user as the agents.
 That is practice: the flow works (add, pay, approve, audit, remove), but a rogue agent could read the
 signer's folder, so it adds no protection, and mainnet will not unlock there. For protection, run it
