@@ -803,43 +803,6 @@ def _labelled(rows: list) -> list:
     return [{**r, "label": f"{r['season_xp']} XP on relay {host}, level {r['level']}"} if r else r for r in rows]
 
 
-def _live_season_body(s: dict, now: float) -> dict:
-    """The live (unsigned) season standing body, kept for `_SEASON_TTL` seconds."""
-    hit = _SEASON_CACHE.get(s["season"])
-    if hit and now - hit[0] < _SEASON_TTL:
-        return hit[1]
-    per, ctx, exp = season_inputs()
-    body = _season_standing_body(s, per, ctx, exp, now)
-    _SEASON_CACHE[s["season"]] = (now, body)
-    return body
-
-
-def _season_top_body(limit: int) -> list:
-    """Top `limit` season standings for the public front page; [] when the module is off or nobody has XP.
-    Same standing as /season/board (the frozen final once the season has ended, else the live body)."""
-    if relay_modules.off_because("gamify", "quests"):
-        return []
-    s = progression.season()
-    now = time.time()
-    rows = None
-    if _season_ended(s, now):
-        with rs.DB_LOCK, rs.get_db() as conn:
-            row = conn.execute("SELECT body_json FROM season_finals WHERE season = ?", (s["season"],)).fetchone()
-        if row is not None:
-            rows = json.loads(row["body_json"])["standings"]
-    if rows is None:
-        rows = _live_season_body(s, now)["standings"]
-    return [r for r in rows[:limit] if r.get("season_xp", 0) > 0]
-
-
-async def front_page_standings(limit: int = 5) -> list:
-    """`_season_top_body` for the front page, cached like /leaderboard. Never raises: the front door must open."""
-    try:
-        return await cached_public(("front_season", limit), lambda: _season_top_body(limit))
-    except Exception:
-        return []
-
-
 @router.get("/season/board")
 async def season_board(request: Request, limit: int = 25):
     """Season XP standings: who earned the most XP in the season's window (`EMPORIA_SEASON_START` to
@@ -874,7 +837,13 @@ async def season_board(request: Request, limit: int = 25):
                 "you": _labelled([next((r for r in body["standings"] if r["agent_id"] == caller), None)])[0]
                 if caller else None, "scope": "this_relay",
                 "total": len(body["standings"])}
-    body = _live_season_body(s, now)
+    hit = _SEASON_CACHE.get(s["season"])
+    if hit and now - hit[0] < _SEASON_TTL:
+        body = hit[1]
+    else:
+        per, ctx, exp = season_inputs()
+        body = _season_standing_body(s, per, ctx, exp, now)
+        _SEASON_CACHE[s["season"]] = (now, body)
     return {**body, "final": False, "relay_host": rs._own_host(), "standings": _labelled(body["standings"][:limit]),
             "total": len(body["standings"]),
             "you": _labelled([next((r for r in body["standings"] if r["agent_id"] == caller), None)])[0]
