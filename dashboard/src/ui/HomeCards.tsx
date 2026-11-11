@@ -48,14 +48,19 @@ export function Card({ c }: { c: CardSpec }) {
   const link = c.onOpen && !c.copy && !c.body;
   const long = !!c.body && (c.body.length > BODY_LONG || c.body.split("\n").length > 6);
   const cls = `e-hcard${c.hero ? " e-hcard--hero" : ""}${c.quiet ? " e-hcard--quiet" : ""}${link ? " is-link" : ""}${c.body ? " e-hcard--post" : ""}`;
+  // Each fact once: a chip that only repeats the headline, or a kind line that only repeats the chip, is not drawn.
+  const same = (a: string, b: string) => !!a && !!b && (a.includes(b) || b.includes(a));
+  const headLow = c.head.toLowerCase();
+  const chip = c.chip && !same(c.chip.toLowerCase(), headLow) ? c.chip : undefined;
+  const meta = c.meta && !same(c.meta.toLowerCase(), (c.chip ?? "").toLowerCase()) && !same(c.meta.toLowerCase(), headLow) ? c.meta : "";
   const body = (
     <>
       <span className="e-hcard__hud">
-        <span>{c.meta}</span>
+        <span>{meta}</span>
         <span>{c.at ? <RelTime at={c.at} /> : c.time}</span>
       </span>
       <span className="e-hcard__ids">
-        {c.chip ? <span className="e-hcard__chip">{c.chip}</span> : <span className="e-hcard__chip e-hcard__chip--none" aria-hidden />}
+        {chip ? <span className="e-hcard__chip">{chip}</span> : <span className="e-hcard__chip e-hcard__chip--none" aria-hidden />}
         {c.game ? <span className="e-hcard__icon"><PixelBadge id={c.game} size={2} mono /></span>
           : c.agent ? <span className="e-hcard__icon" title={c.agent}><AgentMoireAvatar agentId={c.agent} size={26} /></span> : null}
       </span>
@@ -101,14 +106,36 @@ export function Card({ c }: { c: CardSpec }) {
   );
 }
 
-/** One Home section as a head and a grid of cards that fills the width, as many columns as fit. */
-export function CardRow({ title, aside, cards, bare = false }: { title: string; aside?: ReactNode; cards: CardSpec[]; bare?: boolean }) {
+export interface CardGroup { label: string; cards: CardSpec[] }
+
+/**
+ * One Home section: a head, then its cards in a grid that fills the width. Given `groups`, the cards sit in
+ * labelled groups that flow side by side (a small group shares its row with the next), each as wide as its
+ * cards need, so the page stays dense and no band holds a lone card.
+ */
+export function CardRow({ title, aside, cards, groups, bare = false }: { title: string; aside?: ReactNode; cards: CardSpec[]; groups?: CardGroup[]; bare?: boolean }) {
   return (
     <section className="e-cards-section" aria-label={title}>
       {bare ? null : <header className="e-now__head e-cards-section__head"><span><ScrambleText text={title} /></span><span>{aside}</span></header>}
-      <div className="e-cardrow" role="list" aria-label={`${title}: cards`}>
-        {mergeCards(cards).map((c) => <Card key={c.key} c={c} />)}
-      </div>
+      {groups ? (
+        <div className="e-hgroups">
+          {groups.map((g) => {
+            const merged = mergeCards(g.cards);
+            return (
+              <div key={g.label} className="e-hgroup" role="group" aria-label={g.label} style={{ ["--n" as string]: Math.min(merged.length, 6) }}>
+                <div className="e-hgroup__label">{g.label}</div>
+                <div className="e-cardrow" role="list" aria-label={`${g.label}: cards`}>
+                  {merged.map((c) => <Card key={c.key} c={c} />)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="e-cardrow" role="list" aria-label={`${title}: cards`}>
+          {mergeCards(cards).map((c) => <Card key={c.key} c={c} />)}
+        </div>
+      )}
     </section>
   );
 }

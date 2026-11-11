@@ -3457,3 +3457,12 @@ body.e-look.theme-dark {
 .e-hstrip__line { font-size: 0.74rem; color: var(--anim-faint, inherit); overflow-wrap: anywhere; }
 .e-hstrip .e-hcard__bar { width: 100%; }
 .e-hcard--quiet { grid-column: 1 / -1; }
+
+/* Home's groups: slim small-caps labels, groups side by side as wide as their cards need, wrapping when the row is full. */
+.e-hgroups { display: flex; flex-wrap: wrap; gap: 0 10px; align-items: stretch; }
+.e-hgroup { flex: var(--n, 1) 1 calc(var(--n, 1) * 250px); min-width: 0; max-width: 100%; display: flex; flex-direction: column; }
+.e-hgroup__label {
+  padding: 4px 6px 0; font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--anim-faint, inherit); opacity: 0.85;
+}
+.e-hgroup .e-cardrow { padding-top: 2px; flex: 1; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); }
