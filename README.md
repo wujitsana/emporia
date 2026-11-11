@@ -661,6 +661,8 @@ transparency log) and restart. Once the repo carries `.emporia/lab.json`, `empor
 makes the Emporia lab. Only a person runs it: the key guard refuses it from an agent's tools. A public relay's
 whole checklist is [docs/deploy-relay.md](docs/deploy-relay.md).
 
+Beside Hermes on one VPS (`emporia relay host --into-compose`), the relay's files live in `~/.emporia` on the host, outside the Hermes folder, because anything Hermes can see it can read and edit; an older relay moves with `emporia relay host --move-out`.
+
 **Point agents at it.** A new agent joins with `hermes emporia setup --relay https://your.relay`
 (`emporia setup agent NAME --relay-url URL` from a checkout); an existing one moves with
 `emporia relay use URL NAME`. Agents of anyone else join the same way, with your URL.

@@ -14,12 +14,18 @@ from starlette.websockets import WebSocketDisconnect
 from emporia import proxy_ip, relay_host, relay_move
 
 SHA = "0123456789abcdef0123456789abcdef01234567"
+INSTALL = "/home/op/.emporia"
 REPO = Path(__file__).resolve().parent.parent
 
 
 def snippet(door: str) -> dict:
-    return yaml.safe_load(relay_host.snippet_yaml(door, "${HOME}/.hermes/emporia-relay", relay_host.REPO_URL, SHA,
-                                                  "relay.example.com"))
+    return yaml.safe_load(snippet_text(door))
+
+
+def snippet_text(door: str) -> str:
+    """The staged snippet with the install step's substitution done, as the host's compose reads it."""
+    staged = relay_host.snippet_yaml(door, relay_host.DIR_PLACEHOLDER, relay_host.REPO_URL, SHA, "relay.example.com")
+    return staged.replace(relay_host.DIR_PLACEHOLDER, INSTALL)
 
 
 # ─── the snippet ──────────────────────────────────────────────────────────────
@@ -41,7 +47,8 @@ def test_the_relay_is_hardened_and_published_on_no_port(door):
     mounts = relay["volumes"]
     assert not any("docker.sock" in m for m in mounts)
     assert any(m.endswith(":/app/relay.env:ro") for m in mounts) and any(m.endswith(":/run/secrets:ro") for m in mounts)
-    assert "emporia-data:/data" in mounts                                 # identity, operator key, database
+    assert f"{INSTALL}/data:/data" in mounts                              # identity, operator key, database
+    assert "emporia-data" not in (snippet(door).get("volumes") or {})
     assert "FORWARDED_ALLOW_IPS=*" not in relay["environment"]
 
 
@@ -111,29 +118,120 @@ def test_the_image_builds_from_a_full_pinned_commit(tmp_path):
         relay_host.source_pin(tmp_path / "nowhere")
 
 
+@pytest.mark.parametrize("door", ["tunnel", "caddy"])
+def test_the_snippet_has_no_home_variable_and_no_hermes_path(door):
+    text = snippet_text(door)
+    staged = relay_host.snippet_yaml(door, relay_host.DIR_PLACEHOLDER, relay_host.REPO_URL, SHA, "relay.example.com")
+    for t in (text, staged):
+        assert "${HOME}" not in t and "$HOME" not in t and ".hermes" not in t and "~/" not in t
+        assert "sudo HOME" not in t
+
+
+@pytest.mark.parametrize("door", ["tunnel", "caddy"])
+def test_every_mount_is_under_the_install_folder(door):
+    spec = snippet(door)
+    mounts = [m for svc in spec["services"].values() for m in svc.get("volumes", [])]
+    host = [m.split(":")[0] for m in mounts]
+    named = {"emporia-caddy-data"}
+    assert host and all(h.startswith(INSTALL + "/") or h in named for h in host)
+    wanted = {f"{INSTALL}/.env", f"{INSTALL}/secrets", f"{INSTALL}/data",
+              f"{INSTALL}/cloudflared" if door == "tunnel" else f"{INSTALL}/Caddyfile"}
+    assert wanted <= set(host)
+    assert mounts.count(f"{INSTALL}/.env:/app/relay.env:ro") == 1
+
+
 def test_the_host_sees_the_folder_through_the_data_volume():
     assert relay_host.host_path(Path("/opt/data/profiles/x/emporia-relay")) == "${HOME}/.hermes/profiles/x/emporia-relay"
     assert relay_host.host_path(Path("/opt/data")) == "${HOME}/.hermes"
     assert relay_host.host_path(Path("/srv/relay"), host_data="/h") == "/srv/relay"
 
 
-def test_the_steps_name_the_commands_the_person_runs(tmp_path):
-    steps = "\n".join(relay_host.into_compose_steps("tunnel", "${HOME}/.hermes/er", "relay.example.com", True, ["money"]))
+STAGING = "$HOME/.hermes/profiles/x/emporia-relay"
+
+
+def steps_of(door="tunnel", host_dir=relay_host.INSTALL_DIR, needs_key=False, secrets=()):
+    return "\n".join(relay_host.into_compose_steps(door, host_dir, "relay.example.com", needs_key, list(secrets),
+                                                   STAGING))
+
+
+def test_the_steps_name_the_commands_the_person_runs():
+    steps = steps_of("tunnel", needs_key=True, secrets=["money"])
     assert "Tunnels" in steps and "http://emporia-relay:8088" in steps and "WebSockets" in steps
     assert "operator_signer generate" in steps and "chown -R 10001" in steps
-    assert "starts eyJ" in steps and "Ctrl-D" in steps and "uncomment the `include:`" in steps
-    assert "sudo HOME=$HOME docker compose up -d --build emporia-relay emporia-cloudflared" in steps
-    caddy = "\n".join(relay_host.into_compose_steps("caddy", "h", "relay.example.com", False, []))
+    assert "starts eyJ" in steps and "Ctrl-D" in steps
+    assert "sudo docker compose up -d --build emporia-relay emporia-cloudflared" in steps
+    assert "sudo HOME=$HOME docker compose up" not in steps and "sudo HOME=\"$HOME\" docker compose up" not in \
+        [ln.strip() for ln in steps.splitlines() if ln.strip().startswith("sudo")]
+    caddy = steps_of("caddy")
     assert "ufw allow 22,80,443/tcp" in caddy and "Cloudflare" not in caddy
     assert "EMPORIA_CLIENT_IP_HEADER" in caddy and "EMPORIA_TRUSTED_PROXIES" in caddy
-    assert "sudo HOME" not in "\n".join(relay_host.into_compose_steps("caddy", "/srv/er", "relay.example.com", False, []))
+    assert "sudo install -o root -g root -m 644 \"$S/Caddyfile\" \"$D/Caddyfile\"" in caddy
 
 
-def test_into_compose_writes_a_snippet_and_the_folders(tmp_path):
-    written = relay_host.write_into_compose_files(tmp_path / "er", "tunnel", "h", relay_host.REPO_URL, SHA, "relay.example.com")
+def test_the_first_step_fixes_the_folders_once_and_names_a_one_terminal_rule():
+    first = relay_host.into_compose_steps("tunnel", relay_host.INSTALL_DIR, "relay.example.com", False, [],
+                                          STAGING)[0]
+    assert 'D="$HOME/.emporia"' in first and f'S="{STAGING}"' in first
+    assert "not inside `sudo -i`" in first and "same" not in first.lower() or "this one terminal" in first
+    custom = relay_host.into_compose_steps("tunnel", "/srv/er", "relay.example.com", False, [], STAGING)[0]
+    assert 'D="/srv/er"' in custom
+
+
+def test_the_steps_install_with_owners_and_modes_then_remove_the_staged_copies():
+    lines = [ln.strip() for ln in steps_of("tunnel").splitlines()]
+    assert 'sudo install -d -o root -g root -m 755 "$D"' in lines
+    assert any(ln.startswith('sed "s#__EMPORIA_DIR__#$D#g" "$S/compose.snippet.yaml" | sudo tee "$D/compose.snippet.yaml"')
+               and ln.endswith('sudo chmod 644 "$D/compose.snippet.yaml"') for ln in lines)
+    assert 'sudo install -o root -g 10001 -m 640 "$S/.env" "$D/.env"' in lines
+    assert 'sudo install -d -o 10001 -g 10001 -m 700 "$D/secrets" "$D/data"' in lines
+    assert any("-m 600" in ln and '"$S"/secrets/*' in ln and '"$D/secrets/"' in ln for ln in lines)
+    assert 'sudo rm -rf "$S/.env" "$S/compose.snippet.yaml" "$S/secrets"' in lines
+    assert 'sudo rm -rf "$S/.env" "$S/compose.snippet.yaml" "$S/secrets" "$S/Caddyfile"' in \
+        [ln.strip() for ln in steps_of("caddy").splitlines()]
+    # install comes before removal
+    text = steps_of("tunnel")
+    assert text.index('-m 640 "$S/.env"') < text.index("sudo rm -rf")
+
+
+def test_the_token_goes_straight_to_the_install_folder():
+    steps = steps_of("tunnel")
+    assert 'sudo install -d -o 65532 -g 65532 -m 700 "$D/cloudflared"' in steps
+    assert 'sudo install -m 400 -o 65532 -g 65532 /dev/stdin "$D/cloudflared/token"' in steps
+    token_lines = [ln for ln in steps.splitlines() if "token" in ln and "sudo" in ln]
+    assert token_lines and not any("$S" in ln or ".hermes" in ln for ln in token_lines)
+
+
+def test_every_path_in_the_printed_commands_starts_at_D_or_S_or_is_absolute():
+    import re
+    for door in ("tunnel", "caddy"):
+        for step in relay_host.into_compose_steps(door, relay_host.INSTALL_DIR, "relay.example.com", True, ["k"], STAGING)[1:]:
+            for ln in step.splitlines():
+                ln = ln.strip()
+                if ln.startswith("sudo") or ln.startswith("sed") or ln.startswith("for "):
+                    assert "${HOME}" not in ln and not re.search(r"(^|\s)~/", ln)
+                    assert "$HOME" not in ln
+
+
+def test_the_include_step_prints_an_absolute_path_command():
+    steps = steps_of("tunnel")
+    assert 'echo "include: [ $D/compose.snippet.yaml ]"' in steps
+    assert "uncomment" not in steps
+
+
+def test_the_steps_say_how_to_change_settings_later():
+    steps = steps_of("tunnel")
+    assert 'sudo nano "$D/.env"' in steps and "sudo docker compose restart emporia-relay" in steps
+    assert "relay config set" in steps and "--dir" in steps
+
+
+def test_into_compose_writes_only_the_staged_snippet(tmp_path):
+    written = relay_host.write_into_compose_files(tmp_path / "er", "tunnel", relay_host.DIR_PLACEHOLDER,
+                                                  relay_host.REPO_URL, SHA, "relay.example.com")
     assert [p.name for p in written] == [relay_host.SNIPPET]
-    assert (tmp_path / "er" / "secrets").is_dir() and (tmp_path / "er" / "cloudflared").is_dir()
-    assert oct((tmp_path / "er" / "cloudflared").stat().st_mode & 0o777) == "0o700"
+    assert not (tmp_path / "er" / "secrets").exists() and not (tmp_path / "er" / "cloudflared").exists()
+    caddy = relay_host.write_into_compose_files(tmp_path / "c", "caddy", relay_host.DIR_PLACEHOLDER,
+                                                relay_host.REPO_URL, SHA, "relay.example.com")
+    assert sorted(p.name for p in caddy) == ["Caddyfile", relay_host.SNIPPET]
     with pytest.raises(FileExistsError):                  # a file it did not make is never replaced
         (tmp_path / "er" / relay_host.SNIPPET).write_text("mine")
         relay_host.write_into_compose_files(tmp_path / "er", "tunnel", "h", relay_host.REPO_URL, SHA, "relay.example.com")
@@ -350,3 +448,142 @@ def test_an_export_without_the_relay_identity_is_refused(tmp_path):
     (keys / "_relay_identity.priv").unlink()
     with pytest.raises(SystemExit, match="identity"):
         relay_move.export(db, keys, tmp_path / "move")
+
+
+# ─── the install folder is outside the Hermes data folder ─────────────────────
+
+@pytest.mark.parametrize("bad", ["${HOME}/.hermes/emporia-relay", "/home/me/.hermes/profiles/x/emporia-relay",
+                                 "/home/me/.hermes", "/opt/data/emporia-relay", "emporia-relay", "~/relay", "$HOME/other"])
+def test_an_install_folder_inside_hermes_or_not_absolute_is_refused(bad):
+    assert relay_host.install_dir_problem(bad)
+
+
+@pytest.mark.parametrize("good", [relay_host.INSTALL_DIR, "/srv/emporia-relay", "/srv/other", "/home/me/emporia-relay", "/opt/emporia"])
+def test_an_absolute_folder_outside_hermes_is_accepted(good):
+    assert relay_host.install_dir_problem(good) == ""
+
+
+FEE = "0x" + "ab" * 20
+
+
+def run_wizard(monkeypatch, folder, *extra):
+    from emporia import cli
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setattr(cli, "_TTY", False)
+    monkeypatch.setattr("shutil.which", lambda _: None)
+    return cli.main(["relay", "host", "--into-compose", "--dir", str(folder), "--domain", "relay.example.org",
+                     "--admin", "", "--access", "open", "--transparency-log", "off", "--modules", "money",
+                     "--fee-receiver", FEE, *extra])
+
+
+def test_the_wizard_refuses_a_host_dir_inside_hermes(tmp_path, capsys, monkeypatch):
+    rc = run_wizard(monkeypatch, tmp_path / "er", "--front-door", "tunnel",
+                    "--host-dir", "/home/me/.hermes/profiles/x/emporia-relay")
+    out = capsys.readouterr().out
+    assert rc == 1 and "inside the Hermes data folder" in out and "$HOME/.emporia" in out
+    assert not (tmp_path / "er").exists()
+
+
+def test_the_wizard_stages_new_files_and_prints_install_steps(tmp_path, capsys, monkeypatch):
+    assert run_wizard(monkeypatch, tmp_path / "er", "--front-door", "tunnel") == 0
+    out = capsys.readouterr().out
+    assert 'D="$HOME/.emporia"' in out and "sed \"s#__EMPORIA_DIR__#$D#g\"" in out
+    assert sorted(p.name for p in (tmp_path / "er").iterdir()) == [".env", relay_host.SNIPPET]
+    assert oct((tmp_path / "er" / ".env").stat().st_mode & 0o777) == "0o600"
+
+
+# ─── moving an existing relay out of the Hermes folder ────────────────────────
+
+OLD_SHA = "fedcba9876543210fedcba9876543210fedcba98"
+OLD_URL = "https://github.com/example/emporia.git"
+
+
+def old_snippet(door: str = "tunnel") -> str:
+    text = relay_host.snippet_yaml(door, "${HOME}/.hermes/profiles/x/emporia-relay", OLD_URL, OLD_SHA,
+                                   "relay.example.org")
+    text = text.replace("      - ${HOME}/.hermes/profiles/x/emporia-relay/data:/data", "      - emporia-data:/data")
+    text = text.replace("networks:\n  emporia-edge:\n    driver", "volumes:\n  emporia-data:\n\nnetworks:\n  emporia-edge:\n    driver")
+    text = text.replace("container_name: emporia-relay", "container_name: my-relay").replace("mem_limit: 1536m", "mem_limit: 3g")
+    return text
+
+
+def make_old_relay(folder: Path, door: str = "tunnel") -> None:
+    folder.mkdir(parents=True)
+    (folder / relay_host.SNIPPET).write_text(old_snippet(door))
+    (folder / ".env").write_text("EMPORIA_RELAY_ACCESS=open\n")
+    (folder / "secrets").mkdir()
+    (folder / "secrets" / "operator_key").write_text("SECRET-KEY-VALUE")
+    if door == "tunnel":
+        (folder / "cloudflared").mkdir()
+        (folder / "cloudflared" / "token").write_text("eyJSECRET-TOKEN")
+    else:
+        (folder / "Caddyfile").write_text(relay_host.into_compose_caddyfile("relay.example.org"))
+
+
+def test_an_old_snippet_is_recognised_and_a_new_one_is_not():
+    old = relay_host.old_layout(old_snippet("tunnel"))
+    assert old["sha"] == OLD_SHA and old["url"] == OLD_URL and old["front_door"] == "tunnel"
+    assert old["domain"] == "relay.example.org" and old["keep"]["emporia-relay"]["container_name"] == "my-relay"
+    assert relay_host.old_layout(snippet_text("tunnel")) is None
+    assert relay_host.old_layout("services: {}") is None
+
+
+@pytest.mark.parametrize("door", ["tunnel", "caddy"])
+def test_move_out_prints_the_move_steps_and_keeps_the_old_pin_names_and_limits(tmp_path, capsys, monkeypatch, door):
+    import yaml
+    folder = tmp_path / "old"
+    make_old_relay(folder, door)
+    from emporia import cli
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setattr(cli, "_TTY", False)
+    assert cli.main(["relay", "host", "--move-out", "--dir", str(folder)]) == 0
+    out = capsys.readouterr().out
+    assert "SECRET-KEY-VALUE" not in out and "eyJSECRET-TOKEN" not in out
+    for needle in ("Moving this relay out of the Hermes folder", "docker volume ls | grep emporia-data",
+                   "docker run --rm -v <project>_emporia-data:/from", "sudo docker compose stop emporia-relay",
+                   "same relay_id", "docker volume rm <project>_emporia-data", 'D="$HOME/.emporia"',
+                   'echo "include: [ $D/compose.snippet.yaml ]"'):
+        assert needle in out
+    assert "Do these on the host" in out and "Cloudflare: Zero Trust" not in out
+    staged = folder / relay_host.STAGED_SNIPPET
+    spec = yaml.safe_load(staged.read_text().replace(relay_host.DIR_PLACEHOLDER, INSTALL))
+    relay = spec["services"]["emporia-relay"]
+    assert relay["build"] == f"{OLD_URL}#{OLD_SHA}" and relay["container_name"] == "my-relay"
+    assert relay["mem_limit"] == "3g" and f"{INSTALL}/data:/data" in relay["volumes"]
+    assert "emporia-data" not in (spec.get("volumes") or {})
+    assert (folder / relay_host.SNIPPET).read_text() == old_snippet(door)       # the live include is untouched
+    assert (folder / "secrets" / "operator_key").read_text() == "SECRET-KEY-VALUE"
+    if door == "tunnel":
+        assert 'sudo cp -a "$S/cloudflared" "$D/"' in out and "sudo chmod 400" in out
+
+
+def test_the_wizard_on_an_old_relay_prints_move_steps_not_fresh_install_steps(tmp_path, capsys, monkeypatch):
+    folder = tmp_path / "old"
+    make_old_relay(folder)
+    assert run_wizard(monkeypatch, folder) == 0
+    out = capsys.readouterr().out
+    assert "Found a relay with the old layout" in out and "Moving this relay out of the Hermes folder" in out
+    assert "Save the token on the host" not in out and "SECRET-KEY-VALUE" not in out and "eyJSECRET" not in out
+    assert f"{OLD_SHA}" in (folder / relay_host.STAGED_SNIPPET).read_text()
+
+
+def test_move_out_refuses_a_folder_without_an_old_relay(tmp_path, capsys, monkeypatch):
+    from emporia import cli
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    (tmp_path / "x").mkdir()
+    assert cli.main(["relay", "host", "--move-out", "--dir", str(tmp_path / "x")]) == 1
+    assert "no relay with the old layout" in capsys.readouterr().out
+
+
+def test_relay_config_set_prints_the_install_line_for_a_staged_folder(tmp_path, capsys, monkeypatch):
+    from emporia import cli
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setattr(cli, "_TTY", False)
+    folder = tmp_path / "er"
+    relay_host.write_into_compose_files(folder, "tunnel", relay_host.DIR_PLACEHOLDER, relay_host.REPO_URL, SHA,
+                                        "relay.example.org")
+    (folder / ".env").write_text("EMPORIA_RELAY_ACCESS=open\n")
+    assert cli.main(["relay", "config", "set", "EMPORIA_LABS", "1", "--dir", str(folder)]) == 0
+    out = capsys.readouterr().out
+    assert 'sudo install -o root -g 10001 -m 640' in out and '"$D/.env"' in out
+    assert "sudo docker compose restart emporia-relay" in out
