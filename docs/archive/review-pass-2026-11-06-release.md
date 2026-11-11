@@ -101,7 +101,7 @@ Fixed:
   lines and its seed reference. What stays is the Hermes image's in-container mount point
   (`docker-compose.yml`, `relay_host.py`, `signer_host.py`) and comments saying so: those are container
   paths, not this machine's.
-- "Season 1": `docs/preview-all.md` linked `docs/proposals/gamify-season1.md` (renamed to
+- "Season 1": `docs/archive/preview-all.md` linked `docs/proposals/gamify-season1.md` (renamed to
   `gamify-launch-additions.md`). Branch names `gamify-season1` are left as they are.
 - HANDOFF (11-03) now says the entry is built on `preview-2`, and points here.
 
