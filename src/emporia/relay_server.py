@@ -566,6 +566,11 @@ def vouched_names() -> frozenset[str]:
     return frozenset(r["agent_id"] for r in rows)
 
 
+def _fold_name(name: str) -> str:
+    """A name as handles are stored: NFKC, trimmed, lower case."""
+    return unicodedata.normalize("NFKC", str(name or "")).strip().lower()
+
+
 def reserved_name_problem(agent_id: str, stable_id: str) -> str:
     """Why `agent_id` may not be registered by the key whose stable id is `stable_id`, or "": the operator's
     configured name (`EMPORIA_AGENT_ID`) belongs to the operator's key. Nobody else may
@@ -576,8 +581,8 @@ def reserved_name_problem(agent_id: str, stable_id: str) -> str:
         return ""       # no operator is pinned: no name is anyone's to reserve, and nobody is the operator
     if stable_id == operator:
         return ""
-    named = os.getenv("EMPORIA_AGENT_ID", "").strip()
-    if named and agent_id == named:
+    named = _fold_name(os.getenv("EMPORIA_AGENT_ID", ""))
+    if named and _fold_name(agent_id) == named:
         return (f"{agent_id!r} is this relay's reserved operator name: only the operator's key "
                 "(EMPORIA_OPERATOR_STABLE_ID) may register it")
     return ""
@@ -1850,6 +1855,9 @@ def record_settlement(settlement: dict[str, Any]) -> None:
 _AGENT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$")
 
 
+_HEX_HANDLE_RE = re.compile(r"^[0-9a-f]{32,}$")
+
+
 def _normalize_agent_id(agent_id: str) -> str:
     """NFKC-normalize and validate a proposed agent_id. Raises ValueError with a message
     safe to surface to the caller. The regex's required alnum first/last char already
@@ -1861,6 +1869,11 @@ def _normalize_agent_id(agent_id: str) -> str:
             "agent_id must be 3-64 chars, lowercase letters/digits/underscore/hyphen only, "
             "and start and end with a letter or digit"
         )
+    # A stable id (and a key) is 64 hex characters, and clients, the operator removal bar and network links
+    # read a hex string as one: a handle must never be mistaken for it.
+    if _HEX_HANDLE_RE.match(normalized):
+        raise ValueError("agent_id may not be a long hex string (32+ characters of 0-9 and a-f): "
+                         "that is what ids look like; add a letter from g-z or a word")
     return normalized
 
 
@@ -2187,6 +2200,53 @@ def _house_names() -> list[str]:
     return sorted(house_names())
 
 
+def extra_reserved_names() -> frozenset[str]:
+    """`EMPORIA_RESERVED_NAMES`: extra names the operator holds back (comma-separated, folded like handles)."""
+    return frozenset(n for n in (_fold_name(x) for x in os.getenv("EMPORIA_RESERVED_NAMES", "").split(",")) if n)
+
+
+def _privileged_stable_ids() -> frozenset[str]:
+    ids = set(house_stable_ids()) | set(vouched_stable_ids())
+    if operator_stable_id():
+        ids.add(operator_stable_id())
+    return frozenset(ids)
+
+
+def _affix_problem(agent_id: str, stable_id: str) -> str:
+    """Why a new handle is a squat on a name that is someone's: a `-`/`_`/digit-separated piece of it (or the
+    whole of it with those taken out) is a reserved word, the operator's name, an operator-reserved name, or
+    spelt like the house's or a vouched resident's handle (`wujitsana-official`, `real-wujitsana`,
+    `emporia-support`). `alpha2` is fine unless `alpha` is protected. The keys of those agents are not held
+    to it for their own names."""
+    if stable_id in _privileged_stable_ids():
+        return ""
+    protected = {n for n in (_fold_name(os.getenv("EMPORIA_AGENT_ID", "")), *_house_names(),
+                             *vouched_names(), *extra_reserved_names()) if n}
+    words = {*RESERVED_AGENT_IDS, *protected}
+    skeletons = {_names.skeleton(w) for w in words}
+    tokens = [t for t in re.split(r"[-_]+|\d+", agent_id) if t]
+    for piece in (*tokens, re.sub(r"[\d_-]", "", agent_id)):
+        if piece and (piece in words or _names.skeleton(piece) in skeletons):
+            return (f"'{agent_id}' contains '{piece}', a reserved or protected name here; "
+                    "choose a name that does not wear someone else's")
+    return ""
+
+
+def handle_problem(conn: Any, agent_id: str, stable_id: str = "") -> str:
+    """Every rule a *new* handle meets (register and `/available` both ask here), or "": reserved, the
+    operator's name, an affix on a protected name, a look-alike of an existing handle. `agent_id` is already
+    normalised."""
+    if agent_id in RESERVED_AGENT_IDS:
+        return f"'{agent_id}' is a reserved handle"
+    if why := reserved_name_problem(agent_id, stable_id):
+        return why
+    if agent_id in extra_reserved_names() and stable_id not in _privileged_stable_ids():
+        return f"'{agent_id}' is a reserved handle on this relay"
+    if why := _affix_problem(agent_id, stable_id):
+        return why
+    return _handle_lookalike_problem(conn, agent_id)
+
+
 def _rename_in_json_column(
     conn: Any, table: str, column: str, old_id: str, new_id: str,
 ) -> int:
@@ -2381,8 +2441,14 @@ class AgentRegistry:
                 if conn.execute("SELECT 1 FROM access_removals WHERE resource_type = 'relay' AND agent_id = ?",
                                 ((held["stable_id"] if held and held["stable_id"] else derived_stable_id),)).fetchone():
                     raise ValueError("This relay's operator removed that agent; it cannot register here again.")
+                handles = [r["agent_id"] for r in conn.execute("SELECT agent_id FROM authorized_agents").fetchall()]
+                if why := _names.display_name_problem(
+                        verified_display_name, handles,
+                        {*RESERVED_AGENT_IDS, *extra_reserved_names(), _fold_name(os.getenv("EMPORIA_AGENT_ID", ""))},
+                        own=agent_id):
+                    raise ValueError(why)
                 if not existing_row:
-                    if why := _handle_lookalike_problem(conn, agent_id):
+                    if why := handle_problem(conn, agent_id, derived_stable_id):
                         raise ValueError(why)
                     # P245: also a key some agent now holds after rotating — its
                     # stable id is from an earlier key, so it would not match above.
@@ -2642,6 +2708,9 @@ class AgentRegistry:
         if new_agent_id == agent_id:
             raise ValueError("that is already this agent's handle")
         with DB_LOCK, get_db() as _conn:
+            mine = _conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+            if why := reserved_name_problem(new_agent_id, (mine["stable_id"] if mine else "") or ""):
+                raise ValueError(why)
             if why := _handle_lookalike_problem(_conn, new_agent_id):
                 if not _names.skeleton(new_agent_id) == _names.skeleton(agent_id):    # renaming to a spelling of itself is fine
                     raise ValueError(why)
@@ -2659,8 +2728,10 @@ class AgentRegistry:
                 raise KeyError(f"'{new_agent_id}' is already taken")
 
             for table, column in _RENAME_COLUMNS:
+                # the operator's removal bar is by stable id, never by name: not rewritten
+                bar = " AND resource_type != 'relay'" if table == "access_removals" else ""
                 conn.execute(
-                    f"UPDATE {table} SET {column} = ? WHERE {column} = ?",
+                    f"UPDATE {table} SET {column} = ? WHERE {column} = ?{bar}",  # noqa: S608
                     (new_agent_id, agent_id),
                 )
             for table, column in _RENAME_JSON_COLUMNS:

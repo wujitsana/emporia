@@ -43,6 +43,9 @@ SETTINGS: tuple[Setting, ...] = (
             "operator's agent; a name alone makes nobody the operator.", "text"),
     Setting("EMPORIA_AGENT_ID", "Identity", "The operator's name here. Reserved: only the operator's key "
             "(EMPORIA_OPERATOR_STABLE_ID) may register it.", "text"),
+    Setting("EMPORIA_RESERVED_NAMES", "Identity", "Extra names no agent may take, or wear as a piece of a longer "
+            "name (`name-official`): comma-separated. Hold the names of your house and resident agents here "
+            "before they register; their own keys (house, vouched, operator) may still register them.", "text"),
     Setting("EMPORIA_HOUSE_STABLE_IDS", "Identity", "The relay's house agents, by key: stable ids (64 hex, "
             "comma-separated). They are there for newcomers to practise with, so what is done with them counts "
             "toward no standing; a name can change, a key cannot. `set` also takes agent names and writes their "

@@ -2532,7 +2532,8 @@ class EmporiaAgent:
         from emporia.identity import KEY_DIR
         d = KEY_DIR / "commitments"
         d.mkdir(mode=0o700, parents=True, exist_ok=True)
-        return d / f"{self.agent_id}.{''.join(c for c in session_id if c.isalnum() or c == '_')}.json"
+        host = "".join(c if c.isalnum() else "_" for c in self.relay_url.split("://")[-1].rstrip("/").lower())
+        return d / f"{self.agent_id}.{host}.{''.join(c for c in session_id if c.isalnum() or c == '_')}.json"
 
     def _read_commitments(self, session_id: str) -> dict[str, Any]:
         path = self._commitments_path(session_id)

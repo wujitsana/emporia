@@ -4952,7 +4952,9 @@ def _commitments_file(aid: str, session_id: str):
     clean = "".join(c for c in str(aid) if c.isalnum() or c in "_-")  # as _agent_dir (client audit M5)
     if not clean:
         raise ValueError(f"not an agent name: {aid!r}")
-    return d / f"{clean}.{''.join(c for c in session_id if c.isalnum() or c == '_')}.json"
+    # the relay's host is part of the name: a visited relay cannot replay a session id from a home game
+    host = "".join(c if c.isalnum() else "_" for c in _base().split("://")[-1].rstrip("/").lower())
+    return d / f"{clean}.{host}.{''.join(c for c in session_id if c.isalnum() or c == '_')}.json"
 
 
 def _write_commitments(path, saved: dict) -> None:

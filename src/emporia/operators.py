@@ -153,9 +153,10 @@ def assign(rows: Iterable[Any], now: float | None = None) -> dict[str, str]:
         by_name = {}
         for r in rows:
             keys = r.keys() if hasattr(r, "keys") else r
-            by_name[r["agent_id"]] = base[r["agent_id"]]
-            if "stable_id" in keys and r["stable_id"]:
-                by_name[r["stable_id"]] = base[r["agent_id"]]
+            # `network_group` names an agent by stable id (agent id only for a row with none), so key by the
+            # stable id when there is one: an agent whose handle looks like another's stable id merges nobody.
+            sid = r["stable_id"] if "stable_id" in keys else ""
+            by_name[sid or r["agent_id"]] = base[r["agent_id"]]
         for r in rows:
             keys = r.keys() if hasattr(r, "keys") else r
             link = (r["network_group"] if "network_group" in keys else "") or ""
