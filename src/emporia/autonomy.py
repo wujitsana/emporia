@@ -26,7 +26,7 @@ from writing it) and its calls count as a person's.
   (``EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY``; unset, it is 25 when every network the agent pays on
   is a testnet and 0 otherwise; a person's value, 0 included, wins), and then every payment is also counted against
   that per-day total where it is signed (agent_wallet._charge_daily), on top of the per-payment cap.
-  Card payments (an SPT or payment intent the agent supplies) cannot be capped here and stay refused.
+  Emporia has no card path: every payment is a wallet payment, capped as above.
 * *A write budget per turn:* 5 writes, 2 DMs to agents it never DMed before; 3 new rooms or topics a day.
   Game moves, and ``say`` with a move, are not writes (games have their own limits).
 * Settings tools (``set_cross_relay_dms``) are a person's.

@@ -377,6 +377,7 @@ token = set_secret_scope({{"EMPORIA_KEYS_DIR": "/profiles/alpha/home/.hermes/key
                           "EMPORIA_IDENTITY_PRIVATE_KEY": "alpha-key", "VAULT_ADDR": "https://vault.alpha",
                           "EMPORIA_ENCRYPTION_KEY_SOURCE": "env:ALPHA_ENC", "ALPHA_ENC": "alpha-enc",
                           "EMPORIA_X402_EVM_KEY_SOURCE": "env:BETA_WALLET",
+                          "EMPORIA_X402_PHRASE_SOURCE": "cmd:vault kv get -field=k secret/a",
                           "OPENROUTER_API_KEY": "alphas-model-key"}}, profile_home="/profiles/alpha")
 try:
     scoped = EmporiaAdapter(PlatformConfig(enabled=True, extra=extra))
@@ -414,19 +415,21 @@ print(json.dumps({{"scoped": show(scoped._bridge_env()), "single": show(single._
     scoped, single = result["scoped"], result["single"]
     assert scoped == {"dotenv": "/profiles/alpha/.env", "no_dotenv": "1",
                       "handed": "ALPHA_ENC,EMPORIA_ENCRYPTION_KEY_SOURCE,EMPORIA_IDENTITY_KEY_SOURCE,"
-                                "EMPORIA_IDENTITY_PRIVATE_KEY,EMPORIA_KEYS_DIR,EMPORIA_X402_EVM_KEY_SOURCE,VAULT_ADDR",
+                                "EMPORIA_IDENTITY_PRIVATE_KEY,EMPORIA_KEYS_DIR,EMPORIA_X402_EVM_KEY_SOURCE,EMPORIA_X402_PHRASE_SOURCE,VAULT_ADDR",
                       "emporia": {"EMPORIA_KEYS_DIR": "/profiles/alpha/home/.hermes/keys",
                                   "EMPORIA_IDENTITY_KEY_SOURCE": "env:EMPORIA_IDENTITY_PRIVATE_KEY",
                                   "EMPORIA_IDENTITY_PRIVATE_KEY": "alpha-key",
                                   "EMPORIA_ENCRYPTION_KEY_SOURCE": "env:ALPHA_ENC",
-                                  "EMPORIA_X402_EVM_KEY_SOURCE": "env:BETA_WALLET"},
+                                  "EMPORIA_X402_EVM_KEY_SOURCE": "env:BETA_WALLET",
+                                  "EMPORIA_X402_PHRASE_SOURCE": "cmd:vault kv get -field=k secret/a"},
                       "vault": "https://vault.alpha", "secrets": [], "plain": True,
                       # A key linked by any name is alpha's own; one alpha lacks is never the launcher's.
                       "linked": {"ALPHA_ENC": "alpha-enc", "BETA_WALLET": None},
                       "hermes_python": False, "bypass": []}
     # One profile, no scope: its os.environ is its own (Hermes loaded its .env there).
     assert single["emporia"]["EMPORIA_KEYS_DIR"] == "/launching/profile/keys"
-    assert single["vault"] == "https://vault.launching" and single["no_dotenv"] == "1"
+    assert single["vault"] is None, "no vault linked: the launching profile's vault address is not handed on"
+    assert single["no_dotenv"] == "1"
     assert single["secrets"] == [] and single["bypass"] == []
 
 

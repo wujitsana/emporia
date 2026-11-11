@@ -181,7 +181,7 @@ def test_an_approval_is_for_that_payee_only_and_every_outcome_is_audited(held):
     assert agent_wallet.sign_exact(AGENT, _challenge_for(400))                    # the approved one pays
     with pytest.raises(agent_wallet.AgentWalletError, match="per-payment cap"):
         agent_wallet.sign_exact(AGENT, _challenge_for(600))
-    rows = [json.loads(ln) for ln in (signer.signer_dir() / "audit.jsonl").read_text().splitlines()]
+    rows = signer.audit_rows()
     assert [r["result"] for r in rows] == ["waiting", "refused", "signed", "refused"]
     assert rows[2]["amount_atomic"] == 400 * 10_000 and oct((signer.signer_dir() / "audit.jsonl").stat().st_mode)[-3:] == "600"
 

@@ -181,11 +181,14 @@ def add_settings(values: dict) -> list[str]:
 
 def audit(entry: dict) -> None:
     """One line per request, appended; only the signer writes it."""
-    path = signer_dir() / "audit.jsonl"
+    # SI-5: refusals and errors cost the agent nothing and are not rate limited, so they go to their own
+    # bounded file; a flood of them can no longer rotate the payment and admin records out of audit.jsonl.
+    noisy = entry.get("result") in ("refused", "error", "limited")
+    path = signer_dir() / ("audit-refused.jsonl" if noisy else "audit.jsonl")
     with _AUDIT_LOCK:
         try:      # S-8: a bounded file: past AUDIT_MAX_BYTES the old log is kept once (audit.jsonl.1) and a new one starts
             if path.stat().st_size > AUDIT_MAX_BYTES:
-                os.replace(path, path.with_name("audit.jsonl.1"))
+                os.replace(path, path.with_name(path.name + ".1"))
         except OSError:
             pass
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
@@ -854,24 +857,34 @@ def open_for(agent_id: str, envelope: dict, label: str, aad: bytes) -> str:
     return text
 
 
+def _safe_error(e: BaseException) -> str:
+    """An exception as told to the agent: never an RPC URL (it may carry a provider's key)."""
+    from emporia.rpc_safe import describe
+    return describe(e)
+
+
+def audit_rows() -> list[dict]:
+    """Every audit entry, oldest first: the main file and the refusals' file merged by time."""
+    rows = []
+    for fname in ("audit.jsonl", "audit-refused.jsonl"):
+        try:
+            lines = (signer_dir() / fname).read_text().splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(e, dict):
+                rows.append(e)
+    return sorted(rows, key=lambda e: e.get("at", 0))
+
+
 def log(agent_id: str = "", limit: int = 50) -> list[dict]:
     """The audit's last entries, for one agent or all: kinds, results, reasons — never content."""
-    path = signer_dir() / "audit.jsonl"
-    try:
-        lines = path.read_text().splitlines()
-    except OSError:
-        return []
-    out = []
-    for line in reversed(lines):
-        try:
-            e = json.loads(line)
-        except ValueError:
-            continue
-        if not agent_id or e.get("agent") == agent_id:
-            out.append(e)
-            if len(out) >= limit:
-                break
-    return list(reversed(out))
+    out = [e for e in audit_rows() if not agent_id or e.get("agent") == agent_id]
+    return out[-limit:] if limit else []
 
 
 # ─── the service ──────────────────────────────────────────────────────────────
@@ -944,8 +957,8 @@ def _run(request: Request, fn):
             audit({"agent": aid, "op": op, "result": "refused", "why": str(e)[:300]})
             raise HTTPException(403, {"error": f"not paid: {e}"}) from None
         except Exception as e:   # a malformed offer, a refused requirement: say so, never a traceback
-            audit({"agent": aid, "op": op, "result": "error", "why": f"{type(e).__name__}: {e}"[:300]})
-            raise HTTPException(400, {"error": f"{type(e).__name__}: {e}"}) from None
+            audit({"agent": aid, "op": op, "result": "error", "why": _safe_error(e)[:300]})
+            raise HTTPException(400, {"error": _safe_error(e)}) from None
         audit({"agent": aid, "op": op, "result": "signed",
                "amount_atomic": agent_wallet.spent_today_atomic(aid) - before})
         return out

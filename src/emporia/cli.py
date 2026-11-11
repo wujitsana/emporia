@@ -26,6 +26,7 @@ import json
 import io
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -1093,8 +1094,8 @@ def _host_service(folder: Path, env_path: Path, needs_key: bool, admin: bool, do
         steps.append(("operator key", ["sudo", "-u", user, "env", "EMPORIA_NO_DOTENV=1",
                                        f"EMPORIA_KEYS_DIR={data / 'keys'}", sys.executable,
                                        "-m", "emporia.operator_signer", "generate"]))
-    steps += [("its settings", ["sudo", "sh", "-c", f"chown root:root {env_path} && chmod 600 {env_path}"]),
-              ("start", ["sudo", "sh", "-c", f"cp {folder / rh.SERVICE} /etc/systemd/system/ && systemctl "
+    steps += [("its settings", ["sudo", "sh", "-c", f"chown root:root {shlex.quote(str(env_path))} && chmod 600 {shlex.quote(str(env_path))}"]),
+              ("start", ["sudo", "sh", "-c", f"cp {shlex.quote(str(folder / rh.SERVICE))} /etc/systemd/system/ && systemctl "
                                              "daemon-reload && systemctl enable --now emporia-relay"])]
     runnable = bool(shutil.which("systemctl") and shutil.which("sudo"))
     if not _host_steps(steps, "Run these now (sudo asks for your password)?" if runnable else "",
@@ -2211,8 +2212,7 @@ def _signer_host(args: argparse.Namespace) -> int:
     steps = [("its user", ["sudo", "sh", "-c", f"id -u {sh.SERVICE_USER} >/dev/null 2>&1 || useradd --system "
                                                f"--no-create-home --shell /usr/sbin/nologin {sh.SERVICE_USER}"]),
              ("can it run", ["sudo", "-u", sh.SERVICE_USER, "test", "-x", str(exe)]),
-             ("start", ["sudo", "sh", "-c", f"cp {folder / sh.SERVICE} /etc/systemd/system/ && systemctl "
-                                            "daemon-reload && systemctl enable --now emporia-signer"])]
+             ("start", ["sudo", "sh", "-c", _service_install_command(folder / sh.SERVICE, "emporia-signer")])]
     runnable = systemd and bool(shutil.which("sudo"))
     if _host_steps(steps, "Run these now (sudo asks for your password)?" if runnable else "",
                    "1. On this machine, as a person with sudo:"):
@@ -2275,18 +2275,16 @@ def _signer_alerts(args: argparse.Namespace) -> int:
 
 def _signer_audit(name: str = "") -> int:
     """What the signer signed, refused and held for approval — newest last."""
-    import json as _json
 
     from emporia import signer
     path = signer.signer_dir() / "audit.jsonl"
-    rows = [_json.loads(ln) for ln in (path.read_text().splitlines() if path.exists() else []) if ln.strip()]
-    rows = [r for r in rows if not name or r.get("agent") == name][-40:]
+    rows = [r for r in signer.audit_rows() if not name or r.get("agent") == name][-40:]
     for r in rows:
         detail = (f"{r['amount_atomic'] / 1e6:.2f} USDC" if r.get("result") == "signed" and r.get("amount_atomic")
                   else r.get("intent") or r.get("why", ""))
         op = f"{r.get('op', '')}:{r['kind']}" if r.get("kind") else r.get("op", "")
-        print(f"  {time.strftime('%m-%d %H:%M:%S', time.localtime(r['at']))}  {r.get('agent', ''):16} "
-              f"{op:22} {r.get('result', ''):8} {detail}")
+        print(f"  {time.strftime('%m-%d %H:%M:%S', time.localtime(r['at']))}  {_audit_text(r.get('agent', ''), 16):16} "
+              f"{_audit_text(op, 40):22} {_audit_text(r.get('result', ''), 12):8} {_audit_text(detail)}")
     print(f"{len(rows)} shown ({path})" if rows else "signer: nothing signed or refused yet")
     return 0
 
@@ -2607,6 +2605,9 @@ def _signer_add_make(args: argparse.Namespace, url: str) -> int:
                   f"agent that has none yet. To move the keys it has: emporia signer add {name} --identity")
             return 1
     key_dir = Path(env.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    if why := _unsafe_profile_key_dir(profile, key_dir):
+        print(f"signer add --make: refused: {why}.")
+        return 1
     stem = _keyfile_stem(name)
     have = [f.name for f in (key_dir.glob(f"{stem}.*") if key_dir.is_dir() else [])
             if f.is_file() and not f.name.endswith(".signer.pub")
@@ -2632,7 +2633,9 @@ def _signer_add_make(args: argparse.Namespace, url: str) -> int:
         print(f"signer add --make: {e}")
         return 1
     rules = {**env, **{k: v for k, v in _mcp_env(profile).items() if k in signer.SIGNING_POLICY}}
-    signer.save_policy(name, {k: rules.get(k, "") for k in signer.POLICY_NAMES if k != "EMPORIA_X402_MAINNET"})
+    seeded = {k: rules.get(k, "") for k in signer.POLICY_NAMES if k != "EMPORIA_X402_MAINNET"}
+    signer.save_policy(name, seeded)
+    _print_seeded_policy(name, seeded)
     token = signer.new_agent_token(name)
     if added := signer.add_settings(env):
         print(f"  The signer takes {name}'s network settings: {', '.join(added)} (in {signer.settings_path()})")
@@ -2640,10 +2643,11 @@ def _signer_add_make(args: argparse.Namespace, url: str) -> int:
     key_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     for marker, value in ((key_dir / f"{stem}.signer.pub", made["identity"]),
                           (key_dir / f"{stem}.x25519.signer.pub", made["encryption"])):
-        marker.write_text(value + "\n")
-        if os.getuid() == 0:
-            owner = profile.stat()
-            os.chown(marker, owner.st_uid, owner.st_gid)
+        try:
+            _write_profile_marker(profile, marker, value)
+        except OSError as e:
+            print(f"signer add --make: refused to write {marker}: {e.strerror or e} (a symbolic link there?)")
+            return 1
     merge_env_file(profile / ".env", {"EMPORIA_SIGNER_URL": url, "EMPORIA_SIGNER_TOKEN": token})
     where_said = {r: where.get(r, "local") for r in made}
     print(f"{name}: its keys were made in the signer and never existed in its profile:")
@@ -2728,7 +2732,9 @@ def _signer_add_sources(args: argparse.Namespace, url: str) -> int:
     for role, ref in refs.items():
         signer.set_route(name, role, "vault", ref)
     rules = {**env, **{k: v for k, v in _mcp_env(profile).items() if k in signer.SIGNING_POLICY}}
-    signer.save_policy(name, {k: rules.get(k, "") for k in signer.POLICY_NAMES if k != "EMPORIA_X402_MAINNET"})
+    seeded = {k: rules.get(k, "") for k in signer.POLICY_NAMES if k != "EMPORIA_X402_MAINNET"}
+    signer.save_policy(name, seeded)
+    _print_seeded_policy(name, seeded)
     token = signer.new_agent_token(name)
     signer.add_settings(env)
     signer.own(signer.agent_dir(name))
@@ -2736,7 +2742,11 @@ def _signer_add_sources(args: argparse.Namespace, url: str) -> int:
         key_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         for marker, value in ((key_dir / f"{stem}.signer.pub", publics["identity"]),
                               (key_dir / f"{stem}.x25519.signer.pub", publics["encryption"])):
-            marker.write_text(value + "\n")
+            try:
+                _write_profile_marker(profile, marker, value)
+            except OSError as e:
+                print(f"signer add --key-source: refused to write {marker}: {e.strerror or e} (a symbolic link?)")
+                return 1
     unset_env_lines(profile / ".env", [SOURCE_VARS[r] for r in refs] + ["EMPORIA_X402_MAINNET"])
     left = [v for v in SOURCE_VARS.values() if installer().harvest_env(profile).get(v, "").startswith("cmd:")]
     vault_vars = [v for v in ("OP_SERVICE_ACCOUNT_TOKEN", "BW_SESSION", "BW_CLIENTID", "BW_CLIENTSECRET")
@@ -2863,15 +2873,17 @@ def _signer_policy(args: argparse.Namespace) -> int:
             return 1
         cap, day = env.get("EMPORIA_X402_MAX_PAYMENT_CENTS", "1000"), env.get("EMPORIA_X402_MAX_DAILY_CENTS", "5000")
         print(f"  Mainnet means real money. Caps: ${int(cap) / 100:.2f} a payment, ${int(day) / 100:.2f} a day; "
-              f"payments above ${int(env.get('EMPORIA_PAYMENT_APPROVAL_CENTS', '0')) / 100:.2f} wait for "
-              f"`emporia signer approve`. Fund its wallet with only what you are ready to lose.")
-        nets = prompt("Mainnet networks it may pay on (e.g. eip155:8453,solana:mainnet)", "")
+              f"{_approval_phrase(env)}. Fund its wallet with only what you are ready to lose.")
+        nets = prompt("Mainnet networks it may pay on, named by you now (e.g. eip155:8453,solana:mainnet)", "")
+        # A mainnet network the seeded list already held was inert while locked; it goes live only when named here.
+        kept = [n for n in resolve_list(env.get("EMPORIA_X402_PAY_NETWORKS", "")) if is_testnet(n)]
+        final = list(dict.fromkeys(kept + resolve_list(nets)))
+        print(f"  Networks it will pay on after this: {', '.join(final) or 'none'}.")
         if prompt(f"Type the agent's name ({name}) to let it pay real money").strip() != name:
             print("Not unlocked.")
             return 1
         env["EMPORIA_X402_MAINNET"] = "1"
-        env["EMPORIA_X402_PAY_NETWORKS"] = ",".join(
-            dict.fromkeys(resolve_list(env.get("EMPORIA_X402_PAY_NETWORKS", "")) + resolve_list(nets)))
+        env["EMPORIA_X402_PAY_NETWORKS"] = ",".join(final)
         signer.save_policy(name, env)
         print(f"{name}: mainnet unlocked in the signer — {env['EMPORIA_X402_PAY_NETWORKS']}.")
         return 0
@@ -2953,8 +2965,9 @@ def _signer_add(args: argparse.Namespace, url: str) -> int:
               + ("" if (signer.identity_path(name)).exists() else
                  f" — its identity key can follow: emporia signer add {name} --identity"))
         return 1
-    if any(str(dotenv.get(v, "")).startswith("cmd:") for v in ("EMPORIA_X402_EVM_KEY_SOURCE",
-                                                               "EMPORIA_X402_SOLANA_KEY_SOURCE")):
+    held_all = {**dotenv, **_mcp_env(profile)}
+    if any(str(held_all.get(v, "")).strip().startswith("cmd:") for v in _CMD_SOURCE_VARS
+           if v != "EMPORIA_IDENTITY_KEY_SOURCE" and v != "EMPORIA_ENCRYPTION_KEY_SOURCE"):
         print(f"signer add: {name}'s wallet is linked to a password manager; the signer reads only its own "
               f"key files for now. Not moved.")
         return 1
@@ -2987,7 +3000,9 @@ def _signer_add(args: argparse.Namespace, url: str) -> int:
         for fam, hexkey in keys.items():
             _write_secret_atomically(targets[fam], bytes.fromhex(hexkey))
     rules = {**dotenv, **{k: v for k, v in _mcp_env(profile).items() if k in signer.SIGNING_POLICY}}
-    signer.save_policy(name, {k: rules.get(k, "") for k in signer.POLICY_NAMES if k != "EMPORIA_X402_MAINNET"})
+    seeded = {k: rules.get(k, "") for k in signer.POLICY_NAMES if k != "EMPORIA_X402_MAINNET"}
+    signer.save_policy(name, seeded)
+    _print_seeded_policy(name, seeded)
     token = signer.new_agent_token(name)
     if added := signer.add_settings(dotenv):   # P206: the RPCs it paid through
         print(f"  The signer takes {name}'s network settings: {', '.join(added)} (in {signer.settings_path()})")
@@ -2999,23 +3014,22 @@ def _signer_add(args: argparse.Namespace, url: str) -> int:
     # folder in the profiles is still within the agents' reach. The 24-hour spend
     # log goes with the keys, or the move would reset the daily cap.
     key_dir = Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    if why := _unsafe_profile_key_dir(profile, key_dir):
+        print(f"signer add: refused: {why}; the old key files were left in place.")
+        return 1
     with agent_wallet.scope(scope):
         if any(targets[f].read_bytes() != bytes.fromhex(h) for f, h in keys.items()):
             print("signer add: the signer's copy does not read back as written; nothing removed from the profile.")
             return 1
         ledger = agent_wallet._ledger_path(name)
     from emporia.identity import _keyfile_stem
-    old = [f for f in key_dir.glob(f"{_keyfile_stem(name)}.x402.*") if f.is_file()]
+    old = [f for f in key_dir.glob(f"{_keyfile_stem(name)}.x402.*") if f.is_file() and not f.is_symlink()]
     for f in old:
         if f.name.endswith(".spend.json"):
             _write_secret_atomically(ledger, f.read_bytes())
     signer.own(signer.agent_dir(name))
     for f in old:
-        with open(f, "r+b") as out:     # overwrite, then unlink
-            out.write(b"\0" * f.stat().st_size)
-            out.flush()
-            os.fsync(out.fileno())
-        f.unlink()
+        _zero_and_unlink(f)     # overwrite, then unlink; never through a link
     unset_env_lines(profile / ".env", ["EMPORIA_X402_EVM_PRIVATE_KEY", "EMPORIA_X402_SOLANA_PRIVATE_KEY",
                                        "EMPORIA_X402_EVM_KEY_SOURCE", "EMPORIA_X402_SOLANA_KEY_SOURCE",
                                        "EMPORIA_X402_MAINNET"])
@@ -3050,13 +3064,16 @@ def _signer_add_identity(profile: Path, name: str) -> int:
         print(f"signer add: the signer already holds {name}'s identity key")
         return 1
     key_dir = Path(env.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    if why := _unsafe_profile_key_dir(profile, key_dir):
+        print(f"signer add: refused: {why}; nothing moved.")
+        return 1
     src = key_dir / f"{_keyfile_stem(name)}.priv"
-    if not src.is_file() or src.stat().st_size != 32:
+    if src.is_symlink() or not src.is_file() or src.stat().st_size != 32:
         print(f"signer add: no identity key file for {name} at {src}; nothing moved.")
         return 1
     enc_src = key_dir / f"{_keyfile_stem(name)}.x25519.priv"
     enc_retired = key_dir / f"{_keyfile_stem(name)}.x25519.retired"
-    if not enc_src.is_file() or enc_src.stat().st_size != 32:
+    if enc_src.is_symlink() or not enc_src.is_file() or enc_src.stat().st_size != 32:
         print(f"signer add: no encryption key file for {name} at {enc_src}; nothing moved.")
         return 1
     raw = src.read_bytes()
@@ -3076,17 +3093,14 @@ def _signer_add_identity(profile: Path, name: str) -> int:
     signer.own(signer.agent_dir(name))
     for marker, value in ((key_dir / f"{_keyfile_stem(name)}.signer.pub", pub),
                           (key_dir / f"{_keyfile_stem(name)}.x25519.signer.pub", enc_pub)):
-        marker.write_text(value + "\n")
-        if os.getuid() == 0:
-            owner = profile.stat()
-            os.chown(marker, owner.st_uid, owner.st_gid)
+        try:
+            _write_profile_marker(profile, marker, value)
+        except OSError as e:
+            print(f"signer add: refused to write {marker}: {e.strerror or e} (a symbolic link there?)")
+            return 1
     for f in (src, enc_src, enc_retired):   # overwrite, then unlink: the signer's copies are the only ones
-        if f.is_file():
-            with open(f, "r+b") as out:
-                out.write(b"\0" * f.stat().st_size)
-                out.flush()
-                os.fsync(out.fileno())
-            f.unlink()
+        if f.is_file() and not f.is_symlink():
+            _zero_and_unlink(f)
     print(f"{name}: its identity and encryption keys are now held by the signer; the profile keeps only their "
           f"public halves ({pub[:12]}…, {enc_pub[:12]}…). Every signature is the signer's, within its rules, and "
           f"every sealed message is opened there — emporia signer policy {name} shows the rules, "
@@ -3101,9 +3115,12 @@ def cmd_agent_secure(name: str) -> int:
     server's entry becomes `${NAME}`, filled from the .env), and both files
     owner-only. Names are printed, never values. Restart the gateway after."""
     root = profiles_root()
-    targets = sorted(p.parent for p in root.glob("*/config.yaml")) if name == "all" else [root / name]
+    # `all` is every Emporia agent profile (an `emporia` MCP server), never a profile that merely lives there
+    # and never the Hermes root.
+    targets = ([p for p, _ in _agent_profiles(root) if p != root.parent] if name == "all" else [root / name])
     if not targets or not (targets[0] / "config.yaml").exists():
-        print(f"agent secure: no profile {name!r} under {root}")
+        print(f"agent secure: no profile {name!r} under {root}" if name != "all"
+              else f"agent secure: no profile under {root} has the Emporia plugin")
         return 1
     any_moved = False
     for profile in targets:
@@ -6109,11 +6126,104 @@ def cmd_log_verify(args: argparse.Namespace) -> int:
     return 0
 
 
+_CMD_SOURCE_VARS = ("EMPORIA_IDENTITY_KEY_SOURCE", "EMPORIA_ENCRYPTION_KEY_SOURCE", "EMPORIA_X402_EVM_KEY_SOURCE",
+                    "EMPORIA_X402_SOLANA_KEY_SOURCE", "EMPORIA_X402_PHRASE_SOURCE")
+
+
+def _agent_child_env(profile: Path, env_over: dict[str, str]) -> dict[str, str]:
+    """The environment `_as_agent` runs with: a fixed allow-list. From the profile's MCP entry only EMPORIA_*
+    names (never PYTHONPATH, PYTHONSTARTUP, LD_*, PATH ...: the person may run this as root), and a `cmd:` key
+    source from that entry is refused here as it is for the .env."""
+    entry = {k: v for k, v in _mcp_env(profile).items() if k.startswith("EMPORIA_")}
+    bad = [k for k in _CMD_SOURCE_VARS if entry.get(k, "").strip().startswith("cmd:")]
+    if bad and os.getuid() == 0:
+        raise RuntimeError(f"{', '.join(bad)} in the profile's MCP entry is a cmd: source; not run as root")
+    return {"PATH": os.defpath, "HOME": str(Path.home()), **entry, **env_over}
+
+
 def _as_agent(profile: Path, code: str, **env_over: str) -> subprocess.CompletedProcess:
-    """Run `code` the way the agent's MCP server runs: its own env, nothing else."""
-    env = {"PATH": os.defpath, "HOME": str(Path.home()), **_mcp_env(profile), **env_over}
-    return subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True,
+    """Run `code` the way the agent's MCP server runs: its own EMPORIA settings, nothing else."""
+    env = _agent_child_env(profile, env_over)
+    return subprocess.run([sys.executable, "-I", "-c", code], env=env, capture_output=True, text=True,
                           timeout=120)
+
+
+def _audit_text(value, limit: int = 300) -> str:
+    """An audit field as a person may be shown it: agent-supplied text with control characters and escape
+    sequences replaced (printable ASCII only), so it cannot forge or hide lines on the terminal."""
+    from emporia.agent_wallet import plain_text
+    return plain_text(value, limit)
+
+
+def _service_install_command(unit_file: Path, service: str) -> str:
+    """The `sh -c` text that installs and starts a systemd unit, the path quoted (it may hold spaces or shell
+    characters, and this runs under sudo)."""
+    return (f"cp {shlex.quote(str(unit_file))} /etc/systemd/system/ && systemctl daemon-reload "
+            f"&& systemctl enable --now {shlex.quote(service)}")
+
+
+def _approval_phrase(env: dict[str, str]) -> str:
+    """What the mainnet unlock says about approvals, true to what the signer enforces."""
+    try:
+        cents = int(str(env.get("EMPORIA_PAYMENT_APPROVAL_CENTS", "") or "").strip() or 0)
+    except ValueError:
+        cents = 0
+    if cents <= 0:
+        return "no approval threshold: payments up to the caps are signed without asking"
+    return f"payments above ${cents / 100:.2f} wait for `emporia signer approve`"
+
+
+def _print_seeded_policy(name: str, policy: dict[str, str]) -> None:
+    """Show the rules the signer took from the profile (the profile is agent-writable, so the person sees them)."""
+    labels = (("EMPORIA_X402_MAX_PAYMENT_CENTS", "per payment (cents)"), ("EMPORIA_X402_MAX_DAILY_CENTS", "per day (cents)"),
+              ("EMPORIA_PAYMENT_APPROVAL_CENTS", "approval threshold (cents)"),
+              ("EMPORIA_X402_PAY_NETWORKS", "pay networks"), ("EMPORIA_PAYOUT_ADDRESSES", "payout addresses"),
+              ("EMPORIA_RELAY_URL", "home relay"), ("EMPORIA_BACKUP_RELAYS", "backup relays"),
+              ("EMPORIA_VISIT_RELAYS", "visit relays"))
+    print(f"  These became {name}'s rules in the signer (copied from its profile; check them: "
+          f"emporia signer policy {name}):")
+    for key, label in labels:
+        print(f"    {label}: {policy.get(key) or 'not set'}")
+    if not policy.get("EMPORIA_PAYMENT_APPROVAL_CENTS"):
+        print("    (no approval threshold: nothing waits for approval)")
+
+
+def _unsafe_profile_key_dir(profile: Path, key_dir: Path) -> str:
+    """Why root must not do file work in `key_dir` for `profile` ('' when it may): the folder is a link, or
+    (as root) it resolves outside the profile, so a planted link could aim the writes at the signer's files."""
+    if key_dir.is_symlink():
+        return f"{key_dir} is a symbolic link"
+    if os.getuid() == 0:
+        try:
+            key_dir.resolve().relative_to(profile.resolve())
+        except ValueError:
+            return f"{key_dir} is outside the profile {profile}"
+    return ""
+
+
+def _write_profile_marker(profile: Path, path: Path, value: str) -> None:
+    """Write a public-key marker in a profile's key folder without following a link, owned by the profile's
+    owner when run as root. Raises OSError (ELOOP) when `path` is a symlink."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+    fd = os.open(path, flags, 0o644)
+    try:
+        if os.getuid() == 0:
+            owner = profile.stat()
+            os.fchown(fd, owner.st_uid, owner.st_gid)
+        os.write(fd, (value + "\n").encode())
+    finally:
+        os.close(fd)
+
+
+def _zero_and_unlink(path: Path) -> None:
+    """Overwrite a regular file with zeros, then unlink it; never through a link."""
+    fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW)
+    try:
+        os.write(fd, b"\0" * os.fstat(fd).st_size)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    path.unlink()
 
 
 def _house_files(profile: Path) -> tuple[Path, Path, Path]:

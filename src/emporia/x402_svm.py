@@ -77,9 +77,13 @@ def _recent_blockhash(network: str, extra: dict[str, Any], rpc_url: str | None) 
     url = rpc_url or os.getenv("EMPORIA_X402_SOLANA_RPC_URL", "") or PUBLIC_RPC.get(network, "")
     if not url:
         raise SvmPayError(f"no RPC for {network}: set EMPORIA_X402_SOLANA_RPC_URL")
-    r = httpx.post(url, json={"jsonrpc": "2.0", "id": 1, "method": "getLatestBlockhash",
-                              "params": [{"commitment": "confirmed"}]}, timeout=15)
-    r.raise_for_status()
+    from emporia.rpc_safe import describe
+    try:
+        r = httpx.post(url, json={"jsonrpc": "2.0", "id": 1, "method": "getLatestBlockhash",
+                                  "params": [{"commitment": "confirmed"}]}, timeout=15)
+        r.raise_for_status()
+    except httpx.HTTPError as e:    # httpx's own text names the URL, which may carry a provider key
+        raise SvmPayError(describe(e)) from None
     try:
         return r.json()["result"]["value"]["blockhash"]
     except (KeyError, TypeError) as e:
