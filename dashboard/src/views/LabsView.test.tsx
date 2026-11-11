@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LabsView } from "./LabsView";
@@ -16,11 +16,11 @@ const lab = {
 const report = {
   report_id: "lrp_1", lab: "emporia-core", ref: "gh_pr:acme/emporia#12", event: "merged", maintainer_id: "alpha",
   author_id: "beta", author_stable_id: "s-beta", reviewer_ids: ["gamma"], reviewer_stable_ids: ["s-gamma"],
-  ideas: ["post:p1", "post:p2"], note: "", at: "2026-11-05T12:00:00Z",
+  ideas: ["post:p1", "post:p2"], note: "superseded by #16", at: "2026-11-05T12:00:00Z",
 };
 
 vi.mock("../api", () => ({
-  api: { labs: vi.fn(), labReports: vi.fn(), labThreads: vi.fn(), labBoard: vi.fn() },
+  api: { labs: vi.fn(), labReports: vi.fn(), labThreads: vi.fn(), labBoard: vi.fn(), postThread: vi.fn(() => Promise.resolve({ kind: "idea", label: "", text: "Rank cards by how often they win", author_id: "bob" })) },
 }));
 
 const mocked = api as unknown as Record<"labs" | "labReports" | "labThreads" | "labBoard", ReturnType<typeof vi.fn>>;
@@ -35,7 +35,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("labs view", () => {
-  it("draws the lab, its signed reports and its threads as the page's cards", async () => {
+  it("draws the lab and its work as the page's cards: a pull request's thread and report are one card", async () => {
     mocked.labs.mockResolvedValue({ labs: [lab] });
     mocked.labReports.mockResolvedValue({ lab: "emporia-core", reports: [report] });
     mocked.labThreads.mockResolvedValue({ lab: "emporia-core", threads: [
@@ -45,11 +45,37 @@ describe("labs view", () => {
     render(<LabsView />);
     await screen.findByText(/^Emporia core$/i);
     await screen.findByText(/author beta/);
-    expect(document.querySelectorAll(".e-card-grid .e-hcard").length).toBe(4);   // the lab, 1 report, 2 threads
-    expect(screen.getByText("REPO VERIFIED")).toBeTruthy();
+    // the lab, its two pieces of work (PR #12 once), the ideas it took up (2)
+    expect(screen.getAllByText("PR #12")).toHaveLength(1);
     expect(screen.getByText(/^Issue #7$/i)).toBeTruthy();
-    expect(screen.getByText(/3 messages/)).toBeTruthy();
-    expect(screen.getByText("open room")).toBeTruthy();
+    expect(screen.getByText("REPO VERIFIED")).toBeTruthy();
+    expect(screen.getByText("3 messages")).toBeTruthy();
+    expect(screen.getByText(/^open room: any agent can join/)).toBeTruthy();
+    // the report's note is shown, and the card says "merged" once
+    expect(screen.getByText(/superseded by #16/)).toBeTruthy();
+    expect(screen.queryByText(/encrypted/i)).toBeNull();
+  });
+
+  it("opens a pull request on GitHub from its card, only for the lab's own repo", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    mocked.labs.mockResolvedValue({ labs: [lab] });
+    mocked.labReports.mockResolvedValue({ lab: "emporia-core", reports: [report, { ...report, report_id: "lrp_2", ref: "gh_pr:evil/other#3" }] });
+    mocked.labThreads.mockResolvedValue({ lab: "emporia-core", threads: [] });
+    render(<LabsView />);
+    await screen.findByText("PR #12");
+    fireEvent.click(screen.getByText("PR #12").closest(".e-hcard")!);
+    expect(open).toHaveBeenCalledWith("https://github.com/acme/emporia/pull/12", "_blank", "noopener,noreferrer");
+    fireEvent.click(screen.getByText("PR #3").closest(".e-hcard")!);
+    expect(open).toHaveBeenCalledTimes(1);
+    open.mockRestore();
+  });
+
+  it("names the ideas a report adopted, by author", async () => {
+    mocked.labs.mockResolvedValue({ labs: [lab] });
+    mocked.labReports.mockResolvedValue({ lab: "emporia-core", reports: [report] });
+    mocked.labThreads.mockResolvedValue({ lab: "emporia-core", threads: [] });
+    render(<LabsView />);
+    expect((await screen.findAllByText(/idea by bob: “Rank cards by how often they win”/)).length).toBeGreaterThan(0);
   });
 
   it("says a repo is not verified, and why", async () => {
@@ -59,11 +85,10 @@ describe("labs view", () => {
     render(<LabsView />);
     expect(await screen.findByText("NOT VERIFIED")).toBeTruthy();
     expect(screen.getByText("the repo does not carry the lab's proof file")).toBeTruthy();
-    expect(await screen.findByText(/No report yet/)).toBeTruthy();
-    expect(screen.getByText(/No thread yet/)).toBeTruthy();
+    expect(await screen.findByText("No work reported yet.")).toBeTruthy();
   });
 
-  it("shows who the lab's reports credit, as a board", async () => {
+  it("shows who the lab's reports credit, as a board, with singular points", async () => {
     mocked.labs.mockResolvedValue({ labs: [lab] });
     mocked.labReports.mockResolvedValue({ lab: "emporia-core", reports: [report] });
     mocked.labThreads.mockResolvedValue({ lab: "emporia-core", threads: [] });
@@ -74,38 +99,38 @@ describe("labs view", () => {
     render(<LabsView />);
     const board = await screen.findByRole("list", { name: "Credits" });
     expect(board.textContent).toContain("beta");
-    expect(board.textContent).toContain("7 pts · 1 fix landed, 2 ideas adopted");
-    expect(board.textContent).toContain("1 pts · 1 fix reviewed");
+    expect(board.textContent).toContain("7 pts");
+    expect(board.textContent).toContain("1 fix landed, 2 ideas adopted");
+    expect(board.textContent).toContain("1 pt");
+    expect(board.textContent).not.toContain("1 pts");
+    expect(screen.getByText(/Credits come from the maintainers' signed reports/)).toBeTruthy();
     expect(mocked.labBoard).toHaveBeenCalledWith("emporia-core");
   });
 
-  it("has no button that acts: the page only reads", async () => {
+  it("tells a person what to ask their agent, as text to copy", async () => {
     mocked.labs.mockResolvedValue({ labs: [lab] });
+    mocked.labReports.mockResolvedValue({ lab: "emporia-core", reports: [] });
+    mocked.labThreads.mockResolvedValue({ lab: "emporia-core", threads: [] });
+    render(<LabsView />);
+    expect(await screen.findByText("join the lab emporia-core and pick an open issue")).toBeTruthy();
+    // the only buttons are copy buttons and "Ideas": nothing acts
+    const names = screen.getAllByRole("button").map((b) => b.textContent);
+    expect(names.every((n) => n === "copy" || n === "Ideas")).toBe(true);
+  });
+
+  it("shows each lab's repo and maintainers, and a second lab folded to its counts", async () => {
+    mocked.labs.mockResolvedValue({ labs: [lab, { ...lab, slug: "second", name: "Second lab" }] });
     mocked.labReports.mockResolvedValue({ lab: "emporia-core", reports: [report] });
     mocked.labThreads.mockResolvedValue({ lab: "emporia-core", threads: [] });
     render(<LabsView />);
-    await screen.findByText(/author beta/);
-    expect(screen.queryAllByRole("button")).toHaveLength(0);
-  });
-
-  it("shows each lab's repo, maintainers, reports with what they credited, and threads", async () => {
-    mocked.labs.mockResolvedValue({ labs: [lab] });
-    mocked.labReports.mockResolvedValue({ lab: "emporia-core", reports: [report] });
-    mocked.labThreads.mockResolvedValue({ lab: "emporia-core", threads: [
-      { ref: "gh_pr:acme/emporia#12", state: "merged", messages: 3, last_at: "2026-11-05T12:00:00Z", reports: ["merged"] },
-    ] });
-    render(<LabsView />);
-    expect(await screen.findByText(/^Emporia core$/i)).toBeTruthy();
-    const repo = screen.getByRole("link", { name: "acme/emporia" }) as HTMLAnchorElement;
+    expect((await screen.findAllByText(/^Emporia core$/i)).length).toBeGreaterThan(0);
+    const repo = screen.getAllByRole("link", { name: "acme/emporia" })[0] as HTMLAnchorElement;
     expect(repo.href).toBe("https://github.com/acme/emporia");
     expect(repo.rel).toContain("noopener");
     expect(screen.getByText(/Maintainers · 1/)).toBeTruthy();
-    // the report names what it credited: the author, the reviewer, the ideas it adopted
-    expect(await screen.findByText(/author beta · reviewer gamma · 2 ideas adopted/)).toBeTruthy();
-    expect(screen.getAllByText("PR #12").length).toBe(2);
-    // the report's event and the thread's state are each a card's chip
-    expect([...document.querySelectorAll(".e-hcard__chip")].filter((c) => c.textContent === "MERGED")).toHaveLength(2);
-    expect(mocked.labReports).toHaveBeenCalledWith("emporia-core");
+    const bar = await screen.findByRole("button", { name: /SECOND LAB/ });
+    expect(bar.getAttribute("aria-expanded")).toBe("false");
+    expect(bar.textContent).toContain("1 report");
   });
 
   it("says a private lab's threads are its members', and still shows its public reports", async () => {

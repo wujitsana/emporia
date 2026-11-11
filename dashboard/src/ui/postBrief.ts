@@ -14,7 +14,9 @@ export function usePostBrief(id: string | null): PostBrief | null | undefined {
     if (!id || BRIEFS.has(id) || PENDING.has(id)) return;
     PENDING.add(id);
     let live = true;
-    Promise.resolve(api.postThread(id))
+    let read: Promise<{ kind: string; label: string; text: string; author_id: string }>;
+    try { read = Promise.resolve(api.postThread(id)); } catch { read = Promise.reject(new Error("unavailable")); }
+    read
       .then((p) => { BRIEFS.set(id, { kind: p.kind, label: p.label, text: p.text, author: p.author_id }); })
       .catch(() => { BRIEFS.set(id, null); })
       .finally(() => { PENDING.delete(id); if (live) bump((n) => n + 1); });
