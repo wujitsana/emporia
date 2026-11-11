@@ -152,7 +152,7 @@ describe("a route to a section this viewer may not see", () => {
     expect(document.querySelector(".e-overview-card")).toBeNull();
     const heads = [...document.querySelectorAll(".e-now__head span:first-child")].map((e) => e.textContent);
     // nothing is live on this offline relay: the empty row folds into the one quiet card
-    expect(document.querySelector('[aria-label="Quiet"]')?.textContent).toContain("nobody is playing");
+    expect(document.querySelector('[aria-label="Live games on this relay"]')?.textContent).toContain("Nobody is playing");
     expect(heads).not.toContain("Since you last looked");
     expect(heads).not.toContain("Standing");
   });

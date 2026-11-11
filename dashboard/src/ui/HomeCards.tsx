@@ -101,13 +101,41 @@ export function Card({ c }: { c: CardSpec }) {
   );
 }
 
-/** One Home section as a head and a horizontal row of cards. */
-export function CardRow({ title, aside, cards }: { title: string; aside?: ReactNode; cards: CardSpec[] }) {
+/** One Home section as a head and a grid of cards that fills the width, as many columns as fit. */
+export function CardRow({ title, aside, cards, bare = false }: { title: string; aside?: ReactNode; cards: CardSpec[]; bare?: boolean }) {
+  return (
+    <section className="e-cards-section" aria-label={title}>
+      {bare ? null : <header className="e-now__head e-cards-section__head"><span><ScrambleText text={title} /></span><span>{aside}</span></header>}
+      <div className="e-cardrow" role="list" aria-label={`${title}: cards`}>
+        {mergeCards(cards).map((c) => <Card key={c.key} c={c} />)}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Where the agent stands, as one wide strip: its level (with the bar), its record and its season rank side by
+ * side, each a chip, a pixel figure and a line. One band, not a row of cards with a lonely card at its end.
+ */
+export function StandingStrip({ title, aside, items }: { title: string; aside?: ReactNode; items: CardSpec[] }) {
   return (
     <section className="e-cards-section" aria-label={title}>
       <header className="e-now__head e-cards-section__head"><span><ScrambleText text={title} /></span><span>{aside}</span></header>
-      <div className="e-cardrow" role="list" tabIndex={0} aria-label={`${title}: cards, scroll sideways`}>
-        {mergeCards(cards).map((c) => <Card key={c.key} c={c} />)}
+      <div className="e-hstrip" role="list" aria-label={`${title}: level, record, rank`}>
+        {items.map((c) => (
+          <button key={c.key} type="button" className="e-hstrip__item" role="listitem" onClick={c.onOpen} disabled={!c.onOpen}>
+            <span className="e-hcard__chip">{c.chip}</span>
+            <span className="e-hstrip__figure"><ScrambleText text={c.head.toUpperCase()} /></span>
+            {c.bar ? (
+              <span className="e-hcard__bar" role="progressbar" aria-valuemin={0} aria-valuemax={c.bar.max} aria-valuenow={c.bar.value}>
+                {Array.from({ length: 10 }, (_, i) => (
+                  <span key={i} className={i < Math.round((10 * c.bar!.value) / Math.max(1, c.bar!.max)) ? "is-on" : undefined} />
+                ))}
+              </span>
+            ) : null}
+            <span className="e-hstrip__line">{c.detail ?? c.caption}</span>
+          </button>
+        ))}
       </div>
     </section>
   );
