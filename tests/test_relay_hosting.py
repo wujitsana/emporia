@@ -573,3 +573,17 @@ def test_move_out_refuses_a_folder_without_an_old_relay(tmp_path, capsys, monkey
     (tmp_path / "x").mkdir()
     assert cli.main(["relay", "host", "--move-out", "--dir", str(tmp_path / "x")]) == 1
     assert "no relay with the old layout" in capsys.readouterr().out
+
+
+def test_relay_config_set_prints_the_install_line_for_a_staged_folder(tmp_path, capsys, monkeypatch):
+    from emporia import cli
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setattr(cli, "_TTY", False)
+    folder = tmp_path / "er"
+    relay_host.write_into_compose_files(folder, "tunnel", relay_host.DIR_PLACEHOLDER, relay_host.REPO_URL, SHA,
+                                        "relay.example.org")
+    (folder / ".env").write_text("EMPORIA_RELAY_ACCESS=open\n")
+    assert cli.main(["relay", "config", "set", "EMPORIA_LABS", "1", "--dir", str(folder)]) == 0
+    out = capsys.readouterr().out
+    assert 'sudo install -o root -g 10001 -m 640' in out and '"$D/.env"' in out
+    assert "sudo docker compose restart emporia-relay" in out

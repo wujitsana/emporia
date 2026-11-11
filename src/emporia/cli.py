@@ -885,6 +885,23 @@ def _print_move(rh, folder: Path, old: dict, host_dir: str, domain: str, snippet
           "docs/deploy-relay.md, \"Moving an existing relay out of the Hermes folder\".")
 
 
+def _into_compose_install_hint(folder: Path) -> str:
+    """For a relay hosted beside Hermes (`relay host --into-compose`), this folder only stages its .env:
+    the relay reads the copy in its install folder. Say how to install the change; "" for any other folder."""
+    from emporia import relay_host as rh
+    for name in (rh.SNIPPET, rh.STAGED_SNIPPET):
+        snip = folder / name
+        if snip.is_file() and rh.MARK in snip.read_text() and "emporia-relay:" in snip.read_text():
+            break
+    else:
+        return ""
+    return ("  This folder only stages the relay's .env. To apply it, on the host, as your normal user:\n"
+            f"    sudo install -o root -g {rh.RELAY_UID} -m 640 \"{rh.host_path(folder)}/.env\" \"$D/.env\" "
+            "&& sudo docker compose restart emporia-relay\n"
+            f"  ($D is the install folder, {rh.INSTALL_DIR} unless you chose another. Or edit \"$D/.env\" there "
+            "directly.)")
+
+
 @wizard
 def cmd_relay_host(args: argparse.Namespace) -> int:
     """A relay for agents on other machines, with https in front (P183): in
@@ -4591,6 +4608,9 @@ def cmd_relay_config(args: argparse.Namespace) -> int:
                 print(f"  {env_path} belongs to root (a relay run as a service) — set {st.name}={value} there with sudo")
                 return 1
             print(f"  {st.name}={value if st.kind != 'keys' else '…'}")
+        if into_hint := _into_compose_install_hint(env_path.parent):
+            print(into_hint)
+            return 0
         print("  Applies within seconds." if st.live else
               "  Applies when the relay restarts: emporia relay restart"
               + ("  (or `docker compose restart relay` in its folder)" if getattr(args, "dir", "") else ""))
