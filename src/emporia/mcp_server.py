@@ -1751,7 +1751,7 @@ def _room_recipients(sender: str, room_id: str) -> dict[str, str]:
     r.raise_for_status()
     room = _bearer_request("get", f"{_base()}/rooms/{_seg(room_id)}", agent_id=sender, timeout=10)
     room.raise_for_status()
-    return room_recipients(room.json(), r.json().get("keys", {}), sender, sender, _base())
+    return room_recipients(room.json(), r.json().get("keys", {}), sender, sender, _base(), RELAY_URL)
 
 
 def _session_recipients(aid: str, session_id: str) -> dict[str, str]:
@@ -1762,7 +1762,7 @@ def _session_recipients(aid: str, session_id: str) -> dict[str, str]:
     r = _bearer_request("get", f"{_base()}/sessions/{_seg(session_id)}/encryption-keys",
                         agent_id=aid, timeout=10)
     r.raise_for_status()
-    return session_recipients(session_id, r.json(), aid, aid, _base())
+    return session_recipients(session_id, r.json(), aid, aid, _base(), RELAY_URL)
 
 
 def _seal_text(text: str, recipients: dict[str, str], session_id: str, field: str,
@@ -5667,7 +5667,7 @@ def _topic_recipients(aid: str, slug: str, card: dict[str, Any]) -> dict[str, st
     from emporia.identity import topic_recipients
     r = _bearer_request("get", f"{_base()}/agoras/topics/{_seg(slug)}/encryption-keys", agent_id=aid, timeout=10)
     r.raise_for_status()
-    return topic_recipients(card, r.json().get("keys", {}), aid, aid, _base())
+    return topic_recipients(card, r.json().get("keys", {}), aid, aid, _base(), RELAY_URL)
 
 
 def _open_posts(aid: str, items: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -8293,7 +8293,7 @@ def test_mcp_send_dm_returns_structured_error_on_sign_failure(prod_client):
         with patch("emporia.identity.sign", side_effect=_key_unreadable_but_for_sign_in()):
             result = mcp_server.send_dm(
                 to_agent_id="p13_dm_sign_fail_recipient", content="hi",
-                from_agent_id="p13_dm_sign_fail_sender",
+                from_agent_id="p13_dm_sign_fail_sender", encrypted=False,
             )
     assert "key unreadable" in result.get("error", ""), result
 
@@ -8311,7 +8311,7 @@ def test_mcp_send_dm_uses_shared_wire_contract_and_relay_accepts_it(prod_client)
          patch.object(wire, "signed_dm_thread_payload", wraps=wire.signed_dm_thread_payload) as spy:
         result = mcp_server.send_dm(
             to_agent_id="p13_dm_wire_recipient", content="hi via mcp",
-            from_agent_id="p13_dm_wire_sender",
+            from_agent_id="p13_dm_wire_sender", encrypted=False,
         )
     assert "error" not in result, result
     assert spy.call_count == 2, spy.call_args_list
@@ -9961,11 +9961,11 @@ def test_request_bodies_are_single_sourced_across_both_clients():
         wire, "dm_thread_message_envelope", wraps=wire.dm_thread_message_envelope,
     ) as spy, patch.object(mcp_server, "_bearer_request") as req:
         req.return_value = MagicMock(status_code=200, **{"json.return_value": {"thread_id": "t1"}})
-        mcp_server.send_dm(to_agent_id="b", content="hi", from_agent_id="sdk_body_agent")
+        mcp_server.send_dm(to_agent_id="b", content="hi", from_agent_id="sdk_body_agent", encrypted=False)
     assert spy.call_count == 1, spy.call_args_list
 
     spy = asyncio.run(sdk_call(
-        "send_dm", "dm_thread_message_envelope", thread_id="t1", content="hi",
+        "send_dm", "dm_thread_message_envelope", thread_id="t1", content="hi", plaintext_ok=True,
     ))
     assert spy.call_count == 1, spy.call_args_list
 
