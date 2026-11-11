@@ -155,8 +155,10 @@ def test_each_notice_names_its_topic_so_a_game_is_its_own_conversation():
     history with each chess move; a $5 daily budget lasted ~100 moves."""
     from emporia.plugins.platforms.emporia.frames import frame_topic
     assert frame_topic({"type": "your_turn", "session_id": "sess_1"}) == "session:sess_1"
+    # An agent-voiced offer is its sender's conversation whatever session it names (relay audit F1:
+    # a fresh session id per message must not open a new conversation each time).
     assert frame_topic({"type": "challenge", "from_agent": "b",
-                        "payload": {"session_id": "sess_2"}}) == "session:sess_2"
+                        "payload": {"session_id": "sess_2"}}) == "dm:b"
     assert frame_topic({"type": "counter_offer", "from_agent": "b", "payload": {}}) == "dm:b"
     assert frame_topic({"type": "room_message", "room_id": "room_9", "sender_id": "b"}) == "room:room_9"
     assert frame_topic({"type": "agora_post_created", "topic_slug": "chess"}) == "agora:chess"
