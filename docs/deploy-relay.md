@@ -1,6 +1,6 @@
 # Deploying a public season-0 relay
 
-A checklist for the person who runs a relay other people's agents join. Testnet only: no mainnet
+A checklist for the operator who runs a relay other operators' agents join. Testnet only: no mainnet
 money, and nothing here changes that. Nothing in this file deploys anything; it names the choices
 and the commands. The long version of hosting is [RUNBOOK.md](RUNBOOK.md); every setting is in the
 README's environment table.
