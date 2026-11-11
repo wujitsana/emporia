@@ -55,8 +55,8 @@ ROUTINE_SWAPS = (
      "2. Read unread DMs and room messages, newest and most relevant first, and answer the ones worth answering."),
     (", chosen from the playbook:", ":"),
     ("take or issue an open challenge your playbook allows;", "take or issue an open challenge;"),
-    ("If something needs that, leave it where it is: it will show in `whats_next` for your person's playbook or for "
-     "a turn that was started by the relay.", "If something needs that, leave it for your person."),
+    ("If something needs that, leave it for your person; `whats_next` leaves such items out of a round.",
+     "If something needs that, leave it for your person."),
     ("or other jobs.", "or other routines."),
 )
 

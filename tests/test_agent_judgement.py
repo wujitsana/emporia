@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from emporia import limits
+from emporia import autonomy, limits
 from emporia import mcp_server as m
 from emporia import playbook as P
 from emporia import relay_server as rs
@@ -367,22 +367,38 @@ def _line(ll, frame, topic="", relay=""):
     return out, out["text"].splitlines()[-1].strip()
 
 
-def test_a_direct_challenge_ends_with_the_agents_own_limits_line(wallet):
+def test_a_direct_challenge_ends_with_the_agents_own_limits_line(wallet, monkeypatch):
+    monkeypatch.setattr(autonomy, "spend_allowed_cents", lambda: 20)
+    monkeypatch.setattr(autonomy, "spent_today_atomic", lambda now=None: 5_0000)     # 5 of the 20 cents
     ll = limits.LimitsLine(ME, fetch=lambda a, o: pytest.fail("the invite carries the count"))
     out, last = _line(ll, {"type": "session_invite", "session_id": "sess_1", "module_type": BLOTTO,
                            "from_agent_id": "alpha", "games_with_you_today": 1})
-    assert last == "limits: games vs alpha today 1/6 · spend left $0.45 today (approval over $0.50) · writes 5 per turn"
+    assert last == ("limits: games vs alpha today 1/6 · unattended spend left $0.15 today (approval over $0.50)"
+                    " · writes 5 per turn")
     assert out["text"].count("limits:") == 1 and len(last) <= 160
 
 
-def test_a_dm_gets_the_chat_count_and_a_relay_report_gets_no_writes_part(wallet):
+def test_a_dm_gets_the_chat_count_and_a_relay_report_gets_no_writes_part(wallet, monkeypatch):
+    monkeypatch.setattr(autonomy, "spend_allowed_cents", lambda: 0)
     ll = limits.LimitsLine(ME)
     dm = {"type": "dm_received", "sender_id": "bob", "thread_id": "dm_1", "content": "hi"}
     for n in (1, 2, 3):
         _, last = _line(ll, dm)
         assert last.endswith(f"this chat {n}/20 this hour"), last
     _, turn = _line(ll, {"type": "your_turn", "session_id": "s1", "module_type": "emporia:chess:v1"})
-    assert turn == "limits: spend left $0.45 today (approval over $0.50)", "relay's own: no chat, no writes"
+    assert turn == "limits: no unattended spending", "relay's own: no chat, no writes; no allowance, no spend"
+
+
+def test_the_line_shows_open_games_against_the_cap_and_six_for_a_reply_thread(wallet, monkeypatch):
+    monkeypatch.setattr(autonomy, "spend_allowed_cents", lambda: 0)
+    monkeypatch.setenv("EMPORIA_MAX_OPEN_GAMES", "3")
+    ll = limits.LimitsLine(ME, open_fetch=lambda aid: 2)
+    reply = {"type": "post_reply", "author_id": "bob", "post_id": "p2", "parent_id": "p1", "preview": "hi"}
+    _, last = _line(ll, reply)
+    assert "open games 2/3" in last and "writes 5" not in last
+    assert "this chat 1/6 this hour" in last, "a post: thread wakes the agent 6 an hour, not 20"
+    monkeypatch.setenv("EMPORIA_MAX_OPEN_GAMES", "0")
+    assert "writes 5 per turn" in _line(limits.LimitsLine(ME, open_fetch=lambda aid: 2), reply)[1]
 
 
 def test_unknown_parts_are_left_out_and_unrelated_notices_get_no_line(monkeypatch):

@@ -70,6 +70,8 @@ _WAKE_GAME_FRAMES = frozenset({"challenge", "session_invite", "challenge_decline
 #: Talk wakes (replies, mentions, followers, what it follows) one agent may take an hour in all, from
 #: senders its person did not list. A constant: a copy of emporia/wake.py's TALK_WAKES_PER_HOUR.
 TALK_WAKES_PER_HOUR = 12
+#: One sender not on the person's list may use at most this many of them.
+_TALK_PER_SENDER = TALK_WAKES_PER_HOUR // 2
 _TALK_FRAMES = frozenset({"post_reply", "mention", "followed", "followed_activity", "topic_activity",
                           "watched_game"})
 #: Counted toward that hourly cap as well: an agent's offer and its answers (POST /messages), which any
@@ -195,7 +197,9 @@ class EmporiaAdapter(BasePlatformAdapter):
         except ValueError:
             self.thread_limit = DEFAULT_THREAD_LIMIT
         self._thread_seen: dict[str, list[float]] = {}
-        self._talk_seen: list[float] = []
+        self._talk_seen: list[tuple[float, str]] = []     # (when, sender) of each delivered talk notice
+        self._talk_noted = -_THREAD_WINDOW_S              # when the "many replies" note last went out
+        self._thread_noted: dict[str, float] = {}
         raw_mode = _setting(extra, "EMPORIA_WAKE", "wake").lower()
         # Unset: direct; unreadable (the retired `games` too): closed.
         self.wake_mode = (raw_mode if raw_mode in WAKE_MODES else "closed") if raw_mode else DEFAULT_WAKE
@@ -398,17 +402,20 @@ class EmporiaAdapter(BasePlatformAdapter):
     def _talk_cap(self, notice: dict[str, Any], sender: str, now: float):
         """True when the notice is no talk or is within the agent's hourly cap on talk wakes (replies, mentions,
         followers, what it follows) from senders the person did not list, whoever the senders are: many
-        senders cannot flood the agent each under its own per-thread limit. Else the one note saying the rest
-        wait in the inbox, then None."""
-        if (str(notice.get("frame_type") or "") not in _CAPPED_FRAMES or sender in self.wake_listed
-                or "*" in self.wake_listed):
+        senders cannot flood the agent each under its own per-thread limit, and one sender uses at most half
+        of it. Else the one note saying the rest wait in the inbox (once an hour), then None. Nothing is
+        recorded here: `_within_limit` records a notice once it is delivered, so one that is not delivered
+        never extends the quiet."""
+        if not self._talk_counted(notice, sender):
             return True
-        seen = [t for t in self._talk_seen if now - t < _THREAD_WINDOW_S]
-        seen.append(now)
+        seen = [(t, s) for t, s in self._talk_seen if now - t < _THREAD_WINDOW_S]
         self._talk_seen = seen
-        if len(seen) <= TALK_WAKES_PER_HOUR:
-            return True
-        if len(seen) == TALK_WAKES_PER_HOUR + 1:
+        if len(seen) < TALK_WAKES_PER_HOUR:
+            if sender == _RELAY_SENDER or sum(1 for _, s in seen if s == sender) < _TALK_PER_SENDER:
+                return True
+            logger.info("Emporia: %s used its share of the hourly talk wakes: a notice not delivered", sender)
+            return None
+        if now - self._talk_noted >= _THREAD_WINDOW_S:
             return ("[Emporia] many replies, mentions or followers this hour: the rest wait in your inbox "
                     "(whats_next shows them). Nothing more of that kind is delivered until the hour has room.")
         logger.info("Emporia: talk wakes over the hourly cap (%d): a notice not delivered", TALK_WAKES_PER_HOUR)
@@ -419,11 +426,25 @@ class EmporiaAdapter(BasePlatformAdapter):
         limit (P230). The first notice past the limit becomes a note saying so,
         so the agent stops rather than wondering; the rest are not delivered
         until the hour has room again. The relay keeps every message — the
-        operator reads the thread in the dashboard. EMPORIA_THREAD_LIMIT=0: none."""
+        operator reads the thread in the dashboard. EMPORIA_THREAD_LIMIT=0: none.
+        Only delivered notices count toward the caps."""
         now = time.monotonic() if now is None else now
-        capped = self._talk_cap(notice, sender, now)
-        if capped is not True:
-            return capped
+        verdict = self._talk_cap(notice, sender, now)
+        if verdict is None:
+            return None
+        if verdict is not True:
+            self._talk_noted = now       # the one note an hour; it is not itself counted
+            return verdict
+        text = self._thread_check(notice, sender, now)
+        if text is not None and self._talk_counted(notice, sender):
+            self._talk_seen.append((now, sender))
+        return text
+
+    def _talk_counted(self, notice: dict[str, Any], sender: str) -> bool:
+        return (str(notice.get("frame_type") or "") in _CAPPED_FRAMES and sender not in self.wake_listed
+                and "*" not in self.wake_listed)
+
+    def _thread_check(self, notice: dict[str, Any], sender: str, now: float) -> Optional[str]:
         topic = notice.get("topic")
         # Only the home relay's own sender is exempt — a visited relay's
         # (`emporia:relay@<host>`) is limited like an agent's (11-05 audit follow-up).
@@ -432,15 +453,16 @@ class EmporiaAdapter(BasePlatformAdapter):
             return notice["text"]
         if topic.startswith("session:") and str(notice.get("frame_type") or "") != "game_chat":
             return notice["text"]    # only table talk is counted: accepts, rejects and challenges are the game's own
-        # A reply thread is a public discussion, not a chat: fewer wakes an hour (two agents once agreed with each
+        # A reply thread is a public discussion, not a chat: fewer wakes an hour (two agents agreed with each
         # other 61 times in 20 minutes there). The person's lower setting still wins.
         limit = min(self.thread_limit, _POST_THREAD_LIMIT) if topic.startswith("post:") else self.thread_limit
         seen = [t for t in self._thread_seen.get(topic, []) if now - t < _THREAD_WINDOW_S]
-        seen.append(now)
         self._thread_seen[topic] = seen
-        if len(seen) <= limit:
+        if len(seen) < limit:
+            seen.append(now)         # delivered: counted (an undelivered one never extends the quiet)
             return notice["text"]
-        if len(seen) == limit + 1:
+        if now - self._thread_noted.get(topic, -_THREAD_WINDOW_S) >= _THREAD_WINDOW_S:
+            self._thread_noted[topic] = now
             return (f"[Emporia] {topic}: {limit} messages from other agents here in the "
                     "last hour. Further ones are not delivered to you until it slows down, so this "
                     "exchange is over for now: don't reply. Your operator can read the conversation in "

@@ -3230,6 +3230,12 @@ _GUARDRAIL_TRIGGER_PHRASES = [
 ]
 
 
+def _caught(result):
+    """Refused (command-shaped) or audited (a bare phrase about prompts or security: logged, allowed)."""
+    from emporia.engine.guardrails import _BARE_PHRASE_PATTERNS
+    return result.ok is False or (result.mode == "audit" and result.matched_pattern in _BARE_PHRASE_PATTERNS)
+
+
 @pytest.mark.parametrize("phrase", _GUARDRAIL_TRIGGER_PHRASES)
 def test_guardrails_scan_text_catches_a_zero_width_inserted_mid_word(phrase):
     from emporia.engine.guardrails import scan_text
@@ -3237,7 +3243,7 @@ def test_guardrails_scan_text_catches_a_zero_width_inserted_mid_word(phrase):
     mid = len(word) // 2 or 1
     obfuscated = word[:mid] + _ZW + word[mid:] + ((" " + rest) if rest else "")
     result = scan_text(obfuscated)
-    assert result.ok is False, (phrase, obfuscated)
+    assert _caught(result), (phrase, obfuscated)
 
 
 @pytest.mark.parametrize("phrase", [p for p in _GUARDRAIL_TRIGGER_PHRASES if " " in p])
@@ -3245,7 +3251,7 @@ def test_guardrails_scan_text_catches_a_zero_width_substituted_for_a_space(phras
     from emporia.engine.guardrails import scan_text
     obfuscated = phrase.replace(" ", _ZW, 1)
     result = scan_text(obfuscated)
-    assert result.ok is False, (phrase, obfuscated)
+    assert _caught(result), (phrase, obfuscated)
 
 
 def test_guardrails_scan_text_does_not_false_positive_on_zwj_emoji():

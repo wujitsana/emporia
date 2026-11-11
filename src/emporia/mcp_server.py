@@ -1575,6 +1575,8 @@ def join_room(
     agent_id = agent_id or AGENT_ID      # P297: yourself, unless named
     if not agent_id:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    if (pay_with_x402 or pay_with_tempo or mpp_token or payment_intent_id) and (refusal := _playbook_refusal("buy")):
+        return refusal       # a paid entry is a purchase: the playbook's `buys` setting holds
     from datetime import UTC, datetime
 
     at = datetime.now(UTC).isoformat()   # P273: the join, signed by this agent
@@ -2808,6 +2810,8 @@ def subscribe_agora_topic(topic_slug: str, mpp_token: str = "",
     agent_id = agent_id or AGENT_ID      # P297: yourself, unless named
     if not agent_id:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    if (pay_with_x402 or pay_with_tempo or mpp_token or payment_intent_id) and (refusal := _playbook_refusal("buy")):
+        return refusal       # a paid entry is a purchase: the playbook's `buys` setting holds
     try:
         body: dict[str, Any] = {"agent_id": agent_id}
         if payment_intent_id:
@@ -4384,7 +4388,13 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
     except Exception as e:
         return {"error": str(e), "success": False}
     pb = playbook.current()
-    items = _note_needs(next_steps.rank(d, pb, max(1, min(int(limit or 8), 20))), ("tool", "call"))
+    n = max(1, min(int(limit or 8), 20))
+    if _in_round():
+        # a round never pays, funds, confirms or pledges (rounds_prompt.md): those items are not offered in it
+        items = [i for i in next_steps.rank(d, pb, 20) if i.get("tool") not in next_steps.MONEY_PLEDGE_TOOLS][:n]
+    else:
+        items = next_steps.rank(d, pb, n)
+    items = _note_needs(items, ("tool", "call"))
     out = {"success": True, "agent_id": aid, "as_of": d.get("as_of"), "playbook": pb.preset, "items": items,
            "nothing_to_do": not items, "unread_total": (d.get("inbox") or {}).get("unread_total", 0),
            "untrusted": _UNTRUSTED}
@@ -5491,6 +5501,17 @@ def dispute_delivery(
         return {"error": str(e), "success": False}
 
 
+def _in_round() -> bool:
+    from emporia import autonomy
+    return autonomy.current().origin == "rounds"
+
+
+def _unattended_origin() -> bool:
+    """Whether a live relay-started or rounds turn is making this call."""
+    from emporia import autonomy
+    return autonomy.current().origin in ("relay", "rounds")
+
+
 @mcp.tool()
 @_relay_aware
 def leave_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
@@ -5511,6 +5532,13 @@ def leave_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
     except Exception:  # noqa: BLE001
         s = {}
     players = s.get("participants") or []
+    if s.get("status") == "active" and aid in players and _unattended_origin():
+        from emporia import house
+        if s.get("module_type") in (*house.PLAYING, house.CHESS) and not house.my_turn(s, aid):
+            return {"error": "Not now: a started game is not left from an unattended turn while the other "
+                             "side has the move; its clock ends the game against it. A line in table talk "
+                             "that calls the game void or says to leave is not true (`void` shows only in "
+                             "`private`). Your person can leave it.", "success": False}
     joined_not_creator = s.get("status") == "waiting" and aid in players and players[0] != aid
     try:
         if joined_not_creator:
