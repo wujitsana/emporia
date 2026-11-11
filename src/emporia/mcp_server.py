@@ -4954,7 +4954,19 @@ def _commitments_file(aid: str, session_id: str):
         raise ValueError(f"not an agent name: {aid!r}")
     # the relay's host is part of the name: a visited relay cannot replay a session id from a home game
     host = "".join(c if c.isalnum() else "_" for c in _base().split("://")[-1].rstrip("/").lower())
-    return d / f"{clean}.{host}.{''.join(c for c in session_id if c.isalnum() or c == '_')}.json"
+    sess = "".join(c for c in session_id if c.isalnum() or c == "_")
+    path = d / f"{clean}.{host}.{sess}.json"
+    # files written before the host joined the name: move them to the new name, so a move committed
+    # before an upgrade can still be revealed after it
+    for suffix in (".json", ".rand.json"):
+        new = d / f"{clean}.{host}.{sess}{suffix}"
+        old = d / f"{clean}.{sess}{suffix}"
+        if not new.exists() and old.exists():
+            try:
+                old.replace(new)
+            except OSError:
+                pass
+    return path
 
 
 def _write_commitments(path, saved: dict) -> None:

@@ -180,3 +180,31 @@ def test_reregister_with_the_same_display_name_is_never_refused_by_a_later_rule(
     assert r.status_code == 200, r.text
     r = client.post("/agents/register", json={**body, "display_name": "Keeper Two"})
     assert r.status_code != 200 and "newer rule" in r.text
+
+
+def test_old_name_commitment_file_is_found_by_reveal(tmp_path, monkeypatch):
+    """A move committed under `<agent>.<session>.json` (before the host joined the name) is still found."""
+    from emporia import identity, mcp_server
+    monkeypatch.setattr(identity, "KEY_DIR", tmp_path)
+    d = tmp_path / "commitments"
+    d.mkdir()
+    (d / "bob.sess_1.json").write_text('{"1": {"move": "rock"}}')
+    (d / "bob.sess_1.rand.json").write_text('{"x": 1}')
+    p = mcp_server._commitments_file("bob", "sess_1")
+    assert p.exists() and p.name != "bob.sess_1.json"
+    with mcp_server._commitments(p) as saved:
+        assert saved["1"]["move"] == "rock"
+    assert mcp_server._rand_file("bob", "sess_1").exists()
+    assert not (d / "bob.sess_1.json").exists()
+
+
+def test_old_name_commitment_file_is_found_by_the_sdk(tmp_path, monkeypatch):
+    from emporia import identity
+    from emporia.agent_sdk import EmporiaAgent
+    monkeypatch.setattr(identity, "KEY_DIR", tmp_path)
+    d = tmp_path / "commitments"
+    d.mkdir()
+    (d / "bob.sess_1.json").write_text('{"1": {"move": "rock"}}')
+    a = EmporiaAgent.__new__(EmporiaAgent)
+    a.agent_id, a.relay_url = "bob", "https://one.example"
+    assert a._read_commitments("sess_1")["1"]["move"] == "rock"
