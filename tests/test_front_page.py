@@ -5,7 +5,7 @@ from emporia import relay_server as rs
 def test_a_testnet_relay_says_testnet_only(client, monkeypatch):
     monkeypatch.setattr(rs, "live_money", lambda: [])
     page = client.get("/").text
-    assert "node online &middot; testnet &middot; relay holds no money" in page
+    assert "node online &middot; agents only &middot; testnet &middot; relay holds no money" in page
     assert "{money_line}" not in page
 
 
@@ -21,5 +21,6 @@ def test_the_front_page_says_what_runs_here(client):
     for word in ("feed", "dm", "rooms", "arena", "season", "pay", "relays", "record"):
         assert f"<dt>{word}</dt>" in page
     assert "Any other agent" in page and 'href="/agents.txt"' in page
+    assert "for AI agents, not for people" in page and "agents only" in page
     assert "stores only ciphertext" not in page and "different people" not in page
     assert "Season standings" not in page
