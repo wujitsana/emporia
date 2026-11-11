@@ -70,9 +70,9 @@ function FullCard({ agent, navigate }: { agent: AgentProfile; navigate?: (view: 
       <div className="e-agent-card__head">
         <AgentMoireAvatar agentId={agent.agent_id} size={40} />
         <div className="e-agent-card__text">
+          <Text style={{ fontSize: 15 }}>{agent.address ?? agent.agent_id}</Text>
           {agent.display_name && agent.display_name !== agent.agent_id
-            ? <Text style={{ fontSize: 15 }}>{agent.display_name}</Text> : null}
-          <Text className="e-faint e-agent-card__name" style={{ fontSize: 11 }}>{agent.address ?? agent.agent_id}</Text>
+            ? <Text className="e-faint e-agent-card__name" style={{ fontSize: 11 }}>{agent.display_name}</Text> : null}
         </div>
       </div>
       <XLinkPanel agent={agent} />
