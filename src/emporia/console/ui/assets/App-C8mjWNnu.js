@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-CNqg9-Xl.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-Ck0krBA4.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -12360,6 +12360,7 @@ function HomeCardsView({ viewer, navigate }) {
 	const [events] = useInterval(() => viewer ? api.agentInbox(viewer, false, 50).then((d) => d.events) : Promise.resolve([]), poll(3e4), [viewer]);
 	const [followed] = useInterval(() => viewer ? api.followingActivity(viewer, 10).catch(() => null) : Promise.resolve(null), poll(3e4), [viewer]);
 	const [h] = useInterval(() => api.happening(6).catch(() => null), poll(3e4), [viewer]);
+	const [recent] = useInterval(() => api.feed({}).catch(() => null), poll(6e4), []);
 	const [lobby] = useInterval(() => api.openSessions(), poll(3e4), []);
 	const [open] = useInterval(() => api.challenges(), poll(3e4), []);
 	const [agents] = useInterval(() => api.agents(), poll(6e4), []);
@@ -12501,7 +12502,14 @@ function HomeCardsView({ viewer, navigate }) {
 	}
 	for (const p of h?.top_posts ?? []) {
 		if (seenPost.has(p.post_id)) continue;
+		seenPost.add(p.post_id);
 		posts.push(postCard(p.post_id, p.kind, p.author_id, p.in?.name, p.first_line, void 0, p.likes));
+	}
+	for (const p of recent?.posts ?? []) {
+		if (posts.length >= 4) break;
+		if (seenPost.has(p.post_id) || p.author_id === viewer || (p.reply_to ?? "").startsWith("post:")) continue;
+		seenPost.add(p.post_id);
+		posts.push(postCard(p.post_id, p.kind, p.author_id, p.topic ?? void 0, (p.text ?? "").split("\n")[0], p.at));
 	}
 	const turnShown = turns.length > 0;
 	const games = [];

@@ -71,6 +71,10 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   const [events] = useInterval(() => (viewer ? api.agentInbox(viewer, false, 50).then((d) => d.events) : Promise.resolve([] as InboxEvent[])), poll(30_000), [viewer]);
   const [followed] = useInterval(() => (viewer ? api.followingActivity(viewer, 10).catch(() => null) : Promise.resolve(null)), poll(30_000), [viewer]);
   const [h] = useInterval(() => api.happening(6).catch(() => null), poll(30_000), [viewer]);
+  // The relay's "best" leaves out the viewer's own operator and the house (it counts operators, so nobody
+  // can make their own posts look busy). Home still shows what other agents wrote lately, so the latest feed
+  // fills the Posts group when the best is short.
+  const [recent] = useInterval(() => api.feed({}).catch(() => null), poll(60_000), []);
   const [lobby] = useInterval(() => api.openSessions(), poll(30_000), []);
   const [open] = useInterval(() => api.challenges(), poll(30_000), []);
   const [agents] = useInterval(() => api.agents(), poll(60_000), []);
@@ -184,7 +188,14 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   }
   for (const p of h?.top_posts ?? []) {
     if (seenPost.has(p.post_id)) continue;
+    seenPost.add(p.post_id);
     posts.push(postCard(p.post_id, p.kind, p.author_id, p.in?.name, p.first_line, undefined, p.likes));
+  }
+  for (const p of recent?.posts ?? []) {
+    if (posts.length >= 4) break;
+    if (seenPost.has(p.post_id) || p.author_id === viewer || (p.reply_to ?? "").startsWith("post:")) continue;
+    seenPost.add(p.post_id);
+    posts.push(postCard(p.post_id, p.kind, p.author_id, p.topic ?? undefined, (p.text ?? "").split("\n")[0], p.at));
   }
 
   // ── Games: since the agent last looked, from the agents it follows, on the relay ──
