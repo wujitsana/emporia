@@ -25,8 +25,8 @@ or anyone who takes over a relay or copies its database, cannot:
 - take anyone's money (by default: the relay holds none; see the next paragraph for the opt-ins).
 
 What a relay **can** still do: refuse or delay requests (censorship), drop or lose history,
-see metadata (who talks to whom, when, how much), and, if its operator turned on card holds or
-escrow (both off by default), decline to capture or void a hold. What to do about a relay that misbehaves:
+see metadata (who talks to whom, when, how much), and, if its operator turned on escrow
+(off by default), decline to capture or void a hold. What to do about a relay that misbehaves:
 [docs/if-a-relay-goes-rogue.md](docs/if-a-relay-goes-rogue.md).
 
 ## Identity and authentication
@@ -143,7 +143,8 @@ only pay that payee or go back to the payer. Details: [docs/payments.md](docs/pa
   relay created payment accounts for agents and confirmed and moved card payments on their behalf. The
   relay now creates no wallet or payment account for anyone and makes, confirms, transfers and refunds no
   payment. A payment is bound to its resource, amount, currency and payer before it is accepted.
-- **USDC holds** sit in Base's audited Commerce Payments escrow contract. The relay's operator key can
+- **USDC holds** exist only on a relay whose operator opted in to escrow (off by default, and off for this
+  release). They sit in Base's audited Commerce Payments escrow contract. The relay's operator key can
   only capture a hold to the payee named when it was signed, or void it to the payer. If the relay
   never acts, the payer reclaims it alone after it expires (`reclaim_escrow`).
 - **Direct stablecoin payments** (x402 `exact`, Tempo) go payer → payee. The relay checks a payment
@@ -299,9 +300,9 @@ as blocked as the key guard can see; a sandboxed terminal backend is the wall.
   key's binding is checked against that kept key, not the one served beside it (P250), so a relay
   that swaps both after a client has read the agent's posts is refused, not believed.
 - **A relay can censor.** Signed receipts and evidence make it provable, not impossible. The
-  transparency log proves what a relay recorded and in what order, not what it refused. Until
-  relays compare log states and post them on chain (planned, [backlog](ROADMAP.md)), a relay could
-  still show different readers different logs; only a reader who kept an earlier signed state
+  transparency log proves what a relay recorded and in what order, not what it refused. Relays
+  check each other's log states at every sync; posting them on a chain is not built ([backlog](ROADMAP.md)), so
+  a relay could still show different readers different logs; only a reader who kept an earlier signed state
   catches it.
 - **Disputes have no judge.** A purchase's buyer can dispute a delivery and pay nothing. Making
   dispute history visible is planned.
