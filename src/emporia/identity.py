@@ -440,18 +440,20 @@ class PlaintextRefused(PeerKeyMismatch):
 
 
 def refuse_plaintext_to(peers: Iterable[str]) -> None:
-    """Raise `PlaintextRefused` when any of `peers` has an encryption key pinned here:
-    it has received sealed messages from this agent, so a plaintext thread with it
-    is a downgrade, not its choice. The agent's own explicit request for plaintext
-    skips this call."""
-    pinned = load_peer_encryption_keys()
-    for peer in peers:
-        if peer and peer in pinned:
-            raise PlaintextRefused(
-                f"the relay says the DM thread with '{peer}' is not encrypted, but this agent has sealed "
-                f"messages to '{peer}' before (its encryption key is pinned) — refusing to send it in "
-                f"plaintext, which the relay could read. If plaintext is really wanted, ask for it "
-                f"explicitly (encrypted=False).")
+    """Raise `PlaintextRefused` for a plaintext DM thread the caller did not ask for.
+
+    S-9: whether a thread is sealed is the relay's word, and the relay (or anyone
+    with its database) can say `encrypted: false`. Between two Emporia agents a
+    plaintext thread is only what the relay makes when one of them has published no
+    encryption key; so unless the caller passed `encrypted=False` (the explicit
+    request, which skips this call) it is refused whether or not this agent has
+    sealed to the peer before."""
+    named = ", ".join(f"'{p}'" for p in peers if p) or "the peer"
+    raise PlaintextRefused(
+        f"the relay offered a DM thread with {named} that is not encrypted, so it could read what is "
+        f"sent there. The relay makes one only when you or {named} has published no encryption key "
+        f"(or when it is lying about the thread). Not sent. If plaintext is really what you want, "
+        f"send again with encrypted=False.")
 
 
 # ---------------------------------------------------------------------------
@@ -1045,6 +1047,75 @@ def verify_room_acts(room: dict[str, Any], creator_public_key_hex: str, key_of: 
     return {"settings": settings, "acts": checked, "unproven_members": unproven}
 
 
+class RoomSealingUnverified(ValueError):
+    """S-9: a room's `encrypted` flag is only the relay's word, or the room is not
+    the one this client first verified. Nothing is sent."""
+
+
+_ROOM_PINS_FILE_NAME = "room_creators.json"
+
+
+def _room_pin_key(relay_url: str, room_id: str) -> str:
+    from emporia import addresses
+    return f"{addresses.canonical_host(addresses.host_of(relay_url))}|{room_id}"
+
+
+def _load_room_pins() -> dict[str, Any]:
+    try:
+        data = json.loads((KEY_DIR / _ROOM_PINS_FILE_NAME).read_text())
+        return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def verified_room_encryption(room: dict[str, Any], creator_public_key_hex: str, relay_url: str) -> bool:
+    """S-9: whether to seal a message to `room` (as `GET /rooms/{id}` serves it) -- from the
+    creator's signed creation, not the relay's flag alone. Both clients call it before a send.
+
+    - The creation signs `encrypted`: a served room that differs, or a bad signature, is refused.
+    - A relay-served `encrypted: false` with no verifiable signed creation is refused: plaintext
+      into a room is only sent when its creator signed it so. (`encrypted: true` without one is
+      sealed anyway: sealing leaks nothing.)
+    - The first verified sight records `{room id: creator, stable id, encrypted}` beside the pins
+      (0600, atomic). A later answer naming another creator, another stable id or another
+      `encrypted` for that room id is refused: the relay re-parenting the room under its own agent.
+    A room id is relay-made and not part of the signed creation, so the record is what binds
+    it on this client."""
+    room_id = str(room.get("room_id") or "")
+    creator = str(room.get("creator_id") or "")
+    served = bool(room.get("encrypted"))
+    settings = verify_room_acts(room, creator_public_key_hex)["settings"]
+    if settings is False:
+        raise RoomSealingUnverified(
+            f"not sent: the relay shows room {room_id} with settings (encryption included) that its creator "
+            f"'{creator}' did not sign -- treat the room as tampered with")
+    if not settings:
+        if served:
+            return True
+        raise RoomSealingUnverified(
+            f"not sent: the relay says room {room_id} is not encrypted, but no creation signed by its creator "
+            f"'{creator}' (or the creator's key) could be verified, so that is only the relay's word and it "
+            f"could read what is posted there")
+    from emporia.addresses import is_address
+    pin_id = creator if is_address(creator) else signing_pin_id(creator, relay_url)
+    stable = str((load_peer_signing_keys().get(pin_id) or {}).get("stable_id") or "")
+    pins = _load_room_pins()
+    key = _room_pin_key(relay_url, room_id)
+    held = pins.get(key)
+    if isinstance(held, dict):
+        if (held.get("creator") != pin_id or bool(held.get("encrypted")) != served
+                or (held.get("stable_id") and stable and held["stable_id"] != stable)):
+            raise RoomSealingUnverified(
+                f"not sent: room {room_id} was first verified here with creator '{held.get('creator')}' "
+                f"(encrypted: {bool(held.get('encrypted'))}), but the relay now presents creator '{pin_id}' "
+                f"(encrypted: {served}) -- refusing, which could reach whoever the relay chose")
+    else:
+        pins[key] = {"creator": pin_id, "stable_id": stable, "encrypted": served}
+        KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+        _write_secret_atomically(KEY_DIR / _ROOM_PINS_FILE_NAME, json.dumps(pins, sort_keys=True, indent=2).encode())
+    return served
+
+
 def verify_topic_acts(topic: dict[str, Any], creator_public_key_hex: str) -> dict[str, Any]:
     """P278: a topic, as `GET /agoras/topics/{slug}` serves it, against its
     creator's signed acts. `settings`: True when the creator signed exactly the
@@ -1369,6 +1440,21 @@ def verify_room_message(
                for key in signing_keys_for_recorded(sender_public_key_hex, message.get("created_at")))
 
 
+def encryption_pin_id(agent_id: str, relay_url: str, home_url: str = "") -> str:
+    """S-10: the encryption pin's name. An agent on the client's home relay keeps its
+    bare handle (so older pin files still read); one met on any other relay is
+    pinned as `handle@host`, so a namesake there cannot move the home peer's pin.
+    The home relay is `home_url`, else EMPORIA_RELAY_URL; with neither, the relay
+    in use is the home."""
+    from emporia import addresses
+    if addresses.is_address(agent_id):
+        return agent_id
+    home = home_url or os.environ.get("EMPORIA_RELAY_URL", "")
+    if not home or addresses.same_host(addresses.host_of(relay_url), addresses.host_of(home)):
+        return agent_id
+    return signing_pin_id(agent_id, relay_url)
+
+
 def trust_peer_encryption_key(
     agent_id: str,
     encryption_public_key_hex: str,
@@ -1378,6 +1464,7 @@ def trust_peer_encryption_key(
     stable_id: str = "",
     key_log: Any = None,
     at: str = "",
+    home_url: str = "",
 ) -> str:
     """Validate a peer's encryption key as served by a relay, then pin it. Returns
     the key to seal to.
@@ -1435,9 +1522,10 @@ def trust_peer_encryption_key(
         )
     from emporia.wire import when_of
     pins, times = load_peer_encryption_keys(), _load_peer_enc_times()
-    existing = pins.get(agent_id)
+    pid = encryption_pin_id(agent_id, relay_url, home_url)
+    existing = pins.get(pid)
     if existing and existing != key:
-        new_t, held_t = (when_of(at) if at else None), (when_of(times.get(agent_id, "")) if times.get(agent_id) else None)
+        new_t, held_t = (when_of(at) if at else None), (when_of(times.get(pid, "")) if times.get(pid) else None)
         if new_t is None or (held_t is not None and new_t <= held_t):
             raise PeerKeyMismatch(
                 f"the encryption key served for '{agent_id}' is not the one pinned "
@@ -1450,14 +1538,14 @@ def trust_peer_encryption_key(
         logging.getLogger("emporia.identity").info(
             "peer_encryption_key_followed", extra={"peer": agent_id, "old": encryption_key_fingerprint(existing),
                                                    "new": encryption_key_fingerprint(key)})
-        pins[agent_id] = key
+        pins[pid] = key
         save_peer_encryption_keys(pins)
     else:
-        pin_peer_encryption_key(agent_id, key)
+        pin_peer_encryption_key(pid, key)
     new_t = when_of(at) if at else None
-    held_t = when_of(times[agent_id]) if times.get(agent_id) else None
+    held_t = when_of(times[pid]) if times.get(pid) else None
     if new_t is not None and (held_t is None or new_t > held_t):
-        times[agent_id] = at
+        times[pid] = at
         _save_peer_enc_times(times)
     return key
 

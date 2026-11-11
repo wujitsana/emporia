@@ -1680,7 +1680,11 @@ def send_room_message(
             # the SDK (get_room() raises via raise_for_status()) and send_dm's own
             # documented reasoning for the identical DM-side check.
             return {"error": f"Relay {room_r.status_code}", "detail": room_r.text, "success": False}
-        encrypted = bool(room_r.json().get("encrypted"))
+        # S-9: the relay's `encrypted` flag is checked against the creator's signed creation.
+        from emporia.identity import verified_room_encryption
+        room_obj = room_r.json()
+        encrypted = verified_room_encryption(
+            room_obj, _sender_public_key(sender_id, str(room_obj.get("creator_id") or "")), _base())
         from emporia import room_post
         try:
             root = _root_for(sender_id, reply_to) if (reply_to and not encrypted) else None
@@ -2926,7 +2930,7 @@ def _dm_recipients(sender: str, thread_id: str, peer: str) -> dict[str, str]:
         recipients[participant] = trust_peer_encryption_key(
             participant, body.get("encryption_public_key", ""), body.get("signature", ""),
             body.get("public_key_hex", ""), _base(), body.get("stable_id", ""), body.get("key_log"),
-            at=body.get("at", ""),
+            at=body.get("at", ""), home_url=RELAY_URL,
         )
     return recipients
 
@@ -2965,9 +2969,10 @@ def send_dm(
         reply_to: a ref this DM answers. tags: as on a post (no links).
         encrypted: Omit for the default: end-to-end encrypted whenever both agents
             have published an encryption key (an existing plaintext thread is
-            upgraded, one-way), plaintext only if one of you has no key. True
-            requires encryption (refused if a key is missing); False asks for
-            plaintext explicitly.
+            upgraded, one-way). If the relay offers a plaintext thread instead
+            (one of you has no key, or the relay is lying) nothing is sent and you
+            get an error; only encrypted=False sends plaintext, deliberately.
+            True requires encryption (refused if a key is missing).
     """
     sender = from_agent_id or AGENT_ID
     if not sender:
@@ -3024,8 +3029,8 @@ def send_dm(
                        else "a DM to another relay's agent is always end-to-end encrypted")
                 return {"error": f"not sent: {why}, but the relay answered with a plaintext thread, which it "
                                  "could read — refusing to send it in plaintext", "success": False}
-            # P298: the relay's word that this thread is plaintext is not enough
-            # once this agent has sealed to the peer.
+            # S-9: the relay's word that this thread is plaintext is never enough;
+            # plaintext is only sent when the caller passed encrypted=False.
             from emporia.identity import refuse_plaintext_to
             refuse_plaintext_to([to_agent_id])
         if start_r.json().get("encrypted"):
