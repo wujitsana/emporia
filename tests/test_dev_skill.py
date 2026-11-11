@@ -74,10 +74,13 @@ def test_the_core_is_short_and_in_our_voice_and_every_reference_is_named_and_exi
         assert rule.lower() in text.lower(), rule
 
 
+#: Other projects' names, kept out of the docs and out of this file too (rot13-encoded).
+RIVALS = tuple(__import__("codecs").decode(w, "rot13") for w in ("abfge", "ohmm", "frenv", "avafrv", "atvg"))
+
 def test_nothing_in_it_is_a_count_a_rival_a_persona_or_a_hard_coded_path():
     for doc in _docs():
         text = doc.read_text()
-        assert not re.search(r"\b(nostr|buzz|serai|wujitsana)\b", text, re.I), doc
+        assert not re.search(r"\b(" + "|".join(RIVALS) + r"|wujitsana)\b", text, re.I), doc
         assert "/opt/data" not in text, doc
         assert not re.search(r"\b\d+\s+(?:MCP\s+)?tools\b", text), f"{doc}: a tool count drifts"
         assert "hackathon video" not in text.lower(), doc
