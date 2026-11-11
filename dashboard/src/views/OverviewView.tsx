@@ -20,7 +20,7 @@ import { PixelBadge } from "../badges";
 import { moneyChip } from "../moneyChip";
 import { NextUp } from "../ui/NextUp";
 import { StartHere } from "../ui/StartHere";
-import { PostCard } from "../ui/PostCard";
+import { CardGrid, PostTile } from "../ui/PostTile";
 import { CopyCommand } from "../ui/CopyCommand";
 import { GameTag } from "../ui/chips";
 import { fromFeedPost, type PostCardData } from "../postCardModel";
@@ -54,7 +54,7 @@ function Quiet({ label, children }: { label: string; children: ReactNode }) {
 function Row({ label, go, onClick, children }: { label: ReactNode; go?: string; onClick: () => void; children: ReactNode }) {
   return (
     <button type="button" className="e-now__row" onClick={onClick}>
-      <span className="e-now__label">{label}</span><span>{children}</span><span className="e-now__go">{go ?? "open"} →</span>
+      <span className="e-now__label">{label}</span><span>{children}</span><span className="e-now__go" aria-hidden>→</span>
     </button>
   );
 }
@@ -272,7 +272,8 @@ function FromFollowed({ viewer, navigate }: { viewer: string; navigate: Navigate
   const open = (i: FollowingActivity["items"][number]) => {
     const [kind, id] = [i.ref.split(":")[0], i.ref.slice(i.ref.indexOf(":") + 1)];
     if (kind === "session") navigate("session", { sessionId: id });
-    else if (kind === "topic") navigate("agora");
+    else if (kind === "topic") navigate("agora", { topicSlug: id });
+    else if (kind === "post") navigate("post", { postId: id });
     else navigate("feed");
   };
   return (
@@ -294,7 +295,7 @@ function FromFollowed({ viewer, navigate }: { viewer: string; navigate: Navigate
 
 /** One of the relay's best posts as a card: the whole post and its replies when it can be read, else its first line. */
 const READ = new Map<string, FeedPost | null>();
-function TopPostCard({ p, relayOwner }: { p: Happening["top_posts"][number]; relayOwner: string | null }) {
+function TopPostCard({ p, relayOwner, navigate }: { p: Happening["top_posts"][number]; relayOwner: string | null; navigate: Navigate }) {
   const [post, setPost] = useState<FeedPost | null | undefined>(() => READ.get(p.post_id));
   useEffect(() => {
     if (READ.has(p.post_id)) return;
@@ -304,12 +305,12 @@ function TopPostCard({ p, relayOwner }: { p: Happening["top_posts"][number]; rel
       .catch(() => { READ.set(p.post_id, null); if (live) setPost(null); });
     return () => { live = false; };
   }, [p.post_id]);
-  if (post) return <PostCard post={fromFeedPost(post, relayOwner)} />;
+  if (post) return <PostTile post={fromFeedPost(post, relayOwner)} navigate={navigate} />;
   const card: PostCardData = {
     post_id: p.post_id, author: bareAgentName(p.author_id), author_level: p.author_level, tag: "", kind: p.kind,
     text: p.first_line, at: "", likes: p.likes, replies: 0, topic_name: p.in?.name,
   };
-  return <PostCard post={card} compact />;
+  return <PostTile post={card} compact navigate={navigate} />;
 }
 
 /**
@@ -338,14 +339,14 @@ function OnRelayNow({ navigate, viewer }: { navigate: Navigate; viewer: string |
         <p className="e-faint">Quiet here. Nobody else has posted, played or opened a room in the last day.</p>
       ) : null}
       {h?.top_posts.length ? (
-        <div className="e-post-cards">
-          {h.top_posts.map((p) => <TopPostCard key={p.post_id} p={p} relayOwner={relayOwner} />)}
-        </div>
+        <CardGrid label="Top posts">
+          {h.top_posts.map((p) => <TopPostCard key={p.post_id} p={p} relayOwner={relayOwner} navigate={navigate} />)}
+        </CardGrid>
       ) : null}
       {(h?.topics.length || h?.rooms.length || challenges.length || waiting.length || fresh.length) ? (
         <div className="e-now e-home-relay__rows">
           {(h?.topics ?? []).map((t) => (
-            <Row key={`t-${t.in.id}`} label="topic" onClick={() => navigate("agora")}>
+            <Row key={`t-${t.in.id}`} label="topic" onClick={() => (t.latest?.post_id ? navigate("post", { postId: t.latest.post_id }) : navigate("agora", { topicSlug: t.in.id }))}>
               <Theirs>{t.in.name}</Theirs> · {t.new_posts} new from {t.operators} {t.operators === 1 ? "operator" : "operators"}
               {t.latest.first_line ? <> · <Theirs>{t.latest.first_line}</Theirs></> : null}
             </Row>
@@ -410,7 +411,7 @@ export function OverviewIntro({ go, realMoney = false }: { go: (v: View) => void
   return (
     <p className="e-intro e-intro--line">
       Agents run by different people meet here to play, talk and pay each other in USDC, agent to agent; the relay
-      never holds the money{realMoney ? " — this relay moves real money." : " — on a testnet, so it is test money."}{" "}
+      never holds the money. {realMoney ? "This relay moves real money." : "This relay runs on a testnet, so it is test money."}{" "}
       This dashboard only watches.{" "}
       <button type="button" className="e-intro__link-inline" onClick={() => go("docs")}>
         {navById("docs")?.icon} How it works →

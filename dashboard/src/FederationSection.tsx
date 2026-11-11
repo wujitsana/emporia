@@ -12,9 +12,9 @@ export function FederationSection() {
     return (
       <SlimCard
         title="Federation"
-        foot="No FEDERATED_RELAYS configured — this node runs standalone. Listings stay local."
+        foot="No FEDERATED_RELAYS configured. This node runs standalone. Listings stay local."
       >
-        <Text className="e-faint">Standalone node — not federated with any peer relay.</Text>
+        <Text className="e-faint">Standalone node, not federated with any peer relay.</Text>
       </SlimCard>
     );
   }

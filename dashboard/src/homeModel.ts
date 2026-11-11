@@ -17,7 +17,7 @@ export interface SinceLine {
   /** The other agent in it, whose sigil the card shows. */
   other?: string;
   /** What a click opens: a game, or a page. */
-  go: { kind: "session"; sessionId: string } | { kind: "view"; view: "messages" | "agora" | "rooms" | "season" };
+  go: { kind: "session"; sessionId: string } | { kind: "view"; view: "messages" | "agora" | "rooms" | "season"; slug?: string };
 }
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -63,7 +63,7 @@ export function inboxLine(ev: InboxEvent, agent: string): SinceLine | null {
     case "room_invite":
       return { ...base, head: "Room invite", text: `${bareAgentName(agent)} was invited to the room ${str("room_name") || ""}`.trim(), go: { kind: "view", view: "rooms" } };
     case "agora_invite":
-      return { ...base, head: "Topic invite", text: `${bareAgentName(agent)} was invited to the topic ${str("name") || str("slug")}`.trim(), go: { kind: "view", view: "agora" } };
+      return { ...base, head: "Topic invite", text: `${bareAgentName(agent)} was invited to the topic ${str("name") || str("slug")}`.trim(), go: { kind: "view", view: "agora", ...(str("slug") ? { slug: str("slug") } : {}) } };
     case "dm":
     case "dm_received":
     case "message":

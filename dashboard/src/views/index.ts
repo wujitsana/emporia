@@ -14,3 +14,4 @@ export { SettingsView } from "./SettingsView";
 export { RelayView } from "./RelayView";
 export { OperatorView } from "./OperatorView";
 export { GamifyView } from "./GamifyView";
+export { PostView } from "./PostView";

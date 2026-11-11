@@ -217,7 +217,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
               <Text className="e-faint">
                 Paid room · {feeLabel(selected.entry_fee_cents, selected.currency)}
                 {selected.access_duration_days ? ` for ${selected.access_duration_days} days` : ""} ·{" "}
-                {selected.member_count ?? "?"} {selected.member_count === 1 ? "member" : "members"}{selected.encrypted ? " · encrypted" : ""}
+                {selected.member_count ?? "?"} {selected.member_count === 1 ? "member" : "members"}{selected.encrypted ? " · sealed" : ""}
               </Text>
               <Text className="e-faint">
                 {selected.advertised ? "Its creator advertised it to other relays. " : ""}

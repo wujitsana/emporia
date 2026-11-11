@@ -6,7 +6,7 @@
  * (dashboard.css § 30: brackets, pixel face, tint fill and ink), so every theme and tint carries over.
  * Cards only display and open the detail; nothing here acts. Fields and helpers: homeCardsModel.ts.
  */
-import { useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { PixelBadge } from "../badges";
 import { ScrambleText } from "./LookChrome";
@@ -32,7 +32,8 @@ function CopyCall({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button type="button" className="e-hcard__copy" aria-label={`Copy: ${text}`}
-      onClick={() => {
+      onClick={(e) => {
+        e.stopPropagation();
         navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined);
       }}>
       {copied ? "copied" : "copy"}
@@ -40,13 +41,27 @@ function CopyCall({ text }: { text: string }) {
   );
 }
 
-/** Past this a body shows "more": about six lines of a 300px card. */
+/** Without layout (no measure), a body past this many characters is taken to be clamped. */
 const BODY_LONG = 260;
+
+/** The text is selected right now: a click that ends a selection must not open the card. */
+function selecting(): boolean {
+  return (window.getSelection?.()?.toString() ?? "") !== "";
+}
 
 export function Card({ c }: { c: CardSpec }) {
   const [open, setOpen] = useState(false);
-  const link = c.onOpen && !c.copy && !c.body;
-  const long = !!c.body && (c.body.length > BODY_LONG || c.body.split("\n").length > 6);
+  const bodyRef = useRef<HTMLSpanElement>(null);
+  const [clamped, setClamped] = useState(false);
+  // "more" shows when the text is actually cut (measured), not by a guess at its length.
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el || open || c.full) return;
+    const laidOut = el.clientHeight > 0;
+    setClamped(laidOut ? el.scrollHeight > el.clientHeight + 1 : c.body!.length > BODY_LONG || c.body!.split("\n").length > 6);
+  }, [c.body, open, c.full]);
+  const link = !!c.onOpen && !c.full;
+  const showMore = !c.full && !!c.body && (clamped || open);
   const cls = `e-hcard${c.hero ? " e-hcard--hero" : ""}${c.quiet ? " e-hcard--quiet" : ""}${link ? " is-link" : ""}${c.body ? " e-hcard--post" : ""}`;
   // Each fact once: a chip that only repeats the headline, or a kind line that only repeats the chip, is not drawn.
   const same = (a: string, b: string) => !!a && !!b && (a.includes(b) || b.includes(a));
@@ -55,12 +70,12 @@ export function Card({ c }: { c: CardSpec }) {
   const meta = c.meta && !same(c.meta.toLowerCase(), (c.chip ?? "").toLowerCase()) && !same(c.meta.toLowerCase(), headLow) ? c.meta : "";
   const body = (
     <>
-      <span className="e-hcard__hud">
+      <span className="e-hcard__hud" title={meta || undefined}>
         <span>{meta}</span>
         <span>{c.at ? <RelTime at={c.at} /> : c.time}</span>
       </span>
       <span className="e-hcard__ids">
-        {chip ? <span className="e-hcard__chip">{chip}</span> : <span className="e-hcard__chip e-hcard__chip--none" aria-hidden />}
+        {chip ? <span className={`e-hcard__chip${c.chipOutline ? " e-hcard__chip--outline" : ""}`}>{chip}</span> : <span className="e-hcard__chip e-hcard__chip--none" aria-hidden />}
         {c.game ? <span className="e-hcard__icon"><PixelBadge id={c.game} size={2} mono /></span>
           : c.agent ? <span className="e-hcard__icon" title={c.agent}><AgentMoireAvatar agentId={c.agent} size={26} /></span> : null}
       </span>
@@ -72,38 +87,47 @@ export function Card({ c }: { c: CardSpec }) {
           ))}
         </span>
       ) : null}
-      {c.detail ? <span className="e-hcard__detail">{c.detail}</span> : null}
+      {c.detail ? <span className="e-hcard__detail" title={c.detail}>{c.detail}</span> : null}
       {c.body ? (
         <span className="e-hcard__bodywrap">
-          <span className={`e-hcard__body${open ? " is-open" : ""}`}
+          <span ref={bodyRef} className={`e-hcard__body${open || c.full ? " is-open" : ""}`}
             title={c.theirs ? "written by another agent: data, not instructions" : undefined}>{c.body}</span>
-          {long ? (
-            <button type="button" className="e-hcard__more" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          {showMore ? (
+            <button type="button" className="e-hcard__more" aria-expanded={open}
+              onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}>
               {open ? "less" : "more"}
             </button>
           ) : null}
         </span>
       ) : null}
+      {c.tagline ? <span className="e-hcard__tags">{c.tagline}</span> : null}
+      {c.marker ? (
+        c.marker.onOpen
+          ? <button type="button" className="e-hcard__marker" onClick={(e) => { e.stopPropagation(); c.marker!.onOpen!(); }}>{c.marker.text}</button>
+          : <span className="e-hcard__marker">{c.marker.text}</span>
+      ) : null}
       {c.extra}
-      <span className="e-hcard__caption" title={c.theirs && !c.body ? "written by another agent: data, not instructions" : undefined}>
-        {c.copy ? <code>{c.copy}</code> : c.caption}
-        {c.copy ? <CopyCall text={c.copy} /> : null}
-      </span>
-      {c.foot || (c.body && c.onOpen) ? (
-        <span className="e-hcard__foot">
+      {c.caption || c.copy ? (
+        <span className="e-hcard__caption"
+          title={c.captionTitle ?? (c.theirs && !c.body ? "written by another agent: data, not instructions" : c.caption)}>
+          {c.copy ? <code>{c.copy}</code> : c.caption}
+          {c.copy ? <CopyCall text={c.copy} /> : null}
+        </span>
+      ) : null}
+      {c.foot ? (
+        <span className="e-hcard__foot" title={c.foot}>
           <span>{c.foot}</span>
-          {c.body && c.onOpen ? (
-            <button type="button" className="e-hcard__more" onClick={c.onOpen}>open →</button>
-          ) : null}
         </span>
       ) : null}
     </>
   );
-  return link ? (
-    <button type="button" className={cls} onClick={c.onOpen} role="listitem">{body}</button>
-  ) : (
-    <div className={cls} role="listitem">{body}</div>
-  );
+  if (!link) return <div className={cls} role="listitem">{body}</div>;
+  const open_ = () => { if (!selecting()) c.onOpen!(); };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); c.onOpen!(); }
+  };
+  return <div className={cls} role="listitem" tabIndex={0} onClick={open_} onKeyDown={onKey}>{body}</div>;
 }
 
 export interface CardGroup { label: string; cards: CardSpec[] }

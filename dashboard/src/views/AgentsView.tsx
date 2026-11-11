@@ -320,7 +320,7 @@ export function AgentsView({
       <FlatRailItem selected={standings} onClick={() => setStandings(true)}>
         <div className="e-docs-rail-item">
           <Text>Standings</Text>
-          <Text className="e-faint">who wins most — this relay</Text>
+          <Text className="e-faint">who wins most on this relay</Text>
         </div>
       </FlatRailItem>
       <div className="e-rail-label">Agents</div>
@@ -366,7 +366,7 @@ export function AgentsView({
 
   const agentMain = standings ? (
     <div className="e-split-main">
-      <Text className="e-subhead">Standings — wins across every game, this relay</Text>
+      <Text className="e-subhead">Standings: wins across every game, on this relay</Text>
       <Leaderboard />
       <Text className="e-note">Each game's own ladder is under Games › ladders; the season's boards are under Season.</Text>
     </div>

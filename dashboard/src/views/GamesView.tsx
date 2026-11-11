@@ -40,6 +40,7 @@ import { Leaderboard } from "../ui/Leaderboard";
 import { ModelResults } from "../ui/ModelResults";
 import { GameResults } from "../ui/GameResults";
 import { SaidLine } from "../ui/GameTalk";
+import { TableTalk } from "../ui/TableTalk";
 import { useSaid } from "../useSaid";
 import { saidAt } from "../gameTalk";
 import { playerName } from "../arena";
@@ -87,6 +88,7 @@ export function ChessReplayPanel({ session, initialStep = null, onStepChange, bo
   const [speed, setSpeed] = React.useState(700);
   const [wsLive, setWsLive] = React.useState(false);
   const [playable, setPlayable] = React.useState(true);
+  const [actTimes, setActTimes] = React.useState<{ created_at: string }[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Leaving the game (a sub-tab, another section) stops a replay that is still stepping.
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
@@ -102,6 +104,7 @@ export function ChessReplayPanel({ session, initialStep = null, onStepChange, bo
       const built = buildChessReplay(acts, fallbackFen, startFen);
       setFens(built.fens);
       setSans(built.sans);
+      setActTimes(acts.map((a) => ({ created_at: a.created_at })));
       setPlayable(built.playable);
       const want = wantStep.current;
       wantStep.current = null;
@@ -184,6 +187,7 @@ export function ChessReplayPanel({ session, initialStep = null, onStepChange, bo
 
   const chessTalk = useSaid(session.session_id, session.status === "active" || session.status === "waiting");
   const chessSaid = chessTalk.messages;
+  const chessPlaced = React.useMemo(() => saidAt(chessSaid, actTimes), [chessSaid, actTimes]);
   const board = fenToBoard(fens[idx] ?? STARTING_FEN);
   const moveLabel =
     idx === 0
@@ -265,6 +269,10 @@ export function ChessReplayPanel({ session, initialStep = null, onStepChange, bo
         ) : null}
         {inArena ? null : <ChessPlayersBar session={session} />}
         <SessionMoney session={session} />
+        {inArena ? (
+          <TableTalk talk={chessTalk} said={chessPlaced} book={book} at={idx}
+            onSeek={(n) => { stopReplay(); setIdx(Math.max(0, Math.min(fens.length - 1, n))); }} />
+        ) : null}
         {chessSaid.filter((m) => m.step === idx).map((m) => (
           <div key={m.message_id} className="e-arena-said">
             <SaidLine m={m} opened={chessTalk.opened} who={playerName(m.agent_id, book, 14)} />

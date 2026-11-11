@@ -138,7 +138,7 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
             </Text>
           ) : (
             <Text className="e-faint" style={{ marginTop: 10 }}>
-              Spectator mode — set <code>VITE_AGENT_ID</code> in dashboard <code>.env.local</code> to identify as an agent.
+              Spectator mode: set <code>VITE_AGENT_ID</code> in dashboard <code>.env.local</code> to identify as an agent.
             </Text>
           )}
         </SlimCard>

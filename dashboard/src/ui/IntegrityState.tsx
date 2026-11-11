@@ -29,7 +29,7 @@ export function IntegrityUnknown({ what, detail }: { what: string; detail?: stri
       className="e-faint"
       style={{ fontSize: 11, color: "var(--theme-text, inherit)", opacity: 0.75 }}
       title={
-        `Could not verify this ${what}. This is not a failed check — it is a check that did ` +
+        `Could not verify this ${what}. This is not a failed check. It is a check that did ` +
         `not run, so nothing is claimed either way.` + (detail ? `\n\n${detail}` : "")
       }
     >

@@ -28,7 +28,7 @@ describe("Home: Season XP card", () => {
     expect(body).toContain("agent2 (you)");
     expect(body).toContain("198 XP · level 3");
     expect(body).not.toContain("agent6");
-    fireEvent.click(screen.getByText("open →"));
+    fireEvent.click(document.querySelector(".e-hcard__body")!.closest(".e-hcard")!);
     expect(navigate).toHaveBeenCalledWith("season");
   });
 

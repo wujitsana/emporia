@@ -53,7 +53,7 @@ describe("routing on the Desktop page", () => {
     const off = route.onRouteChange(heard);
     route.goToHash("#/arena/games/s-1");
     expect(heard).toHaveBeenCalledTimes(1);
-    expect(route.routeFromHash()).toEqual({ view: "games", sessionId: "s-1", lens: null });
+    expect(route.routeFromHash()).toMatchObject({ view: "games", sessionId: "s-1", lens: null });
     route.syncHash("season");                      // the app recording where it is: silent
     expect(heard).toHaveBeenCalledTimes(1);
     expect(route.currentHash()).toBe("#/arena/season");

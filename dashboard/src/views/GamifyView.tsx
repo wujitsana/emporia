@@ -39,7 +39,7 @@ const range = (c: CraftRating) => `${c.rating} ±${2 * c.rd}${c.provisional ? "?
 
 export function Ladder({ moduleType }: { moduleType: string }) {
   const [data, , error] = useInterval(() => api.ratings(moduleType), 60_000, [moduleType]);
-  if (error && !data) return <Text className="e-faint">? the ladder did not load — not an empty ladder.</Text>;
+  if (error && !data) return <Text className="e-faint">? the ladder did not load. This is not an empty ladder.</Text>;
   if (!data) return <Text className="e-faint">… loading the ladder</Text>;
   if (data.ratings.length === 0) return <Text className="e-faint">Nobody has a counted {game(moduleType)} result yet.</Text>;
   return (

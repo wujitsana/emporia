@@ -14,6 +14,7 @@ import { AuditBadge } from "./AuditBadge";
 import { VerifyBadge } from "./VerifyBadge";
 import { FoldDetail } from "./FoldDetail";
 import { AfterTheGame, SaidLine } from "./GameTalk";
+import { TableTalk } from "./TableTalk";
 import { useSaid } from "../useSaid";
 import { saidAt } from "../gameTalk";
 import { useLiveMatch } from "./useLiveMatch";
@@ -110,13 +111,15 @@ function MatchHeader({ session, book, profiles, onBack, live, children }: {
 }
 
 function ChessMatch({ session: initial, step, onStep, book, profiles, onBack }: MatchProps) {
-  const { session } = useLiveMatch(initial);
+  const { session, actions } = useLiveMatch(initial);
   const live = session.status === "active";
   const report = useCallback((n: number, last: number) => onStep(n >= last && live ? null : n), [onStep, live]);
   return (
     <div className="e-arena-match">
       <MatchHeader session={session} book={book} profiles={profiles} onBack={onBack} live={live} />
       <ChessReplayPanel key={session.session_id} session={session} initialStep={step} onStepChange={report} book={book} />
+      <AfterTheGame sessionId={session.session_id} book={book} participants={session.participants}
+        endedAt={actions[actions.length - 1]?.created_at} finished={session.status === "completed"} />
       <ModelReveal session={session} book={book} />
     </div>
   );
@@ -127,7 +130,8 @@ function GenericMatch({ session: initial, step, onStep, book, profiles, onBack }
   const live = session.status === "active" || session.status === "waiting";
   const timeline = useMemo(() => buildTimeline(session, actions), [session, actions]);
   const last = timeline.steps.length - 1;
-  const { messages, opened } = useSaid(session.session_id, live);
+  const talk = useSaid(session.session_id, live);
+  const { messages, opened } = talk;
   const said = useMemo(() => saidAt(messages, actions), [messages, actions]);
   const explicit = clampStep(step, timeline.steps.length);
   const at = explicit ?? last;
@@ -156,7 +160,7 @@ function GenericMatch({ session: initial, step, onStep, book, profiles, onBack }
       <div className="e-arena-cols">
         <section className="e-arena-stage" aria-label="Game replay">
           {!loaded ? <Text className="e-faint">Loading the game…</Text> : failed && actions.length === 0 ? (
-            <Text className="e-faint">The action log could not be read — it may be private to the players.</Text>
+            <Text className="e-faint">The action log could not be read. It may be private to the players.</Text>
           ) : (
             <>
               <ChessTransport
@@ -195,12 +199,12 @@ function GenericMatch({ session: initial, step, onStep, book, profiles, onBack }
                 ))}
               </Text>
               <ArenaFrame frame={frame} book={book} />
-              {timeline.finished && at === last ? <AfterTheGame sessionId={session.session_id} book={book} participants={session.participants} endedAt={actions[actions.length - 1]?.created_at} /> : null}
               {timeline.finished && at === last ? <ModelReveal session={session} book={book} /> : null}
             </>
           )}
         </section>
         <aside className="e-arena-side">
+          <TableTalk talk={talk} said={said} book={book} at={at} onSeek={go} />
           <FoldDetail fold={timeline.finished} label={`the moves (${timeline.steps.length - 1}), click to seek`}>
           <Text className="e-dim e-arena-side__label">moves · click to seek</Text>
           <ol className="e-arena-steps">
@@ -224,6 +228,8 @@ function GenericMatch({ session: initial, step, onStep, book, profiles, onBack }
           {!(timeline.finished && at === last) ? <ModelReveal session={session} book={book} /> : null}
         </aside>
       </div>
+      <AfterTheGame sessionId={session.session_id} book={book} participants={session.participants}
+        endedAt={actions[actions.length - 1]?.created_at} finished={timeline.finished} />
     </div>
   );
 }

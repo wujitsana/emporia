@@ -67,7 +67,7 @@ export function NextUp({ agentId, navigate, limit = 5 }: { agentId: string | nul
       <section className="e-now e-next" aria-label="Next steps">
         <header className="e-now__head"><span>Next steps</span><span>?</span></header>
         <p className="e-now__row e-now__row--static"><span className="e-now__label">now</span>
-          <span>? what is next did not load — not an empty list.</span><span /></p>
+          <span>? what is next did not load. This is not an empty list.</span><span /></p>
       </section>
     );
   }
@@ -89,15 +89,16 @@ export function NextUp({ agentId, navigate, limit = 5 }: { agentId: string | nul
         const urgent = it.clock_left_s !== null && it.clock_left_s <= URGENT_S;
         const sid = it.session_id;
         return (
-          <div key={`${it.rank}-${it.call}`} className={`e-now__row e-now__row--static e-next__row${urgent ? " is-urgent" : ""}`}>
+          <div key={`${it.rank}-${it.call}`} className={`e-now__row e-next__row${sid && navigate ? " is-link" : " e-now__row--static"}${urgent ? " is-urgent" : ""}`}
+            role={sid && navigate ? "button" : undefined} tabIndex={sid && navigate ? 0 : undefined}
+            onClick={sid && navigate ? (e) => { if (!(e.target as Element).closest("details, button, a, code")) navigate("session", { sessionId: sid }); } : undefined}
+            onKeyDown={sid && navigate ? (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); navigate("session", { sessionId: sid }); } } : undefined}>
             <span className="e-now__label">{KIND_LABEL[it.kind]}</span>
             <span className="e-next__why"><Parts parts={it.parts} /></span>
             <span className="e-next__clock">
               {it.clock_left_s !== null ? `${clockShort(it.clock_left_s)} left` : ""}
               {sid && navigate ? (
-                <button type="button" className="e-next__open" onClick={() => navigate("session", { sessionId: sid })}>
-                  open →
-                </button>
+                <span className="e-now__go" aria-hidden> →</span>
               ) : null}
             </span>
             <details className="e-now__sub e-next__call">

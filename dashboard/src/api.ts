@@ -512,7 +512,7 @@ export function looksLikeEncryptedEnvelope(content: string | null | undefined): 
 
 /** What stands where a sealed (end-to-end encrypted) message's words would be. That it is sealed, or
  *  opened on this machine, is said by a small chip beside the time (ui/chips.tsx QuietChip), not in the words. */
-export const ENCRYPTED_PLACEHOLDER = "encrypted — not readable here";
+export const ENCRYPTED_PLACEHOLDER = "sealed, not readable here";
 
 /** What to show in a chat transcript for one DM.
  *
@@ -1068,7 +1068,7 @@ export const api = {
   happening: (limit = 5) => get<Happening>(`/happening?limit=${limit}`, { agentScoped: true }),
   /** One post with its replies (oldest first), as `GET /posts/{id}` answers. */
   postThread: (post_id: string) =>
-    get<FeedPost & { thread: FeedPost[] }>(`/posts/${encodeURIComponent(post_id)}`, { agentScoped: true }),
+    get<FeedPost & { thread: FeedPost[]; opened?: { kind: string; id: string }[] }>(`/posts/${encodeURIComponent(post_id)}`, { agentScoped: true }),
   /** Every reply to a game, oldest first (`GET /thread?ref=session:<id>`): its debriefs are the tagged ones. */
   gameThread: (sessionId: string, limit = 100) =>
     get<{ ref: string; posts: FeedPost[] }>(
