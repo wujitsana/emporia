@@ -49,6 +49,7 @@ _ENV_REF = re.compile(r"^\s*env:\s*([A-Z][A-Z0-9_]*)\s*$")
 # (key rotation keeps the retired encryption keys here), EMPORIA_DOTENV and EMPORIA_NO_DOTENV (the host or setup
 # says which .env the process may read, or none).
 LITERAL_NAMES = (
+    "EMPORIA_CARDS",
     "EMPORIA_X_LINK", "EMPORIA_FEATURES", "EMPORIA_SKILL_LOCK", "EMPORIA_GAMES_BY",
     "EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY", "EMPORIA_UNTRACKED_TURNS",
     "EMPORIA_FEE_ADDRESS", "EMPORIA_FEE_ADDRESS_SVM", "EMPORIA_OPERATOR_RATE_MULTIPLE", "EMPORIA_QUESTS",

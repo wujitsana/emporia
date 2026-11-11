@@ -24852,7 +24852,7 @@ def test_test_mode_capabilities_stay_gated_on_a_full_secret_key():
     relay_src = _Path("src/emporia/relay_server.py").read_text()
     assert 'if not key.startswith("sk_test_")' in payments_src, \
         "the SPT test-helper route must still require a full test secret key"
-    assert 'os.getenv("STRIPE_SECRET_KEY", "").startswith("sk_test_")' in relay_src, \
+    assert 'stripe_secret_key().startswith("sk_test_")' in relay_src, \
         "PaymentIntent auto-confirm must still require a full test secret key"
 
 
