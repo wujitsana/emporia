@@ -61,6 +61,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 import uvicorn
+from emporia.cards import PAUSED_RELAY_MSG, cards_paused, stripe_profile_id, stripe_secret_key
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -175,7 +176,7 @@ def live_money() -> list[str]:
     """P202: what makes this relay move real money, if anything."""
     from emporia.networks import is_testnet
     reasons = []
-    if (os.getenv("STRIPE_SECRET_KEY") or "").strip().startswith(("sk_live_", "rk_live_")):
+    if stripe_secret_key().strip().startswith(("sk_live_", "rk_live_")):
         reasons.append("a live Stripe key")
     nets = [n.strip() for n in (os.getenv("EMPORIA_X402_NETWORKS") or "").split(",") if n.strip()]
     if os.getenv("EMPORIA_X402_ENABLED", "").strip() == "1" and any(not is_testnet(n) for n in nets):
@@ -291,12 +292,12 @@ def _ensure_federation_pins_loaded() -> None:
 
 
 def _stripe_profile_id() -> str:
-    return (os.getenv("STRIPE_PROFILE_ID", "") or "").strip()
+    return stripe_profile_id()
 
 
 def _stripe_profile_ready() -> bool:
     profile_id = _stripe_profile_id()
-    return bool(os.getenv("STRIPE_SECRET_KEY")) and (
+    return bool(stripe_secret_key()) and (
         profile_id.startswith("profile_") or profile_id.startswith("profile_test_")
     )
 
@@ -304,7 +305,7 @@ def _stripe_profile_ready() -> bool:
 def _stripe_mpp_admin_notice() -> str | None:
     from emporia.stripe_profile_discovery import stripe_mpp_admin_notice
 
-    sk = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
+    sk = stripe_secret_key().strip()
     return stripe_mpp_admin_notice(sk, profile_ready=_stripe_profile_ready())
 
 
@@ -341,7 +342,7 @@ def custodial_cards_allowed() -> bool:
     card payment is a destination charge to the person it is for, as USDC is
     (P157). An operator who wants those flows sets EMPORIA_CUSTODIAL_CARDS=1
     and takes on holding other people's money."""
-    return os.environ.get("EMPORIA_CUSTODIAL_CARDS", "").strip().lower() in ("1", "true", "yes", "on")
+    return not cards_paused() and os.environ.get("EMPORIA_CUSTODIAL_CARDS", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def stripe_payee_account(agent_id: str | None) -> str | None:
@@ -1657,6 +1658,8 @@ async def _verify_and_confirm_payment(
         PaymentRef, _x402_enabled,
     )
     _assert_agent_budget(agent_id, amount_cents)
+    if cards_paused() and not card_unavailable:
+        card_unavailable = PAUSED_RELAY_MSG   # no card challenge, no card credential is read
 
     # A paid entry (`x402_split`) is two x402 payments in one act (fees.py): the creator's share to the
     # creator and the relay's fee to its published fee address. No fee address, no fee: one payment.
@@ -1878,7 +1881,7 @@ async def _verify_and_confirm_payment(
                 # reported to the caller as a payment failure. The narrow gate
                 # costs a restricted-key relay this convenience; guessing wrong
                 # costs it a misattributed error on the money path.
-                if os.getenv("STRIPE_SECRET_KEY", "").startswith("sk_test_"):
+                if stripe_secret_key().startswith("sk_test_"):
                     await confirm_stripe_intent(req_payment_intent_id)
                     result = await verify_payment_intent(req_payment_intent_id)
                     status = result.get("status")
@@ -3644,6 +3647,10 @@ async def lifespan(app: FastAPI):
     _check_relay_modules()   # P291: before anything is opened or started
     _hold_the_database()
     init_db()
+    if cards_paused() and (os.environ.get("STRIPE_SECRET_KEY") or "").strip():
+        stripe_secret_key()      # logs `cards_paused` once
+        logger.warning("cards_paused: a Stripe key is set and ignored — cards are paused in this release "
+                       "(docs/payments.md); unset STRIPE_SECRET_KEY")
     notice = _stripe_mpp_admin_notice()
     if notice:
         logger.warning("%s", notice)
@@ -4524,7 +4531,7 @@ async def _reconcile_owed_payouts() -> dict[str, int]:
     # otherwise be reported as a failing loop forever. Found by running the
     # relay, not by a test: every test in the suite reaches Stripe through a
     # mock, so none of them can observe what an unconfigured relay does.
-    if not (os.getenv("STRIPE_SECRET_KEY") or "").strip():
+    if not stripe_secret_key().strip():
         return counts
 
     for row in _owed_payout_rows():
@@ -4816,7 +4823,7 @@ def _payment_rails(*, has_stripe: bool | None = None) -> tuple[list[str], list[s
     filtering happens where it must, in the 402 challenge itself
     (`_x402_pay_to_by_network()`, P1b-4).
     """
-    stripe_enabled = bool(os.getenv("STRIPE_SECRET_KEY"))
+    stripe_enabled = bool(stripe_secret_key())
     stripe_profile_ready = _stripe_profile_ready()
     from emporia.payments import _x402_enabled
 
@@ -4859,7 +4866,7 @@ async def health(request: Request):
             session_count = row2["c"] if row2 else 0
     except Exception:
         pass
-    stripe_enabled = bool(os.getenv("STRIPE_SECRET_KEY"))
+    stripe_enabled = bool(stripe_secret_key())
     stripe_profile_ready = _stripe_profile_ready()
     payment_rails, payment_methods = _payment_rails()
     from emporia import deletion
@@ -4903,6 +4910,8 @@ async def health(request: Request):
         "mpp_enabled": bool(payment_methods),
         "payment_methods": payment_methods,
         "stripe_enabled": stripe_enabled,
+        "cards_paused": cards_paused(),
+        "stripe_key_ignored": cards_paused() and bool((os.environ.get("STRIPE_SECRET_KEY") or "").strip()),
         # P37-1: which key space, not just whether a key exists. The two are
         # disjoint, and the correct payout advice is opposite in each: test mode
         # auto-provisions a Connected Account at registration and
@@ -5446,6 +5455,8 @@ async def stripe_webhook(request: Request):
     not rejected) — Stripe retries non-2xx responses, and there's nothing to
     gain by making it retry an event this relay will never act on differently.
     """
+    if cards_paused():
+        raise HTTPException(404, PAUSED_RELAY_MSG)
     raw_body = await request.body()
     sig_header = request.headers.get("Stripe-Signature", "")
     secret = (os.getenv("STRIPE_WEBHOOK_SECRET") or "").strip()

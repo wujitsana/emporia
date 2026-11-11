@@ -620,6 +620,9 @@ def _create_profile(name: str) -> str:
 
 def cmd_setup(args: argparse.Namespace) -> int:
     rest = list(args.rest or [])
+    if rest[:1] == ["stripe"] and (os.environ.get("EMPORIA_CARDS") or "").strip().lower() not in ("on", "1", "true", "yes"):
+        print("Cards (Stripe) are paused in this release — see docs/payments.md")
+        return 1
     if rest[:1] and rest[0] in SETUP_PASSTHROUGH:          # `emporia setup relay|stripe|dashboard|log …`
         return cmd_passthrough(argparse.Namespace(emporia_command="setup", cli_args=rest))
     print("Emporia setup")

@@ -106,7 +106,7 @@ def _feature_options() -> tuple[Option, ...]:
     out = [_o("models", special["models"][0], True, special["models"][1], title="Declared models",
               installs="Part of core; this only chooses whether the agent declares its model.")]
     for f in F.FEATURES:
-        if f.name == F.CORE:
+        if f.name == F.CORE or f.name in F.paused():
             continue
         effect, why = special.get(f.name, (f"{f.about}.", "Part of the recommended set." if f.default else ""))
         out.append(_o(f.name, effect, f.default, why, title=f.title if f.name != "x_link" else "link an X account",
@@ -289,7 +289,7 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
                   "It costs nothing, and nobody else's words can rewrite them."),
            "emporia skill-lock on|off|status"),
     Choice("stripe", "Should it be paid by card too (Stripe)?",
-           "Only matters on a relay that takes cards.",
+           "Paused in this release (docs/payments.md): setup does not ask this unless EMPORIA_CARDS=on.",
            YES_NO("sets up card payouts to you.", "USDC only; nothing to set up.", False, "Skip until you need cards."),
            "emporia setup agent NAME --stripe"),
     # A relay's money (`emporia setup relay`, the money module of `relay host` and `relay modules`).

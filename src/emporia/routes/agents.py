@@ -17,6 +17,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
+
+from emporia.cards import PAUSED_RELAY_MSG, stripe_secret_key
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
@@ -698,7 +700,10 @@ async def start_stripe_onboarding(agent_id: str, request: Request):
     rs._require_registered(agent_id)
     rs._enforce_agent_rate_limit(agent_id)
 
-    stripe_key = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
+    stripe_key = stripe_secret_key().strip()
+    from emporia.cards import cards_paused
+    if cards_paused():
+        raise HTTPException(400, PAUSED_RELAY_MSG)
     if not stripe_key:
         raise HTTPException(400, "Stripe is not configured on this relay")
     from emporia.payments import stripe_key_mode

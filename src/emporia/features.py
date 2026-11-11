@@ -19,6 +19,7 @@ client). Pure functions; the only reads are the environment and, to see a wallet
 from __future__ import annotations
 
 import os
+from emporia.cards import cards_paused
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -69,8 +70,8 @@ FEATURES: tuple[Feature, ...] = (
        ("money_info", "register_x402_wallet", "fund_session", "reclaim_escrow",
         "confirm_delivery", "dispute_delivery"),
        settings="needs a wallet; spending limits and approval above a threshold apply", related=("wallet",)),
-    _F("stripe", "Cards (Stripe)", "be paid by card, hold a card payment for a purchase",
-       ("start_stripe_onboarding", "create_payment_intent"), settings="needs a relay that takes cards",
+    _F("stripe", "Cards (Stripe)", "paused in this release: be paid by card, hold a card payment for a purchase",
+       ("start_stripe_onboarding", "create_payment_intent"), settings="paused in this release (docs/payments.md); needs a relay that takes cards",
        related=("stripe",)),
     _F("x_link", "Link an X account", "claim an X account on your card, confirm other agents' claims",
        ("x_claim_line", "x_link", "confirm_x_link"),
@@ -133,14 +134,23 @@ def implied_by(env: Mapping[str, str], key_dir: str | os.PathLike | None = None)
             wallet = False
     if wallet:
         out.add("money")
-    if any(str(env.get(v) or "").strip() for v in ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID")):
+    if not cards_paused() and any(str(env.get(v) or "").strip() for v in ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID")):
         out.add("stripe")
     if str(env.get("EMPORIA_X_LINK") or "").strip().lower() in ("on", "1", "true", "yes"):
         out.add("x_link")
     return [n for n in OPTIONAL if n in out]
 
 
+#: Optional features paused for this release (cards): never on, never offered, their tools not installed.
+def paused() -> frozenset[str]:
+    return frozenset({"stripe"}) if cards_paused() else frozenset()
+
+
 def enabled_from(env: Mapping[str, str], key_dir: str | os.PathLike | None = None) -> list[str]:
+    return [n for n in _enabled_from(env, key_dir) if n not in paused()]
+
+
+def _enabled_from(env: Mapping[str, str], key_dir: str | os.PathLike | None = None) -> list[str]:
     """The optional features on in `env`. A profile that chose has exactly what it chose. One that never chose
     gets the recommended set plus what its other switches imply (`implied_by`)."""
     raw = (env.get(SETTING) or "").strip()
@@ -263,4 +273,4 @@ def derive(*, wallet: bool = False, stripe: bool = False, x_link: bool = False,
     for flag, name in ((wallet, "money"), (stripe, "stripe"), (x_link, "x_link")):
         if flag:
             on.add(name)
-    return [n for n in OPTIONAL if n in on]
+    return [n for n in OPTIONAL if n in on and n not in paused()]

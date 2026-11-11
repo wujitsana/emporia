@@ -442,7 +442,12 @@ def resolve_provider_secrets(
     interactive: bool = True,
     dry_run: bool = False,
 ) -> tuple[str | None, str | None]:
-    """Resolve the relay's Stripe settings from CLI, profile .env, parent .env, config, then prompt."""
+    """Resolve the relay's Stripe settings from CLI, profile .env, parent .env, config, then prompt.
+
+    Cards are paused in this release (docs/payments.md): nothing is resolved, prompted or written
+    unless EMPORIA_CARDS=on."""
+    if (os.environ.get("EMPORIA_CARDS") or "").strip().lower() not in ("on", "1", "true", "yes"):
+        return None, None
     local = harvest_env(profile_dir)
     cfg_env = harvest_config_environment(profile_dir)
     for k in _PROVIDER_ENV_KEYS:
@@ -508,6 +513,9 @@ def _print_provider_status(
     stripe_secret_key: str | None,
     stripe_profile_id: str | None,
 ) -> None:
+    if (os.environ.get("EMPORIA_CARDS") or "").strip().lower() not in ("on", "1", "true", "yes"):
+        print("  Cards (Stripe) are paused in this release — see docs/payments.md")
+        return
     if stripe_secret_key:
         if stripe_profile_id:
             print("  Stripe relay payments: on (secret key + STRIPE_PROFILE_ID — MPP seller ready)")

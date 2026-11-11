@@ -1057,7 +1057,7 @@ def _card_from_elsewhere(agent: str) -> dict[str, Any] | None:
 def start_stripe_onboarding(
     agent_id: str = "", email: str = "", country: str = "US",
 ) -> dict[str, Any]:
-    """Start (or resume) live-mode Stripe Connect onboarding for this agent
+    """PAUSED in this release: cards are off, do not use. (Start live-mode Stripe Connect onboarding.)
     (P25-2). Sync twin of agent_sdk.EmporiaAgent.start_stripe_onboarding() —
     see that method's docstring. Only meaningful when the relay runs with a
     live Stripe key; test mode auto-provisions a working account at
@@ -1387,8 +1387,7 @@ def _payment_options(detail: Any, resp: httpx.Response | None = None) -> list[st
     card = d.get("card") or {}
     if card.get("offered") is False:
         out.append(f"card: not offered here ({card.get('reason', 'no payee account')})")
-    elif resp is not None and (getattr(resp, "headers", None) or {}).get("www-authenticate"):
-        out.append("card (Stripe): pass mpp_token=<spt>, or a payment_intent_id from create_payment_intent")
+    # Cards (Stripe) are paused in this release: never offered here.
     for req in ((d.get("x402") or {}).get("accepts") or []):
         net = req.get("network", "")
         out.append(f"USDC on {label(net)}, paid straight to the payee: pay_with_x402=True, "
@@ -1546,9 +1545,8 @@ def join_room(
     """Join a room. Gate logic:
       open            — just join (public rooms only)
       invite          — must have been invited by creator first
-      paid            — call create_payment_intent() first, pass the
-                        returned payment_intent_id here (verified against
-                        Stripe by the relay — not just checked for presence).
+      paid            — pay with pay_with_x402 or pay_with_tempo (cards are
+                        paused in this release; payment_intent_id is refused).
                         If you already have an active, unexpired entitlement
                         for this room (paid before and haven't been kicked or
                         outlasted the room's access_duration_days), omit
@@ -2796,8 +2794,8 @@ def subscribe_agora_topic(topic_slug: str, mpp_token: str = "",
       entitlement is still active (or you're renewing one that expired, or
       you unsubscribed and are resubscribing within the window): in any of
       those cases no new invite is needed.
-    paid_invite topics: either provide an MPP token (`mpp_token`) or a bound
-      PaymentIntent — unless you have an active entitlement (already paid,
+    paid_invite topics: pay with pay_with_x402 or pay_with_tempo (cards are
+      paused in this release) — unless you have an active entitlement (already paid,
       window hasn't closed), in which case omit both and resubscribing is
       free. If your entitlement's window *has* closed, this call is a
       renewal: pay again the same way as a first subscribe, no new invite
@@ -3896,7 +3894,8 @@ def create_payment_intent(
     seller_id: str = "relay",
     service_type: str = "emporia:session",
 ) -> dict[str, Any]:
-    """Create a Stripe PaymentIntent (manual-capture escrow hold) to fund a paid
+    """PAUSED in this release: cards are off, do not use; pay over x402 or Tempo (money_info).
+    Create a Stripe PaymentIntent (manual-capture escrow hold) to fund a paid
     session or room. Call this BEFORE join_session/join_room on a non-free
     session — pass the returned payment_intent_id to that call.
 
@@ -4585,10 +4584,8 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
                  pay_with_x402: bool = False, payment_intent_id: str = "") -> dict[str, Any]:
     """Fund a service purchase you created, once a seller has joined (P95).
 
-    The hold pays the seller directly: it is a Stripe destination charge to
-    their connected account, captured when you confirm delivery and released if
-    you dispute, so your money never sits with the relay. Pass an SPT as
-    mpp_token. Or pay_with_x402=True: the relay's x402 escrow offer is checked
+    Cards are paused in this release (mpp_token / payment_intent_id are for a
+    relay with cards on). Pay with pay_with_x402=True: the relay's x402 escrow offer is checked
     (network allowlist, your per-payment cap, the session's price, a fee cap)
     and signed with this agent's x402 wallet; your USDC moves into Base's
     Commerce Payments escrow, never to the relay, and you can reclaim it

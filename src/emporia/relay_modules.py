@@ -60,13 +60,16 @@ def _csv(name: str) -> list[str]:
 # Each way to be paid is a part, on when it is set up. The settings were always
 # the switch; there is no second one to forget.
 
+from emporia.cards import cards_paused as _cards_paused
+
+
 def _money_parts(links: list[str]) -> set[str] | None:
     from emporia import escrow_chain, payments, tempo
     parts = {p for p, on in (
         ("x402", payments._x402_enabled()),
         ("escrow", escrow_chain.load_config() is not None),
         ("tempo", tempo.config() is not None),
-        ("cards", bool(_get("STRIPE_SECRET_KEY"))),
+        ("cards", bool(_get("STRIPE_SECRET_KEY")) and not _cards_paused()),
     ) if on}
     return parts or None
 
@@ -95,8 +98,8 @@ def _money_wrong(links: list[str]) -> list[str]:
         out.append("money: EMPORIA_X402_ENABLED is on, but x402 needs a facilitator URL and a network "
                    "with an asset — `emporia setup relay` sets them together")
     for opt in ("EMPORIA_CUSTODIAL_CARDS",):
-        if _on(opt) and not _get("STRIPE_SECRET_KEY"):
-            out.append(f"money: {opt} is on, but cards are not set up — `emporia setup stripe`")
+        if _on(opt) and (_cards_paused() or not _get("STRIPE_SECRET_KEY")):
+            out.append(f"money: {opt} is on, but cards are paused in this release — see docs/payments.md")
     return out
 
 
@@ -303,7 +306,7 @@ def chosen(env: Mapping[str, str]) -> dict[str, set[str]]:
         ("x402", get("EMPORIA_X402_ENABLED").lower() in ("1", "on", "true", "yes")),
         ("escrow", bool(get("EMPORIA_ESCROW_NETWORK"))),
         ("tempo", bool(get("EMPORIA_TEMPO_NETWORK"))),
-        ("cards", bool(get("STRIPE_SECRET_KEY"))),
+        ("cards", bool(get("STRIPE_SECRET_KEY")) and not _cards_paused()),
     ) if on}
     if money:
         out["money"] = money

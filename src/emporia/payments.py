@@ -37,6 +37,8 @@ from typing import Any
 
 import httpx
 
+from emporia.cards import stripe_secret_key
+
 
 def settlement_dedupe_key(
     session_id: str, payer_id: str | None, payment_intent_ids: Sequence[str]
@@ -903,7 +905,7 @@ def stripe_key_mode() -> str:
     in relay_server.py so `settle()` can apply the same rule without importing
     the server module (payments.py must stay server-import-free, same
     constraint entitlements.py has)."""
-    sk = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
+    sk = stripe_secret_key().strip()
     # P62: `rk_` is Stripe's *restricted* key prefix — same test/live segment,
     # fewer permissions. Only `sk_` was recognised, so a restricted key returned
     # "" and every protection keyed on mode switched itself off: the live-mode
@@ -935,7 +937,7 @@ def stripe_account_mode_mismatch(account_mode: str) -> bool:
 
 
 def _stripe_key() -> str:
-    key = os.getenv("STRIPE_SECRET_KEY", "")
+    key = stripe_secret_key()
     if not key:
         raise RuntimeError(
             "STRIPE_SECRET_KEY is not set. "
