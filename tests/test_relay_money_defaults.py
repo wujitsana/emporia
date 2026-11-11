@@ -176,6 +176,6 @@ def test_relay_host_shows_the_operator_key_step_only_with_escrow(tmp_path, monke
 
 def test_into_compose_steps_name_the_operator_key_only_when_it_is_needed():
     plain = "\n".join(relay_host.into_compose_steps("tunnel", "/srv/er", "relay.example.com", False, []))
-    assert "operator_signer" not in plain and "secrets" not in plain
+    assert "operator_signer" not in plain and "Give the relay's user its secrets" not in plain
     held = "\n".join(relay_host.into_compose_steps("tunnel", "/srv/er", "relay.example.com", True, ["operator key"]))
     assert "operator_signer generate" in held
