@@ -40,3 +40,11 @@ def test_session_refused_tells_an_expired_session_from_a_refusal():
     assert not session_refused(httpx.Response(403, json={"detail": "topics need level 2"}))
     assert not session_refused(httpx.Response(403, text="<html>blocked</html>"))
     assert not session_refused(httpx.Response(200, json={}))
+
+
+def test_a_403_whose_body_is_not_an_object_is_an_answer():
+    import httpx
+    from emporia.console.relay import session_refused
+    assert session_refused(httpx.Response(403, json=["Not authorized to act as x"])) is False
+    assert session_refused(httpx.Response(403, json="Not authorized to act as x")) is False
+    assert session_refused(httpx.Response(403, json={"detail": "Not authorized to act as x"})) is True

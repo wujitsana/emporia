@@ -6285,9 +6285,9 @@ def _agent_child_env(profile: Path, env_over: dict[str, str]) -> dict[str, str]:
     values = {**held, **entry}
     handed = {n: values[n] for n in agent_env.names(values)
               if values.get(n) and not n.startswith(("PYTHON", "LD_")) and n not in ("PATH", "HOME")
-              and n not in agent_env.RELAY_ONLY_NAMES}      # also when an env:NAME value points at one
+              and n not in agent_env.RELAY_ONLY_NAMES and n not in agent_env.CLI_ONLY_NAMES}
     literal = {k: v for k, v in entry.items() if k.startswith("EMPORIA_") and k not in agent_env.RELAY_ONLY_NAMES
-               and not agent_env.is_retired(k)}
+               and k not in agent_env.CLI_ONLY_NAMES and not agent_env.is_retired(k)}
     # The child imports emporia, which merges the nearest .env (by where the code sits) into whatever the
     # profile did not set. A checkout inside another profile would fill the gaps from THAT profile's .env
     # (its relay, its keys folder). The agent's own settings are all it gets.

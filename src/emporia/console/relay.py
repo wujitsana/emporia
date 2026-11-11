@@ -34,9 +34,10 @@ def session_refused(r: httpx.Response) -> bool:
     if r.status_code != 403:
         return False
     try:
-        detail = str((r.json() or {}).get("detail", ""))
+        body = r.json()
     except ValueError:
         return False
+    detail = str(body.get("detail", "")) if isinstance(body, dict) else ""
     return detail.startswith("Not authorized to act as")
 
 

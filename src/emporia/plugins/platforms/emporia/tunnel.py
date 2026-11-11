@@ -42,10 +42,13 @@ def missed_turn_frames(events: list[dict[str, Any]], now: Any = None) -> list[di
     out: list[dict[str, Any]] = []
     for e in events:
         payload = e.get("payload") if isinstance(e.get("payload"), dict) else {}
-        if e.get("is_read") or e.get("event_type") != "your_turn" or payload.get("type") != "your_turn":
+        if e.get("event_type") != "your_turn" or payload.get("type") != "your_turn":
             continue
         sid = str(payload.get("session_id") or "")
         if not sid or sid in seen:
+            continue
+        seen.add(sid)            # only the newest notice per game counts: if it was read, older ones are stale
+        if e.get("is_read"):
             continue
         try:
             at = datetime.fromisoformat(str(e.get("created_at")))
@@ -55,7 +58,6 @@ def missed_turn_frames(events: list[dict[str, Any]], now: Any = None) -> list[di
             at = at.replace(tzinfo=UTC)
         if now - at > timedelta(hours=MISSED_TURN_HOURS):
             continue
-        seen.add(sid)
         out.append({**payload, "inbox_id": e.get("inbox_id"), "replayed": True})
     return list(reversed(out))
 

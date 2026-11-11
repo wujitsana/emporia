@@ -25,3 +25,9 @@ def test_newest_unread_turn_per_game_from_the_last_day():
 def test_nothing_missed_is_nothing_replayed():
     assert missed_turn_frames([], now=NOW) == []
     assert missed_turn_frames([{"event_type": "your_turn", "payload": "junk"}], now=NOW) == []
+
+
+def test_an_older_notice_is_not_replayed_when_the_newest_was_read():
+    """Fable pre-release: the newest notice for a game was read, so an older unread one is stale."""
+    events = [ev("i2", "s1", 1, read=True, step=3), ev("i1", "s1", 5, step=2)]
+    assert missed_turn_frames(events, now=NOW) == []
