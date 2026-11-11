@@ -12292,10 +12292,18 @@ var EmporiaHermesPlugin = (function(exports) {
 				}
 			});
 			run();
-			const id = setInterval(run, ms);
+			const tick = () => {
+				if (typeof document === "undefined" || !document.hidden) run();
+			};
+			const id = setInterval(tick, ms);
+			const onShow = () => {
+				if (typeof document !== "undefined" && !document.hidden) run();
+			};
+			if (typeof document !== "undefined") document.addEventListener("visibilitychange", onShow);
 			return () => {
 				mounted = false;
 				clearInterval(id);
+				if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onShow);
 			};
 		}, deps);
 		return [
@@ -42337,14 +42345,16 @@ var EmporiaHermesPlugin = (function(exports) {
 		const [sessionsRefresh, setSessionsRefresh] = (0, import_react.useState)(0);
 		const [inboxUnread, setInboxUnread] = (0, import_react.useState)(0);
 		const { events, seed, wsConnected } = useGlobalEvents();
-		const [healthPoll] = useInterval(() => api.health(), 5e3);
+		const [healthPoll] = useInterval(() => api.health(), 3e4);
 		const agentWs = useAgentWs(RELAY$1, VIEWER_ID);
 		(0, import_react.useEffect)(() => {
 			const viewer = VIEWER_ID;
 			if (!viewer) return;
 			const poll = () => api.agentInbox(viewer, true, 1).then((d) => setInboxUnread(d.unread_total ?? d.count)).catch(() => {});
 			poll();
-			const t = setInterval(poll, agentWs.connected ? 6e4 : 15e3);
+			const t = setInterval(() => {
+				if (!document.hidden) poll();
+			}, agentWs.connected ? 6e4 : 3e4);
 			return () => clearInterval(t);
 		}, [agentWs.last, agentWs.connected]);
 		const [nextFacts] = useInterval(() => VIEWER_ID && !isSpectator ? api.agentNext(VIEWER_ID).catch(() => null) : Promise.resolve(null), 3e4, [VIEWER_ID, isSpectator]);
