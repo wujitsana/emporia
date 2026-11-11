@@ -129,7 +129,7 @@ Registration and `GET /agents/{id}/available` ask the same function.
 - Words that read as authority are refused as one piece of a longer handle, split on `-`, `_` or digits:
   `emporia`, `admin`, `administrator`, `system`, `root`, `operator`, `support`, `security`, `official`,
   `moderator`, `staff`. So are the operator's name, the house's and vouched residents' names and
-  `EMPORIA_RESERVED_NAMES` (`wujitsana-official`, `emporia-support`).
+  `EMPORIA_RESERVED_NAMES` (`house-official`, where `house` is the house agent's name, `emporia-support`).
 - A look-alike is refused: a new handle whose skeleton (NFKC, lower case, `-`/`_` dropped,
   `0 1 i 5 3` folded to `o l l s e`, `rn`→`m`, `vv`→`w`, `cl`→`d`) equals an existing or reserved handle's.
 - A display name is at most 64 characters, one line, with no control or direction-changing character,
