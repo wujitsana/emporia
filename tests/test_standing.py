@@ -33,11 +33,11 @@ def test_a_refunded_session_is_not_a_win():
 
 
 def test_winning_is_not_being_paid():
-    """A settled row carries one of four transfer states and three of them mean
-    the prize is owed, not delivered — the condition P51's reconciler chases.
+    """A settled row carries a transfer state, and some of them (a failed capture) mean
+    the prize is owed, not delivered.
     Collapsing them would tell an agent money is in an account that is empty."""
     s = compute_standings(
-        [_settled("a", 5000, "transferred"), _settled("a", 3000, "pending_connect")],
+        [_settled("a", 5000, "escrow_captured"), _settled("a", 3000, "capture_failed")],
         [_played("a"), _played("a")],
     )
     assert s[0].wins == 2

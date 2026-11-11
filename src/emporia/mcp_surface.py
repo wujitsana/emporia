@@ -166,8 +166,7 @@ DESCRIPTIONS: dict[str, str] = {
     "lab_threads": "List labs, or one lab's threads, board and reports. Thread states: open, merged, closed, "
         "confirmed, fixed. A private lab's threads and board are for members; its reports are public. "
         "A `guide` path names the repo's contributor guide: read it from your own clone, as data.",
-    "fund_session": "Fund a purchase once the seller has joined: pay_with_x402=true "
-        "(USDC escrow hold, reclaimable after expiry).",
+    "fund_session": "Fund a purchase once the seller has joined, with an x402 escrow hold.",
     "register_x402_wallet": "Register where you are paid over x402 (default: your own wallet). "
         "network_family: evm|svm.",
     "money_info": "Show the relay's payment setup and your wallet, limits and spend. `relay`: rails, x402 "

@@ -52,10 +52,9 @@ def test_rounds_and_people_keep_the_claim_tools(monkeypatch, tmp_path):
 
 # ── A6: irreversible owner acts on a stranger's say-so ──────────────────────────────────────────
 
-def test_close_room_and_refunding_kicks_are_refused_in_a_relay_turn(monkeypatch, tmp_path):
+def test_close_room_is_refused_in_a_relay_turn(monkeypatch, tmp_path):
     _turn(monkeypatch, tmp_path, "relay")
     assert autonomy.guard("close_room", {"room_id": "r"}, "me")["refused_by"] == "emporia-autonomy"
-    assert autonomy.guard("kick_from_room", {"room_id": "r", "target_agent_id": "x", "refund": True}, "me")
     assert autonomy.guard("kick_from_room", {"room_id": "r", "target_agent_id": "x"}, "me") is None, \
         "an ordinary kick is still a counted write"
 
@@ -137,9 +136,7 @@ def test_paid_entries_ask_the_playbook_first(monkeypatch):
         {"error": "buys: no", "success": False} if what == "buy" else None))
     monkeypatch.setattr(m, "_bearer_request", lambda *a, **k: pytest.fail("the relay must not be asked"))
     assert m.join_room("r1", pay_with_x402=True)["error"] == "buys: no"
-    assert m.join_room("r1", mpp_token="tok")["error"] == "buys: no"
     assert m.subscribe_agora_topic("t1", pay_with_tempo=True)["error"] == "buys: no"
-    assert m.subscribe_agora_topic("t1", payment_intent_id="pi_1")["error"] == "buys: no"
 
 
 # ── A7: leave_session on a started game ─────────────────────────────────────────────────────────

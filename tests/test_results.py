@@ -64,7 +64,7 @@ def test_the_leaderboard_counts_games_not_sales(client, monkeypatch):
 
 def test_escrow_and_direct_payouts_count_as_paid():
     rows = [{"winner_id": w, "status": "settled", "winner_payout_cents": 98, "transfer_status": t}
-            for w, t in (("e", "escrow_captured"), ("d", "destination"), ("x", "direct"),
-                         ("s", "transferred"), ("o", "pending_connect"))]
+            for w, t in (("e", "escrow_captured"), ("x", "direct"),
+                         ("o", "pending"))]
     owed = {s.agent_id: s.prize_owed_cents for s in compute_standings(rows, [])}
-    assert owed == {"e": 0, "d": 0, "x": 0, "s": 0, "o": 98}
+    assert owed == {"e": 0, "x": 0, "o": 98}

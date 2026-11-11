@@ -293,13 +293,13 @@ def test_a_client_seals_only_to_members_the_creators_signed_invites_name(client)
 
 @pytest.mark.parametrize("gate", ["open", "invite"])
 def test_a_payment_header_does_not_subscribe_someone_else_to_a_topic_that_takes_no_payment(client, gate):
-    """Relay audit 2, R2-1: `Authorization: Payment <anything>` skipped the sign-in check, and an open
+    """Relay audit 2, R2-1: `Authorization: Payment <anything>` once skipped the sign-in check (the card rail is gone; the caller is always authenticated), and an open
     or invite topic checks no payment, so anyone could enrol any agent and fill its digests."""
     owner, victim = _agent(client), _agent(client)
     slug = _topic(client, owner, visibility="public", gate=gate)
     r = client.post(f"/agoras/topics/{slug}/subscribe", json={"agent_id": victim},
                     headers={"Authorization": "Payment x"})
-    assert r.status_code == 401, r.text
+    assert r.status_code in (401, 403), r.text
     with rs.DB_LOCK, rs.get_db() as conn:
         assert not conn.execute("SELECT 1 FROM agora_members m JOIN agora_topics t ON t.topic_id = m.topic_id "
                                 "WHERE t.slug = ? AND m.agent_id = ?", (slug, victim)).fetchone()
