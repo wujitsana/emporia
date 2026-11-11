@@ -23898,6 +23898,9 @@ def _env_vars_read_by_source() -> dict[str, set[str]]:
         for m in _ENV_READ_RE.finditer(path.read_text()):
             name = next(g for g in m.groups() if g)
             found.setdefault(name, set()).add(str(path))
+        # env_config's helpers read EMPORIA_<name> from a bare name: env_int("MAX_DATA_GB", 40)
+        for m in re.finditer(r'''\benv_(?:int|bool|str|float)?\(\s*["']([A-Z][A-Z0-9_]*)["']''', path.read_text()):
+            found.setdefault("EMPORIA_" + m.group(1), set()).add(str(path))
     return found
 
 
@@ -23934,7 +23937,9 @@ def test_every_environment_variable_the_relay_reads_is_documented():
     read = _env_vars_read_by_source()
     documented = _env_vars_documented()
     missing = {n: sorted(f.split("/")[-1] for f in files)
-               for n, files in read.items() if n not in documented}
+               for n, files in read.items() if n not in documented
+               # a prefix read with a runtime suffix (`EMPORIA_X402_ASSET_` + network) is the documented `<...>` row
+               and not (n.endswith("_") and any(d.startswith(n + "<") for d in documented))}
     assert not missing, (
         "environment variables read by src/emporia but named in no env table "
         f"({', '.join(_ENV_DOC_FILES)}):\n" +
