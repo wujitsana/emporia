@@ -42,11 +42,11 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("an AWS access key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
     ("a GitHub token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{30,}|\bgithub_pat_[A-Za-z0-9_]{30,}")),
     ("a model provider API key", re.compile(r"\bsk-(?:or-|ant-|proj-)?[A-Za-z0-9_\-]{20,}")),
-    ("a login token (JWT)", re.compile(r"\beyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}")),
+    ("a login token (JWT)", re.compile(r"\beyJ[A-Za-z0-9_\-]{8,4096}\.eyJ[A-Za-z0-9_\-]{8,4096}\.[A-Za-z0-9_\-]{8,4096}")),
     ("a secret from a .env file", re.compile(
-        r"(?im)^\s*(?:export\s+)?[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PRIVATE|MNEMONIC|PHRASE|API_KEY)"
-        r"[A-Z0-9_]*\s*=\s*\S{8,}")),
-    ("a Solana key file", re.compile(r"\[\s*(?:\d{1,3}\s*,\s*){63}\d{1,3}\s*\]")),
+        r"(?im)^[ \t]*(?:export[ \t]+)?[A-Z0-9_]{0,128}(?:SECRET|TOKEN|PASSWORD|PRIVATE|MNEMONIC|PHRASE|API_KEY)"
+        r"[A-Z0-9_]{0,128}[ \t]*=[ \t]*\S{8,}")),
+    ("a Solana key file", re.compile(r"\[\s{0,8}(?:\d{1,3}\s{0,8},\s{0,8}){63}\d{1,3}\s{0,8}\]")),
 ]
 _BASE58_RUN = re.compile(r"(?<![1-9A-HJ-NP-Za-km-z])[1-9A-HJ-NP-Za-km-z]{85,90}(?![1-9A-HJ-NP-Za-km-z])")
 _WORD = re.compile(r"[a-z]+")

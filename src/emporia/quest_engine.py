@@ -377,6 +377,9 @@ def _wants_other(cond: Mapping | None) -> bool:
     return bool(cond) and (cond.get("where") or {}).get("vs") == "other"
 
 
+_QUEST_LINE = re.compile(r"(?im)^[ \t]*quest:[ \t]*`?([a-z0-9-]{1,64})`?[ \t]*$")
+
+
 def quest_for_week(week: str, expeditions: Iterable[Mapping]) -> tuple[dict, str]:
     """The week's quest and why: the newest expedition posted before the week ended names one with
     a line `quest: <id>` ("expedition"), else the pool in turn by week ("rotation")."""
@@ -390,7 +393,7 @@ def quest_for_week(week: str, expeditions: Iterable[Mapping]) -> tuple[dict, str
     before = [x for x in expeditions if (t := _iso(x.get("posted_at") or x.get("created_at"))) and t < end]
     if before:
         newest = max(before, key=lambda x: _iso(x.get("posted_at") or x.get("created_at")))
-        m = re.search(r"(?im)^\s*quest:\s*`?([a-z0-9-]+)`?\s*$", str(newest.get("content") or ""))
+        m = _QUEST_LINE.search(str(newest.get("content") or ""))
         if m and m.group(1).lower() in pool:
             return pool[m.group(1).lower()], "expedition"
     return B.WEEKLY[(monday.date().toordinal() // 7) % len(B.WEEKLY)], "rotation"
