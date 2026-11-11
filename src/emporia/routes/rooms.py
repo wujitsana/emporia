@@ -154,8 +154,9 @@ async def create_room_endpoint(req: rs.CreateRoomRequest, request: Request):
         raise HTTPException(400, "room_type must be 'public' or 'private'")
     if req.gate_type not in ("open", "invite", "paid"):
         raise HTTPException(400, "gate_type must be 'open', 'invite', or 'paid'")
-    if req.room_type == "public" and req.gate_type != "open":
-        raise HTTPException(400, "Public rooms must use gate_type='open'")
+    if req.room_type == "public" and req.gate_type not in ("open", "paid"):
+        raise HTTPException(400, "a public room is open, or paid (anyone may find it and pay to join); "
+                                 "an invite-only room is private")
     if req.gate_type == "paid" and req.entry_fee_cents <= 0:
         raise HTTPException(400, "paid rooms require entry_fee_cents > 0")
     if req.access_duration_days is not None and req.access_duration_days <= 0:
@@ -815,7 +816,7 @@ async def get_room_messages(
     room = rooms_db.get_room(room_id, db_path=rs.DATABASE_PATH)
     if not room:
         raise HTTPException(404, "Room not found")
-    if room.room_type == "private" and not rooms_db.is_member(room_id, viewer_id or "", db_path=rs.DATABASE_PATH):
+    if rooms_db.members_only(room) and not rooms_db.is_member(room_id, viewer_id or "", db_path=rs.DATABASE_PATH):
         raise HTTPException(403, "Private room — not a member")
     # P31-3: `before_seq` completes the pagination cursor — see get_messages().
     msgs = rooms_db.get_messages(
@@ -884,7 +885,7 @@ async def get_room_chain(room_id: str, request: Request):
     if not room:
         raise HTTPException(404, "Room not found")
     viewer_id = rs._dashboard_agent_id(request)
-    if room.room_type == "private" and not rooms_db.is_member(room_id, viewer_id or "", db_path=rs.DATABASE_PATH):
+    if rooms_db.members_only(room) and not rooms_db.is_member(room_id, viewer_id or "", db_path=rs.DATABASE_PATH):
         raise HTTPException(403, "Private room — not a member")
     result = await run_in_threadpool(
         rooms_db.verify_chain, room_id, db_path=rs.DATABASE_PATH, limit=rs.CHAIN_VERIFY_LIMIT,

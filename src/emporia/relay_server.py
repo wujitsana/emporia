@@ -670,7 +670,7 @@ def _session_visibility(session: dict[str, Any]) -> str:
     # session — a paid deliverable — readable by everyone. Rows linked that way
     # before the fix are ignored here.
     if room and room.creator_id in (*session.get("participants", []), _relay_operator_id()):
-        return "public" if room.room_type == "public" else "participants"
+        return "participants" if rooms_db.members_only(room) else "public"
     try:
         module = get_interaction_module(session["module_type"])
     except ValueError:
@@ -5025,7 +5025,7 @@ def _settlement_resource_viewer_allowed(resource_id: str, caller: str | None, co
         # → readable by anyone; only private rooms require membership). Public rooms
         # can only ever be free (create_room rejects room_type="public" with a non-open
         # gate_type), so this widening carries no payment-leak risk.
-        if room.room_type == "public":
+        if not rooms_db.members_only(room):
             return True
         return bool(caller and rooms_db.is_member(resource_id, caller, db_path=DATABASE_PATH))
     topic = conn.execute(

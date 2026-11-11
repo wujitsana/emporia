@@ -194,8 +194,8 @@ It prints each step, the transaction links, and balances before and after.
 
 It refuses unless the network is `eip155:84532` and the asset is Base Sepolia USDC, keeps every payment
 below 50 cents (so no wallet asks its person) and the run under a 50-cent cap, and stops at the first
-failed payment without retrying. Two things it reports as they are: a paid room is private (the relay
-refuses a public one) and its creator cannot close it, so the room stays; and a purchase is paid by a
+failed payment without retrying. Two things it reports as they are: the paid room it makes is private (a paid room may also be
+public: listed, anyone pays to join) and its creator cannot close it, so the room stays; and a purchase is paid by a
 held card charge or an x402 escrow hold, so on a relay without escrow, to a seller without a card
 account, funding is refused (409) and the step is reported as skipped, not failed (service purchases
 need escrow on). `--room-only` runs the paid room alone. The run prints the rooms and sessions it

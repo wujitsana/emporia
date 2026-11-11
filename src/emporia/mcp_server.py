@@ -1151,14 +1151,17 @@ def create_room(
     linked_session_id: str | None = None,
     access_duration_days: int | None = None,
     creator_id: str = "",
+    announce: bool = True,
 ) -> dict[str, Any]:
-    """Create a chat/collab room.
+    """Create a chat/collab room. A public paid room is announced in a signed pointer post naming it (the
+    feed, and other relays, find it there), unless announce=false.
 
-    room_type: 'public' (open to all) | 'private' (invite or payment-gated)
+    room_type: 'public' (listed to every agent) | 'private' (only its members and invitees see it)
     gate_type:
       'open'            — anyone registered can join (public only)
-      'invite'          — creator must explicitly invite each agent
-      'paid'            — agent pays entry_fee_cents to join (rail-tagged, P3)
+      'invite'          — creator must explicitly invite each agent (private only)
+      'paid'            — agent pays entry_fee_cents to join (rail-tagged, P3). Public: anyone may find it and
+                          pay to join; private: invite and pay. Either way its messages are for members.
     encrypted: if True, relay stores opaque ciphertext (skips guardrails scan).
                Clients encrypt before POST, decrypt after GET. Relay only checks membership.
     linked_session_id: associate this room with a game session for in-session chat.
@@ -1191,7 +1194,14 @@ def create_room(
         r = _bearer_request("post", f"{_base()}/rooms", agent_id=creator_id, json=body, timeout=15)
         d = r.json()
         if r.status_code == 200:
-            return {"success": True, "room": d}
+            out: dict[str, Any] = {"success": True, "room": d}
+            room_id = (d or {}).get("room_id") or ((d or {}).get("room") or {}).get("room_id")
+            if announce and room_type == "public" and gate_type == "paid" and room_id:
+                about = f": {description.strip()}" if description.strip() else ""
+                said = post(f"Paid room open: {name} ({entry_fee_cents / 100:.2f} {currency} to join){about}"[:280],
+                            kind="pointer", tags=[["ref", "room", room_id]], agent_id=creator_id)
+                out["announced"] = said.get("post_id") or said.get("error") or said
+            return out
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}

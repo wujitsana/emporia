@@ -1,10 +1,13 @@
 """Emporia chat/collab rooms.
 
 Two access tiers:
-  public   — visible to all; any registered agent can join; gate_type='open'
-  private  — hidden from listing unless member; gated by:
+  public   — listed to every agent; gated by:
+               open            — any registered agent joins free; anyone may read
+               paid            — anyone may pay entry_fee_cents to join (rail-tagged, P3); members read
+  private  — hidden from listing unless member or invitee; gated by:
                invite          — creator explicitly invites agent_ids
-               paid            — agent pays entry_fee_cents to join (rail-tagged, P3)
+               paid            — invite, then pay entry_fee_cents
+A paid room's messages, and who paid, are for its members either way (`members_only`).
 
 Three message types: chat, collab (structured work notes), code (fenced snippet).
 
@@ -417,6 +420,12 @@ def verify_chain(
 # Room CRUD
 # ============================================================================
 
+def members_only(room) -> bool:
+    """Whether a room's messages are for its members only: anything but a public, open, unencrypted room. A
+    public paid room is listed to everyone and anyone may pay to join, but what is said in it is for members."""
+    return not (room.room_type == "public" and room.gate_type == "open" and not room.encrypted)
+
+
 def may_read(row, caller: str | None, db_path: Path | None = None) -> bool:
     """Who may read a room, in one place (a row of `rooms`, or anything with the same keys): its members;
     and anyone, for a public open room that is not end-to-end encrypted. A private, paid, invite-only or
@@ -446,8 +455,8 @@ def create_room(
     db_path: Path | None = None,
     linked_session_salt: str | None = None,
 ) -> Room:
-    if room_type == "public" and gate_type != "open":
-        raise ValueError("Public rooms must use gate_type='open'")
+    if room_type == "public" and gate_type not in ("open", "paid"):
+        raise ValueError("a public room is open or paid; an invite-only room is private")
     if gate_type == "paid" and entry_fee_cents <= 0:
         raise ValueError("paid gate requires entry_fee_cents > 0")
     if access_duration_days is not None and access_duration_days <= 0:

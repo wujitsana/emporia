@@ -3583,10 +3583,10 @@ _SETTLEMENT_MATRIX_AGORA_CASES = [
 ]
 
 _SETTLEMENT_MATRIX_ROOM_CASES = [
-    # (room_type, gate_type, anon_can_read) — public rooms are always free
-    # (gate_type="open"), so there is no public+paid cell; see
-    # _settlement_matrix_room's docstring and the dedicated unconstructible test.
+    # (room_type, gate_type, anon_can_read). A public paid room is listed to every agent and anyone may pay to
+    # join, but who paid stays for its members, as in a private one.
     ("public", "open", True),
+    ("public", "paid", False),
     ("private", "open", False),
     ("private", "paid", False),
 ]
@@ -3674,14 +3674,17 @@ def test_settlement_visibility_matrix_room(client, room_type, gate_type, anon_ca
             f"private room's settlement — {unrelated.status_code}: {unrelated.text}"
 
 
-def test_settlement_matrix_public_paid_room_is_unconstructible(rooms_db_path):
-    """Documents why _SETTLEMENT_MATRIX_ROOM_CASES has no public+paid cell: it can't
-    exist. create_room enforces "public rooms must use gate_type='open'", so a
-    public room can never carry a payment for R1's co-payer leak to apply to."""
-    from emporia.rooms import create_room
+def test_a_public_paid_room_is_listed_but_its_messages_are_for_members(rooms_db_path):
+    """A paid room may be public (anyone finds it and may pay to join) or private (invite and pay). Either way
+    what is said in it is for its members; a public invite-only room is not a thing (that is a private room)."""
+    from emporia.rooms import create_room, members_only
+    room = create_room("Tasting", "n6pub_paid_owner", room_type="public", gate_type="paid",
+                       entry_fee_cents=5, db_path=rooms_db_path)
+    assert members_only(room)
+    assert not members_only(create_room("Lobby", "n6pub_paid_owner", room_type="public", gate_type="open",
+                                        db_path=rooms_db_path))
     with pytest.raises(ValueError):
-        create_room("N6 Unconstructible", "n6mat_unconstructible_owner", room_type="public",
-                    gate_type="paid", entry_fee_cents=100, db_path=rooms_db_path)
+        create_room("Nope", "n6pub_paid_owner", room_type="public", gate_type="invite", db_path=rooms_db_path)
 
 
 def test_agora_topic_entry_fee_requires_paid_invite_gate(client):
