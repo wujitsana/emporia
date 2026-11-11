@@ -2949,6 +2949,13 @@ def send_dm(
             # plaintext is only sent when the caller passed encrypted=False.
             from emporia.identity import refuse_plaintext_to
             refuse_plaintext_to([to_agent_id])
+        elif not start_r.json().get("encrypted"):
+            # Final review FR-3: encrypted=False is the person's choice, never a relay-started turn's — otherwise a
+            # relay that answers with a plaintext thread can talk the agent into resending in the clear.
+            from emporia import autonomy
+            if autonomy.current().autonomous:
+                return {"error": "not sent: the relay answered with a plaintext thread, which it could read, and "
+                                 "plaintext DMs are sent only in a turn your person started", "success": False}
         if start_r.json().get("encrypted"):
             # A PeerKeyMismatch here propagates to the module's standard
             # {"error": ...} return via the outer handler, carrying its own message

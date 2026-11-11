@@ -165,6 +165,13 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
         raise HTTPException(400, f"Unknown module: {req.module_type}")
     rs._require_registered(caller)
     rs._enforce_agent_rate_limit(caller)
+    # Final review FR-2: a game's settings are text other agents read and the relay keeps — bounded, scanned
+    # and counted against the creator's daily write budget like any other write.
+    try:
+        await rs._assert_payload_safe_counted({"config": req.config or {}, "payment_rules": req.payment_rules or {}},
+                                              caller=caller)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
 
     module = get_interaction_module(req.module_type)
     if module.RETIRED_FOR:   # calls: the :v1 set plays are retired, loudly
@@ -1588,6 +1595,22 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         mover, req.action_type, req.payload, req.peer_text_rationale,
         session_id, s["step_number"], say=req.say, model_commit=req.model_commit, say_tags=req.say_tags,
     )
+    # 1. Ed25519 signature verify — mandatory, and first: nothing costly (the firewall scan, the write budget)
+    # runs for a caller who has not proved the agent's key (final review FR-1). The signature binds the action
+    # to this exact session_id + step_number, so a captured signature can't be replayed against a different
+    # session or an earlier/later turn.
+    if not req.signature:
+        rs.SAFETY_STATS["unsigned_actions_rejected"] += 1
+        rs.logger.warning("unsigned_action_rejected", extra={"reason": "missing_signature"})
+        raise HTTPException(401, "Signature required for session actions")
+    if not rs.AGENT_REGISTRY.verify_signature(req.agent_id, full_payload, req.signature):
+        rs.SAFETY_STATS["unsigned_actions_rejected"] += 1
+        rs.logger.warning("unsigned_action_rejected", extra={"reason": "invalid_signature"})
+        raise HTTPException(403, "Invalid signature")
+    # Rate-limit after signature verification, not before — keying on req.agent_id
+    # pre-signature would let a forged, unsigned request burn any agent's rate-limit
+    # budget with no credential at all.
+    rs._enforce_agent_rate_limit(req.agent_id)
     if req.say_tags and req.say and (why := _wire.tags_problem(req.say_tags)):
         raise HTTPException(400, why)
     # P148: a line of table talk with the move — the table's rules, checked
@@ -1602,12 +1625,12 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
             if isinstance(v, str) and v:
                 _require_sealed(s, v, f"'{f}'")
 
-    # 1. Guardrails (regex firewall). A line of table talk the firewall trips on is dropped and the move kept
-    # (a bluff that reads like an attack must not fail the move while its clock runs); the signature still
-    # binds the original line, so it is checked against `full_payload` below. Anything else tripping: 403.
+    # 2. Guardrails (regex firewall), and the move counts against the mover's daily write budget. A line of
+    # table talk the firewall trips on is dropped and the move kept (a bluff that reads like an attack must not
+    # fail the move while its clock runs); the signature above binds the original line. Anything else: 403.
     say_dropped = False
     try:
-        await rs._assert_payload_safe_counted(full_payload)
+        await rs._assert_payload_safe_counted(full_payload, caller=req.agent_id)
     except PermissionError as e:
         if not req.say:
             raise HTTPException(403, str(e))
@@ -1618,21 +1641,6 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         say_dropped = True
         rs.logger.warning("table_talk_dropped", extra={"session_id": session_id, "agent_id": req.agent_id})
 
-    # 2. Ed25519 signature verify — mandatory. The signature binds the action to
-    # this exact session_id + step_number, so a captured signature can't be
-    # replayed against a different session or an earlier/later turn.
-    if not req.signature:
-        rs.SAFETY_STATS["unsigned_actions_rejected"] += 1
-        rs.logger.warning("unsigned_action_rejected", extra={"reason": "missing_signature"})
-        raise HTTPException(401, "Signature required for session actions")
-    if not rs.AGENT_REGISTRY.verify_signature(req.agent_id, full_payload, req.signature):
-        rs.SAFETY_STATS["unsigned_actions_rejected"] += 1
-        rs.logger.warning("unsigned_action_rejected", extra={"reason": "invalid_signature"})
-        raise HTTPException(403, "Invalid signature")
-    # Rate-limit after signature verification, not before — keying on req.agent_id
-    # pre-signature would let a forged, unsigned request burn any agent's rate-limit
-    # budget with no credential at all.
-    rs._enforce_agent_rate_limit(req.agent_id)
 
     # 3. per-turn PoR gate next
 

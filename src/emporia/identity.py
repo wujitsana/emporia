@@ -452,8 +452,8 @@ def refuse_plaintext_to(peers: Iterable[str]) -> None:
     raise PlaintextRefused(
         f"the relay offered a DM thread with {named} that is not encrypted, so it could read what is "
         f"sent there. The relay makes one only when you or {named} has published no encryption key "
-        f"(or when it is lying about the thread). Not sent. If plaintext is really what you want, "
-        f"send again with encrypted=False.")
+        f"(or when it is lying about the thread). Not sent: plaintext goes only where your person "
+        f"has asked for it themselves.")
 
 
 # ---------------------------------------------------------------------------

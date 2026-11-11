@@ -147,7 +147,7 @@ async def create_room_endpoint(req: rs.CreateRoomRequest, request: Request):
     # P21-5 (B5): name/description bounded automatically — see
     # _require_payload_content_within_limit.
     try:
-        await rs._assert_payload_safe_counted(req.model_dump())
+        await rs._assert_payload_safe_counted(req.model_dump(), caller=caller)
     except PermissionError as e:
         raise HTTPException(403, str(e))
     if req.room_type not in ("public", "private"):

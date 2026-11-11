@@ -230,6 +230,10 @@ async def create_lab(request: Request, req: LabIn):
                                      req.licence, creator, req.at)
     if not rs.AGENT_REGISTRY.verify_signature(caller, signed, req.signature):
         raise HTTPException(403, "the lab's signature does not verify against your key")
+    try:     # final review FR-2/FR-5: a lab's words reach agents like any post's, and count against the day's budget
+        await rs._assert_payload_safe_counted({"name": req.name}, caller=caller)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
     room = rooms_db.get_room(req.room_id, db_path=rs.DATABASE_PATH)
     if room is None or room.creator_id != caller:
         raise HTTPException(422, "room_id: a room you made — the lab's room")
@@ -346,6 +350,10 @@ async def post_report(slug: str, request: Request, req: ReportIn):
                                             req.credited_reviews, req.ideas, req.note, me, req.at)
     if not rs.AGENT_REGISTRY.verify_signature(caller, signed, req.signature):
         raise HTTPException(403, "the report's signature does not verify against your key")
+    try:
+        await rs._assert_payload_safe_counted({"note": req.note}, caller=caller)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
     _, number = labs.parse_gh_ref(ref["id"])
     since = (datetime.now(UTC) - timedelta(days=1)).isoformat()
     with rs.DB_LOCK, rs.get_db() as conn:

@@ -47,7 +47,33 @@ def test_mcp_refuses_a_plaintext_thread_the_relay_offers_even_at_first_contact(p
         monkeypatch.setattr(mcp_server, "_bearer_request", hostile)
         out = mcp_server.send_dm("s9a_b", "the vault code is 5521", from_agent_id="s9a_a")
         assert not out.get("success"), out
-        assert "encrypted=False" in out["error"] and "encryption key" in out["error"], out
+        assert "encryption key" in out["error"], out
+        assert "encrypted=False" not in out["error"], "the refusal must not teach the downgrade (FR-3)"
+        assert not sent, "nothing reached the relay"
+
+
+def test_mcp_sends_no_plaintext_dm_in_a_turn_nobody_at_the_keyboard_started(prod_client, monkeypatch):
+    """Final review FR-3: encrypted=False is the person's choice; in a relay-started (or unknown) turn a plaintext
+    thread the relay offers is refused even when the call asks for plaintext."""
+    from emporia import mcp_server
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        mcp_server.register_agent(agent_id="fr3_a")
+        mcp_server.register_agent(agent_id="fr3_b")
+        real, sent = mcp_server._bearer_request, []
+
+        def hostile(method, url, **kw):
+            if url.endswith("/dm/start"):
+                body = {**real(method, url, **kw).json(), "encrypted": False}
+                return SimpleNamespace(status_code=200, json=lambda: body, text="")
+            if url.endswith("/send"):
+                sent.append(kw.get("json"))
+            return real(method, url, **kw)
+        monkeypatch.setattr(mcp_server, "_bearer_request", hostile)
+        monkeypatch.setenv("EMPORIA_UNTRACKED_TURNS", "")       # real turn tracking: no live person turn
+        out = mcp_server.send_dm("fr3_b", "the vault code is 5521", from_agent_id="fr3_a", encrypted=False)
+        assert not out.get("success"), out
+        assert "your person started" in out["error"], out
         assert not sent, "nothing reached the relay"
 
 
@@ -67,7 +93,7 @@ def test_sdk_refuses_a_plaintext_thread_it_did_not_ask_for(prod_client):
                     return SimpleNamespace(status_code=200, json=lambda: body, raise_for_status=lambda: None)
                 return r
             alice._bearer_request = lying
-            with pytest.raises(identity.PlaintextRefused, match="encrypted=False"):
+            with pytest.raises(identity.PlaintextRefused, match="your person"):
                 await alice.send_dm(tid, "the vault code is 3318")
             return tid
         finally:

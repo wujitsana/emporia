@@ -78,7 +78,13 @@ from starlette.responses import JSONResponse
 from emporia.config import database_path as _database_path  # noqa: E402
 
 from emporia.engine import guardrails
-from emporia.engine.guardrails import MAX_PLAINTEXT_BYTES, GuardrailBlocked, assert_payload_safe_async, oversized_plaintext
+from emporia.engine.guardrails import (
+    MAX_PLAINTEXT_BYTES,
+    MAX_PLAINTEXT_TOTAL_BYTES,
+    GuardrailBlocked,
+    assert_payload_safe_async,
+    oversized_plaintext,
+)
 from emporia.identity import (
     relay_key_history,
     verify,
@@ -2895,7 +2901,7 @@ def _require_valid_msg_type(msg_type: str, sealed: bool = False) -> None:
         raise HTTPException(400, why)
 
 
-async def _assert_payload_safe_counted(payload: dict[str, Any]) -> None:
+async def _assert_payload_safe_counted(payload: dict[str, Any], *, caller: str | None = None) -> None:
     """Wrap guardrails.assert_payload_safe_async to count blocks for the
     dashboard.
 
@@ -2903,15 +2909,21 @@ async def _assert_payload_safe_counted(payload: dict[str, Any]) -> None:
     whole payload through, so the per-field content-size bound
     (_require_payload_content_within_limit, checked before the scan — cheap
     should reject before expensive) now lives here instead of being enumerated
-    by hand at up to 17 call sites, three of which had no bound at all."""
+    by hand at up to 17 call sites, three of which had no bound at all.
+
+    With `caller`, the payload's size also counts against that agent's daily write budget and the disk
+    floor is checked (final review FR-2) — for the writes that do not charge their own content."""
     _require_payload_content_within_limit(payload)
     # Only plaintext reaches a scan (sealed ciphertext is never scanned and keeps the larger limit above).
     if size := oversized_plaintext(payload):
         raise HTTPException(
             413,
-            f"unencrypted content is limited to {MAX_PLAINTEXT_BYTES} bytes ({size} sent); "
+            f"unencrypted content is limited to {MAX_PLAINTEXT_BYTES} bytes a field and "
+            f"{MAX_PLAINTEXT_TOTAL_BYTES} bytes in all ({size} sent); "
             f"seal it (encrypted content may be larger) or send less",
         )
+    if caller is not None:
+        _charge_write_bytes(caller, len(json.dumps(payload, default=str).encode("utf-8")))
     try:
         await assert_payload_safe_async(payload)
     except GuardrailBlocked as e:

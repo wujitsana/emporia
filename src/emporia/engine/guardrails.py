@@ -46,7 +46,7 @@ _INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
         *_BARE_PHRASE_PATTERNS[:2],
         r"execute\s+(a\s+)?(system|terminal|shell)\s+command",
         r"rm\s+-rf\s+/",
-        r"curl\s+[^\n|;]+\|\s*(bash|sh)",
+        r"curl\s{1,8}[^\n|;]{1,300}\|\s{0,8}(bash|sh)",
         r"exfiltrate|steal\s+(secrets|keys|tokens|credentials)",
         r"print\s+(the\s+)?(environment|en[v]|secrets|api[_-]?keys)",
         *_BARE_PHRASE_PATTERNS[2:],
@@ -274,13 +274,21 @@ def _flatten_texts(payload: Mapping[str, Any] | str) -> list[str]:
 #: Plaintext the relay scans is capped well under the ciphertext limit (`wire.MAX_CONTENT_BYTES`): every scanner
 #: runs on the event loop, so the work a single request can ask for is bounded by this.
 MAX_PLAINTEXT_BYTES = 32 * 1024
+#: ...and the whole payload's plaintext together, so many fields at the per-field cap cannot multiply the work.
+MAX_PLAINTEXT_TOTAL_BYTES = 64 * 1024
 
 
 def oversized_plaintext(payload: Mapping[str, Any] | str) -> int:
-    """The size in bytes of the first text field of `payload` over `MAX_PLAINTEXT_BYTES`, else 0."""
+    """The size in bytes of the first text field of `payload` over `MAX_PLAINTEXT_BYTES`, or of all its text
+    together when that is over `MAX_PLAINTEXT_TOTAL_BYTES`, else 0."""
+    total = 0
     for text in _flatten_texts(payload):
-        if len(text) * 4 > MAX_PLAINTEXT_BYTES and (size := len(text.encode("utf-8"))) > MAX_PLAINTEXT_BYTES:
+        size = len(text.encode("utf-8"))
+        if size > MAX_PLAINTEXT_BYTES:
             return size
+        total += size
+        if total > MAX_PLAINTEXT_TOTAL_BYTES:
+            return total
     return 0
 
 
