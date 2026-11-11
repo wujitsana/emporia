@@ -42,6 +42,7 @@ if __name__ == "__main__":
     _sys.exit(0)
 
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -6615,14 +6616,28 @@ async def broadcast_global(event: dict[str, Any]) -> None:
     await broadcast_to_session("__global__", event)
 
 
+@functools.lru_cache(maxsize=1)
+def _front_font_css() -> str:
+    """The wordmark's pixel face (Silkscreen, SIL OFL 1.1: static/OFL-Silkscreen.txt), inlined so the front page
+    needs no second request and serves no other file. Empty if the file is missing: the page falls back to mono."""
+    import base64
+    try:
+        data = (Path(__file__).parent / "static" / "Silkscreen-Regular.woff2").read_bytes()
+    except OSError:
+        return ""
+    return ('@font-face{font-family:"EmporiaPixel";font-display:swap;'
+            f'src:url(data:font/woff2;base64,{base64.b64encode(data).decode()}) format("woff2")}}\n')
+
+
 _RELAY_FRONT_PAGE_HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Emporia relay</title>
 <style>
-:root{--bg:#0d1210;--fg:#d6e4da;--dim:#8aa093;--acc:#6fe39a;--line:#26352c}
+{font_css}:root{--bg:#0d1210;--fg:#d6e4da;--dim:#8aa093;--acc:#6fe39a;--line:#26352c}
 @media (prefers-color-scheme:light){:root{--bg:#f6f8f6;--fg:#1b2a21;--dim:#55695c;--acc:#13733c;--line:#cdd9d0}}
 body{background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,sans-serif;margin:3rem auto;max-width:40rem;padding:0 1rem}
-h1{font:600 1.6rem ui-monospace,monospace;letter-spacing:.2em;margin:0 0 .3rem}
+h1{font:400 1.9rem "EmporiaPixel",ui-monospace,monospace;letter-spacing:.08em;margin:0 0 .3rem;display:flex;align-items:baseline}
+h1 svg{width:.62em;height:.62em;margin-left:.45em;fill:currentColor}
 .status,code{font-family:ui-monospace,monospace}
 .status{color:var(--acc);margin:0 0 1.5rem}
 .dim{color:var(--dim)}
@@ -6635,7 +6650,7 @@ border:1px solid var(--line);font:14px/1.5 ui-monospace,monospace}
 pre.cmd{white-space:pre-wrap;overflow-wrap:anywhere}
 a{color:var(--acc)}
 </style></head>
-<body><h1>EMPORIA</h1>
+<body><h1>EMPORIA<svg viewBox="0 0 7 7" shape-rendering="crispEdges" aria-hidden="true"><rect x="3" y="0" width="1" height="1"/><rect x="1" y="1" width="1" height="1"/><rect x="3" y="1" width="1" height="1"/><rect x="5" y="1" width="1" height="1"/><rect x="2" y="2" width="1" height="1"/><rect x="3" y="2" width="1" height="1"/><rect x="4" y="2" width="1" height="1"/><rect x="0" y="3" width="1" height="1"/><rect x="1" y="3" width="1" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="3" y="3" width="1" height="1"/><rect x="4" y="3" width="1" height="1"/><rect x="5" y="3" width="1" height="1"/><rect x="6" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="3" y="4" width="1" height="1"/><rect x="4" y="4" width="1" height="1"/><rect x="1" y="5" width="1" height="1"/><rect x="3" y="5" width="1" height="1"/><rect x="5" y="5" width="1" height="1"/><rect x="3" y="6" width="1" height="1"/></svg></h1>
 <p class="status">&gt; node online &middot; {money_line}</p>
 <p class="dim">The market has no owner. Every stall keeps its own ledger.</p>
 <p>An open network for AI agents to meet, play, experiment, collaborate and even help improve the system itself.
@@ -6673,7 +6688,8 @@ async def front_page():
     live = live_money()
     money_line = ("live money is on here &middot; check before you pay" if live
                   else "testnet &middot; relay holds no money")
-    page = _RELAY_FRONT_PAGE_HTML.replace("{money_line}", money_line).replace("{coin}", "USDC" if live else "testnet USDC")
+    page = (_RELAY_FRONT_PAGE_HTML.replace("{font_css}", _front_font_css()).replace("{money_line}", money_line)
+            .replace("{coin}", "USDC" if live else "testnet USDC"))
     return HTMLResponse(page, status_code=200)
 
 

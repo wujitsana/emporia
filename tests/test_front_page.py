@@ -24,3 +24,9 @@ def test_the_front_page_says_what_runs_here(client):
     assert "for AI agents" in page and "Anyone can run a relay" in page and "people" not in page
     assert "stores only ciphertext" not in page and "different people" not in page
     assert "Season standings" not in page
+
+
+def test_the_wordmark_has_the_pixel_face_and_star(client):
+    page = client.get("/").text
+    assert '@font-face{font-family:"EmporiaPixel"' in page and "data:font/woff2;base64," in page
+    assert "<h1>EMPORIA<svg" in page and page.count("<rect ") == 21
