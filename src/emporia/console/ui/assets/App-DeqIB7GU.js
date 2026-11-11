@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-Sfthrt1X.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-OLtNPBOF.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -663,7 +663,9 @@ var api = {
 	sessionAudit: (session_id) => get(`/sessions/${session_id}/audit`, { agentScoped: true }),
 	labs: () => get("/labs"),
 	labReports: (slug) => get(`/labs/${encodeURIComponent(slug)}/reports`),
-	labThreads: (slug) => get(`/labs/${encodeURIComponent(slug)}/threads`, { agentScoped: true })
+	labThreads: (slug) => get(`/labs/${encodeURIComponent(slug)}/threads`, { agentScoped: true }),
+	/** A lab's credits board, from its reports alone (members only for a private lab). */
+	labBoard: (slug) => get(`/labs/${encodeURIComponent(slug)}/board`, { agentScoped: true })
 };
 // src/hooks.ts
 function toWsUrl(httpUrl) {
@@ -2177,6 +2179,53 @@ function scrambleFrame(text, resolved, rnd = Math.random) {
 	}
 	return out;
 }
+// src/ui/PixelStar.tsx
+/**
+* The brand's star, drawn on a 7 x 7 pixel grid like the wordmark's face (Silkscreen has no star glyph,
+* so a typed ✶ fell back to another font and looked off). Inline SVG: it takes the text's colour
+* (`currentColor`), is as tall as the capitals beside it and is hidden from screen readers.
+*/
+var CELLS = [
+	[3, 0],
+	[1, 1],
+	[3, 1],
+	[5, 1],
+	[2, 2],
+	[3, 2],
+	[4, 2],
+	[0, 3],
+	[1, 3],
+	[2, 3],
+	[3, 3],
+	[4, 3],
+	[5, 3],
+	[6, 3],
+	[2, 4],
+	[3, 4],
+	[4, 4],
+	[1, 5],
+	[3, 5],
+	[5, 5],
+	[3, 6]
+];
+function PixelStar({ className = "e-pixel-star", size }) {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("svg", {
+		className,
+		viewBox: "0 0 7 7",
+		width: size,
+		height: size,
+		shapeRendering: "crispEdges",
+		fill: "currentColor",
+		"aria-hidden": "true",
+		focusable: "false",
+		children: CELLS.map(([x, y]) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("rect", {
+			x,
+			y,
+			width: "1",
+			height: "1"
+		}, `${x}-${y}`))
+	});
+}
 // src/ui/LookChrome.tsx
 /**
 * The look's moving parts (look.ts, dashboard.css § 30): the header's brand and
@@ -2190,6 +2239,7 @@ function scrambleFrame(text, resolved, rnd = Math.random) {
 * are shown finished.
 */
 var SCRAMBLE_MS = 420;
+var MAX_SCRAMBLE = 44;
 /** power2.out: fast, then settling — the animatic's easing. */
 var ease = (t) => 1 - (1 - t) * (1 - t);
 /**
@@ -2240,7 +2290,7 @@ function useArrival(key, ms, moving, stepMs = 0) {
 }
 /** A heading that decodes from scrambled glyphs into its word, once per text. */
 function ScrambleText({ text }) {
-	const moving = motionAllowed();
+	const moving = motionAllowed() && text.length <= MAX_SCRAMBLE;
 	const at = useArrival(text, SCRAMBLE_MS, moving, 45);
 	if (!moving || at >= SCRAMBLE_MS) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_jsx_runtime.Fragment, { children: text });
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
@@ -2263,6 +2313,7 @@ var BRAND_SCRAMBLED = "E#P0R!A";
 function BrandTitle({ replay = "", onHome }) {
 	const moving = motionAllowed();
 	const first = (0, import_react.useRef)(true);
+	const root = (0, import_react.useRef)(null);
 	const [run, setRun] = (0, import_react.useState)({
 		key: `open:${replay}`,
 		ms: 900
@@ -2274,19 +2325,44 @@ function BrandTitle({ replay = "", onHome }) {
 		}
 		setRun({
 			key: `replay:${replay}`,
-			ms: 320
+			ms: 520
 		});
 	}, [replay]);
+	(0, import_react.useEffect)(() => {
+		const el = root.current;
+		if (!el || !moving || typeof IntersectionObserver === "undefined") return;
+		const seen = {
+			hidden: false,
+			n: 0
+		};
+		const io = new IntersectionObserver((entries) => {
+			if (!entries[entries.length - 1].isIntersecting) {
+				seen.hidden = true;
+				return;
+			}
+			if (seen.hidden) {
+				seen.hidden = false;
+				seen.n += 1;
+				setRun({
+					key: `shown:${seen.n}`,
+					ms: 900
+				});
+			}
+		});
+		io.observe(el);
+		return () => io.disconnect();
+	}, [moving]);
 	const at = useArrival(run.key, run.ms, moving, 55);
 	let shown = BRAND;
 	if (moving && at < run.ms) {
 		const opening = run.ms === 900;
-		const from = opening ? 0 : 2;
+		const from = opening ? 0 : 1;
 		const resolved = from + Math.floor(ease(at / run.ms) * (7 - from));
 		shown = opening && at < 160 ? BRAND_SCRAMBLED : scrambleFrame(BRAND, resolved);
 	}
 	const word = /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 		className: "e-brand",
+		ref: root,
 		"data-decoding": shown !== "EMPORIA" ? "true" : void 0,
 		children: [
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
@@ -2296,7 +2372,7 @@ function BrandTitle({ replay = "", onHome }) {
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 				className: "e-brand__star",
 				"aria-hidden": true,
-				children: " ✶"
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PixelStar, {})
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 				className: "e-sr",
@@ -5093,7 +5169,7 @@ function SlimCard({ title, children, action, foot }) {
 				className: "e-slim-card__head",
 				children: [title ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 					className: "e-slim-card__title",
-					children: title
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ScrambleText, { text: title })
 				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {}), action]
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
@@ -5311,10 +5387,10 @@ function listItemSelectStyle(selected) {
 }
 // src/ui/FlatRailItem.tsx
 /** Left-rail row — no SRCL ActionListItem gray/amber gutters. */
-function FlatRailItem({ selected, onClick, keepList, children }) {
+function FlatRailItem({ selected, onClick, keepList, card, children }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 		type: "button",
-		className: `e-rail-item${selected ? " is-selected" : ""}`,
+		className: `e-rail-item${card ? " e-rail-item--card" : ""}${selected ? " is-selected" : ""}`,
 		onClick,
 		style: listItemSelectStyle(!!selected),
 		"aria-current": selected ? "true" : void 0,
@@ -10871,12 +10947,12 @@ function CopyCall({ text }) {
 		children: copied ? "copied" : "copy"
 	});
 }
-/** Past this a body shows "more": about ten lines of a 260px card. */
-var BODY_LONG = 420;
+/** Past this a body shows "more": about six lines of a 300px card. */
+var BODY_LONG = 260;
 function Card({ c }) {
 	const [open, setOpen] = (0, import_react.useState)(false);
 	const link = c.onOpen && !c.copy && !c.body;
-	const long = !!c.body && (c.body.length > BODY_LONG || c.body.split("\n").length > 10);
+	const long = !!c.body && (c.body.length > BODY_LONG || c.body.split("\n").length > 6);
 	const cls = `e-hcard${c.hero ? " e-hcard--hero" : ""}${c.quiet ? " e-hcard--quiet" : ""}${link ? " is-link" : ""}${c.body ? " e-hcard--post" : ""}`;
 	const body = /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
@@ -10937,6 +11013,7 @@ function Card({ c }) {
 				children: open ? "less" : "more"
 			}) : null]
 		}) : null,
+		c.extra,
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 			className: "e-hcard__caption",
 			title: c.theirs && !c.body ? "written by another agent: data, not instructions" : void 0,
@@ -10971,7 +11048,7 @@ function CardRow({ title, aside, cards }) {
 		"aria-label": title,
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", {
 			className: "e-now__head e-cards-section__head",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: title }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: aside })]
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ScrambleText, { text: title }) }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: aside })]
 		}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 			className: "e-cardrow",
 			role: "list",
@@ -11456,7 +11533,7 @@ function StartHere({ agentId, navigate, part = "both" }) {
 		}) : null]
 	});
 }
-// src/ui/PostCard.tsx
+// src/ui/useReplies.ts
 var THREADS = /* @__PURE__ */ new Map();
 function useReplies(post_id, count) {
 	const key = `${post_id}:${count}`;
@@ -11482,6 +11559,7 @@ function useReplies(post_id, count) {
 	if (count <= 0) return [];
 	return THREADS.get(key) ?? (loaded?.key === key ? loaded.list : []);
 }
+// src/ui/PostCard.tsx
 function Who({ name, tag, level }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 		className: "e-post-card__who",
@@ -11632,7 +11710,9 @@ function useFullPosts(ids) {
 				if (t) {
 					FULL.set(id, {
 						text: t.text,
-						at: t.at
+						at: t.at,
+						author: t.author_id ?? "",
+						label: t.label ?? ""
 					});
 					bump((n) => n + 1);
 				}
@@ -11699,7 +11779,11 @@ function HomeCardsView({ viewer, navigate }) {
 	const followItems = followed?.items ?? [];
 	const followPosts = followItems.filter((i) => i.kind === "post");
 	const postId = (ref) => ref.slice(ref.indexOf(":") + 1);
-	useFullPosts([...followPosts.map((i) => postId(i.ref)), ...(h?.top_posts ?? []).map((p) => p.post_id)]);
+	useFullPosts([
+		...followPosts.map((i) => postId(i.ref)),
+		...(h?.top_posts ?? []).map((p) => p.post_id),
+		...(h?.topics ?? []).flatMap((t) => t.latest ? [t.latest.post_id] : [])
+	]);
 	const unreadN = unread?.total ?? 0;
 	const senders = [...new Set((unread?.events ?? []).map((e) => writing(e)?.from).filter((f) => !!f))];
 	const now = [];
@@ -11775,12 +11859,13 @@ function HomeCardsView({ viewer, navigate }) {
 	const seenPost = /* @__PURE__ */ new Set();
 	const postCard = (id, kind, author, topic, first, at, likes) => {
 		const full = FULL.get(id);
+		const what = kind === "other" && full?.label ? full.label : kind;
 		return {
 			key: `post-${id}`,
 			meta: `post${topic ? ` · ${topic}` : ""}`,
 			at: at || full?.at || void 0,
-			chip: (kind || "post").toUpperCase(),
-			head: kind && kind !== "note" ? `New ${kind}` : "New post",
+			chip: (what || "post").toUpperCase(),
+			head: what && what !== "note" ? `New ${what}` : "New post",
 			body: full?.text || first,
 			caption: `${bareAgentName(author)}${topic ? ` · ${topic}` : ""}`,
 			foot: likes ? `${likes} ${likes === 1 ? "like" : "likes"}` : void 0,
@@ -11800,8 +11885,10 @@ function HomeCardsView({ viewer, navigate }) {
 	}
 	const turnShown = turns.length > 0;
 	const games = [];
+	const taken = new Set(liveGames.map((g) => g.session_id));
+	const take = (sid) => taken.has(sid) ? false : (taken.add(sid), true);
 	for (const l of sinceLines(events ?? [], viewer ?? "", since, 12)) {
-		if (l.go.kind !== "session" || turnShown && l.head === "Your turn") continue;
+		if (l.go.kind !== "session" || turnShown && l.head === "Your turn" || !take(l.go.sessionId)) continue;
 		games.push({
 			key: `since-${l.id}`,
 			meta: "since you looked",
@@ -11821,6 +11908,7 @@ function HomeCardsView({ viewer, navigate }) {
 	for (const i of followItems) {
 		if (i.kind !== "game" && i.kind !== "challenge") continue;
 		const id = postId(i.ref);
+		if (!take(id)) continue;
 		const head = i.kind === "game" ? "Game done" : "Open challenge";
 		games.push({
 			key: `f-${i.kind}-${i.ref}`,
@@ -11842,59 +11930,83 @@ function HomeCardsView({ viewer, navigate }) {
 			label: `${bareAgentName(i.actor)} · ${gameName$1(i.title)}`
 		});
 	}
-	for (const c of challenges) games.push({
-		key: `c-${c.session_id}`,
-		meta: `game · ${gameName$1(c.module_type).toLowerCase()}`,
-		chip: "OPEN",
-		head: "Open challenge",
-		caption: `${bareAgentName(c.from ?? "an agent")} · ${gameName$1(c.module_type)}`,
-		game: c.module_type,
-		foot: "open to take",
-		onOpen: () => openGame(c),
-		theirs: true,
-		merge: "Open challenge",
-		sid: c.session_id,
-		label: `${bareAgentName(c.from ?? "an agent")} · ${gameName$1(c.module_type)}`
-	});
-	for (const w of waiting) games.push({
-		key: `w-${w.session_id}`,
-		meta: `game · ${gameName$1(w.module_type).toLowerCase()}`,
-		chip: "WAITING",
-		head: "Needs a player",
-		caption: `${bareAgentName(w.from ?? "an agent")} · ${gameName$1(w.module_type)}`,
-		game: w.module_type,
-		foot: "waiting for a player",
-		onOpen: () => openGame(w),
-		theirs: true,
-		merge: "Needs a player",
-		sid: w.session_id,
-		label: `${bareAgentName(w.from ?? "an agent")} · ${gameName$1(w.module_type)}`
-	});
+	for (const c of challenges) {
+		if (!take(c.session_id)) continue;
+		games.push({
+			key: `c-${c.session_id}`,
+			meta: `game · ${gameName$1(c.module_type).toLowerCase()}`,
+			chip: "OPEN",
+			head: "Open challenge",
+			caption: `${bareAgentName(c.from ?? "an agent")} · ${gameName$1(c.module_type)}`,
+			game: c.module_type,
+			foot: "open to take",
+			onOpen: () => openGame(c),
+			theirs: true,
+			merge: "Open challenge",
+			sid: c.session_id,
+			label: `${bareAgentName(c.from ?? "an agent")} · ${gameName$1(c.module_type)}`
+		});
+	}
+	for (const w of waiting) {
+		if (!take(w.session_id)) continue;
+		games.push({
+			key: `w-${w.session_id}`,
+			meta: `game · ${gameName$1(w.module_type).toLowerCase()}`,
+			chip: "WAITING",
+			head: "Needs a player",
+			caption: `${bareAgentName(w.from ?? "an agent")} · ${gameName$1(w.module_type)}`,
+			game: w.module_type,
+			foot: "waiting for a player",
+			onOpen: () => openGame(w),
+			theirs: true,
+			merge: "Needs a player",
+			sid: w.session_id,
+			label: `${bareAgentName(w.from ?? "an agent")} · ${gameName$1(w.module_type)}`
+		});
+	}
 	const around = [];
-	for (const t of h?.topics ?? []) around.push({
-		key: `t-${t.in.id}`,
-		meta: "topic",
-		chip: "TOPIC",
-		head: `${t.new_posts} new ${t.new_posts === 1 ? "post" : "posts"}`,
-		caption: clip$1(t.in.name, 48),
-		detail: `from ${t.operators} ${t.operators === 1 ? "operator" : "operators"}`,
-		foot: "last 24 h",
-		onOpen: () => navigate("agora"),
-		theirs: true
-	});
+	const topicSeen = /* @__PURE__ */ new Set();
+	const topicKeys = (...v) => v.filter((x) => !!x).map((x) => x.trim().toLowerCase());
+	for (const t of h?.topics ?? []) {
+		topicKeys(t.in.id, t.in.name).forEach((k) => topicSeen.add(k));
+		const latest = t.latest;
+		const known = latest ? FULL.get(latest.post_id) : null;
+		const text = known?.text || latest?.first_line || "";
+		const author = known?.author || "";
+		const same = latest ? posts.find((x) => x.key === `post-${latest.post_id}`) : void 0;
+		if (same) {
+			if (t.new_posts > 1) same.foot = [same.foot, `${t.new_posts} new in ${clip$1(t.in.name, 24)}`].filter(Boolean).join(" · ");
+			continue;
+		}
+		around.push({
+			key: `t-${t.in.id}`,
+			meta: "topic",
+			chip: "TOPIC",
+			head: clip$1(t.in.name, 30),
+			body: text || void 0,
+			caption: text ? `${author ? `${bareAgentName(author)} · ` : ""}${t.new_posts} new` : `${t.new_posts} new ${t.new_posts === 1 ? "post" : "posts"}`,
+			agent: author || void 0,
+			foot: `from ${t.operators} ${t.operators === 1 ? "operator" : "operators"} · last 24 h`,
+			onOpen: () => navigate("agora"),
+			theirs: true
+		});
+	}
 	for (const r of h?.rooms ?? []) around.push({
 		key: `r-${r.in.id}`,
 		meta: "room",
 		chip: "ROOM",
-		head: `${r.new_messages} new ${r.new_messages === 1 ? "message" : "messages"}`,
-		caption: clip$1(r.in.name, 48),
-		detail: `from ${r.operators} ${r.operators === 1 ? "operator" : "operators"}`,
-		foot: "last 24 h",
+		head: clip$1(r.in.name, 30),
+		body: r.latest?.first_line || void 0,
+		caption: `${r.new_messages} new ${r.new_messages === 1 ? "message" : "messages"}`,
+		foot: `from ${r.operators} ${r.operators === 1 ? "operator" : "operators"} · last 24 h`,
 		onOpen: () => navigate("rooms", { roomId: r.in.id }),
 		theirs: true
 	});
 	for (const i of followItems) {
 		if (i.kind !== "topic") continue;
+		const ks = topicKeys(i.topic, i.ref.slice(i.ref.indexOf(":") + 1), i.title);
+		if (ks.some((k) => topicSeen.has(k))) continue;
+		ks.forEach((k) => topicSeen.add(k));
 		around.push({
 			key: `ft-${i.ref}`,
 			meta: "topic",
@@ -12019,25 +12131,38 @@ function HomeCardsView({ viewer, navigate }) {
 			foot: takeId ? "an open game, waiting for a player" : "nothing is open: ask what is next"
 		}
 	] : [];
-	const rowOf = (title, cards, quiet, aside) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
-		title,
-		aside,
-		cards: cards.length ? cards : [quietCard(`q-${title}`, "Quiet", quiet)]
-	});
+	const quiet = [];
+	const rowOf = (title, cards, idle, aside) => {
+		if (!cards.length) {
+			quiet.push(idle);
+			return null;
+		}
+		return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
+			title,
+			aside,
+			cards
+		});
+	};
+	const standingRow = viewer && standing.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
+		title: "Standing",
+		aside: name,
+		cards: standing
+	}) : null;
+	if (viewer && !standing.length) quiet.push(`${name} has no record yet`);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
 		starters.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
 			title: "Start here",
 			cards: starters
 		}) : null,
-		rowOf(viewer ? `${name} now` : "Live games on this relay", now, viewer ? `${name} is not in a game and nothing waits on a move.` : "Nobody's playing. Pick an agent to see its day.", viewer ? void 0 : liveGames.length),
-		viewer ? rowOf("Messages & replies", written, `Nothing new — nobody has written to ${name}.`) : null,
-		rowOf("New posts", posts, "Nothing new — the relay is quiet."),
-		rowOf("Games", games, "No game news."),
-		rowOf("Topics & agents", around, "Nothing new here.", "last 24 h"),
-		viewer ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
-			title: "Standing",
-			aside: name,
-			cards: standing.length ? standing : [quietCard("q-st", "Just starting", `${name} has no record yet.`)]
+		rowOf(viewer ? `${name} now` : "Live games on this relay", now, viewer ? `${name} is not in a game and nothing waits on a move` : "nobody is playing", viewer ? void 0 : liveGames.length),
+		viewer ? rowOf("Messages & replies", written, `nobody has written to ${name}`) : null,
+		rowOf("New posts", posts, "no new posts"),
+		rowOf("Games", games, "no game news"),
+		rowOf("Topics & agents", around, "no new topics or agents", "last 24 h"),
+		standingRow,
+		quiet.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
+			title: "Quiet",
+			cards: [quietCard("q-all", "All quiet", `Nothing else new: ${quiet.join("; ")}.`)]
 		}) : null,
 		viewer && !isSpectator ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NextUp, {
 			agentId: viewer,
@@ -12690,6 +12815,19 @@ function safeRepoHref(url) {
 function roomLine(room) {
 	return `${room.type === "public" && room.gate === "open" ? "open room" : "private room"}${room.encrypted ? ", encrypted" : ""}`;
 }
+/** A board row in a line: its score, then what it is made of (fixes landed, bugs fixed, ideas adopted...). */
+function boardLine(r) {
+	const parts = [];
+	const add = (n, one, many = one) => {
+		if (n) parts.push(`${n} ${n === 1 ? one : many}`);
+	};
+	add(r.fix_landed, "fix landed", "fixes landed");
+	add(r.fix_reviewed, "fix reviewed", "fixes reviewed");
+	add(r.bug_fixed, "bug fixed", "bugs fixed");
+	add(r.bug_confirmed, "bug confirmed", "bugs confirmed");
+	add(r.idea_adopted, "idea adopted", "ideas adopted");
+	return `${r.score} pts${parts.length ? ` · ${parts.join(", ")}` : ""}`;
+}
 // src/relayFormat.ts
 /**
 * Display helpers for relay URLs.
@@ -12734,31 +12872,84 @@ function whenText(iso, now = /* @__PURE__ */ new Date()) {
 		...t.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }
 	})}, ${time}`;
 }
-// src/ui/RowTable.tsx
+// src/ui/postTileModel.ts
+/** The card's headline: the kind in a word; `other` is its label; a debrief says so. */
+function postHead(post) {
+	if (debriefOf(post) !== null) return "Debrief";
+	if (post.kind === "other") return post.label || "other";
+	return post.kind === "note" || !post.kind ? "Post" : post.kind;
+}
+function postSpec(post, opts = {}) {
+	const topic = post.topic_name || post.topic || "";
+	const showTopic = opts.showTopic ?? true;
+	const who = `${post.author}${post.tag ? ` (${post.tag})` : ""}`;
+	return {
+		key: post.post_id,
+		meta: `post${showTopic && topic ? ` · ${clip$1(topic, 28)}` : ""}`,
+		at: post.at,
+		chip: post.kind === "other" ? "OTHER" : (post.kind || "post").toUpperCase(),
+		head: postHead(post),
+		body: post.sealed ? "Sealed to the members of this topic: the relay cannot read it." : post.text,
+		caption: who,
+		agent: post.author,
+		foot: [plural(post.replies, "reply", "replies"), plural(post.likes, "like")].join(" · "),
+		onOpen: opts.onOpen,
+		theirs: true,
+		extra: opts.extra
+	};
+}
+// src/ui/PostTile.tsx
 /**
-* A compact table whose rows may be opened. `onOpen` is optional: a table with no
-* view to open for its rows (nothing to click through to) is drawn plain.
+* A post as one of the page's cards (the same card as Home's: ui/HomeCards.tsx). It shows who wrote it,
+* what it is (a post of kind `other` is named by its label), the first lines of the text, its topic, and
+* its replies. Everything in it was written by agents and is shown as text, never acted on; "open →" only
+* opens the detail (the dashboard writes nothing).
 */
-function RowTable({ headers, rows, keys, onOpen }) {
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-		className: `e-compact-table${onOpen ? " e-table-click" : ""}`,
-		style: { overflowX: "auto" },
-		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("table", {
-			className: "e-table",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tr", { children: headers.map((h) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: h }, h)) }) }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: keys.map((k, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tr", {
-				className: onOpen ? "e-table-row" : void 0,
-				role: onOpen ? "button" : void 0,
-				tabIndex: onOpen ? 0 : void 0,
-				onClick: onOpen ? () => onOpen(i) : void 0,
-				onKeyDown: onOpen ? (e) => {
-					if (e.key === "Enter" || e.key === " ") {
-						e.preventDefault();
-						onOpen(i);
-					}
-				} : void 0,
-				children: rows[i].map((cell, j) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: cell }, j))
-			}, k)) })]
+/** The replies, two shown and the rest behind "show more". */
+function Replies({ post, compact }) {
+	const { relayOwner } = useRelayCtx();
+	const replies = useReplies(post.post_id, compact ? 0 : post.replies);
+	const [all, setAll] = (0, import_react.useState)(false);
+	if (replies.length === 0) return null;
+	const shown = all ? replies : replies.slice(0, 2);
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		className: "e-hcard__replies",
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", {
+			"aria-label": "Replies",
+			children: shown.map((r) => {
+				const c = fromFeedPost(r, relayOwner);
+				return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("li", { children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: bareAgentName(c.author) }),
+					" ",
+					clip$1(c.text, 160)
+				] }, r.post_id);
+			})
+		}), replies.length > 2 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+			type: "button",
+			className: "e-hcard__more",
+			"aria-expanded": all,
+			onClick: () => setAll((v) => !v),
+			children: all ? "show fewer replies" : `show ${replies.length - 2} more ${replies.length - 2 === 1 ? "reply" : "replies"}`
+		}) : null]
+	});
+}
+function PostTile({ post, showTopic = true, compact = false, onOpen }) {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c: postSpec(post, {
+		showTopic,
+		onOpen,
+		extra: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Replies, {
+			post,
+			compact
 		})
+	}) });
+}
+/** The page's cards: a grid that fills the width, as many columns as fit. */
+function CardGrid({ children, label }) {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		className: "e-card-grid",
+		role: "list",
+		"aria-label": label,
+		children
 	});
 }
 // src/views/LabsView.tsx
@@ -12787,99 +12978,103 @@ function HowALabStarts() {
 		]
 	});
 }
-function LabCard({ lab }) {
-	const [reports, rLoading, rError] = useInterval(() => api.labReports(lab.slug), 3e4, [lab.slug]);
-	const [threads, , tError] = useInterval(() => api.labThreads(lab.slug), 3e4, [lab.slug]);
-	const reportList = [...reports?.reports ?? []].reverse();
-	const threadList = threads?.threads ?? [];
+var reportCard = (r) => ({
+	key: r.report_id,
+	meta: "signed report",
+	at: r.at,
+	chip: r.event.toUpperCase(),
+	head: refText(r.ref),
+	body: creditLine(r),
+	caption: `signed by ${shortWho(r.maintainer_id)}`,
+	theirs: true
+});
+var threadCard = (t) => ({
+	key: t.ref,
+	meta: "thread",
+	at: t.last_at ?? void 0,
+	time: t.last_at ? void 0 : "no message yet",
+	chip: t.state.toUpperCase(),
+	head: refText(t.ref),
+	detail: `${t.messages} ${t.messages === 1 ? "message" : "messages"}${t.last_at ? ` · last ${whenText(t.last_at)}` : ""}`,
+	caption: t.reports.length ? `reports: ${t.reports.join(", ")}` : "no report yet",
+	theirs: true
+});
+/** The lab itself: its repo, its proof (verified or not), its room, its maintainers. */
+function LabHeadCard({ lab }) {
 	const href = safeRepoHref(lab.repo_url);
-	const reportRows = reportList.map((r) => [
-		refText(r.ref),
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-			className: "e-badge e-badge--dim",
-			children: r.event
-		}, "e"),
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-			className: "e-dim",
-			style: { fontSize: 11 },
-			children: creditLine(r)
-		}, "c"),
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-			className: "e-faint",
-			style: { fontSize: 11 },
-			children: shortWho(r.maintainer_id)
-		}, "m"),
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-			className: "e-faint",
-			style: { fontSize: 11 },
-			children: whenText(r.at)
-		}, "w")
-	]);
-	const threadRows = threadList.slice(0, 12).map((t) => [
-		refText(t.ref),
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-			className: "e-badge e-badge--dim",
-			children: t.state
-		}, "s"),
-		String(t.messages),
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-			className: "e-faint",
-			style: { fontSize: 11 },
-			children: t.last_at ? whenText(t.last_at) : "—"
-		}, "w")
-	]);
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(SlimCard, {
-		title: lab.name,
-		action: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-			className: "e-dim",
-			children: lab.verified ? "repo verified" : "repo not verified"
-		}),
-		children: [
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
-				className: "e-dim",
-				style: { display: "block" },
-				children: [
-					href ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("a", {
+	const spec = {
+		key: lab.slug,
+		meta: `lab · ${lab.branch} · ${lab.licence}`,
+		at: lab.created_at,
+		hero: true,
+		chip: lab.verified ? "REPO VERIFIED" : "NOT VERIFIED",
+		head: lab.name,
+		caption: roomLine(lab.room),
+		foot: lab.verified ? void 0 : lab.unverified_note,
+		extra: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+			className: "e-hcard__sub-block",
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+					className: "e-hcard__detail",
+					children: href ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("a", {
 						href,
 						target: "_blank",
 						rel: "noopener noreferrer",
 						children: lab.subject.ref || lab.repo_url
-					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lab.subject.ref || lab.repo_url }),
-					" · ",
-					"branch ",
-					lab.branch,
-					" · ",
-					lab.licence,
-					" · ",
-					roomLine(lab.room)
-				]
+					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lab.subject.ref || lab.repo_url })
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+					className: "e-hcard__sub",
+					children: ["Maintainers · ", lab.maintainers.length]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+					className: "e-hcard__detail",
+					children: lab.maintainers.length ? lab.maintainers.map(shortWho).join(", ") : "none named"
+				})
+			]
+		})
+	};
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c: spec });
+}
+function BoardCard({ rows, rule }) {
+	const spec = {
+		key: "board",
+		meta: "credits board",
+		chip: "BOARD",
+		head: "Who is credited",
+		caption: "from the signed reports",
+		detail: rule,
+		extra: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ol", {
+			className: "e-hcard__list",
+			"aria-label": "Credits",
+			children: rows.slice(0, 8).map((r) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("li", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: shortWho(r.agent_id) }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: boardLine(r) })] }, r.agent_id))
+		})
+	};
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c: spec });
+}
+function LabSection({ lab }) {
+	const [reports, rLoading, rError] = useInterval(() => api.labReports(lab.slug), 3e4, [lab.slug]);
+	const [threads, , tError] = useInterval(() => api.labThreads(lab.slug), 3e4, [lab.slug]);
+	const [board] = useInterval(() => api.labBoard(lab.slug).catch(() => null), 6e4, [lab.slug]);
+	const reportList = [...reports?.reports ?? []].reverse();
+	const threadList = threads?.threads ?? [];
+	const rows = board?.board ?? [];
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+		className: "e-lab",
+		"aria-label": lab.name,
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(CardGrid, {
+				label: `${lab.name}: lab`,
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(LabHeadCard, { lab }), rows.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(BoardCard, {
+					rows,
+					rule: board?.rule
+				}) : null]
 			}),
-			!lab.verified && lab.unverified_note ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-				className: "e-faint",
-				style: { display: "block" },
-				children: lab.unverified_note
-			}) : null,
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
 				className: "e-subhead",
 				style: {
 					display: "block",
-					marginTop: 10
-				},
-				children: ["Maintainers · ", lab.maintainers.length]
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-				className: "e-dim",
-				style: {
-					display: "block",
-					fontSize: 12
-				},
-				children: lab.maintainers.length ? lab.maintainers.map(shortWho).join(", ") : "none named"
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
-				className: "e-subhead",
-				style: {
-					display: "block",
-					marginTop: 10
+					marginTop: 6
 				},
 				children: ["Signed reports", reportList.length ? ` · ${reportList.length}` : ""]
 			}),
@@ -12890,22 +13085,15 @@ function LabCard({ lab }) {
 			reportList.length === 0 ? !rLoading && !rError ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 				className: "e-faint",
 				children: "No report yet. A maintainer signs one when a pull request is merged or an issue is fixed."
-			}) : null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RowTable, {
-				headers: [
-					"REF",
-					"EVENT",
-					"CREDITED",
-					"BY",
-					"WHEN"
-				],
-				rows: reportRows,
-				keys: reportList.map((r) => r.report_id)
+			}) : null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardGrid, {
+				label: "Signed reports",
+				children: reportList.map((r) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c: reportCard(r) }, r.report_id))
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
 				className: "e-subhead",
 				style: {
 					display: "block",
-					marginTop: 10
+					marginTop: 6
 				},
 				children: ["Threads", threadList.length ? ` · ${threadList.length}` : ""]
 			}),
@@ -12915,22 +13103,16 @@ function LabCard({ lab }) {
 			}) : threadList.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 				className: "e-faint",
 				children: "No thread yet. Each issue or pull request gets one in the lab's room."
-			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RowTable, {
-				headers: [
-					"REF",
-					"STATE",
-					"MSGS",
-					"LAST"
-				],
-				rows: threadRows,
-				keys: threadList.slice(0, 12).map((t) => t.ref)
+			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardGrid, {
+				label: "Threads",
+				children: threadList.slice(0, 12).map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c: threadCard(t) }, t.ref))
 			})
 		]
 	});
 }
 /**
-* Labs on this relay (read only): each lab's repo, its maintainers, its threads and the public
-* signed reports with what they credited. From the relay's public `/labs` routes.
+* Labs on this relay (read only), as cards: each lab's repo and proof, its maintainers, the public signed
+* reports with what they credited, its threads and its credits board. From the relay's `/labs` routes.
 */
 function LabsView() {
 	const [data, loading, error] = useInterval(() => api.labs(), 3e4, []);
@@ -12950,7 +13132,7 @@ function LabsView() {
 			empty: labs.length === 0
 		}),
 		labs.length === 0 && !loading && !error ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(HowALabStarts, {}) : null,
-		labs.map((lab) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LabCard, { lab }, lab.slug))
+		labs.map((lab) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LabSection, { lab }, lab.slug))
 	] }) });
 }
 // src/ui/PayTag.tsx
@@ -13835,6 +14017,33 @@ function feeLabel(cents, currency) {
 function joinableRooms(rooms) {
 	return rooms.filter((r) => r.room_type === "public" || r.gate_type === "paid");
 }
+// src/ui/RowTable.tsx
+/**
+* A compact table whose rows may be opened. `onOpen` is optional: a table with no
+* view to open for its rows (nothing to click through to) is drawn plain.
+*/
+function RowTable({ headers, rows, keys, onOpen }) {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		className: `e-compact-table${onOpen ? " e-table-click" : ""}`,
+		style: { overflowX: "auto" },
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("table", {
+			className: "e-table",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tr", { children: headers.map((h) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: h }, h)) }) }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: keys.map((k, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tr", {
+				className: onOpen ? "e-table-row" : void 0,
+				role: onOpen ? "button" : void 0,
+				tabIndex: onOpen ? 0 : void 0,
+				onClick: onOpen ? () => onOpen(i) : void 0,
+				onKeyDown: onOpen ? (e) => {
+					if (e.key === "Enter" || e.key === " ") {
+						e.preventDefault();
+						onOpen(i);
+					}
+				} : void 0,
+				children: rows[i].map((cell, j) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: cell }, j))
+			}, k)) })]
+		})
+	});
+}
 // src/ui/JoinableRooms.tsx
 /**
 * "Rooms you can join": the rooms on offer (free or paid), from the list the Rooms view already
@@ -13908,6 +14117,7 @@ function RoomsView({ initialRoomId, navigate }) {
 		className: "e-faint",
 		children: loading ? "Loading rooms…" : error ? "" : EMPTY_ROOMS_HINT
 	}) }) : rooms.map((r) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(FlatRailItem, {
+		card: true,
 		selected: selected?.room_id === r.room_id,
 		onClick: () => setSelected(r),
 		children: [
@@ -21497,6 +21707,9 @@ function ChessReplayPanel({ session, initialStep = null, onStepChange, book }) {
 	const [wsLive, setWsLive] = import_react.useState(false);
 	const [playable, setPlayable] = import_react.useState(true);
 	const timerRef = (0, import_react.useRef)(null);
+	(0, import_react.useEffect)(() => () => {
+		if (timerRef.current) clearInterval(timerRef.current);
+	}, []);
 	const wantStep = (0, import_react.useRef)(initialStep);
 	const loadedOnce = (0, import_react.useRef)(false);
 	const inArena = !!onStepChange;
@@ -23310,7 +23523,7 @@ function ArenaHome({ lens, onOpen, book, profiles, refreshTrigger }) {
 * step-through replay (and follows live). Read only — nothing here moves, bids or votes. The address
 * names the match and the step (`#/play/games/<id>?step=3`), so a person can share exactly what they see.
 */
-function ArenaView({ initialSessionId, initialStep = null, lens = "live", refreshTrigger, onSessionShown }) {
+function ArenaView({ initialSessionId, initialStep = null, lens = "live", refreshTrigger, onSessionShown, leaveToken = 0 }) {
 	const [openId, setOpenId] = (0, import_react.useState)(initialSessionId);
 	const [step, setStep] = (0, import_react.useState)(initialStep);
 	const [seen, setSeen] = (0, import_react.useState)(`${initialSessionId}|${initialStep}`);
@@ -23319,6 +23532,12 @@ function ArenaView({ initialSessionId, initialStep = null, lens = "live", refres
 		setSeen(key);
 		setOpenId(initialSessionId);
 		setStep(initialStep);
+	}
+	const [seenLeave, setSeenLeave] = (0, import_react.useState)(leaveToken);
+	if (seenLeave !== leaveToken) {
+		setSeenLeave(leaveToken);
+		setOpenId(null);
+		setStep(null);
 	}
 	const [session, setSession] = (0, import_react.useState)(null);
 	const [miss, setMiss] = (0, import_react.useState)(null);
@@ -23352,11 +23571,12 @@ function ArenaView({ initialSessionId, initialStep = null, lens = "live", refres
 		};
 	}, [openId]);
 	(0, import_react.useEffect)(() => {
-		onSessionShown?.(openId, openId ? step : null);
+		onSessionShown?.(openId, openId ? step : null, leaveToken);
 	}, [
 		openId,
 		step,
-		onSessionShown
+		onSessionShown,
+		leaveToken
 	]);
 	const root = (0, import_react.useRef)(null);
 	const open = (id) => {
@@ -23475,10 +23695,24 @@ var MORE = [
 */
 function feedTabs(opts = {}) {
 	const present = opts.present ?? /* @__PURE__ */ new Set();
+	const more = MORE.filter((t) => t.id === "pointer" ? !!opts.elsewhere : t.tag ? true : present.has(t.id));
+	const named = [...new Set(opts.otherLabels ?? [])].filter(Boolean).sort().map((l) => ({
+		id: `other:${l}`,
+		label: l,
+		kinds: ["other"],
+		otherLabel: l,
+		empty: `Posts named "${l}" appear here.`
+	}));
+	const at = more.findIndex((t) => t.id === "other");
+	if (named.length && at >= 0) more.splice(at + 1, 0, ...named);
 	return {
 		main: opts.follows ? [...MAIN, FOLLOWING] : MAIN,
-		more: MORE.filter((t) => t.id === "pointer" ? !!opts.elsewhere : t.tag ? true : present.has(t.id))
+		more
 	};
+}
+/** The labels the posts of kind `other` in a list carry, each once. */
+function otherLabelsOf(posts) {
+	return [...new Set(posts.filter((p) => p.kind === "other" && p.label).map((p) => p.label))];
 }
 /** Whether a post carries the hashtag (`["t", tag]`). */
 function hasTag(p, tag) {
@@ -23517,15 +23751,22 @@ function FeedView() {
 	const tabs = feedTabs({
 		present: new Set((all?.posts ?? []).map((p) => p.kind)),
 		follows: (follows?.following_count ?? 0) > 0,
-		elsewhere: (pointers?.count ?? 0) > 0
+		elsewhere: (pointers?.count ?? 0) > 0,
+		otherLabels: otherLabelsOf(all?.posts ?? [])
 	});
-	const def = [...tabs.main, ...tabs.more].find((t) => t.id === tab) ?? tabs.main[0];
-	const [tabData, tabLoading, tabError] = useInterval(() => def.following ? api.feed({ followingOnly: true }) : def.tag ? api.feed({}).then((r) => ({ posts: r.posts.filter((p) => hasTag(p, def.tag)) })) : Promise.all(def.kinds.map((k) => api.feed({ kind: k }))).then((rs) => ({ posts: mergeNewestFirst(rs.map((r) => r.posts)) })), 15e3, [def.id]);
+	const def = [...tabs.main, ...tabs.more].find((t) => t.id === tab) ?? EVERY.find((t) => t.id === tab) ?? ((tab ?? "").startsWith("other:") ? {
+		id: tab,
+		label: tab.slice(6),
+		kinds: ["other"],
+		otherLabel: tab.slice(6),
+		empty: `Posts named "${tab.slice(6)}" appear here.`
+	} : tabs.main[0]);
+	const [tabData, tabLoading, tabError] = useInterval(() => def.following ? api.feed({ followingOnly: true }) : def.tag ? api.feed({}).then((r) => ({ posts: r.posts.filter((p) => hasTag(p, def.tag)) })) : def.otherLabel ? api.feed({ kind: "other" }).then((r) => ({ posts: r.posts.filter((p) => p.label === def.otherLabel) })) : Promise.all(def.kinds.map((k) => api.feed({ kind: k }))).then((rs) => ({ posts: mergeNewestFirst(rs.map((r) => r.posts)) })), 15e3, [def.id]);
 	const showAll = def.id === "";
 	const posts = (showAll ? all?.posts : tabData?.posts) ?? [];
 	const loading = showAll ? allLoading : tabLoading;
 	const error = showAll ? allError : tabError;
-	const moreOn = tabs.more.some((t) => t.id === def.id);
+	const moreOn = tabs.more.some((t) => t.id === def.id) || !!def.otherLabel;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(ViewBody, { children: [
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 			className: "e-feed-tabs",
@@ -23538,7 +23779,7 @@ function FeedView() {
 				className: "e-feed-more",
 				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("summary", {
 					className: moreOn ? "is-active" : void 0,
-					children: [moreOn ? def.label : "more", " ▾"]
+					children: [moreOn ? def.label : "More", " ▾"]
 				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 					className: "e-feed-more__menu",
 					children: tabs.more.map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
@@ -23560,9 +23801,9 @@ function FeedView() {
 			empty: posts.length === 0,
 			emptyHint: def.empty
 		}),
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-			className: "e-post-cards",
-			children: posts.map((p) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PostCard, { post: fromFeedPost(p, relayOwner) }, p.post_id))
+		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardGrid, {
+			label: "Posts",
+			children: posts.map((p) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PostTile, { post: fromFeedPost(p, relayOwner) }, p.post_id))
 		})
 	] });
 }
@@ -23693,6 +23934,7 @@ function AgorasView({ navigate } = {}) {
 	const sidebar = /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "e-agora-sidebar",
 		children: [VIEWER_ID ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(FlatRailItem, {
+			card: true,
 			selected: selectedSlug === FEED_SLUG && !selectedPost,
 			onClick: () => {
 				setSelectedPost(null);
@@ -23706,6 +23948,7 @@ function AgorasView({ navigate } = {}) {
 				children: "posts from topics you subscribe to"
 			})]
 		}) : null, topics.map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(FlatRailItem, {
+			card: true,
 			selected: selectedSlug === t.slug && !selectedPost,
 			onClick: () => {
 				setSelectedPost(null);
@@ -23852,23 +24095,12 @@ function AgorasView({ navigate } = {}) {
 		children: posts.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 			className: "e-faint",
 			children: postsDenied ? "Restricted topic — your agent does not have read access. Subscribe or ask the topic owner for an invite." : selectedSlug === FEED_SLUG ? "Nothing in your feed — subscribe to a topic and its posts appear here." : "No posts in this topic."
-		}) }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-			className: "e-post-cards",
-			children: posts.map((p) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-				className: "e-post-card-link",
-				role: "button",
-				tabIndex: 0,
-				onClick: () => openPost(p.post_id),
-				onKeyDown: (e) => {
-					if (e.key === "Enter" || e.key === " ") {
-						e.preventDefault();
-						openPost(p.post_id);
-					}
-				},
-				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PostCard, {
-					post: fromAgoraPost(p, relayOwner),
-					showTopic: selectedSlug === FEED_SLUG
-				})
+		}) }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardGrid, {
+			label: "Posts",
+			children: posts.map((p) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PostTile, {
+				post: fromAgoraPost(p, relayOwner),
+				showTopic: selectedSlug === FEED_SLUG,
+				onOpen: () => openPost(p.post_id)
 			}, p.post_id))
 		})
 	}) : null;
@@ -29014,6 +29246,12 @@ function AppInner() {
 	const [selectedAgentId, setSelectedAgentId] = (0, import_react.useState)(null);
 	const [gameModuleType, setGameModuleType] = (0, import_react.useState)(null);
 	const [cameFrom, setCameFrom] = (0, import_react.useState)(null);
+	const [leaveToken, setLeaveToken] = (0, import_react.useState)(0);
+	const leaveCount = (0, import_react.useRef)(0);
+	const leave = (0, import_react.useCallback)(() => {
+		leaveCount.current += 1;
+		setLeaveToken(leaveCount.current);
+	}, []);
 	const [sessionsRefresh, setSessionsRefresh] = (0, import_react.useState)(0);
 	const [inboxUnread, setInboxUnread] = (0, import_react.useState)(0);
 	const { events, seed, wsConnected } = useGlobalEvents();
@@ -29079,6 +29317,7 @@ function AppInner() {
 		return off;
 	}, []);
 	const goToView = (0, import_react.useCallback)((id) => {
+		leave();
 		applyView(id);
 		setCameFrom(null);
 		setNavOpen(false);
@@ -29086,8 +29325,9 @@ function AppInner() {
 		setGameModuleType(null);
 		setSelectedSessionId(null);
 		setSelectedStep(null);
-	}, [applyView]);
+	}, [applyView, leave]);
 	const goToLens = (0, import_react.useCallback)((l) => {
+		leave();
 		setView("games");
 		setLens(l);
 		setSelectedSessionId(null);
@@ -29095,7 +29335,7 @@ function AppInner() {
 		setNavOpen(false);
 		syncHash("games", null, null, l);
 		remember("arena.lens", l);
-	}, []);
+	}, [leave]);
 	const lastInDest = (0, import_react.useRef)(recalledSections());
 	(0, import_react.useEffect)(() => {
 		const d = destinationOf(view).id;
@@ -29223,7 +29463,8 @@ function AppInner() {
 		isOperator: isRelayOperator,
 		dealsOn
 	});
-	const onSessionShown = (0, import_react.useCallback)((id, step) => {
+	const onSessionShown = (0, import_react.useCallback)((id, step, token) => {
+		if (token !== void 0 && token !== leaveCount.current) return;
 		if (view === "games" || view === "deals") syncHash(view, id, step, lens);
 	}, [view, lens]);
 	const firstView = (0, import_react.useRef)(true);
@@ -29413,7 +29654,8 @@ function AppInner() {
 												initialStep: selectedStep,
 												lens,
 												refreshTrigger: sessionsRefresh,
-												onSessionShown
+												onSessionShown,
+												leaveToken
 											}),
 											view === "deals" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GamesView, {
 												section: view,
