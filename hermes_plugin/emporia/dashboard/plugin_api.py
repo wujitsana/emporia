@@ -247,6 +247,12 @@ async def _ensure_console() -> tuple[Path, str]:
             raise NotSetUp("Emporia is not set up in this profile — run `hermes emporia setup`")
         if console.proc is not None and console.proc.poll() is None:
             console.proc.terminate()
+            # Wait for it to go: on exit it removes its socket path, which the new console is about to use.
+            try:
+                await asyncio.to_thread(console.proc.wait, 5)
+            except subprocess.TimeoutExpired:
+                console.proc.kill()
+                await asyncio.to_thread(console.proc.wait, 5)
         runtime = sock.parent
         if not _private_dir(runtime):
             raise RuntimeError(f"the console's folder {runtime} is not this user's own 0700 folder")

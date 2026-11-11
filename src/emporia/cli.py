@@ -6274,7 +6274,8 @@ def _agent_child_env(profile: Path, env_over: dict[str, str]) -> dict[str, str]:
         held = {}
     values = {**held, **entry}
     handed = {n: values[n] for n in agent_env.names(values)
-              if values.get(n) and not n.startswith(("PYTHON", "LD_")) and n not in ("PATH", "HOME")}
+              if values.get(n) and not n.startswith(("PYTHON", "LD_")) and n not in ("PATH", "HOME")
+              and n not in agent_env.RELAY_ONLY_NAMES}      # also when an env:NAME value points at one
     literal = {k: v for k, v in entry.items() if k.startswith("EMPORIA_") and k not in agent_env.RELAY_ONLY_NAMES
                and not agent_env.is_retired(k)}
     return {"PATH": os.defpath, "HOME": str(Path.home()), **literal, **handed, **env_over}

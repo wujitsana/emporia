@@ -4958,7 +4958,8 @@ def _commitments_file(aid: str, session_id: str):
     path = d / f"{clean}.{host}.{sess}.json"
     # files written before the host joined the name: move them to the new name, so a move committed
     # before an upgrade can still be revealed after it
-    for suffix in (".json", ".rand.json"):
+    # (only on the home relay: a visited relay must not adopt a home game's old file)
+    for suffix in (".json", ".rand.json") if not _RELAY_CTX.get() else ():
         new = d / f"{clean}.{host}.{sess}{suffix}"
         old = d / f"{clean}.{sess}{suffix}"
         if not new.exists() and old.exists():

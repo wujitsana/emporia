@@ -2536,8 +2536,11 @@ class EmporiaAgent:
         sess = "".join(c for c in session_id if c.isalnum() or c == "_")
         path = d / f"{self.agent_id}.{host}.{sess}.json"
         # the name before the host was added: move it over so an in-flight commit can still be revealed
+        # (only on the home relay: the configured one, or the only one when none is configured)
+        import os
+        configured = os.environ.get("EMPORIA_RELAY_URL", "").strip().rstrip("/")
         old = d / f"{self.agent_id}.{sess}.json"
-        if not path.exists() and old.exists():
+        if (not configured or configured == self.relay_url) and not path.exists() and old.exists():
             try:
                 old.replace(path)
             except OSError:
