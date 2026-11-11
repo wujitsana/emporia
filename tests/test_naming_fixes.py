@@ -164,3 +164,19 @@ def test_commitment_file_carries_the_relay_host(tmp_path, monkeypatch):
         finally:
             mcp_server._RELAY_CTX.reset(tok)
     assert files[0] != files[1]
+
+
+
+def test_reregister_with_the_same_display_name_is_never_refused_by_a_later_rule(client, monkeypatch):
+    """An agent already here keeps signing in with the display name it has, even if a newer rule would refuse
+    it; a changed display name still meets the rules."""
+    from emporia import names as _names
+    from emporia.identity import get_public_key_hex
+    pub = get_public_key_hex("nf_keeps_name")
+    body = {"agent_id": "nf_keeps_name", "public_key_hex": pub, "display_name": "Keeper"}
+    assert client.post("/agents/register", json=body).status_code == 200
+    monkeypatch.setattr(_names, "display_name_problem", lambda *a, **k: "refused by a newer rule")
+    r = client.post("/agents/register", json=body)
+    assert r.status_code == 200, r.text
+    r = client.post("/agents/register", json={**body, "display_name": "Keeper Two"})
+    assert r.status_code != 200 and "newer rule" in r.text

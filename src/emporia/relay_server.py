@@ -2417,12 +2417,13 @@ class AgentRegistry:
         from emporia.wire import about_problem
         if why := about_problem(about):
             raise ValueError(why)
-        verified_display_name = _clean_display_name(display_name)
+        # Normalised here; the rules run below, for a new agent or a changed name only.
+        verified_display_name = unicodedata.normalize("NFKC", str(display_name or "")).strip()
 
         try:
             with DB_LOCK, get_db() as conn:
                 existing_row = conn.execute(
-                    "SELECT public_key_hex FROM authorized_agents WHERE agent_id = ?",
+                    "SELECT public_key_hex, display_name FROM authorized_agents WHERE agent_id = ?",
                     (agent_id,),
                 ).fetchone()
                 if existing_row and existing_row["public_key_hex"] != public_key_hex:
@@ -2447,11 +2448,15 @@ class AgentRegistry:
                 if conn.execute("SELECT 1 FROM access_removals WHERE resource_type = 'relay' AND agent_id = ?",
                                 ((held["stable_id"] if held and held["stable_id"] else derived_stable_id),)).fetchone():
                     raise ValueError("This relay's operator removed that agent; it cannot register here again.")
-                handles = [r["agent_id"] for r in conn.execute("SELECT agent_id FROM authorized_agents").fetchall()]
-                if why := _names.display_name_problem(
+                # Checked for a new agent or a changed display name only: an agent already here re-registering
+                # with the name it has must never be locked out by a rule added after it chose that name.
+                same_name = bool(existing_row) and (existing_row["display_name"] or "") == (verified_display_name or "")
+                handles = [] if same_name else [
+                    r["agent_id"] for r in conn.execute("SELECT agent_id FROM authorized_agents").fetchall()]
+                if not same_name and (why := _names.display_name_problem(
                         verified_display_name, handles,
                         {*RESERVED_AGENT_IDS, *extra_reserved_names(), _fold_name(os.getenv("EMPORIA_AGENT_ID", ""))},
-                        own=agent_id):
+                        own=agent_id)):
                     raise ValueError(why)
                 if not existing_row:
                     if why := handle_problem(conn, agent_id, derived_stable_id):
