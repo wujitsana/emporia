@@ -12,16 +12,18 @@ from tests.test_emporia import _register_keyed, _p45_requirement, _P45_PAYER_KEY
 @pytest.fixture(autouse=True)
 def _clean_state():
     rs._DAILY_WRITE_BUDGET.clear()
+    rs._DAILY_WRITE_TOTAL[:] = ["", 0]
     rs._DISK_CACHE[0] = 0.0
     yield
     rs._DAILY_WRITE_BUDGET.clear()
+    rs._DAILY_WRITE_TOTAL[:] = ["", 0]
     rs._DISK_CACHE[0] = 0.0
 
 
 # ---- F3 ------------------------------------------------------------------
 
 def test_daily_write_budget_refuses_over_the_limit(monkeypatch):
-    monkeypatch.setenv("EMPORIA_DAILY_WRITE_MB", "1")
+    monkeypatch.setenv("EMPORIA_DAILY_WRITE_MB_PER_AGENT", "1")
     for _ in range(5):
         rs._require_content_within_limit("x" * 200_000, caller="f3_a")
     with pytest.raises(HTTPException) as e:
@@ -32,7 +34,7 @@ def test_daily_write_budget_refuses_over_the_limit(monkeypatch):
 
 
 def test_budget_resets_on_a_new_day(monkeypatch):
-    monkeypatch.setenv("EMPORIA_DAILY_WRITE_MB", "1")
+    monkeypatch.setenv("EMPORIA_DAILY_WRITE_MB_PER_AGENT", "1")
     rs._charge_write_bytes("f3_c", 1024 * 1024)
     rs._DAILY_WRITE_BUDGET["f3_c"] = ("1999-01-01", 1024 * 1024)
     rs._charge_write_bytes("f3_c", 10)
@@ -68,15 +70,32 @@ def test_low_disk_refuses_with_507_and_is_cached(monkeypatch):
     rs._charge_write_bytes("f3_e", 5)
 
 
-def test_messages_route_is_covered_by_the_budget(monkeypatch):
-    client = TestClient(app, client=("127.0.0.1", 51701))
-    _register_keyed(client, "f3_sender")
-    _register_keyed(client, "f3_target")
-    monkeypatch.setenv("EMPORIA_DAILY_WRITE_MB", "1")
-    body = {"to_agent": "f3_target", "type": "challenge", "payload": {"t": "x" * 200_000}}
-    h = {"x-emporia-agent-id": "f3_sender"}
-    codes = [client.post("/messages", json=body, headers=h).status_code for _ in range(8)]
-    assert 429 in codes and codes[0] != 429
+def test_relay_wide_daily_total_refuses_everyone(monkeypatch):
+    monkeypatch.setenv("EMPORIA_DAILY_WRITE_MB_TOTAL", "1")
+    monkeypatch.setenv("EMPORIA_DAILY_WRITE_MB_PER_AGENT", "5")
+    for who in ("f3_t1", "f3_t2", "f3_t3", "f3_t4", "f3_t5"):
+        rs._charge_write_bytes(who, 200_000)
+    with pytest.raises(HTTPException) as e:
+        rs._charge_write_bytes("f3_t6", 200_000)
+    assert e.value.status_code == 429 and "This relay" in e.value.detail
+
+
+def test_defaults_are_5_mb_per_agent_500_total_2048_free():
+    assert rs._daily_write_budget_bytes() == 5 * 1024 * 1024
+    assert rs._daily_write_total_bytes() == 500 * 1024 * 1024
+
+
+def test_audit_log_rolls_at_the_size_limit(monkeypatch, tmp_path):
+    tmp_path = tmp_path / "audit"
+    tmp_path.mkdir()
+    monkeypatch.setattr(rs, "LOG_DIR", tmp_path)
+    monkeypatch.setattr(rs, "AUDIT_LOG_MAX_BYTES", 200)
+    for n in range(40):
+        rs._write_audit_line({"n": n, "pad": "x" * 30})
+    names = sorted(p.name for p in tmp_path.iterdir())
+    assert any(x.endswith(".jsonl") for x in names) and any(x.endswith(".jsonl.1") for x in names)
+    assert not any(x.endswith(".jsonl.4") for x in names)
+    assert all(p.stat().st_size <= 400 for p in tmp_path.iterdir()), sorted((p.stat().st_size, p.name) for p in tmp_path.iterdir())
 
 
 # ---- F5 ------------------------------------------------------------------

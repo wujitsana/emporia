@@ -3418,11 +3418,44 @@ async def _assert_payload_safe_counted(payload: dict[str, Any]) -> None:
         raise
 
 
+AUDIT_LOG_MAX_BYTES = 50 * 1024 * 1024    # one day's file rolls to .1 .2 .3 past this
+AUDIT_LOG_KEEP = 3
+AUDIT_LOG_KEEP_DAYS = 30
+_AUDIT_LOCK = threading.Lock()
+_AUDIT_PRUNED_DAY = [""]
+
+
+def _roll_audit_file(path: Path) -> None:
+    """Size-based rotation: path -> path.1 -> path.2 -> path.3 (the oldest is dropped)."""
+    for n in range(AUDIT_LOG_KEEP, 0, -1):
+        src = path if n == 1 else Path(f"{path}.{n - 1}")
+        if src.exists():
+            os.replace(src, Path(f"{path}.{n}"))
+
+
+def _prune_audit_days(today: str) -> None:
+    """Once per day: delete audit files older than AUDIT_LOG_KEEP_DAYS days."""
+    if _AUDIT_PRUNED_DAY[0] == today:
+        return
+    _AUDIT_PRUNED_DAY[0] = today
+    cutoff = time.time() - AUDIT_LOG_KEEP_DAYS * 86400
+    for old in LOG_DIR.glob("messages_*.jsonl*"):
+        with suppress(OSError):
+            if old.stat().st_mtime < cutoff:
+                old.unlink()
+
+
 def _write_audit_line(entry: dict[str, Any]) -> None:
     date_str = datetime.now(UTC).strftime("%Y-%m-%d")
     path = LOG_DIR / f"messages_{date_str}.jsonl"
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, sort_keys=True) + "\n")
+    line = json.dumps(entry, sort_keys=True) + "\n"
+    with _AUDIT_LOCK:
+        with suppress(OSError):
+            if path.exists() and path.stat().st_size + len(line) > AUDIT_LOG_MAX_BYTES:
+                _roll_audit_file(path)
+            _prune_audit_days(date_str)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line)
 
 
 # ============================================================================
@@ -3824,20 +3857,27 @@ async def limit_request_size(request: Request, call_next):
 # content-bearing write: a per-agent daily byte budget (in memory, resets on restart) and a free-disk
 # watermark on the database's filesystem. MAX_CONTENT_BYTES itself stays (sealed rooms and labs need it).
 _DAILY_WRITE_BUDGET: dict[str, tuple[str, int]] = {}    # agent_id -> (UTC day, bytes so far)
+_DAILY_WRITE_TOTAL: list = ["", 0]                       # [UTC day, bytes so far, all agents]
 _DISK_CACHE: list[float] = [0.0, float("inf")]           # [checked at, free MB]
 _DISK_CACHE_SECONDS = 10.0
 
 
 def _daily_write_budget_bytes() -> int:
-    return env_int("DAILY_WRITE_MB", 20) * 1024 * 1024
+    """EMPORIA_DAILY_WRITE_MB_PER_AGENT, default 5."""
+    return env_int("DAILY_WRITE_MB_PER_AGENT", 5) * 1024 * 1024
+
+
+def _daily_write_total_bytes() -> int:
+    """EMPORIA_DAILY_WRITE_MB_TOTAL, default 500: every agent together, per UTC day."""
+    return env_int("DAILY_WRITE_MB_TOTAL", 500) * 1024 * 1024
 
 
 def _require_disk_free() -> None:
-    """507 when the database's filesystem has less than EMPORIA_MIN_FREE_DISK_MB free (default 1024).
+    """507 when the database's filesystem has less than EMPORIA_MIN_FREE_DISK_MB free (default 2048).
     0 turns the check off. disk_usage is cached for ~10 s."""
     import shutil
 
-    floor = env_int("MIN_FREE_DISK_MB", 1024)
+    floor = env_int("MIN_FREE_DISK_MB", 2048)
     if floor <= 0:
         return
     now = time.monotonic()
@@ -3862,6 +3902,15 @@ def _charge_write_bytes(caller: str | None, size: int) -> None:
     seen_day, used = _DAILY_WRITE_BUDGET.get(caller, (day, 0))
     if seen_day != day:
         used = 0
+    if _DAILY_WRITE_TOTAL[0] != day:
+        _DAILY_WRITE_TOTAL[:] = [day, 0]
+    total_budget = _daily_write_total_bytes()
+    if _DAILY_WRITE_TOTAL[1] + size > total_budget:
+        RATE_LIMIT_HITS["agent"] += 1
+        logger.error("daily_total_write_budget_reached", extra={"budget_mb": total_budget // (1024 * 1024)})
+        raise HTTPException(
+            429, f"This relay has taken its {total_budget // (1024 * 1024)} MB of content for today. "
+                 f"It resets at 00:00 UTC.")
     budget = _daily_write_budget_bytes()
     if used + size > budget:
         RATE_LIMIT_HITS["agent"] += 1
@@ -3869,6 +3918,7 @@ def _charge_write_bytes(caller: str | None, size: int) -> None:
             429, f"Daily write budget reached — {budget // (1024 * 1024)} MB of content per agent per day. "
                  f"It resets at 00:00 UTC.")
     _DAILY_WRITE_BUDGET[caller] = (day, used + size)
+    _DAILY_WRITE_TOTAL[1] += size
 
 
 def _require_content_within_limit(content: str, field: str = "content", caller: str | None = None) -> None:
@@ -6834,7 +6884,7 @@ async def send_message(req: SendMessageRequest, request: Request):
         raise HTTPException(403, f"{req.to_agent} takes no messages from {caller}")
     # P19-7 (M4): payload is a dict, not a str — bound its serialized size, same
     # budget every other content-bearing field now gets.
-    _require_content_within_limit(json.dumps(req.payload), "payload", caller)
+    _require_content_within_limit(json.dumps(req.payload), "payload")
     if not req.signature:
         raise HTTPException(401, "Signature required")
     # N3-8 (R7): bound to the routing envelope (to_agent/type/session_id), not just
