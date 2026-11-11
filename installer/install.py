@@ -133,6 +133,31 @@ def find_profile_dir_from_cwd() -> Path | None:
     return None
 
 
+def resolve_install_profile(explicit: str | None, env_name: str | None = None) -> Path:
+    """The profile `--install-profile` wires (SI-7): an explicit `--profile` path or name, the HERMES_PROFILE /
+    HERMES_AGENT_ID name, or the CWD's own named profile. A config.yaml found by walking up from the CWD is
+    never taken on its own: it may be the Hermes root (a checkout under it is not an agent), and wiring it
+    rewrites its gateway, memory and terminal settings. Exits with a message when nothing explicit is given."""
+    if explicit:
+        path = Path(explicit).expanduser()
+        found = path.resolve() if path.is_dir() else find_profile_dir_by_name(explicit)
+        if not found:
+            print(f"ERROR: no profile {explicit!r} (a folder, or the name of a Hermes profile).")
+            sys.exit(1)
+        return found
+    if env_name:
+        found = find_profile_dir_by_name(env_name)
+        if found:
+            return found
+    found = find_profile_dir_from_cwd()
+    if found and _is_named_profile(found):
+        return found
+    where = f" ({found} looks like the Hermes root, which is not wired implicitly)" if found else ""
+    print(f"ERROR: --install-profile needs a profile named explicitly{where}.")
+    print("Pass --profile PATH_OR_NAME, or run it inside a named profile's folder (…/profiles/NAME/…).")
+    sys.exit(1)
+
+
 # The relay's agent-id rule (emporia.relay_server._AGENT_ID_RE).
 AGENT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$")
 
@@ -1569,6 +1594,9 @@ def main() -> None:
     )
     parser.add_argument("--install-profile", action="store_true",
                         help="Patch the current profile's config.yaml (auto-detected from CWD)")
+    parser.add_argument("--profile", metavar="PATH_OR_NAME",
+                        help="With --install-profile: the profile to wire (a folder or a Hermes profile name); "
+                             "never guessed from a config.yaml above the CWD")
     parser.add_argument("--create-profile", metavar="NAME",
                         help="Create a new agent profile named NAME")
     parser.add_argument("--bootstrap-test", action="store_true",
@@ -1657,6 +1685,9 @@ def main() -> None:
         env_name = os.getenv("HERMES_PROFILE") or os.getenv("HERMES_AGENT_ID")
         if env_name:
             current_profile_dir = find_profile_dir_by_name(env_name)
+    if args.install_profile:
+        current_profile_dir = resolve_install_profile(
+            args.profile, os.getenv("HERMES_PROFILE") or os.getenv("HERMES_AGENT_ID"))
     if current_profile_dir:
         print(f"Detected profile: {current_profile_dir}")
     else:

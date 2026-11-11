@@ -136,7 +136,12 @@ def test_install_profile_needs_an_explicit_profile(tmp_path, monkeypatch):
     monkeypatch.chdir(root / "scratch" / "emporia")
     with pytest.raises(SystemExit):
         inst.resolve_install_profile(None, None)
-    assert inst.resolve_install_profile("zed", None) is not None
+    named = tmp_path / "hermes" / "profiles" / "zed"
+    named.mkdir(parents=True)
+    (named / "config.yaml").write_text("{}")
+    assert inst.resolve_install_profile(str(named), None) == named.resolve()
+    monkeypatch.chdir(named)
+    assert inst.resolve_install_profile(None, None) == named.resolve()
 
 
 # SI-10
