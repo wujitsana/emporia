@@ -1666,11 +1666,21 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
             if isinstance(v, str) and v:
                 _require_sealed(s, v, f"'{f}'")
 
-    # 1. Guardrails (regex firewall)
+    # 1. Guardrails (regex firewall). A line of table talk the firewall trips on is dropped and the move kept
+    # (a bluff that reads like an attack must not fail the move while its clock runs); the signature still
+    # binds the original line, so it is checked against `full_payload` below. Anything else tripping: 403.
+    say_dropped = False
     try:
         await rs._assert_payload_safe_counted(full_payload)
     except PermissionError as e:
-        raise HTTPException(403, str(e))
+        if not req.say:
+            raise HTTPException(403, str(e))
+        try:
+            await rs._assert_payload_safe_counted({**full_payload, "say": "", "say_tags": []})
+        except PermissionError:
+            raise HTTPException(403, str(e))
+        say_dropped = True
+        rs.logger.warning("table_talk_dropped", extra={"session_id": session_id, "agent_id": req.agent_id})
 
     # 2. Ed25519 signature verify — mandatory. The signature binds the action to
     # this exact session_id + step_number, so a captured signature can't be
@@ -1756,7 +1766,8 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     # Rooms v2: the line sent with a move is a post replying to the game, tied to the move's number
     said = (_store_chat(s, req.agent_id, req.say.strip(), kind=None if rs.session_sealed(s) else "note",
                         tags=None if rs.session_sealed(s) else (req.say_tags or None),
-                        reply_to=f"session:{session_id}", step=s["step_number"] + 1)[0] if req.say else None)
+                        reply_to=f"session:{session_id}", step=s["step_number"] + 1)[0]
+            if req.say and not say_dropped else None)
     receipt = action_receipt(session_id, s["step_number"] + 1, req.agent_id, req.action_type,
                              req.payload, block_hash)
 
@@ -1839,6 +1850,7 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         "settlement": settlement_record,
         "artifacts": result.artifacts,
         "receipt": receipt,
+        **({"say_dropped": True} if say_dropped else {}),
     }
 async def sweep_service_deadlines(limit: int = 200) -> dict[str, int]:
     """End service sessions whose deadline passed with nobody acting (P112).
