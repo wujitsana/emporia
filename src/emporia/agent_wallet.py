@@ -56,6 +56,20 @@ class AgentWalletError(RuntimeError):
     """The wallet cannot pay this, and the message says why."""
 
 
+def positive_atomic(value: Any, what: str = "amount") -> int:
+    """`value` as a whole number of atomic units greater than zero, or AgentWalletError. A zero or negative
+    amount would add nothing (or less than nothing) to the spend ledgers, and a fraction is no amount."""
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        raise AgentWalletError(f"not paid: the {what} is not a whole number of atomic units")
+    text = str(value).strip()
+    if not text.isascii() or not text.isdigit():
+        raise AgentWalletError(f"not paid: the {what} {text[:24]!r} is not a positive whole number")
+    n = int(text)
+    if n <= 0:
+        raise AgentWalletError(f"not paid: the {what} must be more than zero")
+    return n
+
+
 # P203: where the rules and keys come from. In the agent's own process (testnet,
 # the default) they are its environment and its key directory. In the signer
 # (emporia.signer) each request runs in a Scope: that agent's policy and keys as
@@ -572,6 +586,22 @@ def terms_digest(terms: dict) -> str:
     return hashlib.sha256(json.dumps(terms, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]
 
 
+def plain_text(text: Any, limit: int = 400) -> str:
+    """Printable ASCII only, no control or ANSI characters, at most `limit` characters: what a person may be
+    shown of a string an agent or a relay supplied (S-7)."""
+    out = "".join(c if 32 <= ord(c) < 127 else "?" for c in str(text))
+    return out if len(out) <= limit else out[:limit - 3] + "..."
+
+
+#: The terms of the payment being put to the approver, as this wallet computed them (S-7): the amount, rail,
+#: network and payee are shown from here, not from the free text an agent or relay could shape.
+_APPROVAL_TERMS: contextvars.ContextVar[dict | None] = contextvars.ContextVar("emporia_approval_terms", default=None)
+
+
+def approval_terms() -> dict:
+    return dict(_APPROVAL_TERMS.get() or {})
+
+
 def require_approval(agent_id: str, amount_atomic: int, what: str, terms: dict | None = None) -> None:
     """Ask the operator before a payment above EMPORIA_PAYMENT_APPROVAL_CENTS.
     Runs after the caps, so nothing above a cap is ever put to them."""
@@ -579,11 +609,19 @@ def require_approval(agent_id: str, amount_atomic: int, what: str, terms: dict |
     if limit is None or amount_atomic <= limit * _USDC_ATOMIC_PER_CENT:
         return
     bound = f" Terms {terms_digest(terms)}." if terms else ""
-    message = (f"Emporia: {agent_id} wants to pay {_exact(amount_atomic)} {what}.{bound} "
+    message = (f"Emporia: {agent_id} wants to pay {_exact(amount_atomic)} {plain_text(what)}.{bound} "
                f"Above your ${limit / 100:.2f} approval threshold. Approve this payment?")
     s = _SCOPE.get()
     approver = s.approver if s is not None else APPROVER
-    answer = approver(message) if approver else None
+    t = terms or {}
+    token = _APPROVAL_TERMS.set({
+        "amount_atomic": int(amount_atomic), "rail": plain_text(t.get("rail", ""), 20),
+        "network": plain_text(t.get("network", ""), 60),
+        "pay_to": plain_text(t.get("pay_to") or t.get("recipient") or t.get("receiver") or "", 80)})
+    try:
+        answer = approver(message) if approver else None
+    finally:
+        _APPROVAL_TERMS.reset(token)
     if answer is None:
         raise AgentWalletError(
             f"this payment ({amount_atomic / 1e6:.2f}) needs your operator's approval (above "
@@ -616,7 +654,8 @@ def _ledger_held(agent_id: str):
             except (OSError, ValueError):
                 entries = []
             now = time.time()
-            yield path, [[t, a] for t, a in entries if now - t < _DAY_S]
+            # S-2: only positive entries count (and are kept): a negative one would lift the daily cap
+            yield path, [[t, a] for t, a in entries if now - t < _DAY_S and isinstance(a, int) and a > 0]
         finally:
             if fd is not None:
                 os.close(fd)          # closing the descriptor releases the lock
@@ -626,15 +665,16 @@ def ledger_spent(agent_id: str) -> int:
     """P275: what the spend log on this machine says was signed in 24 hours —
     the in-process total, with no signer asked (the SDK's)."""
     with _ledger_held(agent_id) as (_, entries):
-        return sum(a for _, a in entries)
+        return sum(a for _, a in entries if a > 0)
 
 
 def charge_daily(agent_id: str, amount_atomic: int, cap_atomic: int) -> None:
     """Refuse (AgentWalletError) if this payment would take the last 24 hours'
     signed total past `cap_atomic`; otherwise record it. Called just before
     signing, by the MCP wallet and (P275) the SDK."""
+    amount_atomic = positive_atomic(amount_atomic)
     with _ledger_held(agent_id) as (path, entries):
-        spent = sum(a for _, a in entries)
+        spent = sum(a for _, a in entries if a > 0)      # a poisoned (non-positive) entry counts for nothing
         if spent + amount_atomic > cap_atomic:
             raise AgentWalletError(
                 f"this payment ({amount_atomic / 1e6:.2f} USDC) would take today's signed total "
@@ -648,7 +688,8 @@ def refund_daily(agent_id: str, amount_atomic: int) -> None:
     """P275: take back the newest charge of `amount_atomic` — the payment was
     refused after it was charged, before anything was signed."""
     from emporia import autonomy
-    autonomy.refund_spend(amount_atomic)
+    if _SCOPE.get() is None:          # in the signer there is no agent turn to count (see _charge_daily)
+        autonomy.refund_spend(amount_atomic)
     with _ledger_held(agent_id) as (path, entries):
         for i in range(len(entries) - 1, -1, -1):
             if entries[i][1] == amount_atomic:
@@ -659,13 +700,37 @@ def refund_daily(agent_id: str, amount_atomic: int) -> None:
 
 def _charge_daily(agent_id: str, amount_atomic: int) -> None:
     """The MCP wallet's every payment passes here, just before signing: in a turn nobody at the keyboard
-    started it must also fit the playbook's autonomous daily allowance (none by default; unsure = unattended)."""
+    started it must also fit the playbook's autonomous daily allowance (none by default; unsure = unattended).
+
+    Money-safety S-1: that allowance is the agent's, counted in the agent's own process (here, or in
+    `_remote_gate` before a hand-off to a signer). Inside a signer (a Scope) this process's own environment
+    says nothing about whose turn it is, so the signer never applies it; it keeps its per-payment and daily
+    caps, which hold whatever the agent says."""
     from emporia import autonomy
-    if why := autonomy.gate_spend(amount_atomic):
+    amount_atomic = positive_atomic(amount_atomic)
+    gated = _SCOPE.get() is None
+    if gated and (why := autonomy.gate_spend(amount_atomic)):
         raise AgentWalletError(why)
     try:
         charge_daily(agent_id, amount_atomic, max_daily_cents() * _USDC_ATOMIC_PER_CENT)
     except AgentWalletError:
+        if gated:
+            autonomy.refund_spend(amount_atomic)
+        raise
+
+
+@contextlib.contextmanager
+def _remote_gate(amount_atomic: int):
+    """S-1: before a paying call is handed to a signer, count it against this agent's unattended-turn
+    allowance in this process, where the turn is known (a person's turn is never limited here). Given back
+    when the signer refuses or fails; the signer's own caps are the second wall."""
+    from emporia import autonomy
+    amount_atomic = positive_atomic(amount_atomic)
+    if why := autonomy.gate_spend(amount_atomic):
+        raise AgentWalletError(why)
+    try:
+        yield
+    except BaseException:
         autonomy.refund_spend(amount_atomic)
         raise
 
@@ -693,6 +758,31 @@ def _payee_label(statement: Any, family: str, address: Any) -> str:
         raise AgentWalletError(f"not paid: {e}") from None
 
 
+def _offered_amount(body: dict, network: str = "") -> int:
+    """The most an x402 body asks for (on `network` when given): what a hand-off to a signer is counted
+    against the unattended allowance as, before the signer picks the requirement it will pay."""
+    from emporia import x402_payer
+    accepts = x402_payer.payment_required_from(body).get("accepts") or []
+    amounts = [positive_atomic(e.get("amount"), "amount the relay asks for") for e in accepts
+               if isinstance(e, dict) and e.get("scheme") == "exact" and (not network or e.get("network") == network)]
+    if not amounts:
+        raise AgentWalletError("nothing offered here can be paid on that network")
+    return max(amounts)
+
+
+def _regate_actual(header: str, counted: int) -> None:
+    """The signer paid less than the most the body asked for: count what it signed, not the maximum."""
+    from emporia import autonomy
+    from emporia.payments import extract_x402_payload
+    try:
+        actual = int(((extract_x402_payload(header) or {}).get("accepted") or {}).get("amount") or 0)
+    except (TypeError, ValueError):
+        return
+    if 0 < actual < counted:
+        autonomy.refund_spend(counted)
+        autonomy.gate_spend(actual)
+
+
 def sign_exact(agent_id: str, body: dict, network: str = "", *, fee_leg: bool = False,
                creator_amount: int = 0) -> str:
     """A relay's x402 402 body in, the PAYMENT-SIGNATURE value out — after the
@@ -708,8 +798,12 @@ def sign_exact(agent_id: str, body: dict, network: str = "", *, fee_leg: bool = 
     only on the network the creator's share was, never above `PAYER_FEE_CAP_BPS` of the whole price, and
     under the same per-payment and daily caps and approval as any payment."""
     if (r := remote()) is not None:
-        return r.call("x402", {"body": body, "network": network, "fee_leg": fee_leg,
-                               "creator_amount": creator_amount})["header"]
+        hint = _offered_amount(body, network)          # S-1: the allowance is counted here, then the signer's caps
+        with _remote_gate(hint):
+            header = r.call("x402", {"body": body, "network": network, "fee_leg": fee_leg,
+                                     "creator_amount": creator_amount})["header"]
+        _regate_actual(header, hint)
+        return header
     from emporia import x402_payer
 
     nets = allowed_networks()
@@ -728,7 +822,7 @@ def sign_exact(agent_id: str, body: dict, network: str = "", *, fee_leg: bool = 
             refusals.append(str(e))
     if requirement is None:
         raise x402_payer.X402PayerError("nothing offered here can be paid: " + "; ".join(refusals))
-    amount = int(requirement.get("amount") or 0)
+    amount = positive_atomic(requirement.get("amount"), "amount the relay asks for")
     cap = max_payment_cents() * _USDC_ATOMIC_PER_CENT
     if amount > cap:
         raise AgentWalletError(
@@ -790,19 +884,42 @@ def sign_entry(agent_id: str, body: dict, network: str = "") -> dict[str, str]:
     return headers
 
 
+def _check_tempo_offer(network: str, request: dict) -> None:
+    """S-3: the chain a Tempo transfer is signed for and the token it moves are the allowed network's,
+    never the offer's own say: an offer labelled with a testnet is not a mainnet transfer."""
+    from emporia.networks import NETWORKS
+    known = NETWORKS.get(network)
+    try:
+        chain_id = int(network.split(":", 1)[1])
+        offered_chain = int((request.get("methodDetails") or {}).get("chainId"))
+    except (IndexError, TypeError, ValueError):
+        raise AgentWalletError("not paid: the Tempo offer names no readable chain id") from None
+    if offered_chain != chain_id:
+        raise AgentWalletError(f"not paid: the offer is for network {network} but asks to be signed for chain "
+                               f"{offered_chain}")
+    tokens = {known.usdc.lower()} if known and known.usdc else set()
+    if _getenv("EMPORIA_TEMPO_NETWORK").strip() == network and (own := _getenv("EMPORIA_TEMPO_TOKEN").strip()):
+        tokens.add(own.lower())
+    if str(request.get("currency") or "").lower() not in tokens:
+        raise AgentWalletError(f"not paid: the offer asks for token {str(request.get('currency'))[:44]!r}, "
+                               f"which is not the stablecoin this client knows for {network}")
+
+
 def pay_tempo(agent_id: str, offer: dict) -> str:
     """P156: pay a relay's Tempo offer from this agent's EVM wallet — a TIP-20
     transfer straight to the payee — after the same network allowlist,
     per-payment cap and daily cap as x402. Returns the PAYMENT-TEMPO value."""
     if (r := remote()) is not None:
-        return r.call("tempo", {"offer": offer})["header"]
+        with _remote_gate(positive_atomic((offer.get("request") or {}).get("amount"), "amount the relay asks for")):
+            return r.call("tempo", {"offer": offer})["header"]
     from emporia import tempo
 
     network = offer.get("network") or ""
     if network not in allowed_networks():
         raise AgentWalletError(f"{network} is not in EMPORIA_X402_PAY_NETWORKS, so this agent "
                                f"does not pay there")
-    amount = int(offer["request"]["amount"])
+    amount = positive_atomic(offer["request"].get("amount"), "amount the relay asks for")
+    _check_tempo_offer(network, offer["request"])
     cap = max_payment_cents() * _USDC_ATOMIC_PER_CENT
     if amount > cap:
         raise AgentWalletError(
@@ -818,16 +935,29 @@ def pay_tempo(agent_id: str, offer: dict) -> str:
                       "chain_id": (request.get("methodDetails") or {}).get("chainId")})
     key = evm_signer(agent_id)
     _charge_daily(agent_id, amount)
-    return tempo.pay(offer, key)
+    try:
+        return tempo.pay(offer, key)
+    except tempo.TempoNotSent:
+        refund_daily(agent_id, amount)      # nothing was broadcast, so nothing can be collected: not spent
+        raise
+
+
+def _escrow_contracts(network: str) -> dict:
+    """S-4: the escrow and collector contracts this agent's person set for `network` (and no others)."""
+    if _getenv("EMPORIA_ESCROW_NETWORK").strip() != network:
+        return {}
+    return {"escrow": _getenv("EMPORIA_ESCROW_CONTRACT"), "collector": _getenv("EMPORIA_ESCROW_COLLECTOR")}
 
 
 def sign_escrow(agent_id: str, offer: dict, *, expected_amount: int) -> str:
     """A relay's escrow offer in, the PAYMENT-ESCROW value out — after the
     network allowlist, the per-payment cap, and escrow.sign_offer's checks."""
     if (r := remote()) is not None:
-        return r.call("escrow", {"offer": offer, "expected_amount": expected_amount})["header"]
+        with _remote_gate(positive_atomic(expected_amount, "hold amount")):
+            return r.call("escrow", {"offer": offer, "expected_amount": expected_amount})["header"]
     from emporia import escrow
 
+    expected_amount = positive_atomic(expected_amount, "hold amount")
     if expected_amount > max_payment_cents() * _USDC_ATOMIC_PER_CENT:
         raise AgentWalletError(
             f"the hold is {expected_amount / 1e6:.2f} USDC, above this agent's per-payment cap")
@@ -850,7 +980,8 @@ def sign_escrow(agent_id: str, offer: dict, *, expected_amount: int) -> str:
                       **{k: str(info.get(k) or "") for k in ("max_amount", "min_fee_bps", "max_fee_bps")}})
     _charge_daily(agent_id, expected_amount)
     return _or_refund(agent_id, expected_amount, lambda: escrow.sign_offer(
-        offer, key, expected_amount=expected_amount, allowed_networks=networks))
+        offer, key, expected_amount=expected_amount, allowed_networks=networks,
+        contracts=_escrow_contracts(offer.get("network") or "")))
 
 
 def reclaim_escrow(agent_id: str, hold: dict) -> dict:
@@ -860,8 +991,17 @@ def reclaim_escrow(agent_id: str, hold: dict) -> dict:
         return r.call("reclaim", {"hold": hold})
     import asyncio
 
-    from emporia import escrow, escrow_chain
+    from emporia import escrow, escrow_chain, networks
     offer = hold["offer"]
+    network = str(offer.get("network") or "")
+    # S-4: a reclaim sends a transaction to a contract from the wallet: only on a test network this agent
+    # may pay on, to the contract its person named.
+    if network not in allowed_networks() or not networks.is_testnet(network):
+        raise AgentWalletError(f"not reclaimed: {network or 'that network'} is not a test network this agent pays on")
+    pinned = _escrow_contracts(network).get("escrow", "").strip().lower()
+    if not pinned or str(offer.get("escrow") or "").strip().lower() != pinned:
+        raise AgentWalletError("not reclaimed: the hold's escrow contract is not the one this agent was told to "
+                               "trust (EMPORIA_ESCROW_NETWORK, EMPORIA_ESCROW_CONTRACT)")
     info = escrow.PaymentInfo.from_json({**offer["payment_info"], "payer": hold["payer"]})
     cfg = escrow_chain.payer_config(offer)
     if not cfg.rpc_url:

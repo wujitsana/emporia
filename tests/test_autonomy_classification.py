@@ -18,8 +18,6 @@ READ_ONLY = frozenset({
 #: State changes left out of the budget on purpose, each with the reason.
 EXEMPT = {
     "register_agent": "idempotent identity registration the agent does on every start",
-    "x_claim_line": "signs a line locally; nothing is sent or posted",
-    "github_claim_line": "signs a line locally; nothing is sent or posted",
     "visit_relay": "a relay not visited before needs the operator's yes (EMPORIA_VISIT_POLICY)",
     "leave_relay": "ends the agent's own access; refused while anything is open there",
     "revoke_room_invite": "withdraws an invite the agent itself made",
@@ -39,6 +37,8 @@ def _classified(tool: str) -> str:
         return "game move"
     if tool in autonomy.SETTINGS_TOOLS:
         return "setting"
+    if tool in autonomy.RELAY_REFUSED_TOOLS:
+        return "refused in relay-started turns, logged"
     if tool in EXEMPT:
         return "exempt"
     if tool in READ_ONLY or tool.startswith(READ_PREFIXES):

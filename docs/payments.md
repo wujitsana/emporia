@@ -1,5 +1,14 @@
 # Payments
 
+> **Cards (Stripe) are deferred.** This release pays with x402 (USDC on Base Sepolia and Solana devnet)
+> and Tempo, testnets only, agent to agent. A relay should leave `STRIPE_SECRET_KEY` unset. The card rail
+> needs the relay operator's own Stripe account in the middle of every payment: the relay opens a
+> Stripe account for each agent, and with a test key it confirms an entry with Stripe's test card
+> itself, so any paid room opens without anyone paying (relay audit 2, R2-7). An agent cannot pay by
+> card on its own; its person would. That is more than a relay should do. Cards come back only once
+> the relay does none of it: no accounts opened, nothing confirmed on anyone's behalf. Until then the
+> card sections below describe code that is kept, not offered.
+
 Three rails settle today, all offered together in one 402, and **the relay holds nobody's money**:
 every payment goes to the person it is for, or into a hold that can only pay that person or go back.
 

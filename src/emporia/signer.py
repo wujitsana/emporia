@@ -40,6 +40,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 
 from emporia import agent_wallet, identity
 
@@ -58,6 +59,8 @@ POLICY_NAMES = ("EMPORIA_X402_PAY_NETWORKS", "EMPORIA_X402_MAX_PAYMENT_CENTS", "
                 "EMPORIA_SIGNER_OPEN_PER_MIN")
 SIGNING_POLICY = POLICY_NAMES[5:10]
 _LOCK = threading.Lock()
+_AUDIT_LOCK = threading.Lock()
+AUDIT_MAX_BYTES = 5 * 1024 * 1024
 
 
 def signer_dir() -> Path:
@@ -179,9 +182,15 @@ def add_settings(values: dict) -> list[str]:
 def audit(entry: dict) -> None:
     """One line per request, appended; only the signer writes it."""
     path = signer_dir() / "audit.jsonl"
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-    with os.fdopen(fd, "a") as f:
-        f.write(json.dumps({"at": time.time(), **entry}) + "\n")
+    with _AUDIT_LOCK:
+        try:      # S-8: a bounded file: past AUDIT_MAX_BYTES the old log is kept once (audit.jsonl.1) and a new one starts
+            if path.stat().st_size > AUDIT_MAX_BYTES:
+                os.replace(path, path.with_name("audit.jsonl.1"))
+        except OSError:
+            pass
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(fd, "a") as f:
+            f.write(json.dumps({"at": time.time(), **entry}) + "\n")
 
 
 # ─── approvals ────────────────────────────────────────────────────────────────
@@ -220,7 +229,7 @@ def _decide(agent_id: str, message: str) -> bool:
         pending = next((i for i in same if i["status"] == "pending"), None)
         if pending is None:
             pending = {"id": "int_" + secrets.token_hex(6), "agent": agent_id, "what": message, "at": now,
-                       "status": "pending"}
+                       "status": "pending", "terms": agent_wallet.approval_terms()}
             items.append(pending)
             _write_json(_intents_path(), items)
         raise ApprovalPending(pending["id"])
@@ -942,31 +951,81 @@ def _run(request: Request, fn):
         return out
 
 
+# S-6: a fee leg is bound to the creator payment this signer itself signed for the agent a moment before, never to
+# a creator_amount the caller says: a compromised agent cannot make any fee look small by naming a huge price.
+CREATOR_LEG_TTL_S = 120
+_CREATOR_LEGS: dict[str, list[tuple[float, int, str]]] = {}
+
+
+def _note_creator_leg(agent_id: str, header: str) -> None:
+    from emporia.payments import extract_x402_payload
+    accepted = (extract_x402_payload(header) or {}).get("accepted") or {}
+    try:
+        amount = int(accepted.get("amount") or 0)
+    except (TypeError, ValueError):
+        return
+    if amount > 0:
+        with _LOCK:
+            legs = [x for x in _CREATOR_LEGS.get(agent_id, []) if time.time() - x[0] < CREATOR_LEG_TTL_S]
+            legs.append((time.time(), amount, str(accepted.get("network") or "")))
+            _CREATOR_LEGS[agent_id] = legs[-8:]
+
+
+def _creator_leg_for_fee(agent_id: str, network: str) -> tuple[int, tuple]:
+    with _LOCK:
+        for leg in reversed(_CREATOR_LEGS.get(agent_id, [])):
+            if time.time() - leg[0] < CREATOR_LEG_TTL_S and (not network or leg[2] == network):
+                return leg[1], leg
+    raise agent_wallet.AgentWalletError(
+        "not paid: a relay fee is paid only together with the creator's share, which this signer signs first; "
+        "none was signed for this agent in the last two minutes")
+
+
+def _x402(body: dict):
+    fee_leg = bool(body.get("fee_leg"))
+
+    def go(aid: str) -> str:
+        creator, used = 0, None
+        if fee_leg:
+            creator, used = _creator_leg_for_fee(aid, body.get("network", ""))
+        header = agent_wallet.sign_exact(aid, body["body"], body.get("network", ""), fee_leg=fee_leg,
+                                         creator_amount=creator)
+        if fee_leg:
+            with _LOCK:
+                if used in _CREATOR_LEGS.get(aid, []):
+                    _CREATOR_LEGS[aid].remove(used)
+        else:
+            _note_creator_leg(aid, header)
+        return header
+    return go
+
+
+# The paying handlers do blocking work (a Tempo transfer waits on the chain for up to a minute; a reclaim runs its
+# own event loop), so they run in a worker thread and never hold up other agents' signing on the loop.
 @app.post("/v1/x402")
 async def sign_x402(request: Request) -> dict:
     body = await request.json()
-    return {"header": _run(request, lambda aid: agent_wallet.sign_exact(
-        aid, body["body"], body.get("network", ""), fee_leg=bool(body.get("fee_leg")),
-        creator_amount=int(body.get("creator_amount") or 0)))}
+    return {"header": await run_in_threadpool(_run, request, _x402(body))}
 
 
 @app.post("/v1/tempo")
 async def pay_tempo(request: Request) -> dict:
     body = await request.json()
-    return {"header": _run(request, lambda aid: agent_wallet.pay_tempo(aid, body["offer"]))}
+    return {"header": await run_in_threadpool(
+        _run, request, lambda aid: agent_wallet.pay_tempo(aid, body["offer"]))}
 
 
 @app.post("/v1/escrow")
 async def sign_escrow(request: Request) -> dict:
     body = await request.json()
-    return {"header": _run(request, lambda aid: agent_wallet.sign_escrow(
+    return {"header": await run_in_threadpool(_run, request, lambda aid: agent_wallet.sign_escrow(
         aid, body["offer"], expected_amount=int(body["expected_amount"])))}
 
 
 @app.post("/v1/reclaim")
 async def reclaim(request: Request) -> dict:
     body = await request.json()
-    return _run(request, lambda aid: agent_wallet.reclaim_escrow(aid, body["hold"]))
+    return await run_in_threadpool(_run, request, lambda aid: agent_wallet.reclaim_escrow(aid, body["hold"]))
 
 
 def _signing_call(request: Request, kind: str, fn, key: str = "signature"):
@@ -980,7 +1039,7 @@ def _signing_call(request: Request, kind: str, fn, key: str = "signature"):
         raise HTTPException(429, {"error": str(e), "retry_after": e.retry_after}) from None
     except signing.Refused as e:
         audit({"agent": aid, "op": "sign", "kind": kind, "result": "refused", "why": str(e)[:300]})
-        _alert(aid, "refused", f"{kind}: {e}")
+        _alert(aid, "refused", f"{kind if kind in signing.KINDS else 'unknown kind'}: {e}")
         raise HTTPException(403, {"error": str(e)}) from None
     except Exception as e:   # wrong arguments for the kind: say so, never a traceback
         audit({"agent": aid, "op": "sign", "kind": kind, "result": "error", "why": f"{type(e).__name__}: {e}"[:300]})

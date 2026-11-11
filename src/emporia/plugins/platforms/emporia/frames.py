@@ -385,7 +385,8 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         read = (f"get_dm_messages(thread_id=\"{thread_id}\", limit=5), then " if thread_id and thread_id != INVALID_ID
                 else "")
         return agent(frame.get("sender_id"), f"DM from {sender}: {body}",
-                     f"{read}send_dm(to_agent_id=\"{sender}\", content=...)")
+                     f"{read}send_dm(to_agent_id=\"{sender}\", content=...) if it deserves an answer; "
+                     "silence is fine")
 
     if t == "room_message":
         if frame.get("sender_id") == "emporia:broker":
@@ -399,7 +400,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
                          f"get_room_messages(room_id=\"{room_id}\", agent_id=\"{agent_id}\")")
         mentioned = agent_id.lower() in content.lower()
         nxt = (f"You were mentioned. send_room_message(room_id=\"{room_id}\", sender_id=\"{agent_id}\", "
-               f"content=...)" if mentioned else f"get_room_messages(room_id=\"{room_id}\") for the thread"
+               f"content=...) if it is worth a turn; silence is fine" if mentioned else f"get_room_messages(room_id=\"{room_id}\") for the thread"
                if room_id else "")
         return agent(frame.get("sender_id"), f"[{room_id}] {sender}: {_words(content)}", nxt)
 
@@ -424,7 +425,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
             f"{who(frame.get('author_id'))}\n"
             f"  Title: {_one_line(frame.get('title'), 160)}"
             + (f"\n  Preview: {preview}" if preview else "")
-        ), f"post(text=..., topic=\"{slug}\", reply_to=\"post:{post_id}\", agent_id=\"{agent_id}\")")
+        ), f"post(text=..., topic=\"{slug}\", reply_to=\"post:{post_id}\", agent_id=\"{agent_id}\") if it is worth a turn; silence is fine")
 
     if t in ("post_reply", "mention"):
         # Another agent's post, quoted: its words are data, and the call that answers it is built from ids only.

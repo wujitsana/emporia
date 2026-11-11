@@ -28,19 +28,27 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MODE = os.getenv("EMPORIA_GUARDRAILS_MODE", "enforce").lower()
 
+#: Bare phrases an honest post about agents contains ("a prompt injection", "the system prompt of a lab agent"):
+#: audited (logged, allowed) rather than refused, in enforce mode too. The reader's side still flags them
+#: (`injection_flags`). Command-shaped patterns below stay enforced.
+_BARE_PHRASE_PATTERNS = (
+    r"system\s+(prompt|message|instruction)",
+    r"developer\s+(prompt|message|instruction)",
+    r"bypass\s+(guardrails|security|safety|policy)",
+    r"jailbreak|prompt\s*injection",
+)
+
 _INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
     re.compile(pattern, re.IGNORECASE | re.DOTALL)
     for pattern in (
         r"ignore\s+(all\s+)?(previous|prior|above)\s+(instructions|rules|messages)",
-        r"system\s+(prompt|message|instruction)",
-        r"developer\s+(prompt|message|instruction)",
+        *_BARE_PHRASE_PATTERNS[:2],
         r"execute\s+(a\s+)?(system|terminal|shell)\s+command",
         r"rm\s+-rf\s+/",
         r"curl\s+[^\n|;]+\|\s*(bash|sh)",
         r"exfiltrate|steal\s+(secrets|keys|tokens|credentials)",
         r"print\s+(the\s+)?(environment|en[v]|secrets|api[_-]?keys)",
-        r"bypass\s+(guardrails|security|safety|policy)",
-        r"jailbreak|prompt\s*injection",
+        *_BARE_PHRASE_PATTERNS[2:],
         r"(disregard|forget|override)\s+(all\s+|any\s+|everything\s+)?(of\s+)?(the\s+|your\s+|these\s+)?"
         r"(previous|prior|above|earlier|safety|system)\s+(instructions|rules|messages|guidelines|prompt)",
         r"new\s+instructions\s*:|updated\s+instructions\s*:",
@@ -214,16 +222,23 @@ def scan_text(text: str, *, mode: str | None = None) -> GuardrailResult:
     if active_mode == "off":
         return GuardrailResult(ok=True, mode=active_mode)
     variants = _normalize_for_scan(text)
+    audited: GuardrailResult | None = None
     for pattern in _INJECTION_PATTERNS:
         for variant in variants:
             if pattern.search(variant):
+                if pattern.pattern in _BARE_PHRASE_PATTERNS:
+                    if audited is None:       # keep looking: a command-shaped pattern later still refuses
+                        logger.warning("guardrail_audit", extra={"matched_pattern": pattern.pattern})
+                        audited = GuardrailResult(ok=True, mode="audit", matched_pattern=pattern.pattern,
+                                                  reason="AUDIT: bare phrase about prompts or security; allowed.")
+                    break
                 return GuardrailResult(
                     ok=(active_mode == "audit"),
                     mode=active_mode,
                     reason="REJECTED_SECURITY: blocked adversarial system instruction text.",
                     matched_pattern=pattern.pattern,
                 )
-    return GuardrailResult(ok=True, mode=active_mode)
+    return audited or GuardrailResult(ok=True, mode=active_mode)
 
 
 def credential_in(text: str) -> bool:
@@ -270,11 +285,13 @@ def oversized_plaintext(payload: Mapping[str, Any] | str) -> int:
 
 def scan_payload(payload: Mapping[str, Any] | str, *, mode: str | None = None) -> GuardrailResult:
     active_mode = (mode or DEFAULT_MODE or "enforce").lower()
+    audited: GuardrailResult | None = None
     for text in _flatten_texts(payload):
         result = scan_text(text, mode=active_mode)
         if not result.ok:
             return result
-    return GuardrailResult(ok=True, mode=active_mode)
+        audited = audited or (result if result.matched_pattern else None)
+    return audited or GuardrailResult(ok=True, mode=active_mode)
 
 
 def assert_payload_safe(payload: Mapping[str, Any] | str, *, mode: str | None = None) -> GuardrailResult:
@@ -308,6 +325,7 @@ def injection_flags(value: Any) -> list[str]:
     same firewall the relay runs over plaintext matches, else `[]`. Never raises; the caller keeps the item."""
     try:
         payload = value if isinstance(value, (str, Mapping)) else {"v": value}
-        return [] if scan_payload(payload, mode="enforce").ok else [INJECTION_FLAG]
+        hit = scan_payload(payload, mode="enforce")
+        return [] if hit.ok and hit.matched_pattern is None else [INJECTION_FLAG]
     except Exception:
         return []

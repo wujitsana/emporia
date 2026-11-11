@@ -435,3 +435,20 @@ def test_the_console_makes_the_text_for_the_post_on_x_button_and_sends_nothing(c
     assert c.get("/x-claim/xc_a?handle=ok&style=nope").status_code == 400
     assert c.get("/x-claim/nobody_here?handle=ok").status_code == 404
     assert c.post("/x-claim/xc_a?handle=ok").status_code in (404, 405)
+
+
+def test_a_relays_answer_is_served_as_data_never_as_a_page(client):
+    """Client audit C1: a hostile relay chose the Content-Type served on the console's origin, and
+    'self' in the CSP covered /relay/…, so HTML with a script from the relay ran as the console."""
+    from emporia.console.relay import response_headers
+    html = httpx.Response(200, headers={"content-type": "text/html", "location": "https://x.example",
+                                        "set-cookie": "a=b", "content-security-policy": "script-src *"},
+                          content=b"<script>alert(1)</script>")
+    h = {k.lower(): v for k, v in response_headers(html).items()}
+    assert h["content-type"].startswith("text/plain") and h["x-content-type-options"] == "nosniff"
+    assert "location" not in h and "set-cookie" not in h and h["content-security-policy"].startswith("sandbox")
+    ok = httpx.Response(200, headers={"content-type": "application/json", "x-next-since": "t"}, content=b"{}")
+    assert {k.lower(): v for k, v in response_headers(ok).items()}["content-type"] == "application/json"
+    _enc_pair(client, "c1_a", "c1_b")
+    r = TestClient(build_app(_console())).get("/relay/c1_a/agents")
+    assert r.status_code == 200 and r.headers["content-security-policy"].startswith("sandbox")

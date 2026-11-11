@@ -21,6 +21,8 @@ agent that never pays on Solana does not need it.
 from __future__ import annotations
 
 import base64
+import os
+import re
 import secrets
 import struct
 from typing import Any
@@ -70,10 +72,8 @@ def associated_token_account(owner: str, mint: str, token_program: str = TOKEN_P
 
 
 def _recent_blockhash(network: str, extra: dict[str, Any], rpc_url: str | None) -> str:
-    hinted = extra.get("recentBlockhash")
-    if isinstance(hinted, str) and hinted:
-        return hinted
-    import os
+    # S-5: a blockhash the relay hands over is not used: a Solana transaction names no cluster, so a hint
+    # from another cluster would make this payment valid there. It comes from this network's own RPC.
     url = rpc_url or os.getenv("EMPORIA_X402_SOLANA_RPC_URL", "") or PUBLIC_RPC.get(network, "")
     if not url:
         raise SvmPayError(f"no RPC for {network}: set EMPORIA_X402_SOLANA_RPC_URL")
@@ -104,10 +104,31 @@ def build_payment_payload(requirement: dict[str, Any], seed: bytes, *,
         raise SvmPayError("the requirement names no feePayer (extra.feePayer)")
     if not mint or not pay_to or amount is None:
         raise SvmPayError("the requirement is missing asset/payTo/amount")
+    network = requirement.get("network") or ""
+    try:
+        if isinstance(amount, bool) or int(str(amount).strip()) <= 0 or not str(amount).strip().isdigit():
+            raise ValueError
+    except ValueError:
+        raise SvmPayError(f"refusing to sign: the amount {str(amount)[:24]!r} is not a positive whole number") from None
+    # S-5: only the network's own USDC mint is signed for (the person's EMPORIA_X402_ASSET_<NETWORK> may name
+    # another), with 6 decimals, so the daily caps count dollars and the cluster is the one named.
+    from emporia import networks as _networks
+    known = _networks.NETWORKS.get(network)
+    allowed = {known.usdc} if known and known.usdc else set()
+    if own := os.getenv("EMPORIA_X402_ASSET_" + re.sub(r"[:-]", "_", network.upper()), "").strip():
+        allowed.add(own)
+    if str(mint) not in allowed:
+        raise SvmPayError(f"refusing to sign: the relay asked for mint {str(mint)[:48]!r} on {network}, which is "
+                          f"not the USDC mint this client knows for that network")
     token_program = extra.get("tokenProgram") or TOKEN_PROGRAM
     if token_program not in (TOKEN_PROGRAM, TOKEN_2022_PROGRAM):
         raise SvmPayError(f"unexpected token program {token_program}")
-    decimals = int(extra.get("decimals", 6))
+    try:
+        decimals = int(extra.get("decimals", 6))
+    except (TypeError, ValueError):
+        raise SvmPayError("extra.decimals is not a number") from None
+    if decimals != 6:
+        raise SvmPayError(f"refusing to sign: the token has {decimals} decimals, this client pays 6-decimal USDC only")
     memo = extra.get("memo") or secrets.token_hex(16)
     if len(memo.encode()) > 256:
         raise SvmPayError("extra.memo is longer than the 256 bytes the spec allows")

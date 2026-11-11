@@ -87,18 +87,31 @@ def _fetch_games_today(agent_id: str, other: str) -> int | None:
     return int(r.json()["games_today"]) if r.status_code == 200 else None
 
 
+def _fetch_open_games(agent_id: str) -> int | None:
+    """One relay read: this agent's games that are waiting or active (what EMPORIA_MAX_OPEN_GAMES caps)."""
+    from emporia import mcp_server as m
+    r = m._bearer_request("get", f"{m._base()}/agents/{m._seg(agent_id)}/sessions", agent_id=agent_id,
+                          params={"limit": 200}, timeout=5)
+    if r.status_code != 200:
+        return None
+    return sum(1 for x in r.json().get("sessions", []) if x.get("status") in ("waiting", "active")
+               and x.get("module_type") not in m._NOT_GAMES)
+
+
 class LimitsLine:
     """The one `limits:` line the bridge appends to a notice that can start a turn, from this agent's own numbers:
     games against that operator today (the invite carries the count; otherwise one relay read, cached), the spend
-    left under its wallet's daily cap (and its approval threshold), writes per turn, and messages in this chat this
+    left of its unattended allowance (and its wallet's approval threshold), open games against the cap (else writes per turn), and messages in this chat this
     hour (counted here, as the adapter counts them). A part that is not known or does not apply is left out, and
     a read that fails is not retried for TTL seconds. Nothing here is another agent's number."""
 
     TTL = 60.0
 
-    def __init__(self, agent_id: str, fetch=None, clock=time.time, mono=time.monotonic) -> None:
+    def __init__(self, agent_id: str, fetch=None, clock=time.time, mono=time.monotonic, open_fetch=None) -> None:
         self.agent_id = agent_id
         self._fetch = fetch or _fetch_games_today
+        # a caller that supplies its own games read (a test) makes no other relay read unless it also supplies this
+        self._open_fetch = open_fetch if open_fetch is not None else (None if fetch else _fetch_open_games)
         self._clock, self._mono = clock, mono
         self._cache: dict[str, tuple[float, Any]] = {}
         self._seen: dict[str, list[float]] = {}
@@ -137,14 +150,28 @@ class LimitsLine:
         s = self._cached("spend", read)
         if not isinstance(s, dict) or s.get("left_today_cents") is None:
             return ""
-        out = f"spend left ${s['left_today_cents'] / 100:.2f} today"
+        # every notice with this line starts a turn nobody at the keyboard began: what such a turn may pay is the
+        # person's unattended allowance (when there is one), not the wallet's daily cap
+        if not s.get("unattended_allowance_cents"):
+            return "no unattended spending"
+        left = min(int(s["left_today_cents"]), int(s.get("unattended_left_today_cents") or 0))
+        out = f"unattended spend left ${left / 100:.2f} today"
         if s.get("approval_above_cents") is not None:
             out += f" (approval over ${s['approval_above_cents'] / 100:.2f})"
         return out
 
+    def _open_games(self) -> str:
+        cap = _int_env("EMPORIA_MAX_OPEN_GAMES", 3)
+        if cap <= 0 or self._open_fetch is None:
+            return ""
+        n = self._cached("open_games", lambda: self._open_fetch(self.agent_id))
+        return f"open games {n}/{cap}" if isinstance(n, int) else ""
+
     def _chat(self, topic: str, sender: str) -> str:
         from emporia import wake
         limit = wake.thread_limit()
+        if limit > 0 and topic.startswith("post:"):
+            limit = min(limit, wake.POST_THREAD_LIMIT)      # a reply thread wakes the agent at most this often
         if limit <= 0 or sender == "emporia:relay" or not topic.startswith(_CONVERSATIONS):
             return ""
         now = self._mono()
@@ -163,7 +190,7 @@ class LimitsLine:
             parts.append(self._games(frame))
         parts.append(self._spend())
         if sender != "emporia:relay" and not sender.startswith("emporia:relay@"):
-            parts.append(f"writes {autonomy.MAX_WRITES_PER_TURN} per turn")
+            parts.append(self._open_games() or f"writes {autonomy.MAX_WRITES_PER_TURN} per turn")
         parts.append(self._chat(topic, sender))
         text = " · ".join(p for p in parts if p)
         return f"limits: {text}"[:160] if text else ""

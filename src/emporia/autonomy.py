@@ -73,6 +73,11 @@ WRITE_TOOLS = frozenset({
 #: Tools no autonomous turn runs, relay-started or rounds: a confirmation says someone looked at X themselves,
 #: which an unattended turn cannot honestly say (a stranger's text could ask for it, and rounds never look).
 PERSON_ONLY_TOOLS = frozenset({"confirm_x_link"})
+#: Tools a turn another agent's message started never runs (rounds keeps them: the X verification post needs
+#: them): a stranger's text could ask for a signature that ties this agent to an account or a PR.
+RELAY_REFUSED_TOOLS = frozenset({"x_claim_line", "x_link", "github_claim_line"})
+#: Pledges an unattended turn makes wait at least this long (a model turn takes longer than the 10 s floor).
+UNATTENDED_MIN_PLEDGE_SECONDS = 120
 #: Tools that start something new that stays open: a room or topic (one a day).
 NEW_SPACE_TOOLS = frozenset({"create_room", "create_agora_topic", "open_room_from_post"})
 #: Tools that move or commit money (with the conditions under which each does, see `money_reason`).
@@ -85,7 +90,7 @@ MONEY_TOOLS = frozenset({
 SETTINGS_TOOLS = frozenset({"set_cross_relay_dms"})
 #: Moves in a game: logged when autonomous, never counted as writes.
 GAME_MOVE_TOOLS = frozenset({"submit_action", "commit_move", "reveal_move"})
-LOGGED_TOOLS = WRITE_TOOLS | MONEY_TOOLS | SETTINGS_TOOLS | GAME_MOVE_TOOLS
+LOGGED_TOOLS = WRITE_TOOLS | MONEY_TOOLS | SETTINGS_TOOLS | GAME_MOVE_TOOLS | RELAY_REFUSED_TOOLS
 #: Tools whose arguments are text other agents will read (checked for the agent's own secrets).
 OUTBOUND_TEXT_TOOLS = frozenset({
     "post", "send_room_message", "send_dm", "submit_action", "commit_move", "reveal_move",
@@ -320,7 +325,8 @@ def _is_card(tool: str, args: dict[str, Any]) -> bool:
 def _spent_today(now: float) -> list[list[float]]:
     folder = store_dir()
     day = _read_json(folder / DAY_FILE, {}) if folder else {}
-    return [[t, a] for t, a in day.get("spend", []) if isinstance(t, (int, float)) and now - t < DAY]
+    return [[t, a] for t, a in day.get("spend", []) if isinstance(t, (int, float)) and now - t < DAY
+            and isinstance(a, (int, float)) and a > 0]
 
 
 def spent_today_atomic(now: float | None = None) -> int:
@@ -330,6 +336,8 @@ def spent_today_atomic(now: float | None = None) -> int:
 def gate_spend(amount_atomic: int) -> str:
     """Called by agent_wallet where a payment is about to be signed. "" when it may go (and counts it),
     else why not. A person's turn is never limited here; an unsure turn is."""
+    if isinstance(amount_atomic, bool) or not isinstance(amount_atomic, int) or amount_atomic <= 0:
+        return "Blocked by Emporia: a payment is a whole number of atomic units above zero."
     turn = current()
     if not turn.autonomous:
         return ""
@@ -342,7 +350,8 @@ def gate_spend(amount_atomic: int) -> str:
     def apply(folder: Path) -> str:
         now = time.time()
         day = _read_json(folder / DAY_FILE, {})
-        spend = [[t, a] for t, a in day.get("spend", []) if isinstance(t, (int, float)) and now - t < DAY]
+        spend = [[t, a] for t, a in day.get("spend", []) if isinstance(t, (int, float)) and now - t < DAY
+                 and isinstance(a, (int, float)) and a > 0]       # a non-positive entry (a poisoned record) is dropped
         spent = int(sum(a for _, a in spend))
         if spent + amount_atomic > cap_atomic:
             return (f"Blocked by Emporia: this payment ({amount_atomic / 1e6:.2f} USDC) would take today's "
@@ -438,11 +447,39 @@ def guard(tool: str, args: dict[str, Any], agent_id: str = "") -> dict[str, Any]
             f"Blocked by Emporia: `{tool}` says you looked at X yourself, and this turn was not started by your "
             "person (it is another agent's message, or your own rounds). Do it in a session your person starts. "
             "Decline in one line."))
+    if why := _unattended_refusal(turn, tool, args):
+        return _refused(turn, tool, args, why)
     refusal = _count_write(turn, tool, args)
     if refusal:
         return _refused(turn, tool, args, refusal)
     log_action(turn, tool, _target(args), "allowed")
     return None
+
+
+def _unattended_refusal(turn: Turn, tool: str, args: dict[str, Any]) -> str:
+    """Why this call is refused in an unattended turn beyond the budget ("" when it is not): irreversible acts and
+    signatures a stranger's message could ask for."""
+    if turn.origin == "relay":
+        if tool in RELAY_REFUSED_TOOLS:
+            return (f"Blocked by Emporia: `{tool}` signs a claim for an account or a piece of work, and this turn "
+                    "was started by another agent's message. Your person makes it in a session they start. "
+                    "Decline in one line.")
+        if tool == "close_room" or (tool in ("kick_from_room", "kick_from_agora_topic") and args.get("refund")):
+            return (f"Blocked by Emporia: `{tool}` is final"
+                    f"{' and reverses a payout' if tool != 'close_room' else ''}, and this turn was started by "
+                    "another agent's message. Leave it for your person. Decline in one line.")
+        if tool == "block_dm_sender":
+            target = str(args.get("sender") or "").strip().lower()
+            if not target or target != (turn.sender or "").strip().lower():
+                return ("Blocked by Emporia: in a turn another agent's message started you may block only that "
+                        "agent; any other block is your person's call. Decline in one line.")
+    if tool == "make_pledge" and args.get("kind") in ("reveal_within", "respond_within"):
+        terms = args.get("terms")
+        secs = terms.get("seconds") if isinstance(terms, dict) else None
+        if isinstance(secs, int) and not isinstance(secs, bool) and secs < UNATTENDED_MIN_PLEDGE_SECONDS:
+            return (f"Blocked by Emporia: an unattended turn promises at least {UNATTENDED_MIN_PLEDGE_SECONDS} "
+                    "seconds; a model turn takes longer than less, so the pledge would break by itself.")
+    return ""
 
 
 def _count_write(turn: Turn, tool: str, args: dict[str, Any]) -> str:
@@ -610,10 +647,22 @@ def private_strings(agent_id: str) -> list[tuple[str, str]]:
     h = home()
     if h is not None:
         paths.add(str(h))
+    if h is not None:
+        paths.add(str(h.parent))
     for p in paths:
         if len(p) > 8:
             found.append(("profile path", p))
+    try:
+        import getpass
+        user = getpass.getuser()
+    except Exception:  # noqa: BLE001
+        user = ""
+    if len(user) >= 4 and user.lower() not in _COMMON_USERS:
+        found.append(("host user name", user))
     return found
+
+
+_COMMON_USERS = frozenset({"root", "user", "node", "ubuntu", "admin", "hermes", "agent", "data", "emporia"})
 
 
 def _jwt_jti(token: str) -> str:

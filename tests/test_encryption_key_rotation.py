@@ -77,8 +77,9 @@ def _bound(priv, name, at=""):
     return enc, identity.sign_payload(priv, wire.signed_encryption_key_payload(name, enc, at))
 
 
-def test_a_peer_follows_a_newer_binding_and_refuses_an_older_one(keys):
+def test_a_peer_follows_a_newer_binding_and_refuses_an_older_one(keys, monkeypatch):
     url, name = "https://enc271.example", "enc271_peer"
+    monkeypatch.setenv("EMPORIA_RELAY_URL", url)                        # the home relay: bare-handle pins (S-10)
     me, me_hex = _ed()
     t1 = datetime.now(UTC).isoformat()
     t2 = (datetime.now(UTC) + timedelta(seconds=5)).isoformat()

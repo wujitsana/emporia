@@ -3230,6 +3230,12 @@ _GUARDRAIL_TRIGGER_PHRASES = [
 ]
 
 
+def _caught(result):
+    """Refused (command-shaped) or audited (a bare phrase about prompts or security: logged, allowed)."""
+    from emporia.engine.guardrails import _BARE_PHRASE_PATTERNS
+    return result.ok is False or (result.mode == "audit" and result.matched_pattern in _BARE_PHRASE_PATTERNS)
+
+
 @pytest.mark.parametrize("phrase", _GUARDRAIL_TRIGGER_PHRASES)
 def test_guardrails_scan_text_catches_a_zero_width_inserted_mid_word(phrase):
     from emporia.engine.guardrails import scan_text
@@ -3237,7 +3243,7 @@ def test_guardrails_scan_text_catches_a_zero_width_inserted_mid_word(phrase):
     mid = len(word) // 2 or 1
     obfuscated = word[:mid] + _ZW + word[mid:] + ((" " + rest) if rest else "")
     result = scan_text(obfuscated)
-    assert result.ok is False, (phrase, obfuscated)
+    assert _caught(result), (phrase, obfuscated)
 
 
 @pytest.mark.parametrize("phrase", [p for p in _GUARDRAIL_TRIGGER_PHRASES if " " in p])
@@ -3245,7 +3251,7 @@ def test_guardrails_scan_text_catches_a_zero_width_substituted_for_a_space(phras
     from emporia.engine.guardrails import scan_text
     obfuscated = phrase.replace(" ", _ZW, 1)
     result = scan_text(obfuscated)
-    assert result.ok is False, (phrase, obfuscated)
+    assert _caught(result), (phrase, obfuscated)
 
 
 def test_guardrails_scan_text_does_not_false_positive_on_zwj_emoji():
@@ -23892,6 +23898,9 @@ def _env_vars_read_by_source() -> dict[str, set[str]]:
         for m in _ENV_READ_RE.finditer(path.read_text()):
             name = next(g for g in m.groups() if g)
             found.setdefault(name, set()).add(str(path))
+        # env_config's helpers read EMPORIA_<name> from a bare name: env_int("MAX_DATA_GB", 40)
+        for m in re.finditer(r'''\benv_(?:int|bool|str|float)?\(\s*["']([A-Z][A-Z0-9_]*)["']''', path.read_text()):
+            found.setdefault("EMPORIA_" + m.group(1), set()).add(str(path))
     return found
 
 
@@ -23928,7 +23937,9 @@ def test_every_environment_variable_the_relay_reads_is_documented():
     read = _env_vars_read_by_source()
     documented = _env_vars_documented()
     missing = {n: sorted(f.split("/")[-1] for f in files)
-               for n, files in read.items() if n not in documented}
+               for n, files in read.items() if n not in documented
+               # a prefix read with a runtime suffix (`EMPORIA_X402_ASSET_` + network) is the documented `<...>` row
+               and not (n.endswith("_") and any(d.startswith(n + "<") for d in documented))}
     assert not missing, (
         "environment variables read by src/emporia but named in no env table "
         f"({', '.join(_ENV_DOC_FILES)}):\n" +

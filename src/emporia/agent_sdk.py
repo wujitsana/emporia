@@ -171,6 +171,7 @@ class EmporiaAgent:
         # Review follow-up M3: also recorded on disk with the thread's peer
         # (`identity.record_dm_thread`), so the rule outlives the process.
         self._sealed_threads: set[str] = set()
+        self._plaintext_asked: set[str] = set()     # S-9: threads this client asked to be plaintext
         # P45: the wallet this agent pays x402 from. Separate from
         # `public_key_hex` on purpose — that is an Ed25519 identity key the
         # relay knows, this is a secp256k1 spending key the relay must never
@@ -1128,6 +1129,9 @@ class EmporiaAgent:
                                   sealed=required)
         if required:
             self._sealed_threads.add(thread.get("thread_id", ""))
+        elif encrypted is False and not thread.get("encrypted"):
+            # S-9: plaintext is only ever this agent's explicit ask.
+            self._plaintext_asked.add(thread.get("thread_id", ""))
         return thread
 
     def _thread_peer(self, thread_id: str, thread: dict[str, Any]) -> tuple[str, bool]:
@@ -1231,10 +1235,9 @@ class EmporiaAgent:
         the caller by design — an API where you can forget to encrypt is one where
         someone will.
 
-        P298: a thread the relay calls plaintext, with a peer this agent has sealed
-        to before, raises `identity.PlaintextRefused` — the relay's flag is not
-        enough. `plaintext_ok=True` when plaintext is this agent's own choice
-        (a thread it started with `encrypted=False`).
+        S-9: a thread the relay calls plaintext raises `identity.PlaintextRefused`
+        unless plaintext was this agent's own choice — `start_dm(encrypted=False)`
+        on this client, or `plaintext_ok=True` here. The relay's flag is not enough.
         """
         from emporia import crypto_box
         from emporia.wire import (
@@ -1271,7 +1274,7 @@ class EmporiaAgent:
         from emporia import secret_guard
         secret_guard.check(self.agent_id, content)   # P172: before sealing
         peer, sealed = self._thread_peer(thread_id, thread)
-        if not thread["encrypted"] and not plaintext_ok:
+        if not thread["encrypted"] and not plaintext_ok and thread_id not in self._plaintext_asked:
             from emporia.identity import PlaintextRefused, refuse_plaintext_to
             if sealed:
                 raise PlaintextRefused(
@@ -2121,7 +2124,10 @@ class EmporiaAgent:
             )
 
         room = await self.get_room(room_id)
-        encrypted = bool(room.get("encrypted"))
+        # S-9: the relay's `encrypted` flag is checked against the creator's signed creation.
+        from emporia.identity import verified_room_encryption
+        encrypted = verified_room_encryption(
+            room, await self._sender_public_key(str(room.get("creator_id") or "")), self.relay_url)
         from emporia import room_post
         root = await self._root_for(reply_to) if (reply_to and not encrypted) else None
         msg_type, content = room_post.prepare(kind, content, self._with_model_tag(tags), reply_to,

@@ -1958,8 +1958,8 @@ def cmd_signer(args: argparse.Namespace) -> int:
         if args.action == "pending":
             items = [i for i in admin.intents() if i["status"] == "pending"]
             for i in items:
-                print(f"  {i['id']}  {time.strftime('%m-%d %H:%M', time.localtime(i['at']))}  {i['agent']}: "
-                      f"{i['what']}")
+                print(f"  {i['id']}  {time.strftime('%m-%d %H:%M', time.localtime(i['at']))}  "
+                      f"{_intent_line(i)}")
             print(f"{len(items)} waiting." + (" Approve: emporia signer approve ID · refuse: emporia signer deny ID"
                                                if items else ""))
             return 0
@@ -1974,7 +1974,7 @@ def cmd_signer(args: argparse.Namespace) -> int:
         except RuntimeError as e:
             print(f"signer {args.action}: {e}")
             return 1
-        print(f"  {item['id']} {item['status']} — {item['agent']}: {item['what']}"
+        print(f"  {item['id']} {item['status']} — {_intent_line(item)}"
               + ("\n  The agent's next try of this payment, within an hour, is paid." if item["status"] == "approved"
                  else ""))
         return 0
@@ -2097,6 +2097,19 @@ def _signer_menu(args: argparse.Namespace, url: str) -> int:
             _signer_limits_menu(choose("Which agent?", [(n, n) for n in held]))
 
 
+def _intent_line(item: dict) -> str:
+    """An approval's one line for a person (S-7): the amount, rail, network and payee as the signer computed
+    them first, then the message with every control character removed. What an agent or a relay put in the
+    free text cannot repaint the amount."""
+    from emporia.agent_wallet import plain_text
+    t = item.get("terms") or {}
+    head = ""
+    if t.get("amount_atomic"):
+        head = (f"[{int(t['amount_atomic']) / 1e6:.6f} {plain_text(t.get('rail', ''), 20)} on "
+                f"{plain_text(t.get('network', ''), 60)} to {plain_text(t.get('pay_to', ''), 80)}] ")
+    return f"{plain_text(item.get('agent', ''), 64)}: {head}{plain_text(item.get('what', ''), 600)}"
+
+
 def _signer_pending_menu(url: str) -> None:
     from emporia import signer, signer_client
     admin = signer_client.Admin(url, signer.admin_token())
@@ -2104,7 +2117,7 @@ def _signer_pending_menu(url: str) -> None:
     if not items:
         print("  Nothing waiting.")
     for i in items:
-        print(f"\n  {i['agent']}: {i['what']}  ({time.strftime('%m-%d %H:%M', time.localtime(i['at']))})")
+        print(f"\n  {_intent_line(i)}  ({time.strftime('%m-%d %H:%M', time.localtime(i['at']))})")
         answer = choose("  Approve this payment?", [("skip", "Not now"), ("approve", "Approve"), ("deny", "Refuse")])
         if answer != "skip":
             cmd_signer(_signer_args(answer, i["id"]))

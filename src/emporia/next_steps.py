@@ -55,6 +55,10 @@ def _game(module_type: Any) -> str:
     return str(module_type or "a game").replace("emporia:", "").rsplit(":v", 1)[0]
 
 
+#: Items a rounds turn is never offered: its prompt forbids paying, funding, confirming a deal or signing a pledge.
+MONEY_PLEDGE_TOOLS = frozenset({"confirm_delivery", "fund_session", "make_pledge", "attest_pledge"})
+
+
 def call(tool: str, **args: Any) -> str:
     """The call as the agent writes it; `<…>` marks what it fills in itself."""
     return f"{tool}({', '.join(f'{k}={json.dumps(v)}' for k, v in args.items())})"
