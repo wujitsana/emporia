@@ -105,7 +105,10 @@ from emporia import rooms as rooms_db
 from emporia import entitlements
 from emporia import translog
 from emporia.env_config import env_int
-from emporia.logging_config import configure_logging, configure_sentry, redact_tokens_in, request_id_ctx
+from emporia.logging_config import (
+    configure_logging, configure_sentry, ip_tag, mark_expected, redact_tokens_in, request_id_ctx,
+    request_info_ctx,
+)
 
 if TYPE_CHECKING:
     # Type-only — every real (runtime) reference to emporia.payments stays a
@@ -1331,6 +1334,7 @@ async def _resolve_open_x402_intent(
 
 def _record_x402_settlement(
     request: Request | None, settle_result: dict[str, Any], *, network: str, payer: str,
+    cents: int | None = None,
 ) -> None:
     """Hold the facilitator's settlement result for the `PAYMENT-RESPONSE` header (P93).
 
@@ -1341,7 +1345,17 @@ def _record_x402_settlement(
     had no receipt for a payment that had moved its money. Recorded on
     `request.state` here and attached by `request_context`, so every paid
     route gets it without each one building its own response.
+
+    Also the one place the relay logs the outcome as a named event for the operator
+    (`payment_settled` / `payment_failed`: rail, network, cents when known; never the payer's
+    address or the receipt).
     """
+    if bool(settle_result.get("success")):
+        logger.info("payment_settled", extra={"rail": "x402", "network": str(network or ""), "cents": cents})
+    else:
+        logger.warning("payment_failed", extra={
+            "rail": "x402", "network": str(network or ""), "cents": cents,
+            "reason": str(settle_result.get("errorReason") or "unknown")[:120]})
     if request is None:
         return
     body: dict[str, Any] = {
@@ -1500,7 +1514,7 @@ async def _verify_x402_payment(
         if settled is not None:
             # A retry whose earlier settlement landed gets the same receipt.
             _record_x402_settlement(request, {"success": True, "transaction": settled},
-                                    network=network or "", payer=authorizer)
+                                    network=network or "", payer=authorizer, cents=amount_cents)
             return PaymentRef(RAIL_X402, settled)
         _reopen_x402_intent(
             intent_key=intent_key, network=network or "", asset=asset or "",
@@ -1509,7 +1523,8 @@ async def _verify_x402_payment(
 
     try:
         settle_result = await x402_settle_payment(x402_payload, expected)
-        _record_x402_settlement(request, settle_result, network=network or "", payer=authorizer)
+        _record_x402_settlement(request, settle_result, network=network or "", payer=authorizer,
+                                cents=amount_cents)
         if not settle_result.get("success"):
             _close_x402_intent(intent_key, X402_INTENT_FAILED)
             raise HTTPException(
@@ -2163,6 +2178,15 @@ def record_settlement(settlement: dict[str, Any]) -> None:
         )
         if cur.rowcount:
             translog.log_row(conn, "settlement", cur.lastrowid)
+    # x402 already logged its own outcome (with the network) when the facilitator settled it
+    if cur.rowcount and rail != "x402":
+        status = settlement.get("transfer_status", "pending_connect")
+        logger.log(
+            logging.WARNING if status == "transfer_failed" else logging.INFO,
+            "payment_failed" if status == "transfer_failed" else "payment_settled",
+            extra={"rail": rail, "network": "", "cents": settlement.get("total_price_cents", 0),
+                   "transfer_status": status},
+        )
 
 
 # ============================================================================
@@ -3325,14 +3349,18 @@ def _enforce_agent_rate_limit(agent_id: str) -> None:
     429 if the agent has exceeded AGENT_REGISTRY.max_per_minute (RATE_LIMIT_PER_MINUTE)
     writes in the trailing 60s.
     """
+    path = (request_info_ctx.get() or {}).get("path", "")
     if not AGENT_REGISTRY.check_rate_limit(agent_id):
         RATE_LIMIT_HITS["agent"] += 1
+        logger.warning("rate_limited", extra={"limit": "agent", "per_minute": AGENT_REGISTRY.max_per_minute,
+                                              "agent_id": agent_id, "path": path})
         raise HTTPException(429, "Rate limit exceeded — too many requests, slow down")
     # per operator as well: an operator's agents together get a few agents' worth, not a budget each
     operator = _operator_key(agent_id)
     if operator and not AGENT_REGISTRY.check_rate_limit(
             f"operator:{operator}", int(AGENT_REGISTRY.max_per_minute * OPERATOR_RATE_MULTIPLE)):
         RATE_LIMIT_HITS["agent"] += 1
+        logger.warning("rate_limited", extra={"limit": "operator", "agent_id": agent_id, "path": path})
         raise HTTPException(429, "Rate limit exceeded for your operator's agents together — slow down")
 
 
@@ -3715,7 +3743,8 @@ def _check_rate_limit(request: Request) -> JSONResponse | None:
     if len(q) >= limit:
         RATE_LIMIT_HITS["ip"] += 1
         logger.warning(
-            "rate_limit_exceeded", extra={"client_ip": ip, "bucket": bucket, "path": path},
+            "rate_limited", extra={"limit": f"ip_{bucket}", "per_minute": limit, "ip_tag": ip_tag(ip),
+                                   "path": path},
         )
         return JSONResponse(
             {"detail": f"Rate limit exceeded — {limit} requests per {int(window)}s per IP"},
@@ -4039,14 +4068,20 @@ async def _ws_refused(ws: WebSocket) -> bool:
 async def request_context(request: Request, call_next):
     rid = uuid.uuid4().hex[:12]
     token = request_id_ctx.set(rid)
+    info: dict = {"path": request.url.path, "expected": False}
+    info_token = request_info_ctx.set(info)
     start = time.monotonic()
     try:
         try:
             response = await call_next(request)
-        except Exception:
+        except Exception as exc:
+            # `unhandled_error` is the line `emporia relay watch` counts as a server error (the 500
+            # itself is built by Starlette outside this middleware, so it has no request line).
             logger.exception(
-                "unhandled_exception",
-                extra={"method": request.method, "path": request.url.path},
+                "unhandled_error",
+                extra={"method": request.method, "path": request.url.path,
+                       "exception_type": type(exc).__name__,
+                       "client_ip": request.client.host if request.client else "unknown"},
             )
             raise
         # P93: an x402 settlement's receipt, recorded by _record_x402_settlement().
@@ -4064,16 +4099,18 @@ async def request_context(request: Request, call_next):
         # INFO).
         normalized_path = request.url.path.rstrip("/") or "/"
         level = logging.DEBUG if normalized_path in _LOW_SIGNAL_PATHS else logging.INFO
-        logger.log(
-            level, "request", extra={
-                "method": request.method, "path": request.url.path,
-                "status_code": response.status_code, "duration_ms": duration_ms,
-                "client_ip": request.client.host if request.client else "unknown",
-            },
-        )
+        fields = {
+            "method": request.method, "path": request.url.path,
+            "status_code": response.status_code, "duration_ms": duration_ms,
+            "client_ip": request.client.host if request.client else "unknown",
+        }
+        if info["expected"]:
+            fields["expected"] = True
+        logger.log(level, "request", extra=fields)
         response.headers["X-Request-Id"] = rid
         return response
     finally:
+        request_info_ctx.reset(info_token)
         request_id_ctx.reset(token)
 
 
@@ -5084,6 +5121,15 @@ async def dashboard_challenge(request: Request):
     }
 
 
+def _signin_failed(reason: str, agent_id: str, *, expected: bool = False) -> None:
+    """The named `signin_failed` event (a reason class, never a nonce or signature). `expected` marks
+    the request line too, for the failures that are a normal step in a flow."""
+    fields = {"reason": reason, "agent_id": str(agent_id)[:64], "expected": expected}
+    logger.log(logging.INFO if expected else logging.WARNING, "signin_failed", extra=fields)
+    if expected:
+        mark_expected()
+
+
 @app.post("/dashboard/session")
 async def dashboard_session(req: DashboardSessionRequest):
     """Step 2 of dashboard auth: verify Ed25519 signature → issue JWT.
@@ -5097,17 +5143,21 @@ async def dashboard_session(req: DashboardSessionRequest):
     wherever the nonce was issued — is refused by name.
     """
     if req.signature_hex or not req.signature or not req.relay:
+        _signin_failed("old_or_malformed_request", req.agent_id)
         raise HTTPException(400, "dashboard sign-in v1 (a signature over the bare nonce) is gone: sign "
                                  "emporia:dashboard-sign-in:v2 {type, nonce, relay} and send {agent_id, "
                                  "challenge_id, relay, signature} (docs/protocol.md §3.1)")
     if not _names_this_relay(req.relay):
+        _signin_failed("wrong_relay", req.agent_id)
         raise HTTPException(403, f"this sign-in is for {req.relay[:100]}, not this relay — a sign-in is "
                                  "good only on the relay it names")
     entry = _CHALLENGE_STORE.pop(req.challenge_id, None)
     if not entry:
+        _signin_failed("unknown_or_expired_challenge", req.agent_id, expected=True)
         raise HTTPException(400, "Unknown or expired challenge_id")
     nonce, expires_at = entry
     if time.time() > expires_at:
+        _signin_failed("expired_challenge", req.agent_id, expected=True)
         raise HTTPException(400, "Challenge expired")
 
     # Look up the agent's registered public key
@@ -5117,10 +5167,14 @@ async def dashboard_session(req: DashboardSessionRequest):
             (req.agent_id,),
         ).fetchone()
     if not row:
+        # Normal in a first sign-in by an agent that has not registered yet (the CLI and the console
+        # probe this before registering): the 404 stays — clients read it — but the line is tagged.
+        _signin_failed("not_registered", req.agent_id, expected=True)
         raise HTTPException(404, f"Agent {req.agent_id!r} not registered on this relay")
 
     from emporia.wire import signed_dashboard_sign_in_payload
     if not verify(signed_dashboard_sign_in_payload(nonce, req.relay), req.signature, row["public_key_hex"]):
+        _signin_failed("bad_signature", req.agent_id)
         raise HTTPException(403, "Invalid signature — sign {type: emporia:dashboard-sign-in:v2, nonce, "
                                  "relay} with the agent's key")
 

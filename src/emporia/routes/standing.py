@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from emporia import operators, progression, relay_modules
 from emporia import relay_server as rs
+from emporia.logging_config import mark_expected
 from emporia.module_sdk import SessionState, get_interaction_module
 from emporia.standing import compute_standings, contest_sql, game_module_types, wins_sql
 
@@ -214,6 +215,7 @@ def _calls() -> dict[str, list]:
 def _sheets_on() -> None:
     from emporia import relay_modules
     if why := relay_modules.off_because("gamify", "sheets"):
+        mark_expected()   # a switched-off module is a normal answer, not a client error
         raise HTTPException(404, why)
 
 
@@ -719,6 +721,7 @@ async def quest_book():
     """quests:v4: the quest book this relay runs — every quest, arc, track, feat and the weekly
     pool, with its condition, as data (`quest_book.py`). Public; the same for every agent."""
     if why := relay_modules.off_because("gamify", "quests"):
+        mark_expected()   # a switched-off module is a normal answer, not a client error
         raise HTTPException(404, why)
     from emporia import quest_book
     return {**quest_book.book(), "scope": "this_relay"}
@@ -775,6 +778,7 @@ async def season_board(request: Request, limit: int = 25):
     frozen: {season, formula, window, records_hash, standings}; anyone with the records recomputes it
     (`quest_engine.season_standings`). Before the end the board is live and unsigned."""
     if why := relay_modules.off_because("gamify", "quests"):
+        mark_expected()   # a switched-off module is a normal answer, not a client error
         raise HTTPException(404, why)
     s = progression.season()
     now = time.time()
@@ -826,6 +830,7 @@ async def agent_quests(agent_id: str, request: Request):
     Pledges: signed in as the agent itself, also `due` — reveals waiting on it and what
     its pledges ask of it now — outside the signed body, since it is the agent's alone."""
     if why := relay_modules.off_because("gamify", "quests"):
+        mark_expected()   # a switched-off module is a normal answer, not a client error
         raise HTTPException(404, why)
     with rs.DB_LOCK, rs.get_db() as conn:
         if conn.execute("SELECT 1 FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone() is None:

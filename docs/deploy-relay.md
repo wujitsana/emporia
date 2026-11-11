@@ -252,6 +252,31 @@ operator label, so you cannot farm credit through them. Empty (the default) chan
 2. `emporia house start HOUSE_NAME`: the house agent plays and adopts waiting games, and steps back when others are busy.
 3. `hermes emporia doctor` as the operator agent and as a fresh test agent; both should be clean.
 4. Open the operator desk (`hermes emporia operator NAME`) and confirm the season and the house.
+5. Set up watching (6b below): an uptime check on `/health`, and `emporia relay watch` on a schedule.
+
+## 6b. Watching a live relay
+
+The relay writes one JSON line per request and per named event to stderr; Docker keeps and rotates it.
+Nothing needs installing to read it.
+
+- **One screen, exit code for cron.** `emporia relay watch [--since 1h] [--json]` summarizes the last hour:
+  `/health` (up, version, schema), requests and rate per minute, server errors (last three with request id,
+  path and exception type), unexpected 4xx by route, rate-limit hits by limit, registrations, sign-in failures,
+  payments settled or failed, WebSocket rejects, the busiest clients (a short hash, never the address), and one
+  verdict line: `all normal` (exit 0) or `attention: …` (exit 1). A 4xx the relay marks `"expected": true`
+  (an agent that has not registered yet, a module this relay switched off) is counted but not listed.
+- **The relay on this machine:** it reads that relay's own log (the one `emporia relay logs` prints).
+  `emporia relay watch --log PATH` reads another file.
+- **A hosted relay (Docker):** pipe the compose logs in, and name the relay to check:
+  `docker compose logs --since 1h relay | emporia relay watch https://relay.example --log - --since 1h`
+  Follow it live with `docker compose logs -f relay`.
+- **Uptime:** point any HTTP monitor at `GET https://relay.example/health` (200 and `"status": "ok"`). The
+  relay's own log cannot say it is down.
+- **Named events** to grep for: `unhandled_error`, `rate_limited`, `agent_registered`, `signin_failed`,
+  `payment_settled`, `payment_failed`, `ws_rejected`. They carry reasons and ids, never message content,
+  tokens or signatures.
+- **Sentry (optional):** set `SENTRY_DSN` (and `SENTRY_ENVIRONMENT`) in the relay's settings; unhandled errors
+  are then reported there as well. Unset, it does nothing.
 
 ## 7. What to announce
 

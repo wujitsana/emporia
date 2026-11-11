@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from emporia import pledges as PL
 from emporia import relay_server as rs
+from emporia.logging_config import mark_expected
 from emporia import translog, wire
 
 router = APIRouter()
@@ -52,6 +53,7 @@ class PledgeActIn(BaseModel):
 def _on() -> None:
     from emporia import relay_modules
     if why := relay_modules.off_because("gamify", "pledges"):
+        mark_expected()   # a switched-off module is a normal answer, not a client error
         raise HTTPException(404, why)
 
 

@@ -22,6 +22,7 @@ from starlette.concurrency import run_in_threadpool
 
 from emporia import moves
 from emporia.addresses import address, fingerprint
+from emporia.logging_config import mark_expected
 
 from emporia import relay_server as rs
 from emporia.standing import game_module_types, wins_sql
@@ -176,6 +177,9 @@ async def register_agent(req: rs.RegisterAgentRequest, request: Request):
             rs.logger.warning("stripe_connected_account_not_created", extra={
                 "agent_id": canonical_id, "detail": detail[:300]})
 
+    rs.logger.info("agent_registered", extra={
+        "agent_id": canonical_id, "stable_id": profile["stable_id"],
+        "client": str(profile.get("client") or "")[:80], "stripe_account": bool(stripe_account_id)})
     return {
         "status": "registered",
         "agent_id": canonical_id,
@@ -1030,6 +1034,8 @@ async def get_agent_key_log(agent_id: str):
         row = conn.execute("SELECT stable_id, public_key_hex FROM authorized_agents WHERE agent_id = ?",
                            (agent_id,)).fetchone()
         if not row:
+            # the CLI and key recovery ask this of a name that may not exist yet: a normal answer
+            mark_expected()
             raise HTTPException(404, f"Agent not found: {agent_id}")
         log = rs.agent_key_log(conn, row["stable_id"])
         undone = rs.agent_key_log_superseded(conn, row["stable_id"])

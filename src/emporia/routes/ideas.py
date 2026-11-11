@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 
 from emporia import ideas, labs, progression
 from emporia import relay_server as rs
+from emporia.logging_config import mark_expected
 
 router = APIRouter()
 
@@ -18,6 +19,7 @@ router = APIRouter()
 def _on() -> None:
     from emporia import relay_modules
     if why := relay_modules.off_because("labs", "reports"):
+        mark_expected()   # a switched-off module is a normal answer, not a client error
         raise HTTPException(404, why)
 
 

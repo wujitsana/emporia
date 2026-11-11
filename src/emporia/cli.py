@@ -514,6 +514,8 @@ def cmd_relay(args: argparse.Namespace) -> int:
         return cmd_relay_remove(args)
     if args.action == "seed":
         return cmd_relay_seed(args)
+    if args.action == "watch":
+        return cmd_relay_watch(args)
     pid_file, log = _relay_files()
     if args.action == "status":
         h = health()
@@ -557,6 +559,45 @@ def cmd_relay(args: argparse.Namespace) -> int:
         print(f"relay: already up at {relay_url()}")
         return 0
     return _start_relay()
+
+
+def cmd_relay_watch(args: argparse.Namespace) -> int:
+    """One screen of what the relay's log says: health, 5xx, unexpected 4xx, limits, sign-ins, payments.
+    Exit 0 when all is normal, 1 when it needs a look (usable from cron). The log is this machine's relay
+    log, a file given with --log, or `-` for `docker compose logs` piped in (a hosted relay)."""
+    import httpx
+
+    from emporia import relay_watch
+
+    try:
+        since = relay_watch.parse_since(args.since)
+    except ValueError as e:
+        print(f"relay watch: {e}", file=sys.stderr)
+        return 2
+    target = (args.url or relay_url()).rstrip("/")
+    try:
+        r = httpx.get(f"{target}/health", timeout=5)
+        body = r.json() if r.status_code == 200 else {}
+        health = {"ok": r.status_code == 200 and body.get("status") == "ok", "version": body.get("version"),
+                  "schema_version": body.get("schema_version"), "why": f"HTTP {r.status_code}"}
+    except (httpx.HTTPError, ValueError) as e:
+        health = {"ok": False, "why": type(e).__name__}
+    if args.log == "-":
+        summary = relay_watch.summarize(sys.stdin, since=since)
+    else:
+        path = Path(args.log).expanduser() if args.log else _relay_files()[1]
+        if not path.exists():
+            print(f"relay watch: no log at {path} (a hosted relay: `docker compose logs relay | emporia relay watch --log -`)",
+                  file=sys.stderr)
+            return 2
+        with path.open(errors="replace") as f:
+            summary = relay_watch.summarize(f, since=since)
+    line, attention = relay_watch.verdict(summary, health)
+    if args.json:
+        print(json.dumps({**summary, "health": health, "verdict": line, "attention": attention}, indent=2))
+    else:
+        print(relay_watch.render(summary, health, line))
+    return 1 if attention else 0
 
 
 def _is_our_pid(pid: int, *marks: bytes) -> bool:
@@ -8947,11 +8988,16 @@ def build_parser() -> argparse.ArgumentParser:
                                      "`host` runs one for other machines, in Docker behind https")
     r.add_argument("action", choices=["start", "stop", "restart", "status", "logs", "use", "host", "link", "unlink", "links",
                                       "access", "members", "move", "backup", "rotate-key", "rotate-sign-in-secret",
-                                      "config", "modules", "overview", "owner-key", "remove", "seed"])
+                                      "config", "modules", "overview", "owner-key", "remove", "seed", "watch"])
     r.add_argument("url", nargs="?", default="", help="use, link, unlink: the other relay's URL; modules: add or remove; "
-                                                      "seed: the operator agent's profile")
+                                                      "seed: the operator agent's profile; watch: the relay whose /health "
+                                                      "to check (default: the configured one)")
     r.add_argument("names", nargs="*", help="use: the agents that move to it; modules add|remove: NAME[:PART,…]…")
     r.add_argument("--lines", type=int, default=40)
+    r.add_argument("--since", default="1h", help="watch: how far back to read the log: 30m, 1h, 24h, 2d (default 1h)")
+    r.add_argument("--log", default="", help="watch: the relay's JSON log file (default: this machine's relay log); "
+                                             "`-` reads stdin, e.g. `docker compose logs relay | emporia relay watch --log -`")
+    r.add_argument("--json", action="store_true", help="watch: the summary as JSON")
     r.add_argument("--lab-repo", default="", help="seed: the https URL of the repo the Emporia lab binds to")
     r.add_argument("--dir", default="", help="host: its folder (default ~/emporia-relay); link: a hosted relay's folder")
     r.add_argument("--domain", default="", help="host: the domain others reach it on (https)")
