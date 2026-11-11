@@ -254,20 +254,18 @@ async def get_room_endpoint(room_id: str, request: Request):
 
 @router.post("/rooms/{room_id}/join")
 async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
-    identity_verified = rs._require_caller_unless_mpp_payment(req.agent_id, request)
+    rs._require_caller_is(req.agent_id, request)
     room = rooms_db.get_room(room_id, db_path=rs.DATABASE_PATH)
     if not room:
         raise HTTPException(404, "Room not found")
     rs._require_registered(req.agent_id)
     # P273: the joining agent signs its join, kept as a room act — a member a
-    # relay lists with no signed join is one a sender refuses to seal to. On a
-    # join paid with a payment token alone (no sign-in) it is what proves who.
+    # relay lists with no signed join is one a sender refuses to seal to.
     if not req.signature or not req.at:
         raise HTTPException(401, "a join is signed by the joining agent (at, signature over "
                                  "wire.signed_room_join_payload)")
     joined = signed_room_join_payload(room_id, rs.AGENT_REGISTRY.get_stable_id(req.agent_id) or "", req.at)
     _require_signed_by(req.agent_id, joined, req.at, req.signature, "the joining agent's")
-    identity_verified = True
     # A join signed before the agent's last act here is an old one replayed —
     # after a leave it would put back someone who left.
     last_act, last_at, closed = _last_own_act(room_id, req.agent_id)
@@ -275,10 +273,7 @@ async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
         raise HTTPException(403, "This room is closed")
     if last_at and _when(req.at) <= _when(last_at):
         raise HTTPException(409, "this join was signed before your last join or leave here — sign a new one")
-    # N12-5 (R5): identity_verified is False on the MPP-payment branch, where agent_id is
-    # an unproven claim — don't spend someone else's write budget on the strength of it.
-    if identity_verified:
-        rs._enforce_agent_rate_limit(req.agent_id)
+    rs._enforce_agent_rate_limit(req.agent_id)
     if rooms_db.is_member(room_id, req.agent_id, db_path=rs.DATABASE_PATH):
         # P50: membership is not proof of purchase — finish the settlement a
         # crash may have cut short before answering. See
@@ -342,41 +337,27 @@ async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
         # None, and the payout/settlement block below (guarded on
         # `confirmed_pi`) never fires. Before this, every join re-ran
         # _verify_and_confirm_payment() and record_payment() (which is
-        # deliberately idempotent on a replayed PaymentIntent), so a rejoin
-        # with the same PI was free but still fired a second real
-        # payout_winner() call, and a rejoin with a *fresh* PI was a second
-        # real charge for one purchase.
+        # deliberately idempotent on a replayed payment reference), so a rejoin
+        # with a *fresh* payment was a second real charge for one purchase.
         if not entitlements.has_access("room", room_id, req.agent_id, db_path=rs.DATABASE_PATH):
-            # P157: a card entry is a destination charge to the creator.
-            dest, fee, card_off = rs.card_payee(room.creator_id, amount_cents)
             result = await rs._verify_and_confirm_payment(
                 request,
                 agent_id=req.agent_id,
-                identity_verified=identity_verified,
                 amount_cents=amount_cents,
                 currency=currency,
                 resource_type="room",
                 resource_id=room_id,
-                service_type="emporia:room_entry",
-                capture_method="automatic",
-                allowed_statuses=("succeeded",),
-                req_payment_intent_id=req.payment_intent_id,
-                challenge_message=(
-                    f"Room entry fee: {amount_cents} {currency} cents. "
-                    "Retry with Authorization: Payment <spt_token>."
-                ),
+                challenge_message=f"Room entry fee: {amount_cents} {currency} cents.",
                 challenge_resource=f"emporia:room:{room_id}",
                 creator_id=room.creator_id,
-                destination_account=dest,
-                application_fee_cents=fee,
-                card_unavailable=card_off, x402_split=True,
+                x402_split=True,
             )
             if isinstance(result, JSONResponse):
                 return result
             confirmed_pi = result
 
-            # N4 review R1: record_payment() raises ValueError on a replayed PaymentIntent
-            # id (already recorded for a different agent/room/amount) — surface as a
+            # N4 review R1: record_payment() raises ValueError on a replayed payment
+            # reference (already recorded for a different agent/room/amount) — surface as a
             # rejected join, not a 500.
             try:
                 rs.record_payment(
@@ -395,15 +376,9 @@ async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
     # before returning) so that a retry after a mid-flight failure is caught by the
     # already_member short-circuit above rather than re-entering payout work.
     #
-    # P50 correction: "payout_winner is a real, non-idempotent Stripe transfer" was
-    # true when N5 wrote it and stopped being true at P1a-3, which made
-    # `idempotency_key` required and derived it from settlement_dedupe_key() — a
-    # resumed payout for the same payment reuses the same key and is a no-op at
-    # Stripe. The ordering is still right, and the residual reason is narrower than
-    # the one recorded: Stripe expires an Idempotency-Key after 24 hours, so a
-    # *very* late replay would move money twice. What was wrong was treating the
-    # short-circuit as free — it also ended the request, stranding any purchase the
-    # crash had left unfinished. See _finish_interrupted_access_purchase().
+    # P50: a retry after a mid-flight failure is caught by the already_member
+    # short-circuit above, which finishes any purchase the crash left unfinished
+    # (see _finish_interrupted_access_purchase()).
     try:
         rooms_db.add_member(room_id, req.agent_id, db_path=rs.DATABASE_PATH)
     except ValueError as e:
@@ -491,6 +466,9 @@ async def kick_from_room(room_id: str, req: rs.KickFromRoomRequest, request: Req
     rs._enforce_agent_rate_limit(room.creator_id)
     if req.target_agent_id == room.creator_id:
         raise HTTPException(400, "Creator cannot kick themselves")
+    if req.refund:
+        raise HTTPException(400, "The relay does not refund payments. Settle a refund with the member "
+                                 "directly (it is the payee's to send); kick without refund.")
     signed = signed_room_kick_payload(room_id, req.target_agent_id, req.refund, req.at,
                                       rs.AGENT_REGISTRY.get_stable_id(room.creator_id) or "")
     _require_creator_signed(room.creator_id, signed, req.at, req.signature)
@@ -504,13 +482,6 @@ async def kick_from_room(room_id: str, req: rs.KickFromRoomRequest, request: Req
                          db_path=rs.DATABASE_PATH)
     rooms_db.remove_invite(room_id, req.target_agent_id, db_path=rs.DATABASE_PATH)
 
-    # P2-7: revocation above happens unconditionally; the refund is a
-    # separate, optional, best-effort step on top of it. Its failure must not
-    # undo the kick or the revocation already committed.
-    refund_result = None
-    if req.refund:
-        refund_result = await rs._refund_kicked_room_payer(room_id, req.target_agent_id)
-
     await rs.broadcast_to_session(f"room:{room_id}", {
         "type": "member_kicked",
         "room_id": room_id,
@@ -521,7 +492,7 @@ async def kick_from_room(room_id: str, req: rs.KickFromRoomRequest, request: Req
         "room_id": room_id,
         "room_name": room.name,
     })
-    return {"status": "kicked", "agent_id": req.target_agent_id, "refund": refund_result}
+    return {"status": "kicked", "agent_id": req.target_agent_id}
 class SignedActRequest(BaseModel):
     at: str
     signature: str

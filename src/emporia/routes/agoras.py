@@ -392,18 +392,15 @@ async def subscribe_agora_topic(slug: str, req: rs.AgoraSubscribeRequest, reques
     Gate logic:
       open       → any registered agent subscribes immediately
       invite     → agent must have a pending invite (free)
-      paid_invite → agent must have a pending invite AND pay the entry fee (SPT/MPP/PI)
+      paid_invite → agent must have a pending invite AND pay the entry fee (x402 or Tempo)
     """
-    identity_verified = rs._require_caller_unless_mpp_payment(req.agent_id, request)
+    rs._require_caller_is(req.agent_id, request)
     rs._require_registered(req.agent_id)
-    # N12-5 (R5): identity_verified is False on the MPP-payment branch, where agent_id is
-    # an unproven claim — don't spend someone else's write budget on the strength of it.
-    if identity_verified:
-        rs._enforce_agent_rate_limit(req.agent_id)
+    rs._enforce_agent_rate_limit(req.agent_id)
     now = datetime.now(UTC).isoformat()
 
     # Topic lookup + already-subscribed short-circuit + invite check — DB_LOCK held
-    # only for this local read, not across the network round-trip to Stripe below
+    # only for this local read, not across the network round-trip below
     # (holding a process-wide lock across an external HTTP call would serialize every
     # other request touching the DB for its duration).
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -414,10 +411,6 @@ async def subscribe_agora_topic(slug: str, req: rs.AgoraSubscribeRequest, reques
         entry_fee = row["entry_fee_cents"] if "entry_fee_cents" in row.keys() else 0
         topic_id = row["topic_id"]
         creator_id = row["creator_id"]
-        if gate != "paid_invite" and not identity_verified:
-            # Relay audit 2, R2-1: a payment header skips the sign-in check so a payment can stand in for
-            # it, but an open or invite topic takes no payment — nothing would prove who is subscribing.
-            raise HTTPException(401, "Authentication required: this topic takes no payment, so sign in")
         if row["encrypted"]:
             # as joining an encrypted room: no key published would leave every post unreadable to this member
             rs._require_encryption_keys_published([req.agent_id])
@@ -429,8 +422,7 @@ async def subscribe_agora_topic(slug: str, req: rs.AgoraSubscribeRequest, reques
         # join_room's already_member short-circuit. Without this, a retry after a
         # mid-flight failure (e.g. the membership write further below failed, or the
         # response was lost after payout succeeded) would re-pass the invite gate and
-        # record_payment's idempotent replay, reaching payout_winner — a real,
-        # non-idempotent Stripe transfer — a second time.
+        # record_payment's idempotent replay, settling a second time.
         already_member = conn.execute(
             "SELECT 1 FROM agora_members WHERE topic_id=? AND agent_id=?",
             (topic_id, req.agent_id),
@@ -496,7 +488,7 @@ async def subscribe_agora_topic(slug: str, req: rs.AgoraSubscribeRequest, reques
             if not has_invite and not ever_entitled:
                 raise HTTPException(403, "Invite required — ask the topic creator to invite you")
 
-    # P50: outside DB_LOCK — this may settle, and settling reaches Stripe. The
+    # P50: outside DB_LOCK — this may settle. The
     # short-circuit is decided under the lock above and acted on here for the
     # same reason the payment check below is outside it.
     if short_circuit:
@@ -513,26 +505,17 @@ async def subscribe_agora_topic(slug: str, req: rs.AgoraSubscribeRequest, reques
     confirmed_pi = None
     currency = "usd"
     if gate == "paid_invite" and entry_fee > 0 and not already_entitled:
-        # P157: a card entry is a destination charge to the creator.
-        dest, fee, card_off = rs.card_payee(creator_id, entry_fee)
         result = await rs._verify_and_confirm_payment(
             request,
             agent_id=req.agent_id,
-            identity_verified=identity_verified,
             amount_cents=entry_fee,
             currency=currency,
             resource_type="agora",
             resource_id=topic_id,
-            service_type="emporia:agora_subscribe",
-            capture_method="automatic",
-            allowed_statuses=("succeeded",),
-            req_payment_intent_id=req.payment_intent_id,
             challenge_message=f"Agora entry fee: {entry_fee} {currency} cents.",
             challenge_resource=f"emporia:agora:{topic_id}",
             creator_id=creator_id,
-            destination_account=dest,
-            application_fee_cents=fee,
-            card_unavailable=card_off, x402_split=True,
+            x402_split=True,
         )
         if isinstance(result, JSONResponse):
             return result
@@ -561,9 +544,7 @@ async def subscribe_agora_topic(slug: str, req: rs.AgoraSubscribeRequest, reques
 
     # Add member + consume invite — N5 review R2: this must commit before the payout
     # below, so that a retry lands on the already_member short-circuit above instead
-    # of re-entering payout work. See join_room's identical restructuring, and the
-    # P50 correction there for why "payout_winner is non-idempotent" has been stale
-    # since P1a-3 and what the short-circuit was actually costing.
+    # of re-entering settlement work. See join_room's identical restructuring.
     with rs.DB_LOCK, rs.get_db() as conn:
         existing = conn.execute(
             "SELECT 1 FROM agora_members WHERE topic_id=? AND agent_id=?",

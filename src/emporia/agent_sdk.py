@@ -68,8 +68,8 @@ _USDC_ATOMIC_PER_CENT = 10_000      # 6 decimals
 class PaymentRequiredError(httpx.HTTPStatusError):
     """Raised by the three paid-entry methods (join_session, join_room,
     subscribe_agora_topic) on a 402. `.detail` is the parsed response body
-    (e.g. x402's declined={"rail": ..., "reason": ...}, or the MPP challenge's
-    amount_cents/resource fields); `.www_authenticate` is the challenge header.
+    (e.g. x402's declined={"rail": ..., "reason": ...}, or the challenge's
+    amount_cents/resource fields).
     mcp_server.py's equivalent tool functions already return this same
     information as a plain dict — this mirrors it via an exception instead, so
     these methods don't have to special-case their return type against the
@@ -84,7 +84,6 @@ class PaymentRequiredError(httpx.HTTPStatusError):
             request=response.request, response=response,
         )
         self.detail = detail
-        self.www_authenticate = response.headers.get("www-authenticate", "")
 
 
 def _payment_detail(resp: httpx.Response) -> dict[str, Any]:
@@ -101,7 +100,7 @@ def _payment_detail(resp: httpx.Response) -> dict[str, Any]:
 
 def _raise_for_status_or_payment(resp: httpx.Response) -> None:
     """resp.raise_for_status(), except a 402 becomes PaymentRequiredError so the
-    challenge body (x402's declined={...}, the MPP amount/resource fields) reaches
+    challenge body (x402's declined={...}, the amount/resource fields) reaches
     the caller instead of being discarded. Used by the three paid-entry methods —
     join_session, join_room, subscribe_agora_topic — mirroring the three
     mcp_server.py call sites that already return that body as `detail`.
@@ -314,7 +313,7 @@ class EmporiaAgent:
             self._bearer_token, self._bearer_exp = old_token, old_exp
 
     async def _bearer_request(
-        self, method: str, url: str, *, payment_token: str | None = None, **kwargs: Any,
+        self, method: str, url: str, **kwargs: Any,
     ) -> httpx.Response:
         """httpx.AsyncClient.{get,post,delete}(url, ...) with a cached bearer token
         attached, retrying once with a freshly-obtained token if the server rejects it
@@ -322,17 +321,8 @@ class EmporiaAgent:
 
         P45: a caller-supplied `headers=` is merged with the bearer headers
         rather than colliding with them — the x402 retry needs to send
-        PAYMENT-SIGNATURE *and* stay authenticated, unlike the MPP path where
-        the payment credential takes over the Authorization header outright and
-        so has to bypass this method entirely. Merged fresh inside the 401/403
-        retry too, since the bearer token is what changes there.
-
-        `payment_token` (P95): an SPT to pay with. It takes `Authorization`
-        and the bearer moves to `X-Emporia-Authorization`, so the relay learns
-        both who is paying and with what. The MPP path used to bypass this
-        method and send the payment alone, leaving the relay unable to tell who
-        paid — fatal on any route that must know (a purchase's
-        buyer).
+        PAYMENT-SIGNATURE *and* stay authenticated. Merged fresh inside the
+        401/403 retry too, since the bearer token is what changes there.
         """
         # P172: the same rule as the MCP tools — nothing sent may carry a secret.
         if method in ("post", "put", "patch"):
@@ -342,12 +332,7 @@ class EmporiaAgent:
         extra = kwargs.pop("headers", None) or {}
 
         async def _headers() -> dict[str, str]:
-            identity = await self._bearer_headers()
-            if payment_token:
-                identity = {"Authorization": f"Payment {payment_token}",
-                            **({"X-Emporia-Authorization": identity["Authorization"]}
-                               if identity.get("Authorization") else {})}
-            return {**identity, **extra}
+            return {**await self._bearer_headers(), **extra}
 
         r = await fn(url, headers=await _headers(), **kwargs)
         if r.status_code in (401, 403):
@@ -412,29 +397,6 @@ class EmporiaAgent:
         out = resp.json()
         signing.remember_stable(self.profile_id, out.get("stable_id", ""))
         return out
-
-    async def start_stripe_onboarding(
-        self, *, email: str = "", country: str = "US",
-    ) -> dict[str, Any]:
-        """Start (or resume) live-mode Stripe Connect onboarding (P25-2).
-        Only meaningful when the relay is running with a live Stripe key —
-        test mode auto-provisions a working account at register() and needs
-        no further action. Returns an `onboarding_url` for the agent's
-        operator to complete Stripe's hosted KYC form; the account is not
-        payable until the relay's webhook independently confirms it.
-
-        P26-6: `email` must be a real, reachable address when a new account
-        is created — Stripe sends verification requirements and payout
-        failures there. `country` is immutable once Stripe creates the
-        account. Both are ignored when an existing account is simply being
-        re-linked.
-        """
-        resp = await self._bearer_request(
-            "post", f"{self.relay_url}/agents/{_seg(self.agent_id)}/stripe-onboarding",
-            json={"email": email, "country": country},
-        )
-        resp.raise_for_status()
-        return resp.json()
 
     # ------------------------------------------------------------------ #
     # Feed: posts, reactions, follows, threads
@@ -748,22 +710,21 @@ class EmporiaAgent:
             return False
 
     async def fund_session(
-        self, session_id: str, mpp_spt: str | None = None, pay_with_x402: bool = False,
+        self, session_id: str, pay_with_x402: bool = False,
     ) -> dict[str, Any]:
         """Fund a service purchase this agent created, once a seller has joined.
 
-        Either rail pays the seller directly and is released if you dispute:
+        The rail pays the seller directly and is released if you dispute:
 
-        - `mpp_spt` (P95): a Stripe destination charge to the seller's account.
         - `pay_with_x402=True` (P99): an on-chain escrow hold. The relay offers a
           PaymentInfo naming the seller's wallet; this agent checks it (network
           allowlist, amount, fee cap), signs it with `x402_private_key`, and
           retries. USDC moves into the escrow contract, not to the relay.
 
-        Without either, raises PaymentRequiredError carrying the offer(s).
+        Without it, raises PaymentRequiredError carrying the offer.
         """
         url = f"{self.relay_url}/sessions/{_seg(session_id)}/fund"
-        resp = await self._bearer_request("post", url, payment_token=mpp_spt)
+        resp = await self._bearer_request("post", url)
         if pay_with_x402 and resp.status_code == 402:
             offer = (_payment_detail(resp) or {}).get("escrow")
             if not offer:
@@ -1349,34 +1310,6 @@ class EmporiaAgent:
     # Payments
     # ------------------------------------------------------------------ #
 
-    async def create_payment_intent(
-        self,
-        session_id: str,
-        amount_cents: int,
-        seller_id: str = "relay",
-        service_type: str = "emporia:session",
-        room_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Create a Stripe PaymentIntent via the relay. Buyer is this agent's own
-        authenticated identity — the relay resolves it from the bearer credential.
-        Returns payment_intent_id.
-
-        In test mode the relay auto-confirms via test_helpers — no card needed.
-        Pass the returned payment_intent_id to join_session() or join_room().
-        """
-        resp = await self._bearer_request(
-            "post", f"{self.relay_url}/payments/create-intent",
-            json={
-                "session_id": session_id,
-                "room_id": room_id,
-                "amount_cents": amount_cents,
-                "seller_id": seller_id,
-                "service_type": service_type,
-            },
-        )
-        resp.raise_for_status()
-        return resp.json()
-
     async def get_settlements(self) -> dict[str, Any]:
         """List all settlement records on this relay. Unfiltered list requires the
         caller to be the relay operator."""
@@ -1403,18 +1336,14 @@ class EmporiaAgent:
         self,
         room_id: str,
         agent_id: str,
-        payment_intent_id: str | None = None,
-        mpp_spt: str | None = None,
         pay_with_x402: bool = False,
     ) -> dict[str, Any]:
-        """Join a room. For paid gate rooms, provide one of:
-        - mpp_spt: SPT from link-cli/mppx — paid at entry, not exit
-        - payment_intent_id: pre-created PI (legacy path)
-        Room entry is charged on join, not on leave.
+        """Join a room. Room entry is charged on join, not on leave: for a paid
+        gate room, pass pay_with_x402=True.
 
         If this agent already has an active, unexpired entitlement for this
         room (paid before and hasn't been kicked or outlasted the room's
-        access_duration_days), omit both payment_intent_id and mpp_spt — the
+        access_duration_days), pay with neither — the
         relay recognizes the existing entitlement and re-admits for free
         rather than charging again. A kicked agent's rejoin — with or
         without payment — is always rejected (403); this is permanent,
@@ -1424,18 +1353,16 @@ class EmporiaAgent:
         agent's `x402_private_key` and retry once (P45) — per-call, and never
         implied by merely holding the key.
 
-        Omit them all and, if payment is required, this raises
-        PaymentRequiredError (`.detail` the parsed challenge body,
-        `.www_authenticate` the header).
+        Omit it and, if payment is required, this raises
+        PaymentRequiredError (`.detail` the parsed challenge body).
         """
         from datetime import UTC, datetime
 
         at = datetime.now(UTC).isoformat()   # P273: the join, signed by this agent
-        body = {"agent_id": agent_id, "payment_intent_id": payment_intent_id, "at": at,
+        body = {"agent_id": agent_id, "at": at,
                 "signature": self._sign("room-join", room_id, agent_id, at)}
-        # P95: the payment and the payer's identity travel together.
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/rooms/{_seg(room_id)}/join", json=body, payment_token=mpp_spt,
+            "post", f"{self.relay_url}/rooms/{_seg(room_id)}/join", json=body,
         )
         if pay_with_x402 and resp.status_code == 402:
             payees, fee = await self._room_terms(room_id)   # P275: only its creator, at most its signed fee
@@ -2270,7 +2197,6 @@ class EmporiaAgent:
         self,
         room_id: str,
         target_agent_id: str,
-        refund: bool = False,
     ) -> dict[str, Any]:
         """Remove an agent from a room. Only the room's creator can kick — this
         agent's own authenticated identity (the bearer credential) must be the
@@ -2282,23 +2208,16 @@ class EmporiaAgent:
         regardless of whether they present a fresh, genuinely valid payment or
         a leftover invite. There is no un-kick.
 
-        refund: if True and target_agent_id had an active paid entitlement for
-        this room, the relay reverses the creator's payout for that purchase
-        and refunds target_agent_id's original charge. Defaults to False — an
-        ordinary kick moves no money. The removal itself always happens
-        regardless of this flag; a refund failure (e.g. a Stripe error) is
-        reported in the response but does not undo the kick. Check the
-        returned "refund" field for the outcome: {"refunded": true, ...} on
-        success, {"refunded": false, "reason": ...} otherwise (including the
-        normal case of a free room with nothing to refund).
+        A kick moves no money: the relay never refunds a payment. A refund is
+        the payee's to send, directly.
         """
         from datetime import UTC, datetime
 
         at = datetime.now(UTC).isoformat()   # P243: the creator's signed act
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/rooms/{_seg(room_id)}/kick",
-            json={"target_agent_id": target_agent_id, "refund": refund, "at": at,
-                  "signature": self._sign("room-kick", room_id, target_agent_id, refund, at)},
+            json={"target_agent_id": target_agent_id, "refund": False, "at": at,
+                  "signature": self._sign("room-kick", room_id, target_agent_id, False, at)},
         )
         resp.raise_for_status()
         return resp.json()
@@ -2356,8 +2275,6 @@ class EmporiaAgent:
     async def subscribe_agora_topic(
         self,
         slug: str,
-        payment_intent_id: str | None = None,
-        mpp_spt: str | None = None,
         pay_with_x402: bool = False,
     ) -> dict[str, Any]:
         """Subscribe to an Agora topic (open topics: immediately; invite/paid_invite:
@@ -2365,7 +2282,7 @@ class EmporiaAgent:
 
         If this agent already has an active, unexpired entitlement for this
         topic (paid before and hasn't been kicked or outlasted the topic's
-        access_duration_days), omit both payment_intent_id and mpp_spt — the
+        access_duration_days), pay with neither — the
         relay recognizes the existing entitlement and re-admits for free
         rather than charging again.
 
@@ -2373,14 +2290,12 @@ class EmporiaAgent:
         agent's `x402_private_key` and retry once (P45) — per-call, and never
         implied by merely holding the key.
 
-        Omit them all and, if payment is required, this raises
-        PaymentRequiredError (`.detail` the parsed challenge body,
-        `.www_authenticate` the header).
+        Omit it and, if payment is required, this raises
+        PaymentRequiredError (`.detail` the parsed challenge body).
         """
-        body = {"agent_id": self.agent_id, "payment_intent_id": payment_intent_id}
-        # P95: the payment and the payer's identity travel together.
+        body = {"agent_id": self.agent_id}
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/agoras/topics/{_seg(slug)}/subscribe", json=body, payment_token=mpp_spt,
+            "post", f"{self.relay_url}/agoras/topics/{_seg(slug)}/subscribe", json=body,
         )
         if pay_with_x402 and resp.status_code == 402:
             payees, fee = await self._topic_terms(slug)   # P278: only its creator, at most its signed fee

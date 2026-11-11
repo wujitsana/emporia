@@ -60,8 +60,6 @@ def _csv(name: str) -> list[str]:
 # Each way to be paid is a part, on when it is set up. The settings were always
 # the switch; there is no second one to forget.
 
-from emporia.cards import cards_paused as _cards_paused
-
 
 def _money_parts(links: list[str]) -> set[str] | None:
     from emporia import escrow_chain, payments, tempo
@@ -69,7 +67,6 @@ def _money_parts(links: list[str]) -> set[str] | None:
         ("x402", payments._x402_enabled()),
         ("escrow", escrow_chain.load_config() is not None),
         ("tempo", tempo.config() is not None),
-        ("cards", bool(_get("STRIPE_SECRET_KEY")) and not _cards_paused()),
     ) if on}
     return parts or None
 
@@ -77,18 +74,11 @@ def _money_parts(links: list[str]) -> set[str] | None:
 def _money_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
     from emporia import escrow_chain, payments, tempo
     escrow = escrow_chain.load_config() if "escrow" in parts else None
-    key = _get("STRIPE_SECRET_KEY")
     return {
         "x402": sorted(payments._x402_networks()) if "x402" in parts else [],
         "escrow": escrow.network if escrow else None,
         "tempo": (tempo.config() or {}).get("network") if "tempo" in parts else None,
-        "cards": _stripe_mode(key) if "cards" in parts else None,
     }
-
-
-def _stripe_mode(key: str) -> str:
-    return "live" if key.startswith(("sk_live_", "rk_live_")) else "test" if key.startswith(
-        ("sk_test_", "rk_test_")) else "unknown"
 
 
 def _money_wrong(links: list[str]) -> list[str]:
@@ -97,9 +87,6 @@ def _money_wrong(links: list[str]) -> list[str]:
     if _on("EMPORIA_X402_ENABLED") and not payments._x402_enabled():
         out.append("money: EMPORIA_X402_ENABLED is on, but x402 needs a facilitator URL and a network "
                    "with an asset — `emporia setup relay` sets them together")
-    for opt in ("EMPORIA_CUSTODIAL_CARDS",):
-        if _on(opt) and (_cards_paused() or not _get("STRIPE_SECRET_KEY")):
-            out.append(f"money: {opt} is on, but cards are paused in this release — see docs/payments.md")
     return out
 
 
@@ -174,12 +161,11 @@ def _labs_wrong(links: list[str]) -> list[str]:
 
 MODULES: tuple[RelayModule, ...] = (
     RelayModule(
-        "money", "Take payments: USDC over x402 paid agent to agent, Tempo, cards; escrow holds only if opted in",
-        parts=("x402", "escrow", "tempo", "cards"),
-        tools={"cards": ("start_stripe_onboarding", "create_payment_intent"),
-               "x402": ("register_x402_wallet", "money_info"),
+        "money", "Take payments: USDC over x402 paid agent to agent, Tempo; escrow holds only if opted in",
+        parts=("x402", "escrow", "tempo"),
+        tools={"x402": ("register_x402_wallet", "money_info"),
                "escrow": ("reclaim_escrow",)},
-        change="emporia setup relay (USDC, Tempo; --escrow opts in to holds) · emporia setup stripe (cards)",
+        change="emporia setup relay (USDC, Tempo; --escrow opts in to holds)",
         running=_money_parts, detail=_money_detail, misconfigured=_money_wrong),
     RelayModule(
         "log", "A public Merkle log anyone can check this relay never rewrote",
@@ -306,7 +292,6 @@ def chosen(env: Mapping[str, str]) -> dict[str, set[str]]:
         ("x402", get("EMPORIA_X402_ENABLED").lower() in ("1", "on", "true", "yes")),
         ("escrow", bool(get("EMPORIA_ESCROW_NETWORK"))),
         ("tempo", bool(get("EMPORIA_TEMPO_NETWORK"))),
-        ("cards", bool(get("STRIPE_SECRET_KEY")) and not _cards_paused()),
     ) if on}
     if money:
         out["money"] = money

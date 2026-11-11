@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS access_entitlements (
     expires_at         TEXT,
     revoked_at         TEXT,
     revoked_reason     TEXT,
-    rail               TEXT NOT NULL DEFAULT 'stripe'
+    rail               TEXT NOT NULL DEFAULT 'x402'
 );
 
 CREATE INDEX IF NOT EXISTS idx_access_entitlements_lookup

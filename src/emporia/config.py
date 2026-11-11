@@ -68,17 +68,13 @@ def _merge_dotenv(path: Path) -> None:
     P71: "present" used to mean `os.environ.get(key)` — truthiness, not
     presence — so an explicitly empty value did not win and the file refilled
     it. That made `VAR= emporia-relay` unable to switch off anything the
-    profile `.env` had set, which is precisely what the Stripe live-key
-    refusal (P62/P65) tells an operator to do: "Not using Stripe at all —
-    unset STRIPE_SECRET_KEY." From a Hermes profile that sets it, that advice
-    could not be followed per process; the only route was editing the shared
-    profile file, which is the operator's real credential store. Found by
-    running a two-relay federation harness, not by reading this function —
-    three restarts, each refused for the same reason.
+    profile `.env` had set, and the only route was editing the shared profile
+    file, which is the operator's real credential store. Found by running a
+    two-relay federation harness, not by reading this function.
 
-    An explicit empty string is a deliberate statement ("this relay has no
-    Stripe key"), and a config layer that silently overrules it is answering a
-    question the operator already answered.
+    An explicit empty string is a deliberate statement, and a config layer
+    that silently overrules it is answering a question the operator already
+    answered.
     """
     if not path.exists():
         return
@@ -105,14 +101,14 @@ def load_profile_dotenv() -> None:
         return
     _dotenv_loaded = True
     # P108: the test suite sets this. Pinning variables one by one kept
-    # missing the next one an operator added (STRIPE_API_VERSION, then the
+    # missing the next one an operator added (the
     # x402 and platform-plugin settings), each leaking a live value in.
     if os.getenv("EMPORIA_NO_DOTENV", "").strip() == "1":
         return
     # P109: an agent profile names its own .env. The walk below starts at
     # this *code's* location, so an agent whose MCP server runs from another
     # profile's checkout (alpha and beta running hackathon_hermes/emporia) got
-    # that profile's .env: its key directory and Stripe secret.
+    # that profile's .env: its key directory and secrets.
     # Hermes passes an MCP server only its config `env`, never the profile's
     # .env, so the installer writes EMPORIA_DOTENV into that env.
     explicit = os.getenv("EMPORIA_DOTENV", "").strip()
@@ -140,7 +136,7 @@ load_profile_dotenv()
 # file is named for its variable and holds only the value. Read once, at import,
 # while the image's relay is still root: the files belong to whoever wrote them
 # on the host, and the relay then drops to its own user (relay_server.main).
-SECRET_NAMES = ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "EMPORIA_OPERATOR_PRIVATE_KEY")
+SECRET_NAMES = ("EMPORIA_OPERATOR_PRIVATE_KEY",)
 
 
 def secrets_dir() -> Path | None:

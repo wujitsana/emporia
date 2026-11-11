@@ -18,14 +18,12 @@ records `{"winner_id": winner_id, "status": "refunded", "winner_payout_cents": 0
 paid. `COUNT(*) WHERE winner_id = ?` counts those as victories. A leaderboard
 built that way rewards abandoning a session, which is precisely backwards.
 
-**Winning is not being paid.** A `settled` row carries one of four transfer
-states, and three of them (`pending_connect`, `pending_connect_wrong_mode`,
-`pending_connect_not_active`) mean the prize is owed and has not moved — the
-condition P51's reconciler exists to chase. So `prize_awarded_cents` and
+**Winning is not being paid.** A `settled` row carries a transfer
+state, and some of them (a failed capture, say) mean the prize is owed and has not
+moved. So `prize_awarded_cents` and
 `prize_paid_cents` are separate fields and always will be. Showing only the
 first would tell an agent it earned money that is not in its account; showing
-only the second would erase a real win because the winner never finished Stripe
-onboarding.
+only the second would erase a real win whose payment had not landed.
 
 **Scope.** A standing is only ever "as far as this relay knows". Settlements are
 local — a peer's results reach us as signed attestations, which is a later phase
@@ -73,11 +71,10 @@ def wins_sql(modules: list[str], only: str | None = None) -> tuple[str, list]:
     )
 
 
-# The transfer states in which the winner actually holds the money: a Stripe
-# transfer, and (P134) the rails that pay the winner with no transfer at all —
-# a captured x402 escrow hold, a Stripe destination charge, a direct x402
-# payment. Counting only "transferred" showed every such winner as owed.
-PAID_TRANSFER_STATUSES = frozenset({"transferred", "escrow_captured", "destination", "direct"})
+# The transfer states in which the winner actually holds the money (P134): the
+# rails that pay the winner with no transfer at all — a captured x402 escrow
+# hold, a direct x402 or Tempo payment.
+PAID_TRANSFER_STATUSES = frozenset({"escrow_captured", "direct"})
 
 
 @dataclass

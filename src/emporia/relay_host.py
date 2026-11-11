@@ -3,7 +3,7 @@
 A relay on this machine's own Python listens on 127.0.0.1 only. One that others
 reach runs in a container, behind https, with its settings in its own folder —
 compose.yaml, Caddyfile and a .env — not in a Hermes profile's .env. Its keys and
-database live in a Docker volume; its secrets (Stripe, an operator key given by
+database live in a Docker volume; its secrets (an operator key given by
 value) in `secrets/`, one file each, mounted read-only — never environment
 variables, which `docker inspect` shows (P200).
 
@@ -302,7 +302,7 @@ services:
     volumes:
       - emporia-data:/data   # its identity, operator key and database: never delete
       - {host_dir}/.env:/app/relay.env:ro   # who may use it; re-read when it changes
-      - {host_dir}/secrets:/run/secrets:ro  # one file per secret (Stripe, an operator key by value)
+      - {host_dir}/secrets:/run/secrets:ro  # one file per secret (an operator key by value)
     networks:
       - emporia-edge
     healthcheck:

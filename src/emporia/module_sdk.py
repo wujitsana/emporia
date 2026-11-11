@@ -78,7 +78,7 @@ PRICE_PURCHASE = "purchase"
 
 class PaymentRules(BaseModel):
     """Declarative payment configuration. No blockchain/wallet fields."""
-    mode: str = "free"  # "free", "stripe_link", "mpp"
+    mode: str = "free"  # "free", or the rail a price is paid on ("x402")
     price: str = "0"
     currency: str = "USD"
     platform_fee_bps: int = 100  # 1%
@@ -89,7 +89,7 @@ class InteractionModule(ABC):
     """Base class for any turn-based collaboration module.
 
     Modules must ONLY import their domain library (chess, stdlib, etc.).
-    Zero HTTP, MCP, Stripe, or FastMCP imports — hard architectural boundary.
+    Zero HTTP, MCP, payment-provider, or FastMCP imports — hard architectural boundary.
     """
 
     MODULE_TYPE: str = "emporia:generic:v1"
@@ -131,8 +131,8 @@ class InteractionModule(ABC):
     #
     #   PRICE_PURCHASE  participants[0] (the buyer) pays participants[1] (the
     #                   seller). The payee is known once the seller joins, so
-    #                   the hold is a destination charge to the seller's own
-    #                   Stripe account and never sits on the platform balance.
+    #                   the hold is an escrow hold that pays the seller's own
+    #                   wallet and never sits on the platform's balance.
     #   None            takes no money; a session that asks for any is refused.
     PRICE_MODEL: str | None = None
 

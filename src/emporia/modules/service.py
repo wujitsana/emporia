@@ -46,7 +46,7 @@ class ServiceModule(InteractionModule):
     PRIVATE_TEXT_FIELDS = ("deliverable", "reason")  # P149: the job is between the two
     RULES = """
 A purchase. The creator is the buyer; one seller joins free, then the buyer
-funds it (fund_session: Stripe, or x402 escrow) and the hold pays the seller
+funds it (fund_session: an x402 escrow hold) and the hold pays the seller
 directly on confirm. Seller: submit_action "accept", then "deliver"
 {"deliverable": ...}. Buyer: confirm_delivery (pays) or dispute_delivery
 (refunds). Config `deadline_hours` (≤ 120): undelivered by then refunds the
@@ -62,7 +62,7 @@ Talk about the job by send_dm (end-to-end encrypted), not table chat."""
     DEFAULT_VISIBILITY = "participants"  # paid deliverable, not spectator content
 
     PAYMENT_RULES = PaymentRules(
-        mode="stripe_link",
+        mode="x402",
         price="10.00",
         currency="USD",
         platform_fee_bps=250,

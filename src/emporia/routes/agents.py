@@ -9,16 +9,13 @@ from __future__ import annotations
 
 import functools
 import json
-import os
 import secrets
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import httpx
 
-from emporia.cards import PAUSED_RELAY_MSG, stripe_secret_key
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
@@ -144,45 +141,9 @@ async def register_agent(req: rs.RegisterAgentRequest, request: Request):
         rs.AGENT_REGISTRY.set_encryption_key(canonical_id, enc_key, req.encryption_key_signature,
                                              req.encryption_key_at)
 
-    # Auto-provision a Stripe Connected Account in test mode so the agent can
-    # receive real (test) payouts without manual Stripe onboarding.
-    stripe_account_id: str | None = None
-    # P75: mode, not prefix. A restricted test key (rk_test_) is test mode, and
-    # a bare sk_test_ check skipped provisioning for it — leaving that operator
-    # in a gap where registration provisions nothing and the onboarding route
-    # below then waves them into the live-mode flow with a test key.
-    from emporia.payments import stripe_key_mode
-    if stripe_key_mode() == "test":
-        try:
-            from emporia.payments import create_connected_account
-            acct = await create_connected_account(canonical_id)
-            stripe_account_id = acct["stripe_account_id"]
-            # P26-4: tag the key space that created it — this block only ever
-            # runs under sk_test_, so "test" is a fact here, not an inference.
-            rs.AGENT_REGISTRY.set_stripe_account(canonical_id, stripe_account_id, mode="test")
-            # P25-2: test mode is the one case where 'active' is correct
-            # immediately — Stripe auto-approves a Custom account's
-            # capabilities in test mode (create_connected_account()'s own
-            # docstring), so there's no webhook to wait for.
-            rs.AGENT_REGISTRY.set_stripe_account_status(stripe_account_id, "active")
-        except Exception as e:
-            # Non-fatal — the agent can still use free sessions and x402 — but
-            # never silent (P128): Stripe refused this for every agent on a new
-            # Connect platform ("use Accounts v2 or enable Accounts v1 support")
-            # and nothing said so until a payout found no account.
-            detail = str(e)
-            resp = getattr(e, "response", None)
-            if resp is not None:
-                try:
-                    detail = resp.json().get("error", {}).get("message", detail)
-                except ValueError:
-                    pass
-            rs.logger.warning("stripe_connected_account_not_created", extra={
-                "agent_id": canonical_id, "detail": detail[:300]})
-
     rs.logger.info("agent_registered", extra={
         "agent_id": canonical_id, "stable_id": profile["stable_id"],
-        "client": str(profile.get("client") or "")[:80], "stripe_account": bool(stripe_account_id)})
+        "client": str(profile.get("client") or "")[:80]})
     return {
         "status": "registered",
         "agent_id": canonical_id,
@@ -197,7 +158,6 @@ async def register_agent(req: rs.RegisterAgentRequest, request: Request):
         "operator_label": profile["operator_label"],
         "about": profile["about"],
         "client": profile["client"],
-        "stripe_account_id": stripe_account_id,
     }
 @router.get("/agents")
 async def list_agents(request: Request, limit: int = 100, search: str | None = None,
@@ -219,7 +179,7 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             pattern = f"%{search}%"
             rows, has_more = rs._fetch_page(
                 conn,
-                "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
+                "SELECT agent_id, display_name, registered_at, is_active, "
                 "operator_label, client_name, client_version, about, declared_model, declared_model_at, stable_id "
                 "FROM authorized_agents WHERE (agent_id LIKE ? OR display_name LIKE ?) "
                 + ("" if include_inactive else "AND is_active = 1 ")    # P222: one that left is gone
@@ -229,7 +189,7 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
         else:
             rows, has_more = rs._fetch_page(
                 conn,
-                "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
+                "SELECT agent_id, display_name, registered_at, is_active, "
                 "operator_label, client_name, client_version, about, declared_model, declared_model_at, stable_id "
                 "FROM authorized_agents " + ("" if include_inactive else "WHERE is_active = 1 ")
                 + "ORDER BY registered_at DESC LIMIT ?",
@@ -278,7 +238,6 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             **_identity_fields(row, caller, changes.get(row["stable_id"], []), links.get(row["stable_id"], [])),
             "registered_at": row["registered_at"],
             "is_active": bool(row["is_active"]),
-            "has_stripe": bool(row["stripe_account_id"]),
             "session_count": session_counts.get(agent_id, 0),
             "win_count": win_counts.get(agent_id, 0),
         })
@@ -400,8 +359,7 @@ async def get_agent_profile(agent_id: str, request: Request):
 
     N4-3 (N4 review R2): this had no `request` param at all — the exact bug shape
     GET /agents was gated for in N3-3 ("the enumeration primitive"), one route over, and
-    returning strictly more per-agent data (including the raw Stripe Connect account id)
-    than the now-gated list endpoint. Requires an authenticated caller, matching GET
+    returning strictly more per-agent data than the now-gated list endpoint. Requires an authenticated caller, matching GET
     /agents; agent discovery stays a feature, it just stops being anonymous.
     """
     caller = rs._dashboard_agent_id(request)
@@ -409,8 +367,8 @@ async def get_agent_profile(agent_id: str, request: Request):
         raise HTTPException(401, "Authentication required")
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute(
-            "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
-            "stripe_account_status, operator_label, client_name, client_version, about, declared_model, "
+            "SELECT agent_id, display_name, registered_at, is_active, "
+            "operator_label, client_name, client_version, about, declared_model, "
             "declared_model_at, encryption_public_key, public_key_hex, stable_id, accepts_remote_dms "
             "FROM authorized_agents WHERE agent_id = ?",
             (agent_id,),
@@ -429,9 +387,7 @@ async def get_agent_profile(agent_id: str, request: Request):
             [*wins_params, agent_id],
         ).fetchone()[0]
 
-    has_stripe = bool(row["stripe_account_id"])
-    stripe_profile_ready = rs._stripe_profile_ready()
-    payment_rails, payment_methods = rs._payment_rails(has_stripe=has_stripe)
+    payment_rails = rs._payment_rails()
 
     return {
         "agent_id": row["agent_id"],
@@ -467,19 +423,9 @@ async def get_agent_profile(agent_id: str, request: Request):
         # P195: its own choice, for itself and the operator only.
         **({"takes_dms_from_other_relays": bool(row["accepts_remote_dms"])}
            if caller in (row["agent_id"], rs._relay_operator_id()) else {}),
-        # N4-3 (R2): stripe_account_id (the raw Connect acct_... id) removed from the
-        # response shape entirely, regardless of auth — has_stripe already answers the
-        # only question a caller legitimately needs ("can this agent be paid").
-        "has_stripe": has_stripe,
-        # P25-2: has_stripe only ever answered "does an account exist" —
-        # 'none' | 'pending' | 'active' answers the question that actually
-        # matters for live mode, "can this agent be paid right now".
-        "stripe_account_status": row["stripe_account_status"] or "none",
-        "stripe_profile_ready": stripe_profile_ready,
         "session_count": session_count,
         "win_count": win_count,
         "payment_rails": payment_rails,
-        "payment_methods": payment_methods,
         # P120: where this agent is paid over x402, per network family. Public:
         # every x402 payment request names it as payTo anyway. Without it an
         # agent could not tell whether its own wallet was registered.
@@ -644,9 +590,8 @@ async def rename_agent(agent_id: str, req: rs.RenameAgentRequest, request: Reque
 @router.post("/agents/{agent_id}/x402-wallet")
 async def set_x402_wallet(agent_id: str, req: rs.SetX402WalletRequest, request: Request):
     """Register (or update) this agent's x402 `payTo` wallet address for one
-    network family. Unlike Stripe Connect (auto-provisioned at registration,
-    `:2586`), there is no wallet to create on an agent's behalf — this must be
-    called explicitly, and a wrong address is unrecoverable money, so the
+    network family. The relay never creates a wallet on an agent's
+    behalf — this must be called explicitly, and a wrong address is unrecoverable money, so the
     format is validated and rejected loudly rather than accepted silently."""
     rs._require_caller_is(agent_id, request)
     rs._require_registered(agent_id)
@@ -676,111 +621,6 @@ async def set_x402_wallet(agent_id: str, req: rs.SetX402WalletRequest, request: 
                                       {"at": req.at, "signature": req.signature})
     return {"agent_id": agent_id, "network_family": req.network_family, "address": req.address,
             "at": req.at, "signature": req.signature}
-@router.post("/agents/{agent_id}/stripe-onboarding")
-async def start_stripe_onboarding(agent_id: str, request: Request):
-    """Start (or resume) live-mode Stripe Connect onboarding for this agent
-    (P25-2). Distinct from registration's test-mode auto-provisioning
-    (`register_agent`, above) — live mode has no verification-skipping
-    shortcut, so this must be an explicit, operator-triggered action that
-    sends the agent's operator through Stripe's own hosted KYC flow rather
-    than fabricating ToS acceptance the way the test-mode path legitimately
-    can. Reuses an existing Connected Account if one was already created by
-    an earlier call (a fresh onboarding link can be requested any time,
-    including for an already-active account, without resetting its status).
-
-    P26-4/P26-6: an existing account is reused only when it belongs to the
-    *current* key space — a leftover test-mode `acct_...` is useless under a
-    live key, so reusing it would produce a Stripe error at best and a real
-    transfer aimed at a nonexistent account at worst. `email` is required
-    (Stripe mails a real account holder about verification and payout
-    failures) and `country` is accepted because Stripe treats it as immutable
-    after creation.
-    """
-    rs._require_caller_is(agent_id, request)
-    rs._require_registered(agent_id)
-    rs._enforce_agent_rate_limit(agent_id)
-
-    stripe_key = stripe_secret_key().strip()
-    from emporia.cards import cards_paused
-    if cards_paused():
-        raise HTTPException(400, PAUSED_RELAY_MSG)
-    if not stripe_key:
-        raise HTTPException(400, "Stripe is not configured on this relay")
-    from emporia.payments import stripe_key_mode
-    if stripe_key_mode() == "test":
-        raise HTTPException(
-            400,
-            "This relay is running in Stripe test mode — a Connected Account "
-            "was already auto-provisioned at registration and needs no "
-            "onboarding. This endpoint is for live mode only.",
-        )
-
-    from emporia.payments import create_account_onboarding_link, create_live_connected_account
-
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    body = body if isinstance(body, dict) else {}
-    email = str(body.get("email") or "").strip()
-    country = str(body.get("country") or "US").strip().upper()
-
-    key_mode = rs._stripe_key_mode()
-    stripe_account_id = rs.AGENT_REGISTRY.get_stripe_account(agent_id)
-    account_mode = rs.AGENT_REGISTRY.get_stripe_account_mode(agent_id)
-    if stripe_account_id and account_mode and key_mode and account_mode != key_mode:
-        # Leftover from the other key space — mint a real one for this mode.
-        stripe_account_id = None
-
-    if not stripe_account_id:
-        # P27-3: `.local` compared case-insensitively (DNS is), and the
-        # local-part/domain split checked rather than a bare "@" test.
-        if not email or "@" not in email or email.lower().endswith(".local"):
-            raise HTTPException(
-                400,
-                "a real, reachable `email` is required to create a live Stripe "
-                "Connected Account — Stripe sends verification requirements, "
-                "payout failures and account restrictions to it",
-            )
-        # P27-3: `str.isalpha()` is true for any Unicode letter, so "ÉÉ"
-        # passed this and reached Stripe as an ISO country code. ISO 3166-1
-        # alpha-2 is ASCII by definition, and Stripe treats the value as
-        # immutable, so a bad one costs an account deletion and a fresh KYC.
-        if len(country) != 2 or not country.isascii() or not country.isalpha():
-            raise HTTPException(
-                400,
-                "`country` must be a 2-letter ISO code; Stripe treats it as "
-                "immutable after the account is created",
-            )
-        try:
-            acct = await create_live_connected_account(agent_id, email=email, country=country)
-        except httpx.HTTPError as e:
-            # P27-2: P26 gave the Account Link call below this treatment and
-            # left creation raw, so a Stripe rejection here surfaced as a 500 —
-            # a relay bug — rather than the upstream failure it is. This is the
-            # likelier of the two to fail: it's the call carrying the
-            # operator-supplied `country` and `email`. Nothing is persisted on
-            # this path, so a corrected retry starts cleanly.
-            raise HTTPException(502, f"Stripe rejected the account-creation request: {e}")
-        stripe_account_id = acct["stripe_account_id"]
-        rs.AGENT_REGISTRY.set_stripe_account(agent_id, stripe_account_id, mode=key_mode or "live")
-        rs.AGENT_REGISTRY.set_stripe_account_status(stripe_account_id, "pending")
-
-    return_url = rs._stripe_onboarding_return_url(request)
-    try:
-        onboarding_url = await create_account_onboarding_link(
-            stripe_account_id, refresh_url=return_url, return_url=return_url,
-        )
-    except httpx.HTTPError as e:
-        # P26-7 (L11): the account itself is already persisted at 'pending', so
-        # a retry correctly reuses it — this is a clean upstream failure, not a
-        # 500 in our own code, and shouldn't be reported as one.
-        raise HTTPException(502, f"Stripe rejected the onboarding-link request: {e}")
-    return {
-        "agent_id": agent_id,
-        "stripe_account_id": stripe_account_id,
-        "onboarding_url": onboarding_url,
-    }
 @router.post("/agents/{agent_id}/encryption-key")
 async def set_encryption_key(agent_id: str, req: rs.SetEncryptionKeyRequest, request: Request):
     """Publish (or rotate) this agent's X25519 public key for end-to-end encrypted

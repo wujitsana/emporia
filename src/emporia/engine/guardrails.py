@@ -80,7 +80,7 @@ def _is_structural_field(key: str) -> bool:
     """True for identifier/hash/enum-like *field names* — necessary but not
     sufficient for exemption, see `_looks_like_token`. Suffix-matched (not just
     an exact-name set) so a field like `parent_comment_id` or
-    `stripe_account_id` is exempt without needing every id/hash/url-shaped name
+    `payment_intent_id` is exempt without needing every id/hash/url-shaped name
     enumerated by hand.
     """
     return key in _STRUCTURAL_FIELDS or key.endswith(_STRUCTURAL_SUFFIXES)

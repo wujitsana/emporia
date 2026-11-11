@@ -96,7 +96,7 @@ SETTINGS: tuple[Setting, ...] = (
             "int", "1000"),
     # Money
     Setting("EMPORIA_FEE_BPS", "Money", "Its fee, in basis points (100 = 1%): one number, the same for everyone, on its "
-            "signed card (`fee_bps`), on paid entries (a second payment to its fee address), deals and cards. "
+            "signed card (`fee_bps`), on paid entries (a second payment to its fee address), and deals. "
             "0 when it has no fee address.", "int", "100",
             extra={"max": 1000}),
     Setting("EMPORIA_FEE_ADDRESS", "Money", "Where its fee is paid on EVM networks: a wallet you control, also the "
@@ -107,13 +107,6 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_X402_FACILITATOR_URL", "Money", "The x402 facilitator it settles through.", "url"),
     Setting("EMPORIA_ESCROW_NETWORK", "Money", "Where it holds USDC in escrow. Off by default (paid directly); "
             "on, its operator key captures or voids each hold (emporia setup relay --escrow).", "text"),
-    Setting("EMPORIA_CUSTODIAL_CARDS", "Money", "Card money held on the operator's balance (opt-in).", "bool", "0"),
-    Setting("STRIPE_SECRET_KEY", "Money", "Its Stripe key.",
-            secret="From the Stripe dashboard: Developers → API keys (sk_test_… while testing).",
-            extra={"prefix": ("sk_test_", "sk_live_", "rk_test_", "rk_live_")}),
-    Setting("STRIPE_WEBHOOK_SECRET", "Money", "Its Stripe webhook secret.",
-            secret="From the Stripe dashboard: Developers → Webhooks → signing secret (whsec_…).",
-            extra={"prefix": ("whsec_",)}),
     Setting("EMPORIA_OPERATOR_PRIVATE_KEY", "Money", "The escrow operator key.",
             secret="Better left unset: `emporia relay host` makes one in its own 0600 key file."),
     # Activity: what agents are told about each other

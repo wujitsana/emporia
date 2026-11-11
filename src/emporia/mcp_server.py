@@ -247,16 +247,10 @@ def _unsafe_path(url: str) -> str:
 
 
 def _bearer_request(
-    method: str, url: str, *, agent_id: str = "", payment_token: str = "", **kwargs: Any,
+    method: str, url: str, *, agent_id: str = "", **kwargs: Any,
 ) -> httpx.Response:
     """httpx.{get,post,delete}(url, ...) with a cached bearer token attached, retrying
-    once with a freshly-obtained token if the server rejects it (401/403).
-
-    `payment_token` (P95): an SPT to pay with. It takes `Authorization` and the
-    identity moves to `X-Emporia-Authorization`, so the relay knows both who is
-    paying and with what — before this, a paid call could carry only the
-    payment and the relay could not tell who sent it. Retrying a paid call is
-    safe: the SPT's Idempotency-Key (P88) returns the same PaymentIntent."""
+    once with a freshly-obtained token if the server rejects it (401/403)."""
     # MCP review: one route per call — an id from a tool argument may not climb out of it.
     if why := _unsafe_path(url):
         raise ValueError(f"refused: {why}. Pass the id exactly as the relay gave it")
@@ -270,13 +264,7 @@ def _bearer_request(
     relay = next((r for r in (RELAY_URL, *_visits(), *_backups()) if url.startswith(r + "/")), _base())
 
     def headers() -> dict[str, str]:
-        identity = _dashboard_bearer_headers(relay_url=relay, agent_id=agent_id)
-        if not payment_token:
-            return {**identity, **extra}
-        out = {"Authorization": f"Payment {payment_token}"}
-        if identity.get("Authorization"):
-            out["X-Emporia-Authorization"] = identity["Authorization"]
-        return {**out, **extra}
+        return {**_dashboard_bearer_headers(relay_url=relay, agent_id=agent_id), **extra}
 
     r = fn(url, headers=headers(), **kwargs)
     if r.status_code in (401, 403):
@@ -1054,34 +1042,6 @@ def _card_from_elsewhere(agent: str) -> dict[str, Any] | None:
 
 
 @mcp.tool()
-def start_stripe_onboarding(
-    agent_id: str = "", email: str = "", country: str = "US",
-) -> dict[str, Any]:
-    """PAUSED in this release: cards are off, do not use. (Start live-mode Stripe Connect onboarding.)
-    (P25-2). Sync twin of agent_sdk.EmporiaAgent.start_stripe_onboarding() —
-    see that method's docstring. Only meaningful when the relay runs with a
-    live Stripe key; test mode auto-provisions a working account at
-    register_agent() already.
-
-    P26-6: `email` must be a real, reachable address when a new account is
-    created (Stripe mails verification requirements and payout failures to
-    it); `country` is immutable once the account exists."""
-    aid = agent_id or AGENT_ID
-    if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    try:
-        r = _bearer_request(
-            "post", f"{_base()}/agents/{_seg(aid)}/stripe-onboarding", agent_id=aid, timeout=10,
-            json={"email": email, "country": country},
-        )
-        if r.status_code != 200:
-            return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
-        return {"success": True, **r.json()}
-    except Exception as e:
-        return {"error": str(e), "success": False}
-
-
-@mcp.tool()
 def list_agents(limit: int = 50, agent_id: str = "") -> dict[str, Any]:
     """List agents registered on this relay.
 
@@ -1384,10 +1344,6 @@ def _payment_options(detail: Any, resp: httpx.Response | None = None) -> list[st
     from emporia.networks import label
     d = detail if isinstance(detail, dict) else {}
     out: list[str] = []
-    card = d.get("card") or {}
-    if card.get("offered") is False:
-        out.append(f"card: not offered here ({card.get('reason', 'no payee account')})")
-    # Cards (Stripe) are paused in this release: never offered here.
     for req in ((d.get("x402") or {}).get("accepts") or []):
         net = req.get("network", "")
         out.append(f"USDC on {label(net)}, paid straight to the payee: pay_with_x402=True, "
@@ -1471,7 +1427,7 @@ def _tempo_paid_retry(r: httpx.Response, aid: str, method: str, url: str, payees
 def _settlement(r: httpx.Response, body: dict[str, Any] | None = None) -> dict[str, Any]:
     """What a paid answer says about its settlement: `{"settlement": {transaction, network, payer}}` from the
     relay's `PAYMENT-RESPONSE` header (x402 and escrow: the facilitator's or the chain's transaction hash), or the
-    `settlement` the relay put in the body (Tempo), or {} when no transaction came back (a card, a free entry)."""
+    `settlement` the relay put in the body (Tempo), or {} when no transaction came back (a free entry)."""
     if isinstance(body, dict) and isinstance(body.get("settlement"), dict):
         return {}
     try:
@@ -1535,8 +1491,6 @@ def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, network
 @mcp.tool()
 def join_room(
     room_id: str,
-    payment_intent_id: str | None = None,
-    mpp_token: str = "",
     pay_with_x402: bool = False,
     pay_with_tempo: bool = False,
     pay_network: str = "",
@@ -1545,14 +1499,13 @@ def join_room(
     """Join a room. Gate logic:
       open            — just join (public rooms only)
       invite          — must have been invited by creator first
-      paid            — pay with pay_with_x402 or pay_with_tempo (cards are
-                        paused in this release; payment_intent_id is refused).
+      paid            — pay with pay_with_x402 or pay_with_tempo.
                         If you already have an active, unexpired entitlement
                         for this room (paid before and haven't been kicked or
-                        outlasted the room's access_duration_days), omit
-                        payment_intent_id entirely — the relay recognizes the
-                        existing entitlement and re-admits you for free rather
-                        than charging again.
+                        outlasted the room's access_duration_days), pay with
+                        neither — the relay recognizes the existing
+                        entitlement and re-admits you for free rather than
+                        charging again.
 
     A kicked agent's rejoin — with or without payment — is always rejected
     (403); this is permanent, there is no un-kick.
@@ -1566,31 +1519,25 @@ def join_room(
 
     Returns current room state on success. Forwards to the relay's
     POST /rooms/{id}/join so payment is actually verified server-side —
-    this used to write directly to the local room DB and only checked that
-    payment_intent_id was *non-empty*, never that it was a real, paid
-    PaymentIntent; that let any agent join a paid room for free.
+    this used to write directly to the local room DB and checked no payment;
+    that let any agent join a paid room for free.
     """
     agent_id = agent_id or AGENT_ID      # P297: yourself, unless named
     if not agent_id:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    if (pay_with_x402 or pay_with_tempo or mpp_token or payment_intent_id) and (refusal := _playbook_refusal("buy")):
+    if (pay_with_x402 or pay_with_tempo) and (refusal := _playbook_refusal("buy")):
         return refusal       # a paid entry is a purchase: the playbook's `buys` setting holds
     from datetime import UTC, datetime
 
     at = datetime.now(UTC).isoformat()   # P273: the join, signed by this agent
     body: dict[str, Any] = {"agent_id": agent_id, "at": at,
                             "signature": signing.sign(agent_id, "room-join", room_id, agent_id, at)}
-    if payment_intent_id:
-        body["payment_intent_id"] = payment_intent_id
     try:
-        # P104: mpp_token was accepted and never sent, so paying for a room with
-        # an SPT through MCP silently did nothing. It travels now, and
         # pay_with_x402 pays the entry fee from this agent's x402 wallet;
         # pay_with_tempo (P156) pays it in Tempo stablecoin from the same EVM
         # wallet, straight to the creator — the relay checks the receipt.
         url = f"{_base()}/rooms/{_seg(room_id)}/join"
-        r = _bearer_request("post", url, agent_id=agent_id, payment_token=mpp_token,
-                            json=body, timeout=15)
+        r = _bearer_request("post", url, agent_id=agent_id, json=body, timeout=15)
         if r.status_code == 402 and (pay_with_x402 or pay_with_tempo):
             payees, fee = _room_terms(agent_id, room_id)   # P275: only its creator, at most its signed fee
             if pay_with_x402:
@@ -2464,7 +2411,6 @@ def close_room(room_id: str, creator_id: str = "") -> dict[str, Any]:
 def kick_from_room(
     room_id: str,
     target_agent_id: str,
-    refund: bool = False,
     creator_id: str = "",
 ) -> dict[str, Any]:
     """Remove an agent from a room. Only the room's creator can kick — creator_id
@@ -2476,14 +2422,8 @@ def kick_from_room(
     whether they present a fresh, genuinely valid payment or a leftover invite.
     There is no un-kick tool.
 
-    refund: if True and target_agent_id had an active paid entitlement for this
-    room, the relay reverses the creator's payout for that purchase and refunds
-    target_agent_id's original charge. Defaults to False — an ordinary kick moves
-    no money. The removal itself always happens regardless of this flag; a
-    refund failure (e.g. a Stripe error) is reported in the response but does
-    not undo the kick. Check the returned "refund" field for the outcome:
-    {"refunded": true, ...} on success, {"refunded": false, "reason": ...}
-    otherwise (including the normal case of a free room with nothing to refund).
+    A kick moves no money: the relay never refunds a payment. A refund is the
+    payee's to send, directly.
 
     Forwards to the relay's POST /rooms/{id}/kick.
     """
@@ -2494,7 +2434,7 @@ def kick_from_room(
         r = _bearer_request(
             "post", f"{_base()}/rooms/{_seg(room_id)}/kick",
             agent_id=creator_id,
-            json=_signed_room_act(creator_id, "kick", room_id, target_agent_id, refund=refund),   # P243
+            json=_signed_room_act(creator_id, "kick", room_id, target_agent_id),   # P243
             timeout=15,
         )
         d = r.json()
@@ -2545,19 +2485,10 @@ def get_inbox(unread_only: bool = True, limit: int = 50, agent_id: str = "") -> 
 # ============================================================================
 
 def _relay_payment_info() -> dict[str, Any]:
-    """The relay's payment setup and available MPP methods (the `relay` part of money_info).
+    """The relay's payment setup (the `relay` part of money_info).
 
     Key fields:
-      payment_rails      — settlement rails (free, mpp, stripe_pi, x402 — P1b)
-      payment_methods    — concrete MPP methods currently configured (stripe, tempo).
-                            Distinct axis from payment_rails: MPP methods are settlement
-                            backends reachable *through* Stripe's MPP challenge/response
-                            transport; x402 has no MPP transport underneath it, so it's
-                            a payment_rails member with no payment_methods counterpart.
-      mpp_enabled        — True when at least one MPP payment method is enabled
-      stripe_profile_id  — Stripe Machine Payments profile ID for fiat MPP
-      stripe_profile_ready — True when the relay has both a Stripe key and valid profile id
-      stripe_api_version — Stripe preview/API version expected by the relay
+      payment_rails      — settlement rails (free, x402)
       x402_enabled       — True when the x402 rail is configured (facilitator + >=1 usable network)
       x402_networks      — configured CAIP-2 network ids (e.g. "eip155:8453", "solana:...")
       x402_facilitator   — the configured facilitator base URL, or "" if unset
@@ -2570,16 +2501,9 @@ def _relay_payment_info() -> dict[str, Any]:
             h = r.json()
             return {
                 "relay_url": RELAY_URL,
-                "stripe_enabled": h.get("stripe_enabled", False),
-                "mpp_enabled": h.get("mpp_enabled", False),
                 "fee_bps": h.get("fee_bps", 0),
                 "payment_rails": h.get("payment_rails", ["free"]),
-                "payment_methods": h.get("payment_methods", []),
-                "stripe_profile_id": h.get("stripe_profile_id", ""),
-                "stripe_profile_ready": h.get("stripe_profile_ready", False),
-                "stripe_api_version": h.get("stripe_api_version", ""),
                 "max_total_spend_cents": h.get("max_total_spend_cents"),
-                "stripe_mpp_admin_notice": h.get("stripe_mpp_admin_notice"),
                 "x402_enabled": h.get("x402_enabled", False),
                 "x402_networks": h.get("x402_networks", []),
                 "x402_facilitator": h.get("x402_facilitator", ""),
@@ -2787,8 +2711,7 @@ def revoke_agora_invite(topic_slug: str, agent_id: str, invited_by: str = "") ->
 
 
 @mcp.tool()
-def subscribe_agora_topic(topic_slug: str, mpp_token: str = "",
-                          payment_intent_id: str = "", pay_with_x402: bool = False,
+def subscribe_agora_topic(topic_slug: str, pay_with_x402: bool = False,
                           pay_with_tempo: bool = False, pay_network: str = "",
                           agent_id: str = "",
 ) -> dict[str, Any]:
@@ -2800,8 +2723,7 @@ def subscribe_agora_topic(topic_slug: str, mpp_token: str = "",
       entitlement is still active (or you're renewing one that expired, or
       you unsubscribed and are resubscribing within the window): in any of
       those cases no new invite is needed.
-    paid_invite topics: pay with pay_with_x402 or pay_with_tempo (cards are
-      paused in this release) — unless you have an active entitlement (already paid,
+    paid_invite topics: pay with pay_with_x402 or pay_with_tempo — unless you have an active entitlement (already paid,
       window hasn't closed), in which case omit both and resubscribing is
       free. If your entitlement's window *has* closed, this call is a
       renewal: pay again the same way as a first subscribe, no new invite
@@ -2812,16 +2734,12 @@ def subscribe_agora_topic(topic_slug: str, mpp_token: str = "",
     agent_id = agent_id or AGENT_ID      # P297: yourself, unless named
     if not agent_id:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    if (pay_with_x402 or pay_with_tempo or mpp_token or payment_intent_id) and (refusal := _playbook_refusal("buy")):
+    if (pay_with_x402 or pay_with_tempo) and (refusal := _playbook_refusal("buy")):
         return refusal       # a paid entry is a purchase: the playbook's `buys` setting holds
     try:
         body: dict[str, Any] = {"agent_id": agent_id}
-        if payment_intent_id:
-            body["payment_intent_id"] = payment_intent_id
-        # P95: the payment and the payer's identity travel together.
         url = f"{_base()}/agoras/topics/{_seg(topic_slug)}/subscribe"
-        r = _bearer_request("post", url, agent_id=agent_id, payment_token=mpp_token,
-                            json=body, timeout=10)
+        r = _bearer_request("post", url, agent_id=agent_id, json=body, timeout=10)
         if r.status_code == 402 and (pay_with_x402 or pay_with_tempo):
             payees, fee = _topic_terms(agent_id, topic_slug)   # P278: only its creator, at most its signed fee
             if pay_with_x402:
@@ -2833,7 +2751,7 @@ def subscribe_agora_topic(topic_slug: str, mpp_token: str = "",
             return {
                 "error": "payment_required", "options": _payment_options(r.json(), r),
                 "detail": r.json(), "success": False,
-                "hint": "Use link-cli or mppx to pay the entry fee, then retry with Authorization: Payment <spt>",
+                "hint": "Pay the entry fee with pay_with_x402=True or pay_with_tempo=True, then retry",
             }
         if r.status_code == 200:
             return {"success": True, **r.json(), **_settlement(r, r.json())}
@@ -3651,7 +3569,6 @@ def create_session(
     payment_mode: str = "free",
     price: str = "0",
     currency: str = "USD",
-    mpp_token: str = "",
 ) -> dict[str, Any]:
     """Create a service session (a purchase, research, code review). Games go through `challenge`:
     this refuses a game module and says so."""
@@ -3662,7 +3579,7 @@ def create_session(
         return {"success": False, "error": f"{module_type} is a game: start it with challenge(module_type=..., "
                                            "opponent=... or none for an open one), not create_session"}
     return _create_session(module_type, agent_id=agent_id, config=config, payment_mode=payment_mode,
-                           price=price, currency=currency, mpp_token=mpp_token)
+                           price=price, currency=currency)
 
 
 @_relay_aware
@@ -3673,7 +3590,6 @@ def _create_session(
     payment_mode: str = "free",
     price: str = "0",
     currency: str = "USD",
-    mpp_token: str = "",
 ) -> dict[str, Any]:
     """Create a new session on the relay. Creator auto-joins as first participant.
 
@@ -3750,8 +3666,7 @@ def _create_session(
         from emporia.wire import session_id_for
         body["rand_commit"] = _rand_commit(aid, session_id_for(body["nonce"]), 0)
     try:
-        r = _bearer_request("post", f"{_base()}/sessions", agent_id=aid,
-                            payment_token=mpp_token, json=body, timeout=10)
+        r = _bearer_request("post", f"{_base()}/sessions", agent_id=aid, json=body, timeout=10)
         d = r.json()
         if r.status_code in (200, 201):
             # P241: a public game with no named opponent is offered to other
@@ -3760,7 +3675,7 @@ def _create_session(
             return {"success": True, **d, "offered": bool(offered)}
         if r.status_code == 402:
             return {"error": "payment_required", "options": _payment_options(d, r), "detail": d,
-                    "www_authenticate": r.headers.get("www-authenticate", ""), "success": False}
+                    "success": False}
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
@@ -3892,59 +3807,6 @@ def get_session(session_id: str) -> dict[str, Any]:
         return _open_session(AGENT_ID, d) if (AGENT_ID and d.get("sealed")) else d
     except Exception as e:
         return {"error": str(e)}
-
-
-@mcp.tool()
-def create_payment_intent(
-    amount_cents: int,
-    buyer_id: str = "",
-    session_id: str = "",
-    room_id: str = "",
-    seller_id: str = "relay",
-    service_type: str = "emporia:session",
-) -> dict[str, Any]:
-    """PAUSED in this release: cards are off, do not use; pay over x402 or Tempo (money_info).
-    Create a Stripe PaymentIntent (manual-capture escrow hold) to fund a paid
-    session or room. Call this BEFORE join_session/join_room on a non-free
-    session — pass the returned payment_intent_id to that call.
-
-    On a relay running with a Stripe *test* key (sk_test_...), join_session/
-    join_room auto-confirm the intent server-side (no real card, no human
-    interaction) — the full hold→escrow→settle→payout cycle runs entirely
-    agent-to-agent. On a live key, the buyer needs a real payment method
-    already on file (Stripe Link / an SPT) — see money_info.
-
-    Args:
-        amount_cents: Amount in cents (e.g. 500 = $5.00).
-        buyer_id: Paying agent's ID. Defaults to EMPORIA_AGENT_ID.
-        session_id: Session this payment is for (mutually exclusive-ish with room_id).
-        room_id: Room this entry fee is for, if paying to join a room instead.
-        seller_id: Receiving party — usually left as "relay" (escrow/marketplace).
-        service_type: Free-form label stored in Stripe metadata.
-    """
-    bid = buyer_id or AGENT_ID
-    if not bid:
-        return {"error": "buyer_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    if (refusal := (_playbook_session_refusal("fund", bid, session_id) if session_id
-                    else _playbook_refusal("fund"))):
-        return refusal
-    body: dict[str, Any] = {
-        "amount_cents": amount_cents,
-        "seller_id": seller_id,
-        "service_type": service_type,
-    }
-    if session_id:
-        body["session_id"] = session_id
-    if room_id:
-        body["room_id"] = room_id
-    try:
-        r = _bearer_request("post", f"{_base()}/payments/create-intent", agent_id=bid, json=body, timeout=15)
-        d = r.json()
-        if r.status_code == 200:
-            return {"success": True, **d}
-        return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
-    except Exception as e:
-        return {"error": str(e), "success": False}
 
 
 @mcp.tool()
@@ -4595,12 +4457,11 @@ def _counterparties(session: dict[str, Any], me: str) -> dict[str, Any]:
 
 @mcp.tool()
 @_relay_aware
-def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
-                 pay_with_x402: bool = False, payment_intent_id: str = "") -> dict[str, Any]:
+def fund_session(session_id: str, agent_id: str = "",
+                 pay_with_x402: bool = False) -> dict[str, Any]:
     """Fund a service purchase you created, once a seller has joined (P95).
 
-    Cards are paused in this release (mpp_token / payment_intent_id are for a
-    relay with cards on). Pay with pay_with_x402=True: the relay's x402 escrow offer is checked
+    Pay with pay_with_x402=True: the relay's x402 escrow offer is checked
     (network allowlist, your per-payment cap, the session's price, a fee cap)
     and signed with this agent's x402 wallet; your USDC moves into Base's
     Commerce Payments escrow, never to the relay, and you can reclaim it
@@ -4614,9 +4475,7 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
         return refusal
     try:
         url = f"{_base()}/sessions/{_seg(session_id)}/fund"
-        r = _bearer_request("post", url, agent_id=aid, payment_token=mpp_token, timeout=15,
-                            **({"json": {"payment_intent_id": payment_intent_id}}
-                               if payment_intent_id else {}))
+        r = _bearer_request("post", url, agent_id=aid, timeout=15)
         if pay_with_x402 and r.status_code == 402 and (r.json() or {}).get("escrow"):
             from emporia import agent_wallet
             from emporia.payments import _x402_amount_atomic
@@ -4648,7 +4507,7 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
             return {"success": True, **d, **_settlement(r, d)}
         if r.status_code == 402:
             return {"error": "payment_required", "options": _payment_options(d, r), "detail": d,
-                    "www_authenticate": r.headers.get("www-authenticate", ""), "success": False}
+                    "success": False}
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
@@ -5519,8 +5378,7 @@ def _unattended_origin() -> bool:
 def leave_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
     """Leave a session. A waiting one (not started, one you joined): you leave freely, signed by you, so
     no relay can drop a player on its own say; the game stays open for the others. One you created, or one
-    already started: this ends it for you, releases your payment holds at once (Stripe would take 5-7
-    days), and for a started game counts as your walk-away.
+    already started: this ends it for you, voids your escrow holds at once, and for a started game counts as your walk-away.
     """
     from datetime import UTC, datetime
 

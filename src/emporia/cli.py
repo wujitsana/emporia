@@ -37,11 +37,8 @@ from emporia.cli_hints import localize, via_plugin
 from typing import Any
 
 from emporia import __version__
-from emporia.cards import PAUSED_LINE, cards_paused
 
 REPO = Path(__file__).resolve().parents[2]
-_RELAY_ONLY = ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID", "STRIPE_API_VERSION",
-               "STRIPE_WEBHOOK_SECRET")
 _TTY = sys.stdin.isatty() and sys.stdout.isatty()
 
 
@@ -523,7 +520,7 @@ def cmd_relay(args: argparse.Namespace) -> int:
         if not h:
             print(f"relay: not answering at {relay_url()}")
             return 1
-        print(f"relay: up at {relay_url()} — v{h.get('version')}, {'cards paused' if h.get('cards_paused') else 'Stripe ' + (h.get('stripe_mode') or 'off')}, "
+        print(f"relay: up at {relay_url()} — v{h.get('version')}, "
               f"x402 {'on ' + ','.join(h.get('x402_networks') or []) if h.get('x402_enabled') else 'off'}, "
               f"fee {h.get('fee_bps', 0) / 100:.1f}%")
         return 0
@@ -718,7 +715,7 @@ def _relay_brief(h: dict) -> str:
     money = ("no wallet payments" if not nets else
              f"pays on {', '.join(label(n) for n in nets)}"
              + ("" if all(is_testnet(n) for n in nets) else " — REAL MONEY"))
-    return (f"v{h.get('version', '?')}, {money}, cards {'paused' if h.get('cards_paused') else h.get('stripe_mode') or 'off'}, "
+    return (f"v{h.get('version', '?')}, {money}, "
             f"fee {h.get('fee_bps', 0) / 100:.1f}%")
 
 
@@ -1015,7 +1012,7 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
     # P208: its keys are apart from Hermes only if Hermes's user cannot get round that.
     if ways := _reachable_anyway(run == "docker"):
         print(f"  ! Hermes runs here as a user for whom {'; '.join(ways)} — its agents could reach this relay's keys "
-              f"(identity, operator key, Stripe key). Fine on testnet; before real money take that away, or run the "
+              f"(identity, operator key). Fine on testnet; before real money take that away, or run the "
               f"relay on its own server.")
     needs_key = escrow and "EMPORIA_OPERATOR_ADDRESS" not in installer().harvest_env(folder)
     done =(_host_docker if run == "docker" else _host_service)(folder, env_path, needs_key, bool(admin), domain)
@@ -1032,7 +1029,7 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
           f"    emporia relay use {url} NAME …")
     if admin:
         print(f"  {admin_name} is its operator; its dashboard shows the relay's settings and activity.")
-    print("  Before others rely on it: docs/RUNBOOK.md (backups of its data, its fee, Stripe).")
+    print("  Before others rely on it: docs/RUNBOOK.md (backups of its data, its fee).")
     return 0
 
 
@@ -1170,7 +1167,7 @@ def _module_items(items: list[str]) -> dict[str, set[str]] | None:
         parts = {p.strip() for p in raw.split(",") if p.strip()}
         if parts and name == "money":
             print("  money's parts are its ways to pay, set up by their own commands: "
-                  "emporia setup relay (x402, Tempo; escrow with --escrow); cards are paused in this release")
+                  "emporia setup relay (x402, Tempo; escrow with --escrow)")
             return None
         if bad := sorted(parts - set(rm.BY_NAME[name].parts)):
             print(f"  {name} has no part called {', '.join(bad)} — its parts: {', '.join(rm.BY_NAME[name].parts) or 'none'}")
@@ -1270,8 +1267,6 @@ def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bo
             out.update(_ESCROW_OFF)
     elif "money" in now and "money" not in want:
         out.update({"EMPORIA_X402_ENABLED": "0", "EMPORIA_ESCROW_NETWORK": "", "EMPORIA_TEMPO_NETWORK": ""})
-        if env.get("STRIPE_SECRET_KEY"):
-            print("  Cards stay on while its Stripe key is set: emporia relay config unset STRIPE_SECRET_KEY")
     # only what changes; a module turned off keeps its data, only unmounted
     return {k: v for k, v in out.items() if str(env.get(k, "")) != v and (v or k in env)}, want
 
@@ -3613,9 +3608,6 @@ def cmd_features(args: argparse.Namespace) -> int:
     except F.FeatureError as e:
         print(f"features: {e}")
         return 1
-    if args.action == "on" and any(w in F.paused() for w in asked):
-        print(PAUSED_LINE)
-        return 1
     if args.action in ("on", "off"):
         if not asked:
             print(f"features: name what to turn {args.action}: {', '.join(F.OPTIONAL)}")
@@ -3713,10 +3705,10 @@ def _setup_about(profile: Path, name: str, about: str | None, existing: bool) ->
 
 
 def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing: bool, *,
-                    wallet: bool = False, stripe: bool = False) -> str:
+                    wallet: bool = False) -> str:
     """The optional pieces setup installs, as one checkbox list (recommended ones ticked): rounds
     (then its interval as a menu) and every optional feature (what it installs on its own line). The features
-    are written as one setting, EMPORIA_FEATURES; a wallet means money and a card choice means stripe, whatever
+    are written as one setting, EMPORIA_FEATURES; a wallet means money, whatever
     was ticked. Without a terminal: the flags, else the recommended set (and what the person's other answers
     imply); an existing agent keeps the features it has. Returns the rounds interval ("" = off)."""
     from emporia import features as F, rounds as R, setup_choices as sc
@@ -3739,10 +3731,10 @@ def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing
         declare = ""
     held = installer().harvest_env(profile)
     if picked_features is None and not (existing and held.get(F.SETTING)):
-        picked_features = F.derive(wallet=wallet, stripe=stripe, x_link=(x_link or held.get("EMPORIA_X_LINK", "")) == "on",
+        picked_features = F.derive(wallet=wallet, x_link=(x_link or held.get("EMPORIA_X_LINK", "")) == "on",
                                    declare_model=held.get("EMPORIA_DECLARE_MODEL", "").lower() != "off")
     if picked_features is not None:
-        picked_features = F.derive(wallet=wallet, stripe=stripe, base=picked_features)
+        picked_features = F.derive(wallet=wallet, base=picked_features)
         merge_env_file(profile / ".env", {F.SETTING: F.render(picked_features)})
         installer().refresh_mcp_references(profile)       # the entry's --features= follows the setting
         print("  " + F.summary(picked_features) + localize("  (change: emporia features on|off NAME)"))
@@ -3765,59 +3757,6 @@ def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing
     return every
 
 
-def _setup_hermes_extras(profile: Path, name: str, args: argparse.Namespace) -> list[str]:
-    """Hermes 0.23 settings, asked after the optional features: lock the skills in the profile that steer the
-    agent (default yes). Returns the closing block's lines. Without a terminal: the flag, else the recommended
-    answer (lock yes) unless the profile's .env already records the person's other choice."""
-    from emporia import setup_choices as sc, skill_lock as SL
-    held = installer().harvest_env(profile)
-    lock = getattr(args, "skill_lock", "") or ""
-    if not lock:
-        lock = "on" if (ask_setting("skill_lock") if _TTY else held.get("EMPORIA_SKILL_LOCK", "on") != "off") else "off"
-    if lock != "on" or held.get("EMPORIA_SKILL_LOCK"):
-        merge_env_file(profile / ".env", {"EMPORIA_SKILL_LOCK": lock})
-    locked: list[str] = []
-    if lock == "on":
-        locked, notes = SL.lock(this_profile_name(profile), profile)
-        for n in notes:
-            print(localize("  Skill lock: " + n + "."))
-    else:
-        SL.unlock(this_profile_name(profile), profile)
-    return sc.hermes_lines(lock, locked, name)
-
-
-def cmd_skill_lock(args: argparse.Namespace) -> int:
-    """`emporia skill-lock on|off|status`: Hermes's `curator lock` on the skills in this profile that steer the
-    agent (its payment skills). A person's setting: the key guard holds it."""
-    from emporia import skill_lock as SL
-    found = _own_profile(args)
-    if found is None:
-        print("skill-lock: no Emporia agent profile here (run it as `hermes -p NAME emporia skill-lock …`, or pass --agent NAME)")
-        return 1
-    profile, name = found
-    pname = this_profile_name(profile)
-    try:
-        if args.action == "on":
-            locked, notes = SL.lock(pname, profile)
-            merge_env_file(profile / ".env", {"EMPORIA_SKILL_LOCK": "on"})
-            print("  locked: " + (", ".join(locked) or "nothing"))
-            for n in notes:
-                print("  " + n)
-            print(f"  Undo: {SL.UNDO.replace('NAME', pname)}")
-        elif args.action == "off":
-            done = SL.unlock(pname, profile)
-            merge_env_file(profile / ".env", {"EMPORIA_SKILL_LOCK": "off"})
-            print("  unlocked: " + (", ".join(done) or "nothing was locked"))
-        else:
-            mine = SL.present(profile)
-            print(f"  Lockable skills here: {', '.join(mine) or 'none'}")
-            print("  (Emporia's own skills come from the plugin, read-only; `hermes curator status` lists what is locked.)")
-    except SL.SkillLockError as e:
-        print(f"skill-lock: {e}")
-        return 1
-    return 0
-
-
 def _fast_path(args: argparse.Namespace) -> bool:
     """The first question of setup: take every recommended setting without asking each one."""
     from emporia import setup_choices as sc
@@ -3832,12 +3771,11 @@ def _recommend(args: argparse.Namespace, existing: bool) -> None:
     """The fast path's answers, as the flags a person could have passed (never over one they did)."""
     from emporia import setup_choices as sc
     args.rounds = args.rounds or sc.default("rounds")
-    args.skill_lock = getattr(args, "skill_lock", "") or "on"
     args.register = True if not args.register else args.register
 
 
 def _closing_block(profile: Path, name: str, role: str, args: argparse.Namespace, chosen_all: bool,
-                   rounds: str, extra_lines: list[str] | None = None) -> None:
+                   rounds: str) -> None:
     from emporia import setup_choices as sc
     dotenv = installer().harvest_env(profile)
     _, agent_id, _ = _agent(name)
@@ -3850,8 +3788,6 @@ def _closing_block(profile: Path, name: str, role: str, args: argparse.Namespace
     keys = "env" if dotenv.get("EMPORIA_KEY_STORAGE") == "env" else "files"
     for line in sc.installed_lines(dotenv, role=role, keys=keys, wallets=wallets, rounds=rounds, chosen=chosen,
                                    name=name):
-        print(localize(line))
-    for line in extra_lines or ():
         print(localize(line))
     print(f"\n  Guide: {CREATE_GUIDE}  (giving it a character, how it behaves, safety habits, your first day, fixing problems)")
 
@@ -5096,17 +5032,6 @@ def doctor_relay(rep: Report) -> dict | None:
     if stale:
         rep.fail(f"the relay runs older code than this checkout ({stale})",
                  "emporia relay restart")
-    mode = h.get("stripe_mode")
-    if cards_paused() or h.get("cards_paused"):
-        rep.ok("Cards (Stripe) paused in this release — see docs/payments.md"
-               + ("; a Stripe key is set and ignored" if h.get("stripe_key_ignored") else ""))
-    elif not h.get("stripe_enabled"):
-        rep.warn("Stripe off", "set STRIPE_SECRET_KEY (an sk_test_ key for testing) in the relay's .env")
-    elif mode == "live":
-        rep.warn("Stripe is in LIVE mode", "use an sk_test_ key unless this relay is in production")
-    else:
-        rep.ok(f"Stripe {mode} mode" + ("" if h.get("stripe_profile_ready")
-                                         else " (no MPP profile — SPT/MPP payments unavailable)"))
     from emporia.networks import label
     if h.get("x402_enabled"):
         rep.ok(f"USDC (x402) on {', '.join(label(n) for n in h.get('x402_networks') or [])}")
@@ -5372,11 +5297,6 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
         rep.fail(f"{_F.SETTING} is not readable: {e}", f"emporia features on NAME  (or set {_F.SETTING} in the profile's .env)")
     doctor_identity_key(rep, name, agent_id, key_dir, linked_identity, dotenv,
                         env.get("EMPORIA_RELAY_URL") or relay_url(), relay_up)
-    cfg_env = inst.load_yaml(profile / "config.yaml").get("env") or {}
-    leaked = [k for k in _RELAY_ONLY if k in dotenv or k in cfg_env]
-    if leaked and profile != this_profile():
-        rep.fail(f"holds the relay's settings: {', '.join(leaked)} (an agent never needs them)",
-                 f"emporia setup agent {name}   (strips them)")
     doctor_profile_secrets(rep, profile, dotenv)
     doctor_labs(rep)
     doctor_mcp_references(rep, profile, dotenv)
@@ -5402,9 +5322,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     has = wallet_presence(profile, agent_id)
     no_key = [n for n in pay_nets if not has.get(family(n) or "", False)]
     if not has["evm"] and not has["svm"]:
-        # Found by the end-to-end run: "by card only" on a relay that takes no cards.
-        rep.warn("no wallet — can pay by card only" if (health() or {}).get("stripe_enabled")
-                 else "no wallet — it cannot pay here (this relay takes no cards)", f"emporia wallet create {name}")
+        rep.warn("no wallet — it cannot pay here", f"emporia wallet create {name}")
     elif not pay_nets:
         rep.fail("a wallet but no EMPORIA_X402_PAY_NETWORKS — it will pay on no network",
                  f"emporia wallet limits {name} --networks base-sepolia")
@@ -5461,14 +5379,6 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
         status, profile_json = _signed_get(agent_id, key_dir, f"agents/{agent_id}")
         if status == 200 and isinstance(profile_json, dict):
             pay_to = (profile_json.get("x402_pay_to") or {}).get("evm")
-            # P128: a relay with Stripe on can still have no way to pay this agent.
-            if (health() or {}).get("stripe_enabled") and \
-                    profile_json.get("stripe_account_status", "none") != "active":
-                rep.warn("cannot receive Stripe payouts (no active Connected Account) — "
-                         "card-paid fees and sales to it stay owed",
-                         "in the Stripe Dashboard (test mode) enable Accounts v1 support "
-                         "(Developers → API policies) or complete Connect → Platform profile; "
-                         f"then restart its gateway so {agent_id} re-registers")
             rep.ok(f"registered as {profile_json.get('address') or agent_id}"
                    + (f", paid at {pay_to[:10]}…" if pay_to else ""))
             # P150: without a published key, its DMs and private sessions
@@ -5874,7 +5784,7 @@ def doctor_machine_secrets(rep: Report) -> None:
     that value over its own .env's."""
     rep.section("This machine")
     from emporia.config import ENV_BEFORE_DOTENV     # P218: not what this profile's .env merged in
-    leaked = [k for k in ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "EMPORIA_OPERATOR_PRIVATE_KEY")
+    leaked = [k for k in ("EMPORIA_OPERATOR_PRIVATE_KEY",)
               if k in ENV_BEFORE_DOTENV and os.environ.get(k)]
     if leaked:
         rep.warn(f"{', '.join(leaked)} set for the whole container — only the relay needs them, and a relay "
@@ -6543,9 +6453,6 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
 
 
 def _setup_agent_body(args: argparse.Namespace) -> int:
-    if getattr(args, "stripe", False) and cards_paused():
-        print(PAUSED_LINE)
-        return 1
     inst = installer()
     me = this_profile()
     name = args.name or prompt("Agent name (its Hermes profile; lowercase, digits, - or _)")
@@ -6756,20 +6663,13 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     elif wallet and not _persons_terminal():
         # An agent setting this up for its operator: the signer is the operator's call.
         print(localize(f"  Optional: keep its wallet behind the signer — the operator runs `emporia signer add {name}`."))
-    # P169: card payouts — only matters if the relay takes cards.
-    stripe_on = False
-    if role != "developer" and not cards_paused() and (health() or {}).get("stripe_enabled") and (
-            args.stripe or (_TTY and ask_setting("stripe"))):
-        _agent_stripe(profile, name)
-        stripe_on = True
     # P168: the role decides its tools; then say plainly what was set up.
     apply_role(profile, role)
     _setup_playbook(profile, name, args.playbook, existing)
     _setup_wake(profile, name, args.wake, existing)
-    rounds_every = _setup_optional(profile, name, args, existing, wallet=bool(wallet), stripe=stripe_on)
-    hermes_lines = _setup_hermes_extras(profile, name, args)
+    rounds_every = _setup_optional(profile, name, args, existing, wallet=bool(wallet))
     _setup_summary(profile, name, role)
-    _closing_block(profile, name, role, args, answered, rounds_every, hermes_lines)
+    _closing_block(profile, name, role, args, answered, rounds_every)
     inst.sync_mcp_costs(profile)      # the limits set above, as Hermes's price and chat limit on the paying tools
     inst.print_restart_instructions(list(inst._TOUCHED_PROFILES))
     return 0
@@ -6903,9 +6803,7 @@ def machine_settings(url: str = "") -> list[dict[str, Any]]:
         nets = ", ".join(h.get("x402_networks") or []) if h else ""
         out += [row("Its payment rails", (f"USDC on {nets}" if nets else "none: free only") if h else "—", "How agents on this machine's relay pay each other (escrow only if opted in).",
                     "emporia setup relay", kind="list"),
-                row("Cards", "paused in this release" if cards_paused() else (h or {}).get("stripe_mode") or "off",
-                    "Whether this machine's relay takes card payments.",
-                    "" if cards_paused() else "emporia setup stripe")]
+                ]
     if h and "relay_modules" in h and local:
         mods = h["relay_modules"] or {}
         out.append(row("Modules", _modules_line(mods) or "the core only",
@@ -7083,9 +6981,6 @@ def agent_settings(profile: Path, agent_id: str) -> list[dict[str, Any]]:
              "warn" if turn_tools == "all" else "ok", kind="choice", current=turn_tools,
              options=("restricted", "all"), recommended="restricted",
              is_default=not (env.get("EMPORIA_RELAY_TURN_TOOLS") or "").strip(), env="EMPORIA_RELAY_TURN_TOOLS"),
-        switch(_G_TOOLS, "Payment skills locked", "EMPORIA_SKILL_LOCK", True,
-               "Stops other agents talking it into rewriting its payment skills.", "on",
-               f"emporia skill-lock on|off --agent {name}"),
         item(_G_TOOLS, "Playbook", book.preset,
              "What it may do on its own: " + (_pb.about(book) or "its own instructions decide")
              .replace(" (the default)", "").rstrip(".") + ".",
@@ -7152,10 +7047,6 @@ def agent_settings(profile: Path, agent_id: str) -> list[dict[str, Any]]:
         out.append(item(_G_MONEY, "Wallets", "none — it cannot pay or be paid",
                         "It still plays free games, talks and joins open rooms.",
                         "" if role == "developer" else f"emporia wallet create {name}"))
-    if role != "developer" and not cards_paused():
-        out.append(item(_G_MONEY, "Card payouts (Stripe)", "see its Stripe status",
-                        "Whether it can be paid by card, where the relay takes cards.",
-                        f"emporia setup stripe --agent {name}"))
 
     # ── Keys & signer ───────────────────────────────────────────────────────
     out.append(item(_G_KEYS, "Identity and encryption keys",
@@ -7452,8 +7343,6 @@ def cmd_setup_relay(args: argparse.Namespace) -> int:
     wizard_commit()
     changed = merge_env_file(env_path, updates)
     print(f"  {len(changed)} setting(s) changed" + (" (backup beside it)" if changed else ""))
-    if os.getenv("STRIPE_SECRET_KEY", "").startswith(("sk_live_", "rk_live_")):
-        print("  ! STRIPE_SECRET_KEY is a live key — use an sk_test_ key for testing.")
     escrow_now = escrow if escrow is not None else bool(env.get("EMPORIA_ESCROW_NETWORK"))
     print(f"  Fee: {f'to {fee}' if fee else 'none (the card says fee 0)'}. "
           f"Escrow: {'on' if escrow_now else 'off (paid directly)'}{' (unchanged)' if escrow is None else ''}.")
@@ -7508,114 +7397,6 @@ def cmd_setup_log(args: argparse.Namespace) -> int:
     if not on:
         print("  What is already in the log stays; turned on again, it logs what it missed.")
     return 0
-
-
-# ─── Stripe (P169) ───────────────────────────────────────────────────────────
-# Cards: the relay holds a Stripe secret key; each agent that is PAID by card
-# needs a connected account (made at registration in test mode; a hosted
-# sign-up link in live mode). An agent PAYING by card needs nothing here: a
-# card token (SPT) per purchase, approved by a person in live mode.
-
-_STRIPE_DASHBOARD_STEP = (
-    "In the Stripe Dashboard (test mode): Settings → Connect → enable Accounts v1 support "
-    "(or complete the Connect platform profile). Without it agents get no connected account and "
-    "cannot be paid by card.")
-
-
-def _stripe_relay_settings(me: Path, args: argparse.Namespace) -> dict[str, str]:
-    """The relay's Stripe settings to write. Secrets are typed hidden or read
-    from an environment variable — never a command-line argument — and never
-    printed."""
-    import getpass
-    have = installer().harvest_env(me)
-    key = os.environ.get(args.stripe_key_env, "") if args.stripe_key_env else ""
-    if not key and _TTY:
-        state = ("a test key" if have.get("STRIPE_SECRET_KEY", "").startswith(("sk_test_", "rk_test_"))
-                 else "a LIVE key" if have.get("STRIPE_SECRET_KEY") else "no key")
-        heading("Stripe (cards)", f"This relay has {state}.")
-        if not ask("Replace the Stripe secret key?" if have.get("STRIPE_SECRET_KEY") else "Set the Stripe secret key?",
-                   not have.get("STRIPE_SECRET_KEY")):
-            return {}
-        key = getpass.getpass("Stripe secret key (hidden; sk_test_… while testing): ").strip()
-    if not key:
-        return {}
-    if not key.startswith(("sk_test_", "sk_live_", "rk_test_", "rk_live_")):
-        print("  ! That is not a Stripe secret key (sk_… or rk_…); nothing written.")
-        return {}
-    updates = {"STRIPE_SECRET_KEY": key}
-    live = "_live_" in key
-    if live:
-        print("  ! A LIVE key moves real money. Use an sk_test_ key unless this relay is in production.")
-        secret = (os.environ.get(args.stripe_webhook_env, "") if args.stripe_webhook_env else
-                  getpass.getpass("Webhook signing secret (whsec_…, hidden; required with a live key): ").strip()
-                  if _TTY else "")
-        if secret:
-            updates["STRIPE_WEBHOOK_SECRET"] = secret
-        else:
-            print("  ! Without STRIPE_WEBHOOK_SECRET the relay refuses to start on a live key.")
-    profile_id = args.stripe_profile_id or (prompt(
-        "Stripe profile id for agent card tokens (profile_test_…; Enter to skip — cards then need a "
-        "pre-made payment intent)") if _TTY else "")
-    if profile_id:
-        updates["STRIPE_PROFILE_ID"] = profile_id
-    print(f"  {_STRIPE_DASHBOARD_STEP}")
-    print("  Custodial card flows stay off (EMPORIA_CUSTODIAL_CARDS) — see docs/payments.md before turning "
-          "them on.")
-    return updates
-
-
-def cmd_setup_stripe(args: argparse.Namespace) -> int:
-    """This relay's Stripe settings, then (optionally) each agent's card payouts."""
-    if cards_paused():
-        print(PAUSED_LINE)
-        return 1
-    me = this_profile()
-    if me is None:
-        print("setup stripe: run it from the relay profile's emporia checkout")
-        return 1
-    updates = _stripe_relay_settings(me, args)
-    if updates:
-        changed = merge_env_file(me / ".env", updates)
-        print(f"  {len(changed)} Stripe setting(s) written to {me / '.env'} (values not shown)")
-        print("  Restart the relay: emporia relay restart")
-    for name in ([args.agent] if args.agent else []):
-        _agent_stripe(profile_dir(name), name)
-    return 0
-
-
-def _agent_stripe(profile: Path, name: str) -> None:
-    """Whether this agent can be paid by card, and what to do if not."""
-    _, agent_id, env = _agent(name)
-    h = health() or {}
-    if not h.get("stripe_enabled"):
-        print(f"  {name}: this relay takes no cards (no Stripe key) — nothing to do.")
-        return
-    key_dir = _key_file(profile, agent_id, "identity").parent
-    status, me = _signed_get(agent_id, key_dir, f"agents/{agent_id}")
-    acct = (me or {}).get("stripe_account_status", "none") if status == 200 else "unknown"
-    if acct == "active":
-        print(f"  {name}: can be paid by card (connected account active).")
-        return
-    if h.get("stripe_mode") != "live":
-        print(f"  {name}: no active connected account yet. Test mode makes one when it registers.\n"
-              f"    {_STRIPE_DASHBOARD_STEP}\n    Then restart its gateway so it registers again.")
-        return
-    email = prompt(f"  {name}: email of the person who will complete Stripe's sign-up") if _TTY else ""
-    if not email:
-        print(f"  {name}: live card payouts need Stripe's sign-up — run `emporia setup stripe --agent {name}` "
-              f"in a terminal.")
-        return
-    r = _as_agent(profile, "from emporia import mcp_server as m, json\n"
-                           f"print(json.dumps(m.start_stripe_onboarding(agent_id={agent_id!r}, email={email!r})))")
-    try:
-        out = json.loads(r.stdout.strip().splitlines()[-1])
-    except Exception:  # noqa: BLE001
-        out = {"error": r.stderr.strip()[-200:]}
-    if out.get("onboarding_url"):
-        print(f"  {name}: open this link to finish Stripe's sign-up (identity checks are Stripe's):\n"
-              f"    {out['onboarding_url']}")
-    else:
-        print(f"  {name}: Stripe sign-up could not start: {out.get('error') or out.get('detail')}")
 
 
 def cmd_setup_dashboard(args: argparse.Namespace) -> int:
@@ -7795,7 +7576,7 @@ def _show_phrase(phrase: str, name: str) -> bool:
 
 
 WALLET_MODES = [
-    ("none", "No wallet — card payments only"),
+    ("none", "No wallet — it cannot pay or be paid"),
     ("evm", "EVM wallet — USDC on Base, stablecoin on Tempo"),
     ("phrase", "EVM + Solana from one recovery phrase — shown once for you to write down; "
                "imports into MetaMask and Phantom"),
@@ -8916,14 +8697,6 @@ def setup_overview() -> None:
     tempo_net = h.get("tempo_network") or relay_env.get("EMPORIA_TEMPO_NETWORK")
     line("✓" if tempo_net else "·", "Tempo", label(tempo_net) if tempo_net else "off",
          "" if tempo_net else "emporia setup relay --with tempo-moderato")
-    if cards_paused():
-        line("·", "Cards (Stripe)", "paused in this release", "see docs/payments.md")
-    else:
-        stripe = ("test mode" if h.get("stripe_mode") == "test" else "LIVE mode" if h.get("stripe_mode") == "live"
-                  else "off") if h else ("key set" if relay_env.get("STRIPE_SECRET_KEY") else "off")
-        line("✓" if stripe not in ("off",) else "·", "Cards (Stripe)",
-             stripe + ("" if relay_env.get("STRIPE_PROFILE_ID") or stripe == "off" else "; no profile id (no card tokens)"),
-             "emporia setup stripe" if stripe == "off" or not relay_env.get("STRIPE_PROFILE_ID") else "")
     public = relay_url()
     line("✓" if "localhost" not in public and "127.0.0.1" not in public else "·", "Reachable from outside",
          public if "localhost" not in public else "local only — agents on other machines cannot connect",
@@ -8937,9 +8710,6 @@ def setup_overview() -> None:
     mods = relay_env.get("EMPORIA_MODULES", "")
     line("✓" if mods else "·", "Extra games", mods or "bundled games only (optional)",
          "" if mods else "docs/adding-a-game.md (optional)")
-    risky = [k for k in ("EMPORIA_CUSTODIAL_CARDS",)
-             if relay_env.get(k, "").lower() in ("1", "true", "yes", "on")]
-    line("!" if risky else "✓", "Risky switches", ", ".join(risky) + " ON" if risky else "all off (recommended)")
 
     print("\nAgents")
     for profile, entry in _agent_profiles(profiles_root()):
@@ -8985,9 +8755,8 @@ def cmd_setup_menu(args: argparse.Namespace) -> int:
     if not _TTY:
         return 0
     what = choose("\nSet up:", [
-        ("agent", "An agent — role, keys, wallets, limits" + ("" if cards_paused() else ", card payouts")),
+        ("agent", "An agent — role, keys, wallets, limits"),
         ("relay", "This relay's USDC payments (x402; Solana, Tempo), its fee, and escrow if you opt in"),
-        *([("stripe", "Cards (Stripe) — the relay's key, and agents' card payouts")] if not cards_paused() else []),
         ("log", "The transparency log — public proof of what this relay recorded (on or off)"),
         ("dashboard", "The Emporia tab in the Hermes dashboard"),
         ("done", "Nothing now"),
@@ -9279,10 +9048,6 @@ def build_parser() -> argparse.ArgumentParser:
     pk.add_argument("--agent", default="", help="the agent's profile (default: this one)")
     pk.set_defaults(func=cmd_peek)
 
-    sl = sub.add_parser("skill-lock", help="lock the agent's payment skills against rewriting (Hermes curator lock)")
-    sl.add_argument("action", choices=["on", "off", "status"], nargs="?", default="status")
-    sl.add_argument("--agent", default="", help="the agent's profile (default: this one)")
-    sl.set_defaults(func=cmd_skill_lock)
 
     rd = sub.add_parser("rounds", help="let the agent act on its own, on a schedule (one Hermes cron job)")
     rd.add_argument("action", choices=["on", "off", "status", "pause", "resume"], nargs="?", default="status")
@@ -9336,16 +9101,12 @@ def build_parser() -> argparse.ArgumentParser:
     ag.add_argument("--rounds", choices=["2h", "4h", "8h", "12h", "24h", "off"], default="",
                     help="let it act on its own every N hours, as one Hermes cron job (default: asked in a terminal; "
                          "off without one). Change later with `emporia rounds`")
-    ag.add_argument("--skill-lock", choices=["on", "off"], default="",
-                    help="lock its payment skills against rewriting, with Hermes's curator lock "
-                         "(default: asked in a terminal; on without one). Change later with `emporia skill-lock`")
     ag.add_argument("--keys", choices=["env", "files"], default="",
                     help="where its keys are kept: its profile .env (recommended) or key files")
     ag.add_argument("--separate-keys", action="store_true",
                     help="with --wallet --solana: two keys, not one recovery phrase for both")
     ag.add_argument("--import-phrase", action="store_true",
                     help="both wallets from a recovery phrase you type (hidden)")
-    ag.add_argument("--stripe", action="store_true", help="set up its card payouts (Stripe) too")
     ag.add_argument("--use-found-keys", choices=["link", "copy"], default="",
                     help="use wallet keys already on this machine ($EVM_PRIVATE_KEY, $SOLANA_PRIVATE_KEY, "
                          "$MNEMONIC, ~/.config/solana/id.json, …): link env vars, or copy them in")
@@ -9427,12 +9188,6 @@ def build_parser() -> argparse.ArgumentParser:
     wl.add_argument("--address", default="", help="register: be paid at this EVM address (no key here)")
     wl.add_argument("--solana-address", default="", help="register: be paid at this Solana address")
     wl.set_defaults(func=cmd_wallet)
-    sp = ss.add_parser("stripe", help="cards: this relay's Stripe key, and an agent's card payouts")
-    sp.add_argument("--agent", default="", help="also set up this agent's card payouts")
-    sp.add_argument("--stripe-key-env", default="", help="read the secret key from this env var (never argv)")
-    sp.add_argument("--stripe-webhook-env", default="", help="read the webhook secret from this env var")
-    sp.add_argument("--stripe-profile-id", default="")
-    sp.set_defaults(func=cmd_setup_stripe)
     db = ss.add_parser("dashboard", help="the Emporia tab in an agent's Hermes dashboard")
     db.add_argument("name", nargs="?", default="", help="the agent profile (default: this one)")
     db.set_defaults(func=cmd_setup_dashboard)

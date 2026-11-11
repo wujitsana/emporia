@@ -19,7 +19,6 @@ client). Pure functions; the only reads are the environment and, to see a wallet
 from __future__ import annotations
 
 import os
-from emporia.cards import cards_paused
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -70,9 +69,6 @@ FEATURES: tuple[Feature, ...] = (
        ("money_info", "register_x402_wallet", "fund_session", "reclaim_escrow",
         "confirm_delivery", "dispute_delivery"),
        settings="needs a wallet; spending limits and approval above a threshold apply", related=("wallet",)),
-    _F("stripe", "Cards (Stripe)", "paused in this release: be paid by card, hold a card payment for a purchase",
-       ("start_stripe_onboarding", "create_payment_intent"), settings="paused in this release (docs/payments.md); needs a relay that takes cards",
-       related=("stripe",)),
     _F("x_link", "Link an X account", "claim an X account on your card, confirm other agents' claims",
        ("x_claim_line", "x_link", "confirm_x_link"),
        settings="posting the claim yourself needs EMPORIA_X_LINK=on and the xurl skill", related=("x_link",)),
@@ -123,8 +119,7 @@ _WALLET_FILES = (".x402.secp256k1", ".x402.ed25519", ".x402.phrase")
 
 def implied_by(env: Mapping[str, str], key_dir: str | os.PathLike | None = None) -> list[str]:
     """The features an agent's other switches already imply, so a profile that never chose its features keeps
-    what it uses: a wallet (a key, a linked source or a key file) means money; a Stripe key or profile means
-    stripe; `EMPORIA_X_LINK=on` means x_link. Read from the switches, not remembered."""
+    what it uses: a wallet (a key, a linked source or a key file) means money; `EMPORIA_X_LINK=on` means x_link. Read from the switches, not remembered."""
     out: set[str] = set()
     wallet = any(str(env.get(v) or "").strip() for v in _WALLET_VARS)
     if not wallet and key_dir:
@@ -134,20 +129,13 @@ def implied_by(env: Mapping[str, str], key_dir: str | os.PathLike | None = None)
             wallet = False
     if wallet:
         out.add("money")
-    if not cards_paused() and any(str(env.get(v) or "").strip() for v in ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID")):
-        out.add("stripe")
     if str(env.get("EMPORIA_X_LINK") or "").strip().lower() in ("on", "1", "true", "yes"):
         out.add("x_link")
     return [n for n in OPTIONAL if n in out]
 
 
-#: Optional features paused for this release (cards): never on, never offered, their tools not installed.
-def paused() -> frozenset[str]:
-    return frozenset({"stripe"}) if cards_paused() else frozenset()
-
-
 def enabled_from(env: Mapping[str, str], key_dir: str | os.PathLike | None = None) -> list[str]:
-    return [n for n in _enabled_from(env, key_dir) if n not in paused()]
+    return _enabled_from(env, key_dir)
 
 
 def _enabled_from(env: Mapping[str, str], key_dir: str | os.PathLike | None = None) -> list[str]:
@@ -264,13 +252,13 @@ def option_text(f: Feature) -> str:
     return text
 
 
-def derive(*, wallet: bool = False, stripe: bool = False, x_link: bool = False,
+def derive(*, wallet: bool = False, x_link: bool = False,
            declare_model: bool = True, base: Iterable[str] = DEFAULTS) -> list[str]:
     """The features setup turns on: the recommended set, plus the ones the person's other answers imply
-    (a wallet means money, a card choice means stripe, an X link means x_link). `declare_model` is read by
+    (a wallet means money, an X link means x_link). `declare_model` is read by
     the declaring itself (EMPORIA_DECLARE_MODEL), no longer a feature."""
     on = set(base)
-    for flag, name in ((wallet, "money"), (stripe, "stripe"), (x_link, "x_link")):
+    for flag, name in ((wallet, "money"), (x_link, "x_link")):
         if flag:
             on.add(name)
-    return [n for n in OPTIONAL if n in on and n not in paused()]
+    return [n for n in OPTIONAL if n in on]

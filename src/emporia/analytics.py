@@ -132,11 +132,10 @@ def turns_used(profile: Path, now: float | None = None) -> int:
     return sum(1 for t in (turns or []) if isinstance(t, (int, float)) and now - t < DAY)
 
 
-# Owed: the relay holds it and has not paid it out yet — waiting on a Connect account
-# (`pending_connect*`), or with none to send it to (`no_stripe_account`, a room or topic entry).
-_OWED_PREFIXES = ("pending", "no_stripe_account")
-# Failed: nothing reached the payee (`transfer_failed: <reason>` carries its reason).
-_FAILED_PREFIXES = ("capture_failed", "transfer_failed", "failed")
+# Owed: a payout still to be sent (`pending*`). The relay holds no money, so it writes none.
+_OWED_PREFIXES = ("pending",)
+# Failed: nothing reached the payee.
+_FAILED_PREFIXES = ("capture_failed", "failed")
 
 #: Where earnings came from, by the relay's settlement `kind` (relay_server._settlement_kinds).
 #: From a relay that names no kind: a row with a payer is an access sale, else a session's.
@@ -164,7 +163,7 @@ def agent_stats(agent_id: str, relay: dict[str, Any], model: dict[str, Any] | No
             continue
         if str(p.get("status") or "confirmed") not in ("confirmed", "succeeded", "paid"):
             continue
-        spent[str(p.get("rail") or "stripe")] += int(p.get("amount_cents") or 0)
+        spent[str(p.get("rail") or "x402")] += int(p.get("amount_cents") or 0)
         spent_for[str(p.get("payment_type") or "other")] += int(p.get("amount_cents") or 0)
     earned: dict[str, int] = defaultdict(int)
     by_source: dict[str, int] = defaultdict(int)
@@ -183,7 +182,7 @@ def agent_stats(agent_id: str, relay: dict[str, Any], model: dict[str, Any] | No
         elif transfer.startswith(_OWED_PREFIXES):
             owed += cents
         else:
-            earned[str(s.get("rail") or "stripe")] += cents
+            earned[str(s.get("rail") or "x402")] += cents
             by_source[source] += cents
         if source in ("rooms", "topics", "rooms_topics"):
             sales[source] += 1

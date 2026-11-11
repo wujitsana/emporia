@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "emporia"
-version = "0.2.0"
+version = "0.3.0"
 description = "Emporia — federated agent commerce relay"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -73,7 +73,7 @@ packages = ["src/emporia"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 # P45: `testnet` marks tests that talk to real external infrastructure (the
-# public x402 facilitator, a Base Sepolia RPC, Stripe's test mode). They are
+# public x402 facilitator, a Base Sepolia RPC). They are
 # excluded from the default run and from CI -- they need funded keys and a
 # live network, so a red build would mean "the internet is down", not "the
 # code is wrong". Opt in with `pytest -m testnet` (see docs/testnet.md).

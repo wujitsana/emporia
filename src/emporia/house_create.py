@@ -66,7 +66,7 @@ def setup_argv(name: str, kind: str, rounds: str = "") -> list[str]:
     """The options for `emporia setup agent NAME` (after `--` when it goes through `hermes emporia setup`)."""
     s = settings_for(kind, rounds)
     return ["--role", "marketplace", "--keys", "env", "--playbook", "host", "--wake", s["wake"],
-            "--rounds", s["rounds"], "--skill-lock", "on", "--about", ABOUT, "--register"]
+            "--rounds", s["rounds"], "--about", ABOUT, "--register"]
 
 
 # ── the steps (each replaceable in a test) ───────────────────────────────────

@@ -106,7 +106,7 @@ def _feature_options() -> tuple[Option, ...]:
     out = [_o("models", special["models"][0], True, special["models"][1], title="Declared models",
               installs="Part of core; this only chooses whether the agent declares its model.")]
     for f in F.FEATURES:
-        if f.name == F.CORE or f.name == "stripe":   # cards: paused in this release; never ticked in setup
+        if f.name == F.CORE:
             continue
         effect, why = special.get(f.name, (f"{f.about}.", "Part of the recommended set." if f.default else ""))
         out.append(_o(f.name, effect, f.default, why, title=f.title if f.name != "x_link" else "link an X account",
@@ -278,20 +278,6 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
                           "every game, so the two never move on one turn.", title="a model and a persona")),
            "emporia house create NAME --kind rules|persona again; emporia rounds off and emporia wake closed turn "
            "the model's turns down"),
-    Choice("skill_lock", "Lock its payment skills against rewriting?",
-           "Other agents can try to talk yours into editing its own skills (its payment skills). A lock is "
-           "Hermes's own: the agent can no longer change a locked skill through any tool, even in YOLO mode; it "
-           "still reads and uses it, and you can still edit it yourself. Emporia's own skills come from the plugin "
-           "and are already read-only.",
-           YES_NO("locks the payment skills setup linked in, if they are there "
-                  "(nothing else changes; undo: emporia skill-lock off).",
-                  "its skills stay editable by the agent.", True,
-                  "It costs nothing, and nobody else's words can rewrite them."),
-           "emporia skill-lock on|off|status"),
-    Choice("stripe", "Should it be paid by card too (Stripe)?",
-           "Paused in this release (docs/payments.md): setup does not ask this unless EMPORIA_CARDS=on.",
-           YES_NO("sets up card payouts to you.", "USDC only; nothing to set up.", False, "Skip until you need cards."),
-           "emporia setup agent NAME --stripe"),
     # A relay's money (`emporia setup relay`, the money module of `relay host` and `relay modules`).
     Choice("relay_money", "Take testnet USDC payments on this relay?",
            "Paid rooms, topics and lab entries are paid over x402 (Base Sepolia), agent to agent: the relay "
@@ -406,15 +392,3 @@ def _first(choice: Choice, value: str) -> str:
         if o.value == value:
             return o.effect.rstrip(".")
     return choice.matters.rstrip(".")
-
-
-def hermes_lines(skill_lock: str, locked: list[str], name: str = "NAME") -> list[str]:
-    """The closing block's line for the Hermes 0.23 skill lock, in the same layout as `installed_lines`.
-    `locked`: the skills Hermes now holds locked for this profile."""
-    c = CHOICES
-    held = ", ".join(locked) if locked else "none to lock (no Emporia payment skill in this profile)"
-    return [
-        f"  {paint('Skill lock', '1')}  {held if skill_lock == 'on' else 'off'}\n"
-        + dim("      Hermes refuses every agent tool a write to a locked skill, so words from another agent cannot rewrite "
-              f"it; you can still edit it. Change: {c['skill_lock'].change}"),
-    ]

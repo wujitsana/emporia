@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS authorized_agents (
                 display_name TEXT,
                 registered_at TEXT NOT NULL,
                 is_active INTEGER NOT NULL DEFAULT 1,
-                stripe_account_id TEXT,
                 operator_label TEXT NOT NULL DEFAULT '',
                 client_name TEXT NOT NULL DEFAULT '',
                 client_version TEXT NOT NULL DEFAULT '',
@@ -22,7 +21,7 @@ CREATE TABLE IF NOT EXISTS authorized_agents (
                 encryption_public_key TEXT NOT NULL DEFAULT '',
                 encryption_key_signature TEXT NOT NULL DEFAULT '',
                 encryption_key_at TEXT NOT NULL DEFAULT ''
-            , stripe_account_status TEXT NOT NULL DEFAULT 'none', stripe_account_mode TEXT NOT NULL DEFAULT '', stable_id TEXT, accepts_remote_dms INTEGER NOT NULL DEFAULT 0, x402_pay_to_proofs_json TEXT NOT NULL DEFAULT '{}', relay_list_json TEXT, carried_records_json TEXT, network_hash TEXT NOT NULL DEFAULT '', network_group TEXT NOT NULL DEFAULT '');
+            , stable_id TEXT, accepts_remote_dms INTEGER NOT NULL DEFAULT 0, x402_pay_to_proofs_json TEXT NOT NULL DEFAULT '{}', relay_list_json TEXT, carried_records_json TEXT, network_hash TEXT NOT NULL DEFAULT '', network_group TEXT NOT NULL DEFAULT '');
 
 CREATE TABLE IF NOT EXISTS relay_secrets (
                 name TEXT PRIMARY KEY,
@@ -134,7 +133,7 @@ CREATE TABLE IF NOT EXISTS payments (
                 payment_type TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'confirmed',
                 created_at TEXT NOT NULL,
-                rail TEXT NOT NULL DEFAULT 'stripe'
+                rail TEXT NOT NULL DEFAULT 'x402'
             );
 
 CREATE TABLE IF NOT EXISTS settlements (
@@ -147,12 +146,12 @@ CREATE TABLE IF NOT EXISTS settlements (
                 platform_fee_bps INTEGER NOT NULL DEFAULT 100,
                 payment_intent_ids TEXT NOT NULL DEFAULT '[]',
                 transfer_id TEXT,
-                transfer_status TEXT NOT NULL DEFAULT 'pending_connect',
+                transfer_status TEXT NOT NULL DEFAULT 'no_payment',
                 status TEXT NOT NULL DEFAULT 'settled',
                 created_at TEXT NOT NULL,
                 payer_id TEXT,
-                rail TEXT NOT NULL DEFAULT 'stripe'
-            , dedupe_key TEXT, refund_id TEXT, reversal_id TEXT, platform_fee_atomic TEXT, winner_payout_atomic TEXT);
+                rail TEXT NOT NULL DEFAULT 'free'
+            , dedupe_key TEXT, platform_fee_atomic TEXT, winner_payout_atomic TEXT);
 
 CREATE TABLE IF NOT EXISTS x402_settle_intents (
                 intent_key TEXT PRIMARY KEY,
@@ -484,7 +483,7 @@ CREATE TABLE IF NOT EXISTS access_entitlements (
     expires_at         TEXT,
     revoked_at         TEXT,
     revoked_reason     TEXT,
-    rail               TEXT NOT NULL DEFAULT 'stripe'
+    rail               TEXT NOT NULL DEFAULT 'x402'
 );
 
 CREATE INDEX IF NOT EXISTS idx_access_entitlements_lookup

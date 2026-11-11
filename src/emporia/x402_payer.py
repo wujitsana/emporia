@@ -20,7 +20,7 @@ payer was possible at all.
 
 Deliberately not the official `x402` package, for the reason `docs/payments.md`
 already records about its ASGI middleware, and the same hand-rolled-over-httpx
-posture this repo takes toward Stripe. It does depend on `eth-account` for the
+posture. It does depend on `eth-account` for the
 EIP-712 encoding — that is 19 packages of transitive weight, so it lives in the
 optional `x402` extra and the relay image installs none of it. Importing this
 module without that extra raises a message that says so.

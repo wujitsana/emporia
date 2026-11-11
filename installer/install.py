@@ -10,7 +10,7 @@ Usage (run from emporia repo root or inside a Hermes profile):
 
     # ── Full hackathon demo (multi-agent profiles + seed) ──
     python installer/install.py --bootstrap-test
-    # → creates alpha/beta/stripe_escrow_bot profiles, starts relay, seeds
+    # → creates alpha/beta/escrow_bot profiles, starts relay, seeds
 
     # ── Relay + dashboard + seed only (no Hermes profile changes) ──
     python installer/install.py --local-demo
@@ -63,28 +63,6 @@ load_profile_dotenv()
 DEFAULT_RELAY_URL = os.getenv("EMPORIA_RELAY_URL", "http://localhost:8088")
 MCP_TOOL_NAME = "emporia"
 
-def _valid_stripe_profile_id(value: str | None) -> bool:
-    if not value:
-        return False
-    value = value.strip()
-    return value.startswith("profile_") or value.startswith("profile_test_")
-
-
-_PROVIDER_ENV_KEYS = ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID")
-
-# The relay's Stripe settings. An agent profile never needs them: its MCP
-# server and platform plugin read no Stripe variable, and every Stripe call goes
-# through the relay, which uses its own key. An agent pays with an SPT (via
-# Link) or its x402 wallet. P107: create_profile() copied these into every
-# agent profile it made or updated, which put the relay's secret key (live, on
-# this deployment) in two more places with no use. Never written to an agent
-# profile now, and stripped from one that already has them.
-_RELAY_ONLY_ENV_KEYS = frozenset({
-    "STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID", "STRIPE_API_VERSION",
-    "STRIPE_WEBHOOK_SECRET",
-})
-
-
 def _apply_guardrails_env(env_block: dict[str, str], *, disabled: bool = False) -> None:
     """The regex firewall: enforce, or off."""
     if disabled:
@@ -129,8 +107,8 @@ def _hermes_profile_create(name: str) -> None:
     """Create the Hermes profile skeleton (idempotent via existence check).
 
     Uses --no-skills: Emporia profiles should carry only the skills they
-    actually need (emporia + payment skills), not the full bundled set —
-    see _install_payment_skill_links() for what gets provisioned instead.
+    actually need, not the full bundled set —
+    see _install_skill_link() for what gets provisioned instead.
     """
     if _hermes_profile_exists(name):
         return
@@ -403,134 +381,7 @@ def collect_upstream_env(profile_dir: Path) -> dict[str, str]:
     emporia_root = profile_dir / "emporia"
     if emporia_root.is_dir() and not homes_only:              # a checkout's own .env: development only
         merged.update({k: v for k, v in harvest_env(emporia_root).items() if v})
-    for k in _PROVIDER_ENV_KEYS:
-        if os.environ.get(k) and k not in merged:
-            merged[k] = os.environ[k].strip()
     return merged
-
-
-def _prompt_optional_secret(label: str, hint: str) -> str | None:
-    if not sys.stdin.isatty():
-        return None
-    try:
-        import getpass
-
-        val = getpass.getpass(f"  {label} ({hint}; Enter to skip): ")
-        val = val.strip()
-        return val or None
-    except (EOFError, KeyboardInterrupt):
-        print()
-        return None
-
-
-def _prompt_optional_line(label: str, hint: str) -> str | None:
-    if not sys.stdin.isatty():
-        return None
-    try:
-        val = input(f"  {label} ({hint}; Enter to skip): ").strip()
-        return val or None
-    except (EOFError, KeyboardInterrupt):
-        print()
-        return None
-
-
-def resolve_provider_secrets(
-    profile_dir: Path,
-    *,
-    stripe_secret_key: str | None = None,
-    stripe_profile_id: str | None = None,
-    interactive: bool = True,
-    dry_run: bool = False,
-) -> tuple[str | None, str | None]:
-    """Resolve the relay's Stripe settings from CLI, profile .env, parent .env, config, then prompt.
-
-    Cards are paused in this release (docs/payments.md): nothing is resolved, prompted or written
-    unless EMPORIA_CARDS=on."""
-    if (os.environ.get("EMPORIA_CARDS") or "").strip().lower() not in ("on", "1", "true", "yes"):
-        return None, None
-    local = harvest_env(profile_dir)
-    cfg_env = harvest_config_environment(profile_dir)
-    for k in _PROVIDER_ENV_KEYS:
-        if not local.get(k) and cfg_env.get(k):
-            local[k] = cfg_env[k]
-    upstream = collect_upstream_env(profile_dir)
-
-    def pick(key: str, cli: str | None) -> str | None:
-        if cli and cli.strip():
-            return cli.strip()
-        if local.get(key):
-            return local[key]
-        if upstream.get(key):
-            return upstream[key]
-        return None
-
-    stripe = pick("STRIPE_SECRET_KEY", stripe_secret_key)
-    profile_cli = stripe_profile_id
-    if (profile_cli or "").strip().lower() == "auto":
-        profile_cli = None
-    profile = pick("STRIPE_PROFILE_ID", profile_cli)
-
-    if stripe and not profile:
-        api_ver = (
-            local.get("STRIPE_API_VERSION")
-            or upstream.get("STRIPE_API_VERSION")
-            or os.getenv("STRIPE_API_VERSION", "2026-04-22.preview")
-        )
-        try:
-            from emporia.stripe_profile_discovery import resolve_stripe_profile_id
-
-            resolved, note = resolve_stripe_profile_id(
-                stripe, profile_dir, api_version=api_ver
-            )
-            if resolved:
-                profile = resolved
-                print(f"  STRIPE_PROFILE_ID: auto-discovered ({note})")
-        except Exception as e:
-            print(f"  STRIPE_PROFILE_ID: auto-discover skipped ({type(e).__name__})")
-
-    if interactive and not dry_run:
-        if not stripe:
-            print("  STRIPE_SECRET_KEY: not found — paid Stripe sessions stay off.")
-            stripe = _prompt_optional_secret(
-                "STRIPE_SECRET_KEY",
-                "enables Stripe escrow / MPP on the relay",
-            )
-        if stripe and not profile:
-            print("  STRIPE_PROFILE_ID: not found — Stripe PI works; MPP seller mode needs profile_…")
-            profile = _prompt_optional_line(
-                "STRIPE_PROFILE_ID",
-                "Stripe Machine Payments profile id",
-            )
-
-    if profile and not _valid_stripe_profile_id(profile):
-        print(f"  WARNING: ignoring invalid STRIPE_PROFILE_ID={profile!r}")
-        profile = None
-
-    return stripe, profile
-
-
-def _print_provider_status(
-    stripe_secret_key: str | None,
-    stripe_profile_id: str | None,
-) -> None:
-    if (os.environ.get("EMPORIA_CARDS") or "").strip().lower() not in ("on", "1", "true", "yes"):
-        print("  Cards (Stripe) are paused in this release — see docs/payments.md")
-        return
-    if stripe_secret_key:
-        if stripe_profile_id:
-            print("  Stripe relay payments: on (secret key + STRIPE_PROFILE_ID — MPP seller ready)")
-        else:
-            print("  Stripe relay payments: on (secret key; PI only — no STRIPE_PROFILE_ID for MPP seller)")
-            try:
-                from emporia.stripe_profile_discovery import stripe_mpp_admin_notice
-
-                admin = stripe_mpp_admin_notice(stripe_secret_key, profile_ready=False)
-                if admin:
-                    print(f"  WARNING: {admin}")
-            except Exception:
-                pass
-    else:
-        print("  Stripe relay payments: off (no STRIPE_SECRET_KEY)")
 
 
 def _model_block(config: dict) -> dict | None:
@@ -649,7 +500,7 @@ def refresh_mcp_references(profile_dir: Path, dry_run: bool = False) -> list[str
 # whose size the agent chooses is its cap: 0 up to the single-payment limit the person set. The chat limit is the
 # agent's daily limit. These are the tools that move money; keyed by name, Hermes warns about a name the server
 # does not offer.
-MONEY_TOOLS = ("join_room", "subscribe_agora_topic", "fund_session", "create_payment_intent")
+MONEY_TOOLS = ("join_room", "subscribe_agora_topic", "fund_session")
 COST_UNIT = "cents"
 DEFAULT_MAX_PAYMENT_CENTS = 1000     # as agent_wallet.DEFAULT_MAX_PAYMENT_CENTS / DEFAULT_MAX_DAILY_CENTS
 DEFAULT_MAX_DAILY_CENTS = 5000
@@ -848,9 +699,6 @@ def install_into_profile(
     profile_dir: Path,
     relay_url: str,
     agent_id: str,
-    stripe_secret_key: str | None = None,
-    stripe_profile_id: str | None = None,
-    stripe_api_version: str | None = None,
     max_budget_cents: int | None = None,
     operator_label: str | None = None,
     no_guardrails: bool = False,
@@ -915,23 +763,8 @@ def install_into_profile(
     # the entry is inert either way.
 
     # Env block
-    # P201: secrets (the Stripe key) go only to the .env below.
+    # P201: secrets go only to the .env below.
     env_block = config.setdefault("env", {})
-    if stripe_profile_id:
-        if not _valid_stripe_profile_id(stripe_profile_id):
-            print(f"  WARNING: ignoring invalid STRIPE_PROFILE_ID={stripe_profile_id!r} (expected profile_... or profile_test_...)")
-            stripe_profile_id = None
-        elif env_block.get("STRIPE_PROFILE_ID") != stripe_profile_id:
-            env_block["STRIPE_PROFILE_ID"] = stripe_profile_id
-            changed = True
-            print("  + env.STRIPE_PROFILE_ID")
-    elif "STRIPE_PROFILE_ID" in env_block and not stripe_secret_key:
-        env_block.pop("STRIPE_PROFILE_ID", None)
-        changed = True
-    if stripe_api_version and env_block.get("STRIPE_API_VERSION") != stripe_api_version:
-        env_block["STRIPE_API_VERSION"] = stripe_api_version
-        changed = True
-        print("  + env.STRIPE_API_VERSION")
     if max_budget_cents is not None:
         if max_budget_cents > 0:
             if env_block.get("EMPORIA_MAX_TOTAL_SPEND_CENTS") != str(max_budget_cents):
@@ -990,15 +823,6 @@ def install_into_profile(
     # P261: and no EMPORIA_TRUST_LOCAL_HEADER_AUTH any more — the relay believes
     # only a bearer token; an older line is taken out.
     env_lines = [ln for ln in env_lines if not ln.startswith("EMPORIA_TRUST_LOCAL_HEADER_AUTH=")]
-    env_lines, _ = _set_env_line(env_lines, "STRIPE_API_VERSION", stripe_api_version or os.getenv("STRIPE_API_VERSION", "2026-04-22.preview"))
-    if stripe_secret_key:
-        env_lines, _ = _set_env_line(env_lines, "STRIPE_SECRET_KEY", stripe_secret_key)
-    else:
-        env_lines = [ln for ln in env_lines if not ln.startswith("STRIPE_SECRET_KEY=")]
-    if stripe_profile_id:
-        env_lines, _ = _set_env_line(env_lines, "STRIPE_PROFILE_ID", stripe_profile_id)
-    elif not stripe_secret_key:
-        env_lines = [ln for ln in env_lines if not ln.startswith("STRIPE_PROFILE_ID=")]
     if max_budget_cents is not None:
         if max_budget_cents > 0:
             env_lines, _ = _set_env_line(env_lines, "EMPORIA_MAX_TOTAL_SPEND_CENTS", str(max_budget_cents))
@@ -1016,10 +840,6 @@ def install_into_profile(
     os.environ["EMPORIA_DB_PATH"] = db_path
     os.environ["EMPORIA_KEYS_DIR"] = runtime_env["EMPORIA_KEYS_DIR"]
     os.environ["EMPORIA_OPERATOR_LABEL"] = operator_label
-    if stripe_secret_key:
-        os.environ["STRIPE_SECRET_KEY"] = stripe_secret_key
-    elif "STRIPE_SECRET_KEY" in os.environ:
-        os.environ.pop("STRIPE_SECRET_KEY", None)
     for line in _guardrails_env_lines(disabled=no_guardrails):
         key, _, val = line.partition("=")
         os.environ[key] = val
@@ -1041,28 +861,20 @@ def install_into_profile(
 # --create-profile
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _merge_profile_env(env_path: Path, managed_lines: list[str], keep_relay: bool = False) -> list[str]:
+def _merge_profile_env(env_path: Path, managed_lines: list[str]) -> list[str]:
     """The installer's lines, then every line of the existing .env it does not
     manage (P115). It used to write the file whole, dropping anything the
-    operator had added — and the relay's Stripe settings, which an agent
-    profile must not hold, are still dropped (_RELAY_ONLY_ENV_KEYS)."""
+    operator had added."""
     managed = {ln.split("=", 1)[0].strip() for ln in managed_lines if "=" in ln}
     kept: list[str] = []
-    dropped: list[str] = []
     from emporia import profile_env          # catalog rule 11: through Hermes for a profile's .env
     if env_path.exists():
         for line in profile_env.lines(env_path):
             key = line.split("=", 1)[0].strip() if "=" in line and not line.lstrip().startswith("#") else ""
-            if key and key in _RELAY_ONLY_ENV_KEYS and not keep_relay and key not in managed:
-                dropped.append(key)
-                continue
             if key and key in managed:
                 continue
             if line.strip():
                 kept.append(line)
-    if dropped:     # P295: said, never silent — it may be someone's own profile
-        print(f"  - removed from {env_path}: {', '.join(dropped)} (a relay's setting; an agent's tools "
-              "could reach it there)")
     return managed_lines + kept
 
 
@@ -1091,8 +903,7 @@ def create_profile(
     must be unique there — a public relay has other people's `default`s.
     `profile_path` is where the profile is (default: beside the current one).
 
-    Takes no Stripe settings (P107): those belong to the relay's profile, never
-    an agent's — see _RELAY_ONLY_ENV_KEYS."""
+    Takes no relay settings: those belong to the relay's profile, never an agent's."""
 
     # Determine where to create it
     if current_profile_dir:
@@ -1165,14 +976,10 @@ def create_profile(
         config["terminal"] = {"backend": "local", "home_mode": "auto"}
 
     # Env block. P217: the relay's own profile (set up from itself) keeps the
-    # relay's settings — they are what an *agent* profile must not hold. Setting
-    # hackathon_hermes up as an agent once dropped its relay's Stripe key.
-    own_relay = current_profile_dir is not None and profile_dir.resolve() == current_profile_dir.resolve()
+    # relay's settings — they are what an *agent* profile must not hold.
     env_block: dict[str, str] = {**inherited_env}
     env_block["EMPORIA_RELAY_URL"] = relay_url
     env_block["EMPORIA_AGENT_ID"] = aid
-    for k in () if own_relay else _RELAY_ONLY_ENV_KEYS:
-        env_block.pop(k, None)
     if max_budget_cents is not None and max_budget_cents > 0:
         env_block["EMPORIA_MAX_TOTAL_SPEND_CENTS"] = str(max_budget_cents)
     else:
@@ -1228,8 +1035,7 @@ def create_profile(
     # Every inherited secret (P201: config.yaml no longer holds any), once.
     written = {ln.split("=", 1)[0] for ln in safe_env_lines}
     for k, v in env_block.items():
-        if (is_secret_name(k) and v and k not in written
-                and (own_relay or k not in _RELAY_ONLY_ENV_KEYS)):
+        if is_secret_name(k) and v and k not in written:
             safe_env_lines.append(f"{k}={v}")
 
     # Export to current process so subsequent steps see the vars immediately
@@ -1243,7 +1049,7 @@ def create_profile(
         print(f"  [dry-run] Would write {env_path}")
     else:
         from emporia import profile_env      # catalog rule 11: through Hermes for a profile's .env
-        profile_env.replace(env_path, _merge_profile_env(env_path, safe_env_lines, keep_relay=own_relay))
+        profile_env.replace(env_path, _merge_profile_env(env_path, safe_env_lines))
         print(f"  Saved: {env_path}")
         if moved := secure_profile(profile_dir):
             print(f"  Moved from config.yaml to .env: {', '.join(moved)}")
@@ -1441,20 +1247,13 @@ def _is_local_relay(relay_url: str) -> bool:
 def bootstrap_test_profiles(
     relay_url: str,
     current_profile_dir: Path | None,
-    stripe_secret_key: str | None = None,
-    stripe_profile_id: str | None = None,
-    stripe_api_version: str | None = None,
     max_budget_cents: int | None = None,
     operator_label: str | None = None,
     dry_run: bool = False,
     dev_skills: bool = False,
 ) -> None:
-    """Create the test agent profiles (alpha, beta, stripe_escrow_bot), then seed."""
-    if stripe_secret_key:
-        os.environ["STRIPE_SECRET_KEY"] = stripe_secret_key
-    elif not stripe_secret_key and "STRIPE_SECRET_KEY" not in os.environ:
-        os.environ.pop("STRIPE_SECRET_KEY", None)
-    for name in ("alpha", "beta", "stripe_escrow_bot"):
+    """Create the test agent profiles (alpha, beta, escrow_bot), then seed."""
+    for name in ("alpha", "beta", "escrow_bot"):
         print(f"\nBootstrapping: {name}")
         create_profile(
             name=name,
@@ -1486,21 +1285,6 @@ _DEV_SKILL_SYMLINKS: list[tuple[str, str]] = [
     ("dev/emporia-dev", "software-development/emporia-dev"),
 ]
 
-# Optional Hermes payment skills (stripe-link-cli, stripe-projects), linked when the Hermes install's
-# optional-skills catalog has them. `hermes skills install <name>` is registry-bound and can hang unattended,
-# so symlink directly from the local catalog (same idempotent pattern as the emporia/dev skill links below).
-_PAYMENT_SKILL_NAMES: list[str] = ["stripe-link-cli", "stripe-projects"]
-
-
-def _hermes_optional_skills_root() -> Path | None:
-    """Locate the Hermes install's optional-skills catalog (…/opt/hermes/optional-skills)."""
-    hermes_bin = shutil.which("hermes")
-    if not hermes_bin:
-        return None
-    # .venv/bin/hermes -> install root is three parents up
-    root = Path(hermes_bin).resolve().parent.parent.parent
-    candidate = root / "optional-skills"
-    return candidate if candidate.is_dir() else None
 
 
 # P295: one plugin, `<home>/plugins/emporia`, keyed `emporia` in plugins.enabled.
@@ -1794,20 +1578,11 @@ def _install_skill_link(
     *,
     dev_skills: bool = False,
 ) -> None:
-    """The skills Emporia needs beside its own (P295: its own are the plugin's).
-
-    Links the optional payment skills (stripe-link-cli, stripe-projects) from
-    the Hermes install's optional-skills catalog, and with dev_skills the repo's
-    dev skills.
+    """The skills Emporia needs beside its own (P295: its own are the plugin's):
+    with dev_skills, the repo's dev skills.
     """
     skills_dir = profile_dir / "skills"
     links: list[tuple[Path, Path]] = []
-    optional_root = _hermes_optional_skills_root()
-    if optional_root:
-        for skill_name in _PAYMENT_SKILL_NAMES:
-            links.append(
-                (optional_root / "payments" / skill_name, skills_dir / "payments" / skill_name),
-            )
     if dev_skills:
         for src_rel, dst_rel in _DEV_SKILL_SYMLINKS:
             links.append(
@@ -1848,7 +1623,7 @@ def main() -> None:
     parser.add_argument("--create-profile", metavar="NAME",
                         help="Create a new agent profile named NAME")
     parser.add_argument("--bootstrap-test", action="store_true",
-                        help="Create alpha/beta/stripe_escrow_bot profiles + seed")
+                        help="Create alpha/beta/escrow_bot profiles + seed")
     parser.add_argument("--seed-only", action="store_true",
                         help="Start local relay if needed and run scripts/seed_demo_relay.py")
     parser.add_argument("--start-relay", action="store_true",
@@ -1875,14 +1650,6 @@ def main() -> None:
                         help="Agent ID for --install-profile (default: profile dir name or HERMES_AGENT_ID)")
     parser.add_argument("--display-name", default="",
                         help="Display name for the agent (defaults to agent-id)")
-    parser.add_argument("--stripe-secret-key", default=None,
-                        help="Stripe secret key (else profile/parent .env, config, or prompt)")
-    parser.add_argument("--non-interactive", action="store_true",
-                        help="Do not prompt for missing Stripe keys (leave features off)")
-    parser.add_argument("--stripe-profile-id", default=None,
-                        help="Stripe Machine Payments profile ID (profile_... / profile_test_...); use 'auto' to discover from env files or Stripe API (sk_* keys only)")
-    parser.add_argument("--stripe-api-version", default=os.getenv("STRIPE_API_VERSION", "2026-04-22.preview"),
-                        help="Stripe API version for SPT/MPP preview endpoints")
     parser.add_argument("--max-budget-cents", type=int, default=int(os.getenv("EMPORIA_MAX_TOTAL_SPEND_CENTS", "0")),
                         help="Optional total cumulative spend limit per agent in cents (0 = unlimited)")
     parser.add_argument("--operator-label", default=None, metavar="op_…",
@@ -1952,8 +1719,6 @@ def main() -> None:
     operator_label = args.operator_label or None
     print()
 
-    interactive = not args.non_interactive
-    secrets_dir = current_profile_dir or Path.cwd()
 
     if args.install_profile:
         if not current_profile_dir:
@@ -1976,22 +1741,10 @@ def main() -> None:
             sys.exit(1)
         print(f"Installing into: {current_profile_dir}  agent_id={agent_id!r}")
 
-        stripe_key, stripe_profile_id = resolve_provider_secrets(
-            current_profile_dir,
-            stripe_secret_key=args.stripe_secret_key,
-            stripe_profile_id=args.stripe_profile_id,
-            interactive=interactive,
-            dry_run=args.dry_run,
-        )
-        _print_provider_status(stripe_key, stripe_profile_id)
-
         install_into_profile(
             profile_dir=current_profile_dir,
             relay_url=args.relay_url,
             agent_id=agent_id,
-            stripe_secret_key=stripe_key,
-            stripe_profile_id=stripe_profile_id,
-            stripe_api_version=args.stripe_api_version,
             max_budget_cents=args.max_budget_cents,
             operator_label=operator_label,
             no_guardrails=args.no_guardrails,
@@ -2011,14 +1764,6 @@ def main() -> None:
                 _run_demo_seed(args.relay_url)
 
     if args.create_profile:
-        stripe_key, stripe_profile_id = resolve_provider_secrets(
-            secrets_dir,
-            stripe_secret_key=args.stripe_secret_key,
-            stripe_profile_id=args.stripe_profile_id,
-            interactive=interactive,
-            dry_run=args.dry_run,
-        )
-        _print_provider_status(stripe_key, stripe_profile_id)
         create_profile(
             name=args.create_profile,
             relay_url=args.relay_url,
@@ -2034,20 +1779,9 @@ def main() -> None:
         )
 
     if args.bootstrap_test:
-        stripe_key, stripe_profile_id = resolve_provider_secrets(
-            secrets_dir,
-            stripe_secret_key=args.stripe_secret_key,
-            stripe_profile_id=args.stripe_profile_id,
-            interactive=interactive,
-            dry_run=args.dry_run,
-        )
-        _print_provider_status(stripe_key, stripe_profile_id)
         bootstrap_test_profiles(
             relay_url=args.relay_url,
             current_profile_dir=current_profile_dir,
-            stripe_secret_key=stripe_key,
-            stripe_profile_id=stripe_profile_id,
-            stripe_api_version=args.stripe_api_version,
             max_budget_cents=args.max_budget_cents,
             operator_label=operator_label,
             dry_run=args.dry_run,

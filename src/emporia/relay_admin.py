@@ -46,7 +46,6 @@ def settings() -> list[dict[str, Any]]:
     tempo = (rs._tempo_cfg() or {}).get("network")
     escrow = rs._escrow_network()
     live = [n for n in [*nets, *([tempo] if tempo else [])] if not is_testnet(n)]
-    stripe = rs._stripe_key_mode() or "off"
     guard = rs.guardrails.DEFAULT_MODE
     out = [
         _item("Identity", "Operator agent", rs._relay_operator_id() or "not set",
@@ -90,14 +89,6 @@ def settings() -> list[dict[str, Any]]:
               "Signs escrow captures and voids (escrow only); never a spending key.", "emporia setup relay --escrow"),
         _item("Tempo", "Tempo", label(tempo) if tempo else "off",
               "Stablecoin on Tempo, straight to the payee.", f"EMPORIA_TEMPO_NETWORK — {_RESTART}"),
-        _item("Cards", "Stripe", stripe, "Card payments, paid to each payee's Stripe account.",
-              "emporia setup stripe"),
-        _item("Cards", "Stripe webhook secret", _is_set("STRIPE_WEBHOOK_SECRET"),
-              "Required with a live key.", "emporia setup stripe",
-              "danger" if stripe == "live" and not os.getenv("STRIPE_WEBHOOK_SECRET") else "ok"),
-        _item("Cards", "Card money held by you", "ON" if rs.custodial_cards_allowed() else "off",
-              "Off by default: flows that leave money on your Stripe balance.",
-              f"EMPORIA_CUSTODIAL_CARDS=0 — {_RESTART}", "warn" if rs.custodial_cards_allowed() else "ok"),
         _item("Games", "Games", ", ".join(sorted(rs.MODULE_REGISTRY)),
               "The games and session types this relay hosts.",
               f"EMPORIA_MODULES (extra modules, after review) — {_RESTART}"),

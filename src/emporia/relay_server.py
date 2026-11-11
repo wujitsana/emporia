@@ -7,7 +7,7 @@ Provides:
   - WebSocket real-time updates (per-session + per-agent)
   - Guardrails on all inbound (deterministic regex firewall)
   - Ed25519 identity verification
-  - Stripe payment gate (when mode != free)
+  - Payment gate (x402 / Tempo, when mode != free)
   - Anti-cheat: Proof-of-Reasoning + bot fingerprint rejection
   - Dual-track JSONL audit log
 
@@ -15,7 +15,7 @@ Inbound processing order (hard contract):
   1. Parse payload
   2. Guardrails scan
   3. Ed25519 signature verify
-  4. Stripe payment gate (if mode != free)
+  4. Payment gate (if mode != free)
   5. PoR density + fingerprint check
   6. Audit log append
   7. Module dispatch
@@ -61,7 +61,6 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 import uvicorn
-from emporia.cards import PAUSED_RELAY_MSG, cards_paused, stripe_profile_id, stripe_secret_key
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -176,8 +175,6 @@ def live_money() -> list[str]:
     """P202: what makes this relay move real money, if anything."""
     from emporia.networks import is_testnet
     reasons = []
-    if stripe_secret_key().strip().startswith(("sk_live_", "rk_live_")):
-        reasons.append("a live Stripe key")
     nets = [n.strip() for n in (os.getenv("EMPORIA_X402_NETWORKS") or "").split(",") if n.strip()]
     if os.getenv("EMPORIA_X402_ENABLED", "").strip() == "1" and any(not is_testnet(n) for n in nets):
         reasons.append("USDC on a mainnet")
@@ -291,187 +288,24 @@ def _ensure_federation_pins_loaded() -> None:
         _FEDERATION_PEER_PUBKEYS_LOADED = True
 
 
-def _stripe_profile_id() -> str:
-    return stripe_profile_id()
 
 
-def _stripe_profile_ready() -> bool:
-    profile_id = _stripe_profile_id()
-    return bool(stripe_secret_key()) and (
-        profile_id.startswith("profile_") or profile_id.startswith("profile_test_")
-    )
 
 
-def _stripe_mpp_admin_notice() -> str | None:
-    from emporia.stripe_profile_discovery import stripe_mpp_admin_notice
-
-    sk = stripe_secret_key().strip()
-    return stripe_mpp_admin_notice(sk, profile_ready=_stripe_profile_ready())
 
 
-def _stripe_key_mode() -> str:
-    """P26-4: which Stripe mode this relay's configured key talks to —
-    `"test"` | `"live"` | `""` (not configured / unrecognizable).
-
-    Connected Account ids don't encode their own mode, and the two key spaces
-    are completely disjoint: an `acct_...` created under a test key does not
-    exist under a live key. That makes the mode a thing the relay has to track
-    itself rather than infer from an id — see the `stripe_account_mode` column.
-
-    Delegates to `payments.stripe_key_mode()` rather than re-deriving the
-    prefix rule: `settle()` applies the same rule and can't import this module,
-    so a second copy here is precisely the hand-copied-logic drift this
-    codebase has found in four separate passes.
-    """
-    from emporia.payments import stripe_key_mode
-
-    return stripe_key_mode()
 
 
-def _stripe_account_mode_mismatch(account_mode: str) -> bool:
-    """Thin re-export of `payments.stripe_account_mode_mismatch()` so both
-    payout call sites (that one, and `_settle_access_payment` here) apply one
-    rule rather than two hand-copied ones."""
-    from emporia.payments import stripe_account_mode_mismatch
-
-    return stripe_account_mode_mismatch(account_mode)
 
 
-def custodial_cards_allowed() -> bool:
-    """Card flows that leave money on the operator's Stripe balance: an entry or a purchase paid to the platform and transferred on. Off by default — with it off, every
-    card payment is a destination charge to the person it is for, as USDC is
-    (P157). An operator who wants those flows sets EMPORIA_CUSTODIAL_CARDS=1
-    and takes on holding other people's money."""
-    return not cards_paused() and os.environ.get("EMPORIA_CUSTODIAL_CARDS", "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def stripe_payee_account(agent_id: str | None) -> str | None:
-    """This agent's connected account when a destination charge can pay it:
-    present, onboarded, and in this relay's key space. Else None."""
-    if not agent_id:
-        return None
-    account = AGENT_REGISTRY.get_stripe_account(agent_id)
-    if not account or AGENT_REGISTRY.get_stripe_account_status(agent_id) != "active":
-        return None
-    if _stripe_account_mode_mismatch(AGENT_REGISTRY.get_stripe_account_mode(agent_id)):
-        return None
-    return account
 
 
-def card_payee(agent_id: str | None, amount_cents: int) -> tuple[str | None, int | None, str | None]:
-    """(destination account, application fee, why cards are off) for a card
-    payment to `agent_id`. Custodial relays keep the old platform charge."""
-    if custodial_cards_allowed():
-        return None, None, None
-    from emporia.payments import platform_fee
-    account = stripe_payee_account(agent_id)
-    if not account:
-        return None, None, (f"{agent_id} has no active Stripe account here, and card payments "
-                            f"go straight to the payee on this relay")
-    return account, platform_fee(amount_cents), None
 
 
-def _verify_stripe_webhook_signature(
-    payload: bytes, sig_header: str, secret: str, *, tolerance_seconds: int = 300,
-) -> bool:
-    """Hand-rolled verification of Stripe's `Stripe-Signature` header scheme
-    (`t=<unix-ts>,v1=<hex-hmac-sha256>[,v1=...]`) — matches this codebase's
-    established raw-httpx/no-SDK posture toward Stripe (`payments.py` never
-    imports the `stripe` package; P25-2 stays consistent). A payload can carry
-    more than one `v1` value during Stripe's own secret-rotation window, so any
-    match is accepted. Rejects a missing/malformed header, a wrong signature,
-    and a timestamp outside Stripe's documented ~5-minute replay-tolerance
-    window. Never fails open: an empty secret or any parse error is a reject,
-    not a skip.
-
-    P26-2: that last sentence was the *intent* in P25 but not the behavior —
-    two inputs raised instead of returning False, and since this app registers
-    no exception handler anywhere, both surfaced as an unauthenticated 500 with
-    a traceback rather than a 403: a `t` of a few hundred digits overflowed
-    `abs(time.time() - ts)` (`int` parses fine, the float subtraction doesn't),
-    and any non-ASCII byte in a `v1` value raised `TypeError` out of
-    `hmac.compare_digest`. Not a bypass — neither produces a valid signature —
-    but it handed any anonymous caller a log-flood primitive and broke the
-    stated contract. The whole body is now total: anything unexpected is a
-    reject. Deliberately a blanket `except Exception`, since this function's
-    only correct answer to *any* input it can't fully parse is False.
-    """
-    try:
-        if not secret or not sig_header:
-            return False
-        parts: dict[str, list[str]] = {}
-        for item in sig_header.split(","):
-            if "=" not in item:
-                continue
-            k, _, v = item.partition("=")
-            parts.setdefault(k.strip(), []).append(v.strip())
-        ts_values = parts.get("t")
-        v1_values = parts.get("v1")
-        if not ts_values or not v1_values:
-            return False
-        ts = int(ts_values[0])
-        # Bound before the float subtraction: int() happily parses a 400-digit
-        # timestamp that abs(time.time() - ts) then can't convert (P26-2).
-        if abs(ts) > 10**12:
-            return False
-        if abs(time.time() - ts) > tolerance_seconds:
-            return False
-        signed_payload = f"{ts_values[0]}.".encode() + payload
-        expected = _hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
-        return any(_hmac.compare_digest(expected, v1) for v1 in v1_values)
-    except Exception:
-        return False
 
 
-def _require_stripe_webhook_secret_if_needed() -> None:
-    """Fail loud at startup (P25-2) rather than silently booting into a state
-    where live-mode Connected Accounts could never be marked payable —
-    POST /webhooks/stripe is the *only* thing that ever sets an account's
-    status to 'active' in live mode, and it refuses every request without a
-    secret to verify against (never fails open). Test-mode key: warn only —
-    the route existing there is harmless (test-mode accounts are already
-    marked 'active' at registration, see register_agent) unless someone is
-    deliberately exercising live-mode onboarding locally.
-    """
-    # P62: asks `stripe_key_mode()` rather than matching a prefix here. The
-    # prefix check missed `rk_live_` — a restricted *live* key, the
-    # least-privilege shape Stripe recommends — so this guard fired for the less
-    # safe key and not the more safe one, and a live relay started into exactly
-    # the state it exists to prevent. Routing both callers through one
-    # classifier is what stops that drifting apart again.
-    from emporia.payments import stripe_key_mode
-
-    secret = (os.getenv("STRIPE_WEBHOOK_SECRET") or "").strip()
-    mode = stripe_key_mode()
-    if mode == "live" and not secret:
-        raise RuntimeError(
-            "STRIPE_SECRET_KEY is a live key but STRIPE_WEBHOOK_SECRET is unset — "
-            "POST /webhooks/stripe cannot verify Stripe's account.updated events "
-            "without it, so live-mode Connected Accounts could never be marked "
-            "payable.\n"
-            "\n"
-            "Three ways forward, depending on what you are doing:\n"
-            "  * Developing or testing — use a test key "
-            "(STRIPE_SECRET_KEY=sk_test_... or rk_test_...). Nothing here needs a "
-            "live one.\n"
-            "  * Not using Stripe at all — unset STRIPE_SECRET_KEY. The relay "
-            "starts, the Stripe rail is simply disabled, and rooms, Agoras, DMs "
-            "and the x402 rail are unaffected.\n"
-            "  * Actually running live — set STRIPE_WEBHOOK_SECRET from the "
-            "Stripe Dashboard's webhook endpoint configuration.\n"
-            "\n"
-            "P62 note: this now recognises restricted keys (rk_live_) as live, "
-            "which it did not before. If this relay used to start and no longer "
-            "does, that is why — the guard was missing your key's shape, not "
-            "newly disagreeing with it."
-        )
-    if mode == "test" and not secret:
-        logger.warning(
-            "STRIPE_WEBHOOK_SECRET is unset — POST /webhooks/stripe will reject "
-            "every request until it's configured. Harmless in test mode unless "
-            "you're exercising live-mode onboarding locally (e.g. Stripe CLI "
-            "webhook forwarding)."
-        )
 
 
 _LOCALHOST_HOSTS = {"127.0.0.1", "::1", "localhost"}
@@ -751,30 +585,6 @@ def _require_caller_is(agent_id: str, request: Request) -> None:
         raise HTTPException(403, f"Not authorized to act as '{agent_id}'")
 
 
-def _require_caller_unless_mpp_payment(agent_id: str, request: Request) -> bool:
-    """Like _require_caller_is, but skipped when the caller is presenting an MPP payment
-    credential (Authorization: Payment <token>) rather than a Bearer JWT — the two share
-    the Authorization header and can't both be sent, so caller identity can't be resolved
-    from a payment-token request at all. In that case payment resource-binding is the only
-    authorization (see _assert_payment_intent_matches), same as before this check existed.
-    Tightening the payment path itself (binding a payment credential to a payer identity,
-    not just a resource) is payment-integrity work, deferred to the x402 re-platform — see
-    the plan's P1 note ("payment is resource-bound, not identity-bound").
-
-    Returns whether `agent_id` was actually proven (N12-5, R5): callers use this to decide
-    whether it's safe to apply _enforce_agent_rate_limit(agent_id) — before this, all three
-    call sites threw the per-agent write budget at whatever agent_id the request body named,
-    even on the MPP-payment branch where that name was never verified, letting a payment-
-    token holder burn any registered agent's budget just by naming them.
-    """
-    from emporia.payments import extract_mpp_token
-    if extract_mpp_token(request.headers.get("Authorization")):
-        # P95: a payer who also sends X-Emporia-Authorization has proven who
-        # they are, and is held to it like any other authenticated caller.
-        if not request.headers.get("x-emporia-authorization"):
-            return False
-    _require_caller_is(agent_id, request)
-    return True
 
 
 _MAX_LIMIT = 200
@@ -865,8 +675,7 @@ def _escrow_network() -> str | None:
 
 
 def session_paid_by(session_id: str) -> list[str]:
-    """P153: the rails this session's payments were actually paid on ("stripe",
-    "x402") — what a page shows as "paid by" once money has moved."""
+    """P153: the rails this session's payments were actually paid on ("x402") — what a page shows as "paid by" once money has moved."""
     with DB_LOCK, get_db() as conn:
         rows = conn.execute("SELECT DISTINCT rail FROM payments WHERE session_id = ? "
                             "AND payment_type = 'session_price'", (session_id,)).fetchall()
@@ -998,76 +807,8 @@ def _stamp_schema_version(conn: Any) -> None:
     conn.execute(f"PRAGMA user_version = {int(SCHEMA_VERSION)}")
 
 
-def _payment_metadata_matches(
-    metadata: dict[str, Any],
-    *,
-    resource_type: str,
-    resource_id: str,
-) -> bool:
-    return metadata.get("resource_type") == resource_type and metadata.get("resource_id") == resource_id
 
 
-def _assert_payment_intent_matches(
-    payment: dict[str, Any],
-    *,
-    amount_cents: int,
-    currency: str,
-    resource_type: str,
-    resource_id: str,
-    expected_capture_method: str,
-    allowed_statuses: tuple[str, ...],
-    expected_payer_agent_id: str | None = None,
-    expected_destination: str | None = None,
-) -> None:
-    """`expected_destination` (P95): for a destination charge, the connected
-    account the money must go to on capture. A hold that names no destination,
-    or another one, would pay the platform or a stranger instead of the seller.
-
-    `expected_payer_agent_id` (P1a-1, R1): a PaymentIntent used to be verified as
-    bound to a *resource* but never to a *payer* — any registered agent presenting a
-    valid, correctly-bound PI id passed every check here, including one they didn't
-    pay for. Both PI-minting paths (`create_price_intent`, `confirm_spt`) already stamp
-    `metadata[buyer_agent_id]`; this was simply never read. Only
-    `_verify_and_confirm_payment()`'s direct-`payment_intent_id` branch passes this —
-    the caller is authenticated there, so the check is real. The SPT branch mints the
-    PI from the caller's own claimed `agent_id` in the same call, so comparing them
-    would be circular; deliberately left `None` (skipped) on that branch. A PI with no
-    `buyer_agent_id` at all is rejected outright when a payer is expected — Emporia
-    stamps every PI it accepts, so "absent" means "not ours," not "trust it anyway."
-    """
-    status = payment.get("status")
-    if status not in allowed_statuses:
-        raise HTTPException(402, f"Payment not confirmed (status={status}).")
-    if int(payment.get("amount") or 0) != amount_cents:
-        raise HTTPException(
-            402,
-            f"Payment amount mismatch: expected {amount_cents}, got {payment.get('amount')}",
-        )
-    actual_currency = (payment.get("currency") or "usd").lower()
-    if actual_currency != currency.lower():
-        raise HTTPException(
-            402,
-            f"Payment currency mismatch: expected {currency.lower()}, got {actual_currency}",
-        )
-    actual_capture = (payment.get("capture_method") or "automatic").lower()
-    if actual_capture != expected_capture_method:
-        raise HTTPException(
-            402,
-            f"Payment capture_method mismatch: expected {expected_capture_method}, got {actual_capture}",
-        )
-    metadata = payment.get("metadata") or {}
-    if not _payment_metadata_matches(
-        metadata,
-        resource_type=resource_type,
-        resource_id=resource_id,
-    ):
-        raise HTTPException(402, "PaymentIntent is not bound to this resource")
-    if expected_payer_agent_id is not None:
-        actual_payer = metadata.get("buyer_agent_id")
-        if actual_payer != expected_payer_agent_id:
-            raise HTTPException(402, "PaymentIntent is not bound to this payer")
-    if expected_destination is not None and payment.get("destination") != expected_destination:
-        raise HTTPException(402, "PaymentIntent does not pay this seller")
 
 
 def _x402_pay_to_by_network(creator_id: str | None) -> dict[str, str]:
@@ -1386,11 +1127,9 @@ async def _verify_x402_payment(
     pay_to_override: str | None = None,
     verify_only: bool = False,
 ) -> "PaymentRef | None":
-    """The x402 analogue of `_verify_and_confirm_payment()`'s SPT/direct-PI
-    branches — verify a client-supplied x402 credential against what this
+    """Verify a client-supplied x402 credential against what this
     relay actually requires for this resource, then settle it. Raises
-    HTTPException(402) on any binding/verification/settlement failure, the
-    same posture as the Stripe branches it sits beside.
+    HTTPException(402) on any binding/verification/settlement failure.
 
     The resource-binding assertion runs BEFORE any facilitator call — a
     deliberate refinement of the plan's original verify-then-assert
@@ -1406,8 +1145,7 @@ async def _verify_x402_payment(
 
     P48 closed the double-charge gap this docstring recorded from P1b to
     P47, and the record of it is kept because the reasoning that left it open
-    was wrong in an instructive way. The gap was real: unlike the Stripe
-    branches there is no pre-created PaymentIntent to re-verify against, so a
+    was wrong in an instructive way. The gap was real: there is no pre-created payment to re-verify against, so a
     crash between a successful x402_settle_payment() and record_payment()
     left a retry that re-signs a *fresh* authorization indistinguishable from
     a first attempt — record_payment() dedupes on the transaction hash and
@@ -1587,79 +1325,40 @@ async def _verify_and_confirm_payment(
     request: Request,
     *,
     agent_id: str,
-    identity_verified: bool,
     amount_cents: int,
     currency: str,
     resource_type: str,
     resource_id: str,
-    service_type: str,
-    capture_method: str,
-    allowed_statuses: tuple[str, ...],
-    req_payment_intent_id: str | None,
     challenge_message: str,
     challenge_resource: str,
     creator_id: str | None = None,
-    destination_account: str | None = None,
-    application_fee_cents: int | None = None,
-    card_unavailable: str | None = None,
     x402_split: bool = False,
 ) -> "PaymentRef | JSONResponse":
-    """Verify a payment credential (SPT via Authorization header, or a client-supplied
-    PaymentIntent id) against the expected amount/currency/capture-method/resource binding,
-    then return a `PaymentRef` — the confirmed reference, tagged with the rail it was
-    verified on (P3, item 3). This is the one funnel that mints a `PaymentRef`; every
-    downstream persistence point (record_payment, entitlements.grant, record_settlement)
-    gets its `rail` from here rather than assuming one.
+    """Verify a payment credential (x402 `PAYMENT-SIGNATURE` or a Tempo credential) against the
+    expected amount/currency/resource binding, then return a `PaymentRef` — the confirmed
+    reference, tagged with the rail it was verified on. This is the one funnel that mints a
+    `PaymentRef`; every downstream persistence point (record_payment, entitlements.grant,
+    record_settlement) gets its `rail` from here rather than assuming one.
 
-    If no credential was supplied, returns a ready-to-return 402 MPP challenge JSONResponse
-    instead of raising — callers must check `isinstance(result, JSONResponse)` and return it
-    directly (a 402 challenge carries X-MPP-* headers that HTTPException's flat detail body
-    doesn't preserve, and each call site's challenge body/resource string legitimately
-    differs). Raises HTTPException(402) on any verification/validation failure — this was
-    already the uniform shape across all three call sites before this was extracted.
+    The relay only verifies proof: the payer pays the payee directly. If no credential was
+    supplied, returns a ready-to-return 402 JSONResponse instead of raising — callers must
+    check `isinstance(result, JSONResponse)` and return it directly. Raises
+    HTTPException(402) on any verification/validation failure.
 
-    `card_unavailable` (P157): why a card cannot pay here (the payee has no
-    account a destination charge can reach, on a relay that will not hold the
-    money itself). The 402 then offers no card, and a card credential is
-    declined rather than charged.
+    Shared by /sessions/{id}/join, /rooms/{id}/join, and /agoras/topics/{slug}/subscribe.
 
-    Shared by /sessions/{id}/join, /rooms/{id}/join, and /agoras/topics/{slug}/subscribe —
-    previously ~40 lines of identical verify/confirm/validate logic copy-pasted at each site.
+    `creator_id`: whose wallet(s) to offer in the 402 challenge and verify a submitted
+    payment against. None on a route with nothing to offer, so no rail is offered there.
 
-    `identity_verified` (P1a-1, R1): whether `agent_id` was actually proven, i.e. the
-    caller's own `_require_caller_unless_mpp_payment()` return value — threaded through
-    explicitly rather than re-derived from `extract_mpp_token()` here, so the guarantee
-    is carried, not inferred from two functions happening to test the same condition.
-    Only the direct-`payment_intent_id` branch below uses it to bind the PI to a payer;
-    see that branch's own comment for why the SPT branch can't.
-
-    `creator_id` (P1b-4/5): whose x402 wallet(s) to offer in the 402 challenge and
-    verify a submitted x402 payment against. None on the session-join route —
-    session escrow stays Stripe-only (no x402 analogue), so neither ever fires
-    regardless of this being passed.
-
-    P1br-1: a `PAYMENT-SIGNATURE` credential is only ever routed to
-    `_verify_x402_payment()` when x402 can genuinely be offered for this
-    exact request (enabled, and this resource has something to offer via
-    `_x402_offer()` below). Otherwise the credential is **declined
-    explicitly** — never silently ignored in favor of the SPT/direct-PI
-    branches below. A `PAYMENT-SIGNATURE` header is the payer explicitly
-    choosing x402; falling through to Stripe would override that choice
-    (see `docs/archive/roadmap-hackathon-era.md`'s composable-payment-options principle). This was a
-    real gap in P1b-5: the branch used to route on the header's mere
-    presence, with no `_x402_enabled()` check at all, so a disabled relay
-    or a route with no creator (session escrow) still tried to verify and
-    402'd three layers down on an unrelated `payTo`/`asset` mismatch,
-    swallowing the Stripe fallback by accident rather than by design.
+    A `PAYMENT-SIGNATURE` credential is only ever routed to `_verify_x402_payment()` when
+    x402 can genuinely be offered for this exact request (enabled, and this resource has
+    something to offer via `_x402_offer()` below). Otherwise the credential is **declined
+    explicitly**.
     """
     from emporia.payments import (
-        RAIL_STRIPE, build_mpp_challenge, build_x402_challenge, extract_mpp_token,
-        extract_x402_payload, confirm_spt, verify_payment_intent, confirm_stripe_intent,
-        PaymentRef, _x402_enabled,
+        PaymentRef, _x402_enabled, build_x402_challenge, extract_x402_payload,
     )
     _assert_agent_budget(agent_id, amount_cents)
-    if cards_paused() and not card_unavailable:
-        card_unavailable = PAUSED_RELAY_MSG   # no card challenge, no card credential is read
 
     # A paid entry (`x402_split`) is two x402 payments in one act (fees.py): the creator's share to the
     # creator and the relay's fee to its published fee address. No fee address, no fee: one payment.
@@ -1718,18 +1417,15 @@ async def _verify_and_confirm_payment(
     def _no_credential_402(
         message: str, offer: dict[str, Any] | None, *, declined_reason: str | None = None,
     ) -> JSONResponse:
-        challenge_headers = ({} if card_unavailable else
-                             build_mpp_challenge(amount_cents, challenge_resource, currency=currency))
+        challenge_headers: dict[str, str] = {}
         content: dict[str, Any] = {
             "error": "payment_required",
             "message": message,
             "amount_cents": amount_cents,
             "resource": challenge_resource,
-            "protocol": "emporia:v1+mpp",
+            "protocol": "emporia:v1",
         }
-        # P1b-4: offer both rails in one 402 — every existing key above is
-        # untouched, so an MPP-only client sees byte-identical output. x402's
-        # own payload is nested under "x402" (not flattened) since its
+        # x402's own payload is nested under "x402" (not flattened) since its
         # `resource` field is an object and would otherwise collide with the
         # string "resource" key above; see build_x402_challenge()'s docstring.
         if offer:
@@ -1742,17 +1438,11 @@ async def _verify_and_confirm_payment(
                     content["x402_fee"] = fee_offer["body"]
                     challenge_headers["PAYMENT-REQUIRED-FEE"] = fee_offer["headers"]["PAYMENT-REQUIRED"]
         # P1brr-2: only set on the "a PAYMENT-SIGNATURE credential was
-        # submitted and declined" path below — the ordinary no-credential
-        # challenge (the call site with no declined_reason) never sets it,
-        # so an MPP-only client, which never sends that header, never sees
-        # this key. P1b-4's byte-identical-when-no-credential contract is
-        # untouched. Machine-readable so an x402-native client can tell
+        # submitted and declined" path below. Machine-readable so an x402-native client can tell
         # "don't retry this rail" apart from "retry with a signed payload,"
         # rather than parsing English prose in `message`.
         if declined_reason:
             content["declined"] = {"rail": "x402", "reason": declined_reason}
-        if card_unavailable:
-            content["card"] = {"offered": False, "reason": card_unavailable}
         tempo_offer = _tempo_offer()
         if tempo_offer:
             content["tempo"] = tempo_offer   # P156
@@ -1832,76 +1522,6 @@ async def _verify_and_confirm_payment(
             f"x402 payment declined: {reason}. {challenge_message}", None,
             declined_reason=reason_code,
         )
-
-    auth_header = request.headers.get("Authorization")
-    spt_token = extract_mpp_token(auth_header)
-
-    if card_unavailable and (spt_token or req_payment_intent_id):
-        resp = _no_credential_402(f"Card payment declined: {card_unavailable}. {challenge_message}",
-                                  _x402_offer())
-        body = json.loads(resp.body)
-        body["declined"] = {"rail": "stripe", "reason": "no_payee_account"}
-        return JSONResponse(status_code=402, content=body,
-                            headers={k: v for k, v in resp.headers.items() if k.lower() != "content-length"})
-
-    if spt_token:
-        try:
-            result = await confirm_spt(
-                spt_token, amount_cents, resource_id, agent_id, service_type,
-                currency=currency, capture_method=capture_method, resource_type=resource_type,
-                destination_account=destination_account,
-                application_fee_cents=application_fee_cents,
-            )
-            result = await verify_payment_intent(result["payment_intent_id"])
-            # No expected_payer_agent_id: confirm_spt() mints this PI from the very
-            # agent_id this request claimed, so comparing them would be circular and
-            # prove nothing — see _assert_payment_intent_matches()'s docstring.
-            _assert_payment_intent_matches(
-                result, amount_cents=amount_cents, currency=currency,
-                resource_type=resource_type, resource_id=resource_id,
-                expected_capture_method=capture_method, allowed_statuses=allowed_statuses,
-                expected_destination=destination_account,
-            )
-            return PaymentRef(RAIL_STRIPE, result["payment_intent_id"], destination_account)
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(402, f"SPT validation failed: {e}")
-
-    if req_payment_intent_id:
-        try:
-            result = await verify_payment_intent(req_payment_intent_id)
-            status = result.get("status")
-            if status not in allowed_statuses:
-                # Stays a full-key check, deliberately — see
-                # test_test_mode_capabilities_stay_gated_on_a_full_secret_key.
-                # P75 tried to widen this to stripe_key_mode() and that test
-                # caught it: a restricted key (rk_test_) is test *mode* but may
-                # lack payment_intents:write, and a 403 surfacing here would be
-                # reported to the caller as a payment failure. The narrow gate
-                # costs a restricted-key relay this convenience; guessing wrong
-                # costs it a misattributed error on the money path.
-                if stripe_secret_key().startswith("sk_test_"):
-                    await confirm_stripe_intent(req_payment_intent_id)
-                    result = await verify_payment_intent(req_payment_intent_id)
-                    status = result.get("status")
-                if status not in allowed_statuses:
-                    raise HTTPException(402, f"Payment not confirmed (status={status}).")
-            # The caller *is* authenticated on this branch (reachable only when
-            # extract_mpp_token() is falsy, the exact condition identity_verified
-            # reflects), so binding to agent_id here is real, not circular.
-            _assert_payment_intent_matches(
-                result, amount_cents=amount_cents, currency=currency,
-                resource_type=resource_type, resource_id=resource_id,
-                expected_capture_method=capture_method, allowed_statuses=allowed_statuses,
-                expected_payer_agent_id=(agent_id if identity_verified else None),
-                expected_destination=destination_account,
-            )
-            return PaymentRef(RAIL_STRIPE, req_payment_intent_id, destination_account)
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(402, f"Payment verification failed: {e}")
 
     return _no_credential_402(challenge_message, _x402_offer())
 
@@ -2135,13 +1755,14 @@ def record_settlement(settlement: dict[str, Any]) -> None:
     dropping the settlement row for real money already taken. See
     `settlement_dedupe_key()`'s docstring for the full shape and why it's hashed.
     """
-    from emporia.payments import KNOWN_RAILS, RAIL_STRIPE, settlement_dedupe_key
+    from emporia.payments import KNOWN_RAILS, RAIL_X402, settlement_dedupe_key
 
     settlement_id = f"stl_{uuid.uuid4().hex[:16]}"
     session_id = settlement["session_id"]
     payer_id = settlement.get("payer_id")
-    rail = settlement.get("rail", RAIL_STRIPE)
-    if rail not in KNOWN_RAILS:
+    # A settlement with no payment behind it (a free session's outcome) is on no rail: "free".
+    rail = settlement.get("rail") or (RAIL_X402 if settlement.get("payment_intent_ids") else "free")
+    if rail not in KNOWN_RAILS and rail != "free":
         raise ValueError(f"Unknown payment rail {rail!r}, expected one of {sorted(KNOWN_RAILS)}")
     dedupe_key = settlement_dedupe_key(
         session_id, payer_id, settlement.get("payment_intent_ids", [])
@@ -2165,7 +1786,7 @@ def record_settlement(settlement: dict[str, Any]) -> None:
                 settlement.get("platform_fee_bps", _fee_bps_now()),
                 json.dumps(settlement.get("payment_intent_ids", [])),
                 settlement.get("transfer_id"),
-                settlement.get("transfer_status", "pending_connect"),
+                settlement.get("transfer_status", "no_payment"),
                 settlement.get("status", "settled"),
                 datetime.now(UTC).isoformat(),
                 payer_id,
@@ -2173,7 +1794,7 @@ def record_settlement(settlement: dict[str, Any]) -> None:
                 # P3: an unrecognized value is rejected above rather than let
                 # through to storage. _settle_access_payment() threads the
                 # real PaymentRef.rail here; other callers still fall back to
-                # the "rail" dict key's RAIL_STRIPE default.
+                # the "rail" dict key's default.
                 rail,
                 _atomic_str(settlement.get("platform_fee_atomic")),
                 _atomic_str(settlement.get("winner_payout_atomic")),
@@ -2183,10 +1804,10 @@ def record_settlement(settlement: dict[str, Any]) -> None:
             translog.log_row(conn, "settlement", cur.lastrowid)
     # x402 already logged its own outcome (with the network) when the facilitator settled it
     if cur.rowcount and rail != "x402":
-        status = settlement.get("transfer_status", "pending_connect")
+        status = settlement.get("transfer_status", "no_payment")
         logger.log(
-            logging.WARNING if status == "transfer_failed" else logging.INFO,
-            "payment_failed" if status == "transfer_failed" else "payment_settled",
+            logging.WARNING if status == "capture_failed" else logging.INFO,
+            "payment_failed" if status == "capture_failed" else "payment_settled",
             extra={"rail": rail, "network": "", "cents": settlement.get("total_price_cents", 0),
                    "transfer_status": status},
         )
@@ -2199,7 +1820,7 @@ def record_settlement(settlement: dict[str, Any]) -> None:
 # N2-7: minimal agent_id namespace hardening. Registration binds a keypair to a name
 # (_consume_challenge proves possession, the key-mismatch check below blocks takeover of
 # an existing name) but never validated the name itself — any charset, any length, no
-# normalization. On an open-registration relay, agent_id="stripe_official" or a
+# normalization. On an open-registration relay, agent_id="support_official" or a
 # Cyrillic-а homoglyph of an existing agent was free and legitimately claimable.
 #
 # NFKC-normalizing before validating (rather than after) means Unicode *compatibility*
@@ -2418,14 +2039,13 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # authorized_agents
     ("authorized_agents", "public_key_hex"), ("authorized_agents", "display_name"),
     ("authorized_agents", "registered_at"), ("authorized_agents", "is_active"),
-    ("authorized_agents", "stripe_account_id"), ("authorized_agents", "operator_label"),
+    ("authorized_agents", "operator_label"),
     ("authorized_agents", "client_name"), ("authorized_agents", "client_version"),
     ("authorized_agents", "declared_model"), ("authorized_agents", "declared_model_at"),
     ("authorized_agents", "x402_pay_to_json"), ("authorized_agents", "x402_pay_to_proofs_json"),
     ("authorized_agents", "encryption_public_key"),
     ("authorized_agents", "encryption_key_signature"),
-    ("authorized_agents", "stripe_account_status"),
-    ("authorized_agents", "stripe_account_mode"), ("authorized_agents", "stable_id"),
+    ("authorized_agents", "stable_id"),
     # dm_messages
     ("dm_messages", "message_id"), ("dm_messages", "thread_id"), ("dm_messages", "content"),
     ("dm_messages", "msg_type"), ("dm_messages", "created_at"), ("dm_messages", "signature"),
@@ -2518,7 +2138,6 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("settlements", "payment_intent_ids"), ("settlements", "transfer_id"),
     ("settlements", "transfer_status"), ("settlements", "status"),
     ("settlements", "created_at"), ("settlements", "rail"), ("settlements", "dedupe_key"),
-    ("settlements", "refund_id"), ("settlements", "reversal_id"),
     ("settlements", "platform_fee_atomic"), ("settlements", "winner_payout_atomic"),
 })
 
@@ -2693,7 +2312,6 @@ class AgentRegistry:
         agent_id: str,
         public_key_hex: str,
         display_name: str = "",
-        stripe_account_id: str | None = None,
         operator_label: str = "",
         client_name: str = "",
         client_version: str = "",
@@ -2787,8 +2405,8 @@ class AgentRegistry:
                 conn.execute(
                     "INSERT INTO authorized_agents "
                     "(agent_id, public_key_hex, display_name, registered_at, is_active, "
-                    "stripe_account_id, operator_label, client_name, client_version, stable_id, about) "
-                    "VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?) "
+                    "operator_label, client_name, client_version, stable_id, about) "
+                    "VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?) "
                     # P47: `stable_id` is deliberately ABSENT from DO UPDATE.
                     # Allocated once, on the row's first insert, and never
                     # recomputed — that is the whole mechanism by which a key
@@ -2800,10 +2418,6 @@ class AgentRegistry:
                     "display_name=excluded.display_name, "
                     "registered_at=excluded.registered_at, "
                     "is_active=1, "
-                    # P26-5: COALESCE keeps an existing Stripe account id whenever this registration
-                    # didn't mint one (a live-mode re-register writes NULL, and the next onboarding
-                    # would otherwise create a second real Connected Account).
-                    "stripe_account_id=COALESCE(excluded.stripe_account_id, authorized_agents.stripe_account_id), "
                     # The signed card's label and client: a registration with none keeps what the row has
                     # (a change of label is logged below, never silent).
                     "operator_label=CASE WHEN excluded.operator_label = '' THEN authorized_agents.operator_label "
@@ -2814,7 +2428,7 @@ class AgentRegistry:
                     "ELSE excluded.client_version END, "
                     # the card is the agent's own word: a registration that carries no bio clears it
                     "about=excluded.about",
-                    (agent_id, public_key_hex, verified_display_name, now_iso, stripe_account_id,
+                    (agent_id, public_key_hex, verified_display_name, now_iso,
                      operator_label, client_name, client_version, derived_stable_id, about or ""),
                 )
                 stored = conn.execute(
@@ -3064,100 +2678,10 @@ class AgentRegistry:
             ).fetchone()
         return row["stable_id"] if row else None
 
-    def get_stripe_account(self, agent_id: str) -> str | None:
-        try:
-            with DB_LOCK, get_db() as conn:
-                row = conn.execute(
-                    "SELECT stripe_account_id FROM authorized_agents WHERE agent_id = ?",
-                    (agent_id,),
-                ).fetchone()
-            return row["stripe_account_id"] if row else None
-        except Exception:
-            return None
-
-    def set_stripe_account(self, agent_id: str, stripe_account_id: str, mode: str = "") -> None:
-        """`mode` (P26-4) records which Stripe key space created this account —
-        "test"/"live", or "" to leave whatever is stored (so a caller that
-        genuinely doesn't know can't erase a known value)."""
-        with DB_LOCK, get_db() as conn:
-            if mode:
-                conn.execute(
-                    "UPDATE authorized_agents SET stripe_account_id = ?, "
-                    "stripe_account_mode = ? WHERE agent_id = ?",
-                    (stripe_account_id, mode, agent_id),
-                )
-            else:
-                conn.execute(
-                    "UPDATE authorized_agents SET stripe_account_id = ? WHERE agent_id = ?",
-                    (stripe_account_id, agent_id),
-                )
-
-    def get_stripe_account_mode(self, agent_id: str) -> str:
-        """P26-4: "test" | "live" | "" (unknown). Never raises; unknown on any
-        error, which `payments.stripe_account_mode_mismatch()` treats as
-        "don't block" rather than "refuse" — see that function for why."""
-        try:
-            with DB_LOCK, get_db() as conn:
-                row = conn.execute(
-                    "SELECT stripe_account_mode FROM authorized_agents WHERE agent_id = ?",
-                    (agent_id,),
-                ).fetchone()
-            return (row["stripe_account_mode"] if row else None) or ""
-        except Exception:
-            return ""
-
-    def get_stripe_account_status(self, agent_id: str) -> str:
-        """P25-2: 'none' | 'pending' | 'active' — see the migration comment
-        above. Never raises; an unknown agent or a DB error reads as 'none'
-        (can't be paid), the same fail-closed default a brand-new row has."""
-        try:
-            with DB_LOCK, get_db() as conn:
-                row = conn.execute(
-                    "SELECT stripe_account_status FROM authorized_agents WHERE agent_id = ?",
-                    (agent_id,),
-                ).fetchone()
-            return (row["stripe_account_status"] if row else None) or "none"
-        except Exception:
-            return "none"
-
-    def set_stripe_account_status(
-        self, stripe_account_id: str, status: str, mode: str = "",
-    ) -> bool:
-        """Looked up by stripe_account_id, not agent_id — that shape is set by
-        POST /webhooks/stripe, which learns the Stripe account id from the
-        event payload and has no agent_id in hand. Returns False when no row
-        matches, so the caller can log an unrecognized/stale webhook instead
-        of assuming it took effect.
-
-        P27-4: this said "the only caller is POST /webhooks/stripe". It has not
-        been since P25 — register_agent() and start_stripe_onboarding() both
-        call it too, and the webhook itself calls it from two branches. The
-        by-account-id lookup is still the webhook's constraint, but a reader
-        checking "who can move this column" was being told the wrong answer."""
-        with DB_LOCK, get_db() as conn:
-            if mode:
-                # P27-5: same "" means leave-it-alone contract as
-                # set_stripe_account()'s own `mode`, so a caller that hasn't
-                # established the key space can't erase one that has.
-                cur = conn.execute(
-                    "UPDATE authorized_agents SET stripe_account_status = ?, "
-                    "stripe_account_mode = ? WHERE stripe_account_id = ?",
-                    (status, mode, stripe_account_id),
-                )
-            else:
-                cur = conn.execute(
-                    "UPDATE authorized_agents SET stripe_account_status = ? "
-                    "WHERE stripe_account_id = ?",
-                    (status, stripe_account_id),
-                )
-            return cur.rowcount > 0
-
     def get_x402_pay_to(self, agent_id: str, network_family: str) -> str | None:
-        """P1b-2: the x402 analogue of get_stripe_account — except one Stripe
-        Connect account serves every currency, while an EVM address and a
-        Solana address are different key spaces entirely, so wallets are keyed
-        per `network_family` ("evm" | "svm") rather than one column. Not
-        auto-provisioned like Connect: there's no wallet to create on an
+        """P1b-2: an EVM address and a Solana address are different key spaces
+        entirely, so wallets are keyed per `network_family` ("evm" | "svm")
+        rather than one column. The relay never creates a wallet on an
         agent's behalf, so this returns None until the agent sets one."""
         return self.get_x402_pay_to_all(agent_id).get(network_family)
 
@@ -3654,14 +3178,6 @@ async def lifespan(app: FastAPI):
     _check_relay_modules()   # P291: before anything is opened or started
     _hold_the_database()
     init_db()
-    if cards_paused() and (os.environ.get("STRIPE_SECRET_KEY") or "").strip():
-        stripe_secret_key()      # logs `cards_paused` once
-        logger.warning("cards_paused: a Stripe key is set and ignored — cards are paused in this release "
-                       "(docs/payments.md); unset STRIPE_SECRET_KEY")
-    notice = _stripe_mpp_admin_notice()
-    if notice:
-        logger.warning("%s", notice)
-    _require_stripe_webhook_secret_if_needed()
     global _SWEEP_TASK, _FEDERATION_SYNC_TASK, _PAYOUT_RECONCILE_TASK
     _SWEEP_TASK = asyncio.create_task(_sweep_loop())
     if translog.enabled():   # P258: EMPORIA_TRANSPARENCY_LOG=off turns it off
@@ -4172,8 +3688,7 @@ app.add_middleware(
     allow_origins=sorted(_CORS_ORIGINS),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    # P1b-4: PAYMENT-SIGNATURE is the x402 retry header (the browser-wallet
-    # analogue of Authorization: Payment for MPP) — without it in
+    # P1b-4: PAYMENT-SIGNATURE is the x402 retry header (the browser-wallet retry header) — without it in
     # allow_headers, a browser-based payer's retry is silently blocked by CORS
     # before it ever reaches the route. PAYMENT-RESPONSE must be exposed for
     # the same reason a JS client would otherwise be unable to read it off a
@@ -4497,21 +4012,6 @@ async def _sweep_loop() -> None:
             SWEEP_STATS["evicted"][key] += count
 
 
-# ─── P51: the payouts nothing was ever going to look at again ────────────────
-# `_settle_access_payment()` and `payments.settle()` between them record five
-# distinct "the creator's money did not move" states, each written correctly and
-# on purpose (P25-2 and P26-4 exist precisely to skip a doomed Stripe call
-# rather than fail against it). Until this loop, nothing read any of them back.
-# The ordinary marketplace sequence — register, sell, *then* finish onboarding —
-# therefore stranded the first sale's money on the platform balance forever.
-#
-# Prefix-matched, not compared for equality: `payments.settle()` writes
-# `f"transfer_failed: {e}"` while `_settle_access_payment()` writes a bare
-# `"transfer_failed"`, and an `==` check would silently reconcile the room/Agora
-# lane while skipping every session-escrow row.
-_PAYOUT_OWED_STATUS_PREFIXES = (
-    "pending_connect", "no_stripe_account", "transfer_failed",
-)
 
 _PAYOUT_RECONCILE_INTERVAL_SECONDS = float(
     os.getenv("EMPORIA_PAYOUT_RECONCILE_INTERVAL_SECONDS", "300")
@@ -4522,154 +4022,16 @@ PAYOUT_RECONCILE_STATS: dict[str, Any] = {
     "last_run_at": None,
     "last_error_at": None,
     "consecutive_failures": 0,
-    "outcomes": {"owed": 0, "recovered": 0, "paid": 0, "unknown": 0,
-                 "still_blocked": 0, "failed": 0},
+    "outcomes": {},
 }
 
 
-def _owed_payout_rows() -> list[dict[str, Any]]:
-    """Settlements where a Stripe payout is owed and no transfer id was ever
-    recorded. `transfer_id IS NULL` is the load-bearing half: a reversed or
-    refunded row keeps its transfer id and must never be re-paid.
-    """
-    from emporia.payments import RAIL_STRIPE
-
-    with DB_LOCK, get_db() as conn:
-        rows = conn.execute(
-            "SELECT settlement_id, session_id, winner_id, winner_payout_cents, "
-            "transfer_status, dedupe_key FROM settlements "
-            "WHERE transfer_id IS NULL AND winner_payout_cents > 0 AND rail = ? "
-            "ORDER BY created_at",
-            (RAIL_STRIPE,),
-        ).fetchall()
-    return [
-        dict(r) for r in rows
-        if (r["transfer_status"] or "").startswith(_PAYOUT_OWED_STATUS_PREFIXES)
-        and r["dedupe_key"]
-    ]
 
 
-def _record_payout_outcome(settlement_id: str, transfer_status: str,
-                           transfer_id: str | None) -> None:
-    with DB_LOCK, get_db() as conn:
-        conn.execute(
-            "UPDATE settlements SET transfer_status = ?, transfer_id = ? "
-            "WHERE settlement_id = ?",
-            (transfer_status, transfer_id, settlement_id),
-        )
 
 
-async def _reconcile_owed_payouts() -> dict[str, int]:
-    """Re-drive the payouts that never happened, asking Stripe first.
-
-    "Ask the ledger, don't reason about it" — P48's move, pointed at Stripe
-    instead of the chain. `transfer_failed` in particular means only that the
-    API call raised: the transfer may well have been created and the response
-    lost, so re-posting on the strength of our own record is how one crash
-    becomes two payouts. `find_settlement_transfer()` is tri-state for that
-    reason, and an unknown answer leaves the row exactly as it was.
-
-    The lookup, not the `Idempotency-Key`, is the guard against paying twice:
-    the key is pruned after 24 hours. P88 corrected what this used to say —
-    that every row here is older than that "by construction". It is not; this
-    runs every few minutes, so a row can be retried minutes after it failed.
-    The consequence runs the other way too: Stripe saves the *first* response
-    to a key once execution begins, errors included, so a transfer refused for
-    an unavailable balance replays that refusal from cache on every retry until
-    the key is pruned, and only then is actually re-attempted. Paid late, never
-    twice. P93 made that rare at the source: a payout funded by one charge now
-    names it as `source_transaction` and draws on it while it is still
-    pending. Retries from here still go without one, since a row records its
-    PaymentIntents but not which charge funded the transfer.
-    """
-    counts = {"owed": 0, "recovered": 0, "paid": 0, "unknown": 0,
-              "still_blocked": 0, "failed": 0}
-
-    # P51r: no credentials, nothing to reconcile — and asking anyway raises out
-    # of `_stripe_key()`, which is a permanent, benign condition that would
-    # otherwise be reported as a failing loop forever. Found by running the
-    # relay, not by a test: every test in the suite reaches Stripe through a
-    # mock, so none of them can observe what an unconfigured relay does.
-    if not stripe_secret_key().strip():
-        return counts
-
-    for row in _owed_payout_rows():
-        counts["owed"] += 1
-        # P51r: per-row isolation. N12-1 established that a raise must not end
-        # the *loop*; this is the same rule one level down, and the level that
-        # actually matters here — without it a single unreconcilable row aborts
-        # the sweep for every row behind it, permanently and in row order.
-        try:
-            outcome = await _reconcile_one_payout(row)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception(
-                "Payout reconcile failed for settlement %s — other rows continue",
-                row["settlement_id"],
-            )
-            counts["failed"] += 1
-            continue
-        counts[outcome] += 1
-    return counts
 
 
-async def _reconcile_one_payout(row: dict[str, Any]) -> str:
-    """One owed settlement. Returns the outcome key it should be counted under.
-
-    Split out of `_reconcile_owed_payouts()` so that "what happens to one row"
-    and "one row must not take the others down with it" are separate, testable
-    things rather than one function where the second is a property of how
-    carefully the first was written.
-    """
-    from emporia.payments import (
-        find_settlement_transfer, payout_winner, stripe_account_mode_mismatch,
-    )
-
-    known, transfer_id = await find_settlement_transfer(
-        transfer_group=row["session_id"], dedupe_key=row["dedupe_key"],
-    )
-    if not known:
-        # Could not ask. Never rounded down to "not paid".
-        return "unknown"
-    if transfer_id:
-        # It landed and we lost the answer. No money moves here.
-        _record_payout_outcome(row["settlement_id"], "transferred", transfer_id)
-        return "recovered"
-
-    creator = row["winner_id"]
-    account = AGENT_REGISTRY.get_stripe_account(creator) if creator else None
-    if not account:
-        blocked = "no_stripe_account"
-    elif stripe_account_mode_mismatch(AGENT_REGISTRY.get_stripe_account_mode(creator)):
-        blocked = "pending_connect_wrong_mode"
-    elif AGENT_REGISTRY.get_stripe_account_status(creator) != "active":
-        blocked = "pending_connect_not_active"
-    else:
-        blocked = ""
-    if blocked:
-        # Still not payable — refresh the recorded reason (it may have
-        # changed) and leave it owed for the next pass.
-        if blocked != row["transfer_status"]:
-            _record_payout_outcome(row["settlement_id"], blocked, None)
-        return "still_blocked"
-
-    try:
-        transfer = await payout_winner(
-            winner_id=creator,
-            stripe_account_id=account,
-            amount_cents=row["winner_payout_cents"],
-            session_id=row["session_id"],
-            idempotency_key="emporia:payout:" + row["dedupe_key"],
-        )
-    except Exception as e:
-        logger.warning(
-            "Payout transfer failed for settlement %s: %s", row["settlement_id"], e
-        )
-        _record_payout_outcome(row["settlement_id"], "transfer_failed", None)
-        return "failed"
-    _record_payout_outcome(row["settlement_id"], "transferred", transfer["transfer_id"])
-    return "paid"
 
 
 async def _payout_reconcile_loop() -> None:
@@ -4682,7 +4044,7 @@ async def _payout_reconcile_loop() -> None:
     while True:
         await asyncio.sleep(_PAYOUT_RECONCILE_INTERVAL_SECONDS)
         try:
-            counts = await _reconcile_owed_payouts()
+            counts: dict[str, int] = {}
             # P111: failed escrow captures/voids, retried while the hold allows.
             from emporia.routes.sessions import reconcile_escrow_holds
             counts.update(await reconcile_escrow_holds())
@@ -4802,7 +4164,6 @@ class CreateRoomRequest(BaseModel):
 
 class JoinRoomRequest(BaseModel):
     agent_id: str
-    payment_intent_id: str | None = None  # required for paid gate
     at: str = ""          # P273: the join, signed by the joining agent
     signature: str = ""   # Ed25519 over wire.signed_room_join_payload()
 
@@ -4839,68 +4200,20 @@ class KickFromRoomRequest(BaseModel):
 # Health & Info
 # ============================================================================
 
-def _payment_rails(*, has_stripe: bool | None = None) -> tuple[list[str], list[str]]:
-    """The single definition for `payment_rails`/`payment_methods` — one rule,
-    two callers (P3 item 5, unified in P70).
+def _payment_rails() -> list[str]:
+    """The single definition for `payment_rails`: what this relay can take, relay-wide.
 
-    `has_stripe=None` selects the relay-wide variant (`GET /health`);
-    `has_stripe=<bool>` the per-agent variant (`GET /agents/{id}`). They now
-    differ in exactly one way: `stripe_connect` is a statement about *this
-    agent* (it has a stored Connect account and can receive payouts), so it
-    exists only in the per-agent answer. Every other rail is a relay-wide
-    capability and must read identically from both doors.
-
-    **P70 fixed a divergence P3 deliberately preserved.** P3 factored two
-    hand-built lists into this one function but reproduced both formulas
-    byte-for-byte, because "no wire change" was that pass's contract — which
-    left one flag combination answering differently depending on which
-    endpoint you asked. With a Stripe key set, the MPP profile not ready and
-    Tempo switched on, `/health` advertised `"mpp"` (its
-    `if payment_methods:` test is truthy on `["tempo"]`) while
-    `GET /agents/{id}` omitted it: an `elif` chain resolved `stripe_enabled`
-    first and never reached the tempo branch. Same relay, same config, two
-    answers to "can I pay by MPP here?".
-
-    The `elif` chain was the bug. `mpp` (is the MPP transport usable at all?)
-    and `stripe_pi` (is there a Stripe key?) are independent conditions, and
-    chaining them made the second silently suppress the first. Each rail now
-    has exactly one condition, tested independently — which is also what makes
-    adding a rail a local edit rather than a matching pair of edits in two
-    formulas that no test required to agree.
-
-    Note the ordering dependency this relies on: `_stripe_profile_ready()`
-    already requires `STRIPE_SECRET_KEY`, so `stripe_profile_ready` implies
-    `stripe_enabled` and the two conditions cannot contradict each other.
-
-    Pure advertisement: nothing in the payment path reads either list to route
-    a charge. `payment_methods` stays Stripe's MPP-specific sub-vocabulary
-    (`stripe`/`tempo`, both settlement backends reachable *through* MPP's
-    challenge/response transport); `x402` is a rail the way `stripe_pi` is —
-    a settlement backend with no MPP transport underneath it — and so is
-    advertised whenever the rail is enabled, not filtered by whether this
-    particular creator has a wallet set. That per-creator, per-network
-    filtering happens where it must, in the 402 challenge itself
-    (`_x402_pay_to_by_network()`, P1b-4).
+    Pure advertisement: nothing in the payment path reads it to route a charge.
+    `x402` is advertised whenever the rail is enabled, not filtered by whether
+    this particular creator has a wallet set; that per-creator, per-network
+    filtering happens in the 402 challenge itself (`_x402_pay_to_by_network()`).
     """
-    stripe_enabled = bool(stripe_secret_key())
-    stripe_profile_ready = _stripe_profile_ready()
     from emporia.payments import _x402_enabled
 
-    payment_methods: list[str] = []
-    if stripe_profile_ready:
-        payment_methods.append("stripe")
-
-    # One condition per rail. No elif — the conditions are independent.
     payment_rails = ["free"]
-    if payment_methods:
-        payment_rails.append("mpp")
-    if stripe_enabled:
-        payment_rails.append("stripe_pi")
-    if has_stripe and stripe_profile_ready:
-        payment_rails.append("stripe_connect")  # can receive payouts
     if _x402_enabled():
         payment_rails.append("x402")
-    return payment_rails, payment_methods
+    return payment_rails
 
 
 @app.get("/health")
@@ -4925,9 +4238,7 @@ async def health(request: Request):
             session_count = row2["c"] if row2 else 0
     except Exception:
         pass
-    stripe_enabled = bool(stripe_secret_key())
-    stripe_profile_ready = _stripe_profile_ready()
-    payment_rails, payment_methods = _payment_rails()
+    payment_rails = _payment_rails()
     from emporia import deletion
     from emporia.payments import _x402_enabled, _x402_facilitator_url, _x402_networks
     return {
@@ -4953,7 +4264,7 @@ async def health(request: Request):
         # P191: each earlier key handing over to the next, signed by the one
         # handing over — how a peer that pinned an old key follows to this one.
         "relay_key_history": relay_key_history(),
-        # P153: where a purchase can be held in USDC escrow (None: card only),
+        # P153: where a purchase can be held in USDC escrow (None: nowhere),
         # so a page can say what it accepts before anyone pays.
         "x402_escrow_network": _escrow_network(),
         # P156: where entries can be paid in Tempo stablecoin, straight to the creator.
@@ -4966,38 +4277,19 @@ async def health(request: Request):
         "season": _season_public(),
         "starter_limits": _starter_limits_on(),
         **_fees_card(),
-        "mpp_enabled": bool(payment_methods),
-        "payment_methods": payment_methods,
-        "stripe_enabled": stripe_enabled,
-        "cards_paused": cards_paused(),
-        "stripe_key_ignored": cards_paused() and bool((os.environ.get("STRIPE_SECRET_KEY") or "").strip()),
-        # P37-1: which key space, not just whether a key exists. The two are
-        # disjoint, and the correct payout advice is opposite in each: test mode
-        # auto-provisions a Connected Account at registration and
-        # /agents/{id}/stripe-onboarding refuses to run, while live mode needs
-        # the operator to walk Stripe's hosted KYC. Without this the dashboard
-        # was telling test-mode operators to run a tool that 400s at them.
-        "stripe_mode": _stripe_key_mode(),
         # P208: for this machine's doctor — whether its keys guard real money,
         # and whether it runs in a container (who could reach them differs).
         "live_money": live_money(),
         "in_container": in_container(),
-        "stripe_profile_ready": stripe_profile_ready,
-        "stripe_profile_id": _stripe_profile_id(),
-        "stripe_api_version": os.getenv("STRIPE_API_VERSION", "2026-04-22.preview"),
         "max_total_spend_cents": MAX_TOTAL_SPEND_CENTS,
         "payment_rails": payment_rails,
-        "stripe_mpp_admin_notice": _stripe_mpp_admin_notice(),
         "chess_lib": _chess_lib_available(),
-        # P1b-7: x402 has no per-agent variant (unlike stripe_connect) — the
-        # rail is either configured relay-wide or it isn't; which creators
-        # can actually receive on it is a 402-time detail, not a /health one.
+        # P1b-7: x402 has no per-agent variant — the rail is either configured
+        # relay-wide or it isn't; which creators can actually receive on it is
+        # a 402-time detail, not a /health one.
         "x402_enabled": _x402_enabled(),
         "x402_networks": _x402_networks(),
         "x402_facilitator": _x402_facilitator_url(),
-        # P160: whether cards are taken on games (P159) and whether this relay
-        # holds card money at all (P157), so a client says what is accepted.
-        "custodial_cards": custodial_cards_allowed(),
     }
 
 
@@ -5175,9 +4467,7 @@ async def relay_card():
     # seam as /health and GET /agents/{id} rather than a third hand-built
     # list. build_relay_descriptor() (identity.py) stays payments-independent
     # on purpose — merged in here instead of widening its signature.
-    payment_rails, payment_methods = _payment_rails()
-    descriptor["payment_rails"] = payment_rails
-    descriptor["payment_methods"] = payment_methods
+    descriptor["payment_rails"] = _payment_rails()
     return descriptor
 
 
@@ -5464,143 +4754,12 @@ class RenameAgentRequest(BaseModel):
 
 
 
-def _stripe_onboarding_return_url(request: Request) -> str:
-    base = (os.getenv("EMPORIA_DASHBOARD_BASE_URL") or "").strip().rstrip("/")
-    if not base:
-        base = str(request.base_url).rstrip("/")
-    return f"{base}/stripe-onboarding-return"
 
 
 
 
-@app.get("/stripe-onboarding-return", response_class=HTMLResponse)
-async def stripe_onboarding_return_page():
-    """Landing page for Stripe's Account Link refresh_url/return_url (P25-2).
-
-    Deliberately plain HTML served by the relay itself, not the dashboard
-    SPA — Stripe just needs a valid URL to redirect to, and completing the
-    hosted form here is not the same as the account being payable (capability
-    activation is asynchronous). Only POST /webhooks/stripe's verified
-    account.updated event ever confirms that; this page must not claim it.
-    """
-    return (
-        "<!doctype html><html><head><title>Emporia — Stripe onboarding</title></head>"
-        "<body style=\"font-family: sans-serif; max-width: 32em; margin: 4em auto; padding: 0 1em;\">"
-        "<h1>Onboarding step complete</h1>"
-        "<p>Stripe has recorded what you submitted. Your account becomes payable "
-        "automatically once Stripe finishes its own verification — check this "
-        "agent's <code>stripe_account_status</code> field (via <code>GET /agents/"
-        "{agent_id}</code> or the dashboard) to see when that happens. "
-        "You can close this tab.</p>"
-        "</body></html>"
-    )
 
 
-@app.post("/webhooks/stripe")
-async def stripe_webhook(request: Request):
-    """Verified receiver for Stripe's `account.updated` events (P25-2) — the
-    only thing in this codebase allowed to mark a live-mode Connected Account
-    'active'. Security-critical: an unverified webhook would let anyone POST
-    a claim that any Stripe account is payable. Reads the raw body before any
-    JSON parsing — FastAPI's model binding would consume/reparse it, and
-    Stripe's signature is computed over the exact raw bytes, not a
-    re-serialized re-encoding of them. Unauthenticated by design (this is
-    Stripe's server calling us, not an Emporia agent) — the signature check
-    is the entire authorization boundary, which is why it must never fail
-    open (see _verify_stripe_webhook_signature's own docstring).
-
-    Always returns 200 once the signature verifies, even for an event type
-    this relay doesn't act on or an account id it doesn't recognize (logged,
-    not rejected) — Stripe retries non-2xx responses, and there's nothing to
-    gain by making it retry an event this relay will never act on differently.
-    """
-    if cards_paused():
-        raise HTTPException(404, PAUSED_RELAY_MSG)
-    raw_body = await request.body()
-    sig_header = request.headers.get("Stripe-Signature", "")
-    secret = (os.getenv("STRIPE_WEBHOOK_SECRET") or "").strip()
-    if not _verify_stripe_webhook_signature(raw_body, sig_header, secret):
-        raise HTTPException(403, "invalid Stripe webhook signature")
-
-    try:
-        event = json.loads(raw_body)
-    except json.JSONDecodeError:
-        raise HTTPException(400, "invalid JSON body")
-
-    if not isinstance(event, dict):
-        return {"received": True, "ignored": "payload is not an object"}
-
-    # P26-5 (L10): Stripe delivers test-mode and live-mode events to the same
-    # configured endpoint. Acting on the wrong one would let a test-mode
-    # capability report mark a *live* account payable, so an event whose
-    # livemode disagrees with this relay's own key is ignored outright.
-    # `livemode` absent (older payloads, hand-built test fixtures) is treated
-    # as "matches" rather than rejected, so this can't silently drop real work.
-    key_mode = _stripe_key_mode()
-    event_livemode = event.get("livemode")
-    # P27-5: whatever this block concludes about the event's key space is worth
-    # persisting. The mode guard can only protect a row whose mode is known,
-    # and P25-era accounts read "" forever -- P25 had no mode column, and the
-    # P26-1 backfill can't help them either (it repairs 'none' rows, while a
-    # P25 live account sits at 'pending'/'active'). Stamping here publishes a
-    # fact this handler has already established rather than inferring one, so
-    # it's set only when the event states `livemode` outright.
-    proven_mode = ""
-    if isinstance(event_livemode, bool) and key_mode in ("test", "live"):
-        if event_livemode != (key_mode == "live"):
-            logger.info(
-                "Stripe webhook ignored: event livemode=%s but relay key is %s",
-                event_livemode, key_mode,
-            )
-            return {"received": True, "ignored": "livemode mismatch"}
-        proven_mode = "live" if event_livemode else "test"
-
-    event_type = event.get("type")
-    # P26-3 (M3): every field below is attacker-shaped only in the sense that
-    # Stripe could reshape it in a future API version -- but P25 assumed dicts
-    # throughout (`.get("object") or {}` doesn't save you when `object` is a
-    # *string*), so any such change became a 500, and Stripe's retry-on-non-2xx
-    # turned that into an infinite loop. Every access is now shape-checked.
-    data = event.get("data")
-    obj = data.get("object") if isinstance(data, dict) else None
-    obj = obj if isinstance(obj, dict) else {}
-
-    if event_type == "account.updated":
-        stripe_account_id = obj.get("id")
-        capabilities = obj.get("capabilities")
-        capabilities = capabilities if isinstance(capabilities, dict) else {}
-        if isinstance(stripe_account_id, str) and stripe_account_id:
-            # P27-6: `transfers` alone, deliberately. This status has exactly
-            # one consumer -- the pre-check guarding payout_winner(), which
-            # issues `POST /v1/transfers` with `destination=acct_...`. That
-            # needs the transfers capability and nothing else. P26 also
-            # required `card_payments`, which governs the connected account
-            # accepting card charges directly -- something this codebase never
-            # does (every charge is created on the platform account; no call
-            # passes `destination`/`on_behalf_of` on a charge). Requiring it
-            # pinned any transfers-approved-but-card-restricted account, a
-            # normal outcome for an account that only receives, at 'pending'
-            # forever: payer charged, payee never paid, no retry. Same
-            # money-stranding class as P26-1, reached through P26's own fix.
-            status = "active" if capabilities.get("transfers") == "active" else "pending"
-            if not AGENT_REGISTRY.set_stripe_account_status(
-                stripe_account_id, status, mode=proven_mode,
-            ):
-                logger.warning(
-                    "Stripe webhook account.updated for unrecognized account %s",
-                    stripe_account_id,
-                )
-    elif event_type == "account.application.deauthorized":
-        # P26-5 (L10): the operator disconnected this account in Stripe. It can
-        # no longer receive transfers, so leaving it 'active' would put it right
-        # back in the doomed-transfer case the pre-check exists to prevent.
-        # The account id is the event's top-level `account` field here -- the
-        # `data.object` is the *application*, not the account.
-        stripe_account_id = event.get("account")
-        if isinstance(stripe_account_id, str) and stripe_account_id:
-            AGENT_REGISTRY.set_stripe_account_status(stripe_account_id, "none")
-
-    return {"received": True}
 
 
 def _validated_encryption_key(agent_id: str, public_key_hex: str, signature: str, at: str = "") -> str:
@@ -5677,122 +4836,8 @@ def _validated_encryption_key(agent_id: str, public_key_hex: str, signature: str
 
 
 # ============================================================================
-# Payments — create intents, list settlements
+# Payments — list settlements
 # ============================================================================
-
-class CreatePaymentIntentRequest(BaseModel):
-    amount_cents: int
-    session_id: str | None = None
-    room_id: str | None = None
-    seller_id: str = "relay"
-    service_type: str = "emporia:session"
-
-
-@app.post("/payments/create-intent")
-async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, request: Request):
-    """Create a Stripe PaymentIntent for a specific paid session or room.
-    Returns payment_intent_id to pass to /sessions/{id}/join or /rooms/{id}/join."""
-    from emporia.payments import create_price_intent
-
-    caller = _dashboard_agent_id(request)
-    if not caller:
-        raise HTTPException(401, "Authentication required")
-    _enforce_agent_rate_limit(caller)
-
-    if bool(req.session_id) == bool(req.room_id):
-        raise HTTPException(400, "Provide exactly one of session_id or room_id")
-
-    target_id = req.session_id or req.room_id or ""
-    expected_amount = 0
-    currency = "usd"
-    capture_method = "manual"
-    resource_type = "session"
-    service_type = req.service_type
-    payee: str | None = None
-
-    if req.session_id:
-        session = load_session(req.session_id)
-        if not session:
-            raise HTTPException(404, "Session not found")
-        payment_rules = session.get("payment_rules", {})
-        price = payment_rules.get("price", "0")
-        expected_amount = int(float(price) * 100) if price else 0
-        currency = (payment_rules.get("currency") or "usd").lower()
-        service_type = service_type or session.get("module_type") or "emporia:session"
-        if payment_rules.get("mode", "free") == "free" or expected_amount <= 0:
-            raise HTTPException(400, "Session does not require a payment")
-        if not custodial_cards_allowed():
-            raise HTTPException(409, (
-                "This relay does not hold card money on its own balance, so this session "
-                "cannot be paid with a card intent. Fund a purchase with fund_session."))
-    else:
-        room = rooms_db.get_room(target_id, db_path=DATABASE_PATH)
-        if not room:
-            raise HTTPException(404, "Room not found")
-        expected_amount = int(room.entry_fee_cents or 0)
-        currency = (room.currency or "usd").lower()
-        capture_method = "automatic"
-        resource_type = "room"
-        if room.gate_type != "paid" or expected_amount <= 0:
-            raise HTTPException(400, "Room does not require a paid entry fee")
-        payee = room.creator_id
-        if service_type == "emporia:session":
-            service_type = "emporia:room_entry"
-
-    if req.amount_cents != expected_amount:
-        raise HTTPException(
-            400,
-            f"amount_cents must match relay pricing for this resource ({expected_amount})",
-        )
-
-    # P74: refuse a price the rail cannot charge, here rather than at Stripe.
-    # The previous guard was `expected_amount <= 0`, so a resource priced at a
-    # penny passed and the agent met a raw provider error for a decision the
-    # relay could have made itself. The operator set an unsellable price; say so.
-    #
-    # The `0 <` half is belt-and-braces, not load-bearing: both branches above
-    # already reject a free resource with "does not require a payment", so
-    # zero cannot reach here today. Stated rather than left to look protective —
-    # a stash-verify that folded zero in broke nothing, which is how I know.
-    from emporia.payments import STRIPE_MIN_CHARGE_CENTS
-    if 0 < expected_amount < STRIPE_MIN_CHARGE_CENTS:
-        raise HTTPException(400, (
-            f"This resource is priced at {expected_amount}¢, below the "
-            f"{STRIPE_MIN_CHARGE_CENTS}¢ minimum this payment rail can charge, so it "
-            f"cannot be paid for at all. That is a pricing mistake by the relay "
-            f"operator, not something the caller can work around — price it at "
-            f"{STRIPE_MIN_CHARGE_CENTS}¢ or more, or make it free."
-        ))
-
-    _assert_agent_budget(caller, expected_amount)
-
-    destination = fee = None
-    if payee and not custodial_cards_allowed():
-        destination = stripe_payee_account(payee)
-        if not destination:
-            raise HTTPException(409, (
-                f"{payee} has no active Stripe account here, and card payments go straight "
-                f"to the payee on this relay. Pay over x402 or Tempo if offered."))
-        from emporia.payments import platform_fee
-        fee = platform_fee(expected_amount)
-
-    try:
-        result = await create_price_intent(
-            session_id=target_id,
-            amount_cents=expected_amount,
-            buyer_id=caller,
-            seller_id=req.seller_id,
-            service_type=service_type,
-            capture_method=capture_method,
-            currency=currency,
-            resource_type=resource_type,
-            destination_account=destination,
-            application_fee_cents=fee,
-        )
-        return result
-    except RuntimeError as e:
-        raise HTTPException(402, str(e))
-
 
 def _settlement_resource_viewer_allowed(resource_id: str, caller: str | None, conn: Any) -> bool:
     """A `settlements.session_id` column is overloaded across three resource kinds —
@@ -5919,7 +4964,7 @@ _SETTLEMENT_PUBLIC_COLUMNS = frozenset({
     "settlement_id", "session_id", "winner_id", "total_price_cents",
     "platform_fee_cents", "winner_payout_cents", "platform_fee_bps",
     "payment_intent_ids", "transfer_id", "transfer_status", "status",
-    "created_at", "payer_id", "refund_id", "reversal_id", "rail",
+    "created_at", "payer_id", "rail",
     "platform_fee_atomic", "winner_payout_atomic",
 })
 _SETTLEMENT_INTERNAL_COLUMNS = frozenset({"dedupe_key"})
@@ -5991,8 +5036,8 @@ def _settlement_row_dict(
     opaque per-transaction identifiers on that resource.
 
     N7 review R4: the original N6-2 redaction covered payment_intent_ids but not
-    transfer_id — the Stripe transfer object id for that specific payer's payout,
-    1:1 with their payment — so a co-payer still got a per-transaction Stripe
+    transfer_id — the transfer reference for that specific payer's payout,
+    1:1 with their payment — so a co-payer still got a per-transaction
     identifier out of the same response N6-2 was written to lock down.
     `total_price_cents`/`winner_payout_cents` are left alone: room/topic entry
     fees are uniform, so a co-payer's amount is already public from the resource's
@@ -6023,12 +5068,6 @@ def _settlement_row_dict(
         d["transfer_id"] = "[redacted]"
     if d.get("payer_id") is not None:
         d["payer_id"] = "[redacted]"
-    # P2r-3 (R3): refund_id/reversal_id are per-payment Stripe identifiers,
-    # the same class N7-R4 already covers for transfer_id — redact alongside it.
-    if d.get("refund_id"):
-        d["refund_id"] = "[redacted]"
-    if d.get("reversal_id"):
-        d["reversal_id"] = "[redacted]"
     return d
 
 
@@ -6798,7 +5837,7 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
     # P6-1: but _write_audit_line() must NOT run while DB_LOCK is held.
     # It belongs outside the lock, and P5-3 put it there anyway.
     # Nothing here awaits, so this isn't the same async-starvation class as
-    # the Agora/Stripe DB_LOCK-across-a-network-round-trip bug this codebase
+    # the Agora DB_LOCK-across-a-network-round-trip bug this codebase
     # already fixed once (docs/archive/roadmap-hackathon-era.md § Architecture cleanup) — but it's the
     # same shape of mistake, so it gets fixed the same way: two short
     # DB_LOCK-held blocks (count, then delete) with the file write in
@@ -7058,7 +6097,7 @@ async def ws_agent(ws: WebSocket, agent_id: str):
 # ============================================================================
 # Rooms
 # Public: open to all registered agents.
-# Private: hidden from listing; gated by invite OR Stripe payment.
+# Private: hidden from listing; gated by invite OR payment (x402 or Tempo).
 # Encryption flag: relay stores opaque ciphertext, skips guardrails scan.
 # Session link: a game session can have an associated room for in-session chat.
 # ============================================================================
@@ -7080,61 +6119,23 @@ async def _settle_access_payment(
     payment_ref: "PaymentRef",
     access_duration_days: int | None,
 ) -> None:
-    """P3 (item 4): the pay-to-access settlement/payout seam, shared by
-    join_room() and subscribe_agora_topic() — before this they were
-    near-identical copy-pasted blocks (same fee split, same Connect account
-    lookup, same try/except around payout_winner, same record_settlement
-    shape; the only differences were cosmetic — kwargs vs. positional args
-    into payout_winner — and the resource ids/outcome_type strings).
+    """The pay-to-access settlement seam, shared by join_room() and
+    subscribe_agora_topic().
 
-    Records the entitlement this payment just bought (P2-4), before the
-    payout — mirrors record_payment's placement relative to payout, for the
-    same "commit the durable record before the outbound call" reason both
-    join_room and subscribe_agora_topic already followed.
+    Records the entitlement this payment just bought (P2-4), then the
+    settlement. The payer paid the payee directly (x402 or Tempo); the relay
+    holds nothing and moves nothing, it only records.
 
-    P50: **exactly-once per payment.** Both membership paths now re-enter this
+    P50: **exactly-once per payment.** Both membership paths re-enter this
     function to finish a purchase a crash cut short (see
     `_finish_interrupted_access_purchase()`), so "already ran" has to be a
     thing this function can answer about itself rather than a property of who
     calls it. It answers from the settlement row it writes last, whose
     `dedupe_key` is UNIQUE — the durable record, not an inference from
     membership or from holding some entitlement here.
-
-    The seam is drawn where custody actually splits, not as a dispatch
-    table: recording the settlement (rail-agnostic, always runs) is
-    structurally separate from the platform→creator transfer hop
-    (Stripe-only, skipped via the `if creator_stripe:` guard and the
-    "no_stripe_account" sentinel below). Per the non-custodial x402 decision
-    (docs/archive/roadmap-hackathon-era.md § Payments), `payout_winner()` has no counterpart at all on
-    a rail where the payment itself is the settlement — a real second rail
-    would skip this transfer entirely, not call into a different transfer
-    implementation, so there is nothing to dispatch to yet. See
-    payments.KNOWN_RAILS's own docstring for why a speculative registry
-    entry isn't here either.
-
-    settle() (session escrow, capture-then-transfer) is deliberately not
-    routed through here — escrow has no x402 analogue and stays Stripe-only
-    (docs/archive/roadmap-hackathon-era.md § Payments), and its own "pending_connect" initial sentinel
-    stays distinct from this function's "no_stripe_account" for the same
-    condition; unifying the two is a behavior change, not this pass's job.
-
-    L2: `from emporia.payments import ...` stays function-local here, same
-    as the two call sites it replaces — 75 test
-    `@patch("emporia.payments.X")` decorators only intercept because nothing
-    in this file imports these names at module scope.
-
-    P1b-6: `payment_ref.rail == RAIL_X402` is the "a real second rail would
-    skip this transfer entirely" case the docstring above already
-    anticipated — x402 is non-custodial (the payment settles straight to
-    `payTo`, resolved and asserted in _verify_x402_payment() before this
-    function is ever reached), so there is no platform-held balance to take
-    a cut from or transfer out of. The platform fee is 0% on x402 for now —
-    a provisional decision, not a permanent one (see docs/archive/roadmap-hackathon-era.md § Payments
-    for the revisit trigger: a cross-chain splitter mechanism). The Stripe
-    branch below is untouched, byte-for-byte.
     """
     from emporia.payments import (
-        RAIL_TEMPO, RAIL_X402, payout_winner, platform_fee as _platform_fee, settlement_dedupe_key,
+        RAIL_TEMPO, RAIL_X402, settlement_dedupe_key,
     )
 
     # P50: this function is exactly-once per payment, because
@@ -7185,59 +6186,10 @@ async def _settle_access_payment(
         from emporia import fees as _fees
         platform_fee_bps = _fees.fee_bps() if platform_fee else 0
         transfer_id = None
-        # "direct": no platform-held balance ever existed to transfer out of
-        # — distinct from "no_stripe_account" (Stripe, platform holds funds,
-        # simply has nowhere to send them) and "transferred"/"transfer_failed"
-        # (Stripe, a transfer was attempted). Not a failure state.
+        # "direct": the payer paid the payee; the relay held nothing. Not a failure state.
         transfer_status = "direct"
-    elif payment_ref.destination:
-        # P157: a destination charge — Stripe paid the creator, less the fee,
-        # when it was captured. Nothing reached the platform but the fee.
-        platform_fee_bps = _fee_bps_now()
-        platform_fee = _platform_fee(amount_cents)
-        creator_payout = amount_cents - platform_fee
-        transfer_id, transfer_status = None, "destination"
     else:
-        platform_fee_bps = _fee_bps_now()
-        platform_fee = _platform_fee(amount_cents)
-        creator_payout = amount_cents - platform_fee
-        transfer_id = None
-        transfer_status = "no_stripe_account"
-        if creator_payout > 0:
-            creator_stripe = AGENT_REGISTRY.get_stripe_account(creator_id)
-            if creator_stripe and _stripe_account_mode_mismatch(
-                AGENT_REGISTRY.get_stripe_account_mode(creator_id)
-            ):
-                # P26-4: account belongs to the other Stripe key space (e.g. a
-                # test-mode leftover after switching to a live key) — the two
-                # acct_... namespaces are disjoint, so this transfer cannot
-                # succeed and must not be attempted.
-                transfer_status = "pending_connect_wrong_mode"
-            elif creator_stripe and AGENT_REGISTRY.get_stripe_account_status(creator_id) != "active":
-                # P25-2: a live-mode account that hasn't finished onboarding
-                # yet — skip the doomed Stripe call rather than let it fail
-                # against Stripe's own API and surface as an opaque
-                # "transfer_failed: ...".
-                transfer_status = "pending_connect_not_active"
-            elif creator_stripe:
-                try:
-                    t = await payout_winner(
-                        winner_id=creator_id,
-                        stripe_account_id=creator_stripe,
-                        amount_cents=creator_payout,
-                        session_id=resource_id,
-                        # Matches this same settlement's dedupe_key below — same
-                        # helper, same inputs, by construction (P1r-2, R1). L1:
-                        # only the bare reference reaches the hash, never the rail.
-                        idempotency_key="emporia:payout:" + settlement_dedupe_key(
-                            resource_id, payer_id, [payment_ref.reference]
-                        ),
-                        source_payment_intent_id=payment_ref.reference,
-                    )
-                    transfer_id = t["transfer_id"]
-                    transfer_status = "transferred"
-                except Exception:
-                    transfer_status = "transfer_failed"
+        raise ValueError(f"no settlement for payment rail {payment_ref.rail!r}")
     record_settlement({
         "session_id": resource_id,
         "winner_id": creator_id,
@@ -7304,7 +6256,7 @@ async def _finish_interrupted_access_purchase(
     already verified this payment and `record_payment()` committed it. The
     rail is read back from storage rather than assumed (P3).
     """
-    from emporia.payments import PaymentRef, settlement_dedupe_key, verify_payment_intent
+    from emporia.payments import PaymentRef
 
     with DB_LOCK, get_db() as conn:
         row = conn.execute(
@@ -7319,21 +6271,6 @@ async def _finish_interrupted_access_purchase(
         return
 
     ref = PaymentRef(row["rail"], row["payment_intent_id"])
-    if ref.rail == "stripe" and not _settlement_exists(
-            settlement_dedupe_key(resource_id, payer_id, [ref.reference])):
-        # P157: whether Stripe already paid the creator (a destination charge)
-        # or the platform holds it is on the PaymentIntent, not in our row.
-        # Unknown on a relay that does not hold money: finish it later rather
-        # than guess — guessing "held" would pay the creator twice.
-        try:
-            dest = (await verify_payment_intent(ref.reference)).get("destination")
-        except Exception:
-            if not custodial_cards_allowed():
-                logger.warning("could not read %s to finish its settlement; will retry",
-                               ref.reference, exc_info=True)
-                return
-            dest = None
-        ref = PaymentRef(ref.rail, ref.reference, dest)
     if ref.rail == "x402":
         from emporia import fees
         # a split entry was paid in two: the fee went to the relay's fee address (fees.py)
@@ -7354,134 +6291,6 @@ async def _finish_interrupted_access_purchase(
 
 
 
-async def _refund_kicked_room_payer(room_id: str, agent_id: str) -> dict[str, Any]:
-    """P2-7: reverse-then-refund a kicked payer's room entry fee, when the
-    kicker asks for it.
-
-    A room entry fee moves in two hops by the time of a kick: the payer's
-    charge landed in the platform balance at join time, then payout_winner()
-    already transferred the creator's net share (97.5%) out to their
-    connected account. Refunding the original charge without first clawing
-    that transfer back would leave the platform eating the creator's share —
-    so the order here undoes both hops in reverse: reverse the transfer,
-    *then* refund the charge. Net effect: the payer is made whole, the
-    creator's payout is reversed, and the platform's 1% fee is simply never
-    kept — no separate "give back the fee" step, since reversing 100% of the
-    transfer plus refunding 100% of the charge already nets to zero for the
-    platform.
-
-    Looks up the *newest* settlement row for this (room, payer) pair — after
-    P2-4 there can be more than one if the payer was kicked, repurchased, and
-    is being kicked again; the most recent purchase is the one this kick is
-    actually undoing.
-
-    Returns an outcome dict rather than raising: a kick has already succeeded
-    by the time this runs, and a Stripe failure here must not read as the
-    kick itself having failed.
-
-    P2r-3 (R3): every real-money outcome here is persisted before returning —
-    this used to only ever *read* the settlement row and call Stripe, so
-    afterward `transfer_status` still said `'transferred'`,
-    `payments.status` still said `'confirmed'`, and neither the refund nor
-    the reversal id was stored anywhere. Every settlement read path (the
-    payer's own receipt, the creator's, the operator's) served a record that
-    contradicted what actually happened at Stripe. A reversal that succeeds
-    followed by a refund that fails is its own persisted state
-    (`'reversed_pending_refund'`) rather than being indistinguishable from
-    "nothing happened" — an operator needs to see that a creator's payout was
-    already clawed back even though the payer hasn't been made whole yet.
-
-    S1: the local write above can itself fail (lock contention, disk full)
-    after Stripe has already moved real money -- that must not read as the
-    kick having failed. Each write is independently wrapped; on write
-    failure the real Stripe outcome is still returned, with `persisted:
-    False` added so an operator can find and reconcile it, instead of the
-    exception propagating into a 500 for an operation that actually
-    succeeded.
-    """
-    from emporia.payments import reverse_transfer, refund_payment_intent, settlement_dedupe_key
-
-    with DB_LOCK, get_db() as conn:
-        row = conn.execute(
-            "SELECT settlement_id, payment_intent_ids, transfer_id, transfer_status "
-            "FROM settlements WHERE session_id=? AND payer_id=? ORDER BY created_at DESC LIMIT 1",
-            (room_id, agent_id),
-        ).fetchone()
-    pi_ids = json.loads(row["payment_intent_ids"] or "[]") if row else []
-    if not row or not pi_ids:
-        return {"refunded": False, "reason": "no_payment_found"}
-
-    settlement_id = row["settlement_id"]
-    payment_intent_id = pi_ids[0]
-    dedupe_key = settlement_dedupe_key(room_id, agent_id, pi_ids)
-
-    reversal_id = None
-    if row["transfer_id"] and row["transfer_status"] == "transferred":
-        try:
-            reversal = await reverse_transfer(
-                row["transfer_id"], idempotency_key="emporia:reversal:" + dedupe_key
-            )
-            reversal_id = reversal["reversal_id"]
-        except Exception as e:
-            # Nothing changed at Stripe — nothing to persist.
-            return {"refunded": False, "reason": f"transfer_reversal_failed: {e}"}
-
-    try:
-        refund = await refund_payment_intent(
-            payment_intent_id, idempotency_key="emporia:refund:" + dedupe_key,
-            # P157: a destination charge — pull the creator's share and the
-            # fee back with the refund, in the same call.
-            destination_charge=row["transfer_status"] == "destination",
-        )
-    except Exception as e:
-        if reversal_id:
-            try:
-                with DB_LOCK, get_db() as conn:
-                    conn.execute(
-                        "UPDATE settlements SET transfer_status='reversed_pending_refund', "
-                        "reversal_id=? WHERE settlement_id=?",
-                        (reversal_id, settlement_id),
-                    )
-            except Exception as persist_exc:
-                # S1: Stripe's reversal already happened — a local write failure
-                # on top of it must still report the reversal, not 500 and hide it.
-                logger.error(
-                    "refund_persist_failed_after_reversal",
-                    extra={"settlement_id": settlement_id, "reversal_id": reversal_id},
-                    exc_info=persist_exc,
-                )
-                return {
-                    "refunded": False, "reason": f"refund_failed: {e}",
-                    "reversal_id": reversal_id, "persisted": False,
-                }
-        return {
-            "refunded": False, "reason": f"refund_failed: {e}", "reversal_id": reversal_id,
-        }
-
-    try:
-        with DB_LOCK, get_db() as conn:
-            conn.execute(
-                "UPDATE settlements SET transfer_status='refunded', refund_id=?, reversal_id=? "
-                "WHERE settlement_id=?",
-                (refund["refund_id"], reversal_id, settlement_id),
-            )
-            conn.execute(
-                "UPDATE payments SET status='refunded' WHERE payment_intent_id=?",
-                (payment_intent_id,),
-            )
-    except Exception as persist_exc:
-        # S1: refund + reversal already happened at Stripe — a local write
-        # failure on top of that must still report the real outcome, not 500.
-        logger.error(
-            "refund_persist_failed",
-            extra={"settlement_id": settlement_id, "reversal_id": reversal_id},
-            exc_info=persist_exc,
-        )
-        return {
-            "refunded": True, "refund_id": refund["refund_id"], "reversal_id": reversal_id,
-            "persisted": False,
-        }
-    return {"refunded": True, "refund_id": refund["refund_id"], "reversal_id": reversal_id}
 
 
 
@@ -7607,7 +6416,6 @@ class CreateAgoraTopicRequest(BaseModel):
 
 class AgoraSubscribeRequest(BaseModel):
     agent_id: str
-    payment_intent_id: str | None = None
 
 
 def _require_registered(agent_id: str) -> None:

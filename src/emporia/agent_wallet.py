@@ -1,8 +1,8 @@
 """An agent's own x402 wallet, for paying from the MCP server (P104).
 
 The Python SDK takes an x402 key as a constructor argument. The MCP server —
-how a Hermes agent actually pays — had no wallet at all, so every MCP payment
-tool was Stripe-only and x402 reached agents only through the SDK.
+how a Hermes agent actually pays — had no wallet at all, so no MCP payment
+tool could pay: x402 reached agents only through the SDK.
 
 This gives each agent one secp256k1 key, `<agent>.x402.secp256k1`, in the
 profile key directory, under the same rules as the operator key (P96): created
