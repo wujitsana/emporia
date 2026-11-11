@@ -202,9 +202,9 @@ def _object_problem(conn, caller: str, ref: dict[str, str], cache: dict) -> tupl
         if not _readable(conn, caller, p["topic"], cache):
             return 403, "a post in a topic you cannot read"
     elif k == "room":
-        r = conn.execute("SELECT room_type, gate_type, encrypted, members_json FROM rooms WHERE room_id = ?",
+        r = conn.execute("SELECT room_id, creator_id, room_type, gate_type, encrypted, members_json FROM rooms WHERE room_id = ?",
                          (i,)).fetchone()
-        if not r or not rooms_db.may_read(r, caller):
+        if not r or not rooms_db.may_read(r, caller, rs.DATABASE_PATH):
             return 403, "a room you are not a member of"
     elif k == "topic":
         t = conn.execute("SELECT * FROM agora_topics WHERE (slug = ? OR topic_id = ?) AND is_deleted = 0",
@@ -217,9 +217,9 @@ def _object_problem(conn, caller: str, ref: dict[str, str], cache: dict) -> tupl
                            (i.partition("#")[0],)).fetchone()
         if not lab:
             return 404, "no lab on this relay for that repo"
-        r = conn.execute("SELECT room_type, gate_type, encrypted, members_json FROM rooms WHERE room_id = ?",
+        r = conn.execute("SELECT room_id, creator_id, room_type, gate_type, encrypted, members_json FROM rooms WHERE room_id = ?",
                          (lab["room_id"],)).fetchone()
-        if not r or not rooms_db.may_read(r, caller):
+        if not r or not rooms_db.may_read(r, caller, rs.DATABASE_PATH):
             return 403, "a lab's room you are not a member of"
     elif k == "agent":
         if not conn.execute("SELECT 1 FROM authorized_agents WHERE stable_id = ?", (i,)).fetchone():
@@ -230,9 +230,9 @@ def _object_problem(conn, caller: str, ref: dict[str, str], cache: dict) -> tupl
                        and caller not in rs._session_row_to_dict(row)["participants"]):
             return 404, "no public game by that id"
     elif k == "message":
-        m = conn.execute("SELECT r.room_type, r.gate_type, r.encrypted, r.members_json FROM room_messages m "
+        m = conn.execute("SELECT r.room_id, r.creator_id, r.room_type, r.gate_type, r.encrypted, r.members_json FROM room_messages m "
                          "JOIN rooms r ON m.room_id = r.room_id WHERE m.message_id = ?", (i,)).fetchone()
-        if m and rooms_db.may_read(m, caller):
+        if m and rooms_db.may_read(m, caller, rs.DATABASE_PATH):
             return None
         if not m:   # table talk is a message too (`gchat_...`): a public game's, or a player's
             g = conn.execute("SELECT s.* FROM game_chat c JOIN sessions s ON s.session_id = c.session_id "
@@ -300,6 +300,25 @@ def _row_readable(conn, caller: str | None, r, cache: dict) -> bool:
     ids = {refs.without_hint(v).partition(":")[2] for v in (r["root_key"], r["reply_key"], r["quote_of"])
            if v and refs.without_hint(v).startswith("session:")}
     return not ids or not _game_gate(conn, caller, ids)
+
+
+def _anonymous_may_read(conn, req) -> bool:
+    """Whether a stranger with no token may read this new post: what the unauthenticated global socket may be
+    told of it. Its topic must be readable to nobody-in-particular (a paid topic is not), and nothing it hangs
+    from (a reply, a quote, a root: a private room, a message in one, a private game) may be closed to them."""
+    cache: dict = {}
+    if not _readable(conn, None, req.topic, cache):
+        return False
+    for ref in (req.reply_to, req.quote_of, req.root):
+        if not ref:
+            continue
+        try:
+            parsed = refs.parse(ref)
+        except ValueError:
+            return False
+        if _object_problem(conn, "", parsed, cache):
+            return False
+    return True
 
 
 @router.post("/posts")
@@ -389,8 +408,7 @@ async def create_post(req: PostIn, request: Request):
             raise HTTPException(409, {"code": wire.ERR_DUPLICATE_NONCE, "message": "already posted"}) from e
         opened = _record_openings(conn, caller, post_id, req.reply_to, req.tags, now)
         translog.log_row(conn, "post", post_id)
-        public = not req.topic or bool(conn.execute(
-            "SELECT 1 FROM agora_topics WHERE slug = ? AND visibility = 'public'", (req.topic,)).fetchone())
+        public = _anonymous_may_read(conn, req)
     if public and not private_game:
         await rs.broadcast_global({"type": "post_created", "post_id": post_id, "kind": req.kind,
                                    "author_id": caller, "preview": req.text[:200]})

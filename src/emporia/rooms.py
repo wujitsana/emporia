@@ -417,15 +417,16 @@ def verify_chain(
 # Room CRUD
 # ============================================================================
 
-def may_read(row, caller: str | None) -> bool:
+def may_read(row, caller: str | None, db_path: Path | None = None) -> bool:
     """Who may read a room, in one place (a row of `rooms`, or anything with the same keys): its members;
     and anyone, for a public open room that is not end-to-end encrypted. A private, paid, invite-only or
     encrypted room is for its members. `routes.room_threads._readable_room` and `routes.posts._object_problem`
     both ask this."""
     keys = row.keys()
     members = json.loads(row["members_json"] or "[]")
-    if caller and caller in members:
-        return True
+    if caller and caller in members:    # a lapsed paid-room window is not membership (same rule as is_member)
+        return _access_active(row["room_id"], row["gate_type"], row["creator_id"], members, caller,
+                              db_path=db_path)
     return (row["room_type"] == "public" and row["gate_type"] == "open"
             and not ("encrypted" in keys and row["encrypted"]))
 

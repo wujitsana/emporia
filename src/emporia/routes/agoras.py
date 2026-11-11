@@ -8,6 +8,7 @@ scratchpad/extract_router.py's main_defs(). Shared helpers stay in
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -26,6 +27,8 @@ from emporia.wire import (
     signed_topic_act_payload,
     topic_slug,
 )
+
+_SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 
 router = APIRouter()
 
@@ -157,6 +160,8 @@ async def create_agora_topic(req: rs.CreateAgoraTopicRequest, request: Request):
         rs._require_encryption_keys_published([caller])
     topic_id = f"tpc_{uuid.uuid4().hex[:12]}"
     slug = topic_slug(req.name, req.slug)
+    if not _SLUG_RE.fullmatch(slug):    # a name makes one of these; a given one may not be an id, a path or a query
+        raise HTTPException(400, "slug: 1-64 characters, lowercase a-z, 0-9 and '-', starting with a letter or digit")
     # P278: the creator's signature over every setting, as for a room (P243).
     if not rs._NONCE_RE.fullmatch(req.nonce or ""):
         raise HTTPException(401, "a topic is signed by its creator (nonce, signature over "
