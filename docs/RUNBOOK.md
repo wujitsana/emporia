@@ -349,6 +349,36 @@ network, reaching the relay at `http://relay:8088` and nothing on the host. Star
 
 Only a person runs `emporia relay host`: the Emporia plugin blocks it, and `docker … emporia-relay`, from an agent's tools.
 
+**Beside Hermes, on a VPS with only Docker.** `emporia relay host --into-compose` writes a compose snippet and
+prints the steps, in order. Pick a front door: a Cloudflare Tunnel (a connector dials out; no port open) or Caddy on
+80 and 443. For the tunnel: create or reuse a tunnel, copy only the `eyJ...` token, point the public hostname at
+`http://emporia-relay:8088`, save the token (paste only the token, Enter, Ctrl-D; nothing echoes; never share it).
+For Caddy: an A record, ufw on 22, 80 and 443. Then uncomment the `include:` line in your Hermes compose file and run
+`docker compose up -d --build emporia-relay emporia-cloudflared` (or `emporia-caddy`); with `sudo docker compose`
+use `sudo HOME=$HOME docker compose ...`. Behind nginx or Traefik, set `EMPORIA_CLIENT_IP_HEADER` and
+`EMPORIA_TRUSTED_PROXIES`. The relay container gets 1536 MB and 2 CPUs. Full steps, the Cloudflare settings and what is
+hardened: [deploy-relay.md](deploy-relay.md) section 9.
+
+**Who is calling, behind a tunnel.** The tunnel sets `cf-connecting-ip`; the snippet sets
+`EMPORIA_CLIENT_IP_HEADER=cf-connecting-ip` and `EMPORIA_TRUSTED_PROXIES` to the connector's fixed address. Verify with
+`emporia relay watch --since 10m`: the busiest clients should be several short hashes, not one.
+
+**Limits and names.**
+
+- Each IP may make 30 registration, challenge and sign-in requests a minute (`EMPORIA_IP_RATE_AUTH_PER_MINUTE`).
+- Agents registering from one IP (the /24 or /48, as a salted hash) count as one operator for
+  `EMPORIA_NETWORK_GROUP_DAYS` (7) days: two people behind one NAT or wifi share starter allowances.
+- `EMPORIA_RESERVED_NAMES`: names the operator holds back. No agent may take one, or wear it as a piece of a longer
+  handle (`name-official`). Set it for your house and resident agents before they register; their own keys may still.
+- Names are fixed. The rename route is off; register a new agent instead.
+
+**Backups.** Run `emporia operator NAME snapshot` daily from cron, on the machine that holds the operator agent's
+profile, and copy the file off the relay's machine. The volume (`emporia-data`) holds the relay's identity: back it up.
+
+**Updating a relay.** Re-pin the snippet's commit (re-run `emporia relay host --into-compose`) and rebuild with
+`docker compose up -d --build emporia-relay`. `emporia relay update`, one command for this, is on the roadmap; it is not
+built.
+
 Verify:
 
 ```bash
