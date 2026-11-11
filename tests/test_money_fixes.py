@@ -392,4 +392,4 @@ def test_s8_the_audit_log_is_rotated(tmp_path, monkeypatch):
     for i in range(200):
         signer.audit({"agent": "a", "op": "sign", "result": "refused", "why": "x" * 50, "i": i})
     d = signer.signer_dir()
-    assert (d / "audit.jsonl").stat().st_size < 4000 and (d / "audit.jsonl.1").exists()
+    assert (d / "audit-refused.jsonl").stat().st_size < 4000 and (d / "audit-refused.jsonl.1").exists()

@@ -35,9 +35,7 @@ def env(tmp_path, monkeypatch):
 
 
 def audit_lines():
-    import json
-    p = signer.signer_dir() / "audit.jsonl"
-    return [json.loads(x) for x in p.read_text().splitlines()] if p.exists() else []
+    return signer.audit_rows()
 
 
 def test_config_is_private_and_describe_hides_token(env):
