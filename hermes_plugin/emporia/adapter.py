@@ -150,17 +150,26 @@ _NOT_THE_BRIDGES = frozenset({"EMPORIA_OPERATOR_PRIVATE_KEY", "EMPORIA_ALLOW_HOT
 
 
 def _vault_families(values: dict[str, str]) -> tuple[str, ...]:
+    """As emporia.agent_env.vault_prefixes: the family of every vault CLI named by any word of a `cmd:` source
+    (a wrapper script or `sh -c` included); a source that names none gets every family."""
     import shlex
     out: list[str] = []
     for name in _SOURCE_VARS:
         v = str(values.get(name, "")).strip()
-        if v.startswith("cmd:"):
-            try:
-                argv = shlex.split(v[4:])
-            except ValueError:
-                continue
-            out += _VAULT_FAMILIES.get(os.path.basename(argv[0]) if argv else "", ())
+        if not v.startswith("cmd:"):
+            continue
+        try:
+            argv = shlex.split(v[4:])
+        except ValueError:
+            argv = v[4:].split()
+        words = [w for a in argv for w in (a, *re.split(r"[\s;&|()'\"`$<>=]+", a))]
+        found: list[str] = []
+        for w in words:
+            found += _VAULT_FAMILIES.get(os.path.basename(w.rstrip("/")), ())
+        out += found or [f for fam in _VAULT_FAMILIES.values() for f in fam]
     return tuple(dict.fromkeys(out))
+
+
 # A key linked by name (`EMPORIA_IDENTITY_KEY_SOURCE=env:MY_KEY`): the bridge signs in with
 # that key, so it is handed too, whatever its name (as agent_env.names() does for the MCP server).
 _ENV_REF = re.compile(r"^\s*env:\s*([A-Z][A-Z0-9_]*)\s*$")
