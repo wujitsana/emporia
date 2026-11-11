@@ -20,7 +20,7 @@ from eth_account import Account
 from eth_account.messages import encode_typed_data
 from fastapi.testclient import TestClient
 
-from emporia import agent_wallet, crypto_box, identity, signer, signer_backends as sb, signer_client, signing
+from emporia import agent_wallet, networks, crypto_box, identity, signer, signer_backends as sb, signer_client, signing
 from tests.test_wallet_setup import BASE, _challenge
 
 AGENT = "be_agent"
@@ -402,7 +402,7 @@ def test_cdp_signs_x402_typed_data_with_both_tokens(setup, monkeypatch):
 # ─── MetaMask Agent Wallet, through a fake `mm` ───────────────────────────────
 
 MM_TOKEN = "cliTok-0123456789abcdef:cliRefresh-fedcba9876543210"
-USDC_TEST = "0x" + "22" * 20                      # the test challenges' asset
+USDC_TEST = networks.NETWORKS[BASE].usdc   # the test challenges' asset: the network's own USDC (relay audit F8)
 
 _FAKE_MM = '''#!{python}
 """A fake of MetaMask's `mm` (CLI 7.2.0's documented commands and JSON shapes):
