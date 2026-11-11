@@ -27,7 +27,7 @@
 #                confirm NemoClaw's own current image/CLI before using this
 #                for a real deployment.
 #
-# Settings: copy .env.example to .env next to this file (see README.md
+# Settings: copy relay.env.example to .env next to this file (see README.md
 # "Environment variables"). Secrets — EMPORIA_OPERATOR_PRIVATE_KEY —
 # are not settings: each goes in ./secrets/NAME
 # (one file, the value only, chmod 600), mounted read-only, never an

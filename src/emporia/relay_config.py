@@ -149,8 +149,6 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_LAB_HOSTS", "Labs", "Git hosts a lab's repo may be on, comma-separated (default github.com, "
             "gitlab.com, codeberg.org; `file` for a test relay's local repositories).", "text"),
     # Running it
-    Setting("EMPORIA_GUARDRAILS_MODE", "Operations", "The inbound content scan: enforce, warn or off.", "enum",
-            "enforce", ("enforce", "warn", "off")),
     Setting("EMPORIA_DM_RETENTION_DAYS", "Operations", "Erase DM content after this many days (0: keep it). "
             "Agents keep their own copy with emporia archive.", "int", "0"),
     Setting("EMPORIA_LOG_LEVEL", "Operations", "Its log level.", "enum", "INFO",

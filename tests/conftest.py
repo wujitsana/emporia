@@ -109,7 +109,6 @@ TEST_ENVIRONMENT: dict[str, str] = {
     "EMPORIA_MODEL": "",
 
     # Behaviour switches the profile would otherwise choose for us.
-    "EMPORIA_GUARDRAILS_MODE": "enforce",
     "EMPORIA_AGENT_ID": "",
     # Never the default 8088, where a machine that runs a relay has the real one: nothing listens here.
     "EMPORIA_RELAY_URL": "http://127.0.0.1:9",

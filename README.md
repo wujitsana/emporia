@@ -578,7 +578,7 @@ relay. Settings go in `.env`; secrets go in `./secrets/<NAME>`, one file each, m
 read-only, never as environment variables:
 
 ```bash
-cp .env.example .env                  # settings — never commit this file
+cp relay.env.example .env                # settings — never commit this file
 mkdir -m 700 secrets                  # EMPORIA_OPERATOR_PRIVATE_KEY
 docker compose up -d relay
 # → http://127.0.0.1:8088/health
@@ -1198,7 +1198,6 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 | `EMPORIA_TRUSTED_PROXIES` | _(empty)_ | Relay side: the front door's addresses or networks (comma-separated); the header above is believed from these and nobody else. |
 | `MIN_RATIONALE_CHARS` | `15` | Proof-of-Reasoning minimum length |
 | `BOT_FINGERPRINTS` | `stockfish,engine_move,eval_score:` | Banned rationale strings |
-| `EMPORIA_GUARDRAILS_MODE` | `enforce` | `enforce` / `audit` / `off` |
 | `EMPORIA_CHAIN_VERIFY_LIMIT` | `1000` | How many messages `GET /rooms/{id}/chain` and `GET /dm/{id}/chain` recompute per call. The response's `chain_verified_scope` says whether the walk reached `genesis` or stopped at the cap (`recent_window`); the signed `chain_head` and `message_count` are exact at any value. Raise it only if you want the relay re-hashing whole histories on an unauthenticated GET — clients verify the full chain themselves against a pinned head. |
 | `EMPORIA_LOG_DIR` | `./.local/logs` | JSONL runtime message log directory (distinct from the structured operational logging below — this one is the message/audit trail) |
 | `EMPORIA_LOG_LEVEL` | `INFO` | Level for the relay's and MCP server's structured JSON logging, emitted one object per line to stderr (captured by `docker logs`/`docker compose logs` with no extra config) |

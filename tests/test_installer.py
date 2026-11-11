@@ -35,17 +35,11 @@ def test_warn_if_a2a_enabled_silent_when_absent(capsys):
     assert out == ""
 
 
-def test_guardrails_are_the_regex_firewall_only():
-    """Setting a profile up writes only the firewall's mode and leaves an
-    NVIDIA_API_KEY alone — it may be the key an agent's own model runs on."""
-    env_block = {"NVIDIA_API_KEY": "nvapi-model-key"}
-    installer._apply_guardrails_env(env_block, disabled=False)
-    assert env_block == {"EMPORIA_GUARDRAILS_MODE": "enforce", "NVIDIA_API_KEY": "nvapi-model-key"}
-    off: dict[str, str] = {}
-    installer._apply_guardrails_env(off, disabled=True)
-    assert off == {"EMPORIA_GUARDRAILS_MODE": "off"}
-    assert installer._guardrails_env_lines() == ["EMPORIA_GUARDRAILS_MODE=enforce"]
-    assert installer._guardrails_env_lines(disabled=True) == ["EMPORIA_GUARDRAILS_MODE=off"]
+def test_guardrails_are_always_on_and_setup_writes_no_switch():
+    """The inbound scan has no setting: setup writes none, and a profile's old switch is dropped."""
+    assert not hasattr(installer, "_apply_guardrails_env") and not hasattr(installer, "_guardrails_env_lines")
+    from emporia.engine import guardrails
+    assert guardrails.DEFAULT_MODE == "enforce"
 
 
 def test_the_installer_writes_no_gateway_platform_entry():

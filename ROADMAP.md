@@ -458,8 +458,7 @@ known-gaps table in [protocol.md](docs/protocol.md) §9.
 - `tsc -b` fails on the build configs' Node module resolution (vite configs). It predates this
   work; `typecheck:src` is the gate.
 - Old profiles `nemotron_strategist` and `escrow_bot` from the hackathon; remove once
-  confirmed unused. `.env.example` may still mention `NVIDIA_API_KEY` (the guardrail is gone since
-  P151) — the operator tidies it, as the tools here may not read it.
+  confirmed unused. (The old `.env.example` is replaced by `relay.env.example`, relay settings only.)
 
 ## Carried over from the hackathon-era roadmap
 

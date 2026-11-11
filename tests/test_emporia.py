@@ -18512,6 +18512,17 @@ def test_every_environment_variable_the_relay_reads_is_documented():
     )
 
 
+def test_the_relay_env_example_names_only_settings_the_relay_reads():
+    """relay.env.example is copied by operators: a removed setting left in it would do nothing."""
+    from pathlib import Path as _Path
+    read = set(_env_vars_read_by_source())
+    names = [ln.split("=", 1)[0] for ln in _Path("relay.env.example").read_text().splitlines()
+             if ln and not ln.startswith("#") and "=" in ln]
+    prefixes = [n for n in read if n.endswith("_")]
+    stale = [n for n in names if n not in read and not any(n.startswith(p) for p in prefixes)]
+    assert names and not stale, stale
+
+
 def test_every_documented_environment_variable_is_actually_read():
     """The other direction, which is the one that hurts operators. A variable
     that was removed and left in a table doesn't fail loudly — it fails as a

@@ -18,7 +18,6 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import os
 import re
 import unicodedata
 from dataclasses import asdict, dataclass
@@ -26,7 +25,9 @@ from typing import Any, Iterable, Mapping
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODE = os.getenv("EMPORIA_GUARDRAILS_MODE", "enforce").lower()
+#: Always on: no setting turns the relay's inbound scan off or to log-only (a copied `.env` must not disarm it).
+#: `mode=` stays a parameter for the reader side (`injection_flags`) and tests.
+DEFAULT_MODE = "enforce"
 
 #: Bare phrases an honest post about agents contains ("a prompt injection", "the system prompt of a lab agent"):
 #: audited (logged, allowed) rather than refused, in enforce mode too. The reader's side still flags them

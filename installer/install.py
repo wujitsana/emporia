@@ -63,18 +63,6 @@ load_profile_dotenv()
 DEFAULT_RELAY_URL = os.getenv("EMPORIA_RELAY_URL", "http://localhost:8088")
 MCP_TOOL_NAME = "emporia"
 
-def _apply_guardrails_env(env_block: dict[str, str], *, disabled: bool = False) -> None:
-    """The regex firewall: enforce, or off."""
-    if disabled:
-        env_block["EMPORIA_GUARDRAILS_MODE"] = "off"
-        return
-    env_block.setdefault("EMPORIA_GUARDRAILS_MODE", "enforce")
-
-
-def _guardrails_env_lines(*, disabled: bool = False) -> list[str]:
-    return ["EMPORIA_GUARDRAILS_MODE=off" if disabled else "EMPORIA_GUARDRAILS_MODE=enforce"]
-
-
 def resolve_operator_label(explicit: str | None = None, profile_dir: Path | None = None) -> str:
     """The operator label for an agent profile: the one given (`--operator-label`), else the one this profile
     already holds, else one an Emporia profile under the same Hermes root holds (the same person's agents share
@@ -661,7 +649,6 @@ def install_into_profile(
     agent_id: str,
     max_budget_cents: int | None = None,
     operator_label: str | None = None,
-    no_guardrails: bool = False,
     dry_run: bool = False,
 ) -> bool:
     config_path = profile_dir / "config.yaml"
@@ -737,16 +724,8 @@ def install_into_profile(
             print("  ~ removed total spend limit (unlimited)")
     operator_label = resolve_operator_label(operator_label, profile_dir)
     print(f"  + EMPORIA_OPERATOR_LABEL in .env  ({operator_label}: declared, not verified)")
-    if no_guardrails:
-        _apply_guardrails_env(env_block, disabled=True)
+    if env_block.pop("EMPORIA_GUARDRAILS_MODE", None) is not None:   # retired: the scan is always on
         changed = True
-        print("  + guardrails disabled (EMPORIA_GUARDRAILS_MODE=off)")
-    else:
-        before = dict(env_block)
-        _apply_guardrails_env(env_block, disabled=False)
-        if env_block != before:
-            changed = True
-            print("  + guardrails: regex firewall, enforce")
 
     if changed:
         if not dry_run:
@@ -790,19 +769,15 @@ def install_into_profile(
             env_lines = [ln for ln in env_lines if not ln.startswith("EMPORIA_MAX_TOTAL_SPEND_CENTS=")]
     env_lines, c3 = _set_env_line(env_lines, "EMPORIA_OPERATOR_LABEL", operator_label)
     env_dirty = False
-    for line in _guardrails_env_lines(disabled=no_guardrails):
-        key, _, val = line.partition("=")
-        env_lines, ch = _set_env_line(env_lines, key, val)
-        env_dirty = env_dirty or ch
+    if any(ln.startswith("EMPORIA_GUARDRAILS_MODE=") for ln in env_lines):   # retired: always on
+        env_lines = [ln for ln in env_lines if not ln.startswith("EMPORIA_GUARDRAILS_MODE=")]
+        env_dirty = True
     # Export to current process so seed and any downstream scripts see it immediately
     os.environ["EMPORIA_AGENT_ID"] = agent_id
     os.environ["EMPORIA_RELAY_URL"] = relay_url
     os.environ["EMPORIA_DB_PATH"] = db_path
     os.environ["EMPORIA_KEYS_DIR"] = runtime_env["EMPORIA_KEYS_DIR"]
     os.environ["EMPORIA_OPERATOR_LABEL"] = operator_label
-    for line in _guardrails_env_lines(disabled=no_guardrails):
-        key, _, val = line.partition("=")
-        os.environ[key] = val
 
     if c1 or c2 or c3 or c4 or c5 or env_dirty:
         if not dry_run:
@@ -944,7 +919,7 @@ def create_profile(
         env_block["EMPORIA_MAX_TOTAL_SPEND_CENTS"] = str(max_budget_cents)
     else:
         env_block.pop("EMPORIA_MAX_TOTAL_SPEND_CENTS", None)
-    _apply_guardrails_env(env_block, disabled=False)
+    env_block.pop("EMPORIA_GUARDRAILS_MODE", None)        # retired: the scan is always on
     # P54: EMPORIA_PUBLIC_KEY used to be written here. Nothing in this repo,
     # in Hermes, or anywhere else ever read it — it was a key-shaped name in an
     # env block that changed nothing when edited, and the value is derivable
@@ -991,7 +966,6 @@ def create_profile(
     if max_budget_cents is not None and max_budget_cents > 0:
         safe_env_lines.append(f"EMPORIA_MAX_TOTAL_SPEND_CENTS={max_budget_cents}")
     safe_env_lines.append(f"EMPORIA_OPERATOR_LABEL={operator_label}")
-    safe_env_lines.extend(_guardrails_env_lines(disabled=False))
     # Every inherited secret (P201: config.yaml no longer holds any), once.
     written = {ln.split("=", 1)[0] for ln in safe_env_lines}
     for k, v in env_block.items():
@@ -1616,8 +1590,6 @@ def main() -> None:
                         help="the operator label to put on the agent's signed card (stored as "
                              "EMPORIA_OPERATOR_LABEL); default: the profile's, else another Emporia profile's "
                              "under the same Hermes root, else a new random one")
-    parser.add_argument("--no-guardrails", action="store_true",
-                        help="Set EMPORIA_GUARDRAILS_MODE=off (testing only)")
     parser.add_argument("--dev-skills", action="store_true",
                         help="Symlink the contributor skill from repo (emporia-dev)")
     parser.add_argument("--dry-run", action="store_true",
@@ -1707,7 +1679,6 @@ def main() -> None:
             agent_id=agent_id,
             max_budget_cents=args.max_budget_cents,
             operator_label=operator_label,
-            no_guardrails=args.no_guardrails,
             dry_run=args.dry_run,
         )
         _install_skill_link(

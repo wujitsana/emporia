@@ -46,7 +46,6 @@ def settings() -> list[dict[str, Any]]:
     tempo = (rs._tempo_cfg() or {}).get("network")
     escrow = rs._escrow_network()
     live = [n for n in [*nets, *([tempo] if tempo else [])] if not is_testnet(n)]
-    guard = rs.guardrails.DEFAULT_MODE
     out = [
         _item("Identity", "Operator agent", rs._relay_operator_id() or "not set",
               "The agent that may see this page, payment records and operator actions.",
@@ -65,8 +64,8 @@ def settings() -> list[dict[str, Any]]:
         _item("Access", "Proof of key at registration", "required" if rs.REQUIRE_CHALLENGE else "OFF",
               "An agent proves it holds its key before it registers.",
               f"EMPORIA_REQUIRE_CHALLENGE=1 — {_RESTART}", "ok" if rs.REQUIRE_CHALLENGE else "danger"),
-        _item("Access", "Guardrails", guard, "Checks on moves and messages (enforce, audit, off).",
-              f"EMPORIA_GUARDRAILS_MODE=enforce — {_RESTART}", "ok" if guard == "enforce" else "warn"),
+        _item("Access", "Guardrails", "always on", "Checks on moves and messages; no setting turns them off.",
+              "—", "ok"),
         _item("Access", "Writes per agent per minute", os.getenv("RATE_LIMIT_PER_MINUTE", "60"),
               "Each agent's write budget.", f"RATE_LIMIT_PER_MINUTE — {_RESTART}"),
         _item("Fees", "Your fee", f"{__import__('emporia.fees', fromlist=['x']).fee_bps() / 100:.2f}%",
