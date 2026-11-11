@@ -631,6 +631,22 @@ def require_approval(agent_id: str, amount_atomic: int, what: str, terms: dict |
         raise AgentWalletError("your operator declined this payment. Not paid; don't retry it.")
 
 
+def _read_ledger_strict(path: Path) -> list:
+    """The spend log's entries; none when there is no file yet. An unreadable or corrupt file fails closed
+    (AgentWalletError): reading it as empty would reset the daily cap, so nothing is signed until a person
+    looks at it."""
+    if not path.exists():
+        return []
+    try:
+        entries = json.loads(path.read_text())
+        if not isinstance(entries, list) or not all(isinstance(x, (list, tuple)) and len(x) == 2 for x in entries):
+            raise ValueError("not a list of [time, amount] pairs")
+    except (OSError, ValueError) as e:
+        raise AgentWalletError(f"the daily spend log {path} cannot be read ({type(e).__name__}); refusing to pay "
+                               "until it is checked, because treating it as empty would lift the daily cap") from None
+    return entries
+
+
 @contextlib.contextmanager
 def _ledger_held(agent_id: str):
     """The 24-hour spend log, held against this process's threads and (P275)
@@ -649,10 +665,7 @@ def _ledger_held(agent_id: str):
                 os.close(fd)
             fd = None
         try:
-            try:
-                entries = json.loads(path.read_text()) if path.exists() else []
-            except (OSError, ValueError):
-                entries = []
+            entries = _read_ledger_strict(path)
             now = time.time()
             # S-2: only positive entries count (and are kept): a negative one would lift the daily cap
             yield path, [[t, a] for t, a in entries if now - t < _DAY_S and isinstance(a, int) and a > 0]

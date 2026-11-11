@@ -26,6 +26,7 @@ import json
 import io
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -1093,8 +1094,8 @@ def _host_service(folder: Path, env_path: Path, needs_key: bool, admin: bool, do
         steps.append(("operator key", ["sudo", "-u", user, "env", "EMPORIA_NO_DOTENV=1",
                                        f"EMPORIA_KEYS_DIR={data / 'keys'}", sys.executable,
                                        "-m", "emporia.operator_signer", "generate"]))
-    steps += [("its settings", ["sudo", "sh", "-c", f"chown root:root {env_path} && chmod 600 {env_path}"]),
-              ("start", ["sudo", "sh", "-c", f"cp {folder / rh.SERVICE} /etc/systemd/system/ && systemctl "
+    steps += [("its settings", ["sudo", "sh", "-c", f"chown root:root {shlex.quote(str(env_path))} && chmod 600 {shlex.quote(str(env_path))}"]),
+              ("start", ["sudo", "sh", "-c", f"cp {shlex.quote(str(folder / rh.SERVICE))} /etc/systemd/system/ && systemctl "
                                              "daemon-reload && systemctl enable --now emporia-relay"])]
     runnable = bool(shutil.which("systemctl") and shutil.which("sudo"))
     if not _host_steps(steps, "Run these now (sudo asks for your password)?" if runnable else "",
@@ -2211,8 +2212,7 @@ def _signer_host(args: argparse.Namespace) -> int:
     steps = [("its user", ["sudo", "sh", "-c", f"id -u {sh.SERVICE_USER} >/dev/null 2>&1 || useradd --system "
                                                f"--no-create-home --shell /usr/sbin/nologin {sh.SERVICE_USER}"]),
              ("can it run", ["sudo", "-u", sh.SERVICE_USER, "test", "-x", str(exe)]),
-             ("start", ["sudo", "sh", "-c", f"cp {folder / sh.SERVICE} /etc/systemd/system/ && systemctl "
-                                            "daemon-reload && systemctl enable --now emporia-signer"])]
+             ("start", ["sudo", "sh", "-c", _service_install_command(folder / sh.SERVICE, "emporia-signer")])]
     runnable = systemd and bool(shutil.which("sudo"))
     if _host_steps(steps, "Run these now (sudo asks for your password)?" if runnable else "",
                    "1. On this machine, as a person with sudo:"):
@@ -2275,7 +2275,6 @@ def _signer_alerts(args: argparse.Namespace) -> int:
 
 def _signer_audit(name: str = "") -> int:
     """What the signer signed, refused and held for approval — newest last."""
-    import json as _json
 
     from emporia import signer
     path = signer.signer_dir() / "audit.jsonl"
@@ -3116,9 +3115,12 @@ def cmd_agent_secure(name: str) -> int:
     server's entry becomes `${NAME}`, filled from the .env), and both files
     owner-only. Names are printed, never values. Restart the gateway after."""
     root = profiles_root()
-    targets = sorted(p.parent for p in root.glob("*/config.yaml")) if name == "all" else [root / name]
+    # `all` is every Emporia agent profile (an `emporia` MCP server), never a profile that merely lives there
+    # and never the Hermes root.
+    targets = ([p for p, _ in _agent_profiles(root) if p != root.parent] if name == "all" else [root / name])
     if not targets or not (targets[0] / "config.yaml").exists():
-        print(f"agent secure: no profile {name!r} under {root}")
+        print(f"agent secure: no profile {name!r} under {root}" if name != "all"
+              else f"agent secure: no profile under {root} has the Emporia plugin")
         return 1
     any_moved = False
     for profile in targets:
@@ -6151,6 +6153,13 @@ def _audit_text(value, limit: int = 300) -> str:
     sequences replaced (printable ASCII only), so it cannot forge or hide lines on the terminal."""
     from emporia.agent_wallet import plain_text
     return plain_text(value, limit)
+
+
+def _service_install_command(unit_file: Path, service: str) -> str:
+    """The `sh -c` text that installs and starts a systemd unit, the path quoted (it may hold spaces or shell
+    characters, and this runs under sudo)."""
+    return (f"cp {shlex.quote(str(unit_file))} /etc/systemd/system/ && systemctl daemon-reload "
+            f"&& systemctl enable --now {shlex.quote(service)}")
 
 
 def _approval_phrase(env: dict[str, str]) -> str:

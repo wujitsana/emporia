@@ -1,7 +1,6 @@
 """Signer/installer audit fixes (SI-1, SI-3, SI-5, SI-7, SI-8, SI-10)."""
 import os
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -151,6 +150,7 @@ def test_spend_ledger_corrupt_file_refuses(tmp_path):
     path.write_text("{not json")
     with pytest.raises(w.AgentWalletError):
         w._read_ledger_strict(path)
+    assert w._read_ledger_strict(tmp_path / "missing.json") == []
 
 
 def test_agent_secure_all_only_touches_emporia_profiles(tmp_path, monkeypatch):
@@ -168,4 +168,6 @@ def test_agent_secure_all_only_touches_emporia_profiles(tmp_path, monkeypatch):
 
 
 def test_quoted_sudo_paths():
-    assert cli._sudo_install_command(Path("/a b/x; rm"), "u.service").count("'") >= 2
+    import shlex
+    cmd = cli._service_install_command(Path("/a b/x; rm"), "emporia-signer")
+    assert shlex.split(cmd)[:2] == ["cp", "/a b/x; rm"]
