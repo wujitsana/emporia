@@ -93,6 +93,14 @@ async def export_games(module: str = "", since: str = "", limit: int = Query(50)
     `module`: one module type; `since`: only games that ended after this ISO time (pass the
     `X-Next-Since` of the last page to continue); `limit`: at most this many (capped)."""
     limit = rs._clamp_limit(limit)
+    from emporia.routes.standing import cached_public
+    lines, last = await cached_public(("games_export", module, since, limit), lambda: _export_lines(module, since, limit))
+    return Response("".join(f"{x}\n" for x in lines), media_type=NDJSON,
+                    headers={"X-Next-Since": last or "", "X-Export-Format": game_export.FORMAT,
+                             "X-Export-Count": str(len(lines))})
+
+
+def _export_lines(module: str, since: str, limit: int) -> tuple[list[str], str]:
     marks = ",".join("?" * len(game_module_types())) or "NULL"
     q, params = f"SELECT * FROM sessions WHERE status = 'completed' AND module_type IN ({marks})", list(game_module_types())
     if module:
@@ -113,6 +121,4 @@ async def export_games(module: str = "", since: str = "", limit: int = Query(50)
         last = s["updated_at"]
         if (line := line_of(s)) is not None:
             lines.append(json.dumps(line, sort_keys=True, default=str))
-    return Response("".join(f"{x}\n" for x in lines), media_type=NDJSON,
-                    headers={"X-Next-Since": last or "", "X-Export-Format": game_export.FORMAT,
-                             "X-Export-Count": str(len(lines))})
+    return lines, last

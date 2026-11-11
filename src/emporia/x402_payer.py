@@ -34,6 +34,8 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+import re
 import secrets
 import time
 from typing import Any
@@ -48,6 +50,9 @@ except ModuleNotFoundError as exc:  # pragma: no cover - exercised by the import
         "'x402' extra: `uv sync --extra x402` (or `pip install 'emporia[x402]'`). "
         "The relay itself never signs, so its image deliberately omits it."
     ) from exc
+
+
+MAX_TIMEOUT_SECONDS = 3600   # relay audit F8: the longest validity window this client will sign
 
 
 class X402PayerError(Exception):
@@ -204,6 +209,28 @@ def build_payment_payload(
         raise X402PayerError(
             "requirement is missing asset/payTo/amount — nothing to authorize"
         )
+
+    # Relay audit F8: the relay names the token in its 402, but only the known USDC of this network is
+    # ever signed for (the person's own EMPORIA_X402_ASSET_<NETWORK> may name another), and the
+    # authorization may not stay valid longer than MAX_TIMEOUT_SECONDS.
+    from emporia import networks as _networks
+    known = _networks.NETWORKS.get(network)
+    allowed = {known.usdc.lower()} if known and known.usdc else set()
+    own = os.getenv("EMPORIA_X402_ASSET_" + re.sub(r"[:-]", "_", network.upper()), "").strip().lower()
+    if own:
+        allowed.add(own)
+    if str(asset).lower() not in allowed:
+        raise X402PayerError(
+            f"refusing to sign: the relay asked for token {asset!r} on {network}, which is not the "
+            f"USDC contract this client knows for that network")
+    try:
+        timeout = int(requirement.get("maxTimeoutSeconds") or 0)
+    except (TypeError, ValueError) as exc:
+        raise X402PayerError("requirement's maxTimeoutSeconds is not a number") from exc
+    if timeout > MAX_TIMEOUT_SECONDS:
+        raise X402PayerError(
+            f"refusing to sign: the authorization would stay valid {timeout} s "
+            f"(the most this client signs is {MAX_TIMEOUT_SECONDS} s)")
 
     from emporia.operator_signer import as_evm_signer
     signer = as_evm_signer(private_key)      # P293: a key here, or the signer's back end

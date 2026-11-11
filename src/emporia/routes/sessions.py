@@ -621,6 +621,7 @@ async def post_game_chat(session_id: str, req: GameChatRequest, request: Request
     content = (req.content or "").strip()
     _check_chat(s, caller, content)
     rs._enforce_agent_rate_limit(caller)
+    rs._charge_write_bytes(caller, len(content.encode("utf-8")))
     await rs._assert_payload_safe_counted({"content": content, "tags": req.tags, "label": req.label})
     extra: dict[str, Any] = {}
     if not rs.session_sealed(s):

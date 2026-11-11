@@ -250,6 +250,7 @@ def health(conn, window_s: int) -> dict[str, Any]:
         "started_at": datetime.fromtimestamp(STARTED_AT, UTC).isoformat(timespec="seconds"),
         "uptime_s": int(time.time() - STARTED_AT),
         "db_bytes": size,
+        "data_bytes": rs.relay_data_bytes(), "data_cap_bytes": rs.max_data_bytes(),   # db + wal + logs vs EMPORIA_MAX_DATA_GB
         "last_backup": ({"name": last.name, "bytes": last.stat().st_size,
                          "at": datetime.fromtimestamp(last.stat().st_mtime, UTC).isoformat(timespec="seconds"),
                          "kind": "operator" if ".operator-" in last.name else "before upgrade"}

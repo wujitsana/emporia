@@ -2743,6 +2743,13 @@ class AgentRegistry:
                 # left to the unique index so the message names the actual
                 # conflict instead of surfacing an IntegrityError.
                 derived_stable_id = stable_id_for(public_key_hex)
+                # Relay audit F5: an agent the operator removed (`emporia relay remove`) stays out. Kept in
+                # access_removals under the key's stable id; an agent's own leave writes no such row.
+                held = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?",
+                                    (agent_id,)).fetchone()
+                if conn.execute("SELECT 1 FROM access_removals WHERE resource_type = 'relay' AND agent_id = ?",
+                                ((held["stable_id"] if held and held["stable_id"] else derived_stable_id),)).fetchone():
+                    raise ValueError("This relay's operator removed that agent; it cannot register here again.")
                 if not existing_row:
                     if why := _handle_lookalike_problem(conn, agent_id):
                         raise ValueError(why)
@@ -3381,11 +3388,44 @@ async def _assert_payload_safe_counted(payload: dict[str, Any]) -> None:
         raise
 
 
+AUDIT_LOG_MAX_BYTES = 50 * 1024 * 1024    # one day's file rolls to .1 .2 .3 past this
+AUDIT_LOG_KEEP = 3
+AUDIT_LOG_KEEP_DAYS = 30
+_AUDIT_LOCK = threading.Lock()
+_AUDIT_PRUNED_DAY = [""]
+
+
+def _roll_audit_file(path: Path) -> None:
+    """Size-based rotation: path -> path.1 -> path.2 -> path.3 (the oldest is dropped)."""
+    for n in range(AUDIT_LOG_KEEP, 0, -1):
+        src = path if n == 1 else Path(f"{path}.{n - 1}")
+        if src.exists():
+            os.replace(src, Path(f"{path}.{n}"))
+
+
+def _prune_audit_days(today: str) -> None:
+    """Once per day: delete audit files older than AUDIT_LOG_KEEP_DAYS days."""
+    if _AUDIT_PRUNED_DAY[0] == today:
+        return
+    _AUDIT_PRUNED_DAY[0] = today
+    cutoff = time.time() - AUDIT_LOG_KEEP_DAYS * 86400
+    for old in LOG_DIR.glob("messages_*.jsonl*"):
+        with suppress(OSError):
+            if old.stat().st_mtime < cutoff:
+                old.unlink()
+
+
 def _write_audit_line(entry: dict[str, Any]) -> None:
     date_str = datetime.now(UTC).strftime("%Y-%m-%d")
     path = LOG_DIR / f"messages_{date_str}.jsonl"
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, sort_keys=True) + "\n")
+    line = json.dumps(entry, sort_keys=True) + "\n"
+    with _AUDIT_LOCK:
+        with suppress(OSError):
+            if path.exists() and path.stat().st_size + len(line) > AUDIT_LOG_MAX_BYTES:
+                _roll_audit_file(path)
+            _prune_audit_days(date_str)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line)
 
 
 # ============================================================================
@@ -3783,11 +3823,114 @@ async def limit_request_size(request: Request, call_next):
     return await call_next(request)
 
 
-def _require_content_within_limit(content: str, field: str = "content") -> None:
+# Relay audit F3: ordinary writes at the per-field limit can fill the disk. Two guards on every
+# content-bearing write: a per-agent daily byte budget (in memory, resets on restart) and a free-disk
+# watermark on the database's filesystem. MAX_CONTENT_BYTES itself stays (sealed rooms and labs need it).
+_DAILY_WRITE_BUDGET: dict[str, tuple[str, int]] = {}    # agent_id -> (UTC day, bytes so far)
+_DAILY_WRITE_TOTAL: list = ["", 0, False]                # [UTC day, bytes so far (all agents), warned]
+_DISK_CACHE: list[float] = [0.0, float("inf")]           # [checked at, free MB]
+_DISK_CACHE_SECONDS = 10.0
+_DATA_CACHE: list[float] = [0.0, 0.0, -1.0]              # [checked at, bytes the relay's own data takes, warned at]
+_DATA_CACHE_SECONDS = 30.0
+
+
+def relay_data_bytes() -> int:
+    """The relay's own data: the database file, its -wal, and everything under the log dir. Cached ~30 s."""
+    now = time.monotonic()
+    if now - _DATA_CACHE[0] > _DATA_CACHE_SECONDS:
+        total = 0
+        db = Path(DATABASE_PATH)
+        for f in (db, Path(f"{db}-wal")):
+            with suppress(OSError):
+                total += f.stat().st_size
+        with suppress(OSError):
+            for f in LOG_DIR.rglob("*"):
+                with suppress(OSError):
+                    if f.is_file():
+                        total += f.stat().st_size
+        _DATA_CACHE[:2] = [now, float(total)]
+    return int(_DATA_CACHE[1])
+
+
+def max_data_bytes() -> int:
+    """EMPORIA_MAX_DATA_GB, default 40; 0 turns the cap off."""
+    return env_int("MAX_DATA_GB", 40) * 1024 ** 3
+
+
+def _daily_write_budget_bytes() -> int:
+    """EMPORIA_DAILY_WRITE_MB_PER_AGENT, default 10: the hard cap on one account's content per UTC day."""
+    return env_int("DAILY_WRITE_MB_PER_AGENT", 10) * 1024 * 1024
+
+
+def _daily_write_warn_bytes() -> int:
+    """EMPORIA_DAILY_WRITE_WARN_GB, default 2: every agent together, per UTC day. Names an event, refuses nothing."""
+    return env_int("DAILY_WRITE_WARN_GB", 2) * 1024 ** 3
+
+
+def _require_disk_free() -> None:
+    """507 when the database's filesystem has less than EMPORIA_MIN_FREE_DISK_MB free (default 15360, i.e. 15 GB).
+    0 turns the check off. disk_usage is cached for ~10 s."""
+    import shutil
+
+    cap = max_data_bytes()
+    if cap > 0 and relay_data_bytes() > cap * 0.8 and _DATA_CACHE[2] != _DATA_CACHE[0]:
+        _DATA_CACHE[2] = _DATA_CACHE[0]       # once per measurement, not once per write
+        logger.warning("data_near_cap", extra={"data_gb": round(relay_data_bytes() / 1024 ** 3, 2),
+                                               "cap_gb": cap // 1024 ** 3})
+    if cap > 0 and relay_data_bytes() > cap:
+        logger.error("data_cap_reached", extra={"data_gb": round(relay_data_bytes() / 1024 ** 3, 2),
+                                                "cap_gb": cap // 1024 ** 3})
+        raise HTTPException(507, f"This relay's data is over its {cap // 1024 ** 3} GB limit "
+                                 f"(EMPORIA_MAX_DATA_GB) and is not taking new content right now.")
+    floor = env_int("MIN_FREE_DISK_MB", 15360)
+    if floor <= 0:
+        return
+    now = time.monotonic()
+    if now - _DISK_CACHE[0] > _DISK_CACHE_SECONDS:
+        try:
+            probe = Path(DATABASE_PATH).resolve().parent
+            _DISK_CACHE[1] = shutil.disk_usage(probe).free / (1024 * 1024)
+        except OSError:
+            _DISK_CACHE[1] = float("inf")     # cannot tell: do not lock everyone out
+        _DISK_CACHE[0] = now
+    if _DISK_CACHE[1] < floor:
+        logger.error("disk_low", extra={"free_mb": int(_DISK_CACHE[1]), "floor_mb": floor})
+        raise HTTPException(507, "This relay is low on disk space and is not taking new content right now.")
+
+
+def _charge_write_bytes(caller: str | None, size: int) -> None:
+    """Count `size` bytes of content against `caller`'s daily budget (429 over it) and check the disk."""
+    _require_disk_free()
+    if not caller:
+        return
+    day = datetime.now(UTC).strftime("%Y-%m-%d")
+    seen_day, used = _DAILY_WRITE_BUDGET.get(caller, (day, 0))
+    if seen_day != day:
+        used = 0
+    budget = _daily_write_budget_bytes()
+    if used + size > budget:
+        RATE_LIMIT_HITS["agent"] += 1
+        raise HTTPException(
+            429, f"Daily write budget reached — {budget // (1024 * 1024)} MB of content per agent per day. "
+                 f"It resets at 00:00 UTC.")
+    _DAILY_WRITE_BUDGET[caller] = (day, used + size)
+    # The relay-wide day total never refuses anyone: it only names the day once it passes the warning line.
+    if _DAILY_WRITE_TOTAL[0] != day:
+        _DAILY_WRITE_TOTAL[:] = [day, 0, False]
+    _DAILY_WRITE_TOTAL[1] += size
+    warn = _daily_write_warn_bytes()
+    if warn > 0 and not _DAILY_WRITE_TOTAL[2] and _DAILY_WRITE_TOTAL[1] > warn:
+        _DAILY_WRITE_TOTAL[2] = True
+        logger.warning("write_volume_high", extra={"day": day, "written_mb": _DAILY_WRITE_TOTAL[1] // (1024 * 1024),
+                                                   "warn_gb": warn // 1024 ** 3})
+
+
+def _require_content_within_limit(content: str, field: str = "content", caller: str | None = None) -> None:
     """P18-1: bound one text field, in bytes. Separate from the request-size
     middleware because a body can sit under the general ceiling while its content
     field is still far past what a message should be — and because a 413 that names
-    nothing is a poor answer to "why was my message rejected"."""
+    nothing is a poor answer to "why was my message rejected". With `caller`, the size also
+    counts against that agent's daily byte budget (relay audit F3)."""
     from emporia.wire import MAX_CONTENT_BYTES
 
     size = len(content.encode("utf-8"))
@@ -3798,6 +3941,7 @@ def _require_content_within_limit(content: str, field: str = "content") -> None:
             f"On an encrypted thread this budget covers the ciphertext, which runs "
             f"larger than the plaintext it carries.",
         )
+    _charge_write_bytes(caller, size)
 
 
 def _require_payload_content_within_limit(payload: dict[str, Any]) -> None:

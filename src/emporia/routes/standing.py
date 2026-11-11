@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 
 from emporia import operators, progression, relay_modules
 from emporia import relay_server as rs
@@ -24,6 +25,34 @@ from emporia.module_sdk import SessionState, get_interaction_module
 from emporia.standing import compute_standings, contest_sql, game_module_types, wins_sql
 
 router = APIRouter()
+
+# Relay audit F9: the public computed endpoints recompute from the whole record set and need no sign-in.
+# Each answer is kept for EMPORIA_PUBLIC_CACHE_SECONDS (default 30; 0 turns it off), keyed by its query
+# parameters, and computed off the event loop. Only answers that are the same for every caller are kept.
+_PUBLIC_CACHE: dict[tuple, tuple[float, Any]] = {}
+_PUBLIC_CACHE_MAX = 512
+
+
+def _public_cache_seconds() -> float:
+    try:
+        return max(0.0, float(os.getenv("EMPORIA_PUBLIC_CACHE_SECONDS", "").strip() or 30))
+    except ValueError:
+        return 30.0
+
+
+async def cached_public(key: tuple, compute):
+    """`compute()` (sync) off the event loop, its answer kept for the cache window. An exception is not kept."""
+    ttl = _public_cache_seconds()
+    now = time.monotonic()
+    if ttl > 0 and (hit := _PUBLIC_CACHE.get(key)) and now - hit[0] < ttl:
+        return hit[1]
+    value = await run_in_threadpool(compute)
+    if ttl > 0:
+        if len(_PUBLIC_CACHE) >= _PUBLIC_CACHE_MAX:
+            for k in [k for k, (t, _) in _PUBLIC_CACHE.items() if now - t >= ttl] or [next(iter(_PUBLIC_CACHE))]:
+                _PUBLIC_CACHE.pop(k, None)
+        _PUBLIC_CACHE[key] = (now, value)
+    return value
 
 
 @router.get("/leaderboard")
@@ -37,6 +66,10 @@ async def leaderboard(limit: int = 25, module_type: str | None = None):
     check as an empty one.
     """
     limit = rs._clamp_limit(limit)
+    return await cached_public(("leaderboard", limit, module_type), lambda: _leaderboard_body(limit, module_type))
+
+
+def _leaderboard_body(limit: int, module_type: str | None) -> dict:
     # P134: games only. Every settlement row used to count — a room's paid
     # entry is a settlement naming its creator, and a service sale names its
     # seller — so selling things ranked an agent as a winner.
@@ -835,12 +868,14 @@ async def agent_quests(agent_id: str, request: Request):
     with rs.DB_LOCK, rs.get_db() as conn:
         if conn.execute("SELECT 1 FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone() is None:
             raise HTTPException(404, f"no agent {agent_id!r} on this relay")
-    body = quests_body(agent_id)
-    from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
-    signed = {**body, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
-              "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "quests", [body]))}
+    def _signed() -> dict:
+        body = quests_body(agent_id)
+        from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
+        return {**body, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
+                "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "quests", [body]))}
+    signed = dict(await cached_public(("quests", agent_id), _signed))   # a copy: `due` below is the caller's alone
     if rs._dashboard_agent_id(request) == agent_id:
-        signed["due"] = _due(agent_id)
+        signed["due"] = await run_in_threadpool(_due, agent_id)
     return signed
 
 
@@ -884,6 +919,10 @@ async def agent_sheet(agent_id: str):
     agent's record (P182), never their content. Calls: `insight`, the agent's calls against
     the rating's own forecast (`progression:v1/insight`), a line of its own."""
     _sheets_on()
+    return await cached_public(("sheet", agent_id), lambda: _sheet_body(agent_id))
+
+
+def _sheet_body(agent_id: str) -> dict:
     with rs.DB_LOCK, rs.get_db() as conn:
         reg = conn.execute("SELECT registered_at FROM authorized_agents WHERE agent_id = ?",
                            (agent_id,)).fetchone()
