@@ -4855,3 +4855,9 @@ Branch `security-followups-2`; each proved by a test that fails without it (`tes
 | P7. MetaMask's Guard Mode check was cached per back-end object, and the signer builds one per request, so every signature also ran `mm wallet trading-mode get` | Remembered across requests for 5 minutes, per back-end name, a digest of its settings and secrets (a back end set up again is asked afresh) and wallet; only a Guard Mode answer is kept, under its own lock (`test_guard_mode_is_checked_once_per_interval_across_requests`) |
 
 Limits: on a one-user testnet set-up the verdict key's folder is readable by that user, so an agent with a terminal on the `local` backend could still reach it by a disguised command (the key guard is not a wall); with the signer as its own OS user it cannot. Who sets `EMPORIA_OPERATOR_VERDICT_KEY` is whoever controls the relay's `.env` — the relay's host, as for `EMPORIA_AGENT_ID`. Security incidents, which award nothing, still take the operator's sign-in alone. The guard's `cd` handling follows one directory per `cd` and does not evaluate shell variables or subshells.
+
+## Relay audit, 2026-11-11
+
+| Finding | Fix |
+|---|---|
+| F1. `POST /messages` took any `type` to any name. The recipient's bridge read `your_turn`, `funding_required`, `session_completed`, `kicked_from_room` and any unknown type in the relay's own voice, admitted in every wake mode; a fresh `session_id` per message was a new conversation each time, past every thread limit. The sender's signature proved who sent it, not that an agent may send that kind | The route is gone (nothing used it; the live relay never stored one), with `GET /messages`, the SDK's `send_message`/`get_messages` and `log_message`. The bridge drops any frame that carries `from_agent` under a kind other than an offer's, so an older relay cannot reopen it, keys offers by sender and counts them toward the hourly talk cap (`tests/test_agent_message_frames.py`) |
