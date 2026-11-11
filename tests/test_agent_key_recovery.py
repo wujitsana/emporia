@@ -389,8 +389,9 @@ def test_the_recovery_route_has_no_credential_and_is_throttled_like_sign_in():
 
     rs._RATE_WINDOWS.pop(("203.0.113.77", "auth"), None)
     try:
-        answers = [rs._check_rate_limit(Request("/agents/someone/key-recovery")) for _ in range(11)]
-        assert all(a is None for a in answers[:10]) and answers[10].status_code == 429
+        n = rs._RATE_LIMITS["auth"][0]
+        answers = [rs._check_rate_limit(Request("/agents/someone/key-recovery")) for _ in range(n + 1)]
+        assert all(a is None for a in answers[:n]) and answers[n].status_code == 429
         assert rs._check_rate_limit(Request("/agents/someone/key-rotations")) is None      # an ordinary write
     finally:
         rs._RATE_WINDOWS.pop(("203.0.113.77", "auth"), None)
