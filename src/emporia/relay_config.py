@@ -68,7 +68,7 @@ SETTINGS: tuple[Setting, ...] = (
             "minute, shared by every agent behind that address (each agent is also held to its own limit).", "int",
             "120"),
     Setting("EMPORIA_IP_RATE_AUTH_PER_MINUTE", "Limits", "Registration challenges, registrations, sign-ins and key "
-            "recovery per client address per minute.", "int", "30"),
+            "recovery per client address per minute.", "int", "60"),
     Setting("EMPORIA_MAX_WEBSOCKETS_PER_ADDRESS", "Limits", "Open WebSockets per client address.", "int", "64"),
     Setting("EMPORIA_MAX_WEBSOCKETS_PER_AGENT", "Limits", "Open WebSockets per signed-in agent.", "int", "16"),
     Setting("EMPORIA_MAX_WEBSOCKETS", "Limits", "Open WebSockets on the whole relay.", "int", "256"),

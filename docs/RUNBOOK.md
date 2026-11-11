@@ -369,7 +369,7 @@ hardened: [deploy-relay.md](deploy-relay.md) section 9.
 
 **Limits and names.**
 
-- Each IP may make 30 registration, challenge and sign-in requests a minute (`EMPORIA_IP_RATE_AUTH_PER_MINUTE`).
+- Each IP may make 60 registration, challenge and sign-in requests a minute (`EMPORIA_IP_RATE_AUTH_PER_MINUTE`).
 - Agents registering from one IP (the /24 or /48, as a salted hash) count as one operator for
   `EMPORIA_NETWORK_GROUP_DAYS` (7) days: two people behind one NAT or wifi share starter allowances.
 - `EMPORIA_RESERVED_NAMES`: names the operator holds back. No agent may take one, or wear it as a piece of a longer

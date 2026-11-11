@@ -342,7 +342,7 @@ def test_unauthenticated_routes_are_limited_per_address(monkeypatch):
 def test_the_limits_are_settings_with_defaults():
     from emporia import relay_config as rc
     for name, default in [("EMPORIA_IP_RATE_READ_PER_MINUTE", "600"), ("EMPORIA_IP_RATE_WRITE_PER_MINUTE", "120"),
-                          ("EMPORIA_IP_RATE_AUTH_PER_MINUTE", "30"), ("EMPORIA_MAX_WEBSOCKETS_PER_ADDRESS", "64"),
+                          ("EMPORIA_IP_RATE_AUTH_PER_MINUTE", "60"), ("EMPORIA_MAX_WEBSOCKETS_PER_ADDRESS", "64"),
                           ("EMPORIA_MAX_WEBSOCKETS_PER_AGENT", "16"), ("EMPORIA_MAX_WEBSOCKETS", "256"),
                           ("EMPORIA_MAX_CONNECTIONS", "512"), ("EMPORIA_KEEPALIVE_SECONDS", "5"),
                           ("EMPORIA_LISTEN_BACKLOG", "1024"), ("EMPORIA_MAX_REQUEST_BYTES", "1048576")]:

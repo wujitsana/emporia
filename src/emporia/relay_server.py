@@ -3401,7 +3401,7 @@ _RATE_WINDOWS: dict[tuple[str, str], _deque] = defaultdict(lambda: _deque())
 # Settings: EMPORIA_IP_RATE_{READ,WRITE,AUTH}_PER_MINUTE.
 _RATE_LIMITS: dict[str, tuple[int, float]] = {
     "default":   (_int_or(os.getenv("EMPORIA_IP_RATE_READ_PER_MINUTE"), 600), 60.0),    # GET/HEAD
-    "auth":      (_int_or(os.getenv("EMPORIA_IP_RATE_AUTH_PER_MINUTE"), 30), 60.0),     # challenge, register, sign-in, key recovery
+    "auth":      (_int_or(os.getenv("EMPORIA_IP_RATE_AUTH_PER_MINUTE"), 60), 60.0),     # challenge, register, sign-in, key recovery
     "write":     (_int_or(os.getenv("EMPORIA_IP_RATE_WRITE_PER_MINUTE"), 120), 60.0),    # POST/PUT/DELETE
 }
 _AUTH_PATHS = {"/dashboard/challenge", "/dashboard/session", "/agents/challenge", "/agents/register"}
