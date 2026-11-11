@@ -414,6 +414,10 @@ async def subscribe_agora_topic(slug: str, req: rs.AgoraSubscribeRequest, reques
         entry_fee = row["entry_fee_cents"] if "entry_fee_cents" in row.keys() else 0
         topic_id = row["topic_id"]
         creator_id = row["creator_id"]
+        if gate != "paid_invite" and not identity_verified:
+            # Relay audit 2, R2-1: a payment header skips the sign-in check so a payment can stand in for
+            # it, but an open or invite topic takes no payment — nothing would prove who is subscribing.
+            raise HTTPException(401, "Authentication required: this topic takes no payment, so sign in")
         if row["encrypted"]:
             # as joining an encrypted room: no key published would leave every post unreadable to this member
             rs._require_encryption_keys_published([req.agent_id])

@@ -1508,7 +1508,13 @@ def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, network
     # signed. Which one is paid, sign_exact checks again (payee.check) when it picks.
     accepts = (body.get("x402") or {}).get("accepts") or []
     reasons = []
+    allowed = set(_pays_on())
     for req in accepts:
+        # Client audit M2: only an entry this wallet would sign is checked, and only the checked entry is
+        # signed below — otherwise a relay could list a decoy at the signed fee and have another one paid.
+        if not isinstance(req, dict) or req.get("scheme") != "exact" or \
+                (network and req.get("network") != network) or req.get("network") not in allowed:
+            continue
         family = x402_network_family(req.get("network") or "") or "evm"
         try:
             payee.check(body.get("payee"), family, str(req.get("payTo") or ""), expected_agents=payees)
@@ -1522,7 +1528,8 @@ def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, network
         break
     else:
         raise agent_wallet.AgentWalletError("not paid: " + ("; ".join(dict.fromkeys(reasons)) or "nothing offered"))
-    headers = agent_wallet.sign_entry(aid, body, network=network)   # + the relay's fee leg, on a paid entry
+    checked = {**body, "x402": {**(body.get("x402") or {}), "accepts": [req]}}
+    headers = agent_wallet.sign_entry(aid, checked, network=req.get("network") or network)   # + the fee leg
     return _bearer_request(method, url, agent_id=aid, headers=headers, **kwargs)
 
 
@@ -3105,9 +3112,26 @@ def unblock_dm_sender(sender: str, agent_id: str = "") -> dict[str, Any]:
 def _archive_dir(relay: str) -> Path:
     from emporia.addresses import host_of
     from emporia.identity import KEY_DIR
-    d = KEY_DIR / "archive" / host_of(relay).replace(":", "_")
+    host = host_of(relay).replace(":", "_")
+    if not _ARCHIVE_NAME.fullmatch(host) or host.startswith("."):
+        raise ValueError(f"cannot archive a relay named {host!r}")
+    d = KEY_DIR / "archive" / host
     d.mkdir(mode=0o700, parents=True, exist_ok=True)
     return d
+
+
+#: Archive file names come from ids the relay sends; the archive sits next to the keys. An id that is
+#: not a plain name is skipped, so a relay can never point a write at another file there.
+_ARCHIVE_NAME = re.compile(r"[A-Za-z0-9_.-]{1,128}")
+_ARCHIVE_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
+
+
+def _archive_file(root: Path, kind: str, item_id: Any, suffix: str) -> Path | None:
+    """`root/kind/<id><suffix>`, or None when the relay's id is not a plain name."""
+    if not isinstance(item_id, str) or not _ARCHIVE_ID.fullmatch(item_id):
+        return None
+    path = root / kind / f"{item_id}{suffix}"
+    return path if path.resolve().parent == (root / kind).resolve() else None
 
 
 def _append_new(path: Path, rows: list[dict[str, Any]], key: str) -> int:
@@ -3181,18 +3205,20 @@ def archive_now(agent_id: str = "") -> dict[str, Any]:
         threads = _bearer_request("get", f"{_base()}/dm", agent_id=aid, params={"agent_id": aid, "limit": 200},
                                   timeout=20)
         for t in (threads.json() if threads.status_code == 200 else []):
-            path = root / "dms" / f"{t['thread_id']}.jsonl"
+            if (path := _archive_file(root, "dms", t.get("thread_id"), ".jsonl")) is None:
+                continue
             path.parent.mkdir(mode=0o700, exist_ok=True)
-            msgs = _pages(f"/dm/{t['thread_id']}/messages", aid, {"agent_id": aid}, _kept_ids(path, "message_id"))
+            msgs = _pages(f"/dm/{_seg(t['thread_id'])}/messages", aid, {"agent_id": aid}, _kept_ids(path, "message_id"))
             counts["dm_messages"] = counts.get("dm_messages", 0) + _append_new(
                 path, [{**m, "thread_with": t.get("other_agent")} for m in msgs], "message_id")
         rooms = _bearer_request("get", f"{_base()}/rooms", agent_id=aid, params={"limit": 200}, timeout=20)
         for room in (rooms.json().get("rooms", []) if rooms.status_code == 200 else []):
             if aid not in (room.get("members") or []) and room.get("creator_id") != aid:
                 continue
-            path = root / "rooms" / f"{room['room_id']}.jsonl"
+            if (path := _archive_file(root, "rooms", room.get("room_id"), ".jsonl")) is None:
+                continue
             path.parent.mkdir(mode=0o700, exist_ok=True)
-            msgs = _pages(f"/rooms/{room['room_id']}/messages", aid, {}, _kept_ids(path, "message_id"))
+            msgs = _pages(f"/rooms/{_seg(room['room_id'])}/messages", aid, {}, _kept_ids(path, "message_id"))
             counts["room_messages"] = counts.get("room_messages", 0) + _append_new(path, msgs, "message_id")
         posts = _bearer_request("get", f"{_base()}/agents/{_seg(aid)}/posts", agent_id=aid, params={"limit": 200}, timeout=20)
         if posts.status_code == 200:
@@ -3201,7 +3227,8 @@ def archive_now(agent_id: str = "") -> dict[str, Any]:
                                    params={"limit": 200}, timeout=20)
         (root / "sessions").mkdir(mode=0o700, exist_ok=True)
         for sess in (sessions.json().get("sessions", []) if sessions.status_code == 200 else []):
-            path = root / "sessions" / f"{sess['session_id']}.json"
+            if (path := _archive_file(root, "sessions", sess.get("session_id"), ".json")) is None:
+                continue
             done = path.exists() and json.loads(path.read_text()).get("session", {}).get("status") in (
                 "completed", "abandoned")
             if done:
@@ -4899,7 +4926,12 @@ def _agent_dir(aid: str, kind: str, session_id: str, suffix: str):
     from emporia.identity import KEY_DIR
     d = KEY_DIR / kind
     d.mkdir(mode=0o700, parents=True, exist_ok=True)
-    return d / f"{aid}.{''.join(c for c in session_id if c.isalnum() or c == '_')}{suffix}"
+    # Both parts are cleaned: `aid` can come from a tool argument, and a name with `/` or `..` would
+    # otherwise put the file outside this folder (client audit M5).
+    clean = "".join(c for c in str(aid) if c.isalnum() or c in "_-")
+    if not clean:
+        raise ValueError(f"not an agent name: {aid!r}")
+    return d / f"{clean}.{''.join(c for c in session_id if c.isalnum() or c == '_')}{suffix}"
 
 
 def _keep_receipt(aid: str, session_id: str, receipt: dict) -> None:

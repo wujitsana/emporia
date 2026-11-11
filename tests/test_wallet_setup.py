@@ -25,8 +25,9 @@ def test_networks_have_names_and_short_forms():
 # -- the agent chooses the network -------------------------------------------
 
 def _challenge(*nets):
+    # The network's own USDC: the payer signs for no other token (relay audit F8).
     accepts = [{"scheme": "exact", "network": n, "amount": "250000", "payTo": "0x" + "11" * 20,
-                "maxTimeoutSeconds": 60, "asset": "0x" + "22" * 20,
+                "maxTimeoutSeconds": 60, "asset": networks.NETWORKS[n].usdc if n in networks.NETWORKS else "0x" + "22" * 20,
                 "extra": {"name": "USDC", "version": "2"}} for n in nets]
     return {"x402": {"x402Version": 2, "resource": {"url": "http://relay/r"}, "accepts": accepts},
             "payee": _PAYEE}

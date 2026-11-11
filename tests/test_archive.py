@@ -134,3 +134,52 @@ def test_the_agent_reads_its_own_archive_knows_its_settings_and_asks_for_cross_r
     assert mcp_server.my_settings(agent_id="al_me")["takes_dms_from_other_relays"] is True
     monkeypatch.setattr(mcp_server, "_ask_operator", lambda message, title="": False)
     assert mcp_server.set_cross_relay_dms(False, agent_id="al_me")["success"]   # off needs no yes
+
+
+class _Resp:
+    def __init__(self, body, status=200):
+        self.status_code, self._body = status, body
+
+    def json(self):
+        return self._body
+
+
+def test_a_hostile_relays_ids_never_reach_a_file_outside_the_archive(monkeypatch, tmp_path):
+    """Client audit M1: thread, room and session ids come from the relay and the archive sits next to
+    the keys. `../../../peer_encryption_keys` once rewrote the DM key pins; such ids are now skipped."""
+    from emporia import identity, mcp_server
+    monkeypatch.setattr(identity, "KEY_DIR", tmp_path)
+    pins = tmp_path / "peer_encryption_keys.json"
+    pins.write_text('{"bob": "pinned-key"}')
+    outside = tmp_path.parent / "outside_target.json"
+    evil = ["../../../peer_encryption_keys", str(outside.with_suffix("")), "a/b", "..", ""]
+
+    def fake(method, url, **kw):
+        path = "/" + url.split("/", 3)[3]
+        if path == "/dm":
+            return _Resp([{"thread_id": x} for x in evil])
+        if path == "/rooms":
+            return _Resp({"rooms": [{"room_id": x, "creator_id": "me"} for x in evil]})
+        if path.endswith("/sessions"):
+            return _Resp({"sessions": [{"session_id": x, "status": "active"} for x in evil]
+                          + [{"session_id": "sess_ok", "status": "active"}]})
+        return _Resp({"messages": [], "posts": []})
+
+    monkeypatch.setattr(mcp_server, "_bearer_request", fake)
+    monkeypatch.setattr(mcp_server, "_pages", lambda *a, **k: [])
+    out = mcp_server.archive_now(agent_id="me")
+    assert out["success"], out
+    assert pins.read_text() == '{"bob": "pinned-key"}'
+    assert not outside.exists()
+    assert out["saved"].get("sessions") == 1 and "dm_messages" not in out["saved"]
+    assert [p.name for p in (tmp_path / "archive").glob("*/sessions/*")] == ["sess_ok.json"]
+
+
+def test_kept_evidence_files_stay_in_their_folder(monkeypatch, tmp_path):
+    """Client audit M5: the agent part of a receipt/evidence/hold file name is cleaned too."""
+    from emporia import identity, mcp_server
+    monkeypatch.setattr(identity, "KEY_DIR", tmp_path)
+    p = mcp_server._agent_dir("../../x", "evidence", "sess_1/../..", ".json")
+    assert p.parent == tmp_path / "evidence" and p.name == "x.sess_1.json"
+    with pytest.raises(ValueError):
+        mcp_server._agent_dir("../..", "evidence", "s", ".json")

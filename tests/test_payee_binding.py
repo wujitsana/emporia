@@ -210,3 +210,15 @@ def test_review_tempo_pays_no_more_than_the_signed_fee():
     with patch.object(mcp_server, "_check_payee_pinned", lambda *a, **k: None), \
          pytest.raises(payee.PayeeError, match="more than the 1.00"):
         mcp_server._tempo_paid_retry(_Resp(402, offer), "a", "post", "http://relay/rooms/r1/join", max_cents=100)
+
+
+def test_mcp_signs_only_the_entry_it_checked_against_the_signed_fee(wallet_env):  # noqa: F811
+    """Client audit M2: a decoy entry at the signed fee that this wallet would never sign, then a real
+    one at five times the fee. The decoy used to pass the check while the wallet signed the other."""
+    relay = _creator_relay("pb_decoy_owner", 100, 5_000_000)
+    accepts = relay.challenge["x402"]["accepts"]
+    decoy = {**accepts[0], "scheme": "upto", "amount": "1000000"}
+    accepts.insert(0, decoy)
+    out = _join_paying(relay, "pb_decoy_payer")
+    assert not out["success"], out
+    assert not any("PAYMENT-SIGNATURE" in c["headers"] for c in relay.calls)
