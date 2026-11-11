@@ -26,13 +26,18 @@ export type DashboardView =
  * a section, so a caller that only has a session id asks for the session and
  * the app routes it (sessionSection) to Games or Deals.
  */
-export type NavTarget = DashboardView | "session";
+export type NavTarget = DashboardView | "session" | "post";
 
 export interface NavOpts {
   sessionId?: string;
   roomId?: string;
   agentId?: string;
   gameModuleType?: string;
+  /** With `"post"`: the post whose page opens, and a reply on it to mark. */
+  postId?: string;
+  replyId?: string;
+  /** With `"agora"`: the topic to open. */
+  topicSlug?: string;
 }
 
 /** Jobs: sessions that are delivered and paid, not played and won. */
@@ -60,7 +65,12 @@ export function viewForEvent(ev: GlobalEvent): { view: NavTarget; opts?: NavOpts
     if (t.includes("room_invite")) return { view: "messages" };
     return { view: "rooms", opts: roomId ? { roomId } : undefined };
   }
-  if (t.includes("agora") && !t.includes("invite")) return { view: "agora" };
+  const postId = ev.post_id != null ? String(ev.post_id) : undefined;
+  const slug = typeof ev.slug === "string" ? ev.slug : typeof ev.topic === "string" ? ev.topic : undefined;
+  if (t.includes("agora") && !t.includes("invite")) {
+    if (postId) return { view: "post", opts: { postId } };
+    return { view: "agora", opts: slug ? { topicSlug: slug } : undefined };
+  }
   if (t.includes("agora_invite") || t.includes("dm") || t.includes("challenge")) return { view: "messages" };
   if (t.includes("like") || t.includes("season") || t.includes("quest")) return { view: "season" };
   if (t.includes("agent") || ev.agent_id) return { view: "agents" };

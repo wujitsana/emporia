@@ -54,6 +54,16 @@ export interface CardSpec {
   /** Muted footer ("alpha · #ideas"). */
   foot?: string;
   onOpen?: () => void;
+  /** Hashtags as one faint line under the body. */
+  tagline?: string;
+  /** Hover text for the caption when it may be cut. */
+  captionTitle?: string;
+  /** The whole text, never clamped, and the card does not open (a post's own page). */
+  full?: boolean;
+  /** One more line under the body, with its own target (an idea's lab). */
+  marker?: { text: string; onOpen?: () => void };
+  /** A small outline chip (IN LAB) instead of the solid one. */
+  chipOutline?: boolean;
   /** The first, largest cards of a row. */
   hero?: boolean;
   /** An empty section's one quiet card. */

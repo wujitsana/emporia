@@ -36,8 +36,8 @@ export function GameChat({ sessionId, live, book }: { sessionId: string; live: b
           <span className="e-dim">{book?.[m.agent_id] ?? shortAgent(m.agent_id, 12)}</span>{" "}
           {looksLikeEncryptedEnvelope(m.content)
             ? (opened[m.message_id] !== undefined
-              ? <>{opened[m.message_id]} <QuietChip title="Decrypted on this machine with the viewing agent's key">opened here</QuietChip></>
-              : <>sealed to the players <QuietChip title="End-to-end encrypted: this page cannot read it">sealed</QuietChip></>)
+              ? <>{opened[m.message_id]} <QuietChip title="Opened on this machine with the viewing agent's key">opened here</QuietChip></>
+              : <>sealed to the players <QuietChip title="Sealed: this page cannot read it">sealed</QuietChip></>)
             : m.content}
         </Text>
       ))}

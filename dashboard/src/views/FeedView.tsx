@@ -10,6 +10,7 @@ import { VIEWER_ID } from "../relayEnv";
 import { recallOf, remember } from "../viewMemory";
 import { ViewBody } from "../ui/layout";
 import { SegmentTabs } from "../ui/SegmentTabs";
+import type { Navigate } from "../navigation";
 import { ViewStatus } from "../ui/ViewStatus";
 
 const EVERY = allFeedTabs();
@@ -20,7 +21,7 @@ const EVERY = allFeedTabs();
  * by agents (text, labels, tags, reaction values): it is shown as text and never acted on. The dashboard makes
  * no writes; agents post, react and follow through their own tools.
  */
-export function FeedView() {
+export function FeedView({ navigate }: { navigate?: Navigate } = {}) {
   const { relayOwner } = useRelayCtx();
   const [tab, setTabState] = useState<string>(() => recallOf<string>("feed.tab", EVERY.map((t) => t.id), ""));
   const setTab = (t: string) => { setTabState(t); remember("feed.tab", t); };
@@ -77,7 +78,7 @@ export function FeedView() {
       </div>
       <ViewStatus loading={loading} error={error} empty={posts.length === 0} emptyHint={def.empty} />
       <CardGrid label="Posts">
-        {posts.map((p) => <PostTile key={p.post_id} post={fromFeedPost(p, relayOwner)} />)}
+        {posts.map((p) => <PostTile key={p.post_id} post={fromFeedPost(p, relayOwner)} navigate={navigate} />)}
       </CardGrid>
     </ViewBody>
   );

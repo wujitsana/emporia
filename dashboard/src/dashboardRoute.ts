@@ -30,7 +30,15 @@ export interface Route {
   sessionId: string | null;
   /** The Arena's lens (`#/arena/waiting`), when the route names one. */
   lens: ArenaLens | null;
+  /** The post a `#/agora/post/<id>` route names (its page), if any. */
+  postId: string | null;
+  /** The reply to mark on that page (`?reply=<id>`). */
+  replyId: string | null;
+  /** The topic a `#/agora/topics/<slug>` route names, if any (`_feed` is the subscribed-topics feed). */
+  topicSlug: string | null;
 }
+
+const ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
 
 /*
  * Where the route lives. In a browser it is the page's hash (`#/arena/games/<id>`), so
@@ -107,6 +115,13 @@ export function onRouteChange(fn: () => void): () => void {
 export function routeFromHash(hash: string = currentHash()): Route {
   const parts = hash.replace(/^#\/?/, "").split("?")[0].trim().split("/");
   const first = (parts[0] ?? "").toLowerCase();
+  const none = { postId: null, replyId: null, topicSlug: null };
+  // The post page: `#/agora/post/<post_id>[?reply=<reply_id>]`. It is a state of the Feed.
+  if (first === "agora" && (parts[1] ?? "").toLowerCase() === "post") {
+    const pid = safeDecode(parts[2] ?? "");
+    const rid = new URLSearchParams(hash.split("?")[1] ?? "").get("reply") ?? "";
+    if (ID_RE.test(pid)) return { view: "feed", sessionId: null, lens: null, postId: pid, replyId: ID_RE.test(rid) ? rid : null, topicSlug: null };
+  }
   let view: View | null = null;
   let rawId: string | undefined;
   let lens: ArenaLens | null = null;
@@ -130,9 +145,10 @@ export function routeFromHash(hash: string = currentHash()): Route {
     // The old You > Deals with no session named is Money now; a deal that names its session keeps its page.
     if (first === "you" && view === "deals" && !rawId) view = "fees";
   }
-  if (!view) return { view: "overview", sessionId: null, lens: null };
+  if (!view) return { view: "overview", sessionId: null, lens: null, ...none };
   const id = rawId ? safeDecode(rawId) : "";
-  return { view, sessionId: SESSION_ROUTES.has(view) && /^[A-Za-z0-9_.:-]{1,128}$/.test(id) ? id : null, lens };
+  const ok = ID_RE.test(id);
+  return { view, sessionId: SESSION_ROUTES.has(view) && ok ? id : null, lens, ...none, topicSlug: view === "agora" && ok ? id : null };
 }
 
 function safeDecode(s: string): string {
@@ -150,6 +166,16 @@ export function stepFromHash(hash: string = currentHash()): number | null {
   const raw = new URLSearchParams(q).get("step");
   if (raw === null || !/^\d{1,6}$/.test(raw)) return null;
   return Number(raw);
+}
+
+/** The post's page: `#/agora/post/<id>`, with `?reply=<id>` to mark one reply. */
+export function hashForPost(postId: string, replyId?: string | null): string {
+  return `#/agora/post/${encodeURIComponent(postId)}${replyId ? `?reply=${encodeURIComponent(replyId)}` : ""}`;
+}
+
+/** A topic's page: `#/agora/topics/<slug>`. */
+export function hashForTopic(slug: string): string {
+  return `#/agora/topics/${encodeURIComponent(slug)}`;
 }
 
 export function hashForView(view: View, sessionId?: string | null, step?: number | null, lens?: ArenaLens | null): string {
@@ -171,7 +197,7 @@ export function syncHash(view: View, sessionId?: string | null, step?: number | 
   const here = currentHash();
   if (!here) { replaceHash(next); return; }
   const before = routeFromHash(here);
-  const same = before.view === view && (before.sessionId ?? null) === (sessionId ?? null)
+  const same = before.view === view && !before.postId && (before.sessionId ?? null) === (sessionId ?? null)
     && (view !== "games" || sessionId || (before.lens ?? "live") === (lens ?? "live"));
   (same ? replaceHash : pushHash)(next);
 }

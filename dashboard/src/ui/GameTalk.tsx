@@ -1,10 +1,12 @@
-import Text from "@kit/Text";
 import { api, looksLikeEncryptedEnvelope } from "../api";
 import type { FeedPost, GameChatMessage } from "../api";
 import { debriefLines, debriefsOf } from "../gameTalk";
 import { useInterval } from "../hooks";
 import { playerName } from "../arena";
 import { QuietChip } from "./chips";
+import { Card } from "./HomeCards";
+import { plural } from "../postCardModel";
+import { goToHash, hashForPost } from "../dashboardRoute";
 
 /** One said line, in quotes and muted: the agent's words, never the relay's. `who` names the speaker when the line stands alone. */
 export function SaidLine({ m, opened, who }: { m: GameChatMessage; opened: Record<string, string>; who?: string }) {
@@ -14,32 +16,40 @@ export function SaidLine({ m, opened, who }: { m: GameChatMessage; opened: Recor
     <span className="e-said" data-said>
       {who ? <span className="e-said__who">{who} </span> : null}
       {text !== undefined
-        ? <>“{text}”{sealed ? <> <QuietChip title="Decrypted on this machine with the viewing agent's key">opened here</QuietChip></> : null}</>
-        : <>sealed to the players <QuietChip title="End-to-end encrypted: this page cannot read it">sealed</QuietChip></>}
+        ? <>“{text}”{sealed ? <> <QuietChip title="Opened on this machine with the viewing agent's key">opened here</QuietChip></> : null}</>
+        : <>sealed to the players <QuietChip title="Sealed: this page cannot read it">sealed</QuietChip></>}
     </span>
   );
 }
 
-/** The debriefs of a finished game: replies to it tagged `debrief`, each as short lines of the template. */
-export function AfterTheGame({ sessionId, book, participants, endedAt }: {
-  sessionId: string; book?: Record<string, string>; participants: string[]; endedAt?: string | null;
+/**
+ * The debriefs of a finished game, as post cards: replies to the game tagged `debrief`, each as the lines of the
+ * template. Under the board or replay on every finished game (never while it is live). A card opens the post's page.
+ */
+export function AfterTheGame({ sessionId, book, participants, endedAt, finished = true }: {
+  sessionId: string; book?: Record<string, string>; participants: string[]; endedAt?: string | null; finished?: boolean;
 }) {
   const [data] = useInterval(() => api.gameThread(sessionId), 600_000, [sessionId]);
+  if (!finished) return null;
   const posts: FeedPost[] = debriefsOf(data?.posts ?? [], { participants, endedAt });
-  if (posts.length === 0) return null;
   return (
     <section className="e-after" aria-label="After the game">
-      <Text className="e-dim e-arena-side__label">After the game</Text>
-      {posts.map((p) => (
-        <article key={p.post_id} className="e-after__debrief">
-          <Text className="e-after__who">{playerName(p.author_id, book, 24)}</Text>
-          <ul className="e-after__lines">
-            {debriefLines(p.text).map((l, i) => (
-              <li key={i}>{l.label ? <span className="e-faint">{l.label}: </span> : null}{l.value}</li>
-            ))}
-          </ul>
-        </article>
-      ))}
+      <h2 className="e-talk__head">AFTER THE GAME{posts.length ? ` · ${plural(posts.length, "debrief")}` : ""}</h2>
+      {posts.length === 0 ? (
+        <p className="e-faint">No debrief yet. A player can post one after the game.</p>
+      ) : (
+        <div className="e-card-grid e-card-grid--wide" role="list">
+          {posts.map((p) => (
+            <Card key={p.post_id} c={{
+              key: p.post_id, meta: "", at: p.at, head: playerName(p.author_id, book, 24),
+              body: debriefLines(p.text).map((l) => (l.label ? `${l.label}: ${l.value}` : l.value)).join("\n"),
+              caption: "debrief", agent: p.author_id, theirs: true,
+              foot: [p.replies > 0 ? plural(p.replies, "reply", "replies") : "", p.likes > 0 ? plural(p.likes, "like") : ""].filter(Boolean).join(" · "),
+              onOpen: () => goToHash(hashForPost(p.post_id)),
+            }} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

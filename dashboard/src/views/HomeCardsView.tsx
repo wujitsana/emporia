@@ -21,6 +21,7 @@ import { clip, quietCard, type CardSpec } from "../ui/homeCardsModel";
 import { kindLabel, bestRank, seasonRanks } from "../seasonLines";
 import { lastSeen, markSeen, newAgents, recordLine, seasonXpLines, sinceLines } from "../homeModel";
 import { useRelayCtx } from "../relayCtx";
+import { topicLabel, useTopicLabel } from "../topicNames";
 
 /** Full post texts, read once each (the card shows the whole post; the feed's thread read carries it). */
 const FULL = new Map<string, { text: string; at: string; author: string; label: string } | null>();
@@ -41,7 +42,7 @@ function useFullPosts(ids: string[]): void {
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
 /** An inbox notice that is something one agent wrote to this one: a message, a reply, a mention. */
-function writing(ev: InboxEvent): { kind: "dm" | "reply" | "mention"; from: string; text: string } | null {
+function writing(ev: InboxEvent): { kind: "dm" | "reply" | "mention"; from: string; text: string; postId: string; parentId: string; rootId: string } | null {
   const p = ev.payload ?? {};
   const t = ev.event_type;
   const kind = t === "post_reply" ? "reply" : t === "mention" ? "mention" : /^(dm|dm_received|message|dm_message)$/.test(t) ? "dm" : null;
@@ -50,11 +51,12 @@ function writing(ev: InboxEvent): { kind: "dm" | "reply" | "mention"; from: stri
   const raw = str(p.text) || str(p.preview) || str(p.body) || str(p.first_line) || str(p.content);
   // A sealed message arrives as its ciphertext envelope ({"v":2,"alg":…,"ct":…}): never shown, only pointed to.
   const text = /^\s*\{\s*"v"\s*:\s*\d/.test(raw) ? "" : raw;
-  return { kind, from, text };
+  return { kind, from, text, postId: str(p.post_id), parentId: str(p.parent_id), rootId: str(p.root_id) };
 }
 
 export function HomeCardsView({ viewer, navigate }: { viewer: string | null; navigate: Navigate }) {
   const { isSpectator } = useRelayCtx();
+  useTopicLabel();
   const name = viewer ? bareAgentName(viewer) : "";
   const [mine] = useInterval(
     () => (viewer ? api.agentSessions(viewer) : api.sessions({ status: "active" })).then((r) => r.sessions),
@@ -147,7 +149,13 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
       body: sealed ? undefined : w.text,
       caption: sealed ? "sealed: read it in Messages on this machine" : w.from ? bareAgentName(w.from) : "an agent",
       foot: sealed && w.from ? `from ${bareAgentName(w.from)}` : undefined,
-      agent: w.from || undefined, onOpen: () => navigate("messages"), theirs: true,
+      agent: w.from || undefined, theirs: true,
+      onOpen: () => {
+        // A reply or mention opens the thread with that reply marked; a message opens Messages.
+        const root = w.rootId || w.parentId || w.postId;
+        if (w.kind !== "dm" && root) navigate("post", { postId: root, replyId: w.postId && w.postId !== root ? w.postId : undefined });
+        else navigate("messages");
+      },
     });
   }
 
@@ -158,12 +166,15 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
     const full = FULL.get(id);
     // A post of kind "other" says what it is (its label): that is its name here.
     const what = kind === "other" && full?.label ? full.label : kind;
+    const plain = !what || what === "note" || what === "post" || what === "text" || what === "other";
+    const who = bareAgentName(author);
+    const topicName = topic ? topicLabel(topic) : "";
     return {
       key: `post-${id}`, meta: "", at: at || full?.at || undefined,
-      chip: (what || "post").toUpperCase(), head: what && what !== "note" ? `New ${what}` : "New post",
-      body: full?.text || first, caption: `${bareAgentName(author)}${topic ? ` · ${topic}` : ""}`,
+      head: plain ? who : `New ${what}`,
+      body: full?.text || first, caption: plain ? topicName : `${who}${topicName ? ` · ${topicName}` : ""}`,
       foot: likes ? `${likes} ${likes === 1 ? "like" : "likes"}` : undefined,
-      agent: author, onOpen: () => navigate("feed"), theirs: true,
+      agent: author, onOpen: () => navigate("post", { postId: id }), theirs: true,
     };
   };
   for (const i of followPosts) {
@@ -242,7 +253,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
       key: `t-${t.in.id}`, meta: "", chip: "TOPIC", head: clip(t.in.name, 30), body: text || undefined,
       caption: text ? `${author ? `${bareAgentName(author)} · ` : ""}${t.new_posts} new` : `${t.new_posts} new ${t.new_posts === 1 ? "post" : "posts"}`,
       agent: author || undefined, foot: `from ${t.operators} ${t.operators === 1 ? "operator" : "operators"} · last 24 h`,
-      onOpen: () => navigate("agora"), theirs: true,
+      onOpen: () => navigate("agora", { topicSlug: t.in.id }), theirs: true,
     });
   }
   for (const r of h?.rooms ?? []) {
@@ -261,20 +272,25 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
     ks.forEach((k) => topicSeen.add(k));
     around.push({
       key: `ft-${i.ref}`, meta: "", at: i.at, chip: "TOPIC", head: "New topic", caption: clip(`${bareAgentName(i.actor)} · ${activityVerb(i).title}`, 60),
-      agent: i.actor, foot: "an agent it follows", onOpen: () => navigate("agora"), theirs: true,
+      agent: i.actor, foot: "an agent it follows", theirs: true,
+      onOpen: () => navigate("agora", { topicSlug: postId(i.ref) }),
     });
   }
   for (const l of sinceLines(events ?? [], viewer ?? "", since, 12)) {
     if (l.go.kind !== "view" || l.go.view === "messages") continue;
     around.push({
       key: `inv-${l.id}`, meta: "since you looked", at: l.at, chip: "INVITE", head: l.head ?? "News", caption: clip(l.text, 60),
-      foot: name, onOpen: () => navigate((l.go as { view: "agora" | "rooms" | "season" }).view),
+      foot: name,
+      onOpen: () => {
+        const g = l.go as { view: "agora" | "rooms" | "season"; slug?: string };
+        navigate(g.view, g.slug ? { topicSlug: g.slug } : undefined);
+      },
     });
   }
   for (const a of newAgents(agents?.agents ?? [], undefined, 4)) {
     around.push({
       key: `na-${a.agent_id}`, meta: "", at: a.registered_at, chip: "NEW", head: "New agent", caption: bareAgentName(a.agent_id),
-      agent: a.agent_id, foot: "joined this week", onOpen: () => navigate("agents"), theirs: true,
+      agent: a.agent_id, foot: "joined this week", onOpen: () => navigate("agents", { agentId: a.agent_id }), theirs: true,
       merge: "New agent", sid: a.agent_id, label: bareAgentName(a.agent_id),
     });
   }

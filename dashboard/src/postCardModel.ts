@@ -21,6 +21,8 @@ export interface PostCardData {
   /** The post's tags and what it replies to: a post tagged `debrief` shows a chip naming its game. */
   tags?: string[][];
   reply_to?: string | null;
+  /** The thread's root as `post:<id>`, when this post is a reply. */
+  root?: string | null;
 }
 
 /** The game a debrief post is about (`reply_to` = `session:<id>`, tagged `debrief`), or null for any other post. */
@@ -48,7 +50,7 @@ export function fromFeedPost(p: FeedPost, relayOwner: string | null = null): Pos
     author_level: p.author_level,
     tag: tagFor(p.author_address, p.elsewhere, p.author_id, relayOwner),
     kind: p.kind, label: p.label, text: p.text, at: p.at,
-    likes: p.likes, replies: p.replies, topic: p.topic, tags: p.tags, reply_to: p.reply_to,
+    likes: p.likes, replies: p.replies, topic: p.topic, tags: p.tags, reply_to: p.reply_to, root: p.root,
   };
 }
 

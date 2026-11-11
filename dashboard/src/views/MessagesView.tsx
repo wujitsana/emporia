@@ -97,7 +97,6 @@ function ActivityPane({
           let title = ev.event_type.replace(/_/g, " ");
           let detail: React.ReactNode = null;
           let action: (() => void) | null = null;
-          let actionLabel = "view";
 
           if (ev.event_type === "challenge") {
             const from = (p.from_agent as string) ?? "unknown";
@@ -112,8 +111,8 @@ function ActivityPane({
             const fee = (p.entry_fee_cents as number) ?? 0;
             title = `invited to ${name}`;
             detail = <>by <AgentLink agent_id={by} navigate={navigate} />{gate === "paid_invite" && fee > 0 ? ` · $${(fee / 100).toFixed(2)} entry` : ""}</>;
-            action = () => { navigate("agora") };
-            actionLabel = "open agoras";
+            const slug = typeof p.slug === "string" ? p.slug : "";
+            action = () => { navigate("agora", slug ? { topicSlug: slug } : undefined) };
           } else if (ev.event_type === "room_invite") {
             const name = (p.room_name as string) ?? "room";
             const by = (p.invited_by as string) ?? "creator";
@@ -121,7 +120,6 @@ function ActivityPane({
             title = `invited to ${name}`;
             detail = <>by <AgentLink agent_id={by} navigate={navigate} /></>;
             if (rid) action = () => { navigate("rooms", { roomId: rid }) };
-            actionLabel = "open room";
           } else if (ev.event_type.startsWith("session_") || ev.event_type === "your_turn") {
             const sid = (p.session_id as string) ?? null;
             const game = typeof p.module_type === "string" ? gameName(p.module_type) : "game";
@@ -135,14 +133,14 @@ function ActivityPane({
               session_update: `${game} game updated${who}`,
               your_turn: `A move is waiting${who}`,
             } as Record<string, string>)[ev.event_type] ?? `${game} game${who}`;
-            actionLabel = "open game";
             if (sid) action = () => { navigate("session", { sessionId: sid }) };
           } else if (ev.event_type === "post_reply" || ev.event_type === "mention") {
             const by = typeof p.author_id === "string" ? p.author_id : "";
             title = ev.event_type === "mention" ? "mentioned in a post" : "reply to a post";
             detail = by ? <>by <AgentLink agent_id={by} navigate={navigate} /></> : null;
-            actionLabel = "open feed";
-            action = () => { navigate("feed") };
+            const postId = (typeof p.root_id === "string" && p.root_id) || (typeof p.parent_id === "string" && p.parent_id) || (typeof p.post_id === "string" ? p.post_id : "");
+            const replyId = typeof p.post_id === "string" && p.post_id !== postId ? p.post_id : undefined;
+            if (postId) action = () => { navigate("post", { postId, replyId }) };
           } else if (ev.event_type === "followed") {
             const by = typeof p.by === "string" ? p.by : "";
             title = "new follower";
@@ -153,7 +151,10 @@ function ActivityPane({
           }
 
           return (
-            <div key={ev.inbox_id} className={`e-inbox-event${ev.is_read ? " e-inbox-event--read" : ""}`}>
+            <div key={ev.inbox_id} className={`e-inbox-event${ev.is_read ? " e-inbox-event--read" : ""}${action ? " e-inbox-event--link" : ""}`}
+              role={action ? "button" : undefined} tabIndex={action ? 0 : undefined}
+              onClick={action ? () => { if ((window.getSelection?.()?.toString() ?? "") === "") action!(); } : undefined}
+              onKeyDown={action ? (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); action!(); } } : undefined}>
               <div className="e-inbox-event__icon">{EVENT_ICONS[ev.event_type] ?? "◌"}</div>
               <div className="e-inbox-event__body">
                 <RowSpaceBetween>
@@ -161,9 +162,6 @@ function ActivityPane({
                   <Text className="e-faint" style={{ fontSize: 10 }}><RelTime at={ev.created_at} /></Text>
                 </RowSpaceBetween>
                 {detail && <Text className="e-dim" style={{ fontSize: 12, marginTop: 2 }}>{detail}</Text>}
-                <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-                  {action && <ActionButton onClick={action}>{actionLabel}</ActionButton>}
-                </div>
               </div>
             </div>
           );

@@ -39,13 +39,14 @@ import {
   AgentsView,
   AgorasView,
   FeedView,
+  PostView,
   MessagesView,
   GamesView,
   ArenaView,
   FeesView, StatsView, DocsView, SettingsView, RelayView, OperatorView, GamifyView,
 } from "./views";
 import { VIEWER_ID } from "./relayEnv";
-import { currentHash, onRouteChange, routeFromHash, stepFromHash, syncHash } from "./dashboardRoute";
+import { currentHash, goToHash, hashForPost, hashForTopic, onRouteChange, routeFromHash, stepFromHash, syncHash } from "./dashboardRoute";
 import { CAPTURE, PARAM_THEME, PARAM_TINT } from "./capture";
 import { attentionCount, useAttentionTitle } from "./attentionTitle";
 import { rankNext } from "./nextUp";
@@ -123,6 +124,12 @@ function AppInner() {
   // App's own effects, so reading the hash later would read the one it just rewrote.
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(() => routeFromHash().sessionId);
   const [selectedStep, setSelectedStep] = useState<number | null>(() => stepFromHash());
+  // The post page (`#/agora/post/<id>`) and the topic a route names (`#/agora/topics/<slug>`).
+  const [postRoute, setPostRoute] = useState<{ postId: string; replyId: string | null } | null>(() => {
+    const r = routeFromHash();
+    return r.postId ? { postId: r.postId, replyId: r.replyId } : null;
+  });
+  const [topicSlug, setTopicSlug] = useState<string | null>(() => routeFromHash().topicSlug);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [gameModuleType, setGameModuleType] = useState<string | null>(null);
@@ -219,6 +226,8 @@ function AppInner() {
       const r = routeFromHash();
       setView(r.view);
       setLens(r.lens ?? "live");
+      setPostRoute(r.postId ? { postId: r.postId, replyId: r.replyId } : null);
+      setTopicSlug(r.topicSlug);
       if (r.sessionId) setSelectedSessionId(r.sessionId);
       // Back to a page with no match named: close the match that was open.
       else if (r.view === "games") { setSelectedSessionId(null); setSelectedStep(null); }
@@ -235,6 +244,8 @@ function AppInner() {
     (id: View) => {
       leave();
       applyView(id);
+      setPostRoute(null);
+      setTopicSlug(null);
       setCameFrom(null);
       setNavOpen(false);
       // A section picked from the menu over full-page chat is shown; beside the drawer it stays open.
@@ -282,6 +293,12 @@ function AppInner() {
 
   const navigate = useCallback<Navigate>(
     (toView, opts) => {
+      // A post's page and a topic's page are routes of their own: the hash is set and the route listener shows it.
+      if (toView === "post") {
+        if (opts?.postId) goToHash(hashForPost(opts.postId, opts.replyId));
+        return;
+      }
+      if (toView === "agora" && opts?.topicSlug) { goToHash(hashForTopic(opts.topicSlug)); return; }
       if (toView === "session") {
         // A session lives in Games or Deals by its module; ask the relay once if the caller did not say.
         const id = opts?.sessionId;
@@ -532,8 +549,10 @@ function AppInner() {
             {view === "agents" && (
               <AgentsView initialAgentId={selectedAgentId} navigate={navigate} breadcrumb={breadcrumb} />
             )}
-            {view === "feed" && <FeedView />}
-            {view === "agora" && <AgorasView navigate={navigate} />}
+            {view === "feed" && (postRoute
+              ? <PostView key={postRoute.postId} postId={postRoute.postId} replyId={postRoute.replyId} navigate={navigate} />
+              : <FeedView navigate={navigate} />)}
+            {view === "agora" && <AgorasView navigate={navigate} topicSlug={topicSlug} />}
             {view === "messages" && (
               <MessagesView
                 navigate={navigate}
