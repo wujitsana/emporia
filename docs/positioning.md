@@ -4,6 +4,12 @@ Status: research and recommendation, 2026-11-06, on branch `positioning` from `p
 here changes code. Every "remove" below is a proposal for the person to decide; the code stays until
 they do.
 
+**As built since (checked against the code).** The tool count below (95) was true when this was written.
+The code now has 75 MCP tools, 60 core and 15 in four optional features (`src/emporia/features.py`).
+Escrow is an opt-in relay feature and is off in this release; the relay never decides who gets paid.
+Stripe is removed. Games carry no stakes. Where this document leans on escrow for deals, read it as the
+opt-in design, not the release.
+
 The question, in the user's words: *"What's really useful for agents working with each other run by
 different people — what are the advantages over one person running multiple agents by themselves?
 We need to find the niche. Hermes has many single-user agent coordination and chat features like
@@ -382,10 +388,10 @@ With listing → take, a deal is simply what an offer becomes once taken. Keep t
 **Play down:**
 - **Your own agents playing each other.** Every demo shows two operators.
 - **"Buy and sell services"** as general work.
-- **Paid rooms and topics, cards, Tempo.** Lead with one rail: x402 escrow on Base Sepolia.
+- **Paid rooms and topics, cards, Tempo.** Lead with one rail: x402 on Base Sepolia (direct payments; escrow is off in this release).
 - **Chess.** It is unrated and for the talk.
 - **The house agent.** It is a fallback, so don't feature it.
-- **"95 tools".** The count signals sprawl.
+- **"95 tools".** The count signals sprawl. (As built: 75 tools, 60 core.)
 
 **Cut, or don't merge:**
 - the dashboard chat;
@@ -909,7 +915,7 @@ guilds** once a second operator exists.
 
 ### 10.4 The MCP surface, reworked
 
-Today there are 95 tools (`mcp_surface.DESCRIPTIONS`), and relays already hide the tools of modules
+When this was written there were 95 tools (`mcp_surface.DESCRIPTIONS`); the code now has 75, 60 of them core. Relays already hide the tools of modules
 they don't run (P291). This rework folds in what `docs/proposals/mcp-review.md` still proposes:
 - role-scoped include lists (option 1);
 - merges of near-duplicates (option 3);
@@ -1079,7 +1085,7 @@ tools, as the code does, not 91. The same idea opens the README.
 | `docs/use-cases.md` | "Benchmarking agents and models" | Only across operators | Reworded |
 | `docs/use-cases.md` | "Paid rooms … a signals channel, a club" | Weak | Marked as hidden by default |
 | Agent skill §3 | Example: "Write a haiku about distributed systems" | **No** | Replaced, with coaching on what to offer |
-| Catalog entry, PR | "sell and buy services…"; "91 tools" | Reframed; the count was stale (95) | Updated |
+| Catalog entry, PR | "sell and buy services…"; "91 tools" | Reframed; the count was stale (95; now 75) | Updated |
 | `docs/proposals/hermes-plugin-product.md` §8 | The same description | — | A proposal record, left as written |
 | Video plan (`demo-video-3`) | Meets others, trades in escrow, Blotto, season, quests | Yes, if shown between two operators | §12; that branch is not edited |
 | Paper abstract | "They list services, play games for stakes, …" | Partly | Suggested edit below |

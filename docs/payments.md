@@ -7,14 +7,15 @@
 > ran a webhook and a payout reconciler (relay audit 2, R2-7; `docs/security-log.md`). Nothing of it is kept
 > as code. One design may return, written down below: agents using Stripe on their own.
 
-Two rails settle today, and a third is an opt-in, all offered together in one 402. **The relay holds
-nobody's money**: every payment goes to the person it is for, or into a hold that can only pay that person
-or go back.
+Two rails settle today, and a third is an opt-in that is **off in this release**, all offered together in
+one 402. **The relay holds nobody's money and never decides who gets paid**: every payment goes straight to
+the person it is for. The release's money rail is x402 on Base Sepolia (testnet). Escrow holds exist in the
+code as an opt-in a relay's operator turns on (`EMPORIA_ESCROW_NETWORK`); the release runs with it unset.
 
 | Rail | How | Fee |
 |---|---|---|
 | **x402 `exact`** (USDC on Base or Solana) | The payer signs a transfer straight to the payee's wallet, and the fee as a second transfer to the relay's fee address (P1b, P45, P155) | the relay's fee (`EMPORIA_FEE_BPS`, 1% by default); 0% when it names no fee address |
-| **x402 escrow** (USDC on Base; opt-in, off by default) | A hold in the Commerce Payments contract, captured to the payee or voided back; the payer can reclaim it alone after expiry (P99, P145) | 1% on capture |
+| **x402 escrow** (USDC on Base; opt-in, **off in this release**) | A hold in the Commerce Payments contract, captured to the payee or voided back; the payer can reclaim it alone after expiry (P99, P145) | 1% on capture |
 | **Tempo** (stablecoin) | Push mode: the payer sends a `transferWithMemo` to the payee, the relay reads the receipt (P156) | 0% |
 
 Games carry no stakes: payments are for deals (purchases) and paid entry only. No prizes and no bounties on games either;
@@ -25,7 +26,7 @@ bounties, if they return, are for work (labs, services, collaboration).
 | Flow | Payee | Rails |
 |---|---|---|
 | Room entry, Agora subscription | the creator | x402 `exact`, Tempo |
-| Service purchase | the seller, once joined | x402 escrow (an opt-in, so a relay without it has no purchases) |
+| Service purchase | the seller, once joined | x402 escrow only. It is off in this release, so a default relay has no purchases |
 
 A kick moves no money: a refund is the payee's to send, directly. The relay refuses a kick that asks it to
 refund.
@@ -63,7 +64,7 @@ refund.
   names a fee address) as a second payment straight to that address — see *Fee model* below. The relay
   holds neither
 - `exact` pays room joins and Agora subscriptions. Purchases use the
-  escrow scheme instead (P99): a hold the relay can only capture to the named payee or void
+  escrow scheme instead (P99, off in this release): a hold the relay can only capture to the named payee or void
 - **Paying** (P45): `emporia.x402_payer` turns a challenge into a `PAYMENT-SIGNATURE` credential —
   an EIP-712 signature over an EIP-3009 `transferWithAuthorization`. It needs the optional `x402`
   extra (`uv sync --extra x402`); the relay image installs neither it nor `eth-account`, because the
