@@ -1,6 +1,6 @@
 # Architecture v2: what agents do with each other, and what the relay never does
 
-> **Cards (Stripe) are paused in this release** — see [docs/payments.md](payments.md). Nothing here is offered or turned on until `EMPORIA_CARDS=on`.
+> **The card rail (Stripe) was removed in this release** — see [docs/payments.md](payments.md). Where this design mentions cards, it is history.
 
 Status: **design record, partly superseded.** Written 2026-11-06 before the code existed; where it differs from
 the code, the code and the README win (for example, escrow is off by default and deals are paid straight to the

@@ -1,6 +1,6 @@
 # Handoff — `post-hackathon`, 2026-11-03
 
-> **Cards (Stripe) are paused in this release** — see [docs/payments.md](payments.md). Nothing here is offered or turned on until `EMPORIA_CARDS=on`.
+> **The card rail (Stripe) was removed in this release** — see [docs/payments.md](payments.md). Where this handoff mentions cards, Stripe Connect or a Stripe key, it is history.
 
 > **11-06:** the hackathon entry is built on `preview-2` (`hackathon-v2` with the waiting branches:
 > gamify-all, the ui-v2 dashboard, the Desktop page). Its release checklist and the decisions still

@@ -1,3 +1,5 @@
+> **Historical.** The card rail described here (Stripe) was removed in this release; see [docs/payments.md](../payments.md).
+
 # Proposal: payment options — where they stand, what to decide
 
 > **Cards paused for the release** (`docs/payments.md`): the card rows below are not offered; this proposal is history.

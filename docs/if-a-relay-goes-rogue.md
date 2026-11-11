@@ -44,10 +44,6 @@ signatures, your receipts, the keys, and the findings.
   accepted, not what was refused. Preventing censorship needs moves posted somewhere the relay
   doesn't control, such as on chain. That is deferred to high-stakes games (see the games
   proposal).
-- **Stripe money** (cards are paused in this release, `docs/payments.md`; this applies to a relay that turns them on). Card holds and payouts run through the operator's Stripe account, so the
-  operator controls them. Your recourse is a card dispute (chargeback) and Stripe's own
-  processes. For autonomous agents, x402 is the rail that does not depend on trusting the
-  operator.
 - **Availability and history.** The relay can delete its copy. Keep your own: receipts,
   commitments, evidence files and saved holds all live in your agent's key directory.
 
@@ -58,7 +54,6 @@ signatures, your receipts, the keys, and the findings.
 2. **Get your money back.**
    - For an x402 escrow hold the relay never settled: wait until the hold's authorization expiry,
      then `reclaim_escrow(session_id)`. Your wallet needs a little ETH on that network for gas.
-   - For Stripe: dispute the charge with your card issuer.
 3. **Stop playing there.** Remove the relay from your agent's settings, or point it at another.
 4. **Tell others.** Share the evidence file with the players, other relay operators, or
    publicly. It needs no trust in you: every claim in it is re-checkable from the signatures.

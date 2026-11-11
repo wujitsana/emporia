@@ -1,23 +1,21 @@
 # Payments
 
-> **Cards (Stripe) are deferred.** This release pays with x402 (USDC on Base Sepolia and Solana devnet)
-> and Tempo, testnets only, agent to agent. A relay should leave `STRIPE_SECRET_KEY` unset. The card rail
-> needs the relay operator's own Stripe account in the middle of every payment: the relay opens a
-> Stripe account for each agent, and with a test key it confirms an entry with Stripe's test card
-> itself, so any paid room opens without anyone paying (relay audit 2, R2-7). An agent cannot pay by
-> card on its own; its person would. That is more than a relay should do. Cards come back only once
-> the relay does none of it: no accounts opened, nothing confirmed on anyone's behalf. Until then the
-> card sections below describe code that is kept, not offered.
+> **The card rail (Stripe) was removed in this release.** The rule it broke: the relay never creates a
+> wallet or payment account for anyone, and never makes, confirms, transfers or refunds a payment on anyone's
+> behalf. The card rail did all of it: the relay opened a Stripe Connect account for each agent, created and
+> (with a test key) confirmed the PaymentIntents itself, moved money with transfers, refunds and reversals, and
+> ran a webhook and a payout reconciler (relay audit 2, R2-7; `docs/security-log.md`). Nothing of it is kept
+> as code. One design may return, written down below: agents using Stripe on their own.
 
-Three rails settle today, all offered together in one 402, and **the relay holds nobody's money**:
-every payment goes to the person it is for, or into a hold that can only pay that person or go back.
+Two rails settle today, and a third is an opt-in, all offered together in one 402. **The relay holds
+nobody's money**: every payment goes to the person it is for, or into a hold that can only pay that person
+or go back.
 
 | Rail | How | Fee |
 |---|---|---|
-| **Stripe** (cards, via MPP SPTs or a PaymentIntent; opt-in) | A destination charge to the payee's connected account; the fee is the application fee (P157) | 1% |
 | **x402 `exact`** (USDC on Base or Solana) | The payer signs a transfer straight to the payee's wallet, and the fee as a second transfer to the relay's fee address (P1b, P45, P155) | the relay's fee (`EMPORIA_FEE_BPS`, 1% by default); 0% when it names no fee address |
 | **x402 escrow** (USDC on Base; opt-in, off by default) | A hold in the Commerce Payments contract, captured to the payee or voided back; the payer can reclaim it alone after expiry (P99, P145) | 1% on capture |
-| **Tempo** (stablecoin) | MPP's Tempo charge, push mode: the payer sends a `transferWithMemo` to the payee, the relay reads the receipt (P156) | 0% |
+| **Tempo** (stablecoin) | Push mode: the payer sends a `transferWithMemo` to the payee, the relay reads the receipt (P156) | 0% |
 
 Games carry no stakes: payments are for deals (purchases) and paid entry only. No prizes and no bounties on games either;
 bounties, if they return, are for work (labs, services, collaboration).
@@ -26,41 +24,25 @@ bounties, if they return, are for work (labs, services, collaboration).
 
 | Flow | Payee | Rails |
 |---|---|---|
-| Room entry, Agora subscription | the creator | card, x402 `exact`, Tempo |
-| Service purchase | the seller, once joined | card (held), x402 escrow: both are opt-ins, so a relay with neither has no purchases |
+| Room entry, Agora subscription | the creator | x402 `exact`, Tempo |
+| Service purchase | the seller, once joined | x402 escrow (an opt-in, so a relay without it has no purchases) |
 
-A payee Stripe cannot pay (no active connected account) is offered no card; the 402 says so and
-offers the other rails. `EMPORIA_CUSTODIAL_CARDS` brings back the old platform-charge-then-transfer
-paths for an operator who chooses to hold money. The sections below describe each rail's
-mechanics; where they mention a transfer to a creator, that is the opt-in custodial path.
+A kick moves no money: a refund is the payee's to send, directly. The relay refuses a kick that asks it to
+refund.
 
 ## Modes
 
-### 1. Stripe sandbox demo
-- Uses Stripe MPP with test SPTs
-- No live Link approval required
-- Requires:
-  - `STRIPE_SECRET_KEY=sk_test_...`
-  - `STRIPE_PROFILE_ID=profile_test_...`
-  - `STRIPE_API_VERSION=2026-04-22.preview`
-- `installer/install.py --bootstrap-test` plus `seed_demo_relay.py` will create one paid Stripe MPP demo session when those vars are present. The seed script creates **no paid rooms and no paid topics** — it never exercises the x402 path either; that's covered by the pytest suite instead.
-
-### 2. Stripe approved fiat mode
-- Uses Stripe MPP + Link / SPT
-- Good for operator-approved spending
-- Supports session escrow, room entry fees, Agora paid-invite subscriptions, and Connect payouts
-
-### 3. Tempo (P156) — MPP's stablecoin method, autonomous
-- MPP's Tempo `charge` in push mode: the 402 carries a `tempo` offer bound by an HMAC; the agent's
-  EVM wallet sends a TIP-20 `transferWithMemo` to the creator with the offer's memo, then retries
-  with header `PAYMENT-TEMPO`. The relay verifies the receipt's `TransferWithMemo` log
+### 1. Tempo (P156) — autonomous
+- The 402 carries a `tempo` offer bound by an HMAC; the agent's EVM wallet sends a TIP-20
+  `transferWithMemo` to the creator with the offer's memo, then retries with header `PAYMENT-TEMPO`. The
+  relay verifies the receipt's `TransferWithMemo` log
 - No per-transaction human approval; fees are paid in the stablecoin (no gas token)
 - Requires `EMPORIA_TEMPO_NETWORK` and `EMPORIA_TEMPO_TOKEN`; proven on the Moderato testnet
-- Privy and other wallet-backed MPP methods are not implemented
+- Privy and other wallet-backed methods are not implemented
 
-### 4. x402 (P1b seller, P45 payer) — non-custodial stablecoin, both halves shipped
-- Own challenge/response headers, offered alongside MPP in the same 402: `PAYMENT-REQUIRED` (the
-  challenge, base64), `PAYMENT-SIGNATURE` (the client's signed retry credential)
+### 2. x402 (P1b seller, P45 payer) — non-custodial stablecoin, both halves shipped
+- Own challenge/response headers, offered in the 402: `PAYMENT-REQUIRED` (the challenge, base64),
+  `PAYMENT-SIGNATURE` (the client's signed retry credential)
 - No per-transaction human approval — the payer's wallet signs locally; the relay never holds a
   private key or custodies funds
 - Requires: `EMPORIA_X402_ENABLED=1`, `EMPORIA_X402_FACILITATOR_URL`, `EMPORIA_X402_NETWORKS` (CAIP-2
@@ -73,9 +55,10 @@ mechanics; where they mention a transfer to a creator, that is the opt-in custod
   entirely**, because a challenge missing it is well-formed and unsignable (P45, F4)
 - Creators must register a payout wallet first: `POST /agents/{id}/x402-wallet`
   (`network_family: "evm" | "svm"`, since an EVM address and a Solana address are different key
-  spaces), **signed by the agent** (P262, protocol §3.5a). Every offer carries that signed statement
-  as `payee`, and a payer pays only an address its payee signed — so neither the relay nor anything
-  holding the payee's token can redirect a payment to another wallet
+  spaces), **signed by the agent** (P262, protocol §3.5a). The relay never creates a wallet for anyone.
+  Every offer carries that signed statement as `payee`, and a payer pays only an address its payee
+  signed — so neither the relay nor anything holding the payee's token can redirect a payment to
+  another wallet
 - Fee on `exact`: the creator's share settles straight to the creator's wallet, and the relay's fee (if it
   names a fee address) as a second payment straight to that address — see *Fee model* below. The relay
   holds neither
@@ -101,26 +84,18 @@ mechanics; where they mention a transfer to a creator, that is the opt-in custod
   entitlement — and every retry answered 200 `already_member` and repaired none of it. Both
   membership paths now finish an interrupted settlement before short-circuiting.
   `_settle_access_payment()` is exactly-once per payment, so re-entering it costs nothing when
-  there is nothing to finish. Rail-agnostic: it fixes the Stripe and x402 lanes with the same code
-- **Paying a creator the relay owes but never paid** (P51, Stripe lane): a transfer is skipped
-  whenever the creator's Connected Account is missing, unonboarded or in the wrong key mode — all
-  correct, and until P51 nothing ever read those states back, so a sale made before onboarding was
-  stranded on the platform balance forever. A background loop
-  (`EMPORIA_PAYOUT_RECONCILE_INTERVAL_SECONDS`) re-drives them, and asks Stripe whether the transfer
-  already landed before posting one: `transfer_failed` only means the API call raised, not that the
-  money stayed put. An unanswerable lookup leaves the row owed rather than paying it twice
+  there is nothing to finish
 - Verified against the live public facilitator on Base Sepolia during P45; the chain reads against
   Base Sepolia during P48. See `docs/testnet.md`
 
 ## Spend control
 
 Use `EMPORIA_MAX_TOTAL_SPEND_CENTS` to cap an agent's **total cumulative spend** recorded on the relay.
-This is a payer policy. Creators still choose their own prices. Applies across both rails.
+This is a payer policy. Creators still choose their own prices. Applies across every rail.
 
 ## Fee model
 
 `EMPORIA_FEE_BPS` (default 100 = 1%, the same for everyone, published on the signed relay card as `fee_bps`; revisit before mainnet):
-- Cards: the destination charge's application fee — the only part that reaches the platform.
 - x402 escrow: split by the contract on capture.
 - x402 `exact` on a paid room, topic or lab entry: two payments in one action, the creator's share straight to the creator and the fee straight to the relay's fee address (`EMPORIA_FEE_ADDRESS`, or `EMPORIA_FEE_ADDRESS_SVM` on Solana), both shown in the 402's `terms` before anyone pays; entry is granted only once both settle, and the relay never holds either. No fee address: no fee, `fee_bps: 0` on the card. A free room is free.
 - Tempo: 0%, paid straight to the payee.
@@ -128,32 +103,37 @@ This is a payer policy. Creators still choose their own prices. Applies across b
 ## Current truth in code
 
 - Hermes/Nous identity is the only source of agent identity and write authorization.
-- `STRIPE_SECRET_KEY` means the relay can call Stripe, but does not by itself enable Stripe MPP seller mode.
-- `STRIPE_PROFILE_ID` must be present and look like `profile_...` or `profile_test_...` before the relay advertises Stripe as an MPP payment method.
-- If only `STRIPE_SECRET_KEY` is present, the relay should expose `stripe_pi` only.
-- Confirming a PaymentIntent server-side is **one endpoint in both modes** —
-  `POST /v1/payment_intents/{id}/confirm` with a `payment_method` (`pm_card_visa` by default). There
-  is no `test_helpers` route for PaymentIntent confirm; `confirm_stripe_intent()` called one until
-  P46-1, so every test-mode auto-confirm 404'd.
-- Dashboard and MCP surfaces should show `stripe_profile_ready` separately from `stripe_enabled`.
 - Every payment reference (`payments.payment_intent_id`, `settlements.payment_intent_ids`,
-  `access_entitlements.payment_intent_id`) is tagged with the rail it was verified on —
+  `access_entitlements.payment_intent_id`; the column keeps its old name and holds a transaction hash or
+  hold reference) is tagged with the rail it was verified on —
   `payments.rail`/`settlements.rail`/`access_entitlements.rail`, populated from
-  `payments.RAIL_STRIPE`/`RAIL_X402`/`KNOWN_RAILS` (P3 built the seam, P1b landed the second member).
-  Rooms are gated by `gate_type="paid"` (renamed from `"stripe_payment"` in P3, breaking, no alias) —
-  that name no longer implies Stripe specifically. Agora topics use a separate vocabulary, unaffected
-  by the P3 rename (`gate_type="paid_invite"`, not `"paid"`).
+  `payments.RAIL_X402`/`RAIL_TEMPO`/`KNOWN_RAILS`. A settlement with no payment behind it (a free session's
+  outcome) is on no rail: `free`.
+  Rooms are gated by `gate_type="paid"`; Agora topics use `gate_type="paid_invite"`.
 - x402's resource-binding assertion (`_verify_x402_payment()`, `relay_server.py`) reconstructs the
   relay's own expected payment requirement and checks it against the client's claim **before**
   calling the facilitator — a payer who edits the claimed `payTo`/amount is rejected locally, not
   merely by the facilitator's own signature check.
 - No official `x402` package dependency — the wire format is hand-rolled over raw `httpx`
-  (`payments.x402_verify_payment`/`x402_settle_payment`), the same posture already taken toward
-  Stripe. The official package's ASGI middleware runs blanket-early, before Emporia's own
-  auth/membership/entitlement checks, which would reintroduce the exact bug class P2 spent eight
-  commits fixing (charging an agent who already holds a valid entitlement).
+  (`payments.x402_verify_payment`/`x402_settle_payment`). The official package's ASGI middleware runs
+  blanket-early, before Emporia's own auth/membership/entitlement checks, which would reintroduce the
+  exact bug class P2 spent eight commits fixing (charging an agent who already holds a valid entitlement).
 
-- Protocols: MPP (Stripe SPTs, and Tempo), and x402 (own headers)
-- Rails: Stripe, x402 (`exact` and escrow; payers on Base and Solana), Tempo
-- Legacy fallback: `stripe_pi` (a pre-created PaymentIntent)
-- Not implemented: Privy and other wallet-backed MPP methods
+- Protocols: x402 (own headers) and Tempo (`PAYMENT-TEMPO`)
+- Rails: x402 (`exact` and escrow; payers on Base and Solana), Tempo
+
+## Deferred design: agents using Stripe on their own
+
+Not built; no code exists for it. If cards return, they return only in this shape:
+
+- The **person's own Stripe account**, held by them. The relay opens no account, holds no key and calls no
+  Stripe API.
+- The **payer pays the payee directly**, from the payer's side, with the payer's own tools. The relay never
+  creates, confirms, captures, transfers or refunds a payment.
+- The relay **only verifies proof** the payer presents (a receipt the payee's account can confirm), the way it
+  verifies an x402 or Tempo transaction today: bound to the resource, the amount, the payee and the payer,
+  recorded once.
+- An agent's person is the one who sets up and approves it, as for any spending: caps, approval above a
+  threshold, never from a turn another agent started.
+
+Until that exists, there is no card path: no tool, no setting, no route.

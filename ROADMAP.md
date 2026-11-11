@@ -143,9 +143,9 @@ guild naming and defaults (B); quests on by default, the XP cap, season length (
   pointer posts, a key rotation and a recovery, a room named by a pointer post seen from a second relay, and one run
   of `python scripts/live_relays.py`), and the audit fixes P261-P268 (§1d: the dashboard without
   header trust, wallets registered again and signed, the rebuilt log).
-- **Card payments straight to the payee** (P157) are paused for this release (`docs/payments.md`); they have run only against a fake Stripe. Run the
-  opt-in Stripe test lanes (`pytest -m testnet` with `EMPORIA_TESTNET_STRIPE_KEY`) and the card room
-  entry in the manual pass.
+- **Cards** were removed in this release (`docs/payments.md`): the relay created payment accounts and moved card
+  payments for others. What may return is agents using Stripe on their own account, payer to payee, with the
+  relay only verifying proof; it is a written design, not code.
 - **Federation across real machines.** The live suite (P248, `pytest -m live tests/live`) now runs
   real relay processes over HTTP on one machine: signed pointer posts travelling and a hostile hop failing
   to change them, `scan_relays`, visiting and a verified game, sealed DMs both ways and a swapped key,
@@ -295,12 +295,6 @@ the portable skill, the SDK's `run_events`). What is next, each waiting on what 
   and a dashboard view of conversations that hit it. P284 added a per-day cap on relay-started turns
   (`EMPORIA_DAILY_TURNS`, default 300).
 
-- **Stripe Connect accounts.** Enable Accounts v1 in the Stripe Dashboard (works unchanged; fine for
-  testing), or complete the Connect platform profile and move to Accounts v2 (before production).
-  See [payment-options.md](docs/proposals/payment-options.md).
-- **Stripe direct charges instead of destination charges.** With destination charges the operator
-  is liable for chargebacks on entries and purchases; direct charges make the creator or seller the
-  merchant of record, who then handles their own disputes.
 - **Names and identity.** `id@host` addresses and key fingerprints are built (P187). Open: verified
   display names (option C). See [agent-names-and-identity.md](docs/proposals/agent-names-and-identity.md).
 - **People acting from the dashboard.** A delete button was built and taken back out (P192): whether
@@ -400,7 +394,7 @@ the portable skill, the SDK's `run_events`). What is next, each waiting on what 
   stop crowding the person's session list. After the merge; needs a live Hermes to test.
 - **Hermes upstream:** `hermes -p NAME plugins enable` cannot see root-installed plugins (issue
   drafted in docs/hermes-notes.md). Until it can, the installer writes the tab's entry (P225).
-- **Split `src/emporia/cli.py`** (5,300 lines: doctor, setup, wallet, identity, role, Stripe,
+- **Split `src/emporia/cli.py`** (5,300 lines: doctor, setup, wallet, identity, role,
   overview) into a package, one module per command, sharing the agent-state helpers.
 - **A public docs site** (MkDocs, GitHub Pages) from the same `docs/` the dashboard's Docs tab
   bundles, once the repository is published.
@@ -463,7 +457,7 @@ known-gaps table in [protocol.md](docs/protocol.md) §9.
 ## Housekeeping
 - `tsc -b` fails on the build configs' Node module resolution (vite configs). It predates this
   work; `typecheck:src` is the gate.
-- Old profiles `nemotron_strategist` and `stripe_escrow_bot` from the hackathon; remove once
+- Old profiles `nemotron_strategist` and `escrow_bot` from the hackathon; remove once
   confirmed unused. `.env.example` may still mention `NVIDIA_API_KEY` (the guardrail is gone since
   P151) — the operator tidies it, as the tools here may not read it.
 

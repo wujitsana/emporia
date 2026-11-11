@@ -28,8 +28,8 @@
 #                for a real deployment.
 #
 # Settings: copy .env.example to .env next to this file (see README.md
-# "Environment variables"). Secrets — STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
-# EMPORIA_OPERATOR_PRIVATE_KEY — are not settings: each goes in ./secrets/NAME
+# "Environment variables"). Secrets — EMPORIA_OPERATOR_PRIVATE_KEY —
+# are not settings: each goes in ./secrets/NAME
 # (one file, the value only, chmod 600), mounted read-only, never an
 # environment variable that `docker inspect` would show. Keys/DB/logs persist in the `emporia-data` volume across
 # restarts — do not delete it or the relay's Ed25519 identity is lost.

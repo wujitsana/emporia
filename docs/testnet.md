@@ -146,68 +146,6 @@ failed intermittently.
 
 ---
 
-## Lane 2 — Stripe PaymentIntent (test mode)
-
-> Paused in this release (`docs/payments.md`): run only with `EMPORIA_CARDS=on`.
-
-```bash
-export EMPORIA_TESTNET_STRIPE_KEY="sk_test_..."
-```
-
-Test mode only, and asserted rather than trusted: the skip guard checks the `sk_test_` prefix, so a
-live key configured by accident skips the tier instead of creating real PaymentIntents.
-
-This lane needed no new payer code — `POST /payments/create-intent` and the SDK's
-`create_payment_intent()` already existed. Worth stating next to lane 1: x402 was missing a payer;
-Stripe was missing only a test that talked to Stripe. What it turned out to be missing badly was a
-working auto-confirm — `confirm_stripe_intent()` POSTed to
-`/v1/test_helpers/payment_intents/{id}/confirm`, a route Stripe does not serve, on a path nothing
-had ever executed (P46-1). The narrow `..._confirm_reaches_a_real_endpoint` test exists so that
-regression fails about the endpoint rather than about a room three layers away.
-
-Confirmation uses `pm_card_visa`, Stripe's always-succeeds test token. No card details exist
-anywhere in this repo.
-
-**First live run, 2026-10-22 (P106), and it found a bug:** the confirm sent `metadata`, which
-Stripe's confirm endpoint rejects ("Received unknown parameter: metadata"), so every server-side
-confirm — test or live — would have failed. Fixed; lanes 2, 2b and 3 now pass.
-
-## Lane 2b — Shared Payment Tokens, no MPP profile needed (P106)
-
-Same key as lane 2. Mints a test SPT with `create_test_spt()`, reads its limits back with
-`retrieve_spt()`, pays with it as a manual-capture hold through `confirm_spt()`, and releases the
-hold. Its first run found `create_test_spt()` sending `usage_limits[amount]` (unknown to Stripe;
-the limit is `max_amount`, in cents) and omitting the required `usage_limits[expires_at]`.
-
-`STRIPE_API_VERSION` must be a version the SPT endpoints accept (`2026-04-22.preview`, the
-default). A plain dated version is refused with "Invalid Stripe API version".
-
----
-
-## Lane 3 — Stripe MPP / Shared Payment Tokens
-
-> Paused in this release (`docs/payments.md`): run only with `EMPORIA_CARDS=on`.
-
-```bash
-export EMPORIA_TESTNET_STRIPE_KEY="sk_test_..."
-export EMPORIA_TESTNET_STRIPE_PROFILE_ID="profile_test_..."   # Dashboard → Machine Payments
-export EMPORIA_TESTNET_SPT="spt_..."                          # optional; minted automatically if unset
-```
-
-The token is minted by the harness from Stripe's own test helper
-(`POST /v1/test_helpers/shared_payment/granted_tokens`, confirmed to exist), so this lane runs
-unattended — no link-cli, no wallet. Set `EMPORIA_TESTNET_SPT` only to test a token a real wallet
-produced.
-
-SPTs are single-use and expire. A supplied one works exactly once; a second run with the same value
-fails at Stripe, not here.
-
-The credential travels as `Authorization: Payment <spt>`, which displaces the identity bearer token —
-they share that header and cannot both be sent. That is why the relay treats `agent_id` as unproven
-on this branch (`_require_caller_unless_mpp_payment`) and leans entirely on payment resource-binding.
-
----
-
 ## Lane `escrow` — x402 escrow holds for purchases (P99, spends testnet USDC)
 
 A real relay subprocess against Base's Commerce Payments contracts (`AuthCaptureEscrow` v1.1.0 at
@@ -274,19 +212,10 @@ and says so in its first output line. Run it only yourself, never from an unatte
 from this repo, and that a tampered one is refused by the same implementation. That is the only
 claim a mock can never support, and it is the reason the tier exists.
 
-It found one immediately. `confirm_stripe_intent()` had been POSTing to a Stripe route that does not
-exist since before the hackathon, on a path with no test coverage of any kind, and a mocked
-`httpx.AsyncClient.post` accepts every URL equally — the defect was invisible to any amount of
-additional mocking and obvious the moment something real was asked.
-
 **Doesn't:** anything about mainnet, about facilitators other than the one configured, or about
 sustained load. The settlement-retry gap this section used to list here is closed (P48) and
 reproduced by an offline test, not by this tier; what lane 1b adds is that the chain reads P48 relies
 on address what they claim on a live contract.
 
 **Run status, honestly:** lane 1 has been executed against the live facilitator (P45), and lane 1b
-against Base Sepolia (P48) — 3 passed. Lanes 2 and 3
-are written and have never been run — no Stripe test key was available in the environment where they
-were built, so they have only ever skipped. Treat their first real run as part of the work, not as a
-formality: the P46-1 URL fix is pinned offline by an asserted literal and confirmed against Stripe's
-routing table, but nothing has yet watched a PaymentIntent actually confirm.
+against Base Sepolia (P48) — 3 passed.

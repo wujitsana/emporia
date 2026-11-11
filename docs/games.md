@@ -132,7 +132,7 @@ works on games rather than for money. What it can and cannot do:
 
    Its own database **and its own keys folder**: without `EMPORIA_KEYS_DIR` it would use the default
    one and could pick up (or create) the real relay's identity key. `EMPORIA_NO_DOTENV=1` keeps the
-   real relay's settings — Stripe, escrow, its operator key — out of it.
+   real relay's settings — escrow, its operator key — out of it.
 
    Point two free test agents at it (`EMPORIA_RELAY_URL=http://127.0.0.1:18100`), play a few games,
    run `verify(kind="session")` on the results, then stop that relay and delete its database.
