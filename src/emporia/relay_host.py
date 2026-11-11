@@ -438,7 +438,7 @@ def _vars_step(host_dir: str, staging: str) -> str:
     return ("Fix the folders once, in your own shell (as your normal user, not inside `sudo -i`). Every later command "
             "uses them, already expanded before sudo runs, so sudo's own HOME never matters:\n"
             f"        D=\"{host_dir}\"   # where the relay lives; a root-only VPS gives /root/.emporia, which is fine\n"
-            f"        S=\"{staging}\"   # where the wizard staged its files, inside the Hermes folder\n"
+            f"        S=\"{staging.replace('${HOME}', '$HOME')}\"   # where the wizard staged its files, inside the Hermes folder\n"
             f"        {SESSION_NOTE}")
 
 
