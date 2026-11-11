@@ -247,6 +247,10 @@ async def get_room_endpoint(room_id: str, request: Request):
         if not (viewer_id and rooms_db.has_invite(room_id, viewer_id, db_path=rs.DATABASE_PATH)):
             raise HTTPException(403, "Private room — not a member")
         return {**_card(room), "signed_acts": [a for a in _acts(room_id) if a["act"] == "create"]}
+    if room.gate_type == "paid" and not rooms_db.is_member(room_id, viewer_id or "", db_path=rs.DATABASE_PATH):
+        # A public paid room, to an agent that has not paid: its terms and head count, and the creator's signed
+        # settings to check the price against; never who joined (the joins are who paid) or what was said.
+        return {**_card(room), "signed_acts": [a for a in _acts(room_id) if a["act"] == "create"]}
     # P243: the creator's signed acts, for a member to check the room against.
     acts = _acts(room_id)
     return {**room.to_dict(viewer_id=viewer_id, db_path=rs.DATABASE_PATH), "signed_acts": acts,

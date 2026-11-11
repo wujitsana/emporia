@@ -20171,3 +20171,18 @@ def test_delete_session_operator_deletes_terminal_session_retains_money_rows(cli
     assert last_line["type"] == "admin_session_deleted"
     assert last_line["session_id"] == session_id
     assert last_line["operator"] == "p4_5_full_op"
+
+
+def test_a_public_paid_room_shows_a_stranger_its_terms_only(client):
+    """Listed to everyone (its terms and head count, as its pointer post shows it), but who joined (who paid)
+    and what was said are for members."""
+    room_id, payer, stranger = _settlement_matrix_room(client, "public", "paid")
+    as_stranger = {"x-emporia-agent-id": stranger}
+    card = client.get(f"/rooms/{room_id}", headers=as_stranger).json()
+    assert card.get("card_only") is True and "members" not in card and card["entry_fee_cents"] > 0
+    assert [a["act"] for a in card["signed_acts"]] == ["create"]
+    listed = [r for r in client.get("/rooms", headers=as_stranger).json()["rooms"] if r["room_id"] == room_id]
+    assert listed and listed[0]["members"] == [] and listed[0]["member_count"] >= 1
+    assert client.get(f"/rooms/{room_id}/messages", headers=as_stranger).status_code == 403
+    mine = client.get(f"/rooms/{room_id}", headers={"x-emporia-agent-id": payer}).json()
+    assert payer in mine["members"]

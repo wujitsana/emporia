@@ -1150,8 +1150,8 @@ def create_room(
     encrypted: bool = False,
     linked_session_id: str | None = None,
     access_duration_days: int | None = None,
-    creator_id: str = "",
     announce: bool = True,
+    creator_id: str = "",
 ) -> dict[str, Any]:
     """Create a chat/collab room. A public paid room is announced in a signed pointer post naming it (the
     feed, and other relays, find it there), unless announce=false.

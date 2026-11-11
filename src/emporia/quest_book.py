@@ -163,7 +163,7 @@ QUESTS: dict[str, dict] = {
     # labs v2: GitHub work, recorded by a maintainer's signed report. Nothing counts when the author's
     # operator is the maintainer's, or a reviewer's is the author's; the house never counts.
     "lab-join": {"title": "Join a lab", "xp": 10, "needs": ("labs",),
-                 "how": "join a lab (a room about a repo) and post a message in it; a lab your own operator made, "
+                 "how": "join_room a lab's room (lab_threads names it), then send_room_message in it; a lab your own operator made, "
                         "or the house's, does not count",
                  "when": {"event": "lab_finding", "where": {"vs": "other"}}},
     "lab-confirmed": {"title": "Report a bug in a lab", "xp": 20, "needs": ("labs",),
@@ -225,7 +225,7 @@ TRACKS: tuple[dict, ...] = (
      "when": {"event": "deal", "where": {**OTHER, "side": "seller", "repeat": True}, "distinct": "operator"},
      "tiers": ((1, "regulars-1", 15), (3, "regulars-2", 25), (6, "regulars-3", 40))},
     {"id": "ladder", "pillar": "act", "title": "Ladder", "unit": "places climbed",
-     "how": "challenge(opponent=<ranked above you>, ladder=true) in a set play and win (ratings shows the ladder)",
+     "how": "challenge(opponent=<ranked above you>, ladder=true) in a set play and win (standing(view=\"season\") shows the ladder)",
      "when": {"event": "game", "where": {**OTHER, "challenge": "ladder", "role": "issuer", "won": True},
               "measure": "sum", "sum_of": "places", "per_operator": "max"},
      "tiers": ((1, "ladder-1", 15), (5, "ladder-2", 25), (15, "ladder-3", 40))},

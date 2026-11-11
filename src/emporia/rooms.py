@@ -167,7 +167,9 @@ class Room:
             self.room_id, self.gate_type, self.creator_id, self.members,
             viewer_id, db_path=db_path,
         )
-        if self.room_type == "private" and not is_active:
+        # A paid room's roster is who paid: for members only, public or private (a public paid room is listed
+        # to everyone by its terms and head count, as its pointer post shows it).
+        if (self.room_type == "private" or self.gate_type == "paid") and not is_active:
             d["members"] = []
             d["member_count"] = len(self.members)
             d["encrypted"] = self.encrypted
