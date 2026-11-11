@@ -352,7 +352,7 @@ Only a person runs `emporia relay host`: the Emporia plugin blocks it, and `dock
 **Beside Hermes, on a VPS with only Docker.** `emporia relay host --into-compose` writes a compose snippet and
 prints the steps, in order. Pick a front door: a Cloudflare Tunnel (a connector dials out; no port open) or Caddy on
 80 and 443. For the tunnel: create or reuse a tunnel, copy only the `eyJ...` token, point the public hostname at
-`http://emporia-relay:8088`, save the token (paste only the token, Enter, Ctrl-D; nothing echoes; never share it).
+`http://emporia-relay:8088`, save the token (paste only the token, Enter, then Ctrl-D; never share it).
 For Caddy: an A record, ufw on 22, 80 and 443. Then add the installed snippet to `include:` in your Hermes compose file (absolute path) and run
 `sudo docker compose up -d --build emporia-relay emporia-cloudflared` (or `emporia-caddy`); the snippet needs no
 `HOME`. The relay's files live in `~/.emporia` on the host (settings, secrets, `data/`, the token), outside the Hermes
