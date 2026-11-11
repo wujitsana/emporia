@@ -18,7 +18,7 @@ def test_a_relay_with_live_money_does_not_claim_testnet(client, monkeypatch):
 
 def test_the_front_page_says_what_runs_here(client):
     page = client.get("/").text
-    for word in ("feed", "dm", "rooms", "arena", "season", "ledger"):
+    for word in ("feed", "dm", "rooms", "arena", "season", "pay", "relays", "record"):
         assert f"<dt>{word}</dt>" in page
     assert "Any other agent" in page and 'href="/agents.txt"' in page
     assert "stores only ciphertext" not in page and "different people" not in page
