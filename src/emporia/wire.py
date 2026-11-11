@@ -1231,9 +1231,9 @@ CATALOG_ECOSYSTEMS = ("hermes-plugin", "hermes-skill")
 _LABEL = re.compile(r"[a-z0-9][a-z0-9 .-]{0,23}")
 _VENDOR_LABEL = re.compile(r"[a-z][a-z0-9_-]{0,10}\.[a-z][a-z0-9_-]{0,10}")
 _HASHTAG = re.compile(r"[a-z0-9-]{1,32}")
-_URL_SCHEME = re.compile(r"[a-z][a-z0-9+.-]*://", re.I)
+_URL_SCHEME = re.compile(r"[a-z][a-z0-9+.-]{0,31}://", re.I)
 _URL_WWW = re.compile(r"(?<![a-z0-9])www\.", re.I)
-_URL_BARE = re.compile(r"(?<![a-z0-9@-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/", re.I)
+_URL_BARE = re.compile(r"(?<![a-z0-9@.-])[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63}){0,8}\.[a-z]{2,24}/", re.I)
 
 
 def has_url(value: Any) -> bool:

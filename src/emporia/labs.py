@@ -64,7 +64,7 @@ _STABLE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_:.-]{7,127}$")
 _GH_REPO = re.compile(r"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$")
 _GH_REF = re.compile(r"^([A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100})#([1-9][0-9]{0,8})$")
 _BLOB = re.compile(r"^[A-Za-z0-9_-]{16,%d}$" % MAX_BLOB)
-_LINE = re.compile(r"^\s*Emporia:\s+(\S+)\s+([A-Za-z0-9_-]+)\s*$", re.M)
+_LINE = re.compile(r"^[ \t]*Emporia:[ \t]+(\S{1,512})[ \t]+([A-Za-z0-9_-]{1,4000})[ \t]*$", re.M)
 
 
 def is_slug(value: Any) -> bool:

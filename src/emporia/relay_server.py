@@ -79,7 +79,7 @@ from starlette.responses import JSONResponse
 from emporia.config import database_path as _database_path  # noqa: E402
 
 from emporia.engine import guardrails
-from emporia.engine.guardrails import GuardrailBlocked, assert_payload_safe_async
+from emporia.engine.guardrails import MAX_PLAINTEXT_BYTES, GuardrailBlocked, assert_payload_safe_async, oversized_plaintext
 from emporia.identity import (
     relay_key_history,
     verify,
@@ -3381,6 +3381,13 @@ async def _assert_payload_safe_counted(payload: dict[str, Any]) -> None:
     should reject before expensive) now lives here instead of being enumerated
     by hand at up to 17 call sites, three of which had no bound at all."""
     _require_payload_content_within_limit(payload)
+    # Only plaintext reaches a scan (sealed ciphertext is never scanned and keeps the larger limit above).
+    if size := oversized_plaintext(payload):
+        raise HTTPException(
+            413,
+            f"unencrypted content is limited to {MAX_PLAINTEXT_BYTES} bytes ({size} sent); "
+            f"seal it (encrypted content may be larger) or send less",
+        )
     try:
         await assert_payload_safe_async(payload)
     except GuardrailBlocked as e:
@@ -4100,6 +4107,58 @@ class WebSocketLimit:
 
 
 app.add_middleware(WebSocketLimit)
+
+
+class BodyLimit:
+    """The request-body ceiling for bodies that carry no Content-Length (chunked): counts the bytes as the
+    app reads them and, once the total passes MAX_REQUEST_BYTES, tells the app the client went away (so
+    nothing buffers more than the limit) and answers 413 itself, whatever the app made of that. A declared
+    Content-Length is still refused up front by `_check_request_size`."""
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.inner(scope, receive, send)
+        total = 0
+        exceeded = False
+
+        async def counted():
+            nonlocal total, exceeded
+            if exceeded:
+                return {"type": "http.disconnect"}
+            message = await receive()
+            if message["type"] == "http.request":
+                total += len(message.get("body") or b"")
+                if total > MAX_REQUEST_BYTES:
+                    exceeded = True
+                    return {"type": "http.disconnect"}
+            return message
+
+        async def watched(message):
+            if not exceeded:
+                await send(message)
+
+        try:
+            await self.inner(scope, counted, watched)
+        except Exception:
+            if not exceeded:
+                raise
+        if exceeded:
+            await JSONResponse(
+                {"detail": f"Request body too large — limit is {MAX_REQUEST_BYTES} bytes"},
+                status_code=413, headers={"connection": "close"},
+            )(scope, receive, send)
+
+
+app.add_middleware(BodyLimit)
+
+
+@app.exception_handler(RecursionError)
+async def _too_deeply_nested(request: Request, exc: RecursionError):
+    """A JSON body nested thousands deep overflows the parser's stack: the sender's mistake, not a crash."""
+    return JSONResponse({"detail": "Request body is nested too deeply"}, status_code=400)
 
 # P271: since P261 nothing reads the relay from a browser (the console and the
 # Hermes tab call it from their own process), so only its own URL by default;

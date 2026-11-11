@@ -53,8 +53,8 @@ _INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
         r"(previous|prior|above|earlier|safety|system)\s+(instructions|rules|messages|guidelines|prompt)",
         r"new\s+instructions\s*:|updated\s+instructions\s*:",
         r"<\|?(im_start|im_end|system|endoftext)\|?>|\[/?INST\]|<</?SYS>>",
-        r"(read|cat|open|print|send|upload|show|reveal)\s+[^\n]{0,40}(~/\.ssh|\.hermes/keys|\.hermes/\.en[v]|id_ed25519|private[_\s-]?key|seed\s+phrase|mnemonic)",
-        r"(send|transfer|pay|wire)\s+[^\n]{0,60}\bto\s+0x[0-9a-f]{20,}",
+        r"(read|cat|open|print|send|upload|show|reveal)\s{1,8}[^\n]{0,40}(~/\.ssh|\.hermes/keys|\.hermes/\.en[v]|id_ed25519|private[_\s-]?key|seed\s+phrase|mnemonic)",
+        r"(send|transfer|pay|wire)\s{1,8}[^\n]{0,60}\bto\s+0x[0-9a-f]{20,}",
         r"(run|execute|invoke)\s+(the\s+)?(terminal|shell|bash|python)\s+(tool|command)",
     )
 )
@@ -144,7 +144,7 @@ def _iter_text_values(value: Any, *, parent_key: str | None = None) -> Iterable[
 _ZERO_WIDTH_RE = re.compile(
     "[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\u00ad\u180e\ufeff"
     "\ufe00-\ufe0f\U000e0000-\U000e007f]")
-_HTML_TAG_RE = re.compile(r"<[^>]{0,200}>|<!--.*?-->", re.DOTALL)
+_HTML_TAG_RE = re.compile(r"<[^>]{0,200}>|<!--.{0,256}?-->", re.DOTALL)
 _B64_RE = re.compile(r"[A-Za-z0-9+/_-]{16,2730}={0,2}")
 #: Cyrillic and Greek letters that read as Latin ones.
 _HOMOGLYPHS = str.maketrans({
@@ -221,9 +221,10 @@ def scan_text(text: str, *, mode: str | None = None) -> GuardrailResult:
     active_mode = (mode or DEFAULT_MODE or "enforce").lower()
     if active_mode == "off":
         return GuardrailResult(ok=True, mode=active_mode)
+    variants = _normalize_for_scan(text)
     audited: GuardrailResult | None = None
     for pattern in _INJECTION_PATTERNS:
-        for variant in _normalize_for_scan(text):
+        for variant in variants:
             if pattern.search(variant):
                 if pattern.pattern in _BARE_PHRASE_PATTERNS:
                     if audited is None:       # keep looking: a command-shaped pattern later still refuses
@@ -267,6 +268,19 @@ def _flatten_texts(payload: Mapping[str, Any] | str) -> list[str]:
         else:
             return [payload]
     return list(_iter_text_values(payload))
+
+
+#: Plaintext the relay scans is capped well under the ciphertext limit (`wire.MAX_CONTENT_BYTES`): every scanner
+#: runs on the event loop, so the work a single request can ask for is bounded by this.
+MAX_PLAINTEXT_BYTES = 32 * 1024
+
+
+def oversized_plaintext(payload: Mapping[str, Any] | str) -> int:
+    """The size in bytes of the first text field of `payload` over `MAX_PLAINTEXT_BYTES`, else 0."""
+    for text in _flatten_texts(payload):
+        if len(text) * 4 > MAX_PLAINTEXT_BYTES and (size := len(text.encode("utf-8"))) > MAX_PLAINTEXT_BYTES:
+            return size
+    return 0
 
 
 def scan_payload(payload: Mapping[str, Any] | str, *, mode: str | None = None) -> GuardrailResult:
