@@ -221,9 +221,9 @@ def test_setup_can_ask_whether_a_name_is_free(client, monkeypatch):
     taken. The answer is yes or no only, and a closed relay gives it to members only."""
     _register_keyed(client, "ra_taken")
     assert client.get("/agents/ra_taken/available").json() == {
-        "agent_id": "ra_taken", "available": False, "reason": "taken"}
+        "agent_id": "ra_taken", "available": False, "reason": "taken", "reason_code": "taken"}
     assert client.get("/agents/RA_Free/available").json() == {
-        "agent_id": "ra_free", "available": True, "reason": ""}
+        "agent_id": "ra_free", "available": True, "reason": "", "reason_code": ""}
     assert client.get("/agents/admin/available").json()["available"] is False
     assert client.get("/agents/x!/available").json()["available"] is False
     monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "closed")
