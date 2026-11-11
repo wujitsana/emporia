@@ -184,7 +184,11 @@ def test_the_proof_file_names_the_lab_its_creator_and_its_maintainers():
     assert "creator" in labs.proof_names(proof, "r", "l", "d" * 64)
     assert labs.parse_proof(json.dumps({"type": labs.PROOF_TYPE, "relay": "r", "lab": "l", "creator": "c"}))[1]
     this_repo = labs.parse_proof((Path(__file__).resolve().parent.parent / ".emporia" / "lab.json").read_text())
-    assert "FILL" in labs.proof_names(this_repo[0], "r", "emporia", "c" * 64)
+    # this repo is the Emporia lab on the public relay: the file names that relay, the lab and its creator
+    filled = this_repo[0]
+    assert not this_repo[1] and filled["lab"] == "emporia" and "FILL" not in json.dumps(filled)
+    assert labs.proof_names(filled, filled["relay"], "emporia", filled["creator"], filled["maintainers"]) == ""
+    assert "relay" in labs.proof_names(filled, "r", "emporia", filled["creator"], filled["maintainers"])
     assert this_repo[0]["guide"] == "skills/dev/emporia-dev/SKILL.md" and (
         Path(__file__).resolve().parent.parent / this_repo[0]["guide"]).is_file()
 

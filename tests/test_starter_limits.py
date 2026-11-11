@@ -33,15 +33,15 @@ def at_level(monkeypatch, agent, level):
 
 
 def test_the_switch_and_the_exemptions(client, monkeypatch):
-    _register_keyed(client, "the_operator")
+    _register_keyed(client, "the_relay_op")
     assert L.starter_limits_on()
     monkeypatch.setenv("EMPORIA_STARTER_LIMITS", "0")
     assert not L.starter_limits_on() and ST.limit_level("anyone") is None
     monkeypatch.setenv("EMPORIA_STARTER_LIMITS", "1")
     _register_keyed(client, "the_house")
     house_env(monkeypatch, "the_house")
-    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of("the_operator"))
-    assert ST.limit_level("the_house") is None and ST.limit_level("the_operator") is None
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of("the_relay_op"))
+    assert ST.limit_level("the_house") is None and ST.limit_level("the_relay_op") is None
 
 
 def test_waiting_challenges_grow_with_level(client, monkeypatch):

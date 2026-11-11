@@ -189,6 +189,13 @@ def test_farm_on_one_relay_move_to_another_and_the_new_relay_still_shows_level_o
     with rs.DB_LOCK, rs.get_db() as conn:
         key = conn.execute("SELECT public_key_hex FROM authorized_agents WHERE agent_id = ?", (agent,)).fetchone()[0]
     farm = _signed_record_from_another_relay(agent, key, "https://relay-a.example")
+    # a record is taken only from a linked relay, checked with the key pinned for it (naming review F4)
+    from emporia import federation_dm
+    monkeypatch.setattr(rs, "FEDERATED_RELAYS", ["https://relay-a.example"])
+
+    async def pinned(peer):
+        return farm["relay_public_key"]
+    monkeypatch.setattr(federation_dm, "peer_key", pinned)
     h = bearer_for(client, agent)
     r = client.post(f"/agents/{agent}/carried-record", json={"record": farm}, headers=h)
     assert r.status_code == 200, r.text

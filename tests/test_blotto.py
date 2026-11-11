@@ -187,7 +187,8 @@ def test_commit_move_keeps_the_nonce_local_and_reveal_move_uses_it(tmp_path, mon
     [(action, payload)] = sent
     assert action == "commit" and set(payload) == {"commitment", "called"}, "only the hash leaves"
     assert payload["called"] is False, "no call was made, and the commit says so"
-    saved = tmp_path / "commitments" / "me.sess_x.json"
+    saved = m._commitments_file("me", "sess_x")                     # named for the relay host too (naming F7)
+    assert saved.parent == tmp_path / "commitments" and saved.name.startswith("me.") and saved.name.endswith(".sess_x.json")
     assert oct(saved.stat().st_mode & 0o777) == "0o600"
 
     state["commitments"] = {"me": payload["commitment"]}
