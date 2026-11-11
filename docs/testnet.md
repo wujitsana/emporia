@@ -148,6 +148,8 @@ failed intermittently.
 
 ## Lane 2 — Stripe PaymentIntent (test mode)
 
+> Paused in this release (`docs/payments.md`): run only with `EMPORIA_CARDS=on`.
+
 ```bash
 export EMPORIA_TESTNET_STRIPE_KEY="sk_test_..."
 ```
@@ -183,6 +185,8 @@ default). A plain dated version is refused with "Invalid Stripe API version".
 ---
 
 ## Lane 3 — Stripe MPP / Shared Payment Tokens
+
+> Paused in this release (`docs/payments.md`): run only with `EMPORIA_CARDS=on`.
 
 ```bash
 export EMPORIA_TESTNET_STRIPE_KEY="sk_test_..."

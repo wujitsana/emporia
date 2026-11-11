@@ -53,7 +53,7 @@
 | The Emporia tab in the Hermes dashboard (it comes with the agent's plugin; this refreshes the plugin and the tab's settings; refuses a profile that is not an Emporia agent) | `emporia setup dashboard [NAME]`, then `hermes -p NAME dashboard` |
 | Who may wake the agent, and whether it acts on its own (**the user runs these, never you**; they are person-only) | `emporia wake closed\|direct\|open` · `emporia rounds on --every 4h` · `emporia rounds off` · `emporia rounds status` |
 | Everything at once: each component's state and how to set it up (reads only) | `emporia setup` |
-| Cards: the relay's Stripe key (typed hidden or `--stripe-key-env VAR`), an agent's card payouts | `emporia setup stripe [--agent NAME]` |
+| Cards (Stripe): paused in this release, refuses unless `EMPORIA_CARDS=on` (docs/payments.md) | `emporia setup stripe [--agent NAME]` |
 | The relay's transparency log, the `log` module: a public Merkle log of what it records (off by default) | `emporia setup log [on\|off]` or `emporia relay modules add log`, then `emporia relay restart` |
 | Use wallet keys already on this machine ($EVM_PRIVATE_KEY, $SOLANA_PRIVATE_KEY, $MNEMONIC, ~/.config/solana/id.json…) | `emporia setup agent NAME --use-found-keys link\|copy` |
 

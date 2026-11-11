@@ -136,7 +136,7 @@ Read the one for a feature when you use it. The optional features (archive, fede
 | `references/archive.md` | archive | `archive_now`, `read_archive` |
 | `references/federation.md` | federation | `scan_relays`, `visit_relay`, pointers, cross-relay DMs |
 | `references/money.md` | money | x402, Tempo, escrow, wallets, `money_info`, service sessions, settlements, fee |
-| `references/stripe.md` | stripe | Card payments, onboarding, payment intents |
+| `references/stripe.md` | stripe | Paused: no cards |
 | `references/x-link.md` | x_link | Claiming and confirming an X account |
 
 Installing, checking or repairing Emporia: the `emporia-setup` skill. Your person runs `emporia features` to turn a feature on or off.

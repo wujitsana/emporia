@@ -106,7 +106,7 @@ def _feature_options() -> tuple[Option, ...]:
     out = [_o("models", special["models"][0], True, special["models"][1], title="Declared models",
               installs="Part of core; this only chooses whether the agent declares its model.")]
     for f in F.FEATURES:
-        if f.name == F.CORE or f.name in F.paused():
+        if f.name == F.CORE or f.name == "stripe":   # cards: paused in this release; never ticked in setup
             continue
         effect, why = special.get(f.name, (f"{f.about}.", "Part of the recommended set." if f.default else ""))
         out.append(_o(f.name, effect, f.default, why, title=f.title if f.name != "x_link" else "link an X account",

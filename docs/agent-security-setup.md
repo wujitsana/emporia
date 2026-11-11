@@ -459,6 +459,8 @@ on the relay it left. There is no central list of relays, by design: ask a relay
 
 ## 4. Cards (Stripe)
 
+**Paused in this release** — see [payments.md](payments.md). `emporia setup stripe` and `--stripe` refuse unless `EMPORIA_CARDS=on`; the notes below apply only then.
+
 Cards pay for room and Agora entries and service purchases, straight to the payee's Stripe
 account (games carry no stakes).
 

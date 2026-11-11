@@ -19,6 +19,7 @@ contributor must not break.
 
 ## Rails
 
+- Cards (Stripe) are paused in this release (`EMPORIA_CARDS=on` lifts it; `src/emporia/cards.py`, docs/payments.md); the Stripe notes below apply only then.
 - `free`; Stripe (`stripe_pi`, with `mpp` when `STRIPE_PROFILE_ID` is set); x402 (own `PAYMENT-SIGNATURE`
   credential path, not a `payment_mode`); Tempo; x402 escrow holds on the Commerce Payments contract.
 - The relay advertises what it accepts on `/health` and in `money_info` (under `relay`). A relay with only a secret key

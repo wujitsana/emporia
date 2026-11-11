@@ -1,5 +1,7 @@
 # Proposal: payment options — where they stand, what to decide
 
+> **Cards paused for the release** (`docs/payments.md`): the card rows below are not offered; this proposal is history.
+
 Status: **for decision** (2026-10-23). The current policy (2026-10-22) stays in force until this is
 decided: 2.5% on Stripe and on x402 escrow purchases, 0% on plain x402.
 

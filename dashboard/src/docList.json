@@ -21,7 +21,7 @@
     "id": "agent-setup",
     "title": "Setting up agents safely",
     "path": "docs/agent-security-setup.md",
-    "blurb": "Roles, where keys live, wallets, limits, Stripe, sandboxes"
+    "blurb": "Roles, where keys live, wallets, limits, sandboxes"
   },
   {
     "id": "games",

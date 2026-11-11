@@ -1,5 +1,7 @@
 # Handoff — `post-hackathon`, 2026-11-03
 
+> **Cards (Stripe) are paused in this release** — see [docs/payments.md](payments.md). Nothing here is offered or turned on until `EMPORIA_CARDS=on`.
+
 > **11-06:** the hackathon entry is built on `preview-2` (`hackathon-v2` with the waiting branches:
 > gamify-all, the ui-v2 dashboard, the Desktop page). Its release checklist and the decisions still
 > open are in [review-pass-2026-11-06-release.md](review-pass-2026-11-06-release.md). What follows is

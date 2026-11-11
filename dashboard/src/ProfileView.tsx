@@ -12,7 +12,6 @@ import { useRelayHealth } from "./healthCtx";
 import { useRelayCtx } from "./relayCtx";
 import { formatMicros, settlementPayoutMicros } from "./paymentFormat";
 import { TrustBadge } from "./views/AgentsView";
-import { McpCommandHint } from "./ui/McpCommandHint";
 import { SessionLink } from "./ui/chips";
 import type { Navigate } from "./navigation";
 import { useEffect, useState } from "react";
@@ -148,8 +147,10 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
               <summary>Payment set-up</summary>
               <MetaGrid
                 rows={[
-                  ["Stripe payouts", stripeAccountStatusLabel(registered, stripeMode)],
-                  ["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"],
+                  ...(stripeMode ? [
+                    ["Stripe payouts", stripeAccountStatusLabel(registered, stripeMode)] as [string, string],
+                    ["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"] as [string, string],
+                  ] : []),
                   ...(registered.payment_methods?.length ? [["Methods", registered.payment_methods.join(", ")] as [string, string]] : []),
                   ...(registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")] as [string, string]] : []),
                 ]}
@@ -229,30 +230,7 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
           </SlimCard>
         )}
 
-        {/* P37-2: live-mode payout onboarding. Only shown when it can actually
-            do something: a live key, an identified viewer, and an account that
-            is not already active. `start_stripe_onboarding` returns a URL the
-            operator opens in a browser to walk Stripe's hosted KYC — the
-            dashboard cannot perform it, which is what the hint is for. */}
-        {!isSpectator && viewerId && stripeMode === "live"
-          && (registered?.stripe_account_status ?? (registered?.has_stripe ? "active" : "none")) !== "active" && (
-          <SlimCard title="Payouts">
-            <Text className="e-faint" style={{ display: "block", marginBottom: 8 }}>
-              {(registered?.stripe_account_status ?? "none") === "pending"
-                ? "Stripe is still verifying this account. Re-run the tool for a fresh onboarding link if the last one expired — Stripe confirms the result automatically."
-                : "Live payouts need a Stripe Connected Account. The tool returns a link to Stripe's own verification flow; open it in a browser."}
-            </Text>
-            <McpCommandHint
-              label="Start Stripe onboarding via MCP"
-              tool="start_stripe_onboarding"
-              args={{ agent_id: viewerId, email: "you@example.com", country: "US" }}
-            />
-            <Text className="e-faint" style={{ fontSize: "0.68rem", marginTop: 8, display: "block" }}>
-              Use a real, reachable address — Stripe sends verification requirements and payout
-              failures there. Country is fixed once the account exists.
-            </Text>
-          </SlimCard>
-        )}
+        {/* Cards (Stripe) are paused in this release (docs/payments.md): no payout-onboarding prompt. */}
 
         {/* My settlement history */}
         {!isSpectator && (
@@ -269,7 +247,7 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
             {mySettlements.length === 0 ? (
               <Text className="e-faint">
                 No settled transactions yet.{" "}
-                {!registered?.stripe_profile_ready && "Paid sessions need a payment rail: Stripe (a valid STRIPE_PROFILE_ID) or x402 (a USDC wallet — register_x402_wallet)."}
+                {!registered?.stripe_profile_ready && "Paid sessions are paid in USDC over x402 or Tempo (a wallet — register_x402_wallet)."}
               </Text>
             ) : (
               <div className="e-compact-table">

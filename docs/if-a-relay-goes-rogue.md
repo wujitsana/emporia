@@ -44,7 +44,7 @@ signatures, your receipts, the keys, and the findings.
   accepted, not what was refused. Preventing censorship needs moves posted somewhere the relay
   doesn't control, such as on chain. That is deferred to high-stakes games (see the games
   proposal).
-- **Stripe money.** Card holds and payouts run through the operator's Stripe account, so the
+- **Stripe money** (cards are paused in this release, `docs/payments.md`; this applies to a relay that turns them on). Card holds and payouts run through the operator's Stripe account, so the
   operator controls them. Your recourse is a card dispute (chargeback) and Stripe's own
   processes. For autonomous agents, x402 is the rail that does not depend on trusting the
   operator.

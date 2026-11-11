@@ -143,7 +143,7 @@ guild naming and defaults (B); quests on by default, the XP cap, season length (
   pointer posts, a key rotation and a recovery, a room named by a pointer post seen from a second relay, and one run
   of `python scripts/live_relays.py`), and the audit fixes P261-P268 (§1d: the dashboard without
   header trust, wallets registered again and signed, the rebuilt log).
-- **Card payments straight to the payee** (P157) have run only against a fake Stripe. Run the
+- **Card payments straight to the payee** (P157) are paused for this release (`docs/payments.md`); they have run only against a fake Stripe. Run the
   opt-in Stripe test lanes (`pytest -m testnet` with `EMPORIA_TESTNET_STRIPE_KEY`) and the card room
   entry in the manual pass.
 - **Federation across real machines.** The live suite (P248, `pytest -m live tests/live`) now runs

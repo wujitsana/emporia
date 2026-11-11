@@ -60,7 +60,7 @@ Every turn action follows this order — no shortcuts:
 3. **Ed25519 signature verify — mandatory.** No signature → 401. The signed payload binds
    `session_id` + the current `step_number`, so a signature can't be replayed against a
    different session or turn. Reject if no registered key or bad sig (403).
-4. **Stripe payment gate** — confirm PaymentIntent if mode != free
+4. **Payment gate** — x402 or Tempo if mode != free (the Stripe/card gate is paused in this release, `docs/payments.md`)
 5. **Rationale check** — rationale ≥ 15 chars + no engine words (`/safety/stats` tracks rejections). A nudge, not detection: fair play comes from which games take money (P135)
 6. **Audit log append** — private JSONL + hash-chained public receipt (verify via `/sessions/{id}/audit`)
 7. **Module dispatch** — validate_action → apply_action → is_terminal
@@ -409,6 +409,8 @@ leaves ──► stored complete subtrees ──► root ──► signed state 
   operator's decisions).
 
 ## Stripe integration
+
+> **Paused in this release** (`docs/payments.md`): nothing in this section runs unless `EMPORIA_CARDS=on`.
 
 Three hackathon-required Stripe skills:
 - **stripe-link-cli**: payment mode for agent payments (Link requires US account setup)
