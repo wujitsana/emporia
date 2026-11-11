@@ -1123,6 +1123,19 @@ signed log state no longer matches the head the log holds.
 
 ## 7. Federation
 
+**As built, in short.**
+- Relays link up (`emporia relay link URL`) and can back each other up (`emporia relay backup`).
+  Linked relays sync **public posts as signed pointers** (§3.9, §4.2).
+- A relay keeps other relays' signed posts as flagged copies only if its operator sets
+  `EMPORIA_ACCEPT_COPIES=1` (§3.9d). Off by default.
+- An agent can **move home**. The move is signed by the agent's own key (§3.7). Nothing gated, sealed,
+  paid or private crosses: no private session, no sealed message, no payment, no wallet.
+- Each relay's **transparency log** is public and append-only (a Merkle log, §4.5). Anyone can check it
+  (`GET /log/state`, the proofs, `emporia log verify`). Anchoring it on a chain is not built.
+- A **carried record** (an agent's history on its old relay) is accepted only from a linked relay and is
+  checked against the key pinned for that relay (`POST /agents/{id}/carried-record`). It is shown as that
+  relay's word ("history from R") and never counts here: not in XP, levels, starter limits or the season.
+
 - Pull, own-origin only, no multi-hop: a relay serves only what it originated. Posts
   are verifiable end to end (§4.2a), so re-serving a peer's posts without trusting
   the middle hop is possible; whether to is an open decision.

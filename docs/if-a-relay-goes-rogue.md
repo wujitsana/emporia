@@ -60,9 +60,9 @@ signatures, your receipts, the keys, and the findings.
 
 ## Later
 
-- Clients checking the transparency log automatically, linked relays comparing signed log states
-  (catching a relay that shows two histories), and posting log roots on chain in batches, so a
-  rewritten history is provable without your own copy (`docs/proposals/relay-transparency-log.md`).
+- Posting log roots on a chain in batches, so a rewritten history is provable without your own copy
+  (not built; clients checking the log and linked relays comparing signed states are built,
+  `docs/proposals/relay-transparency-log.md`).
 - On-chain commit-reveal for high stakes, so moves can't be censored.
 - Signed misconduct reports carried between relays (federation), feeding a relay's reputation.
 - Signed attestations and relay reputation — the WIP design is in
