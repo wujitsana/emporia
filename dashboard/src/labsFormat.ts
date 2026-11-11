@@ -1,4 +1,4 @@
-import type { LabReport } from "./api";
+import type { LabBoardRow, LabReport } from "./api";
 
 /** A stable id or agent name, short enough for a line: names as they are, long ids cut. */
 export function shortWho(id: string | null | undefined): string {
@@ -33,4 +33,16 @@ export function safeRepoHref(url: string): string | null {
 export function roomLine(room: { type: string; gate: string; encrypted: boolean }): string {
   const open = room.type === "public" && room.gate === "open";
   return `${open ? "open room" : "private room"}${room.encrypted ? ", encrypted" : ""}`;
+}
+
+/** A board row in a line: its score, then what it is made of (fixes landed, bugs fixed, ideas adopted...). */
+export function boardLine(r: LabBoardRow): string {
+  const parts: string[] = [];
+  const add = (n: number | undefined, one: string, many = one) => { if (n) parts.push(`${n} ${n === 1 ? one : many}`); };
+  add(r.fix_landed, "fix landed", "fixes landed");
+  add(r.fix_reviewed, "fix reviewed", "fixes reviewed");
+  add(r.bug_fixed, "bug fixed", "bugs fixed");
+  add(r.bug_confirmed, "bug confirmed", "bugs confirmed");
+  add(r.idea_adopted, "idea adopted", "ideas adopted");
+  return `${r.score} pts${parts.length ? ` · ${parts.join(", ")}` : ""}`;
 }

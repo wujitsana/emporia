@@ -180,6 +180,8 @@ describe("Home", () => {
       { kind: "post", actor: "bob", ref: "post:p1", title: "a fresh idea", at: "2026-11-06T11:00:00Z", post_kind: "idea", topic: "ideas" },
       { kind: "game", actor: "carol", ref: "session:s9", title: "emporia:chess:v1", at: "2026-11-06T10:00:00Z" },
     ] };
+    data.happening = { since: "x", next_since: "y", untrusted: "x", labs: [], rooms: [], top_posts: [],
+      topics: [{ in: { kind: "topic", id: "ideas", name: "Ideas" }, new_posts: 2, operators: 1, latest: { post_id: "p7", first_line: "Another take" } }] };
     const nav = vi.fn();
     render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={nav} />));
     expect(screen.getByRole("group", { name: "Home view" }).querySelector("[aria-pressed=true]")?.textContent).toBe("cards");
@@ -228,12 +230,56 @@ describe("Home", () => {
     expect(start.querySelectorAll(".e-hcard__copy")).toHaveLength(3);
   });
 
-  it("collapses an empty section to one quiet card", () => {
+  it("draws no row for an empty section, and ONE quiet card at the foot naming them all", () => {
     data.followed = { agent_id: "alpha", following: 2, items: [] };
     render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
-    const block = screen.getByRole("region", { name: "Games" });
-    expect(block.querySelectorAll(".e-hcard")).toHaveLength(1);
-    expect(block.querySelector(".e-hcard--quiet")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Games" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "New posts" })).toBeNull();
+    expect(document.querySelectorAll(".e-hcard--quiet")).toHaveLength(1);
+    const quiet = screen.getByRole("region", { name: "Quiet" });
+    expect(quiet.textContent).toContain("no game news");
+    expect(quiet.textContent).toContain("no new posts");
+  });
+
+  it("shows a topic's newest post (who, its text, the topic) and never the same post or topic twice", () => {
+    data.followed = { agent_id: "alpha", following: 2, items: [
+      { kind: "topic", actor: "bob", ref: "topic:ideas", title: "Ideas", topic: "ideas", at: "2026-11-06T11:00:00Z" },
+      { kind: "topic", actor: "carol", ref: "topic:games", title: "Games", topic: "games", at: "2026-11-06T10:00:00Z" },
+    ] };
+    data.happening = {
+      since: "x", next_since: "y", untrusted: "x", labs: [], rooms: [],
+      topics: [
+        { in: { kind: "topic", id: "ideas", name: "Ideas" }, new_posts: 3, operators: 2, latest: { post_id: "p1", first_line: "Rank cards by wins" } },
+        { in: { kind: "topic", id: "games", name: "Games" }, new_posts: 1, operators: 1, latest: { post_id: "p2", first_line: "Who wants a rematch?" } },
+      ],
+      top_posts: [{ post_id: "p1", kind: "idea", first_line: "Rank cards by wins", likes: 2, author_id: "bob", in: { kind: "topic", id: "ideas", name: "Ideas" } }],
+    };
+    render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
+    // Ideas: its newest post is already a post card, which says how many more the topic has; no second Ideas card
+    const posts = screen.getByRole("region", { name: "New posts" });
+    expect(posts.textContent).toContain("Rank cards by wins");
+    expect(posts.textContent).toContain("3 new in Ideas");
+    const around = screen.getByRole("region", { name: "Topics & agents" });
+    const heads = [...around.querySelectorAll(".e-hcard__head")].map(headOf);
+    expect(heads).toEqual(["GAMES"]);   // Games once, though the followed-topic line names it too
+    // Games shows the post's text, not "1 new post"
+    expect(around.querySelector(".e-hcard__body")?.textContent).toBe("Who wants a rematch?");
+    expect(around.textContent).not.toMatch(/1 new post\b/);
+  });
+
+  it("draws a game once on the page: not under 'now' and again under Games", () => {
+    data.sessions = [live];
+    data.followed = { agent_id: "alpha", following: 1, items: [
+      { kind: "challenge", actor: "carol", ref: "session:s-live", title: "emporia:blotto:v2", at: "2026-11-06T10:00:00Z" },
+    ] };
+    data.happening = {
+      since: "x", next_since: "y", untrusted: "x", labs: [], rooms: [], topics: [], top_posts: [],
+      open_challenges: [{ session_id: "s-live", module_type: "emporia:blotto:v2", from: "carol", expires_at: null }],
+      games_waiting: [{ session_id: "s-live", module_type: "emporia:blotto:v2", from: "carol" }],
+    };
+    render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
+    expect(screen.getByRole("region", { name: "alpha now" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Games" })).toBeNull();
   });
 
   it("draws no Next steps on a relay that does not serve the route", () => {

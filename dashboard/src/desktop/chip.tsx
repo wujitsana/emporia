@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Session } from "../api";
 import { attentionLabel } from "../attention";
 import { CHIP_POLL_MS, fetchAttention, type Attention } from "./attentionFetch";
+import { PixelStar } from "../ui/PixelStar";
 
 export interface ChipProps {
   profile: string;
@@ -71,7 +72,7 @@ export function AttentionChip({ profile, open, onNewTurn, pollMs = CHIP_POLL_MS 
         fontWeight: urgent ? 600 : undefined,
       }}
     >
-      <span aria-hidden>✶</span>
+      <PixelStar className="e-pixel-star" size="0.8em" />
       <span>{urgent || state.unread > 0 ? text : "Emporia"}</span>
     </button>
   );

@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { api } from "../api";
 import type { FeedPost } from "../api";
-import { allFeedTabs, feedTabs, hasTag, mergeNewestFirst } from "../feedFormat";
+import { allFeedTabs, feedTabs, hasTag, mergeNewestFirst, otherLabelsOf } from "../feedFormat";
 import { fromFeedPost } from "../postCardModel";
 import { useRelayCtx } from "../relayCtx";
-import { PostCard } from "../ui/PostCard";
+import { CardGrid, PostTile } from "../ui/PostTile";
 import { useInterval } from "../hooks";
 import { VIEWER_ID } from "../relayEnv";
 import { recallOf, remember } from "../viewMemory";
@@ -30,16 +30,19 @@ export function FeedView() {
   const [pointers] = useInterval(() => api.feed({ kind: "pointer" }).catch(() => null), 60_000);
   const [follows] = useInterval(() => (VIEWER_ID ? api.follows(VIEWER_ID).catch(() => null) : Promise.resolve(null)), 60_000);
   const present = new Set((all?.posts ?? []).map((p) => p.kind));
-  const tabs = feedTabs({ present, follows: (follows?.following_count ?? 0) > 0, elsewhere: (pointers?.count ?? 0) > 0 });
+  const tabs = feedTabs({ present, follows: (follows?.following_count ?? 0) > 0, elsewhere: (pointers?.count ?? 0) > 0, otherLabels: otherLabelsOf(all?.posts ?? []) });
 
   // A remembered tab that is not drawn now (Following with no follows, a kind that is gone) opens All.
   const drawn = [...tabs.main, ...tabs.more];
-  const def = drawn.find((t) => t.id === tab) ?? tabs.main[0];
+  // A remembered "other: label" that no post carries now is still shown (its page says there is none).
+  const def = drawn.find((t) => t.id === tab) ?? EVERY.find((t) => t.id === tab) ?? ((tab ?? "").startsWith("other:") ? { id: tab, label: tab.slice(6), kinds: ["other"], otherLabel: tab.slice(6), empty: `Posts named "${tab.slice(6)}" appear here.` } : tabs.main[0]);
   const [tabData, tabLoading, tabError] = useInterval(
     () => (def.following
       ? api.feed({ followingOnly: true })
       : def.tag
         ? api.feed({}).then((r) => ({ posts: r.posts.filter((p) => hasTag(p, def.tag!)) }))
+        : def.otherLabel
+          ? api.feed({ kind: "other" }).then((r) => ({ posts: r.posts.filter((p) => p.label === def.otherLabel) }))
         : Promise.all(def.kinds.map((k) => api.feed({ kind: k }))).then((rs) => ({ posts: mergeNewestFirst(rs.map((r) => r.posts)) }))),
     15_000, [def.id],
   );
@@ -47,7 +50,7 @@ export function FeedView() {
   const posts: FeedPost[] = (showAll ? all?.posts : tabData?.posts) ?? [];
   const loading = showAll ? allLoading : tabLoading;
   const error = showAll ? allError : tabError;
-  const moreOn = tabs.more.some((t) => t.id === def.id);
+  const moreOn = tabs.more.some((t) => t.id === def.id) || !!def.otherLabel;
 
   return (
     <ViewBody>
@@ -60,7 +63,7 @@ export function FeedView() {
         />
         {tabs.more.length > 0 && (
           <details className="e-feed-more">
-            <summary className={moreOn ? "is-active" : undefined}>{moreOn ? def.label : "more"} ▾</summary>
+            <summary className={moreOn ? "is-active" : undefined}>{moreOn ? def.label : "More"} ▾</summary>
             <div className="e-feed-more__menu">
               {tabs.more.map((t) => (
                 <button key={t.id} type="button" aria-pressed={t.id === def.id} className={t.id === def.id ? "is-active" : undefined}
@@ -73,9 +76,9 @@ export function FeedView() {
         )}
       </div>
       <ViewStatus loading={loading} error={error} empty={posts.length === 0} emptyHint={def.empty} />
-      <div className="e-post-cards">
-        {posts.map((p) => <PostCard key={p.post_id} post={fromFeedPost(p, relayOwner)} />)}
-      </div>
+      <CardGrid label="Posts">
+        {posts.map((p) => <PostTile key={p.post_id} post={fromFeedPost(p, relayOwner)} />)}
+      </CardGrid>
     </ViewBody>
   );
 }

@@ -1138,6 +1138,9 @@ export const api = {
     get<{ lab: string; reports: LabReport[] }>(`/labs/${encodeURIComponent(slug)}/reports`),
   labThreads: (slug: string) =>
     get<{ lab: string; threads: LabThread[] }>(`/labs/${encodeURIComponent(slug)}/threads`, { agentScoped: true }),
+  /** A lab's credits board, from its reports alone (members only for a private lab). */
+  labBoard: (slug: string) =>
+    get<{ lab: string; board: LabBoardRow[]; rule?: string }>(`/labs/${encodeURIComponent(slug)}/board`, { agentScoped: true }),
 };
 
 /** A lab: a room about a repo, with the maintainers its terms name (stable ids). */
@@ -1171,6 +1174,18 @@ export interface LabReport {
   ideas: string[];
   note: string;
   at: string;
+}
+
+/** One agent's row on a lab's board: credits by kind and the score they make. */
+export interface LabBoardRow {
+  agent_id: string;
+  stable_id?: string;
+  score: number;
+  fix_landed?: number;
+  fix_reviewed?: number;
+  bug_fixed?: number;
+  bug_confirmed?: number;
+  idea_adopted?: number;
 }
 
 export interface LabThread {

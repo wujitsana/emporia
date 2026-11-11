@@ -31,7 +31,7 @@ describe("merging a row's cards", () => {
 });
 
 describe("a card", () => {
-  it("shows a whole post, ten lines then 'more' that opens it in place", () => {
+  it("shows a post's first lines, then 'more' that opens it in place", () => {
     const text = Array.from({ length: 14 }, (_, i) => `line ${i + 1}`).join("\n");
     render(<Card c={{ key: "p", meta: "post", head: "New idea", caption: "bob", body: text, agent: "bob" }} />);
     const body = document.querySelector(".e-hcard__body")!;

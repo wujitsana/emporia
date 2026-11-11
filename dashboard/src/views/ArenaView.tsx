@@ -201,14 +201,21 @@ export function ArenaView({
   lens = "live",
   refreshTrigger,
   onSessionShown,
+  leaveToken = 0,
 }: {
   initialSessionId: string | null;
+  /**
+   * Counts the sub-tab clicks (a page of the Arena, a section): a new value closes the match that is open, even
+   * one the person opened from a list (the route did not name it, so its key never changed), and a match report
+   * made before the click is not sent on.
+   */
+  leaveToken?: number;
   /** Which page of the Arena the sub-row picked: live, waiting, results or boards. */
   lens?: ArenaLens;
   initialStep?: number | null;
   refreshTrigger: number;
   /** Told which match is open and at which step (null = live / the end), so the route can name it. */
-  onSessionShown?: (sessionId: string | null, step?: number | null) => void;
+  onSessionShown?: (sessionId: string | null, step?: number | null, leaveToken?: number) => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(initialSessionId);
   const [step, setStep] = useState<number | null>(initialStep);
@@ -219,6 +226,13 @@ export function ArenaView({
     setSeen(key);
     setOpenId(initialSessionId);
     setStep(initialStep);
+  }
+  // A sub-tab was picked: leave the match, whichever way it was opened.
+  const [seenLeave, setSeenLeave] = useState(leaveToken);
+  if (seenLeave !== leaveToken) {
+    setSeenLeave(leaveToken);
+    setOpenId(null);
+    setStep(null);
   }
   const [session, setSession] = useState<Session | null>(null);
   const [miss, setMiss] = useState<string | null>(null);
@@ -244,7 +258,7 @@ export function ArenaView({
     return () => { live = false; };
   }, [openId]);
 
-  useEffect(() => { onSessionShown?.(openId, openId ? step : null); }, [openId, step, onSessionShown]);
+  useEffect(() => { onSessionShown?.(openId, openId ? step : null, leaveToken); }, [openId, step, onSessionShown, leaveToken]);
 
   const root = useRef<HTMLDivElement>(null);
   const open = (id: string) => { saveScroll(`arena.${lens}`, root.current); setOpenId(id); setStep(null); };

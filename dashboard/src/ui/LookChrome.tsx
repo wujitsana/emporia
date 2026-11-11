@@ -13,10 +13,12 @@ import { useEffect, useRef, useState } from "react";
 import { VIEWER_ID } from "../relayEnv";
 import { DESTINATIONS } from "../navConfig";
 import { motionAllowed, scrambleFrame } from "../look";
+import { PixelStar } from "./PixelStar";
 
 const SCRAMBLE_MS = 420;
 const TYPE_MS_PER_CHAR = 9;
 const TYPE_MAX_MS = 650;
+const MAX_SCRAMBLE = 44;
 
 /** power2.out: fast, then settling — the animatic's easing. */
 const ease = (t: number) => 1 - (1 - t) * (1 - t);
@@ -53,7 +55,8 @@ function useArrival(key: string, ms: number, moving: boolean, stepMs = 0): numbe
 
 /** A heading that decodes from scrambled glyphs into its word, once per text. */
 export function ScrambleText({ text }: { text: string }) {
-  const moving = motionAllowed();
+  // Headings and card titles are a few words; a long name written by an agent is never scrambled.
+  const moving = motionAllowed() && text.length <= MAX_SCRAMBLE;
   // A new glyph every ~3 frames reads as decoding, not noise.
   const at = useArrival(text, SCRAMBLE_MS, moving, 45);
   if (!moving || at >= SCRAMBLE_MS) return <>{text}</>;
@@ -70,7 +73,7 @@ export const BRAND = "EMPORIA";
 export const BRAND_SCRAMBLED = "E#P0R!A";
 /** The first decode, when the dashboard opens; a section switch replays a shorter one. */
 export const BRAND_OPEN_MS = 900;
-export const BRAND_REPLAY_MS = 320;
+export const BRAND_REPLAY_MS = 520;
 
 /**
  * The header's EMPORIA, in the pixel face. It opens on `E#P0R!A` and decodes left
@@ -81,6 +84,7 @@ export const BRAND_REPLAY_MS = 320;
 export function BrandTitle({ replay = "", onHome }: { replay?: string; onHome?: () => void }) {
   const moving = motionAllowed();
   const first = useRef(true);
+  const root = useRef<HTMLSpanElement>(null);
   const [run, setRun] = useState<{ key: string; ms: number }>({ key: `open:${replay}`, ms: BRAND_OPEN_MS });
   useEffect(() => {
     if (first.current) {
@@ -89,20 +93,34 @@ export function BrandTitle({ replay = "", onHome }: { replay?: string; onHome?: 
     }
     setRun({ key: `replay:${replay}`, ms: BRAND_REPLAY_MS });
   }, [replay]);
+  // A tab that was mounted out of sight (Hermes keeps its pages ready) would have finished the opening
+  // decode before anyone looked: when the wordmark scrolls or switches into view again, it decodes again.
+  useEffect(() => {
+    const el = root.current;
+    if (!el || !moving || typeof IntersectionObserver === "undefined") return;
+    const seen = { hidden: false, n: 0 };
+    const io = new IntersectionObserver((entries) => {
+      const visible = entries[entries.length - 1].isIntersecting;
+      if (!visible) { seen.hidden = true; return; }
+      if (seen.hidden) { seen.hidden = false; seen.n += 1; setRun({ key: `shown:${seen.n}`, ms: BRAND_OPEN_MS }); }
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [moving]);
   const at = useArrival(run.key, run.ms, moving, 55);
   let shown = BRAND;
   if (moving && at < run.ms) {
     const opening = run.ms === BRAND_OPEN_MS;
-    // A replay is gentler: the first two letters stay, only the rest flickers back.
-    const from = opening ? 0 : 2;
+    // A replay is a little gentler: the first letter stays, the rest flickers back.
+    const from = opening ? 0 : 1;
     const resolved = from + Math.floor(ease(at / run.ms) * (BRAND.length - from));
     // The opening run starts on the title card's own frame.
     shown = opening && at < 160 ? BRAND_SCRAMBLED : scrambleFrame(BRAND, resolved);
   }
   const word = (
-    <span className="e-brand" data-decoding={shown !== BRAND ? "true" : undefined}>
+    <span className="e-brand" ref={root} data-decoding={shown !== BRAND ? "true" : undefined}>
       <span aria-hidden>{shown}</span>
-      <span className="e-brand__star" aria-hidden> ✶</span>
+      <span className="e-brand__star" aria-hidden><PixelStar /></span>
       <span className="e-sr">Emporia</span>
     </span>
   );
