@@ -77,7 +77,7 @@ def test_secrets_are_password_fields_and_settings_are_not():
 
 def test_what_is_declared_is_something_the_runtime_hands_or_the_gateway_reads():
     """No name that nothing reads: declared names are the runtime's (agent_env) or the gateway adapter's."""
-    known = agent_env.known() | set(agent_env.GATEWAY_ONLY) | set(agent_env.LITERAL_IN_ENTRY) | set(agent_env.VAULT_NAMES)
+    known = agent_env.known_with_relay() | set(agent_env.GATEWAY_ONLY) | set(agent_env.LITERAL_IN_ENTRY) | set(agent_env.VAULT_NAMES)
     assert not (set(DECLARED) - known), sorted(set(DECLARED) - known)
 
 
