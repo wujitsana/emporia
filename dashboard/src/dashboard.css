@@ -3484,7 +3484,11 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 .e-lab__h { margin: 14px 0 4px; font-family: var(--anim-pixel); font-size: 0.95rem; font-weight: 400; letter-spacing: 0.06em; }
 .e-lab__rule { margin: 0 4px 6px; font-size: 0.78rem; max-width: 70ch; }
 .e-lab__take { margin: 2px 4px 8px; }
-.e-hcard__board { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; text-indent: 0; }
+.e-hcard__board { margin: 0; padding: 0; list-style: none; text-indent: 0; display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; text-indent: 0; }
 .e-hcard__board-row { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; white-space: pre; }
 .e-hcard__board-parts { display: block; font-size: 0.7rem; color: var(--anim-faint, inherit); font-weight: 400; }
 .e-hcard__ideas { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+
+.e-hcard__board > li { list-style: none; display: flex; flex-direction: column; }
+.e-hcard__board > li::before { content: none; display: none; }
+.e-hcard__board > li { padding-left: 0; }

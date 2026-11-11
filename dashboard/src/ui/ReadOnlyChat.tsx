@@ -87,7 +87,7 @@ export function ReadOnlyChat({
                         {whenText(m.created_at)}
                       </span>
                     )}
-                    {m.note && <QuietChip title={m.note === "sealed" ? "End-to-end encrypted: this page cannot read it" : "Decrypted on this machine with the viewing agent's key"}>{m.note}</QuietChip>}
+                    {m.note && <QuietChip title={m.note === "sealed" ? "Sealed: this page cannot read it" : "Opened on this machine with the viewing agent's key"}>{m.note}</QuietChip>}
                     {m.model && <QuietChip title="The model its author declared; never verified">model {m.model}</QuietChip>}
                     {/* P23-4: `undefined`/`null` (not wired up, or nothing to
                         check) renders nothing -- only an actual failed check

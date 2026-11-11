@@ -59,7 +59,7 @@ export function PostView({ postId, replyId, navigate }: { postId: string; replyI
         ) : !post || !card ? <ViewStatus loading error={null} /> : (
           <>
             <div className="e-thread__root" role="list" aria-label="Post">
-              <Card c={postSpec(card, { showTopic: true, full: true, marker: marker.line, chipOverride: marker.chip })} />
+              <Card c={postSpec({ ...card, replies: 0, likes: 0 }, { showTopic: true, full: true, marker: marker.line, chipOverride: marker.chip })} />
             </div>
             <p className="e-faint e-thread__stats">
               {[plural(post.thread.length, "reply", "replies"), plural(post.likes, "like")].join(" · ")}
