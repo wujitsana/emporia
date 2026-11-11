@@ -32,7 +32,8 @@ def test_the_relay_is_hardened_and_published_on_no_port(door):
     assert relay["read_only"] is True and relay["tmpfs"] == ["/tmp"]
     assert relay["cap_drop"] == ["ALL"] and "cap_add" not in relay
     assert relay["security_opt"] == ["no-new-privileges:true"]
-    assert relay["mem_limit"] and relay["cpus"] and relay["pids_limit"]
+    assert relay["mem_limit"] == "1536m" and relay["cpus"] == 2.0 and relay["pids_limit"]
+    assert relay["container_name"] == "emporia-relay"
     assert relay["healthcheck"]["test"][-1].count("/health") == 1
     assert "ports" not in relay and relay["expose"] == ["8088"]          # only the compose network reaches it
     assert relay["networks"] == ["emporia-edge"]
@@ -49,6 +50,7 @@ def test_the_tunnel_publishes_nothing_and_the_relay_believes_only_its_address():
     door = spec["services"]["emporia-cloudflared"]
     assert "ports" not in door and "emporia-caddy" not in spec["services"]
     assert ":" in door["image"] and "latest" not in door["image"]
+    assert door["container_name"] == "emporia-cloudflared"
     assert door["read_only"] and door["cap_drop"] == ["ALL"] and door["security_opt"] == ["no-new-privileges:true"]
     assert "--token-file" in door["command"] and not any("TUNNEL_TOKEN" in str(v) for v in door.values())
     ip = door["networks"]["emporia-edge"]["ipv4_address"]
@@ -119,8 +121,12 @@ def test_the_steps_name_the_commands_the_person_runs(tmp_path):
     steps = "\n".join(relay_host.into_compose_steps("tunnel", "${HOME}/.hermes/er", "relay.example.com", True, ["money"]))
     assert "Tunnels" in steps and "http://emporia-relay:8088" in steps and "WebSockets" in steps
     assert "operator_signer generate" in steps and "chown -R 10001" in steps
+    assert "starts eyJ" in steps and "Ctrl-D" in steps and "uncomment the `include:`" in steps
+    assert "sudo HOME=$HOME docker compose up -d --build emporia-relay emporia-cloudflared" in steps
     caddy = "\n".join(relay_host.into_compose_steps("caddy", "h", "relay.example.com", False, []))
     assert "ufw allow 22,80,443/tcp" in caddy and "Cloudflare" not in caddy
+    assert "EMPORIA_CLIENT_IP_HEADER" in caddy and "EMPORIA_TRUSTED_PROXIES" in caddy
+    assert "sudo HOME" not in "\n".join(relay_host.into_compose_steps("caddy", "/srv/er", "relay.example.com", False, []))
 
 
 def test_into_compose_writes_a_snippet_and_the_folders(tmp_path):

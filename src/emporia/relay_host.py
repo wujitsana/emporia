@@ -209,6 +209,7 @@ def snippet_yaml(front_door: str, host_dir: str, repo_url: str, sha: str, domain
   # Front door: a connector that dials out to Cloudflare. It publishes no port. In the
   # Cloudflare dashboard the tunnel's public hostname {domain} points at http://emporia-relay:8088.
   emporia-cloudflared:
+    container_name: emporia-cloudflared
     image: {CLOUDFLARED_IMAGE}
     restart: unless-stopped
     user: "{CLOUDFLARED_UID}:{CLOUDFLARED_UID}"
@@ -271,13 +272,15 @@ def snippet_yaml(front_door: str, host_dir: str, repo_url: str, sha: str, domain
 """
     header = "cf-connecting-ip" if tunnel else "x-forwarded-for"
     return f"""{MARK} — re-running it rewrites this file.
-# Add each top-level part to your existing Hermes compose file (services: under services:,
-# and so on), or run: docker compose -f <your compose file> -f {host_dir}/{SNIPPET} up -d
-# Paths use ${{HOME}}: the host's view of Hermes's data volume. Change them if it is elsewhere.
+# Include this file from your Hermes compose file (an `include:` entry), or run:
+#   docker compose -f <your compose file> -f {host_dir}/{SNIPPET} up -d
+# Paths may use ${{HOME}}: with `sudo docker compose` that is /root, so run
+# `sudo HOME=$HOME docker compose ...` or write absolute paths here.
 services:
   # The relay: built from one pinned commit, on a network of its own that Hermes is not on,
   # published on no port. Hermes's agents reach it at its public https address.
   emporia-relay:
+    container_name: emporia-relay
     build: {repo_url}#{sha}
     image: emporia-relay:{sha[:12]}
     restart: unless-stopped
@@ -287,8 +290,8 @@ services:
       - /tmp
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    mem_limit: 768m
-    cpus: 1.0
+    mem_limit: 1536m
+    cpus: 2.0
     pids_limit: 256
     env_file:
       - {host_dir}/.env
@@ -352,23 +355,24 @@ def into_compose_steps(front_door: str, host_dir: str, domain: str, needs_key: b
     """What the person does by hand, in order, with the exact commands. The relay's
     uid owns what only it may read; the tunnel's owns the token. `needs_key`: escrow
     is on and has no operator key yet — money alone (x402, paid directly) needs none."""
-    steps = [f"Add the snippet to your Hermes compose file: copy the services:, volumes: and networks: entries of "
-             f"{host_dir}/{SNIPPET} under the same keys there (or pass it as a second -f file — one project either way)."]
-    if front_door == "tunnel":
-        steps += [
-            f"Cloudflare (one time): Zero Trust > Networks > Tunnels > Create a tunnel > Cloudflared. Copy its token. "
-            f"Add a public hostname {domain} with service http://emporia-relay:8088. The domain's DNS must be on Cloudflare "
-            f"and the record proxied (orange cloud).",
-            f"Put the token where only the connector reads it (paste, then Ctrl-D):\n"
+    tunnel = front_door == "tunnel"
+    door = "emporia-cloudflared" if tunnel else "emporia-caddy"
+    if tunnel:
+        steps = [
+            f"Cloudflare: Zero Trust > Networks > Tunnels. Create a tunnel, or open an existing one (Configure shows "
+            f"the token again). Copy only the token, the long string that starts eyJ, not the whole command. "
+            f"Public hostname {domain} -> http://emporia-relay:8088. The domain's DNS must be on Cloudflare, proxied "
+            f"(orange cloud). Turn WebSockets on.",
+            f"Save the token on the host. Run this, paste only the token, press Enter, then Ctrl-D. Nothing "
+            f"echoes, and the token is a secret: never share it.\n"
             f"        sudo install -d -o {CLOUDFLARED_UID} -g {CLOUDFLARED_UID} -m 700 {host_dir}/cloudflared\n"
             f"        sudo install -m 400 -o {CLOUDFLARED_UID} -g {CLOUDFLARED_UID} /dev/stdin {host_dir}/cloudflared/token",
-            "Cloudflare, Network: turn WebSockets on. Security > WAF > Rate limiting rules: see docs/deploy-relay.md. "
-            "Every client is a bot (agents, linked relays): keep Bot Fight Mode off, turn Browser Integrity Check off "
-            "for this host, and never use \"I'm Under Attack\" here — it locks every agent out.",
         ]
     else:
-        steps += [f"DNS: an A record for {domain} to this VPS. Firewall: allow 22, 80 and 443 only "
-                  f"(sudo ufw default deny incoming && sudo ufw allow 22,80,443/tcp && sudo ufw enable)."]
+        steps = [f"DNS: an A record for {domain} to this VPS. Firewall: allow 22, 80 and 443 only\n"
+                 f"        sudo ufw default deny incoming && sudo ufw allow 22,80,443/tcp && sudo ufw enable"]
+    steps.append(f"In your Hermes compose file, uncomment the `include:` line that lists {host_dir}/{SNIPPET} (or add "
+                 f"it under `include:`). Do not copy the services, volumes or networks over.")
     if secrets or needs_key:
         steps.append(f"Give the relay's user its secrets, and nobody else:\n"
                      f"        sudo chown -R {RELAY_UID}:{RELAY_UID} {host_dir}/secrets && sudo chmod 700 {host_dir}/secrets"
@@ -377,11 +381,22 @@ def into_compose_steps(front_door: str, host_dir: str, domain: str, needs_key: b
         steps.append("Make the escrow operator key inside the relay's volume, then put the address it prints in the "
                      f"relay's .env ({host_dir}/.env) as EMPORIA_OPERATOR_ADDRESS=0x…:\n"
                      "        docker compose run --rm --no-deps emporia-relay python -m emporia.operator_signer generate")
-    names = " ".join(["emporia-relay", "emporia-cloudflared" if front_door == "tunnel" else "emporia-caddy"])
-    steps.append(f"Start it (the first build pulls the pinned commit from GitHub, so the host must reach it):\n"
-                 f"        docker compose up -d --build {names}")
+    start = f"docker compose up -d --build emporia-relay {door}"
+    text = f"Start it (the first build pulls the pinned commit from GitHub):\n        {start}"
+    if "${HOME}" in host_dir:
+        text += (f"\n        If your docker needs sudo, `sudo docker compose` sets ${{HOME}} to /root and the snippet "
+                 f"paths break. Run instead:\n        sudo HOME=$HOME {start}\n"
+                 f"        Or add your user to the docker group and drop sudo.")
+    steps.append(text)
     steps.append(f"Check: curl -s https://{domain}/health   (status ok). Then move your agents to it: "
                  f"emporia relay use https://{domain} NAME …")
+    if tunnel:
+        steps.append("Optional, in Cloudflare: Security > WAF > Rate limiting rules (docs/deploy-relay.md). Keep Bot "
+                     "Fight Mode, Browser Integrity Check and \"I'm Under Attack\" off for this host: every client "
+                     "is an agent, and they would lock all of them out.")
+    else:
+        steps.append("Behind nginx or Traefik instead of Caddy: set EMPORIA_CLIENT_IP_HEADER to the header your proxy "
+                     "sets, and EMPORIA_TRUSTED_PROXIES to its address, in the relay's .env.")
     return steps
 
 

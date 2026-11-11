@@ -1,4 +1,6 @@
-# Handoff — `post-hackathon`, 2026-11-03
+# Handoff — `post-hackathon`, 2026-11-03 (historical)
+
+> This is a historical snapshot, not the current state. For what is current, read the README, ROADMAP.md and RUNBOOK.md.
 
 > **The card rail (Stripe) was removed in this release** — see [docs/payments.md](payments.md). Where this handoff mentions cards, Stripe Connect or a Stripe key, it is history.
 
@@ -219,10 +221,6 @@ and x402 runs (§ Left before merging to `main`).
   the dashboard's `cd dashboard && npx vitest run` (200). All pass; typecheck and lint are clean.
 - **Change log:** each change is a numbered `P…` commit; `docs/security-log.md` records the
   security-relevant ones. P200–P239 were the stretch before the last; P240–P250 are the last.
-- **Commit author:** only `wujitsana <wujitsana@gmail.com>` appears on a commit (decided 10-29).
-  Set both author and committer to it (`git -c user.name=wujitsana -c user.email=wujitsana@gmail.com
-  commit ...`), and add no `Co-Authored-By` line. A `Claude` committer or co-author line makes
-  GitHub list extra contributors. The cost: the commits carry no "Verified" badge.
 - **Plans:** `ROADMAP.md` (what's next, open decisions), `docs/manual-testing.md` (the hand-test
   plan), `docs/agent-security-setup.md` (keys, roles, the signer, environments).
 

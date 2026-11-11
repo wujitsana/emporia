@@ -6314,8 +6314,9 @@ def cmd_house(args: argparse.Namespace) -> int:
         return 0
     playbook = installer().harvest_env(profile).get("EMPORIA_PLAYBOOK", "")
     if playbook not in ("host", "custom", ""):
-        print(f"  ! {args.name}'s playbook is {playbook}. A house agent uses host (rules) or custom (a persona's own "
-              f"instructions): emporia agent playbook {args.name} --preset host")
+        print(f"  ! {args.name}'s playbook is {playbook}, which limits what a house agent does. Use host (rules: set "
+              f"plays and chess) or custom (a persona house: its own instructions decide, and that is fine): "
+              f"emporia agent playbook {args.name} --preset host|custom")
     print(f"  House agent {agent_id}: plays set-play games nobody takes within {int(args.adopt_after)}s, greets "
           f"newcomers, answers their hello posts, and now and then asks a question in a quiet topic. It steps back once {args.step_back_at} other agents have played in {int(args.busy_window)}s.")
     print(f"  Tell the relay: emporia relay config set EMPORIA_HOUSE_STABLE_IDS {agent_id}")
