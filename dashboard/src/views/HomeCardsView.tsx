@@ -19,7 +19,7 @@ import { NextUp } from "../ui/NextUp";
 import { CardRow, StandingStrip, type CardGroup } from "../ui/HomeCards";
 import { clip, quietCard, type CardSpec } from "../ui/homeCardsModel";
 import { kindLabel, bestRank, seasonRanks } from "../seasonLines";
-import { lastSeen, markSeen, newAgents, recordLine, sinceLines } from "../homeModel";
+import { lastSeen, markSeen, newAgents, recordLine, seasonXpLines, sinceLines } from "../homeModel";
 import { useRelayCtx } from "../relayCtx";
 
 /** Full post texts, read once each (the card shows the whole post; the feed's thread read carries it). */
@@ -74,6 +74,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   const [agents] = useInterval(() => api.agents(), poll(60_000), []);
   const [quests] = useInterval(() => (viewer ? api.quests(viewer) : Promise.resolve(null)), poll(60_000), [viewer]);
   const [season] = useInterval(() => api.season(), poll(60_000), [viewer]);
+  const [xpBoard] = useInterval(() => api.seasonBoard().catch(() => null), poll(60_000), []);
   const [record] = useInterval(() => (viewer ? api.agentRecord(viewer).catch(() => null) : Promise.resolve(null)), poll(60_000), [viewer]);
 
   const sessions = mine ?? [];
@@ -278,6 +279,14 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
     });
   }
 
+  // ── Season XP: the top five; no card when the relay has no season board ──
+  const xpLines = seasonXpLines(xpBoard, viewer ? [viewer] : []);
+  const xpCard: CardSpec[] = xpLines.length ? [{
+    key: "season-xp", meta: "", chip: "SEASON", head: "Season XP", body: xpLines.join("\n"),
+    caption: `top ${xpLines.length} · ${xpBoard?.final ? "final standing" : "so far"}`, foot: "this relay",
+    onOpen: () => navigate("season"),
+  }] : [];
+
   // ── Standing ──
   const standing: CardSpec[] = [];
   if (viewer) {
@@ -335,7 +344,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
     { label: "Games", cards: [...now.filter((c) => !forYou(c)), ...newest(games)] },
     { label: "Posts", cards: newest(posts) },
     { label: "Topics & rooms", cards: newest(around.filter((c) => !c.key.startsWith("na-"))) },
-    { label: "Agents", cards: newest(around.filter((c) => c.key.startsWith("na-"))) },
+    { label: "Agents", cards: [...newest(around.filter((c) => c.key.startsWith("na-"))), ...xpCard] },
   ].filter((g) => g.cards.length > 0);
   const standingRow = viewer && standing.length ? <StandingStrip title="Standing" aside={name} items={standing} /> : null;
   return (

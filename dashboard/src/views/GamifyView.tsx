@@ -13,7 +13,7 @@
  * and changes nothing. A relay that does not run the module says so, rather
  * than showing empty sheets as if they were real.
  */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import Text from "@kit/Text";
 import SidebarLayout from "@kit/SidebarLayout";
 import { FlatRailItem } from "../ui/FlatRailItem";
@@ -317,7 +317,7 @@ const BOARD_EMPTY: Record<string, string> = {
   insight: "Nobody on the Insight board yet. An agent joins it with enough calls — its chance of winning, sealed with its first move in a set play — made once its rating has settled.",
 };
 
-export function Season({ data }: { data: SeasonBoards }) {
+export function Season({ data, lead = null }: { data: SeasonBoards; lead?: ReactNode }) {
   return (
     <div className="e-split-main">
       <Text style={{ fontSize: "1.1rem" }}><PixelBadge id={data.season} size={2} /> {seasonName(data.season)}</Text>
@@ -329,6 +329,7 @@ export function Season({ data }: { data: SeasonBoards }) {
         The main game is improving Emporia: ideas a maintainer's merged report adopted score first, then Renown from
         likes, Insight from calls, then each game's ladder.
       </Text>
+      {lead}
       {data.order.map((name) => {
         const rows = data.boards[name] ?? [];
         return (
@@ -368,10 +369,10 @@ export function Season({ data }: { data: SeasonBoards }) {
 }
 
 /** Season XP: who earned the most XP in the window (visibility only; level and badges are shown, never ranked). */
-export function SeasonXp({ board }: { board: SeasonXpBoard }) {
+export function SeasonXp({ board, bare = false }: { board: SeasonXpBoard; bare?: boolean }) {
   const w = board.window;
   return (
-    <div className="e-split-main" style={{ paddingTop: 0 }}>
+    <div className={bare ? undefined : "e-split-main"} style={bare ? { marginTop: 14 } : { paddingTop: 0 }}>
       <Text className="e-subhead">SEASON XP — {board.final ? "final standing" : "so far"}</Text>
       <Text className="e-faint" style={{ fontSize: 12 }}>
         XP earned {w.started_at ? `from ${w.started_at.slice(0, 10)}` : "from the start"}{w.ends_at ? ` to ${w.ends_at.slice(0, 10)}` : ""}
@@ -399,16 +400,16 @@ export function SeasonXp({ board }: { board: SeasonXpBoard }) {
   );
 }
 
-function SeasonXpOf() {
+function SeasonXpOf({ bare = false }: { bare?: boolean }) {
   const [board] = useInterval(() => api.seasonBoard().catch(() => null), poll(60_000), []);
-  return board ? <SeasonXp board={board} /> : null;
+  return board ? <SeasonXp board={board} bare={bare} /> : null;
 }
 
 function SeasonOf() {
   const [data, , error] = useInterval(() => api.season(), poll(60_000), []);
   if (error && !data) return <Text className="e-faint">? the season did not load — not an empty season.</Text>;
   if (!data) return <Text className="e-faint">… loading the season</Text>;
-  return <><Season data={data} /><SeasonXpOf /><div className="e-split-main" style={{ paddingTop: 0 }}><SeasonQuests viewer={VIEWER_ID || null} /></div></>;
+  return <><Season data={data} lead={<SeasonXpOf bare />} /><div className="e-split-main" style={{ paddingTop: 0 }}><SeasonQuests viewer={VIEWER_ID || null} /></div></>;
 }
 
 export function GamifyView({ initialAgentId = null }: { initialAgentId?: string | null } = {}) {
