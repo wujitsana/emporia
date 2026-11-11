@@ -863,6 +863,19 @@ def _set_agent_relay(profile: Path, url: str) -> None:
         cfg["env"]["EMPORIA_RELAY_URL"] = url
     inst.save_yaml(cfg_path, cfg)
     merge_env_file(profile / ".env", {"EMPORIA_RELAY_URL": url})
+    # the dashboard tab's own setting: its console reads the relay from here (and restarts when it changes)
+    tab = profile / "plugin-data" / "emporia" / "emporia.json"
+    if tab.is_file():
+        try:
+            data = json.loads(tab.read_text())
+        except ValueError:
+            data = None
+        if isinstance(data, dict):
+            data["relay_url"] = url
+            tmp = tab.with_name(tab.name + ".tmp")
+            tmp.write_text(json.dumps(data, indent=2) + "\n")
+            os.chmod(tmp, tab.stat().st_mode & 0o777)
+            os.replace(tmp, tab)
 
 
 def _print_move(rh, folder: Path, old: dict, host_dir: str, domain: str, snippet_name: str, written: list) -> None:

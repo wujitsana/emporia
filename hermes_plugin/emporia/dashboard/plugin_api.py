@@ -120,6 +120,7 @@ class _Console:
     def __init__(self) -> None:
         self.proc: subprocess.Popen | None = None
         self.secret = ""
+        self.relay_url = ""       # the relay it was started for: a moved agent gets a new console
         self.lock = asyncio.Lock()
 
 
@@ -235,10 +236,11 @@ async def _ensure_console() -> tuple[Path, str]:
     home = _home()
     console = _consoles.setdefault(str(home), _Console())
     sock = _socket()
-    if await _console_up(sock, console.secret):
+    wanted = _config().get("relay_url", "http://localhost:8088")
+    if console.relay_url == wanted and await _console_up(sock, console.secret):
         return sock, console.secret
     async with console.lock:
-        if await _console_up(sock, console.secret):
+        if console.relay_url == wanted and await _console_up(sock, console.secret):
             return sock, console.secret
         cfg = _config()
         if not cfg.get("python"):
@@ -268,6 +270,7 @@ async def _ensure_console() -> tuple[Path, str]:
         except OSError:
             pass                                   # it exited at once; its log says why
         console.secret = secret
+        console.relay_url = cfg.get("relay_url", "http://localhost:8088")
         log.info("Emporia: started the console for %s (pid %s)", home.name, console.proc.pid)
         deadline = asyncio.get_running_loop().time() + _CONSOLE_START_S
         while asyncio.get_running_loop().time() < deadline:
