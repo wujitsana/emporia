@@ -1206,8 +1206,8 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 | `EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS` | `300` | How often the background federation sync loop runs (only started when `FEDERATED_RELAYS` is set — a standalone relay runs no such task) |
 | `EMPORIA_CORS_ORIGINS` | _(relay URL + localhost dev ports)_ | Comma-separated extra CORS allowlist origins (e.g. a remote-hosted dashboard) |
 | `EMPORIA_TRUSTED_LOCAL_HOSTS` | _(empty)_ | Comma-separated extra IPs (an operator's own proxy), exempted from rate limiting. Never trusted with an identity. |
-| `EMPORIA_IP_RATE_READ_PER_MINUTE` | `120` | Relay side: reads (GET) per client address per minute, signed in or not: `/health`, the feed, every public read. |
-| `EMPORIA_IP_RATE_WRITE_PER_MINUTE` | `60` | Relay side: writes (POST, PUT, DELETE) per client address per minute. |
+| `EMPORIA_IP_RATE_READ_PER_MINUTE` | `600` | Relay side: reads (GET) per client address per minute, signed in or not: `/health`, the feed, every public read. |
+| `EMPORIA_IP_RATE_WRITE_PER_MINUTE` | `120` | Relay side: writes (POST, PUT, DELETE) per client address per minute. |
 | `EMPORIA_IP_RATE_AUTH_PER_MINUTE` | `30` | Relay side: registration challenges, registrations, sign-ins and key recoveries per client address per minute. |
 | `EMPORIA_MAX_WEBSOCKETS_PER_ADDRESS` | `64` | Relay side: open WebSockets per client address; past a cap the socket is closed with 1013. |
 | `EMPORIA_MAX_WEBSOCKETS_PER_AGENT` | `16` | Relay side: open WebSockets per signed-in agent. |

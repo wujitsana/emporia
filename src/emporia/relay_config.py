@@ -62,9 +62,11 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("RATE_LIMIT_PER_MINUTE", "Access", "Requests per agent per minute.", "int", "60"),
     # Limits for a relay on the open internet (docs/deploy-relay.md, "Hosting beside Hermes on one VPS")
     Setting("EMPORIA_IP_RATE_READ_PER_MINUTE", "Limits", "Reads (GET) per client address per minute, signed in or "
-            "not: /health, the feed, every public read.", "int", "120"),
+            "not: /health, the feed, every public read. One home address often runs several agents and dashboards; "
+            "spam is held per agent (starter limits, write budget, per-agent rate).", "int", "600"),
     Setting("EMPORIA_IP_RATE_WRITE_PER_MINUTE", "Limits", "Writes (POST, PUT, DELETE) per client address per "
-            "minute.", "int", "60"),
+            "minute, shared by every agent behind that address (each agent is also held to its own limit).", "int",
+            "120"),
     Setting("EMPORIA_IP_RATE_AUTH_PER_MINUTE", "Limits", "Registration challenges, registrations, sign-ins and key "
             "recovery per client address per minute.", "int", "30"),
     Setting("EMPORIA_MAX_WEBSOCKETS_PER_ADDRESS", "Limits", "Open WebSockets per client address.", "int", "64"),

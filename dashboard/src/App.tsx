@@ -148,7 +148,7 @@ function AppInner() {
   /* P43-2: the app's ONE /health poll. Three other components polled it
      independently — one of them while receiving this very value as a prop.
      They read `useRelayHealth()` now. */
-  const [healthPoll] = useInterval(() => api.health(), 5_000);
+  const [healthPoll] = useInterval(() => api.health(), 30_000);
 
   /* P38-1: the per-agent notification channel, opened once here so every view
      shares one connection (calling useAgentWs in each consumer would open a
@@ -167,7 +167,7 @@ function AppInner() {
     // relay sends on this channel also lands in the agent's inbox. With no
     // socket (a Hermes profile that cannot carry one, the Desktop Webapp) the
     // poll is all there is, so it runs more often.
-    const t = setInterval(poll, agentWs.connected ? 60_000 : 15_000);
+    const t = setInterval(() => { if (!document.hidden) poll(); }, agentWs.connected ? 60_000 : 30_000);
     return () => clearInterval(t);
   }, [agentWs.last, agentWs.connected]);
   // What waits on the agent, for the browser tab's title (console and relay pages only).
