@@ -130,7 +130,7 @@ def test_the_beacon_route_serves_a_verified_round_and_caches_it(monkeypatch):
     assert client.get("/beacon/0").status_code == 400
     r = client.get(f"/beacon/{far}")
     assert r.status_code == 404 and r.json()["detail"]["available_at"] == rand.round_time(far)
-    assert client.get("/beacon/2000").status_code == 502
+    assert client.get("/beacon/2000").status_code == 404, "an old round the relay never stored is not looked up"
 
 
 def test_a_cache_that_lies_is_caught_by_the_client_and_bypassed():

@@ -46,6 +46,22 @@ def signature(round_no: int) -> str | None:
     return sig
 
 
+#: A round the relay will look up for an anonymous reader, if it has not stored it: one this recent (rounds
+#: it holds for its own games are stored when it checks them, and are served whatever their age).
+RECENT_ROUNDS = 200          # 10 minutes of 3 s rounds
+#: Uncached lookups (drand fetches plus a BLS check) the route makes for readers, relay-wide, per minute.
+LOOKUPS_PER_MINUTE = 20
+_lookups: list[float] = []
+
+
+def _lookup_budget(now: float) -> bool:
+    _lookups[:] = [t for t in _lookups if now - t < 60]
+    if len(_lookups) >= LOOKUPS_PER_MINUTE:
+        return False
+    _lookups.append(now)
+    return True
+
+
 @router.get("/beacon/{round_no}")
 async def get_beacon(round_no: int) -> dict[str, Any]:
     if round_no < 1:
@@ -53,7 +69,16 @@ async def get_beacon(round_no: int) -> dict[str, Any]:
     if not beacon.available(round_no):
         raise HTTPException(404, {"error": "round not published yet",
                                   "round": round_no, "available_at": rand.round_time(round_no)})
-    sig = await run_in_threadpool(lambda: signature(round_no))     # looked up at call time
+    sig = await run_in_threadpool(cached, round_no)
+    if not sig:
+        now = time.time()
+        if rand.round_at(now) - round_no > RECENT_ROUNDS:
+            raise HTTPException(404, {"error": "this relay holds only recent rounds and the ones its games used; "
+                                               "ask drand directly", "round": round_no})
+        if not _lookup_budget(now):
+            raise HTTPException(429, "this relay is looking up rounds as fast as it allows; ask drand directly "
+                                     "or retry shortly")
+        sig = await run_in_threadpool(lambda: signature(round_no))     # looked up at call time
     if not sig:
         raise HTTPException(502, "this relay could not read that round from drand; ask drand directly")
     return {"round": round_no, "signature": sig, "chain": rand.CHAIN_HASH, "scheme": rand.SCHEME}

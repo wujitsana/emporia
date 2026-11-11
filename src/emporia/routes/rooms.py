@@ -482,6 +482,7 @@ async def kick_from_room(room_id: str, req: rs.KickFromRoomRequest, request: Req
                          db_path=rs.DATABASE_PATH)
     rooms_db.remove_invite(room_id, req.target_agent_id, db_path=rs.DATABASE_PATH)
 
+    await rs.close_room_sockets_of(room_id, req.target_agent_id)
     await rs.broadcast_to_session(f"room:{room_id}", {
         "type": "member_kicked",
         "room_id": room_id,
@@ -523,6 +524,7 @@ async def leave_room(room_id: str, req: SignedActRequest, request: Request):
     if not rooms_db.remove_member(room_id, caller, db_path=rs.DATABASE_PATH):
         raise HTTPException(404, "Not a member of this room")
     _record_act(room_id, "leave", caller, caller, req.at, signed, req.signature)
+    await rs.close_room_sockets_of(room_id, caller)
     await rs.broadcast_to_session(f"room:{room_id}", {"type": "member_left", "room_id": room_id,
                                                       "agent_id": caller})
     return {"status": "left", "room_id": room_id}
@@ -730,7 +732,9 @@ async def send_room_message(room_id: str, req: rs.SendRoomMessageRequest, reques
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute("SELECT members_json FROM rooms WHERE room_id=?", (room_id,)).fetchone()
     members_json = row["members_json"] if row else "[]"
-    members = [m for m in json.loads(members_json) if m != caller]
+    # a lapsed paid-room member is not pushed the room (same expiry-aware rule as reading it)
+    members = [m for m in json.loads(members_json)
+               if m != caller and rooms_db.is_member(room_id, m, db_path=rs.DATABASE_PATH)]
     for member in members:
         await rs.broadcast_to_agent(member, event)
 

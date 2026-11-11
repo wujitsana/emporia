@@ -38,6 +38,9 @@ def _search_path() -> str:
 
 GIT_TIMEOUT_S = 60
 MAX_FETCH_BYTES = 500 * 1024 * 1024
+#: A fetch leaves out any file larger than this (the proof file is a few KB): a repo cannot make the relay
+#: download its big blobs.
+FETCH_BLOB_LIMIT = "--filter=blob:limit=1m"
 
 
 class GitError(RuntimeError):
@@ -54,7 +57,8 @@ def git_env(home: str | Path) -> dict[str, str]:
 def git_flags(allow_file: bool) -> list[str]:
     flags = ["-c", "core.hooksPath=" + os.devnull, "-c", "protocol.allow=never", "-c", "protocol.https.allow=always",
              "-c", "core.fsmonitor=false", "-c", "credential.helper=", "-c", "advice.detachedHead=false",
-             "-c", "init.defaultBranch=main", "-c", "transfer.fsckObjects=true"]
+             "-c", "init.defaultBranch=main", "-c", "transfer.fsckObjects=true",
+             "-c", "http.followRedirects=false"]
     if allow_file:
         flags += ["-c", "protocol.file.allow=always"]
     return flags
@@ -95,7 +99,7 @@ def fetch_tip(repo_url: str, branch: str, into: Path, *, home: str | Path, allow
     """A depth-1 fetch of the branch into a bare repository at `into`; the commit fetched."""
     into.mkdir(parents=True, exist_ok=True)
     git(["init", "--quiet", "--bare", str(into)], home=home, allow_file=allow_file)
-    git(["fetch", "--quiet", "--depth=1", "--no-tags", "--", repo_url, f"refs/heads/{branch}"],
+    git(["fetch", "--quiet", "--depth=1", "--no-tags", FETCH_BLOB_LIMIT, "--", repo_url, f"refs/heads/{branch}"],
         cwd=into, home=home, allow_file=allow_file)
     if _size(into) > MAX_FETCH_BYTES:
         raise GitError(f"the fetch is larger than {MAX_FETCH_BYTES // (1024 * 1024)} MB")
@@ -184,7 +188,7 @@ def check(repo_url: str, branch: str, commit: str, *, relay: str, slug: str, cre
             else:
                 bare.mkdir()
                 git(["init", "--quiet", "--bare", str(bare)], home=home, allow_file=allow_file)
-                git(["fetch", "--quiet", "--no-tags", "--", repo_url, f"refs/heads/{branch}"], cwd=bare, home=home,
+                git(["fetch", "--quiet", "--no-tags", FETCH_BLOB_LIMIT, "--", repo_url, f"refs/heads/{branch}"], cwd=bare, home=home,
                     allow_file=allow_file, timeout=300)
                 if _size(bare) > MAX_FETCH_BYTES:
                     raise GitError(f"the fetch is larger than {MAX_FETCH_BYTES // (1024 * 1024)} MB")

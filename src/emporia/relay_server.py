@@ -3108,15 +3108,54 @@ def record_action(
 # WebSocket Manager
 # ============================================================================
 
+# What a socket was authorised by at connect, so a later send can ask again: {"token", "agent"} for a signed-in
+# socket, plus {"room_id"} for a private room's. A socket with no entry is an anonymous one.
+_ws_auth: dict[WebSocket, dict[str, Any]] = {}
+
+
+def _ws_still_authorised(ws: WebSocket) -> bool:
+    """Whether the socket's connect-time authority still holds: its token not expired, signed out, revoked
+    by revoke-all or key recovery, and its agent still active under the same stable id; for a private room's
+    socket, the agent still a member (expiry-aware)."""
+    meta = _ws_auth.get(ws)
+    if meta is None:
+        return True
+    if _token_agent(_jwt_decode(meta["token"])) != meta["agent"]:
+        return False
+    room_id = meta.get("room_id")
+    return not room_id or rooms_db.is_member(room_id, meta["agent"], db_path=DATABASE_PATH)
+
+
+async def _ws_drop(key: str, ws: WebSocket) -> None:
+    ws_connections[key].discard(ws)
+    _ws_auth.pop(ws, None)
+    try:
+        await ws.close(code=1008)
+    except Exception:  # noqa: BLE001 - already gone
+        pass
+
+
+async def close_room_sockets_of(room_id: str, agent_id: str) -> None:
+    """A member was kicked or left: close its sockets on that room now."""
+    key = f"room:{room_id}"
+    for ws in list(ws_connections.get(key, ())):
+        if (_ws_auth.get(ws) or {}).get("agent") == agent_id:
+            await _ws_drop(key, ws)
+
+
 async def broadcast_to_session(session_id: str, message: dict[str, Any]) -> None:
     dead: set[WebSocket] = set()
-    for ws in ws_connections.get(session_id, set()):
+    for ws in list(ws_connections.get(session_id, set())):
+        if ws in _ws_auth and not _ws_still_authorised(ws):
+            await _ws_drop(session_id, ws)
+            continue
         try:
             await ws.send_json(message)
         except Exception:
             dead.add(ws)
     for ws in dead:
         ws_connections[session_id].discard(ws)
+        _ws_auth.pop(ws, None)
 
 
 async def broadcast_to_agent(agent_id: str, message: dict[str, Any]) -> None:
@@ -3126,7 +3165,10 @@ async def broadcast_to_agent(agent_id: str, message: dict[str, Any]) -> None:
     # for ever (alpha and beta each held over 100 turn notices).
     inbox_id = f"ibx_{uuid.uuid4().hex[:12]}"
     dead: set[WebSocket] = set()
-    for ws in ws_connections.get(key, set()):
+    for ws in list(ws_connections.get(key, set())):
+        if not _ws_still_authorised(ws):
+            await _ws_drop(key, ws)
+            continue
         try:
             await ws.send_json({**message, "inbox_id": inbox_id})
         except Exception:
@@ -3818,6 +3860,9 @@ async def request_context(request: Request, call_next):
             fields["expected"] = True
         logger.log(level, "request", extra=fields)
         response.headers["X-Request-Id"] = rid
+        # An answer to a signed-in request is for that caller: no cache (a shared one) keeps it.
+        if any(request.headers.get(h, "").startswith("Bearer ") for h in ("authorization", "x-emporia-authorization")):
+            response.headers["Cache-Control"] = "no-store"
         return response
     finally:
         request_info_ctx.reset(info_token)
@@ -6099,15 +6144,13 @@ async def ws_agent(ws: WebSocket, agent_id: str):
     logger.info("ws_connected", extra={"ws_id": ws_id, "channel": "agent", "agent_id": agent_id})
     key = f"agent:{agent_id}"
     ws_connections[key].add(ws)
+    _ws_auth[ws] = {"token": _ws_token(ws), "agent": caller}
     try:
         while True:
             await ws.receive_text()
             # An operator removal runs in another process and cannot reach this socket: the next frame
-            # from a removed agent closes it.
-            with DB_LOCK, get_db() as conn:
-                row = conn.execute("SELECT is_active FROM authorized_agents WHERE agent_id = ?",
-                                   (agent_id,)).fetchone()
-            if caller == agent_id and (row is None or not row["is_active"]):
+            # from a removed agent closes it; so does one after sign-out, revoke-all or token expiry.
+            if not _ws_still_authorised(ws):
                 await ws.close(code=1008)
                 break
     except WebSocketDisconnect:
@@ -6115,6 +6158,7 @@ async def ws_agent(ws: WebSocket, agent_id: str):
     finally:
         logger.info("ws_disconnected", extra={"ws_id": ws_id, "channel": "agent", "agent_id": agent_id})
         ws_connections[key].discard(ws)
+        _ws_auth.pop(ws, None)
 
 
 
@@ -6397,6 +6441,9 @@ async def ws_room(ws: WebSocket, room_id: str):
     logger.info("ws_connected", extra={"ws_id": ws_id, "channel": "room", "room_id": room_id})
     key = f"room:{room_id}"
     ws_connections[key].add(ws)
+    if caller:
+        _ws_auth[ws] = {"token": _ws_token(ws), "agent": caller,
+                        "room_id": room_id if room.room_type == "private" else None}
     try:
         msgs = rooms_db.get_messages(room_id, limit=20, db_path=DATABASE_PATH)
         await ws.send_json({
@@ -6406,6 +6453,9 @@ async def ws_room(ws: WebSocket, room_id: str):
         })
         while True:
             data = await ws.receive_text()
+            if not _ws_still_authorised(ws):
+                await ws.close(code=1008)
+                break
             try:
                 frame = json.loads(data)
             except json.JSONDecodeError:
@@ -6417,6 +6467,7 @@ async def ws_room(ws: WebSocket, room_id: str):
     finally:
         logger.info("ws_disconnected", extra={"ws_id": ws_id, "channel": "room", "room_id": room_id})
         ws_connections[key].discard(ws)
+        _ws_auth.pop(ws, None)
 
 
 # ============================================================================

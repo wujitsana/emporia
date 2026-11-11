@@ -33,7 +33,7 @@ def _readable_room(conn, caller: str, room_id: str):
     r = conn.execute("SELECT * FROM rooms WHERE room_id = ?", (room_id,)).fetchone()
     if not r:
         return None
-    return r if rooms_db.may_read(r, caller) else None
+    return r if rooms_db.may_read(r, caller, rs.DATABASE_PATH) else None
 
 
 def _message_item(m, room, likes: int, others: dict) -> dict[str, Any]:

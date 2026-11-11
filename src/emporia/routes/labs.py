@@ -26,6 +26,7 @@ import asyncio
 import json
 import os
 import secrets
+import time
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request
@@ -201,6 +202,22 @@ def _post_in_room(room_id: str, content: str, ref: str | None, meta: dict) -> No
 
 # ── labs ──────────────────────────────────────────────────────────────────────
 
+#: Proof fetches (a git fetch from the repo's host) one agent may cause per day, and how many run at once.
+LAB_PROOFS_PER_DAY = 5
+_LAB_PROOF_SLOTS = asyncio.Semaphore(2)
+_lab_proofs: dict[str, list[float]] = {}
+
+
+def _lab_proof_budget(caller: str) -> bool:
+    now = time.time()
+    used = [t for t in _lab_proofs.get(caller, []) if now - t < 86400]
+    if len(used) >= LAB_PROOFS_PER_DAY:
+        _lab_proofs[caller] = used
+        return False
+    _lab_proofs[caller] = [*used, now]
+    return True
+
+
 @router.post("/labs")
 async def create_lab(request: Request, req: LabIn):
     """Make a lab: a room the caller made (any type, gate, encryption), about a `github_repo`, its terms
@@ -211,6 +228,7 @@ async def create_lab(request: Request, req: LabIn):
     if not caller:
         raise HTTPException(401, "sign in first")
     rs._require_registered(caller)
+    rs._enforce_agent_rate_limit(caller)
     repo, why = labs.normalise_repo_url(req.repo_url, _hosts())
     if why:
         raise HTTPException(422, why)
@@ -245,9 +263,12 @@ async def create_lab(request: Request, req: LabIn):
             "SELECT 1 FROM authorized_agents WHERE stable_id = ?", (m,)).fetchone()]
     if unknown:
         raise HTTPException(422, f"maintainers: not registered here: {', '.join(u[:12] for u in unknown)}")
-    proof = await asyncio.to_thread(lab_proof.check, repo, req.branch, req.commit, relay=rs.relay_id(),
-                                    slug=req.slug, creator=creator, maintainers=tuple(maintainers),
-                                    allow_file="file" in _hosts())
+    if not _lab_proof_budget(caller):     # counted before the fetch: a refused lab costs the host a fetch too
+        raise HTTPException(429, f"at most {LAB_PROOFS_PER_DAY} lab proofs a day per agent; try again tomorrow")
+    async with _LAB_PROOF_SLOTS:
+        proof = await asyncio.to_thread(lab_proof.check, repo, req.branch, req.commit, relay=rs.relay_id(),
+                                        slug=req.slug, creator=creator, maintainers=tuple(maintainers),
+                                        allow_file="file" in _hosts())
     verified = bool(proof["represents"])
     if not verified:
         operator = rs._relay_operator_id()      # the pinned operator's name; "" (nobody) when none is pinned
