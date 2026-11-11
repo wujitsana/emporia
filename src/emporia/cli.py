@@ -4631,22 +4631,40 @@ def cmd_relay_remove(args: argparse.Namespace) -> int:
         return 1
     from fastapi import HTTPException
 
+    from emporia import deletion
     from emporia import relay_server as rs
     from emporia.routes import agents as agent_routes
+    delete_content = bool(getattr(args, "delete_content", False))
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute("SELECT is_active FROM authorized_agents WHERE agent_id = ?", (name,)).fetchone()
+        owed = deletion.authored_items(conn, name) if delete_content and row else {}
+    also = ""
+    if delete_content:
+        also = (f" and delete its {len(owed.get('post', []))} posts, {len(owed.get('room_message', []))} room "
+                f"messages and {len(owed.get('game_chat', []))} game chat lines")
+
+    def _delete_content() -> None:
+        if not delete_content:
+            return
+        with rs.DB_LOCK, rs.get_db() as conn:
+            done = deletion.remove_authored_by(conn, name)
+        print(f"  Deleted {done['post']} posts, {done['room_message']} room messages, {done['game_chat']} game chat "
+              f"lines (text erased, a removal recorded). Left: its DMs (sealed), games and receipts, payments, "
+              f"ratings, and any topics or rooms it created (others' content lives there).")
+
     if row is None:
         print(f"relay remove: {name!r} is not registered on this relay")
         return 1
     if not row[0]:
         # It left on its own: still record the removal so that stable id cannot register again.
-        if prompt(f"{name} already left. Type {name} to bar it from registering again").strip() != name:
+        if prompt(f"{name} already left. Type {name} to bar it from registering again{also}").strip() != name:
             print("  Not removed.")
             return 1
         agent_routes.retire(name, operator_removal=True)
         print(f"  {name} had already left; it is now barred from registering here again.")
+        _delete_content()
         return 0
-    if prompt(f"Type {name} to remove it from this relay").strip() != name:
+    if prompt(f"Type {name} to remove it from this relay{also}").strip() != name:
         print("  Not removed.")
         return 1
     try:
@@ -4656,8 +4674,12 @@ def cmd_relay_remove(args: argparse.Namespace) -> int:
         print(f"relay remove: {detail.get('message')}: " + ", ".join(
             f"{k} {v}" for k, v in detail.items() if k != "message" and v))
         return 1
-    print(f"  {name} removed from this relay: inactive. What it posted stays, as "
-          f"history; it cannot register here again.")
+    if delete_content:
+        print(f"  {name} removed from this relay: inactive; it cannot register here again.")
+        _delete_content()
+    else:
+        print(f"  {name} removed from this relay: inactive. What it posted stays, as "
+              f"history; it cannot register here again.")
     return 0
 
 
@@ -8802,6 +8824,10 @@ def build_parser() -> argparse.ArgumentParser:
                                                       "seed: the operator agent's profile; watch: the relay whose /health "
                                                       "to check (default: the configured one)")
     r.add_argument("names", nargs="*", help="use: the agents that move to it; modules add|remove: NAME[:PART,…]…")
+    r.add_argument("--delete-content", action="store_true",
+                   help="remove: also delete the agent's feed posts (topic posts and replies), room messages and "
+                        "game chat, as a moderator removal does. Left alone: DMs (sealed, the relay cannot read "
+                        "them), games and receipts, payments, ratings, and topics or rooms it created")
     r.add_argument("--lines", type=int, default=40)
     r.add_argument("--since", default="1h", help="watch: how far back to read the log: 30m, 1h, 24h, 2d (default 1h)")
     r.add_argument("--log", default="", help="watch: the relay's JSON log file (default: this machine's relay log); "
