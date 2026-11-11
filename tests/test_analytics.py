@@ -193,7 +193,9 @@ def test_earnings_by_source_and_payout_states_from_settlement_kinds():
 def test_the_relay_gives_an_agent_its_own_payments_only():
     from fastapi.testclient import TestClient
     from emporia import relay_server as rs
+    from tests.test_emporia import _register_keyed
     client = TestClient(rs.app)
+    _register_keyed(client, "stats_me")     # a token speaks only for a registered, active agent (final review FR-5)
     with rs.DB_LOCK, rs.get_db() as conn:
         for pid, who in (("pay_mine_1", "stats_me"), ("pay_other_1", "stats_other")):
             conn.execute("INSERT INTO payments (payment_id, agent_id, amount_cents, payment_intent_id, payment_type, "

@@ -13098,8 +13098,8 @@ def test_content_limit_now_covers_submit_action_payload_and_dispute_reason(clien
     """A3: SendMessageRequest.payload was bounded at the /messages route
     (P19-7), but the identical field on SubmitActionRequest was not — and
     DisputeDeliveryRequest.reason flows into it unbounded too, as
-    payload={"reason": req.reason}. The size check runs before signature
-    verification, so an unsigned request is enough to prove the bound exists."""
+    payload={"reason": req.reason}. Since the final review (FR-1) the signature is checked before the size
+    check and the scan, so the move is signed; the bound still answers 400."""
     from emporia.wire import MAX_CONTENT_BYTES
 
     _register_keyed(client, "p20_action_a")
@@ -13115,7 +13115,7 @@ def test_content_limit_now_covers_submit_action_payload_and_dispute_reason(clien
     big = "z" * (MAX_CONTENT_BYTES + 1)
     r = client.post(
         f"/sessions/{session_id}/action",
-        json={"agent_id": "p20_action_a", "action_type": "move", "payload": {"note": big}},
+        json=_signed_action_body(client, session_id, "p20_action_a", "move", {"note": big}, ""),
     )
     assert r.status_code == 400 and "payload" in r.text, r.text
 
@@ -13124,7 +13124,9 @@ def test_content_limit_now_covers_submit_action_payload_and_dispute_reason(clien
     # embeds `reason`, which would otherwise mask which check actually fired).
     r = client.post(
         f"/sessions/{session_id}/dispute-delivery",
-        json={"agent_id": "p20_action_a", "reason": big, "rationale": "ok"},
+        json={"agent_id": "p20_action_a", "reason": big, "rationale": "ok",
+              "signature": _signed_action_body(client, session_id, "p20_action_a", "dispute",
+                                               {"reason": big}, "ok")["signature"]},
     )
     assert r.status_code == 400 and "payload" in r.text, r.text
 

@@ -458,7 +458,8 @@ def test_a_relay_follows_a_remote_agents_log_and_refuses_anything_else(client):
     # a rollback to an earlier key is not a change it can make
     with pytest.raises(HTTPException):
         fd.pin_remote(peer, _remote_record(host, "kr_remote", keys[1], stable, log[:1]))
-    # served to clients that look the key up
+    # served to clients that look the key up (a registered agent: a token for no agent here speaks for nobody)
+    _register_keyed(client, "kr_remote_viewer")
     r = client.get(f"/agents/{addr}/encryption-key", headers=_as("kr_remote_viewer"))
     assert r.status_code == 200, r.text
     assert r.json()["key_log"] == log and r.json()["stable_id"] == stable and r.json()["public_key_hex"] == _hex(keys[2])

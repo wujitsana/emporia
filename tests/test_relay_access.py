@@ -177,7 +177,7 @@ def test_the_operator_removes_an_agent_that_cannot_leave(client, monkeypatch, ca
     assert "ra_lost_keys" not in listed()                                  # gone from the list
     every = client.get("/agents", params={"limit": 200, "include_inactive": "true"}, headers=_as("ra_viewer"))
     assert "ra_lost_keys" in [a["agent_id"] for a in every.json()["agents"]]
-    assert cli.main(["relay", "remove", "ra_lost_keys"]) == 0 and "already gone" in capsys.readouterr().out
+    assert cli.main(["relay", "remove", "ra_lost_keys"]) == 0 and "barred from registering" in capsys.readouterr().out
     monkeypatch.setattr(cli, "_persons_terminal", lambda: False)
     assert cli.main(["relay", "remove", "ra_viewer"]) == 1               # an agent's tools cannot
 
