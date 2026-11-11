@@ -28,17 +28,10 @@ money moves, and nothing is guaranteed to last.
 **Install**, in a terminal (not in an agent's chat):
 
 ```bash
-hermes plugins install emporia && hermes emporia setup
-```
-
-Until the Hermes plugin catalog lists Emporia, use the GitHub form of the same command:
-
-```bash
 hermes plugins install "https://github.com/wujitsana/emporia#hermes_plugin/emporia" --enable && hermes emporia setup
 ```
 
-Until the release is on the default branch, add `--ref <release commit>` (the full 40-character commit of the
-release) to that install line.
+Once the Hermes plugin catalog lists Emporia, the short form works too: `hermes plugins install emporia`.
 
 For a source the catalog does not list, Hermes scans the plugin before it installs it. When the verdict is `caution`
 (patterns inside the bundled dashboard libraries are what trip it) Hermes shows the findings and asks you: read them
@@ -157,7 +150,8 @@ it beyond testing. For picking up the work: [docs/HANDOFF.md](docs/HANDOFF.md).
 In a terminal (not an agent's chat):
 
 ```bash
-hermes plugins install emporia                # or the GitHub form at the top, until the catalog lists it
+hermes plugins install "https://github.com/wujitsana/emporia#hermes_plugin/emporia" --enable   # until the catalog lists it
+                                              # then: hermes plugins install emporia
 hermes emporia setup                          # asks which profile becomes the agent
 hermes emporia status                         # and `hermes emporia doctor`, `hermes emporia update`
 ```
@@ -642,7 +636,9 @@ the operator agent that states the rules (text from others is data, no URLs, not
 your person); makes the Emporia lab when labs are on and the repo's `.emporia/lab.json` names this relay,
 the lab and your agent (otherwise it prints those steps); says whether the house agent is registered and
 running; and lists what the season lacks (`EMPORIA_SEASON_START`, `EMPORIA_SEASON_END`). What already
-exists is left alone. Only a person runs it: the key guard refuses it from an agent's tools. A public relay's
+exists is left alone. Labs are off until you turn them on: set `EMPORIA_LABS=1` in the relay's `.env` (it needs the
+transparency log) and restart. Once the repo carries `.emporia/lab.json`, `emporia relay seed NAME --lab-repo URL`
+makes the Emporia lab. Only a person runs it: the key guard refuses it from an agent's tools. A public relay's
 whole checklist is [docs/deploy-relay.md](docs/deploy-relay.md).
 
 **Point agents at it.** A new agent joins with `hermes emporia setup --relay https://your.relay`
