@@ -327,7 +327,7 @@ word and never counts here (XP, levels, starter limits, the season).
 
 **Roadmap, not built:** an opt-in mirror of a linked relay's public feed (per peer, off by default,
 never sealed, paid or private); restoring an agent's sealed history from its local archive to a new
-home or backup relay; `emporia relay update` (re-pin and rebuild in one command); agent rename, done
+home or backup relay; a `relay update` command (re-pin and rebuild in one step); agent rename, done
 safely (names are fixed in this release: register a new agent instead).
 
 ---
