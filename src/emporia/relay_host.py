@@ -531,7 +531,7 @@ def _settings_step() -> str:
     return ("Change a setting later, only this way: edit the relay's .env in the install folder, on the host, with "
             "sudo, then restart the relay from the folder of your Hermes compose file. (In a new terminal, run the "
             "folder lines from step 1 first.) The staged copies are gone by then, so there is nothing else to "
-            "re-install:\n" + _cmds(['sudo nano "${D:?}/.env"', "sudo docker compose restart emporia-relay"]))
+            "re-install:\n" + _cmds(['sudo nano "${D:?}/.env"', "sudo docker compose up -d emporia-relay"]))
 
 
 def _install_step(front_door: str, snippet_name: str) -> str:

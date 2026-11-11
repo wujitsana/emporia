@@ -383,8 +383,8 @@ If your own Hermes compose file uses `${HOME}` in its paths, run `sudo HOME="$HO
 absolute paths in that file.
 
 **Changing a setting later.** Only this way: edit `"$D/.env"` on the host (`$D` is the install folder, `~/.emporia`
-unless you chose another) with `sudo nano "$D/.env"`, then `sudo docker compose restart emporia-relay` from the
-folder of your Hermes compose file. Do not use `emporia relay config set --dir` for this relay: the wizard's staged
+unless you chose another) with `sudo nano "$D/.env"`, then `sudo docker compose up -d emporia-relay` from the
+folder of your Hermes compose file (`up -d`, not `restart`: a restart keeps the old settings, `up -d` re-reads the `.env`). Do not use `emporia relay config set --dir` for this relay: the wizard's staged
 copies are gone after the install step, and `config set --dir` refuses a staging folder that has no `.env` (it would
 create a one-line `.env`, and installing that over the real one drops the relay's settings, so a closed relay opens).
 

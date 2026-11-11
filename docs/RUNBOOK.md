@@ -256,7 +256,7 @@ Once guardians are named, `rotate-key` is refused. `emporia guardians show` list
 `rotate-sign-in-secret` is for a sign-in secret that may have leaked (whoever holds it can mint a
 token for any agent). Every token stops working and clients sign in again by themselves; unpaid
 Tempo offers are refused. In Docker run it inside the container:
-`docker compose exec -it relay emporia relay rotate-sign-in-secret`, then `docker compose restart relay`.
+`docker compose exec -it relay emporia relay rotate-sign-in-secret`, then `docker compose up -d relay`.
 
 **One process.** A relay keeps its rate limits, sign-in floors and sockets in memory, so it runs as
 one process: a second one on the same database (another start, or uvicorn `--workers 2`) refuses to
@@ -357,7 +357,7 @@ For Caddy: an A record, ufw on 22, 80 and 443. Then add the installed snippet to
 `sudo docker compose up -d --build emporia-relay emporia-cloudflared` (or `emporia-caddy`); the snippet needs no
 `HOME`. The relay's files live in `~/.emporia` on the host (settings, secrets, `data/`, the token), outside the Hermes
 folder: the wizard stages them in the profile and the first printed steps install them there and remove the copies.
-Change a setting later by editing `~/.emporia/.env` and `sudo docker compose restart emporia-relay`. A relay made
+Change a setting later by editing `~/.emporia/.env` and `sudo docker compose up -d emporia-relay`. A relay made
 before this layout: `emporia relay host --move-out --dir <its folder>` prints the move steps
 (deploy-relay.md, "Moving an existing relay out of the Hermes folder"). Behind nginx or Traefik, set `EMPORIA_CLIENT_IP_HEADER` and
 `EMPORIA_TRUSTED_PROXIES`. The relay container gets 1536 MB and 2 CPUs. Full steps, the Cloudflare settings and what is

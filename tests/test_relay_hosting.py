@@ -224,7 +224,7 @@ def test_the_include_step_prints_an_absolute_path_command():
 
 def test_the_steps_say_how_to_change_settings_later():
     steps = steps_of("tunnel")
-    assert 'sudo nano "${D:?}/.env"' in steps and "sudo docker compose restart emporia-relay" in steps
+    assert 'sudo nano "${D:?}/.env"' in steps and "sudo docker compose up -d emporia-relay" in steps
     assert "relay config set" not in steps and "--dir" not in steps and "docker group" not in steps
 
 
@@ -693,7 +693,7 @@ def test_relay_config_set_on_a_staged_folder_points_at_the_host_env_and_has_no_i
     assert cli.main(["relay", "config", "set", "EMPORIA_LABS", "1", "--dir", str(folder)]) == 0
     out = capsys.readouterr().out
     assert "sudo install" not in out and "config set" not in out
-    assert '"$D/.env"' in out and "sudo docker compose restart emporia-relay" in out
+    assert '"$D/.env"' in out and "sudo docker compose up -d emporia-relay" in out
 
 
 def test_relay_config_set_refuses_a_staging_folder_with_no_env(tmp_path, capsys, monkeypatch):

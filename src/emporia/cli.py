@@ -1475,7 +1475,7 @@ def cmd_relay_modules(args: argparse.Namespace) -> int:
         if rc:
             return rc
     print("  Restart the relay to apply it: emporia relay restart"
-          + ("  (or `docker compose restart relay` in its folder)" if hosted else ""))
+          + ("  (or `docker compose up -d relay` in its folder)" if hosted else ""))
     return 0
 
 
@@ -1517,7 +1517,7 @@ def cmd_relay_links(args: argparse.Namespace) -> int:
         print(f"  {'linked to' if args.action == 'link' else 'unlinked from'} {url}"
               + ("" if args.action == "link" else " — its posts go from here at the relay's next start"))
         print("  Restart the relay to apply it: emporia relay restart"
-              + ("  (or `docker compose restart relay` in its folder)" if getattr(args, "dir", "") else ""))
+              + ("  (or `docker compose up -d relay` in its folder)" if getattr(args, "dir", "") else ""))
         if args.action == "link":
             print("  It is one-way until that relay links back to this one; ask its operator.")
         return 0
@@ -4493,7 +4493,7 @@ def cmd_relay_rotate_sign_in_secret(args: argparse.Namespace) -> int:
         return 1
     identity.rotate_relay_jwt_secret()
     print("  Done. Restart the relay to use it: emporia relay restart"
-          " (in Docker: docker compose restart relay)")
+          " (in Docker: docker compose up -d relay)")
     return 0
 
 
@@ -4579,7 +4579,7 @@ def cmd_relay_config(args: argparse.Namespace) -> int:
     if not env_path.exists() and _is_into_compose_folder(env_path.parent):
         print(f"relay config: {env_path.parent} only stages a relay's files: this relay's settings live on the host, "
               "in its install folder ($HOME/.emporia unless you chose another). Edit \"$D/.env\" there with sudo, "
-              "then run sudo docker compose restart emporia-relay. Nothing was written.")
+              "then run sudo docker compose up -d emporia-relay. Nothing was written.")
         return 1
     current = installer().harvest_env(env_path.parent) if env_path.exists() else {}
     # A relay in Docker reads secrets from files (its folder's secrets/, mounted
@@ -4659,7 +4659,7 @@ def cmd_relay_config(args: argparse.Namespace) -> int:
             return 0
         print("  Applies within seconds." if st.live else
               "  Applies when the relay restarts: emporia relay restart"
-              + ("  (or `docker compose restart relay` in its folder)" if getattr(args, "dir", "") else ""))
+              + ("  (or `docker compose up -d relay` in its folder)" if getattr(args, "dir", "") else ""))
         return 0
 
     verb = (args.url or "").strip()
