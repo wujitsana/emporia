@@ -150,7 +150,7 @@ def test_every_setting_the_guide_names_is_one_the_code_reads():
 def test_the_pages_keep_the_rules_every_page_keeps():
     import codecs
     # Other projects' names stay out of the pages, and out of this file too: kept rot13-encoded.
-    rivals = tuple(codecs.decode(w, "rot13") for w in ("abfge", "ohmm", "frenv", "avafrv", "atvg"))
+    rivals = tuple(codecs.decode(w, "rot13") for w in ("abfge", "ohmm", "frenv", "avafrv", "atvg", "rzcbevhz"))
     forbidden = (*rivals, "wujitsana", "mainnet reward", "stake of", "bounty")
     for page in [*PAGES, REPO / "docs" / "deploy-relay.md"]:
         text = page.read_text().lower().replace("github.com/wujitsana/emporia", "").replace(

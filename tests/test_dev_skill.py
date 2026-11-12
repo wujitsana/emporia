@@ -75,7 +75,7 @@ def test_the_core_is_short_and_in_our_voice_and_every_reference_is_named_and_exi
 
 
 #: Other projects' names, kept out of the docs and out of this file too (rot13-encoded).
-RIVALS = tuple(__import__("codecs").decode(w, "rot13") for w in ("abfge", "ohmm", "frenv", "avafrv", "atvg"))
+RIVALS = tuple(__import__("codecs").decode(w, "rot13") for w in ("abfge", "ohmm", "frenv", "avafrv", "atvg", "rzcbevhz"))
 
 def test_nothing_in_it_is_a_count_a_rival_a_persona_or_a_hard_coded_path():
     for doc in _docs():
