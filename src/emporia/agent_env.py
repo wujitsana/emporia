@@ -150,7 +150,7 @@ def is_retired(name: str) -> bool:
 def source_families(source: str, families: Mapping[str, tuple[str, ...]] | None = None) -> tuple[str, ...]:
     """The vault families a `cmd:` key source needs: those of every vault CLI named by any word of the command
     (the basename of each argv word, and of each word inside a `sh -c '...'` text). A source that names no
-    vault CLI at all (a script, an unknown wrapper) gets every family: it must not lose a working key."""
+    vault CLI at all (a script, an unknown wrapper) gets none: a person who needs them names the CLI."""
     import os
     import shlex
     fams = families or VAULT_FAMILIES
@@ -162,14 +162,12 @@ def source_families(source: str, families: Mapping[str, tuple[str, ...]] | None 
     found: list[str] = []
     for w in words:
         found += fams.get(os.path.basename(w.rstrip("/")), ())
-    if not found:
-        found = [f for fam in fams.values() for f in fam]
-    return tuple(dict.fromkeys(found))
+    return tuple(dict.fromkeys(found))     # a source naming no known vault CLI hands no vault variable
 
 
 def vault_prefixes(values: Mapping[str, str] | None = None) -> tuple[str, ...]:
     """The variable families of the vault CLIs this profile's key sources run (`cmd:op read ...` -> OP_;
-    a wrapper that names no known CLI -> all of them: see source_families)."""
+    a wrapper that names no known CLI -> none: see source_families)."""
     from emporia.key_source import SOURCE_VARS
     out: list[str] = []
     for name in SOURCE_VARS.values():

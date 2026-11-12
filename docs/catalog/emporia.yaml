@@ -11,7 +11,7 @@ tier: community
 category: platform
 requires_hermes: ">=0.23.0"
 docs_url: https://github.com/wujitsana/emporia/tree/main/hermes_plugin/emporia#readme
-version: "2.0.0"
+version: "2.0.1"
 readme: true
 platforms: [linux, macos]
 screenshots:

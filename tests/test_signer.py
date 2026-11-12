@@ -92,7 +92,7 @@ def test_a_tester_adds_an_agent_to_the_signer_and_removes_it(profiles, tmp_path,
     from tests.test_wallet_setup import _env_of
     root, _ = profiles
     with patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "taster", "--keys", "files", "--wallet", "--max-daily-cents", "700"]) == 0
+        assert cli.main(["setup", "agent", "taster", "--relay-url", "http://127.0.0.1:9", "--keys", "files", "--wallet", "--max-daily-cents", "700"]) == 0
     prof = root / "taster"
     before = _env_of(prof)
     monkeypatch.setattr(cli, "profiles_root", lambda: root)
@@ -129,7 +129,7 @@ def test_the_signer_menu_starts_it_and_adds_an_agent(profiles, tmp_path, monkeyp
     from tests.test_wallet_setup import _typing
     root, _ = profiles
     with patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "menuist", "--keys", "files", "--wallet"]) == 0
+        assert cli.main(["setup", "agent", "menuist", "--relay-url", "http://127.0.0.1:9", "--keys", "files", "--wallet"]) == 0
     monkeypatch.setattr(cli, "profiles_root", lambda: root)
     monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
     monkeypatch.setattr(cli, "_TTY", True)
@@ -160,7 +160,7 @@ def test_setup_offers_to_start_the_signer_and_keep_the_new_wallet_there(profiles
     asked = []
     monkeypatch.setattr(cli, "ask", lambda q, default=False: asked.append((q, default)) or ("signer" in q or default))
     with patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "offered", "--keys", "files", "--wallet"]) == 0
+        assert cli.main(["setup", "agent", "offered", "--relay-url", "http://127.0.0.1:9", "--keys", "files", "--wallet"]) == 0
     question = next((q, d) for q, d in asked if "signer" in q)
     assert "this starts the signer" in question[0] and question[1] is False      # optional: no by default
     assert state["up"] and signer.policy("offered")["token_sha256"]
@@ -202,7 +202,7 @@ def test_real_money_needs_the_signer_to_run_as_another_user(profiles, tmp_path, 
     from emporia import cli
     root, _ = profiles
     with patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "richer", "--keys", "files", "--wallet"]) == 0
+        assert cli.main(["setup", "agent", "richer", "--relay-url", "http://127.0.0.1:9", "--keys", "files", "--wallet"]) == 0
     monkeypatch.setattr(cli, "profiles_root", lambda: root)
     monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
     monkeypatch.setenv("EMPORIA_SIGNER_DIR", str(tmp_path / "same-user"))
@@ -217,7 +217,7 @@ def test_an_agent_setting_up_a_wallet_is_not_offered_the_signer(profiles, monkey
     from emporia import cli
     monkeypatch.setattr(cli, "_persons_terminal", lambda: False)
     with patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "helped", "--keys", "files", "--wallet"]) == 0
+        assert cli.main(["setup", "agent", "helped", "--relay-url", "http://127.0.0.1:9", "--keys", "files", "--wallet"]) == 0
     out = capsys.readouterr().out
     assert "the operator runs `emporia signer add helped`" in out
     assert not signer.agent_dir("helped").exists()
@@ -255,11 +255,11 @@ def test_a_developer_may_hold_a_wallet_behind_a_signer_running_apart(profiles, m
     monkeypatch.setattr(cli, "_signer_apart", lambda: True)
     monkeypatch.setattr(cli, "_signer_add", lambda args, url: added.append(args.name) or 0)
     with patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "builder", "--role", "developer", "--keys", "files", "--wallet"]) == 0
+        assert cli.main(["setup", "agent", "builder", "--relay-url", "http://127.0.0.1:9", "--role", "developer", "--keys", "files", "--wallet"]) == 0
     assert added == ["builder"] and "out of its tools' reach" in capsys.readouterr().out
     monkeypatch.setattr(cli, "_signer_apart", lambda: False)       # practice mode, or none: no wallet
     with patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "builder2", "--role", "developer", "--keys", "files", "--wallet"]) == 0
+        assert cli.main(["setup", "agent", "builder2", "--relay-url", "http://127.0.0.1:9", "--role", "developer", "--keys", "files", "--wallet"]) == 0
     assert added == ["builder"] and "Wallet flags ignored" in capsys.readouterr().out
 
 

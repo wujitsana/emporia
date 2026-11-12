@@ -39,6 +39,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 HERE = Path(__file__).resolve().parent
 SOURCE_FILE = HERE / "emporia_source.json"
@@ -139,29 +140,149 @@ class NoRelease(SetupFailed):
     """This plugin build pins no commit of the runtime (a build before its first release)."""
 
 
-# Hermes's switches that skip or pre-answer approvals. A child of `hermes emporia` (git, pip,
-# `hermes -p NAME plugins install`, `hermes profile create`, the runtime's CLI and the
-# `hermes` commands it runs) never inherits them: what it does is approved, or asked, on
-# its own (catalog rule 12).
-APPROVAL_BYPASS_VARS = frozenset({"HERMES_YOLO_MODE", "HERMES_YOLO", "HERMES_ACCEPT_HOOKS",
-                                  "HERMES_ACP_AUTO_APPROVE"})
-
-
-def _clean_env() -> dict[str, str]:
-    """This process's environment without what the `hermes` launcher sets for Hermes's own
-    interpreter (P296, found by the end-to-end run: with Hermes's PYTHONPATH, pip took
-    Hermes's packages as Emporia's dependencies and skipped them, and Emporia's Python
-    imported Hermes's copies), and without Hermes's approval bypasses."""
-    return {k: v for k, v in os.environ.items()
-            if k not in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PYTHONSTARTUP")
-            and k not in APPROVAL_BYPASS_VARS
-            and not k.startswith(("PIP_", "UV_PROJECT", "UV_PYTHON"))}
-
-
 _TOOL_ENV = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LANGUAGE", "TZ", "TMPDIR", "TERM",
              "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "PIP_CERT", "GIT_SSL_CAINFO",
              "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
-             "XDG_CACHE_HOME", "UV_CACHE_DIR", "PIP_CACHE_DIR", "PIP_INDEX_URL", "UV_INDEX_URL")
+             "XDG_CACHE_HOME", "UV_CACHE_DIR", "PIP_CACHE_DIR", "NO_COLOR")
+# What only pip and uv are given besides: an index URL may embed credentials, so no other child (git included)
+# gets one.
+_INDEX_ENV = ("PIP_INDEX_URL", "UV_INDEX_URL")
+
+
+# The Hermes variables a child needs to find its profile, and nothing else of Hermes's.
+_HERMES_ENV = ("HERMES_HOME", "HERMES_REAL_HOME")
+# The relay's own settings and names no agent runtime reads (as emporia.agent_env.RELAY_ONLY_NAMES).
+_NOT_THE_RUNTIMES = frozenset({"EMPORIA_OPERATOR_PRIVATE_KEY", "EMPORIA_ALLOW_HOT_OPERATOR_KEY",
+                               "EMPORIA_OPERATOR_SIGNER", "EMPORIA_OPERATOR_ADDRESS", "EMPORIA_RELAY_ENV_FILE",
+                               "EMPORIA_SECRETS_DIR", "EMPORIA_RELAY_HOST", "EMPORIA_RELAY_PORT",
+                               "EMPORIA_PYTHON", "EMPORIA_NO_DOTENV"})
+# Only the family of the vault CLI a `cmd:` key source runs is handed on (as emporia.agent_env.VAULT_FAMILIES).
+_VAULT_FAMILIES = {"op": ("OP_",), "bw": ("BW_",), "vault": ("VAULT_",), "doppler": ("DOPPLER_",),
+                   "infisical": ("INFISICAL_",), "aws": ("AWS_",), "az": ("AZURE_",)}
+_SOURCE_VARS = ("EMPORIA_IDENTITY_KEY_SOURCE", "EMPORIA_ENCRYPTION_KEY_SOURCE", "EMPORIA_X402_EVM_KEY_SOURCE",
+                "EMPORIA_X402_SOLANA_KEY_SOURCE", "EMPORIA_X402_PHRASE_SOURCE")
+_ENV_REF = re.compile(r"^\s*env:\s*([A-Z][A-Z0-9_]*)\s*$")
+
+
+def normalize_relay(raw: str) -> str:
+    """A relay as typed, made whole (as the runtime's `normalize_relay_url`, which this mirrors; the plugin imports
+    nothing of Emporia): a bare host gets https://, a host on this machine without a scheme gets http://, an explicit
+    http(s):// is kept; scheme and host are lower-cased. "" when it is no relay address: no host, another scheme, a
+    user name or password, a query or fragment, or 0.0.0.0."""
+    from urllib.parse import urlparse
+    url = (raw or "").strip().rstrip("/")
+    if not url or url.lower() in ("http:", "https:") or any(c.isspace() for c in url):
+        return ""
+    if "://" not in url:
+        host = urlparse("//" + url).hostname or ""
+        url = ("http://" if host in ("localhost", "127.0.0.1", "::1") else "https://") + url
+    try:
+        parts = urlparse(url)
+        parts.port
+    except ValueError:
+        return ""
+    if parts.scheme not in ("http", "https") or not parts.hostname or parts.username is not None \
+            or parts.password is not None or parts.query or parts.fragment or parts.hostname == "0.0.0.0":
+        return ""
+    return f"{parts.scheme}://{parts.netloc.lower()}{parts.path}"
+
+
+def _profile_relay(name: str) -> str:
+    """The relay an existing profile's agent is on (its EMPORIA_RELAY_URL: the MCP entry in its config.yaml), or ""."""
+    if name == profile_name():
+        return normalize_relay(_setting("EMPORIA_RELAY_URL"))
+    try:
+        text = (_hermes_root() / "profiles" / name / "config.yaml").read_text()
+    except OSError:
+        return ""
+    m = re.search(r"EMPORIA_RELAY_URL:\s*['\"]?([^\s'\"]+)", text)
+    return normalize_relay(m.group(1)) if m else ""
+
+
+def _probe_relay(url: str) -> str:
+    """"ok" when `url`/health answers as an Emporia relay (service "Emporia" and a relay_id; a closed relay tells a
+    stranger only its relay_url), "other" for an answer that is something else, "down" for none. 5 seconds."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"{url.rstrip('/')}/health", timeout=5) as r:
+            data = json.loads(r.read(65536))
+    except Exception:
+        return "down"
+    if isinstance(data, dict) and data.get("service") == "Emporia" and (
+            data.get("relay_id") or (data.get("access") == "closed" and data.get("relay_url"))):
+        return "ok"
+    return "other"
+
+
+def _vault_families(sources: list[str]) -> tuple[str, ...]:
+    """The families of every vault CLI named by any word of a `cmd:` source (a wrapper script or `sh -c`
+    included); a source that names none gets no vault variable (a person who needs them names the CLI)."""
+    out: list[str] = []
+    for v in sources:
+        if not v.startswith("cmd:"):
+            continue
+        try:
+            argv = shlex.split(v[4:])
+        except ValueError:
+            argv = v[4:].split()
+        words = [w for a in argv for w in (a, *re.split(r"[\s;&|()'\"`$<>=]+", a))]
+        found: list[str] = []
+        for w in words:
+            found += _VAULT_FAMILIES.get(os.path.basename(w.rstrip("/")), ())
+        out += found                     # a source that names no known vault CLI hands no vault variables
+    return tuple(dict.fromkeys(out))
+
+
+def _base_env() -> dict[str, str]:
+    """What every child of `hermes emporia` is given (catalog rule 11): the search path, the
+    home, the locale, the network's proxies and certificates, the caches, and where Hermes's
+    profile is (HERMES_HOME) — nothing else. Never a provider key or token Hermes holds, nor
+    Hermes's Python settings (P296: with Hermes's PYTHONPATH, pip took Hermes's packages as
+    Emporia's dependencies and skipped them), nor its approval bypasses (rule 12: those
+    are simply not on the list)."""
+    return {k: v for k, v in os.environ.items() if k in _TOOL_ENV or k in _HERMES_ENV or k.startswith("LC_")}
+
+
+def _profile_values() -> dict[str, str]:
+    """This profile's Emporia settings and keys, each read through Hermes's secret scope
+    (`get_scoped_secret`), as the gateway adapter does: every EMPORIA_* name the scope (or, with no
+    scope, the environment Hermes loaded the profile into) holds that an agent's runtime reads, a
+    key linked by name (`env:NAME`), and the vault variables of a linked vault key source."""
+    try:
+        from agent.secret_scope import current_secret_scope
+        scope = current_secret_scope()
+    except Exception:
+        scope = None
+    names = set(scope) if scope is not None else set(os.environ)
+    out: dict[str, str] = {}
+
+    def take(wanted) -> None:
+        for name in sorted(wanted):
+            value = _setting(name)
+            if value:
+                out[name] = value
+
+    take(n for n in names if n.startswith("EMPORIA_") and n not in _NOT_THE_RUNTIMES
+         and not n.startswith("EMPORIA_NEMO_"))
+    sources = [out.get(n, "") for n in _SOURCE_VARS]
+    take({m.group(1) for v in sources if (m := _ENV_REF.match(v))} - set(out))   # only a key source links by name
+    if fam := _vault_families(sources):
+        take(n for n in names if n.startswith(fam))
+    return out
+
+
+def _child_env(runtime: bool = False) -> dict[str, str]:
+    """The environment of a child process: `_base_env()`. A child that is Emporia's runtime
+    (`runtime=True`) also gets this profile's own Emporia settings and keys, handed by name, and
+    EMPORIA_NO_DOTENV=1: it reads no `.env` (Hermes's store) at all."""
+    env = _base_env()
+    if runtime:
+        values = _profile_values()
+        env.update(values)
+        env["EMPORIA_HANDED_NAMES"] = ",".join(sorted(values))     # so a relay started from here gets none of them
+        env["HERMES_HOME"] = str(hermes_home())
+        env["EMPORIA_NO_DOTENV"] = "1"
+    return env
 
 
 def _real_home() -> Path:
@@ -197,20 +318,21 @@ def _shared_caches() -> dict[str, str]:
     return out
 
 
-def _tool_env() -> dict[str, str]:
+def _tool_env(index: bool = True) -> dict[str, str]:
     """P298 (security audit): what git, uv and pip are given — the locale, the network's
-    certificates and proxies, the caches, and nothing else. `_clean_env` is everything
-    the Hermes process holds (its .env's API keys and tokens among it) less its Python
-    settings, and pip and uv run packages' build code from PyPI. Their caches are the
-    user's (`_shared_caches`), not the profile's HOME."""
-    env = {k: v for k, v in os.environ.items() if k in _TOOL_ENV or k.startswith("LC_")}
+    certificates and proxies, the caches, and nothing else (HERMES_HOME is not among it: pip
+    and uv run packages' build code from PyPI). Their caches are the user's
+    (`_shared_caches`), not the profile's HOME."""
+    env = {k: v for k, v in _base_env().items() if k not in _HERMES_ENV}
+    if index:
+        env.update({k: os.environ[k] for k in _INDEX_ENV if k in os.environ})
     return {**_shared_caches(), **env}
 
 
 def _run(argv: list[str], cwd: Path | None = None) -> str:
     try:
         out = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=_TIMEOUT_S,
-                             stdin=subprocess.DEVNULL, env=_tool_env())
+                             stdin=subprocess.DEVNULL, env=_tool_env(index=argv[0] != "git"))
     except FileNotFoundError as exc:
         raise SetupFailed(f"{argv[0]} is not installed") from exc
     except subprocess.TimeoutExpired as exc:
@@ -415,7 +537,7 @@ def _emporia(rt: Path, *args: str) -> int:
     """Run the runtime's `emporia` CLI for this profile, attached to this terminal. Without
     one (cron, the gateway, a pipe) its stdin is /dev/null: a question it asks ends at once
     instead of waiting on a stdin nobody writes to (catalog rule 12)."""
-    env = {**_clean_env(), "HERMES_HOME": str(hermes_home())}
+    env = _child_env(runtime=True)
     stdin = None if _has_terminal() else subprocess.DEVNULL
     return subprocess.call([str(python_of(rt)), "-m", "emporia.cli", *args], env=env, stdin=stdin)
 
@@ -531,7 +653,7 @@ def _install_plugin_into(name: str, plugin_source: str = "emporia") -> bool:
         return False
     print(f"  Installing the Emporia plugin into {name} ({plugin_source})")
     r = subprocess.run([hermes, "-p", name, "plugins", "install", plugin_source, "--enable"],
-                       stdin=subprocess.DEVNULL, timeout=_TIMEOUT_S, env=_clean_env())
+                       stdin=subprocess.DEVNULL, timeout=_TIMEOUT_S, env=_child_env())
     if r.returncode == 0:
         return True
     if plugin_source != "emporia":
@@ -550,10 +672,10 @@ def _install_plugin_into(name: str, plugin_source: str = "emporia") -> bool:
     cmd = [hermes, "-p", name, "plugins", "install", url, "--ref", sha, "--enable"]
     print(f"  The catalog does not list Emporia yet; installing from GitHub ({url}, {sha[:12]}: {how}).")
     if _has_terminal():
-        r = subprocess.run(cmd, timeout=_TIMEOUT_S, env=_clean_env())
+        r = subprocess.run(cmd, timeout=_TIMEOUT_S, env=_child_env())
         return r.returncode == 0
     r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                       timeout=_TIMEOUT_S, env=_clean_env())
+                       timeout=_TIMEOUT_S, env=_child_env())
     if r.returncode == 0:
         return True
     lines = [ln.strip() for ln in f"{r.stderr or ''}\n{r.stdout or ''}".splitlines() if ln.strip()]
@@ -595,7 +717,7 @@ def _remove_profile(name: str) -> None:
     if not _has_terminal():
         print(f"  ! The profile {name} was made but not finished; remove it with: hermes profile delete {name}")
         return
-    r = subprocess.run(cmd, timeout=_TIMEOUT_S, env=_clean_env())
+    r = subprocess.run(cmd, timeout=_TIMEOUT_S, env=_child_env())
     print(f"  Removed the profile {name} this setup had just made" if r.returncode == 0
           else f"  ! The profile {name} was made but not finished: hermes profile delete {name}")
 
@@ -607,7 +729,7 @@ def _create_profile(name: str) -> str:
     if not hermes:
         print(f"  ✗ hermes is not on PATH: run `hermes profile create {name} --no-skills` yourself")
         return ""
-    kw = dict(stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=_TIMEOUT_S, env=_clean_env())
+    kw = dict(stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=_TIMEOUT_S, env=_child_env())
     if subprocess.run([hermes, "profile", "show", name], **kw).returncode == 0:
         return "there"
     r = subprocess.run([hermes, "profile", "create", name, "--no-skills"], **kw)
@@ -636,6 +758,35 @@ def cmd_setup(args: argparse.Namespace) -> int:
               "--keys env\n  (--here sets up this profile instead of a new one)")
         return 2
     name, new = chosen
+    rest = [a for a in (args.rest or []) if a != "--"]
+    typed = next((rest[i + 1] for i, a in enumerate(rest[:-1]) if a == "--relay-url"),
+                 next((a.split("=", 1)[1] for a in rest if a.startswith("--relay-url=")), None))
+    for flag, value in (("--relay", args.relay), ("--relay-url", typed)):
+        if value is not None and not normalize_relay(value):
+            print(f"  ✗ {flag} {value!r} is not a relay address: give its https address (a bare host such as "
+                  "relay.example.net is fine; no user name or password). Nothing was set up.")
+            return 2
+    if not tty:
+        # No one to ask: a relay that is not an Emporia relay (or not up, unless it is this machine's) is refused
+        # here, before a profile is made or the runtime installed (the runtime looks again, and asks, with a terminal).
+        for flag, value in (("--relay", args.relay), ("--relay-url", typed)):
+            if value is None:
+                continue
+            url = normalize_relay(value)
+            local = (urlparse(url).hostname or "") in ("localhost", "127.0.0.1", "::1")
+            state = _probe_relay(url)
+            if state == "down" and url == _profile_relay(name):
+                print(f"  Note: {url} is not answering now; the agent is already on it, so it stays there.")
+                continue
+            if state != "ok" and not (local and state == "down"):
+                print(f"  ✗ {url} is not answering as an Emporia relay; check the address and pass {flag} again. "
+                      "Nothing was set up.")
+                return 2
+    if not tty and not args.relay and typed is None and not _profile_exists(name):
+        # There is no default relay: nobody is asked, so a new agent must be told where to go.
+        print("  ✗ No terminal to ask which relay to join: pass --relay URL (or `-- --relay-url URL`; the relay's https address). "
+              "Nothing was set up.")
+        return 2
     try:
         rt = runtime()
         src = source()
@@ -662,7 +813,10 @@ def cmd_setup(args: argparse.Namespace) -> int:
     if extra[:1] == ["--"]:
         extra = extra[1:]
     if args.relay:
-        extra = ["--relay-url", args.relay, *extra]
+        shown = normalize_relay(args.relay)
+        if shown != args.relay.strip().rstrip("/"):
+            print(f"  Using {shown}")
+        extra = ["--relay-url", shown, *extra]
     # P296: a new profile gets the plugin before the agent is set up, so the restart
     # setup asks for last is the only one needed, and comes after everything it covers.
     made = ""
@@ -771,7 +925,7 @@ def _tools_line() -> str:
              "EMPORIA_X402_EVM_KEY_SOURCE", "EMPORIA_X402_SOLANA_KEY_SOURCE", "EMPORIA_X402_PHRASE_SOURCE")
     try:
         out = subprocess.run([str(python_of(rt)), "-c", code], capture_output=True, text=True, timeout=30,
-                             env={**_clean_env(), **{n: v for n in names if (v := _setting(n))}})
+                             env={**_base_env(), "EMPORIA_NO_DOTENV": "1", **{n: v for n in names if (v := _setting(n))}})
         line = out.stdout.strip().splitlines()[-1] if out.returncode == 0 and out.stdout.strip() else ""
     except (OSError, subprocess.SubprocessError):
         line = ""
@@ -887,7 +1041,7 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
     where.add_argument("--agent-profile", dest="profile", metavar="NAME",
                        help="The profile to set up as the agent; made if it does not exist")
     where.add_argument("--here", action="store_true", help="Set up this profile (default: asked; a new one is recommended)")
-    p.add_argument("--relay", help="The relay to join (https URL)")
+    p.add_argument("--relay", help="The relay to join (https URL); needed without a terminal, there is no default")
     p.add_argument("--plugin-source", default="emporia",
                    help="Where a new profile's plugin comes from (default: the catalog entry; before it is "
                         "listed: https://github.com/wujitsana/emporia#hermes_plugin/emporia)")

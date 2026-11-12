@@ -1,5 +1,6 @@
 """P295: `hermes emporia setup` — which profile becomes the agent, and what it writes."""
 import argparse
+import os
 import importlib.util
 import sys
 from pathlib import Path
@@ -13,8 +14,13 @@ sys.modules["emporia_setup_cli"] = setup_cli
 spec.loader.exec_module(setup_cli)
 
 
+@pytest.fixture(autouse=True)
+def _relays_answer(monkeypatch):
+    monkeypatch.setattr(setup_cli, "_probe_relay", lambda url: "ok")
+
+
 def _args(**kw):
-    return argparse.Namespace(**{"profile": None, "here": False, "relay": None, "rest": [],
+    return argparse.Namespace(**{"profile": None, "here": False, "relay": "https://r.test", "rest": [],
                                  "plugin_source": "emporia", **kw})
 
 
@@ -220,6 +226,91 @@ def test_it_runs_setup_agent_for_the_chosen_profile_only(monkeypatch, capsys):
     assert "hermes -p shop emporia status" in out and "hermes -p shop dashboard" in out   # P296: what next
 
 
+def test_setup_without_a_terminal_requires_a_relay_and_has_no_default(monkeypatch, capsys):
+    """Review: no --relay and no terminal fell back to the author's server. A new agent's setup stops
+    before installing or writing anything and says to pass --relay."""
+    ran = []
+    monkeypatch.setattr(setup_cli, "profile_name", lambda home=None: "default")
+    monkeypatch.setattr(setup_cli, "_emporia", lambda rt, *a: ran.append(a) or 0)
+    monkeypatch.setattr(setup_cli.sys, "stdin", type("S", (), {"isatty": lambda self: False})())
+    assert setup_cli.cmd_setup(_args(profile="shop", relay=None, rest=[])) == 2
+    out = capsys.readouterr().out
+    assert "pass --relay URL" in out and ran == []
+    assert "wujitsana.net" not in out and "wujitsana.net" not in setup_cli.HERE.joinpath("setup_cli.py").read_text()
+
+
+def test_no_child_of_the_plugin_inherits_an_approval_bypass(monkeypatch, tmp_path):
+    """Rule 12, every child: runtime, `hermes` children, git/pip/uv (`_tool_env`), the settings writer."""
+    from emporia import hermes_settings
+    bypass = {"HERMES_YOLO_MODE", "HERMES_YOLO", "HERMES_ACCEPT_HOOKS", "HERMES_ACP_AUTO_APPROVE"}
+    for name in bypass:
+        monkeypatch.setenv(name, "1")
+    for env in (setup_cli._child_env(), setup_cli._child_env(runtime=True), setup_cli._tool_env(),
+                hermes_settings._env(tmp_path)):
+        assert not bypass & set(env)
+
+
+def test_an_index_url_that_may_hold_credentials_reaches_only_pip_and_uv(monkeypatch, tmp_path):
+    monkeypatch.setenv("PIP_INDEX_URL", "https://user:pw@index.example/simple")
+    monkeypatch.setenv("UV_INDEX_URL", "https://user:pw@index.example/simple")
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert {"PIP_INDEX_URL", "UV_INDEX_URL"} <= set(setup_cli._tool_env())
+    seen = []
+
+    class Done:
+        returncode, stdout, stderr = 0, "", ""
+    monkeypatch.setattr(setup_cli.subprocess, "run", lambda argv, **kw: seen.append((argv[0], kw["env"])) or Done())
+    setup_cli._run(["git", "--version"])
+    setup_cli._run(["uv", "--version"])
+    assert not {"PIP_INDEX_URL", "UV_INDEX_URL"} & set(seen[0][1]), "git gets none"
+    assert {"PIP_INDEX_URL", "UV_INDEX_URL"} <= set(seen[1][1])
+    for env in (setup_cli._child_env(), setup_cli._child_env(runtime=True)):
+        assert not {"PIP_INDEX_URL", "UV_INDEX_URL"} & set(env) and env["NO_COLOR"] == "1"
+
+
+def test_a_relay_url_after_the_dashes_counts_as_a_relay_without_a_terminal(monkeypatch, capsys):
+    ran = []
+    monkeypatch.setattr(setup_cli, "profile_name", lambda home=None: "default")
+    monkeypatch.setattr(setup_cli, "_emporia", lambda rt, *a: ran.append(a) or 0)
+    monkeypatch.setattr(setup_cli.sys, "stdin", type("S", (), {"isatty": lambda self: False})())
+    assert setup_cli.cmd_setup(_args(profile="shop", relay=None, rest=["--", "--relay-url", "https://r.test"])) == 0
+    assert ran[0] == ("setup", "agent", "shop", "--relay-url", "https://r.test")
+
+
+def test_only_the_vault_a_key_source_names_is_handed_and_env_links_only_from_key_sources(monkeypatch):
+    """S2: not every vault prefix; `env:NAME` is followed from the five *_KEY_SOURCE settings only."""
+    held = {"EMPORIA_AGENT_ID": "alpha", "EMPORIA_IDENTITY_KEY_SOURCE": "cmd:op read x",
+            "EMPORIA_ABOUT": "env:OPENROUTER_API_KEY", "OPENROUTER_API_KEY": "sk",
+            "OP_SERVICE_ACCOUNT_TOKEN": "tok", "AWS_SECRET_ACCESS_KEY": "aws", "BW_SESSION": "bw"}
+    monkeypatch.setattr(setup_cli, "_setting", lambda name: held.get(name, ""))
+    import types
+    monkeypatch.setitem(sys.modules, "agent.secret_scope", types.SimpleNamespace(current_secret_scope=lambda: held))
+    got = setup_cli._profile_values()
+    assert got["OP_SERVICE_ACCOUNT_TOKEN"] == "tok"
+    assert not {"AWS_SECRET_ACCESS_KEY", "BW_SESSION", "OPENROUTER_API_KEY"} & got.keys()
+    held["EMPORIA_X402_PHRASE_SOURCE"] = "env:OPENROUTER_API_KEY"
+    assert setup_cli._profile_values()["OPENROUTER_API_KEY"] == "sk"       # a key source, so it is the key's name
+
+
+def test_a_relay_started_from_the_plugin_gets_none_of_the_agents_settings(monkeypatch):
+    """S5: `hermes emporia relay start` ran the relay with the agent's minimal env and EMPORIA_NO_DOTENV=1, so
+    it lost its own settings. It gets the process's environment less what was handed to the runtime."""
+    monkeypatch.setattr(setup_cli, "_profile_values", lambda: {"EMPORIA_AGENT_ID": "alpha", "EMPORIA_X402_MAINNET": "1"})
+    monkeypatch.setenv("HERMES_HOME", "/h")
+    env = setup_cli._child_env(runtime=True)
+    assert env["EMPORIA_HANDED_NAMES"] == "EMPORIA_AGENT_ID,EMPORIA_X402_MAINNET" and env["EMPORIA_NO_DOTENV"] == "1"
+    from emporia import cli
+    with pytest.MonkeyPatch.context() as m:
+        for k in [k for k in os.environ if k.startswith("EMPORIA_")]:
+            m.delenv(k)
+        m.setattr(os, "environ", {**env, "EMPORIA_RELAY_PORT": "9000"})
+        relay = cli._relay_start_env()
+    assert relay == {k: v for k, v in env.items() if not k.startswith("EMPORIA_")} | {"EMPORIA_RELAY_PORT": "9000"}
+    with pytest.MonkeyPatch.context() as m:
+        m.delenv("EMPORIA_HANDED_NAMES", raising=False)
+        assert cli._relay_start_env() is None, "from a shell the relay inherits the environment as before"
+
+
 def test_a_catalog_runtime_is_pinned_to_a_full_commit(tmp_path, monkeypatch):
     monkeypatch.setattr(setup_cli, "SOURCE_FILE", tmp_path / "s.json")
     (tmp_path / "s.json").write_text('{"repo": "https://github.com/x/y", "sha": "abc"}')
@@ -418,7 +509,7 @@ def test_hermess_own_python_settings_never_reach_emporias_processes(monkeypatch)
     monkeypatch.setenv("PYTHONPATH", "/opt/hermes:/opt/hermes/site")
     monkeypatch.setenv("PIP_TARGET", "/somewhere")
     monkeypatch.setenv("PATH", "/usr/bin")
-    env = setup_cli._clean_env()
+    env = setup_cli._child_env()
     assert "PYTHONPATH" not in env and "PIP_TARGET" not in env and env["PATH"] == "/usr/bin"
 
 
@@ -447,9 +538,47 @@ def test_no_child_of_hermes_emporia_inherits_an_approval_bypass(monkeypatch):
     for name in ("HERMES_YOLO_MODE", "HERMES_YOLO", "HERMES_ACCEPT_HOOKS", "HERMES_ACP_AUTO_APPROVE"):
         monkeypatch.setenv(name, "1")
     monkeypatch.setenv("HERMES_HOME", "/somewhere/home")
-    env = setup_cli._clean_env()
-    assert not setup_cli.APPROVAL_BYPASS_VARS & set(env)
-    assert env["HERMES_HOME"] == "/somewhere/home"
+    for runtime in (False, True):
+        env = setup_cli._child_env(runtime=runtime)
+        assert not {"HERMES_YOLO_MODE", "HERMES_YOLO", "HERMES_ACCEPT_HOOKS", "HERMES_ACP_AUTO_APPROVE"} & set(env)
+        assert env["HERMES_HOME"] == "/somewhere/home"
+
+
+def test_a_child_is_given_an_allowlist_not_hermess_whole_environment(monkeypatch):
+    """Review: `_clean_env` was os.environ less a few names, so every provider key Hermes holds reached
+    the runtime CLI, `/emporia` and the `hermes` children. A child gets PATH, HOME, locale, proxies,
+    certificates and HERMES_HOME; the runtime also its own EMPORIA_* settings, read by name."""
+    for k, v in (("OPENROUTER_API_KEY", "sk-or"), ("ANTHROPIC_API_KEY", "sk-an"), ("TELEGRAM_BOT_TOKEN", "1:x"),
+                 ("HERMES_YOLO_MODE", "1"), ("PYTHONPATH", "/opt/hermes"), ("HTTPS_PROXY", "http://p:3128"),
+                 ("SSL_CERT_FILE", "/ca.pem"), ("LC_ALL", "C.UTF-8"), ("PATH", "/usr/bin"),
+                 ("EMPORIA_X402_MAINNET", "1"), ("EMPORIA_OPERATOR_PRIVATE_KEY", "relay-secret"),
+                 ("OP_SERVICE_ACCOUNT_TOKEN", "op-token")):
+        monkeypatch.setenv(k, v)
+    monkeypatch.setenv("HERMES_HOME", "/h/profiles/p")
+    plain = setup_cli._child_env()
+    assert {k for k in plain if not k.startswith("LC_")} <= set(setup_cli._TOOL_ENV) | {"HERMES_HOME", "HERMES_REAL_HOME"}
+    assert plain["HTTPS_PROXY"] == "http://p:3128" and plain["SSL_CERT_FILE"] == "/ca.pem"
+    run = setup_cli._child_env(runtime=True)
+    assert run["EMPORIA_NO_DOTENV"] == "1" and run["HERMES_HOME"] == str(setup_cli.hermes_home())
+    assert run["EMPORIA_X402_MAINNET"] == "1"                       # a declared name, handed by name
+    for banned in ("OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "HERMES_YOLO_MODE",
+                   "PYTHONPATH", "EMPORIA_OPERATOR_PRIVATE_KEY", "OP_SERVICE_ACCOUNT_TOKEN"):
+        assert banned not in plain and banned not in run
+
+
+def test_the_runtimes_values_come_from_the_scoped_secret_read(monkeypatch):
+    """The profile's own settings are read with get_scoped_secret (as the adapter does), never from
+    a file; a vault's variables only when a key source runs a command."""
+    held = {"EMPORIA_AGENT_ID": "alpha", "EMPORIA_IDENTITY_KEY_SOURCE": "cmd:op read x",
+            "OP_SERVICE_ACCOUNT_TOKEN": "tok", "OPENROUTER_API_KEY": "sk"}
+    monkeypatch.setattr(setup_cli, "_setting", lambda name: held.get(name, ""))
+    import types
+    monkeypatch.setitem(sys.modules, "agent.secret_scope", types.SimpleNamespace(current_secret_scope=lambda: held))
+    got = setup_cli._profile_values()
+    assert got["EMPORIA_AGENT_ID"] == "alpha" and got["OP_SERVICE_ACCOUNT_TOKEN"] == "tok"
+    assert "OPENROUTER_API_KEY" not in got
+    held["EMPORIA_IDENTITY_KEY_SOURCE"] = "file:/k"
+    assert "OP_SERVICE_ACCOUNT_TOKEN" not in setup_cli._profile_values()
 
 
 @pytest.mark.parametrize("tty", [True, False])
@@ -767,3 +896,40 @@ def test_a_github_source_is_the_pin_and_only_an_https_source_with_a_full_commit(
     assert len(seen) == 1
     docs = (REPO / "docs" / "deploy-relay.md").read_text() + (REPO / "docs" / "RUNBOOK.md").read_text()
     assert 'plugins install "https://github.com/wujitsana/emporia#hermes_plugin/emporia" --ref' in docs
+
+
+def test_a_relay_flag_is_made_whole_looked_at_and_refused_without_a_terminal_when_it_is_not_one(monkeypatch, capsys):
+    ran = []
+    monkeypatch.setattr(setup_cli, "profile_name", lambda home=None: "default")
+    monkeypatch.setattr(setup_cli, "_emporia", lambda rt, *a: ran.append(a) or 0)
+    monkeypatch.setattr(setup_cli.sys, "stdin", type("S", (), {"isatty": lambda self: False})())
+    assert setup_cli.cmd_setup(_args(profile="shop", relay="emporia.example.net/", rest=[])) == 0
+    assert ran[0][:5] == ("setup", "agent", "shop", "--relay-url", "https://emporia.example.net")
+    assert "Using https://emporia.example.net" in capsys.readouterr().out
+    ran.clear()
+    for relay, rest in (("user:pw@h.example", []), (None, ["--", "--relay-url", "ftp://h.example"])):
+        assert setup_cli.cmd_setup(_args(profile="shop", relay=relay, rest=rest)) == 2
+        assert "not a relay address" in capsys.readouterr().out
+    states = {"https://web.example": "other", "https://down.example": "down", "http://localhost:8088": "down"}
+    monkeypatch.setattr(setup_cli, "_probe_relay", lambda url: states.get(url, "ok"))
+    for relay in ("web.example", "down.example"):
+        assert setup_cli.cmd_setup(_args(profile="shop", relay=relay, rest=[])) == 2
+        assert "is not answering as an Emporia relay; check the address and pass --relay again" in capsys.readouterr().out
+    assert setup_cli.cmd_setup(_args(profile="shop", relay="localhost:8088", rest=[])) == 0, "this machine's, not up yet"
+    assert ran == [("setup", "agent", "shop", "--relay-url", "http://localhost:8088"), ("welcome", "shop")]
+
+
+def test_an_existing_agent_on_a_relay_that_is_briefly_down_is_not_refused(monkeypatch, capsys, tmp_path):
+    """N10: the profile's agent is already on that relay (its MCP entry names it): note, go on."""
+    ran = []
+    root = tmp_path / "hermes"
+    (root / "profiles" / "shop").mkdir(parents=True)
+    (root / "profiles" / "shop" / "config.yaml").write_text("mcp_servers:\n  emporia:\n    env:\n      EMPORIA_RELAY_URL: https://r.example\n")
+    monkeypatch.setattr(setup_cli, "_hermes_root", lambda: root)
+    monkeypatch.setattr(setup_cli, "profile_name", lambda home=None: "default")
+    monkeypatch.setattr(setup_cli, "_emporia", lambda rt, *a: ran.append(a) or 0)
+    monkeypatch.setattr(setup_cli.sys, "stdin", type("S", (), {"isatty": lambda self: False})())
+    monkeypatch.setattr(setup_cli, "_probe_relay", lambda url: "down")
+    assert setup_cli.cmd_setup(_args(profile="shop", relay="r.example", rest=[])) == 0
+    assert "already on it" in capsys.readouterr().out and ran[0][3:5] == ("--relay-url", "https://r.example")
+    assert setup_cli.cmd_setup(_args(profile="shop", relay="other.example", rest=[])) == 2

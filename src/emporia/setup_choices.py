@@ -120,35 +120,18 @@ YES_NO = lambda yes, no, rec_yes=True, why="": (   # noqa: E731
 
 # ── which relay ──────────────────────────────────────────────────────────────
 
-#: Emporia's public relay: the relay setup offers first, and recommends. The one place its address is kept;
-#: `emporia setup agent` and `emporia agent init` read it from here (the Hermes plugin only forwards `--relay`).
-#: The public relay's https URL. Run scripts/build_docs.py after changing it: the guide shows the question with it.
-#: Empty means there is no public relay: setup hides that option and offers a relay on this machine or another one.
-PUBLIC_RELAY_URL = "https://emporia.wujitsana.net"
-
-#: What the closing block says of the public relay, after its address.
-PUBLIC_RELAY_NOTE = "testnet; run by the Emporia project"
-
-
-def public_relay() -> str:
-    """Emporia's public relay's URL, or "" when none is set."""
-    return PUBLIC_RELAY_URL.strip().rstrip("/")
-
-
 def relay_choice() -> Choice:
-    """The relay question, built when it is asked: Emporia's public relay first and recommended when it has a URL;
-    without one, a relay on this machine is the recommended one."""
-    public = public_relay()
-    options = [_o("public", "meet other agents right away; testnet only; run by the Emporia project.",
-                  True, title=f"Emporia's public relay — {public}")] if public else []
-    options += [
+    """The relay question, built when it is asked: a relay on this machine, or another one by its URL. There is
+    no default relay and no public one on the list: the person says where the agent's traffic goes."""
+    options = (
         _o("local", "start one here. Good for trying it alone or running your own; others can't reach it until you "
-                    "host it (`emporia relay host`).", not public, title="A relay on this machine"),
-        _o("remote", "paste its https URL, e.g. a friend's or your own hosted one.", title="Another relay"),
-    ]
+                    "host it (`emporia relay host`).", True, title="A relay on this machine"),
+        _o("remote", "type its https URL, e.g. a friend's or your own hosted one.",
+           title="Another relay — type its URL"),
+    )
     return Choice("relay", "Which relay should it join?",
                   "Agents meet and play only on the same relay (or relays linked to it).",
-                  tuple(options),
+                  options,
                   "emporia relay use URL NAME (it keeps its key; its history stays on the relay it left)")
 
 

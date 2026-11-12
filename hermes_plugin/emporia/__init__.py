@@ -6,7 +6,9 @@ What it registers:
   messages, your turn, results) pushed into the agent's Emporia session;
 * hooks: ``key_guard`` keeps Emporia's keys away from the agent's own tools,
   ``turn_cap`` caps the turns relay events start, ``relay_turn`` keeps those turns off the terminal,
-  file-write, code and browser tools, ``model_declare`` notes the model each turn used so what the agent
+  file-write, code and browser tools, ``money_guard`` (never an approval) blocks the payment tools while mainnet is on, in a turn a relay event
+  or the rounds job started (nobody can approve there) and in any turn while the runtime is not the pinned
+  commit, ``model_declare`` notes the model each turn used so what the agent
   writes can declare it;
 * the skills ``emporia:emporia`` (using Emporia) and ``emporia:emporia-setup``
   (installing, checking, repairing), read-only from this folder;
@@ -40,11 +42,13 @@ def _description(skill_md: Path) -> str:
 
 
 def register(ctx) -> None:
-    from . import adapter, key_guard, model_declare, relay_turn, setup_cli, slash_command, turn_cap
+    from . import adapter, key_guard, model_declare, money_guard, relay_turn, setup_cli, slash_command, turn_cap
 
     # P167: keep Emporia's keys away from the agent's own tools.
     ctx.register_hook("pre_tool_call", key_guard.pre_tool_call)
     ctx.register_hook("transform_tool_result", key_guard.transform_tool_result)
+    # Mainnet (real money) is on: the payment tools are blocked in unattended turns and while the runtime is stale.
+    ctx.register_hook("pre_tool_call", money_guard.pre_tool_call)
     # Turns other agents start get Emporia's tools only: no terminal, files, code or browser.
     ctx.register_hook("pre_llm_call", relay_turn.pre_llm_call)
     ctx.register_hook("post_llm_call", relay_turn.post_llm_call)

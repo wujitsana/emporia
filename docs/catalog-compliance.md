@@ -222,8 +222,9 @@ scans only the plugin directory, so none of the 25 runtime findings reaches an i
 - The agent's install leaves out the `relay` extra (server-side packages only a relay imports;
   `tests/test_fast_setup.py` imports every module with them blocked). uv and pip use the user's own
   package caches, shared by the profiles of one user: what they take from a cache is checked against
-  uv.lock's hashes (`--frozen`) or `--require-hashes`, and each profile still has its own runtime
-  folder and virtualenv, verified by `verify_runtime` before use (rule 3 is unchanged).
+  uv.lock's hashes (`--frozen`) or `--require-hashes`, and a profile has a runtime folder and virtualenv
+  of its own, or shares the one made for another profile of the same user (its `EMPORIA_PYTHON`); either way it is
+  verified by `verify_runtime` before use (rule 3 is unchanged).
 
 ### 11. Credentials come through Hermes — pass
 - **The plugin's in-process code** reads its settings with
@@ -240,11 +241,42 @@ scans only the plugin directory, so none of the 25 runtime findings reaches an i
 - **The runtime CLI** (`hermes emporia …`), **the console** and **the installer** never open a
   profile's `.env`. `emporia.profile_env` is the one place that reads or writes one, and it does
   so through Hermes's own interpreter with Hermes's public functions:
-  - read: `agent.secret_scope.load_env_file`;
-  - write: `hermes_cli.config.save_env_value` / `remove_env_value`, under the profile's
-    `HERMES_HOME`.
+  - read: only the declared names (`emporia.agent_env`), each with `agent.secret_scope.get_secret`
+    in the profile's scope; the rest of the profile is never returned to Emporia;
+  - write: a name on the explicit `hermes_settings.PLAIN_SETTINGS` list (known to hold no secret) goes by
+    `hermes -p <profile> config set -- NAME VALUE` / `config unset -- NAME`, with a minimal environment
+    and always a profile selector (`default` for the root). **Every other name** (the identity,
+    encryption and wallet keys, the phrase, the signer token, the retired-keys list, any URL that may
+    carry a provider key, DSNs, sessions, key-source references, anything unlisted) goes on stdin to
+    Hermes's `hermes_cli.config.save_env_value` / `remove_env_value`. This is the one place Emporia calls
+    Hermes's Python function directly instead of its command, and it is deliberate: `hermes config set` takes
+    the value as an argument, which any process on the machine can read (`ps`, `/proc`), and keys are written
+    lazily while the gateway runs. `hermes_cli.config` is on Hermes's public plugin-API list
+    (`hermes_cli/plugin_validate_private_imports.py`, `_PUBLIC`) and bundled plugins (discord, matrix,
+    whatsapp…) write their settings with `save_env_value`. We will switch these names to `config set` too if the reviewer prefers
+    (the keys would then be briefly visible in argv).
 
-  Values travel on stdin and a pipe, never in argv. A runtime installed from the catalog with
+  What is read, exactly (nothing else of a profile's `.env` or secret sources is ever returned to Emporia):
+  - the declared names: Emporia's own `EMPORIA_*` settings and keys (`emporia.agent_env`); the settings of an
+    Emporia relay run from a profile (`FEDERATED_RELAYS`, `RATE_LIMIT_PER_MINUTE`, `MIN_RATIONALE_CHARS`,
+    `BOT_FINGERPRINTS`, `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_TRACES_SAMPLE_RATE`); and `API_SERVER_HOST`
+    and `API_SERVER_ENABLED` (not secrets; the doctor's hardening check);
+  - presence only, as booleans, never a value: the model's provider key, `API_SERVER_KEY` (long enough to
+    switch the api_server on), `A2A_TRUSTED_PEERS`, and whether a vault variable is held (the doctor);
+  - a name the person gives, read by that name alone: `--from-env NAME`, `link env:NAME`, the "Variable name" of
+    an interactive `wallet import`, and a secret name found in config.yaml that setup is moving into the `.env`;
+  - the variables of the vault CLI a linked `cmd:` key source names (`op`, `bw`, `vault`, `doppler`, `infisical`,
+    `aws`, `az`; a command naming none gets none, and the doctor says so), and the key an `env:NAME` key source
+    names.
+
+  The environment of a child process is an allowlist: `PATH, HOME, USER, LOGNAME, LANG, LANGUAGE, LC_*, TZ, TMPDIR,
+  TERM, NO_COLOR, SSL_CERT_FILE, SSL_CERT_DIR, REQUESTS_CA_BUNDLE, PIP_CERT, GIT_SSL_CAINFO, HTTP_PROXY, HTTPS_PROXY,
+  NO_PROXY` (and the lower-case proxy names), `XDG_CACHE_HOME, UV_CACHE_DIR, PIP_CACHE_DIR`, `HERMES_HOME`,
+  `HERMES_REAL_HOME`; `PIP_INDEX_URL` and `UV_INDEX_URL` (an index URL may hold credentials) only to pip and uv. The
+  runtime also gets the profile's own settings above and `EMPORIA_NO_DOTENV=1`. No provider key, and none of
+  Hermes's Python or approval-bypass variables, reaches a child.
+
+  A runtime installed from the catalog with
   no Hermes fails closed. Only a relay's own folder, or a checkout used without Hermes, is a
   plain file. `tests/test_profile_env.py` checks the routing, that no other module opens a
   `.env`, and a real round trip through the installed Hermes.
@@ -300,6 +332,20 @@ scans only the plugin directory, so none of the 25 runtime findings reaches an i
   prompt, which an unattended run denies.
 - A payment above the person's threshold asks through MCP elicitation, which Hermes routes to
   its approvals.
+- **Mainnet (real money): every payment is approved, per call.** With `EMPORIA_X402_MAINNET` on, or the unlock in
+  the signer's policy, the approval threshold is 0 (`agent_wallet.require_approval`, also for a wallet behind
+  the signer: it asks before handing the payment over). Every payment (x402, Tempo, escrow) goes to Hermes's
+  approval prompt as an MCP elicitation carrying the exact amount, network and payee; it is once or deny, not
+  bypassed by YOLO, and with no way to ask, declined or cancelled the payment is refused ("Not paid"); cron and
+  other unattended runs decline. A turn another agent started has nobody to answer, so the plugin's
+  `money_guard` (`pre_tool_call`) refuses `join_room`, `subscribe_agora_topic`, `fund_session` and
+  `reclaim_escrow` there at once instead of letting the elicitation wait out its timeout. The spending caps hold
+  as before. With mainnet on, testnet payments ask too (the threshold is 0 for every payment). The plugin's
+  `money_guard` also asks the signer's `/v1/wallet`, with the agent's signer token, whether its policy has
+  mainnet unlocked (`emporia signer add` takes the flag out of the profile); a signer too old to say counts as
+  unlocked, so upgrade it. While the profile's runtime is not at the commit this plugin pins, `money_guard`
+  refuses the payment tools in any turn on mainnet ("run `hermes emporia update` first"). No relay is used
+  unless the person names one (setup has no default relay).
 
 ### 13. Disclosure — pass
 The plugin README (it renders on the catalog page at the pin) and the PR text disclose:

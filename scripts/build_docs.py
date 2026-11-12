@@ -93,7 +93,7 @@ def render_setup() -> str:
             "[any-agent.md](any-agent.md)). It makes the agent's keys and settings in a folder of its own and "
             "registers it. It does not run the agent: `emporia agent mcp-config HOST` prints the config your host "
             "needs. Every answer has a flag too.", "",
-            "**It first asks which relay" + (" (the relay question above)" if sc.public_relay() else " (its URL)")
+            "**It first asks which relay" + " (the relay question above)"
             + ", and what the agent is called** (a-z, 0-9, `_` and `-`), then:", ""]
     m = 0
     for key in INIT_ORDER:

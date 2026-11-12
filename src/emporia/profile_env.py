@@ -56,7 +56,8 @@ def _parse(text: str) -> dict[str, str]:
 
 
 def read(path: Path, *, fresh: bool = False) -> dict[str, str]:
-    """Every NAME=value of the `.env` at `path` ({} when there is none)."""
+    """The `.env` at `path` as NAME=value ({} when there is none). A Hermes profile's is read through Hermes:
+    Emporia's declared names only (`hermes_settings.read`)."""
     path = Path(path).expanduser()
     if through_hermes(path):
         return hermes_settings.read(path.parent, fresh=fresh)
@@ -64,6 +65,25 @@ def read(path: Path, *, fresh: bool = False) -> dict[str, str]:
         return _parse(path.read_text(errors="replace"))
     except OSError:
         return {}
+
+
+def read_names(path: Path, names: list[str]) -> dict[str, str]:
+    """Exactly `names` of the `.env` at `path`: what a person asked to move or import by name. Not the rest."""
+    path = Path(path).expanduser()
+    if through_hermes(path):
+        return hermes_settings.read_named(path.parent, names)
+    return {k: v for k, v in read(path).items() if k in names}
+
+
+def present(path: Path, names: dict[str, int] | list[str]) -> dict[str, bool]:
+    """Whether the `.env` at `path` holds each name (with at least the given length, for a name mapped to one):
+    booleans only. Through Hermes, Hermes answers; the value never reaches Emporia."""
+    path = Path(path).expanduser()
+    if through_hermes(path):
+        return hermes_settings.present(path.parent, names)
+    want = dict(names) if isinstance(names, dict) else {n: 1 for n in names}
+    have = read(path)
+    return {n: len(have.get(n, "")) >= max(1, m) for n, m in want.items()}
 
 
 def lines(path: Path) -> list[str]:
@@ -96,7 +116,7 @@ def update(path: Path, updates: dict[str, str] | None = None, unset=()) -> list[
         # Fresh: a value read earlier in this process may have changed since, and a set judged
         # "already so" from it would be skipped.
         have = hermes_settings.read(path.parent, fresh=True)
-        changed = [k for k, v in updates.items() if have.get(k) != v] + [n for n in unset if n in have]
+        changed = [k for k, v in updates.items() if have.get(k, "") != v] + [n for n in unset if n in have]
         if changed:
             hermes_settings.write(path.parent, {k: updates[k] for k in changed if k in updates},
                                   [n for n in changed if n not in updates])
@@ -132,7 +152,7 @@ def replace(path: Path, lines: list[str]) -> list[str]:
     want = _parse("\n".join(lines))
     if through_hermes(path):
         have = hermes_settings.read(path.parent, fresh=True)
-        return update(path, {k: v for k, v in want.items() if have.get(k) != v},
+        return update(path, {k: v for k, v in want.items() if have.get(k, "") != v},
                       [n for n in have if n not in want])
     before = read(path)
     _write_file(path, "\n".join(lines) + "\n")

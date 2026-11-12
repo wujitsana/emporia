@@ -123,20 +123,14 @@ def parse_line(raw: str) -> Optional[dict[str, Any]]:
 
 
 
-# Names that hold a secret: Hermes's own rule for a platform's settings
-# (_TOKEN, _SECRET, _KEY, _PASSWORD) plus JWTs, phrases and private keys.
-_SECRET_NAME = re.compile(r"(_TOKEN|_SECRET|_KEY|_PASSWORD|_JWT|_JSON)$|SECRET|PRIVATE|PHRASE", re.IGNORECASE)
-
-
-# What the `hermes` launcher sets for its own interpreter, kept from Emporia's processes.
-_HERMES_PYTHON_VARS = frozenset({"PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PYTHONSTARTUP"})
-# Hermes's switches that skip or pre-answer approvals (as setup_cli.APPROVAL_BYPASS_VARS):
-# the bridge, and the relay or `hermes` commands it may start, never inherit them (rule 12).
-_APPROVAL_BYPASS_VARS = frozenset({"HERMES_YOLO_MODE", "HERMES_YOLO", "HERMES_ACCEPT_HOOKS",
-                                   "HERMES_ACP_AUTO_APPROVE"})
-# What a linked key's vault CLI needs besides EMPORIA_* (its token, its address): the
-# profile's own values, never the launching profile's.
-_VAULT_PREFIXES = ("OP_", "BW_", "VAULT_", "DOPPLER_", "INFISICAL_", "AWS_", "AZURE_")
+# The only variables of the gateway's own environment the bridge is given (as setup_cli._base_env): where to
+# find things, the locale, the network's proxies and certificates, and where Hermes's profile is. Not Hermes's
+# Python settings (the bridge runs Emporia's interpreter), not its approval bypasses (rule 12), and no key or
+# token of the gateway's or of any provider it holds.
+_BRIDGE_ENV = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LANGUAGE", "TZ", "TMPDIR", "TERM",
+               "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "PIP_CERT", "GIT_SSL_CAINFO",
+               "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+               "XDG_CACHE_HOME", "HERMES_HOME", "HERMES_REAL_HOME")
 # Only the family of the vault CLI a `cmd:` key source runs is handed on (as emporia.agent_env.vault_prefixes),
 # and never the relay-side secrets or the retired card/Stripe names the bridge does not read.
 _VAULT_FAMILIES = {"op": ("OP_",), "bw": ("BW_",), "vault": ("VAULT_",), "doppler": ("DOPPLER_",),
@@ -151,7 +145,7 @@ _NOT_THE_BRIDGES = frozenset({"EMPORIA_OPERATOR_PRIVATE_KEY", "EMPORIA_ALLOW_HOT
 
 def _vault_families(values: dict[str, str]) -> tuple[str, ...]:
     """As emporia.agent_env.vault_prefixes: the family of every vault CLI named by any word of a `cmd:` source
-    (a wrapper script or `sh -c` included); a source that names none gets every family."""
+    (a wrapper script or `sh -c` included); a source that names none gets no vault variable."""
     import shlex
     out: list[str] = []
     for name in _SOURCE_VARS:
@@ -166,7 +160,7 @@ def _vault_families(values: dict[str, str]) -> tuple[str, ...]:
         found: list[str] = []
         for w in words:
             found += _VAULT_FAMILIES.get(os.path.basename(w.rstrip("/")), ())
-        out += found or [f for fam in _VAULT_FAMILIES.values() for f in fam]
+        out += found                     # a source that names no known vault CLI hands no vault variables
     return tuple(dict.fromkeys(out))
 
 
@@ -176,7 +170,7 @@ _ENV_REF = re.compile(r"^\s*env:\s*([A-Z][A-Z0-9_]*)\s*$")
 
 
 def _linked_names(values: dict[str, str]) -> set[str]:
-    return {m.group(1) for k, v in values.items() if k.startswith("EMPORIA_") and (m := _ENV_REF.match(v))}
+    return {m.group(1) for k, v in values.items() if k in _SOURCE_VARS and (m := _ENV_REF.match(v))}
 
 
 def _profile_values() -> dict[str, str]:
@@ -281,13 +275,9 @@ class EmporiaAdapter(BasePlatformAdapter):
         as the file a brand-new key is written to (`--keys env`): no Hermes route exists
         for a process outside Hermes to write a profile setting.
 
-        P201: and no secret of the gateway's — a bot token, a model key, any
-        key docker-compose gave the container. Nor Hermes's approval bypasses."""
-        linked = _linked_names(self.profile_values)     # never the launching profile's copy of one
-        env = {k: v for k, v in os.environ.items()
-               if not k.startswith("EMPORIA_") and not k.startswith(_VAULT_PREFIXES)
-               and not _SECRET_NAME.search(k) and k not in linked
-               and k not in _HERMES_PYTHON_VARS and k not in _APPROVAL_BYPASS_VARS}
+        P201: an allowlist, not a denylist: no secret of the gateway's — a bot token, a model key, any
+        key docker-compose gave the container — and not Hermes's approval bypasses."""
+        env = {k: v for k, v in os.environ.items() if k in _BRIDGE_ENV or k.startswith("LC_")}
         env.update(self.profile_values)
         # Which of these are the agent's, so a relay the bridge restarts gets none of them.
         env["EMPORIA_HANDED_NAMES"] = ",".join(sorted(self.profile_values))

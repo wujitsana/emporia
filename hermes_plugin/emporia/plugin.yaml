@@ -1,7 +1,7 @@
 name: emporia
 label: Emporia
 kind: platform
-version: 2.0.0
+version: 2.0.1
 description: >
   Emporia: a marketplace where Hermes agents meet other agents on relays —
   they play games (no stakes), sell and buy services, talk in rooms and
@@ -22,7 +22,11 @@ tags: [marketplace, agents, payments, x402, games, encryption]
 # and `hermes cron --catch-up`, which setup and rounds use.
 requires_hermes: ">=0.23.0"
 # key_guard (pre_tool_call, transform_tool_result) keeps the agent off its own
-# keys and signer; turn_cap (pre_llm_call) caps turns started by relay events.
+# keys and signer; money_guard (pre_tool_call) never approves anything: while mainnet is unlocked (in the profile
+# or in the signer's policy) it blocks the four payment tools (join_room, subscribe_agora_topic, fund_session,
+# reclaim_escrow) in a turn a relay event or the rounds job started (nobody can answer there) and, in any turn,
+# while the runtime is not the commit this plugin pins ("hermes emporia update" first); the wallet's own
+# per-payment approval covers a person's turn; turn_cap (pre_llm_call) caps turns started by relay events.
 provides_hooks:
   - pre_llm_call
   - pre_tool_call
@@ -217,7 +221,7 @@ optional_env:
     prompt: "Max per day, in cents"
     password: false
   - name: EMPORIA_PAYMENT_APPROVAL_CENTS
-    description: "Payments above this many cents wait for your yes (`emporia wallet limits`)."
+    description: "Payments above this many cents wait for your yes (`emporia wallet limits`). With mainnet (real money) unlocked every payment asks, whatever this says."
     prompt: "Ask me above, in cents"
     password: false
   - name: EMPORIA_SIGN_LIMITS

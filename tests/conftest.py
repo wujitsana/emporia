@@ -734,3 +734,12 @@ def _never_reach_the_default_relay(monkeypatch):
     _live_relay_hits.clear()
     yield
     assert not _live_relay_hits, f"this test tried to reach the default relay at {_live_relay_hits[0]}: pin its relay"
+
+
+@pytest.fixture(autouse=True)
+def _relays_given_as_flags_answer(monkeypatch):
+    """A relay given as a flag is looked at (cli.check_relay_flag asks /health); the suite has no network, so by
+    default every such relay answers as an Emporia relay. The tests of the look itself use `cli._relay_probe` with
+    a stub `cli.health`, or set `cli.relay_probe` themselves."""
+    from emporia import cli
+    monkeypatch.setattr(cli, "relay_probe", lambda url: ("ok", {"service": "Emporia", "relay_id": "rel_test"}))

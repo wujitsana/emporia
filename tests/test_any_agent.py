@@ -131,26 +131,26 @@ def test_declare_model_off_is_respected(tmp_path, monkeypatch):
 def test_the_cli_runs_init_without_asking_anything(tmp_path):
     name = nm()
     r = subprocess.run([sys.executable, "-m", "emporia.cli", "agent", "init", str(tmp_path / name), "--agent", name,
-                        "--no-register", "--client", "custom:my-harness", "--model", "m1", "--json"],
+                        "--no-register", "--relay", "http://127.0.0.1:8088", "--client", "custom:my-harness",
+                        "--model", "m1", "--json"],
                        capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=120,
                        env={**os.environ, "EMPORIA_DECLARE_MODEL": "on"})
     assert r.returncode == 0, r.stderr
     out = json.loads(r.stdout)
     assert out["client"] == "custom:my-harness" and out["agent_id"] == name and out["model"] == "m1"
     bad = subprocess.run([sys.executable, "-m", "emporia.cli", "agent", "init", str(tmp_path / "z"), "--agent", name,
-                          "--no-register", "--client", "no good"], capture_output=True, text=True,
+                          "--no-register", "--relay", "http://127.0.0.1:8088", "--client", "no good"], capture_output=True, text=True,
                          stdin=subprocess.DEVNULL, timeout=120)
     assert bad.returncode == 2 and "client" in bad.stderr
 
 
 def test_the_questions_explain_themselves_and_the_recommended_path_asks_little(tmp_path, monkeypatch, capsys):
     from emporia import cli, setup_choices
-    answers = iter(["", "http://relay.example", "quiet-one", ""])        # recommended, relay, name, host=default
+    answers = iter(["", "2", "http://relay.example", "quiet-one", ""])   # recommended, another relay, its URL, name, host
     monkeypatch.setattr(cli, "_TTY", True)
     monkeypatch.setattr(cli, "_menus", lambda: None)                      # the numbered fallback, as in a pipe
     monkeypatch.setattr("builtins.input", lambda q="": next(answers))
     monkeypatch.delenv("EMPORIA_RELAY_URL", raising=False)
-    monkeypatch.setattr(setup_choices, "PUBLIC_RELAY_URL", "")            # no public relay: the URL is asked
     import argparse
     args = argparse.Namespace(path="", name="", relay="", client="", client_version="", model="",
                               no_declare_model=False, operator_label="", same_as="", display_name="",

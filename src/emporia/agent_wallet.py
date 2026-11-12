@@ -564,6 +564,8 @@ APPROVER = None
 
 
 def approval_threshold_cents() -> int | None:
+    if mainnet_on():
+        return 0                 # real money: every payment asks, whatever is set
     raw = _getenv("EMPORIA_PAYMENT_APPROVAL_CENTS").strip()
     return int(raw) if raw else None
 
@@ -602,17 +604,53 @@ def approval_terms() -> dict:
     return dict(_APPROVAL_TERMS.get() or {})
 
 
+def mainnet_on() -> bool:
+    """Whether real money is unlocked for this agent (the agent side: never inside the signer, which follows its
+    own policy), by either route: EMPORIA_X402_MAINNET here, or, with the wallet behind a signer, the signer's
+    policy (its /v1/wallet says `mainnet`; one that says nothing is an older signer and counts as unlocked).
+    A signer that cannot be reached pays nothing, so it counts as not unlocked here."""
+    from emporia.networks import mainnet_unlocked
+    if _SCOPE.get() is not None:
+        return False             # inside the signer: its own policy decides (the agent side already asked)
+    if mainnet_unlocked():
+        return True
+    if (r := remote()) is not None:
+        try:
+            return bool(r.wallet().get("mainnet", True))       # an older signer does not say: ask
+        except AgentWalletError:
+            return False
+    return False
+
+
+def _net(network: str) -> str:
+    from emporia.networks import label
+    return label(network)
+
+
+def _approve_before_signer(agent_id: str, amount_atomic: int, what: str, terms: dict) -> None:
+    """Behind a signer, a payment is handed over without passing `require_approval`. On mainnet, ask the
+    operator first, here, as for a local wallet, with the amount, network and payee the offer names (the
+    signer then applies its own caps and approvals)."""
+    if mainnet_on():
+        require_approval(agent_id, amount_atomic, f"{what} via the signer", terms)
+
+
 def require_approval(agent_id: str, amount_atomic: int, what: str, terms: dict | None = None) -> None:
-    """Ask the operator before a payment above EMPORIA_PAYMENT_APPROVAL_CENTS.
+    """Ask the operator before a payment above EMPORIA_PAYMENT_APPROVAL_CENTS — and, with mainnet
+    unlocked (EMPORIA_X402_MAINNET, real money), before every payment: the threshold is 0 there,
+    whether or not it is set, and with no way to ask the payment is refused.
     Runs after the caps, so nothing above a cap is ever put to them."""
-    limit = approval_threshold_cents()
+    scope = _SCOPE.get()
+    real_money = mainnet_on()
+    limit = 0 if real_money else approval_threshold_cents()
     if limit is None or amount_atomic <= limit * _USDC_ATOMIC_PER_CENT:
         return
     bound = f" Terms {terms_digest(terms)}." if terms else ""
+    why = ("Mainnet is unlocked (real money): every payment needs your approval." if real_money
+           else f"Above your ${limit / 100:.2f} approval threshold.")
     message = (f"Emporia: {agent_id} wants to pay {_exact(amount_atomic)} {plain_text(what)}.{bound} "
-               f"Above your ${limit / 100:.2f} approval threshold. Approve this payment?")
-    s = _SCOPE.get()
-    approver = s.approver if s is not None else APPROVER
+               f"{why} Approve this payment?")
+    approver = scope.approver if scope is not None else APPROVER
     t = terms or {}
     token = _APPROVAL_TERMS.set({
         "amount_atomic": int(amount_atomic), "rail": plain_text(t.get("rail", ""), 20),
@@ -624,9 +662,10 @@ def require_approval(agent_id: str, amount_atomic: int, what: str, terms: dict |
         _APPROVAL_TERMS.reset(token)
     if answer is None:
         raise AgentWalletError(
-            f"this payment ({amount_atomic / 1e6:.2f}) needs your operator's approval (above "
-            f"${limit / 100:.2f}, EMPORIA_PAYMENT_APPROVAL_CENTS) and this agent's app cannot ask "
-            f"them. Not paid.")
+            f"this payment ({amount_atomic / 1e6:.2f}) needs your operator's approval ("
+            + ("mainnet is unlocked, so every payment does" if real_money
+               else f"above ${limit / 100:.2f}, EMPORIA_PAYMENT_APPROVAL_CENTS")
+            + ") and this agent's app cannot ask them. Not paid.")
     if not answer:
         raise AgentWalletError("your operator declined this payment. Not paid; don't retry it.")
 
@@ -771,18 +810,6 @@ def _payee_label(statement: Any, family: str, address: Any) -> str:
         raise AgentWalletError(f"not paid: {e}") from None
 
 
-def _offered_amount(body: dict, network: str = "") -> int:
-    """The most an x402 body asks for (on `network` when given): what a hand-off to a signer is counted
-    against the unattended allowance as, before the signer picks the requirement it will pay."""
-    from emporia import x402_payer
-    accepts = x402_payer.payment_required_from(body).get("accepts") or []
-    amounts = [positive_atomic(e.get("amount"), "amount the relay asks for") for e in accepts
-               if isinstance(e, dict) and e.get("scheme") == "exact" and (not network or e.get("network") == network)]
-    if not amounts:
-        raise AgentWalletError("nothing offered here can be paid on that network")
-    return max(amounts)
-
-
 def _regate_actual(header: str, counted: int) -> None:
     """The signer paid less than the most the body asked for: count what it signed, not the maximum."""
     from emporia import autonomy
@@ -794,6 +821,27 @@ def _regate_actual(header: str, counted: int) -> None:
     if 0 < actual < counted:
         autonomy.refund_spend(counted)
         autonomy.gate_spend(actual)
+
+
+def _choose_requirement(agent_id: str, body: dict, network: str = "") -> tuple[dict, dict]:
+    """(the 402 challenge, the one requirement this agent pays): `network` if given (it must be on the
+    allowlist), else the first allowed network the relay offers and this agent has a wallet for. The same rule
+    for a local wallet and for one behind a signer."""
+    from emporia import x402_payer
+    nets = allowed_networks()
+    if network and network not in nets:
+        raise AgentWalletError(
+            f"{network} is not one of the networks this agent may pay on "
+            f"(EMPORIA_X402_PAY_NETWORKS: {', '.join(nets)})")
+    challenge = x402_payer.payment_required_from(body)
+    families = _families(agent_id) or ("evm",)
+    refusals = []
+    for net in ([network] if network else nets):
+        try:
+            return challenge, x402_payer.select_requirement(challenge, networks=[net], families=families)
+        except x402_payer.X402PayerError as e:
+            refusals.append(str(e))
+    raise x402_payer.X402PayerError("nothing offered here can be paid: " + "; ".join(refusals))
 
 
 def sign_exact(agent_id: str, body: dict, network: str = "", *, fee_leg: bool = False,
@@ -810,31 +858,27 @@ def sign_exact(agent_id: str, body: dict, network: str = "", *, fee_leg: bool = 
     holds the fee requirement and `creator_amount` (atomic) the creator's share it goes with. It is paid
     only on the network the creator's share was, never above `PAYER_FEE_CAP_BPS` of the whole price, and
     under the same per-payment and daily caps and approval as any payment."""
-    if (r := remote()) is not None:
-        hint = _offered_amount(body, network)          # S-1: the allowance is counted here, then the signer's caps
-        with _remote_gate(hint):
-            header = r.call("x402", {"body": body, "network": network, "fee_leg": fee_leg,
-                                     "creator_amount": creator_amount})["header"]
-        _regate_actual(header, hint)
-        return header
     from emporia import x402_payer
-
-    nets = allowed_networks()
-    if network and network not in nets:
-        raise AgentWalletError(
-            f"{network} is not one of the networks this agent may pay on "
-            f"(EMPORIA_X402_PAY_NETWORKS: {', '.join(nets)})")
-    challenge = x402_payer.payment_required_from(body)
-    families = _families(agent_id) or ("evm",)
-    requirement, refusals = None, []
-    for net in ([network] if network else nets):
-        try:
-            requirement = x402_payer.select_requirement(challenge, networks=[net], families=families)
-            break
-        except x402_payer.X402PayerError as e:
-            refusals.append(str(e))
-    if requirement is None:
-        raise x402_payer.X402PayerError("nothing offered here can be paid: " + "; ".join(refusals))
+    challenge, requirement = _choose_requirement(agent_id, body, network)
+    if (r := remote()) is not None:
+        # The requirement is chosen here, by the same rule as for a local wallet, shown to the operator as it is,
+        # and handed to the signer alone (network pinned): what was approved is what gets signed.
+        amount = positive_atomic(requirement.get("amount"), "amount the relay asks for")      # S-1: counted here
+        pinned = dict(body)
+        if isinstance(body.get("x402"), dict):
+            pinned["x402"] = {**body["x402"], "accepts": [requirement]}
+        if "accepts" in body:                                # a challenge at the top level (it is read first)
+            pinned["accepts"] = [requirement]
+        _approve_before_signer(
+            agent_id, amount, f"USDC on {_net(requirement.get('network') or '')} to "
+            f"{plain_text(requirement.get('payTo') or '?', 80)}",
+            {"rail": "x402", "network": requirement.get("network"), "asset": requirement.get("asset"),
+             "pay_to": str(requirement.get("payTo") or "").lower(), "amount": str(amount)})
+        with _remote_gate(amount):
+            header = r.call("x402", {"body": pinned, "network": requirement.get("network") or network,
+                                     "fee_leg": fee_leg, "creator_amount": creator_amount})["header"]
+        _regate_actual(header, amount)
+        return header
     amount = positive_atomic(requirement.get("amount"), "amount the relay asks for")
     cap = max_payment_cents() * _USDC_ATOMIC_PER_CENT
     if amount > cap:
@@ -923,7 +967,13 @@ def pay_tempo(agent_id: str, offer: dict) -> str:
     transfer straight to the payee — after the same network allowlist,
     per-payment cap and daily cap as x402. Returns the PAYMENT-TEMPO value."""
     if (r := remote()) is not None:
-        with _remote_gate(positive_atomic((offer.get("request") or {}).get("amount"), "amount the relay asks for")):
+        amount = positive_atomic((offer.get("request") or {}).get("amount"), "amount the relay asks for")
+        req = offer.get("request") or {}
+        _approve_before_signer(
+            agent_id, amount, f"in stablecoin {req.get('currency')} on {_net(offer.get('network') or '')} to "
+            f"{plain_text(req.get('recipient') or '?', 80)}",
+            {"rail": "tempo", "network": offer.get("network"), "recipient": req.get("recipient")})
+        with _remote_gate(amount):
             return r.call("tempo", {"offer": offer})["header"]
     from emporia import tempo
 
@@ -966,6 +1016,10 @@ def sign_escrow(agent_id: str, offer: dict, *, expected_amount: int) -> str:
     """A relay's escrow offer in, the PAYMENT-ESCROW value out — after the
     network allowlist, the per-payment cap, and escrow.sign_offer's checks."""
     if (r := remote()) is not None:
+        _approve_before_signer(
+            agent_id, positive_atomic(expected_amount, "hold amount"),
+            f"USDC into an escrow hold on {_net(offer.get('network') or '')} (contract {plain_text(offer.get('escrow'), 80)})",
+            {"rail": "escrow", "network": offer.get("network"), "pay_to": offer.get("escrow")})
         with _remote_gate(positive_atomic(expected_amount, "hold amount")):
             return r.call("escrow", {"offer": offer, "expected_amount": expected_amount})["header"]
     from emporia import escrow

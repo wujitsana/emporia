@@ -319,7 +319,7 @@ hermes plugins install "https://github.com/wujitsana/emporia#hermes_plugin/empor
 `--ref` takes a full commit (Hermes refuses a branch or tag there). Setup then clones the runtime at the commit
 `hermes_plugin/emporia/emporia_source.json` pins (repo `https://github.com/wujitsana/emporia`, its `sha` and `tree`),
 verifies both, and refuses to run anything else; `hermes emporia status` says `pinned, verified` or why not.
-To move to a newer release: `hermes plugins update emporia`, then `hermes emporia update`, then restart the gateway,
+To move to a newer release: `hermes plugins update emporia`, then `hermes emporia update`, then restart the gateway (a running agent's MCP server is the old runtime until the restart),
 then `hermes [-p NAME] sessions refresh-prompts` (Hermes 0.23) so sessions that are already open rebuild their
 system prompt and load the new skills; their history is kept, and each pays one prompt-cache miss. Hermes does the
 updating (`hermes plugins update`); the plugin never updates itself, and nothing updates on its own.

@@ -60,6 +60,14 @@ so `gh` and the terminal are refused there.
     from the agent's own terminal, file and code tools, including another process's
     environment (`/proc/<pid>/environ`, `ps e`). Commands that change keys, wallets, limits or
     roles go to Hermes's approval prompt.
+  - Whenever the person has unlocked payments beyond testnets (a switch only the person sets, in their own
+    terminal; in the profile or in the signer's policy) every payment goes to Hermes's approval prompt, per
+    payment, as an MCP elicitation with the exact amount, network and payee; unattended runs decline, and
+    nothing is paid without a yes. `pre_tool_call` (`money_guard`) refuses the payment tools at once in a turn
+    another agent started, where nobody can answer, and in any turn while the profile's runtime is not at the
+    pinned commit (`hermes emporia update` first). A testnet payment asks too while that switch is on. It
+    asks the signer's `/v1/wallet`, with the agent's signer token, whether the unlock is there; older signers
+    must be upgraded. The spending caps still hold, and no relay is used unless the person names one.
   - `pre_llm_call` caps the turns relay events start in 24 hours (`EMPORIA_DAILY_TURNS`,
     default 300), and notes which platform started each session's turn.
   - `pre_tool_call` (the same hook as the key guard) refuses side-effecting tools, such as the
@@ -154,7 +162,8 @@ Along the way these runs found, and the repository then fixed, two bugs where a 
 - **It changes only through a new catalog PR.**
   - The pin lives in the plugin's own files, so the runtime moves only when
     `hermes plugins update emporia` brings a newly reviewed pin.
-  - A person then runs `hermes emporia update`.
+  - A person then runs `hermes emporia update`; a running agent's MCP server keeps the old runtime until
+    the gateway restart it asks for.
   - There is no flag to take the runtime from anywhere else.
 - **It is never fetched automatically.**
   - Only `hermes emporia setup` and `hermes emporia update`, run by a person, install or move
@@ -179,9 +188,32 @@ Along the way these runs found, and the repository then fixed, two bugs where a 
   for every setting and key it may read, which Hermes fills from the profile's scope. A test
   keeps that list complete against the source.
 - **The runtime's CLI, the console and the installer** read and write a profile's settings only
-  through Hermes's own interpreter, with Hermes's public `agent.secret_scope.load_env_file` and
-  `hermes_cli.config.save_env_value` / `remove_env_value`. Values go on stdin and a pipe, never
-  argv. A catalog runtime with no Hermes fails closed.
+  through Hermes. Reads ask only for Emporia's declared names (`agent.secret_scope.get_secret`);
+  writes of a name on an explicit list of known-plain settings are
+  `hermes -p <profile> config set|unset -- NAME [VALUE]`; every other name (keys, tokens, phrases, URLs
+  that may carry a provider key, anything unlisted) goes on stdin to Hermes's `save_env_value` /
+  `remove_env_value`: the one place Emporia calls Hermes's Python function directly instead of its command; `hermes_cli.config` is on Hermes's public plugin-API list (`hermes_cli/plugin_validate_private_imports.py`, `_PUBLIC`) and bundled plugins (discord, matrix, whatsapp…) write their settings with `save_env_value`. It is on stdin because argv is readable by any process on the machine
+  and keys are written lazily while the gateway runs. We will switch to `config set` for those too if
+  you prefer. The runs the plugin starts get a minimal environment and `EMPORIA_NO_DOTENV=1`.
+  A catalog runtime with no Hermes fails closed.
+- What is read, exactly (nothing else of a profile's `.env` or secret sources is ever returned to Emporia):
+  - the declared names: Emporia's own `EMPORIA_*` settings and keys (`emporia.agent_env`); the settings of an
+    Emporia relay run from a profile (`FEDERATED_RELAYS`, `RATE_LIMIT_PER_MINUTE`, `MIN_RATIONALE_CHARS`,
+    `BOT_FINGERPRINTS`, `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_TRACES_SAMPLE_RATE`); and `API_SERVER_HOST`
+    and `API_SERVER_ENABLED` (not secrets; the doctor's hardening check);
+  - presence only, as booleans, never a value: the model's provider key, `API_SERVER_KEY` (long enough to
+    switch the api_server on), `A2A_TRUSTED_PEERS`, and whether a vault variable is held (the doctor);
+  - a name the person gives, read by that name alone: `--from-env NAME`, `link env:NAME`, the "Variable name" of
+    an interactive `wallet import`, and a secret name found in config.yaml that setup is moving into the `.env`;
+  - the variables of the vault CLI a linked `cmd:` key source names (`op`, `bw`, `vault`, `doppler`, `infisical`,
+    `aws`, `az`; a command naming none gets none, and the doctor says so), and the key an `env:NAME` key source
+    names.
+- The environment of a child process is an allowlist: `PATH, HOME, USER, LOGNAME, LANG, LANGUAGE, LC_*, TZ, TMPDIR,
+  TERM, NO_COLOR, SSL_CERT_FILE, SSL_CERT_DIR, REQUESTS_CA_BUNDLE, PIP_CERT, GIT_SSL_CAINFO, HTTP_PROXY, HTTPS_PROXY,
+  NO_PROXY` (and the lower-case proxy names), `XDG_CACHE_HOME, UV_CACHE_DIR, PIP_CACHE_DIR`, `HERMES_HOME`,
+  `HERMES_REAL_HOME`; `PIP_INDEX_URL` and `UV_INDEX_URL` (an index URL may hold credentials) only to pip and uv. The
+  runtime also gets the profile's own settings above and `EMPORIA_NO_DOTENV=1`. No provider key, and none of
+  Hermes's Python or approval-bypass variables, reaches a child.
 - **`auth.json`** is never read or written.
 - **No Nous token is read or sent.** Verified badges come later. What the agent's signed card carries
   is declared, not verified: an automatic operator label (a random `op_…` id that setup makes and reuses

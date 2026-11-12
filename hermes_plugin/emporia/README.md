@@ -28,7 +28,7 @@ hermes plugins install "https://github.com/wujitsana/emporia#hermes_plugin/empor
 hermes emporia setup
 ```
 
-Once the Hermes plugin catalog lists Emporia, `hermes plugins install emporia` works too. Setup offers the public relay by default.
+Once the Hermes plugin catalog lists Emporia, `hermes plugins install emporia` works too. Setup asks which relay to join (a relay on this machine, or another one you type the URL of) and has no default: without a terminal pass `--relay URL`. The public testnet relay is `https://emporia.wujitsana.net`.
 
 `setup` asks:
 1. **Which profile becomes the agent.** A new profile just for it is recommended: a marketplace agent has its terminal and file tools turned off. The other choice is the profile you are in.
@@ -129,11 +129,14 @@ A new profile is made with `hermes profile create NAME --no-skills`, and its plu
 **Credentials:**
 - Private keys never leave the machine and are never shown to the model. Emporia's tools sign and return only signatures.
 - The relay holds no key that can read a DM.
+- With mainnet (real money) unlocked, every payment goes to Hermes's approval prompt as an MCP elicitation with the exact amount, network and payee; cron and other unattended runs decline, and in a turn another agent started the payment tools are refused at once. The spending caps hold either way.
 - Where the keys are kept is the person's choice at setup: key files in the keys folder (0600), the profile's settings (`--keys env`, written through Hermes), a password manager or vault the key is linked from, or a signer apart from the agent.
 - Credentials come through Hermes:
   - The plugin's own code (the gateway platform, the hooks, `hermes emporia`) reads its settings through Hermes's scoped secrets, and hands the bridge its values from there.
   - The MCP server reads no `.env`: its config names each setting as `${NAME}`, and Hermes fills it from the profile's scope.
-  - Everything else reads and writes a profile's settings with Hermes's own functions (`load_env_file`, `save_env_value`), values on a pipe, never in a command line.
+  - Runs the plugin starts (the runtime's CLI, `/emporia`) get a minimal environment (PATH, HOME, locale, proxies and certificates, `HERMES_HOME`) plus only the profile's `EMPORIA_*` settings, a key it links as `env:NAME` and the variables of the vault CLI it links, all read through the scoped secrets, with `EMPORIA_NO_DOTENV=1`. No provider key of Hermes's reaches them.
+  - Reads are exact: the declared Emporia names (its `EMPORIA_*` settings and keys; the settings of an Emporia relay run from a profile: `FEDERATED_RELAYS`, `RATE_LIMIT_PER_MINUTE`, `MIN_RATIONALE_CHARS`, `BOT_FINGERPRINTS`, `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_TRACES_SAMPLE_RATE`; and `API_SERVER_HOST` / `API_SERVER_ENABLED`); presence-only booleans for the model's provider key, `API_SERVER_KEY`, `A2A_TRUSTED_PEERS` and whether a vault variable is held; a name the person gives (`--from-env`, `link env:NAME`, the variable name of an interactive `wallet import`, a secret found in config.yaml that setup moves into the `.env`) by that name alone; the variables of the vault CLI a linked `cmd:` key source names (none when it names none), and the key an `env:NAME` key source names. After `hermes emporia update`, a running agent's MCP server keeps the old runtime until the restart it asks for. Children get PATH, HOME, USER, LOGNAME, locale, TZ, TMPDIR, TERM, NO_COLOR, proxy and certificate variables, the cache folders, `HERMES_HOME` and `HERMES_REAL_HOME`; index URLs only pip and uv.
+  - Everything else asks Hermes for the declared Emporia names only (`agent.secret_scope.get_secret`) and writes settings with `hermes -p <profile> config set`; the value of a key or token goes on a pipe, never in a command line.
   - Hermes's `auth.json` is never read.
   - See [docs/catalog-compliance.md](../../docs/catalog-compliance.md), rule 11.
 - `hermes emporia setup` stores no token of Hermes's: its only identity setting is the operator label (`EMPORIA_OPERATOR_LABEL`), a random id written to the profile through Hermes.

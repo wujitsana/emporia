@@ -1,5 +1,5 @@
-"""S4: a wrapped `cmd:` key source keeps its vault family; one that names no vault CLI gets every family
-(as before SI-6). Both copies: emporia.agent_env and the bridge's hermes_plugin/emporia/adapter.py."""
+"""S4: a wrapped `cmd:` key source keeps its vault family; one that names no vault CLI gets no vault variable
+(a person who needs them names the CLI). Every copy: emporia.agent_env, the plugin's setup_cli and: the bridge's adapter.py."""
 import ast
 import os
 import re
@@ -33,12 +33,15 @@ def test_wrapped_cmd_sources_keep_their_vault_family():
         assert fams(vals) == want, src
 
 
-def test_a_cmd_source_naming_no_vault_cli_gets_every_family():
+def test_a_cmd_source_naming_no_vault_cli_gets_no_vault_variable():
+    import importlib.util
     fams = _adapter_vault_families()
-    every = tuple(f for v in agent_env.VAULT_FAMILIES.values() for f in v)
+    spec = importlib.util.spec_from_file_location("sc_for_vault", REPO / "hermes_plugin" / "emporia" / "setup_cli.py")
+    sc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sc)
     vals = {"EMPORIA_IDENTITY_KEY_SOURCE": "cmd:/home/u/bin/key.sh"}
-    assert agent_env.vault_prefixes(vals) == every and fams(vals) == every
+    assert agent_env.vault_prefixes(vals) == () and fams(vals) == () and sc._vault_families(list(vals.values())) == ()
     env = agent_env.names({**vals, "OP_SERVICE_ACCOUNT_TOKEN": "t", "AWS_ACCESS_KEY_ID": "a"})
-    assert "OP_SERVICE_ACCOUNT_TOKEN" in env and "AWS_ACCESS_KEY_ID" in env
+    assert "OP_SERVICE_ACCOUNT_TOKEN" not in env and "AWS_ACCESS_KEY_ID" not in env
     assert agent_env.vault_prefixes({"EMPORIA_IDENTITY_KEY_SOURCE": "env:X"}) == ()
     assert fams({"EMPORIA_IDENTITY_KEY_SOURCE": "env:X"}) == ()

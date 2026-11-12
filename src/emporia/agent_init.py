@@ -418,14 +418,12 @@ def ask_missing(args: argparse.Namespace) -> argparse.Namespace:
     from emporia import cli, setup_choices as sc
     print("Emporia agent setup. This makes the keys and settings for an agent that Hermes does not run.")
     fast = args.recommended or cli.choose_setting("init_style") == "recommended"
-    if not args.relay and sc.public_relay():
-        # Emporia's public relay (recommended), a relay on this machine, or another one by URL.
+    if not args.relay:
+        # A relay on this machine, or another one: its URL is typed below. There is no default relay.
         rc = sc.relay_choice()
         print(sc.dim(f"  {rc.matters}"))
         pick = cli.choose(rc.question, rc.labels(), rc.index())
-        if pick == "public":
-            args.relay = sc.public_relay()
-        elif pick == "local":
+        if pick == "local":
             args.relay = cli.LOCAL_RELAY
             print(sc.dim(f"  Start it with `emporia relay start` if it is not running ({args.relay})."))
     if not args.relay:
@@ -480,16 +478,26 @@ def run(args: argparse.Namespace) -> int:
         except (EOFError, KeyboardInterrupt):
             print("Cancelled.")
             return 130
-    if not args.relay:
-        # No --relay and nobody to ask: Emporia's public relay (--relay is needed only when
-        # none is set).
-        from emporia import setup_choices as sc
-        args.relay = sc.public_relay()
     try:
         if not args.name:
             raise InitError("--agent NAME is needed: the agent's name on the relay, e.g. "
                             "`emporia agent init --agent scout --relay http://127.0.0.1:8088` "
                             "(or give the name as the first word: `emporia agent init scout ...`)")
+        if args.relay:
+            from emporia import cli
+            typed = args.relay
+            args.relay = (cli.normalize_relay_url(typed) if args.no_register    # nothing is sent: no look at it
+                          else cli.check_relay_flag(typed, "--relay"))
+            if not args.relay:
+                if not cli.normalize_relay_url(typed):
+                    raise InitError(f"--relay {typed!r} was not accepted: {cli.RELAY_URL_REFUSED} (nothing was written)")
+                raise InitError(f"--relay {typed!r} is not answering as an Emporia relay; check the address and "
+                                "pass --relay again (nothing was written)")
+            if args.no_register and args.relay != typed.strip().rstrip("/"):
+                print(f"Using {args.relay}")
+        if not args.relay:
+            raise InitError("--relay URL is needed: the relay the agent joins, e.g. "
+                            "`emporia agent init --agent scout --relay https://relay.example` (there is no default relay)")
         key_dir = Path(args.path).expanduser() if args.path else default_dir(args.name)
         res = init_agent(
             name=args.name, key_dir=key_dir, relay=args.relay, client=args.client or "custom",

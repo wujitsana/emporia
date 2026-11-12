@@ -270,7 +270,14 @@ def secure_profile(profile_dir: Path, dry_run: bool = False) -> list[str]:
     if not config_path.exists():
         return []
     config = load_yaml(config_path)
-    have = harvest_env(profile_dir)
+    # Exactly the secret names config.yaml holds are looked up in the .env (to keep a value already there):
+    # nothing else of the profile is read.
+    servers = config.get("mcp_servers") if isinstance(config.get("mcp_servers"), dict) else {}
+    names = [str(k) for block in [config.get(n) for n in ("env", "environment")]
+             + [(s.get("env") if isinstance(s, dict) else None) for s in servers.values()]
+             if isinstance(block, dict) for k in block if is_secret_name(str(k))]
+    from emporia import profile_env
+    have = profile_env.read_names(env_path, names) if names else {}
     to_env: dict[str, str] = {}
     moved: list[str] = []
 
@@ -290,7 +297,7 @@ def secure_profile(profile_dir: Path, dry_run: bool = False) -> list[str]:
     for name in ("env", "environment"):
         if isinstance(config.get(name), dict):
             take(config[name], keep_ref=False)
-    for server in (config.get("mcp_servers") or {}).values():
+    for server in servers.values():
         if isinstance(server, dict) and isinstance(server.get("env"), dict):
             take(server["env"], keep_ref=True)
     if dry_run:
@@ -323,7 +330,8 @@ def _provider_key_note(model_block: dict | None, profile_dir: Path) -> str | Non
     so setup copies none between profiles. Returns the one-line note, or None when
     the model needs no key or the profile's .env already has it (names only, never values)."""
     name = _PROVIDER_KEYS.get(str((model_block or {}).get("provider") or "").lower())
-    if not name or harvest_env(profile_dir).get(name):
+    from emporia import profile_env      # catalog rule 11: through Hermes; a boolean, never the key
+    if not name or profile_env.present(profile_dir / ".env", [name]).get(name):
         return None
     return (f"  {profile_dir.name}'s model needs {name}, which setup does not copy from another profile "
             f"(each profile's credentials are its own). Add it through Hermes: `hermes -p {profile_dir.name} model`.")

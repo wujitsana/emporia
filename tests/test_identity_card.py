@@ -218,9 +218,9 @@ def test_setup_agent_gives_the_first_agent_a_label_and_the_next_one_the_same(pro
     from emporia import cli
     root, _ = profiles
     with patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "first", "--keys", "files"]) == 0
+        assert cli.main(["setup", "agent", "first", "--relay-url", "http://127.0.0.1:9", "--keys", "files"]) == 0
     with patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "second", "--keys", "files"]) == 0
+        assert cli.main(["setup", "agent", "second", "--relay-url", "http://127.0.0.1:9", "--keys", "files"]) == 0
     label = identity_card.label_of_profile(root / "first")
     assert operators.valid_label(label)
     assert identity_card.label_of_profile(root / "second") == label, "one person's agents share their label"

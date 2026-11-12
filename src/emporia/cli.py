@@ -557,7 +557,7 @@ def cmd_relay(args: argparse.Namespace) -> int:
     if health():
         print(f"relay: already up at {relay_url()}")
         return 0
-    return _start_relay()
+    return _start_relay(_relay_start_env())
 
 
 def cmd_relay_watch(args: argparse.Namespace) -> int:
@@ -611,6 +611,18 @@ def _is_our_pid(pid: int, *marks: bytes) -> bool:
 def _is_relay_pid(pid: int) -> bool:
     """Whether `pid` is a relay `emporia relay start` started."""
     return _is_our_pid(pid, b"emporia-relay", b"emporia.relay_server")
+
+
+def _relay_start_env() -> dict[str, str] | None:
+    """What a relay started from here is given. From a shell, everything (None: inherited). From the Hermes
+    plugin (`hermes emporia relay start`) this process holds the agent's settings and keys by name
+    (EMPORIA_HANDED_NAMES) and EMPORIA_NO_DOTENV=1: the relay gets none of them and reads its own settings
+    from its own folder, as `ensure_local_relay` starts it."""
+    handed = os.environ.get("EMPORIA_HANDED_NAMES")
+    if handed is None:
+        return None
+    agent = {n for n in handed.split(",") if n} | {"EMPORIA_HANDED_NAMES", "EMPORIA_NO_DOTENV", "EMPORIA_DOTENV"}
+    return {k: v for k, v in os.environ.items() if k not in agent}
 
 
 def _start_relay(env: dict[str, str] | None = None, url: str | None = None, say=print) -> int:
@@ -730,53 +742,143 @@ def _relays_in_use() -> dict[str, list[str]]:
     return used
 
 
-def _check_relay_url(url: str) -> str:
-    """The URL, cleaned, if a person accepts it; "" if not."""
+_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
+
+
+def normalize_relay_url(raw: str, plain_remote: bool = True) -> str:
+    """A relay URL as typed, made whole: `relay.example.net` or `relay.example.net/` becomes
+    `https://relay.example.net`; a host on this machine (localhost, 127.0.0.1, ::1) without a scheme becomes
+    `http://`; an explicit http:// or https:// is kept. "" when it is no URL a relay has: no host, a scheme
+    other than http(s), a user name or password in it (a relay never needs one), a query or fragment, or 0.0.0.0. The scheme and host
+    are lower-cased. An `http://` the person
+    typed to another machine is kept when `plain_remote` (a flag's explicit scheme is their say-so; the menu
+    asks, `_check_relay_url`); `plain_remote=False` refuses it."""
     import urllib.parse
-    url = url.strip().rstrip("/")
-    parts = urllib.parse.urlparse(url)
-    if parts.scheme not in ("http", "https") or not parts.hostname:
-        print("  A relay URL starts with https:// (or http:// on this machine).")
+    url = (raw or "").strip().rstrip("/")
+    if not url or url.lower() in ("http:", "https:") or any(c.isspace() for c in url):
         return ""
+    if "://" not in url:
+        host = urllib.parse.urlparse("//" + url).hostname or ""
+        url = ("http://" if host in _LOCAL_HOSTS else "https://") + url
+    try:
+        parts = urllib.parse.urlparse(url)
+        parts.port                                          # a port that is no number raises
+    except ValueError:
+        return ""
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return ""
+    if parts.username is not None or parts.password is not None or parts.query or parts.fragment:
+        return ""
+    if parts.hostname == "0.0.0.0":                         # not an address anything can be reached at
+        return ""
+    if parts.scheme == "http" and not plain_remote and parts.hostname not in _LOCAL_HOSTS:
+        return ""
+    return f"{parts.scheme}://{parts.netloc.lower()}{parts.path}"
+
+
+def _relay_probe(url: str) -> tuple[str, dict | None]:
+    """Ask `url`/health (5 s) what answers there: ("ok", health) for an Emporia relay (service "Emporia" and a
+    relay_id — a closed relay tells a stranger only its relay_url), ("other", None) for an answer that is
+    something else, ("down", None) for none."""
+    h = health(timeout=5, url=url)
+    if h is None:
+        return "down", None
+    if isinstance(h, dict) and h.get("service") == "Emporia" and (
+            h.get("relay_id") or (h.get("access") == "closed" and h.get("relay_url"))):
+        return "ok", h
+    return "other", None
+
+
+def relay_probe(url: str) -> tuple[str, dict | None]:
+    return _relay_probe(url)
+
+
+def _local_relay_address(url: str) -> bool:
+    import urllib.parse
+    return (urllib.parse.urlparse(url).hostname or "") in _LOCAL_HOSTS or installer()._is_local_relay(url)
+
+
+def check_relay_flag(raw: str, what: str = "--relay", current: str = "") -> str:
+    """A relay given as a flag (--relay, --relay-url, `relay use URL`), without a person to ask: made whole
+    (normalize_relay_url), then looked at. "" (one line printed, nothing to be written) for a malformed address,
+    a remote relay that does not answer as an Emporia relay, or a local one that answers as something else. A local
+    address that is not up yet is accepted, with a note to start it. With a terminal, the same questions the
+    menu asks. Prints the URL used when it differs from what was typed."""
+    typed = (raw or "").strip().rstrip("/")
+    url = normalize_relay_url(typed)
+    if not url:
+        print(f"{what} {raw!r}: {RELAY_URL_REFUSED}")
+        return ""
+    if url != typed:
+        print(f"  Using {url}")
+    state, h = relay_probe(url)
+    if state == "ok":
+        return url
+    if _TTY:
+        say = ("It is not answering now." if state == "down" else "It answers, but not as an Emporia relay.")
+        return url if ask(f"  {say} Use it anyway?", False) else ""
+    if state == "down" and _local_relay_address(url):
+        print(f"  Note: {url} is not up yet; start it with `emporia relay start`.")
+        return url
+    if state == "down" and current and normalize_relay_url(current) == url:
+        print(f"  Note: {url} is not answering now; the agent is already on it, so it stays there.")
+        return url
+    print(f"{url} is not answering as an Emporia relay; check the address and pass {what} again")
+    return ""
+
+
+RELAY_URL_REFUSED = ("a relay URL is its https address (a bare host such as relay.example.net is fine; http:// only "
+                     "for this machine; no user name or password in it)")
+
+
+def _check_relay_url(url: str) -> str:
+    """The URL, cleaned, if a person accepts it; "" if not. A bare host gets `https://`."""
+    import urllib.parse
+    typed = url.strip().rstrip("/")
+    url = normalize_relay_url(typed, plain_remote=True)
+    if not url:
+        print("  A relay URL is its https address, e.g. relay.example.net (http:// only on this machine; "
+              "no user name or password in it).")
+        return ""
+    if url != typed:
+        print(f"  Using {url}")
+    parts = urllib.parse.urlparse(url)
     local = parts.hostname in ("localhost", "127.0.0.1", "::1") or installer()._is_local_relay(url)
     if parts.scheme == "http" and not local:
         print("  ! Not https: its sign-in tokens and everything not end-to-end encrypted travel in the "
               "clear. Ask its operator for the https address.")
         if not ask("  Use it anyway?", False):
             return ""
-    h = health(timeout=5, url=url)
-    if h:
+    state, h = relay_probe(url)
+    if state == "ok":
         print(f"  ✓ answering — {_relay_brief(h)}")
-    elif not ask("  It is not answering now. Use it anyway?", False):
+    elif not ask(f"  {'It is not answering now.' if state == 'down' else 'It answers, but not as an Emporia relay.'} "
+                 "Use it anyway?", False):
         return ""
     return url
 
 
-def default_relay(current: str = "") -> str:
-    """The relay an agent joins when nobody says which: the one it is on, else EMPORIA_RELAY_URL, else Emporia's
-    public relay (setup_choices.PUBLIC_RELAY_URL), else a relay on this machine."""
-    from emporia import setup_choices as sc
-    return (current or os.getenv("EMPORIA_RELAY_URL", "") or sc.public_relay() or LOCAL_RELAY).rstrip("/")
+def default_relay(current: str = "", use_env: bool = True) -> str:
+    """The relay an agent joins when nobody says which: the one it is on, else EMPORIA_RELAY_URL, else none (""):
+    there is no default relay, public or otherwise. Setup without a terminal then asks for `--relay-url`.
+    `use_env=False` for an agent in another profile than the caller's, when the environment is the one the
+    Hermes plugin handed over (EMPORIA_HANDED_NAMES: the calling profile's settings): its EMPORIA_RELAY_URL is
+    not that agent's relay. A person's own export in a shell still counts."""
+    return (current or (os.getenv("EMPORIA_RELAY_URL", "") if use_env else "")).rstrip("/")
 
 
 def _choose_relay(current: str = "") -> str:
-    """Ask which relay the agent joins (setup_choices.relay_choice: Emporia's public relay, recommended, once it has
-    launched; a relay on this machine; another one by URL), with the relays found here listed too. Returns its URL.
+    """Ask which relay the agent joins (setup_choices.relay_choice: a relay on this machine, or another one the
+    person types the URL of), with the relays found here listed too. Returns its URL, or "" when none was chosen.
     An agent that is already on a relay keeps it unless the person picks another."""
     from emporia import setup_choices as sc
     rc = sc.relay_choice()
     named = dict(rc.labels())                 # option -> its name and, on the next line, what it does
-    public = sc.public_relay()
     used = _relays_in_use()
     candidates = list(dict.fromkeys([u for u in (current, *used, os.getenv("EMPORIA_RELAY_URL", "").rstrip("/"),
-                                                 LOCAL_RELAY) if u and u != public]))
+                                                 LOCAL_RELAY) if u]))
     up = {u: health(timeout=2, url=u) for u in candidates}
     options, default = [], None
-    if public:
-        who = used.get(public, [])
-        extra = ("current" if public == current else "") + (f"; used by {', '.join(who)}" if who else "")
-        options.append(("public", named["public"] + (f" ({extra.lstrip('; ')})" if extra else "")))
-        default = 0
     for u in candidates:
         if not (up[u] or used.get(u) or u == current):
             continue
@@ -795,15 +897,14 @@ def _choose_relay(current: str = "") -> str:
     if not up.get(LOCAL_RELAY):
         options.append(("local", named["local"]))
     options.append(("remote", named["remote"]))
-    fallback = current or public or LOCAL_RELAY
+    fallback = current
     options.append(("host", "Host a relay for other machines\nIn Docker or as a system service, behind https; then "
                             "move this agent to it."))
-    options.append(("later", f"Decide later\nKeeps {fallback}; change it any time with `emporia relay use URL NAME`."))
+    if fallback:
+        options.append(("later", f"Decide later\nKeeps {fallback}; change it any time with `emporia relay use URL NAME`."))
     if not up.get(LOCAL_RELAY) and default is None:
         default = [k for k, _ in options].index("local")
     choice = choose(rc.question, options, default or 0)
-    if choice == "public":
-        return public
     if choice.startswith("use:"):
         return choice[4:]
     if choice == "local":
@@ -814,8 +915,7 @@ def _choose_relay(current: str = "") -> str:
             print("  Then move this agent to it: emporia relay use URL NAME")
         return fallback
     if choice == "remote":
-        print("  Ask the relay's operator for its URL." + (
-            " Relays announce themselves in #relays on Emporia's public relay." if public else ""))
+        print("  Ask the relay's operator for its URL.")
         print("  Before trusting one, read (also in the dashboard's Docs tab):")
         for line in RELAY_READING:
             print(f"    · {line}")
@@ -823,7 +923,8 @@ def _choose_relay(current: str = "") -> str:
             url = _check_relay_url(prompt("Relay URL"))
             if url:
                 return url
-        print(f"  Keeping {fallback} for now: emporia relay use URL NAME when you have it.")
+        print((f"  Keeping {fallback} for now: " if fallback else "  No relay chosen: ")
+              + "emporia relay use URL NAME when you have it.")
         return fallback
     return fallback
 
@@ -5041,17 +5142,13 @@ def welcome_lines(name: str, agent: str, relay: str, label: str = "") -> list[st
     Every line is true of what setup did: nothing is sent — the agent registers when its gateway or
     chat first starts, and starts at level 1 with no XP."""
     from urllib.parse import urlsplit
-
-    from emporia import setup_choices as sc
     host = urlsplit(relay).netloc if relay else ""
     chat = "hermes" if name == "default" else f"hermes -p {name}"
-    public = sc.public_relay()
-    whose = (f"  (Emporia's public relay: {sc.PUBLIC_RELAY_NOTE})" if public and relay.rstrip("/") == public else "")
     return [
         "",
         "  You're in.",
         f"      Agent  : {agent}" + (f"@{host}" if host else "") + "  (testnet only)",
-        f"      Relay  : {relay or '(not set)'}{whose}",
+        f"      Relay  : {relay or '(not set)'}",
         "      Level  : 1 (starter limits; XP and levels come from what it does). It appears on the relay "
         "when its gateway or chat first starts.",
         f"      Operator: {label or '(none yet)'}  (an automatic label on its card: your agents that share it count "
@@ -5124,7 +5221,7 @@ def cmd_relay_use(args: argparse.Namespace) -> int:
     if not args.url:
         print("relay use: give the relay's URL — emporia relay use https://relay.example NAME")
         return 1
-    url = _check_relay_url(args.url) if _TTY else args.url.strip().rstrip("/")
+    url = _check_relay_url(args.url) if _TTY else check_relay_flag(args.url, "relay use")
     if not url:
         return 1
     names = args.names or (choose_many("Which agents move to it?", [(n, n) for n in agents], set())
@@ -5478,6 +5575,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     doctor_identity_key(rep, name, agent_id, key_dir, linked_identity, dotenv,
                         env.get("EMPORIA_RELAY_URL") or relay_url(), relay_up)
     doctor_profile_secrets(rep, profile, dotenv)
+    doctor_vault_sources(rep, profile, dotenv)
     doctor_labs(rep)
     doctor_mcp_references(rep, profile, dotenv)
     doctor_signer(rep, profile, dotenv)
@@ -5487,7 +5585,9 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     key_name = inst._PROVIDER_KEYS.get(str(model.get("provider") or "").lower())
     # P201: a multiplexed profile gets only its own .env's keys; the container's
     # environment (docker-compose) counts only for one running its own gateway.
-    if key_name and not dotenv.get(key_name):
+    from emporia import profile_env
+    key_held = bool(key_name and profile_env.present(profile / ".env", [key_name]).get(key_name))   # a boolean, not the key
+    if key_name and not key_held:
         if inst.is_multiplexed(profile):
             rep.fail(f"model {model.get('default')} needs {key_name} in this profile's .env — it shares the "
                      "gateway with other profiles, so a key in docker-compose does not reach it",
@@ -5607,8 +5707,10 @@ def api_server_host(profile: Path, dotenv: dict[str, str]) -> str | None:
             break
     api = api or {}
     explicit = api.get("enabled")
-    from_env = (str(dotenv.get("API_SERVER_ENABLED", "")).strip().lower() in ("1", "true", "yes", "on")
-                or len(dotenv.get("API_SERVER_KEY", "")) >= 16)
+    from emporia import profile_env
+    key_ok = len(dotenv.get("API_SERVER_KEY", "")) >= 16 or profile_env.present(
+        profile / ".env", {"API_SERVER_KEY": 16}).get("API_SERVER_KEY", False)       # a boolean, not the key
+    from_env = (str(dotenv.get("API_SERVER_ENABLED", "")).strip().lower() in ("1", "true", "yes", "on") or key_ok)
     if not (explicit is True or (explicit is None and from_env)):
         return None
     host = (api.get("extra") or {}).get("host") or dotenv.get("API_SERVER_HOST") or "127.0.0.1"
@@ -5792,7 +5894,9 @@ def a2a_state(profile: Path) -> tuple[bool, bool]:
     a2a = ((cfg.get("gateway") or {}).get("platforms") or {}).get("a2a") or {}
     listed = any(isinstance(x, dict) and x.get("platform") == "a2a" for x in (cfg.get("platforms") or []))
     on = bool(a2a.get("enabled")) or listed
-    trusted = bool((cfg.get("a2a") or {}).get("trusted_peers") or inst.harvest_env(profile).get("A2A_TRUSTED_PEERS"))
+    from emporia import profile_env
+    trusted = bool((cfg.get("a2a") or {}).get("trusted_peers")
+                   or profile_env.present(profile / ".env", ["A2A_TRUSTED_PEERS"]).get("A2A_TRUSTED_PEERS"))
     return on, trusted
 
 
@@ -5823,6 +5927,24 @@ def _read_only(argv: list[str]) -> tuple[int, str]:
     except (OSError, subprocess.TimeoutExpired):
         return 127, ""
     return p.returncode, (p.stdout or "") + (p.stderr or "")
+
+
+def doctor_vault_sources(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
+    """A `cmd:` key source that names no known vault CLI is handed no vault variables (it must name `op`, `bw`,
+    `vault`…, or run it through `sh -c`). When the profile holds some, say so: a presence check, no value read."""
+    from emporia import agent_env, profile_env
+    from emporia.key_source import SOURCE_VARS
+    blind = [var for var in SOURCE_VARS.values()
+             if str(dotenv.get(var, "")).startswith("cmd:") and not agent_env.source_families(dotenv[var][4:])]
+    if not blind:
+        return
+    held = [n for n, there in profile_env.present(profile / ".env", list(agent_env.VAULT_NAMES)).items() if there]
+    if held:
+        rep.warn(f"{', '.join(blind)} runs a command that names no known vault CLI "
+                 f"({', '.join(agent_env.VAULT_FAMILIES)}), so the vault variables this profile holds "
+                 f"({', '.join(held)}) are not handed to it",
+                 "name the CLI in the command so its variables are handed, e.g. cmd:op read op://…  or  "
+                 "cmd:sh -c 'op read …'")
 
 
 def doctor_profile_secrets(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
@@ -6326,8 +6448,9 @@ def _approval_phrase(env: dict[str, str]) -> str:
     except ValueError:
         cents = 0
     if cents <= 0:
-        return "no approval threshold: payments up to the caps are signed without asking"
-    return f"payments above ${cents / 100:.2f} wait for `emporia signer approve`"
+        return ("no approval threshold at the signer; Hermes still asks you before every mainnet payment "
+                "(real money is never signed unasked)")
+    return f"Hermes asks you before every mainnet payment, and payments above ${cents / 100:.2f} wait for `emporia signer approve`"
 
 
 def _print_seeded_policy(name: str, policy: dict[str, str]) -> None:
@@ -6824,15 +6947,26 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     else:
         sync_model = fast or ask_setting("sync_model", f"Use the same model as {me.name if me else 'this profile'}?")
     identity_before = _holds_an_agent(profile) if existing else False
-    # P177: which relay it joins — Emporia's public relay, one found or run here, or
-    # another one. --relay-url skips the question; without a terminal it is default_relay().
+    # P177: which relay it joins — one found or run here, or another one whose URL is typed.
+    # --relay-url skips the question; without a terminal it is default_relay(), else setup stops.
     current_relay = ((inst.load_yaml(profile / "config.yaml").get("mcp_servers") or {}).get("emporia") or {}) \
         .get("env", {}).get("EMPORIA_RELAY_URL", "") if existing else ""
     if _TTY and not args.relay_url:
         from emporia import setup_choices as _sc
         heading("Relay", _sc.relay_choice().matters)
     chosen_relay = (args.relay_url or (_choose_relay(current_relay) if _TTY else "")
-                    or default_relay(current_relay)).rstrip("/")
+                    or default_relay(current_relay, use_env=("EMPORIA_HANDED_NAMES" not in os.environ or profile == me))).rstrip("/")
+    if args.relay_url:
+        typed = chosen_relay
+        chosen_relay = check_relay_flag(typed, "--relay-url", current_relay)
+        if not chosen_relay:
+            print("setup agent: nothing was written.")
+            return 1
+    if not chosen_relay:
+        print(localize("setup agent: no relay to join. Pass --relay-url URL (the relay's https address; "
+                       "there is no default relay), or choose a relay on this machine with a terminal. "
+                       "Nothing was written."))
+        return 1
     os.environ["EMPORIA_RELAY_URL"] = chosen_relay
     agent_id = _choose_agent_id(args, name, profile, existing, chosen_relay)
     if not agent_id:
@@ -7043,7 +7177,8 @@ def _setup_summary(profile: Path, name: str, role: str) -> None:
               f"  ({'MAINNET UNLOCKED — real money' if mainnet_unlocked(dotenv) else 'testnets only; mainnet locked'})")
         print(f"  Limits      ${int(dotenv.get('EMPORIA_X402_MAX_PAYMENT_CENTS', 1000)) / 100:.2f} a payment, "
               f"${int(dotenv.get('EMPORIA_X402_MAX_DAILY_CENTS', 5000)) / 100:.2f} a day; "
-              + (f"asks you above ${int(approve) / 100:.2f}" if approve else "never asks you"))
+              + ("asks you before every payment (mainnet)" if mainnet_unlocked(dotenv)
+                 else f"asks you above ${int(approve) / 100:.2f}" if approve else "never asks you"))
     for w in _role_warnings(role, bool(wallets), backend):
         print(f"  ! {w}")
     print(localize(f"  Recovery    make a recovery key now, in your own terminal, so a lost or stolen identity key is "
@@ -8112,7 +8247,8 @@ def _import_wallet(args: argparse.Namespace, profile: Path, agent_id: str) -> in
     if args.link:
         return _link_wallet(profile, agent_id, what, args.link)
     if args.from_env:
-        secret = os.environ.get(args.from_env) or installer().harvest_env(profile).get(args.from_env, "")
+        from emporia import profile_env
+        secret = os.environ.get(args.from_env) or profile_env.read_names(profile / ".env", [args.from_env]).get(args.from_env, "")
         if not secret.strip():
             print(f"wallet import: {args.from_env} is not set here or in {profile.name}'s .env")
             return 1
@@ -8141,7 +8277,8 @@ def _import_wallet(args: argparse.Namespace, profile: Path, agent_id: str) -> in
             secret = Path(prompt("Path to the file")).expanduser().read_text()
         elif how == "env":
             name = prompt("Variable name")
-            secret = os.environ.get(name) or installer().harvest_env(profile).get(name, "")
+            from emporia import profile_env     # the name the person gave, and only it
+            secret = os.environ.get(name) or profile_env.read_names(profile / ".env", [name]).get(name, "")
         else:
             secret = getpass.getpass("Paste it (hidden): ")
         if not secret.strip():
@@ -8219,7 +8356,7 @@ def _link_wallet(profile: Path, agent_id: str, what: str, ref: str) -> int:
     try:
         # P173: read with this agent's own environment only — never the CLI's,
         # which may hold another profile's key under the same name.
-        secret = read_text(ref, env=installer().harvest_env(profile))
+        secret = read_text(ref, env=_source_env(profile, ref))
         addresses = {}
         if what == "phrase":
             evm_raw, sol_raw = aw.derive_from_phrase(secret)
@@ -8597,7 +8734,8 @@ def cmd_wallet(args: argparse.Namespace) -> int:
     approve = dotenv.get("EMPORIA_PAYMENT_APPROVAL_CENTS", "")
     print(f"  limits  ${int(dotenv.get('EMPORIA_X402_MAX_PAYMENT_CENTS', 1000)) / 100:.2f} a payment, "
           f"${int(dotenv.get('EMPORIA_X402_MAX_DAILY_CENTS', 5000)) / 100:.2f} a day; "
-          + (f"asks you above ${int(approve) / 100:.2f}" if approve else "never asks you"))
+          + ("asks you before every payment (mainnet)" if mainnet_unlocked(dotenv)
+             else f"asks you above ${int(approve) / 100:.2f}" if approve else "never asks you"))
     h = health()
     if h:
         offered = [label(n) for n in h.get("x402_networks") or []]
@@ -8652,19 +8790,14 @@ def _set_mainnet(profile: Path, agent_id: str, name: str, dotenv: dict[str, str]
               f"marketplace agent first (emporia role {name} marketplace), or give it a sandboxed backend.")
         return 1
     cap, day = int(dotenv.get("EMPORIA_X402_MAX_PAYMENT_CENTS", 1000)), int(dotenv.get("EMPORIA_X402_MAX_DAILY_CENTS", 5000))
-    approve = dotenv.get("EMPORIA_PAYMENT_APPROVAL_CENTS", "")
     print(f"""
   Mainnet means real money. Before {name} may pay with it:
     · Test on testnets first. Emporia is young and has not been audited.
     · A payment cannot be taken back. Deals with money are
       regulated in many places — check yours.
     · Its caps still apply: ${cap / 100:.2f} a payment, ${day / 100:.2f} a day. Keep them small.
-    · {'It asks you before any payment above $' + format(int(approve) / 100, '.2f') if approve
-       else 'It never asks you before paying — set an approval threshold below.'}
+    · It asks you before EVERY mainnet payment, whatever the threshold below says (Hermes's approval prompt).
     · Fund its wallet with only what you are ready to lose.""")
-    if not approve or int(approve) > 500:
-        merge_env_file(profile / ".env", {"EMPORIA_PAYMENT_APPROVAL_CENTS": str(
-            prompt_cents("Ask you before any single payment above (0 = always ask)", 0))})
     if prompt(f"Type the agent's name ({name}) to let it pay real money").strip() != name:
         print("Not unlocked: it still pays on testnets only.")
         return 1
@@ -8832,6 +8965,19 @@ def _expected_public(profile: Path, agent_id: str, which: str) -> str | None:
     return d.get("public_key_hex" if which == "identity" else "encryption_public_key") or None
 
 
+def _source_env(profile: Path, ref: str) -> dict[str, str]:
+    """What a key source a person names is read with: this profile's declared settings, the one variable an
+    `env:NAME` names, and (for `cmd:`) the variables of the vault CLI the command names. Not the rest of the .env."""
+    from emporia import agent_env, profile_env
+    env = dict(installer().harvest_env(profile))
+    ref = ref.strip()
+    if ref.startswith("env:"):
+        env.update(profile_env.read_names(profile / ".env", [ref[4:].strip()]))
+    elif ref.startswith("cmd:") and (fam := agent_env.source_families(ref[4:])):
+        env.update(profile_env.read_names(profile / ".env", [n for n in agent_env.VAULT_NAMES if n.startswith(fam)]))
+    return env
+
+
 def _link_key(profile: Path, agent_id: str, which: str, ref: str) -> int:
     from emporia.key_source import KeySourceError, key32
     want = _expected_public(profile, agent_id, which)
@@ -8840,7 +8986,7 @@ def _link_key(profile: Path, agent_id: str, which: str, ref: str) -> int:
               f"Linking would make a different agent; nothing changed.")
         return 1
     try:
-        got = _public_of(which, key32(ref, installer().harvest_env(profile)))
+        got = _public_of(which, key32(ref, _source_env(profile, ref)))
     except (KeySourceError, ValueError) as e:
         print(f"identity: {e}")
         return 1

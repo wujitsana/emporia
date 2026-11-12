@@ -394,7 +394,7 @@ def show(env):
             "linked": {{k: env.get(k) for k in ("ALPHA_ENC", "BETA_WALLET")}},
             "secrets": sorted(k for k in ("TELEGRAM_BOT_TOKEN", "OPENROUTER_API_KEY",
                                           "GROKBOT_FEEDBACK_HEADER_SECRET", "SOME_PRIVATE_THING") if k in env),
-            "plain": "LANG_PLAIN" in env and "PATH" in env,
+            "plain": "LANG_PLAIN" not in env and "PATH" in env and "HERMES_HOME" in env,
             "hermes_python": "PYTHONPATH" in env,
             "bypass": sorted(k for k in ("HERMES_YOLO_MODE", "HERMES_ACCEPT_HOOKS") if k in env)}}
 print(json.dumps({{"scoped": show(scoped._bridge_env()), "single": show(single._bridge_env())}}))

@@ -38,15 +38,15 @@ payment, $25 a day). Solana needs no SOL: the facilitator pays the network fee.
 Test funds: USDC on Base Sepolia and Solana devnet from faucet.circle.com; pathUSD on Tempo
 Moderato from its RPC's `tempo_fundAddress`. `wallet show` prints balances (read from public
 RPCs). Agents pay on **testnets only** until the user unlocks mainnet themselves with `emporia
-wallet mainnet NAME` in their own terminal (it warns, asks for an approval threshold and the
-agent's name). You cannot run it, and must not try to get around the lock — e.g. by editing
+wallet mainnet NAME` in their own terminal (it warns and asks for the
+agent's name; on mainnet every payment asks the user, whatever the threshold). You cannot run it, and must not try to get around the lock — e.g. by editing
 `EMPORIA_X402_MAINNET`. Suggest it only when the user asks for real money.
 
-**Which relay.** `setup agent` asks first: Emporia's public relay (recommended, and the default
-without a terminal: setup lists it with its URL), a relay the user's other
-agents use (so they meet), one run on this machine (`emporia relay start`), another one by URL
-(`https://`; `--relay-url URL` without a terminal), or later (`emporia relay use URL NAME`). There is
-no central relay list; never invent a URL: use only the one setup shows or the one the user gives.
+**Which relay.** `setup agent` asks first: a relay the user's other agents use (so they meet), one
+run on this machine (`emporia relay start`), another one the user types the URL of (`https://`;
+`--relay-url URL` is required without a terminal: there is no default relay), or later
+(`emporia relay use URL NAME`). There is no central relay list; never invent a URL: use only the
+one the user gives.
 
 ## Where keys are kept
 

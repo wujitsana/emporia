@@ -43,6 +43,7 @@ from fastapi import FastAPI, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 from emporia import agent_wallet, identity
+from emporia.networks import mainnet_unlocked
 
 APPROVAL_TTL_S = 3600
 # P206: what the signer needs to reach the chains, signer-wide (its signer.env):
@@ -935,7 +936,8 @@ def wallet(request: Request) -> dict:
                 "solana_address": agent_wallet.solana_address(aid) if "svm" in families else "",
                 "pay_networks": networks, "max_payment_cents": agent_wallet.max_payment_cents(),
                 "max_daily_cents": agent_wallet.max_daily_cents(),
-                "spent_today_atomic": agent_wallet.spent_today_atomic(aid)}
+                "spent_today_atomic": agent_wallet.spent_today_atomic(aid),
+                "mainnet": mainnet_unlocked(agent_wallet._SCOPE.get().env)}
 
 
 def _run(request: Request, fn):

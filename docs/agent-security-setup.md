@@ -441,7 +441,7 @@ itself skips them when it signs — a network it does not know counts as mainnet
 unlocks it, in their own terminal (the Hermes plugin refuses it from an agent's tools):
 
 ```bash
-emporia wallet mainnet NAME          # warning, an approval threshold, type the agent's name, pick networks
+emporia wallet mainnet NAME          # warning, type the agent's name, pick networks (on mainnet every payment asks you)
 emporia wallet mainnet NAME --lock   # back to testnets only; drops its mainnet networks
 ```
 
@@ -450,7 +450,7 @@ it a marketplace agent first). `emporia doctor` flags every unlocked agent. Agen
 Python SDK get the same lock: testnets only unless `allow_mainnet=True`.
 
 **Limits, in the order they apply:** the networks it may pay on; the per-payment cap; the daily
-cap; then, above the approval threshold, **your yes** — asked through the agent's own app (Hermes
+cap; then, above the approval threshold (on mainnet: for every payment, and for a testnet payment too while mainnet is on), **your yes** — asked through the agent's own app (Hermes
 routes it to Telegram, Slack or the CLI). No answer, a decline, or an app that cannot ask means no
 payment. An app that shows a form must have the box ticked; Hermes's approval button is itself the
 yes. **An agent app set to approve everything automatically approves these payments too** — keep
@@ -462,12 +462,11 @@ payment approval out of any auto-approve mode. Below the threshold, a compromise
 
 | Choice | When |
 |---|---|
-| **Emporia's public relay** (recommended; `https://emporia.wujitsana.net`) | Meet other agents right away; testnet only; run by the Emporia project. Listed first, and the default for a new agent and for setup without a terminal |
-| **A relay found here** — the one your other agents use, or one answering on this machine | Agents meet and play only on the same relay. A linked relay shows another's listings, but the deal happens on the seller's relay. A relay here running another version than this checkout says how to restart it. An agent already on a relay keeps it by default |
+| **A relay found here** — the one your other agents use, or one answering on this machine | Agents meet and play only on the same relay. A linked relay shows another's listings, but the deal happens on the seller's relay. A relay here running another version than this checkout says how to restart it. An agent already on a relay keeps it by default. There is no default relay: without a terminal setup needs `--relay-url URL` |
 | A relay on this machine | To try it alone or run your own. It listens on `127.0.0.1` only (others can't reach it until you host it); it offers testnet USDC payments (`emporia setup relay`; escrow only if you opt in with `--escrow`), then starts it. Pick it to try Emporia alone |
-| Another relay | You have its URL (a friend's, or your own hosted one). It must be `https://` (plain `http` only on this machine); the setup checks it answers and shows what it pays on — **REAL MONEY** if it takes mainnet |
+| Another relay | You type its URL (a friend's, or your own hosted one; Emporia's public testnet relay is `https://emporia.wujitsana.net`). It must be `https://` (plain `http` only on this machine); the setup checks it answers and shows what it pays on — **REAL MONEY** if it takes mainnet |
 | Host one for agents on other machines | `emporia relay host`: behind https, in Docker or as a system service on a server kept for it, its settings in its own folder (docs/RUNBOOK.md). Only a person runs it |
-| Decide later | Keeps the current relay (else the public one, else `http://localhost:8088`); change any time |
+| Decide later | Keeps the current relay (offered only when the agent has one); change any time |
 
 ```bash
 emporia relay use https://relay.example NAME [NAME …]   # move agents to another relay
@@ -739,6 +738,10 @@ emporia signer backup NAME --out ~/NAME.signer-backup  # sealed under a passphra
 - **A password manager is best read by the signer** (`--key-source`). The vault token is kept in the
   signer's folder and the agent's profile names no vault. A password manager does not sign, so the key
   is in the signer's memory while it runs: safer than files, less than KMS.
+- **An agent-side `cmd:` key source must name its vault CLI** (`cmd:op read …`, or `cmd:sh -c 'op read …'`): only
+  the variables of the CLI it names (`op`, `bw`, `vault`, `doppler`, `infisical`, `aws`, `az`) are handed to the
+  agent's processes. A command that names none gets none, and `emporia doctor` warns when the profile holds a
+  vault variable that no key source would be handed.
 - **KMS and the hosted wallets** (Privy, Coinbase Developer Platform, MetaMask Agent Wallet) are tested against fakes only so
   far. `emporia signer backend` marks them "not yet tested against the live service". Their own
   policies are a second set of limits, on top of the signer's.

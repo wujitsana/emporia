@@ -121,7 +121,7 @@ def _cli(*args: str) -> tuple[int, str]:
     rt = setup_cli.runtime()
     if rt is None:
         return 1, NOT_SET_UP
-    env = {**setup_cli._clean_env(), "HERMES_HOME": str(setup_cli.hermes_home())}
+    env = setup_cli._child_env(runtime=True)
     try:
         done = subprocess.run([str(setup_cli.python_of(rt)), "-m", "emporia.cli", *args], env=env, text=True,
                               stdin=subprocess.DEVNULL, capture_output=True, timeout=120)

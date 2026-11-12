@@ -25,7 +25,7 @@ def test_merge_env_file_changes_only_what_it_sets_and_keeps_a_backup(tmp_path):
 def test_setup_agent_makes_a_slim_profile_with_its_own_wallet(profiles, capsys):
     root, _ = profiles
     with patch.dict(os.environ):
-        rc = cli.main(["setup", "agent", "gamma", "--keys", "files", "--wallet", "--max-daily-cents", "700"])
+        rc = cli.main(["setup", "agent", "gamma", "--relay-url", "http://127.0.0.1:9", "--keys", "files", "--wallet", "--max-daily-cents", "700"])
     assert rc == 0
     prof = root / "gamma"
     mcp_env = yaml.safe_load((prof / "config.yaml").read_text())["mcp_servers"]["emporia"]["env"]
@@ -53,7 +53,7 @@ def test_setup_agent_on_an_existing_profile_keeps_its_model_credentials_and_iden
     (prof / ".env").write_text(own_env)
     for extra in ([], ["--sync-model"], ["--no-sync-model", "--keys", "env"]):
         with patch.dict(os.environ):
-            assert cli.main(["setup", "agent", "alpha", "--agent-id", "alpha", *extra]) == 0
+            assert cli.main(["setup", "agent", "alpha", "--relay-url", "http://127.0.0.1:9", "--agent-id", "alpha", *extra]) == 0
         cfg = yaml.safe_load((prof / "config.yaml").read_text())
         assert cfg["model"] == {"provider": "nous", "default": "nous-model"}, extra
         env = (prof / ".env").read_text()
@@ -202,7 +202,7 @@ print(json.dumps(got))
                          timeout=60, env={**os.environ, "HERMES_HOME": str(tmp_path), "PYTHONPATH": "/opt/hermes"})
     assert out.returncode == 0, out.stderr[-2000:]
     assert json.loads(out.stdout.strip().splitlines()[-1]) == {
-        "hooks": ["pre_tool_call", "transform_tool_result", "pre_llm_call", "post_llm_call", "pre_tool_call",
+        "hooks": ["pre_tool_call", "transform_tool_result", "pre_tool_call", "pre_llm_call", "post_llm_call", "pre_tool_call",
                   "transform_tool_result", "pre_llm_call", "pre_llm_call"], "platform": "emporia",
         "skills": ["emporia", "emporia-setup"], "cli": "emporia", "command": "emporia"}
 
@@ -389,7 +389,7 @@ def test_a_profile_the_plugin_just_made_is_set_up_as_a_new_agent(profiles, capsy
     made.mkdir()
     (made / "config.yaml").write_text(yaml.dump({"plugins": {"enabled": ["emporia"]}}))
     with patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "kappa", "--new-profile"]) == 0
+        assert cli.main(["setup", "agent", "kappa", "--relay-url", "http://127.0.0.1:9", "--new-profile"]) == 0
     out = capsys.readouterr().out
     assert "New agent: kappa" in out and "existing keys are still files" not in out
     assert cli.profile_role(made, False) == "marketplace"
@@ -442,7 +442,7 @@ def test_new_profile_is_refused_for_a_profile_that_holds_an_agent(profiles, caps
     a moment ago."""
     root, _ = profiles
     with patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "lambda", "--role", "both", "--keys", "files", "--wallet",
+        assert cli.main(["setup", "agent", "lambda", "--relay-url", "http://127.0.0.1:9", "--role", "both", "--keys", "files", "--wallet",
                          "--max-daily-cents", "300", "--max-payment-cents", "100",
                          "--approve-above-cents", "0"]) == 0
     prof = root / "lambda"
@@ -451,7 +451,7 @@ def test_new_profile_is_refused_for_a_profile_that_holds_an_agent(profiles, caps
     keys = {f.name: f.read_bytes() for f in keydir.iterdir() if f.is_file()}
     capsys.readouterr()
     with patch.dict(os.environ):
-        rc = cli.main(["setup", "agent", "lambda", "--new-profile"])
+        rc = cli.main(["setup", "agent", "lambda", "--relay-url", "http://127.0.0.1:9", "--new-profile"])
     after = (prof / ".env").read_text(), cli.profile_role(prof, True)
     assert (rc, after) == (1, before), after
     assert "already" in capsys.readouterr().out
@@ -460,7 +460,7 @@ def test_new_profile_is_refused_for_a_profile_that_holds_an_agent(profiles, caps
     # plugin-only user — who has `hermes emporia setup`, not `emporia setup agent`.
     from emporia import cli_hints
     with patch.object(cli_hints, "via_plugin", lambda runtime=None: True), patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "lambda", "--new-profile"]) == 1
+        assert cli.main(["setup", "agent", "lambda", "--relay-url", "http://127.0.0.1:9", "--new-profile"]) == 1
     out = capsys.readouterr().out
     assert "hermes emporia setup --agent-profile lambda" in out and "`emporia setup agent" not in out, out
 

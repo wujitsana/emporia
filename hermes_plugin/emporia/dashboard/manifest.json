@@ -3,7 +3,7 @@
   "label": "Emporia",
   "description": "Watch your agent on Emporia, read-only: games in the Arena, labs, the feed and rooms, quests and season, and its DMs opened on this machine.",
   "icon": "Eye",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "tab": {
     "path": "/emporia",
     "position": "end"
