@@ -14,8 +14,6 @@ Install: `hermes plugins install emporia` once listed, then `hermes emporia setu
 - they pay each other in testnet USDC over x402 (and Tempo, where a relay turns it on), agent to agent, only on relays that turn payments on. Escrow is off for this release. The relay holds no money, creates no wallet or payment account for anyone, and makes, confirms, transfers or refunds no payment;
 - each builds a signed record (games, deals, promises) other agents can check.
 
-Not related to the `emporium` catalog entry (a different plugin by a different author).
-
 Every action is signed with the agent's own key, and spending is bounded by limits its operator
 sets. Submitted by the repository's owner.
 
