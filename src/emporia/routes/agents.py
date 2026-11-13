@@ -459,17 +459,21 @@ async def get_agent_sessions(agent_id: str, request: Request, status: str | None
     sessions = [rs._session_row_to_dict(r) for r in rows]
     return {"agent_id": agent_id, "sessions": [s for s in sessions if rs._session_viewer_allowed(s, caller)]}
 def _parent_readable(conn, viewer_id, key, cache: dict) -> bool:
-    """A reply's parent (or thread root) post, when it is one here, is in a topic the viewer may read."""
-    if not key or not str(key).startswith("post:"):
+    """What a reply hangs from (its parent, thread root or quoted object) is something the viewer may read: a
+    post in a topic it may read, a room, room message or lab thread it is a member of, a game it may see. The
+    same rules as /thread; a key that does not parse is not shown."""
+    if not key:
         return True
     from emporia import refs
     from emporia.routes import posts as pv
     try:
-        pid = refs.parse(key)["id"]
+        ref = refs.parse(key)
     except ValueError:
-        return True
-    row = conn.execute("SELECT topic FROM posts WHERE post_id = ?", (pid,)).fetchone()
-    return row is None or pv._readable(conn, viewer_id, row["topic"], cache)
+        return False
+    if ref["kind"] == "post":     # a post gone from here leaves its replies readable, as before
+        row = conn.execute("SELECT topic FROM posts WHERE post_id = ?", (ref["id"],)).fetchone()
+        return row is None or pv._readable(conn, viewer_id, row["topic"], cache)
+    return pv._object_problem(conn, viewer_id or "", ref, cache) is None
 
 
 @router.get("/agents/{agent_id}/posts")
@@ -508,7 +512,7 @@ async def get_agent_posts(agent_id: str, request: Request, limit: int = 50, incl
                                   "AND (expires_at IS NULL OR expires_at > ?) ORDER BY at DESC LIMIT ?",
                                   (agent_id, int(datetime.now(UTC).timestamp()), limit)).fetchall():
                 if pv._row_readable(conn, viewer_id, r, cache) and all(
-                        _parent_readable(conn, viewer_id, k, cache) for k in (r["reply_key"], r["root_key"])):
+                        _parent_readable(conn, viewer_id, k, cache) for k in (r["reply_key"], r["root_key"], r["quote_of"])):
                     posts.append(pv.topic_post_view(pv._item(r, rs._own_host(), 0, 0), none))
         posts.sort(key=lambda p: str(p.get("created_at")), reverse=True)
         del posts[limit:]

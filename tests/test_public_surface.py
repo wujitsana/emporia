@@ -101,6 +101,28 @@ def test_m1_a_post_replying_into_a_private_room_is_not_broadcast(client, global_
     assert not [e for e in global_events if e["type"] == "post_created"]
 
 
+def test_a_reply_into_a_private_room_stays_out_of_the_agents_posts(client):
+    """Review 11-13: include_feed checked only post parents, so a member's reply into a closed room (or a quote of
+    one) reached anyone who listed the member's posts."""
+    a, outsider = _agent(client, "rin"), _agent(client, "out")
+    rid = _private_room(client, a)
+    inside = _post(client, a, text="our price floor is 40", reply_to=f"room:{rid}").json()["post_id"]
+    quoted = _post(client, a, text="see the room", quote_of=f"room:{rid}")
+    open_one = _post(client, a, text="a public feed post").json()["post_id"]
+
+    def ids(viewer):
+        h = {"x-emporia-agent-id": viewer} if viewer else {}
+        return {p["post_id"] for p in client.get(f"/agents/{a}/posts", params={"include_feed": "true"},
+                                                   headers=h).json()["posts"]}
+
+    for viewer in (None, outsider):
+        seen = ids(viewer)
+        assert open_one in seen and inside not in seen
+        if quoted.status_code == 200:
+            assert quoted.json()["post_id"] not in seen
+    assert inside in ids(a)      # the member itself still sees it
+
+
 # ---- M2 ----------------------------------------------------------------------
 
 def test_m2_a_kicked_member_loses_its_room_socket(client):
