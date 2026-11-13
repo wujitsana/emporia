@@ -21,10 +21,10 @@ const report = {
 };
 
 vi.mock("../api", () => ({
-  api: { labs: vi.fn(), labReports: vi.fn(), labThreads: vi.fn(), labBoard: vi.fn(), roomMessages: vi.fn(), postThread: vi.fn(() => Promise.resolve({ kind: "idea", label: "", text: "Rank cards by how often they win", author_id: "bob" })) },
+  api: { labs: vi.fn(), labReports: vi.fn(), labThreads: vi.fn(), labBoard: vi.fn(), roomMessages: vi.fn(), rooms: vi.fn(), postThread: vi.fn(() => Promise.resolve({ kind: "idea", label: "", text: "Rank cards by how often they win", author_id: "bob" })) },
 }));
 
-const mocked = api as unknown as Record<"labs" | "labReports" | "labThreads" | "labBoard" | "roomMessages", ReturnType<typeof vi.fn>>;
+const mocked = api as unknown as Record<"labs" | "labReports" | "labThreads" | "labBoard" | "roomMessages" | "rooms", ReturnType<typeof vi.fn>>;
 
 beforeEach(() => {
   mocked.labs.mockReset();
@@ -33,6 +33,8 @@ beforeEach(() => {
   mocked.labBoard.mockReset();
   mocked.roomMessages.mockReset();
   mocked.roomMessages.mockResolvedValue({ messages: [], count: 0 });
+  mocked.rooms.mockReset();
+  mocked.rooms.mockResolvedValue({ rooms: [], count: 0 });
   mocked.labBoard.mockResolvedValue({ lab: "emporia-core", board: [] });
 });
 afterEach(cleanup);
@@ -186,12 +188,39 @@ describe("labs view", () => {
       { message_id: "m2", sender_id: "gamma", content: "thread talk", created_at: "2026-11-01T00:01:00Z", reply_to: "gh_pr:acme/emporia#12" },
       { message_id: "m3", sender_id: "alpha", content: "who takes the parser?", created_at: "2026-11-01T00:02:00Z" },
     ] });
+    mocked.rooms.mockResolvedValue({ count: 2, rooms: [
+      { room_id: "r_other", name: "x", room_type: "public", message_count: 9 },
+      { room_id: "r_lab", name: "lab", room_type: "public", message_count: 412 },
+    ] });
     render(<LabsView />);
     expect(await screen.findByText(/who takes the parser\?/)).toBeTruthy();
-    expect(screen.getByText(/ROOM · 3 messages/)).toBeTruthy();
+    // the room's own count, not the three messages on the page
+    expect(await screen.findByText(/ROOM · 412 messages/)).toBeTruthy();
     expect(screen.getByText(/welcome all/)).toBeTruthy();
     expect(screen.queryByText(/thread talk/)).toBeNull();
     expect(mocked.roomMessages).toHaveBeenCalledWith("r_lab");
+  });
+
+  it("says 'latest N' when the relay gives no count for the room", async () => {
+    mocked.labs.mockResolvedValue({ labs: [lab] });
+    mocked.labReports.mockResolvedValue({ lab: "emporia-core", reports: [] });
+    mocked.labThreads.mockResolvedValue({ lab: "emporia-core", threads: [] });
+    mocked.roomMessages.mockResolvedValue({ count: 3, messages: [
+      { message_id: "m1", sender_id: "beta", content: "welcome all", created_at: "2026-11-01T00:00:00Z" },
+    ] });
+    mocked.rooms.mockResolvedValue({ count: 1, rooms: [{ room_id: "r_lab", name: "lab", room_type: "public" }] });
+    render(<LabsView />);
+    expect(await screen.findByText(/ROOM · latest 1 message/)).toBeTruthy();
+    expect(screen.queryByText(/^ROOM · 1 message$/)).toBeNull();
+  });
+
+  it("does not read an encrypted lab room", async () => {
+    mocked.labs.mockResolvedValue({ labs: [{ ...lab, room: { ...lab.room, encrypted: true } }] });
+    mocked.labReports.mockResolvedValue({ lab: "emporia-core", reports: [] });
+    mocked.labThreads.mockResolvedValue({ lab: "emporia-core", threads: [] });
+    render(<LabsView />);
+    expect(await screen.findByText(/This lab's room is encrypted/)).toBeTruthy();
+    expect(mocked.roomMessages).not.toHaveBeenCalled();
   });
 
   it("shows an empty room with no messages and a way in", async () => {
@@ -200,7 +229,7 @@ describe("labs view", () => {
     mocked.labThreads.mockResolvedValue({ lab: "emporia-core", threads: [] });
     render(<LabsView />);
     expect(await screen.findByText("No general messages yet.")).toBeTruthy();
-    expect(screen.getByText(/ROOM · 0 messages/)).toBeTruthy();
+    expect(screen.getByText(/ROOM · latest 0 messages/)).toBeTruthy();
   });
 
   it("does not read a private lab's room, and keeps its private-room line", async () => {

@@ -140,19 +140,30 @@ function openRoomFn(navigate: Navigate | undefined, roomId: string): () => void 
 /** The lab's room: how many messages it holds, the latest general ones, and a way in. */
 function LabRoomBlock({ lab, isPrivate, onOpen }: { lab: Lab; isPrivate: boolean; onOpen: () => void }) {
   const [messages, setMessages] = useState<LabRoomMessage[] | null>(null);
+  // The room's real count comes from the rooms list (`message_count`); the fetched page is only the latest few.
+  const [total, setTotal] = useState<number | null>(null);
+  const sealed = lab.room.encrypted;
   useEffect(() => {
-    if (isPrivate) return;
+    if (isPrivate || sealed) return;
     let live = true;
     api.roomMessages(lab.room_id).then((r) => { if (live) setMessages(r.messages as unknown as LabRoomMessage[]); })
       .catch(() => { if (live) setMessages([]); });
+    api.rooms().then((r) => {
+      const n = r.rooms.find((x) => x.room_id === lab.room_id)?.message_count;
+      if (live && typeof n === "number") setTotal(n);
+    }).catch(() => undefined);
     return () => { live = false; };
-  }, [lab.room_id, isPrivate]);
+  }, [lab.room_id, isPrivate, sealed]);
   const latest = generalMessages(messages ?? [], 3);
+  const heading = total !== null ? ` · ${plural(total, "message")}`
+    : messages ? ` · latest ${plural(messages.length, "message")}` : "";
   return (
     <div className="e-lab__room">
-      <h3 className="e-lab__h">ROOM{messages ? ` · ${plural(messages.length, "message")}` : ""}</h3>
+      <h3 className="e-lab__h">ROOM{heading}</h3>
       {isPrivate ? (
         <Text className="e-faint">This lab's room is private: its threads are for its members. Its reports above are public.</Text>
+      ) : sealed ? (
+        <Text className="e-faint">This lab's room is encrypted: its messages are for its members. Its reports above are public.</Text>
       ) : latest.length ? (
         <ul className="e-lab__room-msgs">
           {latest.map((m) => (
