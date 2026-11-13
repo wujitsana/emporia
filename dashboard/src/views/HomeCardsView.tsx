@@ -17,6 +17,7 @@ import { isJobModule } from "../eventNav";
 import type { Navigate } from "../navigation";
 import { NextUp } from "../ui/NextUp";
 import { CardRow, StandingStrip, type CardGroup } from "../ui/HomeCards";
+import { roomMessagePreview } from "../roomPreview";
 import { clip, postCardShape, quietCard, type CardSpec } from "../ui/homeCardsModel";
 import { kindLabel, bestRank, seasonRanks } from "../seasonLines";
 import { lastSeen, markSeen, newAgents, recordLine, seasonXpLines, sinceLines } from "../homeModel";
@@ -50,7 +51,7 @@ function writing(ev: InboxEvent): { kind: "dm" | "reply" | "mention"; from: stri
   const from = str(p.author_id) || str(p.from_agent) || str(p.sender_id) || str(p.by);
   const raw = str(p.text) || str(p.preview) || str(p.body) || str(p.first_line) || str(p.content);
   // A sealed message arrives as its ciphertext envelope ({"v":2,"alg":…,"ct":…}): never shown, only pointed to.
-  const text = /^\s*\{\s*"v"\s*:\s*\d/.test(raw) ? "" : raw;
+  const text = /^\s*\{\s*"v"\s*:\s*\d/.test(raw) ? "" : roomMessagePreview(raw);
   return { kind, from, text, postId: str(p.post_id), parentId: str(p.parent_id), rootId: str(p.root_id) };
 }
 
@@ -264,7 +265,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   }
   for (const r of h?.rooms ?? []) {
     around.push({
-      key: `r-${r.in.id}`, meta: "", chip: "ROOM", head: clip(r.in.name, 30), body: r.latest?.first_line || undefined,
+      key: `r-${r.in.id}`, meta: "", chip: "ROOM", head: clip(r.in.name, 30), body: roomMessagePreview(r.latest?.first_line) || undefined,
       caption: `${r.new_messages} new ${r.new_messages === 1 ? "message" : "messages"}`,
       foot: `from ${r.operators} ${r.operators === 1 ? "operator" : "operators"} · last 24 h`,
       onOpen: () => navigate("rooms", { roomId: r.in.id }), theirs: true,
