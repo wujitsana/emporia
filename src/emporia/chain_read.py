@@ -7,6 +7,7 @@ never carries a URL (an RPC URL may hold a provider's key).
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Callable
 
 from emporia import rpc_safe
@@ -22,6 +23,10 @@ class ChainUnknown(Exception):
     """The chain could not be read (or its answer was not trustworthy). Never `invalid`."""
 
 
+class ChainRpcError(ChainUnknown):
+    """The node answered with a JSON-RPC error (not a revert): it may just not know a parameter form."""
+
+
 class ChainRevert(ChainUnknown):
     """The node answered that the call reverted."""
 
@@ -29,10 +34,13 @@ class ChainRevert(ChainUnknown):
 def _httpx_post(url: str, body: bytes, headers: dict, timeout: float, max_bytes: int) -> tuple[int, bytes]:
     import httpx
 
+    end = time.monotonic() + timeout   # httpx's timeout is per read: a slow drip needs a whole-response one too
     with httpx.stream("POST", url, content=body, headers=headers, timeout=timeout) as r:
         data = bytearray()
         for chunk in r.iter_bytes():
             data += chunk
+            if time.monotonic() > end:
+                raise ChainUnknown("the RPC was too slow")
             if len(data) > max_bytes:
                 raise ChainUnknown("the RPC response was too large")
         return r.status_code, bytes(data)
@@ -59,14 +67,26 @@ class PinnedReader:
         self._http: Http = http or _httpx_post
         self._n = 0
         self._block: tuple[int, str] | None = None
+        self._by_hash = True            # EIP-1898 object form, until a node rejects it
+        self._until: float | None = None  # the deadline of the call in progress
+
+    def _begin(self) -> bool:
+        """Start the one overall deadline for a public call (False if an outer call already has it)."""
+        if self._until is not None:
+            return False
+        self._until = time.monotonic() + self.timeout
+        return True
 
     # -- transport ----------------------------------------------------------------------------------
     def _rpc(self, url: str, method: str, params: list) -> Any:
         self._n += 1
         body = json.dumps({"jsonrpc": "2.0", "id": self._n, "method": method, "params": params}).encode()
         headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
+        left = self.timeout if self._until is None else min(self.timeout, self._until - time.monotonic())
+        if left <= 0:
+            raise ChainUnknown("the RPC took too long")
         try:
-            status, data = self._http(url, body, headers, self.timeout, self.max_bytes)
+            status, data = self._http(url, body, headers, left, self.max_bytes)
         except ChainUnknown:
             raise
         except Exception as e:
@@ -86,7 +106,7 @@ class PinnedReader:
             text = rpc_safe.redact(err.get("message", "") if isinstance(err, dict) else err)[:120]
             if isinstance(err, dict) and (err.get("code") == 3 or "revert" in text.lower()):
                 raise ChainRevert(f"the call reverted: {text}")
-            raise ChainUnknown(f"the RPC returned an error: {text}")
+            raise ChainRpcError(f"the RPC returned an error: {text}")
         return msg.get("result")
 
     def _all(self, method: str, params: list) -> Any:
@@ -112,6 +132,14 @@ class PinnedReader:
     def pin(self) -> tuple[int, str]:
         if self._block is not None:
             return self._block
+        own = self._begin()
+        try:
+            return self._pin()
+        finally:
+            if own:
+                self._until = None
+
+    def _pin(self) -> tuple[int, str]:
         for url in self.urls:
             cid = self._rpc(url, "eth_chainId", [])
             try:
@@ -159,12 +187,27 @@ class PinnedReader:
         except ValueError:
             raise ChainUnknown("the RPC answered something unexpected") from None
 
+    def _at_block(self, method: str, head: list) -> Any:
+        """`method(*head, block)` at the pinned block: by hash (EIP-1898) where the nodes take it, else by number."""
+        own = self._begin()
+        try:
+            number, bhash = self.pin()
+            if self._by_hash:
+                try:
+                    return self._all(method, [*head, {"blockHash": bhash}])
+                except ChainRevert:
+                    raise
+                except ChainRpcError:
+                    self._by_hash = False   # a node rejected the object form: number from here on
+            return self._all(method, [*head, _hex(number)])
+        finally:
+            if own:
+                self._until = None
+
     def call(self, to: str, data: bytes | str) -> bytes:
-        number = self.pin()[0]
         payload = data if isinstance(data, str) else "0x" + bytes(data).hex()
         tx = {"to": to, "data": payload, "gas": _hex(self.gas_cap)}
-        return self._bytes(self._all("eth_call", [tx, _hex(number)]))
+        return self._bytes(self._at_block("eth_call", [tx]))
 
     def code(self, address: str) -> bytes:
-        number = self.pin()[0]
-        return self._bytes(self._all("eth_getCode", [address, _hex(number)]))
+        return self._bytes(self._at_block("eth_getCode", [address]))

@@ -13,7 +13,7 @@ SECRET = "https://rpc.example/key-SECRET123"
 
 class Fake:
     def __init__(self, chain=4663, finalized=True, latest=1000, status=200, big=False, exc=None,
-                 call="0x1234", code="0x6001", revert=False, block_hash=H1):
+                 call="0x1234", code="0x6001", revert=False, block_hash=H1, reject_hash=False):
         self.__dict__.update(locals())
         self.log = []
 
@@ -35,6 +35,8 @@ class Fake:
             res = {"number": p[0], "hash": self.block_hash}
         elif m == "eth_blockNumber":
             res = hex(self.latest)
+        elif m in ("eth_call", "eth_getCode") and self.reject_hash and isinstance(p[-1], dict):
+            err = {"code": -32602, "message": "invalid block number"}
         elif m == "eth_call":
             if self.revert:
                 err = {"code": 3, "message": "execution reverted"}
@@ -61,7 +63,7 @@ def test_pins_finalized_once_and_reads_at_it():
     assert r.code("0x" + "11" * 20) == bytes.fromhex("6001")
     assert sum(1 for _, m, *_ in f.log if m == "eth_getBlockByNumber") == 1
     call = [x for x in f.log if x[1] == "eth_call"][0]
-    assert call[2][1] == "0x10" and call[2][0]["data"] == "0x0102"
+    assert call[2][1] == {"blockHash": H1} and call[2][0]["data"] == "0x0102"
     assert all(x[3]["User-Agent"] == chain_read.USER_AGENT for x in f.log)
 
 
@@ -138,3 +140,51 @@ def test_rpc_for_precedence(monkeypatch):
     assert networks.rpc_for("eip155:4663") == ["https://one.example", "https://two.example"]
     assert networks.rpc_for("eip155:999999") == []
     assert PinnedReader("eip155:4663", http=Fake()).urls == ["https://one.example", "https://two.example"]
+
+
+def test_a_node_that_rejects_the_hash_form_is_read_by_number():
+    f = Fake(reject_hash=True)
+    r = reader(f)
+    assert r.call("0x" + "11" * 20, b"\x01") == bytes.fromhex("1234")
+    assert r.code("0x" + "11" * 20) == bytes.fromhex("6001")
+    reads = [x[2][-1] for x in f.log if x[1] in ("eth_call", "eth_getCode")]
+    assert reads == [{"blockHash": H1}, "0x10", "0x10"]   # one failed try, then number only
+
+
+def test_a_revert_is_not_a_reason_to_retry_by_number():
+    f = Fake(revert=True)
+    with pytest.raises(ChainRevert):
+        reader(f).call("0x" + "11" * 20, b"\x01")
+    assert sum(1 for x in f.log if x[1] == "eth_call") == 1
+
+
+def test_one_deadline_covers_the_whole_call(monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr(chain_read.time, "monotonic", lambda: now[0])
+    f = Fake()
+    seen = []
+
+    def slow(url, body, headers, timeout, max_bytes):
+        seen.append(timeout)
+        now[0] += 4.0                      # every read takes 4 s of the 8 s budget
+        return f(url, body, headers, timeout, max_bytes)
+
+    r = reader(slow, timeout=8.0)
+    with pytest.raises(ChainUnknown, match="too long"):
+        r.call("0x" + "11" * 20, b"\x01")
+    assert seen == [8.0, 4.0]              # each read gets only what is left
+    assert max(seen) <= 8.0
+
+
+def test_each_call_starts_a_fresh_deadline(monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr(chain_read.time, "monotonic", lambda: now[0])
+    f = Fake()
+
+    def fast(*a):
+        now[0] += 1.0
+        return f(*a)
+
+    r = reader(fast, timeout=8.0)
+    for _ in range(4):
+        r.code("0x" + "11" * 20)   # the first pins (4 reads) and reads; later ones read once
