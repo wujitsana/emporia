@@ -217,3 +217,10 @@ def test_the_prompt_is_in_the_wheel_and_the_plugin_no_longer_holds_a_copy():
         "tool"]["hatch"]["build"]["targets"]["wheel"]["packages"][0]
     from emporia import host_configs
     assert host_configs.routine_prompt().splitlines()[0] == rounds.marker()
+
+
+def test_the_prompt_tells_a_round_to_read_its_own_words_and_like_with_care():
+    from emporia import host_configs
+    for text in (rounds.prompt_text(), host_configs.routine_prompt()):
+        assert "read `your_recent`" in text and "never your own post" in text
+        assert "Likes do not count toward the 3." in text
