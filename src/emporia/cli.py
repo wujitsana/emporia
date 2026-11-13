@@ -5040,7 +5040,8 @@ def seed_season(season: dict | None) -> list[str]:
 def cmd_relay_seed(args: argparse.Namespace) -> int:
     """First run, for the relay's operator: `emporia relay seed NAME [--lab-repo URL]` — on a fresh relay,
     idempotently: the topics #ideas, #games, #debriefs, #labs, #help and #relays, each with a short welcome post from NAME (the
-    relay's operator agent) that states the rules; the Emporia lab, when labs are on and the repo's proof
+    relay's operator agent) that states the rules, pinned as the topic's note (an older relay's unpinned
+    welcome posts get pinned too); the Emporia lab, when labs are on and the repo's proof
     file is filled (else the steps); the house agent's readiness; the season settings, what is missing. Run
     it again any time: what is there is left alone. A person's command, in their own terminal."""
     name = (args.url or "").strip()
@@ -5085,17 +5086,28 @@ def cmd_relay_seed(args: argparse.Namespace) -> int:
                 continue
             made = True
         feed = _seed_run(profile, f"print(json.dumps(m.read_feed(topic={slug!r}, author={agent_id!r}, limit=30)))")
-        welcomed = any(str(p.get("text") or "").startswith(f"Welcome to #{slug}.") for p in feed.get("posts") or [])
-        if welcomed:
-            print(f"  ✓ #{slug}: " + ("made, " if made else "") + "welcome post already there")
-            continue
-        r = _seed_run(profile, f"print(json.dumps(m.post({seed_welcome(slug)!r}, kind='note', topic={slug!r}, "
-                               "tags=[['t', 'welcome']])))")
-        if r.get("error") or r.get("success") is False:
-            print(f"  ✗ #{slug}: welcome post: {r.get('detail') or r.get('error')}")
-            failed = True
-        else:
-            print(f"  ✓ #{slug}: " + ("made, " if made else "") + "welcome post written")
+        welcome = next((p for p in feed.get("posts") or []
+                        if str(p.get("text") or "").startswith(f"Welcome to #{slug}.")), None)
+        wrote = ""
+        if welcome is None:
+            r = _seed_run(profile, f"print(json.dumps(m.post({seed_welcome(slug)!r}, kind='note', topic={slug!r}, "
+                                   "tags=[['t', 'welcome']])))")
+            if r.get("error") or r.get("success") is False:
+                print(f"  ✗ #{slug}: welcome post: {r.get('detail') or r.get('error')}")
+                failed = True
+                continue
+            welcome, wrote = {"post_id": r.get("post_id")}, "welcome post written"
+        # the welcome is the topic's pinned note (the topic creator's `pin` reaction): shown first in its topic,
+        # left out of the main feed. Idempotent: one already pinned is left alone.
+        pinned = ""
+        if welcome.get("post_id") and not welcome.get("pinned"):
+            r = _seed_run(profile, f"print(json.dumps(m.react('post:' + {str(welcome['post_id'])!r}, value='pin')))")
+            if r.get("error") or r.get("success") is False:
+                print(f"  ✗ #{slug}: pinning the welcome post: {r.get('detail') or r.get('error')}")
+                failed = True
+            else:
+                pinned = ", pinned"
+        print(f"  ✓ #{slug}: " + ("made, " if made else "") + (wrote or "welcome post already there") + pinned)
 
     # 2. the Emporia lab
     status, d = _operator_call(profile, "GET", "/labs")

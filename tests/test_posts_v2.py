@@ -419,3 +419,50 @@ async def test_a_pointer_pull_keeps_what_checks_out_and_refuses_the_rest(client)
          patch.object(rs, "_repin_if_rotated", AsyncMock(return_value=False)):
         assert await rs._pull_federated_posts(peer) == 0
     assert "mismatch" in rs._FEDERATION_LAST_SYNC[peer]["error"]
+
+
+# ── a topic's pinned note: left out of the main feed and the news, first in its topic ─────────────
+
+def _make_topic(client, creator, slug):
+    r = client.post("/agoras/topics", json={"slug": slug, "name": slug.title(), "creator_id": creator},
+                    headers=_as(creator))
+    assert r.status_code in (200, 201), r.text
+
+
+def _pin(client, agent, post_id, on=True):
+    at = datetime.now(UTC).isoformat()
+    target = f"post:{post_id}"
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT author_id FROM posts WHERE post_id = ?", (post_id,)).fetchone()
+    to = _stable(row["author_id"])
+    sig = signing.sign(agent, "reaction", target, "pin", to, _stable(agent), on, at)
+    return client.post("/reactions", json={"target": target, "value": "pin", "to_agent": row["author_id"],
+                                           "on": on, "at": at, "signature": sig}, headers=_as(agent))
+
+
+def test_a_pinned_welcome_is_out_of_the_main_feed_first_in_its_topic_and_not_news(client):
+    me, other = _agent(client, "pn"), _agent(client, "po")
+    slug = f"pin-{uuid.uuid4().hex[:6]}"
+    _make_topic(client, me, slug)
+    welcome = _post(client, me, topic=slug, text=f"Welcome to #{slug}. Be kind.").json()["post_id"]
+    plain = _post(client, other, topic=slug, text="a plain post").json()["post_id"]
+    assert _pin(client, other, welcome).status_code == 403, "only the topic's creator pins"
+    assert [p["post_id"] for p in client.get("/feed", params={"limit": 200}).json()["posts"]
+            if p["post_id"] in (welcome, plain)] == [plain, welcome], "not pinned yet: both in the feed"
+    assert _pin(client, me, welcome).status_code == 200
+    feed = [p["post_id"] for p in client.get("/feed", params={"limit": 200}).json()["posts"]]
+    assert welcome not in feed and plain in feed
+    for sort in ("best",):
+        assert welcome not in [p["post_id"] for p in client.get("/feed", params={"sort": sort}).json()["posts"]]
+    inside = client.get("/feed", params={"topic": slug}).json()["posts"]
+    assert {p["post_id"] for p in inside} == {welcome, plain} and next(
+        p for p in inside if p["post_id"] == welcome)["pinned"] is True
+    page = client.get(f"/agoras/topics/{slug}/posts").json()["posts"]
+    assert [p["post_id"] for p in page] == [welcome, plain] and page[0]["is_pinned"] and not page[1]["is_pinned"]
+    from emporia.routes import happening as hp
+    with rs.DB_LOCK, rs.get_db() as conn:
+        news = hp.topic_news(conn, "2000-01-01T00:00:00+00:00", hp._counter(None))
+    latest = [t["latest"]["post_id"] for t in news if t["in"]["id"] == slug]
+    assert latest == [plain], "the pinned note is not news"
+    assert _pin(client, me, welcome, on=False).status_code == 200
+    assert welcome in [p["post_id"] for p in client.get("/feed", params={"limit": 200}).json()["posts"]]

@@ -645,7 +645,7 @@ async def list_agora_posts(
         cap = rs._clamp_limit(limit)
         posts = [pv.topic_post_view(i, row) for i in pv.topic_posts(conn, viewer_id, slug, cap, flair or "")]
     key = (lambda x: (x["vote_score"], x["created_at"])) if sort == "top" else (lambda x: x["created_at"])
-    posts = sorted(posts, key=key, reverse=True)[:cap]
+    posts = sorted(posts, key=lambda x: (bool(x["is_pinned"]), *key(x)), reverse=True)[:cap]   # the pinned note first
     return {
         "posts": posts,
         "count": len(posts),

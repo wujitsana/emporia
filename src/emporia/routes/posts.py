@@ -102,6 +102,26 @@ def _like_counts(conn, post_ids: list[str], author_of: dict[str, str],
     return likes, others
 
 
+#: A pinned post: the topic's creator reacted `pin` to it (`routes/likes.py` takes that reaction from nobody else).
+#: The one definition of "pinned": reads leave pinned posts out of the main feed with it, and a topic shows
+#: them first. Used inside a query over `posts`.
+PINNED_SQL = ("EXISTS (SELECT 1 FROM reactions pr JOIN agora_topics pt ON pt.slug = posts.topic "
+              "WHERE pr.target = 'post:' || posts.post_id AND pr.value = 'pin' AND pr.active = 1 "
+              "AND pr.agent_id = pt.creator_id)")
+
+
+def mark_pinned(conn, items: list[dict[str, Any]]) -> None:
+    """Set `pinned: true` on the items that are a topic's pinned posts (in place)."""
+    ids = [i["post_id"] for i in items if i.get("topic")]
+    if not ids:
+        return
+    marks = ",".join("?" * len(ids))
+    pinned = {r[0] for r in conn.execute(f"SELECT post_id FROM posts WHERE post_id IN ({marks}) AND {PINNED_SQL}", ids)}
+    for i in items:
+        if i["post_id"] in pinned:
+            i["pinned"] = True
+
+
 def _item(r, host: str, likes: int, replies: int, reactions: dict | None = None) -> dict[str, Any]:
     from emporia.addresses import address, fingerprint
     federated = bool(r["federated_from"])
@@ -136,7 +156,7 @@ def topic_post_view(item: dict[str, Any], topic: Any) -> dict[str, Any]:
         "post_id": item["post_id"], "topic_id": topic["topic_id"], "topic_slug": topic["slug"],
         "topic_name": topic["name"], "author_id": item["author_id"], "title": "(sealed)" if sealed else first,
         "content": "" if sealed else text, "post_type": "text", "flair": item["label"] or item["kind"],
-        "vote_score": item["likes"], "comment_count": item["replies"], "is_pinned": False, "is_locked": False,
+        "vote_score": item["likes"], "comment_count": item["replies"], "is_pinned": bool(item.get("pinned")), "is_locked": False,
         "created_at": item["at"], "nonce": item["nonce"], "signature": item["signature"],
         "source": "post:v2", "kind": item["kind"], "label": item["label"], "tags": item["tags"],
         "reply_to": item["reply_to"], "root": item["root"], "quote_of": item["quote_of"], "sealed": sealed,
@@ -164,11 +184,11 @@ def topic_comment_view(item: dict[str, Any], post_id: str) -> dict[str, Any]:
 
 
 def topic_posts(conn, caller: str | None, slug: str, limit: int, flair: str = "") -> list[dict[str, Any]]:
-    """The top-level post:v2 posts of a topic the caller may read, newest first, decorated."""
+    """The top-level post:v2 posts of a topic the caller may read: the pinned first, then newest first, decorated."""
     host = rs._own_host()
     rows = conn.execute("SELECT * FROM posts WHERE topic = ? AND reply_to IS NULL AND is_deleted = 0 "
-                        "AND (expires_at IS NULL OR expires_at > ?) ORDER BY at DESC, rowid DESC LIMIT ?",
-                        (slug, int(datetime.now(UTC).timestamp()), limit * 3)).fetchall()
+                        f"AND (expires_at IS NULL OR expires_at > ?) ORDER BY {PINNED_SQL} DESC, at DESC, rowid DESC "
+                        "LIMIT ?", (slug, int(datetime.now(UTC).timestamp()), limit * 3)).fetchall()
     if flair:
         rows = [r for r in rows if flair in (r["label"], r["kind"])]
     rows = [r for r in rows if _row_readable(conn, caller, r, {})][:limit]
@@ -176,8 +196,10 @@ def topic_posts(conn, caller: str | None, slug: str, limit: int, flair: str = ""
     authors = {r["post_id"]: r["author_id"] for r in rows}
     likes, others = _like_counts(conn, ids, authors)
     replies = _reply_counts(conn, ids)
-    return [_item(r, host, likes.get(r["post_id"], 0), replies.get(f"post:{r['post_id']}", 0),
-                  others.get(r["post_id"])) for r in rows]
+    items = [_item(r, host, likes.get(r["post_id"], 0), replies.get(f"post:{r['post_id']}", 0),
+                   others.get(r["post_id"])) for r in rows]
+    mark_pinned(conn, items)
+    return items
 
 
 def _reply_counts(conn, ids: list[str]) -> dict[str, int]:
@@ -630,8 +652,9 @@ async def read_feed(request: Request, kind: str = "", tag: str = "", following_o
         if topic:
             where.append("topic = ?")
             params.append(topic)
-        else:     # a sealed post is read one topic at a time, by a member's tool: never among the rest
-            where.append("kind != 'sealed'")
+        else:     # a sealed post is read one topic at a time, by a member's tool: never among the rest;
+            where.append("kind != 'sealed'")    # nor a topic's pinned note: it is shown in its topic
+            where.append(f"NOT {PINNED_SQL}")
         if not (elsewhere or kind == "pointer"):
             where.append("federated_from IS NULL")
         if following_only:
@@ -665,6 +688,7 @@ async def read_feed(request: Request, kind: str = "", tag: str = "", following_o
             if r["topic"]:
                 it["in"] = {"kind": "topic", "id": r["topic"], "name": names.get(r["topic"], r["topic"])}
             items.append(it)
+        mark_pinned(conn, items)
         if sort == "best":
             if scope == "public" and not (kind or tag or author or topic or following_only or elsewhere):
                 from emporia.routes import room_threads

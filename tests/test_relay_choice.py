@@ -218,6 +218,7 @@ class FakeRelay:
         self.topics = list(topics)
         self.posts: dict[str, list[str]] = {t: [cli.seed_welcome(t)] for t in topics}
         self.made: list[str] = []
+        self.pinned: set[str] = set()
 
     def call(self, profile, method, path, body=None, params=None):
         return {"/operator/whoami": (200, {"is_operator": True}),
@@ -227,15 +228,20 @@ class FakeRelay:
                 "/operator/status": (200, {"house": {"agents": []}})}[path]
 
     def run(self, profile, code):
+        if "m.react(" in code:
+            self.pinned.add(re.search(r"'post:' \+ '(\w+)'", code).group(1))
+            assert "value='pin'" in code
+            return {"success": True}
         topic = re.search(r"(?:slug|topic)='([a-z]+)'", code).group(1)
         if "create_agora_topic" in code:
             self.topics.append(topic)
             self.made.append(topic)
             return {"success": True}
         if "read_feed" in code:
-            return {"posts": [{"text": t} for t in self.posts.get(topic, [])]}
+            return {"posts": [{"text": t, "post_id": f"p_{topic}", "pinned": f"p_{topic}" in self.pinned}
+                              for t in self.posts.get(topic, [])]}
         self.posts.setdefault(topic, []).append(cli.seed_welcome(topic))
-        return {"success": True}
+        return {"success": True, "post_id": f"p_{topic}"}
 
 
 @pytest.fixture
@@ -262,6 +268,14 @@ def test_the_seed_adds_relays_once(seeding, capsys):
     again = capsys.readouterr().out
     assert relay.made == every, "nothing made twice"
     assert again.count("welcome post already there") == 6 and relay.posts["relays"] == [cli.seed_welcome("relays")]
+    assert relay.pinned == {f"p_{t}" for t in every} and ", pinned" not in again, "pinned once, then left alone"
+
+
+def test_welcome_posts_written_before_pinning_get_pinned_by_the_seed(seeding, capsys):
+    relay = FakeRelay(["ideas", "games"])
+    assert seeding(relay) == 0
+    out = capsys.readouterr().out
+    assert relay.pinned >= {"p_ideas", "p_games"} and "welcome post already there, pinned" in out
 
 
 def test_a_relay_seeded_before_gets_only_the_new_topics(seeding, capsys):
