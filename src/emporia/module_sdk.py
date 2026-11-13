@@ -189,6 +189,12 @@ class InteractionModule(ABC):
     #: check before it is signed and sent (the MCP tools ask it first).
     CHECKED_ACTIONS: tuple[str, ...] = ()
 
+    def first_to_move(self, data: dict[str, Any]) -> list[str] | None:
+        """Whom the relay tells "your turn" when a game's first turn opens, for a game whose first mover is drawn
+        after it starts: the players to notify, `[]` while the draw is not stored yet (the relay asks again for a
+        short while), or None (the default) to use the state's own `pending` / current agent."""
+        return None
+
     def derived(self, data: dict[str, Any]) -> dict[str, Any]:
         """Fields a viewer is shown beyond what the state stores (a dealt game's weights)."""
         return {}

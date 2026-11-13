@@ -79,6 +79,26 @@ def beacon_of(data: dict[str, Any], round_no: int | None) -> bytes:
     return bytes.fromhex(sig) if sig else b""
 
 
+#: How long a tool waits for a turn's gate when the served state says it is not drawn yet (see `gate_wait_s`).
+GATE_WAIT_MAX_S = 20.0
+GATE_POLL_S = 1.5
+
+
+def gate_wait_s(data: dict[str, Any], now_ts: float, limit: float = GATE_WAIT_MAX_S) -> float | None:
+    """Seconds to wait before the served state's gate can be read: when `data` (a game's served state) says
+    `gate_ready` is false and its `gate_at` is within `limit` seconds (or already past: the relay has not stored the
+    round yet), the time left (0 when it is past); None when there is no gate to wait for or it is too far off, so
+    the caller answers with the plain refusal."""
+    if data.get("gate_ready") is not False or not data.get("gate_at"):
+        return None
+    try:
+        at = datetime.fromisoformat(str(data["gate_at"]).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+    left = at - now_ts
+    return max(0.0, left) if left <= limit else None
+
+
 def pick(scope: str, purpose: str, sig: bytes, n: int) -> int:
     """A public draw from `sig` as a whole number in 0..n-1."""
     return rand.uint(rand.rand(scope, purpose, sig)) % n

@@ -4771,6 +4771,9 @@ def submit_action(
     if (refusal := _playbook_refusal_runner(sess.get("module_type", ""))):
         return refusal
     cls = _load_game_module(sess.get("module_type", ""))
+    if cls is not None and action_type in getattr(cls, "CHECKED_ACTIONS", ()):
+        sess = _await_gate(aid, session_id, sess)
+        step_number = sess["step_number"]
     if cls is not None:       # a draw per turn: the move names its next round here, the agent types only its choice
         payload = cls().fill_move(action_type, dict(payload or {}),
                                   (sess.get("state") or {}).get("data") or {}, time.time())
@@ -5129,6 +5132,34 @@ def _session_json(session_id: str, aid: str) -> dict[str, Any]:
 
 def _session_data(session_id: str, aid: str) -> dict[str, Any]:
     return (_session_json(session_id, aid).get("state") or {}).get("data") or {}
+
+
+_sleep = time.sleep         # (tests swap these two for a fake clock)
+_clock = time.time
+
+
+def _await_gate(aid: str, session_id: str, sess: dict[str, Any]) -> dict[str, Any]:
+    """A move right after the opponent's can land before the next gate's drand round is published. When the served
+    state says the gate is not ready and it is due within 20 s, wait for it (reading the session again) and return
+    the fresh session; after 20 s, or when the gate is further off, return `sess` and let the plain refusal speak."""
+    from emporia import rand_game
+    data = (sess.get("state") or {}).get("data") or {}
+    if rand_game.gate_wait_s(data, _clock()) is None:
+        return sess
+    deadline = _clock() + rand_game.GATE_WAIT_MAX_S
+    while _clock() < deadline:
+        left = rand_game.gate_wait_s(data, _clock())
+        _sleep(min(max(left or 0.0, rand_game.GATE_POLL_S), max(0.0, deadline - _clock())))
+        try:
+            r = _bearer_request("get", f"{_base()}/sessions/{_seg(session_id)}", agent_id=aid, timeout=10)
+            r.raise_for_status()
+            sess = r.json()
+        except Exception:
+            return sess
+        data = (sess.get("state") or {}).get("data") or {}
+        if data.get("gate_ready") is not False:
+            break
+    return sess
 
 
 def _move_problem(module_type: str, data: dict[str, Any], move: Any) -> str:

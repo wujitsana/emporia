@@ -40,6 +40,9 @@ BOUNDS = {"drops": (4, 10), "move_time_limit_s": (30, 12 * 3600)}
 DEAL_ATTEMPTS = 64
 SILT_BLOCKS = 2
 STONES_EACH = 3
+# What decides a game that ends with live threes level: "coin" (a drand flip, see `level_flip`) or "second" (the
+# player who moved second). The module's rule is the constant; the balance report swaps it to measure both.
+LEVEL_RULE = "coin"
 
 Cell = tuple[int, int]          # (channel 1-6, row 1-5)
 Grid = list[list[str]]          # grid[channel - 1][row - 1]
@@ -163,6 +166,21 @@ def gate(scope: str, n: int, sig: bytes, open_: list[int]) -> int | None:
     return ch[rand_game.pick(scope, f"gate:{n}", sig, len(ch))] if len(ch) > 1 else None
 
 
+def level_flip(scope: str, sig: bytes, seats: list[str]) -> str:
+    """Who wins a level game under the coin rule: `seats[pick(scope, "level", sig, 2)]`, from the beacon that drew
+    the final move's gate (the round the move before it named; the game's own round for a one-move game)."""
+    return seats[rand_game.pick(scope, "level", sig, 2)]
+
+
+def _level_sig(data: dict[str, Any], n_moves: int) -> bytes:
+    """The stored signature the coin is drawn from, for a game that ended after `n_moves` moves: the gate beacon of
+    its last move. Falls back to the game's own round when that gate needed no beacon (one channel left)."""
+    moves = data.get("moves") or []
+    r = data.get("rand") or {}
+    rnd = moves[n_moves - 2]["round"] if n_moves >= 2 else r.get("round")
+    return _sig(data, rnd) or _sig(data, r.get("round"))
+
+
 def _grid_of(data: dict[str, Any], opening: dict[str, Any]) -> Grid:
     """The board at the opening: silt and each seat's stones at their cells."""
     grid = empty_grid()
@@ -223,6 +241,8 @@ def verdict(data: dict[str, Any]) -> dict[str, Any] | None:
     a, b = seats
     if threes[a] != threes[b]:
         winner, how = (a, "threes") if threes[a] > threes[b] else (b, "threes")
+    elif LEVEL_RULE == "coin":
+        winner, how = level_flip((data.get("rand") or {}).get("scope", ""), _level_sig(data, len(moves)), seats), "coin"
     else:
         winner, how = order[1], "level"           # level goes to the player who moved second
     loser = b if winner == a else a
@@ -241,6 +261,8 @@ def _result(data: dict[str, Any], winner: str, loser: str, how: str, n: int, *, 
         out["reason"] = f"{winner} made four in a line"
     elif how == "threes":
         out["reason"] = f"the drops ran out: {winner} had more live threes"
+    elif how == "coin":
+        out["reason"] = "the drops ran out with live threes level: a drand coin flip decided"
     else:
         out["reason"] = "the drops ran out with live threes level: the player who moved second wins"
     return out
@@ -406,6 +428,11 @@ Clock: `move_time_limit_s` (default 600) per drop; missing it loses. Winner +1, 
         moves = data.get("moves") or []
         last = moves[-1]["round"] if moves else (data.get("rand") or {}).get("round") or 0
         return {**payload, "round": max(rand.client_turn_round(now_ts), int(last) + 1)}
+
+    def first_to_move(self, data: dict[str, Any]) -> list[str]:
+        """The beacon picks the first mover: only that player is told it is their turn, once the draw is stored."""
+        view = _view(data)
+        return [view["to_move"]] if view and view["to_move"] else []
 
     def derived(self, data: dict[str, Any]) -> dict[str, Any]:
         view = _view(data)
@@ -610,7 +637,7 @@ Clock: `move_time_limit_s` (default 600) per drop; missing it loses. Winner +1, 
             return "the game is marked ended but its moves do not end it"
         if res is not None and (not ended or ended.get("winner") != res["winner"] or ended.get("how") != res["termination"]):
             return "the stored ending is not what the moves give"
-        if res is not None and relay_verdict and relay_verdict.get("termination") in ("four", "threes", "level") \
+        if res is not None and relay_verdict and relay_verdict.get("termination") in ("four", "threes", "level", "coin") \
                 and (relay_verdict.get("winner") != res["winner"]):
             return f"the rules give {res['winner']} as the winner, the relay declared {relay_verdict.get('winner')}"
         return ""

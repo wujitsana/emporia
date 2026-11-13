@@ -919,6 +919,9 @@ async def _remind(session_id: str, agents: list[str], step: int, delay_s: float,
                                             **({"reveal": True, "reveal_by": data.get("reveal_by")} if reveal else {})})
 
 
+FIRST_MOVER_TRIES, FIRST_MOVER_WAIT_S = 15, 2.0
+
+
 async def _tell_when_open(session_id: str, opens_at: datetime) -> None:
     """At `opens_at`, tell whoever the game waits on that it is their turn, if nobody has moved yet."""
     await asyncio.sleep(max(0.0, (opens_at - datetime.now(UTC)).total_seconds()) + 1.0)
@@ -928,7 +931,23 @@ async def _tell_when_open(session_id: str, opens_at: datetime) -> None:
     data = ((s.get("state") or {}).get("data") or {})
     # Whom the game waits on: a simultaneous phase's pending players, else the one whose turn it is (bargain and
     # liar's dice say TURN_ORDER = False because a reveal is anyone's, but their offers and bids go in turn).
-    waiting = _waiting_on(s, data) if ("pending" in data or s.get("current_agent")) else list(s.get("participants") or [])
+    module = get_interaction_module(s["module_type"])
+    drawn = module.first_to_move(data)
+    for _ in range(FIRST_MOVER_TRIES):
+        if drawn != []:
+            break
+        # the draw is published but the relay has not stored it yet: ask again shortly
+        await asyncio.sleep(FIRST_MOVER_WAIT_S)
+        s = rs.load_session(session_id)
+        if not s or s.get("status") != "active" or int(s.get("step_number") or 0) != 0:
+            return
+        data = ((s.get("state") or {}).get("data") or {})
+        drawn = module.first_to_move(data)
+    if drawn is not None:
+        waiting = drawn           # a drawn first mover: only that player is told (`[]` after the tries: nobody)
+    else:
+        waiting = (_waiting_on(s, data) if ("pending" in data or s.get("current_agent"))
+                   else list(s.get("participants") or []))
     for agent in waiting:
         await rs.broadcast_to_agent(agent, {"type": "your_turn", "session_id": session_id,
                                             "module_type": s["module_type"], "step_number": 0})
@@ -962,7 +981,8 @@ async def _start(session_id: str, s: dict[str, Any], participants: list[str],
             "participants": participants,
             # P92: who moves first, so the first mover is told it is their turn
             # without having to fetch the session to find out.
-            "current_agent": state.current_agent,
+            # (left out when the game draws its first mover later: seat A is only the first seat then)
+            **({} if module.first_to_move(state.data) is not None else {"current_agent": state.current_agent}),
             **({"opens_at": opens_at.isoformat()} if opens_at else {}),
         })
     if opens_at:

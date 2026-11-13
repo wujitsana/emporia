@@ -13,6 +13,7 @@ Bug fixes vs PTGS agent_sdk.py:
 from __future__ import annotations
 
 import asyncio
+import time
 import json
 import urllib.parse
 from collections.abc import Awaitable, Callable, Collection
@@ -904,6 +905,29 @@ class EmporiaAgent:
         _raise_for_status_or_payment(resp)
         return resp.json()
 
+    #: (a test swaps these for a fake clock)
+    _sleep = staticmethod(asyncio.sleep)
+    _clock = staticmethod(time.time)
+
+    async def _await_gate(self, session_id: str, session: dict[str, Any]) -> dict[str, Any]:
+        """A move right after the opponent's can land before the next gate's drand round is published. When the
+        served state says the gate is not ready and it is due within 20 s, wait for it (reading the session
+        again); after 20 s, or when the gate is further off, return the session and let the relay's plain refusal
+        speak."""
+        from emporia import rand_game
+        data = (session.get("state") or {}).get("data") or {}
+        if rand_game.gate_wait_s(data, self._clock()) is None:
+            return session
+        deadline = self._clock() + rand_game.GATE_WAIT_MAX_S
+        while self._clock() < deadline:
+            left = rand_game.gate_wait_s(data, self._clock())
+            await self._sleep(min(max(left or 0.0, rand_game.GATE_POLL_S), max(0.0, deadline - self._clock())))
+            session = await self.get_session(session_id)
+            data = (session.get("state") or {}).get("data") or {}
+            if data.get("gate_ready") is not False:
+                break
+        return session
+
     async def submit_action(
         self,
         session_id: str,
@@ -926,6 +950,7 @@ class EmporiaAgent:
         if why := rationale_problem(rationale):
             raise ValueError(why)
         session = await self.get_session(session_id)
+        session = await self._await_gate(session_id, session)
         if cls := self._game_module(session.get("module_type", "")):    # a draw per turn names its round here
             import time as _time
             payload = cls().fill_move(action_type, dict(payload or {}),
