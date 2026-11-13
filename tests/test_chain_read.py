@@ -13,7 +13,7 @@ SECRET = "https://rpc.example/key-SECRET123"
 
 class Fake:
     def __init__(self, chain=4663, finalized=True, latest=1000, status=200, big=False, exc=None,
-                 call="0x1234", code="0x6001", revert=False, block_hash=H1, reject_hash=False):
+                 call="0x1234", code="0x6001", revert=False, block_hash=H1, reject_hash=False, header_missing=False):
         self.__dict__.update(locals())
         self.log = []
 
@@ -37,6 +37,8 @@ class Fake:
             res = hex(self.latest)
         elif m in ("eth_call", "eth_getCode") and self.reject_hash and isinstance(p[-1], dict):
             err = {"code": -32602, "message": "invalid block number"}
+        elif m in ("eth_call", "eth_getCode") and self.header_missing and isinstance(p[-1], dict):
+            err = {"code": -32000, "message": "header not found"}
         elif m == "eth_call":
             if self.revert:
                 err = {"code": 3, "message": "execution reverted"}
@@ -149,6 +151,17 @@ def test_a_node_that_rejects_the_hash_form_is_read_by_number():
     assert r.code("0x" + "11" * 20) == bytes.fromhex("6001")
     reads = [x[2][-1] for x in f.log if x[1] in ("eth_call", "eth_getCode")]
     assert reads == [{"blockHash": H1}, "0x10", "0x10"]   # one failed try, then number only
+
+
+def test_a_header_not_found_error_does_not_switch_the_reader_to_numbers():
+    f = Fake(header_missing=True)
+    r = reader(f)
+    with pytest.raises(chain_read.ChainRpcError, match="header not found"):
+        r.call("0x" + "11" * 20, b"\x01")
+    assert r._by_hash is True
+    f.header_missing = False
+    assert r.call("0x" + "11" * 20, b"\x01") == bytes.fromhex("1234")
+    assert [x[2][-1] for x in f.log if x[1] == "eth_call"] == [{"blockHash": H1}, {"blockHash": H1}]
 
 
 def test_a_revert_is_not_a_reason_to_retry_by_number():

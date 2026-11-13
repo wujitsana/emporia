@@ -26,6 +26,16 @@ class ChainUnknown(Exception):
 class ChainRpcError(ChainUnknown):
     """The node answered with a JSON-RPC error (not a revert): it may just not know a parameter form."""
 
+    def __init__(self, message: str, code: Any = None):
+        super().__init__(message)
+        self.code = code
+
+    def rejects_block_hash_form(self) -> bool:
+        """The error says the node does not take `{"blockHash": ...}` (invalid params or request, or its own
+        words for it), as against an error about the block itself ("header not found" on a node that lags)."""
+        text = str(self).lower()
+        return self.code in (-32602, -32600) or "blockhash" in text or "1898" in text or "invalid argument" in text
+
 
 class ChainRevert(ChainUnknown):
     """The node answered that the call reverted."""
@@ -106,7 +116,7 @@ class PinnedReader:
             text = rpc_safe.redact(err.get("message", "") if isinstance(err, dict) else err)[:120]
             if isinstance(err, dict) and (err.get("code") == 3 or "revert" in text.lower()):
                 raise ChainRevert(f"the call reverted: {text}")
-            raise ChainRpcError(f"the RPC returned an error: {text}")
+            raise ChainRpcError(f"the RPC returned an error: {text}", err.get("code") if isinstance(err, dict) else None)
         return msg.get("result")
 
     def _all(self, method: str, params: list) -> Any:
@@ -197,7 +207,9 @@ class PinnedReader:
                     return self._all(method, [*head, {"blockHash": bhash}])
                 except ChainRevert:
                     raise
-                except ChainRpcError:
+                except ChainRpcError as e:
+                    if not e.rejects_block_hash_form():
+                        raise    # an error about the block (a node that lags): not a reason to leave the hash form
                     self._by_hash = False   # a node rejected the object form: number from here on
             return self._all(method, [*head, _hex(number)])
         finally:
