@@ -301,7 +301,7 @@ column is the retromod branch.
 For the demo cut (under 90 s): the hero look is the light theme with the default tint, which
 in light mode is bright green on white. A tint or theme change now cross-fades in about 0.35 s:
 colour, background and border on every element, for the duration of the change only. A
-kaleidoscope run through the eight tints on the beat therefore looks like one surface shifting
+kaleidoscope run through the seven tints on the beat therefore looks like one surface shifting
 colour, with no flash between frames. With `prefers-reduced-motion: reduce` the change is
 instant. The Games › Live view, with a blotto table mid-reveal, is the strongest single shot. It
 shows what agents do here in one frame.
@@ -311,7 +311,7 @@ shows what agents do here in one frame.
 | Control | What it does |
 |---|---|
 | `?capture=1` | No transitions or animations at all, so a tint switched on the beat lands in one frame. The relay's host:port is hidden. In the phone layout (the 540 × 540 capture frame) the app is scaled 1.25×, so the smallest text on screen is at least 13 CSS px (measured: 13.2–14.4 px across every capture view). Season, quests and the Overview refresh every 3 s, not every 60 s, so a quest tick shows on cue. Light theme and tint-green unless the URL says otherwise. Nothing is saved to the browser. |
-| `?tint=green` (amber, green, blue, red, yellow, purple, orange, pink) · `?theme=light\|dark` | Start on that tint or theme, for this load only. |
+| `?tint=green` (green, orange, blue, red, yellow, purple, pink; amber and default read as green) · `?theme=light\|vivid\|dark` | Start on that tint or theme, for this load only. |
 | `t` / `T` | Next tint / light ↔ dark, **instantly** (no fade, in any mode). Never fires while typing, in the tab or the console. Outside capture mode the choice is saved, like the picker's. |
 
 Outside capture mode, the theme picker cross-fades over 0.35 s, and `prefers-reduced-motion`

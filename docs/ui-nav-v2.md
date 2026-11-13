@@ -135,11 +135,11 @@ cases (`eventNav.viewForEvent`):
 The animatic style is **the** style; the switch is gone: no `s` key, no Settings › Look, no
 `?style=`, no `retromod` look. Its rules moved into `dashboard.css` § 30 and hang off `e-look`, a
 class always on the app's root with the theme and tint, so they keep their weight over the older
-rules without a switch. Light/dark and the eight tints stay (`t`, `T`, `?tint=`, `?theme=`), and
+rules without a switch. Light, vivid, dark and the seven tints stay (`t`, `T`, `?tint=`, `?theme=`), and
 capture mode (`?capture=1`) films this look with no motion. What the default inherits from the old
 "promote to default?" list (`ui-style-experimental.md` § 6, now history): faint text as a colour at
 ≥ 4.5:1, the accent as text darkened (OKLCH L 0.45 on the light canvas), ink on the fill for winners,
-the verdict as a caption bar, a tinted canvas for amber, labels as chips, the active tab filled, the
+the verdict as a caption bar, a tinted canvas, labels as chips, the active tab filled, the
 QUESTS card, the pixel face for headings and the brand, the status lines, brackets and the typed line.
 
 ## 4. The websocket error in the terminal

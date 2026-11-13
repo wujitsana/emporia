@@ -4,6 +4,13 @@
 > Settings › Look, `?style=`) and the retromod look are gone, and these rules live in
 > `dashboard/src/dashboard.css` § 30. What stays below is how the look was chosen. See
 > `docs/ui-nav-v2.md` § 3.
+>
+> **Since 11-13** the themes are `light | vivid | dark` and the tints seven: green (the default),
+> orange, blue, red, yellow, purple, pink. Amber is gone as a colour; wherever this history says
+> amber, read green. *Vivid* is the tint as the background with its deep dark as ink (the video's
+> "live now" screen); *dark* is the "deep" palette of the video's all-dark-green screens, green exact.
+> The palettes are in `dashboard/src/themePalette.ts` and mirrored in `dashboard.css` § 30 and the
+> kit's `ui/kit/global.css`; `themeContrast.test.ts` holds every tint × theme to 4.5:1.
 
 Branch `style-experimental`, on top of `retromod-ux`. It adds a **style mode**, a third look
 axis next to light/dark and the eight accent tints. The current look, `retromod`, stays the

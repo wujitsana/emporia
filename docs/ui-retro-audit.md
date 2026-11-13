@@ -6,7 +6,7 @@ about it.
 ## Direction: retromod
 
 We keep the retro terminal identity: the vendored kit's look, monospace throughout, a
-box-drawing feel, and the existing light/dark themes with their eight tints
+box-drawing feel, and the existing light/dark themes with their tints (since 11-13: light, vivid, dark; seven tints, green the default)
 (`themeConfig.ts`). On top of that goes modern polish: clean spacing and a clear hierarchy,
 smooth readable type, visible focus and state, and comfortable touch targets on a phone. Nothing
 should feel like a dated imitation of an old terminal. Nothing new comes from the network:
