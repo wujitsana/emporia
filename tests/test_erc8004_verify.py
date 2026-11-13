@@ -228,7 +228,7 @@ def test_stale_after_the_bound_token_moves():
     ch.erc721[C["bound_token"].lower()][TOKEN] = "0x" + "77" * 20  # sold
     ch.controllers.discard((C["owning_contract"].lower(), AGENT, addr.lower()))
     r = erc8004.verify(make_link(key, addr), ch)
-    assert (r["status"], r["tier"]) == ("not-proven", "not-proven")
+    assert (r["status"], r["tier"]) == ("not-proven", "")
 
 
 @needs_lib
@@ -273,7 +273,7 @@ def test_approvals_and_non_controllers_do_not_count():
     key, addr = keypair()
     ch = bound_chain(erc8004.STD_ERC721, addr, controller=False)
     r = erc8004.verify(make_link(key, addr), ch)
-    assert (r["status"], r["tier"]) == ("not-proven", "not-proven")
+    assert (r["status"], r["tier"]) == ("not-proven", "")
     ch2 = FakeChain()
     ch2.owners[AGENT] = "0x" + "55" * 20   # an EOA owner, signer is someone else
     assert erc8004.verify(make_link(key, addr), ch2)["status"] == "not-proven"
@@ -462,7 +462,7 @@ def test_an_invalid_link_has_no_tier_and_a_not_proven_one_keeps_it():
     other = FakeChain()
     other.owners[AGENT] = C["owning_contract"]
     r = erc8004.verify(make_link(key, addr), other)
-    assert (r["status"], r["tier"]) == ("not-proven", "not-proven")
+    assert (r["status"], r["tier"]) == ("not-proven", "")
 
 
 @needs_lib
@@ -478,3 +478,29 @@ def test_a_refused_link_reads_nothing_from_the_chain():
     ch = _Watched()
     ch.owners[AGENT] = addr
     assert erc8004.verify(make_link(key, addr), ch)["block_number"] == 123
+
+
+@needs_lib
+def test_only_a_proven_link_has_a_tier():
+    key, addr = keypair()
+    other = FakeChain()
+    other.owners[AGENT] = C["owning_contract"]
+    assert erc8004.verify(make_link(key, addr), other)["tier"] == ""
+
+
+class _EmptyOwner(FakeChain):
+    def call(self, to, data):
+        if to.lower() == self.registry.lower() and data[:4] == erc8004.SEL_OWNER_OF:
+            return b""
+        return super().call(to, data)
+
+
+@needs_lib
+def test_an_empty_owner_answer_is_unknown_without_code_at_the_registry_else_not_proven():
+    key, addr = keypair()
+    ch = _EmptyOwner()
+    r = erc8004.verify(make_link(key, addr), ch)
+    assert (r["status"], r["tier"]) == ("unknown", "")
+    ch.codes.add(ch.registry)
+    r = erc8004.verify(make_link(key, addr), ch)
+    assert (r["status"], r["tier"]) == ("not-proven", "")

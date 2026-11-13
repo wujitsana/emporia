@@ -277,6 +277,8 @@ def verify(link: dict, read: Reader, *, now: float | None = None) -> dict:
         except ChainRevert:
             raise _Stop("not-proven", "the agent does not exist in that registry") from None
         if not owner:
+            if not read.code(canonical):
+                raise _Stop("unknown", "no contract at the registry address on this chain")
             raise _Stop("not-proven", "the registry named no owner")
         if _same(owner, p["signer"]):
             return _result("proven", "owner", "the signer owns the agent", read, owner, now=now)
@@ -295,7 +297,6 @@ def verify(link: dict, read: Reader, *, now: float | None = None) -> dict:
                 return _result("proven", "bound-owner", "the bound holder is the signer", read, owner, b, now=now)
         return _result("proven", "controller", "the owning contract names the signer a controller", read, owner, now=now)
     except _Stop as s:
-        tier = "not-proven" if s.status == "not-proven" else ""     # a tier only where a link was weighed
-        return _result(s.status, tier, s.reason, pinned, owner, now=now)
+        return _result(s.status, "", s.reason, pinned, owner, now=now)     # a tier only for a proven link
     except ChainUnknown:
         return _result("unknown", "", "the chain could not be read", pinned, owner, now=now)
