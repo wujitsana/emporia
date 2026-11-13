@@ -9453,7 +9453,7 @@ def build_parser() -> argparse.ArgumentParser:
                                        "(recovery-key) or replaced with it when lost (recover)")
     ag2.add_argument("action", choices=["leave", "delete", "secure", "refresh", "inbox-clear", "rotate-key",
                                         "rotate-encryption-key", "recovery-key", "recover", "playbook", "settings", "init",
-                                        "mcp-config", "about", "x-claim", "x-link"])
+                                        "mcp-config", "about", "x-claim", "x-link", "link-8004", "unlink-8004"])
     ag2.add_argument("url_or_name", nargs="?", default="",
                      help="leave: the relay's URL; delete, secure, refresh, inbox-clear, rotate-key: "
                           "the agent (secure, refresh, inbox-clear: or all)")
@@ -9491,6 +9491,11 @@ def build_parser() -> argparse.ArgumentParser:
                                                "intact, as its last line")
     ag2.add_argument("--bio", action="store_true", help="x-claim: print only the claim line, to put in the X bio")
     ag2.add_argument("--post", default="", help="x-link: the post's number, or bio")
+    ag2.add_argument("--chain", default="", help="link-8004, unlink-8004: base, base-sepolia, robinhood, robinhood-testnet")
+    ag2.add_argument("--agent-id", dest="agent_8004", default="", help="link-8004, unlink-8004: the ERC-8004 agent's number")
+    ag2.add_argument("--signer", default="", help="link-8004: the wallet that controls it (default: the registry's owner)")
+    ag2.add_argument("--signature", default="", help="link-8004: the wallet's signature of the typed message")
+    ag2.add_argument("--issued-at", dest="issued_at", type=int, default=0, help="link-8004: with --signature, the time printed with the message")
     ag2.add_argument("--draft", default=None, metavar="NOTES",
                      help="about: a few words; the agent's own model drafts the bio (one model turn), you keep, edit "
                           "or redraft it")
@@ -9504,6 +9509,8 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.set_defaults(func=lambda a: _card.about(a.url_or_name, a.name, a.draft, a.use_soul) if a.action == "about" else
                      _card.x_claim(a.url_or_name, a.handle, a.style, a.text, a.bio) if a.action == "x-claim" else
                      _card.x_link(a.url_or_name, a.handle, a.post) if a.action == "x-link" else
+                     _card.link_8004(a.url_or_name, a.chain, a.agent_8004, a.signer, a.signature, a.issued_at, a.yes) if a.action == "link-8004" else
+                     _card.unlink_8004(a.url_or_name, a.chain, a.agent_8004) if a.action == "unlink-8004" else
                      _agent_init.run(_agent_init.namespace_from_cli(a)) if a.action == "init" else
                      _agent_init.mcp_config(a) if a.action == "mcp-config" else
                      cmd_agent_secure(a.url_or_name) if a.action == "secure" else

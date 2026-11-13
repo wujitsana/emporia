@@ -300,3 +300,65 @@ def verify(link: dict, read: Reader, *, now: float | None = None) -> dict:
         return _result(s.status, "", s.reason, pinned, owner, now=now)     # a tier only for a proven link
     except ChainUnknown:
         return _result("unknown", "", "the chain could not be read", pinned, owner, now=now)
+
+
+# -- what a person is told before they sign ---------------------------------------------------------
+TIER_WORDING = {"owner": "owner", "bound-owner": "holder of the bound token", "controller": "controller, per the owning contract"}
+
+
+def preview(agent_id: str | int, signer: str, read: Reader, *, now: float | None = None) -> dict:
+    """What `signer` would prove for this agent at the reader's pinned block, without a signature: the owner,
+    the binding and the tier verify() would give a good signature. `tier` is "" when the chain does not back
+    the signer. Reads only; raises ChainUnknown if the chain cannot be read."""
+    agent_id = int(agent_id)
+    chain = read.caip2
+    registry = ERC8004_REGISTRIES[chain]
+    read.block_number
+    out: dict = {"tier": "", "owner": "", "block_number": read.block_number, "block_hash": read.block_hash,
+                 "checked_at": int(now if now is not None else time.time())}
+    try:
+        owner = _addr(_call(read, registry, SEL_OWNER_OF, ["uint256"], [agent_id])) or ""
+    except ChainRevert:
+        out["reason"] = "the agent does not exist in that registry"
+        return out
+    out["owner"] = owner.lower()
+    if not owner:
+        out["reason"] = "the registry named no owner"
+        return out
+    if not signer:
+        out["reason"] = ""
+        return out
+    if _same(owner, signer):
+        out["tier"] = "owner"
+        return out
+    if not read.code(owner):
+        out["reason"] = "the signer does not own the agent"
+        return out
+    if not _is_controller(read, owner, agent_id, signer):
+        out["reason"] = "the owning contract does not name the signer a controller"
+        return out
+    out["tier"] = "controller"
+    claim = _read_binding(read, owner, agent_id)
+    if claim is not None and claim[0] in STANDARD_NAMES:
+        std, bound, token = claim
+        if _derive(read, std, bound, token, signer):
+            out["tier"] = "bound-owner"
+            out["binding"] = {"standard": STANDARD_NAMES[std], "address": bound.lower()}
+            if std not in (STD_ACCOUNT, STD_OWNABLE):
+                out["binding"]["token_id"] = str(token)
+    return out
+
+
+def typed_data_json(td: dict) -> dict:
+    """The typed message as a wallet or `cast` takes it: JSON only (bytes32 as hex, uint256 as decimal strings)."""
+    m = dict(td["message"])
+    m["emporiaStableId"] = "0x" + bytes(m["emporiaStableId"]).hex()
+    m["agentId"] = str(m["agentId"])
+    return {**td, "message": m}
+
+
+def typed_data_from_json(td: dict) -> dict:
+    m = dict(td["message"])
+    m["emporiaStableId"] = bytes.fromhex(str(m["emporiaStableId"]).removeprefix("0x"))
+    m["agentId"], m["issuedAt"] = int(m["agentId"]), int(m["issuedAt"])
+    return {**td, "message": m}

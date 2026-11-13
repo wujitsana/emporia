@@ -1,4 +1,4 @@
-"""`emporia agent about | x-claim | x-link`: the card's bio and X link, from a person's terminal.
+"""`emporia agent about | x-claim | x-link | link-8004 | unlink-8004`: the card's bio and links, from a person's terminal.
 
 * `about NAME "text"` sets the bio (`EMPORIA_ABOUT`, at most 160 characters, plain text, no link) and registers
   the agent again so the relay's card carries it; `about NAME` shows it (and a suggestion); `about NAME ""`
@@ -8,6 +8,10 @@
   to show it (the stock ones, or your own words with the line added last), and the bio form (the line alone).
   It posts nothing.
 * `x-link NAME --handle H --post ID|bio` records on the card where the claim line was shown.
+* `link-8004 NAME --chain C --agent-id N [--signer 0x..]` reads an ERC-8004 identity on-chain and prints the owner,
+  binding and tier it expects, the privacy note and the EIP-712 message to sign in a wallet; with `--signature 0x..
+  --issued-at T` it verifies that locally, then signs and posts the link (`chain_link`). `unlink-8004` removes it
+  (a signed removal; the marker stays). Both are refused while an unattended turn is live.
 
 Works for a Hermes agent profile and for an agent made with `emporia agent init` (its key directory).
 """
@@ -204,3 +208,121 @@ def x_link(name: str, handle: str, post: str) -> int:
           f"(confirmed by {link.get('confirmed_by', 0)} other operators).")
     return 0
 
+
+
+def _chain_run(t: _Target, fn: str, *args: Any) -> dict[str, Any]:
+    """`chain_link.<fn>(*args)` as the agent; the answer, or {"error": ...}."""
+    argtext = ", ".join(repr(a) for a in args)
+    return _result(t.run("import json\nfrom emporia import chain_link as c\n"
+                         "try:\n"
+                         f"    out = c.{fn}({argtext})\n"
+                         "    print(json.dumps({'success': True, **out}, default=str))\n"
+                         "except c.LinkError as e:\n"
+                         "    print(json.dumps({'success': False, 'error': str(e)}))\n"))
+
+
+def _link_target(cmd: str, name: str) -> "_Target | None":
+    t = _Target(name)
+    if not t.found:
+        print(f"agent {cmd}: no agent {name!r} here (a Hermes agent profile, or one made with `emporia agent init`)")
+        return None
+    if why := t.unattended():
+        print(f"agent {cmd}: a {why} turn is running for {name}: an ERC-8004 link is a person's to change "
+              "(it publishes a wallet address). Run it yourself, when no turn is live.")
+        return None
+    return t
+
+
+def link_8004(name: str, chain: str, agent_id: str, signer: str = "", signature: str = "",
+              issued_at: int = 0, yes: bool = False) -> int:
+    """`emporia agent link-8004 NAME --chain C --agent-id N [--signer 0x..] [--signature 0x.. --issued-at T]`."""
+    t = _link_target("link-8004", name)
+    if t is None:
+        return 1
+    if not chain or not str(agent_id or "").strip():
+        print("agent link-8004: --chain (e.g. base, base-sepolia, robinhood) and --agent-id N are required")
+        return 1
+    if not signature:
+        out = _chain_run(t, "ask", chain, agent_id, signer)
+        if not out.get("success"):
+            print(f"agent link-8004: {out.get('error')}")
+            return 1
+        _print_ask(name, out)
+        return 0
+    if not signer or not issued_at:
+        print("agent link-8004: with --signature give --signer (the wallet that signed) and --issued-at (printed "
+              "beside the message)")
+        return 1
+    cli = _cli()
+    if not yes:
+        if not cli._persons_terminal():
+            print("agent link-8004: recording publishes the wallet address on the card; there is no terminal to "
+                  "ask in. Run it in your own terminal, or add --yes.")
+            return 1
+        print(f"  {chain_note(chain)}")
+        print("  " + _wrap_privacy())
+        if cli.prompt(f"Record {signer} as {name}'s ERC-8004 #{agent_id} on its card? [y/N]", "n").lower() not in ("y", "yes"):
+            print("  nothing recorded.")
+            return 0
+    out = _chain_run(t, "record", chain, agent_id, signer, int(issued_at), signature)
+    if not out.get("success"):
+        print(f"agent link-8004: {out.get('error')}")
+        return 1
+    link = out.get("link") or {}
+    got = out.get("checked_here") or {}
+    print(f"  Checked here at block {got.get('block_number')}: {got.get('tier')}. "
+          f"On {name}'s card as {link.get('status', 'claimed')}"
+          + (" (testnet)." if out.get("testnet") else "."))
+    return 0
+
+
+def chain_note(chain: str) -> str:
+    from emporia import networks
+    c = networks.resolve(chain)
+    return f"chain: {networks.label(c)}"
+
+
+def _wrap_privacy() -> str:
+    from emporia import chain_link
+    return chain_link.PRIVACY_NOTE
+
+
+def _print_ask(name: str, out: dict[str, Any]) -> None:
+    print(f"  ERC-8004 #{out['agent_id']} on {out['chain_label']}, read at block {out['block_number']}")
+    print(f"    owner:   {out['owner']}")
+    if out.get("binding"):
+        print(f"    binding: {json.dumps(out['binding'], sort_keys=True)}")
+    print(f"    signer:  {out['signer']}")
+    if out["tier"]:
+        print(f"    tier:    {out['tier']} ({out['tier_wording']}): what the card will say once you sign")
+    else:
+        print(f"    tier:    not proven: {out.get('reason') or 'the chain does not back this signer'}")
+    print(f"\n  {out['privacy']}\n")
+    print("  Sign this typed message (EIP-712) in the wallet of the signer, e.g. save it as msg.json and run\n"
+          "  `cast wallet sign --data --from-file msg.json --private-key ...` or paste it into a wallet that\n"
+          "  signs typed data. Nothing goes on-chain; it moves no funds and grants no permission:\n")
+    print(json.dumps(out["typed_data"], indent=2))
+    print(f"\n  Then record it: emporia agent link-8004 {name} --chain {_short(out['chain'])} "
+          f"--agent-id {out['agent_id']} --signer {out['signer']} --issued-at {out['issued_at']} --signature 0x...")
+
+
+def _short(caip2: str) -> str:
+    from emporia import chain_link
+    return next((k for k, v in chain_link.chains().items() if v == caip2), caip2)
+
+
+def unlink_8004(name: str, chain: str, agent_id: str) -> int:
+    """`emporia agent unlink-8004 NAME --chain C --agent-id N`: a signed removal; the marker stays."""
+    t = _link_target("unlink-8004", name)
+    if t is None:
+        return 1
+    if not chain or not str(agent_id or "").strip():
+        print("agent unlink-8004: --chain and --agent-id N are required")
+        return 1
+    out = _chain_run(t, "unlink", chain, agent_id)
+    if not out.get("success"):
+        print(f"agent unlink-8004: {out.get('error')}")
+        return 1
+    print(f"  ERC-8004 #{agent_id} is off {name}'s card; a signed removal marker stays. What was already published "
+          "(the wallet address, in relay copies and the transparency log) is not erased.")
+    return 0
