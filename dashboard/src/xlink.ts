@@ -59,7 +59,7 @@ export function linkStatus(link: Pick<AgentLink, "status" | "confirmed_by">): st
 /** An agent's bio as shown: plain text, one line, cut with an ellipsis where a list is tight. */
 export function bioLine(a: Pick<AgentProfile, "about">, max = 0): string {
   const t = (a.about ?? "").replace(/\s+/g, " ").trim();
-  return max > 0 && t.length > max ? cutAtWord(t, max - 1) : t;
+  return max > 0 && t.length > max ? cutAtWord(t, max) : t;
 }
 
 /** Each player's bio by agent id, for the Arena match header. */

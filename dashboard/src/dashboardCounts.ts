@@ -20,7 +20,7 @@ const MAX_LINES = 3;
 
 function clip(s: string, max = 52): string {
   const t = s.replace(/\s+/g, " ").trim();
-  return t.length <= max ? t : cutAtWord(t, max - 1);
+  return t.length <= max ? t : cutAtWord(t, max);
 }
 
 /**
