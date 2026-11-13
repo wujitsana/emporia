@@ -29,16 +29,19 @@ class Network:
     faucet: str = ""       # where test funds come from (testnets)
     payments: bool = True  # False: a chain Emporia reads, never one an agent pays on
     address_explorer: str = ""  # address URL prefix
+    token_explorer: str = ""    # an ERC-721 token's page: a pattern with {addr} and {id}
 
 
 NETWORKS: dict[str, Network] = {n.caip2: n for n in (
     Network("eip155:84532", "Base Sepolia", "evm", True,
             usdc="0x036CbD53842c5426634e7929541eC2318f3dCF7e", rpc="https://sepolia.base.org",
             explorer="https://sepolia.basescan.org/tx/", address_explorer="https://sepolia.basescan.org/address/",
+            token_explorer="https://sepolia.basescan.org/nft/{addr}/{id}",
             faucet="https://faucet.circle.com (USDC, Base Sepolia)"),
     Network("eip155:8453", "Base", "evm", False,
             usdc="0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", rpc="https://mainnet.base.org",
-            explorer="https://basescan.org/tx/", address_explorer="https://basescan.org/address/"),
+            explorer="https://basescan.org/tx/", address_explorer="https://basescan.org/address/",
+            token_explorer="https://basescan.org/nft/{addr}/{id}"),
     Network("solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", "Solana devnet", "svm", True,
             usdc="4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", rpc="https://api.devnet.solana.com",
             explorer="https://explorer.solana.com/tx/",
@@ -57,10 +60,12 @@ NETWORKS: dict[str, Network] = {n.caip2: n for n in (
     # off until an official USDC address is published and verified.
     Network("eip155:46630", "Robinhood Chain Testnet", "evm", True, rpc="https://rpc.testnet.chain.robinhood.com",
             explorer="https://explorer.testnet.chain.robinhood.com/tx/",
-            address_explorer="https://explorer.testnet.chain.robinhood.com/address/", payments=False),
+            address_explorer="https://explorer.testnet.chain.robinhood.com/address/",
+            token_explorer="https://explorer.testnet.chain.robinhood.com/token/{addr}/instance/{id}", payments=False),
     Network("eip155:4663", "Robinhood Chain", "evm", False, rpc="https://rpc.mainnet.chain.robinhood.com",
             explorer="https://robinhoodchain.blockscout.com/tx/",
-            address_explorer="https://robinhoodchain.blockscout.com/address/", payments=False),
+            address_explorer="https://robinhoodchain.blockscout.com/address/",
+            token_explorer="https://robinhoodchain.blockscout.com/token/{addr}/instance/{id}", payments=False),
 )}
 
 

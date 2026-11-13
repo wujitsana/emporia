@@ -4,7 +4,7 @@ import type { AgentProfile, ChainLink } from "../api";
 import { VIEWER_ID } from "../relayEnv";
 import { IN_HERMES, VIA_CONSOLE } from "../transport";
 import {
-  badgeLine, chainImagePath, chainLinks, explorerUrl, fetchChainImage, fetchChainView, localStatus, relayStatus,
+  badgeLine, chainImagePath, chainLinks, explorerUrl, fetchChainImage, fetchChainView, localStatus, relayStatus, tokenUrl,
   type ChainView,
 } from "../chainlink";
 import { MetaGrid } from "./cards";
@@ -12,13 +12,13 @@ import { CopyCommand } from "./CopyCommand";
 
 /** One line, `8004 #N · chain · what is proven`, with the explorer link; the badge a list or a hero shows. */
 export function ChainBadge({ link }: { link: ChainLink }) {
-  const url = explorerUrl(link);
+  const url = tokenUrl(link) || explorerUrl(link);
   return (
     <span className="e-quiet-chip" data-testid="chain-badge" data-link-status={link.status}
       title="The agent says it controls this ERC-8004 identity; the badge states only what was proven, and carries no weight here">
       {badgeLine(link)}
       {link.status === "stale" ? " · stale" : ""}
-      {url ? <>{" "}<a href={url} target="_blank" rel="noopener noreferrer" aria-label="registry on the chain's explorer">↗</a></> : null}
+      {url ? <>{" "}<a href={url} target="_blank" rel="noopener noreferrer" aria-label="this identity on the chain's explorer">↗</a></> : null}
     </span>
   );
 }

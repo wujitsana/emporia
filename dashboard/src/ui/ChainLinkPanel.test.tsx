@@ -28,7 +28,7 @@ describe("the ERC-8004 badge and panel", () => {
     render(<ChainBadges agent={agent([link()])} />);
     const badge = screen.getByTestId("chain-badge");
     expect(badge.textContent).toContain("8004 #42 · Base Sepolia · owner (testnet)");
-    expect(badge.querySelector("a")?.getAttribute("href")).toBe(`https://sepolia.basescan.org/address/${REG}`);
+    expect(badge.querySelector("a")?.getAttribute("href")).toBe(`https://sepolia.basescan.org/nft/${REG}/42`);
     expect(badge.querySelector("a")?.getAttribute("rel")).toContain("noopener");
     expect(screen.queryByTestId("chain-image")).toBeNull();
   });

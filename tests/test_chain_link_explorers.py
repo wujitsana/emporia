@@ -13,9 +13,10 @@ def test_every_registry_chain_has_the_same_label_and_address_explorer_in_the_das
     for caip2 in networks.ERC8004_REGISTRIES:
         n, chain_id = networks.NETWORKS[caip2], caip2.split(":")[1]
         assert n.address_explorer, caip2
-        m = re.search(rf'"{chain_id}": \{{ label: "([^"]+)", explorer: "([^"]+)" \}}', TS)
+        m = re.search(rf'"{chain_id}": \{{ label: "([^"]+)", explorer: "([^"]+)", token: "([^"]+)" \}}', TS)
         assert m, f"chainlink.ts has no entry for {caip2}"
-        assert (m.group(1), m.group(2)) == (n.label, n.address_explorer), caip2
+        assert (m.group(1), m.group(2), m.group(3)) == (n.label, n.address_explorer, n.token_explorer), caip2
+        assert "{addr}" in n.token_explorer and "{id}" in n.token_explorer and n.token_explorer.startswith("https://")
 
 
 def test_the_dashboard_knows_no_chain_the_runtime_has_no_registry_for():

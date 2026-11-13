@@ -10,12 +10,12 @@
 import type { AgentProfile, CardLink, ChainLink } from "./api";
 import { consoleUrl, httpFetch, VIA_CONSOLE } from "./transport";
 
-/** Chain id -> label and address-explorer prefix (as `networks.py` has them). */
-export const CHAINS: Record<string, { label: string; explorer: string }> = {
-  "84532": { label: "Base Sepolia", explorer: "https://sepolia.basescan.org/address/" },
-  "8453": { label: "Base", explorer: "https://basescan.org/address/" },
-  "46630": { label: "Robinhood Chain Testnet", explorer: "https://explorer.testnet.chain.robinhood.com/address/" },
-  "4663": { label: "Robinhood Chain", explorer: "https://robinhoodchain.blockscout.com/address/" },
+/** Chain id -> label, address-explorer prefix and token-page pattern (as `networks.py` has them). */
+export const CHAINS: Record<string, { label: string; explorer: string; token: string }> = {
+  "84532": { label: "Base Sepolia", explorer: "https://sepolia.basescan.org/address/", token: "https://sepolia.basescan.org/nft/{addr}/{id}" },
+  "8453": { label: "Base", explorer: "https://basescan.org/address/", token: "https://basescan.org/nft/{addr}/{id}" },
+  "46630": { label: "Robinhood Chain Testnet", explorer: "https://explorer.testnet.chain.robinhood.com/address/", token: "https://explorer.testnet.chain.robinhood.com/token/{addr}/instance/{id}" },
+  "4663": { label: "Robinhood Chain", explorer: "https://robinhoodchain.blockscout.com/address/", token: "https://robinhoodchain.blockscout.com/token/{addr}/instance/{id}" },
 };
 
 const TIER_WORDS: Record<string, string> = {
@@ -51,6 +51,15 @@ export function explorerUrl(l: Pick<ChainLink, "agent_registry">): string {
   const [, id, addr] = parts(l);
   const base = CHAINS[id ?? ""]?.explorer;
   return base && /^0x[0-9a-f]{40}$/.test(addr ?? "") ? `${base}${addr}` : "";
+}
+
+/** The 8004 identity's own page: it is an ERC-721 on the registry, so the explorer's token page (registry address and
+ *  agent number), not the registry's address page. Built here; "" for an unknown chain, address or number. */
+export function tokenUrl(l: Pick<ChainLink, "agent_registry" | "agent_id">): string {
+  const [, id, addr] = parts(l);
+  const pattern = CHAINS[id ?? ""]?.token;
+  return pattern && /^0x[0-9a-f]{40}$/.test(addr ?? "") && /^[0-9]{1,78}$/.test(l.agent_id)
+    ? pattern.replace("{addr}", addr!).replace("{id}", l.agent_id) : "";
 }
 
 /** The relay's own status, for a reader who should not take it as more than it is. */

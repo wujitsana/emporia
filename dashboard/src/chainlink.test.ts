@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChainLink } from "./api";
-import { badgeLine, chainImagePath, CHAINS, chainLinks, explorerUrl, localStatus, relayStatus, tierWording, type ChainView } from "./chainlink";
+import { badgeLine, chainImagePath, CHAINS, chainLinks, explorerUrl, localStatus, tokenUrl, relayStatus, tierWording, type ChainView } from "./chainlink";
 import { xLinks } from "./xlink";
 
 const REG = "0x8004a818bfb912233c491871b3d84c89a494bd9e";
@@ -31,6 +31,16 @@ describe("an ERC-8004 link's wording", () => {
     expect(explorerUrl(link({ agent_registry: `eip155:4663:${REG}` }))).toBe(`https://robinhoodchain.blockscout.com/address/${REG}`);
     expect(explorerUrl(link({ agent_registry: `eip155:1:${REG}` }))).toBe("");
     expect(explorerUrl(link({ agent_registry: "eip155:84532:javascript:alert(1)" }))).toBe("");
+  });
+
+  it("links the identity's own token page: the registry address and the agent number, per the explorer's style", () => {
+    expect(tokenUrl(link())).toBe(`https://sepolia.basescan.org/nft/${REG}/42`);
+    expect(tokenUrl(link({ agent_registry: `eip155:4663:${REG}` }))).toBe(`https://robinhoodchain.blockscout.com/token/${REG}/instance/42`);
+    const big = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+    expect(tokenUrl(link({ agent_id: big }))).toBe(`https://sepolia.basescan.org/nft/${REG}/${big}`);
+    expect(tokenUrl(link({ agent_registry: `eip155:1:${REG}` }))).toBe("");
+    expect(tokenUrl(link({ agent_id: "42/../x" }))).toBe("");
+    expect(tokenUrl(link({ agent_registry: "eip155:84532:javascript:alert(1)" }))).toBe("");
   });
 
   it("says what the relay read and never more than that", () => {
