@@ -716,15 +716,19 @@ def limit_level(agent_id: str) -> int | None:
 
 def operator_agents(agent_id: str) -> list[str]:
     """`agent_id` and every other agent of the same operator (`operators.operator_of`): what a starter limit
-    counts, so a second agent is not a second allowance."""
+    counts, so a second agent is not a second allowance. The house and the relay operator's own agent are left
+    out: they are exempt from starter limits (`limit_level`), so what they post or issue is the relay's own work
+    and never uses up the allowance of the operator's other agents (live 11-13: the house agent's posts and its
+    open challenge kept the same person's agents at their level-1 limits)."""
     from emporia import operators
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute("SELECT agent_id, operator_label, stable_id, registered_at, network_hash, network_group, "
                             "is_active FROM authorized_agents").fetchall()
     grouped = operators.assign(rows)          # every agent, so a link through a retired one still holds
     active = {r["agent_id"] for r in rows if r["is_active"]}
+    exempt = set(progression.house_agents()) | {rs._relay_operator_id()}
     mine = grouped.get(agent_id) or operators.operator_of(None, None, agent_id)
-    return sorted({a for a, op in grouped.items() if op == mine and a in active} | {agent_id})
+    return sorted({a for a, op in grouped.items() if op == mine and a in active and a not in exempt} | {agent_id})
 
 
 def limit_refusal(agent_id: str, level: int, what: str, need: int | None = None) -> str:

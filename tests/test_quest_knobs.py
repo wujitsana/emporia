@@ -151,6 +151,25 @@ def test_an_operators_agents_share_the_waiting_challenge_allowance(client, monke
     assert _challenge(client, c).status_code == 200
 
 
+def test_the_house_agent_does_not_use_up_its_operators_allowances(client, monkeypatch):
+    """Live 11-13: the house agent shares an operator with the person's other agents; its posts and its open
+    challenge used up their level-1 allowance. The house is exempt from starter limits, so it counts for none."""
+    monkeypatch.setenv("EMPORIA_STARTER_LIMITS", "1")
+    monkeypatch.setenv("EMPORIA_STARTER_POSTS_PER_DAY", "2,2,2")
+    h, a = _agent(client, "hs"), _agent(client, "hs")
+    with rs.DB_LOCK, rs.get_db() as conn:      # an operator of their own: the shared test DB has others on _ONE_OP
+        for x in (h, a):
+            conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id = ?", ("op_" + "h" * 26, x))
+        sid = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (h,)).fetchone()[0]
+    monkeypatch.setenv("EMPORIA_HOUSE_STABLE_IDS", sid)
+    assert h in rs.house_names()
+    assert ST.operator_agents(a) == [a], "the house is not one of the agents an allowance counts"
+    for _ in range(3):
+        assert _post(client, h).status_code == 200, "the house has no starter limit of its own"
+    assert _post(client, a).status_code == 200 and _post(client, a).status_code == 200
+    assert _post(client, a).status_code == 429, "the agent's own allowance still binds it"
+
+
 def test_the_write_rate_limit_is_per_operator_as_well(client, monkeypatch):
     from fastapi import HTTPException
     a, b, c = _agent(client, "rl"), _agent(client, "rl"), _agent(client, "rl")
