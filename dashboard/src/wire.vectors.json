@@ -1,0 +1,473 @@
+{
+ "about": "Made by scripts/wire_vectors.py from wire.py, rooms.py and identity.py; do not edit by hand.",
+ "chain_hash": [
+  {
+   "chain_hash": "9da3a9a784899e9ebcbaab4139133004c63e320c0d3df4244a8ac013659b4dde",
+   "content": "first",
+   "created_at": "2026-11-01T10:00:00.000001+00:00",
+   "name": "genesis",
+   "prev_hash": null,
+   "python_ok": true,
+   "sender_id": "agent_a"
+  },
+  {
+   "chain_hash": "b9ab44b5ba5175f6f1c633c2c68283262c6dd90d32c1c90bd800395932dfa354",
+   "content": "second — 日本語",
+   "created_at": "2026-11-01T10:00:05+00:00",
+   "name": "chained",
+   "prev_hash": "9da3a9a784899e9ebcbaab4139133004c63e320c0d3df4244a8ac013659b4dde",
+   "python_ok": true,
+   "sender_id": "agent_b"
+  },
+  {
+   "chain_hash": "5fc50fe4b667159e8425988e6451920174b2843437de4bebd0ccb477b08acba6",
+   "content": "Hello — 世界 🎉 \"quoted\" and a\\backslash",
+   "created_at": "2026-11-01T10:00:10.250000+00:00",
+   "name": "chained non-ASCII",
+   "prev_hash": "b9ab44b5ba5175f6f1c633c2c68283262c6dd90d32c1c90bd800395932dfa354",
+   "python_ok": true,
+   "sender_id": "agent_a"
+  },
+  {
+   "chain_hash": "b9ab44b5ba5175f6f1c633c2c68283262c6dd90d32c1c90bd800395932dfa354",
+   "content": "second — 日本語 tampered",
+   "created_at": "2026-11-01T10:00:05+00:00",
+   "name": "tampered content",
+   "prev_hash": "9da3a9a784899e9ebcbaab4139133004c63e320c0d3df4244a8ac013659b4dde",
+   "python_ok": false,
+   "sender_id": "agent_b"
+  }
+ ],
+ "dm_chain_head": [
+  {
+   "messages": [
+    {
+     "chain_hash": "9da3a9a784899e9ebcbaab4139133004c63e320c0d3df4244a8ac013659b4dde",
+     "content": "first",
+     "created_at": "2026-11-01T10:00:00.000001+00:00",
+     "nonce": "n-chain-0",
+     "sender_id": "agent_a",
+     "seq": 1
+    },
+    {
+     "chain_hash": "b9ab44b5ba5175f6f1c633c2c68283262c6dd90d32c1c90bd800395932dfa354",
+     "content": "second — 日本語",
+     "created_at": "2026-11-01T10:00:05+00:00",
+     "nonce": "n-chain-1",
+     "sender_id": "agent_b",
+     "seq": 2
+    },
+    {
+     "chain_hash": "5fc50fe4b667159e8425988e6451920174b2843437de4bebd0ccb477b08acba6",
+     "content": "Hello — 世界 🎉 \"quoted\" and a\\backslash",
+     "created_at": "2026-11-01T10:00:10.250000+00:00",
+     "nonce": "n-chain-2",
+     "sender_id": "agent_a",
+     "seq": 3
+    }
+   ],
+   "name": "dm head",
+   "python_verified": true,
+   "relay_url": "http://vector-relay.example",
+   "served": {
+    "chain_head": "5fc50fe4b667159e8425988e6451920174b2843437de4bebd0ccb477b08acba6",
+    "message_count": 3,
+    "origin_public_key_hex": "0243d7fe78068e77444a4c9f3bcd81de73e1b23e4309d0acb8a441bd865cc4ce",
+    "origin_relay": "http://vector-relay.example",
+    "signature": "2fa8089004198c0f18c61f12058ac718001a1f80346e6d3e69910043b52d07a8889f24f0c2354ae5e76bec4ab569a85c88e17329bd1cb02c702095bcf76a820c"
+   },
+   "thread_id": "dm_vector_1"
+  },
+  {
+   "messages": [
+    {
+     "chain_hash": "9da3a9a784899e9ebcbaab4139133004c63e320c0d3df4244a8ac013659b4dde",
+     "content": "first",
+     "created_at": "2026-11-01T10:00:00.000001+00:00",
+     "nonce": "n-chain-0",
+     "sender_id": "agent_a",
+     "seq": 1
+    },
+    {
+     "chain_hash": "b9ab44b5ba5175f6f1c633c2c68283262c6dd90d32c1c90bd800395932dfa354",
+     "content": "second — 日本語",
+     "created_at": "2026-11-01T10:00:05+00:00",
+     "nonce": "n-chain-1",
+     "sender_id": "agent_b",
+     "seq": 2
+    },
+    {
+     "chain_hash": "5fc50fe4b667159e8425988e6451920174b2843437de4bebd0ccb477b08acba6",
+     "content": "Hello — 世界 🎉 \"quoted\" and a\\backslash",
+     "created_at": "2026-11-01T10:00:10.250000+00:00",
+     "nonce": "n-chain-2",
+     "sender_id": "agent_a",
+     "seq": 3
+    }
+   ],
+   "name": "dm head, head changed",
+   "python_verified": false,
+   "relay_url": "http://vector-relay.example",
+   "served": {
+    "chain_head": "9da3a9a784899e9ebcbaab4139133004c63e320c0d3df4244a8ac013659b4dde",
+    "message_count": 3,
+    "origin_public_key_hex": "0243d7fe78068e77444a4c9f3bcd81de73e1b23e4309d0acb8a441bd865cc4ce",
+    "origin_relay": "http://vector-relay.example",
+    "signature": "2fa8089004198c0f18c61f12058ac718001a1f80346e6d3e69910043b52d07a8889f24f0c2354ae5e76bec4ab569a85c88e17329bd1cb02c702095bcf76a820c"
+   },
+   "thread_id": "dm_vector_1"
+  }
+ ],
+ "dm_message": [
+  {
+   "message": {
+    "content": "hello thread",
+    "created_at": "2026-11-01T10:00:00.000001+00:00",
+    "msg_type": "text",
+    "nonce": "n-dm-1",
+    "signature": "pOSe-fCSyGtE6BwVr3938_-KCEIkBGIXoFnloi2s6xrGnCEOFzOx3VOVIUZkD_pLAw10wl7YkJZ1oToRTxCcAQ"
+   },
+   "name": "dm",
+   "python_verified": true,
+   "sender_public_key": "df9318b76e3a879c18757e3b322fd9c3dfd0dcc2e18da7c9a54970a69ac0be10",
+   "thread_id": "dm_vector_1"
+  },
+  {
+   "message": {
+    "content": "Hello — 世界 🎉 \"quoted\" and a\\backslash",
+    "created_at": "2026-11-01T10:00:05+00:00",
+    "msg_type": "text",
+    "nonce": "n-dm-2",
+    "signature": "31EBDXEWm6b0g2nRgJkBhZcU_Hf83MnVqfQWSx7zZ44U7lX3cVQgjFep5r0Tjf51QB5bZMR4YgiffOKxwQWqDg"
+   },
+   "name": "dm non-ASCII content",
+   "python_verified": true,
+   "sender_public_key": "df9318b76e3a879c18757e3b322fd9c3dfd0dcc2e18da7c9a54970a69ac0be10",
+   "thread_id": "dm_vector_1"
+  },
+  {
+   "message": {
+    "content": "hello thread tampered",
+    "created_at": "2026-11-01T10:00:00.000001+00:00",
+    "msg_type": "text",
+    "nonce": "n-dm-1",
+    "signature": "pOSe-fCSyGtE6BwVr3938_-KCEIkBGIXoFnloi2s6xrGnCEOFzOx3VOVIUZkD_pLAw10wl7YkJZ1oToRTxCcAQ"
+   },
+   "name": "dm tampered content",
+   "python_verified": false,
+   "sender_public_key": "df9318b76e3a879c18757e3b322fd9c3dfd0dcc2e18da7c9a54970a69ac0be10",
+   "thread_id": "dm_vector_1"
+  }
+ ],
+ "message_id": [
+  {
+   "message_id": "msg_cf46aa3130231a94a3ddb3acb8f9c101",
+   "name": "room message",
+   "payload": {
+    "content": "hello room",
+    "msg_type": "chat",
+    "nonce": "n-room-1",
+    "room_id": "room_vector_1",
+    "stable_id": "d8ee6e3dd20e9213f22e7488824c04d8d072fb445a46cf80f58ab8624c87184b",
+    "type": "emporia:room-message:v2"
+   }
+  },
+  {
+   "message_id": "msg_0e1397021ece6c619361e3c182c44abc",
+   "name": "room message non-ASCII",
+   "payload": {
+    "content": "Hello — 世界 🎉 \"quoted\" and a\\backslash",
+    "msg_type": "chat",
+    "nonce": "n-room-2",
+    "room_id": "room_vector_1",
+    "stable_id": "d8ee6e3dd20e9213f22e7488824c04d8d072fb445a46cf80f58ab8624c87184b",
+    "type": "emporia:room-message:v2"
+   }
+  },
+  {
+   "message_id": "msg_0213b3228af9aca30789acada7f01710",
+   "name": "one changed byte is another id",
+   "payload": {
+    "content": "hello room.",
+    "msg_type": "chat",
+    "nonce": "n-room-1",
+    "room_id": "room_vector_1",
+    "stable_id": "d8ee6e3dd20e9213f22e7488824c04d8d072fb445a46cf80f58ab8624c87184b",
+    "type": "emporia:room-message:v2"
+   }
+  }
+ ],
+ "relay_url": "http://vector-relay.example",
+ "removed_chain": {
+  "messages": [
+   {
+    "chain_hash": "9da3a9a784899e9ebcbaab4139133004c63e320c0d3df4244a8ac013659b4dde",
+    "content": "first",
+    "created_at": "2026-11-01T10:00:00.000001+00:00",
+    "sender_id": "agent_a"
+   },
+   {
+    "chain_hash": "b9ab44b5ba5175f6f1c633c2c68283262c6dd90d32c1c90bd800395932dfa354",
+    "content": "",
+    "created_at": "2026-11-01T10:00:05+00:00",
+    "deleted_at": "2026-11-02T09:00:00+00:00",
+    "sender_id": "agent_b"
+   },
+   {
+    "chain_hash": "5fc50fe4b667159e8425988e6451920174b2843437de4bebd0ccb477b08acba6",
+    "content": "Hello — 世界 🎉 \"quoted\" and a\\backslash",
+    "created_at": "2026-11-01T10:00:10.250000+00:00",
+    "sender_id": "agent_a"
+   }
+  ],
+  "name": "removed message taken as stored",
+  "python_link_ok": [
+   true,
+   true,
+   true
+  ]
+ },
+ "room_chain_head": [
+  {
+   "messages": [
+    {
+     "chain_hash": "9da3a9a784899e9ebcbaab4139133004c63e320c0d3df4244a8ac013659b4dde",
+     "content": "first",
+     "created_at": "2026-11-01T10:00:00.000001+00:00",
+     "sender_id": "agent_a"
+    },
+    {
+     "chain_hash": "b9ab44b5ba5175f6f1c633c2c68283262c6dd90d32c1c90bd800395932dfa354",
+     "content": "second — 日本語",
+     "created_at": "2026-11-01T10:00:05+00:00",
+     "sender_id": "agent_b"
+    },
+    {
+     "chain_hash": "5fc50fe4b667159e8425988e6451920174b2843437de4bebd0ccb477b08acba6",
+     "content": "Hello — 世界 🎉 \"quoted\" and a\\backslash",
+     "created_at": "2026-11-01T10:00:10.250000+00:00",
+     "sender_id": "agent_a"
+    }
+   ],
+   "name": "room head",
+   "python_verified": true,
+   "relay_url": "http://vector-relay.example",
+   "room_id": "room_vector_1",
+   "served": {
+    "chain_head": "5fc50fe4b667159e8425988e6451920174b2843437de4bebd0ccb477b08acba6",
+    "message_count": 3,
+    "origin_public_key_hex": "0243d7fe78068e77444a4c9f3bcd81de73e1b23e4309d0acb8a441bd865cc4ce",
+    "origin_relay": "http://vector-relay.example",
+    "signature": "bc676d5f55179598d4dc5341d7a4a4dab223651041d1513ee8ae108fbebe80607247b29f6c5d74ed09b000ab5dd74ff12c448bf2c0bde5622fdf8072831abe02"
+   }
+  },
+  {
+   "messages": [
+    {
+     "chain_hash": "9da3a9a784899e9ebcbaab4139133004c63e320c0d3df4244a8ac013659b4dde",
+     "content": "first",
+     "created_at": "2026-11-01T10:00:00.000001+00:00",
+     "sender_id": "agent_a"
+    },
+    {
+     "chain_hash": "b9ab44b5ba5175f6f1c633c2c68283262c6dd90d32c1c90bd800395932dfa354",
+     "content": "second — 日本語",
+     "created_at": "2026-11-01T10:00:05+00:00",
+     "sender_id": "agent_b"
+    },
+    {
+     "chain_hash": "5fc50fe4b667159e8425988e6451920174b2843437de4bebd0ccb477b08acba6",
+     "content": "Hello — 世界 🎉 \"quoted\" and a\\backslash",
+     "created_at": "2026-11-01T10:00:10.250000+00:00",
+     "sender_id": "agent_a"
+    }
+   ],
+   "name": "room head, message count changed",
+   "python_verified": false,
+   "relay_url": "http://vector-relay.example",
+   "room_id": "room_vector_1",
+   "served": {
+    "chain_head": "5fc50fe4b667159e8425988e6451920174b2843437de4bebd0ccb477b08acba6",
+    "message_count": 4,
+    "origin_public_key_hex": "0243d7fe78068e77444a4c9f3bcd81de73e1b23e4309d0acb8a441bd865cc4ce",
+    "origin_relay": "http://vector-relay.example",
+    "signature": "bc676d5f55179598d4dc5341d7a4a4dab223651041d1513ee8ae108fbebe80607247b29f6c5d74ed09b000ab5dd74ff12c448bf2c0bde5622fdf8072831abe02"
+   }
+  },
+  {
+   "messages": [
+    {
+     "chain_hash": "9da3a9a784899e9ebcbaab4139133004c63e320c0d3df4244a8ac013659b4dde",
+     "content": "first",
+     "created_at": "2026-11-01T10:00:00.000001+00:00",
+     "sender_id": "agent_a"
+    },
+    {
+     "chain_hash": "b9ab44b5ba5175f6f1c633c2c68283262c6dd90d32c1c90bd800395932dfa354",
+     "content": "second — 日本語",
+     "created_at": "2026-11-01T10:00:05+00:00",
+     "sender_id": "agent_b"
+    },
+    {
+     "chain_hash": "5fc50fe4b667159e8425988e6451920174b2843437de4bebd0ccb477b08acba6",
+     "content": "Hello — 世界 🎉 \"quoted\" and a\\backslash",
+     "created_at": "2026-11-01T10:00:10.250000+00:00",
+     "sender_id": "agent_a"
+    }
+   ],
+   "name": "room head, another relay's key",
+   "python_verified": false,
+   "relay_url": "http://vector-relay.example",
+   "room_id": "room_vector_1",
+   "served": {
+    "chain_head": "5fc50fe4b667159e8425988e6451920174b2843437de4bebd0ccb477b08acba6",
+    "message_count": 3,
+    "origin_public_key_hex": "e74042bb5b618ce2c9c5346d6bad6c28b962359726639429249ea02c85c5edc0",
+    "origin_relay": "http://vector-relay.example",
+    "signature": "bc676d5f55179598d4dc5341d7a4a4dab223651041d1513ee8ae108fbebe80607247b29f6c5d74ed09b000ab5dd74ff12c448bf2c0bde5622fdf8072831abe02"
+   }
+  },
+  {
+   "messages": [],
+   "name": "empty room head",
+   "python_verified": true,
+   "relay_url": "http://vector-relay.example",
+   "room_id": "room_vector_1",
+   "served": {
+    "chain_head": null,
+    "message_count": 0,
+    "origin_public_key_hex": "0243d7fe78068e77444a4c9f3bcd81de73e1b23e4309d0acb8a441bd865cc4ce",
+    "origin_relay": "http://vector-relay.example",
+    "signature": "606373dcaa843125fd267b7045f79f4c1d9469e9dd105fd9abe931029fffe2ac9305f1dd56ee5fd55d0b7290d0f05adc497e639a22720450c0f450dfa056b208"
+   }
+  }
+ ],
+ "room_message": [
+  {
+   "message": {
+    "content": "hello room",
+    "created_at": "2026-11-01T10:00:00.000001+00:00",
+    "msg_type": "chat",
+    "nonce": "n-room-1",
+    "sender_stable_id": "d8ee6e3dd20e9213f22e7488824c04d8d072fb445a46cf80f58ab8624c87184b",
+    "signature": "L2oJ5nUdrzHM71WHUXAeEoIeBQ3v-R-PE60GkACHm_ywQxXTTUYRnL1lbfU95KZEExGHXMiP-4PywxFsMEiPAA"
+   },
+   "name": "v2 with stable id",
+   "python_verified": true,
+   "room_id": "room_vector_1",
+   "sender_public_key": "df9318b76e3a879c18757e3b322fd9c3dfd0dcc2e18da7c9a54970a69ac0be10"
+  },
+  {
+   "message": {
+    "content": "Hello — 世界 🎉 \"quoted\" and a\\backslash",
+    "created_at": "2026-11-01T10:00:05+00:00",
+    "msg_type": "chat",
+    "nonce": "n-room-2",
+    "sender_stable_id": "d8ee6e3dd20e9213f22e7488824c04d8d072fb445a46cf80f58ab8624c87184b",
+    "signature": "xO31ndKQrIoZRQB6iu-8M9-huRZQComojOpBRQJX1l0j-aYCobK-7AZfnl-RFfb9UqWamgYoTVSoQB9aabsrDw"
+   },
+   "name": "v2 non-ASCII content",
+   "python_verified": true,
+   "room_id": "room_vector_1",
+   "sender_public_key": "df9318b76e3a879c18757e3b322fd9c3dfd0dcc2e18da7c9a54970a69ac0be10"
+  },
+  {
+   "message": {
+    "content": "a note with no signer id",
+    "created_at": "2026-11-01T10:00:10.250000+00:00",
+    "msg_type": "chat",
+    "nonce": "n-room-3",
+    "sender_stable_id": "",
+    "signature": "h9-kts9iUOWpL4zf-D6BlSn7SRtGTYWOoohj-tcuKJT_6-KakLQtafzghR3eh3XdP21YM39_4skj4e-Kv5UrBQ"
+   },
+   "name": "v2 with an empty stable id",
+   "python_verified": true,
+   "room_id": "room_vector_1",
+   "sender_public_key": "df9318b76e3a879c18757e3b322fd9c3dfd0dcc2e18da7c9a54970a69ac0be10"
+  },
+  {
+   "message": {
+    "content": "hello room tampered",
+    "created_at": "2026-11-01T10:00:00.000001+00:00",
+    "msg_type": "chat",
+    "nonce": "n-room-1",
+    "sender_stable_id": "d8ee6e3dd20e9213f22e7488824c04d8d072fb445a46cf80f58ab8624c87184b",
+    "signature": "L2oJ5nUdrzHM71WHUXAeEoIeBQ3v-R-PE60GkACHm_ywQxXTTUYRnL1lbfU95KZEExGHXMiP-4PywxFsMEiPAA"
+   },
+   "name": "tampered content",
+   "python_verified": false,
+   "room_id": "room_vector_1",
+   "sender_public_key": "df9318b76e3a879c18757e3b322fd9c3dfd0dcc2e18da7c9a54970a69ac0be10"
+  },
+  {
+   "message": {
+    "content": "hello room",
+    "created_at": "2026-11-01T10:00:00.000001+00:00",
+    "msg_type": "chat",
+    "nonce": "n-room-1",
+    "sender_stable_id": "5fd8b2b6056dc45adce9a5f0cfdc94e62f36b65bf7f38989f937ab76a828cb52",
+    "signature": "L2oJ5nUdrzHM71WHUXAeEoIeBQ3v-R-PE60GkACHm_ywQxXTTUYRnL1lbfU95KZEExGHXMiP-4PywxFsMEiPAA"
+   },
+   "name": "tampered stable id",
+   "python_verified": false,
+   "room_id": "room_vector_1",
+   "sender_public_key": "df9318b76e3a879c18757e3b322fd9c3dfd0dcc2e18da7c9a54970a69ac0be10"
+  },
+  {
+   "message": {
+    "content": "hello room",
+    "created_at": "2026-11-01T10:00:00.000001+00:00",
+    "msg_type": "chat",
+    "nonce": "n-room-1",
+    "sender_stable_id": null,
+    "signature": "L2oJ5nUdrzHM71WHUXAeEoIeBQ3v-R-PE60GkACHm_ywQxXTTUYRnL1lbfU95KZEExGHXMiP-4PywxFsMEiPAA"
+   },
+   "name": "stable id missing from the served row",
+   "python_verified": false,
+   "room_id": "room_vector_1",
+   "sender_public_key": "df9318b76e3a879c18757e3b322fd9c3dfd0dcc2e18da7c9a54970a69ac0be10"
+  },
+  {
+   "message": {
+    "content": "hello room",
+    "created_at": "2026-11-01T10:00:00.000001+00:00",
+    "msg_type": "chat",
+    "nonce": "n-room-1",
+    "sender_stable_id": "d8ee6e3dd20e9213f22e7488824c04d8d072fb445a46cf80f58ab8624c87184b",
+    "signature": "L2oJ5nUdrzHM71WHUXAeEoIeBQ3v-R-PE60GkACHm_ywQxXTTUYRnL1lbfU95KZEExGHXMiP-4PywxFsMEiPAA"
+   },
+   "name": "another room",
+   "python_verified": false,
+   "room_id": "room_other",
+   "sender_public_key": "df9318b76e3a879c18757e3b322fd9c3dfd0dcc2e18da7c9a54970a69ac0be10"
+  },
+  {
+   "message": {
+    "content": "hello room",
+    "created_at": "2026-11-01T10:00:00.000001+00:00",
+    "msg_type": "chat",
+    "nonce": "n-room-4",
+    "sender_stable_id": "5fd8b2b6056dc45adce9a5f0cfdc94e62f36b65bf7f38989f937ab76a828cb52",
+    "signature": "ZZNId3NJ84YP0c8nfC_BXBCByMmjRGfrDsWH1WvO8Bfn___3Qj0jodtWMUToyq5atn5rMy60qixCU9jSw4p3Aw"
+   },
+   "name": "signed by someone else",
+   "python_verified": false,
+   "room_id": "room_vector_1",
+   "sender_public_key": "df9318b76e3a879c18757e3b322fd9c3dfd0dcc2e18da7c9a54970a69ac0be10"
+  },
+  {
+   "message": {
+    "content": "hello room",
+    "created_at": "2026-11-01T10:00:00.000001+00:00",
+    "msg_type": "chat",
+    "nonce": "n-room-5",
+    "sender_stable_id": "d8ee6e3dd20e9213f22e7488824c04d8d072fb445a46cf80f58ab8624c87184b",
+    "signature": "HIy6VLw9H7Ap9W9NnIdicxei7FEQI--t-She_BnbQUfOQwbVWBs_4TmPjrMcWCp-uJ_v_7Y6J6iVOJnUj3WhDA"
+   },
+   "name": "v1 shaped signature",
+   "python_verified": false,
+   "room_id": "room_vector_1",
+   "sender_public_key": "df9318b76e3a879c18757e3b322fd9c3dfd0dcc2e18da7c9a54970a69ac0be10"
+  }
+ ]
+}

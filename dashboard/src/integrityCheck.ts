@@ -41,7 +41,13 @@ export interface SignableMessage {
   signature?: string | null;
   /** When the relay recorded it: picks the sender's key at that time (P253). */
   created_at?: string;
+  /** A room message's signer, bound into the v2 signature (`wire.signed_room_message_payload`);
+   * the relay serves it on every room message. Absent or empty reads as "". */
+  sender_stable_id?: string | null;
 }
+
+/** `wire.ROOM_MESSAGE_TYPE`: the first field of what a room message signs (protocol v2). */
+export const ROOM_MESSAGE_TYPE = "emporia:room-message:v2";
 
 /**
  * Mirrors `identity.verify_room_message()`/`verify_dm_message()`: `null`
@@ -65,8 +71,11 @@ export function verifyMessageSignature(
   // "" when it had none then, which fails the check.
   const senderPublicKeyHex = signingKeyFor(sender, message.created_at);
   if (!senderPublicKeyHex) return false;
-  const scopeKey = kind === "room" ? "room_id" : "thread_id";
-  const payload: Record<string, string> = { [scopeKey]: scopeId, content, msg_type, nonce };
+  // Room: `wire.signed_room_message_payload` (type, room_id, stable_id, content, msg_type, nonce), the stable id
+  // read from the message as `identity.verify_room_message` reads it. DM: `wire.signed_dm_thread_payload`.
+  const payload: Record<string, string> = kind === "room"
+    ? { type: ROOM_MESSAGE_TYPE, room_id: scopeId, stable_id: message.sender_stable_id ?? "", content, msg_type, nonce }
+    : { thread_id: scopeId, content, msg_type, nonce };
   try {
     const messageBytes = new TextEncoder().encode(canonicalSignPayload(payload));
     const sigBytes = base64UrlToBytes(signature);

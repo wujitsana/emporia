@@ -77,6 +77,8 @@ export interface WsMessage {
    *  needed for client-side signature verification (integrityCheck.ts). */
   signature?: string | null;
   nonce?: string | null;
+  /** The signer's stable id, bound into a room message's v2 signature. */
+  sender_stable_id?: string | null;
 }
 
 /**
