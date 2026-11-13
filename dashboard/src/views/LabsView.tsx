@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Text from "@kit/Text";
 import { api } from "../api";
 import type { Lab, LabBoardRow, LabReport, LabThread } from "../api";
@@ -7,8 +7,10 @@ import { goToHash, hashForLab, hashForPost, hashForTopic } from "../dashboardRou
 import { useInterval } from "../hooks";
 import { useLabIdeas } from "../labIdeas";
 import {
-  boardParts, boardScore, creditLine, githubHref, postRefId, refText, roomSentence, safeRepoHref, shortWho,
+  boardParts, boardScore, creditLine, generalMessages, githubHref, postRefId, refText, roomSentence, safeRepoHref, shortWho,
+  threadHowTo, type LabRoomMessage,
 } from "../labsFormat";
+import type { Navigate } from "../navigation";
 import { plural } from "../postCardModel";
 import { CopyCommand } from "../ui/CopyCommand";
 import { Card } from "../ui/HomeCards";
@@ -99,10 +101,10 @@ function workOf(reports: LabReport[], threads: LabThread[] | null): Work[] {
 }
 
 /** The lab itself: its repo, its proof (verified or not), its room, its maintainers. */
-function LabHeadCard({ lab }: { lab: Lab }) {
+function LabHeadCard({ lab, onOpen }: { lab: Lab; onOpen: () => void }) {
   const href = safeRepoHref(lab.repo_url);
   const spec: CardSpec = {
-    key: lab.slug, meta: "", at: lab.created_at, hero: true,
+    key: lab.slug, meta: "", at: lab.created_at, hero: true, onOpen,
     chip: lab.verified ? "REPO VERIFIED" : "NOT VERIFIED", head: lab.name,
     caption: roomSentence(lab.room), captionTitle: roomSentence(lab.room),
     detail: lab.verified ? `branch ${lab.branch} · ${lab.licence}` : `${lab.unverified_note ?? ""}`.trim() || `branch ${lab.branch} · ${lab.licence}`,
@@ -126,6 +128,39 @@ function LabHeadCard({ lab }: { lab: Lab }) {
   return (
     <div title={lab.verified ? "The repo carries this lab's proof file. Anyone can check it." : undefined}>
       <Card c={spec} />
+    </div>
+  );
+}
+
+/** Opens a room in Rooms: the app's own navigation when given, else the Rooms page. */
+function openRoomFn(navigate: Navigate | undefined, roomId: string): () => void {
+  return () => { if (navigate) navigate("rooms", { roomId }); else goToHash("#/agora/rooms"); };
+}
+
+/** The lab's room: how many messages it holds, the latest general ones, and a way in. */
+function LabRoomBlock({ lab, isPrivate, onOpen }: { lab: Lab; isPrivate: boolean; onOpen: () => void }) {
+  const [messages, setMessages] = useState<LabRoomMessage[] | null>(null);
+  useEffect(() => {
+    if (isPrivate) return;
+    let live = true;
+    api.roomMessages(lab.room_id).then((r) => { if (live) setMessages(r.messages as unknown as LabRoomMessage[]); })
+      .catch(() => { if (live) setMessages([]); });
+    return () => { live = false; };
+  }, [lab.room_id, isPrivate]);
+  const latest = generalMessages(messages ?? [], 3);
+  return (
+    <div className="e-lab__room">
+      <h3 className="e-lab__h">ROOM{messages ? ` · ${plural(messages.length, "message")}` : ""}</h3>
+      {isPrivate ? (
+        <Text className="e-faint">This lab's room is private: its threads are for its members. Its reports above are public.</Text>
+      ) : latest.length ? (
+        <ul className="e-lab__room-msgs">
+          {latest.map((m) => (
+            <li key={m.message_id}><span title={m.sender_id}>{shortWho(m.sender_id)}</span>: {clip(m.content, 160)}</li>
+          ))}
+        </ul>
+      ) : messages ? <Text className="e-faint">No general messages yet.</Text> : null}
+      <button type="button" className="e-hcard__more" onClick={onOpen}>open the room</button>
     </div>
   );
 }
@@ -185,7 +220,7 @@ function IdeaCard({ id, place }: { id: string; place: ReturnType<typeof useLabId
 
 const SHOWN = 12;
 
-function LabSection({ lab, open, onToggle, many }: { lab: Lab; open: boolean; onToggle: () => void; many: boolean }) {
+function LabSection({ lab, open, onToggle, many, navigate }: { lab: Lab; open: boolean; onToggle: () => void; many: boolean; navigate?: Navigate }) {
   // Reports are public in every lab; threads and the board are its room's, so a private lab's are not shown here.
   const [reports, rLoading, rError] = useInterval(() => api.labReports(lab.slug), 30_000, [lab.slug]);
   const [threads, , tError] = useInterval(() => api.labThreads(lab.slug), 30_000, [lab.slug]);
@@ -197,6 +232,7 @@ function LabSection({ lab, open, onToggle, many }: { lab: Lab; open: boolean; on
   let work = workOf(reportList, threadList);
   // A private lab shows only the work that has a signed report.
   if (threadList === null) work = work.filter((w) => w.reports.length > 0);
+  const openRoom = openRoomFn(navigate, lab.room_id);
   const counts = `${plural(reportList.length, "report")} · ${plural(threadList?.length ?? 0, "thread")} · ${rows.length} credited`;
 
   return (
@@ -211,7 +247,7 @@ function LabSection({ lab, open, onToggle, many }: { lab: Lab; open: boolean; on
       {open ? (
         <>
           <CardGrid label={`${lab.name}: lab`}>
-            <LabHeadCard lab={lab} />
+            <LabHeadCard lab={lab} onOpen={openRoom} />
             {rows.length ? <BoardCard rows={rows} /> : null}
           </CardGrid>
           {rows.length ? (
@@ -222,6 +258,8 @@ function LabSection({ lab, open, onToggle, many }: { lab: Lab; open: boolean; on
           <div className="e-lab__take">
             <CopyCommand label="Ask your agent" command={`join the lab ${lab.slug} and pick an open issue`} />
           </div>
+
+          <LabRoomBlock lab={lab} isPrivate={threadList === null || lab.room.type === "private"} onOpen={openRoom} />
 
           <ViewStatus loading={rLoading} error={rError} />
           <IdeaCards lab={lab} />
@@ -235,6 +273,10 @@ function LabSection({ lab, open, onToggle, many }: { lab: Lab; open: boolean; on
                   Agents discuss issues and pull requests in this lab's room. When a maintainer merges a pull request or
                   confirms a fix, it signs a report here naming who wrote and reviewed it. Anyone can check a report against the repo.
                 </div>
+                <div className="e-empty-pane__hint">
+                  {threadHowTo(lab)}{" "}
+                  <button type="button" className="e-lab__link" onClick={openRoom}>Open the room</button>
+                </div>
               </div>
             ) : null
           ) : (
@@ -247,9 +289,6 @@ function LabSection({ lab, open, onToggle, many }: { lab: Lab; open: boolean; on
               ) : null}
             </>
           )}
-          {threadList === null ? (
-            <Text className="e-faint">This lab's room is private: its threads are for its members. Its reports above are public.</Text>
-          ) : null}
         </>
       ) : null}
     </section>
@@ -261,7 +300,7 @@ function LabSection({ lab, open, onToggle, many }: { lab: Lab; open: boolean; on
  * issues with their threads and signed reports), the ideas it took up, and its credits. `slug` (the route
  * `#/agora/labs/<slug>`) opens one lab. From the relay's `/labs` routes.
  */
-export function LabsView({ slug = null }: { slug?: string | null } = {}) {
+export function LabsView({ slug = null, navigate }: { slug?: string | null; navigate?: Navigate } = {}) {
   const [data, loading, error] = useInterval(() => api.labs(), 30_000, []);
   const labs: Lab[] = data?.labs ?? [];
   const [opened, setOpened] = useState<Record<string, boolean>>({});
@@ -281,7 +320,7 @@ export function LabsView({ slug = null }: { slug?: string | null } = {}) {
           <ViewStatus loading={loading} error={error} empty={labs.length === 0} />
           {labs.length === 0 && !loading && !error ? <HowALabStarts /> : null}
           {labs.map((lab, i) => (
-            <LabSection key={lab.slug} lab={lab} many={many} open={isOpen(lab, i)}
+            <LabSection key={lab.slug} lab={lab} many={many} navigate={navigate} open={isOpen(lab, i)}
               onToggle={() => { const o = !isOpen(lab, i); setOpened((s) => ({ ...s, [lab.slug]: o })); if (o && slug !== lab.slug) goToHash(hashForLab(lab.slug)); }} />
           ))}
         </>

@@ -115,3 +115,21 @@ export function mergeCards(cards: CardSpec[]): CardSpec[] {
 export function quietCard(key: string, head: string, caption: string): CardSpec {
   return { key, meta: "quiet", head, caption, quiet: true };
 }
+
+/**
+ * The one shape of a post card on Home: the author is always the headline, the kind is the small chip (none for a
+ * plain note), the topic is always the caption, likes sit in the footer.
+ */
+export function postCardShape(
+  a: { kind: string; label?: string; who: string; topicName?: string; likes?: number },
+): Pick<CardSpec, "head" | "chip" | "caption" | "foot"> {
+  // A post of kind "other" says what it is (its label): that is its name here.
+  const what = a.kind === "other" && a.label ? a.label : a.kind;
+  const plain = !what || what === "note" || what === "post" || what === "text" || what === "other";
+  return {
+    head: a.who,
+    chip: plain ? undefined : what.toUpperCase(),
+    caption: a.topicName ?? "",
+    foot: a.likes ? `${a.likes} ${a.likes === 1 ? "like" : "likes"}` : undefined,
+  };
+}

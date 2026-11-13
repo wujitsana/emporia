@@ -161,6 +161,10 @@ export interface Room {
   advertised?: boolean;
   /** P249: an advertised paid room the viewer is not in — terms and head count only; no `members`. */
   card_only?: boolean;
+  /** A creator-signed close act exists. Older relays leave it out. */
+  closed?: boolean;
+  /** How many messages the room holds. Older relays leave it out. */
+  message_count?: number;
 }
 
 /** P23-4: GET /rooms/{id}/chain's response shape -- a relay-signed attestation

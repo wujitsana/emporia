@@ -56,7 +56,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
 
   useEffect(() => {
     if (initialRoomId || rooms.length === 0) return;
-    setSelected((cur) => cur ?? rooms[0]);
+    setSelected((cur) => cur ?? rooms.find((r) => !r.closed) ?? rooms[0]);
   }, [rooms, initialRoomId]);
 
   /* P41-2: resolve the deep link ONCE per id.
@@ -82,14 +82,10 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
-  const roomSidebar = (
-    <>
-      {rooms.length === 0 ? (
-        <Indent>
-          <Text className="e-faint">{loading ? "Loading rooms…" : error ? "" : EMPTY_ROOMS_HINT}</Text>
-        </Indent>
-      ) : (
-        rooms.map((r) => (
+  // Closed rooms sit apart at the end of the rail, never among the open ones.
+  const openRooms = rooms.filter((r) => !r.closed);
+  const closedRooms = rooms.filter((r) => r.closed);
+  const railItem = (r: Room) => (
           <FlatRailItem
             card
             key={r.room_id}
@@ -109,6 +105,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
                     <AcceptsTag move="entry" />
                   </>
                 )}
+                {r.closed && <QuietChip title="Its creator closed this room; what was said stays readable">closed</QuietChip>}
                 <Text className="e-dim e-status-txt">{r.room_type}</Text>
               </div>
             </RowSpaceBetween>
@@ -130,7 +127,19 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
               </button>
             )}
           </FlatRailItem>
-        ))
+  );
+  const roomSidebar = (
+    <>
+      {openRooms.length === 0 ? (
+        <Indent>
+          <Text className="e-faint">{loading ? "Loading rooms…" : error ? "" : EMPTY_ROOMS_HINT}</Text>
+        </Indent>
+      ) : openRooms.map(railItem)}
+      {closedRooms.length > 0 && (
+        <>
+          <div className="e-rail-group">Closed</div>
+          {closedRooms.map(railItem)}
+        </>
       )}
     </>
   );
@@ -208,7 +217,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
     >
       <SidebarLayout sidebar={roomSidebar} defaultSidebarWidth={26} initialPane={initialRoomId ? "detail" : "list"}>
         <div className="e-split-main">
-          <JoinableRooms rooms={rooms} onOpen={setSelected} />
+          <JoinableRooms rooms={openRooms} onOpen={setSelected} />
           <ViewStatus loading={loading} error={error} />
           {selected?.card_only ? (
             <Indent>

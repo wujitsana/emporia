@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LabsView } from "./LabsView";
+import { generalMessages, threadHowTo } from "../labsFormat";
 import { api } from "../api";
 
 // Labs are read from the relay's public /labs routes: the lab, its signed reports (public in every lab), its threads.
@@ -20,16 +21,18 @@ const report = {
 };
 
 vi.mock("../api", () => ({
-  api: { labs: vi.fn(), labReports: vi.fn(), labThreads: vi.fn(), labBoard: vi.fn(), postThread: vi.fn(() => Promise.resolve({ kind: "idea", label: "", text: "Rank cards by how often they win", author_id: "bob" })) },
+  api: { labs: vi.fn(), labReports: vi.fn(), labThreads: vi.fn(), labBoard: vi.fn(), roomMessages: vi.fn(), postThread: vi.fn(() => Promise.resolve({ kind: "idea", label: "", text: "Rank cards by how often they win", author_id: "bob" })) },
 }));
 
-const mocked = api as unknown as Record<"labs" | "labReports" | "labThreads" | "labBoard", ReturnType<typeof vi.fn>>;
+const mocked = api as unknown as Record<"labs" | "labReports" | "labThreads" | "labBoard" | "roomMessages", ReturnType<typeof vi.fn>>;
 
 beforeEach(() => {
   mocked.labs.mockReset();
   mocked.labReports.mockReset();
   mocked.labThreads.mockReset();
   mocked.labBoard.mockReset();
+  mocked.roomMessages.mockReset();
+  mocked.roomMessages.mockResolvedValue({ messages: [], count: 0 });
   mocked.labBoard.mockResolvedValue({ lab: "emporia-core", board: [] });
 });
 afterEach(cleanup);
@@ -113,9 +116,9 @@ describe("labs view", () => {
     mocked.labThreads.mockResolvedValue({ lab: "emporia-core", threads: [] });
     render(<LabsView />);
     expect(await screen.findByText("join the lab emporia-core and pick an open issue")).toBeTruthy();
-    // the only buttons are copy buttons and "Ideas": nothing acts
+    // the only buttons are copy buttons, "Ideas" and the ways into the lab's room: nothing writes
     const names = screen.getAllByRole("button").map((b) => b.textContent);
-    expect(names.every((n) => n === "copy" || n === "Ideas")).toBe(true);
+    expect(names.every((n) => ["copy", "Ideas", "open the room", "Open the room"].includes(n ?? ""))).toBe(true);
   });
 
   it("shows each lab's repo and maintainers, and a second lab folded to its counts", async () => {
@@ -138,7 +141,7 @@ describe("labs view", () => {
     mocked.labReports.mockResolvedValue({ lab: "emporia-core", reports: [report] });
     mocked.labThreads.mockRejectedValue(new Error("403 /labs/emporia-core/threads"));
     render(<LabsView />);
-    expect(await screen.findByText(/threads are for its members/)).toBeTruthy();
+    expect((await screen.findAllByText(/threads are for its members/)).length).toBeGreaterThan(0);
     expect(await screen.findByText(/author beta/)).toBeTruthy();
   });
 
@@ -156,5 +159,72 @@ describe("labs view", () => {
     mocked.labs.mockRejectedValue(new Error("404 /labs"));
     render(<LabsView />);
     expect(await screen.findByText("This relay doesn't run labs.")).toBeTruthy();
+  });
+
+  it("opens the lab's room from the lab card, and from the room block", async () => {
+    const navigate = vi.fn();
+    mocked.labs.mockResolvedValue({ labs: [lab] });
+    mocked.labReports.mockResolvedValue({ lab: "emporia-core", reports: [] });
+    mocked.labThreads.mockResolvedValue({ lab: "emporia-core", threads: [] });
+    render(<LabsView navigate={navigate} />);
+    const head = (await screen.findByText("REPO VERIFIED")).closest(".e-hcard")!;
+    fireEvent.click(head);
+    expect(navigate).toHaveBeenCalledWith("rooms", { roomId: "r_lab" });
+    fireEvent.click(await screen.findByRole("button", { name: "open the room" }));
+    expect(navigate).toHaveBeenCalledTimes(2);
+    // the repo link inside the card does not open the room
+    fireEvent.click(screen.getAllByRole("link", { name: "acme/emporia" })[0]);
+    expect(navigate).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the room's message count and its latest general messages, not the PR threads", async () => {
+    mocked.labs.mockResolvedValue({ labs: [lab] });
+    mocked.labReports.mockResolvedValue({ lab: "emporia-core", reports: [] });
+    mocked.labThreads.mockResolvedValue({ lab: "emporia-core", threads: [] });
+    mocked.roomMessages.mockResolvedValue({ count: 3, messages: [
+      { message_id: "m1", sender_id: "beta", content: "welcome all", created_at: "2026-11-01T00:00:00Z" },
+      { message_id: "m2", sender_id: "gamma", content: "thread talk", created_at: "2026-11-01T00:01:00Z", reply_to: "gh_pr:acme/emporia#12" },
+      { message_id: "m3", sender_id: "alpha", content: "who takes the parser?", created_at: "2026-11-01T00:02:00Z" },
+    ] });
+    render(<LabsView />);
+    expect(await screen.findByText(/who takes the parser\?/)).toBeTruthy();
+    expect(screen.getByText(/ROOM · 3 messages/)).toBeTruthy();
+    expect(screen.getByText(/welcome all/)).toBeTruthy();
+    expect(screen.queryByText(/thread talk/)).toBeNull();
+    expect(mocked.roomMessages).toHaveBeenCalledWith("r_lab");
+  });
+
+  it("shows an empty room with no messages and a way in", async () => {
+    mocked.labs.mockResolvedValue({ labs: [lab] });
+    mocked.labReports.mockResolvedValue({ lab: "emporia-core", reports: [] });
+    mocked.labThreads.mockResolvedValue({ lab: "emporia-core", threads: [] });
+    render(<LabsView />);
+    expect(await screen.findByText("No general messages yet.")).toBeTruthy();
+    expect(screen.getByText(/ROOM · 0 messages/)).toBeTruthy();
+  });
+
+  it("does not read a private lab's room, and keeps its private-room line", async () => {
+    mocked.labs.mockResolvedValue({ labs: [{ ...lab, room: { type: "private", gate: "invite", encrypted: true, entry_fee_cents: 0 } }] });
+    mocked.labReports.mockResolvedValue({ lab: "emporia-core", reports: [report] });
+    mocked.labThreads.mockRejectedValue(new Error("403 /labs/emporia-core/threads"));
+    render(<LabsView />);
+    expect(await screen.findByText(/This lab's room is private/)).toBeTruthy();
+    expect(mocked.roomMessages).not.toHaveBeenCalled();
+  });
+
+  it("the empty WORK state names the lab's real repo and links to the room", async () => {
+    mocked.labs.mockResolvedValue({ labs: [lab] });
+    mocked.labReports.mockResolvedValue({ lab: "emporia-core", reports: [] });
+    mocked.labThreads.mockResolvedValue({ lab: "emporia-core", threads: [] });
+    render(<LabsView />);
+    expect(await screen.findByText(/gh_pr:acme\/emporia#N or gh_issue:acme\/emporia#N/)).toBeTruthy();
+    expect(screen.queryByText(/OWNER\/REPO/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Open the room" })).toBeTruthy();
+  });
+
+  it("labsFormat: general messages skip threads and removed ones; the how-to uses the repo", () => {
+    const m = (id: string, extra = {}) => ({ message_id: id, sender_id: "a", content: id, created_at: "", ...extra });
+    expect(generalMessages([m("a"), m("b", { root: "gh_issue:x/y#1" }), m("c", { deleted_at: "t" }), m("d")], 5).map((x) => x.message_id)).toEqual(["a", "d"]);
+    expect(threadHowTo({ subject: { ref: "x/y" }, repo_url: "" })).toContain("gh_pr:x/y#N");
   });
 });

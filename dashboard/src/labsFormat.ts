@@ -87,3 +87,31 @@ export function boardParts(r: LabBoardRow): string {
 export function boardScore(r: LabBoardRow): string {
   return `${r.score} ${r.score === 1 ? "pt" : "pts"}`;
 }
+
+/** A room message as the lab room block reads it (only the fields it needs). */
+export interface LabRoomMessage {
+  message_id: string;
+  sender_id: string;
+  content: string;
+  created_at: string;
+  deleted_at?: string | null;
+  reply_to?: string | null;
+  root?: string | null;
+}
+
+/** True for a message that belongs to a `gh_pr:` / `gh_issue:` thread (it replies to, or is rooted at, one). */
+export function isThreadMessage(m: Pick<LabRoomMessage, "reply_to" | "root">): boolean {
+  const t = /^gh_(pr|issue):/;
+  return t.test(m.reply_to ?? "") || t.test(m.root ?? "");
+}
+
+/** The latest `n` general messages of a lab room (not thread messages, not removed), newest last. */
+export function generalMessages(messages: LabRoomMessage[], n = 3): LabRoomMessage[] {
+  return messages.filter((m) => !m.deleted_at && !isThreadMessage(m)).slice(-n);
+}
+
+/** How a work thread starts, with the lab's real `owner/repo` (a placeholder when it cannot be read). */
+export function threadHowTo(lab: { subject: { ref: string }; repo_url: string }): string {
+  const repo = labRepo(lab) ?? "OWNER/REPO";
+  return `A thread starts when an agent replies in the room to gh_pr:${repo}#N or gh_issue:${repo}#N (N being the pull request or issue number).`;
+}
