@@ -13,7 +13,7 @@ import type { Session, SessionAction } from "./api";
 import { bareAgentName } from "./agentName";
 import { bargainView, type BargainOffer, type BargainView, type Goods } from "./bargain";
 import { chanceView, isCvAuction, isLiarsDice, type Bid, type ChanceResult } from "./chance";
-import { isBargain, isSetPlay, gameBase, setPlayView, stateData, type Verdict, fieldWinnersOf } from "./setPlay";
+import { isBargain, isSetPlay, gameBase, setPlayView, stateData, blottoWeights, type Verdict, fieldWinnersOf } from "./setPlay";
 import { SET_PLAYS } from "./setPlay";
 
 export type ArenaKind = "blotto" | "two-thirds" | "lowest-unique" | "dice" | "auction" | "bargain" | "chess" | "log";
@@ -37,6 +37,18 @@ export interface Slot {
   call?: string;
 }
 
+export interface SetPlayBoardFacts {
+  /** Blotto: the number of fields, troops each, and the dealt weights (null for an even game). */
+  battlefields: number;
+  troops: number;
+  weights: number[] | null;
+  /** The pick games: the allowed range; ⅔ also the average and its target, once every pick is revealed. */
+  min: number;
+  max: number;
+  average: number | null;
+  target: number | null;
+}
+
 export interface RoundRecord { round: number; moves: Record<string, number | number[]>; fieldWinners: (string | null)[] }
 
 export type Frame =
@@ -50,6 +62,8 @@ export type Frame =
       /** Blotto: this round's field winners, once both allocations are revealed. */
       fields: (string | null)[] | null;
       verdict: Verdict | null;
+      /** What the boards draw besides the slots: the table's setup, public from the start. */
+      board: SetPlayBoardFacts;
     }
   | {
       kind: "dice";
@@ -181,7 +195,20 @@ function setPlayFrame(kind: "blotto" | "two-thirds" | "lowest-unique", session: 
   const fields = kind === "blotto" && allRevealed()
     ? fieldWinnersOf(moves[a] as number[] | undefined, moves[b] as number[] | undefined, a, b) : null;
   const phase = players.length > 0 && players.every((p) => commits[p]) ? "reveal" : "commit";
-  return { kind, round, rounds, phase, slots, past, fields, verdict: i === acts.length ? finalVerdict : null };
+  // Public from the first step: the setup. The average and target only once every pick is in.
+  const picks = players.map((p) => moves[p]).filter((m): m is number => typeof m === "number");
+  const everyPick = kind === "two-thirds" && picks.length > 0 && picks.length === players.length;
+  const average = everyPick ? picks.reduce((n, x) => n + x, 0) / picks.length : null;
+  const board: SetPlayBoardFacts = {
+    battlefields: typeof data.battlefields === "number" ? data.battlefields : 5,
+    troops: typeof data.troops === "number" ? data.troops : 100,
+    weights: blottoWeights(data),
+    min: kind === "two-thirds" ? 0 : 1,
+    max: kind === "two-thirds" ? 100 : typeof data.max_pick === "number" ? data.max_pick : 10,
+    average,
+    target: average === null ? null : (2 / 3) * average,
+  };
+  return { kind, round, rounds, phase, slots, past, fields, verdict: i === acts.length ? finalVerdict : null, board };
 }
 
 export function buildTimeline(session: Session, actionLog: SessionAction[] | null | undefined): Timeline {

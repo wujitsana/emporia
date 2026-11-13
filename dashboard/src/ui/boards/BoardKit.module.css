@@ -1,0 +1,50 @@
+/* Shared by every board. Theme variables only; the --anim-* fallbacks keep a board legible outside the look. */
+
+.board {
+  --board-fill: var(--anim-fill, var(--theme-focused-foreground));
+  --board-ink: var(--anim-ink, var(--theme-background));
+  --board-line: var(--anim-line, var(--theme-focused-foreground));
+  --board-rule: var(--e-rule, var(--theme-border-subdued));
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+
+.rules {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  opacity: 0.8;
+}
+
+.scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* The text alternative: a real table, visually hidden, read in order by a screen reader. */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* A sealed move: hatched, never a guess. The word "sealed" is always printed with it. */
+.hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--theme-text) 0 1px,
+    transparent 1px 5px
+  );
+  background-color: transparent;
+  border: 1px solid var(--board-rule);
+  opacity: 0.55;
+}
+
+.foot {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}

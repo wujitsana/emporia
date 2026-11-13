@@ -24,6 +24,8 @@ import { GameChat } from "./GameChat";
 import { McpCommandHint } from "./McpCommandHint";
 import { SessionMoney } from "./SessionMoney";
 import { VerifyBadge } from "./VerifyBadge";
+import { SetPlayBoard } from "./boards/SetPlayBoard";
+import { modelFromView } from "./boards/setPlayModel";
 
 const num: CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
@@ -66,7 +68,7 @@ export function SetPlayPanel({ session: initial }: { session: Session }) {
       )}
 
       <FoldDetail fold={!live && !!v.verdict} label={v.kind === "blotto" ? "the troops, field by field" : "the picks and who made them"}>
-        {v.kind === "blotto" ? <BlottoBoard v={v} /> : <PickBoard v={v} />}
+        <Board v={v} />
 
         <Seats v={v} />
       </FoldDetail>
@@ -158,53 +160,13 @@ function Seats({ v }: { v: SetPlayView }) {
   );
 }
 
-function BlottoBoard({ v }: { v: SetPlayView }) {
-  const b = v.blotto!;
-  const fields = Array.from({ length: b.battlefields }, (_, i) => i);
-  const last = v.phase === "done" ? b.rounds_done[b.rounds_done.length - 1] : undefined;
-  const showWon = v.phase === "done" || b.rounds > 1;
+/** The game's own board (bars, number line or number cells), and for blotto the earlier rounds. */
+function Board({ v }: { v: SetPlayView }) {
+  const b = v.blotto;
   return (
-    <div className="e-blotto">
-      <p className="e-faint e-blotto__rules" style={num}>
-        {b.battlefields} fields · {b.troops} troops each · round {Math.min(b.round, b.rounds)} of {b.rounds}
-        {" "}· more troops takes a field, more fields takes the round
-      </p>
-      <div className="e-blotto__scroll">
-        <table className="e-blotto__grid">
-          <thead>
-            <tr>
-              <th scope="col"><span className="e-sr">player</span></th>
-              {fields.map((f) => <th key={f} scope="col">F{f + 1}</th>)}
-              {showWon && <th scope="col">{b.rounds > 1 ? "rounds" : "fields"}</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {v.seats.map((s) => {
-              const alloc = Array.isArray(s.move) ? s.move : null;
-              const took = last ? last.fieldWinners.filter((w) => w === s.agent).length : null;
-              return (
-                <tr key={s.agent} className={s.winner ? "is-winner" : undefined}>
-                  <th scope="row">
-                    <span className="e-blotto__name">{s.winner ? "★ " : ""}{s.agent}</span>
-                    <span className="e-blotto__state">{SEAT_TEXT[s.state]}<CallTag v={v} agent={s.agent} /></span>
-                  </th>
-                  {fields.map((f) => {
-                    const won = last?.fieldWinners[f] === s.agent;
-                    return (
-                      <td key={f} className={`${won ? "is-won" : ""}${alloc ? "" : " is-hidden"}`} style={num}
-                        title={alloc ? undefined : s.state === "committed" ? `committed: ${s.hash}…` : "no move yet"}>
-                        {alloc ? alloc[f] : s.state === "committed" ? "▒▒" : "·"}
-                      </td>
-                    );
-                  })}
-                  {showWon && <td style={num} className="e-blotto__took">{b.rounds > 1 ? b.wins[s.agent] ?? 0 : took}</td>}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      {b.rounds_done.length > (v.phase === "done" ? 1 : 0) ? (
+    <div>
+      <SetPlayBoard model={modelFromView(v, (agent) => callText(v, agent))} />
+      {b && b.rounds_done.length > (v.phase === "done" ? 1 : 0) ? (
         <details className="e-blotto__history">
           <summary>earlier rounds ({v.phase === "done" ? b.rounds_done.length - 1 : b.rounds_done.length})</summary>
           {(v.phase === "done" ? b.rounds_done.slice(0, -1) : b.rounds_done).map((r) => (
@@ -215,86 +177,6 @@ function BlottoBoard({ v }: { v: SetPlayView }) {
           ))}
         </details>
       ) : null}
-    </div>
-  );
-}
-
-function PickBoard({ v }: { v: SetPlayView }) {
-  const p = v.pick!;
-  const revealed = v.seats.filter((s) => typeof s.move === "number") as (Seat & { move: number })[];
-  const hidden = v.seats.filter((s) => s.state === "committed").length;
-  if (v.kind === "two-thirds") return <TwoThirdsLine v={v} revealed={revealed} hidden={hidden} />;
-
-  // Lowest unique: a box per number, its pickers inside.
-  const numbers = Array.from({ length: p.max - p.min + 1 }, (_, i) => p.min + i);
-  const by = new Map<number, string[]>();
-  for (const s of revealed) by.set(s.move, [...(by.get(s.move) ?? []), s.agent]);
-  return (
-    <div className="e-lowest">
-      <p className="e-faint e-lowest__rules">
-        pick {p.min}–{p.max} · the lowest number only one player picked wins
-        {hidden ? ` · ${hidden} pick${hidden === 1 ? "" : "s"} still hidden` : ""}
-      </p>
-      <div className="e-lowest__row" role="list">
-        {numbers.map((n) => {
-          const who = by.get(n) ?? [];
-          const winning = v.verdict?.winner != null && who.length === 1 && who[0] === v.verdict.winner;
-          const cls = who.length === 0 ? "is-empty" : who.length === 1 ? "is-unique" : "is-taken";
-          return (
-            <div role="listitem" key={n} className={`e-lowest__cell ${cls}${winning ? " is-winner" : ""}`}>
-              <span className="e-lowest__n" style={num}>{n}</span>
-              {who.map((a) => <span key={a} className="e-lowest__who">{winning ? "★ " : ""}{a}</span>)}
-              {who.length > 1 ? <span className="e-lowest__tag">×{who.length}</span> : who.length === 1 ? <span className="e-lowest__tag">once</span> : null}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function TwoThirdsLine({ v, revealed, hidden }: { v: SetPlayView; revealed: (Seat & { move: number })[]; hidden: number }) {
-  const { min, max, average, target } = v.pick!;
-  const at = (x: number) => `${((x - min) / (max - min)) * 100}%`;
-  // Stack picks whose labels would overlap (about a quarter of the line on a phone) onto their own rows.
-  const rows: number[] = [];
-  const placed = [...revealed].sort((a, b) => a.move - b.move).map((s) => {
-    let row = 0;
-    while (rows[row] !== undefined && s.move - rows[row] < 26) row++;
-    rows[row] = s.move;
-    return { s, row };
-  });
-  const height = Math.max(1, rows.length);
-  return (
-    <div className="e-twothirds">
-      <p className="e-faint e-twothirds__rules">
-        pick 0–100 · the pick closest to ⅔ of the average wins
-        {hidden ? ` · ${hidden} pick${hidden === 1 ? "" : "s"} still hidden — the target appears when all are revealed` : ""}
-      </p>
-      <div className="e-numline" style={{ "--rows": height } as CSSProperties} role="img"
-        aria-label={`picks: ${revealed.map((s) => `${s.agent} ${s.move}`).join(", ") || "none revealed"}${target !== null ? `; target ${target.toFixed(1)}` : ""}`}>
-        <div className="e-numline__axis" />
-        {[0, 25, 50, 75, 100].map((t) => (
-          <span key={t} className="e-numline__tick" style={{ left: at(t) }}><span>{t}</span></span>
-        ))}
-        {average !== null ? (
-          <span className="e-numline__mark e-numline__mark--avg" style={{ left: at(average) }}>
-            <span>avg {average.toFixed(1)}</span>
-          </span>
-        ) : null}
-        {target !== null ? (
-          <span className={`e-numline__mark e-numline__mark--target${target < 15 ? " is-low" : ""}`} style={{ left: at(target) }}>
-            <span>target {target.toFixed(1)}</span>
-          </span>
-        ) : null}
-        {placed.map(({ s, row }) => (
-          <span key={s.agent} className={`e-numline__pick${s.winner ? " is-winner" : ""}`}
-            style={{ left: at(s.move), "--row": row } as CSSProperties}>
-            <span className="e-numline__pin" aria-hidden />
-            <span className="e-numline__label">{s.winner ? "★ " : ""}{s.agent} {s.move}</span>
-          </span>
-        ))}
-      </div>
     </div>
   );
 }

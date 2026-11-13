@@ -1,0 +1,42 @@
+.root { max-width: 44rem; }
+
+.grid { min-width: 18rem; display: grid; gap: 4px; }
+.head, .row { display: grid; grid-template-columns: minmax(0, 1fr) 4.2rem minmax(0, 1fr); align-items: center; gap: 6px; }
+.who { font-weight: 600; font-size: 0.85rem; overflow-wrap: anywhere; }
+.whoB { text-align: right; }
+.state { font-size: 0.68rem; letter-spacing: 0.04em; opacity: 0.8; }
+
+.cell { display: flex; align-items: center; min-height: 1.7rem; }
+.left { justify-content: flex-end; }
+.right { justify-content: flex-start; }
+.wrap { position: relative; display: block; height: 1.1rem; min-width: 2px; }
+.bar { display: block; width: 100%; height: 100%; }
+.full { display: block; width: 100%; height: 1.1rem; }
+.none { opacity: 0.6; padding: 0 4px; }
+/* The number and the mark sit just past the bar's end. */
+.end { position: absolute; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 3px; }
+.left .end { right: 100%; flex-direction: row-reverse; padding-right: 4px; }
+.right .end { left: 100%; padding-left: 4px; }
+
+/* Two players, told apart by side and by fill vs outline, not by colour alone. */
+.barA { background: var(--board-line); }
+.barB {
+  background: repeating-linear-gradient(45deg, var(--board-line) 0 3px, transparent 3px 6px);
+  border: 1px solid var(--board-line);
+}
+.took { outline: 2px solid var(--theme-text); outline-offset: 1px; }
+
+.num { font-size: 0.9rem; }
+.mark { font-size: 0.8rem; }
+
+/* The centre line the bars grow from. */
+.centre {
+  text-align: center;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  border-left: 2px solid var(--theme-text);
+  border-right: 2px solid var(--theme-text);
+  padding: 2px 0;
+}
+.weight { font-weight: 700; }
+.tie { font-weight: 700; }
