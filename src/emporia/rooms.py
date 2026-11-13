@@ -222,6 +222,11 @@ def _connect(db_path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+def _has_table(conn: sqlite3.Connection, name: str) -> bool:
+    """A rooms-only database (no signed room acts yet) has no `room_acts`: then no room is closed."""
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
+
+
 def _row_to_room(row: sqlite3.Row) -> Room:
     return Room(
         room_id=row["room_id"],
@@ -530,7 +535,7 @@ def list_rooms(
     shown rather than per room total.
     """
     with _LOCK, _connect(db_path) as conn:
-        hide = "" if include_closed else (
+        hide = "" if include_closed or not _has_table(conn, "room_acts") else (
             "WHERE NOT (EXISTS (SELECT 1 FROM room_acts a WHERE a.room_id = rooms.room_id AND a.act = 'close') "
             "AND NOT EXISTS (SELECT 1 FROM room_messages m WHERE m.room_id = rooms.room_id)) ")
         rows = conn.execute(
@@ -559,8 +564,9 @@ def room_listing_flags(room_ids: list[str], db_path: Path | None = None) -> dict
         return out
     marks = ",".join("?" * len(ids))
     with _LOCK, _connect(db_path) as conn:
-        for r in conn.execute(f"SELECT DISTINCT room_id FROM room_acts WHERE act = 'close' "
-                              f"AND room_id IN ({marks})", ids):
+        closes = conn.execute(f"SELECT DISTINCT room_id FROM room_acts WHERE act = 'close' "
+                              f"AND room_id IN ({marks})", ids) if _has_table(conn, "room_acts") else ()
+        for r in closes:
             out[r[0]]["closed"] = True
         for r in conn.execute(f"SELECT room_id, COUNT(*) FROM room_messages WHERE room_id IN ({marks}) "
                               f"GROUP BY room_id", ids):
