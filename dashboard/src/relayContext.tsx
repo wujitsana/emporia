@@ -48,7 +48,8 @@ export function RelayContextProvider({ children }: { children: React.ReactNode }
       .catch((e) => { if (live && /^40[13]\b/.test(String(e?.message ?? ""))) setVerifiedOperator(null); });
     return () => { live = false; };
   }, [claimsOperator, viewerId, tick, dashboardToken]);
-  // Is the viewed agent on this relay at all? Its own profile is a cheap signed read; only a 401 means no.
+  // Can the viewed agent sign in here? Its own profile is a cheap signed read, repeated on each refresh; only a
+  // 401 means no, and the relay gives the same 401 for an unknown agent and for an expired session.
   const [unregistered, setUnregistered] = useState<string | null>(null);
   useEffect(() => {
     if (!viewerId) return;
@@ -57,7 +58,7 @@ export function RelayContextProvider({ children }: { children: React.ReactNode }
       .then(() => { if (live) setUnregistered(null); })
       .catch((e) => { if (live && isNotRegistered(e)) setUnregistered(viewerId); });
     return () => { live = false; };
-  }, [viewerId, dashboardToken]);
+  }, [viewerId, dashboardToken, tick]);
   const isRelayOperator = claimsOperator && verifiedOperator === viewerId;
   const relayUrl = cfg?.relay_url ?? RELAY;
 

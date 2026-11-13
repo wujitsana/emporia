@@ -31,7 +31,7 @@ describe("the not-on-this-relay note", () => {
     vi.spyOn(api, "agentProfile").mockRejectedValue(new Error("401 /agents/alpha"));
     shown();
     const note = await screen.findByRole("note");
-    expect(note.textContent).toBe("alpha is not on relay.example:8443 yet. Run hermes emporia setup to join.");
+    expect(note.textContent).toBe("alpha could not sign in to relay.example:8443: it may not be registered there yet (hermes emporia setup), or its dashboard session has ended.");
   });
 
   it.each([["403 /agents/alpha"], ["Failed to fetch"], ["500 /agents/alpha"]])("says nothing on %s", async (msg) => {
