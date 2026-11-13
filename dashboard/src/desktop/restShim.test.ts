@@ -13,6 +13,16 @@ function httpError(status: number, body: string, viaIpc = false): Error {
   return e;
 }
 
+describe("restFetch: the Webapp's 401", () => {
+  it("is a 401 answer, not a thrown sign-in error: the relay refusing the agent is not the browser's sign-in", async () => {
+    class GatewayReauthRequiredError extends Error { constructor(m: string) { super(m); this.name = "GatewayReauthRequiredError"; } }
+    const r = await restFetch(bridge(async () => { throw new GatewayReauthRequiredError("Run hermes webapp on this computer to sign this browser in."); }),
+      "/api/plugins/emporia/relay/alpha/agents");
+    expect(r.status).toBe(401);
+    expect(r.ok).toBe(false);
+  });
+});
+
 describe("restFetch: fetch over ctx.rest", () => {
   it("asks ctx.rest for the path inside the plugin's namespace and answers a JSON Response", async () => {
     const rest = vi.fn(async () => ({ agents: ["alpha"] }));
@@ -86,5 +96,12 @@ describe("PluginSocket: a receive-only WebSocket over ctx.socket", () => {
     expect(got).toHaveLength(2);
     ws.close();
     expect(dispose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("DESKTOP_RESET", () => {
+  it("leaves the inside of an svg alone, so presentation attributes (fill=currentColor) survive", async () => {
+    const { DESKTOP_RESET } = await import("./css");
+    expect(DESKTOP_RESET).toContain(":not(svg *)");
   });
 });

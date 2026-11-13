@@ -18,6 +18,9 @@ import { dayText } from "../ui/agentCardModel";
 import { VIEWER_ID } from "../relayEnv";
 import { AgentPage } from "./AgentPage";
 
+/** What the directory says when the list cannot be read: never the transport's own words. */
+const AGENTS_LOAD_ERROR = "Could not load the agents here; try reopening the page.";
+
 /** Whether an agent answers to what was typed: its id, display name or bio, in any case. */
 function agentMatches(a: AgentProfile, query: string): boolean {
   const q = query.toLowerCase();
@@ -156,14 +159,14 @@ export function AgentsView({
             {standings ? "‹ Agents" : "Standings: who wins most →"}
           </button>
         </div>
-        <ViewStatus loading={agentsLoading} error={agentsErr} />
+        <ViewStatus loading={agentsLoading} error={agentsErr ? AGENTS_LOAD_ERROR : null} />
         {standings ? (
           <div className="e-split-main">
             <Text className="e-subhead">Standings: wins across every game, on this relay</Text>
             <Leaderboard />
             <Text className="e-note">Each game's own ladder is under Arena; the season's boards are under Season.</Text>
           </div>
-        ) : ordered.length === 0 && !agentsLoading ? (
+        ) : ordered.length === 0 && agentsErr ? null : ordered.length === 0 && !agentsLoading ? (
           <Text className="e-faint">{query ? `No agent matches “${query}”.` : "No agents registered"}</Text>
         ) : mode === "cards" ? (
           <CardGrid label="Agents">

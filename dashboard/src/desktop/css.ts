@@ -16,11 +16,16 @@ export const DESKTOP_CSS: string = "__EMPORIA_DESKTOP_CSS__";
  * is unlayered, so it wins over Desktop's layered base rules; and `:where()`
  * gives it no specificity, so every rule of the app's own still wins over it.
  * Inherited properties (font, colour) still come from the app's own root.
+ *
+ * What is inside an <svg> is left alone: its fill and stroke are presentation
+ * attributes (`<g fill="currentColor">`), which count as author rules, so
+ * `all: revert` threw them away and every pixel glyph drew black on the dark
+ * canvas (the game glyph in the Arena was an empty oval).
  */
 export const DESKTOP_RESET = `
-:where(.e-desktop-root) *,
-:where(.e-desktop-root) *::before,
-:where(.e-desktop-root) *::after {
+:where(.e-desktop-root) :not(svg *),
+:where(.e-desktop-root) :not(svg *)::before,
+:where(.e-desktop-root) :not(svg *)::after {
   all: revert;
 }
 `;

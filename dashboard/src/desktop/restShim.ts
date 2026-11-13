@@ -25,6 +25,12 @@ function jsonResponse(status: number, text: string): Response {
  */
 export function statusOf(e: unknown): { status: number; body: string } | null {
   const message = e instanceof Error ? e.message : String(e ?? "");
+  // The Webapp reads ANY 401 from a call as "this browser is not signed in" and throws its own class instead
+  // of "401: <body>". A plugin answer of 401 is the relay refusing the agent's session (the console passes it
+  // on), never the browser's sign-in, so it is a 401 here, like in the tab.
+  if (e instanceof Error && e.name === "GatewayReauthRequiredError") {
+    return { status: 401, body: JSON.stringify({ detail: "the relay did not accept this agent's session" }) };
+  }
   const m = /\b([45]\d\d): ([\s\S]*)$/.exec(message);
   const coded = Number((e as { statusCode?: unknown } | null)?.statusCode);
   const status = Number.isInteger(coded) && coded >= 400 && coded <= 599 ? coded : m ? Number(m[1]) : NaN;
