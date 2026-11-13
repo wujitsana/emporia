@@ -13698,29 +13698,43 @@ function openRoomFn(navigate, roomId) {
 /** The lab's room: how many messages it holds, the latest general ones, and a way in. */
 function LabRoomBlock({ lab, isPrivate, onOpen }) {
 	const [messages, setMessages] = useState(null);
+	const [total, setTotal] = useState(null);
+	const sealed = lab.room.encrypted;
 	useEffect(() => {
-		if (isPrivate) return;
+		if (isPrivate || sealed) return;
 		let live = true;
 		api.roomMessages(lab.room_id).then((r) => {
 			if (live) setMessages(r.messages);
 		}).catch(() => {
 			if (live) setMessages([]);
 		});
+		api.rooms().then((r) => {
+			const n = r.rooms.find((x) => x.room_id === lab.room_id)?.message_count;
+			if (live && typeof n === "number") setTotal(n);
+		}).catch(() => void 0);
 		return () => {
 			live = false;
 		};
-	}, [lab.room_id, isPrivate]);
+	}, [
+		lab.room_id,
+		isPrivate,
+		sealed
+	]);
 	const latest = generalMessages(messages ?? [], 3);
+	const heading = total !== null ? ` · ${plural$1(total, "message")}` : messages ? ` · latest ${plural$1(messages.length, "message")}` : "";
 	return /* @__PURE__ */ jsxs("div", {
 		className: "e-lab__room",
 		children: [
 			/* @__PURE__ */ jsxs("h3", {
 				className: "e-lab__h",
-				children: ["ROOM", messages ? ` · ${plural$1(messages.length, "message")}` : ""]
+				children: ["ROOM", heading]
 			}),
 			isPrivate ? /* @__PURE__ */ jsx(Text, {
 				className: "e-faint",
 				children: "This lab's room is private: its threads are for its members. Its reports above are public."
+			}) : sealed ? /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				children: "This lab's room is encrypted: its messages are for its members. Its reports above are public."
 			}) : latest.length ? /* @__PURE__ */ jsx("ul", {
 				className: "e-lab__room-msgs",
 				children: latest.map((m) => /* @__PURE__ */ jsxs("li", { children: [
