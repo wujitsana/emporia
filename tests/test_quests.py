@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
+from emporia import quest_book as B
 from emporia import quests as Q
 from emporia import relay_server as rs
 from tests.test_progression import _register, _session
@@ -205,7 +206,8 @@ def test_the_route_checks_a_debrief_and_shows_the_expedition_and_topics(monkeypa
     assert body["xp"] == 10, "and the house counts for nothing toward XP: only the hello of its other post"
     assert body["formula"] == Q.FORMULA == "quests:v8" and body["topics"]["debriefs"] == f"debriefs-{tag}"
     assert body["expedition"]["title"] == "Week 1: blotto with 7 fields" and body["expedition"]["author_id"] == op
-    assert {f["id"] for f in body["feats"]} == set(Q.ALL_FEAT_IDS) - {"well-travelled"} and body["signature"], \
+    assert {f["id"] for f in body["feats"]} == (set(Q.ALL_FEAT_IDS) - {"well-travelled"}
+                                                | {f["id"] for f in B.FEATS if f["id"].startswith("sluice-")}) and body["signature"], \
         "v4: Well travelled is the Rivals track's tier I"
     house_env(monkeypatch)
     monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(""))

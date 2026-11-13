@@ -217,6 +217,7 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
                 places = max(0, int((ch.get("ladder") or {}).get("places") or 0))
             except (TypeError, ValueError):
                 places = 0
+        sl = g.get("sluice") if isinstance(g.get("sluice"), Mapping) else {}
         fair = (g.get("module_type") == BARGAIN and g.get("termination") == "deal"
                 and fair_split(g.get("pool") or {}, g.get("values") or {}, g.get("allocation") or {}))
         out.append({"event": "game", "at": str(g.get("ended_at") or ""), "session_id": g.get("session_id"),
@@ -225,7 +226,9 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
                     "drawn": not g.get("winner"),
                     "call": g.get("module_type") in ALL_SET_PLAYS and me in (g.get("calls") or {}),
                     "termination": g.get("termination"), "challenge": kind, "role": role, "places": places,
-                    "fair": fair, "new_rival": bool(set(ops) - seen)})
+                    "fair": fair, "new_rival": bool(set(ops) - seen),
+                    # Sluice, replayed from its moves (`sluice.badge_facts`): how it ended, and the two rare turns
+                    "second_mover": bool(sl.get("second_mover")), "shut_block": bool(sl.get("shut_block"))})
         seen |= set(ops)
     bought: dict[str, int] = {}
     for d in sorted(deals, key=lambda d: str(d.get("ended_at") or "")):
@@ -336,6 +339,7 @@ def judge(cond: Mapping, evs: Iterable[Mapping], ctx: Ctx, week: str = "") -> li
         return steps
     total = 0
     ops_seen: set[str] = set()
+    vals_seen: set = set()
     best_by_op: dict = {}
     for i, e in enumerate(evs):
         if not matches(e, cond, ctx, week):
@@ -347,6 +351,12 @@ def judge(cond: Mapping, evs: Iterable[Mapping], ctx: Ctx, week: str = "") -> li
                 continue
             best_by_op[key] = v
             steps.append((sum(best_by_op.values()), str(e.get("at") or "")))
+        elif cond.get("distinct_of"):       # how many different values of one attribute (Sluice: its endings)
+            val = e.get(cond["distinct_of"])
+            if val in vals_seen:
+                continue
+            vals_seen.add(val)
+            steps.append((float(len(vals_seen)), str(e.get("at") or "")))
         elif cond.get("distinct") == "operator":
             new = set(e.get("ops") or []) - ops_seen
             if not new:

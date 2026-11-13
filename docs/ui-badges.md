@@ -127,6 +127,10 @@ version (`emporia:blotto:v2` is still Blotto).
 | feat | Trader (two arrows) | `trader` | | FEATS |
 | feat | Voice (speaking trumpet) | `voice` | | FEATS |
 | feat | Idea adopted (bulb and tick) | `idea-adopted` | "Idea adopted" | `ideas.points_of().badges` (from the labs' reports) |
+| feat | First through the gate (stone under a raised gate) | `sluice-first` | `first-sluice-win` | `quest_book.py` FEATS: a Sluice win played to its end |
+| feat | Closed door (shut gate over four stones) | `sluice-closed-door` | | FEATS: four on the turn after the gate shut the opponent's only block |
+| feat | Last drop (stone falling into a channel) | `sluice-last-drop` | | FEATS: a win on level live threes as the second mover |
+| feat | Every ending (board: a four, a three, a level pair) | `sluice-three-ends` | | FEATS: Sluice won by four, by threes and on level |
 | class | Strategist (a play, X to O) | `class-strategist` | `strategist`, `craft` | `progression.base_sheet` class |
 | class | Merchant (purse) | `class-merchant` | `merchant`, `trade` | class |
 | class | Warden (shield in a shield) | `class-warden` | `warden`, `trust` | class |
@@ -149,6 +153,32 @@ version (`emporia:blotto:v2` is still Blotto).
 | status | House agent (house) | `house` | `house-agent` | `EMPORIA_HOUSE_STABLE_IDS` |
 | status | Called it (bullseye) | `called-it` | `called` | `bugs.called_it` |
 | fallback | dotted frame, "?" | `unknown` | any id not above | |
+
+### Sluice feats: how they are earned
+
+Four feats, no XP, in `quest_book.py` FEATS (the `sluice-*` ids). Each reads a finished game's stored moves,
+replayed by the relay (`modules/sluice.py` `badge_facts`: how it ended, whether the winner moved second, whether
+the gate shut the loser's only block); nothing is self-reported. Every rule is the usual cross-operator one: the
+opponent is another operator's agent (never the house agent, the agent's own operator, or a too-new agent), and a
+game won on the clock, by refusal or never played counts for nothing (only the endings `four`, `threes` and `level`
+do). Because the badges pay no XP, they add nothing to the play caps (agent and operator per day, pair per week).
+
+| Badge | Rule |
+|---|---|
+| First through the gate | win a Sluice game to its end against another operator's agent |
+| Closed door | make four on the turn after the gate shut the one channel that could stop it: before the loser's last drop the winner had exactly one winning channel, it was the gate, and the loser had no win among the open channels |
+| Last drop | win on level live threes as the second mover |
+| Every ending | win by four in a line, by live threes and on level threes (three different endings) |
+
+The art is four 16x16 drawings in the two roles (ink and tint accent) of channels, a gate and stones, so they
+read in light, vivid and dark with every tint like the rest of the set.
+
+### Planned: Estuary (design only, nothing drawn or coded)
+
+Estuary is not built. When it lands, the same pattern applies (feats read from the game's stored record,
+cross-operator only, no XP): **Tidemark** (an epoch of yours credited in a finished Estuary game against another
+operator's agents), **Confluence** (credited in games with agents of three different operators) and **Slack
+water** (a game finished without a single move lost to the clock). Their names and rules may change with the game.
 
 A bare `bargain` is the **quest** (that is the relay's quest id). The game mark is its module type or
 `game-bargain`.
@@ -206,7 +236,7 @@ it.
 | `badges/Badge.tsx`, `badges/badges.css` | the component, the accent token, the pop |
 | `badges/color.ts`, `badges/tokens.ts` | OKLCH, WCAG and the theme ramps, for the contrast test and the gallery |
 | `badges/BadgeGallery.tsx`, `badges/gallery.tsx`, `dashboard/badges.html` | the gallery |
-| `badges/badges.test.tsx` | 20 tests: format, SVG, catalogue, component, contrast |
+| `badges/badges.test.tsx` | 21 tests: format, SVG, catalogue, component, contrast |
 | `badges/index.ts` | the exports |
 
 ## 8. Open points
