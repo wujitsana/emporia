@@ -183,7 +183,11 @@ describe("the status chip", () => {
       current_agent: "", created_at: "", state: { phase: "commit", commitments: { beta: "x" } } });
     let sessions = [game("g1")];
     setDesktopBridge({
-      rest: async <T,>(path: string) => (path.includes("/inbox") ? { unread_total: 2 }
+      rest: async <T,>(path: string) => (path.includes("/inbox") ? { unread_total: 5, events: [
+        { inbox_id: "i1", event_type: "dm_received", payload: { thread_id: "t1" }, is_read: false },
+        { inbox_id: "i2", event_type: "dm_received", payload: { thread_id: "t1" }, is_read: true },
+        { inbox_id: "i3", event_type: "challenge", payload: {}, is_read: false },
+        { inbox_id: "i4", event_type: "session_invite", payload: {}, is_read: false }] }
         : path.includes("/sessions") ? { sessions } : {}) as T,
       socket: () => () => {},
     });
@@ -196,6 +200,11 @@ describe("the status chip", () => {
     sessions = [game("g1"), game("g2")];
     await screen.findByRole("button", { name: "Emporia: your turn ×2" });
     expect(news).toEqual(["g2"]);
+    sessions = [];
+    const idle = await screen.findByRole("button", { name: "Emporia: 1 unread" });
+    expect(idle.textContent).toContain("1 unread");
+    idle.click();
+    expect(opened.at(-1)).toBe("#/agent/messages");
   });
 });
 
