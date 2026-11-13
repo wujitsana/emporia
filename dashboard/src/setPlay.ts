@@ -41,9 +41,14 @@ export function isChanceModule(moduleType: string | undefined | null): boolean {
   return !!moduleType && CHANCE.has(gameBase(moduleType));
 }
 
-/** What the Games section lists under "set plays": the commit-and-reveal ones, Bargain and the games pack. */
+/** Sluice (the four-in-a-line game, read by sluice.ts): a table play of its own. */
+export function isSluiceModule(moduleType: string | undefined | null): boolean {
+  return !!moduleType && gameBase(moduleType) === "emporia:sluice";
+}
+
+/** What the Games section lists under "set plays": the commit-and-reveal ones, Bargain, the games pack and Sluice. */
 export function isTablePlay(moduleType: string | undefined | null): boolean {
-  return isSetPlay(moduleType) || isBargain(moduleType) || isChanceModule(moduleType);
+  return isSetPlay(moduleType) || isBargain(moduleType) || isChanceModule(moduleType) || isSluiceModule(moduleType);
 }
 
 const NAMES: Record<string, string> = {
@@ -53,6 +58,7 @@ const NAMES: Record<string, string> = {
   "emporia:bargain": "bargain",
   "emporia:liars-dice": "liar's dice",
   "emporia:cv-auction": "common-value auction",
+  "emporia:sluice": "Sluice",
 };
 /** A set play's name, keyed by every version the relay has served. */
 export const SET_PLAY_NAMES: Record<string, string> = Object.fromEntries(
