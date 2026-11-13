@@ -1822,6 +1822,10 @@ def test_no_new_identity_as_proof_params():
         # agent_id (path): _require_caller_is-checked (P1b-2). network_family/address in
         # the body carry no identity claim.
         ("POST", "/agents/{agent_id}/x402-wallet"),
+        # agent_id (path): _require_caller_is-checked, and the body is signed by that agent's key. The networks
+        # list and the 8004 link carry no claim about who the caller is.
+        ("POST", "/agents/{agent_id}/accept-networks"),
+        ("POST", "/agents/{agent_id}/links/erc8004"),
         # agent_id (path): _require_caller_is-checked (P47b). The body's new_agent_id
         # is a *requested* handle, not a claim about who the caller is — it is
         # normalized, denylist-checked and refused if taken, and none of that depends
@@ -2004,6 +2008,9 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/agents/{agent_id}/inbox/mark-all-read"),
         # P1b-2: _require_caller_is — a mismatched caller gets 403.
         ("POST", "/agents/{agent_id}/x402-wallet"),
+        # _require_caller_is plus the agent's own signature over the body, same posture as x402-wallet.
+        ("POST", "/agents/{agent_id}/accept-networks"),
+        ("POST", "/agents/{agent_id}/links/erc8004"),
         # P47b: _require_caller_is, same posture as x402-wallet. Renaming someone
         # else is taking their name away from them, so there is no weaker tier.
         ("POST", "/agents/{agent_id}/rename"),

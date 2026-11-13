@@ -338,7 +338,7 @@ def test_an_agents_sessions_come_from_the_participants_table_with_the_same_resul
 README_ROWS = {
     "profile": "Profile", "role": "Role", "keys": "Keys", "wallet": "Wallets", "wake": "Wake mode",
     "rounds": "Rounds", "optional": "Optional features", "playbook": "Playbook",
-    "about": "Bio (`about`)", "register": "Register now", "sync_model": "Same model as this profile",
+    "about": "Bio (`about`)", "accept": "Takes payment on", "register": "Register now", "sync_model": "Same model as this profile",
     "signer": "Signer", "relay": "Relay",
 }
 #: Where the README words an option differently from its stored value.

@@ -842,7 +842,7 @@ def _x402_pay_to_by_network(creator_id: str | None) -> dict[str, str]:
         return {}
     from emporia.payments import _x402_networks, x402_network_family
 
-    wallets = AGENT_REGISTRY.get_x402_pay_to_all(creator_id)
+    wallets, accepted = AGENT_REGISTRY.get_x402_receive(creator_id)    # one read: wallets and accept list
     result: dict[str, str] = {}
     for network in _x402_networks():
         family = x402_network_family(network)
@@ -851,7 +851,6 @@ def _x402_pay_to_by_network(creator_id: str | None) -> dict[str, str]:
         pay_to = wallets.get(family)
         if pay_to:
             result[network] = pay_to
-    accepted = AGENT_REGISTRY.get_accepts_networks(creator_id)
     if accepted is not None:     # the payee's own choice of networks (POST /agents/{id}/accept-networks)
         result = {n: a for n, a in result.items() if n in accepted}
     return result
@@ -1566,7 +1565,7 @@ async def _verify_and_confirm_payment(
         )
 
     offer = _x402_offer()
-    if offer is None and (problem := _accept_list_problem(creator_id)) and _x402_enabled():
+    if offer is None and _x402_enabled() and (problem := _accept_list_problem(creator_id)):
         return _no_credential_402(f"{problem}. {challenge_message}", None)
     return _no_credential_402(challenge_message, offer)
 
@@ -2850,6 +2849,27 @@ class AgentRegistry:
             return data if isinstance(data, dict) else {}
         except Exception:
             return {}
+
+    def get_x402_receive(self, agent_id: str) -> tuple[dict[str, str], list[str] | None]:
+        """The agent's wallets (as `get_x402_pay_to_all`) and its accept list (as `get_accepts_networks`) in
+        one read: this runs on every 402 challenge. Fails closed to no wallets on any error."""
+        try:
+            with DB_LOCK, get_db() as conn:
+                row = conn.execute("SELECT x402_pay_to_json, accepts_networks_json FROM authorized_agents "
+                                   "WHERE agent_id = ?", (agent_id,)).fetchone()
+            if not row:
+                return {}, None
+            wallets = json.loads(row["x402_pay_to_json"] or "{}")
+            wallets = wallets if isinstance(wallets, dict) else {}
+        except Exception:
+            return {}, None
+        try:
+            data = json.loads(row["accepts_networks_json"] or "null")
+            nets = data.get("networks") if isinstance(data, dict) else None
+            accepted = [str(n) for n in nets] if isinstance(nets, list) and nets else None
+        except Exception:
+            accepted = None
+        return wallets, accepted
 
     def set_x402_pay_to(self, agent_id: str, network_family: str, address: str,
                         proof: dict[str, str] | None = None) -> None:
