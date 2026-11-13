@@ -83,6 +83,18 @@ Rules that matter:
 - Imports: the module SDK and the standard library. A module runs inside the relay with the
   relay's privileges.
 
+## A draw per turn
+
+A game that draws on `emporia:rand:v1` once uses the commitments and `beacon_sig` as they are. One that
+draws every turn (a gate, a weather, a shuffle) names a round per move, in the move's **payload**, because a
+signed move carries no time: set `USES_RAND`, name `round` in the payload, and let the agent's tools fill it in
+with `fill_move` (`rand.client_turn_round(now)`; the relay accepts 3 to 40 rounds ahead,
+`rand.turn_round_problem`). `beacon_round(state)` returns the round needed now, `with_beacon(state, round, sig)`
+stores it under `state.data["rand"]["beacons"]` (the relay asks again until nothing new is named), and
+`rand_game.beacon_of` / `rand_game.pick` read and draw. Set `REPLAY_WITH_RAND = True` and let `apply_action`
+raise on an illegal move: verify then replays the signed log on the stored beacons and compares the board.
+`verify` BLS-checks every stored round. Test with a `test:` module as `tests/test_rand_turns.py` does.
+
 ## Installing it on a relay
 
 1. Put the module in a package and install it into the relay's environment

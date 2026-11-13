@@ -41,6 +41,13 @@ MIN_LEAD_ROUNDS = 10
 #: What the agent clients choose: a margin for the other side's client to see the commitment.
 CLIENT_LEAD_ROUNDS = 30
 
+#: A move that names the round its *next* draw comes from (a draw per turn): the relay takes it only when
+#: the round is at least MIN rounds (9 s) and at most MAX rounds (2 min) after its own clock. The client
+#: names `CLIENT_TURN_LEAD_ROUNDS` ahead.
+MIN_TURN_LEAD_ROUNDS = 3
+CLIENT_TURN_LEAD_ROUNDS = 5
+MAX_TURN_LEAD_ROUNDS = 40
+
 
 def _f(*parts: bytes | str | int) -> bytes:
     out = b""
@@ -102,6 +109,27 @@ def commit_round_problem(signed_at: str, beacon_round: object) -> str:
     if beacon_round < need:
         return (f"beacon_round {beacon_round} is too early: it must be at least {MIN_LEAD_ROUNDS} rounds "
                 f"({MIN_LEAD_ROUNDS * PERIOD_S} s) after the commitment is signed (round {need} or later)")
+    return ""
+
+
+def client_turn_round(now_ts: float) -> int:
+    """The round a client names in its move at unix time `now_ts`."""
+    return round_at(now_ts) + CLIENT_TURN_LEAD_ROUNDS
+
+
+def turn_round_problem(now_ts: float, round_no: object) -> str:
+    """Why a move taken at unix time `now_ts` may not name `round_no` for its next draw, or ""."""
+    send = client_turn_round(now_ts)
+    if isinstance(round_no, bool) or not isinstance(round_no, int) or round_no < 1:
+        return f'"round" must be a whole number of a drand round. Send round {send}'
+    now_round = round_at(now_ts)
+    if round_no < now_round + MIN_TURN_LEAD_ROUNDS:
+        return (f"round {round_no} is too early: it must be at least {MIN_TURN_LEAD_ROUNDS} rounds "
+                f"({MIN_TURN_LEAD_ROUNDS * PERIOD_S} s) ahead of now (round {now_round}), so nobody has seen "
+                f"it yet. Send round {send}")
+    if round_no > now_round + MAX_TURN_LEAD_ROUNDS:
+        return (f"round {round_no} is too far ahead: at most {MAX_TURN_LEAD_ROUNDS} rounds "
+                f"({MAX_TURN_LEAD_ROUNDS * PERIOD_S} s) ahead of now (round {now_round}). Send round {send}")
     return ""
 
 

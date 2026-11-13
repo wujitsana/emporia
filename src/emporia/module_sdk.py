@@ -176,6 +176,11 @@ class InteractionModule(ABC):
     #: `state.data["rand"]["beacon_sig"]` (public) once `beacon_round(state)` has been published.
     USES_RAND: bool = False
 
+    #: USES_RAND, a draw per turn: True when verification also replays the signed log through the module
+    #: (`replay_state`) and the board it gives must equal the stored one. A game that names more than one
+    #: round keeps each in `state.data["rand"]["beacons"]` ({"<round>": sig}); `verify` BLS-checks all.
+    REPLAY_WITH_RAND: bool = False
+
     #: True when table talk is part of the game: a session is created with
     #: `chat` on unless its creator turned it off.
     CHAT_BY_DEFAULT: bool = False
@@ -191,6 +196,36 @@ class InteractionModule(ABC):
     def beacon_round(self, state: SessionState) -> int | None:
         """USES_RAND: the drand round the module needs in `state.data["rand"]["beacon_sig"]` now, or None."""
         return None
+
+    def with_beacon(self, state: SessionState, round_no: int, sig: str) -> SessionState:
+        """USES_RAND: `state` with the published (and verified) signature of `round_no` stored. The relay
+        calls this for each round `beacon_round(state)` names, until it names none it has not stored. The
+        default keeps one round: `state.data["rand"]["beacon_sig"]`."""
+        r = {**state.data["rand"], "beacon_sig": sig}
+        return SessionState(data={**state.data, "rand": r}, current_agent=state.current_agent,
+                            step_number=state.step_number, metadata=state.metadata)
+
+    def fill_move(self, action_type: str, payload: dict[str, Any], data: dict[str, Any],
+                  now_ts: float) -> dict[str, Any]:
+        """A client-side hook, pure: the payload the agent's tools sign for `action_type`, with what the
+        agent should not have to type (a draw per turn names its next round here). Default: unchanged."""
+        return payload
+
+    def replay_state(self, session: dict[str, Any]) -> SessionState | None:
+        """REPLAY_WITH_RAND: the state a replay of the signed log starts from: `initial_state` with the
+        final state's round and beacons copied in. None when the game does not replay or has none."""
+        if not self.REPLAY_WITH_RAND:
+            return None
+        final = ((session.get("state") or {}).get("data") or {}).get("rand")
+        if not final:
+            return None
+        state = self.initial_state(list(session.get("participants") or []), session.get("config") or {})
+        r = dict(state.data.get("rand") or {})
+        for k in ("round", "beacon_sig", "beacons"):
+            if k in final:
+                r[k] = final[k]
+        return SessionState(data={**state.data, "rand": r}, current_agent=state.current_agent,
+                            step_number=state.step_number, metadata=state.metadata)
 
     def rand_problem(self, data: dict[str, Any], players: list[str], relay_verdict: dict[str, Any] | None) -> str:
         """USES_RAND: why the draws a finished game published are not what the revealed secrets and the
@@ -336,6 +371,7 @@ def list_available_modules() -> list[dict[str, Any]]:
             "declares_winner": cls.DECLARES_WINNER,
             "timed": cls.TIMED,
             "engine_decidable": cls.ENGINE_DECIDABLE,
+            "uses_rand": cls.USES_RAND,
             "bundled": mod_type.split(":", 1)[0] == BUNDLED_NAMESPACE,
             **({"retired_for": cls.RETIRED_FOR} if cls.RETIRED_FOR else {}),
             "rules": cls.RULES.strip(),

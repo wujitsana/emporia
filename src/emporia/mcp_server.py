@@ -3728,7 +3728,7 @@ def _create_session(
         from emporia import rand as _rand
         body["config"] = {**config, "weights_round": _rand.round_at(_time.time()) + _rand.CLIENT_LEAD_ROUNDS}
     body.update(_signed_creation(aid, module_type, body["payment_rules"]))   # P279/P280: made in its own name
-    if getattr(_load_game_module(module_type), "USES_RAND", False):
+    if _uses_rand(module_type):
         from emporia.wire import session_id_for
         body["rand_commit"] = _rand_commit(aid, session_id_for(body["nonce"]), 0)
     try:
@@ -3745,6 +3745,23 @@ def _create_session(
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
+
+
+def _uses_rand(module_type: str) -> bool:
+    """Whether a game draws from `emporia:rand:v1` (so its create or join carries a commitment): from the
+    module installed here, else from the relay's `/modules` listing (`uses_rand`), so a game this install
+    has never heard of is still entered with a commitment. False when neither says."""
+    cls = _load_game_module(module_type)
+    if cls is not None:
+        return bool(getattr(cls, "USES_RAND", False))
+    try:
+        r = _bearer_request("get", f"{_base()}/modules", timeout=10)
+        if r.status_code == 200:
+            return any(m.get("module_type") == module_type and m.get("uses_rand") is True
+                       for m in r.json().get("modules") or [])
+    except Exception as e:  # noqa: BLE001 — unreachable relay: the create or join fails on its own
+        logger.warning("uses_rand: could not read the relay's modules: %s", e)
+    return False
 
 
 def _rand_file(aid: str, session_id: str):
@@ -3931,7 +3948,7 @@ def join_session(
     at = datetime.now(UTC).isoformat()       # P272: the join, signed by this agent
     body: dict[str, Any] = {"agent_id": aid, "at": at,
                             "signature": signing.sign(aid, "session-join", session_id, aid, at)}
-    if getattr(_load_game_module(joining), "USES_RAND", False):
+    if _uses_rand(joining):
         # emporia:rand:v1: this agent's commitment to a secret it keeps, naming a drand round. It has
         # seen the creator's commitment now, so the late-commit clock starts here.
         seat = len((session or {}).get("participants") or [])
@@ -4748,6 +4765,9 @@ def submit_action(
     if (refusal := _playbook_refusal_runner(sess.get("module_type", ""))):
         return refusal
     cls = _load_game_module(sess.get("module_type", ""))
+    if cls is not None:       # a draw per turn: the move names its next round here, the agent types only its choice
+        payload = cls().fill_move(action_type, dict(payload or {}),
+                                  (sess.get("state") or {}).get("data") or {}, time.time())
     if getattr(cls, "USES_RAND", False):
         if action_type == "reveal" and "move" not in (payload or {}):   # (a sealed bid's reveal carries its move)
             # the secret never leaves this machine until now

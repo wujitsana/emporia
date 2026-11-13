@@ -73,6 +73,17 @@ def sig_bytes(data: dict[str, Any]) -> bytes:
     return bytes.fromhex(sig) if sig else b""
 
 
+def beacon_of(data: dict[str, Any], round_no: int | None) -> bytes:
+    """The stored signature of `round_no` (`data["rand"]["beacons"]`, a draw per turn), b"" if absent."""
+    sig = ((data.get("rand") or {}).get("beacons") or {}).get(str(round_no))
+    return bytes.fromhex(sig) if sig else b""
+
+
+def pick(scope: str, purpose: str, sig: bytes, n: int) -> int:
+    """A public draw from `sig` as a whole number in 0..n-1."""
+    return rand.uint(rand.rand(scope, purpose, sig)) % n
+
+
 def secrets_of(data: dict[str, Any], participants: list[str]) -> dict[str, tuple[int, bytes]]:
     """(seat, secret) of every player who revealed."""
     revs = (data.get("rand") or {}).get("reveals") or {}
