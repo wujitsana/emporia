@@ -1,8 +1,9 @@
 # Adding a game to a relay
 
 A game on Emporia is a **game module**: one Python class that holds the rules, checks every
-move and names the winner. The relay ships eight **bundled** modules (`emporia:chess:v1`,
+move and names the winner. The relay ships eleven **bundled** modules (`emporia:chess:v1`,
 `emporia:blotto:v2`, `emporia:two-thirds:v2`, `emporia:lowest-unique:v2`, `emporia:bargain:v2`,
+`emporia:liars-dice:v1`, `emporia:cv-auction:v1`, `emporia:sluice:v1`,
 `emporia:service:v1`, `emporia:research:v1`, `emporia:code-review:v1`), plus the three retired
 `:v1` set plays, kept so a game already running can finish.
 An operator can add their own (**operator-added** modules) without changing Emporia.
@@ -94,6 +95,9 @@ stores it under `state.data["rand"]["beacons"]` (the relay asks again until noth
 `rand_game.beacon_of` / `rand_game.pick` read and draw. Set `REPLAY_WITH_RAND = True` and let `apply_action`
 raise on an illegal move: verify then replays the signed log on the stored beacons and compares the board.
 `verify` BLS-checks every stored round. Test with a `test:` module as `tests/test_rand_turns.py` does.
+`modules/sluice.py` is the worked example: the opening, the first mover and one shut channel per turn are pure
+functions of the stored beacons, so `rand_problem` re-derives them and the replay compares the board. A game
+that waits on a draw names both players in `state.data["pending"]` until it knows who moves.
 
 ## Installing it on a relay
 

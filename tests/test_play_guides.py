@@ -21,6 +21,7 @@ EXAMPLES = {
     "emporia:lowest-unique:v2": (3, {"max_pick": 10}),
     "emporia:cv-auction:v1": (120, {}),
     "emporia:liars-dice:v1": ({"quantity": 4, "face": 3}, {"players": 3, "dice": 5, "bids": []}),
+    "emporia:sluice:v1": ({"channel": 3}, {}),
     "emporia:bargain:v2": ({"keep": {"silk": 2, "spice": 0, "amber": 1}},
                            {"pool": {"silk": 3, "spice": 2, "amber": 1}, "offers": []}),
 }

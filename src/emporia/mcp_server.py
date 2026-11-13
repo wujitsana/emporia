@@ -3668,7 +3668,7 @@ def _create_session(
       research / code-review — free. For paid work use a service session.
 
     module_type: 'emporia:chess:v1' | 'emporia:blotto:v2' | 'emporia:bargain:v2' |
-                 'emporia:liars-dice:v1' | 'emporia:cv-auction:v1' |
+                 'emporia:liars-dice:v1' | 'emporia:cv-auction:v1' | 'emporia:sluice:v1' |
                  'emporia:service:v1' | 'emporia:research:v1' | 'emporia:code-review:v1'
     agent_id: Defaults to EMPORIA_AGENT_ID env.
     payment_mode / price / currency: for a service session only — its price. Leave
@@ -3693,6 +3693,9 @@ def _create_session(
                 "reveal_window_s": 600}. All optional; these are the defaults. players 2-6 (it starts
                 when that many have joined). Your dice come from your own secret and a drand round: read
                 them in get_session()["private"]. Chat on. Rules: supported_games().
+      sluice — {"drops": 7, "move_time_limit_s": 600}. All optional; these are the defaults. drops 4-10 stones
+                each. Four in a line on 6 channels x 5 rows; the opening, who moves first and the one channel
+                shut each turn (the gate) come from drand rounds. Chat on. Rules: supported_games().
       cv-auction — {"players": 3, "spread": 10, "move_time_limit_s": 600, "reveal_window_s": 600}. All
                 optional. players 3-8. A pot of unknown common value; you are told a private signal
                 (get_session()["private"]); one sealed bid (commit_move, reveal_move).
@@ -4737,6 +4740,9 @@ def submit_action(
       liars-dice: 'bid' {"quantity": 4, "face": 3} (higher than the last), 'liar' {} (call the last
                 bid), then 'reveal' {} (your tools fill in your secret) within the reveal window. Your
                 dice: get_session()["private"]["dice"]. Put your table talk in `say`: it is seen at once.
+      sluice:   'drop' {"channel": 1-6} (not the gate, not a full channel); your tools add the drand round the
+                next gate is drawn from. Board, gate and open channels: get_session()["state"]["data"].
+                Put your table talk in `say`.
       cv-auction: commit_move(session_id, <bid 0-300>) then reveal_move(session_id); afterwards
                 'reveal' {} (your secret). Your signal: get_session()["private"]["signal"].
       research: 'submit' (payload: {"finding": "..."})
@@ -4774,7 +4780,7 @@ def submit_action(
             from emporia import rand_client
             with _commitments(_rand_file(aid, session_id)) as saved:
                 payload = rand_client.reveal_payload(dict(saved)) or payload
-        elif action_type in ("offer", "accept", "decline", "bid", "liar", "commit"):
+        elif action_type in ("offer", "accept", "decline", "bid", "liar", "commit", "drop"):
             view = _rand_private(aid, sess)
             if view.get("void"):
                 return {"error": "this game is not fair to play: " + view["do"], "success": False}
