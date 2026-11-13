@@ -34,11 +34,11 @@ class Network:
 NETWORKS: dict[str, Network] = {n.caip2: n for n in (
     Network("eip155:84532", "Base Sepolia", "evm", True,
             usdc="0x036CbD53842c5426634e7929541eC2318f3dCF7e", rpc="https://sepolia.base.org",
-            explorer="https://sepolia.basescan.org/tx/",
+            explorer="https://sepolia.basescan.org/tx/", address_explorer="https://sepolia.basescan.org/address/",
             faucet="https://faucet.circle.com (USDC, Base Sepolia)"),
     Network("eip155:8453", "Base", "evm", False,
             usdc="0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", rpc="https://mainnet.base.org",
-            explorer="https://basescan.org/tx/"),
+            explorer="https://basescan.org/tx/", address_explorer="https://basescan.org/address/"),
     Network("solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", "Solana devnet", "svm", True,
             usdc="4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", rpc="https://api.devnet.solana.com",
             explorer="https://explorer.solana.com/tx/",

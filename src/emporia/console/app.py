@@ -6,6 +6,8 @@
     GET   /verify/<agent>/<session>    the game checked here, with <agent>'s receipts (P146)
     GET   /settings                    each local agent's settings and the command that changes each (P178)
     GET   /log-check/<agent>           what <agent>'s own last check of its relay's log found (P281)
+    GET   /chain-link/<agent>          this machine's own read of an ERC-8004 link (cached 10 minutes)
+    GET   /chain-image/<agent>         its on-chain image, as an image only (sandbox CSP, nosniff)
     POST  /session/<agent>/<session>/open  a private session's sealed text, opened (P149)
     WS    /ws/<agent>/<path>           the relay's websocket <path>, as <agent>
     GET   /, /assets/*                 the dashboard (standalone mode only)
@@ -67,6 +69,8 @@ class Console:
         # secret, so a link seen again (logs, shell history) opens nothing.
         self.link_key: str | None = session_token
         self.cookie_secret = secrets.token_urlsafe(32)
+        from emporia.console.chain import ChainViews
+        self.chain = ChainViews()              # the console's own reads of ERC-8004 links
 
     def agents(self) -> dict[str, LocalAgent]:
         return discover(self.key_dirs)
@@ -208,8 +212,9 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
             response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers.update(security_headers)
-        if request.url.path.startswith("/relay/"):
-            # Client audit C1: a relay's answer is data, never a page — no script runs from it here.
+        if request.url.path.startswith(("/relay/", "/chain-image/")):
+            # Client audit C1: a relay's answer is data, never a page — no script runs from it here. The same for
+            # a chain's image: served as an image only, in an <img>.
             response.headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
         return response
 
@@ -325,6 +330,42 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
         agent = console.agent(agent_id)
         relay = console.relay.relay_url
         return {"relay": relay, "kept": await asyncio.to_thread(logcheck.kept_summary, relay, agent.key_dir)}
+
+    def _chain_query(registry: str, agent: str, signer: str) -> tuple[str, str, str]:
+        from emporia import networks, wire
+        parts = registry.split(":")
+        chain = "eip155:" + parts[1] if len(parts) == 3 else ""
+        canonical = networks.ERC8004_REGISTRIES.get(chain)
+        if canonical is None or parts[2] != canonical.lower():
+            raise HTTPException(400, "registry is the canonical ERC-8004 registry of a chain Emporia knows")
+        if not agent.isdigit() or int(agent) >= 1 << 256:
+            raise HTTPException(400, "agent is the ERC-8004 agent's number")
+        if not wire._EVM_ADDRESS.fullmatch(signer):
+            raise HTTPException(400, "signer is an EVM address")
+        return chain, agent, signer
+
+    @app.get("/chain-link/{agent_id}")
+    async def chain_link(agent_id: str, registry: str, agent: str, signer: str):
+        """This machine's own read of a link on a card (never the relay's word): does the chain, at a pinned block,
+        still back `signer` for that ERC-8004 agent; its registration name and description (a stranger's text,
+        capped, normalised, flagged); whether an on-chain image is available. Cached ten minutes. Reads only."""
+        console.agent(agent_id)
+        chain, num, who = _chain_query(registry, agent, signer)
+        loaded, cached = await asyncio.to_thread(console.chain.load, chain, num, who)
+        return {**loaded.view(), "cached": cached, "image_url": f"/chain-image/{agent_id}" if loaded.image else ""}
+
+    @app.get("/chain-image/{agent_id}")
+    async def chain_image(agent_id: str, registry: str, agent: str, signer: str):
+        """The link's image, from an on-chain data: URI only, as an image with a sandbox policy (the middleware sets
+        `Content-Security-Policy: sandbox; default-src 'none'`; nosniff comes with every answer). Never fetched from
+        a URL, never `animation_url`."""
+        console.agent(agent_id)
+        chain, num, who = _chain_query(registry, agent, signer)
+        loaded, _ = await asyncio.to_thread(console.chain.load, chain, num, who)
+        if loaded.image is None:
+            raise HTTPException(404, loaded.image_note or "no on-chain image")
+        mime, data = loaded.image
+        return Response(data, media_type=mime, headers={"Content-Disposition": "inline", "X-Content-Type-Options": "nosniff"})
 
     @app.get("/x-claim/{agent_id}")
     async def x_claim(agent_id: str, handle: str, style: str = "plain"):

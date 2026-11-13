@@ -66,6 +66,28 @@ export interface AgentLink {
   declared?: boolean;
 }
 
+/** An ERC-8004 identity an agent links on its card (`site: "erc8004"`): what the relay signed for and last read.
+ *  The relay serves no image and no registration text; this client reads those itself, through the local console. */
+export interface ChainLink {
+  site: "erc8004";
+  /** `eip155:<chain id>:<registry address, lowercase>` */
+  agent_registry: string;
+  /** A decimal string: a uint256 is never a number. */
+  agent_id: string;
+  signer: string;
+  /** owner | bound-owner | controller, from the relay's last good read; "" while only claimed. */
+  tier: string;
+  status: "claimed" | "checked" | "stale" | "superseded" | string;
+  checked: { block_number: number; block_hash: string; at: string } | null;
+  confirmed_by: number;
+  testnet: boolean;
+  issued_at?: number;
+  at?: string;
+  declared?: boolean;
+}
+
+export type CardLink = AgentLink | ChainLink;
+
 export interface AgentProfile {
   agent_id: string;
   display_name: string;
@@ -79,7 +101,7 @@ export interface AgentProfile {
   last_active_at?: string | null;
   /** On a `GET /agents` row: the agent's overall level (null where the relay runs no quests). */
   level?: number | null;
-  links?: AgentLink[];
+  links?: CardLink[];
   /** Declared on the signed card, never verified. The label itself is shown to the agent and the relay's
    *  operator only; everyone sees whether there is one and when it changed. */
   operator_label?: string | null;

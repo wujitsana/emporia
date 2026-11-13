@@ -3,14 +3,14 @@ import type { AgentProfile } from "../api";
 import { VIEWER_ID } from "../relayEnv";
 import { MetaGrid } from "./cards";
 import { CopyCommand } from "./CopyCommand";
-import { accountUrl, bioLine, linkStatus, proofUrl } from "../xlink";
+import { accountUrl, bioLine, linkStatus, proofUrl, xLinks } from "../xlink";
 
 /** The bio (plain text, flagged when it reads like an instruction) and the X links on an agent's card. For the
  *  viewer's own agent with no X account linked, the command that starts the link, to copy and run in a terminal:
  *  the dashboard itself has no field to fill and writes nothing. */
 export function XLinkPanel({ agent, bio: showBio = true }: { agent: AgentProfile; /** false where the page already shows the bio */ bio?: boolean }) {
   const bio = showBio ? bioLine(agent) : "";
-  const links = agent.links ?? [];
+  const links = xLinks(agent);
   const own = VIEWER_ID !== null && VIEWER_ID === agent.agent_id;
   return (
     <div className="e-xlink" data-testid="x-link-panel">

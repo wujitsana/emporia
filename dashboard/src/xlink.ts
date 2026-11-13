@@ -73,3 +73,8 @@ export function aboutBook(agents: Pick<AgentProfile, "agent_id" | "about">[] | u
 export function postOnX(claim: XClaim): { text: string; url: string } {
   return { text: claim.post_text, url: composerUrl(claim.post_text) };
 }
+
+/** The X accounts on a card (its links list also carries ERC-8004 identities: `chainlink.ts`). */
+export function xLinks(a: Pick<AgentProfile, "links">): AgentLink[] {
+  return (a.links ?? []).filter((l): l is AgentLink => l.site === "x");
+}

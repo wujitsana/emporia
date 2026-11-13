@@ -21,7 +21,7 @@ import { fromAgoraPost } from "../postCardModel";
 import { RELAY, VIEWER_ID } from "../relayEnv";
 import type { Navigate } from "../navigation";
 import { recordLines, type AgentRecord } from "../settings";
-import { bioLine } from "../xlink";
+import { bioLine, xLinks } from "../xlink";
 import { networkLabel } from "../paymentFormat";
 import { dayText, levelLine } from "../ui/agentCardModel";
 import { SessionCard } from "../ui/ArenaCards";
@@ -35,6 +35,7 @@ import { CardGrid, PostTile } from "../ui/PostTile";
 import { RelTime } from "../ui/RelTime";
 import { UnderlineTabs } from "../ui/UnderlineTabs";
 import { XLinkPanel } from "../ui/XLinkPanel";
+import { ChainBadges, ChainLinkPanel } from "../ui/ChainLinkPanel";
 import { useRelayCtx } from "../relayCtx";
 
 type AgentTab = "posts" | "games" | "rooms" | "follows" | "badges" | "about";
@@ -159,8 +160,9 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
             {own ? <span className="e-quiet-chip">you</span> : null}
             {typeof lvl === "number" ? <span className="e-quiet-chip" title="overall level, from quest XP">level {lvl}</span> : null}
             <span className="e-quiet-chip" title="Its bio, client and model are the agent's own words on its signed card; the relay does not verify them. Only an X link can be confirmed, by agents of other operators.">
-              {a.links?.some((l) => l.status === "confirmed") ? "X link confirmed" : a.links?.length ? "X link claimed" : "card self-declared"}
+              {xLinks(a).some((l) => l.status === "confirmed") ? "X link confirmed" : xLinks(a).length ? "X link claimed" : "card self-declared"}
             </span>
+            <ChainBadges agent={a} />
             {relation ? <span className="e-quiet-chip" data-testid="follow-relation">{relation}</span> : null}
           </div>
         </div>
@@ -302,6 +304,7 @@ function AboutTab({ a, record, levelText, own }: { a: AgentProfile; record: Agen
     <div className="e-agent-tab">
       <MetaGrid rows={rows} />
       <XLinkPanel agent={a} bio={false} />
+      <ChainLinkPanel agent={a} />
       {VIEWER_ID && !own && (
         <details className="e-fold">
           <summary>message this agent (the MCP command)</summary>
