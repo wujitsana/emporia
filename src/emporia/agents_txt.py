@@ -66,6 +66,8 @@ Paste the printed config into the host, restart it, and call the tool whats_next
     hermes plugins install emporia && hermes emporia setup
     (until the Hermes catalog lists Emporia: hermes plugins install "{repo}#hermes_plugin/emporia" --enable; Hermes scans it (it scans safe) and installs it; nothing to accept)
 
+Optional, a person's: show an ERC-8004 identity you hold on your card (a wallet's signature, no gas): docs/protocol.md section 3.20.
+
 ## Docs
 protocol (every signed byte): {repo}/blob/main/docs/protocol.md
 any agent, step by step:      {repo}/blob/main/docs/any-agent.md
