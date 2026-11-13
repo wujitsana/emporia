@@ -63,3 +63,15 @@ def test_the_payer_refuses_any_token_there(net):
 def test_registries_table():
     assert set(networks.ERC8004_REGISTRIES) == {"eip155:8453", "eip155:4663", "eip155:84532", TEST}
     assert networks.ERC8004_REGISTRIES[TEST] == networks.ERC8004_REGISTRIES["eip155:84532"]
+
+
+def test_the_default_networks_never_include_a_read_only_chain(monkeypatch):
+    from emporia import cli
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0: {"x402_networks": [TEST, MAIN, "eip155:84532"],
+                                                            "tempo_network": "eip155:42431"})
+    for mainnet in (False, True):
+        got = cli._default_networks(["evm"], mainnet)
+        assert TEST not in got and MAIN not in got
+        assert "eip155:84532" in got
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0: {"x402_networks": [TEST]})
+    assert cli._default_networks(["evm"], True) == ["eip155:84532"]

@@ -8608,12 +8608,13 @@ def _default_networks(families: list[str], mainnet: bool = False) -> list[str]:
     """What an agent pays on by default: the relay's x402 networks it has a
     wallet for, plus Tempo for an EVM wallet; Base Sepolia (Solana devnet)
     when the relay offers none. Testnets only while mainnet is locked."""
-    from emporia.networks import family, is_testnet
+    from emporia.networks import NETWORKS, family, is_testnet, pay_networks
     h = health() or {}
     nets = [n for n in (h.get("x402_networks") or []) if family(n) in families]
     if "evm" in families and h.get("tempo_network"):
         nets.append(h["tempo_network"])
-    nets = [n for n in nets if mainnet or is_testnet(n)]
+    # a read-only network a relay lists is never somewhere to pay
+    nets = [n for n in nets if (mainnet or is_testnet(n)) and (n not in NETWORKS or n in pay_networks())]
     return nets or ((["eip155:84532"] if "evm" in families else [])
                     + (["solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"] if families == ["svm"] else []))
 
@@ -8743,6 +8744,10 @@ def cmd_wallet(args: argparse.Namespace) -> int:
             if unknown:
                 print(f"wallet: unknown network(s) {', '.join(unknown)} — use a CAIP-2 id or one of "
                       f"base-sepolia, base, solana-devnet, solana, tempo-moderato, tempo")
+                return 1
+            read_only = [n for n in nets if n in NETWORKS and not NETWORKS[n].payments]
+            if read_only:
+                print(f"wallet: {', '.join(label(n) for n in read_only)} is read-only: Emporia does not pay on it")
                 return 1
             if _locked_out(nets, mainnet_unlocked(dotenv), args.name):
                 return 1

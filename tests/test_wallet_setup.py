@@ -130,6 +130,17 @@ def test_wallet_create_never_replaces_a_key_and_limits_take_short_names(profiles
     assert "Solana devnet (testnet)" in out and "PRIV" not in out.upper().replace("PRIVATE", "")
 
 
+def test_wallet_limits_refuse_a_read_only_network(profiles, capsys):
+    root, _ = profiles
+    with patch.dict(os.environ):
+        cli.main(["setup", "agent", "ro", "--keys", "files", "--wallet"])
+    before = (root / "ro" / ".env").read_text()
+    for name in ("robinhood-testnet", "eip155:4663", "base-sepolia,robinhood-testnet"):
+        assert cli.main(["wallet", "limits", "ro", "--networks", name]) == 1
+        assert "read-only" in capsys.readouterr().out
+    assert (root / "ro" / ".env").read_text() == before
+
+
 def test_setup_relay_adds_solana_devnet_with_the_facilitators_fee_payer(profiles, monkeypatch):
     _, op = profiles
     keys = op / "home" / ".hermes" / "keys"
