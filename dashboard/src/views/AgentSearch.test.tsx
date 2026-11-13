@@ -15,8 +15,14 @@ vi.mock("../api", () => ({
     agentSessions: vi.fn(() => new Promise(() => {})), agentPosts: vi.fn(() => new Promise(() => {})),
     agentRecord: vi.fn(() => new Promise(() => {})), follows: vi.fn(() => new Promise(() => {})),
     leaderboard: vi.fn(() => new Promise(() => {})),
+    quests: vi.fn((id: string) => Promise.resolve({ level: { level: id === "alpha" ? 2 : 1 } })),
     seasonBoard: vi.fn(() => Promise.resolve({ standings: [{ rank: 1, agent_id: "beta", season_xp: 5, level: 3, badges: 0 }] })),
   },
+}));
+const store = new Map<string, string>();
+vi.mock("../prefs", () => ({
+  readPref: (k: string) => store.get(k) ?? null,
+  writePref: (k: string, v: string | null) => { if (v === null) store.delete(k); else store.set(k, v); },
 }));
 vi.mock("../relayEnv", () => ({ RELAY: "http://relay.test", VIEWER_ID: "alpha" }));
 
@@ -98,5 +104,20 @@ describe("the agents directory opens an agent's page", () => {
     fireEvent.click(screen.getByRole("button", { name: "list" }));
     expect(screen.getByRole("list", { name: "Agents" })).toBeTruthy();
     expect(screen.queryByText(/hermes-plugin/)).toBeNull();
+  });
+});
+
+describe("one list/cards choice for every view", () => {
+  it("a switch made in the directory is what the next view opens in", async () => {
+    const { readHomeMode } = await import("../ui/homeCardsModel");
+    agentsMock.mockResolvedValue({ agents: [mk("beta")], count: 1, has_more: false });
+    store.clear();
+    render(<AgentsView navigate={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("beta")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "list" }));
+    expect(readHomeMode()).toBe("list");
+    cleanup();
+    render(<AgentsView navigate={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole("list", { name: "Agents" })).toBeTruthy());
   });
 });

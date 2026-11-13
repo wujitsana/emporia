@@ -32,9 +32,23 @@ function agentStub(id: string): AgentProfile {
 }
 
 /** One agent in the directory: its glyph, name, bio line, level and when it was last active. A click opens its page. */
-function DirectoryEntry({ a, level, mode, onOpen }: { a: AgentProfile; level?: number; mode: HomeMode; onOpen: () => void }) {
+function DirectoryEntry({ a, level: boardLevel, mode, onOpen }: { a: AgentProfile; level?: number; mode: HomeMode; onOpen: () => void }) {
+  // The season board lists the top few; an agent it leaves out (or a list row without a last-active day) is read for itself.
+  const [own, setOwn] = React.useState<{ level?: number; last?: string }>({});
+  useEffect(() => {
+    if (typeof boardLevel === "number" && a.last_active_at) return;
+    let live = true;
+    const get = <T,>(f: () => Promise<T>) => Promise.resolve().then(f).catch(() => null);
+    Promise.all([
+      typeof boardLevel === "number" ? null : get(() => api.quests(a.agent_id)),
+      a.last_active_at ? null : get(() => api.agentProfile(a.agent_id)),
+    ]).then(([q, p]) => { if (live) setOwn({ level: q?.level?.level, last: p?.last_active_at ?? undefined }); });
+    return () => { live = false; };
+  }, [a.agent_id, a.last_active_at, boardLevel]);
+  const level = boardLevel ?? own.level;
   const bio = bioLine(a, 90);
-  const last = a.last_active_at ? dayText(a.last_active_at) : "";
+  const lastDay = a.last_active_at ?? own.last;
+  const last = lastDay ? dayText(lastDay) : "";
   const you = !!VIEWER_ID && a.agent_id === VIEWER_ID;
   const who = (
     <span className="e-agent-dir__who">
@@ -85,8 +99,8 @@ export function AgentsView({
   const [board] = useInterval(() => api.seasonBoard().catch(() => null), 60_000, []);
   const levels = React.useMemo(() => new Map((board?.standings ?? []).map((r) => [r.agent_id, r.level])), [board]);
   const agents = React.useMemo(() => agentsData?.agents ?? [], [agentsData]);
-  const [mode, setMode] = React.useState<HomeMode>(() => readHomeMode(VIEWER_ID, "cards"));
-  const chooseMode = (m: HomeMode) => { setMode(m); writeHomeMode(VIEWER_ID, m); };
+  const [mode, setMode] = React.useState<HomeMode>(() => readHomeMode());
+  const chooseMode = (m: HomeMode) => { setMode(m); writeHomeMode(m); };
   const [standings, setStandings] = React.useState(false);
 
   // The search filters what is loaded as the person types. Only when the loaded list is a cut of a longer

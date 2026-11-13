@@ -90,8 +90,8 @@ export function OverviewView({
   const viewer = VIEWER_ID;
   const [agents] = useInterval(() => api.agents(), poll(60_000), []);
   const noAgents = agents ? agents.agents.length === 0 : false;
-  const [mode, setMode] = useState<HomeMode>(() => readHomeMode(viewer, defaultMode));
-  const chooseMode = (m: HomeMode) => { setMode(m); writeHomeMode(viewer, m); };
+  const [mode, setMode] = useState<HomeMode>(() => readHomeMode(defaultMode));
+  const chooseMode = (m: HomeMode) => { setMode(m); writeHomeMode(m); };
 
   return (
     <HomeModeContext.Provider value={mode}>

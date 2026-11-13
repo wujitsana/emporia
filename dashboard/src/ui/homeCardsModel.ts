@@ -4,16 +4,17 @@ import { readPref, writePref } from "../prefs";
 
 export type HomeMode = "list" | "cards";
 
-const KEY = (viewer: string | null) => `emporia_home_mode:${viewer ?? ""}`;
+/** One choice per browser, for every list/cards switch (Home, the agents directory, an agent's posts): not per viewed agent. */
+const KEY = "emporia_view_mode";
 
-/** The viewer's Home mode on this machine; cards unless they chose the list. */
-export function readHomeMode(viewer: string | null, fallback: HomeMode = "cards"): HomeMode {
-  const saved = readPref(KEY(viewer));
+/** The list/cards choice on this machine; cards unless they chose the list. */
+export function readHomeMode(fallback: HomeMode = "cards"): HomeMode {
+  const saved = readPref(KEY);
   return saved === "list" || saved === "cards" ? saved : fallback;
 }
 
-export function writeHomeMode(viewer: string | null, mode: HomeMode): void {
-  writePref(KEY(viewer), mode);
+export function writeHomeMode(mode: HomeMode): void {
+  writePref(KEY, mode);
 }
 
 export const HomeModeContext = createContext<HomeMode>("list");

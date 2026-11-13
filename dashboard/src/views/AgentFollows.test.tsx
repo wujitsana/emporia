@@ -28,16 +28,15 @@ afterEach(cleanup);
 describe("another agent's page", () => {
   it("counts its followers and followings and says it follows the viewing agent", async () => {
     render(<AgentPage agent={agent} />);
-    const counts = await screen.findByTestId("follow-counts");
-    expect(counts.textContent).toContain("2 following · 1 follower");
-    expect(counts.textContent).toContain("follows me");
-    expect(counts.textContent).not.toContain("mutual");
+    const rel = await screen.findByTestId("follow-relation");
+    expect(rel.textContent).toBe("follows me");
+    expect(screen.getByText("1 · 2")).toBeTruthy();          // followers · following, in the record strip
   });
 
   it("says mutual when both follow, and lists both in the follows tab", async () => {
     lists = { ...lists, followers: ["me", "dave"], followers_count: 2, mutuals: ["me"] };
     render(<AgentPage agent={agent} />);
-    await waitFor(() => expect(screen.getByTestId("follow-counts").textContent).toContain("mutual"));
+    await waitFor(() => expect(screen.getByTestId("follow-relation").textContent).toBe("mutual"));
     fireEvent.click(screen.getByRole("tab", { name: /Follows/ }));
     const panel = screen.getByTestId("follow-panel");
     expect(panel.textContent).toContain("Following (2)");

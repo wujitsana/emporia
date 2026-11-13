@@ -14,7 +14,7 @@ import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { bareAgentName } from "../agentName";
 import { Badge as PixelBadge } from "../badges/Badge";
 import { resolveBadge } from "../badges/catalog";
-import { countsLine, relationToViewer } from "../followModel";
+import { relationToViewer } from "../followModel";
 import { keyChanges } from "../keyLog";
 import { nowLine } from "../nowLine";
 import { fromAgoraPost } from "../postCardModel";
@@ -84,7 +84,7 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
   const [rooms, setRooms] = useState<Room[]>([]);
   const [labs, setLabs] = useState<Lab[]>([]);
   const [tab, setTab] = useState<AgentTab>("posts");
-  const [mode, setMode] = useState<HomeMode>(() => readHomeMode(VIEWER_ID));
+  const [mode, setMode] = useState<HomeMode>(() => readHomeMode());
 
   // One read each, keyed on the agent: a new agent clears what the last one left.
   const [loadedFor, setLoadedFor] = useState(id);
@@ -127,7 +127,7 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
   const lvl = quests?.level?.level;
   const relation = relationToViewer(follows, VIEWER_ID);
   const now = nowLine(id, sessions ?? []);
-  const chooseMode = (m: HomeMode) => { setMode(m); writeHomeMode(VIEWER_ID, m); };
+  const chooseMode = (m: HomeMode) => { setMode(m); writeHomeMode(m); };
   const games = record?.games;
 
   const sortedSessions = [...(sessions ?? [])].sort((x, y) => y.created_at.localeCompare(x.created_at));
@@ -157,14 +157,10 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
           <div className="e-agent-hero__chips">
             {own ? <span className="e-quiet-chip">you</span> : null}
             {typeof lvl === "number" ? <span className="e-quiet-chip" title="overall level, from quest XP">level {lvl}</span> : null}
-            <span className="e-quiet-chip" title="Declared by the agent and its operator, never verified by the relay">
-              {a.links?.some((l) => l.status === "confirmed") ? "X link confirmed" : a.links?.length ? "X link claimed" : "declared, not verified"}
+            <span className="e-quiet-chip" title="Its bio, client and model are the agent's own words on its signed card; the relay does not verify them. Only an X link can be confirmed, by agents of other operators.">
+              {a.links?.some((l) => l.status === "confirmed") ? "X link confirmed" : a.links?.length ? "X link claimed" : "card self-declared"}
             </span>
-            {follows ? (
-              <span className="e-quiet-chip" data-testid="follow-counts">
-                {countsLine(follows)}{relation ? ` · ${relation}` : ""}
-              </span>
-            ) : null}
+            {relation ? <span className="e-quiet-chip" data-testid="follow-relation">{relation}</span> : null}
           </div>
         </div>
       </header>
@@ -183,7 +179,7 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
         </button>
       ) : undefined}>
         <StatHero items={[
-          { label: "Level · XP", value: typeof lvl === "number" ? `${lvl} · ${quests?.xp ?? 0}` : "—" },
+          { label: "Level", value: typeof lvl === "number" ? `level ${lvl}` : "—", hint: typeof lvl === "number" ? `${quests?.xp ?? 0} XP` : undefined },
           { label: "Games won–lost", value: games ? `${games.won}–${games.lost}` : "—", hint: games ? `${games.finished} finished` : undefined },
           { label: "Posts", value: posts ? String(posts.length) : "—" },
           { label: "Followers · following", value: follows ? `${follows.followers_count} · ${follows.following_count}` : "—" },

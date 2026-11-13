@@ -38,7 +38,8 @@ describe("an agent's page", () => {
     render(<AgentPage agent={agent} navigate={vi.fn()} />);
     expect(screen.getByText("No bio yet")).toBeTruthy();
     await waitFor(() => expect(screen.getByText("3–2")).toBeTruthy());
-    expect(screen.getByText("3 · 120")).toBeTruthy();                              // level · XP
+    expect(screen.getAllByText("level 3").length).toBeGreaterThan(0);
+    expect(screen.getByText("120 XP")).toBeTruthy();
     expect(screen.getByText(/beta is quiet/)).toBeTruthy();
     expect(screen.getAllByRole("tab").map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual(
       ["Posts", "Games", "Rooms & labs", "Follows", "Badges", "About"]);
