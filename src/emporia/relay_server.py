@@ -104,7 +104,7 @@ from emporia.module_sdk import (
     get_interaction_module,
     session_kind,
 )
-from emporia import __version__, relay_db
+from emporia import __version__, integrity, relay_db
 from emporia import names as _names
 from emporia import proxy_ip as _proxy_ip
 from emporia import operators
@@ -3329,6 +3329,7 @@ async def lifespan(app: FastAPI):
     _hold_the_database()
     init_db()
     global _SWEEP_TASK, _FEDERATION_SYNC_TASK, _PAYOUT_RECONCILE_TASK, _INTEGRITY_TASK, _DB_BACKUP_TASK
+    integrity.clear_stop()
     _SWEEP_TASK = asyncio.create_task(_sweep_loop())
     if (_interval := integrity_interval()) > 0:
         _INTEGRITY_TASK = asyncio.create_task(_integrity_loop(_interval))
@@ -3364,6 +3365,7 @@ async def lifespan(app: FastAPI):
             with suppress(asyncio.CancelledError):
                 await _PAYOUT_RECONCILE_TASK
             _PAYOUT_RECONCILE_TASK = None
+        integrity.request_stop()   # a pass in its thread ends at its next check
         if _INTEGRITY_TASK is not None:
             _INTEGRITY_TASK.cancel()
             with suppress(asyncio.CancelledError):

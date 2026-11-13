@@ -354,3 +354,15 @@ def test_the_watcher_calls_a_degraded_check_attention():
     line, attention = relay_watch.verdict(summary, bad)
     assert attention and "2 room chain(s) broken" in line and "transparency log broken" in line
     assert relay_watch.verdict(summary, {"ok": True}) == ("all normal", False)     # an older relay: no field
+
+
+def test_a_stop_request_ends_the_pass_at_its_next_check(tmp_path, log_on):
+    path = _full(tmp_path)
+    integrity.request_stop()
+    try:
+        report = integrity.check(path, relay_public_keys=[_PUB], budget_seconds=600)
+    finally:
+        integrity.clear_stop()
+    assert report["partial"] is True
+    assert report["rooms"]["checked"] == 0 and report["dms"]["checked"] == 0
+    assert integrity.check(path, relay_public_keys=[_PUB], budget_seconds=600)["partial"] is False

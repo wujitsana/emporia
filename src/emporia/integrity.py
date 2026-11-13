@@ -9,6 +9,7 @@ as it is, exactly as a reader's check does.
 from __future__ import annotations
 
 import sqlite3
+import threading
 import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -21,12 +22,26 @@ from emporia import translog
 _PUBLIC_LISTED = 20
 
 
+#: Set on relay shutdown: a pass in its thread ends at its next budget check instead of running out its time.
+_STOP = threading.Event()
+
+
+def request_stop() -> None:
+    _STOP.set()
+
+
+def clear_stop() -> None:
+    _STOP.clear()
+
+
 class _Budget:
     def __init__(self, seconds: float | None):
         self.deadline = None if seconds is None else time.monotonic() + max(0.0, seconds)
         self.spent = False
 
     def out(self) -> bool:
+        if _STOP.is_set():
+            self.spent = True
         if self.deadline is not None and time.monotonic() >= self.deadline:
             self.spent = True
         return self.spent
