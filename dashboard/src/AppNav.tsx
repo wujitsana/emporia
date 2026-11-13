@@ -9,7 +9,7 @@ import { useSubItems, useViewerOpts, type SubItem } from "./subNavItems";
 import { ThemePanelBody } from "./ThemeControls";
 import { ViewerSwitcher } from "./ui/ViewerSwitcher";
 import { BrandTitle } from "./ui/LookChrome";
-import type { Theme, Tint } from "./themeConfig";
+import type { BaseTheme, Theme, Tint } from "./themeConfig";
 import type { DashboardView } from "./eventNav";
 
 type Badges = Partial<Record<DashboardView, number>>;
@@ -275,6 +275,7 @@ export function MobileNavDrawer({
   onGoView,
   onClose,
   theme,
+  base,
   tint,
   onTheme,
   onTint,
@@ -288,6 +289,7 @@ export function MobileNavDrawer({
   /** Drawn above the destinations (the agent chat, in the Hermes tab). */
   lead?: ReactNode;
   theme: Theme;
+  base?: BaseTheme;
   tint: Tint;
   onTheme: (t: Theme) => void;
   onTint: (t: Tint) => void;
@@ -308,7 +310,7 @@ export function MobileNavDrawer({
       <HeaderLinks view={view} onGo={onGoView} drawer />
       <div className="e-mobile-drawer__foot">
         <ViewerSwitcher />
-        <ThemePanelBody theme={theme} tint={tint} onTheme={onTheme} onTint={onTint} />
+        <ThemePanelBody theme={theme} base={base} tint={tint} onTheme={onTheme} onTint={onTint} />
       </div>
     </div>
   );

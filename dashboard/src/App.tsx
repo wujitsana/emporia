@@ -20,7 +20,7 @@ import { hermesProfile, MODE } from "./transport";
 import { readPref, writePref } from "./prefs";
 import { DESKTOP_ROOT } from "./shadowScope";
 import { RelayHealthCtx } from "./healthCtx";
-import { applyTheme, nextTint, toggleTheme, THEMES, TINTS, type Theme, type Tint } from "./themeConfig";
+import { applyTheme, nextTint, normalizeBase, normalizeTheme, normalizeTint, toggleTheme, type BaseTheme, type Theme, type Tint } from "./themeConfig";
 import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
 import { ARENA_LENSES, canSee, dealsAvailable, destById, destinationOf, navById, navForHotkey, siblingView, type ArenaLens, type Destination, type View } from "./navConfig";
 import { GatedNote } from "./ui/GatedNote";
@@ -57,19 +57,24 @@ import { BadgeGallery } from "./badges/BadgeGallery";
 
 const LS_THEME = "emporia_theme";
 const LS_TINT = "emporia_tint";
+const LS_BASE = "emporia_theme_base";
 
 // `?theme=` / `?tint=` win for this load (not saved); capture mode starts light, tint-green.
 function readTheme(): Theme {
   if (PARAM_THEME) return PARAM_THEME;
   if (CAPTURE) return "theme-light";
   const v = readPref(LS_THEME);
-  return (THEMES as readonly string[]).includes(v ?? "") ? (v as Theme) : "theme-light";
+  return normalizeTheme(v);
+}
+/** The last of light / dark: where turning vivid off goes back to. */
+function readBase(theme: Theme): BaseTheme {
+  return normalizeBase(CAPTURE ? null : readPref(LS_BASE), theme);
 }
 function readTint(): Tint {
   if (PARAM_TINT !== null) return PARAM_TINT;
   if (CAPTURE) return "tint-green";
   const v = readPref(LS_TINT);
-  return (TINTS as readonly string[]).includes(v ?? "") ? (v as Tint) : "";
+  return normalizeTint(v);   // "" and the old amber load as green
 }
 
 /** The sub-tab last seen in each destination in this browser tab (navForHotkey ignores a name it does not know). */
@@ -99,6 +104,9 @@ function AppInner() {
   const [lens, setLens] = useState<ArenaLens>(() => routeFromHash().lens ?? "live");
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [tint, setTint] = useState<Tint>(readTint);
+  const [base, setBase] = useState<BaseTheme>(() => readBase(theme));
+  const baseRef = useRef(base);
+  useEffect(() => { baseRef.current = base; }, [base]);
   const [navOpen, setNavOpen] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
@@ -209,6 +217,10 @@ function AppInner() {
   const setThemeAndApply = (t: Theme) => {
     setTheme(t);
     if (!CAPTURE) writePref(LS_THEME, t);
+    if (t !== "theme-vivid") {
+      setBase(t);
+      if (!CAPTURE) writePref(LS_BASE, t);
+    }
   };
   const setTintAndApply = (t: Tint) => {
     setTint(t);
@@ -367,8 +379,9 @@ function AppInner() {
           return next;
         });
         else setTheme((cur) => {
-          const next = toggleTheme(cur);
-          if (!CAPTURE) writePref(LS_THEME, next);
+          const next = toggleTheme(cur, baseRef.current);
+          if (!CAPTURE) { writePref(LS_THEME, next); writePref(LS_BASE, next); }
+          setBase(next as BaseTheme);
           return next;
         });
         return;
@@ -431,6 +444,7 @@ function AppInner() {
             onGoView={goToView}
             onClose={() => setNavOpen(false)}
             theme={theme}
+            base={base}
             tint={tint}
             onTheme={setThemeAndApply}
             onTint={setTintAndApply}
@@ -465,6 +479,7 @@ function AppInner() {
               <div className="e-app-top__actions">
                 <ThemeCompact
                   theme={theme}
+                  base={base}
                   tint={tint}
                   onTheme={setThemeAndApply}
                   onTint={setTintAndApply}
