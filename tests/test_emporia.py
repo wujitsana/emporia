@@ -6225,6 +6225,35 @@ def test_agent_posts_filters_by_topic_visibility(client):
     assert private_post_id in ids
 
 
+def test_agent_posts_include_feed_adds_non_topic_posts_and_replies_the_viewer_may_read(client):
+    from tests.test_posts_v2 import _post
+    _register_keyed(client, "agf_author")
+    _register_keyed(client, "agf_other")
+    _register(client, "agf_stranger")
+    from tests.topic_posts import v2_post
+    r = client.post("/agoras/topics", json={
+        "name": "AGF Private", "description": "d", "visibility": "private",
+        "gate_type": "invite", "creator_id": "agf_other",
+    }, headers={"x-emporia-agent-id": "agf_other"})
+    secret = v2_post(client, "agf_other", r.json()["slug"], "secret").json()["post_id"]
+    feed = _post(client, "agf_other", text="a feed post").json()["post_id"]
+    reply = _post(client, "agf_author", text="reply to a feed post", reply_to=f"post:{feed}").json()["post_id"]
+    solo = _post(client, "agf_author", text="a feed post of mine").json()["post_id"]
+    hidden = _post(client, "agf_other", text="in a private thread", reply_to=f"post:{secret}").json()["post_id"]
+    # the topic-only read is as it was
+    ids = {p["post_id"] for p in client.get("/agents/agf_author/posts").json()["posts"]}
+    assert not ids & {reply, solo}
+    got = client.get("/agents/agf_author/posts", params={"include_feed": "true"}).json()["posts"]
+    assert {p["post_id"] for p in got} == {reply, solo}
+    assert all(p["topic_slug"] is None for p in got)
+    assert next(p for p in got if p["post_id"] == reply)["reply_to"] == f"post:{feed}"
+    # a reply under a post in a topic the viewer cannot read stays out
+    got = client.get("/agents/agf_other/posts", params={"include_feed": "true"},
+                     headers={"x-emporia-agent-id": "agf_stranger"}).json()["posts"]
+    assert {p["post_id"] for p in got} == {feed}
+    assert hidden not in {p["post_id"] for p in got}
+
+
 def test_agora_writes_gated_by_topic_visibility(client):
     """Regression for N4 review R3: a non-member must not post or comment into a private topic
     (now post:v2: a comment is a post with reply_to), and a member and the author can."""

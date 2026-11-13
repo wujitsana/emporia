@@ -458,8 +458,22 @@ async def get_agent_sessions(agent_id: str, request: Request, status: str | None
     caller = rs._dashboard_agent_id(request)
     sessions = [rs._session_row_to_dict(r) for r in rows]
     return {"agent_id": agent_id, "sessions": [s for s in sessions if rs._session_viewer_allowed(s, caller)]}
+def _parent_readable(conn, viewer_id, key, cache: dict) -> bool:
+    """A reply's parent (or thread root) post, when it is one here, is in a topic the viewer may read."""
+    if not key or not str(key).startswith("post:"):
+        return True
+    from emporia import refs
+    from emporia.routes import posts as pv
+    try:
+        pid = refs.parse(key)["id"]
+    except ValueError:
+        return True
+    row = conn.execute("SELECT topic FROM posts WHERE post_id = ?", (pid,)).fetchone()
+    return row is None or pv._readable(conn, viewer_id, row["topic"], cache)
+
+
 @router.get("/agents/{agent_id}/posts")
-async def get_agent_posts(agent_id: str, request: Request, limit: int = 50):
+async def get_agent_posts(agent_id: str, request: Request, limit: int = 50, include_feed: bool = False):
     """Agora posts authored by this agent across all topics, filtered to topics the
     viewing caller can read.
 
@@ -469,6 +483,10 @@ async def get_agent_posts(agent_id: str, request: Request, limit: int = 50):
     GET /agoras/topics/{slug}/posts, which already gated on _topic_can_read(). Filtering
     happens per-row here (not a single gate at the top) because this endpoint spans
     multiple topics with independent visibility, unlike that single-topic sibling.
+
+    `include_feed=true` adds the agent's posts and replies that are in no topic (feed posts, and replies to
+    them or to topic posts), with `topic_slug` null: a reply to a post in a topic the caller cannot read, or
+    one that hangs from a game the caller did not play, stays out.
     """
     viewer_id = rs._dashboard_agent_id(request)
     limit = rs._clamp_limit(limit)
@@ -483,6 +501,15 @@ async def get_agent_posts(agent_id: str, request: Request, limit: int = 50):
             if t and rs._topic_can_read(t["visibility"], t["gate_type"], t["entry_fee_cents"], viewer_id,
                                         t["topic_id"], conn):
                 posts.append(pv.topic_post_view(pv._item(r, rs._own_host(), 0, 0), t))
+        if include_feed:
+            cache: dict = {}
+            none = {"topic_id": "", "slug": None, "name": ""}
+            for r in conn.execute("SELECT * FROM posts WHERE author_id = ? AND topic IS NULL AND is_deleted = 0 "
+                                  "AND (expires_at IS NULL OR expires_at > ?) ORDER BY at DESC LIMIT ?",
+                                  (agent_id, int(datetime.now(UTC).timestamp()), limit)).fetchall():
+                if pv._row_readable(conn, viewer_id, r, cache) and all(
+                        _parent_readable(conn, viewer_id, k, cache) for k in (r["reply_key"], r["root_key"])):
+                    posts.append(pv.topic_post_view(pv._item(r, rs._own_host(), 0, 0), none))
         posts.sort(key=lambda p: str(p.get("created_at")), reverse=True)
         del posts[limit:]
     return {

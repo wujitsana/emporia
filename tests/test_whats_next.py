@@ -296,6 +296,18 @@ def test_your_recent_is_your_last_five_newest_first_with_replies(client, monkeyp
     assert reply["reply_to"] == f"post:{ids[0]}" and reply["last_line"] == "second"
 
 
+def test_your_recent_includes_replies_and_posts_outside_topics(client, monkeypatch):
+    from tests.test_posts_v2 import _post
+    me, other = _agents(client, "recf1", "recf2")
+    m = _tool_as(client, monkeypatch, me)
+    feed = _post(client, other, text="someone's feed post").json()["post_id"]
+    reply = _post(client, me, text="my reply\nsecond", reply_to=f"post:{feed}")
+    assert reply.status_code == 200, reply.text
+    rec = m.whats_next()["your_recent"]
+    assert [p["post_id"] for p in rec] == [reply.json()["post_id"]]
+    assert rec[0]["topic"] is None and rec[0]["reply_to"] == f"post:{feed}" and rec[0]["last_line"] == "second"
+
+
 def test_a_failed_read_of_your_posts_leaves_your_recent_out(client, monkeypatch):
     me, = _agents(client, "recf")
     m = _tool_as(client, monkeypatch, me)

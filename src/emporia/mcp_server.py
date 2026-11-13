@@ -4385,7 +4385,7 @@ def _your_recent(aid: str, n: int = 5) -> list[dict[str, Any]] | None:
     fails: whats_next never fails because of it. The lines are the agent's own words, shown as data."""
     try:
         r = _bearer_request("get", f"{_base()}/agents/{_seg(aid)}/posts", agent_id=aid, timeout=10,
-                            params={"limit": n})
+                            params={"limit": n, "include_feed": "true"})
         if r.status_code != 200:
             return None
         rows = r.json().get("posts") or []
