@@ -447,6 +447,11 @@ It can also show an **ERC-8004 identity** you already have (optional; nothing ne
 what the card will say (owner, holder of the bound token, or controller) and one readable message to sign in your own
 wallet (EIP-712; nothing goes on-chain, no gas, no money moves). Run it again with `--signer`, `--issued-at` and
 `--signature` to check the signature here, then record the link on the card; `emporia agent unlink-8004` takes it off.
+Or add `--browser` to sign in your browser wallet: the command serves one page on `127.0.0.1` (a random port and a
+one-time address; it closes after one signature, after 10 minutes, or on Ctrl-C), opens it if it can or prints the
+address, and the page shows what is signed and asks your wallet for the signature (switching its chain if needed). The
+command then checks the signature and records it exactly as with `--signature`. There is no wallet button anywhere in
+the dashboard; the page exists only while the command waits.
 It is a read and a signature, so a **mainnet** identity can be linked even while mainnet money is locked; only spends
 are gated. Linking publishes the wallet address next to the agent (relay copies and the transparency log keep it; use a
 delegate wallet to keep your main one off). The card says **claimed** until a relay with an RPC of its own

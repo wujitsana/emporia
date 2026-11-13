@@ -234,14 +234,20 @@ def _link_target(cmd: str, name: str) -> "_Target | None":
 
 
 def link_8004(name: str, chain: str, agent_id: str, signer: str = "", signature: str = "",
-              issued_at: int = 0, yes: bool = False) -> int:
-    """`emporia agent link-8004 NAME --chain C --agent-id N [--signer 0x..] [--signature 0x.. --issued-at T]`."""
+              issued_at: int = 0, yes: bool = False, browser: bool = False) -> int:
+    """`emporia agent link-8004 NAME --chain C --agent-id N [--signer 0x..] [--signature 0x.. --issued-at T | --browser]`."""
     t = _link_target("link-8004", name)
     if t is None:
         return 1
     if not chain or not str(agent_id or "").strip():
         print("agent link-8004: --chain (e.g. base, base-sepolia, robinhood) and --agent-id N are required")
         return 1
+    if browser and (signature or issued_at):
+        print("agent link-8004: --browser gets the signature from your browser wallet; do not give --signature or "
+              "--issued-at with it")
+        return 1
+    if browser:
+        return _link_in_browser(t, name, chain, agent_id, signer, yes)
     if not signature:
         out = _chain_run(t, "ask", chain, agent_id, signer)
         if not out.get("success"):
@@ -273,6 +279,64 @@ def link_8004(name: str, chain: str, agent_id: str, signer: str = "", signature:
     print(f"  Checked here at block {got.get('block_number')}: {got.get('tier')}. "
           f"On {name}'s card as {link.get('status', 'claimed')}"
           + (" (testnet)." if out.get("testnet") else "."))
+    return 0
+
+
+def _link_in_browser(t: "_Target", name: str, chain: str, agent_id: str, signer: str, yes: bool, *,
+                     timeout: float | None = None) -> int:
+    """`--browser`: read the chain, serve one local page for the wallet to sign (browser_sign), then check and record
+    what comes back exactly as `--signature` does. Nothing is served unless the chain backs the signer."""
+    import webbrowser
+
+    from emporia import browser_sign
+    cli = _cli()
+    if not yes and not cli._persons_terminal():
+        print("agent link-8004: recording publishes the wallet address on the card; there is no terminal to ask in. "
+              "Run it in your own terminal, or add --yes.")
+        return 1
+    out = _chain_run(t, "ask", chain, agent_id, signer)
+    if not out.get("success"):
+        print(f"agent link-8004: {out.get('error')}")
+        return 1
+    print(f"  ERC-8004 #{out['agent_id']} on {out['chain_label']}, read at block {out['block_number']}; "
+          f"owner {out['owner']}; signer {out['signer']}")
+    if not out["tier"]:
+        print(f"agent link-8004: the chain does not back this signer ({out.get('reason') or 'not proven'}): "
+              "nothing to sign. Give --signer for the wallet that controls it.")
+        return 1
+    print(f"  Once signed the card will say: {out['tier']} ({out['tier_wording']}).")
+    page = browser_sign.SigningPage(out["typed_data"], chain_label=out["chain_label"], agent_name=name,
+                                    **({} if timeout is None else {"timeout": timeout})).start()
+    print(f"\n  Open this page in the browser that has your wallet (it only exists while this command waits; "
+          f"closes after one signature or {int(page.timeout // 60)} minutes; Ctrl-C cancels):\n\n    {page.url}\n")
+    try:
+        webbrowser.open(page.url)           # best effort: the URL above is the fallback
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        got = page.wait()
+    except browser_sign.BrowserSignError as e:
+        print(f"agent link-8004: {e}; nothing recorded")
+        return 1
+    except KeyboardInterrupt:
+        page.close()
+        print("\n  cancelled; nothing recorded.")
+        return 1
+    if not yes:
+        print(f"  {chain_note(chain)}")
+        print("  " + _wrap_privacy())
+        if cli.prompt(f"Record {out['signer']} as {name}'s ERC-8004 #{agent_id} on its card? [y/N]", "n").lower() not in ("y", "yes"):
+            print("  nothing recorded.")
+            return 0
+    rec = _chain_run(t, "record", chain, agent_id, out["signer"], int(out["issued_at"]), got["signature"])
+    if not rec.get("success"):
+        print(f"agent link-8004: {rec.get('error')}")
+        return 1
+    link = rec.get("link") or {}
+    checked = rec.get("checked_here") or {}
+    print(f"  Checked here at block {checked.get('block_number')}: {checked.get('tier')}. "
+          f"On {name}'s card as {link.get('status', 'claimed')}"
+          + (" (testnet)." if rec.get("testnet") else "."))
     return 0
 
 

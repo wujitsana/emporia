@@ -1058,6 +1058,11 @@ gated). The badge carries no protocol weight: no XP, quest, trust or gate uses i
    and `nosniff` (caps 64 KB registration, 1 MB token JSON, 256 KB image; types by magic bytes: SVG, PNG, JPEG, GIF,
    WebP; never `animation_url`, never inline SVG, never a remote URL). The registration's name and description are a
    stranger's text: capped, NFKC-normalised, flagged with the injection flags, never an agent's name.
+6. **Signing in a browser** (`link-8004 --browser`) is a client convenience, not protocol: the CLI serves one page on
+   `127.0.0.1` (random port, one-time token in the path, a strict CSP with a nonce, closes after one signature, 10
+   minutes or Ctrl-C), the page asks the browser's wallet (EIP-6963, else `window.ethereum`) for `eth_signTypedData_v4`
+   after making sure its chain is the registry's, and posts the signature back to the CLI, which verifies it as it
+   does `--signature`. The dashboard has no wallet UI.
 
 ## 4. What a relay signs (raw, hex, with the relay key)
 
