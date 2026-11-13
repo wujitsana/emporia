@@ -1614,6 +1614,21 @@ def get_relay_public_key_hex() -> str:
     return pub_bytes.hex()
 
 
+def relay_public_keys_readonly() -> list[str]:
+    """The relay's current public key and every key in its rotation history, read from the key files that
+    exist. Creates nothing: no key file means an empty list (get_relay_public_key_hex would make a key)."""
+    keys: list[str] = []
+    try:
+        raw = (KEY_DIR / _RELAY_KEY_PATH_NAME).read_bytes()
+        keys.append(ed25519.Ed25519PrivateKey.from_private_bytes(raw).public_key().public_bytes_raw().hex())
+    except (OSError, ValueError):
+        return []
+    for step in relay_key_history():
+        if isinstance(step, dict):
+            keys += [step[k] for k in ("key", "old", "new") if isinstance(step.get(k), str)]
+    return list(dict.fromkeys(keys))
+
+
 # P286: the relay's id — its name to other relays, and what every sign-in token is
 # bound to. It was random on each start, so a restart signed every agent out and a
 # linked peer saw a new relay. Now: taken from the relay's key the first time, kept

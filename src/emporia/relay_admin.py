@@ -111,7 +111,8 @@ def settings() -> list[dict[str, Any]]:
               f"EMPORIA_INTEGRITY_INTERVAL_SECONDS (0 turns it off) — {_RESTART}"),
         _item("Operations", "Database backup", str(_bk) if (_bk := relay_db.backup_dir()) else "off",
               "One consistent local copy of the database a day, the newest few kept. Off unless a folder is set. "
-              "Restore is `emporia relay db restore`, with the relay stopped.",
+              "Restore is `emporia relay db restore`, with the relay stopped. In Docker use a folder on the data "
+              "volume (/data/backups) and `docker compose exec relay emporia relay db …`.",
               f"EMPORIA_DB_BACKUP_DIR, EMPORIA_DB_BACKUP_KEEP — {_RESTART}"),
         _item("Operations", "Checks", "", "✓ / ! / ✗ for the relay and every agent on this machine.",
               "emporia doctor"),

@@ -4146,17 +4146,24 @@ def integrity_interval() -> float:
         return 3600.0
 
 
-def run_integrity_check() -> dict[str, Any]:
-    """One pass of the integrity check on this relay's database; keeps the report for /health."""
-    global _INTEGRITY_REPORT
-    from emporia import identity, integrity
+def _relay_keys_for_integrity() -> list[str]:
+    """This relay's current public key and every earlier one in its rotation history."""
+    from emporia import identity
     keys = [identity.get_relay_public_key_hex()]
     for step in identity.relay_key_history():
         keys += [step[k] for k in ("key", "old", "new") if isinstance(step.get(k), str)]
-    report = integrity.check(DATABASE_PATH, relay_public_keys=keys, budget_seconds=_INTEGRITY_BUDGET_SECONDS)
+    return list(dict.fromkeys(keys))
+
+
+def run_integrity_check() -> dict[str, Any]:
+    """One pass of the integrity check on this relay's database; keeps the report for /health."""
+    global _INTEGRITY_REPORT
+    from emporia import integrity
+    report = integrity.check(DATABASE_PATH, relay_public_keys=_relay_keys_for_integrity(), budget_seconds=_INTEGRITY_BUDGET_SECONDS)
     _INTEGRITY_REPORT = report
     if report["status"] == "degraded":
-        logger.error("integrity_degraded", extra={"report": report})
+        # counts and public room ids only, like /health: logs can leave the host (SENTRY_DSN)
+        logger.error("integrity_degraded", extra={"report": integrity.public_summary(report)})
     else:
         logger.info("integrity_ok", extra={"partial": report["partial"], "rooms": report["rooms"]["checked"],
                                            "dms": report["dms"]["checked"], "log": report["log"]["status"]})
@@ -4188,7 +4195,7 @@ _DB_BACKUP_TASK: asyncio.Task | None = None
 
 
 def _db_backup_pass() -> None:
-    made = relay_db.backup_if_due(DATABASE_PATH)
+    made = relay_db.backup_if_due(DATABASE_PATH, relay_public_keys=_relay_keys_for_integrity())
     if made is None:
         return
     status = (relay_db._read_manifest(made) or {}).get("integrity", {}).get("status")

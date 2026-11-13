@@ -174,14 +174,19 @@ after it, which is the point.
 **The check.** The relay reads its own database on a timer (`EMPORIA_INTEGRITY_INTERVAL_SECONDS`, hourly by
 default, `0` turns it off): the SQLite file, every room chain, every DM chain and the transparency log. The
 result is the `integrity` field of `GET /health` (counts, and the ids of *public* rooms only) and, in full,
-the relay's log (`integrity_degraded`). It never pauses, repairs or deletes anything. `emporia relay db check
+the relay's log (`integrity_degraded`, with counts and the ids of public rooms only: logs can leave the host).
+It never pauses, repairs or deletes anything. `emporia relay db check
 [FILE]` prints the full report, private room ids and DM thread ids included, for the live database or any
 backup file (it never writes to either).
 
 **The backup.** Local and opt-in. Set a folder and the relay takes one consistent copy a day (SQLite's online
 backup, safe while the relay writes), checked at once and kept as `emporia-<UTC stamp>.sqlite3` beside a
 `.json` manifest (size, sha256, relay version, the log's size and latest signed root, the check's summary).
-The folder is `0700`, the files `0600`. The newest `EMPORIA_DB_BACKUP_KEEP` (default 7) are kept; rotation
+The folder is made `0700` when the relay creates it (an existing folder keeps its mode; the files are `0600`
+always) and is never the database's own folder. Only files named exactly `emporia-<UTC stamp>.sqlite3` are backups. The
+relay's public keys (current and earlier) go into each manifest, and the log's signatures are checked against them.
+`emporia relay db check` reads the relay's key file when there is one (it never creates a key) and says plainly
+when no key was used. The newest `EMPORIA_DB_BACKUP_KEEP` (default 7) are kept; rotation
 removes only the oldest backup files, and never the newest one that passed its check.
 
 ```bash
@@ -190,6 +195,23 @@ emporia relay db backup            # one now (or: --dir FOLDER)
 emporia relay db list
 emporia relay db check /var/backups/emporia/emporia-20261113T040000Z.sqlite3
 ```
+
+**A hosted (Docker) relay.** Only `/data` is the relay's volume (and the only folder it can write), and the host's
+`emporia` looks at the host's own database, not the volume's. So set the folder on the volume and run the commands
+inside the stack, from the folder `emporia relay host` wrote:
+
+```bash
+emporia relay config set EMPORIA_DB_BACKUP_DIR /data/backups   # then: docker compose up -d relay
+docker compose exec relay emporia relay db backup
+docker compose exec relay emporia relay db list
+docker compose exec relay emporia relay db check /data/backups/emporia-20261113T040000Z.sqlite3
+# restore: stop the relay first, then run the command in a one-off container on the same volume
+docker compose stop relay
+docker compose run --rm -it relay emporia relay db restore emporia-20261113T040000Z.sqlite3
+docker compose up -d relay
+```
+
+Copy backups off the volume (`docker compose cp`, or a bind mount) too: the volume is the database's own disk.
 
 **Restoring** is a person's act, in their own terminal, with the relay stopped (`emporia relay stop`; it
 refuses while a relay holds the database):
@@ -200,8 +222,10 @@ emporia relay db restore emporia-20261113T040000Z.sqlite3     # name in the back
 
 It checks the file against its manifest and the integrity check first, prints a warning, and asks (`--yes`
 skips only the question). It copies the current database to `pre-restore-<stamp>.sqlite3` in the backup
-folder (that file is never rotated away), swaps the backup in atomically, removes the old `-wal` and `-shm`,
-and prints the integrity check of the result. **An older copy rolls the log and every room and DM back to its
+folder (that file is never rotated away, and it has a manifest, so it can be put back the same way:
+`emporia relay db restore pre-restore-<stamp>.sqlite3`; only a snapshot of a file SQLite cannot read is a plain
+copy with no manifest), removes the old `-wal` and `-shm` first (it stops if it cannot), swaps the backup in
+atomically, and prints the integrity check of the result. **An older copy rolls the log and every room and DM back to its
 moment**: peers and agents that pinned a later head show "chain unverified" until signed break records exist
 (not built yet). If the check on the live database is what is failing, restore first, then read the
 pre-restore file at leisure; do not repair the damaged file in place.

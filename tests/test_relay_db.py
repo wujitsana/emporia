@@ -17,6 +17,11 @@ from emporia import relay_server as rs
 from tests.test_integrity import _db, _room
 
 
+@pytest.fixture
+def log_on(monkeypatch):
+    monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
+
+
 def _rows(path: Path, room: str = "r1") -> int:
     conn = sqlite3.connect(path)
     try:
@@ -260,3 +265,236 @@ def test_the_command_is_wired(tmp_path, monkeypatch, capsys):
     args = Namespace(action="db", url="check", names=[], dir="", yes=False)
     assert cli.cmd_relay(args) == 0
     assert "status: ok" in capsys.readouterr().out
+
+
+# ─── audit fixes ─────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("name", ["emporia-0main.sqlite3", "emporia-relay.sqlite3", "emporia-20991231T000000Z.sqlite3x"])
+def test_a_database_named_like_a_backup_is_refused_as_its_own_folder(tmp_path, name):
+    db = _db(tmp_path, name)
+    _room(db, "r1", ["a"])
+    before = db.read_bytes()
+    with pytest.raises(relay_db.BackupError, match="own folder"):
+        relay_db.backup(db, tmp_path, keep=1)
+    assert db.exists() and db.read_bytes() == before
+    with pytest.raises(relay_db.BackupError):
+        relay_db.backup_if_due(db, tmp_path, 1)
+    assert db.exists()
+
+
+def test_rotation_never_unlinks_the_database_and_lists_only_exact_names(tmp_path):
+    bk = tmp_path / "bk"
+    db = _db(tmp_path)
+    made = [relay_db.backup(db, bk, keep=7) for _ in range(3)]
+    for stray in ("emporia-0main.sqlite3", "emporia-relay.sqlite3", "emporia-20260101T000000Z.sqlite3.partial",
+                  "emporia-2026.sqlite3", "emporia-20260101T000000Z-x.sqlite3"):
+        (bk / stray).write_bytes(b"x")
+    assert relay_db.list_backups(bk) == made
+    # a symlink to the live file under a backup-shaped name is never removed by rotation
+    link = bk / "emporia-19990101T000000Z.sqlite3"
+    link.symlink_to(db)
+    gone = relay_db.rotate(bk, 1, db_path=db)
+    assert db.exists() and db.stat().st_size > 0
+    assert link not in gone
+    assert all((bk / s).exists() for s in ("emporia-0main.sqlite3", "emporia-relay.sqlite3"))
+
+
+def test_a_failure_after_the_copy_leaves_no_partial_and_no_manifest_temp(tmp_path, monkeypatch):
+    db = _db(tmp_path)
+    _room(db, "r1", ["a"])
+    bk = tmp_path / "bk"
+
+    def boom(*a, **k):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(integrity, "_check_rooms", boom)       # the section raising is turned into a finding
+    out = relay_db.backup(db, bk)
+    assert relay_db._read_manifest(out)["integrity"]["status"] == "degraded"
+    for patched in ("_sha256", "_write_private"):
+        monkeypatch.setattr(relay_db, patched, boom)
+        for _ in range(3):
+            with pytest.raises(OSError):
+                relay_db.backup(db, bk)
+        monkeypatch.undo()
+        monkeypatch.setattr(integrity, "_check_rooms", boom)
+    assert sorted(p.name for p in bk.iterdir()) == sorted([out.name, relay_db.manifest_path(out).name])
+
+
+def test_the_check_never_raises_and_does_not_use_the_system_temp_dir(tmp_path, monkeypatch):
+    import tempfile
+    db = _db(tmp_path)
+    _room(db, "r1", ["a", "b"])
+    out = relay_db.backup(db, tmp_path / "bk")                  # a rollback-journal file: walked as a copy
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "no-such-tmp"))
+    monkeypatch.setenv("TMPDIR", str(tmp_path / "no-such-tmp"))
+    report = integrity.check(out)
+    assert report["status"] == "ok" and report["rooms"]["checked"] == 1
+    assert [p.name for p in out.parent.iterdir() if p.name.startswith(".")] == []     # scratch removed
+    import shutil
+
+    def full(*a, **k):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(shutil, "copyfile", full)
+    report = integrity.check(out)
+    assert report["status"] == "degraded" and "could not be checked" in report["rooms"]["broken"][0]["detail"]
+    assert [p.name for p in out.parent.iterdir() if p.name.startswith(".")] == []
+
+
+def test_the_check_of_an_old_schema_log_does_not_raise(tmp_path, log_on):
+    from tests.test_integrity import _log
+    db = _db(tmp_path)
+    _log(db)
+    conn = sqlite3.connect(db)
+    conn.execute("ALTER TABLE translog_states DROP COLUMN epoch")
+    conn.commit()
+    conn.close()
+    report = integrity.check(db, relay_public_keys=["ab" * 32])
+    assert report["log"]["status"] in ("ok", "broken")
+    # and a section that does raise is a finding, not a crash
+    with patch.object(integrity, "_check_log", side_effect=IndexError("No item with that key")):
+        r = integrity.check(db)
+    assert r["status"] == "degraded" and "could not be checked" in r["log"]["detail"]
+
+
+def test_stale_partials_are_cleared_when_a_backup_starts(tmp_path):
+    db = _db(tmp_path)
+    bk = tmp_path / "bk"
+    bk.mkdir()
+    old, fresh = bk / "emporia-20260101T000000Z.sqlite3.partial", bk / "emporia-20260102T000000Z.sqlite3.partial"
+    old.write_bytes(b"x")
+    fresh.write_bytes(b"x")
+    os.utime(old, (1, 1))
+    relay_db.backup(db, bk)
+    assert not old.exists() and fresh.exists()
+
+
+def test_relay_keys_are_checked_and_recorded_in_the_manifest(tmp_path, log_on):
+    from tests.test_integrity import _PUB, _log
+    db = _db(tmp_path)
+    _log(db)
+    stranger = "cd" * 32
+    bad = relay_db.backup(db, tmp_path / "bk", relay_public_keys=[stranger])
+    m = relay_db._read_manifest(bad)
+    assert m["relay_public_keys"] == [stranger] and m["integrity"]["log"] == "broken"
+    good = relay_db.backup(db, tmp_path / "bk2", relay_public_keys=[_PUB])
+    assert relay_db._read_manifest(good)["relay_public_keys"] == [_PUB]
+    assert relay_db.verify(good)["ok"]
+    # verify uses the manifest's keys: a manifest naming another key fails the same file
+    mp = relay_db.manifest_path(good)
+    data = json.loads(mp.read_text())
+    data["relay_public_keys"] = [stranger]
+    mp.write_text(json.dumps(data))
+    assert not relay_db.verify(good)["ok"]
+
+
+def test_the_relay_pass_hands_its_keys_to_the_backup(tmp_path, monkeypatch, log_on):
+    from tests.test_integrity import _PUB, _log
+    db = _db(tmp_path)
+    _log(db)
+    monkeypatch.setattr(rs, "DATABASE_PATH", db)
+    monkeypatch.setenv("EMPORIA_DB_BACKUP_DIR", str(tmp_path / "bk"))
+    monkeypatch.setattr(rs, "_relay_keys_for_integrity", lambda: [_PUB])
+    rs._db_backup_pass()
+    (made,) = relay_db.list_backups(tmp_path / "bk")
+    assert relay_db._read_manifest(made)["relay_public_keys"] == [_PUB]
+
+
+def test_the_cli_check_reads_the_key_file_without_creating_one(tmp_path, capsys, monkeypatch, log_on):
+    from emporia import identity
+    from tests.test_integrity import _log
+    keys = tmp_path / "keys"
+    monkeypatch.setattr(identity, "KEY_DIR", keys)
+    monkeypatch.setattr(identity, "_RELAY_KEYPAIR_CACHE", None)
+    db = _db(tmp_path)
+    _log(db)
+    assert _cli("check", db_path=db) == 0
+    out = capsys.readouterr().out
+    assert "NO relay key was used" in out
+    assert not keys.exists()                                  # nothing was created
+    keys.mkdir()
+    (keys / identity._RELAY_KEY_PATH_NAME).write_bytes(b"\x01" * 32)
+    assert _cli("check", db_path=db) == 1                     # the log is signed by another key: now it shows
+    assert "this host's relay key" in capsys.readouterr().out
+
+
+def test_restore_removes_the_old_wal_before_the_swap_and_fails_loudly(tmp_path, monkeypatch):
+    db = _db(tmp_path)
+    _room(db, "r1", ["a"])
+    bk = relay_db.backup(db, tmp_path / "bk")
+    wal = db.with_name(db.name + "-wal")
+    wal.write_bytes(b"stale wal frames")
+    order = []
+    real_replace = os.replace
+    monkeypatch.setattr(os, "replace", lambda a, b: (order.append(("replace", wal.exists())), real_replace(a, b))[1])
+    relay_db.restore(bk, db)
+    assert order[-1] == ("replace", False)                    # the WAL was already gone at the swap
+    # a WAL that cannot be removed stops the restore, and the database stays as it was
+    wal.write_bytes(b"stale")
+    before = db.read_bytes()
+    real_unlink = Path.unlink
+
+    def deny(self, *a, **k):
+        if self.name.endswith("-wal"):
+            raise PermissionError(13, "denied")
+        return real_unlink(self, *a, **k)
+
+    monkeypatch.setattr(Path, "unlink", deny)
+    with pytest.raises(relay_db.BackupError, match="could not be removed"):
+        relay_db.restore(bk, db)
+    assert db.read_bytes() == before
+    assert not list(db.parent.glob("*.restoring-*"))
+
+
+def test_the_pre_restore_snapshot_has_a_manifest_and_can_be_restored(tmp_path):
+    db = _db(tmp_path)
+    _room(db, "r1", ["a"])
+    bk = relay_db.backup(db, tmp_path / "bk")
+    _room(db, "r2", ["later"])
+    snap = relay_db.restore(bk, db)["snapshot"]
+    assert relay_db.manifest_path(snap).exists() and relay_db.verify(snap)["ok"]
+    relay_db.restore(snap, db)
+    assert _rows(db, "r2") == 1
+
+
+def test_an_existing_backup_folder_keeps_its_mode_and_a_new_one_is_private(tmp_path):
+    db = _db(tmp_path)
+    shared = tmp_path / "shared"
+    shared.mkdir(mode=0o755)
+    os.chmod(shared, 0o755)
+    out = relay_db.backup(db, shared)
+    assert stat.S_IMODE(shared.stat().st_mode) == 0o755 and stat.S_IMODE(out.stat().st_mode) == 0o600
+    relay_db.backup(db, tmp_path / "fresh")
+    assert stat.S_IMODE((tmp_path / "fresh").stat().st_mode) == 0o700
+
+
+def test_the_cli_reports_an_unwritable_folder_instead_of_a_traceback(tmp_path, capsys):
+    db = _db(tmp_path)
+    blocker = tmp_path / "file"
+    blocker.write_text("x")
+    assert _cli("backup", dest=str(blocker / "sub"), db_path=db) == 1
+    assert "relay db backup:" in capsys.readouterr().out
+
+
+def test_the_degraded_report_in_the_log_names_no_private_id(tmp_path, monkeypatch, log_on):
+    import logging
+    db = _db(tmp_path)
+    _room(db, "secret-room", ["a", "b"], public=False)
+    _room(db, "pub-room", ["a", "b"])
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE room_messages SET content = 'x' WHERE room_id IN ('secret-room', 'pub-room') AND message_id LIKE '%-0'")
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(rs, "DATABASE_PATH", db)
+    monkeypatch.setattr(rs, "_relay_keys_for_integrity", lambda: [])
+    records = []
+    handler = logging.Handler()
+    handler.emit = records.append
+    rs.logger.addHandler(handler)
+    try:
+        rs.run_integrity_check()
+    finally:
+        rs.logger.removeHandler(handler)
+    (rec,) = [r for r in records if r.getMessage() == "integrity_degraded"]
+    text = json.dumps(rec.report)
+    assert "secret-room" not in text and "pub-room" in text and rec.report["rooms_broken"] == 2

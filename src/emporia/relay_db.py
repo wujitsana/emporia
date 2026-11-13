@@ -20,11 +20,12 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import tempfile
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,9 @@ from emporia import __version__, integrity
 
 PREFIX = "emporia-"
 SUFFIX = ".sqlite3"
+#: Exactly the names `_new_name` writes: a fixed-width UTC stamp, an optional -N, the suffix. Nothing else in a
+#: folder is a backup (a database named emporia-*.sqlite3 beside them is not).
+BACKUP_NAME = re.compile(r"^emporia-\d{8}T\d{6,12}Z(-\d+)?\.sqlite3$")
 DEFAULT_KEEP = 7
 DAY_SECONDS = 24 * 3600
 #: How long the integrity check of one fresh backup may take.
@@ -68,9 +72,26 @@ def backup_keep() -> int:
 # ─── files ───────────────────────────────────────────────────────────────────
 
 def _private_dir(path: Path) -> None:
+    """Make the backup folder 0700 when this call creates it. A folder that already exists is not ours to
+    change (`--dir ~/shared`): it is used as it is, and the files in it are 0600 anyway."""
+    if path.exists():
+        return
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     with contextlib.suppress(OSError):
         path.chmod(0o700)
+
+
+def _protected(db_path: Path) -> set[Path]:
+    """The live database and its side files, resolved: never a backup, never unlinked here."""
+    base = Path(os.path.realpath(db_path))
+    return {base, base.with_name(base.name + "-wal"), base.with_name(base.name + "-shm"),
+            base.with_name(base.name + ".lock")}
+
+
+def _refuse_own_folder(db_path: Path, dest_dir: Path) -> None:
+    if Path(os.path.realpath(dest_dir)) == Path(os.path.realpath(db_path)).parent:
+        raise BackupError(f"the backup folder {dest_dir} is the database's own folder: pick another "
+                          "(a backup beside the live file would not survive what the live file does)")
 
 
 def _sha256(path: Path) -> str:
@@ -116,8 +137,7 @@ def _log_head(conn: sqlite3.Connection) -> dict[str, Any]:
 def list_backups(dest_dir: Path) -> list[Path]:
     """Backup files in `dest_dir`, oldest first (the stamp in the name sorts by time)."""
     try:
-        return sorted((p for p in dest_dir.iterdir()
-                       if p.is_file() and p.name.startswith(PREFIX) and p.name.endswith(SUFFIX)),
+        return sorted((p for p in dest_dir.iterdir() if p.is_file() and BACKUP_NAME.match(p.name)),
                       key=lambda p: p.name.removesuffix(SUFFIX))
     except OSError:
         return []
@@ -133,43 +153,81 @@ def _new_name(dest_dir: Path) -> Path:
     return path
 
 
+STALE_PARTIAL_SECONDS = DAY_SECONDS
+
+
+def _clear_stale(dest_dir: Path) -> None:
+    """Leftovers of a backup that died before it could clean up (a killed process): old `.partial` files and
+    check scratch folders. Only names this module writes, only when a day old."""
+    import shutil as _sh
+    cutoff = time.time() - STALE_PARTIAL_SECONDS
+    try:
+        entries = list(dest_dir.iterdir())
+    except OSError:
+        return
+    for p in entries:
+        try:
+            if p.stat().st_mtime >= cutoff:
+                continue
+            if p.is_file() and p.name.startswith(PREFIX) and p.name.endswith((".partial", ".json.tmp")):
+                p.unlink()
+            elif p.is_dir() and p.name.startswith(".emporia-integrity-"):
+                _sh.rmtree(p, ignore_errors=True)
+        except OSError:
+            continue
+
+
 def backup(db_path: Path, dest_dir: Path, keep: int = DEFAULT_KEEP, *,
-           budget_seconds: float | None = CHECK_BUDGET_SECONDS) -> Path:
+           budget_seconds: float | None = CHECK_BUDGET_SECONDS,
+           relay_public_keys: Sequence[str] = ()) -> Path:
     """Copy the database at `db_path` into `dest_dir` and rotate. Returns the backup file's path; its manifest
     (`manifest_path`) says whether the copy passed the integrity check. A copy that did not pass is kept and
-    reported, never hidden."""
+    reported, never hidden. `relay_public_keys` (the relay's current and earlier keys) anchor the check of the
+    transparency log's signatures; they are recorded in the manifest. Whatever goes wrong after the copy
+    starts, no `.partial` file or manifest temp is left behind."""
     db_path, dest_dir = Path(db_path), Path(dest_dir)
     if not db_path.is_file():
         raise BackupError(f"there is no database at {db_path}")
+    _refuse_own_folder(db_path, dest_dir)
     _private_dir(dest_dir)
+    _clear_stale(dest_dir)
     final = _new_name(dest_dir)
     partial = final.with_name(final.name + ".partial")
-    src = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=30.0)
+    manifest_tmp = manifest_path(final).with_name(manifest_path(final).name + ".tmp")
+    keys = list(dict.fromkeys(relay_public_keys))
     try:
-        dst = sqlite3.connect(partial)
+        src = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=30.0)
         try:
-            src.backup(dst)
-            dst.execute("PRAGMA journal_mode=DELETE")   # one self-contained file that never changes after this
-            dst.commit()
+            fd = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            os.close(fd)
+            dst = sqlite3.connect(partial)
+            try:
+                src.backup(dst)
+                dst.execute("PRAGMA journal_mode=DELETE")   # one self-contained file that never changes after this
+                dst.commit()
+            finally:
+                dst.close()
+            head = _log_head(src)
         finally:
-            dst.close()
-        head = _log_head(src)
-    except sqlite3.Error as e:
-        with contextlib.suppress(OSError):
-            partial.unlink()
-        raise BackupError(f"the database could not be copied: {e}") from e
-    finally:
-        src.close()
-    partial.chmod(0o600)
-    report = integrity.check(partial, budget_seconds=budget_seconds)
-    manifest = {
-        "file": final.name, "created_at": datetime.now(UTC).isoformat(), "size": partial.stat().st_size,
-        "sha256": _sha256(partial), "relay_version": __version__,
-        "source": str(db_path), "log": head, "integrity": _summary(report),
-    }
-    _write_private(manifest_path(final), json.dumps(manifest, indent=1, sort_keys=True))
-    os.replace(partial, final)
-    rotate(dest_dir, keep)
+            src.close()
+        partial.chmod(0o600)
+        report = integrity.check(partial, relay_public_keys=keys, budget_seconds=budget_seconds)
+        manifest = {
+            "file": final.name, "created_at": datetime.now(UTC).isoformat(), "size": partial.stat().st_size,
+            "sha256": _sha256(partial), "relay_version": __version__,
+            "source": str(db_path), "log": head, "integrity": _summary(report), "relay_public_keys": keys,
+        }
+        _write_private(manifest_tmp, json.dumps(manifest, indent=1, sort_keys=True))
+        os.replace(manifest_tmp, manifest_path(final))
+        os.replace(partial, final)
+    except BaseException as e:
+        for f in (partial, manifest_tmp, manifest_path(final)):
+            with contextlib.suppress(OSError):
+                f.unlink()
+        if isinstance(e, sqlite3.Error):
+            raise BackupError(f"the database could not be copied: {e}") from e
+        raise
+    rotate(dest_dir, keep, db_path=db_path)
     return final
 
 
@@ -182,11 +240,13 @@ def _summary(report: dict) -> dict[str, Any]:
             "log": report["log"]["status"], "log_detail": report["log"]["detail"]}
 
 
-def rotate(dest_dir: Path, keep: int) -> list[Path]:
+def rotate(dest_dir: Path, keep: int, *, db_path: Path | None = None) -> list[Path]:
     """Remove the oldest backup files (and their manifests) beyond `keep`. The newest backup that passed its
     check is never removed, so a run of damaged copies cannot push the last good one out. The database is
-    never touched. Returns what was removed."""
-    files = list_backups(dest_dir)
+    never touched: only names written by `backup` are considered, and the live file (`db_path`, with its side
+    files) is never unlinked. Returns what was removed."""
+    never = _protected(db_path) if db_path is not None else set()
+    files = [p for p in list_backups(dest_dir) if Path(os.path.realpath(p)) not in never]
     protected = None
     for p in reversed(files):
         m = _read_manifest(p)
@@ -198,6 +258,8 @@ def rotate(dest_dir: Path, keep: int) -> list[Path]:
         if p == protected:
             continue
         for f in (p, manifest_path(p)):
+            if Path(os.path.realpath(f)) in never:
+                continue
             with contextlib.suppress(OSError):
                 f.unlink()
         gone.append(p)
@@ -212,16 +274,19 @@ def latest_age_seconds(dest_dir: Path) -> float | None:
     return max(0.0, time.time() - files[-1].stat().st_mtime)
 
 
-def backup_if_due(db_path: Path, dest_dir: Path | None = None, keep: int | None = None) -> Path | None:
+def backup_if_due(db_path: Path, dest_dir: Path | None = None, keep: int | None = None, *,
+                  relay_public_keys: Sequence[str] = ()) -> Path | None:
     """The relay's daily backup: one when `dest_dir` (EMPORIA_DB_BACKUP_DIR) is set and the newest is a day old.
     Returns the new file, or None when nothing was due."""
     dest_dir = dest_dir or backup_dir()
     if dest_dir is None:
         return None
+    _refuse_own_folder(Path(db_path), dest_dir)
     age = latest_age_seconds(dest_dir)
     if age is not None and age < DAY_SECONDS:
         return None
-    return backup(db_path, dest_dir, keep if keep is not None else backup_keep())
+    return backup(db_path, dest_dir, keep if keep is not None else backup_keep(),
+                  relay_public_keys=relay_public_keys)
 
 
 # ─── verify and restore ──────────────────────────────────────────────────────
@@ -244,7 +309,7 @@ def verify(path: Path) -> dict[str, Any]:
             problems.append("its sha256 does not match the manifest: the file changed after it was made")
     if problems:
         return {"ok": False, "problems": problems, "manifest": manifest, "report": None}
-    report = integrity.check(path)
+    report = integrity.check(path, relay_public_keys=(manifest or {}).get("relay_public_keys") or ())
     if report["status"] != "ok":
         problems.append("it does not pass the integrity check (see the report)")
     return {"ok": not problems, "problems": problems, "manifest": manifest, "report": report}
@@ -294,13 +359,24 @@ def _snapshot_current(db_path: Path, dest_dir: Path) -> Path | None:
     try:
         src = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=30.0)
         try:
+            fd = os.open(snap, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)    # 0600 from the first byte
+            os.close(fd)
             dst = sqlite3.connect(snap)
             try:
                 src.backup(dst)
+                dst.execute("PRAGMA journal_mode=DELETE")
+                dst.commit()
             finally:
                 dst.close()
+            head = _log_head(src)
         finally:
             src.close()
+        # a manifest, so the snapshot can be put back with `emporia relay db restore` like any backup
+        _write_private(manifest_path(snap), json.dumps({
+            "file": snap.name, "created_at": datetime.now(UTC).isoformat(), "size": snap.stat().st_size,
+            "sha256": _sha256(snap), "relay_version": __version__, "source": str(db_path), "log": head,
+            "integrity": {"status": "unknown"}, "relay_public_keys": [], "kind": "pre-restore snapshot",
+        }, indent=1, sort_keys=True))
     except sqlite3.Error:
         # a file SQLite cannot read is the very thing a person may be restoring from: keep its bytes as they are
         with contextlib.suppress(OSError):
@@ -336,15 +412,29 @@ def restore(backup_file: Path, db_path: Path) -> dict[str, Any]:
                                   "nothing was changed")
             with open(tmp, "rb") as f:
                 os.fsync(f.fileno())
+            # the old database's write-ahead log must not meet the restored file: gone before the swap, and a
+            # failure to remove it stops the restore (the snapshot above holds everything the log held)
+            for ext in ("-wal", "-shm"):
+                side = db_path.with_name(db_path.name + ext)
+                try:
+                    side.unlink()
+                except FileNotFoundError:
+                    pass
+                except OSError as e:
+                    raise BackupError(f"the old {side.name} could not be removed ({e}): nothing was restored; "
+                                      f"the database as it was is {snapshot}") from e
             os.replace(tmp, db_path)
+            dir_fd = os.open(db_path.parent, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
         except BaseException:
             with contextlib.suppress(OSError):
                 tmp.unlink()
             raise
-        for ext in ("-wal", "-shm"):
-            with contextlib.suppress(OSError):
-                db_path.with_name(db_path.name + ext).unlink()
-    return {"snapshot": snapshot, "report": integrity.check(db_path), "verified": verified}
+    keys = (verified["manifest"] or {}).get("relay_public_keys") or ()
+    return {"snapshot": snapshot, "report": integrity.check(db_path, relay_public_keys=keys), "verified": verified}
 
 
 # ─── CLI: emporia relay db … ─────────────────────────────────────────────────
@@ -359,6 +449,21 @@ def _fmt_report(report: dict) -> list[str]:
     out += [f"  {b['thread_id']}: {b['detail']}" for b in report["dms"]["broken"]]
     out.append(f"transparency log: {report['log']['status']} (size {report['log']['size']}): {report['log']['detail']}")
     return out
+
+
+def _keys_for_check(target: Path | None) -> tuple[list[str], str]:
+    """The relay's public keys to check the log's signatures against, and a plain line saying which. A backup's
+    manifest names the keys it was made with; else the key files of this host are read (never created)."""
+    if target is not None:
+        recorded = [k for k in ((_read_manifest(target) or {}).get("relay_public_keys") or []) if isinstance(k, str)]
+        if recorded:
+            return recorded, "log signatures: checked against the relay keys recorded in the backup's manifest"
+    from emporia import identity
+    keys = identity.relay_public_keys_readonly()
+    if keys:
+        return keys, "log signatures: checked against this host's relay key"
+    return [], ("log signatures: NO relay key was used (none found here): each state is checked against the key "
+                "it names, not the relay's, so this finds accidents, not a deliberate rewrite")
 
 
 def _dir_for(args_dir: str) -> Path:
@@ -386,12 +491,16 @@ def cli(sub: str, files: list[str], *, dest: str = "", db_path: Path | None = No
                 return 1
             from emporia import translog
             print(f"{target}" + ("" if translog.enabled() else "   (the transparency log is off here: EMPORIA_TRANSPARENCY_LOG)"))
-            report = integrity.check(target)
+            keys, said = _keys_for_check(target)
+            print(said)
+            report = integrity.check(target, relay_public_keys=keys)
             print("\n".join(_fmt_report(report)))
             return 0 if report["status"] == "ok" else 1
         if sub == "backup":
             d = _dir_for(dest)
-            made = backup(db_path, d, backup_keep())
+            keys, said = _keys_for_check(None)
+            print(said)
+            made = backup(db_path, d, backup_keep(), relay_public_keys=keys)
             m = _read_manifest(made) or {}
             status = m.get("integrity", {}).get("status", "?")
             print(f"backup: {made} ({m.get('size', 0)} bytes, integrity {status})")
@@ -419,6 +528,9 @@ def cli(sub: str, files: list[str], *, dest: str = "", db_path: Path | None = No
         if sub == "restore":
             return _cli_restore(files, dest, db_path, yes=yes, person=person, ask=ask)
     except BackupError as e:
+        print(f"relay db {sub}: {e}")
+        return 1
+    except OSError as e:
         print(f"relay db {sub}: {e}")
         return 1
     print("relay db: say check, backup, list or restore FILE")

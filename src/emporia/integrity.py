@@ -81,10 +81,20 @@ def _check_rooms(db_path: Path, budget: _Budget) -> dict[str, Any]:
         return _walk_rooms(db_path, budget)
     import shutil
     import tempfile
-    with tempfile.TemporaryDirectory(prefix="emporia-integrity-") as tmp:
-        copy = Path(tmp) / "copy.sqlite3"
+    # a throwaway copy beside the file being checked (never the system temp dir: that may be a small tmpfs),
+    # removed whatever happens
+    scratch: Path | None = None
+    try:
+        scratch = Path(tempfile.mkdtemp(prefix=".emporia-integrity-", dir=db_path.parent))
+        copy = scratch / "copy.sqlite3"
         shutil.copyfile(db_path, copy)
         return _walk_rooms(copy, budget)
+    except OSError as e:
+        return {"checked": 0, "broken": [{"room_id": "", "public": False,
+                                          "detail": f"could not be checked: {type(e).__name__}: {e}"}]}
+    finally:
+        if scratch is not None:
+            shutil.rmtree(scratch, ignore_errors=True)
 
 
 def _walk_rooms(db_path: Path, budget: _Budget) -> dict[str, Any]:
@@ -223,10 +233,11 @@ def _verify_log(conn: sqlite3.Connection, relay_public_keys: Sequence[str], budg
             note(f"the state at size {s['size']} is signed by a key that is not the relay's")
         if tree.mth(0, s["size"]).hex() != s["root"]:
             note(f"the root of the state at size {s['size']} does not match the recomputed root")
-        prev = last_by_epoch.get(s["epoch"])
+        epoch = s["epoch"] if "epoch" in s.keys() else None    # a file from before that column has none
+        prev = last_by_epoch.get(epoch)
         if prev is not None and s["at"] < prev[1]:
             note(f"the log shrank: size {s['size']} was signed at {s['at']}, before size {prev[0]} at {prev[1]}")
-        last_by_epoch[s["epoch"]] = (s["size"], max(s["at"], prev[1]) if prev else s["at"])
+        last_by_epoch[epoch] = (s["size"], max(s["at"], prev[1]) if prev else s["at"])
     if problems:
         return {"status": "broken", "size": n, "detail": "; ".join(problems)}
     detail = "ok" if states else "ok (no signed state yet)"
@@ -235,18 +246,35 @@ def _verify_log(conn: sqlite3.Connection, relay_public_keys: Sequence[str], budg
     return {"status": "ok", "size": n, "detail": detail}
 
 
+def _safely(run: Any, failed: dict[str, Any]) -> dict[str, Any]:
+    """One section of the check; whatever it raises is a finding ("could not be checked"), never a crash."""
+    try:
+        return run()
+    except Exception as e:      # noqa: BLE001 - the check never raises
+        detail = f"could not be checked: {type(e).__name__}: {e}"
+        out = dict(failed)
+        if "broken" in out:
+            out["broken"] = [{**b, "detail": detail} for b in out["broken"]]
+        else:
+            out["detail"] = detail
+        return out
+
+
 def check(db_path: Path, *, relay_public_keys: Sequence[str] = (), budget_seconds: float | None = None) -> dict:
     """Check the database at `db_path`. `budget_seconds` bounds the whole pass: what it did not reach is left
     unchecked and `partial` says so. `relay_public_keys` are the relay's current and earlier keys; with none
-    given, a signed state need only verify under the key it names."""
+    given, a signed state need only verify under the key it names. Never raises: a section that cannot run is
+    reported as not checked (and so as degraded)."""
     db_path = Path(db_path)
     budget = _Budget(budget_seconds)
     report: dict[str, Any] = {"status": "ok", "checked_at": datetime.now(UTC).isoformat()}
-    report["db"] = _check_file(db_path, budget)
+    report["db"] = _safely(lambda: _check_file(db_path, budget), {"ok": False})
     if report["db"]["ok"]:
-        report["rooms"] = _check_rooms(db_path, budget)
-        report["dms"] = _check_dms(db_path, budget)
-        report["log"] = _check_log(db_path, relay_public_keys, budget)
+        report["rooms"] = _safely(lambda: _check_rooms(db_path, budget),
+                                  {"checked": 0, "broken": [{"room_id": "", "public": False}]})
+        report["dms"] = _safely(lambda: _check_dms(db_path, budget), {"checked": 0, "broken": [{"thread_id": ""}]})
+        report["log"] = _safely(lambda: _check_log(db_path, relay_public_keys, budget),
+                                {"status": "broken", "size": 0})
     else:       # a file that is not sound is not walked further
         report["rooms"] = {"checked": 0, "broken": []}
         report["dms"] = {"checked": 0, "broken": []}
