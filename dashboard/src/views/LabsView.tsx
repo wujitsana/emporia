@@ -15,6 +15,7 @@ import { plural } from "../postCardModel";
 import { CopyCommand } from "../ui/CopyCommand";
 import { Card } from "../ui/HomeCards";
 import { clip, type CardSpec } from "../ui/homeCardsModel";
+import { roomMessagePreview } from "../roomPreview";
 import { CardGrid } from "../ui/PostTile";
 import { usePostBrief } from "../ui/postBrief";
 import { ViewStatus } from "../ui/ViewStatus";
@@ -167,7 +168,7 @@ function LabRoomBlock({ lab, isPrivate, onOpen }: { lab: Lab; isPrivate: boolean
       ) : latest.length ? (
         <ul className="e-lab__room-msgs">
           {latest.map((m) => (
-            <li key={m.message_id}><span title={m.sender_id}>{shortWho(m.sender_id)}</span>: {clip(m.content, 160)}</li>
+            <li key={m.message_id}><span title={m.sender_id}>{shortWho(m.sender_id)}</span>: {clip(roomMessagePreview(m.content, { removed: !!m.deleted_at }), 160)}</li>
           ))}
         </ul>
       ) : messages ? <Text className="e-faint">No general messages yet.</Text> : null}

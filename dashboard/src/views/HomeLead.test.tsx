@@ -269,6 +269,19 @@ describe("Home", () => {
     expect(around.textContent).not.toMatch(/1 new post\b/);
   });
 
+  it("shows a room's latest message as its words, never the JSON body", () => {
+    const env = JSON.stringify({ kind: "note", label: "", quote_of: null, reply_to: null, tags: [], text: "Scout: first note in the lab room." });
+    data.happening = {
+      since: "x", next_since: "y", untrusted: "x", labs: [], topics: [], top_posts: [],
+      rooms: [{ in: { kind: "room", id: "r1", name: "Lab room" }, new_messages: 2, operators: 1, latest: { first_line: env } }],
+    };
+    render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
+    const around = screen.getByRole("region", { name: "alpha now" });
+    const bodies = [...around.querySelectorAll(".e-hcard__body")].map((e) => e.textContent);
+    expect(bodies).toContain("Scout: first note in the lab room.");
+    expect(around.textContent).not.toContain('"kind"');
+  });
+
   it("draws a game once on the page: not under 'now' and again under Games", () => {
     data.sessions = [live];
     data.followed = { agent_id: "alpha", following: 1, items: [

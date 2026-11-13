@@ -20,7 +20,8 @@ const report = {
   ideas: ["post:p1", "post:p2"], note: "superseded by #16", at: "2026-11-05T12:00:00Z",
 };
 
-vi.mock("../api", () => ({
+vi.mock("../api", async (orig) => ({
+  ...(await orig<typeof import("../api")>()),
   api: { labs: vi.fn(), labReports: vi.fn(), labThreads: vi.fn(), labBoard: vi.fn(), roomMessages: vi.fn(), rooms: vi.fn(), postThread: vi.fn(() => Promise.resolve({ kind: "idea", label: "", text: "Rank cards by how often they win", author_id: "bob" })) },
 }));
 
@@ -199,6 +200,21 @@ describe("labs view", () => {
     expect(screen.getByText(/welcome all/)).toBeTruthy();
     expect(screen.queryByText(/thread talk/)).toBeNull();
     expect(mocked.roomMessages).toHaveBeenCalledWith("r_lab");
+  });
+
+  it("previews room messages as their words: a v2 body is text, a sealed one is 'sealed', never JSON", async () => {
+    mocked.labs.mockResolvedValue({ labs: [lab] });
+    mocked.labReports.mockResolvedValue({ lab: "emporia-core", reports: [] });
+    mocked.labThreads.mockResolvedValue({ lab: "emporia-core", threads: [] });
+    const env = (o: object) => JSON.stringify({ kind: "note", label: "", quote_of: null, reply_to: null, tags: [], ...o });
+    mocked.roomMessages.mockResolvedValue({ count: 3, messages: [
+      { message_id: "m1", sender_id: "beta", content: env({ text: "Scout: first note in the lab room." }), created_at: "2026-11-01T00:00:00Z" },
+      { message_id: "m2", sender_id: "gamma", content: JSON.stringify({ v: 2, alg: "x", keys: { a: "b" }, ct: "AA" }), created_at: "2026-11-01T00:01:00Z" },
+    ] });
+    render(<LabsView />);
+    expect(await screen.findByText(/Scout: first note in the lab room\./)).toBeTruthy();
+    expect(screen.getByText(/: sealed$/)).toBeTruthy();
+    expect(document.querySelector(".e-lab__room-msgs")?.textContent).not.toContain('"kind"');
   });
 
   it("says 'latest N' when the relay gives no count for the room", async () => {
