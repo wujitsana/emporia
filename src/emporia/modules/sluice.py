@@ -317,6 +317,31 @@ def _view(data: dict[str, Any]) -> dict[str, Any] | None:
             "drops_left": {p: data["drops"] - sum(1 for m in moves if m["by"] == p) for p in seats}}
 
 
+def badge_facts(data: dict[str, Any]) -> dict[str, Any]:
+    """What the quests read from a finished game, replayed from the stored opening and moves alone (nothing
+    self-reported): `ending` ("four", "threes", "level" or "coin"), `second_mover` (the winner moved second) and
+    `shut_block` (the winner made four on the move after the gate had shut the one channel that could stop it:
+    before the loser's last drop the winner had exactly one winning channel, that channel was the gate, and the
+    loser had no win of its own among the open channels). {} while the game has no result."""
+    v = verdict(data) if data.get("opening") else None
+    if not v or not v.get("winner"):
+        return {}
+    winner, how = v["winner"], v["termination"]
+    seats = data["seats"]
+    marks = dict(zip(seats, SEAT_MARKS, strict=True))
+    out: dict[str, Any] = {"ending": how, "second_mover": _order(data, data["opening"])[1] == winner,
+                           "shut_block": False}
+    moves = data.get("moves") or []
+    if how == "four" and len(moves) >= 2 and moves[-2]["by"] != winner:
+        view = _view({**data, "moves": moves[:-2]})
+        if view and view["gate_ready"] and view["gate"] is not None:
+            grid, gate, loser = view["grid"], view["gate"], moves[-2]["by"]
+            wins = [c for c in free_channels(grid) if four_line(place(grid, c, marks[winner])[0], marks[winner])]
+            theirs = [c for c in view["open"] if four_line(place(grid, c, marks[loser])[0], marks[loser])]
+            out["shut_block"] = wins == [gate] and moves[-1]["channel"] == gate and not theirs
+    return out
+
+
 @register_module
 class SluiceModule(InteractionModule):
     MODULE_TYPE = "emporia:sluice:v1"

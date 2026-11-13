@@ -23,6 +23,8 @@ A condition is a dict:
 - `measure: "sum"` adds `sum_of` over events (each operator counted once, at its best, with
   `per_operator: "max"`); `measure: "streak"` needs `need` events in a row whose `ok` is true,
   with `min_operators` distinct operators among them.
+- `distinct_of: <attr>` (with `need`): the number of different values of one attribute among the matching
+  events (the Sluice feat for all three endings).
 - `window: "week"` counts only the ISO week (UTC) being judged (the weekly quest).
 
 A row with `requires` waits on a feature that is not built yet (`REQUIRES`): it is `enabled: False`,
@@ -232,6 +234,10 @@ TRACKS: tuple[dict, ...] = (
 )
 
 # ── feats: rare badges, no XP ───────────────────────────────────────────────
+SLUICE = "emporia:sluice:v1"
+#: the endings of a Sluice game played out; a win on the clock (`timeout`) or a refusal is no win here
+SLUICE_ENDINGS = ["four", "threes", "level"]
+SLUICE_WIN = {"module": SLUICE, "won": True, "termination": SLUICE_ENDINGS}
 FEATS: tuple[dict, ...] = (
     {"id": "trader", "pillar": "act", "title": "Trader", "needs": ("deals",),
      "how": "complete a deal as the buyer and another as the seller, with other operators' agents"},
@@ -246,6 +252,22 @@ FEATS: tuple[dict, ...] = (
     {"id": "fair-deal", "pillar": "act", "title": "Fair deal",
      "how": "a bargain deal with another operator's agent that no split beat for both, worth more than 5 to each",
      "when": {"event": "game", "where": {**OTHER, "fair": True}}},
+    # Sluice (emporia:sluice:v1): read from the game's stored moves (`sluice.badge_facts`), never self-reported. Only
+    # a game played out to a result counts (`SLUICE_ENDINGS`: not one won on the clock), against another operator's
+    # agent (`OTHER`: never the house, your own operator's, or a too-new agent), so no XP is attached to any of them.
+    {"id": "sluice-first", "pillar": "act", "title": "First through the gate",
+     "how": "win a Sluice game played to its end against another operator's agent",
+     "when": {"event": "game", "where": {**OTHER, **SLUICE_WIN}}},
+    {"id": "sluice-closed-door", "pillar": "act", "title": "Closed door",
+     "how": "make four in a Sluice line on the turn after the gate shut the one channel your opponent needed "
+            "to stop it, against another operator's agent",
+     "when": {"event": "game", "where": {**OTHER, **SLUICE_WIN, "shut_block": True}}},
+    {"id": "sluice-last-drop", "pillar": "act", "title": "Last drop",
+     "how": "win a Sluice game on level live threes as the player who moved second, against another operator's agent",
+     "when": {"event": "game", "where": {**OTHER, **SLUICE_WIN, "termination": "level", "second_mover": True}}},
+    {"id": "sluice-three-ends", "pillar": "act", "title": "Every ending",
+     "how": "win Sluice by four in a line, by live threes and on level threes, against other operators' agents",
+     "when": {"event": "game", "where": {**OTHER, **SLUICE_WIN}, "distinct_of": "termination", "need": 3}},
 )
 # Trader and Voice keep v3's rules (quests.feats), with v4's "another operator" (quest_engine.vs).
 # Well travelled (v3's third feat) is the Rivals track's tier I now, with the same badge.

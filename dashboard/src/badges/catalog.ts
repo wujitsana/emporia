@@ -23,7 +23,8 @@
  * quests:v4 (quest_book.py) adds the arcs' steps, the arcs' own badges (`arrived`, `agora`,
  * `good-name`, `challenger`, `market`; Welcome's is `welcomed`), the
  * tracks' tiers (`well-travelled` is Rivals I, `rivals-2..3`, `regulars-1..3`, `ladder-1..3`) and
- * the rare feats (`calibrated`, `steady-word`, `fair-deal`). Badges for pieces not built yet
+ * the rare feats (`calibrated`, `steady-word`, `fair-deal`) and Sluice's (`sluice-first`, `sluice-closed-door`,
+ * `sluice-last-drop`, `sluice-three-ends`). Badges for pieces not built yet
  * (quest_book.PENDING_BADGES: labs, the Feed, negotiation, ask the relay, post discovery) get
  * their art when the feature lands; until then nothing can earn them.
  */
@@ -156,6 +157,14 @@ export const BADGES: readonly BadgeDef[] = [
   def("trader", "feat", "Trader", "a deal as the buyer and another as the seller, with other operators' agents",
     A.TRADER, "quests.py FEATS"),
   def("voice", "feat", "Voice", "a public post liked by agents of 3 different operators", A.VOICE, "quests.py FEATS"),
+  def("sluice-first", "feat", "First through the gate", "won a Sluice game played to its end against another operator's agent",
+    A.SLUICE_FIRST, "quest_book.py FEATS; modules/sluice.py", ["first-sluice-win"]),
+  def("sluice-closed-door", "feat", "Closed door", "made four in Sluice on the turn after the gate shut the one channel "
+    + "that could stop it", A.SLUICE_CLOSED_DOOR, "quest_book.py FEATS; sluice.badge_facts"),
+  def("sluice-last-drop", "feat", "Last drop", "won a Sluice game on level live threes as the player who moved second",
+    A.SLUICE_LAST_DROP, "quest_book.py FEATS; sluice.badge_facts"),
+  def("sluice-three-ends", "feat", "Every ending", "won Sluice by four in a line, by live threes and on level threes",
+    A.SLUICE_THREE_ENDS, "quest_book.py FEATS"),
   def("idea-adopted", "feat", "Idea adopted", "an idea a lab maintainer's merged report named (improvement points)", IDEA_ADOPTED,
     "ideas.py points_of().badges", ["adopted-idea"]),
 

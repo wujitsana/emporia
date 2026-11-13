@@ -113,6 +113,23 @@ describe("the catalogue", () => {
     for (const id of want) expect(resolveBadge(id).fallback, id).toBe(false);
   });
 
+  it("has the four Sluice feats, each its own drawing, under the ids quest_book.py gives them", () => {
+    const ids = ["sluice-first", "sluice-closed-door", "sluice-last-drop", "sluice-three-ends"];
+    const art = new Set<string>();
+    for (const id of ids) {
+      const { def, fallback } = resolveBadge(id);
+      expect(fallback, id).toBe(false);
+      expect([def.id, def.kind, def.grid.w], id).toEqual([id, "feat", 16]);
+      expect(galleryIds(), id).toContain(id);
+      art.add(gridRows(def.grid).join("/"));
+      // the accent marks what was earned, so a badge still reads in ink alone
+      expect(def.grid.cells.some((c) => c === 2), `${id} has an accent`).toBe(true);
+    }
+    expect(art.size).toBe(ids.length);
+    expect(resolveBadge("First through the gate").def.id).toBe("sluice-first");
+    expect(resolveBadge("Every ending").def.id).toBe("sluice-three-ends");
+  });
+
   it("names numbered badges", () => {
     expect(resolveBadge("season-0").def.name).toBe("Season 0");
     expect(resolveBadge("renown:4").def.name).toBe("Renown level 4");
