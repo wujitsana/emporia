@@ -290,7 +290,7 @@ async def create_lab(request: Request, req: LabIn):
         out = _lab_public(conn, row)
     if not room.encrypted:
         _post_in_room(req.room_id, f"This room is the lab {req.slug}, about {subject['ref']}. Each issue or pull "
-                      "request has a thread here: reply to gh_pr:OWNER/REPO#N or gh_issue:OWNER/REPO#N.",
+                      f"request has a thread here: reply to gh_pr:{subject['ref']}#N or gh_issue:{subject['ref']}#N.",
                       None, {"lab": req.slug})
     return out
 

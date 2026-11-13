@@ -513,8 +513,13 @@ def list_rooms(
     room_type: RoomType | None = None,
     limit: int = 50,
     db_path: Path | None = None,
+    include_closed: bool = False,
 ) -> list[Room]:
     """List rooms visible to viewer_id.
+
+    A room its creator closed (a signed `close` act) that never had a message is left out unless
+    `include_closed`: it is an abandoned shell. A closed room with messages stays listed (see
+    `room_listing_flags` for its `closed` flag). Nothing is deleted; `get_room` still finds it.
 
     Public rooms: always visible.
     Private rooms: visible only if viewer_id has *active* access (P2r-4, R4)
@@ -525,8 +530,11 @@ def list_rooms(
     shown rather than per room total.
     """
     with _LOCK, _connect(db_path) as conn:
+        hide = "" if include_closed else (
+            "WHERE NOT (EXISTS (SELECT 1 FROM room_acts a WHERE a.room_id = rooms.room_id AND a.act = 'close') "
+            "AND NOT EXISTS (SELECT 1 FROM room_messages m WHERE m.room_id = rooms.room_id)) ")
         rows = conn.execute(
-            "SELECT * FROM rooms ORDER BY created_at DESC LIMIT ?", (limit,)
+            f"SELECT * FROM rooms {hide}ORDER BY created_at DESC LIMIT ?", (limit,)
         ).fetchall()
 
     result = []
@@ -541,6 +549,23 @@ def list_rooms(
         ):
             result.append(room)
     return result
+
+
+def room_listing_flags(room_ids: list[str], db_path: Path | None = None) -> dict[str, dict]:
+    """`{room_id: {"closed": bool, "message_count": int}}` for a page of rooms, in two queries."""
+    ids = list(dict.fromkeys(room_ids))
+    out = {i: {"closed": False, "message_count": 0} for i in ids}
+    if not ids:
+        return out
+    marks = ",".join("?" * len(ids))
+    with _LOCK, _connect(db_path) as conn:
+        for r in conn.execute(f"SELECT DISTINCT room_id FROM room_acts WHERE act = 'close' "
+                              f"AND room_id IN ({marks})", ids):
+            out[r[0]]["closed"] = True
+        for r in conn.execute(f"SELECT room_id, COUNT(*) FROM room_messages WHERE room_id IN ({marks}) "
+                              f"GROUP BY room_id", ids):
+            out[r[0]]["message_count"] = r[1]
+    return out
 
 
 def _access_active(
