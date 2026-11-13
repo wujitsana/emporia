@@ -1,16 +1,15 @@
 import Text from "@kit/Text";
 import type { Frame, Slot } from "../arena";
 import { playerName } from "../arena";
-import type { BargainOffer, Goods } from "../bargain";
-import { GOODS } from "../bargain";
 import { FoldDetail } from "./FoldDetail";
 import { SetPlayBoard } from "./boards/SetPlayBoard";
 import { modelFromFrame } from "./boards/setPlayModel";
+import { AuctionLine } from "./boards/AuctionLine";
+import { BargainSplit } from "./boards/BargainSplit";
+import { DiceTable } from "./boards/DiceTable";
+import { auctionFromFrame, bargainFromFrame, diceFromFrame } from "./boards/chanceModel";
 
 type Book = Record<string, string> | undefined;
-
-const goods = (g: Goods | undefined) =>
-  GOODS.map((k) => `${g?.[k] ?? 0} ${k}`).join(" · ");
 
 function moveText(m: number | number[] | undefined): string {
   if (m === undefined) return "";
@@ -87,28 +86,9 @@ export function ArenaFrame({ frame, book }: { frame: Frame; book: Book }) {
       <div className="e-arena-frame" data-kind="dice">
         <Result r={frame.result} book={book} />
         <FoldDetail fold={!!frame.result} label="the bids and the dice">
-        {frame.bids.length === 0 ? <Text className="e-faint">No bid yet.</Text> : (
-          <ol className="e-arena-bids">
-            {frame.bids.map((b) => (
-              <li key={b.n} className={frame.call?.bid === b.n ? "is-called" : undefined}>
-                <span className="e-arena-slot__who">{playerName(b.by, book)}</span>
-                <span className="e-arena-move">{b.quantity} × {b.face}</span>
-                {frame.call?.bid === b.n ? <span className="e-arena-call">called liar by {playerName(frame.call.by, book, 12)}</span> : null}
-              </li>
-            ))}
-          </ol>
-        )}
+        <DiceTable {...diceFromFrame(frame, (id) => playerName(id, book, 10))} />
         {frame.call ? <Text className="e-faint" style={{ fontSize: 12 }}>secrets revealed: {frame.revealed.length}</Text> : null}
-        {frame.dice ? (
-          <ul className="e-arena-slots" aria-label="Dice, revealed with the record">
-            {Object.entries(frame.dice).map(([p, d]) => (
-              <li key={p} className="e-arena-slot is-revealed">
-                <span className="e-arena-slot__who">{playerName(p, book)}</span>
-                <span className="e-arena-move">{d.join(" ")}</span>
-              </li>
-            ))}
-          </ul>
-        ) : frame.call ? <Text className="e-faint" style={{ fontSize: 12 }}>dice stay hidden until the record reveals them</Text> : null}
+        {!frame.dice && frame.call ? <Text className="e-faint" style={{ fontSize: 12 }}>dice stay hidden until the record reveals them</Text> : null}
         </FoldDetail>
       </div>
     );
@@ -118,14 +98,9 @@ export function ArenaFrame({ frame, book }: { frame: Frame; book: Book }) {
       <div className="e-arena-frame" data-kind="auction">
         <Result r={frame.result} book={book} />
         <FoldDetail fold={!!frame.result} label="the bids and the signals">
-        <Slots slots={frame.slots} book={book} />
+        <AuctionLine {...auctionFromFrame(frame, (id) => playerName(id, book, 10))} />
         {frame.secrets.length ? <Text className="e-faint" style={{ fontSize: 12 }}>secrets revealed: {frame.secrets.length}</Text> : null}
-        {frame.value !== null ? (
-          <p className="e-arena-verdict">
-            V = {frame.value}{frame.base !== null ? ` (base ${frame.base})` : ""}
-            {frame.signals ? ` · signals ${Object.entries(frame.signals).map(([p, v]) => `${playerName(p, book, 10)} ${v}`).join(", ")}` : ""}
-          </p>
-        ) : <Text className="e-faint" style={{ fontSize: 12 }}>V stays unknown until the secrets are revealed</Text>}
+        {frame.value === null ? <Text className="e-faint" style={{ fontSize: 12 }}>V stays unknown until the secrets are revealed</Text> : null}
         </FoldDetail>
       </div>
     );
@@ -136,25 +111,8 @@ export function ArenaFrame({ frame, book }: { frame: Frame; book: Book }) {
         <Result r={frame.result} book={book} />
         {frame.result && frame.ended ? <p className="e-arena-verdict">{playerName(frame.ended.by, book)} {frame.ended.how} offer {frame.offers.length}.</p> : null}
         <FoldDetail fold={!!frame.result} label={`the offers and the hands (${frame.offers.length})`}>
-        {frame.offers.length === 0 ? <Text className="e-faint">No offer yet.</Text> : (
-          <ol className="e-arena-bids">
-            {frame.offers.map((o: BargainOffer) => (
-              <li key={o.n}>
-                <span className="e-arena-slot__who">{playerName(o.by, book)}</span>
-                <span className="e-arena-move">
-                  {Object.entries(o.allocation).map(([p, g]) => `${playerName(p, book, 10)} ${goods(g)}`).join("  |  ")}
-                </span>
-                {o.claim ? <span className="e-faint"> claims {goods(o.claim)}</span> : null}
-              </li>
-            ))}
-          </ol>
-        )}
+        <BargainSplit {...bargainFromFrame(frame, (id) => playerName(id, book, 10))} />
         {frame.ended && !frame.result ? <p className="e-arena-verdict">{playerName(frame.ended.by, book)} {frame.ended.how} offer {frame.offers.length}.</p> : null}
-        {frame.hands ? (
-          <Text className="e-faint" style={{ fontSize: 12, display: "block" }}>
-            hands: {Object.entries(frame.hands).map(([p, g]) => `${playerName(p, book, 10)} ${goods(g)}`).join("  |  ")}
-          </Text>
-        ) : null}
         </FoldDetail>
       </div>
     );

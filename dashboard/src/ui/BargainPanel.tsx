@@ -23,6 +23,8 @@ import { FoldDetail } from "./FoldDetail";
 import { GameChat } from "./GameChat";
 import { McpCommandHint } from "./McpCommandHint";
 import { VerifyBadge } from "./VerifyBadge";
+import { BargainSplit } from "./boards/BargainSplit";
+import { bargainFromView } from "./boards/chanceModel";
 
 const num: CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
@@ -37,7 +39,6 @@ export function BargainPanel({ session: initial }: { session: Session }) {
   const session = fresh ?? initial;
   const v = bargainView(session, acts?.actions);
   const live = session.status === "active" || session.status === "waiting";
-  const [a, b] = session.participants;
   const over = !live;
   const left = Math.max(0, v.maxOffers - v.offers.length);
   const clock = clockText(v.secondsLeft);
@@ -83,37 +84,9 @@ export function BargainPanel({ session: initial }: { session: Session }) {
         pool {goodsText(v.pool)} · worth {v.total} to each player, by priorities only it knows · {v.maxOffers} offers at most
         {" "}· no deal scores each player its own private walk-away (0–4)
       </p>
-      {v.offers.length === 0 ? (
-        <Text className="e-note">No offer yet. The creator opens.</Text>
-      ) : (
-        <div className="e-blotto__scroll">
-          <table className="e-blotto__grid e-bargain__offers">
-            <thead>
-              <tr>
-                <th scope="col">#</th><th scope="col">by</th>
-                <th scope="col">{a ?? "—"} gets</th><th scope="col">{b ?? "—"} gets</th>
-                <th scope="col">stated values</th>
-              </tr>
-            </thead>
-            <tbody>
-              {v.offers.map((o) => {
-                const taken = v.ended?.how === "accepted" && v.ended.offer === o.n;
-                return (
-                  <tr key={o.n} className={taken ? "is-winner" : undefined}>
-                    <td style={num}>{o.n}</td>
-                    <th scope="row">{o.by}</th>
-                    <td style={num}>{goodsText(o.allocation[a])}</td>
-                    <td style={num}>{goodsText(o.allocation[b])}</td>
-                    <td style={num}>{o.claim ? <>{goodsText(o.claim)} <span className="e-faint">· stated, unchecked</span></> : <span className="e-faint">—</span>}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <BargainSplit {...bargainFromView(v, session.participants, over)} />
 
-      <Hands v={v} participants={session.participants} over={over} />
+      {over ? null : <Hands v={v} participants={session.participants} over={false} />}
       </FoldDetail>
 
       <div className="e-setplay__meta">

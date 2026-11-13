@@ -1,0 +1,29 @@
+.root { max-width: 44rem; }
+
+.line { position: relative; min-width: 28rem; margin: 6px 14px 4px; display: grid; gap: 0; }
+.lane { --rows: 1; position: relative; height: calc(var(--rows) * 1.5rem + 1.3rem); }
+.axis { position: relative; height: 2px; background: var(--theme-text); opacity: 1; margin: 0; }
+.tick { position: absolute; top: -5px; width: 1px; height: 12px; background: var(--theme-text); }
+.tick > span { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-size: 0.66rem; }
+.mark { position: absolute; top: -10px; width: 0; height: 22px; }
+.mark > span { position: absolute; top: -14px; left: 4px; font-size: 0.7rem; white-space: nowrap; font-weight: 700; }
+.base { border-left: 2px dashed var(--theme-text); }
+.pot { border-left: 3px solid var(--board-line); }
+.pot > span { left: auto; right: 5px; }
+
+/* Signals above the axis: a label over a tick that ends on the line. */
+.sig { position: absolute; top: calc(var(--row) * 1.5rem); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
+.sigText { font-size: 0.7rem; white-space: nowrap; padding: 0 3px; border: 1px dotted var(--theme-text); background: var(--theme-background); }
+.sigTick { width: 0; height: 0.4rem; border-left: 1px dotted var(--theme-text); }
+
+/* Bids below the axis: a pin hanging from the line to its label. */
+.pin { position: absolute; top: calc(var(--row) * 1.5rem); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; margin-top: 0.7rem; }
+.pinTick { width: 2px; height: 0.4rem; background: var(--theme-text); }
+.pinText { font-size: 0.72rem; white-space: nowrap; padding: 0 4px; border: 1px solid var(--board-rule); background: var(--theme-background); }
+.won .pinText { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; }
+
+/* The winner's gain or loss: the stretch between its bid and V. A curse is hatched, a gain solid. */
+.seg { position: relative; height: 2.2rem; margin-top: 4px; }
+.span { position: absolute; top: 4px; height: 0.8rem; min-width: 3px; background: var(--board-line); }
+.loss { background: repeating-linear-gradient(45deg, var(--board-line) 0 3px, transparent 3px 6px); border: 1px solid var(--board-line); }
+.segText { position: absolute; top: 1.3rem; font-size: 0.74rem; font-weight: 700; white-space: nowrap; }

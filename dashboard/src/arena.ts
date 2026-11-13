@@ -86,6 +86,9 @@ export type Frame =
     }
   | {
       kind: "bargain";
+      /** The two players in seat order, and the public pool, for the split board. */
+      players: string[];
+      pool: Goods;
       offers: BargainOffer[];
       ended: { how: "accepted" | "declined"; by: string } | null;
       hands: Record<string, Goods> | null;
@@ -282,7 +285,7 @@ export function buildTimeline(session: Session, actionLog: SessionAction[] | nul
         }
       }
       const hands = atEnd && Object.keys(bv.hands).length ? bv.hands : null;
-      return { kind: "bargain", offers, ended, hands, result: atEnd ? bv.result : null };
+      return { kind: "bargain", players, pool: bv.pool, offers, ended, hands, result: atEnd ? bv.result : null };
     }
     if (kind === "chess") return { kind: "chess" };
     return {
