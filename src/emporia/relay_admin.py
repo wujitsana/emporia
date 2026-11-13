@@ -38,6 +38,7 @@ def _is_set(name: str) -> str:
 def settings() -> list[dict[str, Any]]:
     """The relay's settings, as its operator would change them."""
     from emporia import relay_access
+    from emporia import relay_db
     from emporia import relay_server as rs
     from emporia.networks import is_testnet, label
     from emporia.payments import _x402_enabled, _x402_facilitator_url, _x402_networks
@@ -108,6 +109,10 @@ def settings() -> list[dict[str, Any]]:
               "Checks the database file, every room and DM chain and the transparency log, and says the result "
               "on /health. It only reads; nothing is paused or repaired.",
               f"EMPORIA_INTEGRITY_INTERVAL_SECONDS (0 turns it off) — {_RESTART}"),
+        _item("Operations", "Database backup", str(_bk) if (_bk := relay_db.backup_dir()) else "off",
+              "One consistent local copy of the database a day, the newest few kept. Off unless a folder is set. "
+              "Restore is `emporia relay db restore`, with the relay stopped.",
+              f"EMPORIA_DB_BACKUP_DIR, EMPORIA_DB_BACKUP_KEEP — {_RESTART}"),
         _item("Operations", "Checks", "", "✓ / ! / ✗ for the relay and every agent on this machine.",
               "emporia doctor"),
     ]

@@ -104,7 +104,7 @@ from emporia.module_sdk import (
     get_interaction_module,
     session_kind,
 )
-from emporia import __version__
+from emporia import __version__, relay_db
 from emporia import names as _names
 from emporia import proxy_ip as _proxy_ip
 from emporia import operators
@@ -3327,10 +3327,12 @@ async def lifespan(app: FastAPI):
     _check_relay_modules()   # P291: before anything is opened or started
     _hold_the_database()
     init_db()
-    global _SWEEP_TASK, _FEDERATION_SYNC_TASK, _PAYOUT_RECONCILE_TASK, _INTEGRITY_TASK
+    global _SWEEP_TASK, _FEDERATION_SYNC_TASK, _PAYOUT_RECONCILE_TASK, _INTEGRITY_TASK, _DB_BACKUP_TASK
     _SWEEP_TASK = asyncio.create_task(_sweep_loop())
     if (_interval := integrity_interval()) > 0:
         _INTEGRITY_TASK = asyncio.create_task(_integrity_loop(_interval))
+    if relay_db.backup_dir() is not None:    # opt-in: EMPORIA_DB_BACKUP_DIR
+        _DB_BACKUP_TASK = asyncio.create_task(_db_backup_loop())
     if translog.enabled():   # P258: EMPORIA_TRANSPARENCY_LOG=off turns it off
         globals()["_LOG_STATE_TASK"] = asyncio.create_task(_log_state_loop())
     else:
@@ -3366,6 +3368,11 @@ async def lifespan(app: FastAPI):
             with suppress(asyncio.CancelledError):
                 await _INTEGRITY_TASK
             _INTEGRITY_TASK = None
+        if _DB_BACKUP_TASK is not None:
+            _DB_BACKUP_TASK.cancel()
+            with suppress(asyncio.CancelledError):
+                await _DB_BACKUP_TASK
+            _DB_BACKUP_TASK = None
         _log_task = globals().get("_LOG_STATE_TASK")
         if _log_task is not None:
             _log_task.cancel()
@@ -4171,6 +4178,36 @@ async def _integrity_loop(interval: float, first_delay: float | None = None) -> 
         except Exception:
             logger.exception("The integrity check failed — will retry")
         await asyncio.sleep(interval)
+
+
+# Local database backup (relay_db.py): with EMPORIA_DB_BACKUP_DIR set, one a day (checked hourly, so a restart
+# does not make an extra one). A failure is logged; the relay carries on.
+_DB_BACKUP_FIRST_DELAY_SECONDS = 60.0
+_DB_BACKUP_CHECK_SECONDS = 3600.0
+_DB_BACKUP_TASK: asyncio.Task | None = None
+
+
+def _db_backup_pass() -> None:
+    made = relay_db.backup_if_due(DATABASE_PATH)
+    if made is None:
+        return
+    status = (relay_db._read_manifest(made) or {}).get("integrity", {}).get("status")
+    if status == "ok":
+        logger.info("db_backup_made", extra={"file": made.name})
+    else:
+        logger.error("db_backup_degraded", extra={"file": made.name, "integrity": status})
+
+
+async def _db_backup_loop(first_delay: float | None = None) -> None:
+    await asyncio.sleep(_DB_BACKUP_FIRST_DELAY_SECONDS if first_delay is None else first_delay)
+    while True:
+        try:
+            await asyncio.to_thread(_db_backup_pass)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("The database backup failed — will retry")
+        await asyncio.sleep(_DB_BACKUP_CHECK_SECONDS)
 
 
 def _expire_dm_content() -> int:

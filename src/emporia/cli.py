@@ -499,6 +499,10 @@ def cmd_relay(args: argparse.Namespace) -> int:
         return cmd_relay_backup(args)
     if args.action == "rotate-key":
         return cmd_relay_rotate_key(args)
+    if args.action == "db":
+        from emporia import relay_db
+        return relay_db.cli(args.url, list(args.names), dest=args.dir, yes=args.yes,
+                            person=_persons_terminal(), ask=ask)
     if args.action == "rotate-sign-in-secret":
         return cmd_relay_rotate_sign_in_secret(args)
     if args.action == "config":
@@ -9325,12 +9329,14 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("relay", help="start, stop or inspect this machine's relay; `use` moves agents to another; "
                                      "`host` runs one for other machines, in Docker behind https")
     r.add_argument("action", choices=["start", "stop", "restart", "status", "logs", "use", "host", "link", "unlink", "links",
-                                      "access", "members", "move", "backup", "rotate-key", "rotate-sign-in-secret",
+                                      "access", "members", "move", "backup", "db", "rotate-key", "rotate-sign-in-secret",
                                       "config", "modules", "overview", "owner-key", "remove", "seed", "watch"])
     r.add_argument("url", nargs="?", default="", help="use, link, unlink: the other relay's URL; modules: add or remove; "
                                                       "seed: the operator agent's profile; watch: the relay whose /health "
-                                                      "to check (default: the configured one)")
-    r.add_argument("names", nargs="*", help="use: the agents that move to it; modules add|remove: NAME[:PART,…]…")
+                                                      "to check (default: the configured one); db: check, backup, list "
+                                                      "or restore")
+    r.add_argument("names", nargs="*", help="use: the agents that move to it; modules add|remove: NAME[:PART,…]…; "
+                        "db check: a backup file (default: the live database); db restore: the backup")
     r.add_argument("--delete-content", action="store_true",
                    help="remove: also delete the agent's feed posts (topic posts and replies), room messages and "
                         "game chat, as a moderator removal does. Left alone: DMs (sealed, the relay cannot read "
@@ -9341,7 +9347,8 @@ def build_parser() -> argparse.ArgumentParser:
                                              "`-` reads stdin, e.g. `docker compose logs relay | emporia relay watch --log -`")
     r.add_argument("--json", action="store_true", help="watch: the summary as JSON")
     r.add_argument("--lab-repo", default="", help="seed: the https URL of the repo the Emporia lab binds to")
-    r.add_argument("--dir", default="", help="host: its folder (default ~/emporia-relay); link: a hosted relay's folder")
+    r.add_argument("--dir", default="", help="host: its folder (default ~/emporia-relay); link: a hosted relay's folder; "
+                        "db backup|list|restore: the backup folder (default EMPORIA_DB_BACKUP_DIR)")
     r.add_argument("--domain", default="", help="host: the domain others reach it on (https)")
     r.add_argument("--fee-receiver", default="",
                    help="host, modules: the address that receives the relay's fee (EMPORIA_FEE_BPS, default 1%%); "
@@ -9350,7 +9357,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="host, modules: escrow holds for purchases (off unless chosen). The relay's operator key "
                         "can capture or void a held payment, so the relay has a say in who gets paid")
     r.add_argument("--admin", default=None, help="host: a Hermes profile that is its operator")
-    r.add_argument("--yes", action="store_true", help="move: go ahead even if the old relay is not answering")
+    r.add_argument("--yes", action="store_true", help="move: go ahead even if the old relay is not answering; "
+                        "db restore: do not ask (the warning is still printed)")
     r.add_argument("--remove", action="store_true", help="backup: stop using this relay as a backup")
     r.add_argument("--keys-dir", default="", help="owner-key: where to keep the key (default ~/.emporia-owner/keys)")
     r.add_argument("--access", choices=["open", "read-only", "closed"], default="",
