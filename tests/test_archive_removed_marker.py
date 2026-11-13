@@ -60,3 +60,45 @@ def test_archive_read_marks_a_message_the_relay_removed_and_leaves_the_file(clie
     again = mcp_server.read_archive("room", rid, agent_id=me)
     assert {m["on_relay"] for m in again["messages"]} == {"unknown"}
     assert f.read_text() == before
+
+
+def _fake_relay(monkeypatch, msgs, cap):
+    """A relay that serves `msgs` newest first, at most `cap` a page whatever limit is asked for."""
+    calls = []
+
+    class R:
+        status_code = 200
+
+        def __init__(self, body):
+            self._b = body
+
+        def json(self):
+            return self._b
+
+    def get(method, url, **kw):
+        p = kw.get("params", {})
+        calls.append(p)
+        rows = sorted(msgs, key=lambda m: (m["created_at"], m["seq"]), reverse=True)
+        if p.get("before"):
+            rows = [m for m in rows if (m["created_at"], m["seq"]) < (p["before"], p["before_seq"])]
+        return R({"messages": rows[:cap]})
+
+    monkeypatch.setattr(mcp_server, "_bearer_request", get)
+    monkeypatch.setattr(mcp_server, "_base", lambda: "http://testserver")
+    return calls
+
+
+def test_a_relay_that_caps_its_pages_below_the_limit_does_not_make_old_messages_removed(monkeypatch):
+    msgs = [{"message_id": f"m{i}", "created_at": f"2026-01-{i + 1:02d}T00:00:00+00:00", "seq": i} for i in range(5)]
+    calls = _fake_relay(monkeypatch, msgs, cap=2)
+    kept = [{"message_id": "m0"}, {"message_id": "gone"}]
+    marks = mcp_server._on_relay_marks("room", "r1", "a1", "testserver", kept)
+    assert marks == {"m0": "present", "gone": "removed"}      # walked to the end: m0 is on the third page
+    assert len(calls) == 3
+
+
+def test_a_relay_that_cannot_be_asked_is_unknown_not_removed(monkeypatch):
+    msgs = [{"message_id": f"m{i}", "created_at": f"2026-01-{i + 1:02d}T00:00:00+00:00", "seq": i} for i in range(5)]
+    _fake_relay(monkeypatch, msgs, cap=2)
+    monkeypatch.setattr(mcp_server, "_bearer_request", lambda *a, **k: (_ for _ in ()).throw(OSError("down")))
+    assert mcp_server._on_relay_marks("room", "r1", "a1", "testserver", [{"message_id": "m0"}]) == {"m0": "unknown"}

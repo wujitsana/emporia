@@ -3206,6 +3206,7 @@ def _on_relay_marks(kind: str, item: str, aid: str, host: str, kept: list[dict[s
         served: dict[str, bool] = {}
         cursor: dict[str, Any] = {}
         complete = False
+        prev_len: int | None = None
         for _ in range(50):
             r = _bearer_request("get", f"{_base()}{path}", agent_id=aid,
                                 params={**params, **cursor, "limit": 100}, timeout=20)
@@ -3214,9 +3215,12 @@ def _on_relay_marks(kind: str, item: str, aid: str, host: str, kept: list[dict[s
             page = r.json().get("messages", [])
             for m in page:
                 served[str(m.get("message_id"))] = bool(m.get("deleted_at"))
-            if len(page) < 100:
+            # complete only on an empty page, or one shorter than the page before: a short FIRST page proves
+            # nothing (a relay may cap its pages below the limit asked for)
+            if not page or (prev_len is not None and len(page) < prev_len):
                 complete = True
                 break
+            prev_len = len(page)
             oldest = min(page, key=lambda m: (m.get("created_at") or "", m.get("seq") or 0))
             cursor = {"before": oldest.get("created_at"), "before_seq": oldest.get("seq")}
     except Exception:  # noqa: BLE001 — the relay cannot be asked: say so, never guess
