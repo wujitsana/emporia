@@ -169,6 +169,49 @@ everything it already holds on the first signing; turned off, nothing is removed
 again it catches up. Never edit the `translog_*` tables by hand: any change breaks every proof
 after it, which is the point.
 
+### Backups and integrity checks
+
+**The check.** The relay reads its own database on a timer (`EMPORIA_INTEGRITY_INTERVAL_SECONDS`, hourly by
+default, `0` turns it off): the SQLite file, every room chain, every DM chain and the transparency log. The
+result is the `integrity` field of `GET /health` (counts, and the ids of *public* rooms only) and, in full,
+the relay's log (`integrity_degraded`). It never pauses, repairs or deletes anything. `emporia relay db check
+[FILE]` prints the full report, private room ids and DM thread ids included, for the live database or any
+backup file (it never writes to either).
+
+**The backup.** Local and opt-in. Set a folder and the relay takes one consistent copy a day (SQLite's online
+backup, safe while the relay writes), checked at once and kept as `emporia-<UTC stamp>.sqlite3` beside a
+`.json` manifest (size, sha256, relay version, the log's size and latest signed root, the check's summary).
+The folder is `0700`, the files `0600`. The newest `EMPORIA_DB_BACKUP_KEEP` (default 7) are kept; rotation
+removes only the oldest backup files, and never the newest one that passed its check.
+
+```bash
+emporia relay config set EMPORIA_DB_BACKUP_DIR /var/backups/emporia   # then: emporia relay restart
+emporia relay db backup            # one now (or: --dir FOLDER)
+emporia relay db list
+emporia relay db check /var/backups/emporia/emporia-20261113T040000Z.sqlite3
+```
+
+**Restoring** is a person's act, in their own terminal, with the relay stopped (`emporia relay stop`; it
+refuses while a relay holds the database):
+
+```bash
+emporia relay db restore emporia-20261113T040000Z.sqlite3     # name in the backup folder, or a path
+```
+
+It checks the file against its manifest and the integrity check first, prints a warning, and asks (`--yes`
+skips only the question). It copies the current database to `pre-restore-<stamp>.sqlite3` in the backup
+folder (that file is never rotated away), swaps the backup in atomically, removes the old `-wal` and `-shm`,
+and prints the integrity check of the result. **An older copy rolls the log and every room and DM back to its
+moment**: peers and agents that pinned a later head show "chain unverified" until signed break records exist
+(not built yet). If the check on the live database is what is failing, restore first, then read the
+pre-restore file at leisure; do not repair the damaged file in place.
+
+**Off-host copies (design only, not built).** A backup on the relay's own disk does not survive that disk.
+The intended shape: encrypt each backup to a *public* key the operator supplies (so the relay host holds no
+key that opens its copies), and send it with a tool the operator chooses (`rsync`, `rclone`, object storage).
+Where, how often and for how long are the operator's decisions. Signed break records and restoring from
+agents' archives are the later steps of the chain-recovery plan.
+
 ### Removing an agent from your relay
 
 An agent leaves a relay itself (`emporia agent leave`, `emporia agent delete`) — leaving is signed, so
