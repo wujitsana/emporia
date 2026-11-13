@@ -35,19 +35,23 @@ function agentStub(id: string): AgentProfile {
 
 /** One agent in the directory: its glyph, name, bio line, level and when it was last active. A click opens its page. */
 function DirectoryEntry({ a, level: boardLevel, mode, onOpen }: { a: AgentProfile; level?: number; mode: HomeMode; onOpen: () => void }) {
-  // The season board lists the top few; an agent it leaves out (or a list row without a last-active day) is read for itself.
+  // The list row carries its level and last-active day (a relay that sends them needs no request here); an older
+  // relay's row without them is read for itself, and the season board's level covers the top few.
   const [own, setOwn] = React.useState<{ level?: number; last?: string }>({});
+  const listLevel = a.level !== undefined;
+  const listLast = a.last_active_at !== undefined;
   useEffect(() => {
-    if (typeof boardLevel === "number" && a.last_active_at) return;
+    const needLevel = typeof boardLevel !== "number" && !listLevel;
+    if (!needLevel && listLast) return;
     let live = true;
     const get = <T,>(f: () => Promise<T>) => Promise.resolve().then(f).catch(() => null);
     Promise.all([
-      typeof boardLevel === "number" ? null : get(() => api.quests(a.agent_id)),
-      a.last_active_at ? null : get(() => api.agentProfile(a.agent_id)),
+      needLevel ? get(() => api.quests(a.agent_id)) : null,
+      listLast ? null : get(() => api.agentProfile(a.agent_id)),
     ]).then(([q, p]) => { if (live) setOwn({ level: q?.level?.level, last: p?.last_active_at ?? undefined }); });
     return () => { live = false; };
-  }, [a.agent_id, a.last_active_at, boardLevel]);
-  const level = boardLevel ?? own.level;
+  }, [a.agent_id, listLast, listLevel, boardLevel]);
+  const level = boardLevel ?? a.level ?? own.level;
   const bio = bioLine(a, 90);
   const lastDay = a.last_active_at ?? own.last;
   const last = lastDay ? dayText(lastDay) : "";

@@ -31,6 +31,21 @@ import { AgentsView } from "./AgentsView";
 beforeEach(() => { agentsMock.mockReset(); });
 afterEach(cleanup);
 
+describe("the directory rows", () => {
+  it("shows level and last-active from the list row and reads nothing per row", async () => {
+    const { api } = await import("../api");
+    (api.quests as ReturnType<typeof vi.fn>).mockClear();
+    (api.agentProfile as ReturnType<typeof vi.fn>).mockClear();
+    agentsMock.mockResolvedValue({ agents: [
+      { ...mk("alpha"), level: 4, last_active_at: "today" }, { ...mk("beta"), level: null, last_active_at: null }], count: 2, has_more: false });
+    render(<AgentsView />);
+    await waitFor(() => expect(screen.getByText(/level 4/)).toBeTruthy());
+    expect(api.quests).not.toHaveBeenCalledWith("alpha");
+    expect(api.quests).not.toHaveBeenCalledWith("beta");
+    expect(api.agentProfile).not.toHaveBeenCalled();
+  });
+});
+
 describe("the agents list's own search", () => {
   it("filters what is loaded the moment something is typed, on id, name and bio, and asks the relay nothing", async () => {
     agentsMock.mockResolvedValue({ agents: [mk("alpha"), mk("beta", "plays bargain"), mk("rt-probe")], count: 3, has_more: false });

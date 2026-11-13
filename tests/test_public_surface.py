@@ -281,3 +281,21 @@ def test_l7_a_signed_in_answer_is_no_store_and_an_anonymous_one_is_not(client):
     assert plain.get("/health", headers={"X-Emporia-Authorization": f"Bearer {tok}"}).headers[
         "cache-control"] == "no-store"
     assert plain.get("/health").headers.get("cache-control") != "no-store"
+
+
+def test_agents_list_rows_carry_last_active_and_level_like_the_profile(client):
+    """The directory reads `last_active_at` and `level` off the list row; they equal the profile's and the quests'."""
+    a = _agent(client, "dl")
+    b = _agent(client, "dm")
+    _post(client, a, text=f"a post {uuid.uuid4().hex[:5]}")
+    rows = {r["agent_id"]: r for r in client.get("/agents?limit=200", headers=_as(b)).json()["agents"]}
+    row = rows[a]
+    prof = client.get(f"/agents/{a}", headers=_as(b)).json()
+    assert row["last_active_at"] == prof["last_active_at"] == "today"
+    from emporia.routes.standing import agent_level
+    assert row["level"] == agent_level(a)
+    assert "T" not in str(row["last_active_at"]), "a day, never a time"
+    from emporia.routes.operator import _last_active, _last_active_many
+    with rs.DB_LOCK, rs.get_db() as conn:
+        many = _last_active_many(conn, [a, b, "nobody"])
+        assert many.get(a) == _last_active(conn, a) and "nobody" not in many
