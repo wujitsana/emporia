@@ -1433,17 +1433,21 @@ def _record_rand_result(session_id: str, outcome: Any) -> None:
 
 
 async def _with_beacon(module, session_id: str, state: SessionState) -> SessionState:
-    """`state` with the drand round the module needs now, once it is published and verified (the
-    relay is a cache: every client checks the same signature). Unchanged when not needed or not there."""
-    rnd = module.beacon_round(state)
-    if rnd is None:
-        return state
-    sig = await run_in_threadpool(beacon_route.signature, rnd)
-    if not sig:
-        return state
-    r = {**state.data["rand"], "beacon_sig": sig}
-    return SessionState(data={**state.data, "rand": r}, current_agent=state.current_agent,
-                        step_number=state.step_number, metadata=state.metadata)
+    """`state` with the drand round(s) the module needs now, once published and verified (the relay is a
+    cache: every client checks the same signature). `module.with_beacon` stores each; a module that draws
+    per turn may name a further round once one is stored, so this asks again (at most 3 rounds).
+    Unchanged when not needed or not there."""
+    seen: set[int] = set()
+    for _ in range(3):
+        rnd = module.beacon_round(state)
+        if rnd is None or rnd in seen:
+            break
+        seen.add(rnd)
+        sig = await run_in_threadpool(beacon_route.signature, rnd)
+        if not sig:
+            break
+        state = module.with_beacon(state, rnd, sig)
+    return state
 
 
 async def _persist_beacon(session_id: str, module) -> None:

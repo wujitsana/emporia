@@ -114,6 +114,8 @@ def verify_game(*, session: dict[str, Any], log: list[dict[str, Any]], public_ke
     else:
         if getattr(cls, "USES_RAND", False):
             note(*_rand_check(cls(), session, public_keys, relay_verdict))    # its clock-bound end is not replayed
+            if getattr(cls, "REPLAY_WITH_RAND", False):     # a draw per turn: the log is replayed on the stored beacons
+                note(*_replay_rand(cls(), session, entries))
         else:
             note(*_replay(cls(), session, entries, relay_verdict))
 
@@ -153,6 +155,13 @@ def _rand_check(module, session: dict[str, Any], public_keys: dict[str, str],
     if r.get("round") != rnd or r.get("scope") != sid:
         return "rand", FAIL, "the game's round or scope is not the one its commitments name"
     sig = r.get("beacon_sig")
+    for b_round, b_sig in (r.get("beacons") or {}).items():       # a draw per turn: every round it used
+        if not str(b_round).isdigit() or int(b_round) < 1:
+            return "rand", FAIL, f"the stored beacons name {b_round!r}, which is not a drand round"
+        if int(b_round) == rnd and b_sig == sig:
+            continue                                              # the game's own round: checked just below
+        if not beacon.verify(int(b_round), b_sig):
+            return "rand", FAIL, f"the stored beacon for round {b_round} is not drand's signature (pinned key)"
     if not sig:
         return "rand", UNCHECKED, "the game ended before its beacon round was needed: no hands were drawn"
     if not beacon.verify(rnd, sig):
@@ -169,6 +178,36 @@ def _rand_check(module, session: dict[str, Any], public_keys: dict[str, str],
                               f"declared {relay_verdict.get('winner') or 'a draw'}")
     return "rand", OK, (f"commitments are the players' own, round {rnd} is drand's, "
                         f"{len(r.get('reveals') or {})} revealed secret(s) recompute to what was published")
+
+
+def _without_times(value: Any) -> Any:
+    """`value` without any `at` / `*_at` field: a replay stamps its own clock, which is not the game's."""
+    if isinstance(value, dict):
+        return {k: _without_times(v) for k, v in value.items() if not (k == "at" or str(k).endswith("_at"))}
+    if isinstance(value, list):
+        return [_without_times(v) for v in value]
+    return value
+
+
+def _replay_rand(module, session: dict[str, Any], entries: list[dict[str, Any]]) -> tuple[str, str, str]:
+    """A game that draws per turn: the signed log replayed through the rules, on the beacons the state stores,
+    must give the board the relay stored (times aside). An illegal logged move fails here: `apply_action`
+    raises on one."""
+    state = module.replay_state(session)
+    if state is None:
+        return "replay", UNCHECKED, "the game's start cannot be rebuilt here, so its log was not replayed"
+    played = [e for e in entries if e.get("action") in module.CHECKED_ACTIONS]
+    for i, e in enumerate(played):
+        try:
+            state = module.apply_action(state, SessionAction(agent_id=e.get("sender", ""),
+                                                             action_type=e.get("action", ""),
+                                                             payload=e.get("payload", {}))).new_state
+        except Exception as exc:  # noqa: BLE001
+            return "replay", FAIL, f"the log's move {i} is not legal under the rules: {exc}"
+    stored = (session.get("state") or {}).get("data") or {}
+    if _without_times(state.data) != _without_times(stored):
+        return "replay", FAIL, "replaying the signed moves does not give the board the relay stored"
+    return "replay", OK, f"replaying the {len(played)} signed move(s) gives the stored board"
 
 
 def _recomputed(module, session: dict[str, Any]) -> dict[str, Any] | None:

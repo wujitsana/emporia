@@ -567,6 +567,7 @@ def rand_testmode(monkeypatch):
     from emporia import rand
     from emporia.routes import beacon as beacon_route
     monkeypatch.setattr(rand, "MIN_LEAD_ROUNDS", -10**6)
+    monkeypatch.setattr(rand, "MIN_TURN_LEAD_ROUNDS", -10**6)
     monkeypatch.setattr(beacon_route, "signature", fake_beacon_sig)
     yield
 

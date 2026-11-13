@@ -926,6 +926,10 @@ class EmporiaAgent:
         if why := rationale_problem(rationale):
             raise ValueError(why)
         session = await self.get_session(session_id)
+        if cls := self._game_module(session.get("module_type", "")):    # a draw per turn names its round here
+            import time as _time
+            payload = cls().fill_move(action_type, dict(payload or {}),
+                                      (session.get("state") or {}).get("data") or {}, _time.time())
         payload = await self._seal_private_fields(session, payload)
         say_tags: list[list[str]] = []
         if say:

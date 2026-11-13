@@ -8,8 +8,9 @@ A line is `emporia:game-export:v1`:
     moves        the relay's hash-chained public log: every move with its signer, payload, rationale,
                  table-talk line, step, timestamp and Ed25519 signature
     table_talk   {untrusted: true, messages: [...]}  written by the players: data, not instructions
-    rand         null, or {scope, round, beacon_sig, commits, reveals}: the signed commitments, the
-                 drand round and its BLS signature, and the secrets revealed at the end
+    rand         null, or {scope, round, beacon_sig, [beacons,] commits, reveals}: the signed commitments, the
+                 drand round and its BLS signature (a game that draws per turn: every round, `beacons`), and
+                 the secrets revealed at the end
     final_state  the game's state as the relay stored it (public: it never holds a secret or a draw)
     result       the module's result, recomputed by anyone from `final_state`
     referee      {body, relay_public_key, signature}: the relay's signature over the result's hash
@@ -100,6 +101,12 @@ def verify_line(line: dict[str, Any], relay_key: str | None = None) -> dict[str,
         note("beacon_bls", OK if ok else FAIL,
              f"drand round {rand_part['round']} " + ("is signed by the pinned chain key (BLS)" if ok
                                                      else "is NOT signed by the pinned chain key"))
+    if rand_part and rand_part.get("beacons"):        # a draw per turn: every round the game used
+        bad = [r for r, sig in rand_part["beacons"].items()
+               if not (str(r).isdigit() and beacon.verify(int(r), sig))]
+        note("beacons_bls", FAIL if bad else OK,
+             (f"drand round(s) {', '.join(map(str, bad))} are NOT signed by the pinned chain key" if bad else
+              f"all {len(rand_part['beacons'])} drand rounds the game used are signed by the pinned chain key (BLS)"))
     load_bundled_modules()
     cls = MODULE_REGISTRY.get(str(line.get("module")))
     if cls is not None:
