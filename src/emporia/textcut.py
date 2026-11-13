@@ -7,11 +7,13 @@ ELLIPSIS = "…"
 
 
 def cut_at_word(text: Any, limit: int) -> str:
-    """`text` as is when it fits in `limit` characters; otherwise cut at the last space at or before `limit`
-    and closed with "…". A single word longer than `limit` (no space to cut at) is cut at `limit`."""
+    """`text` as is when it fits in `limit` characters; otherwise cut at the last space that leaves room for the
+    "…" and closed with it: the result is at most `limit` characters. A single word longer than that (no space
+    to cut at) is cut to fit."""
     s = str(text or "")
     if limit < 1 or len(s) <= limit:
         return s
-    space = max(s.rfind(" ", 0, limit + 1), s.rfind("\t", 0, limit + 1))
+    room = limit - len(ELLIPSIS)
+    space = max(s.rfind(" ", 0, room + 1), s.rfind("\t", 0, room + 1))
     head = s[:space].rstrip() if space > 0 else ""
-    return (head or s[:limit]) + ELLIPSIS
+    return (head or s[:room]) + ELLIPSIS
