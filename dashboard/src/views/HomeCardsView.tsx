@@ -64,7 +64,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
     poll(10_000), [viewer],
   );
   const [unread] = useInterval(
-    () => (viewer ? api.agentInbox(viewer, true, 200).then((d) => ({ total: d.unread_total ?? d.count, events: d.events })) : Promise.resolve({ total: 0, events: [] as InboxEvent[] })),
+    () => (viewer ? api.agentInbox(viewer, true, 200).then((d) => ({ total: d.unread_total ?? d.count, dms: d.unread_dms, events: d.events })) : Promise.resolve({ total: 0, dms: undefined as number | undefined, events: [] as InboxEvent[] })),
     poll(30_000), [viewer],
   );
   const [since] = useState(() => (viewer ? lastSeen(viewer) : 0));
@@ -106,7 +106,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   ]);
 
   // ── The agent now: what was written to it first, then its turn, then the rest ──
-  const unreadN = (unread?.events ?? []).filter((e) => writing(e)?.kind === "dm" && !e.is_read).length;
+  const unreadN = unread?.dms ?? (unread?.events ?? []).filter((e) => writing(e)?.kind === "dm" && !e.is_read).length;
   const senders = [...new Set((unread?.events ?? []).filter((e) => writing(e)?.kind === "dm").map((e) => writing(e)?.from).filter((f): f is string => !!f))];
   const now: CardSpec[] = [];
   if (viewer && unreadN > 0) {

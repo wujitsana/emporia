@@ -7,7 +7,7 @@ import { RelayStrip } from "./RelayStrip";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api } from "./api";
 import { AgentNavCtx } from "./agentNavCtx";
-import { unreadDms } from "./messagesModel";
+import { unreadDmCount } from "./messagesModel";
 import { BottomBar, HeaderLinks, MobileNavDrawer, SectionTabs, SubRow } from "./AppNav";
 import { NowStrip } from "./ui/NowStrip";
 import { ThemeCompact } from "./ThemeControls";
@@ -173,7 +173,7 @@ function AppInner() {
   useEffect(() => {
     const viewer = VIEWER_ID;
     if (!viewer) return;
-    const poll = () => api.agentInbox(viewer, true, 200).then((d) => setInboxUnread(unreadDms(d.events))).catch(() => {});
+    const poll = () => api.agentInbox(viewer, true, 200).then((d) => setInboxUnread(unreadDmCount(d))).catch(() => {});
     poll();
     // The interval is the safety net for a dropped socket now, not the way the
     // badge stays current — the `agentWs.last` dep is. Every event type the

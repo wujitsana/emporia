@@ -52,3 +52,13 @@ describe("unreadDms / needsAgent", () => {
     expect(needsAgent(events).map((e) => e.inbox_id).sort()).toEqual(["i4", "i5"]);
   });
 });
+
+describe("unreadDmCount", () => {
+  it("prefers the relay's unread_dms and falls back to the page count", async () => {
+    const { unreadDmCount } = await import("./messagesModel");
+    const events = [ev("i1", "dm_received", { thread_id: "dm_a" })];
+    expect(unreadDmCount({ events, unread_dms: 7 })).toBe(7);
+    expect(unreadDmCount({ events, unread_dms: 0 })).toBe(0);
+    expect(unreadDmCount({ events })).toBe(1);
+  });
+});

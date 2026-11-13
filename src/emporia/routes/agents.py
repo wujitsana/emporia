@@ -204,6 +204,8 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
         changes = _operator_changes(conn, [row["stable_id"] for row in rows])
         from emporia.routes.x_links import links_for
         links = links_for(conn, [row["stable_id"] for row in rows])
+        from emporia.routes.operator import _last_active_many
+        last_active = _last_active_many(conn, agent_ids)
         session_counts: dict[str, int] = {}
         win_counts: dict[str, int] = {}
         if agent_ids:
@@ -228,6 +230,7 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             ).fetchall():
                 win_counts[r["winner_id"]] = r["c"]
 
+    from emporia.routes.standing import agent_level
     agents = []
     for row in rows:
         agent_id = row["agent_id"]
@@ -240,6 +243,10 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             "is_active": bool(row["is_active"]),
             "session_count": session_counts.get(agent_id, 0),
             "win_count": win_counts.get(agent_id, 0),
+            # The same two values the profile and quests routes give (the day it last acted; its level, None
+            # where this relay runs no quests), so the directory needs no request per row.
+            "last_active_at": coarse_day(last_active.get(agent_id)),
+            "level": agent_level(agent_id),
         })
     return {"agents": agents, "count": len(agents), "has_more": has_more}
 def _operator_changes(conn: Any, stable_ids: list[str]) -> dict[str, list[str]]:
@@ -545,6 +552,12 @@ async def get_agent_inbox(
         unread_total = conn.execute(
             "SELECT COUNT(*) FROM agent_inbox WHERE agent_id = ? AND is_read = 0", (agent_id,)
         ).fetchone()[0]
+        # The unread direct messages among them (what the Messages badge shows): counted here, because
+        # the page above is oldest-first and capped, so a client count misses a DM behind many other events.
+        unread_dms = conn.execute(
+            "SELECT COUNT(*) FROM agent_inbox WHERE agent_id = ? AND is_read = 0 AND event_type = 'dm_received' "
+            "AND COALESCE(json_extract(payload_json, '$.thread_id'), '') != ''", (agent_id,)
+        ).fetchone()[0]
     events = [
         {
             "inbox_id": r["inbox_id"],
@@ -555,7 +568,8 @@ async def get_agent_inbox(
         }
         for r in rows
     ]
-    return {"agent_id": agent_id, "events": events, "count": len(events), "unread_total": unread_total}
+    return {"agent_id": agent_id, "events": events, "count": len(events), "unread_total": unread_total,
+            "unread_dms": unread_dms}
 @router.post("/agents/{agent_id}/inbox/mark-all-read")
 async def mark_inbox_all_read(agent_id: str, request: Request):
     """P232: every unread event read — "mark all read" marked only the page shown,

@@ -9460,6 +9460,25 @@ def test_inbox_receives_room_invite(client):
     assert inbox2["count"] == 0 and inbox2["unread_total"] == 0
 
 
+def test_inbox_unread_dms_counts_all_dms_past_the_page(client):
+    """`unread_dms` counts unread DM events in SQL, so a DM behind a full page of other events is counted."""
+    from emporia import relay_server as rs
+    import asyncio
+    client.post("/agents/register", json={
+        "agent_id": "ibx_dm", "public_key_hex": _test_pubkey("ibx_dm"), "display_name": "ibx_dm"})
+    for i in range(3):
+        asyncio.run(rs.broadcast_to_agent("ibx_dm", {"type": "your_turn", "session_id": f"s{i}"}))
+    asyncio.run(rs.broadcast_to_agent("ibx_dm", {"type": "dm_received", "thread_id": "t1", "from_agent": "x"}))
+    asyncio.run(rs.broadcast_to_agent("ibx_dm", {"type": "dm_received", "thread_id": "t2", "from_agent": "x"}))
+    me = {"x-emporia-agent-id": "ibx_dm"}
+    page = client.get("/agents/ibx_dm/inbox?limit=1", headers=me).json()
+    assert page["unread_total"] == 5 and page["unread_dms"] == 2
+    dm_ids = [e["inbox_id"] for e in client.get("/agents/ibx_dm/inbox?limit=50", headers=me).json()["events"]
+              if e["event_type"] == "dm_received"]
+    client.post("/agents/ibx_dm/inbox/mark-read", json=dm_ids[:1], headers=me)
+    assert client.get("/agents/ibx_dm/inbox?limit=1", headers=me).json()["unread_dms"] == 1
+
+
 def test_inbox_counts_every_unread_event_and_marks_them_all_read(client):
     """P232: the badge polled with limit=1 and showed `count` — always 1 — and
     "mark all read" marked only the page shown, over 100 old turn notices."""

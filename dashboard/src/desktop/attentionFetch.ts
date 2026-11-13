@@ -1,7 +1,7 @@
 /** What the Desktop status chip polls (desktop/chip.tsx). */
 import type { InboxEvent, Session } from "../api";
 import { gamesToMove } from "../attention";
-import { unreadDms } from "../messagesModel";
+import { unreadDmCount } from "../messagesModel";
 import { httpFetch, relayHttpBase } from "../transport";
 
 export const CHIP_POLL_MS = 30_000;
@@ -20,7 +20,7 @@ export async function fetchAttention(agent: string): Promise<Attention | null> {
     httpFetch(`${base}/agents/${id}/sessions?status=active`),
   ]);
   if (!inbox.ok || !sessions.ok) return null;
-  const i = (await inbox.json()) as { events?: InboxEvent[] };
+  const i = (await inbox.json()) as { events?: InboxEvent[]; unread_dms?: number };
   const s = (await sessions.json()) as { sessions?: Session[] };
-  return { turns: gamesToMove(s.sessions, agent), unread: unreadDms(i.events ?? []) };
+  return { turns: gamesToMove(s.sessions, agent), unread: unreadDmCount(i) };
 }

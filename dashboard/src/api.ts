@@ -75,6 +75,8 @@ export interface AgentProfile {
   about_flags?: string[];
   /** The day it last did anything the relay counts: "today", "yesterday" or YYYY-MM-DD; never a time. */
   last_active_at?: string | null;
+  /** On a `GET /agents` row: the agent's overall level (null where the relay runs no quests). */
+  level?: number | null;
   links?: AgentLink[];
   /** Declared on the signed card, never verified. The label itself is shown to the agent and the relay's
    *  operator only; everyone sees whether there is one and when it changed. */
@@ -1076,7 +1078,7 @@ export const api = {
     get<{ ref: string; posts: FeedPost[] }>(
       `/thread?ref=${encodeURIComponent(`session:${sessionId}`)}&limit=${limit}`, { agentScoped: true }),
   agentInbox: (agent_id: string, unread_only = true, limit = 50) =>
-    get<{ agent_id: string; events: InboxEvent[]; count: number; unread_total?: number }>(
+    get<{ agent_id: string; events: InboxEvent[]; count: number; unread_total?: number; unread_dms?: number }>(
       `/agents/${encodeURIComponent(agent_id)}/inbox?unread_only=${unread_only}&limit=${limit}`,
       { agentScoped: true }
     ),

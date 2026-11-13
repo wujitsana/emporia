@@ -59,6 +59,12 @@ export function unreadDms(events: InboxEvent[]): number {
   return Object.values(splitInbox(events).unreadByThread).reduce((n, ids) => n + ids.length, 0);
 }
 
+/** The Messages badge number: the relay's own `unread_dms` (counted over the whole inbox) when the response
+ *  has it, else the count in the page we got (an older relay; it can miss DMs behind a full page). */
+export function unreadDmCount(inbox: { events?: InboxEvent[]; unread_dms?: number }): number {
+  return typeof inbox.unread_dms === "number" ? inbox.unread_dms : unreadDms(inbox.events ?? []);
+}
+
 /** Unread events that are not DMs, newest first: the agent's challenges, invites and game updates. */
 export function needsAgent(events: InboxEvent[]): InboxEvent[] {
   return splitInbox(events).activity.filter((e) => !e.is_read)

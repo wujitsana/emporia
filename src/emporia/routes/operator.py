@@ -179,6 +179,28 @@ def _last_active(conn, agent_id: str) -> str | None:
     return latest or None
 
 
+def _last_active_many(conn, agent_ids: list[str]) -> dict[str, str]:
+    """`_last_active` for many agents at once: one grouped query per activity table, not one per agent."""
+    from emporia.routes.standing import _ACTIVITY
+    ids = [a for a in dict.fromkeys(agent_ids) if a]
+    latest: dict[str, str] = {}
+    if not ids:
+        return latest
+    marks = ",".join("?" * len(ids))
+    for table, col, at in _ACTIVITY:
+        if not _has_table(conn, table):
+            continue
+        if col.endswith("_json"):
+            sql = (f"SELECT j.value AS who, MAX({table}.{at}) AS at FROM {table}, json_each({table}.{col}) AS j "  # noqa: S608
+                   f"WHERE j.value IN ({marks}) GROUP BY j.value")
+        else:
+            sql = f"SELECT {col} AS who, MAX({at}) AS at FROM {table} WHERE {col} IN ({marks}) GROUP BY {col}"  # noqa: S608
+        for r in conn.execute(sql, ids):
+            if r["who"] and r["at"] and str(r["at"]) > latest.get(r["who"], ""):
+                latest[r["who"]] = str(r["at"])
+    return latest
+
+
 def house(conn, window_s: int) -> dict[str, Any]:
     """The house agents (EMPORIA_HOUSE_STABLE_IDS): registered, when each last acted, and whether
     the relay is busy enough that `emporia house run` (at its defaults) steps back."""
