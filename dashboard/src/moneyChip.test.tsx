@@ -59,7 +59,7 @@ describe("the money chip", () => {
       const { container } = render(<RelayStrip relayUrl="http://127.0.0.1:1" wsConnected={false} health={h} compact={compact} />);
       const chip = container.querySelector(".e-relay-status__chips .e-money-chip--test");
       expect(chip?.firstChild?.textContent).toBe("testnet");
-      expect(chip?.getAttribute("title")).toMatch(/^Test money only/);
+      expect(chip?.getAttribute("title")).toMatch(/^Experimental stage, on testnet: test money only/);
       cleanup();
     }
   });

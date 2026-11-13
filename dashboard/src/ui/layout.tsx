@@ -78,7 +78,7 @@ export function StatHero({
           role="listitem"
         >
           <span className="e-hero-stat__value">{it.value}</span>
-          <span className="e-hero-stat__label">{it.label}</span>
+          {it.label ? <span className="e-hero-stat__label">{it.label}</span> : null}
           {it.hint ? <span className="e-hero-stat__hint">{it.hint}</span> : null}
         </div>
       ))}

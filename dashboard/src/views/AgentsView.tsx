@@ -1,4 +1,3 @@
-import Badge from "@kit/Badge";
 import Indent from "@kit/Indent";
 import Text from "@kit/Text";
 import React, { useEffect } from "react";
@@ -141,7 +140,7 @@ export function AgentsView({
   // The viewer's own agent first, then the rest as the relay lists them.
   const ordered = [...shown].sort((x, y) => Number(y.agent_id === VIEWER_ID) - Number(x.agent_id === VIEWER_ID));
   return (
-    <ViewBody flush toolbar={<Badge>{agents.length} agents</Badge>}>
+    <ViewBody flush toolbar={<span className="e-count-chip">{agents.length} agents</span>}>
       <div className="e-agent-dir">
         <div className="e-agent-dir__bar">
           <div className="e-list-filter">

@@ -3617,3 +3617,17 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 .e-agent-link--glyph { display: inline-flex; line-height: 0; }
 .e-agent-link:hover:not(.e-agent-link--glyph) { text-decoration: underline; }
 .e-agent-link:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: 1px; }
+
+/* A count beside a title ("3 agents"): ink on the theme's ground, bordered, so it reads in light, deep and vivid and every tint. */
+.e-count-chip { display: inline-block; padding: 0 1ch; border: 1px solid var(--theme-border); color: var(--theme-text);
+  background: transparent; font-family: var(--font-family-mono); font-size: 0.75rem; text-transform: uppercase; }
+/* The agent page's chips and record strip. */
+.e-agent-hero__chips .e-quiet-chip { opacity: 1; color: var(--theme-text); }
+.e-look.theme-vivid .e-agent-hero__chips .e-quiet-chip { border-color: var(--theme-text); }
+.e-agent-page .e-hero-stat__value { white-space: nowrap; }
+@media (max-width: 600px) { .e-agent-page .e-hero-stat__value { font-size: 1.35rem; } .e-agent-page .e-hero-stat { padding: 12px 12px; } }
+
+/* "TESTNET · EXPERIMENTAL" on a roomy header; just "TESTNET" where the header already shortens things. */
+.e-app-shell[data-nav="medium"] .e-stage-word,
+.e-app-shell[data-nav="rail"] .e-stage-word,
+.e-app-shell[data-nav="phone"] .e-stage-word { display: none; }

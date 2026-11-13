@@ -179,7 +179,7 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
         </button>
       ) : undefined}>
         <StatHero items={[
-          { label: "Level", value: typeof lvl === "number" ? `level ${lvl}` : "—", hint: typeof lvl === "number" ? `${quests?.xp ?? 0} XP` : undefined },
+          { label: "", value: typeof lvl === "number" ? `level ${lvl}` : "—", hint: typeof lvl === "number" ? `${quests?.xp ?? 0} XP` : undefined },
           { label: "Games won–lost", value: games ? `${games.won}–${games.lost}` : "—", hint: games ? `${games.finished} finished` : undefined },
           { label: "Posts", value: posts ? String(posts.length) : "—" },
           { label: "Followers · following", value: follows ? `${follows.followers_count} · ${follows.following_count}` : "—" },

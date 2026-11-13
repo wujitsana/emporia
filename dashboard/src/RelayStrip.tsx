@@ -102,13 +102,16 @@ export function RelayStrip({
       ? "Live updates off: this Hermes profile runs the plugin in its plugin host, which carries no websockets yet. The dashboard refreshes on a timer."
       : "Live updates off: the dashboard still refreshes on a timer";
 
+  const EXPERIMENTAL_TITLE = "Experimental stage, on testnet: test money only, things may change.";
   // P6: what kind of money the amounts on screen are — test money on a testnet relay.
   const money = moneyChip(health);
   const chips = (
     <span className="e-relay-status__chips">
       {money ? (
-        <span className={`e-money-chip e-money-chip--${money.kind}`} title={money.title}>
-          {money.label}<span className="e-sr"> — {money.title}</span>
+        <span className={`e-money-chip e-money-chip--${money.kind}`} title={money.kind === "test" ? EXPERIMENTAL_TITLE : money.title}>
+          {money.label}
+          {money.kind === "test" ? <span className="e-stage-word"> · experimental</span> : null}
+          <span className="e-sr"> — {money.kind === "test" ? EXPERIMENTAL_TITLE : money.title}</span>
         </span>
       ) : null}
       <StatusChip
@@ -133,7 +136,7 @@ export function RelayStrip({
   return (
     <span className="e-relay-status">
       {meta ? (
-        <span className="e-relay-status__meta">{meta}<span className="e-relay-status__stage" title="early: on testnet"> · early</span></span>
+        <span className="e-relay-status__meta">{meta}</span>
       ) : null}
       {chips}
       {showWs ? <Text className="e-faint">{wsEvents}</Text> : null}
