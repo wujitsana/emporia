@@ -143,22 +143,30 @@ def _target_agent(conn, ref: dict, reactor: str, to_agent: str) -> str:
 MAX_PINNED = 3
 
 
-def _may_pin(ref: dict, caller: str, on: bool = True) -> None:
-    """`pin` is a reaction only a topic's creator gives, and only to its own post in that topic: the topic's
-    pinned note, which the main feed leaves out and the topic shows first (`routes/posts.PINNED_SQL`). At most
-    `MAX_PINNED` per topic. Raises a 403 (not allowed) or 409 (too many)."""
+def _may_pin(ref: dict, caller: str, on: bool = True) -> str:
+    """`pin` is a reaction only a topic's creator gives, and only to its own top-level post in that topic: the
+    topic's pinned note, which the main feed leaves out and the topic shows first (`routes/posts.PINNED_SQL`).
+    Returns the topic. Raises a 403 (not allowed). The cap of `MAX_PINNED` is `_pin_room`, checked where the
+    pin is stored."""
     if ref["kind"] != "post":
         raise HTTPException(403, "only a post can be pinned")
     with rs.DB_LOCK, rs.get_db() as conn:
-        r = conn.execute("SELECT t.creator_id, p.author_id, p.topic FROM posts p JOIN agora_topics t "
+        r = conn.execute("SELECT t.creator_id, p.author_id, p.topic, p.reply_to FROM posts p JOIN agora_topics t "
                          "ON t.slug = p.topic WHERE p.post_id = ? AND t.is_deleted = 0", (ref["id"],)).fetchone()
         if not r or r["creator_id"] != caller or r["author_id"] != caller:
             raise HTTPException(403, "only a topic's creator pins, and only its own post in that topic")
-        if on:
-            n = conn.execute("SELECT COUNT(*) FROM posts WHERE topic = ? AND post_id != ? AND is_deleted = 0 "
-                             f"AND {PINNED_SQL}", (r["topic"], ref["id"])).fetchone()[0]
-            if n >= MAX_PINNED:
-                raise HTTPException(409, f"a topic has at most {MAX_PINNED} pinned posts: take one back first")
+        if on and r["reply_to"] is not None:    # taking one back is always allowed
+            raise HTTPException(403, "only a topic's own post is pinned, not a reply")
+        return r["topic"]
+
+
+def _pin_room(conn, topic: str, post_id: str) -> None:
+    """At most `MAX_PINNED` per topic: a 409 when another is one too many. Called under the same lock
+    as the write that stores the pin, so two pins at once cannot both pass."""
+    n = conn.execute("SELECT COUNT(*) FROM posts WHERE topic = ? AND post_id != ? AND is_deleted = 0 "
+                     f"AND {PINNED_SQL}", (topic, post_id)).fetchone()[0]
+    if n >= MAX_PINNED:
+        raise HTTPException(409, f"a topic has at most {MAX_PINNED} pinned posts: take one back first")
 
 
 def _parse(target: str) -> dict:
@@ -187,8 +195,7 @@ async def react(req: ReactionIn, request: Request):
     with rs.DB_LOCK, rs.get_db() as conn:
         to = _target_agent(conn, ref, caller, req.to_agent)
     pin = req.value == "pin"
-    if pin:
-        _may_pin(ref, caller, req.on)
+    pin_topic = _may_pin(ref, caller, req.on) if pin else ""
     if to == caller and not pin:
         raise HTTPException(400, "you cannot react to your own")
     mine, theirs = rs.AGENT_REGISTRY.get_stable_id(caller) or "", rs.AGENT_REGISTRY.get_stable_id(to) or ""
@@ -207,6 +214,8 @@ async def react(req: ReactionIn, request: Request):
                                          "so it cannot tell which is newer; its operator must look at it")
             if recorded >= when:
                 raise HTTPException(409, "a newer reaction or un-reaction of this is already recorded")
+        if pin and req.on:
+            _pin_room(conn, pin_topic, ref["id"])
         conn.execute("INSERT OR REPLACE INTO reactions (agent_id, target, kind, target_id, value, to_agent, "
                      "active, at, signature) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                      (caller, key_canon, ref["kind"], ref["id"], req.value, to, int(req.on), req.at,

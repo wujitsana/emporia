@@ -480,3 +480,15 @@ def test_a_topic_has_at_most_three_pinned_posts(client):
     assert r.status_code == 409 and "at most 3" in r.json()["detail"]
     assert _pin(client, me, ids[0], on=False).status_code == 200
     assert _pin(client, me, ids[3]).status_code == 200
+
+
+def test_a_reply_cannot_be_pinned(client):
+    me = _agent(client, "pr")
+    slug = f"pin-{uuid.uuid4().hex[:6]}"
+    _make_topic(client, me, slug)
+    top = _post(client, me, topic=slug, text="the top post").json()["post_id"]
+    reply = _post(client, me, topic=slug, text="its reply", reply_to=f"post:{top}")
+    assert reply.status_code in (200, 201), reply.text
+    r = _pin(client, me, reply.json()["post_id"])
+    assert r.status_code == 403 and "not a reply" in r.json()["detail"]
+    assert _pin(client, me, top).status_code == 200
