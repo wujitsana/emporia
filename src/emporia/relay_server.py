@@ -3327,8 +3327,10 @@ async def lifespan(app: FastAPI):
     _check_relay_modules()   # P291: before anything is opened or started
     _hold_the_database()
     init_db()
-    global _SWEEP_TASK, _FEDERATION_SYNC_TASK, _PAYOUT_RECONCILE_TASK
+    global _SWEEP_TASK, _FEDERATION_SYNC_TASK, _PAYOUT_RECONCILE_TASK, _INTEGRITY_TASK
     _SWEEP_TASK = asyncio.create_task(_sweep_loop())
+    if (_interval := integrity_interval()) > 0:
+        _INTEGRITY_TASK = asyncio.create_task(_integrity_loop(_interval))
     if translog.enabled():   # P258: EMPORIA_TRANSPARENCY_LOG=off turns it off
         globals()["_LOG_STATE_TASK"] = asyncio.create_task(_log_state_loop())
     else:
@@ -3359,6 +3361,11 @@ async def lifespan(app: FastAPI):
             with suppress(asyncio.CancelledError):
                 await _PAYOUT_RECONCILE_TASK
             _PAYOUT_RECONCILE_TASK = None
+        if _INTEGRITY_TASK is not None:
+            _INTEGRITY_TASK.cancel()
+            with suppress(asyncio.CancelledError):
+                await _INTEGRITY_TASK
+            _INTEGRITY_TASK = None
         _log_task = globals().get("_LOG_STATE_TASK")
         if _log_task is not None:
             _log_task.cancel()
@@ -4117,6 +4124,55 @@ async def _log_state_loop() -> None:
             logger.exception("Signing the log state failed — will retry")
 
 
+# Integrity check (integrity.py): once shortly after startup, then every EMPORIA_INTEGRITY_INTERVAL_SECONDS
+# (0 turns it off). Detection only: nothing is paused, repaired or deleted.
+_INTEGRITY_FIRST_DELAY_SECONDS = 20.0
+_INTEGRITY_BUDGET_SECONDS = 600.0
+_INTEGRITY_REPORT: dict[str, Any] | None = None
+_INTEGRITY_TASK: asyncio.Task | None = None
+
+
+def integrity_interval() -> float:
+    try:
+        return max(0.0, float(os.getenv("EMPORIA_INTEGRITY_INTERVAL_SECONDS", "3600")))
+    except ValueError:
+        return 3600.0
+
+
+def run_integrity_check() -> dict[str, Any]:
+    """One pass of the integrity check on this relay's database; keeps the report for /health."""
+    global _INTEGRITY_REPORT
+    from emporia import identity, integrity
+    keys = [identity.get_relay_public_key_hex()]
+    for step in identity.relay_key_history():
+        keys += [step[k] for k in ("key", "old", "new") if isinstance(step.get(k), str)]
+    report = integrity.check(DATABASE_PATH, relay_public_keys=keys, budget_seconds=_INTEGRITY_BUDGET_SECONDS)
+    _INTEGRITY_REPORT = report
+    if report["status"] == "degraded":
+        logger.error("integrity_degraded", extra={"report": report})
+    else:
+        logger.info("integrity_ok", extra={"partial": report["partial"], "rooms": report["rooms"]["checked"],
+                                           "dms": report["dms"]["checked"], "log": report["log"]["status"]})
+    return report
+
+
+def _integrity_pass() -> None:
+    """What one tick of the loop does, in a thread."""
+    run_integrity_check()
+
+
+async def _integrity_loop(interval: float, first_delay: float | None = None) -> None:
+    await asyncio.sleep(_INTEGRITY_FIRST_DELAY_SECONDS if first_delay is None else first_delay)
+    while True:
+        try:
+            await asyncio.to_thread(_integrity_pass)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("The integrity check failed — will retry")
+        await asyncio.sleep(interval)
+
+
 def _expire_dm_content() -> int:
     """P276: with EMPORIA_DM_RETENTION_DAYS set, erase DM content past it, in
     batches of 500 per sweep (`deletion.expire_dms`)."""
@@ -4391,7 +4447,7 @@ async def health(request: Request):
     except Exception:
         pass
     payment_rails = _payment_rails()
-    from emporia import deletion
+    from emporia import deletion, integrity
     from emporia.payments import _x402_enabled, _x402_facilitator_url, _x402_networks
     return {
         "status": "ok",
@@ -4442,6 +4498,8 @@ async def health(request: Request):
         "x402_enabled": _x402_enabled(),
         "x402_networks": _x402_networks(),
         "x402_facilitator": _x402_facilitator_url(),
+        # the last integrity check: counts, and the ids of public rooms only (integrity.public_summary)
+        "integrity": integrity.public_summary(_INTEGRITY_REPORT),
     }
 
 

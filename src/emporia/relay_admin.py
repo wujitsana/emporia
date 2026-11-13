@@ -103,6 +103,11 @@ def settings() -> list[dict[str, Any]]:
               "Sentry, if you use it.", f"SENTRY_DSN — {_RESTART}"),
         _item("Operations", "Log level", os.getenv("EMPORIA_LOG_LEVEL", "INFO"), "The relay's own logs.",
               f"EMPORIA_LOG_LEVEL — {_RESTART}"),
+        _item("Operations", "Integrity check",
+              "off" if rs.integrity_interval() <= 0 else f"every {rs.integrity_interval():g} s",
+              "Checks the database file, every room and DM chain and the transparency log, and says the result "
+              "on /health. It only reads; nothing is paused or repaired.",
+              f"EMPORIA_INTEGRITY_INTERVAL_SECONDS (0 turns it off) — {_RESTART}"),
         _item("Operations", "Checks", "", "✓ / ! / ✗ for the relay and every agent on this machine.",
               "emporia doctor"),
     ]

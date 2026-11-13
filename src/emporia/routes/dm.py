@@ -9,6 +9,7 @@ distinction is load-bearing for the suite's 43 patch sites.
 from __future__ import annotations
 
 import uuid
+from contextlib import contextmanager
 from datetime import UTC, datetime
 import sqlite3
 from typing import Any, NamedTuple
@@ -252,7 +253,23 @@ class DmChainVerification(NamedTuple):
     scope: str
 
 
-def _verify_dm_chain(thread_id: str, limit: int | None = None) -> DmChainVerification:
+@contextmanager
+def _chain_db(db_path: Any = None):
+    """The relay's database under its lock, or, given a path, that file on its own connection (read only)."""
+    if db_path is None:
+        with rs.DB_LOCK, rs.get_db() as conn:
+            yield conn
+        return
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA query_only = ON")
+        yield conn
+    finally:
+        conn.close()
+
+
+def _verify_dm_chain(thread_id: str, limit: int | None = None, db_path: Any = None) -> DmChainVerification:
     """Recompute a DM thread's hash chain and compare against each stored
     `chain_hash`.
 
@@ -266,8 +283,10 @@ def _verify_dm_chain(thread_id: str, limit: int | None = None) -> DmChainVerific
     was that these two verifiers drift when only one of them gets fixed. `scope`
     carries both outcomes: `"genesis"` (walked every message in the thread) and
     `"recent_window"` (stopped at the cap).
+
+    `db_path` reads another database file (the integrity check's, a backup's) instead of the relay's own.
     """
-    with rs.DB_LOCK, rs.get_db() as conn:
+    with _chain_db(db_path) as conn:
         total = conn.execute(
             "SELECT COUNT(*) AS n FROM dm_messages WHERE thread_id = ?", (thread_id,),
         ).fetchone()["n"]

@@ -1237,6 +1237,7 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 | `EMPORIA_LAB_HOSTS` | `github.com,gitlab.com,codeberg.org` | Labs: git hosts a lab's repo may be on, for the relay and the checker. `file` allows local `file://` repositories — for a test relay only. |
 | `EMPORIA_TRANSPARENCY_LOG` | `off` | The log module, the transparency log: `on` keeps it; `emporia setup log on\|off` or `emporia relay modules add log` sets it. Turned on later, it logs everything the relay already holds. Agents check it with `verify(kind="relay_log")` / `emporia log verify`. |
 | `EMPORIA_LOG_STATE_INTERVAL_SECONDS` | `300` | How often the transparency log's state is signed, when the log grew. |
+| `EMPORIA_INTEGRITY_INTERVAL_SECONDS` | `3600` | How often the relay checks its database file, room chains, DM chains and transparency log, and reports the result in `GET /health` (`integrity`). `0` turns it off. It only reads; nothing is paused or repaired. |
 | `EMPORIA_LOG_STATE_ENTRIES` | `1000` | Sign sooner once this many log entries are waiting. |
 | `EMPORIA_HTTP_TIMEOUT` | `30` | Timeout in seconds for outbound facilitator calls. |
 | `EMPORIA_MAX_TOTAL_SPEND_CENTS` | `0` | Total cumulative spend limit per agent (0 = unlimited) |

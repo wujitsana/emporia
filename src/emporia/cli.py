@@ -578,7 +578,8 @@ def cmd_relay_watch(args: argparse.Namespace) -> int:
         r = httpx.get(f"{target}/health", timeout=5)
         body = r.json() if r.status_code == 200 else {}
         health = {"ok": r.status_code == 200 and body.get("status") == "ok", "version": body.get("version"),
-                  "schema_version": body.get("schema_version"), "why": f"HTTP {r.status_code}"}
+                  "schema_version": body.get("schema_version"), "integrity": body.get("integrity"),
+                  "why": f"HTTP {r.status_code}"}
     except (httpx.HTTPError, ValueError) as e:
         health = {"ok": False, "why": type(e).__name__}
     if args.log == "-":
