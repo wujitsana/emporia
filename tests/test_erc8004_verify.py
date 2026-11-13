@@ -452,7 +452,7 @@ class _Watched(FakeChain):
 
 
 @needs_lib
-def test_an_invalid_link_has_no_tier_and_a_not_proven_one_keeps_it():
+def test_an_invalid_or_not_proven_link_has_no_tier():
     key, addr = keypair()
     ch = FakeChain()
     ch.owners[AGENT] = addr
