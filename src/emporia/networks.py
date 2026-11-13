@@ -13,6 +13,7 @@ network on.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 
 
@@ -26,6 +27,8 @@ class Network:
     rpc: str = ""
     explorer: str = ""     # transaction URL prefix
     faucet: str = ""       # where test funds come from (testnets)
+    payments: bool = True  # False: a chain Emporia reads, never one an agent pays on
+    address_explorer: str = ""  # address URL prefix
 
 
 NETWORKS: dict[str, Network] = {n.caip2: n for n in (
@@ -48,7 +51,42 @@ NETWORKS: dict[str, Network] = {n.caip2: n for n in (
             rpc="https://rpc.moderato.tempo.xyz",
             faucet="the tempo_fundAddress RPC method on the Moderato RPC"),
     Network("eip155:4217", "Tempo", "evm", False, rpc="https://rpc.tempo.xyz"),
+    # Read-only chains. Their RPCs answer the right chain id (checked against the
+    # operator's published connection docs). No stablecoin is pinned: payments stay
+    # off until that network's token facts are confirmed.
+    Network("eip155:46630", "Robinhood Chain Testnet", "evm", True, rpc="https://rpc.testnet.chain.robinhood.com",
+            explorer="https://explorer.testnet.chain.robinhood.com/tx/",
+            address_explorer="https://explorer.testnet.chain.robinhood.com/address/", payments=False),
+    Network("eip155:4663", "Robinhood Chain", "evm", False, rpc="https://rpc.mainnet.chain.robinhood.com",
+            explorer="https://robinhoodchain.blockscout.com/tx/",
+            address_explorer="https://robinhoodchain.blockscout.com/address/", payments=False),
 )}
+
+
+def pay_networks() -> dict[str, Network]:
+    """The networks an agent may pay on: every entry except the read-only ones."""
+    return {k: v for k, v in NETWORKS.items() if v.payments}
+
+
+# ERC-8004 identity registries, per chain (a table, never derived from the chain id).
+ERC8004_REGISTRIES: dict[str, str] = {
+    "eip155:8453": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+    "eip155:4663": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+    "eip155:84532": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+    "eip155:46630": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+}
+
+
+def rpc_for(caip2: str) -> list[str]:
+    """RPC URLs for a chain: EMPORIA_RPC_<CHAINID> (one URL, or two comma-separated
+    so reads must agree), else the table's public RPC."""
+    chain_id = caip2.split(":", 1)[-1]
+    raw = os.getenv(f"EMPORIA_RPC_{re.sub(r'[^A-Za-z0-9]', '_', chain_id).upper()}", "")
+    urls = [u.strip() for u in raw.split(",") if u.strip()][:2]
+    if urls:
+        return urls
+    n = NETWORKS.get(caip2)
+    return [n.rpc] if n and n.rpc else []
 
 
 def label(caip2: str) -> str:
@@ -92,6 +130,7 @@ ALIASES: dict[str, str] = {
     "solana-devnet": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
     "solana": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
     "tempo-moderato": "eip155:42431", "tempo": "eip155:4217",
+    "robinhood-testnet": "eip155:46630", "robinhood": "eip155:4663",
 }
 
 

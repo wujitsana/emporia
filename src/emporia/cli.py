@@ -3130,15 +3130,15 @@ def _signer_policy(args: argparse.Namespace) -> int:
         print(f"  {name}: {key}={value} (applies to its next signature)")
         return 0
     if key == "EMPORIA_X402_PAY_NETWORKS":
-        from emporia.networks import NETWORKS
+        from emporia.networks import pay_networks
         try:
             nets = resolve_list(value)
         except (KeyError, ValueError) as e:
             print(f"signer policy: {key}: {e}")
             return 1
-        unknown = [n for n in nets if n not in NETWORKS]
+        unknown = [n for n in nets if n not in pay_networks()]
         if unknown or not nets:
-            print(f"signer policy: {key}: not networks Emporia knows: {', '.join(unknown) or value!r}")
+            print(f"signer policy: {key}: not networks Emporia pays on: {', '.join(unknown) or value!r}")
             return 1
         locked = [n for n in nets if not is_testnet(n)] and not mainnet_unlocked(env)
         if locked:
@@ -8406,13 +8406,14 @@ def _register_addresses(profile: Path, agent_id: str, evm: str, svm: str) -> int
 def _choose_networks(families: list[str], current: list[str], mainnet: bool = False) -> list[str]:
     """Where it may pay: ticked are the current ones, else what the relay takes.
     P177: testnets only, unless mainnet is unlocked for this agent."""
-    from emporia.networks import NETWORKS, family, is_testnet, label
+    from emporia.networks import NETWORKS, family, is_testnet, label, pay_networks
     h = health() or {}
     offered = list(dict.fromkeys([*(h.get("x402_networks") or []),
                                   *([h["tempo_network"]] if h.get("tempo_network") else [])]))
     candidates = [n for n in dict.fromkeys([*offered, *current,
-                                            *(k for k, v in NETWORKS.items() if v.testnet or mainnet)])
-                  if family(n) in families and (mainnet or is_testnet(n))]
+                                            *(k for k, v in pay_networks().items() if v.testnet or mainnet)])
+                  if family(n) in families and (mainnet or is_testnet(n))
+                  and (n not in NETWORKS or NETWORKS[n].payments)]
     ticked = set(current) or set(_default_networks(families, mainnet))
     opts = [(n, f"{label(n)}{'  — this relay takes it' if n in offered else ''}") for n in candidates]
     if not mainnet:

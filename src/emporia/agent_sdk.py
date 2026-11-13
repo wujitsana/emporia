@@ -181,10 +181,10 @@ class EmporiaAgent:
         # testnets only — the known testnets by default, and mainnet networks
         # dropped from a given list — unless `allow_mainnet` (or
         # EMPORIA_X402_MAINNET) says real money is intended.
-        from emporia.networks import NETWORKS, is_testnet, mainnet_unlocked
+        from emporia.networks import is_testnet, mainnet_unlocked, pay_networks
         if not (allow_mainnet or mainnet_unlocked()):
             x402_networks = [n for n in (x402_networks if x402_networks is not None
-                                         else [k for k, v in NETWORKS.items() if v.testnet])
+                                         else [k for k, v in pay_networks().items() if v.testnet])
                              if is_testnet(n)]
         self._x402_networks = x402_networks
         # P180: the same limits an MCP agent's wallet applies, before anything
