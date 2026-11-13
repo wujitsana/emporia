@@ -23,24 +23,30 @@ _PUBLIC_LISTED = 20
 
 
 #: Set on relay shutdown: a pass in its thread ends at its next budget check instead of running out its time.
+#: Each budget keeps the event that was current when it began; a stop sets that one and starts a fresh one,
+#: so a pass begun after the stop (the next relay in the same process, a direct call) is not stopped.
 _STOP = threading.Event()
 
 
 def request_stop() -> None:
-    _STOP.set()
+    global _STOP
+    stopped, _STOP = _STOP, threading.Event()
+    stopped.set()
 
 
 def clear_stop() -> None:
-    _STOP.clear()
+    global _STOP
+    _STOP = threading.Event()
 
 
 class _Budget:
     def __init__(self, seconds: float | None):
         self.deadline = None if seconds is None else time.monotonic() + max(0.0, seconds)
         self.spent = False
+        self._stop = _STOP
 
     def out(self) -> bool:
-        if _STOP.is_set():
+        if self._stop.is_set():
             self.spent = True
         if self.deadline is not None and time.monotonic() >= self.deadline:
             self.spent = True
