@@ -459,3 +459,12 @@ def test_quiet_when_nothing_waits_and_nothing_is_new(client, monkeypatch, tmp_pa
     state["unread"] = 2
     busy = m.whats_next()
     assert "quiet" not in busy and "hint" not in busy
+    state["unread"] = 0
+    from emporia import next_steps as N
+
+    def ranked(kinds):
+        return lambda *a, **k: [{"kind": kd, "why": kd, "tool": "whats_next", "args": {}, "call": "x"} for kd in kinds]
+    monkeypatch.setattr(N, "rank", ranked(["quest", "talk", "expedition", "guided", "idle"]))
+    assert m.whats_next()["quiet"] is True          # standing suggestions are not news
+    monkeypatch.setattr(N, "rank", ranked(["quest", "move"]))
+    assert "quiet" not in m.whats_next()             # a move waiting on the agent is

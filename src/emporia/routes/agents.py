@@ -509,7 +509,7 @@ def _add_last_word(conn, viewer_id, agent_id: str, pairs: list) -> None:
     def readable(r) -> bool:
         if not pv._row_readable(conn, viewer_id, r, cache):
             return False
-        for k in (r["reply_key"], r["root_key"]):
+        for k in (r["reply_key"], r["root_key"], r["quote_of"]):
             if k not in parent_ok:
                 parent_ok[k] = _parent_readable(conn, viewer_id, k, cache)
             if not parent_ok[k]:
