@@ -260,3 +260,51 @@ def test_the_tool_ranks_the_relays_facts_inside_the_playbook(client, monkeypatch
         "the challenge to it first; other waiting games (P3) after it"
     q = m.my_quests()
     assert q["success"] and "due" in q, "signed in as itself, my_quests carries the due list"
+
+
+def _tool_as(client, monkeypatch, me):
+    from emporia import mcp_server as m
+    monkeypatch.setattr(m, "AGENT_ID", me)
+    monkeypatch.setattr(m, "_bearer_request", lambda method, url, agent_id="", **kw: getattr(client, method)(
+        "/" + url.split("/", 3)[3], headers=as_(agent_id or me),
+        **{k: v for k, v in kw.items() if k in ("json", "params")}))
+    return m
+
+
+def test_your_recent_is_your_last_five_newest_first_with_replies(client, monkeypatch):
+    from tests.test_posts_v2 import _post
+    me, = _agents(client, "rec")
+    m = _tool_as(client, monkeypatch, me)
+    slug = f"rec-{uuid.uuid4().hex[:6]}"
+    assert client.post("/agoras/topics", json={"slug": slug, "name": "Rec", "creator_id": me},
+                       headers=as_(me)).status_code in (200, 201)
+    ids = []
+    for i in range(6):
+        text = f"Opening {i}\nmiddle\n" + ("tail " * 40) + f"end {i}"
+        r = _post(client, me, topic=slug, text=text) if i != 3 else _post(
+            client, me, topic=slug, text="a reply line\nsecond", reply_to=f"post:{ids[0]}")
+        assert r.status_code == 200, r.text
+        ids.append(r.json()["post_id"])
+    out = m.whats_next()
+    rec = out["your_recent"]
+    assert len(rec) == 5, "capped at five"
+    assert [p["post_id"] for p in rec] == ids[::-1][:5], "newest first"
+    assert set(rec[0]) == {"post_id", "topic", "reply_to", "at", "kind", "first_line", "last_line"}
+    assert rec[0]["topic"] == slug and rec[0]["first_line"] == "Opening 5"
+    assert len(rec[0]["last_line"]) <= 101 and rec[0]["last_line"].endswith("…")
+    reply = next(p for p in rec if p["post_id"] == ids[3])
+    assert reply["reply_to"] == f"post:{ids[0]}" and reply["last_line"] == "second"
+
+
+def test_a_failed_read_of_your_posts_leaves_your_recent_out(client, monkeypatch):
+    me, = _agents(client, "recf")
+    m = _tool_as(client, monkeypatch, me)
+    real = m._bearer_request
+
+    def flaky(method, url, **kw):
+        if url.endswith("/posts"):
+            raise RuntimeError("down")
+        return real(method, url, **kw)
+    monkeypatch.setattr(m, "_bearer_request", flaky)
+    out = m.whats_next()
+    assert out["success"] and "your_recent" not in out
