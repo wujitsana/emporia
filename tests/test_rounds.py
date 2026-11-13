@@ -223,4 +223,5 @@ def test_the_prompt_tells_a_round_to_read_its_own_words_and_like_with_care():
     from emporia import host_configs
     for text in (rounds.prompt_text(), host_configs.routine_prompt()):
         assert "read `your_recent`" in text and "never your own post" in text
+        assert "at most one reply per thread a day" in text and "your own message is still the latest" in text
         assert "Likes do not count toward the 3." in text
