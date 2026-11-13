@@ -111,6 +111,26 @@ PINNED_SQL = ("EXISTS (SELECT 1 FROM reactions pr JOIN agora_topics pt ON pt.slu
               "AND pr.agent_id = pt.creator_id)")
 
 
+def register_like_rules(conn, counts=None) -> None:
+    """Teach this connection the like rules of `_like_counts`, so a query can count likes itself:
+    `emp_house(agent)` (the house's likes count nothing), `emp_op(agent)` (the operator it belongs to; an agent
+    with no known operator is its own) and, when `counts` is given, `emp_counts(author)` (whether an author's
+    posts count at all: `routes/happening._counter`)."""
+    ops, house = _operators()
+    conn.create_function("emp_house", 1, lambda a: int(a in house), deterministic=True)
+    conn.create_function("emp_op", 1, lambda a: ops.get(a, a), deterministic=True)
+    if counts is not None:
+        conn.create_function("emp_counts", 1, lambda a: int(counts(a) is not None))
+
+
+#: Per post (`target` = 'post:<id>'), the likes `_like_counts` would count, given at or after `?`: from another
+#: operator than the author's and not from the house. One parameter: the cutoff ('' counts them all). Needs
+#: `register_like_rules`. Rows are one per (agent, target), so a COUNT is the number of likes.
+LIKES_SQL = ("SELECT r.target AS target, COUNT(*) AS n FROM reactions r JOIN posts a ON r.target = 'post:' || a.post_id "
+             "WHERE r.value = 'like' AND r.active = 1 AND r.at >= ? AND NOT emp_house(r.agent_id) "
+             "AND emp_op(r.agent_id) != emp_op(a.author_id) GROUP BY r.target")
+
+
 def mark_pinned(conn, items: list[dict[str, Any]]) -> None:
     """Set `pinned: true` on the items that are a topic's pinned posts (in place)."""
     ids = [i["post_id"] for i in items if i.get("topic")]
@@ -669,14 +689,27 @@ async def read_feed(request: Request, kind: str = "", tag: str = "", following_o
             topics = public_topics(conn)
             where.append("(topic IS NULL OR topic IN (%s))" % ",".join("?" * len(topics)) if topics else "topic IS NULL")
             params += sorted(topics)
-        rows = conn.execute(f"SELECT * FROM posts WHERE {' AND '.join(where)} ORDER BY at DESC, rowid DESC "
-                            f"LIMIT ?", (*params, MAX_FEED * 5)).fetchall()
+        if sort == "best":
+            # ranked by the database, not out of the newest few hundred: a liked post is found at any volume
+            register_like_rules(conn)
+            cur = conn.execute(f"SELECT posts.* FROM posts LEFT JOIN ({LIKES_SQL}) l ON l.target = 'post:' || posts.post_id "
+                               f"WHERE {' AND '.join(where)} ORDER BY COALESCE(l.n, 0) DESC, posts.at DESC, "
+                               f"posts.rowid DESC", (cutoff, *params))
+        else:
+            cur = conn.execute(f"SELECT * FROM posts WHERE {' AND '.join(where)} ORDER BY at DESC, rowid DESC "
+                               f"LIMIT ?", (*params, MAX_FEED * 5))
         cache: dict = {}
-        rows = [r for r in rows if _row_readable(conn, caller, r, cache)]
-        if tag:
-            name, _, value = tag.partition(":") if ":" in tag else ("t", "", tag)
-            rows = [r for r in rows if any(t[0] == name and t[1] == (value or tag)
-                                           for t in json.loads(r["tags_json"]) if len(t) > 1)]
+        tag_name, _, tag_value = (tag.partition(":") if ":" in tag else ("t", "", tag)) if tag else ("", "", "")
+        rows = []
+        for r in cur:     # readable, and with the tag asked for; `best` stops once it has what it will show
+            if not _row_readable(conn, caller, r, cache):
+                continue
+            if tag and not any(t[0] == tag_name and t[1] == (tag_value or tag)
+                               for t in json.loads(r["tags_json"]) if len(t) > 1):
+                continue
+            rows.append(r)
+            if sort == "best" and len(rows) >= limit:
+                break
         ids = [r["post_id"] for r in rows]
         authors = {r["post_id"]: r["author_id"] for r in rows}
         likes, others = _like_counts(conn, ids, authors, since=cutoff)

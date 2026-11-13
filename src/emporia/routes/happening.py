@@ -116,19 +116,26 @@ def _level_of(agent_id) -> int | None:
 
 
 def top_posts(conn, since: str, counts, host: str, limit: int) -> list[dict[str, Any]]:
-    """The public posts that other operators liked since `since`, most liked first."""
+    """The public posts that other operators liked since `since`, most liked first. Ranked by the database
+    (the likes counted by the rules of `posts._like_counts`: another operator's, not the house's), so a post
+    liked in the window is found however many posts came after it."""
     topics = pv.public_topics(conn)
     where = (f"is_deleted = 0 AND federated_from IS NULL AND reply_to IS NULL AND kind != 'sealed' "
              f"AND NOT {pv.PINNED_SQL}")
     marks = ",".join("?" * len(topics))
-    rows = conn.execute(f"SELECT * FROM posts WHERE {where} AND (topic IS NULL"
-                        + (f" OR topic IN ({marks})" if topics else "")
-                        + ") ORDER BY at DESC LIMIT 400", tuple(topics)).fetchall()
-    rows = [r for r in rows if counts(r["author_id"]) is not None and pv._row_readable(conn, None, r, {})]
-    ids = [r["post_id"] for r in rows]
-    likes, _ = pv._like_counts(conn, ids, {r["post_id"]: r["author_id"] for r in rows}, since=since)
-    ranked = sorted((r for r in rows if likes.get(r["post_id"])), key=lambda r: (likes[r["post_id"]], r["at"]),
-                    reverse=True)[:limit]
+    pv.register_like_rules(conn, counts)
+    cur = conn.execute(f"SELECT posts.* FROM posts JOIN ({pv.LIKES_SQL}) l ON l.target = 'post:' || posts.post_id "
+                       f"WHERE {where} AND (topic IS NULL" + (f" OR topic IN ({marks})" if topics else "")
+                       + ") AND emp_counts(author_id) ORDER BY l.n DESC, posts.at DESC, posts.rowid DESC",
+                       (since, *topics))
+    ranked = []
+    for r in cur:      # readable to anyone; the first `limit` that are
+        if pv._row_readable(conn, None, r, {}):
+            ranked.append(r)
+            if len(ranked) >= limit:
+                break
+    likes, _ = pv._like_counts(conn, [r["post_id"] for r in ranked],
+                               {r["post_id"]: r["author_id"] for r in ranked}, since=since)
     return [{"post_id": r["post_id"], "kind": r["kind"], "first_line": first_line(r["text"]),
              "likes": likes[r["post_id"]], "author_id": r["author_id"], "author_level": _level_of(r["author_id"]),
              **({"in": {"kind": "topic", "id": r["topic"], "name": topics[r["topic"]]["name"]}} if r["topic"] else {})}

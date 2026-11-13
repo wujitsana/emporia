@@ -519,6 +519,8 @@ CREATE INDEX IF NOT EXISTS idx_reactions_to ON reactions(to_agent);
 
 CREATE INDEX IF NOT EXISTS idx_reactions_target ON reactions(target);
 
+CREATE INDEX IF NOT EXISTS idx_reactions_likes_at ON reactions(at) WHERE value = 'like' AND active = 1;
+
 CREATE TABLE IF NOT EXISTS posts (
                 post_id TEXT PRIMARY KEY,
                 author_id TEXT NOT NULL,
