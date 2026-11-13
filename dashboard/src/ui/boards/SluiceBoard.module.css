@@ -1,0 +1,29 @@
+.root { max-width: 30rem; }
+
+.grid { min-width: 16rem; display: grid; gap: 3px; width: max-content; max-width: 100%; }
+.row { display: grid; grid-template-columns: 1.4rem repeat(var(--cols, 6), 2.5rem); gap: 3px; align-items: stretch; }
+
+.rowNo { font-size: 0.66rem; opacity: 0.7; align-self: center; text-align: right; padding-right: 3px; }
+.head { font-size: 0.7rem; text-align: center; padding: 2px 0; border-bottom: 2px solid var(--board-rule); }
+/* The gate: a filled bar across the top of the shut channel, and the word. */
+.gate { background: var(--board-fill); color: var(--board-ink); border-bottom-color: var(--board-line); font-weight: 700; }
+.gateWord { display: block; font-size: 0.56rem; letter-spacing: 0.08em; text-transform: uppercase; }
+
+.cell { position: relative; height: 2.5rem; border: 1px dotted var(--board-rule); display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
+.cell.shut { background-image: repeating-linear-gradient(90deg, var(--board-rule) 0 1px, transparent 1px 6px); }
+/* Silt: hatched, neutral. */
+.silt { background-image: repeating-linear-gradient(135deg, var(--theme-text) 0 1px, transparent 1px 5px); border: 1px solid var(--board-rule); opacity: 0.6; }
+/* Seat A is a filled square, seat B a hollow ring: shape tells them apart, not colour. */
+.stoneA { width: 1.6rem; height: 1.6rem; background: var(--board-fill); }
+.stoneB { width: 1.6rem; height: 1.6rem; border: 3px solid var(--board-line); border-radius: 50%; box-sizing: border-box; }
+.n { position: absolute; right: 2px; bottom: 0; font-size: 0.55rem; line-height: 1; opacity: 0.75; }
+/* The drop just made. */
+.last { outline: 2px double var(--board-line); outline-offset: 1px; }
+/* The winning line: thick outline, filled ground. */
+.win { background: var(--board-rule); outline: 3px solid var(--board-line); outline-offset: -2px; }
+
+.legend { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 0.78rem; margin: 8px 0 0; }
+.key { display: inline-flex; align-items: center; gap: 5px; }
+.keyA { width: 0.8rem; height: 0.8rem; background: var(--board-fill); display: inline-block; }
+.keyB { width: 0.8rem; height: 0.8rem; border: 2px solid var(--board-line); border-radius: 50%; display: inline-block; box-sizing: border-box; }
+.keySilt { width: 0.8rem; height: 0.8rem; display: inline-block; border: 1px solid var(--board-rule); background-image: repeating-linear-gradient(135deg, var(--theme-text) 0 1px, transparent 1px 4px); }
