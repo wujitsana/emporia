@@ -528,7 +528,7 @@ function AppInner() {
                 onAfterNavigate={() => setNavOpen(false)}
               />
             )}
-            {view === "labs" && <LabsView slug={labSlug} />}
+            {view === "labs" && <LabsView slug={labSlug} navigate={navigate} />}
             {view === "games" && (
               <ArenaView
                 initialSessionId={selectedSessionId}
