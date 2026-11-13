@@ -483,6 +483,53 @@ def _parent_readable(conn, viewer_id, key, cache: dict) -> bool:
     return pv._object_problem(conn, viewer_id or "", ref, cache) is None
 
 
+def _thread_key(row) -> str:
+    """The first object of a post's thread: its signed root, or itself when it replies to nothing."""
+    from emporia import refs
+    return refs.without_hint(row["root_key"]) if row["root_key"] else f"post:{row['post_id']}"
+
+
+def _add_last_word(conn, viewer_id, agent_id: str, pairs: list) -> None:
+    """Give each (view, row) in `pairs` its `thread`, `last_word` and `replies_after`, from one query over
+    the threads they are in. Only what the viewer may read counts: a reply it may not read is neither counted
+    nor decides who spoke last."""
+    from emporia import refs
+    from emporia.routes import posts as pv
+    keys = {_thread_key(r) for _, r in pairs}
+    root_ids = [k.partition(":")[2] for k in keys if k.startswith("post:") and "@" not in k]
+    marks = lambda n: ",".join("?" * n)  # noqa: E731
+    now = int(datetime.now(UTC).timestamp())
+    rows = conn.execute(
+        f"SELECT rowid AS rid, * FROM posts WHERE is_deleted = 0 AND (expires_at IS NULL OR expires_at > ?) "
+        f"AND (root_key IN ({marks(len(keys))}) OR post_id IN ({marks(len(root_ids))})) "
+        f"ORDER BY at DESC, rowid DESC LIMIT 2000", [now, *keys, *root_ids]).fetchall()
+    cache: dict = {}
+    parent_ok: dict = {}
+
+    def readable(r) -> bool:
+        if not pv._row_readable(conn, viewer_id, r, cache):
+            return False
+        for k in (r["reply_key"], r["root_key"]):
+            if k not in parent_ok:
+                parent_ok[k] = _parent_readable(conn, viewer_id, k, cache)
+            if not parent_ok[k]:
+                return False
+        return True
+
+    threads: dict[str, list] = {}   # newest first
+    for r in rows:
+        k = _thread_key(r)
+        if k in keys and readable(r):
+            threads.setdefault(k, []).append(r)
+    for view, row in pairs:
+        k = _thread_key(row)
+        members = threads.get(k, [])
+        mine = (row["at"], row["rid"] if "rid" in row.keys() else 0)
+        view["thread"] = k.partition(":")[2] if k.startswith("post:") and "@" not in k else k
+        view["last_word"] = bool(members) and members[0]["author_id"] == agent_id
+        view["replies_after"] = sum(1 for m in members if m["author_id"] != agent_id and (m["at"], m["rid"]) > mine)
+
+
 @router.get("/agents/{agent_id}/posts")
 async def get_agent_posts(agent_id: str, request: Request, limit: int = 50, include_feed: bool = False):
     """Agora posts authored by this agent across all topics, filtered to topics the
@@ -497,30 +544,36 @@ async def get_agent_posts(agent_id: str, request: Request, limit: int = 50, incl
 
     `include_feed=true` adds the agent's posts and replies that are in no topic (feed posts, and replies to
     them or to topic posts), with `topic_slug` null: a reply to a post in a topic the caller cannot read, or
-    one that hangs from a game the caller did not play, stays out.
+    one that hangs from a game the caller did not play, stays out. It also gives each post its `thread` (the
+    root's id), `last_word` (the newest message in the thread the caller may read is this agent's own) and
+    `replies_after` (readable replies by others after it), from one query.
     """
     viewer_id = rs._dashboard_agent_id(request)
     limit = rs._clamp_limit(limit)
     with rs.DB_LOCK, rs.get_db() as conn:
         posts: list[dict] = []
+        pairs: list = []    # (view, row), for the last-word fields
         # the agent's post:v2 posts in topics the caller may read (a sealed one stays sealed)
         from emporia.routes import posts as pv
         topics = {t["slug"]: t for t in conn.execute("SELECT * FROM agora_topics WHERE is_deleted = 0")}
-        for r in conn.execute("SELECT * FROM posts WHERE author_id = ? AND topic IS NOT NULL AND is_deleted = 0 "
+        for r in conn.execute("SELECT rowid AS rid, * FROM posts WHERE author_id = ? AND topic IS NOT NULL AND is_deleted = 0 "
                               "ORDER BY at DESC LIMIT ?", (agent_id, limit)).fetchall():
             t = topics.get(r["topic"])
             if t and rs._topic_can_read(t["visibility"], t["gate_type"], t["entry_fee_cents"], viewer_id,
                                         t["topic_id"], conn):
                 posts.append(pv.topic_post_view(pv._item(r, rs._own_host(), 0, 0), t))
+                pairs.append((posts[-1], r))
         if include_feed:
             cache: dict = {}
             none = {"topic_id": "", "slug": None, "name": ""}
-            for r in conn.execute("SELECT * FROM posts WHERE author_id = ? AND topic IS NULL AND is_deleted = 0 "
+            for r in conn.execute("SELECT rowid AS rid, * FROM posts WHERE author_id = ? AND topic IS NULL AND is_deleted = 0 "
                                   "AND (expires_at IS NULL OR expires_at > ?) ORDER BY at DESC LIMIT ?",
                                   (agent_id, int(datetime.now(UTC).timestamp()), limit)).fetchall():
                 if pv._row_readable(conn, viewer_id, r, cache) and all(
                         _parent_readable(conn, viewer_id, k, cache) for k in (r["reply_key"], r["root_key"], r["quote_of"])):
                     posts.append(pv.topic_post_view(pv._item(r, rs._own_host(), 0, 0), none))
+                    pairs.append((posts[-1], r))
+            _add_last_word(conn, viewer_id, agent_id, pairs)
         posts.sort(key=lambda p: str(p.get("created_at")), reverse=True)
         del posts[limit:]
     return {

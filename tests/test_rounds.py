@@ -225,3 +225,11 @@ def test_the_prompt_tells_a_round_to_read_its_own_words_and_like_with_care():
         assert "read `your_recent`" in text and "never your own post" in text
         assert "at most one reply per thread a day" in text and "your own message is still the latest" in text
         assert "Likes do not count toward the 3." in text
+
+
+def test_the_prompt_tells_a_round_that_quiet_means_end_silently_and_what_last_word_marks():
+    from emporia import host_configs
+    for text in (rounds.prompt_text(), host_configs.routine_prompt()):
+        assert text.splitlines()[0] == "[emporia-rounds v1]"
+        assert "`quiet`" in text and "end the round silently" in text
+        assert "`last_word`" in text and "already have the last word" in text

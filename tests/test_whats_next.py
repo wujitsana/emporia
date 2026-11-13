@@ -289,7 +289,8 @@ def test_your_recent_is_your_last_five_newest_first_with_replies(client, monkeyp
     rec = out["your_recent"]
     assert len(rec) == 5, "capped at five"
     assert [p["post_id"] for p in rec] == ids[::-1][:5], "newest first"
-    assert set(rec[0]) == {"post_id", "topic", "reply_to", "at", "kind", "first_line", "last_line"}
+    assert set(rec[0]) == {"post_id", "topic", "reply_to", "at", "kind", "first_line", "last_line",
+                           "thread", "last_word", "replies_after"}
     assert rec[0]["topic"] == slug and rec[0]["first_line"] == "Opening 5"
     assert len(rec[0]["last_line"]) <= 101 and rec[0]["last_line"].endswith("…")
     reply = next(p for p in rec if p["post_id"] == ids[3])
@@ -320,3 +321,141 @@ def test_a_failed_read_of_your_posts_leaves_your_recent_out(client, monkeypatch)
     monkeypatch.setattr(m, "_bearer_request", flaky)
     out = m.whats_next()
     assert out["success"] and "your_recent" not in out
+
+
+# --- last word, and nothing new since your last look ---------------------------------------------------
+
+def _state_dir(monkeypatch, tmp_path):
+    from emporia import identity
+    monkeypatch.setattr(identity, "KEY_DIR", tmp_path)
+    return tmp_path
+
+
+def test_last_word_and_replies_after_in_your_recent(client, monkeypatch, tmp_path):
+    from tests.test_posts_v2 import _post
+    _state_dir(monkeypatch, tmp_path)
+    me, other = _agents(client, "lw1", "lw2")
+    m = _tool_as(client, monkeypatch, me)
+    root = _post(client, other, text="a question").json()["post_id"]
+    mine = _post(client, me, text="my answer", reply_to=f"post:{root}").json()["post_id"]
+    out = m.whats_next()
+    rec = {p["post_id"]: p for p in out["your_recent"]}
+    assert rec[mine]["thread"] == root and rec[mine]["last_word"] is True and rec[mine]["replies_after"] == 0
+    assert out["last_word_threads"] == [root]
+    _post(client, other, text="a follow-up", reply_to=f"post:{mine}")
+    out = m.whats_next()
+    rec = {p["post_id"]: p for p in out["your_recent"]}
+    assert rec[mine]["last_word"] is False and rec[mine]["replies_after"] == 1
+    assert out["last_word_threads"] == []
+    own_root = _post(client, me, text="my own root").json()["post_id"]
+    rec = {p["post_id"]: p for p in m.whats_next()["your_recent"]}
+    assert rec[own_root]["thread"] == own_root and rec[own_root]["last_word"] is True
+
+
+def test_a_reply_you_may_not_read_is_not_counted_or_leaked(client, monkeypatch, tmp_path):
+    from tests.test_posts_v2 import _post
+    from tests.topic_posts import v2_post
+    _state_dir(monkeypatch, tmp_path)
+    me, other = _agents(client, "lwp1", "lwp2")
+    m = _tool_as(client, monkeypatch, me)
+    root = _post(client, me, text="my root").json()["post_id"]
+    r = client.post("/agoras/topics", json={"name": f"LW {uuid.uuid4().hex[:6]}", "description": "d",
+                                            "visibility": "private", "gate_type": "invite", "creator_id": other},
+                    headers=as_(other))
+    slug = r.json()["slug"]
+    secret = v2_post(client, other, slug, "secret").json()["post_id"]
+    # a reply by someone else under a post in a topic I cannot read: unreadable to me
+    hidden = _post(client, other, text="PRIVATE TEXT", reply_to=f"post:{secret}", root=f"post:{secret}")
+    assert hidden.status_code == 200, hidden.text
+    # and a plain reply to my root that I can read
+    _post(client, other, text="plain", reply_to=f"post:{root}")
+    out = m.whats_next()
+    rec = {p["post_id"]: p for p in out["your_recent"]}
+    assert rec[root]["replies_after"] == 1 and rec[root]["last_word"] is False
+    assert "PRIVATE TEXT" not in json.dumps(out)
+
+
+def test_the_relay_gives_the_last_word_fields_only_with_include_feed(client):
+    from tests.test_posts_v2 import _post
+    me, other = _agents(client, "ifd1", "ifd2")
+    root = _post(client, other, text="root").json()["post_id"]
+    mine = _post(client, me, text="mine", reply_to=f"post:{root}").json()["post_id"]
+    got = client.get(f"/agents/{me}/posts", params={"include_feed": "true"}).json()["posts"]
+    assert got[0]["post_id"] == mine and got[0]["thread"] == root
+    assert got[0]["last_word"] is True and got[0]["replies_after"] == 0
+    plain = client.get(f"/agents/{me}/posts").json()["posts"]
+    assert all("last_word" not in p for p in plain)
+
+
+def test_the_last_look_is_written_then_used_as_since(client, monkeypatch, tmp_path):
+    _state_dir(monkeypatch, tmp_path)
+    me, = _agents(client, "look")
+    m = _tool_as(client, monkeypatch, me)
+    sent = []
+    real = m._bearer_request
+
+    def spy(method, url, **kw):
+        if url.endswith("/happening"):
+            sent.append((kw.get("params") or {}).get("since"))
+        return real(method, url, **kw)
+    monkeypatch.setattr(m, "_bearer_request", spy)
+    first = m.whats_next()
+    assert first["since_last_look"] == {"at": None} and sent[-1] is None
+    stored = json.loads((tmp_path / "last_look.json").read_text())[me]
+    second = m.whats_next()
+    assert second["since_last_look"] == {"at": stored} and sent[-1] == stored
+    m.whats_next(since="2026-01-01T00:00:00+00:00")
+    assert sent[-1] == "2026-01-01T00:00:00+00:00", "a since passed in wins"
+
+
+def test_a_stale_last_look_is_ignored(client, monkeypatch, tmp_path):
+    _state_dir(monkeypatch, tmp_path)
+    me, = _agents(client, "stale")
+    m = _tool_as(client, monkeypatch, me)
+    old = (datetime.now(UTC) - timedelta(days=8)).isoformat()
+    (tmp_path / "last_look.json").write_text(json.dumps({me: old}))
+    assert m.whats_next()["since_last_look"] == {"at": None}
+
+
+def test_an_unwritable_or_broken_state_file_never_breaks_whats_next(client, monkeypatch, tmp_path):
+    _state_dir(monkeypatch, tmp_path)
+    me, = _agents(client, "bad")
+    m = _tool_as(client, monkeypatch, me)
+    (tmp_path / "last_look.json").mkdir()   # a directory where the file should be: read and write both fail
+    out = m.whats_next()
+    assert out["success"] and out["since_last_look"] == {"at": None}
+    (tmp_path / "last_look.json").rmdir()
+    (tmp_path / "last_look.json").write_text("{not json")
+    assert m.whats_next()["success"]
+
+
+def test_quiet_when_nothing_waits_and_nothing_is_new(client, monkeypatch, tmp_path):
+    _state_dir(monkeypatch, tmp_path)
+    me, = _agents(client, "q1")
+    m = _tool_as(client, monkeypatch, me)
+    monkeypatch.setenv("EMPORIA_PLAYBOOK", "player")
+    real = m._bearer_request
+
+    state = {"unread": 0}
+
+    def calm(method, url, **kw):
+        class R:
+            status_code = 200
+            content = b"{}"
+
+            def __init__(self, body):
+                self.body = body
+
+            def json(self):
+                return self.body
+        if url.endswith("/happening"):
+            return R({"since": "s", "next_since": "n", "topics": [], "rooms": []})
+        if url.endswith("/next"):
+            return R({"as_of": "t", "inbox": {"unread_total": state["unread"]}})
+        return real(method, url, **kw)
+    monkeypatch.setattr(m, "_bearer_request", calm)
+    out = m.whats_next()
+    assert all(i["kind"] == "idle" for i in out["items"]) and out["quiet"] is True and "[SILENT]" in out["hint"]
+    state["unread"] = 2
+    busy = m.whats_next()
+    assert "quiet" not in busy and "hint" not in busy
