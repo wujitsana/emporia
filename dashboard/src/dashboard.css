@@ -29,10 +29,11 @@
 /* ─── 1. VARIABLES & TOKENS ─────────────────────────────────────────────── */
 
 body.theme-dark {
-  --theme-focused-foreground: #f5b84a;
+  --theme-focused-foreground: #39ff44;
 }
 
 body.theme-dark,
+body.theme-vivid,
 body.theme-light {
   overflow-x: clip;
 }
@@ -1047,6 +1048,9 @@ body.theme-light {
 .e-theme-circle--mode[data-mode="theme-light"] { background: #f2f2f2; }
 .e-theme-circle--mode[data-mode="theme-dark"]  { background: #121212; }
 .e-theme-circle--accent { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
+/* The vivid circle: the tint with a ring of its ink (colour set inline); the ring fills in when vivid is on. */
+.e-theme-circle--vivid { box-shadow: inset 0 0 0 3px currentColor; }
+.e-theme-circle--vivid[data-on="true"] { box-shadow: inset 0 0 0 5px currentColor; }
 .e-mode-toggle {
   width: 26px; height: 26px;
   padding: 0;
@@ -1909,7 +1913,7 @@ body.theme-light {
 .e-section-tab__sub {
   grid-area: sub;
   font-size: 0.72rem;
-  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));
   white-space: normal;
 }
 
@@ -2006,7 +2010,7 @@ body.theme-light {
   font-size: 0.72rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));
   white-space: nowrap;
 }
 .e-subnav__tab {
@@ -2043,7 +2047,7 @@ body.theme-light {
   align-items: center;
   padding: 0 4px;
   font-size: 0.78rem;
-  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));
   white-space: nowrap;
 }
 .e-subnav__tab:focus-visible, .e-section-tab:focus-visible, .e-header-link:focus-visible, .e-bottom-bar__tab:focus-visible {
@@ -2619,8 +2623,8 @@ body.theme-light {
    the only one. `.e-look` is on the app's root with the theme and
    tint classes (themeConfig.applyTheme), so these rules keep their
    weight over the older ones above without a switch.
-   - It follows light/dark and all eight tints: every colour comes
-     from the tint (--tint; amber when there is none).
+   - It follows light, vivid, dark and all seven tints: every colour comes
+     from the tint (--tint; green when there is none).
    - Motion: arrivals only, 0.35–0.45 s, ease-out. Nothing moves with
      prefers-reduced-motion or in capture mode (?capture=1).
    ═══════════════════════════════════════════════════════════════ */
@@ -2640,7 +2644,7 @@ body.theme-light {
 /* ─── 1. TOKENS ─────────────────────────────────────────────────────────── */
 
 .e-look {
-  --anim-tint: var(--tint, #f0a832);                                   /* amber when no tint is set */
+  --anim-tint: var(--tint, #39ff44);                                   /* green when no tint is set */
   --anim-ink: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);       /* text on a fill, both themes */
   --anim-fill: oklch(from var(--anim-tint) max(l, 0.86) c h);         /* caption bands, chips, the won cells */
   /* brackets, rules, ticks: graphics only. P10: L 0.58, not 0.62, so it clears 3:1 on the light
@@ -2652,7 +2656,7 @@ body.theme-light {
   --anim-ease: cubic-bezier(0.33, 1, 0.68, 1);                          /* power2.out */
 }
 
-/* The light canvas for every tint, amber included : white with a breath of the tint, near-black ink.
+/* The light canvas for every tint : white with a breath of the tint, near-black ink.
    The accent used AS TEXT is darker than the graphics accent so it reads
    (≥ 4.5:1 on the canvas). */
 body.e-look.theme-light {
@@ -2668,20 +2672,77 @@ body.e-look.theme-light {
   --theme-focused-foreground-subdued: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h / 0.5);
 }
 
-/* The dark variant: the same cards on a near-black tinted canvas. */
+/* The dark theme is the DEEP palette (the demo video's all-dark-green screens): the canvas is the tint at
+   L .192 with 24 % of its chroma, the panel a step up, the border and text likewise; green is pinned to the
+   video's exact colours. The accent as text is lifted to L .78 (chroma capped at .22) so blue, red and purple
+   read; a chip is the pure tint with the canvas on it (white on blue and purple).
+   Mirrored in themePalette.ts, which the contrast tests read; keep the two the same.
+   BEFORE (the previous dark, kept to compare; `git revert` of the deep commit restores it):
+     bg  oklch(from tint 0.14 calc(c * 0.18) h)      panel  oklch(from tint 0.24 calc(c * 0.22) h)
+     input 0.28 / c*0.2   border 0.4 / c*0.28   border-subdued 0.32 / c*0.26
+     text/button oklch(from tint 0.94 calc(c * 0.12) h)   button-text = bg   line 0.72 c
+     chip fill oklch(from tint max(l, 0.86) c h) with ink oklch(from tint 0.18 calc(c * 0.4) h) */
 body.e-look.theme-dark {
-  --theme-background: oklch(from var(--anim-tint) 0.14 calc(c * 0.18) h);
-  --theme-background-modal: oklch(from var(--anim-tint) 0.24 calc(c * 0.22) h);
-  --theme-background-input: oklch(from var(--anim-tint) 0.28 calc(c * 0.2) h);
-  --theme-border: oklch(from var(--anim-tint) 0.4 calc(c * 0.28) h);
-  --theme-border-subdued: oklch(from var(--anim-tint) 0.32 calc(c * 0.26) h);
-  --theme-text: oklch(from var(--anim-tint) 0.94 calc(c * 0.12) h);
-  --theme-button: oklch(from var(--anim-tint) 0.94 calc(c * 0.12) h);
-  --theme-button-text: oklch(from var(--anim-tint) 0.14 calc(c * 0.18) h);
+  --theme-background: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
+  --theme-background-modal: oklch(from var(--anim-tint) 0.253 calc(c * 0.243) h);
+  --theme-background-input: oklch(from var(--anim-tint) 0.253 calc(c * 0.243) h);
+  --theme-border: oklch(from var(--anim-tint) 0.366 calc(c * 0.328) h);
+  --theme-border-subdued: color-mix(in srgb, var(--theme-border) 60%, transparent);
+  --theme-text: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);
+  --theme-button: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);
+  --theme-button-text: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
   --theme-focused-foreground: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h);
   --theme-focused-foreground-subdued: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h / 0.5);
   --anim-line: oklch(from var(--anim-tint) 0.72 c h);
+  --anim-fill: var(--anim-tint);
+  --anim-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
 }
+body.e-look.theme-dark.tint-blue,
+body.e-look.theme-dark.tint-purple { --anim-ink: #fff; }
+/* Green is the video's, exact. */
+body.e-look.theme-dark.tint-green {
+  --theme-background: #001b00;
+  --theme-background-modal: #0b2a0b;
+  --theme-background-input: #0b2a0b;
+  --theme-border: #1d4a1d;
+  --theme-text: #d8ffd8;
+  --theme-button: #d8ffd8;
+  --theme-button-text: #001b00;
+  --theme-focused-foreground: #39ff44;
+  --theme-focused-foreground-subdued: rgb(57 255 68 / 0.5);
+  --anim-ink: #001b00;
+}
+
+/* VIVID: the tint is the background, ink is the tint's deep dark (the video's "LIVE NOW" screen).
+   The panel is a step darker (lighter for red and pink); blue and purple take white ink. Ink is the
+   border, the accent-as-text, the focus ring and the chip fill (the tint written on it): no tint-on-tint
+   text. Green is exact: #39ff44 / #2ee03a / #001b00. Mirrored in themePalette.ts. */
+body.e-look.theme-vivid {
+  --vv-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
+  --vv-panel: oklch(from var(--anim-tint) calc(l - 0.082) calc(c * 0.91) h);
+  --theme-background: var(--anim-tint);
+  --theme-background-modal: var(--vv-panel);
+  --theme-background-input: var(--vv-panel);
+  --theme-border: var(--vv-ink);
+  --theme-border-subdued: color-mix(in srgb, var(--vv-ink) 35%, transparent);
+  --theme-text: var(--vv-ink);
+  --theme-button: var(--vv-ink);
+  --theme-button-text: var(--anim-tint);
+  --theme-focused-foreground: var(--vv-ink);
+  --theme-focused-foreground-subdued: color-mix(in srgb, var(--vv-ink) 50%, transparent);
+  --anim-line: var(--vv-ink);
+  --anim-fill: var(--vv-ink);
+  --anim-ink: var(--anim-tint);
+  /* Faint and status text are the ink itself here: a mix toward a saturated tint falls under 4.5:1
+     on blue, red, purple and pink. Every "text N %" mix above adds this and caps at 100 %. */
+  --e-ink-boost: 100%;
+  --anim-faint: var(--theme-text);
+}
+body.e-look.theme-vivid.tint-red,
+body.e-look.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }
+body.e-look.theme-vivid.tint-blue,
+body.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }
+body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }
 
 .e-look .e-dashboard-shell {
   --e-rule: var(--theme-border-subdued);
@@ -2690,6 +2751,8 @@ body.e-look.theme-dark {
 }
 /* On the dark canvas a strong wash would sit under light text: keep it faint. */
 .e-look.theme-dark .e-dashboard-shell { --anim-wash: color-mix(in srgb, var(--anim-fill) 14%, transparent); }
+/* The hover / selected wash in vivid is the panel colour: text on it clears 4.5:1 in every tint. */
+.e-look.theme-vivid .e-dashboard-shell { --anim-wash: var(--theme-background-modal); }
 
 /* ─── 2. CORNER BRACKETS ─────────────────────────────────────────────────
    Four L-shaped corners drawn as background images, so no element and no
@@ -2770,7 +2833,7 @@ body.e-look.theme-dark {
   font-size: 0.74rem;
   line-height: 1.4;
   letter-spacing: 0.05em;
-  color: color-mix(in srgb, var(--theme-text) 80%, var(--theme-background));
+  color: color-mix(in srgb, var(--theme-text) min(100%, calc(80% + var(--e-ink-boost, 0%))), var(--theme-background));
   font-variant-numeric: tabular-nums;
 }
 .e-look .e-anim-hud__key {
@@ -2798,7 +2861,8 @@ body.e-look.theme-dark {
   opacity: 0;
   pointer-events: none;
 }
-.e-look.theme-dark .e-anim-flash { background: var(--anim-fill); }
+.e-look.theme-dark .e-anim-flash,
+.e-look.theme-vivid .e-anim-flash { background: var(--anim-fill); }
 @media (prefers-reduced-motion: no-preference) {
   .e-look .e-anim-flash { animation: e-anim-flash 0.42s var(--anim-ease) both; }}
 @keyframes e-anim-flash {
@@ -2831,7 +2895,7 @@ body.e-look.theme-dark {
   letter-spacing: 0.06em;
 }
 .e-look .e-mobile-top__section::before { content: "> "; opacity: 0.8; }
-.e-look .e-section-tab__key { opacity: 1; color: color-mix(in srgb, var(--theme-text) 80%, var(--theme-background)); }
+.e-look .e-section-tab__key { opacity: 1; color: color-mix(in srgb, var(--theme-text) min(100%, calc(80% + var(--e-ink-boost, 0%))), var(--theme-background)); }
 .e-look .e-section-tab.is-active .e-section-tab__key { color: var(--anim-ink); }
 
 /* Relay / live: square chips, the live one filled. */
@@ -2889,7 +2953,7 @@ body.e-look.theme-dark {
 /* Quests read like the animatic's QUESTS card: `>` lines, the done ones ticked. */
 .e-look .e-quest-row { font-size: 0.95rem !important; line-height: 1.7; opacity: 1; }
 .e-look .e-quest-row::before { content: "> "; color: var(--theme-focused-foreground); font-weight: 700; }
-.e-look .e-quest-row:not(.is-done) { color: color-mix(in srgb, var(--theme-text) 74%, var(--theme-background));}
+.e-look .e-quest-row:not(.is-done) { color: color-mix(in srgb, var(--theme-text) min(100%, calc(74% + var(--e-ink-boost, 0%))), var(--theme-background));}
 .e-look .e-quest-next .e-now__label { margin-right: 4px; }
 
 /* ─── 6. SET PLAYS ───────────────────────────────────────────────────── */
@@ -2966,7 +3030,7 @@ body.e-look.theme-dark {
    Secondary text used to dim to 35–50 % opacity, which falls under
    4.5:1 on a tinted canvas. Faint is a colour at about 4.6:1 or more. */
 .e-look {
-  --anim-faint: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  --anim-faint: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));
 }
 .e-look .e-faint,
 .e-look .e-dim,
@@ -3090,7 +3154,7 @@ body.e-look.theme-dark {
   padding: 8px 14px 10px;
   font-size: 0.75rem;
   line-height: 1.5;
-  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));
 }
 /* Text another agent wrote: quoted and underlined as data, never styled as the dashboard's own words. */
 .e-untrusted { font-style: italic; border-bottom: 1px dotted currentColor; }
@@ -3121,7 +3185,7 @@ body.e-look.theme-dark {
   display: block;
   margin-top: 6px;
   overflow-wrap: anywhere;
-  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));
 }
 .e-look .e-pipeline-chip > summary { background: var(--anim-fill); color: var(--anim-ink); font-weight: 700; border-color: transparent; }
 
@@ -3278,7 +3342,7 @@ body.e-look.theme-dark {
 
 .e-hcard__hud {
   display: flex; justify-content: space-between; gap: 8px; font-size: 0.68rem; letter-spacing: 0.05em;
-  color: color-mix(in srgb, var(--theme-text) 78%, var(--theme-background)); font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--theme-text) min(100%, calc(78% + var(--e-ink-boost, 0%))), var(--theme-background)); font-variant-numeric: tabular-nums;
 }
 .e-hcard__hud > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .e-hcard__chip {
