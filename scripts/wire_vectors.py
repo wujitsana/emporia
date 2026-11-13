@@ -153,6 +153,36 @@ def build() -> dict:
     }
     assert all(removed_chain["python_link_ok"])
 
+    # the full walk over a chain with a removed message, Python's verdict for each: the loop of
+    # rooms.verify_chain (link_ok on every row, the next prev is the row's stored hash) and
+    # rooms.verify_chain_page over the whole chain from the signed head
+    def _walk(msgs):
+        prev = None
+        for m in msgs:
+            if not rooms.link_ok(prev, m):
+                return False
+            prev = m["chain_hash"]
+        return True
+
+    def _page(msgs):
+        ok, _, _ = rooms.verify_chain_page(msgs, msgs[-1]["chain_hash"], True)
+        return ok
+
+    gone = {"content": "", "deleted_at": "2026-11-02T09:00:00+00:00"}
+    walk_cases = [
+        ("removed message in the middle", [chained[0], removed, after]),
+        ("removed first message", [dict(chained[0], **gone), {**chained[1]}, {**chained[2]}]),
+        ("tampered stored hash after a removed message", [chained[0], removed, dict(after, chain_hash="0" * 64)]),
+        ("removed message with a tampered stored hash", [chained[0], dict(removed, chain_hash="1" * 64), after]),
+        ("removed message with no stored hash", [chained[0], dict(removed, chain_hash=None), after]),
+        ("tampered content beside a removed message", [chained[0], removed, dict(after, content=_tamper(rows[2][1]))]),
+    ]
+    removed_chain_walk = [
+        {"name": n, "messages": ms, "python_walk_ok": _walk(ms), "python_page_ok": _page(ms)}
+        for n, ms in walk_cases
+    ]
+    assert removed_chain_walk[0]["python_walk_ok"] and removed_chain_walk[1]["python_walk_ok"]
+
     room_heads = [
         _head(relay, RELAY, "room_chain", "room_id", ROOM_ID, chained, "room head"),
         _head(relay, RELAY, "room_chain", "room_id", ROOM_ID, chained, "room head, message count changed",
@@ -178,6 +208,7 @@ def build() -> dict:
         "message_id": ids,
         "chain_hash": chain_hash,
         "removed_chain": removed_chain,
+        "removed_chain_walk": removed_chain_walk,
         "room_chain_head": room_heads,
         "dm_chain_head": dm_heads,
     }

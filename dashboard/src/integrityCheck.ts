@@ -140,6 +140,18 @@ export interface ChainMessage {
    * as `before_seq` makes the cursor total. Optional so a relay that predates
    * it degrades to the old behaviour rather than breaking. */
   seq?: number | null;
+  /** Set by the relay on a removed message (its text is gone). */
+  deleted_at?: string | null;
+}
+
+/** `rooms.link_ok()`, ported: does `msg` chain onto `prevHash`? A removed
+ * message's text is gone, so its own link cannot be recomputed: its stored
+ * hash is taken, the next message must still chain onto it, and the gap
+ * carries its signed removal -- a reader sees a removal, never what looks
+ * like tampering. (`rooms._removed` is `bool(msg["deleted_at"])`.) */
+async function linkOk(prevHash: string | null, msg: ChainMessage): Promise<boolean> {
+  if (msg.deleted_at) return true;
+  return (await computeChainHash(prevHash, msg.sender_id, msg.content, msg.created_at)) === msg.chain_hash;
 }
 
 /** Either a bare `chain_hash` string (the *first* call in a walk, checked
@@ -182,8 +194,7 @@ export async function verifyChainPage(
     }
   } else {
     const pending = expected;
-    const recomputed = await computeChainHash(newest.chain_hash ?? null, pending.sender_id, pending.content, pending.created_at);
-    if (recomputed !== pending.chain_hash) {
+    if (!(await linkOk(newest.chain_hash ?? null, pending))) {
       return {
         ok: false, newExpected: null,
         // P31-3: this used to hedge with "or a message was lost at a
@@ -199,16 +210,14 @@ export async function verifyChainPage(
   for (let i = 1; i < page.length; i++) {
     const older = page[i - 1];
     const newer = page[i];
-    const recomputed = await computeChainHash(older.chain_hash ?? null, newer.sender_id, newer.content, newer.created_at);
-    if (recomputed !== newer.chain_hash) {
+    if (!(await linkOk(older.chain_hash ?? null, newer))) {
       return { ok: false, newExpected: null, reason: "hash mismatch within a page — history may have been rewritten" };
     }
   }
 
   const oldest = page[0];
   if (atGenesis) {
-    const genesisExpected = await computeChainHash(null, oldest.sender_id, oldest.content, oldest.created_at);
-    if (genesisExpected !== oldest.chain_hash) {
+    if (!(await linkOk(null, oldest))) {
       return {
         ok: false, newExpected: null,
         reason: "genesis message does not chain from an empty prior — chain does not anchor at a true beginning",
@@ -239,11 +248,10 @@ export async function verifyChainOverMessages(
 ): Promise<ChainVerifyResult> {
   let prevHash = priorHead;
   for (const m of messages) {
-    const expected = await computeChainHash(prevHash, m.sender_id, m.content, m.created_at);
-    if (m.chain_hash !== expected) {
+    if (!(await linkOk(prevHash, m))) {
       return { verified: false, reason: "chain hash mismatch — history may have been rewritten", head: prevHash };
     }
-    prevHash = expected;
+    prevHash = m.chain_hash ?? null;
   }
   return { verified: true, reason: `chain valid (${messages.length} messages)`, head: prevHash };
 }

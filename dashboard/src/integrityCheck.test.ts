@@ -12,6 +12,7 @@ import {
   verifyDmChainFromRelay,
   ROOM_MESSAGE_TYPE,
 } from "./integrityCheck";
+import type { ChainMessage } from "./integrityCheck";
 // Made by scripts/wire_vectors.py, i.e. by the Python side (wire.py, rooms.py, identity.py), with Python's own
 // verdict on each case. tests/test_wire_vectors.py fails when wire.py changes until this file is regenerated.
 import vectors from "./wire.vectors.json";
@@ -211,12 +212,21 @@ describe("computeChainHash", () => {
   });
 
   it("takes a removed message's link as stored, as rooms.link_ok does, and the next message chains onto it", async () => {
-    // The dashboard's own walk (verifyChainPage / verifyChainOverMessages) does not skip a removed message's
-    // own link yet; what is checked here is the part it has: the messages around it chain onto its stored hash.
     const [first, removed, after] = vectors.removed_chain.messages;
     expect(vectors.removed_chain.python_link_ok).toEqual([true, true, true]);
     expect(await computeChainHash(null, first.sender_id, first.content, first.created_at)).toBe(first.chain_hash);
     expect(await computeChainHash(removed.chain_hash, after.sender_id, after.content, after.created_at)).toBe(after.chain_hash);
+  });
+
+  it("walks a chain with a removed message to Python's verdict, in verifyChainOverMessages and verifyChainPage", async () => {
+    expect(vectors.removed_chain_walk.length).toBeGreaterThan(4);
+    for (const c of vectors.removed_chain_walk) {
+      const msgs = c.messages as ChainMessage[];
+      const over = await verifyChainOverMessages(msgs);
+      expect([c.name, "over", over.verified]).toEqual([c.name, "over", c.python_walk_ok]);
+      const page = await verifyChainPage(msgs, msgs[msgs.length - 1].chain_hash!, true);
+      expect([c.name, "page", page.ok]).toEqual([c.name, "page", c.python_page_ok]);
+    }
   });
 
   it("reproduces a message id, msg_ + the first 32 hex of sha256 over the signed payload (wire.message_id_for)", async () => {
