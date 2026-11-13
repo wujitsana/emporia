@@ -13,7 +13,7 @@ describe("theme cross-fade", () => {
     const root = document.createElement("div");
     setThemeRoot(root);
 
-    applyTheme("theme-light", "");
+    applyTheme("theme-light", "tint-green");
     expect(root.classList.contains("e-theme-anim")).toBe(false);
 
     applyTheme("theme-light", "tint-blue");
@@ -36,7 +36,7 @@ describe("theme cross-fade", () => {
   it("switches instantly when asked to (capture hotkeys), even mid-fade", () => {
     const root = document.createElement("div");
     setThemeRoot(root);
-    applyTheme("theme-light", "");
+    applyTheme("theme-light", "tint-green");
     applyTheme("theme-light", "tint-red");
     expect(root.classList.contains("e-theme-anim")).toBe(true);
     applyTheme("theme-light", "tint-blue", { fade: false, capture: true });
@@ -51,5 +51,71 @@ describe("theme cross-fade", () => {
     applyTheme("theme-dark", "tint-green");
     applyTheme("theme-dark", "tint-green");
     expect(root.classList.contains("e-theme-anim")).toBe(false);
+  });
+});
+
+import { DEFAULT_TINT, THEMES, TINTS, TINT_COLORS, TINT_LABELS, nextTint, normalizeBase, normalizeTheme, normalizeTint, toggleTheme, toggleVivid } from "./themeConfig";
+
+describe("tints", () => {
+  it("are seven, green first and the default, with no amber", () => {
+    expect([...TINTS]).toEqual(["tint-green", "tint-orange", "tint-blue", "tint-red", "tint-yellow", "tint-purple", "tint-pink"]);
+    expect(DEFAULT_TINT).toBe("tint-green");
+    expect(TINT_COLORS["tint-green"]).toBe("#39ff44");
+    expect(Object.values(TINT_LABELS)).not.toContain("Amber");
+    expect(Object.values(TINT_COLORS)).not.toContain("#f0a832");
+  });
+
+  it("cycle through all seven and back to green", () => {
+    let t = DEFAULT_TINT;
+    const seen: string[] = [t];
+    for (let i = 0; i < TINTS.length; i++) { t = nextTint(t); seen.push(t); }
+    expect(seen.slice(0, 7)).toEqual([...TINTS]);
+    expect(seen[7]).toBe("tint-green");
+  });
+
+  it("load from a saved preference: the old default, amber and junk are green", () => {
+    for (const old of ["", "tint-amber", "amber", "tint-teal", null, undefined]) expect(normalizeTint(old)).toBe("tint-green");
+    for (const t of TINTS) expect(normalizeTint(t)).toBe(t);
+  });
+});
+
+describe("themes", () => {
+  it("are light, vivid, dark", () => {
+    expect([...THEMES]).toEqual(["theme-light", "theme-vivid", "theme-dark"]);
+  });
+
+  it("the mode circle swaps light and dark; from vivid it leaves for the other of the last two", () => {
+    expect(toggleTheme("theme-light")).toBe("theme-dark");
+    expect(toggleTheme("theme-dark")).toBe("theme-light");
+    expect(toggleTheme("theme-vivid", "theme-light")).toBe("theme-dark");
+    expect(toggleTheme("theme-vivid", "theme-dark")).toBe("theme-light");
+  });
+
+  it("the vivid circle turns vivid on, and off back to the last of light / dark", () => {
+    expect(toggleVivid("theme-light", "theme-light")).toBe("theme-vivid");
+    expect(toggleVivid("theme-dark", "theme-dark")).toBe("theme-vivid");
+    expect(toggleVivid("theme-vivid", "theme-dark")).toBe("theme-dark");
+    expect(toggleVivid("theme-vivid", "theme-light")).toBe("theme-light");
+  });
+
+  it("load from a saved preference: unknown is light; a saved base falls back to the theme's own", () => {
+    expect(normalizeTheme("theme-vivid")).toBe("theme-vivid");
+    expect(normalizeTheme("theme-dark")).toBe("theme-dark");
+    expect(normalizeTheme("")).toBe("theme-light");
+    expect(normalizeTheme(null)).toBe("theme-light");
+    expect(normalizeBase("theme-dark", "theme-vivid")).toBe("theme-dark");
+    expect(normalizeBase(null, "theme-dark")).toBe("theme-dark");
+    expect(normalizeBase("theme-vivid", "theme-vivid")).toBe("theme-light");
+  });
+
+  it("applyTheme puts the vivid class on, the old amber class off, and an empty tint is green", () => {
+    const root = document.createElement("div");
+    setThemeRoot(root);
+    root.classList.add("tint-amber");
+    applyTheme("theme-vivid", "", { fade: false });
+    expect(root.classList.contains("theme-vivid")).toBe(true);
+    expect(root.classList.contains("tint-green")).toBe(true);
+    expect(root.classList.contains("tint-amber")).toBe(false);
+    setThemeRoot(null);
   });
 });

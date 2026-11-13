@@ -24,15 +24,17 @@ const AA = 4.5;
 
 describe("the look's text tokens", () => {
   for (const gamut of ["css", "clip"] as Gamut[]) {
-    it(`reach ${AA}:1 on the canvas in both themes and all 8 tints (${gamut} gamut)`, () => {
+    it(`reach ${AA}:1 on the canvas in all three themes and all 7 tints (${gamut} gamut)`, () => {
       const fails: string[] = [];
       for (const t of allThemes(gamut)) {
         const canvas = t.surfaces.find((s) => s.name === "canvas")!.rgb;
         const wash = t.surfaces.find((s) => s.name === "wash")!.rgb;
+        // Vivid sets --e-ink-boost to 100 %: faint and status text are the ink itself there (dashboard.css).
+        const share = (p: number) => (t.theme === "vivid" ? 1 : p);
         const checks: [string, number][] = [
           ["text", contrast(t.ink, canvas)],
-          ["faint (68 %)", contrast(mixOver(t.ink, 0.68, canvas), canvas)],
-          ["status line (80 %)", contrast(mixOver(t.ink, 0.8, canvas), canvas)],
+          ["faint (68 %)", contrast(mixOver(t.ink, share(0.68), canvas), canvas)],
+          ["status line (80 %)", contrast(mixOver(t.ink, share(0.8), canvas), canvas)],
           ["accent as text", contrast(t.accent, canvas)],
           ["canvas on the accent (badges, send)", contrast(canvas, t.accent)],
           ["ink on the fill", contrast(t.fill!.ink, t.fill!.bg)],
@@ -46,7 +48,7 @@ describe("the look's text tokens", () => {
 });
 
 /** P10: the look's graphics line (brackets, the active sub-tab's underline, rules) as the CSS writes it. */
-const LINE_L = { light: 0.58, dark: 0.72 } as const;
+const LINE_L = { light: 0.58, dark: 0.72 } as const;   // vivid: the line is the ink (checked below)
 
 describe("the look's graphics line (P10)", () => {
   it("is written in dashboard.css with the lightness checked here", () => {
@@ -60,10 +62,10 @@ describe("the look's graphics line (P10)", () => {
   // their own, the sub-tab underline sits on the header. (L 0.62 measured 2.89:1 under the
   // green tint; 0.58 is the smallest step that clears 3:1 in every tint, both gamuts.)
   for (const gamut of ["css", "clip"] as Gamut[]) {
-    it(`reaches 3:1 on the canvas in both themes and all 8 tints (${gamut} gamut)`, () => {
+    it(`reaches 3:1 on the canvas in all three themes and all 7 tints (${gamut} gamut)`, () => {
       const fails: string[] = [];
       for (const t of allThemes(gamut)) {
-        const line = relativeOklch(t.tintHex, LINE_L[t.theme], (c) => c, gamut);
+        const line = t.theme === "vivid" ? t.ink : relativeOklch(t.tintHex, LINE_L[t.theme], (c) => c, gamut);
         const canvas = t.surfaces.find((s) => s.name === "canvas")!.rgb;
         const r = contrast(line, canvas);
         if (r < 3) fails.push(`${t.theme} ${t.label} line on the canvas: ${r.toFixed(2)}`);

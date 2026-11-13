@@ -430,6 +430,15 @@ body.theme-light.tint-pink {
   --theme-window-shadow: oklch(from var(--tint) 0.7 calc(c * 0.28) h);
 }
 
+/*
+DEEP (the dark theme with a tint): the demo video's all-dark-green screens in OKLCH relative to the
+tint — canvas L .192, panel L .253 (chroma x .243), border L .366 (x .328), text L .962 (x .243);
+the accent as text is lifted to L .78 (chroma capped at .22); green is pinned to the video's colours.
+Mirrored in dashboard.css (body.e-look.theme-dark) and themePalette.ts.
+BEFORE (the previous dark ramp, for comparing; `git revert` of the deep commit restores it):
+  background  oklch(from var(--tint) 0.14 calc(c * 0.18) h)   modal 0.24 / c*0.22   footer 0.3 / c*0.24
+  input 0.28 / c*0.2   border 0.4 / c*0.28   text 0.92 / c*0.18   accent 0.72 c
+*/
 body.theme-dark.tint-green,
 body.theme-dark.tint-blue,
 body.theme-dark.tint-red,
@@ -437,39 +446,78 @@ body.theme-dark.tint-yellow,
 body.theme-dark.tint-purple,
 body.theme-dark.tint-orange,
 body.theme-dark.tint-pink {
-  /*
-  NOTE(jimmylee):
-  Dark tint ramp is anchored to the ANSI dark grays:
-    --theme-background          ≈ ansi-232-gray-3  (#080808)
-    --theme-background-modal    ≈ ansi-235-gray-15 (#262626)
-    --theme-background-input    ≈ ansi-237-gray-23 (#3a3a3a)
-    --theme-border              ≈ ansi-237-gray-23 (#3a3a3a)
-    --theme-text                ≈ ansi-15-white    (#ffffff)
-  */
   --theme-overlay: var(--color-black-alpha-40);
-  --theme-background: oklch(from var(--tint) 0.14 calc(c * 0.18) h);
-  --theme-background-modal: oklch(from var(--tint) 0.24 calc(c * 0.22) h);
-  --theme-background-modal-footer: oklch(from var(--tint) 0.3 calc(c * 0.24) h);
-  --theme-background-input: oklch(from var(--tint) 0.28 calc(c * 0.2) h);
-  --theme-border: oklch(from var(--tint) 0.4 calc(c * 0.28) h);
-  --theme-border-subdued: oklch(from var(--tint) 0.4 calc(c * 0.28) h / 0.6);
-  --theme-text: oklch(from var(--tint) 0.92 calc(c * 0.18) h);
-  --theme-button: oklch(from var(--tint) 0.92 calc(c * 0.18) h);
-  --theme-button-text: oklch(from var(--tint) 0.14 calc(c * 0.18) h);
-  --theme-button-foreground: oklch(from var(--tint) 0.3 calc(c * 0.22) h);
-  --theme-button-background: oklch(from var(--tint) 0.24 calc(c * 0.22) h);
-  --theme-focused-foreground: oklch(from var(--tint) 0.72 c h);
-  --theme-focused-foreground-subdued: oklch(from var(--tint) 0.72 c h / 0.5);
-  /*
-  NOTE(jimmylee):
-  Window body matches background-modal (L=0.24) so it sits one step lighter than
-  the L=0.14 page background, and the shadow drops to L=0.18 — a hair lighter than
-  the page but darker than the window body, preserving the "shadow darker than the
-  body" contract under every dark tint.
-  */
-  --theme-window-background: oklch(from var(--tint) 0.24 calc(c * 0.22) h);
-  --theme-window-shadow: oklch(from var(--tint) 0.18 calc(c * 0.2) h);
+  --theme-background: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
+  --theme-background-modal: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
+  --theme-background-modal-footer: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
+  --theme-background-input: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
+  --theme-border: oklch(from var(--tint) 0.366 calc(c * 0.328) h);
+  --theme-border-subdued: oklch(from var(--tint) 0.366 calc(c * 0.328) h / 0.6);
+  --theme-text: oklch(from var(--tint) 0.962 calc(c * 0.243) h);
+  --theme-button: oklch(from var(--tint) 0.962 calc(c * 0.243) h);
+  --theme-button-text: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
+  --theme-button-foreground: oklch(from var(--tint) 0.366 calc(c * 0.328) h);
+  --theme-button-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
+  --theme-focused-foreground: oklch(from var(--tint) max(l, 0.78) min(c, 0.22) h);
+  --theme-focused-foreground-subdued: oklch(from var(--tint) max(l, 0.78) min(c, 0.22) h / 0.5);
+  --theme-window-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
+  --theme-window-shadow: oklch(from var(--tint) 0.15 calc(c * 0.243) h);
 }
+
+body.theme-dark.tint-green {
+  --theme-background: #001b00;
+  --theme-background-modal: #0b2a0b;
+  --theme-background-modal-footer: #0b2a0b;
+  --theme-background-input: #0b2a0b;
+  --theme-border: #1d4a1d;
+  --theme-border-subdued: rgb(29 74 29 / 0.6);
+  --theme-text: #d8ffd8;
+  --theme-button: #d8ffd8;
+  --theme-button-text: #001b00;
+  --theme-button-foreground: #1d4a1d;
+  --theme-button-background: #0b2a0b;
+  --theme-focused-foreground: #39ff44;
+  --theme-focused-foreground-subdued: rgb(57 255 68 / 0.5);
+  --theme-window-background: #0b2a0b;
+  --theme-window-shadow: #000f00;
+}
+
+/*
+VIVID: the tint is the background, ink is the tint's deep dark; the panel a step darker (lighter for
+red and pink); white ink on blue and purple; green exact (#39ff44 / #2ee03a / #001b00). Web-only, like
+the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and themePalette.ts.
+*/
+body.theme-vivid.tint-green,
+body.theme-vivid.tint-blue,
+body.theme-vivid.tint-red,
+body.theme-vivid.tint-yellow,
+body.theme-vivid.tint-purple,
+body.theme-vivid.tint-orange,
+body.theme-vivid.tint-pink {
+  --vv-ink: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
+  --vv-panel: oklch(from var(--tint) calc(l - 0.082) calc(c * 0.91) h);
+  --theme-overlay: var(--color-black-alpha-40);
+  --theme-background: var(--tint);
+  --theme-background-modal: var(--vv-panel);
+  --theme-background-modal-footer: var(--vv-panel);
+  --theme-background-input: var(--vv-panel);
+  --theme-border: var(--vv-ink);
+  --theme-border-subdued: color-mix(in srgb, var(--vv-ink) 35%, transparent);
+  --theme-text: var(--vv-ink);
+  --theme-button: var(--vv-ink);
+  --theme-button-text: var(--tint);
+  --theme-button-foreground: var(--vv-panel);
+  --theme-button-background: var(--vv-panel);
+  --theme-focused-foreground: var(--vv-ink);
+  --theme-focused-foreground-subdued: color-mix(in srgb, var(--vv-ink) 50%, transparent);
+  --theme-window-background: var(--vv-panel);
+  --theme-window-shadow: var(--vv-ink);
+}
+body.theme-vivid.tint-red,
+body.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--tint) 80%, white); }
+body.theme-vivid.tint-blue,
+body.theme-vivid.tint-purple { --vv-ink: #fff; }
+body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }
 
 #__next {
 }

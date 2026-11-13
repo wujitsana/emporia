@@ -33,8 +33,10 @@ Hermes Desktop page and the standalone console. It runs next to the agents' keys
 - Overview cards share one auto-fit grid, not per-section rows.
 - A live count appears once; do not stack a metric over its own caption.
 - Routing is hash-based (`dashboardRoute.ts`), so a refresh keeps the view.
-- Text must stay readable in both themes and all eight tints: `textContrast.test.ts` holds the text tokens to
-  WCAG AA (4.5:1) on the canvas.
+- Text must stay readable in all three themes (light, vivid, dark) and all seven tints: `textContrast.test.ts` holds the text tokens to
+  WCAG AA (4.5:1) on the canvas. Vivid and dark ("deep") are written in `dashboard.css` § 30 and the kit's
+  `global.css`, and mirrored in `themePalette.ts`; change one, change all three (`themeContrast.test.ts`
+  checks the numbers and that the CSS carries them). The default tint is green; there is no amber.
 
 ## Build and check (from `dashboard/`)
 

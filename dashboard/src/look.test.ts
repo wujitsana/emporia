@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * One style (ui-v2): the animatic look is the dashboard's, with no switch. Light/dark
- * and the eight tints stay the viewer's (t, T, ?tint=, ?theme=).
+ * and the seven tints stay the viewer's (t, T, ?tint=, ?theme=).
  */
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -30,13 +30,14 @@ describe("the look", () => {
   it("goes on the app's root with the theme and tint, in every theme and tint", () => {
     applyTheme("theme-dark", "tint-blue", { fade: false });
     expect([...document.body.classList]).toEqual(expect.arrayContaining(["e-look", "theme-dark", "tint-blue"]));
-    applyTheme("theme-light", "", { fade: false });
+    applyTheme("theme-light", "", { fade: false });   // the old default tint loads as green
+    expect(document.body.classList.contains("tint-green")).toBe(true);
     expect(document.body.classList.contains("e-look")).toBe(true);
   });
 
   it("darkens the accent used as text on the light canvas and keeps faint text a colour (readability)", () => {
     expect(CSS).toMatch(/body\.e-look\.theme-light \{[^}]*--theme-focused-foreground: oklch\(from var\(--anim-tint\) 0\.45/);
-    expect(CSS).toMatch(/--anim-faint: color-mix\(in srgb, var\(--theme-text\) 68%/);
+    expect(CSS).toMatch(/--anim-faint: color-mix\(in srgb, var\(--theme-text\) min\(100%, calc\(68% \+ var\(--e-ink-boost, 0%\)\)\)/);
   });
 
   it("loads no remote font: the pixel face is bundled", () => {

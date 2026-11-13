@@ -7,7 +7,7 @@
      wash in every theme and tint; badges.test.tsx holds it to that).
    The accent is set on the element that carries the theme class (body in
    the console, the app's container in the Hermes tab and on Desktop), so it
-   follows light/dark and the tint run without a re-render. The formulas
+   follows light, vivid, dark and the tint run without a re-render. The formulas
    are mirrored in tokens.ts (ACCENT_CSS); keep the two the same.
    ═══════════════════════════════════════════════════════════════ */
 
@@ -18,10 +18,10 @@
 /* The gallery's panels each carry their own theme and tint: the same formula, worked out there.
    (dashboard.css § 30 sets --theme-focused-foreground to exactly these on the app's root.) */
 .e-badge-panel.theme-light {
-  --e-badge-accent: oklch(from var(--tint, #f0a832) 0.45 min(c, 0.2) h);
+  --e-badge-accent: oklch(from var(--tint, #39ff44) 0.45 min(c, 0.2) h);
 }
 .e-badge-panel.theme-dark {
-  --e-badge-accent: oklch(from var(--tint, #f0a832) max(l, 0.78) min(c, 0.22) h);
+  --e-badge-accent: oklch(from var(--tint, #39ff44) max(l, 0.78) min(c, 0.22) h);
 }
 
 /* A row of small badges (Season › Quests: the ones earned). */
@@ -112,17 +112,32 @@
   color: var(--p-ink);
 }
 .e-badge-panel.theme-light {
-  --p-bg: oklch(from var(--tint, #f0a832) 0.97 calc(c * 0.1) h);
-  --p-panel: oklch(from var(--tint, #f0a832) 0.92 calc(c * 0.18) h);
-  --p-ink: oklch(from var(--tint, #f0a832) 0.18 calc(c * 0.4) h);
-  --p-line: oklch(from var(--tint, #f0a832) 0.84 calc(c * 0.28) h);
+  --p-bg: oklch(from var(--tint, #39ff44) 0.97 calc(c * 0.1) h);
+  --p-panel: oklch(from var(--tint, #39ff44) 0.92 calc(c * 0.18) h);
+  --p-ink: oklch(from var(--tint, #39ff44) 0.18 calc(c * 0.4) h);
+  --p-line: oklch(from var(--tint, #39ff44) 0.84 calc(c * 0.28) h);
 }
 .e-badge-panel.theme-dark {
-  --p-bg: oklch(from var(--tint, #f0a832) 0.14 calc(c * 0.18) h);
-  --p-panel: oklch(from var(--tint, #f0a832) 0.24 calc(c * 0.22) h);
-  --p-ink: oklch(from var(--tint, #f0a832) 0.94 calc(c * 0.12) h);
-  --p-line: oklch(from var(--tint, #f0a832) 0.4 calc(c * 0.28) h);
+  --p-bg: oklch(from var(--tint, #39ff44) 0.192 calc(c * 0.243) h);
+  --p-panel: oklch(from var(--tint, #39ff44) 0.253 calc(c * 0.243) h);
+  --p-ink: oklch(from var(--tint, #39ff44) 0.962 calc(c * 0.243) h);
+  --p-line: oklch(from var(--tint, #39ff44) 0.366 calc(c * 0.328) h);
 }
+.e-badge-panel.theme-dark.tint-green {
+  --p-bg: #001b00; --p-panel: #0b2a0b; --p-ink: #d8ffd8; --p-line: #1d4a1d; --e-badge-accent: #39ff44;
+}
+.e-badge-panel.theme-vivid {
+  --p-bg: var(--tint, #39ff44);
+  --p-panel: oklch(from var(--tint, #39ff44) calc(l - 0.082) calc(c * 0.91) h);
+  --p-ink: oklch(from var(--tint, #39ff44) 0.192 calc(c * 0.243) h);
+  --p-line: var(--p-ink);
+  --e-badge-accent: var(--p-ink);
+}
+.e-badge-panel.theme-vivid.tint-red,
+.e-badge-panel.theme-vivid.tint-pink { --p-panel: color-mix(in srgb, var(--tint) 80%, white); }
+.e-badge-panel.theme-vivid.tint-blue,
+.e-badge-panel.theme-vivid.tint-purple { --p-ink: #fff; }
+.e-badge-panel.theme-vivid.tint-green { --p-ink: #001b00; --p-panel: #2ee03a; }
 .e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }
 .e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }
 .e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }

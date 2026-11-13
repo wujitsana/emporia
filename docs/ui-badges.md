@@ -6,7 +6,7 @@ dev gallery page. **No view uses them yet**: §5 lists where each one belongs, f
 wire in.
 
 The rendered sheet is `docs/ui-badges-shots/badge-sheet.png`: every badge at 1×, 2× and 3× on the
-light green canvas, then the whole set on light and dark in all eight tints. Headless Chromium will
+light green canvas, then the whole set on light, vivid and dark in all seven tints. Headless Chromium will
 not start in the build sandbox, so the sheet was drawn with Pillow from the same grids and the same
 colours `tokens.ts` computes. It is not a browser screenshot.
 
@@ -54,8 +54,8 @@ the app's container in the Hermes tab and on Desktop. So it follows light and da
 and the kaleidoscope run with no re-render:
 
 ```css
-.theme-light { --e-badge-accent: oklch(from var(--tint, #f0a832) 0.45 min(c, 0.2) h); }
-.theme-dark  { --e-badge-accent: oklch(from var(--tint, #f0a832) max(l, 0.78) min(c, 0.22) h); }
+.theme-light { --e-badge-accent: oklch(from var(--tint, #39ff44) 0.45 min(c, 0.2) h); }
+.theme-dark  { --e-badge-accent: oklch(from var(--tint, #39ff44) max(l, 0.78) min(c, 0.22) h); }
 ```
 
 These are the animatic style's accent-as-text formulas (`--theme-focused-foreground` in
@@ -71,7 +71,7 @@ close in lightness (dark yellow).
 every colour the way the CSS does: OKLCH relative colour from each tint, under both CSS Color 4
 gamut mapping and plain clipping. It then checks ink and accent against every surface a badge can
 sit on: the canvas, a panel, and in the animatic style the selected-row wash. That covers both
-styles, both themes and all eight tints, 32 combinations.
+styles, all three themes and all seven tints.
 
 - The lowest ink contrast is 11.4:1 (retromod, dark, no tint, on a panel).
 - The lowest accent contrast is 4.8:1 (animatic, light red, on the row wash, clipped). Every accent
@@ -191,7 +191,7 @@ it.
 
 - Every badge at 1×, 2× and 3×, with its name, its ids and how it is earned. The page's
   light/dark and tint buttons only change what the page shows.
-- Then **every tint**: 16 panels, light and dark × eight tints, each with the whole set at 2× on the
+- Then **every tint**: 21 panels, light, vivid and dark × seven tints, each with the whole set at 2× on the
   canvas and 1× on a panel, and the lowest contrast printed on the panel.
 - `?theme=dark&tint=pink` and `?capture=1` (no motion) work as in the dashboard. "Replay the pop"
   shows the earn animation on the 3× column.
