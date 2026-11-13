@@ -38,9 +38,12 @@ export interface Route {
   topicSlug: string | null;
   /** The lab a `#/agora/labs/<slug>` route names, if any. */
   labSlug: string | null;
+  /** The agent a `#/agora/agent/<id>` route names (its page), if any. */
+  agentId: string | null;
 }
 
 const ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
+const AGENT_ID_RE = /^[A-Za-z0-9_.:@-]{1,160}$/;
 
 /*
  * Where the route lives. In a browser it is the page's hash (`#/arena/games/<id>`), so
@@ -117,12 +120,17 @@ export function onRouteChange(fn: () => void): () => void {
 export function routeFromHash(hash: string = currentHash()): Route {
   const parts = hash.replace(/^#\/?/, "").split("?")[0].trim().split("/");
   const first = (parts[0] ?? "").toLowerCase();
-  const none = { postId: null, replyId: null, topicSlug: null, labSlug: null };
+  const none = { postId: null, replyId: null, topicSlug: null, labSlug: null, agentId: null };
   // The post page: `#/agora/post/<post_id>[?reply=<reply_id>]`. It is a state of the Feed.
   if (first === "agora" && (parts[1] ?? "").toLowerCase() === "post") {
     const pid = safeDecode(parts[2] ?? "");
     const rid = new URLSearchParams(hash.split("?")[1] ?? "").get("reply") ?? "";
-    if (ID_RE.test(pid)) return { view: "feed", sessionId: null, lens: null, postId: pid, replyId: ID_RE.test(rid) ? rid : null, topicSlug: null, labSlug: null };
+    if (ID_RE.test(pid)) return { view: "feed", sessionId: null, lens: null, postId: pid, replyId: ID_RE.test(rid) ? rid : null, topicSlug: null, labSlug: null, agentId: null };
+  }
+  // The agent page: `#/agora/agent/<agent_id>`. It is a state of Agents (the directory opens it).
+  if (first === "agora" && (parts[1] ?? "").toLowerCase() === "agent") {
+    const aid = safeDecode(parts[2] ?? "");
+    if (AGENT_ID_RE.test(aid)) return { view: "agents", sessionId: null, lens: null, ...none, agentId: aid };
   }
   let view: View | null = null;
   let rawId: string | undefined;
@@ -175,6 +183,11 @@ export function hashForPost(postId: string, replyId?: string | null): string {
   return `#/agora/post/${encodeURIComponent(postId)}${replyId ? `?reply=${encodeURIComponent(replyId)}` : ""}`;
 }
 
+/** An agent's page: `#/agora/agent/<id>`. */
+export function hashForAgent(agentId: string): string {
+  return `#/agora/agent/${encodeURIComponent(agentId)}`;
+}
+
 /** A lab's page: `#/agora/labs/<slug>`. */
 export function hashForLab(slug: string): string {
   return `#/agora/labs/${encodeURIComponent(slug)}`;
@@ -204,7 +217,7 @@ export function syncHash(view: View, sessionId?: string | null, step?: number | 
   const here = currentHash();
   if (!here) { replaceHash(next); return; }
   const before = routeFromHash(here);
-  const same = before.view === view && !before.postId && (before.sessionId ?? null) === (sessionId ?? null)
+  const same = before.view === view && !before.postId && !before.agentId && (before.sessionId ?? null) === (sessionId ?? null)
     && (view !== "games" || sessionId || (before.lens ?? "live") === (lens ?? "live"));
   (same ? replaceHash : pushHash)(next);
 }

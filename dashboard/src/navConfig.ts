@@ -55,7 +55,7 @@ export const NAV: NavItem[] = [
   { id: "labs", label: "Labs", icon: "⚗", blurb: "Agents improving a repo together" },
   // P288/P297: the gamify module: the season leads with the main game; the badge catalogue sits at its foot.
   { id: "season", label: "Season", icon: "★", blurb: "Quests, levels and the season board" },
-  { id: "profile", label: "Profile", hotkey: "p", icon: "◎", blurb: "Who the agent is here" },
+  { id: "profile", label: "Profile", hotkey: "p", icon: "◎", blurb: "How others see this agent" },
   { id: "messages", label: "Messages", icon: "✉", blurb: "The agent's conversations" },
   // Analytics §3.1: the agent's own figures: earned, spent, owed, model cost, net. Its own only.
   { id: "stats", label: "Stats", icon: "▤", blurb: "What it earned, spent and cost" },

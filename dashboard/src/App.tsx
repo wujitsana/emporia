@@ -6,6 +6,7 @@ import { RelayStrip } from "./RelayStrip";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api } from "./api";
+import { AgentNavCtx } from "./agentNavCtx";
 import { unreadDms } from "./messagesModel";
 import { BottomBar, HeaderLinks, MobileNavDrawer, SectionTabs, SubRow } from "./AppNav";
 import { NowStrip } from "./ui/NowStrip";
@@ -47,7 +48,7 @@ import {
   FeesView, StatsView, DocsView, SettingsView, RelayView, OperatorView, GamifyView,
 } from "./views";
 import { VIEWER_ID } from "./relayEnv";
-import { currentHash, goToHash, hashForPost, hashForTopic, onRouteChange, routeFromHash, stepFromHash, syncHash } from "./dashboardRoute";
+import { currentHash, goToHash, hashForAgent, hashForView, hashForPost, hashForTopic, onRouteChange, routeFromHash, stepFromHash, syncHash } from "./dashboardRoute";
 import { CAPTURE, PARAM_THEME, PARAM_TINT } from "./capture";
 import { attentionCount, useAttentionTitle } from "./attentionTitle";
 import { rankNext } from "./nextUp";
@@ -138,6 +139,8 @@ function AppInner() {
     const r = routeFromHash();
     return r.postId ? { postId: r.postId, replyId: r.replyId } : null;
   });
+  // The agent page (`#/agora/agent/<id>`).
+  const [agentRoute, setAgentRoute] = useState<string | null>(() => routeFromHash().agentId);
   const [topicSlug, setTopicSlug] = useState<string | null>(() => routeFromHash().topicSlug);
   const [labSlug, setLabSlug] = useState<string | null>(() => routeFromHash().labSlug);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
@@ -230,6 +233,7 @@ function AppInner() {
 
   const applyView = useCallback((id: View, sessionId?: string | null) => {
     setView(id);
+    setAgentRoute(null);
     syncHash(id, sessionId, null, lens);
   }, [lens]);
 
@@ -241,6 +245,7 @@ function AppInner() {
       setView(r.view);
       setLens(r.lens ?? "live");
       setPostRoute(r.postId ? { postId: r.postId, replyId: r.replyId } : null);
+      setAgentRoute(r.agentId);
       setTopicSlug(r.topicSlug);
       setLabSlug(r.labSlug);
       if (r.sessionId) setSelectedSessionId(r.sessionId);
@@ -260,6 +265,7 @@ function AppInner() {
       leave();
       applyView(id);
       setPostRoute(null);
+      setAgentRoute(null);
       setTopicSlug(null);
       setLabSlug(null);
       setCameFrom(null);
@@ -327,10 +333,15 @@ function AppInner() {
           .catch(() => applyView("games", id));   // Games says it could not be opened
         return;
       }
-      // An agent card opened from another page remembers that page, for its "‹ <page>" breadcrumb.
-      if (toView === "agents" && opts?.agentId && view !== "agents") {
-        saveScroll(`view.${view}`, mainRef.current?.firstElementChild ?? null);
-        setCameFrom({ view, sessionId: selectedSessionId, step: selectedStep, lens });
+      // An agent opens its page, a route of its own. Opened from another page, it remembers that page for its
+      // "‹ <page>" breadcrumb; opened from the directory, the breadcrumb goes back to the directory.
+      if (toView === "agents" && opts?.agentId) {
+        if (view !== "agents") {
+          saveScroll(`view.${view}`, mainRef.current?.firstElementChild ?? null);
+          setCameFrom({ view, sessionId: selectedSessionId, step: selectedStep, lens });
+        }
+        goToHash(hashForAgent(opts.agentId));
+        return;
       }
       applyView(toView, opts?.sessionId);
       if (opts?.sessionId !== undefined) setSelectedSessionId(opts.sessionId);
@@ -342,7 +353,9 @@ function AppInner() {
   );
 
   // "‹ Arena" on an agent card opened from a game: back to that page, its match, lens and scroll.
-  const breadcrumb = cameFrom && view === "agents"
+  const breadcrumb = view === "agents" && agentRoute && !cameFrom
+    ? { label: "Agents", onBack: () => goToHash(hashForView("agents")) }
+    : cameFrom && view === "agents" && agentRoute
     ? {
       label: destinationOf(cameFrom.view).label,
       onBack: () => {
@@ -353,6 +366,7 @@ function AppInner() {
         setSelectedSessionId(c.sessionId);
         setSelectedStep(c.step);
         setSelectedAgentId(null);
+        setAgentRoute(null);
         syncHash(c.view, c.sessionId, c.step, c.lens);
         restoreScroll(`view.${c.view}`, mainRef.current?.firstElementChild ?? null);
       },
@@ -389,6 +403,8 @@ function AppInner() {
       }
       // `[` / `]`: the previous / next section in this destination (Feed ↔ Agora ↔ Rooms ↔ Messages).
       if (e.key === "[" || e.key === "]") {
+        // On an agent's page the same keys move between its tabs.
+        if (view === "agents" && agentRoute) { window.dispatchEvent(new CustomEvent("emporia-agent-tab", { detail: e.key === "]" ? 1 : -1 })); return; }
         const next = siblingView(view, e.key === "]" ? 1 : -1, { isSpectator, isOperator: isRelayOperator, dealsOn });
         if (next !== view) goToView(next);
         return;
@@ -404,7 +420,7 @@ function AppInner() {
     // `isSpectator` belongs here: the handler closes over it, and it stops being
     // constant the moment the dashboard/challenge login flow lands (the token
     // setter is already on the context).
-  }, [goToView, isSpectator, isRelayOperator, dealsOn, view]);
+  }, [goToView, isSpectator, isRelayOperator, dealsOn, view, agentRoute]);
 
   const currentNav = navById(view);
   const shown = canSee(view, { isSpectator, isOperator: isRelayOperator, dealsOn });
@@ -437,6 +453,7 @@ function AppInner() {
 
   return (
     <RelayHealthCtx.Provider value={relayHealth}>
+    <AgentNavCtx.Provider value={navigate}>
     <div ref={shellRef} data-nav={navLayout} className={`e-app-shell e-dashboard-shell e-app-shell--header-nav${navOpen ? " is-nav-open" : ""}${chatBeside ? " has-chat" : ""}`}>
         <aside ref={drawerRef} className="e-app-drawer" aria-label="Menu" inert={!navOpen}>
           <MobileNavDrawer
@@ -531,7 +548,7 @@ function AppInner() {
           {!hermesNonAgent && VIEWER_ID && view !== "overview" ? <NowStrip navigate={navigate} /> : null}
           <div className="e-view">
             <NotAnAgentNote />
-            {!hermesNonAgent && <PageHeading item={currentNav} agent={VIEWER_ID} />}
+            {!hermesNonAgent && !(view === "agents" && agentRoute) && <PageHeading item={currentNav} agent={VIEWER_ID} />}
             {/* P234: a Hermes profile that is no agent shows nothing of the relay. */}
             {!hermesNonAgent && !shown && <GatedNote view={view} />}
             {!hermesNonAgent && shown && (<ViewBoundary key={view} name={currentNav?.label ?? "This section"}>
@@ -566,7 +583,7 @@ function AppInner() {
             )}
             {view === "rooms" && <RoomsView initialRoomId={selectedRoomId} navigate={navigate} />}
             {view === "agents" && (
-              <AgentsView initialAgentId={selectedAgentId} navigate={navigate} breadcrumb={breadcrumb} />
+              <AgentsView agentId={agentRoute} navigate={navigate} breadcrumb={breadcrumb} />
             )}
             {view === "feed" && (postRoute
               ? <PostView key={postRoute.postId} postId={postRoute.postId} replyId={postRoute.replyId} navigate={navigate} />
@@ -606,6 +623,7 @@ function AppInner() {
         {/* Full-page chat (a phone, a narrow tab) keeps the menu: its ☰ opens the same drawer, above it. */}
         <AgentChatDrawer onMenu={() => setNavOpen(true)} covered={navOpen} />
     </div>
+    </AgentNavCtx.Provider>
     </RelayHealthCtx.Provider>
   );
 }

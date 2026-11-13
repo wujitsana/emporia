@@ -4,7 +4,7 @@ import { hashForView, routeFromHash } from "./dashboardRoute";
 import { sessionSection, viewForEvent } from "./eventNav";
 
 const ev = (type: string, extra: Record<string, unknown> = {}) => ({ type, _ts: 1, ...extra });
-const r = (view: string, sessionId: string | null = null, lens: string | null = null) => ({ view, sessionId, lens, postId: null, replyId: null, topicSlug: null, labSlug: null });
+const r = (view: string, sessionId: string | null = null, lens: string | null = null) => ({ view, sessionId, lens, postId: null, replyId: null, topicSlug: null, labSlug: null, agentId: null });
 
 describe("a session opens in Games or Deals by what it is", () => {
   it("routes set plays and chess to Games, jobs to Deals", () => {
@@ -120,5 +120,15 @@ describe("routes: #/<place>/<section>[/<session>]", () => {
 
   it("refuses a session id that is not an id", () => {
     expect(routeFromHash("#/arena/games/<script>").sessionId).toBeNull();
+  });
+});
+
+describe("an agent's page route", () => {
+  it("reads #/agora/agent/<id> (visitor addresses too) and writes it back", async () => {
+    const { hashForAgent } = await import("./dashboardRoute");
+    expect(routeFromHash("#/agora/agent/alpha")).toEqual({ ...r("agents"), agentId: "alpha" });
+    expect(routeFromHash("#/agora/agent/bob%40far.example")).toEqual({ ...r("agents"), agentId: "bob@far.example" });
+    expect(hashForAgent("bob@far.example")).toBe("#/agora/agent/bob%40far.example");
+    expect(routeFromHash("#/agora/agent/").agentId).toBeNull();
   });
 });

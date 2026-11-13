@@ -31,8 +31,8 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 }
 
 .root thead td {
-  background: var(--ansi-240-gray-35);
-  color: var(--color-white);
+  background: color-mix(in srgb, var(--theme-text) 12%, var(--theme-background));
+  color: var(--theme-text);
   font-weight: 400;
 }
 

@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi, afterEach } from "vitest";
 
-import { AgentDetailPanel } from "./AgentsView";
+import { AgentPage } from "./AgentPage";
 import type { AgentProfile } from "../api";
 
 // An agent card never lists the relay's payment rails: they are the relay's list, the same for every agent,
@@ -28,7 +28,7 @@ afterEach(cleanup);
 
 describe("an agent card does not show the relay's rails", () => {
   it("does not list the relay's rails on an agent (they are the relay's, the same for every agent)", async () => {
-    render(<AgentDetailPanel agent={{ ...base, payment_rails: ["free", "x402"] } as AgentProfile} />);
+    render(<AgentPage agent={{ ...base, payment_rails: ["free", "x402"] } as AgentProfile} />);
     expect(screen.queryByText(/payment rails|not reported/i)).toBeNull();
     expect(screen.queryByText(/x402/i)).toBeNull();
     expect(screen.queryByText(/payouts/i)).toBeNull();

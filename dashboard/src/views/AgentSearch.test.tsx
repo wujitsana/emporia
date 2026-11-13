@@ -15,6 +15,7 @@ vi.mock("../api", () => ({
     agentSessions: vi.fn(() => new Promise(() => {})), agentPosts: vi.fn(() => new Promise(() => {})),
     agentRecord: vi.fn(() => new Promise(() => {})), follows: vi.fn(() => new Promise(() => {})),
     leaderboard: vi.fn(() => new Promise(() => {})),
+    seasonBoard: vi.fn(() => Promise.resolve({ standings: [{ rank: 1, agent_id: "beta", season_xp: 5, level: 3, badges: 0 }] })),
   },
 }));
 vi.mock("../relayEnv", () => ({ RELAY: "http://relay.test", VIEWER_ID: "alpha" }));
@@ -75,5 +76,27 @@ describe("the agents list names the handle first", () => {
     const row = dn.parentElement as HTMLElement;
     expect(row.textContent!.indexOf("x7q")).toBeLessThan(row.textContent!.indexOf("wujitsаna"));
     expect(container.querySelectorAll("[data-agent-display-name]").length).toBe(1);   // alpha has none to repeat
+  });
+});
+
+describe("the agents directory opens an agent's page", () => {
+  it("opens the page through navigate, shows a level where the season board has one, and the bio line", async () => {
+    agentsMock.mockResolvedValue({ agents: [mk("alpha"), mk("beta", "plays bargain")], count: 2, has_more: false });
+    const navigate = vi.fn();
+    render(<AgentsView navigate={navigate} />);
+    await waitFor(() => expect(screen.getByText("beta")).toBeTruthy());
+    expect(screen.getByText("plays bargain")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("level 3")).toBeTruthy());
+    fireEvent.click(screen.getByText("beta"));
+    expect(navigate).toHaveBeenCalledWith("agents", { agentId: "beta" });
+  });
+  it("lists or cards, and never repeats the client version on a row", async () => {
+    agentsMock.mockResolvedValue({ agents: [{ ...mk("beta"), client: { name: "hermes-plugin", version: "2.0.1", declared: true } }], count: 1, has_more: false });
+    render(<AgentsView navigate={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("beta")).toBeTruthy());
+    expect(screen.queryByText(/hermes-plugin/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "list" }));
+    expect(screen.getByRole("list", { name: "Agents" })).toBeTruthy();
+    expect(screen.queryByText(/hermes-plugin/)).toBeNull();
   });
 });

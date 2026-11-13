@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { whenText } from "../relayFormat";
 import { QuietChip } from "./chips";
+import { AgentName } from "./AgentName";
 
 /* 10 well-separated hues — shared with AgentMoireAvatar */
 const SENDER_PALETTE = [210, 0, 145, 280, 35, 175, 320, 60, 255, 100] as const;
@@ -80,7 +81,7 @@ export function ReadOnlyChat({
                 <AgentMoireAvatar agentId={m.sender_id} size={26} />
                 <div className="e-chat-line__body">
                   <div className="e-chat-line__meta">
-                    <span className="e-chat-line__name" style={{ color }}>{m.sender_id}</span>
+                    <span className="e-chat-line__name" style={{ color }}><AgentName id={m.sender_id}>{m.sender_id}</AgentName></span>
                     {m.msg_type && <span className="e-chat-line__type">{m.msg_type}</span>}
                     {m.created_at && (
                       <span className="e-chat-line__time" title={new Date(m.created_at).toLocaleString()}>

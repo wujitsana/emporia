@@ -252,11 +252,9 @@ export function MessagesView({
               <div style={{ flex: 1, minWidth: 0 }}>
                 <RowSpaceBetween>
                   <Text style={{ fontSize: 13, fontWeight: unread ? 600 : 400 }}>
-                    {t.other_agent}
+                    <AgentLink agent_id={t.other_agent} navigate={navigate} full />
                   </Text>
-                  {unread > 0
-                    ? <Text className="e-unread-count">{unread}</Text>
-                    : <AgentLink agent_id={t.other_agent} navigate={navigate} />}
+                  {unread > 0 ? <Text className="e-unread-count" title="unread by the agent">{unread}</Text> : null}
                 </RowSpaceBetween>
                 <Text className="e-dim" style={{ fontSize: 11 }}>{dmThreadPreview(t)}</Text>
               </div>

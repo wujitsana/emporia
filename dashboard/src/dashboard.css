@@ -1461,12 +1461,12 @@ body.theme-light {
   font-size: 0.792rem;
 }
 
-/* Header row — keep the SRCL gray bar */
+/* Header row: a quiet band from the theme's own ink and ground, so it follows light, vivid and deep and every tint. */
 .e-dashboard-shell .e-compact-table thead td,
 .e-dashboard-shell table thead td,
 .e-table thead td {
-  background: var(--ansi-240-gray-35, #585858) !important;
-  color: var(--color-white, #fff);
+  background: color-mix(in srgb, var(--theme-text) 12%, var(--theme-background)) !important;
+  color: var(--theme-text);
   padding: 4px 8px;
   font-size: 0.682rem;
   letter-spacing: 0.06em;
@@ -3560,3 +3560,60 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 .e-hcard__board > li { list-style: none; display: flex; flex-direction: column; }
 .e-hcard__board > li::before { content: none; display: none; }
 .e-hcard__board > li { padding-left: 0; }
+
+/* ─── AGENT PAGE: hero in the page-title frame, now strip, record, underline tabs ─────────── */
+.e-agent-page { min-width: 0; max-width: 100%; }
+.e-agent-hero { display: flex; gap: 16px; align-items: flex-start; }
+.e-agent-hero__glyph { flex: none; line-height: 0; border: 1px solid var(--e-rule); }
+.e-agent-hero__glyph .e-moire-avatar { image-rendering: pixelated; display: block; }
+.e-agent-hero__text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.e-agent-hero__name { flex-wrap: wrap; overflow-wrap: anywhere; font-size: 1.5rem; }
+.e-look .e-agent-hero__name { font-family: var(--anim-pixel); }
+.e-agent-hero__relay { font-size: 0.8rem; font-weight: 400; letter-spacing: 0; text-transform: none; }
+.e-agent-hero__bio { overflow-wrap: anywhere; max-width: 80ch; opacity: 0.8; }
+.e-agent-hero__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.e-agent-now { margin: 0; }
+.e-agent-now .e-now-strip__main { min-width: 0; overflow-wrap: anywhere; text-align: left; }
+.e-agent-page .e-subhead { padding: 0 16px; justify-content: space-between; }
+.e-agent-page .e-hero-stats { padding: 0 16px; }
+.e-utabs {
+  display: flex; gap: 0; overflow-x: auto; scrollbar-width: none; max-width: 100%;
+  border-bottom: 1px solid var(--e-rule); margin-top: 14px; padding: 0 8px;
+}
+.e-utabs::-webkit-scrollbar { display: none; }
+.e-utabs__tab { flex: none; }
+.e-utabs__count { font-size: 0.7rem; margin-left: 2px; }
+.e-agent-tab { padding: 12px 16px 24px; min-width: 0; }
+.e-agent-badges { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 110px), 1fr)); }
+.e-agent-badges li { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; font-size: 0.74rem; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .e-agent-hero { flex-direction: column; }
+  .e-agent-hero__name { font-size: 1.2rem; }
+}
+
+/* The agents directory: a list or cards of the agents on this relay; a row opens the agent's page. */
+.e-agent-dir { padding: 8px 16px 24px; min-width: 0; }
+.e-agent-dir__bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; }
+.e-agent-dir__bar .e-list-filter { flex: 1; min-width: 160px; }
+.e-agent-dir__bar .e-home-switch { margin: 0; }
+.e-agent-dir__row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 10px; align-items: center; width: 100%;
+  padding: 8px 10px; text-align: left; font: inherit; color: inherit; background: transparent; border: 0;
+  border-bottom: 1px solid var(--e-rule); cursor: pointer;
+}
+.e-agent-dir__row:hover, .e-agent-dir__row:focus-visible { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); outline: none; }
+.e-agent-dir__who { min-width: 0; overflow-wrap: anywhere; }
+.e-agent-dir__meta { font-size: 0.74rem; white-space: nowrap; }
+@media (max-width: 600px) {
+  .e-agent-dir__row { grid-template-columns: auto minmax(0, 1fr); }
+  .e-agent-dir__meta { grid-column: 2; white-space: normal; }
+}
+.e-agent-card-tile { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; font: inherit; color: inherit;
+  background: transparent; border: 1px solid var(--e-rule); padding: 10px 12px; cursor: pointer; min-width: 0; overflow-wrap: anywhere; }
+.e-agent-card-tile:hover, .e-agent-card-tile:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }
+
+/* An agent's name or glyph that opens its page: looks like what it wraps, shows it is clickable on hover and focus. */
+.e-agent-link { cursor: pointer; }
+.e-agent-link--glyph { display: inline-flex; line-height: 0; }
+.e-agent-link:hover:not(.e-agent-link--glyph) { text-decoration: underline; }
+.e-agent-link:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: 1px; }

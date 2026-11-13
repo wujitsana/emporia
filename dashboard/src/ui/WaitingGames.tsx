@@ -5,6 +5,7 @@ import { isJobModule } from "../eventNav";
 import { useInterval } from "../hooks";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { bareAgentName } from "../agentName";
+import { AgentName } from "./AgentName";
 import { whenText } from "../relayFormat";
 import { GameTag } from "./chips";
 import { gameName } from "../attention";
@@ -29,7 +30,7 @@ export function WaitingGames({ onOpen }: { onOpen: (sessionId: string) => void }
       <GameTag key="game" moduleType={w.module_type} label={gameName(w.module_type)} />,
       <span key="agent" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
         <AgentMoireAvatar agentId={w.creator} size={18} />
-        <span className="e-dim" style={{ fontSize: 11 }}>{bareAgentName(w.creator)}</span>
+        <span className="e-dim" style={{ fontSize: 11 }}><AgentName id={w.creator}>{bareAgentName(w.creator)}</AgentName></span>
         {w.creator_fingerprint && <span className="e-faint" style={{ fontSize: 10 }}>{w.creator_fingerprint}</span>}
       </span>,
       ...(anyPrice ? [price

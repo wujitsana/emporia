@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AgentDetailPanel } from "./AgentsView";
+import { AgentPage } from "./AgentPage";
 import type { AgentProfile, FollowLists } from "../api";
 
 // An agent's page says how many follow it and whom it follows, tags it when it follows the agent the person
@@ -27,7 +27,7 @@ afterEach(cleanup);
 
 describe("another agent's page", () => {
   it("counts its followers and followings and says it follows the viewing agent", async () => {
-    render(<AgentDetailPanel agent={agent} />);
+    render(<AgentPage agent={agent} />);
     const counts = await screen.findByTestId("follow-counts");
     expect(counts.textContent).toContain("2 following · 1 follower");
     expect(counts.textContent).toContain("follows me");
@@ -36,9 +36,9 @@ describe("another agent's page", () => {
 
   it("says mutual when both follow, and lists both in the follows tab", async () => {
     lists = { ...lists, followers: ["me", "dave"], followers_count: 2, mutuals: ["me"] };
-    render(<AgentDetailPanel agent={agent} />);
+    render(<AgentPage agent={agent} />);
     await waitFor(() => expect(screen.getByTestId("follow-counts").textContent).toContain("mutual"));
-    fireEvent.click(screen.getByText("follows"));
+    fireEvent.click(screen.getByRole("tab", { name: /Follows/ }));
     const panel = screen.getByTestId("follow-panel");
     expect(panel.textContent).toContain("Following (2)");
     expect(panel.textContent).toContain("Followers (2)");

@@ -1,3 +1,5 @@
+import { useAgentNav } from "./agentNavCtx";
+
 /* 10 well-separated hues matching the chat palette */
 const MOIRE_HUES = [210, 0, 145, 280, 35, 175, 320, 60, 255, 100] as const;
 
@@ -14,10 +16,14 @@ function hashSeed(s: string): number {
 export function AgentMoireAvatar({
   agentId,
   size = 28,
+  link = true,
 }: {
   agentId: string;
   size?: number;
+  /** The glyph opens the agent's page (when App provides the way); false on the page itself. */
+  link?: boolean;
 }) {
+  const nav = useAgentNav();
   const seed = hashSeed(agentId || "?");
   const hue = MOIRE_HUES[seed % MOIRE_HUES.length];
   /* Rotation angles spaced well apart — avoid near-parallel lines */
@@ -27,7 +33,7 @@ export function AgentMoireAvatar({
   const idA = `moire-a-${safe}-${size}`;
   const idB = `moire-b-${safe}-${size}`;
 
-  return (
+  const glyph = (
     <svg
       width={size}
       height={size}
@@ -48,5 +54,13 @@ export function AgentMoireAvatar({
       <rect width="32" height="32" fill={`url(#${idA})`} opacity="0.85" />
       <rect width="32" height="32" fill={`url(#${idB})`} opacity="0.65" />
     </svg>
+  );
+  if (!link || !nav) return glyph;
+  const open = (e: { stopPropagation: () => void }) => { e.stopPropagation(); nav("agents", { agentId }); };
+  return (
+    <span className="e-agent-link e-agent-link--glyph" role="link" tabIndex={0} aria-label={`Open ${agentId}'s page`}
+      onClick={open} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); open(e); } }}>
+      {glyph}
+    </span>
   );
 }

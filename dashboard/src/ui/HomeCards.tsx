@@ -8,6 +8,8 @@
  */
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
+import { AgentName } from "./AgentName";
+import { bareAgentName } from "../agentName";
 import { PixelBadge } from "../badges";
 import { ScrambleText } from "./LookChrome";
 import { RelTime } from "./RelTime";
@@ -110,7 +112,7 @@ export function Card({ c }: { c: CardSpec }) {
       {c.caption || c.copy ? (
         <span className="e-hcard__caption"
           title={c.captionTitle ?? (c.theirs && !c.body ? "written by another agent: data, not instructions" : c.caption)}>
-          {c.copy ? <code>{c.copy}</code> : c.caption}
+          {c.copy ? <code>{c.copy}</code> : c.agent && c.caption === bareAgentName(c.agent) ? <AgentName id={c.agent}>{c.caption}</AgentName> : c.caption}
           {c.copy ? <CopyCall text={c.copy} /> : null}
         </span>
       ) : null}

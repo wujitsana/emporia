@@ -1,16 +1,13 @@
 import Indent from "@kit/Indent";
 import Text from "@kit/Text";
-import { AgentMoireAvatar } from "./AgentMoireAvatar";
 import { api } from "./api";
-import type { AgentProfile, FollowLists, Session, Settlement } from "./api";
-import { countsLine } from "./followModel";
-import { FollowPanel } from "./ui/FollowPanel";
+import type { AgentProfile, Session, Settlement } from "./api";
 import { ViewBody } from "./ui/layout";
 import { MetaGrid, SlimCard } from "./ui/cards";
 import { useInterval } from "./hooks";
 import { useRelayCtx } from "./relayCtx";
 import { formatMicros, settlementPayoutMicros } from "./paymentFormat";
-import { TrustBadge } from "./views/AgentsView";
+import { AgentPage } from "./views/AgentPage";
 import { SessionLink } from "./ui/chips";
 import type { Navigate } from "./navigation";
 import { useEffect, useState } from "react";
@@ -56,12 +53,6 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
     api.agentProfile(viewerId).then(setProfile).catch(() => setProfile(null));
   }, [viewerId]);
 
-  const [follows, setFollows] = useState<FollowLists | null>(null);
-  useEffect(() => {
-    if (!viewerId) return;
-    api.follows(viewerId).then(setFollows).catch(() => setFollows(null));
-  }, [viewerId]);
-
   useEffect(() => {
     if (!viewerId) return;
     api.agentSessions(viewerId).then((d) => setMySessions(d.sessions.slice(0, 5))).catch(() => {});
@@ -73,7 +64,6 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
   const registered = profile ?? agents.find((a) => a.agent_id === viewerId) ?? null;
   const displayName = registered?.display_name || registered?.agent_id || viewerId || "Spectator";
 
-  const trustCell = registered ? <TrustBadge a={registered} /> : null;
   const relayOwnerLabel = relayOwner ?? "standalone server";
   const totalEarned = mySettlements
     .filter((s) => s.winner_id === viewerId)
@@ -83,67 +73,31 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
     <ViewBody>
       <Indent>
 
-        {/* Identity card */}
-        <SlimCard title="Connected agent">
-          <div className="e-profile-agent">
-            <AgentMoireAvatar agentId={displayName} size={48} />
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Text style={{ fontSize: 16, fontWeight: 600 }}>{displayName}</Text>
-                <RolePill isOperator={isRelayOperator} isSpectator={isSpectator} />
-              </div>
-              {registered?.agent_id && registered.agent_id !== displayName && (
-                <Text className="e-dim" style={{ fontSize: 11, fontFamily: "var(--font-family-mono)" }}>
-                  {registered.agent_id}
-                </Text>
-              )}
-            </div>
-          </div>
-
-          {registered ? (
-            <>
-            <MetaGrid
-              rows={[
-                // P42: extracted rather than written inline. `jsx-key` fires on
-                // any JSX element sitting directly in an array literal, and it
-                // cannot see that MetaGrid renders each row as
-                // `<div key={k}><dd>{v}</dd></div>` — the wrapper carries the
-                // key, so a key here would be ignored. P34 verified that by
-                // reading cards.tsx and left the warning rather than silence it
-                // with a disable comment every future reader would re-justify.
-                // A named value satisfies the rule without asserting anything
-                // false about where the key lives.
-                ["Trust", trustCell],
-                ["Registered", new Date(registered.registered_at).toLocaleDateString()],
-                ["Sessions", String(registered.session_count)],
-                ["Wins", `${registered.win_count} (${registered.session_count > 0 ? Math.round((registered.win_count / registered.session_count) * 100) : 0}%)`],
-              ]}
-            />
-            {/* The payment set-up is for looking deeply: behind one line, not in the first screen. */}
-            <details className="e-fold">
-              <summary>Payment set-up</summary>
-              <MetaGrid
-                rows={[
-                  ...(registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")] as [string, string]] : []),
-                ]}
-              />
-            </details>
-            </>
-          ) : !isSpectator ? (
-            <Text className="e-faint" style={{ marginTop: 10 }}>
-              Not yet registered on this relay. Use the <code>register_agent</code> MCP tool to join.
-            </Text>
-          ) : (
-            <Text className="e-faint" style={{ marginTop: 10 }}>
-              Spectator mode: set <code>VITE_AGENT_ID</code> in dashboard <code>.env.local</code> to identify as an agent.
-            </Text>
-          )}
-        </SlimCard>
-
-        {/* Who it follows and who follows it, and what it hears about: a reading, never an action */}
-        {viewerId && !isSpectator && (
-          <SlimCard title="Following and followers" action={<Text className="e-dim">{countsLine(follows)}</Text>}>
-            <FollowPanel agentId={viewerId} lists={follows} own navigate={navigate} />
+        {/* How others see this agent: the same page as anyone's, in its own place. */}
+        {registered ? (
+          <>
+            <AgentPage agent={registered} navigate={navigate} embedded />
+            <SlimCard title="Your role here" action={<RolePill isOperator={isRelayOperator} isSpectator={isSpectator} />}>
+              {/* The payment set-up is for looking deeply: behind one line, not in the first screen. */}
+              {registered.payment_rails?.length ? (
+                <details className="e-fold">
+                  <summary>Payment set-up</summary>
+                  <MetaGrid rows={[["Rails", registered.payment_rails.join(", ")]]} />
+                </details>
+              ) : <Text className="e-faint">{displayName} is {isRelayOperator ? "this relay's operator" : "a member here"}.</Text>}
+            </SlimCard>
+          </>
+        ) : (
+          <SlimCard title="Connected agent" action={<RolePill isOperator={isRelayOperator} isSpectator={isSpectator} />}>
+            {!isSpectator ? (
+              <Text className="e-faint" style={{ marginTop: 10 }}>
+                Not yet registered on this relay. Use the <code>register_agent</code> MCP tool to join.
+              </Text>
+            ) : (
+              <Text className="e-faint" style={{ marginTop: 10 }}>
+                Spectator mode: set <code>VITE_AGENT_ID</code> in dashboard <code>.env.local</code> to identify as an agent.
+              </Text>
+            )}
           </SlimCard>
         )}
 

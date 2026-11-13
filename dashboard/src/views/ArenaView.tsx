@@ -3,17 +3,15 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { restoreScroll, saveScroll } from "../scrollMemory";
 import { api } from "../api";
 import type { AgentProfile, GameResult, Session } from "../api";
-import { AgentCard } from "../ui/AgentCard";
 import { playerName } from "../arena";
 import { isJobModule } from "../eventNav";
 import { useInterval } from "../hooks";
-import { SET_PLAY_NAMES, gameBase, isSetPlay, phaseLine, setPlayView } from "../setPlay";
 import { verdict } from "../resultsFormat";
 import { shortAgent } from "../chessReplay";
-import { sessionStatusLabel } from "../paymentFormat";
 import { whenText } from "../relayFormat";
-import { chanceLine, chanceView } from "../chance";
 import { GameTag } from "../ui/chips";
+import { Players, SessionCard } from "../ui/ArenaCards";
+import { gameName } from "../arenaCardModel";
 import { Leaderboard } from "../ui/Leaderboard";
 import { ModelResults } from "../ui/ModelResults";
 import { MatchView } from "../ui/ArenaMatch";
@@ -23,38 +21,6 @@ import { ViewBody } from "../ui/layout";
 import { OpenChallenges } from "./QuestArcs";
 import { GAME_TYPES } from "../gameTypes";
 import type { ArenaLens } from "../navConfig";
-
-const gameName = (moduleType: string) =>
-  SET_PLAY_NAMES[moduleType] ?? GAME_TYPES.find((g) => gameBase(g.id) === gameBase(moduleType))?.label
-  ?? moduleType.replace("emporia:", "").replace(/:v\d+$/, "");
-
-/** Where a live match is, in a few words: round and phase for a set play, bids for dice, steps otherwise. */
-function progressLine(s: Session): string {
-  if (s.status === "waiting") return `waiting for players (${s.participants.length})`;
-  if (isSetPlay(s.module_type)) {
-    const v = setPlayView(s);
-    const round = v.blotto && v.blotto.rounds > 1 ? `round ${v.blotto.round} of ${v.blotto.rounds} · ` : "";
-    return `${round}${phaseLine(v)}`;
-  }
-  const c = chanceView(s);
-  if (c) return chanceLine(c, s);
-  return `${s.step_number} step${s.step_number === 1 ? "" : "s"}`;
-}
-
-/** A match's players as `name@host`; the relay's address book where it has one. */
-function Players({ ids, book, profiles }: { ids: string[]; book: Record<string, string> | undefined;
-  profiles?: Record<string, AgentProfile> }) {
-  if (ids.some((p) => profiles?.[p])) {
-    return (
-      <span className="e-arena-players">
-        {ids.map((p) => profiles?.[p]
-          ? <AgentCard key={p} agent={profiles[p]} variant="compact" />
-          : <span key={p}>{playerName(p, book, 22)}</span>)}
-      </span>
-    );
-  }
-  return <span className="e-arena-players">{ids.map((p) => playerName(p, book, 22)).join("  v  ")}</span>;
-}
 
 function LiveNow({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: string) => void; book?: Record<string, string>; profiles?: Record<string, AgentProfile>; refreshTrigger: number }) {
   const [active, loading, error] = useInterval(() => api.sessions({ status: "active" }), 6_000, [refreshTrigger]);
@@ -72,38 +38,12 @@ function LiveNow({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: stri
       ) : (
         <ul className="e-arena-cards">
           {list.map((s) => (
-            <li key={s.session_id}>
-              <button type="button" className="e-arena-card" onClick={() => onOpen(s.session_id)}>
-                <span className="e-arena-card__top">
-                  <span className="e-arena-card__game"><GameTag moduleType={s.module_type} label={gameName(s.module_type)} /></span>
-                  <span className="e-arena-card__live">{s.status === "active" ? "● live" : sessionStatusLabel(s.status)}</span>
-                </span>
-                <Players ids={s.participants} book={book} profiles={profiles} />
-                <span className="e-faint">{progressLine(s)}</span>
-                <ModelsLine sessionId={s.session_id} />
-              </button>
-            </li>
+            <SessionCard key={s.session_id} s={s} onOpen={onOpen} book={book} profiles={profiles} />
           ))}
         </ul>
       )}
     </section>
   );
-}
-
-/** The models the players declared for a live match: only whether one is sealed in, until the game ends. */
-function ModelsLine({ sessionId }: { sessionId: string }) {
-  const [m, setM] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    api.sessionModels(sessionId)
-      .then((r) => {
-        const n = Object.values(r.players).filter((p) => p.status === "committed" || p.status === "revealed").length;
-        if (live) setM(n ? `${n} of ${Object.keys(r.players).length} declared a model` : "no model declared");
-      })
-      .catch(() => {});
-    return () => { live = false; };
-  }, [sessionId]);
-  return m ? <span className="e-faint e-arena-card__models">{m}</span> : null;
 }
 
 function Recent({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: string) => void; book?: Record<string, string>; profiles?: Record<string, AgentProfile>; refreshTrigger: number }) {
