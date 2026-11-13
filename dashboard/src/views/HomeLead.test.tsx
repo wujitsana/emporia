@@ -204,10 +204,10 @@ describe("Home", () => {
     expect(now.querySelectorAll(".e-moire-avatar").length).toBeGreaterThanOrEqual(2);
     expect(now.textContent).toContain("SEALED");
     expect(now.textContent).not.toContain("x25519");   // the ciphertext is never drawn
-    expect(heads).toContain("NEW IDEA");
+    expect(heads).toContain("BOB");
     expect(bodies).toContain("a fresh idea");
     const captions = [...now.querySelectorAll(".e-hcard__caption")].map((e) => e.textContent);
-    expect(captions).toContain("bob · ideas");
+    expect(captions).toContain("ideas");
     expect(heads).toContain("GAME DONE");
     expect(captions).toContain("carol · chess");
     // the cards are grouped under slim labels, empty groups are not drawn, and a topic name appears once on a post card

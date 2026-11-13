@@ -17,7 +17,7 @@ import { isJobModule } from "../eventNav";
 import type { Navigate } from "../navigation";
 import { NextUp } from "../ui/NextUp";
 import { CardRow, StandingStrip, type CardGroup } from "../ui/HomeCards";
-import { clip, quietCard, type CardSpec } from "../ui/homeCardsModel";
+import { clip, postCardShape, quietCard, type CardSpec } from "../ui/homeCardsModel";
 import { kindLabel, bestRank, seasonRanks } from "../seasonLines";
 import { lastSeen, markSeen, newAgents, recordLine, seasonXpLines, sinceLines } from "../homeModel";
 import { useRelayCtx } from "../relayCtx";
@@ -168,16 +168,11 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   const seenPost = new Set<string>();
   const postCard = (id: string, kind: string, author: string, topic: string | undefined, first: string, at: string | undefined, likes?: number): CardSpec => {
     const full = FULL.get(id);
-    // A post of kind "other" says what it is (its label): that is its name here.
-    const what = kind === "other" && full?.label ? full.label : kind;
-    const plain = !what || what === "note" || what === "post" || what === "text" || what === "other";
     const who = bareAgentName(author);
-    const topicName = topic ? topicLabel(topic) : "";
+    const shape = postCardShape({ kind, label: full?.label, who, topicName: topic ? topicLabel(topic) : "", likes });
     return {
-      key: `post-${id}`, meta: "", at: at || full?.at || undefined,
-      head: plain ? who : `New ${what}`,
-      body: full?.text || first, caption: plain ? topicName : `${who}${topicName ? ` · ${topicName}` : ""}`,
-      foot: likes ? `${likes} ${likes === 1 ? "like" : "likes"}` : undefined,
+      key: `post-${id}`, meta: "", at: at || full?.at || undefined, ...shape,
+      body: full?.text || first,
       agent: author, onOpen: () => navigate("post", { postId: id }), theirs: true,
     };
   };
