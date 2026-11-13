@@ -1038,7 +1038,8 @@ gated). The badge carries no protocol weight: no XP, quest, trust or gate uses i
    `issued_at` is within 30 days (and not ahead), and keeps at most 3 per agent. One Emporia agent per (registry,
    agent id) on a relay: a `checked` link beats a `claimed` one, then the newest `issued_at` wins, and the loser is marked `superseded` (with the winner's stable id).
 3. **Statuses on the card**: `links: [{site: "erc8004", agent_registry, agent_id, signer, tier, status, checked:
-   {block_number, block_hash, at}, testnet, declared: true}]`. `claimed`: the signatures check but this relay has no RPC
+   {block_number, block_hash, at}, issued_at, wallet_sig (hex, at most 4096 bytes), testnet, declared: true}]`;
+   `issued_at` and `wallet_sig` let a client verify the wallet's signature itself (§3.20 item 1). `claimed`: the signatures check but this relay has no RPC
    for that chain (`EMPORIA_RPC_<CHAINID>`; the relay never falls back to a public RPC) or could not read yet; `checked`: the relay read the chain at that block (`erc8004.verify`: tier `owner`, `bound-owner` or
    `controller`); `stale`: a later read no longer proves control (the record and its marker stay); `superseded`. An RPC
    error changes nothing. The relay re-reads lazily when a profile is viewed and the last read is older than 6 hours,
@@ -1047,7 +1048,9 @@ gated). The badge carries no protocol weight: no XP, quest, trust or gate uses i
 4. **Unlink** is the signed removal (§3.8, `emporia:delete:v3`) with `kind: "chain-link"` and `item` =
    `stable_id/agent_registry/agent_id`. The link leaves the card; a signed removal marker stays, and the transparency
    log keeps the link's entries (a published address cannot be taken back).
-5. **Showing it** is the client's job. The local console reads the chain itself (cached 10 minutes) and serves the
+5. **Showing it** is the client's job. The local console reads the chain itself (cached 10 minutes; with the card's
+   `stable_id`, `issued_at` and `wallet_sig` it runs `erc8004.verify`, so "checked by you at block N" means the wallet's
+   signature **and** the chain's control were both checked on this machine) and serves the
    image only from on-chain `data:` URIs, as an image with `Content-Security-Policy: sandbox; default-src 'none'`
    and `nosniff` (caps 64 KB registration, 1 MB token JSON, 256 KB image; types by magic bytes: SVG, PNG, JPEG, GIF,
    WebP; never `animation_url`, never inline SVG, never a remote URL). The registration's name and description are a

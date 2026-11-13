@@ -12,7 +12,7 @@ from emporia.console import chain as cc
 from emporia.console.app import Console, build_app
 from emporia.networks import ERC8004_REGISTRIES
 from emporia.relay_server import app as relay_app
-from tests.test_erc8004_verify import AGENT, C, FakeChain, bound_chain, keypair, needs_lib
+from tests.test_erc8004_verify import AGENT, C, FX, FakeChain, bound_chain, keypair, make_link, needs_lib
 
 pytestmark = needs_lib
 SEPOLIA = "eip155:84532"
@@ -240,3 +240,40 @@ def test_the_routes_refuse_a_foreign_registry_a_bad_number_and_an_unknown_agent(
 def test_the_dashboard_back_end_only_reads(console_client):
     c, console, name = console_client
     assert c.post(f"/chain-link/{name}").status_code == 405
+
+
+# -- the wallet's own signature, checked here ------------------------------------------------------------
+def _signed(key, addr, **kw):
+    link = make_link(key, addr, **kw)
+    return {"stable_id": link["stable_id"], "issued_at": link["issued_at"], "wallet_sig": link["wallet_sig"]}
+
+
+def test_with_the_cards_signature_the_console_verifies_it_as_well_as_the_chain():
+    key, addr = keypair()
+    got, _ = views(owned(addr, name="a")).load(SEPOLIA, str(AGENT), addr, _signed(key, addr))
+    assert got.status == "checked" and got.tier == "owner" and got.signature_checked is True
+    assert got.view()["signature_checked"] is True
+    plain, _ = views(owned(addr, name="a")).load(SEPOLIA, str(AGENT), addr)
+    assert plain.status == "checked" and plain.signature_checked is False
+
+
+def test_a_signature_by_another_wallet_is_not_shown_even_when_the_chain_backs_the_signer():
+    key, addr = keypair()
+    other, _ = keypair()
+    got, _ = views(owned(addr, name="a")).load(SEPOLIA, str(AGENT), addr, _signed(other, addr))
+    assert got.status == "not-proven" and got.tier == "" and got.signature_checked is True and got.image is None
+    wrong_stable = _signed(key, addr)
+    wrong_stable["stable_id"] = "0x" + "99" * 32
+    assert views(owned(addr)).load(SEPOLIA, str(AGENT), addr, wrong_stable)[0].status == "not-proven"
+
+
+def test_the_route_takes_the_cards_signature_and_refuses_a_malformed_one(console_client):
+    c, console, name = console_client
+    key, addr = keypair()
+    console.chain = views(owned(addr, name="a"))
+    s = _signed(key, addr)
+    q = {**_q(addr), "stable": s["stable_id"], "issued": str(s["issued_at"]), "sig": s["wallet_sig"]}
+    j = c.get(f"/chain-link/{name}", params=q).json()
+    assert j["status"] == "checked" and j["signature_checked"] is True
+    for bad in ({"sig": "zz"}, {"issued": "x"}, {"stable": "0x12"}, {"sig": "00" * 5000}):
+        assert c.get(f"/chain-link/{name}", params={**q, **bad}).status_code == 400, bad

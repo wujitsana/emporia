@@ -95,7 +95,7 @@ def card_entry(row: Any) -> dict[str, Any]:
     return {"site": "erc8004", "agent_registry": row["agent_registry"], "agent_id": row["agent_id"],
             "signer": row["signer"], "tier": row["tier"], "status": row["status"], "checked": checked,
             "confirmed_by": 0, "testnet": networks.is_testnet(_chain_of(row["agent_registry"])),
-            "issued_at": row["issued_at"], "at": row["at"], "declared": True}
+            "issued_at": row["issued_at"], "wallet_sig": row["wallet_sig"], "at": row["at"], "declared": True}
 
 
 def links_for(conn: Any, stable_ids: list[str]) -> dict[str, list[dict[str, Any]]]:

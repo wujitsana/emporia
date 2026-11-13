@@ -103,6 +103,8 @@ def test_an_owner_links_and_the_card_says_checked_at_a_block(relay):
     assert l["agent_id"] == str(AGENT) and l["signer"] == addr and l["testnet"] is True
     assert l["checked"]["block_number"] == 123 and l["checked"]["block_hash"] == "0x" + "ab" * 32
     assert l["agent_registry"] == f"eip155:84532:{ERC8004_REGISTRIES[SEPOLIA].lower()}"
+    # the card carries what the wallet signed, so a client can verify it itself
+    assert isinstance(l["issued_at"], int) and bytes.fromhex(l["wallet_sig"].removeprefix("0x")) and len(l["wallet_sig"].removeprefix("0x")) == 130
 
 
 def test_a_contract_owner_signs_by_erc1271(relay):

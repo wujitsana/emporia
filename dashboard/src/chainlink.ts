@@ -74,6 +74,8 @@ export interface ChainView {
   block_number: number | null;
   block_hash: string;
   checked_at: number;
+  /** True when the console verified the wallet's signature too, not only the chain's control. */
+  signature_checked?: boolean;
   cached: boolean;
   registration: { name?: string; description?: string; flags?: string[]; active?: boolean | null; note?: string } | null;
   image: { source: string; available: boolean; note: string; type: string };
@@ -82,21 +84,28 @@ export interface ChainView {
 
 /** "checked by you at block N", from this machine's own read; never the relay's word. */
 export function localStatus(v: ChainView): string {
-  if (v.status === "checked") return `checked by you at block ${v.block_number}`;
+  if (v.status === "checked") {
+    return v.signature_checked === false ? `chain control checked by you at block ${v.block_number} (signature not available)`
+      : `checked by you at block ${v.block_number}`;
+  }
   if (v.status === "not-proven") return `your read does not show it${v.reason ? `: ${v.reason}` : ""}`;
   if (v.status === "not-checked") return "not checked here";
   return "your read could not reach the chain just now";
 }
 
-function query(l: ChainLink): string {
-  return `registry=${encodeURIComponent(l.agent_registry)}&agent=${encodeURIComponent(l.agent_id)}&signer=${encodeURIComponent(l.signer)}`;
+/** The query for the console's routes. With the card's stable id and the link's `issued_at` and `wallet_sig` the
+ *  console verifies the wallet's signature as well as the chain's control. */
+function query(l: ChainLink, stable?: string): string {
+  const base = `registry=${encodeURIComponent(l.agent_registry)}&agent=${encodeURIComponent(l.agent_id)}&signer=${encodeURIComponent(l.signer)}`;
+  if (!stable || !l.wallet_sig || !l.issued_at) return base;
+  return `${base}&stable=${encodeURIComponent(stable)}&issued=${l.issued_at}&sig=${encodeURIComponent(l.wallet_sig)}`;
 }
 
 /** The viewer's own read of a link, through the local console; null where there is no console (or it did not answer). */
-export async function fetchChainView(viewer: string | null, l: ChainLink): Promise<ChainView | null> {
+export async function fetchChainView(viewer: string | null, l: ChainLink, stable?: string): Promise<ChainView | null> {
   if (!VIA_CONSOLE || !viewer) return null;
   try {
-    const r = await httpFetch(consoleUrl(`/chain-link/${encodeURIComponent(viewer)}?${query(l)}`));
+    const r = await httpFetch(consoleUrl(`/chain-link/${encodeURIComponent(viewer)}?${query(l, stable)}`));
     return r.ok ? ((await r.json()) as ChainView) : null;
   } catch {
     return null;
@@ -105,13 +114,13 @@ export async function fetchChainView(viewer: string | null, l: ChainLink): Promi
 
 /** The image's address on the console (same origin). Used as an `<img src>` where the page carries a cookie; inside a
  *  host it is fetched as bytes (`fetchChainImage`) because an `<img>` cannot send the host's sign-in. */
-export function chainImagePath(viewer: string, l: ChainLink): string {
-  return consoleUrl(`/chain-image/${encodeURIComponent(viewer)}?${query(l)}`);
+export function chainImagePath(viewer: string, l: ChainLink, stable?: string): string {
+  return consoleUrl(`/chain-image/${encodeURIComponent(viewer)}?${query(l, stable)}`);
 }
 
-export async function fetchChainImage(viewer: string, l: ChainLink): Promise<Blob | null> {
+export async function fetchChainImage(viewer: string, l: ChainLink, stable?: string): Promise<Blob | null> {
   try {
-    const r = await httpFetch(chainImagePath(viewer, l));
+    const r = await httpFetch(chainImagePath(viewer, l, stable));
     if (!r.ok) return null;
     const b = await r.blob();
     return b.type.startsWith("image/") ? b : null;

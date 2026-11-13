@@ -133,12 +133,13 @@ class Loaded:
     image_source: str = "none"                  # bound-token | registration | none
     image_note: str = ""
     image: tuple[str, bytes] | None = field(default=None, repr=False)
+    signature_checked: bool = False             # the wallet's signature was verified here too, not only the chain
 
     def view(self) -> dict[str, Any]:
         return {"status": self.status, "reason": self.reason, "tier": self.tier,
                 "tier_wording": erc8004.TIER_WORDING.get(self.tier, ""), "owner": self.owner, "binding": self.binding,
                 "block_number": self.block_number, "block_hash": self.block_hash, "checked_at": self.checked_at,
-                "registration": self.registration,
+                "signature_checked": self.signature_checked, "registration": self.registration,
                 "image": {"source": self.image_source, "available": self.image is not None, "note": self.image_note,
                           "type": self.image[0] if self.image else ""}}
 
@@ -149,25 +150,46 @@ class ChainViews:
     def __init__(self, reader: Callable[[str], Any] | None = None, clock: Callable[[], float] = time.time):
         self._reader = reader or (lambda caip2: PinnedReader(caip2, max_response_bytes=RESPONSE_CAP))
         self._clock = clock
-        self._cache: dict[tuple[str, str, str], tuple[float, Loaded]] = {}
+        self._cache: dict[tuple[str, str, str, str], tuple[float, Loaded]] = {}
 
-    def load(self, caip2: str, agent_id: str, signer: str) -> tuple[Loaded, bool]:
-        """(the look, whether it came from the cache). Blocking: run it in a thread."""
-        key = (caip2, str(int(agent_id)), signer.lower())
+    def load(self, caip2: str, agent_id: str, signer: str, signed: dict | None = None) -> tuple[Loaded, bool]:
+        """(the look, whether it came from the cache). Blocking: run it in a thread. `signed` is the card's
+        `{stable_id, issued_at, wallet_sig}`: with it the wallet's signature is verified here as well as the
+        chain's control (`erc8004.verify`); without it only the chain is read (`erc8004.preview`)."""
+        key = (caip2, str(int(agent_id)), signer.lower(),
+               "" if not signed else f"{signed['stable_id']}/{signed['issued_at']}/{signed['wallet_sig']}")
         hit = self._cache.get(key)
         now = self._clock()
         if hit and now - hit[0] < CACHE_SECONDS:
             return hit[1], True
-        got = self._read(caip2, key[1], signer, int(now))
+        got = self._read(caip2, key[1], signer, int(now), signed)
         if got.status != "unknown":             # an RPC error is not remembered: the next look tries again
             self._cache[key] = (now, got)
         return got, False
 
-    def _read(self, caip2: str, agent_id: str, signer: str, now: int) -> Loaded:
+    def _read(self, caip2: str, agent_id: str, signer: str, now: int, signed: dict | None = None) -> Loaded:
         if not erc8004.available():
             return Loaded("not-checked", "no signature library is installed here", checked_at=now)
         try:
             reader = self._reader(caip2)
+            if signed:
+                link = {"agent_registry": erc8004.registry_string(int(caip2.split(":", 1)[1]),
+                                                                   networks.ERC8004_REGISTRIES[caip2]),
+                        "agent_id": agent_id, "signer": signer, **signed}
+                v = erc8004.verify(link, reader, now=now)
+                if v["status"] in ("unknown", "not-checked"):
+                    return Loaded(v["status"], v["reason"], checked_at=now)
+                ok = v["status"] == "proven"
+                got = Loaded("checked" if ok else "not-proven", "" if ok else v["reason"], v["tier"] if ok else "",
+                             v["owner"], v.get("binding"), v["block_number"], v["block_hash"], v["checked_at"],
+                             signature_checked=True)
+                if not ok:
+                    return got
+                try:
+                    self._show(reader, caip2, agent_id, signer, got)
+                except ChainUnknown:
+                    got.image_note = "the registration could not be read now"
+                return got
             pv = erc8004.preview(agent_id, signer, reader, now=now)
         except ChainUnknown as e:
             return Loaded("unknown", f"the chain could not be read ({e})", checked_at=now)

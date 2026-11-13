@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChainLink } from "./api";
-import { badgeLine, CHAINS, chainLinks, explorerUrl, localStatus, relayStatus, tierWording, type ChainView } from "./chainlink";
+import { badgeLine, chainImagePath, CHAINS, chainLinks, explorerUrl, localStatus, relayStatus, tierWording, type ChainView } from "./chainlink";
 import { xLinks } from "./xlink";
 
 const REG = "0x8004a818bfb912233c491871b3d84c89a494bd9e";
@@ -45,6 +45,22 @@ describe("an ERC-8004 link's wording", () => {
     expect(localStatus(v)).toBe("checked by you at block 321");
     expect(localStatus({ ...v, status: "not-proven", reason: "the signer does not own the agent" } as ChainView)).toContain("does not show it");
     expect(localStatus({ ...v, status: "unknown" } as ChainView)).toContain("could not reach");
+  });
+
+  it("says when the wallet's signature was not part of the check", () => {
+    const v = { status: "checked", block_number: 321, reason: "" } as ChainView;
+    expect(localStatus({ ...v, signature_checked: true })).toBe("checked by you at block 321");
+    expect(localStatus({ ...v, signature_checked: false })).toContain("signature not available");
+  });
+
+  it("sends the card's signature to the console only with the stable id, and as encoded query values", () => {
+    const l = link({ issued_at: 1700000000, wallet_sig: "0xab" });
+    expect(chainImagePath("me", l)).not.toContain("sig=");
+    expect(chainImagePath("me", { ...l, wallet_sig: undefined }, "0x" + "11".repeat(32))).not.toContain("sig=");
+    const url = chainImagePath("me", l, "0x" + "11".repeat(32));
+    expect(url).toContain("issued=1700000000");
+    expect(url).toContain("sig=0xab");
+    expect(url).toContain(`stable=0x${"11".repeat(32)}`);
   });
 
   it("separates X accounts from chain links on one card", () => {

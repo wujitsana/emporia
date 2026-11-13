@@ -30,17 +30,17 @@ export function ChainBadges({ agent }: { agent: Pick<AgentProfile, "links"> }) {
 
 /** The picture, from an on-chain data: URI the local console read. Shown in an <img>, never inline, never fetched
  *  from a URL by this page. Inside Hermes the bytes come through its authed fetch and are shown from a blob. */
-function ChainImage({ link }: { link: ChainLink }) {
-  const [src, setSrc] = useState<string | null>(VIEWER_ID && !IN_HERMES ? chainImagePath(VIEWER_ID, link) : null);
+function ChainImage({ link, stable }: { link: ChainLink; stable?: string }) {
+  const [src, setSrc] = useState<string | null>(VIEWER_ID && !IN_HERMES ? chainImagePath(VIEWER_ID, link, stable) : null);
   useEffect(() => {
     if (!VIEWER_ID || !IN_HERMES) return;
     let url: string | null = null;
     let live = true;
-    void fetchChainImage(VIEWER_ID, link).then((b) => {
+    void fetchChainImage(VIEWER_ID, link, stable).then((b) => {
       if (live && b) { url = URL.createObjectURL(b); setSrc(url); }
     });
     return () => { live = false; if (url) URL.revokeObjectURL(url); };
-  }, [link]);
+  }, [link, stable]);
   if (!src) return null;
   return <img className="e-chain-image" src={src} width={96} height={96} alt="" referrerPolicy="no-referrer" loading="lazy" decoding="async"
     data-testid="chain-image" style={{ imageRendering: "auto", objectFit: "contain", background: "var(--theme-background-input, transparent)" }} />;
@@ -59,15 +59,15 @@ function Registration({ view }: { view: ChainView }) {
   );
 }
 
-function ChainLinkRow({ link }: { link: ChainLink }) {
+function ChainLinkRow({ link, stable }: { link: ChainLink; stable?: string }) {
   const [view, setView] = useState<ChainView | null>(null);
   useEffect(() => {
     let live = true;
     if (VIA_CONSOLE && VIEWER_ID && link.status !== "superseded") {
-      void fetchChainView(VIEWER_ID, link).then((v) => { if (live) setView(v); });
+      void fetchChainView(VIEWER_ID, link, stable).then((v) => { if (live) setView(v); });
     }
     return () => { live = false; };
-  }, [link]);
+  }, [link, stable]);
   return (
     <div className="e-chain-link" data-testid="chain-link-row" style={{ display: "grid", gap: 4 }}>
       <ChainBadge link={link} />
@@ -76,7 +76,7 @@ function ChainLinkRow({ link }: { link: ChainLink }) {
         {view ? <> · <span data-testid="chain-local-status">{localStatus(view)}</span></> : null}
       </Text>
       {view ? <Registration view={view} /> : null}
-      {view?.image.available ? <ChainImage link={link} /> : null}
+      {view?.image.available ? <ChainImage link={link} stable={stable} /> : null}
       {view && !view.image.available && view.status === "checked" && view.image.note
         ? <Text className="e-faint" style={{ fontSize: "0.66rem" }}>{view.image.note}</Text> : null}
     </div>
@@ -92,7 +92,7 @@ export function ChainLinkPanel({ agent }: { agent: AgentProfile }) {
   return (
     <div className="e-xlink" data-testid="chain-link-panel">
       {links.length ? (
-        <MetaGrid rows={links.map((l) => ["ERC-8004", <ChainLinkRow key={`${l.agent_registry}/${l.agent_id}`} link={l} />])} />
+        <MetaGrid rows={links.map((l) => ["ERC-8004", <ChainLinkRow key={`${l.agent_registry}/${l.agent_id}`} link={l} stable={agent.stable_id} />])} />
       ) : (
         <div style={{ marginTop: 10, marginBottom: 14 }}>
           <Text className="e-dim" style={{ fontSize: "0.68rem" }}>
