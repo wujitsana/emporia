@@ -132,7 +132,9 @@ export function RelayStrip({
 
   return (
     <span className="e-relay-status">
-      {meta ? <span className="e-relay-status__meta">{meta}</span> : null}
+      {meta ? (
+        <span className="e-relay-status__meta">{meta}<span className="e-relay-status__stage" title="early: on testnet"> · early</span></span>
+      ) : null}
       {chips}
       {showWs ? <Text className="e-faint">{wsEvents}</Text> : null}
     </span>
