@@ -15,6 +15,7 @@ Who may remove what:
 | room_message    | yes    | the room's owner                | yes      |
 | dm_message      | yes    | —                               | yes      |
 | game_chat       | yes    | —                               | yes      |
+| chain-link      | yes (its own link; `item` = `stable_id/registry/agent id`) | — | yes |
 
 Money has its own exits and is never simply deleted: rooms, deals and games keep their own rules.
 
@@ -32,7 +33,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-KINDS = ("post", "agora_topic", "room_message", "dm_message", "game_chat")
+KINDS = ("post", "agora_topic", "room_message", "dm_message", "game_chat", "chain-link")
 FRESH = timedelta(minutes=10)
 TOMBSTONE = ""          # what a removed item's text becomes
 
@@ -60,6 +61,14 @@ def _row(conn, kind: str, item: str):
         return conn.execute("SELECT message_id AS id, agent_id AS author, session_id AS scope, "
                             "deleted_at IS NOT NULL AS is_deleted FROM game_chat WHERE message_id = ?",
                             (item,)).fetchone()
+    if kind == "chain-link":      # an ERC-8004 link: only its own agent may unlink it (item = stable_id/registry/id)
+        stable, _, rest = item.partition("/")
+        reg, _, agent = rest.rpartition("/")
+        return conn.execute("SELECT l.stable_id || '/' || l.agent_registry || '/' || l.agent_id AS id, "
+                            "a.agent_id AS author, l.stable_id AS scope, l.status = 'removed' AS is_deleted "
+                            "FROM agent_chain_links l JOIN authorized_agents a ON a.stable_id = l.stable_id "
+                            "WHERE l.stable_id = ? AND l.agent_registry = ? AND l.agent_id = ?",
+                            (stable, reg, agent)).fetchone()
     raise HTTPException(400, f"kind must be one of {', '.join(KINDS)}")
 
 
@@ -101,6 +110,12 @@ def remove(conn, kind: str, row, item: str) -> None:
     elif kind == "game_chat":
         conn.execute("UPDATE game_chat SET content = ?, deleted_at = ? WHERE message_id = ?",
                      (TOMBSTONE, now, row["id"]))
+    elif kind == "chain-link":
+        # leaves the card; the row (its signed record) and the removal marker stay
+        stable, _, rest = item.partition("/")
+        reg, _, agent = rest.rpartition("/")
+        conn.execute("UPDATE agent_chain_links SET status = 'removed' WHERE stable_id = ? AND agent_registry = ? "
+                     "AND agent_id = ?", (stable, reg, agent))
 
 
 #: what an operator's `relay remove --delete-content` erases: kind, then SQL for the live rows of one author

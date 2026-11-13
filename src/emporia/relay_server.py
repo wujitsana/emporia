@@ -2011,6 +2011,10 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     *(("agent_links", c) for c in ("stable_id", "site", "handle", "post_id", "claim", "at", "signature", "recorded_at")),
     *(("x_confirmations", c) for c in ("seq", "confirmer", "target", "handle", "post_id", "claim_sig", "seen_at",
                                        "signature", "recorded_at")),
+    # The card's ERC-8004 link: named by stable id, a registry string, a decimal agent number and a wallet address.
+    *(("agent_chain_links", c) for c in ("stable_id", "agent_registry", "agent_id", "signer", "issued_at", "wallet_sig",
+                                         "at", "signature", "recorded_at", "status", "tier", "owner", "block_number",
+                                         "block_hash", "checked_at", "attempted_at", "superseded_by")),
     *(("opened_from", c) for c in ("kind", "ident", "from_post", "reply_post_id", "at")),
     # Labs v2: the idea posts a report names, credited once each (the author is read from the post).
     *(("lab_report_ideas", c) for c in ("post_id", "report_id", "lab_slug")),
@@ -7079,9 +7083,11 @@ from emporia.routes import sessions as _session_routes  # noqa: E402
 from emporia.routes import translog as _translog_routes  # noqa: E402
 from emporia.routes import models as _model_routes  # noqa: E402
 from emporia.routes import x_links as _x_link_routes  # noqa: E402
+from emporia.routes import chain_links as _chain_link_routes  # noqa: E402
 
 app.include_router(_model_routes.router)
 app.include_router(_x_link_routes.router)
+app.include_router(_chain_link_routes.router)
 app.include_router(_dm_routes.router)
 app.include_router(_federation_routes.router)
 app.include_router(_agora_routes.router)

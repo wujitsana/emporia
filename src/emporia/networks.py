@@ -90,6 +90,13 @@ def rpc_for(caip2: str) -> list[str]:
     return [n.rpc] if n and n.rpc else []
 
 
+def rpc_configured(caip2: str) -> list[str]:
+    """Only what an operator set (EMPORIA_RPC_<CHAINID>), never the table's public RPC: the relay reads only
+    RPC URLs its operator chose."""
+    raw = os.getenv(f"EMPORIA_RPC_{re.sub(r'[^A-Za-z0-9]', '_', caip2.split(':', 1)[-1]).upper()}", "")
+    return [u.strip() for u in raw.split(",") if u.strip()][:2]
+
+
 def label(caip2: str) -> str:
     """"Base Sepolia (testnet)", or the raw id for a network not in the table."""
     n = NETWORKS.get(caip2)

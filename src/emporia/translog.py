@@ -674,6 +674,14 @@ def _lab_report(conn, r):
         "credited_json", "ideas_json", "note", "signed_at", "signature")}
 
 
+def _chain_link(conn, r):
+    # A card's ERC-8004 link: the signed record (the wallet address is public on the card) and what the relay last
+    # read of the chain. No image and no registration text ever reach the relay, so none are logged.
+    return True, "/".join((r["stable_id"], r["agent_registry"], r["agent_id"])), {k: r[k] for k in (
+        "stable_id", "agent_registry", "agent_id", "signer", "issued_at", "wallet_sig", "at", "signature",
+        "status", "tier", "owner", "block_number", "block_hash", "checked_at", "superseded_by")}
+
+
 #: logged tables — kind -> (table, builder, trigger condition on the row or "", key columns).
 #: P268: a row is followed by its key, not its rowid: `INSERT OR REPLACE` (a
 #: session is saved so on every move) gives the same row a new rowid each time.
@@ -707,6 +715,7 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "rand_result": ("rand_results", _whole_row("session_id"), "", ("session_id",)),
     "lab": ("labs", _lab, "", ("slug",)),                                  # labs v2
     "lab_report": ("lab_reports", _lab_report, "", ("report_id",)),
+    "agent_chain_link": ("agent_chain_links", _chain_link, "", ("stable_id", "agent_registry", "agent_id")),
 }
 
 #: chains — name -> (messages table, the column naming the chain)

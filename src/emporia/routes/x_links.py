@@ -113,6 +113,9 @@ def links_for(conn: Any, stable_ids: list[str]) -> dict[str, list[dict[str, Any]
             "site": r["site"], "handle": r["handle"], "post_id": r["post_id"], "claim": r["claim"],
             "status": "confirmed" if others else "claimed", "confirmed_by": len(others), "at": r["at"],
             "declared": True})
+    from emporia.routes import chain_links
+    for sid, found in chain_links.links_for(conn, ids).items():
+        out[sid].extend(found)
     return out
 
 

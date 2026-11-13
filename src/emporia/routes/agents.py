@@ -286,7 +286,9 @@ def _last_active_of(agent_id: str) -> str | None:
 
 
 def _profile_links(stable_id: str) -> list[dict[str, Any]]:
+    from emporia.routes import chain_links
     from emporia.routes.x_links import links_for
+    chain_links.schedule_rechecks([stable_id])      # a profile view: re-read what is older than 6 hours (lazy, capped)
     with rs.DB_LOCK, rs.get_db() as conn:
         return links_for(conn, [stable_id]).get(stable_id, [])
 

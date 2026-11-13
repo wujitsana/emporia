@@ -587,6 +587,31 @@ CREATE TABLE IF NOT EXISTS x_confirmations (
 
 CREATE INDEX IF NOT EXISTS idx_x_confirmations_target ON x_confirmations(target, handle);
 
+-- An agent's ERC-8004 links (docs/protocol.md 3.20): the signed record (wallet statement and the agent's own
+-- signature) and what this relay last read. Never an image or registration text; the relay reads configured RPCs only.
+CREATE TABLE IF NOT EXISTS agent_chain_links (
+                stable_id TEXT NOT NULL,
+                agent_registry TEXT NOT NULL,        -- eip155:<chain id>:<registry address, lowercase>
+                agent_id TEXT NOT NULL,              -- the 8004 agent's number, a decimal string
+                signer TEXT NOT NULL,
+                issued_at INTEGER NOT NULL,          -- unix seconds the wallet signed
+                wallet_sig TEXT NOT NULL,
+                at TEXT NOT NULL,
+                signature TEXT NOT NULL,             -- the Emporia agent's, over emporia:erc8004-link:v1
+                recorded_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'claimed',   -- claimed | checked | stale | superseded | removed
+                tier TEXT NOT NULL DEFAULT '',            -- owner | bound-owner | controller, from the last good read
+                owner TEXT NOT NULL DEFAULT '',
+                block_number INTEGER,
+                block_hash TEXT NOT NULL DEFAULT '',
+                checked_at TEXT NOT NULL DEFAULT '',      -- the last read that proved control
+                attempted_at TEXT NOT NULL DEFAULT '',    -- the last read tried, good or not (the 6 hour clock)
+                superseded_by TEXT NOT NULL DEFAULT '',   -- the stable id of the newer link that took it over
+                PRIMARY KEY (stable_id, agent_registry, agent_id)
+            );
+
+CREATE INDEX IF NOT EXISTS idx_agent_chain_links_agent ON agent_chain_links(agent_registry, agent_id);
+
 CREATE TABLE IF NOT EXISTS follows (
                 agent_id TEXT NOT NULL,
                 target TEXT NOT NULL,

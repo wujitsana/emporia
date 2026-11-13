@@ -362,3 +362,19 @@ def typed_data_from_json(td: dict) -> dict:
     m["emporiaStableId"] = bytes.fromhex(str(m["emporiaStableId"]).removeprefix("0x"))
     m["agentId"], m["issuedAt"] = int(m["agentId"]), int(m["issuedAt"])
     return {**td, "message": m}
+
+
+def signature_recovers(link: dict) -> bool | None:
+    """Whether the wallet signature recovers to `signer` (an ordinary account signed it): True, False, or None when
+    this process cannot check (no library, or a malformed link). A contract wallet's signature is False here and is
+    settled only by a chain read (ERC-1271)."""
+    if not available():
+        return None
+    try:
+        p = _parse(link)
+        td = agent_link_typed_data(p["chain_id"], p["registry"], p["agent_id"], p["signer"], p["stable_id"],
+                                   p["issued_at"])
+    except _Stop:
+        return None
+    rec = _recover(td, p["sig"])
+    return rec is not None and _same(rec, p["signer"])
