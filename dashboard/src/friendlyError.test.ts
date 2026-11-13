@@ -11,6 +11,10 @@ describe("friendlyError", () => {
   it("never shows a transport class name", () => {
     expect(friendlyError("GatewayReauthRequiredError: Run hermes webapp on this computer to sign this browser in.")).toBe("Something went wrong loading this. Try reopening the page.");
   });
+  it("gives a script error a plain sentence, not its message", () => {
+    expect(friendlyError("TypeError: Cannot read properties of undefined (reading 'x')")).toBe("Something went wrong; try again.");
+    expect(friendlyError("Error: bad thing")).toBe("Something went wrong; try again.");
+  });
   it("leaves any other message as written", () => {
     expect(friendlyError("not found")).toBe("not found");
   });
