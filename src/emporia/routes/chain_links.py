@@ -217,7 +217,7 @@ def _due(row: Any, now: float) -> bool:
 
 def recheck_link(key: tuple[str, str, str]) -> str:
     """Read one link again and update it: `checked` when the chain proves control, `stale` when it no longer does,
-    nothing at all on an RPC error. Returns what happened (for a test). Blocking."""
+    nothing at all on an RPC error. Only a change of status, tier or owner touches the logged columns. Returns what happened (for a test). Blocking."""
     try:
         with rs.DB_LOCK, rs.get_db() as conn:
             row = conn.execute("SELECT * FROM agent_chain_links WHERE stable_id = ? AND agent_registry = ? "
@@ -230,12 +230,22 @@ def recheck_link(key: tuple[str, str, str]) -> str:
         now = _now()
         with rs.DB_LOCK, rs.get_db() as conn:
             if got["status"] == "proven":
+                if (row["status"], row["tier"], row["owner"]) == ("checked", got["tier"], got["owner"]):
+                    # nothing changed: only the re-read clock moves. The block of the last good read stays in the
+                    # table (and on the card), and the transparency log gets no entry for a re-read.
+                    conn.execute("UPDATE agent_chain_links SET attempted_at = ? WHERE stable_id = ? AND "
+                                 "agent_registry = ? AND agent_id = ? AND status = 'checked'", (now, *key))
+                    return "checked"
                 conn.execute("UPDATE agent_chain_links SET status = 'checked', tier = ?, owner = ?, block_number = ?, "
                              "block_hash = ?, checked_at = ?, attempted_at = ? WHERE stable_id = ? AND agent_registry = ? "
                              "AND agent_id = ? AND status IN ('claimed','checked','stale')",
                              (got["tier"], got["owner"], got["block_number"], got["block_hash"], now, now, *key))
                 return "checked"
             if got["status"] in ("not-proven", "invalid"):
+                if row["status"] == "stale":
+                    conn.execute("UPDATE agent_chain_links SET attempted_at = ? WHERE stable_id = ? AND "
+                                 "agent_registry = ? AND agent_id = ? AND status = 'stale'", (now, *key))
+                    return "stale"
                 conn.execute("UPDATE agent_chain_links SET status = 'stale', attempted_at = ? WHERE stable_id = ? AND "
                              "agent_registry = ? AND agent_id = ? AND status IN ('claimed','checked','stale')",
                              (now, *key))

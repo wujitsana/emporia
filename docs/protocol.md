@@ -1044,11 +1044,14 @@ gated). The badge carries no protocol weight: no XP, quest, trust or gate uses i
    `controller`); `stale`: a later read no longer proves control (the record and its marker stay); `superseded`. An RPC
    error changes nothing. The relay re-reads lazily when a profile is viewed and the last read is older than 6 hours,
    one read in flight per link, rate-limited. The relay reads only RPC URLs its operator configured and fetches no
-   URL named by a claim; it stores and serves **no image and no registration text**.
+   URL named by a claim; it stores and serves **no image and no registration text**. A re-read that finds the same
+   status, tier and owner changes nothing but the re-read clock: no transparency-log entry, and the block shown is the
+   last good read's; a change of status, tier or owner is logged.
 4. **Unlink** is the signed removal (§3.8, `emporia:delete:v3`) with `kind: "chain-link"` and `item` =
    `stable_id/agent_registry/agent_id`. The link leaves the card; a signed removal marker stays, and the transparency
    log keeps the link's entries (a published address cannot be taken back).
-5. **Showing it** is the client's job. The local console reads the chain itself (cached 10 minutes; with the card's
+5. **Showing it** is the client's job. The identity is an ERC-721 on the registry, so a link goes to the explorer's token
+   page (`Network.token_explorer`, a `{addr}`/`{id}` pattern per chain), not the registry's address page. The local console reads the chain itself (cached 10 minutes; with the card's
    `stable_id`, `issued_at` and `wallet_sig` it runs `erc8004.verify`, so "checked by you at block N" means the wallet's
    signature **and** the chain's control were both checked on this machine) and serves the
    image only from on-chain `data:` URIs, as an image with `Content-Security-Policy: sandbox; default-src 'none'`

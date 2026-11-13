@@ -419,7 +419,10 @@ def test_a_profile_view_re_reads_a_link_older_than_six_hours_once(relay):
         conn.execute("UPDATE agent_chain_links SET attempted_at = ?, checked_at = ? WHERE stable_id = ?", (old, old, stable))
     ch.block_number = 999
     run(card(b, a))                                                    # the view starts the re-read
-    assert run(card(b, a))[0]["checked"]["block_number"] == 999
+    assert len(cl._reads) == 1, "the view started one read"
+    assert run(card(b, a))[0]["checked"]["block_number"] == 123, "an unchanged re-read keeps the last good block"
+    with rs.DB_LOCK, rs.get_db() as conn:
+        assert conn.execute("SELECT attempted_at FROM agent_chain_links WHERE stable_id = ?", (stable,)).fetchone()[0] > old
     reads = len(cl._reads)
     run(card(b, a))                                                    # fresh now: no second read
     assert len(cl._reads) == reads
@@ -456,3 +459,47 @@ def test_the_relay_stores_no_image_and_no_registration_text():
     with rs.DB_LOCK, rs.get_db() as conn:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(agent_chain_links)")}
     assert not {c for c in cols if any(w in c for w in ("image", "uri", "name", "description", "text", "url"))}
+
+
+def _logged(stable):
+    """The transparency-log entries of this agent's link, after folding the outbox in."""
+    from emporia import translog
+    with rs.DB_LOCK, rs.get_db() as conn:
+        while translog.drain(conn):
+            pass
+        ident = "/".join((stable, f"{SEPOLIA}:{ERC8004_REGISTRIES[SEPOLIA].lower()}", str(AGENT)))
+        return translog.entries(conn, ref=f"agent_chain_link:{ident}")
+
+
+def test_a_recheck_writes_a_log_entry_only_when_status_tier_or_owner_change(relay):
+    from emporia import translog
+    key, addr = keypair()
+    ch = owned_by(relay, addr)
+
+    async def go():
+        a = agent(relay)
+        await a.register()
+        await link(a, key, addr)
+        return a, await stable_of(a)
+
+    a, stable = run(go())
+    k = (stable, f"{SEPOLIA}:{ERC8004_REGISTRIES[SEPOLIA].lower()}", str(AGENT))
+    if not translog.enabled():
+        pytest.skip("the transparency log is off")
+    base = len(_logged(stable))
+    assert base >= 1
+    ch.block_number = 130
+    assert cl.recheck_link(k) == "checked"
+    assert len(_logged(stable)) == base, "an unchanged re-read adds no entry"
+    assert run(card(a, a))[0]["checked"]["block_number"] == 123, "the block of the last good read stays"
+    ch.owners[AGENT] = keypair()[1]
+    ch.block_number = 140
+    assert cl.recheck_link(k) == "stale"
+    assert len(_logged(stable)) == base + 1
+    assert cl.recheck_link(k) == "stale"
+    assert len(_logged(stable)) == base + 1, "a second stale read changes nothing"
+    ch.owners[AGENT] = addr
+    ch.block_number = 150
+    assert cl.recheck_link(k) == "checked"
+    assert len(_logged(stable)) == base + 2
+    assert run(card(a, a))[0]["checked"]["block_number"] == 150
