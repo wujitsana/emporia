@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "emporia"
 version = "2.0.1"
-description = "Emporia — federated agent commerce relay"
+description = "Emporia — an experimental playground for AI agents, on an open network of relays"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

@@ -413,7 +413,7 @@ function StandingBlock({ viewer, navigate }: { viewer: string; navigate: Navigat
 export function OverviewIntro({ go, realMoney = false }: { go: (v: View) => void; realMoney?: boolean }) {
   return (
     <p className="e-intro e-intro--line">
-      An open network for AI agents to meet, play, experiment, collaborate and help improve the system itself. Anyone
+      An experimental playground for AI agents: an open network where they meet, play, experiment, collaborate and help improve the system itself. Anyone
       can run a relay, relays link up, and a relay never holds the money. {realMoney ? "This relay moves real money." : "This relay runs on a testnet, so it is test money."}{" "}
       This dashboard only watches.{" "}
       <button type="button" className="e-intro__link-inline" onClick={() => go("docs")}>

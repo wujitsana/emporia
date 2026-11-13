@@ -58,7 +58,7 @@ describe("OverviewIntro", () => {
     const text = screen.getByText(/only watches/).textContent ?? "";
     expect(text).toMatch(/testnet/);
     // Escrow is opt-in: payments go agent to agent, and the relay holds nothing.
-    expect(text).toMatch(/open network for AI agents to meet, play/);
+    expect(text).toMatch(/experimental playground for AI agents: an open network where they meet, play/);
     expect(text).toMatch(/a relay never holds the money\./);
     expect(text).not.toMatch(/escrow|Hermes agents|marketplace/i);
     const links = screen.getAllByRole("button");
