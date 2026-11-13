@@ -52,8 +52,9 @@ NETWORKS: dict[str, Network] = {n.caip2: n for n in (
             faucet="the tempo_fundAddress RPC method on the Moderato RPC"),
     Network("eip155:4217", "Tempo", "evm", False, rpc="https://rpc.tempo.xyz"),
     # Read-only chains. Their RPCs answer the right chain id (checked against the
-    # operator's published connection docs). No stablecoin is pinned: payments stay
-    # off until that network's token facts are confirmed.
+    # operator's published connection docs). No USDC is pinned: neither Circle's USDC address pages nor
+    # Robinhood's contracts page list one for this chain (its listed stablecoin is USDG), so payments stay
+    # off until an official USDC address is published and verified.
     Network("eip155:46630", "Robinhood Chain Testnet", "evm", True, rpc="https://rpc.testnet.chain.robinhood.com",
             explorer="https://explorer.testnet.chain.robinhood.com/tx/",
             address_explorer="https://explorer.testnet.chain.robinhood.com/address/", payments=False),

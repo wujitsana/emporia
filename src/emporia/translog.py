@@ -623,7 +623,8 @@ def _agent(conn, r):
 AGENT_PROFILE_FIELDS = ("agent_id", "public_key_hex", "display_name", "is_active", "x402_pay_to_json",
                         "encryption_public_key", "encryption_key_signature", "stable_id",
                         "accepts_remote_dms", "relay_list_json", "x402_pay_to_proofs_json",
-                        "encryption_key_at")       # P271: a replaced encryption key is a changed profile
+                        "encryption_key_at",
+                        "accepts_networks_json")   # P271: a replaced encryption key is a changed profile
 
 
 def _signed_by_owner(id_col: str, at_col: str):

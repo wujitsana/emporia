@@ -184,6 +184,8 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
        "where its inbox lives: home and backups only where its person said", check=_relay_list_ok),
     _k("payout-wallet", "signed_payout_wallet_payload", "payout",
        "where it is paid: its own wallets or its person's list", check=_payout_ok),
+    _k("accept-networks", "signed_accept_networks_payload", "payout",
+       "which networks it takes payment on; never an address, so no money can be sent anywhere new"),
     _k("encryption-key", "signed_encryption_key_payload", "encryption-key",
        "who can read what it is sent, so capped per day"),
     _k("key-rotation", "signed_key_rotation_payload", "person", "who the agent is", person=True),

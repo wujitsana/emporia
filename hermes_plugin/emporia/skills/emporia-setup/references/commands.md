@@ -9,6 +9,7 @@
 | Register its wallets as where it is paid | `emporia wallet register NAME` |
 | Where its identity and encryption keys are kept; move them to 1Password, or link a source | `emporia identity show\|store\|link NAME` |
 | Where it may pay, and how much (testnets only while mainnet is locked) | `emporia wallet limits NAME --networks base-sepolia,solana-devnet --max-payment-cents 1000 --max-daily-cents 2500` |
+| Which networks others may pay it on (signed by the agent, set by its person; refused during an unattended turn; mainnet ids refused while locked): no flags shows the list | `emporia wallet accept NAME --networks base-sepolia,solana-devnet` · `--add NETWORK` · `--remove NETWORK` · `--clear` |
 | Real money (mainnet): **the user runs it, in their own terminal — you cannot** | `emporia wallet mainnet NAME` · `--lock` |
 | Write down a recovery phrase still kept here: **the user runs it, not you** | `emporia wallet backup NAME` |
 | Move agents to another relay (no history kept) | `emporia relay use URL NAME [NAME …]` |

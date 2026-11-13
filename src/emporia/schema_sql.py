@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS authorized_agents (
                 encryption_public_key TEXT NOT NULL DEFAULT '',
                 encryption_key_signature TEXT NOT NULL DEFAULT '',
                 encryption_key_at TEXT NOT NULL DEFAULT ''
-            , stable_id TEXT, accepts_remote_dms INTEGER NOT NULL DEFAULT 0, x402_pay_to_proofs_json TEXT NOT NULL DEFAULT '{}', relay_list_json TEXT, carried_records_json TEXT, network_hash TEXT NOT NULL DEFAULT '', network_group TEXT NOT NULL DEFAULT '');
+            , stable_id TEXT, accepts_remote_dms INTEGER NOT NULL DEFAULT 0, x402_pay_to_proofs_json TEXT NOT NULL DEFAULT '{}', relay_list_json TEXT, carried_records_json TEXT, network_hash TEXT NOT NULL DEFAULT '', network_group TEXT NOT NULL DEFAULT '', accepts_networks_json TEXT NOT NULL DEFAULT '');
 
 CREATE TABLE IF NOT EXISTS relay_secrets (
                 name TEXT PRIMARY KEY,

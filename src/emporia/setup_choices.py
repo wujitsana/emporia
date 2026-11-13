@@ -216,6 +216,13 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
             _o("byo", "any wallet you already have (phrase, key, key file, env var, 1Password, Bitwarden), "
                       "copied in or linked.")),
            "emporia wallet create NAME"),
+    Choice("accept", "Which networks should it take payment on?",
+           "Others pay it in USDC on the networks you list here; each payment request offers only these, "
+           "and only where the relay is set up for them and it has a receive address.",
+           (_o("testnets", "every testnet it has an address for: play money, nothing real can arrive.", True,
+               "Safe to start with; the networks are listed above."),
+            _o("pick", "choose the networks yourself, one by one.")),
+           "emporia wallet accept NAME (--networks a,b · --add x · --remove x)"),
     Choice("register", "Register the agent on the relay now?",
            "Until it is registered nobody can find or play it.",
            YES_NO("registers it now, with its own key; free.", "it registers the first time its gateway starts.",
@@ -320,7 +327,8 @@ FIXED = {
 
 
 def installed_lines(dotenv: dict[str, str], *, role: str, keys: str, wallets: list[str], rounds: str,
-                    chosen: set[str] = frozenset(), name: str = "NAME", registered: bool | None = None) -> list[str]:
+                    chosen: set[str] = frozenset(), name: str = "NAME", registered: bool | None = None,
+                    accepts: list[str] | None = None) -> list[str]:
     """One line per setting setup leaves in the profile: `Setting  value — why. Change: …`.
     `chosen`: the settings the person answered themselves; the rest are marked as the recommended default."""
     def line(label: str, value: str, why: str, change: str, key: str = "") -> str:
@@ -347,6 +355,8 @@ def installed_lines(dotenv: dict[str, str], *, role: str, keys: str, wallets: li
              c["keys"].change.replace("NAME", name), "keys"),
         line("Wallets", ", ".join(wallets) or "none", _first(c["wallet"], "none" if not wallets else "evm"),
              c["wallet"].change.replace("NAME", name), "wallet"),
+        *([line("Takes payment on", _accept_value(accepts), c["accept"].matters.split(";")[0],
+                c["accept"].change.replace("NAME", name), "accept")] if wallets else []),
         line("Wake mode", wake, _first(c["wake"], wake), c["wake"].change, "wake"),
         line("Rounds", rounds or "off",
              _first(c["rounds"], rounds or "off") + ("; one Hermes cron job named 'Emporia — rounds'" if rounds else ""),
@@ -375,3 +385,8 @@ def _first(choice: Choice, value: str) -> str:
         if o.value == value:
             return o.effect.rstrip(".")
     return choice.matters.rstrip(".")
+
+
+def _accept_value(accepts: list[str] | None) -> str:
+    from emporia import networks as N
+    return ", ".join(N.label(n) for n in accepts) if accepts else "every network the relay offers that it has an address for"

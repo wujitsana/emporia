@@ -851,7 +851,31 @@ def _x402_pay_to_by_network(creator_id: str | None) -> dict[str, str]:
         pay_to = wallets.get(family)
         if pay_to:
             result[network] = pay_to
+    accepted = AGENT_REGISTRY.get_accepts_networks(creator_id)
+    if accepted is not None:     # the payee's own choice of networks (POST /agents/{id}/accept-networks)
+        result = {n: a for n, a in result.items() if n in accepted}
     return result
+
+
+def _payee_accepts(creator_id: str | None, network: str) -> bool:
+    """Whether the payee takes payment on `network`: always when it never chose, else only when it listed it."""
+    accepted = AGENT_REGISTRY.get_accepts_networks(creator_id) if creator_id else None
+    return accepted is None or network in accepted
+
+
+def _accept_list_problem(creator_id: str | None) -> str:
+    """"" or why a payee's accept list leaves this relay nothing to offer: "<agent> takes payment on <list>;
+    this relay offers <list>"."""
+    if not creator_id:
+        return ""
+    from emporia import networks as nets
+    from emporia.payments import _x402_network_parts, _x402_networks
+    accepted = AGENT_REGISTRY.get_accepts_networks(creator_id)
+    if accepted is None or _x402_pay_to_by_network(creator_id):
+        return ""
+    offered = [n for n in _x402_networks() if _x402_network_parts(n)]
+    names = lambda ids: ", ".join(nets.label(n) for n in ids) or "no network"  # noqa: E731
+    return f"{creator_id} takes payment on {names(accepted)}; this relay offers {names(offered)}"
 
 
 # ---------------------------------------------------------------------------
@@ -1193,7 +1217,7 @@ async def _verify_x402_payment(
     # `pay_to_override`: the relay's fee address, for the fee leg of a split entry (fees.py)
     pay_to = pay_to_override or (
         AGENT_REGISTRY.get_x402_pay_to(creator_id, family)
-        if creator_id and family else None
+        if creator_id and family and network and _payee_accepts(creator_id, network) else None
     )
     asset = _x402_asset_for(network) if network else None
     extra = _x402_extra_for(network) if network else None
@@ -1424,7 +1448,7 @@ async def _verify_and_confirm_payment(
         if not cfg or not creator_id or currency != "usd":
             return None
         wallet = AGENT_REGISTRY.get_x402_pay_to(creator_id, "evm")
-        if not wallet:
+        if not wallet or not _payee_accepts(creator_id, cfg["network"]):
             return None
         return tempo.build_offer(amount_cents=amount_cents, resource=challenge_resource,
                                  recipient=wallet, payer_id=agent_id,
@@ -1476,7 +1500,7 @@ async def _verify_and_confirm_payment(
         from emporia import tempo
         cfg = tempo.config()
         wallet = AGENT_REGISTRY.get_x402_pay_to(creator_id, "evm") if creator_id else None
-        if not cfg or not wallet or currency != "usd":
+        if not cfg or not wallet or currency != "usd" or not _payee_accepts(creator_id, cfg["network"]):
             return _no_credential_402(f"Tempo payment declined: not offered here. {challenge_message}", None)
         try:
             tx_hash = await asyncio.to_thread(
@@ -1529,6 +1553,8 @@ async def _verify_and_confirm_payment(
                 "route_unsupported",
                 "this route has no x402 analogue (e.g. session escrow)",
             )
+        elif problem := _accept_list_problem(creator_id):
+            reason_code, reason = "no_shared_network", problem
         else:
             reason_code, reason = (
                 "no_payout_wallet",
@@ -1539,7 +1565,10 @@ async def _verify_and_confirm_payment(
             declined_reason=reason_code,
         )
 
-    return _no_credential_402(challenge_message, _x402_offer())
+    offer = _x402_offer()
+    if offer is None and (problem := _accept_list_problem(creator_id)) and _x402_enabled():
+        return _no_credential_402(f"{problem}. {challenge_message}", None)
+    return _no_credential_402(challenge_message, offer)
 
 
 def record_payment(
@@ -2117,7 +2146,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("topic_acts", "act_id"), ("topic_acts", "topic_id"), ("topic_acts", "act"), ("topic_acts", "at"),
     ("topic_acts", "nonce"), ("topic_acts", "payload_json"), ("topic_acts", "signature"),
     ("authorized_agents", "relay_list_json"), ("authorized_agents", "carried_records_json"),
-    ("authorized_agents", "network_hash"), ("authorized_agents", "network_group"), ("relay_secrets", "name"), ("relay_secrets", "value"),
+    ("authorized_agents", "network_hash"), ("authorized_agents", "network_group"),
+    ("authorized_agents", "accepts_networks_json"), ("relay_secrets", "name"), ("relay_secrets", "value"),
     ("deletions", "kind"), ("deletions", "item"), ("deletions", "role"), ("deletions", "deleted_at"),
     ("deletions", "signature"), ("deletions", "stable_id"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),
     ("dm_messages", "deleted_at"), ("game_chat", "deleted_at"),
@@ -2839,6 +2869,37 @@ class AgentRegistry:
                 "UPDATE authorized_agents SET x402_pay_to_json = ?, x402_pay_to_proofs_json = ? WHERE agent_id = ?",
                 (json.dumps(wallets), json.dumps(proofs), agent_id),
             )
+
+    def get_accepts_networks(self, agent_id: str) -> list[str] | None:
+        """The CAIP-2 networks this agent said it takes payment on, or None when it never chose (then: every
+        network the relay offers that it has a receive address for). Fails open to None only for an unreadable
+        row; a stored list is always honoured."""
+        try:
+            with DB_LOCK, get_db() as conn:
+                row = conn.execute("SELECT accepts_networks_json FROM authorized_agents WHERE agent_id = ?",
+                                   (agent_id,)).fetchone()
+            data = json.loads((row["accepts_networks_json"] if row else "") or "null")
+            nets = data.get("networks") if isinstance(data, dict) else None
+            return [str(n) for n in nets] if isinstance(nets, list) and nets else None
+        except Exception:
+            return None
+
+    def accepts_networks_proof(self, agent_id: str) -> dict[str, Any] | None:
+        """The signed list as stored — `{networks, at, signature}` — or None."""
+        with DB_LOCK, get_db() as conn:
+            row = conn.execute("SELECT accepts_networks_json FROM authorized_agents WHERE agent_id = ?",
+                               (agent_id,)).fetchone()
+        try:
+            data = json.loads((row["accepts_networks_json"] if row else "") or "null")
+        except ValueError:
+            return None
+        return data if isinstance(data, dict) and data.get("networks") else None
+
+    def set_accepts_networks(self, agent_id: str, networks: list[str], at: str, signature: str) -> None:
+        value = json.dumps({"networks": sorted(set(networks)), "at": at, "signature": signature}) if networks else ""
+        with DB_LOCK, get_db() as conn:
+            conn.execute("UPDATE authorized_agents SET accepts_networks_json = ? WHERE agent_id = ?",
+                         (value, agent_id))
 
     def payee_statement(self, agent_id: str) -> dict[str, Any] | None:
         """P262: who an offer pays, in the payee's own words — its signed payout
@@ -4350,6 +4411,12 @@ class SetX402WalletRequest(BaseModel):
     address: str
     at: str           # P262: near this relay's clock
     signature: str    # Ed25519, by the agent's key, over wire.signed_payout_wallet_payload()
+
+
+class SetAcceptNetworksRequest(BaseModel):
+    networks: list[str]   # CAIP-2 ids; [] takes the choice back
+    at: str               # near this relay's clock
+    signature: str        # Ed25519, by the agent's key, over wire.signed_accept_networks_payload()
 
 
 class SetEncryptionKeyRequest(BaseModel):

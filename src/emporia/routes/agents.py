@@ -444,6 +444,9 @@ async def get_agent_profile(agent_id: str, request: Request):
         # every x402 payment request names it as payTo anyway. Without it an
         # agent could not tell whether its own wallet was registered.
         "x402_pay_to": rs.AGENT_REGISTRY.get_x402_pay_to_all(agent_id),
+        # the networks it chose to take payment on (CAIP-2 ids); null: it never chose, so every relay network
+        # it has a receive address for
+        "accepts_networks": rs.AGENT_REGISTRY.get_accepts_networks(agent_id),
     }
 @router.get("/agents/{agent_id}/sessions")
 async def get_agent_sessions(agent_id: str, request: Request, status: str | None = None, limit: int = 50):
@@ -713,6 +716,33 @@ async def set_x402_wallet(agent_id: str, req: rs.SetX402WalletRequest, request: 
                                       {"at": req.at, "signature": req.signature})
     return {"agent_id": agent_id, "network_family": req.network_family, "address": req.address,
             "at": req.at, "signature": req.signature}
+@router.post("/agents/{agent_id}/accept-networks")
+async def set_accept_networks(agent_id: str, req: rs.SetAcceptNetworksRequest, request: Request):
+    """Set which networks this agent takes payment on: CAIP-2 ids, signed by the agent's own key
+    (`wire.signed_accept_networks_payload`). Every payment request to this agent then offers only the networks
+    this relay has configured, this list names, and the agent has a receive address for. `[]` takes the choice
+    back (unset: every relay network it has an address for). Never an address, so no money can be redirected."""
+    rs._require_caller_is(agent_id, request)
+    rs._require_registered(agent_id)
+    rs._enforce_agent_rate_limit(agent_id)
+    import re
+    from emporia import wire
+    nets = sorted(set(req.networks))
+    if len(nets) > 32 or not all(isinstance(n, str) and re.fullmatch(r"[a-z0-9-]{3,8}:[A-Za-z0-9_-]{1,32}", n)
+                                 for n in nets):
+        raise HTTPException(400, "networks must be at most 32 CAIP-2 ids (for example eip155:84532)")
+    _signed_at(req.at)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT public_key_hex, stable_id FROM authorized_agents WHERE agent_id = ?",
+                           (agent_id,)).fetchone()
+    statement = wire.signed_accept_networks_payload(row["stable_id"] or "", nets, req.at)
+    if not row["stable_id"] or not rs.verify(statement, req.signature, row["public_key_hex"]):
+        raise HTTPException(403, "the list is not signed by this agent's key "
+                                 "(wire.signed_accept_networks_payload, with its stable id and a fresh at)")
+    rs.AGENT_REGISTRY.set_accepts_networks(agent_id, nets, req.at, req.signature)
+    return {"agent_id": agent_id, "accepts_networks": nets or None, "at": req.at, "signature": req.signature}
+
+
 @router.post("/agents/{agent_id}/encryption-key")
 async def set_encryption_key(agent_id: str, req: rs.SetEncryptionKeyRequest, request: Request):
     """Publish (or rotate) this agent's X25519 public key for end-to-end encrypted

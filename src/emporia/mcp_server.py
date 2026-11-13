@@ -3305,9 +3305,11 @@ def my_settings(agent_id: str = "") -> dict[str, Any]:
     from emporia import agent_wallet, visits
     aid = agent_id or AGENT_ID
     takes = None
+    accepts = None
     try:
         r = _bearer_request("get", f"{RELAY_URL}/agents/{aid}", agent_id=aid, timeout=10)
         takes = r.json().get("takes_dms_from_other_relays") if r.status_code == 200 else None
+        accepts = r.json().get("accepts_networks") if r.status_code == 200 else None
     except Exception:  # noqa: BLE001
         pass
     return {"success": True, "agent_id": aid, "home": RELAY_URL,
@@ -3316,6 +3318,8 @@ def my_settings(agent_id: str = "") -> dict[str, Any]:
             "takes_dms_from_other_relays": takes,
             "max_payment_cents": agent_wallet.max_payment_cents(), "max_daily_cents": agent_wallet.max_daily_cents(),
             "pays_on": _pays_on(),
+            # where others may pay it (null: it never chose: every relay network it has a receive address for)
+            "takes_payment_on": accepts,
             "asks_operator_above_cents": agent_wallet.approval_threshold_cents(),
             "daily_turns": _daily_turns(),
             "wallet": "money_info",
@@ -3326,6 +3330,7 @@ def my_settings(agent_id: str = "") -> dict[str, Any]:
                 "DMs from other relays": f"set_cross_relay_dms(true) asks your operator; or emporia dms {aid} "
                                          "--other-relays on",
                 "spending limits": f"emporia wallet limits {aid}",
+                "networks it takes payment on": f"emporia wallet accept {aid} (your operator only)",
                 "daily turns": f"EMPORIA_DAILY_TURNS in {aid}'s .env (your operator; 0 = no cap)",
                 "playbook": f"emporia agent playbook {aid} (your operator)",
                 "home relay": f"emporia relay move URL {aid} (your operator only)"}.items()}}
@@ -4726,6 +4731,40 @@ def register_x402_wallet(address: str = "", network_family: str = "evm",
                             json={"network_family": network_family, "address": address,
                                   "at": at, "signature": signature},
                             timeout=10)
+        d = r.json()
+        return {"success": True, **d} if r.status_code == 200 else {
+            "error": f"Relay {r.status_code}", "detail": d, "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+def read_accept_networks(agent_id: str = "") -> dict[str, Any]:
+    """This agent's accept list and registered receive addresses' families, as its relay serves them
+    (for `emporia wallet accept`; not an MCP tool)."""
+    aid = agent_id or AGENT_ID
+    try:
+        r = _bearer_request("get", f"{_base()}/agents/{_seg(aid)}", agent_id=aid, timeout=10)
+        if r.status_code != 200:
+            return {"success": False, "error": f"Relay {r.status_code}"}
+        d = r.json()
+        return {"success": True, "accepts_networks": d.get("accepts_networks"),
+                "x402_pay_to": d.get("x402_pay_to") or {}}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def publish_accept_networks(networks: list[str], agent_id: str = "") -> dict[str, Any]:
+    """Sign and send the networks this agent takes payment on (CAIP-2 ids; [] takes the choice back).
+    Deliberately not an MCP tool: it is its person's setting, changed by `emporia wallet accept`."""
+    aid = agent_id or AGENT_ID
+    try:
+        from datetime import UTC, datetime
+
+        at = datetime.now(UTC).isoformat()
+        nets = sorted(set(networks))
+        signature = signing.sign(aid, "accept-networks", _signing_identity(aid), nets, at)
+        r = _bearer_request("post", f"{_base()}/agents/{_seg(aid)}/accept-networks", agent_id=aid,
+                            json={"networks": nets, "at": at, "signature": signature}, timeout=10)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": d, "success": False}

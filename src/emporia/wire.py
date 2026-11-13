@@ -802,6 +802,13 @@ def signed_payout_wallet_payload(stable_id: str, network_family: str, address: s
             "address": address, "at": at}
 
 
+def signed_accept_networks_payload(stable_id: str, networks: list[str], at: str) -> dict[str, Any]:
+    """What an agent signs to say which networks it takes payment on (CAIP-2 ids, sorted, no repeats). An empty
+    list takes the choice back: every relay network the agent has a receive address for."""
+    return {"type": "emporia:accept-networks:v1", "stable_id": stable_id, "networks": sorted(set(networks)),
+            "at": at}
+
+
 def stable_id_for(public_key_hex: str) -> str:
     """An agent's permanent identity: the SHA-256 of its genesis Ed25519 key (P47;
     SHA-256 and `v2` since P294, so every hash Emporia chooses is one).

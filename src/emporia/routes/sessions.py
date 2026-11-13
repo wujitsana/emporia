@@ -1216,7 +1216,7 @@ def _escrow_rail(seller: str):
     if cfg is None:
         return None
     wallet = rs.AGENT_REGISTRY.get_x402_pay_to(seller, "evm")
-    if not wallet:
+    if not wallet or not rs._payee_accepts(seller, cfg.network):
         return None
     try:
         signer = load_operator_signer(cfg.network)

@@ -4065,19 +4065,20 @@ def _recommend(args: argparse.Namespace, existing: bool) -> None:
 
 
 def _closing_block(profile: Path, name: str, role: str, args: argparse.Namespace, chosen_all: bool,
-                   rounds: str) -> None:
+                   rounds: str, accepts: list[str] | None = None) -> None:
     from emporia import setup_choices as sc
     dotenv = installer().harvest_env(profile)
     _, agent_id, _ = _agent(name)
     wallets = [w for w, solana in (("EVM", False), ("Solana", True)) if _wallet_address(profile, agent_id, solana)]
     flags = {"role": args.role, "keys": args.keys, "wake": args.wake, "playbook": args.playbook,
              "rounds": args.rounds, "wallet": "x" if (args.wallet or args.solana) else "",
-             "about": "x" if args.about is not None else ""}
+             "about": "x" if args.about is not None else "",
+             "accept": getattr(args, "accept_networks", "")}
     chosen = set(sc.CHOICES) if chosen_all else {k for k, v in flags.items() if v}
     heading(f"Settings installed for {name}", "Each line: the value, why, and how to change or undo it.")
     keys = "env" if dotenv.get("EMPORIA_KEY_STORAGE") == "env" else "files"
     for line in sc.installed_lines(dotenv, role=role, keys=keys, wallets=wallets, rounds=rounds, chosen=chosen,
-                                   name=name):
+                                   name=name, accepts=accepts):
         print(localize(line))
     print(f"\n  Guide: {CREATE_GUIDE}  (giving it a character, how it behaves, safety habits, your first day, fixing problems)")
 
@@ -7109,6 +7110,9 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     else:   # P160: what this relay takes, on the wallets it has
         networks = ",".join(_default_networks(families, unlocked))
     wallet = bool(families)
+    accept_list: list[str] | None = None     # the networks it takes payment on, once chosen
+    accept_sent = False
+    from emporia.networks import label as label_of
     if existing:   # P216: its own limits are the defaults, not the built-in ones
         current = inst.harvest_env(profile)
         for attr, var, built_in in (("max_payment_cents", "EMPORIA_X402_MAX_PAYMENT_CENTS", 1000),
@@ -7166,6 +7170,7 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
         for n in nets:
             if n in NETWORKS and NETWORKS[n].faucet:
                 print(f"  Fund it on {label(n)}: {NETWORKS[n].faucet}")
+        accept_list = _setup_accept(name, {f: f in made for f in ("evm", "svm")}, args, unlocked)
     _ensure_member(name, chosen_relay or relay_url())
     _setup_about(profile, name, args.about, existing)
     if _TTY or args.register:
@@ -7184,6 +7189,12 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
                           f"print({f!r} + ' wallet', 'registered' if w.get('success') else "
                           f"w.get('error') or w.get('detail'))\n" for f in families)))
             print("  " + (r.stdout.strip().replace("\n", "\n  ") or r.stderr.strip()[-300:]))
+            if accept_list is not None and (not existing or args.accept_networks or _TTY):
+                accept_sent = _publish_accept(profile, agent_id, name, accept_list)
+    if accept_list is not None and not accept_sent and (not existing or args.accept_networks or _TTY):
+        print(localize(f"  Takes payment on {', '.join(label_of(n) for n in accept_list)}: sent once it is "
+                       f"registered — emporia wallet accept {name} --networks "
+                       f"{','.join(accept_list)}"))
     if wallet and behind_signer:      # P207: the condition it was allowed a wallet on
         _signer_add(_signer_args("add", name), _signer_url(_signer_args("")))
     # P204: offer the signer — yes by default when it already runs; optional on
@@ -7206,10 +7217,41 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     _setup_wake(profile, name, args.wake, existing)
     rounds_every = _setup_optional(profile, name, args, existing, wallet=bool(wallet))
     _setup_summary(profile, name, role)
-    _closing_block(profile, name, role, args, answered, rounds_every)
+    _closing_block(profile, name, role, args, answered, rounds_every, accepts=accept_list)
     inst.sync_mcp_costs(profile)      # the limits set above, as Hermes's price and chat limit on the paying tools
     inst.print_restart_instructions(list(inst._TOUCHED_PROFILES))
     return 0
+
+
+def _setup_accept(name: str, has: dict[str, bool], args: argparse.Namespace, unlocked: bool) -> list[str] | None:
+    """The question after the wallet step: which networks it takes payment on. The default is every testnet it has
+    an address for. Returns the list; it is sent once the agent is registered (`_publish_accept`)."""
+    from emporia import accept_networks as A, setup_choices as sc
+    from emporia.networks import resolve_list
+    if args.accept_networks:
+        nets = resolve_list(args.accept_networks)
+        if _locked_out(nets, unlocked, name):
+            return A.default_list(has)
+        return nets
+    options = A.option_lines(has)
+    if not _TTY:
+        return A.default_list(has)
+    heading("Where it takes payment", "Others pay it on the networks you list; change it any time with "
+                                      f"`emporia wallet accept {name}`.")
+    for _, line in options:
+        print(sc.dim(f"  {line}"))
+    if choose_setting("accept") == "testnets" or not options:
+        return A.default_list(has)
+    return choose_many("Which networks does it take payment on?", options, {n for n, _ in options}) or A.default_list(has)
+
+
+def _publish_accept(profile: Path, agent_id: str, name: str, nets: list[str]) -> bool:
+    from emporia import accept_networks as A
+    ok, why = A.publish(profile, agent_id, nets)
+    from emporia.networks import label
+    print(f"  Takes payment on {', '.join(label(n) for n in nets)}" if ok else
+          f"  Not saved: {why} — emporia wallet accept {name} --networks {','.join(nets)}")
+    return ok
 
 
 def _setup_summary(profile: Path, name: str, role: str) -> None:
@@ -8656,6 +8698,7 @@ def cmd_wallet(args: argparse.Namespace) -> int:
             ("backup", "Write down its recovery phrase, then remove it from this machine"),
             ("mainnet", "Allow or stop real-money (mainnet) payments — testnets only by default"),
             ("register", "Register where it is paid (its wallets, or an address you give)"),
+            ("accept", "Choose the networks it takes payment on"),
         ]) if _TTY else "show"
     profile, agent_id, env = _agent(args.name)
     if not env:
@@ -8695,6 +8738,10 @@ def cmd_wallet(args: argparse.Namespace) -> int:
 
     if args.action == "import":
         return _import_wallet(args, profile, agent_id)
+
+    if args.action == "accept":    # the networks others may pay it on: its person's setting
+        from emporia import accept_networks
+        return accept_networks.cmd_accept(args, profile, agent_id, dotenv)
 
     if args.action == "backup":    # P175: show a stored phrase once, then remove it
         return _backup_phrase(profile, agent_id)
@@ -9679,6 +9726,9 @@ def build_parser() -> argparse.ArgumentParser:
     ag.add_argument("--pay-networks", default="",
                     help="where it may pay, e.g. base-sepolia,solana-devnet (default: what the relay takes; "
                          "testnets only until `emporia wallet mainnet NAME`)")
+    ag.add_argument("--accept-networks", default="",
+                    help="the networks it takes payment on, e.g. base-sepolia,solana-devnet (default: every "
+                         "testnet it has an address for; change it later: emporia wallet accept NAME)")
     ag.add_argument("--agent-id", default="",
                     help="its name on the relay, unique there (default: the profile's name; asked for "
                          "the default profile)")
@@ -9725,7 +9775,7 @@ def build_parser() -> argparse.ArgumentParser:
     idp.set_defaults(func=cmd_identity)
     wl = sub.add_parser("wallet", help="an agent's wallets: show, create, register, limits")
     wl.add_argument("action", nargs="?", default="",
-                    choices=["", "show", "create", "import", "store", "backup", "mainnet", "register", "limits"])
+                    choices=["", "show", "create", "import", "store", "backup", "mainnet", "register", "limits", "accept"])
     wl.add_argument("name", nargs="?", default="", help="the agent's Hermes profile")
     wl.add_argument("--evm", action="store_true", help="create: the EVM wallet (Base, Tempo) — the default")
     wl.add_argument("--solana", action="store_true", help="create: the Solana wallet")
@@ -9736,7 +9786,12 @@ def build_parser() -> argparse.ArgumentParser:
                     help="create both from a recovery phrase you type (hidden)")
     wl.add_argument("--register", action="store_true", help="create: also register it on the relay")
     wl.add_argument("--networks", default="",
-                    help="limits: where it may pay, e.g. base-sepolia,solana-devnet,tempo-moderato")
+                    help="limits: where it may pay, e.g. base-sepolia,solana-devnet,tempo-moderato; "
+                         "accept: where it takes payment (replaces the list)")
+    wl.add_argument("--add", default="", help="accept: add these networks to the list it takes payment on")
+    wl.add_argument("--remove", default="", help="accept: remove these networks from that list")
+    wl.add_argument("--clear", action="store_true",
+                    help="accept: take the choice back (every relay network it has a receive address for)")
     wl.add_argument("--max-payment-cents", type=int, default=None)
     wl.add_argument("--max-daily-cents", type=int, default=None)
     wl.add_argument("--approve-above-cents", type=int, default=None,
