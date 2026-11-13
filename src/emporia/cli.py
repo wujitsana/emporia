@@ -1991,6 +1991,17 @@ def _lab_create(profile: Path, agent_id: str, rest: list[str], args: argparse.Na
         return 1
     ref = args.subject or "/".join(repo.split("/")[3:5])
     subject = {"kind": "github_repo", "ref": ref}
+    _, creator = _lab_key_of(profile, agent_id)
+    # idempotent: a lab already here under this slug is reported, and no room is made for it
+    st, have = _operator_call(profile, "GET", f"/labs/{path_id(slug)}")
+    if st == 200 and isinstance(have, dict):
+        if have.get("subject") == subject and creator and have.get("creator") == creator:
+            print(f"lab {slug}: already exists ({subject['kind']}:{ref}) · room {have.get('room_id')}; nothing made")
+            return 0
+        print(f"lab create: the slug {slug!r} is taken here by another lab "
+              f"({(have.get('subject') or {}).get('kind')}:{(have.get('subject') or {}).get('ref')}, "
+              "another creator or subject); nothing made")
+        return 1
     branch = args.branch or "main"
     import tempfile
     reachable = True
@@ -2016,27 +2027,62 @@ def _lab_create(profile: Path, agent_id: str, rest: list[str], args: argparse.Na
     if why := labs.check_lab(slug, name, subject, branch, commit, maintainers, args.licence):
         print(f"lab create: {why}")
         return 1
-    _, creator = _lab_key_of(profile, agent_id)
+    if reachable:     # the check the relay will make, before a room exists to be left behind
+        proof = lab_proof.check(repo, branch, commit, relay=_relay_id_of(profile), slug=slug, creator=creator,
+                                maintainers=tuple(maintainers),
+                                allow_file="file" in labs.allowed_hosts(os.environ.get("EMPORIA_LAB_HOSTS")))
+        if not proof["represents"]:
+            print(f"lab create: the repo does not say it is this lab: {proof['why']}; no room made")
+            return 1
     room_args = (f"room_type={args.room_type!r}, gate_type={args.gate!r}, entry_fee_cents={int(args.entry_fee_cents)}, "
                  f"encrypted={bool(args.encrypted)!r}")
-    r = _as_agent(profile, "import json\nfrom emporia import mcp_server as m\n"
-                  f"print(json.dumps(m.create_room({('lab: ' + name)!r}, {room_args}, "
-                  f"description={('The lab ' + slug + ': ' + ref + '. Each issue or PR has a thread here.')!r})))",
-                  EMPORIA_NO_ARCHIVE="1")
-    try:
-        room = json.loads(r.stdout.strip().splitlines()[-1])
-    except (ValueError, IndexError):
-        print(f"lab create: the room: {(r.stderr or r.stdout).strip()[-300:]}")
-        return 1
-    room_id = room.get("room_id") or (room.get("room") or {}).get("room_id")
+    # reuse an open room this agent made for this lab name that no lab is bound to (a run that stopped early)
+    room_id, made_here = "", False
+    st_r, rl = _operator_call(profile, "GET", "/rooms", params={"limit": 200})
+    st_l, ll = _operator_call(profile, "GET", "/labs")
+    if st_r == 200 and st_l == 200 and isinstance(rl, dict) and isinstance(ll, dict):
+        bound = {x.get("room_id") for x in ll.get("labs") or []}
+        for rm in rl.get("rooms") or []:
+            if (rm.get("creator_id") == agent_id and rm.get("name") == f"lab: {name}" and not rm.get("closed")
+                    and rm.get("room_id") not in bound and rm.get("room_type") == args.room_type
+                    and rm.get("gate_type") == args.gate and bool(rm.get("encrypted")) == bool(args.encrypted)):
+                room_id = rm["room_id"]
+                print(f"lab create: using your open room {room_id} (no lab is bound to it)")
+                break
     if not room_id:
-        print(f"lab create: the room was not made: {room.get('detail') or room.get('error')}")
-        return 1
-    at, sig = _lab_sign(profile, "lab", slug, name, room_id, subject, branch, commit, maintainers, args.licence,
-                        creator)
-    d = call("POST", "/labs", {"slug": slug, "name": name, "room_id": room_id, "subject": subject, "repo_url": repo,
-                               "branch": branch, "commit": commit, "maintainers": maintainers,
-                               "licence": args.licence, "verified": reachable, "at": at, "signature": sig})
+        r = _as_agent(profile, "import json\nfrom emporia import mcp_server as m\n"
+                      f"print(json.dumps(m.create_room({('lab: ' + name)!r}, {room_args}, "
+                      f"description={('The lab ' + slug + ': ' + ref + '. Each issue or PR has a thread here.')!r})))",
+                      EMPORIA_NO_ARCHIVE="1")
+        try:
+            room = json.loads(r.stdout.strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            print(f"lab create: the room: {(r.stderr or r.stdout).strip()[-300:]}")
+            return 1
+        room_id = room.get("room_id") or (room.get("room") or {}).get("room_id")
+        if not room_id:
+            print(f"lab create: the room was not made: {room.get('detail') or room.get('error')}")
+            return 1
+        made_here = True
+    try:
+        at, sig = _lab_sign(profile, "lab", slug, name, room_id, subject, branch, commit, maintainers,
+                            args.licence, creator)
+        d = call("POST", "/labs", {"slug": slug, "name": name, "room_id": room_id, "subject": subject,
+                                   "repo_url": repo, "branch": branch, "commit": commit,
+                                   "maintainers": maintainers, "licence": args.licence, "verified": reachable,
+                                   "at": at, "signature": sig})
+    except Exception:
+        if made_here:     # no orphan: close the room this run made (a signed close; closed and empty, it no longer lists)
+            c = _as_agent(profile, "import json\nfrom emporia import mcp_server as m\n"
+                          f"print(json.dumps(m.close_room({room_id!r})))", EMPORIA_NO_ARCHIVE="1")
+            try:
+                closed = bool(json.loads(c.stdout.strip().splitlines()[-1]).get("success"))
+            except (ValueError, IndexError):
+                closed = False
+            print(f"lab create: the lab was refused; the room {room_id} this run made was "
+                  + ("closed (signed), so it is not left open" if closed else
+                     f"NOT closed — close it yourself (emporia: close_room {room_id})"))
+        raise
     print(f"lab {d['slug']}: {d['subject']['kind']}:{d['subject']['ref']} · room {d['room_id']} · "
           + ("the repo says it is this lab" if d["verified"] else "UNVERIFIED (its repo could not be read)")
           + f" (checked {d['checked_at']})")
@@ -2088,8 +2134,10 @@ else:
     me = next((x.get("sender_id") for x in msgs if x.get("sender_id", "").startswith(m.AGENT_ID + "@")), m.AGENT_ID)
     message_read.annotate_messages(msgs, kind={kind!r}, scope_id={item!r}, viewer_agent_id=me, private_key=priv,
                                    pubkeys={{}}, verify=lambda msg, pk: None)
+    marks = m._on_relay_marks({kind!r}, {item!r}, m.AGENT_ID, hits[0].parents[1].name, msgs)
     print(json.dumps([[x.get("created_at", "")[:16], x.get("sender_id"), x.get("content"),
-                       x.get("deleted_at") is not None] for x in msgs]))"""
+                       x.get("deleted_at") is not None, marks.get(str(x.get("message_id")), "unknown")]
+                      for x in msgs]))"""
     r = _as_agent(profile, code, EMPORIA_NO_ARCHIVE="1")
     try:
         rows = _json.loads(r.stdout.strip().splitlines()[-1])
@@ -2099,8 +2147,9 @@ else:
     if isinstance(rows, dict):
         print(f"archive: {rows['error']}")
         return 1
-    for when, who, content, removed in rows:
-        print(f"  {when}  {who}: " + ("(removed)" if removed else content))
+    for when, who, content, removed, on_relay in rows:
+        note = "removed on the relay (your copy): " if on_relay == "removed" else ""
+        print(f"  {when}  {who}: " + note + ("(removed)" if removed else content))
     return 0
 
 

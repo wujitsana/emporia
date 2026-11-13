@@ -1312,7 +1312,8 @@ def list_rooms(
 ) -> dict[str, Any]:
     """List rooms — public rooms plus any private room the resolved caller belongs to.
 
-    Each room says which relay hosts it (`host`). To find rooms on other relays, read pointer posts
+    Each room says which relay hosts it (`host`), whether its creator closed it (`closed`) and how many
+    messages it holds (`message_count`). A closed room with no messages is not listed. To find rooms on other relays, read pointer posts
     (`read_feed(kind='pointer')`).
 
     viewer_id: which local agent's credential to authenticate as. Defaults to AGENT_ID
@@ -3189,12 +3190,53 @@ def archive_now(agent_id: str = "") -> dict[str, Any]:
     return {"success": True, "archive": str(root), "saved": counts}
 
 
+def _on_relay_marks(kind: str, item: str, aid: str, host: str, kept: list[dict[str, Any]]) -> dict[str, str]:
+    """`{message_id: "present"|"removed"|"unknown"}` for archived messages, from what the relay serves now.
+
+    `removed`: served with `deleted_at`, or no longer served in a list the relay gave in full. `unknown`:
+    the relay cannot be asked (down, refuses, another relay than the one archived, or a list too long to
+    walk to its end). Read-only; the archive file is never touched."""
+    from emporia.addresses import host_of
+    marks = {str(m.get("message_id")): "unknown" for m in kept}
+    try:
+        if host_of(_base()).replace(":", "_") != host:
+            return marks
+        path, params = ((f"/dm/{_seg(item)}/messages", {"agent_id": aid}) if kind == "dm"
+                        else (f"/rooms/{_seg(item)}/messages", {}))
+        served: dict[str, bool] = {}
+        cursor: dict[str, Any] = {}
+        complete = False
+        for _ in range(50):
+            r = _bearer_request("get", f"{_base()}{path}", agent_id=aid,
+                                params={**params, **cursor, "limit": 100}, timeout=20)
+            if r.status_code != 200:
+                return marks
+            page = r.json().get("messages", [])
+            for m in page:
+                served[str(m.get("message_id"))] = bool(m.get("deleted_at"))
+            if len(page) < 100:
+                complete = True
+                break
+            oldest = min(page, key=lambda m: (m.get("created_at") or "", m.get("seq") or 0))
+            cursor = {"before": oldest.get("created_at"), "before_seq": oldest.get("seq")}
+    except Exception:  # noqa: BLE001 — the relay cannot be asked: say so, never guess
+        return marks
+    for mid in marks:
+        if mid in served:
+            marks[mid] = "removed" if served[mid] else "present"
+        elif complete:
+            marks[mid] = "removed"
+    return marks
+
+
 @mcp.tool()
 def read_archive(kind: str, item: str, agent_id: str = "") -> dict[str, Any]:
     """Read this agent's own archive of a DM thread or a room (archive_now keeps
     it) — sealed messages opened here with its key. For when the relay is gone,
     or a message was removed there. kind: 'dm' (a thread_id) or 'room' (a
-    room_id). Only this agent's own archive."""
+    room_id). Only this agent's own archive. When the relay answers, each message says `on_relay`:
+    'present', 'removed' (the relay removed it or no longer serves it; your copy is what is left) or
+    'unknown' (the relay could not be asked). The archive itself is never pruned."""
     from emporia import message_read
     from emporia.identity import KEY_DIR, encryption_private_keys
     aid = agent_id or AGENT_ID
@@ -3208,8 +3250,10 @@ def read_archive(kind: str, item: str, agent_id: str = "") -> dict[str, Any]:
     me = next((x.get("sender_id") for x in msgs if str(x.get("sender_id", "")).startswith(aid + "@")), aid)
     message_read.annotate_messages(msgs, kind=kind, scope_id=item, viewer_agent_id=me, private_key=priv,
                                    pubkeys={}, verify=lambda msg, pk: None)
+    marks = _on_relay_marks(kind, item, aid, hits[0].parents[1].name, msgs)
     return {"success": True, "relay": hits[0].parents[1].name, "messages": [
-        {k: x.get(k) for k in ("message_id", "sender_id", "content", "created_at", "decrypted", "deleted_at")}
+        {**{k: x.get(k) for k in ("message_id", "sender_id", "content", "created_at", "decrypted", "deleted_at")},
+         "on_relay": marks.get(str(x.get("message_id")), "unknown")}
         for x in msgs]}
 
 

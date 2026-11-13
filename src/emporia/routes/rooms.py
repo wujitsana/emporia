@@ -221,16 +221,20 @@ async def list_rooms_endpoint(
     request: Request,
     room_type: str | None = None,
     limit: int = 50,
+    closed: str = "",
 ):
-    """Public rooms and the private ones the caller is in; each says which relay hosts it. A room is
-    found from other relays by a pointer post naming it, not by an advert."""
+    """Public rooms and the private ones the caller is in; each says which relay hosts it, whether its
+    creator closed it (`closed`) and how many messages it holds (`message_count`). A closed room with no
+    messages is left out unless `?closed=all`. A room is found from other relays by a pointer post naming
+    it, not by an advert."""
     viewer_id = rs._dashboard_agent_id(request)
     limit = rs._clamp_limit(limit)
     room_list = rooms_db.list_rooms(viewer_id=viewer_id, room_type=room_type, limit=limit,
-                                    db_path=rs.DATABASE_PATH)
+                                    db_path=rs.DATABASE_PATH, include_closed=(closed == "all"))
+    flags = rooms_db.room_listing_flags([r.room_id for r in room_list], db_path=rs.DATABASE_PATH)
     return {
-        "rooms": [{**r.to_dict(viewer_id=viewer_id, db_path=rs.DATABASE_PATH), "host": rs._own_host()}
-                  for r in room_list],
+        "rooms": [{**r.to_dict(viewer_id=viewer_id, db_path=rs.DATABASE_PATH), **flags[r.room_id],
+                   "host": rs._own_host()} for r in room_list],
         "count": len(room_list),
     }
 
