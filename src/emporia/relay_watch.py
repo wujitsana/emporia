@@ -181,6 +181,14 @@ def verdict(summary: dict[str, Any], health: dict[str, Any] | None) -> tuple[str
         why.append(f"{f} payment{'s' if f != 1 else ''} failed")
     if d := summary.get("disk_events"):
         why.append("disk and write volume: " + ", ".join(f"{k} x{v}" for k, v in sorted(d.items())))
+    integ = (health or {}).get("integrity") or {}
+    if integ.get("status") == "degraded":
+        bits = [f"{integ.get('rooms_broken', 0)} room chain(s) broken", f"{integ.get('dms_broken', 0)} DM chain(s)"]
+        if integ.get("log") == "broken":
+            bits.append("transparency log broken")
+        if integ.get("db") == "broken":
+            bits.append("database file damaged")
+        why.append("integrity check degraded: " + ", ".join(bits))
     if why:
         return "attention: " + "; ".join(why), True
     return "all normal", False
@@ -204,6 +212,9 @@ def render(summary: dict[str, Any], health: dict[str, Any] | None, line: str) ->
         out.append(f"health:    ok, v{health.get('version', '?')}, schema {health.get('schema_version', '?')}")
     else:
         out.append(f"health:    NOT OK ({health.get('why', 'no answer')})")
+    if health is not None and (integ := health.get("integrity")):
+        out.append(f"integrity: {integ.get('status', 'unknown')} (rooms broken {integ.get('rooms_broken', 0)}, "
+                   f"DMs broken {integ.get('dms_broken', 0)}, log {integ.get('log', '?')}, db {integ.get('db', '?')})")
     out.append(f"requests:  {summary['requests']} ({summary['requests_per_minute']}/min)")
     out.append(f"5xx:       {summary['server_errors']}")
     for e in summary["last_server_errors"]:
