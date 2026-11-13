@@ -7,6 +7,8 @@ import { modelFromFrame } from "./boards/setPlayModel";
 import { AuctionLine } from "./boards/AuctionLine";
 import { BargainSplit } from "./boards/BargainSplit";
 import { DiceTable } from "./boards/DiceTable";
+import { SluiceBoard } from "./boards/SluiceBoard";
+import { sluiceFromFrame } from "./boards/sluiceModel";
 import { auctionFromFrame, bargainFromFrame, diceFromFrame } from "./boards/chanceModel";
 
 type Book = Record<string, string> | undefined;
@@ -113,6 +115,17 @@ export function ArenaFrame({ frame, book }: { frame: Frame; book: Book }) {
         <FoldDetail fold={!!frame.result} label={`the offers and the hands (${frame.offers.length})`}>
         <BargainSplit {...bargainFromFrame(frame, (id) => playerName(id, book, 10))} />
         {frame.ended && !frame.result ? <p className="e-arena-verdict">{playerName(frame.ended.by, book)} {frame.ended.how} offer {frame.offers.length}.</p> : null}
+        </FoldDetail>
+      </div>
+    );
+  }
+  if (frame.kind === "sluice") {
+    const props = sluiceFromFrame(frame, (id) => playerName(id, book, 10));
+    return (
+      <div className="e-arena-frame" data-kind="sluice">
+        {props.verdict ? <p className="e-arena-verdict" role="status">{props.verdict}</p> : null}
+        <FoldDetail fold={!!props.verdict} label="the board and the drops">
+        <SluiceBoard {...props} />
         </FoldDetail>
       </div>
     );

@@ -15,8 +15,9 @@ import { bargainView, type BargainOffer, type BargainView, type Goods } from "./
 import { chanceView, isCvAuction, isLiarsDice, type Bid, type ChanceResult } from "./chance";
 import { isBargain, isSetPlay, gameBase, setPlayView, stateData, blottoWeights, type Verdict, fieldWinnersOf } from "./setPlay";
 import { SET_PLAYS } from "./setPlay";
+import { dropText, isSluice, sluiceFrameAt, sluiceView, type SluiceFrame } from "./sluice";
 
-export type ArenaKind = "blotto" | "two-thirds" | "lowest-unique" | "dice" | "auction" | "bargain" | "chess" | "log";
+export type ArenaKind = "blotto" | "two-thirds" | "lowest-unique" | "dice" | "auction" | "bargain" | "sluice" | "chess" | "log";
 
 export interface Step {
   /** 0 is the start; i is after the i-th action. */
@@ -94,6 +95,7 @@ export type Frame =
       hands: Record<string, Goods> | null;
       result: BargainView["result"];
     }
+  | SluiceFrame
   | { kind: "chess" }
   | { kind: "log"; rows: { n: number; agent: string; type: string; text: string }[] };
 
@@ -123,6 +125,7 @@ export function arenaKind(moduleType: string): ArenaKind {
   if (isBargain(moduleType)) return "bargain";
   if (isLiarsDice(moduleType)) return "dice";
   if (isCvAuction(moduleType)) return "auction";
+  if (isSluice(moduleType)) return "sluice";
   return "log";
 }
 
@@ -142,6 +145,7 @@ function stepLabel(kind: ArenaKind, a: SessionAction): string {
       if (isSecretReveal(a)) return "revealed its secret";
       if (kind === "auction") return `revealed a bid of ${movePlain(p.move)}`;
       return `revealed ${movePlain(p.move)}`;
+    case "drop": return p.channel !== undefined ? `dropped in channel ${p.channel}` : "dropped a stone";
     case "bid": return `bid ${p.quantity} × ${p.face}`;
     case "liar": return "called liar";
     case "offer": return p.keep && typeof p.keep === "object" ? `offered to keep ${goodsText(p.keep as Goods)}` : "made an offer";
@@ -219,9 +223,19 @@ export function buildTimeline(session: Session, actionLog: SessionAction[] | nul
   const kind = arenaKind(session.module_type);
   const players = session.participants ?? [];
   const finished = session.status === "completed";
+  // Sluice: the record knows the row and the gate of each drop; say them (the n-th drop is the n-th move).
+  const sluice = kind === "sluice" ? sluiceView(session, actionLog) : null;
+  let drops = 0;
+  const labelOf = (a: SessionAction): string => {
+    if (sluice && a.action_type === "drop") {
+      const m = sluice.moves[drops++];
+      if (m && m.by === a.agent_id) return dropText(m);
+    }
+    return stepLabel(kind, a);
+  };
   const steps: Step[] = [
-    { index: 0, actionId: null, agent: null, type: "start", label: "the table before the first move" },
-    ...acts.map((a, n) => ({ index: n + 1, actionId: a.action_id, agent: a.agent_id, type: a.action_type, label: stepLabel(kind, a) })),
+    { index: 0, actionId: null, agent: null, type: "start", label: kind === "sluice" ? "the table as the beacon dealt it" : "the table before the first move" },
+    ...acts.map((a, n) => ({ index: n + 1, actionId: a.action_id, agent: a.agent_id, type: a.action_type, label: labelOf(a) })),
   ];
   const last = acts.length;
   // Published-with-the-record facts, read only for the last step of a finished game.
@@ -286,6 +300,11 @@ export function buildTimeline(session: Session, actionLog: SessionAction[] | nul
       }
       const hands = atEnd && Object.keys(bv.hands).length ? bv.hands : null;
       return { kind: "bargain", players, pool: bv.pool, offers, ended, hands, result: atEnd ? bv.result : null };
+    }
+    if (kind === "sluice" && sluice) {
+      // Each action that took effect is one move of the log; a void or a say is not a stone.
+      const stones = acts.slice(0, i).filter((a) => a.action_type === "drop").length;
+      return sluiceFrameAt(sluice, stones, atEnd);
     }
     if (kind === "chess") return { kind: "chess" };
     return {
