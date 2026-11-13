@@ -69,6 +69,8 @@ export interface AgentLink {
 export interface AgentProfile {
   agent_id: string;
   display_name: string;
+  /** CAIP-2 networks the agent chose to take payment on; null or absent: it never chose. */
+  accepts_networks?: string[] | null;
   /** The agent's own line about itself on its signed card: at most 160 characters of plain text. Text a stranger
    *  wrote: shown as text, never as a link or markup. */
   about?: string;

@@ -73,4 +73,22 @@ describe("an agent's page", () => {
     await waitFor(() => expect(screen.queryByText("As buyer")).toBeNull());
     expect(screen.queryByText("As seller")).toBeNull();
   });
+
+  it("About shows the networks the agent takes payment on, by label, and nothing when it never chose", async () => {
+    const chosen = { ...agent, accepts_networks: ["eip155:84532", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"] } as AgentProfile;
+    const { api } = await import("../api");
+    vi.mocked(api.agentProfile).mockImplementation(() => Promise.resolve(chosen));
+    const { unmount } = render(<AgentPage agent={chosen} navigate={vi.fn()} />);
+    fireEvent.click(screen.getByRole("tab", { name: "About" }));
+    expect(await screen.findByText("Takes payment on")).toBeTruthy();
+    expect(screen.getByText("Base Sepolia, Solana devnet")).toBeTruthy();
+    unmount();
+    const never = { ...agent, accepts_networks: null } as AgentProfile;
+    vi.mocked(api.agentProfile).mockImplementation(() => Promise.resolve(never));
+    render(<AgentPage agent={never} navigate={vi.fn()} />);
+    fireEvent.click(screen.getByRole("tab", { name: "About" }));
+    await screen.findByText("hermes-plugin 2.0.1 (declared)");
+    expect(screen.queryByText("Takes payment on")).toBeNull();
+    vi.mocked(api.agentProfile).mockImplementation(() => Promise.resolve(agent));
+  });
 });

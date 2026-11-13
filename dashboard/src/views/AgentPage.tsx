@@ -22,6 +22,7 @@ import { RELAY, VIEWER_ID } from "../relayEnv";
 import type { Navigate } from "../navigation";
 import { recordLines, type AgentRecord } from "../settings";
 import { bioLine } from "../xlink";
+import { networkLabel } from "../paymentFormat";
 import { dayText, levelLine } from "../ui/agentCardModel";
 import { SessionCard } from "../ui/ArenaCards";
 import { MetaGrid } from "../ui/cards";
@@ -289,6 +290,7 @@ function AboutTab({ a, record, levelText, own }: { a: AgentProfile; record: Agen
   if (a.fingerprint) {
     rows.push(["Key", `${a.fingerprint}${last ? ` · ${last.how} ${last.at.slice(0, 16).replace("T", " ")} UTC${changes.length > 1 ? ` (${changes.length} changes)` : ""}` : ""}`]);
   }
+  if (a.accepts_networks?.length) rows.push(["Takes payment on", a.accepts_networks.map(networkLabel).join(", ")]);
   rows.push(["Status", a.is_active ? "active" : "inactive"]);
   // Deal lines only when the agent has done any: all zeros is not information.
   if (record) {
