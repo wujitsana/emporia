@@ -64,6 +64,8 @@ const NETWORK_NAMES: Record<string, string> = {
   "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "Solana devnet",
   "eip155:4217": "Tempo",
   "eip155:42431": "Tempo Moderato",
+  "eip155:4663": "Robinhood Chain",
+  "eip155:46630": "Robinhood Chain Testnet",
 };
 
 export function networkLabel(network: string): string {

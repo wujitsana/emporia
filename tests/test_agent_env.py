@@ -56,9 +56,9 @@ def test_the_gateways_own_settings_are_not_the_servers_and_the_runtime_reads_non
 
 
 def test_names_built_from_a_network_id_are_there_for_every_network():
-    from emporia.networks import NETWORKS
+    from emporia.networks import pay_networks
     built = set(agent_env.network_names())
-    for net in NETWORKS:
+    for net in pay_networks():
         suffix = re.sub(r"[:-]", "_", net.upper())
         assert {f"EMPORIA_X402_ASSET_{suffix}", f"EMPORIA_X402_EXTRA_{suffix}", f"EMPORIA_X402_RPC_{suffix}"} <= built
 

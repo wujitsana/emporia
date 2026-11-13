@@ -133,8 +133,10 @@ LITERAL_NAMES = (
 
 
 def network_names() -> list[str]:
-    from emporia.networks import NETWORKS
-    return [p + re.sub(r"[:-]", "_", net.upper()) for net in NETWORKS for p in NETWORK_PREFIXES]
+    from emporia.networks import NETWORKS, pay_networks
+    pay = [p + re.sub(r"[:-]", "_", net.upper()) for net in pay_networks() for p in NETWORK_PREFIXES]
+    rpc = [f"EMPORIA_RPC_{net.split(':', 1)[1].upper()}" for net in NETWORKS if net.startswith("eip155:")]
+    return pay + rpc
 
 
 def key_names() -> list[str]:
