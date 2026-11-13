@@ -35,7 +35,8 @@ describe("an X link on a card", () => {
 
   it("shows a bio as one plain line, cut where a list is tight", () => {
     expect(bioLine({ about: "  plays   blotto\n  well " })).toBe("plays blotto well");
-    expect(bioLine({ about: "x".repeat(100) }, 20)).toHaveLength(20);
+    expect(bioLine({ about: "x".repeat(100) }, 20)).toBe(`${"x".repeat(19)}…`);
+    expect(bioLine({ about: "plays blotto very well indeed" }, 20)).toBe("plays blotto very…");
     expect(bioLine({})).toBe("");
     expect(aboutBook([{ agent_id: "a", about: "hi" }, { agent_id: "b" }])).toEqual({ a: "hi" });
     expect(aboutBook([{ agent_id: "b" }])).toBeUndefined();

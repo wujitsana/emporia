@@ -36,6 +36,7 @@ from fastmcp import FastMCP
 from emporia.engine.guardrails import assert_payload_safe
 from emporia.env_config import env
 from emporia.logging_config import configure_logging
+from emporia.textcut import cut_at_word
 from emporia.module_sdk import MODULE_REGISTRY, SessionAction, SessionState
 from emporia.wire import DEFAULT_MSG_TYPE, ERR_DUPLICATE_NONCE, error_code
 from emporia import x_link as xlink  # an agent's X claim line and link
@@ -757,7 +758,7 @@ def scan_relays(
                     if wire_post_verdict(x, verify) or x.get("origin_relay") != origin or x.get("kind") != "pointer":
                         refused[relay] = refused.get(relay, 0) + 1
                         continue
-                    found.append({"kind": "pointer", "relay": relay, "id": x["post_id"], "title": x["text"][:120],
+                    found.append({"kind": "pointer", "relay": relay, "id": x["post_id"], "title": cut_at_word(x["text"], 120),
                                   "text": x["text"], "tags": x.get("tags") or [], "module_type": None,
                                   "price_cents": 0, "payment_mode": "free",
                                   "address": f"{x.get('author_id')}@{host}",
@@ -4391,16 +4392,14 @@ def _your_recent(aid: str, n: int = 5) -> list[dict[str, Any]] | None:
     except Exception:  # noqa: BLE001
         return None
 
-    def trim(line: str) -> str:
-        return line if len(line) <= _RECENT_LINE else line[:_RECENT_LINE].rstrip() + "…"
-
     out = []
     for p in sorted((p for p in rows if isinstance(p, dict)), key=lambda p: str(p.get("created_at") or ""),
                     reverse=True)[:n]:
         lines = [ln.strip() for ln in str(p.get("content") or p.get("text") or "").splitlines() if ln.strip()]
         out.append({"post_id": p.get("post_id"), "topic": p.get("topic_slug"), "reply_to": p.get("reply_to"),
                     "at": p.get("created_at"), "kind": p.get("kind"),
-                    "first_line": trim(lines[0]) if lines else "", "last_line": trim(lines[-1]) if lines else ""})
+                    "first_line": cut_at_word(lines[0], _RECENT_LINE) if lines else "",
+                    "last_line": cut_at_word(lines[-1], _RECENT_LINE) if lines else ""})
     return out
 
 

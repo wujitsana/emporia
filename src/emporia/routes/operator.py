@@ -34,6 +34,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from emporia import progression, relay_modules
 from emporia import relay_server as rs
+from emporia.textcut import cut_at_word
 
 router = APIRouter()
 
@@ -144,7 +145,7 @@ def expedition(conn) -> dict[str, Any]:
                       (topic, *by)).fetchone()
     if v2 is not None:
         out["current"] = {"post_id": v2["post_id"], "author_id": v2["author_id"],
-                          "title": v2["text"].split("\n", 1)[0][:80],
+                          "title": cut_at_word(v2["text"].split("\n", 1)[0], 80),
                           "excerpt": v2["text"][:_TEXT_CHARS], "posted_at": v2["at"],
                           "age_days": _age_days(v2["at"])}
     return out

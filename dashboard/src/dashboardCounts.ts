@@ -2,6 +2,7 @@ import { api, dmThreadPreview } from "./api";
 import type { RelayHealth } from "./hooks";
 import { isJobModule, type DashboardView } from "./eventNav";
 import type { NavItem } from "./navConfig";
+import { cutAtWord } from "./cutAtWord";
 
 export type OverviewTabId = Exclude<DashboardView, "overview">;
 
@@ -19,7 +20,7 @@ const MAX_LINES = 3;
 
 function clip(s: string, max = 52): string {
   const t = s.replace(/\s+/g, " ").trim();
-  return t.length <= max ? t : `${t.slice(0, max - 1)}…`;
+  return t.length <= max ? t : cutAtWord(t, max - 1);
 }
 
 /**

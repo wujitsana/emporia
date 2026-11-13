@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from emporia import notices, refs, translog, wire
 from emporia import rooms as rooms_db
 from emporia.addresses import same_host
+from emporia.textcut import cut_at_word
 from emporia import relay_server as rs
 
 router = APIRouter()
@@ -151,7 +152,7 @@ def topic_post_view(item: dict[str, Any], topic: Any) -> dict[str, Any]:
     vote_score, comment_count). A sealed post has no title or content to show: its text is the envelope, for a member's tool to open."""
     sealed = item["kind"] == wire.SEALED_KIND
     text = item["text"]
-    first = "" if sealed else next((ln.strip() for ln in text.splitlines() if ln.strip()), "")[:80]
+    first = "" if sealed else cut_at_word(next((ln.strip() for ln in text.splitlines() if ln.strip()), ""), 80)
     out = {
         "post_id": item["post_id"], "topic_id": topic["topic_id"], "topic_slug": topic["slug"],
         "topic_name": topic["name"], "author_id": item["author_id"], "title": "(sealed)" if sealed else first,
