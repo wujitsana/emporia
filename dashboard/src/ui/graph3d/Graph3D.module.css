@@ -1,0 +1,157 @@
+/* Every colour is a theme token, so the viewer follows light, vivid, dark and each tint. */
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  color: var(--theme-text);
+}
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.switch {
+  display: inline-flex;
+  border: 1px solid var(--theme-border);
+}
+.switchBtn,
+.resetBtn {
+  font: inherit;
+  font-size: 0.85em;
+  padding: 4px 10px;
+  min-height: 32px;
+  background: var(--theme-background);
+  color: var(--theme-text);
+  border: 0;
+  cursor: pointer;
+}
+.resetBtn {
+  border: 1px solid var(--theme-border);
+}
+.switchBtn + .switchBtn {
+  border-left: 1px solid var(--theme-border);
+}
+.switchBtn[aria-pressed="true"] {
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+}
+.switchBtn:focus-visible,
+.resetBtn:focus-visible,
+.stage:focus-visible {
+  outline: 2px solid var(--theme-focused-foreground);
+  outline-offset: 2px;
+}
+.hint {
+  font-size: 0.8em;
+  color: var(--anim-faint, var(--theme-text-subdued));
+}
+.stage {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--theme-border-subdued);
+  background: var(--theme-background);
+}
+.svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 70vh;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+.svg:active {
+  cursor: grabbing;
+}
+.flat {
+  touch-action: pan-y;
+  cursor: default;
+}
+
+/* Edges */
+.edge {
+  fill: none;
+  stroke-linecap: round;
+  stroke: var(--anim-line);
+}
+.neg {
+  stroke: var(--theme-warning, var(--theme-text));
+  stroke-dasharray: 7 4;
+}
+.blocked {
+  stroke-dasharray: 1.5 4;
+  opacity: 0.35;
+}
+.dim {
+  opacity: 0.12;
+}
+.lit {
+  opacity: 1;
+}
+/* Flow: a dash that travels along the edge (moving) or a soft wider underlay (still). */
+.flowStill {
+  fill: none;
+  stroke: var(--anim-tint, var(--anim-line));
+  stroke-linecap: round;
+  opacity: 0.28;
+  pointer-events: none;
+}
+.pulse {
+  fill: none;
+  stroke: var(--theme-focused-foreground);
+  stroke-linecap: round;
+  stroke-dasharray: 2 14;
+  pointer-events: none;
+  animation: flow 1.2s linear infinite;
+}
+@keyframes flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+  }
+}
+
+/* Nodes */
+.dot {
+  fill: color-mix(in srgb, var(--anim-line) var(--mix, 50%), var(--theme-background));
+  stroke: var(--anim-line);
+  stroke-width: 1.2;
+}
+.dotNeg {
+  fill: color-mix(in srgb, var(--theme-warning, var(--theme-text)) var(--mix, 50%), var(--theme-background));
+  stroke: var(--theme-warning, var(--theme-text));
+}
+.hit {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 3;
+  cursor: pointer;
+  outline: none;
+}
+.hit:focus-visible {
+  stroke: var(--theme-focused-foreground);
+  stroke-width: 3;
+}
+.picked {
+  stroke: var(--theme-text);
+  stroke-width: 2;
+}
+.label {
+  fill: var(--theme-text);
+  font-size: 9px;
+  paint-order: stroke;
+  stroke: var(--theme-background);
+  stroke-width: 3px;
+  pointer-events: none;
+}
+.layerTag {
+  fill: var(--anim-faint, var(--theme-text-subdued));
+  font-size: 9px;
+  text-anchor: middle;
+}
