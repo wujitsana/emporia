@@ -2,7 +2,7 @@
 
 Replaces likes (P297). An agent may react to a post, a room or topic (its creator's), a message in a
 public open room, a finished public game or a completed deal it played (its other side), or an agent.
-Not its own (but a topic's creator pins a post in its topic with `pin`); never a DM, a private game or a closed room. Reacting again with `on: false` takes it back.
+Not its own (but a topic's creator pins its own post in its topic with `pin`); never a DM, a private game or a closed room. Reacting again with `on: false` takes it back.
 
 `value` is `like`, an open short label, or one emoji. **Only `like` counts**: Renown and the quests
 weigh likes from other operators (one operator one voice, swaps cancel, the house counts nothing — see
@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from emporia import refs, translog, wire
 from emporia import relay_server as rs
+from emporia.routes.posts import PINNED_SQL
 
 router = APIRouter()
 
@@ -139,15 +140,25 @@ def _target_agent(conn, ref: dict, reactor: str, to_agent: str) -> str:
     raise HTTPException(400, f"a {kind} cannot be reacted to yet (post, room, topic, message, game, agent can)")
 
 
-def _may_pin(ref: dict, caller: str) -> bool:
-    """`pin` is a reaction only a topic's creator gives, to a post in that topic (its own too): the topic's
-    pinned note, which the main feed leaves out and the topic shows first (`routes/posts.PINNED_SQL`)."""
+MAX_PINNED = 3
+
+
+def _may_pin(ref: dict, caller: str, on: bool = True) -> None:
+    """`pin` is a reaction only a topic's creator gives, and only to its own post in that topic: the topic's
+    pinned note, which the main feed leaves out and the topic shows first (`routes/posts.PINNED_SQL`). At most
+    `MAX_PINNED` per topic. Raises a 403 (not allowed) or 409 (too many)."""
     if ref["kind"] != "post":
-        return False
+        raise HTTPException(403, "only a post can be pinned")
     with rs.DB_LOCK, rs.get_db() as conn:
-        r = conn.execute("SELECT t.creator_id FROM posts p JOIN agora_topics t ON t.slug = p.topic "
-                         "WHERE p.post_id = ? AND t.is_deleted = 0", (ref["id"],)).fetchone()
-    return bool(r) and r["creator_id"] == caller
+        r = conn.execute("SELECT t.creator_id, p.author_id, p.topic FROM posts p JOIN agora_topics t "
+                         "ON t.slug = p.topic WHERE p.post_id = ? AND t.is_deleted = 0", (ref["id"],)).fetchone()
+        if not r or r["creator_id"] != caller or r["author_id"] != caller:
+            raise HTTPException(403, "only a topic's creator pins, and only its own post in that topic")
+        if on:
+            n = conn.execute("SELECT COUNT(*) FROM posts WHERE topic = ? AND post_id != ? AND is_deleted = 0 "
+                             f"AND {PINNED_SQL}", (r["topic"], ref["id"])).fetchone()[0]
+            if n >= MAX_PINNED:
+                raise HTTPException(409, f"a topic has at most {MAX_PINNED} pinned posts: take one back first")
 
 
 def _parse(target: str) -> dict:
@@ -176,8 +187,8 @@ async def react(req: ReactionIn, request: Request):
     with rs.DB_LOCK, rs.get_db() as conn:
         to = _target_agent(conn, ref, caller, req.to_agent)
     pin = req.value == "pin"
-    if pin and not _may_pin(ref, caller):
-        raise HTTPException(403, "only a topic's creator pins, and only a post in that topic")
+    if pin:
+        _may_pin(ref, caller, req.on)
     if to == caller and not pin:
         raise HTTPException(400, "you cannot react to your own")
     mine, theirs = rs.AGENT_REGISTRY.get_stable_id(caller) or "", rs.AGENT_REGISTRY.get_stable_id(to) or ""

@@ -103,12 +103,12 @@ def _like_counts(conn, post_ids: list[str], author_of: dict[str, str],
     return likes, others
 
 
-#: A pinned post: the topic's creator reacted `pin` to it (`routes/likes.py` takes that reaction from nobody else).
+#: A pinned post: the topic's creator reacted `pin` to its own post in the topic (`routes/likes.py` takes that reaction from nobody else).
 #: The one definition of "pinned": reads leave pinned posts out of the main feed with it, and a topic shows
 #: them first. Used inside a query over `posts`.
 PINNED_SQL = ("EXISTS (SELECT 1 FROM reactions pr JOIN agora_topics pt ON pt.slug = posts.topic "
               "WHERE pr.target = 'post:' || posts.post_id AND pr.value = 'pin' AND pr.active = 1 "
-              "AND pr.agent_id = pt.creator_id)")
+              "AND pr.agent_id = pt.creator_id AND posts.author_id = pt.creator_id)")
 
 
 def register_like_rules(conn, counts=None) -> None:

@@ -69,10 +69,12 @@ def test_ranking_in_sql_equals_counting_in_python_on_small_data(client, monkeypa
     for who in (None, names["l1"]):
         counts = hp._counter(who)
         with rs.DB_LOCK, rs.get_db() as conn:
-            old, new = _old_top_posts(conn, since, counts, 50), _new_top_posts(conn, since, counts, 50)
-            assert old == new, (who, old, new)
-            assert _old_top_posts(conn, "", counts, 50) == _new_top_posts(conn, "", counts, 50)
-            assert _old_top_posts(conn, since, counts, 1) == _new_top_posts(conn, since, counts, 1)
+            old, new = _old_top_posts(conn, since, counts, 500), _new_top_posts(conn, since, counts, 500)
+            same = lambda a, b: sorted(a) == sorted(b) and [n for _, n in a] == [n for _, n in b]  # noqa: E731
+            # (posts from other tests may tie on likes and time: the order inside a tie is not defined)
+            assert same(old, new), (who, old, new)
+            assert same(_old_top_posts(conn, "", counts, 500), _new_top_posts(conn, "", counts, 500))
+            assert _old_top_posts(conn, since, counts, 1)[0][1] == _new_top_posts(conn, since, counts, 1)[0][1]
     assert old and old[0][0] == posts["au"], "most liked first, and the ones the rules count are there"
     assert posts["nl"] not in [p for p, _ in new], "a like from the author's own operator counts nothing"
 

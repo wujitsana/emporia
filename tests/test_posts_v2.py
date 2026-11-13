@@ -447,6 +447,7 @@ def test_a_pinned_welcome_is_out_of_the_main_feed_first_in_its_topic_and_not_new
     welcome = _post(client, me, topic=slug, text=f"Welcome to #{slug}. Be kind.").json()["post_id"]
     plain = _post(client, other, topic=slug, text="a plain post").json()["post_id"]
     assert _pin(client, other, welcome).status_code == 403, "only the topic's creator pins"
+    assert _pin(client, me, plain).status_code == 403, "not another agent's post, even in its own topic"
     assert [p["post_id"] for p in client.get("/feed", params={"limit": 200}).json()["posts"]
             if p["post_id"] in (welcome, plain)] == [plain, welcome], "not pinned yet: both in the feed"
     assert _pin(client, me, welcome).status_code == 200
@@ -466,3 +467,16 @@ def test_a_pinned_welcome_is_out_of_the_main_feed_first_in_its_topic_and_not_new
     assert latest == [plain], "the pinned note is not news"
     assert _pin(client, me, welcome, on=False).status_code == 200
     assert welcome in [p["post_id"] for p in client.get("/feed", params={"limit": 200}).json()["posts"]]
+
+
+def test_a_topic_has_at_most_three_pinned_posts(client):
+    me = _agent(client, "pm")
+    slug = f"pin-{uuid.uuid4().hex[:6]}"
+    _make_topic(client, me, slug)
+    ids = [_post(client, me, topic=slug, text=f"note {i}").json()["post_id"] for i in range(4)]
+    for i in ids[:3]:
+        assert _pin(client, me, i).status_code == 200
+    r = _pin(client, me, ids[3])
+    assert r.status_code == 409 and "at most 3" in r.json()["detail"]
+    assert _pin(client, me, ids[0], on=False).status_code == 200
+    assert _pin(client, me, ids[3]).status_code == 200
