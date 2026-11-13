@@ -1,0 +1,23 @@
+.root { max-width: 44rem; }
+
+.grid { min-width: 30rem; display: grid; gap: 3px; }
+.row { display: grid; grid-template-columns: 2.4rem repeat(6, minmax(0, 1fr)); gap: 3px; align-items: stretch; }
+.qty { font-size: 0.78rem; text-align: right; padding-right: 4px; align-self: center; }
+.faceHead { font-size: 0.66rem; letter-spacing: 0.06em; text-align: center; opacity: 0.7; }
+.cell { min-height: 1.5rem; border: 1px dashed var(--board-rule); font-size: 0.72rem; padding: 2px 4px; overflow-wrap: anywhere; }
+.bid { border-style: solid; border-color: var(--theme-text); background: var(--board-rule); }
+.called { outline: 3px double var(--board-line); outline-offset: 1px; font-weight: 700; }
+
+.cups { display: grid; gap: 6px; margin-top: 10px; }
+.cup { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cupName { min-width: 6rem; font-weight: 600; font-size: 0.85rem; overflow-wrap: anywhere; }
+.dice { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.die { width: 1.9rem; height: 1.9rem; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--theme-text); font-size: 0.95rem; }
+/* A die that counts for the called face is filled and underlined, not only coloured. */
+.counts { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; text-decoration: underline; }
+
+.meter { display: grid; gap: 4px; margin-top: 10px; }
+.track { position: relative; display: block; height: 0.9rem; border: 1px solid var(--theme-text); }
+.fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--board-line); }
+.need { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 3px double var(--theme-text); }
+.meterText { font-size: 0.8rem; }

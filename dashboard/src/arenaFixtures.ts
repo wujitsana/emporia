@@ -44,7 +44,7 @@ export const DICE = {
   actions: [
     act("alpha", "bid", { quantity: 2, face: 4 }), act("beta", "bid", { quantity: 4, face: 4 }), act("alpha", "liar"),
     act("alpha", "reveal", { s: "ss", nonce: "nn" }),
-    act("beta", "reveal", { s: "tt", nonce: "mm" }, { result: { winner: "alpha", outcome_type: "win", termination: "liar_called" } }),
+    act("beta", "reveal", { s: "tt", nonce: "mm" }, { result: { winner: "alpha", outcome_type: "won", termination: "bid_failed", count: 1, ones_wild: false, points: { alpha: 1, beta: 0 } } }),
   ],
 };
 
@@ -58,7 +58,10 @@ export const AUCTION = {
     act("alpha", "commit", { commitment: H }), act("beta", "commit", { commitment: H }),
     act("alpha", "reveal", { move: 52, nonce: "n1" }), act("beta", "reveal", { move: 61, nonce: "n2" }),
     act("alpha", "reveal", { s: "ss", nonce: "nn" }),
-    act("beta", "reveal", { s: "tt", nonce: "mm" }, { result: { winner: "alpha", outcome_type: "win", value: 55, bids: { alpha: 52, beta: 61 } } }),
+    act("beta", "reveal", { s: "tt", nonce: "mm" }, { result: {
+      winner: null, outcome_type: "draw", termination: "winners_curse", value: 55, base_value: 40, bids: { alpha: 52, beta: 61 },
+      winning_bid: 61, bidder: "beta", profit: -6, points: { alpha: 0, beta: -6 }, values: { alpha: 47, beta: 53 },
+    } }),
   ],
 };
 
@@ -75,7 +78,10 @@ export const BARGAIN = {
   actions: [
     act("alpha", "offer", { keep: { silk: 4, spice: 1, amber: 0 } }),
     act("beta", "offer", { keep: { silk: 1, spice: 2, amber: 3 } }),
-    act("alpha", "accept", {}, { result: { winner: "alpha", outcome_type: "win", points: { alpha: 15, beta: 14 } } }),
+    act("alpha", "accept", {}, { result: {
+      winner: "alpha", outcome_type: "won", termination: "deal", points: { alpha: 15, beta: 14 }, walk_aways: { alpha: 2, beta: 3 },
+      claims: { alpha: { claimed: { silk: 5, spice: 1, amber: 0 }, actual: { silk: 5, spice: 1, amber: 0 }, matches: true } },
+    } }),
   ],
 };
 

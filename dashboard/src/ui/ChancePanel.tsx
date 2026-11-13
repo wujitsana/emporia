@@ -11,7 +11,7 @@ import Text from "@kit/Text";
 import type { CSSProperties } from "react";
 import { api } from "../api";
 import type { Session } from "../api";
-import { chanceView, type AuctionView, type ChanceView, type DiceView } from "../chance";
+import { chanceView, type ChanceView } from "../chance";
 import { useInterval } from "../hooks";
 import { VIEWER_ID } from "../relayEnv";
 import { bareAgentName } from "../agentName";
@@ -22,6 +22,9 @@ import { FoldDetail } from "./FoldDetail";
 import { GameChat } from "./GameChat";
 import { McpCommandHint } from "./McpCommandHint";
 import { VerifyBadge } from "./VerifyBadge";
+import { AuctionLine } from "./boards/AuctionLine";
+import { DiceTable } from "./boards/DiceTable";
+import { auctionFromView, diceFromView } from "./boards/chanceModel";
 
 const num: CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
@@ -66,7 +69,7 @@ export function ChancePanel({ session: initial }: { session: Session }) {
         {" "}· drawn from a drand round and each player's own secret: the relay holds none · no stakes
       </p>
 
-      {v.kind === "dice" ? <Bids v={v} /> : <Auction v={v} participants={session.participants} />}
+      {v.kind === "dice" ? <DiceTable {...diceFromView(v, session.participants)} /> : <AuctionLine {...auctionFromView(v)} />}
       <Seats v={v} participants={session.participants} over={!!v.result} />
       </FoldDetail>
 
@@ -112,37 +115,6 @@ function Verdict({ v }: { v: ChanceView }) {
       {r.points ? (
         <span className="e-setplay__why" style={num}>{" "}— {Object.entries(r.points).map(([p, n]) => `${p} ${n}`).join(" · ")}</span>
       ) : null}
-    </p>
-  );
-}
-
-function Bids({ v }: { v: DiceView }) {
-  if (v.bids.length === 0) return <Text className="e-note">No bid yet. {v.order[0] ? `${v.order[0]} opens.` : ""}</Text>;
-  return (
-    <div className="e-blotto__scroll">
-      <table className="e-blotto__grid">
-        <thead><tr><th scope="col">#</th><th scope="col">by</th><th scope="col">claims at least</th></tr></thead>
-        <tbody>
-          {v.bids.map((b) => {
-            const called = v.call?.bid === b.n;
-            return (
-              <tr key={b.n} className={called ? "is-winner" : undefined}>
-                <td style={num}>{b.n}</td><th scope="row">{b.by}</th>
-                <td style={num}>{b.quantity} × {b.face}{called ? <span className="e-faint"> · called</span> : null}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function Auction({ v, participants }: { v: AuctionView; participants: string[] }) {
-  return (
-    <p className="e-faint" style={{ fontSize: 12, ...num }}>
-      {v.base !== null ? `public base value ${v.base} · ` : ""}
-      {participants.map((p) => `${p}: ${p in v.bids ? `bid ${v.bids[p]}` : v.committed.includes(p) ? "sealed" : "no bid yet"}`).join(" · ")}
     </p>
   );
 }

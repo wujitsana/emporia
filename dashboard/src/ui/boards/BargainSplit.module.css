@@ -1,0 +1,24 @@
+.root { max-width: 44rem; }
+
+.offers { display: flex; gap: 10px; min-width: min-content; padding-bottom: 4px; }
+.offer { flex: 0 0 13rem; border: 1px solid var(--board-rule); padding: 6px 8px; display: grid; gap: 4px; align-content: start; }
+.taken { border: 2px solid var(--board-line); }
+.head { margin: 0; font-size: 0.78rem; font-weight: 700; }
+.good { display: grid; grid-template-columns: 3.4rem 1fr auto; gap: 6px; align-items: center; font-size: 0.74rem; }
+.cells { display: flex; gap: 2px; flex-wrap: wrap; }
+.unit { width: 0.8rem; height: 0.8rem; border: 1px solid var(--board-line); display: inline-block; }
+.a { background: var(--board-line); }
+.b { background: repeating-linear-gradient(45deg, var(--board-line) 0 2px, transparent 2px 4px); }
+.free { border-style: dashed; }
+.count { white-space: nowrap; }
+.claim { margin: 0; font-size: 0.7rem; opacity: 0.85; }
+
+.scores { display: grid; gap: 6px; margin-top: 10px; }
+.score { display: grid; grid-template-columns: 6rem 1fr; gap: 4px 8px; align-items: center; }
+.who { font-size: 0.85rem; font-weight: 600; overflow-wrap: anywhere; }
+.track { position: relative; display: block; height: 0.9rem; border: 1px solid var(--theme-text); }
+.fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--board-line); }
+.walk { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 3px double var(--theme-text); }
+.pts { grid-column: 2; font-size: 0.76rem; }
+
+.hands { list-style: none; margin: 8px 0 0; padding: 0; font-size: 0.8rem; display: grid; gap: 2px; }
