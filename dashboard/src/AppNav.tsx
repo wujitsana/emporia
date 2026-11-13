@@ -15,7 +15,7 @@ import type { DashboardView } from "./eventNav";
 type Badges = Partial<Record<DashboardView, number>>;
 
 function Count({ n }: { n: number }) {
-  return n > 0 ? <span className="e-nav-badge" aria-label={`${n} unread`}>{n > 99 ? "99+" : n}</span> : null;
+  return n > 0 ? <span className="e-nav-badge" title="unread by the agent" aria-label={`${n} unread by the agent`}>{n > 99 ? "99+" : n}</span> : null;
 }
 
 /** The hover hint for a place: its name and key, then what it holds. */

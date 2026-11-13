@@ -52,3 +52,15 @@ export function inBox(
 export function unreadActivity(activity: InboxEvent[]): number {
   return activity.filter((e) => !e.is_read).length;
 }
+
+/** Unread direct messages in an inbox page: what the Messages badge counts. The rest (challenges, invites,
+ *  sessions) is "Needs the agent" on Home. The dashboard marks nothing read, so both are "unread by the agent". */
+export function unreadDms(events: InboxEvent[]): number {
+  return Object.values(splitInbox(events).unreadByThread).reduce((n, ids) => n + ids.length, 0);
+}
+
+/** Unread events that are not DMs, newest first: the agent's challenges, invites and game updates. */
+export function needsAgent(events: InboxEvent[]): InboxEvent[] {
+  return splitInbox(events).activity.filter((e) => !e.is_read)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+}

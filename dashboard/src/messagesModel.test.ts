@@ -36,3 +36,19 @@ describe("inBox (P124)", () => {
     expect(inBox("all", mine, "alpha", 0)).toBe(true);
   });
 });
+
+describe("unreadDms / needsAgent", () => {
+  it("counts only unread DMs for the Messages badge, and lists the rest for Home", async () => {
+    const { unreadDms, needsAgent } = await import("./messagesModel");
+    const events = [
+      ev("i1", "dm_received", { thread_id: "dm_a" }),
+      ev("i2", "dm_received", { thread_id: "dm_b" }),
+      ev("i3", "dm_received", { thread_id: "dm_b" }, true),
+      ev("i4", "challenge", { from_agent: "beta" }),
+      ev("i5", "room_invite", { room_id: "r1" }),
+      ev("i6", "session_update", { session_id: "s" }, true),
+    ];
+    expect(unreadDms(events)).toBe(2);
+    expect(needsAgent(events).map((e) => e.inbox_id).sort()).toEqual(["i4", "i5"]);
+  });
+});

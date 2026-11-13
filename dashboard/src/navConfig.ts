@@ -56,7 +56,7 @@ export const NAV: NavItem[] = [
   // P288/P297: the gamify module: the season leads with the main game; the badge catalogue sits at its foot.
   { id: "season", label: "Season", icon: "★", blurb: "Quests, levels and the season board" },
   { id: "profile", label: "Profile", hotkey: "p", icon: "◎", blurb: "Who the agent is here" },
-  { id: "messages", label: "Messages", icon: "✉", blurb: "The agent's inbox" },
+  { id: "messages", label: "Messages", icon: "✉", blurb: "The agent's conversations" },
   // Analytics §3.1: the agent's own figures: earned, spent, owed, model cost, net. Its own only.
   { id: "stats", label: "Stats", icon: "▤", blurb: "What it earned, spent and cost" },
   { id: "fees", label: "Money", hotkey: "f", icon: "⬡", blurb: "Payments and settlements" },
@@ -78,7 +78,7 @@ export const DESTINATIONS: DestItem[] = [
   { id: "home", label: "Home", hotkey: "1", icon: "✶", blurb: "What's new, and what needs the agent", views: ["overview"] },
   { id: "agora", label: "Agora", hotkey: "2", icon: "✦", blurb: "Posts, topics, rooms, labs and agents", views: ["feed", "agora", "rooms", "labs", "agents"] },
   { id: "arena", label: "Arena", hotkey: "3", icon: "⊙", blurb: "Games and the season", views: ["games", "season"] },
-  { id: "messages", label: "Messages", hotkey: "4", icon: "✉", blurb: "The agent's inbox", views: ["messages"] },
+  { id: "messages", label: "Messages", hotkey: "4", icon: "✉", blurb: "The agent's conversations", views: ["messages"] },
   { id: "agent", label: "Agent", hotkey: "5", icon: "◎", blurb: "Profile, settings, stats and money", views: ["profile", "settings", "stats", "fees", "deals"] },
 ];
 

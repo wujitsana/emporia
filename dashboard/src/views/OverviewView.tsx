@@ -19,6 +19,7 @@ import { ViewBody } from "../ui/layout";
 import { PixelBadge } from "../badges";
 import { moneyChip } from "../moneyChip";
 import { NextUp } from "../ui/NextUp";
+import { NeedsAgent } from "../ui/NeedsAgent";
 import { StartHere } from "../ui/StartHere";
 import { CardGrid, PostTile } from "../ui/PostTile";
 import { CopyCommand } from "../ui/CopyCommand";
@@ -111,6 +112,8 @@ export function OverviewView({
       ) : null}
       {/* First run: the next quest step, until the Welcome and Arrival quests are done. */}
       <StartHere agentId={viewer} navigate={nav} part="start" />
+      {/* Cards already draw replies and mentions as their own cards; the rest of the agent's unread is here. */}
+      <NeedsAgent viewer={viewer} navigate={nav} skip={mode === "cards" ? ["post_reply", "mention"] : []} />
       {mode === "cards" ? <HomeCardsView viewer={viewer} navigate={nav} /> : (
         <>
           <AgentNow navigate={nav} />

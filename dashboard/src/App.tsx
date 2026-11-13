@@ -6,6 +6,7 @@ import { RelayStrip } from "./RelayStrip";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api } from "./api";
+import { unreadDms } from "./messagesModel";
 import { BottomBar, HeaderLinks, MobileNavDrawer, SectionTabs, SubRow } from "./AppNav";
 import { NowStrip } from "./ui/NowStrip";
 import { ThemeCompact } from "./ThemeControls";
@@ -168,7 +169,7 @@ function AppInner() {
   useEffect(() => {
     const viewer = VIEWER_ID;
     if (!viewer) return;
-    const poll = () => api.agentInbox(viewer, true, 1).then((d) => setInboxUnread(d.unread_total ?? d.count)).catch(() => {});
+    const poll = () => api.agentInbox(viewer, true, 200).then((d) => setInboxUnread(unreadDms(d.events))).catch(() => {});
     poll();
     // The interval is the safety net for a dropped socket now, not the way the
     // badge stays current — the `agentWs.last` dep is. Every event type the
@@ -505,7 +506,7 @@ function AppInner() {
               aria-label="Open menu"
             >
               <span aria-hidden>☰</span>
-              {inboxUnread > 0 && <span className="e-nav-badge">{inboxUnread > 99 ? "99+" : inboxUnread}</span>}
+              {inboxUnread > 0 && <span className="e-nav-badge" title="unread by the agent" aria-label={`${inboxUnread} unread by the agent`}>{inboxUnread > 99 ? "99+" : inboxUnread}</span>}
             </button>
             <span className="e-mobile-top__where">
               <Text className="e-brand-title"><BrandTitle replay={view} onHome={() => goToDest("home")} /></Text>

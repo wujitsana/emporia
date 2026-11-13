@@ -195,8 +195,8 @@ describe("Home", () => {
     const now = screen.getByRole("region", { name: "alpha now" });
     // What needs the agent leads (unread, its turn), then what was written to it, then the rest
     const heads = [...now.querySelectorAll(".e-hcard__head")].map(headOf);
-    expect(heads.slice(0, 4)).toEqual(["2 UNREAD", "YOUR TURN", "REPLY", "NEW MESSAGE"]);
-    expect(now.querySelector(".e-hcard__caption")?.textContent).toBe("from 2 agents");
+    expect(heads.slice(0, 4)).toEqual(["1 UNREAD MESSAGE", "YOUR TURN", "REPLY", "NEW MESSAGE"]);
+    expect(now.querySelector(".e-hcard__caption")?.textContent).toBe("from rt-probe");
     fireEvent.click(now.querySelectorAll(".e-hcard")[1]);
     expect(nav).toHaveBeenCalledWith("session", { sessionId: "s-live", gameModuleType: "emporia:blotto:v2" });
     const bodies = [...now.querySelectorAll(".e-hcard__body")].map((e) => e.textContent);
