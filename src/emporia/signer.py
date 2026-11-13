@@ -545,7 +545,7 @@ def sign_kind(agent_id: str, kind: str, args: list, kwargs: dict) -> str:
 # Kinds only a person signs (signing.KINDS' `person`), and the sign-in their
 # commands need first. Never reachable with an agent's token: these run in the
 # person's own terminal, as the signer's user (they read its folder).
-PERSON_KINDS = ("key-rotation", "recovery-commitment", "dashboard-sign-in")
+PERSON_KINDS = ("key-rotation", "recovery-commitment", "dashboard-sign-in", "erc8004-link")
 
 
 def person_sign(agent_id: str, kind: str, *args, **kwargs) -> str:
@@ -561,7 +561,7 @@ def person_sign(agent_id: str, kind: str, *args, **kwargs) -> str:
         raise signing.Refused(f"not signed: {why}")
     sig = _sign_with(agent_id, held, lambda h: identity.sign_payload(h, p))
     audit({"agent": agent_id, "op": "sign", "kind": kind, "result": "signed", "by": "person"})
-    if kind != "dashboard-sign-in":
+    if kind in ("key-rotation", "recovery-commitment"):
         _alert(agent_id, "identity-change" if kind == "key-rotation" else "recovery-key",
                "its person rotated its identity key" if kind == "key-rotation" else "its person made a recovery key")
     return sig

@@ -1495,7 +1495,7 @@ X_CLAIM_TYPE, X_LINK_TYPE, X_CONFIRM_TYPE = "emporia:x-claim:v1", "emporia:x-lin
 _X_HANDLE = re.compile(r"[a-z0-9_]{1,15}")
 _X_POST_ID = re.compile(r"[0-9]{1,25}")
 X_BIO = "bio"          # the proof is the claim line in the account's bio, not a post
-LINK_SITES = ("x",)
+LINK_SITES = ("x", "erc8004")
 
 
 def clean_x_handle(handle: Any) -> str:
@@ -1547,3 +1547,52 @@ def signed_x_confirm_payload(stable_id: str, target: str, handle: str, post_id: 
     line's signature token it saw."""
     return {"type": X_CONFIRM_TYPE, "stable_id": stable_id, "target": target, "handle": handle,
             "post_id": post_id, "seen_at": seen_at, "claim_sig": claim_sig}
+
+
+# ── The card's ERC-8004 link: a wallet's signed statement, recorded by the agent (docs/protocol.md §3.20) ──
+
+ERC8004_LINK_TYPE = "emporia:erc8004-link:v1"
+CHAIN_LINK_REMOVAL = "chain-link"       # the `kind` of the signed removal (`emporia:delete:v3`) that unlinks
+ERC8004_SIG_MAX_BYTES = 4096
+_EVM_ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}")
+_DECIMAL_UINT = re.compile(r"[0-9]{1,78}")
+_STABLE_HEX = re.compile(r"[0-9a-f]{64}")
+
+
+def signed_erc8004_link_payload(stable_id: str, agent_registry: str, agent_id: str, signer: str, issued_at: int,
+                                wallet_sig: str, at: str) -> dict[str, Any]:
+    """`emporia:erc8004-link:v1`: an agent recording that the wallet `signer` controls the ERC-8004 agent
+    `agent_id` in `agent_registry` (`eip155:<chain id>:<registry address, lowercase>`). `agent_id` is a decimal
+    string (a uint256 is never a JSON number); `issued_at` is the unix second the wallet signed its EIP-712
+    statement; `wallet_sig` is that signature (hex, at most 4096 bytes). Bound to the agent's stable id, so a
+    key rotation does not void it."""
+    return {"type": ERC8004_LINK_TYPE, "stable_id": stable_id, "agent_registry": agent_registry,
+            "agent_id": agent_id, "signer": signer, "issued_at": issued_at, "wallet_sig": wallet_sig, "at": at}
+
+
+def chain_link_item(stable_id: str, agent_registry: str, agent_id: str) -> str:
+    """The item a signed removal of a chain link names (`kind` `chain-link`)."""
+    return f"{stable_id}/{agent_registry}/{agent_id}"
+
+
+def erc8004_link_problem(p: Mapping[str, Any]) -> str:
+    """Why this is not a well-formed link record, or "": shape only (the chain decides the rest)."""
+    parts = str(p.get("agent_registry") or "").split(":")
+    if len(parts) != 3 or parts[0] != "eip155" or not _DECIMAL_UINT.fullmatch(parts[1]) \
+            or not _EVM_ADDRESS.fullmatch(parts[2]) or parts[2] != parts[2].lower():
+        return "agent_registry is eip155:<chain id>:<registry address, lowercase>"
+    agent_id = p.get("agent_id")
+    if not isinstance(agent_id, str) or not _DECIMAL_UINT.fullmatch(agent_id) or int(agent_id) >= 1 << 256:
+        return "agent_id is a decimal string (a uint256)"
+    if not _EVM_ADDRESS.fullmatch(str(p.get("signer") or "")):
+        return "signer is an EVM address"
+    if not _STABLE_HEX.fullmatch(str(p.get("stable_id") or "")):
+        return "stable_id is 64 lowercase hex characters"
+    issued = p.get("issued_at")
+    if isinstance(issued, bool) or not isinstance(issued, int) or not 0 < issued < 1 << 64:
+        return "issued_at is unix seconds"
+    sig = str(p.get("wallet_sig") or "")
+    body = sig[2:] if sig[:2].lower() == "0x" else sig
+    if not body or len(body) % 2 or len(body) > 2 * ERC8004_SIG_MAX_BYTES or not re.fullmatch(r"[0-9a-fA-F]+", body):
+        return f"wallet_sig is hex, at most {ERC8004_SIG_MAX_BYTES} bytes"
+    return ""

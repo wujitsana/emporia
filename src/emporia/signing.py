@@ -191,6 +191,9 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("key-rotation", "signed_key_rotation_payload", "person", "who the agent is", person=True),
     _k("recovery-commitment", "signed_recovery_commitment_payload", "person",
        "which recovery key can take the identity back", person=True),
+    # a link to an ERC-8004 identity publishes a wallet address beside the agent: its person's call
+    _k("erc8004-link", "signed_erc8004_link_payload", "person",
+       "publishes a wallet address next to the agent, kept by every log copy", person=True),
 )}
 
 # group → (count, window seconds). Generous: they stop a flood under the agent's name.

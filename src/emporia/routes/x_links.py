@@ -131,7 +131,7 @@ async def record_link(agent_id: str, req: LinkIn, request: Request):
     rs._require_registered(agent_id)
     rs._enforce_agent_rate_limit(agent_id)
     if req.site != "x":
-        raise HTTPException(400, f"links are one of: {', '.join(wire.LINK_SITES)}")
+        raise HTTPException(400, "links here are x: an ERC-8004 identity goes to /agents/{id}/links/erc8004")
     handle = wire.clean_x_handle(req.handle)
     if not handle or handle != req.handle:
         raise HTTPException(400, "handle is an X handle: letters, digits and _, at most 15, lowercase, no @")
