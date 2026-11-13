@@ -977,7 +977,7 @@ var BlockLoader = ({ mode = 0 }) => {
 	});
 };
 // src/api.ts
-var base$2 = () => relayHttpBase();
+var base$3 = () => relayHttpBase();
 /** The dashboard's JWT, if any — for callers that need it outside a fetch() header
 * (e.g. WebSocket handshakes, which can't set custom headers from browser JS). */
 function dashboardToken() {
@@ -987,7 +987,7 @@ function agentHeaders() {
 	return {};
 }
 async function get(path, opts) {
-	const r = await httpFetch(`${base$2()}${path}`, { headers: opts?.agentScoped ? agentHeaders() : {} });
+	const r = await httpFetch(`${base$3()}${path}`, { headers: opts?.agentScoped ? agentHeaders() : {} });
 	if (!r.ok) throw new Error(`${r.status} ${path}`);
 	return r.json();
 }
@@ -1102,7 +1102,7 @@ var api = {
 	/** P256: the relay's latest signed transparency-log state (public). `on` false: it keeps no log;
 	*  `state` null with `on`: none signed yet. Read only, like every call here. */
 	logState: async () => {
-		const r = await httpFetch(`${base$2()}/log/state`);
+		const r = await httpFetch(`${base$3()}/log/state`);
 		if (r.status === 404) {
 			const detail = String((await r.json().catch(() => ({})))?.detail ?? "");
 			return {
@@ -2114,39 +2114,60 @@ function useSubItems(view, lens, badges, go) {
 	};
 }
 // src/themeConfig.ts
-var THEMES = ["theme-dark", "theme-light"];
+var THEMES = [
+	"theme-light",
+	"theme-vivid",
+	"theme-dark"
+];
+/** Green is the default tint (the no-tint fallback) and the first in the cycle. */
 var TINTS = [
-	"",
 	"tint-green",
+	"tint-orange",
 	"tint-blue",
 	"tint-red",
 	"tint-yellow",
 	"tint-purple",
-	"tint-orange",
 	"tint-pink"
 ];
+var DEFAULT_TINT = "tint-green";
 var TINT_LABELS = {
-	"": "Amber",
 	"tint-green": "Green",
+	"tint-orange": "Orange",
 	"tint-blue": "Blue",
 	"tint-red": "Red",
 	"tint-yellow": "Yellow",
 	"tint-purple": "Purple",
-	"tint-orange": "Orange",
 	"tint-pink": "Pink"
 };
 var TINT_COLORS = {
-	"": "#f0a832",
 	"tint-green": "#39ff44",
+	"tint-orange": "#ffac1c",
 	"tint-blue": "#0047ff",
 	"tint-red": "#ff0000",
 	"tint-yellow": "#e4f221",
 	"tint-purple": "#8000ff",
-	"tint-orange": "#ffac1c",
 	"tint-pink": "#ff00ff"
 };
-function toggleTheme(current) {
-	return current === "theme-dark" ? "theme-light" : "theme-dark";
+/** A saved or typed tint → a tint. The old default (`""`, "amber") and anything unknown load as green. */
+function normalizeTint(v) {
+	return TINTS.includes(v ?? "") ? v : DEFAULT_TINT;
+}
+/** A saved theme → a theme; unknown reads as light. */
+function normalizeTheme(v) {
+	return THEMES.includes(v ?? "") ? v : "theme-light";
+}
+/** A saved base (light | dark) → one; unknown falls back to the theme's own base, else light. */
+function normalizeBase(v, theme) {
+	if (v === "theme-light" || v === "theme-dark") return v;
+	return theme === "theme-dark" ? "theme-dark" : "theme-light";
+}
+/** The mode circle: light ⇄ dark. From vivid it leaves vivid for the *other* of the two. */
+function toggleTheme(current, base = "theme-light") {
+	return (current === "theme-vivid" ? base : current) === "theme-dark" ? "theme-light" : "theme-dark";
+}
+/** The vivid circle: on, or off back to the last of light / dark. */
+function toggleVivid(current, base) {
+	return current === "theme-vivid" ? base : "theme-vivid";
 }
 function nextTint(current) {
 	const i = TINTS.indexOf(current);
@@ -2164,11 +2185,12 @@ var fadeTimers = /* @__PURE__ */ new WeakMap();
 * (a run through the tints) keep the class on until the last one settles.
 * `fade: false` (the capture hotkeys, capture mode) switches instantly.
 */
-function applyTheme(theme, tint, opts = {}) {
+function applyTheme(theme, tintIn, opts = {}) {
+	const tint = normalizeTint(tintIn);
 	const b = themeRoot ?? null;
 	if (!b) return;
 	b.classList.toggle("e-capture", !!opts.capture);
-	const changed = THEMES.some((t) => b.classList.contains(t)) && (!b.classList.contains(theme) || (tint ? !b.classList.contains(tint) : TINTS.some((t) => t && b.classList.contains(t))));
+	const changed = THEMES.some((t) => b.classList.contains(t)) && (!b.classList.contains(theme) || !b.classList.contains(tint));
 	if (opts.fade === false) {
 		clearTimeout(fadeTimers.get(b));
 		b.classList.remove("e-theme-anim");
@@ -2178,14 +2200,213 @@ function applyTheme(theme, tint, opts = {}) {
 		fadeTimers.set(b, setTimeout(() => b.classList.remove("e-theme-anim"), 450));
 	}
 	THEMES.forEach((t) => b.classList.remove(t));
-	TINTS.forEach((t) => t && b.classList.remove(t));
+	TINTS.forEach((t) => b.classList.remove(t));
+	b.classList.remove("tint-amber");
 	b.classList.add(theme);
 	b.classList.add("font-use-CommitMono");
 	b.classList.add("e-look");
-	if (tint) b.classList.add(tint);
+	b.classList.add(tint);
 }
+// src/badges/color.ts
+function hexToRgb(hex) {
+	const h = hex.replace(/^#/, "");
+	const v = h.length === 3 ? h.split("").map((ch) => ch + ch).join("") : h.slice(0, 6);
+	const n = parseInt(v, 16);
+	return [
+		(n >> 16 & 255) / 255,
+		(n >> 8 & 255) / 255,
+		(n & 255) / 255
+	];
+}
+var toLinear = (x) => x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4;
+var toGamma = (x) => x <= .0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - .055;
+function linearToOklab([r, g, b]) {
+	const l = Math.cbrt(.4122214708 * r + .5363325363 * g + .0514459929 * b);
+	const m = Math.cbrt(.2119034982 * r + .6806995451 * g + .1073969566 * b);
+	const s = Math.cbrt(.0883024619 * r + .2817188376 * g + .6299787005 * b);
+	return [
+		.2104542553 * l + .793617785 * m - .0040720468 * s,
+		1.9779984951 * l - 2.428592205 * m + .4505937099 * s,
+		.0259040371 * l + .7827717662 * m - .808675766 * s
+	];
+}
+function oklabToLinear([L, a, b]) {
+	const l = (L + .3963377774 * a + .2158037573 * b) ** 3;
+	const m = (L - .1055613458 * a - .0638541728 * b) ** 3;
+	const s = (L - .0894841775 * a - 1.291485548 * b) ** 3;
+	return [
+		4.0767416621 * l - 3.3077115913 * m + .2309699292 * s,
+		-1.2684380046 * l + 2.6097574011 * m - .3413193965 * s,
+		-.0041960863 * l - .7034186147 * m + 1.707614701 * s
+	];
+}
+function rgbToOklch(rgb) {
+	const [L, a, b] = linearToOklab(rgb.map(toLinear));
+	const c = Math.hypot(a, b);
+	return {
+		l: L,
+		c,
+		h: c < 1e-6 ? 0 : (Math.atan2(b, a) * 180 / Math.PI + 360) % 360
+	};
+}
+function oklchToLab({ l, c, h }) {
+	const r = h * Math.PI / 180;
+	return [
+		l,
+		c * Math.cos(r),
+		c * Math.sin(r)
+	];
+}
+/** Unclipped gamma-encoded sRGB (may fall outside 0–1). */
+function oklchToRgbRaw(o) {
+	return oklabToLinear(oklchToLab(o)).map((x) => Math.sign(x) * toGamma(Math.abs(x)));
+}
+var clip$1 = (rgb) => rgb.map((x) => Math.min(1, Math.max(0, x)));
+var inGamut = (rgb) => rgb.every((x) => x >= -1e-6 && x <= 1 + 1e-6);
+function deltaEOK(a, b) {
+	const p = linearToOklab(a.map(toLinear));
+	const q = linearToOklab(b.map(toLinear));
+	return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+}
+/** OKLCH → displayable sRGB. */
+function oklchToRgb(o, gamut = "css") {
+	const raw = oklchToRgbRaw(o);
+	if (inGamut(raw)) return clip$1(raw);
+	if (gamut === "clip") return clip$1(raw);
+	if (o.l >= 1) return [
+		1,
+		1,
+		1
+	];
+	if (o.l <= 0) return [
+		0,
+		0,
+		0
+	];
+	const JND = .02;
+	let lo = 0;
+	let hi = o.c;
+	let lastClipped = clip$1(oklchToRgbRaw({
+		...o,
+		c: 0
+	}));
+	while (hi - lo > 1e-4) {
+		const mid = (lo + hi) / 2;
+		const cand = oklchToRgbRaw({
+			...o,
+			c: mid
+		});
+		if (inGamut(cand)) {
+			lo = mid;
+			lastClipped = clip$1(cand);
+			continue;
+		}
+		const clipped = clip$1(cand);
+		if (deltaEOK(clipped, cand) < JND) {
+			lo = mid;
+			lastClipped = clipped;
+			if (JND - deltaEOK(clipped, cand) < 1e-4) break;
+		} else hi = mid;
+	}
+	return lastClipped;
+}
+/** `oklch(from <hex> L C h)`: the origin's hue, L and C as given (numbers or functions of l, c). */
+function relativeOklch(hex, L, C, gamut = "css") {
+	const o = rgbToOklch(hexToRgb(hex));
+	const l = typeof L === "function" ? L(o.l) : L;
+	const c = typeof C === "function" ? C(o.c) : C;
+	return oklchToRgb({
+		l,
+		c: Math.max(0, c),
+		h: o.h
+	}, gamut);
+}
+/** `color-mix(in srgb, a p%, transparent)` laid over `under`: a straight blend. */
+function mixOver(a, p, under) {
+	return a.map((x, i) => x * p + under[i] * (1 - p));
+}
+function luminance(rgb) {
+	const [r, g, b] = rgb.map(toLinear);
+	return .2126 * r + .7152 * g + .0722 * b;
+}
+/** The WCAG contrast ratio, 1–21. */
+function contrast(a, b) {
+	const la = luminance(a);
+	const lb = luminance(b);
+	return (Math.max(la, lb) + .05) / (Math.min(la, lb) + .05);
+}
+// src/themePalette.ts
+/**
+* The vivid and deep palettes, worked out per tint the way dashboard.css § 30 (and the kit's
+* global.css) write them. One table of formulas here; the contrast tests and the control's
+* circles read it, and a test holds the CSS to the same numbers. docs/ui-style-experimental.md.
+*
+* - vivid: the tint is the background, ink is the tint's deep dark (white on blue and purple),
+*   the panel a step darker (a step lighter for red and pink, whose ink is darkest against it).
+*   Green is pinned exactly: bg #39ff44, panel #2ee03a, ink #001b00.
+* - deep (the dark theme): the video's all-dark-green screens in OKLCH relative to the tint
+*   (bg L .192 C×.243, panel L .253 C×.243, border L .366 C×.328, text L .962 C×.243), green pinned
+*   to #001b00 / #0b2a0b / #1d4a1d / #d8ffd8 with #39ff44 as the accent. The accent as text is
+*   `oklch(from tint max(l, .78) min(c, .22) h)` (green keeps #39ff44).
+*/
+var WHITE$1 = [
+	1,
+	1,
+	1
+];
+var hex = hexToRgb;
+/** Tints whose vivid ink is white (the tint is too dark for a dark ink). */
+var WHITE_INK = ["tint-blue", "tint-purple"];
+/** Tints whose vivid panel is the tint lightened (a mix with white), not darkened. */
+var LIGHT_PANEL = ["tint-red", "tint-pink"];
+var LIGHT_PANEL_WHITE = .2;
+function vividPalette(tint, gamut = "css") {
+	const t = TINT_COLORS[tint];
+	const bg = hex(t);
+	const green = tint === "tint-green";
+	const ink = green ? hex("#001b00") : WHITE_INK.includes(tint) ? WHITE$1 : relativeOklch(t, .192, (c) => c * .243, gamut);
+	return {
+		bg,
+		panel: green ? hex("#2ee03a") : LIGHT_PANEL.includes(tint) ? mixOver(WHITE$1, LIGHT_PANEL_WHITE, bg) : relativeOklch(t, (l) => l - .082, (c) => c * .91, gamut),
+		border: ink,
+		text: ink,
+		accent: ink,
+		fill: ink,
+		fillInk: bg
+	};
+}
+function deepPalette(tint, gamut = "css") {
+	const t = TINT_COLORS[tint];
+	if (tint === "tint-green") {
+		const bg = hex("#001b00");
+		return {
+			bg,
+			panel: hex("#0b2a0b"),
+			border: hex("#1d4a1d"),
+			text: hex("#d8ffd8"),
+			accent: hex("#39ff44"),
+			fill: hex(t),
+			fillInk: bg
+		};
+	}
+	const bg = relativeOklch(t, .192, (c) => c * .243, gamut);
+	return {
+		bg,
+		panel: relativeOklch(t, .253, (c) => c * .243, gamut),
+		border: relativeOklch(t, .366, (c) => c * .328, gamut),
+		text: relativeOklch(t, .962, (c) => c * .243, gamut),
+		accent: relativeOklch(t, (l) => Math.max(l, .78), (c) => Math.min(c, .22), gamut),
+		fill: hex(t),
+		fillInk: WHITE_INK.includes(tint) ? WHITE$1 : bg
+	};
+}
+var toHex = (rgb) => "#" + rgb.map((x) => Math.round(x * 255).toString(16).padStart(2, "0")).join("");
+var rgbHex = toHex;
 // src/ThemeControls.tsx
-function ThemePanelBody({ theme, tint, onTheme, onTint }) {
+function ThemePanelBody({ theme, base, tint, onTheme, onTint }) {
+	const last = base ?? (theme === "theme-dark" ? "theme-dark" : "theme-light");
+	const vivid = theme === "theme-vivid";
+	const mode = vivid ? last : theme;
 	return /* @__PURE__ */ jsxs("div", {
 		className: "e-theme-duo",
 		role: "group",
@@ -2194,10 +2415,27 @@ function ThemePanelBody({ theme, tint, onTheme, onTint }) {
 			/* @__PURE__ */ jsx("button", {
 				type: "button",
 				className: "e-theme-circle e-theme-circle--mode e-theme-duo__btn",
-				"data-mode": theme,
-				onClick: () => onTheme(toggleTheme(theme)),
-				title: theme === "theme-dark" ? "dark (click for light)" : "light (click for dark)",
-				"aria-label": theme === "theme-dark" ? "Theme: dark, switch to light" : "Theme: light, switch to dark"
+				"data-mode": mode,
+				onClick: () => onTheme(toggleTheme(theme, last)),
+				title: mode === "theme-dark" ? "dark (click for light)" : "light (click for dark)",
+				"aria-label": mode === "theme-dark" ? "Theme: dark, switch to light" : "Theme: light, switch to dark"
+			}),
+			/* @__PURE__ */ jsx("span", {
+				className: "e-theme-duo__rule",
+				"aria-hidden": true
+			}),
+			/* @__PURE__ */ jsx("button", {
+				type: "button",
+				className: "e-theme-circle e-theme-circle--vivid e-theme-duo__btn",
+				"data-on": vivid ? "true" : "false",
+				style: {
+					background: TINT_COLORS[tint],
+					color: rgbHex(vividPalette(tint).text)
+				},
+				onClick: () => onTheme(toggleVivid(theme, last)),
+				"aria-pressed": vivid,
+				title: vivid ? `vivid on (click for ${last === "theme-dark" ? "dark" : "light"})` : "vivid off (click for vivid)",
+				"aria-label": vivid ? `Vivid: on, switch to ${last === "theme-dark" ? "dark" : "light"}` : "Vivid: off, switch on"
 			}),
 			/* @__PURE__ */ jsx("span", {
 				className: "e-theme-duo__rule",
@@ -2214,7 +2452,7 @@ function ThemePanelBody({ theme, tint, onTheme, onTint }) {
 		]
 	});
 }
-/** Header / mobile: same two-circle control, no popover. */
+/** Header / mobile: same three-circle control, no popover. */
 function ThemeCompact(props) {
 	return /* @__PURE__ */ jsx("div", {
 		className: "e-theme-compact e-theme-compact--inline",
@@ -2335,10 +2573,11 @@ function ViewerSelect() {
 *   ?capture=1        no transitions or animations at all, the relay's host:port
 *                     hidden, a phone layout scaled so its smallest text is ≥ 13
 *                     CSS px, and faster refreshes so changes appear on cue.
-*   ?tint=green       start on a tint: amber, green, blue, red, yellow, purple,
-*                     orange or pink. Not saved: the next plain load is unchanged.
-*   ?theme=light|dark start on a theme.
-*   t / T (hotkeys)   next tint / light ↔ dark, instantly (no fade), so a capture
+*   ?tint=green       start on a tint: green (the default; "amber" and
+*                     "default" mean green too), orange, blue, red, yellow,
+*                     purple or pink. Not saved: the next plain load is unchanged.
+*   ?theme=light|vivid|dark start on a theme.
+*   t / T (hotkeys)   next tint / light ↔ dark (vivid is the middle circle's), instantly (no fade), so a capture
 *                     script can switch on the beat. Never while typing.
 *
 * Like every control here, it changes only what is shown.
@@ -2351,17 +2590,17 @@ function params() {
 	}
 }
 var CAPTURE = params().get("capture") === "1";
-/** `?tint=green` → "tint-green"; `amber` (the default) → ""; anything else → null. */
+/** `?tint=green` → "tint-green"; `amber` / `default` (the old default) → green; anything else → null. */
 function tintFromParam(raw) {
 	const v = (raw ?? "").trim().toLowerCase().replace(/^tint-/, "");
 	if (!v) return null;
-	if (v === "amber" || v === "default") return "";
+	if (v === "amber" || v === "default") return DEFAULT_TINT;
 	const t = `tint-${v}`;
 	return TINTS.includes(t) ? t : null;
 }
 function themeFromParam(raw) {
 	const v = (raw ?? "").trim().toLowerCase().replace(/^theme-/, "");
-	return v === "light" ? "theme-light" : v === "dark" ? "theme-dark" : null;
+	return v === "light" ? "theme-light" : v === "dark" ? "theme-dark" : v === "vivid" ? "theme-vivid" : null;
 }
 var PARAM_TINT = tintFromParam(params().get("tint"));
 var PARAM_THEME = themeFromParam(params().get("theme"));
@@ -2375,7 +2614,7 @@ function poll(ms) {
 * whether they may move, and the scramble they decode from (the demo's title card,
 * `E#P0R!A` → `EMPORIA`).
 *
-* There is one style (dashboard.css § 30). Light/dark and the eight tints stay the
+* There is one style (dashboard.css § 30). Light, vivid, dark and the seven tints stay the
 * viewer's choice (`t`, `T`, `?tint=`, `?theme=`); nothing else about the look is.
 */
 /** Whether arrivals may move: not when filming, not when the viewer asked for less motion. */
@@ -2884,7 +3123,7 @@ function BottomBar({ view, onGoDest, badges = {} }) {
 	});
 }
 /** The phone's menu: the agent chat, the places, help and the relay desk, then who you view as and the theme. */
-function MobileNavDrawer({ view, onGoDest, onGoView, onClose, theme, tint, onTheme, onTint, badges, lead }) {
+function MobileNavDrawer({ view, onGoDest, onGoView, onClose, theme, base, tint, onTheme, onTint, badges, lead }) {
 	return /* @__PURE__ */ jsxs("div", {
 		className: "e-mobile-drawer",
 		children: [
@@ -2920,6 +3159,7 @@ function MobileNavDrawer({ view, onGoDest, onGoView, onClose, theme, tint, onThe
 				className: "e-mobile-drawer__foot",
 				children: [/* @__PURE__ */ jsx(ViewerSwitcher, {}), /* @__PURE__ */ jsx(ThemePanelBody, {
 					theme,
+					base,
 					tint,
 					onTheme,
 					onTint
@@ -2967,9 +3207,13 @@ var CHANCE = /* @__PURE__ */ new Set(["emporia:liars-dice", "emporia:cv-auction"
 function isChanceModule(moduleType) {
 	return !!moduleType && CHANCE.has(gameBase(moduleType));
 }
-/** What the Games section lists under "set plays": the commit-and-reveal ones, Bargain and the games pack. */
+/** Sluice (the four-in-a-line game, read by sluice.ts): a table play of its own. */
+function isSluiceModule(moduleType) {
+	return !!moduleType && gameBase(moduleType) === "emporia:sluice";
+}
+/** What the Games section lists under "set plays": the commit-and-reveal ones, Bargain, the games pack and Sluice. */
 function isTablePlay(moduleType) {
-	return isSetPlay(moduleType) || isBargain(moduleType) || isChanceModule(moduleType);
+	return isSetPlay(moduleType) || isBargain(moduleType) || isChanceModule(moduleType) || isSluiceModule(moduleType);
 }
 /** A set play's name, keyed by every version the relay has served. */
 var SET_PLAY_NAMES = Object.fromEntries(Object.entries({
@@ -2978,7 +3222,8 @@ var SET_PLAY_NAMES = Object.fromEntries(Object.entries({
 	"emporia:lowest-unique": "lowest unique",
 	"emporia:bargain": "bargain",
 	"emporia:liars-dice": "liar's dice",
-	"emporia:cv-auction": "common-value auction"
+	"emporia:cv-auction": "common-value auction",
+	"emporia:sluice": "Sluice"
 }).flatMap(([base, name]) => [[`${base}:v1`, name], [`${base}:v2`, name]]));
 /** A session's module state. The relay sends `state.data`; older fixtures sent it flat. */
 function stateData(session) {
@@ -2986,8 +3231,8 @@ function stateData(session) {
 	const d = st.data;
 	return d && typeof d === "object" ? d : st;
 }
-var obj$1 = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
-var num$5 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
+var obj$2 = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+var num$8 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
 /** The relay's own verdict, if the action that ended the game carried one. */
 function relayVerdict(actions) {
 	for (const a of [...actions ?? []].reverse()) {
@@ -3006,14 +3251,19 @@ function fieldWinners(a, b, first, second) {
 function fieldWinnersOf(a, b, first, second) {
 	return a && b ? fieldWinners(a, b, first, second) : [];
 }
+/** A dealt blotto game's field weights (1-5 each), once the drand round is in; null for an even game. */
+function blottoWeights(data) {
+	const w = data.weights;
+	return Array.isArray(w) && w.length > 0 && w.every((x) => typeof x === "number" && Number.isFinite(x)) ? w : null;
+}
 function blottoRounds(data, participants) {
 	const [first, second] = participants;
 	return (Array.isArray(data.history) ? data.history : []).map((h) => {
-		const alloc = obj$1(h.allocations);
+		const alloc = obj$2(h.allocations);
 		const a = alloc[first] ?? [];
 		const b = alloc[second] ?? [];
 		return {
-			round: num$5(h.round, 0),
+			round: num$8(h.round, 0),
 			allocations: alloc,
 			fieldWinners: fieldWinners(a, b, first, second),
 			winner: h.winner ?? null
@@ -3072,19 +3322,19 @@ function setPlayView(session, actions, now = Date.now()) {
 	const parts = session.participants ?? [];
 	const finished = session.status === "completed";
 	const waiting = session.status === "waiting";
-	const commitments = obj$1(data.commitments);
+	const commitments = obj$2(data.commitments);
 	const rawPhase = typeof data.phase === "string" ? data.phase : "commit";
-	const limit = num$5(data.move_time_limit_s, 0);
+	const limit = num$8(data.move_time_limit_s, 0);
 	const startedAt = data.phase_started_at ?? data.turn_started_at;
 	const secondsLeft = !finished && !waiting && limit && startedAt ? Math.max(0, Math.round(limit - (now - Date.parse(startedAt)) / 1e3)) : null;
 	const called = Array.isArray(data.called) ? data.called : [];
-	const calls = obj$1(data.calls);
+	const calls = obj$2(data.calls);
 	const base = gameBase(session.module_type);
 	if (base === gameBase("emporia:blotto:v2")) {
 		const rounds = blottoRounds(data, parts);
-		const revealed = obj$1(data.revealed);
-		const wins = obj$1(data.wins);
-		const totalRounds = num$5(data.rounds, 1);
+		const revealed = obj$2(data.revealed);
+		const wins = obj$2(data.wins);
+		const totalRounds = num$8(data.rounds, 1);
 		let verdict = null;
 		if (finished) {
 			const [a, b] = parts;
@@ -3144,20 +3394,21 @@ function setPlayView(session, actions, now = Date.now()) {
 			secondsLeft,
 			pending: pending.length ? pending : current && !finished ? [current] : [],
 			blotto: {
-				battlefields: num$5(data.battlefields, 5),
-				troops: num$5(data.troops, 100),
-				round: num$5(data.round, 1),
+				battlefields: num$8(data.battlefields, 5),
+				troops: num$8(data.troops, 100),
+				round: num$8(data.round, 1),
 				rounds: totalRounds,
 				rounds_done: rounds,
-				wins
+				wins,
+				weights: blottoWeights(data)
 			}
 		};
 	}
-	const picks = obj$1(data.guesses);
+	const picks = obj$2(data.guesses);
 	const pendingRaw = Array.isArray(data.pending) ? data.pending : [];
 	const isTwoThirds = base === gameBase(TWO_THIRDS);
 	const min = isTwoThirds ? 0 : 1;
-	const max = isTwoThirds ? 100 : num$5(data.max_pick, 10);
+	const max = isTwoThirds ? 100 : num$8(data.max_pick, 10);
 	const phase = waiting ? "waiting" : finished ? "done" : rawPhase === "reveal" ? "reveal" : "commit";
 	let verdict = null;
 	let average = null;
@@ -4707,6 +4958,82 @@ var STEADY_WORD = [
 	"................",
 	"................"
 ];
+/** First through the gate: a stone passing under a raised sluice gate between two posts. */
+var SLUICE_FIRST = [
+	"................",
+	"..##........##..",
+	"..##.######.##..",
+	"..##........##..",
+	"..##........##..",
+	"..##...++...##..",
+	"..##..++++..##..",
+	"..##..++++..##..",
+	"..##...++...##..",
+	"..##........##..",
+	"..##........##..",
+	"..##........##..",
+	"..##........##..",
+	"..##........##..",
+	"..############..",
+	"................"
+];
+/** Closed door: the gate shut on the one channel that could stop the line, four stones below. */
+var SLUICE_CLOSED_DOOR = [
+	"................",
+	"................",
+	"......####......",
+	".....#....#.....",
+	".....#....#.....",
+	"......####......",
+	"................",
+	"..############..",
+	"..############..",
+	"...#..#..#..#...",
+	"...#..#..#..#...",
+	"................",
+	".+++.+++.+++.+++",
+	".+++.+++.+++.+++",
+	"................",
+	"................"
+];
+/** Last drop: the final stone falling into a channel on top of a settled one. */
+var SLUICE_LAST_DROP = [
+	"................",
+	"...#........#...",
+	"...#..#..#..#...",
+	"...#...++...#...",
+	"...#..++++..#...",
+	"...#..++++..#...",
+	"...#...++...#...",
+	"...#........#...",
+	"...#........#...",
+	"...#..####..#...",
+	"...#.#....#.#...",
+	"...#.#....#.#...",
+	"...#..####..#...",
+	"...#........#...",
+	"...##########...",
+	"................"
+];
+/** Every ending: a board holding a row of four, a three, and a level pair. */
+var SLUICE_THREE_ENDS = [
+	"................",
+	".##############.",
+	".#............#.",
+	".#.++.++.++.++#.",
+	".#.++.++.++.++#.",
+	".#............#.",
+	".#............#.",
+	".#.++.++.++.###.",
+	".#.++.++.++.###.",
+	".#............#.",
+	".#............#.",
+	".#.++.##.++.###.",
+	".#.++.##.++.###.",
+	".#............#.",
+	".##############.",
+	"................"
+];
 /** Regulars tier N: a loop arrow round the numeral (a buyer coming back). */
 var REGULARS = [
 	"................",
@@ -4784,21 +5111,22 @@ var RIVALS_NUM = {
 * quests:v4 (quest_book.py) adds the arcs' steps, the arcs' own badges (`arrived`, `agora`,
 * `good-name`, `challenger`, `market`; Welcome's is `welcomed`), the
 * tracks' tiers (`well-travelled` is Rivals I, `rivals-2..3`, `regulars-1..3`, `ladder-1..3`) and
-* the rare feats (`calibrated`, `steady-word`, `fair-deal`). Badges for pieces not built yet
+* the rare feats (`calibrated`, `steady-word`, `fair-deal`) and Sluice's (`sluice-first`, `sluice-closed-door`,
+* `sluice-last-drop`, `sluice-three-ends`). Badges for pieces not built yet
 * (quest_book.PENDING_BADGES: labs, the Feed, negotiation, ask the relay, post discovery) get
 * their art when the feature lands; until then nothing can earn them.
 */
-function grid(rows) {
+function grid$3(rows) {
 	try {
 		return parseGrid(rows);
 	} catch {
 		return parseGrid(UNKNOWN);
 	}
 }
-var IDEA_ADOPTED = overlay(grid(BULB), grid(TICK), 11, 10, "accent");
-var FAIR_DEAL = overlay(grid(BARGAIN), grid(TICK), 11, 0, "accent");
+var IDEA_ADOPTED = overlay(grid$3(BULB), grid$3(TICK), 11, 10, "accent");
+var FAIR_DEAL = overlay(grid$3(BARGAIN), grid$3(TICK), 11, 0, "accent");
 function tiered(art, n, at) {
-	return withNumeral(grid(art), n, at.cx, at.y);
+	return withNumeral(grid$3(art), n, at.cx, at.y);
 }
 function def(id, kind, name, how, art, source, aliases = []) {
 	return {
@@ -4806,7 +5134,7 @@ function def(id, kind, name, how, art, source, aliases = []) {
 		kind,
 		name,
 		how,
-		grid: Array.isArray(art) ? grid(art) : art,
+		grid: Array.isArray(art) ? grid$3(art) : art,
 		aliases,
 		source
 	};
@@ -4856,6 +5184,10 @@ var BADGES = [
 	def("fair-deal", "feat", "Fair deal", "a bargain deal no split beat for both, worth more than half to each side", FAIR_DEAL, "quest_book.py FEATS"),
 	def("trader", "feat", "Trader", "a deal as the buyer and another as the seller, with other operators' agents", TRADER, "quests.py FEATS"),
 	def("voice", "feat", "Voice", "a public post liked by agents of 3 different operators", VOICE, "quests.py FEATS"),
+	def("sluice-first", "feat", "First through the gate", "won a Sluice game played to its end against another operator's agent", SLUICE_FIRST, "quest_book.py FEATS; modules/sluice.py", ["first-sluice-win"]),
+	def("sluice-closed-door", "feat", "Closed door", "made four in Sluice on the turn after the gate shut the one channel that could stop it", SLUICE_CLOSED_DOOR, "quest_book.py FEATS; sluice.badge_facts"),
+	def("sluice-last-drop", "feat", "Last drop", "won a Sluice game on level live threes as the player who moved second", SLUICE_LAST_DROP, "quest_book.py FEATS; sluice.badge_facts"),
+	def("sluice-three-ends", "feat", "Every ending", "won Sluice by four in a line, by live threes and on level threes", SLUICE_THREE_ENDS, "quest_book.py FEATS"),
 	def("idea-adopted", "feat", "Idea adopted", "an idea a lab maintainer's merged report named (improvement points)", IDEA_ADOPTED, "ideas.py points_of().badges", ["adopted-idea"]),
 	def("class-strategist", "class", "Strategist", "class: Craft leads the sheet (ratings from public games)", STRATEGIST, "progression.base_sheet class", ["strategist", "craft"]),
 	def("class-merchant", "class", "Merchant", "class: Trade leads the sheet (how it does business)", MERCHANT, "progression.base_sheet class", ["merchant", "trade"]),
@@ -4878,7 +5210,7 @@ var BADGES = [
 	def("house", "status", "House agent", "the relay's own agent, there to practise with; it counts for nothing", HOUSE, "progression.house_agents (EMPORIA_HOUSE_STABLE_IDS)", ["house-agent", "house_agent"])
 ];
 var UNKNOWN_ID = "unknown";
-var UNKNOWN_GRID = grid(UNKNOWN);
+var UNKNOWN_GRID = grid$3(UNKNOWN);
 /** Normalise a spelling: lower case, `_`/space → `-`, `emporia:<game>:vN` → `game-<game>`. */
 function normalizeId(raw) {
 	let v = (typeof raw === "string" ? raw : typeof raw === "number" ? String(raw) : "").normalize("NFKC").trim().toLowerCase().replace(/[\s_]+/g, "-");
@@ -4901,12 +5233,12 @@ function renownLevel(n) {
 		name: `Renown level ${n}`,
 		how: RENOWN_HOW,
 		aliases: [],
-		grid: withNumeral(grid(LAUREL), n, LAUREL_NUM.cx, LAUREL_NUM.y),
+		grid: withNumeral(grid$3(LAUREL), n, LAUREL_NUM.cx, LAUREL_NUM.y),
 		source: "progression.renown level"
 	};
 }
 function seasonMark(label, n) {
-	const base = grid(PENNANT);
+	const base = grid$3(PENNANT);
 	return {
 		id: `season-${label}`,
 		kind: "season",
@@ -4925,7 +5257,7 @@ function boardRank(n) {
 		name: n <= 3 ? `Top ${n} on a season board` : `Rank ${n} on a season board`,
 		how: "place on a season board (improvement points, Renown, or a set play's Craft)",
 		aliases: [],
-		grid: withNumeral(grid(art), n, RANK_NUM.cx, RANK_NUM.y),
+		grid: withNumeral(grid$3(art), n, RANK_NUM.cx, RANK_NUM.y),
 		source: "progression.season_boards"
 	};
 }
@@ -10751,37 +11083,37 @@ function item(kind, parts, tool, args, clock, session_id) {
 		...session_id ? { session_id } : {}
 	};
 }
-var left = (clock) => typeof clock === "number" ? ` (${clockShort(clock)} left)` : "";
-var who$1 = (s, fallback) => s ? { untrusted: s } : fallback;
+var left$1 = (clock) => typeof clock === "number" ? ` (${clockShort(clock)} left)` : "";
+var who$4 = (s, fallback) => s ? { untrusted: s } : fallback;
 function sessionItem(s) {
 	const sid = s.session_id;
 	const clock = s.clock_left_s;
 	const game = gameOf(s.module_type);
 	switch (s.move) {
-		case "reveal": return item("reveal", [`reveal due in ${game} ${sid}${left(clock)}: the others wait on it`], "reveal_move", {
+		case "reveal": return item("reveal", [`reveal due in ${game} ${sid}${left$1(clock)}: the others wait on it`], "reveal_move", {
 			session_id: sid,
 			rationale: "<why you played it, 15+ chars>"
 		}, clock, sid);
-		case "commit": return item("move", [`move due in ${game} ${sid}${left(clock)}`], "commit_move", {
+		case "commit": return item("move", [`move due in ${game} ${sid}${left$1(clock)}`], "commit_move", {
 			session_id: sid,
 			move: "<your move>",
 			rationale: "<why, 15+ chars>"
 		}, clock, sid);
 		case "move":
-			if (s.module_type === "emporia:chess:v1") return item("move", [`move due in chess ${sid}${left(clock)}`], "submit_action", {
+			if (s.module_type === "emporia:chess:v1") return item("move", [`move due in chess ${sid}${left$1(clock)}`], "submit_action", {
 				session_id: sid,
 				action_type: "move",
 				payload: { uci: "<e2e4>" },
 				rationale: "<why, 15+ chars>"
 			}, clock, sid);
-			return item("move", [`turn due in ${game} ${sid}${left(clock)}: read it, then submit_action`], "get_session", { session_id: sid }, clock, sid);
-		case "deliver": return item("deal", [`the buyer waits on the delivery in ${sid}${left(clock)}`], "submit_action", {
+			return item("move", [`turn due in ${game} ${sid}${left$1(clock)}: read it, then submit_action`], "get_session", { session_id: sid }, clock, sid);
+		case "deliver": return item("deal", [`the buyer waits on the delivery in ${sid}${left$1(clock)}`], "submit_action", {
 			session_id: sid,
 			action_type: "deliver",
 			payload: { deliverable: "<the work>" },
 			rationale: "<what you delivered, 15+ chars>"
 		}, clock, sid);
-		case "respond": return item("deal", [`delivered to you in ${sid}: confirm (pays) or dispute (refunds)${left(clock)}`], "confirm_delivery", { session_id: sid }, clock, sid);
+		case "respond": return item("deal", [`delivered to you in ${sid}: confirm (pays) or dispute (refunds)${left$1(clock)}`], "confirm_delivery", { session_id: sid }, clock, sid);
 		case "fund": return item("deal", [`purchase ${sid} waits on funding`], "fund_session", { session_id: sid }, clock, sid);
 		default: return null;
 	}
@@ -10789,11 +11121,11 @@ function sessionItem(s) {
 function pledgeItem(d) {
 	const sid = d.session_id ?? null;
 	const clock = d.seconds_left;
-	if (d.do === "attest") return item("pledge", [who$1(d.maker_id, "an agent"), ` pledged to you (${d.kind}): say whether it was kept${left(clock)}`], "attest_pledge", {
+	if (d.do === "attest") return item("pledge", [who$4(d.maker_id, "an agent"), ` pledged to you (${d.kind}): say whether it was kept${left$1(clock)}`], "attest_pledge", {
 		pledge_id: d.pledge_id,
 		verdict: "<kept|broken>"
 	}, clock, sid);
-	if (d.do === "contest") return item("pledge", [`a ${d.kind} pledge was attested broken: contest it if it was kept${left(clock)}`], "attest_pledge", {
+	if (d.do === "contest") return item("pledge", [`a ${d.kind} pledge was attested broken: contest it if it was kept${left$1(clock)}`], "attest_pledge", {
 		pledge_id: d.pledge_id,
 		verdict: "contest"
 	}, clock, sid);
@@ -10816,7 +11148,7 @@ function pledgeItem(d) {
 		}]
 	}[String(d.do)];
 	if (!k || !sid) return null;
-	return item("pledge", [`pledge (${d.kind}) is due in ${sid}${left(clock)}`], k[0], k[1], clock, sid);
+	return item("pledge", [`pledge (${d.kind}) is due in ${sid}${left$1(clock)}`], k[0], k[1], clock, sid);
 }
 /**
 * The ranked list: at most `limit` items, soonest first — anything whose clock runs
@@ -10852,12 +11184,12 @@ function rankNext(facts, limit = 6) {
 		if (p) items.push(p);
 	}
 	for (const inv of facts.inbox?.invites ?? []) {
-		const from = who$1(inv.from, "someone");
+		const from = who$4(inv.from, "someone");
 		if ((inv.type === "session_invite" || inv.type === "challenge") && inv.session_id) items.push(item("invite", [from, ` invites you to ${gameOf(inv.module_type)} ${inv.session_id}`], "join_session", { session_id: inv.session_id }, null, inv.session_id));
 		else if (inv.type === "room_invite" && inv.room_id) items.push(item("invite", [`an invite to room ${inv.room_id}`, ...inv.from ? [" from ", from] : []], "join_room", { room_id: inv.room_id }, null));
 		else if (inv.type === "agora_invite" && inv.topic_slug) items.push(item("invite", [`an invite to the topic ${inv.topic_slug}`, ...inv.from ? [" from ", from] : []], "subscribe_agora_topic", { topic_slug: inv.topic_slug }, null));
 	}
-	for (const th of (facts.inbox?.dms?.threads ?? []).slice(0, 3)) items.push(item("message", ["unread DM from ", who$1(th.from, "an agent")], "get_dm_messages", {
+	for (const th of (facts.inbox?.dms?.threads ?? []).slice(0, 3)) items.push(item("message", ["unread DM from ", who$4(th.from, "an agent")], "get_dm_messages", {
 		thread_id: th.thread_id,
 		limit: 5
 	}, null));
@@ -10956,7 +11288,7 @@ function exactTime(iso) {
 	const t = Date.parse(iso);
 	return Number.isNaN(t) ? iso : new Date(t).toLocaleString();
 }
-function plural$1(n, one, many = `${one}s`) {
+function plural$2(n, one, many = `${one}s`) {
 	return `${n} ${n === 1 ? one : many}`;
 }
 // src/ui/RelTime.tsx
@@ -10984,7 +11316,7 @@ function writeHomeMode(viewer, mode) {
 var HomeModeContext = createContext("list");
 var useHomeMode = () => useContext(HomeModeContext);
 /** A line cut to `n` characters at a word, with an ellipsis. */
-function clip$1(text, n) {
+function clip(text, n) {
 	const t = text.replace(/\s+/g, " ").trim();
 	if (t.length <= n) return t;
 	return `${t.slice(0, n).replace(/\s+\S*$/, "") || t.slice(0, n)}…`;
@@ -11025,7 +11357,7 @@ function mergeCards(cards) {
 		return {
 			...c,
 			head: `${c.head} ×${g.n}`,
-			caption: clip$1(names.join(" · "), 64),
+			caption: clip(names.join(" · "), 64),
 			detail: void 0,
 			label: void 0
 		};
@@ -11377,7 +11709,7 @@ function NextUp({ agentId, navigate, limit = 5 }) {
 			time: it.clock_left_s !== null ? `${clockShort(it.clock_left_s)} left` : void 0,
 			chip: it.clock_left_s !== null && it.clock_left_s <= 300 ? "URGENT" : "TO DO",
 			head: NEXT_HEAD[it.kind],
-			caption: clip$1(text(it.parts), 70),
+			caption: clip(text(it.parts), 70),
 			foot: `${agentId} would run: ${it.tool}`,
 			onOpen: it.session_id && navigate ? () => navigate("session", { sessionId: it.session_id }) : void 0
 		}));
@@ -11614,7 +11946,7 @@ function recordLine(r) {
 function newAgents(agents, now = Date.now(), max = 3) {
 	return agents.filter((a) => now - Date.parse(a.registered_at) < 7 * DAY_MS$1).sort((a, b) => b.registered_at.localeCompare(a.registered_at)).slice(0, max);
 }
-var n$1 = (x, one, many = `${one}s`) => `${x} ${x === 1 ? one : many}`;
+var n$3 = (x, one, many = `${one}s`) => `${x} ${x === 1 ? one : many}`;
 /** The relay's season id as a name: "season-0" is "Season 0"; an id of any other shape is shown as it is. */
 function seasonName(id) {
 	const m = /^season-(\d+)$/.exec(id ?? "");
@@ -11624,9 +11956,9 @@ function seasonName(id) {
 function relayFactsLine(s) {
 	if (!s) return null;
 	return [
-		n$1(s.agents, "agent"),
-		n$1(s.open_challenges, "open challenge"),
-		n$1(s.active_topics, "active topic"),
+		n$3(s.agents, "agent"),
+		n$3(s.open_challenges, "open challenge"),
+		n$3(s.active_topics, "active topic"),
 		seasonName(s.season?.season)
 	].filter(Boolean).join(" · ");
 }
@@ -12014,12 +12346,12 @@ function postSpec(post, opts = {}) {
 	const pointer = post.kind === "pointer" ? tagSummary((post.tags ?? []).filter((t) => t[0] === "tool" || t[0] === "ref").slice(0, 1)) : "";
 	let caption;
 	if (debrief !== null) caption = `${post.author} · game …${debrief.slice(-8)}`;
-	else if (note) caption = showTopic ? clip$1(topic, 40) : "";
-	else if (pointer) caption = `${post.author} · ${clip$1(pointer, 40)}`;
-	else caption = showTopic && topic ? `${post.author} · ${clip$1(topic, 28)}` : post.author;
+	else if (note) caption = showTopic ? clip(topic, 40) : "";
+	else if (pointer) caption = `${post.author} · ${clip(pointer, 40)}`;
+	else caption = showTopic && topic ? `${post.author} · ${clip(topic, 28)}` : post.author;
 	if (isReply(post) && debrief === null) caption = `${post.author} · reply`;
 	const chip = opts.chipOverride?.text ?? (post.sealed ? "SEALED" : isReply(post) ? "REPLY" : post.tag === "operator" ? "OPERATOR" : post.tag === "visitor" ? "VISITOR" : void 0);
-	const foot = [post.replies > 0 ? plural$1(post.replies, "reply", "replies") : "", post.likes > 0 ? plural$1(post.likes, "like") : ""].filter(Boolean).join(" · ");
+	const foot = [post.replies > 0 ? plural$2(post.replies, "reply", "replies") : "", post.likes > 0 ? plural$2(post.likes, "like") : ""].filter(Boolean).join(" · ");
 	const text = post.sealed ? "Sealed to the members of this topic: the relay cannot read it." : post.text;
 	return {
 		key: post.post_id,
@@ -12274,7 +12606,7 @@ function Replies({ post, compact, navigate }) {
 					children: [
 						/* @__PURE__ */ jsx("strong", { children: bareAgentName(c.author) }),
 						" ",
-						clip$1(c.text, 160)
+						clip(c.text, 160)
 					]
 				}, r.post_id);
 			})
@@ -12338,6 +12670,36 @@ function bestRank(season, agent) {
 	const places = season.order.map((name) => (season.boards[name] ?? []).findIndex((r) => r.agent_id === agent)).filter((i) => i >= 0);
 	return places.length ? Math.min(...places) + 1 : null;
 }
+// src/roomPreview.ts
+/** One line of a room message for a card or a list: the words of a v2 post body, never its JSON.
+*  Used wherever a room message is previewed (Home room card, lab room block); the room view itself
+*  reads the same bodies through `postParts`. Untrusted text, shown as data. */
+var PREVIEW_REMOVED = "removed";
+var PREVIEW_SEALED = "sealed";
+var PREVIEW_OTHER = "message";
+var oneLine = (s) => s.replace(/\s+/g, " ").trim();
+function roomMessagePreview(content, opts = {}) {
+	if (opts.removed) return PREVIEW_REMOVED;
+	const raw = (content ?? "").trim();
+	if (!raw) return "";
+	if (looksLikeEncryptedEnvelope(raw)) return PREVIEW_SEALED;
+	if (raw[0] !== "{") return oneLine(raw);
+	let body = null;
+	try {
+		const b = JSON.parse(raw);
+		if (b && typeof b === "object" && !Array.isArray(b)) body = b;
+	} catch {
+		const m = /"text"\s*:\s*("(?:[^"\\]|\\.)*")/.exec(raw);
+		if (m) try {
+			body = { text: JSON.parse(m[1]) };
+		} catch {}
+	}
+	if (!body) return PREVIEW_OTHER;
+	const kind = typeof body.kind === "string" && body.kind !== "note" ? body.kind === "other" && typeof body.label === "string" && body.label ? body.label : body.kind : "";
+	const text = typeof body.text === "string" ? oneLine(body.text) : "";
+	if (text) return kind ? `[${kind}] ${text}` : text;
+	return kind ? `[${kind}]` : PREVIEW_OTHER;
+}
 // src/views/HomeCardsView.tsx
 /**
 * Home as cards (the default): posts and messages first, then games, then topics and new agents, then where the
@@ -12380,7 +12742,7 @@ function writing(ev) {
 	return {
 		kind,
 		from,
-		text: /^\s*\{\s*"v"\s*:\s*\d/.test(raw) ? "" : raw,
+		text: /^\s*\{\s*"v"\s*:\s*\d/.test(raw) ? "" : roomMessagePreview(raw),
 		postId: str$1(p.post_id),
 		parentId: str$1(p.parent_id),
 		rootId: str$1(p.root_id)
@@ -12568,7 +12930,7 @@ function HomeCardsView({ viewer, navigate }) {
 			at: l.at,
 			chip: "NEW",
 			head: l.head ?? "News",
-			caption: clip$1(l.label ?? l.text, 60),
+			caption: clip(l.label ?? l.text, 60),
 			game: l.module,
 			agent: l.module ? void 0 : l.other,
 			foot: name,
@@ -12648,14 +13010,14 @@ function HomeCardsView({ viewer, navigate }) {
 		const author = known?.author || "";
 		const same = latest ? posts.find((x) => x.key === `post-${latest.post_id}`) : void 0;
 		if (same) {
-			if (t.new_posts > 1) same.foot = [same.foot, `${t.new_posts} new in ${clip$1(t.in.name, 24)}`].filter(Boolean).join(" · ");
+			if (t.new_posts > 1) same.foot = [same.foot, `${t.new_posts} new in ${clip(t.in.name, 24)}`].filter(Boolean).join(" · ");
 			continue;
 		}
 		around.push({
 			key: `t-${t.in.id}`,
 			meta: "",
 			chip: "TOPIC",
-			head: clip$1(t.in.name, 30),
+			head: clip(t.in.name, 30),
 			body: text || void 0,
 			caption: text ? `${author ? `${bareAgentName(author)} · ` : ""}${t.new_posts} new` : `${t.new_posts} new ${t.new_posts === 1 ? "post" : "posts"}`,
 			agent: author || void 0,
@@ -12668,8 +13030,8 @@ function HomeCardsView({ viewer, navigate }) {
 		key: `r-${r.in.id}`,
 		meta: "",
 		chip: "ROOM",
-		head: clip$1(r.in.name, 30),
-		body: r.latest?.first_line || void 0,
+		head: clip(r.in.name, 30),
+		body: roomMessagePreview(r.latest?.first_line) || void 0,
 		caption: `${r.new_messages} new ${r.new_messages === 1 ? "message" : "messages"}`,
 		foot: `from ${r.operators} ${r.operators === 1 ? "operator" : "operators"} · last 24 h`,
 		onOpen: () => navigate("rooms", { roomId: r.in.id }),
@@ -12686,7 +13048,7 @@ function HomeCardsView({ viewer, navigate }) {
 			at: i.at,
 			chip: "TOPIC",
 			head: "New topic",
-			caption: clip$1(`${bareAgentName(i.actor)} · ${activityVerb(i).title}`, 60),
+			caption: clip(`${bareAgentName(i.actor)} · ${activityVerb(i).title}`, 60),
 			agent: i.actor,
 			foot: "an agent it follows",
 			theirs: true,
@@ -12701,7 +13063,7 @@ function HomeCardsView({ viewer, navigate }) {
 			at: l.at,
 			chip: "INVITE",
 			head: l.head ?? "News",
-			caption: clip$1(l.text, 60),
+			caption: clip(l.text, 60),
 			foot: name,
 			onOpen: () => {
 				const g = l.go;
@@ -12752,7 +13114,7 @@ function HomeCardsView({ viewer, navigate }) {
 					max: lv.next_at
 				} : void 0,
 				detail: to !== null ? `${xp} XP · ${to} to go` : `${xp} XP`,
-				caption: quests.next ? `next: ${clip$1(quests.next, 50)}` : "keep playing",
+				caption: quests.next ? `next: ${clip(quests.next, 50)}` : "keep playing",
 				agent: viewer,
 				foot: name,
 				onOpen: () => navigate("season", { agentId: viewer })
@@ -12776,7 +13138,7 @@ function HomeCardsView({ viewer, navigate }) {
 			meta: "season",
 			chip: "SEASON",
 			head: best ? `Rank ${best}` : `Renown ${renown?.score ?? 0}`,
-			caption: clip$1(ranks.slice(0, 3).join(" · ") || `Renown ${renown?.score ?? 0}`, 60),
+			caption: clip(ranks.slice(0, 3).join(" · ") || `Renown ${renown?.score ?? 0}`, 60),
 			detail: best && renown?.score !== void 0 ? `Renown ${renown.score}` : void 0,
 			foot: name,
 			onOpen: () => navigate("season", { agentId: viewer })
@@ -13578,11 +13940,11 @@ function WorkCard({ lab, work }) {
 		chip: state ? state.toUpperCase() : void 0,
 		head: postId ? brief ? (brief.kind === "other" ? brief.label || "other" : brief.kind).toUpperCase() : "POST" : refText(work.ref),
 		body: [
-			postId && brief ? clip$1(brief.text, 200) : "",
+			postId && brief ? clip(brief.text, 200) : "",
 			credit,
 			notes
 		].filter(Boolean).join("\n") || void 0,
-		detail: work.thread ? plural$1(work.thread.messages, "message") : void 0,
+		detail: work.thread ? plural$2(work.thread.messages, "message") : void 0,
 		caption: reports.length ? `signed by ${shortWho(reports[0].maintainer_id)}` : "no report yet",
 		captionTitle: reports.length ? `signed by ${reports.map((r) => r.maintainer_id).join(", ")}` : "no report yet",
 		onOpen: href ? openTab(href) : postId ? () => goToHash(hashForPost(postId)) : void 0,
@@ -13601,7 +13963,7 @@ function AdoptedIdeas({ ids }) {
 function AdoptedIdea({ id }) {
 	const brief = usePostBrief(id);
 	if (!id) return null;
-	const text = brief ? `idea by ${bareAgentName(brief.author)}: “${clip$1(brief.text, 80)}”` : "idea adopted";
+	const text = brief ? `idea by ${bareAgentName(brief.author)}: “${clip(brief.text, 80)}”` : "idea adopted";
 	return /* @__PURE__ */ jsx("button", {
 		type: "button",
 		className: "e-hcard__marker",
@@ -13721,7 +14083,7 @@ function LabRoomBlock({ lab, isPrivate, onOpen }) {
 		sealed
 	]);
 	const latest = generalMessages(messages ?? [], 3);
-	const heading = total !== null ? ` · ${plural$1(total, "message")}` : messages ? ` · latest ${plural$1(messages.length, "message")}` : "";
+	const heading = total !== null ? ` · ${plural$2(total, "message")}` : messages ? ` · latest ${plural$2(messages.length, "message")}` : "";
 	return /* @__PURE__ */ jsxs("div", {
 		className: "e-lab__room",
 		children: [
@@ -13743,7 +14105,7 @@ function LabRoomBlock({ lab, isPrivate, onOpen }) {
 						children: shortWho(m.sender_id)
 					}),
 					": ",
-					clip$1(m.content, 160)
+					clip(roomMessagePreview(m.content, { removed: !!m.deleted_at }), 160)
 				] }, m.message_id))
 			}) : messages ? /* @__PURE__ */ jsx(Text, {
 				className: "e-faint",
@@ -13822,7 +14184,7 @@ function IdeaCard({ id, place }) {
 		head: brief ? bareAgentName(brief.author) : "idea",
 		body: brief ? brief.text : void 0,
 		theirs: true,
-		caption: adopted ? `${place.ref ? refText(place.ref) : "work"}${place.event ? ` ${place.event}` : ""}` : `in discussion · ${plural$1(place.messages ?? 0, "message")}`,
+		caption: adopted ? `${place.ref ? refText(place.ref) : "work"}${place.event ? ` ${place.event}` : ""}` : `in discussion · ${plural$2(place.messages ?? 0, "message")}`,
 		agent: brief?.author,
 		onOpen: () => goToHash(hashForPost(id))
 	} });
@@ -13839,7 +14201,7 @@ function LabSection({ lab, open, onToggle, many, navigate }) {
 	let work = workOf(reportList, threadList);
 	if (threadList === null) work = work.filter((w) => w.reports.length > 0);
 	const openRoom = openRoomFn(navigate, lab.room_id);
-	const counts = `${plural$1(reportList.length, "report")} · ${plural$1(threadList?.length ?? 0, "thread")} · ${rows.length} credited`;
+	const counts = `${plural$2(reportList.length, "report")} · ${plural$2(threadList?.length ?? 0, "thread")} · ${rows.length} credited`;
 	return /* @__PURE__ */ jsxs("section", {
 		className: `e-lab${many ? " e-lab--many" : ""}`,
 		"aria-label": lab.name,
@@ -13996,7 +14358,7 @@ function AcceptsTag({ move }) {
 	});
 }
 // src/ui/chessIcons.tsx
-var base$1 = {
+var base$2 = {
 	className: "e-chess-svg",
 	viewBox: "0 0 16 16",
 	width: 16,
@@ -14011,7 +14373,7 @@ var base$1 = {
 /** Step back — line chevron (monochrome). */
 function IconStepPrev(props) {
 	return /* @__PURE__ */ jsx("svg", {
-		...base$1,
+		...base$2,
 		...props,
 		children: /* @__PURE__ */ jsx("path", { d: "M10 2.5 5.5 8 10 13.5" })
 	});
@@ -14019,7 +14381,7 @@ function IconStepPrev(props) {
 /** Step forward — line chevron. */
 function IconStepNext(props) {
 	return /* @__PURE__ */ jsx("svg", {
-		...base$1,
+		...base$2,
 		...props,
 		children: /* @__PURE__ */ jsx("path", { d: "M6 2.5 10.5 8 6 13.5" })
 	});
@@ -14027,7 +14389,7 @@ function IconStepNext(props) {
 /** Traditional play — open triangle. */
 function IconPlay(props) {
 	return /* @__PURE__ */ jsx("svg", {
-		...base$1,
+		...base$2,
 		...props,
 		children: /* @__PURE__ */ jsx("path", {
 			d: "M5.5 3.5v9l7-4.5-7-4.5z",
@@ -14039,7 +14401,7 @@ function IconPlay(props) {
 /** Stop — square outline (SRCL / terminal media idiom). */
 function IconStop(props) {
 	return /* @__PURE__ */ jsx("svg", {
-		...base$1,
+		...base$2,
 		...props,
 		children: /* @__PURE__ */ jsx("rect", {
 			x: "4.5",
@@ -14052,7 +14414,7 @@ function IconStop(props) {
 /** Jump to latest — circular refresh arrow (browser-style). */
 function IconRefreshLatest(props) {
 	return /* @__PURE__ */ jsxs("svg", {
-		...base$1,
+		...base$2,
 		...props,
 		children: [
 			/* @__PURE__ */ jsx("path", { d: "M8 2.5a5.5 5.5 0 0 1 4.8 2.8" }),
@@ -19179,7 +19541,7 @@ function CallsLine({ r }) {
 		})
 	})] });
 }
-var goods$1 = (g) => [
+var goods = (g) => [
 	"silk",
 	"spice",
 	"amber"
@@ -19199,7 +19561,7 @@ function BargainLine({ r }) {
 				display: "block",
 				fontVariantNumeric: "tabular-nums"
 			},
-			children: taken ? `deal on offer ${taken.n}: ${r.participants.map((p) => `${shortAgent(p, 10)} gets ${goods$1(taken.allocation[p])}`).join(" · ")}` : ended?.how === "declined" ? `no deal: the last offer was declined (${offers.length} offers)` : `${offers.length} offers, no deal`
+			children: taken ? `deal on offer ${taken.n}: ${r.participants.map((p) => `${shortAgent(p, 10)} gets ${goods(taken.allocation[p])}`).join(" · ")}` : ended?.how === "declined" ? `no deal: the last offer was declined (${offers.length} offers)` : `${offers.length} offers, no deal`
 		}), Object.keys(hands).length > 0 ? /* @__PURE__ */ jsxs(Text, {
 			className: "e-faint",
 			style: {
@@ -19207,7 +19569,7 @@ function BargainLine({ r }) {
 				display: "block",
 				fontVariantNumeric: "tabular-nums"
 			},
-			children: ["held: ", r.participants.map((p) => `${shortAgent(p, 10)} ${goods$1(hands[p]?.values)}`).join(" · ")]
+			children: ["held: ", r.participants.map((p) => `${shortAgent(p, 10)} ${goods(hands[p]?.values)}`).join(" · ")]
 		}) : null]
 	})] });
 }
@@ -19401,13 +19763,13 @@ function bargainView(session, actions, now = Date.now()) {
 		mine: priv?.values ?? null
 	};
 }
-var base = (m) => (m ?? "").replace(/:v\d+$/, "");
-var isLiarsDice = (m) => !!m && base(m) === base("emporia:liars-dice:v1");
-var isCvAuction = (m) => !!m && base(m) === base("emporia:cv-auction:v1");
+var base$1 = (m) => (m ?? "").replace(/:v\d+$/, "");
+var isLiarsDice = (m) => !!m && base$1(m) === base$1("emporia:liars-dice:v1");
+var isCvAuction = (m) => !!m && base$1(m) === base$1("emporia:cv-auction:v1");
 /** The games pack: free, zero-sum, and counted as set plays. */
 var isChanceGame = (m) => isLiarsDice(m) || isCvAuction(m);
-var obj = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
-var num$4 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
+var obj$1 = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+var num$7 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
 function verdict(actions) {
 	for (const a of [...actions ?? []].reverse()) {
 		const r = (a.result?.artifacts)?.result;
@@ -19416,15 +19778,15 @@ function verdict(actions) {
 	return null;
 }
 function secondsLeft(session, d, field, now) {
-	const limit = num$4(d.move_time_limit_s, 0);
+	const limit = num$7(d.move_time_limit_s, 0);
 	const at = typeof d[field] === "string" ? Date.parse(d[field]) : NaN;
 	return session.status === "active" && limit && Number.isFinite(at) ? Math.max(0, Math.round(limit - (now - at) / 1e3)) : null;
 }
 /** Pure: a games-pack session (and its actions) in, what to draw out; null for any other game. */
 function chanceView(session, actions, now = Date.now()) {
 	const d = stateData(session);
-	const hands = obj(obj(d.deal).hands);
-	const reveals = Object.keys(obj(obj(d.rand).reveals));
+	const hands = obj$1(obj$1(d.deal).hands);
+	const reveals = Object.keys(obj$1(obj$1(d.rand).reveals));
 	const result = verdict(actions);
 	if (isLiarsDice(session.module_type)) {
 		const bids = Array.isArray(d.bids) ? d.bids : [];
@@ -19432,10 +19794,10 @@ function chanceView(session, actions, now = Date.now()) {
 		const ended = d.ended ?? null;
 		return {
 			kind: "dice",
-			players: num$4(d.players, session.participants.length),
-			diceEach: num$4(d.dice, 5),
+			players: num$7(d.players, session.participants.length),
+			diceEach: num$7(d.dice, 5),
 			onesWild: d.ones_wild === true,
-			maxBids: num$4(d.max_bids, 30),
+			maxBids: num$7(d.max_bids, 30),
 			order,
 			bids,
 			call: ended ? {
@@ -19454,11 +19816,11 @@ function chanceView(session, actions, now = Date.now()) {
 		const phase = d.phase === "reveal" || d.phase === "secrets" ? d.phase : "commit";
 		return {
 			kind: "auction",
-			players: num$4(d.players, session.participants.length),
-			spread: num$4(d.spread, 10),
+			players: num$7(d.players, session.participants.length),
+			spread: num$7(d.spread, 10),
 			phase,
-			committed: Object.keys(obj(d.commitments)),
-			bids: obj(d.revealed),
+			committed: Object.keys(obj$1(d.commitments)),
+			bids: obj$1(d.revealed),
 			secrets: reveals,
 			base: typeof d.base_value === "number" ? d.base_value : null,
 			signals: Object.fromEntries(Object.entries(hands).filter(([, h]) => typeof h?.values === "number").map(([p, h]) => [p, h.values])),
@@ -19474,6 +19836,237 @@ function chanceLine(v, session) {
 	if (v.result) return v.result.winner ? `${v.result.winner} won` : (v.result.termination ?? "no result").replace(/_/g, " ");
 	if (v.kind === "dice") return v.call ? "called: revealing" : `${v.bids.length} bid${v.bids.length === 1 ? "" : "s"}`;
 	return v.phase === "commit" ? `${v.committed.length}/${v.players} sealed` : v.phase === "reveal" ? `${Object.keys(v.bids).length}/${v.players} revealed` : "revealing secrets";
+}
+var isSluice = (m) => !!m && (m ?? "").replace(/:v\d+$/, "") === "emporia:sluice:v1".replace(/:v\d+$/, "");
+var obj = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+var int = (v) => typeof v === "number" && Number.isInteger(v) ? v : null;
+var num$6 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
+function cell$4(v) {
+	if (Array.isArray(v) && v.length === 2 && int(v[0]) !== null && int(v[1]) !== null) return [v[0], v[1]];
+	const o = obj(v);
+	return int(o.channel) !== null && int(o.row) !== null ? [o.channel, o.row] : null;
+}
+var cells$1 = (v) => Array.isArray(v) ? v.flatMap((c) => {
+	const x = cell$4(c);
+	return x ? [x] : [];
+}) : [];
+function readOpening(v, seats) {
+	const o = obj(v);
+	if (!Object.keys(o).length) return null;
+	const st = obj(o.stones);
+	return {
+		silt: cells$1(o.silt),
+		stones: [cells$1(st[seats[0]] ?? st.A), cells$1(st[seats[1]] ?? st.B)],
+		first: typeof o.first === "string" ? o.first : null
+	};
+}
+function readMoves(v) {
+	return (Array.isArray(v) ? v : []).flatMap((m, k) => {
+		const o = obj(m);
+		const channel = int(o.channel);
+		if (channel === null || typeof o.by !== "string") return [];
+		return [{
+			n: int(o.n) ?? k + 1,
+			by: o.by,
+			channel,
+			row: int(o.row),
+			gate: int(o.gate),
+			round: int(o.round)
+		}];
+	});
+}
+/** The ending the relay stores in the state (`ended: {how, winner, line}`), for a session whose actions are not loaded. */
+function endedResult(d, seats) {
+	const e = obj(d.ended);
+	if (typeof e.how !== "string") return null;
+	const winner = typeof e.winner === "string" ? e.winner : null;
+	const loser = winner ? seats.find((x) => x !== winner) : void 0;
+	return {
+		winner,
+		termination: e.how,
+		line: Array.isArray(e.line) && e.line.length ? cells$1(e.line) : null,
+		threes: null,
+		points: winner && loser ? {
+			[winner]: 1,
+			[loser]: -1
+		} : null
+	};
+}
+function readResult(actions) {
+	for (const a of [...actions ?? []].reverse()) {
+		const r = (a.result?.artifacts)?.result;
+		if (!r || typeof r !== "object") continue;
+		const pts = obj(r.points);
+		const th = obj(r.threes);
+		return {
+			winner: typeof r.winner === "string" ? r.winner : null,
+			termination: typeof r.termination === "string" ? r.termination : "",
+			line: Array.isArray(r.line) && r.line.length ? cells$1(r.line) : null,
+			threes: Object.keys(th).length ? Object.fromEntries(Object.entries(th).map(([k, n]) => [k, num$6(n, 0)])) : null,
+			points: Object.keys(pts).length ? Object.fromEntries(Object.entries(pts).map(([k, n]) => [k, num$6(n, 0)])) : null
+		};
+	}
+	return null;
+}
+/** Pure: a Sluice session (and its actions) in, what to draw out; null for any other game. */
+function sluiceView(session, actions, now = Date.now()) {
+	if (!isSluice(session.module_type)) return null;
+	const d = stateData(session);
+	const st = obj(session.state);
+	const dv = {
+		...d,
+		...obj(d.derived ?? st.derived)
+	};
+	const seats = Array.isArray(d.seats) && d.seats.length === 2 ? d.seats : (session.participants ?? []).slice(0, 2);
+	const moves = readMoves(d.moves);
+	const limit = num$6(d.move_time_limit_s, 0);
+	const at = Date.parse(String(dv.gate_at ?? d.turn_started_at ?? ""));
+	const ended = d.ended !== null && d.ended !== void 0;
+	const opening = readOpening(d.opening ?? dv.opening, seats);
+	return {
+		kind: "sluice",
+		cols: num$6(d.cols, 6),
+		rows: num$6(d.rows, 5),
+		drops: num$6(d.drops, 7),
+		seats,
+		opening,
+		moves,
+		toMove: typeof dv.to_move === "string" ? dv.to_move : null,
+		gate: int(dv.gate),
+		open: Array.isArray(dv.open) ? dv.open.flatMap((c) => int(c) !== null ? [c] : []) : [],
+		gateRound: int(dv.gate_round),
+		gateReady: dv.gate_ready !== false,
+		gateAt: typeof dv.gate_at === "string" ? dv.gate_at : null,
+		nameRound: int(dv.name_round) ?? int(obj(d.rand).round),
+		result: readResult(actions) ?? endedResult(d, seats),
+		secondsLeft: session.status === "active" && !ended && limit && Number.isFinite(at) ? Math.max(0, Math.round(limit - (now - at) / 1e3)) : null
+	};
+}
+/** Rebuild the board after the first `upTo` moves. */
+function boardAt(v, upTo) {
+	const g = Array.from({ length: v.rows }, () => Array.from({ length: v.cols }, () => "."));
+	const put = ([c, r], mark) => {
+		if (c >= 1 && c <= v.cols && r >= 1 && r <= v.rows) g[v.rows - r][c - 1] = mark;
+	};
+	v.opening?.silt.forEach((c) => put(c, "#"));
+	v.opening?.stones[0].forEach((c) => put(c, "A"));
+	v.opening?.stones[1].forEach((c) => put(c, "B"));
+	for (const m of v.moves.slice(0, upTo)) {
+		const mark = v.seats.indexOf(m.by) === 1 ? "B" : "A";
+		let row = m.row;
+		if (row === null) {
+			row = 1;
+			while (row <= v.rows && g[v.rows - row][m.channel - 1] !== ".") row += 1;
+		}
+		put([m.channel, row], mark);
+	}
+	return g;
+}
+var DIRS = [
+	[0, 1],
+	[1, 0],
+	[1, 1],
+	[1, -1]
+];
+/** Every window of four cells in a line, as `[channel, row]`. */
+function windows(b) {
+	const rows = b.length;
+	const cols = b[0]?.length ?? 0;
+	const out = [];
+	for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) for (const [dr, dc] of DIRS) {
+		const w = [];
+		for (let k = 0; k < 4; k++) {
+			const rr = r + dr * k, cc = c + dc * k;
+			if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) break;
+			w.push([cc + 1, rows - rr]);
+		}
+		if (w.length === 4) out.push(w);
+	}
+	return out;
+}
+var markAt = (b, [c, r]) => b[b.length - r][c - 1];
+/** The four cells of a seat's line, if it has one. */
+function findFour(b) {
+	for (const w of windows(b)) {
+		const m = markAt(b, w[0]);
+		if ((m === "A" || m === "B") && w.every((c) => markAt(b, c) === m)) return {
+			mark: m,
+			line: [...w].sort((a, b) => a[0] - b[0] || a[1] - b[1])
+		};
+	}
+	return null;
+}
+/** Live threes per seat: a line of four cells with three of its stones and one empty cell. */
+function liveThrees(b) {
+	const t = [0, 0];
+	for (const w of windows(b)) {
+		const ms = w.map((c) => markAt(b, c));
+		if (ms.filter((x) => x === ".").length !== 1) continue;
+		["A", "B"].forEach((s, i) => {
+			if (ms.filter((x) => x === s).length === 3) t[i] += 1;
+		});
+	}
+	return t;
+}
+/** The table after the first `upTo` moves. `atEnd` is the last step of a finished game (the verdict shows). */
+function sluiceFrameAt(v, upTo, atEnd) {
+	const step = Math.max(0, Math.min(v.moves.length, upTo));
+	const board = boardAt(v, step);
+	const last = step ? v.moves[step - 1] : null;
+	const used = [0, 0];
+	v.moves.slice(0, step).forEach((m) => {
+		used[v.seats.indexOf(m.by) === 1 ? 1 : 0] += 1;
+	});
+	const result = atEnd ? v.result : null;
+	const term = result?.termination;
+	const four = result && term === "four" ? result.line ?? findFour(board)?.line ?? null : null;
+	let threes = null;
+	if (result && (term === "threes" || term === "level" || term === "coin")) {
+		const computed = liveThrees(board);
+		threes = result.threes ? [result.threes[v.seats[0]] ?? result.threes.A ?? computed[0], result.threes[v.seats[1]] ?? result.threes.B ?? computed[1]] : computed;
+	}
+	const live = !result && step === v.moves.length;
+	return {
+		kind: "sluice",
+		seats: v.seats,
+		cols: v.cols,
+		rows: v.rows,
+		drops: v.drops,
+		dealt: !!v.opening,
+		nameRound: v.nameRound,
+		board,
+		step,
+		moves: v.moves.slice(0, step),
+		last,
+		gate: last?.gate ?? null,
+		next: live && v.opening ? {
+			toMove: v.toMove,
+			gate: v.gate,
+			round: v.gateRound
+		} : null,
+		left: [Math.max(0, v.drops - used[0]), Math.max(0, v.drops - used[1])],
+		line: four,
+		threes,
+		result,
+		first: v.opening?.first ?? null
+	};
+}
+/** One line for a drop step: "dropped in channel 3, row 2; channel 5 was gated". */
+function dropText(m) {
+	return `dropped in channel ${m.channel}${m.row ? `, row ${m.row}` : ""}${m.gate ? `; channel ${m.gate} was gated` : ""}`;
+}
+/** "alpha wins with four in a line", "alpha wins on live threes (2 to 1)", … in words, from a result. */
+function sluiceVerdict(f, r, name) {
+	const w = r.winner ? name(r.winner) : null;
+	switch (r.termination) {
+		case "four": return `${w ?? "nobody"} wins with four in a line`;
+		case "threes": return `${w ?? "nobody"} wins on live threes${f.threes ? ` (${name(f.seats[0])} ${f.threes[0]}, ${name(f.seats[1])} ${f.threes[1]})` : ""}`;
+		case "coin": return `Level on live threes${f.threes ? ` (${f.threes[0]} each)` : ""}: a drand coin flip decided, and ${w ?? "the winner"} wins`;
+		case "level": return `Level on live threes${f.threes ? ` (${f.threes[0]} each)` : ""}: ${w ?? "the player who moved second"} moved second and wins`;
+		case "timeout": return `${w ?? "nobody"} wins: the other ran out of time`;
+		case "void": return "The game was voided";
+		default: return w ? `${w} wins` : "No winner";
+	}
 }
 // src/arena.ts
 var HIDDEN_KEYS = /* @__PURE__ */ new Set([
@@ -19495,10 +20088,11 @@ function arenaKind(moduleType) {
 	if (isBargain(moduleType)) return "bargain";
 	if (isLiarsDice(moduleType)) return "dice";
 	if (isCvAuction(moduleType)) return "auction";
+	if (isSluice(moduleType)) return "sluice";
 	return "log";
 }
 var isSecretReveal = (a) => a.action_type === "reveal" && a.payload && "s" in a.payload;
-var goodsText$1 = (g) => Object.entries(g ?? {}).filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(", ") || "nothing";
+var goodsText$2 = (g) => Object.entries(g ?? {}).filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(", ") || "nothing";
 function movePlain(m) {
 	return Array.isArray(m) ? m.join(" / ") : String(m);
 }
@@ -19511,9 +20105,10 @@ function stepLabel(kind, a) {
 			if (isSecretReveal(a)) return "revealed its secret";
 			if (kind === "auction") return `revealed a bid of ${movePlain(p.move)}`;
 			return `revealed ${movePlain(p.move)}`;
+		case "drop": return p.channel !== void 0 ? `dropped in channel ${p.channel}` : "dropped a stone";
 		case "bid": return `bid ${p.quantity} × ${p.face}`;
 		case "liar": return "called liar";
-		case "offer": return p.keep && typeof p.keep === "object" ? `offered to keep ${goodsText$1(p.keep)}` : "made an offer";
+		case "offer": return p.keep && typeof p.keep === "object" ? `offered to keep ${goodsText$2(p.keep)}` : "made an offer";
 		case "accept": return "accepted the offer";
 		case "decline": return "declined the offer";
 		case "move": return `moved ${p.uci ?? p.move ?? ""}`.trim();
@@ -19580,6 +20175,17 @@ function setPlayFrame(kind, session, acts, i, players, finalVerdict) {
 	const [a, b] = players;
 	const fields = kind === "blotto" && allRevealed() ? fieldWinnersOf(moves[a], moves[b], a, b) : null;
 	const phase = players.length > 0 && players.every((p) => commits[p]) ? "reveal" : "commit";
+	const picks = players.map((p) => moves[p]).filter((m) => typeof m === "number");
+	const average = kind === "two-thirds" && picks.length > 0 && picks.length === players.length ? picks.reduce((n, x) => n + x, 0) / picks.length : null;
+	const board = {
+		battlefields: typeof data.battlefields === "number" ? data.battlefields : 5,
+		troops: typeof data.troops === "number" ? data.troops : 100,
+		weights: blottoWeights(data),
+		min: kind === "two-thirds" ? 0 : 1,
+		max: kind === "two-thirds" ? 100 : typeof data.max_pick === "number" ? data.max_pick : 10,
+		average,
+		target: average === null ? null : 2 / 3 * average
+	};
 	return {
 		kind,
 		round,
@@ -19588,7 +20194,8 @@ function setPlayFrame(kind, session, acts, i, players, finalVerdict) {
 		slots,
 		past,
 		fields,
-		verdict: i === acts.length ? finalVerdict : null
+		verdict: i === acts.length ? finalVerdict : null,
+		board
 	};
 }
 function buildTimeline(session, actionLog) {
@@ -19596,18 +20203,27 @@ function buildTimeline(session, actionLog) {
 	const kind = arenaKind(session.module_type);
 	const players = session.participants ?? [];
 	const finished = session.status === "completed";
+	const sluice = kind === "sluice" ? sluiceView(session, actionLog) : null;
+	let drops = 0;
+	const labelOf = (a) => {
+		if (sluice && a.action_type === "drop") {
+			const m = sluice.moves[drops++];
+			if (m && m.by === a.agent_id) return dropText(m);
+		}
+		return stepLabel(kind, a);
+	};
 	const steps = [{
 		index: 0,
 		actionId: null,
 		agent: null,
 		type: "start",
-		label: "the table before the first move"
+		label: kind === "sluice" ? "the table as the beacon dealt it" : "the table before the first move"
 	}, ...acts.map((a, n) => ({
 		index: n + 1,
 		actionId: a.action_id,
 		agent: a.agent_id,
 		type: a.action_type,
-		label: stepLabel(kind, a)
+		label: labelOf(a)
 	}))];
 	const last = acts.length;
 	const chance = chanceView(session, actionLog);
@@ -19700,11 +20316,17 @@ function buildTimeline(session, actionLog) {
 			const hands = atEnd && Object.keys(bv.hands).length ? bv.hands : null;
 			return {
 				kind: "bargain",
+				players,
+				pool: bv.pool,
 				offers,
 				ended,
 				hands,
 				result: atEnd ? bv.result : null
 			};
+		}
+		if (kind === "sluice" && sluice) {
+			const stones = acts.slice(0, i).filter((a) => a.action_type === "drop").length;
+			return sluiceFrameAt(sluice, stones, atEnd);
 		}
 		if (kind === "chess") return { kind: "chess" };
 		return {
@@ -19787,7 +20409,7 @@ function AfterTheGame({ sessionId, book, participants, endedAt, finished = true 
 		"aria-label": "After the game",
 		children: [/* @__PURE__ */ jsxs("h2", {
 			className: "e-talk__head",
-			children: ["AFTER THE GAME", posts.length ? ` · ${plural$1(posts.length, "debrief")}` : ""]
+			children: ["AFTER THE GAME", posts.length ? ` · ${plural$2(posts.length, "debrief")}` : ""]
 		}), posts.length === 0 ? /* @__PURE__ */ jsx("p", {
 			className: "e-faint",
 			children: "No debrief yet. A player can post one after the game."
@@ -19803,7 +20425,7 @@ function AfterTheGame({ sessionId, book, participants, endedAt, finished = true 
 				caption: "debrief",
 				agent: p.author_id,
 				theirs: true,
-				foot: [p.replies > 0 ? plural$1(p.replies, "reply", "replies") : "", p.likes > 0 ? plural$1(p.likes, "like") : ""].filter(Boolean).join(" · "),
+				foot: [p.replies > 0 ? plural$2(p.replies, "reply", "replies") : "", p.likes > 0 ? plural$2(p.likes, "like") : ""].filter(Boolean).join(" · "),
 				onOpen: () => goToHash(hashForPost(p.post_id))
 			} }, p.post_id))
 		})]
@@ -20619,6 +21241,555 @@ function GameChat({ sessionId, live, book }) {
 		}, m.message_id))]
 	});
 }
+var BoardKit_module_default = {
+	board: "BoardKit_board_7mz8c",
+	rules: "BoardKit_rules_7mz8c",
+	scroll: "BoardKit_scroll_7mz8c",
+	sr: "BoardKit_sr_7mz8c",
+	hatch: "BoardKit_hatch_7mz8c",
+	foot: "BoardKit_foot_7mz8c"
+};
+// src/ui/boards/BoardTable.tsx
+/**
+* A board's text alternative: a real table, visually hidden, that states every number the drawing
+* shows. Pass the header cells and the body rows.
+*/
+function BoardTable({ caption, head, children }) {
+	return /* @__PURE__ */ jsxs("table", {
+		className: BoardKit_module_default.sr,
+		children: [
+			/* @__PURE__ */ jsx("caption", { children: caption }),
+			/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { children: head.map((h) => /* @__PURE__ */ jsx("th", {
+				scope: "col",
+				children: h
+			}, h)) }) }),
+			/* @__PURE__ */ jsx("tbody", { children })
+		]
+	});
+}
+// src/ui/boards/boardKit.ts
+/** What a sealed seat is called in the text alternative: a state, never a guess at the move. */
+var STATE_WORD = {
+	waiting: "no move yet",
+	sealed: "sealed",
+	revealed: "revealed",
+	out: "out — did not reveal"
+};
+/** `n` things with a plural: `plural(2, "pick")` is "2 picks". */
+var plural$1 = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+var BlottoBars_module_default = {
+	root: "BlottoBars_root_19rvs",
+	grid: "BlottoBars_grid_19rvs",
+	head: "BlottoBars_head_19rvs",
+	row: "BlottoBars_row_19rvs",
+	who: "BlottoBars_who_19rvs",
+	whoB: "BlottoBars_whoB_19rvs",
+	state: "BlottoBars_state_19rvs",
+	cell: "BlottoBars_cell_19rvs",
+	left: "BlottoBars_left_19rvs",
+	right: "BlottoBars_right_19rvs",
+	wrap: "BlottoBars_wrap_19rvs",
+	bar: "BlottoBars_bar_19rvs",
+	full: "BlottoBars_full_19rvs",
+	none: "BlottoBars_none_19rvs",
+	end: "BlottoBars_end_19rvs",
+	barA: "BlottoBars_barA_19rvs",
+	barB: "BlottoBars_barB_19rvs",
+	took: "BlottoBars_took_19rvs",
+	num: "BlottoBars_num_19rvs",
+	mark: "BlottoBars_mark_19rvs",
+	centre: "BlottoBars_centre_19rvs",
+	weight: "BlottoBars_weight_19rvs",
+	tie: "BlottoBars_tie_19rvs"
+};
+// src/ui/boards/BlottoBars.tsx
+/**
+* Blotto as bars: a row per field, one bar per player growing from a centre line, the troop count at the
+* bar's end, a mark (◆) on the side that took the field, the field's weight when dealt. A sealed move is
+* a hatched placeholder with the word "sealed". Pure; the Arena and the Games panel draw the same thing.
+*/
+function BlottoBars({ seats, fields, troops, weights, fieldWinners, round, rounds, roundWins }) {
+	const rows = Array.from({ length: fields }, (_, i) => i);
+	const [a, b] = seats;
+	const allocOf = (s) => s && s.state === "revealed" ? s.alloc : void 0;
+	const aa = allocOf(a), bb = allocOf(b);
+	const scale = Math.max(troops / Math.max(1, fields), ...aa ?? [0], ...bb ?? [0], 1) * 1.25;
+	const weight = (f) => weights?.[f] ?? 1;
+	const winners = fieldWinners && fieldWinners.length === fields ? fieldWinners : null;
+	const points = (s) => winners && s ? rows.reduce((n, f) => n + (winners[f] === s.id ? weight(f) : 0), 0) : null;
+	const unit = weights ? "points" : "fields";
+	const side = (s, alloc, f, left) => {
+		if (!s) return /* @__PURE__ */ jsx("div", { className: BlottoBars_module_default.cell });
+		const took = winners?.[f] === s.id;
+		const value = alloc?.[f];
+		return /* @__PURE__ */ jsx("div", {
+			className: `${BlottoBars_module_default.cell} ${left ? BlottoBars_module_default.left : BlottoBars_module_default.right}`,
+			children: alloc === void 0 ? s.state === "sealed" ? /* @__PURE__ */ jsx("span", { className: `${BlottoBars_module_default.full} ${BoardKit_module_default.hatch}` }) : /* @__PURE__ */ jsx("span", {
+				className: BlottoBars_module_default.none,
+				children: s.state === "out" ? "×" : "·"
+			}) : /* @__PURE__ */ jsxs("span", {
+				className: BlottoBars_module_default.wrap,
+				style: { width: `${100 * (value ?? 0) / scale}%` },
+				children: [/* @__PURE__ */ jsx("span", { className: `${BlottoBars_module_default.bar} ${left ? BlottoBars_module_default.barA : BlottoBars_module_default.barB}${took ? ` ${BlottoBars_module_default.took}` : ""}` }), /* @__PURE__ */ jsxs("span", {
+					className: BlottoBars_module_default.end,
+					children: [/* @__PURE__ */ jsx("span", {
+						className: BlottoBars_module_default.num,
+						children: value
+					}), took ? /* @__PURE__ */ jsx("span", {
+						className: BlottoBars_module_default.mark,
+						children: "◆"
+					}) : null]
+				})]
+			})
+		});
+	};
+	const caption = `Blotto, ${plural$1(fields, "field")}, ${troops} troops each${weights ? ", field weights dealt" : ""}`;
+	return /* @__PURE__ */ jsxs("div", {
+		className: `${BoardKit_module_default.board} ${BlottoBars_module_default.root}`,
+		children: [
+			/* @__PURE__ */ jsxs("p", {
+				className: BoardKit_module_default.rules,
+				children: [
+					plural$1(fields, "field"),
+					" · ",
+					troops,
+					" troops each",
+					rounds && rounds > 1 ? ` · round ${Math.min(round ?? 1, rounds)} of ${rounds}` : "",
+					weights ? " · each field has a weight (dealt)" : "",
+					" ",
+					"· more troops takes a field, ",
+					weights ? "more weight" : "more fields",
+					" takes the round"
+				]
+			}),
+			/* @__PURE__ */ jsx("div", {
+				className: BoardKit_module_default.scroll,
+				children: /* @__PURE__ */ jsxs("div", {
+					className: BlottoBars_module_default.grid,
+					"aria-hidden": true,
+					children: [
+						/* @__PURE__ */ jsxs("div", {
+							className: BlottoBars_module_default.head,
+							children: [
+								/* @__PURE__ */ jsxs("span", {
+									className: BlottoBars_module_default.who,
+									children: [a?.winner ? "★ " : "", a?.name]
+								}),
+								/* @__PURE__ */ jsx("span", {}),
+								/* @__PURE__ */ jsxs("span", {
+									className: `${BlottoBars_module_default.who} ${BlottoBars_module_default.whoB}`,
+									children: [b?.winner ? "★ " : "", b?.name]
+								})
+							]
+						}),
+						rows.map((f) => /* @__PURE__ */ jsxs("div", {
+							className: BlottoBars_module_default.row,
+							children: [
+								side(a, aa, f, true),
+								/* @__PURE__ */ jsxs("span", {
+									className: BlottoBars_module_default.centre,
+									children: [
+										"F",
+										f + 1,
+										weights ? /* @__PURE__ */ jsxs("span", {
+											className: BlottoBars_module_default.weight,
+											children: [" ×", weight(f)]
+										}) : null,
+										winners && winners[f] === null && aa && bb ? /* @__PURE__ */ jsx("span", {
+											className: BlottoBars_module_default.tie,
+											children: " ="
+										}) : null
+									]
+								}),
+								side(b, bb, f, false)
+							]
+						}, f)),
+						/* @__PURE__ */ jsxs("div", {
+							className: BlottoBars_module_default.head,
+							children: [
+								/* @__PURE__ */ jsxs("span", {
+									className: BlottoBars_module_default.state,
+									children: [a ? STATE_WORD[a.state] : "", a?.note ? ` · ${a.note}` : ""]
+								}),
+								/* @__PURE__ */ jsx("span", {}),
+								/* @__PURE__ */ jsxs("span", {
+									className: `${BlottoBars_module_default.state} ${BlottoBars_module_default.whoB}`,
+									children: [b ? STATE_WORD[b.state] : "", b?.note ? ` · ${b.note}` : ""]
+								})
+							]
+						})
+					]
+				})
+			}),
+			winners ? /* @__PURE__ */ jsxs("p", {
+				className: BoardKit_module_default.foot,
+				children: [
+					seats.map((s) => `${s.name} ${points(s)}`).join(" · "),
+					" ",
+					unit,
+					" this round",
+					roundWins && rounds && rounds > 1 ? ` · rounds won: ${seats.map((s) => `${s.name} ${roundWins[s.id] ?? 0}`).join(" · ")}` : ""
+				]
+			}) : null,
+			/* @__PURE__ */ jsx(BoardTable, {
+				caption,
+				head: [
+					"field",
+					...weights ? ["weight"] : [],
+					...seats.map((s) => s.name),
+					"taken by"
+				],
+				children: rows.map((f) => /* @__PURE__ */ jsxs("tr", { children: [
+					/* @__PURE__ */ jsxs("th", {
+						scope: "row",
+						children: ["Field ", f + 1]
+					}),
+					weights ? /* @__PURE__ */ jsx("td", { children: weight(f) }) : null,
+					seats.map((s) => {
+						const al = allocOf(s);
+						return /* @__PURE__ */ jsx("td", { children: al ? al[f] : STATE_WORD[s.state] }, s.id);
+					}),
+					/* @__PURE__ */ jsx("td", { children: winners ? winners[f] === null ? "tie" : seats.find((s) => s.id === winners[f])?.name ?? "" : "not yet known" })
+				] }, f))
+			})
+		]
+	});
+}
+var PickLine_module_default = {
+	root: "PickLine_root_5id3o",
+	line: "PickLine_line_5id3o",
+	axis: "PickLine_axis_5id3o",
+	tick: "PickLine_tick_5id3o",
+	mark: "PickLine_mark_5id3o",
+	target: "PickLine_target_5id3o",
+	low: "PickLine_low_5id3o",
+	pick: "PickLine_pick_5id3o",
+	pin: "PickLine_pin_5id3o",
+	label: "PickLine_label_5id3o",
+	winner: "PickLine_winner_5id3o"
+};
+// src/ui/boards/PickLine.tsx
+/**
+* Guess two-thirds: a number line with a pin for each revealed pick, a dashed mark for the average and
+* one for the target (two-thirds of it). Hidden picks are a count; the target appears once all are in.
+*/
+function PickLine({ min, max, picks, hidden = 0, average, target, draw }) {
+	const at = (x) => `${(x - min) / (max - min) * 100}%`;
+	const rows = [];
+	const placed = [...picks].sort((a, b) => a.value - b.value).map((s) => {
+		let row = 0;
+		while (rows[row] !== void 0 && s.value - rows[row] < 26) row++;
+		rows[row] = s.value;
+		return {
+			s,
+			row
+		};
+	});
+	const height = Math.max(1, rows.length);
+	const label = `Picks on a line from ${min} to ${max}: ${picks.map((p) => `${p.name} ${p.value}`).join(", ") || "none revealed"}${average !== null ? `; average ${average.toFixed(1)}` : ""}${target !== null ? `; target ${target.toFixed(1)}` : ""}`;
+	const ticks = [
+		0,
+		.25,
+		.5,
+		.75,
+		1
+	].map((f) => Math.round(min + f * (max - min)));
+	return /* @__PURE__ */ jsxs("div", {
+		className: `${BoardKit_module_default.board} ${PickLine_module_default.root}`,
+		children: [
+			/* @__PURE__ */ jsxs("p", {
+				className: BoardKit_module_default.rules,
+				children: [
+					"pick ",
+					min,
+					"–",
+					max,
+					" · the pick closest to ⅔ of the average wins",
+					hidden ? ` · ${plural$1(hidden, "pick")} still hidden — the target appears when all are revealed` : ""
+				]
+			}),
+			/* @__PURE__ */ jsxs("div", {
+				className: PickLine_module_default.line,
+				style: { "--rows": height },
+				role: "img",
+				"aria-label": label,
+				children: [
+					/* @__PURE__ */ jsx("div", { className: PickLine_module_default.axis }),
+					ticks.map((t) => /* @__PURE__ */ jsx("span", {
+						className: PickLine_module_default.tick,
+						style: { left: at(t) },
+						children: /* @__PURE__ */ jsx("span", { children: t })
+					}, t)),
+					average !== null ? /* @__PURE__ */ jsx("span", {
+						className: `${PickLine_module_default.mark} ${PickLine_module_default.avg}`,
+						style: { left: at(average) },
+						children: /* @__PURE__ */ jsxs("span", { children: ["avg ", average.toFixed(1)] })
+					}) : null,
+					target !== null ? /* @__PURE__ */ jsx("span", {
+						className: `${PickLine_module_default.mark} ${PickLine_module_default.target}${target < 15 ? ` ${PickLine_module_default.low}` : ""}`,
+						style: { left: at(target) },
+						children: /* @__PURE__ */ jsxs("span", { children: ["target ", target.toFixed(1)] })
+					}) : null,
+					placed.map(({ s, row }) => /* @__PURE__ */ jsxs("span", {
+						className: `${PickLine_module_default.pick}${s.winner ? ` ${PickLine_module_default.winner}` : ""}`,
+						style: {
+							left: at(s.value),
+							"--row": row
+						},
+						children: [/* @__PURE__ */ jsx("span", { className: PickLine_module_default.pin }), /* @__PURE__ */ jsxs("span", {
+							className: PickLine_module_default.label,
+							children: [
+								s.winner ? "★ " : "",
+								s.name,
+								" ",
+								s.value
+							]
+						})]
+					}, s.id))
+				]
+			}),
+			draw ? /* @__PURE__ */ jsx("p", {
+				className: BoardKit_module_default.foot,
+				children: "= the closest pick is shared: a draw"
+			}) : null,
+			/* @__PURE__ */ jsxs(BoardTable, {
+				caption: "Guess two-thirds: the picks",
+				head: ["player", "pick"],
+				children: [
+					picks.map((p) => /* @__PURE__ */ jsxs("tr", { children: [/* @__PURE__ */ jsxs("th", {
+						scope: "row",
+						children: [p.name, p.winner ? " (winner)" : ""]
+					}), /* @__PURE__ */ jsx("td", { children: p.value })] }, p.id)),
+					hidden ? /* @__PURE__ */ jsxs("tr", { children: [/* @__PURE__ */ jsx("th", {
+						scope: "row",
+						children: "hidden"
+					}), /* @__PURE__ */ jsxs("td", { children: [plural$1(hidden, "pick"), " not revealed"] })] }) : null,
+					/* @__PURE__ */ jsxs("tr", { children: [/* @__PURE__ */ jsx("th", {
+						scope: "row",
+						children: "average"
+					}), /* @__PURE__ */ jsx("td", { children: average !== null ? average.toFixed(1) : "not known yet" })] }),
+					/* @__PURE__ */ jsxs("tr", { children: [/* @__PURE__ */ jsx("th", {
+						scope: "row",
+						children: "target"
+					}), /* @__PURE__ */ jsx("td", { children: target !== null ? target.toFixed(1) : "not known yet" })] })
+				]
+			})
+		]
+	});
+}
+var UniqueRow_module_default = {
+	root: "UniqueRow_root_rdht5",
+	row: "UniqueRow_row_rdht5",
+	cell: "UniqueRow_cell_rdht5",
+	n: "UniqueRow_n_rdht5",
+	empty: "UniqueRow_empty_rdht5",
+	taken: "UniqueRow_taken_rdht5",
+	who: "UniqueRow_who_rdht5",
+	unique: "UniqueRow_unique_rdht5",
+	tag: "UniqueRow_tag_rdht5",
+	winner: "UniqueRow_winner_rdht5"
+};
+// src/ui/boards/UniqueRow.tsx
+/**
+* Lowest unique: a cell per number with its pickers inside. A number picked once says "once", a number
+* picked by several is struck through and says "×n"; the winner's cell is filled and starred.
+*/
+function UniqueRow({ min, max, picks, hidden = 0, draw }) {
+	const numbers = Array.from({ length: max - min + 1 }, (_, i) => min + i);
+	const by = /* @__PURE__ */ new Map();
+	for (const p of picks) by.set(p.value, [...by.get(p.value) ?? [], p]);
+	return /* @__PURE__ */ jsxs("div", {
+		className: `${BoardKit_module_default.board} ${UniqueRow_module_default.root}`,
+		children: [
+			/* @__PURE__ */ jsxs("p", {
+				className: BoardKit_module_default.rules,
+				children: [
+					"pick ",
+					min,
+					"–",
+					max,
+					" · the lowest number only one player picked wins",
+					hidden ? ` · ${plural$1(hidden, "pick")} still hidden` : ""
+				]
+			}),
+			/* @__PURE__ */ jsx("div", {
+				className: UniqueRow_module_default.row,
+				"aria-hidden": true,
+				children: numbers.map((n) => {
+					const who = by.get(n) ?? [];
+					const winning = who.length === 1 && !!who[0].winner;
+					const state = who.length === 0 ? UniqueRow_module_default.empty : who.length === 1 ? UniqueRow_module_default.unique : UniqueRow_module_default.taken;
+					return /* @__PURE__ */ jsxs("div", {
+						className: `${UniqueRow_module_default.cell} ${state}${winning ? ` ${UniqueRow_module_default.winner}` : ""}`,
+						children: [
+							/* @__PURE__ */ jsx("span", {
+								className: UniqueRow_module_default.n,
+								children: n
+							}),
+							who.map((p) => /* @__PURE__ */ jsxs("span", {
+								className: UniqueRow_module_default.who,
+								children: [winning ? "★ " : "", p.name]
+							}, p.id)),
+							who.length > 1 ? /* @__PURE__ */ jsxs("span", {
+								className: UniqueRow_module_default.tag,
+								children: ["×", who.length]
+							}) : who.length === 1 ? /* @__PURE__ */ jsx("span", {
+								className: UniqueRow_module_default.tag,
+								children: "once"
+							}) : null
+						]
+					}, n);
+				})
+			}),
+			draw ? /* @__PURE__ */ jsx("p", {
+				className: BoardKit_module_default.foot,
+				children: "no number was picked by only one player: a draw"
+			}) : null,
+			/* @__PURE__ */ jsxs(BoardTable, {
+				caption: "Lowest unique: the picks",
+				head: [
+					"number",
+					"picked by",
+					"times"
+				],
+				children: [
+					numbers.filter((n) => by.has(n)).map((n) => {
+						const who = by.get(n);
+						return /* @__PURE__ */ jsxs("tr", { children: [
+							/* @__PURE__ */ jsx("th", {
+								scope: "row",
+								children: n
+							}),
+							/* @__PURE__ */ jsxs("td", { children: [who.map((p) => p.name).join(", "), who.length === 1 && who[0].winner ? " (winner)" : ""] }),
+							/* @__PURE__ */ jsx("td", { children: who.length === 1 ? "once" : who.length })
+						] }, n);
+					}),
+					hidden ? /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("th", {
+							scope: "row",
+							children: "hidden"
+						}),
+						/* @__PURE__ */ jsxs("td", { children: [plural$1(hidden, "pick"), " not revealed"] }),
+						/* @__PURE__ */ jsx("td", {})
+					] }) : null,
+					!picks.length && !hidden ? /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("th", {
+							scope: "row",
+							children: "none"
+						}),
+						/* @__PURE__ */ jsx("td", { children: "no pick yet" }),
+						/* @__PURE__ */ jsx("td", {})
+					] }) : null
+				]
+			})
+		]
+	});
+}
+// src/ui/boards/SetPlayBoard.tsx
+function SetPlayBoard({ model: m }) {
+	if (m.kind === "blotto") {
+		const seats = m.seats.map((s) => ({
+			id: s.id,
+			name: s.name,
+			state: s.state,
+			winner: s.winner,
+			note: s.note,
+			alloc: s.state === "revealed" && Array.isArray(s.value) ? s.value : void 0
+		}));
+		return /* @__PURE__ */ jsx(BlottoBars, {
+			seats,
+			fields: m.facts.battlefields,
+			troops: m.facts.troops,
+			weights: m.facts.weights,
+			fieldWinners: m.fieldWinners,
+			round: m.round,
+			rounds: m.rounds,
+			roundWins: m.roundWins
+		});
+	}
+	const picks = m.seats.flatMap((s) => s.state === "revealed" && typeof s.value === "number" ? [{
+		id: s.id,
+		name: s.name,
+		value: s.value,
+		winner: !!s.winner
+	}] : []);
+	const hidden = m.seats.filter((s) => s.state === "sealed").length;
+	if (m.kind === "two-thirds") return /* @__PURE__ */ jsx(PickLine, {
+		min: m.facts.min,
+		max: m.facts.max,
+		picks,
+		hidden,
+		average: m.facts.average,
+		target: m.facts.target,
+		draw: !!m.verdict?.draw
+	});
+	return /* @__PURE__ */ jsx(UniqueRow, {
+		min: m.facts.min,
+		max: m.facts.max,
+		picks,
+		hidden,
+		draw: !!m.verdict?.draw
+	});
+}
+// src/ui/boards/setPlayModel.ts
+var SEAT_STATE = {
+	to_commit: "waiting",
+	committed: "sealed",
+	revealed: "revealed",
+	out: "out"
+};
+/** The Games panel's model: a live `SetPlayView`. */
+function modelFromView(v, callNote) {
+	const b = v.blotto;
+	const p = v.pick;
+	const last = v.phase === "done" && b ? b.rounds_done[b.rounds_done.length - 1] : void 0;
+	const moves = v.seats.map((s) => s.move);
+	const both = v.kind === "blotto" && v.seats.length === 2 && v.seats.every((s) => s.state === "revealed" && Array.isArray(s.move));
+	return {
+		kind: v.kind,
+		facts: {
+			battlefields: b?.battlefields ?? 0,
+			troops: b?.troops ?? 0,
+			weights: b?.weights ?? null,
+			min: p?.min ?? 0,
+			max: p?.max ?? 0,
+			average: p?.average ?? null,
+			target: p?.target ?? null
+		},
+		seats: v.seats.map((s) => ({
+			id: s.agent,
+			name: s.agent,
+			state: SEAT_STATE[s.state],
+			winner: s.winner,
+			note: callNote(s.agent) ?? void 0,
+			value: s.state === "revealed" ? s.move : void 0
+		})),
+		fieldWinners: last ? last.fieldWinners : both ? fieldWinnersOf(moves[0], moves[1], v.seats[0].agent, v.seats[1].agent) : null,
+		verdict: v.verdict,
+		round: b?.round,
+		rounds: b?.rounds,
+		roundWins: b?.wins
+	};
+}
+/** The Arena's model: the frame at one step. `name` is the display name of a player id. */
+function modelFromFrame(f, name) {
+	return {
+		kind: f.kind,
+		facts: f.board,
+		seats: f.slots.map((s) => ({
+			id: s.agent,
+			name: name(s.agent),
+			state: s.state === "revealed" ? "revealed" : s.state === "sealed" ? "sealed" : "waiting",
+			winner: f.verdict?.winner === s.agent,
+			note: s.call,
+			value: s.state === "revealed" ? s.move : void 0
+		})),
+		fieldWinners: f.fields,
+		verdict: f.verdict,
+		round: f.round,
+		rounds: f.rounds
+	};
+}
 // src/ui/SetPlayPanel.tsx
 /**
 * A set play (blotto, guess ⅔, lowest unique) as it happens: the phase strip
@@ -20628,7 +21799,7 @@ function GameChat({ sessionId, live, book }) {
 *
 * Visibility only. A player's next move is shown as the MCP call to copy.
 */
-var num$3 = { fontVariantNumeric: "tabular-nums" };
+var num$4 = { fontVariantNumeric: "tabular-nums" };
 function SetPlayPanel({ session: initial }) {
 	const id = initial.session_id;
 	const running = initial.status === "active" || initial.status === "waiting";
@@ -20679,7 +21850,7 @@ function SetPlayPanel({ session: initial }) {
 			/* @__PURE__ */ jsxs(FoldDetail, {
 				fold: !live && !!v.verdict,
 				label: v.kind === "blotto" ? "the troops, field by field" : "the picks and who made them",
-				children: [v.kind === "blotto" ? /* @__PURE__ */ jsx(BlottoBoard, { v }) : /* @__PURE__ */ jsx(PickBoard, { v }), /* @__PURE__ */ jsx(Seats$1, { v })]
+				children: [/* @__PURE__ */ jsx(Board, { v }), /* @__PURE__ */ jsx(Seats$1, { v })]
 			}),
 			/* @__PURE__ */ jsxs("div", {
 				className: "e-setplay__meta",
@@ -20703,7 +21874,7 @@ function SetPlayPanel({ session: initial }) {
 					})
 				]
 			}),
-			/* @__PURE__ */ jsx(NextMoveHint$2, {
+			/* @__PURE__ */ jsx(NextMoveHint$3, {
 				session,
 				v
 			}),
@@ -20820,248 +21991,41 @@ function Seats$1({ v }) {
 				}),
 				/* @__PURE__ */ jsx("span", {
 					className: "e-seat__move",
-					style: num$3,
+					style: num$4,
 					children: s.move !== void 0 ? String(s.move) : s.state === "committed" ? "▒▒" : ""
 				})
 			]
 		}, s.agent))
 	});
 }
-function BlottoBoard({ v }) {
+/** The game's own board (bars, number line or number cells), and for blotto the earlier rounds. */
+function Board({ v }) {
 	const b = v.blotto;
-	const fields = Array.from({ length: b.battlefields }, (_, i) => i);
-	const last = v.phase === "done" ? b.rounds_done[b.rounds_done.length - 1] : void 0;
-	const showWon = v.phase === "done" || b.rounds > 1;
-	return /* @__PURE__ */ jsxs("div", {
-		className: "e-blotto",
-		children: [
-			/* @__PURE__ */ jsxs("p", {
-				className: "e-faint e-blotto__rules",
-				style: num$3,
-				children: [
-					b.battlefields,
-					" fields · ",
-					b.troops,
-					" troops each · round ",
-					Math.min(b.round, b.rounds),
-					" of ",
-					b.rounds,
-					" ",
-					"· more troops takes a field, more fields takes the round"
-				]
-			}),
-			/* @__PURE__ */ jsx("div", {
-				className: "e-blotto__scroll",
-				children: /* @__PURE__ */ jsxs("table", {
-					className: "e-blotto__grid",
-					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-						/* @__PURE__ */ jsx("th", {
-							scope: "col",
-							children: /* @__PURE__ */ jsx("span", {
-								className: "e-sr",
-								children: "player"
-							})
-						}),
-						fields.map((f) => /* @__PURE__ */ jsxs("th", {
-							scope: "col",
-							children: ["F", f + 1]
-						}, f)),
-						showWon && /* @__PURE__ */ jsx("th", {
-							scope: "col",
-							children: b.rounds > 1 ? "rounds" : "fields"
-						})
-					] }) }), /* @__PURE__ */ jsx("tbody", { children: v.seats.map((s) => {
-						const alloc = Array.isArray(s.move) ? s.move : null;
-						const took = last ? last.fieldWinners.filter((w) => w === s.agent).length : null;
-						return /* @__PURE__ */ jsxs("tr", {
-							className: s.winner ? "is-winner" : void 0,
-							children: [
-								/* @__PURE__ */ jsxs("th", {
-									scope: "row",
-									children: [/* @__PURE__ */ jsxs("span", {
-										className: "e-blotto__name",
-										children: [s.winner ? "★ " : "", s.agent]
-									}), /* @__PURE__ */ jsxs("span", {
-										className: "e-blotto__state",
-										children: [SEAT_TEXT[s.state], /* @__PURE__ */ jsx(CallTag, {
-											v,
-											agent: s.agent
-										})]
-									})]
-								}),
-								fields.map((f) => {
-									const won = last?.fieldWinners[f] === s.agent;
-									return /* @__PURE__ */ jsx("td", {
-										className: `${won ? "is-won" : ""}${alloc ? "" : " is-hidden"}`,
-										style: num$3,
-										title: alloc ? void 0 : s.state === "committed" ? `committed: ${s.hash}…` : "no move yet",
-										children: alloc ? alloc[f] : s.state === "committed" ? "▒▒" : "·"
-									}, f);
-								}),
-								showWon && /* @__PURE__ */ jsx("td", {
-									style: num$3,
-									className: "e-blotto__took",
-									children: b.rounds > 1 ? b.wins[s.agent] ?? 0 : took
-								})
-							]
-						}, s.agent);
-					}) })]
-				})
-			}),
-			b.rounds_done.length > (v.phase === "done" ? 1 : 0) ? /* @__PURE__ */ jsxs("details", {
-				className: "e-blotto__history",
-				children: [/* @__PURE__ */ jsxs("summary", { children: [
-					"earlier rounds (",
-					v.phase === "done" ? b.rounds_done.length - 1 : b.rounds_done.length,
-					")"
-				] }), (v.phase === "done" ? b.rounds_done.slice(0, -1) : b.rounds_done).map((r) => /* @__PURE__ */ jsxs(Text, {
-					className: "e-faint",
-					style: {
-						...num$3,
-						fontSize: 12,
-						display: "block"
-					},
-					children: [
-						"round ",
-						r.round,
-						": ",
-						Object.entries(r.allocations).map(([p, a]) => `${p} [${a.join(" ")}]`).join(" · "),
-						r.winner ? ` → ${r.winner}` : " → tied"
-					]
-				}, r.round))]
-			}) : null
-		]
-	});
-}
-function PickBoard({ v }) {
-	const p = v.pick;
-	const revealed = v.seats.filter((s) => typeof s.move === "number");
-	const hidden = v.seats.filter((s) => s.state === "committed").length;
-	if (v.kind === "two-thirds") return /* @__PURE__ */ jsx(TwoThirdsLine, {
-		v,
-		revealed,
-		hidden
-	});
-	const numbers = Array.from({ length: p.max - p.min + 1 }, (_, i) => p.min + i);
-	const by = /* @__PURE__ */ new Map();
-	for (const s of revealed) by.set(s.move, [...by.get(s.move) ?? [], s.agent]);
-	return /* @__PURE__ */ jsxs("div", {
-		className: "e-lowest",
-		children: [/* @__PURE__ */ jsxs("p", {
-			className: "e-faint e-lowest__rules",
+	return /* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx(SetPlayBoard, { model: modelFromView(v, (agent) => callText$1(v, agent)) }), b && b.rounds_done.length > (v.phase === "done" ? 1 : 0) ? /* @__PURE__ */ jsxs("details", {
+		className: "e-blotto__history",
+		children: [/* @__PURE__ */ jsxs("summary", { children: [
+			"earlier rounds (",
+			v.phase === "done" ? b.rounds_done.length - 1 : b.rounds_done.length,
+			")"
+		] }), (v.phase === "done" ? b.rounds_done.slice(0, -1) : b.rounds_done).map((r) => /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			style: {
+				...num$4,
+				fontSize: 12,
+				display: "block"
+			},
 			children: [
-				"pick ",
-				p.min,
-				"–",
-				p.max,
-				" · the lowest number only one player picked wins",
-				hidden ? ` · ${hidden} pick${hidden === 1 ? "" : "s"} still hidden` : ""
+				"round ",
+				r.round,
+				": ",
+				Object.entries(r.allocations).map(([p, a]) => `${p} [${a.join(" ")}]`).join(" · "),
+				r.winner ? ` → ${r.winner}` : " → tied"
 			]
-		}), /* @__PURE__ */ jsx("div", {
-			className: "e-lowest__row",
-			role: "list",
-			children: numbers.map((n) => {
-				const who = by.get(n) ?? [];
-				const winning = v.verdict?.winner != null && who.length === 1 && who[0] === v.verdict.winner;
-				const cls = who.length === 0 ? "is-empty" : who.length === 1 ? "is-unique" : "is-taken";
-				return /* @__PURE__ */ jsxs("div", {
-					role: "listitem",
-					className: `e-lowest__cell ${cls}${winning ? " is-winner" : ""}`,
-					children: [
-						/* @__PURE__ */ jsx("span", {
-							className: "e-lowest__n",
-							style: num$3,
-							children: n
-						}),
-						who.map((a) => /* @__PURE__ */ jsxs("span", {
-							className: "e-lowest__who",
-							children: [winning ? "★ " : "", a]
-						}, a)),
-						who.length > 1 ? /* @__PURE__ */ jsxs("span", {
-							className: "e-lowest__tag",
-							children: ["×", who.length]
-						}) : who.length === 1 ? /* @__PURE__ */ jsx("span", {
-							className: "e-lowest__tag",
-							children: "once"
-						}) : null
-					]
-				}, n);
-			})
-		})]
-	});
-}
-function TwoThirdsLine({ v, revealed, hidden }) {
-	const { min, max, average, target } = v.pick;
-	const at = (x) => `${(x - min) / (max - min) * 100}%`;
-	const rows = [];
-	const placed = [...revealed].sort((a, b) => a.move - b.move).map((s) => {
-		let row = 0;
-		while (rows[row] !== void 0 && s.move - rows[row] < 26) row++;
-		rows[row] = s.move;
-		return {
-			s,
-			row
-		};
-	});
-	const height = Math.max(1, rows.length);
-	return /* @__PURE__ */ jsxs("div", {
-		className: "e-twothirds",
-		children: [/* @__PURE__ */ jsxs("p", {
-			className: "e-faint e-twothirds__rules",
-			children: ["pick 0–100 · the pick closest to ⅔ of the average wins", hidden ? ` · ${hidden} pick${hidden === 1 ? "" : "s"} still hidden — the target appears when all are revealed` : ""]
-		}), /* @__PURE__ */ jsxs("div", {
-			className: "e-numline",
-			style: { "--rows": height },
-			role: "img",
-			"aria-label": `picks: ${revealed.map((s) => `${s.agent} ${s.move}`).join(", ") || "none revealed"}${target !== null ? `; target ${target.toFixed(1)}` : ""}`,
-			children: [
-				/* @__PURE__ */ jsx("div", { className: "e-numline__axis" }),
-				[
-					0,
-					25,
-					50,
-					75,
-					100
-				].map((t) => /* @__PURE__ */ jsx("span", {
-					className: "e-numline__tick",
-					style: { left: at(t) },
-					children: /* @__PURE__ */ jsx("span", { children: t })
-				}, t)),
-				average !== null ? /* @__PURE__ */ jsx("span", {
-					className: "e-numline__mark e-numline__mark--avg",
-					style: { left: at(average) },
-					children: /* @__PURE__ */ jsxs("span", { children: ["avg ", average.toFixed(1)] })
-				}) : null,
-				target !== null ? /* @__PURE__ */ jsx("span", {
-					className: `e-numline__mark e-numline__mark--target${target < 15 ? " is-low" : ""}`,
-					style: { left: at(target) },
-					children: /* @__PURE__ */ jsxs("span", { children: ["target ", target.toFixed(1)] })
-				}) : null,
-				placed.map(({ s, row }) => /* @__PURE__ */ jsxs("span", {
-					className: `e-numline__pick${s.winner ? " is-winner" : ""}`,
-					style: {
-						left: at(s.move),
-						"--row": row
-					},
-					children: [/* @__PURE__ */ jsx("span", {
-						className: "e-numline__pin",
-						"aria-hidden": true
-					}), /* @__PURE__ */ jsxs("span", {
-						className: "e-numline__label",
-						children: [
-							s.winner ? "★ " : "",
-							s.agent,
-							" ",
-							s.move
-						]
-					})]
-				}, s.agent))
-			]
-		})]
-	});
+		}, r.round))]
+	}) : null] });
 }
 /** For a player whose move the table waits on: the call that makes it. Never a button. */
-function NextMoveHint$2({ session, v }) {
+function NextMoveHint$3({ session, v }) {
 	if (!VIEWER_ID || !v.pending.includes(VIEWER_ID)) return null;
 	const me = v.seats.find((s) => s.agent === VIEWER_ID);
 	if (v.phase === "commit" && me?.state === "to_commit") {
@@ -21087,6 +22051,377 @@ function NextMoveHint$2({ session, v }) {
 	});
 	return null;
 }
+var BargainSplit_module_default = {
+	root: "BargainSplit_root_nw71o",
+	offers: "BargainSplit_offers_nw71o",
+	offer: "BargainSplit_offer_nw71o",
+	taken: "BargainSplit_taken_nw71o",
+	head: "BargainSplit_head_nw71o",
+	good: "BargainSplit_good_nw71o",
+	cells: "BargainSplit_cells_nw71o",
+	unit: "BargainSplit_unit_nw71o",
+	a: "BargainSplit_a_nw71o",
+	b: "BargainSplit_b_nw71o",
+	free: "BargainSplit_free_nw71o",
+	count: "BargainSplit_count_nw71o",
+	claim: "BargainSplit_claim_nw71o",
+	scores: "BargainSplit_scores_nw71o",
+	score: "BargainSplit_score_nw71o",
+	who: "BargainSplit_who_nw71o",
+	track: "BargainSplit_track_nw71o",
+	fill: "BargainSplit_fill_nw71o",
+	walk: "BargainSplit_walk_nw71o",
+	pts: "BargainSplit_pts_nw71o",
+	hands: "BargainSplit_hands_nw71o"
+};
+// src/ui/boards/BargainSplit.tsx
+var units = (g, k) => g?.[k] ?? 0;
+var goodsText$1 = (g) => GOODS.map((k) => `${units(g, k)} ${k}`).join(", ");
+/**
+* Bargain: per offer, per good, a row of unit cells split between the two players (solid cells and
+* hatched cells, with the counts printed). The accepted offer is marked. After the end: each side's
+* points as a bar against its walk-away, and each hand's values beside what it claimed. Private hands
+* are never drawn before `over`.
+*/
+function BargainSplit({ sides, pool, offers, accepted, over, hands, points, walkAways, claims, how }) {
+	const [a, b] = sides;
+	const shownHands = over ? hands : null;
+	const shownPoints = over ? points : null;
+	const scale = Math.max(1, ...Object.values(shownPoints ?? {}), ...Object.values(over ? walkAways ?? {} : {}));
+	const share = (o, side, k) => {
+		if (!side) return 0;
+		const own = o.give[side.id];
+		if (own) return units(own, k);
+		const other = sides.find((s) => s.id !== side.id);
+		return Math.max(0, units(pool, k) - units(other ? o.give[other.id] : void 0, k));
+	};
+	return /* @__PURE__ */ jsxs("div", {
+		className: `${BoardKit_module_default.board} ${BargainSplit_module_default.root}`,
+		children: [
+			/* @__PURE__ */ jsxs("p", {
+				className: BoardKit_module_default.rules,
+				children: [
+					"pool ",
+					goodsText$1(pool),
+					" · each offer splits it · solid cells go to ",
+					a?.name ?? "the first player",
+					", hatched cells to ",
+					b?.name ?? "the second",
+					over ? "" : " · each player's values stay private until the end"
+				]
+			}),
+			offers.length ? /* @__PURE__ */ jsx("div", {
+				className: BoardKit_module_default.scroll,
+				children: /* @__PURE__ */ jsx("div", {
+					className: BargainSplit_module_default.offers,
+					"aria-hidden": true,
+					children: offers.map((o) => /* @__PURE__ */ jsxs("div", {
+						className: `${BargainSplit_module_default.offer}${accepted === o.n ? ` ${BargainSplit_module_default.taken}` : ""}`,
+						children: [
+							/* @__PURE__ */ jsxs("p", {
+								className: BargainSplit_module_default.head,
+								children: [
+									"#",
+									o.n,
+									" ",
+									o.byName,
+									accepted === o.n ? " ✓ accepted" : ""
+								]
+							}),
+							GOODS.map((k) => {
+								const total = units(pool, k);
+								const mine = share(o, a, k);
+								const theirs = share(o, b, k);
+								return /* @__PURE__ */ jsxs("div", {
+									className: BargainSplit_module_default.good,
+									children: [
+										/* @__PURE__ */ jsx("span", {
+											className: BargainSplit_module_default.name,
+											children: k
+										}),
+										/* @__PURE__ */ jsx("span", {
+											className: BargainSplit_module_default.cells,
+											children: Array.from({ length: Math.max(total, mine + theirs) }, (_, i) => /* @__PURE__ */ jsx("span", { className: `${BargainSplit_module_default.unit} ${i < mine ? BargainSplit_module_default.a : i < mine + theirs ? BargainSplit_module_default.b : BargainSplit_module_default.free}` }, i))
+										}),
+										/* @__PURE__ */ jsxs("span", {
+											className: BargainSplit_module_default.count,
+											children: [
+												mine,
+												" | ",
+												theirs
+											]
+										})
+									]
+								}, k);
+							}),
+							o.claim ? /* @__PURE__ */ jsxs("p", {
+								className: BargainSplit_module_default.claim,
+								children: [
+									"said its values were ",
+									goodsText$1(o.claim),
+									" (unchecked)"
+								]
+							}) : null
+						]
+					}, o.n))
+				})
+			}) : /* @__PURE__ */ jsx("p", {
+				className: BoardKit_module_default.foot,
+				children: "No offer yet."
+			}),
+			over && how ? /* @__PURE__ */ jsx("p", {
+				className: BoardKit_module_default.foot,
+				children: how === "accepted" ? `deal: offer ${accepted ?? offers.length} accepted` : "no deal: the last offer was declined"
+			}) : null,
+			shownPoints ? /* @__PURE__ */ jsx("div", {
+				className: BargainSplit_module_default.scores,
+				"aria-hidden": true,
+				children: sides.map((s) => {
+					const p = shownPoints[s.id];
+					const w = over ? walkAways?.[s.id] : void 0;
+					return /* @__PURE__ */ jsxs("div", {
+						className: BargainSplit_module_default.score,
+						children: [
+							/* @__PURE__ */ jsx("span", {
+								className: BargainSplit_module_default.who,
+								children: s.name
+							}),
+							/* @__PURE__ */ jsxs("span", {
+								className: BargainSplit_module_default.track,
+								children: [/* @__PURE__ */ jsx("span", {
+									className: BargainSplit_module_default.fill,
+									style: { width: `${(p ?? 0) / scale * 100}%` }
+								}), typeof w === "number" ? /* @__PURE__ */ jsx("span", {
+									className: BargainSplit_module_default.walk,
+									style: { left: `${w / scale * 100}%` }
+								}) : null]
+							}),
+							/* @__PURE__ */ jsxs("span", {
+								className: BargainSplit_module_default.pts,
+								children: [
+									p ?? 0,
+									" points",
+									typeof w === "number" ? ` · walk-away ${w}` : ""
+								]
+							})
+						]
+					}, s.id);
+				})
+			}) : null,
+			shownHands && Object.keys(shownHands).length ? /* @__PURE__ */ jsx("ul", {
+				className: BargainSplit_module_default.hands,
+				"aria-hidden": true,
+				children: sides.map((s) => {
+					const c = claims?.[s.id];
+					return shownHands[s.id] ? /* @__PURE__ */ jsxs("li", { children: [
+						s.name,
+						" held ",
+						goodsText$1(shownHands[s.id]),
+						c ? ` · said ${goodsText$1(c.claimed)} — ${c.matches ? "matched" : "differed"}` : ""
+					] }, s.id) : null;
+				})
+			}) : null,
+			/* @__PURE__ */ jsxs(BoardTable, {
+				caption: `Bargain: ${plural$1(offers.length, "offer")}`,
+				head: [
+					"offer",
+					"by",
+					`${a?.name ?? "first"} gets`,
+					`${b?.name ?? "second"} gets`,
+					"stated values",
+					"status"
+				],
+				children: [
+					offers.map((o) => /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("th", {
+							scope: "row",
+							children: o.n
+						}),
+						/* @__PURE__ */ jsx("td", { children: o.byName }),
+						/* @__PURE__ */ jsx("td", { children: GOODS.map((k) => `${share(o, a, k)} ${k}`).join(", ") }),
+						/* @__PURE__ */ jsx("td", { children: GOODS.map((k) => `${share(o, b, k)} ${k}`).join(", ") }),
+						/* @__PURE__ */ jsx("td", { children: o.claim ? `${goodsText$1(o.claim)} (stated, unchecked)` : "none" }),
+						/* @__PURE__ */ jsx("td", { children: accepted === o.n ? "accepted" : "" })
+					] }, o.n)),
+					!offers.length ? /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("th", {
+							scope: "row",
+							children: "none"
+						}),
+						/* @__PURE__ */ jsx("td", {}),
+						/* @__PURE__ */ jsx("td", {}),
+						/* @__PURE__ */ jsx("td", {}),
+						/* @__PURE__ */ jsx("td", { children: "no offer yet" }),
+						/* @__PURE__ */ jsx("td", {})
+					] }) : null,
+					sides.map((s) => /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("th", {
+							scope: "row",
+							children: s.name
+						}),
+						/* @__PURE__ */ jsx("td", { children: over ? "end" : "values" }),
+						/* @__PURE__ */ jsx("td", {
+							colSpan: 2,
+							children: shownHands?.[s.id] ? `held ${goodsText$1(shownHands[s.id])}` : over ? "hand not published" : "private until the end"
+						}),
+						/* @__PURE__ */ jsx("td", { children: over && claims?.[s.id] ? `said ${goodsText$1(claims[s.id].claimed)}: ${claims[s.id].matches ? "matched" : "differed"}` : "" }),
+						/* @__PURE__ */ jsx("td", { children: shownPoints ? `${shownPoints[s.id] ?? 0} points${typeof walkAways?.[s.id] === "number" ? `, walk-away ${walkAways[s.id]}` : ""}` : "" })
+					] }, `end-${s.id}`))
+				]
+			})
+		]
+	});
+}
+// src/ui/boards/chanceModel.ts
+var asNumber = (v) => typeof v === "number" && Number.isFinite(v) ? v : null;
+function diceModel(o, name) {
+	const ids = o.players.length ? o.players : [...new Set(o.bids.map((b) => b.by))];
+	const r = o.over ? o.result : null;
+	return {
+		bids: o.bids.map((b) => ({
+			n: b.n,
+			name: name(b.by),
+			quantity: b.quantity,
+			face: b.face
+		})),
+		call: o.call ? {
+			bid: o.call.bid,
+			byName: name(o.call.by)
+		} : null,
+		onesWild: o.onesWild ?? r?.ones_wild === true,
+		diceEach: o.diceEach,
+		over: o.over,
+		cups: ids.map((id) => ({
+			id,
+			name: name(id),
+			values: o.over && o.dice?.[id]?.length ? o.dice[id] : null
+		})),
+		showed: r ? asNumber(r.count) : null,
+		held: r?.termination === "bid_held" ? true : r?.termination === "bid_failed" ? false : null
+	};
+}
+function diceFromView(v, participants, name = (s) => s) {
+	return diceModel({
+		bids: v.bids,
+		call: v.call,
+		players: participants,
+		dice: v.dice,
+		over: !!v.result,
+		result: v.result,
+		onesWild: v.onesWild,
+		diceEach: v.diceEach
+	}, name);
+}
+function diceFromFrame(f, name) {
+	return diceModel({
+		bids: f.bids,
+		call: f.call,
+		players: Object.keys(f.dice ?? {}),
+		dice: f.dice,
+		over: !!f.result,
+		result: f.result
+	}, name);
+}
+function auctionModel(o, name) {
+	const r = o.over ? o.result : null;
+	const value = r ? asNumber(r.value) : null;
+	const bidder = r && typeof r.bidder === "string" ? r.bidder : null;
+	const winBid = r ? asNumber(r.winning_bid) : null;
+	const profit = r ? asNumber(r.profit) : null;
+	return {
+		bids: Object.entries(o.bids).map(([id, v]) => ({
+			id,
+			name: name(id),
+			value: v
+		})),
+		sealed: o.sealed,
+		base: o.base,
+		over: o.over,
+		signals: o.over && o.signals ? Object.entries(o.signals).map(([id, v]) => ({
+			id,
+			name: name(id),
+			value: v
+		})) : null,
+		value,
+		winner: bidder && winBid !== null ? {
+			id: bidder,
+			name: name(bidder),
+			bid: winBid,
+			profit
+		} : null,
+		curse: r?.termination === "winners_curse",
+		spread: o.spread
+	};
+}
+function auctionFromView(v, name = (s) => s) {
+	const sealed = v.committed.filter((p) => !(p in v.bids)).length;
+	return auctionModel({
+		bids: v.bids,
+		sealed,
+		base: v.base,
+		over: !!v.result,
+		signals: v.signals,
+		result: v.result,
+		spread: v.spread
+	}, name);
+}
+function auctionFromFrame(f, name) {
+	return auctionModel({
+		bids: Object.fromEntries(f.slots.flatMap((s) => s.state === "revealed" && typeof s.move === "number" ? [[s.agent, s.move]] : [])),
+		sealed: f.slots.filter((s) => s.state === "sealed").length,
+		base: f.base,
+		over: !!f.result,
+		signals: f.signals,
+		result: f.result
+	}, name);
+}
+function bargainModel(o, name) {
+	const r = o.over ? o.result : null;
+	const accepted = o.ended?.how === "accepted" && o.offers.length ? o.offers[o.offers.length - 1].n : null;
+	const hands = o.over && o.hands && Object.keys(o.hands).length ? o.hands : null;
+	return {
+		sides: o.sides.map((id) => ({
+			id,
+			name: name(id)
+		})),
+		pool: o.pool,
+		offers: o.offers.map((x) => ({
+			n: x.n,
+			byName: name(x.by),
+			give: x.allocation,
+			claim: x.claim
+		})),
+		accepted,
+		over: o.over,
+		hands,
+		points: r?.points ?? null,
+		walkAways: r?.walk_aways ?? null,
+		claims: r?.claims ?? null,
+		how: o.ended?.how ?? null
+	};
+}
+function bargainFromView(v, participants, over, name = (s) => s) {
+	return bargainModel({
+		sides: participants.slice(0, 2),
+		pool: v.pool,
+		offers: v.offers,
+		ended: v.ended,
+		hands: v.hands,
+		result: v.result,
+		over
+	}, name);
+}
+function bargainFromFrame(f, name) {
+	return bargainModel({
+		sides: f.players ?? [],
+		pool: f.pool ?? {},
+		offers: f.offers,
+		ended: f.ended,
+		hands: f.hands,
+		result: f.result,
+		over: !!f.result
+	}, name);
+}
 // src/ui/BargainPanel.tsx
 /**
 * Bargain (`emporia:bargain:v2`, docs/proposals/gamify-bargain.md §9) as a viewer
@@ -21098,7 +22433,7 @@ function NextMoveHint$2({ session, v }) {
 * shown as the MCP call to copy. While it runs the hands are sealed — a viewer who
 * is a player sees its own values (`private`, served to it alone), nobody else's.
 */
-var num$2 = { fontVariantNumeric: "tabular-nums" };
+var num$3 = { fontVariantNumeric: "tabular-nums" };
 var goodsText = (g) => GOODS.map((k) => `${g?.[k] ?? 0} ${k}`).join(" · ");
 function BargainPanel({ session: initial }) {
 	const id = initial.session_id;
@@ -21108,7 +22443,6 @@ function BargainPanel({ session: initial }) {
 	const session = fresh ?? initial;
 	const v = bargainView(session, acts?.actions);
 	const live = session.status === "active" || session.status === "waiting";
-	const [a, b] = session.participants;
 	const over = !live;
 	const left = Math.max(0, v.maxOffers - v.offers.length);
 	const clock = clockText(v.secondsLeft);
@@ -21144,7 +22478,7 @@ function BargainPanel({ session: initial }) {
 					] }) : v.result ? " — a draw" : null,
 					v.result?.points ? /* @__PURE__ */ jsxs("span", {
 						className: "e-setplay__why",
-						style: num$2,
+						style: num$3,
 						children: [
 							" ",
 							"— ",
@@ -21169,7 +22503,7 @@ function BargainPanel({ session: initial }) {
 				children: [
 					/* @__PURE__ */ jsxs("p", {
 						className: "e-faint e-blotto__rules",
-						style: num$2,
+						style: num$3,
 						children: [
 							"pool ",
 							goodsText(v.pool),
@@ -21182,78 +22516,612 @@ function BargainPanel({ session: initial }) {
 							"· no deal scores each player its own private walk-away (0–4)"
 						]
 					}),
-					v.offers.length === 0 ? /* @__PURE__ */ jsx(Text, {
-						className: "e-note",
-						children: "No offer yet. The creator opens."
-					}) : /* @__PURE__ */ jsx("div", {
-						className: "e-blotto__scroll",
-						children: /* @__PURE__ */ jsxs("table", {
-							className: "e-blotto__grid e-bargain__offers",
-							children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-								/* @__PURE__ */ jsx("th", {
-									scope: "col",
-									children: "#"
-								}),
-								/* @__PURE__ */ jsx("th", {
-									scope: "col",
-									children: "by"
-								}),
-								/* @__PURE__ */ jsxs("th", {
-									scope: "col",
-									children: [a ?? "—", " gets"]
-								}),
-								/* @__PURE__ */ jsxs("th", {
-									scope: "col",
-									children: [b ?? "—", " gets"]
-								}),
-								/* @__PURE__ */ jsx("th", {
-									scope: "col",
-									children: "stated values"
-								})
-							] }) }), /* @__PURE__ */ jsx("tbody", { children: v.offers.map((o) => {
-								const taken = v.ended?.how === "accepted" && v.ended.offer === o.n;
-								return /* @__PURE__ */ jsxs("tr", {
-									className: taken ? "is-winner" : void 0,
-									children: [
-										/* @__PURE__ */ jsx("td", {
-											style: num$2,
-											children: o.n
-										}),
-										/* @__PURE__ */ jsx("th", {
-											scope: "row",
-											children: o.by
-										}),
-										/* @__PURE__ */ jsx("td", {
-											style: num$2,
-											children: goodsText(o.allocation[a])
-										}),
-										/* @__PURE__ */ jsx("td", {
-											style: num$2,
-											children: goodsText(o.allocation[b])
-										}),
-										/* @__PURE__ */ jsx("td", {
-											style: num$2,
-											children: o.claim ? /* @__PURE__ */ jsxs(Fragment, { children: [
-												goodsText(o.claim),
-												" ",
-												/* @__PURE__ */ jsx("span", {
-													className: "e-faint",
-													children: "· stated, unchecked"
-												})
-											] }) : /* @__PURE__ */ jsx("span", {
-												className: "e-faint",
-												children: "—"
-											})
-										})
-									]
-								}, o.n);
-							}) })]
-						})
-					}),
-					/* @__PURE__ */ jsx(Hands, {
+					/* @__PURE__ */ jsx(BargainSplit, { ...bargainFromView(v, session.participants, over) }),
+					over ? null : /* @__PURE__ */ jsx(Hands, {
 						v,
 						participants: session.participants,
-						over
+						over: false
+					})
+				]
+			}),
+			/* @__PURE__ */ jsxs("div", {
+				className: "e-setplay__meta",
+				children: [/* @__PURE__ */ jsxs(Text, {
+					className: "e-faint",
+					style: { fontSize: 11 },
+					children: [
+						"…",
+						id.slice(-10),
+						session.created_at ? ` · started ${whenText(session.created_at)}` : "",
+						" · no stakes"
+					]
+				}), /* @__PURE__ */ jsxs("span", {
+					className: "e-setplay__badges",
+					children: [/* @__PURE__ */ jsx(AuditBadge, { sessionId: id }), /* @__PURE__ */ jsx(VerifyBadge, {
+						sessionId: id,
+						live: session.status === "active"
+					})]
+				})]
+			}),
+			/* @__PURE__ */ jsx(NextMoveHint$2, {
+				session,
+				v
+			}),
+			/* @__PURE__ */ jsx(GameChat, {
+				sessionId: id,
+				live
+			})
+		]
+	});
+}
+/** Sealed while it runs; after the end each real hand beside the last thing its player said. */
+function Hands({ v, participants, over }) {
+	const revealed = over && Object.keys(v.hands).length > 0;
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-seats",
+		role: "list",
+		"aria-label": "Priorities",
+		children: participants.map((p) => {
+			const claim = v.result?.claims?.[p];
+			return /* @__PURE__ */ jsxs("div", {
+				role: "listitem",
+				className: "e-seat e-bargain__hand",
+				children: [
+					/* @__PURE__ */ jsxs("span", {
+						className: "e-seat__name",
+						children: [p, p === VIEWER_ID ? " (viewing as)" : ""]
+					}),
+					/* @__PURE__ */ jsxs("span", {
+						className: "e-seat__state",
+						style: num$3,
+						children: [revealed ? /* @__PURE__ */ jsxs(Fragment, { children: ["held ", goodsText(v.hands[p])] }) : p === VIEWER_ID && v.mine ? /* @__PURE__ */ jsxs(Fragment, { children: [
+							"values ",
+							goodsText(v.mine),
+							" ",
+							/* @__PURE__ */ jsxs("span", {
+								className: "e-faint",
+								children: [
+									"· only ",
+									bareAgentName(p),
+									" sees these"
+								]
+							})
+						] }) : "▒▒ sealed until the end", revealed && claim ? /* @__PURE__ */ jsxs("span", {
+							className: "e-faint",
+							children: [
+								" · said ",
+								goodsText(claim.claimed),
+								" — ",
+								claim.matches ? "matched" : "differed"
+							]
+						}) : null]
+					}),
+					/* @__PURE__ */ jsx("span", {
+						className: "e-seat__move",
+						style: num$3,
+						children: v.result?.points?.[p] ?? ""
+					})
+				]
+			}, p);
+		})
+	});
+}
+function NextMoveHint$2({ session, v }) {
+	if (!VIEWER_ID || session.status !== "active" || session.current_agent !== VIEWER_ID) return null;
+	const last = v.offers.length >= v.maxOffers;
+	return /* @__PURE__ */ jsx(McpCommandHint, {
+		label: last ? `${bareAgentName(VIEWER_ID)}'s move: the last offer stands; it answers with` : `${bareAgentName(VIEWER_ID)}'s move: it offers (or accepts the offer on the table) with`,
+		tool: "submit_action",
+		args: {
+			session_id: session.session_id,
+			action_type: last ? "accept | decline" : "offer",
+			payload: last ? "{}" : "{\"keep\": {\"silk\": 2, \"spice\": 0, \"amber\": 1}}"
+		}
+	});
+}
+var AuctionLine_module_default = {
+	root: "AuctionLine_root_1bjou",
+	line: "AuctionLine_line_1bjou",
+	lane: "AuctionLine_lane_1bjou",
+	axis: "AuctionLine_axis_1bjou",
+	tick: "AuctionLine_tick_1bjou",
+	mark: "AuctionLine_mark_1bjou",
+	base: "AuctionLine_base_1bjou",
+	pot: "AuctionLine_pot_1bjou",
+	sig: "AuctionLine_sig_1bjou",
+	sigText: "AuctionLine_sigText_1bjou",
+	sigTick: "AuctionLine_sigTick_1bjou",
+	pin: "AuctionLine_pin_1bjou",
+	pinTick: "AuctionLine_pinTick_1bjou",
+	pinText: "AuctionLine_pinText_1bjou",
+	won: "AuctionLine_won_1bjou",
+	seg: "AuctionLine_seg_1bjou",
+	span: "AuctionLine_span_1bjou",
+	loss: "AuctionLine_loss_1bjou",
+	segText: "AuctionLine_segText_1bjou"
+};
+// src/ui/boards/AuctionLine.tsx
+/** Spread labels that would overlap (about a sixth of the line) onto their own rows. */
+function stack(items, range) {
+	const last = [];
+	return [...items].sort((a, b) => a.at - b.at).map((item) => {
+		let row = 0;
+		while (last[row] !== void 0 && (item.at - last[row]) / range * 100 < 17) row++;
+		last[row] = item.at;
+		return {
+			item,
+			row
+		};
+	});
+}
+/**
+* Common-value auction: a number line 0-300. Sealed bids are a count, not positions. After the reveal:
+* bids as pins, each signal as a tick, the base value and V. The winner's gain or loss is the segment
+* between its bid and V, labelled, so the winner's curse is visible.
+*/
+function AuctionLine({ min = 0, max = 300, bids, sealed = 0, base, over, signals, value, winner, spread }) {
+	const range = max - min;
+	const at = (x) => `${(Math.min(max, Math.max(min, x)) - min) / range * 100}%`;
+	const sigs = over && signals ? signals : [];
+	const v = over ? value : null;
+	const pins = stack(bids.map((b) => ({
+		...b,
+		at: b.value
+	})), range);
+	const ticks = stack(sigs.map((s) => ({
+		...s,
+		at: s.value
+	})), range);
+	const gain = over && winner && v !== null ? winner.profit ?? v - winner.bid : null;
+	const segFrom = winner && v !== null ? Math.min(winner.bid, v) : 0;
+	const segTo = winner && v !== null ? Math.max(winner.bid, v) : 0;
+	const gainText = gain === null ? "" : gain < 0 ? `${winner.name} paid ${-gain} more than the pot was worth: the winner's curse` : gain === 0 ? `${winner.name} broke even` : `${winner.name} gained ${gain}`;
+	const label = `Bids on a line from ${min} to ${max}: ${bids.map((b) => `${b.name} ${b.value}`).join(", ") || "none revealed"}${sealed ? `; ${plural$1(sealed, "bid")} sealed` : ""}${base !== null ? `; base value ${base}` : ""}${v !== null ? `; pot worth ${v}` : ""}`;
+	return /* @__PURE__ */ jsxs("div", {
+		className: `${BoardKit_module_default.board} ${AuctionLine_module_default.root}`,
+		children: [
+			/* @__PURE__ */ jsxs("p", {
+				className: BoardKit_module_default.rules,
+				children: [
+					"one pot worth the same to all, known to nobody · a private noisy signal each",
+					spread ? ` (±${spread})` : "",
+					" ",
+					"· one sealed bid each, the highest wins value minus bid",
+					sealed ? ` · ${plural$1(sealed, "bid")} still sealed` : "",
+					over ? "" : " · signals and the pot's worth appear when the game ends"
+				]
+			}),
+			/* @__PURE__ */ jsx("div", {
+				className: BoardKit_module_default.scroll,
+				children: /* @__PURE__ */ jsxs("div", {
+					className: AuctionLine_module_default.line,
+					role: "img",
+					"aria-label": label,
+					children: [
+						/* @__PURE__ */ jsx("div", {
+							className: AuctionLine_module_default.lane,
+							style: { "--rows": Math.max(1, ...ticks.map((t) => t.row + 1)) },
+							children: ticks.map(({ item, row }) => /* @__PURE__ */ jsxs("span", {
+								className: AuctionLine_module_default.sig,
+								style: {
+									left: at(item.at),
+									"--row": row
+								},
+								children: [/* @__PURE__ */ jsxs("span", {
+									className: AuctionLine_module_default.sigText,
+									children: [
+										item.name,
+										" signal ",
+										item.value
+									]
+								}), /* @__PURE__ */ jsx("span", { className: AuctionLine_module_default.sigTick })]
+							}, item.id))
+						}),
+						/* @__PURE__ */ jsxs("div", {
+							className: AuctionLine_module_default.axis,
+							children: [
+								[
+									0,
+									.25,
+									.5,
+									.75,
+									1
+								].map((f) => /* @__PURE__ */ jsx("span", {
+									className: AuctionLine_module_default.tick,
+									style: { left: at(min + f * range) },
+									children: /* @__PURE__ */ jsx("span", { children: Math.round(min + f * range) })
+								}, f)),
+								base !== null ? /* @__PURE__ */ jsx("span", {
+									className: `${AuctionLine_module_default.mark} ${AuctionLine_module_default.base}`,
+									style: { left: at(base) },
+									children: /* @__PURE__ */ jsxs("span", { children: ["base ", base] })
+								}) : null,
+								v !== null ? /* @__PURE__ */ jsx("span", {
+									className: `${AuctionLine_module_default.mark} ${AuctionLine_module_default.pot}`,
+									style: { left: at(v) },
+									children: /* @__PURE__ */ jsxs("span", { children: ["V ", v] })
+								}) : null
+							]
+						}),
+						/* @__PURE__ */ jsx("div", {
+							className: AuctionLine_module_default.lane,
+							style: { "--rows": Math.max(1, ...pins.map((p) => p.row + 1)) },
+							children: pins.map(({ item, row }) => /* @__PURE__ */ jsxs("span", {
+								className: `${AuctionLine_module_default.pin}${winner?.id === item.id ? ` ${AuctionLine_module_default.won}` : ""}`,
+								style: {
+									left: at(item.at),
+									"--row": row
+								},
+								children: [/* @__PURE__ */ jsx("span", { className: AuctionLine_module_default.pinTick }), /* @__PURE__ */ jsxs("span", {
+									className: AuctionLine_module_default.pinText,
+									children: [
+										winner?.id === item.id ? "★ " : "",
+										item.name,
+										" bid ",
+										item.value
+									]
+								})]
+							}, item.id))
+						}),
+						winner && v !== null && gain !== null ? /* @__PURE__ */ jsxs("div", {
+							className: AuctionLine_module_default.seg,
+							children: [/* @__PURE__ */ jsx("span", {
+								className: `${AuctionLine_module_default.span}${gain < 0 ? ` ${AuctionLine_module_default.loss}` : ""}`,
+								style: {
+									left: at(segFrom),
+									width: `${(Math.min(max, segTo) - Math.max(min, segFrom)) / range * 100}%`
+								}
+							}), /* @__PURE__ */ jsx("span", {
+								className: AuctionLine_module_default.segText,
+								style: { left: at(segFrom) },
+								children: gain < 0 ? `${gain} (curse)` : `+${gain}`
+							})]
+						}) : null
+					]
+				})
+			}),
+			gainText ? /* @__PURE__ */ jsxs("p", {
+				className: BoardKit_module_default.foot,
+				children: [
+					gainText,
+					" (bid ",
+					winner.bid,
+					", pot ",
+					v,
+					")"
+				]
+			}) : null,
+			/* @__PURE__ */ jsxs(BoardTable, {
+				caption: "Common-value auction",
+				head: [
+					"player",
+					"bid",
+					"signal"
+				],
+				children: [
+					bids.map((b) => /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsxs("th", {
+							scope: "row",
+							children: [b.name, winner?.id === b.id ? " (won the pot)" : ""]
+						}),
+						/* @__PURE__ */ jsx("td", { children: b.value }),
+						/* @__PURE__ */ jsx("td", { children: over ? sigs.find((s) => s.id === b.id)?.value ?? "never revealed" : "private" })
+					] }, b.id)),
+					sealed ? /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("th", {
+							scope: "row",
+							children: "sealed"
+						}),
+						/* @__PURE__ */ jsxs("td", { children: [plural$1(sealed, "bid"), " not revealed"] }),
+						/* @__PURE__ */ jsx("td", {})
+					] }) : null,
+					!bids.length && !sealed ? /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("th", {
+							scope: "row",
+							children: "none"
+						}),
+						/* @__PURE__ */ jsx("td", { children: "no bid yet" }),
+						/* @__PURE__ */ jsx("td", {})
+					] }) : null,
+					/* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("th", {
+							scope: "row",
+							children: "base value"
+						}),
+						/* @__PURE__ */ jsx("td", { children: base !== null ? base : "not known yet" }),
+						/* @__PURE__ */ jsx("td", {})
+					] }),
+					/* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("th", {
+							scope: "row",
+							children: "pot worth V"
+						}),
+						/* @__PURE__ */ jsx("td", { children: v !== null ? v : "not known yet" }),
+						/* @__PURE__ */ jsx("td", {})
+					] }),
+					gain !== null ? /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("th", {
+							scope: "row",
+							children: "winner's result"
+						}),
+						/* @__PURE__ */ jsx("td", { children: gain }),
+						/* @__PURE__ */ jsx("td", { children: gainText })
+					] }) : null
+				]
+			})
+		]
+	});
+}
+var DiceTable_module_default = {
+	root: "DiceTable_root_1yna5",
+	grid: "DiceTable_grid_1yna5",
+	row: "DiceTable_row_1yna5",
+	qty: "DiceTable_qty_1yna5",
+	faceHead: "DiceTable_faceHead_1yna5",
+	cell: "DiceTable_cell_1yna5",
+	bid: "DiceTable_bid_1yna5",
+	called: "DiceTable_called_1yna5",
+	cups: "DiceTable_cups_1yna5",
+	cup: "DiceTable_cup_1yna5",
+	cupName: "DiceTable_cupName_1yna5",
+	dice: "DiceTable_dice_1yna5",
+	die: "DiceTable_die_1yna5",
+	counts: "DiceTable_counts_1yna5",
+	meter: "DiceTable_meter_1yna5",
+	track: "DiceTable_track_1yna5",
+	fill: "DiceTable_fill_1yna5",
+	need: "DiceTable_need_1yna5",
+	meterText: "DiceTable_meterText_1yna5"
+};
+// src/ui/boards/DiceTable.tsx
+var FACES = [
+	1,
+	2,
+	3,
+	4,
+	5,
+	6
+];
+var counts = (v, face, wild) => v === face || wild && v === 1;
+/**
+* Liar's dice: the bids as a ladder on a grid (quantity up, face across), each bid a marked cell with
+* its bidder, the called bid outlined. After the reveal: each cup as die faces, the dice that count for
+* the called face filled, and "needed 4, showed 3" as a bar against a mark. Cups stay closed until `over`.
+*/
+function DiceTable({ bids, call, onesWild, diceEach, over, cups, showed, held }) {
+	const top = Math.max(1, ...bids.map((b) => b.quantity));
+	const rows = Array.from({ length: top }, (_, i) => top - i);
+	const byCell = new Map(bids.map((b) => [`${b.quantity}:${b.face}`, b]));
+	const called = call ? bids.find((b) => b.n === call.bid) : void 0;
+	const open = over ? cups.filter((c) => c.values && c.values.length > 0) : [];
+	const face = called?.face;
+	const mine = (v) => face !== void 0 && counts(v, face, !!onesWild);
+	const computed = called && open.length ? open.reduce((n, c) => n + c.values.filter(mine).length, 0) : null;
+	const count = over && called ? typeof showed === "number" ? showed : computed : null;
+	const scale = called && count !== null ? Math.max(called.quantity, count, 1) : 1;
+	const verdict = called && count !== null ? held ?? count >= called.quantity : null;
+	const caption = `Liar's dice: ${plural$1(bids.length, "bid")}${call ? `, bid ${call.bid} called` : ""}`;
+	return /* @__PURE__ */ jsxs("div", {
+		className: `${BoardKit_module_default.board} ${DiceTable_module_default.root}`,
+		children: [
+			/* @__PURE__ */ jsxs("p", {
+				className: BoardKit_module_default.rules,
+				children: [
+					diceEach ? `${diceEach} dice each, ` : "",
+					"bids rise: more dice, or a higher face",
+					onesWild ? " · ones are wild" : "",
+					over ? "" : " · every cup stays closed until the game ends"
+				]
+			}),
+			bids.length ? /* @__PURE__ */ jsx("div", {
+				className: BoardKit_module_default.scroll,
+				children: /* @__PURE__ */ jsxs("div", {
+					className: DiceTable_module_default.grid,
+					"aria-hidden": true,
+					children: [/* @__PURE__ */ jsxs("div", {
+						className: DiceTable_module_default.row,
+						children: [/* @__PURE__ */ jsx("span", { className: DiceTable_module_default.qty }), FACES.map((f) => /* @__PURE__ */ jsxs("span", {
+							className: DiceTable_module_default.faceHead,
+							children: ["face ", f]
+						}, f))]
+					}), rows.map((q) => /* @__PURE__ */ jsxs("div", {
+						className: DiceTable_module_default.row,
+						children: [/* @__PURE__ */ jsxs("span", {
+							className: DiceTable_module_default.qty,
+							children: [q, "×"]
+						}), FACES.map((f) => {
+							const b = byCell.get(`${q}:${f}`);
+							const isCalled = !!b && call?.bid === b.n;
+							return /* @__PURE__ */ jsx("span", {
+								className: `${DiceTable_module_default.cell}${b ? ` ${DiceTable_module_default.bid}` : ""}${isCalled ? ` ${DiceTable_module_default.called}` : ""}`,
+								children: b ? /* @__PURE__ */ jsxs(Fragment, { children: [
+									"#",
+									b.n,
+									" ",
+									b.name,
+									isCalled ? " ⚑" : ""
+								] }) : null
+							}, f);
+						})]
+					}, q))]
+				})
+			}) : /* @__PURE__ */ jsx("p", {
+				className: BoardKit_module_default.foot,
+				children: "No bid yet."
+			}),
+			call ? /* @__PURE__ */ jsxs("p", {
+				className: BoardKit_module_default.foot,
+				children: [
+					"⚑ ",
+					call.byName,
+					" called liar on bid ",
+					call.bid,
+					called ? ` (${called.quantity} × ${called.face} by ${called.name})` : ""
+				]
+			}) : null,
+			over && open.length ? /* @__PURE__ */ jsx("div", {
+				className: DiceTable_module_default.cups,
+				"aria-hidden": true,
+				children: open.map((c) => /* @__PURE__ */ jsxs("div", {
+					className: DiceTable_module_default.cup,
+					children: [/* @__PURE__ */ jsx("span", {
+						className: DiceTable_module_default.cupName,
+						children: c.name
+					}), /* @__PURE__ */ jsx("span", {
+						className: DiceTable_module_default.dice,
+						children: c.values.map((v, i) => /* @__PURE__ */ jsx("span", {
+							className: `${DiceTable_module_default.die}${mine(v) ? ` ${DiceTable_module_default.counts}` : ""}`,
+							children: v
+						}, i))
+					})]
+				}, c.id))
+			}) : null,
+			over && called && count !== null ? /* @__PURE__ */ jsxs("div", {
+				className: DiceTable_module_default.meter,
+				"aria-hidden": true,
+				children: [/* @__PURE__ */ jsxs("span", {
+					className: DiceTable_module_default.track,
+					children: [/* @__PURE__ */ jsx("span", {
+						className: DiceTable_module_default.fill,
+						style: { width: `${count / scale * 100}%` }
+					}), /* @__PURE__ */ jsx("span", {
+						className: DiceTable_module_default.need,
+						style: { left: `${called.quantity / scale * 100}%` }
+					})]
+				}), /* @__PURE__ */ jsxs("span", {
+					className: DiceTable_module_default.meterText,
+					children: [
+						"needed ",
+						called.quantity,
+						", showed ",
+						count,
+						verdict === null ? "" : verdict ? " — the bid held" : " — the bid failed"
+					]
+				})]
+			}) : null,
+			/* @__PURE__ */ jsxs(BoardTable, {
+				caption,
+				head: [
+					"bid",
+					"by",
+					"claims at least",
+					"status"
+				],
+				children: [
+					bids.map((b) => /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("th", {
+							scope: "row",
+							children: b.n
+						}),
+						/* @__PURE__ */ jsx("td", { children: b.name }),
+						/* @__PURE__ */ jsxs("td", { children: [
+							b.quantity,
+							" × ",
+							b.face
+						] }),
+						/* @__PURE__ */ jsx("td", { children: call?.bid === b.n ? `called liar by ${call.byName}` : "" })
+					] }, b.n)),
+					!bids.length ? /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("th", {
+							scope: "row",
+							children: "none"
+						}),
+						/* @__PURE__ */ jsx("td", {}),
+						/* @__PURE__ */ jsx("td", { children: "no bid yet" }),
+						/* @__PURE__ */ jsx("td", {})
+					] }) : null,
+					cups.map((c) => /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsxs("th", {
+							scope: "row",
+							children: [c.name, "'s cup"]
+						}),
+						/* @__PURE__ */ jsx("td", {}),
+						/* @__PURE__ */ jsx("td", { children: over ? c.values && c.values.length ? `held ${c.values.join(" ")}` : "never revealed" : "closed" }),
+						/* @__PURE__ */ jsx("td", {})
+					] }, `cup-${c.id}`)),
+					over && called && count !== null ? /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("th", {
+							scope: "row",
+							children: "result"
+						}),
+						/* @__PURE__ */ jsx("td", {}),
+						/* @__PURE__ */ jsxs("td", { children: [
+							"needed ",
+							called.quantity,
+							", showed ",
+							count
+						] }),
+						/* @__PURE__ */ jsx("td", { children: verdict ? "the bid held" : "the bid failed" })
+					] }) : null
+				]
+			})
+		]
+	});
+}
+// src/ui/ChancePanel.tsx
+/**
+* Liar's dice and the common-value auction (the games pack) as a viewer sees them: who is
+* seated, the bids in order, whose turn and the clock; after the end every die or signal beside
+* what was said at the table, the result and each score.
+*
+* Visibility only: the dashboard never bids or calls. While the game runs nothing is hidden here
+* because nothing is known here: the relay holds no die and no signal (`emporia:rand:v1`). A player's
+* next move is shown as the MCP call to copy.
+*/
+var num$2 = { fontVariantNumeric: "tabular-nums" };
+function ChancePanel({ session: initial }) {
+	const id = initial.session_id;
+	const running = initial.status === "active" || initial.status === "waiting";
+	const [fresh] = useInterval(() => api.session(id), running ? 4e3 : 36e5, [id, running]);
+	const [acts] = useInterval(() => api.sessionActions(id), running ? 4e3 : 36e5, [id, running]);
+	const session = fresh ?? initial;
+	const v = chanceView(session, acts?.actions);
+	if (!v) return null;
+	const live = session.status === "active" || session.status === "waiting";
+	const clock = clockText(v.secondsLeft);
+	const name = v.kind === "dice" ? "liar's dice" : "common-value auction";
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-setplay e-chance",
+		children: [
+			/* @__PURE__ */ jsxs("header", {
+				className: "e-setplay__head",
+				children: [/* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx("p", {
+					className: "e-setplay__game",
+					children: name
+				}), /* @__PURE__ */ jsx("p", {
+					className: "e-setplay__players",
+					children: session.participants.join(" v ")
+				})] }), /* @__PURE__ */ jsx("span", {
+					className: `e-setplay__status${live ? " is-live" : ""}`,
+					children: live ? session.status === "waiting" ? "waiting" : "live" : "finished"
+				})]
+			}),
+			v.result ? /* @__PURE__ */ jsx(Verdict, { v }) : /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("p", {
+				className: "e-setplay__wait",
+				children: session.status === "waiting" ? `Waiting for players (${session.participants.length}/${v.players}).` : progress$1(v, clock)
+			}), /* @__PURE__ */ jsx("span", {
+				className: "e-sr",
+				role: "status",
+				children: session.status === "waiting" ? "Waiting for players." : progress$1(v)
+			})] }),
+			/* @__PURE__ */ jsxs(FoldDetail, {
+				fold: !!v.result,
+				label: v.kind === "dice" ? "the bids, the dice and the rules" : "the bids, the signals and the rules",
+				children: [
+					/* @__PURE__ */ jsxs("p", {
+						className: "e-faint e-blotto__rules",
+						style: num$2,
+						children: [
+							v.kind === "dice" ? `${v.players} players · ${v.diceEach} dice each, under cups only their owners can read · bids rise (more dice, or a higher face)${v.onesWild ? " · ones are wild" : ""} · one call ends the play` : `${v.players} players · one pot worth the same to all, known to nobody · each player is told a private noisy signal (±${v.spread} parts) · one sealed bid each · the highest bid wins value minus bid`,
+							" ",
+							"· drawn from a drand round and each player's own secret: the relay holds none · no stakes"
+						]
+					}),
+					v.kind === "dice" ? /* @__PURE__ */ jsx(DiceTable, { ...diceFromView(v, session.participants) }) : /* @__PURE__ */ jsx(AuctionLine, { ...auctionFromView(v) }),
+					/* @__PURE__ */ jsx(Seats, {
+						v,
+						participants: session.participants,
+						over: !!v.result
 					})
 				]
 			}),
@@ -21287,172 +23155,7 @@ function BargainPanel({ session: initial }) {
 		]
 	});
 }
-/** Sealed while it runs; after the end each real hand beside the last thing its player said. */
-function Hands({ v, participants, over }) {
-	const revealed = over && Object.keys(v.hands).length > 0;
-	return /* @__PURE__ */ jsx("div", {
-		className: "e-seats",
-		role: "list",
-		"aria-label": "Priorities",
-		children: participants.map((p) => {
-			const claim = v.result?.claims?.[p];
-			return /* @__PURE__ */ jsxs("div", {
-				role: "listitem",
-				className: "e-seat e-bargain__hand",
-				children: [
-					/* @__PURE__ */ jsxs("span", {
-						className: "e-seat__name",
-						children: [p, p === VIEWER_ID ? " (viewing as)" : ""]
-					}),
-					/* @__PURE__ */ jsxs("span", {
-						className: "e-seat__state",
-						style: num$2,
-						children: [revealed ? /* @__PURE__ */ jsxs(Fragment, { children: ["held ", goodsText(v.hands[p])] }) : p === VIEWER_ID && v.mine ? /* @__PURE__ */ jsxs(Fragment, { children: [
-							"values ",
-							goodsText(v.mine),
-							" ",
-							/* @__PURE__ */ jsxs("span", {
-								className: "e-faint",
-								children: [
-									"· only ",
-									bareAgentName(p),
-									" sees these"
-								]
-							})
-						] }) : "▒▒ sealed until the end", revealed && claim ? /* @__PURE__ */ jsxs("span", {
-							className: "e-faint",
-							children: [
-								" · said ",
-								goodsText(claim.claimed),
-								" — ",
-								claim.matches ? "matched" : "differed"
-							]
-						}) : null]
-					}),
-					/* @__PURE__ */ jsx("span", {
-						className: "e-seat__move",
-						style: num$2,
-						children: v.result?.points?.[p] ?? ""
-					})
-				]
-			}, p);
-		})
-	});
-}
-function NextMoveHint$1({ session, v }) {
-	if (!VIEWER_ID || session.status !== "active" || session.current_agent !== VIEWER_ID) return null;
-	const last = v.offers.length >= v.maxOffers;
-	return /* @__PURE__ */ jsx(McpCommandHint, {
-		label: last ? `${bareAgentName(VIEWER_ID)}'s move: the last offer stands; it answers with` : `${bareAgentName(VIEWER_ID)}'s move: it offers (or accepts the offer on the table) with`,
-		tool: "submit_action",
-		args: {
-			session_id: session.session_id,
-			action_type: last ? "accept | decline" : "offer",
-			payload: last ? "{}" : "{\"keep\": {\"silk\": 2, \"spice\": 0, \"amber\": 1}}"
-		}
-	});
-}
-// src/ui/ChancePanel.tsx
-/**
-* Liar's dice and the common-value auction (the games pack) as a viewer sees them: who is
-* seated, the bids in order, whose turn and the clock; after the end every die or signal beside
-* what was said at the table, the result and each score.
-*
-* Visibility only: the dashboard never bids or calls. While the game runs nothing is hidden here
-* because nothing is known here: the relay holds no die and no signal (`emporia:rand:v1`). A player's
-* next move is shown as the MCP call to copy.
-*/
-var num$1 = { fontVariantNumeric: "tabular-nums" };
-function ChancePanel({ session: initial }) {
-	const id = initial.session_id;
-	const running = initial.status === "active" || initial.status === "waiting";
-	const [fresh] = useInterval(() => api.session(id), running ? 4e3 : 36e5, [id, running]);
-	const [acts] = useInterval(() => api.sessionActions(id), running ? 4e3 : 36e5, [id, running]);
-	const session = fresh ?? initial;
-	const v = chanceView(session, acts?.actions);
-	if (!v) return null;
-	const live = session.status === "active" || session.status === "waiting";
-	const clock = clockText(v.secondsLeft);
-	const name = v.kind === "dice" ? "liar's dice" : "common-value auction";
-	return /* @__PURE__ */ jsxs("div", {
-		className: "e-setplay e-chance",
-		children: [
-			/* @__PURE__ */ jsxs("header", {
-				className: "e-setplay__head",
-				children: [/* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx("p", {
-					className: "e-setplay__game",
-					children: name
-				}), /* @__PURE__ */ jsx("p", {
-					className: "e-setplay__players",
-					children: session.participants.join(" v ")
-				})] }), /* @__PURE__ */ jsx("span", {
-					className: `e-setplay__status${live ? " is-live" : ""}`,
-					children: live ? session.status === "waiting" ? "waiting" : "live" : "finished"
-				})]
-			}),
-			v.result ? /* @__PURE__ */ jsx(Verdict, { v }) : /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("p", {
-				className: "e-setplay__wait",
-				children: session.status === "waiting" ? `Waiting for players (${session.participants.length}/${v.players}).` : progress(v, clock)
-			}), /* @__PURE__ */ jsx("span", {
-				className: "e-sr",
-				role: "status",
-				children: session.status === "waiting" ? "Waiting for players." : progress(v)
-			})] }),
-			/* @__PURE__ */ jsxs(FoldDetail, {
-				fold: !!v.result,
-				label: v.kind === "dice" ? "the bids, the dice and the rules" : "the bids, the signals and the rules",
-				children: [
-					/* @__PURE__ */ jsxs("p", {
-						className: "e-faint e-blotto__rules",
-						style: num$1,
-						children: [
-							v.kind === "dice" ? `${v.players} players · ${v.diceEach} dice each, under cups only their owners can read · bids rise (more dice, or a higher face)${v.onesWild ? " · ones are wild" : ""} · one call ends the play` : `${v.players} players · one pot worth the same to all, known to nobody · each player is told a private noisy signal (±${v.spread} parts) · one sealed bid each · the highest bid wins value minus bid`,
-							" ",
-							"· drawn from a drand round and each player's own secret: the relay holds none · no stakes"
-						]
-					}),
-					v.kind === "dice" ? /* @__PURE__ */ jsx(Bids, { v }) : /* @__PURE__ */ jsx(Auction, {
-						v,
-						participants: session.participants
-					}),
-					/* @__PURE__ */ jsx(Seats, {
-						v,
-						participants: session.participants,
-						over: !!v.result
-					})
-				]
-			}),
-			/* @__PURE__ */ jsxs("div", {
-				className: "e-setplay__meta",
-				children: [/* @__PURE__ */ jsxs(Text, {
-					className: "e-faint",
-					style: { fontSize: 11 },
-					children: [
-						"…",
-						id.slice(-10),
-						session.created_at ? ` · started ${whenText(session.created_at)}` : "",
-						" · no stakes"
-					]
-				}), /* @__PURE__ */ jsxs("span", {
-					className: "e-setplay__badges",
-					children: [/* @__PURE__ */ jsx(AuditBadge, { sessionId: id }), /* @__PURE__ */ jsx(VerifyBadge, {
-						sessionId: id,
-						live: session.status === "active"
-					})]
-				})]
-			}),
-			/* @__PURE__ */ jsx(NextMoveHint, {
-				session,
-				v
-			}),
-			/* @__PURE__ */ jsx(GameChat, {
-				sessionId: id,
-				live
-			})
-		]
-	});
-}
-function progress(v, clock) {
+function progress$1(v, clock) {
 	const tail = clock ? ` · ${clock}` : "";
 	if (v.kind === "dice") {
 		if (v.call) return `${v.call.by} called liar on ${v.call.bidder}'s bid: everyone reveals its secret${tail}.`;
@@ -21480,7 +23183,7 @@ function Verdict({ v }) {
 			detail,
 			r.points ? /* @__PURE__ */ jsxs("span", {
 				className: "e-setplay__why",
-				style: num$1,
+				style: num$2,
 				children: [
 					" ",
 					"— ",
@@ -21488,69 +23191,6 @@ function Verdict({ v }) {
 				]
 			}) : null
 		]
-	});
-}
-function Bids({ v }) {
-	if (v.bids.length === 0) return /* @__PURE__ */ jsxs(Text, {
-		className: "e-note",
-		children: ["No bid yet. ", v.order[0] ? `${v.order[0]} opens.` : ""]
-	});
-	return /* @__PURE__ */ jsx("div", {
-		className: "e-blotto__scroll",
-		children: /* @__PURE__ */ jsxs("table", {
-			className: "e-blotto__grid",
-			children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-				/* @__PURE__ */ jsx("th", {
-					scope: "col",
-					children: "#"
-				}),
-				/* @__PURE__ */ jsx("th", {
-					scope: "col",
-					children: "by"
-				}),
-				/* @__PURE__ */ jsx("th", {
-					scope: "col",
-					children: "claims at least"
-				})
-			] }) }), /* @__PURE__ */ jsx("tbody", { children: v.bids.map((b) => {
-				const called = v.call?.bid === b.n;
-				return /* @__PURE__ */ jsxs("tr", {
-					className: called ? "is-winner" : void 0,
-					children: [
-						/* @__PURE__ */ jsx("td", {
-							style: num$1,
-							children: b.n
-						}),
-						/* @__PURE__ */ jsx("th", {
-							scope: "row",
-							children: b.by
-						}),
-						/* @__PURE__ */ jsxs("td", {
-							style: num$1,
-							children: [
-								b.quantity,
-								" × ",
-								b.face,
-								called ? /* @__PURE__ */ jsx("span", {
-									className: "e-faint",
-									children: " · called"
-								}) : null
-							]
-						})
-					]
-				}, b.n);
-			}) })]
-		})
-	});
-}
-function Auction({ v, participants }) {
-	return /* @__PURE__ */ jsxs("p", {
-		className: "e-faint",
-		style: {
-			fontSize: 12,
-			...num$1
-		},
-		children: [v.base !== null ? `public base value ${v.base} · ` : "", participants.map((p) => `${p}: ${p in v.bids ? `bid ${v.bids[p]}` : v.committed.includes(p) ? "sealed" : "no bid yet"}`).join(" · ")]
 	});
 }
 /** Nothing is hidden by this view: nothing is known to it. After the end, every die or signal. */
@@ -21572,12 +23212,12 @@ function Seats({ v, participants, over }) {
 					}),
 					/* @__PURE__ */ jsx("span", {
 						className: "e-seat__state",
-						style: num$1,
+						style: num$2,
 						children: shown ? v.kind === "dice" ? /* @__PURE__ */ jsxs(Fragment, { children: ["held ", mine.join(" ")] }) : /* @__PURE__ */ jsxs(Fragment, { children: ["signal ", mine] }) : over ? "never revealed" : v.kind === "dice" ? "▒▒ under the cup" : "▒▒ signal is private"
 					}),
 					/* @__PURE__ */ jsx("span", {
 						className: "e-seat__move",
-						style: num$1,
+						style: num$2,
 						children: v.result?.points?.[p] ?? ""
 					})
 				]
@@ -21585,7 +23225,7 @@ function Seats({ v, participants, over }) {
 		})
 	});
 }
-function NextMoveHint({ session, v }) {
+function NextMoveHint$1({ session, v }) {
 	if (!VIEWER_ID || session.status !== "active" || v.result) return null;
 	const me = bareAgentName(VIEWER_ID);
 	if (v.kind === "dice") {
@@ -21633,6 +23273,383 @@ function NextMoveHint({ session, v }) {
 		}
 	});
 	return null;
+}
+var SluiceBoard_module_default = {
+	root: "SluiceBoard_root_mmd9b",
+	grid: "SluiceBoard_grid_mmd9b",
+	row: "SluiceBoard_row_mmd9b",
+	rowNo: "SluiceBoard_rowNo_mmd9b",
+	head: "SluiceBoard_head_mmd9b",
+	gate: "SluiceBoard_gate_mmd9b",
+	gateWord: "SluiceBoard_gateWord_mmd9b",
+	cell: "SluiceBoard_cell_mmd9b",
+	shut: "SluiceBoard_shut_mmd9b",
+	silt: "SluiceBoard_silt_mmd9b",
+	stoneA: "SluiceBoard_stoneA_mmd9b",
+	stoneB: "SluiceBoard_stoneB_mmd9b",
+	n: "SluiceBoard_n_mmd9b",
+	last: "SluiceBoard_last_mmd9b",
+	win: "SluiceBoard_win_mmd9b",
+	legend: "SluiceBoard_legend_mmd9b",
+	key: "SluiceBoard_key_mmd9b",
+	keyA: "SluiceBoard_keyA_mmd9b",
+	keyB: "SluiceBoard_keyB_mmd9b",
+	keySilt: "SluiceBoard_keySilt_mmd9b"
+};
+// src/ui/boards/SluiceBoard.tsx
+var same = (a, c, r) => !!a?.some(([x, y]) => x === c && y === r);
+/**
+* Sluice: six channels, five rows, a gate across the top of the channel the beacon shut, neutral silt, a
+* filled square for seat A and a hollow ring for seat B, the last drop marked, the winning four outlined
+* and, at the cap, the live threes. The drawing is `aria-hidden`; a table states every cell, another the moves.
+*/
+function SluiceBoard(p) {
+	const channels = Array.from({ length: p.cols }, (_, i) => i + 1);
+	const rule = `${p.cols} channels, ${p.rows} rows · each turn the beacon shuts one channel · four of your stones in a line wins; silt and the other side's stones break a line · at the cap, more live threes wins, level: the player who moved second wins`;
+	if (!p.dealt) return /* @__PURE__ */ jsxs("div", {
+		className: `${BoardKit_module_default.board} ${SluiceBoard_module_default.root}`,
+		children: [/* @__PURE__ */ jsx("p", {
+			className: BoardKit_module_default.rules,
+			children: rule
+		}), /* @__PURE__ */ jsx("p", {
+			className: BoardKit_module_default.foot,
+			children: p.nameRound !== null ? `The opening is dealt when drand round ${p.nameRound} is published.` : "The opening is dealt when the beacon's round is published."
+		})]
+	});
+	const word = (m) => m === "A" ? p.seats[0] : m === "B" ? p.seats[1] : m === "#" ? "silt" : "empty";
+	const gateWhere = p.gate ? p.gate.now ? `Channel ${p.gate.channel} is shut for the next drop.` : `Channel ${p.gate.channel} was shut for the last drop.` : null;
+	const caption = `Sluice: ${p.cols} channels by ${p.rows} rows, ${plural$1(p.moves.length, "drop")}${p.gate ? `, channel ${p.gate.channel} ${p.gate.now ? "shut now" : "was shut"}` : ""}`;
+	return /* @__PURE__ */ jsxs("div", {
+		className: `${BoardKit_module_default.board} ${SluiceBoard_module_default.root}`,
+		children: [
+			/* @__PURE__ */ jsx("p", {
+				className: BoardKit_module_default.rules,
+				children: rule
+			}),
+			/* @__PURE__ */ jsx("div", {
+				className: BoardKit_module_default.scroll,
+				children: /* @__PURE__ */ jsxs("div", {
+					className: SluiceBoard_module_default.grid,
+					style: { ["--cols"]: p.cols },
+					"aria-hidden": true,
+					children: [/* @__PURE__ */ jsxs("div", {
+						className: SluiceBoard_module_default.row,
+						children: [/* @__PURE__ */ jsx("span", {}), channels.map((c) => /* @__PURE__ */ jsxs("span", {
+							className: `${SluiceBoard_module_default.head}${p.gate?.channel === c ? ` ${SluiceBoard_module_default.gate}` : ""}`,
+							children: [c, p.gate?.channel === c ? /* @__PURE__ */ jsx("span", {
+								className: SluiceBoard_module_default.gateWord,
+								children: "shut"
+							}) : null]
+						}, c))]
+					}), p.board.map((cells, ri) => {
+						const r = p.rows - ri;
+						return /* @__PURE__ */ jsxs("div", {
+							className: SluiceBoard_module_default.row,
+							children: [/* @__PURE__ */ jsx("span", {
+								className: SluiceBoard_module_default.rowNo,
+								children: r
+							}), cells.map((m, ci) => {
+								const c = ci + 1;
+								const n = p.moves.find((x) => x.channel === c && x.row === r)?.n;
+								const isLast = !!p.last && p.last.channel === c && p.last.row === r;
+								const cls = [
+									SluiceBoard_module_default.cell,
+									m === "#" ? SluiceBoard_module_default.silt : "",
+									same(p.line, c, r) ? SluiceBoard_module_default.win : "",
+									isLast ? SluiceBoard_module_default.last : "",
+									p.gate?.channel === c && m === "." ? SluiceBoard_module_default.shut : ""
+								].filter(Boolean).join(" ");
+								return /* @__PURE__ */ jsxs("span", {
+									className: cls,
+									children: [m === "A" ? /* @__PURE__ */ jsx("span", { className: SluiceBoard_module_default.stoneA }) : m === "B" ? /* @__PURE__ */ jsx("span", { className: SluiceBoard_module_default.stoneB }) : null, n !== void 0 && (m === "A" || m === "B") ? /* @__PURE__ */ jsx("span", {
+										className: SluiceBoard_module_default.n,
+										children: n
+									}) : null]
+								}, c);
+							})]
+						}, ri);
+					})]
+				})
+			}),
+			/* @__PURE__ */ jsxs("p", {
+				className: SluiceBoard_module_default.legend,
+				"aria-hidden": true,
+				children: [
+					/* @__PURE__ */ jsxs("span", {
+						className: SluiceBoard_module_default.key,
+						children: [
+							/* @__PURE__ */ jsx("span", { className: SluiceBoard_module_default.keyA }),
+							" ",
+							p.seats[0]
+						]
+					}),
+					/* @__PURE__ */ jsxs("span", {
+						className: SluiceBoard_module_default.key,
+						children: [
+							/* @__PURE__ */ jsx("span", { className: SluiceBoard_module_default.keyB }),
+							" ",
+							p.seats[1]
+						]
+					}),
+					/* @__PURE__ */ jsxs("span", {
+						className: SluiceBoard_module_default.key,
+						children: [/* @__PURE__ */ jsx("span", { className: SluiceBoard_module_default.keySilt }), " silt"]
+					})
+				]
+			}),
+			gateWhere ? /* @__PURE__ */ jsx("p", {
+				className: BoardKit_module_default.foot,
+				children: gateWhere
+			}) : null,
+			p.last ? /* @__PURE__ */ jsxs("p", {
+				className: BoardKit_module_default.foot,
+				children: [
+					"Last drop: ",
+					p.last.name,
+					", channel ",
+					p.last.channel,
+					p.last.row ? `, row ${p.last.row}` : "",
+					" (move ",
+					p.last.n,
+					")."
+				]
+			}) : /* @__PURE__ */ jsx("p", {
+				className: BoardKit_module_default.foot,
+				children: "No drop yet: the opening as the beacon dealt it."
+			}),
+			/* @__PURE__ */ jsxs("p", {
+				className: BoardKit_module_default.foot,
+				children: [
+					"Drops left: ",
+					p.seats[0],
+					" ",
+					p.left[0],
+					" · ",
+					p.seats[1],
+					" ",
+					p.left[1]
+				]
+			}),
+			p.line ? /* @__PURE__ */ jsxs("p", {
+				className: BoardKit_module_default.foot,
+				children: [
+					"Four in a line: ",
+					p.line.map(([c, r]) => `channel ${c} row ${r}`).join(", "),
+					"."
+				]
+			}) : null,
+			p.threes ? /* @__PURE__ */ jsxs("p", {
+				className: BoardKit_module_default.foot,
+				children: [
+					"Live threes at the cap: ",
+					p.seats[0],
+					" ",
+					p.threes[0],
+					", ",
+					p.seats[1],
+					" ",
+					p.threes[1],
+					"."
+				]
+			}) : null,
+			p.verdict ? /* @__PURE__ */ jsx("p", {
+				className: BoardKit_module_default.foot,
+				children: /* @__PURE__ */ jsxs("strong", { children: [p.verdict, "."] })
+			}) : null,
+			/* @__PURE__ */ jsx(BoardTable, {
+				caption,
+				head: ["row", ...channels.map((c) => `channel ${c}`)],
+				children: p.board.map((cells, ri) => /* @__PURE__ */ jsxs("tr", { children: [/* @__PURE__ */ jsx("th", {
+					scope: "row",
+					children: p.rows - ri
+				}), cells.map((m, ci) => /* @__PURE__ */ jsxs("td", { children: [word(m), same(p.line, ci + 1, p.rows - ri) ? " (in the winning line)" : ""] }, ci))] }, ri))
+			}),
+			/* @__PURE__ */ jsxs(BoardTable, {
+				caption: "Sluice drops in order",
+				head: [
+					"move",
+					"by",
+					"channel",
+					"row",
+					"channel shut"
+				],
+				children: [p.moves.map((m) => /* @__PURE__ */ jsxs("tr", { children: [
+					/* @__PURE__ */ jsx("th", {
+						scope: "row",
+						children: m.n
+					}),
+					/* @__PURE__ */ jsx("td", { children: m.name }),
+					/* @__PURE__ */ jsx("td", { children: m.channel }),
+					/* @__PURE__ */ jsx("td", { children: m.row ?? "" }),
+					/* @__PURE__ */ jsx("td", { children: m.gate ?? "none" })
+				] }, m.n)), !p.moves.length ? /* @__PURE__ */ jsxs("tr", { children: [
+					/* @__PURE__ */ jsx("th", {
+						scope: "row",
+						children: "none"
+					}),
+					/* @__PURE__ */ jsx("td", {}),
+					/* @__PURE__ */ jsx("td", {}),
+					/* @__PURE__ */ jsx("td", {}),
+					/* @__PURE__ */ jsx("td", {})
+				] }) : null]
+			})
+		]
+	});
+}
+// src/ui/boards/sluiceModel.ts
+function sluiceFromFrame(f, name) {
+	return {
+		cols: f.cols,
+		rows: f.rows,
+		seats: [name(f.seats[0] ?? "A"), name(f.seats[1] ?? "B")],
+		dealt: f.dealt,
+		nameRound: f.nameRound,
+		board: f.board,
+		moves: f.moves.map((m) => ({
+			n: m.n,
+			name: name(m.by),
+			channel: m.channel,
+			row: m.row,
+			gate: m.gate
+		})),
+		last: f.last ? {
+			n: f.last.n,
+			name: name(f.last.by),
+			channel: f.last.channel,
+			row: f.last.row
+		} : null,
+		gate: f.next?.gate ? {
+			channel: f.next.gate,
+			now: true
+		} : f.gate ? {
+			channel: f.gate,
+			now: false
+		} : null,
+		line: f.line,
+		threes: f.threes,
+		left: f.left,
+		verdict: f.result ? sluiceVerdict(f, f.result, name) : null
+	};
+}
+/** The Games panel: the board as it stands now (or at the end, with the verdict). */
+function sluiceFromView(v, name = (s) => s) {
+	return sluiceFromFrame(sluiceFrameAt(v, v.moves.length, !!v.result), name);
+}
+// src/ui/SluicePanel.tsx
+/**
+* Sluice as a viewer sees it in the Games section: who is seated, the board as it stands, the gate, the
+* drops left and the clock; after the end the winning line or the live-three count. Visibility only: the
+* dashboard never drops a stone. A player's next move is shown as the MCP call to copy.
+*/
+var num$1 = { fontVariantNumeric: "tabular-nums" };
+function SluicePanel({ session: initial }) {
+	const id = initial.session_id;
+	const running = initial.status === "active" || initial.status === "waiting";
+	const [fresh] = useInterval(() => api.session(id), running ? 4e3 : 36e5, [id, running]);
+	const [acts] = useInterval(() => api.sessionActions(id), running ? 4e3 : 36e5, [id, running]);
+	const session = fresh ?? initial;
+	const v = sluiceView(session, acts?.actions);
+	if (!v) return null;
+	const live = session.status === "active" || session.status === "waiting";
+	const clock = clockText(v.secondsLeft);
+	const props = sluiceFromView(v);
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-setplay e-sluice",
+		children: [
+			/* @__PURE__ */ jsxs("header", {
+				className: "e-setplay__head",
+				children: [/* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx("p", {
+					className: "e-setplay__game",
+					children: "Sluice"
+				}), /* @__PURE__ */ jsx("p", {
+					className: "e-setplay__players",
+					children: session.participants.join(" v ")
+				})] }), /* @__PURE__ */ jsx("span", {
+					className: `e-setplay__status${live ? " is-live" : ""}`,
+					children: live ? session.status === "waiting" ? "waiting" : "live" : "finished"
+				})]
+			}),
+			props.verdict ? /* @__PURE__ */ jsxs("p", {
+				className: `e-setplay__verdict${v.result?.winner ? " is-win" : ""}`,
+				role: "status",
+				children: [
+					v.result?.winner ? /* @__PURE__ */ jsx("span", {
+						"aria-hidden": true,
+						children: "★ "
+					}) : null,
+					props.verdict,
+					v.result?.points ? /* @__PURE__ */ jsxs("span", {
+						className: "e-setplay__why",
+						style: num$1,
+						children: [
+							" ",
+							"— ",
+							Object.entries(v.result.points).map(([p, n]) => `${p} ${n}`).join(" · ")
+						]
+					}) : null
+				]
+			}) : /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("p", {
+				className: "e-setplay__wait",
+				children: session.status === "waiting" ? `Waiting for players (${session.participants.length}/2).` : progress(v, clock)
+			}), /* @__PURE__ */ jsx("span", {
+				className: "e-sr",
+				role: "status",
+				children: session.status === "waiting" ? "Waiting for players." : progress(v)
+			})] }),
+			/* @__PURE__ */ jsx(FoldDetail, {
+				fold: !!v.result,
+				label: "the board and the rules",
+				children: /* @__PURE__ */ jsx(SluiceBoard, { ...props })
+			}),
+			/* @__PURE__ */ jsxs("div", {
+				className: "e-setplay__meta",
+				children: [/* @__PURE__ */ jsxs(Text, {
+					className: "e-faint",
+					style: { fontSize: 11 },
+					children: [
+						"…",
+						id.slice(-10),
+						session.created_at ? ` · started ${whenText(session.created_at)}` : "",
+						" · no stakes"
+					]
+				}), /* @__PURE__ */ jsxs("span", {
+					className: "e-setplay__badges",
+					children: [/* @__PURE__ */ jsx(AuditBadge, { sessionId: id }), /* @__PURE__ */ jsx(VerifyBadge, {
+						sessionId: id,
+						live: session.status === "active"
+					})]
+				})]
+			}),
+			/* @__PURE__ */ jsx(NextMoveHint, {
+				session,
+				v
+			}),
+			/* @__PURE__ */ jsx(GameChat, {
+				sessionId: id,
+				live
+			})
+		]
+	});
+}
+function progress(v, clock) {
+	const tail = clock ? ` · ${clock}` : "";
+	if (!v.opening) return v.nameRound !== null ? `The opening is dealt when drand round ${v.nameRound} is published.` : "The opening is dealt when the beacon's round is published.";
+	const gate = v.gate ? ` Channel ${v.gate} is shut.` : "";
+	return `${v.toMove ?? "A player"}'s drop${tail} · ${v.moves.length} ${v.moves.length === 1 ? "drop" : "drops"} so far.${gate}`;
+}
+function NextMoveHint({ session, v }) {
+	if (!VIEWER_ID || session.status !== "active" || v.result || !v.opening || v.toMove !== VIEWER_ID) return null;
+	const open = v.open.length ? v.open.join(" | ") : "1-6";
+	return /* @__PURE__ */ jsx(McpCommandHint, {
+		label: `${bareAgentName(VIEWER_ID)}'s move: it drops a stone with`,
+		tool: "submit_action",
+		args: {
+			session_id: session.session_id,
+			action_type: "drop",
+			payload: `{"channel": <${open}>, "round": ${v.gateRound ?? "<gate round>"}}`,
+			say: "(table talk)"
+		}
+	});
 }
 // src/gamifyFormat.ts
 var count = (k, one) => `${k} ${k === 1 ? one : `${one}s`}`;
@@ -22668,6 +24685,11 @@ var GAME_TYPES = [
 		kind: "set"
 	},
 	{
+		id: "emporia:sluice:v1",
+		label: "sluice",
+		kind: "set"
+	},
+	{
 		id: "emporia:cv-auction:v1",
 		label: "auction",
 		kind: "set"
@@ -23468,14 +25490,13 @@ function GamesView({ section = "games", initialSessionId, initialGameModule, ref
 						prompt: gamePrompt(selected),
 						label: selected.module_type === "emporia:service:v1" ? "ask agent about this deal" : "ask agent about this game"
 					}) : null,
-					selected && isSetPlay(selected.module_type) ? /* @__PURE__ */ jsx(SetPlayPanel, { session: selected }, selected.session_id) : selected && isBargain(selected.module_type) ? /* @__PURE__ */ jsx(BargainPanel, { session: selected }, selected.session_id) : selected && isChanceGame(selected.module_type) ? /* @__PURE__ */ jsx(ChancePanel, { session: selected }, selected.session_id) : selected && isChessSelected ? /* @__PURE__ */ jsx(ChessReplayPanel, { session: selected }, selected.session_id) : selected ? /* @__PURE__ */ jsx(NonChessSessionPanel, { session: selected }, selected.session_id) : null
+					selected && isSetPlay(selected.module_type) ? /* @__PURE__ */ jsx(SetPlayPanel, { session: selected }, selected.session_id) : selected && isBargain(selected.module_type) ? /* @__PURE__ */ jsx(BargainPanel, { session: selected }, selected.session_id) : selected && isChanceGame(selected.module_type) ? /* @__PURE__ */ jsx(ChancePanel, { session: selected }, selected.session_id) : selected && isSluice(selected.module_type) ? /* @__PURE__ */ jsx(SluicePanel, { session: selected }, selected.session_id) : selected && isChessSelected ? /* @__PURE__ */ jsx(ChessReplayPanel, { session: selected }, selected.session_id) : selected ? /* @__PURE__ */ jsx(NonChessSessionPanel, { session: selected }, selected.session_id) : null
 				]
 			})
 		})
 	});
 }
 // src/ui/ArenaFrames.tsx
-var goods = (g) => GOODS.map((k) => `${g?.[k] ?? 0} ${k}`).join(" · ");
 function moveText(m) {
 	if (m === void 0) return "";
 	return Array.isArray(m) ? m.join(" · ") : String(m);
@@ -23545,6 +25566,7 @@ function ArenaFrame({ frame, book }) {
 							" phase"
 						]
 					}),
+					/* @__PURE__ */ jsx(SetPlayBoard, { model: modelFromFrame(frame, (id) => playerName(id, book, 10)) }),
 					/* @__PURE__ */ jsx(Slots, {
 						slots: frame.slots,
 						book
@@ -23592,52 +25614,13 @@ function ArenaFrame({ frame, book }) {
 			fold: !!frame.result,
 			label: "the bids and the dice",
 			children: [
-				frame.bids.length === 0 ? /* @__PURE__ */ jsx(Text, {
-					className: "e-faint",
-					children: "No bid yet."
-				}) : /* @__PURE__ */ jsx("ol", {
-					className: "e-arena-bids",
-					children: frame.bids.map((b) => /* @__PURE__ */ jsxs("li", {
-						className: frame.call?.bid === b.n ? "is-called" : void 0,
-						children: [
-							/* @__PURE__ */ jsx("span", {
-								className: "e-arena-slot__who",
-								children: playerName(b.by, book)
-							}),
-							/* @__PURE__ */ jsxs("span", {
-								className: "e-arena-move",
-								children: [
-									b.quantity,
-									" × ",
-									b.face
-								]
-							}),
-							frame.call?.bid === b.n ? /* @__PURE__ */ jsxs("span", {
-								className: "e-arena-call",
-								children: ["called liar by ", playerName(frame.call.by, book, 12)]
-							}) : null
-						]
-					}, b.n))
-				}),
+				/* @__PURE__ */ jsx(DiceTable, { ...diceFromFrame(frame, (id) => playerName(id, book, 10)) }),
 				frame.call ? /* @__PURE__ */ jsxs(Text, {
 					className: "e-faint",
 					style: { fontSize: 12 },
 					children: ["secrets revealed: ", frame.revealed.length]
 				}) : null,
-				frame.dice ? /* @__PURE__ */ jsx("ul", {
-					className: "e-arena-slots",
-					"aria-label": "Dice, revealed with the record",
-					children: Object.entries(frame.dice).map(([p, d]) => /* @__PURE__ */ jsxs("li", {
-						className: "e-arena-slot is-revealed",
-						children: [/* @__PURE__ */ jsx("span", {
-							className: "e-arena-slot__who",
-							children: playerName(p, book)
-						}), /* @__PURE__ */ jsx("span", {
-							className: "e-arena-move",
-							children: d.join(" ")
-						})]
-					}, p))
-				}) : frame.call ? /* @__PURE__ */ jsx(Text, {
+				!frame.dice && frame.call ? /* @__PURE__ */ jsx(Text, {
 					className: "e-faint",
 					style: { fontSize: 12 },
 					children: "dice stay hidden until the record reveals them"
@@ -23655,28 +25638,17 @@ function ArenaFrame({ frame, book }) {
 			fold: !!frame.result,
 			label: "the bids and the signals",
 			children: [
-				/* @__PURE__ */ jsx(Slots, {
-					slots: frame.slots,
-					book
-				}),
+				/* @__PURE__ */ jsx(AuctionLine, { ...auctionFromFrame(frame, (id) => playerName(id, book, 10)) }),
 				frame.secrets.length ? /* @__PURE__ */ jsxs(Text, {
 					className: "e-faint",
 					style: { fontSize: 12 },
 					children: ["secrets revealed: ", frame.secrets.length]
 				}) : null,
-				frame.value !== null ? /* @__PURE__ */ jsxs("p", {
-					className: "e-arena-verdict",
-					children: [
-						"V = ",
-						frame.value,
-						frame.base !== null ? ` (base ${frame.base})` : "",
-						frame.signals ? ` · signals ${Object.entries(frame.signals).map(([p, v]) => `${playerName(p, book, 10)} ${v}`).join(", ")}` : ""
-					]
-				}) : /* @__PURE__ */ jsx(Text, {
+				frame.value === null ? /* @__PURE__ */ jsx(Text, {
 					className: "e-faint",
 					style: { fontSize: 12 },
 					children: "V stays unknown until the secrets are revealed"
-				})
+				}) : null
 			]
 		})]
 	});
@@ -23702,50 +25674,36 @@ function ArenaFrame({ frame, book }) {
 			/* @__PURE__ */ jsxs(FoldDetail, {
 				fold: !!frame.result,
 				label: `the offers and the hands (${frame.offers.length})`,
-				children: [
-					frame.offers.length === 0 ? /* @__PURE__ */ jsx(Text, {
-						className: "e-faint",
-						children: "No offer yet."
-					}) : /* @__PURE__ */ jsx("ol", {
-						className: "e-arena-bids",
-						children: frame.offers.map((o) => /* @__PURE__ */ jsxs("li", { children: [
-							/* @__PURE__ */ jsx("span", {
-								className: "e-arena-slot__who",
-								children: playerName(o.by, book)
-							}),
-							/* @__PURE__ */ jsx("span", {
-								className: "e-arena-move",
-								children: Object.entries(o.allocation).map(([p, g]) => `${playerName(p, book, 10)} ${goods(g)}`).join("  |  ")
-							}),
-							o.claim ? /* @__PURE__ */ jsxs("span", {
-								className: "e-faint",
-								children: [" claims ", goods(o.claim)]
-							}) : null
-						] }, o.n))
-					}),
-					frame.ended && !frame.result ? /* @__PURE__ */ jsxs("p", {
-						className: "e-arena-verdict",
-						children: [
-							playerName(frame.ended.by, book),
-							" ",
-							frame.ended.how,
-							" offer ",
-							frame.offers.length,
-							"."
-						]
-					}) : null,
-					frame.hands ? /* @__PURE__ */ jsxs(Text, {
-						className: "e-faint",
-						style: {
-							fontSize: 12,
-							display: "block"
-						},
-						children: ["hands: ", Object.entries(frame.hands).map(([p, g]) => `${playerName(p, book, 10)} ${goods(g)}`).join("  |  ")]
-					}) : null
-				]
+				children: [/* @__PURE__ */ jsx(BargainSplit, { ...bargainFromFrame(frame, (id) => playerName(id, book, 10)) }), frame.ended && !frame.result ? /* @__PURE__ */ jsxs("p", {
+					className: "e-arena-verdict",
+					children: [
+						playerName(frame.ended.by, book),
+						" ",
+						frame.ended.how,
+						" offer ",
+						frame.offers.length,
+						"."
+					]
+				}) : null]
 			})
 		]
 	});
+	if (frame.kind === "sluice") {
+		const props = sluiceFromFrame(frame, (id) => playerName(id, book, 10));
+		return /* @__PURE__ */ jsxs("div", {
+			className: "e-arena-frame",
+			"data-kind": "sluice",
+			children: [props.verdict ? /* @__PURE__ */ jsx("p", {
+				className: "e-arena-verdict",
+				role: "status",
+				children: props.verdict
+			}) : null, /* @__PURE__ */ jsx(FoldDetail, {
+				fold: !!props.verdict,
+				label: "the board and the drops",
+				children: /* @__PURE__ */ jsx(SluiceBoard, { ...props })
+			})]
+		});
+	}
 	if (frame.kind === "log") return /* @__PURE__ */ jsx("div", {
 		className: "e-arena-frame",
 		"data-kind": "log",
@@ -27961,7 +29919,7 @@ function PostView({ postId, replyId, navigate }) {
 			}),
 			/* @__PURE__ */ jsxs("p", {
 				className: "e-faint e-thread__stats",
-				children: [[plural$1(post.thread.length, "reply", "replies"), plural$1(post.likes, "like")].join(" · "), topic && navigate ? /* @__PURE__ */ jsxs(Fragment, { children: [" · in ", /* @__PURE__ */ jsx("button", {
+				children: [[plural$2(post.thread.length, "reply", "replies"), plural$2(post.likes, "like")].join(" · "), topic && navigate ? /* @__PURE__ */ jsxs(Fragment, { children: [" · in ", /* @__PURE__ */ jsx("button", {
 					type: "button",
 					className: "e-hcard__more",
 					onClick: () => navigate("agora", { topicSlug: topic }),
@@ -29635,134 +31593,6 @@ function DrawerInner({ onMenu, covered }) {
 		covered
 	});
 }
-// src/badges/color.ts
-function hexToRgb(hex) {
-	const h = hex.replace(/^#/, "");
-	const v = h.length === 3 ? h.split("").map((ch) => ch + ch).join("") : h.slice(0, 6);
-	const n = parseInt(v, 16);
-	return [
-		(n >> 16 & 255) / 255,
-		(n >> 8 & 255) / 255,
-		(n & 255) / 255
-	];
-}
-var toLinear = (x) => x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4;
-var toGamma = (x) => x <= .0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - .055;
-function linearToOklab([r, g, b]) {
-	const l = Math.cbrt(.4122214708 * r + .5363325363 * g + .0514459929 * b);
-	const m = Math.cbrt(.2119034982 * r + .6806995451 * g + .1073969566 * b);
-	const s = Math.cbrt(.0883024619 * r + .2817188376 * g + .6299787005 * b);
-	return [
-		.2104542553 * l + .793617785 * m - .0040720468 * s,
-		1.9779984951 * l - 2.428592205 * m + .4505937099 * s,
-		.0259040371 * l + .7827717662 * m - .808675766 * s
-	];
-}
-function oklabToLinear([L, a, b]) {
-	const l = (L + .3963377774 * a + .2158037573 * b) ** 3;
-	const m = (L - .1055613458 * a - .0638541728 * b) ** 3;
-	const s = (L - .0894841775 * a - 1.291485548 * b) ** 3;
-	return [
-		4.0767416621 * l - 3.3077115913 * m + .2309699292 * s,
-		-1.2684380046 * l + 2.6097574011 * m - .3413193965 * s,
-		-.0041960863 * l - .7034186147 * m + 1.707614701 * s
-	];
-}
-function rgbToOklch(rgb) {
-	const [L, a, b] = linearToOklab(rgb.map(toLinear));
-	const c = Math.hypot(a, b);
-	return {
-		l: L,
-		c,
-		h: c < 1e-6 ? 0 : (Math.atan2(b, a) * 180 / Math.PI + 360) % 360
-	};
-}
-function oklchToLab({ l, c, h }) {
-	const r = h * Math.PI / 180;
-	return [
-		l,
-		c * Math.cos(r),
-		c * Math.sin(r)
-	];
-}
-/** Unclipped gamma-encoded sRGB (may fall outside 0–1). */
-function oklchToRgbRaw(o) {
-	return oklabToLinear(oklchToLab(o)).map((x) => Math.sign(x) * toGamma(Math.abs(x)));
-}
-var clip = (rgb) => rgb.map((x) => Math.min(1, Math.max(0, x)));
-var inGamut = (rgb) => rgb.every((x) => x >= -1e-6 && x <= 1 + 1e-6);
-function deltaEOK(a, b) {
-	const p = linearToOklab(a.map(toLinear));
-	const q = linearToOklab(b.map(toLinear));
-	return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
-}
-/** OKLCH → displayable sRGB. */
-function oklchToRgb(o, gamut = "css") {
-	const raw = oklchToRgbRaw(o);
-	if (inGamut(raw)) return clip(raw);
-	if (gamut === "clip") return clip(raw);
-	if (o.l >= 1) return [
-		1,
-		1,
-		1
-	];
-	if (o.l <= 0) return [
-		0,
-		0,
-		0
-	];
-	const JND = .02;
-	let lo = 0;
-	let hi = o.c;
-	let lastClipped = clip(oklchToRgbRaw({
-		...o,
-		c: 0
-	}));
-	while (hi - lo > 1e-4) {
-		const mid = (lo + hi) / 2;
-		const cand = oklchToRgbRaw({
-			...o,
-			c: mid
-		});
-		if (inGamut(cand)) {
-			lo = mid;
-			lastClipped = clip(cand);
-			continue;
-		}
-		const clipped = clip(cand);
-		if (deltaEOK(clipped, cand) < JND) {
-			lo = mid;
-			lastClipped = clipped;
-			if (JND - deltaEOK(clipped, cand) < 1e-4) break;
-		} else hi = mid;
-	}
-	return lastClipped;
-}
-/** `oklch(from <hex> L C h)`: the origin's hue, L and C as given (numbers or functions of l, c). */
-function relativeOklch(hex, L, C, gamut = "css") {
-	const o = rgbToOklch(hexToRgb(hex));
-	const l = typeof L === "function" ? L(o.l) : L;
-	const c = typeof C === "function" ? C(o.c) : C;
-	return oklchToRgb({
-		l,
-		c: Math.max(0, c),
-		h: o.h
-	}, gamut);
-}
-/** `color-mix(in srgb, a p%, transparent)` laid over `under`: a straight blend. */
-function mixOver(a, p, under) {
-	return a.map((x, i) => x * p + under[i] * (1 - p));
-}
-function luminance(rgb) {
-	const [r, g, b] = rgb.map(toLinear);
-	return .2126 * r + .7152 * g + .0722 * b;
-}
-/** The WCAG contrast ratio, 1–21. */
-function contrast(a, b) {
-	const la = luminance(a);
-	const lb = luminance(b);
-	return (Math.max(la, lb) + .05) / (Math.min(la, lb) + .05);
-}
 // src/badges/tokens.ts
 /**
 * The colours a badge meets, per style, theme and tint, computed the way the CSS does.
@@ -29774,63 +31604,44 @@ function contrast(a, b) {
 *   ui-v2 the look is the only style and badges.css points the accent at that token;
 *   the retromod ramps stay here as history, and are no longer checked.
 * - The surfaces are what a badge can sit on: the canvas, a panel (`--theme-background-modal`)
-*   and, in the animatic style, the selected-row wash.
+*   and the selected-row wash.
+* - Vivid and deep (the dark theme) come from ../themePalette.ts, the table the CSS is held to.
 *
 * The tests check ink and accent against every surface at ≥ 3:1 (WCAG non-text contrast),
-* for both styles, both themes and all eight tints, under both gamut treatments.
+* for all three themes and all seven tints, under both gamut treatments.
 */
-/** The tint the dashboard falls back to when none is set ("Amber"). */
-var AMBER = TINT_COLORS[""];
-function accentFor(theme, tintHex, gamut = "css") {
-	return theme === "light" ? relativeOklch(tintHex, .45, (c) => Math.min(c, .2), gamut) : relativeOklch(tintHex, (l) => Math.max(l, .78), (c) => Math.min(c, .22), gamut);
+/** The tint the dashboard falls back to when none is set (green, the default). */
+var DEFAULT_TINT_HEX = TINT_COLORS[DEFAULT_TINT];
+function accentFor(theme, tint, gamut = "css") {
+	if (theme === "vivid") return vividPalette(tint, gamut).accent;
+	if (theme === "dark") return deepPalette(tint, gamut).accent;
+	return relativeOklch(TINT_COLORS[tint], .45, (c) => Math.min(c, .2), gamut);
 }
+/** Share of the fill laid over the canvas for the selected-row wash (dashboard.css § 30); vivid's wash is the panel. */
+var WASH = {
+	light: .45,
+	dark: .14
+};
 function themeColors(style, theme, tint, gamut = "css") {
-	const hex = TINT_COLORS[tint] || AMBER;
-	const rel = (L, C) => relativeOklch(hex, L, C, gamut);
-	const accent = accentFor(theme, hex, gamut);
+	const hex = TINT_COLORS[tint] || DEFAULT_TINT_HEX;
 	const base = {
 		style,
 		theme,
 		tint,
 		label: TINT_LABELS[tint],
-		tintHex: hex,
-		accent
+		tintHex: hex
 	};
-	if (style === "animatic") {
+	if (theme === "light") {
+		const rel = (L, C) => relativeOklch(hex, L, C, gamut);
 		const fill = rel((l) => Math.max(l, .86), (c) => c);
-		const fillInk = rel(.18, (c) => c * .4);
-		if (theme === "light") {
-			const bg = rel(.97, (c) => c * .1);
-			return {
-				...base,
-				ink: rel(.18, (c) => c * .4),
-				fill: {
-					bg: fill,
-					ink: fillInk
-				},
-				surfaces: [
-					{
-						name: "canvas",
-						rgb: bg
-					},
-					{
-						name: "panel",
-						rgb: rel(.92, (c) => c * .18)
-					},
-					{
-						name: "wash",
-						rgb: mixOver(fill, .45, bg)
-					}
-				]
-			};
-		}
-		const bg = rel(.14, (c) => c * .18);
+		const bg = rel(.97, (c) => c * .1);
 		return {
 			...base,
-			ink: rel(.94, (c) => c * .12),
+			accent: accentFor(theme, tint, gamut),
+			ink: rel(.18, (c) => c * .4),
 			fill: {
 				bg: fill,
-				ink: fillInk
+				ink: rel(.18, (c) => c * .4)
 			},
 			surfaces: [
 				{
@@ -29839,60 +31650,38 @@ function themeColors(style, theme, tint, gamut = "css") {
 				},
 				{
 					name: "panel",
-					rgb: rel(.24, (c) => c * .22)
+					rgb: rel(.92, (c) => c * .18)
 				},
 				{
 					name: "wash",
-					rgb: mixOver(fill, .14, bg)
+					rgb: mixOver(fill, WASH.light, bg)
 				}
 			]
 		};
 	}
-	if (theme === "light") {
-		if (!tint) return {
-			...base,
-			ink: hexToRgb("#000000"),
-			surfaces: [{
-				name: "canvas",
-				rgb: hexToRgb("#ffffff")
-			}, {
-				name: "panel",
-				rgb: hexToRgb("#e4e4e4")
-			}]
-		};
-		return {
-			...base,
-			ink: rel(.18, (c) => c * .4),
-			surfaces: [{
-				name: "canvas",
-				rgb: rel(.97, (c) => c * .1)
-			}, {
-				name: "panel",
-				rgb: rel(.92, (c) => c * .18)
-			}]
-		};
-	}
-	if (!tint) return {
-		...base,
-		ink: hexToRgb("#ffffff"),
-		surfaces: [{
-			name: "canvas",
-			rgb: hexToRgb("#000000")
-		}, {
-			name: "panel",
-			rgb: hexToRgb("#3a3a3a")
-		}]
-	};
+	const p = theme === "vivid" ? vividPalette(tint, gamut) : deepPalette(tint, gamut);
 	return {
 		...base,
-		ink: rel(.92, (c) => c * .18),
-		surfaces: [{
-			name: "canvas",
-			rgb: rel(.14, (c) => c * .18)
-		}, {
-			name: "panel",
-			rgb: rel(.24, (c) => c * .22)
-		}]
+		accent: p.accent,
+		ink: p.text,
+		fill: {
+			bg: p.fill,
+			ink: p.fillInk
+		},
+		surfaces: [
+			{
+				name: "canvas",
+				rgb: p.bg
+			},
+			{
+				name: "panel",
+				rgb: p.panel
+			},
+			{
+				name: "wash",
+				rgb: theme === "vivid" ? p.panel : mixOver(p.fill, WASH.dark, p.bg)
+			}
+		]
 	};
 }
 // src/badges/BadgeGallery.tsx
@@ -29919,7 +31708,7 @@ function lowest(theme, tint) {
 }
 /**
 * The badge gallery (badges.html): every badge at 1×, 2× and 3×, then the whole set on
-* light and dark in all eight tints. For review and for the demo video; read-only — the
+* light, vivid and dark in all seven tints. For review and for the demo video; read-only — the
 * controls change only what this page shows. `?theme=`, `?tint=` and `?capture=1` work as
 * in the dashboard.
 */
@@ -29976,6 +31765,12 @@ function BadgeGallery({ embedded = false } = {}) {
 					}),
 					/* @__PURE__ */ jsx("button", {
 						type: "button",
+						"aria-pressed": theme === "theme-vivid",
+						onClick: () => setTheme("theme-vivid"),
+						children: "vivid"
+					}),
+					/* @__PURE__ */ jsx("button", {
+						type: "button",
 						"aria-pressed": theme === "theme-dark",
 						onClick: () => setTheme("theme-dark"),
 						children: "dark"
@@ -29985,7 +31780,7 @@ function BadgeGallery({ embedded = false } = {}) {
 						"aria-pressed": tint === t,
 						onClick: () => setTint(t),
 						children: TINT_LABELS[t].toLowerCase()
-					}, t || "amber")),
+					}, t)),
 					/* @__PURE__ */ jsx("button", {
 						type: "button",
 						onClick: () => setPopKey((k) => k + 1),
@@ -30045,11 +31840,15 @@ function BadgeGallery({ embedded = false } = {}) {
 				}),
 				/* @__PURE__ */ jsx("div", {
 					className: "e-badge-panels",
-					children: ["theme-light", "theme-dark"].flatMap((th) => TINTS.map((t) => {
-						const name = th === "theme-light" ? "light" : "dark";
+					children: [
+						"theme-light",
+						"theme-vivid",
+						"theme-dark"
+					].flatMap((th) => TINTS.map((t) => {
+						const name = th === "theme-light" ? "light" : th === "theme-vivid" ? "vivid" : "dark";
 						const low = lowest(name, t);
 						return /* @__PURE__ */ jsxs("div", {
-							className: `e-badge-panel ${th}`,
+							className: `e-badge-panel ${th} ${t}`,
 							style: { "--tint": TINT_COLORS[t] },
 							children: [
 								/* @__PURE__ */ jsxs("div", {
@@ -30090,17 +31889,20 @@ function BadgeGallery({ embedded = false } = {}) {
 // src/App.tsx
 var LS_THEME = "emporia_theme";
 var LS_TINT = "emporia_tint";
+var LS_BASE = "emporia_theme_base";
 function readTheme() {
 	if (PARAM_THEME) return PARAM_THEME;
 	if (CAPTURE) return "theme-light";
-	const v = readPref(LS_THEME);
-	return THEMES.includes(v ?? "") ? v : "theme-light";
+	return normalizeTheme(readPref(LS_THEME));
+}
+/** The last of light / dark: where turning vivid off goes back to. */
+function readBase(theme) {
+	return normalizeBase(CAPTURE ? null : readPref(LS_BASE), theme);
 }
 function readTint() {
 	if (PARAM_TINT !== null) return PARAM_TINT;
 	if (CAPTURE) return "tint-green";
-	const v = readPref(LS_TINT);
-	return TINTS.includes(v ?? "") ? v : "";
+	return normalizeTint(readPref(LS_TINT));
 }
 /** The sub-tab last seen in each destination in this browser tab (navForHotkey ignores a name it does not know). */
 function recalledSections() {
@@ -30127,6 +31929,11 @@ function AppInner() {
 	const [lens, setLens] = useState(() => routeFromHash().lens ?? "live");
 	const [theme, setTheme] = useState(readTheme);
 	const [tint, setTint] = useState(readTint);
+	const [base, setBase] = useState(() => readBase(theme));
+	const baseRef = useRef(base);
+	useEffect(() => {
+		baseRef.current = base;
+	}, [base]);
 	const [navOpen, setNavOpen] = useState(false);
 	const shellRef = useRef(null);
 	const drawerRef = useRef(null);
@@ -30198,6 +32005,10 @@ function AppInner() {
 	const setThemeAndApply = (t) => {
 		setTheme(t);
 		if (!CAPTURE) writePref(LS_THEME, t);
+		if (t !== "theme-vivid") {
+			setBase(t);
+			if (!CAPTURE) writePref(LS_BASE, t);
+		}
 	};
 	const setTintAndApply = (t) => {
 		setTint(t);
@@ -30352,8 +32163,12 @@ function AppInner() {
 					return next;
 				});
 				else setTheme((cur) => {
-					const next = toggleTheme(cur);
-					if (!CAPTURE) writePref(LS_THEME, next);
+					const next = toggleTheme(cur, baseRef.current);
+					if (!CAPTURE) {
+						writePref(LS_THEME, next);
+						writePref(LS_BASE, next);
+					}
+					setBase(next);
 					return next;
 				});
 				return;
@@ -30440,6 +32255,7 @@ function AppInner() {
 						onGoView: goToView,
 						onClose: () => setNavOpen(false),
 						theme,
+						base,
 						tint,
 						onTheme: setThemeAndApply,
 						onTint: setTintAndApply,
@@ -30488,6 +32304,7 @@ function AppInner() {
 											children: [
 												/* @__PURE__ */ jsx(ThemeCompact, {
 													theme,
+													base,
 													tint,
 													onTheme: setThemeAndApply,
 													onTint: setTintAndApply
@@ -30739,7 +32556,7 @@ function AttentionChip({ profile, open, onNewTurn, pollMs = CHIP_POLL_MS }) {
 * the themes', the views'), so plugin.js stays one file. The page renders it in
 * a <style> inside its own root (desktop/mount.tsx), mounted and removed with it.
 */
-var DESKTOP_CSS = "/* srcl's global.css (github.com/internet-development/www-sacred), MIT — see LICENSE-srcl. */\n/*\nNOTE(jimmylee):\nColor palette for Sacred Computer. The root source of truth for color is the\nSimulacrum CLI palette in scripts/cli/colors.json — those are the true, terminal-\ntested colors, the ones a real terminal actually renders. The --ansi-* primitives\nbelow mirror that palette in CSS, so every value must be one a terminal can show:\nStandard (SGR 30-37, 90-97), 256-color (SGR 38;5;n), the grayscale ramp (232-255),\nor 24-bit true color (SGR 38;2;r;g;b). Do not add a color outside that spec.\n\nThe OKLCH tint themes further down are a WEB-ONLY behavior. A terminal cannot run\nOKLCH math; it exists purely so the React surface can derive tinted variants while\nstaying inside the same perceptual band as the terminal-tested primitives. OKLCH is\na projection of the root palette, never a new source of color.\n*/\n\n.e-desktop-root a,\n.e-desktop-root abbr,\n.e-desktop-root acronym,\n.e-desktop-root address,\n.e-desktop-root applet,\n.e-desktop-root article,\n.e-desktop-root aside,\n.e-desktop-root audio,\n.e-desktop-root b,\n.e-desktop-root big,\n.e-desktop-root blockquote,\n.e-desktop-root .e-host-body,\n.e-desktop-root canvas,\n.e-desktop-root caption,\n.e-desktop-root center,\n.e-desktop-root cite,\n.e-desktop-root code,\n.e-desktop-root dd,\n.e-desktop-root del,\n.e-desktop-root details,\n.e-desktop-root dfn,\n.e-desktop-root div,\n.e-desktop-root dl,\n.e-desktop-root dt,\n.e-desktop-root embed,\n.e-desktop-root em,\n.e-desktop-root figure,\n.e-desktop-root figcaption,\n.e-desktop-root fieldset,\n.e-desktop-root footer,\n.e-desktop-root form,\n.e-desktop-root h1,\n.e-desktop-root h2,\n.e-desktop-root h3,\n.e-desktop-root h4,\n.e-desktop-root h5,\n.e-desktop-root h6,\n.e-desktop-root header,\n.e-desktop-root hgroup,\n.e-desktop-root .e-host-body,\n.e-desktop-root i,\n.e-desktop-root iframe,\n.e-desktop-root img,\n.e-desktop-root ins,\n.e-desktop-root kbd,\n.e-desktop-root label,\n.e-desktop-root legend,\n.e-desktop-root li,\n.e-desktop-root mark,\n.e-desktop-root menu,\n.e-desktop-root nav,\n.e-desktop-root object,\n.e-desktop-root ol,\n.e-desktop-root output,\n.e-desktop-root p,\n.e-desktop-root pre,\n.e-desktop-root q,\n.e-desktop-root ruby,\n.e-desktop-root s,\n.e-desktop-root samp,\n.e-desktop-root section,\n.e-desktop-root small,\n.e-desktop-root span,\n.e-desktop-root strike,\n.e-desktop-root strong,\n.e-desktop-root sub,\n.e-desktop-root summary,\n.e-desktop-root sup,\n.e-desktop-root table,\n.e-desktop-root tbody,\n.e-desktop-root td,\n.e-desktop-root tfoot,\n.e-desktop-root th,\n.e-desktop-root thead,\n.e-desktop-root time,\n.e-desktop-root tr,\n.e-desktop-root tt,\n.e-desktop-root u,\n.e-desktop-root ul,\n.e-desktop-root var,\n.e-desktop-root video {\n  border: 0;\n  box-sizing: border-box;\n  margin: 0;\n  padding: 0;\n  vertical-align: baseline;\n}\n\n.e-desktop-root a {\n  background: var(--theme-border-subdued);\n  color: var(--theme-text);\n\n  &:hover {\n    background: var(--theme-focused-foreground);\n    color: var(--theme-text);\n  }\n\n  &:focus {\n    background: var(--theme-focused-foreground);\n    color: var(--theme-text);\n    outline: 0;\n  }\n\n  &:active {\n    background: var(--theme-focused-foreground);\n    color: var(--theme-text);\n  }\n}\n\n.e-desktop-root ul {\n  list-style-position: inside;\n  list-style-type: '▪';\n  text-indent: -1ch;\n}\n\n.e-desktop-root ol {\n  list-style-type: '';\n  list-style-position: inside;\n  counter-reset: cupcake;\n  text-indent: -1ch;\n}\n\n.e-desktop-root ul ul,\n.e-desktop-root ul ol,\n.e-desktop-root ol ul,\n.e-desktop-root ol ol {\n  padding-left: 2ch;\n}\n\n.e-desktop-root ol li {\n  padding-left: 1ch;\n  counter-increment: cupcake;\n}\n\n.e-desktop-root ul li:before {\n  content: ' ';\n  display: inline-block;\n  width: 1ch;\n  height: 0;\n  visibility: hidden;\n}\n\n.e-desktop-root ol li:before {\n  content: counters(cupcake, '.') '. ';\n}\n\n.e-desktop-root article,\n.e-desktop-root aside,\n.e-desktop-root details,\n.e-desktop-root figcaption,\n.e-desktop-root figure,\n.e-desktop-root footer,\n.e-desktop-root header,\n.e-desktop-root hgroup,\n.e-desktop-root menu,\n.e-desktop-root nav,\n.e-desktop-root section {\n  display: block;\n}\n\n.e-desktop-root .e-host-body,\n.e-desktop-root .e-host-body {\n  /* ------------------------------------------------------------------ */\n  /* Standard 16 Colors (SGR 38;5;0-15)                                 */\n  /* ------------------------------------------------------------------ */\n  --ansi-0-black: #000000;\n  --ansi-1-maroon: #800000;\n  --ansi-2-green: #008000;\n  --ansi-3-olive: #808000;\n  --ansi-4-navy: #000080;\n  --ansi-5-purple: #800080;\n  --ansi-6-teal: #008080;\n  --ansi-7-silver: #c0c0c0;\n  --ansi-8-gray: #808080;\n  --ansi-9-red: #ff0000;\n  --ansi-10-lime: #00ff00;\n  --ansi-11-yellow: #ffff00;\n  --ansi-12-blue: #0000ff;\n  --ansi-13-fuchsia: #ff00ff;\n  --ansi-14-aqua: #00ffff;\n  --ansi-15-white: #ffffff;\n\n  /* ------------------------------------------------------------------ */\n  /* 216 Color Cube (SGR 38;5;16-231)                                   */\n  /* Channels: 0x00, 0x5F, 0x87, 0xAF, 0xD7, 0xFF                       */\n  /* ------------------------------------------------------------------ */\n  --ansi-100-yellow4a: #878700;\n  --ansi-148-yellow3a: #afd700;\n  --ansi-232-gray-3: #080808;\n  --ansi-235-gray-15: #262626;\n  --ansi-237-gray-23: #3a3a3a;\n  --ansi-240-gray-35: #585858;\n  --ansi-242-gray-42: #6c6c6c;\n  --ansi-245-gray-54: #8a8a8a;\n  --ansi-248-gray-66: #a8a8a8;\n  --ansi-251-gray-78: #c6c6c6;\n  --ansi-254-gray-89: #e4e4e4;\n  --ansi-255-gray-93: #eeeeee;\n\n  /* ------------------------------------------------------------------ */\n  /* Bright Colors (SGR 90-97) — overlap with ansi-8..15 in some terms  */\n  /* but the SGR 90-97 renditions use these distinct hex values.        */\n  /* ------------------------------------------------------------------ */\n  --ansi-bright-green: #55ff55;\n\n  /* ------------------------------------------------------------------ */\n  /* 24-bit True Color (SGR 38;2;r;g;b) — outside the 256 palette       */\n  /* ------------------------------------------------------------------ */\n  --ansi-true-brand: #e4f221;\n\n  /* ------------------------------------------------------------------ */\n  /* Semantic Color Aliases                                              */\n  /* All values reference the ANSI palette above.                       */\n  /* ------------------------------------------------------------------ */\n  --color-black: var(--ansi-0-black);\n  --color-white: var(--ansi-15-white);\n  --color-green: var(--ansi-2-green);\n  --color-lime: var(--ansi-10-lime);\n  --color-bright-green: var(--ansi-bright-green);\n  --color-brand: var(--ansi-true-brand);\n\n  --color-gray-93: var(--ansi-255-gray-93);\n  --color-gray-89: var(--ansi-254-gray-89);\n  --color-gray-78: var(--ansi-251-gray-78);\n  --color-gray-66: var(--ansi-248-gray-66);\n  --color-gray-54: var(--ansi-245-gray-54);\n  --color-gray-42: var(--ansi-242-gray-42);\n  --color-gray-35: var(--ansi-240-gray-35);\n  --color-gray-23: var(--ansi-237-gray-23);\n  --color-gray-15: var(--ansi-235-gray-15);\n  --color-gray-3: var(--ansi-232-gray-3);\n\n  /* ------------------------------------------------------------------ */\n  /* Web-only Alpha Variants (no ANSI equivalent — CSS rendering only)  */\n  /* Used for translucent overlays and subdued borders.                  */\n  /* ------------------------------------------------------------------ */\n  --color-black-alpha-40: rgba(0, 0, 0, 0.4);\n  --color-white-alpha-40: rgba(255, 255, 255, 0.4);\n  --color-gray-89-border-alpha: rgba(228, 228, 228, 0.6);\n  --color-gray-23-border-alpha: rgba(58, 58, 58, 0.3);\n  --color-brand-alpha-50: rgba(228, 242, 33, 0.5);\n\n  --font-family-mono: 'GeistMono-Regular', Consolas, monaco, monospace;\n\n  --theme-line-height-base: 1.25;\n  --font-size: 16px;\n\n  --z-index-page: 1;\n  --z-index-page-select: 3;\n  --z-index-page-tooltips: 4;\n  --z-index-page-popover: 5;\n  --z-index-page-dropdown-menus: 6;\n  --z-index-page-modals: 10;\n\n  background: var(--theme-background);\n  color: var(--theme-text);\n  font-family: var(--font-family-mono);\n  line-height: calc(var(--theme-line-height-base) * 1rem);\n\n  font-size: var(--font-size);\n  font-optical-sizing: auto;\n  text-rendering: geometricPrecision;\n  font-weight: 400;\n  font-variant-numeric: tabular-nums lining-nums;\n\n  &::-webkit-scrollbar {\n    background: transparent;\n    height: calc(var(--theme-line-height-base) * 1rem);\n    width: 1ch;\n  }\n\n  &::-webkit-scrollbar-track {\n    background: var(--theme-background);\n  }\n\n  &::-webkit-scrollbar-thumb {\n    background: var(--theme-border);\n  }\n\n  &::-webkit-scrollbar-thumb:hover {\n    background: var(--theme-border);\n  }\n}\n\n.e-desktop-root .e-host-body.theme-light {\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: var(--color-white);\n  --theme-background-modal: var(--color-gray-89);\n  --theme-background-modal-footer: var(--color-gray-66);\n  --theme-background-input: var(--color-gray-89);\n  --theme-border: var(--color-gray-89);\n  --theme-border-subdued: var(--color-gray-89-border-alpha);\n  --theme-text: var(--color-black);\n  --theme-button: var(--color-black);\n  --theme-button-text: var(--color-white);\n  --theme-button-foreground: var(--color-gray-78);\n  --theme-button-background: var(--color-gray-89);\n  --theme-focused-foreground: var(--color-bright-green);\n  --theme-focused-foreground-subdued: var(--color-brand-alpha-50);\n  /*\n  NOTE(jimmylee):\n  Window-specific tones — body sits one step darker than --theme-background so the\n  window reads as a \"lifted\" panel, and the shadow sits one step darker still so the\n  drop shadow is unambiguously darker than the window body. The CLI mirror lives in\n  scripts/cli/colors.json (windowBg / shadow).\n  */\n  --theme-window-background: var(--color-gray-89);\n  --theme-window-shadow: var(--color-gray-66);\n}\n\n.e-desktop-root .e-host-body.theme-dark {\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: var(--color-black);\n  --theme-background-modal: var(--color-gray-23);\n  --theme-background-modal-footer: var(--color-gray-35);\n  --theme-background-input: var(--color-gray-23);\n  --theme-border: var(--color-gray-23);\n  --theme-border-subdued: var(--color-gray-23-border-alpha);\n  --theme-text: var(--color-white);\n  --theme-button: var(--color-white);\n  --theme-button-text: var(--color-black);\n  --theme-button-foreground: var(--color-gray-15);\n  --theme-button-background: var(--color-gray-23);\n  --theme-focused-foreground: oklch(from var(--ansi-13-fuchsia) 0.55 c h);\n  --theme-focused-foreground-subdued: oklch(from var(--ansi-13-fuchsia) 0.55 c h / 0.5);\n  /*\n  NOTE(jimmylee):\n  Window body is gray-23 (#3a3a3a) so it lifts off the gray-3 (#080808) page\n  background, and the shadow is gray-15 (#262626) — a hair lighter than the page\n  but visibly darker than the window body, preserving the \"shadow darker than the\n  body\" contract while staying inside the ANSI gray ramp.\n  */\n  --theme-window-background: var(--color-gray-23);\n  --theme-window-shadow: var(--color-gray-15);\n}\n\n/*\nNOTE(jimmylee):\nOKLCH tint themes — web-only. These have no terminal equivalent (Simulacrum renders\nthe fixed colors.json palette, never derived tints). They are recalibrated against\nthe --ansi-* base so the saturation and lightness ramps fall in the same perceptual\nrange as the ANSI gray scale (#eeeeee → #262626) and the brand color (#e4f221). Each\ntint sets only --tint, and the body.theme-light.tint-* / body.theme-dark.tint-*\nselectors below derive every --theme-* token from that tint via OKLCH math.\n*/\n\n.e-desktop-root .e-host-body.tint-green {\n  --tint: #39ff44;\n}\n\n.e-desktop-root .e-host-body.tint-blue {\n  --tint: #0047ff;\n}\n\n.e-desktop-root .e-host-body.tint-red {\n  --tint: #ff0000;\n}\n\n.e-desktop-root .e-host-body.tint-yellow {\n  --tint: var(--ansi-true-brand);\n}\n\n.e-desktop-root .e-host-body.tint-purple {\n  --tint: #8000ff;\n}\n\n.e-desktop-root .e-host-body.tint-orange {\n  --tint: #ffac1c;\n}\n\n.e-desktop-root .e-host-body.tint-pink {\n  --tint: #ff00ff;\n}\n\n.e-desktop-root .e-host-body.theme-light.tint-green,\n.e-desktop-root .e-host-body.theme-light.tint-blue,\n.e-desktop-root .e-host-body.theme-light.tint-red,\n.e-desktop-root .e-host-body.theme-light.tint-yellow,\n.e-desktop-root .e-host-body.theme-light.tint-purple,\n.e-desktop-root .e-host-body.theme-light.tint-orange,\n.e-desktop-root .e-host-body.theme-light.tint-pink {\n  /*\n  NOTE(jimmylee):\n  Light tint ramp is anchored to the ANSI light grays:\n    --theme-background          ≈ ansi-255-gray-93 (#eeeeee)\n    --theme-background-modal    ≈ ansi-254-gray-89 (#e4e4e4)\n    --theme-background-input    ≈ ansi-255-gray-93 (#eeeeee)\n    --theme-border              ≈ ansi-251-gray-78 (#c6c6c6)\n    --theme-text                ≈ ansi-232-gray-3  (#080808)\n  Each token uses oklch(from var(--tint) L C H) so it tints toward the source\n  color while staying within the ANSI lightness band.\n  */\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: oklch(from var(--tint) 0.97 calc(c * 0.1) h);\n  --theme-background-modal: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-background-modal-footer: oklch(from var(--tint) 0.86 calc(c * 0.22) h);\n  --theme-background-input: oklch(from var(--tint) 0.97 calc(c * 0.1) h);\n  --theme-border: oklch(from var(--tint) 0.84 calc(c * 0.28) h);\n  --theme-border-subdued: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-text: oklch(from var(--tint) 0.18 calc(c * 0.4) h);\n  --theme-button: oklch(from var(--tint) 0.18 calc(c * 0.4) h);\n  --theme-button-text: oklch(from var(--tint) 0.97 calc(c * 0.1) h);\n  --theme-button-foreground: oklch(from var(--tint) 0.86 calc(c * 0.22) h);\n  --theme-button-background: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-focused-foreground: oklch(from var(--tint) 0.62 c h);\n  --theme-focused-foreground-subdued: oklch(from var(--tint) 0.62 c h / 0.5);\n  /*\n  NOTE(jimmylee):\n  Window body matches background-modal so the panel sits one step darker than the\n  page background, and the shadow drops to L=0.70 — a third step down so the\n  drop shadow stays visibly darker than the window body across every tint.\n  */\n  --theme-window-background: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-window-shadow: oklch(from var(--tint) 0.7 calc(c * 0.28) h);\n}\n\n.e-desktop-root .e-host-body.theme-dark.tint-green,\n.e-desktop-root .e-host-body.theme-dark.tint-blue,\n.e-desktop-root .e-host-body.theme-dark.tint-red,\n.e-desktop-root .e-host-body.theme-dark.tint-yellow,\n.e-desktop-root .e-host-body.theme-dark.tint-purple,\n.e-desktop-root .e-host-body.theme-dark.tint-orange,\n.e-desktop-root .e-host-body.theme-dark.tint-pink {\n  /*\n  NOTE(jimmylee):\n  Dark tint ramp is anchored to the ANSI dark grays:\n    --theme-background          ≈ ansi-232-gray-3  (#080808)\n    --theme-background-modal    ≈ ansi-235-gray-15 (#262626)\n    --theme-background-input    ≈ ansi-237-gray-23 (#3a3a3a)\n    --theme-border              ≈ ansi-237-gray-23 (#3a3a3a)\n    --theme-text                ≈ ansi-15-white    (#ffffff)\n  */\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: oklch(from var(--tint) 0.14 calc(c * 0.18) h);\n  --theme-background-modal: oklch(from var(--tint) 0.24 calc(c * 0.22) h);\n  --theme-background-modal-footer: oklch(from var(--tint) 0.3 calc(c * 0.24) h);\n  --theme-background-input: oklch(from var(--tint) 0.28 calc(c * 0.2) h);\n  --theme-border: oklch(from var(--tint) 0.4 calc(c * 0.28) h);\n  --theme-border-subdued: oklch(from var(--tint) 0.4 calc(c * 0.28) h / 0.6);\n  --theme-text: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-button: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-button-text: oklch(from var(--tint) 0.14 calc(c * 0.18) h);\n  --theme-button-foreground: oklch(from var(--tint) 0.3 calc(c * 0.22) h);\n  --theme-button-background: oklch(from var(--tint) 0.24 calc(c * 0.22) h);\n  --theme-focused-foreground: oklch(from var(--tint) 0.72 c h);\n  --theme-focused-foreground-subdued: oklch(from var(--tint) 0.72 c h / 0.5);\n  /*\n  NOTE(jimmylee):\n  Window body matches background-modal (L=0.24) so it sits one step lighter than\n  the L=0.14 page background, and the shadow drops to L=0.18 — a hair lighter than\n  the page but darker than the window body, preserving the \"shadow darker than the\n  body\" contract under every dark tint.\n  */\n  --theme-window-background: oklch(from var(--tint) 0.24 calc(c * 0.22) h);\n  --theme-window-shadow: oklch(from var(--tint) 0.18 calc(c * 0.2) h);\n}\n\n.e-desktop-root #__next {\n}\n/* ═══════════════════════════════════════════════════════════════\n   EMPORIA DASHBOARD — single consolidated stylesheet\n   Sections:\n   1.  Variables & tokens\n   2.  Utility classes\n   3.  App shell layout\n   4.  Header & section nav\n   5.  Mobile drawer\n   6.  View body / ViewBody component\n   7.  Sidebar rail\n   8.  Component kit (slim card, meta-grid, KPIs, hero stats, empty pane)\n   9.  Overview — dashboard, stat strip, feed\n   10. Theme picker\n   11. Relay strip\n   12. Agent / profile row components\n   13. Chat & ReadOnlyChat\n   14. Agora — votes, posts\n   15. Navigation chips — SegmentTabs, section tabs\n   16. Badges, pills, entity chips\n   17. Tables — compact, listings\n   18. Toolbar & search\n   19. Action timeline\n   20. Session & transaction rows\n   21. Messages / inbox sub-view\n   22. SRCL component overrides (flat canvas + chrome)\n   23. Responsive breakpoints\n═══════════════════════════════════════════════════════════════ */\n\n/* ─── 1. VARIABLES & TOKENS ─────────────────────────────────────────────── */\n\n.e-desktop-root .e-host-body.theme-dark {\n  --theme-focused-foreground: #f5b84a;\n}\n\n.e-desktop-root .e-host-body.theme-dark,\n.e-desktop-root .e-host-body.theme-light {\n  overflow-x: clip;\n}\n\n/* Flat canvas — all emporia surfaces transparent within the shell */\n.e-desktop-root .e-dashboard-shell {\n  --font-size: 16px; /* 100% SRCL root — no html 110% zoom */\n  --theme-background-modal: var(--theme-background);\n  --theme-background-modal-footer: var(--theme-background);\n  --theme-background-input: var(--theme-background);\n  --theme-window-background: var(--theme-background);\n  --theme-window-shadow: transparent;\n  --theme-button-background: transparent;\n  --theme-button-foreground: transparent;\n  --emporia-surface: transparent;\n  --emporia-surface-raised: transparent;\n  --emporia-nav-active: transparent;\n}\n\n/* ─── 2. UTILITY CLASSES ─────────────────────────────────────────────────── */\n\n.e-desktop-root .e-dim   { opacity: 0.5; }\n.e-desktop-root .e-faint { opacity: 0.35; }\n.e-desktop-root .e-trust-key { opacity: 0.55; }\n/* \"mutual\" / \"follows <name>\" beside a name in the Following and Followers lists */\n.e-desktop-root .e-follow-tag {\n  font-size: 0.62rem;\n  padding: 0 6px;\n  border: 1px solid rgba(128,128,128,0.35);\n  border-radius: 8px;\n  opacity: 0.8;\n  white-space: nowrap;\n  margin-left: 8px;\n}\n\n/* Master-detail selection indicator */\n.e-desktop-root .e-sel   { border-left: 2px solid var(--theme-focused-foreground); padding-left: 8px; }\n\n.e-desktop-root .e-status-txt {\n  font-size: 0.682rem;\n  letter-spacing: 0.1em;\n  text-transform: uppercase;\n}\n\n/* ─── 3. APP SHELL LAYOUT ────────────────────────────────────────────────── */\n\n/* The app is one frame: the header, the section strip, the view (which\n   scrolls) and the chat drawer all live inside it, and so does every overlay\n   (the phone menu and its backdrop, full-page chat, popovers). `contain:\n   layout paint` makes the frame the containing block of anything positioned\n   inside it, so nothing reaches past it into the page around it: inside the\n   Hermes tab the frame is the tab's own container (hermesPlugin.tsx sizes it to\n   what is visible, --e-frame-h: 100%), on the Desktop page the page's pane,\n   standalone the window. */\n.e-desktop-root .e-app-shell {\n  display: flex;\n  height: var(--e-frame-h, 100dvh);\n  min-height: 0;\n  width: 100%;\n  max-width: 100%;\n  position: relative;\n  overflow: hidden;\n  contain: layout paint;\n}\n.e-desktop-root .e-nav-row-hotkey { font-size: 0.715rem; opacity: 0.5; font-variant-numeric: tabular-nums; }\n\n.e-desktop-root .e-sidebar-group { display: flex; flex-direction: column; gap: 0; }\n.e-desktop-root .e-sidebar-group + .e-sidebar-group { margin-top: 6px; }\n.e-desktop-root .e-sidebar-group-label {\n  font-size: 0.638rem;\n  letter-spacing: 0.12em;\n  opacity: 0.45;\n  padding: 6px 10px 4px;\n  user-select: none;\n}\n.e-desktop-root .e-sidebar-key {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 2px;\n  padding: 5px 2px;\n  background: transparent;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  font-size: 0.715rem;\n}\n.e-desktop-root .e-sidebar-key:hover,\n.e-desktop-root .e-sidebar-key:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }\n.e-desktop-root .e-sidebar-key__k { opacity: 0.55; font-variant-numeric: tabular-nums; }\n\n.e-desktop-root .e-app-main {\n  flex: 1;\n  min-width: 0;\n  min-height: 0;\n  height: 100%;\n  max-width: 100%;\n  display: flex;\n  flex-direction: column;\n  background: var(--theme-background);\n  overflow-x: clip;\n}\n\n.e-desktop-root .e-app-backdrop { display: none; }\n\n/* The rail layout puts the five places beside the page; every other layout stacks them. */\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-main { flex-direction: row; }\n.e-desktop-root .e-app-col {\n  flex: 1;\n  min-width: 0;\n  min-height: 0;\n  display: flex;\n  flex-direction: column;\n}\n\n.e-desktop-root .e-view {\n  flex: 1;\n  scrollbar-gutter: stable;\n  height: auto;\n  min-height: 0;\n  min-width: 0;\n  max-width: 100%;\n  overflow-x: clip;\n  overflow-y: auto;\n  box-sizing: border-box;\n}\n\n/* ─── 4. HEADER & SECTION NAV ────────────────────────────────────────────── */\n\n.e-desktop-root .e-app-top {\n  flex-shrink: 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  background: var(--theme-background);\n}\n\n.e-desktop-root .e-app-top__row {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 16px;\n  padding: 10px 20px;\n  min-height: 52px;\n  flex-wrap: wrap;\n  min-width: 0;\n}\n.e-desktop-root .e-app-top__actions {\n  display: flex;\n  align-items: center;\n  gap: 16px;\n  min-width: 0;\n  flex-shrink: 1;\n}\n\n.e-desktop-root .e-brand-title { font-size: 1.155rem !important; letter-spacing: 0.06em; }\n.e-desktop-root .e-brand-title--header { font-size: 1.1rem; font-weight: 600; }\n\n/* Destinations (nav v2): six tabs in the header row, beside the brand. */\n.e-desktop-root .e-section-tabs {\n  display: none;\n  gap: 2px;\n  max-width: 100%;\n  box-sizing: border-box;\n}\n/* The layout is chosen from the dashboard's OWN width (ui/navLayout.ts writes it as data-nav on the\n   shell), never from the window's: inside the Hermes tab the window is wider than the dashboard.\n   wide: labels in the header row · medium: icon + short label · rail: icons down the left edge ·\n   phone: the bottom bar. The main navigation never scrolls; every range draws all five places. */\n.e-desktop-root .e-app-shell[data-nav=\"wide\"] .e-section-tabs--horizontal,\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-section-tabs--horizontal {\n  /* Never wraps: a wrapped header grows and moves everything under it (the audit's A3). */\n  display: flex; flex: 1; min-width: 0; flex-wrap: nowrap;\n}\n/* Past the first tier the header's own controls shrink: \"as\" before the viewer, the select narrower. */\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top .e-viewer-switch > .e-faint,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-top .e-viewer-switch > .e-faint { display: none; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top .e-viewer-switch select,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-top .e-viewer-switch select { max-width: 7rem; }\n.e-desktop-root .e-app-top__row { flex-wrap: nowrap; }\n.e-desktop-root .e-app-top__actions { flex-shrink: 0; }\n/* Medium and rail: the header gives up what it can spare, so it stays on one row. */\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top__row,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-top__row { gap: 10px; padding-left: 14px; padding-right: 14px; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top__actions,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-top__actions { gap: 10px; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-section-tab { padding: 6px 8px; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-section-tab__label { letter-spacing: 0; }\n/* The wordmark keeps its full size wherever the header has room (wide and medium); it only gives way in the\n   rail and phone layouts. */\n.e-desktop-root .e-app-shell[data-nav=\"wide\"] .e-app-top .e-brand-title,\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top .e-brand-title { font-size: 1.5rem !important; letter-spacing: 0.08em; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-relay-status__meta,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-relay-status__meta,\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-header-link__word,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-header-link__word { display: none; }\n/* The live chip keeps its dot and its title; its word is for a roomy header only. */\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-status-chip__label--live,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-status-chip__label--live,\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-status-chip__label--live {\n  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;\n}\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-status-chip__label--relay { max-width: 22ch; }\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-status-chip__label--relay { max-width: 22ch; }\n\n/* The rail: the five places as icons down the left edge, the word on hover and focus. */\n.e-desktop-root .e-section-tabs--rail { display: none; }\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-section-tabs--rail {\n  display: flex;\n  flex: none;\n  flex-direction: column;\n  align-items: stretch;\n  gap: 2px;\n  width: 88px;\n  padding: 8px 4px;\n  border-right: 1px solid var(--e-rule, var(--theme-border-subdued));\n  background: var(--theme-background);\n  position: relative;\n  z-index: 30;\n}\n.e-desktop-root .e-section-tabs--rail .e-section-tab {\n  justify-content: flex-start;\n  min-height: 44px;\n  padding: 0 8px;\n  opacity: 0.85;\n}\n.e-desktop-root .e-section-tabs--rail .e-section-tab__label { font-size: 0.78rem; letter-spacing: 0; }\n.e-desktop-root .e-section-tabs--rail .e-section-tab .e-nav-badge { position: absolute; top: 4px; right: 4px; margin: 0; }\n\n.e-desktop-root .e-section-tab {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  padding: 6px 10px;\n  border: 1px solid transparent;\n  border-radius: 0 !important;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.792rem;\n  cursor: pointer;\n  white-space: nowrap;\n  opacity: 0.75;\n  transition: background 0.12s, opacity 0.12s, border-color 0.12s;\n}\n.e-desktop-root .e-section-tab:hover  { opacity: 1; border-color: var(--theme-border-subdued, rgba(255,255,255,0.12)); background: transparent; }\n.e-desktop-root .e-section-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); background: transparent; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-section-tab__label { letter-spacing: 0.02em; }\n/* The five places are words only in every layout (header row, rail, phone bar, menu): no icon, no hotkey number;\n   the key and the blurb are the hover title. */\n/* The wordmark is a button to Home: it keeps the title's look, with a pointer and a focus ring. */\n.e-desktop-root .e-brand-home { background: none; border: 0; padding: 0; margin: 0; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; }\n.e-desktop-root .e-brand-home:hover { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-brand-home:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: 3px; }\n\n/* Drawer variant */\n.e-desktop-root .e-section-tabs--drawer {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  padding: 12px 0;\n  flex: 1;\n  overflow-y: auto;\n}\n.e-desktop-root .e-section-tabs--drawer .e-section-tab { width: 100%; justify-content: flex-start; padding: 10px 14px; }\n.e-desktop-root .e-section-tabs--drawer .e-section-tab.is-active { background: transparent !important; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n\n/* Nav unread badge */\n.e-desktop-root .e-nav-badge {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 14px;\n  height: 14px;\n  padding: 0 3px;\n  margin-left: 4px;\n  border-radius: 7px;\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  font-size: 10px;\n  font-weight: 700;\n  vertical-align: middle;\n  line-height: 1;\n}\n\n/* A tab's unread count sits on its corner, so it never widens the tab or moves its neighbours. */\n.e-desktop-root .e-section-tabs--horizontal .e-section-tab .e-nav-badge,\n.e-desktop-root .e-bottom-bar__tab .e-nav-badge,\n.e-desktop-root .e-subnav__tab .e-nav-badge {\n  position: absolute;\n  top: -2px;\n  right: -2px;\n  margin: 0;\n}\n.e-desktop-root .e-subnav__tab { position: relative; }\n.e-desktop-root .e-subnav__tab .e-nav-badge { top: 6px; right: 2px; }\n\n/* Header-only places: Help (?) and, for the operator, the relay's desk. */\n.e-desktop-root .e-header-links { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }\n.e-desktop-root .e-header-link {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  min-height: 28px;\n  padding: 2px 9px;\n  border: 1px solid var(--e-rule, var(--theme-border-subdued));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.78rem;\n  cursor: pointer;\n  white-space: nowrap;\n}\n.e-desktop-root .e-header-link:hover { border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-header-link.is-active { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-header-link__icon { font-weight: 700; }\n\n/* ─── 5. MOBILE DRAWER ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-mobile-top {\n  display: none;\n  align-items: center;\n  gap: 10px;\n  padding: 10px 12px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  position: sticky;\n  top: 0;\n  background: var(--theme-background);\n  z-index: 20;\n  flex-wrap: wrap;\n}\n\n.e-desktop-root .e-app-drawer { display: none; }\n\n.e-desktop-root .e-mobile-drawer {\n  display: flex;\n  flex-direction: column;\n  height: 100%;\n  padding: 16px 12px;\n}\n\n/* ─── 6. VIEW BODY ───────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-view-body {\n  padding: 20px 24px 32px;\n  margin: 0 auto;\n  width: 100%;\n  max-width: min(1440px, 100%);\n  box-sizing: border-box;\n  min-width: 0;\n}\n.e-desktop-root .e-view-body__inner { min-height: 40vh; }\n\n.e-desktop-root .e-view-toolbar {\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  gap: 12px;\n  flex-wrap: wrap;\n}\n\n/* Flush variant — fills remaining height for split views */\n.e-desktop-root .e-view-body--flush {\n  padding: 0;\n  max-width: none;\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n}\n.e-desktop-root .e-view-body--flush .e-view-body__inner {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n}\n.e-desktop-root .e-view-body--flush .e-view-toolbar {\n  padding: 10px 16px;\n  margin: 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  background: var(--emporia-surface);\n}\n.e-desktop-root .e-view-body--flush .e-search-row { margin: 0; }\n\n/* ─── 7. SIDEBAR RAIL ────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] {\n  background: var(--theme-background) !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_root\"] {\n  flex: 1;\n  min-height: 0;\n}\n\n/* Rail item — custom flat sidebar list button */\n.e-desktop-root .e-rail-item {\n  display: block;\n  width: 100%;\n  margin: 0;\n  padding: 6px 8px 6px 10px;\n  border: 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.05));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n/* badges on a rail row's first line: they wrap under each other instead of squeezing the name */\n.e-desktop-root .e-rail-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end; min-width: 0; text-align: right; }\n/* the second line of a rail row is secondary: smaller than the name above it, not larger */\n.e-desktop-root .e-rail-item .e-dim, .e-desktop-root .e-rail-item .e-faint { font-size: 12px; line-height: 1.45; }\n.e-desktop-root .e-rail-item:hover { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-rail-item.is-selected,\n.e-desktop-root .e-rail-item:focus-visible { outline: none; }\n.e-desktop-root .e-rail-item:focus-visible { color: var(--theme-focused-foreground); }\n\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] [class*=\"Badge_root\"] {\n  background: transparent !important;\n  padding: 0 !important;\n  font-size: 0.682rem;\n  letter-spacing: 0.06em;\n  color: var(--theme-focused-foreground);\n  opacity: 0.9;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] .e-segment-tabs { margin: 4px 0 8px; }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] [class*=\"Divider_gradient\"] {\n  background: linear-gradient(to right, transparent, var(--theme-border-subdued, rgba(255,255,255,0.08)), transparent) !important;\n  height: 1px !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] [class*=\"Divider_line\"] { height: 1px !important; opacity: 0.35; }\n\n/* ─── 8. COMPONENT KIT ───────────────────────────────────────────────────── */\n\n/* Slim card */\n.e-desktop-root .e-slim-card {\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  border-radius: 4px;\n  background: transparent;\n  margin-bottom: 12px;\n}\n.e-desktop-root .e-slim-card__head {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 6px 10px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n}\n.e-desktop-root .e-slim-card__title {\n  font-size: 0.682rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  opacity: 0.55;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n}\n.e-desktop-root .e-slim-card__body { padding: 10px 12px; }\n.e-desktop-root .e-slim-card__foot {\n  padding: 6px 10px;\n  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n  font-size: 0.748rem;\n  opacity: 0.45;\n}\n\n/* Panel card (used in overview sections) */\n.e-desktop-root .e-panel-card {\n  border-radius: 4px;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  background: transparent;\n  margin-bottom: 12px;\n}\n.e-desktop-root .e-panel-card__head { padding: 6px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06)); }\n.e-desktop-root .e-panel-card__title {\n  font-size: 0.792rem !important;\n  letter-spacing: 0.04em;\n  opacity: 0.5;\n}\n.e-desktop-root .e-panel-card__body { padding: 8px 10px; }\n\n/* Meta grid (agent detail, listing detail) */\n.e-desktop-root .e-meta-grid {\n  margin: 0;\n  display: grid;\n  gap: 6px 12px;\n}\n.e-desktop-root .e-meta-grid__row {\n  display: grid;\n  grid-template-columns: 7rem 1fr;\n  gap: 8px;\n  align-items: baseline;\n}\n.e-desktop-root .e-meta-grid dt {\n  margin: 0;\n  font-size: 0.682rem;\n  letter-spacing: 0.08em;\n  text-transform: uppercase;\n  opacity: 0.45;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n}\n.e-desktop-root .e-meta-grid dd { margin: 0; font-size: 0.858rem; word-break: break-word; }\n\n/* Empty pane */\n.e-desktop-root .e-empty-pane {\n  padding: 20px 16px;\n  border: 1px dashed var(--theme-border-subdued, rgba(255,255,255,0.12));\n  border-radius: 4px;\n  max-width: 28rem;\n}\n.e-desktop-root .e-empty-pane__title { font-size: 0.902rem; opacity: 0.7; }\n.e-desktop-root .e-empty-pane__hint { margin-top: 6px; font-size: 0.792rem; opacity: 0.45; line-height: 1.45; }\n\n/* KPI strip (fees view) */\n.e-desktop-root .e-kpi-row {\n  display: grid;\n  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));\n  gap: 8px;\n  margin-bottom: 12px;\n}\n.e-desktop-root .e-kpi { padding: 5px 8px; border-radius: 4px; }\n.e-desktop-root .e-kpi__val { display: block; font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-kpi__lbl { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.65; }\n\n/* Chess session — board + controls share one centered column (board width) */\n.e-desktop-root .e-chess-main {\n  padding: 18px 20px 20px 9px;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-column {\n  display: flex;\n  flex-direction: column;\n  align-items: stretch;\n  width: fit-content;\n  max-width: 100%;\n  gap: 12px;\n}\n.e-desktop-root .e-chess-stage {\n  display: grid;\n  justify-items: center;\n  width: 100%;\n  max-width: 100%;\n  vertical-align: top;\n  gap: 6px;\n  padding-top: 0;\n}\n.e-desktop-root .e-chess-stage > table {\n  display: inline-table;\n}\n.e-desktop-root .e-chess-moves-block {\n  width: 100%;\n}\n.e-desktop-root .e-chess-moves-label {\n  display: block;\n  font-size: 0.7rem;\n  margin-bottom: 6px;\n}\n\n.e-desktop-root .e-chess-players {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 16px;\n  width: 100%;\n  margin-top: 0;\n  margin-bottom: 0;\n  font-family: var(--font-family-mono);\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-players__side {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  min-width: 0;\n}\n.e-desktop-root .e-chess-players__piece {\n  font-size: 1.55rem;\n  line-height: 1;\n  flex-shrink: 0;\n}\n.e-desktop-root .e-chess-players__piece--dark { opacity: 0.88; }\n.e-desktop-root .e-chess-players__name {\n  font-size: 0.95rem;\n  font-weight: 600;\n  max-width: 14rem;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n.e-desktop-root .e-chess-players__vs { opacity: 0.45; font-size: 0.72rem; }\n\n.e-desktop-root .e-chess-ctrl-move {\n  margin-left: 8px;\n  font-family: var(--font-family-mono);\n  font-size: 0.72rem;\n  opacity: 0.8;\n}\n\n.e-desktop-root .e-chess-movelist {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 4px 6px;\n  margin-top: 0;\n  width: 100%;\n  max-width: 100%;\n  font-family: var(--font-family-mono);\n  font-size: 0.68rem;\n}\n.e-desktop-root .e-chess-movelist__btn {\n  border: none;\n  background: transparent;\n  color: inherit;\n  opacity: 0.72;\n  cursor: pointer;\n  padding: 2px 4px;\n  border-radius: 3px;\n}\n.e-desktop-root .e-chess-movelist__btn:hover { opacity: 1; background: var(--theme-border-subdued, rgba(255,255,255,0.06)); }\n.e-desktop-root .e-chess-movelist__btn--on {\n  opacity: 1;\n  font-weight: 600;\n  color: var(--theme-focused-foreground, inherit);\n}\n\n.e-desktop-root .e-chess-warn { font-size: 0.68rem; margin-top: 6px; }\n\n.e-desktop-root .e-chess-ctrl-row {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 4px;\n  margin-top: 8px;\n  width: fit-content;\n  max-width: 100%;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-ctrl-icons {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  flex-shrink: 0;\n}\n.e-desktop-root .e-chess-ctrl-status {\n  text-align: center;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n  font-size: 0.72rem;\n  opacity: 0.65;\n  font-variant-numeric: tabular-nums;\n  white-space: nowrap;\n}\n.e-desktop-root .e-chess-replay-status {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n}\n.e-desktop-root .e-chess-live-mark {\n  text-transform: uppercase;\n  letter-spacing: 0.06em;\n  color: var(--theme-focused-foreground);\n  opacity: 1;\n}\n.e-desktop-root .e-chess-icon-btn {\n  appearance: none;\n  flex: 0 0 auto;\n  margin: 0;\n  padding: 0;\n  border: 0;\n  background: transparent;\n  color: inherit;\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n.e-desktop-root .e-chess-icon-btn__glyph {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 6px;\n  box-shadow: inset 0 0 0 1px var(--theme-border-subdued, rgba(255, 255, 255, 0.12));\n  transition: color 0.1s, box-shadow 0.1s;\n}\n.e-desktop-root .e-chess-icon-btn .e-chess-svg {\n  display: block;\n  width: 1.25rem;\n  height: 1.25rem;\n}\n.e-desktop-root .e-chess-icon-btn:hover .e-chess-icon-btn__glyph,\n.e-desktop-root .e-chess-icon-btn:focus-visible .e-chess-icon-btn__glyph {\n  color: var(--theme-focused-foreground);\n  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground);\n}\n.e-desktop-root .e-chess-icon-btn:focus-visible {\n  outline: none;\n}\n.e-desktop-root .e-chess-move-idx,\n.e-desktop-root .e-chess-speed__lbl {\n  font-size: 0.792rem;\n  opacity: 0.55;\n}\n.e-desktop-root .e-chess-speed {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 8px;\n  align-items: center;\n  justify-content: center;\n  width: fit-content;\n  max-width: 100%;\n  margin: 0 auto;\n  padding: 6px 0 2px;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-speed__range {\n  width: min(9rem, 42vw);\n  max-width: 140px;\n  accent-color: var(--theme-focused-foreground);\n}\n\n/* Hero stats (overview) */\n.e-desktop-root .e-hero-stats {\n  display: grid;\n  grid-template-columns: repeat(2, 1fr);\n  gap: 12px;\n  margin-bottom: 24px;\n}\n@media (min-width: 720px) { .e-desktop-root .e-hero-stats { grid-template-columns: repeat(4, 1fr); }}\n\n.e-desktop-root .e-hero-stat {\n  padding: 16px 18px;\n  background: transparent;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  border-radius: 4px;\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  position: relative;\n  overflow: hidden;\n}\n.e-desktop-root .e-hero-stat::before {\n  content: \"\";\n  position: absolute;\n  top: 0; left: 0; right: 0;\n  height: 2px;\n  background: var(--theme-border-subdued, rgba(255,255,255,0.15));\n}\n.e-desktop-root .e-hero-stat--accent::before { background: linear-gradient(90deg, var(--theme-focused-foreground), transparent); }\n.e-desktop-root .e-hero-stat__value { font-size: 1.925rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }\n.e-desktop-root .e-hero-stat--accent .e-hero-stat__value { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-hero-stat__label { font-size: 0.715rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.55; }\n.e-desktop-root .e-hero-stat__hint  { font-size: 0.748rem; opacity: 0.4; }\n\n/* MCP command hint — \"show the tool call\" write-action affordance */\n.e-desktop-root .e-mcp-hint {\n  margin-top: 8px;\n  padding: 6px 8px;\n  border: 1px dashed var(--theme-border);\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n.e-desktop-root .e-mcp-hint__label { font-size: 0.682rem; text-transform: uppercase; letter-spacing: 0.04em; }\n.e-desktop-root .e-mcp-hint__code {\n  font-family: var(--font-family-mono);\n  font-size: 0.77rem;\n  color: var(--theme-focused-foreground);\n  cursor: pointer;\n  word-break: break-all;\n}\n.e-desktop-root .e-mcp-hint__code:hover { text-decoration: underline; }\n\n/* Rail chips (payment rail badges) */\n.e-desktop-root .e-rail-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }\n.e-desktop-root .e-rail-chip {\n  font-size: 0.682rem;\n  padding: 0;\n  border: 0;\n  border-radius: 0;\n  opacity: 0.85;\n  text-transform: uppercase;\n  letter-spacing: 0.04em;\n  color: var(--theme-focused-foreground);\n  background: transparent !important;\n}\n\n/* Outline pill for longer status text (e.g. NIM model name) — a solid-fill\n   badge (.e-trust-verified) reads as an alert/highlight at this length. */\n.e-desktop-root .e-status-pill {\n  font-size: 0.682rem;\n  font-family: var(--font-family-mono);\n  padding: 2px 7px;\n  border: 1px solid var(--theme-border);\n  background: transparent !important;\n  white-space: nowrap;\n}\n.e-desktop-root .e-status-pill--off { opacity: 0.45; }\n\n/* ─── 9. OVERVIEW ────────────────────────────────────────────────────────── */\n\n/* Hub grid — overview nav cards */\n.e-desktop-root .e-overview-status {\n  display: block;\n  font-size: 0.748rem;\n  margin-bottom: 12px;\n  max-width: 100%;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .e-pipeline-strip {\n  display: block;\n  font-size: 0.726rem;\n  letter-spacing: 0.02em;\n  margin-bottom: 14px;\n  max-width: 100%;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .e-overview-hub {\n  display: grid;\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n  gap: 8px;\n  margin-bottom: 20px;\n  min-width: 0;\n}\n@media (min-width: 560px)  { .e-desktop-root .e-overview-hub { grid-template-columns: repeat(3, minmax(0, 1fr)); }}\n@media (min-width: 900px)  { .e-desktop-root .e-overview-hub { grid-template-columns: repeat(4, minmax(0, 1fr)); }}\n@media (min-width: 1300px) { .e-desktop-root .e-overview-hub { grid-template-columns: repeat(5, minmax(0, 1fr)); }}\n\n.e-desktop-root .e-overview-card {\n  display: flex;\n  flex-direction: column;\n  gap: 0;\n  padding: 10px 12px 12px;\n  text-align: left;\n  background: transparent;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  transition: border-color 0.12s ease;\n  min-width: 0;\n  max-width: 100%;\n}\n.e-desktop-root .e-overview-card:hover,\n.e-desktop-root .e-overview-card:focus-visible {\n  border-color: var(--theme-focused-foreground);\n  outline: none;\n}\n\n.e-desktop-root .e-overview-card__head {\n  display: flex;\n  justify-content: space-between;\n  align-items: baseline;\n  flex-wrap: wrap;\n  gap: 2px 6px;\n  margin-bottom: 6px;\n  min-width: 0;\n}\n.e-desktop-root .e-overview-card__topline {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  min-width: 0;\n  flex: 1;\n}\n.e-desktop-root .e-overview-card__icon  { font-size: 1.1rem; line-height: 1; flex-shrink: 0; }\n.e-desktop-root .e-overview-card__title { font-size: 0.858rem; font-weight: 500; }\n/* P69: a collection whose fetch rejected, as distinct from one that came back\n   empty. The snapshot is allSettled, so a single failing endpoint used to\n   render \"—\" — the same glyph as \"not loaded yet\" — beside cards showing real\n   numbers, which reads as \"there is nothing there\". Muted rather than alarming:\n   the relay is up and answering for the other panels, so this is one endpoint\n   to go and look at, not an outage. */\n.e-desktop-root .e-overview-card--failed .e-overview-card__sub {\n  color: var(--theme-warning, #c33);\n  opacity: 1;\n  letter-spacing: 0.02em;\n}\n.e-desktop-root .e-overview-card--failed .e-overview-card__body { opacity: 0.55; }\n\n.e-desktop-root .e-overview-card__sub   {\n  font-size: 0.715rem;\n  font-variant-numeric: tabular-nums;\n  color: var(--theme-focused-foreground);\n  opacity: 0.85;\n  white-space: nowrap;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  flex-shrink: 1;\n}\n.e-desktop-root .e-overview-card__body { }\n.e-desktop-root .e-overview-card__body p {\n  margin: 0 0 3px;\n  font-size: 0.748rem;\n  line-height: 1.4;\n  opacity: 0.5;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.e-desktop-root .e-nav-card {\n  display: flex;\n  flex-direction: column;\n  align-items: flex-start;\n  gap: 6px;\n  padding: 14px 16px;\n  text-align: left;\n  background: var(--theme-background);\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  min-height: 5.5rem;\n  transition: border-color 0.15s ease;\n}\n.e-desktop-root .e-nav-card:hover,\n.e-desktop-root .e-nav-card:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }\n.e-desktop-root .e-nav-card[data-active=\"true\"] { border-color: var(--theme-focused-foreground); box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }\n.e-desktop-root .e-nav-card__hotkey {\n  position: absolute;\n  top: 10px; right: 10px;\n  font-size: 0.66rem;\n  opacity: 0.4;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));\n  padding: 2px 5px;\n}\n\n/* Stat strip */\n.e-desktop-root .e-stat-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }\n.e-desktop-root .e-stat-strip__lbl { font-size: 0.682rem; opacity: 0.55; }\n\n/* Live event feed */\n.e-desktop-root .e-feed-panel { max-height: min(70vh, 520px); overflow-y: auto; }\n\n.e-desktop-root .e-feed-panel--v2 { max-height: min(65vh, 480px); margin: -4px 0; }\n\n.e-desktop-root .e-feed-row {\n  cursor: pointer;\n  padding: 6px 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n}\n.e-desktop-root .e-feed-row:hover { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-feed-row:last-child { border-bottom: none; }\n\n.e-desktop-root .e-feed-row--v2 {\n  padding: 12px 12px 12px 14px;\n  margin: 0 -4px;\n  border-radius: 0;\n  border-bottom: none;\n  border-left: 3px solid transparent;\n  transition: border-color 0.12s ease;\n}\n.e-desktop-root .e-feed-row--v2.is-clickable:hover { border-left-color: var(--theme-focused-foreground); }\n\n.e-desktop-root .e-feed-type {\n  display: inline-block;\n  font-size: 0.682rem;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n  margin-bottom: 4px;\n}\n.e-desktop-root .e-feed-detail  { font-size: 0.902rem !important; }\n.e-desktop-root .e-feed-time    { font-size: 0.748rem !important; font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-feed-jump    { font-size: 0.715rem !important; opacity: 0.45; margin-top: 4px; }\n\n/* ─── 10. THEME PICKER ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-theme-compact { position: relative; }\n.e-desktop-root .e-theme-compact--inline { display: flex; align-items: center; }\n/* Fixed, but inside the frame's `contain: layout paint`: it covers the frame, never the page around it. */\n.e-desktop-root .e-theme-compact__backdrop { position: fixed; inset: 0; z-index: 200; border: 0; background: transparent; }\n\n.e-desktop-root .e-theme-duo {\n  display: inline-flex;\n  align-items: center;\n  gap: 0;\n  padding: 5px 9px;\n  border: 1px solid var(--theme-border-subdued, rgba(255, 255, 255, 0.18));\n  border-radius: 0;\n  background: transparent;\n}\n.e-desktop-root .e-theme-duo__rule {\n  width: 1px;\n  align-self: stretch;\n  min-height: 14px;\n  margin: 2px 8px;\n  background: var(--theme-border-subdued, rgba(255, 255, 255, 0.18));\n  flex-shrink: 0;\n}\n.e-desktop-root .e-theme-duo__btn {\n  display: block;\n}\n.e-desktop-root .e-theme-circle {\n  width: 16px;\n  height: 16px;\n  padding: 0;\n  border: none;\n  border-radius: 50%;\n  cursor: pointer;\n  flex-shrink: 0;\n  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.4);\n  transition: transform 0.12s ease, opacity 0.12s ease;\n}\n.e-desktop-root .e-theme-circle:hover,\n.e-desktop-root .e-theme-circle:focus-visible {\n  transform: scale(1.1);\n  outline: none;\n  opacity: 0.92;\n}\n.e-desktop-root .e-theme-circle--mode[data-mode=\"theme-light\"] { background: #f2f2f2; }\n.e-desktop-root .e-theme-circle--mode[data-mode=\"theme-dark\"]  { background: #121212; }\n.e-desktop-root .e-theme-circle--accent { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }\n.e-desktop-root .e-mode-toggle {\n  width: 26px; height: 26px;\n  padding: 0;\n  border: none;\n  border-radius: 50%;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.858rem;\n  line-height: 1;\n  cursor: pointer;\n  opacity: 0.45;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  transition: background 0.12s ease, opacity 0.12s ease;\n}\n.e-desktop-root .e-mode-toggle.is-active {\n  opacity: 1;\n  background: var(--theme-background) !important;\n  color: var(--theme-focused-foreground);\n  box-shadow: 0 1px 3px rgba(0,0,0,0.3);\n}\n/* ─── 11. RELAY STRIP ────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-relay-status {\n  display: inline-flex;\n  align-items: center;\n  gap: 14px;\n  flex-wrap: wrap;\n  justify-content: flex-end;\n  font-size: 0.792rem;\n  background: transparent !important;\n}\n.e-desktop-root .e-relay-status--compact {\n  gap: 12px;\n}\n.e-desktop-root .e-relay-status__chips {\n  display: inline-flex;\n  align-items: center;\n  gap: 10px;\n}\n.e-desktop-root .e-relay-status__host {\n  color: var(--theme-text-subdued, #888);\n  max-width: 140px;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  margin-right: 2px;\n}\n.e-desktop-root .e-relay-status__meta { color: var(--theme-text-subdued, #666); font-size: 0.715rem; }\n.e-desktop-root .e-badge--ok,\n.e-desktop-root .e-relay-status .e-badge--ok { color: var(--theme-focused-foreground) !important; }\n\n/* The relay chip carries the relay's name: a long host is cut with an ellipsis (its title has it all). */\n.e-desktop-root .e-status-chip__label--relay { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-status-chip__label--relay { max-width: 14ch; }\n.e-desktop-root .e-status-chip {\n  display: inline-flex;\n  align-items: center;\n  gap: 7px;\n  padding: 4px 9px;\n  border: 1px solid var(--theme-border-subdued, rgba(255, 255, 255, 0.18));\n  border-radius: 0;\n  background: var(--theme-border, rgba(255, 255, 255, 0.06));\n  font-size: 0.748rem;\n  line-height: 1.25;\n  white-space: nowrap;\n}\n.e-desktop-root .e-status-chip.is-ok {\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-status-chip:not(.is-ok) {\n  opacity: 0.7;}\n.e-desktop-root .e-status-chip__label {\n  letter-spacing: 0.02em;\n}\n.e-desktop-root .e-status-chip__loader {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 1.1ch;\n  min-width: 1.1ch;\n  color: inherit;\n}\n.e-desktop-root .e-status-chip.is-ok .e-status-chip__loader {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .e-status-chip__dot {\n  display: inline-block;\n  width: 1ch;\n  text-align: center;\n}\n@keyframes e-status-pulse {\n  0%, 100% { opacity: 1; }\n  50% { opacity: 0.35; }\n}\n\n/* ─── 12. AGENT / PROFILE ROW ────────────────────────────────────────────── */\n\n.e-desktop-root .e-agent-row { display: flex; gap: 8px; align-items: center; }\n.e-desktop-root .e-moire-avatar { flex-shrink: 0; border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12)); }\n.e-desktop-root .e-profile-agent { display: flex; gap: 12px; align-items: center; }\n\n/* Settlement list */\n.e-desktop-root .e-settlement-list { list-style: none; margin: 16px 0 0; padding: 0; font-size: 0.825rem; background: transparent !important; }\n/* P105: the inherited list marker is a ::before box, and in a grid it takes a\n   cell — pushing every row's status onto the next line. */\n.e-desktop-root .e-settlement-list__item::before { content: none !important; display: none !important; }\n.e-desktop-root .e-settlement-list__item {\n  display: grid;\n  grid-template-columns: 1fr auto auto;\n  gap: 12px;\n  padding: 6px 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n  background: transparent !important;\n}\n\n/* ─── 13. CHAT & READ-ONLY CHAT ──────────────────────────────────────────── */\n\n.e-desktop-root .e-chat-pane {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n.e-desktop-root .e-chat-messages {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  display: flex;\n  flex-direction: column;\n  gap: 6px;\n  padding: 12px 16px;\n}\n.e-desktop-root .e-chat-footer {\n  flex-shrink: 0;\n  padding: 8px 12px;\n  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n}\n.e-desktop-root .e-chat-meta { display: block; font-size: 0.748rem; margin-bottom: 2px; }\n\n/* Transcript chat line — avatar + content */\n.e-desktop-root .e-chat-line {\n  display: flex;\n  gap: 8px;\n  align-items: flex-start;\n}\n.e-desktop-root .e-chat-line__body {\n  flex: 1;\n  min-width: 0;\n}\n.e-desktop-root .e-chat-line__meta {\n  display: flex;\n  align-items: baseline;\n  flex-wrap: wrap;\n  gap: 6px;\n  margin-bottom: 2px;\n}\n.e-desktop-root .e-chat-line__name {\n  font-size: 0.792rem;\n  font-weight: 600;\n  word-break: break-all;\n}\n.e-desktop-root .e-chat-line__type,\n.e-desktop-root .e-chat-line__time {\n  font-size: 0.682rem;\n  opacity: 0.45;\n  font-variant-numeric: tabular-nums;\n}\n/* A list's own filter, at the top of its column: compact, the theme's colours, a clear button inside. */\n.e-desktop-root .e-list-filter { position: relative; padding: 8px 10px; border-bottom: 1px solid var(--e-rule, var(--theme-border-subdued)); }\n.e-desktop-root .e-list-filter input {\n  box-sizing: border-box; width: 100%; padding: 5px 26px 5px 8px; border: 1px solid var(--e-rule, currentColor); border-radius: 0;\n  background: transparent; color: inherit; font: inherit; font-size: 0.8rem;\n}\n.e-desktop-root .e-list-filter input::placeholder { color: var(--anim-faint, inherit); opacity: 1; }\n.e-desktop-root .e-list-filter input:focus { outline: none; border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-list-filter__clear {\n  position: absolute; right: 14px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; color: inherit;\n  font: inherit; font-size: 1rem; line-height: 1; cursor: pointer; opacity: 0.6; padding: 0 2px;\n}\n.e-desktop-root .e-list-filter__clear:hover { opacity: 1; color: var(--theme-focused-foreground); }\n/* A fold inside a card: one muted line that opens the facts only a close look needs. */\n.e-desktop-root .e-fold { margin-top: 8px; }\n.e-desktop-root .e-fold > summary { cursor: pointer; font-size: 0.72rem; letter-spacing: 0.04em; opacity: 0.65; list-style: none; padding: 2px 0; }\n.e-desktop-root .e-fold--game { margin: 10px 0; }\n.e-desktop-root .e-fold--game > summary { font-size: 0.78rem; }\n.e-desktop-root .e-fold > summary::before { content: \"▸ \"; }\n.e-desktop-root .e-fold[open] > summary::before { content: \"▾ \"; }\n.e-desktop-root .e-fold > summary::-webkit-details-marker { display: none; }\n.e-desktop-root .e-fold > summary:hover, .e-desktop-root .e-fold[open] > summary { opacity: 1; color: var(--theme-focused-foreground); }\n/* \"+N more\": the rest of a row's chips, behind one small disclosure (progressive disclosure, nothing removed). */\n.e-desktop-root .e-more { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }\n.e-desktop-root .e-more > summary { cursor: pointer; font-size: 0.7rem; opacity: 0.7; list-style: none; padding: 1px 4px; }\n.e-desktop-root .e-more > summary::-webkit-details-marker { display: none; }\n.e-desktop-root .e-more > summary:hover, .e-desktop-root .e-more[open] > summary { opacity: 1; color: var(--theme-focused-foreground); }\n/* A game's pixel glyph then its name: the one way every list says \"this is a game\". */\n.e-desktop-root .e-game-tag { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; vertical-align: middle; }\n.e-desktop-root .e-quiet-chip {\n  display: inline-block;\n  padding: 0 6px;\n  border: 1px solid var(--e-rule, currentColor);\n  border-radius: 8px;\n  font-size: 0.64rem;\n  line-height: 1.5;\n  letter-spacing: 0.02em;\n  opacity: 0.6;\n  white-space: nowrap;\n}\n.e-desktop-root .e-chat-line__content {\n  font-size: 0.902rem;\n  line-height: 1.45;\n  word-break: break-word;\n  white-space: pre-wrap;\n}\n\n/* Agora detail pane (also used for events detail) */\n.e-desktop-root .e-split-main { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 8px 0 16px 0; }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main {\n  padding-left: 4px;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main:has(.e-chess-main) {\n  padding-left: 0;}\n.e-desktop-root .e-agora-detail { overflow: hidden; }\n.e-desktop-root .e-agora-detail__scroll { flex: 1; overflow-y: auto; padding: 16px; }\n.e-desktop-root .e-agora-detail__title { font-size: 1.1rem; font-weight: 600; margin-bottom: 4px; display: block; }\n.e-desktop-root .e-agora-detail__meta  { font-size: 0.792rem; margin-bottom: 12px; display: block; }\n.e-desktop-root .e-agora-detail__body  { display: block; margin-top: 12px; white-space: pre-wrap; }\n.e-desktop-root .e-agora-readonly-hint { display: block; margin-top: 24px; font-size: 0.715rem; }\n\n.e-desktop-root .e-agora-comment { padding: 6px 0; border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06)); }\n\n/* ─── 14. AGORA ──────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-agora-pane {\n  height: 100%;\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n}\n.e-desktop-root .e-agora-posts,\n.e-desktop-root .e-agora-sidebar { overflow-y: auto; flex: 1; }\n\n.e-desktop-root .e-post-row { display: flex; gap: 10px; align-items: flex-start; flex: 1; }\n.e-desktop-root .e-post-title { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }\n.e-desktop-root .e-vote-btn {\n  background: none;\n  border: none;\n  cursor: pointer;\n  font-size: 14px;\n  padding: 2px 4px;\n  opacity: 0.45;\n  color: inherit;\n  transition: opacity 0.15s, color 0.15s;\n}\n.e-desktop-root .e-vote-btn:hover { opacity: 1; }\n.e-desktop-root .e-vote-score { font-size: 13px; min-width: 20px; text-align: center; }\n\n/* ─── 15. SEGMENT TABS ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-segment-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }\n.e-desktop-root .e-segment-tabs--grow .e-segment-tab { flex: 1; min-width: 0; text-align: center; }\n\n.e-desktop-root .e-segment-tab {\n  appearance: none;\n  margin: 0;\n  padding: 4px 10px;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));\n  border-radius: 0 !important;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n  font-size: 0.748rem;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  cursor: pointer;\n  opacity: 0.75;\n  transition: border-color 0.1s, color 0.1s, opacity 0.1s;\n}\n/* View filters are chips, not tabs: pills, smaller, no underline; they sit left, directly above their list. */\n.e-desktop-root .e-segment-tabs { justify-content: flex-start; margin: 0 0 12px; }\n.e-desktop-root .e-segment-tab {\n  border-radius: 999px !important;\n  padding: 2px 11px;\n  font-size: 0.68rem;\n  text-transform: none;\n  letter-spacing: 0.02em;\n}\n.e-desktop-root .e-segment-tab.is-active { background: var(--e-accent-wash, transparent); font-weight: 400; }\n.e-desktop-root .e-segment-tab:hover { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-segment-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); font-weight: 600; }\n\n/* The Feed's filter chips, and \"more ▾\" for the rarer kinds: the same chip, opening a short list. */\n.e-desktop-root .e-feed-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; margin: 0 0 12px; }\n.e-desktop-root .e-feed-tabs .e-segment-tabs { margin: 0; }\n.e-desktop-root .e-feed-more { position: relative; }\n.e-desktop-root .e-feed-more > summary {\n  list-style: none; cursor: pointer; padding: 2px 11px; border: 1px solid var(--theme-border-subdued, currentColor);\n  border-radius: 999px; font-size: 0.68rem; letter-spacing: 0.02em; opacity: 0.75; user-select: none;\n}\n.e-desktop-root .e-feed-more > summary::-webkit-details-marker { display: none; }\n.e-desktop-root .e-feed-more > summary:hover, .e-desktop-root .e-feed-more[open] > summary, .e-desktop-root .e-feed-more > summary.is-active {\n  opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-feed-more__menu {\n  position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 9rem; display: flex; flex-direction: column;\n  border: 1px solid var(--theme-border, var(--e-rule)); background: var(--theme-background);\n}\n.e-desktop-root .e-feed-more__menu button {\n  padding: 6px 12px; border: 0; border-bottom: 1px solid var(--e-rule, transparent); background: transparent; color: inherit;\n  font: inherit; font-size: 0.72rem; text-align: left; cursor: pointer;\n}\n.e-desktop-root .e-feed-more__menu button:last-child { border-bottom: 0; }\n.e-desktop-root .e-feed-more__menu button:hover, .e-desktop-root .e-feed-more__menu button.is-active { color: var(--theme-focused-foreground); }\n\n/* ─── 16. BADGES, PILLS & ENTITY CHIPS ──────────────────────────────────── */\n\n.e-desktop-root .e-badge { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 12px; font-family: var(--font-family-mono); border: 1px solid currentColor; white-space: nowrap; }\n.e-desktop-root .e-badge--dim { opacity: 0.5; }\n\n.e-desktop-root .e-role-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid currentColor; }\n.e-desktop-root .e-role-pill--operator  { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-role-pill--member    { opacity: 0.6; }\n.e-desktop-root .e-role-pill--spectator { opacity: 0.4; }\n\n.e-desktop-root .e-gate-badge {\n  display: inline-block;\n  padding: 1px 5px;\n  border-radius: 4px;\n  font-size: 10px;\n  font-weight: 700;\n  letter-spacing: 0.05em;\n  text-transform: uppercase;\n  white-space: nowrap;\n}\n.e-desktop-root .e-gate-badge--invite { background: rgba(128,128,255,0.15); color: #8888ff; }\n.e-desktop-root .e-gate-badge--paid   { background: rgba(80,200,120,0.15);  color: #4caf7a; }\n.e-desktop-root .e-gate-badge--advert { background: rgba(255,190,80,0.15);  color: #d9a441; }\n\n.e-desktop-root .e-outcome-pill {\n  display: inline-block;\n  padding: 1px 5px;\n  border-radius: 4px;\n  font-size: 10px;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n}\n.e-desktop-root .e-outcome-pill--game   { background: rgba(255,180,0,0.12);   color: #c89a00; }\n.e-desktop-root .e-outcome-pill--room   { background: rgba(0,180,255,0.12);   color: #0099cc; }\n.e-desktop-root .e-outcome-pill--agora  { background: rgba(128,128,255,0.12); color: #7777dd; }\n.e-desktop-root .e-outcome-pill--refund { background: rgba(200,50,50,0.12);   color: #cc4444; }\n\n/* Entity chips — clickable agent / session cross-nav links */\n.e-desktop-root .e-entity-chip {\n  display: inline-block;\n  font-family: var(--font-family-mono);\n  font-size: 12px;\n  padding: 1px 5px;\n  border: 1px solid transparent;\n  background: transparent;\n  cursor: default;\n  white-space: nowrap;\n}\n.e-desktop-root .e-entity-chip--inert { opacity: 0.55; }\n.e-desktop-root .e-entity-chip--agent,\n.e-desktop-root .e-entity-chip--session {\n  cursor: pointer;\n  border-color: rgba(128,128,128,0.2);\n  color: var(--theme-focused-foreground);\n  opacity: 0.8;\n  transition: opacity 0.1s, background 0.1s;\n}\n.e-desktop-root .e-entity-chip--agent:hover,\n.e-desktop-root .e-entity-chip--session:hover { opacity: 1; background: rgba(128,128,128,0.08); }\n\n/* Room → session link */\n.e-desktop-root .e-room-session-link {\n  display: inline-flex;\n  align-items: center;\n  gap: 3px;\n  margin-top: 3px;\n  padding: 1px 6px;\n  border: 1px solid rgba(128,128,128,0.2);\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font-size: 11px;\n  font-family: var(--font-family-mono);\n  cursor: pointer;\n  opacity: 0.7;\n  transition: opacity 0.1s;\n}\n.e-desktop-root .e-room-session-link:hover { opacity: 1; background: rgba(128,128,128,0.08); }\n\n/* ─── 17. TABLES ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-compact-table { overflow-x: auto; }\n\n.e-desktop-root .e-compact-table table,\n.e-desktop-root .e-table {\n  width: 100%;\n  border-collapse: collapse;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n  font-size: 0.792rem;\n}\n\n/* Header row — keep the SRCL gray bar */\n.e-desktop-root .e-dashboard-shell .e-compact-table thead td,\n.e-desktop-root .e-dashboard-shell table thead td,\n.e-desktop-root .e-table thead td {\n  background: var(--ansi-240-gray-35, #585858) !important;\n  color: var(--color-white, #fff);\n  padding: 4px 8px;\n  font-size: 0.682rem;\n  letter-spacing: 0.06em;\n}\n\n.e-desktop-root .e-table tbody td {\n  padding: 5px 8px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n}\n.e-desktop-root .e-dashboard-shell table tbody tr { background: transparent !important; }\n.e-desktop-root .e-dashboard-shell table tbody tr:hover { background: transparent !important; }\n\n.e-desktop-root .e-table-row { cursor: pointer; }\n.e-desktop-root .e-table-row:hover td { border-left: 2px solid var(--theme-focused-foreground); padding-left: 6px; }\n.e-desktop-root .e-table-row:focus-visible { outline: 1px solid var(--theme-focused-foreground); }\n\n/* ─── 18. TOOLBAR & SEARCH ───────────────────────────────────────────────── */\n\n.e-desktop-root .e-toolbar-h {\n  display: flex;\n  flex-wrap: nowrap;\n  gap: 6px;\n  align-items: center;\n  padding: 6px 12px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n  overflow-x: auto;\n}\n.e-desktop-root .e-toolbar-h--wrap { flex-wrap: wrap; }\n\n.e-desktop-root .e-search-row {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  padding: 8px 12px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n}\n/* The kit Input draws its text in a display layer and puts the real <input>\n   (which gets this class) transparent on top. So the box lives on the display\n   layer, and the input just covers it exactly — styling the input itself drew\n   a second, empty box under the placeholder. */\n.e-desktop-root .e-search-row > [class*=\"Input_root\"] { flex: 1; min-width: 0; }\n.e-desktop-root .e-search-row [class*=\"Input_displayed\"] {\n  display: flex;\n  align-items: center;\n  min-height: 40px;\n  padding: 0 12px;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-search-bar {\n  height: 100%;\n  padding: 0 12px !important;\n  box-sizing: border-box;\n  border: 0 !important;\n  background: transparent !important;\n}\n\n/* ─── 19. ACTION TIMELINE ────────────────────────────────────────────────── */\n\n.e-desktop-root .e-action-timeline { display: flex; flex-direction: column; gap: 2px; }\n.e-desktop-root .e-action-row { padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }\n.e-desktop-root .e-action-row:last-child { border-bottom: none; }\n.e-desktop-root .e-action-row--terminal .e-action-row__outcome { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-action-row__meta { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 2px; }\n.e-desktop-root .e-action-row__icon { font-size: 14px; min-width: 16px; text-align: center; }\n.e-desktop-root .e-action-row__body { font-size: 13px; opacity: 0.75; padding-left: 24px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }\n.e-desktop-root .e-action-row__outcome { font-size: 12px; padding-left: 24px; opacity: 0.6; margin-top: 2px; }\n\n/* ─── 20. SESSION & TRANSACTION ROWS ────────────────────────────────────── */\n\n.e-desktop-root .e-txn-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid rgba(128,128,128,0.1); }\n.e-desktop-root .e-txn-row:last-child { border-bottom: none; }\n.e-desktop-root .e-txn-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }\n.e-desktop-root .e-txn-dot--in  { background: var(--theme-focused-foreground); }\n.e-desktop-root .e-txn-dot--out { background: rgba(128,128,128,0.4); }\n\n.e-desktop-root .e-session-status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: rgba(128,128,128,0.4); }\n.e-desktop-root .e-session-status-dot--active    { background: var(--theme-focused-foreground); }\n.e-desktop-root .e-session-status-dot--completed { background: rgba(128,128,128,0.6); }\n.e-desktop-root .e-session-status-dot--abandoned { background: rgba(180,80,80,0.5); }\n/* ─── 21. MESSAGES / INBOX ───────────────────────────────────────────────── */\n\n.e-desktop-root .e-messages-pane {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n.e-desktop-root .e-messages-pane__toolbar {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 8px 16px;\n  border-bottom: 1px solid var(--theme-border-color, rgba(128,128,128,0.12));\n  flex-shrink: 0;\n}\n.e-desktop-root .e-inbox-list { display: flex; flex-direction: column; gap: 0; }\n.e-desktop-root .e-inbox-event {\n  display: flex;\n  gap: 12px;\n  padding: 10px 0;\n  border-bottom: 1px solid var(--theme-border-color, rgba(128,128,128,0.12));\n}\n.e-desktop-root .e-inbox-event:last-child { border-bottom: none; }\n.e-desktop-root .e-inbox-event--read { opacity: 0.55; }\n.e-desktop-root .e-inbox-event--link { cursor: pointer; }\n.e-desktop-root .e-inbox-event--link:hover, .e-desktop-root .e-inbox-event--link:focus-visible { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); outline: none; }\n.e-desktop-root .e-now__row.is-link { cursor: pointer; }\n.e-desktop-root .e-now__row.is-link:hover .e-now__go { text-decoration: underline; }\n.e-desktop-root .e-inbox-event__icon { flex-shrink: 0; width: 22px; text-align: center; font-size: 15px; padding-top: 2px; opacity: 0.7; }\n.e-desktop-root .e-inbox-event__body { flex: 1; min-width: 0; }\n\n/* ─── 22. SRCL COMPONENT OVERRIDES ──────────────────────────────────────── */\n\n/* ActionButton — outline style, no fills */\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_content\"] {\n  background: transparent !important;\n  box-shadow: inset 0 0 0 1px var(--theme-border-subdued, rgba(255,255,255,0.12)) !important;\n  border-radius: 0 !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_hotkey\"] { background: transparent !important; }\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"]:hover [class*=\"ActionButton_content\"] {\n  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground) !important;\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"].selected [class*=\"ActionButton_content\"],\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_selected\"] [class*=\"ActionButton_content\"] {\n  background: transparent !important;\n  color: var(--theme-focused-foreground) !important;\n  font-weight: 600;\n  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground) !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"]:focus,\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"]:active { background: transparent !important; }\n\n/* Badges — square */\n.e-desktop-root .e-dashboard-shell [class*=\"Badge_root\"] { border-radius: 0 !important; }\n\n/* Input */\n.e-desktop-root .e-dashboard-shell [class*=\"Input_root\"] input { background: transparent !important; }\n\n/* Kill all surfaces from panels and stat blocks */\n.e-desktop-root .e-dashboard-shell .e-app-top,\n.e-desktop-root .e-dashboard-shell .e-mobile-top { background: var(--theme-background) !important; }\n.e-desktop-root .e-dashboard-shell .e-app-drawer,\n.e-desktop-root .e-dashboard-shell .e-mobile-drawer { background: var(--theme-background) !important; box-shadow: none; }\n.e-desktop-root .e-dashboard-shell .e-panel-card,\n.e-desktop-root .e-dashboard-shell .e-panel-card__head,\n.e-desktop-root .e-dashboard-shell .e-panel-card__body,\n.e-desktop-root .e-dashboard-shell .e-slim-card,\n.e-desktop-root .e-dashboard-shell .e-hero-stat,\n.e-desktop-root .e-dashboard-shell .e-kpi,\n.e-desktop-root .e-dashboard-shell .e-empty-pane { background: transparent !important; }\n\n/* ─── 23. RESPONSIVE ─────────────────────────────────────────────────────── */\n\n@media (max-width: 900px) {\n  .e-desktop-root .e-view-body { padding: 14px 12px 24px; }}\n/* The phone layout (the frame under 600 px): top bar, menu behind the burger, bottom bar. */\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-app-top { display: none; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-mobile-top { display: flex; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-app-drawer {\n  display: flex;\n  position: absolute;\n  left: 0; top: 0; bottom: 0;\n  z-index: 140;     /* above full-page chat (120): the chat's ☰ opens it */\n  width: min(85%, 16rem);\n  transform: translateX(-105%);\n  transition: transform 0.2s ease;\n  background: var(--theme-background);\n  border-right: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n}\n.e-desktop-root .e-app-shell[data-nav=\"phone\"].is-nav-open .e-app-drawer { transform: translateX(0); }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"].is-nav-open .e-app-backdrop {\n  display: block;\n  position: absolute;\n  inset: 0;\n  z-index: 130;\n  background: rgba(0,0,0,0.55);\n  border: 0;\n  padding: 0;\n  cursor: pointer;\n}\n\n/* Narrow screens: SidebarLayout itself (kit module CSS) turns rail-beside-detail\n   into list-then-detail with a back control — see ui/kit/SidebarLayout.tsx. */\n\n@media (min-width: 901px) {\n  .e-desktop-root .e-hero-stats { grid-template-columns: repeat(4, 1fr); }}\n\n/* P121: unread count on a conversation or on Activity. */\n.e-desktop-root .e-unread-count {\n  font-size: 11px;\n  font-weight: 600;\n  padding: 0 6px;\n  border-radius: 8px;\n  background: var(--theme-focused-foreground, #3c3);\n  color: var(--theme-background, #000);\n}\n\n/* P123: view-as switcher (local relays only). */\n.e-desktop-root .e-viewer-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }\n.e-desktop-root .e-viewer-switch select {\n  font: inherit; font-size: 12px; padding: 2px 6px;\n  background: var(--theme-background, transparent); color: inherit;\n  border: 1px solid var(--theme-border, rgba(128,128,128,0.4)); border-radius: 4px;\n}\n/* A phone (the switcher sits in the menu): under 16px, iOS zooms the page when the select takes focus. */\n@media (max-width: 900px) {\n  .e-desktop-root .e-viewer-switch select { font-size: 16px; min-height: 40px; }}\n\n/* P124: inbox / sent / all above the conversation list. */\n.e-desktop-root .e-messages-boxes { padding: 8px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(128,128,128,0.12)); }\n\n/* P171: the Docs view. */\n.e-desktop-root .e-docs-rail { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; }\n.e-desktop-root .e-docs-search { width: 100%; margin: 0 0 6px 0; padding: 6px 8px; font: inherit; background: transparent;\n  color: inherit; border: 1px solid currentColor; opacity: 0.8; }\n.e-desktop-root .e-docs-rail-item { display: flex; flex-direction: column; gap: 2px; text-align: left; }\n.e-desktop-root .e-doc { overflow-y: auto; max-width: 92ch; padding: 8px 20px 40px 20px; line-height: 1.55; }\n.e-desktop-root .e-doc .e-doc-h { margin: 1.4em 0 0.5em 0; line-height: 1.25; scroll-margin-top: 8px; }\n.e-desktop-root .e-doc p, .e-desktop-root .e-doc .e-doc-list, .e-desktop-root .e-doc .e-doc-quote { margin: 0.6em 0; }\n.e-desktop-root .e-doc .e-doc-list { padding-left: 1.6em; }\n.e-desktop-root .e-doc code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 0 0.25em;\n  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); }\n.e-desktop-root .e-doc .e-doc-code { overflow-x: auto; padding: 10px 12px; margin: 0.8em 0;\n  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n.e-desktop-root .e-doc .e-doc-code code { border: 0; padding: 0; }\n.e-desktop-root .e-doc .e-doc-table-wrap { overflow-x: auto; margin: 0.8em 0; }\n.e-desktop-root .e-doc .e-doc-table { border-collapse: collapse; font-size: 0.94em; }\n.e-desktop-root .e-doc .e-doc-table th, .e-desktop-root .e-doc .e-doc-table td { text-align: left; vertical-align: top; padding: 4px 10px;\n  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n.e-desktop-root .e-doc .e-doc-quote { padding-left: 12px; border-left: 3px solid color-mix(in srgb, currentColor 35%, transparent); }\n.e-desktop-root .e-doc .e-doc-link { text-decoration: underline; cursor: pointer; }\n.e-desktop-root .e-doc .e-doc-path { font-family: var(--font-family-mono, monospace); font-size: 0.92em; opacity: 0.8; }\n\n/* P178: the Settings view (read-only), laid out like Hermes's config page: sections of rows, the\n   label and its plain words on the left, the value drawn as Hermes's form would on the right (never a\n   control), and where to change it underneath. Tokens only, so every theme and tint carries it. */\n.e-desktop-root .e-settings { overflow-y: auto; max-width: 110ch; min-width: 0; padding: 8px 20px 40px 20px;\n  --e-settings-rule: var(--e-rule, color-mix(in srgb, currentColor 18%, transparent)); }\n.e-desktop-root .e-settings-hint { margin: 4px 0 0; font-size: 0.9em; }\n.e-desktop-root .e-settings-intro { margin: 8px 0 4px; padding: 8px 12px; font-size: 0.9em;\n  border-left: 3px solid var(--theme-focused-foreground);\n  background: var(--e-accent-wash, color-mix(in srgb, currentColor 6%, transparent)); }\n.e-desktop-root .e-settings-heading { font-size: 1.2em; margin: 16px 0 0; overflow-wrap: anywhere; }\n.e-desktop-root .e-settings-group { margin: 0 0 6px 0; }\n.e-desktop-root .e-settings-title { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;\n  margin: 18px 0 6px; opacity: 0.8; }\n.e-desktop-root .e-settings-card { border: 1px solid var(--e-settings-rule); }\n.e-desktop-root .e-setting { padding: 10px 14px; border-top: 1px solid var(--e-settings-rule);\n  display: flex; flex-direction: column; gap: 6px; min-width: 0; }\n.e-desktop-root .e-setting:first-child { border-top: 0; }\n.e-desktop-root .e-setting-warn { box-shadow: inset 3px 0 0 var(--theme-focused-foreground); }\n.e-desktop-root .e-setting-danger { box-shadow: inset 3px 0 0 currentColor; }\n.e-desktop-root .e-setting-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto); gap: 4px 16px; align-items: start; }\n.e-desktop-root .e-setting-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }\n.e-desktop-root .e-setting-label { font-weight: 600; overflow-wrap: anywhere; }\n.e-desktop-root .e-setting-mark { display: inline-block; min-width: 1.1em; margin-right: 4px; font-weight: 700;\n  color: var(--theme-focused-foreground); }\n.e-desktop-root .e-setting-about { font-size: 0.88em; opacity: 0.75; }\n.e-desktop-root .e-setting-control { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end;\n  max-width: 48ch; min-width: 0; }\n.e-desktop-root .e-setting-value, .e-desktop-root .e-setting-number, .e-desktop-root .e-setting-list { font-family: var(--font-family-mono, monospace);\n  font-size: 0.9em; overflow-wrap: anywhere; text-align: right; }\n.e-desktop-root .e-setting-number { font-variant-numeric: tabular-nums; font-weight: 600; }\n.e-desktop-root .e-setting-tag { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 1px 6px;\n  border: 1px dashed color-mix(in srgb, currentColor 45%, transparent); }\n/* Read-only values are plain text: no border, fill, hover or pointer, so nothing looks pressable. */\n.e-desktop-root .e-setting-plain { font-size: 0.9em; font-weight: 600; cursor: default; opacity: 0.7; }\n.e-desktop-root .e-setting-plain.is-on { opacity: 1; }\n.e-desktop-root .e-setting-choices { display: inline; text-align: right; cursor: default; }\n.e-desktop-root .e-setting-rec { font-weight: 400; font-size: 0.82em; }\n/* Where to change it: Hermes's own page, the command, and who may run it. */\n.e-desktop-root .e-setting-change { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 0.88em; min-width: 0; }\n.e-desktop-root .e-setting-hermes { font: inherit; color: var(--theme-focused-foreground); background: transparent; cursor: pointer;\n  border: 1px solid currentColor; padding: 1px 8px; text-decoration: none; white-space: nowrap; }\n.e-desktop-root .e-setting-hermes:hover,\n.e-desktop-root .e-setting-hermes:focus-visible { background: color-mix(in srgb, var(--theme-focused-foreground) 14%, transparent); outline: none; }\n.e-desktop-root .e-setting-hermes-text { opacity: 0.85; }\n.e-desktop-root .e-setting-env { font-family: var(--font-family-mono, monospace); font-size: 0.85em; opacity: 0.7; overflow-wrap: anywhere; }\n.e-desktop-root .e-setting-cmd { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }\n.e-desktop-root .e-setting-cmd code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 1px 6px;\n  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); overflow-wrap: anywhere; }\n.e-desktop-root .e-setting-copy { font: inherit; font-size: 0.85em; padding: 1px 8px; background: transparent; color: inherit;\n  border: 1px solid color-mix(in srgb, currentColor 35%, transparent); cursor: pointer; }\n.e-desktop-root .e-setting-note { flex-basis: 100%; opacity: 0.75; }\n@media (max-width: 640px) {\n  .e-desktop-root .e-settings { padding: 4px 12px 32px; }\n  .e-desktop-root .e-setting { padding: 10px; }\n  .e-desktop-root .e-setting-main { grid-template-columns: minmax(0, 1fr); }\n  .e-desktop-root .e-setting-control { justify-content: flex-start; max-width: none; }\n  .e-desktop-root .e-setting-value, .e-desktop-root .e-setting-number, .e-desktop-root .e-setting-list { text-align: left; }\n  .e-desktop-root .e-setting-choices { justify-content: flex-start; }\n}\n\n/* P281: the relay's transparency log and this agent's own check of it, one compact block (Trust & Safety). */\n.e-desktop-root .e-relay-log { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-top: 10px; padding-top: 8px;\n  border-top: 1px solid var(--e-rule, color-mix(in srgb, currentColor 18%, transparent)); font-size: 0.82rem; min-width: 0; }\n.e-desktop-root .e-relay-log__name { font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-size: 0.72rem; }\n.e-desktop-root .e-relay-log__facts { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }\n.e-desktop-root .e-relay-log.is-off .e-relay-log__facts { opacity: 0.7; }\n.e-desktop-root .e-relay-log__check { overflow-wrap: anywhere; }\n.e-desktop-root .e-relay-log__check.is-ok { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-relay-log__check.is-none, .e-desktop-root .e-relay-log__check.is-info { opacity: 0.8; }\n.e-desktop-root .e-relay-log__check.is-warn { font-weight: 700; padding: 1px 6px; border: 1px solid currentColor; }\n.e-desktop-root .e-relay-log__about { flex-basis: 100%; font-size: 0.72rem; opacity: 0.7; }\n\n/* P179: the relay operator's Relay view. */\n.e-desktop-root .e-relay { overflow-y: auto; max-width: 110ch; padding: 8px 20px 40px 20px; }\n.e-desktop-root .e-relay h3 { font-size: 1.05em; margin: 18px 0 8px 0; }\n.e-desktop-root .e-relay-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }\n.e-desktop-root .e-relay-tile { padding: 10px 12px; border: 1px solid color-mix(in srgb, currentColor 18%, transparent);\n  display: flex; flex-direction: column; gap: 2px; }\n.e-desktop-root .e-relay-tile-value { font-size: 1.6em; font-variant-numeric: tabular-nums; line-height: 1.2; }\n.e-desktop-root .e-relay-tile-sub { font-size: 0.85em; }\n.e-desktop-root .e-relay-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }\n.e-desktop-root .e-relay-charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }\n.e-desktop-root .e-relay-chart { margin: 0; }\n.e-desktop-root .e-relay-chart figcaption { margin-bottom: 4px; }\n.e-desktop-root .e-relay-chart svg { width: 100%; height: 64px; display: block; }\n.e-desktop-root .e-relay-bar { fill: currentColor; opacity: 0.75; }\n.e-desktop-root .e-relay-chart g:hover .e-relay-bar { opacity: 1; }\n.e-desktop-root .e-relay-axis { stroke: currentColor; opacity: 0.25; stroke-width: 1; }\n.e-desktop-root .e-relay-table { border-collapse: collapse; font-size: 0.94em; margin: 4px 0 10px 0; font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-relay-table th, .e-desktop-root .e-relay-table td { text-align: left; padding: 4px 10px;\n  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n\n/* Rooms › \"Rooms you can join\": folded above the chat until opened. */\n.e-desktop-root .e-joinable { margin: 0 0 10px; border: 1px solid var(--theme-border-subdued, currentColor); padding: 6px 10px; }\n.e-desktop-root .e-joinable > summary { cursor: pointer; font-size: 0.85rem; opacity: 0.8; }\n.e-desktop-root .e-joinable[open] > summary { margin-bottom: 6px; }\n/* You › Stats: the agent's own figures. Bars are decoration: every value is also text. */\n.e-desktop-root .e-stats-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }\n.e-desktop-root .e-stats-num { font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-stats-list { list-style: none; margin: 4px 0 8px 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }\n.e-desktop-root .e-stats-bars { list-style: none; margin: 4px 0 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }\n.e-desktop-root .e-stats-bars__row { display: grid; grid-template-columns: minmax(12ch, 16rem) minmax(60px, 1fr) auto; gap: 10px;\n  align-items: center; }\n.e-desktop-root .e-stats-bars__track { height: 8px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n.e-desktop-root .e-stats-bars__fill { display: block; height: 100%; background: var(--theme-focused-foreground, currentColor); }\n/* the kit draws a marker before every list item; in the grid it became a fourth cell and shoved the row apart */\n.e-desktop-root .e-stats-bars__row, .e-desktop-root .e-stats-list li { padding-left: 0; text-indent: 0; }\n.e-desktop-root .e-stats-bars__row::before, .e-desktop-root .e-stats-list li::before { content: none; display: none; }\n.e-desktop-root .e-stats-bars__label { min-width: 0; overflow-wrap: anywhere; }\n.e-desktop-root .e-stats-money-note, .e-desktop-root .e-stats-missing { display: block; }\n.e-desktop-root .e-stats .e-faint, .e-desktop-root .e-stats-toolbar .e-faint { font-size: 13px; line-height: 1.5; }\n.e-desktop-root .e-stats-table td, .e-desktop-root .e-stats-table th { white-space: nowrap; }\n@media (max-width: 700px) {\n  .e-desktop-root .e-stats-bars__row { grid-template-columns: 1fr auto; }\n  .e-desktop-root .e-stats-bars__track { grid-column: 1 / -1; grid-row: 2; }}\n\n/* ─── 24. RETROMOD ───────────────────────────────────────────────────────────\n   The terminal look, kept and made consistent: monospace, hairline boxes, the\n   theme's accent as the one highlight. Modern where it helps reading and\n   touching: smooth type, clear focus, one heading per section, 44px targets on\n   a phone, list-then-detail split views, tables that scroll in their own box.\n   ──────────────────────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-dashboard-shell {\n  -webkit-font-smoothing: antialiased;\n  -moz-osx-font-smoothing: grayscale;\n  text-rendering: optimizeLegibility;\n  --e-rule: var(--theme-border-subdued, rgba(128, 128, 128, 0.22));\n  --e-accent-wash: color-mix(in srgb, var(--theme-focused-foreground) 9%, transparent);\n}\n\n/* One focus ring, everywhere — keyboard users always see where they are. */\n.e-desktop-root .e-dashboard-shell :focus-visible,\n.e-desktop-root .e-dashboard-shell .e-rail-item:focus-visible,\n.e-desktop-root .e-dashboard-shell .e-theme-circle:focus-visible {\n  outline: 2px solid var(--theme-focused-foreground);\n  outline-offset: 2px;\n}\n.e-desktop-root .e-dashboard-shell .e-rail-item:focus-visible { outline-offset: -2px; }\n/* The page title takes focus after a section change (read out); the ring shows only for a keyboard move. */\n.e-desktop-root .e-dashboard-shell .e-page-head__title:focus:not([data-by-key]),\n.e-desktop-root .e-dashboard-shell .e-page-head__title:focus-visible:not([data-by-key]) { outline: none; }\n\n/* Section heading: ▍Name, then the plain-words line on what it shows. */\n.e-desktop-root .e-page-head {\n  padding: 14px 24px 12px;\n  border-bottom: 1px solid var(--e-rule);\n  max-width: min(1440px, 100%);\n  margin: 0 auto;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-page-head__title {\n  margin: 0;\n  display: flex;\n  align-items: baseline;\n  gap: 1ch;\n  font: inherit;\n  font-size: 1.05rem;\n  font-weight: 600;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n  line-height: 1.3;\n}\n.e-desktop-root .e-page-head__blurb {\n  margin: 4px 0 0;\n  font-size: 0.82rem;\n  line-height: 1.5;\n  opacity: 0.62;\n  max-width: 80ch;\n}\n\n/* Sub-heading inside a view: CAPS label with a box-drawing rule after it. */\n.e-desktop-root .e-subhead {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  margin: 18px 0 6px;\n  font-size: 0.72rem;\n  letter-spacing: 0.12em;\n  text-transform: uppercase;\n  opacity: 0.7;\n}\n.e-desktop-root .e-subhead::after {\n  content: \"\";\n  flex: 1;\n  height: 1px;\n  background: var(--e-rule);\n}\n.e-desktop-root .e-subhead:first-child { margin-top: 4px; }\n.e-desktop-root .e-note { font-size: 0.8rem; line-height: 1.5; opacity: 0.6; margin: 2px 0 0; }\n\n.e-desktop-root .e-section-tabs--horizontal { align-items: center; }\n.e-desktop-root .e-section-tab.is-active { background: var(--e-accent-wash) !important; }\n\n/* The menu: the six destinations, each with its sections named under it. */\n.e-desktop-root .e-section-tabs--drawer .e-section-tab {\n  min-height: 52px;\n  display: grid;\n  grid-template-columns: 1fr auto;\n  grid-template-areas: \"label key\" \"sub key\";\n  align-items: center;\n  column-gap: 10px;\n  row-gap: 0;\n  text-align: left;\n}\n.e-desktop-root .e-section-tabs--drawer .e-section-tab__label { grid-area: label; font-size: 0.95rem; }\n.e-desktop-root .e-section-tabs--drawer .e-section-tab__key { grid-area: key; }\n.e-desktop-root .e-section-tab__sub {\n  grid-area: sub;\n  font-size: 0.72rem;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));\n  white-space: normal;\n}\n\n/* The sections inside the current destination: one strip under the header, every width. */\n/* The strip may scroll (it is the page's sections, not the main navigation), but never silently:\n   a fade at each cut edge and a \"n ▾\" button listing the tabs that are cut off. */\n.e-desktop-root .e-subnav-wrap {\n  flex: none;\n  position: relative;\n  display: flex;\n  align-items: stretch;\n  border-bottom: 1px solid var(--e-rule);\n  background: var(--theme-background);\n}\n.e-desktop-root .e-subnav-box { position: relative; flex: 1; min-width: 0; display: flex; }\n.e-desktop-root .e-subnav {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  align-items: stretch;\n  gap: 2px;\n  padding: 0 16px;\n  min-height: 40px;\n  overflow-x: auto;\n  scrollbar-width: none;\n  background: var(--theme-background);\n}\n.e-desktop-root .e-subnav::-webkit-scrollbar { display: none; }\n.e-desktop-root .e-subnav-fade {\n  position: absolute;\n  top: 0; bottom: 0;\n  width: 28px;\n  pointer-events: none;\n  visibility: hidden;\n}\n.e-desktop-root .e-subnav-fade--left { left: 0; background: linear-gradient(to right, var(--theme-background), transparent); }\n.e-desktop-root .e-subnav-fade--right { right: 0; background: linear-gradient(to left, var(--theme-background), transparent); }\n.e-desktop-root .e-subnav-box.has-left .e-subnav-fade--left,\n.e-desktop-root .e-subnav-box.has-right .e-subnav-fade--right { visibility: visible; }\n.e-desktop-root .e-subnav-more {\n  flex: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 44px;\n  padding: 0 10px;\n  border: 0;\n  border-left: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.78rem;\n  cursor: pointer;\n}\n.e-desktop-root .e-subnav-more:hover, .e-desktop-root .e-subnav-more[aria-expanded=\"true\"] { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-subnav-more:focus-visible, .e-desktop-root .e-subnav-menu__item:focus-visible { outline: 2px solid var(--theme-focused-foreground); outline-offset: -2px; }\n.e-desktop-root .e-subnav-menu {\n  position: absolute;\n  top: 100%;\n  right: 0;\n  z-index: 50;\n  min-width: 11rem;\n  max-width: 100%;\n  display: flex;\n  flex-direction: column;\n  border: 1px solid var(--theme-border, var(--e-rule));\n  background: var(--theme-background);\n  box-shadow: 0 6px 18px rgba(0,0,0,0.25);\n}\n.e-desktop-root .e-subnav-menu__item {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  min-height: 40px;\n  padding: 0 14px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.82rem;\n  text-align: left;\n  cursor: pointer;\n}\n.e-desktop-root .e-subnav-menu__item:last-child { border-bottom: 0; }\n.e-desktop-root .e-subnav-menu__item:hover, .e-desktop-root .e-subnav-menu__item.is-active { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-subnav__dest {\n  display: inline-flex;\n  align-items: center;\n  padding-right: 10px;\n  margin-right: 4px;\n  border-right: 1px solid var(--e-rule);\n  font-size: 0.72rem;\n  letter-spacing: 0.12em;\n  text-transform: uppercase;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__tab {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  min-height: 40px;\n  padding: 0 12px;\n  border: 0;\n  border-bottom: 2px solid transparent;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.82rem;\n  cursor: pointer;\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__tab:hover { border-bottom-color: var(--theme-border); }\n/* Active is marked by the rule under the tab, never by weight: bold would widen the tab and move its neighbours. */\n.e-desktop-root .e-subnav__tab.is-active { border-bottom-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-subnav__tab.is-off { opacity: 0.7; font-style: italic; }\n.e-desktop-root .e-subnav__tab.is-off-relay::after {\n  content: \"off on this relay\";\n  margin-left: 6px;\n  padding: 0 5px;\n  border: 1px solid currentColor;\n  border-radius: 999px;\n  font-size: 0.6rem;\n  font-style: normal;\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__note {\n  display: inline-flex;\n  align-items: center;\n  padding: 0 4px;\n  font-size: 0.78rem;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__tab:focus-visible, .e-desktop-root .e-section-tab:focus-visible, .e-desktop-root .e-header-link:focus-visible, .e-desktop-root .e-bottom-bar__tab:focus-visible {\n  outline: 2px solid var(--theme-focused-foreground);\n  outline-offset: -2px;\n}\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-subnav { padding: 0 8px; min-height: 44px; }\n/* Five tabs (the Arena's) fit a 390px phone; a longer row still scrolls, with the fade at its edge. */\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-subnav { gap: 0; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-subnav__tab { min-height: 44px; padding: 0 10px; }\n\n/* Phone: the five places as a bar at the foot, under the view. */\n.e-desktop-root .e-bottom-bar { display: none; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-bottom-bar {\n  flex: none;\n  display: grid;\n  grid-template-columns: repeat(5, minmax(0, 1fr));\n  border-top: 1px solid var(--e-rule, var(--theme-border-subdued));\n  background: var(--theme-background);\n  padding-bottom: env(safe-area-inset-bottom, 0);\n}\n.e-desktop-root .e-bottom-bar__tab {\n  position: relative;\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  gap: 2px;\n  min-height: 52px;\n  padding: 4px 2px;\n  border: 0;\n  border-top: 2px solid transparent;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.7rem;\n  cursor: pointer;\n  min-width: 0;\n}\n.e-desktop-root .e-bottom-bar__tab.is-active { border-top-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-bottom-bar__label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.72rem; letter-spacing: 0; }\n.e-desktop-root .e-bottom-bar__tab .e-nav-badge { top: 4px; right: 22%; min-width: 8px; height: 8px; font-size: 0; padding: 0; }\n/* The page scrolls under the bar's height too, so its last row is never behind the bar (390px, the game\n   panel's move list): the bar's tab is 52px plus its 2px accent and the bar's 1px rule, and the safe area. */\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-view { padding-bottom: calc(55px + env(safe-area-inset-bottom, 0px)); }\n.e-desktop-root .e-header-links--drawer { padding: 8px 0 12px; }\n\n/* The one-line strip of what the agent is doing now, under the sub-row. */\n.e-desktop-root .e-now-strip {\n  flex: none;\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  min-height: 32px;\n  padding: 2px 16px;\n  border-bottom: 1px solid var(--e-rule, var(--theme-border-subdued));\n  font-size: 0.78rem;\n  min-width: 0;\n}\n.e-desktop-root .e-now-strip__main {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  background: transparent;\n  border: 0;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  padding: 4px 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  cursor: pointer;\n}\n.e-desktop-root .e-now-strip__main:disabled { cursor: default; }\n.e-desktop-root .e-now-strip__live { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-now-strip__toggle { background: transparent; border: 0; color: inherit; font: inherit; cursor: pointer; opacity: 0.7; padding: 4px 6px; }\n.e-desktop-root .e-now-strip.is-collapsed { min-height: 22px; justify-content: flex-end; }\n/* The whole menu scrolls as one, so the foot never covers the last sections. */\n.e-desktop-root .e-section-tabs--drawer { flex: none; overflow: visible; }\n.e-desktop-root .e-mobile-drawer { overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; width: 100%; }\n.e-desktop-root .e-mobile-drawer__head {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding-bottom: 8px;\n  border-bottom: 1px solid var(--e-rule);\n}\n.e-desktop-root .e-mobile-drawer__foot {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: 12px;\n  padding-top: 12px;\n  border-top: 1px solid var(--e-rule);\n}\n.e-desktop-root .e-icon-button,\n.e-desktop-root .e-menu-button {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  min-width: 44px;\n  min-height: 44px;\n  padding: 0 10px;\n  border: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 1.1rem;\n  cursor: pointer;\n}\n.e-desktop-root .e-icon-button:hover,\n.e-desktop-root .e-menu-button:hover { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-menu-button .e-nav-badge { margin-left: 0; }\n\n/* Phone top bar: one row — menu, where you are, relay state. */\n.e-desktop-root .e-mobile-top { flex-wrap: nowrap !important; gap: 10px; padding: 6px 12px; }\n/* Brand above, the section you are in below it — both always fit. */\n.e-desktop-root .e-mobile-top__where {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n  justify-content: center;\n  gap: 1px;\n  overflow: hidden;\n  white-space: nowrap;\n}\n.e-desktop-root .e-mobile-top__where .e-brand-title { font-size: 0.8rem !important; line-height: 1.2; opacity: 0.75; }\n.e-desktop-root .e-mobile-top__section {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  font-size: 0.85rem;\n  line-height: 1.25;\n  letter-spacing: 0.08em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-mobile-top__section::before { content: \"▸ \"; opacity: 0.6; }\n\n/* The brand: the word, decoded (LookChrome.BrandTitle); a fixed width so the\n   header never shifts while glyphs change. */\n.e-desktop-root .e-brand { display: inline-block; min-width: 7.2ch; font-variant-numeric: tabular-nums; }\n/* The brand's star: a 7 x 7 pixel drawing (ui/PixelStar.tsx), as tall as the pixel face's capitals and standing on their baseline. */\n.e-desktop-root .e-pixel-star { display: inline-block; width: 0.66em; height: 0.66em; vertical-align: baseline; flex: none; }\n.e-desktop-root .e-brand__star { margin-left: 0.45em; }\n.e-desktop-root .e-mobile-top .e-relay-status__host { display: none; }\n.e-desktop-root .e-mobile-top .e-relay-status__chips { gap: 6px; }\n.e-desktop-root .e-mobile-top .e-status-chip { padding: 4px 6px; }\n/* The relay's name gives way to its dot on a phone (the title and screen readers still have it): the page name needs the room. */\n.e-desktop-root .e-mobile-top .e-status-chip__label--relay {\n  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;\n}\n\n/* A label above a run of rail rows (\"Which game\", \"Character sheets\"). */\n.e-desktop-root .e-rail-label {\n  padding: 12px 12px 4px;\n  font-size: 0.66rem;\n  letter-spacing: 0.16em;\n  text-transform: uppercase;\n  opacity: 0.5;\n}\n\n/* Rail rows: room to breathe, the selected one washed in the accent. */\n.e-desktop-root .e-rail-item { padding: 8px 10px 8px 12px; min-height: 40px; }\n.e-desktop-root .e-rail-item.is-selected { background: var(--e-accent-wash); }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] {\n  border-right: 1px solid var(--e-rule);\n  box-sizing: border-box;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main { padding: 12px 16px 24px 20px; }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main:has(.e-chess-main) { padding-left: 8px;}\n\n/* What-you-are-looking-at box on the Overview. */\n.e-desktop-root .e-intro {\n  border: 1px solid var(--e-rule);\n  border-left: 3px solid var(--theme-focused-foreground);\n  padding: 12px 16px 14px;\n  margin-bottom: 16px;\n  line-height: 1.55;\n}\n.e-desktop-root .e-intro__title {\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  opacity: 0.6;\n  margin: 0 0 6px;\n}\n.e-desktop-root .e-intro__text { margin: 0; font-size: 0.9rem; max-width: 78ch; }\n.e-desktop-root .e-intro__go { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }\n.e-desktop-root .e-intro__link {\n  flex: 1 1 13rem;\n  display: inline-flex;\n  flex-direction: column;\n  align-items: flex-start;\n  gap: 2px;\n  min-height: 44px;\n  padding: 6px 12px;\n  border: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n.e-desktop-root .e-intro__link:hover { border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-intro__link-label { color: var(--theme-focused-foreground); font-size: 0.85rem; }\n.e-desktop-root .e-intro__link-hint { font-size: 0.72rem; opacity: 0.6; }\n\n/* The toolbar line above a split view is context, not content — keep it small. */\n.e-desktop-root .e-view-body--flush .e-view-toolbar,\n.e-desktop-root .e-view-body--flush .e-view-toolbar p { font-size: 0.78rem; line-height: 1.45; }\n\n/* Leaderboard-style tables size to their content instead of spreading three\n   short columns across a wide screen. */\n.e-desktop-root .e-table.e-board { width: auto; min-width: min(100%, 34rem); }\n\n/* Replay status line (ply, started, audit, verify) wraps instead of running off the edge. */\n.e-desktop-root .e-chess-replay-status { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }\n\n/* ─── 25. PHONE (≤ 700px) ───────────────────────────────────────────────── */\n\n@media (max-width: 700px) {\n  .e-desktop-root .e-page-head { padding: 12px 16px 10px; }\n  .e-desktop-root .e-page-head__blurb { font-size: 0.78rem; }\n  .e-desktop-root .e-view-toolbar { justify-content: flex-start; }\n  .e-desktop-root .e-view-body { padding: 12px 16px 24px; }\n  .e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] { border-right: 0; }\n  .e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main { padding: 12px 16px 24px; }\n\n  /* Tables scroll inside their own box; short cells stay on one line. */\n  .e-desktop-root .e-table,\n  .e-desktop-root .e-relay-table,\n  .e-desktop-root .e-compact-table table {\n    display: block;\n    max-width: 100%;\n    overflow-x: auto;\n    -webkit-overflow-scrolling: touch;\n  }\n  .e-desktop-root .e-table td,\n  .e-desktop-root .e-relay-table td,\n  .e-desktop-root .e-relay-table th { white-space: nowrap; }\n\n  /* Comfortable targets. */\n  .e-desktop-root .e-rail-item { min-height: 48px; padding: 10px 16px; }\n  /* Filters (data-keep-list) become a row of chips, so the list itself is near the top. */\n  .e-desktop-root .e-rail-item[data-keep-list] {\n    display: inline-flex;\n    align-items: center;\n    width: auto;\n    min-height: 40px;\n    margin: 4px 0 4px 8px;\n    padding: 6px 12px !important;\n    border: 1px solid var(--e-rule) !important;\n  }\n  .e-desktop-root .e-rail-item[data-keep-list].is-selected { border-color: var(--theme-focused-foreground) !important; }\n  .e-desktop-root .e-segment-tab { min-height: 40px; padding: 6px 12px; }\n  .e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"] { min-height: 40px; }\n  .e-desktop-root .e-search-row [class*=\"Input_displayed\"] { min-height: 44px; }\n  .e-desktop-root .e-theme-duo { padding: 12px 14px; }\n  .e-desktop-root .e-theme-circle { width: 20px; height: 20px; }\n  .e-desktop-root .e-theme-duo__rule { margin: 0 12px; }\n  .e-desktop-root .e-viewer-switch select { min-height: 40px; font-size: 14px; }\n  .e-desktop-root .e-meta-grid__row { grid-template-columns: 6rem 1fr; }}\n\n@media (pointer: coarse) {\n  .e-desktop-root .e-section-tab { min-height: 44px; }\n  .e-desktop-root .e-rail-item { min-height: 48px; }\n  .e-desktop-root .e-segment-tab { min-height: 40px; }}\n\n/* ─── 26. SET PLAYS (blotto, ⅔, lowest unique) ─────────────────────────── */\n\n.e-desktop-root .e-setplay { padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }\n.e-desktop-root .e-setplay__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }\n.e-desktop-root .e-setplay__game {\n  margin: 0;\n  font-size: 0.78rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-setplay__players { margin: 2px 0 0; font-size: 1.05rem; }\n.e-desktop-root .e-setplay__status {\n  flex: none;\n  font-size: 0.68rem;\n  letter-spacing: 0.12em;\n  text-transform: uppercase;\n  padding: 3px 8px;\n  border: 1px solid var(--e-rule);\n  opacity: 0.75;\n}\n.e-desktop-root .e-setplay__status.is-live {\n  opacity: 1;\n  border-color: var(--theme-focused-foreground);\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-setplay__status.is-live::before { content: \"● \"; }\n.e-desktop-root .e-setplay__verdict { margin: 0; font-size: 0.95rem; }\n.e-desktop-root .e-setplay__verdict.is-win { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-setplay__why { color: var(--theme-text); opacity: 0.6; font-size: 0.82rem; font-weight: 400; }\n.e-desktop-root .e-setplay__wait { margin: 0; font-size: 0.82rem; line-height: 1.5; opacity: 0.7; max-width: 72ch; }\n.e-desktop-root .e-setplay__meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding-top: 8px; border-top: 1px solid var(--e-rule); }\n.e-desktop-root .e-setplay__badges { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; }\n.e-desktop-root .e-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n\n/* commit → reveal → winner */\n.e-desktop-root .e-phase-strip { list-style: none; display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; font-size: 0.78rem; }\n.e-desktop-root .e-phase-strip__step {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  padding: 4px 10px 4px 0;\n  opacity: 0.4;\n  white-space: nowrap;\n}\n.e-desktop-root .e-phase-strip__step + .e-phase-strip__step::before {\n  content: \"\";\n  width: clamp(12px, 4vw, 56px);\n  height: 1px;\n  margin-right: 10px;\n  background: currentColor;\n  opacity: 0.6;\n}\n.e-desktop-root .e-phase-strip__step.is-done { opacity: 0.75; }\n.e-desktop-root .e-phase-strip__step.is-now { opacity: 1; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-phase-strip__n {\n  display: inline-grid;\n  place-items: center;\n  width: 1.7em;\n  height: 1.7em;\n  border: 1px solid currentColor;\n  border-radius: 50%;\n  font-size: 0.72rem;\n}\n.e-desktop-root .e-phase-strip__step.is-now .e-phase-strip__n {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  border-color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-phase-strip__who { font-weight: 600; }\n\n/* Seats (pick games) */\n.e-desktop-root .e-seats { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--e-rule); }\n.e-desktop-root .e-seat {\n  display: grid;\n  grid-template-columns: minmax(8ch, 1fr) minmax(12ch, 1.4fr) 5ch;\n  gap: 8px;\n  align-items: baseline;\n  padding: 7px 8px;\n  border-bottom: 1px solid var(--e-rule);\n  font-size: 0.85rem;\n}\n.e-desktop-root .e-seat__state { opacity: 0.65; font-size: 0.78rem; }\n.e-desktop-root .e-seat__move { text-align: right; font-size: 1rem; }\n.e-desktop-root .e-seat.is-to_commit { opacity: 0.55; }\n.e-desktop-root .e-seat.is-out { opacity: 0.45; text-decoration: line-through; }\n.e-desktop-root .e-seat.is-winner {\n  background: color-mix(in srgb, var(--theme-focused-foreground) 16%, transparent);\n  box-shadow: inset 3px 0 0 var(--theme-focused-foreground);\n}\n.e-desktop-root .e-seat.is-winner .e-seat__name,\n.e-desktop-root .e-seat.is-winner .e-seat__move { color: var(--theme-focused-foreground); font-weight: 600; }\n\n/* Blotto: a row per player, a column per field */\n.e-desktop-root .e-blotto__rules, .e-desktop-root .e-lowest__rules, .e-desktop-root .e-twothirds__rules { margin: 0 0 8px; font-size: 0.75rem; line-height: 1.5; }\n.e-desktop-root .e-blotto__scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }\n.e-desktop-root .e-blotto__grid { border-collapse: collapse; font-size: 0.95rem; }\n.e-desktop-root .e-blotto__grid th, .e-desktop-root .e-blotto__grid td { padding: 8px 10px; border: 1px solid var(--e-rule); text-align: center; }\n.e-desktop-root .e-blotto__grid thead th { font-size: 0.68rem; letter-spacing: 0.1em; font-weight: 400; opacity: 0.6; border-top: 0; }\n.e-desktop-root .e-blotto__grid thead th:first-child { border-left: 0; }\n.e-desktop-root .e-blotto__grid tbody th { text-align: left; font-weight: 400; min-width: 12ch; border-left: 0; }\n.e-desktop-root .e-blotto__name { display: block; }\n.e-desktop-root .e-blotto__state { display: block; font-size: 0.68rem; opacity: 0.6; white-space: nowrap; }\n.e-desktop-root .e-blotto__grid td { min-width: 3.2ch; }\n.e-desktop-root .e-blotto__grid td.is-hidden { opacity: 0.4; }\n.e-desktop-root .e-blotto__grid td.is-won {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  font-weight: 700;\n}\n.e-desktop-root .e-blotto__grid tr.is-winner th { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-blotto__took { font-weight: 600; }\n.e-desktop-root .e-blotto__history { margin-top: 8px; font-size: 0.78rem; }\n.e-desktop-root .e-blotto__history summary { cursor: pointer; opacity: 0.7; }\n\n/* Guess ⅔: one number line */\n.e-desktop-root .e-numline {\n  --rows: 1;\n  position: relative;\n  margin: 28px 12px 4px;\n  height: calc(40px + var(--rows) * 30px);\n}\n.e-desktop-root .e-numline__axis { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--theme-text); opacity: 0.5; }\n.e-desktop-root .e-numline__tick { position: absolute; top: -6px; width: 1px; height: 14px; background: var(--theme-text); opacity: 0.45; }\n.e-desktop-root .e-numline__tick > span { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 0.68rem; }\n.e-desktop-root .e-numline__mark { position: absolute; top: -8px; bottom: 0; width: 0; border-left: 2px dashed var(--theme-text); opacity: 0.55; }\n.e-desktop-root .e-numline__mark > span { position: absolute; bottom: -2px; left: 5px; font-size: 0.7rem; white-space: nowrap; }\n/* The target (⅔ of the average) is always left of the average: label it on its left. */\n.e-desktop-root .e-numline__mark--target > span { left: auto; right: 5px; }\n.e-desktop-root .e-numline__mark--target.is-low > span { left: 5px; right: auto; bottom: 16px; }\n.e-desktop-root .e-numline__mark--target { border-left-color: var(--theme-focused-foreground); opacity: 1; }\n.e-desktop-root .e-numline__mark--target > span { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-numline__pick { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 1; }\n.e-desktop-root .e-numline__pin { width: 2px; height: calc(10px + var(--row, 0) * 30px); background: var(--theme-text); opacity: 0.6; }\n.e-desktop-root .e-numline__label { font-size: 0.75rem; white-space: nowrap; padding: 1px 4px; border: 1px solid var(--e-rule); background: var(--theme-background); }\n.e-desktop-root .e-numline__pick.is-winner .e-numline__pin { background: var(--theme-focused-foreground); opacity: 1; width: 3px; }\n.e-desktop-root .e-numline__pick.is-winner .e-numline__label {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  border-color: var(--theme-focused-foreground);\n  font-weight: 700;\n}\n\n/* Lowest unique: a box per number */\n.e-desktop-root .e-lowest__row { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr)); gap: 6px; margin: 0; padding: 0; }\n.e-desktop-root .e-lowest__cell {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  min-height: 4.6rem;\n  padding: 6px 8px;\n  border: 1px solid var(--e-rule);\n  font-size: 0.78rem;\n}\n.e-desktop-root .e-lowest__n { font-size: 1.05rem; }\n.e-desktop-root .e-lowest__cell.is-empty { opacity: 0.4; }\n.e-desktop-root .e-lowest__cell.is-taken .e-lowest__who { text-decoration: line-through; opacity: 0.6; }\n.e-desktop-root .e-lowest__cell.is-unique { border-color: var(--theme-text); }\n.e-desktop-root .e-lowest__tag { margin-top: auto; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.55; }\n.e-desktop-root .e-lowest__cell.is-winner {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  border-color: var(--theme-focused-foreground);\n  font-weight: 700;\n}\n.e-desktop-root .e-lowest__cell.is-winner .e-lowest__tag { opacity: 0.85; }\n\n/* Game rows in the Games rail */\n.e-desktop-root .e-game-row { display: flex; flex-direction: column; gap: 1px; min-width: 0; text-align: left; }\n.e-desktop-root .e-game-row__top { display: flex; justify-content: space-between; gap: 8px; }\n.e-desktop-root .e-game-row__kind { font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-game-row__phase { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; white-space: nowrap; }\n\n/* ─── 27. OVERVIEW: YOUR AGENT NOW ─────────────────────────────────────── */\n\n.e-desktop-root .e-now { border: 1px solid var(--e-rule); margin-bottom: 16px; }\n.e-desktop-root .e-now__head {\n  display: flex;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 8px 14px;\n  border-bottom: 1px solid var(--e-rule);\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n}\n.e-desktop-root .e-now__head > span:first-child { opacity: 0.6; }\n.e-desktop-root .e-now__row {\n  display: grid;\n  grid-template-columns: 11ch minmax(0, 1fr) auto;\n  gap: 2px 12px;\n  align-items: baseline;\n  width: 100%;\n  min-height: 44px;\n  padding: 9px 14px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.85rem;\n  text-align: left;\n  cursor: pointer;\n}\n.e-desktop-root .e-now__row:last-child { border-bottom: 0; }\n.e-desktop-root .e-now__row:hover { background: color-mix(in srgb, var(--theme-focused-foreground) 8%, transparent); }\n.e-desktop-root .e-now__row--static { cursor: default; }\n.e-desktop-root .e-now__row--static:hover { background: transparent; }\n.e-desktop-root .e-now__label { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55; }\n.e-desktop-root .e-now__go { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-now__sub { grid-column: 2 / 4; font-size: 0.75rem; opacity: 0.6; overflow-wrap: anywhere; }\n.e-desktop-root .e-now__live { color: var(--theme-focused-foreground); }\n/* On a phone the third cell (where it stands, \"open →\") drops under the text instead of squeezing it to one word a line. */\n@media (max-width: 520px) {\n  .e-desktop-root .e-now__row--stack { grid-template-columns: 9ch minmax(0, 1fr); }\n  .e-desktop-root .e-now__row--stack > .e-now__go { grid-column: 2; }\n}\n\n/* ─── 28. THEME / TINT CROSS-FADE ──────────────────────────────────────── */\n/* On only for the length of a theme or tint change (themeConfig.applyTheme),\n   so hovers and other transitions are untouched the rest of the time. A run\n   through the tints reads as one surface changing colour, not a flash. */\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-theme-anim,\n  .e-desktop-root .e-theme-anim *,\n  .e-desktop-root .e-theme-anim *::before,\n  .e-desktop-root .e-theme-anim *::after {\n    transition-property: color, background-color, border-color, outline-color, fill, stroke, box-shadow, text-decoration-color !important;\n    transition-duration: 0.35s !important;\n    transition-timing-function: ease-out !important;\n    transition-delay: 0s !important;\n  }}\n\n/* ─── 29. CAPTURE MODE (?capture=1, src/capture.ts) ────────────────────── */\n/* For filming: nothing moves between frames, so a tint switched on the beat\n   lands in one frame; the relay's host:port is not on screen. */\n.e-desktop-root .e-capture,\n.e-desktop-root .e-capture *,\n.e-desktop-root .e-capture *::before,\n.e-desktop-root .e-capture *::after {\n  transition: none !important;\n  animation: none !important;\n}\n.e-desktop-root .e-capture .e-capture-hide { display: none !important; }\n/* The capture frame (540 × 540 CSS px) is the phone layout; scale it so the\n   smallest text on screen (0.65rem / 11px labels) is at least 13 CSS px. */\n@media (max-width: 700px) {\n  .e-desktop-root .e-capture .e-app-shell { zoom: 1.25; height: calc(var(--e-frame-h, 100dvh) / 1.25); }}\n\n.e-desktop-root .e-quest-next { margin: 4px 0 10px; font-size: 0.85rem; line-height: 1.5; }\n.e-desktop-root .e-quest-next code { font-size: 0.78rem; overflow-wrap: anywhere; opacity: 0.8; }\n\n@media (max-width: 700px) {\n  /* On a detail screen, the list's own controls (search, counts, the toolbar\n     line) belong to the list: hide them so the detail starts at the top. */\n  .e-desktop-root .e-view-body:has([data-pane-shown=\"detail\"]) .e-view-toolbar,\n  .e-desktop-root .e-view-body__inner:has(> [data-pane-shown=\"detail\"]) > .e-search-row { display: none; }\n  /* Keep commit → reveal → winner on one line; the verdict line names the winner. */\n  .e-desktop-root .e-phase-strip { flex-wrap: nowrap; }\n  .e-desktop-root .e-phase-strip__step { padding-right: 6px; gap: 5px; }\n  .e-desktop-root .e-phase-strip__step + .e-phase-strip__step::before { width: 14px; margin-right: 6px; }\n  .e-desktop-root .e-phase-strip__who { display: none; }\n  .e-desktop-root .e-setplay { padding: 12px 16px 24px; }\n  .e-desktop-root .e-blotto__grid th, .e-desktop-root .e-blotto__grid td { padding: 8px 6px; }\n  .e-desktop-root .e-blotto__grid tbody th { min-width: 9ch; }}\n\n@media (prefers-reduced-motion: reduce) {\n  .e-desktop-root .e-dashboard-shell *,\n  .e-desktop-root .e-app-drawer { transition: none !important; animation: none !important; }}\n\n/* Calls (:v2 set plays): a forecast sealed with the first move — \"called · sealed\", then its percent. */\n.e-desktop-root .e-call-tag { margin-left: 8px; padding: 0 6px; font-size: 0.72rem; letter-spacing: 0.04em; white-space: nowrap;\n  border: 1px dashed var(--e-rule); opacity: 0.8; }\n.e-desktop-root .e-call-tag.is-revealed { border-style: solid; border-color: var(--theme-focused-foreground);\n  color: var(--theme-focused-foreground); opacity: 1; }\n/* Bargain: the offers table (blotto's grid, wider cells) and each hand, sealed until the end. */\n.e-desktop-root .e-bargain__offers td, .e-desktop-root .e-bargain__offers th { text-align: left; white-space: nowrap; font-size: 0.85rem; }\n.e-desktop-root .e-bargain__hand { grid-template-columns: minmax(8ch, 1fr) minmax(16ch, 3fr) 4ch; }\n\n/* Operator section: the operator's desk — cards and commands from the views it sits beside. */\n.e-desktop-root .e-op { display: flex; flex-direction: column; gap: 14px; }\n.e-desktop-root .e-op-list { display: flex; flex-direction: column; gap: 10px; }\n.e-desktop-root .e-op-cmds { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }\n.e-desktop-root .e-op .e-setting-cmd.e-op-cmd { padding-left: 0; }\n.e-desktop-root .e-op-cmd__label { min-width: 12ch; }\n.e-desktop-root .e-op-cmds__note { font-size: 0.85em; }\n\n/* Launch additions: the operator's current expedition, under an agent's quests — the theme's accent, a quiet rule. */\n.e-desktop-root .e-gamify-expedition { margin-top: 12px; padding: 6px 0 6px 10px;\n  border-left: 2px solid var(--theme-focused-foreground); display: flex; flex-direction: column; gap: 2px; }\n\n/* ═══════════════════════════════════════════════════════════════\n   30. THE LOOK — the one style (the demo animatic's information cards)\n   Pixel headings (Silkscreen) that unscramble, mono lines typed with\n   a block cursor, corner brackets, status lines above and below,\n   and the tint as a FILL with dark ink on it, never as text on the\n   light canvas. It was the \"animatic\" style beside \"retromod\"\n   (docs/ui-style-experimental.md, now history); since ui-v2 it is\n   the only one. `.e-look` is on the app's root with the theme and\n   tint classes (themeConfig.applyTheme), so these rules keep their\n   weight over the older ones above without a switch.\n   - It follows light/dark and all eight tints: every colour comes\n     from the tint (--tint; amber when there is none).\n   - Motion: arrivals only, 0.35–0.45 s, ease-out. Nothing moves with\n     prefers-reduced-motion or in capture mode (?capture=1).\n   ═══════════════════════════════════════════════════════════════ */\n\n/* ─── 0. THE PIXEL FACE ─────────────────────────────────────────────────────\n   Silkscreen (SIL OFL 1.1, assets/fonts/OFL-Silkscreen.txt), bundled: the\n   dashboard makes no third-party requests. Latin only; anything else falls\n   back to the mono stack. Not fetched until a pixel heading is on screen. */\n@font-face {\n  font-family: \"EmporiaPixel\";\n  font-style: normal;\n  font-weight: 400;\n  font-display: swap;\n  src: url(\"data:font/woff2;base64,d09GMgABAAAAACDUABEAAAAAc1wAACBxAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGlIbhAAcbAZgAIQ+CFIJnAwRCAqBpxSBkiMLgzYAATYCJAOGaAQgBYRGB4RMDIEyGwpmRQdixjgAMHx2yMhAsHHANtNLxf/HA02GJOR7JKprV5NUnRSjxHppZpqxPWeO2JpuP0Isn3Ov4hHC4zgO9qdWap45dxcvUZxGXXw/8Nxb3aV/w6i27p5poYiio1hQTiyOIYq3OJ9tR+9p4zYLR5R3f208FD8D20b+JCev/4CnvZ9U2MkZjQ7u4J7o7SzUVNVI6WwIJOW0uo52Sqs/fYh/f2+bc9/fTpMEh7Kb1TTXFbYVR9AEiTKlKSzGo4jHYzBd/Q+EJMSMdcuq80ykKr90zV3RXfY3/0NBa9t5xEoiUaqEhj+mHko5eD5t6TpQVEAKfOWHb3YDZEAdGUEKSr71FbWLervqaY2x/5Z+flXd2D0jaZ+DHBLaRchcZgPHuR9cv8N95J8g/qbZ0vsBIkuW98HTVBltFaZD9UlTBkImywPyEPAXpbZ1WaksC7Z0eA8kIAHRej2HDmOnmSDMsT4kRFxZZaPdY2avJsdX3SI7V/XTmIYWUjkRYUjoh+wiM8j/2fTf9t7Ryk+2P9hBhdgBKjp94Cq/aINFubqzM+Od2bWeViaB/UD2y3u2P1j+4NgBzUrWW8uBhwGG7hNBlxQN9/lFnaohKpr0qcqcNEWXx9H7S064bLOOjnhfc75fophbX9tkyWGC6uq0g+Ia4Rrf+9t9X0tNVZfKWSNjQRdlgVW5JK/2zDG2agP0ov/bWAWDg50ZaN2PM4IwFPbH3wNDiPARIRmi4IX4iEYS1SFnnce66BIWIYAI4TvrnPPZ204ACY4bmgVFJECEB4BWywEIc86t6HpUVrk9R/HkZ4FhQkBAB5EAKKtpNSgtkOHHjazIiobTWPAARIQymlxASYNMWUqpgErjkwrIiBNyu3pTV1IAsb6o3cXgr+9E+QUjfPRaG+Gp3kuExi9FSwBGRdyXhsuxUorKvruRqW2kpIrkqiTK6jy9djO9QdnOlqW9jNo0MpWv/iURH9GAa4r2DqnlDW/Y70xcecMbanqzfTWDj/Ah1yk+Sp8cxcOEc/gmIq2HfU13J/Bl0Ginr9T7Z96j4OT7s2Dc/D87zEAEtD3wcrqKBUZ3kqmlI7FmacVoVWB4O9VsRHPDCaNJC14d5GTwgblnUgCEj749HcDOb+T5g6HIoRLXI3EtPAoHyVf1eAKtAGB/pRhdLv25vQA4LICB5kVdsajKKzOIHk8Oj4icNVcDaekFc1x3jVgeK+K6cr25/pweZ8S5ceuDetoR5Dg23CxOHP8g2PaiLlxPrm/a9dL/AcEAAP+X/FG9nUfNaAB4eG5O5msqD6aDAEYAP6fDIeu3Sbc0FPg/DkebZKOZ9jqj3SYLLTLDQePMMdYs401wzBFHTbEZEZOQUeiiq26666OvfvobQJcpcxYsWbHmwJETZ66Wmm2ZUxa4yo0ff4GCRYgUJVqCREmSpUiTp4BKoWIlKlWpplZnsZ2WOGGMyXbbb48Ddtniiq3qrXXSXNvctMNxQw1zzWkdprlliAbrjDDcSFPxMVhCPAIiUp0p6eiktx566kWOY0iPPmMGDjFiz4YtOy7MFPHizoMPT958BQgXIlSYeDFixQmSKku6DDkyHZatQqky5Wrkq2Ui12prLLfSKit0vgae/5uXocvSiMxSA0THvQDKKHq2+aI19yyKQSr/RV/5fhBZu4Z7t4b28NOzOKL7FsfSvHqFevrPZV7akR4ba8E7cEN7LYgwuhICqtW4hEKt2hIFUp8p2/cK1yWixOgy3e663Jq6AeX+qWAblN1Uw25PWzoYMDpq/RMLZbd1dyauPxEo1bVRirrRKXjqT0IrEjULbJESJPTe3QQh2G6tkVq4egrLP9tuctgf9dGKtygedn/5ldOZ5q3y1JctkiI244XNW5Bcb0s13RtBc01soif8cHU6GUvzX+qA6UddVzm0OWYrWE3GEBYuA+rYHIHnHjw4+lYdNsjKjeWLdO3LiO9KrlVpQqhTgEQIYUC4HxFUF0pUSF9gnmpB57ZHNwc3Z6wNkKpEi7rrIeay3jhhIa8D4wUNJ6FV2oY6sTP3DaWp/l9MRJ7MtGB5x8dtk3aD12CDIB88JAw4YkYXVKIDg50WNNnAT2+YUwH8egnajCHtJPokVQyIyytcjq6ZNKJnO7IKjKXYay7ORGusCvvuvS0fsOxyCmxdV05CwQ2YR+k3jVrqmEcopOU0qkfIuE2iuC3oGXpvHCVFmruIlh245NclnTnLMlW2vTVqw3t7LPOQ6aDw0/w6JT4glVQ8rqrJX+fMBXwaPjd+1iBwWx6bS5RrJm3TqAkYpfmq7M6BXmKItX2fWdcLL3F6PdUhmtnxa3vnorEpFQ2NkRF2D4ZDuQJSO4IIns1Rd9m7oL8MsquC4qxzFBth7pr/xPg2f2J1WVICwwU0L/htZ8DjMLouP4pJWTuJvNwMRNqDEJxaktL1PktQZGjZ94TmpI9rDseglZN4ld2fwEZxp3DOwQDxOUPqHM8P+L9z9CLgcoGMpFOSaRiBLKOQYwrkGYMCU6HINCgxHcqMQ4UZ0wNoFs4TrVrb9yoV5GvNuDGZsmwSzm/ucFPb+fu+VVHQI9gZSH1xptoKEmtYxToqNlCxiYotVGyjYgcVu6jYQ8U+an0EmS1bGC+OZCvpatd0EztMih4hd9kEjIPxJDx/CpFhGzndrmlSt/f2+bSBAGbeaXt2Zwvuzo/pJKtpp+8/hlDNPEpr4KwvIN/cn1qiqDcolqch4VD85GVCnAMAbs7rZF6kJODvywoyK8MgJsEN+g0qWaN6MFuyEdgMGeeXlm+Rqey+kipUQGPN7Fxp/htanUvij83eu9xcu0lk5+57XLwDEGSeReYfnPmSsy3nWOycNCMTmW02jyPZj0qldQeaOZmK8HVnWS7v/BnT21Uj5/LtfHD77bxJaRpykzqI1JWLVsc9z/vRdC6MsVZUpjpPMiaqqIyPWMlyUtm5/KyDNGkUkwOoY9LWfqN0WmtfxzqmpKx6ErGsFVieC3NfkWI/bbK4I5QcAPFlNKbmelJnJyc2HUuYXMMDINOUy5ETB/fJg9vVX+elr2RWrVFnLc6FjK2oubZu5RcYL5UtMS9ypq3wR85PyoG86fhzTqznMtFzEioVlK645Az9ttkNXmZDlScp7liOeO0Nd832xtc1tC33dd8AuzB7+ptgH031JKQdYLMRWITGiske3CpBoDTI8E8m7OxFgO7DujgrlU5aabyNbE67qztd2H8XQyxTYLSbffmsThqLmjEbnIU709h1oPHvau45ZrUXIalI4L0gWfxRi3U+fGeYWU2Ozv2dD5BBekXWfttDsL3Ao4uC6KtUMmgaNWTRY5R1kUedRU/QArcDPmVFE8T6AMYZQWJQCMYkI0j1AUwzWpxJtwjwP9BOEWT7AeZSBPknCYSFFEGxH2ApRbpsGQNZhRqo9gGsMYL6oBCCDUbQ7APYYmTazmEA6/AWuv0AeymC/pMEwkGKYNgPcJSi08ZpuzzSaCa04uZwdKYY0bPY8wajs/O0nSYKYZEmtUwDqwl5onHteOLG8TRb4lfciSvs08AhDRwn5HXFk+OFZ8cLL44XXgXBLQ3c08BjQt6ET8cbX443vh1v/AiCbxr4pan/047A+9ubvlnQp8PJsIEp+rp9dFNT/cw3e1WbWYOYppfse9/y7Qn+n0IAbgPQK3TwkDwgWyHMmIgeMV+juI0yg6TLPPH8NuCwt35bAJglacCyPaAcJerCgxJoNor4Y8dsBW6dIwVpSUmWqM2Lng3PFZhBZ9iynvB2ZS2igCsbKlFdEswoVh24DbdS1gWOio0RqU3AlZdqHyowmCEvIJSrCI0fwlILJkCa9cuvioW6fLIMQYAu60ohfFMdoR5u84mlSJH8kQD75kTxFrp9p4Mi3krLtgsSkBp1pitndci5tGxV7BnByVQFYfg800YfhRqcslgug9pTRqDhYIZM98+eT9gkI90+D51U183V7YZNmbbUaiwFu14rTSIGw6JeWUlLWIiqssQy3WYCuA6QJTa79HegK67udlrIZD6S0GTEclEShUWaBN9heERM7jiB08wJIS+VRAlmK6RACt7E+FOr3gWONSsYaDmK/0VMEVtLaiUuoao1I2qLcqV2qRLMueiFUUpXbYrofR+idlVyj/c3txC6hfyiSncNAfsBpDuggkX+8DU3sHWqcFJT7VMjXhttkMUmUpQIzmdIRKGqWIpwGOaMKYmVgj+YSX9MiZV6IjbRSAHhGHFcPfy/WHosXHrlz5RkUnMAVlM0MzE66O99X9rud4FA0T8j9DJXM+IclGzoejyuVpVVdf6hjoMeypCLBtzEGYktnkeoykgdDII74iWFyOscJLzSETJC2OGtDfy4kUiLvYQtPRDOFxDeJtlxNUJa8zIGtZphiaWhRSmJdaRUpQUtHEb976pwpTQMxCE0no26R770NaxNOB4KUYwqUeumB5FgCbNQraTIHynKUdkopTburx4q6Sh/4AVMdhaR7Zfdn17HJ48FWZ02NZTJQlEhC1Nd5zlXyE041gvCaRWjnvZ+SH0yDjUUnd7teAinSeEJp2wTk9y2MWmUHApzhjbc30JfJLOqZzrSZORDXrk2sEZSIgTFiIZrdBFUnyljuxezBU/Ov0TaCT3+kY0jJfFZgahM+Rrk1UImsYNXL2qlrRDjb7XU/y4Efz4zymgpWP42nG765IPVrwRoes2xx8ow0G4yNyNQWuVzazLq/WPH7FYR1GtDmCNgctRhq4Td8j5POkGhKGSTjqxYk+cQ4OR0KxXpwr4Mnz1xgrvw1xnylU2+ElrPyt1+VlR6aEe5JV6qRk1GGIRz8IBCnp+qksaazZ/Bc3KB9eKY+voc+niGbPfp7WVTsKLhyG0Jnia+fEqnJ8S4D0M+eJHYH/hBR6XYWT5SCVYTP5FC88XnEKXrVFLpxInlys5E6lraNj0rrow5q3ObqmWotMO46A3908cys3etYw9vEaHo3FsCJKvioOXpd09s84rDrzSGCRkmTMmnBI0zhQrkDRvltlZo9tqneFAES7F6k2/0y2kLtCUJYopLT9wPeiSzHfhJ0BhxvmPYcqnX/g9LhGU4XIW5GRnNgEsO7ZDR261I5mgOAz98e9pa0tzyu3ksinwG1UwEjOvA87RlgRoTT0piWwpXxvLDFoggLDDA1WprC4W/I2v/WULxGLEcBAM/890Py0pA/KT05Glh6pYt84eDdjtfXZNW1S0Y/ul0LxMEaBz5ONTXr5/YGKjpQnvw1tQ/Tsty23Bt7zZNvm3m+K3T3qt6gG5f3SAj1QYUAqJ22lkXDQq4ZIW58HSql0WBOttJqiuA7Oqznz6NPIjPlGlRV252oVarVPFnvHRiLjFN46IszfuLotCqQjpO09Uq4cv4YV4OUoEf6k1CwTTUr0aKGxLUct5oSAZZKl9m6bpPytqMharYeCRc0XyUUIJcaRcwKxF9tR7fqxmqnWUL2CyQKm8Egy50SubfpNrnLOZCfovs1C4XMsHzWKq16Q+l5TE09eLBoWGB4LNjYtSdj7NJQYwaIU8VniItViqTO5DKwq0ZP8TEZ2X0lMxcoFrn5YW7x7UFORtok/2c2GOoxTBpDU+icA9zEkafHA30Cfdix4yDvcM9Iw4o6SkfV4Nbmj6+8N4ZfI+1JRaCWJnkMe0vszHi1o3YIt6SQBp5lZbIm4P2ctp3Uamk1sK9RXPN27/i65iTgXkhVJ9h1sySIwsbDnP0KUBLVnuDtam+NsjdCpaWMYcID3nKXwsXnsKpwfTPbiKKPq7DuBF8G4t4hgMvQmEEgbWU93wdfdNaxGvD0TOowYvJNIw2viuWklW2tFXFa54FCmWlOBQV82rSluqnyiYyLnwZb7e7qhVghO6NRNrk4+hCxL7O6aLvJdrHTM36lfXSbOYEXm/bPHxBh9TwoZHdhC6z1buvhrmMxzPkNX7PND5aN6Z3PrFniNiNYWF5PRefu+yUlAAQBOc1AZN7ru8iUuv6Ln8vbFJJOvQCgJ50FsM8GEOwa2FwdrFhzi42zNnFs8Fhc6ZJHjV0jjIv5yjzco7KoApPpgJyU3NTc1Mxd14YnMfe2FOgmJ5zyiZZ6U1ubW5tbm1ubbKvVmdABmWYO5CcF+bOh6b01O/AWK7S3A1WB3P+n4zBWY0HkeURnKepS3D5d4Jh8OjtPl+nPvqKuMEnJggADgEADLgKNAgYw76LGe2sS8T2kbeX9VfyCY4IFo7hN5Qlrc26hGFtYhV2d/E2bO2HTckFh9pCsZcIYMPghn2gRWa9UCIv49xP+UOtYyD9A+sb4ARbiNSBxFNQfICQ4TDYy5hf/OWMhFv6ooon5OdNAe7UlNmdN+jXy44N2wuZNPSb1YFXYAbcZuFq1mXvIdwxxz4Xl0udVH3eXOY4+2iM+7HLBWY+l7Xf+KeuLd550c78zHN6X19sNwa4mOiavdi2OIn4vDXudbZW1V23bndA4xR/7Hw++zaHl1dGmL2l0SvF/99cOLHwK6M85nwS7oO+eV6h+sY9uKievpWjCCt6mK9EgvGcAPyZtzLv7rCIn2vuuRZMmOab9PtIN7dlAmazAy94IZds6/d/ucNR8loQOEitK8EJuD5Cpp0qlSJG841C3eGrm3xfpUlr2aL3Ic/2BZjVQGYZMaffem4FRlSzYcDL0yk65uiRG0fiGfce3+wC0085KTiyM2/wNCSCSpID7xBnEnEfLHOsMMOshhTB3Ic9SLsQUlgJob7skvV/7b9ZnkfRblC530XwSRFjUtOv51/nMQJu4Yu15TSrE6LsrwBVfRbdd9vtK8rN7aVmL88ucQXJckkTwm31kJqCttBsdytSwNNAkXd0pAW42ZNfwgIj7bCvIuAEcqcim8MunWBWf455/X3R9V4QKeZCCFOsagycOrtVMPOzlCKz7HLxfeCSqaMiKYJZ3HArxAFPvwuKs7hkUj870p024ICYGmD65cp9AJMuRrMMi+gZq1s9zeVMuR+1fBr7ArMzG4b7G1hfTplqYciwXKJp2mxl/ElnfCqKBH74Jc4c6EQQ6Epp/P5GpZIW/7v737pc0dvc+o0cVfnGxMg5lvrDtu3FVfFzqc21cWf7aD75F2VkPXltyzyxxWs+c17vgCPgUQY8z0ZmvUUcaFNJAKdZYczSM6Cm4l1hHrbI1KIRHQakvxIKjK9aQZRYSsQkt4HBO7e5ordI7gUKEuIiJyvrN8awEzOoonv8/d8gsVDDihGRlvEmPeshjYxOMtkCLJ1qc43bfTDsyT+OLeMFKz+HI3genqEM/diN1Vkr0cBg9+CWIzOGpMmnsvL1TQJbyhYUO8LIURAjU7cPw1CzSPAtkEj02+kGdGvsRa609kbL65ztQ3DDyiVSpyehg5N2jGGHoIN27TEm9vPcQAHh8BMmSsTxeulpdVRu3XTV2pKh8y7yjyk+TVo6wGUmV1OfFaELq/gUVmTun7dvlrF+PYZKfQ5fX8ViHANfjZqt14qVuXIpLsT2OB9tmIPY/VOXxnaeCsGgN8LT6MZs2GjbJfb/nPIYTtpF9uRfiEc++fluWUqeCaTbNJByjiQPL8H6C9pwLJJTJ8OwEp7msAWuiSCsNWZ/mFwCWGyWmzN3AwMpiKziaArNC5YzC5Sl0cHBenjJvY4B3MghZgT7pHU8hvozRWgZnzRjr4xqMrfKGjrTvRX7vvlvom27rxPmyiCaPsJPkJnMrZhzOO6ndOL8lwjhL7t9hW7AFgPtoxeOjMz4nF7TGaryLGNvZwD3eEg9/Zs5+oMnvad8DFDcsabbKKESE3bqjsvFjpS4VeTKvMwDWtts5rIWasudIEReJafs6V63gCScf5L79xTRO/bHIsxfGDoQFkRHDrDovzO3JPt8P9NvtOSYOBdnMzJ+C1677mpv0DrvoqAZssX3qADkLImJxayPyciIjGuEFtsnI8HcD7ziWP/PmVaTun1RIuvJXReWDXI/L1Exe9VTaNJCRAWe4+rC9sMafWfTzlk0IoVXp5dxHRnVKi4GOsD12/oRw90U3pPZSyqbriWku/nXQAcPHKN9LCKJCizyOR8/uplQyNAWLsrniQCFkQWWWeDPWdTmajc+CD75R9/Sm/EdeKiypGhaTFz2eVkBmxh5LPBedxdUqDEGoL0+5syLrqHHyz1oMJvrwJCwAo18OBiQyRopqjl63yXH3A9g3voMbcMADPjx6O7ieWmA8LOq+gB03fn9LySIJ//yLX0gz7hhqkg2l3ha/Fix9145Gj585Fyt3z4A/M0/Yks3DgFruMzDf/kNPANpx22GwvWaxUtcLsnIVRHNI0A3vrpm0J9PrazRP71eQoQh8CrVbLEgctlsJkz2iqPdBIzql+nHEfXnMLVCC3ZflOKdpzGDK0t4p79mmf3zsZR19k+jeM7MevqY/LYQEz9quPv0L6IQB8VZhwd/R2hwtavGsB6rso2aptdfnH/P89Rv9p6P223Y8Yr4/4CzGfaVMDkuAAmfgXk8d1LmXN1GQZP99nuO0CjN4uO8fJkCIQUuZKZDkbyHDR+tYNPjCxWHHWycEVw1FQpjlmiWZYjVdqs9euKdSdHIrsc+drTDjptQi9994HZzwVm87PO2V8yC20cyCiqJ1ZucactwiK2zFoAhDnVOgw+2xiZL79n8dlFe94YEMQkFltIgNzEaD9z4K/N4lB+FbIoPQ5m/6qaeslsLHbOtxTMKG7G8B1Sq1FsEtLSKb3Bvn1hQ2BlHwq9KZzRF2SJlwdvcAFv7Ana+CSepNTUDq5YY5KYJd2rXqjDPYSjzszq3DusFPkO6ymj+RsDrk/6XcrXcg3O0NteoVcQn/wIQ+eTxdgFUjv58WZjmmYARosLIY5Ols4+8VRRP/rmTePL2zx9F1gF26+goWTeX/YPf7RQmBrVU7PM8hFtDr0kJZ6ZtN50mhNUdC8Hb/XnlDkc8SL4FeTvgxEo8wo/EPc46u4XHo2ojz4Iuv9zOIk2cjWxmYJMe4NVweMAxRH2MIFcVojIwAV16sR5kNz5+FUNlYFXA+UixO9f0Mh7ChuxgbPQYc31XIUqxEgDG7HtvTweY8ZR5u/OVKcMmBw+XG/mxuQD1Lxw2vAyQnRpzVMDgqBvWPE0e3DbwzcGdc+3I78D/uv7Y/B8vKbXGYObpQy9YVxJVEF5YSbd3PGW9ioOkSpuCY2Zf4SckKrIWjZv1TUcuU1fT4gpuVy4wpDe/qTlEyB/UfrLv93AQnFr1831vxitrjNljMS/cMLedZEy+yOZI8qC48l0eYwAj45sifTb2UYVgaghaVNa6j8dpv+taOHBUWAb6iXLXgeRnPp3u8gfgimkfak+2xOQ4nDzSWRIkpS037g84WaKOhj4XM3IgPOiv6RnHToHDragfq/PvBsTOqZirhw9X8UuwuQB3SxrnqKsc8mFznVvs6bAPw+32g4nrteNHNHcZipIjES06OfaTwTDwBQBf5wgB87H3ur9Co0ZXNufIC5rYYm6rMSON/DkY4WI/vWEPwf/24rqOPrinaVro6Bt7VsRopd59gZ/5qA9caU+oLZWDsWcs9ndJPvd8SzRneVz4aePc6o+DvzYICyYm3IYw5n6Nf580QDiVeiHyQDXdyoGNW+ngVWOBLclXkeVfiALQGZdN7RXa045fdspGQPvthkArmnS3Vem4DFWdqVXf5iHLP5VxPsBW8NjBWCbxuOCRmqrYovxP+7i2fOTMc2hT+hyJqOr7UvAuLzDLKbW1bRHmVS6VvdJDs1C/K7w7K9nDm9LI+QaoAaEhOoTUoKVQLP3UzW+V13bUj8C6ooyDAPsXBMyB3A0Gj7nEr/ep/7GP2NK6JYoLkeznnWfMcNx0iX5vmGWXGLdzHRBRmIw8Wv3qvbVrkElbBe7PcR2GXGrEccr/rv2ZJM907KeTOLy//YKao9xMorULqfQtJbbnad+kygoUzAcA+oGjQue93D3tX9sHHSXt5IjRo+9HBCB+X3WPhmV7Ht9ESvYlAOxa/q0EgPvfC1Vt4MlU2XkBBnQBZkRv5v1YMibRZu/fz9ulhqbeJwfSyjIbq0kJJ9JIPVAgplbUvrkS9ahVaEsdn/yxrbTz1cYXriBrSPbI1zDWqcg8zhZAwY1YHMhQuRDnSuuC6qANLL7w0tgyl6zKqKwNtoRqsZy0qrAgxMQrWjuXVJPdCI8ODJLEqGoo2C5XRqGRqzPATx4MhoU0EwAjFmRgEECkEIs6MYCOWDEvIV3T+yUMRWQvYbm5/BIeAxtfwpcgzRcM006+gncBxerq0Gq13FjneXG+GiWqcbCWVblEOfhV7BeZlkYLEiGewjLNpamoVLIUR6VIPfm54CehqYH4VZbL49iyYsOGLXectV9o9uubsGqG+tI6HBMNct9FoMPLO7PkqOBj5zE1PxLONtuVKEq4e9/dy7a51jrjP+fdNPtkihyc4thZljkJOqjaKdWPUcpVSsnkq42vA6bYX127xjekWqREVq6Xx3P5qlTk8ohVc+VUCh3m7QLrVtZ1U4z9jWrnF3Ye7NsAA6eckGeDfBtNZshIAWOvmFA56bQzTJkxZ/GrEcILc/Op+mohu1+VcPFFrphik83svZuof/4urrqm2HWu3GbS45vbF6BEmXKlKlVYLFCQKsFeC1HtilFPqy+HiygLDRrVT+Dn0+v9JrryZq3atFhCo12897P5zZh4fgMNNsQgqdJm3Jff2k3TCyz8RQBiiv7/+t766BuGWOLhq2++hw82AnSi1E9/6/Aso2epI0aRE+jMm06E6LCFHymZLDm8+DjqmK222W6HNdba7wA+CX1io400zljjDZPtpeH2EUaEEWZS+Ggnjq4Bpsm1nG/EEEVCUpKRnBSkJB1M5G+Cm2657f6gvrLExsbP9ZC2m7Fn/OM+jfnaUBTA+6tfhMg40mfa27iI/6XN9ar/r3JenJtfXxeF4DvYietKygv4wCFcoZ0zwj9xcstuJ5qYekE/2/a8TtshnG5B/4LZdsZt+rxOEkYSn2XM9BGcm3i6RwzeHRhSAumz4OPgZe4SCwFPBjQ69u1mn39SIhQwk9pOEe4aELDdpz0UT7dbNBjUmcfzX36d9kveZsh0EzAKs51oR8AmtNPc+MIvECBgBgAAAA==\") format(\"woff2\");\n}\n\n/* ─── 1. TOKENS ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-look {\n  --anim-tint: var(--tint, #f0a832);                                   /* amber when no tint is set */\n  --anim-ink: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);       /* text on a fill, both themes */\n  --anim-fill: oklch(from var(--anim-tint) max(l, 0.86) c h);         /* caption bands, chips, the won cells */\n  /* brackets, rules, ticks: graphics only. P10: L 0.58, not 0.62, so it clears 3:1 on the light\n     canvas in every tint (green measured 2.89:1); textContrast.test.ts holds it there. */\n  --anim-line: oklch(from var(--anim-tint) 0.58 c h);\n  --anim-pixel: \"EmporiaPixel\", var(--font-family-mono, monospace);\n  --anim-bracket: 12px;\n  --anim-bracket-w: 2px;\n  --anim-ease: cubic-bezier(0.33, 1, 0.68, 1);                          /* power2.out */\n}\n\n/* The light canvas for every tint, amber included : white with a breath of the tint, near-black ink.\n   The accent used AS TEXT is darker than the graphics accent so it reads\n   (≥ 4.5:1 on the canvas). */\n.e-desktop-root .e-host-body.e-look.theme-light {\n  --theme-background: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);\n  --theme-background-modal: oklch(from var(--anim-tint) 0.92 calc(c * 0.18) h);\n  --theme-background-input: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);\n  --theme-border: oklch(from var(--anim-tint) 0.84 calc(c * 0.28) h);\n  --theme-border-subdued: oklch(from var(--anim-tint) 0.88 calc(c * 0.22) h);\n  --theme-text: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);\n  --theme-button: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);\n  --theme-button-text: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);\n  --theme-focused-foreground: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h);\n  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h / 0.5);\n}\n\n/* The dark variant: the same cards on a near-black tinted canvas. */\n.e-desktop-root .e-host-body.e-look.theme-dark {\n  --theme-background: oklch(from var(--anim-tint) 0.14 calc(c * 0.18) h);\n  --theme-background-modal: oklch(from var(--anim-tint) 0.24 calc(c * 0.22) h);\n  --theme-background-input: oklch(from var(--anim-tint) 0.28 calc(c * 0.2) h);\n  --theme-border: oklch(from var(--anim-tint) 0.4 calc(c * 0.28) h);\n  --theme-border-subdued: oklch(from var(--anim-tint) 0.32 calc(c * 0.26) h);\n  --theme-text: oklch(from var(--anim-tint) 0.94 calc(c * 0.12) h);\n  --theme-button: oklch(from var(--anim-tint) 0.94 calc(c * 0.12) h);\n  --theme-button-text: oklch(from var(--anim-tint) 0.14 calc(c * 0.18) h);\n  --theme-focused-foreground: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h);\n  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h / 0.5);\n  --anim-line: oklch(from var(--anim-tint) 0.72 c h);\n}\n\n.e-desktop-root .e-look .e-dashboard-shell {\n  --e-rule: var(--theme-border-subdued);\n  --anim-wash: color-mix(in srgb, var(--anim-fill) 45%, transparent);\n  --e-accent-wash: var(--anim-wash);\n}\n/* On the dark canvas a strong wash would sit under light text: keep it faint. */\n.e-desktop-root .e-look.theme-dark .e-dashboard-shell { --anim-wash: color-mix(in srgb, var(--anim-fill) 14%, transparent); }\n\n/* ─── 2. CORNER BRACKETS ─────────────────────────────────────────────────\n   Four L-shaped corners drawn as background images, so no element and no\n   ::before/::after is taken from the other rules. On panels only: the\n   frame around data, never over it. */\n.e-desktop-root .e-look .e-page-head,\n.e-desktop-root .e-look .e-now,\n.e-desktop-root .e-look .e-intro,\n.e-desktop-root .e-look .e-panel-card,\n.e-desktop-root .e-look .e-overview-card,\n.e-desktop-root .e-look .e-setplay,\n.e-desktop-root .e-look .e-hcard,\n.e-desktop-root .e-look .e-empty-pane {\n  background-image:\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line));\n  background-size:\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket);\n  background-position: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%;\n  background-repeat: no-repeat;\n  background-origin: border-box;\n  border-radius: 0;\n}\n.e-desktop-root .e-look .e-page-head { --anim-bracket: 18px; --anim-bracket-w: 3px; }\n\n/* ─── 3. THE SECTION HEADING: status line, pixel title, typed line ─────── */\n\n.e-desktop-root .e-look .e-page-head {\n  position: relative;\n  padding: 12px 24px 16px;\n  margin-top: 10px;\n  border-bottom: 0;\n  max-width: min(1440px, calc(100% - 32px));\n}\n.e-desktop-root .e-look .e-page-head__title {\n  font-family: var(--anim-pixel);\n  font-weight: 400;\n  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);\n  line-height: 1.05;\n  letter-spacing: 0.04em;\n  margin-top: 6px;\n  overflow-wrap: anywhere;\n}\n.e-desktop-root .e-look .e-page-head__blurb {\n  margin-top: 10px;\n  font-size: 0.9rem;\n  line-height: 1.5;\n  opacity: 0.86;\n  max-width: 72ch;\n}\n\n/* The block cursor at the end of a typed line. */\n.e-desktop-root .e-look .e-anim-cursor {\n  display: inline-block;\n  width: 0.6em;\n  height: 1em;\n  margin-left: 0.15em;\n  vertical-align: -0.14em;\n  background: currentColor;\n}\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-look .e-anim-cursor { animation: e-anim-blink 1.06s steps(1, end) infinite; }}\n@keyframes e-anim-blink { 50% { opacity: 0; } }\n\n/* Status lines: `emporia ~ hermes plugin · [1] · 01 / 14 · overview` above,\n   `T+00:28 · as alpha · watch only` below. Small, but ink at 80 %, not faint. */\n.e-desktop-root .e-look .e-anim-hud {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 4px 12px;\n  flex-wrap: wrap;\n  font-size: 0.74rem;\n  line-height: 1.4;\n  letter-spacing: 0.05em;\n  color: color-mix(in srgb, var(--theme-text) 80%, var(--theme-background));\n  font-variant-numeric: tabular-nums;\n}\n.e-desktop-root .e-look .e-anim-hud__key {\n  padding: 1px 8px;\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  font-weight: 700;\n}\n.e-desktop-root .e-look .e-anim-hud--foot {\n  max-width: min(1440px, calc(100% - 32px));\n  margin: 8px auto 12px;\n  padding: 8px 24px 0;\n  border-top: 1px solid var(--theme-border-subdued);\n  box-sizing: border-box;\n}\n\n/* The beat flash: an ink bar along the heading's top edge, once per section. */\n.e-desktop-root .e-look .e-anim-flash {\n  position: absolute;\n  left: 0;\n  right: 0;\n  top: -6px;\n  height: 4px;\n  background: var(--anim-ink);\n  opacity: 0;\n  pointer-events: none;\n}\n.e-desktop-root .e-look.theme-dark .e-anim-flash { background: var(--anim-fill); }\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-look .e-anim-flash { animation: e-anim-flash 0.42s var(--anim-ease) both; }}\n@keyframes e-anim-flash {\n  0% { opacity: 1; transform: scaleX(0.2); transform-origin: left; }\n  45% { opacity: 1; transform: scaleX(1); transform-origin: left; }\n  100% { opacity: 0; transform: scaleX(1); transform-origin: left; }\n}\n\n/* ─── 4. HEADER, NAV, MENU ──────────────────────────────────────────────── */\n\n.e-desktop-root .e-look .e-brand-title {\n  font-family: var(--anim-pixel);\n  font-weight: 400;\n  text-transform: uppercase;\n  letter-spacing: 0.06em;\n}\n.e-desktop-root .e-look .e-section-tab { opacity: 0.8; }\n.e-desktop-root .e-look .e-section-tab.is-active {\n  background: var(--anim-fill) !important;\n  color: var(--anim-ink);\n  border-color: var(--anim-fill);\n}\n.e-desktop-root .e-look .e-section-tab.is-active .e-section-tab__icon { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-section-tab.is-active .e-section-tab__sub { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-subnav__tab.is-active { border-bottom-color: var(--anim-line); }\n.e-desktop-root .e-look .e-mobile-top__section {\n  font-family: var(--anim-pixel);\n  color: var(--theme-text);\n  font-size: 0.95rem;\n  letter-spacing: 0.06em;\n}\n.e-desktop-root .e-look .e-mobile-top__section::before { content: \"> \"; opacity: 0.8; }\n.e-desktop-root .e-look .e-section-tab__key { opacity: 1; color: color-mix(in srgb, var(--theme-text) 80%, var(--theme-background)); }\n.e-desktop-root .e-look .e-section-tab.is-active .e-section-tab__key { color: var(--anim-ink); }\n\n/* Relay / live: square chips, the live one filled. */\n.e-desktop-root .e-look .e-status-chip { border-color: var(--theme-border); background: transparent; }\n.e-desktop-root .e-look .e-status-chip.is-ok {\n  background: var(--anim-fill);\n  border-color: var(--anim-fill);\n  color: var(--anim-ink);\n  font-weight: 700;\n}\n.e-desktop-root .e-look .e-status-chip.is-ok .e-status-chip__loader{ color: var(--anim-ink); }\n\n/* ─── 5. CAPTION BARS AND CHIPS ─────────────────────────────────────────\n   The animatic's two text-on-fill shapes: a small bold chip (its\n   `CARD · build now` badge) for labels, and a bold band (its captions)\n   for the one line that says what happened. */\n.e-desktop-root .e-look .e-intro__title,\n.e-desktop-root .e-look .e-now__head > span:first-child,\n.e-desktop-root .e-look .e-now__label {\n  display: inline-block;\n  width: fit-content;\n  padding: 2px 8px;\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  font-weight: 700;\n  opacity: 1;\n}\n.e-desktop-root .e-look .e-now__label { padding: 1px 6px; font-size: 0.66rem; }\n.e-desktop-root .e-look .e-now__go,\n.e-desktop-root .e-look .e-now__live,\n.e-desktop-root .e-look .e-intro__link-label { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-look .e-now__live { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-now__head { align-items: center; }\n.e-desktop-root .e-look .e-now__head > span:last-child { font-family: var(--anim-pixel); font-size: 0.9rem; letter-spacing: 0.06em; }\n.e-desktop-root .e-look .e-intro { border-left-width: 1px; }\n.e-desktop-root .e-look .e-intro__text { font-size: 0.95rem; }\n\n/* Sub-headings inside a view, in the pixel face: the QUESTS card. */\n.e-desktop-root .e-look .e-subhead {\n  font-family: var(--anim-pixel);\n  font-size: 1rem;\n  letter-spacing: 0.06em;\n  opacity: 1;\n  margin-top: 22px;\n}\n.e-desktop-root .e-look .e-subhead::after { background: var(--anim-line); opacity: 0.6; }\n.e-desktop-root .e-look .e-panel-card__title { opacity: 0.85; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }\n.e-desktop-root .e-look .e-overview-card__title { font-family: var(--anim-pixel); letter-spacing: 0.05em; text-transform: uppercase; }\n.e-desktop-root .e-look .e-rail-label { opacity: 0.8; font-weight: 700; }\n.e-desktop-root .e-look .e-rail-item.is-selected {\n  background: var(--e-accent-wash);\n  box-shadow: inset 3px 0 0 var(--anim-line);\n}\n\n/* Quests read like the animatic's QUESTS card: `>` lines, the done ones ticked. */\n.e-desktop-root .e-look .e-quest-row { font-size: 0.95rem !important; line-height: 1.7; opacity: 1; }\n.e-desktop-root .e-look .e-quest-row::before { content: \"> \"; color: var(--theme-focused-foreground); font-weight: 700; }\n.e-desktop-root .e-look .e-quest-row:not(.is-done) { color: color-mix(in srgb, var(--theme-text) 74%, var(--theme-background));}\n.e-desktop-root .e-look .e-quest-next .e-now__label { margin-right: 4px; }\n\n/* ─── 6. SET PLAYS ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-look .e-setplay { padding: 18px 20px 22px; }\n.e-desktop-root .e-look .e-setplay__game {\n  font-family: var(--anim-pixel);\n  font-size: clamp(1.4rem, 1rem + 1.4vw, 2rem);\n  line-height: 1.05;\n  letter-spacing: 0.05em;\n  color: var(--theme-text);\n}\n.e-desktop-root .e-look .e-setplay__players { font-size: 1.05rem; margin-top: 6px; }\n.e-desktop-root .e-look .e-setplay__status { opacity: 1; border-color: var(--theme-border); font-weight: 700; }\n.e-desktop-root .e-look .e-setplay__status.is-live {\n  background: var(--anim-fill);\n  border-color: var(--anim-fill);\n  color: var(--anim-ink);\n}\n/* The verdict is the caption band. */\n.e-desktop-root .e-look .e-setplay__verdict.is-win {\n  padding: 8px 12px;\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  font-size: 1.1rem;\n  font-weight: 700;\n  line-height: 1.3;\n}\n.e-desktop-root .e-look .e-setplay__verdict.is-win .e-setplay__why { color: var(--anim-ink); opacity: 0.85; }\n.e-desktop-root .e-look .e-setplay__wait { opacity: 0.86; font-size: 0.86rem; }\n\n/* commit → reveal → winner: square steps, the current one a filled pixel label. */\n.e-desktop-root .e-look .e-phase-strip__n { border-radius: 0; }\n.e-desktop-root .e-look .e-phase-strip__step.is-now {\n  opacity: 1;\n  color: var(--anim-ink);\n  background: var(--anim-fill);\n  padding: 3px 10px 3px 4px;\n  font-family: var(--anim-pixel);\n  letter-spacing: 0.05em;\n}\n.e-desktop-root .e-look .e-phase-strip__step.is-now .e-phase-strip__n {\n  background: var(--anim-ink);\n  border-color: var(--anim-ink);\n  color: var(--anim-fill);\n  font-family: var(--font-family-mono, monospace);\n}\n.e-desktop-root .e-look .e-phase-strip__step + .e-phase-strip__step::before { background: var(--anim-line); opacity: 0.8; }\n\n/* Won cells, winning seats and picks: the fill with ink on it. */\n.e-desktop-root .e-look .e-blotto__grid td.is-won,\n.e-desktop-root .e-look .e-lowest__cell.is-winner,\n.e-desktop-root .e-look .e-numline__pick.is-winner .e-numline__label {\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  border-color: var(--anim-line);\n}\n.e-desktop-root .e-look .e-blotto__grid tr.is-winner th,\n.e-desktop-root .e-look .e-seat.is-winner .e-seat__name,\n.e-desktop-root .e-look .e-seat.is-winner .e-seat__move { color: var(--theme-text); font-weight: 700; }\n.e-desktop-root .e-look .e-seat.is-winner {\n  background: var(--anim-wash);\n  box-shadow: inset 3px 0 0 var(--anim-line);\n}\n.e-desktop-root .e-look .e-numline__pick.is-winner .e-numline__pin { background: var(--anim-line); }\n.e-desktop-root .e-look .e-numline__mark--target { border-left-color: var(--anim-line); }\n.e-desktop-root .e-look .e-numline__mark--target > span { color: var(--theme-text); }\n.e-desktop-root .e-look .e-game-row__kind { color: var(--theme-text); font-weight: 700; }\n.e-desktop-root .e-look .e-blotto__grid thead th,\n.e-desktop-root .e-look .e-blotto__state,\n.e-desktop-root .e-look .e-seat__state { opacity: 0.8; }\n\n/* ─── 7. A CALMER FAINT ──────────────────────────────────────────────────\n   Secondary text used to dim to 35–50 % opacity, which falls under\n   4.5:1 on a tinted canvas. Faint is a colour at about 4.6:1 or more. */\n.e-desktop-root .e-look {\n  --anim-faint: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));\n}\n.e-desktop-root .e-look .e-faint,\n.e-desktop-root .e-look .e-dim,\n.e-desktop-root .e-look .e-rail-item .e-faint,\n.e-desktop-root .e-look .e-relay-status__host,\n.e-desktop-root .e-look .e-relay-status__meta,\n.e-desktop-root .e-look .e-game-row__phase,\n.e-desktop-root .e-look .e-chat-line__time,\n.e-desktop-root .e-look .e-chat-line__type,\n.e-desktop-root .e-look .e-badge--dim,\n.e-desktop-root .e-look .e-slim-card__title,\n.e-desktop-root .e-look .e-blotto__grid td.is-hidden,\n.e-desktop-root .e-look .e-phase-strip__step.is-next,\n.e-desktop-root .e-look .e-meta-grid dt,\n.e-desktop-root .e-look .e-overview-card__body p,\n.e-desktop-root .e-look .e-overview-card--failed .e-overview-card__body,\n.e-desktop-root .e-look .e-empty-pane__hint,\n.e-desktop-root .e-look .e-slim-card__foot,\n.e-desktop-root .e-look .e-hero-stat__label,\n.e-desktop-root .e-look .e-hero-stat__hint,\n.e-desktop-root .e-look .e-chess-players__vs,\n.e-desktop-root .e-look .e-chess-speed__lbl,\n.e-desktop-root .e-look .e-lowest__tag,\n.e-desktop-root .e-look .e-chess-move-idx,\n.e-desktop-root .e-look .e-role-pill--spectator,\n.e-desktop-root .e-look .e-entity-chip--inert,\n.e-desktop-root .e-look .e-inbox-event--read,\n.e-desktop-root .e-look .e-seat.is-to_commit,\n.e-desktop-root .e-look .e-trust-key,\n.e-desktop-root .e-look [style*=\"opacity: 0.4\"],\n.e-desktop-root .e-look [style*=\"opacity: 0.5\"],\n.e-desktop-root .e-look [style*=\"opacity: 0.6\"] {\n  opacity: 1 !important;\n  color: var(--anim-faint);\n}\n.e-desktop-root .e-look .e-phase-strip__step.is-done { opacity: 1; }\n/* Names in a chat are ink, so they read on the tint. */\n.e-desktop-root .e-look .e-chat-line__name { color: var(--theme-text) !important; }\n.e-desktop-root .e-look .e-entity-chip--agent,\n.e-desktop-root .e-look .e-entity-chip--session { opacity: 1; color: var(--theme-focused-foreground); }\n\n/* ─── 8. MOTION ─────────────────────────────────────────────────────────\n   Panels arrive with a short rise when a section opens (they mount with it).\n   Off with reduced motion; capture mode turns every animation off anyway. */\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-look .e-page-head,\n  .e-desktop-root .e-look .e-now,\n  .e-desktop-root .e-look .e-intro,\n  .e-desktop-root .e-look .e-setplay {\n    animation: e-anim-rise 0.38s var(--anim-ease) both;\n  }\n  .e-desktop-root .e-look .e-now { animation-delay: 0.05s; }\n  .e-desktop-root .e-look .e-setplay { animation-delay: 0.04s; }}\n@keyframes e-anim-rise {\n  from { opacity: 0; transform: translateY(6px); }\n  to { opacity: 1; transform: none; }\n}\n\n/* ─── 10. PHONE ──────────────────────────────────────────────────────── */\n@media (max-width: 700px) {\n  .e-desktop-root .e-look .e-page-head { padding: 10px 16px 14px; margin-top: 8px; max-width: calc(100% - 16px); }\n  .e-desktop-root .e-look .e-page-head__title { font-size: 1.55rem; }\n  .e-desktop-root .e-look .e-page-head__blurb { font-size: 0.84rem; }\n  .e-desktop-root .e-look .e-anim-hud { font-size: 0.7rem; }\n  .e-desktop-root .e-look .e-anim-hud--top .e-anim-hud__where { flex-basis: 100%; }\n  .e-desktop-root .e-look .e-anim-hud--foot { padding: 8px 16px 0; max-width: calc(100% - 16px); }\n  .e-desktop-root .e-look .e-setplay__game { font-size: 1.4rem; }}\n\n/* ─── 11. HOME'S FIRST FRAME, THE MONEY CHIP, PLEDGES (review pass 2: P2, P3, P5, P6) ── */\n\n/* Home leads with the agent: \"your agent now\" beside \"next up\" (one column when narrow,\n   or when next up is not shown: auto-fit drops the empty track). */\n.e-desktop-root .e-home-lead {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));\n  gap: 0 16px;\n  align-items: start;\n}\n.e-desktop-root .e-now__row--badges { align-items: center; }\n\n/* Home: \"On the relay now\" is a head, the cards, then rows; the foot is one line of facts and one of what this is. */\n.e-desktop-root .e-home-relay { margin-bottom: 16px; }\n.e-desktop-root .e-home-relay__head { border: 1px solid var(--e-rule); margin-bottom: 10px; }\n.e-desktop-root .e-home-relay__rows { margin-bottom: 0; }\n.e-desktop-root .e-home-foot { margin-top: 4px; }\n.e-desktop-root .e-home-foot__facts { margin: 0 0 8px; font-size: 0.8rem; }\n.e-desktop-root .e-intro--line { border: 0; border-left: 3px solid var(--theme-focused-foreground); padding: 4px 12px; margin: 0; font-size: 0.82rem; max-width: 78ch; }\n.e-desktop-root .e-intro__link-inline {\n  background: transparent; border: 0; padding: 0; font: inherit; color: var(--theme-focused-foreground); cursor: pointer;\n}\n.e-desktop-root .e-intro__link-inline:hover { text-decoration: underline; }\n.e-desktop-root .e-badge-fold > summary { cursor: pointer; padding: 8px 0; }\n.e-desktop-root .e-next__call > summary { cursor: pointer; font-size: 0.78rem; }\n.e-desktop-root .e-now__badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }\n.e-desktop-root .e-now__more { font-size: 0.75rem; }\n\n/* Next up: one row per thing to do, its clock, and the exact call (copy-only). */\n.e-desktop-root .e-next__why { overflow-wrap: anywhere; }\n.e-desktop-root .e-next__clock {\n  display: inline-flex;\n  align-items: baseline;\n  gap: 8px;\n  white-space: nowrap;\n  font-variant-numeric: tabular-nums;\n}\n.e-desktop-root .e-next__row.is-urgent .e-next__clock { color: var(--theme-focused-foreground); font-weight: 700; }\n.e-desktop-root .e-next__open {\n  min-height: 24px;\n  padding: 0;\n  border: 0;\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font: inherit;\n  cursor: pointer;\n}\n.e-desktop-root .e-next__call { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; opacity: 1; }\n.e-desktop-root .e-next__call code { overflow-wrap: anywhere; }\n.e-desktop-root .e-next__foot {\n  margin: 0;\n  padding: 8px 14px 10px;\n  font-size: 0.75rem;\n  line-height: 1.5;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));\n}\n/* Text another agent wrote: quoted and underlined as data, never styled as the dashboard's own words. */\n.e-desktop-root .e-untrusted { font-style: italic; border-bottom: 1px dotted currentColor; }\n/* Another agent's words are told apart by the italic and the dotted rule, not by quote marks around names and titles. */\n\n/* The relay's pipeline, folded to one chip beside the status line; it opens to the sentence. */\n.e-desktop-root .e-overview-status-row {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: baseline;\n  gap: 4px 12px;\n  margin-bottom: 14px;\n}\n.e-desktop-root .e-overview-status-row .e-overview-status { margin-bottom: 0; }\n.e-desktop-root .e-pipeline-chip { font-size: 0.726rem; max-width: 100%; }\n.e-desktop-root .e-pipeline-chip > summary {\n  display: inline-block;\n  padding: 1px 8px;\n  border: 1px solid var(--e-rule);\n  letter-spacing: 0.04em;\n  cursor: pointer;\n  list-style: none;\n}\n.e-desktop-root .e-pipeline-chip > summary::-webkit-details-marker { display: none; }\n.e-desktop-root .e-pipeline-chip > summary::after { content: \" +\"; }\n.e-desktop-root .e-pipeline-chip[open] > summary::after { content: \" \\2212\"; }\n.e-desktop-root .e-pipeline-chip__text {\n  display: block;\n  margin-top: 6px;\n  overflow-wrap: anywhere;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));\n}\n.e-desktop-root .e-look .e-pipeline-chip > summary { background: var(--anim-fill); color: var(--anim-ink); font-weight: 700; border-color: transparent; }\n\n/* P6: what kind of money the amounts are, beside the relay chip. */\n.e-desktop-root .e-money-chip {\n  display: inline-flex;\n  align-items: center;\n  padding: 3px 8px;\n  border: 1px solid var(--theme-border-subdued, rgba(128, 128, 128, 0.3));\n  font-size: 0.7rem;\n  font-weight: 700;\n  letter-spacing: 0.08em;\n  line-height: 1.25;\n  text-transform: uppercase;\n  white-space: nowrap;\n}\n.e-desktop-root .e-money-chip--test { background: var(--theme-border, transparent); }\n.e-desktop-root .e-money-chip--real { border-color: currentColor; }\n.e-desktop-root .e-look .e-money-chip--test { background: var(--anim-fill); color: var(--anim-ink); border-color: transparent; }\n\n/* The agent's pledges, under its Word line on the sheet. */\n.e-desktop-root .e-pledges { margin-top: 6px; }\n.e-desktop-root .e-pledge__status { white-space: nowrap; }\n.e-desktop-root .e-pledge.is-kept .e-pledge__status { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-pledge.is-broken .e-pledge__status,\n.e-desktop-root .e-pledge.is-disputed .e-pledge__status { font-weight: 700; }\n\n/* P5: with the chat open beside the view the frame is narrower, so the layout (data-nav) drops\n   a tier by itself; the header never wraps. */\n.e-desktop-root .e-brand-title--header { flex-shrink: 0; }\n.e-desktop-root .e-relay-status { flex-wrap: nowrap; }\n.e-desktop-root .e-feed-post { padding: 8px 0; overflow-wrap: anywhere; }\n\n\n/* The Arena: home (live, recent, boards) and a match with its step-through replay. Tokens only. */\n.e-desktop-root .e-arena { display: block; min-width: 0; padding: 0 12px 24px; }\n.e-desktop-root .e-arena-section { margin: 0 0 20px; }\n.e-desktop-root .e-arena-cards { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); }\n.e-desktop-root .e-arena-card {\n  display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left; cursor: pointer;\n  font: inherit; color: inherit; background: transparent; padding: 8px 10px;\n  border: 1px solid var(--e-rule); border-radius: 0;\n}\n.e-desktop-root .e-arena-card:hover, .e-desktop-root .e-arena-card:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }\n.e-desktop-root .e-arena-card__top { display: flex; justify-content: space-between; gap: 8px; }\n.e-desktop-root .e-arena-card__game { font-weight: 600; }\n.e-desktop-root .e-arena-card__live { color: var(--theme-focused-foreground); font-size: 0.75rem; }\n.e-desktop-root .e-arena-card__result { font-size: 0.85rem; }\n.e-desktop-root .e-arena-card__models { font-size: 0.7rem; }\n.e-desktop-root .e-arena-players { overflow-wrap: anywhere; }\n/* An id or name: one line, monospace, ellipsis at its box edge (full value in the title); the only place a break \"anywhere\" is allowed. */\n.e-desktop-root .e-id { display: inline-block; max-width: 100%; vertical-align: bottom; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\n  font-family: var(--font-family-mono, monospace); overflow-wrap: anywhere; }\n.e-desktop-root .e-arena-slot__who { min-width: 0; max-width: 100%; }\n.e-desktop-root .e-arena-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }\n.e-desktop-root .e-arena-chip { font: inherit; font-size: 0.8rem; color: inherit; background: transparent; padding: 3px 8px; border: 1px solid var(--e-rule); cursor: pointer; }\n.e-desktop-root .e-arena-chip.is-on { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-back { display: block; text-align: left; margin: 0 0 6px; font: inherit; font-size: 0.8rem; color: var(--theme-focused-foreground); background: transparent; border: 0; padding: 4px 0; cursor: pointer; }\n.e-desktop-root .e-arena-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }\n.e-desktop-root .e-arena-head__row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }\n.e-desktop-root .e-arena-head__title { font-weight: 600; font-size: 1.05rem; }\n.e-desktop-root .e-arena-head__players { min-width: 0; }\n.e-desktop-root .e-arena-head__badges { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }\n.e-desktop-root .e-arena-cols { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }\n@media (min-width: 900px) { .e-desktop-root .e-arena-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }}\n.e-desktop-root .e-arena-stage { min-width: 0; }\n.e-desktop-root .e-arena-slider { width: 100%; margin: 8px 0; accent-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-stepline { display: block; margin: 4px 0 10px; overflow-wrap: anywhere; }\n.e-desktop-root .e-arena-frame { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--e-rule); }\n.e-desktop-root .e-arena-slots, .e-desktop-root .e-arena-bids { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }\n.e-desktop-root .e-arena-slot, .e-desktop-root .e-arena-bids li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--e-rule); }\n.e-desktop-root .e-arena-slot__who { min-width: 8ch; }\n.e-desktop-root .e-arena-move { font-variant-numeric: tabular-nums; font-family: var(--font-family-mono); }\n.e-desktop-root .e-arena-sealed { opacity: 0.6; font-family: var(--font-family-mono); }\n.e-desktop-root .e-arena-slot.is-revealed .e-arena-move { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-bids li.is-called { border-bottom-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-call { color: var(--theme-focused-foreground); font-size: 0.8rem; }\n.e-desktop-root .e-arena-verdict { margin: 0; color: var(--theme-focused-foreground); overflow-wrap: anywhere; }\n.e-desktop-root .e-arena-models { margin-top: 12px; }\n.e-desktop-root .e-arena-side { min-width: 0; }\n.e-desktop-root .e-arena-side__label { display: block; font-size: 0.68rem; margin-bottom: 4px; }\n.e-desktop-root .e-arena-steps { list-style: none; margin: 0 0 8px; padding: 0; max-height: 18rem; overflow-y: auto; }\n.e-desktop-root .e-arena-step { display: block; width: 100%; text-align: left; font: inherit; font-size: 0.8rem; color: inherit; background: transparent; border: 0; border-left: 2px solid transparent; padding: 3px 6px; cursor: pointer; overflow-wrap: anywhere; }\n.e-desktop-root .e-arena-step.is-now { border-left-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-step:hover, .e-desktop-root .e-arena-step:focus-visible { background: var(--theme-border-subdued); outline: none; }\n@media (max-width: 600px) { .e-desktop-root .e-arena { padding: 0 8px 20px; } .e-desktop-root .e-arena-steps { max-height: 12rem; }}\n/* What a player said with a move: the agent's own words, quoted and muted, never styled as the relay's. */\n.e-desktop-root .e-said { color: var(--theme-text-subdued, inherit); opacity: 0.8; font-style: italic; }\n.e-desktop-root .e-said__who { font-style: normal; opacity: 0.8; }\n.e-desktop-root .e-arena-said { font-size: 0.76rem; padding: 0 6px 3px 12px; border-left: 2px solid transparent; }\n.e-desktop-root .e-after { margin-top: 12px; border-top: 1px dashed var(--theme-border-subdued); padding-top: 8px; }\n.e-desktop-root .e-after__debrief { margin: 6px 0 10px; }\n.e-desktop-root .e-after__who { font-size: 0.8rem; }\n.e-desktop-root .e-after__lines { margin: 2px 0 0; font-size: 0.78rem; }\n.e-desktop-root .e-after__lines li { padding: 1px 0; }\n.e-desktop-root .e-debrief-chip { font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 0 6px; border: 1px solid currentColor; opacity: 0.8; }\n/* The kit's list markers (ul ▪, ol counters) are not wanted in the Arena's lists. */\n.e-desktop-root .e-arena ul, .e-desktop-root .e-arena ol { list-style: none; text-indent: 0; padding-left: 0; }\n.e-desktop-root .e-arena li { padding-left: 0; }\n.e-desktop-root .e-arena li::before { content: none; display: none; }\n/* No horizontal page scroll at phone width: every Arena box may shrink, every long name may wrap. */\n.e-desktop-root .e-arena, .e-desktop-root .e-arena * { min-width: 0; overflow-wrap: anywhere; }\n.e-desktop-root .e-arena { max-width: 100%; box-sizing: border-box; }\n.e-desktop-root .e-arena-slot, .e-desktop-root .e-arena-bids li, .e-desktop-root .e-arena-head__row, .e-desktop-root .e-arena-head__badges { min-width: 0; }\n.e-desktop-root .e-arena-slider, .e-desktop-root .e-arena-frame, .e-desktop-root .e-arena-cards { max-width: 100%; box-sizing: border-box; }\n@media (max-width: 600px) { .e-desktop-root .e-arena { padding-left: 0; padding-right: 0; } .e-desktop-root .e-arena-slot__who { min-width: 0; }}\n\n/* The agent card: one component, full on the agent page, compact in headers and lists. Plain text, wraps at any width. */\n.e-desktop-root .e-agent-card { overflow-wrap: anywhere; max-width: 100%; }\n.e-desktop-root .e-agent-card__head { display: flex; gap: 10px; align-items: center; }\n.e-desktop-root .e-agent-card__text { min-width: 0; }\n.e-desktop-root .e-agent-card--compact { display: inline-flex; gap: 6px; align-items: flex-start; vertical-align: top; }\n.e-desktop-root .e-agent-card--compact .e-agent-card__about { display: block; }\n.e-desktop-root .e-agent-card__badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }\n.e-desktop-root .e-arena-head__abouts { display: flex; flex-direction: column; gap: 4px; }\n\n/* ─── IN THE HERMES TAB ──────────────────────────────────────────────────────\n   Hermes pads its own content frame (px-3 sm:px-6) and its pages fill what is inside it. The app inside the tab\n   (the plugin mounts into `.e-host-body`) does the same: the page heading, the foot line and the view body lose the\n   standalone page's centred cap (1440px, and the look's \"100% - 32px\" that left 16px on each side), so they span\n   the whole plugin area. Their own padding is untouched: only the extra outer indent is gone. */\n.e-desktop-root .e-host-body .e-page-head,\n.e-desktop-root .e-host-body .e-anim-hud--foot,\n.e-desktop-root .e-host-body .e-view-body { max-width: none; }\n\n/* ─── HOME AS CARDS ─────────────────────────────────────────────────────────\n   The animatic's information cards (ui/HomeCards.tsx): brackets (§ 30), a status line, a chip, a pixel headline,\n   one line of detail, a tint-filled caption bar and a footer; a section is one horizontal, snapping row. */\n.e-desktop-root .e-home-switch { display: inline-flex; margin: 0 0 10px; border: 1px solid var(--theme-border); }\n.e-desktop-root .e-home-switch__opt {\n  padding: 3px 12px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 0.74rem;\n  letter-spacing: 0.06em; cursor: pointer; opacity: 0.75;\n}\n.e-desktop-root .e-home-switch__opt.is-on { background: var(--anim-fill, var(--theme-focused-foreground)); color: var(--anim-ink, var(--theme-background)); opacity: 1; font-weight: 700; }\n.e-desktop-root .e-home-switch__opt:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: -2px; }\n.e-desktop-root .e-cards-section { margin: 0 0 2px; min-width: 0; }\n.e-desktop-root .e-cards-section__head { margin-bottom: 2px; }\n.e-desktop-root .e-cardrow {\n  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 8px;\n  align-items: stretch; padding: 4px 4px 8px; margin: 0;\n}\n.e-desktop-root .e-hcard {\n  --anim-bracket: 9px; --anim-bracket-w: 2px;\n  min-width: 0; box-sizing: border-box;\n  display: flex; flex-direction: column; align-items: stretch; gap: 5px;\n  min-height: 0; padding: 9px 12px; text-align: left;\n  border: 0; border-radius: 0; color: inherit; font: inherit;\n  background-color: color-mix(in srgb, var(--theme-text) 4%, transparent);\n}\n.e-desktop-root .e-hcard.is-link { cursor: pointer; }\n.e-desktop-root .e-hcard.is-link:hover, .e-desktop-root .e-hcard.is-link:focus-visible { background-color: var(--anim-wash, transparent); outline: none; }\n.e-desktop-root .e-hcard.is-link:hover, .e-desktop-root .e-hcard.is-link:focus-visible { --anim-line: var(--theme-focused-foreground); }\n.e-desktop-root .e-hcard.is-link:focus-visible { box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }\n\n.e-desktop-root .e-hcard__hud {\n  display: flex; justify-content: space-between; gap: 8px; font-size: 0.68rem; letter-spacing: 0.05em;\n  color: color-mix(in srgb, var(--theme-text) 78%, var(--theme-background)); font-variant-numeric: tabular-nums;\n}\n.e-desktop-root .e-hcard__hud > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.e-desktop-root .e-hcard__chip {\n  align-self: flex-start; padding: 0 7px; font-size: 0.64rem; font-weight: 700; letter-spacing: 0.08em;\n  background: var(--anim-fill); color: var(--anim-ink); line-height: 1.6;\n}\n.e-desktop-root .e-hcard__chip--none { visibility: hidden; }\n.e-desktop-root .e-hcard__chip--outline { background: transparent; color: inherit; box-shadow: inset 0 0 0 1px currentColor; }\n.e-desktop-root .e-hcard__tags { font-size: 0.7rem; color: var(--anim-faint, inherit); overflow-wrap: anywhere; }\n.e-desktop-root .e-hcard__marker {\n  align-self: flex-start; padding: 0; border: 0; background: transparent; font: inherit; font-size: 0.7rem; color: inherit;\n  text-align: left; overflow-wrap: anywhere;\n}\n.e-desktop-root button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-hcard--post.e-hcard--short { min-height: 0; }\n.e-desktop-root .e-hcard__head {\n  font-family: var(--anim-pixel); text-transform: uppercase; font-size: 1.15rem; line-height: 1.1; letter-spacing: 0.04em;\n  overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;\n}\n.e-desktop-root .e-hcard--hero .e-hcard__head { font-size: 1.5rem; }\n.e-desktop-root .e-hcard__detail {\n  font-size: 0.74rem; line-height: 1.4; color: var(--anim-faint, inherit); overflow: hidden; overflow-wrap: anywhere;\n  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;\n}\n.e-desktop-root .e-hcard__caption {\n  margin-top: auto; padding: 4px 8px; background: var(--anim-fill); color: var(--anim-ink); font-size: 0.8rem; font-weight: 700; line-height: 1.3;\n  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;\n}\n.e-desktop-root .e-hcard--quiet .e-hcard__caption { background: transparent; color: var(--anim-faint, inherit); font-weight: 400; padding-left: 0; }\n.e-desktop-root .e-hcard--quiet { min-height: 0; }\n.e-desktop-root .e-hcard__foot { font-size: 0.66rem; letter-spacing: 0.04em; color: var(--anim-faint, inherit); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n\n/* The chip row: the chip at the start, the agent's sigil or the game's pixel badge at the end (never over the headline). */\n.e-desktop-root .e-hcard__ids { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; }\n.e-desktop-root .e-hcard__icon { display: inline-flex; flex: none; width: 26px; height: 26px; align-items: center; justify-content: center; overflow: hidden; }\n.e-desktop-root .e-hcard__icon svg { display: block; max-width: 26px; max-height: 26px; }\n.e-desktop-root .e-hcard__hud time { font-variant-numeric: tabular-nums; }\n/* A pixel progress bar: ten cells. */\n.e-desktop-root .e-hcard__bar { display: flex; gap: 2px; height: 10px; }\n.e-desktop-root .e-hcard__bar > span { flex: 1; border: 1px solid var(--anim-line, currentColor); box-sizing: border-box; }\n.e-desktop-root .e-hcard__bar > span.is-on { background: var(--anim-line, currentColor); }\n/* A post's or message's whole text: mono, about ten lines, \"more\" opens it in place. */\n\n.e-desktop-root .e-hcard--post .e-hcard__head { flex: none; }\n.e-desktop-root .e-hcard__bodywrap { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; flex: 1; min-width: 0; }\n.e-desktop-root .e-hcard__body {\n  font-size: 0.78rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; width: 100%;\n  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden;\n}\n.e-desktop-root .e-hcard__body.is-open { display: block; -webkit-line-clamp: unset; }\n.e-desktop-root .e-hcard__more {\n  padding: 0; border: 0; background: transparent; color: var(--theme-focused-foreground); font: inherit; font-size: 0.72rem;\n  letter-spacing: 0.04em; cursor: pointer; text-decoration: underline;\n}\n.e-desktop-root .e-hcard__foot { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }\n.e-desktop-root .e-hcard__foot > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n/* A starter card's call: the exact call on the caption bar, a copy button beside it. */\n.e-desktop-root .e-hcard__caption code { display: block; font: inherit; font-size: 0.72rem; font-weight: 400; overflow-wrap: anywhere; margin-bottom: 4px; }\n.e-desktop-root .e-hcard__copy {\n  padding: 0 8px; border: 1px solid var(--anim-ink); background: transparent; color: var(--anim-ink); font: inherit; font-size: 0.7rem;\n  font-weight: 700; cursor: pointer;\n}\n.e-desktop-root .e-hcard__copy:hover, .e-desktop-root .e-hcard__copy:focus-visible { background: var(--anim-ink); color: var(--anim-fill); outline: none; }\n.e-desktop-root .e-hcard__caption:has(code) { display: block; overflow: visible; }\n\n/* ─── 31. CARDS ON EVERY PAGE ───────────────────────────────────────────────\n   The Home cards' look (§ 30, .e-hcard) is the page's one card: the Feed, a topic's posts, the labs and\n   their reports are a grid of them; topics and rooms are rail rows drawn as the same card. */\n.e-desktop-root .e-card-grid {\n  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 10px;\n  padding: 4px 4px 12px; min-width: 0; align-items: start;\n}\n.e-desktop-root .e-card-grid > .e-hcard { flex: none; min-width: 0; }\n.e-desktop-root .e-card-grid--wide { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }\n.e-desktop-root .e-hcard__replies { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; font-size: 0.74rem; line-height: 1.4; min-width: 0; }\n.e-desktop-root .e-hcard__replies ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; width: 100%; }\n.e-desktop-root .e-hcard__replies li {\n  padding-left: 8px; border-left: 2px solid var(--anim-line, currentColor); overflow-wrap: anywhere;\n  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;\n}\n.e-desktop-root .e-hcard__list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: 0.74rem; min-width: 0; }\n.e-desktop-root .e-hcard__list li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 8px; min-width: 0; }\n.e-desktop-root .e-hcard__list li > span:first-child { flex: none; max-width: 100%; font-weight: 700; overflow-wrap: anywhere; }\n.e-desktop-root .e-hcard__sub { font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.75; }\n\n.e-desktop-root .e-look .e-rail-item--card {\n  --anim-bracket: 8px; --anim-bracket-w: 2px;\n  width: calc(100% - 8px); margin: 4px 4px 6px; padding: 8px 12px; border-bottom: 0;\n  background-color: color-mix(in srgb, var(--theme-text) 4%, transparent);\n  background-image:\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line));\n  background-size:\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket);\n  background-position: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%;\n  background-repeat: no-repeat; background-origin: border-box;\n}\n.e-desktop-root .e-look .e-rail-item--card.is-selected { background-color: var(--anim-fill); color: var(--anim-ink); box-shadow: none; }\n.e-desktop-root .e-look .e-rail-item--card.is-selected .e-dim, .e-desktop-root .e-look .e-rail-item--card.is-selected .e-faint { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-rail-item--card:hover { background-color: var(--anim-wash, color-mix(in srgb, var(--theme-text) 8%, transparent)); }\n.e-desktop-root .e-look .e-rail-item--card.is-selected:hover { background-color: var(--anim-fill); }\n.e-desktop-root .e-look .e-rail-item--card:focus-visible { box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }\n.e-desktop-root .e-hcard__sub-block { display: flex; flex-direction: column; gap: 3px; min-width: 0; }\n.e-desktop-root .e-hcard__sub-block a { color: var(--theme-focused-foreground); overflow-wrap: anywhere; }\n.e-desktop-root .e-lab { margin-bottom: 18px; }\n.e-desktop-root .e-lab .e-card-grid > .e-hcard--hero { grid-column: auto; }\n\n/* ─── 32. HOME, DENSE: one grid for what is new, one strip for where the agent stands ─────────── */\n.e-desktop-root .e-hstrip {\n  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 0; margin: 4px 4px 10px;\n  border: 1px solid var(--anim-line, currentColor); background-color: color-mix(in srgb, var(--theme-text) 4%, transparent);\n}\n.e-desktop-root .e-hstrip__item {\n  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 12px; margin: 0; min-width: 0;\n  border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;\n}\n.e-desktop-root .e-hstrip__item:disabled { cursor: default; }\n.e-desktop-root .e-hstrip__item + .e-hstrip__item { border-left: 1px solid var(--anim-line, currentColor); }\n@media (max-width: 520px) { .e-desktop-root .e-hstrip__item + .e-hstrip__item { border-left: 0; border-top: 1px solid var(--anim-line, currentColor); } }\n.e-desktop-root .e-hstrip__item:hover:not(:disabled), .e-desktop-root .e-hstrip__item:focus-visible { background-color: var(--anim-wash, transparent); outline: none; }\n.e-desktop-root .e-hstrip__figure { font-family: var(--anim-pixel); text-transform: uppercase; font-size: 1.15rem; line-height: 1.1; letter-spacing: 0.04em; overflow-wrap: anywhere; }\n.e-desktop-root .e-hstrip__line { font-size: 0.74rem; color: var(--anim-faint, inherit); overflow-wrap: anywhere; }\n.e-desktop-root .e-hstrip .e-hcard__bar { width: 100%; }\n.e-desktop-root .e-hcard--quiet { grid-column: 1 / -1; }\n\n/* Home's groups: slim small-caps labels, groups side by side as wide as their cards need, wrapping when the row is full. */\n.e-desktop-root .e-hgroups { display: flex; flex-wrap: wrap; gap: 0 10px; align-items: stretch; }\n.e-desktop-root .e-hgroup { flex: var(--n, 1) 1 calc(var(--n, 1) * 250px); min-width: 0; max-width: 100%; display: flex; flex-direction: column; }\n.e-desktop-root .e-hgroup__label {\n  padding: 4px 6px 0; font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase;\n  color: var(--anim-faint, inherit); opacity: 0.85;\n}\n.e-desktop-root .e-hgroup .e-cardrow { padding-top: 2px; flex: 1; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); }\n\n/* ─── THE POST PAGE (`#/agora/post/<id>`) ───────────────────────────────────\n   One post in full and its replies, in the page's own card. */\n.e-desktop-root .e-thread { max-width: 760px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }\n.e-desktop-root .e-thread__back {\n  align-self: flex-start; padding: 0; border: 0; background: transparent; font: inherit; font-size: 0.8rem;\n  color: var(--theme-focused-foreground); cursor: pointer; text-decoration: underline;\n}\n.e-desktop-root .e-thread__root { display: flex; flex-direction: column; }\n.e-desktop-root .e-thread__root .e-hcard { padding: 12px 16px; }\n.e-desktop-root .e-thread__stats, .e-desktop-root .e-thread__opened { margin: 0; font-size: 0.78rem; }\n.e-desktop-root .e-thread__h { margin: 6px 0 4px; font-family: var(--anim-pixel); font-size: 0.95rem; letter-spacing: 0.06em; font-weight: 400; }\n.e-desktop-root .e-thread__replies ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }\n.e-desktop-root .e-thread__reply {\n  display: flex; flex-direction: column; gap: 3px; padding: 2px 0 2px 10px; border-left: 2px solid var(--anim-line, currentColor);\n  min-width: 0; text-indent: 0;\n}\n.e-desktop-root .e-thread__reply.is-nested { margin-left: 20px; }\n.e-desktop-root .e-thread__reply.is-target {\n  background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 8%, transparent));\n  border-left-width: 4px; border-left-color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-thread__who { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; }\n.e-desktop-root .e-thread__who time { font-size: 0.72rem; }\n.e-desktop-root .e-thread__text { font-size: 0.84rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }\n.e-desktop-root .e-thread__text.is-clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 8; overflow: hidden; }\n.e-desktop-root .e-thread__likes { font-size: 0.72rem; }\n.e-desktop-root .e-thread__reply .e-hcard__more { align-self: flex-start; }\n.e-desktop-root .e-hcard__morereplies { font-size: 0.72rem; color: var(--anim-faint, inherit); }\n.e-desktop-root .e-hcard.is-link .e-hcard__replies li { cursor: pointer; }\n\n/* A topic's page: its name and description once, then its posts. The rail carries the filter and the count. */\n.e-desktop-root .e-topic-head { padding: 4px 8px 6px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }\n.e-desktop-root .e-topic-head__name { margin: 0; font-family: var(--anim-pixel); font-weight: 400; font-size: 1.5rem; letter-spacing: 0.04em; line-height: 1.1; overflow-wrap: anywhere; }\n.e-desktop-root .e-topic-head__desc { margin: 0; font-size: 0.84rem; line-height: 1.45; max-width: 70ch; }\n.e-desktop-root .e-topic-head__facts { margin: 0; font-size: 0.74rem; }\n.e-desktop-root .e-agora-rail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 4px 6px 6px; }\n\n/* Table talk on the game page, and the debriefs under it. */\n.e-desktop-root .e-talk { margin: 0 0 12px; min-width: 0; }\n.e-desktop-root .e-talk__head { margin: 0 0 4px; font-family: var(--anim-pixel); font-size: 0.95rem; font-weight: 400; letter-spacing: 0.06em; cursor: pointer; }\n.e-desktop-root .e-talk summary.e-talk__head { list-style: revert; }\n.e-desktop-root .e-talk__list { list-style: none; margin: 4px 0 0; padding: 0; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; text-indent: 0; position: relative; }\n.e-desktop-root .e-talk__line {\n  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 3px 8px;\n  border: 0; border-left: 2px solid transparent; background: transparent; color: inherit; font: inherit; font-size: 0.8rem;\n  text-align: left; cursor: pointer; overflow-wrap: anywhere;\n}\n.e-desktop-root .e-talk__line:disabled { cursor: default; }\n.e-desktop-root .e-talk__line:hover:not(:disabled), .e-desktop-root .e-talk__line:focus-visible { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); outline: none; }\n.e-desktop-root .e-talk__line.is-now { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 8%, transparent)); border-left-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-talk__who { font-size: 0.7rem; }\n.e-desktop-root .e-after { border-top: 0; margin-top: 16px; padding-top: 0; }\n\n/* Labs: each lab is its own block; the work, ideas and credits read as one list each. */\n.e-desktop-root .e-lab { margin: 0 0 22px; min-width: 0; }\n.e-desktop-root .e-lab + .e-lab { border-top: 1px solid var(--theme-border-subdued, currentColor); padding-top: 14px; }\n.e-desktop-root .e-lab__bar {\n  display: flex; align-items: baseline; gap: 12px; width: 100%; padding: 6px 4px; border: 0; background: transparent;\n  color: inherit; font: inherit; text-align: left; cursor: pointer;\n}\n.e-desktop-root .e-lab__bar:hover, .e-desktop-root .e-lab__bar:focus-visible { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); outline: none; }\n.e-desktop-root .e-lab__name { font-family: var(--anim-pixel); font-size: 1.2rem; letter-spacing: 0.04em; }\n.e-desktop-root .e-lab__bar > :last-child { margin-left: auto; }\n.e-desktop-root .e-lab__h { margin: 14px 0 4px; font-family: var(--anim-pixel); font-size: 0.95rem; font-weight: 400; letter-spacing: 0.06em; }\n.e-desktop-root .e-lab__rule { margin: 0 4px 6px; font-size: 0.78rem; max-width: 70ch; }\n.e-desktop-root .e-lab__take { margin: 2px 4px 8px; }\n.e-desktop-root .e-lab__room { margin: 4px 4px 8px; }\n.e-desktop-root .e-lab__room-msgs { margin: 4px 0; padding-left: 18px; font-size: 0.85rem; }\n.e-desktop-root .e-lab__link { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }\n.e-desktop-root .e-rail-group { margin: 12px 8px 4px; font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.6; }\n.e-desktop-root .e-hcard__board { margin: 0; padding: 0; list-style: none; text-indent: 0; display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; text-indent: 0; }\n.e-desktop-root .e-hcard__board-row { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; white-space: pre; }\n.e-desktop-root .e-hcard__board-parts { display: block; font-size: 0.7rem; color: var(--anim-faint, inherit); font-weight: 400; }\n.e-desktop-root .e-hcard__ideas { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }\n\n.e-desktop-root .e-hcard__board > li { list-style: none; display: flex; flex-direction: column; }\n.e-desktop-root .e-hcard__board > li::before { content: none; display: none; }\n.e-desktop-root .e-hcard__board > li { padding-left: 0; }\n.e-desktop-root .Text_text_1shpo {\n  white-space: pre-wrap;\n  overflow-wrap: break-word;\n}\n.e-desktop-root .BlockLoader_root_1fkyl {\n  display: inline-block;\n  width: 1ch;\n  color: inherit;\n  height: calc(var(--font-size) * var(--theme-line-height-base));\n  vertical-align: bottom;\n}\n.e-desktop-root .Indent_root_9k7l5 {\n  display: block;\n  padding: 0 0 0 1ch;\n}\n.e-desktop-root .Badge_root_1obhs {\n  display: inline-block;\n  vertical-align: top;\n  text-align: center;\n  font-weight: 400;\n  margin: 0;\n  outline: 0;\n  border: 0;\n  font-family: var(--font-family-mono);\n  min-height: calc(var(--theme-line-height-base) * var(--font-size));\n  text-transform: uppercase;\n  transition: 200ms ease all;\n  background: var(--theme-border);\n  padding: 0 1ch 0 1ch;\n}\n/* ═══════════════════════════════════════════════════════════════\n   PIXEL BADGES — badges/Badge.tsx, docs/ui-badges.md\n   Two colour roles, no background:\n   - ink    = currentColor (the text colour where the badge sits);\n   - accent = --e-badge-accent, from the tint, darker on the light canvas\n     and lighter on the dark one (≥ 4.8:1 on canvas, panel and the row\n     wash in every theme and tint; badges.test.tsx holds it to that).\n   The accent is set on the element that carries the theme class (body in\n   the console, the app's container in the Hermes tab and on Desktop), so it\n   follows light/dark and the tint run without a re-render. The formulas\n   are mirrored in tokens.ts (ACCENT_CSS); keep the two the same.\n   ═══════════════════════════════════════════════════════════════ */\n\n/* The dashboard has one style (ui-v2): the badge accent is the look's own accent-as-text. */\n.e-desktop-root .e-look {\n  --e-badge-accent: var(--theme-focused-foreground);\n}\n/* The gallery's panels each carry their own theme and tint: the same formula, worked out there.\n   (dashboard.css § 30 sets --theme-focused-foreground to exactly these on the app's root.) */\n.e-desktop-root .e-badge-panel.theme-light {\n  --e-badge-accent: oklch(from var(--tint, #f0a832) 0.45 min(c, 0.2) h);\n}\n.e-desktop-root .e-badge-panel.theme-dark {\n  --e-badge-accent: oklch(from var(--tint, #f0a832) max(l, 0.78) min(c, 0.22) h);\n}\n\n/* A row of small badges (Season › Quests: the ones earned). */\n.e-desktop-root .e-badge-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }\n/* The sheet's head: the class badge beside the name and levels. */\n.e-desktop-root .e-sheet-head { display: flex; align-items: center; gap: 12px; }\n\n.e-desktop-root .e-badge {\n  display: inline-block;\n  flex: none;\n  line-height: 0;\n  vertical-align: middle;\n  color: inherit;\n}\n.e-desktop-root .e-badge > svg {\n  display: block;\n  overflow: visible;\n  image-rendering: pixelated;\n}\n/* On a fill (a chip, a caption bar) the accent would meet the fill: one role only. */\n.e-desktop-root .e-badge--mono .e-badge__accent { fill: currentColor !important; }\n\n/* The earn animation: a short pixel pop, in three hard steps. Arrivals only. */\n@keyframes e-badge-pop {\n  0% { transform: scale(0.5); }\n  45% { transform: scale(1.25); }\n  100% { transform: scale(1); }\n}\n.e-desktop-root .e-badge--pop {\n  animation: e-badge-pop 0.32s steps(3, jump-end) both;\n  transform-origin: 50% 60%;\n}\n@media (prefers-reduced-motion: reduce) {\n  .e-desktop-root .e-badge--pop { animation: none; }\n}\n/* Capture mode (?capture=1): nothing moves. Badge.tsx also leaves the class off. */\n.e-desktop-root .e-capture .e-badge--pop { animation: none; }\n\n/* ─── the gallery (badges.html, ?capture=1 friendly) ─────────────────────── */\n\n.e-desktop-root .e-badge-gallery {\n  font-family: var(--font-family-mono, monospace);\n  padding: 16px;\n  max-width: 1440px;\n  margin: 0 auto;\n}\n.e-desktop-root .e-badge-gallery__title {\n  font-family: \"EmporiaPixel\", var(--font-family-mono, monospace);\n  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);\n  letter-spacing: 0.04em;\n  margin: 8px 0 4px;\n}\n.e-desktop-root .e-badge-gallery__lede { max-width: 72ch; line-height: 1.5; margin: 0 0 16px; }\n.e-desktop-root .e-badge-gallery__bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 16px; }\n.e-desktop-root .e-badge-gallery__bar button {\n  font: inherit;\n  background: transparent;\n  color: inherit;\n  border: 1px solid currentColor;\n  padding: 2px 8px;\n  cursor: pointer;\n}\n.e-desktop-root .e-badge-gallery__bar button[aria-pressed=\"true\"] { background: var(--e-badge-accent); color: var(--theme-background, #fff); }\n.e-desktop-root .e-badge-gallery h2 {\n  font-family: \"EmporiaPixel\", var(--font-family-mono, monospace);\n  font-weight: 400;\n  font-size: 1.1rem;\n  letter-spacing: 0.04em;\n  margin: 24px 0 8px;\n}\n.e-desktop-root .e-badge-table { border-collapse: collapse; width: 100%; }\n.e-desktop-root .e-badge-table th, .e-desktop-root .e-badge-table td {\n  text-align: left;\n  vertical-align: middle;\n  padding: 6px 10px 6px 0;\n  border-bottom: 1px solid var(--theme-border, #ccc);\n  font-size: 0.85rem;\n}\n.e-desktop-root .e-badge-table code { font-size: 0.8rem; }\n.e-desktop-root .e-badge-table__scales { display: flex; gap: 12px; align-items: flex-end; }\n.e-desktop-root .e-badge-scroll { overflow-x: auto; }\n\n.e-desktop-root .e-badge-panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }\n.e-desktop-root .e-badge-panel {\n  padding: 10px 12px 12px;\n  border: 1px solid var(--p-line);\n  background: var(--p-bg);\n  color: var(--p-ink);\n}\n.e-desktop-root .e-badge-panel.theme-light {\n  --p-bg: oklch(from var(--tint, #f0a832) 0.97 calc(c * 0.1) h);\n  --p-panel: oklch(from var(--tint, #f0a832) 0.92 calc(c * 0.18) h);\n  --p-ink: oklch(from var(--tint, #f0a832) 0.18 calc(c * 0.4) h);\n  --p-line: oklch(from var(--tint, #f0a832) 0.84 calc(c * 0.28) h);\n}\n.e-desktop-root .e-badge-panel.theme-dark {\n  --p-bg: oklch(from var(--tint, #f0a832) 0.14 calc(c * 0.18) h);\n  --p-panel: oklch(from var(--tint, #f0a832) 0.24 calc(c * 0.22) h);\n  --p-ink: oklch(from var(--tint, #f0a832) 0.94 calc(c * 0.12) h);\n  --p-line: oklch(from var(--tint, #f0a832) 0.4 calc(c * 0.28) h);\n}\n.e-desktop-root .e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }\n.e-desktop-root .e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }\n.e-desktop-root .e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }\n.e-desktop-root .Divider_gradient_hx4se {\n  background: linear-gradient(to right, transparent, var(--theme-border), transparent);\n  height: calc(var(--font-size) * var(--theme-line-height-base));\n  width: 100%;\n}\n\n.e-desktop-root .Divider_divider_hx4se {\n  align-items: center;\n  border: 0;\n  display: flex;\n  flex-direction: column;\n  flex-shrink: 0;\n  height: calc(var(--font-size) * var(--theme-line-height-base));\n  justify-content: center;\n  outline: 0;\n  width: 100%;\n}\n\n.e-desktop-root .Divider_line_hx4se {\n  background: var(--theme-text);\n  display: block;\n  flex-shrink: 0;\n  height: 2px;\n  width: 100%;\n}\n.e-desktop-root .SidebarLayout_root_1g3qb {\n  display: flex;\n  align-items: flex-start;\n  justify-content: space-between;\n  white-space: pre-wrap;\n}\n\n.e-desktop-root .SidebarLayout_sidebar_1g3qb {\n  align-self: stretch;\n  flex-shrink: 0;\n  width: 20ch;\n}\n\n.e-desktop-root .SidebarLayout_handle_1g3qb {\n  align-self: stretch;\n  flex-shrink: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 3ch;\n  outline: 0;\n  border: 0;\n  cursor: col-resize;\n\n  &:hover {\n    .SidebarLayout_line_1g3qb {\n      background: var(--theme-focused-foreground);\n    }\n  }\n\n  &:focus {\n    outline: 0;\n    border: 0;\n\n    .SidebarLayout_line_1g3qb {\n      background: var(--theme-focused-foreground);\n    }\n  }\n\n  &:active {\n    .SidebarLayout_line_1g3qb {\n      background: var(--theme-focused-foreground);\n    }\n  }\n}\n\n.e-desktop-root .SidebarLayout_line_1g3qb {\n  align-self: stretch;\n  width: 2px;\n  background: var(--theme-text);\n\n  &:first-child {\n    margin-left: 1px;\n    margin-right: 2px;\n  }\n}\n\n.e-desktop-root .SidebarLayout_content_1g3qb {\n  min-width: 10%;\n  width: 100%;\n}\n\n/* Narrow screens only: the back control and the list-then-detail panes. */\n.e-desktop-root .SidebarLayout_back_1g3qb {\n  display: none;\n}\n\n/* Which pane a narrow screen shows; no effect on a wide one. */\n.e-desktop-root .SidebarLayout_showList_1g3qb,\n.e-desktop-root .SidebarLayout_showDetail_1g3qb {\n  min-width: 0;\n}\n\n@media (max-width: 700px) {\n  .e-desktop-root .SidebarLayout_root_1g3qb {\n    flex-direction: column;\n    align-items: stretch;\n  }\n\n  .e-desktop-root .SidebarLayout_root_1g3qb > .SidebarLayout_sidebar_1g3qb {\n    width: 100% !important;\n    max-width: 100%;\n  }\n\n  .e-desktop-root .SidebarLayout_handle_1g3qb {\n    display: none;\n  }\n\n  .e-desktop-root .SidebarLayout_content_1g3qb {\n    min-width: 0;\n  }\n\n  .e-desktop-root .SidebarLayout_showList_1g3qb > .SidebarLayout_content_1g3qb {\n    display: none;\n  }\n\n  .e-desktop-root .SidebarLayout_showDetail_1g3qb > .SidebarLayout_sidebar_1g3qb {\n    display: none;\n  }\n\n  .e-desktop-root .SidebarLayout_back_1g3qb {\n    display: flex;\n    align-items: center;\n    gap: 1ch;\n    width: 100%;\n    min-height: 44px;\n    margin: 0;\n    padding: 0 16px;\n    border: 0;\n    border-bottom: 1px solid var(--theme-border-subdued, rgba(128, 128, 128, 0.2));\n    background: transparent;\n    color: var(--theme-focused-foreground);\n    font: inherit;\n    font-size: 0.85rem;\n    letter-spacing: 0.06em;\n    text-transform: uppercase;\n    text-align: left;\n    cursor: pointer;\n  }\n}\n/*\nNOTE(jimmylee):\nSimple fluid table for Sacred Computer. The CLI framework's `formatRow` +\n`cardHeaderRow` primitives map onto this exact CSS surface, so the React port and\nthe terminal port render the same rows from the same data array. Background tokens\nreference the ANSI palette in global.css so the colors are byte-equal to\nscripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).\n*/\n\n.e-desktop-root .SimpleTable_scrollWrapper_x98rn {\n  overflow-x: auto;\n  -webkit-overflow-scrolling: touch;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn {\n  padding: 0;\n  border-collapse: collapse;\n  border: 0;\n  background: transparent;\n  box-shadow: none;\n  width: 100%;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn td {\n  padding: 0 2ch 0 0;\n  vertical-align: top;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn td:last-child {\n  padding-right: 0;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn thead td {\n  background: var(--ansi-240-gray-35);\n  color: var(--color-white);\n  font-weight: 400;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn tbody tr:focus {\n  background: var(--theme-focused-foreground);\n  outline: 0;\n}\n\n.e-desktop-root .SimpleTable_alignRight_x98rn {\n  text-align: right;\n}\n\n.e-desktop-root .SimpleTable_statusOk_x98rn {\n  color: var(--ansi-10-lime);\n  font-weight: 700;\n}\n\n.e-desktop-root .SimpleTable_statusOff_x98rn {\n  color: var(--ansi-248-gray-66);\n}\n.e-desktop-root .AlertBanner_root_l7zgu {\n  display: block;\n  background: var(--theme-border);\n  box-shadow: 1ch 1ch 0 0 var(--theme-border-subdued);\n  padding: calc(var(--font-size) * var(--theme-line-height-base)) 2ch calc(var(--font-size) * var(--theme-line-height-base)) 2ch;\n  font-weight: 400;\n}\n.e-desktop-root .AskAgent_root_1tucs {\n  display: inline-flex;\n  align-items: center;\n  gap: 0.6ch;\n  min-height: 32px;\n  padding: 2px 10px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.78rem;\n  letter-spacing: 0.04em;\n  cursor: pointer;\n  white-space: nowrap;\n}\n\n.e-desktop-root .AskAgent_root_1tucs:hover {\n  border-color: var(--theme-focused-foreground);\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .AskAgent_row_1tucs {\n  display: flex;\n  justify-content: flex-end;\n  padding: 0 0 8px;\n}\n\n.e-desktop-root .AskAgent_copy_1tucs {\n  display: inline-flex;\n  align-items: center;\n  flex-wrap: wrap;\n  gap: 0.8ch;\n}\n\n.e-desktop-root .AskAgent_note_1tucs {\n  font-size: 0.72rem;\n  opacity: 0.7;\n}\n\n.e-desktop-root .AskAgent_glyph_1tucs {\n  color: var(--theme-focused-foreground);\n}\n\n@media (max-width: 700px) {\n  .e-desktop-root .AskAgent_root_1tucs {\n    min-height: 40px;\n    padding: 4px 12px;\n  }\n}\n.e-desktop-root .RowSpaceBetween_row_1rf1p {\n  display: flex;\n  justify-content: space-between;\n  outline: 0;\n  border: 0;\n}\n.e-desktop-root .Chessboard_board_cycky {\n  display: inline-table;\n  border-collapse: collapse;\n  touch-action: none;\n}\n\n.e-desktop-root .Chessboard_corner_cycky {\n  width: 1ch;\n  height: calc(var(--theme-line-height-base) * 1rem);\n}\n\n.e-desktop-root .Chessboard_cell_cycky {\n  width: 1ch;\n  height: calc(var(--theme-line-height-base) * 1rem);\n  background-color: var(--theme-border-subdued);\n  text-align: center;\n  vertical-align: middle;\n}\n\n.e-desktop-root .Chessboard_square_cycky {\n  height: calc(var(--theme-line-height-base) * 2rem);\n  text-align: center;\n  vertical-align: middle;\n  width: 3ch;\n}\n\n.e-desktop-root .Chessboard_dark_cycky {\n  background-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .Chessboard_light_cycky {\n  background-color: var(--theme-focused-foreground-subdued);\n}\n\n.e-desktop-root .Chessboard_symbol_cycky {\n  font-size: 40px;\n  line-height: calc(var(--theme-line-height-base) * 2rem);\n}\n.e-desktop-root .ActionButton_hotkey_fa94z {\n  background: var(--theme-button-foreground);\n  color: var(--theme-text);\n  cursor: pointer;\n  flex-shrink: 0;\n  font-weight: 400;\n  padding: 0 1ch 0 1ch;\n  text-indent: 0ch;\n  user-select: none;\n}\n\n.e-desktop-root .ActionButton_content_fa94z {\n  background: var(--theme-button-background);\n  box-shadow: inset 0 0 0 2px var(--theme-button-foreground);\n  cursor: pointer;\n  flex-shrink: 0;\n  font-weight: 400;\n  padding: 0 1ch 0 1ch;\n  text-indent: 0ch;\n  text-transform: uppercase;\n  user-select: none;\n}\n\n.e-desktop-root .ActionButton_root_fa94z {\n  display: inline-flex;\n  align-items: center;\n  justify-content: space-between;\n  cursor: pointer;\n  outline: 0;\n  border: 0;\n  margin: 0;\n  padding: 0;\n  box-sizing: border-box;\n  font-family: var(--font-family-mono);\n  font-size: var(--font-size);\n  flex-shrink: 0;\n\n  &:hover .ActionButton_hotkey_fa94z {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:hover .ActionButton_content_fa94z {\n    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);\n  }\n\n  &:focus {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:focus .ActionButton_hotkey_fa94z {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:focus .ActionButton_content_fa94z {\n    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);\n  }\n\n  &:active {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:active .ActionButton_hotkey_fa94z {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:active .ActionButton_content_fa94z {\n    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);\n  }\n}\n\n.e-desktop-root .ActionButton_selected_fa94z {\n  .ActionButton_content_fa94z {\n    background: var(--theme-focused-foreground);\n  }\n}\n.e-desktop-root .AgentChat_toggle_ry10h {\n  font-size: 0.85rem !important;\n  letter-spacing: 0.04em;\n}\n\n.e-desktop-root .AgentChat_glyph_ry10h {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .AgentChat_label_ry10h {\n  text-transform: lowercase;\n}\n\n.e-desktop-root .AgentChat_menuItem_ry10h {\n  padding: 12px 0 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .AgentChat_menuItem_ry10h .e-section-tab {\n  width: 100%;\n  min-height: 44px;\n  justify-content: flex-start;\n  padding: 10px 14px;\n  opacity: 1;\n}\n\n.e-desktop-root .AgentChat_on_ry10h {\n  border-color: var(--theme-focused-foreground) !important;\n  background: var(--e-accent-wash, transparent) !important;\n}\n/* The agent chat drawer: monospace, hairline rules, the theme's accent as the\n   one highlight, 40–48px targets on a phone. Tokens only (--theme-*, --e-rule,\n   --e-accent-wash); no colours of its own.\n\n   It is sized to the app's own frame, never to the browser window: inside the\n   Hermes tab the frame is the tab's container (hermesPlugin.tsx), so the\n   transcript scrolls and the composer stays pinned at the bottom of what you\n   see. Below the header-nav width it covers the frame (absolute, inside the\n   shell's `contain: layout paint`), never the Hermes app around it. */\n\n.e-desktop-root .ChatDrawer_root_tg8j6 {\n  display: none;\n  flex: none;\n  flex-direction: column;\n  box-sizing: border-box;\n  width: min(27rem, 40%);\n  height: 100%;\n  min-height: 0;\n  position: relative;\n  align-self: stretch;\n  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: var(--theme-background);\n  color: var(--theme-text);\n  font-size: 0.86rem;\n  line-height: 1.5;\n}\n\n.e-desktop-root .ChatDrawer_open_tg8j6 {\n  display: flex;\n}\n\n/* ── head ─────────────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_head_tg8j6 {\n  flex: none;\n  padding: 12px 16px 10px;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .ChatDrawer_headRow_tg8j6 {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n}\n\n.e-desktop-root .ChatDrawer_heading_tg8j6 {\n  margin: 0;\n  display: flex;\n  align-items: baseline;\n  gap: 1ch;\n  font: inherit;\n  font-size: 1.05rem;\n  font-weight: 600;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n}\n\n.e-desktop-root .ChatDrawer_headIcon_tg8j6 {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_close_tg8j6 {\n  min-width: 40px !important;\n  min-height: 40px !important;\n}\n\n.e-desktop-root .ChatDrawer_meta_tg8j6 {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 0 1ch;\n  margin-top: 2px;\n  font-size: 0.74rem;\n  opacity: 0.62;\n}\n\n.e-desktop-root .ChatDrawer_conn_tg8j6[data-conn=\"open\"] {\n  color: var(--theme-focused-foreground);\n  opacity: 1;\n}\n\n.e-desktop-root .ChatDrawer_sessionBar_tg8j6 {\n  display: flex;\n  gap: 8px;\n  margin-top: 10px;\n}\n\n.e-desktop-root .ChatDrawer_sessionPick_tg8j6 {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 1ch;\n  min-height: 36px;\n  padding: 4px 10px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_sessionPick_tg8j6:hover,\n.e-desktop-root .ChatDrawer_sessionPick_tg8j6[aria-expanded=\"true\"] {\n  border-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_sessionPickTitle_tg8j6 {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_smallButton_tg8j6 {\n  flex: none;\n  min-height: 36px;\n  padding: 4px 12px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font: inherit;\n  font-size: 0.8rem;\n  letter-spacing: 0.04em;\n  cursor: pointer;\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_smallButton_tg8j6:hover {\n  border-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_error_tg8j6 {\n  margin: 8px 0 0;\n  font-size: 0.78rem;\n  color: var(--theme-focused-foreground);\n}\n\n/* ── transcript ───────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_transcript_tg8j6 {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  overscroll-behavior: contain;\n  padding: 12px 16px 16px;\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n\n.e-desktop-root .ChatDrawer_intro_tg8j6 {\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  border-left: 3px solid var(--theme-focused-foreground);\n  padding: 10px 14px 12px;\n  line-height: 1.55;\n}\n\n.e-desktop-root .ChatDrawer_intro_tg8j6 p {\n  margin: 0 0 6px;\n}\n\n.e-desktop-root .ChatDrawer_introTitle_tg8j6 {\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  opacity: 0.6;\n}\n\n.e-desktop-root .ChatDrawer_introNote_tg8j6 {\n  font-size: 0.78rem;\n  opacity: 0.65;\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6 {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  min-width: 0;\n}\n\n.e-desktop-root .ChatDrawer_who_tg8j6 {\n  font-size: 0.68rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6[data-who=\"you\"] .ChatDrawer_who_tg8j6 {\n  color: var(--theme-focused-foreground);\n  opacity: 1;\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6[data-who=\"you\"] .ChatDrawer_text_tg8j6 {\n  padding: 6px 10px;\n  background: var(--e-accent-wash, rgba(128, 128, 128, 0.08));\n  border-left: 2px solid var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_text_tg8j6 {\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .ChatDrawer_caret_tg8j6 {\n  color: var(--theme-focused-foreground);\n  animation: ChatDrawer_blink_tg8j6 1s steps(1) infinite;\n}\n\n@keyframes ChatDrawer_blink_tg8j6 {\n  50% {\n    opacity: 0;\n  }\n}\n\n.e-desktop-root .ChatDrawer_working_tg8j6 {\n  display: flex;\n  gap: 1ch;\n  align-items: center;\n  font-size: 0.78rem;\n  opacity: 0.7;\n}\n\n.e-desktop-root .ChatDrawer_notice_tg8j6 {\n  font-size: 0.78rem;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  opacity: 0.75;\n  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  padding: 2px 0 2px 10px;\n  max-height: 22rem;\n  overflow-y: auto;\n}\n\n.e-desktop-root .ChatDrawer_notice_tg8j6[data-tone=\"error\"] {\n  opacity: 1;\n  border-left: 2px solid var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_notice_tg8j6[data-tone=\"command\"] {\n  border-left: 0;\n  padding-left: 0;\n  opacity: 0.9;\n}\n\n.e-desktop-root .ChatDrawer_prompt_tg8j6 {\n  color: var(--theme-focused-foreground);\n}\n\n/* ── tool cards ───────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_tool_tg8j6 {\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  min-width: 0;\n}\n\n.e-desktop-root .ChatDrawer_toolHead_tg8j6 {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  width: 100%;\n  min-height: 36px;\n  padding: 6px 10px;\n  border: 0;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.8rem;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_toolHead_tg8j6:hover .ChatDrawer_toolName_tg8j6 {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_toolMark_tg8j6 {\n  flex: none;\n  width: 1.5ch;\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_tool_tg8j6[data-status=\"failed\"] .ChatDrawer_toolMark_tg8j6,\n.e-desktop-root .ChatDrawer_tool_tg8j6[data-status=\"blocked\"] .ChatDrawer_toolMark_tg8j6 {\n  color: inherit;\n  opacity: 0.8;\n}\n\n.e-desktop-root .ChatDrawer_toolName_tg8j6 {\n  flex: none;\n  font-weight: 600;\n}\n\n.e-desktop-root .ChatDrawer_toolContext_tg8j6 {\n  flex: 1;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  opacity: 0.65;\n}\n\n.e-desktop-root .ChatDrawer_toolTime_tg8j6 {\n  flex: none;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */\n  font-size: 0.72rem;\n}\n\n.e-desktop-root .ChatDrawer_toolCaret_tg8j6 {\n  flex: none;\n  opacity: 0.5;\n}\n\n.e-desktop-root .ChatDrawer_toolOut_tg8j6 {\n  margin: 0;\n  padding: 8px 10px;\n  border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  max-height: 16rem;\n  overflow: auto;\n  font: inherit;\n  font-size: 0.76rem;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n}\n\n/* Relay content: dashed rule, a label that says so. */\n.e-desktop-root .ChatDrawer_untrusted_tg8j6 {\n  border-style: dashed;\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6.ChatDrawer_untrusted_tg8j6 {\n  border: 1px dashed var(--e-rule, rgba(128, 128, 128, 0.35));\n  padding: 6px 10px;\n}\n\n.e-desktop-root .ChatDrawer_untrustedLabel_tg8j6 {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: 4px 1ch;\n  padding: 0 10px 6px;\n  font-size: 0.7rem;\n  opacity: 0.8;\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6 .ChatDrawer_untrustedLabel_tg8j6 {\n  padding: 0;\n}\n\n.e-desktop-root .ChatDrawer_untrustedLabel_tg8j6 [class*=\"Badge_root\"] {\n  font-size: 0.66rem;\n  letter-spacing: 0.08em;\n  background: transparent;\n  border: 1px solid currentColor;\n}\n\n/* ── approval / clarify ───────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_approval_tg8j6 {\n  border: 1px solid var(--theme-focused-foreground);\n  border-left-width: 3px;\n  padding: 10px 12px;\n  background: var(--e-accent-wash, transparent);\n}\n\n.e-desktop-root .ChatDrawer_cardTitle_tg8j6 {\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n  margin-bottom: 6px;\n}\n\n.e-desktop-root .ChatDrawer_cardText_tg8j6 {\n  margin: 0 0 6px;\n}\n\n.e-desktop-root .ChatDrawer_cardNote_tg8j6 {\n  margin: 6px 0;\n  font-size: 0.78rem;\n  font-weight: 600;\n}\n\n.e-desktop-root .ChatDrawer_cardFoot_tg8j6 {\n  margin: 8px 0 0;\n  font-size: 0.7rem;\n  opacity: 0.6;\n}\n\n.e-desktop-root .ChatDrawer_command_tg8j6 {\n  margin: 0 0 8px;\n  padding: 6px 8px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: var(--theme-background);\n  font: inherit;\n  font-size: 0.78rem;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  max-height: 10rem;\n  overflow: auto;\n}\n\n.e-desktop-root .ChatDrawer_choices_tg8j6 {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 8px;\n}\n\n.e-desktop-root .ChatDrawer_choice_tg8j6 {\n  min-height: 36px;\n  padding: 4px 12px;\n  border: 1px solid var(--theme-focused-foreground);\n  background: var(--theme-background);\n  color: inherit;\n  font: inherit;\n  font-size: 0.8rem;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_choice_tg8j6:hover:not(:disabled),\n.e-desktop-root .ChatDrawer_picked_tg8j6 {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n}\n\n.e-desktop-root .ChatDrawer_choice_tg8j6:disabled {\n  opacity: 0.45;\n  cursor: default;\n}\n\n.e-desktop-root .ChatDrawer_deny_tg8j6 {\n  border-color: var(--e-rule, rgba(128, 128, 128, 0.4));\n}\n\n.e-desktop-root .ChatDrawer_answered_tg8j6 {\n  font-size: 0.8rem;\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_question_tg8j6 + .ChatDrawer_question_tg8j6 {\n  margin-top: 10px;\n}\n\n.e-desktop-root .ChatDrawer_answerInput_tg8j6 {\n  box-sizing: border-box;\n  width: 100%;\n  margin-top: 6px;\n  min-height: 36px;\n  max-height: calc(6 * 1.45em + 12px);\n  padding: 4px 8px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.3));\n  background: var(--theme-background);\n  color: inherit;\n  font: inherit;\n  line-height: 1.45;\n  resize: none;\n  overflow-y: auto;\n  overflow-wrap: anywhere;\n}\n\n/* ── sessions ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_sessions_tg8j6 {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  overscroll-behavior: contain;\n  padding-bottom: 16px;\n}\n\n.e-desktop-root .ChatDrawer_sessionsHead_tg8j6 {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 4px 12px 4px 0;\n}\n\n.e-desktop-root .ChatDrawer_sessionList_tg8j6 {\n  list-style: none;\n  margin: 0;\n  padding: 0;\n}\n\n.e-desktop-root .ChatDrawer_sessionRow_tg8j6 {\n  display: flex !important;\n  flex-direction: column;\n  align-items: flex-start;\n  gap: 2px;\n  width: 100%;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_sessionRow_tg8j6:hover .ChatDrawer_sessionTitle_tg8j6 {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_sessionTitle_tg8j6 {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: baseline;\n  gap: 0 1ch;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .ChatDrawer_sessionMeta_tg8j6 {\n  font-size: 0.74rem;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */\n}\n\n.e-desktop-root .ChatDrawer_tag_tg8j6 {\n  font-size: 0.64rem;\n  letter-spacing: 0.1em;\n  text-transform: uppercase;\n  padding: 0 0.6ch;\n  border: 1px solid currentColor;\n  color: var(--theme-focused-foreground);\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_empty_tg8j6 {\n  padding: 8px 12px;\n  margin: 0;\n  font-size: 0.8rem;\n  opacity: 0.6;\n}\n\n/* ── composer ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_composer_tg8j6 {\n  position: relative;\n  flex: none;\n  padding: 8px 12px 10px;\n  border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: var(--theme-background);\n}\n\n.e-desktop-root .ChatDrawer_inputRow_tg8j6 {\n  display: flex;\n  align-items: flex-end;\n  gap: 8px;\n}\n\n/* One slim line (42px) by default; it grows with the text (ChatDrawer's\n   layout effect) up to six lines, then scrolls inside. */\n.e-desktop-root .ChatDrawer_input_tg8j6 {\n  flex: 1;\n  min-width: 0;\n  box-sizing: border-box;\n  height: 42px;\n  min-height: 42px;\n  max-height: calc(6 * 1.45em + 20px);\n  overflow-wrap: anywhere;\n  padding: 10px 10px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.35));\n  background: var(--theme-background);\n  color: inherit;\n  font: inherit;\n  line-height: 1.45;\n  resize: none;\n  overflow-y: auto;\n}\n\n.e-desktop-root .ChatDrawer_input_tg8j6:focus {\n  border-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_send_tg8j6 {\n  flex: none;\n  box-sizing: border-box;\n  min-width: 48px;\n  height: 42px;\n  min-height: 42px;\n  padding: 0 14px;\n  border: 1px solid var(--theme-focused-foreground);\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  font: inherit;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_send_tg8j6:disabled {\n  background: transparent;\n  color: inherit;\n  border-color: var(--e-rule, rgba(128, 128, 128, 0.35));\n  opacity: 0.6;\n  cursor: default;\n}\n\n.e-desktop-root .ChatDrawer_stop_tg8j6 {\n  background: transparent;\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_readOnly_tg8j6 {\n  margin: 0 0 8px;\n  font-size: 0.78rem;\n  opacity: 0.7;\n}\n\n.e-desktop-root .ChatDrawer_typeahead_tg8j6 {\n  position: absolute;\n  left: 16px;\n  right: 16px;\n  bottom: 100%;\n  z-index: 5;\n  list-style: none;\n  margin: 0;\n  padding: 0;\n  max-height: 18rem;\n  overflow-y: auto;\n  border: 1px solid var(--theme-focused-foreground);\n  background: var(--theme-background);\n}\n\n.e-desktop-root .ChatDrawer_typeRow_tg8j6 {\n  display: grid;\n  grid-template-columns: auto auto 1fr;\n  align-items: baseline;\n  gap: 0 1ch;\n  width: 100%;\n  min-height: 36px;\n  padding: 4px 10px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.8rem;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_typeRow_tg8j6[data-reach=\"terminal\"],\n.e-desktop-root .ChatDrawer_typeRow_tg8j6[data-reach=\"voice\"],\n.e-desktop-root .ChatDrawer_typeRow_tg8j6[data-reach=\"settings\"] {\n  opacity: 0.6;\n}\n\n.e-desktop-root .ChatDrawer_typeRowOn_tg8j6 {\n  background: var(--e-accent-wash, rgba(128, 128, 128, 0.1));\n}\n\n.e-desktop-root .ChatDrawer_typeName_tg8j6 {\n  color: var(--theme-focused-foreground);\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_typeMeta_tg8j6 {\n  grid-column: 1 / -1;\n  font-size: 0.72rem;\n  opacity: 0.6;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/* ── back control (phone) ─────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_back_tg8j6 {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  width: 100%;\n  min-height: 44px;\n  margin: 0;\n  padding: 0 16px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font: inherit;\n  font-size: 0.85rem;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n  text-align: left;\n  cursor: pointer;\n  flex: none;\n}\n\n/* \"← back to the dashboard\", then the menu: the full-page chat's top row. */\n.e-desktop-root .ChatDrawer_backRow_tg8j6 {\n  align-items: stretch;\n  flex: none;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .ChatDrawer_backRow_tg8j6 .ChatDrawer_back_tg8j6 {\n  flex: 1;\n  border-bottom: 0;\n}\n\n.e-desktop-root .ChatDrawer_menu_tg8j6 {\n  flex: none;\n  min-width: 48px;\n  min-height: 44px;\n  border: 0;\n  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .ChatDrawer_phoneOnly_tg8j6 {\n  display: none;\n}\n\n/* Below the header-nav breakpoint: one full-screen panel, \"← back\" on top. */\n@media (max-width: 900px) {\n  .e-desktop-root .ChatDrawer_root_tg8j6 {\n    position: absolute;\n    inset: 0;\n    z-index: 120;\n    width: 100%;\n    height: 100%;\n    border-left: 0;\n  }\n\n  .e-desktop-root .ChatDrawer_phoneOnly_tg8j6 {\n    display: flex;\n  }\n\n  .e-desktop-root .ChatDrawer_close_tg8j6 {\n    display: none !important;\n  }\n\n  .e-desktop-root .ChatDrawer_sessionPick_tg8j6,\n  .e-desktop-root .ChatDrawer_smallButton_tg8j6,\n  .e-desktop-root .ChatDrawer_choice_tg8j6,\n  .e-desktop-root .ChatDrawer_toolHead_tg8j6,\n  .e-desktop-root .ChatDrawer_typeRow_tg8j6 {\n    min-height: 44px;\n  }\n\n  .e-desktop-root .ChatDrawer_sessionRow_tg8j6 {\n    min-height: 48px;\n  }\n\n  .e-desktop-root .ChatDrawer_input_tg8j6,\n  .e-desktop-root .ChatDrawer_answerInput_tg8j6 {\n    font-size: 16px; /* no zoom-on-focus on a phone */\n  }\n}\n\n/* The kit gives every `ul li` an inline :before spacer (global.css), which\n   opens an empty line above a block button. Lists here are rows, not prose. */\n.e-desktop-root .ChatDrawer_typeahead_tg8j6 > li::before,\n.e-desktop-root .ChatDrawer_sessionList_tg8j6 > li::before {\n  content: none;\n  display: none;\n}\n\n/* A flex column shrinks its scrollable children to nothing when it overflows;\n   transcript items keep their height and the transcript scrolls instead. */\n.e-desktop-root .ChatDrawer_transcript_tg8j6 > * {\n  flex-shrink: 0;\n}\n\n/* A short screen (the 540 × 540 capture frame, a phone held sideways): the\n   \"← back\" row already says where you are, so the title row goes. */\n@media (max-width: 900px) and (max-height: 640px) {\n  .e-desktop-root .ChatDrawer_headRow_tg8j6 {\n    display: none;\n  }\n\n  .e-desktop-root .ChatDrawer_head_tg8j6 {\n    padding-top: 8px;\n  }\n\n  .e-desktop-root .ChatDrawer_sessionBar_tg8j6 {\n    margin-top: 6px;\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .e-desktop-root .ChatDrawer_caret_tg8j6 {\n    animation: none;\n  }\n}\n/*$vite$:1*/";
+var DESKTOP_CSS = "/* srcl's global.css (github.com/internet-development/www-sacred), MIT — see LICENSE-srcl. */\n/*\nNOTE(jimmylee):\nColor palette for Sacred Computer. The root source of truth for color is the\nSimulacrum CLI palette in scripts/cli/colors.json — those are the true, terminal-\ntested colors, the ones a real terminal actually renders. The --ansi-* primitives\nbelow mirror that palette in CSS, so every value must be one a terminal can show:\nStandard (SGR 30-37, 90-97), 256-color (SGR 38;5;n), the grayscale ramp (232-255),\nor 24-bit true color (SGR 38;2;r;g;b). Do not add a color outside that spec.\n\nThe OKLCH tint themes further down are a WEB-ONLY behavior. A terminal cannot run\nOKLCH math; it exists purely so the React surface can derive tinted variants while\nstaying inside the same perceptual band as the terminal-tested primitives. OKLCH is\na projection of the root palette, never a new source of color.\n*/\n\n.e-desktop-root a,\n.e-desktop-root abbr,\n.e-desktop-root acronym,\n.e-desktop-root address,\n.e-desktop-root applet,\n.e-desktop-root article,\n.e-desktop-root aside,\n.e-desktop-root audio,\n.e-desktop-root b,\n.e-desktop-root big,\n.e-desktop-root blockquote,\n.e-desktop-root .e-host-body,\n.e-desktop-root canvas,\n.e-desktop-root caption,\n.e-desktop-root center,\n.e-desktop-root cite,\n.e-desktop-root code,\n.e-desktop-root dd,\n.e-desktop-root del,\n.e-desktop-root details,\n.e-desktop-root dfn,\n.e-desktop-root div,\n.e-desktop-root dl,\n.e-desktop-root dt,\n.e-desktop-root embed,\n.e-desktop-root em,\n.e-desktop-root figure,\n.e-desktop-root figcaption,\n.e-desktop-root fieldset,\n.e-desktop-root footer,\n.e-desktop-root form,\n.e-desktop-root h1,\n.e-desktop-root h2,\n.e-desktop-root h3,\n.e-desktop-root h4,\n.e-desktop-root h5,\n.e-desktop-root h6,\n.e-desktop-root header,\n.e-desktop-root hgroup,\n.e-desktop-root .e-host-body,\n.e-desktop-root i,\n.e-desktop-root iframe,\n.e-desktop-root img,\n.e-desktop-root ins,\n.e-desktop-root kbd,\n.e-desktop-root label,\n.e-desktop-root legend,\n.e-desktop-root li,\n.e-desktop-root mark,\n.e-desktop-root menu,\n.e-desktop-root nav,\n.e-desktop-root object,\n.e-desktop-root ol,\n.e-desktop-root output,\n.e-desktop-root p,\n.e-desktop-root pre,\n.e-desktop-root q,\n.e-desktop-root ruby,\n.e-desktop-root s,\n.e-desktop-root samp,\n.e-desktop-root section,\n.e-desktop-root small,\n.e-desktop-root span,\n.e-desktop-root strike,\n.e-desktop-root strong,\n.e-desktop-root sub,\n.e-desktop-root summary,\n.e-desktop-root sup,\n.e-desktop-root table,\n.e-desktop-root tbody,\n.e-desktop-root td,\n.e-desktop-root tfoot,\n.e-desktop-root th,\n.e-desktop-root thead,\n.e-desktop-root time,\n.e-desktop-root tr,\n.e-desktop-root tt,\n.e-desktop-root u,\n.e-desktop-root ul,\n.e-desktop-root var,\n.e-desktop-root video {\n  border: 0;\n  box-sizing: border-box;\n  margin: 0;\n  padding: 0;\n  vertical-align: baseline;\n}\n\n.e-desktop-root a {\n  background: var(--theme-border-subdued);\n  color: var(--theme-text);\n\n  &:hover {\n    background: var(--theme-focused-foreground);\n    color: var(--theme-text);\n  }\n\n  &:focus {\n    background: var(--theme-focused-foreground);\n    color: var(--theme-text);\n    outline: 0;\n  }\n\n  &:active {\n    background: var(--theme-focused-foreground);\n    color: var(--theme-text);\n  }\n}\n\n.e-desktop-root ul {\n  list-style-position: inside;\n  list-style-type: '▪';\n  text-indent: -1ch;\n}\n\n.e-desktop-root ol {\n  list-style-type: '';\n  list-style-position: inside;\n  counter-reset: cupcake;\n  text-indent: -1ch;\n}\n\n.e-desktop-root ul ul,\n.e-desktop-root ul ol,\n.e-desktop-root ol ul,\n.e-desktop-root ol ol {\n  padding-left: 2ch;\n}\n\n.e-desktop-root ol li {\n  padding-left: 1ch;\n  counter-increment: cupcake;\n}\n\n.e-desktop-root ul li:before {\n  content: ' ';\n  display: inline-block;\n  width: 1ch;\n  height: 0;\n  visibility: hidden;\n}\n\n.e-desktop-root ol li:before {\n  content: counters(cupcake, '.') '. ';\n}\n\n.e-desktop-root article,\n.e-desktop-root aside,\n.e-desktop-root details,\n.e-desktop-root figcaption,\n.e-desktop-root figure,\n.e-desktop-root footer,\n.e-desktop-root header,\n.e-desktop-root hgroup,\n.e-desktop-root menu,\n.e-desktop-root nav,\n.e-desktop-root section {\n  display: block;\n}\n\n.e-desktop-root .e-host-body,\n.e-desktop-root .e-host-body {\n  /* ------------------------------------------------------------------ */\n  /* Standard 16 Colors (SGR 38;5;0-15)                                 */\n  /* ------------------------------------------------------------------ */\n  --ansi-0-black: #000000;\n  --ansi-1-maroon: #800000;\n  --ansi-2-green: #008000;\n  --ansi-3-olive: #808000;\n  --ansi-4-navy: #000080;\n  --ansi-5-purple: #800080;\n  --ansi-6-teal: #008080;\n  --ansi-7-silver: #c0c0c0;\n  --ansi-8-gray: #808080;\n  --ansi-9-red: #ff0000;\n  --ansi-10-lime: #00ff00;\n  --ansi-11-yellow: #ffff00;\n  --ansi-12-blue: #0000ff;\n  --ansi-13-fuchsia: #ff00ff;\n  --ansi-14-aqua: #00ffff;\n  --ansi-15-white: #ffffff;\n\n  /* ------------------------------------------------------------------ */\n  /* 216 Color Cube (SGR 38;5;16-231)                                   */\n  /* Channels: 0x00, 0x5F, 0x87, 0xAF, 0xD7, 0xFF                       */\n  /* ------------------------------------------------------------------ */\n  --ansi-100-yellow4a: #878700;\n  --ansi-148-yellow3a: #afd700;\n  --ansi-232-gray-3: #080808;\n  --ansi-235-gray-15: #262626;\n  --ansi-237-gray-23: #3a3a3a;\n  --ansi-240-gray-35: #585858;\n  --ansi-242-gray-42: #6c6c6c;\n  --ansi-245-gray-54: #8a8a8a;\n  --ansi-248-gray-66: #a8a8a8;\n  --ansi-251-gray-78: #c6c6c6;\n  --ansi-254-gray-89: #e4e4e4;\n  --ansi-255-gray-93: #eeeeee;\n\n  /* ------------------------------------------------------------------ */\n  /* Bright Colors (SGR 90-97) — overlap with ansi-8..15 in some terms  */\n  /* but the SGR 90-97 renditions use these distinct hex values.        */\n  /* ------------------------------------------------------------------ */\n  --ansi-bright-green: #55ff55;\n\n  /* ------------------------------------------------------------------ */\n  /* 24-bit True Color (SGR 38;2;r;g;b) — outside the 256 palette       */\n  /* ------------------------------------------------------------------ */\n  --ansi-true-brand: #e4f221;\n\n  /* ------------------------------------------------------------------ */\n  /* Semantic Color Aliases                                              */\n  /* All values reference the ANSI palette above.                       */\n  /* ------------------------------------------------------------------ */\n  --color-black: var(--ansi-0-black);\n  --color-white: var(--ansi-15-white);\n  --color-green: var(--ansi-2-green);\n  --color-lime: var(--ansi-10-lime);\n  --color-bright-green: var(--ansi-bright-green);\n  --color-brand: var(--ansi-true-brand);\n\n  --color-gray-93: var(--ansi-255-gray-93);\n  --color-gray-89: var(--ansi-254-gray-89);\n  --color-gray-78: var(--ansi-251-gray-78);\n  --color-gray-66: var(--ansi-248-gray-66);\n  --color-gray-54: var(--ansi-245-gray-54);\n  --color-gray-42: var(--ansi-242-gray-42);\n  --color-gray-35: var(--ansi-240-gray-35);\n  --color-gray-23: var(--ansi-237-gray-23);\n  --color-gray-15: var(--ansi-235-gray-15);\n  --color-gray-3: var(--ansi-232-gray-3);\n\n  /* ------------------------------------------------------------------ */\n  /* Web-only Alpha Variants (no ANSI equivalent — CSS rendering only)  */\n  /* Used for translucent overlays and subdued borders.                  */\n  /* ------------------------------------------------------------------ */\n  --color-black-alpha-40: rgba(0, 0, 0, 0.4);\n  --color-white-alpha-40: rgba(255, 255, 255, 0.4);\n  --color-gray-89-border-alpha: rgba(228, 228, 228, 0.6);\n  --color-gray-23-border-alpha: rgba(58, 58, 58, 0.3);\n  --color-brand-alpha-50: rgba(228, 242, 33, 0.5);\n\n  --font-family-mono: 'GeistMono-Regular', Consolas, monaco, monospace;\n\n  --theme-line-height-base: 1.25;\n  --font-size: 16px;\n\n  --z-index-page: 1;\n  --z-index-page-select: 3;\n  --z-index-page-tooltips: 4;\n  --z-index-page-popover: 5;\n  --z-index-page-dropdown-menus: 6;\n  --z-index-page-modals: 10;\n\n  background: var(--theme-background);\n  color: var(--theme-text);\n  font-family: var(--font-family-mono);\n  line-height: calc(var(--theme-line-height-base) * 1rem);\n\n  font-size: var(--font-size);\n  font-optical-sizing: auto;\n  text-rendering: geometricPrecision;\n  font-weight: 400;\n  font-variant-numeric: tabular-nums lining-nums;\n\n  &::-webkit-scrollbar {\n    background: transparent;\n    height: calc(var(--theme-line-height-base) * 1rem);\n    width: 1ch;\n  }\n\n  &::-webkit-scrollbar-track {\n    background: var(--theme-background);\n  }\n\n  &::-webkit-scrollbar-thumb {\n    background: var(--theme-border);\n  }\n\n  &::-webkit-scrollbar-thumb:hover {\n    background: var(--theme-border);\n  }\n}\n\n.e-desktop-root .e-host-body.theme-light {\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: var(--color-white);\n  --theme-background-modal: var(--color-gray-89);\n  --theme-background-modal-footer: var(--color-gray-66);\n  --theme-background-input: var(--color-gray-89);\n  --theme-border: var(--color-gray-89);\n  --theme-border-subdued: var(--color-gray-89-border-alpha);\n  --theme-text: var(--color-black);\n  --theme-button: var(--color-black);\n  --theme-button-text: var(--color-white);\n  --theme-button-foreground: var(--color-gray-78);\n  --theme-button-background: var(--color-gray-89);\n  --theme-focused-foreground: var(--color-bright-green);\n  --theme-focused-foreground-subdued: var(--color-brand-alpha-50);\n  /*\n  NOTE(jimmylee):\n  Window-specific tones — body sits one step darker than --theme-background so the\n  window reads as a \"lifted\" panel, and the shadow sits one step darker still so the\n  drop shadow is unambiguously darker than the window body. The CLI mirror lives in\n  scripts/cli/colors.json (windowBg / shadow).\n  */\n  --theme-window-background: var(--color-gray-89);\n  --theme-window-shadow: var(--color-gray-66);\n}\n\n.e-desktop-root .e-host-body.theme-dark {\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: var(--color-black);\n  --theme-background-modal: var(--color-gray-23);\n  --theme-background-modal-footer: var(--color-gray-35);\n  --theme-background-input: var(--color-gray-23);\n  --theme-border: var(--color-gray-23);\n  --theme-border-subdued: var(--color-gray-23-border-alpha);\n  --theme-text: var(--color-white);\n  --theme-button: var(--color-white);\n  --theme-button-text: var(--color-black);\n  --theme-button-foreground: var(--color-gray-15);\n  --theme-button-background: var(--color-gray-23);\n  --theme-focused-foreground: oklch(from var(--ansi-13-fuchsia) 0.55 c h);\n  --theme-focused-foreground-subdued: oklch(from var(--ansi-13-fuchsia) 0.55 c h / 0.5);\n  /*\n  NOTE(jimmylee):\n  Window body is gray-23 (#3a3a3a) so it lifts off the gray-3 (#080808) page\n  background, and the shadow is gray-15 (#262626) — a hair lighter than the page\n  but visibly darker than the window body, preserving the \"shadow darker than the\n  body\" contract while staying inside the ANSI gray ramp.\n  */\n  --theme-window-background: var(--color-gray-23);\n  --theme-window-shadow: var(--color-gray-15);\n}\n\n/*\nNOTE(jimmylee):\nOKLCH tint themes — web-only. These have no terminal equivalent (Simulacrum renders\nthe fixed colors.json palette, never derived tints). They are recalibrated against\nthe --ansi-* base so the saturation and lightness ramps fall in the same perceptual\nrange as the ANSI gray scale (#eeeeee → #262626) and the brand color (#e4f221). Each\ntint sets only --tint, and the body.theme-light.tint-* / body.theme-dark.tint-*\nselectors below derive every --theme-* token from that tint via OKLCH math.\n*/\n\n.e-desktop-root .e-host-body.tint-green {\n  --tint: #39ff44;\n}\n\n.e-desktop-root .e-host-body.tint-blue {\n  --tint: #0047ff;\n}\n\n.e-desktop-root .e-host-body.tint-red {\n  --tint: #ff0000;\n}\n\n.e-desktop-root .e-host-body.tint-yellow {\n  --tint: var(--ansi-true-brand);\n}\n\n.e-desktop-root .e-host-body.tint-purple {\n  --tint: #8000ff;\n}\n\n.e-desktop-root .e-host-body.tint-orange {\n  --tint: #ffac1c;\n}\n\n.e-desktop-root .e-host-body.tint-pink {\n  --tint: #ff00ff;\n}\n\n.e-desktop-root .e-host-body.theme-light.tint-green,\n.e-desktop-root .e-host-body.theme-light.tint-blue,\n.e-desktop-root .e-host-body.theme-light.tint-red,\n.e-desktop-root .e-host-body.theme-light.tint-yellow,\n.e-desktop-root .e-host-body.theme-light.tint-purple,\n.e-desktop-root .e-host-body.theme-light.tint-orange,\n.e-desktop-root .e-host-body.theme-light.tint-pink {\n  /*\n  NOTE(jimmylee):\n  Light tint ramp is anchored to the ANSI light grays:\n    --theme-background          ≈ ansi-255-gray-93 (#eeeeee)\n    --theme-background-modal    ≈ ansi-254-gray-89 (#e4e4e4)\n    --theme-background-input    ≈ ansi-255-gray-93 (#eeeeee)\n    --theme-border              ≈ ansi-251-gray-78 (#c6c6c6)\n    --theme-text                ≈ ansi-232-gray-3  (#080808)\n  Each token uses oklch(from var(--tint) L C H) so it tints toward the source\n  color while staying within the ANSI lightness band.\n  */\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: oklch(from var(--tint) 0.97 calc(c * 0.1) h);\n  --theme-background-modal: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-background-modal-footer: oklch(from var(--tint) 0.86 calc(c * 0.22) h);\n  --theme-background-input: oklch(from var(--tint) 0.97 calc(c * 0.1) h);\n  --theme-border: oklch(from var(--tint) 0.84 calc(c * 0.28) h);\n  --theme-border-subdued: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-text: oklch(from var(--tint) 0.18 calc(c * 0.4) h);\n  --theme-button: oklch(from var(--tint) 0.18 calc(c * 0.4) h);\n  --theme-button-text: oklch(from var(--tint) 0.97 calc(c * 0.1) h);\n  --theme-button-foreground: oklch(from var(--tint) 0.86 calc(c * 0.22) h);\n  --theme-button-background: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-focused-foreground: oklch(from var(--tint) 0.62 c h);\n  --theme-focused-foreground-subdued: oklch(from var(--tint) 0.62 c h / 0.5);\n  /*\n  NOTE(jimmylee):\n  Window body matches background-modal so the panel sits one step darker than the\n  page background, and the shadow drops to L=0.70 — a third step down so the\n  drop shadow stays visibly darker than the window body across every tint.\n  */\n  --theme-window-background: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-window-shadow: oklch(from var(--tint) 0.7 calc(c * 0.28) h);\n}\n\n/*\nDEEP (the dark theme with a tint): the demo video's all-dark-green screens in OKLCH relative to the\ntint — canvas L .192, panel L .253 (chroma x .243), border L .366 (x .328), text L .962 (x .243);\nthe accent as text is lifted to L .78 (chroma capped at .22); green is pinned to the video's colours.\nMirrored in dashboard.css (body.e-look.theme-dark) and themePalette.ts.\nBEFORE (the previous dark ramp, for comparing; `git revert` of the deep commit restores it):\n  background  oklch(from var(--tint) 0.14 calc(c * 0.18) h)   modal 0.24 / c*0.22   footer 0.3 / c*0.24\n  input 0.28 / c*0.2   border 0.4 / c*0.28   text 0.92 / c*0.18   accent 0.72 c\n*/\n.e-desktop-root .e-host-body.theme-dark.tint-green,\n.e-desktop-root .e-host-body.theme-dark.tint-blue,\n.e-desktop-root .e-host-body.theme-dark.tint-red,\n.e-desktop-root .e-host-body.theme-dark.tint-yellow,\n.e-desktop-root .e-host-body.theme-dark.tint-purple,\n.e-desktop-root .e-host-body.theme-dark.tint-orange,\n.e-desktop-root .e-host-body.theme-dark.tint-pink {\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: oklch(from var(--tint) 0.192 calc(c * 0.243) h);\n  --theme-background-modal: oklch(from var(--tint) 0.253 calc(c * 0.243) h);\n  --theme-background-modal-footer: oklch(from var(--tint) 0.253 calc(c * 0.243) h);\n  --theme-background-input: oklch(from var(--tint) 0.253 calc(c * 0.243) h);\n  --theme-border: oklch(from var(--tint) 0.366 calc(c * 0.328) h);\n  --theme-border-subdued: oklch(from var(--tint) 0.366 calc(c * 0.328) h / 0.6);\n  --theme-text: oklch(from var(--tint) 0.962 calc(c * 0.243) h);\n  --theme-button: oklch(from var(--tint) 0.962 calc(c * 0.243) h);\n  --theme-button-text: oklch(from var(--tint) 0.192 calc(c * 0.243) h);\n  --theme-button-foreground: oklch(from var(--tint) 0.366 calc(c * 0.328) h);\n  --theme-button-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);\n  --theme-focused-foreground: oklch(from var(--tint) max(l, 0.78) min(c, 0.22) h);\n  --theme-focused-foreground-subdued: oklch(from var(--tint) max(l, 0.78) min(c, 0.22) h / 0.5);\n  --theme-window-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);\n  --theme-window-shadow: oklch(from var(--tint) 0.15 calc(c * 0.243) h);\n}\n\n.e-desktop-root .e-host-body.theme-dark.tint-green {\n  --theme-background: #001b00;\n  --theme-background-modal: #0b2a0b;\n  --theme-background-modal-footer: #0b2a0b;\n  --theme-background-input: #0b2a0b;\n  --theme-border: #1d4a1d;\n  --theme-border-subdued: rgb(29 74 29 / 0.6);\n  --theme-text: #d8ffd8;\n  --theme-button: #d8ffd8;\n  --theme-button-text: #001b00;\n  --theme-button-foreground: #1d4a1d;\n  --theme-button-background: #0b2a0b;\n  --theme-focused-foreground: #39ff44;\n  --theme-focused-foreground-subdued: rgb(57 255 68 / 0.5);\n  --theme-window-background: #0b2a0b;\n  --theme-window-shadow: #000f00;\n}\n\n/*\nVIVID: the tint is the background, ink is the tint's deep dark; the panel a step darker (lighter for\nred and pink); white ink on blue and purple; green exact (#39ff44 / #2ee03a / #001b00). Web-only, like\nthe other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and themePalette.ts.\n*/\n.e-desktop-root .e-host-body.theme-vivid.tint-green,\n.e-desktop-root .e-host-body.theme-vivid.tint-blue,\n.e-desktop-root .e-host-body.theme-vivid.tint-red,\n.e-desktop-root .e-host-body.theme-vivid.tint-yellow,\n.e-desktop-root .e-host-body.theme-vivid.tint-purple,\n.e-desktop-root .e-host-body.theme-vivid.tint-orange,\n.e-desktop-root .e-host-body.theme-vivid.tint-pink {\n  --vv-ink: oklch(from var(--tint) 0.192 calc(c * 0.243) h);\n  --vv-panel: oklch(from var(--tint) calc(l - 0.082) calc(c * 0.91) h);\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: var(--tint);\n  --theme-background-modal: var(--vv-panel);\n  --theme-background-modal-footer: var(--vv-panel);\n  --theme-background-input: var(--vv-panel);\n  --theme-border: var(--vv-ink);\n  --theme-border-subdued: color-mix(in srgb, var(--vv-ink) 35%, transparent);\n  --theme-text: var(--vv-ink);\n  --theme-button: var(--vv-ink);\n  --theme-button-text: var(--tint);\n  --theme-button-foreground: var(--vv-panel);\n  --theme-button-background: var(--vv-panel);\n  --theme-focused-foreground: var(--vv-ink);\n  --theme-focused-foreground-subdued: color-mix(in srgb, var(--vv-ink) 50%, transparent);\n  --theme-window-background: var(--vv-panel);\n  --theme-window-shadow: var(--vv-ink);\n}\n.e-desktop-root .e-host-body.theme-vivid.tint-red,\n.e-desktop-root .e-host-body.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--tint) 80%, white); }\n.e-desktop-root .e-host-body.theme-vivid.tint-blue,\n.e-desktop-root .e-host-body.theme-vivid.tint-purple { --vv-ink: #fff; }\n.e-desktop-root .e-host-body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }\n\n.e-desktop-root #__next {\n}\n/* ═══════════════════════════════════════════════════════════════\n   EMPORIA DASHBOARD — single consolidated stylesheet\n   Sections:\n   1.  Variables & tokens\n   2.  Utility classes\n   3.  App shell layout\n   4.  Header & section nav\n   5.  Mobile drawer\n   6.  View body / ViewBody component\n   7.  Sidebar rail\n   8.  Component kit (slim card, meta-grid, KPIs, hero stats, empty pane)\n   9.  Overview — dashboard, stat strip, feed\n   10. Theme picker\n   11. Relay strip\n   12. Agent / profile row components\n   13. Chat & ReadOnlyChat\n   14. Agora — votes, posts\n   15. Navigation chips — SegmentTabs, section tabs\n   16. Badges, pills, entity chips\n   17. Tables — compact, listings\n   18. Toolbar & search\n   19. Action timeline\n   20. Session & transaction rows\n   21. Messages / inbox sub-view\n   22. SRCL component overrides (flat canvas + chrome)\n   23. Responsive breakpoints\n═══════════════════════════════════════════════════════════════ */\n\n/* ─── 1. VARIABLES & TOKENS ─────────────────────────────────────────────── */\n\n.e-desktop-root .e-host-body.theme-dark {\n  --theme-focused-foreground: #39ff44;\n}\n\n.e-desktop-root .e-host-body.theme-dark,\n.e-desktop-root .e-host-body.theme-vivid,\n.e-desktop-root .e-host-body.theme-light {\n  overflow-x: clip;\n}\n\n/* Flat canvas — all emporia surfaces transparent within the shell */\n.e-desktop-root .e-dashboard-shell {\n  --font-size: 16px; /* 100% SRCL root — no html 110% zoom */\n  --theme-background-modal: var(--theme-background);\n  --theme-background-modal-footer: var(--theme-background);\n  --theme-background-input: var(--theme-background);\n  --theme-window-background: var(--theme-background);\n  --theme-window-shadow: transparent;\n  --theme-button-background: transparent;\n  --theme-button-foreground: transparent;\n  --emporia-surface: transparent;\n  --emporia-surface-raised: transparent;\n  --emporia-nav-active: transparent;\n}\n\n/* ─── 2. UTILITY CLASSES ─────────────────────────────────────────────────── */\n\n.e-desktop-root .e-dim   { opacity: 0.5; }\n.e-desktop-root .e-faint { opacity: 0.35; }\n.e-desktop-root .e-trust-key { opacity: 0.55; }\n/* \"mutual\" / \"follows <name>\" beside a name in the Following and Followers lists */\n.e-desktop-root .e-follow-tag {\n  font-size: 0.62rem;\n  padding: 0 6px;\n  border: 1px solid rgba(128,128,128,0.35);\n  border-radius: 8px;\n  opacity: 0.8;\n  white-space: nowrap;\n  margin-left: 8px;\n}\n\n/* Master-detail selection indicator */\n.e-desktop-root .e-sel   { border-left: 2px solid var(--theme-focused-foreground); padding-left: 8px; }\n\n.e-desktop-root .e-status-txt {\n  font-size: 0.682rem;\n  letter-spacing: 0.1em;\n  text-transform: uppercase;\n}\n\n/* ─── 3. APP SHELL LAYOUT ────────────────────────────────────────────────── */\n\n/* The app is one frame: the header, the section strip, the view (which\n   scrolls) and the chat drawer all live inside it, and so does every overlay\n   (the phone menu and its backdrop, full-page chat, popovers). `contain:\n   layout paint` makes the frame the containing block of anything positioned\n   inside it, so nothing reaches past it into the page around it: inside the\n   Hermes tab the frame is the tab's own container (hermesPlugin.tsx sizes it to\n   what is visible, --e-frame-h: 100%), on the Desktop page the page's pane,\n   standalone the window. */\n.e-desktop-root .e-app-shell {\n  display: flex;\n  height: var(--e-frame-h, 100dvh);\n  min-height: 0;\n  width: 100%;\n  max-width: 100%;\n  position: relative;\n  overflow: hidden;\n  contain: layout paint;\n}\n.e-desktop-root .e-nav-row-hotkey { font-size: 0.715rem; opacity: 0.5; font-variant-numeric: tabular-nums; }\n\n.e-desktop-root .e-sidebar-group { display: flex; flex-direction: column; gap: 0; }\n.e-desktop-root .e-sidebar-group + .e-sidebar-group { margin-top: 6px; }\n.e-desktop-root .e-sidebar-group-label {\n  font-size: 0.638rem;\n  letter-spacing: 0.12em;\n  opacity: 0.45;\n  padding: 6px 10px 4px;\n  user-select: none;\n}\n.e-desktop-root .e-sidebar-key {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 2px;\n  padding: 5px 2px;\n  background: transparent;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  font-size: 0.715rem;\n}\n.e-desktop-root .e-sidebar-key:hover,\n.e-desktop-root .e-sidebar-key:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }\n.e-desktop-root .e-sidebar-key__k { opacity: 0.55; font-variant-numeric: tabular-nums; }\n\n.e-desktop-root .e-app-main {\n  flex: 1;\n  min-width: 0;\n  min-height: 0;\n  height: 100%;\n  max-width: 100%;\n  display: flex;\n  flex-direction: column;\n  background: var(--theme-background);\n  overflow-x: clip;\n}\n\n.e-desktop-root .e-app-backdrop { display: none; }\n\n/* The rail layout puts the five places beside the page; every other layout stacks them. */\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-main { flex-direction: row; }\n.e-desktop-root .e-app-col {\n  flex: 1;\n  min-width: 0;\n  min-height: 0;\n  display: flex;\n  flex-direction: column;\n}\n\n.e-desktop-root .e-view {\n  flex: 1;\n  scrollbar-gutter: stable;\n  height: auto;\n  min-height: 0;\n  min-width: 0;\n  max-width: 100%;\n  overflow-x: clip;\n  overflow-y: auto;\n  box-sizing: border-box;\n}\n\n/* ─── 4. HEADER & SECTION NAV ────────────────────────────────────────────── */\n\n.e-desktop-root .e-app-top {\n  flex-shrink: 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  background: var(--theme-background);\n}\n\n.e-desktop-root .e-app-top__row {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 16px;\n  padding: 10px 20px;\n  min-height: 52px;\n  flex-wrap: wrap;\n  min-width: 0;\n}\n.e-desktop-root .e-app-top__actions {\n  display: flex;\n  align-items: center;\n  gap: 16px;\n  min-width: 0;\n  flex-shrink: 1;\n}\n\n.e-desktop-root .e-brand-title { font-size: 1.155rem !important; letter-spacing: 0.06em; }\n.e-desktop-root .e-brand-title--header { font-size: 1.1rem; font-weight: 600; }\n\n/* Destinations (nav v2): six tabs in the header row, beside the brand. */\n.e-desktop-root .e-section-tabs {\n  display: none;\n  gap: 2px;\n  max-width: 100%;\n  box-sizing: border-box;\n}\n/* The layout is chosen from the dashboard's OWN width (ui/navLayout.ts writes it as data-nav on the\n   shell), never from the window's: inside the Hermes tab the window is wider than the dashboard.\n   wide: labels in the header row · medium: icon + short label · rail: icons down the left edge ·\n   phone: the bottom bar. The main navigation never scrolls; every range draws all five places. */\n.e-desktop-root .e-app-shell[data-nav=\"wide\"] .e-section-tabs--horizontal,\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-section-tabs--horizontal {\n  /* Never wraps: a wrapped header grows and moves everything under it (the audit's A3). */\n  display: flex; flex: 1; min-width: 0; flex-wrap: nowrap;\n}\n/* Past the first tier the header's own controls shrink: \"as\" before the viewer, the select narrower. */\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top .e-viewer-switch > .e-faint,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-top .e-viewer-switch > .e-faint { display: none; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top .e-viewer-switch select,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-top .e-viewer-switch select { max-width: 7rem; }\n.e-desktop-root .e-app-top__row { flex-wrap: nowrap; }\n.e-desktop-root .e-app-top__actions { flex-shrink: 0; }\n/* Medium and rail: the header gives up what it can spare, so it stays on one row. */\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top__row,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-top__row { gap: 10px; padding-left: 14px; padding-right: 14px; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top__actions,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-top__actions { gap: 10px; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-section-tab { padding: 6px 8px; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-section-tab__label { letter-spacing: 0; }\n/* The wordmark keeps its full size wherever the header has room (wide and medium); it only gives way in the\n   rail and phone layouts. */\n.e-desktop-root .e-app-shell[data-nav=\"wide\"] .e-app-top .e-brand-title,\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top .e-brand-title { font-size: 1.5rem !important; letter-spacing: 0.08em; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-relay-status__meta,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-relay-status__meta,\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-header-link__word,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-header-link__word { display: none; }\n/* The live chip keeps its dot and its title; its word is for a roomy header only. */\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-status-chip__label--live,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-status-chip__label--live,\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-status-chip__label--live {\n  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;\n}\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-status-chip__label--relay { max-width: 22ch; }\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-status-chip__label--relay { max-width: 22ch; }\n\n/* The rail: the five places as icons down the left edge, the word on hover and focus. */\n.e-desktop-root .e-section-tabs--rail { display: none; }\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-section-tabs--rail {\n  display: flex;\n  flex: none;\n  flex-direction: column;\n  align-items: stretch;\n  gap: 2px;\n  width: 88px;\n  padding: 8px 4px;\n  border-right: 1px solid var(--e-rule, var(--theme-border-subdued));\n  background: var(--theme-background);\n  position: relative;\n  z-index: 30;\n}\n.e-desktop-root .e-section-tabs--rail .e-section-tab {\n  justify-content: flex-start;\n  min-height: 44px;\n  padding: 0 8px;\n  opacity: 0.85;\n}\n.e-desktop-root .e-section-tabs--rail .e-section-tab__label { font-size: 0.78rem; letter-spacing: 0; }\n.e-desktop-root .e-section-tabs--rail .e-section-tab .e-nav-badge { position: absolute; top: 4px; right: 4px; margin: 0; }\n\n.e-desktop-root .e-section-tab {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  padding: 6px 10px;\n  border: 1px solid transparent;\n  border-radius: 0 !important;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.792rem;\n  cursor: pointer;\n  white-space: nowrap;\n  opacity: 0.75;\n  transition: background 0.12s, opacity 0.12s, border-color 0.12s;\n}\n.e-desktop-root .e-section-tab:hover  { opacity: 1; border-color: var(--theme-border-subdued, rgba(255,255,255,0.12)); background: transparent; }\n.e-desktop-root .e-section-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); background: transparent; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-section-tab__label { letter-spacing: 0.02em; }\n/* The five places are words only in every layout (header row, rail, phone bar, menu): no icon, no hotkey number;\n   the key and the blurb are the hover title. */\n/* The wordmark is a button to Home: it keeps the title's look, with a pointer and a focus ring. */\n.e-desktop-root .e-brand-home { background: none; border: 0; padding: 0; margin: 0; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; }\n.e-desktop-root .e-brand-home:hover { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-brand-home:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: 3px; }\n\n/* Drawer variant */\n.e-desktop-root .e-section-tabs--drawer {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  padding: 12px 0;\n  flex: 1;\n  overflow-y: auto;\n}\n.e-desktop-root .e-section-tabs--drawer .e-section-tab { width: 100%; justify-content: flex-start; padding: 10px 14px; }\n.e-desktop-root .e-section-tabs--drawer .e-section-tab.is-active { background: transparent !important; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n\n/* Nav unread badge */\n.e-desktop-root .e-nav-badge {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 14px;\n  height: 14px;\n  padding: 0 3px;\n  margin-left: 4px;\n  border-radius: 7px;\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  font-size: 10px;\n  font-weight: 700;\n  vertical-align: middle;\n  line-height: 1;\n}\n\n/* A tab's unread count sits on its corner, so it never widens the tab or moves its neighbours. */\n.e-desktop-root .e-section-tabs--horizontal .e-section-tab .e-nav-badge,\n.e-desktop-root .e-bottom-bar__tab .e-nav-badge,\n.e-desktop-root .e-subnav__tab .e-nav-badge {\n  position: absolute;\n  top: -2px;\n  right: -2px;\n  margin: 0;\n}\n.e-desktop-root .e-subnav__tab { position: relative; }\n.e-desktop-root .e-subnav__tab .e-nav-badge { top: 6px; right: 2px; }\n\n/* Header-only places: Help (?) and, for the operator, the relay's desk. */\n.e-desktop-root .e-header-links { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }\n.e-desktop-root .e-header-link {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  min-height: 28px;\n  padding: 2px 9px;\n  border: 1px solid var(--e-rule, var(--theme-border-subdued));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.78rem;\n  cursor: pointer;\n  white-space: nowrap;\n}\n.e-desktop-root .e-header-link:hover { border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-header-link.is-active { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-header-link__icon { font-weight: 700; }\n\n/* ─── 5. MOBILE DRAWER ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-mobile-top {\n  display: none;\n  align-items: center;\n  gap: 10px;\n  padding: 10px 12px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  position: sticky;\n  top: 0;\n  background: var(--theme-background);\n  z-index: 20;\n  flex-wrap: wrap;\n}\n\n.e-desktop-root .e-app-drawer { display: none; }\n\n.e-desktop-root .e-mobile-drawer {\n  display: flex;\n  flex-direction: column;\n  height: 100%;\n  padding: 16px 12px;\n}\n\n/* ─── 6. VIEW BODY ───────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-view-body {\n  padding: 20px 24px 32px;\n  margin: 0 auto;\n  width: 100%;\n  max-width: min(1440px, 100%);\n  box-sizing: border-box;\n  min-width: 0;\n}\n.e-desktop-root .e-view-body__inner { min-height: 40vh; }\n\n.e-desktop-root .e-view-toolbar {\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  gap: 12px;\n  flex-wrap: wrap;\n}\n\n/* Flush variant — fills remaining height for split views */\n.e-desktop-root .e-view-body--flush {\n  padding: 0;\n  max-width: none;\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n}\n.e-desktop-root .e-view-body--flush .e-view-body__inner {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n}\n.e-desktop-root .e-view-body--flush .e-view-toolbar {\n  padding: 10px 16px;\n  margin: 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  background: var(--emporia-surface);\n}\n.e-desktop-root .e-view-body--flush .e-search-row { margin: 0; }\n\n/* ─── 7. SIDEBAR RAIL ────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] {\n  background: var(--theme-background) !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_root\"] {\n  flex: 1;\n  min-height: 0;\n}\n\n/* Rail item — custom flat sidebar list button */\n.e-desktop-root .e-rail-item {\n  display: block;\n  width: 100%;\n  margin: 0;\n  padding: 6px 8px 6px 10px;\n  border: 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.05));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n/* badges on a rail row's first line: they wrap under each other instead of squeezing the name */\n.e-desktop-root .e-rail-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end; min-width: 0; text-align: right; }\n/* the second line of a rail row is secondary: smaller than the name above it, not larger */\n.e-desktop-root .e-rail-item .e-dim, .e-desktop-root .e-rail-item .e-faint { font-size: 12px; line-height: 1.45; }\n.e-desktop-root .e-rail-item:hover { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-rail-item.is-selected,\n.e-desktop-root .e-rail-item:focus-visible { outline: none; }\n.e-desktop-root .e-rail-item:focus-visible { color: var(--theme-focused-foreground); }\n\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] [class*=\"Badge_root\"] {\n  background: transparent !important;\n  padding: 0 !important;\n  font-size: 0.682rem;\n  letter-spacing: 0.06em;\n  color: var(--theme-focused-foreground);\n  opacity: 0.9;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] .e-segment-tabs { margin: 4px 0 8px; }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] [class*=\"Divider_gradient\"] {\n  background: linear-gradient(to right, transparent, var(--theme-border-subdued, rgba(255,255,255,0.08)), transparent) !important;\n  height: 1px !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] [class*=\"Divider_line\"] { height: 1px !important; opacity: 0.35; }\n\n/* ─── 8. COMPONENT KIT ───────────────────────────────────────────────────── */\n\n/* Slim card */\n.e-desktop-root .e-slim-card {\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  border-radius: 4px;\n  background: transparent;\n  margin-bottom: 12px;\n}\n.e-desktop-root .e-slim-card__head {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 6px 10px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n}\n.e-desktop-root .e-slim-card__title {\n  font-size: 0.682rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  opacity: 0.55;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n}\n.e-desktop-root .e-slim-card__body { padding: 10px 12px; }\n.e-desktop-root .e-slim-card__foot {\n  padding: 6px 10px;\n  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n  font-size: 0.748rem;\n  opacity: 0.45;\n}\n\n/* Panel card (used in overview sections) */\n.e-desktop-root .e-panel-card {\n  border-radius: 4px;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  background: transparent;\n  margin-bottom: 12px;\n}\n.e-desktop-root .e-panel-card__head { padding: 6px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06)); }\n.e-desktop-root .e-panel-card__title {\n  font-size: 0.792rem !important;\n  letter-spacing: 0.04em;\n  opacity: 0.5;\n}\n.e-desktop-root .e-panel-card__body { padding: 8px 10px; }\n\n/* Meta grid (agent detail, listing detail) */\n.e-desktop-root .e-meta-grid {\n  margin: 0;\n  display: grid;\n  gap: 6px 12px;\n}\n.e-desktop-root .e-meta-grid__row {\n  display: grid;\n  grid-template-columns: 7rem 1fr;\n  gap: 8px;\n  align-items: baseline;\n}\n.e-desktop-root .e-meta-grid dt {\n  margin: 0;\n  font-size: 0.682rem;\n  letter-spacing: 0.08em;\n  text-transform: uppercase;\n  opacity: 0.45;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n}\n.e-desktop-root .e-meta-grid dd { margin: 0; font-size: 0.858rem; word-break: break-word; }\n\n/* Empty pane */\n.e-desktop-root .e-empty-pane {\n  padding: 20px 16px;\n  border: 1px dashed var(--theme-border-subdued, rgba(255,255,255,0.12));\n  border-radius: 4px;\n  max-width: 28rem;\n}\n.e-desktop-root .e-empty-pane__title { font-size: 0.902rem; opacity: 0.7; }\n.e-desktop-root .e-empty-pane__hint { margin-top: 6px; font-size: 0.792rem; opacity: 0.45; line-height: 1.45; }\n\n/* KPI strip (fees view) */\n.e-desktop-root .e-kpi-row {\n  display: grid;\n  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));\n  gap: 8px;\n  margin-bottom: 12px;\n}\n.e-desktop-root .e-kpi { padding: 5px 8px; border-radius: 4px; }\n.e-desktop-root .e-kpi__val { display: block; font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-kpi__lbl { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.65; }\n\n/* Chess session — board + controls share one centered column (board width) */\n.e-desktop-root .e-chess-main {\n  padding: 18px 20px 20px 9px;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-column {\n  display: flex;\n  flex-direction: column;\n  align-items: stretch;\n  width: fit-content;\n  max-width: 100%;\n  gap: 12px;\n}\n.e-desktop-root .e-chess-stage {\n  display: grid;\n  justify-items: center;\n  width: 100%;\n  max-width: 100%;\n  vertical-align: top;\n  gap: 6px;\n  padding-top: 0;\n}\n.e-desktop-root .e-chess-stage > table {\n  display: inline-table;\n}\n.e-desktop-root .e-chess-moves-block {\n  width: 100%;\n}\n.e-desktop-root .e-chess-moves-label {\n  display: block;\n  font-size: 0.7rem;\n  margin-bottom: 6px;\n}\n\n.e-desktop-root .e-chess-players {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 16px;\n  width: 100%;\n  margin-top: 0;\n  margin-bottom: 0;\n  font-family: var(--font-family-mono);\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-players__side {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  min-width: 0;\n}\n.e-desktop-root .e-chess-players__piece {\n  font-size: 1.55rem;\n  line-height: 1;\n  flex-shrink: 0;\n}\n.e-desktop-root .e-chess-players__piece--dark { opacity: 0.88; }\n.e-desktop-root .e-chess-players__name {\n  font-size: 0.95rem;\n  font-weight: 600;\n  max-width: 14rem;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n.e-desktop-root .e-chess-players__vs { opacity: 0.45; font-size: 0.72rem; }\n\n.e-desktop-root .e-chess-ctrl-move {\n  margin-left: 8px;\n  font-family: var(--font-family-mono);\n  font-size: 0.72rem;\n  opacity: 0.8;\n}\n\n.e-desktop-root .e-chess-movelist {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 4px 6px;\n  margin-top: 0;\n  width: 100%;\n  max-width: 100%;\n  font-family: var(--font-family-mono);\n  font-size: 0.68rem;\n}\n.e-desktop-root .e-chess-movelist__btn {\n  border: none;\n  background: transparent;\n  color: inherit;\n  opacity: 0.72;\n  cursor: pointer;\n  padding: 2px 4px;\n  border-radius: 3px;\n}\n.e-desktop-root .e-chess-movelist__btn:hover { opacity: 1; background: var(--theme-border-subdued, rgba(255,255,255,0.06)); }\n.e-desktop-root .e-chess-movelist__btn--on {\n  opacity: 1;\n  font-weight: 600;\n  color: var(--theme-focused-foreground, inherit);\n}\n\n.e-desktop-root .e-chess-warn { font-size: 0.68rem; margin-top: 6px; }\n\n.e-desktop-root .e-chess-ctrl-row {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 4px;\n  margin-top: 8px;\n  width: fit-content;\n  max-width: 100%;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-ctrl-icons {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  flex-shrink: 0;\n}\n.e-desktop-root .e-chess-ctrl-status {\n  text-align: center;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n  font-size: 0.72rem;\n  opacity: 0.65;\n  font-variant-numeric: tabular-nums;\n  white-space: nowrap;\n}\n.e-desktop-root .e-chess-replay-status {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n}\n.e-desktop-root .e-chess-live-mark {\n  text-transform: uppercase;\n  letter-spacing: 0.06em;\n  color: var(--theme-focused-foreground);\n  opacity: 1;\n}\n.e-desktop-root .e-chess-icon-btn {\n  appearance: none;\n  flex: 0 0 auto;\n  margin: 0;\n  padding: 0;\n  border: 0;\n  background: transparent;\n  color: inherit;\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n.e-desktop-root .e-chess-icon-btn__glyph {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 6px;\n  box-shadow: inset 0 0 0 1px var(--theme-border-subdued, rgba(255, 255, 255, 0.12));\n  transition: color 0.1s, box-shadow 0.1s;\n}\n.e-desktop-root .e-chess-icon-btn .e-chess-svg {\n  display: block;\n  width: 1.25rem;\n  height: 1.25rem;\n}\n.e-desktop-root .e-chess-icon-btn:hover .e-chess-icon-btn__glyph,\n.e-desktop-root .e-chess-icon-btn:focus-visible .e-chess-icon-btn__glyph {\n  color: var(--theme-focused-foreground);\n  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground);\n}\n.e-desktop-root .e-chess-icon-btn:focus-visible {\n  outline: none;\n}\n.e-desktop-root .e-chess-move-idx,\n.e-desktop-root .e-chess-speed__lbl {\n  font-size: 0.792rem;\n  opacity: 0.55;\n}\n.e-desktop-root .e-chess-speed {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 8px;\n  align-items: center;\n  justify-content: center;\n  width: fit-content;\n  max-width: 100%;\n  margin: 0 auto;\n  padding: 6px 0 2px;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-speed__range {\n  width: min(9rem, 42vw);\n  max-width: 140px;\n  accent-color: var(--theme-focused-foreground);\n}\n\n/* Hero stats (overview) */\n.e-desktop-root .e-hero-stats {\n  display: grid;\n  grid-template-columns: repeat(2, 1fr);\n  gap: 12px;\n  margin-bottom: 24px;\n}\n@media (min-width: 720px) { .e-desktop-root .e-hero-stats { grid-template-columns: repeat(4, 1fr); }}\n\n.e-desktop-root .e-hero-stat {\n  padding: 16px 18px;\n  background: transparent;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  border-radius: 4px;\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  position: relative;\n  overflow: hidden;\n}\n.e-desktop-root .e-hero-stat::before {\n  content: \"\";\n  position: absolute;\n  top: 0; left: 0; right: 0;\n  height: 2px;\n  background: var(--theme-border-subdued, rgba(255,255,255,0.15));\n}\n.e-desktop-root .e-hero-stat--accent::before { background: linear-gradient(90deg, var(--theme-focused-foreground), transparent); }\n.e-desktop-root .e-hero-stat__value { font-size: 1.925rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }\n.e-desktop-root .e-hero-stat--accent .e-hero-stat__value { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-hero-stat__label { font-size: 0.715rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.55; }\n.e-desktop-root .e-hero-stat__hint  { font-size: 0.748rem; opacity: 0.4; }\n\n/* MCP command hint — \"show the tool call\" write-action affordance */\n.e-desktop-root .e-mcp-hint {\n  margin-top: 8px;\n  padding: 6px 8px;\n  border: 1px dashed var(--theme-border);\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n.e-desktop-root .e-mcp-hint__label { font-size: 0.682rem; text-transform: uppercase; letter-spacing: 0.04em; }\n.e-desktop-root .e-mcp-hint__code {\n  font-family: var(--font-family-mono);\n  font-size: 0.77rem;\n  color: var(--theme-focused-foreground);\n  cursor: pointer;\n  word-break: break-all;\n}\n.e-desktop-root .e-mcp-hint__code:hover { text-decoration: underline; }\n\n/* Rail chips (payment rail badges) */\n.e-desktop-root .e-rail-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }\n.e-desktop-root .e-rail-chip {\n  font-size: 0.682rem;\n  padding: 0;\n  border: 0;\n  border-radius: 0;\n  opacity: 0.85;\n  text-transform: uppercase;\n  letter-spacing: 0.04em;\n  color: var(--theme-focused-foreground);\n  background: transparent !important;\n}\n\n/* Outline pill for longer status text (e.g. NIM model name) — a solid-fill\n   badge (.e-trust-verified) reads as an alert/highlight at this length. */\n.e-desktop-root .e-status-pill {\n  font-size: 0.682rem;\n  font-family: var(--font-family-mono);\n  padding: 2px 7px;\n  border: 1px solid var(--theme-border);\n  background: transparent !important;\n  white-space: nowrap;\n}\n.e-desktop-root .e-status-pill--off { opacity: 0.45; }\n\n/* ─── 9. OVERVIEW ────────────────────────────────────────────────────────── */\n\n/* Hub grid — overview nav cards */\n.e-desktop-root .e-overview-status {\n  display: block;\n  font-size: 0.748rem;\n  margin-bottom: 12px;\n  max-width: 100%;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .e-pipeline-strip {\n  display: block;\n  font-size: 0.726rem;\n  letter-spacing: 0.02em;\n  margin-bottom: 14px;\n  max-width: 100%;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .e-overview-hub {\n  display: grid;\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n  gap: 8px;\n  margin-bottom: 20px;\n  min-width: 0;\n}\n@media (min-width: 560px)  { .e-desktop-root .e-overview-hub { grid-template-columns: repeat(3, minmax(0, 1fr)); }}\n@media (min-width: 900px)  { .e-desktop-root .e-overview-hub { grid-template-columns: repeat(4, minmax(0, 1fr)); }}\n@media (min-width: 1300px) { .e-desktop-root .e-overview-hub { grid-template-columns: repeat(5, minmax(0, 1fr)); }}\n\n.e-desktop-root .e-overview-card {\n  display: flex;\n  flex-direction: column;\n  gap: 0;\n  padding: 10px 12px 12px;\n  text-align: left;\n  background: transparent;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  transition: border-color 0.12s ease;\n  min-width: 0;\n  max-width: 100%;\n}\n.e-desktop-root .e-overview-card:hover,\n.e-desktop-root .e-overview-card:focus-visible {\n  border-color: var(--theme-focused-foreground);\n  outline: none;\n}\n\n.e-desktop-root .e-overview-card__head {\n  display: flex;\n  justify-content: space-between;\n  align-items: baseline;\n  flex-wrap: wrap;\n  gap: 2px 6px;\n  margin-bottom: 6px;\n  min-width: 0;\n}\n.e-desktop-root .e-overview-card__topline {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  min-width: 0;\n  flex: 1;\n}\n.e-desktop-root .e-overview-card__icon  { font-size: 1.1rem; line-height: 1; flex-shrink: 0; }\n.e-desktop-root .e-overview-card__title { font-size: 0.858rem; font-weight: 500; }\n/* P69: a collection whose fetch rejected, as distinct from one that came back\n   empty. The snapshot is allSettled, so a single failing endpoint used to\n   render \"—\" — the same glyph as \"not loaded yet\" — beside cards showing real\n   numbers, which reads as \"there is nothing there\". Muted rather than alarming:\n   the relay is up and answering for the other panels, so this is one endpoint\n   to go and look at, not an outage. */\n.e-desktop-root .e-overview-card--failed .e-overview-card__sub {\n  color: var(--theme-warning, #c33);\n  opacity: 1;\n  letter-spacing: 0.02em;\n}\n.e-desktop-root .e-overview-card--failed .e-overview-card__body { opacity: 0.55; }\n\n.e-desktop-root .e-overview-card__sub   {\n  font-size: 0.715rem;\n  font-variant-numeric: tabular-nums;\n  color: var(--theme-focused-foreground);\n  opacity: 0.85;\n  white-space: nowrap;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  flex-shrink: 1;\n}\n.e-desktop-root .e-overview-card__body { }\n.e-desktop-root .e-overview-card__body p {\n  margin: 0 0 3px;\n  font-size: 0.748rem;\n  line-height: 1.4;\n  opacity: 0.5;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.e-desktop-root .e-nav-card {\n  display: flex;\n  flex-direction: column;\n  align-items: flex-start;\n  gap: 6px;\n  padding: 14px 16px;\n  text-align: left;\n  background: var(--theme-background);\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  min-height: 5.5rem;\n  transition: border-color 0.15s ease;\n}\n.e-desktop-root .e-nav-card:hover,\n.e-desktop-root .e-nav-card:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }\n.e-desktop-root .e-nav-card[data-active=\"true\"] { border-color: var(--theme-focused-foreground); box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }\n.e-desktop-root .e-nav-card__hotkey {\n  position: absolute;\n  top: 10px; right: 10px;\n  font-size: 0.66rem;\n  opacity: 0.4;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));\n  padding: 2px 5px;\n}\n\n/* Stat strip */\n.e-desktop-root .e-stat-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }\n.e-desktop-root .e-stat-strip__lbl { font-size: 0.682rem; opacity: 0.55; }\n\n/* Live event feed */\n.e-desktop-root .e-feed-panel { max-height: min(70vh, 520px); overflow-y: auto; }\n\n.e-desktop-root .e-feed-panel--v2 { max-height: min(65vh, 480px); margin: -4px 0; }\n\n.e-desktop-root .e-feed-row {\n  cursor: pointer;\n  padding: 6px 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n}\n.e-desktop-root .e-feed-row:hover { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-feed-row:last-child { border-bottom: none; }\n\n.e-desktop-root .e-feed-row--v2 {\n  padding: 12px 12px 12px 14px;\n  margin: 0 -4px;\n  border-radius: 0;\n  border-bottom: none;\n  border-left: 3px solid transparent;\n  transition: border-color 0.12s ease;\n}\n.e-desktop-root .e-feed-row--v2.is-clickable:hover { border-left-color: var(--theme-focused-foreground); }\n\n.e-desktop-root .e-feed-type {\n  display: inline-block;\n  font-size: 0.682rem;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n  margin-bottom: 4px;\n}\n.e-desktop-root .e-feed-detail  { font-size: 0.902rem !important; }\n.e-desktop-root .e-feed-time    { font-size: 0.748rem !important; font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-feed-jump    { font-size: 0.715rem !important; opacity: 0.45; margin-top: 4px; }\n\n/* ─── 10. THEME PICKER ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-theme-compact { position: relative; }\n.e-desktop-root .e-theme-compact--inline { display: flex; align-items: center; }\n/* Fixed, but inside the frame's `contain: layout paint`: it covers the frame, never the page around it. */\n.e-desktop-root .e-theme-compact__backdrop { position: fixed; inset: 0; z-index: 200; border: 0; background: transparent; }\n\n.e-desktop-root .e-theme-duo {\n  display: inline-flex;\n  align-items: center;\n  gap: 0;\n  padding: 5px 9px;\n  border: 1px solid var(--theme-border-subdued, rgba(255, 255, 255, 0.18));\n  border-radius: 0;\n  background: transparent;\n}\n.e-desktop-root .e-theme-duo__rule {\n  width: 1px;\n  align-self: stretch;\n  min-height: 14px;\n  margin: 2px 8px;\n  background: var(--theme-border-subdued, rgba(255, 255, 255, 0.18));\n  flex-shrink: 0;\n}\n.e-desktop-root .e-theme-duo__btn {\n  display: block;\n}\n.e-desktop-root .e-theme-circle {\n  width: 16px;\n  height: 16px;\n  padding: 0;\n  border: none;\n  border-radius: 50%;\n  cursor: pointer;\n  flex-shrink: 0;\n  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.4);\n  transition: transform 0.12s ease, opacity 0.12s ease;\n}\n.e-desktop-root .e-theme-circle:hover,\n.e-desktop-root .e-theme-circle:focus-visible {\n  transform: scale(1.1);\n  outline: none;\n  opacity: 0.92;\n}\n.e-desktop-root .e-theme-circle--mode[data-mode=\"theme-light\"] { background: #f2f2f2; }\n.e-desktop-root .e-theme-circle--mode[data-mode=\"theme-dark\"]  { background: #121212; }\n.e-desktop-root .e-theme-circle--accent { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }\n/* The vivid circle: the tint with a ring of its ink (colour set inline); the ring fills in when vivid is on. */\n.e-desktop-root .e-theme-circle--vivid { box-shadow: inset 0 0 0 3px currentColor; }\n.e-desktop-root .e-theme-circle--vivid[data-on=\"true\"] { box-shadow: inset 0 0 0 5px currentColor; }\n.e-desktop-root .e-mode-toggle {\n  width: 26px; height: 26px;\n  padding: 0;\n  border: none;\n  border-radius: 50%;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.858rem;\n  line-height: 1;\n  cursor: pointer;\n  opacity: 0.45;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  transition: background 0.12s ease, opacity 0.12s ease;\n}\n.e-desktop-root .e-mode-toggle.is-active {\n  opacity: 1;\n  background: var(--theme-background) !important;\n  color: var(--theme-focused-foreground);\n  box-shadow: 0 1px 3px rgba(0,0,0,0.3);\n}\n/* ─── 11. RELAY STRIP ────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-relay-status {\n  display: inline-flex;\n  align-items: center;\n  gap: 14px;\n  flex-wrap: wrap;\n  justify-content: flex-end;\n  font-size: 0.792rem;\n  background: transparent !important;\n}\n.e-desktop-root .e-relay-status--compact {\n  gap: 12px;\n}\n.e-desktop-root .e-relay-status__chips {\n  display: inline-flex;\n  align-items: center;\n  gap: 10px;\n}\n.e-desktop-root .e-relay-status__host {\n  color: var(--theme-text-subdued, #888);\n  max-width: 140px;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  margin-right: 2px;\n}\n.e-desktop-root .e-relay-status__meta { color: var(--theme-text-subdued, #666); font-size: 0.715rem; }\n.e-desktop-root .e-badge--ok,\n.e-desktop-root .e-relay-status .e-badge--ok { color: var(--theme-focused-foreground) !important; }\n\n/* The relay chip carries the relay's name: a long host is cut with an ellipsis (its title has it all). */\n.e-desktop-root .e-status-chip__label--relay { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-status-chip__label--relay { max-width: 14ch; }\n.e-desktop-root .e-status-chip {\n  display: inline-flex;\n  align-items: center;\n  gap: 7px;\n  padding: 4px 9px;\n  border: 1px solid var(--theme-border-subdued, rgba(255, 255, 255, 0.18));\n  border-radius: 0;\n  background: var(--theme-border, rgba(255, 255, 255, 0.06));\n  font-size: 0.748rem;\n  line-height: 1.25;\n  white-space: nowrap;\n}\n.e-desktop-root .e-status-chip.is-ok {\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-status-chip:not(.is-ok) {\n  opacity: 0.7;}\n.e-desktop-root .e-status-chip__label {\n  letter-spacing: 0.02em;\n}\n.e-desktop-root .e-status-chip__loader {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 1.1ch;\n  min-width: 1.1ch;\n  color: inherit;\n}\n.e-desktop-root .e-status-chip.is-ok .e-status-chip__loader {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .e-status-chip__dot {\n  display: inline-block;\n  width: 1ch;\n  text-align: center;\n}\n@keyframes e-status-pulse {\n  0%, 100% { opacity: 1; }\n  50% { opacity: 0.35; }\n}\n\n/* ─── 12. AGENT / PROFILE ROW ────────────────────────────────────────────── */\n\n.e-desktop-root .e-agent-row { display: flex; gap: 8px; align-items: center; }\n.e-desktop-root .e-moire-avatar { flex-shrink: 0; border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12)); }\n.e-desktop-root .e-profile-agent { display: flex; gap: 12px; align-items: center; }\n\n/* Settlement list */\n.e-desktop-root .e-settlement-list { list-style: none; margin: 16px 0 0; padding: 0; font-size: 0.825rem; background: transparent !important; }\n/* P105: the inherited list marker is a ::before box, and in a grid it takes a\n   cell — pushing every row's status onto the next line. */\n.e-desktop-root .e-settlement-list__item::before { content: none !important; display: none !important; }\n.e-desktop-root .e-settlement-list__item {\n  display: grid;\n  grid-template-columns: 1fr auto auto;\n  gap: 12px;\n  padding: 6px 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n  background: transparent !important;\n}\n\n/* ─── 13. CHAT & READ-ONLY CHAT ──────────────────────────────────────────── */\n\n.e-desktop-root .e-chat-pane {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n.e-desktop-root .e-chat-messages {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  display: flex;\n  flex-direction: column;\n  gap: 6px;\n  padding: 12px 16px;\n}\n.e-desktop-root .e-chat-footer {\n  flex-shrink: 0;\n  padding: 8px 12px;\n  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n}\n.e-desktop-root .e-chat-meta { display: block; font-size: 0.748rem; margin-bottom: 2px; }\n\n/* Transcript chat line — avatar + content */\n.e-desktop-root .e-chat-line {\n  display: flex;\n  gap: 8px;\n  align-items: flex-start;\n}\n.e-desktop-root .e-chat-line__body {\n  flex: 1;\n  min-width: 0;\n}\n.e-desktop-root .e-chat-line__meta {\n  display: flex;\n  align-items: baseline;\n  flex-wrap: wrap;\n  gap: 6px;\n  margin-bottom: 2px;\n}\n.e-desktop-root .e-chat-line__name {\n  font-size: 0.792rem;\n  font-weight: 600;\n  word-break: break-all;\n}\n.e-desktop-root .e-chat-line__type,\n.e-desktop-root .e-chat-line__time {\n  font-size: 0.682rem;\n  opacity: 0.45;\n  font-variant-numeric: tabular-nums;\n}\n/* A list's own filter, at the top of its column: compact, the theme's colours, a clear button inside. */\n.e-desktop-root .e-list-filter { position: relative; padding: 8px 10px; border-bottom: 1px solid var(--e-rule, var(--theme-border-subdued)); }\n.e-desktop-root .e-list-filter input {\n  box-sizing: border-box; width: 100%; padding: 5px 26px 5px 8px; border: 1px solid var(--e-rule, currentColor); border-radius: 0;\n  background: transparent; color: inherit; font: inherit; font-size: 0.8rem;\n}\n.e-desktop-root .e-list-filter input::placeholder { color: var(--anim-faint, inherit); opacity: 1; }\n.e-desktop-root .e-list-filter input:focus { outline: none; border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-list-filter__clear {\n  position: absolute; right: 14px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; color: inherit;\n  font: inherit; font-size: 1rem; line-height: 1; cursor: pointer; opacity: 0.6; padding: 0 2px;\n}\n.e-desktop-root .e-list-filter__clear:hover { opacity: 1; color: var(--theme-focused-foreground); }\n/* A fold inside a card: one muted line that opens the facts only a close look needs. */\n.e-desktop-root .e-fold { margin-top: 8px; }\n.e-desktop-root .e-fold > summary { cursor: pointer; font-size: 0.72rem; letter-spacing: 0.04em; opacity: 0.65; list-style: none; padding: 2px 0; }\n.e-desktop-root .e-fold--game { margin: 10px 0; }\n.e-desktop-root .e-fold--game > summary { font-size: 0.78rem; }\n.e-desktop-root .e-fold > summary::before { content: \"▸ \"; }\n.e-desktop-root .e-fold[open] > summary::before { content: \"▾ \"; }\n.e-desktop-root .e-fold > summary::-webkit-details-marker { display: none; }\n.e-desktop-root .e-fold > summary:hover, .e-desktop-root .e-fold[open] > summary { opacity: 1; color: var(--theme-focused-foreground); }\n/* \"+N more\": the rest of a row's chips, behind one small disclosure (progressive disclosure, nothing removed). */\n.e-desktop-root .e-more { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }\n.e-desktop-root .e-more > summary { cursor: pointer; font-size: 0.7rem; opacity: 0.7; list-style: none; padding: 1px 4px; }\n.e-desktop-root .e-more > summary::-webkit-details-marker { display: none; }\n.e-desktop-root .e-more > summary:hover, .e-desktop-root .e-more[open] > summary { opacity: 1; color: var(--theme-focused-foreground); }\n/* A game's pixel glyph then its name: the one way every list says \"this is a game\". */\n.e-desktop-root .e-game-tag { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; vertical-align: middle; }\n.e-desktop-root .e-quiet-chip {\n  display: inline-block;\n  padding: 0 6px;\n  border: 1px solid var(--e-rule, currentColor);\n  border-radius: 8px;\n  font-size: 0.64rem;\n  line-height: 1.5;\n  letter-spacing: 0.02em;\n  opacity: 0.6;\n  white-space: nowrap;\n}\n.e-desktop-root .e-chat-line__content {\n  font-size: 0.902rem;\n  line-height: 1.45;\n  word-break: break-word;\n  white-space: pre-wrap;\n}\n\n/* Agora detail pane (also used for events detail) */\n.e-desktop-root .e-split-main { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 8px 0 16px 0; }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main {\n  padding-left: 4px;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main:has(.e-chess-main) {\n  padding-left: 0;}\n.e-desktop-root .e-agora-detail { overflow: hidden; }\n.e-desktop-root .e-agora-detail__scroll { flex: 1; overflow-y: auto; padding: 16px; }\n.e-desktop-root .e-agora-detail__title { font-size: 1.1rem; font-weight: 600; margin-bottom: 4px; display: block; }\n.e-desktop-root .e-agora-detail__meta  { font-size: 0.792rem; margin-bottom: 12px; display: block; }\n.e-desktop-root .e-agora-detail__body  { display: block; margin-top: 12px; white-space: pre-wrap; }\n.e-desktop-root .e-agora-readonly-hint { display: block; margin-top: 24px; font-size: 0.715rem; }\n\n.e-desktop-root .e-agora-comment { padding: 6px 0; border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06)); }\n\n/* ─── 14. AGORA ──────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-agora-pane {\n  height: 100%;\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n}\n.e-desktop-root .e-agora-posts,\n.e-desktop-root .e-agora-sidebar { overflow-y: auto; flex: 1; }\n\n.e-desktop-root .e-post-row { display: flex; gap: 10px; align-items: flex-start; flex: 1; }\n.e-desktop-root .e-post-title { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }\n.e-desktop-root .e-vote-btn {\n  background: none;\n  border: none;\n  cursor: pointer;\n  font-size: 14px;\n  padding: 2px 4px;\n  opacity: 0.45;\n  color: inherit;\n  transition: opacity 0.15s, color 0.15s;\n}\n.e-desktop-root .e-vote-btn:hover { opacity: 1; }\n.e-desktop-root .e-vote-score { font-size: 13px; min-width: 20px; text-align: center; }\n\n/* ─── 15. SEGMENT TABS ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-segment-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }\n.e-desktop-root .e-segment-tabs--grow .e-segment-tab { flex: 1; min-width: 0; text-align: center; }\n\n.e-desktop-root .e-segment-tab {\n  appearance: none;\n  margin: 0;\n  padding: 4px 10px;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));\n  border-radius: 0 !important;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n  font-size: 0.748rem;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  cursor: pointer;\n  opacity: 0.75;\n  transition: border-color 0.1s, color 0.1s, opacity 0.1s;\n}\n/* View filters are chips, not tabs: pills, smaller, no underline; they sit left, directly above their list. */\n.e-desktop-root .e-segment-tabs { justify-content: flex-start; margin: 0 0 12px; }\n.e-desktop-root .e-segment-tab {\n  border-radius: 999px !important;\n  padding: 2px 11px;\n  font-size: 0.68rem;\n  text-transform: none;\n  letter-spacing: 0.02em;\n}\n.e-desktop-root .e-segment-tab.is-active { background: var(--e-accent-wash, transparent); font-weight: 400; }\n.e-desktop-root .e-segment-tab:hover { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-segment-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); font-weight: 600; }\n\n/* The Feed's filter chips, and \"more ▾\" for the rarer kinds: the same chip, opening a short list. */\n.e-desktop-root .e-feed-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; margin: 0 0 12px; }\n.e-desktop-root .e-feed-tabs .e-segment-tabs { margin: 0; }\n.e-desktop-root .e-feed-more { position: relative; }\n.e-desktop-root .e-feed-more > summary {\n  list-style: none; cursor: pointer; padding: 2px 11px; border: 1px solid var(--theme-border-subdued, currentColor);\n  border-radius: 999px; font-size: 0.68rem; letter-spacing: 0.02em; opacity: 0.75; user-select: none;\n}\n.e-desktop-root .e-feed-more > summary::-webkit-details-marker { display: none; }\n.e-desktop-root .e-feed-more > summary:hover, .e-desktop-root .e-feed-more[open] > summary, .e-desktop-root .e-feed-more > summary.is-active {\n  opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-feed-more__menu {\n  position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 9rem; display: flex; flex-direction: column;\n  border: 1px solid var(--theme-border, var(--e-rule)); background: var(--theme-background);\n}\n.e-desktop-root .e-feed-more__menu button {\n  padding: 6px 12px; border: 0; border-bottom: 1px solid var(--e-rule, transparent); background: transparent; color: inherit;\n  font: inherit; font-size: 0.72rem; text-align: left; cursor: pointer;\n}\n.e-desktop-root .e-feed-more__menu button:last-child { border-bottom: 0; }\n.e-desktop-root .e-feed-more__menu button:hover, .e-desktop-root .e-feed-more__menu button.is-active { color: var(--theme-focused-foreground); }\n\n/* ─── 16. BADGES, PILLS & ENTITY CHIPS ──────────────────────────────────── */\n\n.e-desktop-root .e-badge { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 12px; font-family: var(--font-family-mono); border: 1px solid currentColor; white-space: nowrap; }\n.e-desktop-root .e-badge--dim { opacity: 0.5; }\n\n.e-desktop-root .e-role-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid currentColor; }\n.e-desktop-root .e-role-pill--operator  { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-role-pill--member    { opacity: 0.6; }\n.e-desktop-root .e-role-pill--spectator { opacity: 0.4; }\n\n.e-desktop-root .e-gate-badge {\n  display: inline-block;\n  padding: 1px 5px;\n  border-radius: 4px;\n  font-size: 10px;\n  font-weight: 700;\n  letter-spacing: 0.05em;\n  text-transform: uppercase;\n  white-space: nowrap;\n}\n.e-desktop-root .e-gate-badge--invite { background: rgba(128,128,255,0.15); color: #8888ff; }\n.e-desktop-root .e-gate-badge--paid   { background: rgba(80,200,120,0.15);  color: #4caf7a; }\n.e-desktop-root .e-gate-badge--advert { background: rgba(255,190,80,0.15);  color: #d9a441; }\n\n.e-desktop-root .e-outcome-pill {\n  display: inline-block;\n  padding: 1px 5px;\n  border-radius: 4px;\n  font-size: 10px;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n}\n.e-desktop-root .e-outcome-pill--game   { background: rgba(255,180,0,0.12);   color: #c89a00; }\n.e-desktop-root .e-outcome-pill--room   { background: rgba(0,180,255,0.12);   color: #0099cc; }\n.e-desktop-root .e-outcome-pill--agora  { background: rgba(128,128,255,0.12); color: #7777dd; }\n.e-desktop-root .e-outcome-pill--refund { background: rgba(200,50,50,0.12);   color: #cc4444; }\n\n/* Entity chips — clickable agent / session cross-nav links */\n.e-desktop-root .e-entity-chip {\n  display: inline-block;\n  font-family: var(--font-family-mono);\n  font-size: 12px;\n  padding: 1px 5px;\n  border: 1px solid transparent;\n  background: transparent;\n  cursor: default;\n  white-space: nowrap;\n}\n.e-desktop-root .e-entity-chip--inert { opacity: 0.55; }\n.e-desktop-root .e-entity-chip--agent,\n.e-desktop-root .e-entity-chip--session {\n  cursor: pointer;\n  border-color: rgba(128,128,128,0.2);\n  color: var(--theme-focused-foreground);\n  opacity: 0.8;\n  transition: opacity 0.1s, background 0.1s;\n}\n.e-desktop-root .e-entity-chip--agent:hover,\n.e-desktop-root .e-entity-chip--session:hover { opacity: 1; background: rgba(128,128,128,0.08); }\n\n/* Room → session link */\n.e-desktop-root .e-room-session-link {\n  display: inline-flex;\n  align-items: center;\n  gap: 3px;\n  margin-top: 3px;\n  padding: 1px 6px;\n  border: 1px solid rgba(128,128,128,0.2);\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font-size: 11px;\n  font-family: var(--font-family-mono);\n  cursor: pointer;\n  opacity: 0.7;\n  transition: opacity 0.1s;\n}\n.e-desktop-root .e-room-session-link:hover { opacity: 1; background: rgba(128,128,128,0.08); }\n\n/* ─── 17. TABLES ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-compact-table { overflow-x: auto; }\n\n.e-desktop-root .e-compact-table table,\n.e-desktop-root .e-table {\n  width: 100%;\n  border-collapse: collapse;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n  font-size: 0.792rem;\n}\n\n/* Header row — keep the SRCL gray bar */\n.e-desktop-root .e-dashboard-shell .e-compact-table thead td,\n.e-desktop-root .e-dashboard-shell table thead td,\n.e-desktop-root .e-table thead td {\n  background: var(--ansi-240-gray-35, #585858) !important;\n  color: var(--color-white, #fff);\n  padding: 4px 8px;\n  font-size: 0.682rem;\n  letter-spacing: 0.06em;\n}\n\n.e-desktop-root .e-table tbody td {\n  padding: 5px 8px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n}\n.e-desktop-root .e-dashboard-shell table tbody tr { background: transparent !important; }\n.e-desktop-root .e-dashboard-shell table tbody tr:hover { background: transparent !important; }\n\n.e-desktop-root .e-table-row { cursor: pointer; }\n.e-desktop-root .e-table-row:hover td { border-left: 2px solid var(--theme-focused-foreground); padding-left: 6px; }\n.e-desktop-root .e-table-row:focus-visible { outline: 1px solid var(--theme-focused-foreground); }\n\n/* ─── 18. TOOLBAR & SEARCH ───────────────────────────────────────────────── */\n\n.e-desktop-root .e-toolbar-h {\n  display: flex;\n  flex-wrap: nowrap;\n  gap: 6px;\n  align-items: center;\n  padding: 6px 12px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n  overflow-x: auto;\n}\n.e-desktop-root .e-toolbar-h--wrap { flex-wrap: wrap; }\n\n.e-desktop-root .e-search-row {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  padding: 8px 12px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n}\n/* The kit Input draws its text in a display layer and puts the real <input>\n   (which gets this class) transparent on top. So the box lives on the display\n   layer, and the input just covers it exactly — styling the input itself drew\n   a second, empty box under the placeholder. */\n.e-desktop-root .e-search-row > [class*=\"Input_root\"] { flex: 1; min-width: 0; }\n.e-desktop-root .e-search-row [class*=\"Input_displayed\"] {\n  display: flex;\n  align-items: center;\n  min-height: 40px;\n  padding: 0 12px;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-search-bar {\n  height: 100%;\n  padding: 0 12px !important;\n  box-sizing: border-box;\n  border: 0 !important;\n  background: transparent !important;\n}\n\n/* ─── 19. ACTION TIMELINE ────────────────────────────────────────────────── */\n\n.e-desktop-root .e-action-timeline { display: flex; flex-direction: column; gap: 2px; }\n.e-desktop-root .e-action-row { padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }\n.e-desktop-root .e-action-row:last-child { border-bottom: none; }\n.e-desktop-root .e-action-row--terminal .e-action-row__outcome { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-action-row__meta { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 2px; }\n.e-desktop-root .e-action-row__icon { font-size: 14px; min-width: 16px; text-align: center; }\n.e-desktop-root .e-action-row__body { font-size: 13px; opacity: 0.75; padding-left: 24px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }\n.e-desktop-root .e-action-row__outcome { font-size: 12px; padding-left: 24px; opacity: 0.6; margin-top: 2px; }\n\n/* ─── 20. SESSION & TRANSACTION ROWS ────────────────────────────────────── */\n\n.e-desktop-root .e-txn-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid rgba(128,128,128,0.1); }\n.e-desktop-root .e-txn-row:last-child { border-bottom: none; }\n.e-desktop-root .e-txn-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }\n.e-desktop-root .e-txn-dot--in  { background: var(--theme-focused-foreground); }\n.e-desktop-root .e-txn-dot--out { background: rgba(128,128,128,0.4); }\n\n.e-desktop-root .e-session-status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: rgba(128,128,128,0.4); }\n.e-desktop-root .e-session-status-dot--active    { background: var(--theme-focused-foreground); }\n.e-desktop-root .e-session-status-dot--completed { background: rgba(128,128,128,0.6); }\n.e-desktop-root .e-session-status-dot--abandoned { background: rgba(180,80,80,0.5); }\n/* ─── 21. MESSAGES / INBOX ───────────────────────────────────────────────── */\n\n.e-desktop-root .e-messages-pane {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n.e-desktop-root .e-messages-pane__toolbar {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 8px 16px;\n  border-bottom: 1px solid var(--theme-border-color, rgba(128,128,128,0.12));\n  flex-shrink: 0;\n}\n.e-desktop-root .e-inbox-list { display: flex; flex-direction: column; gap: 0; }\n.e-desktop-root .e-inbox-event {\n  display: flex;\n  gap: 12px;\n  padding: 10px 0;\n  border-bottom: 1px solid var(--theme-border-color, rgba(128,128,128,0.12));\n}\n.e-desktop-root .e-inbox-event:last-child { border-bottom: none; }\n.e-desktop-root .e-inbox-event--read { opacity: 0.55; }\n.e-desktop-root .e-inbox-event--link { cursor: pointer; }\n.e-desktop-root .e-inbox-event--link:hover, .e-desktop-root .e-inbox-event--link:focus-visible { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); outline: none; }\n.e-desktop-root .e-now__row.is-link { cursor: pointer; }\n.e-desktop-root .e-now__row.is-link:hover .e-now__go { text-decoration: underline; }\n.e-desktop-root .e-inbox-event__icon { flex-shrink: 0; width: 22px; text-align: center; font-size: 15px; padding-top: 2px; opacity: 0.7; }\n.e-desktop-root .e-inbox-event__body { flex: 1; min-width: 0; }\n\n/* ─── 22. SRCL COMPONENT OVERRIDES ──────────────────────────────────────── */\n\n/* ActionButton — outline style, no fills */\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_content\"] {\n  background: transparent !important;\n  box-shadow: inset 0 0 0 1px var(--theme-border-subdued, rgba(255,255,255,0.12)) !important;\n  border-radius: 0 !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_hotkey\"] { background: transparent !important; }\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"]:hover [class*=\"ActionButton_content\"] {\n  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground) !important;\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"].selected [class*=\"ActionButton_content\"],\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_selected\"] [class*=\"ActionButton_content\"] {\n  background: transparent !important;\n  color: var(--theme-focused-foreground) !important;\n  font-weight: 600;\n  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground) !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"]:focus,\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"]:active { background: transparent !important; }\n\n/* Badges — square */\n.e-desktop-root .e-dashboard-shell [class*=\"Badge_root\"] { border-radius: 0 !important; }\n\n/* Input */\n.e-desktop-root .e-dashboard-shell [class*=\"Input_root\"] input { background: transparent !important; }\n\n/* Kill all surfaces from panels and stat blocks */\n.e-desktop-root .e-dashboard-shell .e-app-top,\n.e-desktop-root .e-dashboard-shell .e-mobile-top { background: var(--theme-background) !important; }\n.e-desktop-root .e-dashboard-shell .e-app-drawer,\n.e-desktop-root .e-dashboard-shell .e-mobile-drawer { background: var(--theme-background) !important; box-shadow: none; }\n.e-desktop-root .e-dashboard-shell .e-panel-card,\n.e-desktop-root .e-dashboard-shell .e-panel-card__head,\n.e-desktop-root .e-dashboard-shell .e-panel-card__body,\n.e-desktop-root .e-dashboard-shell .e-slim-card,\n.e-desktop-root .e-dashboard-shell .e-hero-stat,\n.e-desktop-root .e-dashboard-shell .e-kpi,\n.e-desktop-root .e-dashboard-shell .e-empty-pane { background: transparent !important; }\n\n/* ─── 23. RESPONSIVE ─────────────────────────────────────────────────────── */\n\n@media (max-width: 900px) {\n  .e-desktop-root .e-view-body { padding: 14px 12px 24px; }}\n/* The phone layout (the frame under 600 px): top bar, menu behind the burger, bottom bar. */\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-app-top { display: none; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-mobile-top { display: flex; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-app-drawer {\n  display: flex;\n  position: absolute;\n  left: 0; top: 0; bottom: 0;\n  z-index: 140;     /* above full-page chat (120): the chat's ☰ opens it */\n  width: min(85%, 16rem);\n  transform: translateX(-105%);\n  transition: transform 0.2s ease;\n  background: var(--theme-background);\n  border-right: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n}\n.e-desktop-root .e-app-shell[data-nav=\"phone\"].is-nav-open .e-app-drawer { transform: translateX(0); }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"].is-nav-open .e-app-backdrop {\n  display: block;\n  position: absolute;\n  inset: 0;\n  z-index: 130;\n  background: rgba(0,0,0,0.55);\n  border: 0;\n  padding: 0;\n  cursor: pointer;\n}\n\n/* Narrow screens: SidebarLayout itself (kit module CSS) turns rail-beside-detail\n   into list-then-detail with a back control — see ui/kit/SidebarLayout.tsx. */\n\n@media (min-width: 901px) {\n  .e-desktop-root .e-hero-stats { grid-template-columns: repeat(4, 1fr); }}\n\n/* P121: unread count on a conversation or on Activity. */\n.e-desktop-root .e-unread-count {\n  font-size: 11px;\n  font-weight: 600;\n  padding: 0 6px;\n  border-radius: 8px;\n  background: var(--theme-focused-foreground, #3c3);\n  color: var(--theme-background, #000);\n}\n\n/* P123: view-as switcher (local relays only). */\n.e-desktop-root .e-viewer-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }\n.e-desktop-root .e-viewer-switch select {\n  font: inherit; font-size: 12px; padding: 2px 6px;\n  background: var(--theme-background, transparent); color: inherit;\n  border: 1px solid var(--theme-border, rgba(128,128,128,0.4)); border-radius: 4px;\n}\n/* A phone (the switcher sits in the menu): under 16px, iOS zooms the page when the select takes focus. */\n@media (max-width: 900px) {\n  .e-desktop-root .e-viewer-switch select { font-size: 16px; min-height: 40px; }}\n\n/* P124: inbox / sent / all above the conversation list. */\n.e-desktop-root .e-messages-boxes { padding: 8px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(128,128,128,0.12)); }\n\n/* P171: the Docs view. */\n.e-desktop-root .e-docs-rail { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; }\n.e-desktop-root .e-docs-search { width: 100%; margin: 0 0 6px 0; padding: 6px 8px; font: inherit; background: transparent;\n  color: inherit; border: 1px solid currentColor; opacity: 0.8; }\n.e-desktop-root .e-docs-rail-item { display: flex; flex-direction: column; gap: 2px; text-align: left; }\n.e-desktop-root .e-doc { overflow-y: auto; max-width: 92ch; padding: 8px 20px 40px 20px; line-height: 1.55; }\n.e-desktop-root .e-doc .e-doc-h { margin: 1.4em 0 0.5em 0; line-height: 1.25; scroll-margin-top: 8px; }\n.e-desktop-root .e-doc p, .e-desktop-root .e-doc .e-doc-list, .e-desktop-root .e-doc .e-doc-quote { margin: 0.6em 0; }\n.e-desktop-root .e-doc .e-doc-list { padding-left: 1.6em; }\n.e-desktop-root .e-doc code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 0 0.25em;\n  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); }\n.e-desktop-root .e-doc .e-doc-code { overflow-x: auto; padding: 10px 12px; margin: 0.8em 0;\n  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n.e-desktop-root .e-doc .e-doc-code code { border: 0; padding: 0; }\n.e-desktop-root .e-doc .e-doc-table-wrap { overflow-x: auto; margin: 0.8em 0; }\n.e-desktop-root .e-doc .e-doc-table { border-collapse: collapse; font-size: 0.94em; }\n.e-desktop-root .e-doc .e-doc-table th, .e-desktop-root .e-doc .e-doc-table td { text-align: left; vertical-align: top; padding: 4px 10px;\n  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n.e-desktop-root .e-doc .e-doc-quote { padding-left: 12px; border-left: 3px solid color-mix(in srgb, currentColor 35%, transparent); }\n.e-desktop-root .e-doc .e-doc-link { text-decoration: underline; cursor: pointer; }\n.e-desktop-root .e-doc .e-doc-path { font-family: var(--font-family-mono, monospace); font-size: 0.92em; opacity: 0.8; }\n\n/* P178: the Settings view (read-only), laid out like Hermes's config page: sections of rows, the\n   label and its plain words on the left, the value drawn as Hermes's form would on the right (never a\n   control), and where to change it underneath. Tokens only, so every theme and tint carries it. */\n.e-desktop-root .e-settings { overflow-y: auto; max-width: 110ch; min-width: 0; padding: 8px 20px 40px 20px;\n  --e-settings-rule: var(--e-rule, color-mix(in srgb, currentColor 18%, transparent)); }\n.e-desktop-root .e-settings-hint { margin: 4px 0 0; font-size: 0.9em; }\n.e-desktop-root .e-settings-intro { margin: 8px 0 4px; padding: 8px 12px; font-size: 0.9em;\n  border-left: 3px solid var(--theme-focused-foreground);\n  background: var(--e-accent-wash, color-mix(in srgb, currentColor 6%, transparent)); }\n.e-desktop-root .e-settings-heading { font-size: 1.2em; margin: 16px 0 0; overflow-wrap: anywhere; }\n.e-desktop-root .e-settings-group { margin: 0 0 6px 0; }\n.e-desktop-root .e-settings-title { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;\n  margin: 18px 0 6px; opacity: 0.8; }\n.e-desktop-root .e-settings-card { border: 1px solid var(--e-settings-rule); }\n.e-desktop-root .e-setting { padding: 10px 14px; border-top: 1px solid var(--e-settings-rule);\n  display: flex; flex-direction: column; gap: 6px; min-width: 0; }\n.e-desktop-root .e-setting:first-child { border-top: 0; }\n.e-desktop-root .e-setting-warn { box-shadow: inset 3px 0 0 var(--theme-focused-foreground); }\n.e-desktop-root .e-setting-danger { box-shadow: inset 3px 0 0 currentColor; }\n.e-desktop-root .e-setting-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto); gap: 4px 16px; align-items: start; }\n.e-desktop-root .e-setting-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }\n.e-desktop-root .e-setting-label { font-weight: 600; overflow-wrap: anywhere; }\n.e-desktop-root .e-setting-mark { display: inline-block; min-width: 1.1em; margin-right: 4px; font-weight: 700;\n  color: var(--theme-focused-foreground); }\n.e-desktop-root .e-setting-about { font-size: 0.88em; opacity: 0.75; }\n.e-desktop-root .e-setting-control { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end;\n  max-width: 48ch; min-width: 0; }\n.e-desktop-root .e-setting-value, .e-desktop-root .e-setting-number, .e-desktop-root .e-setting-list { font-family: var(--font-family-mono, monospace);\n  font-size: 0.9em; overflow-wrap: anywhere; text-align: right; }\n.e-desktop-root .e-setting-number { font-variant-numeric: tabular-nums; font-weight: 600; }\n.e-desktop-root .e-setting-tag { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 1px 6px;\n  border: 1px dashed color-mix(in srgb, currentColor 45%, transparent); }\n/* Read-only values are plain text: no border, fill, hover or pointer, so nothing looks pressable. */\n.e-desktop-root .e-setting-plain { font-size: 0.9em; font-weight: 600; cursor: default; opacity: 0.7; }\n.e-desktop-root .e-setting-plain.is-on { opacity: 1; }\n.e-desktop-root .e-setting-choices { display: inline; text-align: right; cursor: default; }\n.e-desktop-root .e-setting-rec { font-weight: 400; font-size: 0.82em; }\n/* Where to change it: Hermes's own page, the command, and who may run it. */\n.e-desktop-root .e-setting-change { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 0.88em; min-width: 0; }\n.e-desktop-root .e-setting-hermes { font: inherit; color: var(--theme-focused-foreground); background: transparent; cursor: pointer;\n  border: 1px solid currentColor; padding: 1px 8px; text-decoration: none; white-space: nowrap; }\n.e-desktop-root .e-setting-hermes:hover,\n.e-desktop-root .e-setting-hermes:focus-visible { background: color-mix(in srgb, var(--theme-focused-foreground) 14%, transparent); outline: none; }\n.e-desktop-root .e-setting-hermes-text { opacity: 0.85; }\n.e-desktop-root .e-setting-env { font-family: var(--font-family-mono, monospace); font-size: 0.85em; opacity: 0.7; overflow-wrap: anywhere; }\n.e-desktop-root .e-setting-cmd { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }\n.e-desktop-root .e-setting-cmd code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 1px 6px;\n  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); overflow-wrap: anywhere; }\n.e-desktop-root .e-setting-copy { font: inherit; font-size: 0.85em; padding: 1px 8px; background: transparent; color: inherit;\n  border: 1px solid color-mix(in srgb, currentColor 35%, transparent); cursor: pointer; }\n.e-desktop-root .e-setting-note { flex-basis: 100%; opacity: 0.75; }\n@media (max-width: 640px) {\n  .e-desktop-root .e-settings { padding: 4px 12px 32px; }\n  .e-desktop-root .e-setting { padding: 10px; }\n  .e-desktop-root .e-setting-main { grid-template-columns: minmax(0, 1fr); }\n  .e-desktop-root .e-setting-control { justify-content: flex-start; max-width: none; }\n  .e-desktop-root .e-setting-value, .e-desktop-root .e-setting-number, .e-desktop-root .e-setting-list { text-align: left; }\n  .e-desktop-root .e-setting-choices { justify-content: flex-start; }\n}\n\n/* P281: the relay's transparency log and this agent's own check of it, one compact block (Trust & Safety). */\n.e-desktop-root .e-relay-log { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-top: 10px; padding-top: 8px;\n  border-top: 1px solid var(--e-rule, color-mix(in srgb, currentColor 18%, transparent)); font-size: 0.82rem; min-width: 0; }\n.e-desktop-root .e-relay-log__name { font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-size: 0.72rem; }\n.e-desktop-root .e-relay-log__facts { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }\n.e-desktop-root .e-relay-log.is-off .e-relay-log__facts { opacity: 0.7; }\n.e-desktop-root .e-relay-log__check { overflow-wrap: anywhere; }\n.e-desktop-root .e-relay-log__check.is-ok { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-relay-log__check.is-none, .e-desktop-root .e-relay-log__check.is-info { opacity: 0.8; }\n.e-desktop-root .e-relay-log__check.is-warn { font-weight: 700; padding: 1px 6px; border: 1px solid currentColor; }\n.e-desktop-root .e-relay-log__about { flex-basis: 100%; font-size: 0.72rem; opacity: 0.7; }\n\n/* P179: the relay operator's Relay view. */\n.e-desktop-root .e-relay { overflow-y: auto; max-width: 110ch; padding: 8px 20px 40px 20px; }\n.e-desktop-root .e-relay h3 { font-size: 1.05em; margin: 18px 0 8px 0; }\n.e-desktop-root .e-relay-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }\n.e-desktop-root .e-relay-tile { padding: 10px 12px; border: 1px solid color-mix(in srgb, currentColor 18%, transparent);\n  display: flex; flex-direction: column; gap: 2px; }\n.e-desktop-root .e-relay-tile-value { font-size: 1.6em; font-variant-numeric: tabular-nums; line-height: 1.2; }\n.e-desktop-root .e-relay-tile-sub { font-size: 0.85em; }\n.e-desktop-root .e-relay-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }\n.e-desktop-root .e-relay-charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }\n.e-desktop-root .e-relay-chart { margin: 0; }\n.e-desktop-root .e-relay-chart figcaption { margin-bottom: 4px; }\n.e-desktop-root .e-relay-chart svg { width: 100%; height: 64px; display: block; }\n.e-desktop-root .e-relay-bar { fill: currentColor; opacity: 0.75; }\n.e-desktop-root .e-relay-chart g:hover .e-relay-bar { opacity: 1; }\n.e-desktop-root .e-relay-axis { stroke: currentColor; opacity: 0.25; stroke-width: 1; }\n.e-desktop-root .e-relay-table { border-collapse: collapse; font-size: 0.94em; margin: 4px 0 10px 0; font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-relay-table th, .e-desktop-root .e-relay-table td { text-align: left; padding: 4px 10px;\n  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n\n/* Rooms › \"Rooms you can join\": folded above the chat until opened. */\n.e-desktop-root .e-joinable { margin: 0 0 10px; border: 1px solid var(--theme-border-subdued, currentColor); padding: 6px 10px; }\n.e-desktop-root .e-joinable > summary { cursor: pointer; font-size: 0.85rem; opacity: 0.8; }\n.e-desktop-root .e-joinable[open] > summary { margin-bottom: 6px; }\n/* You › Stats: the agent's own figures. Bars are decoration: every value is also text. */\n.e-desktop-root .e-stats-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }\n.e-desktop-root .e-stats-num { font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-stats-list { list-style: none; margin: 4px 0 8px 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }\n.e-desktop-root .e-stats-bars { list-style: none; margin: 4px 0 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }\n.e-desktop-root .e-stats-bars__row { display: grid; grid-template-columns: minmax(12ch, 16rem) minmax(60px, 1fr) auto; gap: 10px;\n  align-items: center; }\n.e-desktop-root .e-stats-bars__track { height: 8px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n.e-desktop-root .e-stats-bars__fill { display: block; height: 100%; background: var(--theme-focused-foreground, currentColor); }\n/* the kit draws a marker before every list item; in the grid it became a fourth cell and shoved the row apart */\n.e-desktop-root .e-stats-bars__row, .e-desktop-root .e-stats-list li { padding-left: 0; text-indent: 0; }\n.e-desktop-root .e-stats-bars__row::before, .e-desktop-root .e-stats-list li::before { content: none; display: none; }\n.e-desktop-root .e-stats-bars__label { min-width: 0; overflow-wrap: anywhere; }\n.e-desktop-root .e-stats-money-note, .e-desktop-root .e-stats-missing { display: block; }\n.e-desktop-root .e-stats .e-faint, .e-desktop-root .e-stats-toolbar .e-faint { font-size: 13px; line-height: 1.5; }\n.e-desktop-root .e-stats-table td, .e-desktop-root .e-stats-table th { white-space: nowrap; }\n@media (max-width: 700px) {\n  .e-desktop-root .e-stats-bars__row { grid-template-columns: 1fr auto; }\n  .e-desktop-root .e-stats-bars__track { grid-column: 1 / -1; grid-row: 2; }}\n\n/* ─── 24. RETROMOD ───────────────────────────────────────────────────────────\n   The terminal look, kept and made consistent: monospace, hairline boxes, the\n   theme's accent as the one highlight. Modern where it helps reading and\n   touching: smooth type, clear focus, one heading per section, 44px targets on\n   a phone, list-then-detail split views, tables that scroll in their own box.\n   ──────────────────────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-dashboard-shell {\n  -webkit-font-smoothing: antialiased;\n  -moz-osx-font-smoothing: grayscale;\n  text-rendering: optimizeLegibility;\n  --e-rule: var(--theme-border-subdued, rgba(128, 128, 128, 0.22));\n  --e-accent-wash: color-mix(in srgb, var(--theme-focused-foreground) 9%, transparent);\n}\n\n/* One focus ring, everywhere — keyboard users always see where they are. */\n.e-desktop-root .e-dashboard-shell :focus-visible,\n.e-desktop-root .e-dashboard-shell .e-rail-item:focus-visible,\n.e-desktop-root .e-dashboard-shell .e-theme-circle:focus-visible {\n  outline: 2px solid var(--theme-focused-foreground);\n  outline-offset: 2px;\n}\n.e-desktop-root .e-dashboard-shell .e-rail-item:focus-visible { outline-offset: -2px; }\n/* The page title takes focus after a section change (read out); the ring shows only for a keyboard move. */\n.e-desktop-root .e-dashboard-shell .e-page-head__title:focus:not([data-by-key]),\n.e-desktop-root .e-dashboard-shell .e-page-head__title:focus-visible:not([data-by-key]) { outline: none; }\n\n/* Section heading: ▍Name, then the plain-words line on what it shows. */\n.e-desktop-root .e-page-head {\n  padding: 14px 24px 12px;\n  border-bottom: 1px solid var(--e-rule);\n  max-width: min(1440px, 100%);\n  margin: 0 auto;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-page-head__title {\n  margin: 0;\n  display: flex;\n  align-items: baseline;\n  gap: 1ch;\n  font: inherit;\n  font-size: 1.05rem;\n  font-weight: 600;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n  line-height: 1.3;\n}\n.e-desktop-root .e-page-head__blurb {\n  margin: 4px 0 0;\n  font-size: 0.82rem;\n  line-height: 1.5;\n  opacity: 0.62;\n  max-width: 80ch;\n}\n\n/* Sub-heading inside a view: CAPS label with a box-drawing rule after it. */\n.e-desktop-root .e-subhead {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  margin: 18px 0 6px;\n  font-size: 0.72rem;\n  letter-spacing: 0.12em;\n  text-transform: uppercase;\n  opacity: 0.7;\n}\n.e-desktop-root .e-subhead::after {\n  content: \"\";\n  flex: 1;\n  height: 1px;\n  background: var(--e-rule);\n}\n.e-desktop-root .e-subhead:first-child { margin-top: 4px; }\n.e-desktop-root .e-note { font-size: 0.8rem; line-height: 1.5; opacity: 0.6; margin: 2px 0 0; }\n\n.e-desktop-root .e-section-tabs--horizontal { align-items: center; }\n.e-desktop-root .e-section-tab.is-active { background: var(--e-accent-wash) !important; }\n\n/* The menu: the six destinations, each with its sections named under it. */\n.e-desktop-root .e-section-tabs--drawer .e-section-tab {\n  min-height: 52px;\n  display: grid;\n  grid-template-columns: 1fr auto;\n  grid-template-areas: \"label key\" \"sub key\";\n  align-items: center;\n  column-gap: 10px;\n  row-gap: 0;\n  text-align: left;\n}\n.e-desktop-root .e-section-tabs--drawer .e-section-tab__label { grid-area: label; font-size: 0.95rem; }\n.e-desktop-root .e-section-tabs--drawer .e-section-tab__key { grid-area: key; }\n.e-desktop-root .e-section-tab__sub {\n  grid-area: sub;\n  font-size: 0.72rem;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n  white-space: normal;\n}\n\n/* The sections inside the current destination: one strip under the header, every width. */\n/* The strip may scroll (it is the page's sections, not the main navigation), but never silently:\n   a fade at each cut edge and a \"n ▾\" button listing the tabs that are cut off. */\n.e-desktop-root .e-subnav-wrap {\n  flex: none;\n  position: relative;\n  display: flex;\n  align-items: stretch;\n  border-bottom: 1px solid var(--e-rule);\n  background: var(--theme-background);\n}\n.e-desktop-root .e-subnav-box { position: relative; flex: 1; min-width: 0; display: flex; }\n.e-desktop-root .e-subnav {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  align-items: stretch;\n  gap: 2px;\n  padding: 0 16px;\n  min-height: 40px;\n  overflow-x: auto;\n  scrollbar-width: none;\n  background: var(--theme-background);\n}\n.e-desktop-root .e-subnav::-webkit-scrollbar { display: none; }\n.e-desktop-root .e-subnav-fade {\n  position: absolute;\n  top: 0; bottom: 0;\n  width: 28px;\n  pointer-events: none;\n  visibility: hidden;\n}\n.e-desktop-root .e-subnav-fade--left { left: 0; background: linear-gradient(to right, var(--theme-background), transparent); }\n.e-desktop-root .e-subnav-fade--right { right: 0; background: linear-gradient(to left, var(--theme-background), transparent); }\n.e-desktop-root .e-subnav-box.has-left .e-subnav-fade--left,\n.e-desktop-root .e-subnav-box.has-right .e-subnav-fade--right { visibility: visible; }\n.e-desktop-root .e-subnav-more {\n  flex: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 44px;\n  padding: 0 10px;\n  border: 0;\n  border-left: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.78rem;\n  cursor: pointer;\n}\n.e-desktop-root .e-subnav-more:hover, .e-desktop-root .e-subnav-more[aria-expanded=\"true\"] { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-subnav-more:focus-visible, .e-desktop-root .e-subnav-menu__item:focus-visible { outline: 2px solid var(--theme-focused-foreground); outline-offset: -2px; }\n.e-desktop-root .e-subnav-menu {\n  position: absolute;\n  top: 100%;\n  right: 0;\n  z-index: 50;\n  min-width: 11rem;\n  max-width: 100%;\n  display: flex;\n  flex-direction: column;\n  border: 1px solid var(--theme-border, var(--e-rule));\n  background: var(--theme-background);\n  box-shadow: 0 6px 18px rgba(0,0,0,0.25);\n}\n.e-desktop-root .e-subnav-menu__item {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  min-height: 40px;\n  padding: 0 14px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.82rem;\n  text-align: left;\n  cursor: pointer;\n}\n.e-desktop-root .e-subnav-menu__item:last-child { border-bottom: 0; }\n.e-desktop-root .e-subnav-menu__item:hover, .e-desktop-root .e-subnav-menu__item.is-active { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-subnav__dest {\n  display: inline-flex;\n  align-items: center;\n  padding-right: 10px;\n  margin-right: 4px;\n  border-right: 1px solid var(--e-rule);\n  font-size: 0.72rem;\n  letter-spacing: 0.12em;\n  text-transform: uppercase;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__tab {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  min-height: 40px;\n  padding: 0 12px;\n  border: 0;\n  border-bottom: 2px solid transparent;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.82rem;\n  cursor: pointer;\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__tab:hover { border-bottom-color: var(--theme-border); }\n/* Active is marked by the rule under the tab, never by weight: bold would widen the tab and move its neighbours. */\n.e-desktop-root .e-subnav__tab.is-active { border-bottom-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-subnav__tab.is-off { opacity: 0.7; font-style: italic; }\n.e-desktop-root .e-subnav__tab.is-off-relay::after {\n  content: \"off on this relay\";\n  margin-left: 6px;\n  padding: 0 5px;\n  border: 1px solid currentColor;\n  border-radius: 999px;\n  font-size: 0.6rem;\n  font-style: normal;\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__note {\n  display: inline-flex;\n  align-items: center;\n  padding: 0 4px;\n  font-size: 0.78rem;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__tab:focus-visible, .e-desktop-root .e-section-tab:focus-visible, .e-desktop-root .e-header-link:focus-visible, .e-desktop-root .e-bottom-bar__tab:focus-visible {\n  outline: 2px solid var(--theme-focused-foreground);\n  outline-offset: -2px;\n}\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-subnav { padding: 0 8px; min-height: 44px; }\n/* Five tabs (the Arena's) fit a 390px phone; a longer row still scrolls, with the fade at its edge. */\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-subnav { gap: 0; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-subnav__tab { min-height: 44px; padding: 0 10px; }\n\n/* Phone: the five places as a bar at the foot, under the view. */\n.e-desktop-root .e-bottom-bar { display: none; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-bottom-bar {\n  flex: none;\n  display: grid;\n  grid-template-columns: repeat(5, minmax(0, 1fr));\n  border-top: 1px solid var(--e-rule, var(--theme-border-subdued));\n  background: var(--theme-background);\n  padding-bottom: env(safe-area-inset-bottom, 0);\n}\n.e-desktop-root .e-bottom-bar__tab {\n  position: relative;\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  gap: 2px;\n  min-height: 52px;\n  padding: 4px 2px;\n  border: 0;\n  border-top: 2px solid transparent;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.7rem;\n  cursor: pointer;\n  min-width: 0;\n}\n.e-desktop-root .e-bottom-bar__tab.is-active { border-top-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-bottom-bar__label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.72rem; letter-spacing: 0; }\n.e-desktop-root .e-bottom-bar__tab .e-nav-badge { top: 4px; right: 22%; min-width: 8px; height: 8px; font-size: 0; padding: 0; }\n/* The page scrolls under the bar's height too, so its last row is never behind the bar (390px, the game\n   panel's move list): the bar's tab is 52px plus its 2px accent and the bar's 1px rule, and the safe area. */\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-view { padding-bottom: calc(55px + env(safe-area-inset-bottom, 0px)); }\n.e-desktop-root .e-header-links--drawer { padding: 8px 0 12px; }\n\n/* The one-line strip of what the agent is doing now, under the sub-row. */\n.e-desktop-root .e-now-strip {\n  flex: none;\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  min-height: 32px;\n  padding: 2px 16px;\n  border-bottom: 1px solid var(--e-rule, var(--theme-border-subdued));\n  font-size: 0.78rem;\n  min-width: 0;\n}\n.e-desktop-root .e-now-strip__main {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  background: transparent;\n  border: 0;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  padding: 4px 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  cursor: pointer;\n}\n.e-desktop-root .e-now-strip__main:disabled { cursor: default; }\n.e-desktop-root .e-now-strip__live { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-now-strip__toggle { background: transparent; border: 0; color: inherit; font: inherit; cursor: pointer; opacity: 0.7; padding: 4px 6px; }\n.e-desktop-root .e-now-strip.is-collapsed { min-height: 22px; justify-content: flex-end; }\n/* The whole menu scrolls as one, so the foot never covers the last sections. */\n.e-desktop-root .e-section-tabs--drawer { flex: none; overflow: visible; }\n.e-desktop-root .e-mobile-drawer { overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; width: 100%; }\n.e-desktop-root .e-mobile-drawer__head {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding-bottom: 8px;\n  border-bottom: 1px solid var(--e-rule);\n}\n.e-desktop-root .e-mobile-drawer__foot {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: 12px;\n  padding-top: 12px;\n  border-top: 1px solid var(--e-rule);\n}\n.e-desktop-root .e-icon-button,\n.e-desktop-root .e-menu-button {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  min-width: 44px;\n  min-height: 44px;\n  padding: 0 10px;\n  border: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 1.1rem;\n  cursor: pointer;\n}\n.e-desktop-root .e-icon-button:hover,\n.e-desktop-root .e-menu-button:hover { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-menu-button .e-nav-badge { margin-left: 0; }\n\n/* Phone top bar: one row — menu, where you are, relay state. */\n.e-desktop-root .e-mobile-top { flex-wrap: nowrap !important; gap: 10px; padding: 6px 12px; }\n/* Brand above, the section you are in below it — both always fit. */\n.e-desktop-root .e-mobile-top__where {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n  justify-content: center;\n  gap: 1px;\n  overflow: hidden;\n  white-space: nowrap;\n}\n.e-desktop-root .e-mobile-top__where .e-brand-title { font-size: 0.8rem !important; line-height: 1.2; opacity: 0.75; }\n.e-desktop-root .e-mobile-top__section {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  font-size: 0.85rem;\n  line-height: 1.25;\n  letter-spacing: 0.08em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-mobile-top__section::before { content: \"▸ \"; opacity: 0.6; }\n\n/* The brand: the word, decoded (LookChrome.BrandTitle); a fixed width so the\n   header never shifts while glyphs change. */\n.e-desktop-root .e-brand { display: inline-block; min-width: 7.2ch; font-variant-numeric: tabular-nums; }\n/* The brand's star: a 7 x 7 pixel drawing (ui/PixelStar.tsx), as tall as the pixel face's capitals and standing on their baseline. */\n.e-desktop-root .e-pixel-star { display: inline-block; width: 0.66em; height: 0.66em; vertical-align: baseline; flex: none; }\n.e-desktop-root .e-brand__star { margin-left: 0.45em; }\n.e-desktop-root .e-mobile-top .e-relay-status__host { display: none; }\n.e-desktop-root .e-mobile-top .e-relay-status__chips { gap: 6px; }\n.e-desktop-root .e-mobile-top .e-status-chip { padding: 4px 6px; }\n/* The relay's name gives way to its dot on a phone (the title and screen readers still have it): the page name needs the room. */\n.e-desktop-root .e-mobile-top .e-status-chip__label--relay {\n  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;\n}\n\n/* A label above a run of rail rows (\"Which game\", \"Character sheets\"). */\n.e-desktop-root .e-rail-label {\n  padding: 12px 12px 4px;\n  font-size: 0.66rem;\n  letter-spacing: 0.16em;\n  text-transform: uppercase;\n  opacity: 0.5;\n}\n\n/* Rail rows: room to breathe, the selected one washed in the accent. */\n.e-desktop-root .e-rail-item { padding: 8px 10px 8px 12px; min-height: 40px; }\n.e-desktop-root .e-rail-item.is-selected { background: var(--e-accent-wash); }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] {\n  border-right: 1px solid var(--e-rule);\n  box-sizing: border-box;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main { padding: 12px 16px 24px 20px; }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main:has(.e-chess-main) { padding-left: 8px;}\n\n/* What-you-are-looking-at box on the Overview. */\n.e-desktop-root .e-intro {\n  border: 1px solid var(--e-rule);\n  border-left: 3px solid var(--theme-focused-foreground);\n  padding: 12px 16px 14px;\n  margin-bottom: 16px;\n  line-height: 1.55;\n}\n.e-desktop-root .e-intro__title {\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  opacity: 0.6;\n  margin: 0 0 6px;\n}\n.e-desktop-root .e-intro__text { margin: 0; font-size: 0.9rem; max-width: 78ch; }\n.e-desktop-root .e-intro__go { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }\n.e-desktop-root .e-intro__link {\n  flex: 1 1 13rem;\n  display: inline-flex;\n  flex-direction: column;\n  align-items: flex-start;\n  gap: 2px;\n  min-height: 44px;\n  padding: 6px 12px;\n  border: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n.e-desktop-root .e-intro__link:hover { border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-intro__link-label { color: var(--theme-focused-foreground); font-size: 0.85rem; }\n.e-desktop-root .e-intro__link-hint { font-size: 0.72rem; opacity: 0.6; }\n\n/* The toolbar line above a split view is context, not content — keep it small. */\n.e-desktop-root .e-view-body--flush .e-view-toolbar,\n.e-desktop-root .e-view-body--flush .e-view-toolbar p { font-size: 0.78rem; line-height: 1.45; }\n\n/* Leaderboard-style tables size to their content instead of spreading three\n   short columns across a wide screen. */\n.e-desktop-root .e-table.e-board { width: auto; min-width: min(100%, 34rem); }\n\n/* Replay status line (ply, started, audit, verify) wraps instead of running off the edge. */\n.e-desktop-root .e-chess-replay-status { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }\n\n/* ─── 25. PHONE (≤ 700px) ───────────────────────────────────────────────── */\n\n@media (max-width: 700px) {\n  .e-desktop-root .e-page-head { padding: 12px 16px 10px; }\n  .e-desktop-root .e-page-head__blurb { font-size: 0.78rem; }\n  .e-desktop-root .e-view-toolbar { justify-content: flex-start; }\n  .e-desktop-root .e-view-body { padding: 12px 16px 24px; }\n  .e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] { border-right: 0; }\n  .e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main { padding: 12px 16px 24px; }\n\n  /* Tables scroll inside their own box; short cells stay on one line. */\n  .e-desktop-root .e-table,\n  .e-desktop-root .e-relay-table,\n  .e-desktop-root .e-compact-table table {\n    display: block;\n    max-width: 100%;\n    overflow-x: auto;\n    -webkit-overflow-scrolling: touch;\n  }\n  .e-desktop-root .e-table td,\n  .e-desktop-root .e-relay-table td,\n  .e-desktop-root .e-relay-table th { white-space: nowrap; }\n\n  /* Comfortable targets. */\n  .e-desktop-root .e-rail-item { min-height: 48px; padding: 10px 16px; }\n  /* Filters (data-keep-list) become a row of chips, so the list itself is near the top. */\n  .e-desktop-root .e-rail-item[data-keep-list] {\n    display: inline-flex;\n    align-items: center;\n    width: auto;\n    min-height: 40px;\n    margin: 4px 0 4px 8px;\n    padding: 6px 12px !important;\n    border: 1px solid var(--e-rule) !important;\n  }\n  .e-desktop-root .e-rail-item[data-keep-list].is-selected { border-color: var(--theme-focused-foreground) !important; }\n  .e-desktop-root .e-segment-tab { min-height: 40px; padding: 6px 12px; }\n  .e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"] { min-height: 40px; }\n  .e-desktop-root .e-search-row [class*=\"Input_displayed\"] { min-height: 44px; }\n  .e-desktop-root .e-theme-duo { padding: 12px 14px; }\n  .e-desktop-root .e-theme-circle { width: 20px; height: 20px; }\n  .e-desktop-root .e-theme-duo__rule { margin: 0 12px; }\n  .e-desktop-root .e-viewer-switch select { min-height: 40px; font-size: 14px; }\n  .e-desktop-root .e-meta-grid__row { grid-template-columns: 6rem 1fr; }}\n\n@media (pointer: coarse) {\n  .e-desktop-root .e-section-tab { min-height: 44px; }\n  .e-desktop-root .e-rail-item { min-height: 48px; }\n  .e-desktop-root .e-segment-tab { min-height: 40px; }}\n\n/* ─── 26. SET PLAYS (blotto, ⅔, lowest unique) ─────────────────────────── */\n\n.e-desktop-root .e-setplay { padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }\n.e-desktop-root .e-setplay__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }\n.e-desktop-root .e-setplay__game {\n  margin: 0;\n  font-size: 0.78rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-setplay__players { margin: 2px 0 0; font-size: 1.05rem; }\n.e-desktop-root .e-setplay__status {\n  flex: none;\n  font-size: 0.68rem;\n  letter-spacing: 0.12em;\n  text-transform: uppercase;\n  padding: 3px 8px;\n  border: 1px solid var(--e-rule);\n  opacity: 0.75;\n}\n.e-desktop-root .e-setplay__status.is-live {\n  opacity: 1;\n  border-color: var(--theme-focused-foreground);\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-setplay__status.is-live::before { content: \"● \"; }\n.e-desktop-root .e-setplay__verdict { margin: 0; font-size: 0.95rem; }\n.e-desktop-root .e-setplay__verdict.is-win { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-setplay__why { color: var(--theme-text); opacity: 0.6; font-size: 0.82rem; font-weight: 400; }\n.e-desktop-root .e-setplay__wait { margin: 0; font-size: 0.82rem; line-height: 1.5; opacity: 0.7; max-width: 72ch; }\n.e-desktop-root .e-setplay__meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding-top: 8px; border-top: 1px solid var(--e-rule); }\n.e-desktop-root .e-setplay__badges { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; }\n.e-desktop-root .e-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n\n/* commit → reveal → winner */\n.e-desktop-root .e-phase-strip { list-style: none; display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; font-size: 0.78rem; }\n.e-desktop-root .e-phase-strip__step {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  padding: 4px 10px 4px 0;\n  opacity: 0.4;\n  white-space: nowrap;\n}\n.e-desktop-root .e-phase-strip__step + .e-phase-strip__step::before {\n  content: \"\";\n  width: clamp(12px, 4vw, 56px);\n  height: 1px;\n  margin-right: 10px;\n  background: currentColor;\n  opacity: 0.6;\n}\n.e-desktop-root .e-phase-strip__step.is-done { opacity: 0.75; }\n.e-desktop-root .e-phase-strip__step.is-now { opacity: 1; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-phase-strip__n {\n  display: inline-grid;\n  place-items: center;\n  width: 1.7em;\n  height: 1.7em;\n  border: 1px solid currentColor;\n  border-radius: 50%;\n  font-size: 0.72rem;\n}\n.e-desktop-root .e-phase-strip__step.is-now .e-phase-strip__n {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  border-color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-phase-strip__who { font-weight: 600; }\n\n/* Seats (pick games) */\n.e-desktop-root .e-seats { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--e-rule); }\n.e-desktop-root .e-seat {\n  display: grid;\n  grid-template-columns: minmax(8ch, 1fr) minmax(12ch, 1.4fr) 5ch;\n  gap: 8px;\n  align-items: baseline;\n  padding: 7px 8px;\n  border-bottom: 1px solid var(--e-rule);\n  font-size: 0.85rem;\n}\n.e-desktop-root .e-seat__state { opacity: 0.65; font-size: 0.78rem; }\n.e-desktop-root .e-seat__move { text-align: right; font-size: 1rem; }\n.e-desktop-root .e-seat.is-to_commit { opacity: 0.55; }\n.e-desktop-root .e-seat.is-out { opacity: 0.45; text-decoration: line-through; }\n.e-desktop-root .e-seat.is-winner {\n  background: color-mix(in srgb, var(--theme-focused-foreground) 16%, transparent);\n  box-shadow: inset 3px 0 0 var(--theme-focused-foreground);\n}\n.e-desktop-root .e-seat.is-winner .e-seat__name,\n.e-desktop-root .e-seat.is-winner .e-seat__move { color: var(--theme-focused-foreground); font-weight: 600; }\n\n/* Blotto: a row per player, a column per field */\n.e-desktop-root .e-blotto__rules, .e-desktop-root .e-lowest__rules, .e-desktop-root .e-twothirds__rules { margin: 0 0 8px; font-size: 0.75rem; line-height: 1.5; }\n.e-desktop-root .e-blotto__scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }\n.e-desktop-root .e-blotto__grid { border-collapse: collapse; font-size: 0.95rem; }\n.e-desktop-root .e-blotto__grid th, .e-desktop-root .e-blotto__grid td { padding: 8px 10px; border: 1px solid var(--e-rule); text-align: center; }\n.e-desktop-root .e-blotto__grid thead th { font-size: 0.68rem; letter-spacing: 0.1em; font-weight: 400; opacity: 0.6; border-top: 0; }\n.e-desktop-root .e-blotto__grid thead th:first-child { border-left: 0; }\n.e-desktop-root .e-blotto__grid tbody th { text-align: left; font-weight: 400; min-width: 12ch; border-left: 0; }\n.e-desktop-root .e-blotto__name { display: block; }\n.e-desktop-root .e-blotto__state { display: block; font-size: 0.68rem; opacity: 0.6; white-space: nowrap; }\n.e-desktop-root .e-blotto__grid td { min-width: 3.2ch; }\n.e-desktop-root .e-blotto__grid td.is-hidden { opacity: 0.4; }\n.e-desktop-root .e-blotto__grid td.is-won {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  font-weight: 700;\n}\n.e-desktop-root .e-blotto__grid tr.is-winner th { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-blotto__took { font-weight: 600; }\n.e-desktop-root .e-blotto__history { margin-top: 8px; font-size: 0.78rem; }\n.e-desktop-root .e-blotto__history summary { cursor: pointer; opacity: 0.7; }\n\n/* Guess ⅔: one number line */\n.e-desktop-root .e-numline {\n  --rows: 1;\n  position: relative;\n  margin: 28px 12px 4px;\n  height: calc(40px + var(--rows) * 30px);\n}\n.e-desktop-root .e-numline__axis { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--theme-text); opacity: 0.5; }\n.e-desktop-root .e-numline__tick { position: absolute; top: -6px; width: 1px; height: 14px; background: var(--theme-text); opacity: 0.45; }\n.e-desktop-root .e-numline__tick > span { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 0.68rem; }\n.e-desktop-root .e-numline__mark { position: absolute; top: -8px; bottom: 0; width: 0; border-left: 2px dashed var(--theme-text); opacity: 0.55; }\n.e-desktop-root .e-numline__mark > span { position: absolute; bottom: -2px; left: 5px; font-size: 0.7rem; white-space: nowrap; }\n/* The target (⅔ of the average) is always left of the average: label it on its left. */\n.e-desktop-root .e-numline__mark--target > span { left: auto; right: 5px; }\n.e-desktop-root .e-numline__mark--target.is-low > span { left: 5px; right: auto; bottom: 16px; }\n.e-desktop-root .e-numline__mark--target { border-left-color: var(--theme-focused-foreground); opacity: 1; }\n.e-desktop-root .e-numline__mark--target > span { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-numline__pick { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 1; }\n.e-desktop-root .e-numline__pin { width: 2px; height: calc(10px + var(--row, 0) * 30px); background: var(--theme-text); opacity: 0.6; }\n.e-desktop-root .e-numline__label { font-size: 0.75rem; white-space: nowrap; padding: 1px 4px; border: 1px solid var(--e-rule); background: var(--theme-background); }\n.e-desktop-root .e-numline__pick.is-winner .e-numline__pin { background: var(--theme-focused-foreground); opacity: 1; width: 3px; }\n.e-desktop-root .e-numline__pick.is-winner .e-numline__label {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  border-color: var(--theme-focused-foreground);\n  font-weight: 700;\n}\n\n/* Lowest unique: a box per number */\n.e-desktop-root .e-lowest__row { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr)); gap: 6px; margin: 0; padding: 0; }\n.e-desktop-root .e-lowest__cell {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  min-height: 4.6rem;\n  padding: 6px 8px;\n  border: 1px solid var(--e-rule);\n  font-size: 0.78rem;\n}\n.e-desktop-root .e-lowest__n { font-size: 1.05rem; }\n.e-desktop-root .e-lowest__cell.is-empty { opacity: 0.4; }\n.e-desktop-root .e-lowest__cell.is-taken .e-lowest__who { text-decoration: line-through; opacity: 0.6; }\n.e-desktop-root .e-lowest__cell.is-unique { border-color: var(--theme-text); }\n.e-desktop-root .e-lowest__tag { margin-top: auto; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.55; }\n.e-desktop-root .e-lowest__cell.is-winner {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  border-color: var(--theme-focused-foreground);\n  font-weight: 700;\n}\n.e-desktop-root .e-lowest__cell.is-winner .e-lowest__tag { opacity: 0.85; }\n\n/* Game rows in the Games rail */\n.e-desktop-root .e-game-row { display: flex; flex-direction: column; gap: 1px; min-width: 0; text-align: left; }\n.e-desktop-root .e-game-row__top { display: flex; justify-content: space-between; gap: 8px; }\n.e-desktop-root .e-game-row__kind { font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-game-row__phase { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; white-space: nowrap; }\n\n/* ─── 27. OVERVIEW: YOUR AGENT NOW ─────────────────────────────────────── */\n\n.e-desktop-root .e-now { border: 1px solid var(--e-rule); margin-bottom: 16px; }\n.e-desktop-root .e-now__head {\n  display: flex;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 8px 14px;\n  border-bottom: 1px solid var(--e-rule);\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n}\n.e-desktop-root .e-now__head > span:first-child { opacity: 0.6; }\n.e-desktop-root .e-now__row {\n  display: grid;\n  grid-template-columns: 11ch minmax(0, 1fr) auto;\n  gap: 2px 12px;\n  align-items: baseline;\n  width: 100%;\n  min-height: 44px;\n  padding: 9px 14px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.85rem;\n  text-align: left;\n  cursor: pointer;\n}\n.e-desktop-root .e-now__row:last-child { border-bottom: 0; }\n.e-desktop-root .e-now__row:hover { background: color-mix(in srgb, var(--theme-focused-foreground) 8%, transparent); }\n.e-desktop-root .e-now__row--static { cursor: default; }\n.e-desktop-root .e-now__row--static:hover { background: transparent; }\n.e-desktop-root .e-now__label { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55; }\n.e-desktop-root .e-now__go { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-now__sub { grid-column: 2 / 4; font-size: 0.75rem; opacity: 0.6; overflow-wrap: anywhere; }\n.e-desktop-root .e-now__live { color: var(--theme-focused-foreground); }\n/* On a phone the third cell (where it stands, \"open →\") drops under the text instead of squeezing it to one word a line. */\n@media (max-width: 520px) {\n  .e-desktop-root .e-now__row--stack { grid-template-columns: 9ch minmax(0, 1fr); }\n  .e-desktop-root .e-now__row--stack > .e-now__go { grid-column: 2; }\n}\n\n/* ─── 28. THEME / TINT CROSS-FADE ──────────────────────────────────────── */\n/* On only for the length of a theme or tint change (themeConfig.applyTheme),\n   so hovers and other transitions are untouched the rest of the time. A run\n   through the tints reads as one surface changing colour, not a flash. */\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-theme-anim,\n  .e-desktop-root .e-theme-anim *,\n  .e-desktop-root .e-theme-anim *::before,\n  .e-desktop-root .e-theme-anim *::after {\n    transition-property: color, background-color, border-color, outline-color, fill, stroke, box-shadow, text-decoration-color !important;\n    transition-duration: 0.35s !important;\n    transition-timing-function: ease-out !important;\n    transition-delay: 0s !important;\n  }}\n\n/* ─── 29. CAPTURE MODE (?capture=1, src/capture.ts) ────────────────────── */\n/* For filming: nothing moves between frames, so a tint switched on the beat\n   lands in one frame; the relay's host:port is not on screen. */\n.e-desktop-root .e-capture,\n.e-desktop-root .e-capture *,\n.e-desktop-root .e-capture *::before,\n.e-desktop-root .e-capture *::after {\n  transition: none !important;\n  animation: none !important;\n}\n.e-desktop-root .e-capture .e-capture-hide { display: none !important; }\n/* The capture frame (540 × 540 CSS px) is the phone layout; scale it so the\n   smallest text on screen (0.65rem / 11px labels) is at least 13 CSS px. */\n@media (max-width: 700px) {\n  .e-desktop-root .e-capture .e-app-shell { zoom: 1.25; height: calc(var(--e-frame-h, 100dvh) / 1.25); }}\n\n.e-desktop-root .e-quest-next { margin: 4px 0 10px; font-size: 0.85rem; line-height: 1.5; }\n.e-desktop-root .e-quest-next code { font-size: 0.78rem; overflow-wrap: anywhere; opacity: 0.8; }\n\n@media (max-width: 700px) {\n  /* On a detail screen, the list's own controls (search, counts, the toolbar\n     line) belong to the list: hide them so the detail starts at the top. */\n  .e-desktop-root .e-view-body:has([data-pane-shown=\"detail\"]) .e-view-toolbar,\n  .e-desktop-root .e-view-body__inner:has(> [data-pane-shown=\"detail\"]) > .e-search-row { display: none; }\n  /* Keep commit → reveal → winner on one line; the verdict line names the winner. */\n  .e-desktop-root .e-phase-strip { flex-wrap: nowrap; }\n  .e-desktop-root .e-phase-strip__step { padding-right: 6px; gap: 5px; }\n  .e-desktop-root .e-phase-strip__step + .e-phase-strip__step::before { width: 14px; margin-right: 6px; }\n  .e-desktop-root .e-phase-strip__who { display: none; }\n  .e-desktop-root .e-setplay { padding: 12px 16px 24px; }\n  .e-desktop-root .e-blotto__grid th, .e-desktop-root .e-blotto__grid td { padding: 8px 6px; }\n  .e-desktop-root .e-blotto__grid tbody th { min-width: 9ch; }}\n\n@media (prefers-reduced-motion: reduce) {\n  .e-desktop-root .e-dashboard-shell *,\n  .e-desktop-root .e-app-drawer { transition: none !important; animation: none !important; }}\n\n/* Calls (:v2 set plays): a forecast sealed with the first move — \"called · sealed\", then its percent. */\n.e-desktop-root .e-call-tag { margin-left: 8px; padding: 0 6px; font-size: 0.72rem; letter-spacing: 0.04em; white-space: nowrap;\n  border: 1px dashed var(--e-rule); opacity: 0.8; }\n.e-desktop-root .e-call-tag.is-revealed { border-style: solid; border-color: var(--theme-focused-foreground);\n  color: var(--theme-focused-foreground); opacity: 1; }\n/* Bargain: the offers table (blotto's grid, wider cells) and each hand, sealed until the end. */\n.e-desktop-root .e-bargain__offers td, .e-desktop-root .e-bargain__offers th { text-align: left; white-space: nowrap; font-size: 0.85rem; }\n.e-desktop-root .e-bargain__hand { grid-template-columns: minmax(8ch, 1fr) minmax(16ch, 3fr) 4ch; }\n\n/* Operator section: the operator's desk — cards and commands from the views it sits beside. */\n.e-desktop-root .e-op { display: flex; flex-direction: column; gap: 14px; }\n.e-desktop-root .e-op-list { display: flex; flex-direction: column; gap: 10px; }\n.e-desktop-root .e-op-cmds { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }\n.e-desktop-root .e-op .e-setting-cmd.e-op-cmd { padding-left: 0; }\n.e-desktop-root .e-op-cmd__label { min-width: 12ch; }\n.e-desktop-root .e-op-cmds__note { font-size: 0.85em; }\n\n/* Launch additions: the operator's current expedition, under an agent's quests — the theme's accent, a quiet rule. */\n.e-desktop-root .e-gamify-expedition { margin-top: 12px; padding: 6px 0 6px 10px;\n  border-left: 2px solid var(--theme-focused-foreground); display: flex; flex-direction: column; gap: 2px; }\n\n/* ═══════════════════════════════════════════════════════════════\n   30. THE LOOK — the one style (the demo animatic's information cards)\n   Pixel headings (Silkscreen) that unscramble, mono lines typed with\n   a block cursor, corner brackets, status lines above and below,\n   and the tint as a FILL with dark ink on it, never as text on the\n   light canvas. It was the \"animatic\" style beside \"retromod\"\n   (docs/ui-style-experimental.md, now history); since ui-v2 it is\n   the only one. `.e-look` is on the app's root with the theme and\n   tint classes (themeConfig.applyTheme), so these rules keep their\n   weight over the older ones above without a switch.\n   - It follows light, vivid, dark and all seven tints: every colour comes\n     from the tint (--tint; green when there is none).\n   - Motion: arrivals only, 0.35–0.45 s, ease-out. Nothing moves with\n     prefers-reduced-motion or in capture mode (?capture=1).\n   ═══════════════════════════════════════════════════════════════ */\n\n/* ─── 0. THE PIXEL FACE ─────────────────────────────────────────────────────\n   Silkscreen (SIL OFL 1.1, assets/fonts/OFL-Silkscreen.txt), bundled: the\n   dashboard makes no third-party requests. Latin only; anything else falls\n   back to the mono stack. Not fetched until a pixel heading is on screen. */\n@font-face {\n  font-family: \"EmporiaPixel\";\n  font-style: normal;\n  font-weight: 400;\n  font-display: swap;\n  src: url(\"data:font/woff2;base64,d09GMgABAAAAACDUABEAAAAAc1wAACBxAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGlIbhAAcbAZgAIQ+CFIJnAwRCAqBpxSBkiMLgzYAATYCJAOGaAQgBYRGB4RMDIEyGwpmRQdixjgAMHx2yMhAsHHANtNLxf/HA02GJOR7JKprV5NUnRSjxHppZpqxPWeO2JpuP0Isn3Ov4hHC4zgO9qdWap45dxcvUZxGXXw/8Nxb3aV/w6i27p5poYiio1hQTiyOIYq3OJ9tR+9p4zYLR5R3f208FD8D20b+JCev/4CnvZ9U2MkZjQ7u4J7o7SzUVNVI6WwIJOW0uo52Sqs/fYh/f2+bc9/fTpMEh7Kb1TTXFbYVR9AEiTKlKSzGo4jHYzBd/Q+EJMSMdcuq80ykKr90zV3RXfY3/0NBa9t5xEoiUaqEhj+mHko5eD5t6TpQVEAKfOWHb3YDZEAdGUEKSr71FbWLervqaY2x/5Z+flXd2D0jaZ+DHBLaRchcZgPHuR9cv8N95J8g/qbZ0vsBIkuW98HTVBltFaZD9UlTBkImywPyEPAXpbZ1WaksC7Z0eA8kIAHRej2HDmOnmSDMsT4kRFxZZaPdY2avJsdX3SI7V/XTmIYWUjkRYUjoh+wiM8j/2fTf9t7Ryk+2P9hBhdgBKjp94Cq/aINFubqzM+Od2bWeViaB/UD2y3u2P1j+4NgBzUrWW8uBhwGG7hNBlxQN9/lFnaohKpr0qcqcNEWXx9H7S064bLOOjnhfc75fophbX9tkyWGC6uq0g+Ia4Rrf+9t9X0tNVZfKWSNjQRdlgVW5JK/2zDG2agP0ov/bWAWDg50ZaN2PM4IwFPbH3wNDiPARIRmi4IX4iEYS1SFnnce66BIWIYAI4TvrnPPZ204ACY4bmgVFJECEB4BWywEIc86t6HpUVrk9R/HkZ4FhQkBAB5EAKKtpNSgtkOHHjazIiobTWPAARIQymlxASYNMWUqpgErjkwrIiBNyu3pTV1IAsb6o3cXgr+9E+QUjfPRaG+Gp3kuExi9FSwBGRdyXhsuxUorKvruRqW2kpIrkqiTK6jy9djO9QdnOlqW9jNo0MpWv/iURH9GAa4r2DqnlDW/Y70xcecMbanqzfTWDj/Ah1yk+Sp8cxcOEc/gmIq2HfU13J/Bl0Ginr9T7Z96j4OT7s2Dc/D87zEAEtD3wcrqKBUZ3kqmlI7FmacVoVWB4O9VsRHPDCaNJC14d5GTwgblnUgCEj749HcDOb+T5g6HIoRLXI3EtPAoHyVf1eAKtAGB/pRhdLv25vQA4LICB5kVdsajKKzOIHk8Oj4icNVcDaekFc1x3jVgeK+K6cr25/pweZ8S5ceuDetoR5Dg23CxOHP8g2PaiLlxPrm/a9dL/AcEAAP+X/FG9nUfNaAB4eG5O5msqD6aDAEYAP6fDIeu3Sbc0FPg/DkebZKOZ9jqj3SYLLTLDQePMMdYs401wzBFHTbEZEZOQUeiiq26666OvfvobQJcpcxYsWbHmwJETZ66Wmm2ZUxa4yo0ff4GCRYgUJVqCREmSpUiTp4BKoWIlKlWpplZnsZ2WOGGMyXbbb48Ddtniiq3qrXXSXNvctMNxQw1zzWkdprlliAbrjDDcSFPxMVhCPAIiUp0p6eiktx566kWOY0iPPmMGDjFiz4YtOy7MFPHizoMPT958BQgXIlSYeDFixQmSKku6DDkyHZatQqky5Wrkq2Ui12prLLfSKit0vgae/5uXocvSiMxSA0THvQDKKHq2+aI19yyKQSr/RV/5fhBZu4Z7t4b28NOzOKL7FsfSvHqFevrPZV7akR4ba8E7cEN7LYgwuhICqtW4hEKt2hIFUp8p2/cK1yWixOgy3e663Jq6AeX+qWAblN1Uw25PWzoYMDpq/RMLZbd1dyauPxEo1bVRirrRKXjqT0IrEjULbJESJPTe3QQh2G6tkVq4egrLP9tuctgf9dGKtygedn/5ldOZ5q3y1JctkiI244XNW5Bcb0s13RtBc01soif8cHU6GUvzX+qA6UddVzm0OWYrWE3GEBYuA+rYHIHnHjw4+lYdNsjKjeWLdO3LiO9KrlVpQqhTgEQIYUC4HxFUF0pUSF9gnmpB57ZHNwc3Z6wNkKpEi7rrIeay3jhhIa8D4wUNJ6FV2oY6sTP3DaWp/l9MRJ7MtGB5x8dtk3aD12CDIB88JAw4YkYXVKIDg50WNNnAT2+YUwH8egnajCHtJPokVQyIyytcjq6ZNKJnO7IKjKXYay7ORGusCvvuvS0fsOxyCmxdV05CwQ2YR+k3jVrqmEcopOU0qkfIuE2iuC3oGXpvHCVFmruIlh245NclnTnLMlW2vTVqw3t7LPOQ6aDw0/w6JT4glVQ8rqrJX+fMBXwaPjd+1iBwWx6bS5RrJm3TqAkYpfmq7M6BXmKItX2fWdcLL3F6PdUhmtnxa3vnorEpFQ2NkRF2D4ZDuQJSO4IIns1Rd9m7oL8MsquC4qxzFBth7pr/xPg2f2J1WVICwwU0L/htZ8DjMLouP4pJWTuJvNwMRNqDEJxaktL1PktQZGjZ94TmpI9rDseglZN4ld2fwEZxp3DOwQDxOUPqHM8P+L9z9CLgcoGMpFOSaRiBLKOQYwrkGYMCU6HINCgxHcqMQ4UZ0wNoFs4TrVrb9yoV5GvNuDGZsmwSzm/ucFPb+fu+VVHQI9gZSH1xptoKEmtYxToqNlCxiYotVGyjYgcVu6jYQ8U+an0EmS1bGC+OZCvpatd0EztMih4hd9kEjIPxJDx/CpFhGzndrmlSt/f2+bSBAGbeaXt2Zwvuzo/pJKtpp+8/hlDNPEpr4KwvIN/cn1qiqDcolqch4VD85GVCnAMAbs7rZF6kJODvywoyK8MgJsEN+g0qWaN6MFuyEdgMGeeXlm+Rqey+kipUQGPN7Fxp/htanUvij83eu9xcu0lk5+57XLwDEGSeReYfnPmSsy3nWOycNCMTmW02jyPZj0qldQeaOZmK8HVnWS7v/BnT21Uj5/LtfHD77bxJaRpykzqI1JWLVsc9z/vRdC6MsVZUpjpPMiaqqIyPWMlyUtm5/KyDNGkUkwOoY9LWfqN0WmtfxzqmpKx6ErGsFVieC3NfkWI/bbK4I5QcAPFlNKbmelJnJyc2HUuYXMMDINOUy5ETB/fJg9vVX+elr2RWrVFnLc6FjK2oubZu5RcYL5UtMS9ypq3wR85PyoG86fhzTqznMtFzEioVlK645Az9ttkNXmZDlScp7liOeO0Nd832xtc1tC33dd8AuzB7+ptgH031JKQdYLMRWITGiske3CpBoDTI8E8m7OxFgO7DujgrlU5aabyNbE67qztd2H8XQyxTYLSbffmsThqLmjEbnIU709h1oPHvau45ZrUXIalI4L0gWfxRi3U+fGeYWU2Ozv2dD5BBekXWfttDsL3Ao4uC6KtUMmgaNWTRY5R1kUedRU/QArcDPmVFE8T6AMYZQWJQCMYkI0j1AUwzWpxJtwjwP9BOEWT7AeZSBPknCYSFFEGxH2ApRbpsGQNZhRqo9gGsMYL6oBCCDUbQ7APYYmTazmEA6/AWuv0AeymC/pMEwkGKYNgPcJSi08ZpuzzSaCa04uZwdKYY0bPY8wajs/O0nSYKYZEmtUwDqwl5onHteOLG8TRb4lfciSvs08AhDRwn5HXFk+OFZ8cLL44XXgXBLQ3c08BjQt6ET8cbX443vh1v/AiCbxr4pan/047A+9ubvlnQp8PJsIEp+rp9dFNT/cw3e1WbWYOYppfse9/y7Qn+n0IAbgPQK3TwkDwgWyHMmIgeMV+juI0yg6TLPPH8NuCwt35bAJglacCyPaAcJerCgxJoNor4Y8dsBW6dIwVpSUmWqM2Lng3PFZhBZ9iynvB2ZS2igCsbKlFdEswoVh24DbdS1gWOio0RqU3AlZdqHyowmCEvIJSrCI0fwlILJkCa9cuvioW6fLIMQYAu60ohfFMdoR5u84mlSJH8kQD75kTxFrp9p4Mi3krLtgsSkBp1pitndci5tGxV7BnByVQFYfg800YfhRqcslgug9pTRqDhYIZM98+eT9gkI90+D51U183V7YZNmbbUaiwFu14rTSIGw6JeWUlLWIiqssQy3WYCuA6QJTa79HegK67udlrIZD6S0GTEclEShUWaBN9heERM7jiB08wJIS+VRAlmK6RACt7E+FOr3gWONSsYaDmK/0VMEVtLaiUuoao1I2qLcqV2qRLMueiFUUpXbYrofR+idlVyj/c3txC6hfyiSncNAfsBpDuggkX+8DU3sHWqcFJT7VMjXhttkMUmUpQIzmdIRKGqWIpwGOaMKYmVgj+YSX9MiZV6IjbRSAHhGHFcPfy/WHosXHrlz5RkUnMAVlM0MzE66O99X9rud4FA0T8j9DJXM+IclGzoejyuVpVVdf6hjoMeypCLBtzEGYktnkeoykgdDII74iWFyOscJLzSETJC2OGtDfy4kUiLvYQtPRDOFxDeJtlxNUJa8zIGtZphiaWhRSmJdaRUpQUtHEb976pwpTQMxCE0no26R770NaxNOB4KUYwqUeumB5FgCbNQraTIHynKUdkopTburx4q6Sh/4AVMdhaR7Zfdn17HJ48FWZ02NZTJQlEhC1Nd5zlXyE041gvCaRWjnvZ+SH0yDjUUnd7teAinSeEJp2wTk9y2MWmUHApzhjbc30JfJLOqZzrSZORDXrk2sEZSIgTFiIZrdBFUnyljuxezBU/Ov0TaCT3+kY0jJfFZgahM+Rrk1UImsYNXL2qlrRDjb7XU/y4Efz4zymgpWP42nG765IPVrwRoes2xx8ow0G4yNyNQWuVzazLq/WPH7FYR1GtDmCNgctRhq4Td8j5POkGhKGSTjqxYk+cQ4OR0KxXpwr4Mnz1xgrvw1xnylU2+ElrPyt1+VlR6aEe5JV6qRk1GGIRz8IBCnp+qksaazZ/Bc3KB9eKY+voc+niGbPfp7WVTsKLhyG0Jnia+fEqnJ8S4D0M+eJHYH/hBR6XYWT5SCVYTP5FC88XnEKXrVFLpxInlys5E6lraNj0rrow5q3ObqmWotMO46A3908cys3etYw9vEaHo3FsCJKvioOXpd09s84rDrzSGCRkmTMmnBI0zhQrkDRvltlZo9tqneFAES7F6k2/0y2kLtCUJYopLT9wPeiSzHfhJ0BhxvmPYcqnX/g9LhGU4XIW5GRnNgEsO7ZDR261I5mgOAz98e9pa0tzyu3ksinwG1UwEjOvA87RlgRoTT0piWwpXxvLDFoggLDDA1WprC4W/I2v/WULxGLEcBAM/890Py0pA/KT05Glh6pYt84eDdjtfXZNW1S0Y/ul0LxMEaBz5ONTXr5/YGKjpQnvw1tQ/Tsty23Bt7zZNvm3m+K3T3qt6gG5f3SAj1QYUAqJ22lkXDQq4ZIW58HSql0WBOttJqiuA7Oqznz6NPIjPlGlRV252oVarVPFnvHRiLjFN46IszfuLotCqQjpO09Uq4cv4YV4OUoEf6k1CwTTUr0aKGxLUct5oSAZZKl9m6bpPytqMharYeCRc0XyUUIJcaRcwKxF9tR7fqxmqnWUL2CyQKm8Egy50SubfpNrnLOZCfovs1C4XMsHzWKq16Q+l5TE09eLBoWGB4LNjYtSdj7NJQYwaIU8VniItViqTO5DKwq0ZP8TEZ2X0lMxcoFrn5YW7x7UFORtok/2c2GOoxTBpDU+icA9zEkafHA30Cfdix4yDvcM9Iw4o6SkfV4Nbmj6+8N4ZfI+1JRaCWJnkMe0vszHi1o3YIt6SQBp5lZbIm4P2ctp3Uamk1sK9RXPN27/i65iTgXkhVJ9h1sySIwsbDnP0KUBLVnuDtam+NsjdCpaWMYcID3nKXwsXnsKpwfTPbiKKPq7DuBF8G4t4hgMvQmEEgbWU93wdfdNaxGvD0TOowYvJNIw2viuWklW2tFXFa54FCmWlOBQV82rSluqnyiYyLnwZb7e7qhVghO6NRNrk4+hCxL7O6aLvJdrHTM36lfXSbOYEXm/bPHxBh9TwoZHdhC6z1buvhrmMxzPkNX7PND5aN6Z3PrFniNiNYWF5PRefu+yUlAAQBOc1AZN7ru8iUuv6Ln8vbFJJOvQCgJ50FsM8GEOwa2FwdrFhzi42zNnFs8Fhc6ZJHjV0jjIv5yjzco7KoApPpgJyU3NTc1Mxd14YnMfe2FOgmJ5zyiZZ6U1ubW5tbm1ubbKvVmdABmWYO5CcF+bOh6b01O/AWK7S3A1WB3P+n4zBWY0HkeURnKepS3D5d4Jh8OjtPl+nPvqKuMEnJggADgEADLgKNAgYw76LGe2sS8T2kbeX9VfyCY4IFo7hN5Qlrc26hGFtYhV2d/E2bO2HTckFh9pCsZcIYMPghn2gRWa9UCIv49xP+UOtYyD9A+sb4ARbiNSBxFNQfICQ4TDYy5hf/OWMhFv6ooon5OdNAe7UlNmdN+jXy44N2wuZNPSb1YFXYAbcZuFq1mXvIdwxxz4Xl0udVH3eXOY4+2iM+7HLBWY+l7Xf+KeuLd550c78zHN6X19sNwa4mOiavdi2OIn4vDXudbZW1V23bndA4xR/7Hw++zaHl1dGmL2l0SvF/99cOLHwK6M85nwS7oO+eV6h+sY9uKievpWjCCt6mK9EgvGcAPyZtzLv7rCIn2vuuRZMmOab9PtIN7dlAmazAy94IZds6/d/ucNR8loQOEitK8EJuD5Cpp0qlSJG841C3eGrm3xfpUlr2aL3Ic/2BZjVQGYZMaffem4FRlSzYcDL0yk65uiRG0fiGfce3+wC0085KTiyM2/wNCSCSpID7xBnEnEfLHOsMMOshhTB3Ic9SLsQUlgJob7skvV/7b9ZnkfRblC530XwSRFjUtOv51/nMQJu4Yu15TSrE6LsrwBVfRbdd9vtK8rN7aVmL88ucQXJckkTwm31kJqCttBsdytSwNNAkXd0pAW42ZNfwgIj7bCvIuAEcqcim8MunWBWf455/X3R9V4QKeZCCFOsagycOrtVMPOzlCKz7HLxfeCSqaMiKYJZ3HArxAFPvwuKs7hkUj870p024ICYGmD65cp9AJMuRrMMi+gZq1s9zeVMuR+1fBr7ArMzG4b7G1hfTplqYciwXKJp2mxl/ElnfCqKBH74Jc4c6EQQ6Epp/P5GpZIW/7v737pc0dvc+o0cVfnGxMg5lvrDtu3FVfFzqc21cWf7aD75F2VkPXltyzyxxWs+c17vgCPgUQY8z0ZmvUUcaFNJAKdZYczSM6Cm4l1hHrbI1KIRHQakvxIKjK9aQZRYSsQkt4HBO7e5ordI7gUKEuIiJyvrN8awEzOoonv8/d8gsVDDihGRlvEmPeshjYxOMtkCLJ1qc43bfTDsyT+OLeMFKz+HI3genqEM/diN1Vkr0cBg9+CWIzOGpMmnsvL1TQJbyhYUO8LIURAjU7cPw1CzSPAtkEj02+kGdGvsRa609kbL65ztQ3DDyiVSpyehg5N2jGGHoIN27TEm9vPcQAHh8BMmSsTxeulpdVRu3XTV2pKh8y7yjyk+TVo6wGUmV1OfFaELq/gUVmTun7dvlrF+PYZKfQ5fX8ViHANfjZqt14qVuXIpLsT2OB9tmIPY/VOXxnaeCsGgN8LT6MZs2GjbJfb/nPIYTtpF9uRfiEc++fluWUqeCaTbNJByjiQPL8H6C9pwLJJTJ8OwEp7msAWuiSCsNWZ/mFwCWGyWmzN3AwMpiKziaArNC5YzC5Sl0cHBenjJvY4B3MghZgT7pHU8hvozRWgZnzRjr4xqMrfKGjrTvRX7vvlvom27rxPmyiCaPsJPkJnMrZhzOO6ndOL8lwjhL7t9hW7AFgPtoxeOjMz4nF7TGaryLGNvZwD3eEg9/Zs5+oMnvad8DFDcsabbKKESE3bqjsvFjpS4VeTKvMwDWtts5rIWasudIEReJafs6V63gCScf5L79xTRO/bHIsxfGDoQFkRHDrDovzO3JPt8P9NvtOSYOBdnMzJ+C1677mpv0DrvoqAZssX3qADkLImJxayPyciIjGuEFtsnI8HcD7ziWP/PmVaTun1RIuvJXReWDXI/L1Exe9VTaNJCRAWe4+rC9sMafWfTzlk0IoVXp5dxHRnVKi4GOsD12/oRw90U3pPZSyqbriWku/nXQAcPHKN9LCKJCizyOR8/uplQyNAWLsrniQCFkQWWWeDPWdTmajc+CD75R9/Sm/EdeKiypGhaTFz2eVkBmxh5LPBedxdUqDEGoL0+5syLrqHHyz1oMJvrwJCwAo18OBiQyRopqjl63yXH3A9g3voMbcMADPjx6O7ieWmA8LOq+gB03fn9LySIJ//yLX0gz7hhqkg2l3ha/Fix9145Gj585Fyt3z4A/M0/Yks3DgFruMzDf/kNPANpx22GwvWaxUtcLsnIVRHNI0A3vrpm0J9PrazRP71eQoQh8CrVbLEgctlsJkz2iqPdBIzql+nHEfXnMLVCC3ZflOKdpzGDK0t4p79mmf3zsZR19k+jeM7MevqY/LYQEz9quPv0L6IQB8VZhwd/R2hwtavGsB6rso2aptdfnH/P89Rv9p6P223Y8Yr4/4CzGfaVMDkuAAmfgXk8d1LmXN1GQZP99nuO0CjN4uO8fJkCIQUuZKZDkbyHDR+tYNPjCxWHHWycEVw1FQpjlmiWZYjVdqs9euKdSdHIrsc+drTDjptQi9994HZzwVm87PO2V8yC20cyCiqJ1ZucactwiK2zFoAhDnVOgw+2xiZL79n8dlFe94YEMQkFltIgNzEaD9z4K/N4lB+FbIoPQ5m/6qaeslsLHbOtxTMKG7G8B1Sq1FsEtLSKb3Bvn1hQ2BlHwq9KZzRF2SJlwdvcAFv7Ana+CSepNTUDq5YY5KYJd2rXqjDPYSjzszq3DusFPkO6ymj+RsDrk/6XcrXcg3O0NteoVcQn/wIQ+eTxdgFUjv58WZjmmYARosLIY5Ols4+8VRRP/rmTePL2zx9F1gF26+goWTeX/YPf7RQmBrVU7PM8hFtDr0kJZ6ZtN50mhNUdC8Hb/XnlDkc8SL4FeTvgxEo8wo/EPc46u4XHo2ojz4Iuv9zOIk2cjWxmYJMe4NVweMAxRH2MIFcVojIwAV16sR5kNz5+FUNlYFXA+UixO9f0Mh7ChuxgbPQYc31XIUqxEgDG7HtvTweY8ZR5u/OVKcMmBw+XG/mxuQD1Lxw2vAyQnRpzVMDgqBvWPE0e3DbwzcGdc+3I78D/uv7Y/B8vKbXGYObpQy9YVxJVEF5YSbd3PGW9ioOkSpuCY2Zf4SckKrIWjZv1TUcuU1fT4gpuVy4wpDe/qTlEyB/UfrLv93AQnFr1831vxitrjNljMS/cMLedZEy+yOZI8qC48l0eYwAj45sifTb2UYVgaghaVNa6j8dpv+taOHBUWAb6iXLXgeRnPp3u8gfgimkfak+2xOQ4nDzSWRIkpS037g84WaKOhj4XM3IgPOiv6RnHToHDragfq/PvBsTOqZirhw9X8UuwuQB3SxrnqKsc8mFznVvs6bAPw+32g4nrteNHNHcZipIjES06OfaTwTDwBQBf5wgB87H3ur9Co0ZXNufIC5rYYm6rMSON/DkY4WI/vWEPwf/24rqOPrinaVro6Bt7VsRopd59gZ/5qA9caU+oLZWDsWcs9ndJPvd8SzRneVz4aePc6o+DvzYICyYm3IYw5n6Nf580QDiVeiHyQDXdyoGNW+ngVWOBLclXkeVfiALQGZdN7RXa045fdspGQPvthkArmnS3Vem4DFWdqVXf5iHLP5VxPsBW8NjBWCbxuOCRmqrYovxP+7i2fOTMc2hT+hyJqOr7UvAuLzDLKbW1bRHmVS6VvdJDs1C/K7w7K9nDm9LI+QaoAaEhOoTUoKVQLP3UzW+V13bUj8C6ooyDAPsXBMyB3A0Gj7nEr/ep/7GP2NK6JYoLkeznnWfMcNx0iX5vmGWXGLdzHRBRmIw8Wv3qvbVrkElbBe7PcR2GXGrEccr/rv2ZJM907KeTOLy//YKao9xMorULqfQtJbbnad+kygoUzAcA+oGjQue93D3tX9sHHSXt5IjRo+9HBCB+X3WPhmV7Ht9ESvYlAOxa/q0EgPvfC1Vt4MlU2XkBBnQBZkRv5v1YMibRZu/fz9ulhqbeJwfSyjIbq0kJJ9JIPVAgplbUvrkS9ahVaEsdn/yxrbTz1cYXriBrSPbI1zDWqcg8zhZAwY1YHMhQuRDnSuuC6qANLL7w0tgyl6zKqKwNtoRqsZy0qrAgxMQrWjuXVJPdCI8ODJLEqGoo2C5XRqGRqzPATx4MhoU0EwAjFmRgEECkEIs6MYCOWDEvIV3T+yUMRWQvYbm5/BIeAxtfwpcgzRcM006+gncBxerq0Gq13FjneXG+GiWqcbCWVblEOfhV7BeZlkYLEiGewjLNpamoVLIUR6VIPfm54CehqYH4VZbL49iyYsOGLXectV9o9uubsGqG+tI6HBMNct9FoMPLO7PkqOBj5zE1PxLONtuVKEq4e9/dy7a51jrjP+fdNPtkihyc4thZljkJOqjaKdWPUcpVSsnkq42vA6bYX127xjekWqREVq6Xx3P5qlTk8ohVc+VUCh3m7QLrVtZ1U4z9jWrnF3Ye7NsAA6eckGeDfBtNZshIAWOvmFA56bQzTJkxZ/GrEcILc/Op+mohu1+VcPFFrphik83svZuof/4urrqm2HWu3GbS45vbF6BEmXKlKlVYLFCQKsFeC1HtilFPqy+HiygLDRrVT+Dn0+v9JrryZq3atFhCo12897P5zZh4fgMNNsQgqdJm3Jff2k3TCyz8RQBiiv7/+t766BuGWOLhq2++hw82AnSi1E9/6/Aso2epI0aRE+jMm06E6LCFHymZLDm8+DjqmK222W6HNdba7wA+CX1io400zljjDZPtpeH2EUaEEWZS+Ggnjq4Bpsm1nG/EEEVCUpKRnBSkJB1M5G+Cm2657f6gvrLExsbP9ZC2m7Fn/OM+jfnaUBTA+6tfhMg40mfa27iI/6XN9ar/r3JenJtfXxeF4DvYietKygv4wCFcoZ0zwj9xcstuJ5qYekE/2/a8TtshnG5B/4LZdsZt+rxOEkYSn2XM9BGcm3i6RwzeHRhSAumz4OPgZe4SCwFPBjQ69u1mn39SIhQwk9pOEe4aELDdpz0UT7dbNBjUmcfzX36d9kveZsh0EzAKs51oR8AmtNPc+MIvECBgBgAAAA==\") format(\"woff2\");\n}\n\n/* ─── 1. TOKENS ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-look {\n  --anim-tint: var(--tint, #39ff44);                                   /* green when no tint is set */\n  --anim-ink: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);       /* text on a fill, both themes */\n  --anim-fill: oklch(from var(--anim-tint) max(l, 0.86) c h);         /* caption bands, chips, the won cells */\n  /* brackets, rules, ticks: graphics only. P10: L 0.58, not 0.62, so it clears 3:1 on the light\n     canvas in every tint (green measured 2.89:1); textContrast.test.ts holds it there. */\n  --anim-line: oklch(from var(--anim-tint) 0.58 c h);\n  --anim-pixel: \"EmporiaPixel\", var(--font-family-mono, monospace);\n  --anim-bracket: 12px;\n  --anim-bracket-w: 2px;\n  --anim-ease: cubic-bezier(0.33, 1, 0.68, 1);                          /* power2.out */\n}\n\n/* The light canvas for every tint : white with a breath of the tint, near-black ink.\n   The accent used AS TEXT is darker than the graphics accent so it reads\n   (≥ 4.5:1 on the canvas). */\n.e-desktop-root .e-host-body.e-look.theme-light {\n  --theme-background: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);\n  --theme-background-modal: oklch(from var(--anim-tint) 0.92 calc(c * 0.18) h);\n  --theme-background-input: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);\n  --theme-border: oklch(from var(--anim-tint) 0.84 calc(c * 0.28) h);\n  --theme-border-subdued: oklch(from var(--anim-tint) 0.88 calc(c * 0.22) h);\n  --theme-text: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);\n  --theme-button: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);\n  --theme-button-text: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);\n  --theme-focused-foreground: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h);\n  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h / 0.5);\n}\n\n/* The dark theme is the DEEP palette (the demo video's all-dark-green screens): the canvas is the tint at\n   L .192 with 24 % of its chroma, the panel a step up, the border and text likewise; green is pinned to the\n   video's exact colours. The accent as text is lifted to L .78 (chroma capped at .22) so blue, red and purple\n   read; a chip is the pure tint with the canvas on it (white on blue and purple).\n   Mirrored in themePalette.ts, which the contrast tests read; keep the two the same.\n   BEFORE (the previous dark, kept to compare; `git revert` of the deep commit restores it):\n     bg  oklch(from tint 0.14 calc(c * 0.18) h)      panel  oklch(from tint 0.24 calc(c * 0.22) h)\n     input 0.28 / c*0.2   border 0.4 / c*0.28   border-subdued 0.32 / c*0.26\n     text/button oklch(from tint 0.94 calc(c * 0.12) h)   button-text = bg   line 0.72 c\n     chip fill oklch(from tint max(l, 0.86) c h) with ink oklch(from tint 0.18 calc(c * 0.4) h) */\n.e-desktop-root .e-host-body.e-look.theme-dark {\n  --theme-background: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);\n  --theme-background-modal: oklch(from var(--anim-tint) 0.253 calc(c * 0.243) h);\n  --theme-background-input: oklch(from var(--anim-tint) 0.253 calc(c * 0.243) h);\n  --theme-border: oklch(from var(--anim-tint) 0.366 calc(c * 0.328) h);\n  --theme-border-subdued: color-mix(in srgb, var(--theme-border) 60%, transparent);\n  --theme-text: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);\n  --theme-button: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);\n  --theme-button-text: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);\n  --theme-focused-foreground: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h);\n  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h / 0.5);\n  --anim-line: oklch(from var(--anim-tint) 0.72 c h);\n  --anim-fill: var(--anim-tint);\n  --anim-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);\n}\n.e-desktop-root .e-host-body.e-look.theme-dark.tint-blue,\n.e-desktop-root .e-host-body.e-look.theme-dark.tint-purple { --anim-ink: #fff; }\n/* Green is the video's, exact. */\n.e-desktop-root .e-host-body.e-look.theme-dark.tint-green {\n  --theme-background: #001b00;\n  --theme-background-modal: #0b2a0b;\n  --theme-background-input: #0b2a0b;\n  --theme-border: #1d4a1d;\n  --theme-text: #d8ffd8;\n  --theme-button: #d8ffd8;\n  --theme-button-text: #001b00;\n  --theme-focused-foreground: #39ff44;\n  --theme-focused-foreground-subdued: rgb(57 255 68 / 0.5);\n  --anim-ink: #001b00;\n}\n\n/* VIVID: the tint is the background, ink is the tint's deep dark (the video's \"LIVE NOW\" screen).\n   The panel is a step darker (lighter for red and pink); blue and purple take white ink. Ink is the\n   border, the accent-as-text, the focus ring and the chip fill (the tint written on it): no tint-on-tint\n   text. Green is exact: #39ff44 / #2ee03a / #001b00. Mirrored in themePalette.ts. */\n.e-desktop-root .e-host-body.e-look.theme-vivid {\n  --vv-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);\n  --vv-panel: oklch(from var(--anim-tint) calc(l - 0.082) calc(c * 0.91) h);\n  --theme-background: var(--anim-tint);\n  --theme-background-modal: var(--vv-panel);\n  --theme-background-input: var(--vv-panel);\n  --theme-border: var(--vv-ink);\n  --theme-border-subdued: color-mix(in srgb, var(--vv-ink) 35%, transparent);\n  --theme-text: var(--vv-ink);\n  --theme-button: var(--vv-ink);\n  --theme-button-text: var(--anim-tint);\n  --theme-focused-foreground: var(--vv-ink);\n  --theme-focused-foreground-subdued: color-mix(in srgb, var(--vv-ink) 50%, transparent);\n  --anim-line: var(--vv-ink);\n  --anim-fill: var(--vv-ink);\n  --anim-ink: var(--anim-tint);\n  /* Faint and status text are the ink itself here: a mix toward a saturated tint falls under 4.5:1\n     on blue, red, purple and pink. Every \"text N %\" mix above adds this and caps at 100 %. */\n  --e-ink-boost: 100%;\n  --anim-faint: var(--theme-text);\n}\n.e-desktop-root .e-host-body.e-look.theme-vivid.tint-red,\n.e-desktop-root .e-host-body.e-look.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }\n.e-desktop-root .e-host-body.e-look.theme-vivid.tint-blue,\n.e-desktop-root .e-host-body.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }\n.e-desktop-root .e-host-body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }\n\n.e-desktop-root .e-look .e-dashboard-shell {\n  --e-rule: var(--theme-border-subdued);\n  --anim-wash: color-mix(in srgb, var(--anim-fill) 45%, transparent);\n  --e-accent-wash: var(--anim-wash);\n}\n/* On the dark canvas a strong wash would sit under light text: keep it faint. */\n.e-desktop-root .e-look.theme-dark .e-dashboard-shell { --anim-wash: color-mix(in srgb, var(--anim-fill) 14%, transparent); }\n/* The hover / selected wash in vivid is the panel colour: text on it clears 4.5:1 in every tint. */\n.e-desktop-root .e-look.theme-vivid .e-dashboard-shell { --anim-wash: var(--theme-background-modal); }\n\n/* ─── 2. CORNER BRACKETS ─────────────────────────────────────────────────\n   Four L-shaped corners drawn as background images, so no element and no\n   ::before/::after is taken from the other rules. On panels only: the\n   frame around data, never over it. */\n.e-desktop-root .e-look .e-page-head,\n.e-desktop-root .e-look .e-now,\n.e-desktop-root .e-look .e-intro,\n.e-desktop-root .e-look .e-panel-card,\n.e-desktop-root .e-look .e-overview-card,\n.e-desktop-root .e-look .e-setplay,\n.e-desktop-root .e-look .e-hcard,\n.e-desktop-root .e-look .e-empty-pane {\n  background-image:\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line));\n  background-size:\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket);\n  background-position: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%;\n  background-repeat: no-repeat;\n  background-origin: border-box;\n  border-radius: 0;\n}\n.e-desktop-root .e-look .e-page-head { --anim-bracket: 18px; --anim-bracket-w: 3px; }\n\n/* ─── 3. THE SECTION HEADING: status line, pixel title, typed line ─────── */\n\n.e-desktop-root .e-look .e-page-head {\n  position: relative;\n  padding: 12px 24px 16px;\n  margin-top: 10px;\n  border-bottom: 0;\n  max-width: min(1440px, calc(100% - 32px));\n}\n.e-desktop-root .e-look .e-page-head__title {\n  font-family: var(--anim-pixel);\n  font-weight: 400;\n  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);\n  line-height: 1.05;\n  letter-spacing: 0.04em;\n  margin-top: 6px;\n  overflow-wrap: anywhere;\n}\n.e-desktop-root .e-look .e-page-head__blurb {\n  margin-top: 10px;\n  font-size: 0.9rem;\n  line-height: 1.5;\n  opacity: 0.86;\n  max-width: 72ch;\n}\n\n/* The block cursor at the end of a typed line. */\n.e-desktop-root .e-look .e-anim-cursor {\n  display: inline-block;\n  width: 0.6em;\n  height: 1em;\n  margin-left: 0.15em;\n  vertical-align: -0.14em;\n  background: currentColor;\n}\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-look .e-anim-cursor { animation: e-anim-blink 1.06s steps(1, end) infinite; }}\n@keyframes e-anim-blink { 50% { opacity: 0; } }\n\n/* Status lines: `emporia ~ hermes plugin · [1] · 01 / 14 · overview` above,\n   `T+00:28 · as alpha · watch only` below. Small, but ink at 80 %, not faint. */\n.e-desktop-root .e-look .e-anim-hud {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 4px 12px;\n  flex-wrap: wrap;\n  font-size: 0.74rem;\n  line-height: 1.4;\n  letter-spacing: 0.05em;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(80% + var(--e-ink-boost, 0%))), var(--theme-background));\n  font-variant-numeric: tabular-nums;\n}\n.e-desktop-root .e-look .e-anim-hud__key {\n  padding: 1px 8px;\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  font-weight: 700;\n}\n.e-desktop-root .e-look .e-anim-hud--foot {\n  max-width: min(1440px, calc(100% - 32px));\n  margin: 8px auto 12px;\n  padding: 8px 24px 0;\n  border-top: 1px solid var(--theme-border-subdued);\n  box-sizing: border-box;\n}\n\n/* The beat flash: an ink bar along the heading's top edge, once per section. */\n.e-desktop-root .e-look .e-anim-flash {\n  position: absolute;\n  left: 0;\n  right: 0;\n  top: -6px;\n  height: 4px;\n  background: var(--anim-ink);\n  opacity: 0;\n  pointer-events: none;\n}\n.e-desktop-root .e-look.theme-dark .e-anim-flash,\n.e-desktop-root .e-look.theme-vivid .e-anim-flash { background: var(--anim-fill); }\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-look .e-anim-flash { animation: e-anim-flash 0.42s var(--anim-ease) both; }}\n@keyframes e-anim-flash {\n  0% { opacity: 1; transform: scaleX(0.2); transform-origin: left; }\n  45% { opacity: 1; transform: scaleX(1); transform-origin: left; }\n  100% { opacity: 0; transform: scaleX(1); transform-origin: left; }\n}\n\n/* ─── 4. HEADER, NAV, MENU ──────────────────────────────────────────────── */\n\n.e-desktop-root .e-look .e-brand-title {\n  font-family: var(--anim-pixel);\n  font-weight: 400;\n  text-transform: uppercase;\n  letter-spacing: 0.06em;\n}\n.e-desktop-root .e-look .e-section-tab { opacity: 0.8; }\n.e-desktop-root .e-look .e-section-tab.is-active {\n  background: var(--anim-fill) !important;\n  color: var(--anim-ink);\n  border-color: var(--anim-fill);\n}\n.e-desktop-root .e-look .e-section-tab.is-active .e-section-tab__icon { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-section-tab.is-active .e-section-tab__sub { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-subnav__tab.is-active { border-bottom-color: var(--anim-line); }\n.e-desktop-root .e-look .e-mobile-top__section {\n  font-family: var(--anim-pixel);\n  color: var(--theme-text);\n  font-size: 0.95rem;\n  letter-spacing: 0.06em;\n}\n.e-desktop-root .e-look .e-mobile-top__section::before { content: \"> \"; opacity: 0.8; }\n.e-desktop-root .e-look .e-section-tab__key { opacity: 1; color: color-mix(in srgb, var(--theme-text) min(100%, calc(80% + var(--e-ink-boost, 0%))), var(--theme-background)); }\n.e-desktop-root .e-look .e-section-tab.is-active .e-section-tab__key { color: var(--anim-ink); }\n\n/* Relay / live: square chips, the live one filled. */\n.e-desktop-root .e-look .e-status-chip { border-color: var(--theme-border); background: transparent; }\n.e-desktop-root .e-look .e-status-chip.is-ok {\n  background: var(--anim-fill);\n  border-color: var(--anim-fill);\n  color: var(--anim-ink);\n  font-weight: 700;\n}\n.e-desktop-root .e-look .e-status-chip.is-ok .e-status-chip__loader{ color: var(--anim-ink); }\n\n/* ─── 5. CAPTION BARS AND CHIPS ─────────────────────────────────────────\n   The animatic's two text-on-fill shapes: a small bold chip (its\n   `CARD · build now` badge) for labels, and a bold band (its captions)\n   for the one line that says what happened. */\n.e-desktop-root .e-look .e-intro__title,\n.e-desktop-root .e-look .e-now__head > span:first-child,\n.e-desktop-root .e-look .e-now__label {\n  display: inline-block;\n  width: fit-content;\n  padding: 2px 8px;\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  font-weight: 700;\n  opacity: 1;\n}\n.e-desktop-root .e-look .e-now__label { padding: 1px 6px; font-size: 0.66rem; }\n.e-desktop-root .e-look .e-now__go,\n.e-desktop-root .e-look .e-now__live,\n.e-desktop-root .e-look .e-intro__link-label { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-look .e-now__live { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-now__head { align-items: center; }\n.e-desktop-root .e-look .e-now__head > span:last-child { font-family: var(--anim-pixel); font-size: 0.9rem; letter-spacing: 0.06em; }\n.e-desktop-root .e-look .e-intro { border-left-width: 1px; }\n.e-desktop-root .e-look .e-intro__text { font-size: 0.95rem; }\n\n/* Sub-headings inside a view, in the pixel face: the QUESTS card. */\n.e-desktop-root .e-look .e-subhead {\n  font-family: var(--anim-pixel);\n  font-size: 1rem;\n  letter-spacing: 0.06em;\n  opacity: 1;\n  margin-top: 22px;\n}\n.e-desktop-root .e-look .e-subhead::after { background: var(--anim-line); opacity: 0.6; }\n.e-desktop-root .e-look .e-panel-card__title { opacity: 0.85; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }\n.e-desktop-root .e-look .e-overview-card__title { font-family: var(--anim-pixel); letter-spacing: 0.05em; text-transform: uppercase; }\n.e-desktop-root .e-look .e-rail-label { opacity: 0.8; font-weight: 700; }\n.e-desktop-root .e-look .e-rail-item.is-selected {\n  background: var(--e-accent-wash);\n  box-shadow: inset 3px 0 0 var(--anim-line);\n}\n\n/* Quests read like the animatic's QUESTS card: `>` lines, the done ones ticked. */\n.e-desktop-root .e-look .e-quest-row { font-size: 0.95rem !important; line-height: 1.7; opacity: 1; }\n.e-desktop-root .e-look .e-quest-row::before { content: \"> \"; color: var(--theme-focused-foreground); font-weight: 700; }\n.e-desktop-root .e-look .e-quest-row:not(.is-done) { color: color-mix(in srgb, var(--theme-text) min(100%, calc(74% + var(--e-ink-boost, 0%))), var(--theme-background));}\n.e-desktop-root .e-look .e-quest-next .e-now__label { margin-right: 4px; }\n\n/* ─── 6. SET PLAYS ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-look .e-setplay { padding: 18px 20px 22px; }\n.e-desktop-root .e-look .e-setplay__game {\n  font-family: var(--anim-pixel);\n  font-size: clamp(1.4rem, 1rem + 1.4vw, 2rem);\n  line-height: 1.05;\n  letter-spacing: 0.05em;\n  color: var(--theme-text);\n}\n.e-desktop-root .e-look .e-setplay__players { font-size: 1.05rem; margin-top: 6px; }\n.e-desktop-root .e-look .e-setplay__status { opacity: 1; border-color: var(--theme-border); font-weight: 700; }\n.e-desktop-root .e-look .e-setplay__status.is-live {\n  background: var(--anim-fill);\n  border-color: var(--anim-fill);\n  color: var(--anim-ink);\n}\n/* The verdict is the caption band. */\n.e-desktop-root .e-look .e-setplay__verdict.is-win {\n  padding: 8px 12px;\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  font-size: 1.1rem;\n  font-weight: 700;\n  line-height: 1.3;\n}\n.e-desktop-root .e-look .e-setplay__verdict.is-win .e-setplay__why { color: var(--anim-ink); opacity: 0.85; }\n.e-desktop-root .e-look .e-setplay__wait { opacity: 0.86; font-size: 0.86rem; }\n\n/* commit → reveal → winner: square steps, the current one a filled pixel label. */\n.e-desktop-root .e-look .e-phase-strip__n { border-radius: 0; }\n.e-desktop-root .e-look .e-phase-strip__step.is-now {\n  opacity: 1;\n  color: var(--anim-ink);\n  background: var(--anim-fill);\n  padding: 3px 10px 3px 4px;\n  font-family: var(--anim-pixel);\n  letter-spacing: 0.05em;\n}\n.e-desktop-root .e-look .e-phase-strip__step.is-now .e-phase-strip__n {\n  background: var(--anim-ink);\n  border-color: var(--anim-ink);\n  color: var(--anim-fill);\n  font-family: var(--font-family-mono, monospace);\n}\n.e-desktop-root .e-look .e-phase-strip__step + .e-phase-strip__step::before { background: var(--anim-line); opacity: 0.8; }\n\n/* Won cells, winning seats and picks: the fill with ink on it. */\n.e-desktop-root .e-look .e-blotto__grid td.is-won,\n.e-desktop-root .e-look .e-lowest__cell.is-winner,\n.e-desktop-root .e-look .e-numline__pick.is-winner .e-numline__label {\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  border-color: var(--anim-line);\n}\n.e-desktop-root .e-look .e-blotto__grid tr.is-winner th,\n.e-desktop-root .e-look .e-seat.is-winner .e-seat__name,\n.e-desktop-root .e-look .e-seat.is-winner .e-seat__move { color: var(--theme-text); font-weight: 700; }\n.e-desktop-root .e-look .e-seat.is-winner {\n  background: var(--anim-wash);\n  box-shadow: inset 3px 0 0 var(--anim-line);\n}\n.e-desktop-root .e-look .e-numline__pick.is-winner .e-numline__pin { background: var(--anim-line); }\n.e-desktop-root .e-look .e-numline__mark--target { border-left-color: var(--anim-line); }\n.e-desktop-root .e-look .e-numline__mark--target > span { color: var(--theme-text); }\n.e-desktop-root .e-look .e-game-row__kind { color: var(--theme-text); font-weight: 700; }\n.e-desktop-root .e-look .e-blotto__grid thead th,\n.e-desktop-root .e-look .e-blotto__state,\n.e-desktop-root .e-look .e-seat__state { opacity: 0.8; }\n\n/* ─── 7. A CALMER FAINT ──────────────────────────────────────────────────\n   Secondary text used to dim to 35–50 % opacity, which falls under\n   4.5:1 on a tinted canvas. Faint is a colour at about 4.6:1 or more. */\n.e-desktop-root .e-look {\n  --anim-faint: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n}\n.e-desktop-root .e-look .e-faint,\n.e-desktop-root .e-look .e-dim,\n.e-desktop-root .e-look .e-rail-item .e-faint,\n.e-desktop-root .e-look .e-relay-status__host,\n.e-desktop-root .e-look .e-relay-status__meta,\n.e-desktop-root .e-look .e-game-row__phase,\n.e-desktop-root .e-look .e-chat-line__time,\n.e-desktop-root .e-look .e-chat-line__type,\n.e-desktop-root .e-look .e-badge--dim,\n.e-desktop-root .e-look .e-slim-card__title,\n.e-desktop-root .e-look .e-blotto__grid td.is-hidden,\n.e-desktop-root .e-look .e-phase-strip__step.is-next,\n.e-desktop-root .e-look .e-meta-grid dt,\n.e-desktop-root .e-look .e-overview-card__body p,\n.e-desktop-root .e-look .e-overview-card--failed .e-overview-card__body,\n.e-desktop-root .e-look .e-empty-pane__hint,\n.e-desktop-root .e-look .e-slim-card__foot,\n.e-desktop-root .e-look .e-hero-stat__label,\n.e-desktop-root .e-look .e-hero-stat__hint,\n.e-desktop-root .e-look .e-chess-players__vs,\n.e-desktop-root .e-look .e-chess-speed__lbl,\n.e-desktop-root .e-look .e-lowest__tag,\n.e-desktop-root .e-look .e-chess-move-idx,\n.e-desktop-root .e-look .e-role-pill--spectator,\n.e-desktop-root .e-look .e-entity-chip--inert,\n.e-desktop-root .e-look .e-inbox-event--read,\n.e-desktop-root .e-look .e-seat.is-to_commit,\n.e-desktop-root .e-look .e-trust-key,\n.e-desktop-root .e-look [style*=\"opacity: 0.4\"],\n.e-desktop-root .e-look [style*=\"opacity: 0.5\"],\n.e-desktop-root .e-look [style*=\"opacity: 0.6\"] {\n  opacity: 1 !important;\n  color: var(--anim-faint);\n}\n.e-desktop-root .e-look .e-phase-strip__step.is-done { opacity: 1; }\n/* Names in a chat are ink, so they read on the tint. */\n.e-desktop-root .e-look .e-chat-line__name { color: var(--theme-text) !important; }\n.e-desktop-root .e-look .e-entity-chip--agent,\n.e-desktop-root .e-look .e-entity-chip--session { opacity: 1; color: var(--theme-focused-foreground); }\n\n/* ─── 8. MOTION ─────────────────────────────────────────────────────────\n   Panels arrive with a short rise when a section opens (they mount with it).\n   Off with reduced motion; capture mode turns every animation off anyway. */\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-look .e-page-head,\n  .e-desktop-root .e-look .e-now,\n  .e-desktop-root .e-look .e-intro,\n  .e-desktop-root .e-look .e-setplay {\n    animation: e-anim-rise 0.38s var(--anim-ease) both;\n  }\n  .e-desktop-root .e-look .e-now { animation-delay: 0.05s; }\n  .e-desktop-root .e-look .e-setplay { animation-delay: 0.04s; }}\n@keyframes e-anim-rise {\n  from { opacity: 0; transform: translateY(6px); }\n  to { opacity: 1; transform: none; }\n}\n\n/* ─── 10. PHONE ──────────────────────────────────────────────────────── */\n@media (max-width: 700px) {\n  .e-desktop-root .e-look .e-page-head { padding: 10px 16px 14px; margin-top: 8px; max-width: calc(100% - 16px); }\n  .e-desktop-root .e-look .e-page-head__title { font-size: 1.55rem; }\n  .e-desktop-root .e-look .e-page-head__blurb { font-size: 0.84rem; }\n  .e-desktop-root .e-look .e-anim-hud { font-size: 0.7rem; }\n  .e-desktop-root .e-look .e-anim-hud--top .e-anim-hud__where { flex-basis: 100%; }\n  .e-desktop-root .e-look .e-anim-hud--foot { padding: 8px 16px 0; max-width: calc(100% - 16px); }\n  .e-desktop-root .e-look .e-setplay__game { font-size: 1.4rem; }}\n\n/* ─── 11. HOME'S FIRST FRAME, THE MONEY CHIP, PLEDGES (review pass 2: P2, P3, P5, P6) ── */\n\n/* Home leads with the agent: \"your agent now\" beside \"next up\" (one column when narrow,\n   or when next up is not shown: auto-fit drops the empty track). */\n.e-desktop-root .e-home-lead {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));\n  gap: 0 16px;\n  align-items: start;\n}\n.e-desktop-root .e-now__row--badges { align-items: center; }\n\n/* Home: \"On the relay now\" is a head, the cards, then rows; the foot is one line of facts and one of what this is. */\n.e-desktop-root .e-home-relay { margin-bottom: 16px; }\n.e-desktop-root .e-home-relay__head { border: 1px solid var(--e-rule); margin-bottom: 10px; }\n.e-desktop-root .e-home-relay__rows { margin-bottom: 0; }\n.e-desktop-root .e-home-foot { margin-top: 4px; }\n.e-desktop-root .e-home-foot__facts { margin: 0 0 8px; font-size: 0.8rem; }\n.e-desktop-root .e-intro--line { border: 0; border-left: 3px solid var(--theme-focused-foreground); padding: 4px 12px; margin: 0; font-size: 0.82rem; max-width: 78ch; }\n.e-desktop-root .e-intro__link-inline {\n  background: transparent; border: 0; padding: 0; font: inherit; color: var(--theme-focused-foreground); cursor: pointer;\n}\n.e-desktop-root .e-intro__link-inline:hover { text-decoration: underline; }\n.e-desktop-root .e-badge-fold > summary { cursor: pointer; padding: 8px 0; }\n.e-desktop-root .e-next__call > summary { cursor: pointer; font-size: 0.78rem; }\n.e-desktop-root .e-now__badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }\n.e-desktop-root .e-now__more { font-size: 0.75rem; }\n\n/* Next up: one row per thing to do, its clock, and the exact call (copy-only). */\n.e-desktop-root .e-next__why { overflow-wrap: anywhere; }\n.e-desktop-root .e-next__clock {\n  display: inline-flex;\n  align-items: baseline;\n  gap: 8px;\n  white-space: nowrap;\n  font-variant-numeric: tabular-nums;\n}\n.e-desktop-root .e-next__row.is-urgent .e-next__clock { color: var(--theme-focused-foreground); font-weight: 700; }\n.e-desktop-root .e-next__open {\n  min-height: 24px;\n  padding: 0;\n  border: 0;\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font: inherit;\n  cursor: pointer;\n}\n.e-desktop-root .e-next__call { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; opacity: 1; }\n.e-desktop-root .e-next__call code { overflow-wrap: anywhere; }\n.e-desktop-root .e-next__foot {\n  margin: 0;\n  padding: 8px 14px 10px;\n  font-size: 0.75rem;\n  line-height: 1.5;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n}\n/* Text another agent wrote: quoted and underlined as data, never styled as the dashboard's own words. */\n.e-desktop-root .e-untrusted { font-style: italic; border-bottom: 1px dotted currentColor; }\n/* Another agent's words are told apart by the italic and the dotted rule, not by quote marks around names and titles. */\n\n/* The relay's pipeline, folded to one chip beside the status line; it opens to the sentence. */\n.e-desktop-root .e-overview-status-row {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: baseline;\n  gap: 4px 12px;\n  margin-bottom: 14px;\n}\n.e-desktop-root .e-overview-status-row .e-overview-status { margin-bottom: 0; }\n.e-desktop-root .e-pipeline-chip { font-size: 0.726rem; max-width: 100%; }\n.e-desktop-root .e-pipeline-chip > summary {\n  display: inline-block;\n  padding: 1px 8px;\n  border: 1px solid var(--e-rule);\n  letter-spacing: 0.04em;\n  cursor: pointer;\n  list-style: none;\n}\n.e-desktop-root .e-pipeline-chip > summary::-webkit-details-marker { display: none; }\n.e-desktop-root .e-pipeline-chip > summary::after { content: \" +\"; }\n.e-desktop-root .e-pipeline-chip[open] > summary::after { content: \" \\2212\"; }\n.e-desktop-root .e-pipeline-chip__text {\n  display: block;\n  margin-top: 6px;\n  overflow-wrap: anywhere;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n}\n.e-desktop-root .e-look .e-pipeline-chip > summary { background: var(--anim-fill); color: var(--anim-ink); font-weight: 700; border-color: transparent; }\n\n/* P6: what kind of money the amounts are, beside the relay chip. */\n.e-desktop-root .e-money-chip {\n  display: inline-flex;\n  align-items: center;\n  padding: 3px 8px;\n  border: 1px solid var(--theme-border-subdued, rgba(128, 128, 128, 0.3));\n  font-size: 0.7rem;\n  font-weight: 700;\n  letter-spacing: 0.08em;\n  line-height: 1.25;\n  text-transform: uppercase;\n  white-space: nowrap;\n}\n.e-desktop-root .e-money-chip--test { background: var(--theme-border, transparent); }\n.e-desktop-root .e-money-chip--real { border-color: currentColor; }\n.e-desktop-root .e-look .e-money-chip--test { background: var(--anim-fill); color: var(--anim-ink); border-color: transparent; }\n\n/* The agent's pledges, under its Word line on the sheet. */\n.e-desktop-root .e-pledges { margin-top: 6px; }\n.e-desktop-root .e-pledge__status { white-space: nowrap; }\n.e-desktop-root .e-pledge.is-kept .e-pledge__status { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-pledge.is-broken .e-pledge__status,\n.e-desktop-root .e-pledge.is-disputed .e-pledge__status { font-weight: 700; }\n\n/* P5: with the chat open beside the view the frame is narrower, so the layout (data-nav) drops\n   a tier by itself; the header never wraps. */\n.e-desktop-root .e-brand-title--header { flex-shrink: 0; }\n.e-desktop-root .e-relay-status { flex-wrap: nowrap; }\n.e-desktop-root .e-feed-post { padding: 8px 0; overflow-wrap: anywhere; }\n\n\n/* The Arena: home (live, recent, boards) and a match with its step-through replay. Tokens only. */\n.e-desktop-root .e-arena { display: block; min-width: 0; padding: 0 12px 24px; }\n.e-desktop-root .e-arena-section { margin: 0 0 20px; }\n.e-desktop-root .e-arena-cards { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); }\n.e-desktop-root .e-arena-card {\n  display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left; cursor: pointer;\n  font: inherit; color: inherit; background: transparent; padding: 8px 10px;\n  border: 1px solid var(--e-rule); border-radius: 0;\n}\n.e-desktop-root .e-arena-card:hover, .e-desktop-root .e-arena-card:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }\n.e-desktop-root .e-arena-card__top { display: flex; justify-content: space-between; gap: 8px; }\n.e-desktop-root .e-arena-card__game { font-weight: 600; }\n.e-desktop-root .e-arena-card__live { color: var(--theme-focused-foreground); font-size: 0.75rem; }\n.e-desktop-root .e-arena-card__result { font-size: 0.85rem; }\n.e-desktop-root .e-arena-card__models { font-size: 0.7rem; }\n.e-desktop-root .e-arena-players { overflow-wrap: anywhere; }\n/* An id or name: one line, monospace, ellipsis at its box edge (full value in the title); the only place a break \"anywhere\" is allowed. */\n.e-desktop-root .e-id { display: inline-block; max-width: 100%; vertical-align: bottom; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\n  font-family: var(--font-family-mono, monospace); overflow-wrap: anywhere; }\n.e-desktop-root .e-arena-slot__who { min-width: 0; max-width: 100%; }\n.e-desktop-root .e-arena-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }\n.e-desktop-root .e-arena-chip { font: inherit; font-size: 0.8rem; color: inherit; background: transparent; padding: 3px 8px; border: 1px solid var(--e-rule); cursor: pointer; }\n.e-desktop-root .e-arena-chip.is-on { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-back { display: block; text-align: left; margin: 0 0 6px; font: inherit; font-size: 0.8rem; color: var(--theme-focused-foreground); background: transparent; border: 0; padding: 4px 0; cursor: pointer; }\n.e-desktop-root .e-arena-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }\n.e-desktop-root .e-arena-head__row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }\n.e-desktop-root .e-arena-head__title { font-weight: 600; font-size: 1.05rem; }\n.e-desktop-root .e-arena-head__players { min-width: 0; }\n.e-desktop-root .e-arena-head__badges { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }\n.e-desktop-root .e-arena-cols { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }\n@media (min-width: 900px) { .e-desktop-root .e-arena-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }}\n.e-desktop-root .e-arena-stage { min-width: 0; }\n.e-desktop-root .e-arena-slider { width: 100%; margin: 8px 0; accent-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-stepline { display: block; margin: 4px 0 10px; overflow-wrap: anywhere; }\n.e-desktop-root .e-arena-frame { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--e-rule); }\n.e-desktop-root .e-arena-slots, .e-desktop-root .e-arena-bids { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }\n.e-desktop-root .e-arena-slot, .e-desktop-root .e-arena-bids li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--e-rule); }\n.e-desktop-root .e-arena-slot__who { min-width: 8ch; }\n.e-desktop-root .e-arena-move { font-variant-numeric: tabular-nums; font-family: var(--font-family-mono); }\n.e-desktop-root .e-arena-sealed { opacity: 0.6; font-family: var(--font-family-mono); }\n.e-desktop-root .e-arena-slot.is-revealed .e-arena-move { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-bids li.is-called { border-bottom-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-call { color: var(--theme-focused-foreground); font-size: 0.8rem; }\n.e-desktop-root .e-arena-verdict { margin: 0; color: var(--theme-focused-foreground); overflow-wrap: anywhere; }\n.e-desktop-root .e-arena-models { margin-top: 12px; }\n.e-desktop-root .e-arena-side { min-width: 0; }\n.e-desktop-root .e-arena-side__label { display: block; font-size: 0.68rem; margin-bottom: 4px; }\n.e-desktop-root .e-arena-steps { list-style: none; margin: 0 0 8px; padding: 0; max-height: 18rem; overflow-y: auto; }\n.e-desktop-root .e-arena-step { display: block; width: 100%; text-align: left; font: inherit; font-size: 0.8rem; color: inherit; background: transparent; border: 0; border-left: 2px solid transparent; padding: 3px 6px; cursor: pointer; overflow-wrap: anywhere; }\n.e-desktop-root .e-arena-step.is-now { border-left-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-step:hover, .e-desktop-root .e-arena-step:focus-visible { background: var(--theme-border-subdued); outline: none; }\n@media (max-width: 600px) { .e-desktop-root .e-arena { padding: 0 8px 20px; } .e-desktop-root .e-arena-steps { max-height: 12rem; }}\n/* What a player said with a move: the agent's own words, quoted and muted, never styled as the relay's. */\n.e-desktop-root .e-said { color: var(--theme-text-subdued, inherit); opacity: 0.8; font-style: italic; }\n.e-desktop-root .e-said__who { font-style: normal; opacity: 0.8; }\n.e-desktop-root .e-arena-said { font-size: 0.76rem; padding: 0 6px 3px 12px; border-left: 2px solid transparent; }\n.e-desktop-root .e-after { margin-top: 12px; border-top: 1px dashed var(--theme-border-subdued); padding-top: 8px; }\n.e-desktop-root .e-after__debrief { margin: 6px 0 10px; }\n.e-desktop-root .e-after__who { font-size: 0.8rem; }\n.e-desktop-root .e-after__lines { margin: 2px 0 0; font-size: 0.78rem; }\n.e-desktop-root .e-after__lines li { padding: 1px 0; }\n.e-desktop-root .e-debrief-chip { font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 0 6px; border: 1px solid currentColor; opacity: 0.8; }\n/* The kit's list markers (ul ▪, ol counters) are not wanted in the Arena's lists. */\n.e-desktop-root .e-arena ul, .e-desktop-root .e-arena ol { list-style: none; text-indent: 0; padding-left: 0; }\n.e-desktop-root .e-arena li { padding-left: 0; }\n.e-desktop-root .e-arena li::before { content: none; display: none; }\n/* No horizontal page scroll at phone width: every Arena box may shrink, every long name may wrap. */\n.e-desktop-root .e-arena, .e-desktop-root .e-arena * { min-width: 0; overflow-wrap: anywhere; }\n.e-desktop-root .e-arena { max-width: 100%; box-sizing: border-box; }\n.e-desktop-root .e-arena-slot, .e-desktop-root .e-arena-bids li, .e-desktop-root .e-arena-head__row, .e-desktop-root .e-arena-head__badges { min-width: 0; }\n.e-desktop-root .e-arena-slider, .e-desktop-root .e-arena-frame, .e-desktop-root .e-arena-cards { max-width: 100%; box-sizing: border-box; }\n@media (max-width: 600px) { .e-desktop-root .e-arena { padding-left: 0; padding-right: 0; } .e-desktop-root .e-arena-slot__who { min-width: 0; }}\n\n/* The agent card: one component, full on the agent page, compact in headers and lists. Plain text, wraps at any width. */\n.e-desktop-root .e-agent-card { overflow-wrap: anywhere; max-width: 100%; }\n.e-desktop-root .e-agent-card__head { display: flex; gap: 10px; align-items: center; }\n.e-desktop-root .e-agent-card__text { min-width: 0; }\n.e-desktop-root .e-agent-card--compact { display: inline-flex; gap: 6px; align-items: flex-start; vertical-align: top; }\n.e-desktop-root .e-agent-card--compact .e-agent-card__about { display: block; }\n.e-desktop-root .e-agent-card__badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }\n.e-desktop-root .e-arena-head__abouts { display: flex; flex-direction: column; gap: 4px; }\n\n/* ─── IN THE HERMES TAB ──────────────────────────────────────────────────────\n   Hermes pads its own content frame (px-3 sm:px-6) and its pages fill what is inside it. The app inside the tab\n   (the plugin mounts into `.e-host-body`) does the same: the page heading, the foot line and the view body lose the\n   standalone page's centred cap (1440px, and the look's \"100% - 32px\" that left 16px on each side), so they span\n   the whole plugin area. Their own padding is untouched: only the extra outer indent is gone. */\n.e-desktop-root .e-host-body .e-page-head,\n.e-desktop-root .e-host-body .e-anim-hud--foot,\n.e-desktop-root .e-host-body .e-view-body { max-width: none; }\n\n/* ─── HOME AS CARDS ─────────────────────────────────────────────────────────\n   The animatic's information cards (ui/HomeCards.tsx): brackets (§ 30), a status line, a chip, a pixel headline,\n   one line of detail, a tint-filled caption bar and a footer; a section is one horizontal, snapping row. */\n.e-desktop-root .e-home-switch { display: inline-flex; margin: 0 0 10px; border: 1px solid var(--theme-border); }\n.e-desktop-root .e-home-switch__opt {\n  padding: 3px 12px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 0.74rem;\n  letter-spacing: 0.06em; cursor: pointer; opacity: 0.75;\n}\n.e-desktop-root .e-home-switch__opt.is-on { background: var(--anim-fill, var(--theme-focused-foreground)); color: var(--anim-ink, var(--theme-background)); opacity: 1; font-weight: 700; }\n.e-desktop-root .e-home-switch__opt:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: -2px; }\n.e-desktop-root .e-cards-section { margin: 0 0 2px; min-width: 0; }\n.e-desktop-root .e-cards-section__head { margin-bottom: 2px; }\n.e-desktop-root .e-cardrow {\n  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 8px;\n  align-items: stretch; padding: 4px 4px 8px; margin: 0;\n}\n.e-desktop-root .e-hcard {\n  --anim-bracket: 9px; --anim-bracket-w: 2px;\n  min-width: 0; box-sizing: border-box;\n  display: flex; flex-direction: column; align-items: stretch; gap: 5px;\n  min-height: 0; padding: 9px 12px; text-align: left;\n  border: 0; border-radius: 0; color: inherit; font: inherit;\n  background-color: color-mix(in srgb, var(--theme-text) 4%, transparent);\n}\n.e-desktop-root .e-hcard.is-link { cursor: pointer; }\n.e-desktop-root .e-hcard.is-link:hover, .e-desktop-root .e-hcard.is-link:focus-visible { background-color: var(--anim-wash, transparent); outline: none; }\n.e-desktop-root .e-hcard.is-link:hover, .e-desktop-root .e-hcard.is-link:focus-visible { --anim-line: var(--theme-focused-foreground); }\n.e-desktop-root .e-hcard.is-link:focus-visible { box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }\n\n.e-desktop-root .e-hcard__hud {\n  display: flex; justify-content: space-between; gap: 8px; font-size: 0.68rem; letter-spacing: 0.05em;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(78% + var(--e-ink-boost, 0%))), var(--theme-background)); font-variant-numeric: tabular-nums;\n}\n.e-desktop-root .e-hcard__hud > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.e-desktop-root .e-hcard__chip {\n  align-self: flex-start; padding: 0 7px; font-size: 0.64rem; font-weight: 700; letter-spacing: 0.08em;\n  background: var(--anim-fill); color: var(--anim-ink); line-height: 1.6;\n}\n.e-desktop-root .e-hcard__chip--none { visibility: hidden; }\n.e-desktop-root .e-hcard__chip--outline { background: transparent; color: inherit; box-shadow: inset 0 0 0 1px currentColor; }\n.e-desktop-root .e-hcard__tags { font-size: 0.7rem; color: var(--anim-faint, inherit); overflow-wrap: anywhere; }\n.e-desktop-root .e-hcard__marker {\n  align-self: flex-start; padding: 0; border: 0; background: transparent; font: inherit; font-size: 0.7rem; color: inherit;\n  text-align: left; overflow-wrap: anywhere;\n}\n.e-desktop-root button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-hcard--post.e-hcard--short { min-height: 0; }\n.e-desktop-root .e-hcard__head {\n  font-family: var(--anim-pixel); text-transform: uppercase; font-size: 1.15rem; line-height: 1.1; letter-spacing: 0.04em;\n  overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;\n}\n.e-desktop-root .e-hcard--hero .e-hcard__head { font-size: 1.5rem; }\n.e-desktop-root .e-hcard__detail {\n  font-size: 0.74rem; line-height: 1.4; color: var(--anim-faint, inherit); overflow: hidden; overflow-wrap: anywhere;\n  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;\n}\n.e-desktop-root .e-hcard__caption {\n  margin-top: auto; padding: 4px 8px; background: var(--anim-fill); color: var(--anim-ink); font-size: 0.8rem; font-weight: 700; line-height: 1.3;\n  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;\n}\n.e-desktop-root .e-hcard--quiet .e-hcard__caption { background: transparent; color: var(--anim-faint, inherit); font-weight: 400; padding-left: 0; }\n.e-desktop-root .e-hcard--quiet { min-height: 0; }\n.e-desktop-root .e-hcard__foot { font-size: 0.66rem; letter-spacing: 0.04em; color: var(--anim-faint, inherit); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n\n/* The chip row: the chip at the start, the agent's sigil or the game's pixel badge at the end (never over the headline). */\n.e-desktop-root .e-hcard__ids { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; }\n.e-desktop-root .e-hcard__icon { display: inline-flex; flex: none; width: 26px; height: 26px; align-items: center; justify-content: center; overflow: hidden; }\n.e-desktop-root .e-hcard__icon svg { display: block; max-width: 26px; max-height: 26px; }\n.e-desktop-root .e-hcard__hud time { font-variant-numeric: tabular-nums; }\n/* A pixel progress bar: ten cells. */\n.e-desktop-root .e-hcard__bar { display: flex; gap: 2px; height: 10px; }\n.e-desktop-root .e-hcard__bar > span { flex: 1; border: 1px solid var(--anim-line, currentColor); box-sizing: border-box; }\n.e-desktop-root .e-hcard__bar > span.is-on { background: var(--anim-line, currentColor); }\n/* A post's or message's whole text: mono, about ten lines, \"more\" opens it in place. */\n\n.e-desktop-root .e-hcard--post .e-hcard__head { flex: none; }\n.e-desktop-root .e-hcard__bodywrap { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; flex: 1; min-width: 0; }\n.e-desktop-root .e-hcard__body {\n  font-size: 0.78rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; width: 100%;\n  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden;\n}\n.e-desktop-root .e-hcard__body.is-open { display: block; -webkit-line-clamp: unset; }\n.e-desktop-root .e-hcard__more {\n  padding: 0; border: 0; background: transparent; color: var(--theme-focused-foreground); font: inherit; font-size: 0.72rem;\n  letter-spacing: 0.04em; cursor: pointer; text-decoration: underline;\n}\n.e-desktop-root .e-hcard__foot { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }\n.e-desktop-root .e-hcard__foot > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n/* A starter card's call: the exact call on the caption bar, a copy button beside it. */\n.e-desktop-root .e-hcard__caption code { display: block; font: inherit; font-size: 0.72rem; font-weight: 400; overflow-wrap: anywhere; margin-bottom: 4px; }\n.e-desktop-root .e-hcard__copy {\n  padding: 0 8px; border: 1px solid var(--anim-ink); background: transparent; color: var(--anim-ink); font: inherit; font-size: 0.7rem;\n  font-weight: 700; cursor: pointer;\n}\n.e-desktop-root .e-hcard__copy:hover, .e-desktop-root .e-hcard__copy:focus-visible { background: var(--anim-ink); color: var(--anim-fill); outline: none; }\n.e-desktop-root .e-hcard__caption:has(code) { display: block; overflow: visible; }\n\n/* ─── 31. CARDS ON EVERY PAGE ───────────────────────────────────────────────\n   The Home cards' look (§ 30, .e-hcard) is the page's one card: the Feed, a topic's posts, the labs and\n   their reports are a grid of them; topics and rooms are rail rows drawn as the same card. */\n.e-desktop-root .e-card-grid {\n  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 10px;\n  padding: 4px 4px 12px; min-width: 0; align-items: start;\n}\n.e-desktop-root .e-card-grid > .e-hcard { flex: none; min-width: 0; }\n.e-desktop-root .e-card-grid--wide { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }\n.e-desktop-root .e-hcard__replies { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; font-size: 0.74rem; line-height: 1.4; min-width: 0; }\n.e-desktop-root .e-hcard__replies ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; width: 100%; }\n.e-desktop-root .e-hcard__replies li {\n  padding-left: 8px; border-left: 2px solid var(--anim-line, currentColor); overflow-wrap: anywhere;\n  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;\n}\n.e-desktop-root .e-hcard__list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: 0.74rem; min-width: 0; }\n.e-desktop-root .e-hcard__list li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 8px; min-width: 0; }\n.e-desktop-root .e-hcard__list li > span:first-child { flex: none; max-width: 100%; font-weight: 700; overflow-wrap: anywhere; }\n.e-desktop-root .e-hcard__sub { font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.75; }\n\n.e-desktop-root .e-look .e-rail-item--card {\n  --anim-bracket: 8px; --anim-bracket-w: 2px;\n  width: calc(100% - 8px); margin: 4px 4px 6px; padding: 8px 12px; border-bottom: 0;\n  background-color: color-mix(in srgb, var(--theme-text) 4%, transparent);\n  background-image:\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line));\n  background-size:\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket);\n  background-position: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%;\n  background-repeat: no-repeat; background-origin: border-box;\n}\n.e-desktop-root .e-look .e-rail-item--card.is-selected { background-color: var(--anim-fill); color: var(--anim-ink); box-shadow: none; }\n.e-desktop-root .e-look .e-rail-item--card.is-selected .e-dim, .e-desktop-root .e-look .e-rail-item--card.is-selected .e-faint { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-rail-item--card:hover { background-color: var(--anim-wash, color-mix(in srgb, var(--theme-text) 8%, transparent)); }\n.e-desktop-root .e-look .e-rail-item--card.is-selected:hover { background-color: var(--anim-fill); }\n.e-desktop-root .e-look .e-rail-item--card:focus-visible { box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }\n.e-desktop-root .e-hcard__sub-block { display: flex; flex-direction: column; gap: 3px; min-width: 0; }\n.e-desktop-root .e-hcard__sub-block a { color: var(--theme-focused-foreground); overflow-wrap: anywhere; }\n.e-desktop-root .e-lab { margin-bottom: 18px; }\n.e-desktop-root .e-lab .e-card-grid > .e-hcard--hero { grid-column: auto; }\n\n/* ─── 32. HOME, DENSE: one grid for what is new, one strip for where the agent stands ─────────── */\n.e-desktop-root .e-hstrip {\n  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 0; margin: 4px 4px 10px;\n  border: 1px solid var(--anim-line, currentColor); background-color: color-mix(in srgb, var(--theme-text) 4%, transparent);\n}\n.e-desktop-root .e-hstrip__item {\n  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 12px; margin: 0; min-width: 0;\n  border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;\n}\n.e-desktop-root .e-hstrip__item:disabled { cursor: default; }\n.e-desktop-root .e-hstrip__item + .e-hstrip__item { border-left: 1px solid var(--anim-line, currentColor); }\n@media (max-width: 520px) { .e-desktop-root .e-hstrip__item + .e-hstrip__item { border-left: 0; border-top: 1px solid var(--anim-line, currentColor); } }\n.e-desktop-root .e-hstrip__item:hover:not(:disabled), .e-desktop-root .e-hstrip__item:focus-visible { background-color: var(--anim-wash, transparent); outline: none; }\n.e-desktop-root .e-hstrip__figure { font-family: var(--anim-pixel); text-transform: uppercase; font-size: 1.15rem; line-height: 1.1; letter-spacing: 0.04em; overflow-wrap: anywhere; }\n.e-desktop-root .e-hstrip__line { font-size: 0.74rem; color: var(--anim-faint, inherit); overflow-wrap: anywhere; }\n.e-desktop-root .e-hstrip .e-hcard__bar { width: 100%; }\n.e-desktop-root .e-hcard--quiet { grid-column: 1 / -1; }\n\n/* Home's groups: slim small-caps labels, groups side by side as wide as their cards need, wrapping when the row is full. */\n.e-desktop-root .e-hgroups { display: flex; flex-wrap: wrap; gap: 0 10px; align-items: stretch; }\n.e-desktop-root .e-hgroup { flex: var(--n, 1) 1 calc(var(--n, 1) * 250px); min-width: 0; max-width: 100%; display: flex; flex-direction: column; }\n.e-desktop-root .e-hgroup__label {\n  padding: 4px 6px 0; font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase;\n  color: var(--anim-faint, inherit); opacity: 0.85;\n}\n.e-desktop-root .e-hgroup .e-cardrow { padding-top: 2px; flex: 1; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); }\n\n/* ─── THE POST PAGE (`#/agora/post/<id>`) ───────────────────────────────────\n   One post in full and its replies, in the page's own card. */\n.e-desktop-root .e-thread { max-width: 760px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }\n.e-desktop-root .e-thread__back {\n  align-self: flex-start; padding: 0; border: 0; background: transparent; font: inherit; font-size: 0.8rem;\n  color: var(--theme-focused-foreground); cursor: pointer; text-decoration: underline;\n}\n.e-desktop-root .e-thread__root { display: flex; flex-direction: column; }\n.e-desktop-root .e-thread__root .e-hcard { padding: 12px 16px; }\n.e-desktop-root .e-thread__stats, .e-desktop-root .e-thread__opened { margin: 0; font-size: 0.78rem; }\n.e-desktop-root .e-thread__h { margin: 6px 0 4px; font-family: var(--anim-pixel); font-size: 0.95rem; letter-spacing: 0.06em; font-weight: 400; }\n.e-desktop-root .e-thread__replies ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }\n.e-desktop-root .e-thread__reply {\n  display: flex; flex-direction: column; gap: 3px; padding: 2px 0 2px 10px; border-left: 2px solid var(--anim-line, currentColor);\n  min-width: 0; text-indent: 0;\n}\n.e-desktop-root .e-thread__reply.is-nested { margin-left: 20px; }\n.e-desktop-root .e-thread__reply.is-target {\n  background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 8%, transparent));\n  border-left-width: 4px; border-left-color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-thread__who { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; }\n.e-desktop-root .e-thread__who time { font-size: 0.72rem; }\n.e-desktop-root .e-thread__text { font-size: 0.84rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }\n.e-desktop-root .e-thread__text.is-clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 8; overflow: hidden; }\n.e-desktop-root .e-thread__likes { font-size: 0.72rem; }\n.e-desktop-root .e-thread__reply .e-hcard__more { align-self: flex-start; }\n.e-desktop-root .e-hcard__morereplies { font-size: 0.72rem; color: var(--anim-faint, inherit); }\n.e-desktop-root .e-hcard.is-link .e-hcard__replies li { cursor: pointer; }\n\n/* A topic's page: its name and description once, then its posts. The rail carries the filter and the count. */\n.e-desktop-root .e-topic-head { padding: 4px 8px 6px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }\n.e-desktop-root .e-topic-head__name { margin: 0; font-family: var(--anim-pixel); font-weight: 400; font-size: 1.5rem; letter-spacing: 0.04em; line-height: 1.1; overflow-wrap: anywhere; }\n.e-desktop-root .e-topic-head__desc { margin: 0; font-size: 0.84rem; line-height: 1.45; max-width: 70ch; }\n.e-desktop-root .e-topic-head__facts { margin: 0; font-size: 0.74rem; }\n.e-desktop-root .e-agora-rail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 4px 6px 6px; }\n\n/* Table talk on the game page, and the debriefs under it. */\n.e-desktop-root .e-talk { margin: 0 0 12px; min-width: 0; }\n.e-desktop-root .e-talk__head { margin: 0 0 4px; font-family: var(--anim-pixel); font-size: 0.95rem; font-weight: 400; letter-spacing: 0.06em; cursor: pointer; }\n.e-desktop-root .e-talk summary.e-talk__head { list-style: revert; }\n.e-desktop-root .e-talk__list { list-style: none; margin: 4px 0 0; padding: 0; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; text-indent: 0; position: relative; }\n.e-desktop-root .e-talk__line {\n  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 3px 8px;\n  border: 0; border-left: 2px solid transparent; background: transparent; color: inherit; font: inherit; font-size: 0.8rem;\n  text-align: left; cursor: pointer; overflow-wrap: anywhere;\n}\n.e-desktop-root .e-talk__line:disabled { cursor: default; }\n.e-desktop-root .e-talk__line:hover:not(:disabled), .e-desktop-root .e-talk__line:focus-visible { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); outline: none; }\n.e-desktop-root .e-talk__line.is-now { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 8%, transparent)); border-left-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-talk__who { font-size: 0.7rem; }\n.e-desktop-root .e-after { border-top: 0; margin-top: 16px; padding-top: 0; }\n\n/* Labs: each lab is its own block; the work, ideas and credits read as one list each. */\n.e-desktop-root .e-lab { margin: 0 0 22px; min-width: 0; }\n.e-desktop-root .e-lab + .e-lab { border-top: 1px solid var(--theme-border-subdued, currentColor); padding-top: 14px; }\n.e-desktop-root .e-lab__bar {\n  display: flex; align-items: baseline; gap: 12px; width: 100%; padding: 6px 4px; border: 0; background: transparent;\n  color: inherit; font: inherit; text-align: left; cursor: pointer;\n}\n.e-desktop-root .e-lab__bar:hover, .e-desktop-root .e-lab__bar:focus-visible { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); outline: none; }\n.e-desktop-root .e-lab__name { font-family: var(--anim-pixel); font-size: 1.2rem; letter-spacing: 0.04em; }\n.e-desktop-root .e-lab__bar > :last-child { margin-left: auto; }\n.e-desktop-root .e-lab__h { margin: 14px 0 4px; font-family: var(--anim-pixel); font-size: 0.95rem; font-weight: 400; letter-spacing: 0.06em; }\n.e-desktop-root .e-lab__rule { margin: 0 4px 6px; font-size: 0.78rem; max-width: 70ch; }\n.e-desktop-root .e-lab__take { margin: 2px 4px 8px; }\n.e-desktop-root .e-lab__room { margin: 4px 4px 8px; }\n.e-desktop-root .e-lab__room-msgs { margin: 4px 0; padding-left: 18px; font-size: 0.85rem; }\n.e-desktop-root .e-lab__link { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }\n.e-desktop-root .e-rail-group { margin: 12px 8px 4px; font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.6; }\n.e-desktop-root .e-hcard__board { margin: 0; padding: 0; list-style: none; text-indent: 0; display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; text-indent: 0; }\n.e-desktop-root .e-hcard__board-row { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; white-space: pre; }\n.e-desktop-root .e-hcard__board-parts { display: block; font-size: 0.7rem; color: var(--anim-faint, inherit); font-weight: 400; }\n.e-desktop-root .e-hcard__ideas { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }\n\n.e-desktop-root .e-hcard__board > li { list-style: none; display: flex; flex-direction: column; }\n.e-desktop-root .e-hcard__board > li::before { content: none; display: none; }\n.e-desktop-root .e-hcard__board > li { padding-left: 0; }\n.e-desktop-root .Text_text_1shpo {\n  white-space: pre-wrap;\n  overflow-wrap: break-word;\n}\n.e-desktop-root .BlockLoader_root_1fkyl {\n  display: inline-block;\n  width: 1ch;\n  color: inherit;\n  height: calc(var(--font-size) * var(--theme-line-height-base));\n  vertical-align: bottom;\n}\n.e-desktop-root .Indent_root_9k7l5 {\n  display: block;\n  padding: 0 0 0 1ch;\n}\n.e-desktop-root .Badge_root_1obhs {\n  display: inline-block;\n  vertical-align: top;\n  text-align: center;\n  font-weight: 400;\n  margin: 0;\n  outline: 0;\n  border: 0;\n  font-family: var(--font-family-mono);\n  min-height: calc(var(--theme-line-height-base) * var(--font-size));\n  text-transform: uppercase;\n  transition: 200ms ease all;\n  background: var(--theme-border);\n  padding: 0 1ch 0 1ch;\n}\n/* ═══════════════════════════════════════════════════════════════\n   PIXEL BADGES — badges/Badge.tsx, docs/ui-badges.md\n   Two colour roles, no background:\n   - ink    = currentColor (the text colour where the badge sits);\n   - accent = --e-badge-accent, from the tint, darker on the light canvas\n     and lighter on the dark one (≥ 4.8:1 on canvas, panel and the row\n     wash in every theme and tint; badges.test.tsx holds it to that).\n   The accent is set on the element that carries the theme class (body in\n   the console, the app's container in the Hermes tab and on Desktop), so it\n   follows light, vivid, dark and the tint run without a re-render. The formulas\n   are mirrored in tokens.ts (ACCENT_CSS); keep the two the same.\n   ═══════════════════════════════════════════════════════════════ */\n\n/* The dashboard has one style (ui-v2): the badge accent is the look's own accent-as-text. */\n.e-desktop-root .e-look {\n  --e-badge-accent: var(--theme-focused-foreground);\n}\n/* The gallery's panels each carry their own theme and tint: the same formula, worked out there.\n   (dashboard.css § 30 sets --theme-focused-foreground to exactly these on the app's root.) */\n.e-desktop-root .e-badge-panel.theme-light {\n  --e-badge-accent: oklch(from var(--tint, #39ff44) 0.45 min(c, 0.2) h);\n}\n.e-desktop-root .e-badge-panel.theme-dark {\n  --e-badge-accent: oklch(from var(--tint, #39ff44) max(l, 0.78) min(c, 0.22) h);\n}\n\n/* A row of small badges (Season › Quests: the ones earned). */\n.e-desktop-root .e-badge-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }\n/* The sheet's head: the class badge beside the name and levels. */\n.e-desktop-root .e-sheet-head { display: flex; align-items: center; gap: 12px; }\n\n.e-desktop-root .e-badge {\n  display: inline-block;\n  flex: none;\n  line-height: 0;\n  vertical-align: middle;\n  color: inherit;\n}\n.e-desktop-root .e-badge > svg {\n  display: block;\n  overflow: visible;\n  image-rendering: pixelated;\n}\n/* On a fill (a chip, a caption bar) the accent would meet the fill: one role only. */\n.e-desktop-root .e-badge--mono .e-badge__accent { fill: currentColor !important; }\n\n/* The earn animation: a short pixel pop, in three hard steps. Arrivals only. */\n@keyframes e-badge-pop {\n  0% { transform: scale(0.5); }\n  45% { transform: scale(1.25); }\n  100% { transform: scale(1); }\n}\n.e-desktop-root .e-badge--pop {\n  animation: e-badge-pop 0.32s steps(3, jump-end) both;\n  transform-origin: 50% 60%;\n}\n@media (prefers-reduced-motion: reduce) {\n  .e-desktop-root .e-badge--pop { animation: none; }\n}\n/* Capture mode (?capture=1): nothing moves. Badge.tsx also leaves the class off. */\n.e-desktop-root .e-capture .e-badge--pop { animation: none; }\n\n/* ─── the gallery (badges.html, ?capture=1 friendly) ─────────────────────── */\n\n.e-desktop-root .e-badge-gallery {\n  font-family: var(--font-family-mono, monospace);\n  padding: 16px;\n  max-width: 1440px;\n  margin: 0 auto;\n}\n.e-desktop-root .e-badge-gallery__title {\n  font-family: \"EmporiaPixel\", var(--font-family-mono, monospace);\n  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);\n  letter-spacing: 0.04em;\n  margin: 8px 0 4px;\n}\n.e-desktop-root .e-badge-gallery__lede { max-width: 72ch; line-height: 1.5; margin: 0 0 16px; }\n.e-desktop-root .e-badge-gallery__bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 16px; }\n.e-desktop-root .e-badge-gallery__bar button {\n  font: inherit;\n  background: transparent;\n  color: inherit;\n  border: 1px solid currentColor;\n  padding: 2px 8px;\n  cursor: pointer;\n}\n.e-desktop-root .e-badge-gallery__bar button[aria-pressed=\"true\"] { background: var(--e-badge-accent); color: var(--theme-background, #fff); }\n.e-desktop-root .e-badge-gallery h2 {\n  font-family: \"EmporiaPixel\", var(--font-family-mono, monospace);\n  font-weight: 400;\n  font-size: 1.1rem;\n  letter-spacing: 0.04em;\n  margin: 24px 0 8px;\n}\n.e-desktop-root .e-badge-table { border-collapse: collapse; width: 100%; }\n.e-desktop-root .e-badge-table th, .e-desktop-root .e-badge-table td {\n  text-align: left;\n  vertical-align: middle;\n  padding: 6px 10px 6px 0;\n  border-bottom: 1px solid var(--theme-border, #ccc);\n  font-size: 0.85rem;\n}\n.e-desktop-root .e-badge-table code { font-size: 0.8rem; }\n.e-desktop-root .e-badge-table__scales { display: flex; gap: 12px; align-items: flex-end; }\n.e-desktop-root .e-badge-scroll { overflow-x: auto; }\n\n.e-desktop-root .e-badge-panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }\n.e-desktop-root .e-badge-panel {\n  padding: 10px 12px 12px;\n  border: 1px solid var(--p-line);\n  background: var(--p-bg);\n  color: var(--p-ink);\n}\n.e-desktop-root .e-badge-panel.theme-light {\n  --p-bg: oklch(from var(--tint, #39ff44) 0.97 calc(c * 0.1) h);\n  --p-panel: oklch(from var(--tint, #39ff44) 0.92 calc(c * 0.18) h);\n  --p-ink: oklch(from var(--tint, #39ff44) 0.18 calc(c * 0.4) h);\n  --p-line: oklch(from var(--tint, #39ff44) 0.84 calc(c * 0.28) h);\n}\n.e-desktop-root .e-badge-panel.theme-dark {\n  --p-bg: oklch(from var(--tint, #39ff44) 0.192 calc(c * 0.243) h);\n  --p-panel: oklch(from var(--tint, #39ff44) 0.253 calc(c * 0.243) h);\n  --p-ink: oklch(from var(--tint, #39ff44) 0.962 calc(c * 0.243) h);\n  --p-line: oklch(from var(--tint, #39ff44) 0.366 calc(c * 0.328) h);\n}\n.e-desktop-root .e-badge-panel.theme-dark.tint-green {\n  --p-bg: #001b00; --p-panel: #0b2a0b; --p-ink: #d8ffd8; --p-line: #1d4a1d; --e-badge-accent: #39ff44;\n}\n.e-desktop-root .e-badge-panel.theme-vivid {\n  --p-bg: var(--tint, #39ff44);\n  --p-panel: oklch(from var(--tint, #39ff44) calc(l - 0.082) calc(c * 0.91) h);\n  --p-ink: oklch(from var(--tint, #39ff44) 0.192 calc(c * 0.243) h);\n  --p-line: var(--p-ink);\n  --e-badge-accent: var(--p-ink);\n}\n.e-desktop-root .e-badge-panel.theme-vivid.tint-red,\n.e-desktop-root .e-badge-panel.theme-vivid.tint-pink { --p-panel: color-mix(in srgb, var(--tint) 80%, white); }\n.e-desktop-root .e-badge-panel.theme-vivid.tint-blue,\n.e-desktop-root .e-badge-panel.theme-vivid.tint-purple { --p-ink: #fff; }\n.e-desktop-root .e-badge-panel.theme-vivid.tint-green { --p-ink: #001b00; --p-panel: #2ee03a; }\n.e-desktop-root .e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }\n.e-desktop-root .e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }\n.e-desktop-root .e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }\n.e-desktop-root .Divider_gradient_hx4se {\n  background: linear-gradient(to right, transparent, var(--theme-border), transparent);\n  height: calc(var(--font-size) * var(--theme-line-height-base));\n  width: 100%;\n}\n\n.e-desktop-root .Divider_divider_hx4se {\n  align-items: center;\n  border: 0;\n  display: flex;\n  flex-direction: column;\n  flex-shrink: 0;\n  height: calc(var(--font-size) * var(--theme-line-height-base));\n  justify-content: center;\n  outline: 0;\n  width: 100%;\n}\n\n.e-desktop-root .Divider_line_hx4se {\n  background: var(--theme-text);\n  display: block;\n  flex-shrink: 0;\n  height: 2px;\n  width: 100%;\n}\n.e-desktop-root .SidebarLayout_root_1g3qb {\n  display: flex;\n  align-items: flex-start;\n  justify-content: space-between;\n  white-space: pre-wrap;\n}\n\n.e-desktop-root .SidebarLayout_sidebar_1g3qb {\n  align-self: stretch;\n  flex-shrink: 0;\n  width: 20ch;\n}\n\n.e-desktop-root .SidebarLayout_handle_1g3qb {\n  align-self: stretch;\n  flex-shrink: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 3ch;\n  outline: 0;\n  border: 0;\n  cursor: col-resize;\n\n  &:hover {\n    .SidebarLayout_line_1g3qb {\n      background: var(--theme-focused-foreground);\n    }\n  }\n\n  &:focus {\n    outline: 0;\n    border: 0;\n\n    .SidebarLayout_line_1g3qb {\n      background: var(--theme-focused-foreground);\n    }\n  }\n\n  &:active {\n    .SidebarLayout_line_1g3qb {\n      background: var(--theme-focused-foreground);\n    }\n  }\n}\n\n.e-desktop-root .SidebarLayout_line_1g3qb {\n  align-self: stretch;\n  width: 2px;\n  background: var(--theme-text);\n\n  &:first-child {\n    margin-left: 1px;\n    margin-right: 2px;\n  }\n}\n\n.e-desktop-root .SidebarLayout_content_1g3qb {\n  min-width: 10%;\n  width: 100%;\n}\n\n/* Narrow screens only: the back control and the list-then-detail panes. */\n.e-desktop-root .SidebarLayout_back_1g3qb {\n  display: none;\n}\n\n/* Which pane a narrow screen shows; no effect on a wide one. */\n.e-desktop-root .SidebarLayout_showList_1g3qb,\n.e-desktop-root .SidebarLayout_showDetail_1g3qb {\n  min-width: 0;\n}\n\n@media (max-width: 700px) {\n  .e-desktop-root .SidebarLayout_root_1g3qb {\n    flex-direction: column;\n    align-items: stretch;\n  }\n\n  .e-desktop-root .SidebarLayout_root_1g3qb > .SidebarLayout_sidebar_1g3qb {\n    width: 100% !important;\n    max-width: 100%;\n  }\n\n  .e-desktop-root .SidebarLayout_handle_1g3qb {\n    display: none;\n  }\n\n  .e-desktop-root .SidebarLayout_content_1g3qb {\n    min-width: 0;\n  }\n\n  .e-desktop-root .SidebarLayout_showList_1g3qb > .SidebarLayout_content_1g3qb {\n    display: none;\n  }\n\n  .e-desktop-root .SidebarLayout_showDetail_1g3qb > .SidebarLayout_sidebar_1g3qb {\n    display: none;\n  }\n\n  .e-desktop-root .SidebarLayout_back_1g3qb {\n    display: flex;\n    align-items: center;\n    gap: 1ch;\n    width: 100%;\n    min-height: 44px;\n    margin: 0;\n    padding: 0 16px;\n    border: 0;\n    border-bottom: 1px solid var(--theme-border-subdued, rgba(128, 128, 128, 0.2));\n    background: transparent;\n    color: var(--theme-focused-foreground);\n    font: inherit;\n    font-size: 0.85rem;\n    letter-spacing: 0.06em;\n    text-transform: uppercase;\n    text-align: left;\n    cursor: pointer;\n  }\n}\n/*\nNOTE(jimmylee):\nSimple fluid table for Sacred Computer. The CLI framework's `formatRow` +\n`cardHeaderRow` primitives map onto this exact CSS surface, so the React port and\nthe terminal port render the same rows from the same data array. Background tokens\nreference the ANSI palette in global.css so the colors are byte-equal to\nscripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).\n*/\n\n.e-desktop-root .SimpleTable_scrollWrapper_x98rn {\n  overflow-x: auto;\n  -webkit-overflow-scrolling: touch;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn {\n  padding: 0;\n  border-collapse: collapse;\n  border: 0;\n  background: transparent;\n  box-shadow: none;\n  width: 100%;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn td {\n  padding: 0 2ch 0 0;\n  vertical-align: top;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn td:last-child {\n  padding-right: 0;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn thead td {\n  background: var(--ansi-240-gray-35);\n  color: var(--color-white);\n  font-weight: 400;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn tbody tr:focus {\n  background: var(--theme-focused-foreground);\n  outline: 0;\n}\n\n.e-desktop-root .SimpleTable_alignRight_x98rn {\n  text-align: right;\n}\n\n.e-desktop-root .SimpleTable_statusOk_x98rn {\n  color: var(--ansi-10-lime);\n  font-weight: 700;\n}\n\n.e-desktop-root .SimpleTable_statusOff_x98rn {\n  color: var(--ansi-248-gray-66);\n}\n.e-desktop-root .AlertBanner_root_l7zgu {\n  display: block;\n  background: var(--theme-border);\n  box-shadow: 1ch 1ch 0 0 var(--theme-border-subdued);\n  padding: calc(var(--font-size) * var(--theme-line-height-base)) 2ch calc(var(--font-size) * var(--theme-line-height-base)) 2ch;\n  font-weight: 400;\n}\n.e-desktop-root .AskAgent_root_1tucs {\n  display: inline-flex;\n  align-items: center;\n  gap: 0.6ch;\n  min-height: 32px;\n  padding: 2px 10px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.78rem;\n  letter-spacing: 0.04em;\n  cursor: pointer;\n  white-space: nowrap;\n}\n\n.e-desktop-root .AskAgent_root_1tucs:hover {\n  border-color: var(--theme-focused-foreground);\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .AskAgent_row_1tucs {\n  display: flex;\n  justify-content: flex-end;\n  padding: 0 0 8px;\n}\n\n.e-desktop-root .AskAgent_copy_1tucs {\n  display: inline-flex;\n  align-items: center;\n  flex-wrap: wrap;\n  gap: 0.8ch;\n}\n\n.e-desktop-root .AskAgent_note_1tucs {\n  font-size: 0.72rem;\n  opacity: 0.7;\n}\n\n.e-desktop-root .AskAgent_glyph_1tucs {\n  color: var(--theme-focused-foreground);\n}\n\n@media (max-width: 700px) {\n  .e-desktop-root .AskAgent_root_1tucs {\n    min-height: 40px;\n    padding: 4px 12px;\n  }\n}\n.e-desktop-root .RowSpaceBetween_row_1rf1p {\n  display: flex;\n  justify-content: space-between;\n  outline: 0;\n  border: 0;\n}\n.e-desktop-root .Chessboard_board_cycky {\n  display: inline-table;\n  border-collapse: collapse;\n  touch-action: none;\n}\n\n.e-desktop-root .Chessboard_corner_cycky {\n  width: 1ch;\n  height: calc(var(--theme-line-height-base) * 1rem);\n}\n\n.e-desktop-root .Chessboard_cell_cycky {\n  width: 1ch;\n  height: calc(var(--theme-line-height-base) * 1rem);\n  background-color: var(--theme-border-subdued);\n  text-align: center;\n  vertical-align: middle;\n}\n\n.e-desktop-root .Chessboard_square_cycky {\n  height: calc(var(--theme-line-height-base) * 2rem);\n  text-align: center;\n  vertical-align: middle;\n  width: 3ch;\n}\n\n.e-desktop-root .Chessboard_dark_cycky {\n  background-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .Chessboard_light_cycky {\n  background-color: var(--theme-focused-foreground-subdued);\n}\n\n.e-desktop-root .Chessboard_symbol_cycky {\n  font-size: 40px;\n  line-height: calc(var(--theme-line-height-base) * 2rem);\n}\n.e-desktop-root .ActionButton_hotkey_fa94z {\n  background: var(--theme-button-foreground);\n  color: var(--theme-text);\n  cursor: pointer;\n  flex-shrink: 0;\n  font-weight: 400;\n  padding: 0 1ch 0 1ch;\n  text-indent: 0ch;\n  user-select: none;\n}\n\n.e-desktop-root .ActionButton_content_fa94z {\n  background: var(--theme-button-background);\n  box-shadow: inset 0 0 0 2px var(--theme-button-foreground);\n  cursor: pointer;\n  flex-shrink: 0;\n  font-weight: 400;\n  padding: 0 1ch 0 1ch;\n  text-indent: 0ch;\n  text-transform: uppercase;\n  user-select: none;\n}\n\n.e-desktop-root .ActionButton_root_fa94z {\n  display: inline-flex;\n  align-items: center;\n  justify-content: space-between;\n  cursor: pointer;\n  outline: 0;\n  border: 0;\n  margin: 0;\n  padding: 0;\n  box-sizing: border-box;\n  font-family: var(--font-family-mono);\n  font-size: var(--font-size);\n  flex-shrink: 0;\n\n  &:hover .ActionButton_hotkey_fa94z {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:hover .ActionButton_content_fa94z {\n    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);\n  }\n\n  &:focus {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:focus .ActionButton_hotkey_fa94z {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:focus .ActionButton_content_fa94z {\n    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);\n  }\n\n  &:active {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:active .ActionButton_hotkey_fa94z {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:active .ActionButton_content_fa94z {\n    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);\n  }\n}\n\n.e-desktop-root .ActionButton_selected_fa94z {\n  .ActionButton_content_fa94z {\n    background: var(--theme-focused-foreground);\n  }\n}\n/* Shared by every board. Theme variables only; the --anim-* fallbacks keep a board legible outside the look. */\n\n.e-desktop-root .BoardKit_board_7mz8c {\n  --board-fill: var(--anim-fill, var(--theme-focused-foreground));\n  --board-ink: var(--anim-ink, var(--theme-background));\n  --board-line: var(--anim-line, var(--theme-focused-foreground));\n  --board-rule: var(--e-rule, var(--theme-border-subdued));\n  font-variant-numeric: tabular-nums;\n  min-width: 0;\n}\n\n.e-desktop-root .BoardKit_rules_7mz8c {\n  margin: 0 0 8px;\n  font-size: 0.75rem;\n  line-height: 1.5;\n  opacity: 0.8;\n}\n\n.e-desktop-root .BoardKit_scroll_7mz8c {\n  overflow-x: auto;\n  -webkit-overflow-scrolling: touch;\n}\n\n/* The text alternative: a real table, visually hidden, read in order by a screen reader. */\n.e-desktop-root .BoardKit_sr_7mz8c {\n  position: absolute;\n  width: 1px;\n  height: 1px;\n  overflow: hidden;\n  clip: rect(0 0 0 0);\n  white-space: nowrap;\n}\n\n/* A sealed move: hatched, never a guess. The word \"sealed\" is always printed with it. */\n.e-desktop-root .BoardKit_hatch_7mz8c {\n  background-image: repeating-linear-gradient(\n    135deg,\n    var(--theme-text) 0 1px,\n    transparent 1px 5px\n  );\n  background-color: transparent;\n  border: 1px solid var(--board-rule);\n  opacity: 0.55;\n}\n\n.e-desktop-root .BoardKit_foot_7mz8c {\n  margin: 6px 0 0;\n  font-size: 0.78rem;\n  line-height: 1.5;\n}\n.e-desktop-root .BlottoBars_root_19rvs { max-width: 44rem; }\n\n.e-desktop-root .BlottoBars_grid_19rvs { min-width: 18rem; display: grid; gap: 4px; }\n.e-desktop-root .BlottoBars_head_19rvs, .e-desktop-root .BlottoBars_row_19rvs { display: grid; grid-template-columns: minmax(0, 1fr) 4.2rem minmax(0, 1fr); align-items: center; gap: 6px; }\n.e-desktop-root .BlottoBars_who_19rvs { font-weight: 600; font-size: 0.85rem; overflow-wrap: anywhere; }\n.e-desktop-root .BlottoBars_whoB_19rvs { text-align: right; }\n.e-desktop-root .BlottoBars_state_19rvs { font-size: 0.68rem; letter-spacing: 0.04em; opacity: 0.8; }\n\n.e-desktop-root .BlottoBars_cell_19rvs { display: flex; align-items: center; min-height: 1.7rem; }\n.e-desktop-root .BlottoBars_left_19rvs { justify-content: flex-end; }\n.e-desktop-root .BlottoBars_right_19rvs { justify-content: flex-start; }\n.e-desktop-root .BlottoBars_wrap_19rvs { position: relative; display: block; height: 1.1rem; min-width: 2px; }\n.e-desktop-root .BlottoBars_bar_19rvs { display: block; width: 100%; height: 100%; }\n.e-desktop-root .BlottoBars_full_19rvs { display: block; width: 100%; height: 1.1rem; }\n.e-desktop-root .BlottoBars_none_19rvs { opacity: 0.6; padding: 0 4px; }\n/* The number and the mark sit just past the bar's end. */\n.e-desktop-root .BlottoBars_end_19rvs { position: absolute; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 3px; }\n.e-desktop-root .BlottoBars_left_19rvs .BlottoBars_end_19rvs { right: 100%; flex-direction: row-reverse; padding-right: 4px; }\n.e-desktop-root .BlottoBars_right_19rvs .BlottoBars_end_19rvs { left: 100%; padding-left: 4px; }\n\n/* Two players, told apart by side and by fill vs outline, not by colour alone. */\n.e-desktop-root .BlottoBars_barA_19rvs { background: var(--board-line); }\n.e-desktop-root .BlottoBars_barB_19rvs {\n  background: repeating-linear-gradient(45deg, var(--board-line) 0 3px, transparent 3px 6px);\n  border: 1px solid var(--board-line);\n}\n.e-desktop-root .BlottoBars_took_19rvs { outline: 2px solid var(--theme-text); outline-offset: 1px; }\n\n.e-desktop-root .BlottoBars_num_19rvs { font-size: 0.9rem; }\n.e-desktop-root .BlottoBars_mark_19rvs { font-size: 0.8rem; }\n\n/* The centre line the bars grow from. */\n.e-desktop-root .BlottoBars_centre_19rvs {\n  text-align: center;\n  font-size: 0.72rem;\n  letter-spacing: 0.06em;\n  border-left: 2px solid var(--theme-text);\n  border-right: 2px solid var(--theme-text);\n  padding: 2px 0;\n}\n.e-desktop-root .BlottoBars_weight_19rvs { font-weight: 700; }\n.e-desktop-root .BlottoBars_tie_19rvs { font-weight: 700; }\n.e-desktop-root .PickLine_root_5id3o { max-width: 44rem; }\n\n.e-desktop-root .PickLine_line_5id3o {\n  --rows: 1;\n  position: relative;\n  margin: 28px 12px 4px;\n  height: calc(40px + var(--rows) * 30px);\n}\n.e-desktop-root .PickLine_axis_5id3o { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--theme-text); opacity: 0.5; }\n.e-desktop-root .PickLine_tick_5id3o { position: absolute; top: -6px; width: 1px; height: 14px; background: var(--theme-text); opacity: 0.45; }\n.e-desktop-root .PickLine_tick_5id3o > span { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 0.68rem; }\n.e-desktop-root .PickLine_mark_5id3o { position: absolute; top: -8px; bottom: 0; width: 0; border-left: 2px dashed var(--theme-text); opacity: 0.55; }\n.e-desktop-root .PickLine_mark_5id3o > span { position: absolute; bottom: -2px; left: 5px; font-size: 0.7rem; white-space: nowrap; }\n.e-desktop-root .PickLine_target_5id3o { border-left: 2px solid var(--board-line); opacity: 1; }\n.e-desktop-root .PickLine_target_5id3o > span { left: auto; right: 5px; color: var(--theme-text); font-weight: 700; }\n.e-desktop-root .PickLine_target_5id3o.PickLine_low_5id3o > span { left: 5px; right: auto; bottom: 16px; }\n\n.e-desktop-root .PickLine_pick_5id3o { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 1; }\n.e-desktop-root .PickLine_pin_5id3o { width: 2px; height: calc(10px + var(--row, 0) * 30px); background: var(--theme-text); opacity: 0.6; }\n.e-desktop-root .PickLine_label_5id3o { font-size: 0.75rem; white-space: nowrap; padding: 1px 4px; border: 1px solid var(--board-rule); background: var(--theme-background); }\n.e-desktop-root .PickLine_winner_5id3o .PickLine_pin_5id3o { background: var(--board-line); opacity: 1; width: 3px; }\n.e-desktop-root .PickLine_winner_5id3o .PickLine_label_5id3o { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; }\n.e-desktop-root .UniqueRow_root_rdht5 { max-width: 44rem; }\n\n.e-desktop-root .UniqueRow_row_rdht5 { display: grid; grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr)); gap: 6px; }\n.e-desktop-root .UniqueRow_cell_rdht5 {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  min-height: 4.6rem;\n  padding: 6px 8px;\n  border: 1px solid var(--board-rule);\n  font-size: 0.78rem;\n  min-width: 0;\n  overflow-wrap: anywhere;\n}\n.e-desktop-root .UniqueRow_n_rdht5 { font-size: 1.05rem; }\n.e-desktop-root .UniqueRow_empty_rdht5 { border-style: dashed; }\n.e-desktop-root .UniqueRow_taken_rdht5 .UniqueRow_who_rdht5 { text-decoration: line-through; }\n.e-desktop-root .UniqueRow_unique_rdht5 { border-color: var(--theme-text); border-width: 2px; }\n.e-desktop-root .UniqueRow_tag_rdht5 { margin-top: auto; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; }\n.e-desktop-root .UniqueRow_winner_rdht5 { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; }\n.e-desktop-root .BargainSplit_root_nw71o { max-width: 44rem; }\n\n.e-desktop-root .BargainSplit_offers_nw71o { display: flex; gap: 10px; min-width: min-content; padding-bottom: 4px; }\n.e-desktop-root .BargainSplit_offer_nw71o { flex: 0 0 13rem; border: 1px solid var(--board-rule); padding: 6px 8px; display: grid; gap: 4px; align-content: start; }\n.e-desktop-root .BargainSplit_taken_nw71o { border: 2px solid var(--board-line); }\n.e-desktop-root .BargainSplit_head_nw71o { margin: 0; font-size: 0.78rem; font-weight: 700; }\n.e-desktop-root .BargainSplit_good_nw71o { display: grid; grid-template-columns: 3.4rem 1fr auto; gap: 6px; align-items: center; font-size: 0.74rem; }\n.e-desktop-root .BargainSplit_cells_nw71o { display: flex; gap: 2px; flex-wrap: wrap; }\n.e-desktop-root .BargainSplit_unit_nw71o { width: 0.8rem; height: 0.8rem; border: 1px solid var(--board-line); display: inline-block; }\n.e-desktop-root .BargainSplit_a_nw71o { background: var(--board-line); }\n.e-desktop-root .BargainSplit_b_nw71o { background: repeating-linear-gradient(45deg, var(--board-line) 0 2px, transparent 2px 4px); }\n.e-desktop-root .BargainSplit_free_nw71o { border-style: dashed; }\n.e-desktop-root .BargainSplit_count_nw71o { white-space: nowrap; }\n.e-desktop-root .BargainSplit_claim_nw71o { margin: 0; font-size: 0.7rem; opacity: 0.85; }\n\n.e-desktop-root .BargainSplit_scores_nw71o { display: grid; gap: 6px; margin-top: 10px; }\n.e-desktop-root .BargainSplit_score_nw71o { display: grid; grid-template-columns: 6rem 1fr; gap: 4px 8px; align-items: center; }\n.e-desktop-root .BargainSplit_who_nw71o { font-size: 0.85rem; font-weight: 600; overflow-wrap: anywhere; }\n.e-desktop-root .BargainSplit_track_nw71o { position: relative; display: block; height: 0.9rem; border: 1px solid var(--theme-text); }\n.e-desktop-root .BargainSplit_fill_nw71o { position: absolute; left: 0; top: 0; bottom: 0; background: var(--board-line); }\n.e-desktop-root .BargainSplit_walk_nw71o { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 3px double var(--theme-text); }\n.e-desktop-root .BargainSplit_pts_nw71o { grid-column: 2; font-size: 0.76rem; }\n\n.e-desktop-root .BargainSplit_hands_nw71o { list-style: none; margin: 8px 0 0; padding: 0; font-size: 0.8rem; display: grid; gap: 2px; }\n.e-desktop-root .AuctionLine_root_1bjou { max-width: 44rem; }\n\n.e-desktop-root .AuctionLine_line_1bjou { position: relative; min-width: 28rem; margin: 6px 14px 4px; display: grid; gap: 0; }\n.e-desktop-root .AuctionLine_lane_1bjou { --rows: 1; position: relative; height: calc(var(--rows) * 1.5rem + 1.3rem); }\n.e-desktop-root .AuctionLine_axis_1bjou { position: relative; height: 2px; background: var(--theme-text); opacity: 1; margin: 0; }\n.e-desktop-root .AuctionLine_tick_1bjou { position: absolute; top: -5px; width: 1px; height: 12px; background: var(--theme-text); }\n.e-desktop-root .AuctionLine_tick_1bjou > span { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-size: 0.66rem; }\n.e-desktop-root .AuctionLine_mark_1bjou { position: absolute; top: -10px; width: 0; height: 22px; }\n.e-desktop-root .AuctionLine_mark_1bjou > span { position: absolute; top: -14px; left: 4px; font-size: 0.7rem; white-space: nowrap; font-weight: 700; }\n.e-desktop-root .AuctionLine_base_1bjou { border-left: 2px dashed var(--theme-text); }\n.e-desktop-root .AuctionLine_pot_1bjou { border-left: 3px solid var(--board-line); }\n.e-desktop-root .AuctionLine_pot_1bjou > span { left: auto; right: 5px; }\n\n/* Signals above the axis: a label over a tick that ends on the line. */\n.e-desktop-root .AuctionLine_sig_1bjou { position: absolute; top: calc(var(--row) * 1.5rem); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }\n.e-desktop-root .AuctionLine_sigText_1bjou { font-size: 0.7rem; white-space: nowrap; padding: 0 3px; border: 1px dotted var(--theme-text); background: var(--theme-background); }\n.e-desktop-root .AuctionLine_sigTick_1bjou { width: 0; height: 0.4rem; border-left: 1px dotted var(--theme-text); }\n\n/* Bids below the axis: a pin hanging from the line to its label. */\n.e-desktop-root .AuctionLine_pin_1bjou { position: absolute; top: calc(var(--row) * 1.5rem); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; margin-top: 0.7rem; }\n.e-desktop-root .AuctionLine_pinTick_1bjou { width: 2px; height: 0.4rem; background: var(--theme-text); }\n.e-desktop-root .AuctionLine_pinText_1bjou { font-size: 0.72rem; white-space: nowrap; padding: 0 4px; border: 1px solid var(--board-rule); background: var(--theme-background); }\n.e-desktop-root .AuctionLine_won_1bjou .AuctionLine_pinText_1bjou { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; }\n\n/* The winner's gain or loss: the stretch between its bid and V. A curse is hatched, a gain solid. */\n.e-desktop-root .AuctionLine_seg_1bjou { position: relative; height: 2.2rem; margin-top: 4px; }\n.e-desktop-root .AuctionLine_span_1bjou { position: absolute; top: 4px; height: 0.8rem; min-width: 3px; background: var(--board-line); }\n.e-desktop-root .AuctionLine_loss_1bjou { background: repeating-linear-gradient(45deg, var(--board-line) 0 3px, transparent 3px 6px); border: 1px solid var(--board-line); }\n.e-desktop-root .AuctionLine_segText_1bjou { position: absolute; top: 1.3rem; font-size: 0.74rem; font-weight: 700; white-space: nowrap; }\n.e-desktop-root .DiceTable_root_1yna5 { max-width: 44rem; }\n\n.e-desktop-root .DiceTable_grid_1yna5 { min-width: 30rem; display: grid; gap: 3px; }\n.e-desktop-root .DiceTable_row_1yna5 { display: grid; grid-template-columns: 2.4rem repeat(6, minmax(0, 1fr)); gap: 3px; align-items: stretch; }\n.e-desktop-root .DiceTable_qty_1yna5 { font-size: 0.78rem; text-align: right; padding-right: 4px; align-self: center; }\n.e-desktop-root .DiceTable_faceHead_1yna5 { font-size: 0.66rem; letter-spacing: 0.06em; text-align: center; opacity: 0.7; }\n.e-desktop-root .DiceTable_cell_1yna5 { min-height: 1.5rem; border: 1px dashed var(--board-rule); font-size: 0.72rem; padding: 2px 4px; overflow-wrap: anywhere; }\n.e-desktop-root .DiceTable_bid_1yna5 { border-style: solid; border-color: var(--theme-text); background: var(--board-rule); }\n.e-desktop-root .DiceTable_called_1yna5 { outline: 3px double var(--board-line); outline-offset: 1px; font-weight: 700; }\n\n.e-desktop-root .DiceTable_cups_1yna5 { display: grid; gap: 6px; margin-top: 10px; }\n.e-desktop-root .DiceTable_cup_1yna5 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }\n.e-desktop-root .DiceTable_cupName_1yna5 { min-width: 6rem; font-weight: 600; font-size: 0.85rem; overflow-wrap: anywhere; }\n.e-desktop-root .DiceTable_dice_1yna5 { display: inline-flex; gap: 4px; flex-wrap: wrap; }\n.e-desktop-root .DiceTable_die_1yna5 { width: 1.9rem; height: 1.9rem; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--theme-text); font-size: 0.95rem; }\n/* A die that counts for the called face is filled and underlined, not only coloured. */\n.e-desktop-root .DiceTable_counts_1yna5 { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; text-decoration: underline; }\n\n.e-desktop-root .DiceTable_meter_1yna5 { display: grid; gap: 4px; margin-top: 10px; }\n.e-desktop-root .DiceTable_track_1yna5 { position: relative; display: block; height: 0.9rem; border: 1px solid var(--theme-text); }\n.e-desktop-root .DiceTable_fill_1yna5 { position: absolute; left: 0; top: 0; bottom: 0; background: var(--board-line); }\n.e-desktop-root .DiceTable_need_1yna5 { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 3px double var(--theme-text); }\n.e-desktop-root .DiceTable_meterText_1yna5 { font-size: 0.8rem; }\n.e-desktop-root .SluiceBoard_root_mmd9b { max-width: 30rem; }\n\n.e-desktop-root .SluiceBoard_grid_mmd9b { min-width: 16rem; display: grid; gap: 3px; width: max-content; max-width: 100%; }\n.e-desktop-root .SluiceBoard_row_mmd9b { display: grid; grid-template-columns: 1.4rem repeat(var(--cols, 6), 2.5rem); gap: 3px; align-items: stretch; }\n\n.e-desktop-root .SluiceBoard_rowNo_mmd9b { font-size: 0.66rem; opacity: 0.7; align-self: center; text-align: right; padding-right: 3px; }\n.e-desktop-root .SluiceBoard_head_mmd9b { font-size: 0.7rem; text-align: center; padding: 2px 0; border-bottom: 2px solid var(--board-rule); }\n/* The gate: a filled bar across the top of the shut channel, and the word. */\n.e-desktop-root .SluiceBoard_gate_mmd9b { background: var(--board-fill); color: var(--board-ink); border-bottom-color: var(--board-line); font-weight: 700; }\n.e-desktop-root .SluiceBoard_gateWord_mmd9b { display: block; font-size: 0.56rem; letter-spacing: 0.08em; text-transform: uppercase; }\n\n.e-desktop-root .SluiceBoard_cell_mmd9b { position: relative; height: 2.5rem; border: 1px dotted var(--board-rule); display: flex; align-items: center; justify-content: center; box-sizing: border-box; }\n.e-desktop-root .SluiceBoard_cell_mmd9b.SluiceBoard_shut_mmd9b { background-image: repeating-linear-gradient(90deg, var(--board-rule) 0 1px, transparent 1px 6px); }\n/* Silt: hatched, neutral. */\n.e-desktop-root .SluiceBoard_silt_mmd9b { background-image: repeating-linear-gradient(135deg, var(--theme-text) 0 1px, transparent 1px 5px); border: 1px solid var(--board-rule); opacity: 0.6; }\n/* Seat A is a filled square, seat B a hollow ring: shape tells them apart, not colour. */\n.e-desktop-root .SluiceBoard_stoneA_mmd9b { width: 1.6rem; height: 1.6rem; background: var(--board-fill); }\n.e-desktop-root .SluiceBoard_stoneB_mmd9b { width: 1.6rem; height: 1.6rem; border: 3px solid var(--board-line); border-radius: 50%; box-sizing: border-box; }\n.e-desktop-root .SluiceBoard_n_mmd9b { position: absolute; right: 2px; bottom: 0; font-size: 0.55rem; line-height: 1; opacity: 0.75; }\n/* The drop just made. */\n.e-desktop-root .SluiceBoard_last_mmd9b { outline: 2px double var(--board-line); outline-offset: 1px; }\n/* The winning line: thick outline, filled ground. */\n.e-desktop-root .SluiceBoard_win_mmd9b { background: var(--board-rule); outline: 3px solid var(--board-line); outline-offset: -2px; }\n\n.e-desktop-root .SluiceBoard_legend_mmd9b { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 0.78rem; margin: 8px 0 0; }\n.e-desktop-root .SluiceBoard_key_mmd9b { display: inline-flex; align-items: center; gap: 5px; }\n.e-desktop-root .SluiceBoard_keyA_mmd9b { width: 0.8rem; height: 0.8rem; background: var(--board-fill); display: inline-block; }\n.e-desktop-root .SluiceBoard_keyB_mmd9b { width: 0.8rem; height: 0.8rem; border: 2px solid var(--board-line); border-radius: 50%; display: inline-block; box-sizing: border-box; }\n.e-desktop-root .SluiceBoard_keySilt_mmd9b { width: 0.8rem; height: 0.8rem; display: inline-block; border: 1px solid var(--board-rule); background-image: repeating-linear-gradient(135deg, var(--theme-text) 0 1px, transparent 1px 4px); }\n.e-desktop-root .AgentChat_toggle_ry10h {\n  font-size: 0.85rem !important;\n  letter-spacing: 0.04em;\n}\n\n.e-desktop-root .AgentChat_glyph_ry10h {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .AgentChat_label_ry10h {\n  text-transform: lowercase;\n}\n\n.e-desktop-root .AgentChat_menuItem_ry10h {\n  padding: 12px 0 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .AgentChat_menuItem_ry10h .e-section-tab {\n  width: 100%;\n  min-height: 44px;\n  justify-content: flex-start;\n  padding: 10px 14px;\n  opacity: 1;\n}\n\n.e-desktop-root .AgentChat_on_ry10h {\n  border-color: var(--theme-focused-foreground) !important;\n  background: var(--e-accent-wash, transparent) !important;\n}\n/* The agent chat drawer: monospace, hairline rules, the theme's accent as the\n   one highlight, 40–48px targets on a phone. Tokens only (--theme-*, --e-rule,\n   --e-accent-wash); no colours of its own.\n\n   It is sized to the app's own frame, never to the browser window: inside the\n   Hermes tab the frame is the tab's container (hermesPlugin.tsx), so the\n   transcript scrolls and the composer stays pinned at the bottom of what you\n   see. Below the header-nav width it covers the frame (absolute, inside the\n   shell's `contain: layout paint`), never the Hermes app around it. */\n\n.e-desktop-root .ChatDrawer_root_tg8j6 {\n  display: none;\n  flex: none;\n  flex-direction: column;\n  box-sizing: border-box;\n  width: min(27rem, 40%);\n  height: 100%;\n  min-height: 0;\n  position: relative;\n  align-self: stretch;\n  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: var(--theme-background);\n  color: var(--theme-text);\n  font-size: 0.86rem;\n  line-height: 1.5;\n}\n\n.e-desktop-root .ChatDrawer_open_tg8j6 {\n  display: flex;\n}\n\n/* ── head ─────────────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_head_tg8j6 {\n  flex: none;\n  padding: 12px 16px 10px;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .ChatDrawer_headRow_tg8j6 {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n}\n\n.e-desktop-root .ChatDrawer_heading_tg8j6 {\n  margin: 0;\n  display: flex;\n  align-items: baseline;\n  gap: 1ch;\n  font: inherit;\n  font-size: 1.05rem;\n  font-weight: 600;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n}\n\n.e-desktop-root .ChatDrawer_headIcon_tg8j6 {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_close_tg8j6 {\n  min-width: 40px !important;\n  min-height: 40px !important;\n}\n\n.e-desktop-root .ChatDrawer_meta_tg8j6 {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 0 1ch;\n  margin-top: 2px;\n  font-size: 0.74rem;\n  opacity: 0.62;\n}\n\n.e-desktop-root .ChatDrawer_conn_tg8j6[data-conn=\"open\"] {\n  color: var(--theme-focused-foreground);\n  opacity: 1;\n}\n\n.e-desktop-root .ChatDrawer_sessionBar_tg8j6 {\n  display: flex;\n  gap: 8px;\n  margin-top: 10px;\n}\n\n.e-desktop-root .ChatDrawer_sessionPick_tg8j6 {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 1ch;\n  min-height: 36px;\n  padding: 4px 10px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_sessionPick_tg8j6:hover,\n.e-desktop-root .ChatDrawer_sessionPick_tg8j6[aria-expanded=\"true\"] {\n  border-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_sessionPickTitle_tg8j6 {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_smallButton_tg8j6 {\n  flex: none;\n  min-height: 36px;\n  padding: 4px 12px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font: inherit;\n  font-size: 0.8rem;\n  letter-spacing: 0.04em;\n  cursor: pointer;\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_smallButton_tg8j6:hover {\n  border-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_error_tg8j6 {\n  margin: 8px 0 0;\n  font-size: 0.78rem;\n  color: var(--theme-focused-foreground);\n}\n\n/* ── transcript ───────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_transcript_tg8j6 {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  overscroll-behavior: contain;\n  padding: 12px 16px 16px;\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n\n.e-desktop-root .ChatDrawer_intro_tg8j6 {\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  border-left: 3px solid var(--theme-focused-foreground);\n  padding: 10px 14px 12px;\n  line-height: 1.55;\n}\n\n.e-desktop-root .ChatDrawer_intro_tg8j6 p {\n  margin: 0 0 6px;\n}\n\n.e-desktop-root .ChatDrawer_introTitle_tg8j6 {\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  opacity: 0.6;\n}\n\n.e-desktop-root .ChatDrawer_introNote_tg8j6 {\n  font-size: 0.78rem;\n  opacity: 0.65;\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6 {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  min-width: 0;\n}\n\n.e-desktop-root .ChatDrawer_who_tg8j6 {\n  font-size: 0.68rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6[data-who=\"you\"] .ChatDrawer_who_tg8j6 {\n  color: var(--theme-focused-foreground);\n  opacity: 1;\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6[data-who=\"you\"] .ChatDrawer_text_tg8j6 {\n  padding: 6px 10px;\n  background: var(--e-accent-wash, rgba(128, 128, 128, 0.08));\n  border-left: 2px solid var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_text_tg8j6 {\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .ChatDrawer_caret_tg8j6 {\n  color: var(--theme-focused-foreground);\n  animation: ChatDrawer_blink_tg8j6 1s steps(1) infinite;\n}\n\n@keyframes ChatDrawer_blink_tg8j6 {\n  50% {\n    opacity: 0;\n  }\n}\n\n.e-desktop-root .ChatDrawer_working_tg8j6 {\n  display: flex;\n  gap: 1ch;\n  align-items: center;\n  font-size: 0.78rem;\n  opacity: 0.7;\n}\n\n.e-desktop-root .ChatDrawer_notice_tg8j6 {\n  font-size: 0.78rem;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  opacity: 0.75;\n  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  padding: 2px 0 2px 10px;\n  max-height: 22rem;\n  overflow-y: auto;\n}\n\n.e-desktop-root .ChatDrawer_notice_tg8j6[data-tone=\"error\"] {\n  opacity: 1;\n  border-left: 2px solid var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_notice_tg8j6[data-tone=\"command\"] {\n  border-left: 0;\n  padding-left: 0;\n  opacity: 0.9;\n}\n\n.e-desktop-root .ChatDrawer_prompt_tg8j6 {\n  color: var(--theme-focused-foreground);\n}\n\n/* ── tool cards ───────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_tool_tg8j6 {\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  min-width: 0;\n}\n\n.e-desktop-root .ChatDrawer_toolHead_tg8j6 {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  width: 100%;\n  min-height: 36px;\n  padding: 6px 10px;\n  border: 0;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.8rem;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_toolHead_tg8j6:hover .ChatDrawer_toolName_tg8j6 {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_toolMark_tg8j6 {\n  flex: none;\n  width: 1.5ch;\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_tool_tg8j6[data-status=\"failed\"] .ChatDrawer_toolMark_tg8j6,\n.e-desktop-root .ChatDrawer_tool_tg8j6[data-status=\"blocked\"] .ChatDrawer_toolMark_tg8j6 {\n  color: inherit;\n  opacity: 0.8;\n}\n\n.e-desktop-root .ChatDrawer_toolName_tg8j6 {\n  flex: none;\n  font-weight: 600;\n}\n\n.e-desktop-root .ChatDrawer_toolContext_tg8j6 {\n  flex: 1;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  opacity: 0.65;\n}\n\n.e-desktop-root .ChatDrawer_toolTime_tg8j6 {\n  flex: none;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */\n  font-size: 0.72rem;\n}\n\n.e-desktop-root .ChatDrawer_toolCaret_tg8j6 {\n  flex: none;\n  opacity: 0.5;\n}\n\n.e-desktop-root .ChatDrawer_toolOut_tg8j6 {\n  margin: 0;\n  padding: 8px 10px;\n  border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  max-height: 16rem;\n  overflow: auto;\n  font: inherit;\n  font-size: 0.76rem;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n}\n\n/* Relay content: dashed rule, a label that says so. */\n.e-desktop-root .ChatDrawer_untrusted_tg8j6 {\n  border-style: dashed;\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6.ChatDrawer_untrusted_tg8j6 {\n  border: 1px dashed var(--e-rule, rgba(128, 128, 128, 0.35));\n  padding: 6px 10px;\n}\n\n.e-desktop-root .ChatDrawer_untrustedLabel_tg8j6 {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: 4px 1ch;\n  padding: 0 10px 6px;\n  font-size: 0.7rem;\n  opacity: 0.8;\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6 .ChatDrawer_untrustedLabel_tg8j6 {\n  padding: 0;\n}\n\n.e-desktop-root .ChatDrawer_untrustedLabel_tg8j6 [class*=\"Badge_root\"] {\n  font-size: 0.66rem;\n  letter-spacing: 0.08em;\n  background: transparent;\n  border: 1px solid currentColor;\n}\n\n/* ── approval / clarify ───────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_approval_tg8j6 {\n  border: 1px solid var(--theme-focused-foreground);\n  border-left-width: 3px;\n  padding: 10px 12px;\n  background: var(--e-accent-wash, transparent);\n}\n\n.e-desktop-root .ChatDrawer_cardTitle_tg8j6 {\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n  margin-bottom: 6px;\n}\n\n.e-desktop-root .ChatDrawer_cardText_tg8j6 {\n  margin: 0 0 6px;\n}\n\n.e-desktop-root .ChatDrawer_cardNote_tg8j6 {\n  margin: 6px 0;\n  font-size: 0.78rem;\n  font-weight: 600;\n}\n\n.e-desktop-root .ChatDrawer_cardFoot_tg8j6 {\n  margin: 8px 0 0;\n  font-size: 0.7rem;\n  opacity: 0.6;\n}\n\n.e-desktop-root .ChatDrawer_command_tg8j6 {\n  margin: 0 0 8px;\n  padding: 6px 8px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: var(--theme-background);\n  font: inherit;\n  font-size: 0.78rem;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  max-height: 10rem;\n  overflow: auto;\n}\n\n.e-desktop-root .ChatDrawer_choices_tg8j6 {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 8px;\n}\n\n.e-desktop-root .ChatDrawer_choice_tg8j6 {\n  min-height: 36px;\n  padding: 4px 12px;\n  border: 1px solid var(--theme-focused-foreground);\n  background: var(--theme-background);\n  color: inherit;\n  font: inherit;\n  font-size: 0.8rem;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_choice_tg8j6:hover:not(:disabled),\n.e-desktop-root .ChatDrawer_picked_tg8j6 {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n}\n\n.e-desktop-root .ChatDrawer_choice_tg8j6:disabled {\n  opacity: 0.45;\n  cursor: default;\n}\n\n.e-desktop-root .ChatDrawer_deny_tg8j6 {\n  border-color: var(--e-rule, rgba(128, 128, 128, 0.4));\n}\n\n.e-desktop-root .ChatDrawer_answered_tg8j6 {\n  font-size: 0.8rem;\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_question_tg8j6 + .ChatDrawer_question_tg8j6 {\n  margin-top: 10px;\n}\n\n.e-desktop-root .ChatDrawer_answerInput_tg8j6 {\n  box-sizing: border-box;\n  width: 100%;\n  margin-top: 6px;\n  min-height: 36px;\n  max-height: calc(6 * 1.45em + 12px);\n  padding: 4px 8px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.3));\n  background: var(--theme-background);\n  color: inherit;\n  font: inherit;\n  line-height: 1.45;\n  resize: none;\n  overflow-y: auto;\n  overflow-wrap: anywhere;\n}\n\n/* ── sessions ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_sessions_tg8j6 {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  overscroll-behavior: contain;\n  padding-bottom: 16px;\n}\n\n.e-desktop-root .ChatDrawer_sessionsHead_tg8j6 {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 4px 12px 4px 0;\n}\n\n.e-desktop-root .ChatDrawer_sessionList_tg8j6 {\n  list-style: none;\n  margin: 0;\n  padding: 0;\n}\n\n.e-desktop-root .ChatDrawer_sessionRow_tg8j6 {\n  display: flex !important;\n  flex-direction: column;\n  align-items: flex-start;\n  gap: 2px;\n  width: 100%;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_sessionRow_tg8j6:hover .ChatDrawer_sessionTitle_tg8j6 {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_sessionTitle_tg8j6 {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: baseline;\n  gap: 0 1ch;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .ChatDrawer_sessionMeta_tg8j6 {\n  font-size: 0.74rem;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */\n}\n\n.e-desktop-root .ChatDrawer_tag_tg8j6 {\n  font-size: 0.64rem;\n  letter-spacing: 0.1em;\n  text-transform: uppercase;\n  padding: 0 0.6ch;\n  border: 1px solid currentColor;\n  color: var(--theme-focused-foreground);\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_empty_tg8j6 {\n  padding: 8px 12px;\n  margin: 0;\n  font-size: 0.8rem;\n  opacity: 0.6;\n}\n\n/* ── composer ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_composer_tg8j6 {\n  position: relative;\n  flex: none;\n  padding: 8px 12px 10px;\n  border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: var(--theme-background);\n}\n\n.e-desktop-root .ChatDrawer_inputRow_tg8j6 {\n  display: flex;\n  align-items: flex-end;\n  gap: 8px;\n}\n\n/* One slim line (42px) by default; it grows with the text (ChatDrawer's\n   layout effect) up to six lines, then scrolls inside. */\n.e-desktop-root .ChatDrawer_input_tg8j6 {\n  flex: 1;\n  min-width: 0;\n  box-sizing: border-box;\n  height: 42px;\n  min-height: 42px;\n  max-height: calc(6 * 1.45em + 20px);\n  overflow-wrap: anywhere;\n  padding: 10px 10px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.35));\n  background: var(--theme-background);\n  color: inherit;\n  font: inherit;\n  line-height: 1.45;\n  resize: none;\n  overflow-y: auto;\n}\n\n.e-desktop-root .ChatDrawer_input_tg8j6:focus {\n  border-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_send_tg8j6 {\n  flex: none;\n  box-sizing: border-box;\n  min-width: 48px;\n  height: 42px;\n  min-height: 42px;\n  padding: 0 14px;\n  border: 1px solid var(--theme-focused-foreground);\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  font: inherit;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_send_tg8j6:disabled {\n  background: transparent;\n  color: inherit;\n  border-color: var(--e-rule, rgba(128, 128, 128, 0.35));\n  opacity: 0.6;\n  cursor: default;\n}\n\n.e-desktop-root .ChatDrawer_stop_tg8j6 {\n  background: transparent;\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_readOnly_tg8j6 {\n  margin: 0 0 8px;\n  font-size: 0.78rem;\n  opacity: 0.7;\n}\n\n.e-desktop-root .ChatDrawer_typeahead_tg8j6 {\n  position: absolute;\n  left: 16px;\n  right: 16px;\n  bottom: 100%;\n  z-index: 5;\n  list-style: none;\n  margin: 0;\n  padding: 0;\n  max-height: 18rem;\n  overflow-y: auto;\n  border: 1px solid var(--theme-focused-foreground);\n  background: var(--theme-background);\n}\n\n.e-desktop-root .ChatDrawer_typeRow_tg8j6 {\n  display: grid;\n  grid-template-columns: auto auto 1fr;\n  align-items: baseline;\n  gap: 0 1ch;\n  width: 100%;\n  min-height: 36px;\n  padding: 4px 10px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.8rem;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_typeRow_tg8j6[data-reach=\"terminal\"],\n.e-desktop-root .ChatDrawer_typeRow_tg8j6[data-reach=\"voice\"],\n.e-desktop-root .ChatDrawer_typeRow_tg8j6[data-reach=\"settings\"] {\n  opacity: 0.6;\n}\n\n.e-desktop-root .ChatDrawer_typeRowOn_tg8j6 {\n  background: var(--e-accent-wash, rgba(128, 128, 128, 0.1));\n}\n\n.e-desktop-root .ChatDrawer_typeName_tg8j6 {\n  color: var(--theme-focused-foreground);\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_typeMeta_tg8j6 {\n  grid-column: 1 / -1;\n  font-size: 0.72rem;\n  opacity: 0.6;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/* ── back control (phone) ─────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_back_tg8j6 {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  width: 100%;\n  min-height: 44px;\n  margin: 0;\n  padding: 0 16px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font: inherit;\n  font-size: 0.85rem;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n  text-align: left;\n  cursor: pointer;\n  flex: none;\n}\n\n/* \"← back to the dashboard\", then the menu: the full-page chat's top row. */\n.e-desktop-root .ChatDrawer_backRow_tg8j6 {\n  align-items: stretch;\n  flex: none;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .ChatDrawer_backRow_tg8j6 .ChatDrawer_back_tg8j6 {\n  flex: 1;\n  border-bottom: 0;\n}\n\n.e-desktop-root .ChatDrawer_menu_tg8j6 {\n  flex: none;\n  min-width: 48px;\n  min-height: 44px;\n  border: 0;\n  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .ChatDrawer_phoneOnly_tg8j6 {\n  display: none;\n}\n\n/* Below the header-nav breakpoint: one full-screen panel, \"← back\" on top. */\n@media (max-width: 900px) {\n  .e-desktop-root .ChatDrawer_root_tg8j6 {\n    position: absolute;\n    inset: 0;\n    z-index: 120;\n    width: 100%;\n    height: 100%;\n    border-left: 0;\n  }\n\n  .e-desktop-root .ChatDrawer_phoneOnly_tg8j6 {\n    display: flex;\n  }\n\n  .e-desktop-root .ChatDrawer_close_tg8j6 {\n    display: none !important;\n  }\n\n  .e-desktop-root .ChatDrawer_sessionPick_tg8j6,\n  .e-desktop-root .ChatDrawer_smallButton_tg8j6,\n  .e-desktop-root .ChatDrawer_choice_tg8j6,\n  .e-desktop-root .ChatDrawer_toolHead_tg8j6,\n  .e-desktop-root .ChatDrawer_typeRow_tg8j6 {\n    min-height: 44px;\n  }\n\n  .e-desktop-root .ChatDrawer_sessionRow_tg8j6 {\n    min-height: 48px;\n  }\n\n  .e-desktop-root .ChatDrawer_input_tg8j6,\n  .e-desktop-root .ChatDrawer_answerInput_tg8j6 {\n    font-size: 16px; /* no zoom-on-focus on a phone */\n  }\n}\n\n/* The kit gives every `ul li` an inline :before spacer (global.css), which\n   opens an empty line above a block button. Lists here are rows, not prose. */\n.e-desktop-root .ChatDrawer_typeahead_tg8j6 > li::before,\n.e-desktop-root .ChatDrawer_sessionList_tg8j6 > li::before {\n  content: none;\n  display: none;\n}\n\n/* A flex column shrinks its scrollable children to nothing when it overflows;\n   transcript items keep their height and the transcript scrolls instead. */\n.e-desktop-root .ChatDrawer_transcript_tg8j6 > * {\n  flex-shrink: 0;\n}\n\n/* A short screen (the 540 × 540 capture frame, a phone held sideways): the\n   \"← back\" row already says where you are, so the title row goes. */\n@media (max-width: 900px) and (max-height: 640px) {\n  .e-desktop-root .ChatDrawer_headRow_tg8j6 {\n    display: none;\n  }\n\n  .e-desktop-root .ChatDrawer_head_tg8j6 {\n    padding-top: 8px;\n  }\n\n  .e-desktop-root .ChatDrawer_sessionBar_tg8j6 {\n    margin-top: 6px;\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .e-desktop-root .ChatDrawer_caret_tg8j6 {\n    animation: none;\n  }\n}\n/*$vite$:1*/";
 /**
 * Desktop's own global CSS reaches the page (there is no shadow root): its base
 * layer (`@layer base`: `* { border: 0 solid; margin: 0; padding: 0 }`, `svg

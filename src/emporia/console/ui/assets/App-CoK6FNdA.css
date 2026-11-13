@@ -430,6 +430,15 @@ body.theme-light.tint-pink {
   --theme-window-shadow: oklch(from var(--tint) 0.7 calc(c * 0.28) h);
 }
 
+/*
+DEEP (the dark theme with a tint): the demo video's all-dark-green screens in OKLCH relative to the
+tint — canvas L .192, panel L .253 (chroma x .243), border L .366 (x .328), text L .962 (x .243);
+the accent as text is lifted to L .78 (chroma capped at .22); green is pinned to the video's colours.
+Mirrored in dashboard.css (body.e-look.theme-dark) and themePalette.ts.
+BEFORE (the previous dark ramp, for comparing; `git revert` of the deep commit restores it):
+  background  oklch(from var(--tint) 0.14 calc(c * 0.18) h)   modal 0.24 / c*0.22   footer 0.3 / c*0.24
+  input 0.28 / c*0.2   border 0.4 / c*0.28   text 0.92 / c*0.18   accent 0.72 c
+*/
 body.theme-dark.tint-green,
 body.theme-dark.tint-blue,
 body.theme-dark.tint-red,
@@ -437,39 +446,78 @@ body.theme-dark.tint-yellow,
 body.theme-dark.tint-purple,
 body.theme-dark.tint-orange,
 body.theme-dark.tint-pink {
-  /*
-  NOTE(jimmylee):
-  Dark tint ramp is anchored to the ANSI dark grays:
-    --theme-background          ≈ ansi-232-gray-3  (#080808)
-    --theme-background-modal    ≈ ansi-235-gray-15 (#262626)
-    --theme-background-input    ≈ ansi-237-gray-23 (#3a3a3a)
-    --theme-border              ≈ ansi-237-gray-23 (#3a3a3a)
-    --theme-text                ≈ ansi-15-white    (#ffffff)
-  */
   --theme-overlay: var(--color-black-alpha-40);
-  --theme-background: oklch(from var(--tint) 0.14 calc(c * 0.18) h);
-  --theme-background-modal: oklch(from var(--tint) 0.24 calc(c * 0.22) h);
-  --theme-background-modal-footer: oklch(from var(--tint) 0.3 calc(c * 0.24) h);
-  --theme-background-input: oklch(from var(--tint) 0.28 calc(c * 0.2) h);
-  --theme-border: oklch(from var(--tint) 0.4 calc(c * 0.28) h);
-  --theme-border-subdued: oklch(from var(--tint) 0.4 calc(c * 0.28) h / 0.6);
-  --theme-text: oklch(from var(--tint) 0.92 calc(c * 0.18) h);
-  --theme-button: oklch(from var(--tint) 0.92 calc(c * 0.18) h);
-  --theme-button-text: oklch(from var(--tint) 0.14 calc(c * 0.18) h);
-  --theme-button-foreground: oklch(from var(--tint) 0.3 calc(c * 0.22) h);
-  --theme-button-background: oklch(from var(--tint) 0.24 calc(c * 0.22) h);
-  --theme-focused-foreground: oklch(from var(--tint) 0.72 c h);
-  --theme-focused-foreground-subdued: oklch(from var(--tint) 0.72 c h / 0.5);
-  /*
-  NOTE(jimmylee):
-  Window body matches background-modal (L=0.24) so it sits one step lighter than
-  the L=0.14 page background, and the shadow drops to L=0.18 — a hair lighter than
-  the page but darker than the window body, preserving the "shadow darker than the
-  body" contract under every dark tint.
-  */
-  --theme-window-background: oklch(from var(--tint) 0.24 calc(c * 0.22) h);
-  --theme-window-shadow: oklch(from var(--tint) 0.18 calc(c * 0.2) h);
+  --theme-background: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
+  --theme-background-modal: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
+  --theme-background-modal-footer: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
+  --theme-background-input: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
+  --theme-border: oklch(from var(--tint) 0.366 calc(c * 0.328) h);
+  --theme-border-subdued: oklch(from var(--tint) 0.366 calc(c * 0.328) h / 0.6);
+  --theme-text: oklch(from var(--tint) 0.962 calc(c * 0.243) h);
+  --theme-button: oklch(from var(--tint) 0.962 calc(c * 0.243) h);
+  --theme-button-text: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
+  --theme-button-foreground: oklch(from var(--tint) 0.366 calc(c * 0.328) h);
+  --theme-button-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
+  --theme-focused-foreground: oklch(from var(--tint) max(l, 0.78) min(c, 0.22) h);
+  --theme-focused-foreground-subdued: oklch(from var(--tint) max(l, 0.78) min(c, 0.22) h / 0.5);
+  --theme-window-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
+  --theme-window-shadow: oklch(from var(--tint) 0.15 calc(c * 0.243) h);
 }
+
+body.theme-dark.tint-green {
+  --theme-background: #001b00;
+  --theme-background-modal: #0b2a0b;
+  --theme-background-modal-footer: #0b2a0b;
+  --theme-background-input: #0b2a0b;
+  --theme-border: #1d4a1d;
+  --theme-border-subdued: rgb(29 74 29 / 0.6);
+  --theme-text: #d8ffd8;
+  --theme-button: #d8ffd8;
+  --theme-button-text: #001b00;
+  --theme-button-foreground: #1d4a1d;
+  --theme-button-background: #0b2a0b;
+  --theme-focused-foreground: #39ff44;
+  --theme-focused-foreground-subdued: rgb(57 255 68 / 0.5);
+  --theme-window-background: #0b2a0b;
+  --theme-window-shadow: #000f00;
+}
+
+/*
+VIVID: the tint is the background, ink is the tint's deep dark; the panel a step darker (lighter for
+red and pink); white ink on blue and purple; green exact (#39ff44 / #2ee03a / #001b00). Web-only, like
+the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and themePalette.ts.
+*/
+body.theme-vivid.tint-green,
+body.theme-vivid.tint-blue,
+body.theme-vivid.tint-red,
+body.theme-vivid.tint-yellow,
+body.theme-vivid.tint-purple,
+body.theme-vivid.tint-orange,
+body.theme-vivid.tint-pink {
+  --vv-ink: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
+  --vv-panel: oklch(from var(--tint) calc(l - 0.082) calc(c * 0.91) h);
+  --theme-overlay: var(--color-black-alpha-40);
+  --theme-background: var(--tint);
+  --theme-background-modal: var(--vv-panel);
+  --theme-background-modal-footer: var(--vv-panel);
+  --theme-background-input: var(--vv-panel);
+  --theme-border: var(--vv-ink);
+  --theme-border-subdued: color-mix(in srgb, var(--vv-ink) 35%, transparent);
+  --theme-text: var(--vv-ink);
+  --theme-button: var(--vv-ink);
+  --theme-button-text: var(--tint);
+  --theme-button-foreground: var(--vv-panel);
+  --theme-button-background: var(--vv-panel);
+  --theme-focused-foreground: var(--vv-ink);
+  --theme-focused-foreground-subdued: color-mix(in srgb, var(--vv-ink) 50%, transparent);
+  --theme-window-background: var(--vv-panel);
+  --theme-window-shadow: var(--vv-ink);
+}
+body.theme-vivid.tint-red,
+body.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--tint) 80%, white); }
+body.theme-vivid.tint-blue,
+body.theme-vivid.tint-purple { --vv-ink: #fff; }
+body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }
 
 #__next {
 }
@@ -504,10 +552,11 @@ body.theme-dark.tint-pink {
 /* ─── 1. VARIABLES & TOKENS ─────────────────────────────────────────────── */
 
 body.theme-dark {
-  --theme-focused-foreground: #f5b84a;
+  --theme-focused-foreground: #39ff44;
 }
 
 body.theme-dark,
+body.theme-vivid,
 body.theme-light {
   overflow-x: clip;
 }
@@ -1522,6 +1571,9 @@ body.theme-light {
 .e-theme-circle--mode[data-mode="theme-light"] { background: #f2f2f2; }
 .e-theme-circle--mode[data-mode="theme-dark"]  { background: #121212; }
 .e-theme-circle--accent { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
+/* The vivid circle: the tint with a ring of its ink (colour set inline); the ring fills in when vivid is on. */
+.e-theme-circle--vivid { box-shadow: inset 0 0 0 3px currentColor; }
+.e-theme-circle--vivid[data-on="true"] { box-shadow: inset 0 0 0 5px currentColor; }
 .e-mode-toggle {
   width: 26px; height: 26px;
   padding: 0;
@@ -2384,7 +2436,7 @@ body.theme-light {
 .e-section-tab__sub {
   grid-area: sub;
   font-size: 0.72rem;
-  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));
   white-space: normal;
 }
 
@@ -2481,7 +2533,7 @@ body.theme-light {
   font-size: 0.72rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));
   white-space: nowrap;
 }
 .e-subnav__tab {
@@ -2518,7 +2570,7 @@ body.theme-light {
   align-items: center;
   padding: 0 4px;
   font-size: 0.78rem;
-  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));
   white-space: nowrap;
 }
 .e-subnav__tab:focus-visible, .e-section-tab:focus-visible, .e-header-link:focus-visible, .e-bottom-bar__tab:focus-visible {
@@ -3094,8 +3146,8 @@ body.theme-light {
    the only one. `.e-look` is on the app's root with the theme and
    tint classes (themeConfig.applyTheme), so these rules keep their
    weight over the older ones above without a switch.
-   - It follows light/dark and all eight tints: every colour comes
-     from the tint (--tint; amber when there is none).
+   - It follows light, vivid, dark and all seven tints: every colour comes
+     from the tint (--tint; green when there is none).
    - Motion: arrivals only, 0.35–0.45 s, ease-out. Nothing moves with
      prefers-reduced-motion or in capture mode (?capture=1).
    ═══════════════════════════════════════════════════════════════ */
@@ -3115,7 +3167,7 @@ body.theme-light {
 /* ─── 1. TOKENS ─────────────────────────────────────────────────────────── */
 
 .e-look {
-  --anim-tint: var(--tint, #f0a832);                                   /* amber when no tint is set */
+  --anim-tint: var(--tint, #39ff44);                                   /* green when no tint is set */
   --anim-ink: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);       /* text on a fill, both themes */
   --anim-fill: oklch(from var(--anim-tint) max(l, 0.86) c h);         /* caption bands, chips, the won cells */
   /* brackets, rules, ticks: graphics only. P10: L 0.58, not 0.62, so it clears 3:1 on the light
@@ -3127,7 +3179,7 @@ body.theme-light {
   --anim-ease: cubic-bezier(0.33, 1, 0.68, 1);                          /* power2.out */
 }
 
-/* The light canvas for every tint, amber included : white with a breath of the tint, near-black ink.
+/* The light canvas for every tint : white with a breath of the tint, near-black ink.
    The accent used AS TEXT is darker than the graphics accent so it reads
    (≥ 4.5:1 on the canvas). */
 body.e-look.theme-light {
@@ -3143,20 +3195,77 @@ body.e-look.theme-light {
   --theme-focused-foreground-subdued: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h / 0.5);
 }
 
-/* The dark variant: the same cards on a near-black tinted canvas. */
+/* The dark theme is the DEEP palette (the demo video's all-dark-green screens): the canvas is the tint at
+   L .192 with 24 % of its chroma, the panel a step up, the border and text likewise; green is pinned to the
+   video's exact colours. The accent as text is lifted to L .78 (chroma capped at .22) so blue, red and purple
+   read; a chip is the pure tint with the canvas on it (white on blue and purple).
+   Mirrored in themePalette.ts, which the contrast tests read; keep the two the same.
+   BEFORE (the previous dark, kept to compare; `git revert` of the deep commit restores it):
+     bg  oklch(from tint 0.14 calc(c * 0.18) h)      panel  oklch(from tint 0.24 calc(c * 0.22) h)
+     input 0.28 / c*0.2   border 0.4 / c*0.28   border-subdued 0.32 / c*0.26
+     text/button oklch(from tint 0.94 calc(c * 0.12) h)   button-text = bg   line 0.72 c
+     chip fill oklch(from tint max(l, 0.86) c h) with ink oklch(from tint 0.18 calc(c * 0.4) h) */
 body.e-look.theme-dark {
-  --theme-background: oklch(from var(--anim-tint) 0.14 calc(c * 0.18) h);
-  --theme-background-modal: oklch(from var(--anim-tint) 0.24 calc(c * 0.22) h);
-  --theme-background-input: oklch(from var(--anim-tint) 0.28 calc(c * 0.2) h);
-  --theme-border: oklch(from var(--anim-tint) 0.4 calc(c * 0.28) h);
-  --theme-border-subdued: oklch(from var(--anim-tint) 0.32 calc(c * 0.26) h);
-  --theme-text: oklch(from var(--anim-tint) 0.94 calc(c * 0.12) h);
-  --theme-button: oklch(from var(--anim-tint) 0.94 calc(c * 0.12) h);
-  --theme-button-text: oklch(from var(--anim-tint) 0.14 calc(c * 0.18) h);
+  --theme-background: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
+  --theme-background-modal: oklch(from var(--anim-tint) 0.253 calc(c * 0.243) h);
+  --theme-background-input: oklch(from var(--anim-tint) 0.253 calc(c * 0.243) h);
+  --theme-border: oklch(from var(--anim-tint) 0.366 calc(c * 0.328) h);
+  --theme-border-subdued: color-mix(in srgb, var(--theme-border) 60%, transparent);
+  --theme-text: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);
+  --theme-button: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);
+  --theme-button-text: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
   --theme-focused-foreground: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h);
   --theme-focused-foreground-subdued: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h / 0.5);
   --anim-line: oklch(from var(--anim-tint) 0.72 c h);
+  --anim-fill: var(--anim-tint);
+  --anim-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
 }
+body.e-look.theme-dark.tint-blue,
+body.e-look.theme-dark.tint-purple { --anim-ink: #fff; }
+/* Green is the video's, exact. */
+body.e-look.theme-dark.tint-green {
+  --theme-background: #001b00;
+  --theme-background-modal: #0b2a0b;
+  --theme-background-input: #0b2a0b;
+  --theme-border: #1d4a1d;
+  --theme-text: #d8ffd8;
+  --theme-button: #d8ffd8;
+  --theme-button-text: #001b00;
+  --theme-focused-foreground: #39ff44;
+  --theme-focused-foreground-subdued: rgb(57 255 68 / 0.5);
+  --anim-ink: #001b00;
+}
+
+/* VIVID: the tint is the background, ink is the tint's deep dark (the video's "LIVE NOW" screen).
+   The panel is a step darker (lighter for red and pink); blue and purple take white ink. Ink is the
+   border, the accent-as-text, the focus ring and the chip fill (the tint written on it): no tint-on-tint
+   text. Green is exact: #39ff44 / #2ee03a / #001b00. Mirrored in themePalette.ts. */
+body.e-look.theme-vivid {
+  --vv-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
+  --vv-panel: oklch(from var(--anim-tint) calc(l - 0.082) calc(c * 0.91) h);
+  --theme-background: var(--anim-tint);
+  --theme-background-modal: var(--vv-panel);
+  --theme-background-input: var(--vv-panel);
+  --theme-border: var(--vv-ink);
+  --theme-border-subdued: color-mix(in srgb, var(--vv-ink) 35%, transparent);
+  --theme-text: var(--vv-ink);
+  --theme-button: var(--vv-ink);
+  --theme-button-text: var(--anim-tint);
+  --theme-focused-foreground: var(--vv-ink);
+  --theme-focused-foreground-subdued: color-mix(in srgb, var(--vv-ink) 50%, transparent);
+  --anim-line: var(--vv-ink);
+  --anim-fill: var(--vv-ink);
+  --anim-ink: var(--anim-tint);
+  /* Faint and status text are the ink itself here: a mix toward a saturated tint falls under 4.5:1
+     on blue, red, purple and pink. Every "text N %" mix above adds this and caps at 100 %. */
+  --e-ink-boost: 100%;
+  --anim-faint: var(--theme-text);
+}
+body.e-look.theme-vivid.tint-red,
+body.e-look.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }
+body.e-look.theme-vivid.tint-blue,
+body.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }
+body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }
 
 .e-look .e-dashboard-shell {
   --e-rule: var(--theme-border-subdued);
@@ -3165,6 +3274,8 @@ body.e-look.theme-dark {
 }
 /* On the dark canvas a strong wash would sit under light text: keep it faint. */
 .e-look.theme-dark .e-dashboard-shell { --anim-wash: color-mix(in srgb, var(--anim-fill) 14%, transparent); }
+/* The hover / selected wash in vivid is the panel colour: text on it clears 4.5:1 in every tint. */
+.e-look.theme-vivid .e-dashboard-shell { --anim-wash: var(--theme-background-modal); }
 
 /* ─── 2. CORNER BRACKETS ─────────────────────────────────────────────────
    Four L-shaped corners drawn as background images, so no element and no
@@ -3245,7 +3356,7 @@ body.e-look.theme-dark {
   font-size: 0.74rem;
   line-height: 1.4;
   letter-spacing: 0.05em;
-  color: color-mix(in srgb, var(--theme-text) 80%, var(--theme-background));
+  color: color-mix(in srgb, var(--theme-text) min(100%, calc(80% + var(--e-ink-boost, 0%))), var(--theme-background));
   font-variant-numeric: tabular-nums;
 }
 .e-look .e-anim-hud__key {
@@ -3273,7 +3384,8 @@ body.e-look.theme-dark {
   opacity: 0;
   pointer-events: none;
 }
-.e-look.theme-dark .e-anim-flash { background: var(--anim-fill); }
+.e-look.theme-dark .e-anim-flash,
+.e-look.theme-vivid .e-anim-flash { background: var(--anim-fill); }
 @media (prefers-reduced-motion: no-preference) {
   .e-look .e-anim-flash { animation: e-anim-flash 0.42s var(--anim-ease) both; }}
 @keyframes e-anim-flash {
@@ -3306,7 +3418,7 @@ body.e-look.theme-dark {
   letter-spacing: 0.06em;
 }
 .e-look .e-mobile-top__section::before { content: "> "; opacity: 0.8; }
-.e-look .e-section-tab__key { opacity: 1; color: color-mix(in srgb, var(--theme-text) 80%, var(--theme-background)); }
+.e-look .e-section-tab__key { opacity: 1; color: color-mix(in srgb, var(--theme-text) min(100%, calc(80% + var(--e-ink-boost, 0%))), var(--theme-background)); }
 .e-look .e-section-tab.is-active .e-section-tab__key { color: var(--anim-ink); }
 
 /* Relay / live: square chips, the live one filled. */
@@ -3364,7 +3476,7 @@ body.e-look.theme-dark {
 /* Quests read like the animatic's QUESTS card: `>` lines, the done ones ticked. */
 .e-look .e-quest-row { font-size: 0.95rem !important; line-height: 1.7; opacity: 1; }
 .e-look .e-quest-row::before { content: "> "; color: var(--theme-focused-foreground); font-weight: 700; }
-.e-look .e-quest-row:not(.is-done) { color: color-mix(in srgb, var(--theme-text) 74%, var(--theme-background));}
+.e-look .e-quest-row:not(.is-done) { color: color-mix(in srgb, var(--theme-text) min(100%, calc(74% + var(--e-ink-boost, 0%))), var(--theme-background));}
 .e-look .e-quest-next .e-now__label { margin-right: 4px; }
 
 /* ─── 6. SET PLAYS ───────────────────────────────────────────────────── */
@@ -3441,7 +3553,7 @@ body.e-look.theme-dark {
    Secondary text used to dim to 35–50 % opacity, which falls under
    4.5:1 on a tinted canvas. Faint is a colour at about 4.6:1 or more. */
 .e-look {
-  --anim-faint: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  --anim-faint: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));
 }
 .e-look .e-faint,
 .e-look .e-dim,
@@ -3565,7 +3677,7 @@ body.e-look.theme-dark {
   padding: 8px 14px 10px;
   font-size: 0.75rem;
   line-height: 1.5;
-  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));
 }
 /* Text another agent wrote: quoted and underlined as data, never styled as the dashboard's own words. */
 .e-untrusted { font-style: italic; border-bottom: 1px dotted currentColor; }
@@ -3596,7 +3708,7 @@ body.e-look.theme-dark {
   display: block;
   margin-top: 6px;
   overflow-wrap: anywhere;
-  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));
 }
 .e-look .e-pipeline-chip > summary { background: var(--anim-fill); color: var(--anim-ink); font-weight: 700; border-color: transparent; }
 
@@ -3753,7 +3865,7 @@ body.e-look.theme-dark {
 
 .e-hcard__hud {
   display: flex; justify-content: space-between; gap: 8px; font-size: 0.68rem; letter-spacing: 0.05em;
-  color: color-mix(in srgb, var(--theme-text) 78%, var(--theme-background)); font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--theme-text) min(100%, calc(78% + var(--e-ink-boost, 0%))), var(--theme-background)); font-variant-numeric: tabular-nums;
 }
 .e-hcard__hud > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .e-hcard__chip {
@@ -4010,7 +4122,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
      wash in every theme and tint; badges.test.tsx holds it to that).
    The accent is set on the element that carries the theme class (body in
    the console, the app's container in the Hermes tab and on Desktop), so it
-   follows light/dark and the tint run without a re-render. The formulas
+   follows light, vivid, dark and the tint run without a re-render. The formulas
    are mirrored in tokens.ts (ACCENT_CSS); keep the two the same.
    ═══════════════════════════════════════════════════════════════ */
 
@@ -4021,10 +4133,10 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 /* The gallery's panels each carry their own theme and tint: the same formula, worked out there.
    (dashboard.css § 30 sets --theme-focused-foreground to exactly these on the app's root.) */
 .e-badge-panel.theme-light {
-  --e-badge-accent: oklch(from var(--tint, #f0a832) 0.45 min(c, 0.2) h);
+  --e-badge-accent: oklch(from var(--tint, #39ff44) 0.45 min(c, 0.2) h);
 }
 .e-badge-panel.theme-dark {
-  --e-badge-accent: oklch(from var(--tint, #f0a832) max(l, 0.78) min(c, 0.22) h);
+  --e-badge-accent: oklch(from var(--tint, #39ff44) max(l, 0.78) min(c, 0.22) h);
 }
 
 /* A row of small badges (Season › Quests: the ones earned). */
@@ -4115,17 +4227,32 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   color: var(--p-ink);
 }
 .e-badge-panel.theme-light {
-  --p-bg: oklch(from var(--tint, #f0a832) 0.97 calc(c * 0.1) h);
-  --p-panel: oklch(from var(--tint, #f0a832) 0.92 calc(c * 0.18) h);
-  --p-ink: oklch(from var(--tint, #f0a832) 0.18 calc(c * 0.4) h);
-  --p-line: oklch(from var(--tint, #f0a832) 0.84 calc(c * 0.28) h);
+  --p-bg: oklch(from var(--tint, #39ff44) 0.97 calc(c * 0.1) h);
+  --p-panel: oklch(from var(--tint, #39ff44) 0.92 calc(c * 0.18) h);
+  --p-ink: oklch(from var(--tint, #39ff44) 0.18 calc(c * 0.4) h);
+  --p-line: oklch(from var(--tint, #39ff44) 0.84 calc(c * 0.28) h);
 }
 .e-badge-panel.theme-dark {
-  --p-bg: oklch(from var(--tint, #f0a832) 0.14 calc(c * 0.18) h);
-  --p-panel: oklch(from var(--tint, #f0a832) 0.24 calc(c * 0.22) h);
-  --p-ink: oklch(from var(--tint, #f0a832) 0.94 calc(c * 0.12) h);
-  --p-line: oklch(from var(--tint, #f0a832) 0.4 calc(c * 0.28) h);
+  --p-bg: oklch(from var(--tint, #39ff44) 0.192 calc(c * 0.243) h);
+  --p-panel: oklch(from var(--tint, #39ff44) 0.253 calc(c * 0.243) h);
+  --p-ink: oklch(from var(--tint, #39ff44) 0.962 calc(c * 0.243) h);
+  --p-line: oklch(from var(--tint, #39ff44) 0.366 calc(c * 0.328) h);
 }
+.e-badge-panel.theme-dark.tint-green {
+  --p-bg: #001b00; --p-panel: #0b2a0b; --p-ink: #d8ffd8; --p-line: #1d4a1d; --e-badge-accent: #39ff44;
+}
+.e-badge-panel.theme-vivid {
+  --p-bg: var(--tint, #39ff44);
+  --p-panel: oklch(from var(--tint, #39ff44) calc(l - 0.082) calc(c * 0.91) h);
+  --p-ink: oklch(from var(--tint, #39ff44) 0.192 calc(c * 0.243) h);
+  --p-line: var(--p-ink);
+  --e-badge-accent: var(--p-ink);
+}
+.e-badge-panel.theme-vivid.tint-red,
+.e-badge-panel.theme-vivid.tint-pink { --p-panel: color-mix(in srgb, var(--tint) 80%, white); }
+.e-badge-panel.theme-vivid.tint-blue,
+.e-badge-panel.theme-vivid.tint-purple { --p-ink: #fff; }
+.e-badge-panel.theme-vivid.tint-green { --p-ink: #001b00; --p-panel: #2ee03a; }
 .e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }
 .e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }
 .e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }
@@ -4504,6 +4631,245 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
     background: var(--theme-focused-foreground);
   }
 }
+/* Shared by every board. Theme variables only; the --anim-* fallbacks keep a board legible outside the look. */
+
+.BoardKit_board_7mz8c {
+  --board-fill: var(--anim-fill, var(--theme-focused-foreground));
+  --board-ink: var(--anim-ink, var(--theme-background));
+  --board-line: var(--anim-line, var(--theme-focused-foreground));
+  --board-rule: var(--e-rule, var(--theme-border-subdued));
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+
+.BoardKit_rules_7mz8c {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  opacity: 0.8;
+}
+
+.BoardKit_scroll_7mz8c {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* The text alternative: a real table, visually hidden, read in order by a screen reader. */
+.BoardKit_sr_7mz8c {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* A sealed move: hatched, never a guess. The word "sealed" is always printed with it. */
+.BoardKit_hatch_7mz8c {
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--theme-text) 0 1px,
+    transparent 1px 5px
+  );
+  background-color: transparent;
+  border: 1px solid var(--board-rule);
+  opacity: 0.55;
+}
+
+.BoardKit_foot_7mz8c {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+.BlottoBars_root_19rvs { max-width: 44rem; }
+
+.BlottoBars_grid_19rvs { min-width: 18rem; display: grid; gap: 4px; }
+.BlottoBars_head_19rvs, .BlottoBars_row_19rvs { display: grid; grid-template-columns: minmax(0, 1fr) 4.2rem minmax(0, 1fr); align-items: center; gap: 6px; }
+.BlottoBars_who_19rvs { font-weight: 600; font-size: 0.85rem; overflow-wrap: anywhere; }
+.BlottoBars_whoB_19rvs { text-align: right; }
+.BlottoBars_state_19rvs { font-size: 0.68rem; letter-spacing: 0.04em; opacity: 0.8; }
+
+.BlottoBars_cell_19rvs { display: flex; align-items: center; min-height: 1.7rem; }
+.BlottoBars_left_19rvs { justify-content: flex-end; }
+.BlottoBars_right_19rvs { justify-content: flex-start; }
+.BlottoBars_wrap_19rvs { position: relative; display: block; height: 1.1rem; min-width: 2px; }
+.BlottoBars_bar_19rvs { display: block; width: 100%; height: 100%; }
+.BlottoBars_full_19rvs { display: block; width: 100%; height: 1.1rem; }
+.BlottoBars_none_19rvs { opacity: 0.6; padding: 0 4px; }
+/* The number and the mark sit just past the bar's end. */
+.BlottoBars_end_19rvs { position: absolute; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 3px; }
+.BlottoBars_left_19rvs .BlottoBars_end_19rvs { right: 100%; flex-direction: row-reverse; padding-right: 4px; }
+.BlottoBars_right_19rvs .BlottoBars_end_19rvs { left: 100%; padding-left: 4px; }
+
+/* Two players, told apart by side and by fill vs outline, not by colour alone. */
+.BlottoBars_barA_19rvs { background: var(--board-line); }
+.BlottoBars_barB_19rvs {
+  background: repeating-linear-gradient(45deg, var(--board-line) 0 3px, transparent 3px 6px);
+  border: 1px solid var(--board-line);
+}
+.BlottoBars_took_19rvs { outline: 2px solid var(--theme-text); outline-offset: 1px; }
+
+.BlottoBars_num_19rvs { font-size: 0.9rem; }
+.BlottoBars_mark_19rvs { font-size: 0.8rem; }
+
+/* The centre line the bars grow from. */
+.BlottoBars_centre_19rvs {
+  text-align: center;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  border-left: 2px solid var(--theme-text);
+  border-right: 2px solid var(--theme-text);
+  padding: 2px 0;
+}
+.BlottoBars_weight_19rvs { font-weight: 700; }
+.BlottoBars_tie_19rvs { font-weight: 700; }
+.PickLine_root_5id3o { max-width: 44rem; }
+
+.PickLine_line_5id3o {
+  --rows: 1;
+  position: relative;
+  margin: 28px 12px 4px;
+  height: calc(40px + var(--rows) * 30px);
+}
+.PickLine_axis_5id3o { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--theme-text); opacity: 0.5; }
+.PickLine_tick_5id3o { position: absolute; top: -6px; width: 1px; height: 14px; background: var(--theme-text); opacity: 0.45; }
+.PickLine_tick_5id3o > span { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 0.68rem; }
+.PickLine_mark_5id3o { position: absolute; top: -8px; bottom: 0; width: 0; border-left: 2px dashed var(--theme-text); opacity: 0.55; }
+.PickLine_mark_5id3o > span { position: absolute; bottom: -2px; left: 5px; font-size: 0.7rem; white-space: nowrap; }
+.PickLine_target_5id3o { border-left: 2px solid var(--board-line); opacity: 1; }
+.PickLine_target_5id3o > span { left: auto; right: 5px; color: var(--theme-text); font-weight: 700; }
+.PickLine_target_5id3o.PickLine_low_5id3o > span { left: 5px; right: auto; bottom: 16px; }
+
+.PickLine_pick_5id3o { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 1; }
+.PickLine_pin_5id3o { width: 2px; height: calc(10px + var(--row, 0) * 30px); background: var(--theme-text); opacity: 0.6; }
+.PickLine_label_5id3o { font-size: 0.75rem; white-space: nowrap; padding: 1px 4px; border: 1px solid var(--board-rule); background: var(--theme-background); }
+.PickLine_winner_5id3o .PickLine_pin_5id3o { background: var(--board-line); opacity: 1; width: 3px; }
+.PickLine_winner_5id3o .PickLine_label_5id3o { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; }
+.UniqueRow_root_rdht5 { max-width: 44rem; }
+
+.UniqueRow_row_rdht5 { display: grid; grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr)); gap: 6px; }
+.UniqueRow_cell_rdht5 {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 4.6rem;
+  padding: 6px 8px;
+  border: 1px solid var(--board-rule);
+  font-size: 0.78rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.UniqueRow_n_rdht5 { font-size: 1.05rem; }
+.UniqueRow_empty_rdht5 { border-style: dashed; }
+.UniqueRow_taken_rdht5 .UniqueRow_who_rdht5 { text-decoration: line-through; }
+.UniqueRow_unique_rdht5 { border-color: var(--theme-text); border-width: 2px; }
+.UniqueRow_tag_rdht5 { margin-top: auto; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.UniqueRow_winner_rdht5 { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; }
+.BargainSplit_root_nw71o { max-width: 44rem; }
+
+.BargainSplit_offers_nw71o { display: flex; gap: 10px; min-width: min-content; padding-bottom: 4px; }
+.BargainSplit_offer_nw71o { flex: 0 0 13rem; border: 1px solid var(--board-rule); padding: 6px 8px; display: grid; gap: 4px; align-content: start; }
+.BargainSplit_taken_nw71o { border: 2px solid var(--board-line); }
+.BargainSplit_head_nw71o { margin: 0; font-size: 0.78rem; font-weight: 700; }
+.BargainSplit_good_nw71o { display: grid; grid-template-columns: 3.4rem 1fr auto; gap: 6px; align-items: center; font-size: 0.74rem; }
+.BargainSplit_cells_nw71o { display: flex; gap: 2px; flex-wrap: wrap; }
+.BargainSplit_unit_nw71o { width: 0.8rem; height: 0.8rem; border: 1px solid var(--board-line); display: inline-block; }
+.BargainSplit_a_nw71o { background: var(--board-line); }
+.BargainSplit_b_nw71o { background: repeating-linear-gradient(45deg, var(--board-line) 0 2px, transparent 2px 4px); }
+.BargainSplit_free_nw71o { border-style: dashed; }
+.BargainSplit_count_nw71o { white-space: nowrap; }
+.BargainSplit_claim_nw71o { margin: 0; font-size: 0.7rem; opacity: 0.85; }
+
+.BargainSplit_scores_nw71o { display: grid; gap: 6px; margin-top: 10px; }
+.BargainSplit_score_nw71o { display: grid; grid-template-columns: 6rem 1fr; gap: 4px 8px; align-items: center; }
+.BargainSplit_who_nw71o { font-size: 0.85rem; font-weight: 600; overflow-wrap: anywhere; }
+.BargainSplit_track_nw71o { position: relative; display: block; height: 0.9rem; border: 1px solid var(--theme-text); }
+.BargainSplit_fill_nw71o { position: absolute; left: 0; top: 0; bottom: 0; background: var(--board-line); }
+.BargainSplit_walk_nw71o { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 3px double var(--theme-text); }
+.BargainSplit_pts_nw71o { grid-column: 2; font-size: 0.76rem; }
+
+.BargainSplit_hands_nw71o { list-style: none; margin: 8px 0 0; padding: 0; font-size: 0.8rem; display: grid; gap: 2px; }
+.AuctionLine_root_1bjou { max-width: 44rem; }
+
+.AuctionLine_line_1bjou { position: relative; min-width: 28rem; margin: 6px 14px 4px; display: grid; gap: 0; }
+.AuctionLine_lane_1bjou { --rows: 1; position: relative; height: calc(var(--rows) * 1.5rem + 1.3rem); }
+.AuctionLine_axis_1bjou { position: relative; height: 2px; background: var(--theme-text); opacity: 1; margin: 0; }
+.AuctionLine_tick_1bjou { position: absolute; top: -5px; width: 1px; height: 12px; background: var(--theme-text); }
+.AuctionLine_tick_1bjou > span { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-size: 0.66rem; }
+.AuctionLine_mark_1bjou { position: absolute; top: -10px; width: 0; height: 22px; }
+.AuctionLine_mark_1bjou > span { position: absolute; top: -14px; left: 4px; font-size: 0.7rem; white-space: nowrap; font-weight: 700; }
+.AuctionLine_base_1bjou { border-left: 2px dashed var(--theme-text); }
+.AuctionLine_pot_1bjou { border-left: 3px solid var(--board-line); }
+.AuctionLine_pot_1bjou > span { left: auto; right: 5px; }
+
+/* Signals above the axis: a label over a tick that ends on the line. */
+.AuctionLine_sig_1bjou { position: absolute; top: calc(var(--row) * 1.5rem); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
+.AuctionLine_sigText_1bjou { font-size: 0.7rem; white-space: nowrap; padding: 0 3px; border: 1px dotted var(--theme-text); background: var(--theme-background); }
+.AuctionLine_sigTick_1bjou { width: 0; height: 0.4rem; border-left: 1px dotted var(--theme-text); }
+
+/* Bids below the axis: a pin hanging from the line to its label. */
+.AuctionLine_pin_1bjou { position: absolute; top: calc(var(--row) * 1.5rem); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; margin-top: 0.7rem; }
+.AuctionLine_pinTick_1bjou { width: 2px; height: 0.4rem; background: var(--theme-text); }
+.AuctionLine_pinText_1bjou { font-size: 0.72rem; white-space: nowrap; padding: 0 4px; border: 1px solid var(--board-rule); background: var(--theme-background); }
+.AuctionLine_won_1bjou .AuctionLine_pinText_1bjou { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; }
+
+/* The winner's gain or loss: the stretch between its bid and V. A curse is hatched, a gain solid. */
+.AuctionLine_seg_1bjou { position: relative; height: 2.2rem; margin-top: 4px; }
+.AuctionLine_span_1bjou { position: absolute; top: 4px; height: 0.8rem; min-width: 3px; background: var(--board-line); }
+.AuctionLine_loss_1bjou { background: repeating-linear-gradient(45deg, var(--board-line) 0 3px, transparent 3px 6px); border: 1px solid var(--board-line); }
+.AuctionLine_segText_1bjou { position: absolute; top: 1.3rem; font-size: 0.74rem; font-weight: 700; white-space: nowrap; }
+.DiceTable_root_1yna5 { max-width: 44rem; }
+
+.DiceTable_grid_1yna5 { min-width: 30rem; display: grid; gap: 3px; }
+.DiceTable_row_1yna5 { display: grid; grid-template-columns: 2.4rem repeat(6, minmax(0, 1fr)); gap: 3px; align-items: stretch; }
+.DiceTable_qty_1yna5 { font-size: 0.78rem; text-align: right; padding-right: 4px; align-self: center; }
+.DiceTable_faceHead_1yna5 { font-size: 0.66rem; letter-spacing: 0.06em; text-align: center; opacity: 0.7; }
+.DiceTable_cell_1yna5 { min-height: 1.5rem; border: 1px dashed var(--board-rule); font-size: 0.72rem; padding: 2px 4px; overflow-wrap: anywhere; }
+.DiceTable_bid_1yna5 { border-style: solid; border-color: var(--theme-text); background: var(--board-rule); }
+.DiceTable_called_1yna5 { outline: 3px double var(--board-line); outline-offset: 1px; font-weight: 700; }
+
+.DiceTable_cups_1yna5 { display: grid; gap: 6px; margin-top: 10px; }
+.DiceTable_cup_1yna5 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.DiceTable_cupName_1yna5 { min-width: 6rem; font-weight: 600; font-size: 0.85rem; overflow-wrap: anywhere; }
+.DiceTable_dice_1yna5 { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.DiceTable_die_1yna5 { width: 1.9rem; height: 1.9rem; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--theme-text); font-size: 0.95rem; }
+/* A die that counts for the called face is filled and underlined, not only coloured. */
+.DiceTable_counts_1yna5 { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; text-decoration: underline; }
+
+.DiceTable_meter_1yna5 { display: grid; gap: 4px; margin-top: 10px; }
+.DiceTable_track_1yna5 { position: relative; display: block; height: 0.9rem; border: 1px solid var(--theme-text); }
+.DiceTable_fill_1yna5 { position: absolute; left: 0; top: 0; bottom: 0; background: var(--board-line); }
+.DiceTable_need_1yna5 { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 3px double var(--theme-text); }
+.DiceTable_meterText_1yna5 { font-size: 0.8rem; }
+.SluiceBoard_root_mmd9b { max-width: 30rem; }
+
+.SluiceBoard_grid_mmd9b { min-width: 16rem; display: grid; gap: 3px; width: max-content; max-width: 100%; }
+.SluiceBoard_row_mmd9b { display: grid; grid-template-columns: 1.4rem repeat(var(--cols, 6), 2.5rem); gap: 3px; align-items: stretch; }
+
+.SluiceBoard_rowNo_mmd9b { font-size: 0.66rem; opacity: 0.7; align-self: center; text-align: right; padding-right: 3px; }
+.SluiceBoard_head_mmd9b { font-size: 0.7rem; text-align: center; padding: 2px 0; border-bottom: 2px solid var(--board-rule); }
+/* The gate: a filled bar across the top of the shut channel, and the word. */
+.SluiceBoard_gate_mmd9b { background: var(--board-fill); color: var(--board-ink); border-bottom-color: var(--board-line); font-weight: 700; }
+.SluiceBoard_gateWord_mmd9b { display: block; font-size: 0.56rem; letter-spacing: 0.08em; text-transform: uppercase; }
+
+.SluiceBoard_cell_mmd9b { position: relative; height: 2.5rem; border: 1px dotted var(--board-rule); display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
+.SluiceBoard_cell_mmd9b.SluiceBoard_shut_mmd9b { background-image: repeating-linear-gradient(90deg, var(--board-rule) 0 1px, transparent 1px 6px); }
+/* Silt: hatched, neutral. */
+.SluiceBoard_silt_mmd9b { background-image: repeating-linear-gradient(135deg, var(--theme-text) 0 1px, transparent 1px 5px); border: 1px solid var(--board-rule); opacity: 0.6; }
+/* Seat A is a filled square, seat B a hollow ring: shape tells them apart, not colour. */
+.SluiceBoard_stoneA_mmd9b { width: 1.6rem; height: 1.6rem; background: var(--board-fill); }
+.SluiceBoard_stoneB_mmd9b { width: 1.6rem; height: 1.6rem; border: 3px solid var(--board-line); border-radius: 50%; box-sizing: border-box; }
+.SluiceBoard_n_mmd9b { position: absolute; right: 2px; bottom: 0; font-size: 0.55rem; line-height: 1; opacity: 0.75; }
+/* The drop just made. */
+.SluiceBoard_last_mmd9b { outline: 2px double var(--board-line); outline-offset: 1px; }
+/* The winning line: thick outline, filled ground. */
+.SluiceBoard_win_mmd9b { background: var(--board-rule); outline: 3px solid var(--board-line); outline-offset: -2px; }
+
+.SluiceBoard_legend_mmd9b { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 0.78rem; margin: 8px 0 0; }
+.SluiceBoard_key_mmd9b { display: inline-flex; align-items: center; gap: 5px; }
+.SluiceBoard_keyA_mmd9b { width: 0.8rem; height: 0.8rem; background: var(--board-fill); display: inline-block; }
+.SluiceBoard_keyB_mmd9b { width: 0.8rem; height: 0.8rem; border: 2px solid var(--board-line); border-radius: 50%; display: inline-block; box-sizing: border-box; }
+.SluiceBoard_keySilt_mmd9b { width: 0.8rem; height: 0.8rem; display: inline-block; border: 1px solid var(--board-rule); background-image: repeating-linear-gradient(135deg, var(--theme-text) 0 1px, transparent 1px 4px); }
 .AgentChat_toggle_ry10h {
   font-size: 0.85rem !important;
   letter-spacing: 0.04em;
