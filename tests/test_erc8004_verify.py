@@ -432,3 +432,49 @@ def test_module_has_no_hermes_or_web_imports():
     imports = [ln for ln in pathlib.Path(erc8004.__file__).read_text().splitlines() if ln.lstrip().startswith(("import ", "from "))]
     for banned in ("hermes", "fastapi", "starlette"):
         assert not any(banned in ln.lower() for ln in imports)
+
+
+class _Watched(FakeChain):
+    """A fake chain that records whether anything was read from it."""
+
+    def __init__(self, *a, **k):
+        self.reads = 0
+        super().__init__(*a, **k)
+
+    @property
+    def block_number(self):
+        self.reads += 1
+        return 123
+
+    @block_number.setter
+    def block_number(self, v):
+        pass
+
+
+@needs_lib
+def test_an_invalid_link_has_no_tier_and_a_not_proven_one_keeps_it():
+    key, addr = keypair()
+    ch = FakeChain()
+    ch.owners[AGENT] = addr
+    bad = erc8004.verify(make_link(key, addr, sig="0x" + "11" * 65), ch)
+    assert bad["status"] == "invalid" and bad["tier"] == ""
+    assert erc8004.verify(make_link(key, addr, registry=C["other_registry"]), ch)["tier"] == ""
+    other = FakeChain()
+    other.owners[AGENT] = C["owning_contract"]
+    r = erc8004.verify(make_link(key, addr), other)
+    assert (r["status"], r["tier"]) == ("not-proven", "not-proven")
+
+
+@needs_lib
+def test_a_refused_link_reads_nothing_from_the_chain():
+    key, addr = keypair()
+    for link in ({"agent_registry": "nonsense"}, {**make_link(key, addr), "agent_id": "x"},
+                 make_link(key, addr, registry=C["other_registry"]),
+                 {**make_link(key, addr), "agent_registry": f"eip155:1:{REG.lower()}"}):
+        ch = _Watched()
+        r = erc8004.verify(link, ch)
+        assert r["status"] == "invalid"
+        assert ch.reads == 0 and r["block_number"] is None and r["block_hash"] == ""
+    ch = _Watched()
+    ch.owners[AGENT] = addr
+    assert erc8004.verify(make_link(key, addr), ch)["block_number"] == 123

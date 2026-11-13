@@ -257,6 +257,7 @@ def verify(link: dict, read: Reader, *, now: float | None = None) -> dict:
     """Verify a link `{agent_registry, agent_id, signer, stable_id, issued_at, wallet_sig}` at the reader's
     pinned block. Returns `{tier, status, block_number, block_hash, owner, binding?, checked_at, reason}`."""
     owner = ""
+    pinned: Any = None      # the reader, once it has pinned a block: a link refused before that read nothing
     try:
         p = _parse(link)
         chain = f"eip155:{p['chain_id']}"
@@ -269,6 +270,7 @@ def verify(link: dict, read: Reader, *, now: float | None = None) -> dict:
             raise _Stop("not-checked", "no signature library is installed")
         td = agent_link_typed_data(p["chain_id"], canonical, p["agent_id"], p["signer"], p["stable_id"], p["issued_at"])
         read.block_number  # pin the block first: a dead RPC is unknown before anything else
+        pinned = read
         _signature_ok(read, p, td)
         try:
             owner = _addr(_call(read, canonical, SEL_OWNER_OF, ["uint256"], [p["agent_id"]])) or ""
@@ -293,7 +295,7 @@ def verify(link: dict, read: Reader, *, now: float | None = None) -> dict:
                 return _result("proven", "bound-owner", "the bound holder is the signer", read, owner, b, now=now)
         return _result("proven", "controller", "the owning contract names the signer a controller", read, owner, now=now)
     except _Stop as s:
-        tier = "not-proven" if s.status in ("not-proven", "invalid") else ""
-        return _result(s.status, tier, s.reason, read, owner, now=now)
+        tier = "not-proven" if s.status == "not-proven" else ""     # a tier only where a link was weighed
+        return _result(s.status, tier, s.reason, pinned, owner, now=now)
     except ChainUnknown:
-        return _result("unknown", "", "the chain could not be read", read, owner, now=now)
+        return _result("unknown", "", "the chain could not be read", pinned, owner, now=now)
