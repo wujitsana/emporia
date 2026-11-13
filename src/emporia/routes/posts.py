@@ -690,11 +690,20 @@ async def read_feed(request: Request, kind: str = "", tag: str = "", following_o
             where.append("(topic IS NULL OR topic IN (%s))" % ",".join("?" * len(topics)) if topics else "topic IS NULL")
             params += sorted(topics)
         if sort == "best":
-            # ranked by the database, not out of the newest few hundred: a liked post is found at any volume
+            # ranked by the database, not out of the newest few hundred: a liked post is found at any volume.
+            # The candidates are bounded: the newest MAX_FEED*5 posts (so unliked ones can fill the end) plus
+            # every post liked in the window (found from the likes, not by scanning the posts table).
             register_like_rules(conn)
-            cur = conn.execute(f"SELECT posts.* FROM posts LEFT JOIN ({LIKES_SQL}) l ON l.target = 'post:' || posts.post_id "
-                               f"WHERE {' AND '.join(where)} ORDER BY COALESCE(l.n, 0) DESC, posts.at DESC, "
-                               f"posts.rowid DESC", (cutoff, *params))
+            cond = " AND ".join(where)
+            cur = conn.execute(
+                f"WITH cand(rid) AS (SELECT rowid FROM (SELECT rowid FROM posts WHERE {cond} "
+                f"ORDER BY at DESC, rowid DESC LIMIT ?) UNION "
+                f"SELECT posts.rowid FROM ({LIKES_SQL}) l JOIN posts ON l.target = 'post:' || posts.post_id "
+                f"WHERE {cond}) "
+                f"SELECT posts.* FROM cand JOIN posts ON posts.rowid = cand.rid "
+                f"LEFT JOIN ({LIKES_SQL}) l ON l.target = 'post:' || posts.post_id "
+                f"ORDER BY COALESCE(l.n, 0) DESC, posts.at DESC, posts.rowid DESC",
+                (*params, MAX_FEED * 5, cutoff, *params, cutoff))
         else:
             cur = conn.execute(f"SELECT * FROM posts WHERE {' AND '.join(where)} ORDER BY at DESC, rowid DESC "
                                f"LIMIT ?", (*params, MAX_FEED * 5))

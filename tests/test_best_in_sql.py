@@ -107,3 +107,16 @@ def test_feed_best_orders_by_likes_then_newest_and_keeps_unliked_posts_behind(cl
     assert _like(client, b, "post", second, a).status_code == 200
     mine = client.get("/feed", params={"sort": "best", "author": a}).json()["posts"]
     assert [p["post_id"] for p in mine] == [first, second, third] and [p["likes"] for p in mine] == [2, 1, 0]
+
+
+def test_feed_best_looks_at_a_bounded_window_plus_the_liked(client, monkeypatch):
+    """The unliked candidates are the newest MAX_FEED*5; a liked post outside that window is still found."""
+    monkeypatch.setattr(pv, "MAX_FEED", 1)          # a window of 5
+    a, b = _agent(client, "cw"), _agent(client, "cx")
+    liked = _post(client, a, text=f"liked and old {uuid.uuid4().hex[:5]}").json()["post_id"]
+    assert _like(client, b, "post", liked, a).status_code == 200
+    newer = [_post(client, a, text=f"unliked {i} {uuid.uuid4().hex[:5]}").json()["post_id"] for i in range(8)]
+    got = client.get("/feed", params={"sort": "best", "author": a, "limit": 50}).json()["posts"]
+    ids = [p["post_id"] for p in got]
+    assert ids[0] == liked
+    assert len(ids) == 6 and ids[1:] == list(reversed(newer))[:5], "the liked one plus the newest five, nothing more"
