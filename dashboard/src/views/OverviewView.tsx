@@ -79,7 +79,7 @@ export function OverviewView({
   navigate: Navigate;
   onAfterNavigate?: () => void;
 }) {
-  const { isSpectator } = useRelayCtx();
+  const { isSpectator, notRegistered } = useRelayCtx();
   const health = useRelayHealth() ?? seed;
   const online = health?.status === "ok";
   const nav: Navigate = (v, o) => {
@@ -111,7 +111,7 @@ export function OverviewView({
         </Block>
       ) : null}
       {/* First run: the next quest step, until the Welcome and Arrival quests are done. */}
-      <StartHere agentId={viewer} navigate={nav} part="start" />
+      {!notRegistered ? <StartHere agentId={viewer} navigate={nav} part="start" /> : null}
       {/* Cards already draw replies and mentions as their own cards; the rest of the agent's unread is here. */}
       <NeedsAgent viewer={viewer} navigate={nav} skip={mode === "cards" ? ["post_reply", "mention"] : []} />
       {mode === "cards" ? <HomeCardsView viewer={viewer} navigate={nav} /> : (

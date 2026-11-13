@@ -3,6 +3,7 @@ import { api } from "./api";
 import type { UiConfig } from "./api";
 import { RELAY, VIEWER_ID, SESSION_TOKEN_KEY } from "./relayEnv";
 import { RelayCtx } from "./relayCtx";
+import { isNotRegistered } from "./notRegistered";
 import type { RelayCtxValue } from "./relayCtx";
 
 
@@ -47,6 +48,16 @@ export function RelayContextProvider({ children }: { children: React.ReactNode }
       .catch((e) => { if (live && /^40[13]\b/.test(String(e?.message ?? ""))) setVerifiedOperator(null); });
     return () => { live = false; };
   }, [claimsOperator, viewerId, tick, dashboardToken]);
+  // Is the viewed agent on this relay at all? Its own profile is a cheap signed read; only a 401 means no.
+  const [unregistered, setUnregistered] = useState<string | null>(null);
+  useEffect(() => {
+    if (!viewerId) return;
+    let live = true;
+    api.agentProfile(viewerId)
+      .then(() => { if (live) setUnregistered(null); })
+      .catch((e) => { if (live && isNotRegistered(e)) setUnregistered(viewerId); });
+    return () => { live = false; };
+  }, [viewerId, dashboardToken]);
   const isRelayOperator = claimsOperator && verifiedOperator === viewerId;
   const relayUrl = cfg?.relay_url ?? RELAY;
 
@@ -61,6 +72,7 @@ export function RelayContextProvider({ children }: { children: React.ReactNode }
     relayVersion: cfg?.version ?? "",
     isRelayOperator,
     isSpectator: viewerId === null,
+    notRegistered: viewerId !== null && unregistered === viewerId,
     dashboardToken,
     setDashboardToken,
     refresh: () => setTick((n) => n + 1),

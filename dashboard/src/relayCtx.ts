@@ -37,6 +37,9 @@ export interface RelayCtxValue {
   relayVersion: string;
   isRelayOperator: boolean;
   isSpectator: boolean;
+  /** The viewed agent is not registered on this relay: the relay answered its signed call with 401 (a 403 or a
+   *  network failure is not this). False until known, and for a spectator. */
+  notRegistered: boolean;
   /** Bearer JWT for remote relay auth (sessionStorage-backed) */
   dashboardToken: string | null;
   setDashboardToken: (t: string | null) => void;
@@ -54,6 +57,7 @@ const DEFAULT: RelayCtxValue = {
   relayVersion: "",
   isRelayOperator: false,
   isSpectator: true,
+  notRegistered: false,
   dashboardToken: null,
   setDashboardToken: () => {},
   refresh: () => {},

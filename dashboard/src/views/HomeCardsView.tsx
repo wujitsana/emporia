@@ -56,7 +56,7 @@ function writing(ev: InboxEvent): { kind: "dm" | "reply" | "mention"; from: stri
 }
 
 export function HomeCardsView({ viewer, navigate }: { viewer: string | null; navigate: Navigate }) {
-  const { isSpectator } = useRelayCtx();
+  const { isSpectator, notRegistered } = useRelayCtx();
   useTopicLabel();
   const name = viewer ? bareAgentName(viewer) : "";
   const [mine] = useInterval(
@@ -315,7 +315,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   if (viewer) {
     const lv = quests?.level;
     const xp = lv?.xp ?? quests?.xp ?? 0;
-    if (quests) {
+    if (quests && !notRegistered) {
       const level = lv?.level ?? 1;
       const to = lv?.next_at != null ? Math.max(0, lv.next_at - xp) : null;
       standing.push({

@@ -18,6 +18,7 @@ import { RelayContextProvider } from "./relayContext";
 import { useRelayCtx } from "./relayCtx";
 import { ViewerSwitcher } from "./ui/ViewerSwitcher";
 import { NotAnAgentNote } from "./ui/NotAnAgentNote";
+import { NotOnRelayNote } from "./ui/NotOnRelayNote";
 import { hermesProfile, MODE } from "./transport";
 import { readPref, writePref } from "./prefs";
 import { DESKTOP_ROOT } from "./shadowScope";
@@ -548,6 +549,7 @@ function AppInner() {
           {!hermesNonAgent && VIEWER_ID && view !== "overview" ? <NowStrip navigate={navigate} /> : null}
           <div className="e-view">
             <NotAnAgentNote />
+            {!hermesNonAgent && <NotOnRelayNote />}
             {!hermesNonAgent && !(view === "agents" && agentRoute) && <PageHeading item={currentNav} agent={VIEWER_ID} />}
             {/* P234: a Hermes profile that is no agent shows nothing of the relay. */}
             {!hermesNonAgent && !shown && <GatedNote view={view} />}
