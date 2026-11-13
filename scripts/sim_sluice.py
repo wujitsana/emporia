@@ -5,7 +5,7 @@ Plays many games through the module's own pure functions (`deal`, `first`, `gate
 simple reference bots and prints how often the first and the second mover win, and how often the better bot beats
 the weaker one. The bots are not strong players; read the numbers as direction, not as measured balance.
 
-    .venv/bin/python scripts/sim_sluice.py [--games 1000] [--seeds 1,2] [--drops 7] [--level coin|second]
+    .venv/bin/python scripts/sim_sluice.py [--games 1000] [--seeds 1,2] [--drops 10] [--level coin|second]
 
 Acceptance for the module (games plan, WP G2, tightened for the level rule): between two look-ahead bots the first
 mover wins 45-55 % (pooled over seeds, with its standard error); the look-ahead bot beats the greedy bot at least
@@ -149,7 +149,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--games", type=int, default=2000, help="per seed")
     ap.add_argument("--seeds", default="1,2")
-    ap.add_argument("--drops", type=int, default=7)
+    ap.add_argument("--drops", type=int, default=10)
     ap.add_argument("--level", choices=("coin", "second"), default=S.LEVEL_RULE)
     ap.add_argument("--pairs", default="look2:look2,look2:greedy,look1:look1,greedy:greedy,look2:random")
     args = ap.parse_args()

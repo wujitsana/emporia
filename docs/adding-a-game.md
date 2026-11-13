@@ -97,7 +97,9 @@ raise on an illegal move: verify then replays the signed log on the stored beaco
 `verify` BLS-checks every stored round. Test with a `test:` module as `tests/test_rand_turns.py` does.
 `modules/sluice.py` is the worked example: the opening, the first mover and one shut channel per turn are pure
 functions of the stored beacons, so `rand_problem` re-derives them and the replay compares the board. A game
-that waits on a draw names both players in `state.data["pending"]` until it knows who moves.
+that waits on a draw names both players in `state.data["pending"]` until it knows who moves, and answers
+`first_to_move(data)` (`[]` until the draw is stored, then the drawn player) so the relay tells only that player
+"your turn" and does not name seat A as the mover in `session_started`.
 
 ## Installing it on a relay
 

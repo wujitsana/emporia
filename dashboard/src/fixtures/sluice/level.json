@@ -1,0 +1,1954 @@
+{
+ "actions": [
+  {
+   "action_id": "act_7abb4b5e51e0",
+   "action_type": "drop",
+   "agent_id": "sl1_38706f",
+   "created_at": "2026-11-13T11:51:05.154486+00:00",
+   "payload": {
+    "channel": 1,
+    "round": 33922438
+   },
+   "result": {
+    "artifacts": null,
+    "new_state": {
+     "board": [
+      "......",
+      ".....A",
+      ".....B",
+      "B.B..A",
+      "#.AB.#"
+     ],
+     "cols": 6,
+     "drops": 5,
+     "ended": null,
+     "leaving_counts": true,
+     "move_time_limit_s": 600,
+     "moves": [
+      {
+       "at": "2026-11-13T11:51:05.150312+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 6,
+       "n": 1,
+       "round": 33922438,
+       "row": 2
+      }
+     ],
+     "opening": {
+      "attempt": 0,
+      "first": "sl1_38706f",
+      "silt": [
+       [
+        1,
+        1
+       ],
+       [
+        6,
+        1
+       ]
+      ],
+      "stones": {
+       "sl0_30845b": [
+        [
+         3,
+         1
+        ],
+        [
+         6,
+         2
+        ],
+        [
+         6,
+         4
+        ]
+       ],
+       "sl1_38706f": [
+        [
+         4,
+         1
+        ],
+        [
+         6,
+         3
+        ],
+        [
+         3,
+         2
+        ]
+       ]
+      }
+     },
+     "pending": [
+      "sl0_30845b"
+     ],
+     "rand": {
+      "beacon_sig": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+      "beacons": {
+       "33922428": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453"
+      },
+      "commits": {
+       "sl0_30845b": {
+        "at": "2026-11-13T11:51:04.977535+00:00",
+        "beacon_round": 33922428,
+        "hash": "e93857d75f35a57a5cfb93a1d59f34a9c357743fb9222b1389ada5ab0469f0b7",
+        "seat": 0,
+        "signature": "AruOYxXNvNZm5RqsJ6eMWWhNvsoEbI3Yj2ydeUiBU-wVYLZ314JCKe2FkKnehgUzD0Xk6ky1-h3Q2pmgqUaBCA",
+        "stable_id": "e57ae5af67dc1bb22693a48e6db39285fd6de9e7600125b53d61f2ac9d1a6d90"
+       },
+       "sl1_38706f": {
+        "at": "2026-11-13T11:51:05.028323+00:00",
+        "beacon_round": 33922428,
+        "hash": "3148964f3fac2ac2efe4780e2ffb054aa9721ba36b2ac11f6a557ddb3d48f1ef",
+        "seat": 1,
+        "signature": "zuIAky378O1fuyU7LHpjGo6Yltk9BOy4HWqasHgpvMgGR1isJgdugOr58lQPvF4HWcWtObWZuTm90Z_w_8kkDw",
+        "stable_id": "a4d897245f0f4aa21847710a5259db0ab0d23c9edc0b82078056fec088fab8fd"
+       }
+      },
+      "reveals": {},
+      "round": 33922428,
+      "scope": "sess_1112518bd3af"
+     },
+     "rows": 5,
+     "seats": [
+      "sl0_30845b",
+      "sl1_38706f"
+     ],
+     "turn_started_at": "2026-11-13T11:51:18+00:00",
+     "voided": null
+    },
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_17d29f9c05f2",
+   "action_type": "drop",
+   "agent_id": "sl0_30845b",
+   "created_at": "2026-11-13T11:51:05.238045+00:00",
+   "payload": {
+    "channel": 1,
+    "round": 33922439
+   },
+   "result": {
+    "artifacts": null,
+    "new_state": {
+     "board": [
+      "......",
+      ".....A",
+      "A....B",
+      "B.B..A",
+      "#.AB.#"
+     ],
+     "cols": 6,
+     "drops": 5,
+     "ended": null,
+     "leaving_counts": true,
+     "move_time_limit_s": 600,
+     "moves": [
+      {
+       "at": "2026-11-13T11:51:05.150312+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 6,
+       "n": 1,
+       "round": 33922438,
+       "row": 2
+      },
+      {
+       "at": "2026-11-13T11:51:05.234835+00:00",
+       "by": "sl0_30845b",
+       "channel": 1,
+       "gate": 4,
+       "n": 2,
+       "round": 33922439,
+       "row": 3
+      }
+     ],
+     "opening": {
+      "attempt": 0,
+      "first": "sl1_38706f",
+      "silt": [
+       [
+        1,
+        1
+       ],
+       [
+        6,
+        1
+       ]
+      ],
+      "stones": {
+       "sl0_30845b": [
+        [
+         3,
+         1
+        ],
+        [
+         6,
+         2
+        ],
+        [
+         6,
+         4
+        ]
+       ],
+       "sl1_38706f": [
+        [
+         4,
+         1
+        ],
+        [
+         6,
+         3
+        ],
+        [
+         3,
+         2
+        ]
+       ]
+      }
+     },
+     "pending": [
+      "sl1_38706f"
+     ],
+     "rand": {
+      "beacon_sig": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+      "beacons": {
+       "33922428": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+       "33922438": "70412158ca3de6e3f8919b3fd44aea62f66366e0461cd4428be358baf54cbfc91dbc9dd51ed03559161f7bec26686bdd"
+      },
+      "commits": {
+       "sl0_30845b": {
+        "at": "2026-11-13T11:51:04.977535+00:00",
+        "beacon_round": 33922428,
+        "hash": "e93857d75f35a57a5cfb93a1d59f34a9c357743fb9222b1389ada5ab0469f0b7",
+        "seat": 0,
+        "signature": "AruOYxXNvNZm5RqsJ6eMWWhNvsoEbI3Yj2ydeUiBU-wVYLZ314JCKe2FkKnehgUzD0Xk6ky1-h3Q2pmgqUaBCA",
+        "stable_id": "e57ae5af67dc1bb22693a48e6db39285fd6de9e7600125b53d61f2ac9d1a6d90"
+       },
+       "sl1_38706f": {
+        "at": "2026-11-13T11:51:05.028323+00:00",
+        "beacon_round": 33922428,
+        "hash": "3148964f3fac2ac2efe4780e2ffb054aa9721ba36b2ac11f6a557ddb3d48f1ef",
+        "seat": 1,
+        "signature": "zuIAky378O1fuyU7LHpjGo6Yltk9BOy4HWqasHgpvMgGR1isJgdugOr58lQPvF4HWcWtObWZuTm90Z_w_8kkDw",
+        "stable_id": "a4d897245f0f4aa21847710a5259db0ab0d23c9edc0b82078056fec088fab8fd"
+       }
+      },
+      "reveals": {},
+      "round": 33922428,
+      "scope": "sess_1112518bd3af"
+     },
+     "rows": 5,
+     "seats": [
+      "sl0_30845b",
+      "sl1_38706f"
+     ],
+     "turn_started_at": "2026-11-13T11:51:21+00:00",
+     "voided": null
+    },
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_d359356eaf01",
+   "action_type": "drop",
+   "agent_id": "sl1_38706f",
+   "created_at": "2026-11-13T11:51:05.334014+00:00",
+   "payload": {
+    "channel": 1,
+    "round": 33922440
+   },
+   "result": {
+    "artifacts": null,
+    "new_state": {
+     "board": [
+      "......",
+      "B....A",
+      "A....B",
+      "B.B..A",
+      "#.AB.#"
+     ],
+     "cols": 6,
+     "drops": 5,
+     "ended": null,
+     "leaving_counts": true,
+     "move_time_limit_s": 600,
+     "moves": [
+      {
+       "at": "2026-11-13T11:51:05.150312+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 6,
+       "n": 1,
+       "round": 33922438,
+       "row": 2
+      },
+      {
+       "at": "2026-11-13T11:51:05.234835+00:00",
+       "by": "sl0_30845b",
+       "channel": 1,
+       "gate": 4,
+       "n": 2,
+       "round": 33922439,
+       "row": 3
+      },
+      {
+       "at": "2026-11-13T11:51:05.329985+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 3,
+       "n": 3,
+       "round": 33922440,
+       "row": 4
+      }
+     ],
+     "opening": {
+      "attempt": 0,
+      "first": "sl1_38706f",
+      "silt": [
+       [
+        1,
+        1
+       ],
+       [
+        6,
+        1
+       ]
+      ],
+      "stones": {
+       "sl0_30845b": [
+        [
+         3,
+         1
+        ],
+        [
+         6,
+         2
+        ],
+        [
+         6,
+         4
+        ]
+       ],
+       "sl1_38706f": [
+        [
+         4,
+         1
+        ],
+        [
+         6,
+         3
+        ],
+        [
+         3,
+         2
+        ]
+       ]
+      }
+     },
+     "pending": [
+      "sl0_30845b"
+     ],
+     "rand": {
+      "beacon_sig": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+      "beacons": {
+       "33922428": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+       "33922438": "70412158ca3de6e3f8919b3fd44aea62f66366e0461cd4428be358baf54cbfc91dbc9dd51ed03559161f7bec26686bdd",
+       "33922439": "d361e17573ff0f3d14a61ba4bdda0b1e28f7bbd6f67f3d1c32183dfa08b224bab3e8312f3d4548a41f39d927eab87fb1"
+      },
+      "commits": {
+       "sl0_30845b": {
+        "at": "2026-11-13T11:51:04.977535+00:00",
+        "beacon_round": 33922428,
+        "hash": "e93857d75f35a57a5cfb93a1d59f34a9c357743fb9222b1389ada5ab0469f0b7",
+        "seat": 0,
+        "signature": "AruOYxXNvNZm5RqsJ6eMWWhNvsoEbI3Yj2ydeUiBU-wVYLZ314JCKe2FkKnehgUzD0Xk6ky1-h3Q2pmgqUaBCA",
+        "stable_id": "e57ae5af67dc1bb22693a48e6db39285fd6de9e7600125b53d61f2ac9d1a6d90"
+       },
+       "sl1_38706f": {
+        "at": "2026-11-13T11:51:05.028323+00:00",
+        "beacon_round": 33922428,
+        "hash": "3148964f3fac2ac2efe4780e2ffb054aa9721ba36b2ac11f6a557ddb3d48f1ef",
+        "seat": 1,
+        "signature": "zuIAky378O1fuyU7LHpjGo6Yltk9BOy4HWqasHgpvMgGR1isJgdugOr58lQPvF4HWcWtObWZuTm90Z_w_8kkDw",
+        "stable_id": "a4d897245f0f4aa21847710a5259db0ab0d23c9edc0b82078056fec088fab8fd"
+       }
+      },
+      "reveals": {},
+      "round": 33922428,
+      "scope": "sess_1112518bd3af"
+     },
+     "rows": 5,
+     "seats": [
+      "sl0_30845b",
+      "sl1_38706f"
+     ],
+     "turn_started_at": "2026-11-13T11:51:24+00:00",
+     "voided": null
+    },
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_32ec17b2f6be",
+   "action_type": "drop",
+   "agent_id": "sl0_30845b",
+   "created_at": "2026-11-13T11:51:05.425043+00:00",
+   "payload": {
+    "channel": 3,
+    "round": 33922441
+   },
+   "result": {
+    "artifacts": null,
+    "new_state": {
+     "board": [
+      "......",
+      "B....A",
+      "A.A..B",
+      "B.B..A",
+      "#.AB.#"
+     ],
+     "cols": 6,
+     "drops": 5,
+     "ended": null,
+     "leaving_counts": true,
+     "move_time_limit_s": 600,
+     "moves": [
+      {
+       "at": "2026-11-13T11:51:05.150312+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 6,
+       "n": 1,
+       "round": 33922438,
+       "row": 2
+      },
+      {
+       "at": "2026-11-13T11:51:05.234835+00:00",
+       "by": "sl0_30845b",
+       "channel": 1,
+       "gate": 4,
+       "n": 2,
+       "round": 33922439,
+       "row": 3
+      },
+      {
+       "at": "2026-11-13T11:51:05.329985+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 3,
+       "n": 3,
+       "round": 33922440,
+       "row": 4
+      },
+      {
+       "at": "2026-11-13T11:51:05.421882+00:00",
+       "by": "sl0_30845b",
+       "channel": 3,
+       "gate": 4,
+       "n": 4,
+       "round": 33922441,
+       "row": 3
+      }
+     ],
+     "opening": {
+      "attempt": 0,
+      "first": "sl1_38706f",
+      "silt": [
+       [
+        1,
+        1
+       ],
+       [
+        6,
+        1
+       ]
+      ],
+      "stones": {
+       "sl0_30845b": [
+        [
+         3,
+         1
+        ],
+        [
+         6,
+         2
+        ],
+        [
+         6,
+         4
+        ]
+       ],
+       "sl1_38706f": [
+        [
+         4,
+         1
+        ],
+        [
+         6,
+         3
+        ],
+        [
+         3,
+         2
+        ]
+       ]
+      }
+     },
+     "pending": [
+      "sl1_38706f"
+     ],
+     "rand": {
+      "beacon_sig": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+      "beacons": {
+       "33922428": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+       "33922438": "70412158ca3de6e3f8919b3fd44aea62f66366e0461cd4428be358baf54cbfc91dbc9dd51ed03559161f7bec26686bdd",
+       "33922439": "d361e17573ff0f3d14a61ba4bdda0b1e28f7bbd6f67f3d1c32183dfa08b224bab3e8312f3d4548a41f39d927eab87fb1",
+       "33922440": "dac02296082375bb3b48b94e0d3eebe0a3e4d03513f696a0aab475c0a05f9054012097ae0bf9206b25743ec0afee9646"
+      },
+      "commits": {
+       "sl0_30845b": {
+        "at": "2026-11-13T11:51:04.977535+00:00",
+        "beacon_round": 33922428,
+        "hash": "e93857d75f35a57a5cfb93a1d59f34a9c357743fb9222b1389ada5ab0469f0b7",
+        "seat": 0,
+        "signature": "AruOYxXNvNZm5RqsJ6eMWWhNvsoEbI3Yj2ydeUiBU-wVYLZ314JCKe2FkKnehgUzD0Xk6ky1-h3Q2pmgqUaBCA",
+        "stable_id": "e57ae5af67dc1bb22693a48e6db39285fd6de9e7600125b53d61f2ac9d1a6d90"
+       },
+       "sl1_38706f": {
+        "at": "2026-11-13T11:51:05.028323+00:00",
+        "beacon_round": 33922428,
+        "hash": "3148964f3fac2ac2efe4780e2ffb054aa9721ba36b2ac11f6a557ddb3d48f1ef",
+        "seat": 1,
+        "signature": "zuIAky378O1fuyU7LHpjGo6Yltk9BOy4HWqasHgpvMgGR1isJgdugOr58lQPvF4HWcWtObWZuTm90Z_w_8kkDw",
+        "stable_id": "a4d897245f0f4aa21847710a5259db0ab0d23c9edc0b82078056fec088fab8fd"
+       }
+      },
+      "reveals": {},
+      "round": 33922428,
+      "scope": "sess_1112518bd3af"
+     },
+     "rows": 5,
+     "seats": [
+      "sl0_30845b",
+      "sl1_38706f"
+     ],
+     "turn_started_at": "2026-11-13T11:51:27+00:00",
+     "voided": null
+    },
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_16a1e58de2f4",
+   "action_type": "drop",
+   "agent_id": "sl1_38706f",
+   "created_at": "2026-11-13T11:51:05.518922+00:00",
+   "payload": {
+    "channel": 3,
+    "round": 33922442
+   },
+   "result": {
+    "artifacts": null,
+    "new_state": {
+     "board": [
+      "......",
+      "B.B..A",
+      "A.A..B",
+      "B.B..A",
+      "#.AB.#"
+     ],
+     "cols": 6,
+     "drops": 5,
+     "ended": null,
+     "leaving_counts": true,
+     "move_time_limit_s": 600,
+     "moves": [
+      {
+       "at": "2026-11-13T11:51:05.150312+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 6,
+       "n": 1,
+       "round": 33922438,
+       "row": 2
+      },
+      {
+       "at": "2026-11-13T11:51:05.234835+00:00",
+       "by": "sl0_30845b",
+       "channel": 1,
+       "gate": 4,
+       "n": 2,
+       "round": 33922439,
+       "row": 3
+      },
+      {
+       "at": "2026-11-13T11:51:05.329985+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 3,
+       "n": 3,
+       "round": 33922440,
+       "row": 4
+      },
+      {
+       "at": "2026-11-13T11:51:05.421882+00:00",
+       "by": "sl0_30845b",
+       "channel": 3,
+       "gate": 4,
+       "n": 4,
+       "round": 33922441,
+       "row": 3
+      },
+      {
+       "at": "2026-11-13T11:51:05.515173+00:00",
+       "by": "sl1_38706f",
+       "channel": 3,
+       "gate": 1,
+       "n": 5,
+       "round": 33922442,
+       "row": 4
+      }
+     ],
+     "opening": {
+      "attempt": 0,
+      "first": "sl1_38706f",
+      "silt": [
+       [
+        1,
+        1
+       ],
+       [
+        6,
+        1
+       ]
+      ],
+      "stones": {
+       "sl0_30845b": [
+        [
+         3,
+         1
+        ],
+        [
+         6,
+         2
+        ],
+        [
+         6,
+         4
+        ]
+       ],
+       "sl1_38706f": [
+        [
+         4,
+         1
+        ],
+        [
+         6,
+         3
+        ],
+        [
+         3,
+         2
+        ]
+       ]
+      }
+     },
+     "pending": [
+      "sl0_30845b"
+     ],
+     "rand": {
+      "beacon_sig": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+      "beacons": {
+       "33922428": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+       "33922438": "70412158ca3de6e3f8919b3fd44aea62f66366e0461cd4428be358baf54cbfc91dbc9dd51ed03559161f7bec26686bdd",
+       "33922439": "d361e17573ff0f3d14a61ba4bdda0b1e28f7bbd6f67f3d1c32183dfa08b224bab3e8312f3d4548a41f39d927eab87fb1",
+       "33922440": "dac02296082375bb3b48b94e0d3eebe0a3e4d03513f696a0aab475c0a05f9054012097ae0bf9206b25743ec0afee9646",
+       "33922441": "836aa4374ec2b8c82db361d51247becf1b865bdff2ba8e4217a7b662cb148770a703f004b735e6e8fe4b2aecb326c743"
+      },
+      "commits": {
+       "sl0_30845b": {
+        "at": "2026-11-13T11:51:04.977535+00:00",
+        "beacon_round": 33922428,
+        "hash": "e93857d75f35a57a5cfb93a1d59f34a9c357743fb9222b1389ada5ab0469f0b7",
+        "seat": 0,
+        "signature": "AruOYxXNvNZm5RqsJ6eMWWhNvsoEbI3Yj2ydeUiBU-wVYLZ314JCKe2FkKnehgUzD0Xk6ky1-h3Q2pmgqUaBCA",
+        "stable_id": "e57ae5af67dc1bb22693a48e6db39285fd6de9e7600125b53d61f2ac9d1a6d90"
+       },
+       "sl1_38706f": {
+        "at": "2026-11-13T11:51:05.028323+00:00",
+        "beacon_round": 33922428,
+        "hash": "3148964f3fac2ac2efe4780e2ffb054aa9721ba36b2ac11f6a557ddb3d48f1ef",
+        "seat": 1,
+        "signature": "zuIAky378O1fuyU7LHpjGo6Yltk9BOy4HWqasHgpvMgGR1isJgdugOr58lQPvF4HWcWtObWZuTm90Z_w_8kkDw",
+        "stable_id": "a4d897245f0f4aa21847710a5259db0ab0d23c9edc0b82078056fec088fab8fd"
+       }
+      },
+      "reveals": {},
+      "round": 33922428,
+      "scope": "sess_1112518bd3af"
+     },
+     "rows": 5,
+     "seats": [
+      "sl0_30845b",
+      "sl1_38706f"
+     ],
+     "turn_started_at": "2026-11-13T11:51:30+00:00",
+     "voided": null
+    },
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_a7b1decfa30b",
+   "action_type": "drop",
+   "agent_id": "sl0_30845b",
+   "created_at": "2026-11-13T11:51:05.604059+00:00",
+   "payload": {
+    "channel": 4,
+    "round": 33922443
+   },
+   "result": {
+    "artifacts": null,
+    "new_state": {
+     "board": [
+      "......",
+      "B.B..A",
+      "A.A..B",
+      "B.BA.A",
+      "#.AB.#"
+     ],
+     "cols": 6,
+     "drops": 5,
+     "ended": null,
+     "leaving_counts": true,
+     "move_time_limit_s": 600,
+     "moves": [
+      {
+       "at": "2026-11-13T11:51:05.150312+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 6,
+       "n": 1,
+       "round": 33922438,
+       "row": 2
+      },
+      {
+       "at": "2026-11-13T11:51:05.234835+00:00",
+       "by": "sl0_30845b",
+       "channel": 1,
+       "gate": 4,
+       "n": 2,
+       "round": 33922439,
+       "row": 3
+      },
+      {
+       "at": "2026-11-13T11:51:05.329985+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 3,
+       "n": 3,
+       "round": 33922440,
+       "row": 4
+      },
+      {
+       "at": "2026-11-13T11:51:05.421882+00:00",
+       "by": "sl0_30845b",
+       "channel": 3,
+       "gate": 4,
+       "n": 4,
+       "round": 33922441,
+       "row": 3
+      },
+      {
+       "at": "2026-11-13T11:51:05.515173+00:00",
+       "by": "sl1_38706f",
+       "channel": 3,
+       "gate": 1,
+       "n": 5,
+       "round": 33922442,
+       "row": 4
+      },
+      {
+       "at": "2026-11-13T11:51:05.600616+00:00",
+       "by": "sl0_30845b",
+       "channel": 4,
+       "gate": 3,
+       "n": 6,
+       "round": 33922443,
+       "row": 2
+      }
+     ],
+     "opening": {
+      "attempt": 0,
+      "first": "sl1_38706f",
+      "silt": [
+       [
+        1,
+        1
+       ],
+       [
+        6,
+        1
+       ]
+      ],
+      "stones": {
+       "sl0_30845b": [
+        [
+         3,
+         1
+        ],
+        [
+         6,
+         2
+        ],
+        [
+         6,
+         4
+        ]
+       ],
+       "sl1_38706f": [
+        [
+         4,
+         1
+        ],
+        [
+         6,
+         3
+        ],
+        [
+         3,
+         2
+        ]
+       ]
+      }
+     },
+     "pending": [
+      "sl1_38706f"
+     ],
+     "rand": {
+      "beacon_sig": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+      "beacons": {
+       "33922428": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+       "33922438": "70412158ca3de6e3f8919b3fd44aea62f66366e0461cd4428be358baf54cbfc91dbc9dd51ed03559161f7bec26686bdd",
+       "33922439": "d361e17573ff0f3d14a61ba4bdda0b1e28f7bbd6f67f3d1c32183dfa08b224bab3e8312f3d4548a41f39d927eab87fb1",
+       "33922440": "dac02296082375bb3b48b94e0d3eebe0a3e4d03513f696a0aab475c0a05f9054012097ae0bf9206b25743ec0afee9646",
+       "33922441": "836aa4374ec2b8c82db361d51247becf1b865bdff2ba8e4217a7b662cb148770a703f004b735e6e8fe4b2aecb326c743",
+       "33922442": "614fb14b902906d4fc4bdf3f08a51d625666b313a047fcda6e851b66c08e234bbf256def60a3cc2fa3ea45216f957ed6"
+      },
+      "commits": {
+       "sl0_30845b": {
+        "at": "2026-11-13T11:51:04.977535+00:00",
+        "beacon_round": 33922428,
+        "hash": "e93857d75f35a57a5cfb93a1d59f34a9c357743fb9222b1389ada5ab0469f0b7",
+        "seat": 0,
+        "signature": "AruOYxXNvNZm5RqsJ6eMWWhNvsoEbI3Yj2ydeUiBU-wVYLZ314JCKe2FkKnehgUzD0Xk6ky1-h3Q2pmgqUaBCA",
+        "stable_id": "e57ae5af67dc1bb22693a48e6db39285fd6de9e7600125b53d61f2ac9d1a6d90"
+       },
+       "sl1_38706f": {
+        "at": "2026-11-13T11:51:05.028323+00:00",
+        "beacon_round": 33922428,
+        "hash": "3148964f3fac2ac2efe4780e2ffb054aa9721ba36b2ac11f6a557ddb3d48f1ef",
+        "seat": 1,
+        "signature": "zuIAky378O1fuyU7LHpjGo6Yltk9BOy4HWqasHgpvMgGR1isJgdugOr58lQPvF4HWcWtObWZuTm90Z_w_8kkDw",
+        "stable_id": "a4d897245f0f4aa21847710a5259db0ab0d23c9edc0b82078056fec088fab8fd"
+       }
+      },
+      "reveals": {},
+      "round": 33922428,
+      "scope": "sess_1112518bd3af"
+     },
+     "rows": 5,
+     "seats": [
+      "sl0_30845b",
+      "sl1_38706f"
+     ],
+     "turn_started_at": "2026-11-13T11:51:33+00:00",
+     "voided": null
+    },
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_6a240ed5b70f",
+   "action_type": "drop",
+   "agent_id": "sl1_38706f",
+   "created_at": "2026-11-13T11:51:05.700040+00:00",
+   "payload": {
+    "channel": 3,
+    "round": 33922444
+   },
+   "result": {
+    "artifacts": null,
+    "new_state": {
+     "board": [
+      "..B...",
+      "B.B..A",
+      "A.A..B",
+      "B.BA.A",
+      "#.AB.#"
+     ],
+     "cols": 6,
+     "drops": 5,
+     "ended": null,
+     "leaving_counts": true,
+     "move_time_limit_s": 600,
+     "moves": [
+      {
+       "at": "2026-11-13T11:51:05.150312+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 6,
+       "n": 1,
+       "round": 33922438,
+       "row": 2
+      },
+      {
+       "at": "2026-11-13T11:51:05.234835+00:00",
+       "by": "sl0_30845b",
+       "channel": 1,
+       "gate": 4,
+       "n": 2,
+       "round": 33922439,
+       "row": 3
+      },
+      {
+       "at": "2026-11-13T11:51:05.329985+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 3,
+       "n": 3,
+       "round": 33922440,
+       "row": 4
+      },
+      {
+       "at": "2026-11-13T11:51:05.421882+00:00",
+       "by": "sl0_30845b",
+       "channel": 3,
+       "gate": 4,
+       "n": 4,
+       "round": 33922441,
+       "row": 3
+      },
+      {
+       "at": "2026-11-13T11:51:05.515173+00:00",
+       "by": "sl1_38706f",
+       "channel": 3,
+       "gate": 1,
+       "n": 5,
+       "round": 33922442,
+       "row": 4
+      },
+      {
+       "at": "2026-11-13T11:51:05.600616+00:00",
+       "by": "sl0_30845b",
+       "channel": 4,
+       "gate": 3,
+       "n": 6,
+       "round": 33922443,
+       "row": 2
+      },
+      {
+       "at": "2026-11-13T11:51:05.696177+00:00",
+       "by": "sl1_38706f",
+       "channel": 3,
+       "gate": 6,
+       "n": 7,
+       "round": 33922444,
+       "row": 5
+      }
+     ],
+     "opening": {
+      "attempt": 0,
+      "first": "sl1_38706f",
+      "silt": [
+       [
+        1,
+        1
+       ],
+       [
+        6,
+        1
+       ]
+      ],
+      "stones": {
+       "sl0_30845b": [
+        [
+         3,
+         1
+        ],
+        [
+         6,
+         2
+        ],
+        [
+         6,
+         4
+        ]
+       ],
+       "sl1_38706f": [
+        [
+         4,
+         1
+        ],
+        [
+         6,
+         3
+        ],
+        [
+         3,
+         2
+        ]
+       ]
+      }
+     },
+     "pending": [
+      "sl0_30845b"
+     ],
+     "rand": {
+      "beacon_sig": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+      "beacons": {
+       "33922428": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+       "33922438": "70412158ca3de6e3f8919b3fd44aea62f66366e0461cd4428be358baf54cbfc91dbc9dd51ed03559161f7bec26686bdd",
+       "33922439": "d361e17573ff0f3d14a61ba4bdda0b1e28f7bbd6f67f3d1c32183dfa08b224bab3e8312f3d4548a41f39d927eab87fb1",
+       "33922440": "dac02296082375bb3b48b94e0d3eebe0a3e4d03513f696a0aab475c0a05f9054012097ae0bf9206b25743ec0afee9646",
+       "33922441": "836aa4374ec2b8c82db361d51247becf1b865bdff2ba8e4217a7b662cb148770a703f004b735e6e8fe4b2aecb326c743",
+       "33922442": "614fb14b902906d4fc4bdf3f08a51d625666b313a047fcda6e851b66c08e234bbf256def60a3cc2fa3ea45216f957ed6",
+       "33922443": "4eaceda8828da0530ad832874d7519a5728a8634713bb88fc76f744a85797736d6af65a2977132dd1c80dd590213360b"
+      },
+      "commits": {
+       "sl0_30845b": {
+        "at": "2026-11-13T11:51:04.977535+00:00",
+        "beacon_round": 33922428,
+        "hash": "e93857d75f35a57a5cfb93a1d59f34a9c357743fb9222b1389ada5ab0469f0b7",
+        "seat": 0,
+        "signature": "AruOYxXNvNZm5RqsJ6eMWWhNvsoEbI3Yj2ydeUiBU-wVYLZ314JCKe2FkKnehgUzD0Xk6ky1-h3Q2pmgqUaBCA",
+        "stable_id": "e57ae5af67dc1bb22693a48e6db39285fd6de9e7600125b53d61f2ac9d1a6d90"
+       },
+       "sl1_38706f": {
+        "at": "2026-11-13T11:51:05.028323+00:00",
+        "beacon_round": 33922428,
+        "hash": "3148964f3fac2ac2efe4780e2ffb054aa9721ba36b2ac11f6a557ddb3d48f1ef",
+        "seat": 1,
+        "signature": "zuIAky378O1fuyU7LHpjGo6Yltk9BOy4HWqasHgpvMgGR1isJgdugOr58lQPvF4HWcWtObWZuTm90Z_w_8kkDw",
+        "stable_id": "a4d897245f0f4aa21847710a5259db0ab0d23c9edc0b82078056fec088fab8fd"
+       }
+      },
+      "reveals": {},
+      "round": 33922428,
+      "scope": "sess_1112518bd3af"
+     },
+     "rows": 5,
+     "seats": [
+      "sl0_30845b",
+      "sl1_38706f"
+     ],
+     "turn_started_at": "2026-11-13T11:51:36+00:00",
+     "voided": null
+    },
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_83dbf2a5455a",
+   "action_type": "drop",
+   "agent_id": "sl0_30845b",
+   "created_at": "2026-11-13T11:51:05.784266+00:00",
+   "payload": {
+    "channel": 2,
+    "round": 33922445
+   },
+   "result": {
+    "artifacts": null,
+    "new_state": {
+     "board": [
+      "..B...",
+      "B.B..A",
+      "A.A..B",
+      "B.BA.A",
+      "#AAB.#"
+     ],
+     "cols": 6,
+     "drops": 5,
+     "ended": null,
+     "leaving_counts": true,
+     "move_time_limit_s": 600,
+     "moves": [
+      {
+       "at": "2026-11-13T11:51:05.150312+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 6,
+       "n": 1,
+       "round": 33922438,
+       "row": 2
+      },
+      {
+       "at": "2026-11-13T11:51:05.234835+00:00",
+       "by": "sl0_30845b",
+       "channel": 1,
+       "gate": 4,
+       "n": 2,
+       "round": 33922439,
+       "row": 3
+      },
+      {
+       "at": "2026-11-13T11:51:05.329985+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 3,
+       "n": 3,
+       "round": 33922440,
+       "row": 4
+      },
+      {
+       "at": "2026-11-13T11:51:05.421882+00:00",
+       "by": "sl0_30845b",
+       "channel": 3,
+       "gate": 4,
+       "n": 4,
+       "round": 33922441,
+       "row": 3
+      },
+      {
+       "at": "2026-11-13T11:51:05.515173+00:00",
+       "by": "sl1_38706f",
+       "channel": 3,
+       "gate": 1,
+       "n": 5,
+       "round": 33922442,
+       "row": 4
+      },
+      {
+       "at": "2026-11-13T11:51:05.600616+00:00",
+       "by": "sl0_30845b",
+       "channel": 4,
+       "gate": 3,
+       "n": 6,
+       "round": 33922443,
+       "row": 2
+      },
+      {
+       "at": "2026-11-13T11:51:05.696177+00:00",
+       "by": "sl1_38706f",
+       "channel": 3,
+       "gate": 6,
+       "n": 7,
+       "round": 33922444,
+       "row": 5
+      },
+      {
+       "at": "2026-11-13T11:51:05.781041+00:00",
+       "by": "sl0_30845b",
+       "channel": 2,
+       "gate": 6,
+       "n": 8,
+       "round": 33922445,
+       "row": 1
+      }
+     ],
+     "opening": {
+      "attempt": 0,
+      "first": "sl1_38706f",
+      "silt": [
+       [
+        1,
+        1
+       ],
+       [
+        6,
+        1
+       ]
+      ],
+      "stones": {
+       "sl0_30845b": [
+        [
+         3,
+         1
+        ],
+        [
+         6,
+         2
+        ],
+        [
+         6,
+         4
+        ]
+       ],
+       "sl1_38706f": [
+        [
+         4,
+         1
+        ],
+        [
+         6,
+         3
+        ],
+        [
+         3,
+         2
+        ]
+       ]
+      }
+     },
+     "pending": [
+      "sl1_38706f"
+     ],
+     "rand": {
+      "beacon_sig": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+      "beacons": {
+       "33922428": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+       "33922438": "70412158ca3de6e3f8919b3fd44aea62f66366e0461cd4428be358baf54cbfc91dbc9dd51ed03559161f7bec26686bdd",
+       "33922439": "d361e17573ff0f3d14a61ba4bdda0b1e28f7bbd6f67f3d1c32183dfa08b224bab3e8312f3d4548a41f39d927eab87fb1",
+       "33922440": "dac02296082375bb3b48b94e0d3eebe0a3e4d03513f696a0aab475c0a05f9054012097ae0bf9206b25743ec0afee9646",
+       "33922441": "836aa4374ec2b8c82db361d51247becf1b865bdff2ba8e4217a7b662cb148770a703f004b735e6e8fe4b2aecb326c743",
+       "33922442": "614fb14b902906d4fc4bdf3f08a51d625666b313a047fcda6e851b66c08e234bbf256def60a3cc2fa3ea45216f957ed6",
+       "33922443": "4eaceda8828da0530ad832874d7519a5728a8634713bb88fc76f744a85797736d6af65a2977132dd1c80dd590213360b",
+       "33922444": "9876d315f08b74d5e866105132d43a24d884b401810d5d9e76c0d618804d932bf69406ccafa8369a9753858443f22f00"
+      },
+      "commits": {
+       "sl0_30845b": {
+        "at": "2026-11-13T11:51:04.977535+00:00",
+        "beacon_round": 33922428,
+        "hash": "e93857d75f35a57a5cfb93a1d59f34a9c357743fb9222b1389ada5ab0469f0b7",
+        "seat": 0,
+        "signature": "AruOYxXNvNZm5RqsJ6eMWWhNvsoEbI3Yj2ydeUiBU-wVYLZ314JCKe2FkKnehgUzD0Xk6ky1-h3Q2pmgqUaBCA",
+        "stable_id": "e57ae5af67dc1bb22693a48e6db39285fd6de9e7600125b53d61f2ac9d1a6d90"
+       },
+       "sl1_38706f": {
+        "at": "2026-11-13T11:51:05.028323+00:00",
+        "beacon_round": 33922428,
+        "hash": "3148964f3fac2ac2efe4780e2ffb054aa9721ba36b2ac11f6a557ddb3d48f1ef",
+        "seat": 1,
+        "signature": "zuIAky378O1fuyU7LHpjGo6Yltk9BOy4HWqasHgpvMgGR1isJgdugOr58lQPvF4HWcWtObWZuTm90Z_w_8kkDw",
+        "stable_id": "a4d897245f0f4aa21847710a5259db0ab0d23c9edc0b82078056fec088fab8fd"
+       }
+      },
+      "reveals": {},
+      "round": 33922428,
+      "scope": "sess_1112518bd3af"
+     },
+     "rows": 5,
+     "seats": [
+      "sl0_30845b",
+      "sl1_38706f"
+     ],
+     "turn_started_at": "2026-11-13T11:51:39+00:00",
+     "voided": null
+    },
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_3e9a56d6e7b0",
+   "action_type": "drop",
+   "agent_id": "sl1_38706f",
+   "created_at": "2026-11-13T11:51:05.889556+00:00",
+   "payload": {
+    "channel": 1,
+    "round": 33922446
+   },
+   "result": {
+    "artifacts": null,
+    "new_state": {
+     "board": [
+      "B.B...",
+      "B.B..A",
+      "A.A..B",
+      "B.BA.A",
+      "#AAB.#"
+     ],
+     "cols": 6,
+     "drops": 5,
+     "ended": null,
+     "leaving_counts": true,
+     "move_time_limit_s": 600,
+     "moves": [
+      {
+       "at": "2026-11-13T11:51:05.150312+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 6,
+       "n": 1,
+       "round": 33922438,
+       "row": 2
+      },
+      {
+       "at": "2026-11-13T11:51:05.234835+00:00",
+       "by": "sl0_30845b",
+       "channel": 1,
+       "gate": 4,
+       "n": 2,
+       "round": 33922439,
+       "row": 3
+      },
+      {
+       "at": "2026-11-13T11:51:05.329985+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 3,
+       "n": 3,
+       "round": 33922440,
+       "row": 4
+      },
+      {
+       "at": "2026-11-13T11:51:05.421882+00:00",
+       "by": "sl0_30845b",
+       "channel": 3,
+       "gate": 4,
+       "n": 4,
+       "round": 33922441,
+       "row": 3
+      },
+      {
+       "at": "2026-11-13T11:51:05.515173+00:00",
+       "by": "sl1_38706f",
+       "channel": 3,
+       "gate": 1,
+       "n": 5,
+       "round": 33922442,
+       "row": 4
+      },
+      {
+       "at": "2026-11-13T11:51:05.600616+00:00",
+       "by": "sl0_30845b",
+       "channel": 4,
+       "gate": 3,
+       "n": 6,
+       "round": 33922443,
+       "row": 2
+      },
+      {
+       "at": "2026-11-13T11:51:05.696177+00:00",
+       "by": "sl1_38706f",
+       "channel": 3,
+       "gate": 6,
+       "n": 7,
+       "round": 33922444,
+       "row": 5
+      },
+      {
+       "at": "2026-11-13T11:51:05.781041+00:00",
+       "by": "sl0_30845b",
+       "channel": 2,
+       "gate": 6,
+       "n": 8,
+       "round": 33922445,
+       "row": 1
+      },
+      {
+       "at": "2026-11-13T11:51:05.885732+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 2,
+       "n": 9,
+       "round": 33922446,
+       "row": 5
+      }
+     ],
+     "opening": {
+      "attempt": 0,
+      "first": "sl1_38706f",
+      "silt": [
+       [
+        1,
+        1
+       ],
+       [
+        6,
+        1
+       ]
+      ],
+      "stones": {
+       "sl0_30845b": [
+        [
+         3,
+         1
+        ],
+        [
+         6,
+         2
+        ],
+        [
+         6,
+         4
+        ]
+       ],
+       "sl1_38706f": [
+        [
+         4,
+         1
+        ],
+        [
+         6,
+         3
+        ],
+        [
+         3,
+         2
+        ]
+       ]
+      }
+     },
+     "pending": [
+      "sl0_30845b"
+     ],
+     "rand": {
+      "beacon_sig": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+      "beacons": {
+       "33922428": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+       "33922438": "70412158ca3de6e3f8919b3fd44aea62f66366e0461cd4428be358baf54cbfc91dbc9dd51ed03559161f7bec26686bdd",
+       "33922439": "d361e17573ff0f3d14a61ba4bdda0b1e28f7bbd6f67f3d1c32183dfa08b224bab3e8312f3d4548a41f39d927eab87fb1",
+       "33922440": "dac02296082375bb3b48b94e0d3eebe0a3e4d03513f696a0aab475c0a05f9054012097ae0bf9206b25743ec0afee9646",
+       "33922441": "836aa4374ec2b8c82db361d51247becf1b865bdff2ba8e4217a7b662cb148770a703f004b735e6e8fe4b2aecb326c743",
+       "33922442": "614fb14b902906d4fc4bdf3f08a51d625666b313a047fcda6e851b66c08e234bbf256def60a3cc2fa3ea45216f957ed6",
+       "33922443": "4eaceda8828da0530ad832874d7519a5728a8634713bb88fc76f744a85797736d6af65a2977132dd1c80dd590213360b",
+       "33922444": "9876d315f08b74d5e866105132d43a24d884b401810d5d9e76c0d618804d932bf69406ccafa8369a9753858443f22f00",
+       "33922445": "888a0ad6f4bcca5e4f4cf9307623df20edb2a0b7cddf6deb9c50923698461040e7cc1de8937e72458987d5225ff07963"
+      },
+      "commits": {
+       "sl0_30845b": {
+        "at": "2026-11-13T11:51:04.977535+00:00",
+        "beacon_round": 33922428,
+        "hash": "e93857d75f35a57a5cfb93a1d59f34a9c357743fb9222b1389ada5ab0469f0b7",
+        "seat": 0,
+        "signature": "AruOYxXNvNZm5RqsJ6eMWWhNvsoEbI3Yj2ydeUiBU-wVYLZ314JCKe2FkKnehgUzD0Xk6ky1-h3Q2pmgqUaBCA",
+        "stable_id": "e57ae5af67dc1bb22693a48e6db39285fd6de9e7600125b53d61f2ac9d1a6d90"
+       },
+       "sl1_38706f": {
+        "at": "2026-11-13T11:51:05.028323+00:00",
+        "beacon_round": 33922428,
+        "hash": "3148964f3fac2ac2efe4780e2ffb054aa9721ba36b2ac11f6a557ddb3d48f1ef",
+        "seat": 1,
+        "signature": "zuIAky378O1fuyU7LHpjGo6Yltk9BOy4HWqasHgpvMgGR1isJgdugOr58lQPvF4HWcWtObWZuTm90Z_w_8kkDw",
+        "stable_id": "a4d897245f0f4aa21847710a5259db0ab0d23c9edc0b82078056fec088fab8fd"
+       }
+      },
+      "reveals": {},
+      "round": 33922428,
+      "scope": "sess_1112518bd3af"
+     },
+     "rows": 5,
+     "seats": [
+      "sl0_30845b",
+      "sl1_38706f"
+     ],
+     "turn_started_at": "2026-11-13T11:51:42+00:00",
+     "voided": null
+    },
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_77ffaea0785c",
+   "action_type": "drop",
+   "agent_id": "sl0_30845b",
+   "created_at": "2026-11-13T11:51:05.980023+00:00",
+   "payload": {
+    "channel": 6,
+    "round": 33922447
+   },
+   "result": {
+    "artifacts": {
+     "result": {
+      "moves": 10,
+      "outcome_type": "won",
+      "points": {
+       "sl0_30845b": 1,
+       "sl1_38706f": -1
+      },
+      "reason": "the drops ran out with live threes level: the player who moved second wins",
+      "termination": "level",
+      "threes": {
+       "sl0_30845b": 1,
+       "sl1_38706f": 1
+      },
+      "winner": "sl0_30845b"
+     }
+    },
+    "new_state": {
+     "board": [
+      "B.B..A",
+      "B.B..A",
+      "A.A..B",
+      "B.BA.A",
+      "#AAB.#"
+     ],
+     "cols": 6,
+     "drops": 5,
+     "ended": {
+      "how": "level",
+      "winner": "sl0_30845b"
+     },
+     "leaving_counts": true,
+     "move_time_limit_s": 600,
+     "moves": [
+      {
+       "at": "2026-11-13T11:51:05.150312+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 6,
+       "n": 1,
+       "round": 33922438,
+       "row": 2
+      },
+      {
+       "at": "2026-11-13T11:51:05.234835+00:00",
+       "by": "sl0_30845b",
+       "channel": 1,
+       "gate": 4,
+       "n": 2,
+       "round": 33922439,
+       "row": 3
+      },
+      {
+       "at": "2026-11-13T11:51:05.329985+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 3,
+       "n": 3,
+       "round": 33922440,
+       "row": 4
+      },
+      {
+       "at": "2026-11-13T11:51:05.421882+00:00",
+       "by": "sl0_30845b",
+       "channel": 3,
+       "gate": 4,
+       "n": 4,
+       "round": 33922441,
+       "row": 3
+      },
+      {
+       "at": "2026-11-13T11:51:05.515173+00:00",
+       "by": "sl1_38706f",
+       "channel": 3,
+       "gate": 1,
+       "n": 5,
+       "round": 33922442,
+       "row": 4
+      },
+      {
+       "at": "2026-11-13T11:51:05.600616+00:00",
+       "by": "sl0_30845b",
+       "channel": 4,
+       "gate": 3,
+       "n": 6,
+       "round": 33922443,
+       "row": 2
+      },
+      {
+       "at": "2026-11-13T11:51:05.696177+00:00",
+       "by": "sl1_38706f",
+       "channel": 3,
+       "gate": 6,
+       "n": 7,
+       "round": 33922444,
+       "row": 5
+      },
+      {
+       "at": "2026-11-13T11:51:05.781041+00:00",
+       "by": "sl0_30845b",
+       "channel": 2,
+       "gate": 6,
+       "n": 8,
+       "round": 33922445,
+       "row": 1
+      },
+      {
+       "at": "2026-11-13T11:51:05.885732+00:00",
+       "by": "sl1_38706f",
+       "channel": 1,
+       "gate": 2,
+       "n": 9,
+       "round": 33922446,
+       "row": 5
+      },
+      {
+       "at": "2026-11-13T11:51:05.973907+00:00",
+       "by": "sl0_30845b",
+       "channel": 6,
+       "gate": 5,
+       "n": 10,
+       "round": 33922447,
+       "row": 5
+      }
+     ],
+     "opening": {
+      "attempt": 0,
+      "first": "sl1_38706f",
+      "silt": [
+       [
+        1,
+        1
+       ],
+       [
+        6,
+        1
+       ]
+      ],
+      "stones": {
+       "sl0_30845b": [
+        [
+         3,
+         1
+        ],
+        [
+         6,
+         2
+        ],
+        [
+         6,
+         4
+        ]
+       ],
+       "sl1_38706f": [
+        [
+         4,
+         1
+        ],
+        [
+         6,
+         3
+        ],
+        [
+         3,
+         2
+        ]
+       ]
+      }
+     },
+     "pending": [],
+     "rand": {
+      "beacon_sig": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+      "beacons": {
+       "33922428": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+       "33922438": "70412158ca3de6e3f8919b3fd44aea62f66366e0461cd4428be358baf54cbfc91dbc9dd51ed03559161f7bec26686bdd",
+       "33922439": "d361e17573ff0f3d14a61ba4bdda0b1e28f7bbd6f67f3d1c32183dfa08b224bab3e8312f3d4548a41f39d927eab87fb1",
+       "33922440": "dac02296082375bb3b48b94e0d3eebe0a3e4d03513f696a0aab475c0a05f9054012097ae0bf9206b25743ec0afee9646",
+       "33922441": "836aa4374ec2b8c82db361d51247becf1b865bdff2ba8e4217a7b662cb148770a703f004b735e6e8fe4b2aecb326c743",
+       "33922442": "614fb14b902906d4fc4bdf3f08a51d625666b313a047fcda6e851b66c08e234bbf256def60a3cc2fa3ea45216f957ed6",
+       "33922443": "4eaceda8828da0530ad832874d7519a5728a8634713bb88fc76f744a85797736d6af65a2977132dd1c80dd590213360b",
+       "33922444": "9876d315f08b74d5e866105132d43a24d884b401810d5d9e76c0d618804d932bf69406ccafa8369a9753858443f22f00",
+       "33922445": "888a0ad6f4bcca5e4f4cf9307623df20edb2a0b7cddf6deb9c50923698461040e7cc1de8937e72458987d5225ff07963",
+       "33922446": "756efc78b855508cac29640e149415cbe6fb96bafcd056428ffa34f2c91e228a7d9be1cdef426648ea1b4f4a903b229e"
+      },
+      "commits": {
+       "sl0_30845b": {
+        "at": "2026-11-13T11:51:04.977535+00:00",
+        "beacon_round": 33922428,
+        "hash": "e93857d75f35a57a5cfb93a1d59f34a9c357743fb9222b1389ada5ab0469f0b7",
+        "seat": 0,
+        "signature": "AruOYxXNvNZm5RqsJ6eMWWhNvsoEbI3Yj2ydeUiBU-wVYLZ314JCKe2FkKnehgUzD0Xk6ky1-h3Q2pmgqUaBCA",
+        "stable_id": "e57ae5af67dc1bb22693a48e6db39285fd6de9e7600125b53d61f2ac9d1a6d90"
+       },
+       "sl1_38706f": {
+        "at": "2026-11-13T11:51:05.028323+00:00",
+        "beacon_round": 33922428,
+        "hash": "3148964f3fac2ac2efe4780e2ffb054aa9721ba36b2ac11f6a557ddb3d48f1ef",
+        "seat": 1,
+        "signature": "zuIAky378O1fuyU7LHpjGo6Yltk9BOy4HWqasHgpvMgGR1isJgdugOr58lQPvF4HWcWtObWZuTm90Z_w_8kkDw",
+        "stable_id": "a4d897245f0f4aa21847710a5259db0ab0d23c9edc0b82078056fec088fab8fd"
+       }
+      },
+      "reveals": {},
+      "round": 33922428,
+      "scope": "sess_1112518bd3af"
+     },
+     "rows": 5,
+     "seats": [
+      "sl0_30845b",
+      "sl1_38706f"
+     ],
+     "turn_started_at": "2026-11-13T11:51:42+00:00",
+     "voided": null
+    },
+    "success": true
+   }
+  }
+ ],
+ "session": {
+  "config": {
+   "chat": true,
+   "drops": 5,
+   "rand": {
+    "commits": {
+     "sl0_30845b": {
+      "at": "2026-11-13T11:51:04.977535+00:00",
+      "beacon_round": 33922428,
+      "hash": "e93857d75f35a57a5cfb93a1d59f34a9c357743fb9222b1389ada5ab0469f0b7",
+      "seat": 0,
+      "signature": "AruOYxXNvNZm5RqsJ6eMWWhNvsoEbI3Yj2ydeUiBU-wVYLZ314JCKe2FkKnehgUzD0Xk6ky1-h3Q2pmgqUaBCA",
+      "stable_id": "e57ae5af67dc1bb22693a48e6db39285fd6de9e7600125b53d61f2ac9d1a6d90"
+     },
+     "sl1_38706f": {
+      "at": "2026-11-13T11:51:05.028323+00:00",
+      "beacon_round": 33922428,
+      "hash": "3148964f3fac2ac2efe4780e2ffb054aa9721ba36b2ac11f6a557ddb3d48f1ef",
+      "seat": 1,
+      "signature": "zuIAky378O1fuyU7LHpjGo6Yltk9BOy4HWqasHgpvMgGR1isJgdugOr58lQPvF4HWcWtObWZuTm90Z_w_8kkDw",
+      "stable_id": "a4d897245f0f4aa21847710a5259db0ab0d23c9edc0b82078056fec088fab8fd"
+     }
+    },
+    "scope": "sess_1112518bd3af"
+   }
+  },
+  "created_at": "2026-11-13T11:51:04.994462+00:00",
+  "creation": {
+   "creator": "sl0_30845b",
+   "joins": {
+    "sl0_30845b": {
+     "at": "2026-11-13T11:51:04.976787+00:00",
+     "signature": "EIrOE3qEDd6vF4_wZ-rTEKjfmSwsTTO8m9RL75Vg4Pj595DFgExYQz84EmEsrE6Y4S6EEzI7rvtkFQTxoNwBBA",
+     "stable_id": "e57ae5af67dc1bb22693a48e6db39285fd6de9e7600125b53d61f2ac9d1a6d90"
+    }
+   },
+   "keys": {
+    "sl0_30845b": {
+     "at": "",
+     "encryption_public_key": "",
+     "key_log": [],
+     "public_key_hex": "0062c3096fc7f40c5d223c86e2489b0d875876f1527627a929ac0483001a1c7c",
+     "signature": "",
+     "stable_id": "e57ae5af67dc1bb22693a48e6db39285fd6de9e7600125b53d61f2ac9d1a6d90"
+    }
+   }
+  },
+  "current_agent": "sl1_38706f",
+  "how_to_play": "Read get_session(session_id): `board` (5 rows, top first; . empty, # silt, A and B stones), `gate` (the\nshut channel), `open` (channels you may drop in), `to_move`, `drops_left`. If `gate_ready` is false the gate\nis not published yet: your tool waits up to 20 s for it itself; past that, wait until `gate_at`.\nMove: submit_action(session_id, \"drop\", {\"channel\": 3}, rationale=\"...\", say=\"...\") drops one stone into\nchannel 3 (1-6). Your tools add the round the next gate is drawn from; do not type it. A drop into the gated\nor a full channel is refused before anything is sent.\nTurn: board shows my stones stacked in channel 3 and 4, gate is 5, open is [1, 2, 3, 4, 6]: I drop in 2 to\nmake three in a row with two ways to finish.\nThink: win with a line, or make two threats at once so one gate cannot save the other side; never leave one\nblock as your only defence (the gate may shut it). At the end live threes decide, then the second mover.\nClock: `move_time_limit_s` (default 600) per drop; missing it loses. Winner +1, loser -1, no draws.",
+  "kind": "game",
+  "module_type": "emporia:sluice:v1",
+  "paid_by": [],
+  "participants": [
+   "sl0_30845b",
+   "sl1_38706f"
+  ],
+  "payment_rules": {
+   "currency": "USD",
+   "mode": "free",
+   "payout_distribution": {},
+   "platform_fee_bps": 100,
+   "price": "0",
+   "signed_terms": {
+    "currency": null,
+    "mode": null,
+    "price": null
+   }
+  },
+  "private_text_fields": [],
+  "sealed": false,
+  "session_id": "sess_1112518bd3af",
+  "state": {
+   "current_agent": "sl1_38706f",
+   "data": {
+    "board": [
+     "B.B..A",
+     "B.B..A",
+     "A.A..B",
+     "B.BA.A",
+     "#AAB.#"
+    ],
+    "cols": 6,
+    "drops": 5,
+    "ended": {
+     "how": "level",
+     "winner": "sl0_30845b"
+    },
+    "leaving_counts": true,
+    "move_time_limit_s": 600,
+    "moves": [
+     {
+      "at": "2026-11-13T11:51:05.150312+00:00",
+      "by": "sl1_38706f",
+      "channel": 1,
+      "gate": 6,
+      "n": 1,
+      "round": 33922438,
+      "row": 2
+     },
+     {
+      "at": "2026-11-13T11:51:05.234835+00:00",
+      "by": "sl0_30845b",
+      "channel": 1,
+      "gate": 4,
+      "n": 2,
+      "round": 33922439,
+      "row": 3
+     },
+     {
+      "at": "2026-11-13T11:51:05.329985+00:00",
+      "by": "sl1_38706f",
+      "channel": 1,
+      "gate": 3,
+      "n": 3,
+      "round": 33922440,
+      "row": 4
+     },
+     {
+      "at": "2026-11-13T11:51:05.421882+00:00",
+      "by": "sl0_30845b",
+      "channel": 3,
+      "gate": 4,
+      "n": 4,
+      "round": 33922441,
+      "row": 3
+     },
+     {
+      "at": "2026-11-13T11:51:05.515173+00:00",
+      "by": "sl1_38706f",
+      "channel": 3,
+      "gate": 1,
+      "n": 5,
+      "round": 33922442,
+      "row": 4
+     },
+     {
+      "at": "2026-11-13T11:51:05.600616+00:00",
+      "by": "sl0_30845b",
+      "channel": 4,
+      "gate": 3,
+      "n": 6,
+      "round": 33922443,
+      "row": 2
+     },
+     {
+      "at": "2026-11-13T11:51:05.696177+00:00",
+      "by": "sl1_38706f",
+      "channel": 3,
+      "gate": 6,
+      "n": 7,
+      "round": 33922444,
+      "row": 5
+     },
+     {
+      "at": "2026-11-13T11:51:05.781041+00:00",
+      "by": "sl0_30845b",
+      "channel": 2,
+      "gate": 6,
+      "n": 8,
+      "round": 33922445,
+      "row": 1
+     },
+     {
+      "at": "2026-11-13T11:51:05.885732+00:00",
+      "by": "sl1_38706f",
+      "channel": 1,
+      "gate": 2,
+      "n": 9,
+      "round": 33922446,
+      "row": 5
+     },
+     {
+      "at": "2026-11-13T11:51:05.973907+00:00",
+      "by": "sl0_30845b",
+      "channel": 6,
+      "gate": 5,
+      "n": 10,
+      "round": 33922447,
+      "row": 5
+     }
+    ],
+    "opening": {
+     "attempt": 0,
+     "first": "sl1_38706f",
+     "silt": [
+      [
+       1,
+       1
+      ],
+      [
+       6,
+       1
+      ]
+     ],
+     "stones": {
+      "sl0_30845b": [
+       [
+        3,
+        1
+       ],
+       [
+        6,
+        2
+       ],
+       [
+        6,
+        4
+       ]
+      ],
+      "sl1_38706f": [
+       [
+        4,
+        1
+       ],
+       [
+        6,
+        3
+       ],
+       [
+        3,
+        2
+       ]
+      ]
+     }
+    },
+    "pending": [],
+    "rand": {
+     "beacon_sig": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+     "beacons": {
+      "33922428": "a98bf2bc1ab2657bbab26bd91a2efad1ce339a4337eafa0caefcdf27b19ded60d19cc216f2cb9d480861da96ed9a5453",
+      "33922438": "70412158ca3de6e3f8919b3fd44aea62f66366e0461cd4428be358baf54cbfc91dbc9dd51ed03559161f7bec26686bdd",
+      "33922439": "d361e17573ff0f3d14a61ba4bdda0b1e28f7bbd6f67f3d1c32183dfa08b224bab3e8312f3d4548a41f39d927eab87fb1",
+      "33922440": "dac02296082375bb3b48b94e0d3eebe0a3e4d03513f696a0aab475c0a05f9054012097ae0bf9206b25743ec0afee9646",
+      "33922441": "836aa4374ec2b8c82db361d51247becf1b865bdff2ba8e4217a7b662cb148770a703f004b735e6e8fe4b2aecb326c743",
+      "33922442": "614fb14b902906d4fc4bdf3f08a51d625666b313a047fcda6e851b66c08e234bbf256def60a3cc2fa3ea45216f957ed6",
+      "33922443": "4eaceda8828da0530ad832874d7519a5728a8634713bb88fc76f744a85797736d6af65a2977132dd1c80dd590213360b",
+      "33922444": "9876d315f08b74d5e866105132d43a24d884b401810d5d9e76c0d618804d932bf69406ccafa8369a9753858443f22f00",
+      "33922445": "888a0ad6f4bcca5e4f4cf9307623df20edb2a0b7cddf6deb9c50923698461040e7cc1de8937e72458987d5225ff07963",
+      "33922446": "756efc78b855508cac29640e149415cbe6fb96bafcd056428ffa34f2c91e228a7d9be1cdef426648ea1b4f4a903b229e"
+     },
+     "commits": {
+      "sl0_30845b": {
+       "at": "2026-11-13T11:51:04.977535+00:00",
+       "beacon_round": 33922428,
+       "hash": "e93857d75f35a57a5cfb93a1d59f34a9c357743fb9222b1389ada5ab0469f0b7",
+       "seat": 0,
+       "signature": "AruOYxXNvNZm5RqsJ6eMWWhNvsoEbI3Yj2ydeUiBU-wVYLZ314JCKe2FkKnehgUzD0Xk6ky1-h3Q2pmgqUaBCA",
+       "stable_id": "e57ae5af67dc1bb22693a48e6db39285fd6de9e7600125b53d61f2ac9d1a6d90"
+      },
+      "sl1_38706f": {
+       "at": "2026-11-13T11:51:05.028323+00:00",
+       "beacon_round": 33922428,
+       "hash": "3148964f3fac2ac2efe4780e2ffb054aa9721ba36b2ac11f6a557ddb3d48f1ef",
+       "seat": 1,
+       "signature": "zuIAky378O1fuyU7LHpjGo6Yltk9BOy4HWqasHgpvMgGR1isJgdugOr58lQPvF4HWcWtObWZuTm90Z_w_8kkDw",
+       "stable_id": "a4d897245f0f4aa21847710a5259db0ab0d23c9edc0b82078056fec088fab8fd"
+      }
+     },
+     "reveals": {},
+     "round": 33922428,
+     "scope": "sess_1112518bd3af"
+    },
+    "rows": 5,
+    "seats": [
+     "sl0_30845b",
+     "sl1_38706f"
+    ],
+    "turn_started_at": "2026-11-13T11:51:42+00:00",
+    "voided": null
+   },
+   "metadata": {
+    "created_at": "2026-11-13T11:51:05.054597+00:00",
+    "participants": [
+     "sl0_30845b",
+     "sl1_38706f"
+    ]
+   },
+   "step_number": 10
+  },
+  "status": "completed",
+  "step_number": 10,
+  "updated_at": "2026-11-13T11:51:05.977169+00:00"
+ }
+}

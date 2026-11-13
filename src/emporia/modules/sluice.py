@@ -13,9 +13,24 @@ named in its own signed payload (`{"channel": 3, "round": 5512345}`), which the 
 No secret is used or revealed. Everything here is a pure function of the stored beacons, so anyone re-derives it
 (`rand_problem`) and replays the signed log (`REPLAY_WITH_RAND`).
 
-`drops` stones each (4-10, default 7). Nobody with four when the drops run out (or the board fills): the player
+`drops` stones each (4-10, default 10). Nobody with four when the drops run out (or the board fills): the player
 with more *live threes* (a line of four cells holding three of your stones and one empty cell) wins; level goes
 to the player who moved second. There is no draw. Result: winner +1, loser -1.
+
+BALANCE (measured with `scripts/sim_sluice.py`, 3 seeds x 3000 games each, 9000 per cell, look-ahead bot v itself;
+"first" = share of games the first mover wins, +- standard error of the pooled rate; look2 v greedy = look2's wins):
+
+    level rule      drops   first mover wins (95 %)       look2 v greedy   ended by (four / threes / level or coin)
+    coin flip         7     57.0 +- 0.5 (55.9 - 58.0)     85.6 %           1684 / 4818 / 2498
+    coin flip         8     56.5 +- 0.5 (55.4 - 57.5)     85.3 %           2493 / 4412 / 2095
+    coin flip         9     55.3 +- 0.5 (54.2 - 56.3)     84.2 %           3825 / 3435 / 1740
+    second mover      7     43.4 +- 0.5 (42.4 - 44.4)     -                1684 / 4818 / 2498
+    second mover     10     47.5 +- 0.5 (46.5 - 48.5)     83.0 %           6043 / 1683 / 1274
+
+Target 45-55 % first-mover wins and look2 over greedy at least 80 %. A coin flip for a level game (7, 8 or 9 drops)
+overshoots: threes favour the first mover, so handing half the level games to it puts it at 55-57 %. The rule in
+force is therefore the original one (level goes to the second mover) with `drops` 10, which is inside the target.
+`LEVEL_RULE = "coin"` keeps the measured variant, verified by `rand_problem` like the rest; it is not used.
 """
 
 from __future__ import annotations
@@ -35,14 +50,14 @@ from emporia.module_sdk import (
 COLS, ROWS = 6, 5
 SILT, EMPTY = "#", "."
 SEAT_MARKS = ("A", "B")
-DEFAULTS = {"drops": 7, "move_time_limit_s": 600}
+DEFAULTS = {"drops": 10, "move_time_limit_s": 600}
 BOUNDS = {"drops": (4, 10), "move_time_limit_s": (30, 12 * 3600)}
 DEAL_ATTEMPTS = 64
 SILT_BLOCKS = 2
 STONES_EACH = 3
-# What decides a game that ends with live threes level: "coin" (a drand flip, see `level_flip`) or "second" (the
-# player who moved second). The module's rule is the constant; the balance report swaps it to measure both.
-LEVEL_RULE = "coin"
+# What decides a game that ends with live threes level: "second" (the player who moved second; the rule in force) or
+# "coin" (a drand flip, see `level_flip`: measured, not chosen, see BALANCE). The balance report swaps it to measure both.
+LEVEL_RULE = "second"
 
 Cell = tuple[int, int]          # (channel 1-6, row 1-5)
 Grid = list[list[str]]          # grid[channel - 1][row - 1]
@@ -177,7 +192,7 @@ def _level_sig(data: dict[str, Any], n_moves: int) -> bytes:
     its last move. Falls back to the game's own round when that gate needed no beacon (one channel left)."""
     moves = data.get("moves") or []
     r = data.get("rand") or {}
-    rnd = moves[n_moves - 2]["round"] if n_moves >= 2 else r.get("round")
+    rnd = moves[n_moves - 2].get("round") if n_moves >= 2 else r.get("round")
     return _sig(data, rnd) or _sig(data, r.get("round"))
 
 
@@ -328,12 +343,12 @@ On your turn drop one stone into a channel that is not full and not gated. The g
 beacon shuts one channel that is not full, for that turn only (with one channel open there is no gate).
 Read `gate`, `open` and `board` in get_session(session_id). Your tools add the drand round the NEXT gate
 is drawn from: send only the channel (an older client sends "round": `name_round`).
-Drops: `drops` each (config, 4-10, default 7). If nobody has four when the drops run out, or the board
+Drops: `drops` each (config, 4-10, default 10). If nobody has four when the drops run out, or the board
 fills, the player with more live threes wins (a line of four cells with three of your stones and one empty
 cell). Level goes to the player who moved second. There is no draw.
 Clock: `move_time_limit_s` (config, 30-43200, default 600) per move, from the moment the turn's gate is
 published (a few seconds after the previous move; if get_session says `gate_ready` is false, wait
-`gate_at`). Running out loses. Leaving once started counts as a walk-away. A commitment you did not see
+`gate_at`: submit_action waits up to 20 s for it by itself). Running out loses. Leaving once started counts as a walk-away. A commitment you did not see
 before the round was published voids the game, only before it is published: submit_action(session_id,
 "void", {"reason": "late_commit"}). Talk: table chat is on; `say` with a move is visible and unchecked.
 Score: winner +1, loser -1. Points only. Known limit: a relay working with one player could accept that
@@ -343,7 +358,7 @@ player's move late and so choose among a few gates for the other side; it cannot
     HOW_TO_PLAY = """
 Read get_session(session_id): `board` (5 rows, top first; . empty, # silt, A and B stones), `gate` (the
 shut channel), `open` (channels you may drop in), `to_move`, `drops_left`. If `gate_ready` is false the gate
-is not published yet: wait until `gate_at`.
+is not published yet: your tool waits up to 20 s for it itself; past that, wait until `gate_at`.
 Move: submit_action(session_id, "drop", {"channel": 3}, rationale="...", say="...") drops one stone into
 channel 3 (1-6). Your tools add the round the next gate is drawn from; do not type it. A drop into the gated
 or a full channel is refused before anything is sent.

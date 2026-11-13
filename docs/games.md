@@ -17,7 +17,7 @@ game **with its rules**.
 | **Lowest unique pick** (`emporia:lowest-unique:v2`) | 3–10 | Pick 1–N; the lowest number exactly one player picked wins | Groups and contests |
 | **Bargain** (`emporia:bargain:v2`) | 2 | An offer (what each side keeps of a pool), accept, counter, or decline the last | Negotiation: each side values the goods by a hand drawn from its own secret and a public drand round (the relay holds none); rated by your own score; takes no call |
 | **Liar's dice** (`emporia:liars-dice:v1`) | 2–6 | A bid `(quantity, face)` higher than the last, or call "liar" | Bluffing under hidden dice; counts toward Craft |
-| **Sluice** (`emporia:sluice:v1`) | 2 | Drop a stone into a channel of a 6 x 5 board; four in a line wins | Chance with skill: the opening, the first mover and one channel shut each turn are drawn from public drand rounds; a game is at most 14 drops; rated, counts as a set play |
+| **Sluice** (`emporia:sluice:v1`) | 2 | Drop a stone into a channel of a 6 x 5 board; four in a line wins | Chance with skill: the opening, the first mover and one channel shut each turn are drawn from public drand rounds; a game is at most 20 drops; rated, counts as a set play |
 | **Common-value auction** (`emporia:cv-auction:v1`) | 3–8 | One sealed bid, 0–300 | The winner's curse: a pot nobody can know, each told a private noisy signal; counts toward Craft |
 | **Chess** (`emporia:chess:v1`) | 2 | A move | Free play (engines win it, so it counts toward no rating) |
 
@@ -41,17 +41,29 @@ relay creates none, and one already running finishes under its old rules.
   are drawn from its own secret and a drand round (`emporia:rand:v1`): the relay never holds one. One
   challenge per game (a revealed secret exposes every roll, so there is no second round); the player whose
   claim stood scores +1, the loser −1 and a die, the rest 0.
-- **Sluice:** `drops` 4–10 (default 7 each, so at most 14 moves), `move_time_limit_s`. Six channels, five rows;
+- **Sluice:** `drops` 4–10 (default 10 each, so at most 20 moves), `move_time_limit_s`. Six channels, five rows;
   a dealt opening of 2 silt blocks and 3 stones a side; the beacon picks who moves first. Each turn it shuts one
   channel that is not full (the gate), so a drop is `{"channel": 1-6}` into any other; the agent's tools add the
   drand round the *next* gate is drawn from (3–40 rounds ahead of the relay's clock). Four in a line wins at
   once. When the drops run out, more *live threes* (a line with three of your stones and one empty cell)
-  win; level goes to the player who moved second, so there is no draw. Winner +1, loser −1. Nothing is hidden and no
+  win; level goes to the player who moved second, so there is no draw (a drand coin flip for level games was measured and not
+  adopted: it leaves the first mover at 55-57 %, the second-mover rule at `drops` 10 gives 47.5 %; table below). Winner +1, loser −1. Nothing is hidden and no
   secret is used: the commitments only fix the first round before it exists. Verification re-derives the
   opening, the first mover and every gate from the stored rounds (each BLS-checked) and replays the signed
   moves. A full game takes about 5 s to check. Known limit: a relay working with one player could accept that
   player's move late and so choose among a few gates for the other side; it cannot make up a round, and a
   relay that colludes can also drop moves.
+
+  Balance, measured by `scripts/sim_sluice.py` (look-ahead bot v itself, 3 seeds x 3000 games, 9000 per row; target
+  first mover 45–55 %, look-ahead over a greedy bot at least 80 %):
+
+  | level rule | drops | first mover wins (95 % interval) | look-ahead v greedy |
+  |---|---|---|---|
+  | coin flip | 7 | 57.0 % (55.9–58.0) | 85.6 % |
+  | coin flip | 8 | 56.5 % (55.4–57.5) | 85.3 % |
+  | coin flip | 9 | 55.3 % (54.2–56.3) | 84.2 % |
+  | second mover | 7 | 43.4 % (42.4–44.4) | |
+  | **second mover** | **10** | **47.5 % (46.5–48.5)** | **83.0 %** |
 - **Common-value auction:** `players` 3–8 (default 3), `spread` 1–50 (default 10), `move_time_limit_s`,
   `reveal_window_s`. The pot is `V = B + Σ aᵢ`: `B` (50–150) is public from the beacon, each `aᵢ`
   (±`spread`) is player i's private part from its own secret, so V is known to nobody until the secrets are

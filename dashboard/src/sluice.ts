@@ -34,7 +34,7 @@ export interface SluiceOpening {
 
 export interface SluiceResult {
   winner: string | null;
-  /** `four` | `threes` | `level` | `timeout` | `void` */
+  /** `four` | `threes` | `level` (second mover) | `coin` (a drand flip) | `timeout` | `void` */
   termination: string;
   line: Cell[] | null;
   /** Live threes per seat id, when the result carries them. */
@@ -55,6 +55,10 @@ export interface SluiceView {
   gate: number | null;
   open: number[];
   gateRound: number | null;
+  /** False while the drand round the next gate comes from is not stored yet (no gate, no open channels). */
+  gateReady: boolean;
+  /** Mid-game: the next gate is not drawn yet. */
+  gateAt: string | null;
   /** The drand round that deals the opening, while it is not dealt yet. */
   nameRound: number | null;
   result: SluiceResult | null;
@@ -93,6 +97,18 @@ function readMoves(v: unknown): SluiceMove[] {
   });
 }
 
+/** The ending the relay stores in the state (`ended: {how, winner, line}`), for a session whose actions are not loaded. */
+function endedResult(d: Data, seats: string[]): SluiceResult | null {
+  const e = obj(d.ended);
+  if (typeof e.how !== "string") return null;
+  const winner = typeof e.winner === "string" ? e.winner : null;
+  const loser = winner ? seats.find((x) => x !== winner) : undefined;
+  return {
+    winner, termination: e.how, line: Array.isArray(e.line) && e.line.length ? cells(e.line) : null, threes: null,
+    points: winner && loser ? { [winner]: 1, [loser]: -1 } : null,
+  };
+}
+
 function readResult(actions?: SessionAction[] | null): SluiceResult | null {
   for (const a of [...(actions ?? [])].reverse()) {
     const r = (a.result?.artifacts as { result?: Data } | undefined)?.result;
@@ -115,7 +131,8 @@ export function sluiceView(session: Session, actions?: SessionAction[] | null, n
   if (!isSluice(session.module_type)) return null;
   const d = stateData(session);
   const st = obj(session.state);
-  const dv = obj(d.derived ?? st.derived);
+  // the relay serves the draws flat in `state.data` (to_move, gate, gate_ready, open, gate_round, gate_at, name_round)
+  const dv = { ...d, ...obj(d.derived ?? st.derived) };
   const seats = Array.isArray(d.seats) && d.seats.length === 2 ? (d.seats as string[]) : (session.participants ?? []).slice(0, 2);
   const moves = readMoves(d.moves);
   const limit = num(d.move_time_limit_s, 0);
@@ -134,8 +151,10 @@ export function sluiceView(session: Session, actions?: SessionAction[] | null, n
     gate: int(dv.gate),
     open: Array.isArray(dv.open) ? (dv.open as unknown[]).flatMap((c) => (int(c) !== null ? [c as number] : [])) : [],
     gateRound: int(dv.gate_round),
+    gateReady: dv.gate_ready !== false,
+    gateAt: typeof dv.gate_at === "string" ? dv.gate_at : null,
     nameRound: int(dv.name_round) ?? int(obj(d.rand).round),
-    result: readResult(actions),
+    result: readResult(actions) ?? endedResult(d, seats),
     secondsLeft: session.status === "active" && !ended && limit && Number.isFinite(at) ? Math.max(0, Math.round(limit - (now - at) / 1000)) : null,
   };
 }
@@ -242,7 +261,7 @@ export function sluiceFrameAt(v: SluiceView, upTo: number, atEnd: boolean): Slui
   const term = result?.termination;
   const four = result && term === "four" ? (result.line ?? findFour(board)?.line ?? null) : null;
   let threes: [number, number] | null = null;
-  if (result && (term === "threes" || term === "level")) {
+  if (result && (term === "threes" || term === "level" || term === "coin")) {
     const computed = liveThrees(board);
     threes = result.threes
       ? [result.threes[v.seats[0]] ?? result.threes.A ?? computed[0], result.threes[v.seats[1]] ?? result.threes.B ?? computed[1]]
@@ -270,6 +289,7 @@ export function sluiceVerdict(f: Pick<SluiceFrame, "seats" | "threes" | "first">
   switch (r.termination) {
     case "four": return `${w ?? "nobody"} wins with four in a line`;
     case "threes": return `${w ?? "nobody"} wins on live threes${f.threes ? ` (${name(f.seats[0])} ${f.threes[0]}, ${name(f.seats[1])} ${f.threes[1]})` : ""}`;
+    case "coin": return `Level on live threes${f.threes ? ` (${f.threes[0]} each)` : ""}: a drand coin flip decided, and ${w ?? "the winner"} wins`;
     case "level": return `Level on live threes${f.threes ? ` (${f.threes[0]} each)` : ""}: ${w ?? "the player who moved second"} moved second and wins`;
     case "timeout": return `${w ?? "nobody"} wins: the other ran out of time`;
     case "void": return "The game was voided";

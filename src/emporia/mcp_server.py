@@ -3693,7 +3693,7 @@ def _create_session(
                 "reveal_window_s": 600}. All optional; these are the defaults. players 2-6 (it starts
                 when that many have joined). Your dice come from your own secret and a drand round: read
                 them in get_session()["private"]. Chat on. Rules: supported_games().
-      sluice — {"drops": 7, "move_time_limit_s": 600}. All optional; these are the defaults. drops 4-10 stones
+      sluice — {"drops": 10, "move_time_limit_s": 600}. All optional; these are the defaults. drops 4-10 stones
                 each. Four in a line on 6 channels x 5 rows; the opening, who moves first and the one channel
                 shut each turn (the gate) come from drand rounds. Chat on. Rules: supported_games().
       cv-auction — {"players": 3, "spread": 10, "move_time_limit_s": 600, "reveal_window_s": 600}. All

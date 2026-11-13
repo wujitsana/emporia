@@ -293,7 +293,7 @@ def test_the_served_state_is_the_contract_the_board_is_built_on(client):
     sid, agents = _game(client)
     s = _served(client, sid, agents[0])
     d = s["state"]["data"]
-    assert (d["cols"], d["rows"], d["drops"], d["move_time_limit_s"]) == (6, 5, 7, 600)
+    assert (d["cols"], d["rows"], d["drops"], d["move_time_limit_s"]) == (6, 5, 10, 600)
     assert d["seats"] == agents and d["moves"] == [] and d["ended"] is None and d["voided"] is None
     assert d["leaving_counts"] is True and d["pending"] == agents, "both are waited on until the beacon names the first"
     assert set(d["opening"]) == {"silt", "stones", "first", "attempt"} and d["opening"]["first"] in agents
@@ -303,7 +303,7 @@ def test_the_served_state_is_the_contract_the_board_is_built_on(client):
     assert sum(x == "A" for r in d["board"] for x in r) == 3 and sum(x == "B" for r in d["board"] for x in r) == 3
     assert d["to_move"] == d["opening"]["first"] and d["gate"] in range(1, 7) and d["gate_ready"] is True
     assert d["open"] == [c for c in range(1, 7) if c != d["gate"]]
-    assert d["drops_left"] == {agents[0]: 7, agents[1]: 7}
+    assert d["drops_left"] == {agents[0]: 10, agents[1]: 10}
     assert d["gate_round"] == d["rand"]["round"]
     assert d["gate_at"] == datetime.fromtimestamp(rand.round_time(d["gate_round"]), UTC).isoformat()
     assert isinstance(d["name_round"], int) and d["name_round"] > d["gate_round"]
@@ -324,7 +324,7 @@ def test_a_drop_settles_the_stone_names_the_next_gate_and_hands_over(client):
     assert st["opening"] == d["opening"] and st["pending"] == [agents[1] if mover == agents[0] else agents[0]]
     assert st["board"] == _served(client, sid, agents[0])["state"]["data"]["board"]
     d2 = _served(client, sid, agents[0])["state"]["data"]
-    assert d2["gate_round"] == m["round"] and d2["to_move"] != mover and d2["drops_left"][mover] == 6
+    assert d2["gate_round"] == m["round"] and d2["to_move"] != mover and d2["drops_left"][mover] == 9
     assert str(m["round"]) in rs.load_session(sid)["state"]["data"]["rand"]["beacons"] or d2["gate_ready"]
     assert rs.load_session(sid)["current_agent"] == d2["to_move"]
 
@@ -795,3 +795,258 @@ def test_the_start_notice_does_not_claim_a_first_mover_the_beacon_has_not_drawn(
         assert "You move first" not in text and "The first move is not yours" not in text and "beacon picks who moves first" in text
     turn = format_frame({"type": "your_turn", "session_id": "sess_x", "module_type": SLUICE}, "alpha").text
     assert "drop" in turn and "gate" in turn and "to_move" in turn
+
+
+# ── who is told "your turn" when the beacon has drawn the first mover ─────────
+
+def _tell(session):
+    from unittest.mock import AsyncMock, patch
+
+    from emporia.routes import sessions
+    with patch.object(sessions.rs, "load_session", return_value=session), \
+         patch.object(sessions.rs, "broadcast_to_agent", new=AsyncMock()) as bcast, \
+         patch.object(sessions.asyncio, "sleep", new=AsyncMock()):
+        asyncio.run(sessions._tell_when_open("sess_x", datetime.now(UTC) - timedelta(seconds=5)))
+    return bcast
+
+
+def _stored_game(agents=("alpha", "beta")):
+    r0 = 5000
+    data = {"cols": 6, "rows": 5, "drops": 7, "move_time_limit_s": 600, "seats": list(agents), "opening": None, "moves": [],
+            "pending": list(agents), "ended": None, "voided": None,
+            "rand": {"scope": "sess_x", "commits": {}, "round": r0, "beacon_sig": fake_beacon_sig(r0),
+                     "beacons": {str(r0): fake_beacon_sig(r0)}, "reveals": {}}}
+    return data
+
+
+def test_only_the_drawn_first_mover_is_told_it_is_their_turn():
+    data = _stored_game()
+    first = S._opening_for(data, _sig(5000))["first"]
+    bcast = _tell({"status": "active", "step_number": 0, "module_type": SLUICE, "current_agent": "alpha",
+                   "participants": ["alpha", "beta"], "state": {"data": data}})
+    sent = [(c.args[0], c.args[1]["type"]) for c in bcast.await_args_list]
+    assert {a for a, _ in sent} == {first} and ("your_turn" in {t for _, t in sent}), sent
+    assert M().first_to_move(data) == [first]
+    # both outcomes occur across sessions: the old behaviour told seat A (and B) every time
+    seen = {S._opening_for({**data, "rand": {**data["rand"], "scope": f"s{i}"}}, _sig(5000))["first"] for i in range(40)}
+    assert seen == {"alpha", "beta"}
+
+
+def test_nobody_is_told_while_the_draw_is_not_stored_and_other_games_are_unchanged():
+    data = _stored_game()
+    data["rand"] = {**data["rand"], "beacon_sig": None, "beacons": {}}
+    assert M().first_to_move(data) == []
+    bcast = _tell({"status": "active", "step_number": 0, "module_type": SLUICE, "current_agent": "alpha",
+                   "participants": ["alpha", "beta"], "state": {"data": data}})
+    bcast.assert_not_awaited()
+    from emporia.modules.sluice import SluiceModule  # noqa: F401
+    other = get_interaction_module("emporia:bargain:v2")
+    assert other.first_to_move({}) is None, "the default: the state's own pending / current agent"
+
+
+def test_the_start_frame_does_not_name_seat_a_as_the_mover():
+    from unittest.mock import AsyncMock, patch
+
+    from emporia.routes import sessions
+    cls = M()
+    state = cls.initial_state(["alpha", "beta"], {})
+    frames = []
+
+    async def run():
+        with patch.object(sessions.rs, "save_session"), patch.object(sessions, "_schedule", new=lambda c: c.close()), \
+             patch.object(sessions, "_first_turn_opens_at", return_value=datetime.now(UTC) + timedelta(seconds=30)), \
+             patch.object(sessions, "get_interaction_module", return_value=type("W", (), {
+                 "initial_state": lambda self, p, c: state, "first_to_move": cls.first_to_move,
+                 "TURN_ORDER": False})()), \
+             patch.object(sessions.rs, "broadcast_to_agent", new=AsyncMock(side_effect=lambda a, f: frames.append(f))):
+            await sessions._start("sess_x", {"module_type": SLUICE, "config": {}, "created_at": "t"},
+                                  ["alpha", "beta"], {})
+    asyncio.run(run())
+    assert frames and all(f["type"] == "session_started" and "current_agent" not in f and "opens_at" in f for f in frames)
+
+
+# ── a tool right after the opponent's move waits for the gate ─────────────────
+
+class _Clock:
+    def __init__(self, t):
+        self.t, self.slept = t, []
+
+    def time(self):
+        return self.t
+
+    def sleep(self, s):
+        self.slept.append(s)
+        self.t += s
+
+    async def asleep(self, s):
+        self.sleep(s)
+
+
+def _served_state(gate_at, ready, step=3):
+    return {"step_number": step, "module_type": SLUICE,
+            "state": {"data": {"gate_ready": ready, "gate_at": datetime.fromtimestamp(gate_at, UTC).isoformat(),
+                               "gate": 2 if ready else None, "open": [1, 3] if ready else [], "gate_round": 9}}}
+
+
+def test_gate_wait_s_only_waits_for_a_gate_that_is_due_within_20_seconds():
+    from emporia import rand_game
+    now = 1_800_000_000.0
+    d = _served_state(now + 12, False)["state"]["data"]
+    assert rand_game.gate_wait_s(d, now) == pytest.approx(12)
+    assert rand_game.gate_wait_s(_served_state(now + 25, False)["state"]["data"], now) is None
+    assert rand_game.gate_wait_s(_served_state(now - 3, False)["state"]["data"], now) == 0.0
+    assert rand_game.gate_wait_s(_served_state(now + 5, True)["state"]["data"], now) is None
+    assert rand_game.gate_wait_s({"gate_at": "nonsense", "gate_ready": False}, now) is None
+    assert rand_game.gate_wait_s({}, now) is None
+
+
+def test_the_mcp_tool_waits_for_the_gate_then_goes_on(monkeypatch):
+    from emporia import mcp_server
+    clock = _Clock(1_800_000_000.0)
+    monkeypatch.setattr(mcp_server, "_clock", clock.time)
+    monkeypatch.setattr(mcp_server, "_sleep", clock.sleep)
+    gate_at = clock.t + 12
+    answers = iter([_served_state(gate_at, False), _served_state(gate_at, True, step=3)])
+
+    class R:
+        def __init__(self, body):
+            self.body = body
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.body
+    monkeypatch.setattr(mcp_server, "_bearer_request", lambda *a, **k: R(next(answers)))
+    first = _served_state(gate_at, False)
+    out = mcp_server._await_gate("alpha", "sess_x", first)
+    assert out["state"]["data"]["gate_ready"] is True and 11 <= sum(clock.slept) <= 14
+    assert mcp_server._await_gate("alpha", "sess_x", out) is out, "ready: nothing to wait for"
+
+
+def test_the_mcp_tool_gives_up_after_20_seconds_and_a_far_gate_is_refused_at_once(monkeypatch):
+    from emporia import mcp_server
+    clock = _Clock(1_800_000_000.0)
+    monkeypatch.setattr(mcp_server, "_clock", clock.time)
+    monkeypatch.setattr(mcp_server, "_sleep", clock.sleep)
+    calls = []
+
+    class R:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return _served_state(clock.t + 3, False)     # the relay never stores the round
+    monkeypatch.setattr(mcp_server, "_bearer_request", lambda *a, **k: calls.append(1) or R())
+    out = mcp_server._await_gate("alpha", "sess_x", _served_state(clock.t + 3, False))
+    assert out["state"]["data"]["gate_ready"] is False and 19.9 <= sum(clock.slept) <= 21.6 and calls
+    clock.slept.clear()
+    calls.clear()
+    far = _served_state(clock.t + 40, False)
+    assert mcp_server._await_gate("alpha", "sess_x", far) is far and not clock.slept and not calls
+    # and the unchanged, clear message follows from the module
+    why = M().move_problem(far["state"]["data"], {"channel": 3})
+    assert "not drawn yet" in why and "Wait" in why
+
+
+def test_the_sdk_waits_for_the_gate_too():
+    from emporia.agent_sdk import EmporiaAgent
+    clock = _Clock(1_800_000_000.0)
+    gate_at = clock.t + 9
+    answers = iter([_served_state(gate_at, False), _served_state(gate_at, True)])
+
+    class A(EmporiaAgent):
+        _sleep = staticmethod(clock.asleep)
+        _clock = staticmethod(clock.time)
+
+        def __init__(self):
+            pass
+
+        async def get_session(self, session_id):
+            return next(answers)
+    out = asyncio.run(A()._await_gate("sess_x", _served_state(gate_at, False)))
+    assert out["state"]["data"]["gate_ready"] is True and 8 <= sum(clock.slept) <= 11
+    far = _served_state(clock.t + 60, False)
+    assert asyncio.run(A()._await_gate("sess_x", far)) is far
+
+
+# ── the measured variant: a level game decided by a drand coin flip ───────────
+
+def test_the_rule_in_force_is_the_second_mover_and_drops_default_to_ten():
+    assert S.LEVEL_RULE == "second" and S.DEFAULTS["drops"] == 10 and S.BOUNDS["drops"] == (4, 10)
+    assert "default 10" in M.RULES and "Level goes to the player who moved second" in M.RULES
+
+
+def _level_data(scope="coin-scope", last_round=6):
+    d = _data([("a", 1), ("b", 3), ("a", 5), ("b", 6)], drops=2)
+    d["rand"] = {"scope": scope, "round": 1, "beacon_sig": fake_beacon_sig(1),
+                 "beacons": {str(r): fake_beacon_sig(r) for r in (1, 2, 3, 4, 5, last_round)}}
+    for i, m in enumerate(d["moves"]):
+        m["round"] = i + 2
+    return d
+
+
+def test_with_the_coin_rule_a_level_game_is_decided_by_a_flip_of_its_last_gate_beacon(monkeypatch):
+    monkeypatch.setattr(S, "LEVEL_RULE", "coin")
+    d = _level_data()
+    v = S.verdict(d)
+    assert v["termination"] == "coin" and v["threes"] == {"a": 0, "b": 0} and v["outcome_type"] == "won"
+    # the flip is the 'level' draw from the beacon that drew the last move's gate (the round move 3 named)
+    assert v["winner"] == ["a", "b"][rand_game_pick("coin-scope", fake_beacon_sig(d["moves"][2]["round"]))]
+    assert v["points"][v["winner"]] == 1 and "coin" in v["reason"]
+    # the flip does not depend on who moved first, and both sides can win it
+    winners = set()
+    for i in range(30):
+        winners.add(S.verdict(_level_data(f"scope-{i}"))["winner"])
+    assert winners == {"a", "b"}
+    # a different beacon for the last gate's round gives (over scopes) either winner: the moves do not fix the flip
+    flips = set()
+    for i in range(30):
+        d2 = _level_data(f"s{i}")
+        d2["rand"]["beacons"][str(d2["moves"][2]["round"])] = fake_beacon_sig(999)
+        flips.add(S.verdict(d2)["winner"])
+    assert flips == {"a", "b"}
+    # a decided count is untouched by the rule
+    decided = _data([("a", 3), ("b", 6), ("a", 5), ("b", 6)], opening_extra={"stones": {"a": [[1, 1], [2, 1]], "b": []}}, drops=2)
+    assert S.verdict(decided)["termination"] == "threes"
+
+
+def rand_game_pick(scope, sig_hex):
+    from emporia import rand_game
+    return rand_game.pick(scope, "level", bytes.fromhex(sig_hex), 2)
+
+
+def test_a_coin_flip_game_through_the_relay_verifies_and_a_tampered_beacon_or_result_fails(client, monkeypatch):
+    monkeypatch.setattr(S, "LEVEL_RULE", "coin")
+    monkeypatch.setattr(beacon, "verify", _fake_or_real)
+    for seed in range(1, 120):        # a game played through the relay that ends level (so the flip decides it)
+        sid, agents = _game(client, {"drops": 4})
+        s = _play(client, sid, agents, random.Random(seed))
+        if s["state"]["data"]["ended"]["how"] == "coin":
+            break
+    else:
+        raise AssertionError("no level game found")
+    s = rs.load_session(sid)
+    data = s["state"]["data"]
+    out = get_interaction_module(SLUICE).is_terminal(SessionState.from_dict(s["state"]))[1]
+    assert out["termination"] == "coin" and data["ended"]["how"] == "coin" and out["winner"] == data["ended"]["winner"]
+    assert out["threes"][agents[0]] == out["threes"][agents[1]]
+    record = _record(client, sid, *agents)
+    report = verify_game(**record)
+    assert report["verdict"] == "ok", [f for f in report["findings"] if f["status"] != "ok"]
+    assert get_interaction_module(SLUICE).rand_problem(data, agents, record["relay_verdict"]) == ""
+
+    def flip(d):
+        d["ended"] = {**d["ended"], "winner": next(p for p in d["seats"] if p != d["ended"]["winner"])}
+    assert _finding(_tamper(record, flip), "rand")["status"] == "fail"
+    last_gate_round = str(data["moves"][-2]["round"])
+
+    def bad_beacon(d):
+        d["rand"]["beacons"][last_gate_round] = fake_beacon_sig(123456)
+    forged = _tamper(record, bad_beacon)
+    assert _finding(forged, "rand")["status"] == "fail" or _finding(forged, "replay")["status"] == "fail"
+    assert verify_game(**forged)["verdict"] != "ok"
+
+    def renamed(d):
+        d["ended"] = {**d["ended"], "how": "level"}
+    assert _finding(_tamper(record, renamed), "rand")["status"] == "fail"
