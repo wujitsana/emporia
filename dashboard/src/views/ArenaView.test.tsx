@@ -184,7 +184,11 @@ describe("a match opened by its address", () => {
     const frame = document.querySelector(".e-arena-frame")!.textContent!;
     expect(frame).toContain("30 · 30 · 30 · 5 · 5");        // alpha revealed
     expect(frame).toContain("sealed");                       // beta still sealed
-    expect(frame).not.toContain("35");
+    // beta's allocation is [10, 10, 10, 35, 35]: no cell of the board's table, no text, shows any of it.
+    const cells = [...document.querySelectorAll(".e-arena-frame td")].map((c) => c.textContent);
+    expect(cells).not.toContain("35");
+    expect(cells).not.toContain("10");
+    expect(frame).not.toContain("10 · 10");
   });
 
   it("plays through at a fixed speed and stops at the end", async () => {

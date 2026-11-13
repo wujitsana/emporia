@@ -93,10 +93,12 @@ describe("a live set play", () => {
     render(<GamesView initialSessionId={SECOND} initialGameModule={null} refreshTrigger={0} />);
     const now = document.querySelector(".e-phase-strip__step.is-now");
     expect(now?.textContent).toContain("reveal");
-    const rows = [...document.querySelectorAll(".e-blotto__grid tbody tr")].map((r) => r.textContent ?? "");
-    expect(rows[0]).toContain("alpha");
-    expect(rows[0]).toContain("30");
-    expect(rows[1]).toContain("▒▒");
+    // The blotto board's text alternative: a row per field, a column per player.
+    const table = screen.getByRole("table", { hidden: true, name: /blotto/i });
+    const head = [...table.querySelectorAll("thead th")].map((c) => c.textContent);
+    const first = [...table.querySelectorAll("tbody tr")[0].querySelectorAll("td")].map((c) => c.textContent);
+    expect(head).toEqual(["field", "alpha", "beta", "taken by"]);
+    expect(first.slice(0, 2)).toEqual(["30", "sealed"]);
     expect(screen.getByRole("status").textContent).toContain("waiting on beta");
     expect(document.querySelector("[class*='Chessboard']")).toBeNull();
   });

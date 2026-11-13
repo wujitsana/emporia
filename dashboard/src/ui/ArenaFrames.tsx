@@ -4,6 +4,8 @@ import { playerName } from "../arena";
 import type { BargainOffer, Goods } from "../bargain";
 import { GOODS } from "../bargain";
 import { FoldDetail } from "./FoldDetail";
+import { SetPlayBoard } from "./boards/SetPlayBoard";
+import { modelFromFrame } from "./boards/setPlayModel";
 
 type Book = Record<string, string> | undefined;
 
@@ -59,6 +61,7 @@ export function ArenaFrame({ frame, book }: { frame: Frame; book: Book }) {
         <Text className="e-dim">
           {frame.rounds > 1 ? `Round ${frame.round} of ${frame.rounds} · ` : ""}{frame.phase} phase
         </Text>
+        <SetPlayBoard model={modelFromFrame(frame, (id) => playerName(id, book, 10))} />
         <Slots slots={frame.slots} book={book} />
         {frame.fields ? (
           <Text className="e-faint" style={{ fontSize: 12 }}>

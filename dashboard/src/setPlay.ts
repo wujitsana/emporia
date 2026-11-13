@@ -101,7 +101,7 @@ export interface SetPlayView {
   verdict: Verdict | null;
   /** Seconds left in this phase, or null if not known / not running. */
   secondsLeft: number | null;
-  blotto?: { battlefields: number; troops: number; round: number; rounds: number; rounds_done: BlottoRound[]; wins: Record<string, number> };
+  blotto?: { battlefields: number; troops: number; round: number; rounds: number; rounds_done: BlottoRound[]; wins: Record<string, number>; weights: number[] | null };
   pick?: { min: number; max: number; average: number | null; target: number | null };
 }
 
@@ -133,6 +133,12 @@ function fieldWinners(a: number[], b: number[], first: string, second: string): 
 /** The same, for allocations that may not both be revealed yet: nothing to compare is no winners. */
 export function fieldWinnersOf(a: number[] | undefined, b: number[] | undefined, first: string, second: string): (string | null)[] {
   return a && b ? fieldWinners(a, b, first, second) : [];
+}
+
+/** A dealt blotto game's field weights (1-5 each), once the drand round is in; null for an even game. */
+export function blottoWeights(data: Data): number[] | null {
+  const w = data.weights;
+  return Array.isArray(w) && w.length > 0 && w.every((x) => typeof x === "number" && Number.isFinite(x)) ? (w as number[]) : null;
 }
 
 export function blottoRounds(data: Data, participants: string[]): BlottoRound[] {
@@ -236,7 +242,7 @@ export function setPlayView(session: Session, actions?: SessionAction[] | null, 
       moduleType: session.module_type, kind: "blotto", called, calls, phase, seats, verdict, secondsLeft,
       pending: pending.length ? pending : current && !finished ? [current] : [],
       blotto: { battlefields: num(data.battlefields, 5), troops: num(data.troops, 100), round: num(data.round, 1),
-        rounds: totalRounds, rounds_done: rounds, wins },
+        rounds: totalRounds, rounds_done: rounds, wins, weights: blottoWeights(data) },
     };
   }
 

@@ -1,0 +1,20 @@
+.root { max-width: 44rem; }
+
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr)); gap: 6px; }
+.cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 4.6rem;
+  padding: 6px 8px;
+  border: 1px solid var(--board-rule);
+  font-size: 0.78rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.n { font-size: 1.05rem; }
+.empty { border-style: dashed; }
+.taken .who { text-decoration: line-through; }
+.unique { border-color: var(--theme-text); border-width: 2px; }
+.tag { margin-top: auto; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.winner { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; }

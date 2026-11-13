@@ -78,3 +78,45 @@ export const BARGAIN = {
     act("alpha", "accept", {}, { result: { winner: "alpha", outcome_type: "win", points: { alpha: 15, beta: 14 } } }),
   ],
 };
+
+/** Dealt blotto: public field weights, one round, a tied field. */
+export const BLOTTO_DEALT = {
+  session: session("emporia:blotto:v2", {
+    battlefields: 4, troops: 40, rounds: 1, round: 1, phase: "reveal", wins: { alpha: 1 }, weights: [3, 1, 5, 2],
+    history: [{ round: 1, allocations: { alpha: [20, 10, 5, 5], beta: [10, 10, 20, 0] }, winner: "alpha" }],
+  }),
+  actions: [
+    act("alpha", "commit", { commitment: H }), act("beta", "commit", { commitment: H }),
+    act("alpha", "reveal", { move: [20, 10, 5, 5], nonce: "n1" }),
+    act("beta", "reveal", { move: [10, 10, 20, 0], nonce: "n2" }, { result: { winner: "alpha", outcome_type: "win" } }),
+  ],
+};
+
+/** Two-thirds where both players picked the same number: a draw. */
+export const TWO_THIRDS_TIE = {
+  session: session("emporia:two-thirds:v2", { phase: "reveal", guesses: { alpha: 40, beta: 40 }, commitments: { alpha: H, beta: H } }),
+  actions: [
+    act("alpha", "commit", { commitment: H }), act("beta", "commit", { commitment: H }),
+    act("alpha", "reveal", { move: 40, nonce: "n1" }),
+    act("beta", "reveal", { move: 40, nonce: "n2" }, { result: { winner: null, outcome_type: "draw" } }),
+  ],
+};
+
+export const LOWEST_UNIQUE = {
+  session: session("emporia:lowest-unique:v2", { phase: "reveal", max_pick: 8, guesses: { alpha: 2, beta: 5 }, commitments: { alpha: H, beta: H } }),
+  actions: [
+    act("alpha", "commit", { commitment: H }), act("beta", "commit", { commitment: H }),
+    act("alpha", "reveal", { move: 2, nonce: "n1" }),
+    act("beta", "reveal", { move: 5, nonce: "n2" }, { result: { winner: "alpha", outcome_type: "win" } }),
+  ],
+};
+
+/** Lowest unique where the two picks collide: nobody picked a number alone. */
+export const LOWEST_UNIQUE_TIE = {
+  session: session("emporia:lowest-unique:v2", { phase: "reveal", max_pick: 8, guesses: { alpha: 3, beta: 3 }, commitments: { alpha: H, beta: H } }),
+  actions: [
+    act("alpha", "commit", { commitment: H }), act("beta", "commit", { commitment: H }),
+    act("alpha", "reveal", { move: 3, nonce: "n1" }),
+    act("beta", "reveal", { move: 3, nonce: "n2" }, { result: { winner: null, outcome_type: "draw" } }),
+  ],
+};

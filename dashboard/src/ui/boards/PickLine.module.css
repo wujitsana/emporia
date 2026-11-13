@@ -1,0 +1,22 @@
+.root { max-width: 44rem; }
+
+.line {
+  --rows: 1;
+  position: relative;
+  margin: 28px 12px 4px;
+  height: calc(40px + var(--rows) * 30px);
+}
+.axis { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--theme-text); opacity: 0.5; }
+.tick { position: absolute; top: -6px; width: 1px; height: 14px; background: var(--theme-text); opacity: 0.45; }
+.tick > span { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 0.68rem; }
+.mark { position: absolute; top: -8px; bottom: 0; width: 0; border-left: 2px dashed var(--theme-text); opacity: 0.55; }
+.mark > span { position: absolute; bottom: -2px; left: 5px; font-size: 0.7rem; white-space: nowrap; }
+.target { border-left: 2px solid var(--board-line); opacity: 1; }
+.target > span { left: auto; right: 5px; color: var(--theme-text); font-weight: 700; }
+.target.low > span { left: 5px; right: auto; bottom: 16px; }
+
+.pick { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 1; }
+.pin { width: 2px; height: calc(10px + var(--row, 0) * 30px); background: var(--theme-text); opacity: 0.6; }
+.label { font-size: 0.75rem; white-space: nowrap; padding: 1px 4px; border: 1px solid var(--board-rule); background: var(--theme-background); }
+.winner .pin { background: var(--board-line); opacity: 1; width: 3px; }
+.winner .label { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; }
