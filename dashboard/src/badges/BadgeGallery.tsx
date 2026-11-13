@@ -23,7 +23,7 @@ function lowest(theme: ThemeName, tint: Tint): { ink: number; accent: number } {
 
 /**
  * The badge gallery (badges.html): every badge at 1×, 2× and 3×, then the whole set on
- * light and dark in all eight tints. For review and for the demo video; read-only — the
+ * light, vivid and dark in all seven tints. For review and for the demo video; read-only — the
  * controls change only what this page shows. `?theme=`, `?tint=` and `?capture=1` work as
  * in the dashboard.
  */
@@ -62,9 +62,10 @@ export function BadgeGallery({ embedded = false }: { embedded?: boolean } = {}) 
           </p>
           <div className="e-badge-gallery__bar" role="group" aria-label="Show the page in">
             <button type="button" aria-pressed={theme === "theme-light"} onClick={() => setTheme("theme-light")}>light</button>
+            <button type="button" aria-pressed={theme === "theme-vivid"} onClick={() => setTheme("theme-vivid")}>vivid</button>
             <button type="button" aria-pressed={theme === "theme-dark"} onClick={() => setTheme("theme-dark")}>dark</button>
             {TINTS.map((t) => (
-              <button key={t || "amber"} type="button" aria-pressed={tint === t} onClick={() => setTint(t)}>
+              <button key={t} type="button" aria-pressed={tint === t} onClick={() => setTint(t)}>
                 {TINT_LABELS[t].toLowerCase()}
               </button>
             ))}
@@ -117,11 +118,11 @@ export function BadgeGallery({ embedded = false }: { embedded?: boolean } = {}) 
         row wash is printed on it (WCAG non-text: 3:1).
       </p>
       <div className="e-badge-panels">
-        {(["theme-light", "theme-dark"] as const).flatMap((th) => TINTS.map((t) => {
-          const name: ThemeName = th === "theme-light" ? "light" : "dark";
+        {(["theme-light", "theme-vivid", "theme-dark"] as const).flatMap((th) => TINTS.map((t) => {
+          const name: ThemeName = th === "theme-light" ? "light" : th === "theme-vivid" ? "vivid" : "dark";
           const low = lowest(name, t);
           return (
-            <div key={`${th}${t}`} className={`e-badge-panel ${th}`} style={{ "--tint": TINT_COLORS[t] } as CSSProperties}>
+            <div key={`${th}${t}`} className={`e-badge-panel ${th} ${t}`} style={{ "--tint": TINT_COLORS[t] } as CSSProperties}>
               <div className="e-badge-panel__head">
                 <span>{name} · {TINT_LABELS[t].toLowerCase()}</span>
                 <span>ink ≥ {low.ink.toFixed(1)} · accent ≥ {low.accent.toFixed(1)}</span>

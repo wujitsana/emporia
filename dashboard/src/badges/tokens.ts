@@ -8,31 +8,34 @@
  *   ui-v2 the look is the only style and badges.css points the accent at that token;
  *   the retromod ramps stay here as history, and are no longer checked.
  * - The surfaces are what a badge can sit on: the canvas, a panel (`--theme-background-modal`)
- *   and, in the animatic style, the selected-row wash.
+ *   and the selected-row wash.
+ * - Vivid and deep (the dark theme) come from ../themePalette.ts, the table the CSS is held to.
  *
  * The tests check ink and accent against every surface at ≥ 3:1 (WCAG non-text contrast),
- * for both styles, both themes and all eight tints, under both gamut treatments.
+ * for all three themes and all seven tints, under both gamut treatments.
  */
 
-import { TINT_COLORS, TINT_LABELS, TINTS, type Tint } from "../themeConfig.ts";
-import { type Gamut, type RGB, hexToRgb, mixOver, relativeOklch } from "./color.ts";
+import { TINT_COLORS, TINT_LABELS, TINTS, DEFAULT_TINT, type Tint } from "../themeConfig.ts";
+import { type Gamut, type RGB, mixOver, relativeOklch } from "./color.ts";
+import { deepPalette, vividPalette } from "../themePalette.ts";
 
-export type StyleName = "animatic" | "retromod";
-export type ThemeName = "light" | "dark";
+export type StyleName = "animatic";
+export type ThemeName = "light" | "vivid" | "dark";
 
-/** The tint the dashboard falls back to when none is set ("Amber"). */
-export const AMBER = TINT_COLORS[""];
+/** The tint the dashboard falls back to when none is set (green, the default). */
+export const DEFAULT_TINT_HEX = TINT_COLORS[DEFAULT_TINT];
 
 /** The accent, exactly as badges.css writes it. Kept here so the test can hold the CSS to it. */
 export const ACCENT_CSS: Record<ThemeName, string> = {
-  light: "oklch(from var(--tint, #f0a832) 0.45 min(c, 0.2) h)",
-  dark: "oklch(from var(--tint, #f0a832) max(l, 0.78) min(c, 0.22) h)",
+  light: "oklch(from var(--tint, #39ff44) 0.45 min(c, 0.2) h)",
+  vivid: "oklch(from var(--tint, #39ff44) 0.192 calc(c * 0.243) h)",
+  dark: "oklch(from var(--tint, #39ff44) max(l, 0.78) min(c, 0.22) h)",
 };
 
-export function accentFor(theme: ThemeName, tintHex: string, gamut: Gamut = "css"): RGB {
-  return theme === "light"
-    ? relativeOklch(tintHex, 0.45, (c) => Math.min(c, 0.2), gamut)
-    : relativeOklch(tintHex, (l) => Math.max(l, 0.78), (c) => Math.min(c, 0.22), gamut);
+export function accentFor(theme: ThemeName, tint: Tint, gamut: Gamut = "css"): RGB {
+  if (theme === "vivid") return vividPalette(tint, gamut).accent;
+  if (theme === "dark") return deepPalette(tint, gamut).accent;
+  return relativeOklch(TINT_COLORS[tint], 0.45, (c) => Math.min(c, 0.2), gamut);
 }
 
 export interface Surface { name: string; rgb: RGB }
@@ -46,49 +49,36 @@ export interface ThemeColors {
   ink: RGB;
   accent: RGB;
   surfaces: Surface[];
-  /** Animatic only: the fill chips and caption bars use, and the ink on it (for `mono` badges). */
-  fill?: { bg: RGB; ink: RGB };
+  /** The fill chips and caption bars use, and the ink on it (for `mono` badges). */
+  fill: { bg: RGB; ink: RGB };
 }
+
+/** Share of the fill laid over the canvas for the selected-row wash (dashboard.css § 30); vivid's wash is the panel. */
+export const WASH = { light: 0.45, dark: 0.14 } as const;
 
 export function themeColors(style: StyleName, theme: ThemeName, tint: Tint, gamut: Gamut = "css"): ThemeColors {
-  const hex = TINT_COLORS[tint] || AMBER;
-  const rel = (L: number | ((v: number) => number), C: number | ((v: number) => number)) => relativeOklch(hex, L, C, gamut);
-  const accent = accentFor(theme, hex, gamut);
-  const base = { style, theme, tint, label: TINT_LABELS[tint], tintHex: hex, accent };
-  if (style === "animatic") {
-    const fill = rel((l) => Math.max(l, 0.86), (c) => c);
-    const fillInk = rel(0.18, (c) => c * 0.4);
-    if (theme === "light") {
-      const bg = rel(0.97, (c) => c * 0.1);
-      return { ...base, ink: rel(0.18, (c) => c * 0.4), fill: { bg: fill, ink: fillInk }, surfaces: [
-        { name: "canvas", rgb: bg }, { name: "panel", rgb: rel(0.92, (c) => c * 0.18) },
-        { name: "wash", rgb: mixOver(fill, 0.45, bg) }] };
-    }
-    const bg = rel(0.14, (c) => c * 0.18);
-    return { ...base, ink: rel(0.94, (c) => c * 0.12), fill: { bg: fill, ink: fillInk }, surfaces: [
-      { name: "canvas", rgb: bg }, { name: "panel", rgb: rel(0.24, (c) => c * 0.22) },
-      { name: "wash", rgb: mixOver(fill, 0.14, bg) }] };
-  }
-  // retromod: no tint is plain white / black (global.css body.theme-*); a tint derives its ramp.
+  const hex = TINT_COLORS[tint] || DEFAULT_TINT_HEX;
+  const base = { style, theme, tint, label: TINT_LABELS[tint], tintHex: hex };
   if (theme === "light") {
-    if (!tint) return { ...base, ink: hexToRgb("#000000"), surfaces: [
-      { name: "canvas", rgb: hexToRgb("#ffffff") }, { name: "panel", rgb: hexToRgb("#e4e4e4") }] };
-    return { ...base, ink: rel(0.18, (c) => c * 0.4), surfaces: [
-      { name: "canvas", rgb: rel(0.97, (c) => c * 0.1) }, { name: "panel", rgb: rel(0.92, (c) => c * 0.18) }] };
+    const rel = (L: number | ((v: number) => number), C: number | ((v: number) => number)) => relativeOklch(hex, L, C, gamut);
+    const fill = rel((l) => Math.max(l, 0.86), (c) => c);
+    const bg = rel(0.97, (c) => c * 0.1);
+    return { ...base, accent: accentFor(theme, tint, gamut), ink: rel(0.18, (c) => c * 0.4),
+      fill: { bg: fill, ink: rel(0.18, (c) => c * 0.4) }, surfaces: [
+        { name: "canvas", rgb: bg }, { name: "panel", rgb: rel(0.92, (c) => c * 0.18) },
+        { name: "wash", rgb: mixOver(fill, WASH.light, bg) }] };
   }
-  if (!tint) return { ...base, ink: hexToRgb("#ffffff"), surfaces: [
-    { name: "canvas", rgb: hexToRgb("#000000") }, { name: "panel", rgb: hexToRgb("#3a3a3a") }] };
-  return { ...base, ink: rel(0.92, (c) => c * 0.18), surfaces: [
-    { name: "canvas", rgb: rel(0.14, (c) => c * 0.18) }, { name: "panel", rgb: rel(0.24, (c) => c * 0.22) }] };
+  const p = theme === "vivid" ? vividPalette(tint, gamut) : deepPalette(tint, gamut);
+  return { ...base, accent: p.accent, ink: p.text, fill: { bg: p.fill, ink: p.fillInk }, surfaces: [
+    { name: "canvas", rgb: p.bg }, { name: "panel", rgb: p.panel },
+    { name: "wash", rgb: theme === "vivid" ? p.panel : mixOver(p.fill, WASH.dark, p.bg) }] };
 }
 
-/** Every combination the dashboard can show: its one style × 2 themes × 8 tints. */
+/** Every combination the dashboard can show: its one style × 3 themes × 7 tints. */
 export function allThemes(gamut: Gamut = "css"): ThemeColors[] {
   const out: ThemeColors[] = [];
-  for (const style of ["animatic"] as const) {
-    for (const theme of ["light", "dark"] as const) {
-      for (const tint of TINTS) out.push(themeColors(style, theme, tint, gamut));
-    }
+  for (const theme of ["light", "vivid", "dark"] as const) {
+    for (const tint of TINTS) out.push(themeColors("animatic", theme, tint, gamut));
   }
   return out;
 }
