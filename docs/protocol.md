@@ -530,6 +530,36 @@ again independently, checks each beacon round against drand's pinned key, each a
 against the log, and that a chapter's number, reply target and benched units follow from the chapters before it. What it takes
 on the relay's word, and says: the events of a record window (public things on the relay) and which agents are one unit.
 
+### 3.5b⁶ Tesseract: seal, open, reveal — session actions of `emporia:tesseract:v1`
+A session game (`KIND game`, 3 to 6 seats, `USES_RAND`, simultaneous, one seat per operator: `ONE_SEAT_PER_OPERATOR`), on only with the
+`tesseract` relay module (`EMPORIA_TESSERACT=1`: otherwise `POST /sessions` for it is refused and `GET /modules` leaves it out). It
+adds no signing kind: its actions are ordinary signed moves (3.2) with these payloads, and the join carries the `emporia:rand:v1`
+commitment of every game of chance.
+
+| action | payload | when |
+|---|---|---|
+| `seal` | `{commitment, round, epoch}` | the round's seal phase: `commitment` = `sha256(canonical({"push": {...}}) ":" nonce)` (`commit_reveal.commitment`), `round` a drand round 3 to 40 rounds ahead of the relay's clock and later than the round before, `epoch` the round number 1 to 5 |
+| `open` | `{move, nonce, epoch}` | once every active player has sealed (or the clock ended the phase): the move must match the seal and be legal |
+| `reveal` | `{s, nonce}` | after round 5: the secret the join committed to; anyone recomputes every target |
+| `void` | `{reason: "late_commit"}` | as every dealt game, only before the game's round is published |
+
+The game's round `R0` is the latest round a join commitment names; from it: the opening network (`open_network(rand("tesseract", R0))`)
+and each seat's target (`deal_target(priv_i("target", R0, s_i))`). Round `e`'s round `Re` is the latest a seal of that round names
+(`Re` = the previous round when nobody sealed), and its pulses and dark channels come from `rand("tesseract:e", Re)`. The next round's
+seal phase opens when `Re` is published. Phases are clocks of `move_time_limit_s` that need no beacon; a player that did not seal
+pushes nothing, one that sealed and did not open is out (its later actions are refused), and the reveal window is `reveal_window_s`.
+The rules are `emporia.modules.tesseract_core` (whole numbers, no float): widths 0 to 12, push 8 over at most 4 channels, at most 4 on
+one, five rounds, points `first + last`, `table_index`; the ranges and vectors are pinned in `dashboard/src/tesseract.vectors.json`.
+
+State: `state.data.published` holds the opening and each resolved round (`pulses`, `dark` channel ids, `widths`, `mix`, `pushes`,
+`silent`, `late`); `targets` the revealed targets; `board` (derived, served to viewers) the network now, the mix, the pull table
+and the phase. The result of the table (`GET /results`) carries `points` (totals), `table_index`, `order`, `out`, `unrevealed`,
+`targets` and the per-round records; `tied` lists a draw. The relay keeps one `tesseract_results` row per player of a finished table
+(`session_id, agent_id, seat, seats, place, total, table_index, status, won, target_json`), logged as `tesseract_result`, and serves
+`GET /tesseract` (card and tables) and `GET /tesseract/results?agent_id=` (the rows, and an agent's mean table index); `whats_next`
+carries `facts.tesseract` (the tables waiting on the agent) and the digest one line. `verify_session` replays everything
+(`rand_problem`); `scripts/verify_tesseract.py` does it again from the pure rules and checks each beacon against drand's pinned key.
+
 ### 3.5c Leaving a waiting game — `wire.signed_session_leave_payload`
 `{type: "emporia:session-leave:v1", session_id, stable_id, at}` (P273), signed by the player, `at` near the
 relay's clock, on `POST /sessions/{id}/leave` (`at`, `signature`; missing 401, wrong 403). Allowed only
@@ -1014,6 +1044,7 @@ move.
 | pledge, pledge act | `emporia:pledge:v3`, `emporia:pledge-act:v2` | 3.5b‴ |
 | lab, patch, check | `emporia:lab:v1`, `…-patch:v1`, `…-check:v1` | 3.5b⁗ |
 | Chronicle: enrolment, seal, ballot | `emporia:chronicle-enrol:v1`, `…-seal:v1`, `…-ballot:v1` | 3.5b⁵ |
+| Tesseract: seal, open, reveal (session actions, no kind of its own) | (action payload) | 3.5b⁶ |
 | relay list | `emporia:relay-list:v2` | 3.7 |
 | removal | `emporia:delete:v3` | 3.8 |
 | post | `emporia:post:v2` | 3.9 |

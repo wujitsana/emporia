@@ -16,8 +16,9 @@ import { chanceView, isCvAuction, isLiarsDice, type Bid, type ChanceResult } fro
 import { isBargain, isSetPlay, gameBase, setPlayView, stateData, blottoWeights, type Verdict, fieldWinnersOf } from "./setPlay";
 import { SET_PLAYS } from "./setPlay";
 import { dropText, isSluice, sluiceFrameAt, sluiceView, type SluiceFrame } from "./sluice";
+import { isTesseract, pushText, tesseractFrameAt, type TesseractFrame } from "./tesseract";
 
-export type ArenaKind = "blotto" | "two-thirds" | "lowest-unique" | "dice" | "auction" | "bargain" | "sluice" | "chess" | "log";
+export type ArenaKind = "blotto" | "two-thirds" | "lowest-unique" | "dice" | "auction" | "bargain" | "sluice" | "tesseract" | "chess" | "log";
 
 export interface Step {
   /** 0 is the start; i is after the i-th action. */
@@ -96,6 +97,7 @@ export type Frame =
       result: BargainView["result"];
     }
   | SluiceFrame
+  | TesseractFrame
   | { kind: "chess" }
   | { kind: "log"; rows: { n: number; agent: string; type: string; text: string }[] };
 
@@ -126,6 +128,7 @@ export function arenaKind(moduleType: string): ArenaKind {
   if (isLiarsDice(moduleType)) return "dice";
   if (isCvAuction(moduleType)) return "auction";
   if (isSluice(moduleType)) return "sluice";
+  if (isTesseract(moduleType)) return "tesseract";
   return "log";
 }
 
@@ -145,6 +148,8 @@ function stepLabel(kind: ArenaKind, a: SessionAction): string {
       if (isSecretReveal(a)) return "revealed its secret";
       if (kind === "auction") return `revealed a bid of ${movePlain(p.move)}`;
       return `revealed ${movePlain(p.move)}`;
+    case "seal": return typeof p.epoch === "number" ? `sealed its push for round ${p.epoch}` : "sealed a push";
+    case "open": return `opened its push${typeof p.epoch === "number" ? ` of round ${p.epoch}` : ""}: ${pushText(((p.move ?? {}) as { push?: Record<string, number> }).push)}`;
     case "drop": return p.channel !== undefined ? `dropped in channel ${p.channel}` : "dropped a stone";
     case "bid": return `bid ${p.quantity} × ${p.face}`;
     case "liar": return "called liar";
@@ -234,7 +239,7 @@ export function buildTimeline(session: Session, actionLog: SessionAction[] | nul
     return stepLabel(kind, a);
   };
   const steps: Step[] = [
-    { index: 0, actionId: null, agent: null, type: "start", label: kind === "sluice" ? "the table as the beacon dealt it" : "the table before the first move" },
+    { index: 0, actionId: null, agent: null, type: "start", label: kind === "sluice" || kind === "tesseract" ? "the table as the beacon dealt it" : "the table before the first move" },
     ...acts.map((a, n) => ({ index: n + 1, actionId: a.action_id, agent: a.agent_id, type: a.action_type, label: labelOf(a) })),
   ];
   const last = acts.length;
@@ -306,6 +311,7 @@ export function buildTimeline(session: Session, actionLog: SessionAction[] | nul
       const stones = acts.slice(0, i).filter((a) => a.action_type === "drop").length;
       return sluiceFrameAt(sluice, stones, atEnd);
     }
+    if (kind === "tesseract") return tesseractFrameAt(session, acts, i, finished);
     if (kind === "chess") return { kind: "chess" };
     return {
       kind: "log",

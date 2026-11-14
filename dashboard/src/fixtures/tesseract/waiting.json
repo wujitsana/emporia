@@ -1,0 +1,128 @@
+{
+ "actions": [],
+ "session": {
+  "config": {
+   "chat": true,
+   "players": 4,
+   "rand": {
+    "commits": {
+     "fz_0": {
+      "at": "2026-11-14T07:10:06.094799+00:00",
+      "beacon_round": 33945609,
+      "hash": "5601b3a431ff2b0cce28da9d76d800b41269d682dbaa55e4b6fc4f6b999bf539",
+      "seat": 0,
+      "signature": "Z9Mldx3vYH_yBq0ZE96EXMF-glNS-HzYG2WrQtr4FtkpjnOJSk4tV_s5MWkeaNi8wMhtkg1ocGv1E56qpyH4AA",
+      "stable_id": "2c4771ccb6023e7c7ce87f338470e7abe0b9a696208ceb38b930ca7c255691e9"
+     },
+     "fz_1": {
+      "at": "2026-11-14T07:10:06.174823+00:00",
+      "beacon_round": 33945609,
+      "hash": "26f6865ccca5f9e3fef606f88c9eb0d56a06d547a5603a2e136f1f7993a577d6",
+      "seat": 1,
+      "signature": "6MKWxxhDSkliQp6vioQR8aXMx6EfidsqPv50TkqpYQUm1bMRtRLUDOyaRP4iBfdGrbLIhimO2lSjxS-xin_5Aw",
+      "stable_id": "85bee5236ed999a3afc1d00ae1c077558515ccd755051312a40c18c3a55fd4cc"
+     }
+    },
+    "scope": "sess_500117f4dc7c"
+   }
+  },
+  "created_at": "2026-11-14T07:10:06.124549+00:00",
+  "creation": {
+   "creator": "fz_0",
+   "joins": {
+    "fz_0": {
+     "at": "2026-11-14T07:10:06.091871+00:00",
+     "signature": "fEZJrVYOIlNCV7RbMCvbv-nuK7YmvKM7wT2Kk5zwL2yZ6XtflIAWfsqt9ypRcA5FOCRUM-KzohD8vUvOzLszCA",
+     "stable_id": "2c4771ccb6023e7c7ce87f338470e7abe0b9a696208ceb38b930ca7c255691e9"
+    }
+   },
+   "keys": {
+    "fz_0": {
+     "at": "",
+     "encryption_public_key": "",
+     "key_log": [],
+     "public_key_hex": "9105c0a7dc3d463a770a4610d7498c9258a124892985ba895e9c4b40381f0290",
+     "signature": "",
+     "stable_id": "2c4771ccb6023e7c7ce87f338470e7abe0b9a696208ceb38b930ca7c255691e9"
+    }
+   }
+  },
+  "current_agent": "fz_0",
+  "how_to_play": "Read tesseract(session_id): your private `target` and `gap` to the mix, the 24 `channels` with their `pull` (each\noutput's change, basis points, for +4 or -4), `you.best` (moves that close your gap most), who pushed what.\nMove: tesseract_push(session_id, {\"WX>W\": 4, \"YZ>Z\": -3}, say=\"...\") seals {\"push\": {\"WX>W\": 4, \"YZ>Z\": -3}}: up to 4\nchannels, 8 units, at most 4 on one. When all have sealed, tesseract_open(session_id) opens it; after round 5 again for\nyour secret. Turn: W is 880 under target, so push WX>W up 4 and the route into it too.\nThink: all pushes add and stay; you score what moved the mix toward YOUR target. Others' targets are unknown; table\ntalk (say) may be a lie.\nClock: `move_time_limit_s` (600) per phase. Sealing and not opening puts you out; not revealing scores 0.",
+  "kind": "game",
+  "module_type": "emporia:tesseract:v1",
+  "paid_by": [],
+  "participants": [
+   "fz_0",
+   "fz_1"
+  ],
+  "payment_rules": {
+   "currency": "USD",
+   "mode": "free",
+   "payout_distribution": {},
+   "platform_fee_bps": 100,
+   "price": "0",
+   "signed_terms": {
+    "currency": null,
+    "mode": null,
+    "price": null
+   }
+  },
+  "private_text_fields": [],
+  "sealed": false,
+  "session_id": "sess_500117f4dc7c",
+  "state": {
+   "current_agent": "fz_0",
+   "data": {
+    "ended": null,
+    "epoch": 1,
+    "game": "emporia:tesseract:v1",
+    "leaving_counts": true,
+    "move_time_limit_s": 600,
+    "opens": {},
+    "pending": [
+     "fz_0"
+    ],
+    "phase": "seal",
+    "phase_started_at": "2026-11-14T07:32:54.050514+00:00",
+    "players": 4,
+    "published": {},
+    "rand": {
+     "beacon_sig": null,
+     "beacons": {},
+     "commits": {
+      "fz_0": {
+       "at": "2026-11-14T07:10:06.094799+00:00",
+       "beacon_round": 33945609,
+       "hash": "5601b3a431ff2b0cce28da9d76d800b41269d682dbaa55e4b6fc4f6b999bf539",
+       "seat": 0,
+       "signature": "Z9Mldx3vYH_yBq0ZE96EXMF-glNS-HzYG2WrQtr4FtkpjnOJSk4tV_s5MWkeaNi8wMhtkg1ocGv1E56qpyH4AA",
+       "stable_id": "2c4771ccb6023e7c7ce87f338470e7abe0b9a696208ceb38b930ca7c255691e9"
+      }
+     },
+     "reveals": {},
+     "round": null,
+     "scope": "sess_500117f4dc7c"
+    },
+    "reveal_by": null,
+    "reveal_window_s": 600,
+    "seals": {},
+    "seats": [
+     "fz_0"
+    ],
+    "targets": {},
+    "voided": null
+   },
+   "metadata": {
+    "created_at": "2026-11-14T07:32:54.050514+00:00",
+    "participants": [
+     "fz_0"
+    ]
+   },
+   "step_number": 0
+  },
+  "status": "waiting",
+  "step_number": 0,
+  "updated_at": "2026-11-14T07:10:06.235803+00:00"
+ }
+}

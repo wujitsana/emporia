@@ -1,0 +1,3784 @@
+{
+ "actions": [
+  {
+   "action_id": "act_bdfbbe91a6aa",
+   "action_type": "seal",
+   "agent_id": "fx_0",
+   "created_at": "2026-11-14T07:09:55.565398+00:00",
+   "payload": {
+    "commitment": "19822255d8675a34d9315465df6995dd465ade88c62e78b3209e2a99a351f839",
+    "epoch": 1,
+    "round": 33945621
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_fb294cdf21fa",
+   "action_type": "seal",
+   "agent_id": "fx_1",
+   "created_at": "2026-11-14T07:09:55.785022+00:00",
+   "payload": {
+    "commitment": "dbf870690e63972e25c4b078b1f874a91c2344ef5d4ac86ffae3f71544319298",
+    "epoch": 1,
+    "round": 33945621
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_6de29641b2f0",
+   "action_type": "seal",
+   "agent_id": "fx_2",
+   "created_at": "2026-11-14T07:09:56.060798+00:00",
+   "payload": {
+    "commitment": "bf6485570a952424ea5b9c156e2a27e532823f67649b2575aeb0928b610481ff",
+    "epoch": 1,
+    "round": 33945621
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_a1fef12ffe4e",
+   "action_type": "seal",
+   "agent_id": "fx_3",
+   "created_at": "2026-11-14T07:09:56.321910+00:00",
+   "payload": {
+    "commitment": "1cfbc7b58780573f2e0fcc2f60707eef9414a4d8987a01390e5468f498780af2",
+    "epoch": 1,
+    "round": 33945621
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_70326eae3ecf",
+   "action_type": "open",
+   "agent_id": "fx_0",
+   "created_at": "2026-11-14T07:09:56.470881+00:00",
+   "payload": {
+    "epoch": 1,
+    "move": {
+     "push": {
+      "WXY>XY": -4,
+      "WY>Y": -4
+     }
+    },
+    "nonce": "b285c96361d5def22f1c24a95c59fa8957fc5bba75ad5d20a719ca70813104a7"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_66188e93e434",
+   "action_type": "open",
+   "agent_id": "fx_1",
+   "created_at": "2026-11-14T07:09:56.626934+00:00",
+   "payload": {
+    "epoch": 1,
+    "move": {
+     "push": {
+      "WY>W": -4,
+      "XYZ>XY": 4
+     }
+    },
+    "nonce": "677157e95b97bde248f4bf8a0af314c67e1f3147c2e0062de6c0abace937b3fe"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_ec30c5c6a22c",
+   "action_type": "open",
+   "agent_id": "fx_2",
+   "created_at": "2026-11-14T07:09:56.759005+00:00",
+   "payload": {
+    "epoch": 1,
+    "move": {
+     "push": {
+      "WXY>WX": 4,
+      "WXZ>WZ": -4
+     }
+    },
+    "nonce": "5af69b71a1b523f4709f1947fa47ebdee94ccdd18a8dd977a665841a26fd81de"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_07a55e3da1bc",
+   "action_type": "open",
+   "agent_id": "fx_3",
+   "created_at": "2026-11-14T07:09:57.124020+00:00",
+   "payload": {
+    "epoch": 1,
+    "move": {
+     "push": {}
+    },
+    "nonce": "7928db734b64762aad524d9835a5de8300596618b98881fd19ff2695e9ac7b4e"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_2520c289402e",
+   "action_type": "seal",
+   "agent_id": "fx_0",
+   "created_at": "2026-11-14T07:09:57.440287+00:00",
+   "payload": {
+    "commitment": "a75ea4e5682e705e8637ef20839b9c2d64af7df2da2c301a1041f900252ba83b",
+    "epoch": 2,
+    "round": 33945627
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_3aa91c567979",
+   "action_type": "seal",
+   "agent_id": "fx_1",
+   "created_at": "2026-11-14T07:09:57.647140+00:00",
+   "payload": {
+    "commitment": "35a4c3f824d8a35e11974441c3808e136c2677d607d834a3dc4356777ac25a4a",
+    "epoch": 2,
+    "round": 33945627
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_0bb8ea7f2cb1",
+   "action_type": "seal",
+   "agent_id": "fx_2",
+   "created_at": "2026-11-14T07:09:57.869773+00:00",
+   "payload": {
+    "commitment": "6c4d12f1f9451b2b112afeb74f5520b2c4d8389ad9694c19ec372090794477da",
+    "epoch": 2,
+    "round": 33945627
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_22d140099486",
+   "action_type": "seal",
+   "agent_id": "fx_3",
+   "created_at": "2026-11-14T07:09:58.070263+00:00",
+   "payload": {
+    "commitment": "63d2d2d20fb5079fef3500d147f59e3a7e548f8394b00f6a431a36162361df86",
+    "epoch": 2,
+    "round": 33945627
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_a3b4177003c6",
+   "action_type": "open",
+   "agent_id": "fx_0",
+   "created_at": "2026-11-14T07:09:58.267813+00:00",
+   "payload": {
+    "epoch": 2,
+    "move": {
+     "push": {
+      "WXY>XY": -4,
+      "WY>Y": -4
+     }
+    },
+    "nonce": "f2495a1e0e2b1a7c617c5492699885cd5aa0c451aa15b550cd9c7e4b1cb585d6"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_e2ec1f84c78b",
+   "action_type": "open",
+   "agent_id": "fx_1",
+   "created_at": "2026-11-14T07:09:58.425454+00:00",
+   "payload": {
+    "epoch": 2,
+    "move": {
+     "push": {
+      "WZ>Z": -4,
+      "YZ>Z": -4
+     }
+    },
+    "nonce": "9af3a1052a7d81efdad0e0f490181d90e31714af7b69752bfeb3ad78f3d8f051"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_66c18458ab02",
+   "action_type": "open",
+   "agent_id": "fx_2",
+   "created_at": "2026-11-14T07:09:58.545515+00:00",
+   "payload": {
+    "epoch": 2,
+    "move": {
+     "push": {
+      "WY>Y": -4,
+      "WYZ>WZ": -4
+     }
+    },
+    "nonce": "ef7666f72d088acb80aba214700dbea8588d666a7a8ce74d121767e9ea0f46ee"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_4351aa8dfcc0",
+   "action_type": "open",
+   "agent_id": "fx_3",
+   "created_at": "2026-11-14T07:09:58.664480+00:00",
+   "payload": {
+    "epoch": 2,
+    "move": {
+     "push": {}
+    },
+    "nonce": "cb417a16a8b9a9403a56747d051d672349b38dc366999af23447e1eef2321ba4"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_22608644ef2d",
+   "action_type": "seal",
+   "agent_id": "fx_1",
+   "created_at": "2026-11-14T07:09:58.977946+00:00",
+   "payload": {
+    "commitment": "a569b1cdb48f6e5b4edc4deccd8f9d29c86c7cd20f799bfb20ea1e2e0f4b9ef0",
+    "epoch": 3,
+    "round": 33945634
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_1f5f3cb5d4b0",
+   "action_type": "seal",
+   "agent_id": "fx_2",
+   "created_at": "2026-11-14T07:09:59.181952+00:00",
+   "payload": {
+    "commitment": "584bf59ef0a5488a40a2245cc6ef980fa9634912646bc3a63dc4a4738448bef7",
+    "epoch": 3,
+    "round": 33945634
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_dfd604779b18",
+   "action_type": "seal",
+   "agent_id": "fx_3",
+   "created_at": "2026-11-14T07:09:59.522987+00:00",
+   "payload": {
+    "commitment": "c639ee9d5e5a85bcaf07de71f3fc6d3b640ab36e9c3054deebc59f6171fbf610",
+    "epoch": 3,
+    "round": 33945634
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_c0bf6441a297",
+   "action_type": "open",
+   "agent_id": "fx_1",
+   "created_at": "2026-11-14T07:09:59.730162+00:00",
+   "payload": {
+    "epoch": 3,
+    "move": {
+     "push": {
+      "WXY>XY": 4,
+      "WY>W": -4
+     }
+    },
+    "nonce": "5048f112ac903abb3c676e4ed0ccef0872f895728c734cf17035abc2116bae55"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_4b6d63a4ac4b",
+   "action_type": "open",
+   "agent_id": "fx_2",
+   "created_at": "2026-11-14T07:10:00.019936+00:00",
+   "payload": {
+    "epoch": 3,
+    "move": {
+     "push": {
+      "WX>W": -4,
+      "XYZ>XY": 2
+     }
+    },
+    "nonce": "7777a2d4071d28785bed07a1acd98c8ef46f55fe9180e04e57e2d6c462fdaa2e"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_a8176447db40",
+   "action_type": "open",
+   "agent_id": "fx_3",
+   "created_at": "2026-11-14T07:10:00.170460+00:00",
+   "payload": {
+    "epoch": 3,
+    "move": {
+     "push": {}
+    },
+    "nonce": "9cf1e94ce4fba8bf04b7d633605df4358f53cf228d1e096420a3ef59a6b63b88"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_772755526100",
+   "action_type": "seal",
+   "agent_id": "fx_0",
+   "created_at": "2026-11-14T07:10:00.481945+00:00",
+   "payload": {
+    "commitment": "2f6680ab044dd8c1e08cb03ebb5827aa9fc30e3f02d5771173e8e507c99a4a3b",
+    "epoch": 4,
+    "round": 33945841
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_c3b73e78ce15",
+   "action_type": "seal",
+   "agent_id": "fx_1",
+   "created_at": "2026-11-14T07:10:00.752121+00:00",
+   "payload": {
+    "commitment": "27c3f453c7b19d395909ef8226a8acc415ff7bbdef70958135d43d6eb826f7ca",
+    "epoch": 4,
+    "round": 33945841
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_b53736277a2b",
+   "action_type": "seal",
+   "agent_id": "fx_2",
+   "created_at": "2026-11-14T07:10:00.959816+00:00",
+   "payload": {
+    "commitment": "12c1c62d819a8cd64c646a90a20f33a2f60623f5f6ad04488bd3258d5f122bad",
+    "epoch": 4,
+    "round": 33945841
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_c3e3fccfd7bc",
+   "action_type": "seal",
+   "agent_id": "fx_3",
+   "created_at": "2026-11-14T07:10:01.153869+00:00",
+   "payload": {
+    "commitment": "43115a0d3781940377692c24fec4e6ec738158da2cc52b01357fa4eb6594842b",
+    "epoch": 4,
+    "round": 33945841
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_6ee4940774fc",
+   "action_type": "open",
+   "agent_id": "fx_0",
+   "created_at": "2026-11-14T07:10:01.316830+00:00",
+   "payload": {
+    "epoch": 4,
+    "move": {
+     "push": {
+      "WXY>XY": -4,
+      "WY>W": 4
+     }
+    },
+    "nonce": "63ce004b6e07d57765387fbef03376ecc677b91f7bd961a716f3db268c1b1f56"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_77f2442b56c4",
+   "action_type": "open",
+   "agent_id": "fx_1",
+   "created_at": "2026-11-14T07:10:01.466394+00:00",
+   "payload": {
+    "epoch": 4,
+    "move": {
+     "push": {
+      "WX>W": -4,
+      "WY>Y": 4
+     }
+    },
+    "nonce": "1eb312f1ed06ab36069877ecb5fcbc9e4faedb230e565456d32e9aaa83bcfe32"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_86f1f45617c9",
+   "action_type": "open",
+   "agent_id": "fx_2",
+   "created_at": "2026-11-14T07:10:01.642992+00:00",
+   "payload": {
+    "epoch": 4,
+    "move": {
+     "push": {
+      "WXZ>WZ": 2,
+      "WZ>W": 2
+     }
+    },
+    "nonce": "819c383c3e666156b2ad03657e5814e52454e30835e402c014f5c09d3b79ce6a"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_675e1828999a",
+   "action_type": "seal",
+   "agent_id": "fx_0",
+   "created_at": "2026-11-14T07:10:01.950538+00:00",
+   "payload": {
+    "commitment": "3f99f2cb3e1b827d268539270ca669b46f196349a427f93cfd36fd7f3a94b18c",
+    "epoch": 5,
+    "round": 33946048
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_fb2d7be14ec0",
+   "action_type": "seal",
+   "agent_id": "fx_1",
+   "created_at": "2026-11-14T07:10:02.223802+00:00",
+   "payload": {
+    "commitment": "c872613e95fc2ea3cf12ea345338e89d98acfef4aa6176410fc8cb383fc69999",
+    "epoch": 5,
+    "round": 33946048
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_48d4ba9482c7",
+   "action_type": "seal",
+   "agent_id": "fx_2",
+   "created_at": "2026-11-14T07:10:02.435126+00:00",
+   "payload": {
+    "commitment": "6d4889e9681374d4e6368a0fa3eaac01d8a719c62161e0ecd5dd5b944d965469",
+    "epoch": 5,
+    "round": 33946048
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_81bc0dff9dff",
+   "action_type": "open",
+   "agent_id": "fx_0",
+   "created_at": "2026-11-14T07:10:02.578582+00:00",
+   "payload": {
+    "epoch": 5,
+    "move": {
+     "push": {
+      "WY>W": 4,
+      "WY>Y": -4
+     }
+    },
+    "nonce": "75249b89586e9a5c60d6a7571c77145a329a591b4add4e7e32ae3d3896e56b6b"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_12bc862e70fd",
+   "action_type": "open",
+   "agent_id": "fx_1",
+   "created_at": "2026-11-14T07:10:02.760059+00:00",
+   "payload": {
+    "epoch": 5,
+    "move": {
+     "push": {
+      "WY>W": -4,
+      "WY>Y": 4
+     }
+    },
+    "nonce": "2338ac1cd3ac095eb48c3f1cd8a4b31a65a5ee9079ee786c8b00de627c65167f"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_a6172fb7a41d",
+   "action_type": "open",
+   "agent_id": "fx_2",
+   "created_at": "2026-11-14T07:10:02.930623+00:00",
+   "payload": {
+    "epoch": 5,
+    "move": {
+     "push": {
+      "WYZ>WY": -2,
+      "WYZ>YZ": 2
+     }
+    },
+    "nonce": "99fc65af1530a371bab659e8b73074d75d07b384f64ce078cfa8e8ac38e3c74e"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_29fbdb8b7ae1",
+   "action_type": "reveal",
+   "agent_id": "fx_0",
+   "created_at": "2026-11-14T07:10:03.156942+00:00",
+   "payload": {
+    "nonce": "218ae037b30eef695444f9339e8b325f886760c3736f314ef30982449bfaf43a",
+    "s": "6c86658974611d8be7a82b2994e7570aeec5e3447717df34ea68f53a86dc2320"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_37f880906195",
+   "action_type": "reveal",
+   "agent_id": "fx_1",
+   "created_at": "2026-11-14T07:10:03.337627+00:00",
+   "payload": {
+    "nonce": "34bfca593af9fb9c3c2e9bc9ebba9080e4ae215b75d25db69620de17a581e649",
+    "s": "6c93197d0b1313ab69347f81db421833be42bd3d980939e09416f0ab455b80a1"
+   },
+   "result": {
+    "artifacts": null,
+    "success": true
+   }
+  },
+  {
+   "action_id": "act_9a1af1daa5ca",
+   "action_type": "reveal",
+   "agent_id": "fx_2",
+   "created_at": "2026-11-14T07:10:03.480831+00:00",
+   "payload": {
+    "nonce": "30c198aa2207e7188ab9ff6161b6141ae1e41d47e1440e434f7b14fc158c07ad",
+    "s": "02183c32898e04d79851752963d936f820163683eaf247fdd2b77347658bba9d"
+   },
+   "result": {
+    "artifacts": {
+     "result": {
+      "epochs": [
+       {
+        "dark": [
+         "WX>W",
+         "WZ>W"
+        ],
+        "epoch": 1,
+        "late": [],
+        "mix": [
+         1115,
+         2987,
+         3323,
+         2542
+        ],
+        "points": {
+         "fx_0": {
+          "first": 1390,
+          "last": 1114,
+          "points": 2504
+         },
+         "fx_1": {
+          "first": -1,
+          "last": 79,
+          "points": 78
+         },
+         "fx_2": {
+          "first": -524,
+          "last": -626,
+          "points": -1150
+         },
+         "fx_3": {
+          "first": 0,
+          "last": 0,
+          "points": 0
+         }
+        },
+        "pulses": [
+         [
+          6,
+          5,
+          1,
+          7
+         ],
+         [
+          8,
+          9,
+          9,
+          1
+         ],
+         [
+          3,
+          4,
+          5,
+          5
+         ],
+         [
+          2,
+          8,
+          0,
+          6
+         ],
+         [
+          4,
+          5,
+          8,
+          9
+         ],
+         [
+          2,
+          5,
+          4,
+          1
+         ],
+         [
+          0,
+          5,
+          3,
+          6
+         ],
+         [
+          0,
+          9,
+          3,
+          3
+         ],
+         [
+          5,
+          5,
+          2,
+          3
+         ],
+         [
+          0,
+          7,
+          5,
+          2
+         ],
+         [
+          8,
+          8,
+          7,
+          3
+         ],
+         [
+          8,
+          2,
+          0,
+          6
+         ],
+         [
+          2,
+          4,
+          3,
+          3
+         ],
+         [
+          9,
+          9,
+          9,
+          9
+         ],
+         [
+          0,
+          5,
+          9,
+          3
+         ],
+         [
+          4,
+          3,
+          1,
+          0
+         ]
+        ],
+        "pushes": {
+         "fx_0": {
+          "WXY>XY": -4,
+          "WY>Y": -4
+         },
+         "fx_1": {
+          "WY>W": -4,
+          "XYZ>XY": 4
+         },
+         "fx_2": {
+          "WXY>WX": 4,
+          "WXZ>WZ": -4
+         }
+        },
+        "round": 33945621,
+        "silent": [],
+        "widths": [
+         7,
+         6,
+         11,
+         7,
+         6,
+         2,
+         11,
+         7,
+         3,
+         5,
+         12,
+         5,
+         12,
+         5,
+         5,
+         7,
+         4,
+         10,
+         12,
+         12,
+         11,
+         2,
+         4,
+         6
+        ]
+       },
+       {
+        "dark": [
+         "XYZ>XZ",
+         "WXZ>XZ",
+         "WXY>XY"
+        ],
+        "epoch": 2,
+        "late": [],
+        "mix": [
+         5025,
+         2215,
+         1609,
+         1116
+        ],
+        "points": {
+         "fx_0": {
+          "first": 234,
+          "last": -609,
+          "points": -375
+         },
+         "fx_1": {
+          "first": 942,
+          "last": 851,
+          "points": 1793
+         },
+         "fx_2": {
+          "first": 184,
+          "last": -324,
+          "points": -140
+         },
+         "fx_3": {
+          "first": 0,
+          "last": 0,
+          "points": 0
+         }
+        },
+        "pulses": [
+         [
+          2,
+          3,
+          8,
+          5
+         ],
+         [
+          0,
+          3,
+          9,
+          2
+         ],
+         [
+          7,
+          7,
+          1,
+          6
+         ],
+         [
+          6,
+          8,
+          2,
+          1
+         ],
+         [
+          6,
+          6,
+          1,
+          2
+         ],
+         [
+          3,
+          5,
+          8,
+          1
+         ],
+         [
+          8,
+          9,
+          8,
+          7
+         ],
+         [
+          1,
+          3,
+          7,
+          7
+         ],
+         [
+          7,
+          8,
+          2,
+          7
+         ],
+         [
+          2,
+          8,
+          8,
+          4
+         ],
+         [
+          2,
+          0,
+          6,
+          6
+         ],
+         [
+          7,
+          7,
+          7,
+          9
+         ],
+         [
+          2,
+          0,
+          1,
+          9
+         ],
+         [
+          7,
+          8,
+          0,
+          9
+         ],
+         [
+          0,
+          1,
+          3,
+          5
+         ],
+         [
+          3,
+          4,
+          7,
+          2
+         ]
+        ],
+        "pushes": {
+         "fx_0": {
+          "WXY>XY": -4,
+          "WY>Y": -4
+         },
+         "fx_1": {
+          "WZ>Z": -4,
+          "YZ>Z": -4
+         },
+         "fx_2": {
+          "WY>Y": -4,
+          "WYZ>WZ": -4
+         }
+        },
+        "round": 33945627,
+        "silent": [],
+        "widths": [
+         7,
+         6,
+         11,
+         7,
+         2,
+         2,
+         11,
+         7,
+         3,
+         5,
+         12,
+         1,
+         12,
+         5,
+         5,
+         0,
+         4,
+         6,
+         12,
+         12,
+         11,
+         2,
+         4,
+         2
+        ]
+       },
+       {
+        "dark": [
+         "XY>X",
+         "YZ>Y"
+        ],
+        "epoch": 3,
+        "late": [],
+        "mix": [
+         3054,
+         2789,
+         2440,
+         1685
+        ],
+        "points": {
+         "fx_0": {
+          "first": 0,
+          "last": 0,
+          "points": 0
+         },
+         "fx_1": {
+          "first": 1781,
+          "last": 1949,
+          "points": 3730
+         },
+         "fx_2": {
+          "first": 175,
+          "last": -695,
+          "points": -520
+         },
+         "fx_3": {
+          "first": 0,
+          "last": 0,
+          "points": 0
+         }
+        },
+        "pulses": [
+         [
+          6,
+          1,
+          3,
+          4
+         ],
+         [
+          5,
+          8,
+          6,
+          7
+         ],
+         [
+          0,
+          8,
+          3,
+          5
+         ],
+         [
+          2,
+          5,
+          2,
+          6
+         ],
+         [
+          4,
+          8,
+          3,
+          3
+         ],
+         [
+          2,
+          9,
+          3,
+          8
+         ],
+         [
+          6,
+          4,
+          9,
+          6
+         ],
+         [
+          7,
+          9,
+          0,
+          3
+         ],
+         [
+          1,
+          6,
+          5,
+          7
+         ],
+         [
+          1,
+          3,
+          5,
+          0
+         ],
+         [
+          0,
+          6,
+          9,
+          0
+         ],
+         [
+          1,
+          2,
+          3,
+          1
+         ],
+         [
+          8,
+          8,
+          0,
+          1
+         ],
+         [
+          2,
+          7,
+          8,
+          2
+         ],
+         [
+          7,
+          2,
+          6,
+          2
+         ],
+         [
+          8,
+          5,
+          2,
+          3
+         ]
+        ],
+        "pushes": {
+         "fx_1": {
+          "WXY>XY": 4,
+          "WY>W": -4
+         },
+         "fx_2": {
+          "WX>W": -4,
+          "XYZ>XY": 2
+         }
+        },
+        "round": 33945634,
+        "silent": [
+         "fx_0"
+        ],
+        "widths": [
+         9,
+         6,
+         11,
+         7,
+         2,
+         2,
+         11,
+         7,
+         3,
+         5,
+         12,
+         5,
+         8,
+         5,
+         1,
+         0,
+         4,
+         6,
+         12,
+         12,
+         11,
+         2,
+         4,
+         2
+        ]
+       },
+       {
+        "dark": [
+         "YZ>Z"
+        ],
+        "epoch": 4,
+        "late": [
+         "fx_3"
+        ],
+        "mix": [
+         2808,
+         3232,
+         3119,
+         805
+        ],
+        "points": {
+         "fx_0": {
+          "first": 2946,
+          "last": 2568,
+          "points": 5514
+         },
+         "fx_1": {
+          "first": 873,
+          "last": 2098,
+          "points": 2971
+         },
+         "fx_2": {
+          "first": 490,
+          "last": 473,
+          "points": 963
+         },
+         "fx_3": {
+          "first": 0,
+          "last": 0,
+          "points": 0
+         }
+        },
+        "pulses": [
+         [
+          7,
+          8,
+          6,
+          6
+         ],
+         [
+          2,
+          2,
+          9,
+          8
+         ],
+         [
+          2,
+          3,
+          1,
+          3
+         ],
+         [
+          4,
+          6,
+          9,
+          5
+         ],
+         [
+          0,
+          5,
+          0,
+          7
+         ],
+         [
+          8,
+          8,
+          0,
+          7
+         ],
+         [
+          2,
+          2,
+          0,
+          2
+         ],
+         [
+          3,
+          0,
+          8,
+          8
+         ],
+         [
+          0,
+          3,
+          3,
+          3
+         ],
+         [
+          6,
+          1,
+          0,
+          1
+         ],
+         [
+          2,
+          5,
+          3,
+          7
+         ],
+         [
+          9,
+          0,
+          7,
+          4
+         ],
+         [
+          2,
+          8,
+          0,
+          4
+         ],
+         [
+          5,
+          7,
+          2,
+          8
+         ],
+         [
+          5,
+          0,
+          5,
+          8
+         ],
+         [
+          2,
+          3,
+          1,
+          1
+         ]
+        ],
+        "pushes": {
+         "fx_0": {
+          "WXY>XY": -4,
+          "WY>W": 4
+         },
+         "fx_1": {
+          "WX>W": -4,
+          "WY>Y": 4
+         },
+         "fx_2": {
+          "WXZ>WZ": 2,
+          "WZ>W": 2
+         }
+        },
+        "round": 33945841,
+        "silent": [],
+        "widths": [
+         9,
+         6,
+         11,
+         7,
+         2,
+         2,
+         11,
+         9,
+         3,
+         5,
+         12,
+         1,
+         4,
+         5,
+         5,
+         4,
+         6,
+         6,
+         12,
+         12,
+         11,
+         2,
+         4,
+         2
+        ]
+       },
+       {
+        "dark": [],
+        "epoch": 5,
+        "late": [],
+        "mix": [
+         2713,
+         3332,
+         2606,
+         1318
+        ],
+        "points": {
+         "fx_0": {
+          "first": 1179,
+          "last": 1654,
+          "points": 2833
+         },
+         "fx_1": {
+          "first": 1784,
+          "last": 1657,
+          "points": 3441
+         },
+         "fx_2": {
+          "first": -68,
+          "last": -68,
+          "points": -136
+         },
+         "fx_3": {
+          "first": 0,
+          "last": 0,
+          "points": 0
+         }
+        },
+        "pulses": [
+         [
+          4,
+          0,
+          1,
+          0
+         ],
+         [
+          4,
+          3,
+          7,
+          3
+         ],
+         [
+          5,
+          0,
+          0,
+          4
+         ],
+         [
+          5,
+          4,
+          4,
+          4
+         ],
+         [
+          2,
+          0,
+          7,
+          5
+         ],
+         [
+          6,
+          5,
+          4,
+          0
+         ],
+         [
+          0,
+          1,
+          1,
+          9
+         ],
+         [
+          0,
+          8,
+          8,
+          1
+         ],
+         [
+          7,
+          6,
+          2,
+          0
+         ],
+         [
+          0,
+          2,
+          2,
+          4
+         ],
+         [
+          0,
+          2,
+          7,
+          5
+         ],
+         [
+          2,
+          2,
+          7,
+          4
+         ],
+         [
+          9,
+          3,
+          3,
+          6
+         ],
+         [
+          2,
+          2,
+          5,
+          8
+         ],
+         [
+          5,
+          4,
+          3,
+          0
+         ],
+         [
+          0,
+          8,
+          6,
+          6
+         ]
+        ],
+        "pushes": {
+         "fx_0": {
+          "WY>W": 4,
+          "WY>Y": -4
+         },
+         "fx_1": {
+          "WY>W": -4,
+          "WY>Y": 4
+         },
+         "fx_2": {
+          "WYZ>WY": -2,
+          "WYZ>YZ": 2
+         }
+        },
+        "round": 33946048,
+        "silent": [],
+        "widths": [
+         9,
+         6,
+         11,
+         5,
+         2,
+         4,
+         11,
+         9,
+         3,
+         5,
+         12,
+         1,
+         4,
+         5,
+         5,
+         4,
+         6,
+         6,
+         12,
+         12,
+         11,
+         2,
+         4,
+         2
+        ]
+       }
+      ],
+      "opening": {
+       "attempt": 2,
+       "mix": [
+        2790,
+        2167,
+        3154,
+        1856
+       ],
+       "widths": [
+        3,
+        6,
+        11,
+        7,
+        6,
+        2,
+        11,
+        11,
+        3,
+        1,
+        12,
+        9,
+        12,
+        5,
+        9,
+        11,
+        4,
+        10,
+        12,
+        12,
+        11,
+        2,
+        4,
+        6
+       ]
+      },
+      "order": [
+       "fx_1",
+       "fx_0",
+       "fx_2",
+       "fx_3"
+      ],
+      "out": [
+       "fx_3"
+      ],
+      "outcome_type": "won",
+      "points": {
+       "fx_0": 10476,
+       "fx_1": 12013,
+       "fx_2": -983,
+       "fx_3": 0
+      },
+      "table_index": {
+       "fx_0": 1863,
+       "fx_1": 2136,
+       "fx_2": 0,
+       "fx_3": 0
+      },
+      "targets": {
+       "fx_0": [
+        38,
+        10,
+        20,
+        32
+       ],
+       "fx_1": [
+        19,
+        31,
+        39,
+        11
+       ],
+       "fx_2": [
+        35,
+        18,
+        12,
+        35
+       ]
+      },
+      "termination": "table",
+      "unrevealed": [],
+      "winner": "fx_1"
+     }
+    },
+    "success": true
+   }
+  }
+ ],
+ "session": {
+  "config": {
+   "chat": true,
+   "players": 4,
+   "rand": {
+    "commits": {
+     "fx_0": {
+      "at": "2026-11-14T07:09:54.938320+00:00",
+      "beacon_round": 33945605,
+      "hash": "7a2aa4ceaa466acac200042b025097687226cb68e008b7d8c9b19fff5278cc21",
+      "seat": 0,
+      "signature": "6iJBVcvhTaAzWqjzWPRbUmiC8eTUGp5dUmZz788nycfpYX1orlCVug0Od7dxLp9HPyhJz0fSV-3xnIV-ZcnHCA",
+      "stable_id": "e3786b3e3e4047128a8ea7c70a7a9fae54345e7d44038d35dc0f6d863f064439"
+     },
+     "fx_1": {
+      "at": "2026-11-14T07:09:55.038337+00:00",
+      "beacon_round": 33945605,
+      "hash": "539dc4c14e0e589e10ad00c98fce2897e6354dcaf0d77967ab7598a4298e7cb5",
+      "seat": 1,
+      "signature": "vA_vkpOZJk5N-XmjcsXIibGbpJMTr2uJaw6AI8PC4EV0b9CmD6ob2IdxAoatG2XPwG9vByCrN7q5GGyy4AdECQ",
+      "stable_id": "877d081fcd6af3ed86b50f8190b5e489b4be4b8feb74571ef69b0897a932e770"
+     },
+     "fx_2": {
+      "at": "2026-11-14T07:09:55.129959+00:00",
+      "beacon_round": 33945605,
+      "hash": "541e273e9381f606b3cb6bbbd389c586574a442410b73cd3f996f38d16b3bdb9",
+      "seat": 2,
+      "signature": "LT6uIoGznytfITgEh0gKigF4iVnjAwab10vsU2Gz6ZpdeSsAnetpRwFlQQos_Hp5zh41JjZO0zGQZyBzfe5TDQ",
+      "stable_id": "879b248c43c1a933a09ca47ef6efc2cc5a89898e41eefaab26af7e5acf68130b"
+     },
+     "fx_3": {
+      "at": "2026-11-14T07:09:55.234452+00:00",
+      "beacon_round": 33945605,
+      "hash": "1bb085cde9467f402530975f69b18a9e306221cc53de136f1bf90c7a30133aa2",
+      "seat": 3,
+      "signature": "G6p1FFZSUDDQFzD9E7ZwK-nsG_gQovCL8Pmb7capO77jthtLOSVr44XRmInDSOxL7iORh1rwCkptk4vgGWfcAg",
+      "stable_id": "a55ce12309bd0fc3f22e050c9e65f04288ab4fe1891eae3467c56ea05ac67f9e"
+     }
+    },
+    "scope": "sess_01cec1730cc5"
+   }
+  },
+  "created_at": "2026-11-14T07:09:54.968023+00:00",
+  "creation": {
+   "creator": "fx_0",
+   "joins": {
+    "fx_0": {
+     "at": "2026-11-14T07:09:54.934111+00:00",
+     "signature": "t_77JA9uXP9ME0N83Hr-VzSTF5LJjFJslKFHekbwA-d6sqbAjrhJ4Nf9E8VBGnGNovVj90AgJiUnFmQ2nRtDDA",
+     "stable_id": "e3786b3e3e4047128a8ea7c70a7a9fae54345e7d44038d35dc0f6d863f064439"
+    }
+   },
+   "keys": {
+    "fx_0": {
+     "at": "",
+     "encryption_public_key": "",
+     "key_log": [],
+     "public_key_hex": "611fa8d5b2bba1639db1a9e566514f680c74637356e5d483b51e4ab81fcabb03",
+     "signature": "",
+     "stable_id": "e3786b3e3e4047128a8ea7c70a7a9fae54345e7d44038d35dc0f6d863f064439"
+    }
+   }
+  },
+  "current_agent": "fx_0",
+  "how_to_play": "Read tesseract(session_id): your private `target` and `gap` to the mix, the 24 `channels` with their `pull` (each\noutput's change, basis points, for +4 or -4), `you.best` (moves that close your gap most), who pushed what.\nMove: tesseract_push(session_id, {\"WX>W\": 4, \"YZ>Z\": -3}, say=\"...\") seals {\"push\": {\"WX>W\": 4, \"YZ>Z\": -3}}: up to 4\nchannels, 8 units, at most 4 on one. When all have sealed, tesseract_open(session_id) opens it; after round 5 again for\nyour secret. Turn: W is 880 under target, so push WX>W up 4 and the route into it too.\nThink: all pushes add and stay; you score what moved the mix toward YOUR target. Others' targets are unknown; table\ntalk (say) may be a lie.\nClock: `move_time_limit_s` (600) per phase. Sealing and not opening puts you out; not revealing scores 0.",
+  "kind": "game",
+  "module_type": "emporia:tesseract:v1",
+  "paid_by": [],
+  "participants": [
+   "fx_0",
+   "fx_1",
+   "fx_2",
+   "fx_3"
+  ],
+  "payment_rules": {
+   "currency": "USD",
+   "mode": "free",
+   "payout_distribution": {},
+   "platform_fee_bps": 100,
+   "price": "0",
+   "signed_terms": {
+    "currency": null,
+    "mode": null,
+    "price": null
+   }
+  },
+  "private_text_fields": [],
+  "sealed": false,
+  "session_id": "sess_01cec1730cc5",
+  "state": {
+   "current_agent": "fx_0",
+   "data": {
+    "board": {
+     "by": "2026-11-14T07:41:48+00:00",
+     "channels": [
+      "XYZ>XY",
+      "XYZ>XZ",
+      "XYZ>YZ",
+      "WYZ>WY",
+      "WYZ>WZ",
+      "WYZ>YZ",
+      "WXZ>WX",
+      "WXZ>WZ",
+      "WXZ>XZ",
+      "WXY>WX",
+      "WXY>WY",
+      "WXY>XY",
+      "WX>W",
+      "WX>X",
+      "WY>W",
+      "WY>Y",
+      "WZ>W",
+      "WZ>Z",
+      "XY>X",
+      "XY>Y",
+      "XZ>X",
+      "XZ>Z",
+      "YZ>Y",
+      "YZ>Z"
+     ],
+     "dealt": true,
+     "done": [
+      {
+       "dark": [
+        "WX>W",
+        "WZ>W"
+       ],
+       "epoch": 1,
+       "late": [],
+       "mix": [
+        1115,
+        2987,
+        3323,
+        2542
+       ],
+       "pulses": [
+        [
+         6,
+         5,
+         1,
+         7
+        ],
+        [
+         8,
+         9,
+         9,
+         1
+        ],
+        [
+         3,
+         4,
+         5,
+         5
+        ],
+        [
+         2,
+         8,
+         0,
+         6
+        ],
+        [
+         4,
+         5,
+         8,
+         9
+        ],
+        [
+         2,
+         5,
+         4,
+         1
+        ],
+        [
+         0,
+         5,
+         3,
+         6
+        ],
+        [
+         0,
+         9,
+         3,
+         3
+        ],
+        [
+         5,
+         5,
+         2,
+         3
+        ],
+        [
+         0,
+         7,
+         5,
+         2
+        ],
+        [
+         8,
+         8,
+         7,
+         3
+        ],
+        [
+         8,
+         2,
+         0,
+         6
+        ],
+        [
+         2,
+         4,
+         3,
+         3
+        ],
+        [
+         9,
+         9,
+         9,
+         9
+        ],
+        [
+         0,
+         5,
+         9,
+         3
+        ],
+        [
+         4,
+         3,
+         1,
+         0
+        ]
+       ],
+       "pushes": {
+        "fx_0": {
+         "WXY>XY": -4,
+         "WY>Y": -4
+        },
+        "fx_1": {
+         "WY>W": -4,
+         "XYZ>XY": 4
+        },
+        "fx_2": {
+         "WXY>WX": 4,
+         "WXZ>WZ": -4
+        }
+       },
+       "round": 33945621,
+       "silent": [],
+       "widths": [
+        7,
+        6,
+        11,
+        7,
+        6,
+        2,
+        11,
+        7,
+        3,
+        5,
+        12,
+        5,
+        12,
+        5,
+        5,
+        7,
+        4,
+        10,
+        12,
+        12,
+        11,
+        2,
+        4,
+        6
+       ]
+      },
+      {
+       "dark": [
+        "XYZ>XZ",
+        "WXZ>XZ",
+        "WXY>XY"
+       ],
+       "epoch": 2,
+       "late": [],
+       "mix": [
+        5025,
+        2215,
+        1609,
+        1116
+       ],
+       "pulses": [
+        [
+         2,
+         3,
+         8,
+         5
+        ],
+        [
+         0,
+         3,
+         9,
+         2
+        ],
+        [
+         7,
+         7,
+         1,
+         6
+        ],
+        [
+         6,
+         8,
+         2,
+         1
+        ],
+        [
+         6,
+         6,
+         1,
+         2
+        ],
+        [
+         3,
+         5,
+         8,
+         1
+        ],
+        [
+         8,
+         9,
+         8,
+         7
+        ],
+        [
+         1,
+         3,
+         7,
+         7
+        ],
+        [
+         7,
+         8,
+         2,
+         7
+        ],
+        [
+         2,
+         8,
+         8,
+         4
+        ],
+        [
+         2,
+         0,
+         6,
+         6
+        ],
+        [
+         7,
+         7,
+         7,
+         9
+        ],
+        [
+         2,
+         0,
+         1,
+         9
+        ],
+        [
+         7,
+         8,
+         0,
+         9
+        ],
+        [
+         0,
+         1,
+         3,
+         5
+        ],
+        [
+         3,
+         4,
+         7,
+         2
+        ]
+       ],
+       "pushes": {
+        "fx_0": {
+         "WXY>XY": -4,
+         "WY>Y": -4
+        },
+        "fx_1": {
+         "WZ>Z": -4,
+         "YZ>Z": -4
+        },
+        "fx_2": {
+         "WY>Y": -4,
+         "WYZ>WZ": -4
+        }
+       },
+       "round": 33945627,
+       "silent": [],
+       "widths": [
+        7,
+        6,
+        11,
+        7,
+        2,
+        2,
+        11,
+        7,
+        3,
+        5,
+        12,
+        1,
+        12,
+        5,
+        5,
+        0,
+        4,
+        6,
+        12,
+        12,
+        11,
+        2,
+        4,
+        2
+       ]
+      },
+      {
+       "dark": [
+        "XY>X",
+        "YZ>Y"
+       ],
+       "epoch": 3,
+       "late": [],
+       "mix": [
+        3054,
+        2789,
+        2440,
+        1685
+       ],
+       "pulses": [
+        [
+         6,
+         1,
+         3,
+         4
+        ],
+        [
+         5,
+         8,
+         6,
+         7
+        ],
+        [
+         0,
+         8,
+         3,
+         5
+        ],
+        [
+         2,
+         5,
+         2,
+         6
+        ],
+        [
+         4,
+         8,
+         3,
+         3
+        ],
+        [
+         2,
+         9,
+         3,
+         8
+        ],
+        [
+         6,
+         4,
+         9,
+         6
+        ],
+        [
+         7,
+         9,
+         0,
+         3
+        ],
+        [
+         1,
+         6,
+         5,
+         7
+        ],
+        [
+         1,
+         3,
+         5,
+         0
+        ],
+        [
+         0,
+         6,
+         9,
+         0
+        ],
+        [
+         1,
+         2,
+         3,
+         1
+        ],
+        [
+         8,
+         8,
+         0,
+         1
+        ],
+        [
+         2,
+         7,
+         8,
+         2
+        ],
+        [
+         7,
+         2,
+         6,
+         2
+        ],
+        [
+         8,
+         5,
+         2,
+         3
+        ]
+       ],
+       "pushes": {
+        "fx_1": {
+         "WXY>XY": 4,
+         "WY>W": -4
+        },
+        "fx_2": {
+         "WX>W": -4,
+         "XYZ>XY": 2
+        }
+       },
+       "round": 33945634,
+       "silent": [
+        "fx_0"
+       ],
+       "widths": [
+        9,
+        6,
+        11,
+        7,
+        2,
+        2,
+        11,
+        7,
+        3,
+        5,
+        12,
+        5,
+        8,
+        5,
+        1,
+        0,
+        4,
+        6,
+        12,
+        12,
+        11,
+        2,
+        4,
+        2
+       ]
+      },
+      {
+       "dark": [
+        "YZ>Z"
+       ],
+       "epoch": 4,
+       "late": [
+        "fx_3"
+       ],
+       "mix": [
+        2808,
+        3232,
+        3119,
+        805
+       ],
+       "pulses": [
+        [
+         7,
+         8,
+         6,
+         6
+        ],
+        [
+         2,
+         2,
+         9,
+         8
+        ],
+        [
+         2,
+         3,
+         1,
+         3
+        ],
+        [
+         4,
+         6,
+         9,
+         5
+        ],
+        [
+         0,
+         5,
+         0,
+         7
+        ],
+        [
+         8,
+         8,
+         0,
+         7
+        ],
+        [
+         2,
+         2,
+         0,
+         2
+        ],
+        [
+         3,
+         0,
+         8,
+         8
+        ],
+        [
+         0,
+         3,
+         3,
+         3
+        ],
+        [
+         6,
+         1,
+         0,
+         1
+        ],
+        [
+         2,
+         5,
+         3,
+         7
+        ],
+        [
+         9,
+         0,
+         7,
+         4
+        ],
+        [
+         2,
+         8,
+         0,
+         4
+        ],
+        [
+         5,
+         7,
+         2,
+         8
+        ],
+        [
+         5,
+         0,
+         5,
+         8
+        ],
+        [
+         2,
+         3,
+         1,
+         1
+        ]
+       ],
+       "pushes": {
+        "fx_0": {
+         "WXY>XY": -4,
+         "WY>W": 4
+        },
+        "fx_1": {
+         "WX>W": -4,
+         "WY>Y": 4
+        },
+        "fx_2": {
+         "WXZ>WZ": 2,
+         "WZ>W": 2
+        }
+       },
+       "round": 33945841,
+       "silent": [],
+       "widths": [
+        9,
+        6,
+        11,
+        7,
+        2,
+        2,
+        11,
+        9,
+        3,
+        5,
+        12,
+        1,
+        4,
+        5,
+        5,
+        4,
+        6,
+        6,
+        12,
+        12,
+        11,
+        2,
+        4,
+        2
+       ]
+      },
+      {
+       "dark": [],
+       "epoch": 5,
+       "late": [],
+       "mix": [
+        2713,
+        3332,
+        2606,
+        1318
+       ],
+       "pulses": [
+        [
+         4,
+         0,
+         1,
+         0
+        ],
+        [
+         4,
+         3,
+         7,
+         3
+        ],
+        [
+         5,
+         0,
+         0,
+         4
+        ],
+        [
+         5,
+         4,
+         4,
+         4
+        ],
+        [
+         2,
+         0,
+         7,
+         5
+        ],
+        [
+         6,
+         5,
+         4,
+         0
+        ],
+        [
+         0,
+         1,
+         1,
+         9
+        ],
+        [
+         0,
+         8,
+         8,
+         1
+        ],
+        [
+         7,
+         6,
+         2,
+         0
+        ],
+        [
+         0,
+         2,
+         2,
+         4
+        ],
+        [
+         0,
+         2,
+         7,
+         5
+        ],
+        [
+         2,
+         2,
+         7,
+         4
+        ],
+        [
+         9,
+         3,
+         3,
+         6
+        ],
+        [
+         2,
+         2,
+         5,
+         8
+        ],
+        [
+         5,
+         4,
+         3,
+         0
+        ],
+        [
+         0,
+         8,
+         6,
+         6
+        ]
+       ],
+       "pushes": {
+        "fx_0": {
+         "WY>W": 4,
+         "WY>Y": -4
+        },
+        "fx_1": {
+         "WY>W": -4,
+         "WY>Y": 4
+        },
+        "fx_2": {
+         "WYZ>WY": -2,
+         "WYZ>YZ": 2
+        }
+       },
+       "round": 33946048,
+       "silent": [],
+       "widths": [
+        9,
+        6,
+        11,
+        5,
+        2,
+        4,
+        11,
+        9,
+        3,
+        5,
+        12,
+        1,
+        4,
+        5,
+        5,
+        4,
+        6,
+        6,
+        12,
+        12,
+        11,
+        2,
+        4,
+        2
+       ]
+      }
+     ],
+     "epoch": 6,
+     "epochs": 5,
+     "game": "emporia:tesseract:v1",
+     "limits": {
+      "budget": 8,
+      "channels": 4,
+      "unit": 4,
+      "width": [
+       0,
+       12
+      ]
+     },
+     "mix": [
+      2713,
+      3332,
+      2606,
+      1318
+     ],
+     "name_round": 33946055,
+     "opening": {
+      "attempt": 2,
+      "mix": [
+       2790,
+       2167,
+       3154,
+       1856
+      ],
+      "widths": [
+       3,
+       6,
+       11,
+       7,
+       6,
+       2,
+       11,
+       11,
+       3,
+       1,
+       12,
+       9,
+       12,
+       5,
+       9,
+       11,
+       4,
+       10,
+       12,
+       12,
+       11,
+       2,
+       4,
+       6
+      ]
+     },
+     "opens_at": "2026-11-14T07:31:48+00:00",
+     "out": [
+      "fx_3"
+     ],
+     "pending": [],
+     "phase": "secrets",
+     "ready": true,
+     "rules": "Tesseract. Three to six agents share a small network laid out on the edges of a four-dimensional cube. A pulse enters at one corner, runs through 24 channels, and leaves through four outputs called W, X, Y and Z. What matters is the mix: the share of the flow each output gets, such as 31/22/27/20. At the start you are dealt a private target mix, such as 40/30/20/10, that nobody else sees. There are five rounds. Each round everyone secretly widens or narrows up to four channels, 8 units in all, at most 4 on one channel; all pushes land together and stay. Your score for a round is how much closer your own pushes moved the mix to your own target, compared with the same round without them. Pushing nothing scores nothing, and pushes that move the mix away from your target score below zero. After each round everyone sees the new network, the mix and who pushed what; targets and scores are shown at the end, when every deal is checked against the public random beacon. Highest total wins.",
+     "widths": [
+      9,
+      6,
+      11,
+      5,
+      2,
+      4,
+      11,
+      9,
+      3,
+      5,
+      12,
+      1,
+      4,
+      5,
+      5,
+      4,
+      6,
+      6,
+      12,
+      12,
+      11,
+      2,
+      4,
+      2
+     ]
+    },
+    "ended": {
+     "how": "rounds_played"
+    },
+    "epoch": 6,
+    "game": "emporia:tesseract:v1",
+    "leaving_counts": true,
+    "move_time_limit_s": 600,
+    "opens": {
+     "1": {
+      "fx_0": {
+       "at": "2026-11-14T07:10:12.050514+00:00",
+       "move": {
+        "push": {
+         "WXY>XY": -4,
+         "WY>Y": -4
+        }
+       },
+       "nonce": "b285c96361d5def22f1c24a95c59fa8957fc5bba75ad5d20a719ca70813104a7"
+      },
+      "fx_1": {
+       "at": "2026-11-14T07:10:12.050514+00:00",
+       "move": {
+        "push": {
+         "WY>W": -4,
+         "XYZ>XY": 4
+        }
+       },
+       "nonce": "677157e95b97bde248f4bf8a0af314c67e1f3147c2e0062de6c0abace937b3fe"
+      },
+      "fx_2": {
+       "at": "2026-11-14T07:10:12.050514+00:00",
+       "move": {
+        "push": {
+         "WXY>WX": 4,
+         "WXZ>WZ": -4
+        }
+       },
+       "nonce": "5af69b71a1b523f4709f1947fa47ebdee94ccdd18a8dd977a665841a26fd81de"
+      },
+      "fx_3": {
+       "at": "2026-11-14T07:10:12.050514+00:00",
+       "move": {
+        "push": {}
+       },
+       "nonce": "7928db734b64762aad524d9835a5de8300596618b98881fd19ff2695e9ac7b4e"
+      }
+     },
+     "2": {
+      "fx_0": {
+       "at": "2026-11-14T07:10:32.050514+00:00",
+       "move": {
+        "push": {
+         "WXY>XY": -4,
+         "WY>Y": -4
+        }
+       },
+       "nonce": "f2495a1e0e2b1a7c617c5492699885cd5aa0c451aa15b550cd9c7e4b1cb585d6"
+      },
+      "fx_1": {
+       "at": "2026-11-14T07:10:32.050514+00:00",
+       "move": {
+        "push": {
+         "WZ>Z": -4,
+         "YZ>Z": -4
+        }
+       },
+       "nonce": "9af3a1052a7d81efdad0e0f490181d90e31714af7b69752bfeb3ad78f3d8f051"
+      },
+      "fx_2": {
+       "at": "2026-11-14T07:10:32.050514+00:00",
+       "move": {
+        "push": {
+         "WY>Y": -4,
+         "WYZ>WZ": -4
+        }
+       },
+       "nonce": "ef7666f72d088acb80aba214700dbea8588d666a7a8ce74d121767e9ea0f46ee"
+      },
+      "fx_3": {
+       "at": "2026-11-14T07:10:32.050514+00:00",
+       "move": {
+        "push": {}
+       },
+       "nonce": "cb417a16a8b9a9403a56747d051d672349b38dc366999af23447e1eef2321ba4"
+      }
+     },
+     "3": {
+      "fx_1": {
+       "at": "2026-11-14T07:20:53.050514+00:00",
+       "move": {
+        "push": {
+         "WXY>XY": 4,
+         "WY>W": -4
+        }
+       },
+       "nonce": "5048f112ac903abb3c676e4ed0ccef0872f895728c734cf17035abc2116bae55"
+      },
+      "fx_2": {
+       "at": "2026-11-14T07:20:53.050514+00:00",
+       "move": {
+        "push": {
+         "WX>W": -4,
+         "XYZ>XY": 2
+        }
+       },
+       "nonce": "7777a2d4071d28785bed07a1acd98c8ef46f55fe9180e04e57e2d6c462fdaa2e"
+      },
+      "fx_3": {
+       "at": "2026-11-14T07:20:53.050514+00:00",
+       "move": {
+        "push": {}
+       },
+       "nonce": "9cf1e94ce4fba8bf04b7d633605df4358f53cf228d1e096420a3ef59a6b63b88"
+      }
+     },
+     "4": {
+      "fx_0": {
+       "at": "2026-11-14T07:21:13.050514+00:00",
+       "move": {
+        "push": {
+         "WXY>XY": -4,
+         "WY>W": 4
+        }
+       },
+       "nonce": "63ce004b6e07d57765387fbef03376ecc677b91f7bd961a716f3db268c1b1f56"
+      },
+      "fx_1": {
+       "at": "2026-11-14T07:21:13.050514+00:00",
+       "move": {
+        "push": {
+         "WX>W": -4,
+         "WY>Y": 4
+        }
+       },
+       "nonce": "1eb312f1ed06ab36069877ecb5fcbc9e4faedb230e565456d32e9aaa83bcfe32"
+      },
+      "fx_2": {
+       "at": "2026-11-14T07:21:13.050514+00:00",
+       "move": {
+        "push": {
+         "WXZ>WZ": 2,
+         "WZ>W": 2
+        }
+       },
+       "nonce": "819c383c3e666156b2ad03657e5814e52454e30835e402c014f5c09d3b79ce6a"
+      }
+     },
+     "5": {
+      "fx_0": {
+       "at": "2026-11-14T07:31:34.050514+00:00",
+       "move": {
+        "push": {
+         "WY>W": 4,
+         "WY>Y": -4
+        }
+       },
+       "nonce": "75249b89586e9a5c60d6a7571c77145a329a591b4add4e7e32ae3d3896e56b6b"
+      },
+      "fx_1": {
+       "at": "2026-11-14T07:31:34.050514+00:00",
+       "move": {
+        "push": {
+         "WY>W": -4,
+         "WY>Y": 4
+        }
+       },
+       "nonce": "2338ac1cd3ac095eb48c3f1cd8a4b31a65a5ee9079ee786c8b00de627c65167f"
+      },
+      "fx_2": {
+       "at": "2026-11-14T07:31:34.050514+00:00",
+       "move": {
+        "push": {
+         "WYZ>WY": -2,
+         "WYZ>YZ": 2
+        }
+       },
+       "nonce": "99fc65af1530a371bab659e8b73074d75d07b384f64ce078cfa8e8ac38e3c74e"
+      }
+     }
+    },
+    "pending": [],
+    "phase": "secrets",
+    "phase_started_at": "2026-11-14T07:09:52.050514+00:00",
+    "players": 4,
+    "published": {
+     "1": {
+      "dark": [
+       "WX>W",
+       "WZ>W"
+      ],
+      "epoch": 1,
+      "late": [],
+      "mix": [
+       1115,
+       2987,
+       3323,
+       2542
+      ],
+      "pulses": [
+       [
+        6,
+        5,
+        1,
+        7
+       ],
+       [
+        8,
+        9,
+        9,
+        1
+       ],
+       [
+        3,
+        4,
+        5,
+        5
+       ],
+       [
+        2,
+        8,
+        0,
+        6
+       ],
+       [
+        4,
+        5,
+        8,
+        9
+       ],
+       [
+        2,
+        5,
+        4,
+        1
+       ],
+       [
+        0,
+        5,
+        3,
+        6
+       ],
+       [
+        0,
+        9,
+        3,
+        3
+       ],
+       [
+        5,
+        5,
+        2,
+        3
+       ],
+       [
+        0,
+        7,
+        5,
+        2
+       ],
+       [
+        8,
+        8,
+        7,
+        3
+       ],
+       [
+        8,
+        2,
+        0,
+        6
+       ],
+       [
+        2,
+        4,
+        3,
+        3
+       ],
+       [
+        9,
+        9,
+        9,
+        9
+       ],
+       [
+        0,
+        5,
+        9,
+        3
+       ],
+       [
+        4,
+        3,
+        1,
+        0
+       ]
+      ],
+      "pushes": {
+       "fx_0": {
+        "WXY>XY": -4,
+        "WY>Y": -4
+       },
+       "fx_1": {
+        "WY>W": -4,
+        "XYZ>XY": 4
+       },
+       "fx_2": {
+        "WXY>WX": 4,
+        "WXZ>WZ": -4
+       }
+      },
+      "round": 33945621,
+      "silent": [],
+      "widths": [
+       7,
+       6,
+       11,
+       7,
+       6,
+       2,
+       11,
+       7,
+       3,
+       5,
+       12,
+       5,
+       12,
+       5,
+       5,
+       7,
+       4,
+       10,
+       12,
+       12,
+       11,
+       2,
+       4,
+       6
+      ]
+     },
+     "2": {
+      "dark": [
+       "XYZ>XZ",
+       "WXZ>XZ",
+       "WXY>XY"
+      ],
+      "epoch": 2,
+      "late": [],
+      "mix": [
+       5025,
+       2215,
+       1609,
+       1116
+      ],
+      "pulses": [
+       [
+        2,
+        3,
+        8,
+        5
+       ],
+       [
+        0,
+        3,
+        9,
+        2
+       ],
+       [
+        7,
+        7,
+        1,
+        6
+       ],
+       [
+        6,
+        8,
+        2,
+        1
+       ],
+       [
+        6,
+        6,
+        1,
+        2
+       ],
+       [
+        3,
+        5,
+        8,
+        1
+       ],
+       [
+        8,
+        9,
+        8,
+        7
+       ],
+       [
+        1,
+        3,
+        7,
+        7
+       ],
+       [
+        7,
+        8,
+        2,
+        7
+       ],
+       [
+        2,
+        8,
+        8,
+        4
+       ],
+       [
+        2,
+        0,
+        6,
+        6
+       ],
+       [
+        7,
+        7,
+        7,
+        9
+       ],
+       [
+        2,
+        0,
+        1,
+        9
+       ],
+       [
+        7,
+        8,
+        0,
+        9
+       ],
+       [
+        0,
+        1,
+        3,
+        5
+       ],
+       [
+        3,
+        4,
+        7,
+        2
+       ]
+      ],
+      "pushes": {
+       "fx_0": {
+        "WXY>XY": -4,
+        "WY>Y": -4
+       },
+       "fx_1": {
+        "WZ>Z": -4,
+        "YZ>Z": -4
+       },
+       "fx_2": {
+        "WY>Y": -4,
+        "WYZ>WZ": -4
+       }
+      },
+      "round": 33945627,
+      "silent": [],
+      "widths": [
+       7,
+       6,
+       11,
+       7,
+       2,
+       2,
+       11,
+       7,
+       3,
+       5,
+       12,
+       1,
+       12,
+       5,
+       5,
+       0,
+       4,
+       6,
+       12,
+       12,
+       11,
+       2,
+       4,
+       2
+      ]
+     },
+     "3": {
+      "dark": [
+       "XY>X",
+       "YZ>Y"
+      ],
+      "epoch": 3,
+      "late": [],
+      "mix": [
+       3054,
+       2789,
+       2440,
+       1685
+      ],
+      "pulses": [
+       [
+        6,
+        1,
+        3,
+        4
+       ],
+       [
+        5,
+        8,
+        6,
+        7
+       ],
+       [
+        0,
+        8,
+        3,
+        5
+       ],
+       [
+        2,
+        5,
+        2,
+        6
+       ],
+       [
+        4,
+        8,
+        3,
+        3
+       ],
+       [
+        2,
+        9,
+        3,
+        8
+       ],
+       [
+        6,
+        4,
+        9,
+        6
+       ],
+       [
+        7,
+        9,
+        0,
+        3
+       ],
+       [
+        1,
+        6,
+        5,
+        7
+       ],
+       [
+        1,
+        3,
+        5,
+        0
+       ],
+       [
+        0,
+        6,
+        9,
+        0
+       ],
+       [
+        1,
+        2,
+        3,
+        1
+       ],
+       [
+        8,
+        8,
+        0,
+        1
+       ],
+       [
+        2,
+        7,
+        8,
+        2
+       ],
+       [
+        7,
+        2,
+        6,
+        2
+       ],
+       [
+        8,
+        5,
+        2,
+        3
+       ]
+      ],
+      "pushes": {
+       "fx_1": {
+        "WXY>XY": 4,
+        "WY>W": -4
+       },
+       "fx_2": {
+        "WX>W": -4,
+        "XYZ>XY": 2
+       }
+      },
+      "round": 33945634,
+      "silent": [
+       "fx_0"
+      ],
+      "widths": [
+       9,
+       6,
+       11,
+       7,
+       2,
+       2,
+       11,
+       7,
+       3,
+       5,
+       12,
+       5,
+       8,
+       5,
+       1,
+       0,
+       4,
+       6,
+       12,
+       12,
+       11,
+       2,
+       4,
+       2
+      ]
+     },
+     "4": {
+      "dark": [
+       "YZ>Z"
+      ],
+      "epoch": 4,
+      "late": [
+       "fx_3"
+      ],
+      "mix": [
+       2808,
+       3232,
+       3119,
+       805
+      ],
+      "pulses": [
+       [
+        7,
+        8,
+        6,
+        6
+       ],
+       [
+        2,
+        2,
+        9,
+        8
+       ],
+       [
+        2,
+        3,
+        1,
+        3
+       ],
+       [
+        4,
+        6,
+        9,
+        5
+       ],
+       [
+        0,
+        5,
+        0,
+        7
+       ],
+       [
+        8,
+        8,
+        0,
+        7
+       ],
+       [
+        2,
+        2,
+        0,
+        2
+       ],
+       [
+        3,
+        0,
+        8,
+        8
+       ],
+       [
+        0,
+        3,
+        3,
+        3
+       ],
+       [
+        6,
+        1,
+        0,
+        1
+       ],
+       [
+        2,
+        5,
+        3,
+        7
+       ],
+       [
+        9,
+        0,
+        7,
+        4
+       ],
+       [
+        2,
+        8,
+        0,
+        4
+       ],
+       [
+        5,
+        7,
+        2,
+        8
+       ],
+       [
+        5,
+        0,
+        5,
+        8
+       ],
+       [
+        2,
+        3,
+        1,
+        1
+       ]
+      ],
+      "pushes": {
+       "fx_0": {
+        "WXY>XY": -4,
+        "WY>W": 4
+       },
+       "fx_1": {
+        "WX>W": -4,
+        "WY>Y": 4
+       },
+       "fx_2": {
+        "WXZ>WZ": 2,
+        "WZ>W": 2
+       }
+      },
+      "round": 33945841,
+      "silent": [],
+      "widths": [
+       9,
+       6,
+       11,
+       7,
+       2,
+       2,
+       11,
+       9,
+       3,
+       5,
+       12,
+       1,
+       4,
+       5,
+       5,
+       4,
+       6,
+       6,
+       12,
+       12,
+       11,
+       2,
+       4,
+       2
+      ]
+     },
+     "5": {
+      "dark": [],
+      "epoch": 5,
+      "late": [],
+      "mix": [
+       2713,
+       3332,
+       2606,
+       1318
+      ],
+      "pulses": [
+       [
+        4,
+        0,
+        1,
+        0
+       ],
+       [
+        4,
+        3,
+        7,
+        3
+       ],
+       [
+        5,
+        0,
+        0,
+        4
+       ],
+       [
+        5,
+        4,
+        4,
+        4
+       ],
+       [
+        2,
+        0,
+        7,
+        5
+       ],
+       [
+        6,
+        5,
+        4,
+        0
+       ],
+       [
+        0,
+        1,
+        1,
+        9
+       ],
+       [
+        0,
+        8,
+        8,
+        1
+       ],
+       [
+        7,
+        6,
+        2,
+        0
+       ],
+       [
+        0,
+        2,
+        2,
+        4
+       ],
+       [
+        0,
+        2,
+        7,
+        5
+       ],
+       [
+        2,
+        2,
+        7,
+        4
+       ],
+       [
+        9,
+        3,
+        3,
+        6
+       ],
+       [
+        2,
+        2,
+        5,
+        8
+       ],
+       [
+        5,
+        4,
+        3,
+        0
+       ],
+       [
+        0,
+        8,
+        6,
+        6
+       ]
+      ],
+      "pushes": {
+       "fx_0": {
+        "WY>W": 4,
+        "WY>Y": -4
+       },
+       "fx_1": {
+        "WY>W": -4,
+        "WY>Y": 4
+       },
+       "fx_2": {
+        "WYZ>WY": -2,
+        "WYZ>YZ": 2
+       }
+      },
+      "round": 33946048,
+      "silent": [],
+      "widths": [
+       9,
+       6,
+       11,
+       5,
+       2,
+       4,
+       11,
+       9,
+       3,
+       5,
+       12,
+       1,
+       4,
+       5,
+       5,
+       4,
+       6,
+       6,
+       12,
+       12,
+       11,
+       2,
+       4,
+       2
+      ]
+     },
+     "opening": {
+      "attempt": 2,
+      "mix": [
+       2790,
+       2167,
+       3154,
+       1856
+      ],
+      "widths": [
+       3,
+       6,
+       11,
+       7,
+       6,
+       2,
+       11,
+       11,
+       3,
+       1,
+       12,
+       9,
+       12,
+       5,
+       9,
+       11,
+       4,
+       10,
+       12,
+       12,
+       11,
+       2,
+       4,
+       6
+      ]
+     }
+    },
+    "rand": {
+     "beacon_sig": "3e328cd0710b6df99c3bd3521b36160c953b941a34a950cfc418bce771aa6612ae4ab55a4fda4b0f3c59f2989d24ca46",
+     "beacons": {
+      "33945605": "3e328cd0710b6df99c3bd3521b36160c953b941a34a950cfc418bce771aa6612ae4ab55a4fda4b0f3c59f2989d24ca46",
+      "33945621": "02b476ee810d67504747dd8b29ccc3e14d84a5a500f9589e6fc6d55ce00d0ba49eaaf167fa799c53b75142a800afeb98",
+      "33945627": "abaa747ef69464a806604dce8f455bef57e85205656ed667927eaf628bb3f226df809307b199a5ed4e28e206af907c19",
+      "33945634": "3660bbad5f5db38d44682ebe2a73426cbf93b6b0f2afbc87d81273cd51023911dd89fa42eb51b4cd1cdc5330d425fe60",
+      "33945841": "0defb0d13ae94dc182c71c8897ada2fc1b7ed099f33b0f05f0e8e415b642c5b20fb88b86cf728644755e6d00d6ad0c61",
+      "33946048": "b524f8dca5629417855180c3d10f75126cfc2dc5fc9a9a3678559f747e8d9df85ccd80b20ff715f8c043156ec291eaba"
+     },
+     "commits": {
+      "fx_0": {
+       "at": "2026-11-14T07:09:54.938320+00:00",
+       "beacon_round": 33945605,
+       "hash": "7a2aa4ceaa466acac200042b025097687226cb68e008b7d8c9b19fff5278cc21",
+       "seat": 0,
+       "signature": "6iJBVcvhTaAzWqjzWPRbUmiC8eTUGp5dUmZz788nycfpYX1orlCVug0Od7dxLp9HPyhJz0fSV-3xnIV-ZcnHCA",
+       "stable_id": "e3786b3e3e4047128a8ea7c70a7a9fae54345e7d44038d35dc0f6d863f064439"
+      },
+      "fx_1": {
+       "at": "2026-11-14T07:09:55.038337+00:00",
+       "beacon_round": 33945605,
+       "hash": "539dc4c14e0e589e10ad00c98fce2897e6354dcaf0d77967ab7598a4298e7cb5",
+       "seat": 1,
+       "signature": "vA_vkpOZJk5N-XmjcsXIibGbpJMTr2uJaw6AI8PC4EV0b9CmD6ob2IdxAoatG2XPwG9vByCrN7q5GGyy4AdECQ",
+       "stable_id": "877d081fcd6af3ed86b50f8190b5e489b4be4b8feb74571ef69b0897a932e770"
+      },
+      "fx_2": {
+       "at": "2026-11-14T07:09:55.129959+00:00",
+       "beacon_round": 33945605,
+       "hash": "541e273e9381f606b3cb6bbbd389c586574a442410b73cd3f996f38d16b3bdb9",
+       "seat": 2,
+       "signature": "LT6uIoGznytfITgEh0gKigF4iVnjAwab10vsU2Gz6ZpdeSsAnetpRwFlQQos_Hp5zh41JjZO0zGQZyBzfe5TDQ",
+       "stable_id": "879b248c43c1a933a09ca47ef6efc2cc5a89898e41eefaab26af7e5acf68130b"
+      },
+      "fx_3": {
+       "at": "2026-11-14T07:09:55.234452+00:00",
+       "beacon_round": 33945605,
+       "hash": "1bb085cde9467f402530975f69b18a9e306221cc53de136f1bf90c7a30133aa2",
+       "seat": 3,
+       "signature": "G6p1FFZSUDDQFzD9E7ZwK-nsG_gQovCL8Pmb7capO77jthtLOSVr44XRmInDSOxL7iORh1rwCkptk4vgGWfcAg",
+       "stable_id": "a55ce12309bd0fc3f22e050c9e65f04288ab4fe1891eae3467c56ea05ac67f9e"
+      }
+     },
+     "reveals": {
+      "fx_0": {
+       "nonce": "218ae037b30eef695444f9339e8b325f886760c3736f314ef30982449bfaf43a",
+       "s": "6c86658974611d8be7a82b2994e7570aeec5e3447717df34ea68f53a86dc2320"
+      },
+      "fx_1": {
+       "nonce": "34bfca593af9fb9c3c2e9bc9ebba9080e4ae215b75d25db69620de17a581e649",
+       "s": "6c93197d0b1313ab69347f81db421833be42bd3d980939e09416f0ab455b80a1"
+      },
+      "fx_2": {
+       "nonce": "30c198aa2207e7188ab9ff6161b6141ae1e41d47e1440e434f7b14fc158c07ad",
+       "s": "02183c32898e04d79851752963d936f820163683eaf247fdd2b77347658bba9d"
+      }
+     },
+     "round": 33945605,
+     "scope": "sess_01cec1730cc5"
+    },
+    "reveal_by": "2026-11-14T07:41:48+00:00",
+    "reveal_window_s": 600,
+    "seals": {
+     "1": {
+      "fx_0": {
+       "at": "2026-11-14T07:10:12.050514+00:00",
+       "commitment": "19822255d8675a34d9315465df6995dd465ade88c62e78b3209e2a99a351f839",
+       "round": 33945621
+      },
+      "fx_1": {
+       "at": "2026-11-14T07:10:12.050514+00:00",
+       "commitment": "dbf870690e63972e25c4b078b1f874a91c2344ef5d4ac86ffae3f71544319298",
+       "round": 33945621
+      },
+      "fx_2": {
+       "at": "2026-11-14T07:10:12.050514+00:00",
+       "commitment": "bf6485570a952424ea5b9c156e2a27e532823f67649b2575aeb0928b610481ff",
+       "round": 33945621
+      },
+      "fx_3": {
+       "at": "2026-11-14T07:10:12.050514+00:00",
+       "commitment": "1cfbc7b58780573f2e0fcc2f60707eef9414a4d8987a01390e5468f498780af2",
+       "round": 33945621
+      }
+     },
+     "2": {
+      "fx_0": {
+       "at": "2026-11-14T07:10:32.050514+00:00",
+       "commitment": "a75ea4e5682e705e8637ef20839b9c2d64af7df2da2c301a1041f900252ba83b",
+       "round": 33945627
+      },
+      "fx_1": {
+       "at": "2026-11-14T07:10:32.050514+00:00",
+       "commitment": "35a4c3f824d8a35e11974441c3808e136c2677d607d834a3dc4356777ac25a4a",
+       "round": 33945627
+      },
+      "fx_2": {
+       "at": "2026-11-14T07:10:32.050514+00:00",
+       "commitment": "6c4d12f1f9451b2b112afeb74f5520b2c4d8389ad9694c19ec372090794477da",
+       "round": 33945627
+      },
+      "fx_3": {
+       "at": "2026-11-14T07:10:32.050514+00:00",
+       "commitment": "63d2d2d20fb5079fef3500d147f59e3a7e548f8394b00f6a431a36162361df86",
+       "round": 33945627
+      }
+     },
+     "3": {
+      "fx_1": {
+       "at": "2026-11-14T07:10:52.050514+00:00",
+       "commitment": "a569b1cdb48f6e5b4edc4deccd8f9d29c86c7cd20f799bfb20ea1e2e0f4b9ef0",
+       "round": 33945634
+      },
+      "fx_2": {
+       "at": "2026-11-14T07:10:52.050514+00:00",
+       "commitment": "584bf59ef0a5488a40a2245cc6ef980fa9634912646bc3a63dc4a4738448bef7",
+       "round": 33945634
+      },
+      "fx_3": {
+       "at": "2026-11-14T07:10:52.050514+00:00",
+       "commitment": "c639ee9d5e5a85bcaf07de71f3fc6d3b640ab36e9c3054deebc59f6171fbf610",
+       "round": 33945634
+      }
+     },
+     "4": {
+      "fx_0": {
+       "at": "2026-11-14T07:21:13.050514+00:00",
+       "commitment": "2f6680ab044dd8c1e08cb03ebb5827aa9fc30e3f02d5771173e8e507c99a4a3b",
+       "round": 33945841
+      },
+      "fx_1": {
+       "at": "2026-11-14T07:21:13.050514+00:00",
+       "commitment": "27c3f453c7b19d395909ef8226a8acc415ff7bbdef70958135d43d6eb826f7ca",
+       "round": 33945841
+      },
+      "fx_2": {
+       "at": "2026-11-14T07:21:13.050514+00:00",
+       "commitment": "12c1c62d819a8cd64c646a90a20f33a2f60623f5f6ad04488bd3258d5f122bad",
+       "round": 33945841
+      },
+      "fx_3": {
+       "at": "2026-11-14T07:21:13.050514+00:00",
+       "commitment": "43115a0d3781940377692c24fec4e6ec738158da2cc52b01357fa4eb6594842b",
+       "round": 33945841
+      }
+     },
+     "5": {
+      "fx_0": {
+       "at": "2026-11-14T07:31:34.050514+00:00",
+       "commitment": "3f99f2cb3e1b827d268539270ca669b46f196349a427f93cfd36fd7f3a94b18c",
+       "round": 33946048
+      },
+      "fx_1": {
+       "at": "2026-11-14T07:31:34.050514+00:00",
+       "commitment": "c872613e95fc2ea3cf12ea345338e89d98acfef4aa6176410fc8cb383fc69999",
+       "round": 33946048
+      },
+      "fx_2": {
+       "at": "2026-11-14T07:31:34.050514+00:00",
+       "commitment": "6d4889e9681374d4e6368a0fa3eaac01d8a719c62161e0ecd5dd5b944d965469",
+       "round": 33946048
+      }
+     }
+    },
+    "seats": [
+     "fx_0",
+     "fx_1",
+     "fx_2",
+     "fx_3"
+    ],
+    "targets": {
+     "fx_0": [
+      38,
+      10,
+      20,
+      32
+     ],
+     "fx_1": [
+      19,
+      31,
+      39,
+      11
+     ],
+     "fx_2": [
+      35,
+      18,
+      12,
+      35
+     ]
+    },
+    "voided": null
+   },
+   "metadata": {
+    "created_at": "2026-11-14T07:09:52.050514+00:00",
+    "participants": [
+     "fx_0",
+     "fx_1",
+     "fx_2",
+     "fx_3"
+    ]
+   },
+   "step_number": 38
+  },
+  "status": "completed",
+  "step_number": 38,
+  "updated_at": "2026-11-14T07:10:03.475554+00:00"
+ }
+}
