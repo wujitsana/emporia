@@ -316,8 +316,9 @@ def _play_and_truth(rng, idx, numbering, mode, roster, window, sigs, call_ts, re
             totals[pick] += wt
     totals = {c: round(v, 9) for c, v in totals.items()}
     none_w = round(none_w, 9)
-    need = 1 if mode == "practice" else max(2, math.ceil(J / 2))
-    units_need = 1 if mode == "practice" else 2
+    thin = mode == "live" and J <= 2
+    need = 1 if mode == "practice" or thin else max(2, math.ceil(J / 2))
+    units_need = 1 if mode == "practice" or thin else 2
     if not cands:
         return ("no_candidates", None, {"totals": totals, "none": none_w})
     if len(counted) < need or len({u for u, _, _ in counted}) < units_need:

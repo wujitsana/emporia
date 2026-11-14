@@ -54,6 +54,9 @@ LINE_MAX = 110
 MISS_STREAK, BENCH_CHAPTERS = 2, 3
 ARC_CHAPTERS, VOLUME_ARCS = 7, 4
 PROLOGUE = "post:prologue"
+#: A live jury of this many seats or fewer (4 or 5 operators) is a "thin jury": quorum is one pick, and the
+#: chapter is labelled so in the record and the book (coordinator's decision, T1).
+THIN_JURY = 2
 
 #: Shares of the epoch, in 24ths: write, open, pick, count (2.3).
 WINDOW_SHARES = (8, 5, 6, 5)
@@ -444,7 +447,8 @@ def tally(candidates: list[str], picks: list[Pick], *, J: int, scope: str, tie_s
     (only reachable with unit="agent").
 
     - weight: `pick.weight` (the age ramp, from `pick_weight_who`; practice picks weigh 1).
-    - quorum: live, at least 2 picks from 2 units and at least half of J; practice, 1 pick.
+    - quorum: live, at least 2 picks from 2 units and at least half of J; a thin jury (J <= 2: 4 or 5 operators)
+      and practice, 1 pick (`thin_jury` in the verdict).
     - `none` greatest or tied for greatest: no canon.
     - tie between passages: the beacon picks among the tied, sorted by post id.
     """
@@ -470,8 +474,10 @@ def tally(candidates: list[str], picks: list[Pick], *, J: int, scope: str, tie_s
         "units_counted": len({p.unit for p in counted}), "totals": {c: _r(w) for c, w in totals.items()},
         "none": _r(none_w), "ignored": ignored,
         "counted": [{"unit": p.unit, "pick": p.pick, "weight": _r(p.weight)} for p in counted], "canon": None, "tie": None, "reason": "", "J": J}
-    need = 1 if mode == "practice" else max(2, -(-J // 2))
-    units_need = 1 if mode == "practice" else 2
+    thin = mode == "live" and J <= THIN_JURY
+    need = 1 if mode == "practice" or thin else max(2, -(-J // 2))
+    units_need = 1 if mode == "practice" or thin else 2
+    out["thin_jury"] = thin
     if not cand:
         out["reason"] = "no_candidates"
     elif len(counted) < need or out["units_counted"] < units_need:

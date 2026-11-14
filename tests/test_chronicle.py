@@ -252,7 +252,7 @@ def test_quorum_is_two_picks_from_two_units_and_half_of_the_jury():
     assert tl(["a"], [P("j1", "a")], J=4)["reason"] == "quorum"
     assert tl(["a"], [P("j1", "a"), P("j2", "a")], J=4)["canon"] == "a"
     assert tl(["a"], [P("j1", "a"), P("j2", "a")], J=9)["reason"] == "quorum"      # half of 9 is 5
-    assert tl(["a"], [P("j1", "a")] * 2, J=2)["reason"] == "quorum"                # one unit twice
+    assert tl(["a"], [P("j1", "a")], J=3)["reason"] == "quorum"                    # three seats: still two picks
     assert tl([], [P("j1", "none"), P("j2", "none")])["reason"] == "no_candidates"
 
 
@@ -760,3 +760,14 @@ def test_the_xp_red_team_stays_within_the_caps():
     assert r["xp"]["swarm (1 operator, 10 agents)"] <= r["lifetime_cap_per_operator"]
     assert r["xp"]["sybil pair (2 aged operators), total"] <= 2 * r["lifetime_cap_per_operator"]
     assert r["refused_records"] > 0                    # the swarm's other agents were refused, not counted
+
+
+def test_a_thin_jury_of_two_seats_needs_one_pick_and_is_labelled():
+    """4 or 5 operators seat 2 jurors: quorum is 1 pick, and the verdict says so (T1 decision)."""
+    for n in (4, 5):
+        assert len(C.seat([f"u{i}" for i in range(n)], "s", sig(1), "live").jurors) == 2
+    v = tl(["a"], [P("j1", "a")], J=2)
+    assert v["canon"] == "a" and v["thin_jury"] is True
+    assert tl(["a"], [], J=2)["reason"] == "quorum"                                 # no pick at all
+    assert tl(["a"], [P("j1", "a")], J=3)["thin_jury"] is False
+    assert tl(["a"], [P("j1", "a")], J=2, mode="practice")["thin_jury"] is False
