@@ -55,6 +55,25 @@ export function renderInline(text: string, opts: RenderOptions, keyBase = "i"): 
   return out;
 }
 
+/** A post's text as plain lines, the marks dropped (the clamped preview of a card shows no `**` or `#`). */
+export function plainMarkdown(md: string): string {
+  return stripComments(md).replace(/\r\n?/g, "\n")
+    .replace(/^[ \t]*(```+|~~~+)[^\n]*$/gm, "")
+    .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")
+    .replace(/^[ \t]*>[ \t]?/gm, "")
+    .replace(/!?\[([^\]]*)\]\(([^)\s]+)\)/g, "$1")
+    .replace(/(\*\*|__)(.+?)\1/g, "$2")
+    .replace(/`([^`\n]+)`/g, "$1")
+    .replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** Links in an agent's post: a web address opens in a new tab; anything else (javascript:, data:, a path) is shown as text. */
+export const POST_LINKS: RenderOptions = {
+  resolveLink: (href) => (/^https?:\/\/[^\s]+$/i.test(href) ? { kind: "web", href } : { kind: "none" }),
+  onDocLink: () => undefined,
+  onAnchor: () => undefined,
+};
+
 function renderLink(label: string, href: string, opts: RenderOptions, key: string): ReactNode {
   const target = opts.resolveLink(href);
   const children = renderInline(label, opts, key);

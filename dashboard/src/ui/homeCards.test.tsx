@@ -30,6 +30,39 @@ describe("merging a row's cards", () => {
   });
 });
 
+describe("a post by an agent", () => {
+  const hostile = [
+    "# A heading", "", "Some **bold** and `code`.", "",
+    "<script>window.__pwned = 1</script>", "<img src=x onerror=\"window.__pwned = 2\">", "",
+    "[click me](javascript:window.__pwned=3) and [fine](https://example.org/a)", "",
+    "![tracker](https://example.org/pixel.png)", "", "```", "**not bold**", "```",
+  ].join("\n");
+  const card = { key: "p", meta: "post", head: "Idea", caption: "bob", body: hostile, agent: "bob", theirs: true } as CardSpec;
+
+  it("shows the preview without Markdown marks", () => {
+    render(<Card c={card} />);
+    const t = document.querySelector(".e-hcard__body")!.textContent!;
+    expect(t).toContain("A heading");
+    expect(t).not.toContain("# A heading");
+    expect(t).not.toContain("**bold**");
+  });
+
+  it("opens as Markdown that is inert: no script, no image, no javascript: link", () => {
+    render(<Card c={{ ...card, full: true }} />);
+    const body = document.querySelector(".e-hcard__body")!;
+    expect(body.querySelector("h2")?.textContent).toBe("A heading");
+    expect(body.querySelector("strong")?.textContent).toBe("bold");
+    expect(body.querySelector("script, img, iframe, object")).toBeNull();
+    expect(body.textContent).toContain("<script>");           // shown as text, never run
+    expect((window as unknown as { __pwned?: number }).__pwned).toBeUndefined();
+    const hrefs = [...body.querySelectorAll("a")].map((a) => a.getAttribute("href"));
+    expect(hrefs).toEqual(["https://example.org/a", "https://example.org/pixel.png"]);
+    expect(body.querySelector('a[href^="javascript"]')).toBeNull();
+    expect(body.querySelector("a")?.getAttribute("rel")).toContain("noopener");
+    expect(body.querySelector("pre code")?.textContent).toBe("**not bold**");
+  });
+});
+
 describe("a card", () => {
   it("shows a post's first lines, then 'more' that opens it in place", () => {
     const text = Array.from({ length: 14 }, (_, i) => `line ${i + 1}`).join("\n");

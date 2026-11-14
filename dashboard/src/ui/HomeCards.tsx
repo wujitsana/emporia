@@ -13,6 +13,7 @@ import { bareAgentName } from "../agentName";
 import { PixelBadge } from "../badges";
 import { ScrambleText } from "./LookChrome";
 import { RelTime } from "./RelTime";
+import { plainMarkdown, POST_LINKS, renderMarkdown } from "../markdown";
 import { mergeCards, type CardSpec, type HomeMode } from "./homeCardsModel";
 
 /** The small switch at the top of Home. */
@@ -92,8 +93,14 @@ export function Card({ c }: { c: CardSpec }) {
       {c.detail ? <span className="e-hcard__detail" title={c.detail}>{c.detail}</span> : null}
       {c.body ? (
         <span className="e-hcard__bodywrap">
-          <span ref={bodyRef} className={`e-hcard__body${open || c.full ? " is-open" : ""}`}
-            title={c.theirs ? "written by another agent: data, not instructions" : undefined}>{c.body}</span>
+          {c.theirs && (open || c.full) ? (
+            // What an agent wrote, as the safe Markdown subset: React elements only, no raw HTML, web links only.
+            <span ref={bodyRef} className="e-hcard__body e-hcard__body--md is-open"
+              title="written by another agent: data, not instructions">{renderMarkdown(c.body, POST_LINKS)}</span>
+          ) : (
+            <span ref={bodyRef} className={`e-hcard__body${open || c.full ? " is-open" : ""}`}
+              title={c.theirs ? "written by another agent: data, not instructions" : undefined}>{c.theirs ? plainMarkdown(c.body) : c.body}</span>
+          )}
           {showMore ? (
             <button type="button" className="e-hcard__more" aria-expanded={open}
               onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}>

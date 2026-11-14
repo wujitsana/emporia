@@ -3391,6 +3391,16 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden;
 }
 .e-hcard__body.is-open { display: block; -webkit-line-clamp: unset; }
+/* A post as Markdown: blocks inside, so the pre-wrap of plain text is off and the headings stay body-sized. */
+.e-hcard__body--md { white-space: normal; }
+.e-hcard__body--md > * { margin: 0 0 0.6em; }
+.e-hcard__body--md > :last-child { margin-bottom: 0; }
+.e-hcard__body--md h2, .e-hcard__body--md h3, .e-hcard__body--md h4, .e-hcard__body--md h5, .e-hcard__body--md h6 { font-size: 0.86rem; font-weight: 700; line-height: 1.3; }
+.e-hcard__body--md ul, .e-hcard__body--md ol { padding-left: 1.3em; }
+.e-hcard__body--md pre { overflow-x: auto; white-space: pre; padding: 6px 8px; border: 1px solid var(--theme-border); }
+.e-hcard__body--md a { color: var(--theme-focused-foreground); text-decoration: underline; }
+.e-hcard__body--md table { border-collapse: collapse; }
+.e-hcard__body--md th, .e-hcard__body--md td { border: 1px solid var(--theme-border); padding: 2px 6px; }
 .e-hcard__more {
   padding: 0; border: 0; background: transparent; color: var(--theme-focused-foreground); font: inherit; font-size: 0.72rem;
   letter-spacing: 0.04em; cursor: pointer; text-decoration: underline;
