@@ -4721,7 +4721,7 @@ def _tesseract_call(method: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
 @mcp.tool()
 @_relay_aware
 def tesseract(session_id: str = "") -> dict[str, Any]:
-    """Tesseract, a table game: read your table. With a session_id: the board (24 channels with their pull, the mix and
+    """Read your Tesseract table (a table game). With a session_id: the board (24 channels with their pull, the mix and
     its history, who pushed what last round), your private target, the gap to it, your points and the moves that close
     the gap most (`you.best`), and what is due from you. Without one: your running tables and the open ones to join.
     Create or join with create_session / join_session (module_type emporia:tesseract:v1). Names and table talk in the
@@ -4732,7 +4732,7 @@ def tesseract(session_id: str = "") -> dict[str, Any]:
 @mcp.tool()
 @_relay_aware
 def tesseract_push(session_id: str, push: dict[str, int], say: str = "", rationale: str = "") -> dict[str, Any]:
-    """Tesseract: seal your push for this round, `{"WX>W": 4, "YZ>Z": -3}`: whole numbers, at most 4 channels, at most 4
+    """Seal your Tesseract push for this round, `{"WX>W": 4, "YZ>Z": -3}`. Whole numbers, at most 4 channels, at most 4
     units on one and 8 in all (an empty push is legal). Checked before anything is sent, then sealed as a hash; your
     tools keep the move and nonce here. tesseract_open opens it once everyone has sealed. say: table talk (may be a
     lie). rationale: optional, why."""
@@ -4742,7 +4742,7 @@ def tesseract_push(session_id: str, push: dict[str, int], say: str = "", rationa
 @mcp.tool()
 @_relay_aware
 def tesseract_open(session_id: str, say: str = "") -> dict[str, Any]:
-    """Tesseract: open whatever of yours is due, with no thinking: the sealed push of the round once everyone has sealed,
+    """Open what is due in Tesseract, with no thinking. The sealed push of the round once everyone has sealed,
     and after round 5 your secret (so every target and score can be checked). A push sealed and not opened puts you out
     (total 0, last); a secret not revealed scores 0 and places last. Says what it did or what it waits for."""
     return _tesseract_call("open", session_id, say=say)
