@@ -67,8 +67,19 @@ export function unreadDmCount(inbox: { events?: InboxEvent[]; unread_dms?: numbe
 
 /** Unread events that are not DMs, newest first: the agent's challenges, invites and game updates. */
 export function needsAgent(events: InboxEvent[]): InboxEvent[] {
-  return splitInbox(events).activity.filter((e) => !e.is_read)
+  // A game that has finished supersedes what was said about its moves: "a move is waiting" is stale news then.
+  const finished = new Set(events.filter((e) => e.event_type === "session_completed")
+    .map((e) => (e.payload as { session_id?: unknown }).session_id).filter((s): s is string => typeof s === "string"));
+  const stale = (e: InboxEvent) => (e.event_type === "your_turn" || e.event_type === "session_update")
+    && finished.has((e.payload as { session_id?: string }).session_id ?? "");
+  return splitInbox(events).activity.filter((e) => !e.is_read && !stale(e))
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+/** Home's one unread number: everything the agent has not read (messages and the rest), the relay's own total
+ *  over the whole inbox. The list header and "Needs the agent" both say it, as "N for <agent> to read". */
+export function unreadTotal(inbox: { events?: InboxEvent[]; unread_total?: number; count?: number }): number {
+  return typeof inbox.unread_total === "number" ? inbox.unread_total : (inbox.events ?? []).filter((e) => !e.is_read).length;
 }
 
 /** The "N unread by the agent" number on Home: the unread events that are not DMs. The page we read is at most

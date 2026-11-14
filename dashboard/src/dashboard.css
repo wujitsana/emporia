@@ -1565,7 +1565,7 @@ body.theme-light {
 .e-inbox-event {
   display: flex;
   gap: 12px;
-  padding: 10px 0;
+  padding: 10px 14px;   /* the same side padding as the panel's head, so icon and time clear the border */
   border-bottom: 1px solid var(--theme-border-color, rgba(128,128,128,0.12));
 }
 .e-inbox-event:last-child { border-bottom: none; }

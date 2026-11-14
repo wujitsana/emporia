@@ -7,7 +7,8 @@ import { useInterval } from "../hooks";
 import { api } from "../api";
 import type { InboxEvent } from "../api";
 import { poll } from "../capture";
-import { needsAgent, needsAgentCount } from "../messagesModel";
+import { bareAgentName } from "../agentName";
+import { needsAgent, unreadTotal } from "../messagesModel";
 import type { Navigate } from "../navigation";
 import { ActivityList } from "./ActivityList";
 
@@ -22,7 +23,7 @@ export function NeedsAgent({ viewer, navigate, skip = [] }: { viewer: string | n
     <section className="e-now" aria-label="Needs the agent">
       <header className="e-now__head">
         <span>Needs the agent</span>
-        <span title="The dashboard cannot clear these: they leave when the agent has read them.">{needsAgentCount(inbox ?? {}, rows, skip)} unread by the agent</span>
+        <span title="The dashboard cannot clear these: they leave when the agent has read them.">{unreadTotal(inbox ?? {})} for {bareAgentName(viewer)} to read</span>
       </header>
       <ActivityList navigate={navigate} events={rows} />
     </section>
