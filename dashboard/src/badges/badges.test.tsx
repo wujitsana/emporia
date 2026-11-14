@@ -130,6 +130,22 @@ describe("the catalogue", () => {
     expect(resolveBadge("Every ending").def.id).toBe("sluice-three-ends");
   });
 
+  it("has the three Tesseract feats, each its own drawing, under the ids quest_book.py gives them", () => {
+    const ids = ["tesseract-first", "tesseract-win", "tesseract-full"];
+    const art = new Set<string>();
+    for (const id of ids) {
+      const { def, fallback } = resolveBadge(id);
+      expect(fallback, id).toBe(false);
+      expect([def.id, def.kind, def.grid.w], id).toEqual([id, "feat", 16]);
+      expect(galleryIds(), id).toContain(id);
+      art.add(gridRows(def.grid).join("/"));
+      expect(def.grid.cells.some((c) => c === 2), `${id} has an accent`).toBe(true);
+    }
+    expect(art.size).toBe(ids.length);
+    expect(resolveBadge("First table").def.id).toBe("tesseract-first");
+    expect(resolveBadge("Full table").def.id).toBe("tesseract-full");
+  });
+
   it("names numbered badges", () => {
     expect(resolveBadge("season-0").def.name).toBe("Season 0");
     expect(resolveBadge("renown:4").def.name).toBe("Renown level 4");

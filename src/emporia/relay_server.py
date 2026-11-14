@@ -130,6 +130,7 @@ import emporia.modules.bargain  # noqa: F401
 import emporia.modules.cv_auction  # noqa: F401
 import emporia.modules.liars_dice  # noqa: F401
 import emporia.modules.sluice  # noqa: F401
+import emporia.modules.tesseract  # noqa: F401
 import emporia.modules.blotto  # noqa: F401
 import emporia.modules.chess  # noqa: F401
 import emporia.modules.code_review  # noqa: F401
@@ -1975,7 +1976,7 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("rand_commits", "agent_id"), ("rand_results", "winner"),
     # The Chronicle: who took part, sealed, opened and picked. The signatures keep the stable ids signed with.
     ("chronicle_enrol", "agent_id"), ("chronicle_seals", "agent_id"), ("chronicle_reveals", "agent_id"),
-    ("chronicle_ballots", "agent_id"),
+    ("chronicle_ballots", "agent_id"), ("tesseract_results", "agent_id"),
 )
 
 # Agent ids inside JSON arrays. Not rewritable in SQL, and deliberately not
@@ -2048,6 +2049,9 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     *(("chronicle_ballots", c) for c in ("seq", "chapter", "stable_id", "pick", "reason", "recap", "nonce",
                                          "signed_at", "received_at", "signature")),
     *(("chronicle_verdicts", c) for c in ("chapter", "body_json", "body_hash", "frozen_at")),
+    # Tesseract: a player's place at a finished table (numbers, a status word, its revealed target)
+    *(("tesseract_results", c) for c in ("session_id", "seat", "seats", "place", "total", "table_index", "status",
+                                         "won", "target_json", "recorded_at")),
     # Identity round: an operator's label history, and the token revocation records, are keyed by stable id.
     *(("model_commits", c) for c in ("session_id", "step", "stable_id", "model_commit")),
     *(("model_reveals", c) for c in ("session_id", "step", "stable_id", "model", "salt", "status", "at", "signature")),
@@ -5024,8 +5028,10 @@ async def dashboard_session(req: DashboardSessionRequest):
 @app.get("/modules")
 async def list_modules():
     """Every game this relay hosts, with its rules for agents (P133)."""
+    from emporia import relay_modules
     from emporia.module_sdk import list_available_modules
-    return {"modules": list_available_modules()}
+    return {"modules": [m for m in list_available_modules()
+                        if not relay_modules.game_off_because(m["module_type"])]}
 
 
 # ============================================================================
@@ -7097,6 +7103,7 @@ from emporia.routes import operator as _operator_routes  # noqa: E402
 from emporia.routes import ideas as _idea_routes  # noqa: E402
 from emporia.routes import labs as _lab_routes  # noqa: E402
 from emporia.routes import chronicle as _chronicle_routes  # noqa: E402
+from emporia.routes import tesseract as _tesseract_routes  # noqa: E402
 from emporia.routes import pledges as _pledge_routes  # noqa: E402
 from emporia.routes import whats_next as _next_routes  # noqa: E402
 from emporia.routes import likes as _like_routes  # noqa: E402
@@ -7129,6 +7136,7 @@ app.include_router(_operator_routes.router)
 app.include_router(_idea_routes.router)
 app.include_router(_lab_routes.router)
 app.include_router(_chronicle_routes.router)
+app.include_router(_tesseract_routes.router)
 app.include_router(_pledge_routes.router)
 app.include_router(_next_routes.router)
 app.include_router(_like_routes.router)

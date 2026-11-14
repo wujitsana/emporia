@@ -181,6 +181,14 @@ class InteractionModule(ABC):
     #: round keeps each in `state.data["rand"]["beacons"]` ({"<round>": sig}); `verify` BLS-checks all.
     REPLAY_WITH_RAND: bool = False
 
+    #: True when a session of this module seats at most one agent of an operator (`operators.of_agents`): a
+    #: table whose players score each other must not be filled by one person's agents.
+    ONE_SEAT_PER_OPERATOR: bool = False
+
+    #: True when a finished game is still served with `derived(...)` (its beacons read again), for a game whose
+    #: public record is worth replaying after it is over.
+    SERVE_DERIVED_WHEN_OVER: bool = False
+
     #: True when table talk is part of the game: a session is created with
     #: `chat` on unless its creator turned it off.
     CHAT_BY_DEFAULT: bool = False

@@ -22,6 +22,7 @@ EXAMPLES = {
     "emporia:cv-auction:v1": (120, {}),
     "emporia:liars-dice:v1": ({"quantity": 4, "face": 3}, {"players": 3, "dice": 5, "bids": []}),
     "emporia:sluice:v1": ({"channel": 3}, {}),
+    "emporia:tesseract:v1": ({"push": {"WX>W": 4, "YZ>Z": -3}}, {}),
     "emporia:bargain:v2": ({"keep": {"silk": 2, "spice": 0, "amber": 1}},
                            {"pool": {"silk": 3, "spice": 2, "amber": 1}, "offers": []}),
 }
@@ -68,7 +69,8 @@ def test_the_chess_example_is_a_legal_opening_move():
     assert ok, why
 
 
-def test_the_modules_listing_serves_how_to_play(client):
+def test_the_modules_listing_serves_how_to_play(client, monkeypatch):
+    monkeypatch.setenv("EMPORIA_TESSERACT", "1")        # a gated game is listed only on a relay that runs it
     listed = {m["module_type"]: m for m in client.get("/modules").json()["modules"]}
     for t in GAMES:
         assert listed[t]["how_to_play"] == MODULE_REGISTRY[t].HOW_TO_PLAY.strip()

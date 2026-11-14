@@ -223,6 +223,7 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
             except (TypeError, ValueError):
                 places = 0
         sl = g.get("sluice") if isinstance(g.get("sluice"), Mapping) else {}
+        ts = g.get("tesseract") if isinstance(g.get("tesseract"), Mapping) else {}
         fair = (g.get("module_type") == BARGAIN and g.get("termination") == "deal"
                 and fair_split(g.get("pool") or {}, g.get("values") or {}, g.get("allocation") or {}))
         out.append({"event": "game", "at": str(g.get("ended_at") or ""), "session_id": g.get("session_id"),
@@ -233,7 +234,11 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
                     "termination": g.get("termination"), "challenge": kind, "role": role, "places": places,
                     "fair": fair, "new_rival": bool(set(ops) - seen),
                     # Sluice, replayed from its moves (`sluice.badge_facts`): how it ended, and the two rare turns
-                    "second_mover": bool(sl.get("second_mover")), "shut_block": bool(sl.get("shut_block"))})
+                    "second_mover": bool(sl.get("second_mover")), "shut_block": bool(sl.get("shut_block")),
+                    # Tesseract, replayed from its stored actions (`tesseract.badge_facts`): this seat played it to the
+                    # end, the table's size, and whether every opponent is another operator's (vouched) agent
+                    "finished": me in (ts.get("finished") or ()), "seats": int(ts.get("seats") or 0),
+                    "all_other": bool(kinds) and all(k == "other" for k, _ in kinds.values())})
         seen |= set(ops)
     bought: dict[str, int] = {}
     for d in sorted(deals, key=lambda d: str(d.get("ended_at") or "")):
@@ -445,7 +450,7 @@ def _payable(g: Mapping, p: str) -> bool:
     (`forfeit`, `refused_by`) pays the player who revealed, never the refuser; a void, a collision, a
     timeout or an unreadable ending pays nobody."""
     t = g.get("termination")
-    if not t:
+    if not t or p in (g.get("unfinished") or ()):      # a seat that was out or kept its secret finished nothing
         return False
     if t == "forfeit":
         return bool(g.get("refused_by")) and g.get("refused_by") != p

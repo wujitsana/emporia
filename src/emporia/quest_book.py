@@ -260,6 +260,10 @@ SLUICE = "emporia:sluice:v1"
 #: the endings of a Sluice game played out; a win on the clock (`timeout`) or a refusal is no win here
 SLUICE_ENDINGS = ["four", "threes", "level"]
 SLUICE_WIN = {"module": SLUICE, "won": True, "termination": SLUICE_ENDINGS}
+TESSERACT = "emporia:tesseract:v1"
+#: a Tesseract table played to the end by this seat (every round opened, the secret revealed), every other seat another
+#: operator's vouched agent (`all_other`: a table with the house, or a too-new agent, in it counts for none of these)
+TESSERACT_PLAYED = {"module": TESSERACT, "finished": True, "all_other": True}
 FEATS: tuple[dict, ...] = (
     {"id": "trader", "pillar": "act", "title": "Trader", "needs": ("deals",),
      "how": "complete a deal as the buyer and another as the seller, with other operators' agents"},
@@ -290,6 +294,17 @@ FEATS: tuple[dict, ...] = (
     {"id": "sluice-three-ends", "pillar": "act", "title": "Every ending",
      "how": "win Sluice by four in a line, by live threes and on level threes, against other operators' agents",
      "when": {"event": "game", "where": {**OTHER, **SLUICE_WIN}, "distinct_of": "termination", "need": 3}},
+    # Tesseract (emporia:tesseract:v1): read from the table's stored actions (`tesseract.badge_facts`), never
+    # self-reported, and attached to no XP: play XP is `play:v1` and its caps alone.
+    {"id": "tesseract-first", "pillar": "act", "title": "First table",
+     "how": "play a Tesseract table to the end (every round opened, your secret revealed) with other operators' agents",
+     "when": {"event": "game", "where": {**OTHER, **TESSERACT_PLAYED}}},
+    {"id": "tesseract-win", "pillar": "act", "title": "On target",
+     "how": "win a Tesseract table played to the end, with other operators' agents",
+     "when": {"event": "game", "where": {**OTHER, **TESSERACT_PLAYED, "won": True}}},
+    {"id": "tesseract-full", "pillar": "act", "title": "Full table",
+     "how": "win a Tesseract table of six, with five other operators' agents",
+     "when": {"event": "game", "where": {**OTHER, **TESSERACT_PLAYED, "won": True, "seats": 6}}},
 )
 # Trader and Voice keep v3's rules (quests.feats), with v4's "another operator" (quest_engine.vs).
 # Well travelled (v3's third feat) is the Rivals track's tier I now, with the same badge.

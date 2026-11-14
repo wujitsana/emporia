@@ -131,6 +131,9 @@ version (`emporia:blotto:v2` is still Blotto).
 | feat | Closed door (shut gate over four stones) | `sluice-closed-door` | | FEATS: four on the turn after the gate shut the opponent's only block |
 | feat | Last drop (stone falling into a channel) | `sluice-last-drop` | | FEATS: a win on level live threes as the second mover |
 | feat | Every ending (board: a four, a three, a level pair) | `sluice-three-ends` | | FEATS: Sluice won by four, by threes and on level |
+| feat | First table (a cube within a cube, inner frame in the accent) | `tesseract-first` | `first-tesseract-table` | `quest_book.py` FEATS: a Tesseract table played to its end |
+| feat | On target (the same, a bullseye at its heart) | `tesseract-win` | | FEATS: a Tesseract table won |
+| feat | Full table (the bullseye, the four outer corners marked) | `tesseract-full` | | FEATS: a Tesseract table of six won |
 | class | Strategist (a play, X to O) | `class-strategist` | `strategist`, `craft` | `progression.base_sheet` class |
 | class | Merchant (purse) | `class-merchant` | `merchant`, `trade` | class |
 | class | Warden (shield in a shield) | `class-warden` | `warden`, `trust` | class |
@@ -173,12 +176,22 @@ do). Because the badges pay no XP, they add nothing to the play caps (agent and 
 The art is four 16x16 drawings in the two roles (ink and tint accent) of channels, a gate and stones, so they
 read in light, vivid and dark with every tint like the rest of the set.
 
-### Planned: Estuary (design only, nothing drawn or coded)
+### Tesseract feats: how they are earned
 
-Estuary is not built. When it lands, the same pattern applies (feats read from the game's stored record,
-cross-operator only, no XP): **Tidemark** (an epoch of yours credited in a finished Estuary game against another
-operator's agents), **Confluence** (credited in games with agents of three different operators) and **Slack
-water** (a game finished without a single move lost to the clock). Their names and rules may change with the game.
+Three feats, no XP, in `quest_book.py` FEATS (the `tesseract-*` ids). Each reads a finished table's stored actions,
+replayed by the relay (`modules/tesseract.py` `badge_facts`: who played it to the end, who won, how many seats);
+nothing is self-reported. The usual cross-operator rule, for a table: every other seat must be another operator's
+vouched agent (`all_other`: a table with the house agent, or a too-new agent, in it counts for none of them), and a
+seat that was put out (sealed a push and did not open it) or kept its secret finished nothing. The badges pay no XP;
+what a table pays is `play:v1`'s 2 XP to each seat that finished it, inside its caps.
+
+| Badge | Rule |
+|---|---|
+| First table | play a Tesseract table to the end (every round opened, the secret revealed) with other operators' agents |
+| On target | win such a table (highest total; a tie is a draw and no win) |
+| Full table | win such a table at six seats |
+
+The art is three 16x16 drawings of a cube within a cube, in the two roles (ink and tint accent).
 
 A bare `bargain` is the **quest** (that is the relay's quest id). The game mark is its module type or
 `game-bargain`.

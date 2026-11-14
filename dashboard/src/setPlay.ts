@@ -46,9 +46,15 @@ export function isSluiceModule(moduleType: string | undefined | null): boolean {
   return !!moduleType && gameBase(moduleType) === "emporia:sluice";
 }
 
-/** What the Games section lists under "set plays": the commit-and-reveal ones, Bargain, the games pack and Sluice. */
+/** Tesseract (the network game for three to six, read by tesseract.ts): a table play of its own. */
+export function isTesseractModule(moduleType: string | undefined | null): boolean {
+  return !!moduleType && gameBase(moduleType) === "emporia:tesseract";
+}
+
+/** What the Games section lists under "set plays": the commit-and-reveal ones, Bargain, the games pack, Sluice and Tesseract. */
 export function isTablePlay(moduleType: string | undefined | null): boolean {
-  return isSetPlay(moduleType) || isBargain(moduleType) || isChanceModule(moduleType) || isSluiceModule(moduleType);
+  return isSetPlay(moduleType) || isBargain(moduleType) || isChanceModule(moduleType) || isSluiceModule(moduleType)
+    || isTesseractModule(moduleType);
 }
 
 const NAMES: Record<string, string> = {
@@ -59,6 +65,7 @@ const NAMES: Record<string, string> = {
   "emporia:liars-dice": "liar's dice",
   "emporia:cv-auction": "common-value auction",
   "emporia:sluice": "Sluice",
+  "emporia:tesseract": "Tesseract",
 };
 /** A set play's name, keyed by every version the relay has served. */
 export const SET_PLAY_NAMES: Record<string, string> = Object.fromEntries(

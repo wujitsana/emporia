@@ -1,0 +1,16 @@
+/* Tesseract's table: theme variables only (the board kit's), no colour of its own. */
+.root { max-width: 44rem; }
+
+.seats { list-style: none; margin: 4px 0 10px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.seat { padding: 2px 8px; border: 1px solid var(--board-rule); font-size: 0.8rem; }
+.winner { border-color: var(--board-line); font-weight: 700; }
+
+.round { margin: 0 0 10px; }
+.bars { display: grid; grid-template-columns: 5.5rem repeat(4, minmax(0, 1fr)); gap: 4px; align-items: stretch; }
+.label { font-size: 0.72rem; align-self: center; opacity: 0.8; }
+.bar { position: relative; display: block; min-height: 1.4rem; border: 1px solid var(--board-rule); overflow: hidden; }
+.fill { position: absolute; inset: 0 auto 0 0; background: var(--board-fill); opacity: 0.35; }
+.value { position: relative; font-size: 0.72rem; padding: 0 4px; line-height: 1.4rem; white-space: nowrap; }
+
+.pushes { margin: 2px 0 0 5.5rem; font-size: 0.72rem; line-height: 1.4; opacity: 0.85; overflow-wrap: anywhere; }
+.results { margin: 6px 0 0; padding-left: 1.4rem; font-size: 0.8rem; line-height: 1.5; }

@@ -21,7 +21,8 @@ def client():
 
 # Calls: a retired module (the :v1 set plays) is refused instead; tests/test_calls.py holds that.
 @pytest.mark.parametrize("module_type", sorted(t for t, c in MODULE_REGISTRY.items() if not c.RETIRED_FOR))
-def test_every_module_can_be_created(client, module_type):
+def test_every_module_can_be_created(client, module_type, monkeypatch):
+    monkeypatch.setenv("EMPORIA_TESSERACT", "1")      # a gated game is created only on a relay that runs it
     creator = "mod_" + uuid.uuid4().hex[:8]
     _register(client, creator)
     r = client.post("/sessions", json={"module_type": module_type, "creator_agent_id": creator},

@@ -180,6 +180,9 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
         raise HTTPException(403, str(e)) from e
 
     module = get_interaction_module(req.module_type)
+    from emporia import relay_modules
+    if why := relay_modules.game_off_because(req.module_type):
+        raise HTTPException(400, f"{why}: {req.module_type} is not played here")
     if module.RETIRED_FOR:   # calls: the :v1 set plays are retired, loudly
         from emporia.module_sdk import retired_refusal
         raise HTTPException(400, retired_refusal(req.module_type, module.RETIRED_FOR))
@@ -524,6 +527,9 @@ async def get_session(session_id: str, request: Request):
     if s["status"] in ("completed", "abandoned"):
         try:
             module = get_interaction_module(s["module_type"])
+            if module.SERVE_DERIVED_WHEN_OVER and out.get("state"):   # a record worth replaying: its beacons read again
+                st = await _with_beacon(module, session_id, SessionState.from_dict(s["state"]))
+                out["state"] = {**out["state"], "data": {**out["state"]["data"], **st.data, **module.derived(st.data)}}
             if module.USES_RAND and out.get("state"):
                 values = module.is_terminal(SessionState.from_dict(s["state"]))[1].get("values") or {}
                 if values:
@@ -1534,6 +1540,13 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
     # players, so no game of more than two could ever fill.
     if len(s["participants"]) + 1 > module.MAX_PARTICIPANTS:
         raise HTTPException(400, f"Max {module.MAX_PARTICIPANTS} participants — this game is full")
+    if module.ONE_SEAT_PER_OPERATOR:     # a table whose players score each other: one person, one seat
+        from emporia import operators
+        with rs.DB_LOCK, rs.get_db() as conn:
+            ops = operators.of_agents(conn)
+        mine = ops.get(req.agent_id)
+        if mine and any(ops.get(p) == mine for p in s["participants"]):
+            raise HTTPException(409, "this table already seats one of your operator's agents: one seat per operator")
     if module.USES_RAND:     # emporia:rand:v1: the joiner's signed commitment, seat 1
         rc = _take_rand_commit(session_id, req.agent_id, len(s["participants"]), req.rand_commit)
         r = (s.get("config") or {}).get("rand") or {}
@@ -1991,6 +2004,9 @@ async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -
         await _persist_beacon(session_id, module)
     if module.USES_RAND or ((rs.load_session(session_id) or {}).get("state") or {}).get("data", {}).get("dealt"):
         _record_rand_result(session_id, outcome)
+    if s["module_type"] == "emporia:tesseract:v1":    # its ledger: one row per player, for the table index
+        from emporia.routes import tesseract as _tess
+        _tess.record_results(session_id, s, outcome)
     settlement_record: dict[str, Any] | None = None
     winner_id = outcome.get("winner") if isinstance(outcome, dict) else None
     outcome_type = outcome.get("outcome_type", "won") if isinstance(outcome, dict) else "won"

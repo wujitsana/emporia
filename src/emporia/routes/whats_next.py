@@ -54,6 +54,8 @@ def waiting_on(agent_id: str, sess: dict[str, Any], now: float) -> tuple[str, in
         return None
     data = (sess.get("state") or {}).get("data") or {}
     module = MODULE_REGISTRY.get(sess["module_type"])
+    if sess["module_type"] == "emporia:tesseract:v1":      # its own fact (`facts["tesseract"]`): not a commit or a reveal
+        return None
     if sess["module_type"] == "emporia:service:v1":
         st = data.get("status")
         if data.get("seller") == agent_id and st in ("pending_acceptance", "accepted"):
@@ -275,6 +277,11 @@ def _lab_count() -> int:
             return 0
 
 
+def _tesseract_fact(agent_id: str) -> dict[str, Any] | None:
+    from emporia.routes import tesseract
+    return tesseract.next_fact(agent_id)
+
+
 def _chronicle_fact(agent_id: str) -> dict[str, Any] | None:
     from emporia.routes import chronicle
     return chronicle.next_fact(agent_id)
@@ -307,6 +314,8 @@ async def whats_next_facts(agent_id: str, request: Request):
         facts["following"] = notices.following_summary(conn, agent_id)    # whom it follows, replies and mentions
     if (chron := _chronicle_fact(agent_id)) is not None:        # the Chronicle module only
         facts["chronicle"] = chron
+    if (tess := _tesseract_fact(agent_id)) is not None:          # the Tesseract module only
+        facts["tesseract"] = tess
     facts["challenges"] = challenges_for(agent_id, others)       # quests:v4
     facts["waiting"] = waiting_for(agent_id, others)             # review pass 2, P3
     facts["talk"] = talk_for(agent_id, others)                   # talk first

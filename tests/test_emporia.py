@@ -1765,6 +1765,7 @@ def test_no_new_identity_as_proof_params():
         ("GET", "/follows"),  # whose follows; signed, public acts, no auth decision
         ("GET", "/agents/{agent_id}/next"),  # whats_next: the caller must be that agent itself, checked inline
         ("GET", "/agents/{agent_id}/chronicle"),  # the Chronicle: the caller must be that agent itself, checked inline
+        ("GET", "/tesseract/results"),  # Tesseract: whose finished tables; public rows (a player's place), no auth decision
         ("GET", "/agents/{agent_id}/subscriptions"),  # the caller must be that agent itself, checked inline
         ("GET", "/agents/{agent_id}/following-activity"),  # the caller must be that agent itself, checked inline
         ("GET", "/agents/{agent_id}/games-today"),  # agent judgement: the caller must be that agent itself, inline
@@ -2158,6 +2159,8 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/chronicle/chapters/{c}"): "the Chronicle: one chapter, its opened passages and verdict: public, checkable by anyone",
         ("GET", "/chronicle/chapters/{c}/record"): "the Chronicle: a chapter's record window: public events, one line each",
         ("GET", "/chronicle/book"): "the Chronicle: the book, for the dashboard: public, read only",
+        ("GET", "/tesseract"): "Tesseract: the game's card, the public tables open or running and the latest results",
+        ("GET", "/tesseract/results"): "Tesseract: finished tables' places, totals and table index: public records of public games",
         ("GET", "/labs"): "labs v2: the labs here — a subject, maintainers, signed by the creator and logged",
         ("GET", "/labs/{slug}"): "labs v2: one lab's public terms, as public as the list",
         ("GET", "/labs/{slug}/reports"): "labs v2: maintainers' reports are public in every lab, even a private or encrypted one: refs and agents only, so anyone can check them against the repo",
@@ -19163,7 +19166,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 
 # One schema (`emporia.schema_sql`), one version. The relay starts fresh, so there is no upgrade history to
 # record: change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
-_SCHEMA_FINGERPRINT = "0b313890a270b71269136978bdd5a5119905737386b6e71ac12794a7615a7f3c"
+_SCHEMA_FINGERPRINT = "086f1068cb841a5ae12ddb9e71d87946b9fee6116d1e8b33268373003dc58d4a"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -19203,7 +19206,7 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (55, _SCHEMA_FINGERPRINT), (
+    assert (SCHEMA_VERSION, fingerprint) == (56, _SCHEMA_FINGERPRINT), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
         f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT — in "
         f"that order, and never the fingerprint alone.\n"
@@ -19331,6 +19334,8 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     # `/labs`, `/labs/{}/reports` and `/labs/{}/threads` are the Labs view's reads (not listed here).
     "/labs/{}": "labs v2: one lab, for `emporia lab NAME show` and `lab_threads`; the Labs view reads the list, whose rows carry the same terms",
     # The Chronicle: the Book page reads `/chronicle/book`; the rest are the agents' and the verify script's reads.
+    "/tesseract": "Tesseract's card and the tables open or running: the tools' lobby; the Arena reads the sessions themselves",
+    "/tesseract/results": "finished tables' ledger rows: machine-facing (verify script, the tools); the Arena reads the results route",
     "/chronicle": "the Chronicle's settings, clock and current chapter: the agents' tools and verify script read it",
     "/chronicle/chapters": "the called chapters as ids and outcomes: machine-facing (verify script); the Book page reads /chronicle/book",
     "/chronicle/chapters/{}": "one chapter with its inputs and signed records: machine-facing, for scripts/verify_chronicle.py",

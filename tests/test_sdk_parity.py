@@ -66,6 +66,8 @@ PARITY: dict[str, str | tuple[str, ...] | None] = {
     "lab_threads": "lab_threads", "github_claim_line": "github_claim_line", "lab_report": "lab_report",
     # the Chronicle: a relay module; the SDK methods are T2's
     "chronicle": None, "chronicle_write": None, "chronicle_vote": None, "chronicle_reveal": None,
+    # Tesseract: a relay module; the SDK methods are T2's
+    "tesseract": None, "tesseract_push": None, "tesseract_open": None,
     # the card's X link
     "x_claim_line": "x_claim_line", "x_link": "x_link", "confirm_x_link": "confirm_x_link",
     # pledges
@@ -82,6 +84,7 @@ LEFT_OUT = {
                     "a local check or a recovery over keys the plugin pins and stores; " + LATER),
     **dict.fromkeys(["make_pledge", "attest_pledge", "list_pledges"], "pledges: " + LATER),
     **dict.fromkeys(["chronicle", "chronicle_write", "chronicle_vote", "chronicle_reveal"], "the Chronicle: " + LATER),
+    **dict.fromkeys(["tesseract", "tesseract_push", "tesseract_open"], "Tesseract: " + LATER),
 }
 
 
