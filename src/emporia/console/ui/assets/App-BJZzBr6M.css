@@ -369,7 +369,7 @@ body.tint-blue {
 }
 
 body.tint-red {
-  --tint: #ff0000;
+  --tint: #b00331;   /* crimson, as the user picked (11-14) */
 }
 
 body.tint-yellow {
@@ -381,7 +381,7 @@ body.tint-purple {
 }
 
 body.tint-orange {
-  --tint: #ffac1c;
+  --tint: #d57c22;   /* burnt orange, as the user picked (11-14); not amber */
 }
 
 body.tint-pink {
@@ -513,9 +513,10 @@ body.theme-vivid.tint-pink {
   --theme-window-background: var(--vv-panel);
   --theme-window-shadow: var(--vv-ink);
 }
-body.theme-vivid.tint-red,
+body.theme-vivid.tint-orange,
 body.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--tint) 80%, white); }
 body.theme-vivid.tint-blue,
+body.theme-vivid.tint-red,
 body.theme-vivid.tint-purple { --vv-ink: #fff; }
 body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }
 
@@ -733,8 +734,6 @@ body.theme-light {
 /* Past the first tier the header's own controls shrink: "as" before the viewer, the select narrower. */
 .e-app-shell[data-nav="medium"] .e-app-top .e-viewer-switch > .e-faint,
 .e-app-shell[data-nav="rail"] .e-app-top .e-viewer-switch > .e-faint { display: none; }
-.e-app-shell[data-nav="medium"] .e-app-top .e-viewer-switch select,
-.e-app-shell[data-nav="rail"] .e-app-top .e-viewer-switch select { max-width: 7rem; }
 .e-app-top__row { flex-wrap: nowrap; }
 .e-app-top__actions { flex-shrink: 0; }
 /* Medium and rail: the header gives up what it can spare, so it stays on one row. */
@@ -921,7 +920,7 @@ body.theme-light {
 /* Flush variant — fills remaining height for split views */
 .e-view-body--flush {
   padding: 0;
-  max-width: none;
+  max-width: min(1440px, 100%);   /* the same column as the heading and the foot, so a split page does not run edge to edge */
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -1915,7 +1914,7 @@ body.theme-light {
 }
 .e-gate-badge--invite { background: rgba(128,128,255,0.15); color: #8888ff; }
 .e-gate-badge--paid   { background: rgba(80,200,120,0.15);  color: #4caf7a; }
-.e-gate-badge--advert { background: rgba(255,190,80,0.15);  color: #d9a441; }
+.e-gate-badge--advert { background: color-mix(in srgb, var(--theme-focused-foreground) 15%, transparent); color: var(--theme-focused-foreground); }
 
 .e-outcome-pill {
   display: inline-block;
@@ -1926,7 +1925,7 @@ body.theme-light {
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.e-outcome-pill--game   { background: rgba(255,180,0,0.12);   color: #c89a00; }
+.e-outcome-pill--game   { background: color-mix(in srgb, var(--theme-focused-foreground) 12%, transparent); color: var(--theme-focused-foreground); }
 .e-outcome-pill--room   { background: rgba(0,180,255,0.12);   color: #0099cc; }
 .e-outcome-pill--agora  { background: rgba(128,128,255,0.12); color: #7777dd; }
 .e-outcome-pill--refund { background: rgba(200,50,50,0.12);   color: #cc4444; }
@@ -1984,12 +1983,12 @@ body.theme-light {
   font-size: 0.792rem;
 }
 
-/* Header row — keep the SRCL gray bar */
+/* Header row: a quiet band from the theme's own ink and ground, so it follows light, vivid and deep and every tint. */
 .e-dashboard-shell .e-compact-table thead td,
 .e-dashboard-shell table thead td,
 .e-table thead td {
-  background: var(--ansi-240-gray-35, #585858) !important;
-  color: var(--color-white, #fff);
+  background: color-mix(in srgb, var(--theme-text) 12%, var(--theme-background)) !important;
+  color: var(--theme-text);
   padding: 4px 8px;
   font-size: 0.682rem;
   letter-spacing: 0.06em;
@@ -2090,7 +2089,7 @@ body.theme-light {
 .e-inbox-event {
   display: flex;
   gap: 12px;
-  padding: 10px 0;
+  padding: 10px 14px;   /* the same side padding as the panel's head, so icon and time clear the border */
   border-bottom: 1px solid var(--theme-border-color, rgba(128,128,128,0.12));
 }
 .e-inbox-event:last-child { border-bottom: none; }
@@ -2397,6 +2396,10 @@ body.theme-light {
   max-width: 80ch;
 }
 
+/* A heading that only repeats the active tab: the blurb alone, one line, no frame. */
+.e-page-head--lean .e-page-head__title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.e-page-head--lean .e-page-head__blurb { margin: 0; }
+
 /* Sub-heading inside a view: CAPS label with a box-drawing rule after it. */
 .e-subhead {
   display: flex;
@@ -2651,6 +2654,9 @@ body.theme-light {
 .e-now-strip__live { color: var(--theme-focused-foreground); }
 .e-now-strip__toggle { background: transparent; border: 0; color: inherit; font: inherit; cursor: pointer; opacity: 0.7; padding: 4px 6px; }
 .e-now-strip.is-collapsed { min-height: 22px; justify-content: flex-end; }
+/* Not in a game: the same line, but a quiet one, so it costs little height. */
+.e-now-strip.is-idle { min-height: 22px; padding-top: 0; padding-bottom: 0; opacity: 0.75; }
+.e-now-strip.is-idle .e-now-strip__main { padding: 1px 0; }
 /* The whole menu scrolls as one, so the foot never covers the last sections. */
 .e-section-tabs--drawer { flex: none; overflow: visible; }
 .e-mobile-drawer { overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; width: 100%; }
@@ -2795,6 +2801,9 @@ body.theme-light {
 /* Replay status line (ply, started, audit, verify) wraps instead of running off the edge. */
 .e-chess-replay-status { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
 
+@property --e-edge-fade { syntax: "<length>"; inherits: false; initial-value: 28px; }
+@keyframes e-edge-fade { 0%, 92% { --e-edge-fade: 28px; } 100% { --e-edge-fade: 0px; } }
+
 /* ─── 25. PHONE (≤ 700px) ───────────────────────────────────────────────── */
 
 @media (max-width: 700px) {
@@ -2817,6 +2826,16 @@ body.theme-light {
   .e-table td,
   .e-relay-table td,
   .e-relay-table th { white-space: nowrap; }
+  /* A table wider than the screen fades at its right edge until it is scrolled to the end, so it reads as scrollable. */
+  @supports (animation-timeline: scroll()) {
+    .e-table,
+    .e-relay-table,
+    .e-compact-table table {
+      mask-image: linear-gradient(to right, #000 calc(100% - var(--e-edge-fade)), transparent);
+      animation: e-edge-fade linear both;
+      animation-timeline: scroll(self inline);
+    }
+  }
 
   /* Comfortable targets. */
   .e-rail-item { min-height: 48px; padding: 10px 16px; }
@@ -3261,9 +3280,10 @@ body.e-look.theme-vivid {
   --e-ink-boost: 100%;
   --anim-faint: var(--theme-text);
 }
-body.e-look.theme-vivid.tint-red,
+body.e-look.theme-vivid.tint-orange,
 body.e-look.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }
 body.e-look.theme-vivid.tint-blue,
+body.e-look.theme-vivid.tint-red,
 body.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }
 body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }
 
@@ -3305,6 +3325,8 @@ body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }
   border-radius: 0;
 }
 .e-look .e-page-head { --anim-bracket: 18px; --anim-bracket-w: 3px; }
+.e-look .e-page-head.e-page-head--lean { background-image: none; padding: 8px 24px 2px; margin-top: 0; animation: none; }
+.e-look .e-page-head--lean .e-page-head__blurb { margin-top: 0; font-size: 0.85rem; opacity: 0.7; }
 
 /* ─── 3. THE SECTION HEADING: status line, pixel title, typed line ─────── */
 
@@ -3894,6 +3916,8 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   margin-top: auto; padding: 4px 8px; background: var(--anim-fill); color: var(--anim-ink); font-size: 0.8rem; font-weight: 700; line-height: 1.3;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
 }
+/* A post's or message's caption (its topic, its sender) is metadata: outlined, so the solid fill stays for state and selection. */
+.e-hcard--post .e-hcard__caption { background: transparent; color: inherit; box-shadow: inset 0 0 0 1px var(--anim-line, currentColor); font-weight: 600; }
 .e-hcard--quiet .e-hcard__caption { background: transparent; color: var(--anim-faint, inherit); font-weight: 400; padding-left: 0; }
 .e-hcard--quiet { min-height: 0; }
 .e-hcard__foot { font-size: 0.66rem; letter-spacing: 0.04em; color: var(--anim-faint, inherit); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3916,6 +3940,16 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden;
 }
 .e-hcard__body.is-open { display: block; -webkit-line-clamp: unset; }
+/* A post as Markdown: blocks inside, so the pre-wrap of plain text is off and the headings stay body-sized. */
+.e-hcard__body--md { white-space: normal; }
+.e-hcard__body--md > * { margin: 0 0 0.6em; }
+.e-hcard__body--md > :last-child { margin-bottom: 0; }
+.e-hcard__body--md h2, .e-hcard__body--md h3, .e-hcard__body--md h4, .e-hcard__body--md h5, .e-hcard__body--md h6 { font-size: 0.86rem; font-weight: 700; line-height: 1.3; }
+.e-hcard__body--md ul, .e-hcard__body--md ol { padding-left: 1.3em; }
+.e-hcard__body--md pre { overflow-x: auto; white-space: pre; padding: 6px 8px; border: 1px solid var(--theme-border); }
+.e-hcard__body--md a { color: var(--theme-focused-foreground); text-decoration: underline; }
+.e-hcard__body--md table { border-collapse: collapse; }
+.e-hcard__body--md th, .e-hcard__body--md td { border: 1px solid var(--theme-border); padding: 2px 6px; }
 .e-hcard__more {
   padding: 0; border: 0; background: transparent; color: var(--theme-focused-foreground); font: inherit; font-size: 0.72rem;
   letter-spacing: 0.04em; cursor: pointer; text-decoration: underline;
@@ -4083,6 +4117,318 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 .e-hcard__board > li { list-style: none; display: flex; flex-direction: column; }
 .e-hcard__board > li::before { content: none; display: none; }
 .e-hcard__board > li { padding-left: 0; }
+
+/* ─── AGENT PAGE: hero in the page-title frame, now strip, record, underline tabs ─────────── */
+.e-agent-page { min-width: 0; max-width: 100%; }
+.e-agent-hero { display: flex; gap: 16px; align-items: flex-start; }
+.e-agent-hero__glyph { flex: none; line-height: 0; border: 1px solid var(--e-rule); }
+.e-agent-hero__glyph .e-moire-avatar { image-rendering: pixelated; display: block; }
+.e-agent-hero__text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.e-agent-hero__name { flex-wrap: wrap; overflow-wrap: anywhere; font-size: 1.5rem; }
+.e-look .e-agent-hero__name { font-family: var(--anim-pixel); }
+.e-agent-hero__relay { font-size: 0.8rem; font-weight: 400; letter-spacing: 0; text-transform: none; }
+.e-agent-hero__bio { overflow-wrap: anywhere; max-width: 80ch; opacity: 0.8; }
+.e-agent-hero__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.e-agent-now { margin: 0; }
+.e-agent-now .e-now-strip__main { min-width: 0; overflow-wrap: anywhere; text-align: left; }
+.e-agent-page .e-subhead { padding: 0 16px; justify-content: space-between; }
+.e-agent-page .e-hero-stats { padding: 0 16px; }
+.e-utabs {
+  display: flex; gap: 0; overflow-x: auto; scrollbar-width: none; max-width: 100%;
+  border-bottom: 1px solid var(--e-rule); margin-top: 14px; padding: 0 8px;
+}
+.e-utabs::-webkit-scrollbar { display: none; }
+.e-utabs__tab { flex: none; }
+.e-utabs__count { font-size: 0.7rem; margin-left: 2px; }
+.e-agent-tab { padding: 12px 16px 24px; min-width: 0; }
+.e-agent-badges { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 110px), 1fr)); }
+.e-agent-badges li { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; font-size: 0.74rem; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .e-agent-hero { flex-direction: column; }
+  .e-agent-hero__name { font-size: 1.2rem; }
+}
+
+/* The agents directory: a list or cards of the agents on this relay; a row opens the agent's page. */
+.e-agent-dir { padding: 8px 16px 24px; min-width: 0; }
+.e-agent-dir__bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; }
+.e-agent-dir__bar .e-list-filter { flex: 1; min-width: 160px; }
+.e-agent-dir__bar .e-home-switch { margin: 0; }
+.e-agent-dir__row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 10px; align-items: center; width: 100%;
+  padding: 8px 10px; text-align: left; font: inherit; color: inherit; background: transparent; border: 0;
+  border-bottom: 1px solid var(--e-rule); cursor: pointer;
+}
+.e-agent-dir__row:hover, .e-agent-dir__row:focus-visible { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); outline: none; }
+.e-agent-dir__who { min-width: 0; overflow-wrap: anywhere; }
+.e-agent-dir__meta { font-size: 0.74rem; white-space: nowrap; }
+@media (max-width: 600px) {
+  .e-agent-dir__row { grid-template-columns: auto minmax(0, 1fr); }
+  .e-agent-dir__meta { grid-column: 2; white-space: normal; }
+}
+.e-agent-card-tile { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; font: inherit; color: inherit;
+  background: transparent; border: 1px solid var(--e-rule); padding: 10px 12px; cursor: pointer; min-width: 0; overflow-wrap: anywhere; }
+.e-agent-card-tile:hover, .e-agent-card-tile:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }
+
+/* An agent's name or glyph that opens its page: looks like what it wraps, shows it is clickable on hover and focus. */
+.e-agent-link { cursor: pointer; }
+.e-agent-link--glyph { display: inline-flex; line-height: 0; }
+.e-agent-link:hover:not(.e-agent-link--glyph) { text-decoration: underline; }
+.e-agent-link:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: 1px; }
+
+/* A count beside a title ("3 agents"): ink on the theme's ground, bordered, so it reads in light, deep and vivid and every tint. */
+.e-count-chip { display: inline-block; padding: 0 1ch; border: 1px solid var(--theme-border); color: var(--theme-text);
+  background: transparent; font-family: var(--font-family-mono); font-size: 0.75rem; text-transform: uppercase; }
+/* The agent page's chips and record strip. */
+.e-agent-hero__chips .e-quiet-chip { opacity: 1; color: var(--theme-text); }
+.e-look.theme-vivid .e-agent-hero__chips .e-quiet-chip { border-color: var(--theme-text); }
+.e-agent-page .e-hero-stat__value { white-space: nowrap; }
+@media (max-width: 600px) { .e-agent-page .e-hero-stat__value { font-size: 1.35rem; } .e-agent-page .e-hero-stat { padding: 12px 12px; } }
+
+/* "TESTNET · EXPERIMENTAL" on a roomy header; just "TESTNET" where the header already shortens things. */
+.e-app-shell[data-nav="medium"] .e-stage-word,
+.e-app-shell[data-nav="rail"] .e-stage-word,
+.e-app-shell[data-nav="phone"] .e-stage-word { display: none; }
+
+/* ─── The header row never overlaps and never clips ──────────────────────────────────────────────────
+   Left to right: the title, the five places, then the actions. The title and the five places keep their
+   width and never move under anything; the actions take the rest, and give things up from the least
+   important: the version, the Help and desk words (the icons stay), the stage word, the "as" and "live"
+   words, and last the relay host, which only ever shortens with an ellipsis. The tiers follow the
+   header row's own width (a container query), so they hold in the Hermes tab as in a window. */
+.e-app-top__row { container-type: inline-size; container-name: etop; }
+.e-app-top__row > .e-section-tabs--horizontal { flex: 0 0 auto; }
+.e-app-top__actions { flex: 1 1 0; justify-content: flex-end; gap: 12px; }
+.e-app-top__actions > * { flex-shrink: 0; }
+.e-app-top__actions > .e-relay-status { flex-shrink: 1; min-width: 0; }
+.e-app-top .e-relay-status__chips { min-width: 0; }
+.e-app-top .e-status-chip:has(.e-status-chip__label--relay) { min-width: 0; flex-shrink: 1; }
+.e-app-top .e-status-chip__label--relay { min-width: 0; max-width: 24ch; }
+/* The agent's name shows whole up to 20 characters, then an ellipsis; the select gives way last. */
+.e-app-top .e-viewer-switch select { box-sizing: content-box; max-width: 24ch; text-overflow: ellipsis; }
+
+
+@container etop (max-width: 1760px) {
+  .e-app-top .e-relay-status__meta { display: none; }
+}
+@container etop (max-width: 1640px) {
+  .e-app-top .e-header-link__word { display: none; }
+}
+@container etop (max-width: 1560px) {
+  .e-app-top .e-stage-word { display: none; }
+}
+@container etop (max-width: 1240px) {
+  .e-app-top .e-viewer-switch > .e-faint { display: none; }
+  .e-app-top .e-status-chip__label--live {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  .e-app-top .e-status-chip__label--relay { max-width: 16ch; }
+}
+@container etop (max-width: 1100px) {
+  .e-app-top__actions { gap: 8px; }
+}
+@container etop (max-width: 940px) {
+  .e-app-top .e-status-chip__label--relay { max-width: 10ch; }
+}
+@container etop (max-width: 640px) {
+  .e-app-top__row { gap: 8px; }
+  .e-app-top__actions { gap: 6px; }
+  .e-app-top .e-theme-duo { padding: 5px 6px; }
+  .e-app-top .e-theme-duo__rule { margin: 2px 5px; }
+}
+/* A tight header: the relay chip keeps its dot and its title; its host is the hover text. This is the medium
+   layout (title + five words + actions, no rail) and the narrowest rail. */
+@container etop (max-width: 1130px) and (min-width: 941px) {
+  .e-app-top .e-status-chip__label--relay {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+}
+@container etop (max-width: 600px) {
+  .e-app-top .e-status-chip__label--relay {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+}
+
+/* A long agent name (a select with data-long, over 12 characters) leaves the relay chip less room: in the bands where
+   it is already a dot, the chips, the theme circles and the gaps between them tighten too. */
+@container etop (max-width: 1130px) and (min-width: 941px) {
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) { gap: 6px; padding-left: 8px; padding-right: 8px; }
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) :is(.e-status-chip, .e-money-chip) { padding-left: 4px; padding-right: 4px; }
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-theme-duo { padding: 5px 5px; }
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-theme-duo__rule { margin: 2px 4px; }
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-app-top__actions { gap: 4px; }
+}
+@container etop (max-width: 680px) {
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) { padding-left: 8px; padding-right: 8px; }
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) :is(.e-status-chip, .e-money-chip) { padding-left: 4px; padding-right: 4px; }
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-theme-duo { padding: 5px 5px; }
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-theme-duo__rule { margin: 2px 4px; }
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-app-top__actions { gap: 4px; }
+}
+
+/* A small phone: the foot is one short line, no key hints (there is no keyboard). */
+@media (max-width: 480px) {
+  .e-look .e-anim-hud--foot > span:first-child,
+  .e-anim-hud__keys { display: none; }
+}
+
+/* Book (the Chronicle, read only): chapters of one arc, the card as badges, apocrypha in a fold, practice pages apart. */
+.e-book { min-width: 0; max-width: 72ch; }
+.e-book__note { margin: 0 0 12px; font-size: 0.78rem; }
+.e-book__legend { margin: 0 0 12px; font-size: 0.76rem; line-height: 1.5; opacity: 0.8; }
+.e-book__legend > div { display: inline; }
+.e-book__legend dt { display: inline; font-weight: 700; }
+.e-book__legend dt::after { content: ":"; }
+.e-book__legend dd { display: inline; margin: 0 10px 0 0; }
+.e-book__h2 { margin: 18px 0 6px; font-family: var(--anim-pixel); font-size: 1.05rem; font-weight: 400; letter-spacing: 0.06em; }
+.e-book__h { margin: 12px 0 4px; font-family: var(--anim-pixel); font-size: 0.85rem; font-weight: 400; letter-spacing: 0.06em; }
+.e-book__toc { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 2px; font-size: 0.85rem; }
+.e-book__toc [aria-current="true"] { font-weight: 700; }
+.e-book__recap .e-book__text { margin: 0 0 4px; }
+.e-book__chapter { margin: 0 0 22px; padding: 12px 0 0; border-top: 1px solid var(--theme-border-subdued, currentColor); min-width: 0; }
+.e-book__chapter--practice { border-top-style: dashed; }
+.e-book__chead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.e-book__title { margin: 0; font-family: var(--anim-pixel); font-size: 1.2rem; font-weight: 400; letter-spacing: 0.04em; }
+.e-book__flag {
+  padding: 0 7px; font-size: 0.64rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1.6;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.e-book__badges { margin: 6px 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.e-book__badge { padding: 0 7px; font-size: 0.72rem; line-height: 1.6; overflow-wrap: anywhere; background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); }
+.e-book__badge-k { opacity: 0.6; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.62rem; }
+.e-book__practice { margin: 4px 0 8px; font-size: 0.78rem; opacity: 0.75; }
+.e-book__passage { margin: 8px 0 12px; min-width: 0; }
+.e-book__text { margin: 0; padding: 0 0 0 12px; border-left: 2px solid var(--theme-border-subdued, currentColor); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.e-book__recap p.e-book__text { padding-left: 0; border-left: 0; }
+.e-book__meta { margin: 4px 0 0; font-size: 0.74rem; opacity: 0.75; overflow-wrap: anywhere; }
+.e-book__tie { margin: 0 0 6px; font-size: 0.78rem; font-style: italic; }
+.e-book__nocanon { margin: 8px 0; }
+.e-book__cites { margin: 6px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: 0.72rem; }
+.e-book__cite { overflow-wrap: anywhere; color: var(--theme-focused-foreground); }
+.e-book__cite--plain { color: inherit; opacity: 0.8; }
+.e-book__cite-kind { text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.6rem; opacity: 0.7; }
+.e-book__picks { margin: 0; padding-left: 18px; font-size: 0.78rem; overflow-wrap: anywhere; }
+.e-book__reason { opacity: 0.75; }
+.e-book__fold { margin: 10px 0 0; }
+.e-book__fold > summary { cursor: pointer; font-size: 0.8rem; letter-spacing: 0.04em; }
+.e-book__aside { opacity: 0.85; }
+.e-book__broke { margin: 2px 0 8px; font-size: 0.76rem; font-weight: 700; }
+.e-book__practice-sec { margin-top: 28px; }
+@media (max-width: 480px) { .e-book__title { font-size: 1.05rem; } }
+
+/* ─── 31. LOOK SWITCHES ─────────────────────────────────────────────────────
+   The viewer's own font (Pixel, Serif, Type) and text ink (Auto, White, Black), and the playful controls
+   for them. Classes come from themeConfig.applyTheme: look-font-*, look-ink-*, look-body-ink, look-cover.
+   Pixel is the default and is §0 above, untouched. Serif and Type use system font stacks (no font file is
+   fetched, so the no-remote-fonts rule holds). Motion: CSS only, none under prefers-reduced-motion or in
+   capture mode. */
+.e-look.look-font-serif {
+  --anim-pixel: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "DejaVu Serif", serif;
+  --font-family-mono: Charter, "Iowan Old Style", Georgia, "DejaVu Serif", serif;
+}
+.e-look.look-font-type {
+  --anim-pixel: "Space Mono", ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  --font-family-mono: var(--anim-pixel);
+}
+/* Headings and the title: Serif is widely spaced capitals, Type is lowercase. */
+.e-look.look-font-serif :is(.e-brand-title, .e-overview-card__title, .e-now__head > span:last-child, .e-hstrip__figure,
+  .e-thread__h, .e-topic-head__name, .e-talk__head, .e-lab__name, .e-lab__h, .e-agent-hero__name, .e-mobile-top__section) {
+  letter-spacing: 0.2em;
+  font-weight: 400;
+}
+.e-look.look-font-serif .e-section-tab { letter-spacing: 0.08em; text-transform: uppercase; }
+.e-look.look-font-type :is(.e-brand-title, .e-overview-card__title, .e-now__head > span:last-child, .e-hstrip__figure,
+  .e-thread__h, .e-topic-head__name, .e-talk__head, .e-lab__name, .e-lab__h, .e-agent-hero__name, .e-mobile-top__section,
+  .e-section-tab) {
+  text-transform: lowercase;
+  letter-spacing: 0;
+}
+/* The wordmark's letters are typed uppercase and sit in a button, which does not inherit text-transform. */
+.e-look.look-font-type .e-brand { text-transform: lowercase; }
+/* Type: the title reads "emporia.✶". */
+.e-look.look-font-type .e-brand > span:first-child::after { content: "."; }
+.e-look.look-font-type .e-brand__star > svg { display: none; }
+.e-look.look-font-type .e-brand__star::after { content: "✶"; }
+.e-look.look-font-type .e-brand__star { margin-left: 0; }
+
+/* Ink: the title always follows White / Black; body text only where it reaches 4.5:1 (look-body-ink). */
+.e-look.look-ink-white :is(.e-brand-title, .e-brand-home, .e-mobile-top__section) { color: #fff; }
+.e-look.look-ink-black :is(.e-brand-title, .e-brand-home, .e-mobile-top__section) { color: #000; }
+.e-look.look-ink-white.look-body-ink { --theme-text: #fff; }
+.e-look.look-ink-black.look-body-ink { --theme-text: #000; }
+.e-lowcontrast {
+  font-size: 0.62rem; line-height: 1; margin-left: 6px; padding: 2px 4px; white-space: nowrap;
+  border: 1px solid currentColor; opacity: 0.85;
+}
+
+/* Cover mode (shift-click the title): the title set the way the chosen font's cover is. */
+.e-look.look-cover .e-brand-title { font-size: 1.5rem !important; }
+.e-look.look-cover.look-font-pixel .e-brand-title { letter-spacing: 0.14em; }
+.e-look.look-cover.look-font-serif .e-brand-title {
+  letter-spacing: 0.5em; padding: 2px 0 2px 0.5em;
+  border-top: 1px solid currentColor; border-bottom: 1px solid currentColor;
+}
+.e-look.look-cover.look-font-type .e-brand-title { letter-spacing: -0.02em; font-weight: 700; text-transform: lowercase; }
+
+/* The controls. */
+.e-sleeve {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 18px; min-width: 18px; padding: 0 6px; border: 1px solid rgba(127,127,127,0.5); border-radius: 0;
+  font: inherit; font-size: 0.66rem; line-height: 1; cursor: pointer; flex-shrink: 0;
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.25);
+  animation: e-sleeve-flip 0.4s ease-out;
+}
+.e-sleeve:focus-visible, .e-inkwell:focus-visible, .e-key:focus-visible { outline: 2px solid var(--theme-focused-foreground); outline-offset: 2px; }
+.e-sleeve__name { white-space: nowrap; }
+@keyframes e-sleeve-flip { from { transform: perspective(60px) rotateY(-90deg); } to { transform: perspective(60px) rotateY(0); } }
+
+.e-inkwell {
+  --well: var(--anim-ink, currentColor);
+  position: relative; width: 16px; height: 18px; padding: 0; background: var(--well);
+  border: 1px solid rgba(127,127,127,0.55); border-radius: 3px 3px 8px 8px; cursor: pointer; flex-shrink: 0;
+  box-shadow: inset 0 3px 0 rgba(255,255,255,0.25);
+}
+.e-inkwell[data-ink="auto"] { background: var(--theme-text); }
+.e-inkwell__drip { position: absolute; left: 50%; top: 100%; width: 3px; height: 0; margin-left: -1px; border-radius: 0 0 3px 3px; background: var(--well); }
+.e-inkwell[data-ink="auto"] .e-inkwell__drip { background: var(--theme-text); }
+.e-inkwell:active .e-inkwell__drip { animation: e-ink-drip 0.45s ease-out; }
+@keyframes e-ink-drip { 0% { height: 0; } 60% { height: 6px; } 100% { height: 0; opacity: 0; } }
+/* The new colour runs down into the title. */
+.e-look.look-drip .e-brand-title { animation: e-title-drip 0.7s ease-out; }
+@keyframes e-title-drip { from { clip-path: inset(0 0 100% 0); text-shadow: 0 -0.5em 0 currentColor; } to { clip-path: inset(0 0 0 0); text-shadow: 0 0 0 transparent; } }
+
+.e-keys { display: inline-flex; gap: 3px; }
+.e-key {
+  width: 18px; height: 18px; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid currentColor; border-radius: 50%; background: transparent; color: inherit; cursor: pointer;
+  font-size: 0.7rem; line-height: 1; box-shadow: 0 2px 0 currentColor; transform: translateY(0);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+.e-key--pixel { font-family: "EmporiaPixel", monospace; }
+.e-key--serif { font-family: Georgia, "DejaVu Serif", serif; }
+.e-key--type { font-family: "Space Mono", ui-monospace, Menlo, Consolas, monospace; }
+.e-key:active, .e-key[aria-pressed="true"] { transform: translateY(2px); box-shadow: 0 0 0 currentColor; }
+.e-key[aria-pressed="true"] { background: var(--theme-text); color: var(--theme-background); }
+
+@media (prefers-reduced-motion: reduce) {
+  .e-sleeve, .e-inkwell__drip, .e-look.look-drip .e-brand-title { animation: none !important; }
+  .e-key { transition: none; }
+}
+.e-capture .e-sleeve, .e-capture .e-inkwell__drip, .e-capture.look-drip .e-brand-title { animation: none !important; }
+.e-capture .e-key { transition: none; }
+
+/* Header tiers (the existing etop container): the swatch's name goes first, then the keys shrink. */
+@container etop (max-width: 1240px) {
+  .e-app-top .e-sleeve__name { display: none; }
+  .e-app-top .e-sleeve { width: 18px; padding: 0; }
+  .e-app-top .e-lowcontrast { font-size: 0; padding: 2px 5px; }
+  .e-app-top .e-lowcontrast::before { content: "!"; font-size: 0.66rem; }
+}
+@container etop (max-width: 940px) {
+  .e-app-top .e-key { width: 15px; height: 15px; font-size: 0.6rem; }
+  .e-app-top .e-inkwell { width: 13px; height: 15px; }
+  .e-app-top .e-sleeve { height: 15px; width: 15px; }
+}
+.e-mobile-drawer .e-theme-duo { flex-wrap: wrap; row-gap: 8px; }
 .Text_text_1shpo {
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -4097,21 +4443,6 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 .Indent_root_9k7l5 {
   display: block;
   padding: 0 0 0 1ch;
-}
-.Badge_root_1obhs {
-  display: inline-block;
-  vertical-align: top;
-  text-align: center;
-  font-weight: 400;
-  margin: 0;
-  outline: 0;
-  border: 0;
-  font-family: var(--font-family-mono);
-  min-height: calc(var(--theme-line-height-base) * var(--font-size));
-  text-transform: uppercase;
-  transition: 200ms ease all;
-  background: var(--theme-border);
-  padding: 0 1ch 0 1ch;
 }
 /* ═══════════════════════════════════════════════════════════════
    PIXEL BADGES — badges/Badge.tsx, docs/ui-badges.md
@@ -4256,30 +4587,82 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 .e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }
 .e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }
 .e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }
-.Divider_gradient_hx4se {
-  background: linear-gradient(to right, transparent, var(--theme-border), transparent);
-  height: calc(var(--font-size) * var(--theme-line-height-base));
-  width: 100%;
-}
-
-.Divider_divider_hx4se {
-  align-items: center;
-  border: 0;
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  height: calc(var(--font-size) * var(--theme-line-height-base));
-  justify-content: center;
+.Badge_root_1obhs {
+  display: inline-block;
+  vertical-align: top;
+  text-align: center;
+  font-weight: 400;
+  margin: 0;
   outline: 0;
-  width: 100%;
+  border: 0;
+  font-family: var(--font-family-mono);
+  min-height: calc(var(--theme-line-height-base) * var(--font-size));
+  text-transform: uppercase;
+  transition: 200ms ease all;
+  background: var(--theme-border);
+  padding: 0 1ch 0 1ch;
+}
+.AlertBanner_root_l7zgu {
+  display: block;
+  background: var(--theme-border);
+  box-shadow: 1ch 1ch 0 0 var(--theme-border-subdued);
+  padding: calc(var(--font-size) * var(--theme-line-height-base)) 2ch calc(var(--font-size) * var(--theme-line-height-base)) 2ch;
+  font-weight: 400;
+}
+.AskAgent_root_1tucs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6ch;
+  min-height: 32px;
+  padding: 2px 10px;
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
-.Divider_line_hx4se {
-  background: var(--theme-text);
-  display: block;
-  flex-shrink: 0;
-  height: 2px;
-  width: 100%;
+.AskAgent_root_1tucs:hover {
+  border-color: var(--theme-focused-foreground);
+  color: var(--theme-focused-foreground);
+}
+
+.AskAgent_row_1tucs {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0 8px;
+}
+
+.AskAgent_copy_1tucs {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.8ch;
+}
+
+.AskAgent_note_1tucs {
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+.AskAgent_glyph_1tucs {
+  color: var(--theme-focused-foreground);
+}
+
+@media (max-width: 700px) {
+  .AskAgent_root_1tucs {
+    min-height: 40px;
+    padding: 4px 12px;
+  }
+}
+.RowSpaceBetween_row_1rf1p {
+  display: flex;
+  justify-content: space-between;
+  outline: 0;
+  border: 0;
 }
 .SidebarLayout_root_1g3qb {
   display: flex;
@@ -4401,123 +4784,6 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
     cursor: pointer;
   }
 }
-/*
-NOTE(jimmylee):
-Simple fluid table for Sacred Computer. The CLI framework's `formatRow` +
-`cardHeaderRow` primitives map onto this exact CSS surface, so the React port and
-the terminal port render the same rows from the same data array. Background tokens
-reference the ANSI palette in global.css so the colors are byte-equal to
-scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
-*/
-
-.SimpleTable_scrollWrapper_x98rn {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.SimpleTable_root_x98rn {
-  padding: 0;
-  border-collapse: collapse;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  width: 100%;
-}
-
-.SimpleTable_root_x98rn td {
-  padding: 0 2ch 0 0;
-  vertical-align: top;
-}
-
-.SimpleTable_root_x98rn td:last-child {
-  padding-right: 0;
-}
-
-.SimpleTable_root_x98rn thead td {
-  background: var(--ansi-240-gray-35);
-  color: var(--color-white);
-  font-weight: 400;
-}
-
-.SimpleTable_root_x98rn tbody tr:focus {
-  background: var(--theme-focused-foreground);
-  outline: 0;
-}
-
-.SimpleTable_alignRight_x98rn {
-  text-align: right;
-}
-
-.SimpleTable_statusOk_x98rn {
-  color: var(--ansi-10-lime);
-  font-weight: 700;
-}
-
-.SimpleTable_statusOff_x98rn {
-  color: var(--ansi-248-gray-66);
-}
-.AlertBanner_root_l7zgu {
-  display: block;
-  background: var(--theme-border);
-  box-shadow: 1ch 1ch 0 0 var(--theme-border-subdued);
-  padding: calc(var(--font-size) * var(--theme-line-height-base)) 2ch calc(var(--font-size) * var(--theme-line-height-base)) 2ch;
-  font-weight: 400;
-}
-.AskAgent_root_1tucs {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6ch;
-  min-height: 32px;
-  padding: 2px 10px;
-  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 0.78rem;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.AskAgent_root_1tucs:hover {
-  border-color: var(--theme-focused-foreground);
-  color: var(--theme-focused-foreground);
-}
-
-.AskAgent_row_1tucs {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 0 8px;
-}
-
-.AskAgent_copy_1tucs {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.8ch;
-}
-
-.AskAgent_note_1tucs {
-  font-size: 0.72rem;
-  opacity: 0.7;
-}
-
-.AskAgent_glyph_1tucs {
-  color: var(--theme-focused-foreground);
-}
-
-@media (max-width: 700px) {
-  .AskAgent_root_1tucs {
-    min-height: 40px;
-    padding: 4px 12px;
-  }
-}
-.RowSpaceBetween_row_1rf1p {
-  display: flex;
-  justify-content: space-between;
-  outline: 0;
-  border: 0;
-}
 .Chessboard_board_cycky {
   display: inline-table;
   border-collapse: collapse;
@@ -4556,80 +4822,30 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   font-size: 40px;
   line-height: calc(var(--theme-line-height-base) * 2rem);
 }
-.ActionButton_hotkey_fa94z {
-  background: var(--theme-button-foreground);
-  color: var(--theme-text);
-  cursor: pointer;
-  flex-shrink: 0;
-  font-weight: 400;
-  padding: 0 1ch 0 1ch;
-  text-indent: 0ch;
-  user-select: none;
+.Divider_gradient_hx4se {
+  background: linear-gradient(to right, transparent, var(--theme-border), transparent);
+  height: calc(var(--font-size) * var(--theme-line-height-base));
+  width: 100%;
 }
 
-.ActionButton_content_fa94z {
-  background: var(--theme-button-background);
-  box-shadow: inset 0 0 0 2px var(--theme-button-foreground);
-  cursor: pointer;
-  flex-shrink: 0;
-  font-weight: 400;
-  padding: 0 1ch 0 1ch;
-  text-indent: 0ch;
-  text-transform: uppercase;
-  user-select: none;
-}
-
-.ActionButton_root_fa94z {
-  display: inline-flex;
+.Divider_divider_hx4se {
   align-items: center;
-  justify-content: space-between;
-  cursor: pointer;
-  outline: 0;
   border: 0;
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size);
+  display: flex;
+  flex-direction: column;
   flex-shrink: 0;
-
-  &:hover .ActionButton_hotkey_fa94z {
-    background: var(--theme-focused-foreground);
-  }
-
-  &:hover .ActionButton_content_fa94z {
-    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);
-  }
-
-  &:focus {
-    background: var(--theme-focused-foreground);
-  }
-
-  &:focus .ActionButton_hotkey_fa94z {
-    background: var(--theme-focused-foreground);
-  }
-
-  &:focus .ActionButton_content_fa94z {
-    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);
-  }
-
-  &:active {
-    background: var(--theme-focused-foreground);
-  }
-
-  &:active .ActionButton_hotkey_fa94z {
-    background: var(--theme-focused-foreground);
-  }
-
-  &:active .ActionButton_content_fa94z {
-    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);
-  }
+  height: calc(var(--font-size) * var(--theme-line-height-base));
+  justify-content: center;
+  outline: 0;
+  width: 100%;
 }
 
-.ActionButton_selected_fa94z {
-  .ActionButton_content_fa94z {
-    background: var(--theme-focused-foreground);
-  }
+.Divider_line_hx4se {
+  background: var(--theme-text);
+  display: block;
+  flex-shrink: 0;
+  height: 2px;
+  width: 100%;
 }
 /* Shared by every board. Theme variables only; the --anim-* fallbacks keep a board legible outside the look. */
 
@@ -4870,6 +5086,22 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 .SluiceBoard_keyA_mmd9b { width: 0.8rem; height: 0.8rem; background: var(--board-fill); display: inline-block; }
 .SluiceBoard_keyB_mmd9b { width: 0.8rem; height: 0.8rem; border: 2px solid var(--board-line); border-radius: 50%; display: inline-block; box-sizing: border-box; }
 .SluiceBoard_keySilt_mmd9b { width: 0.8rem; height: 0.8rem; display: inline-block; border: 1px solid var(--board-rule); background-image: repeating-linear-gradient(135deg, var(--theme-text) 0 1px, transparent 1px 4px); }
+/* Tesseract's table: theme variables only (the board kit's), no colour of its own. */
+.TesseractBoard_root_1igqw { max-width: 44rem; }
+
+.TesseractBoard_seats_1igqw { list-style: none; margin: 4px 0 10px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.TesseractBoard_seat_1igqw { padding: 2px 8px; border: 1px solid var(--board-rule); font-size: 0.8rem; }
+.TesseractBoard_winner_1igqw { border-color: var(--board-line); font-weight: 700; }
+
+.TesseractBoard_round_1igqw { margin: 0 0 10px; }
+.TesseractBoard_bars_1igqw { display: grid; grid-template-columns: 5.5rem repeat(4, minmax(0, 1fr)); gap: 4px; align-items: stretch; }
+.TesseractBoard_label_1igqw { font-size: 0.72rem; align-self: center; opacity: 0.8; }
+.TesseractBoard_bar_1igqw { position: relative; display: block; min-height: 1.4rem; border: 1px solid var(--board-rule); overflow: hidden; }
+.TesseractBoard_fill_1igqw { position: absolute; inset: 0 auto 0 0; background: var(--board-fill); opacity: 0.35; }
+.TesseractBoard_value_1igqw { position: relative; font-size: 0.72rem; padding: 0 4px; line-height: 1.4rem; white-space: nowrap; }
+
+.TesseractBoard_pushes_1igqw { margin: 2px 0 0 5.5rem; font-size: 0.72rem; line-height: 1.4; opacity: 0.85; overflow-wrap: anywhere; }
+.TesseractBoard_results_1igqw { margin: 6px 0 0; padding-left: 1.4rem; font-size: 0.8rem; line-height: 1.5; }
 .AgentChat_toggle_ry10h {
   font-size: 0.85rem !important;
   letter-spacing: 0.04em;

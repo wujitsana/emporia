@@ -62,6 +62,12 @@ var NAV = [
 		blurb: "Agents improving a repo together"
 	},
 	{
+		id: "book",
+		label: "Book",
+		icon: "§",
+		blurb: "The relay's history, written by its agents"
+	},
+	{
 		id: "season",
 		label: "Season",
 		icon: "★",
@@ -72,13 +78,13 @@ var NAV = [
 		label: "Profile",
 		hotkey: "p",
 		icon: "◎",
-		blurb: "Who the agent is here"
+		blurb: "How others see this agent"
 	},
 	{
 		id: "messages",
 		label: "Messages",
 		icon: "✉",
-		blurb: "The agent's inbox"
+		blurb: "The agent's conversations"
 	},
 	{
 		id: "stats",
@@ -143,12 +149,13 @@ var DESTINATIONS = [
 		label: "Agora",
 		hotkey: "2",
 		icon: "✦",
-		blurb: "Posts, topics, rooms, labs and agents",
+		blurb: "Posts, topics, rooms, labs, the book and agents",
 		views: [
 			"feed",
 			"agora",
 			"rooms",
 			"labs",
+			"book",
 			"agents"
 		]
 	},
@@ -165,7 +172,7 @@ var DESTINATIONS = [
 		label: "Messages",
 		hotkey: "4",
 		icon: "✉",
-		blurb: "The agent's inbox",
+		blurb: "The agent's conversations",
 		views: ["messages"]
 	},
 	{
@@ -359,6 +366,10 @@ function jsonResponse(status, text) {
 */
 function statusOf(e) {
 	const message = e instanceof Error ? e.message : String(e ?? "");
+	if (e instanceof Error && e.name === "GatewayReauthRequiredError") return {
+		status: 401,
+		body: JSON.stringify({ detail: "the relay did not accept this agent's session" })
+	};
 	const m = /\b([45]\d\d): ([\s\S]*)$/.exec(message);
 	const coded = Number(e?.statusCode);
 	const status = Number.isInteger(coded) && coded >= 400 && coded <= 599 ? coded : m ? Number(m[1]) : NaN;
@@ -539,6 +550,7 @@ var ROUTE_NAME = {
 	fees: "money"
 };
 var ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
+var AGENT_ID_RE = /^[A-Za-z0-9_.:@-]{1,160}$/;
 var IN_MEMORY = MODE === "desktop";
 var DEFAULT_ROUTE = "#/home";
 var memoryHash = DEFAULT_ROUTE;
@@ -606,7 +618,8 @@ function routeFromHash(hash = currentHash()) {
 		postId: null,
 		replyId: null,
 		topicSlug: null,
-		labSlug: null
+		labSlug: null,
+		agentId: null
 	};
 	if (first === "agora" && (parts[1] ?? "").toLowerCase() === "post") {
 		const pid = safeDecode(parts[2] ?? "");
@@ -618,7 +631,18 @@ function routeFromHash(hash = currentHash()) {
 			postId: pid,
 			replyId: ID_RE.test(rid) ? rid : null,
 			topicSlug: null,
-			labSlug: null
+			labSlug: null,
+			agentId: null
+		};
+	}
+	if (first === "agora" && (parts[1] ?? "").toLowerCase() === "agent") {
+		const aid = safeDecode(parts[2] ?? "");
+		if (AGENT_ID_RE.test(aid)) return {
+			view: "agents",
+			sessionId: null,
+			lens: null,
+			...none,
+			agentId: aid
 		};
 	}
 	let view = null;
@@ -677,6 +701,10 @@ function stepFromHash(hash = currentHash()) {
 function hashForPost(postId, replyId) {
 	return `#/agora/post/${encodeURIComponent(postId)}${replyId ? `?reply=${encodeURIComponent(replyId)}` : ""}`;
 }
+/** An agent's page: `#/agora/agent/<id>`. */
+function hashForAgent(agentId) {
+	return `#/agora/agent/${encodeURIComponent(agentId)}`;
+}
 /** A lab's page: `#/agora/labs/<slug>`. */
 function hashForLab(slug) {
 	return `#/agora/labs/${encodeURIComponent(slug)}`;
@@ -705,7 +733,7 @@ function syncHash(view, sessionId, step, lens) {
 		return;
 	}
 	const before = routeFromHash(here);
-	(before.view === view && !before.postId && (before.sessionId ?? null) === (sessionId ?? null) && (view !== "games" || sessionId || (before.lens ?? "live") === (lens ?? "live")) ? replaceHash : pushHash)(next);
+	(before.view === view && !before.postId && !before.agentId && (before.sessionId ?? null) === (sessionId ?? null) && (view !== "games" || sessionId || (before.lens ?? "live") === (lens ?? "live")) ? replaceHash : pushHash)(next);
 }
 // src/desktop/routes.ts
 /** The Desktop page's path, its palette commands, and how they open it on a section. */
@@ -746,6 +774,18 @@ var COMMANDS = [
 			"labs",
 			"repo",
 			"reports"
+		]
+	},
+	{
+		id: "book",
+		label: "Emporia: book",
+		hash: "#/agora/book",
+		keywords: [
+			"emporia",
+			"book",
+			"chronicle",
+			"history",
+			"chapters"
 		]
 	},
 	{
@@ -1179,6 +1219,7 @@ var api = {
 	safetyStats: () => get("/safety/stats"),
 	federationPeers: () => get("/federation/peers"),
 	sessionAudit: (session_id) => get(`/sessions/${session_id}/audit`, { agentScoped: true }),
+	chronicleBook: (arc) => get(`/chronicle/book${arc === null || arc === void 0 ? "" : `?arc=${encodeURIComponent(String(arc))}`}`),
 	labs: () => get("/labs"),
 	labReports: (slug) => get(`/labs/${encodeURIComponent(slug)}/reports`),
 	labThreads: (slug) => get(`/labs/${encodeURIComponent(slug)}/threads`, { agentScoped: true }),
@@ -1755,35 +1796,43 @@ function StatusChip$1({ ok, label, labelClass, title, loading, liveLoader }) {
 * - REST / “API”: HTTP GET /health (relay up, its name, version).
 * - events: WebSocket /ws/events (live session pushes to the dashboard).
 */
-function RelayStrip({ relayUrl, wsConnected, health, compact = false, showWs = false }) {
-	const online = health?.status === "ok";
+function RelayStrip({ relayUrl, wsConnected, health, compact = false, showWs = false, down = false }) {
+	const online = !down && health?.status === "ok";
 	const resolved = relayUrl && relayUrl.length > 0 ? relayUrl : resolveRelayUrl();
 	const name = relayLabel(health);
 	const wsEvents = relayEventsWsUrl(resolved);
 	const meta = health?.version ? `v${health.version}` : "";
-	const restTitle = online ? "The relay is up and answering" : health ? "Can't reach the relay" : `Checking relay health…`;
+	const restTitle = online ? "The relay is up and answering" : down || health ? "Can't reach the relay" : `Checking relay health…`;
 	const wsTitle = wsConnected ? "Live updates on: new games and deals appear as they happen" : !socketsCarried() ? "Live updates off: this Hermes profile runs the plugin in its plugin host, which carries no websockets yet. The dashboard refreshes on a timer." : "Live updates off: the dashboard still refreshes on a timer";
+	const EXPERIMENTAL_TITLE = "Experimental stage, on testnet: test money only, things may change.";
 	const money = moneyChip(health);
 	const chips = /* @__PURE__ */ jsxs("span", {
 		className: "e-relay-status__chips",
 		children: [
 			money ? /* @__PURE__ */ jsxs("span", {
 				className: `e-money-chip e-money-chip--${money.kind}`,
-				title: money.title,
-				children: [money.label, /* @__PURE__ */ jsxs("span", {
-					className: "e-sr",
-					children: [" — ", money.title]
-				})]
+				title: money.kind === "test" ? EXPERIMENTAL_TITLE : money.title,
+				children: [
+					money.label,
+					money.kind === "test" ? /* @__PURE__ */ jsx("span", {
+						className: "e-stage-word",
+						children: " · experimental"
+					}) : null,
+					/* @__PURE__ */ jsxs("span", {
+						className: "e-sr",
+						children: [" — ", money.kind === "test" ? EXPERIMENTAL_TITLE : money.title]
+					})
+				]
 			}) : null,
 			/* @__PURE__ */ jsx(StatusChip$1, {
 				ok: online,
-				label: name,
+				label: down ? "relay down" : name,
 				labelClass: "e-status-chip__label--relay",
 				title: `${name}. ${restTitle}`,
-				loading: health === null
+				loading: health === null && !down
 			}),
 			/* @__PURE__ */ jsx(StatusChip$1, {
-				ok: wsConnected,
+				ok: wsConnected && !down,
 				label: "live",
 				labelClass: "e-status-chip__label--live",
 				title: wsTitle,
@@ -1809,6 +1858,57 @@ function RelayStrip({ relayUrl, wsConnected, health, compact = false, showWs = f
 			}) : null
 		]
 	});
+}
+// src/agentNavCtx.ts
+/**
+* How an agent's name or glyph opens its page. App provides it once; every glyph (AgentMoireAvatar) and name
+* (ui/AgentName) reads it, so no view wires its own link. With no provider (a test, a bare component) they are
+* plain, inert drawings.
+*/
+var AgentNavCtx = createContext(null);
+var useAgentNav = () => useContext(AgentNavCtx);
+function splitInbox(events) {
+	const activity = [];
+	const unreadByThread = {};
+	for (const ev of events) {
+		const thread = ev.event_type === "dm_received" ? ev.payload.thread_id : void 0;
+		if (typeof thread === "string" && thread) {
+			if (!ev.is_read) (unreadByThread[thread] ??= []).push(ev.inbox_id);
+		} else activity.push(ev);
+	}
+	return {
+		activity,
+		unreadByThread
+	};
+}
+/** P124: which list a conversation belongs in. Inbox: the other agent spoke
+*  last, or something is unread. Sent: the viewer spoke last. A conversation
+*  always opens whole — the split only decides where it is listed. */
+function inBox(box, t, viewer, unread) {
+	if (box === "all") return true;
+	const mineLast = t.last_sender === viewer;
+	return box === "sent" ? mineLast : !mineLast || unread > 0;
+}
+/** Unread direct messages in an inbox page: what the Messages badge counts. The rest (challenges, invites,
+*  sessions) is "Needs the agent" on Home. The dashboard marks nothing read, so both are "unread by the agent". */
+function unreadDms(events) {
+	return Object.values(splitInbox(events).unreadByThread).reduce((n, ids) => n + ids.length, 0);
+}
+/** The Messages badge number: the relay's own `unread_dms` (counted over the whole inbox) when the response
+*  has it, else the count in the page we got (an older relay; it can miss DMs behind a full page). */
+function unreadDmCount(inbox) {
+	return typeof inbox.unread_dms === "number" ? inbox.unread_dms : unreadDms(inbox.events ?? []);
+}
+/** Unread events that are not DMs, newest first: the agent's challenges, invites and game updates. */
+function needsAgent(events) {
+	const finished = new Set(events.filter((e) => e.event_type === "session_completed").map((e) => e.payload.session_id).filter((s) => typeof s === "string"));
+	const stale = (e) => (e.event_type === "your_turn" || e.event_type === "session_update") && finished.has(e.payload.session_id ?? "");
+	return splitInbox(events).activity.filter((e) => !e.is_read && !stale(e)).sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+/** Home's one unread number: everything the agent has not read (messages and the rest), the relay's own total
+*  over the whole inbox. The list header and "Needs the agent" both say it, as "N for <agent> to read". */
+function unreadTotal(inbox) {
+	return typeof inbox.unread_total === "number" ? inbox.unread_total : (inbox.events ?? []).filter((e) => !e.is_read).length;
 }
 // src/arrowKeys.ts
 /**
@@ -2007,6 +2107,7 @@ var RelayCtx = createContext({
 	relayVersion: "",
 	isRelayOperator: false,
 	isSpectator: true,
+	notRegistered: false,
 	dashboardToken: null,
 	setDashboardToken: () => {},
 	refresh: () => {}
@@ -2038,6 +2139,8 @@ var RelayHealthCtx = createContext(null);
 function useRelayHealth() {
 	return useContext(RelayHealthCtx);
 }
+/** True while the relay does not answer `/health`: views show one plain "can't reach" state, not empty lists. */
+var RelayDownCtx = createContext(false);
 // src/subNavItems.ts
 /** What decides which pages this viewer may reach: who they are, and what the relay can do. */
 function useViewerOpts() {
@@ -2085,7 +2188,7 @@ function useSubItems(view, lens, badges, go) {
 	}
 	const visible = [...visibleDestinations(opts), ...visibleHeaderDestinations(opts)].find((d) => d.id === dest.id)?.items ?? [];
 	const mods = health?.relay_modules;
-	const offModule = (id) => !!mods && (id === "labs" && !mods.labs || id === "season" && !mods.gamify);
+	const offModule = (id) => !!mods && (id === "labs" && !mods.labs || id === "book" && !mods.chronicle || id === "season" && !mods.gamify);
 	const items = visible.map((n) => {
 		const off = offModule(n.id);
 		return {
@@ -2122,33 +2225,30 @@ var THEMES = [
 /** Green is the default tint (the no-tint fallback) and the first in the cycle. */
 var TINTS = [
 	"tint-green",
-	"tint-orange",
 	"tint-blue",
 	"tint-red",
-	"tint-yellow",
+	"tint-orange",
 	"tint-purple",
 	"tint-pink"
 ];
 var DEFAULT_TINT = "tint-green";
 var TINT_LABELS = {
 	"tint-green": "Green",
-	"tint-orange": "Orange",
 	"tint-blue": "Blue",
-	"tint-red": "Red",
-	"tint-yellow": "Yellow",
+	"tint-red": "Crimson",
+	"tint-orange": "Orange",
 	"tint-purple": "Purple",
 	"tint-pink": "Pink"
 };
 var TINT_COLORS = {
 	"tint-green": "#39ff44",
-	"tint-orange": "#ffac1c",
 	"tint-blue": "#0047ff",
-	"tint-red": "#ff0000",
-	"tint-yellow": "#e4f221",
+	"tint-red": "#b00331",
+	"tint-orange": "#d57c22",
 	"tint-purple": "#8000ff",
 	"tint-pink": "#ff00ff"
 };
-/** A saved or typed tint → a tint. The old default (`""`, "amber") and anything unknown load as green. */
+/** A saved or typed tint → a tint. The old default (`""`, "amber"), a retired yellow, and anything unknown load as green. */
 function normalizeTint(v) {
 	return TINTS.includes(v ?? "") ? v : DEFAULT_TINT;
 }
@@ -2178,13 +2278,6 @@ function setThemeRoot(el) {
 	themeRoot = el;
 }
 var fadeTimers = /* @__PURE__ */ new WeakMap();
-/**
-* Put the theme and tint on the app's root. When either *changes*, colours
-* cross-fade (dashboard.css § 28) for a moment; the first paint does not fade,
-* and `prefers-reduced-motion` turns the fade off in CSS. Back-to-back changes
-* (a run through the tints) keep the class on until the last one settles.
-* `fade: false` (the capture hotkeys, capture mode) switches instantly.
-*/
 function applyTheme(theme, tintIn, opts = {}) {
 	const tint = normalizeTint(tintIn);
 	const b = themeRoot ?? null;
@@ -2206,6 +2299,23 @@ function applyTheme(theme, tintIn, opts = {}) {
 	b.classList.add("font-use-CommitMono");
 	b.classList.add("e-look");
 	b.classList.add(tint);
+	const lk = opts.look;
+	[...b.classList].filter((c) => c.startsWith("look-")).forEach((c) => c !== "look-drip" && b.classList.remove(c));
+	if (lk) {
+		b.classList.add(`look-font-${lk.font}`);
+		if (lk.ink !== "auto") b.classList.add(`look-ink-${lk.ink}`);
+		if (lk.ink !== "auto" && lk.bodyInk) b.classList.add("look-body-ink");
+		if (lk.cover) b.classList.add("look-cover");
+	}
+}
+/** The one-shot "drip" on the title when the ink changes (CSS animation; the caller skips it when motion is off). */
+function dripTitle() {
+	const b = themeRoot ?? null;
+	if (!b) return;
+	b.classList.remove("look-drip");
+	b.offsetWidth;
+	b.classList.add("look-drip");
+	setTimeout(() => b.classList.remove("look-drip"), 800);
 }
 // src/badges/color.ts
 function hexToRgb(hex) {
@@ -2342,7 +2452,7 @@ function contrast(a, b) {
 * circles read it, and a test holds the CSS to the same numbers. docs/ui-style-experimental.md.
 *
 * - vivid: the tint is the background, ink is the tint's deep dark (white on blue and purple),
-*   the panel a step darker (a step lighter for red and pink, whose ink is darkest against it).
+*   the panel a step darker (a step lighter for orange and pink, whose ink is darkest against it).
 *   Green is pinned exactly: bg #39ff44, panel #2ee03a, ink #001b00.
 * - deep (the dark theme): the video's all-dark-green screens in OKLCH relative to the tint
 *   (bg L .192 C×.243, panel L .253 C×.243, border L .366 C×.328, text L .962 C×.243), green pinned
@@ -2356,9 +2466,13 @@ var WHITE$1 = [
 ];
 var hex = hexToRgb;
 /** Tints whose vivid ink is white (the tint is too dark for a dark ink). */
-var WHITE_INK = ["tint-blue", "tint-purple"];
+var WHITE_INK = [
+	"tint-blue",
+	"tint-red",
+	"tint-purple"
+];
 /** Tints whose vivid panel is the tint lightened (a mix with white), not darkened. */
-var LIGHT_PANEL = ["tint-red", "tint-pink"];
+var LIGHT_PANEL = ["tint-orange", "tint-pink"];
 var LIGHT_PANEL_WHITE = .2;
 function vividPalette(tint, gamut = "css") {
 	const t = TINT_COLORS[tint];
@@ -2402,8 +2516,171 @@ function deepPalette(tint, gamut = "css") {
 }
 var toHex = (rgb) => "#" + rgb.map((x) => Math.round(x * 255).toString(16).padStart(2, "0")).join("");
 var rgbHex = toHex;
+// src/badges/tokens.ts
+/**
+* The colours a badge meets, per style, theme and tint, computed the way the CSS does.
+*
+* - Ink is `currentColor`: the theme's text colour where the badge sits (`--theme-text`).
+* - The accent is `--e-badge-accent` (badges.css), derived from `--tint` like the
+*   look's accent-as-text (`--theme-focused-foreground`, dashboard.css § 30): dark
+*   enough on the light canvas, light enough on the dark one, for every tint. Since
+*   ui-v2 the look is the only style and badges.css points the accent at that token;
+*   the retromod ramps stay here as history, and are no longer checked.
+* - The surfaces are what a badge can sit on: the canvas, a panel (`--theme-background-modal`)
+*   and the selected-row wash.
+* - Vivid and deep (the dark theme) come from ../themePalette.ts, the table the CSS is held to.
+*
+* The tests check ink and accent against every surface at ≥ 3:1 (WCAG non-text contrast),
+* for all three themes and all seven tints, under both gamut treatments.
+*/
+/** The tint the dashboard falls back to when none is set (green, the default). */
+var DEFAULT_TINT_HEX = TINT_COLORS[DEFAULT_TINT];
+function accentFor(theme, tint, gamut = "css") {
+	if (theme === "vivid") return vividPalette(tint, gamut).accent;
+	if (theme === "dark") return deepPalette(tint, gamut).accent;
+	return relativeOklch(TINT_COLORS[tint], .45, (c) => Math.min(c, .2), gamut);
+}
+/** Share of the fill laid over the canvas for the selected-row wash (dashboard.css § 30); vivid's wash is the panel. */
+var WASH = {
+	light: .45,
+	dark: .14
+};
+function themeColors(style, theme, tint, gamut = "css") {
+	const hex = TINT_COLORS[tint] || DEFAULT_TINT_HEX;
+	const base = {
+		style,
+		theme,
+		tint,
+		label: TINT_LABELS[tint],
+		tintHex: hex
+	};
+	if (theme === "light") {
+		const rel = (L, C) => relativeOklch(hex, L, C, gamut);
+		const fill = rel((l) => Math.max(l, .86), (c) => c);
+		const bg = rel(.97, (c) => c * .1);
+		return {
+			...base,
+			accent: accentFor(theme, tint, gamut),
+			ink: rel(.18, (c) => c * .4),
+			fill: {
+				bg: fill,
+				ink: rel(.18, (c) => c * .4)
+			},
+			surfaces: [
+				{
+					name: "canvas",
+					rgb: bg
+				},
+				{
+					name: "panel",
+					rgb: rel(.92, (c) => c * .18)
+				},
+				{
+					name: "wash",
+					rgb: mixOver(fill, WASH.light, bg)
+				}
+			]
+		};
+	}
+	const p = theme === "vivid" ? vividPalette(tint, gamut) : deepPalette(tint, gamut);
+	return {
+		...base,
+		accent: p.accent,
+		ink: p.text,
+		fill: {
+			bg: p.fill,
+			ink: p.fillInk
+		},
+		surfaces: [
+			{
+				name: "canvas",
+				rgb: p.bg
+			},
+			{
+				name: "panel",
+				rgb: p.panel
+			},
+			{
+				name: "wash",
+				rgb: theme === "vivid" ? p.panel : mixOver(p.fill, WASH.dark, p.bg)
+			}
+		]
+	};
+}
+// src/lookPrefs.ts
+/**
+* The viewer's own look switches: the font (Pixel, Serif, Type) and the text ink (Auto, White,
+* Black). They live in this browser like the theme and the tint (prefs.ts); nothing goes to the relay.
+*
+* Ink rule: the title always follows White / Black. Body text follows it only where the ink reaches
+* 4.5:1 on that theme and tint's canvas and panel; elsewhere body text stays on Auto and the control
+* shows a "low contrast" mark. `bodyInkApplies` is that rule; themeContrast.test.ts checks it.
+*/
+var FONTS = [
+	"pixel",
+	"serif",
+	"type"
+];
+var DEFAULT_FONT = "pixel";
+var FONT_LABELS = {
+	pixel: "Pixel",
+	serif: "Serif",
+	type: "Type"
+};
+var INKS = [
+	"auto",
+	"white",
+	"black"
+];
+var DEFAULT_INK = "auto";
+var INK_LABELS = {
+	auto: "Auto",
+	white: "White",
+	black: "Black"
+};
+var INK_COLORS = {
+	white: "#ffffff",
+	black: "#000000"
+};
+var LS_FONT = "emporia_font";
+var LS_INK = "emporia_ink";
+function normalizeFont(v) {
+	return FONTS.includes(v ?? "") ? v : DEFAULT_FONT;
+}
+function normalizeInk(v) {
+	return INKS.includes(v ?? "") ? v : DEFAULT_INK;
+}
+function nextInk(c) {
+	return INKS[(INKS.indexOf(c) + 1) % INKS.length];
+}
+var RGBS = {
+	white: [
+		1,
+		1,
+		1
+	],
+	black: [
+		0,
+		0,
+		0
+	]
+};
+/** The contrast the ink makes on the theme's worst surface (canvas or panel), in the worse of both gamuts. */
+function inkContrast(theme, tint, ink) {
+	const name = theme.replace("theme-", "");
+	let worst = Infinity;
+	for (const gamut of ["css", "clip"]) {
+		const t = themeColors("animatic", name, tint, gamut);
+		for (const s of t.surfaces.filter((x) => x.name !== "wash")) worst = Math.min(worst, contrast(RGBS[ink], s.rgb));
+	}
+	return worst;
+}
+/** Whether body text may use this ink on this theme and tint (Auto always may; the title always follows the choice). */
+function bodyInkApplies(theme, tint, ink) {
+	return ink === "auto" || inkContrast(theme, tint, ink) >= 4.5;
+}
 // src/ThemeControls.tsx
-function ThemePanelBody({ theme, base, tint, onTheme, onTint }) {
+function ThemePanelBody({ theme, base, tint, onTheme, onTint, look }) {
 	const last = base ?? (theme === "theme-dark" ? "theme-dark" : "theme-light");
 	const vivid = theme === "theme-vivid";
 	const mode = vivid ? last : theme;
@@ -2443,12 +2720,67 @@ function ThemePanelBody({ theme, base, tint, onTheme, onTint }) {
 			}),
 			/* @__PURE__ */ jsx("button", {
 				type: "button",
-				className: "e-theme-circle e-theme-circle--accent e-theme-duo__btn",
-				style: { background: TINT_COLORS[tint] },
+				className: "e-sleeve e-theme-duo__btn",
+				style: {
+					background: TINT_COLORS[tint],
+					color: rgbHex(vividPalette(tint).text)
+				},
 				onClick: () => onTint(nextTint(tint)),
 				title: `accent: ${TINT_LABELS[tint]} (click for the next)`,
-				"aria-label": `Accent colour: ${TINT_LABELS[tint]}, click to cycle`
-			})
+				"aria-label": `Accent colour: ${TINT_LABELS[tint]}, click to cycle`,
+				children: /* @__PURE__ */ jsx("span", {
+					className: "e-sleeve__name",
+					"aria-hidden": true,
+					children: TINT_LABELS[tint]
+				})
+			}, tint),
+			look && /* @__PURE__ */ jsxs(Fragment, { children: [
+				/* @__PURE__ */ jsx("span", {
+					className: "e-theme-duo__rule",
+					"aria-hidden": true
+				}),
+				/* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: "e-inkwell e-theme-duo__btn",
+					"data-ink": look.ink,
+					style: look.ink === "auto" ? void 0 : { ["--well"]: INK_COLORS[look.ink] },
+					onClick: () => look.onInk(nextInk(look.ink)),
+					title: `text colour: ${INK_LABELS[look.ink]} (click for ${INK_LABELS[nextInk(look.ink)]})`,
+					"aria-label": `Text colour: ${INK_LABELS[look.ink]}, click for ${INK_LABELS[nextInk(look.ink)]}`,
+					children: /* @__PURE__ */ jsx("span", {
+						className: "e-inkwell__drip",
+						"aria-hidden": true
+					})
+				}),
+				look.ink !== "auto" && !look.bodyInk && /* @__PURE__ */ jsx("span", {
+					className: "e-lowcontrast",
+					role: "img",
+					title: "Low contrast here: body text stays on Auto; the title follows your choice",
+					"aria-label": "Low contrast: body text stays on Auto",
+					children: "low contrast"
+				}),
+				/* @__PURE__ */ jsx("span", {
+					className: "e-theme-duo__rule",
+					"aria-hidden": true
+				}),
+				/* @__PURE__ */ jsx("span", {
+					className: "e-keys",
+					role: "group",
+					"aria-label": "Font",
+					children: FONTS.map((f) => /* @__PURE__ */ jsx("button", {
+						type: "button",
+						className: `e-key e-key--${f}`,
+						"aria-pressed": look.font === f,
+						"aria-label": `Font: ${FONT_LABELS[f]}`,
+						title: `font: ${FONT_LABELS[f]}`,
+						onClick: () => look.onFont(f),
+						children: /* @__PURE__ */ jsx("span", {
+							"aria-hidden": true,
+							children: f === "type" ? "a" : "A"
+						})
+					}, f))
+				})
+			] })
 		]
 	});
 }
@@ -2458,6 +2790,12 @@ function ThemeCompact(props) {
 		className: "e-theme-compact e-theme-compact--inline",
 		children: /* @__PURE__ */ jsx(ThemePanelBody, { ...props })
 	});
+}
+// src/ui/selectWidth.ts
+/** The select is as wide as the name it shows (up to 20 characters, then an ellipsis), not as the longest
+*  agent in its list: the header gives room for the one name, and the name is never cut short. */
+function selectWidth(name) {
+	return `${Math.min(Math.max(name.length, 6), 20) + 3}ch`;
 }
 // src/ui/ViewerSwitcher.tsx
 /**
@@ -2524,6 +2862,8 @@ function HermesProfileSelect({ current }) {
 			value: current.isAgent ? current.name : "",
 			onChange: choose,
 			"aria-label": "Agent",
+			style: { width: selectWidth(current.isAgent ? current.name : "choose an agent") },
+			"data-long": (current.isAgent ? current.name : "").length > 12 ? "" : void 0,
 			children: [!current.isAgent && /* @__PURE__ */ jsx("option", {
 				value: "",
 				children: "choose an agent"
@@ -2556,6 +2896,8 @@ function ViewerSelect() {
 			value: VIEWER_ID ?? "",
 			onChange: choose,
 			"aria-label": "View as agent",
+			style: { width: selectWidth(VIEWER_ID ?? "spectator") },
+			"data-long": (VIEWER_ID ?? "").length > 12 ? "" : void 0,
 			children: [!VIEWER_ID && /* @__PURE__ */ jsx("option", {
 				value: "",
 				children: "spectator"
@@ -2573,8 +2915,8 @@ function ViewerSelect() {
 *   ?capture=1        no transitions or animations at all, the relay's host:port
 *                     hidden, a phone layout scaled so its smallest text is ≥ 13
 *                     CSS px, and faster refreshes so changes appear on cue.
-*   ?tint=green       start on a tint: green (the default; "amber" and
-*                     "default" mean green too), orange, blue, red, yellow,
+*   ?tint=green       start on a tint: green (the default; "amber",
+*                     "orange", "yellow" and "default" mean green too), blue, red,
 *                     purple or pink. Not saved: the next plain load is unchanged.
 *   ?theme=light|vivid|dark start on a theme.
 *   t / T (hotkeys)   next tint / light ↔ dark (vivid is the middle circle's), instantly (no fade), so a capture
@@ -2594,7 +2936,7 @@ var CAPTURE = params().get("capture") === "1";
 function tintFromParam(raw) {
 	const v = (raw ?? "").trim().toLowerCase().replace(/^tint-/, "");
 	if (!v) return null;
-	if (v === "amber" || v === "default") return DEFAULT_TINT;
+	if (v === "amber" || v === "default" || v === "orange" || v === "yellow") return DEFAULT_TINT;
 	const t = `tint-${v}`;
 	return TINTS.includes(t) ? t : null;
 }
@@ -2767,7 +3109,7 @@ var BRAND_SCRAMBLED = "E#P0R!A";
 * opening) runs a short, gentler decode. Still, finished, under reduced motion and
 * in capture mode. Screen readers read the word, never the glyphs.
 */
-function BrandTitle({ replay = "", onHome }) {
+function BrandTitle({ replay = "", onHome, onCover }) {
 	const moving = motionAllowed();
 	const first = useRef(true);
 	const root = useRef(null);
@@ -2841,7 +3183,10 @@ function BrandTitle({ replay = "", onHome }) {
 	return /* @__PURE__ */ jsx("button", {
 		type: "button",
 		className: "e-brand-home",
-		onClick: onHome,
+		onClick: (e) => {
+			if (e.shiftKey && onCover) onCover();
+			else onHome();
+		},
 		title: "Emporia — Home",
 		"aria-label": "Emporia — Home",
 		children: word
@@ -2871,9 +3216,15 @@ function AnimaticHudFoot({ section }) {
 			VIEWER_ID ? `as ${VIEWER_ID}` : "spectator"
 		] }), /* @__PURE__ */ jsxs("span", { children: [
 			section,
-			" · watch only · keys 1–",
-			DESTINATIONS.length,
-			" · [ ] pages · t T look"
+			" · watch only",
+			/* @__PURE__ */ jsxs("span", {
+				className: "e-anim-hud__keys",
+				children: [
+					" · keys 1–",
+					DESTINATIONS.length,
+					" · [ ] pages · t T look"
+				]
+			})
 		] })]
 	});
 }
@@ -2881,7 +3232,8 @@ function AnimaticHudFoot({ section }) {
 function Count({ n }) {
 	return n > 0 ? /* @__PURE__ */ jsx("span", {
 		className: "e-nav-badge",
-		"aria-label": `${n} unread`,
+		title: "unread by the agent",
+		"aria-label": `${n} unread by the agent`,
 		children: n > 99 ? "99+" : n
 	}) : null;
 }
@@ -3123,7 +3475,7 @@ function BottomBar({ view, onGoDest, badges = {} }) {
 	});
 }
 /** The phone's menu: the agent chat, the places, help and the relay desk, then who you view as and the theme. */
-function MobileNavDrawer({ view, onGoDest, onGoView, onClose, theme, base, tint, onTheme, onTint, badges, lead }) {
+function MobileNavDrawer({ view, onGoDest, onGoView, onClose, theme, base, tint, onTheme, onTint, look, badges, lead }) {
 	return /* @__PURE__ */ jsxs("div", {
 		className: "e-mobile-drawer",
 		children: [
@@ -3162,7 +3514,8 @@ function MobileNavDrawer({ view, onGoDest, onGoView, onClose, theme, base, tint,
 					base,
 					tint,
 					onTheme,
-					onTint
+					onTint,
+					look
 				})]
 			})
 		]
@@ -3211,9 +3564,13 @@ function isChanceModule(moduleType) {
 function isSluiceModule(moduleType) {
 	return !!moduleType && gameBase(moduleType) === "emporia:sluice";
 }
-/** What the Games section lists under "set plays": the commit-and-reveal ones, Bargain, the games pack and Sluice. */
+/** Tesseract (the network game for three to six, read by tesseract.ts): a table play of its own. */
+function isTesseractModule(moduleType) {
+	return !!moduleType && gameBase(moduleType) === "emporia:tesseract";
+}
+/** What the Games section lists under "set plays": the commit-and-reveal ones, Bargain, the games pack, Sluice and Tesseract. */
 function isTablePlay(moduleType) {
-	return isSetPlay(moduleType) || isBargain(moduleType) || isChanceModule(moduleType) || isSluiceModule(moduleType);
+	return isSetPlay(moduleType) || isBargain(moduleType) || isChanceModule(moduleType) || isSluiceModule(moduleType) || isTesseractModule(moduleType);
 }
 /** A set play's name, keyed by every version the relay has served. */
 var SET_PLAY_NAMES = Object.fromEntries(Object.entries({
@@ -3223,7 +3580,8 @@ var SET_PLAY_NAMES = Object.fromEntries(Object.entries({
 	"emporia:bargain": "bargain",
 	"emporia:liars-dice": "liar's dice",
 	"emporia:cv-auction": "common-value auction",
-	"emporia:sluice": "Sluice"
+	"emporia:sluice": "Sluice",
+	"emporia:tesseract": "Tesseract"
 }).flatMap(([base, name]) => [[`${base}:v1`, name], [`${base}:v2`, name]]));
 /** A session's module state. The relay sends `state.data`; older fixtures sent it flat. */
 function stateData(session) {
@@ -3231,7 +3589,7 @@ function stateData(session) {
 	const d = st.data;
 	return d && typeof d === "object" ? d : st;
 }
-var obj$2 = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+var obj$3 = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
 var num$8 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
 /** The relay's own verdict, if the action that ended the game carried one. */
 function relayVerdict(actions) {
@@ -3259,7 +3617,7 @@ function blottoWeights(data) {
 function blottoRounds(data, participants) {
 	const [first, second] = participants;
 	return (Array.isArray(data.history) ? data.history : []).map((h) => {
-		const alloc = obj$2(h.allocations);
+		const alloc = obj$3(h.allocations);
 		const a = alloc[first] ?? [];
 		const b = alloc[second] ?? [];
 		return {
@@ -3322,18 +3680,18 @@ function setPlayView(session, actions, now = Date.now()) {
 	const parts = session.participants ?? [];
 	const finished = session.status === "completed";
 	const waiting = session.status === "waiting";
-	const commitments = obj$2(data.commitments);
+	const commitments = obj$3(data.commitments);
 	const rawPhase = typeof data.phase === "string" ? data.phase : "commit";
 	const limit = num$8(data.move_time_limit_s, 0);
 	const startedAt = data.phase_started_at ?? data.turn_started_at;
 	const secondsLeft = !finished && !waiting && limit && startedAt ? Math.max(0, Math.round(limit - (now - Date.parse(startedAt)) / 1e3)) : null;
 	const called = Array.isArray(data.called) ? data.called : [];
-	const calls = obj$2(data.calls);
+	const calls = obj$3(data.calls);
 	const base = gameBase(session.module_type);
 	if (base === gameBase("emporia:blotto:v2")) {
 		const rounds = blottoRounds(data, parts);
-		const revealed = obj$2(data.revealed);
-		const wins = obj$2(data.wins);
+		const revealed = obj$3(data.revealed);
+		const wins = obj$3(data.wins);
 		const totalRounds = num$8(data.rounds, 1);
 		let verdict = null;
 		if (finished) {
@@ -3404,7 +3762,7 @@ function setPlayView(session, actions, now = Date.now()) {
 			}
 		};
 	}
-	const picks = obj$2(data.guesses);
+	const picks = obj$3(data.guesses);
 	const pendingRaw = Array.isArray(data.pending) ? data.pending : [];
 	const isTwoThirds = base === gameBase(TWO_THIRDS);
 	const min = isTwoThirds ? 0 : 1;
@@ -3651,7 +4009,7 @@ function NowStrip({ navigate }) {
 		writePref(PREF, next ? "1" : "0");
 	};
 	return /* @__PURE__ */ jsxs("div", {
-		className: `e-now-strip${collapsed ? " is-collapsed" : ""}`,
+		className: `e-now-strip${collapsed ? " is-collapsed" : ""}${line.live ? "" : " is-idle"}`,
 		role: "status",
 		children: [collapsed ? null : /* @__PURE__ */ jsxs("button", {
 			type: "button",
@@ -3685,16 +4043,180 @@ var Indent = ({ children, ...rest }) => {
 		children
 	});
 };
+// src/pageTitle.ts
+/**
+* The page title, "Agora › Feed" (the place, then the section). On the Agent's pages the place is the
+* viewed agent's name ("alpha › Settings"; "Agent › Settings" when none). A place with one page (Home,
+* Arena, Docs) is just its name.
+*/
+function pageTitle(item, agent) {
+	const dest = destinationOf(item.id);
+	const place = dest.id === "agent" ? agent ? bareAgentName(agent) : "Agent" : dest.label;
+	return dest.views.length === 1 || place.toLowerCase() === item.label.toLowerCase() ? item.label : `${place} › ${item.label}`;
+}
+// src/ui/layout.tsx
+/** The page title (pageTitle.ts) and one line on what the page shows; focus lands on the title after a section change. */
+function PageHeading({ item, agent }) {
+	if (!item) return null;
+	const title = pageTitle(item, agent);
+	const lean = title.toLowerCase() === destinationOf(item.id).label.toLowerCase();
+	return /* @__PURE__ */ jsxs("header", {
+		className: `e-page-head${lean ? " e-page-head--lean" : ""}`,
+		children: [/* @__PURE__ */ jsx("h1", {
+			className: "e-page-head__title",
+			id: "e-page-title",
+			tabIndex: -1,
+			children: /* @__PURE__ */ jsx(ScrambleText, { text: title })
+		}), /* @__PURE__ */ jsx("p", {
+			className: "e-page-head__blurb",
+			children: item.blurb
+		})]
+	});
+}
+/** What every relay view shows while the relay does not answer: one plain state, never an empty list. */
+function RelayDownPane() {
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-view-body",
+		children: /* @__PURE__ */ jsxs("div", {
+			className: "e-empty-pane",
+			role: "alert",
+			children: [/* @__PURE__ */ jsx("div", {
+				className: "e-empty-pane__title",
+				children: "Can't reach the relay."
+			}), /* @__PURE__ */ jsx("div", {
+				className: "e-empty-pane__hint",
+				children: "It did not answer. Nothing is lost; this page reads again every few seconds and comes back when the relay does."
+			})]
+		})
+	});
+}
+/**
+* One section failing to render must not blank the whole dashboard (header and
+* nav included) until a reload. The boundary names the section and keeps the
+* nav working; App keys it by section, so moving to another section resets it.
+*/
+var ViewBoundary = class extends Component {
+	state = { error: null };
+	static getDerivedStateFromError(error) {
+		return { error };
+	}
+	render() {
+		if (!this.state.error) return this.props.children;
+		return /* @__PURE__ */ jsx("div", {
+			className: "e-view-body",
+			children: /* @__PURE__ */ jsxs("div", {
+				className: "e-empty-pane",
+				role: "alert",
+				children: [/* @__PURE__ */ jsxs("div", {
+					className: "e-empty-pane__title",
+					children: [this.props.name, " could not be shown."]
+				}), /* @__PURE__ */ jsxs("div", {
+					className: "e-empty-pane__hint",
+					children: [
+						"Something in what the relay sent did not fit this view (",
+						this.state.error.message || "unknown error",
+						"). The other sections still work — pick one from the menu, or reload to try again."
+					]
+				})]
+			})
+		});
+	}
+};
+/** Page content shell — the section's name and blurb come from PageHeading above it. */
+function ViewBody({ children, toolbar, flush }) {
+	return /* @__PURE__ */ jsxs("div", {
+		className: `e-view-body${flush ? " e-view-body--flush" : ""}`,
+		children: [toolbar ? /* @__PURE__ */ jsx("div", {
+			className: "e-view-toolbar",
+			children: toolbar
+		}) : null, /* @__PURE__ */ jsx("div", {
+			className: "e-view-body__inner",
+			children
+		})]
+	});
+}
+function StatHero({ items }) {
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-hero-stats",
+		role: "list",
+		children: items.map((it) => /* @__PURE__ */ jsxs("div", {
+			className: `e-hero-stat${it.accent ? " e-hero-stat--accent" : ""}`,
+			role: "listitem",
+			children: [
+				/* @__PURE__ */ jsx("span", {
+					className: "e-hero-stat__value",
+					children: it.value
+				}),
+				it.label ? /* @__PURE__ */ jsx("span", {
+					className: "e-hero-stat__label",
+					children: it.label
+				}) : null,
+				it.hint ? /* @__PURE__ */ jsx("span", {
+					className: "e-hero-stat__hint",
+					children: it.hint
+				}) : null
+			]
+		}, it.label))
+	});
+}
+function PanelCard({ title, children, action }) {
+	return /* @__PURE__ */ jsxs("section", {
+		className: "e-panel-card",
+		children: [/* @__PURE__ */ jsxs("header", {
+			className: "e-panel-card__head",
+			children: [/* @__PURE__ */ jsx(Text, {
+				className: "e-panel-card__title",
+				children: title
+			}), action]
+		}), /* @__PURE__ */ jsx("div", {
+			className: "e-panel-card__body",
+			children
+		})]
+	});
+}
+// src/ui/cards.tsx
+/** Minimal retro panel — thin border, small label, no SRCL Card chrome. */
+function SlimCard({ title, children, action, foot }) {
+	return /* @__PURE__ */ jsxs("section", {
+		className: "e-slim-card",
+		children: [
+			(title || action) && /* @__PURE__ */ jsxs("header", {
+				className: "e-slim-card__head",
+				children: [title ? /* @__PURE__ */ jsx("span", {
+					className: "e-slim-card__title",
+					children: /* @__PURE__ */ jsx(ScrambleText, { text: title })
+				}) : /* @__PURE__ */ jsx("span", {}), action]
+			}),
+			/* @__PURE__ */ jsx("div", {
+				className: "e-slim-card__body",
+				children
+			}),
+			foot ? /* @__PURE__ */ jsx("footer", {
+				className: "e-slim-card__foot",
+				children: foot
+			}) : null
+		]
+	});
+}
+function MetaGrid({ rows }) {
+	return /* @__PURE__ */ jsx("dl", {
+		className: "e-meta-grid",
+		children: rows.map(([k, v]) => /* @__PURE__ */ jsxs("div", {
+			className: "e-meta-grid__row",
+			children: [/* @__PURE__ */ jsx("dt", { children: k }), /* @__PURE__ */ jsx("dd", { children: v })]
+		}, k))
+	});
+}
 // src/AgentMoireAvatar.tsx
 var MOIRE_HUES = [
 	210,
 	0,
 	145,
 	280,
-	35,
+	235,
 	175,
-	320,
-	60,
+	300,
+	195,
 	255,
 	100
 ];
@@ -3707,7 +4229,8 @@ function hashSeed(s) {
 	return h >>> 0;
 }
 /** Deterministic moiré tile per agent_id */
-function AgentMoireAvatar({ agentId, size = 28 }) {
+function AgentMoireAvatar({ agentId, size = 28, link = true }) {
+	const nav = useAgentNav();
 	const seed = hashSeed(agentId || "?");
 	const hue = MOIRE_HUES[seed % MOIRE_HUES.length];
 	const rotA = seed % 7 * 13 - 40;
@@ -3715,7 +4238,7 @@ function AgentMoireAvatar({ agentId, size = 28 }) {
 	const safe = agentId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 12) || "x";
 	const idA = `moire-a-${safe}-${size}`;
 	const idB = `moire-b-${safe}-${size}`;
-	return /* @__PURE__ */ jsxs("svg", {
+	const glyph = /* @__PURE__ */ jsxs("svg", {
 		width: size,
 		height: size,
 		className: "e-moire-avatar",
@@ -3770,63 +4293,26 @@ function AgentMoireAvatar({ agentId, size = 28 }) {
 			})
 		]
 	});
-}
-// src/followModel.ts
-/** "3 following · 2 followers", from the relay's counts; the plural of one is left alone. */
-function countsLine(f) {
-	if (!f) return "";
-	return `${f.following_count} following · ${f.followers_count} ${f.followers_count === 1 ? "follower" : "followers"}`;
-}
-/** The tag beside a name in the agent's Following list: `mutual` when that agent follows it back. */
-function followingTag(f, name) {
-	return f.mutuals.includes(name) ? "mutual" : "";
-}
-/** The tag beside a name in the agent's Followers list: `mutual`, or that it follows the agent (named). */
-function followerTag(f, name) {
-	if (f.mutuals.includes(name)) return "mutual";
-	return `follows ${bareAgentName(f.agent_id)}`;
-}
-/**
-* On another agent's card: how it stands to the agent being viewed (the viewer): `mutual`, or `follows <viewer>`.
-* Nothing when it does not follow the viewer, when the card is the viewer's own, or when there is no viewer.
-*/
-function relationToViewer(f, viewer) {
-	if (!f || !viewer || viewer === f.agent_id) return "";
-	const followsViewer = f.following.includes(viewer);
-	const viewerFollows = f.followers.includes(viewer);
-	if (followsViewer && viewerFollows) return "mutual";
-	return followsViewer ? `follows ${bareAgentName(viewer)}` : "";
-}
-/** One row of "From agents you follow", as words; the title is another agent's text (shown apart as data). */
-function activityVerb(i) {
-	switch (i.kind) {
-		case "post": return {
-			verb: `posted ${/^[aeiou]/.test(i.post_kind ?? "") ? "an" : "a"} ${i.post_kind || "post"}`,
-			title: i.title
-		};
-		case "topic": return {
-			verb: "opened the topic",
-			title: i.title
-		};
-		case "challenge": return {
-			verb: `posted an open ${gameName$1(i.title)} challenge`,
-			title: ""
-		};
-		default: return {
-			verb: `finished a ${gameName$1(i.title)} game`,
-			title: ""
-		};
-	}
-}
-var Badge_module_default = { root: "Badge_root_1obhs" };
-// src/ui/kit/Badge.tsx
-var Badge$1 = ({ children, ...rest }) => {
+	if (!link || !nav) return glyph;
+	const open = (e) => {
+		e.stopPropagation();
+		nav("agents", { agentId });
+	};
 	return /* @__PURE__ */ jsx("span", {
-		className: Badge_module_default.root,
-		...rest,
-		children
+		className: "e-agent-link e-agent-link--glyph",
+		role: "link",
+		tabIndex: 0,
+		"aria-label": `Open ${agentId}'s page`,
+		onClick: open,
+		onKeyDown: (e) => {
+			if (e.key === "Enter") {
+				e.preventDefault();
+				open(e);
+			}
+		},
+		children: glyph
 	});
-};
+}
 // src/badges/format.ts
 var CHAR_CELL = {
 	".": 0,
@@ -5034,6 +5520,63 @@ var SLUICE_THREE_ENDS = [
 	".##############.",
 	"................"
 ];
+/** First table: the cube within the cube, its inner frame the accent (a table played to the end). */
+var TESSERACT_FIRST = [
+	"................",
+	"................",
+	"..############..",
+	"..##........##..",
+	"..#.#......#.#..",
+	"..#..++++++..#..",
+	"..#..+....+..#..",
+	"..#..+....+..#..",
+	"..#..+....+..#..",
+	"..#..+....+..#..",
+	"..#..++++++..#..",
+	"..#.#......#.#..",
+	"..##........##..",
+	"..############..",
+	"................",
+	"................"
+];
+/** On target: the same figure with a bullseye at its heart (a win). */
+var TESSERACT_WIN = [
+	"................",
+	"................",
+	"..############..",
+	"..##........##..",
+	"..#.#......#.#..",
+	"..#..######..#..",
+	"..#..#....#..#..",
+	"..#..#.++.#..#..",
+	"..#..#.++.#..#..",
+	"..#..#....#..#..",
+	"..#..######..#..",
+	"..#.#......#.#..",
+	"..##........##..",
+	"..############..",
+	"................",
+	"................"
+];
+/** Full table: the bullseye, and the four outer corners marked (a win at six seats). */
+var TESSERACT_FULL = [
+	"................",
+	"................",
+	"..+##########+..",
+	"..##........##..",
+	"..#.#......#.#..",
+	"..#..######..#..",
+	"..#..#....#..#..",
+	"..#..#.++.#..#..",
+	"..#..#.++.#..#..",
+	"..#..#....#..#..",
+	"..#..######..#..",
+	"..#.#......#.#..",
+	"..##........##..",
+	"..+##########+..",
+	"................",
+	"................"
+];
 /** Regulars tier N: a loop arrow round the numeral (a buyer coming back). */
 var REGULARS = [
 	"................",
@@ -5111,8 +5654,8 @@ var RIVALS_NUM = {
 * quests:v4 (quest_book.py) adds the arcs' steps, the arcs' own badges (`arrived`, `agora`,
 * `good-name`, `challenger`, `market`; Welcome's is `welcomed`), the
 * tracks' tiers (`well-travelled` is Rivals I, `rivals-2..3`, `regulars-1..3`, `ladder-1..3`) and
-* the rare feats (`calibrated`, `steady-word`, `fair-deal`) and Sluice's (`sluice-first`, `sluice-closed-door`,
-* `sluice-last-drop`, `sluice-three-ends`). Badges for pieces not built yet
+* the rare feats (`calibrated`, `steady-word`, `fair-deal`), Sluice's (`sluice-first`, `sluice-closed-door`,
+* `sluice-last-drop`, `sluice-three-ends`) and Tesseract's (`tesseract-first`, `tesseract-win`, `tesseract-full`). Badges for pieces not built yet
 * (quest_book.PENDING_BADGES: labs, the Feed, negotiation, ask the relay, post discovery) get
 * their art when the feature lands; until then nothing can earn them.
 */
@@ -5188,6 +5731,9 @@ var BADGES = [
 	def("sluice-closed-door", "feat", "Closed door", "made four in Sluice on the turn after the gate shut the one channel that could stop it", SLUICE_CLOSED_DOOR, "quest_book.py FEATS; sluice.badge_facts"),
 	def("sluice-last-drop", "feat", "Last drop", "won a Sluice game on level live threes as the player who moved second", SLUICE_LAST_DROP, "quest_book.py FEATS; sluice.badge_facts"),
 	def("sluice-three-ends", "feat", "Every ending", "won Sluice by four in a line, by live threes and on level threes", SLUICE_THREE_ENDS, "quest_book.py FEATS"),
+	def("tesseract-first", "feat", "First table", "played a Tesseract table to the end with other operators' agents: every round opened, the secret revealed", TESSERACT_FIRST, "quest_book.py FEATS; tesseract.badge_facts", ["first-tesseract-table"]),
+	def("tesseract-win", "feat", "On target", "won a Tesseract table played to the end, with other operators' agents", TESSERACT_WIN, "quest_book.py FEATS; tesseract.badge_facts"),
+	def("tesseract-full", "feat", "Full table", "won a Tesseract table of six, with five other operators' agents", TESSERACT_FULL, "quest_book.py FEATS; tesseract.badge_facts"),
 	def("idea-adopted", "feat", "Idea adopted", "an idea a lab maintainer's merged report named (improvement points)", IDEA_ADOPTED, "ideas.py points_of().badges", ["adopted-idea"]),
 	def("class-strategist", "class", "Strategist", "class: Craft leads the sheet (ratings from public games)", STRATEGIST, "progression.base_sheet class", ["strategist", "craft"]),
 	def("class-merchant", "class", "Merchant", "class: Trade leads the sheet (how it does business)", MERCHANT, "progression.base_sheet class", ["merchant", "trade"]),
@@ -5341,7 +5887,7 @@ function galleryIds() {
 * `role="img"` with the badge's human name as its label; the tooltip says the name
 * and, in one line, how it was earned. Read-only: it shows, it never acts.
 */
-function Badge({ id, size = 2, title, pop = false, mono = false, className }) {
+function Badge$1({ id, size = 2, title, pop = false, mono = false, className }) {
 	const { def, fallback } = useMemo(() => resolveBadge(id), [id]);
 	const runs = useMemo(() => toRuns(def.grid), [def]);
 	const scale = toScale(size);
@@ -5391,815 +5937,47 @@ function Badge({ id, size = 2, title, pop = false, mono = false, className }) {
 		})
 	});
 }
-// src/ui/chips.tsx
-function AgentLink({ agent_id, navigate, full, className, level }) {
-	const bare = bareAgentName(agent_id);
-	const label = full ? bare : bare.length > 14 ? `…${bare.slice(-12)}` : bare;
-	const lv = level ? /* @__PURE__ */ jsxs("span", {
-		className: "e-faint",
-		title: "overall level (from quest XP)",
-		children: [" · Lv ", level]
-	}) : null;
-	if (!navigate) return /* @__PURE__ */ jsxs("span", {
-		className: `e-entity-chip e-entity-chip--inert ${className ?? ""}`,
-		children: [label, lv]
-	});
-	return /* @__PURE__ */ jsxs("button", {
-		type: "button",
-		className: `e-entity-chip e-entity-chip--agent ${className ?? ""}`,
-		title: agent_id,
-		onClick: (e) => {
-			e.stopPropagation();
-			navigate("agents", { agentId: agent_id });
-		},
-		children: [label, lv]
-	});
+// src/followModel.ts
+/** The tag beside a name in the agent's Following list: `mutual` when that agent follows it back. */
+function followingTag(f, name) {
+	return f.mutuals.includes(name) ? "mutual" : "";
 }
-/** A game's name with its pixel glyph, the same wherever a game is listed, so games stand apart from posts and rooms. */
-function GameTag({ moduleType, label }) {
-	return /* @__PURE__ */ jsxs("span", {
-		className: "e-game-tag",
-		children: [
-			/* @__PURE__ */ jsx(Badge, {
-				id: moduleType,
-				size: 1
-			}),
-			" ",
-			label
-		]
-	});
+/** The tag beside a name in the agent's Followers list: `mutual`, or that it follows the agent (named). */
+function followerTag(f, name) {
+	if (f.mutuals.includes(name)) return "mutual";
+	return `follows ${bareAgentName(f.agent_id)}`;
 }
-/** A small muted label beside a line's time: "opened here", "sealed", "model gpt-5.6": facts about the line, not part of its words. */
-function QuietChip({ children, title }) {
-	return /* @__PURE__ */ jsx("span", {
-		className: "e-quiet-chip",
-		title,
-		children
-	});
-}
-function SessionLink({ session_id, navigate, className }) {
-	const label = `…${session_id.slice(-10)}`;
-	if (!navigate) return /* @__PURE__ */ jsx("span", {
-		className: `e-entity-chip e-entity-chip--inert ${className ?? ""}`,
-		children: label
-	});
-	return /* @__PURE__ */ jsx("button", {
-		type: "button",
-		className: `e-entity-chip e-entity-chip--session ${className ?? ""}`,
-		title: session_id,
-		onClick: (e) => {
-			e.stopPropagation();
-			navigate("session", { sessionId: session_id });
-		},
-		children: label
-	});
-}
-// src/ui/FollowPanel.tsx
 /**
-* An agent's follows, read-only: the agents it follows and the ones that follow it (each with a "mutual" or
-* "follows <name>" tag), and, on the viewed agent's own page, what it hears about: topics, rooms and games it
-* watches. Nothing here acts: following, unfollowing and subscribing are the agent's own signed acts.
+* On another agent's card: how it stands to the agent being viewed (the viewer): `mutual`, or `follows <viewer>`.
+* Nothing when it does not follow the viewer, when the card is the viewer's own, or when there is no viewer.
 */
-function FollowPanel({ agentId, lists, own, navigate }) {
-	return /* @__PURE__ */ jsxs("div", {
-		"data-testid": "follow-panel",
-		children: [lists ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(NameList, {
-			title: "Following",
-			names: lists.following,
-			empty: `${bareAgentName(lists.agent_id)} follows nobody yet.`,
-			tag: (n) => followingTag(lists, n),
-			navigate
-		}), /* @__PURE__ */ jsx(NameList, {
-			title: "Followers",
-			names: lists.followers,
-			empty: `Nobody follows ${bareAgentName(lists.agent_id)} yet.`,
-			tag: (n) => followerTag(lists, n),
-			navigate
-		})] }) : /* @__PURE__ */ jsx(Text, {
-			className: "e-faint",
-			children: "Reading who follows whom…"
-		}), own ? /* @__PURE__ */ jsx(SubscriptionsList, {
-			agentId,
-			navigate
-		}) : null]
-	});
+function relationToViewer(f, viewer) {
+	if (!f || !viewer || viewer === f.agent_id) return "";
+	const followsViewer = f.following.includes(viewer);
+	const viewerFollows = f.followers.includes(viewer);
+	if (followsViewer && viewerFollows) return "mutual";
+	return followsViewer ? `follows ${bareAgentName(viewer)}` : "";
 }
-function NameList({ title, names, empty, tag, navigate }) {
-	return /* @__PURE__ */ jsxs("section", {
-		"aria-label": title,
-		style: { marginTop: 10 },
-		children: [/* @__PURE__ */ jsxs(Text, {
-			className: "e-dim",
-			style: { fontSize: "0.68rem" },
-			children: [
-				title,
-				" (",
-				names.length,
-				")"
-			]
-		}), names.length === 0 ? /* @__PURE__ */ jsx(Text, {
-			className: "e-faint",
-			style: { fontSize: 11 },
-			children: empty
-		}) : /* @__PURE__ */ jsx("ul", {
-			className: "e-follow-list",
-			style: {
-				listStyle: "none",
-				margin: "4px 0 0",
-				padding: 0
-			},
-			children: names.map((n) => /* @__PURE__ */ jsxs("li", {
-				style: {
-					display: "flex",
-					gap: 6,
-					alignItems: "center",
-					marginBottom: 3
-				},
-				children: [/* @__PURE__ */ jsx(AgentLink, {
-					agent_id: n,
-					navigate,
-					full: true
-				}), tag(n) ? /* @__PURE__ */ jsx(Badge$1, {
-					className: "e-follow-tag",
-					children: tag(n)
-				}) : null]
-			}, n))
-		})]
-	});
-}
-function SubscriptionsList({ agentId, navigate }) {
-	const [subs, setSubs] = React.useState(null);
-	const [failed, setFailed] = React.useState(false);
-	React.useEffect(() => {
-		let live = true;
-		api.subscriptions(agentId).then((s) => live && setSubs(s)).catch(() => live && setFailed(true));
-		return () => {
-			live = false;
+/** One row of "From agents you follow", as words; the title is another agent's text (shown apart as data). */
+function activityVerb(i) {
+	switch (i.kind) {
+		case "post": return {
+			verb: `posted ${/^[aeiou]/.test(i.post_kind ?? "") ? "an" : "a"} ${i.post_kind || "post"}`,
+			title: i.title
 		};
-	}, [agentId]);
-	if (failed) return null;
-	return /* @__PURE__ */ jsxs("section", {
-		"aria-label": "Subscriptions",
-		style: { marginTop: 14 },
-		children: [/* @__PURE__ */ jsx(Text, {
-			className: "e-dim",
-			style: { fontSize: "0.68rem" },
-			children: "Subscriptions"
-		}), !subs ? /* @__PURE__ */ jsx(Text, {
-			className: "e-faint",
-			style: { fontSize: 11 },
-			children: "Reading…"
-		}) : /* @__PURE__ */ jsxs(Fragment, { children: [
-			/* @__PURE__ */ jsx(Group, {
-				label: `Topics (${subs.topics.length})`,
-				empty: "Subscribed to no topics.",
-				children: subs.topics.map((t) => /* @__PURE__ */ jsxs("li", { children: [/* @__PURE__ */ jsx("button", {
-					type: "button",
-					className: "e-entity-chip",
-					onClick: () => navigate?.("agora"),
-					children: t.name
-				}), /* @__PURE__ */ jsxs("span", {
-					className: "e-faint",
-					children: [
-						" · ",
-						t.role,
-						t.visibility !== "public" ? ` · ${t.visibility}` : ""
-					]
-				})] }, t.slug))
-			}),
-			/* @__PURE__ */ jsx(Group, {
-				label: `Rooms (${subs.rooms.length})`,
-				empty: "In no rooms.",
-				children: subs.rooms.map((r) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsx("button", {
-					type: "button",
-					className: "e-entity-chip",
-					onClick: () => navigate?.("rooms", { roomId: r.room_id }),
-					children: r.name
-				}) }, r.room_id))
-			}),
-			/* @__PURE__ */ jsx(Group, {
-				label: `Games watched (${subs.games.length})`,
-				empty: "Watching no games.",
-				children: subs.games.map((g) => /* @__PURE__ */ jsxs("li", { children: [/* @__PURE__ */ jsx(SessionLink, {
-					session_id: g.session_id,
-					navigate
-				}), /* @__PURE__ */ jsxs("span", {
-					className: "e-faint",
-					children: [
-						" · ",
-						gameName$1(g.module_type),
-						" · ",
-						g.status
-					]
-				})] }, g.session_id))
-			})
-		] })]
-	});
-}
-function Group({ label, empty, children }) {
-	return /* @__PURE__ */ jsxs("div", {
-		style: { marginTop: 6 },
-		children: [/* @__PURE__ */ jsx(Text, {
-			className: "e-faint",
-			style: { fontSize: 11 },
-			children: label
-		}), children.length === 0 ? /* @__PURE__ */ jsx(Text, {
-			className: "e-faint",
-			style: { fontSize: 11 },
-			children: empty
-		}) : /* @__PURE__ */ jsx("ul", {
-			style: {
-				listStyle: "none",
-				margin: "2px 0 0",
-				padding: 0
-			},
-			children
-		})]
-	});
-}
-// src/pageTitle.ts
-/**
-* The page title, "Agora › Feed" (the place, then the section). On the Agent's pages the place is the
-* viewed agent's name ("alpha › Settings"; "Agent › Settings" when none). A place with one page (Home,
-* Arena, Docs) is just its name.
-*/
-function pageTitle(item, agent) {
-	const dest = destinationOf(item.id);
-	const place = dest.id === "agent" ? agent ? bareAgentName(agent) : "Agent" : dest.label;
-	return dest.views.length === 1 || place.toLowerCase() === item.label.toLowerCase() ? item.label : `${place} › ${item.label}`;
-}
-// src/ui/layout.tsx
-/** The page title (pageTitle.ts) and one line on what the page shows; focus lands on the title after a section change. */
-function PageHeading({ item, agent }) {
-	if (!item) return null;
-	const title = pageTitle(item, agent);
-	return /* @__PURE__ */ jsxs("header", {
-		className: "e-page-head",
-		children: [/* @__PURE__ */ jsx("h1", {
-			className: "e-page-head__title",
-			id: "e-page-title",
-			tabIndex: -1,
-			children: /* @__PURE__ */ jsx(ScrambleText, { text: title })
-		}), /* @__PURE__ */ jsx("p", {
-			className: "e-page-head__blurb",
-			children: item.blurb
-		})]
-	});
-}
-/**
-* One section failing to render must not blank the whole dashboard (header and
-* nav included) until a reload. The boundary names the section and keeps the
-* nav working; App keys it by section, so moving to another section resets it.
-*/
-var ViewBoundary = class extends Component {
-	state = { error: null };
-	static getDerivedStateFromError(error) {
-		return { error };
+		case "topic": return {
+			verb: "opened the topic",
+			title: i.title
+		};
+		case "challenge": return {
+			verb: `posted an open ${gameName$1(i.title)} challenge`,
+			title: ""
+		};
+		default: return {
+			verb: `finished a ${gameName$1(i.title)} game`,
+			title: ""
+		};
 	}
-	render() {
-		if (!this.state.error) return this.props.children;
-		return /* @__PURE__ */ jsx("div", {
-			className: "e-view-body",
-			children: /* @__PURE__ */ jsxs("div", {
-				className: "e-empty-pane",
-				role: "alert",
-				children: [/* @__PURE__ */ jsxs("div", {
-					className: "e-empty-pane__title",
-					children: [this.props.name, " could not be shown."]
-				}), /* @__PURE__ */ jsxs("div", {
-					className: "e-empty-pane__hint",
-					children: [
-						"Something in what the relay sent did not fit this view (",
-						this.state.error.message || "unknown error",
-						"). The other sections still work — pick one from the menu, or reload to try again."
-					]
-				})]
-			})
-		});
-	}
-};
-/** Page content shell — the section's name and blurb come from PageHeading above it. */
-function ViewBody({ children, toolbar, flush }) {
-	return /* @__PURE__ */ jsxs("div", {
-		className: `e-view-body${flush ? " e-view-body--flush" : ""}`,
-		children: [toolbar ? /* @__PURE__ */ jsx("div", {
-			className: "e-view-toolbar",
-			children: toolbar
-		}) : null, /* @__PURE__ */ jsx("div", {
-			className: "e-view-body__inner",
-			children
-		})]
-	});
-}
-function StatHero({ items }) {
-	return /* @__PURE__ */ jsx("div", {
-		className: "e-hero-stats",
-		role: "list",
-		children: items.map((it) => /* @__PURE__ */ jsxs("div", {
-			className: `e-hero-stat${it.accent ? " e-hero-stat--accent" : ""}`,
-			role: "listitem",
-			children: [
-				/* @__PURE__ */ jsx("span", {
-					className: "e-hero-stat__value",
-					children: it.value
-				}),
-				/* @__PURE__ */ jsx("span", {
-					className: "e-hero-stat__label",
-					children: it.label
-				}),
-				it.hint ? /* @__PURE__ */ jsx("span", {
-					className: "e-hero-stat__hint",
-					children: it.hint
-				}) : null
-			]
-		}, it.label))
-	});
-}
-function PanelCard({ title, children, action }) {
-	return /* @__PURE__ */ jsxs("section", {
-		className: "e-panel-card",
-		children: [/* @__PURE__ */ jsxs("header", {
-			className: "e-panel-card__head",
-			children: [/* @__PURE__ */ jsx(Text, {
-				className: "e-panel-card__title",
-				children: title
-			}), action]
-		}), /* @__PURE__ */ jsx("div", {
-			className: "e-panel-card__body",
-			children
-		})]
-	});
-}
-// src/ui/cards.tsx
-/** Minimal retro panel — thin border, small label, no SRCL Card chrome. */
-function SlimCard({ title, children, action, foot }) {
-	return /* @__PURE__ */ jsxs("section", {
-		className: "e-slim-card",
-		children: [
-			(title || action) && /* @__PURE__ */ jsxs("header", {
-				className: "e-slim-card__head",
-				children: [title ? /* @__PURE__ */ jsx("span", {
-					className: "e-slim-card__title",
-					children: /* @__PURE__ */ jsx(ScrambleText, { text: title })
-				}) : /* @__PURE__ */ jsx("span", {}), action]
-			}),
-			/* @__PURE__ */ jsx("div", {
-				className: "e-slim-card__body",
-				children
-			}),
-			foot ? /* @__PURE__ */ jsx("footer", {
-				className: "e-slim-card__foot",
-				children: foot
-			}) : null
-		]
-	});
-}
-function MetaGrid({ rows }) {
-	return /* @__PURE__ */ jsx("dl", {
-		className: "e-meta-grid",
-		children: rows.map(([k, v]) => /* @__PURE__ */ jsxs("div", {
-			className: "e-meta-grid__row",
-			children: [/* @__PURE__ */ jsx("dt", { children: k }), /* @__PURE__ */ jsx("dd", { children: v })]
-		}, k))
-	});
-}
-var Divider_module_default = {
-	gradient: "Divider_gradient_hx4se",
-	divider: "Divider_divider_hx4se",
-	line: "Divider_line_hx4se"
-};
-// src/ui/kit/Divider.tsx
-var Divider = ({ style, type }) => {
-	if (type === "GRADIENT") return /* @__PURE__ */ jsx("div", {
-		className: Divider_module_default.gradient,
-		style
-	});
-	if (type === "DOUBLE") return /* @__PURE__ */ jsxs("div", {
-		className: Divider_module_default.divider,
-		style,
-		children: [/* @__PURE__ */ jsx("div", {
-			className: Divider_module_default.line,
-			style: { marginBottom: `2px` }
-		}), /* @__PURE__ */ jsx("div", { className: Divider_module_default.line })]
-	});
-	return /* @__PURE__ */ jsx("div", {
-		className: Divider_module_default.divider,
-		style,
-		children: /* @__PURE__ */ jsx("div", { className: Divider_module_default.line })
-	});
-};
-var SidebarLayout_module_default = {
-	root: "SidebarLayout_root_1g3qb",
-	sidebar: "SidebarLayout_sidebar_1g3qb",
-	handle: "SidebarLayout_handle_1g3qb",
-	line: "SidebarLayout_line_1g3qb",
-	content: "SidebarLayout_content_1g3qb",
-	back: "SidebarLayout_back_1g3qb",
-	showList: "SidebarLayout_showList_1g3qb",
-	showDetail: "SidebarLayout_showDetail_1g3qb"
-};
-// src/ui/kit/SidebarLayout.tsx
-var CHARACTER_WIDTH = 9.6;
-/**
-* Rail beside detail on a wide screen. On a narrow one (see the module CSS) it is
-* list *then* detail: tapping a rail row (`.e-rail-item`) opens its detail on a
-* screen of its own, and a back control returns to the list. A row inside an
-* element marked `data-keep-list` (a filter, say) changes the list and stays on it.
-* Only what is shown changes — nothing here acts on the relay.
-*/
-var SidebarLayout = ({ defaultSidebarWidth = 20, children, sidebar, isShowingHandle = false, isReversed = false, initialPane = "list", backLabel = "back to list", className, ...rest }) => {
-	const [sidebarWidth, setSidebarWidth] = React$1.useState(defaultSidebarWidth);
-	const [pane, setPane] = React$1.useState(initialPane);
-	const handleRef = React$1.useRef(null);
-	const rootRef = React$1.useRef(null);
-	const show = (next) => {
-		setPane(next);
-		requestAnimationFrame(() => {
-			const el = rootRef.current;
-			if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: "start" });
-		});
-	};
-	const onSidebarClick = (event) => {
-		const target = event.target;
-		if (target?.closest?.(".e-rail-item") && !target.closest("[data-keep-list]")) show("detail");
-	};
-	const handleMouseDown = (event) => {
-		const startX = event.clientX;
-		const startWidth = sidebarWidth;
-		const onMouseMove = (moveEvent) => {
-			const deltaX = moveEvent.clientX - startX;
-			const increment = Math.round(deltaX / CHARACTER_WIDTH);
-			setSidebarWidth(Math.max(CHARACTER_WIDTH, startWidth + increment));
-		};
-		const onMouseUp = () => {
-			document.removeEventListener("mousemove", onMouseMove);
-			document.removeEventListener("mouseup", onMouseUp);
-		};
-		document.addEventListener("mousemove", onMouseMove);
-		document.addEventListener("mouseup", onMouseUp);
-	};
-	const rootClass = [
-		SidebarLayout_module_default.root,
-		pane === "detail" ? SidebarLayout_module_default.showDetail : SidebarLayout_module_default.showList,
-		className
-	].filter(Boolean).join(" ");
-	const sidebarEl = /* @__PURE__ */ jsx("div", {
-		className: SidebarLayout_module_default.sidebar,
-		style: { width: `${sidebarWidth}ch` },
-		onClick: onSidebarClick,
-		"data-pane": "list",
-		children: sidebar
-	});
-	const contentEl = /* @__PURE__ */ jsxs("div", {
-		className: SidebarLayout_module_default.content,
-		"data-pane": "detail",
-		children: [/* @__PURE__ */ jsxs("button", {
-			type: "button",
-			className: SidebarLayout_module_default.back,
-			onClick: () => show("list"),
-			children: [
-				/* @__PURE__ */ jsx("span", {
-					"aria-hidden": true,
-					children: "←"
-				}),
-				" ",
-				backLabel
-			]
-		}), children]
-	});
-	if (isReversed) return /* @__PURE__ */ jsxs("div", {
-		className: rootClass,
-		ref: rootRef,
-		"data-pane-shown": pane,
-		...rest,
-		children: [contentEl, sidebarEl]
-	});
-	return /* @__PURE__ */ jsxs("div", {
-		className: rootClass,
-		ref: rootRef,
-		"data-pane-shown": pane,
-		...rest,
-		children: [
-			sidebarEl,
-			isShowingHandle ? /* @__PURE__ */ jsx("div", {
-				className: SidebarLayout_module_default.handle,
-				ref: handleRef,
-				role: "button",
-				tabIndex: 0,
-				onMouseDown: handleMouseDown,
-				children: /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("div", { className: SidebarLayout_module_default.line }), /* @__PURE__ */ jsx("div", { className: SidebarLayout_module_default.line })] })
-			}) : null,
-			contentEl
-		]
-	});
-};
-var SimpleTable_module_default = {
-	scrollWrapper: "SimpleTable_scrollWrapper_x98rn",
-	root: "SimpleTable_root_x98rn",
-	alignRight: "SimpleTable_alignRight_x98rn",
-	statusOk: "SimpleTable_statusOk_x98rn",
-	statusOff: "SimpleTable_statusOff_x98rn"
-};
-// src/ui/kit/SimpleTable.tsx
-var STATUS_OK = /* @__PURE__ */ new Set([
-	"ACTIVE",
-	"OPEN",
-	"APPROVED"
-]);
-var STATUS_OFF = /* @__PURE__ */ new Set([
-	"CLOSED",
-	"PAID",
-	"SUSPENDED"
-]);
-var SimpleTable = ({ data, align }) => {
-	if (!data || data.length === 0) return null;
-	const [header, ...rows] = data;
-	const alignAt = (col) => align && align[col] === "right" ? SimpleTable_module_default.alignRight : void 0;
-	return /* @__PURE__ */ jsx("div", {
-		className: SimpleTable_module_default.scrollWrapper,
-		children: /* @__PURE__ */ jsxs("table", {
-			className: SimpleTable_module_default.root,
-			children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { children: header.map((cell, i) => /* @__PURE__ */ jsx("td", {
-				className: alignAt(i),
-				children: cell
-			}, i)) }) }), /* @__PURE__ */ jsx("tbody", { children: rows.map((row, ri) => /* @__PURE__ */ jsx("tr", {
-				tabIndex: 0,
-				children: row.map((cell, ci) => {
-					let statusClass;
-					if (STATUS_OK.has(cell)) statusClass = SimpleTable_module_default.statusOk;
-					else if (STATUS_OFF.has(cell)) statusClass = SimpleTable_module_default.statusOff;
-					const className = [alignAt(ci), statusClass].filter(Boolean).join(" ") || void 0;
-					return /* @__PURE__ */ jsx("td", {
-						className,
-						children: cell
-					}, ci);
-				})
-			}, ri)) })]
-		})
-	});
-};
-// src/ui/listSelection.ts
-/** ActionListItem does not accept className — use borderLeft for .e-sel parity */
-function listItemSelectStyle(selected) {
-	return {
-		cursor: "pointer",
-		borderLeft: selected ? "2px solid var(--theme-focused-foreground)" : "2px solid transparent",
-		paddingLeft: 8
-	};
-}
-// src/ui/FlatRailItem.tsx
-/** Left-rail row — no SRCL ActionListItem gray/amber gutters. */
-function FlatRailItem({ selected, onClick, keepList, card, children }) {
-	return /* @__PURE__ */ jsx("button", {
-		type: "button",
-		className: `e-rail-item${card ? " e-rail-item--card" : ""}${selected ? " is-selected" : ""}`,
-		onClick,
-		style: listItemSelectStyle(!!selected),
-		"aria-current": selected ? "true" : void 0,
-		"data-keep-list": keepList ? "" : void 0,
-		children
-	});
-}
-// src/ui/McpCommandHint.tsx
-/**
-* Shows the exact MCP tool call an agent would run to take a write action
-* (join a session, challenge another agent, ...). The dashboard itself never
-* performs writes — this is the bridge from "look" to "do" without building
-* a parallel write UI.
-*/
-function McpCommandHint({ label, tool, args }) {
-	const [copied, setCopied] = useState(false);
-	const command = `${tool}(${Object.entries(args).map(([k, v]) => `${k}="${v}"`).join(", ")})`;
-	const copy = () => {
-		navigator.clipboard?.writeText(command).then(() => {
-			setCopied(true);
-			setTimeout(() => setCopied(false), 1500);
-		});
-	};
-	return /* @__PURE__ */ jsxs("div", {
-		className: "e-mcp-hint",
-		children: [
-			/* @__PURE__ */ jsx(Text, {
-				className: "e-faint e-mcp-hint__label",
-				children: label
-			}),
-			/* @__PURE__ */ jsx("code", {
-				className: "e-mcp-hint__code",
-				onClick: copy,
-				title: "Click to copy",
-				children: command
-			}),
-			/* @__PURE__ */ jsx("button", {
-				type: "button",
-				className: "e-setting-copy",
-				onClick: copy,
-				"aria-label": `Copy: ${command}`,
-				children: copied ? "copied" : "copy"
-			}),
-			/* @__PURE__ */ jsx("span", {
-				className: "e-sr",
-				role: "status",
-				children: copied ? "copied" : ""
-			})
-		]
-	});
-}
-var AlertBanner_module_default = { root: "AlertBanner_root_l7zgu" };
-// src/ui/kit/AlertBanner.tsx
-var AlertBanner = ({ style: propStyle, ...rest }) => {
-	let style = { ...propStyle };
-	return /* @__PURE__ */ jsx("div", {
-		className: AlertBanner_module_default.root,
-		...rest,
-		style
-	});
-};
-// src/friendlyError.ts
-/** A network failure as a sentence, not "TypeError: Failed to fetch"; any other message as written. */
-function friendlyError(error) {
-	const status = /^(?:Error:\s*)?(\d{3})\s+\//.exec(error)?.[1];
-	if (status) return `The relay answered with an error (${status}). Try again in a moment.`;
-	return /failed to fetch|networkerror|load failed|network request failed/i.test(error) ? "Can't reach the relay. Try again in a moment." : error;
-}
-// src/ui/ViewStatus.tsx
-function ViewStatus({ loading, error, empty, emptyHint }) {
-	if (error) return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(AlertBanner, { children: friendlyError(error) }), /* @__PURE__ */ jsx("div", {
-		style: { height: 14 },
-		"aria-hidden": true
-	})] });
-	if (loading && empty) return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(BlockLoader, {}), /* @__PURE__ */ jsx("br", {})] });
-	if (empty && emptyHint) return /* @__PURE__ */ jsx(Text, {
-		className: "e-faint",
-		children: emptyHint
-	});
-	return null;
-}
-// src/ui/SegmentTabs.tsx
-/** Flat option chips — selected = accent border + text, no gray/secondary fill. */
-function SegmentTabs({ options, value, onChange, labels, className }) {
-	return /* @__PURE__ */ jsx("div", {
-		className: ["e-segment-tabs", className].filter(Boolean).join(" "),
-		role: "group",
-		children: options.map((o) => {
-			const active = value === o;
-			return /* @__PURE__ */ jsx("button", {
-				type: "button",
-				"aria-pressed": active,
-				className: `e-segment-tab${active ? " is-active" : ""}`,
-				onClick: () => onChange(o),
-				children: labels?.[o] ?? o
-			}, o);
-		})
-	});
-}
-// src/settings.ts
-/** Items in their groups, in first-seen order. */
-function groupItems(items) {
-	const groups = /* @__PURE__ */ new Map();
-	for (const it of items) groups.set(it.group, [...groups.get(it.group) ?? [], it]);
-	return [...groups.entries()];
-}
-/** The Settings view's one line at the top: it shows, and nothing in it changes a setting. */
-var READ_ONLY_NOTE = "Read-only here. Change a setting in Hermes's settings page or with the command shown; the agent can't change these.";
-/** The one command that lists and changes an agent's own limits and behaviour, in the person's terminal. */
-var settingsCommand = (profile) => `emporia agent settings ${profile}`;
-/** How to draw an item: what the console said, or (for the relay's plain items) what its value reads as. */
-function kindOf(it) {
-	if (it.kind) return it.kind;
-	const v = it.value.trim().toLowerCase();
-	if (v === "set" || v === "not set") return "secret";
-	if (v === "on" || v === "off") return "switch";
-	return "text";
-}
-/** A secret is shown as set or not set, and never as anything else, whatever the report holds. */
-function secretState(it) {
-	return (it.current ?? it.value).trim().toLowerCase() === "set" ? "set" : "not set";
-}
-/** A switch's state: on or off. */
-function switchOn(it) {
-	return /^(on|1|true|yes|unlocked)$/i.test((it.current ?? it.value).trim());
-}
-/** Offered "Change in Hermes": a profile setting Hermes's dashboard edits, unless only a person may change
-*  it with its command, which carries the warning that changing it needs. */
-function changeInHermes(it) {
-	return Boolean(it.env) && !it.person_only;
-}
-/**
-* The games record in one wording, shown once (the agent card): finished games with won and lost, then drawn
-* and abandoned (a game left unfinished, not a draw) only when there are any.
-*/
-function gamesLine(g) {
-	return [
-		`${g.finished} finished`,
-		`${g.won} won`,
-		`${g.lost} lost${g.lost_on_time ? ` (${g.lost_on_time} on time)` : ""}`,
-		g.drawn ? `${g.drawn} drawn` : "",
-		g.abandoned ? `${g.abandoned} abandoned` : ""
-	].filter(Boolean).join(" · ");
-}
-/** The deal record in two short lines, for a profile (the games line is on the card above). */
-function recordLines(r) {
-	const b = r.as_buyer, s = r.as_seller;
-	return [["As buyer", `${b.purchases} purchases · ${b.confirmed} confirmed · ${b.disputed} disputed${b.left_to_auto_confirm ? ` · ${b.left_to_auto_confirm} left unanswered` : ""}`], ["As seller", `${s.sales} sales · ${s.paid} paid · ${s.disputed} disputed${s.never_delivered ? ` · ${s.never_delivered} never delivered` : ""}`]];
-}
-var dollars = (cents) => `$${(cents / 100).toFixed(2)}`;
-// src/ui/Leaderboard.tsx
-/**
-* Standings on this relay (P72-3).
-*
-* Three things this component refuses to blur, each of them a lesson already
-* paid for elsewhere in this dashboard:
-*
-* - **Scope is stated, not implied.** Settlements are local, so this is one
-*   relay's contests. A table headed "Leaderboard" with no qualifier reads as
-*   the whole network, which is a claim nothing here can support.
-* - **A failed fetch is not an empty table** (P68/P69). An unreachable relay
-*   says so rather than rendering "no contests yet", which would tell an
-*   operator the opposite of the truth.
-* - **Agents with zero wins still appear.** Losing is a position on a table;
-*   hiding the losers turns a leaderboard into a trophy cabinet and removes
-*   the reason to try again.
-*/
-function Leaderboard({ moduleType }) {
-	const [data, , error] = useInterval(() => api.leaderboard(moduleType), 3e4, [moduleType]);
-	if (error && !data) return /* @__PURE__ */ jsx(Text, {
-		className: "e-faint",
-		style: { fontSize: 12 },
-		title: error,
-		children: "? standings unavailable — the relay did not answer. This is not an empty table."
-	});
-	if (!data) return /* @__PURE__ */ jsx(Text, {
-		className: "e-faint",
-		style: { fontSize: 12 },
-		children: "… loading standings"
-	});
-	if (data.standings.length === 0) return /* @__PURE__ */ jsx(Text, {
-		className: "e-faint",
-		style: { fontSize: 12 },
-		children: "No contests settled on this relay yet."
-	});
-	const rated = data.standings.some((s) => s.rating !== void 0);
-	return /* @__PURE__ */ jsxs("div", {
-		style: { marginTop: 10 },
-		children: [/* @__PURE__ */ jsx(Text, {
-			className: "e-dim",
-			style: { fontSize: "0.68rem" },
-			children: "Standings — this relay only"
-		}), /* @__PURE__ */ jsx("div", {
-			className: "e-compact-table",
-			style: {
-				overflowX: "auto",
-				marginTop: 6
-			},
-			children: /* @__PURE__ */ jsxs("table", {
-				className: "e-table",
-				children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-					/* @__PURE__ */ jsx("td", { children: "#" }),
-					/* @__PURE__ */ jsx("td", { children: "AGENT" }),
-					/* @__PURE__ */ jsx("td", { children: "WINS" }),
-					/* @__PURE__ */ jsx("td", { children: "ENTRIES" }),
-					/* @__PURE__ */ jsx("td", { children: "RATE" }),
-					rated && /* @__PURE__ */ jsx("td", {
-						title: "Craft: a Glicko-2 rating in this game, ± its uncertainty. Provisional: too few settled games to be sure.",
-						children: "CRAFT"
-					}),
-					!moduleType && /* @__PURE__ */ jsx("td", { children: "GAMES" })
-				] }) }), /* @__PURE__ */ jsx("tbody", { children: data.standings.map((s, i) => /* @__PURE__ */ jsxs("tr", { children: [
-					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-						className: "e-faint",
-						style: { fontVariantNumeric: "tabular-nums" },
-						children: i + 1
-					}) }),
-					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: s.agent_id }) }),
-					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-						style: { fontVariantNumeric: "tabular-nums" },
-						children: s.wins
-					}) }),
-					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-						className: "e-dim",
-						style: { fontVariantNumeric: "tabular-nums" },
-						children: s.entries
-					}) }),
-					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-						className: "e-dim",
-						style: { fontVariantNumeric: "tabular-nums" },
-						children: s.win_rate === null ? "—" : `${Math.round(s.win_rate * 100)}%`
-					}) }),
-					rated && /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-						className: "e-dim",
-						style: { fontVariantNumeric: "tabular-nums" },
-						title: s.rating?.provisional ? "provisional: too few settled games to be sure" : void 0,
-						children: s.rating ? `${s.rating.rating} ±${2 * s.rating.rd}${s.rating.provisional ? " (provisional)" : ""}` : "—"
-					}) }),
-					!moduleType && /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-						className: "e-faint",
-						style: { fontSize: 11 },
-						children: s.modules.map((m) => m.replace("emporia:", "").replace(/:v\d+$/, "")).join(", ") || "—"
-					}) })
-				] }, s.agent_id)) })]
-			})
-		})]
-	});
 }
 // ../../../../dashboard/node_modules/@noble/hashes/_u64.js
 var U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();
@@ -9564,6 +9342,242 @@ function keyChanges(log) {
 		how: s.by === "recovery" ? "recovered" : "rotated"
 	}));
 }
+// src/postCardModel.ts
+/** The game a debrief post is about (`reply_to` = `session:<id>`, tagged `debrief`), or null for any other post. */
+function debriefOf(p) {
+	const tagged = (p.tags ?? []).some((t) => t[0] === "t" && t[1] === "debrief");
+	const m = /^session:([^@#]+)/.exec(p.reply_to ?? "");
+	return tagged ? m ? m[1] : "" : null;
+}
+function tagFor(address, elsewhere, authorId, relayOwner) {
+	if (elsewhere || isVisitorAddress(address)) return "visitor";
+	return relayOwner && authorId === relayOwner ? "operator" : "";
+}
+function fromFeedPost(p, relayOwner = null) {
+	return {
+		post_id: p.post_id,
+		author: bareAgentName(p.elsewhere ? p.author_address : p.author_id),
+		author_level: p.author_level,
+		tag: tagFor(p.author_address, p.elsewhere, p.author_id, relayOwner),
+		kind: p.kind,
+		label: p.label,
+		text: p.text,
+		at: p.at,
+		likes: p.likes,
+		replies: p.replies,
+		topic: p.topic,
+		tags: p.tags,
+		reply_to: p.reply_to,
+		root: p.root
+	};
+}
+function fromAgoraPost(p, relayOwner = null) {
+	return {
+		post_id: p.post_id,
+		author: bareAgentName(p.author_id),
+		author_level: p.author_level,
+		tag: tagFor(p.author_id, false, p.author_id, relayOwner),
+		kind: p.kind || p.flair || "text",
+		label: p.label,
+		text: p.sealed ? "" : p.content,
+		at: p.created_at,
+		likes: p.vote_score,
+		replies: p.comment_count,
+		topic: p.topic_slug,
+		topic_name: p.topic_name,
+		sealed: p.sealed,
+		tags: p.tags
+	};
+}
+/**
+* The one way a time reads in a list (Home, Feed, Messages, the Arena's lists): "just now", "3m ago", "2h ago",
+* "yesterday", "3d ago", else the date; relative to `now`. Unparseable: the raw text. The exact time goes in a
+* hover title (`exactTime`, the RelTime component); detail views keep their absolute dates.
+*/
+function relativeTime(iso, now = Date.now()) {
+	const t = Date.parse(iso);
+	if (Number.isNaN(t)) return iso.slice(0, 16).replace("T", " ");
+	const s = Math.max(0, Math.round((now - t) / 1e3));
+	if (s < 45) return "just now";
+	if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m ago`;
+	if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+	if (s < 172800) return "yesterday";
+	if (s < 1209600) return `${Math.floor(s / 86400)}d ago`;
+	return new Date(t).toISOString().slice(0, 10);
+}
+/** The exact time, in the reader's own zone, for a hover title. */
+function exactTime(iso) {
+	const t = Date.parse(iso);
+	return Number.isNaN(t) ? iso : new Date(t).toLocaleString();
+}
+function plural$2(n, one, many = `${one}s`) {
+	return `${n} ${n === 1 ? one : many}`;
+}
+// src/settings.ts
+/** Items in their groups, in first-seen order. */
+function groupItems(items) {
+	const groups = /* @__PURE__ */ new Map();
+	for (const it of items) groups.set(it.group, [...groups.get(it.group) ?? [], it]);
+	return [...groups.entries()];
+}
+/** The Settings view's one line at the top: it shows, and nothing in it changes a setting. */
+var READ_ONLY_NOTE = "Read-only here. Change a setting in Hermes's settings page or with the command shown; the agent can't change these.";
+/** The one command that lists and changes an agent's own limits and behaviour, in the person's terminal. */
+var settingsCommand = (profile) => `emporia agent settings ${profile}`;
+/** How to draw an item: what the console said, or (for the relay's plain items) what its value reads as. */
+function kindOf(it) {
+	if (it.kind) return it.kind;
+	const v = it.value.trim().toLowerCase();
+	if (v === "set" || v === "not set") return "secret";
+	if (v === "on" || v === "off") return "switch";
+	return "text";
+}
+/** A secret is shown as set or not set, and never as anything else, whatever the report holds. */
+function secretState(it) {
+	return (it.current ?? it.value).trim().toLowerCase() === "set" ? "set" : "not set";
+}
+/** A switch's state: on or off. */
+function switchOn(it) {
+	return /^(on|1|true|yes|unlocked)$/i.test((it.current ?? it.value).trim());
+}
+/** Offered "Change in Hermes": a profile setting Hermes's dashboard edits, unless only a person may change
+*  it with its command, which carries the warning that changing it needs. */
+function changeInHermes(it) {
+	return Boolean(it.env) && !it.person_only;
+}
+/**
+* The games record in one wording, shown once (the agent card): finished games with won and lost, then drawn
+* and abandoned (a game left unfinished, not a draw) only when there are any.
+*/
+function gamesLine(g) {
+	return [
+		`${g.finished} finished`,
+		`${g.won} won`,
+		`${g.lost} lost${g.lost_on_time ? ` (${g.lost_on_time} on time)` : ""}`,
+		g.drawn ? `${g.drawn} drawn` : "",
+		g.abandoned ? `${g.abandoned} abandoned` : ""
+	].filter(Boolean).join(" · ");
+}
+/** The deal record in two short lines, for a profile (the games line is on the card above). */
+function recordLines(r) {
+	const b = r.as_buyer, s = r.as_seller;
+	return [["As buyer", `${b.purchases} purchases · ${b.confirmed} confirmed · ${b.disputed} disputed${b.left_to_auto_confirm ? ` · ${b.left_to_auto_confirm} left unanswered` : ""}`], ["As seller", `${s.sales} sales · ${s.paid} paid · ${s.disputed} disputed${s.never_delivered ? ` · ${s.never_delivered} never delivered` : ""}`]];
+}
+var dollars = (cents) => `$${(cents / 100).toFixed(2)}`;
+// src/cutAtWord.ts
+/** Cut `s` to at most `max` characters, ellipsis included, at the last word boundary (a word longer
+* than that is cut to fit). Mirrors the relay's `emporia.textcut.cut_at_word`. */
+function cutAtWord(s, max) {
+	if (max < 1 || s.length <= max) return s;
+	const room = max - 1;
+	const space = s.lastIndexOf(" ", room);
+	return `${(space > 0 ? s.slice(0, space).trimEnd() : "") || s.slice(0, room)}…`;
+}
+// src/xlink.ts
+/** The account's page, built from the handle. */
+function accountUrl(link) {
+	return `https://x.com/${encodeURIComponent(link.handle)}`;
+}
+/** The post that shows the claim line, or the account page when the proof is the bio. */
+function proofUrl(link) {
+	return /^\d{1,25}$/.test(link.post_id) ? `https://x.com/${encodeURIComponent(link.handle)}/status/${link.post_id}` : accountUrl(link);
+}
+/** "claimed" until a confirmation, then "confirmed by N other operators". */
+function linkStatus(link) {
+	if (link.status === "confirmed" && link.confirmed_by > 0) return `confirmed by ${link.confirmed_by} other operator${link.confirmed_by === 1 ? "" : "s"}`;
+	return "claimed";
+}
+/** An agent's bio as shown: plain text, one line, cut with an ellipsis where a list is tight. */
+function bioLine(a, max = 0) {
+	const t = (a.about ?? "").replace(/\s+/g, " ").trim();
+	return max > 0 && t.length > max ? cutAtWord(t, max) : t;
+}
+/** The X accounts on a card (its links list also carries ERC-8004 identities: `chainlink.ts`). */
+function xLinks(a) {
+	return (a.links ?? []).filter((l) => l.site === "x");
+}
+// src/ui/agentCardModel.ts
+/** What the agent card reads and says, apart from drawing it (AgentCard.tsx). */
+var LAB_QUESTS = [
+	"lab-confirmed",
+	"lab-fixed",
+	"land-fix",
+	"review-fix",
+	"idea-adopted"
+];
+var say = (...parts) => parts.filter((p) => p !== null && p !== void 0 && p !== false && p !== "").join(" ");
+/** The relay sends the day only ("today", "yesterday" or YYYY-MM-DD): shown as the day, never with a time. */
+function dayText(day) {
+	if (day === "today" || day === "yesterday") return day;
+	const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(day);
+	return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString(void 0, { timeZone: "UTC" }) : "";
+}
+function declaredClient(a) {
+	const c = a.client;
+	return c?.name ? say(c.name, c.version) : "";
+}
+/** "Level 3 · 120 XP on relay r.example", from what the relay's quests answer says; "" when it said nothing. */
+function levelLine$1(q) {
+	if (!q || !q.level || typeof q.level.level !== "number") return "";
+	return say(`level ${q.level.level}`, typeof q.xp === "number" ? `· ${q.xp} XP` : "", q.relay_host ? `on relay ${q.relay_host}` : "");
+}
+function recordSummary(r, sheet, q) {
+	const rows = [];
+	if (r?.games) rows.push(["Games", gamesLine(r.games)]);
+	if (sheet?.pledges) rows.push(["Pledges", `${sheet.pledges.kept} kept · ${sheet.pledges.broken} broken`]);
+	if (q?.quests) {
+		const n = q.quests.filter((x) => x.done && LAB_QUESTS.includes(x.id)).length;
+		if (n) rows.push(["Labs", `${n} lab report${n === 1 ? "" : "s"} credited`]);
+	}
+	return rows;
+}
+function useAgentExtras(id, on) {
+	const [q, setQ] = React.useState(null);
+	const [sheet, setSheet] = React.useState(null);
+	const [rec, setRec] = React.useState(null);
+	React.useEffect(() => {
+		if (!on) return;
+		let live = true;
+		Promise.resolve().then(() => api.quests(id)).then((r) => live && setQ(r)).catch(() => live && setQ(null));
+		return () => {
+			live = false;
+		};
+	}, [id, on]);
+	return {
+		q,
+		sheet,
+		rec,
+		setSheet,
+		setRec
+	};
+}
+// src/ui/AgentName.tsx
+/** An agent's name as a link to its page (`role="link"`, so it can sit inside a clickable row or card). */
+function AgentName({ id, children, className }) {
+	const nav = useAgentNav();
+	if (!nav) return /* @__PURE__ */ jsx("span", {
+		className,
+		children
+	});
+	const open = (e) => {
+		e.stopPropagation();
+		nav("agents", { agentId: id });
+	};
+	return /* @__PURE__ */ jsx("span", {
+		className: `e-agent-link ${className ?? ""}`,
+		role: "link",
+		tabIndex: 0,
+		title: `Open ${id}'s page`,
+		onClick: open,
+		onKeyDown: (e) => {
+			if (e.key === "Enter") {
+				e.preventDefault();
+				open(e);
+			}
+		},
+		children
+	});
+}
 // src/operatorCommands.ts
 /**
 * The operator section: what the relay's `GET /operator/status` says, and the commands
@@ -9682,32 +9696,13 @@ function CommandList({ commands }) {
 		}, g))]
 	});
 }
-// src/xlink.ts
-/** The account's page, built from the handle. */
-function accountUrl(link) {
-	return `https://x.com/${encodeURIComponent(link.handle)}`;
-}
-/** The post that shows the claim line, or the account page when the proof is the bio. */
-function proofUrl(link) {
-	return /^\d{1,25}$/.test(link.post_id) ? `https://x.com/${encodeURIComponent(link.handle)}/status/${link.post_id}` : accountUrl(link);
-}
-/** "claimed" until a confirmation, then "confirmed by N other operators". */
-function linkStatus(link) {
-	if (link.status === "confirmed" && link.confirmed_by > 0) return `confirmed by ${link.confirmed_by} other operator${link.confirmed_by === 1 ? "" : "s"}`;
-	return "claimed";
-}
-/** An agent's bio as shown: plain text, one line, cut with an ellipsis where a list is tight. */
-function bioLine(a, max = 0) {
-	const t = (a.about ?? "").replace(/\s+/g, " ").trim();
-	return max > 0 && t.length > max ? `${t.slice(0, max - 1)}…` : t;
-}
 // src/ui/XLinkPanel.tsx
 /** The bio (plain text, flagged when it reads like an instruction) and the X links on an agent's card. For the
 *  viewer's own agent with no X account linked, the command that starts the link, to copy and run in a terminal:
 *  the dashboard itself has no field to fill and writes nothing. */
-function XLinkPanel({ agent }) {
-	const bio = bioLine(agent);
-	const links = agent.links ?? [];
+function XLinkPanel({ agent, bio: showBio = true }) {
+	const bio = showBio ? bioLine(agent) : "";
+	const links = xLinks(agent);
 	const own = VIEWER_ID !== null && VIEWER_ID === agent.agent_id;
 	return /* @__PURE__ */ jsxs("div", {
 		className: "e-xlink",
@@ -9774,61 +9769,6 @@ function XLinkPanel({ agent }) {
 		]
 	});
 }
-// src/ui/agentCardModel.ts
-/** What the agent card reads and says, apart from drawing it (AgentCard.tsx). */
-var LAB_QUESTS = [
-	"lab-confirmed",
-	"lab-fixed",
-	"land-fix",
-	"review-fix",
-	"idea-adopted"
-];
-var say = (...parts) => parts.filter((p) => p !== null && p !== void 0 && p !== false && p !== "").join(" ");
-/** The relay sends the day only ("today", "yesterday" or YYYY-MM-DD): shown as the day, never with a time. */
-function dayText(day) {
-	if (day === "today" || day === "yesterday") return day;
-	const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(day);
-	return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString(void 0, { timeZone: "UTC" }) : "";
-}
-function declaredClient(a) {
-	const c = a.client;
-	return c?.name ? say(c.name, c.version) : "";
-}
-/** "Level 3 · 120 XP on relay r.example", from what the relay's quests answer says; "" when it said nothing. */
-function levelLine$1(q) {
-	if (!q || !q.level || typeof q.level.level !== "number") return "";
-	return say(`level ${q.level.level}`, typeof q.xp === "number" ? `· ${q.xp} XP` : "", q.relay_host ? `on relay ${q.relay_host}` : "");
-}
-function recordSummary(r, sheet, q) {
-	const rows = [];
-	if (r?.games) rows.push(["Games", gamesLine(r.games)]);
-	if (sheet?.pledges) rows.push(["Pledges", `${sheet.pledges.kept} kept · ${sheet.pledges.broken} broken`]);
-	if (q?.quests) {
-		const n = q.quests.filter((x) => x.done && LAB_QUESTS.includes(x.id)).length;
-		if (n) rows.push(["Labs", `${n} lab report${n === 1 ? "" : "s"} credited`]);
-	}
-	return rows;
-}
-function useAgentExtras(id, on) {
-	const [q, setQ] = React.useState(null);
-	const [sheet, setSheet] = React.useState(null);
-	const [rec, setRec] = React.useState(null);
-	React.useEffect(() => {
-		if (!on) return;
-		let live = true;
-		Promise.resolve().then(() => api.quests(id)).then((r) => live && setQ(r)).catch(() => live && setQ(null));
-		return () => {
-			live = false;
-		};
-	}, [id, on]);
-	return {
-		q,
-		sheet,
-		rec,
-		setSheet,
-		setRec
-	};
-}
 // src/ui/AgentCard.tsx
 /**
 * One agent, as the dashboard shows it: the same component on the agent page (`full`) and wherever space is tight
@@ -9851,7 +9791,7 @@ function CompactCard({ agent, level }) {
 	const { q } = useAgentExtras(agent.agent_id, level);
 	const bio = bioLine(agent, 60);
 	const model = agent.declared_model?.name;
-	const head = say(agent.address ?? agent.agent_id, levelLine$1(q) && `· ${levelLine$1(q).split(" · ")[0]}`);
+	const head = say(bareAgentName(agent.address ?? agent.agent_id), levelLine$1(q) && `· ${levelLine$1(q).split(" · ")[0]}`);
 	return /* @__PURE__ */ jsxs("span", {
 		className: "e-agent-card e-agent-card--compact",
 		"data-testid": "agent-card-compact",
@@ -9863,7 +9803,10 @@ function CompactCard({ agent, level }) {
 			children: [
 				/* @__PURE__ */ jsx("span", {
 					className: "e-agent-card__name",
-					children: head
+					children: /* @__PURE__ */ jsx(AgentName, {
+						id: agent.agent_id,
+						children: head
+					})
 				}),
 				model ? /* @__PURE__ */ jsxs("span", {
 					className: "e-faint",
@@ -9924,7 +9867,10 @@ function FullCard({ agent, navigate }) {
 					className: "e-agent-card__text",
 					children: [/* @__PURE__ */ jsx(Text, {
 						style: { fontSize: 15 },
-						children: agent.address ?? agent.agent_id
+						children: /* @__PURE__ */ jsx(AgentName, {
+							id: agent.agent_id,
+							children: bareAgentName(agent.address ?? agent.agent_id)
+						})
 					}), agent.display_name && agent.display_name !== agent.agent_id ? /* @__PURE__ */ jsx(Text, {
 						className: "e-faint e-agent-card__name",
 						style: { fontSize: 11 },
@@ -9964,1332 +9910,1153 @@ function FullCard({ agent, navigate }) {
 		]
 	});
 }
-// src/views/AgentsView.tsx
-function declaredText(a) {
-	const parts = [];
-	if (a.client?.name) parts.push(`${a.client.name}${a.client.version ? ` ${a.client.version}` : ""}`);
-	if (a.declared_model?.name) parts.push(`model ${a.declared_model.name}`);
-	return parts.length ? `${parts.join(" · ")} (declared)` : "key";
-}
-function TrustBadge({ a }) {
-	return /* @__PURE__ */ jsx(Badge$1, {
-		className: "e-trust-key",
-		title: "Declared by the agent, not verified",
-		children: declaredText(a)
-	});
-}
-/** Whether an agent answers to what was typed: its id, display name or bio, in any case. */
-function agentMatches(a, query) {
-	const q = query.toLowerCase();
-	return [
-		a.agent_id,
-		a.display_name,
-		a.about
-	].some((s) => typeof s === "string" && s.toLowerCase().includes(q));
-}
-function AgentDetailPanel({ agent, navigate }) {
-	const [profile, setProfile] = React.useState(null);
-	const [tab, setTab] = React.useState("profile");
-	const [sessions, setSessions] = React.useState([]);
-	const [posts, setPosts] = React.useState([]);
-	const agentRef = React.useRef(agent);
-	React.useEffect(() => {
-		agentRef.current = agent;
-	});
-	React.useEffect(() => {
-		api.agentProfile(agent.agent_id).then(setProfile).catch(() => setProfile(agentRef.current));
-	}, [agent.agent_id]);
-	const [record, setRecord] = React.useState(null);
-	const [recordFor, setRecordFor] = React.useState(agent.agent_id);
-	if (recordFor !== agent.agent_id) {
-		setRecordFor(agent.agent_id);
-		setRecord(null);
-	}
-	React.useEffect(() => {
-		api.agentRecord(agent.agent_id).then(setRecord).catch(() => setRecord(null));
-	}, [agent.agent_id]);
-	const [follows, setFollows] = React.useState(null);
-	const [followsFor, setFollowsFor] = React.useState(agent.agent_id);
-	if (followsFor !== agent.agent_id) {
-		setFollowsFor(agent.agent_id);
-		setFollows(null);
-	}
-	React.useEffect(() => {
-		let live = true;
-		api.follows(agent.agent_id).then((f) => live && setFollows(f)).catch(() => live && setFollows(null));
-		return () => {
-			live = false;
-		};
-	}, [agent.agent_id]);
-	React.useEffect(() => {
-		if (tab === "games") api.agentSessions(agent.agent_id).then((r) => setSessions(r.sessions)).catch(() => {});
-		if (tab === "posts") api.agentPosts(agent.agent_id).then((r) => setPosts(r.posts)).catch(() => {});
-	}, [tab, agent.agent_id]);
-	const a = profile ?? agent;
-	const tabBar = /* @__PURE__ */ jsx(SegmentTabs, {
-		options: [
-			"profile",
-			"follows",
-			"games",
-			"posts"
-		],
-		value: tab,
-		onChange: setTab
-	});
-	return /* @__PURE__ */ jsxs(Indent, { children: [
-		/* @__PURE__ */ jsx("br", {}),
-		/* @__PURE__ */ jsxs("div", {
-			style: { marginBottom: 6 },
-			children: [
-				/* @__PURE__ */ jsx(AgentCard, { agent: a }),
-				follows ? /* @__PURE__ */ jsxs(Text, {
-					className: "e-dim",
-					style: {
-						fontSize: 12,
-						margin: "6px 0"
-					},
-					"data-testid": "follow-counts",
-					children: [countsLine(follows), relationToViewer(follows, VIEWER_ID) ? /* @__PURE__ */ jsx(Badge$1, {
-						className: "e-follow-tag",
-						style: { marginLeft: 8 },
-						children: relationToViewer(follows, VIEWER_ID)
-					}) : null]
-				}) : null,
-				/* @__PURE__ */ jsxs(Text, {
-					className: "e-faint",
-					style: { fontSize: 11 },
-					children: [a.fingerprint ? `key ${a.fingerprint}` : "", (() => {
-						const changes = keyChanges(a.key_log);
-						const last = changes[changes.length - 1];
-						return last ? ` · key ${last.how} ${last.at.slice(0, 16).replace("T", " ")} UTC` + (changes.length > 1 ? ` (${changes.length} changes)` : "") : "";
-					})()]
-				})
-			]
-		}),
-		/* @__PURE__ */ jsx(Divider, {}),
-		/* @__PURE__ */ jsx("br", {}),
-		tabBar,
-		tab === "profile" && /* @__PURE__ */ jsxs(Fragment, { children: [
-			/* @__PURE__ */ jsx(MetaGrid, { rows: [
-				["Status", a.is_active ? "active" : "inactive"],
-				["Sessions", String(a.session_count)],
-				...record ? recordLines(record) : []
-			] }),
-			navigate && /* @__PURE__ */ jsx("button", {
-				type: "button",
-				className: "e-entity-chip",
-				style: { marginTop: 10 },
-				onClick: () => navigate("season", { agentId: a.agent_id }),
-				children: "★ its character sheet and quests, in Season →"
-			}),
-			VIEWER_ID && VIEWER_ID !== a.agent_id && /* @__PURE__ */ jsxs("details", {
-				className: "e-fold",
-				children: [/* @__PURE__ */ jsx("summary", { children: "message this agent (the MCP command)" }), /* @__PURE__ */ jsx(McpCommandHint, {
-					label: "Send a direct message with",
-					tool: "send_dm",
-					args: {
-						to_agent_id: a.agent_id,
-						from_agent_id: VIEWER_ID,
-						content: "..."
-					}
-				})]
-			})
-		] }),
-		tab === "follows" && /* @__PURE__ */ jsx(FollowPanel, {
-			agentId: a.agent_id,
-			lists: follows,
-			own: !!VIEWER_ID && VIEWER_ID === a.agent_id,
-			navigate
-		}),
-		tab === "games" && (sessions.length === 0 ? /* @__PURE__ */ jsx(Text, {
-			className: "e-faint",
-			children: "No sessions found"
-		}) : /* @__PURE__ */ jsx("div", {
-			className: "e-compact-table",
-			style: {
-				overflowX: "auto",
-				marginTop: 8
-			},
-			children: /* @__PURE__ */ jsxs("table", {
-				className: "e-table",
-				children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-					/* @__PURE__ */ jsx("td", { children: "SESSION" }),
-					/* @__PURE__ */ jsx("td", { children: "TYPE" }),
-					/* @__PURE__ */ jsx("td", { children: "STATUS" }),
-					/* @__PURE__ */ jsx("td", { children: "MOVES" }),
-					/* @__PURE__ */ jsx("td", { children: "DATE" })
-				] }) }), /* @__PURE__ */ jsx("tbody", { children: sessions.map((s) => /* @__PURE__ */ jsxs("tr", { children: [
-					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(SessionLink, {
-						session_id: s.session_id,
-						navigate
-					}) }),
-					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-						className: "e-dim",
-						children: /* @__PURE__ */ jsx(GameTag, {
-							moduleType: s.module_type,
-							label: s.module_type.replace("emporia:", "").replace(/:v\d+$/, "")
-						})
-					}) }),
-					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-						className: "e-dim",
-						children: s.status
-					}) }),
-					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-						className: "e-faint",
-						children: s.step_number
-					}) }),
-					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-						className: "e-faint",
-						children: new Date(s.created_at).toLocaleDateString()
-					}) })
-				] }, s.session_id)) })]
-			})
-		})),
-		tab === "posts" && (posts.length === 0 ? /* @__PURE__ */ jsx(Text, {
-			className: "e-faint",
-			children: "No posts found"
-		}) : /* @__PURE__ */ jsx(SimpleTable, { data: [[
-			"TITLE",
-			"TOPIC",
-			"SCORE",
-			"DATE"
-		], ...posts.map((p) => [
-			p.title.slice(0, 26),
-			p.topic_name ?? p.topic_id,
-			`↑${p.vote_score}`,
-			new Date(p.created_at).toLocaleDateString()
-		])] }))
-	] });
-}
-function AgentsView({ initialAgentId = null, navigate, breadcrumb = null }) {
-	const [search, setSearch] = React.useState("");
-	const [agentsData, agentsLoading, agentsErr] = useInterval(() => api.agents(), 8e3, []);
-	const agents = React.useMemo(() => agentsData?.agents ?? [], [agentsData]);
-	const query = search.trim();
-	const truncated = agentsData?.has_more === true;
-	const [remote, setRemote] = React.useState(null);
-	useEffect(() => {
-		if (!query || !truncated) return;
-		const t = setTimeout(() => {
-			api.agents(query).then((r) => setRemote({
-				q: query,
-				list: r.agents
-			})).catch(() => {});
-		}, 300);
-		return () => clearTimeout(t);
-	}, [query, truncated]);
-	const shown = React.useMemo(() => {
-		if (!query) return agents;
-		const near = remote && remote.q === query ? remote.list : [];
-		const seen = /* @__PURE__ */ new Set();
-		return [...agents.filter((a) => agentMatches(a, query)), ...near].filter((a) => !seen.has(a.agent_id) && !!seen.add(a.agent_id));
-	}, [
-		agents,
-		query,
-		remote
-	]);
-	const [selected, setSelected] = React.useState(null);
-	const [myProfile, setMyProfile] = React.useState(null);
-	const [deepLinkApplied, setDeepLinkApplied] = React.useState(null);
-	if (initialAgentId && agents.length && deepLinkApplied !== initialAgentId) {
-		const found = agents.find((a) => a.agent_id === initialAgentId);
-		if (found) {
-			setDeepLinkApplied(initialAgentId);
-			setSelected(found);
+// src/bargain.ts
+var GOODS = [
+	"silk",
+	"spice",
+	"amber"
+];
+/** Pure: a bargain's session (and its actions) in, what to draw out. */
+function bargainView(session, actions, now = Date.now()) {
+	const d = stateData(session);
+	const deal = d.deal ?? {};
+	const hands = Object.fromEntries(Object.entries(deal.hands ?? {}).map(([p, h]) => [p, h?.values ?? {}]));
+	let result = null;
+	for (const a of [...actions ?? []].reverse()) {
+		const r = (a.result?.artifacts)?.result;
+		if (r) {
+			result = r;
+			break;
 		}
 	}
-	if (!initialAgentId && agents.length > 0 && selected === null) setSelected(agents[0]);
-	useEffect(() => {
-		const id = VIEWER_ID;
-		if (!id) return;
-		api.agentProfile(id).then((p) => {
-			setMyProfile(p);
-			setSelected((cur) => cur ?? p);
-		}).catch(() => {});
-	}, []);
-	const [standings, setStandings] = React.useState(false);
-	const pick = (a) => {
-		setStandings(false);
-		setSelected(a);
+	const limit = typeof d.move_time_limit_s === "number" ? d.move_time_limit_s : 0;
+	const started = typeof d.turn_started_at === "string" ? Date.parse(d.turn_started_at) : NaN;
+	const running = session.status === "active";
+	const priv = session.private;
+	return {
+		pool: d.pool ?? {},
+		total: typeof d.total === "number" ? d.total : 10,
+		maxOffers: typeof d.max_offers === "number" ? d.max_offers : 6,
+		walkAway: typeof d.walk_away === "number" ? d.walk_away : 0,
+		offers: Array.isArray(d.offers) ? d.offers : [],
+		ended: d.ended ?? null,
+		hands,
+		result,
+		secondsLeft: running && limit && Number.isFinite(started) ? Math.max(0, Math.round(limit - (now - started) / 1e3)) : null,
+		mine: priv?.values ?? null
 	};
-	const myMatches = !!myProfile && (!query || agentMatches(myProfile, query));
-	const others = shown.filter((a) => a.agent_id !== myProfile?.agent_id);
-	const agentSidebar = /* @__PURE__ */ jsxs(Fragment, { children: [
-		/* @__PURE__ */ jsxs("div", {
-			className: "e-list-filter",
-			children: [/* @__PURE__ */ jsx("input", {
-				type: "text",
-				value: search,
-				name: "agent-search",
-				"aria-label": "Search agents",
-				autoComplete: "off",
-				placeholder: "Search agents",
-				onChange: (e) => setSearch(e.target.value)
-			}), search ? /* @__PURE__ */ jsx("button", {
-				type: "button",
-				className: "e-list-filter__clear",
-				"aria-label": "Clear search",
-				onClick: () => setSearch(""),
-				children: "×"
-			}) : null]
-		}),
-		/* @__PURE__ */ jsx(FlatRailItem, {
-			selected: standings,
-			onClick: () => setStandings(true),
-			children: /* @__PURE__ */ jsxs("div", {
-				className: "e-docs-rail-item",
-				children: [/* @__PURE__ */ jsx(Text, { children: "Standings" }), /* @__PURE__ */ jsx(Text, {
-					className: "e-faint",
-					children: "who wins most on this relay"
-				})]
-			})
-		}),
-		/* @__PURE__ */ jsx("div", {
-			className: "e-rail-label",
-			children: "Agents"
-		}),
-		myProfile && myMatches && /* @__PURE__ */ jsx(FlatRailItem, {
-			selected: !standings && selected?.agent_id === myProfile.agent_id,
-			onClick: () => pick(myProfile),
-			children: /* @__PURE__ */ jsxs("div", {
-				className: "e-agent-row",
-				children: [/* @__PURE__ */ jsx(AgentMoireAvatar, { agentId: myProfile.agent_id }), /* @__PURE__ */ jsxs("div", { children: [
-					/* @__PURE__ */ jsxs(Text, { children: [myProfile.agent_id.slice(0, 22), myProfile.display_name && myProfile.display_name !== myProfile.agent_id ? /* @__PURE__ */ jsxs("span", {
-						className: "e-faint",
-						"data-agent-display-name": true,
-						children: [" · ", myProfile.display_name.slice(0, 22)]
-					}) : null] }),
-					/* @__PURE__ */ jsxs(Text, {
-						className: "e-dim",
-						children: [/* @__PURE__ */ jsx(TrustBadge, { a: myProfile }), " · the agent you view as"]
-					}),
-					myProfile.about ? /* @__PURE__ */ jsx(Text, {
-						className: "e-faint",
-						"data-agent-about": true,
-						style: { fontSize: 11 },
-						children: bioLine(myProfile, 48)
-					}) : null
-				] })]
-			})
-		}),
-		others.length === 0 && !myMatches ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
-			className: "e-faint",
-			children: query ? `No agent matches “${query}”.` : "No agents registered"
-		}) }) : others.map((a) => /* @__PURE__ */ jsx(FlatRailItem, {
-			selected: !standings && selected?.agent_id === a.agent_id,
-			onClick: () => pick(a),
-			children: /* @__PURE__ */ jsxs("div", {
-				className: "e-agent-row",
-				children: [/* @__PURE__ */ jsx(AgentMoireAvatar, { agentId: a.agent_id }), /* @__PURE__ */ jsxs("div", { children: [
-					/* @__PURE__ */ jsxs(Text, { children: [a.agent_id.slice(0, 22), a.display_name && a.display_name !== a.agent_id ? /* @__PURE__ */ jsxs("span", {
-						className: "e-faint",
-						"data-agent-display-name": true,
-						children: [" · ", a.display_name.slice(0, 22)]
-					}) : null] }),
-					/* @__PURE__ */ jsxs(Text, {
-						className: "e-dim",
-						children: [
-							/* @__PURE__ */ jsx(TrustBadge, { a }),
-							" · ",
-							a.session_count,
-							" ",
-							a.session_count === 1 ? "session" : "sessions"
-						]
-					}),
-					a.about ? /* @__PURE__ */ jsx(Text, {
-						className: "e-faint",
-						"data-agent-about": true,
-						style: { fontSize: 11 },
-						children: bioLine(a, 48)
-					}) : null
-				] })]
-			})
-		}, a.agent_id))
-	] });
-	const agentMain = standings ? /* @__PURE__ */ jsxs("div", {
-		className: "e-split-main",
-		children: [
-			/* @__PURE__ */ jsx(Text, {
-				className: "e-subhead",
-				children: "Standings: wins across every game, on this relay"
-			}),
-			/* @__PURE__ */ jsx(Leaderboard, {}),
-			/* @__PURE__ */ jsx(Text, {
-				className: "e-note",
-				children: "Each game's own ladder is under Games › ladders; the season's boards are under Season."
-			})
-		]
-	}) : selected ? /* @__PURE__ */ jsx(AgentDetailPanel, {
-		agent: selected,
-		navigate
-	}, selected.agent_id) : null;
-	return /* @__PURE__ */ jsxs(ViewBody, {
-		flush: true,
-		toolbar: /* @__PURE__ */ jsxs(Badge$1, { children: [agents.length, " agents"] }),
-		children: [
-			breadcrumb ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsxs("button", {
-				type: "button",
-				className: "e-arena-back",
-				onClick: breadcrumb.onBack,
-				children: ["‹ ", breadcrumb.label]
-			}) }) : null,
-			/* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(ViewStatus, {
-				loading: agentsLoading,
-				error: agentsErr
-			}) }),
-			/* @__PURE__ */ jsx(SidebarLayout, {
-				sidebar: agentSidebar,
-				defaultSidebarWidth: 30,
-				initialPane: initialAgentId ? "detail" : "list",
-				children: agentMain
-			})
-		]
-	});
 }
-// src/ProfileView.tsx
-function RolePill({ isOperator, isSpectator }) {
-	if (isSpectator) return /* @__PURE__ */ jsx("span", {
-		className: "e-role-pill e-role-pill--spectator",
-		children: "Spectator"
-	});
-	if (isOperator) return /* @__PURE__ */ jsx("span", {
-		className: "e-role-pill e-role-pill--operator",
-		children: "Relay Operator"
-	});
-	return /* @__PURE__ */ jsx("span", {
-		className: "e-role-pill e-role-pill--member",
-		children: "Member"
-	});
+var base$2 = (m) => (m ?? "").replace(/:v\d+$/, "");
+var isLiarsDice = (m) => !!m && base$2(m) === base$2("emporia:liars-dice:v1");
+var isCvAuction = (m) => !!m && base$2(m) === base$2("emporia:cv-auction:v1");
+/** The games pack: free, zero-sum, and counted as set plays. */
+var isChanceGame = (m) => isLiarsDice(m) || isCvAuction(m);
+var obj$2 = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+var num$7 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
+function verdict$1(actions) {
+	for (const a of [...actions ?? []].reverse()) {
+		const r = (a.result?.artifacts)?.result;
+		if (r) return r;
+	}
+	return null;
 }
-function SettlementRow({ s, viewerId, navigate }) {
-	const won = s.winner_id === viewerId;
-	const payout = won ? settlementPayoutMicros(s) : 0;
-	const amount = won && payout > 0 ? `+${formatMicros(payout)}` : !won && s.total_price_cents > 0 ? `-$${(s.total_price_cents / 100).toFixed(2)}` : "free";
-	return /* @__PURE__ */ jsxs("div", {
-		className: "e-txn-row",
-		children: [
-			/* @__PURE__ */ jsx("span", { className: `e-txn-dot ${won ? "e-txn-dot--in" : "e-txn-dot--out"}` }),
-			/* @__PURE__ */ jsx("span", {
-				style: { flex: 1 },
-				children: /* @__PURE__ */ jsx(SessionLink, {
-					session_id: s.session_id,
-					navigate
-				})
-			}),
-			/* @__PURE__ */ jsx(Text, {
-				style: {
-					fontWeight: 600,
-					color: won ? "var(--theme-focused-foreground)" : void 0
-				},
-				children: amount
-			}),
-			/* @__PURE__ */ jsx(Text, {
-				className: "e-faint",
-				style: { fontSize: 11 },
-				children: new Date(s.created_at).toLocaleDateString()
-			})
-		]
-	});
+function secondsLeft(session, d, field, now) {
+	const limit = num$7(d.move_time_limit_s, 0);
+	const at = typeof d[field] === "string" ? Date.parse(d[field]) : NaN;
+	return session.status === "active" && limit && Number.isFinite(at) ? Math.max(0, Math.round(limit - (now - at) / 1e3)) : null;
 }
-function ProfileView({ navigate } = {}) {
-	const { viewerId, relayOwner, relayId, relayUrl, requireChallenge, isRelayOperator, isSpectator, agentCount, activeSessionCount, relayVersion } = useRelayCtx();
-	const [loadedProfile, setProfile] = useState(null);
-	const profile = viewerId ? loadedProfile : null;
-	const [mySessions, setMySessions] = useState([]);
-	const [mySettlements, setMySettlements] = useState([]);
-	useEffect(() => {
-		if (!viewerId) return;
-		api.agentProfile(viewerId).then(setProfile).catch(() => setProfile(null));
-	}, [viewerId]);
-	const [follows, setFollows] = useState(null);
-	useEffect(() => {
-		if (!viewerId) return;
-		api.follows(viewerId).then(setFollows).catch(() => setFollows(null));
-	}, [viewerId]);
-	useEffect(() => {
-		if (!viewerId) return;
-		api.agentSessions(viewerId).then((d) => setMySessions(d.sessions.slice(0, 5))).catch(() => {});
-		api.agentSettlements(viewerId).then((d) => setMySettlements(d.settlements.slice(0, 8))).catch(() => {});
-	}, [viewerId]);
-	const [agentsData] = useInterval(() => api.agents(), 3e4);
-	const agents = agentsData?.agents ?? [];
-	const registered = profile ?? agents.find((a) => a.agent_id === viewerId) ?? null;
-	const displayName = registered?.display_name || registered?.agent_id || viewerId || "Spectator";
-	const trustCell = registered ? /* @__PURE__ */ jsx(TrustBadge, { a: registered }) : null;
-	const relayOwnerLabel = relayOwner ?? "standalone server";
-	const totalEarned = mySettlements.filter((s) => s.winner_id === viewerId).reduce((n, s) => n + settlementPayoutMicros(s), 0);
-	return /* @__PURE__ */ jsx(ViewBody, { children: /* @__PURE__ */ jsxs(Indent, { children: [
-		/* @__PURE__ */ jsxs(SlimCard, {
-			title: "Connected agent",
-			children: [/* @__PURE__ */ jsxs("div", {
-				className: "e-profile-agent",
-				children: [/* @__PURE__ */ jsx(AgentMoireAvatar, {
-					agentId: displayName,
-					size: 48
-				}), /* @__PURE__ */ jsxs("div", {
-					style: { flex: 1 },
-					children: [/* @__PURE__ */ jsxs("div", {
-						style: {
-							display: "flex",
-							alignItems: "center",
-							gap: 8
-						},
-						children: [/* @__PURE__ */ jsx(Text, {
-							style: {
-								fontSize: 16,
-								fontWeight: 600
-							},
-							children: displayName
-						}), /* @__PURE__ */ jsx(RolePill, {
-							isOperator: isRelayOperator,
-							isSpectator
-						})]
-					}), registered?.agent_id && registered.agent_id !== displayName && /* @__PURE__ */ jsx(Text, {
-						className: "e-dim",
-						style: {
-							fontSize: 11,
-							fontFamily: "var(--font-family-mono)"
-						},
-						children: registered.agent_id
-					})]
-				})]
-			}), registered ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(MetaGrid, { rows: [
-				["Trust", trustCell],
-				["Registered", new Date(registered.registered_at).toLocaleDateString()],
-				["Sessions", String(registered.session_count)],
-				["Wins", `${registered.win_count} (${registered.session_count > 0 ? Math.round(registered.win_count / registered.session_count * 100) : 0}%)`]
-			] }), /* @__PURE__ */ jsxs("details", {
-				className: "e-fold",
-				children: [/* @__PURE__ */ jsx("summary", { children: "Payment set-up" }), /* @__PURE__ */ jsx(MetaGrid, { rows: [...registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")]] : []] })]
-			})] }) : !isSpectator ? /* @__PURE__ */ jsxs(Text, {
-				className: "e-faint",
-				style: { marginTop: 10 },
-				children: [
-					"Not yet registered on this relay. Use the ",
-					/* @__PURE__ */ jsx("code", { children: "register_agent" }),
-					" MCP tool to join."
-				]
-			}) : /* @__PURE__ */ jsxs(Text, {
-				className: "e-faint",
-				style: { marginTop: 10 },
-				children: [
-					"Spectator mode: set ",
-					/* @__PURE__ */ jsx("code", { children: "VITE_AGENT_ID" }),
-					" in dashboard ",
-					/* @__PURE__ */ jsx("code", { children: ".env.local" }),
-					" to identify as an agent."
-				]
-			})]
-		}),
-		viewerId && !isSpectator && /* @__PURE__ */ jsx(SlimCard, {
-			title: "Following and followers",
-			action: /* @__PURE__ */ jsx(Text, {
-				className: "e-dim",
-				children: countsLine(follows)
-			}),
-			children: /* @__PURE__ */ jsx(FollowPanel, {
-				agentId: viewerId,
-				lists: follows,
-				own: true,
-				navigate
-			})
-		}),
-		/* @__PURE__ */ jsxs(SlimCard, {
-			title: "Relay",
-			children: [/* @__PURE__ */ jsx(MetaGrid, { rows: [
-				["URL", relayUrl],
-				["Operator", relayOwnerLabel],
-				["Role here", isRelayOperator ? "operator" : isSpectator ? "spectator" : "member"]
-			] }), /* @__PURE__ */ jsxs("details", {
-				className: "e-fold",
-				children: [/* @__PURE__ */ jsx("summary", { children: "More about this relay" }), /* @__PURE__ */ jsx(MetaGrid, { rows: [
-					["Relay ID", relayId ?? "—"],
-					["Agents", String(agentCount)],
-					["Active sessions", String(activeSessionCount)],
-					...relayVersion ? [["Version", relayVersion]] : [],
-					["Registration", requireChallenge ? "challenge required (proves key possession)" : "open — no key-possession proof"]
-				] })]
-			})]
-		}),
-		!isSpectator && /* @__PURE__ */ jsx(SlimCard, {
-			title: "Recent sessions",
-			action: /* @__PURE__ */ jsx(Text, {
-				className: "e-dim",
-				children: mySessions.length
-			}),
-			children: mySessions.length === 0 ? /* @__PURE__ */ jsx(Text, {
-				className: "e-faint",
-				children: "No sessions yet. Create one via MCP or Listings."
-			}) : /* @__PURE__ */ jsx("div", {
-				className: "e-compact-table",
-				children: mySessions.map((s) => /* @__PURE__ */ jsxs("div", {
-					className: "e-txn-row",
-					children: [
-						/* @__PURE__ */ jsx("span", { className: `e-session-status-dot e-session-status-dot--${s.status}` }),
-						/* @__PURE__ */ jsx(Text, {
-							className: "e-dim",
-							style: {
-								fontFamily: "var(--font-family-mono)",
-								fontSize: 11,
-								flex: 1
-							},
-							children: s.module_type.replace("emporia:", "").replace(/:v\d$/, "")
-						}),
-						/* @__PURE__ */ jsx(Text, {
-							className: "e-faint",
-							style: { fontSize: 11 },
-							children: s.status
-						}),
-						/* @__PURE__ */ jsx(SessionLink, {
-							session_id: s.session_id,
-							navigate
-						}),
-						/* @__PURE__ */ jsx(Text, {
-							className: "e-faint",
-							style: { fontSize: 11 },
-							children: new Date(s.created_at).toLocaleDateString()
-						})
-					]
-				}, s.session_id))
-			})
-		}),
-		!isSpectator && /* @__PURE__ */ jsx(SlimCard, {
-			title: "Transaction history",
-			action: totalEarned > 0 ? /* @__PURE__ */ jsxs(Text, {
-				style: {
-					color: "var(--theme-focused-foreground)",
-					fontSize: 12
-				},
-				children: [
-					"+",
-					formatMicros(totalEarned),
-					" earned"
-				]
-			}) : void 0,
-			children: mySettlements.length === 0 ? /* @__PURE__ */ jsx(Text, {
-				className: "e-faint",
-				children: "No settled transactions yet. Paid sessions are paid in USDC over x402 or Tempo (a wallet — register_x402_wallet)."
-			}) : /* @__PURE__ */ jsx("div", {
-				className: "e-compact-table",
-				children: mySettlements.map((s) => /* @__PURE__ */ jsx(SettlementRow, {
-					s,
-					viewerId,
-					navigate
-				}, s.settlement_id ?? s.session_id))
-			})
-		}),
-		/* @__PURE__ */ jsx(Text, {
-			className: "e-faint",
-			style: {
-				fontSize: "0.68rem",
-				marginTop: 8
-			},
-			children: isRelayOperator ? "This agent runs the relay. The relay's fees and settlements are under Money." : "Only this agent's own payments are listed here."
-		})
-	] }) });
-}
-// src/relayContext.tsx
-function RelayContextProvider({ children }) {
-	const [cfg, setCfg] = useState(null);
-	const [tick, setTick] = useState(0);
-	const [dashboardToken, setDashboardTokenState] = useState(() => sessionStorage.getItem(SESSION_TOKEN_KEY));
-	useEffect(() => {
-		api.uiConfig().then(setCfg).catch(() => {});
-	}, [tick]);
-	useEffect(() => {
-		const id = setInterval(() => setTick((n) => n + 1), 3e4);
-		return () => clearInterval(id);
-	}, []);
-	const setDashboardToken = (t) => {
-		setDashboardTokenState(t);
-		if (t) sessionStorage.setItem(SESSION_TOKEN_KEY, t);
-		else sessionStorage.removeItem(SESSION_TOKEN_KEY);
-	};
-	const viewerId = VIEWER_ID;
-	const relayOwner = cfg?.owner_agent_id ?? null;
-	const claimsOperator = !!(viewerId && relayOwner && viewerId === relayOwner);
-	const [verifiedOperator, setVerifiedOperator] = useState(null);
-	useEffect(() => {
-		if (!claimsOperator) return;
-		let live = true;
-		api.operatorWhoami().then((w) => {
-			if (live) setVerifiedOperator(w.is_operator ? w.agent_id : null);
-		}).catch((e) => {
-			if (live && /^40[13]\b/.test(String(e?.message ?? ""))) setVerifiedOperator(null);
-		});
-		return () => {
-			live = false;
+/** Pure: a games-pack session (and its actions) in, what to draw out; null for any other game. */
+function chanceView(session, actions, now = Date.now()) {
+	const d = stateData(session);
+	const hands = obj$2(obj$2(d.deal).hands);
+	const reveals = Object.keys(obj$2(obj$2(d.rand).reveals));
+	const result = verdict$1(actions);
+	if (isLiarsDice(session.module_type)) {
+		const bids = Array.isArray(d.bids) ? d.bids : [];
+		const order = Array.isArray(d.turn_order) ? d.turn_order : [];
+		const ended = d.ended ?? null;
+		return {
+			kind: "dice",
+			players: num$7(d.players, session.participants.length),
+			diceEach: num$7(d.dice, 5),
+			onesWild: d.ones_wild === true,
+			maxBids: num$7(d.max_bids, 30),
+			order,
+			bids,
+			call: ended ? {
+				by: ended.by,
+				bid: ended.bid,
+				bidder: ended.bidder
+			} : null,
+			revealed: reveals,
+			dice: Object.fromEntries(Object.entries(hands).map(([p, h]) => [p, Array.isArray(h?.values) ? h.values : []])),
+			toMove: session.status === "active" && !ended && order.length ? order[bids.length % order.length] : null,
+			result,
+			secondsLeft: ended ? null : secondsLeft(session, d, "turn_started_at", now)
 		};
-	}, [
-		claimsOperator,
-		viewerId,
-		tick,
-		dashboardToken
-	]);
-	const isRelayOperator = claimsOperator && verifiedOperator === viewerId;
-	const relayUrl = cfg?.relay_url ?? RELAY$1;
-	const value = {
-		viewerId,
-		relayOwner,
-		relayId: cfg?.relay_id ?? null,
-		relayUrl,
-		requireChallenge: cfg?.require_challenge ?? false,
-		agentCount: cfg?.agent_count ?? 0,
-		activeSessionCount: cfg?.active_session_count ?? 0,
-		relayVersion: cfg?.version ?? "",
-		isRelayOperator,
-		isSpectator: viewerId === null,
-		dashboardToken,
-		setDashboardToken,
-		refresh: () => setTick((n) => n + 1)
+	}
+	if (isCvAuction(session.module_type)) {
+		const phase = d.phase === "reveal" || d.phase === "secrets" ? d.phase : "commit";
+		return {
+			kind: "auction",
+			players: num$7(d.players, session.participants.length),
+			spread: num$7(d.spread, 10),
+			phase,
+			committed: Object.keys(obj$2(d.commitments)),
+			bids: obj$2(d.revealed),
+			secrets: reveals,
+			base: typeof d.base_value === "number" ? d.base_value : null,
+			signals: Object.fromEntries(Object.entries(hands).filter(([, h]) => typeof h?.values === "number").map(([p, h]) => [p, h.values])),
+			result,
+			secondsLeft: phase === "secrets" ? null : secondsLeft(session, d, "phase_started_at", now)
+		};
+	}
+	return null;
+}
+/** One short line for a list row. */
+function chanceLine(v, session) {
+	if (session.status === "waiting") return `waiting for players (${session.participants.length}/${v.players})`;
+	if (v.result) return v.result.winner ? `${v.result.winner} won` : (v.result.termination ?? "no result").replace(/_/g, " ");
+	if (v.kind === "dice") return v.call ? "called: revealing" : `${v.bids.length} bid${v.bids.length === 1 ? "" : "s"}`;
+	return v.phase === "commit" ? `${v.committed.length}/${v.players} sealed` : v.phase === "reveal" ? `${Object.keys(v.bids).length}/${v.players} revealed` : "revealing secrets";
+}
+var isSluice = (m) => !!m && (m ?? "").replace(/:v\d+$/, "") === "emporia:sluice:v1".replace(/:v\d+$/, "");
+var obj$1 = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+var int = (v) => typeof v === "number" && Number.isInteger(v) ? v : null;
+var num$6 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
+function cell$5(v) {
+	if (Array.isArray(v) && v.length === 2 && int(v[0]) !== null && int(v[1]) !== null) return [v[0], v[1]];
+	const o = obj$1(v);
+	return int(o.channel) !== null && int(o.row) !== null ? [o.channel, o.row] : null;
+}
+var cells$1 = (v) => Array.isArray(v) ? v.flatMap((c) => {
+	const x = cell$5(c);
+	return x ? [x] : [];
+}) : [];
+function readOpening(v, seats) {
+	const o = obj$1(v);
+	if (!Object.keys(o).length) return null;
+	const st = obj$1(o.stones);
+	return {
+		silt: cells$1(o.silt),
+		stones: [cells$1(st[seats[0]] ?? st.A), cells$1(st[seats[1]] ?? st.B)],
+		first: typeof o.first === "string" ? o.first : null
 	};
-	return /* @__PURE__ */ jsx(RelayCtx.Provider, {
-		value,
-		children
+}
+function readMoves(v) {
+	return (Array.isArray(v) ? v : []).flatMap((m, k) => {
+		const o = obj$1(m);
+		const channel = int(o.channel);
+		if (channel === null || typeof o.by !== "string") return [];
+		return [{
+			n: int(o.n) ?? k + 1,
+			by: o.by,
+			channel,
+			row: int(o.row),
+			gate: int(o.gate),
+			round: int(o.round)
+		}];
 	});
 }
-// src/ui/NotAnAgentNote.tsx
-/**
-* P231: the tab opened in a Hermes profile that has no Emporia agent. It used to
-* show alpha's view under that profile's name; now it says so, shows the relay
-* as a spectator sees it, and says how to set the agent up. Setting up is a
-* person's job in a terminal (it creates keys and may create wallets), or the
-* agent's own with the emporia-setup skill — never a button here.
-*/
-function NotAnAgentNote() {
-	const hermes = hermesProfile();
-	if (!hermes || hermes.isAgent) return null;
-	return /* @__PURE__ */ jsx("div", {
-		role: "note",
-		children: /* @__PURE__ */ jsxs(Text, {
-			className: "e-dim",
-			children: [
-				hermes.name,
-				" is not an Emporia agent.",
-				" ",
-				"Switch Hermes to an agent's profile",
-				", or add this one: ",
-				/* @__PURE__ */ jsxs("code", { children: ["emporia setup agent ", hermes.name] })
-			]
-		})
-	});
-}
-// src/shadowScope.ts
-/** The Desktop page's outer element: every rule is scoped under it. */
-var DESKTOP_ROOT = "e-desktop-root";
-/** Its inner element, the app's "body": themes and tints go on it (themeConfig.ts). */
-var DESKTOP_BODY = "e-host-body";
-// src/ui/GatedNote.tsx
-/**
-* A route to a section this viewer may not see (`#/more/operator` opened by
-* someone who does not run the relay, `#/you/fees` by a spectator, `#/you/deals`
-* on a relay that cannot sell services). The nav hides these sections, but a
-* link or a bookmark still lands on them, and the page used to show the
-* section's heading over nothing. It says why instead.
-*
-* No redirect: the operator's sections open only once the relay has confirmed a
-* signed sign-in, which arrives after the first render, so bouncing away would
-* send the real operator off their own link.
-*/
-function GatedNote({ view }) {
-	if (view === "deals") return /* @__PURE__ */ jsx("div", {
-		className: "e-view-body",
-		children: /* @__PURE__ */ jsx("div", {
-			className: "e-empty-pane",
-			role: "note",
-			children: /* @__PURE__ */ jsx("div", {
-				className: "e-empty-pane__title",
-				children: "This relay doesn't run deals."
-			})
-		})
-	});
-	const operatorOnly = view === "relay" || view === "operator";
-	return /* @__PURE__ */ jsx("div", {
-		className: "e-view-body",
-		children: /* @__PURE__ */ jsxs("div", {
-			className: "e-empty-pane",
-			role: "note",
-			children: [/* @__PURE__ */ jsx("div", {
-				className: "e-empty-pane__title",
-				children: operatorOnly ? "This section is for the relay's operator." : "This section is your agent's own."
-			}), /* @__PURE__ */ jsx("div", {
-				className: "e-empty-pane__hint",
-				children: operatorOnly ? "It opens once the relay confirms, from the agent's signed sign-in, that this agent runs the relay. Until then there is nothing here to show." : "A spectator sees the public relay only. Open the dashboard as one of your agents to see its money and its messages."
-			})]
-		})
-	});
-}
-// src/viewMemory.ts
-/**
-* What the person last chose in each view (sub-tab per destination, Feed and Topics filters, the
-* Arena's page), kept in sessionStorage for this browser tab only. Storage can be missing or throw
-* (private window, blocked site data): every read and write is guarded and the view works without it.
-*/
-var PREFIX = "emporia.view.";
-function recall(key) {
-	try {
-		return window.sessionStorage.getItem(PREFIX + key);
-	} catch {
-		return null;
-	}
-}
-function remember(key, value) {
-	try {
-		window.sessionStorage.setItem(PREFIX + key, value);
-	} catch {}
-}
-/** The remembered value if it is one of the allowed ones, else the fallback. */
-function recallOf(key, allowed, fallback) {
-	const v = recall(key);
-	return allowed.includes(v ?? "") ? v : fallback;
-}
-// src/scrollMemory.ts
-/**
-* Going into a drill-down (a game from the Arena, an agent from the list) and back should land on the same
-* spot. The page's scroll is held in memory for the session; reading it never throws and needs no storage.
-*/
-/** The nearest ancestor that scrolls, else the document's scroller. */
-function scrollerOf(el) {
-	for (let n = el?.parentElement ?? null; n; n = n.parentElement) {
-		const oy = getComputedStyle(n).overflowY;
-		if ((oy === "auto" || oy === "scroll") && n.scrollHeight > n.clientHeight) return n;
-	}
-	return document.scrollingElement;
-}
-var SAVED = /* @__PURE__ */ new Map();
-function saveScroll(key, from) {
-	SAVED.set(key, scrollerOf(from)?.scrollTop ?? 0);
-}
-/** Put the scroll back once the page it belonged to is drawn again (next frame). */
-function restoreScroll(key, from) {
-	const top = SAVED.get(key);
-	if (top === void 0) return;
-	let tries = 0;
-	const step = () => {
-		const s = scrollerOf(from);
-		if (s) s.scrollTop = top;
-		if (s && Math.abs(s.scrollTop - top) > 1 && ++tries < 20) requestAnimationFrame(step);
+/** The ending the relay stores in the state (`ended: {how, winner, line}`), for a session whose actions are not loaded. */
+function endedResult(d, seats) {
+	const e = obj$1(d.ended);
+	if (typeof e.how !== "string") return null;
+	const winner = typeof e.winner === "string" ? e.winner : null;
+	const loser = winner ? seats.find((x) => x !== winner) : void 0;
+	return {
+		winner,
+		termination: e.how,
+		line: Array.isArray(e.line) && e.line.length ? cells$1(e.line) : null,
+		threes: null,
+		points: winner && loser ? {
+			[winner]: 1,
+			[loser]: -1
+		} : null
 	};
-	requestAnimationFrame(step);
 }
-var AskAgent_module_default = {
-	root: "AskAgent_root_1tucs",
-	row: "AskAgent_row_1tucs",
-	copy: "AskAgent_copy_1tucs",
-	note: "AskAgent_note_1tucs",
-	glyph: "AskAgent_glyph_1tucs"
-};
-// src/chat/gateway.ts
-var RpcError = class extends Error {
-	code;
-	constructor(code, message) {
-		super(message);
-		this.code = code;
+function readResult(actions) {
+	for (const a of [...actions ?? []].reverse()) {
+		const r = (a.result?.artifacts)?.result;
+		if (!r || typeof r !== "object") continue;
+		const pts = obj$1(r.points);
+		const th = obj$1(r.threes);
+		return {
+			winner: typeof r.winner === "string" ? r.winner : null,
+			termination: typeof r.termination === "string" ? r.termination : "",
+			line: Array.isArray(r.line) && r.line.length ? cells$1(r.line) : null,
+			threes: Object.keys(th).length ? Object.fromEntries(Object.entries(th).map(([k, n]) => [k, num$6(n, 0)])) : null,
+			points: Object.keys(pts).length ? Object.fromEntries(Object.entries(pts).map(([k, n]) => [k, num$6(n, 0)])) : null
+		};
 	}
-};
-/** JSON-RPC "method not found": how a client says it will not answer a request. */
-var METHOD_NOT_FOUND = -32601;
-var ChatGateway = class {
-	ws = null;
-	seq = 0;
-	pending = /* @__PURE__ */ new Map();
-	eventHandlers = /* @__PURE__ */ new Set();
-	requestHandlers = /* @__PURE__ */ new Set();
-	stateHandlers = /* @__PURE__ */ new Set();
-	state = "idle";
-	factory;
-	profile;
-	constructor(factory, profile) {
-		this.factory = factory;
-		this.profile = profile;
-	}
-	onEvent(fn) {
-		this.eventHandlers.add(fn);
-		return () => this.eventHandlers.delete(fn);
-	}
-	onRequest(fn) {
-		this.requestHandlers.add(fn);
-		return () => this.requestHandlers.delete(fn);
-	}
-	onState(fn) {
-		this.stateHandlers.add(fn);
-		return () => this.stateHandlers.delete(fn);
-	}
-	setState(s) {
-		this.state = s;
-		this.stateHandlers.forEach((fn) => fn(s));
-	}
-	async connect() {
-		if (this.ws && (this.state === "open" || this.state === "connecting")) return;
-		this.setState("connecting");
-		let ws;
-		try {
-			ws = await this.factory();
-		} catch (e) {
-			this.setState("closed");
-			throw e;
+	return null;
+}
+/** Pure: a Sluice session (and its actions) in, what to draw out; null for any other game. */
+function sluiceView(session, actions, now = Date.now()) {
+	if (!isSluice(session.module_type)) return null;
+	const d = stateData(session);
+	const st = obj$1(session.state);
+	const dv = {
+		...d,
+		...obj$1(d.derived ?? st.derived)
+	};
+	const seats = Array.isArray(d.seats) && d.seats.length === 2 ? d.seats : (session.participants ?? []).slice(0, 2);
+	const moves = readMoves(d.moves);
+	const limit = num$6(d.move_time_limit_s, 0);
+	const at = Date.parse(String(dv.gate_at ?? d.turn_started_at ?? ""));
+	const ended = d.ended !== null && d.ended !== void 0;
+	const opening = readOpening(d.opening ?? dv.opening, seats);
+	return {
+		kind: "sluice",
+		cols: num$6(d.cols, 6),
+		rows: num$6(d.rows, 5),
+		drops: num$6(d.drops, 7),
+		seats,
+		opening,
+		moves,
+		toMove: typeof dv.to_move === "string" ? dv.to_move : null,
+		gate: int(dv.gate),
+		open: Array.isArray(dv.open) ? dv.open.flatMap((c) => int(c) !== null ? [c] : []) : [],
+		gateRound: int(dv.gate_round),
+		gateReady: dv.gate_ready !== false,
+		gateAt: typeof dv.gate_at === "string" ? dv.gate_at : null,
+		nameRound: int(dv.name_round) ?? int(obj$1(d.rand).round),
+		result: readResult(actions) ?? endedResult(d, seats),
+		secondsLeft: session.status === "active" && !ended && limit && Number.isFinite(at) ? Math.max(0, Math.round(limit - (now - at) / 1e3)) : null
+	};
+}
+/** Rebuild the board after the first `upTo` moves. */
+function boardAt(v, upTo) {
+	const g = Array.from({ length: v.rows }, () => Array.from({ length: v.cols }, () => "."));
+	const put = ([c, r], mark) => {
+		if (c >= 1 && c <= v.cols && r >= 1 && r <= v.rows) g[v.rows - r][c - 1] = mark;
+	};
+	v.opening?.silt.forEach((c) => put(c, "#"));
+	v.opening?.stones[0].forEach((c) => put(c, "A"));
+	v.opening?.stones[1].forEach((c) => put(c, "B"));
+	for (const m of v.moves.slice(0, upTo)) {
+		const mark = v.seats.indexOf(m.by) === 1 ? "B" : "A";
+		let row = m.row;
+		if (row === null) {
+			row = 1;
+			while (row <= v.rows && g[v.rows - row][m.channel - 1] !== ".") row += 1;
 		}
-		this.ws = ws;
-		await new Promise((resolve, reject) => {
-			ws.onopen = () => resolve();
-			ws.onerror = () => reject(/* @__PURE__ */ new Error("could not reach Hermes"));
-			ws.onclose = () => reject(/* @__PURE__ */ new Error("Hermes closed the connection"));
-		});
-		ws.onmessage = (m) => this.receive(typeof m.data === "string" ? m.data : "");
-		ws.onclose = () => {
-			this.ws = null;
-			this.setState("closed");
-			this.pending.forEach((p) => {
-				clearTimeout(p.timer);
-				p.reject(/* @__PURE__ */ new Error("connection to Hermes closed"));
-			});
-			this.pending.clear();
-		};
-		ws.onerror = () => {};
-		this.setState("open");
-		await this.call("client.capabilities", { server_requests: true }).catch(() => void 0);
+		put([m.channel, row], mark);
 	}
-	close() {
-		this.ws?.close();
-		this.ws = null;
+	return g;
+}
+var DIRS = [
+	[0, 1],
+	[1, 0],
+	[1, 1],
+	[1, -1]
+];
+/** Every window of four cells in a line, as `[channel, row]`. */
+function windows(b) {
+	const rows = b.length;
+	const cols = b[0]?.length ?? 0;
+	const out = [];
+	for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) for (const [dr, dc] of DIRS) {
+		const w = [];
+		for (let k = 0; k < 4; k++) {
+			const rr = r + dr * k, cc = c + dc * k;
+			if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) break;
+			w.push([cc + 1, rows - rr]);
+		}
+		if (w.length === 4) out.push(w);
 	}
-	/** Call a method. `profile` is always set to this tab's profile — a caller cannot widen it. */
-	call(method, params = {}, timeoutMs = 6e4) {
-		const ws = this.ws;
-		if (!ws || this.state !== "open") return Promise.reject(/* @__PURE__ */ new Error("not connected to Hermes"));
-		const id = `emp${++this.seq}`;
-		const scoped = method === "client.capabilities" ? params : {
-			...params,
-			profile: this.profile
+	return out;
+}
+var markAt = (b, [c, r]) => b[b.length - r][c - 1];
+/** The four cells of a seat's line, if it has one. */
+function findFour(b) {
+	for (const w of windows(b)) {
+		const m = markAt(b, w[0]);
+		if ((m === "A" || m === "B") && w.every((c) => markAt(b, c) === m)) return {
+			mark: m,
+			line: [...w].sort((a, b) => a[0] - b[0] || a[1] - b[1])
 		};
-		return new Promise((resolve, reject) => {
-			const timer = setTimeout(() => {
-				this.pending.delete(id);
-				reject(/* @__PURE__ */ new Error(`Hermes did not answer ${method}`));
-			}, timeoutMs);
-			this.pending.set(id, {
-				resolve,
-				reject,
-				timer
-			});
-			ws.send(JSON.stringify({
-				jsonrpc: "2.0",
-				id,
-				method,
-				params: scoped
-			}));
+	}
+	return null;
+}
+/** Live threes per seat: a line of four cells with three of its stones and one empty cell. */
+function liveThrees(b) {
+	const t = [0, 0];
+	for (const w of windows(b)) {
+		const ms = w.map((c) => markAt(b, c));
+		if (ms.filter((x) => x === ".").length !== 1) continue;
+		["A", "B"].forEach((s, i) => {
+			if (ms.filter((x) => x === s).length === 3) t[i] += 1;
 		});
 	}
-	/** Answer a server→client request (an approval or a clarify). A write to Hermes, never to the relay. */
-	respond(id, result) {
-		this.ws?.send(JSON.stringify({
-			jsonrpc: "2.0",
-			id,
-			result
-		}));
+	return t;
+}
+/** The table after the first `upTo` moves. `atEnd` is the last step of a finished game (the verdict shows). */
+function sluiceFrameAt(v, upTo, atEnd) {
+	const step = Math.max(0, Math.min(v.moves.length, upTo));
+	const board = boardAt(v, step);
+	const last = step ? v.moves[step - 1] : null;
+	const used = [0, 0];
+	v.moves.slice(0, step).forEach((m) => {
+		used[v.seats.indexOf(m.by) === 1 ? 1 : 0] += 1;
+	});
+	const result = atEnd ? v.result : null;
+	const term = result?.termination;
+	const four = result && term === "four" ? result.line ?? findFour(board)?.line ?? null : null;
+	let threes = null;
+	if (result && (term === "threes" || term === "level" || term === "coin")) {
+		const computed = liveThrees(board);
+		threes = result.threes ? [result.threes[v.seats[0]] ?? result.threes.A ?? computed[0], result.threes[v.seats[1]] ?? result.threes.B ?? computed[1]] : computed;
 	}
-	/** Decline a server→client request this UI does not answer (a password, a secret). */
-	decline(id, message) {
-		this.ws?.send(JSON.stringify({
-			jsonrpc: "2.0",
-			id,
-			error: {
-				code: METHOD_NOT_FOUND,
-				message
+	const live = !result && step === v.moves.length;
+	return {
+		kind: "sluice",
+		seats: v.seats,
+		cols: v.cols,
+		rows: v.rows,
+		drops: v.drops,
+		dealt: !!v.opening,
+		nameRound: v.nameRound,
+		board,
+		step,
+		moves: v.moves.slice(0, step),
+		last,
+		gate: last?.gate ?? null,
+		next: live && v.opening ? {
+			toMove: v.toMove,
+			gate: v.gate,
+			round: v.gateRound
+		} : null,
+		left: [Math.max(0, v.drops - used[0]), Math.max(0, v.drops - used[1])],
+		line: four,
+		threes,
+		result,
+		first: v.opening?.first ?? null
+	};
+}
+/** One line for a drop step: "dropped in channel 3, row 2; channel 5 was gated". */
+function dropText(m) {
+	return `dropped in channel ${m.channel}${m.row ? `, row ${m.row}` : ""}${m.gate ? `; channel ${m.gate} was gated` : ""}`;
+}
+/** "alpha wins with four in a line", "alpha wins on live threes (2 to 1)", … in words, from a result. */
+function sluiceVerdict(f, r, name) {
+	const w = r.winner ? name(r.winner) : null;
+	switch (r.termination) {
+		case "four": return `${w ?? "nobody"} wins with four in a line`;
+		case "threes": return `${w ?? "nobody"} wins on live threes${f.threes ? ` (${name(f.seats[0])} ${f.threes[0]}, ${name(f.seats[1])} ${f.threes[1]})` : ""}`;
+		case "coin": return `Level on live threes${f.threes ? ` (${f.threes[0]} each)` : ""}: a drand coin flip decided, and ${w ?? "the winner"} wins`;
+		case "level": return `Level on live threes${f.threes ? ` (${f.threes[0]} each)` : ""}: ${w ?? "the player who moved second"} moved second and wins`;
+		case "timeout": return `${w ?? "nobody"} wins: the other ran out of time`;
+		case "void": return "The game was voided";
+		default: return w ? `${w} wins` : "No winner";
+	}
+}
+var isTesseract = (m) => !!m && m.replace(/:v\d+$/, "") === "emporia:tesseract:v1".replace(/:v\d+$/, "");
+var AXES = [
+	"W",
+	"X",
+	"Y",
+	"Z"
+];
+var obj = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+var nums = (v) => Array.isArray(v) ? v.filter((x) => typeof x === "number") : [];
+/** The relay's result for the table, from the action that ended it (absent for a table the clock ended). */
+function tesseractResult(actions) {
+	for (const a of [...actions ?? []].reverse()) {
+		const r = obj(obj(a.result?.artifacts).result);
+		if (Object.keys(r).length && r.points) return {
+			winner: typeof r.winner === "string" ? r.winner : null,
+			tied: Array.isArray(r.tied) ? r.tied : [],
+			points: obj(r.points),
+			tableIndex: obj(r.table_index),
+			order: Array.isArray(r.order) ? r.order : [],
+			out: Array.isArray(r.out) ? r.out : [],
+			unrevealed: Array.isArray(r.unrevealed) ? r.unrevealed : [],
+			targets: obj(r.targets)
+		};
+	}
+	return null;
+}
+/** "WX>W +4, YZ>Z −3": a push as words (an empty push says so). */
+function pushText(push) {
+	const e = Object.entries(push ?? {}).filter(([, n]) => n);
+	return e.length ? e.map(([c, n]) => `${c} ${n > 0 ? "+" : "−"}${Math.abs(n)}`).join(", ") : "nothing";
+}
+function published(session) {
+	const pub = obj(stateData(session).published);
+	const rounds = /* @__PURE__ */ new Map();
+	for (const [k, v] of Object.entries(pub)) {
+		const r = obj(v);
+		if (k === "opening" || !Number.isInteger(Number(k)) || !Array.isArray(r.mix)) continue;
+		rounds.set(Number(k), {
+			epoch: Number(k),
+			mix: nums(r.mix),
+			pushes: obj(r.pushes),
+			dark: Array.isArray(r.dark) ? r.dark.length : 0,
+			silent: Array.isArray(r.silent) ? r.silent : [],
+			late: Array.isArray(r.late) ? r.late : []
+		});
+	}
+	const o = obj(pub.opening);
+	return {
+		opening: Array.isArray(o.mix) ? nums(o.mix) : null,
+		rounds
+	};
+}
+/** The table after the first `i` actions (`acts` are those that took effect), `finished`: the table is over. */
+function tesseractFrameAt(session, acts, i, finished) {
+	const players = session.participants ?? [];
+	const { opening, rounds } = published(session);
+	const sealed = /* @__PURE__ */ new Map();
+	const opened = /* @__PURE__ */ new Map();
+	const secrets = [];
+	for (const a of acts.slice(0, i)) {
+		const p = obj(a.payload);
+		const e = typeof p.epoch === "number" ? p.epoch : 0;
+		if (a.action_type === "seal") {
+			if (!sealed.has(e)) sealed.set(e, /* @__PURE__ */ new Set());
+			sealed.get(e).add(a.agent_id);
+		} else if (a.action_type === "open") {
+			if (!opened.has(e)) opened.set(e, /* @__PURE__ */ new Map());
+			opened.get(e).set(a.agent_id, obj(obj(p.move).push));
+		} else if (a.action_type === "reveal" && "s" in p && !secrets.includes(a.agent_id)) secrets.push(a.agent_id);
+	}
+	const atEnd = finished && i === acts.length;
+	const result = atEnd ? tesseractResult(acts) : null;
+	const seen = [...sealed.keys(), ...opened.keys()].filter((e) => e > 0);
+	let epoch = seen.length ? Math.max(...seen) : 1;
+	const sealedNow = sealed.get(epoch)?.size ?? 0;
+	const openedNow = opened.get(epoch)?.size ?? 0;
+	const done = (n) => rounds.has(n) && (opened.get(n)?.size ?? 0) >= (sealed.get(n)?.size ?? 0) && (sealed.get(n)?.size ?? 0) > 0;
+	let phase = sealedNow >= players.length && sealedNow > openedNow ? "open" : "seal";
+	if (sealedNow > 0 && openedNow >= sealedNow && sealedNow >= players.length) {
+		if (epoch >= 5) phase = "secrets";
+		else {
+			epoch += 1;
+			phase = "seal";
+		}
+	}
+	if (atEnd) phase = "done";
+	const shown = [...rounds.values()].filter((r) => atEnd || done(r.epoch)).sort((a, b) => a.epoch - b.epoch).map((r) => {
+		const o = opened.get(r.epoch);
+		return atEnd || !o ? r : {
+			...r,
+			pushes: Object.fromEntries([...o].filter(([, p]) => Object.keys(p).length))
+		};
+	});
+	const out = new Set(result?.out ?? []);
+	const seats = players.map((agent) => {
+		let state = "waiting";
+		if (out.has(agent)) state = "out";
+		else if (phase === "seal") state = sealed.get(epoch)?.has(agent) ? "sealed" : "waiting";
+		else if (phase === "open") state = opened.get(epoch)?.has(agent) ? "opened" : sealed.get(epoch)?.has(agent) ? "sealed" : "waiting";
+		else state = secrets.includes(agent) || phase === "done" ? "opened" : "waiting";
+		return {
+			agent,
+			state
+		};
+	});
+	return {
+		kind: "tesseract",
+		epoch: Math.min(epoch, 5),
+		epochs: 5,
+		phase,
+		players,
+		seats,
+		opening,
+		rounds: shown,
+		secrets,
+		result
+	};
+}
+/** One line for the verdict, in words. */
+function tesseractVerdict(r, name = (s) => s) {
+	if (r.winner) return `${name(r.winner)} won with ${r.points[r.winner] ?? 0} points`;
+	if (r.tied.length) return `${r.tied.map(name).join(" and ")} tied at ${r.points[r.tied[0]] ?? 0} points: a draw`;
+	return "no one finished: a draw";
+}
+// src/arena.ts
+var HIDDEN_KEYS = /* @__PURE__ */ new Set([
+	"s",
+	"nonce",
+	"commitment",
+	"sig",
+	"signature",
+	"secret"
+]);
+/** Only the actions that took effect: a rejected move is not a step of the match. */
+function effectiveActions(actions) {
+	return (actions ?? []).filter((a) => a.result?.success !== false);
+}
+function arenaKind(moduleType) {
+	const base = gameBase(moduleType);
+	if (base === "emporia:chess") return "chess";
+	if (isSetPlay(moduleType)) return base === gameBase(SET_PLAYS[0]) ? "blotto" : base === gameBase(SET_PLAYS[1]) ? "two-thirds" : "lowest-unique";
+	if (isBargain(moduleType)) return "bargain";
+	if (isLiarsDice(moduleType)) return "dice";
+	if (isCvAuction(moduleType)) return "auction";
+	if (isSluice(moduleType)) return "sluice";
+	if (isTesseract(moduleType)) return "tesseract";
+	return "log";
+}
+var isSecretReveal = (a) => a.action_type === "reveal" && a.payload && "s" in a.payload;
+var goodsText$2 = (g) => Object.entries(g ?? {}).filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(", ") || "nothing";
+function movePlain(m) {
+	return Array.isArray(m) ? m.join(" / ") : String(m);
+}
+/** One line for what a step did. A commit never says what was committed to. */
+function stepLabel(kind, a) {
+	const p = a.payload ?? {};
+	switch (a.action_type) {
+		case "commit": return "sealed a move";
+		case "reveal":
+			if (isSecretReveal(a)) return "revealed its secret";
+			if (kind === "auction") return `revealed a bid of ${movePlain(p.move)}`;
+			return `revealed ${movePlain(p.move)}`;
+		case "seal": return typeof p.epoch === "number" ? `sealed its push for round ${p.epoch}` : "sealed a push";
+		case "open": return `opened its push${typeof p.epoch === "number" ? ` of round ${p.epoch}` : ""}: ${pushText((p.move ?? {}).push)}`;
+		case "drop": return p.channel !== void 0 ? `dropped in channel ${p.channel}` : "dropped a stone";
+		case "bid": return `bid ${p.quantity} × ${p.face}`;
+		case "liar": return "called liar";
+		case "offer": return p.keep && typeof p.keep === "object" ? `offered to keep ${goodsText$2(p.keep)}` : "made an offer";
+		case "accept": return "accepted the offer";
+		case "decline": return "declined the offer";
+		case "move": return `moved ${p.uci ?? p.move ?? ""}`.trim();
+		case "void": return "voided the game";
+		default: {
+			const keys = Object.keys(p).filter((k) => !HIDDEN_KEYS.has(k));
+			return keys.length ? `${a.action_type} · ${keys[0]}: ${String(p[keys[0]]).slice(0, 60)}` : a.action_type;
+		}
+	}
+}
+function setPlayFrame(kind, session, acts, i, players, finalVerdict) {
+	const data = stateData(session);
+	const rounds = typeof data.rounds === "number" ? data.rounds : 1;
+	let round = 1;
+	let commits = {};
+	let called = {};
+	let moves = {};
+	let calls = {};
+	const past = [];
+	const closeRound = () => {
+		const [a, b] = players;
+		past.push({
+			round,
+			moves: { ...moves },
+			fieldWinners: kind === "blotto" ? fieldWinnersOf(moves[a], moves[b], a, b) : []
+		});
+		round += 1;
+		commits = {};
+		called = {};
+		moves = {};
+		calls = {};
+	};
+	const allRevealed = () => players.length > 0 && players.every((p) => moves[p] !== void 0);
+	for (const a of acts.slice(0, i)) {
+		const p = a.payload ?? {};
+		if (a.action_type === "commit") {
+			if (kind === "blotto" && allRevealed()) closeRound();
+			commits[a.agent_id] = true;
+			if (p.called) called[a.agent_id] = true;
+		} else if (a.action_type === "reveal" && p.move !== void 0 && !("s" in p)) {
+			moves[a.agent_id] = p.move;
+			if (typeof p.call_pct === "number") calls[a.agent_id] = p.call_pct;
+		}
+	}
+	const slots = players.map((agent) => {
+		const call = calls[agent] !== void 0 ? `called ${calls[agent]} %` : called[agent] ? "called · sealed" : void 0;
+		if (moves[agent] !== void 0) return {
+			agent,
+			state: "revealed",
+			move: moves[agent],
+			call
+		};
+		if (commits[agent]) return {
+			agent,
+			state: "sealed",
+			call
+		};
+		return {
+			agent,
+			state: "waiting",
+			call
+		};
+	});
+	const [a, b] = players;
+	const fields = kind === "blotto" && allRevealed() ? fieldWinnersOf(moves[a], moves[b], a, b) : null;
+	const phase = players.length > 0 && players.every((p) => commits[p]) ? "reveal" : "commit";
+	const picks = players.map((p) => moves[p]).filter((m) => typeof m === "number");
+	const average = kind === "two-thirds" && picks.length > 0 && picks.length === players.length ? picks.reduce((n, x) => n + x, 0) / picks.length : null;
+	const board = {
+		battlefields: typeof data.battlefields === "number" ? data.battlefields : 5,
+		troops: typeof data.troops === "number" ? data.troops : 100,
+		weights: blottoWeights(data),
+		min: kind === "two-thirds" ? 0 : 1,
+		max: kind === "two-thirds" ? 100 : typeof data.max_pick === "number" ? data.max_pick : 10,
+		average,
+		target: average === null ? null : 2 / 3 * average
+	};
+	return {
+		kind,
+		round,
+		rounds,
+		phase,
+		slots,
+		past,
+		fields,
+		verdict: i === acts.length ? finalVerdict : null,
+		board
+	};
+}
+function buildTimeline(session, actionLog) {
+	const acts = effectiveActions(actionLog);
+	const kind = arenaKind(session.module_type);
+	const players = session.participants ?? [];
+	const finished = session.status === "completed";
+	const sluice = kind === "sluice" ? sluiceView(session, actionLog) : null;
+	let drops = 0;
+	const labelOf = (a) => {
+		if (sluice && a.action_type === "drop") {
+			const m = sluice.moves[drops++];
+			if (m && m.by === a.agent_id) return dropText(m);
+		}
+		return stepLabel(kind, a);
+	};
+	const steps = [{
+		index: 0,
+		actionId: null,
+		agent: null,
+		type: "start",
+		label: kind === "sluice" || kind === "tesseract" ? "the table as the beacon dealt it" : "the table before the first move"
+	}, ...acts.map((a, n) => ({
+		index: n + 1,
+		actionId: a.action_id,
+		agent: a.agent_id,
+		type: a.action_type,
+		label: labelOf(a)
+	}))];
+	const last = acts.length;
+	const chance = chanceView(session, actionLog);
+	const verdictOf = () => finished && isSetPlay(session.module_type) ? setPlayView(session, actionLog).verdict : null;
+	const frameAt = (raw) => {
+		const i = Math.max(0, Math.min(last, raw));
+		const atEnd = finished && i === last;
+		if (kind === "blotto" || kind === "two-thirds" || kind === "lowest-unique") return setPlayFrame(kind, session, acts, i, players, atEnd ? verdictOf() : null);
+		if (kind === "dice") {
+			const bids = [];
+			let call = null;
+			const revealed = [];
+			for (const a of acts.slice(0, i)) {
+				const p = a.payload ?? {};
+				if (a.action_type === "bid") bids.push({
+					n: bids.length + 1,
+					by: a.agent_id,
+					quantity: Number(p.quantity),
+					face: Number(p.face)
+				});
+				else if (a.action_type === "liar" && bids.length) call = {
+					by: a.agent_id,
+					bidder: bids[bids.length - 1].by,
+					bid: bids.length
+				};
+				else if (isSecretReveal(a) && !revealed.includes(a.agent_id)) revealed.push(a.agent_id);
 			}
-		}));
-	}
-	/** Exposed for tests. */
-	receive(raw) {
-		let frame;
-		try {
-			frame = JSON.parse(raw);
-		} catch {
-			return;
-		}
-		const id = frame.id;
-		const method = frame.method;
-		if (method === "event") {
-			const params = frame.params;
-			if (params && typeof params.type === "string") this.eventHandlers.forEach((fn) => fn(params));
-			return;
-		}
-		if (typeof id === "string" && typeof method === "string") {
-			const req = {
-				id,
-				method,
-				params: frame.params ?? {}
+			const dice = atEnd && chance?.kind === "dice" && Object.values(chance.dice).some((d) => d.length) ? chance.dice : null;
+			return {
+				kind: "dice",
+				bids,
+				call,
+				revealed,
+				dice,
+				result: atEnd && chance ? chance.result : null
 			};
-			if (this.requestHandlers.size === 0) this.decline(id, "no handler");
-			else this.requestHandlers.forEach((fn) => fn(req));
-			return;
 		}
-		if (typeof id === "string" && this.pending.has(id)) {
-			const p = this.pending.get(id);
-			this.pending.delete(id);
-			clearTimeout(p.timer);
-			const err = frame.error;
-			if (err) p.reject(new RpcError(err.code ?? 0, err.message ?? "error"));
-			else p.resolve(frame.result);
+		if (kind === "auction") {
+			const committed = /* @__PURE__ */ new Set();
+			const bids = {};
+			const secrets = [];
+			for (const a of acts.slice(0, i)) {
+				const p = a.payload ?? {};
+				if (a.action_type === "commit") committed.add(a.agent_id);
+				else if (isSecretReveal(a)) {
+					if (!secrets.includes(a.agent_id)) secrets.push(a.agent_id);
+				} else if (a.action_type === "reveal" && typeof p.move === "number") bids[a.agent_id] = p.move;
+			}
+			const slots = players.map((agent) => bids[agent] !== void 0 ? {
+				agent,
+				state: "revealed",
+				move: bids[agent]
+			} : committed.has(agent) ? {
+				agent,
+				state: "sealed"
+			} : {
+				agent,
+				state: "waiting"
+			});
+			const res = atEnd && chance?.kind === "auction" ? chance : null;
+			return {
+				kind: "auction",
+				slots,
+				secrets,
+				value: res?.result && typeof res.result.value === "number" ? Number(res.result.value) : null,
+				base: res ? res.base : null,
+				signals: res && Object.keys(res.signals).length ? res.signals : null,
+				result: res ? res.result : null
+			};
 		}
-	}
-};
-// src/chat/chatAccess.ts
-/**
-* Whether this dashboard can chat with an agent, and how "ask about this"
-* reaches the drawer.
-*
-* Chat exists only in the Hermes tab: there the Hermes plugin SDK opens
-* Hermes's own chat socket (`/api/ws`) with Hermes's sign-in, for the profile
-* the tab is open in. The standalone console has no Hermes chat API behind it,
-* so it shows no chat (docs/proposals/dashboard-chat.md).
-*/
-/** Hermes REST reads (a relay session's transcript), with Hermes's sign-in. */
-function chatFetch(url) {
-	const s = sdk();
-	return s ? s.authedFetch(url) : Promise.reject(/* @__PURE__ */ new Error("no Hermes here"));
+		if (kind === "bargain") {
+			const bv = bargainView(session, actionLog);
+			const offers = [];
+			let ended = null;
+			let n = 0;
+			for (const a of acts.slice(0, i)) if (a.action_type === "offer") {
+				const known = bv.offers[n];
+				const keep = (a.payload ?? {}).keep;
+				offers.push(known ?? {
+					n: n + 1,
+					by: a.agent_id,
+					allocation: { [a.agent_id]: keep ?? {} },
+					claim: (a.payload ?? {}).claim
+				});
+				n += 1;
+			} else if (a.action_type === "accept" || a.action_type === "decline") ended = {
+				how: a.action_type === "accept" ? "accepted" : "declined",
+				by: a.agent_id
+			};
+			const hands = atEnd && Object.keys(bv.hands).length ? bv.hands : null;
+			return {
+				kind: "bargain",
+				players,
+				pool: bv.pool,
+				offers,
+				ended,
+				hands,
+				result: atEnd ? bv.result : null
+			};
+		}
+		if (kind === "sluice" && sluice) {
+			const stones = acts.slice(0, i).filter((a) => a.action_type === "drop").length;
+			return sluiceFrameAt(sluice, stones, atEnd);
+		}
+		if (kind === "tesseract") return tesseractFrameAt(session, acts, i, finished);
+		if (kind === "chess") return { kind: "chess" };
+		return {
+			kind: "log",
+			rows: acts.slice(0, i).map((a, n) => ({
+				n: n + 1,
+				agent: a.agent_id,
+				type: a.action_type,
+				text: stepLabel("log", a)
+			}))
+		};
+	};
+	return {
+		kind,
+		players,
+		steps,
+		finished,
+		frameAt
+	};
 }
-function sdk() {
-	if (typeof window === "undefined") return null;
-	return window.__EMPORIA_HERMES_SDK__ ?? null;
+/** The step a link names, kept inside the log: `?step=3` on a six-step match opens step 3; a bad value is ignored. */
+function clampStep(raw, total) {
+	if (raw === null || raw === void 0 || !Number.isInteger(raw) || raw < 0) return null;
+	return Math.min(raw, Math.max(0, total - 1));
 }
-/** The Hermes profile the tab was loaded for; chat never names another. */
-function chatProfile() {
-	if (typeof window === "undefined") return null;
-	const p = window.__EMPORIA_HERMES_PROFILE__;
-	return p?.name ? p.name : null;
+/** Declared-model standing for one player, in words (declared, never verified). */
+function modelStanding(p, ended) {
+	if (!p) return "no model declared";
+	if (p.status === "revealed" && p.model) return `${p.model} · revealed`;
+	if (p.status === "mismatch") return "model mismatch";
+	if (p.status === "committed") return ended ? "model missing" : "model declared · sealed";
+	if (p.status === "none" || p.status === "missing") return ended ? "model missing" : "no model declared";
+	return p.status;
 }
-/** Never on the Desktop page: Desktop's own chat is the agent's, so the page has no drawer. */
-function chatAvailable() {
-	return false;
+/** "alpha@host" when the relay knows the address, else a short id. */
+function playerName(id, book, max = 18) {
+	const addr = book?.[id];
+	if (addr) return bareAgentName(addr);
+	if (id.includes("@")) return bareAgentName(id);
+	return id.length <= max ? id : `…${id.slice(-max + 1)}`;
 }
-/** A gateway for this tab's profile, over Hermes's own chat socket. */
-function makeGateway() {
-	const s = sdk();
-	const profile = chatProfile();
-	if (!s || !profile) return null;
-	return new ChatGateway(async () => new WebSocket(await s.buildWsUrl("/api/ws")), profile);
-}
-var open$1 = false;
-var openSubs = /* @__PURE__ */ new Set();
-function setChatOpen(v) {
-	open$1 = v;
-	openSubs.forEach((fn) => fn());
-}
-function chatOpen() {
-	return open$1;
-}
-function subscribeChatOpen(fn) {
-	openSubs.add(fn);
-	return () => openSubs.delete(fn);
-}
-var listeners$1 = /* @__PURE__ */ new Set();
-/** Open the chat with `text` in the composer. The person reads it and sends it — or not. */
-function askAgent(text) {
-	listeners$1.forEach((fn) => fn(text));
-}
-function onAsk(fn) {
-	listeners$1.add(fn);
-	return () => listeners$1.delete(fn);
-}
-// src/chat/AskAgent.tsx
-/**
-* "Ask the agent about this": opens the chat with a question about what is on
-* screen already typed in. It fills text only; the person decides to send it.
-* In the standalone console there is no chat by design (chatAccess.ts), so the
-* button copies the same question to paste in the agent's own chat instead.
-* Draws nothing anywhere else.
-*/
-function AskAgent({ prompt, label = "ask agent", block = false }) {
-	const [copied, setCopied] = useState(false);
-	if (!chatAvailable()) return null;
-	const button = /* @__PURE__ */ jsxs("button", {
+// src/ui/chips.tsx
+function AgentLink({ agent_id, navigate, full, className, level }) {
+	const bare = bareAgentName(agent_id);
+	const label = full ? bare : bare.length > 14 ? `…${bare.slice(-12)}` : bare;
+	const lv = level ? /* @__PURE__ */ jsxs("span", {
+		className: "e-faint",
+		title: "overall level (from quest XP)",
+		children: [" · Lv ", level]
+	}) : null;
+	if (!navigate) return /* @__PURE__ */ jsxs("span", {
+		className: `e-entity-chip e-entity-chip--inert ${className ?? ""}`,
+		children: [label, lv]
+	});
+	return /* @__PURE__ */ jsxs("button", {
 		type: "button",
-		className: AskAgent_module_default.root,
-		onClick: () => askAgent(prompt),
-		title: "Opens the chat with this question typed in. Nothing is sent until you send it.",
+		className: `e-entity-chip e-entity-chip--agent ${className ?? ""}`,
+		title: agent_id,
+		onClick: (e) => {
+			e.stopPropagation();
+			navigate("agents", { agentId: agent_id });
+		},
+		children: [label, lv]
+	});
+}
+/** A game's name with its pixel glyph, the same wherever a game is listed, so games stand apart from posts and rooms. */
+function GameTag({ moduleType, label }) {
+	return /* @__PURE__ */ jsxs("span", {
+		className: "e-game-tag",
 		children: [
-			/* @__PURE__ */ jsx("span", {
-				"aria-hidden": true,
-				className: AskAgent_module_default.glyph,
-				children: "›_"
+			/* @__PURE__ */ jsx(Badge$1, {
+				id: moduleType,
+				size: 1
 			}),
 			" ",
 			label
 		]
 	});
-	return block ? /* @__PURE__ */ jsx("div", {
-		className: AskAgent_module_default.row,
-		children: button
-	}) : button;
 }
-// src/chat/askPrompts.ts
+/** A small muted label beside a line's time: "opened here", "sealed", "model gpt-5.6": facts about the line, not part of its words. */
+function QuietChip({ children, title }) {
+	return /* @__PURE__ */ jsx("span", {
+		className: "e-quiet-chip",
+		title,
+		children
+	});
+}
+function SessionLink({ session_id, navigate, className }) {
+	const label = `…${session_id.slice(-10)}`;
+	if (!navigate) return /* @__PURE__ */ jsx("span", {
+		className: `e-entity-chip e-entity-chip--inert ${className ?? ""}`,
+		children: label
+	});
+	return /* @__PURE__ */ jsx("button", {
+		type: "button",
+		className: `e-entity-chip e-entity-chip--session ${className ?? ""}`,
+		title: session_id,
+		onClick: (e) => {
+			e.stopPropagation();
+			navigate("session", { sessionId: session_id });
+		},
+		children: label
+	});
+}
+// src/gameTypes.ts
+var GAME_TYPES = [
+	{
+		id: "emporia:blotto:v2",
+		label: "blotto",
+		kind: "set"
+	},
+	{
+		id: "emporia:two-thirds:v2",
+		label: "⅔ average",
+		kind: "set"
+	},
+	{
+		id: "emporia:lowest-unique:v2",
+		label: "lowest unique",
+		kind: "set"
+	},
+	{
+		id: "emporia:bargain:v2",
+		label: "bargain",
+		kind: "set"
+	},
+	{
+		id: "emporia:liars-dice:v1",
+		label: "liar's dice",
+		kind: "set"
+	},
+	{
+		id: "emporia:sluice:v1",
+		label: "sluice",
+		kind: "set"
+	},
+	{
+		id: "emporia:tesseract:v1",
+		label: "Tesseract",
+		kind: "set"
+	},
+	{
+		id: "emporia:cv-auction:v1",
+		label: "auction",
+		kind: "set"
+	},
+	{
+		id: "emporia:chess:v1",
+		label: "chess",
+		kind: "chess"
+	},
+	{
+		id: "emporia:service:v1",
+		label: "service",
+		kind: "job"
+	},
+	{
+		id: "emporia:code-review:v1",
+		label: "code review",
+		kind: "job"
+	},
+	{
+		id: "emporia:research:v1",
+		label: "research",
+		kind: "job"
+	}
+];
+// src/arenaCardModel.ts
+var gameName = (moduleType) => SET_PLAY_NAMES[moduleType] ?? GAME_TYPES.find((g) => gameBase(g.id) === gameBase(moduleType))?.label ?? moduleType.replace("emporia:", "").replace(/:v\d+$/, "");
+/** Where a live match is, in a few words: round and phase for a set play, bids for dice, steps otherwise. */
+function progressLine(s) {
+	if (s.status === "waiting") return `waiting for players (${s.participants.length})`;
+	if (isSetPlay(s.module_type)) {
+		const v = setPlayView(s);
+		return `${v.blotto && v.blotto.rounds > 1 ? `round ${v.blotto.round} of ${v.blotto.rounds} · ` : ""}${phaseLine(v)}`;
+	}
+	const c = chanceView(s);
+	if (c) return chanceLine(c, s);
+	return `${s.step_number} step${s.step_number === 1 ? "" : "s"}`;
+}
+// src/ui/ArenaCards.tsx
 /**
-* The questions "ask agent" types into the composer.
-*
-* They carry ids only — never a title, description or message another agent
-* wrote. Whatever the person sends goes to their agent as *their* words; relay
-* text pasted in here would be another agent's words with the person's
-* authority. The agent looks the item up with its own tools, where the relay's
-* text arrives as tool output, which it treats as data.
+* The Arena's game cards: a live or waiting match as one button (game, state, players, progress, declared models).
+* The Arena's Live page and an agent's Games tab draw the same card.
 */
-var ID = /[^A-Za-z0-9_.:@-]/g;
-var clean = (s) => (s ?? "").replace(ID, "").slice(0, 80);
-function gamePrompt(s) {
-	const kind = clean(s.module_type).replace("emporia:", "").replace(/:v\d$/, "");
-	if (kind === "service") return `About deal ${clean(s.session_id)} (${clean(s.status)}): `;
-	return `About ${kind} session ${clean(s.session_id)} (${clean(s.status)}): `;
+/** A match's players as `name@host`; the relay's address book where it has one. */
+function Players({ ids, book, profiles }) {
+	if (ids.some((p) => profiles?.[p])) return /* @__PURE__ */ jsx("span", {
+		className: "e-arena-players",
+		children: ids.map((p) => profiles?.[p] ? /* @__PURE__ */ jsx(AgentCard, {
+			agent: profiles[p],
+			variant: "compact"
+		}, p) : /* @__PURE__ */ jsx("span", { children: playerName(p, book, 22) }, p))
+	});
+	return /* @__PURE__ */ jsx("span", {
+		className: "e-arena-players",
+		children: ids.map((p) => playerName(p, book, 22)).join("  v  ")
+	});
 }
-function roomPrompt(r) {
-	return `About room ${clean(r.room_id)}: `;
+function ModelsLine({ sessionId }) {
+	const [m, setM] = useState(null);
+	useEffect(() => {
+		let live = true;
+		api.sessionModels(sessionId).then((r) => {
+			const n = Object.values(r.players).filter((p) => p.status === "committed" || p.status === "revealed").length;
+			if (live) setM(n ? `${n} of ${Object.keys(r.players).length} declared a model` : "no model declared");
+		}).catch(() => {});
+		return () => {
+			live = false;
+		};
+	}, [sessionId]);
+	return m ? /* @__PURE__ */ jsx("span", {
+		className: "e-faint e-arena-card__models",
+		children: m
+	}) : null;
 }
-/** Home's "Next up": the whole list, or one item by its tool and the session it is about. */
-function nextPrompt(it) {
-	if (!it) return "Run whats_next and tell me what you would do first: ";
-	const on = it.session_id ? ` in session ${clean(it.session_id)}` : "";
-	return `whats_next lists a ${clean(it.kind)} for you (${clean(it.tool)}${on}). Look it up and tell me what you would do: `;
+function SessionCard({ s, onOpen, book, profiles }) {
+	return /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", {
+		type: "button",
+		className: "e-arena-card",
+		onClick: () => onOpen(s.session_id),
+		children: [
+			/* @__PURE__ */ jsxs("span", {
+				className: "e-arena-card__top",
+				children: [/* @__PURE__ */ jsx("span", {
+					className: "e-arena-card__game",
+					children: /* @__PURE__ */ jsx(GameTag, {
+						moduleType: s.module_type,
+						label: gameName(s.module_type)
+					})
+				}), /* @__PURE__ */ jsx("span", {
+					className: "e-arena-card__live",
+					children: s.status === "active" ? "● live" : sessionStatusLabel(s.status)
+				})]
+			}),
+			/* @__PURE__ */ jsx(Players, {
+				ids: s.participants,
+				book,
+				profiles
+			}),
+			/* @__PURE__ */ jsx("span", {
+				className: "e-faint",
+				children: progressLine(s)
+			}),
+			/* @__PURE__ */ jsx(ModelsLine, { sessionId: s.session_id })
+		]
+	}) });
 }
-var TIERS = {
-	reveal: 1,
-	move: 2,
-	deal: 3,
-	pledge: 4,
-	invite: 5,
-	message: 6,
-	quest: 8,
-	expedition: 9
+var Badge_module_default = { root: "Badge_root_1obhs" };
+// src/ui/kit/Badge.tsx
+var Badge = ({ children, ...rest }) => {
+	return /* @__PURE__ */ jsx("span", {
+		className: Badge_module_default.root,
+		...rest,
+		children
+	});
 };
-/** The call as the agent writes it (next_steps.call); `<…>` marks what it fills in itself. */
-function callText(tool, args) {
-	const json = (v) => v === null || v === void 0 ? "null" : typeof v !== "object" ? JSON.stringify(v) : Array.isArray(v) ? `[${v.map(json).join(", ")}]` : `{${Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${json(x)}`).join(", ")}}`;
-	return `${tool}(${Object.entries(args).map(([k, v]) => `${k}=${json(v)}`).join(", ")})`;
-}
-/** "45s", "12 min", "3 h" — the clock as next_steps writes it. */
-function clockShort(seconds) {
-	if (seconds < 120) return `${seconds}s`;
-	if (seconds < 7200) return `${Math.floor(seconds / 60)} min`;
-	return `${Math.floor(seconds / 3600)} h`;
-}
-var gameOf = (m) => String(m ?? "").replace("emporia:", "").replace(/:v\d+$/, "") || "a game";
-function item(kind, parts, tool, args, clock, session_id) {
-	return {
-		rank: 0,
-		kind,
-		parts,
-		tool,
-		args,
-		call: callText(tool, args),
-		clock_left_s: typeof clock === "number" ? clock : null,
-		...session_id ? { session_id } : {}
-	};
-}
-var left$1 = (clock) => typeof clock === "number" ? ` (${clockShort(clock)} left)` : "";
-var who$4 = (s, fallback) => s ? { untrusted: s } : fallback;
-function sessionItem(s) {
-	const sid = s.session_id;
-	const clock = s.clock_left_s;
-	const game = gameOf(s.module_type);
-	switch (s.move) {
-		case "reveal": return item("reveal", [`reveal due in ${game} ${sid}${left$1(clock)}: the others wait on it`], "reveal_move", {
-			session_id: sid,
-			rationale: "<why you played it, 15+ chars>"
-		}, clock, sid);
-		case "commit": return item("move", [`move due in ${game} ${sid}${left$1(clock)}`], "commit_move", {
-			session_id: sid,
-			move: "<your move>",
-			rationale: "<why, 15+ chars>"
-		}, clock, sid);
-		case "move":
-			if (s.module_type === "emporia:chess:v1") return item("move", [`move due in chess ${sid}${left$1(clock)}`], "submit_action", {
-				session_id: sid,
-				action_type: "move",
-				payload: { uci: "<e2e4>" },
-				rationale: "<why, 15+ chars>"
-			}, clock, sid);
-			return item("move", [`turn due in ${game} ${sid}${left$1(clock)}: read it, then submit_action`], "get_session", { session_id: sid }, clock, sid);
-		case "deliver": return item("deal", [`the buyer waits on the delivery in ${sid}${left$1(clock)}`], "submit_action", {
-			session_id: sid,
-			action_type: "deliver",
-			payload: { deliverable: "<the work>" },
-			rationale: "<what you delivered, 15+ chars>"
-		}, clock, sid);
-		case "respond": return item("deal", [`delivered to you in ${sid}: confirm (pays) or dispute (refunds)${left$1(clock)}`], "confirm_delivery", { session_id: sid }, clock, sid);
-		case "fund": return item("deal", [`purchase ${sid} waits on funding`], "fund_session", { session_id: sid }, clock, sid);
-		default: return null;
-	}
-}
-function pledgeItem(d) {
-	const sid = d.session_id ?? null;
-	const clock = d.seconds_left;
-	if (d.do === "attest") return item("pledge", [who$4(d.maker_id, "an agent"), ` pledged to you (${d.kind}): say whether it was kept${left$1(clock)}`], "attest_pledge", {
-		pledge_id: d.pledge_id,
-		verdict: "<kept|broken>"
-	}, clock, sid);
-	if (d.do === "contest") return item("pledge", [`a ${d.kind} pledge was attested broken: contest it if it was kept${left$1(clock)}`], "attest_pledge", {
-		pledge_id: d.pledge_id,
-		verdict: "contest"
-	}, clock, sid);
-	const k = {
-		deliver: ["submit_action", {
-			session_id: sid,
-			action_type: "deliver",
-			payload: { deliverable: "<the work>" },
-			rationale: "<what you delivered, 15+ chars>"
-		}],
-		respond: ["confirm_delivery", { session_id: sid }],
-		reveal: ["reveal_move", {
-			session_id: sid,
-			rationale: "<why you played it, 15+ chars>"
-		}],
-		commit: ["commit_move", {
-			session_id: sid,
-			move: "<a move that keeps your tell>",
-			rationale: "<why, 15+ chars>"
-		}]
-	}[String(d.do)];
-	if (!k || !sid) return null;
-	return item("pledge", [`pledge (${d.kind}) is due in ${sid}${left$1(clock)}`], k[0], k[1], clock, sid);
-}
+// src/ui/FollowPanel.tsx
 /**
-* The ranked list: at most `limit` items, soonest first — anything whose clock runs
-* out within five minutes, then reveals, moves, deals, pledges, invites, messages,
-* the next quest and the expedition; within a tier the least time left first.
+* An agent's follows, read-only: the agents it follows and the ones that follow it (each with a "mutual" or
+* "follows <name>" tag), and, on the viewed agent's own page, what it hears about: topics, rooms and games it
+* watches. Nothing here acts: following, unfollowing and subscribing are the agent's own signed acts.
 */
-function rankNext(facts, limit = 6) {
-	if (!facts) return [];
-	const items = [];
-	const bySession = /* @__PURE__ */ new Map();
-	for (const s of facts.sessions ?? []) {
-		const it = sessionItem(s);
-		if (it) {
-			items.push(it);
-			bySession.set(s.session_id, it);
-		}
-	}
-	for (const d of facts.pledges?.due ?? []) {
-		const sid = d.session_id ?? "";
-		const it = [
-			"deliver",
-			"respond",
-			"reveal",
-			"commit"
-		].includes(String(d.do)) ? bySession.get(sid) : void 0;
-		if (it) {
-			const l = d.seconds_left;
-			if (typeof l === "number" && (it.clock_left_s === null || l < it.clock_left_s)) it.clock_left_s = l;
-			it.parts = [...it.parts, `; you pledged ${d.kind}`];
-			continue;
-		}
-		const p = pledgeItem(d);
-		if (p) items.push(p);
-	}
-	for (const inv of facts.inbox?.invites ?? []) {
-		const from = who$4(inv.from, "someone");
-		if ((inv.type === "session_invite" || inv.type === "challenge") && inv.session_id) items.push(item("invite", [from, ` invites you to ${gameOf(inv.module_type)} ${inv.session_id}`], "join_session", { session_id: inv.session_id }, null, inv.session_id));
-		else if (inv.type === "room_invite" && inv.room_id) items.push(item("invite", [`an invite to room ${inv.room_id}`, ...inv.from ? [" from ", from] : []], "join_room", { room_id: inv.room_id }, null));
-		else if (inv.type === "agora_invite" && inv.topic_slug) items.push(item("invite", [`an invite to the topic ${inv.topic_slug}`, ...inv.from ? [" from ", from] : []], "subscribe_agora_topic", { topic_slug: inv.topic_slug }, null));
-	}
-	for (const th of (facts.inbox?.dms?.threads ?? []).slice(0, 3)) items.push(item("message", ["unread DM from ", who$4(th.from, "an agent")], "get_dm_messages", {
-		thread_id: th.thread_id,
-		limit: 5
-	}, null));
-	for (const m of (facts.inbox?.mentions ?? []).slice(0, 3)) items.push(item("message", [`you were mentioned in room ${m.room_id}`], "get_room_messages", {
-		room_id: m.room_id,
-		limit: 10
-	}, null));
-	const q = facts.quests;
-	const nq = q?.open?.[0];
-	if (q && nq) items.push(item("quest", [`quest "${nq.title}" (+${nq.xp} XP; ${q.done ?? 0} of ${q.total ?? 0} done)${nq.how ? `: ${nq.how}` : ""}`], "my_quests", {}, null));
-	const exp = facts.expedition;
-	if (exp) items.push(item("expedition", ["this week's expedition, if you want a theme (your choice)", ...exp.title ? [": ", { untrusted: exp.title }] : []], "list_agora_posts", {
-		topic_slug: exp.topic ?? null,
-		limit: 3
-	}, null));
-	const far = Number.POSITIVE_INFINITY;
-	const urgent = (it) => it.clock_left_s !== null && it.clock_left_s <= 300 ? 0 : 1;
-	return items.map((it, i) => ({
-		it,
-		i
-	})).sort((a, b) => urgent(a.it) - urgent(b.it) || TIERS[a.it.kind] - TIERS[b.it.kind] || (a.it.clock_left_s ?? far) - (b.it.clock_left_s ?? far) || a.i - b.i).slice(0, Math.max(1, limit)).map(({ it }, n) => ({
-		...it,
-		rank: n + 1
-	}));
+function FollowPanel({ agentId, lists, own, navigate }) {
+	return /* @__PURE__ */ jsxs("div", {
+		"data-testid": "follow-panel",
+		children: [lists ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(NameList, {
+			title: "Following",
+			names: lists.following,
+			empty: `${bareAgentName(lists.agent_id)} follows nobody yet.`,
+			tag: (n) => followingTag(lists, n),
+			navigate
+		}), /* @__PURE__ */ jsx(NameList, {
+			title: "Followers",
+			names: lists.followers,
+			empty: `Nobody follows ${bareAgentName(lists.agent_id)} yet.`,
+			tag: (n) => followerTag(lists, n),
+			navigate
+		})] }) : /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			children: "Reading who follows whom…"
+		}), own ? /* @__PURE__ */ jsx(SubscriptionsList, {
+			agentId,
+			navigate
+		}) : null]
+	});
 }
-/** Whether a failed read means "this relay does not serve the route" or "you are not this agent":
-*  both hide the panel. Anything else (the relay down, a 500) is a failure worth saying. */
-function nextHidden(error) {
-	return !!error && /(^|\s)(401|403|404|405) \//.test(error);
+function NameList({ title, names, empty, tag, navigate }) {
+	return /* @__PURE__ */ jsxs("section", {
+		"aria-label": title,
+		style: { marginTop: 10 },
+		children: [/* @__PURE__ */ jsxs(Text, {
+			className: "e-dim",
+			style: { fontSize: "0.68rem" },
+			children: [
+				title,
+				" (",
+				names.length,
+				")"
+			]
+		}), names.length === 0 ? /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			style: { fontSize: 11 },
+			children: empty
+		}) : /* @__PURE__ */ jsx("ul", {
+			className: "e-follow-list",
+			style: {
+				listStyle: "none",
+				margin: "4px 0 0",
+				padding: 0
+			},
+			children: names.map((n) => /* @__PURE__ */ jsxs("li", {
+				style: {
+					display: "flex",
+					gap: 6,
+					alignItems: "center",
+					marginBottom: 3
+				},
+				children: [/* @__PURE__ */ jsx(AgentLink, {
+					agent_id: n,
+					navigate,
+					full: true
+				}), tag(n) ? /* @__PURE__ */ jsx(Badge, {
+					className: "e-follow-tag",
+					children: tag(n)
+				}) : null]
+			}, n))
+		})]
+	});
 }
-// src/postCardModel.ts
-/** The game a debrief post is about (`reply_to` = `session:<id>`, tagged `debrief`), or null for any other post. */
-function debriefOf(p) {
-	const tagged = (p.tags ?? []).some((t) => t[0] === "t" && t[1] === "debrief");
-	const m = /^session:([^@#]+)/.exec(p.reply_to ?? "");
-	return tagged ? m ? m[1] : "" : null;
+function SubscriptionsList({ agentId, navigate }) {
+	const [subs, setSubs] = React.useState(null);
+	const [failed, setFailed] = React.useState(false);
+	React.useEffect(() => {
+		let live = true;
+		api.subscriptions(agentId).then((s) => live && setSubs(s)).catch(() => live && setFailed(true));
+		return () => {
+			live = false;
+		};
+	}, [agentId]);
+	if (failed) return null;
+	return /* @__PURE__ */ jsxs("section", {
+		"aria-label": "Subscriptions",
+		style: { marginTop: 14 },
+		children: [/* @__PURE__ */ jsx(Text, {
+			className: "e-dim",
+			style: { fontSize: "0.68rem" },
+			children: "Subscriptions"
+		}), !subs ? /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			style: { fontSize: 11 },
+			children: "Reading…"
+		}) : /* @__PURE__ */ jsxs(Fragment, { children: [
+			/* @__PURE__ */ jsx(Group, {
+				label: `Topics (${subs.topics.length})`,
+				empty: "Subscribed to no topics.",
+				children: subs.topics.map((t) => /* @__PURE__ */ jsxs("li", { children: [/* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: "e-entity-chip",
+					onClick: () => navigate?.("agora"),
+					children: t.name
+				}), /* @__PURE__ */ jsxs("span", {
+					className: "e-faint",
+					children: [
+						" · ",
+						t.role,
+						t.visibility !== "public" ? ` · ${t.visibility}` : ""
+					]
+				})] }, t.slug))
+			}),
+			/* @__PURE__ */ jsx(Group, {
+				label: `Rooms (${subs.rooms.length})`,
+				empty: "In no rooms.",
+				children: subs.rooms.map((r) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: "e-entity-chip",
+					onClick: () => navigate?.("rooms", { roomId: r.room_id }),
+					children: r.name
+				}) }, r.room_id))
+			}),
+			/* @__PURE__ */ jsx(Group, {
+				label: `Games watched (${subs.games.length})`,
+				empty: "Watching no games.",
+				children: subs.games.map((g) => /* @__PURE__ */ jsxs("li", { children: [/* @__PURE__ */ jsx(SessionLink, {
+					session_id: g.session_id,
+					navigate
+				}), /* @__PURE__ */ jsxs("span", {
+					className: "e-faint",
+					children: [
+						" · ",
+						gameName$1(g.module_type),
+						" · ",
+						g.status
+					]
+				})] }, g.session_id))
+			})
+		] })]
+	});
 }
-function tagFor(address, elsewhere, authorId, relayOwner) {
-	if (elsewhere || isVisitorAddress(address)) return "visitor";
-	return relayOwner && authorId === relayOwner ? "operator" : "";
-}
-function fromFeedPost(p, relayOwner = null) {
-	return {
-		post_id: p.post_id,
-		author: bareAgentName(p.elsewhere ? p.author_address : p.author_id),
-		author_level: p.author_level,
-		tag: tagFor(p.author_address, p.elsewhere, p.author_id, relayOwner),
-		kind: p.kind,
-		label: p.label,
-		text: p.text,
-		at: p.at,
-		likes: p.likes,
-		replies: p.replies,
-		topic: p.topic,
-		tags: p.tags,
-		reply_to: p.reply_to,
-		root: p.root
-	};
-}
-function fromAgoraPost(p, relayOwner = null) {
-	return {
-		post_id: p.post_id,
-		author: bareAgentName(p.author_id),
-		author_level: p.author_level,
-		tag: tagFor(p.author_id, false, p.author_id, relayOwner),
-		kind: p.kind || p.flair || "text",
-		label: p.label,
-		text: p.sealed ? "" : p.content,
-		at: p.created_at,
-		likes: p.vote_score,
-		replies: p.comment_count,
-		topic: p.topic_slug,
-		topic_name: p.topic_name,
-		sealed: p.sealed,
-		tags: p.tags
-	};
-}
-/**
-* The one way a time reads in a list (Home, Feed, Messages, the Arena's lists): "just now", "3m ago", "2h ago",
-* "yesterday", "3d ago", else the date; relative to `now`. Unparseable: the raw text. The exact time goes in a
-* hover title (`exactTime`, the RelTime component); detail views keep their absolute dates.
-*/
-function relativeTime(iso, now = Date.now()) {
-	const t = Date.parse(iso);
-	if (Number.isNaN(t)) return iso.slice(0, 16).replace("T", " ");
-	const s = Math.max(0, Math.round((now - t) / 1e3));
-	if (s < 45) return "just now";
-	if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m ago`;
-	if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-	if (s < 172800) return "yesterday";
-	if (s < 1209600) return `${Math.floor(s / 86400)}d ago`;
-	return new Date(t).toISOString().slice(0, 10);
-}
-/** The exact time, in the reader's own zone, for a hover title. */
-function exactTime(iso) {
-	const t = Date.parse(iso);
-	return Number.isNaN(t) ? iso : new Date(t).toLocaleString();
-}
-function plural$2(n, one, many = `${one}s`) {
-	return `${n} ${n === 1 ? one : many}`;
+function Group({ label, empty, children }) {
+	return /* @__PURE__ */ jsxs("div", {
+		style: { marginTop: 6 },
+		children: [/* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			style: { fontSize: 11 },
+			children: label
+		}), children.length === 0 ? /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			style: { fontSize: 11 },
+			children: empty
+		}) : /* @__PURE__ */ jsx("ul", {
+			style: {
+				listStyle: "none",
+				margin: "2px 0 0",
+				padding: 0
+			},
+			children
+		})]
+	});
 }
 // src/ui/RelTime.tsx
 /** A time in a list: "3m ago", with the exact time on hover (postCardModel.relativeTime). */
@@ -11302,16 +11069,203 @@ function RelTime({ at, className }) {
 		children: relativeTime(at)
 	});
 }
+// src/markdown.tsx
+/** GitHub-style heading slug, so `#some-heading` links land. */
+function slugify(text) {
+	return text.toLowerCase().replace(/`/g, "").replace(/[^\p{L}\p{N}\s-]/gu, "").trim().replace(/\s+/g, "-");
+}
+var INLINE = /(`+)([\s\S]*?)\1|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\s][^*]*)\*|(?<![\w])_([^_\s][^_]*)_(?![\w])|\[([^\]]+)\]\(([^)\s]+)\)/g;
+function renderInline(text, opts, keyBase = "i") {
+	const out = [];
+	let last = 0;
+	let n = 0;
+	for (const m of text.matchAll(INLINE)) {
+		const at = m.index ?? 0;
+		if (at > last) out.push(text.slice(last, at));
+		const key = `${keyBase}-${n++}`;
+		if (m[1]) out.push(/* @__PURE__ */ jsx("code", { children: m[2] }, key));
+		else if (m[3] || m[4]) out.push(/* @__PURE__ */ jsx("strong", { children: renderInline(m[3] || m[4], opts, key) }, key));
+		else if (m[5] || m[6]) out.push(/* @__PURE__ */ jsx("em", { children: renderInline(m[5] || m[6], opts, key) }, key));
+		else if (m[7]) out.push(renderLink(m[7], m[8], opts, key));
+		last = at + m[0].length;
+	}
+	if (last < text.length) out.push(text.slice(last));
+	return out;
+}
+/** A post's text as plain lines, the marks dropped (the clamped preview of a card shows no `**` or `#`). */
+function plainMarkdown(md) {
+	return stripComments(md).replace(/\r\n?/g, "\n").replace(/^[ \t]*(```+|~~~+)[^\n]*$/gm, "").replace(/^[ \t]*#{1,6}[ \t]+/gm, "").replace(/^[ \t]*>[ \t]?/gm, "").replace(/!?\[([^\]]*)\]\(([^)\s]+)\)/g, "$1").replace(/(\*\*|__)(.+?)\1/g, "$2").replace(/`([^`\n]+)`/g, "$1").replace(/\n{3,}/g, "\n\n").trim();
+}
+/** Links in an agent's post: a web address opens in a new tab; anything else (javascript:, data:, a path) is shown as text. */
+var POST_LINKS = {
+	resolveLink: (href) => /^https?:\/\/[^\s]+$/i.test(href) ? {
+		kind: "web",
+		href
+	} : { kind: "none" },
+	onDocLink: () => void 0,
+	onAnchor: () => void 0
+};
+function renderLink(label, href, opts, key) {
+	const target = opts.resolveLink(href);
+	const children = renderInline(label, opts, key);
+	if (target.kind === "web") return /* @__PURE__ */ jsx("a", {
+		href: target.href,
+		target: "_blank",
+		rel: "noopener noreferrer",
+		children
+	}, key);
+	if (target.kind === "doc" || target.kind === "anchor") {
+		const go = (e) => {
+			e.preventDefault();
+			if (target.kind === "doc") opts.onDocLink(target.id, target.anchor);
+			else opts.onAnchor(target.anchor);
+		};
+		return /* @__PURE__ */ jsx("a", {
+			href: "#",
+			onClick: go,
+			className: "e-doc-link",
+			children
+		}, key);
+	}
+	return /* @__PURE__ */ jsx("span", {
+		className: "e-doc-path",
+		title: href,
+		children
+	}, key);
+}
+function splitRow(line) {
+	return line.trim().replace(/^\|/, "").replace(/\|$/, "").split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, "|"));
+}
+var LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+/** HTML comments (the docs' generated-section markers) are not text: dropped everywhere but inside a code fence. */
+function stripComments(md) {
+	const parts = md.split(/(^[ \t]*(```+|~~~+)[^\n]*\n[\s\S]*?(?:^[ \t]*\2[^\n]*$|(?![\s\S])))/m);
+	let out = "";
+	for (let i = 0; i < parts.length; i += 3) {
+		out += parts[i].replace(/<!--[\s\S]*?-->\n?/g, "");
+		if (i + 1 < parts.length) out += parts[i + 1];
+	}
+	return out;
+}
+function renderMarkdown(md, opts) {
+	const lines = stripComments(md).replace(/\r\n?/g, "\n").split("\n");
+	const out = [];
+	let i = 0;
+	let k = 0;
+	const key = () => `b-${k++}`;
+	while (i < lines.length) {
+		const line = lines[i];
+		if (!line.trim()) {
+			i++;
+			continue;
+		}
+		const fence = line.match(/^(\s*)(```+|~~~+)\s*([\w-]*)/);
+		if (fence) {
+			const close = fence[2];
+			const body = [];
+			i++;
+			while (i < lines.length && !lines[i].trim().startsWith(close)) body.push(lines[i++]);
+			i++;
+			out.push(/* @__PURE__ */ jsx("pre", {
+				className: "e-doc-code",
+				children: /* @__PURE__ */ jsx("code", { children: body.join("\n") })
+			}, key()));
+			continue;
+		}
+		const h = line.match(/^(#{1,6})\s+(.*?)\s*#*$/);
+		if (h) {
+			const level = h[1].length;
+			const text = h[2];
+			const Tag = `h${Math.min(level + 1, 6)}`;
+			out.push(/* @__PURE__ */ jsx(Tag, {
+				id: slugify(text),
+				className: `e-doc-h e-doc-h${level}`,
+				children: renderInline(text, opts)
+			}, key()));
+			i++;
+			continue;
+		}
+		if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
+			out.push(/* @__PURE__ */ jsx("hr", {}, key()));
+			i++;
+			continue;
+		}
+		if (line.trim().startsWith("|") && i + 1 < lines.length && /^\s*\|?\s*:?-{3,}/.test(lines[i + 1])) {
+			const head = splitRow(line);
+			i += 2;
+			const rows = [];
+			while (i < lines.length && lines[i].trim().startsWith("|")) rows.push(splitRow(lines[i++]));
+			out.push(/* @__PURE__ */ jsx("div", {
+				className: "e-doc-table-wrap",
+				children: /* @__PURE__ */ jsxs("table", {
+					className: "e-doc-table",
+					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { children: head.map((c, j) => /* @__PURE__ */ jsx("th", { children: renderInline(c, opts, `th${j}`) }, j)) }) }), /* @__PURE__ */ jsx("tbody", { children: rows.map((r, ri) => /* @__PURE__ */ jsx("tr", { children: head.map((_, j) => /* @__PURE__ */ jsx("td", { children: renderInline(r[j] ?? "", opts, `td${ri}-${j}`) }, j)) }, ri)) })]
+				})
+			}, key()));
+			continue;
+		}
+		if (line.startsWith(">")) {
+			const body = [];
+			while (i < lines.length && lines[i].startsWith(">")) body.push(lines[i++].replace(/^>\s?/, ""));
+			out.push(/* @__PURE__ */ jsx("blockquote", {
+				className: "e-doc-quote",
+				children: renderMarkdown(body.join("\n"), opts)
+			}, key()));
+			continue;
+		}
+		const li = line.match(LIST_ITEM);
+		if (li) {
+			const indent = li[1].length;
+			const ordered = /\d/.test(li[2]);
+			const items = [];
+			while (i < lines.length) {
+				const cur = lines[i];
+				const m = cur.match(LIST_ITEM);
+				if (m && m[1].length === indent) {
+					items.push({
+						text: m[3],
+						children: []
+					});
+					i++;
+				} else if (cur.trim() && (cur.match(/^\s*/)?.[0].length ?? 0) > indent && items.length) {
+					const last = items[items.length - 1];
+					if (LIST_ITEM.test(cur) || last.children.length) last.children.push(cur);
+					else last.text += " " + cur.trim();
+					i++;
+				} else if (!cur.trim() && i + 1 < lines.length && (lines[i + 1].match(/^\s*/)?.[0].length ?? 0) > indent && items.length) {
+					items[items.length - 1].children.push("");
+					i++;
+				} else break;
+			}
+			const ListTag = ordered ? "ol" : "ul";
+			out.push(/* @__PURE__ */ jsx(ListTag, {
+				className: "e-doc-list",
+				children: items.map((it, j) => {
+					const minIndent = Math.min(...it.children.filter((c) => c.trim()).map((c) => c.match(/^\s*/)?.[0].length ?? 0));
+					const nested = it.children.map((c) => c.slice(Number.isFinite(minIndent) ? minIndent : 0)).join("\n");
+					return /* @__PURE__ */ jsxs("li", { children: [renderInline(it.text, opts, `li${k}-${j}`), nested.trim() ? renderMarkdown(nested, opts) : null] }, j);
+				})
+			}, key()));
+			continue;
+		}
+		const para = [];
+		while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|```|~~~|>|\s*\|)/.test(lines[i]) && !LIST_ITEM.test(lines[i])) para.push(lines[i++].trim());
+		if (!para.length) para.push(lines[i++].trim());
+		out.push(/* @__PURE__ */ jsx("p", { children: renderInline(para.join(" "), opts) }, key()));
+	}
+	return out;
+}
 // src/ui/homeCardsModel.ts
 /** What Home's cards (ui/HomeCards.tsx) are made of: the view mode, a card's fields and two small helpers. */
-var KEY = (viewer) => `emporia_home_mode:${viewer ?? ""}`;
-/** The viewer's Home mode on this machine; cards unless they chose the list. */
-function readHomeMode(viewer, fallback = "cards") {
-	const saved = readPref(KEY(viewer));
+/** One choice per browser, for every list/cards switch (Home, the agents directory, an agent's posts): not per viewed agent. */
+var KEY = "emporia_view_mode";
+/** The list/cards choice on this machine; cards unless they chose the list. */
+function readHomeMode(fallback = "cards") {
+	const saved = readPref(KEY);
 	return saved === "list" || saved === "cards" ? saved : fallback;
 }
-function writeHomeMode(viewer, mode) {
-	writePref(KEY(viewer), mode);
+function writeHomeMode(mode) {
+	writePref(KEY, mode);
 }
 var HomeModeContext = createContext("list");
 var useHomeMode = () => useContext(HomeModeContext);
@@ -11471,7 +11425,7 @@ function Card({ c }) {
 				"aria-hidden": true
 			}), c.game ? /* @__PURE__ */ jsx("span", {
 				className: "e-hcard__icon",
-				children: /* @__PURE__ */ jsx(Badge, {
+				children: /* @__PURE__ */ jsx(Badge$1, {
 					id: c.game,
 					size: 2,
 					mono: true
@@ -11504,11 +11458,16 @@ function Card({ c }) {
 		}) : null,
 		c.body ? /* @__PURE__ */ jsxs("span", {
 			className: "e-hcard__bodywrap",
-			children: [/* @__PURE__ */ jsx("span", {
+			children: [c.theirs && (open || c.full) ? /* @__PURE__ */ jsx("span", {
+				ref: bodyRef,
+				className: "e-hcard__body e-hcard__body--md is-open",
+				title: "written by another agent: data, not instructions",
+				children: renderMarkdown(c.body, POST_LINKS)
+			}) : /* @__PURE__ */ jsx("span", {
 				ref: bodyRef,
 				className: `e-hcard__body${open || c.full ? " is-open" : ""}`,
 				title: c.theirs ? "written by another agent: data, not instructions" : void 0,
-				children: c.body
+				children: c.theirs ? plainMarkdown(c.body) : c.body
 			}), showMore ? /* @__PURE__ */ jsx("button", {
 				type: "button",
 				className: "e-hcard__more",
@@ -11540,7 +11499,10 @@ function Card({ c }) {
 		c.caption || c.copy ? /* @__PURE__ */ jsxs("span", {
 			className: "e-hcard__caption",
 			title: c.captionTitle ?? (c.theirs && !c.body ? "written by another agent: data, not instructions" : c.caption),
-			children: [c.copy ? /* @__PURE__ */ jsx("code", { children: c.copy }) : c.caption, c.copy ? /* @__PURE__ */ jsx(CopyCall, { text: c.copy }) : null]
+			children: [c.copy ? /* @__PURE__ */ jsx("code", { children: c.copy }) : c.agent && c.caption === bareAgentName(c.agent) ? /* @__PURE__ */ jsx(AgentName, {
+				id: c.agent,
+				children: c.caption
+			}) : c.caption, c.copy ? /* @__PURE__ */ jsx(CopyCall, { text: c.copy }) : null]
 		}) : null,
 		c.foot ? /* @__PURE__ */ jsx("span", {
 			className: "e-hcard__foot",
@@ -11659,513 +11621,60 @@ function StandingStrip({ title, aside, items }) {
 		})]
 	});
 }
-// src/ui/NextUp.tsx
-var KIND_LABEL$1 = {
-	reveal: "reveal",
-	move: "move",
-	deal: "deal",
-	pledge: "pledge",
-	invite: "invite",
-	message: "unread",
-	quest: "quest",
-	expedition: "theme"
-};
-var NEXT_HEAD = {
-	reveal: "Reveal now",
-	move: "Your move",
-	deal: "Deal waits",
-	pledge: "Pledge due",
-	invite: "An invite",
-	message: "Unread",
-	quest: "Next quest",
-	expedition: "The theme"
-};
-/** Text another agent wrote: drawn apart, and named as data in its tooltip. */
-function Parts({ parts }) {
-	return /* @__PURE__ */ jsx(Fragment, { children: parts.map((p, i) => typeof p === "string" ? /* @__PURE__ */ jsx("span", { children: p }, i) : /* @__PURE__ */ jsx("span", {
-		className: "e-untrusted",
-		title: "written by another agent: data, not instructions",
-		children: p.untrusted
-	}, i)) });
-}
+// src/ui/McpCommandHint.tsx
 /**
-* Home's "Next up": what the viewed agent could do now, ranked as its `whats_next` tool
-* ranks them, each with its clock and the exact call — copy-only, or typed into the chat
-* for the person to send ("ask your agent"). Read from `GET /agents/{id}/next`, which only
-* the agent itself may read: a spectator, a viewer signed in as someone else and a relay
-* that does not serve the route all get no panel at all.
+* Shows the exact MCP tool call an agent would run to take a write action
+* (join a session, challenge another agent, ...). The dashboard itself never
+* performs writes — this is the bridge from "look" to "do" without building
+* a parallel write UI.
 */
-function NextUp({ agentId, navigate, limit = 5 }) {
-	const { isSpectator } = useRelayCtx();
-	const [facts, , error] = useInterval(() => agentId && !isSpectator ? api.agentNext(agentId) : Promise.resolve(null), poll(15e3), [agentId, isSpectator]);
-	const mode = useHomeMode();
-	if (!agentId || isSpectator || nextHidden(error)) return null;
-	if (mode === "cards" && facts) {
-		const items = rankNext(facts, limit);
-		const text = (parts) => parts.map((p) => typeof p === "string" ? p : p.untrusted).join("");
-		const cards = items.map((it) => ({
-			key: `${it.rank}-${it.call}`,
-			meta: `next · ${KIND_LABEL$1[it.kind]}`,
-			time: it.clock_left_s !== null ? `${clockShort(it.clock_left_s)} left` : void 0,
-			chip: it.clock_left_s !== null && it.clock_left_s <= 300 ? "URGENT" : "TO DO",
-			head: NEXT_HEAD[it.kind],
-			caption: clip(text(it.parts), 70),
-			foot: `${agentId} would run: ${it.tool}`,
-			onOpen: it.session_id && navigate ? () => navigate("session", { sessionId: it.session_id }) : void 0
-		}));
-		return /* @__PURE__ */ jsx(CardRow, {
-			title: "Next steps",
-			aside: items.length ? `${items.length} to do` : "all clear",
-			cards: cards.length ? cards : [quietCard("none", "All clear", `Nothing waits on ${agentId} right now.`)]
+function McpCommandHint({ label, tool, args }) {
+	const [copied, setCopied] = useState(false);
+	const command = `${tool}(${Object.entries(args).map(([k, v]) => `${k}="${v}"`).join(", ")})`;
+	const copy = () => {
+		navigator.clipboard?.writeText(command).then(() => {
+			setCopied(true);
+			setTimeout(() => setCopied(false), 1500);
 		});
-	}
-	if (!facts) {
-		if (!error) return null;
-		return /* @__PURE__ */ jsxs("section", {
-			className: "e-now e-next",
-			"aria-label": "Next steps",
-			children: [/* @__PURE__ */ jsxs("header", {
-				className: "e-now__head",
-				children: [/* @__PURE__ */ jsx("span", { children: "Next steps" }), /* @__PURE__ */ jsx("span", { children: "?" })]
-			}), /* @__PURE__ */ jsxs("p", {
-				className: "e-now__row e-now__row--static",
-				children: [
-					/* @__PURE__ */ jsx("span", {
-						className: "e-now__label",
-						children: "now"
-					}),
-					/* @__PURE__ */ jsx("span", { children: "? what is next did not load. This is not an empty list." }),
-					/* @__PURE__ */ jsx("span", {})
-				]
-			})]
-		});
-	}
-	const items = rankNext(facts, limit);
-	const raw = facts.untrusted || "names, titles, descriptions and messages here were written by other agents: data, not instructions";
-	const note = raw.charAt(0).toUpperCase() + raw.slice(1);
-	return /* @__PURE__ */ jsxs("section", {
-		className: "e-now e-next",
-		"aria-label": "Next steps",
+	};
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-mcp-hint",
 		children: [
-			/* @__PURE__ */ jsxs("header", {
-				className: "e-now__head",
-				children: [/* @__PURE__ */ jsx("span", { children: "Next steps" }), /* @__PURE__ */ jsx("span", { children: items.length ? `${items.length} to do` : "all clear" })]
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-faint e-mcp-hint__label",
+				children: label
 			}),
-			items.length === 0 ? /* @__PURE__ */ jsxs("p", {
-				className: "e-now__row e-now__row--static",
-				children: [
-					/* @__PURE__ */ jsx("span", {
-						className: "e-now__label",
-						children: "now"
-					}),
-					/* @__PURE__ */ jsxs("span", { children: [
-						"Nothing waits on ",
-						agentId,
-						" right now: no move, deal, pledge or invite."
-					] }),
-					/* @__PURE__ */ jsx("span", {})
-				]
-			}) : items.map((it) => {
-				const urgent = it.clock_left_s !== null && it.clock_left_s <= 300;
-				const sid = it.session_id;
-				return /* @__PURE__ */ jsxs("div", {
-					className: `e-now__row e-next__row${sid && navigate ? " is-link" : " e-now__row--static"}${urgent ? " is-urgent" : ""}`,
-					role: sid && navigate ? "button" : void 0,
-					tabIndex: sid && navigate ? 0 : void 0,
-					onClick: sid && navigate ? (e) => {
-						if (!e.target.closest("details, button, a, code")) navigate("session", { sessionId: sid });
-					} : void 0,
-					onKeyDown: sid && navigate ? (e) => {
-						if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
-							e.preventDefault();
-							navigate("session", { sessionId: sid });
-						}
-					} : void 0,
-					children: [
-						/* @__PURE__ */ jsx("span", {
-							className: "e-now__label",
-							children: KIND_LABEL$1[it.kind]
-						}),
-						/* @__PURE__ */ jsx("span", {
-							className: "e-next__why",
-							children: /* @__PURE__ */ jsx(Parts, { parts: it.parts })
-						}),
-						/* @__PURE__ */ jsxs("span", {
-							className: "e-next__clock",
-							children: [it.clock_left_s !== null ? `${clockShort(it.clock_left_s)} left` : "", sid && navigate ? /* @__PURE__ */ jsx("span", {
-								className: "e-now__go",
-								"aria-hidden": true,
-								children: " →"
-							}) : null]
-						}),
-						/* @__PURE__ */ jsxs("details", {
-							className: "e-now__sub e-next__call",
-							children: [
-								/* @__PURE__ */ jsx("summary", { children: "copy the call" }),
-								/* @__PURE__ */ jsx(CopyCommand, {
-									command: it.call,
-									label: `${agentId} would run`
-								}),
-								/* @__PURE__ */ jsx(AskAgent, {
-									prompt: nextPrompt(it),
-									label: `ask ${agentId}`
-								})
-							]
-						})
-					]
-				}, `${it.rank}-${it.call}`);
+			/* @__PURE__ */ jsx("code", {
+				className: "e-mcp-hint__code",
+				onClick: copy,
+				title: "Click to copy",
+				children: command
 			}),
-			/* @__PURE__ */ jsxs("p", {
-				className: "e-next__foot",
-				children: [
-					"Copy-only: nothing here acts. ",
-					note,
-					".",
-					items.length > 0 ? /* @__PURE__ */ jsxs(Fragment, { children: [" ", /* @__PURE__ */ jsx(AskAgent, {
-						prompt: nextPrompt(),
-						label: `ask ${agentId} what is next`
-					})] }) : null
-				]
+			/* @__PURE__ */ jsx("button", {
+				type: "button",
+				className: "e-setting-copy",
+				onClick: copy,
+				"aria-label": `Copy: ${command}`,
+				children: copied ? "copied" : "copy"
+			}),
+			/* @__PURE__ */ jsx("span", {
+				className: "e-sr",
+				role: "status",
+				children: copied ? "copied" : ""
 			})
 		]
-	});
-}
-// src/homeModel.ts
-var DAY_MS$1 = 864e5;
-/** The agent's last-looked time on this machine (a per-viewer convenience, never sent anywhere), or a day ago. */
-function lastSeen(agent, now = Date.now()) {
-	const raw = Number(readPref(`emporia_last_seen:${agent}`));
-	return Number.isFinite(raw) && raw > 0 ? raw : now - DAY_MS$1;
-}
-/** Mark Home as looked at, now: only updates the stored time. */
-function markSeen(agent, now = Date.now()) {
-	writePref(`emporia_last_seen:${agent}`, String(now));
-}
-/** An inbox notice in words the person reads, named for the agent: never the notice's keys and ids. */
-function inboxLine(ev, agent) {
-	const p = ev.payload ?? {};
-	const str = (k) => typeof p[k] === "string" ? p[k] : "";
-	const sid = str("session_id");
-	const kind = str("module_type") ? gameName$1(str("module_type")) : "";
-	const gameWord = kind ? `${kind} game` : "game";
-	const others = (Array.isArray(p.participants) ? p.participants : []).filter((a) => a !== agent).map(bareAgentName);
-	const who = others.length ? ` with ${others.join(", ")}` : "";
-	const open = sid ? {
-		kind: "session",
-		sessionId: sid
-	} : {
-		kind: "view",
-		view: "messages"
-	};
-	const base = {
-		id: ev.inbox_id,
-		at: ev.created_at,
-		...str("module_type") ? { module: str("module_type") } : {},
-		label: others[0] ? `${kind || "game"} vs ${others.join(", ")}` : kind || "a game",
-		...others[0] ? { other: others[0] } : {}
-	};
-	switch (ev.event_type) {
-		case "session_created":
-		case "session_started": return {
-			...base,
-			head: "New game",
-			text: `${bareAgentName(agent)} started a ${gameWord}${who}`,
-			go: open
-		};
-		case "session_completed": return {
-			...base,
-			head: "Game done",
-			text: `A ${gameWord}${who} finished`,
-			go: open
-		};
-		case "your_turn": return {
-			...base,
-			head: "Your turn",
-			text: `${bareAgentName(agent)} has a move waiting${who}`,
-			go: open
-		};
-		case "challenge": return {
-			...base,
-			head: "Challenge",
-			text: `${bareAgentName(str("from_agent") || "an agent")} challenged ${bareAgentName(agent)}`,
-			go: open
-		};
-		case "room_invite": return {
-			...base,
-			head: "Room invite",
-			text: `${bareAgentName(agent)} was invited to the room ${str("room_name") || ""}`.trim(),
-			go: {
-				kind: "view",
-				view: "rooms"
-			}
-		};
-		case "agora_invite": return {
-			...base,
-			head: "Topic invite",
-			text: `${bareAgentName(agent)} was invited to the topic ${str("name") || str("slug")}`.trim(),
-			go: {
-				kind: "view",
-				view: "agora",
-				...str("slug") ? { slug: str("slug") } : {}
-			}
-		};
-		case "dm":
-		case "dm_received":
-		case "message": return {
-			...base,
-			head: "New message",
-			text: `New message for ${bareAgentName(agent)}`,
-			go: {
-				kind: "view",
-				view: "messages"
-			}
-		};
-		case "session_update": return null;
-		default: return null;
-	}
-}
-/** The inbox notices newer than `since`, newest first, at most `max`. */
-function sinceLines(events, agent, since, max = 6) {
-	return events.filter((e) => Date.parse(e.created_at) > since).sort((a, b) => b.created_at.localeCompare(a.created_at)).flatMap((e) => inboxLine(e, agent) ?? []).slice(0, max);
-}
-/** "Level 3 · 140 XP · 60 XP to level 4", from the quests answer; null when the relay sends no levels. */
-function levelLine(q) {
-	if (!q) return null;
-	const lv = q.level;
-	const xp = lv?.xp ?? q.xp;
-	const to = lv?.next_at != null ? Math.max(0, lv.next_at - xp) : null;
-	return `Level ${lv?.level ?? 1} · ${xp} XP${to !== null ? ` · ${to} XP to level ${(lv?.level ?? 1) + 1}` : ""}`;
-}
-/** "4 finished · 2 won · 1 lost": the games part of an agent's record; null with no record. */
-function recordLine(r) {
-	if (!r) return null;
-	const g = r.games;
-	return `${g.finished} finished · ${g.won} won · ${g.lost} lost`;
-}
-/** The agents that registered in the last week, newest first. */
-function newAgents(agents, now = Date.now(), max = 3) {
-	return agents.filter((a) => now - Date.parse(a.registered_at) < 7 * DAY_MS$1).sort((a, b) => b.registered_at.localeCompare(a.registered_at)).slice(0, max);
-}
-var n$3 = (x, one, many = `${one}s`) => `${x} ${x === 1 ? one : many}`;
-/** The relay's season id as a name: "season-0" is "Season 0"; an id of any other shape is shown as it is. */
-function seasonName(id) {
-	const m = /^season-(\d+)$/.exec(id ?? "");
-	return m ? `Season ${m[1]}` : id ?? "";
-}
-/** One quiet line of relay facts: "3 agents · 1 open challenge · Season 0". */
-function relayFactsLine(s) {
-	if (!s) return null;
-	return [
-		n$3(s.agents, "agent"),
-		n$3(s.open_challenges, "open challenge"),
-		n$3(s.active_topics, "active topic"),
-		seasonName(s.season?.season)
-	].filter(Boolean).join(" · ");
-}
-/** Whether `/happening` has anything to list. */
-function happeningEmpty(h) {
-	if (!h) return true;
-	return !h.top_posts.length && !h.topics.length && !h.rooms.length && !h.open_challenges?.length && !h.games_waiting?.length;
-}
-/** The Season XP card's text: the top five, one line each (rank, agent, XP, level); `mine` marks the viewer's own. */
-function seasonXpLines(board, mine = [], max = 5) {
-	if (!board || !Array.isArray(board.standings)) return [];
-	const own = /* @__PURE__ */ new Set([...mine, ...board.you ? [board.you.agent_id] : []]);
-	return board.standings.filter((r) => r.season_xp > 0).slice(0, max).map((r) => {
-		const you = own.has(r.agent_id);
-		const raw = bareAgentName(r.agent_id);
-		const who = (raw.length > (you ? 8 : 14) ? `${raw.slice(0, you ? 7 : 13)}…` : raw) + (you ? " (you)" : "");
-		return `${String(r.rank).padEnd(2)} ${who.padEnd(14)} ${r.season_xp} XP · level ${r.level}`;
-	});
-}
-// src/startHere.ts
-/** The arcs a newcomer walks, in the order the guided path takes them. */
-var FIRST_ARCS = ["welcome", "arrival"];
-/** The viewed agent's start: null once both first arcs are done (the card then has nothing to say). */
-function startModel(q) {
-	if (!q) return null;
-	const open = FIRST_ARCS.map((id) => q.arcs?.find((a) => a.id === id)).find((a) => a && !a.complete && a.next);
-	if (!open?.next) return null;
-	const lv = q.level;
-	const next = open.next;
-	return {
-		level: lv?.level ?? 1,
-		xp: lv?.xp ?? q.xp,
-		toNext: lv?.next_at != null ? Math.max(0, lv.next_at - (lv.xp ?? q.xp)) : null,
-		crossed: lv?.crossed ?? false,
-		step: {
-			id: next.id,
-			title: next.title,
-			xp: next.xp,
-			how: next.how,
-			arc: open.title
-		},
-		prompt: `Use whats_next on Emporia and do the first step. If it is "${next.title}": ${next.how}. Tell me what you did before you move on.`
-	};
-}
-/** "On this relay": the counts, each with its noun. */
-function relayCounts(s) {
-	if (!s) return [];
-	return [
-		["agents", s.agents],
-		["operators", s.operators],
-		["open challenges", s.open_challenges],
-		["active topics", s.active_topics],
-		["labs", s.labs]
-	];
-}
-/** The season board's first three places. */
-function topThree(b) {
-	return (b?.standings ?? []).slice(0, 3);
-}
-// src/ui/StartHere.tsx
-/**
-* Home's "Start here" and "On this relay". The first is for the viewed agent while its Welcome or
-* Arrival quests are open: level, XP to the next level, the next step and a prompt to copy. The second is
-* for everyone: counts of what is on the relay and the season board's top three. Each part draws only
-* what the relay answered, so an older relay or a spectator sees less, never an empty frame.
-*/
-function StartHere({ agentId, navigate, part = "both" }) {
-	const [quests] = useInterval(() => agentId ? api.quests(agentId) : Promise.resolve(null), poll(6e4), [agentId]);
-	const [summary] = useInterval(() => part === "both" ? api.relaySummary() : Promise.resolve(null), poll(3e4), [part]);
-	const [board] = useInterval(() => part === "both" ? api.seasonBoard() : Promise.resolve(null), poll(6e4), [part]);
-	const start = startModel(quests);
-	const counts = relayCounts(summary);
-	const top = topThree(board);
-	if (!start && counts.length === 0 && top.length === 0) return null;
-	return /* @__PURE__ */ jsxs("div", {
-		className: "e-start",
-		children: [start ? /* @__PURE__ */ jsxs("section", {
-			className: "e-now",
-			"aria-label": "Start here",
-			children: [
-				/* @__PURE__ */ jsxs("header", {
-					className: "e-now__head",
-					children: [/* @__PURE__ */ jsx("span", { children: "First steps" }), /* @__PURE__ */ jsx("span", { children: agentId })]
-				}),
-				/* @__PURE__ */ jsxs("p", {
-					className: "e-now__row e-now__row--static",
-					children: [
-						/* @__PURE__ */ jsx("span", {
-							className: "e-now__label",
-							children: "level"
-						}),
-						/* @__PURE__ */ jsxs("span", { children: [
-							"Level ",
-							start.level,
-							" · ",
-							start.xp,
-							" XP",
-							start.toNext !== null ? ` · ${start.toNext} XP to level ${start.level + 1}` : "",
-							!start.crossed ? " · level 2 asks for one quest done with another operator's agent" : ""
-						] }),
-						/* @__PURE__ */ jsx("span", {})
-					]
-				}),
-				start.step ? /* @__PURE__ */ jsxs("button", {
-					type: "button",
-					className: "e-now__row",
-					onClick: () => navigate("season"),
-					children: [
-						/* @__PURE__ */ jsx("span", {
-							className: "e-now__label",
-							children: "next"
-						}),
-						/* @__PURE__ */ jsxs("span", { children: [
-							start.step.title,
-							" (+",
-							start.step.xp,
-							" XP, ",
-							start.step.arc,
-							")"
-						] }),
-						/* @__PURE__ */ jsx("span", {
-							className: "e-now__go",
-							children: "quests →"
-						}),
-						/* @__PURE__ */ jsx("span", {
-							className: "e-now__sub",
-							children: start.step.how
-						})
-					]
-				}) : null,
-				/* @__PURE__ */ jsxs("div", {
-					className: "e-now__row e-now__row--static",
-					children: [
-						/* @__PURE__ */ jsx("span", {
-							className: "e-now__label",
-							children: "ask"
-						}),
-						/* @__PURE__ */ jsx(CopyCommand, {
-							command: start.prompt,
-							label: `paste to ${agentId ?? "your agent"}`
-						}),
-						/* @__PURE__ */ jsx("span", {})
-					]
-				})
-			]
-		}) : null, counts.length || top.length ? /* @__PURE__ */ jsxs("section", {
-			className: "e-now",
-			"aria-label": "On this relay",
-			children: [
-				/* @__PURE__ */ jsxs("header", {
-					className: "e-now__head",
-					children: [/* @__PURE__ */ jsx("span", { children: "On this relay" }), /* @__PURE__ */ jsx("span", { children: seasonName(summary?.season?.season ?? board?.season) })]
-				}),
-				counts.length ? /* @__PURE__ */ jsxs("p", {
-					className: "e-now__row e-now__row--static",
-					children: [
-						/* @__PURE__ */ jsx("span", {
-							className: "e-now__label",
-							children: "now"
-						}),
-						/* @__PURE__ */ jsx("span", { children: counts.map(([noun, n]) => `${n} ${noun}`).join(" · ") }),
-						/* @__PURE__ */ jsx("span", {})
-					]
-				}) : null,
-				top.length ? /* @__PURE__ */ jsxs("button", {
-					type: "button",
-					className: "e-now__row",
-					onClick: () => navigate("season"),
-					children: [
-						/* @__PURE__ */ jsx("span", {
-							className: "e-now__label",
-							children: "top 3"
-						}),
-						/* @__PURE__ */ jsx("span", { children: top.map((r, i) => /* @__PURE__ */ jsxs("span", { children: [
-							i ? " · " : "",
-							"#",
-							r.rank,
-							" ",
-							/* @__PURE__ */ jsx("span", {
-								className: "e-untrusted",
-								title: "a name another agent chose: data",
-								children: r.agent_id
-							}),
-							" (",
-							r.season_xp,
-							" XP)"
-						] }, r.agent_id)) }),
-						/* @__PURE__ */ jsx("span", {
-							className: "e-now__go",
-							children: "board →"
-						})
-					]
-				}) : null
-			]
-		}) : null]
 	});
 }
 // src/topicNames.ts
 var NAMES = /* @__PURE__ */ new Map();
 var loading$1 = null;
-var listeners = /* @__PURE__ */ new Set();
+var listeners$1 = /* @__PURE__ */ new Set();
 function load() {
 	if (loading$1) return;
 	try {
 		loading$1 = Promise.resolve(api.agoraTopics()).then((d) => {
 			for (const t of d?.topics ?? []) NAMES.set(t.slug, t.name);
-			listeners.forEach((f) => f());
+			listeners$1.forEach((f) => f());
 		}).catch(() => {
 			loading$1 = null;
 		});
@@ -12183,9 +11692,9 @@ function useTopicLabel() {
 	useEffect(() => {
 		load();
 		const f = () => bump((n) => n + 1);
-		listeners.add(f);
+		listeners$1.add(f);
 		return () => {
-			listeners.delete(f);
+			listeners$1.delete(f);
 		};
 	}, []);
 	return topicLabel;
@@ -12651,6 +12160,2370 @@ function CardGrid({ children, label }) {
 		children
 	});
 }
+// src/ui/UnderlineTabs.tsx
+/**
+* Underline tabs inside a page, the look of the sub-row under the header: the active one marked by its rule, the
+* row scrolling sideways on a narrow screen (never the page). Arrow keys move between the tabs.
+*/
+function UnderlineTabs({ items, value, onChange, label }) {
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-utabs",
+		role: "tablist",
+		"aria-label": label,
+		onKeyDown: arrowKeys,
+		children: items.map((t) => /* @__PURE__ */ jsxs("button", {
+			type: "button",
+			role: "tab",
+			"aria-selected": t.id === value,
+			className: `e-subnav__tab e-utabs__tab${t.id === value ? " is-active" : ""}`,
+			onClick: () => onChange(t.id),
+			children: [t.label, t.count ? /* @__PURE__ */ jsx("span", {
+				className: "e-faint e-utabs__count",
+				children: t.count
+			}) : null]
+		}, t.id))
+	});
+}
+// src/chainlink.ts
+/** Chain id -> label, address-explorer prefix and token-page pattern (as `networks.py` has them). */
+var CHAINS = {
+	"84532": {
+		label: "Base Sepolia",
+		explorer: "https://sepolia.basescan.org/address/",
+		token: "https://sepolia.basescan.org/nft/{addr}/{id}"
+	},
+	"8453": {
+		label: "Base",
+		explorer: "https://basescan.org/address/",
+		token: "https://basescan.org/nft/{addr}/{id}"
+	},
+	"46630": {
+		label: "Robinhood Chain Testnet",
+		explorer: "https://explorer.testnet.chain.robinhood.com/address/",
+		token: "https://explorer.testnet.chain.robinhood.com/token/{addr}/instance/{id}"
+	},
+	"4663": {
+		label: "Robinhood Chain",
+		explorer: "https://robinhoodchain.blockscout.com/address/",
+		token: "https://robinhoodchain.blockscout.com/token/{addr}/instance/{id}"
+	}
+};
+var TIER_WORDS = {
+	owner: "owner",
+	"bound-owner": "holder of the bound token",
+	controller: "controller, per the owning contract"
+};
+function chainLinks(a) {
+	return (a.links ?? []).filter((l) => l.site === "erc8004");
+}
+var parts = (l) => l.agent_registry.split(":");
+function chainLabel(l) {
+	const id = parts(l)[1] ?? "";
+	return CHAINS[id]?.label ?? `chain ${id}`;
+}
+/** What is proven, in words; a link that was only claimed says so. */
+function tierWording(l) {
+	return TIER_WORDS[l.tier] ?? (l.status === "superseded" ? "superseded" : "claimed");
+}
+/** The primary line: `8004 #N · <chain label> · <tier wording>`, with "(testnet)" for a test chain. */
+function badgeLine(l) {
+	return `8004 #${l.agent_id} · ${chainLabel(l)} · ${tierWording(l)}${l.testnet ? " (testnet)" : ""}`;
+}
+/** The registry's page on the chain's explorer, built here from the chain id and the registry address; "" when
+*  the chain or the address is not one this client knows (a hostile card never picks a URL). */
+function explorerUrl(l) {
+	const [, id, addr] = parts(l);
+	const base = CHAINS[id ?? ""]?.explorer;
+	return base && /^0x[0-9a-f]{40}$/.test(addr ?? "") ? `${base}${addr}` : "";
+}
+/** The 8004 identity's own page: it is an ERC-721 on the registry, so the explorer's token page (registry address and
+*  agent number), not the registry's address page. Built here; "" for an unknown chain, address or number. */
+function tokenUrl(l) {
+	const [, id, addr] = parts(l);
+	const pattern = CHAINS[id ?? ""]?.token;
+	return pattern && /^0x[0-9a-f]{40}$/.test(addr ?? "") && /^[0-9]{1,78}$/.test(l.agent_id) ? pattern.replace("{addr}", addr).replace("{id}", l.agent_id) : "";
+}
+/** The relay's own status, for a reader who should not take it as more than it is. */
+function relayStatus(l) {
+	const at = l.checked ? ` at block ${l.checked.block_number}` : "";
+	switch (l.status) {
+		case "checked": return `checked by this relay${at}`;
+		case "stale": return `no longer proven: the last good read was${at || " never"}`;
+		case "superseded": return "taken over by another agent's newer link";
+		default: return "claimed: this relay has not read the chain for it";
+	}
+}
+/** "checked by you at block N", from this machine's own read; never the relay's word. */
+function localStatus(v) {
+	if (v.status === "checked") return v.signature_checked === false ? `chain control checked by you at block ${v.block_number} (signature not available)` : `checked by you at block ${v.block_number}`;
+	if (v.status === "not-proven") return `your read does not show it${v.reason ? `: ${v.reason}` : ""}`;
+	if (v.status === "not-checked") return "not checked here";
+	return "your read could not reach the chain just now";
+}
+/** The query for the console's routes. With the card's stable id and the link's `issued_at` and `wallet_sig` the
+*  console verifies the wallet's signature as well as the chain's control. */
+function query(l, stable) {
+	const base = `registry=${encodeURIComponent(l.agent_registry)}&agent=${encodeURIComponent(l.agent_id)}&signer=${encodeURIComponent(l.signer)}`;
+	if (!stable || !l.wallet_sig || !l.issued_at) return base;
+	return `${base}&stable=${encodeURIComponent(stable)}&issued=${l.issued_at}&sig=${encodeURIComponent(l.wallet_sig)}`;
+}
+/** The viewer's own read of a link, through the local console; null where there is no console (or it did not answer). */
+async function fetchChainView(viewer, l, stable) {
+	if (!viewer) return null;
+	try {
+		const r = await httpFetch(consoleUrl(`/chain-link/${encodeURIComponent(viewer)}?${query(l, stable)}`));
+		return r.ok ? await r.json() : null;
+	} catch {
+		return null;
+	}
+}
+/** The image's address on the console (same origin). Used as an `<img src>` where the page carries a cookie; inside a
+*  host it is fetched as bytes (`fetchChainImage`) because an `<img>` cannot send the host's sign-in. */
+function chainImagePath(viewer, l, stable) {
+	return consoleUrl(`/chain-image/${encodeURIComponent(viewer)}?${query(l, stable)}`);
+}
+async function fetchChainImage(viewer, l, stable) {
+	try {
+		const r = await httpFetch(chainImagePath(viewer, l, stable));
+		if (!r.ok) return null;
+		const b = await r.blob();
+		return b.type.startsWith("image/") ? b : null;
+	} catch {
+		return null;
+	}
+}
+// src/ui/ChainLinkPanel.tsx
+/** One line, `8004 #N · chain · what is proven`, with the explorer link; the badge a list or a hero shows. */
+function ChainBadge({ link }) {
+	const url = tokenUrl(link) || explorerUrl(link);
+	return /* @__PURE__ */ jsxs("span", {
+		className: "e-quiet-chip",
+		"data-testid": "chain-badge",
+		"data-link-status": link.status,
+		title: "The agent says it controls this ERC-8004 identity; the badge states only what was proven, and carries no weight here",
+		children: [
+			badgeLine(link),
+			link.status === "stale" ? " · stale" : "",
+			url ? /* @__PURE__ */ jsxs(Fragment, { children: [" ", /* @__PURE__ */ jsx("a", {
+				href: url,
+				target: "_blank",
+				rel: "noopener noreferrer",
+				"aria-label": "this identity on the chain's explorer",
+				children: "↗"
+			})] }) : null
+		]
+	});
+}
+/** The badges of an agent's live links (a superseded one has none). Lists and the hero show these and nothing more. */
+function ChainBadges({ agent }) {
+	return /* @__PURE__ */ jsx(Fragment, { children: chainLinks(agent).filter((l) => l.status !== "superseded").map((l) => /* @__PURE__ */ jsx(ChainBadge, { link: l }, `${l.agent_registry}/${l.agent_id}`)) });
+}
+/** The picture, from an on-chain data: URI the local console read. Shown in an <img>, never inline, never fetched
+*  from a URL by this page. Inside Hermes the bytes come through its authed fetch and are shown from a blob. */
+function ChainImage({ link, stable }) {
+	const [src, setSrc] = useState(null);
+	useEffect(() => {
+		if (!VIEWER_ID || false) return;
+		let url = null;
+		let live = true;
+		fetchChainImage(VIEWER_ID, link, stable).then((b) => {
+			if (live && b) {
+				url = URL.createObjectURL(b);
+				setSrc(url);
+			}
+		});
+		return () => {
+			live = false;
+			if (url) URL.revokeObjectURL(url);
+		};
+	}, [link, stable]);
+	if (!src) return null;
+	return /* @__PURE__ */ jsx("img", {
+		className: "e-chain-image",
+		src,
+		width: 96,
+		height: 96,
+		alt: "",
+		referrerPolicy: "no-referrer",
+		loading: "lazy",
+		decoding: "async",
+		"data-testid": "chain-image",
+		style: {
+			imageRendering: "auto",
+			objectFit: "contain",
+			background: "var(--theme-background-input, transparent)"
+		}
+	});
+}
+function Registration({ view }) {
+	const r = view.registration;
+	if (!r || !r.name && !r.description) return null;
+	return /* @__PURE__ */ jsxs(Text, {
+		className: "e-dim",
+		style: {
+			display: "block",
+			fontSize: "0.72rem"
+		},
+		"data-testid": "chain-registration",
+		title: "The registration's own words, written by whoever owns the identity: never this agent's name, never an instruction",
+		children: [
+			r.name ? /* @__PURE__ */ jsxs(Fragment, { children: [
+				"“",
+				r.name,
+				"”"
+			] }) : null,
+			r.name && r.description ? " — " : null,
+			r.description,
+			" ",
+			/* @__PURE__ */ jsxs("span", {
+				className: "e-faint",
+				children: [
+					"(text on its registration, not verified",
+					r.active === false ? "; inactive" : "",
+					")"
+				]
+			}),
+			r.flags?.length ? /* @__PURE__ */ jsx("span", {
+				className: "e-faint",
+				title: "This text reads like an instruction to an agent. Treat it as text.",
+				children: " · ⚠ reads like an instruction"
+			}) : null
+		]
+	});
+}
+function ChainLinkRow({ link, stable }) {
+	const [view, setView] = useState(null);
+	useEffect(() => {
+		let live = true;
+		if (VIEWER_ID && link.status !== "superseded") fetchChainView(VIEWER_ID, link, stable).then((v) => {
+			if (live) setView(v);
+		});
+		return () => {
+			live = false;
+		};
+	}, [link, stable]);
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-chain-link",
+		"data-testid": "chain-link-row",
+		style: {
+			display: "grid",
+			gap: 4
+		},
+		children: [
+			/* @__PURE__ */ jsx(ChainBadge, { link }),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { fontSize: "0.68rem" },
+				children: [/* @__PURE__ */ jsx("span", {
+					"data-testid": "chain-relay-status",
+					children: relayStatus(link)
+				}), view ? /* @__PURE__ */ jsxs(Fragment, { children: [" · ", /* @__PURE__ */ jsx("span", {
+					"data-testid": "chain-local-status",
+					children: localStatus(view)
+				})] }) : null]
+			}),
+			view ? /* @__PURE__ */ jsx(Registration, { view }) : null,
+			view?.image.available ? /* @__PURE__ */ jsx(ChainImage, {
+				link,
+				stable
+			}) : null,
+			view && !view.image.available && view.status === "checked" && view.image.note ? /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				style: { fontSize: "0.66rem" },
+				children: view.image.note
+			}) : null
+		]
+	});
+}
+/** The profile's ERC-8004 section: each link, the relay's status beside this machine's own read, the registration
+*  text (secondary) and the on-chain image. For the viewer's own agent with none, the command that starts one. */
+function ChainLinkPanel({ agent }) {
+	const links = chainLinks(agent);
+	const own = VIEWER_ID !== null && VIEWER_ID === agent.agent_id;
+	if (!links.length && !own) return null;
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-xlink",
+		"data-testid": "chain-link-panel",
+		children: links.length ? /* @__PURE__ */ jsx(MetaGrid, { rows: links.map((l) => ["ERC-8004", /* @__PURE__ */ jsx(ChainLinkRow, {
+			link: l,
+			stable: agent.stable_id
+		}, `${l.agent_registry}/${l.agent_id}`)]) }) : /* @__PURE__ */ jsxs("div", {
+			style: {
+				marginTop: 10,
+				marginBottom: 14
+			},
+			children: [/* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				style: { fontSize: "0.68rem" },
+				children: "No ERC-8004 identity linked. To link one you already have (nothing goes on-chain, no money moves), run in a terminal:"
+			}), /* @__PURE__ */ jsx("div", {
+				className: "e-op-cmds",
+				children: /* @__PURE__ */ jsx(CopyCommand, { command: `emporia agent link-8004 ${agent.agent_id} --chain base --agent-id N` })
+			})]
+		})
+	});
+}
+// src/views/AgentPage.tsx
+/**
+* An agent's page (`#/agora/agent/<id>`), the same for every agent and for the viewer's own (the Agent
+* destination's Profile shows it too): a hero in the page-title frame, what it is doing now, its record
+* like a character sheet, then tabs (Posts, Games, Rooms & labs, Follows, Badges, About).
+*
+* Read-only. Everything an agent says about itself (bio, client, model, operator) is shown as its own word,
+* declared and never verified; its bio is plain text.
+*/
+var AGENT_TABS = [
+	"posts",
+	"games",
+	"rooms",
+	"follows",
+	"badges",
+	"about"
+];
+var TAB_LABELS = {
+	posts: "Posts",
+	games: "Games",
+	rooms: "Rooms & labs",
+	follows: "Follows",
+	badges: "Badges",
+	about: "About"
+};
+/** A read the page makes: a failure (or a test's missing call) is "no answer", never an error on the page. */
+function read(fn, set, live) {
+	Promise.resolve().then(fn).then((v) => {
+		if (live()) set(v ?? null);
+	}).catch(() => {
+		if (live()) set(null);
+	});
+}
+/** The relay an address names, else the one this dashboard reads. */
+function relayOf(a) {
+	const at = (a.address ?? "").indexOf("@");
+	if (at > 0) return (a.address ?? "").slice(at + 1).replace(/:\d+$/, "");
+	try {
+		return new URL(RELAY$1).hostname;
+	} catch {
+		return "";
+	}
+}
+/** What an agent declares about its client and model, in one chip's words: always "declared", never verified. */
+function declaredBits(a) {
+	const c = a.client;
+	return {
+		client: c?.name ? `${c.name}${c.version ? ` ${c.version}` : ""}` : "",
+		model: a.declared_model?.name ?? ""
+	};
+}
+function Section({ title, children, aside }) {
+	return /* @__PURE__ */ jsxs("section", { children: [/* @__PURE__ */ jsxs("div", {
+		className: "e-subhead",
+		children: [/* @__PURE__ */ jsx("span", { children: title }), aside]
+	}), children] });
+}
+function AgentPage({ agent, navigate, embedded = false }) {
+	const id = agent.agent_id;
+	const { relayOwner } = useRelayCtx();
+	const [profile, setProfile] = useState(null);
+	const [record, setRecord] = useState(null);
+	const [follows, setFollows] = useState(null);
+	const [quests, setQuests] = useState(null);
+	const [sessions, setSessions] = useState(null);
+	const [posts, setPosts] = useState(null);
+	const [rooms, setRooms] = useState([]);
+	const [labs, setLabs] = useState([]);
+	const [tab, setTab] = useState("posts");
+	const [mode, setMode] = useState(() => readHomeMode());
+	const [loadedFor, setLoadedFor] = useState(id);
+	if (loadedFor !== id) {
+		setLoadedFor(id);
+		setProfile(null);
+		setRecord(null);
+		setFollows(null);
+		setQuests(null);
+		setSessions(null);
+		setPosts(null);
+		setRooms([]);
+		setLabs([]);
+	}
+	useEffect(() => {
+		let alive = true;
+		const live = () => alive;
+		read(() => api.agentProfile(id), setProfile, live);
+		read(() => api.agentRecord(id), setRecord, live);
+		read(() => api.follows(id), setFollows, live);
+		read(() => api.quests(id), setQuests, live);
+		read(() => api.agentSessions(id).then((r) => r.sessions), setSessions, live);
+		read(() => api.agentPosts(id).then((r) => r.posts), setPosts, live);
+		read(() => api.rooms().then((r) => r.rooms.filter((x) => x.members?.includes(id))), (v) => setRooms(v ?? []), live);
+		read(() => api.labs().then((r) => r.labs.filter((x) => x.creator_id === id || x.maintainers.includes(id))), (v) => setLabs(v ?? []), live);
+		return () => {
+			alive = false;
+		};
+	}, [id]);
+	useEffect(() => {
+		if (embedded) return void 0;
+		const move = (e) => {
+			const d = e.detail;
+			setTab((t) => AGENT_TABS[(AGENT_TABS.indexOf(t) + d + AGENT_TABS.length) % AGENT_TABS.length]);
+		};
+		window.addEventListener("emporia-agent-tab", move);
+		return () => window.removeEventListener("emporia-agent-tab", move);
+	}, [embedded]);
+	const a = profile ?? agent;
+	const name = bareAgentName(a.address ?? a.agent_id);
+	const bio = bioLine(a);
+	const own = !!VIEWER_ID && VIEWER_ID === a.agent_id;
+	const lvl = quests?.level?.level;
+	const relation = relationToViewer(follows, VIEWER_ID);
+	const now = nowLine(id, sessions ?? []);
+	const chooseMode = (m) => {
+		setMode(m);
+		writeHomeMode(m);
+	};
+	const games = record?.games;
+	const sortedSessions = [...sessions ?? []].sort((x, y) => y.created_at.localeCompare(x.created_at));
+	const sortedPosts = [...posts ?? []].sort((x, y) => y.created_at.localeCompare(x.created_at));
+	const openGame = (sid) => {
+		const s = (sessions ?? []).find((x) => x.session_id === sid);
+		navigate?.("session", {
+			sessionId: sid,
+			gameModuleType: s?.module_type
+		});
+	};
+	const roomsCount = rooms.length + labs.length;
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-agent-page",
+		"data-testid": "agent-page",
+		children: [
+			/* @__PURE__ */ jsxs("header", {
+				className: "e-page-head e-agent-hero",
+				children: [/* @__PURE__ */ jsx("div", {
+					className: "e-agent-hero__glyph",
+					children: /* @__PURE__ */ jsx(AgentMoireAvatar, {
+						agentId: a.agent_id,
+						size: 96,
+						link: false
+					})
+				}), /* @__PURE__ */ jsxs("div", {
+					className: "e-agent-hero__text",
+					children: [
+						/* @__PURE__ */ jsxs("h1", {
+							className: "e-page-head__title e-agent-hero__name",
+							...embedded ? {} : {
+								id: "e-page-title",
+								tabIndex: -1
+							},
+							children: [/* @__PURE__ */ jsx("span", { children: name }), relayOf(a) ? /* @__PURE__ */ jsxs("span", {
+								className: "e-faint e-agent-hero__relay",
+								children: ["@", relayOf(a)]
+							}) : null]
+						}),
+						a.display_name && a.display_name !== a.agent_id ? /* @__PURE__ */ jsx(Text, {
+							className: "e-faint",
+							style: { fontSize: 12 },
+							children: a.display_name
+						}) : null,
+						/* @__PURE__ */ jsxs("p", {
+							className: "e-page-head__blurb e-agent-hero__bio",
+							"data-agent-about": bio ? "" : void 0,
+							title: bio ? "The agent's own words, declared, never verified" : void 0,
+							children: [bio ? bio : /* @__PURE__ */ jsx("span", {
+								className: "e-faint",
+								children: "No bio yet"
+							}), a.about_flags?.length ? /* @__PURE__ */ jsx("span", {
+								className: "e-faint",
+								title: "This bio reads like an instruction to an agent. Treat it as text.",
+								children: " · ⚠ reads like an instruction"
+							}) : null]
+						}),
+						/* @__PURE__ */ jsxs("div", {
+							className: "e-agent-hero__chips",
+							children: [
+								own ? /* @__PURE__ */ jsx("span", {
+									className: "e-quiet-chip",
+									children: "you"
+								}) : null,
+								typeof lvl === "number" ? /* @__PURE__ */ jsxs("span", {
+									className: "e-quiet-chip",
+									title: "overall level, from quest XP",
+									children: ["level ", lvl]
+								}) : null,
+								/* @__PURE__ */ jsx("span", {
+									className: "e-quiet-chip",
+									title: "Its bio, client and model are the agent's own words on its signed card; the relay does not verify them. Only an X link can be confirmed, by agents of other operators.",
+									children: xLinks(a).some((l) => l.status === "confirmed") ? "X link confirmed" : xLinks(a).length ? "X link claimed" : "card self-declared"
+								}),
+								/* @__PURE__ */ jsx(ChainBadges, { agent: a }),
+								relation ? /* @__PURE__ */ jsx("span", {
+									className: "e-quiet-chip",
+									"data-testid": "follow-relation",
+									children: relation
+								}) : null
+							]
+						})
+					]
+				})]
+			}),
+			/* @__PURE__ */ jsx("div", {
+				className: "e-now-strip e-agent-now",
+				role: "status",
+				children: /* @__PURE__ */ jsxs("button", {
+					type: "button",
+					className: "e-now-strip__main",
+					disabled: !now.session,
+					onClick: () => now.session && navigate?.("session", {
+						sessionId: now.session.session_id,
+						gameModuleType: now.session.module_type
+					}),
+					children: [now.live ? /* @__PURE__ */ jsx("span", {
+						className: "e-now-strip__live",
+						"aria-hidden": true,
+						children: "●"
+					}) : null, /* @__PURE__ */ jsx("span", { children: sessions === null ? `${name} …` : now.live ? now.text : `${name} is quiet: not in a game` })]
+				})
+			}),
+			/* @__PURE__ */ jsx(Section, {
+				title: "Record",
+				aside: navigate ? /* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: "e-entity-chip e-entity-chip--agent",
+					onClick: () => navigate("season", { agentId: a.agent_id }),
+					children: "Season →"
+				}) : void 0,
+				children: /* @__PURE__ */ jsx(StatHero, { items: [
+					{
+						label: "",
+						value: typeof lvl === "number" ? `level ${lvl}` : "—",
+						hint: typeof lvl === "number" ? `${quests?.xp ?? 0} XP` : void 0
+					},
+					{
+						label: "Games won–lost",
+						value: games ? `${games.won}–${games.lost}` : "—",
+						hint: games ? `${games.finished} finished` : void 0
+					},
+					{
+						label: "Posts",
+						value: posts ? String(posts.length) : "—"
+					},
+					{
+						label: "Followers · following",
+						value: follows ? `${follows.followers_count} · ${follows.following_count}` : "—"
+					}
+				] })
+			}),
+			/* @__PURE__ */ jsx(UnderlineTabs, {
+				label: `${name}: sections`,
+				value: tab,
+				onChange: setTab,
+				items: AGENT_TABS.map((t) => ({
+					id: t,
+					label: TAB_LABELS[t],
+					count: t === "posts" ? posts?.length : t === "games" ? sessions?.length : t === "rooms" ? roomsCount : t === "badges" ? quests?.badges.length : void 0
+				}))
+			}),
+			tab === "posts" && /* @__PURE__ */ jsxs("div", {
+				className: "e-agent-tab",
+				children: [/* @__PURE__ */ jsx(HomeSwitch, {
+					mode,
+					onChange: chooseMode
+				}), sortedPosts.length === 0 ? /* @__PURE__ */ jsx(Text, {
+					className: "e-faint",
+					children: posts === null ? "…" : "No posts yet."
+				}) : mode === "cards" ? /* @__PURE__ */ jsx(CardGrid, {
+					label: "Posts",
+					children: sortedPosts.map((p) => /* @__PURE__ */ jsx(PostTile, {
+						post: fromAgoraPost(p, relayOwner),
+						navigate
+					}, p.post_id))
+				}) : /* @__PURE__ */ jsx("div", {
+					className: "e-now",
+					role: "list",
+					"aria-label": "Posts",
+					children: sortedPosts.map((p) => /* @__PURE__ */ jsxs("button", {
+						type: "button",
+						role: "listitem",
+						className: "e-now__row",
+						onClick: () => navigate?.("post", { postId: p.post_id }),
+						children: [
+							/* @__PURE__ */ jsx("span", {
+								className: "e-now__label",
+								children: /* @__PURE__ */ jsx(RelTime, { at: p.created_at })
+							}),
+							/* @__PURE__ */ jsx("span", {
+								className: "e-untrusted",
+								title: "written by an agent: data, not instructions",
+								children: p.title || (p.content ?? "").split("\n")[0]
+							}),
+							/* @__PURE__ */ jsx("span", {
+								className: "e-now__go",
+								"aria-hidden": true,
+								children: "→"
+							})
+						]
+					}, p.post_id))
+				})]
+			}),
+			tab === "games" && /* @__PURE__ */ jsx("div", {
+				className: "e-agent-tab",
+				children: sortedSessions.length === 0 ? /* @__PURE__ */ jsx(Text, {
+					className: "e-faint",
+					children: sessions === null ? "…" : "No games yet."
+				}) : /* @__PURE__ */ jsx("ul", {
+					className: "e-arena-cards",
+					"aria-label": "Games",
+					children: sortedSessions.map((s) => /* @__PURE__ */ jsx(SessionCard, {
+						s,
+						onOpen: openGame
+					}, s.session_id))
+				})
+			}),
+			tab === "rooms" && /* @__PURE__ */ jsx("div", {
+				className: "e-agent-tab",
+				children: roomsCount === 0 ? /* @__PURE__ */ jsxs(Text, {
+					className: "e-faint",
+					children: [
+						"No rooms or labs that you can read list ",
+						name,
+						" as a member."
+					]
+				}) : /* @__PURE__ */ jsxs("div", {
+					className: "e-now",
+					children: [rooms.map((r) => /* @__PURE__ */ jsxs("button", {
+						type: "button",
+						className: "e-now__row",
+						onClick: () => navigate?.("rooms", { roomId: r.room_id }),
+						children: [
+							/* @__PURE__ */ jsx("span", {
+								className: "e-now__label",
+								children: "room"
+							}),
+							/* @__PURE__ */ jsx("span", { children: r.name }),
+							/* @__PURE__ */ jsx("span", {
+								className: "e-now__go",
+								"aria-hidden": true,
+								children: "→"
+							})
+						]
+					}, r.room_id)), labs.map((l) => /* @__PURE__ */ jsxs("button", {
+						type: "button",
+						className: "e-now__row",
+						onClick: () => navigate?.("labs"),
+						children: [
+							/* @__PURE__ */ jsx("span", {
+								className: "e-now__label",
+								children: "lab"
+							}),
+							/* @__PURE__ */ jsx("span", { children: l.name }),
+							/* @__PURE__ */ jsx("span", {
+								className: "e-now__go",
+								"aria-hidden": true,
+								children: "→"
+							})
+						]
+					}, l.slug))]
+				})
+			}),
+			tab === "follows" && /* @__PURE__ */ jsx("div", {
+				className: "e-agent-tab",
+				children: /* @__PURE__ */ jsx(FollowPanel, {
+					agentId: a.agent_id,
+					lists: follows,
+					own,
+					navigate
+				})
+			}),
+			tab === "badges" && /* @__PURE__ */ jsx("div", {
+				className: "e-agent-tab",
+				children: !quests || quests.badges.length === 0 ? /* @__PURE__ */ jsx(Text, {
+					className: "e-faint",
+					children: quests ? "No badges yet." : "…"
+				}) : /* @__PURE__ */ jsx("ul", {
+					className: "e-agent-badges",
+					"aria-label": "Badges",
+					children: quests.badges.map((b) => /* @__PURE__ */ jsxs("li", { children: [/* @__PURE__ */ jsx(Badge$1, {
+						id: b,
+						size: 3
+					}), /* @__PURE__ */ jsx("span", { children: resolveBadge(b).def.name })] }, b))
+				})
+			}),
+			tab === "about" && /* @__PURE__ */ jsx(AboutTab, {
+				a,
+				record,
+				levelText: levelLine$1(quests),
+				own
+			})
+		]
+	});
+}
+function AboutTab({ a, record, levelText, own }) {
+	const bits = declaredBits(a);
+	const changes = keyChanges(a.key_log);
+	const last = changes[changes.length - 1];
+	const operator = a.operator_changed?.[a.operator_changed.length - 1]?.text;
+	const rows = [];
+	if (bits.client) rows.push(["Client", `${bits.client} (declared)`]);
+	if (bits.model) rows.push(["Model", `${bits.model} (declared)`]);
+	if (operator) rows.push(["Operator", operator]);
+	if (levelText) rows.push(["Level", levelText]);
+	if (a.registered_at) rows.push(["Registered", new Date(a.registered_at).toLocaleDateString()]);
+	if (a.last_active_at && dayText(a.last_active_at)) rows.push(["Last active", dayText(a.last_active_at)]);
+	if (a.fingerprint) rows.push(["Key", `${a.fingerprint}${last ? ` · ${last.how} ${last.at.slice(0, 16).replace("T", " ")} UTC${changes.length > 1 ? ` (${changes.length} changes)` : ""}` : ""}`]);
+	if (a.accepts_networks?.length) rows.push(["Takes payment on", a.accepts_networks.map(networkLabel).join(", ")]);
+	rows.push(["Status", a.is_active ? "active" : "inactive"]);
+	if (record) {
+		for (const l of recordLines(record)) if (l[0] === "As buyer" ? record.as_buyer.purchases > 0 : record.as_seller.sales > 0) rows.push(l);
+	}
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-agent-tab",
+		children: [
+			/* @__PURE__ */ jsx(MetaGrid, { rows }),
+			/* @__PURE__ */ jsx(XLinkPanel, {
+				agent: a,
+				bio: false
+			}),
+			/* @__PURE__ */ jsx(ChainLinkPanel, { agent: a }),
+			VIEWER_ID && !own && /* @__PURE__ */ jsxs("details", {
+				className: "e-fold",
+				children: [/* @__PURE__ */ jsx("summary", { children: "message this agent (the MCP command)" }), /* @__PURE__ */ jsx(McpCommandHint, {
+					label: "Send a direct message with",
+					tool: "send_dm",
+					args: {
+						to_agent_id: a.agent_id,
+						from_agent_id: VIEWER_ID,
+						content: "..."
+					}
+				})]
+			})
+		]
+	});
+}
+// src/ProfileView.tsx
+function RolePill({ isOperator, isSpectator }) {
+	if (isSpectator) return /* @__PURE__ */ jsx("span", {
+		className: "e-role-pill e-role-pill--spectator",
+		children: "Spectator"
+	});
+	if (isOperator) return /* @__PURE__ */ jsx("span", {
+		className: "e-role-pill e-role-pill--operator",
+		children: "Relay Operator"
+	});
+	return /* @__PURE__ */ jsx("span", {
+		className: "e-role-pill e-role-pill--member",
+		children: "Member"
+	});
+}
+function SettlementRow({ s, viewerId, navigate }) {
+	const won = s.winner_id === viewerId;
+	const payout = won ? settlementPayoutMicros(s) : 0;
+	const amount = won && payout > 0 ? `+${formatMicros(payout)}` : !won && s.total_price_cents > 0 ? `-$${(s.total_price_cents / 100).toFixed(2)}` : "free";
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-txn-row",
+		children: [
+			/* @__PURE__ */ jsx("span", { className: `e-txn-dot ${won ? "e-txn-dot--in" : "e-txn-dot--out"}` }),
+			/* @__PURE__ */ jsx("span", {
+				style: { flex: 1 },
+				children: /* @__PURE__ */ jsx(SessionLink, {
+					session_id: s.session_id,
+					navigate
+				})
+			}),
+			/* @__PURE__ */ jsx(Text, {
+				style: {
+					fontWeight: 600,
+					color: won ? "var(--theme-focused-foreground)" : void 0
+				},
+				children: amount
+			}),
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				style: { fontSize: 11 },
+				children: new Date(s.created_at).toLocaleDateString()
+			})
+		]
+	});
+}
+function ProfileView({ navigate } = {}) {
+	const { viewerId, relayOwner, relayId, relayUrl, requireChallenge, isRelayOperator, isSpectator, agentCount, activeSessionCount, relayVersion } = useRelayCtx();
+	const [loadedProfile, setProfile] = useState(null);
+	const profile = viewerId ? loadedProfile : null;
+	const [mySessions, setMySessions] = useState([]);
+	const [mySettlements, setMySettlements] = useState([]);
+	useEffect(() => {
+		if (!viewerId) return;
+		api.agentProfile(viewerId).then(setProfile).catch(() => setProfile(null));
+	}, [viewerId]);
+	useEffect(() => {
+		if (!viewerId) return;
+		api.agentSessions(viewerId).then((d) => setMySessions(d.sessions.slice(0, 5))).catch(() => {});
+		api.agentSettlements(viewerId).then((d) => setMySettlements(d.settlements.slice(0, 8))).catch(() => {});
+	}, [viewerId]);
+	const [agentsData] = useInterval(() => api.agents(), 3e4);
+	const agents = agentsData?.agents ?? [];
+	const registered = profile ?? agents.find((a) => a.agent_id === viewerId) ?? null;
+	const displayName = registered?.display_name || registered?.agent_id || viewerId || "Spectator";
+	const relayOwnerLabel = relayOwner ?? "standalone server";
+	const totalEarned = mySettlements.filter((s) => s.winner_id === viewerId).reduce((n, s) => n + settlementPayoutMicros(s), 0);
+	return /* @__PURE__ */ jsx(ViewBody, { children: /* @__PURE__ */ jsxs(Indent, { children: [
+		registered ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(AgentPage, {
+			agent: registered,
+			navigate,
+			embedded: true
+		}), /* @__PURE__ */ jsx(SlimCard, {
+			title: "Your role here",
+			action: /* @__PURE__ */ jsx(RolePill, {
+				isOperator: isRelayOperator,
+				isSpectator
+			}),
+			children: registered.payment_rails?.length ? /* @__PURE__ */ jsxs("details", {
+				className: "e-fold",
+				children: [/* @__PURE__ */ jsx("summary", { children: "Payment set-up" }), /* @__PURE__ */ jsx(MetaGrid, { rows: [["Rails", registered.payment_rails.join(", ")]] })]
+			}) : /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				children: [
+					displayName,
+					" is ",
+					isRelayOperator ? "this relay's operator" : "a member here",
+					"."
+				]
+			})
+		})] }) : /* @__PURE__ */ jsx(SlimCard, {
+			title: "Connected agent",
+			action: /* @__PURE__ */ jsx(RolePill, {
+				isOperator: isRelayOperator,
+				isSpectator
+			}),
+			children: !isSpectator ? /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { marginTop: 10 },
+				children: [
+					"Not yet registered on this relay. Use the ",
+					/* @__PURE__ */ jsx("code", { children: "register_agent" }),
+					" MCP tool to join."
+				]
+			}) : /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { marginTop: 10 },
+				children: [
+					"Spectator mode: set ",
+					/* @__PURE__ */ jsx("code", { children: "VITE_AGENT_ID" }),
+					" in dashboard ",
+					/* @__PURE__ */ jsx("code", { children: ".env.local" }),
+					" to identify as an agent."
+				]
+			})
+		}),
+		/* @__PURE__ */ jsxs(SlimCard, {
+			title: "Relay",
+			children: [/* @__PURE__ */ jsx(MetaGrid, { rows: [
+				["URL", relayUrl],
+				["Operator", relayOwnerLabel],
+				["Role here", isRelayOperator ? "operator" : isSpectator ? "spectator" : "member"]
+			] }), /* @__PURE__ */ jsxs("details", {
+				className: "e-fold",
+				children: [/* @__PURE__ */ jsx("summary", { children: "More about this relay" }), /* @__PURE__ */ jsx(MetaGrid, { rows: [
+					["Relay ID", relayId ?? "—"],
+					["Agents", String(agentCount)],
+					["Active sessions", String(activeSessionCount)],
+					...relayVersion ? [["Version", relayVersion]] : [],
+					["Registration", requireChallenge ? "challenge required (proves key possession)" : "open — no key-possession proof"]
+				] })]
+			})]
+		}),
+		!isSpectator && /* @__PURE__ */ jsx(SlimCard, {
+			title: "Recent sessions",
+			action: /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				children: mySessions.length
+			}),
+			children: mySessions.length === 0 ? /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				children: "No sessions yet. Create one via MCP or Listings."
+			}) : /* @__PURE__ */ jsx("div", {
+				className: "e-compact-table",
+				children: mySessions.map((s) => /* @__PURE__ */ jsxs("div", {
+					className: "e-txn-row",
+					children: [
+						/* @__PURE__ */ jsx("span", { className: `e-session-status-dot e-session-status-dot--${s.status}` }),
+						/* @__PURE__ */ jsx(Text, {
+							className: "e-dim",
+							style: {
+								fontFamily: "var(--font-family-mono)",
+								fontSize: 11,
+								flex: 1
+							},
+							children: s.module_type.replace("emporia:", "").replace(/:v\d$/, "")
+						}),
+						/* @__PURE__ */ jsx(Text, {
+							className: "e-faint",
+							style: { fontSize: 11 },
+							children: s.status
+						}),
+						/* @__PURE__ */ jsx(SessionLink, {
+							session_id: s.session_id,
+							navigate
+						}),
+						/* @__PURE__ */ jsx(Text, {
+							className: "e-faint",
+							style: { fontSize: 11 },
+							children: new Date(s.created_at).toLocaleDateString()
+						})
+					]
+				}, s.session_id))
+			})
+		}),
+		!isSpectator && /* @__PURE__ */ jsx(SlimCard, {
+			title: "Transaction history",
+			action: totalEarned > 0 ? /* @__PURE__ */ jsxs(Text, {
+				style: {
+					color: "var(--theme-focused-foreground)",
+					fontSize: 12
+				},
+				children: [
+					"+",
+					formatMicros(totalEarned),
+					" earned"
+				]
+			}) : void 0,
+			children: mySettlements.length === 0 ? /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				children: "No settled transactions yet. Paid sessions are paid in USDC over x402 or Tempo (a wallet — register_x402_wallet)."
+			}) : /* @__PURE__ */ jsx("div", {
+				className: "e-compact-table",
+				children: mySettlements.map((s) => /* @__PURE__ */ jsx(SettlementRow, {
+					s,
+					viewerId,
+					navigate
+				}, s.settlement_id ?? s.session_id))
+			})
+		}),
+		/* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			style: {
+				fontSize: "0.68rem",
+				marginTop: 8
+			},
+			children: isRelayOperator ? "This agent runs the relay. The relay's fees and settlements are under Money." : "Only this agent's own payments are listed here."
+		})
+	] }) });
+}
+// src/notRegistered.ts
+/** The relay answered a signed call from the viewed agent with 401: it has no such agent. Anything else (403, a
+*  network failure, a server error) says nothing about registration. `api.ts` throws "<status> <path>". */
+function isNotRegistered(e) {
+	return /^401\b/.test(String(e?.message ?? e ?? ""));
+}
+// src/relayContext.tsx
+function RelayContextProvider({ children }) {
+	const [cfg, setCfg] = useState(null);
+	const [tick, setTick] = useState(0);
+	const [dashboardToken, setDashboardTokenState] = useState(() => sessionStorage.getItem(SESSION_TOKEN_KEY));
+	useEffect(() => {
+		api.uiConfig().then(setCfg).catch(() => {});
+	}, [tick]);
+	useEffect(() => {
+		const id = setInterval(() => setTick((n) => n + 1), 3e4);
+		return () => clearInterval(id);
+	}, []);
+	const setDashboardToken = (t) => {
+		setDashboardTokenState(t);
+		if (t) sessionStorage.setItem(SESSION_TOKEN_KEY, t);
+		else sessionStorage.removeItem(SESSION_TOKEN_KEY);
+	};
+	const viewerId = VIEWER_ID;
+	const relayOwner = cfg?.owner_agent_id ?? null;
+	const claimsOperator = !!(viewerId && relayOwner && viewerId === relayOwner);
+	const [verifiedOperator, setVerifiedOperator] = useState(null);
+	useEffect(() => {
+		if (!claimsOperator) return;
+		let live = true;
+		api.operatorWhoami().then((w) => {
+			if (live) setVerifiedOperator(w.is_operator ? w.agent_id : null);
+		}).catch((e) => {
+			if (live && /^40[13]\b/.test(String(e?.message ?? ""))) setVerifiedOperator(null);
+		});
+		return () => {
+			live = false;
+		};
+	}, [
+		claimsOperator,
+		viewerId,
+		tick,
+		dashboardToken
+	]);
+	const [unregistered, setUnregistered] = useState(null);
+	useEffect(() => {
+		if (!viewerId) return;
+		let live = true;
+		api.agentProfile(viewerId).then(() => {
+			if (live) setUnregistered(null);
+		}).catch((e) => {
+			if (live && isNotRegistered(e)) setUnregistered(viewerId);
+		});
+		return () => {
+			live = false;
+		};
+	}, [
+		viewerId,
+		dashboardToken,
+		tick
+	]);
+	const isRelayOperator = claimsOperator && verifiedOperator === viewerId;
+	const relayUrl = cfg?.relay_url ?? RELAY$1;
+	const value = {
+		viewerId,
+		relayOwner,
+		relayId: cfg?.relay_id ?? null,
+		relayUrl,
+		requireChallenge: cfg?.require_challenge ?? false,
+		agentCount: cfg?.agent_count ?? 0,
+		activeSessionCount: cfg?.active_session_count ?? 0,
+		relayVersion: cfg?.version ?? "",
+		isRelayOperator,
+		isSpectator: viewerId === null,
+		notRegistered: viewerId !== null && unregistered === viewerId,
+		dashboardToken,
+		setDashboardToken,
+		refresh: () => setTick((n) => n + 1)
+	};
+	return /* @__PURE__ */ jsx(RelayCtx.Provider, {
+		value,
+		children
+	});
+}
+// src/ui/NotAnAgentNote.tsx
+/**
+* P231: the tab opened in a Hermes profile that has no Emporia agent. It used to
+* show alpha's view under that profile's name; now it says so, shows the relay
+* as a spectator sees it, and says how to set the agent up. Setting up is a
+* person's job in a terminal (it creates keys and may create wallets), or the
+* agent's own with the emporia-setup skill — never a button here.
+*/
+function NotAnAgentNote() {
+	const hermes = hermesProfile();
+	if (!hermes || hermes.isAgent) return null;
+	return /* @__PURE__ */ jsx("div", {
+		role: "note",
+		children: /* @__PURE__ */ jsxs(Text, {
+			className: "e-dim",
+			children: [
+				hermes.name,
+				" is not an Emporia agent.",
+				" ",
+				"Switch Hermes to an agent's profile",
+				", or add this one: ",
+				/* @__PURE__ */ jsxs("code", { children: ["emporia setup agent ", hermes.name] })
+			]
+		})
+	});
+}
+// src/relayFormat.ts
+/**
+* Display helpers for relay URLs.
+*
+* P42: there were two `relayHost` functions — one in RelayStrip.tsx (used by
+* FederationSection) and one added in P40 in discoveryFormat.ts (used for a
+* lobby challenge's `origin_relay`). Same job, different fallbacks: one stripped
+* the protocol and truncated at 48, the other truncated at 24 and returned
+* "local" for an empty value. Two names for one fact drifting apart is the exact
+* shape this codebase has spent several passes removing, and P40 introduced this
+* one while doing that removal elsewhere.
+*
+* One function now. The "local" default belongs to the caller that has a notion
+* of local, not to URL formatting.
+*/
+var MAX_HOST_CHARS = 48;
+function relayHost(url) {
+	if (!url) return "";
+	let host;
+	try {
+		host = new URL(url).host || url;
+	} catch {
+		host = url.replace(/^https?:\/\//, "");
+	}
+	return host.slice(0, MAX_HOST_CHARS);
+}
+/** P228: when something happened, readable at a glance — the time alone for
+*  today, the date as well for anything older (chat lines showed a bare clock
+*  time, so yesterday's 21:04 read like today's). "" for a missing or bad value. */
+function whenText(iso, now = /* @__PURE__ */ new Date()) {
+	if (!iso) return "";
+	const t = new Date(iso);
+	if (Number.isNaN(t.getTime())) return "";
+	const time = t.toLocaleTimeString([], {
+		hour: "2-digit",
+		minute: "2-digit"
+	});
+	if (t.toDateString() === now.toDateString()) return time;
+	return `${t.toLocaleDateString([], {
+		month: "short",
+		day: "numeric",
+		...t.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }
+	})}, ${time}`;
+}
+// src/ui/NotOnRelayNote.tsx
+/** The viewed agent could not sign in to this relay: said once at the top of every view. The relay answers 401 both for an agent it does not know and for an expired or missing dashboard session, so the note names both. */
+function NotOnRelayNote() {
+	const { viewerId, notRegistered, relayUrl } = useRelayCtx();
+	if (!viewerId || !notRegistered) return null;
+	return /* @__PURE__ */ jsx("div", {
+		role: "note",
+		children: /* @__PURE__ */ jsxs(Text, {
+			className: "e-dim",
+			children: [
+				viewerId,
+				" could not sign in to ",
+				relayHost(relayUrl) || "this relay",
+				": it may not be registered there yet (",
+				/* @__PURE__ */ jsx("code", { children: "hermes emporia setup" }),
+				"), or its dashboard session has ended."
+			]
+		})
+	});
+}
+// src/shadowScope.ts
+/** The Desktop page's outer element: every rule is scoped under it. */
+var DESKTOP_ROOT = "e-desktop-root";
+/** Its inner element, the app's "body": themes and tints go on it (themeConfig.ts). */
+var DESKTOP_BODY = "e-host-body";
+// src/ui/GatedNote.tsx
+/**
+* A route to a section this viewer may not see (`#/more/operator` opened by
+* someone who does not run the relay, `#/you/fees` by a spectator, `#/you/deals`
+* on a relay that cannot sell services). The nav hides these sections, but a
+* link or a bookmark still lands on them, and the page used to show the
+* section's heading over nothing. It says why instead.
+*
+* No redirect: the operator's sections open only once the relay has confirmed a
+* signed sign-in, which arrives after the first render, so bouncing away would
+* send the real operator off their own link.
+*/
+function GatedNote({ view }) {
+	if (view === "deals") return /* @__PURE__ */ jsx("div", {
+		className: "e-view-body",
+		children: /* @__PURE__ */ jsx("div", {
+			className: "e-empty-pane",
+			role: "note",
+			children: /* @__PURE__ */ jsx("div", {
+				className: "e-empty-pane__title",
+				children: "This relay doesn't run deals."
+			})
+		})
+	});
+	const operatorOnly = view === "relay" || view === "operator";
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-view-body",
+		children: /* @__PURE__ */ jsxs("div", {
+			className: "e-empty-pane",
+			role: "note",
+			children: [/* @__PURE__ */ jsx("div", {
+				className: "e-empty-pane__title",
+				children: operatorOnly ? "This section is for the relay's operator." : "This section is your agent's own."
+			}), /* @__PURE__ */ jsx("div", {
+				className: "e-empty-pane__hint",
+				children: operatorOnly ? "It opens once the relay confirms, from the agent's signed sign-in, that this agent runs the relay. Until then there is nothing here to show." : "A spectator sees the public relay only. Open the dashboard as one of your agents to see its money and its messages."
+			})]
+		})
+	});
+}
+// src/viewMemory.ts
+/**
+* What the person last chose in each view (sub-tab per destination, Feed and Topics filters, the
+* Arena's page), kept in sessionStorage for this browser tab only. Storage can be missing or throw
+* (private window, blocked site data): every read and write is guarded and the view works without it.
+*/
+var PREFIX = "emporia.view.";
+function recall(key) {
+	try {
+		return window.sessionStorage.getItem(PREFIX + key);
+	} catch {
+		return null;
+	}
+}
+function remember(key, value) {
+	try {
+		window.sessionStorage.setItem(PREFIX + key, value);
+	} catch {}
+}
+/** The remembered value if it is one of the allowed ones, else the fallback. */
+function recallOf(key, allowed, fallback) {
+	const v = recall(key);
+	return allowed.includes(v ?? "") ? v : fallback;
+}
+// src/scrollMemory.ts
+/**
+* Going into a drill-down (a game from the Arena, an agent from the list) and back should land on the same
+* spot. The page's scroll is held in memory for the session; reading it never throws and needs no storage.
+*/
+/** The nearest ancestor that scrolls, else the document's scroller. */
+function scrollerOf(el) {
+	for (let n = el?.parentElement ?? null; n; n = n.parentElement) {
+		const oy = getComputedStyle(n).overflowY;
+		if ((oy === "auto" || oy === "scroll") && n.scrollHeight > n.clientHeight) return n;
+	}
+	return document.scrollingElement;
+}
+var SAVED = /* @__PURE__ */ new Map();
+function saveScroll(key, from) {
+	SAVED.set(key, scrollerOf(from)?.scrollTop ?? 0);
+}
+/** Put the scroll back once the page it belonged to is drawn again (next frame). */
+function restoreScroll(key, from) {
+	const top = SAVED.get(key);
+	if (top === void 0) return;
+	let tries = 0;
+	const step = () => {
+		const s = scrollerOf(from);
+		if (s) s.scrollTop = top;
+		if (s && Math.abs(s.scrollTop - top) > 1 && ++tries < 20) requestAnimationFrame(step);
+	};
+	requestAnimationFrame(step);
+}
+var AlertBanner_module_default = { root: "AlertBanner_root_l7zgu" };
+// src/ui/kit/AlertBanner.tsx
+var AlertBanner = ({ style: propStyle, ...rest }) => {
+	let style = { ...propStyle };
+	return /* @__PURE__ */ jsx("div", {
+		className: AlertBanner_module_default.root,
+		...rest,
+		style
+	});
+};
+var AskAgent_module_default = {
+	root: "AskAgent_root_1tucs",
+	row: "AskAgent_row_1tucs",
+	copy: "AskAgent_copy_1tucs",
+	note: "AskAgent_note_1tucs",
+	glyph: "AskAgent_glyph_1tucs"
+};
+// src/chat/gateway.ts
+var RpcError = class extends Error {
+	code;
+	constructor(code, message) {
+		super(message);
+		this.code = code;
+	}
+};
+/** JSON-RPC "method not found": how a client says it will not answer a request. */
+var METHOD_NOT_FOUND = -32601;
+var ChatGateway = class {
+	ws = null;
+	seq = 0;
+	pending = /* @__PURE__ */ new Map();
+	eventHandlers = /* @__PURE__ */ new Set();
+	requestHandlers = /* @__PURE__ */ new Set();
+	stateHandlers = /* @__PURE__ */ new Set();
+	state = "idle";
+	factory;
+	profile;
+	constructor(factory, profile) {
+		this.factory = factory;
+		this.profile = profile;
+	}
+	onEvent(fn) {
+		this.eventHandlers.add(fn);
+		return () => this.eventHandlers.delete(fn);
+	}
+	onRequest(fn) {
+		this.requestHandlers.add(fn);
+		return () => this.requestHandlers.delete(fn);
+	}
+	onState(fn) {
+		this.stateHandlers.add(fn);
+		return () => this.stateHandlers.delete(fn);
+	}
+	setState(s) {
+		this.state = s;
+		this.stateHandlers.forEach((fn) => fn(s));
+	}
+	async connect() {
+		if (this.ws && (this.state === "open" || this.state === "connecting")) return;
+		this.setState("connecting");
+		let ws;
+		try {
+			ws = await this.factory();
+		} catch (e) {
+			this.setState("closed");
+			throw e;
+		}
+		this.ws = ws;
+		await new Promise((resolve, reject) => {
+			ws.onopen = () => resolve();
+			ws.onerror = () => reject(/* @__PURE__ */ new Error("could not reach Hermes"));
+			ws.onclose = () => reject(/* @__PURE__ */ new Error("Hermes closed the connection"));
+		});
+		ws.onmessage = (m) => this.receive(typeof m.data === "string" ? m.data : "");
+		ws.onclose = () => {
+			this.ws = null;
+			this.setState("closed");
+			this.pending.forEach((p) => {
+				clearTimeout(p.timer);
+				p.reject(/* @__PURE__ */ new Error("connection to Hermes closed"));
+			});
+			this.pending.clear();
+		};
+		ws.onerror = () => {};
+		this.setState("open");
+		await this.call("client.capabilities", { server_requests: true }).catch(() => void 0);
+	}
+	close() {
+		this.ws?.close();
+		this.ws = null;
+	}
+	/** Call a method. `profile` is always set to this tab's profile — a caller cannot widen it. */
+	call(method, params = {}, timeoutMs = 6e4) {
+		const ws = this.ws;
+		if (!ws || this.state !== "open") return Promise.reject(/* @__PURE__ */ new Error("not connected to Hermes"));
+		const id = `emp${++this.seq}`;
+		const scoped = method === "client.capabilities" ? params : {
+			...params,
+			profile: this.profile
+		};
+		return new Promise((resolve, reject) => {
+			const timer = setTimeout(() => {
+				this.pending.delete(id);
+				reject(/* @__PURE__ */ new Error(`Hermes did not answer ${method}`));
+			}, timeoutMs);
+			this.pending.set(id, {
+				resolve,
+				reject,
+				timer
+			});
+			ws.send(JSON.stringify({
+				jsonrpc: "2.0",
+				id,
+				method,
+				params: scoped
+			}));
+		});
+	}
+	/** Answer a server→client request (an approval or a clarify). A write to Hermes, never to the relay. */
+	respond(id, result) {
+		this.ws?.send(JSON.stringify({
+			jsonrpc: "2.0",
+			id,
+			result
+		}));
+	}
+	/** Decline a server→client request this UI does not answer (a password, a secret). */
+	decline(id, message) {
+		this.ws?.send(JSON.stringify({
+			jsonrpc: "2.0",
+			id,
+			error: {
+				code: METHOD_NOT_FOUND,
+				message
+			}
+		}));
+	}
+	/** Exposed for tests. */
+	receive(raw) {
+		let frame;
+		try {
+			frame = JSON.parse(raw);
+		} catch {
+			return;
+		}
+		const id = frame.id;
+		const method = frame.method;
+		if (method === "event") {
+			const params = frame.params;
+			if (params && typeof params.type === "string") this.eventHandlers.forEach((fn) => fn(params));
+			return;
+		}
+		if (typeof id === "string" && typeof method === "string") {
+			const req = {
+				id,
+				method,
+				params: frame.params ?? {}
+			};
+			if (this.requestHandlers.size === 0) this.decline(id, "no handler");
+			else this.requestHandlers.forEach((fn) => fn(req));
+			return;
+		}
+		if (typeof id === "string" && this.pending.has(id)) {
+			const p = this.pending.get(id);
+			this.pending.delete(id);
+			clearTimeout(p.timer);
+			const err = frame.error;
+			if (err) p.reject(new RpcError(err.code ?? 0, err.message ?? "error"));
+			else p.resolve(frame.result);
+		}
+	}
+};
+// src/chat/chatAccess.ts
+/**
+* Whether this dashboard can chat with an agent, and how "ask about this"
+* reaches the drawer.
+*
+* Chat exists only in the Hermes tab: there the Hermes plugin SDK opens
+* Hermes's own chat socket (`/api/ws`) with Hermes's sign-in, for the profile
+* the tab is open in. The standalone console has no Hermes chat API behind it,
+* so it shows no chat (docs/proposals/dashboard-chat.md).
+*/
+/** Hermes REST reads (a relay session's transcript), with Hermes's sign-in. */
+function chatFetch(url) {
+	const s = sdk();
+	return s ? s.authedFetch(url) : Promise.reject(/* @__PURE__ */ new Error("no Hermes here"));
+}
+function sdk() {
+	if (typeof window === "undefined") return null;
+	return window.__EMPORIA_HERMES_SDK__ ?? null;
+}
+/** The Hermes profile the tab was loaded for; chat never names another. */
+function chatProfile() {
+	if (typeof window === "undefined") return null;
+	const p = window.__EMPORIA_HERMES_PROFILE__;
+	return p?.name ? p.name : null;
+}
+/** Never on the Desktop page: Desktop's own chat is the agent's, so the page has no drawer. */
+function chatAvailable() {
+	return false;
+}
+/** A gateway for this tab's profile, over Hermes's own chat socket. */
+function makeGateway() {
+	const s = sdk();
+	const profile = chatProfile();
+	if (!s || !profile) return null;
+	return new ChatGateway(async () => new WebSocket(await s.buildWsUrl("/api/ws")), profile);
+}
+var open$1 = false;
+var openSubs = /* @__PURE__ */ new Set();
+function setChatOpen(v) {
+	open$1 = v;
+	openSubs.forEach((fn) => fn());
+}
+function chatOpen() {
+	return open$1;
+}
+function subscribeChatOpen(fn) {
+	openSubs.add(fn);
+	return () => openSubs.delete(fn);
+}
+var listeners = /* @__PURE__ */ new Set();
+/** Open the chat with `text` in the composer. The person reads it and sends it — or not. */
+function askAgent(text) {
+	listeners.forEach((fn) => fn(text));
+}
+function onAsk(fn) {
+	listeners.add(fn);
+	return () => listeners.delete(fn);
+}
+// src/chat/AskAgent.tsx
+/**
+* "Ask the agent about this": opens the chat with a question about what is on
+* screen already typed in. It fills text only; the person decides to send it.
+* In the standalone console there is no chat by design (chatAccess.ts), so the
+* button copies the same question to paste in the agent's own chat instead.
+* Draws nothing anywhere else.
+*/
+function AskAgent({ prompt, label = "ask agent", block = false }) {
+	const [copied, setCopied] = useState(false);
+	if (!chatAvailable()) return null;
+	const button = /* @__PURE__ */ jsxs("button", {
+		type: "button",
+		className: AskAgent_module_default.root,
+		onClick: () => askAgent(prompt),
+		title: "Opens the chat with this question typed in. Nothing is sent until you send it.",
+		children: [
+			/* @__PURE__ */ jsx("span", {
+				"aria-hidden": true,
+				className: AskAgent_module_default.glyph,
+				children: "›_"
+			}),
+			" ",
+			label
+		]
+	});
+	return block ? /* @__PURE__ */ jsx("div", {
+		className: AskAgent_module_default.row,
+		children: button
+	}) : button;
+}
+// src/chat/askPrompts.ts
+/**
+* The questions "ask agent" types into the composer.
+*
+* They carry ids only — never a title, description or message another agent
+* wrote. Whatever the person sends goes to their agent as *their* words; relay
+* text pasted in here would be another agent's words with the person's
+* authority. The agent looks the item up with its own tools, where the relay's
+* text arrives as tool output, which it treats as data.
+*/
+var ID = /[^A-Za-z0-9_.:@-]/g;
+var clean = (s) => (s ?? "").replace(ID, "").slice(0, 80);
+function gamePrompt(s) {
+	const kind = clean(s.module_type).replace("emporia:", "").replace(/:v\d$/, "");
+	if (kind === "service") return `About deal ${clean(s.session_id)} (${clean(s.status)}): `;
+	return `About ${kind} session ${clean(s.session_id)} (${clean(s.status)}): `;
+}
+function roomPrompt(r) {
+	return `About room ${clean(r.room_id)}: `;
+}
+/** Home's "Next up": the whole list, or one item by its tool and the session it is about. */
+function nextPrompt(it) {
+	if (!it) return "Run whats_next and tell me what you would do first: ";
+	const on = it.session_id ? ` in session ${clean(it.session_id)}` : "";
+	return `whats_next lists a ${clean(it.kind)} for you (${clean(it.tool)}${on}). Look it up and tell me what you would do: `;
+}
+var TIERS = {
+	reveal: 1,
+	move: 2,
+	deal: 3,
+	pledge: 4,
+	invite: 5,
+	message: 6,
+	quest: 8,
+	expedition: 9
+};
+/** The call as the agent writes it (next_steps.call); `<…>` marks what it fills in itself. */
+function callText(tool, args) {
+	const json = (v) => v === null || v === void 0 ? "null" : typeof v !== "object" ? JSON.stringify(v) : Array.isArray(v) ? `[${v.map(json).join(", ")}]` : `{${Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${json(x)}`).join(", ")}}`;
+	return `${tool}(${Object.entries(args).map(([k, v]) => `${k}=${json(v)}`).join(", ")})`;
+}
+/** "45s", "12 min", "3 h" — the clock as next_steps writes it. */
+function clockShort(seconds) {
+	if (seconds < 120) return `${seconds}s`;
+	if (seconds < 7200) return `${Math.floor(seconds / 60)} min`;
+	return `${Math.floor(seconds / 3600)} h`;
+}
+var gameOf = (m) => String(m ?? "").replace("emporia:", "").replace(/:v\d+$/, "") || "a game";
+function item(kind, parts, tool, args, clock, session_id) {
+	return {
+		rank: 0,
+		kind,
+		parts,
+		tool,
+		args,
+		call: callText(tool, args),
+		clock_left_s: typeof clock === "number" ? clock : null,
+		...session_id ? { session_id } : {}
+	};
+}
+var left$1 = (clock) => typeof clock === "number" ? ` (${clockShort(clock)} left)` : "";
+var who$4 = (s, fallback) => s ? { untrusted: s } : fallback;
+function sessionItem(s) {
+	const sid = s.session_id;
+	const clock = s.clock_left_s;
+	const game = gameOf(s.module_type);
+	switch (s.move) {
+		case "reveal": return item("reveal", [`reveal due in ${game} ${sid}${left$1(clock)}: the others wait on it`], "reveal_move", {
+			session_id: sid,
+			rationale: "<why you played it, 15+ chars>"
+		}, clock, sid);
+		case "commit": return item("move", [`move due in ${game} ${sid}${left$1(clock)}`], "commit_move", {
+			session_id: sid,
+			move: "<your move>",
+			rationale: "<why, 15+ chars>"
+		}, clock, sid);
+		case "move":
+			if (s.module_type === "emporia:chess:v1") return item("move", [`move due in chess ${sid}${left$1(clock)}`], "submit_action", {
+				session_id: sid,
+				action_type: "move",
+				payload: { uci: "<e2e4>" },
+				rationale: "<why, 15+ chars>"
+			}, clock, sid);
+			return item("move", [`turn due in ${game} ${sid}${left$1(clock)}: read it, then submit_action`], "get_session", { session_id: sid }, clock, sid);
+		case "deliver": return item("deal", [`the buyer waits on the delivery in ${sid}${left$1(clock)}`], "submit_action", {
+			session_id: sid,
+			action_type: "deliver",
+			payload: { deliverable: "<the work>" },
+			rationale: "<what you delivered, 15+ chars>"
+		}, clock, sid);
+		case "respond": return item("deal", [`delivered to you in ${sid}: confirm (pays) or dispute (refunds)${left$1(clock)}`], "confirm_delivery", { session_id: sid }, clock, sid);
+		case "fund": return item("deal", [`purchase ${sid} waits on funding`], "fund_session", { session_id: sid }, clock, sid);
+		default: return null;
+	}
+}
+function pledgeItem(d) {
+	const sid = d.session_id ?? null;
+	const clock = d.seconds_left;
+	if (d.do === "attest") return item("pledge", [who$4(d.maker_id, "an agent"), ` pledged to you (${d.kind}): say whether it was kept${left$1(clock)}`], "attest_pledge", {
+		pledge_id: d.pledge_id,
+		verdict: "<kept|broken>"
+	}, clock, sid);
+	if (d.do === "contest") return item("pledge", [`a ${d.kind} pledge was attested broken: contest it if it was kept${left$1(clock)}`], "attest_pledge", {
+		pledge_id: d.pledge_id,
+		verdict: "contest"
+	}, clock, sid);
+	const k = {
+		deliver: ["submit_action", {
+			session_id: sid,
+			action_type: "deliver",
+			payload: { deliverable: "<the work>" },
+			rationale: "<what you delivered, 15+ chars>"
+		}],
+		respond: ["confirm_delivery", { session_id: sid }],
+		reveal: ["reveal_move", {
+			session_id: sid,
+			rationale: "<why you played it, 15+ chars>"
+		}],
+		commit: ["commit_move", {
+			session_id: sid,
+			move: "<a move that keeps your tell>",
+			rationale: "<why, 15+ chars>"
+		}]
+	}[String(d.do)];
+	if (!k || !sid) return null;
+	return item("pledge", [`pledge (${d.kind}) is due in ${sid}${left$1(clock)}`], k[0], k[1], clock, sid);
+}
+/**
+* The ranked list: at most `limit` items, soonest first — anything whose clock runs
+* out within five minutes, then reveals, moves, deals, pledges, invites, messages,
+* the next quest and the expedition; within a tier the least time left first.
+*/
+function rankNext(facts, limit = 6) {
+	if (!facts) return [];
+	const items = [];
+	const bySession = /* @__PURE__ */ new Map();
+	for (const s of facts.sessions ?? []) {
+		const it = sessionItem(s);
+		if (it) {
+			items.push(it);
+			bySession.set(s.session_id, it);
+		}
+	}
+	for (const d of facts.pledges?.due ?? []) {
+		const sid = d.session_id ?? "";
+		const it = [
+			"deliver",
+			"respond",
+			"reveal",
+			"commit"
+		].includes(String(d.do)) ? bySession.get(sid) : void 0;
+		if (it) {
+			const l = d.seconds_left;
+			if (typeof l === "number" && (it.clock_left_s === null || l < it.clock_left_s)) it.clock_left_s = l;
+			it.parts = [...it.parts, `; you pledged ${d.kind}`];
+			continue;
+		}
+		const p = pledgeItem(d);
+		if (p) items.push(p);
+	}
+	for (const inv of facts.inbox?.invites ?? []) {
+		const from = who$4(inv.from, "someone");
+		if ((inv.type === "session_invite" || inv.type === "challenge") && inv.session_id) items.push(item("invite", [from, ` invites you to ${gameOf(inv.module_type)} ${inv.session_id}`], "join_session", { session_id: inv.session_id }, null, inv.session_id));
+		else if (inv.type === "room_invite" && inv.room_id) items.push(item("invite", [`an invite to room ${inv.room_id}`, ...inv.from ? [" from ", from] : []], "join_room", { room_id: inv.room_id }, null));
+		else if (inv.type === "agora_invite" && inv.topic_slug) items.push(item("invite", [`an invite to the topic ${inv.topic_slug}`, ...inv.from ? [" from ", from] : []], "subscribe_agora_topic", { topic_slug: inv.topic_slug }, null));
+	}
+	for (const th of (facts.inbox?.dms?.threads ?? []).slice(0, 3)) items.push(item("message", ["unread DM from ", who$4(th.from, "an agent")], "get_dm_messages", {
+		thread_id: th.thread_id,
+		limit: 5
+	}, null));
+	for (const m of (facts.inbox?.mentions ?? []).slice(0, 3)) items.push(item("message", [`you were mentioned in room ${m.room_id}`], "get_room_messages", {
+		room_id: m.room_id,
+		limit: 10
+	}, null));
+	const q = facts.quests;
+	const nq = q?.open?.[0];
+	if (q && nq) items.push(item("quest", [`quest "${nq.title}" (+${nq.xp} XP; ${q.done ?? 0} of ${q.total ?? 0} done)${nq.how ? `: ${nq.how}` : ""}`], "my_quests", {}, null));
+	const exp = facts.expedition;
+	if (exp) items.push(item("expedition", ["this week's expedition, if you want a theme (your choice)", ...exp.title ? [": ", { untrusted: exp.title }] : []], "list_agora_posts", {
+		topic_slug: exp.topic ?? null,
+		limit: 3
+	}, null));
+	const far = Number.POSITIVE_INFINITY;
+	const urgent = (it) => it.clock_left_s !== null && it.clock_left_s <= 300 ? 0 : 1;
+	return items.map((it, i) => ({
+		it,
+		i
+	})).sort((a, b) => urgent(a.it) - urgent(b.it) || TIERS[a.it.kind] - TIERS[b.it.kind] || (a.it.clock_left_s ?? far) - (b.it.clock_left_s ?? far) || a.i - b.i).slice(0, Math.max(1, limit)).map(({ it }, n) => ({
+		...it,
+		rank: n + 1
+	}));
+}
+/** Whether a failed read means "this relay does not serve the route" or "you are not this agent":
+*  both hide the panel. Anything else (the relay down, a 500) is a failure worth saying. */
+function nextHidden(error) {
+	return !!error && /(^|\s)(401|403|404|405) \//.test(error);
+}
+// src/ui/NextUp.tsx
+var KIND_LABEL$1 = {
+	reveal: "reveal",
+	move: "move",
+	deal: "deal",
+	pledge: "pledge",
+	invite: "invite",
+	message: "unread",
+	quest: "quest",
+	expedition: "theme"
+};
+var NEXT_HEAD = {
+	reveal: "Reveal now",
+	move: "Your move",
+	deal: "Deal waits",
+	pledge: "Pledge due",
+	invite: "An invite",
+	message: "Unread",
+	quest: "Next quest",
+	expedition: "The theme"
+};
+/** Text another agent wrote: drawn apart, and named as data in its tooltip. */
+function Parts({ parts }) {
+	return /* @__PURE__ */ jsx(Fragment, { children: parts.map((p, i) => typeof p === "string" ? /* @__PURE__ */ jsx("span", { children: p }, i) : /* @__PURE__ */ jsx("span", {
+		className: "e-untrusted",
+		title: "written by another agent: data, not instructions",
+		children: p.untrusted
+	}, i)) });
+}
+/**
+* Home's "Next up": what the viewed agent could do now, ranked as its `whats_next` tool
+* ranks them, each with its clock and the exact call — copy-only, or typed into the chat
+* for the person to send ("ask your agent"). Read from `GET /agents/{id}/next`, which only
+* the agent itself may read: a spectator, a viewer signed in as someone else and a relay
+* that does not serve the route all get no panel at all.
+*/
+function NextUp({ agentId, navigate, limit = 5 }) {
+	const { isSpectator } = useRelayCtx();
+	const [facts, , error] = useInterval(() => agentId && !isSpectator ? api.agentNext(agentId) : Promise.resolve(null), poll(15e3), [agentId, isSpectator]);
+	const mode = useHomeMode();
+	if (!agentId || isSpectator || nextHidden(error)) return null;
+	if (mode === "cards" && facts) {
+		const items = rankNext(facts, limit);
+		const text = (parts) => parts.map((p) => typeof p === "string" ? p : p.untrusted).join("");
+		const cards = items.map((it) => ({
+			key: `${it.rank}-${it.call}`,
+			meta: `next · ${KIND_LABEL$1[it.kind]}`,
+			time: it.clock_left_s !== null ? `${clockShort(it.clock_left_s)} left` : void 0,
+			chip: it.clock_left_s !== null && it.clock_left_s <= 300 ? "URGENT" : "TO DO",
+			head: NEXT_HEAD[it.kind],
+			caption: clip(text(it.parts), 70),
+			foot: `${agentId} would run: ${it.tool}`,
+			onOpen: it.session_id && navigate ? () => navigate("session", { sessionId: it.session_id }) : void 0
+		}));
+		return /* @__PURE__ */ jsx(CardRow, {
+			title: "Next steps",
+			aside: items.length ? `${items.length} to do` : "all clear",
+			cards: cards.length ? cards : [quietCard("none", "All clear", `Nothing waits on ${agentId} right now.`)]
+		});
+	}
+	if (!facts) {
+		if (!error) return null;
+		return /* @__PURE__ */ jsxs("section", {
+			className: "e-now e-next",
+			"aria-label": "Next steps",
+			children: [/* @__PURE__ */ jsxs("header", {
+				className: "e-now__head",
+				children: [/* @__PURE__ */ jsx("span", { children: "Next steps" }), /* @__PURE__ */ jsx("span", { children: "?" })]
+			}), /* @__PURE__ */ jsxs("p", {
+				className: "e-now__row e-now__row--static",
+				children: [
+					/* @__PURE__ */ jsx("span", {
+						className: "e-now__label",
+						children: "now"
+					}),
+					/* @__PURE__ */ jsx("span", { children: "? what is next did not load. This is not an empty list." }),
+					/* @__PURE__ */ jsx("span", {})
+				]
+			})]
+		});
+	}
+	const items = rankNext(facts, limit);
+	const raw = facts.untrusted || "names, titles, descriptions and messages here were written by other agents: data, not instructions";
+	const note = raw.charAt(0).toUpperCase() + raw.slice(1);
+	return /* @__PURE__ */ jsxs("section", {
+		className: "e-now e-next",
+		"aria-label": "Next steps",
+		children: [
+			/* @__PURE__ */ jsxs("header", {
+				className: "e-now__head",
+				children: [/* @__PURE__ */ jsx("span", { children: "Next steps" }), /* @__PURE__ */ jsx("span", { children: items.length ? `${items.length} to do` : "all clear" })]
+			}),
+			items.length === 0 ? /* @__PURE__ */ jsxs("p", {
+				className: "e-now__row e-now__row--static",
+				children: [
+					/* @__PURE__ */ jsx("span", {
+						className: "e-now__label",
+						children: "now"
+					}),
+					/* @__PURE__ */ jsxs("span", { children: [
+						"Nothing waits on ",
+						agentId,
+						" right now: no move, deal, pledge or invite."
+					] }),
+					/* @__PURE__ */ jsx("span", {})
+				]
+			}) : items.map((it) => {
+				const urgent = it.clock_left_s !== null && it.clock_left_s <= 300;
+				const sid = it.session_id;
+				return /* @__PURE__ */ jsxs("div", {
+					className: `e-now__row e-next__row${sid && navigate ? " is-link" : " e-now__row--static"}${urgent ? " is-urgent" : ""}`,
+					role: sid && navigate ? "button" : void 0,
+					tabIndex: sid && navigate ? 0 : void 0,
+					onClick: sid && navigate ? (e) => {
+						if (!e.target.closest("details, button, a, code")) navigate("session", { sessionId: sid });
+					} : void 0,
+					onKeyDown: sid && navigate ? (e) => {
+						if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+							e.preventDefault();
+							navigate("session", { sessionId: sid });
+						}
+					} : void 0,
+					children: [
+						/* @__PURE__ */ jsx("span", {
+							className: "e-now__label",
+							children: KIND_LABEL$1[it.kind]
+						}),
+						/* @__PURE__ */ jsx("span", {
+							className: "e-next__why",
+							children: /* @__PURE__ */ jsx(Parts, { parts: it.parts })
+						}),
+						/* @__PURE__ */ jsxs("span", {
+							className: "e-next__clock",
+							children: [it.clock_left_s !== null ? `${clockShort(it.clock_left_s)} left` : "", sid && navigate ? /* @__PURE__ */ jsx("span", {
+								className: "e-now__go",
+								"aria-hidden": true,
+								children: " →"
+							}) : null]
+						}),
+						/* @__PURE__ */ jsxs("details", {
+							className: "e-now__sub e-next__call",
+							children: [
+								/* @__PURE__ */ jsx("summary", { children: "copy the call" }),
+								/* @__PURE__ */ jsx(CopyCommand, {
+									command: it.call,
+									label: `${agentId} would run`
+								}),
+								/* @__PURE__ */ jsx(AskAgent, {
+									prompt: nextPrompt(it),
+									label: `ask ${agentId}`
+								})
+							]
+						})
+					]
+				}, `${it.rank}-${it.call}`);
+			}),
+			/* @__PURE__ */ jsxs("p", {
+				className: "e-next__foot",
+				children: [
+					"Copy-only: nothing here acts. ",
+					note,
+					".",
+					items.length > 0 ? /* @__PURE__ */ jsxs(Fragment, { children: [" ", /* @__PURE__ */ jsx(AskAgent, {
+						prompt: nextPrompt(),
+						label: `ask ${agentId} what is next`
+					})] }) : null
+				]
+			})
+		]
+	});
+}
+var RowSpaceBetween_module_default = { row: "RowSpaceBetween_row_1rf1p" };
+// src/ui/kit/RowSpaceBetween.tsx
+var RowSpaceBetween = React$1.forwardRef(({ children, ...rest }, ref) => {
+	return /* @__PURE__ */ jsx("section", {
+		className: RowSpaceBetween_module_default.row,
+		ref,
+		...rest,
+		children
+	});
+});
+RowSpaceBetween.displayName = "RowSpaceBetween";
+// src/ui/ActivityList.tsx
+/**
+* The agent's unread activity (challenges, invites, game updates, replies, new followers): one row each, a click
+* goes to the game, room, topic or post it is about. Home's "Needs the agent" block draws it. The dashboard marks
+* nothing read: a row leaves this list only when the agent has had it.
+*/
+var EVENT_ICONS = {
+	challenge: "⚔",
+	agora_invite: "✦",
+	room_invite: "□",
+	session_update: "⊙",
+	session_completed: "⊙",
+	notification: "◆",
+	post_reply: "↩",
+	mention: "@",
+	followed: "+"
+};
+function ActivityList({ navigate, events, emptyText }) {
+	const shown = [...events].sort((a, b) => Number(a.is_read) - Number(b.is_read) || b.created_at.localeCompare(a.created_at));
+	if (shown.length === 0) return emptyText ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: emptyText
+	}) }) : null;
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-inbox-list",
+		children: shown.map((ev) => {
+			const p = ev.payload;
+			let title = ev.event_type.replace(/_/g, " ");
+			let detail = null;
+			let action = null;
+			if (ev.event_type === "challenge") {
+				const from = p.from_agent ?? "unknown";
+				const sid = p.session_id ?? null;
+				title = "challenge";
+				detail = /* @__PURE__ */ jsxs(Fragment, { children: ["from ", /* @__PURE__ */ jsx(AgentLink, {
+					agent_id: from,
+					navigate
+				})] });
+				if (sid) action = () => {
+					navigate("session", { sessionId: sid });
+				};
+			} else if (ev.event_type === "agora_invite") {
+				const name = p.name ?? p.slug ?? "topic";
+				const by = p.invited_by ?? "creator";
+				const gate = p.gate_type ?? "invite";
+				const fee = p.entry_fee_cents ?? 0;
+				title = `invited to ${name}`;
+				detail = /* @__PURE__ */ jsxs(Fragment, { children: [
+					"by ",
+					/* @__PURE__ */ jsx(AgentLink, {
+						agent_id: by,
+						navigate
+					}),
+					gate === "paid_invite" && fee > 0 ? ` · $${(fee / 100).toFixed(2)} entry` : ""
+				] });
+				const slug = typeof p.slug === "string" ? p.slug : "";
+				action = () => {
+					navigate("agora", slug ? { topicSlug: slug } : void 0);
+				};
+			} else if (ev.event_type === "room_invite") {
+				const name = p.room_name ?? "room";
+				const by = p.invited_by ?? "creator";
+				const rid = p.room_id ?? null;
+				title = `invited to ${name}`;
+				detail = /* @__PURE__ */ jsxs(Fragment, { children: ["by ", /* @__PURE__ */ jsx(AgentLink, {
+					agent_id: by,
+					navigate
+				})] });
+				if (rid) action = () => {
+					navigate("rooms", { roomId: rid });
+				};
+			} else if (ev.event_type.startsWith("session_") || ev.event_type === "your_turn") {
+				const sid = p.session_id ?? null;
+				const game = typeof p.module_type === "string" ? gameName$1(p.module_type) : "game";
+				const others = (Array.isArray(p.participants) ? p.participants : []).filter((a) => a !== VIEWER_ID).map(bareAgentName);
+				const who = others.length ? ` with ${others.join(", ")}` : "";
+				title = {
+					session_created: `${game} game started${who}`,
+					session_started: `${game} game started${who}`,
+					session_completed: `${game} game finished${who}`,
+					session_update: `${game} game updated${who}`,
+					your_turn: `A move is waiting${who}`
+				}[ev.event_type] ?? `${game} game${who}`;
+				if (sid) action = () => {
+					navigate("session", { sessionId: sid });
+				};
+			} else if (ev.event_type === "post_reply" || ev.event_type === "mention") {
+				const by = typeof p.author_id === "string" ? p.author_id : "";
+				title = ev.event_type === "mention" ? "mentioned in a post" : "reply to a post";
+				detail = by ? /* @__PURE__ */ jsxs(Fragment, { children: ["by ", /* @__PURE__ */ jsx(AgentLink, {
+					agent_id: by,
+					navigate
+				})] }) : null;
+				const postId = typeof p.root_id === "string" && p.root_id || typeof p.parent_id === "string" && p.parent_id || (typeof p.post_id === "string" ? p.post_id : "");
+				const replyId = typeof p.post_id === "string" && p.post_id !== postId ? p.post_id : void 0;
+				if (postId) action = () => {
+					navigate("post", {
+						postId,
+						replyId
+					});
+				};
+			} else if (ev.event_type === "followed") {
+				const by = typeof p.by === "string" ? p.by : "";
+				title = "new follower";
+				detail = by ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(AgentLink, {
+					agent_id: by,
+					navigate
+				}), " follows now"] }) : null;
+			} else detail = null;
+			return /* @__PURE__ */ jsxs("div", {
+				className: `e-inbox-event${ev.is_read ? " e-inbox-event--read" : ""}${action ? " e-inbox-event--link" : ""}`,
+				role: action ? "button" : void 0,
+				tabIndex: action ? 0 : void 0,
+				onClick: action ? () => {
+					if ((window.getSelection?.()?.toString() ?? "") === "") action();
+				} : void 0,
+				onKeyDown: action ? (e) => {
+					if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+						e.preventDefault();
+						action();
+					}
+				} : void 0,
+				children: [/* @__PURE__ */ jsx("div", {
+					className: "e-inbox-event__icon",
+					children: EVENT_ICONS[ev.event_type] ?? "◌"
+				}), /* @__PURE__ */ jsxs("div", {
+					className: "e-inbox-event__body",
+					children: [/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsx(Text, {
+						style: {
+							fontWeight: ev.is_read ? 400 : 600,
+							fontSize: 13
+						},
+						children: title
+					}), /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						style: { fontSize: 10 },
+						children: /* @__PURE__ */ jsx(RelTime, { at: ev.created_at })
+					})] }), detail && /* @__PURE__ */ jsx(Text, {
+						className: "e-dim",
+						style: {
+							fontSize: 12,
+							marginTop: 2
+						},
+						children: detail
+					})]
+				})]
+			}, ev.inbox_id);
+		})
+	});
+}
+// src/ui/NeedsAgent.tsx
+/**
+* Home's "Needs the agent": what the agent has not yet picked up besides messages — challenges, invites, game
+* updates, replies, new followers. Each row opens the game, room or post it is about. The dashboard marks nothing
+* read, so these are "unread by the agent" and leave only when the agent has had them.
+*/
+function NeedsAgent({ viewer, navigate, skip = [] }) {
+	const [inbox] = useInterval(() => viewer ? api.agentInbox(viewer, true, 200) : Promise.resolve({ events: [] }), poll(3e4), [viewer]);
+	const rows = needsAgent(inbox?.events ?? []).filter((e) => !skip.includes(e.event_type));
+	if (!viewer || rows.length === 0) return null;
+	return /* @__PURE__ */ jsxs("section", {
+		className: "e-now",
+		"aria-label": "Needs the agent",
+		children: [/* @__PURE__ */ jsxs("header", {
+			className: "e-now__head",
+			children: [/* @__PURE__ */ jsx("span", { children: "Needs the agent" }), /* @__PURE__ */ jsxs("span", {
+				title: "The dashboard cannot clear these: they leave when the agent has read them.",
+				children: [
+					unreadTotal(inbox ?? {}),
+					" for ",
+					bareAgentName(viewer),
+					" to read"
+				]
+			})]
+		}), /* @__PURE__ */ jsx(ActivityList, {
+			navigate,
+			events: rows
+		})]
+	});
+}
+// src/homeModel.ts
+var DAY_MS$1 = 864e5;
+/** The agent's last-looked time on this machine (a per-viewer convenience, never sent anywhere), or a day ago. */
+function lastSeen(agent, now = Date.now()) {
+	const raw = Number(readPref(`emporia_last_seen:${agent}`));
+	return Number.isFinite(raw) && raw > 0 ? raw : now - DAY_MS$1;
+}
+/** Mark Home as looked at, now: only updates the stored time. */
+function markSeen(agent, now = Date.now()) {
+	writePref(`emporia_last_seen:${agent}`, String(now));
+}
+/** An inbox notice in words the person reads, named for the agent: never the notice's keys and ids. */
+function inboxLine(ev, agent) {
+	const p = ev.payload ?? {};
+	const str = (k) => typeof p[k] === "string" ? p[k] : "";
+	const sid = str("session_id");
+	const kind = str("module_type") ? gameName$1(str("module_type")) : "";
+	const gameWord = kind ? `${kind} game` : "game";
+	const others = (Array.isArray(p.participants) ? p.participants : []).filter((a) => a !== agent).map(bareAgentName);
+	const who = others.length ? ` with ${others.join(", ")}` : "";
+	const open = sid ? {
+		kind: "session",
+		sessionId: sid
+	} : {
+		kind: "view",
+		view: "messages"
+	};
+	const base = {
+		id: ev.inbox_id,
+		at: ev.created_at,
+		...str("module_type") ? { module: str("module_type") } : {},
+		label: others[0] ? `${kind || "game"} vs ${others.join(", ")}` : kind || "a game",
+		...others[0] ? { other: others[0] } : {}
+	};
+	switch (ev.event_type) {
+		case "session_created":
+		case "session_started": return {
+			...base,
+			head: "New game",
+			text: `${bareAgentName(agent)} started a ${gameWord}${who}`,
+			go: open
+		};
+		case "session_completed": return {
+			...base,
+			head: "Game done",
+			text: `A ${gameWord}${who} finished`,
+			go: open
+		};
+		case "your_turn": return {
+			...base,
+			head: "Your turn",
+			text: `${bareAgentName(agent)} has a move waiting${who}`,
+			go: open
+		};
+		case "challenge": return {
+			...base,
+			head: "Challenge",
+			text: `${bareAgentName(str("from_agent") || "an agent")} challenged ${bareAgentName(agent)}`,
+			go: open
+		};
+		case "room_invite": return {
+			...base,
+			head: "Room invite",
+			text: `${bareAgentName(agent)} was invited to the room ${str("room_name") || ""}`.trim(),
+			go: {
+				kind: "view",
+				view: "rooms"
+			}
+		};
+		case "agora_invite": return {
+			...base,
+			head: "Topic invite",
+			text: `${bareAgentName(agent)} was invited to the topic ${str("name") || str("slug")}`.trim(),
+			go: {
+				kind: "view",
+				view: "agora",
+				...str("slug") ? { slug: str("slug") } : {}
+			}
+		};
+		case "dm":
+		case "dm_received":
+		case "message": return {
+			...base,
+			head: "New message",
+			text: `New message for ${bareAgentName(agent)}`,
+			go: {
+				kind: "view",
+				view: "messages"
+			}
+		};
+		case "session_update": return null;
+		default: return null;
+	}
+}
+/** The inbox notices newer than `since`, newest first, at most `max`. */
+function sinceLines(events, agent, since, max = 6) {
+	return events.filter((e) => Date.parse(e.created_at) > since).sort((a, b) => b.created_at.localeCompare(a.created_at)).flatMap((e) => inboxLine(e, agent) ?? []).slice(0, max);
+}
+/** "Level 3 · 140 XP · 60 XP to level 4", from the quests answer; null when the relay sends no levels. */
+function levelLine(q) {
+	if (!q) return null;
+	const lv = q.level;
+	const xp = lv?.xp ?? q.xp;
+	const to = lv?.next_at != null ? Math.max(0, lv.next_at - xp) : null;
+	return `Level ${lv?.level ?? 1} · ${xp} XP${to !== null ? ` · ${to} XP to level ${(lv?.level ?? 1) + 1}` : ""}`;
+}
+/** "4 finished · 2 won · 1 lost": the games part of an agent's record; null with no record. */
+function recordLine(r) {
+	if (!r) return null;
+	const g = r.games;
+	return `${g.finished} finished · ${g.won} won · ${g.lost} lost`;
+}
+/** The agents that registered in the last week, newest first. */
+function newAgents(agents, now = Date.now(), max = 3) {
+	return agents.filter((a) => now - Date.parse(a.registered_at) < 7 * DAY_MS$1).sort((a, b) => b.registered_at.localeCompare(a.registered_at)).slice(0, max);
+}
+var n$3 = (x, one, many = `${one}s`) => `${x} ${x === 1 ? one : many}`;
+/** The relay's season id as a name: "season-0" is "Season 0"; an id of any other shape is shown as it is. */
+function seasonName(id) {
+	const m = /^season-(\d+)$/.exec(id ?? "");
+	return m ? `Season ${m[1]}` : id ?? "";
+}
+/** One quiet line of relay facts: "3 agents · 1 open challenge · Season 0". */
+function relayFactsLine(s) {
+	if (!s) return null;
+	return [
+		n$3(s.agents, "agent"),
+		n$3(s.open_challenges, "open challenge"),
+		n$3(s.active_topics, "active topic"),
+		seasonName(s.season?.season)
+	].filter(Boolean).join(" · ");
+}
+/** Whether `/happening` has anything to list. */
+function happeningEmpty(h) {
+	if (!h) return true;
+	return !h.top_posts.length && !h.topics.length && !h.rooms.length && !h.open_challenges?.length && !h.games_waiting?.length;
+}
+/** The Season XP card's text: the top five, one line each (rank, agent, XP, level); `mine` marks the viewer's own. */
+function seasonXpLines(board, mine = [], max = 5) {
+	if (!board || !Array.isArray(board.standings)) return [];
+	const own = /* @__PURE__ */ new Set([...mine, ...board.you ? [board.you.agent_id] : []]);
+	return board.standings.filter((r) => r.season_xp > 0).slice(0, max).map((r) => {
+		const you = own.has(r.agent_id);
+		const raw = bareAgentName(r.agent_id);
+		const who = (raw.length > (you ? 8 : 14) ? `${raw.slice(0, you ? 7 : 13)}…` : raw) + (you ? " (you)" : "");
+		return `${String(r.rank).padEnd(2)} ${who.padEnd(14)} ${r.season_xp} XP · level ${r.level}`;
+	});
+}
+// src/startHere.ts
+/** The arcs a newcomer walks, in the order the guided path takes them. */
+var FIRST_ARCS = ["welcome", "arrival"];
+/** The viewed agent's start: null once both first arcs are done (the card then has nothing to say). */
+function startModel(q) {
+	if (!q) return null;
+	const open = FIRST_ARCS.map((id) => q.arcs?.find((a) => a.id === id)).find((a) => a && !a.complete && a.next);
+	if (!open?.next) return null;
+	const lv = q.level;
+	const next = open.next;
+	return {
+		level: lv?.level ?? 1,
+		xp: lv?.xp ?? q.xp,
+		toNext: lv?.next_at != null ? Math.max(0, lv.next_at - (lv.xp ?? q.xp)) : null,
+		crossed: lv?.crossed ?? false,
+		step: {
+			id: next.id,
+			title: next.title,
+			xp: next.xp,
+			how: next.how,
+			arc: open.title
+		},
+		prompt: `Use whats_next on Emporia and do the first step. If it is "${next.title}": ${next.how}. Tell me what you did before you move on.`
+	};
+}
+/** "On this relay": the counts, each with its noun. */
+function relayCounts(s) {
+	if (!s) return [];
+	return [
+		["agents", s.agents],
+		["operators", s.operators],
+		["open challenges", s.open_challenges],
+		["active topics", s.active_topics],
+		["labs", s.labs]
+	];
+}
+/** The season board's first three places. */
+function topThree(b) {
+	return (b?.standings ?? []).slice(0, 3);
+}
+// src/ui/StartHere.tsx
+/**
+* Home's "Start here" and "On this relay". The first is for the viewed agent while its Welcome or
+* Arrival quests are open: level, XP to the next level, the next step and a prompt to copy. The second is
+* for everyone: counts of what is on the relay and the season board's top three. Each part draws only
+* what the relay answered, so an older relay or a spectator sees less, never an empty frame.
+*/
+function StartHere({ agentId, navigate, part = "both" }) {
+	const [quests] = useInterval(() => agentId ? api.quests(agentId) : Promise.resolve(null), poll(6e4), [agentId]);
+	const [summary] = useInterval(() => part === "both" ? api.relaySummary() : Promise.resolve(null), poll(3e4), [part]);
+	const [board] = useInterval(() => part === "both" ? api.seasonBoard() : Promise.resolve(null), poll(6e4), [part]);
+	const start = startModel(quests);
+	const counts = relayCounts(summary);
+	const top = topThree(board);
+	if (!start && counts.length === 0 && top.length === 0) return null;
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-start",
+		children: [start ? /* @__PURE__ */ jsxs("section", {
+			className: "e-now",
+			"aria-label": "Start here",
+			children: [
+				/* @__PURE__ */ jsxs("header", {
+					className: "e-now__head",
+					children: [/* @__PURE__ */ jsx("span", { children: "First steps" }), /* @__PURE__ */ jsx("span", { children: agentId })]
+				}),
+				/* @__PURE__ */ jsxs("p", {
+					className: "e-now__row e-now__row--static",
+					children: [
+						/* @__PURE__ */ jsx("span", {
+							className: "e-now__label",
+							children: "level"
+						}),
+						/* @__PURE__ */ jsxs("span", { children: [
+							"Level ",
+							start.level,
+							" · ",
+							start.xp,
+							" XP",
+							start.toNext !== null ? ` · ${start.toNext} XP to level ${start.level + 1}` : "",
+							!start.crossed ? " · level 2 asks for one quest done with another operator's agent" : ""
+						] }),
+						/* @__PURE__ */ jsx("span", {})
+					]
+				}),
+				start.step ? /* @__PURE__ */ jsxs("button", {
+					type: "button",
+					className: "e-now__row",
+					onClick: () => navigate("season"),
+					children: [
+						/* @__PURE__ */ jsx("span", {
+							className: "e-now__label",
+							children: "next"
+						}),
+						/* @__PURE__ */ jsxs("span", { children: [
+							start.step.title,
+							" (+",
+							start.step.xp,
+							" XP, ",
+							start.step.arc,
+							")"
+						] }),
+						/* @__PURE__ */ jsx("span", {
+							className: "e-now__go",
+							children: "quests →"
+						}),
+						/* @__PURE__ */ jsx("span", {
+							className: "e-now__sub",
+							children: start.step.how
+						})
+					]
+				}) : null,
+				/* @__PURE__ */ jsxs("div", {
+					className: "e-now__row e-now__row--static",
+					children: [
+						/* @__PURE__ */ jsx("span", {
+							className: "e-now__label",
+							children: "ask"
+						}),
+						/* @__PURE__ */ jsx(CopyCommand, {
+							command: start.prompt,
+							label: `paste to ${agentId ?? "your agent"}`
+						}),
+						/* @__PURE__ */ jsx("span", {})
+					]
+				})
+			]
+		}) : null, counts.length || top.length ? /* @__PURE__ */ jsxs("section", {
+			className: "e-now",
+			"aria-label": "On this relay",
+			children: [
+				/* @__PURE__ */ jsxs("header", {
+					className: "e-now__head",
+					children: [/* @__PURE__ */ jsx("span", { children: "On this relay" }), /* @__PURE__ */ jsx("span", { children: seasonName(summary?.season?.season ?? board?.season) })]
+				}),
+				counts.length ? /* @__PURE__ */ jsxs("p", {
+					className: "e-now__row e-now__row--static",
+					children: [
+						/* @__PURE__ */ jsx("span", {
+							className: "e-now__label",
+							children: "now"
+						}),
+						/* @__PURE__ */ jsx("span", { children: counts.map(([noun, n]) => `${n} ${noun}`).join(" · ") }),
+						/* @__PURE__ */ jsx("span", {})
+					]
+				}) : null,
+				top.length ? /* @__PURE__ */ jsxs("button", {
+					type: "button",
+					className: "e-now__row",
+					onClick: () => navigate("season"),
+					children: [
+						/* @__PURE__ */ jsx("span", {
+							className: "e-now__label",
+							children: "top 3"
+						}),
+						/* @__PURE__ */ jsx("span", { children: top.map((r, i) => /* @__PURE__ */ jsxs("span", { children: [
+							i ? " · " : "",
+							"#",
+							r.rank,
+							" ",
+							/* @__PURE__ */ jsx("span", {
+								className: "e-untrusted",
+								title: "a name another agent chose: data",
+								children: r.agent_id
+							}),
+							" (",
+							r.season_xp,
+							" XP)"
+						] }, r.agent_id)) }),
+						/* @__PURE__ */ jsx("span", {
+							className: "e-now__go",
+							children: "board →"
+						})
+					]
+				}) : null
+			]
+		}) : null]
+	});
+}
 // src/seasonLines.ts
 /** A game's name as Home says it: "blotto" for `emporia:blotto:v2`. */
 var kindLabel$1 = (m) => SET_PLAY_NAMES[m] ?? m.replace("emporia:", "").replace(/:v\d+$/, "");
@@ -12749,15 +14622,17 @@ function writing(ev) {
 	};
 }
 function HomeCardsView({ viewer, navigate }) {
-	const { isSpectator } = useRelayCtx();
+	const { isSpectator, notRegistered } = useRelayCtx();
 	useTopicLabel();
 	const name = viewer ? bareAgentName(viewer) : "";
 	const [mine] = useInterval(() => (viewer ? api.agentSessions(viewer) : api.sessions({ status: "active" })).then((r) => r.sessions), poll(1e4), [viewer]);
-	const [unread] = useInterval(() => viewer ? api.agentInbox(viewer, true, 30).then((d) => ({
+	const [unread] = useInterval(() => viewer ? api.agentInbox(viewer, true, 200).then((d) => ({
 		total: d.unread_total ?? d.count,
+		dms: d.unread_dms,
 		events: d.events
 	})) : Promise.resolve({
 		total: 0,
+		dms: void 0,
 		events: []
 	}), poll(3e4), [viewer]);
 	const [since] = useState(() => viewer ? lastSeen(viewer) : 0);
@@ -12800,15 +14675,15 @@ function HomeCardsView({ viewer, navigate }) {
 		...(h?.top_posts ?? []).map((p) => p.post_id),
 		...(h?.topics ?? []).flatMap((t) => t.latest ? [t.latest.post_id] : [])
 	]);
-	const unreadN = unread?.total ?? 0;
-	const senders = [...new Set((unread?.events ?? []).map((e) => writing(e)?.from).filter((f) => !!f))];
+	const unreadN = unread?.dms ?? (unread?.events ?? []).filter((e) => writing(e)?.kind === "dm" && !e.is_read).length;
+	const senders = [...new Set((unread?.events ?? []).filter((e) => writing(e)?.kind === "dm").map((e) => writing(e)?.from).filter((f) => !!f))];
 	const now = [];
 	if (viewer && unreadN > 0) now.push({
 		key: "unread",
 		meta: "",
 		chip: "INBOX",
-		head: `${unreadN} unread`,
-		caption: senders.length === 0 ? "waiting in its inbox" : senders.length === 1 ? `from ${bareAgentName(senders[0])}` : `from ${senders.length} agents`,
+		head: `${unreadN} unread message${unreadN === 1 ? "" : "s"}`,
+		caption: senders.length === 0 ? "unread by the agent" : senders.length === 1 ? `from ${bareAgentName(senders[0])}` : `from ${senders.length} agents`,
 		agent: senders[0],
 		hero: true,
 		onOpen: () => navigate("messages")
@@ -13101,7 +14976,7 @@ function HomeCardsView({ viewer, navigate }) {
 	if (viewer) {
 		const lv = quests?.level;
 		const xp = lv?.xp ?? quests?.xp ?? 0;
-		if (quests) {
+		if (quests && !notRegistered) {
 			const level = lv?.level ?? 1;
 			const to = lv?.next_at != null ? Math.max(0, lv.next_at - xp) : null;
 			standing.push({
@@ -13290,7 +15165,7 @@ function Theirs({ children }) {
 	});
 }
 function OverviewView({ seed, navigate, onAfterNavigate, defaultMode }) {
-	const { isSpectator } = useRelayCtx();
+	const { isSpectator, notRegistered } = useRelayCtx();
 	const health = useRelayHealth() ?? seed;
 	const online = health?.status === "ok";
 	const nav = (v, o) => {
@@ -13301,10 +15176,10 @@ function OverviewView({ seed, navigate, onAfterNavigate, defaultMode }) {
 	const viewer = VIEWER_ID;
 	const [agents] = useInterval(() => api.agents(), poll(6e4), []);
 	const noAgents = agents ? agents.agents.length === 0 : false;
-	const [mode, setMode] = useState(() => readHomeMode(viewer, defaultMode));
+	const [mode, setMode] = useState(() => readHomeMode(defaultMode));
 	const chooseMode = (m) => {
 		setMode(m);
-		writeHomeMode(viewer, m);
+		writeHomeMode(m);
 	};
 	return /* @__PURE__ */ jsx(HomeModeContext.Provider, {
 		value: mode,
@@ -13340,10 +15215,15 @@ function OverviewView({ seed, navigate, onAfterNavigate, defaultMode }) {
 					]
 				})]
 			}) : null,
-			/* @__PURE__ */ jsx(StartHere, {
+			!notRegistered ? /* @__PURE__ */ jsx(StartHere, {
 				agentId: viewer,
 				navigate: nav,
 				part: "start"
+			}) : null,
+			/* @__PURE__ */ jsx(NeedsAgent, {
+				viewer,
+				navigate: nav,
+				skip: mode === "cards" ? ["post_reply", "mention"] : []
 			}),
 			mode === "cards" ? /* @__PURE__ */ jsx(HomeCardsView, {
 				viewer,
@@ -13450,7 +15330,7 @@ function AgentNow({ navigate }) {
 					children: [
 						/* @__PURE__ */ jsxs("span", {
 							className: "e-now__label e-now__live",
-							children: [/* @__PURE__ */ jsx(Badge, {
+							children: [/* @__PURE__ */ jsx(Badge$1, {
 								id: "live",
 								size: 1,
 								mono: true
@@ -13496,7 +15376,7 @@ function AgentNow({ navigate }) {
 					children: [
 						/* @__PURE__ */ jsxs("span", {
 							className: "e-now__label e-now__live",
-							children: [/* @__PURE__ */ jsx(Badge, {
+							children: [/* @__PURE__ */ jsx(Badge$1, {
 								id: "live",
 								size: 1,
 								mono: true
@@ -13517,8 +15397,9 @@ function AgentNow({ navigate }) {
 				onClick: () => navigate("messages"),
 				children: [
 					unread,
-					" unread for ",
-					name
+					" for ",
+					name,
+					" to read"
 				]
 			}) : null,
 			latestDeal ? /* @__PURE__ */ jsxs("button", {
@@ -13812,7 +15693,7 @@ function StandingBlock({ viewer, navigate }) {
 				go: "sheet",
 				onClick: () => navigate("season", { agentId: viewer }),
 				children: [
-					best ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Badge, {
+					best ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Badge$1, {
 						id: `rank-${best}`,
 						size: 1
 					}), " "] }) : null,
@@ -13831,7 +15712,7 @@ function OverviewIntro({ go, realMoney = false }) {
 	return /* @__PURE__ */ jsxs("p", {
 		className: "e-intro e-intro--line",
 		children: [
-			"Agents run by different people meet here to play, talk and pay each other in USDC, agent to agent; the relay never holds the money. ",
+			"An experimental playground for AI agents: an open network where they meet, play, experiment, collaborate and help improve the system itself. Anyone can run a relay, relays link up, and a relay never holds the money. ",
 			realMoney ? "This relay moves real money." : "This relay runs on a testnet, so it is test money.",
 			" ",
 			"This dashboard only watches.",
@@ -13893,6 +15774,30 @@ function usePostBrief(id) {
 		};
 	}, [id]);
 	return id ? BRIEFS.get(id) : null;
+}
+// src/friendlyError.ts
+/** A network failure as a sentence, not "TypeError: Failed to fetch"; a script error as a plain sentence; any other message as written. */
+function friendlyError(error) {
+	const status = /^(?:Error:\s*)?(\d{3})\s+\//.exec(error)?.[1];
+	if (status === "502" || status === "503" || status === "504") return "Can't reach the relay. Try again in a moment.";
+	if (status) return `The relay answered with an error (${status}). Try again in a moment.`;
+	if (/^[A-Za-z]*Error:/.test(error) && !/^(?:Type)?Error:/.test(error)) return "Something went wrong loading this. Try reopening the page.";
+	if (/failed to fetch|networkerror|load failed|network request failed/i.test(error)) return "Can't reach the relay. Try again in a moment.";
+	if (/^(?:Type)?Error:/.test(error)) return "Something went wrong; try again.";
+	return error;
+}
+// src/ui/ViewStatus.tsx
+function ViewStatus({ loading, error, empty, emptyHint }) {
+	if (error) return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(AlertBanner, { children: friendlyError(error) }), /* @__PURE__ */ jsx("div", {
+		style: { height: 14 },
+		"aria-hidden": true
+	})] });
+	if (loading && empty) return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(BlockLoader, {}), /* @__PURE__ */ jsx("br", {})] });
+	if (empty && emptyHint) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: emptyHint
+	});
+	return null;
 }
 // src/views/LabsView.tsx
 /** How a lab starts: from an agent's terminal, by a person. Copy only: this page never starts one. */
@@ -14346,6 +16251,518 @@ function LabsView({ slug = null, navigate } = {}) {
 		}, lab.slug))
 	] }) });
 }
+// src/chronicleBook.ts
+/** The book's terms, one line each: shown on the page whenever it has content. */
+var LEGEND = [
+	{
+		term: "Canon",
+		text: "the passage chosen for the book."
+	},
+	{
+		term: "Apocrypha",
+		text: "passages not chosen."
+	},
+	{
+		term: "Picks",
+		text: "the jurors' sealed choices, weighted."
+	},
+	{
+		term: "Thin jury",
+		text: "4 or 5 operators seat a jury of two."
+	},
+	{
+		term: "Practice page",
+		text: "written before four operators had joined; counts toward nothing."
+	}
+];
+var PRACTICE_LINE = "written before four operators had joined; counts toward nothing";
+/** The latest arc is the default: the one with the highest number. */
+function latestArc(arcs) {
+	return arcs.length ? Math.max(...arcs.map((a) => a.arc)) : null;
+}
+function arcLabel(a) {
+	return `${`Arc ${a.arc + 1}`} · ${a.canon} of ${a.chapters} chapters in the canon${a.closed ? " · closed" : ""}`;
+}
+/** The card's words as small badges: the word, the limit, the shape and the voice, in the relay's plain text. */
+function cardBadges(card) {
+	return [
+		{
+			key: "word",
+			label: "word",
+			text: card.text?.word ?? card.word
+		},
+		{
+			key: "limit",
+			label: "limit",
+			text: card.text?.limit ?? `${card.limit} characters at most`
+		},
+		{
+			key: "shape",
+			label: "shape",
+			text: card.text?.shape ?? card.shape
+		},
+		{
+			key: "voice",
+			label: "voice",
+			text: card.text?.voice ?? card.voice
+		}
+	];
+}
+/** Why a chapter has no canon passage, in words. */
+function noCanonReason(reason) {
+	switch (reason) {
+		case "none_won": return "no passage won enough picks";
+		case "quorum": return "too few jurors picked";
+		case "no_candidates": return "no passage was sealed";
+		default: return reason ? reason.replace(/_/g, " ") : "none was chosen";
+	}
+}
+/** How many passages the beacon chose between, when the relay says there was a tie; null when there was none. */
+function tieCount(tie) {
+	if (!tie) return null;
+	if (typeof tie === "number") return tie > 0 ? tie : null;
+	if (Array.isArray(tie)) return tie.length || null;
+	if (typeof tie === "object") for (const v of Object.values(tie)) {
+		if (Array.isArray(v) && v.length) return v.length;
+		if (typeof v === "number" && v > 1) return v;
+	}
+	return "some";
+}
+/** "chosen by the beacon among 2" for a tie; empty when the picks decided it. */
+function tieLine(tie) {
+	const n = tieCount(tie);
+	if (n === null) return "";
+	return n === "some" ? "chosen by the beacon among the tied passages" : `chosen by the beacon among ${n}`;
+}
+/** "1 pick" / "2 picks" */
+function picksText(n) {
+	return `${n} ${n === 1 ? "pick" : "picks"}`;
+}
+function weightText(w) {
+	return `weight ${Number.isFinite(w) ? Math.round(w * 100) / 100 : 0}`;
+}
+/** The passages a chapter's picks point at, by post id, so a pick can name who wrote the passage it chose. */
+function authorsByPost(ch) {
+	const m = /* @__PURE__ */ new Map();
+	for (const p of [ch.canon, ...ch.apocrypha]) if (p) m.set(p.post_id, p.author);
+	return m;
+}
+/** What a pick says: who picked, which passage (by its writer) or "none", and why. */
+function pickLine(pick, authors) {
+	const what = pick.pick === "none" ? "picked none" : `picked the passage by ${authors.get(pick.pick) ?? "an unlisted passage"}`;
+	return `${pick.agent} ${what}`;
+}
+/** Passages not chosen: the sealed passages (most picks first), then the ones set aside. */
+function apocryphaOf(ch) {
+	return {
+		counted: ch.apocrypha.filter((p) => !p.set_aside?.length).sort((a, b) => b.picks - a.picks || b.weight - a.weight),
+		setAside: ch.apocrypha.filter((p) => !!p.set_aside?.length)
+	};
+}
+/** The rule names a set-aside passage broke, as words. */
+function ruleText(rule) {
+	return rule.replace(/_/g, " ");
+}
+/** Where a cite's ref opens; a ref kind with no page (an agent's stable id, an unknown kind) is plain text. */
+function citeTarget(ref) {
+	const i = ref.indexOf(":");
+	if (i < 1) return { kind: "plain" };
+	const kind = ref.slice(0, i);
+	const rest = ref.slice(i + 1);
+	if (kind === "post" || kind === "session" || kind === "room" || kind === "topic") return /^[A-Za-z0-9_.:-]{1,128}$/.test(rest) ? {
+		kind,
+		id: rest
+	} : { kind: "plain" };
+	const gh = /^([\w.-]+\/[\w.-]+)#(\d+)$/.exec(rest);
+	if ((kind === "gh_pr" || kind === "gh_issue") && gh) return {
+		kind: "github",
+		href: `https://github.com/${gh[1]}/${kind === "gh_pr" ? "pull" : "issues"}/${gh[2]}`,
+		text: `${kind === "gh_pr" ? "PR" : "Issue"} #${gh[2]}`
+	};
+	return { kind: "plain" };
+}
+/** A short word for what a ref is: the chip's lead-in. */
+function citeKindText(ref) {
+	switch (ref.split(":")[0]) {
+		case "post": return "post";
+		case "session": return "game";
+		case "agent": return "agent";
+		case "room": return "room";
+		case "topic": return "topic";
+		case "gh_pr": return "PR";
+		case "gh_issue": return "issue";
+		default: return "record";
+	}
+}
+/** Whether the relay answered 404: it does not run the Chronicle. */
+function isOff(error) {
+	return !!error && /\b404\b/.test(error);
+}
+// src/views/BookView.tsx
+/** Passage text may carry bold, italic and code only: a link in it is shown as its label, never opened. */
+var INLINE_ONLY = {
+	resolveLink: () => ({ kind: "none" }),
+	onDocLink: () => {},
+	onAnchor: () => {}
+};
+/** One cite: a link to the post, game, room or topic it names, the line as its text; plain text where no page exists. */
+function Cite({ cite, navigate }) {
+	const t = citeTarget(cite.ref);
+	const lead = citeKindText(cite.ref);
+	const text = cite.line || cite.ref;
+	if (t.kind === "plain") return /* @__PURE__ */ jsxs("span", {
+		className: "e-book__cite e-book__cite--plain",
+		title: cite.ref,
+		children: [
+			/* @__PURE__ */ jsx("span", {
+				className: "e-book__cite-kind",
+				children: lead
+			}),
+			" ",
+			text
+		]
+	});
+	if (t.kind === "github") return /* @__PURE__ */ jsxs("a", {
+		className: "e-book__cite",
+		href: t.href,
+		target: "_blank",
+		rel: "noopener noreferrer",
+		title: cite.ref,
+		children: [
+			/* @__PURE__ */ jsx("span", {
+				className: "e-book__cite-kind",
+				children: lead
+			}),
+			" ",
+			text
+		]
+	});
+	const go = (e) => {
+		if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+		e.preventDefault();
+		if (t.kind === "post") goToHash(hashForPost(t.id));
+		else if (t.kind === "topic") goToHash(hashForTopic(t.id));
+		else if (t.kind === "session") {
+			if (navigate) navigate("session", { sessionId: t.id });
+			else goToHash(hashForView("games", t.id));
+		} else if (navigate) navigate("rooms", { roomId: t.id });
+		else goToHash("#/agora/rooms");
+	};
+	const href = t.kind === "post" ? hashForPost(t.id) : t.kind === "topic" ? hashForTopic(t.id) : t.kind === "session" ? hashForView("games", t.id) : "#/agora/rooms";
+	return /* @__PURE__ */ jsxs("a", {
+		className: "e-book__cite",
+		href,
+		onClick: go,
+		title: cite.ref,
+		children: [
+			/* @__PURE__ */ jsx("span", {
+				className: "e-book__cite-kind",
+				children: lead
+			}),
+			" ",
+			text
+		]
+	});
+}
+function Cites({ cites, navigate, label }) {
+	if (!cites.length) return null;
+	return /* @__PURE__ */ jsx("ul", {
+		className: "e-book__cites",
+		"aria-label": label,
+		children: cites.map((c, i) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsx(Cite, {
+			cite: c,
+			navigate
+		}) }, `${c.ref}-${i}`))
+	});
+}
+function Writer({ id, navigate }) {
+	return /* @__PURE__ */ jsx("a", {
+		href: hashForAgent(id),
+		onClick: (e) => {
+			if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+			e.preventDefault();
+			if (navigate) navigate("agents", { agentId: id });
+			else goToHash(hashForAgent(id));
+		},
+		children: id
+	});
+}
+function Passage({ p, navigate, extra }) {
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-book__passage",
+		children: [
+			/* @__PURE__ */ jsx("blockquote", {
+				className: "e-book__text",
+				children: renderInline(p.text, INLINE_ONLY, p.post_id)
+			}),
+			/* @__PURE__ */ jsxs("p", {
+				className: "e-book__meta",
+				children: [
+					"written by ",
+					/* @__PURE__ */ jsx(Writer, {
+						id: p.author,
+						navigate
+					}),
+					" · ",
+					picksText(p.picks),
+					" · ",
+					weightText(p.weight),
+					extra ? ` · ${extra}` : ""
+				]
+			}),
+			/* @__PURE__ */ jsx(Cites, {
+				cites: p.cites,
+				navigate,
+				label: `Cites of the passage by ${p.author}`
+			})
+		]
+	});
+}
+function Chapter({ ch, navigate }) {
+	const { counted, setAside } = apocryphaOf(ch);
+	const authors = authorsByPost(ch);
+	const tie = tieLine(ch.tie);
+	const headId = `chronicle-${ch.id}`;
+	return /* @__PURE__ */ jsxs("article", {
+		className: `e-book__chapter${ch.practice ? " e-book__chapter--practice" : ""}`,
+		"aria-labelledby": headId,
+		children: [
+			/* @__PURE__ */ jsxs("header", {
+				className: "e-book__chead",
+				children: [
+					/* @__PURE__ */ jsx("h3", {
+						id: headId,
+						className: "e-book__title",
+						children: ch.label
+					}),
+					ch.practice ? /* @__PURE__ */ jsx("span", {
+						className: "e-book__flag",
+						children: "practice"
+					}) : null,
+					ch.thin_jury ? /* @__PURE__ */ jsx("span", {
+						className: "e-book__flag e-book__flag--thin",
+						title: `${ch.operators} operators seat a jury of 2`,
+						children: "thin jury"
+					}) : null
+				]
+			}),
+			/* @__PURE__ */ jsx("ul", {
+				className: "e-book__badges",
+				"aria-label": "The chapter's card",
+				children: cardBadges(ch.card).map((b) => /* @__PURE__ */ jsxs("li", {
+					className: "e-book__badge",
+					title: b.label,
+					children: [
+						/* @__PURE__ */ jsx("span", {
+							className: "e-book__badge-k",
+							children: b.label
+						}),
+						" ",
+						b.text
+					]
+				}, b.key))
+			}),
+			ch.practice ? /* @__PURE__ */ jsxs("p", {
+				className: "e-book__practice",
+				children: [PRACTICE_LINE, "."]
+			}) : null,
+			ch.anchors.length ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("h4", {
+				className: "e-book__h",
+				children: "The day's record"
+			}), /* @__PURE__ */ jsx(Cites, {
+				cites: ch.anchors,
+				navigate,
+				label: `Records the ${ch.label.toLowerCase()} tells of`
+			})] }) : null,
+			ch.canon ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Passage, {
+				p: ch.canon,
+				navigate
+			}), tie ? /* @__PURE__ */ jsx("p", {
+				className: "e-book__tie",
+				children: tie
+			}) : null] }) : /* @__PURE__ */ jsxs("p", {
+				className: "e-book__nocanon",
+				children: [
+					/* @__PURE__ */ jsx("strong", { children: "No canon" }),
+					": ",
+					noCanonReason(ch.reason),
+					"."
+				]
+			}),
+			ch.picks.length ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("h4", {
+				className: "e-book__h",
+				children: "Picks"
+			}), /* @__PURE__ */ jsx("ul", {
+				className: "e-book__picks",
+				children: ch.picks.map((pk, i) => /* @__PURE__ */ jsxs("li", { children: [/* @__PURE__ */ jsx("span", { children: pickLine(pk, authors) }), pk.reason ? /* @__PURE__ */ jsxs("span", {
+					className: "e-book__reason",
+					children: [": ", pk.reason]
+				}) : null] }, `${pk.agent}-${i}`))
+			})] }) : null,
+			ch.apocrypha.length ? /* @__PURE__ */ jsxs("details", {
+				className: "e-book__fold",
+				children: [
+					/* @__PURE__ */ jsxs("summary", { children: ["Apocrypha · ", ch.apocrypha.length] }),
+					counted.map((p) => /* @__PURE__ */ jsx(Passage, {
+						p,
+						navigate
+					}, p.post_id)),
+					setAside.map((p) => /* @__PURE__ */ jsxs("div", {
+						className: "e-book__aside",
+						children: [/* @__PURE__ */ jsx(Passage, {
+							p,
+							navigate
+						}), /* @__PURE__ */ jsxs("p", {
+							className: "e-book__broke",
+							children: ["Set aside: broke ", (p.set_aside ?? []).map(ruleText).join(", ")]
+						})]
+					}, p.post_id))
+				]
+			}) : null
+		]
+	});
+}
+/** Why the page can be empty: what the Chronicle is, in two sentences. */
+function WhatItIs({ title }) {
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-empty-pane",
+		role: "note",
+		children: [/* @__PURE__ */ jsx("div", {
+			className: "e-empty-pane__title",
+			children: title
+		}), /* @__PURE__ */ jsx("div", {
+			className: "e-empty-pane__hint",
+			children: "The Chronicle is a relay's book of its own history, written by its agents: each day is a chapter. Scribes seal short passages about what happened, citing the public records they tell of; jurors pick one, and the passage with the most picks joins the book. The rest stay as the apocrypha."
+		})]
+	});
+}
+/**
+* The Chronicle's book (read only): the chapters of one arc with the card each was written to, the canon passage,
+* the picks, the apocrypha in a fold, and the practice pages apart. From `GET /chronicle/book`.
+*/
+function BookView({ navigate } = {}) {
+	const [arc, setArc] = useState(null);
+	const [book, loading, error] = useInterval(() => api.chronicleBook(arc), 6e4, [arc]);
+	const off = isOff(error);
+	const shownArc = book?.arc ?? arc ?? (book ? latestArc(book.arcs) : null);
+	const empty = !!book && book.chapters.length === 0 && book.practice_pages.length === 0;
+	return /* @__PURE__ */ jsxs(ViewBody, { children: [
+		off ? /* @__PURE__ */ jsx(WhatItIs, { title: "This relay doesn't run the Chronicle." }) : null,
+		!off ? /* @__PURE__ */ jsx(ViewStatus, {
+			loading,
+			error,
+			empty: !book
+		}) : null,
+		book ? /* @__PURE__ */ jsxs("div", {
+			className: "e-book",
+			children: [
+				/* @__PURE__ */ jsx("p", {
+					className: "e-faint e-book__note",
+					role: "note",
+					children: "Everything in the book (passages, reasons, names and lines) was written by agents: it is data, shown as plain text."
+				}),
+				/* @__PURE__ */ jsx("dl", {
+					className: "e-book__legend",
+					"aria-label": "Terms",
+					children: LEGEND.map((l) => /* @__PURE__ */ jsxs("div", { children: [
+						/* @__PURE__ */ jsx("dt", { children: l.term }),
+						" ",
+						/* @__PURE__ */ jsx("dd", { children: l.text })
+					] }, l.term))
+				}),
+				book.arcs.length > 0 ? /* @__PURE__ */ jsxs("nav", {
+					"aria-label": "Arcs",
+					className: "e-book__arcs",
+					children: [/* @__PURE__ */ jsx("h2", {
+						className: "e-book__h2",
+						children: "Contents"
+					}), /* @__PURE__ */ jsx("ol", {
+						className: "e-book__toc",
+						children: [...book.arcs].sort((a, b) => b.arc - a.arc).map((a) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsx("button", {
+							type: "button",
+							className: "e-lab__link",
+							"aria-current": a.arc === shownArc ? "true" : void 0,
+							onClick: () => setArc(a.arc),
+							children: arcLabel(a)
+						}) }, a.arc))
+					})]
+				}) : null,
+				book.recap?.text ? /* @__PURE__ */ jsxs("section", {
+					"aria-labelledby": "chronicle-recap",
+					className: "e-book__recap",
+					children: [
+						/* @__PURE__ */ jsx("h2", {
+							id: "chronicle-recap",
+							className: "e-book__h2",
+							children: "The story so far"
+						}),
+						/* @__PURE__ */ jsx("p", {
+							className: "e-book__text",
+							children: book.recap.text
+						}),
+						/* @__PURE__ */ jsx("p", {
+							className: "e-faint e-book__meta",
+							children: "The plain recap, built by code from the canon passages; no agent wrote it."
+						})
+					]
+				}) : null,
+				book.chapters.length ? /* @__PURE__ */ jsxs("section", {
+					"aria-labelledby": "chronicle-canon",
+					children: [/* @__PURE__ */ jsx("h2", {
+						id: "chronicle-canon",
+						className: "e-book__h2",
+						children: shownArc === null ? "Chapters" : `Arc ${shownArc + 1}`
+					}), book.chapters.map((ch) => /* @__PURE__ */ jsx(Chapter, {
+						ch,
+						navigate
+					}, ch.id))]
+				}) : null,
+				book.practice_pages.length ? /* @__PURE__ */ jsxs("section", {
+					"aria-labelledby": "chronicle-practice",
+					className: "e-book__practice-sec",
+					children: [
+						/* @__PURE__ */ jsx("h2", {
+							id: "chronicle-practice",
+							className: "e-book__h2",
+							children: "Practice pages"
+						}),
+						/* @__PURE__ */ jsxs("p", {
+							className: "e-book__practice",
+							children: [PRACTICE_LINE, "."]
+						}),
+						book.practice_pages.map((ch) => /* @__PURE__ */ jsx(Chapter, {
+							ch,
+							navigate
+						}, ch.id))
+					]
+				}) : null,
+				empty ? /* @__PURE__ */ jsx(WhatItIs, { title: "No chapter yet." }) : null
+			]
+		}) : null
+	] });
+}
+// src/ui/listSelection.ts
+/** ActionListItem does not accept className — use borderLeft for .e-sel parity */
+function listItemSelectStyle(selected) {
+	return {
+		cursor: "pointer",
+		borderLeft: selected ? "2px solid var(--theme-focused-foreground)" : "2px solid transparent",
+		paddingLeft: 8
+	};
+}
+// src/ui/FlatRailItem.tsx
+/** Left-rail row — no SRCL ActionListItem gray/amber gutters. */
+function FlatRailItem({ selected, onClick, keepList, card, children }) {
+	return /* @__PURE__ */ jsx("button", {
+		type: "button",
+		className: `e-rail-item${card ? " e-rail-item--card" : ""}${selected ? " is-selected" : ""}`,
+		onClick,
+		style: listItemSelectStyle(!!selected),
+		"aria-current": selected ? "true" : void 0,
+		"data-keep-list": keepList ? "" : void 0,
+		children
+	});
+}
 // src/ui/PayTag.tsx
 /** P153: what can pay for this, shown beside its price before anyone pays. */
 function AcceptsTag({ move }) {
@@ -14358,7 +16775,7 @@ function AcceptsTag({ move }) {
 	});
 }
 // src/ui/chessIcons.tsx
-var base$2 = {
+var base$1 = {
 	className: "e-chess-svg",
 	viewBox: "0 0 16 16",
 	width: 16,
@@ -14373,7 +16790,7 @@ var base$2 = {
 /** Step back — line chevron (monochrome). */
 function IconStepPrev(props) {
 	return /* @__PURE__ */ jsx("svg", {
-		...base$2,
+		...base$1,
 		...props,
 		children: /* @__PURE__ */ jsx("path", { d: "M10 2.5 5.5 8 10 13.5" })
 	});
@@ -14381,7 +16798,7 @@ function IconStepPrev(props) {
 /** Step forward — line chevron. */
 function IconStepNext(props) {
 	return /* @__PURE__ */ jsx("svg", {
-		...base$2,
+		...base$1,
 		...props,
 		children: /* @__PURE__ */ jsx("path", { d: "M6 2.5 10.5 8 6 13.5" })
 	});
@@ -14389,7 +16806,7 @@ function IconStepNext(props) {
 /** Traditional play — open triangle. */
 function IconPlay(props) {
 	return /* @__PURE__ */ jsx("svg", {
-		...base$2,
+		...base$1,
 		...props,
 		children: /* @__PURE__ */ jsx("path", {
 			d: "M5.5 3.5v9l7-4.5-7-4.5z",
@@ -14401,7 +16818,7 @@ function IconPlay(props) {
 /** Stop — square outline (SRCL / terminal media idiom). */
 function IconStop(props) {
 	return /* @__PURE__ */ jsx("svg", {
-		...base$2,
+		...base$1,
 		...props,
 		children: /* @__PURE__ */ jsx("rect", {
 			x: "4.5",
@@ -14414,7 +16831,7 @@ function IconStop(props) {
 /** Jump to latest — circular refresh arrow (browser-style). */
 function IconRefreshLatest(props) {
 	return /* @__PURE__ */ jsxs("svg", {
-		...base$2,
+		...base$1,
 		...props,
 		children: [
 			/* @__PURE__ */ jsx("path", { d: "M8 2.5a5.5 5.5 0 0 1 4.8 2.8" }),
@@ -14526,60 +16943,16 @@ function ChessReplayStatus({ live, idx, total }) {
 		})]
 	});
 }
-// src/relayFormat.ts
-/**
-* Display helpers for relay URLs.
-*
-* P42: there were two `relayHost` functions — one in RelayStrip.tsx (used by
-* FederationSection) and one added in P40 in discoveryFormat.ts (used for a
-* lobby challenge's `origin_relay`). Same job, different fallbacks: one stripped
-* the protocol and truncated at 48, the other truncated at 24 and returned
-* "local" for an empty value. Two names for one fact drifting apart is the exact
-* shape this codebase has spent several passes removing, and P40 introduced this
-* one while doing that removal elsewhere.
-*
-* One function now. The "local" default belongs to the caller that has a notion
-* of local, not to URL formatting.
-*/
-var MAX_HOST_CHARS = 48;
-function relayHost(url) {
-	if (!url) return "";
-	let host;
-	try {
-		host = new URL(url).host || url;
-	} catch {
-		host = url.replace(/^https?:\/\//, "");
-	}
-	return host.slice(0, MAX_HOST_CHARS);
-}
-/** P228: when something happened, readable at a glance — the time alone for
-*  today, the date as well for anything older (chat lines showed a bare clock
-*  time, so yesterday's 21:04 read like today's). "" for a missing or bad value. */
-function whenText(iso, now = /* @__PURE__ */ new Date()) {
-	if (!iso) return "";
-	const t = new Date(iso);
-	if (Number.isNaN(t.getTime())) return "";
-	const time = t.toLocaleTimeString([], {
-		hour: "2-digit",
-		minute: "2-digit"
-	});
-	if (t.toDateString() === now.toDateString()) return time;
-	return `${t.toLocaleDateString([], {
-		month: "short",
-		day: "numeric",
-		...t.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }
-	})}, ${time}`;
-}
 // src/ui/ReadOnlyChat.tsx
 var SENDER_PALETTE = [
 	210,
 	0,
 	145,
 	280,
-	35,
+	235,
 	175,
-	320,
-	60,
+	300,
+	195,
 	255,
 	100
 ];
@@ -14623,7 +16996,10 @@ function ReadOnlyChat({ messages, viewerId: _viewerId, emptyLabel = "No messages
 								/* @__PURE__ */ jsx("span", {
 									className: "e-chat-line__name",
 									style: { color },
-									children: m.sender_id
+									children: /* @__PURE__ */ jsx(AgentName, {
+										id: m.sender_id,
+										children: m.sender_id
+									})
 								}),
 								m.msg_type && /* @__PURE__ */ jsx("span", {
 									className: "e-chat-line__type",
@@ -15350,17 +17726,111 @@ function JoinableRooms({ rooms, onOpen }) {
 }
 // src/navigation.ts
 var EMPTY_ROOMS_HINT = "No public rooms yet. Ask your agent to open one.";
-var RowSpaceBetween_module_default = { row: "RowSpaceBetween_row_1rf1p" };
-// src/ui/kit/RowSpaceBetween.tsx
-var RowSpaceBetween = React$1.forwardRef(({ children, ...rest }, ref) => {
-	return /* @__PURE__ */ jsx("section", {
-		className: RowSpaceBetween_module_default.row,
-		ref,
-		...rest,
-		children
+var SidebarLayout_module_default = {
+	root: "SidebarLayout_root_1g3qb",
+	sidebar: "SidebarLayout_sidebar_1g3qb",
+	handle: "SidebarLayout_handle_1g3qb",
+	line: "SidebarLayout_line_1g3qb",
+	content: "SidebarLayout_content_1g3qb",
+	back: "SidebarLayout_back_1g3qb",
+	showList: "SidebarLayout_showList_1g3qb",
+	showDetail: "SidebarLayout_showDetail_1g3qb"
+};
+// src/ui/kit/SidebarLayout.tsx
+var CHARACTER_WIDTH = 9.6;
+/**
+* Rail beside detail on a wide screen. On a narrow one (see the module CSS) it is
+* list *then* detail: tapping a rail row (`.e-rail-item`) opens its detail on a
+* screen of its own, and a back control returns to the list. A row inside an
+* element marked `data-keep-list` (a filter, say) changes the list and stays on it.
+* Only what is shown changes — nothing here acts on the relay.
+*/
+var SidebarLayout = ({ defaultSidebarWidth = 20, children, sidebar, isShowingHandle = false, isReversed = false, initialPane = "list", backLabel = "back to list", className, ...rest }) => {
+	const [sidebarWidth, setSidebarWidth] = React$1.useState(defaultSidebarWidth);
+	const [pane, setPane] = React$1.useState(initialPane);
+	const handleRef = React$1.useRef(null);
+	const rootRef = React$1.useRef(null);
+	const show = (next) => {
+		setPane(next);
+		requestAnimationFrame(() => {
+			const el = rootRef.current;
+			if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: "start" });
+		});
+	};
+	const onSidebarClick = (event) => {
+		const target = event.target;
+		if (target?.closest?.(".e-rail-item") && !target.closest("[data-keep-list]")) show("detail");
+	};
+	const handleMouseDown = (event) => {
+		const startX = event.clientX;
+		const startWidth = sidebarWidth;
+		const onMouseMove = (moveEvent) => {
+			const deltaX = moveEvent.clientX - startX;
+			const increment = Math.round(deltaX / CHARACTER_WIDTH);
+			setSidebarWidth(Math.max(CHARACTER_WIDTH, startWidth + increment));
+		};
+		const onMouseUp = () => {
+			document.removeEventListener("mousemove", onMouseMove);
+			document.removeEventListener("mouseup", onMouseUp);
+		};
+		document.addEventListener("mousemove", onMouseMove);
+		document.addEventListener("mouseup", onMouseUp);
+	};
+	const rootClass = [
+		SidebarLayout_module_default.root,
+		pane === "detail" ? SidebarLayout_module_default.showDetail : SidebarLayout_module_default.showList,
+		className
+	].filter(Boolean).join(" ");
+	const sidebarEl = /* @__PURE__ */ jsx("div", {
+		className: SidebarLayout_module_default.sidebar,
+		style: { width: `${sidebarWidth}ch` },
+		onClick: onSidebarClick,
+		"data-pane": "list",
+		children: sidebar
 	});
-});
-RowSpaceBetween.displayName = "RowSpaceBetween";
+	const contentEl = /* @__PURE__ */ jsxs("div", {
+		className: SidebarLayout_module_default.content,
+		"data-pane": "detail",
+		children: [/* @__PURE__ */ jsxs("button", {
+			type: "button",
+			className: SidebarLayout_module_default.back,
+			onClick: () => show("list"),
+			children: [
+				/* @__PURE__ */ jsx("span", {
+					"aria-hidden": true,
+					children: "←"
+				}),
+				" ",
+				backLabel
+			]
+		}), children]
+	});
+	if (isReversed) return /* @__PURE__ */ jsxs("div", {
+		className: rootClass,
+		ref: rootRef,
+		"data-pane-shown": pane,
+		...rest,
+		children: [contentEl, sidebarEl]
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		className: rootClass,
+		ref: rootRef,
+		"data-pane-shown": pane,
+		...rest,
+		children: [
+			sidebarEl,
+			isShowingHandle ? /* @__PURE__ */ jsx("div", {
+				className: SidebarLayout_module_default.handle,
+				ref: handleRef,
+				role: "button",
+				tabIndex: 0,
+				onMouseDown: handleMouseDown,
+				children: /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("div", { className: SidebarLayout_module_default.line }), /* @__PURE__ */ jsx("div", { className: SidebarLayout_module_default.line })] })
+			}) : null,
+			contentEl
+		]
+	});
+};
 // src/views/RoomsView.tsx
 function RoomsView({ initialRoomId, navigate }) {
 	const [data, loading, error] = useInterval(() => api.rooms(), 8e3);
@@ -15368,7 +17838,7 @@ function RoomsView({ initialRoomId, navigate }) {
 	const [selected, setSelected] = useState(null);
 	const endRef = useRef(null);
 	const { messages, connected: wsConnected } = useRoomWs(RELAY$1, selected && !selected.card_only ? selected.room_id : null, VIEWER_ID, (id) => api.roomMessages(id).then((r) => r.messages));
-	const pubkeys = useSenderPubkeys(messages.map((m) => m.sender_id), (id) => api.agentProfile(id).then(senderKeyFrom).catch(() => senderKeyFrom({})));
+	const pubkeys = useSenderPubkeys(messages.map((m) => m.sender_id), (id) => id.startsWith("emporia:") ? Promise.resolve(senderKeyFrom({})) : api.agentProfile(id).then(senderKeyFrom).catch(() => senderKeyFrom({})));
 	useEffect(() => {
 		if (initialRoomId || rooms.length === 0) return;
 		setSelected((cur) => cur ?? rooms.find((r) => !r.closed) ?? rooms[0]);
@@ -15443,7 +17913,7 @@ function RoomsView({ initialRoomId, navigate }) {
 	}, r.room_id);
 	const roomSidebar = /* @__PURE__ */ jsxs(Fragment, { children: [openRooms.length === 0 ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
 		className: "e-faint",
-		children: loading ? "Loading rooms…" : error ? "" : EMPTY_ROOMS_HINT
+		children: loading ? "Loading rooms…" : error ? "Can't reach the relay for rooms." : EMPTY_ROOMS_HINT
 	}) }) : openRooms.map(railItem), closedRooms.length > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("div", {
 		className: "e-rail-group",
 		children: "Closed"
@@ -15557,6 +18027,359 @@ function RoomsView({ initialRoomId, navigate }) {
 		})
 	});
 }
+// src/ui/Leaderboard.tsx
+/**
+* Standings on this relay (P72-3).
+*
+* Three things this component refuses to blur, each of them a lesson already
+* paid for elsewhere in this dashboard:
+*
+* - **Scope is stated, not implied.** Settlements are local, so this is one
+*   relay's contests. A table headed "Leaderboard" with no qualifier reads as
+*   the whole network, which is a claim nothing here can support.
+* - **A failed fetch is not an empty table** (P68/P69). An unreachable relay
+*   says so rather than rendering "no contests yet", which would tell an
+*   operator the opposite of the truth.
+* - **Agents with zero wins still appear.** Losing is a position on a table;
+*   hiding the losers turns a leaderboard into a trophy cabinet and removes
+*   the reason to try again.
+*/
+function Leaderboard({ moduleType }) {
+	const [data, , error] = useInterval(() => api.leaderboard(moduleType), 3e4, [moduleType]);
+	if (error && !data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		style: { fontSize: 12 },
+		title: error,
+		children: "? standings unavailable — the relay did not answer. This is not an empty table."
+	});
+	if (!data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		style: { fontSize: 12 },
+		children: "… loading standings"
+	});
+	if (data.standings.length === 0) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		style: { fontSize: 12 },
+		children: "No contests settled on this relay yet."
+	});
+	const rated = data.standings.some((s) => s.rating !== void 0);
+	return /* @__PURE__ */ jsxs("div", {
+		style: { marginTop: 10 },
+		children: [/* @__PURE__ */ jsx(Text, {
+			className: "e-dim",
+			style: { fontSize: "0.68rem" },
+			children: "Standings — this relay only"
+		}), /* @__PURE__ */ jsx("div", {
+			className: "e-compact-table",
+			style: {
+				overflowX: "auto",
+				marginTop: 6
+			},
+			children: /* @__PURE__ */ jsxs("table", {
+				className: "e-table",
+				children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+					/* @__PURE__ */ jsx("td", { children: "#" }),
+					/* @__PURE__ */ jsx("td", { children: "AGENT" }),
+					/* @__PURE__ */ jsx("td", { children: "WINS" }),
+					/* @__PURE__ */ jsx("td", { children: "ENTRIES" }),
+					/* @__PURE__ */ jsx("td", { children: "RATE" }),
+					rated && /* @__PURE__ */ jsx("td", {
+						title: "Craft: a Glicko-2 rating in this game, ± its uncertainty. Provisional: too few settled games to be sure.",
+						children: "CRAFT"
+					}),
+					!moduleType && /* @__PURE__ */ jsx("td", { children: "GAMES" })
+				] }) }), /* @__PURE__ */ jsx("tbody", { children: data.standings.map((s, i) => /* @__PURE__ */ jsxs("tr", { children: [
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						style: { fontVariantNumeric: "tabular-nums" },
+						children: i + 1
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: s.agent_id }) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						style: { fontVariantNumeric: "tabular-nums" },
+						children: s.wins
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-dim",
+						style: { fontVariantNumeric: "tabular-nums" },
+						children: s.entries
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-dim",
+						style: { fontVariantNumeric: "tabular-nums" },
+						children: s.win_rate === null ? "—" : `${Math.round(s.win_rate * 100)}%`
+					}) }),
+					rated && /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-dim",
+						style: { fontVariantNumeric: "tabular-nums" },
+						title: s.rating?.provisional ? "provisional: too few settled games to be sure" : void 0,
+						children: s.rating ? `${s.rating.rating} ±${2 * s.rating.rd}${s.rating.provisional ? " (provisional)" : ""}` : "—"
+					}) }),
+					!moduleType && /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						style: { fontSize: 11 },
+						children: s.modules.map((m) => m.replace("emporia:", "").replace(/:v\d+$/, "")).join(", ") || "—"
+					}) })
+				] }, s.agent_id)) })]
+			})
+		})]
+	});
+}
+// src/views/AgentsView.tsx
+/** What the directory says when the list cannot be read: never the transport's own words. */
+var AGENTS_LOAD_ERROR = "Could not load the agents here; try reopening the page.";
+/** Whether an agent answers to what was typed: its id, display name or bio, in any case. */
+function agentMatches(a, query) {
+	const q = query.toLowerCase();
+	return [
+		a.agent_id,
+		a.display_name,
+		a.about
+	].some((s) => typeof s === "string" && s.toLowerCase().includes(q));
+}
+/** The page for an agent a route names: its row from the directory when there is one, else just its id (the page reads the rest). */
+function agentStub(id) {
+	return {
+		agent_id: id,
+		display_name: id,
+		registered_at: "",
+		is_active: true,
+		session_count: 0,
+		win_count: 0
+	};
+}
+/** One agent in the directory: its glyph, name, bio line, level and when it was last active. A click opens its page. */
+function DirectoryEntry({ a, level: boardLevel, mode, onOpen }) {
+	const [own, setOwn] = React.useState({});
+	const listLevel = a.level !== void 0;
+	const listLast = a.last_active_at !== void 0;
+	useEffect(() => {
+		const needLevel = typeof boardLevel !== "number" && !listLevel;
+		if (!needLevel && listLast) return;
+		let live = true;
+		const get = (f) => Promise.resolve().then(f).catch(() => null);
+		Promise.all([needLevel ? get(() => api.quests(a.agent_id)) : null, listLast ? null : get(() => api.agentProfile(a.agent_id))]).then(([q, p]) => {
+			if (live) setOwn({
+				level: q?.level?.level,
+				last: p?.last_active_at ?? void 0
+			});
+		});
+		return () => {
+			live = false;
+		};
+	}, [
+		a.agent_id,
+		listLast,
+		listLevel,
+		boardLevel
+	]);
+	const level = boardLevel ?? a.level ?? own.level;
+	const bio = bioLine(a, 90);
+	const lastDay = a.last_active_at ?? own.last;
+	const last = lastDay ? dayText(lastDay) : "";
+	const you = !!VIEWER_ID && a.agent_id === VIEWER_ID;
+	const who = /* @__PURE__ */ jsxs("span", {
+		className: "e-agent-dir__who",
+		children: [/* @__PURE__ */ jsxs(Text, { children: [
+			bareAgentName(a.address ?? a.agent_id),
+			a.display_name && a.display_name !== a.agent_id ? /* @__PURE__ */ jsxs("span", {
+				className: "e-faint",
+				"data-agent-display-name": true,
+				children: [" · ", a.display_name.slice(0, 22)]
+			}) : null,
+			you ? /* @__PURE__ */ jsx("span", {
+				className: "e-quiet-chip",
+				style: { marginLeft: 6 },
+				children: "you"
+			}) : null
+		] }), bio ? /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			"data-agent-about": true,
+			style: { fontSize: 11 },
+			children: bio
+		}) : null]
+	});
+	const meta = [typeof level === "number" ? `level ${level}` : "", last ? `active ${last}` : ""].filter(Boolean).join(" · ");
+	if (mode === "cards") return /* @__PURE__ */ jsxs("button", {
+		type: "button",
+		role: "listitem",
+		className: "e-agent-card-tile",
+		onClick: onOpen,
+		children: [
+			/* @__PURE__ */ jsx(AgentMoireAvatar, {
+				agentId: a.agent_id,
+				size: 40
+			}),
+			who,
+			meta ? /* @__PURE__ */ jsx("span", {
+				className: "e-faint e-agent-dir__meta",
+				children: meta
+			}) : null
+		]
+	});
+	return /* @__PURE__ */ jsxs("button", {
+		type: "button",
+		role: "listitem",
+		className: "e-agent-dir__row",
+		onClick: onOpen,
+		children: [
+			/* @__PURE__ */ jsx(AgentMoireAvatar, {
+				agentId: a.agent_id,
+				size: 32
+			}),
+			who,
+			/* @__PURE__ */ jsx("span", {
+				className: "e-faint e-agent-dir__meta",
+				children: typeof level === "number" ? `level ${level}` : ""
+			}),
+			/* @__PURE__ */ jsx("span", {
+				className: "e-faint e-agent-dir__meta",
+				children: last ? `active ${last}` : ""
+			})
+		]
+	});
+}
+/**
+* Agora › Agents: the directory (search, list or cards) of the agents on this relay. Picking one opens its page
+* (`#/agora/agent/<id>`, AgentPage); with `agentId` set, this is that page. Standings stay one click away.
+*/
+function AgentsView({ agentId = null, navigate, breadcrumb = null }) {
+	const [search, setSearch] = React.useState("");
+	const [agentsData, agentsLoading, agentsErr] = useInterval(() => api.agents(), 8e3, []);
+	const [board] = useInterval(() => api.seasonBoard().catch(() => null), 6e4, []);
+	const levels = React.useMemo(() => new Map((board?.standings ?? []).map((r) => [r.agent_id, r.level])), [board]);
+	const agents = React.useMemo(() => agentsData?.agents ?? [], [agentsData]);
+	const [mode, setMode] = React.useState(() => readHomeMode());
+	const chooseMode = (m) => {
+		setMode(m);
+		writeHomeMode(m);
+	};
+	const [standings, setStandings] = React.useState(false);
+	const query = search.trim();
+	const truncated = agentsData?.has_more === true;
+	const [remote, setRemote] = React.useState(null);
+	useEffect(() => {
+		if (!query || !truncated) return;
+		const t = setTimeout(() => {
+			api.agents(query).then((r) => setRemote({
+				q: query,
+				list: r.agents
+			})).catch(() => {});
+		}, 300);
+		return () => clearTimeout(t);
+	}, [query, truncated]);
+	const shown = React.useMemo(() => {
+		if (!query) return agents;
+		const near = remote && remote.q === query ? remote.list : [];
+		const seen = /* @__PURE__ */ new Set();
+		return [...agents.filter((a) => agentMatches(a, query)), ...near].filter((a) => !seen.has(a.agent_id) && !!seen.add(a.agent_id));
+	}, [
+		agents,
+		query,
+		remote
+	]);
+	const open = (id) => navigate?.("agents", { agentId: id });
+	if (agentId) {
+		const found = agents.find((a) => a.agent_id === agentId) ?? agentStub(agentId);
+		return /* @__PURE__ */ jsxs(ViewBody, {
+			flush: true,
+			children: [breadcrumb ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsxs("button", {
+				type: "button",
+				className: "e-arena-back",
+				onClick: breadcrumb.onBack,
+				children: ["‹ ", breadcrumb.label]
+			}) }) : null, /* @__PURE__ */ jsx(AgentPage, {
+				agent: found,
+				navigate
+			}, agentId)]
+		});
+	}
+	const ordered = [...shown].sort((x, y) => Number(y.agent_id === VIEWER_ID) - Number(x.agent_id === VIEWER_ID));
+	return /* @__PURE__ */ jsx(ViewBody, {
+		flush: true,
+		toolbar: /* @__PURE__ */ jsxs("span", {
+			className: "e-count-chip",
+			children: [agents.length, " agents"]
+		}),
+		children: /* @__PURE__ */ jsxs("div", {
+			className: "e-agent-dir",
+			children: [
+				/* @__PURE__ */ jsxs("div", {
+					className: "e-agent-dir__bar",
+					children: [
+						/* @__PURE__ */ jsxs("div", {
+							className: "e-list-filter",
+							children: [/* @__PURE__ */ jsx("input", {
+								type: "text",
+								value: search,
+								name: "agent-search",
+								"aria-label": "Search agents",
+								autoComplete: "off",
+								placeholder: "Search agents",
+								onChange: (e) => setSearch(e.target.value)
+							}), search ? /* @__PURE__ */ jsx("button", {
+								type: "button",
+								className: "e-list-filter__clear",
+								"aria-label": "Clear search",
+								onClick: () => setSearch(""),
+								children: "×"
+							}) : null]
+						}),
+						/* @__PURE__ */ jsx(HomeSwitch, {
+							mode,
+							onChange: chooseMode
+						}),
+						/* @__PURE__ */ jsx("button", {
+							type: "button",
+							className: "e-entity-chip e-entity-chip--agent",
+							"aria-pressed": standings,
+							onClick: () => setStandings((v) => !v),
+							children: standings ? "‹ Agents" : "Standings: who wins most →"
+						})
+					]
+				}),
+				/* @__PURE__ */ jsx(ViewStatus, {
+					loading: agentsLoading,
+					error: agentsErr ? AGENTS_LOAD_ERROR : null
+				}),
+				standings ? /* @__PURE__ */ jsxs("div", {
+					className: "e-split-main",
+					children: [
+						/* @__PURE__ */ jsx(Text, {
+							className: "e-subhead",
+							children: "Standings: wins across every game, on this relay"
+						}),
+						/* @__PURE__ */ jsx(Leaderboard, {}),
+						/* @__PURE__ */ jsx(Text, {
+							className: "e-note",
+							children: "Each game's own ladder is under Arena; the season's boards are under Season."
+						})
+					]
+				}) : ordered.length === 0 && agentsErr ? null : ordered.length === 0 && !agentsLoading ? /* @__PURE__ */ jsx(Text, {
+					className: "e-faint",
+					children: query ? `No agent matches “${query}”.` : "No agents registered"
+				}) : mode === "cards" ? /* @__PURE__ */ jsx(CardGrid, {
+					label: "Agents",
+					children: ordered.map((a) => /* @__PURE__ */ jsx(DirectoryEntry, {
+						a,
+						level: levels.get(a.agent_id),
+						mode,
+						onOpen: () => open(a.agent_id)
+					}, a.agent_id))
+				}) : /* @__PURE__ */ jsx("div", {
+					role: "list",
+					"aria-label": "Agents",
+					children: ordered.map((a) => /* @__PURE__ */ jsx(DirectoryEntry, {
+						a,
+						level: levels.get(a.agent_id),
+						mode,
+						onOpen: () => open(a.agent_id)
+					}, a.agent_id))
+				})
+			]
+		})
+	});
+}
 var Chessboard_module_default = {
 	board: "Chessboard_board_cycky",
 	corner: "Chessboard_corner_cycky",
@@ -15580,11 +18403,6 @@ function classNames(...args) {
 		}
 	}
 	return out.join(" ");
-}
-function isEmpty(text) {
-	if (text === 0) return false;
-	if (!text || typeof text === "object") return true;
-	return !String(text).trim();
 }
 [
 	"a[href]",
@@ -15653,6 +18471,49 @@ var Chessboard = ({ board }) => {
 		})] }, rank))] })
 	});
 };
+var Divider_module_default = {
+	gradient: "Divider_gradient_hx4se",
+	divider: "Divider_divider_hx4se",
+	line: "Divider_line_hx4se"
+};
+// src/ui/kit/Divider.tsx
+var Divider = ({ style, type }) => {
+	if (type === "GRADIENT") return /* @__PURE__ */ jsx("div", {
+		className: Divider_module_default.gradient,
+		style
+	});
+	if (type === "DOUBLE") return /* @__PURE__ */ jsxs("div", {
+		className: Divider_module_default.divider,
+		style,
+		children: [/* @__PURE__ */ jsx("div", {
+			className: Divider_module_default.line,
+			style: { marginBottom: `2px` }
+		}), /* @__PURE__ */ jsx("div", { className: Divider_module_default.line })]
+	});
+	return /* @__PURE__ */ jsx("div", {
+		className: Divider_module_default.divider,
+		style,
+		children: /* @__PURE__ */ jsx("div", { className: Divider_module_default.line })
+	});
+};
+// src/ui/SegmentTabs.tsx
+/** Flat option chips — selected = accent border + text, no gray/secondary fill. */
+function SegmentTabs({ options, value, onChange, labels, className }) {
+	return /* @__PURE__ */ jsx("div", {
+		className: ["e-segment-tabs", className].filter(Boolean).join(" "),
+		role: "group",
+		children: options.map((o) => {
+			const active = value === o;
+			return /* @__PURE__ */ jsx("button", {
+				type: "button",
+				"aria-pressed": active,
+				className: `e-segment-tab${active ? " is-active" : ""}`,
+				onClick: () => onChange(o),
+				children: labels?.[o] ?? o
+			}, o);
+		})
+	});
+}
 // src/fen.ts
 var STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 function fenToBoard(fen) {
@@ -19023,7 +21884,7 @@ function ArcProgress({ q }) {
 				className: a.complete ? "e-quest-row is-done" : "e-quest-row",
 				style: { fontSize: 13 },
 				children: [
-					/* @__PURE__ */ jsx(Badge, {
+					/* @__PURE__ */ jsx(Badge$1, {
 						id: a.badge,
 						size: 1,
 						title: a.complete ? `earned ${a.at}` : `${a.done} of ${a.total}`
@@ -19069,7 +21930,7 @@ function ArcProgress({ q }) {
 				children: [
 					t.tiers.map((x) => /* @__PURE__ */ jsx("span", {
 						style: { opacity: x.done ? 1 : .35 },
-						children: /* @__PURE__ */ jsx(Badge, {
+						children: /* @__PURE__ */ jsx(Badge$1, {
 							id: x.badge,
 							size: 1,
 							title: x.done ? `earned ${x.at}` : `at ${x.need} ${t.unit}`
@@ -19187,7 +22048,7 @@ function QuestBookPanel({ book, mine }) {
 								className: got?.complete ? "e-quest-row is-done" : "e-quest-row",
 								style: { fontSize: 13 },
 								children: [
-									/* @__PURE__ */ jsx(Badge, {
+									/* @__PURE__ */ jsx(Badge$1, {
 										id: a.badge,
 										size: 1
 									}),
@@ -19212,7 +22073,7 @@ function QuestBookPanel({ book, mine }) {
 							style: { fontSize: 13 },
 							title: t.how,
 							children: [
-								t.tiers.map((x) => /* @__PURE__ */ jsx(Badge, {
+								t.tiers.map((x) => /* @__PURE__ */ jsx(Badge$1, {
 									id: x.badge,
 									size: 1,
 									title: `${x.need} ${t.unit}`
@@ -19289,7 +22150,7 @@ function ChallengeBoard({ list }) {
 			marginBottom: 6
 		},
 		children: [
-			/* @__PURE__ */ jsx(Badge, {
+			/* @__PURE__ */ jsx(Badge$1, {
 				id: c.module_type,
 				size: 1
 			}),
@@ -19424,7 +22285,7 @@ function ModelResults() {
 }
 // src/resultsFormat.ts
 /** P134: how a finished game ended, in a few words. */
-function verdict$1(r) {
+function verdict(r) {
 	if (r.termination === "deal" && r.points && Object.keys(r.points).length > 1) return `deal: ${(r.participants?.length ? r.participants : Object.keys(r.points)).map((p) => r.points[p] ?? 0).join(" vs ")} points`;
 	if (r.outcome_type === "draw") return "draw";
 	if (!r.winner) return r.outcome_type ?? "ended";
@@ -19509,7 +22370,7 @@ function ResultRow({ r, onOpen }) {
 					children: r.module_type.replace("emporia:", "").replace(/:v\d+$/, "")
 				}) }),
 				/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: r.participants.map((p) => shortAgent(p, 12)).join(" v ") }) }),
-				/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: verdict$1(r) }) })
+				/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: verdict(r) }) })
 			]
 		}),
 		setPlay(r.module_type) === "emporia:blotto" ? /* @__PURE__ */ jsx(BlottoRounds, { r }) : null,
@@ -19726,647 +22587,6 @@ function debriefLines(text) {
 		});
 	}
 	return out;
-}
-// src/bargain.ts
-var GOODS = [
-	"silk",
-	"spice",
-	"amber"
-];
-/** Pure: a bargain's session (and its actions) in, what to draw out. */
-function bargainView(session, actions, now = Date.now()) {
-	const d = stateData(session);
-	const deal = d.deal ?? {};
-	const hands = Object.fromEntries(Object.entries(deal.hands ?? {}).map(([p, h]) => [p, h?.values ?? {}]));
-	let result = null;
-	for (const a of [...actions ?? []].reverse()) {
-		const r = (a.result?.artifacts)?.result;
-		if (r) {
-			result = r;
-			break;
-		}
-	}
-	const limit = typeof d.move_time_limit_s === "number" ? d.move_time_limit_s : 0;
-	const started = typeof d.turn_started_at === "string" ? Date.parse(d.turn_started_at) : NaN;
-	const running = session.status === "active";
-	const priv = session.private;
-	return {
-		pool: d.pool ?? {},
-		total: typeof d.total === "number" ? d.total : 10,
-		maxOffers: typeof d.max_offers === "number" ? d.max_offers : 6,
-		walkAway: typeof d.walk_away === "number" ? d.walk_away : 0,
-		offers: Array.isArray(d.offers) ? d.offers : [],
-		ended: d.ended ?? null,
-		hands,
-		result,
-		secondsLeft: running && limit && Number.isFinite(started) ? Math.max(0, Math.round(limit - (now - started) / 1e3)) : null,
-		mine: priv?.values ?? null
-	};
-}
-var base$1 = (m) => (m ?? "").replace(/:v\d+$/, "");
-var isLiarsDice = (m) => !!m && base$1(m) === base$1("emporia:liars-dice:v1");
-var isCvAuction = (m) => !!m && base$1(m) === base$1("emporia:cv-auction:v1");
-/** The games pack: free, zero-sum, and counted as set plays. */
-var isChanceGame = (m) => isLiarsDice(m) || isCvAuction(m);
-var obj$1 = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
-var num$7 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
-function verdict(actions) {
-	for (const a of [...actions ?? []].reverse()) {
-		const r = (a.result?.artifacts)?.result;
-		if (r) return r;
-	}
-	return null;
-}
-function secondsLeft(session, d, field, now) {
-	const limit = num$7(d.move_time_limit_s, 0);
-	const at = typeof d[field] === "string" ? Date.parse(d[field]) : NaN;
-	return session.status === "active" && limit && Number.isFinite(at) ? Math.max(0, Math.round(limit - (now - at) / 1e3)) : null;
-}
-/** Pure: a games-pack session (and its actions) in, what to draw out; null for any other game. */
-function chanceView(session, actions, now = Date.now()) {
-	const d = stateData(session);
-	const hands = obj$1(obj$1(d.deal).hands);
-	const reveals = Object.keys(obj$1(obj$1(d.rand).reveals));
-	const result = verdict(actions);
-	if (isLiarsDice(session.module_type)) {
-		const bids = Array.isArray(d.bids) ? d.bids : [];
-		const order = Array.isArray(d.turn_order) ? d.turn_order : [];
-		const ended = d.ended ?? null;
-		return {
-			kind: "dice",
-			players: num$7(d.players, session.participants.length),
-			diceEach: num$7(d.dice, 5),
-			onesWild: d.ones_wild === true,
-			maxBids: num$7(d.max_bids, 30),
-			order,
-			bids,
-			call: ended ? {
-				by: ended.by,
-				bid: ended.bid,
-				bidder: ended.bidder
-			} : null,
-			revealed: reveals,
-			dice: Object.fromEntries(Object.entries(hands).map(([p, h]) => [p, Array.isArray(h?.values) ? h.values : []])),
-			toMove: session.status === "active" && !ended && order.length ? order[bids.length % order.length] : null,
-			result,
-			secondsLeft: ended ? null : secondsLeft(session, d, "turn_started_at", now)
-		};
-	}
-	if (isCvAuction(session.module_type)) {
-		const phase = d.phase === "reveal" || d.phase === "secrets" ? d.phase : "commit";
-		return {
-			kind: "auction",
-			players: num$7(d.players, session.participants.length),
-			spread: num$7(d.spread, 10),
-			phase,
-			committed: Object.keys(obj$1(d.commitments)),
-			bids: obj$1(d.revealed),
-			secrets: reveals,
-			base: typeof d.base_value === "number" ? d.base_value : null,
-			signals: Object.fromEntries(Object.entries(hands).filter(([, h]) => typeof h?.values === "number").map(([p, h]) => [p, h.values])),
-			result,
-			secondsLeft: phase === "secrets" ? null : secondsLeft(session, d, "phase_started_at", now)
-		};
-	}
-	return null;
-}
-/** One short line for a list row. */
-function chanceLine(v, session) {
-	if (session.status === "waiting") return `waiting for players (${session.participants.length}/${v.players})`;
-	if (v.result) return v.result.winner ? `${v.result.winner} won` : (v.result.termination ?? "no result").replace(/_/g, " ");
-	if (v.kind === "dice") return v.call ? "called: revealing" : `${v.bids.length} bid${v.bids.length === 1 ? "" : "s"}`;
-	return v.phase === "commit" ? `${v.committed.length}/${v.players} sealed` : v.phase === "reveal" ? `${Object.keys(v.bids).length}/${v.players} revealed` : "revealing secrets";
-}
-var isSluice = (m) => !!m && (m ?? "").replace(/:v\d+$/, "") === "emporia:sluice:v1".replace(/:v\d+$/, "");
-var obj = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
-var int = (v) => typeof v === "number" && Number.isInteger(v) ? v : null;
-var num$6 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
-function cell$4(v) {
-	if (Array.isArray(v) && v.length === 2 && int(v[0]) !== null && int(v[1]) !== null) return [v[0], v[1]];
-	const o = obj(v);
-	return int(o.channel) !== null && int(o.row) !== null ? [o.channel, o.row] : null;
-}
-var cells$1 = (v) => Array.isArray(v) ? v.flatMap((c) => {
-	const x = cell$4(c);
-	return x ? [x] : [];
-}) : [];
-function readOpening(v, seats) {
-	const o = obj(v);
-	if (!Object.keys(o).length) return null;
-	const st = obj(o.stones);
-	return {
-		silt: cells$1(o.silt),
-		stones: [cells$1(st[seats[0]] ?? st.A), cells$1(st[seats[1]] ?? st.B)],
-		first: typeof o.first === "string" ? o.first : null
-	};
-}
-function readMoves(v) {
-	return (Array.isArray(v) ? v : []).flatMap((m, k) => {
-		const o = obj(m);
-		const channel = int(o.channel);
-		if (channel === null || typeof o.by !== "string") return [];
-		return [{
-			n: int(o.n) ?? k + 1,
-			by: o.by,
-			channel,
-			row: int(o.row),
-			gate: int(o.gate),
-			round: int(o.round)
-		}];
-	});
-}
-/** The ending the relay stores in the state (`ended: {how, winner, line}`), for a session whose actions are not loaded. */
-function endedResult(d, seats) {
-	const e = obj(d.ended);
-	if (typeof e.how !== "string") return null;
-	const winner = typeof e.winner === "string" ? e.winner : null;
-	const loser = winner ? seats.find((x) => x !== winner) : void 0;
-	return {
-		winner,
-		termination: e.how,
-		line: Array.isArray(e.line) && e.line.length ? cells$1(e.line) : null,
-		threes: null,
-		points: winner && loser ? {
-			[winner]: 1,
-			[loser]: -1
-		} : null
-	};
-}
-function readResult(actions) {
-	for (const a of [...actions ?? []].reverse()) {
-		const r = (a.result?.artifacts)?.result;
-		if (!r || typeof r !== "object") continue;
-		const pts = obj(r.points);
-		const th = obj(r.threes);
-		return {
-			winner: typeof r.winner === "string" ? r.winner : null,
-			termination: typeof r.termination === "string" ? r.termination : "",
-			line: Array.isArray(r.line) && r.line.length ? cells$1(r.line) : null,
-			threes: Object.keys(th).length ? Object.fromEntries(Object.entries(th).map(([k, n]) => [k, num$6(n, 0)])) : null,
-			points: Object.keys(pts).length ? Object.fromEntries(Object.entries(pts).map(([k, n]) => [k, num$6(n, 0)])) : null
-		};
-	}
-	return null;
-}
-/** Pure: a Sluice session (and its actions) in, what to draw out; null for any other game. */
-function sluiceView(session, actions, now = Date.now()) {
-	if (!isSluice(session.module_type)) return null;
-	const d = stateData(session);
-	const st = obj(session.state);
-	const dv = {
-		...d,
-		...obj(d.derived ?? st.derived)
-	};
-	const seats = Array.isArray(d.seats) && d.seats.length === 2 ? d.seats : (session.participants ?? []).slice(0, 2);
-	const moves = readMoves(d.moves);
-	const limit = num$6(d.move_time_limit_s, 0);
-	const at = Date.parse(String(dv.gate_at ?? d.turn_started_at ?? ""));
-	const ended = d.ended !== null && d.ended !== void 0;
-	const opening = readOpening(d.opening ?? dv.opening, seats);
-	return {
-		kind: "sluice",
-		cols: num$6(d.cols, 6),
-		rows: num$6(d.rows, 5),
-		drops: num$6(d.drops, 7),
-		seats,
-		opening,
-		moves,
-		toMove: typeof dv.to_move === "string" ? dv.to_move : null,
-		gate: int(dv.gate),
-		open: Array.isArray(dv.open) ? dv.open.flatMap((c) => int(c) !== null ? [c] : []) : [],
-		gateRound: int(dv.gate_round),
-		gateReady: dv.gate_ready !== false,
-		gateAt: typeof dv.gate_at === "string" ? dv.gate_at : null,
-		nameRound: int(dv.name_round) ?? int(obj(d.rand).round),
-		result: readResult(actions) ?? endedResult(d, seats),
-		secondsLeft: session.status === "active" && !ended && limit && Number.isFinite(at) ? Math.max(0, Math.round(limit - (now - at) / 1e3)) : null
-	};
-}
-/** Rebuild the board after the first `upTo` moves. */
-function boardAt(v, upTo) {
-	const g = Array.from({ length: v.rows }, () => Array.from({ length: v.cols }, () => "."));
-	const put = ([c, r], mark) => {
-		if (c >= 1 && c <= v.cols && r >= 1 && r <= v.rows) g[v.rows - r][c - 1] = mark;
-	};
-	v.opening?.silt.forEach((c) => put(c, "#"));
-	v.opening?.stones[0].forEach((c) => put(c, "A"));
-	v.opening?.stones[1].forEach((c) => put(c, "B"));
-	for (const m of v.moves.slice(0, upTo)) {
-		const mark = v.seats.indexOf(m.by) === 1 ? "B" : "A";
-		let row = m.row;
-		if (row === null) {
-			row = 1;
-			while (row <= v.rows && g[v.rows - row][m.channel - 1] !== ".") row += 1;
-		}
-		put([m.channel, row], mark);
-	}
-	return g;
-}
-var DIRS = [
-	[0, 1],
-	[1, 0],
-	[1, 1],
-	[1, -1]
-];
-/** Every window of four cells in a line, as `[channel, row]`. */
-function windows(b) {
-	const rows = b.length;
-	const cols = b[0]?.length ?? 0;
-	const out = [];
-	for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) for (const [dr, dc] of DIRS) {
-		const w = [];
-		for (let k = 0; k < 4; k++) {
-			const rr = r + dr * k, cc = c + dc * k;
-			if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) break;
-			w.push([cc + 1, rows - rr]);
-		}
-		if (w.length === 4) out.push(w);
-	}
-	return out;
-}
-var markAt = (b, [c, r]) => b[b.length - r][c - 1];
-/** The four cells of a seat's line, if it has one. */
-function findFour(b) {
-	for (const w of windows(b)) {
-		const m = markAt(b, w[0]);
-		if ((m === "A" || m === "B") && w.every((c) => markAt(b, c) === m)) return {
-			mark: m,
-			line: [...w].sort((a, b) => a[0] - b[0] || a[1] - b[1])
-		};
-	}
-	return null;
-}
-/** Live threes per seat: a line of four cells with three of its stones and one empty cell. */
-function liveThrees(b) {
-	const t = [0, 0];
-	for (const w of windows(b)) {
-		const ms = w.map((c) => markAt(b, c));
-		if (ms.filter((x) => x === ".").length !== 1) continue;
-		["A", "B"].forEach((s, i) => {
-			if (ms.filter((x) => x === s).length === 3) t[i] += 1;
-		});
-	}
-	return t;
-}
-/** The table after the first `upTo` moves. `atEnd` is the last step of a finished game (the verdict shows). */
-function sluiceFrameAt(v, upTo, atEnd) {
-	const step = Math.max(0, Math.min(v.moves.length, upTo));
-	const board = boardAt(v, step);
-	const last = step ? v.moves[step - 1] : null;
-	const used = [0, 0];
-	v.moves.slice(0, step).forEach((m) => {
-		used[v.seats.indexOf(m.by) === 1 ? 1 : 0] += 1;
-	});
-	const result = atEnd ? v.result : null;
-	const term = result?.termination;
-	const four = result && term === "four" ? result.line ?? findFour(board)?.line ?? null : null;
-	let threes = null;
-	if (result && (term === "threes" || term === "level" || term === "coin")) {
-		const computed = liveThrees(board);
-		threes = result.threes ? [result.threes[v.seats[0]] ?? result.threes.A ?? computed[0], result.threes[v.seats[1]] ?? result.threes.B ?? computed[1]] : computed;
-	}
-	const live = !result && step === v.moves.length;
-	return {
-		kind: "sluice",
-		seats: v.seats,
-		cols: v.cols,
-		rows: v.rows,
-		drops: v.drops,
-		dealt: !!v.opening,
-		nameRound: v.nameRound,
-		board,
-		step,
-		moves: v.moves.slice(0, step),
-		last,
-		gate: last?.gate ?? null,
-		next: live && v.opening ? {
-			toMove: v.toMove,
-			gate: v.gate,
-			round: v.gateRound
-		} : null,
-		left: [Math.max(0, v.drops - used[0]), Math.max(0, v.drops - used[1])],
-		line: four,
-		threes,
-		result,
-		first: v.opening?.first ?? null
-	};
-}
-/** One line for a drop step: "dropped in channel 3, row 2; channel 5 was gated". */
-function dropText(m) {
-	return `dropped in channel ${m.channel}${m.row ? `, row ${m.row}` : ""}${m.gate ? `; channel ${m.gate} was gated` : ""}`;
-}
-/** "alpha wins with four in a line", "alpha wins on live threes (2 to 1)", … in words, from a result. */
-function sluiceVerdict(f, r, name) {
-	const w = r.winner ? name(r.winner) : null;
-	switch (r.termination) {
-		case "four": return `${w ?? "nobody"} wins with four in a line`;
-		case "threes": return `${w ?? "nobody"} wins on live threes${f.threes ? ` (${name(f.seats[0])} ${f.threes[0]}, ${name(f.seats[1])} ${f.threes[1]})` : ""}`;
-		case "coin": return `Level on live threes${f.threes ? ` (${f.threes[0]} each)` : ""}: a drand coin flip decided, and ${w ?? "the winner"} wins`;
-		case "level": return `Level on live threes${f.threes ? ` (${f.threes[0]} each)` : ""}: ${w ?? "the player who moved second"} moved second and wins`;
-		case "timeout": return `${w ?? "nobody"} wins: the other ran out of time`;
-		case "void": return "The game was voided";
-		default: return w ? `${w} wins` : "No winner";
-	}
-}
-// src/arena.ts
-var HIDDEN_KEYS = /* @__PURE__ */ new Set([
-	"s",
-	"nonce",
-	"commitment",
-	"sig",
-	"signature",
-	"secret"
-]);
-/** Only the actions that took effect: a rejected move is not a step of the match. */
-function effectiveActions(actions) {
-	return (actions ?? []).filter((a) => a.result?.success !== false);
-}
-function arenaKind(moduleType) {
-	const base = gameBase(moduleType);
-	if (base === "emporia:chess") return "chess";
-	if (isSetPlay(moduleType)) return base === gameBase(SET_PLAYS[0]) ? "blotto" : base === gameBase(SET_PLAYS[1]) ? "two-thirds" : "lowest-unique";
-	if (isBargain(moduleType)) return "bargain";
-	if (isLiarsDice(moduleType)) return "dice";
-	if (isCvAuction(moduleType)) return "auction";
-	if (isSluice(moduleType)) return "sluice";
-	return "log";
-}
-var isSecretReveal = (a) => a.action_type === "reveal" && a.payload && "s" in a.payload;
-var goodsText$2 = (g) => Object.entries(g ?? {}).filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(", ") || "nothing";
-function movePlain(m) {
-	return Array.isArray(m) ? m.join(" / ") : String(m);
-}
-/** One line for what a step did. A commit never says what was committed to. */
-function stepLabel(kind, a) {
-	const p = a.payload ?? {};
-	switch (a.action_type) {
-		case "commit": return "sealed a move";
-		case "reveal":
-			if (isSecretReveal(a)) return "revealed its secret";
-			if (kind === "auction") return `revealed a bid of ${movePlain(p.move)}`;
-			return `revealed ${movePlain(p.move)}`;
-		case "drop": return p.channel !== void 0 ? `dropped in channel ${p.channel}` : "dropped a stone";
-		case "bid": return `bid ${p.quantity} × ${p.face}`;
-		case "liar": return "called liar";
-		case "offer": return p.keep && typeof p.keep === "object" ? `offered to keep ${goodsText$2(p.keep)}` : "made an offer";
-		case "accept": return "accepted the offer";
-		case "decline": return "declined the offer";
-		case "move": return `moved ${p.uci ?? p.move ?? ""}`.trim();
-		case "void": return "voided the game";
-		default: {
-			const keys = Object.keys(p).filter((k) => !HIDDEN_KEYS.has(k));
-			return keys.length ? `${a.action_type} · ${keys[0]}: ${String(p[keys[0]]).slice(0, 60)}` : a.action_type;
-		}
-	}
-}
-function setPlayFrame(kind, session, acts, i, players, finalVerdict) {
-	const data = stateData(session);
-	const rounds = typeof data.rounds === "number" ? data.rounds : 1;
-	let round = 1;
-	let commits = {};
-	let called = {};
-	let moves = {};
-	let calls = {};
-	const past = [];
-	const closeRound = () => {
-		const [a, b] = players;
-		past.push({
-			round,
-			moves: { ...moves },
-			fieldWinners: kind === "blotto" ? fieldWinnersOf(moves[a], moves[b], a, b) : []
-		});
-		round += 1;
-		commits = {};
-		called = {};
-		moves = {};
-		calls = {};
-	};
-	const allRevealed = () => players.length > 0 && players.every((p) => moves[p] !== void 0);
-	for (const a of acts.slice(0, i)) {
-		const p = a.payload ?? {};
-		if (a.action_type === "commit") {
-			if (kind === "blotto" && allRevealed()) closeRound();
-			commits[a.agent_id] = true;
-			if (p.called) called[a.agent_id] = true;
-		} else if (a.action_type === "reveal" && p.move !== void 0 && !("s" in p)) {
-			moves[a.agent_id] = p.move;
-			if (typeof p.call_pct === "number") calls[a.agent_id] = p.call_pct;
-		}
-	}
-	const slots = players.map((agent) => {
-		const call = calls[agent] !== void 0 ? `called ${calls[agent]} %` : called[agent] ? "called · sealed" : void 0;
-		if (moves[agent] !== void 0) return {
-			agent,
-			state: "revealed",
-			move: moves[agent],
-			call
-		};
-		if (commits[agent]) return {
-			agent,
-			state: "sealed",
-			call
-		};
-		return {
-			agent,
-			state: "waiting",
-			call
-		};
-	});
-	const [a, b] = players;
-	const fields = kind === "blotto" && allRevealed() ? fieldWinnersOf(moves[a], moves[b], a, b) : null;
-	const phase = players.length > 0 && players.every((p) => commits[p]) ? "reveal" : "commit";
-	const picks = players.map((p) => moves[p]).filter((m) => typeof m === "number");
-	const average = kind === "two-thirds" && picks.length > 0 && picks.length === players.length ? picks.reduce((n, x) => n + x, 0) / picks.length : null;
-	const board = {
-		battlefields: typeof data.battlefields === "number" ? data.battlefields : 5,
-		troops: typeof data.troops === "number" ? data.troops : 100,
-		weights: blottoWeights(data),
-		min: kind === "two-thirds" ? 0 : 1,
-		max: kind === "two-thirds" ? 100 : typeof data.max_pick === "number" ? data.max_pick : 10,
-		average,
-		target: average === null ? null : 2 / 3 * average
-	};
-	return {
-		kind,
-		round,
-		rounds,
-		phase,
-		slots,
-		past,
-		fields,
-		verdict: i === acts.length ? finalVerdict : null,
-		board
-	};
-}
-function buildTimeline(session, actionLog) {
-	const acts = effectiveActions(actionLog);
-	const kind = arenaKind(session.module_type);
-	const players = session.participants ?? [];
-	const finished = session.status === "completed";
-	const sluice = kind === "sluice" ? sluiceView(session, actionLog) : null;
-	let drops = 0;
-	const labelOf = (a) => {
-		if (sluice && a.action_type === "drop") {
-			const m = sluice.moves[drops++];
-			if (m && m.by === a.agent_id) return dropText(m);
-		}
-		return stepLabel(kind, a);
-	};
-	const steps = [{
-		index: 0,
-		actionId: null,
-		agent: null,
-		type: "start",
-		label: kind === "sluice" ? "the table as the beacon dealt it" : "the table before the first move"
-	}, ...acts.map((a, n) => ({
-		index: n + 1,
-		actionId: a.action_id,
-		agent: a.agent_id,
-		type: a.action_type,
-		label: labelOf(a)
-	}))];
-	const last = acts.length;
-	const chance = chanceView(session, actionLog);
-	const verdictOf = () => finished && isSetPlay(session.module_type) ? setPlayView(session, actionLog).verdict : null;
-	const frameAt = (raw) => {
-		const i = Math.max(0, Math.min(last, raw));
-		const atEnd = finished && i === last;
-		if (kind === "blotto" || kind === "two-thirds" || kind === "lowest-unique") return setPlayFrame(kind, session, acts, i, players, atEnd ? verdictOf() : null);
-		if (kind === "dice") {
-			const bids = [];
-			let call = null;
-			const revealed = [];
-			for (const a of acts.slice(0, i)) {
-				const p = a.payload ?? {};
-				if (a.action_type === "bid") bids.push({
-					n: bids.length + 1,
-					by: a.agent_id,
-					quantity: Number(p.quantity),
-					face: Number(p.face)
-				});
-				else if (a.action_type === "liar" && bids.length) call = {
-					by: a.agent_id,
-					bidder: bids[bids.length - 1].by,
-					bid: bids.length
-				};
-				else if (isSecretReveal(a) && !revealed.includes(a.agent_id)) revealed.push(a.agent_id);
-			}
-			const dice = atEnd && chance?.kind === "dice" && Object.values(chance.dice).some((d) => d.length) ? chance.dice : null;
-			return {
-				kind: "dice",
-				bids,
-				call,
-				revealed,
-				dice,
-				result: atEnd && chance ? chance.result : null
-			};
-		}
-		if (kind === "auction") {
-			const committed = /* @__PURE__ */ new Set();
-			const bids = {};
-			const secrets = [];
-			for (const a of acts.slice(0, i)) {
-				const p = a.payload ?? {};
-				if (a.action_type === "commit") committed.add(a.agent_id);
-				else if (isSecretReveal(a)) {
-					if (!secrets.includes(a.agent_id)) secrets.push(a.agent_id);
-				} else if (a.action_type === "reveal" && typeof p.move === "number") bids[a.agent_id] = p.move;
-			}
-			const slots = players.map((agent) => bids[agent] !== void 0 ? {
-				agent,
-				state: "revealed",
-				move: bids[agent]
-			} : committed.has(agent) ? {
-				agent,
-				state: "sealed"
-			} : {
-				agent,
-				state: "waiting"
-			});
-			const res = atEnd && chance?.kind === "auction" ? chance : null;
-			return {
-				kind: "auction",
-				slots,
-				secrets,
-				value: res?.result && typeof res.result.value === "number" ? Number(res.result.value) : null,
-				base: res ? res.base : null,
-				signals: res && Object.keys(res.signals).length ? res.signals : null,
-				result: res ? res.result : null
-			};
-		}
-		if (kind === "bargain") {
-			const bv = bargainView(session, actionLog);
-			const offers = [];
-			let ended = null;
-			let n = 0;
-			for (const a of acts.slice(0, i)) if (a.action_type === "offer") {
-				const known = bv.offers[n];
-				const keep = (a.payload ?? {}).keep;
-				offers.push(known ?? {
-					n: n + 1,
-					by: a.agent_id,
-					allocation: { [a.agent_id]: keep ?? {} },
-					claim: (a.payload ?? {}).claim
-				});
-				n += 1;
-			} else if (a.action_type === "accept" || a.action_type === "decline") ended = {
-				how: a.action_type === "accept" ? "accepted" : "declined",
-				by: a.agent_id
-			};
-			const hands = atEnd && Object.keys(bv.hands).length ? bv.hands : null;
-			return {
-				kind: "bargain",
-				players,
-				pool: bv.pool,
-				offers,
-				ended,
-				hands,
-				result: atEnd ? bv.result : null
-			};
-		}
-		if (kind === "sluice" && sluice) {
-			const stones = acts.slice(0, i).filter((a) => a.action_type === "drop").length;
-			return sluiceFrameAt(sluice, stones, atEnd);
-		}
-		if (kind === "chess") return { kind: "chess" };
-		return {
-			kind: "log",
-			rows: acts.slice(0, i).map((a, n) => ({
-				n: n + 1,
-				agent: a.agent_id,
-				type: a.action_type,
-				text: stepLabel("log", a)
-			}))
-		};
-	};
-	return {
-		kind,
-		players,
-		steps,
-		finished,
-		frameAt
-	};
-}
-/** The step a link names, kept inside the log: `?step=3` on a six-step match opens step 3; a bad value is ignored. */
-function clampStep(raw, total) {
-	if (raw === null || raw === void 0 || !Number.isInteger(raw) || raw < 0) return null;
-	return Math.min(raw, Math.max(0, total - 1));
-}
-/** Declared-model standing for one player, in words (declared, never verified). */
-function modelStanding(p, ended) {
-	if (!p) return "no model declared";
-	if (p.status === "revealed" && p.model) return `${p.model} · revealed`;
-	if (p.status === "mismatch") return "model mismatch";
-	if (p.status === "committed") return ended ? "model missing" : "model declared · sealed";
-	if (p.status === "none" || p.status === "missing") return ended ? "model missing" : "no model declared";
-	return p.status;
-}
-/** "alpha@host" when the relay knows the address, else a short id. */
-function playerName(id, book, max = 18) {
-	const addr = book?.[id];
-	if (addr) return bareAgentName(addr);
-	if (id.includes("@")) return bareAgentName(id);
-	return id.length <= max ? id : `…${id.slice(-max + 1)}`;
 }
 // src/ui/GameTalk.tsx
 /** One said line, in quotes and muted: the agent's words, never the relay's. `who` names the speaker when the line stands alone. */
@@ -20607,38 +22827,6 @@ function SessionMoney({ session }) {
 		]
 	});
 }
-var ActionButton_module_default = {
-	hotkey: "ActionButton_hotkey_fa94z",
-	content: "ActionButton_content_fa94z",
-	root: "ActionButton_root_fa94z",
-	selected: "ActionButton_selected_fa94z"
-};
-// src/ui/kit/ActionButton.tsx
-var ActionButton = React$1.forwardRef(({ onClick, hotkey, children, style, rootStyle, isSelected }, ref) => {
-	return /* @__PURE__ */ jsxs("div", {
-		className: classNames(ActionButton_module_default.root, isSelected ? ActionButton_module_default.selected : null),
-		style: rootStyle,
-		onClick,
-		onKeyDown: (e) => {
-			if (e.key === "Enter" || e.key === " ") {
-				if (e.key === " ") e.preventDefault();
-				onClick?.();
-			}
-		},
-		tabIndex: 0,
-		ref,
-		role: "button",
-		children: [isEmpty(hotkey) ? null : /* @__PURE__ */ jsx("span", {
-			className: ActionButton_module_default.hotkey,
-			children: hotkey
-		}), /* @__PURE__ */ jsx("span", {
-			className: ActionButton_module_default.content,
-			style,
-			children
-		})]
-	});
-});
-ActionButton.displayName = "ActionButton";
 // src/ui/DmChainBadge.tsx
 /**
 * P32-2: the DM counterpart of RoomChainBadge, and the last leg of P28-4 —
@@ -20673,37 +22861,11 @@ function DmChainBadge({ threadId, viewerId }) {
 		children: [result.verified ? `\u2713 chain verified (${result.message_count})` : "✗ chain unverified", result.replayed_nonce_count > 0 ? " ⚠" : ""]
 	});
 }
-function splitInbox(events) {
-	const activity = [];
-	const unreadByThread = {};
-	for (const ev of events) {
-		const thread = ev.event_type === "dm_received" ? ev.payload.thread_id : void 0;
-		if (typeof thread === "string" && thread) {
-			if (!ev.is_read) (unreadByThread[thread] ??= []).push(ev.inbox_id);
-		} else activity.push(ev);
-	}
-	return {
-		activity,
-		unreadByThread
-	};
-}
-/** P124: which list a conversation belongs in. Inbox: the other agent spoke
-*  last, or something is unread. Sent: the viewer spoke last. A conversation
-*  always opens whole — the split only decides where it is listed. */
-function inBox(box, t, viewer, unread) {
-	if (box === "all") return true;
-	const mineLast = t.last_sender === viewer;
-	return box === "sent" ? mineLast : !mineLast || unread > 0;
-}
-function unreadActivity(activity) {
-	return activity.filter((e) => !e.is_read).length;
-}
 // src/views/MessagesView.tsx
 /**
-* Messages — one view (P121): conversations on the left, each with its unread
-* count, and "Activity" (every non-DM event: challenges, invites, sessions) at
-* the top of the same list. It replaced two sub-tabs that shared nothing: the
-* inbox listed a DM it could not open, with a read state of its own.
+* Messages — conversations on the left, each with its unread count (P121). The
+* rest of the agent's inbox (challenges, invites, sessions) is not here: Home
+* shows it as "Needs the agent".
 *
 * Visibility-only: the one write is marking events read.
 */
@@ -20721,176 +22883,6 @@ async function openSealedDms(viewer, threadId, messages) {
 	if (!r.ok) throw new Error(`console ${r.status}`);
 	const d = await r.json();
 	return Object.fromEntries(Object.entries(d.opened ?? {}).filter((e) => typeof e[1] === "string"));
-}
-var EVENT_ICONS = {
-	challenge: "⚔",
-	agora_invite: "✦",
-	room_invite: "□",
-	session_update: "⊙",
-	session_completed: "⊙",
-	notification: "◆",
-	post_reply: "↩",
-	mention: "@",
-	followed: "+"
-};
-function ActivityPane({ navigate, events, loading, error }) {
-	const [showAll, setShowAll] = useState(false);
-	const shown = [...showAll ? events : events.filter((e) => !e.is_read)].sort((a, b) => Number(a.is_read) - Number(b.is_read) || b.created_at.localeCompare(a.created_at));
-	const unread = events.filter((e) => !e.is_read).map((e) => e.inbox_id);
-	return /* @__PURE__ */ jsxs("div", {
-		className: "e-messages-pane",
-		children: [
-			/* @__PURE__ */ jsxs("div", {
-				className: "e-messages-pane__toolbar",
-				children: [/* @__PURE__ */ jsx(Text, {
-					className: "e-dim",
-					children: unread.length > 0 ? `${unread.length} unread` : "no unread"
-				}), /* @__PURE__ */ jsx("div", {
-					style: {
-						display: "flex",
-						gap: 6
-					},
-					children: /* @__PURE__ */ jsx(ActionButton, {
-						onClick: () => setShowAll((v) => !v),
-						children: showAll ? "unread only" : "show all"
-					})
-				})]
-			}),
-			/* @__PURE__ */ jsx(ViewStatus, {
-				loading,
-				error
-			}),
-			/* @__PURE__ */ jsx("div", {
-				className: "e-inbox-list",
-				children: shown.length === 0 ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
-					className: "e-faint",
-					children: showAll ? "No activity yet." : "Nothing new."
-				}) }) : shown.map((ev) => {
-					const p = ev.payload;
-					let title = ev.event_type.replace(/_/g, " ");
-					let detail = null;
-					let action = null;
-					if (ev.event_type === "challenge") {
-						const from = p.from_agent ?? "unknown";
-						const sid = p.session_id ?? null;
-						title = "challenge";
-						detail = /* @__PURE__ */ jsxs(Fragment, { children: ["from ", /* @__PURE__ */ jsx(AgentLink, {
-							agent_id: from,
-							navigate
-						})] });
-						if (sid) action = () => {
-							navigate("session", { sessionId: sid });
-						};
-					} else if (ev.event_type === "agora_invite") {
-						const name = p.name ?? p.slug ?? "topic";
-						const by = p.invited_by ?? "creator";
-						const gate = p.gate_type ?? "invite";
-						const fee = p.entry_fee_cents ?? 0;
-						title = `invited to ${name}`;
-						detail = /* @__PURE__ */ jsxs(Fragment, { children: [
-							"by ",
-							/* @__PURE__ */ jsx(AgentLink, {
-								agent_id: by,
-								navigate
-							}),
-							gate === "paid_invite" && fee > 0 ? ` · $${(fee / 100).toFixed(2)} entry` : ""
-						] });
-						const slug = typeof p.slug === "string" ? p.slug : "";
-						action = () => {
-							navigate("agora", slug ? { topicSlug: slug } : void 0);
-						};
-					} else if (ev.event_type === "room_invite") {
-						const name = p.room_name ?? "room";
-						const by = p.invited_by ?? "creator";
-						const rid = p.room_id ?? null;
-						title = `invited to ${name}`;
-						detail = /* @__PURE__ */ jsxs(Fragment, { children: ["by ", /* @__PURE__ */ jsx(AgentLink, {
-							agent_id: by,
-							navigate
-						})] });
-						if (rid) action = () => {
-							navigate("rooms", { roomId: rid });
-						};
-					} else if (ev.event_type.startsWith("session_") || ev.event_type === "your_turn") {
-						const sid = p.session_id ?? null;
-						const game = typeof p.module_type === "string" ? gameName$1(p.module_type) : "game";
-						const others = (Array.isArray(p.participants) ? p.participants : []).filter((a) => a !== VIEWER_ID).map(bareAgentName);
-						const who = others.length ? ` with ${others.join(", ")}` : "";
-						title = {
-							session_created: `${game} game started${who}`,
-							session_started: `${game} game started${who}`,
-							session_completed: `${game} game finished${who}`,
-							session_update: `${game} game updated${who}`,
-							your_turn: `A move is waiting${who}`
-						}[ev.event_type] ?? `${game} game${who}`;
-						if (sid) action = () => {
-							navigate("session", { sessionId: sid });
-						};
-					} else if (ev.event_type === "post_reply" || ev.event_type === "mention") {
-						const by = typeof p.author_id === "string" ? p.author_id : "";
-						title = ev.event_type === "mention" ? "mentioned in a post" : "reply to a post";
-						detail = by ? /* @__PURE__ */ jsxs(Fragment, { children: ["by ", /* @__PURE__ */ jsx(AgentLink, {
-							agent_id: by,
-							navigate
-						})] }) : null;
-						const postId = typeof p.root_id === "string" && p.root_id || typeof p.parent_id === "string" && p.parent_id || (typeof p.post_id === "string" ? p.post_id : "");
-						const replyId = typeof p.post_id === "string" && p.post_id !== postId ? p.post_id : void 0;
-						if (postId) action = () => {
-							navigate("post", {
-								postId,
-								replyId
-							});
-						};
-					} else if (ev.event_type === "followed") {
-						const by = typeof p.by === "string" ? p.by : "";
-						title = "new follower";
-						detail = by ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(AgentLink, {
-							agent_id: by,
-							navigate
-						}), " follows now"] }) : null;
-					} else detail = null;
-					return /* @__PURE__ */ jsxs("div", {
-						className: `e-inbox-event${ev.is_read ? " e-inbox-event--read" : ""}${action ? " e-inbox-event--link" : ""}`,
-						role: action ? "button" : void 0,
-						tabIndex: action ? 0 : void 0,
-						onClick: action ? () => {
-							if ((window.getSelection?.()?.toString() ?? "") === "") action();
-						} : void 0,
-						onKeyDown: action ? (e) => {
-							if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
-								e.preventDefault();
-								action();
-							}
-						} : void 0,
-						children: [/* @__PURE__ */ jsx("div", {
-							className: "e-inbox-event__icon",
-							children: EVENT_ICONS[ev.event_type] ?? "◌"
-						}), /* @__PURE__ */ jsxs("div", {
-							className: "e-inbox-event__body",
-							children: [/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsx(Text, {
-								style: {
-									fontWeight: ev.is_read ? 400 : 600,
-									fontSize: 13
-								},
-								children: title
-							}), /* @__PURE__ */ jsx(Text, {
-								className: "e-faint",
-								style: { fontSize: 10 },
-								children: /* @__PURE__ */ jsx(RelTime, { at: ev.created_at })
-							})] }), detail && /* @__PURE__ */ jsx(Text, {
-								className: "e-dim",
-								style: {
-									fontSize: 12,
-									marginTop: 2
-								},
-								children: detail
-							})]
-						})]
-					}, ev.inbox_id);
-				})
-			})
-		]
-	});
 }
 function ThreadPane({ thread, viewer, liveEvent, liveConnected }) {
 	const [messages, setMessages] = useState([]);
@@ -20966,13 +22958,11 @@ function ThreadPane({ thread, viewer, liveEvent, liveConnected }) {
 		}, thread.thread_id)] })
 	});
 }
-var ACTIVITY = "__activity__";
-function MessagesView({ navigate, initialTab, liveEvent = null, liveConnected = false }) {
+function MessagesView({ navigate, liveEvent = null, liveConnected = false }) {
 	const viewer = VIEWER_ID;
 	const [events, setEvents] = useState([]);
 	const [threads, setThreads] = useState([]);
-	const [selected, setSelected] = useState(initialTab === "inbox" ? ACTIVITY : null);
-	const [loading, setLoading] = useState(true);
+	const [selected, setSelected] = useState(null);
 	const [error, setError] = useState(null);
 	const [box, setBox] = useState("inbox");
 	const loadInbox = useCallback(() => {
@@ -20980,7 +22970,7 @@ function MessagesView({ navigate, initialTab, liveEvent = null, liveConnected = 
 		api.agentInbox(viewer, false, 200).then((d) => {
 			setEvents(d.events);
 			setError(null);
-		}).catch((e) => setError(String(e))).finally(() => setLoading(false));
+		}).catch((e) => setError(String(e)));
 	}, [viewer]);
 	const loadThreads = useCallback(() => {
 		if (!viewer) return;
@@ -21006,8 +22996,8 @@ function MessagesView({ navigate, initialTab, liveEvent = null, liveConnected = 
 		loadThreads,
 		loadInbox
 	]);
-	const { activity, unreadByThread } = splitInbox(events);
-	if (selected === null && (threads.length > 0 || !loading)) setSelected(threads[0]?.thread_id ?? ACTIVITY);
+	const { unreadByThread } = splitInbox(events);
+	if (selected === null && threads.length > 0) setSelected(threads[0].thread_id);
 	const [boxChosen, setBoxChosen] = useState(false);
 	if (!boxChosen && box === "inbox" && threads.length > 0 && !threads.some((t) => inBox("inbox", t, viewer ?? "", unreadByThread[t.thread_id]?.length ?? 0))) setBox("all");
 	if (!viewer) return /* @__PURE__ */ jsx(ViewBody, {
@@ -21023,7 +23013,6 @@ function MessagesView({ navigate, initialTab, liveEvent = null, liveConnected = 
 			})]
 		})
 	});
-	const activityUnread = unreadActivity(activity);
 	const active = threads.find((t) => t.thread_id === selected) ?? null;
 	const listed = threads.filter((t) => inBox(box, t, viewer, unreadByThread[t.thread_id]?.length ?? 0));
 	const inboxUnread = threads.reduce((n, t) => n + (unreadByThread[t.thread_id]?.length ?? 0), 0);
@@ -21048,25 +23037,7 @@ function MessagesView({ navigate, initialTab, liveEvent = null, liveConnected = 
 				}
 			})
 		}),
-		/* @__PURE__ */ jsxs(FlatRailItem, {
-			selected: selected === ACTIVITY,
-			onClick: () => setSelected(ACTIVITY),
-			children: [/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsx(Text, {
-				style: {
-					fontSize: 13,
-					fontWeight: activityUnread ? 600 : 400
-				},
-				children: "◆ Activity"
-			}), activityUnread > 0 && /* @__PURE__ */ jsx(Text, {
-				className: "e-unread-count",
-				children: activityUnread
-			})] }), /* @__PURE__ */ jsx(Text, {
-				className: "e-dim",
-				style: { fontSize: 11 },
-				children: "challenges · invites · sessions"
-			})]
-		}),
-		listed.length === 0 && /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
+		listed.length === 0 && !error && /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
 			className: "e-faint",
 			children: threads.length === 0 ? "No conversations yet. Direct messages your agent sends or receives appear here." : box === "sent" ? `Nothing sent last by ${VIEWER_ID ? bareAgentName(VIEWER_ID) : "this agent"}.` : `Nothing waiting on ${VIEWER_ID ? bareAgentName(VIEWER_ID) : "this agent"}.`
 		}) }),
@@ -21077,7 +23048,10 @@ function MessagesView({ navigate, initialTab, liveEvent = null, liveConnected = 
 				onClick: () => setSelected(t.thread_id),
 				children: /* @__PURE__ */ jsxs("div", {
 					className: "e-agent-row",
-					children: [/* @__PURE__ */ jsx(AgentMoireAvatar, { agentId: t.other_agent }), /* @__PURE__ */ jsxs("div", {
+					children: [/* @__PURE__ */ jsx(AgentMoireAvatar, {
+						agentId: t.other_agent,
+						link: false
+					}), /* @__PURE__ */ jsxs("div", {
 						style: {
 							flex: 1,
 							minWidth: 0
@@ -21087,14 +23061,15 @@ function MessagesView({ navigate, initialTab, liveEvent = null, liveConnected = 
 								fontSize: 13,
 								fontWeight: unread ? 600 : 400
 							},
-							children: t.other_agent
+							children: /* @__PURE__ */ jsx(AgentLink, {
+								agent_id: t.other_agent,
+								full: true
+							})
 						}), unread > 0 ? /* @__PURE__ */ jsx(Text, {
 							className: "e-unread-count",
+							title: "unread by the agent",
 							children: unread
-						}) : /* @__PURE__ */ jsx(AgentLink, {
-							agent_id: t.other_agent,
-							navigate
-						})] }), /* @__PURE__ */ jsx(Text, {
+						}) : null] }), /* @__PURE__ */ jsx(Text, {
 							className: "e-dim",
 							style: { fontSize: 11 },
 							children: dmThreadPreview(t)
@@ -21111,20 +23086,26 @@ function MessagesView({ navigate, initialTab, liveEvent = null, liveConnected = 
 			defaultSidebarWidth: 30,
 			children: /* @__PURE__ */ jsxs("div", {
 				className: "e-split-main",
-				children: [error ? /* @__PURE__ */ jsx(AlertBanner, { children: error }) : null, selected === ACTIVITY ? /* @__PURE__ */ jsx(ActivityPane, {
-					navigate,
-					events: activity,
-					loading,
-					error: null
-				}) : active ? /* @__PURE__ */ jsx(ThreadPane, {
-					thread: active,
-					viewer,
-					liveEvent,
-					liveConnected
-				}, active.thread_id) : /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
-					className: "e-faint",
-					children: "Pick a conversation from the list, or Activity for challenges, invites and sessions. Messages are decrypted on this machine only."
-				}) })]
+				children: [
+					error ? /* @__PURE__ */ jsx(AlertBanner, { children: friendlyError(error) }) : null,
+					active ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsxs(Text, {
+						className: "e-faint",
+						children: ["With ", /* @__PURE__ */ jsx(AgentLink, {
+							agent_id: active.other_agent,
+							navigate,
+							full: true
+						})]
+					}) }) : null,
+					active ? /* @__PURE__ */ jsx(ThreadPane, {
+						thread: active,
+						viewer,
+						liveEvent,
+						liveConnected
+					}, active.thread_id) : /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						children: "Pick a conversation from the list. Messages are decrypted on this machine only."
+					}) })
+				]
 			})
 		})
 	});
@@ -23818,7 +25799,7 @@ var QUESTS = "__quests__";
 var game = (m) => m.replace("emporia:", "").replace(/:v\d+$/, "");
 var num = { fontVariantNumeric: "tabular-nums" };
 var signed = (x) => `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(2)}`;
-var pct$1 = (x) => `${Math.round(x * 100)} %`;
+var pct$2 = (x) => `${Math.round(x * 100)} %`;
 var range = (c) => `${c.rating} ±${2 * c.rd}${c.provisional ? "?" : ""}`;
 function Ladder({ moduleType }) {
 	const [data, , error] = useInterval(() => api.ratings(moduleType), 6e4, [moduleType]);
@@ -23880,7 +25861,7 @@ function Sheet({ sheet }) {
 		children: [
 			/* @__PURE__ */ jsxs("div", {
 				className: "e-sheet-head",
-				children: [/* @__PURE__ */ jsx(Badge, {
+				children: [/* @__PURE__ */ jsx(Badge$1, {
 					id: sheet.class ?? "class-none",
 					size: 3
 				}), /* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsxs(Text, {
@@ -23907,7 +25888,7 @@ function Sheet({ sheet }) {
 						levels.trust,
 						levels.renown ? /* @__PURE__ */ jsxs(Fragment, { children: [
 							" · ",
-							/* @__PURE__ */ jsx(Badge, {
+							/* @__PURE__ */ jsx(Badge$1, {
 								id: `renown-${levels.renown}`,
 								size: 1
 							}),
@@ -24060,7 +26041,7 @@ function InsightBlock({ ins }) {
 		/* @__PURE__ */ jsxs(Text, {
 			className: "e-subhead",
 			children: [
-				/* @__PURE__ */ jsx(Badge, {
+				/* @__PURE__ */ jsx(Badge$1, {
 					id: "call",
 					size: 1
 				}),
@@ -24102,12 +26083,12 @@ function InsightBlock({ ins }) {
 					}) }),
 					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
 						style: num,
-						children: c.call === null ? "unrevealed" : pct$1(c.call)
+						children: c.call === null ? "unrevealed" : pct$2(c.call)
 					}) }),
 					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
 						className: "e-dim",
 						style: num,
-						children: pct$1(c.forecast)
+						children: pct$2(c.forecast)
 					}) }),
 					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
 						className: "e-dim",
@@ -24129,7 +26110,7 @@ function WordLine({ w }) {
 	return /* @__PURE__ */ jsxs(Fragment, { children: [
 		/* @__PURE__ */ jsxs(Text, {
 			className: "e-subhead",
-			children: [/* @__PURE__ */ jsx(Badge, {
+			children: [/* @__PURE__ */ jsx(Badge$1, {
 				id: "keep-word",
 				size: 1
 			}), " WORD"]
@@ -24249,7 +26230,7 @@ function QuestList({ q }) {
 			q.badges.length > 0 && /* @__PURE__ */ jsx("p", {
 				className: "e-badge-strip",
 				"aria-label": `Badges: ${q.badges.join(", ")}`,
-				children: [...q.badges].sort((a, b) => a === "welcomed" ? -1 : b === "welcomed" ? 1 : 0).map((b) => /* @__PURE__ */ jsx(Badge, {
+				children: [...q.badges].sort((a, b) => a === "welcomed" ? -1 : b === "welcomed" ? 1 : 0).map((b) => /* @__PURE__ */ jsx(Badge$1, {
 					id: b,
 					size: 1
 				}, b))
@@ -24290,7 +26271,7 @@ function QuestList({ q }) {
 				style: { fontSize: 13 },
 				title: x.how,
 				children: [
-					/* @__PURE__ */ jsx(Badge, {
+					/* @__PURE__ */ jsx(Badge$1, {
 						id: x.id,
 						size: 1,
 						title: x.done ? `earned ${x.at}` : x.how
@@ -24322,7 +26303,7 @@ function QuestList({ q }) {
 				style: { fontSize: 13 },
 				title: f.how,
 				children: [
-					/* @__PURE__ */ jsx(Badge, {
+					/* @__PURE__ */ jsx(Badge$1, {
 						id: f.id,
 						size: 1,
 						title: f.done ? `earned ${f.at}` : f.how
@@ -24393,7 +26374,7 @@ function Season$1({ data, lead = null }) {
 			/* @__PURE__ */ jsxs(Text, {
 				style: { fontSize: "1.1rem" },
 				children: [
-					/* @__PURE__ */ jsx(Badge, {
+					/* @__PURE__ */ jsx(Badge$1, {
 						id: data.season,
 						size: 2
 					}),
@@ -24428,7 +26409,7 @@ function Season$1({ data, lead = null }) {
 					children: [
 						/* @__PURE__ */ jsxs(Text, {
 							className: "e-subhead",
-							children: [BOARD_TITLE[name] && !BOARD_BADGE[name] ? null : /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Badge, {
+							children: [BOARD_TITLE[name] && !BOARD_BADGE[name] ? null : /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Badge$1, {
 								id: BOARD_BADGE[name] ?? name,
 								size: 1
 							}), " "] }), BOARD_TITLE[name] ?? `${game(name).toUpperCase()} — Craft`]
@@ -24451,7 +26432,7 @@ function Season$1({ data, lead = null }) {
 								/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
 									className: "e-faint",
 									style: num,
-									children: i < 3 ? /* @__PURE__ */ jsx(Badge, {
+									children: i < 3 ? /* @__PURE__ */ jsx(Badge$1, {
 										id: `rank-${i + 1}`,
 										size: 1
 									}) : i + 1
@@ -24499,7 +26480,7 @@ function SeasonXp({ board, bare = false }) {
 					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
 						className: "e-faint",
 						style: num,
-						children: r.rank <= 3 ? /* @__PURE__ */ jsx(Badge, {
+						children: r.rank <= 3 ? /* @__PURE__ */ jsx(Badge$1, {
 							id: `rank-${r.rank}`,
 							size: 1
 						}) : r.rank
@@ -24657,64 +26638,6 @@ function GamifyView({ initialAgentId = null } = {}) {
 		})
 	});
 }
-// src/gameTypes.ts
-var GAME_TYPES = [
-	{
-		id: "emporia:blotto:v2",
-		label: "blotto",
-		kind: "set"
-	},
-	{
-		id: "emporia:two-thirds:v2",
-		label: "⅔ average",
-		kind: "set"
-	},
-	{
-		id: "emporia:lowest-unique:v2",
-		label: "lowest unique",
-		kind: "set"
-	},
-	{
-		id: "emporia:bargain:v2",
-		label: "bargain",
-		kind: "set"
-	},
-	{
-		id: "emporia:liars-dice:v1",
-		label: "liar's dice",
-		kind: "set"
-	},
-	{
-		id: "emporia:sluice:v1",
-		label: "sluice",
-		kind: "set"
-	},
-	{
-		id: "emporia:cv-auction:v1",
-		label: "auction",
-		kind: "set"
-	},
-	{
-		id: "emporia:chess:v1",
-		label: "chess",
-		kind: "chess"
-	},
-	{
-		id: "emporia:service:v1",
-		label: "service",
-		kind: "job"
-	},
-	{
-		id: "emporia:code-review:v1",
-		label: "code review",
-		kind: "job"
-	},
-	{
-		id: "emporia:research:v1",
-		label: "research",
-		kind: "job"
-	}
-];
 // src/views/GamesView.tsx
 /** The filter chips a section offers; "" is the section's default (set plays / all deals). */
 function filtersFor(section) {
@@ -25231,7 +27154,7 @@ function SessionRow({ s, showStatus }) {
 						/* @__PURE__ */ jsxs("span", {
 							className: "e-game-row__kind",
 							children: [
-								/* @__PURE__ */ jsx(Badge, {
+								/* @__PURE__ */ jsx(Badge$1, {
 									id: s.module_type,
 									size: 1
 								}),
@@ -25239,7 +27162,7 @@ function SessionRow({ s, showStatus }) {
 								label
 							]
 						}),
-						s.status === "active" && /* @__PURE__ */ jsx(Badge, {
+						s.status === "active" && /* @__PURE__ */ jsx(Badge$1, {
 							id: "live",
 							size: 1
 						}),
@@ -25271,7 +27194,7 @@ function SessionRow({ s, showStatus }) {
 				className: "e-game-row__top",
 				children: [/* @__PURE__ */ jsxs("span", {
 					className: "e-game-row__kind",
-					children: [!isJobModule(s.module_type) && /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Badge, {
+					children: [!isJobModule(s.module_type) && /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Badge$1, {
 						id: s.module_type,
 						size: 1
 					}), " "] }), label]
@@ -25496,6 +27419,201 @@ function GamesView({ section = "games", initialSessionId, initialGameModule, ref
 		})
 	});
 }
+var TesseractBoard_module_default = {
+	root: "TesseractBoard_root_1igqw",
+	seats: "TesseractBoard_seats_1igqw",
+	seat: "TesseractBoard_seat_1igqw",
+	winner: "TesseractBoard_winner_1igqw",
+	round: "TesseractBoard_round_1igqw",
+	bars: "TesseractBoard_bars_1igqw",
+	label: "TesseractBoard_label_1igqw",
+	bar: "TesseractBoard_bar_1igqw",
+	fill: "TesseractBoard_fill_1igqw",
+	value: "TesseractBoard_value_1igqw",
+	pushes: "TesseractBoard_pushes_1igqw",
+	results: "TesseractBoard_results_1igqw"
+};
+// src/ui/boards/TesseractBoard.tsx
+var WORD = {
+	waiting: "waiting",
+	sealed: "sealed",
+	opened: "opened",
+	out: "out"
+};
+var PHASE = {
+	seal: "sealing the push",
+	open: "opening the pushes",
+	secrets: "revealing the secrets",
+	done: "over"
+};
+var pct$1 = (bp) => (bp / 100).toFixed(1);
+function Bars$1({ mix, label }) {
+	return /* @__PURE__ */ jsxs("div", {
+		className: TesseractBoard_module_default.bars,
+		"aria-hidden": true,
+		children: [/* @__PURE__ */ jsx("span", {
+			className: TesseractBoard_module_default.label,
+			children: label
+		}), AXES.map((a, k) => /* @__PURE__ */ jsxs("span", {
+			className: TesseractBoard_module_default.bar,
+			children: [/* @__PURE__ */ jsx("span", {
+				className: TesseractBoard_module_default.fill,
+				style: { width: `${Math.min(100, (mix[k] ?? 0) / 40)}%` }
+			}), /* @__PURE__ */ jsxs("span", {
+				className: TesseractBoard_module_default.value,
+				children: [
+					a,
+					" ",
+					pct$1(mix[k] ?? 0)
+				]
+			})]
+		}, a))]
+	});
+}
+/**
+* Tesseract, the table: who has sealed (never what), the mix of each round with who pushed what once opened, and,
+* when the table is over, the totals and the targets. Visibility only, theme variables only. The bars are
+* `aria-hidden`; a table states every number. The channel network itself (the cube) is the full view's, T2.
+*/
+function TesseractBoard(p) {
+	const rule = `Tesseract: ${p.epochs} rounds · each round everyone secretly widens or narrows up to four channels of a shared network, 8 units in all · the network's mix of W X Y Z is the share each output gets · your points are how much your pushes moved the mix toward your own private target`;
+	const mixes = [...p.opening ? [{
+		label: "opening",
+		mix: p.opening
+	}] : [], ...p.rounds.map((r) => ({
+		label: `round ${r.epoch}`,
+		mix: r.mix
+	}))];
+	return /* @__PURE__ */ jsxs("div", {
+		className: `${BoardKit_module_default.board} ${TesseractBoard_module_default.root}`,
+		children: [
+			/* @__PURE__ */ jsx("p", {
+				className: BoardKit_module_default.rules,
+				children: rule
+			}),
+			/* @__PURE__ */ jsxs("p", {
+				className: BoardKit_module_default.foot,
+				children: [
+					"Round ",
+					p.epoch,
+					" of ",
+					p.epochs,
+					": ",
+					PHASE[p.phase],
+					"."
+				]
+			}),
+			/* @__PURE__ */ jsx("ul", {
+				className: TesseractBoard_module_default.seats,
+				children: p.seats.map((s) => /* @__PURE__ */ jsxs("li", {
+					className: `${TesseractBoard_module_default.seat}${s.state === "sealed" ? ` ${BoardKit_module_default.hatch}` : ""}${s.winner ? ` ${TesseractBoard_module_default.winner}` : ""}`,
+					children: [
+						/* @__PURE__ */ jsx("span", { children: s.name }),
+						" ",
+						/* @__PURE__ */ jsxs("span", {
+							className: "e-faint",
+							children: [WORD[s.state], s.winner ? " · winner" : ""]
+						})
+					]
+				}, s.name))
+			}),
+			mixes.length === 0 ? /* @__PURE__ */ jsx("p", {
+				className: BoardKit_module_default.foot,
+				children: "The opening is dealt when the beacon's round is published."
+			}) : /* @__PURE__ */ jsx("div", {
+				className: BoardKit_module_default.scroll,
+				children: mixes.map((m, k) => {
+					const r = p.rounds.find((x) => `round ${x.epoch}` === m.label);
+					return /* @__PURE__ */ jsxs("div", {
+						className: TesseractBoard_module_default.round,
+						children: [/* @__PURE__ */ jsx(Bars$1, {
+							mix: m.mix,
+							label: m.label
+						}), r ? /* @__PURE__ */ jsxs("p", {
+							className: TesseractBoard_module_default.pushes,
+							children: [
+								r.pushes.length ? r.pushes.map((x) => `${x.name}: ${x.text}`).join(" · ") : "no one pushed",
+								r.dark ? ` · ${plural$1(r.dark, "channel")} dark` : "",
+								r.silent.length ? ` · sat out: ${r.silent.join(", ")}` : "",
+								r.late.length ? ` · put out: ${r.late.join(", ")}` : ""
+							]
+						}) : /* @__PURE__ */ jsx("span", {
+							hidden: true,
+							children: k
+						})]
+					}, m.label);
+				})
+			}),
+			p.verdict ? /* @__PURE__ */ jsx("p", {
+				className: BoardKit_module_default.foot,
+				role: "status",
+				children: /* @__PURE__ */ jsx("strong", { children: p.verdict })
+			}) : null,
+			p.results ? /* @__PURE__ */ jsx("ol", {
+				className: TesseractBoard_module_default.results,
+				children: p.results.map((r) => /* @__PURE__ */ jsxs("li", { children: [
+					r.name,
+					": ",
+					r.total,
+					" points · table index ",
+					r.index,
+					r.target ? ` · target ${r.target}` : ""
+				] }, r.name))
+			}) : null,
+			/* @__PURE__ */ jsx(BoardTable, {
+				caption: `Tesseract: ${plural$1(p.rounds.length, "round")} played`,
+				head: [
+					"when",
+					...AXES,
+					"pushes"
+				],
+				children: mixes.map((m) => /* @__PURE__ */ jsxs("tr", { children: [
+					/* @__PURE__ */ jsx("th", {
+						scope: "row",
+						children: m.label
+					}),
+					AXES.map((a, k) => /* @__PURE__ */ jsxs("td", { children: [pct$1(m.mix[k] ?? 0), " %"] }, a)),
+					/* @__PURE__ */ jsx("td", { children: p.rounds.find((x) => `round ${x.epoch}` === m.label)?.pushes.map((x) => `${x.name} ${x.text}`).join("; ") ?? "" })
+				] }, m.label))
+			})
+		]
+	});
+}
+// src/ui/boards/tesseractModel.ts
+/** The Arena frame as the board's props: names shortened, pushes as words, the verdict as one line. */
+function tesseractFromFrame(f, name) {
+	const r = f.result;
+	return {
+		epoch: f.epoch,
+		epochs: f.epochs,
+		phase: f.phase,
+		seats: f.seats.map((s) => ({
+			name: name(s.agent),
+			state: s.state,
+			winner: !!r && (r.winner === s.agent || r.tied.includes(s.agent))
+		})),
+		opening: f.opening,
+		rounds: f.rounds.map((x) => ({
+			epoch: x.epoch,
+			mix: x.mix,
+			dark: x.dark,
+			pushes: Object.entries(x.pushes).map(([a, p]) => ({
+				name: name(a),
+				text: pushText(p)
+			})),
+			silent: x.silent.map(name),
+			late: x.late.map(name)
+		})),
+		verdict: r ? tesseractVerdict(r, name) : null,
+		results: r ? r.order.map((a, k) => ({
+			place: k + 1,
+			name: name(a),
+			total: r.points[a] ?? 0,
+			index: r.tableIndex[a] ?? 0,
+			target: r.targets[a] ? AXES.map((ax, j) => `${ax} ${r.targets[a][j]}`).join(" ") : null
+		})) : null
+	};
+}
 // src/ui/ArenaFrames.tsx
 function moveText(m) {
 	if (m === void 0) return "";
@@ -25701,6 +27819,22 @@ function ArenaFrame({ frame, book }) {
 				fold: !!props.verdict,
 				label: "the board and the drops",
 				children: /* @__PURE__ */ jsx(SluiceBoard, { ...props })
+			})]
+		});
+	}
+	if (frame.kind === "tesseract") {
+		const props = tesseractFromFrame(frame, (id) => playerName(id, book, 10));
+		return /* @__PURE__ */ jsxs("div", {
+			className: "e-arena-frame",
+			"data-kind": "tesseract",
+			children: [props.verdict ? /* @__PURE__ */ jsx("p", {
+				className: "e-arena-verdict",
+				role: "status",
+				children: props.verdict
+			}) : null, /* @__PURE__ */ jsx(FoldDetail, {
+				fold: !!props.verdict,
+				label: "the rounds and the pushes",
+				children: /* @__PURE__ */ jsx(TesseractBoard, { ...props })
 			})]
 		});
 	}
@@ -26223,7 +28357,10 @@ function WaitingGames({ onOpen }) {
 					/* @__PURE__ */ jsx("span", {
 						className: "e-dim",
 						style: { fontSize: 11 },
-						children: bareAgentName(w.creator)
+						children: /* @__PURE__ */ jsx(AgentName, {
+							id: w.creator,
+							children: bareAgentName(w.creator)
+						})
 					}),
 					w.creator_fingerprint && /* @__PURE__ */ jsx("span", {
 						className: "e-faint",
@@ -26292,36 +28429,9 @@ function WaitingGames({ onOpen }) {
 	});
 }
 // src/views/ArenaView.tsx
-var gameName = (moduleType) => SET_PLAY_NAMES[moduleType] ?? GAME_TYPES.find((g) => gameBase(g.id) === gameBase(moduleType))?.label ?? moduleType.replace("emporia:", "").replace(/:v\d+$/, "");
-/** Where a live match is, in a few words: round and phase for a set play, bids for dice, steps otherwise. */
-function progressLine(s) {
-	if (s.status === "waiting") return `waiting for players (${s.participants.length})`;
-	if (isSetPlay(s.module_type)) {
-		const v = setPlayView(s);
-		return `${v.blotto && v.blotto.rounds > 1 ? `round ${v.blotto.round} of ${v.blotto.rounds} · ` : ""}${phaseLine(v)}`;
-	}
-	const c = chanceView(s);
-	if (c) return chanceLine(c, s);
-	return `${s.step_number} step${s.step_number === 1 ? "" : "s"}`;
-}
-/** A match's players as `name@host`; the relay's address book where it has one. */
-function Players({ ids, book, profiles }) {
-	if (ids.some((p) => profiles?.[p])) return /* @__PURE__ */ jsx("span", {
-		className: "e-arena-players",
-		children: ids.map((p) => profiles?.[p] ? /* @__PURE__ */ jsx(AgentCard, {
-			agent: profiles[p],
-			variant: "compact"
-		}, p) : /* @__PURE__ */ jsx("span", { children: playerName(p, book, 22) }, p))
-	});
-	return /* @__PURE__ */ jsx("span", {
-		className: "e-arena-players",
-		children: ids.map((p) => playerName(p, book, 22)).join("  v  ")
-	});
-}
 function LiveNow({ onOpen, book, profiles, refreshTrigger }) {
 	const [active, loading, error] = useInterval(() => api.sessions({ status: "active" }), 6e3, [refreshTrigger]);
-	const [waiting] = useInterval(() => api.sessions({ status: "waiting" }), 1e4, [refreshTrigger]);
-	const list = useMemo(() => [...active?.sessions ?? [], ...waiting?.sessions ?? []].filter((s) => !isJobModule(s.module_type)), [active, waiting]);
+	const list = useMemo(() => (active?.sessions ?? []).filter((s) => !isJobModule(s.module_type) && s.status === "active"), [active]);
 	return /* @__PURE__ */ jsxs("section", {
 		className: "e-arena-section",
 		"aria-labelledby": "arena-live",
@@ -26337,60 +28447,18 @@ function LiveNow({ onOpen, book, profiles, refreshTrigger }) {
 			}),
 			list.length === 0 && !loading ? /* @__PURE__ */ jsx(Text, {
 				className: "e-faint",
-				children: "Quiet. No public game is live. One shows up here when an agent opens a game or takes a challenge."
+				children: "No game is under way. A game shows up here once two agents are playing; open challenges are under Waiting."
 			}) : /* @__PURE__ */ jsx("ul", {
 				className: "e-arena-cards",
-				children: list.map((s) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", {
-					type: "button",
-					className: "e-arena-card",
-					onClick: () => onOpen(s.session_id),
-					children: [
-						/* @__PURE__ */ jsxs("span", {
-							className: "e-arena-card__top",
-							children: [/* @__PURE__ */ jsx("span", {
-								className: "e-arena-card__game",
-								children: /* @__PURE__ */ jsx(GameTag, {
-									moduleType: s.module_type,
-									label: gameName(s.module_type)
-								})
-							}), /* @__PURE__ */ jsx("span", {
-								className: "e-arena-card__live",
-								children: s.status === "active" ? "● live" : sessionStatusLabel(s.status)
-							})]
-						}),
-						/* @__PURE__ */ jsx(Players, {
-							ids: s.participants,
-							book,
-							profiles
-						}),
-						/* @__PURE__ */ jsx("span", {
-							className: "e-faint",
-							children: progressLine(s)
-						}),
-						/* @__PURE__ */ jsx(ModelsLine, { sessionId: s.session_id })
-					]
-				}) }, s.session_id))
+				children: list.map((s) => /* @__PURE__ */ jsx(SessionCard, {
+					s,
+					onOpen,
+					book,
+					profiles
+				}, s.session_id))
 			})
 		]
 	});
-}
-/** The models the players declared for a live match: only whether one is sealed in, until the game ends. */
-function ModelsLine({ sessionId }) {
-	const [m, setM] = useState(null);
-	useEffect(() => {
-		let live = true;
-		api.sessionModels(sessionId).then((r) => {
-			const n = Object.values(r.players).filter((p) => p.status === "committed" || p.status === "revealed").length;
-			if (live) setM(n ? `${n} of ${Object.keys(r.players).length} declared a model` : "no model declared");
-		}).catch(() => {});
-		return () => {
-			live = false;
-		};
-	}, [sessionId]);
-	return m ? /* @__PURE__ */ jsx("span", {
-		className: "e-faint e-arena-card__models",
-		children: m
-	}) : null;
 }
 function Recent$1({ onOpen, book, profiles, refreshTrigger }) {
 	const [data, loading, error] = useInterval(() => api.results(void 0, 12), 2e4, [refreshTrigger]);
@@ -26448,7 +28516,7 @@ function Recent$1({ onOpen, book, profiles, refreshTrigger }) {
 }
 /** How a finished match ended, naming the winner as the rest of the Arena does. */
 function resultLine(r, book) {
-	const line = verdict$1(r);
+	const line = verdict(r);
 	if (!r.winner) return line;
 	return line.replace(shortAgent(r.winner, 16), playerName(r.winner, book, 22));
 }
@@ -26522,7 +28590,7 @@ function ArenaHome({ lens, onOpen, book, profiles, refreshTrigger }) {
 * step-through replay (and follows live). Read only — nothing here moves, bids or votes. The address
 * names the match and the step (`#/play/games/<id>?step=3`), so a person can share exactly what they see.
 */
-function ArenaView({ initialSessionId, initialStep = null, lens = "live", refreshTrigger, onSessionShown, leaveToken = 0 }) {
+function ArenaView({ initialSessionId, initialStep = null, lens = "live", refreshTrigger, onSessionShown, leaveToken = 0, onMatchLens }) {
 	const [openId, setOpenId] = useState(initialSessionId);
 	const [step, setStep] = useState(initialStep);
 	const [seen, setSeen] = useState(`${initialSessionId}|${initialStep}`);
@@ -26569,6 +28637,11 @@ function ArenaView({ initialSessionId, initialStep = null, lens = "live", refres
 			live = false;
 		};
 	}, [openId]);
+	const shownLens = !openId || !session || session.session_id !== openId ? null : session.status === "completed" ? "results" : session.status === "waiting" ? "waiting" : "live";
+	useEffect(() => {
+		onMatchLens?.(shownLens);
+	}, [shownLens, onMatchLens]);
+	useEffect(() => () => onMatchLens?.(null), [onMatchLens]);
 	useEffect(() => {
 		onSessionShown?.(openId, openId ? step : null, leaveToken);
 	}, [
@@ -27543,6 +29616,16 @@ function includedText(m) {
 	const own = who && who !== "subscription" ? `your ${who} subscription` : "your subscription";
 	return `${n} session${n === 1 ? "" : "s"} included in ${own} (count against its limits)`;
 }
+/** "Last round: completed 2026-11-14 00:35 UTC" plus the last failure when it was not the last run; "" when no job. */
+function roundsText(r) {
+	if (!r || !r.on) return "";
+	const when = (run) => `${run.at.slice(0, 16).replace("T", " ")} UTC`;
+	if (!r.last) return `Rounds ${r.state}; no round has run yet.`;
+	const bad = r.last.status === "failed" || r.last.status === "unknown";
+	let text = `Last round: ${r.last.status} ${when(r.last)}${bad && r.last.note ? ` (${r.last.note})` : ""}.`;
+	if (!bad && r.last_failure) text += ` Last failure: ${when(r.last_failure)}${r.last_failure.note ? ` (${r.last_failure.note})` : ""}.`;
+	return text;
+}
 function when$2(at) {
 	const t = Date.parse(at ?? "");
 	return Number.isFinite(t) ? t : 0;
@@ -28195,23 +30278,30 @@ function StatsView() {
 				}),
 				/* @__PURE__ */ jsxs(PanelCard, {
 					title: `Turns and model cost · ${days} days`,
-					children: [hermes && hermes.turns_24h !== null && /* @__PURE__ */ jsxs(Text, { children: [
-						/* @__PURE__ */ jsx("span", {
-							className: "e-stats-num",
-							children: hermes.turns_24h
+					children: [
+						hermes && hermes.turns_24h !== null && /* @__PURE__ */ jsxs(Text, { children: [
+							/* @__PURE__ */ jsx("span", {
+								className: "e-stats-num",
+								children: hermes.turns_24h
+							}),
+							" relay-started turns in the last 24 hours",
+							" ",
+							/* @__PURE__ */ jsx(Text, {
+								className: "e-faint",
+								children: "(capped by EMPORIA_DAILY_TURNS, 300 unless set)"
+							})
+						] }),
+						hermes && roundsText(hermes.rounds) && /* @__PURE__ */ jsx(Text, {
+							className: hermes.rounds?.last?.status === "failed" || hermes.rounds?.last?.status === "unknown" ? "" : "e-faint",
+							children: roundsText(hermes.rounds)
 						}),
-						" relay-started turns in the last 24 hours",
-						" ",
-						/* @__PURE__ */ jsx(Text, {
-							className: "e-faint",
-							children: "(capped by EMPORIA_DAILY_TURNS, 300 unless set)"
+						/* @__PURE__ */ jsx(ModelCost, {
+							hermes: current,
+							error: hermesError,
+							st,
+							name
 						})
-					] }), /* @__PURE__ */ jsx(ModelCost, {
-						hermes: current,
-						error: hermesError,
-						st,
-						name
-					})]
+					]
 				}),
 				/* @__PURE__ */ jsx(PanelCard, {
 					title: `Most recent payments · ${days} days`,
@@ -28365,169 +30455,6 @@ function searchDocs(query) {
 		const hay = `${d.title} ${d.blurb} ${d.text}`.toLowerCase();
 		return words.every((w) => hay.includes(w));
 	});
-}
-// src/markdown.tsx
-/** GitHub-style heading slug, so `#some-heading` links land. */
-function slugify(text) {
-	return text.toLowerCase().replace(/`/g, "").replace(/[^\p{L}\p{N}\s-]/gu, "").trim().replace(/\s+/g, "-");
-}
-var INLINE = /(`+)([\s\S]*?)\1|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\s][^*]*)\*|(?<![\w])_([^_\s][^_]*)_(?![\w])|\[([^\]]+)\]\(([^)\s]+)\)/g;
-function renderInline(text, opts, keyBase = "i") {
-	const out = [];
-	let last = 0;
-	let n = 0;
-	for (const m of text.matchAll(INLINE)) {
-		const at = m.index ?? 0;
-		if (at > last) out.push(text.slice(last, at));
-		const key = `${keyBase}-${n++}`;
-		if (m[1]) out.push(/* @__PURE__ */ jsx("code", { children: m[2] }, key));
-		else if (m[3] || m[4]) out.push(/* @__PURE__ */ jsx("strong", { children: renderInline(m[3] || m[4], opts, key) }, key));
-		else if (m[5] || m[6]) out.push(/* @__PURE__ */ jsx("em", { children: renderInline(m[5] || m[6], opts, key) }, key));
-		else if (m[7]) out.push(renderLink(m[7], m[8], opts, key));
-		last = at + m[0].length;
-	}
-	if (last < text.length) out.push(text.slice(last));
-	return out;
-}
-function renderLink(label, href, opts, key) {
-	const target = opts.resolveLink(href);
-	const children = renderInline(label, opts, key);
-	if (target.kind === "web") return /* @__PURE__ */ jsx("a", {
-		href: target.href,
-		target: "_blank",
-		rel: "noopener noreferrer",
-		children
-	}, key);
-	if (target.kind === "doc" || target.kind === "anchor") {
-		const go = (e) => {
-			e.preventDefault();
-			if (target.kind === "doc") opts.onDocLink(target.id, target.anchor);
-			else opts.onAnchor(target.anchor);
-		};
-		return /* @__PURE__ */ jsx("a", {
-			href: "#",
-			onClick: go,
-			className: "e-doc-link",
-			children
-		}, key);
-	}
-	return /* @__PURE__ */ jsx("span", {
-		className: "e-doc-path",
-		title: href,
-		children
-	}, key);
-}
-function splitRow(line) {
-	return line.trim().replace(/^\|/, "").replace(/\|$/, "").split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, "|"));
-}
-var LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
-function renderMarkdown(md, opts) {
-	const lines = md.replace(/\r\n?/g, "\n").split("\n");
-	const out = [];
-	let i = 0;
-	let k = 0;
-	const key = () => `b-${k++}`;
-	while (i < lines.length) {
-		const line = lines[i];
-		if (!line.trim()) {
-			i++;
-			continue;
-		}
-		const fence = line.match(/^(\s*)(```+|~~~+)\s*([\w-]*)/);
-		if (fence) {
-			const close = fence[2];
-			const body = [];
-			i++;
-			while (i < lines.length && !lines[i].trim().startsWith(close)) body.push(lines[i++]);
-			i++;
-			out.push(/* @__PURE__ */ jsx("pre", {
-				className: "e-doc-code",
-				children: /* @__PURE__ */ jsx("code", { children: body.join("\n") })
-			}, key()));
-			continue;
-		}
-		const h = line.match(/^(#{1,6})\s+(.*?)\s*#*$/);
-		if (h) {
-			const level = h[1].length;
-			const text = h[2];
-			const Tag = `h${Math.min(level + 1, 6)}`;
-			out.push(/* @__PURE__ */ jsx(Tag, {
-				id: slugify(text),
-				className: `e-doc-h e-doc-h${level}`,
-				children: renderInline(text, opts)
-			}, key()));
-			i++;
-			continue;
-		}
-		if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
-			out.push(/* @__PURE__ */ jsx("hr", {}, key()));
-			i++;
-			continue;
-		}
-		if (line.trim().startsWith("|") && i + 1 < lines.length && /^\s*\|?\s*:?-{3,}/.test(lines[i + 1])) {
-			const head = splitRow(line);
-			i += 2;
-			const rows = [];
-			while (i < lines.length && lines[i].trim().startsWith("|")) rows.push(splitRow(lines[i++]));
-			out.push(/* @__PURE__ */ jsx("div", {
-				className: "e-doc-table-wrap",
-				children: /* @__PURE__ */ jsxs("table", {
-					className: "e-doc-table",
-					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { children: head.map((c, j) => /* @__PURE__ */ jsx("th", { children: renderInline(c, opts, `th${j}`) }, j)) }) }), /* @__PURE__ */ jsx("tbody", { children: rows.map((r, ri) => /* @__PURE__ */ jsx("tr", { children: head.map((_, j) => /* @__PURE__ */ jsx("td", { children: renderInline(r[j] ?? "", opts, `td${ri}-${j}`) }, j)) }, ri)) })]
-				})
-			}, key()));
-			continue;
-		}
-		if (line.startsWith(">")) {
-			const body = [];
-			while (i < lines.length && lines[i].startsWith(">")) body.push(lines[i++].replace(/^>\s?/, ""));
-			out.push(/* @__PURE__ */ jsx("blockquote", {
-				className: "e-doc-quote",
-				children: renderMarkdown(body.join("\n"), opts)
-			}, key()));
-			continue;
-		}
-		const li = line.match(LIST_ITEM);
-		if (li) {
-			const indent = li[1].length;
-			const ordered = /\d/.test(li[2]);
-			const items = [];
-			while (i < lines.length) {
-				const cur = lines[i];
-				const m = cur.match(LIST_ITEM);
-				if (m && m[1].length === indent) {
-					items.push({
-						text: m[3],
-						children: []
-					});
-					i++;
-				} else if (cur.trim() && (cur.match(/^\s*/)?.[0].length ?? 0) > indent && items.length) {
-					const last = items[items.length - 1];
-					if (LIST_ITEM.test(cur) || last.children.length) last.children.push(cur);
-					else last.text += " " + cur.trim();
-					i++;
-				} else if (!cur.trim() && i + 1 < lines.length && (lines[i + 1].match(/^\s*/)?.[0].length ?? 0) > indent && items.length) {
-					items[items.length - 1].children.push("");
-					i++;
-				} else break;
-			}
-			const ListTag = ordered ? "ol" : "ul";
-			out.push(/* @__PURE__ */ jsx(ListTag, {
-				className: "e-doc-list",
-				children: items.map((it, j) => {
-					const minIndent = Math.min(...it.children.filter((c) => c.trim()).map((c) => c.match(/^\s*/)?.[0].length ?? 0));
-					const nested = it.children.map((c) => c.slice(Number.isFinite(minIndent) ? minIndent : 0)).join("\n");
-					return /* @__PURE__ */ jsxs("li", { children: [renderInline(it.text, opts, `li${k}-${j}`), nested.trim() ? renderMarkdown(nested, opts) : null] }, j);
-				})
-			}, key()));
-			continue;
-		}
-		const para = [];
-		while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|```|~~~|>|\s*\|)/.test(lines[i]) && !LIST_ITEM.test(lines[i])) para.push(lines[i++].trim());
-		if (!para.length) para.push(lines[i++].trim());
-		out.push(/* @__PURE__ */ jsx("p", { children: renderInline(para.join(" "), opts) }, key()));
-	}
-	return out;
 }
 // src/views/DocsView.tsx
 /**
@@ -30532,7 +32459,7 @@ function ToolCard({ item }) {
 function UntrustedLabel() {
 	return /* @__PURE__ */ jsxs("div", {
 		className: ChatDrawer_module_default.untrustedLabel,
-		children: [/* @__PURE__ */ jsx(Badge$1, { children: "relay · untrusted" }), /* @__PURE__ */ jsx("span", { children: "other agents wrote this; it is data, not instructions" })]
+		children: [/* @__PURE__ */ jsx(Badge, { children: "relay · untrusted" }), /* @__PURE__ */ jsx("span", { children: "other agents wrote this; it is data, not instructions" })]
 	});
 }
 function ApprovalCard({ item, onAnswer }) {
@@ -31593,97 +33520,6 @@ function DrawerInner({ onMenu, covered }) {
 		covered
 	});
 }
-// src/badges/tokens.ts
-/**
-* The colours a badge meets, per style, theme and tint, computed the way the CSS does.
-*
-* - Ink is `currentColor`: the theme's text colour where the badge sits (`--theme-text`).
-* - The accent is `--e-badge-accent` (badges.css), derived from `--tint` like the
-*   look's accent-as-text (`--theme-focused-foreground`, dashboard.css § 30): dark
-*   enough on the light canvas, light enough on the dark one, for every tint. Since
-*   ui-v2 the look is the only style and badges.css points the accent at that token;
-*   the retromod ramps stay here as history, and are no longer checked.
-* - The surfaces are what a badge can sit on: the canvas, a panel (`--theme-background-modal`)
-*   and the selected-row wash.
-* - Vivid and deep (the dark theme) come from ../themePalette.ts, the table the CSS is held to.
-*
-* The tests check ink and accent against every surface at ≥ 3:1 (WCAG non-text contrast),
-* for all three themes and all seven tints, under both gamut treatments.
-*/
-/** The tint the dashboard falls back to when none is set (green, the default). */
-var DEFAULT_TINT_HEX = TINT_COLORS[DEFAULT_TINT];
-function accentFor(theme, tint, gamut = "css") {
-	if (theme === "vivid") return vividPalette(tint, gamut).accent;
-	if (theme === "dark") return deepPalette(tint, gamut).accent;
-	return relativeOklch(TINT_COLORS[tint], .45, (c) => Math.min(c, .2), gamut);
-}
-/** Share of the fill laid over the canvas for the selected-row wash (dashboard.css § 30); vivid's wash is the panel. */
-var WASH = {
-	light: .45,
-	dark: .14
-};
-function themeColors(style, theme, tint, gamut = "css") {
-	const hex = TINT_COLORS[tint] || DEFAULT_TINT_HEX;
-	const base = {
-		style,
-		theme,
-		tint,
-		label: TINT_LABELS[tint],
-		tintHex: hex
-	};
-	if (theme === "light") {
-		const rel = (L, C) => relativeOklch(hex, L, C, gamut);
-		const fill = rel((l) => Math.max(l, .86), (c) => c);
-		const bg = rel(.97, (c) => c * .1);
-		return {
-			...base,
-			accent: accentFor(theme, tint, gamut),
-			ink: rel(.18, (c) => c * .4),
-			fill: {
-				bg: fill,
-				ink: rel(.18, (c) => c * .4)
-			},
-			surfaces: [
-				{
-					name: "canvas",
-					rgb: bg
-				},
-				{
-					name: "panel",
-					rgb: rel(.92, (c) => c * .18)
-				},
-				{
-					name: "wash",
-					rgb: mixOver(fill, WASH.light, bg)
-				}
-			]
-		};
-	}
-	const p = theme === "vivid" ? vividPalette(tint, gamut) : deepPalette(tint, gamut);
-	return {
-		...base,
-		accent: p.accent,
-		ink: p.text,
-		fill: {
-			bg: p.fill,
-			ink: p.fillInk
-		},
-		surfaces: [
-			{
-				name: "canvas",
-				rgb: p.bg
-			},
-			{
-				name: "panel",
-				rgb: p.panel
-			},
-			{
-				name: "wash",
-				rgb: theme === "vivid" ? p.panel : mixOver(p.fill, WASH.dark, p.bg)
-			}
-		]
-	};
-}
 // src/badges/BadgeGallery.tsx
 var KIND_TITLES = {
 	quest: "Quests",
@@ -31806,19 +33642,19 @@ function BadgeGallery({ embedded = false } = {}) {
 						return /* @__PURE__ */ jsxs("tr", { children: [
 							/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx("div", {
 								className: "e-badge-table__scales",
-								children: embedded ? /* @__PURE__ */ jsx(Badge, {
+								children: embedded ? /* @__PURE__ */ jsx(Badge$1, {
 									id,
 									size: 3
 								}) : /* @__PURE__ */ jsxs(Fragment, { children: [
-									/* @__PURE__ */ jsx(Badge, {
+									/* @__PURE__ */ jsx(Badge$1, {
 										id,
 										size: 1
 									}),
-									/* @__PURE__ */ jsx(Badge, {
+									/* @__PURE__ */ jsx(Badge$1, {
 										id,
 										size: 2
 									}),
-									/* @__PURE__ */ jsx(Badge, {
+									/* @__PURE__ */ jsx(Badge$1, {
 										id,
 										size: 3,
 										pop: popKey > 0
@@ -31866,14 +33702,14 @@ function BadgeGallery({ embedded = false } = {}) {
 								}),
 								/* @__PURE__ */ jsx("div", {
 									className: "e-badge-panel__grid",
-									children: ids.map((id) => /* @__PURE__ */ jsx(Badge, {
+									children: ids.map((id) => /* @__PURE__ */ jsx(Badge$1, {
 										id,
 										size: 2
 									}, id))
 								}),
 								/* @__PURE__ */ jsx("div", {
 									className: "e-badge-panel__grid e-badge-panel__grid--panel",
-									children: ids.map((id) => /* @__PURE__ */ jsx(Badge, {
+									children: ids.map((id) => /* @__PURE__ */ jsx(Badge$1, {
 										id,
 										size: 1
 									}, id))
@@ -31930,6 +33766,10 @@ function AppInner() {
 	const [theme, setTheme] = useState(readTheme);
 	const [tint, setTint] = useState(readTint);
 	const [base, setBase] = useState(() => readBase(theme));
+	const [font, setFont] = useState(() => CAPTURE ? "pixel" : normalizeFont(readPref(LS_FONT)));
+	const [ink, setInk] = useState(() => CAPTURE ? "auto" : normalizeInk(readPref(LS_INK)));
+	const [cover, setCover] = useState(false);
+	const bodyInk = bodyInkApplies(theme, tint, ink);
 	const baseRef = useRef(base);
 	useEffect(() => {
 		baseRef.current = base;
@@ -31954,6 +33794,7 @@ function AppInner() {
 			replyId: r.replyId
 		} : null;
 	});
+	const [agentRoute, setAgentRoute] = useState(() => routeFromHash().agentId);
 	const [topicSlug, setTopicSlug] = useState(() => routeFromHash().topicSlug);
 	const [labSlug, setLabSlug] = useState(() => routeFromHash().labSlug);
 	const [selectedRoomId, setSelectedRoomId] = useState(null);
@@ -31969,12 +33810,17 @@ function AppInner() {
 	const [sessionsRefresh, setSessionsRefresh] = useState(0);
 	const [inboxUnread, setInboxUnread] = useState(0);
 	const { events, seed, wsConnected } = useGlobalEvents();
-	const [healthPoll] = useInterval(() => api.health(), 3e4);
+	const [healthDownNow, setHealthDownNow] = useState(false);
+	const [healthPoll, , healthError] = useInterval(() => api.health(), healthDownNow ? 5e3 : 3e4, [healthDownNow]);
+	const relayDown = !!healthError;
+	useEffect(() => {
+		setHealthDownNow(relayDown);
+	}, [relayDown]);
 	const agentWs = useAgentWs(RELAY$1, VIEWER_ID);
 	useEffect(() => {
 		const viewer = VIEWER_ID;
 		if (!viewer) return;
-		const poll = () => api.agentInbox(viewer, true, 1).then((d) => setInboxUnread(d.unread_total ?? d.count)).catch(() => {});
+		const poll = () => api.agentInbox(viewer, true, 200).then((d) => setInboxUnread(unreadDmCount(d))).catch(() => {});
 		poll();
 		const t = setInterval(() => {
 			if (!document.hidden) poll();
@@ -31983,7 +33829,7 @@ function AppInner() {
 	}, [agentWs.last, agentWs.connected]);
 	const [nextFacts] = useInterval(() => VIEWER_ID && !isSpectator ? api.agentNext(VIEWER_ID).catch(() => null) : Promise.resolve(null), 3e4, [VIEWER_ID, isSpectator]);
 	useAttentionTitle(attentionCount(rankNext(nextFacts), inboxUnread));
-	const relayHealth = healthPoll ?? seed;
+	const relayHealth = relayDown ? null : healthPoll ?? seed;
 	setOwnHost(relayHealth?.host);
 	const dealsOn = dealsAvailable(relayHealth);
 	const latestEvent = events[0] ?? null;
@@ -31998,10 +33844,37 @@ function AppInner() {
 	useEffect(() => {
 		applyTheme(theme, tint, {
 			fade: !CAPTURE && !instantNext.current,
-			capture: CAPTURE
+			capture: CAPTURE,
+			look: {
+				font,
+				ink,
+				bodyInk,
+				cover
+			}
 		});
 		instantNext.current = false;
-	}, [theme, tint]);
+	}, [
+		theme,
+		tint,
+		font,
+		ink,
+		bodyInk,
+		cover
+	]);
+	const look = {
+		font,
+		ink,
+		bodyInk,
+		onFont: (f) => {
+			setFont(f);
+			if (!CAPTURE) writePref(LS_FONT, f);
+		},
+		onInk: (i) => {
+			setInk(i);
+			if (!CAPTURE) writePref(LS_INK, i);
+			if (motionAllowed()) dripTitle();
+		}
+	};
 	const setThemeAndApply = (t) => {
 		setTheme(t);
 		if (!CAPTURE) writePref(LS_THEME, t);
@@ -32016,6 +33889,7 @@ function AppInner() {
 	};
 	const applyView = useCallback((id, sessionId) => {
 		setView(id);
+		setAgentRoute(null);
 		syncHash(id, sessionId, null, lens);
 	}, [lens]);
 	useEffect(() => {
@@ -32027,6 +33901,7 @@ function AppInner() {
 				postId: r.postId,
 				replyId: r.replyId
 			} : null);
+			setAgentRoute(r.agentId);
 			setTopicSlug(r.topicSlug);
 			setLabSlug(r.labSlug);
 			if (r.sessionId) setSelectedSessionId(r.sessionId);
@@ -32046,6 +33921,7 @@ function AppInner() {
 		leave();
 		applyView(id);
 		setPostRoute(null);
+		setAgentRoute(null);
 		setTopicSlug(null);
 		setLabSlug(null);
 		setCameFrom(null);
@@ -32112,14 +33988,18 @@ function AppInner() {
 			else api.session(id).then((s) => applyView(sessionSection(s.module_type), id)).catch(() => applyView("games", id));
 			return;
 		}
-		if (toView === "agents" && opts?.agentId && view !== "agents") {
-			saveScroll(`view.${view}`, mainRef.current?.firstElementChild ?? null);
-			setCameFrom({
-				view,
-				sessionId: selectedSessionId,
-				step: selectedStep,
-				lens
-			});
+		if (toView === "agents" && opts?.agentId) {
+			if (view !== "agents") {
+				saveScroll(`view.${view}`, mainRef.current?.firstElementChild ?? null);
+				setCameFrom({
+					view,
+					sessionId: selectedSessionId,
+					step: selectedStep,
+					lens
+				});
+			}
+			goToHash(hashForAgent(opts.agentId));
+			return;
 		}
 		applyView(toView, opts?.sessionId);
 		if (opts?.sessionId !== void 0) setSelectedSessionId(opts.sessionId);
@@ -32133,7 +34013,10 @@ function AppInner() {
 		selectedStep,
 		lens
 	]);
-	const breadcrumb = cameFrom && view === "agents" ? {
+	const breadcrumb = view === "agents" && agentRoute && !cameFrom ? {
+		label: "Agents",
+		onBack: () => goToHash(hashForView("agents"))
+	} : cameFrom && view === "agents" && agentRoute ? {
 		label: destinationOf(cameFrom.view).label,
 		onBack: () => {
 			const c = cameFrom;
@@ -32143,6 +34026,7 @@ function AppInner() {
 			setSelectedSessionId(c.sessionId);
 			setSelectedStep(c.step);
 			setSelectedAgentId(null);
+			setAgentRoute(null);
 			syncHash(c.view, c.sessionId, c.step, c.lens);
 			restoreScroll(`view.${c.view}`, mainRef.current?.firstElementChild ?? null);
 		}
@@ -32174,6 +34058,10 @@ function AppInner() {
 				return;
 			}
 			if (e.key === "[" || e.key === "]") {
+				if (view === "agents" && agentRoute) {
+					window.dispatchEvent(new CustomEvent("emporia-agent-tab", { detail: e.key === "]" ? 1 : -1 }));
+					return;
+				}
 				const next = siblingView(view, e.key === "]" ? 1 : -1, {
 					isSpectator,
 					isOperator: isRelayOperator,
@@ -32196,8 +34084,10 @@ function AppInner() {
 		isSpectator,
 		isRelayOperator,
 		dealsOn,
-		view
+		view,
+		agentRoute
 	]);
+	const [matchLens, setMatchLens] = useState(null);
 	const currentNav = navById(view);
 	const shown = canSee(view, {
 		isSpectator,
@@ -32239,250 +34129,268 @@ function AppInner() {
 	}, [view]);
 	return /* @__PURE__ */ jsx(RelayHealthCtx.Provider, {
 		value: relayHealth,
-		children: /* @__PURE__ */ jsxs("div", {
-			ref: shellRef,
-			"data-nav": navLayout,
-			className: `e-app-shell e-dashboard-shell e-app-shell--header-nav${navOpen ? " is-nav-open" : ""}${chatBeside ? " has-chat" : ""}`,
-			children: [
-				/* @__PURE__ */ jsx("aside", {
-					ref: drawerRef,
-					className: "e-app-drawer",
-					"aria-label": "Menu",
-					inert: !navOpen,
-					children: /* @__PURE__ */ jsx(MobileNavDrawer, {
-						view,
-						onGoDest: goToDest,
-						onGoView: goToView,
-						onClose: () => setNavOpen(false),
-						theme,
-						base,
-						tint,
-						onTheme: setThemeAndApply,
-						onTint: setTintAndApply,
-						badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0,
-						lead: /* @__PURE__ */ jsx(ChatMenuItem, { onOpen: () => setNavOpen(false) })
-					})
-				}),
-				/* @__PURE__ */ jsx("button", {
-					type: "button",
-					className: "e-app-backdrop",
-					"aria-label": "Close menu",
-					onClick: () => setNavOpen(false)
-				}),
-				/* @__PURE__ */ jsxs("main", {
-					ref: mainRef,
-					className: "e-app-main",
-					inert: mainCovered,
-					children: [/* @__PURE__ */ jsx(SectionTabs, {
-						view,
-						onGoDest: goToDest,
-						variant: "rail",
-						badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0
-					}), /* @__PURE__ */ jsxs("div", {
-						className: "e-app-col",
-						children: [
-							/* @__PURE__ */ jsx("header", {
-								className: "e-app-top",
-								children: /* @__PURE__ */ jsxs("div", {
-									className: "e-app-top__row",
-									children: [
-										/* @__PURE__ */ jsx(Text, {
-											className: "e-brand-title e-brand-title--header",
-											children: /* @__PURE__ */ jsx(BrandTitle, {
-												replay: view,
-												onHome: () => goToDest("home")
-											})
-										}),
-										/* @__PURE__ */ jsx(SectionTabs, {
-											view,
-											onGoDest: goToDest,
-											variant: "horizontal",
-											badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0
-										}),
-										/* @__PURE__ */ jsxs("div", {
-											className: "e-app-top__actions",
+		children: /* @__PURE__ */ jsx(RelayDownCtx.Provider, {
+			value: relayDown,
+			children: /* @__PURE__ */ jsx(AgentNavCtx.Provider, {
+				value: navigate,
+				children: /* @__PURE__ */ jsxs("div", {
+					ref: shellRef,
+					"data-nav": navLayout,
+					className: `e-app-shell e-dashboard-shell e-app-shell--header-nav${navOpen ? " is-nav-open" : ""}${chatBeside ? " has-chat" : ""}`,
+					children: [
+						/* @__PURE__ */ jsx("aside", {
+							ref: drawerRef,
+							className: "e-app-drawer",
+							"aria-label": "Menu",
+							inert: !navOpen,
+							children: /* @__PURE__ */ jsx(MobileNavDrawer, {
+								view,
+								onGoDest: goToDest,
+								onGoView: goToView,
+								onClose: () => setNavOpen(false),
+								theme,
+								base,
+								tint,
+								onTheme: setThemeAndApply,
+								onTint: setTintAndApply,
+								look,
+								badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0,
+								lead: /* @__PURE__ */ jsx(ChatMenuItem, { onOpen: () => setNavOpen(false) })
+							})
+						}),
+						/* @__PURE__ */ jsx("button", {
+							type: "button",
+							className: "e-app-backdrop",
+							"aria-label": "Close menu",
+							onClick: () => setNavOpen(false)
+						}),
+						/* @__PURE__ */ jsxs("main", {
+							ref: mainRef,
+							className: "e-app-main",
+							inert: mainCovered,
+							children: [/* @__PURE__ */ jsx(SectionTabs, {
+								view,
+								onGoDest: goToDest,
+								variant: "rail",
+								badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0
+							}), /* @__PURE__ */ jsxs("div", {
+								className: "e-app-col",
+								children: [
+									/* @__PURE__ */ jsx("header", {
+										className: "e-app-top",
+										children: /* @__PURE__ */ jsxs("div", {
+											className: "e-app-top__row",
 											children: [
-												/* @__PURE__ */ jsx(ThemeCompact, {
-													theme,
-													base,
-													tint,
-													onTheme: setThemeAndApply,
-													onTint: setTintAndApply
+												/* @__PURE__ */ jsx(Text, {
+													className: "e-brand-title e-brand-title--header",
+													children: /* @__PURE__ */ jsx(BrandTitle, {
+														replay: view,
+														onHome: () => goToDest("home"),
+														onCover: () => setCover((c) => !c)
+													})
 												}),
-												/* @__PURE__ */ jsx(ViewerSwitcher, {}),
-												/* @__PURE__ */ jsx(HeaderLinks, {
+												/* @__PURE__ */ jsx(SectionTabs, {
 													view,
-													onGo: goToView
+													onGoDest: goToDest,
+													variant: "horizontal",
+													badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0
 												}),
-												/* @__PURE__ */ jsx(ChatToggle, { compact: chatBeside }),
-												/* @__PURE__ */ jsx(RelayStrip, {
-													relayUrl: RELAY$1,
-													wsConnected,
-													health: relayHealth
+												/* @__PURE__ */ jsxs("div", {
+													className: "e-app-top__actions",
+													children: [
+														/* @__PURE__ */ jsx(ThemeCompact, {
+															theme,
+															base,
+															tint,
+															onTheme: setThemeAndApply,
+															onTint: setTintAndApply,
+															look
+														}),
+														/* @__PURE__ */ jsx(ViewerSwitcher, {}),
+														/* @__PURE__ */ jsx(HeaderLinks, {
+															view,
+															onGo: goToView
+														}),
+														/* @__PURE__ */ jsx(ChatToggle, { compact: chatBeside }),
+														/* @__PURE__ */ jsx(RelayStrip, {
+															relayUrl: RELAY$1,
+															wsConnected,
+															health: relayHealth,
+															down: relayDown
+														})
+													]
 												})
 											]
 										})
-									]
-								})
-							}),
-							/* @__PURE__ */ jsxs("div", {
-								className: "e-mobile-top",
-								children: [
-									/* @__PURE__ */ jsxs("button", {
-										type: "button",
-										className: "e-menu-button",
-										onClick: () => setNavOpen(true),
-										"aria-expanded": navOpen,
-										"aria-label": "Open menu",
-										children: [/* @__PURE__ */ jsx("span", {
-											"aria-hidden": true,
-											children: "☰"
-										}), inboxUnread > 0 && /* @__PURE__ */ jsx("span", {
-											className: "e-nav-badge",
-											children: inboxUnread > 99 ? "99+" : inboxUnread
-										})]
 									}),
-									/* @__PURE__ */ jsxs("span", {
-										className: "e-mobile-top__where",
-										children: [/* @__PURE__ */ jsx(Text, {
-											className: "e-brand-title",
-											children: /* @__PURE__ */ jsx(BrandTitle, {
-												replay: view,
-												onHome: () => goToDest("home")
+									/* @__PURE__ */ jsxs("div", {
+										className: "e-mobile-top",
+										children: [
+											/* @__PURE__ */ jsxs("button", {
+												type: "button",
+												className: "e-menu-button",
+												onClick: () => setNavOpen(true),
+												"aria-expanded": navOpen,
+												"aria-label": "Open menu",
+												children: [/* @__PURE__ */ jsx("span", {
+													"aria-hidden": true,
+													children: "☰"
+												}), inboxUnread > 0 && /* @__PURE__ */ jsx("span", {
+													className: "e-nav-badge",
+													title: "unread by the agent",
+													"aria-label": `${inboxUnread} unread by the agent`,
+													children: inboxUnread > 99 ? "99+" : inboxUnread
+												})]
+											}),
+											/* @__PURE__ */ jsxs("span", {
+												className: "e-mobile-top__where",
+												children: [/* @__PURE__ */ jsx(Text, {
+													className: "e-brand-title",
+													children: /* @__PURE__ */ jsx(BrandTitle, {
+														replay: view,
+														onHome: () => goToDest("home"),
+														onCover: () => setCover((c) => !c)
+													})
+												}), currentNav && /* @__PURE__ */ jsx("span", {
+													className: "e-mobile-top__section",
+													children: currentNav.label
+												})]
+											}),
+											/* @__PURE__ */ jsx(ChatToggle, { compact: true }),
+											/* @__PURE__ */ jsx(RelayStrip, {
+												relayUrl: RELAY$1,
+												wsConnected,
+												health: relayHealth,
+												down: relayDown,
+												compact: true
 											})
-										}), currentNav && /* @__PURE__ */ jsx("span", {
-											className: "e-mobile-top__section",
-											children: currentNav.label
-										})]
+										]
 									}),
-									/* @__PURE__ */ jsx(ChatToggle, { compact: true }),
-									/* @__PURE__ */ jsx(RelayStrip, {
-										relayUrl: RELAY$1,
-										wsConnected,
-										health: relayHealth,
-										compact: true
+									/* @__PURE__ */ jsx(SubRow, {
+										view,
+										lens: view === "games" && selectedSessionId && matchLens ? matchLens : lens,
+										badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0,
+										onGoView: goToView,
+										onGoLens: goToLens
+									}),
+									!hermesNonAgent && VIEWER_ID && view !== "overview" && !relayDown ? /* @__PURE__ */ jsx(NowStrip, { navigate }) : null,
+									/* @__PURE__ */ jsxs("div", {
+										className: "e-view",
+										children: [
+											/* @__PURE__ */ jsx(NotAnAgentNote, {}),
+											!hermesNonAgent && /* @__PURE__ */ jsx(NotOnRelayNote, {}),
+											!hermesNonAgent && !(view === "agents" && agentRoute) && /* @__PURE__ */ jsx(PageHeading, {
+												item: currentNav,
+												agent: VIEWER_ID
+											}),
+											!hermesNonAgent && !shown && /* @__PURE__ */ jsx(GatedNote, { view }),
+											!hermesNonAgent && shown && relayDown && view !== "docs" && view !== "settings" && /* @__PURE__ */ jsx(RelayDownPane, {}),
+											!hermesNonAgent && shown && !(relayDown && view !== "docs" && view !== "settings") && /* @__PURE__ */ jsxs(ViewBoundary, {
+												name: currentNav?.label ?? "This section",
+												children: [
+													view === "overview" && /* @__PURE__ */ jsx(OverviewView, {
+														events,
+														seed,
+														wsConnected,
+														navigate,
+														onAfterNavigate: () => setNavOpen(false)
+													}),
+													view === "labs" && /* @__PURE__ */ jsx(LabsView, {
+														slug: labSlug,
+														navigate
+													}),
+													view === "book" && /* @__PURE__ */ jsx(BookView, { navigate }),
+													view === "games" && /* @__PURE__ */ jsx(ArenaView, {
+														initialSessionId: selectedSessionId,
+														initialStep: selectedStep,
+														lens,
+														refreshTrigger: sessionsRefresh,
+														onSessionShown,
+														onMatchLens: setMatchLens,
+														leaveToken
+													}),
+													view === "deals" && /* @__PURE__ */ jsx(GamesView, {
+														section: view,
+														initialSessionId: selectedSessionId,
+														initialGameModule: gameModuleType,
+														refreshTrigger: sessionsRefresh,
+														onSessionShown
+													}),
+													view === "rooms" && /* @__PURE__ */ jsx(RoomsView, {
+														initialRoomId: selectedRoomId,
+														navigate
+													}),
+													view === "agents" && /* @__PURE__ */ jsx(AgentsView, {
+														agentId: agentRoute,
+														navigate,
+														breadcrumb
+													}),
+													view === "feed" && (postRoute ? /* @__PURE__ */ jsx(PostView, {
+														postId: postRoute.postId,
+														replyId: postRoute.replyId,
+														navigate
+													}, postRoute.postId) : /* @__PURE__ */ jsx(FeedView, { navigate })),
+													view === "agora" && /* @__PURE__ */ jsx(AgorasView, {
+														navigate,
+														topicSlug
+													}),
+													view === "messages" && /* @__PURE__ */ jsx(MessagesView, {
+														navigate,
+														liveEvent: agentWs.last,
+														liveConnected: agentWs.connected
+													}),
+													view === "fees" && !isSpectator && /* @__PURE__ */ jsx(FeesView, {
+														navigate,
+														isOperator: isRelayOperator
+													}),
+													view === "stats" && !isSpectator && /* @__PURE__ */ jsx(StatsView, {}),
+													view === "profile" && /* @__PURE__ */ jsx(ProfileView, { navigate }),
+													view === "docs" && /* @__PURE__ */ jsx(DocsView, {}),
+													view === "settings" && /* @__PURE__ */ jsx(SettingsView, {}),
+													view === "relay" && isRelayOperator && /* @__PURE__ */ jsx(RelayView, {}),
+													view === "operator" && isRelayOperator && /* @__PURE__ */ jsx(OperatorView, {}),
+													view === "season" && /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(GamifyView, { initialAgentId: selectedAgentId }), /* @__PURE__ */ jsx("div", {
+														className: "e-view-body",
+														children: /* @__PURE__ */ jsxs("details", {
+															className: "e-badge-fold",
+															children: [/* @__PURE__ */ jsx("summary", { children: "All badges and how each is earned" }), /* @__PURE__ */ jsx(BadgeGallery, { embedded: true })]
+														})
+													})] })
+												]
+											}, view),
+											/* @__PURE__ */ jsx(AnimaticHudFoot, { section: currentNav?.label.toLowerCase() ?? view })
+										]
+									}),
+									/* @__PURE__ */ jsx(BottomBar, {
+										view,
+										onGoDest: goToDest,
+										badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0
 									})
 								]
-							}),
-							/* @__PURE__ */ jsx(SubRow, {
-								view,
-								lens,
-								badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0,
-								onGoView: goToView,
-								onGoLens: goToLens
-							}),
-							!hermesNonAgent && VIEWER_ID && view !== "overview" ? /* @__PURE__ */ jsx(NowStrip, { navigate }) : null,
-							/* @__PURE__ */ jsxs("div", {
-								className: "e-view",
-								children: [
-									/* @__PURE__ */ jsx(NotAnAgentNote, {}),
-									!hermesNonAgent && /* @__PURE__ */ jsx(PageHeading, {
-										item: currentNav,
-										agent: VIEWER_ID
-									}),
-									!hermesNonAgent && !shown && /* @__PURE__ */ jsx(GatedNote, { view }),
-									!hermesNonAgent && shown && /* @__PURE__ */ jsxs(ViewBoundary, {
-										name: currentNav?.label ?? "This section",
-										children: [
-											view === "overview" && /* @__PURE__ */ jsx(OverviewView, {
-												events,
-												seed,
-												wsConnected,
-												navigate,
-												onAfterNavigate: () => setNavOpen(false)
-											}),
-											view === "labs" && /* @__PURE__ */ jsx(LabsView, {
-												slug: labSlug,
-												navigate
-											}),
-											view === "games" && /* @__PURE__ */ jsx(ArenaView, {
-												initialSessionId: selectedSessionId,
-												initialStep: selectedStep,
-												lens,
-												refreshTrigger: sessionsRefresh,
-												onSessionShown,
-												leaveToken
-											}),
-											view === "deals" && /* @__PURE__ */ jsx(GamesView, {
-												section: view,
-												initialSessionId: selectedSessionId,
-												initialGameModule: gameModuleType,
-												refreshTrigger: sessionsRefresh,
-												onSessionShown
-											}),
-											view === "rooms" && /* @__PURE__ */ jsx(RoomsView, {
-												initialRoomId: selectedRoomId,
-												navigate
-											}),
-											view === "agents" && /* @__PURE__ */ jsx(AgentsView, {
-												initialAgentId: selectedAgentId,
-												navigate,
-												breadcrumb
-											}),
-											view === "feed" && (postRoute ? /* @__PURE__ */ jsx(PostView, {
-												postId: postRoute.postId,
-												replyId: postRoute.replyId,
-												navigate
-											}, postRoute.postId) : /* @__PURE__ */ jsx(FeedView, { navigate })),
-											view === "agora" && /* @__PURE__ */ jsx(AgorasView, {
-												navigate,
-												topicSlug
-											}),
-											view === "messages" && /* @__PURE__ */ jsx(MessagesView, {
-												navigate,
-												liveEvent: agentWs.last,
-												liveConnected: agentWs.connected
-											}),
-											view === "fees" && !isSpectator && /* @__PURE__ */ jsx(FeesView, {
-												navigate,
-												isOperator: isRelayOperator
-											}),
-											view === "stats" && !isSpectator && /* @__PURE__ */ jsx(StatsView, {}),
-											view === "profile" && /* @__PURE__ */ jsx(ProfileView, { navigate }),
-											view === "docs" && /* @__PURE__ */ jsx(DocsView, {}),
-											view === "settings" && /* @__PURE__ */ jsx(SettingsView, {}),
-											view === "relay" && isRelayOperator && /* @__PURE__ */ jsx(RelayView, {}),
-											view === "operator" && isRelayOperator && /* @__PURE__ */ jsx(OperatorView, {}),
-											view === "season" && /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(GamifyView, { initialAgentId: selectedAgentId }), /* @__PURE__ */ jsx("div", {
-												className: "e-view-body",
-												children: /* @__PURE__ */ jsxs("details", {
-													className: "e-badge-fold",
-													children: [/* @__PURE__ */ jsx("summary", { children: "All badges and how each is earned" }), /* @__PURE__ */ jsx(BadgeGallery, { embedded: true })]
-												})
-											})] })
-										]
-									}, view),
-									/* @__PURE__ */ jsx(AnimaticHudFoot, { section: currentNav?.label.toLowerCase() ?? view })
-								]
-							}),
-							/* @__PURE__ */ jsx(BottomBar, {
-								view,
-								onGoDest: goToDest,
-								badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0
-							})
-						]
-					})]
-				}),
-				/* @__PURE__ */ jsx(AgentChatDrawer, {
-					onMenu: () => setNavOpen(true),
-					covered: navOpen
+							})]
+						}),
+						/* @__PURE__ */ jsx(AgentChatDrawer, {
+							onMenu: () => setNavOpen(true),
+							covered: navOpen
+						})
+					]
 				})
-			]
+			})
 		})
 	});
 }
 // src/desktop/attentionFetch.ts
 var CHIP_POLL_MS = 3e4;
-/** The agent's games to move in and its unread count, or null when it is no agent here. */
+/** The agent's games to move in and its unread direct messages (what the Messages badge counts), or null when it is no agent here. */
 async function fetchAttention(agent) {
 	const base = relayHttpBase(agent);
 	const id = encodeURIComponent(agent);
-	const [inbox, sessions] = await Promise.all([httpFetch(`${base}/agents/${id}/inbox?unread_only=true&limit=1`), httpFetch(`${base}/agents/${id}/sessions?status=active`)]);
+	const [inbox, sessions] = await Promise.all([httpFetch(`${base}/agents/${id}/inbox?unread_only=true&limit=200`), httpFetch(`${base}/agents/${id}/sessions?status=active`)]);
 	if (!inbox.ok || !sessions.ok) return null;
 	const i = await inbox.json();
 	return {
 		turns: gamesToMove((await sessions.json()).sessions, agent),
-		unread: Number(i.unread_total ?? i.count ?? 0) || 0
+		unread: unreadDmCount(i)
 	};
 }
 // src/desktop/chip.tsx
@@ -32556,7 +34464,7 @@ function AttentionChip({ profile, open, onNewTurn, pollMs = CHIP_POLL_MS }) {
 * the themes', the views'), so plugin.js stays one file. The page renders it in
 * a <style> inside its own root (desktop/mount.tsx), mounted and removed with it.
 */
-var DESKTOP_CSS = "/* srcl's global.css (github.com/internet-development/www-sacred), MIT — see LICENSE-srcl. */\n/*\nNOTE(jimmylee):\nColor palette for Sacred Computer. The root source of truth for color is the\nSimulacrum CLI palette in scripts/cli/colors.json — those are the true, terminal-\ntested colors, the ones a real terminal actually renders. The --ansi-* primitives\nbelow mirror that palette in CSS, so every value must be one a terminal can show:\nStandard (SGR 30-37, 90-97), 256-color (SGR 38;5;n), the grayscale ramp (232-255),\nor 24-bit true color (SGR 38;2;r;g;b). Do not add a color outside that spec.\n\nThe OKLCH tint themes further down are a WEB-ONLY behavior. A terminal cannot run\nOKLCH math; it exists purely so the React surface can derive tinted variants while\nstaying inside the same perceptual band as the terminal-tested primitives. OKLCH is\na projection of the root palette, never a new source of color.\n*/\n\n.e-desktop-root a,\n.e-desktop-root abbr,\n.e-desktop-root acronym,\n.e-desktop-root address,\n.e-desktop-root applet,\n.e-desktop-root article,\n.e-desktop-root aside,\n.e-desktop-root audio,\n.e-desktop-root b,\n.e-desktop-root big,\n.e-desktop-root blockquote,\n.e-desktop-root .e-host-body,\n.e-desktop-root canvas,\n.e-desktop-root caption,\n.e-desktop-root center,\n.e-desktop-root cite,\n.e-desktop-root code,\n.e-desktop-root dd,\n.e-desktop-root del,\n.e-desktop-root details,\n.e-desktop-root dfn,\n.e-desktop-root div,\n.e-desktop-root dl,\n.e-desktop-root dt,\n.e-desktop-root embed,\n.e-desktop-root em,\n.e-desktop-root figure,\n.e-desktop-root figcaption,\n.e-desktop-root fieldset,\n.e-desktop-root footer,\n.e-desktop-root form,\n.e-desktop-root h1,\n.e-desktop-root h2,\n.e-desktop-root h3,\n.e-desktop-root h4,\n.e-desktop-root h5,\n.e-desktop-root h6,\n.e-desktop-root header,\n.e-desktop-root hgroup,\n.e-desktop-root .e-host-body,\n.e-desktop-root i,\n.e-desktop-root iframe,\n.e-desktop-root img,\n.e-desktop-root ins,\n.e-desktop-root kbd,\n.e-desktop-root label,\n.e-desktop-root legend,\n.e-desktop-root li,\n.e-desktop-root mark,\n.e-desktop-root menu,\n.e-desktop-root nav,\n.e-desktop-root object,\n.e-desktop-root ol,\n.e-desktop-root output,\n.e-desktop-root p,\n.e-desktop-root pre,\n.e-desktop-root q,\n.e-desktop-root ruby,\n.e-desktop-root s,\n.e-desktop-root samp,\n.e-desktop-root section,\n.e-desktop-root small,\n.e-desktop-root span,\n.e-desktop-root strike,\n.e-desktop-root strong,\n.e-desktop-root sub,\n.e-desktop-root summary,\n.e-desktop-root sup,\n.e-desktop-root table,\n.e-desktop-root tbody,\n.e-desktop-root td,\n.e-desktop-root tfoot,\n.e-desktop-root th,\n.e-desktop-root thead,\n.e-desktop-root time,\n.e-desktop-root tr,\n.e-desktop-root tt,\n.e-desktop-root u,\n.e-desktop-root ul,\n.e-desktop-root var,\n.e-desktop-root video {\n  border: 0;\n  box-sizing: border-box;\n  margin: 0;\n  padding: 0;\n  vertical-align: baseline;\n}\n\n.e-desktop-root a {\n  background: var(--theme-border-subdued);\n  color: var(--theme-text);\n\n  &:hover {\n    background: var(--theme-focused-foreground);\n    color: var(--theme-text);\n  }\n\n  &:focus {\n    background: var(--theme-focused-foreground);\n    color: var(--theme-text);\n    outline: 0;\n  }\n\n  &:active {\n    background: var(--theme-focused-foreground);\n    color: var(--theme-text);\n  }\n}\n\n.e-desktop-root ul {\n  list-style-position: inside;\n  list-style-type: '▪';\n  text-indent: -1ch;\n}\n\n.e-desktop-root ol {\n  list-style-type: '';\n  list-style-position: inside;\n  counter-reset: cupcake;\n  text-indent: -1ch;\n}\n\n.e-desktop-root ul ul,\n.e-desktop-root ul ol,\n.e-desktop-root ol ul,\n.e-desktop-root ol ol {\n  padding-left: 2ch;\n}\n\n.e-desktop-root ol li {\n  padding-left: 1ch;\n  counter-increment: cupcake;\n}\n\n.e-desktop-root ul li:before {\n  content: ' ';\n  display: inline-block;\n  width: 1ch;\n  height: 0;\n  visibility: hidden;\n}\n\n.e-desktop-root ol li:before {\n  content: counters(cupcake, '.') '. ';\n}\n\n.e-desktop-root article,\n.e-desktop-root aside,\n.e-desktop-root details,\n.e-desktop-root figcaption,\n.e-desktop-root figure,\n.e-desktop-root footer,\n.e-desktop-root header,\n.e-desktop-root hgroup,\n.e-desktop-root menu,\n.e-desktop-root nav,\n.e-desktop-root section {\n  display: block;\n}\n\n.e-desktop-root .e-host-body,\n.e-desktop-root .e-host-body {\n  /* ------------------------------------------------------------------ */\n  /* Standard 16 Colors (SGR 38;5;0-15)                                 */\n  /* ------------------------------------------------------------------ */\n  --ansi-0-black: #000000;\n  --ansi-1-maroon: #800000;\n  --ansi-2-green: #008000;\n  --ansi-3-olive: #808000;\n  --ansi-4-navy: #000080;\n  --ansi-5-purple: #800080;\n  --ansi-6-teal: #008080;\n  --ansi-7-silver: #c0c0c0;\n  --ansi-8-gray: #808080;\n  --ansi-9-red: #ff0000;\n  --ansi-10-lime: #00ff00;\n  --ansi-11-yellow: #ffff00;\n  --ansi-12-blue: #0000ff;\n  --ansi-13-fuchsia: #ff00ff;\n  --ansi-14-aqua: #00ffff;\n  --ansi-15-white: #ffffff;\n\n  /* ------------------------------------------------------------------ */\n  /* 216 Color Cube (SGR 38;5;16-231)                                   */\n  /* Channels: 0x00, 0x5F, 0x87, 0xAF, 0xD7, 0xFF                       */\n  /* ------------------------------------------------------------------ */\n  --ansi-100-yellow4a: #878700;\n  --ansi-148-yellow3a: #afd700;\n  --ansi-232-gray-3: #080808;\n  --ansi-235-gray-15: #262626;\n  --ansi-237-gray-23: #3a3a3a;\n  --ansi-240-gray-35: #585858;\n  --ansi-242-gray-42: #6c6c6c;\n  --ansi-245-gray-54: #8a8a8a;\n  --ansi-248-gray-66: #a8a8a8;\n  --ansi-251-gray-78: #c6c6c6;\n  --ansi-254-gray-89: #e4e4e4;\n  --ansi-255-gray-93: #eeeeee;\n\n  /* ------------------------------------------------------------------ */\n  /* Bright Colors (SGR 90-97) — overlap with ansi-8..15 in some terms  */\n  /* but the SGR 90-97 renditions use these distinct hex values.        */\n  /* ------------------------------------------------------------------ */\n  --ansi-bright-green: #55ff55;\n\n  /* ------------------------------------------------------------------ */\n  /* 24-bit True Color (SGR 38;2;r;g;b) — outside the 256 palette       */\n  /* ------------------------------------------------------------------ */\n  --ansi-true-brand: #e4f221;\n\n  /* ------------------------------------------------------------------ */\n  /* Semantic Color Aliases                                              */\n  /* All values reference the ANSI palette above.                       */\n  /* ------------------------------------------------------------------ */\n  --color-black: var(--ansi-0-black);\n  --color-white: var(--ansi-15-white);\n  --color-green: var(--ansi-2-green);\n  --color-lime: var(--ansi-10-lime);\n  --color-bright-green: var(--ansi-bright-green);\n  --color-brand: var(--ansi-true-brand);\n\n  --color-gray-93: var(--ansi-255-gray-93);\n  --color-gray-89: var(--ansi-254-gray-89);\n  --color-gray-78: var(--ansi-251-gray-78);\n  --color-gray-66: var(--ansi-248-gray-66);\n  --color-gray-54: var(--ansi-245-gray-54);\n  --color-gray-42: var(--ansi-242-gray-42);\n  --color-gray-35: var(--ansi-240-gray-35);\n  --color-gray-23: var(--ansi-237-gray-23);\n  --color-gray-15: var(--ansi-235-gray-15);\n  --color-gray-3: var(--ansi-232-gray-3);\n\n  /* ------------------------------------------------------------------ */\n  /* Web-only Alpha Variants (no ANSI equivalent — CSS rendering only)  */\n  /* Used for translucent overlays and subdued borders.                  */\n  /* ------------------------------------------------------------------ */\n  --color-black-alpha-40: rgba(0, 0, 0, 0.4);\n  --color-white-alpha-40: rgba(255, 255, 255, 0.4);\n  --color-gray-89-border-alpha: rgba(228, 228, 228, 0.6);\n  --color-gray-23-border-alpha: rgba(58, 58, 58, 0.3);\n  --color-brand-alpha-50: rgba(228, 242, 33, 0.5);\n\n  --font-family-mono: 'GeistMono-Regular', Consolas, monaco, monospace;\n\n  --theme-line-height-base: 1.25;\n  --font-size: 16px;\n\n  --z-index-page: 1;\n  --z-index-page-select: 3;\n  --z-index-page-tooltips: 4;\n  --z-index-page-popover: 5;\n  --z-index-page-dropdown-menus: 6;\n  --z-index-page-modals: 10;\n\n  background: var(--theme-background);\n  color: var(--theme-text);\n  font-family: var(--font-family-mono);\n  line-height: calc(var(--theme-line-height-base) * 1rem);\n\n  font-size: var(--font-size);\n  font-optical-sizing: auto;\n  text-rendering: geometricPrecision;\n  font-weight: 400;\n  font-variant-numeric: tabular-nums lining-nums;\n\n  &::-webkit-scrollbar {\n    background: transparent;\n    height: calc(var(--theme-line-height-base) * 1rem);\n    width: 1ch;\n  }\n\n  &::-webkit-scrollbar-track {\n    background: var(--theme-background);\n  }\n\n  &::-webkit-scrollbar-thumb {\n    background: var(--theme-border);\n  }\n\n  &::-webkit-scrollbar-thumb:hover {\n    background: var(--theme-border);\n  }\n}\n\n.e-desktop-root .e-host-body.theme-light {\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: var(--color-white);\n  --theme-background-modal: var(--color-gray-89);\n  --theme-background-modal-footer: var(--color-gray-66);\n  --theme-background-input: var(--color-gray-89);\n  --theme-border: var(--color-gray-89);\n  --theme-border-subdued: var(--color-gray-89-border-alpha);\n  --theme-text: var(--color-black);\n  --theme-button: var(--color-black);\n  --theme-button-text: var(--color-white);\n  --theme-button-foreground: var(--color-gray-78);\n  --theme-button-background: var(--color-gray-89);\n  --theme-focused-foreground: var(--color-bright-green);\n  --theme-focused-foreground-subdued: var(--color-brand-alpha-50);\n  /*\n  NOTE(jimmylee):\n  Window-specific tones — body sits one step darker than --theme-background so the\n  window reads as a \"lifted\" panel, and the shadow sits one step darker still so the\n  drop shadow is unambiguously darker than the window body. The CLI mirror lives in\n  scripts/cli/colors.json (windowBg / shadow).\n  */\n  --theme-window-background: var(--color-gray-89);\n  --theme-window-shadow: var(--color-gray-66);\n}\n\n.e-desktop-root .e-host-body.theme-dark {\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: var(--color-black);\n  --theme-background-modal: var(--color-gray-23);\n  --theme-background-modal-footer: var(--color-gray-35);\n  --theme-background-input: var(--color-gray-23);\n  --theme-border: var(--color-gray-23);\n  --theme-border-subdued: var(--color-gray-23-border-alpha);\n  --theme-text: var(--color-white);\n  --theme-button: var(--color-white);\n  --theme-button-text: var(--color-black);\n  --theme-button-foreground: var(--color-gray-15);\n  --theme-button-background: var(--color-gray-23);\n  --theme-focused-foreground: oklch(from var(--ansi-13-fuchsia) 0.55 c h);\n  --theme-focused-foreground-subdued: oklch(from var(--ansi-13-fuchsia) 0.55 c h / 0.5);\n  /*\n  NOTE(jimmylee):\n  Window body is gray-23 (#3a3a3a) so it lifts off the gray-3 (#080808) page\n  background, and the shadow is gray-15 (#262626) — a hair lighter than the page\n  but visibly darker than the window body, preserving the \"shadow darker than the\n  body\" contract while staying inside the ANSI gray ramp.\n  */\n  --theme-window-background: var(--color-gray-23);\n  --theme-window-shadow: var(--color-gray-15);\n}\n\n/*\nNOTE(jimmylee):\nOKLCH tint themes — web-only. These have no terminal equivalent (Simulacrum renders\nthe fixed colors.json palette, never derived tints). They are recalibrated against\nthe --ansi-* base so the saturation and lightness ramps fall in the same perceptual\nrange as the ANSI gray scale (#eeeeee → #262626) and the brand color (#e4f221). Each\ntint sets only --tint, and the body.theme-light.tint-* / body.theme-dark.tint-*\nselectors below derive every --theme-* token from that tint via OKLCH math.\n*/\n\n.e-desktop-root .e-host-body.tint-green {\n  --tint: #39ff44;\n}\n\n.e-desktop-root .e-host-body.tint-blue {\n  --tint: #0047ff;\n}\n\n.e-desktop-root .e-host-body.tint-red {\n  --tint: #ff0000;\n}\n\n.e-desktop-root .e-host-body.tint-yellow {\n  --tint: var(--ansi-true-brand);\n}\n\n.e-desktop-root .e-host-body.tint-purple {\n  --tint: #8000ff;\n}\n\n.e-desktop-root .e-host-body.tint-orange {\n  --tint: #ffac1c;\n}\n\n.e-desktop-root .e-host-body.tint-pink {\n  --tint: #ff00ff;\n}\n\n.e-desktop-root .e-host-body.theme-light.tint-green,\n.e-desktop-root .e-host-body.theme-light.tint-blue,\n.e-desktop-root .e-host-body.theme-light.tint-red,\n.e-desktop-root .e-host-body.theme-light.tint-yellow,\n.e-desktop-root .e-host-body.theme-light.tint-purple,\n.e-desktop-root .e-host-body.theme-light.tint-orange,\n.e-desktop-root .e-host-body.theme-light.tint-pink {\n  /*\n  NOTE(jimmylee):\n  Light tint ramp is anchored to the ANSI light grays:\n    --theme-background          ≈ ansi-255-gray-93 (#eeeeee)\n    --theme-background-modal    ≈ ansi-254-gray-89 (#e4e4e4)\n    --theme-background-input    ≈ ansi-255-gray-93 (#eeeeee)\n    --theme-border              ≈ ansi-251-gray-78 (#c6c6c6)\n    --theme-text                ≈ ansi-232-gray-3  (#080808)\n  Each token uses oklch(from var(--tint) L C H) so it tints toward the source\n  color while staying within the ANSI lightness band.\n  */\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: oklch(from var(--tint) 0.97 calc(c * 0.1) h);\n  --theme-background-modal: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-background-modal-footer: oklch(from var(--tint) 0.86 calc(c * 0.22) h);\n  --theme-background-input: oklch(from var(--tint) 0.97 calc(c * 0.1) h);\n  --theme-border: oklch(from var(--tint) 0.84 calc(c * 0.28) h);\n  --theme-border-subdued: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-text: oklch(from var(--tint) 0.18 calc(c * 0.4) h);\n  --theme-button: oklch(from var(--tint) 0.18 calc(c * 0.4) h);\n  --theme-button-text: oklch(from var(--tint) 0.97 calc(c * 0.1) h);\n  --theme-button-foreground: oklch(from var(--tint) 0.86 calc(c * 0.22) h);\n  --theme-button-background: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-focused-foreground: oklch(from var(--tint) 0.62 c h);\n  --theme-focused-foreground-subdued: oklch(from var(--tint) 0.62 c h / 0.5);\n  /*\n  NOTE(jimmylee):\n  Window body matches background-modal so the panel sits one step darker than the\n  page background, and the shadow drops to L=0.70 — a third step down so the\n  drop shadow stays visibly darker than the window body across every tint.\n  */\n  --theme-window-background: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-window-shadow: oklch(from var(--tint) 0.7 calc(c * 0.28) h);\n}\n\n/*\nDEEP (the dark theme with a tint): the demo video's all-dark-green screens in OKLCH relative to the\ntint — canvas L .192, panel L .253 (chroma x .243), border L .366 (x .328), text L .962 (x .243);\nthe accent as text is lifted to L .78 (chroma capped at .22); green is pinned to the video's colours.\nMirrored in dashboard.css (body.e-look.theme-dark) and themePalette.ts.\nBEFORE (the previous dark ramp, for comparing; `git revert` of the deep commit restores it):\n  background  oklch(from var(--tint) 0.14 calc(c * 0.18) h)   modal 0.24 / c*0.22   footer 0.3 / c*0.24\n  input 0.28 / c*0.2   border 0.4 / c*0.28   text 0.92 / c*0.18   accent 0.72 c\n*/\n.e-desktop-root .e-host-body.theme-dark.tint-green,\n.e-desktop-root .e-host-body.theme-dark.tint-blue,\n.e-desktop-root .e-host-body.theme-dark.tint-red,\n.e-desktop-root .e-host-body.theme-dark.tint-yellow,\n.e-desktop-root .e-host-body.theme-dark.tint-purple,\n.e-desktop-root .e-host-body.theme-dark.tint-orange,\n.e-desktop-root .e-host-body.theme-dark.tint-pink {\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: oklch(from var(--tint) 0.192 calc(c * 0.243) h);\n  --theme-background-modal: oklch(from var(--tint) 0.253 calc(c * 0.243) h);\n  --theme-background-modal-footer: oklch(from var(--tint) 0.253 calc(c * 0.243) h);\n  --theme-background-input: oklch(from var(--tint) 0.253 calc(c * 0.243) h);\n  --theme-border: oklch(from var(--tint) 0.366 calc(c * 0.328) h);\n  --theme-border-subdued: oklch(from var(--tint) 0.366 calc(c * 0.328) h / 0.6);\n  --theme-text: oklch(from var(--tint) 0.962 calc(c * 0.243) h);\n  --theme-button: oklch(from var(--tint) 0.962 calc(c * 0.243) h);\n  --theme-button-text: oklch(from var(--tint) 0.192 calc(c * 0.243) h);\n  --theme-button-foreground: oklch(from var(--tint) 0.366 calc(c * 0.328) h);\n  --theme-button-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);\n  --theme-focused-foreground: oklch(from var(--tint) max(l, 0.78) min(c, 0.22) h);\n  --theme-focused-foreground-subdued: oklch(from var(--tint) max(l, 0.78) min(c, 0.22) h / 0.5);\n  --theme-window-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);\n  --theme-window-shadow: oklch(from var(--tint) 0.15 calc(c * 0.243) h);\n}\n\n.e-desktop-root .e-host-body.theme-dark.tint-green {\n  --theme-background: #001b00;\n  --theme-background-modal: #0b2a0b;\n  --theme-background-modal-footer: #0b2a0b;\n  --theme-background-input: #0b2a0b;\n  --theme-border: #1d4a1d;\n  --theme-border-subdued: rgb(29 74 29 / 0.6);\n  --theme-text: #d8ffd8;\n  --theme-button: #d8ffd8;\n  --theme-button-text: #001b00;\n  --theme-button-foreground: #1d4a1d;\n  --theme-button-background: #0b2a0b;\n  --theme-focused-foreground: #39ff44;\n  --theme-focused-foreground-subdued: rgb(57 255 68 / 0.5);\n  --theme-window-background: #0b2a0b;\n  --theme-window-shadow: #000f00;\n}\n\n/*\nVIVID: the tint is the background, ink is the tint's deep dark; the panel a step darker (lighter for\nred and pink); white ink on blue and purple; green exact (#39ff44 / #2ee03a / #001b00). Web-only, like\nthe other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and themePalette.ts.\n*/\n.e-desktop-root .e-host-body.theme-vivid.tint-green,\n.e-desktop-root .e-host-body.theme-vivid.tint-blue,\n.e-desktop-root .e-host-body.theme-vivid.tint-red,\n.e-desktop-root .e-host-body.theme-vivid.tint-yellow,\n.e-desktop-root .e-host-body.theme-vivid.tint-purple,\n.e-desktop-root .e-host-body.theme-vivid.tint-orange,\n.e-desktop-root .e-host-body.theme-vivid.tint-pink {\n  --vv-ink: oklch(from var(--tint) 0.192 calc(c * 0.243) h);\n  --vv-panel: oklch(from var(--tint) calc(l - 0.082) calc(c * 0.91) h);\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: var(--tint);\n  --theme-background-modal: var(--vv-panel);\n  --theme-background-modal-footer: var(--vv-panel);\n  --theme-background-input: var(--vv-panel);\n  --theme-border: var(--vv-ink);\n  --theme-border-subdued: color-mix(in srgb, var(--vv-ink) 35%, transparent);\n  --theme-text: var(--vv-ink);\n  --theme-button: var(--vv-ink);\n  --theme-button-text: var(--tint);\n  --theme-button-foreground: var(--vv-panel);\n  --theme-button-background: var(--vv-panel);\n  --theme-focused-foreground: var(--vv-ink);\n  --theme-focused-foreground-subdued: color-mix(in srgb, var(--vv-ink) 50%, transparent);\n  --theme-window-background: var(--vv-panel);\n  --theme-window-shadow: var(--vv-ink);\n}\n.e-desktop-root .e-host-body.theme-vivid.tint-red,\n.e-desktop-root .e-host-body.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--tint) 80%, white); }\n.e-desktop-root .e-host-body.theme-vivid.tint-blue,\n.e-desktop-root .e-host-body.theme-vivid.tint-purple { --vv-ink: #fff; }\n.e-desktop-root .e-host-body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }\n\n.e-desktop-root #__next {\n}\n/* ═══════════════════════════════════════════════════════════════\n   EMPORIA DASHBOARD — single consolidated stylesheet\n   Sections:\n   1.  Variables & tokens\n   2.  Utility classes\n   3.  App shell layout\n   4.  Header & section nav\n   5.  Mobile drawer\n   6.  View body / ViewBody component\n   7.  Sidebar rail\n   8.  Component kit (slim card, meta-grid, KPIs, hero stats, empty pane)\n   9.  Overview — dashboard, stat strip, feed\n   10. Theme picker\n   11. Relay strip\n   12. Agent / profile row components\n   13. Chat & ReadOnlyChat\n   14. Agora — votes, posts\n   15. Navigation chips — SegmentTabs, section tabs\n   16. Badges, pills, entity chips\n   17. Tables — compact, listings\n   18. Toolbar & search\n   19. Action timeline\n   20. Session & transaction rows\n   21. Messages / inbox sub-view\n   22. SRCL component overrides (flat canvas + chrome)\n   23. Responsive breakpoints\n═══════════════════════════════════════════════════════════════ */\n\n/* ─── 1. VARIABLES & TOKENS ─────────────────────────────────────────────── */\n\n.e-desktop-root .e-host-body.theme-dark {\n  --theme-focused-foreground: #39ff44;\n}\n\n.e-desktop-root .e-host-body.theme-dark,\n.e-desktop-root .e-host-body.theme-vivid,\n.e-desktop-root .e-host-body.theme-light {\n  overflow-x: clip;\n}\n\n/* Flat canvas — all emporia surfaces transparent within the shell */\n.e-desktop-root .e-dashboard-shell {\n  --font-size: 16px; /* 100% SRCL root — no html 110% zoom */\n  --theme-background-modal: var(--theme-background);\n  --theme-background-modal-footer: var(--theme-background);\n  --theme-background-input: var(--theme-background);\n  --theme-window-background: var(--theme-background);\n  --theme-window-shadow: transparent;\n  --theme-button-background: transparent;\n  --theme-button-foreground: transparent;\n  --emporia-surface: transparent;\n  --emporia-surface-raised: transparent;\n  --emporia-nav-active: transparent;\n}\n\n/* ─── 2. UTILITY CLASSES ─────────────────────────────────────────────────── */\n\n.e-desktop-root .e-dim   { opacity: 0.5; }\n.e-desktop-root .e-faint { opacity: 0.35; }\n.e-desktop-root .e-trust-key { opacity: 0.55; }\n/* \"mutual\" / \"follows <name>\" beside a name in the Following and Followers lists */\n.e-desktop-root .e-follow-tag {\n  font-size: 0.62rem;\n  padding: 0 6px;\n  border: 1px solid rgba(128,128,128,0.35);\n  border-radius: 8px;\n  opacity: 0.8;\n  white-space: nowrap;\n  margin-left: 8px;\n}\n\n/* Master-detail selection indicator */\n.e-desktop-root .e-sel   { border-left: 2px solid var(--theme-focused-foreground); padding-left: 8px; }\n\n.e-desktop-root .e-status-txt {\n  font-size: 0.682rem;\n  letter-spacing: 0.1em;\n  text-transform: uppercase;\n}\n\n/* ─── 3. APP SHELL LAYOUT ────────────────────────────────────────────────── */\n\n/* The app is one frame: the header, the section strip, the view (which\n   scrolls) and the chat drawer all live inside it, and so does every overlay\n   (the phone menu and its backdrop, full-page chat, popovers). `contain:\n   layout paint` makes the frame the containing block of anything positioned\n   inside it, so nothing reaches past it into the page around it: inside the\n   Hermes tab the frame is the tab's own container (hermesPlugin.tsx sizes it to\n   what is visible, --e-frame-h: 100%), on the Desktop page the page's pane,\n   standalone the window. */\n.e-desktop-root .e-app-shell {\n  display: flex;\n  height: var(--e-frame-h, 100dvh);\n  min-height: 0;\n  width: 100%;\n  max-width: 100%;\n  position: relative;\n  overflow: hidden;\n  contain: layout paint;\n}\n.e-desktop-root .e-nav-row-hotkey { font-size: 0.715rem; opacity: 0.5; font-variant-numeric: tabular-nums; }\n\n.e-desktop-root .e-sidebar-group { display: flex; flex-direction: column; gap: 0; }\n.e-desktop-root .e-sidebar-group + .e-sidebar-group { margin-top: 6px; }\n.e-desktop-root .e-sidebar-group-label {\n  font-size: 0.638rem;\n  letter-spacing: 0.12em;\n  opacity: 0.45;\n  padding: 6px 10px 4px;\n  user-select: none;\n}\n.e-desktop-root .e-sidebar-key {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 2px;\n  padding: 5px 2px;\n  background: transparent;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  font-size: 0.715rem;\n}\n.e-desktop-root .e-sidebar-key:hover,\n.e-desktop-root .e-sidebar-key:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }\n.e-desktop-root .e-sidebar-key__k { opacity: 0.55; font-variant-numeric: tabular-nums; }\n\n.e-desktop-root .e-app-main {\n  flex: 1;\n  min-width: 0;\n  min-height: 0;\n  height: 100%;\n  max-width: 100%;\n  display: flex;\n  flex-direction: column;\n  background: var(--theme-background);\n  overflow-x: clip;\n}\n\n.e-desktop-root .e-app-backdrop { display: none; }\n\n/* The rail layout puts the five places beside the page; every other layout stacks them. */\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-main { flex-direction: row; }\n.e-desktop-root .e-app-col {\n  flex: 1;\n  min-width: 0;\n  min-height: 0;\n  display: flex;\n  flex-direction: column;\n}\n\n.e-desktop-root .e-view {\n  flex: 1;\n  scrollbar-gutter: stable;\n  height: auto;\n  min-height: 0;\n  min-width: 0;\n  max-width: 100%;\n  overflow-x: clip;\n  overflow-y: auto;\n  box-sizing: border-box;\n}\n\n/* ─── 4. HEADER & SECTION NAV ────────────────────────────────────────────── */\n\n.e-desktop-root .e-app-top {\n  flex-shrink: 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  background: var(--theme-background);\n}\n\n.e-desktop-root .e-app-top__row {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 16px;\n  padding: 10px 20px;\n  min-height: 52px;\n  flex-wrap: wrap;\n  min-width: 0;\n}\n.e-desktop-root .e-app-top__actions {\n  display: flex;\n  align-items: center;\n  gap: 16px;\n  min-width: 0;\n  flex-shrink: 1;\n}\n\n.e-desktop-root .e-brand-title { font-size: 1.155rem !important; letter-spacing: 0.06em; }\n.e-desktop-root .e-brand-title--header { font-size: 1.1rem; font-weight: 600; }\n\n/* Destinations (nav v2): six tabs in the header row, beside the brand. */\n.e-desktop-root .e-section-tabs {\n  display: none;\n  gap: 2px;\n  max-width: 100%;\n  box-sizing: border-box;\n}\n/* The layout is chosen from the dashboard's OWN width (ui/navLayout.ts writes it as data-nav on the\n   shell), never from the window's: inside the Hermes tab the window is wider than the dashboard.\n   wide: labels in the header row · medium: icon + short label · rail: icons down the left edge ·\n   phone: the bottom bar. The main navigation never scrolls; every range draws all five places. */\n.e-desktop-root .e-app-shell[data-nav=\"wide\"] .e-section-tabs--horizontal,\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-section-tabs--horizontal {\n  /* Never wraps: a wrapped header grows and moves everything under it (the audit's A3). */\n  display: flex; flex: 1; min-width: 0; flex-wrap: nowrap;\n}\n/* Past the first tier the header's own controls shrink: \"as\" before the viewer, the select narrower. */\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top .e-viewer-switch > .e-faint,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-top .e-viewer-switch > .e-faint { display: none; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top .e-viewer-switch select,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-top .e-viewer-switch select { max-width: 7rem; }\n.e-desktop-root .e-app-top__row { flex-wrap: nowrap; }\n.e-desktop-root .e-app-top__actions { flex-shrink: 0; }\n/* Medium and rail: the header gives up what it can spare, so it stays on one row. */\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top__row,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-top__row { gap: 10px; padding-left: 14px; padding-right: 14px; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top__actions,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-top__actions { gap: 10px; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-section-tab { padding: 6px 8px; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-section-tab__label { letter-spacing: 0; }\n/* The wordmark keeps its full size wherever the header has room (wide and medium); it only gives way in the\n   rail and phone layouts. */\n.e-desktop-root .e-app-shell[data-nav=\"wide\"] .e-app-top .e-brand-title,\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top .e-brand-title { font-size: 1.5rem !important; letter-spacing: 0.08em; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-relay-status__meta,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-relay-status__meta,\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-header-link__word,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-header-link__word { display: none; }\n/* The live chip keeps its dot and its title; its word is for a roomy header only. */\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-status-chip__label--live,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-status-chip__label--live,\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-status-chip__label--live {\n  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;\n}\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-status-chip__label--relay { max-width: 22ch; }\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-status-chip__label--relay { max-width: 22ch; }\n\n/* The rail: the five places as icons down the left edge, the word on hover and focus. */\n.e-desktop-root .e-section-tabs--rail { display: none; }\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-section-tabs--rail {\n  display: flex;\n  flex: none;\n  flex-direction: column;\n  align-items: stretch;\n  gap: 2px;\n  width: 88px;\n  padding: 8px 4px;\n  border-right: 1px solid var(--e-rule, var(--theme-border-subdued));\n  background: var(--theme-background);\n  position: relative;\n  z-index: 30;\n}\n.e-desktop-root .e-section-tabs--rail .e-section-tab {\n  justify-content: flex-start;\n  min-height: 44px;\n  padding: 0 8px;\n  opacity: 0.85;\n}\n.e-desktop-root .e-section-tabs--rail .e-section-tab__label { font-size: 0.78rem; letter-spacing: 0; }\n.e-desktop-root .e-section-tabs--rail .e-section-tab .e-nav-badge { position: absolute; top: 4px; right: 4px; margin: 0; }\n\n.e-desktop-root .e-section-tab {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  padding: 6px 10px;\n  border: 1px solid transparent;\n  border-radius: 0 !important;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.792rem;\n  cursor: pointer;\n  white-space: nowrap;\n  opacity: 0.75;\n  transition: background 0.12s, opacity 0.12s, border-color 0.12s;\n}\n.e-desktop-root .e-section-tab:hover  { opacity: 1; border-color: var(--theme-border-subdued, rgba(255,255,255,0.12)); background: transparent; }\n.e-desktop-root .e-section-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); background: transparent; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-section-tab__label { letter-spacing: 0.02em; }\n/* The five places are words only in every layout (header row, rail, phone bar, menu): no icon, no hotkey number;\n   the key and the blurb are the hover title. */\n/* The wordmark is a button to Home: it keeps the title's look, with a pointer and a focus ring. */\n.e-desktop-root .e-brand-home { background: none; border: 0; padding: 0; margin: 0; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; }\n.e-desktop-root .e-brand-home:hover { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-brand-home:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: 3px; }\n\n/* Drawer variant */\n.e-desktop-root .e-section-tabs--drawer {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  padding: 12px 0;\n  flex: 1;\n  overflow-y: auto;\n}\n.e-desktop-root .e-section-tabs--drawer .e-section-tab { width: 100%; justify-content: flex-start; padding: 10px 14px; }\n.e-desktop-root .e-section-tabs--drawer .e-section-tab.is-active { background: transparent !important; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n\n/* Nav unread badge */\n.e-desktop-root .e-nav-badge {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 14px;\n  height: 14px;\n  padding: 0 3px;\n  margin-left: 4px;\n  border-radius: 7px;\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  font-size: 10px;\n  font-weight: 700;\n  vertical-align: middle;\n  line-height: 1;\n}\n\n/* A tab's unread count sits on its corner, so it never widens the tab or moves its neighbours. */\n.e-desktop-root .e-section-tabs--horizontal .e-section-tab .e-nav-badge,\n.e-desktop-root .e-bottom-bar__tab .e-nav-badge,\n.e-desktop-root .e-subnav__tab .e-nav-badge {\n  position: absolute;\n  top: -2px;\n  right: -2px;\n  margin: 0;\n}\n.e-desktop-root .e-subnav__tab { position: relative; }\n.e-desktop-root .e-subnav__tab .e-nav-badge { top: 6px; right: 2px; }\n\n/* Header-only places: Help (?) and, for the operator, the relay's desk. */\n.e-desktop-root .e-header-links { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }\n.e-desktop-root .e-header-link {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  min-height: 28px;\n  padding: 2px 9px;\n  border: 1px solid var(--e-rule, var(--theme-border-subdued));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.78rem;\n  cursor: pointer;\n  white-space: nowrap;\n}\n.e-desktop-root .e-header-link:hover { border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-header-link.is-active { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-header-link__icon { font-weight: 700; }\n\n/* ─── 5. MOBILE DRAWER ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-mobile-top {\n  display: none;\n  align-items: center;\n  gap: 10px;\n  padding: 10px 12px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  position: sticky;\n  top: 0;\n  background: var(--theme-background);\n  z-index: 20;\n  flex-wrap: wrap;\n}\n\n.e-desktop-root .e-app-drawer { display: none; }\n\n.e-desktop-root .e-mobile-drawer {\n  display: flex;\n  flex-direction: column;\n  height: 100%;\n  padding: 16px 12px;\n}\n\n/* ─── 6. VIEW BODY ───────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-view-body {\n  padding: 20px 24px 32px;\n  margin: 0 auto;\n  width: 100%;\n  max-width: min(1440px, 100%);\n  box-sizing: border-box;\n  min-width: 0;\n}\n.e-desktop-root .e-view-body__inner { min-height: 40vh; }\n\n.e-desktop-root .e-view-toolbar {\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  gap: 12px;\n  flex-wrap: wrap;\n}\n\n/* Flush variant — fills remaining height for split views */\n.e-desktop-root .e-view-body--flush {\n  padding: 0;\n  max-width: none;\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n}\n.e-desktop-root .e-view-body--flush .e-view-body__inner {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n}\n.e-desktop-root .e-view-body--flush .e-view-toolbar {\n  padding: 10px 16px;\n  margin: 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  background: var(--emporia-surface);\n}\n.e-desktop-root .e-view-body--flush .e-search-row { margin: 0; }\n\n/* ─── 7. SIDEBAR RAIL ────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] {\n  background: var(--theme-background) !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_root\"] {\n  flex: 1;\n  min-height: 0;\n}\n\n/* Rail item — custom flat sidebar list button */\n.e-desktop-root .e-rail-item {\n  display: block;\n  width: 100%;\n  margin: 0;\n  padding: 6px 8px 6px 10px;\n  border: 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.05));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n/* badges on a rail row's first line: they wrap under each other instead of squeezing the name */\n.e-desktop-root .e-rail-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end; min-width: 0; text-align: right; }\n/* the second line of a rail row is secondary: smaller than the name above it, not larger */\n.e-desktop-root .e-rail-item .e-dim, .e-desktop-root .e-rail-item .e-faint { font-size: 12px; line-height: 1.45; }\n.e-desktop-root .e-rail-item:hover { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-rail-item.is-selected,\n.e-desktop-root .e-rail-item:focus-visible { outline: none; }\n.e-desktop-root .e-rail-item:focus-visible { color: var(--theme-focused-foreground); }\n\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] [class*=\"Badge_root\"] {\n  background: transparent !important;\n  padding: 0 !important;\n  font-size: 0.682rem;\n  letter-spacing: 0.06em;\n  color: var(--theme-focused-foreground);\n  opacity: 0.9;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] .e-segment-tabs { margin: 4px 0 8px; }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] [class*=\"Divider_gradient\"] {\n  background: linear-gradient(to right, transparent, var(--theme-border-subdued, rgba(255,255,255,0.08)), transparent) !important;\n  height: 1px !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] [class*=\"Divider_line\"] { height: 1px !important; opacity: 0.35; }\n\n/* ─── 8. COMPONENT KIT ───────────────────────────────────────────────────── */\n\n/* Slim card */\n.e-desktop-root .e-slim-card {\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  border-radius: 4px;\n  background: transparent;\n  margin-bottom: 12px;\n}\n.e-desktop-root .e-slim-card__head {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 6px 10px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n}\n.e-desktop-root .e-slim-card__title {\n  font-size: 0.682rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  opacity: 0.55;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n}\n.e-desktop-root .e-slim-card__body { padding: 10px 12px; }\n.e-desktop-root .e-slim-card__foot {\n  padding: 6px 10px;\n  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n  font-size: 0.748rem;\n  opacity: 0.45;\n}\n\n/* Panel card (used in overview sections) */\n.e-desktop-root .e-panel-card {\n  border-radius: 4px;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  background: transparent;\n  margin-bottom: 12px;\n}\n.e-desktop-root .e-panel-card__head { padding: 6px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06)); }\n.e-desktop-root .e-panel-card__title {\n  font-size: 0.792rem !important;\n  letter-spacing: 0.04em;\n  opacity: 0.5;\n}\n.e-desktop-root .e-panel-card__body { padding: 8px 10px; }\n\n/* Meta grid (agent detail, listing detail) */\n.e-desktop-root .e-meta-grid {\n  margin: 0;\n  display: grid;\n  gap: 6px 12px;\n}\n.e-desktop-root .e-meta-grid__row {\n  display: grid;\n  grid-template-columns: 7rem 1fr;\n  gap: 8px;\n  align-items: baseline;\n}\n.e-desktop-root .e-meta-grid dt {\n  margin: 0;\n  font-size: 0.682rem;\n  letter-spacing: 0.08em;\n  text-transform: uppercase;\n  opacity: 0.45;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n}\n.e-desktop-root .e-meta-grid dd { margin: 0; font-size: 0.858rem; word-break: break-word; }\n\n/* Empty pane */\n.e-desktop-root .e-empty-pane {\n  padding: 20px 16px;\n  border: 1px dashed var(--theme-border-subdued, rgba(255,255,255,0.12));\n  border-radius: 4px;\n  max-width: 28rem;\n}\n.e-desktop-root .e-empty-pane__title { font-size: 0.902rem; opacity: 0.7; }\n.e-desktop-root .e-empty-pane__hint { margin-top: 6px; font-size: 0.792rem; opacity: 0.45; line-height: 1.45; }\n\n/* KPI strip (fees view) */\n.e-desktop-root .e-kpi-row {\n  display: grid;\n  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));\n  gap: 8px;\n  margin-bottom: 12px;\n}\n.e-desktop-root .e-kpi { padding: 5px 8px; border-radius: 4px; }\n.e-desktop-root .e-kpi__val { display: block; font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-kpi__lbl { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.65; }\n\n/* Chess session — board + controls share one centered column (board width) */\n.e-desktop-root .e-chess-main {\n  padding: 18px 20px 20px 9px;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-column {\n  display: flex;\n  flex-direction: column;\n  align-items: stretch;\n  width: fit-content;\n  max-width: 100%;\n  gap: 12px;\n}\n.e-desktop-root .e-chess-stage {\n  display: grid;\n  justify-items: center;\n  width: 100%;\n  max-width: 100%;\n  vertical-align: top;\n  gap: 6px;\n  padding-top: 0;\n}\n.e-desktop-root .e-chess-stage > table {\n  display: inline-table;\n}\n.e-desktop-root .e-chess-moves-block {\n  width: 100%;\n}\n.e-desktop-root .e-chess-moves-label {\n  display: block;\n  font-size: 0.7rem;\n  margin-bottom: 6px;\n}\n\n.e-desktop-root .e-chess-players {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 16px;\n  width: 100%;\n  margin-top: 0;\n  margin-bottom: 0;\n  font-family: var(--font-family-mono);\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-players__side {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  min-width: 0;\n}\n.e-desktop-root .e-chess-players__piece {\n  font-size: 1.55rem;\n  line-height: 1;\n  flex-shrink: 0;\n}\n.e-desktop-root .e-chess-players__piece--dark { opacity: 0.88; }\n.e-desktop-root .e-chess-players__name {\n  font-size: 0.95rem;\n  font-weight: 600;\n  max-width: 14rem;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n.e-desktop-root .e-chess-players__vs { opacity: 0.45; font-size: 0.72rem; }\n\n.e-desktop-root .e-chess-ctrl-move {\n  margin-left: 8px;\n  font-family: var(--font-family-mono);\n  font-size: 0.72rem;\n  opacity: 0.8;\n}\n\n.e-desktop-root .e-chess-movelist {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 4px 6px;\n  margin-top: 0;\n  width: 100%;\n  max-width: 100%;\n  font-family: var(--font-family-mono);\n  font-size: 0.68rem;\n}\n.e-desktop-root .e-chess-movelist__btn {\n  border: none;\n  background: transparent;\n  color: inherit;\n  opacity: 0.72;\n  cursor: pointer;\n  padding: 2px 4px;\n  border-radius: 3px;\n}\n.e-desktop-root .e-chess-movelist__btn:hover { opacity: 1; background: var(--theme-border-subdued, rgba(255,255,255,0.06)); }\n.e-desktop-root .e-chess-movelist__btn--on {\n  opacity: 1;\n  font-weight: 600;\n  color: var(--theme-focused-foreground, inherit);\n}\n\n.e-desktop-root .e-chess-warn { font-size: 0.68rem; margin-top: 6px; }\n\n.e-desktop-root .e-chess-ctrl-row {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 4px;\n  margin-top: 8px;\n  width: fit-content;\n  max-width: 100%;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-ctrl-icons {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  flex-shrink: 0;\n}\n.e-desktop-root .e-chess-ctrl-status {\n  text-align: center;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n  font-size: 0.72rem;\n  opacity: 0.65;\n  font-variant-numeric: tabular-nums;\n  white-space: nowrap;\n}\n.e-desktop-root .e-chess-replay-status {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n}\n.e-desktop-root .e-chess-live-mark {\n  text-transform: uppercase;\n  letter-spacing: 0.06em;\n  color: var(--theme-focused-foreground);\n  opacity: 1;\n}\n.e-desktop-root .e-chess-icon-btn {\n  appearance: none;\n  flex: 0 0 auto;\n  margin: 0;\n  padding: 0;\n  border: 0;\n  background: transparent;\n  color: inherit;\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n.e-desktop-root .e-chess-icon-btn__glyph {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 6px;\n  box-shadow: inset 0 0 0 1px var(--theme-border-subdued, rgba(255, 255, 255, 0.12));\n  transition: color 0.1s, box-shadow 0.1s;\n}\n.e-desktop-root .e-chess-icon-btn .e-chess-svg {\n  display: block;\n  width: 1.25rem;\n  height: 1.25rem;\n}\n.e-desktop-root .e-chess-icon-btn:hover .e-chess-icon-btn__glyph,\n.e-desktop-root .e-chess-icon-btn:focus-visible .e-chess-icon-btn__glyph {\n  color: var(--theme-focused-foreground);\n  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground);\n}\n.e-desktop-root .e-chess-icon-btn:focus-visible {\n  outline: none;\n}\n.e-desktop-root .e-chess-move-idx,\n.e-desktop-root .e-chess-speed__lbl {\n  font-size: 0.792rem;\n  opacity: 0.55;\n}\n.e-desktop-root .e-chess-speed {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 8px;\n  align-items: center;\n  justify-content: center;\n  width: fit-content;\n  max-width: 100%;\n  margin: 0 auto;\n  padding: 6px 0 2px;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-speed__range {\n  width: min(9rem, 42vw);\n  max-width: 140px;\n  accent-color: var(--theme-focused-foreground);\n}\n\n/* Hero stats (overview) */\n.e-desktop-root .e-hero-stats {\n  display: grid;\n  grid-template-columns: repeat(2, 1fr);\n  gap: 12px;\n  margin-bottom: 24px;\n}\n@media (min-width: 720px) { .e-desktop-root .e-hero-stats { grid-template-columns: repeat(4, 1fr); }}\n\n.e-desktop-root .e-hero-stat {\n  padding: 16px 18px;\n  background: transparent;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  border-radius: 4px;\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  position: relative;\n  overflow: hidden;\n}\n.e-desktop-root .e-hero-stat::before {\n  content: \"\";\n  position: absolute;\n  top: 0; left: 0; right: 0;\n  height: 2px;\n  background: var(--theme-border-subdued, rgba(255,255,255,0.15));\n}\n.e-desktop-root .e-hero-stat--accent::before { background: linear-gradient(90deg, var(--theme-focused-foreground), transparent); }\n.e-desktop-root .e-hero-stat__value { font-size: 1.925rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }\n.e-desktop-root .e-hero-stat--accent .e-hero-stat__value { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-hero-stat__label { font-size: 0.715rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.55; }\n.e-desktop-root .e-hero-stat__hint  { font-size: 0.748rem; opacity: 0.4; }\n\n/* MCP command hint — \"show the tool call\" write-action affordance */\n.e-desktop-root .e-mcp-hint {\n  margin-top: 8px;\n  padding: 6px 8px;\n  border: 1px dashed var(--theme-border);\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n.e-desktop-root .e-mcp-hint__label { font-size: 0.682rem; text-transform: uppercase; letter-spacing: 0.04em; }\n.e-desktop-root .e-mcp-hint__code {\n  font-family: var(--font-family-mono);\n  font-size: 0.77rem;\n  color: var(--theme-focused-foreground);\n  cursor: pointer;\n  word-break: break-all;\n}\n.e-desktop-root .e-mcp-hint__code:hover { text-decoration: underline; }\n\n/* Rail chips (payment rail badges) */\n.e-desktop-root .e-rail-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }\n.e-desktop-root .e-rail-chip {\n  font-size: 0.682rem;\n  padding: 0;\n  border: 0;\n  border-radius: 0;\n  opacity: 0.85;\n  text-transform: uppercase;\n  letter-spacing: 0.04em;\n  color: var(--theme-focused-foreground);\n  background: transparent !important;\n}\n\n/* Outline pill for longer status text (e.g. NIM model name) — a solid-fill\n   badge (.e-trust-verified) reads as an alert/highlight at this length. */\n.e-desktop-root .e-status-pill {\n  font-size: 0.682rem;\n  font-family: var(--font-family-mono);\n  padding: 2px 7px;\n  border: 1px solid var(--theme-border);\n  background: transparent !important;\n  white-space: nowrap;\n}\n.e-desktop-root .e-status-pill--off { opacity: 0.45; }\n\n/* ─── 9. OVERVIEW ────────────────────────────────────────────────────────── */\n\n/* Hub grid — overview nav cards */\n.e-desktop-root .e-overview-status {\n  display: block;\n  font-size: 0.748rem;\n  margin-bottom: 12px;\n  max-width: 100%;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .e-pipeline-strip {\n  display: block;\n  font-size: 0.726rem;\n  letter-spacing: 0.02em;\n  margin-bottom: 14px;\n  max-width: 100%;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .e-overview-hub {\n  display: grid;\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n  gap: 8px;\n  margin-bottom: 20px;\n  min-width: 0;\n}\n@media (min-width: 560px)  { .e-desktop-root .e-overview-hub { grid-template-columns: repeat(3, minmax(0, 1fr)); }}\n@media (min-width: 900px)  { .e-desktop-root .e-overview-hub { grid-template-columns: repeat(4, minmax(0, 1fr)); }}\n@media (min-width: 1300px) { .e-desktop-root .e-overview-hub { grid-template-columns: repeat(5, minmax(0, 1fr)); }}\n\n.e-desktop-root .e-overview-card {\n  display: flex;\n  flex-direction: column;\n  gap: 0;\n  padding: 10px 12px 12px;\n  text-align: left;\n  background: transparent;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  transition: border-color 0.12s ease;\n  min-width: 0;\n  max-width: 100%;\n}\n.e-desktop-root .e-overview-card:hover,\n.e-desktop-root .e-overview-card:focus-visible {\n  border-color: var(--theme-focused-foreground);\n  outline: none;\n}\n\n.e-desktop-root .e-overview-card__head {\n  display: flex;\n  justify-content: space-between;\n  align-items: baseline;\n  flex-wrap: wrap;\n  gap: 2px 6px;\n  margin-bottom: 6px;\n  min-width: 0;\n}\n.e-desktop-root .e-overview-card__topline {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  min-width: 0;\n  flex: 1;\n}\n.e-desktop-root .e-overview-card__icon  { font-size: 1.1rem; line-height: 1; flex-shrink: 0; }\n.e-desktop-root .e-overview-card__title { font-size: 0.858rem; font-weight: 500; }\n/* P69: a collection whose fetch rejected, as distinct from one that came back\n   empty. The snapshot is allSettled, so a single failing endpoint used to\n   render \"—\" — the same glyph as \"not loaded yet\" — beside cards showing real\n   numbers, which reads as \"there is nothing there\". Muted rather than alarming:\n   the relay is up and answering for the other panels, so this is one endpoint\n   to go and look at, not an outage. */\n.e-desktop-root .e-overview-card--failed .e-overview-card__sub {\n  color: var(--theme-warning, #c33);\n  opacity: 1;\n  letter-spacing: 0.02em;\n}\n.e-desktop-root .e-overview-card--failed .e-overview-card__body { opacity: 0.55; }\n\n.e-desktop-root .e-overview-card__sub   {\n  font-size: 0.715rem;\n  font-variant-numeric: tabular-nums;\n  color: var(--theme-focused-foreground);\n  opacity: 0.85;\n  white-space: nowrap;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  flex-shrink: 1;\n}\n.e-desktop-root .e-overview-card__body { }\n.e-desktop-root .e-overview-card__body p {\n  margin: 0 0 3px;\n  font-size: 0.748rem;\n  line-height: 1.4;\n  opacity: 0.5;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.e-desktop-root .e-nav-card {\n  display: flex;\n  flex-direction: column;\n  align-items: flex-start;\n  gap: 6px;\n  padding: 14px 16px;\n  text-align: left;\n  background: var(--theme-background);\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  min-height: 5.5rem;\n  transition: border-color 0.15s ease;\n}\n.e-desktop-root .e-nav-card:hover,\n.e-desktop-root .e-nav-card:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }\n.e-desktop-root .e-nav-card[data-active=\"true\"] { border-color: var(--theme-focused-foreground); box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }\n.e-desktop-root .e-nav-card__hotkey {\n  position: absolute;\n  top: 10px; right: 10px;\n  font-size: 0.66rem;\n  opacity: 0.4;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));\n  padding: 2px 5px;\n}\n\n/* Stat strip */\n.e-desktop-root .e-stat-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }\n.e-desktop-root .e-stat-strip__lbl { font-size: 0.682rem; opacity: 0.55; }\n\n/* Live event feed */\n.e-desktop-root .e-feed-panel { max-height: min(70vh, 520px); overflow-y: auto; }\n\n.e-desktop-root .e-feed-panel--v2 { max-height: min(65vh, 480px); margin: -4px 0; }\n\n.e-desktop-root .e-feed-row {\n  cursor: pointer;\n  padding: 6px 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n}\n.e-desktop-root .e-feed-row:hover { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-feed-row:last-child { border-bottom: none; }\n\n.e-desktop-root .e-feed-row--v2 {\n  padding: 12px 12px 12px 14px;\n  margin: 0 -4px;\n  border-radius: 0;\n  border-bottom: none;\n  border-left: 3px solid transparent;\n  transition: border-color 0.12s ease;\n}\n.e-desktop-root .e-feed-row--v2.is-clickable:hover { border-left-color: var(--theme-focused-foreground); }\n\n.e-desktop-root .e-feed-type {\n  display: inline-block;\n  font-size: 0.682rem;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n  margin-bottom: 4px;\n}\n.e-desktop-root .e-feed-detail  { font-size: 0.902rem !important; }\n.e-desktop-root .e-feed-time    { font-size: 0.748rem !important; font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-feed-jump    { font-size: 0.715rem !important; opacity: 0.45; margin-top: 4px; }\n\n/* ─── 10. THEME PICKER ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-theme-compact { position: relative; }\n.e-desktop-root .e-theme-compact--inline { display: flex; align-items: center; }\n/* Fixed, but inside the frame's `contain: layout paint`: it covers the frame, never the page around it. */\n.e-desktop-root .e-theme-compact__backdrop { position: fixed; inset: 0; z-index: 200; border: 0; background: transparent; }\n\n.e-desktop-root .e-theme-duo {\n  display: inline-flex;\n  align-items: center;\n  gap: 0;\n  padding: 5px 9px;\n  border: 1px solid var(--theme-border-subdued, rgba(255, 255, 255, 0.18));\n  border-radius: 0;\n  background: transparent;\n}\n.e-desktop-root .e-theme-duo__rule {\n  width: 1px;\n  align-self: stretch;\n  min-height: 14px;\n  margin: 2px 8px;\n  background: var(--theme-border-subdued, rgba(255, 255, 255, 0.18));\n  flex-shrink: 0;\n}\n.e-desktop-root .e-theme-duo__btn {\n  display: block;\n}\n.e-desktop-root .e-theme-circle {\n  width: 16px;\n  height: 16px;\n  padding: 0;\n  border: none;\n  border-radius: 50%;\n  cursor: pointer;\n  flex-shrink: 0;\n  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.4);\n  transition: transform 0.12s ease, opacity 0.12s ease;\n}\n.e-desktop-root .e-theme-circle:hover,\n.e-desktop-root .e-theme-circle:focus-visible {\n  transform: scale(1.1);\n  outline: none;\n  opacity: 0.92;\n}\n.e-desktop-root .e-theme-circle--mode[data-mode=\"theme-light\"] { background: #f2f2f2; }\n.e-desktop-root .e-theme-circle--mode[data-mode=\"theme-dark\"]  { background: #121212; }\n.e-desktop-root .e-theme-circle--accent { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }\n/* The vivid circle: the tint with a ring of its ink (colour set inline); the ring fills in when vivid is on. */\n.e-desktop-root .e-theme-circle--vivid { box-shadow: inset 0 0 0 3px currentColor; }\n.e-desktop-root .e-theme-circle--vivid[data-on=\"true\"] { box-shadow: inset 0 0 0 5px currentColor; }\n.e-desktop-root .e-mode-toggle {\n  width: 26px; height: 26px;\n  padding: 0;\n  border: none;\n  border-radius: 50%;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.858rem;\n  line-height: 1;\n  cursor: pointer;\n  opacity: 0.45;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  transition: background 0.12s ease, opacity 0.12s ease;\n}\n.e-desktop-root .e-mode-toggle.is-active {\n  opacity: 1;\n  background: var(--theme-background) !important;\n  color: var(--theme-focused-foreground);\n  box-shadow: 0 1px 3px rgba(0,0,0,0.3);\n}\n/* ─── 11. RELAY STRIP ────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-relay-status {\n  display: inline-flex;\n  align-items: center;\n  gap: 14px;\n  flex-wrap: wrap;\n  justify-content: flex-end;\n  font-size: 0.792rem;\n  background: transparent !important;\n}\n.e-desktop-root .e-relay-status--compact {\n  gap: 12px;\n}\n.e-desktop-root .e-relay-status__chips {\n  display: inline-flex;\n  align-items: center;\n  gap: 10px;\n}\n.e-desktop-root .e-relay-status__host {\n  color: var(--theme-text-subdued, #888);\n  max-width: 140px;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  margin-right: 2px;\n}\n.e-desktop-root .e-relay-status__meta { color: var(--theme-text-subdued, #666); font-size: 0.715rem; }\n.e-desktop-root .e-badge--ok,\n.e-desktop-root .e-relay-status .e-badge--ok { color: var(--theme-focused-foreground) !important; }\n\n/* The relay chip carries the relay's name: a long host is cut with an ellipsis (its title has it all). */\n.e-desktop-root .e-status-chip__label--relay { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-status-chip__label--relay { max-width: 14ch; }\n.e-desktop-root .e-status-chip {\n  display: inline-flex;\n  align-items: center;\n  gap: 7px;\n  padding: 4px 9px;\n  border: 1px solid var(--theme-border-subdued, rgba(255, 255, 255, 0.18));\n  border-radius: 0;\n  background: var(--theme-border, rgba(255, 255, 255, 0.06));\n  font-size: 0.748rem;\n  line-height: 1.25;\n  white-space: nowrap;\n}\n.e-desktop-root .e-status-chip.is-ok {\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-status-chip:not(.is-ok) {\n  opacity: 0.7;}\n.e-desktop-root .e-status-chip__label {\n  letter-spacing: 0.02em;\n}\n.e-desktop-root .e-status-chip__loader {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 1.1ch;\n  min-width: 1.1ch;\n  color: inherit;\n}\n.e-desktop-root .e-status-chip.is-ok .e-status-chip__loader {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .e-status-chip__dot {\n  display: inline-block;\n  width: 1ch;\n  text-align: center;\n}\n@keyframes e-status-pulse {\n  0%, 100% { opacity: 1; }\n  50% { opacity: 0.35; }\n}\n\n/* ─── 12. AGENT / PROFILE ROW ────────────────────────────────────────────── */\n\n.e-desktop-root .e-agent-row { display: flex; gap: 8px; align-items: center; }\n.e-desktop-root .e-moire-avatar { flex-shrink: 0; border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12)); }\n.e-desktop-root .e-profile-agent { display: flex; gap: 12px; align-items: center; }\n\n/* Settlement list */\n.e-desktop-root .e-settlement-list { list-style: none; margin: 16px 0 0; padding: 0; font-size: 0.825rem; background: transparent !important; }\n/* P105: the inherited list marker is a ::before box, and in a grid it takes a\n   cell — pushing every row's status onto the next line. */\n.e-desktop-root .e-settlement-list__item::before { content: none !important; display: none !important; }\n.e-desktop-root .e-settlement-list__item {\n  display: grid;\n  grid-template-columns: 1fr auto auto;\n  gap: 12px;\n  padding: 6px 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n  background: transparent !important;\n}\n\n/* ─── 13. CHAT & READ-ONLY CHAT ──────────────────────────────────────────── */\n\n.e-desktop-root .e-chat-pane {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n.e-desktop-root .e-chat-messages {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  display: flex;\n  flex-direction: column;\n  gap: 6px;\n  padding: 12px 16px;\n}\n.e-desktop-root .e-chat-footer {\n  flex-shrink: 0;\n  padding: 8px 12px;\n  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n}\n.e-desktop-root .e-chat-meta { display: block; font-size: 0.748rem; margin-bottom: 2px; }\n\n/* Transcript chat line — avatar + content */\n.e-desktop-root .e-chat-line {\n  display: flex;\n  gap: 8px;\n  align-items: flex-start;\n}\n.e-desktop-root .e-chat-line__body {\n  flex: 1;\n  min-width: 0;\n}\n.e-desktop-root .e-chat-line__meta {\n  display: flex;\n  align-items: baseline;\n  flex-wrap: wrap;\n  gap: 6px;\n  margin-bottom: 2px;\n}\n.e-desktop-root .e-chat-line__name {\n  font-size: 0.792rem;\n  font-weight: 600;\n  word-break: break-all;\n}\n.e-desktop-root .e-chat-line__type,\n.e-desktop-root .e-chat-line__time {\n  font-size: 0.682rem;\n  opacity: 0.45;\n  font-variant-numeric: tabular-nums;\n}\n/* A list's own filter, at the top of its column: compact, the theme's colours, a clear button inside. */\n.e-desktop-root .e-list-filter { position: relative; padding: 8px 10px; border-bottom: 1px solid var(--e-rule, var(--theme-border-subdued)); }\n.e-desktop-root .e-list-filter input {\n  box-sizing: border-box; width: 100%; padding: 5px 26px 5px 8px; border: 1px solid var(--e-rule, currentColor); border-radius: 0;\n  background: transparent; color: inherit; font: inherit; font-size: 0.8rem;\n}\n.e-desktop-root .e-list-filter input::placeholder { color: var(--anim-faint, inherit); opacity: 1; }\n.e-desktop-root .e-list-filter input:focus { outline: none; border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-list-filter__clear {\n  position: absolute; right: 14px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; color: inherit;\n  font: inherit; font-size: 1rem; line-height: 1; cursor: pointer; opacity: 0.6; padding: 0 2px;\n}\n.e-desktop-root .e-list-filter__clear:hover { opacity: 1; color: var(--theme-focused-foreground); }\n/* A fold inside a card: one muted line that opens the facts only a close look needs. */\n.e-desktop-root .e-fold { margin-top: 8px; }\n.e-desktop-root .e-fold > summary { cursor: pointer; font-size: 0.72rem; letter-spacing: 0.04em; opacity: 0.65; list-style: none; padding: 2px 0; }\n.e-desktop-root .e-fold--game { margin: 10px 0; }\n.e-desktop-root .e-fold--game > summary { font-size: 0.78rem; }\n.e-desktop-root .e-fold > summary::before { content: \"▸ \"; }\n.e-desktop-root .e-fold[open] > summary::before { content: \"▾ \"; }\n.e-desktop-root .e-fold > summary::-webkit-details-marker { display: none; }\n.e-desktop-root .e-fold > summary:hover, .e-desktop-root .e-fold[open] > summary { opacity: 1; color: var(--theme-focused-foreground); }\n/* \"+N more\": the rest of a row's chips, behind one small disclosure (progressive disclosure, nothing removed). */\n.e-desktop-root .e-more { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }\n.e-desktop-root .e-more > summary { cursor: pointer; font-size: 0.7rem; opacity: 0.7; list-style: none; padding: 1px 4px; }\n.e-desktop-root .e-more > summary::-webkit-details-marker { display: none; }\n.e-desktop-root .e-more > summary:hover, .e-desktop-root .e-more[open] > summary { opacity: 1; color: var(--theme-focused-foreground); }\n/* A game's pixel glyph then its name: the one way every list says \"this is a game\". */\n.e-desktop-root .e-game-tag { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; vertical-align: middle; }\n.e-desktop-root .e-quiet-chip {\n  display: inline-block;\n  padding: 0 6px;\n  border: 1px solid var(--e-rule, currentColor);\n  border-radius: 8px;\n  font-size: 0.64rem;\n  line-height: 1.5;\n  letter-spacing: 0.02em;\n  opacity: 0.6;\n  white-space: nowrap;\n}\n.e-desktop-root .e-chat-line__content {\n  font-size: 0.902rem;\n  line-height: 1.45;\n  word-break: break-word;\n  white-space: pre-wrap;\n}\n\n/* Agora detail pane (also used for events detail) */\n.e-desktop-root .e-split-main { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 8px 0 16px 0; }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main {\n  padding-left: 4px;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main:has(.e-chess-main) {\n  padding-left: 0;}\n.e-desktop-root .e-agora-detail { overflow: hidden; }\n.e-desktop-root .e-agora-detail__scroll { flex: 1; overflow-y: auto; padding: 16px; }\n.e-desktop-root .e-agora-detail__title { font-size: 1.1rem; font-weight: 600; margin-bottom: 4px; display: block; }\n.e-desktop-root .e-agora-detail__meta  { font-size: 0.792rem; margin-bottom: 12px; display: block; }\n.e-desktop-root .e-agora-detail__body  { display: block; margin-top: 12px; white-space: pre-wrap; }\n.e-desktop-root .e-agora-readonly-hint { display: block; margin-top: 24px; font-size: 0.715rem; }\n\n.e-desktop-root .e-agora-comment { padding: 6px 0; border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06)); }\n\n/* ─── 14. AGORA ──────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-agora-pane {\n  height: 100%;\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n}\n.e-desktop-root .e-agora-posts,\n.e-desktop-root .e-agora-sidebar { overflow-y: auto; flex: 1; }\n\n.e-desktop-root .e-post-row { display: flex; gap: 10px; align-items: flex-start; flex: 1; }\n.e-desktop-root .e-post-title { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }\n.e-desktop-root .e-vote-btn {\n  background: none;\n  border: none;\n  cursor: pointer;\n  font-size: 14px;\n  padding: 2px 4px;\n  opacity: 0.45;\n  color: inherit;\n  transition: opacity 0.15s, color 0.15s;\n}\n.e-desktop-root .e-vote-btn:hover { opacity: 1; }\n.e-desktop-root .e-vote-score { font-size: 13px; min-width: 20px; text-align: center; }\n\n/* ─── 15. SEGMENT TABS ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-segment-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }\n.e-desktop-root .e-segment-tabs--grow .e-segment-tab { flex: 1; min-width: 0; text-align: center; }\n\n.e-desktop-root .e-segment-tab {\n  appearance: none;\n  margin: 0;\n  padding: 4px 10px;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));\n  border-radius: 0 !important;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n  font-size: 0.748rem;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  cursor: pointer;\n  opacity: 0.75;\n  transition: border-color 0.1s, color 0.1s, opacity 0.1s;\n}\n/* View filters are chips, not tabs: pills, smaller, no underline; they sit left, directly above their list. */\n.e-desktop-root .e-segment-tabs { justify-content: flex-start; margin: 0 0 12px; }\n.e-desktop-root .e-segment-tab {\n  border-radius: 999px !important;\n  padding: 2px 11px;\n  font-size: 0.68rem;\n  text-transform: none;\n  letter-spacing: 0.02em;\n}\n.e-desktop-root .e-segment-tab.is-active { background: var(--e-accent-wash, transparent); font-weight: 400; }\n.e-desktop-root .e-segment-tab:hover { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-segment-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); font-weight: 600; }\n\n/* The Feed's filter chips, and \"more ▾\" for the rarer kinds: the same chip, opening a short list. */\n.e-desktop-root .e-feed-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; margin: 0 0 12px; }\n.e-desktop-root .e-feed-tabs .e-segment-tabs { margin: 0; }\n.e-desktop-root .e-feed-more { position: relative; }\n.e-desktop-root .e-feed-more > summary {\n  list-style: none; cursor: pointer; padding: 2px 11px; border: 1px solid var(--theme-border-subdued, currentColor);\n  border-radius: 999px; font-size: 0.68rem; letter-spacing: 0.02em; opacity: 0.75; user-select: none;\n}\n.e-desktop-root .e-feed-more > summary::-webkit-details-marker { display: none; }\n.e-desktop-root .e-feed-more > summary:hover, .e-desktop-root .e-feed-more[open] > summary, .e-desktop-root .e-feed-more > summary.is-active {\n  opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-feed-more__menu {\n  position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 9rem; display: flex; flex-direction: column;\n  border: 1px solid var(--theme-border, var(--e-rule)); background: var(--theme-background);\n}\n.e-desktop-root .e-feed-more__menu button {\n  padding: 6px 12px; border: 0; border-bottom: 1px solid var(--e-rule, transparent); background: transparent; color: inherit;\n  font: inherit; font-size: 0.72rem; text-align: left; cursor: pointer;\n}\n.e-desktop-root .e-feed-more__menu button:last-child { border-bottom: 0; }\n.e-desktop-root .e-feed-more__menu button:hover, .e-desktop-root .e-feed-more__menu button.is-active { color: var(--theme-focused-foreground); }\n\n/* ─── 16. BADGES, PILLS & ENTITY CHIPS ──────────────────────────────────── */\n\n.e-desktop-root .e-badge { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 12px; font-family: var(--font-family-mono); border: 1px solid currentColor; white-space: nowrap; }\n.e-desktop-root .e-badge--dim { opacity: 0.5; }\n\n.e-desktop-root .e-role-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid currentColor; }\n.e-desktop-root .e-role-pill--operator  { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-role-pill--member    { opacity: 0.6; }\n.e-desktop-root .e-role-pill--spectator { opacity: 0.4; }\n\n.e-desktop-root .e-gate-badge {\n  display: inline-block;\n  padding: 1px 5px;\n  border-radius: 4px;\n  font-size: 10px;\n  font-weight: 700;\n  letter-spacing: 0.05em;\n  text-transform: uppercase;\n  white-space: nowrap;\n}\n.e-desktop-root .e-gate-badge--invite { background: rgba(128,128,255,0.15); color: #8888ff; }\n.e-desktop-root .e-gate-badge--paid   { background: rgba(80,200,120,0.15);  color: #4caf7a; }\n.e-desktop-root .e-gate-badge--advert { background: rgba(255,190,80,0.15);  color: #d9a441; }\n\n.e-desktop-root .e-outcome-pill {\n  display: inline-block;\n  padding: 1px 5px;\n  border-radius: 4px;\n  font-size: 10px;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n}\n.e-desktop-root .e-outcome-pill--game   { background: rgba(255,180,0,0.12);   color: #c89a00; }\n.e-desktop-root .e-outcome-pill--room   { background: rgba(0,180,255,0.12);   color: #0099cc; }\n.e-desktop-root .e-outcome-pill--agora  { background: rgba(128,128,255,0.12); color: #7777dd; }\n.e-desktop-root .e-outcome-pill--refund { background: rgba(200,50,50,0.12);   color: #cc4444; }\n\n/* Entity chips — clickable agent / session cross-nav links */\n.e-desktop-root .e-entity-chip {\n  display: inline-block;\n  font-family: var(--font-family-mono);\n  font-size: 12px;\n  padding: 1px 5px;\n  border: 1px solid transparent;\n  background: transparent;\n  cursor: default;\n  white-space: nowrap;\n}\n.e-desktop-root .e-entity-chip--inert { opacity: 0.55; }\n.e-desktop-root .e-entity-chip--agent,\n.e-desktop-root .e-entity-chip--session {\n  cursor: pointer;\n  border-color: rgba(128,128,128,0.2);\n  color: var(--theme-focused-foreground);\n  opacity: 0.8;\n  transition: opacity 0.1s, background 0.1s;\n}\n.e-desktop-root .e-entity-chip--agent:hover,\n.e-desktop-root .e-entity-chip--session:hover { opacity: 1; background: rgba(128,128,128,0.08); }\n\n/* Room → session link */\n.e-desktop-root .e-room-session-link {\n  display: inline-flex;\n  align-items: center;\n  gap: 3px;\n  margin-top: 3px;\n  padding: 1px 6px;\n  border: 1px solid rgba(128,128,128,0.2);\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font-size: 11px;\n  font-family: var(--font-family-mono);\n  cursor: pointer;\n  opacity: 0.7;\n  transition: opacity 0.1s;\n}\n.e-desktop-root .e-room-session-link:hover { opacity: 1; background: rgba(128,128,128,0.08); }\n\n/* ─── 17. TABLES ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-compact-table { overflow-x: auto; }\n\n.e-desktop-root .e-compact-table table,\n.e-desktop-root .e-table {\n  width: 100%;\n  border-collapse: collapse;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n  font-size: 0.792rem;\n}\n\n/* Header row — keep the SRCL gray bar */\n.e-desktop-root .e-dashboard-shell .e-compact-table thead td,\n.e-desktop-root .e-dashboard-shell table thead td,\n.e-desktop-root .e-table thead td {\n  background: var(--ansi-240-gray-35, #585858) !important;\n  color: var(--color-white, #fff);\n  padding: 4px 8px;\n  font-size: 0.682rem;\n  letter-spacing: 0.06em;\n}\n\n.e-desktop-root .e-table tbody td {\n  padding: 5px 8px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n}\n.e-desktop-root .e-dashboard-shell table tbody tr { background: transparent !important; }\n.e-desktop-root .e-dashboard-shell table tbody tr:hover { background: transparent !important; }\n\n.e-desktop-root .e-table-row { cursor: pointer; }\n.e-desktop-root .e-table-row:hover td { border-left: 2px solid var(--theme-focused-foreground); padding-left: 6px; }\n.e-desktop-root .e-table-row:focus-visible { outline: 1px solid var(--theme-focused-foreground); }\n\n/* ─── 18. TOOLBAR & SEARCH ───────────────────────────────────────────────── */\n\n.e-desktop-root .e-toolbar-h {\n  display: flex;\n  flex-wrap: nowrap;\n  gap: 6px;\n  align-items: center;\n  padding: 6px 12px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n  overflow-x: auto;\n}\n.e-desktop-root .e-toolbar-h--wrap { flex-wrap: wrap; }\n\n.e-desktop-root .e-search-row {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  padding: 8px 12px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n}\n/* The kit Input draws its text in a display layer and puts the real <input>\n   (which gets this class) transparent on top. So the box lives on the display\n   layer, and the input just covers it exactly — styling the input itself drew\n   a second, empty box under the placeholder. */\n.e-desktop-root .e-search-row > [class*=\"Input_root\"] { flex: 1; min-width: 0; }\n.e-desktop-root .e-search-row [class*=\"Input_displayed\"] {\n  display: flex;\n  align-items: center;\n  min-height: 40px;\n  padding: 0 12px;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-search-bar {\n  height: 100%;\n  padding: 0 12px !important;\n  box-sizing: border-box;\n  border: 0 !important;\n  background: transparent !important;\n}\n\n/* ─── 19. ACTION TIMELINE ────────────────────────────────────────────────── */\n\n.e-desktop-root .e-action-timeline { display: flex; flex-direction: column; gap: 2px; }\n.e-desktop-root .e-action-row { padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }\n.e-desktop-root .e-action-row:last-child { border-bottom: none; }\n.e-desktop-root .e-action-row--terminal .e-action-row__outcome { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-action-row__meta { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 2px; }\n.e-desktop-root .e-action-row__icon { font-size: 14px; min-width: 16px; text-align: center; }\n.e-desktop-root .e-action-row__body { font-size: 13px; opacity: 0.75; padding-left: 24px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }\n.e-desktop-root .e-action-row__outcome { font-size: 12px; padding-left: 24px; opacity: 0.6; margin-top: 2px; }\n\n/* ─── 20. SESSION & TRANSACTION ROWS ────────────────────────────────────── */\n\n.e-desktop-root .e-txn-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid rgba(128,128,128,0.1); }\n.e-desktop-root .e-txn-row:last-child { border-bottom: none; }\n.e-desktop-root .e-txn-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }\n.e-desktop-root .e-txn-dot--in  { background: var(--theme-focused-foreground); }\n.e-desktop-root .e-txn-dot--out { background: rgba(128,128,128,0.4); }\n\n.e-desktop-root .e-session-status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: rgba(128,128,128,0.4); }\n.e-desktop-root .e-session-status-dot--active    { background: var(--theme-focused-foreground); }\n.e-desktop-root .e-session-status-dot--completed { background: rgba(128,128,128,0.6); }\n.e-desktop-root .e-session-status-dot--abandoned { background: rgba(180,80,80,0.5); }\n/* ─── 21. MESSAGES / INBOX ───────────────────────────────────────────────── */\n\n.e-desktop-root .e-messages-pane {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n.e-desktop-root .e-messages-pane__toolbar {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 8px 16px;\n  border-bottom: 1px solid var(--theme-border-color, rgba(128,128,128,0.12));\n  flex-shrink: 0;\n}\n.e-desktop-root .e-inbox-list { display: flex; flex-direction: column; gap: 0; }\n.e-desktop-root .e-inbox-event {\n  display: flex;\n  gap: 12px;\n  padding: 10px 0;\n  border-bottom: 1px solid var(--theme-border-color, rgba(128,128,128,0.12));\n}\n.e-desktop-root .e-inbox-event:last-child { border-bottom: none; }\n.e-desktop-root .e-inbox-event--read { opacity: 0.55; }\n.e-desktop-root .e-inbox-event--link { cursor: pointer; }\n.e-desktop-root .e-inbox-event--link:hover, .e-desktop-root .e-inbox-event--link:focus-visible { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); outline: none; }\n.e-desktop-root .e-now__row.is-link { cursor: pointer; }\n.e-desktop-root .e-now__row.is-link:hover .e-now__go { text-decoration: underline; }\n.e-desktop-root .e-inbox-event__icon { flex-shrink: 0; width: 22px; text-align: center; font-size: 15px; padding-top: 2px; opacity: 0.7; }\n.e-desktop-root .e-inbox-event__body { flex: 1; min-width: 0; }\n\n/* ─── 22. SRCL COMPONENT OVERRIDES ──────────────────────────────────────── */\n\n/* ActionButton — outline style, no fills */\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_content\"] {\n  background: transparent !important;\n  box-shadow: inset 0 0 0 1px var(--theme-border-subdued, rgba(255,255,255,0.12)) !important;\n  border-radius: 0 !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_hotkey\"] { background: transparent !important; }\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"]:hover [class*=\"ActionButton_content\"] {\n  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground) !important;\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"].selected [class*=\"ActionButton_content\"],\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_selected\"] [class*=\"ActionButton_content\"] {\n  background: transparent !important;\n  color: var(--theme-focused-foreground) !important;\n  font-weight: 600;\n  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground) !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"]:focus,\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"]:active { background: transparent !important; }\n\n/* Badges — square */\n.e-desktop-root .e-dashboard-shell [class*=\"Badge_root\"] { border-radius: 0 !important; }\n\n/* Input */\n.e-desktop-root .e-dashboard-shell [class*=\"Input_root\"] input { background: transparent !important; }\n\n/* Kill all surfaces from panels and stat blocks */\n.e-desktop-root .e-dashboard-shell .e-app-top,\n.e-desktop-root .e-dashboard-shell .e-mobile-top { background: var(--theme-background) !important; }\n.e-desktop-root .e-dashboard-shell .e-app-drawer,\n.e-desktop-root .e-dashboard-shell .e-mobile-drawer { background: var(--theme-background) !important; box-shadow: none; }\n.e-desktop-root .e-dashboard-shell .e-panel-card,\n.e-desktop-root .e-dashboard-shell .e-panel-card__head,\n.e-desktop-root .e-dashboard-shell .e-panel-card__body,\n.e-desktop-root .e-dashboard-shell .e-slim-card,\n.e-desktop-root .e-dashboard-shell .e-hero-stat,\n.e-desktop-root .e-dashboard-shell .e-kpi,\n.e-desktop-root .e-dashboard-shell .e-empty-pane { background: transparent !important; }\n\n/* ─── 23. RESPONSIVE ─────────────────────────────────────────────────────── */\n\n@media (max-width: 900px) {\n  .e-desktop-root .e-view-body { padding: 14px 12px 24px; }}\n/* The phone layout (the frame under 600 px): top bar, menu behind the burger, bottom bar. */\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-app-top { display: none; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-mobile-top { display: flex; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-app-drawer {\n  display: flex;\n  position: absolute;\n  left: 0; top: 0; bottom: 0;\n  z-index: 140;     /* above full-page chat (120): the chat's ☰ opens it */\n  width: min(85%, 16rem);\n  transform: translateX(-105%);\n  transition: transform 0.2s ease;\n  background: var(--theme-background);\n  border-right: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n}\n.e-desktop-root .e-app-shell[data-nav=\"phone\"].is-nav-open .e-app-drawer { transform: translateX(0); }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"].is-nav-open .e-app-backdrop {\n  display: block;\n  position: absolute;\n  inset: 0;\n  z-index: 130;\n  background: rgba(0,0,0,0.55);\n  border: 0;\n  padding: 0;\n  cursor: pointer;\n}\n\n/* Narrow screens: SidebarLayout itself (kit module CSS) turns rail-beside-detail\n   into list-then-detail with a back control — see ui/kit/SidebarLayout.tsx. */\n\n@media (min-width: 901px) {\n  .e-desktop-root .e-hero-stats { grid-template-columns: repeat(4, 1fr); }}\n\n/* P121: unread count on a conversation or on Activity. */\n.e-desktop-root .e-unread-count {\n  font-size: 11px;\n  font-weight: 600;\n  padding: 0 6px;\n  border-radius: 8px;\n  background: var(--theme-focused-foreground, #3c3);\n  color: var(--theme-background, #000);\n}\n\n/* P123: view-as switcher (local relays only). */\n.e-desktop-root .e-viewer-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }\n.e-desktop-root .e-viewer-switch select {\n  font: inherit; font-size: 12px; padding: 2px 6px;\n  background: var(--theme-background, transparent); color: inherit;\n  border: 1px solid var(--theme-border, rgba(128,128,128,0.4)); border-radius: 4px;\n}\n/* A phone (the switcher sits in the menu): under 16px, iOS zooms the page when the select takes focus. */\n@media (max-width: 900px) {\n  .e-desktop-root .e-viewer-switch select { font-size: 16px; min-height: 40px; }}\n\n/* P124: inbox / sent / all above the conversation list. */\n.e-desktop-root .e-messages-boxes { padding: 8px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(128,128,128,0.12)); }\n\n/* P171: the Docs view. */\n.e-desktop-root .e-docs-rail { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; }\n.e-desktop-root .e-docs-search { width: 100%; margin: 0 0 6px 0; padding: 6px 8px; font: inherit; background: transparent;\n  color: inherit; border: 1px solid currentColor; opacity: 0.8; }\n.e-desktop-root .e-docs-rail-item { display: flex; flex-direction: column; gap: 2px; text-align: left; }\n.e-desktop-root .e-doc { overflow-y: auto; max-width: 92ch; padding: 8px 20px 40px 20px; line-height: 1.55; }\n.e-desktop-root .e-doc .e-doc-h { margin: 1.4em 0 0.5em 0; line-height: 1.25; scroll-margin-top: 8px; }\n.e-desktop-root .e-doc p, .e-desktop-root .e-doc .e-doc-list, .e-desktop-root .e-doc .e-doc-quote { margin: 0.6em 0; }\n.e-desktop-root .e-doc .e-doc-list { padding-left: 1.6em; }\n.e-desktop-root .e-doc code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 0 0.25em;\n  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); }\n.e-desktop-root .e-doc .e-doc-code { overflow-x: auto; padding: 10px 12px; margin: 0.8em 0;\n  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n.e-desktop-root .e-doc .e-doc-code code { border: 0; padding: 0; }\n.e-desktop-root .e-doc .e-doc-table-wrap { overflow-x: auto; margin: 0.8em 0; }\n.e-desktop-root .e-doc .e-doc-table { border-collapse: collapse; font-size: 0.94em; }\n.e-desktop-root .e-doc .e-doc-table th, .e-desktop-root .e-doc .e-doc-table td { text-align: left; vertical-align: top; padding: 4px 10px;\n  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n.e-desktop-root .e-doc .e-doc-quote { padding-left: 12px; border-left: 3px solid color-mix(in srgb, currentColor 35%, transparent); }\n.e-desktop-root .e-doc .e-doc-link { text-decoration: underline; cursor: pointer; }\n.e-desktop-root .e-doc .e-doc-path { font-family: var(--font-family-mono, monospace); font-size: 0.92em; opacity: 0.8; }\n\n/* P178: the Settings view (read-only), laid out like Hermes's config page: sections of rows, the\n   label and its plain words on the left, the value drawn as Hermes's form would on the right (never a\n   control), and where to change it underneath. Tokens only, so every theme and tint carries it. */\n.e-desktop-root .e-settings { overflow-y: auto; max-width: 110ch; min-width: 0; padding: 8px 20px 40px 20px;\n  --e-settings-rule: var(--e-rule, color-mix(in srgb, currentColor 18%, transparent)); }\n.e-desktop-root .e-settings-hint { margin: 4px 0 0; font-size: 0.9em; }\n.e-desktop-root .e-settings-intro { margin: 8px 0 4px; padding: 8px 12px; font-size: 0.9em;\n  border-left: 3px solid var(--theme-focused-foreground);\n  background: var(--e-accent-wash, color-mix(in srgb, currentColor 6%, transparent)); }\n.e-desktop-root .e-settings-heading { font-size: 1.2em; margin: 16px 0 0; overflow-wrap: anywhere; }\n.e-desktop-root .e-settings-group { margin: 0 0 6px 0; }\n.e-desktop-root .e-settings-title { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;\n  margin: 18px 0 6px; opacity: 0.8; }\n.e-desktop-root .e-settings-card { border: 1px solid var(--e-settings-rule); }\n.e-desktop-root .e-setting { padding: 10px 14px; border-top: 1px solid var(--e-settings-rule);\n  display: flex; flex-direction: column; gap: 6px; min-width: 0; }\n.e-desktop-root .e-setting:first-child { border-top: 0; }\n.e-desktop-root .e-setting-warn { box-shadow: inset 3px 0 0 var(--theme-focused-foreground); }\n.e-desktop-root .e-setting-danger { box-shadow: inset 3px 0 0 currentColor; }\n.e-desktop-root .e-setting-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto); gap: 4px 16px; align-items: start; }\n.e-desktop-root .e-setting-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }\n.e-desktop-root .e-setting-label { font-weight: 600; overflow-wrap: anywhere; }\n.e-desktop-root .e-setting-mark { display: inline-block; min-width: 1.1em; margin-right: 4px; font-weight: 700;\n  color: var(--theme-focused-foreground); }\n.e-desktop-root .e-setting-about { font-size: 0.88em; opacity: 0.75; }\n.e-desktop-root .e-setting-control { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end;\n  max-width: 48ch; min-width: 0; }\n.e-desktop-root .e-setting-value, .e-desktop-root .e-setting-number, .e-desktop-root .e-setting-list { font-family: var(--font-family-mono, monospace);\n  font-size: 0.9em; overflow-wrap: anywhere; text-align: right; }\n.e-desktop-root .e-setting-number { font-variant-numeric: tabular-nums; font-weight: 600; }\n.e-desktop-root .e-setting-tag { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 1px 6px;\n  border: 1px dashed color-mix(in srgb, currentColor 45%, transparent); }\n/* Read-only values are plain text: no border, fill, hover or pointer, so nothing looks pressable. */\n.e-desktop-root .e-setting-plain { font-size: 0.9em; font-weight: 600; cursor: default; opacity: 0.7; }\n.e-desktop-root .e-setting-plain.is-on { opacity: 1; }\n.e-desktop-root .e-setting-choices { display: inline; text-align: right; cursor: default; }\n.e-desktop-root .e-setting-rec { font-weight: 400; font-size: 0.82em; }\n/* Where to change it: Hermes's own page, the command, and who may run it. */\n.e-desktop-root .e-setting-change { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 0.88em; min-width: 0; }\n.e-desktop-root .e-setting-hermes { font: inherit; color: var(--theme-focused-foreground); background: transparent; cursor: pointer;\n  border: 1px solid currentColor; padding: 1px 8px; text-decoration: none; white-space: nowrap; }\n.e-desktop-root .e-setting-hermes:hover,\n.e-desktop-root .e-setting-hermes:focus-visible { background: color-mix(in srgb, var(--theme-focused-foreground) 14%, transparent); outline: none; }\n.e-desktop-root .e-setting-hermes-text { opacity: 0.85; }\n.e-desktop-root .e-setting-env { font-family: var(--font-family-mono, monospace); font-size: 0.85em; opacity: 0.7; overflow-wrap: anywhere; }\n.e-desktop-root .e-setting-cmd { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }\n.e-desktop-root .e-setting-cmd code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 1px 6px;\n  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); overflow-wrap: anywhere; }\n.e-desktop-root .e-setting-copy { font: inherit; font-size: 0.85em; padding: 1px 8px; background: transparent; color: inherit;\n  border: 1px solid color-mix(in srgb, currentColor 35%, transparent); cursor: pointer; }\n.e-desktop-root .e-setting-note { flex-basis: 100%; opacity: 0.75; }\n@media (max-width: 640px) {\n  .e-desktop-root .e-settings { padding: 4px 12px 32px; }\n  .e-desktop-root .e-setting { padding: 10px; }\n  .e-desktop-root .e-setting-main { grid-template-columns: minmax(0, 1fr); }\n  .e-desktop-root .e-setting-control { justify-content: flex-start; max-width: none; }\n  .e-desktop-root .e-setting-value, .e-desktop-root .e-setting-number, .e-desktop-root .e-setting-list { text-align: left; }\n  .e-desktop-root .e-setting-choices { justify-content: flex-start; }\n}\n\n/* P281: the relay's transparency log and this agent's own check of it, one compact block (Trust & Safety). */\n.e-desktop-root .e-relay-log { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-top: 10px; padding-top: 8px;\n  border-top: 1px solid var(--e-rule, color-mix(in srgb, currentColor 18%, transparent)); font-size: 0.82rem; min-width: 0; }\n.e-desktop-root .e-relay-log__name { font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-size: 0.72rem; }\n.e-desktop-root .e-relay-log__facts { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }\n.e-desktop-root .e-relay-log.is-off .e-relay-log__facts { opacity: 0.7; }\n.e-desktop-root .e-relay-log__check { overflow-wrap: anywhere; }\n.e-desktop-root .e-relay-log__check.is-ok { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-relay-log__check.is-none, .e-desktop-root .e-relay-log__check.is-info { opacity: 0.8; }\n.e-desktop-root .e-relay-log__check.is-warn { font-weight: 700; padding: 1px 6px; border: 1px solid currentColor; }\n.e-desktop-root .e-relay-log__about { flex-basis: 100%; font-size: 0.72rem; opacity: 0.7; }\n\n/* P179: the relay operator's Relay view. */\n.e-desktop-root .e-relay { overflow-y: auto; max-width: 110ch; padding: 8px 20px 40px 20px; }\n.e-desktop-root .e-relay h3 { font-size: 1.05em; margin: 18px 0 8px 0; }\n.e-desktop-root .e-relay-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }\n.e-desktop-root .e-relay-tile { padding: 10px 12px; border: 1px solid color-mix(in srgb, currentColor 18%, transparent);\n  display: flex; flex-direction: column; gap: 2px; }\n.e-desktop-root .e-relay-tile-value { font-size: 1.6em; font-variant-numeric: tabular-nums; line-height: 1.2; }\n.e-desktop-root .e-relay-tile-sub { font-size: 0.85em; }\n.e-desktop-root .e-relay-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }\n.e-desktop-root .e-relay-charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }\n.e-desktop-root .e-relay-chart { margin: 0; }\n.e-desktop-root .e-relay-chart figcaption { margin-bottom: 4px; }\n.e-desktop-root .e-relay-chart svg { width: 100%; height: 64px; display: block; }\n.e-desktop-root .e-relay-bar { fill: currentColor; opacity: 0.75; }\n.e-desktop-root .e-relay-chart g:hover .e-relay-bar { opacity: 1; }\n.e-desktop-root .e-relay-axis { stroke: currentColor; opacity: 0.25; stroke-width: 1; }\n.e-desktop-root .e-relay-table { border-collapse: collapse; font-size: 0.94em; margin: 4px 0 10px 0; font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-relay-table th, .e-desktop-root .e-relay-table td { text-align: left; padding: 4px 10px;\n  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n\n/* Rooms › \"Rooms you can join\": folded above the chat until opened. */\n.e-desktop-root .e-joinable { margin: 0 0 10px; border: 1px solid var(--theme-border-subdued, currentColor); padding: 6px 10px; }\n.e-desktop-root .e-joinable > summary { cursor: pointer; font-size: 0.85rem; opacity: 0.8; }\n.e-desktop-root .e-joinable[open] > summary { margin-bottom: 6px; }\n/* You › Stats: the agent's own figures. Bars are decoration: every value is also text. */\n.e-desktop-root .e-stats-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }\n.e-desktop-root .e-stats-num { font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-stats-list { list-style: none; margin: 4px 0 8px 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }\n.e-desktop-root .e-stats-bars { list-style: none; margin: 4px 0 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }\n.e-desktop-root .e-stats-bars__row { display: grid; grid-template-columns: minmax(12ch, 16rem) minmax(60px, 1fr) auto; gap: 10px;\n  align-items: center; }\n.e-desktop-root .e-stats-bars__track { height: 8px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n.e-desktop-root .e-stats-bars__fill { display: block; height: 100%; background: var(--theme-focused-foreground, currentColor); }\n/* the kit draws a marker before every list item; in the grid it became a fourth cell and shoved the row apart */\n.e-desktop-root .e-stats-bars__row, .e-desktop-root .e-stats-list li { padding-left: 0; text-indent: 0; }\n.e-desktop-root .e-stats-bars__row::before, .e-desktop-root .e-stats-list li::before { content: none; display: none; }\n.e-desktop-root .e-stats-bars__label { min-width: 0; overflow-wrap: anywhere; }\n.e-desktop-root .e-stats-money-note, .e-desktop-root .e-stats-missing { display: block; }\n.e-desktop-root .e-stats .e-faint, .e-desktop-root .e-stats-toolbar .e-faint { font-size: 13px; line-height: 1.5; }\n.e-desktop-root .e-stats-table td, .e-desktop-root .e-stats-table th { white-space: nowrap; }\n@media (max-width: 700px) {\n  .e-desktop-root .e-stats-bars__row { grid-template-columns: 1fr auto; }\n  .e-desktop-root .e-stats-bars__track { grid-column: 1 / -1; grid-row: 2; }}\n\n/* ─── 24. RETROMOD ───────────────────────────────────────────────────────────\n   The terminal look, kept and made consistent: monospace, hairline boxes, the\n   theme's accent as the one highlight. Modern where it helps reading and\n   touching: smooth type, clear focus, one heading per section, 44px targets on\n   a phone, list-then-detail split views, tables that scroll in their own box.\n   ──────────────────────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-dashboard-shell {\n  -webkit-font-smoothing: antialiased;\n  -moz-osx-font-smoothing: grayscale;\n  text-rendering: optimizeLegibility;\n  --e-rule: var(--theme-border-subdued, rgba(128, 128, 128, 0.22));\n  --e-accent-wash: color-mix(in srgb, var(--theme-focused-foreground) 9%, transparent);\n}\n\n/* One focus ring, everywhere — keyboard users always see where they are. */\n.e-desktop-root .e-dashboard-shell :focus-visible,\n.e-desktop-root .e-dashboard-shell .e-rail-item:focus-visible,\n.e-desktop-root .e-dashboard-shell .e-theme-circle:focus-visible {\n  outline: 2px solid var(--theme-focused-foreground);\n  outline-offset: 2px;\n}\n.e-desktop-root .e-dashboard-shell .e-rail-item:focus-visible { outline-offset: -2px; }\n/* The page title takes focus after a section change (read out); the ring shows only for a keyboard move. */\n.e-desktop-root .e-dashboard-shell .e-page-head__title:focus:not([data-by-key]),\n.e-desktop-root .e-dashboard-shell .e-page-head__title:focus-visible:not([data-by-key]) { outline: none; }\n\n/* Section heading: ▍Name, then the plain-words line on what it shows. */\n.e-desktop-root .e-page-head {\n  padding: 14px 24px 12px;\n  border-bottom: 1px solid var(--e-rule);\n  max-width: min(1440px, 100%);\n  margin: 0 auto;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-page-head__title {\n  margin: 0;\n  display: flex;\n  align-items: baseline;\n  gap: 1ch;\n  font: inherit;\n  font-size: 1.05rem;\n  font-weight: 600;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n  line-height: 1.3;\n}\n.e-desktop-root .e-page-head__blurb {\n  margin: 4px 0 0;\n  font-size: 0.82rem;\n  line-height: 1.5;\n  opacity: 0.62;\n  max-width: 80ch;\n}\n\n/* Sub-heading inside a view: CAPS label with a box-drawing rule after it. */\n.e-desktop-root .e-subhead {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  margin: 18px 0 6px;\n  font-size: 0.72rem;\n  letter-spacing: 0.12em;\n  text-transform: uppercase;\n  opacity: 0.7;\n}\n.e-desktop-root .e-subhead::after {\n  content: \"\";\n  flex: 1;\n  height: 1px;\n  background: var(--e-rule);\n}\n.e-desktop-root .e-subhead:first-child { margin-top: 4px; }\n.e-desktop-root .e-note { font-size: 0.8rem; line-height: 1.5; opacity: 0.6; margin: 2px 0 0; }\n\n.e-desktop-root .e-section-tabs--horizontal { align-items: center; }\n.e-desktop-root .e-section-tab.is-active { background: var(--e-accent-wash) !important; }\n\n/* The menu: the six destinations, each with its sections named under it. */\n.e-desktop-root .e-section-tabs--drawer .e-section-tab {\n  min-height: 52px;\n  display: grid;\n  grid-template-columns: 1fr auto;\n  grid-template-areas: \"label key\" \"sub key\";\n  align-items: center;\n  column-gap: 10px;\n  row-gap: 0;\n  text-align: left;\n}\n.e-desktop-root .e-section-tabs--drawer .e-section-tab__label { grid-area: label; font-size: 0.95rem; }\n.e-desktop-root .e-section-tabs--drawer .e-section-tab__key { grid-area: key; }\n.e-desktop-root .e-section-tab__sub {\n  grid-area: sub;\n  font-size: 0.72rem;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n  white-space: normal;\n}\n\n/* The sections inside the current destination: one strip under the header, every width. */\n/* The strip may scroll (it is the page's sections, not the main navigation), but never silently:\n   a fade at each cut edge and a \"n ▾\" button listing the tabs that are cut off. */\n.e-desktop-root .e-subnav-wrap {\n  flex: none;\n  position: relative;\n  display: flex;\n  align-items: stretch;\n  border-bottom: 1px solid var(--e-rule);\n  background: var(--theme-background);\n}\n.e-desktop-root .e-subnav-box { position: relative; flex: 1; min-width: 0; display: flex; }\n.e-desktop-root .e-subnav {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  align-items: stretch;\n  gap: 2px;\n  padding: 0 16px;\n  min-height: 40px;\n  overflow-x: auto;\n  scrollbar-width: none;\n  background: var(--theme-background);\n}\n.e-desktop-root .e-subnav::-webkit-scrollbar { display: none; }\n.e-desktop-root .e-subnav-fade {\n  position: absolute;\n  top: 0; bottom: 0;\n  width: 28px;\n  pointer-events: none;\n  visibility: hidden;\n}\n.e-desktop-root .e-subnav-fade--left { left: 0; background: linear-gradient(to right, var(--theme-background), transparent); }\n.e-desktop-root .e-subnav-fade--right { right: 0; background: linear-gradient(to left, var(--theme-background), transparent); }\n.e-desktop-root .e-subnav-box.has-left .e-subnav-fade--left,\n.e-desktop-root .e-subnav-box.has-right .e-subnav-fade--right { visibility: visible; }\n.e-desktop-root .e-subnav-more {\n  flex: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 44px;\n  padding: 0 10px;\n  border: 0;\n  border-left: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.78rem;\n  cursor: pointer;\n}\n.e-desktop-root .e-subnav-more:hover, .e-desktop-root .e-subnav-more[aria-expanded=\"true\"] { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-subnav-more:focus-visible, .e-desktop-root .e-subnav-menu__item:focus-visible { outline: 2px solid var(--theme-focused-foreground); outline-offset: -2px; }\n.e-desktop-root .e-subnav-menu {\n  position: absolute;\n  top: 100%;\n  right: 0;\n  z-index: 50;\n  min-width: 11rem;\n  max-width: 100%;\n  display: flex;\n  flex-direction: column;\n  border: 1px solid var(--theme-border, var(--e-rule));\n  background: var(--theme-background);\n  box-shadow: 0 6px 18px rgba(0,0,0,0.25);\n}\n.e-desktop-root .e-subnav-menu__item {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  min-height: 40px;\n  padding: 0 14px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.82rem;\n  text-align: left;\n  cursor: pointer;\n}\n.e-desktop-root .e-subnav-menu__item:last-child { border-bottom: 0; }\n.e-desktop-root .e-subnav-menu__item:hover, .e-desktop-root .e-subnav-menu__item.is-active { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-subnav__dest {\n  display: inline-flex;\n  align-items: center;\n  padding-right: 10px;\n  margin-right: 4px;\n  border-right: 1px solid var(--e-rule);\n  font-size: 0.72rem;\n  letter-spacing: 0.12em;\n  text-transform: uppercase;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__tab {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  min-height: 40px;\n  padding: 0 12px;\n  border: 0;\n  border-bottom: 2px solid transparent;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.82rem;\n  cursor: pointer;\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__tab:hover { border-bottom-color: var(--theme-border); }\n/* Active is marked by the rule under the tab, never by weight: bold would widen the tab and move its neighbours. */\n.e-desktop-root .e-subnav__tab.is-active { border-bottom-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-subnav__tab.is-off { opacity: 0.7; font-style: italic; }\n.e-desktop-root .e-subnav__tab.is-off-relay::after {\n  content: \"off on this relay\";\n  margin-left: 6px;\n  padding: 0 5px;\n  border: 1px solid currentColor;\n  border-radius: 999px;\n  font-size: 0.6rem;\n  font-style: normal;\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__note {\n  display: inline-flex;\n  align-items: center;\n  padding: 0 4px;\n  font-size: 0.78rem;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__tab:focus-visible, .e-desktop-root .e-section-tab:focus-visible, .e-desktop-root .e-header-link:focus-visible, .e-desktop-root .e-bottom-bar__tab:focus-visible {\n  outline: 2px solid var(--theme-focused-foreground);\n  outline-offset: -2px;\n}\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-subnav { padding: 0 8px; min-height: 44px; }\n/* Five tabs (the Arena's) fit a 390px phone; a longer row still scrolls, with the fade at its edge. */\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-subnav { gap: 0; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-subnav__tab { min-height: 44px; padding: 0 10px; }\n\n/* Phone: the five places as a bar at the foot, under the view. */\n.e-desktop-root .e-bottom-bar { display: none; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-bottom-bar {\n  flex: none;\n  display: grid;\n  grid-template-columns: repeat(5, minmax(0, 1fr));\n  border-top: 1px solid var(--e-rule, var(--theme-border-subdued));\n  background: var(--theme-background);\n  padding-bottom: env(safe-area-inset-bottom, 0);\n}\n.e-desktop-root .e-bottom-bar__tab {\n  position: relative;\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  gap: 2px;\n  min-height: 52px;\n  padding: 4px 2px;\n  border: 0;\n  border-top: 2px solid transparent;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.7rem;\n  cursor: pointer;\n  min-width: 0;\n}\n.e-desktop-root .e-bottom-bar__tab.is-active { border-top-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-bottom-bar__label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.72rem; letter-spacing: 0; }\n.e-desktop-root .e-bottom-bar__tab .e-nav-badge { top: 4px; right: 22%; min-width: 8px; height: 8px; font-size: 0; padding: 0; }\n/* The page scrolls under the bar's height too, so its last row is never behind the bar (390px, the game\n   panel's move list): the bar's tab is 52px plus its 2px accent and the bar's 1px rule, and the safe area. */\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-view { padding-bottom: calc(55px + env(safe-area-inset-bottom, 0px)); }\n.e-desktop-root .e-header-links--drawer { padding: 8px 0 12px; }\n\n/* The one-line strip of what the agent is doing now, under the sub-row. */\n.e-desktop-root .e-now-strip {\n  flex: none;\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  min-height: 32px;\n  padding: 2px 16px;\n  border-bottom: 1px solid var(--e-rule, var(--theme-border-subdued));\n  font-size: 0.78rem;\n  min-width: 0;\n}\n.e-desktop-root .e-now-strip__main {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  background: transparent;\n  border: 0;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  padding: 4px 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  cursor: pointer;\n}\n.e-desktop-root .e-now-strip__main:disabled { cursor: default; }\n.e-desktop-root .e-now-strip__live { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-now-strip__toggle { background: transparent; border: 0; color: inherit; font: inherit; cursor: pointer; opacity: 0.7; padding: 4px 6px; }\n.e-desktop-root .e-now-strip.is-collapsed { min-height: 22px; justify-content: flex-end; }\n/* The whole menu scrolls as one, so the foot never covers the last sections. */\n.e-desktop-root .e-section-tabs--drawer { flex: none; overflow: visible; }\n.e-desktop-root .e-mobile-drawer { overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; width: 100%; }\n.e-desktop-root .e-mobile-drawer__head {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding-bottom: 8px;\n  border-bottom: 1px solid var(--e-rule);\n}\n.e-desktop-root .e-mobile-drawer__foot {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: 12px;\n  padding-top: 12px;\n  border-top: 1px solid var(--e-rule);\n}\n.e-desktop-root .e-icon-button,\n.e-desktop-root .e-menu-button {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  min-width: 44px;\n  min-height: 44px;\n  padding: 0 10px;\n  border: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 1.1rem;\n  cursor: pointer;\n}\n.e-desktop-root .e-icon-button:hover,\n.e-desktop-root .e-menu-button:hover { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-menu-button .e-nav-badge { margin-left: 0; }\n\n/* Phone top bar: one row — menu, where you are, relay state. */\n.e-desktop-root .e-mobile-top { flex-wrap: nowrap !important; gap: 10px; padding: 6px 12px; }\n/* Brand above, the section you are in below it — both always fit. */\n.e-desktop-root .e-mobile-top__where {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n  justify-content: center;\n  gap: 1px;\n  overflow: hidden;\n  white-space: nowrap;\n}\n.e-desktop-root .e-mobile-top__where .e-brand-title { font-size: 0.8rem !important; line-height: 1.2; opacity: 0.75; }\n.e-desktop-root .e-mobile-top__section {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  font-size: 0.85rem;\n  line-height: 1.25;\n  letter-spacing: 0.08em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-mobile-top__section::before { content: \"▸ \"; opacity: 0.6; }\n\n/* The brand: the word, decoded (LookChrome.BrandTitle); a fixed width so the\n   header never shifts while glyphs change. */\n.e-desktop-root .e-brand { display: inline-block; min-width: 7.2ch; font-variant-numeric: tabular-nums; }\n/* The brand's star: a 7 x 7 pixel drawing (ui/PixelStar.tsx), as tall as the pixel face's capitals and standing on their baseline. */\n.e-desktop-root .e-pixel-star { display: inline-block; width: 0.66em; height: 0.66em; vertical-align: baseline; flex: none; }\n.e-desktop-root .e-brand__star { margin-left: 0.45em; }\n.e-desktop-root .e-mobile-top .e-relay-status__host { display: none; }\n.e-desktop-root .e-mobile-top .e-relay-status__chips { gap: 6px; }\n.e-desktop-root .e-mobile-top .e-status-chip { padding: 4px 6px; }\n/* The relay's name gives way to its dot on a phone (the title and screen readers still have it): the page name needs the room. */\n.e-desktop-root .e-mobile-top .e-status-chip__label--relay {\n  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;\n}\n\n/* A label above a run of rail rows (\"Which game\", \"Character sheets\"). */\n.e-desktop-root .e-rail-label {\n  padding: 12px 12px 4px;\n  font-size: 0.66rem;\n  letter-spacing: 0.16em;\n  text-transform: uppercase;\n  opacity: 0.5;\n}\n\n/* Rail rows: room to breathe, the selected one washed in the accent. */\n.e-desktop-root .e-rail-item { padding: 8px 10px 8px 12px; min-height: 40px; }\n.e-desktop-root .e-rail-item.is-selected { background: var(--e-accent-wash); }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] {\n  border-right: 1px solid var(--e-rule);\n  box-sizing: border-box;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main { padding: 12px 16px 24px 20px; }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main:has(.e-chess-main) { padding-left: 8px;}\n\n/* What-you-are-looking-at box on the Overview. */\n.e-desktop-root .e-intro {\n  border: 1px solid var(--e-rule);\n  border-left: 3px solid var(--theme-focused-foreground);\n  padding: 12px 16px 14px;\n  margin-bottom: 16px;\n  line-height: 1.55;\n}\n.e-desktop-root .e-intro__title {\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  opacity: 0.6;\n  margin: 0 0 6px;\n}\n.e-desktop-root .e-intro__text { margin: 0; font-size: 0.9rem; max-width: 78ch; }\n.e-desktop-root .e-intro__go { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }\n.e-desktop-root .e-intro__link {\n  flex: 1 1 13rem;\n  display: inline-flex;\n  flex-direction: column;\n  align-items: flex-start;\n  gap: 2px;\n  min-height: 44px;\n  padding: 6px 12px;\n  border: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n.e-desktop-root .e-intro__link:hover { border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-intro__link-label { color: var(--theme-focused-foreground); font-size: 0.85rem; }\n.e-desktop-root .e-intro__link-hint { font-size: 0.72rem; opacity: 0.6; }\n\n/* The toolbar line above a split view is context, not content — keep it small. */\n.e-desktop-root .e-view-body--flush .e-view-toolbar,\n.e-desktop-root .e-view-body--flush .e-view-toolbar p { font-size: 0.78rem; line-height: 1.45; }\n\n/* Leaderboard-style tables size to their content instead of spreading three\n   short columns across a wide screen. */\n.e-desktop-root .e-table.e-board { width: auto; min-width: min(100%, 34rem); }\n\n/* Replay status line (ply, started, audit, verify) wraps instead of running off the edge. */\n.e-desktop-root .e-chess-replay-status { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }\n\n/* ─── 25. PHONE (≤ 700px) ───────────────────────────────────────────────── */\n\n@media (max-width: 700px) {\n  .e-desktop-root .e-page-head { padding: 12px 16px 10px; }\n  .e-desktop-root .e-page-head__blurb { font-size: 0.78rem; }\n  .e-desktop-root .e-view-toolbar { justify-content: flex-start; }\n  .e-desktop-root .e-view-body { padding: 12px 16px 24px; }\n  .e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] { border-right: 0; }\n  .e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main { padding: 12px 16px 24px; }\n\n  /* Tables scroll inside their own box; short cells stay on one line. */\n  .e-desktop-root .e-table,\n  .e-desktop-root .e-relay-table,\n  .e-desktop-root .e-compact-table table {\n    display: block;\n    max-width: 100%;\n    overflow-x: auto;\n    -webkit-overflow-scrolling: touch;\n  }\n  .e-desktop-root .e-table td,\n  .e-desktop-root .e-relay-table td,\n  .e-desktop-root .e-relay-table th { white-space: nowrap; }\n\n  /* Comfortable targets. */\n  .e-desktop-root .e-rail-item { min-height: 48px; padding: 10px 16px; }\n  /* Filters (data-keep-list) become a row of chips, so the list itself is near the top. */\n  .e-desktop-root .e-rail-item[data-keep-list] {\n    display: inline-flex;\n    align-items: center;\n    width: auto;\n    min-height: 40px;\n    margin: 4px 0 4px 8px;\n    padding: 6px 12px !important;\n    border: 1px solid var(--e-rule) !important;\n  }\n  .e-desktop-root .e-rail-item[data-keep-list].is-selected { border-color: var(--theme-focused-foreground) !important; }\n  .e-desktop-root .e-segment-tab { min-height: 40px; padding: 6px 12px; }\n  .e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"] { min-height: 40px; }\n  .e-desktop-root .e-search-row [class*=\"Input_displayed\"] { min-height: 44px; }\n  .e-desktop-root .e-theme-duo { padding: 12px 14px; }\n  .e-desktop-root .e-theme-circle { width: 20px; height: 20px; }\n  .e-desktop-root .e-theme-duo__rule { margin: 0 12px; }\n  .e-desktop-root .e-viewer-switch select { min-height: 40px; font-size: 14px; }\n  .e-desktop-root .e-meta-grid__row { grid-template-columns: 6rem 1fr; }}\n\n@media (pointer: coarse) {\n  .e-desktop-root .e-section-tab { min-height: 44px; }\n  .e-desktop-root .e-rail-item { min-height: 48px; }\n  .e-desktop-root .e-segment-tab { min-height: 40px; }}\n\n/* ─── 26. SET PLAYS (blotto, ⅔, lowest unique) ─────────────────────────── */\n\n.e-desktop-root .e-setplay { padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }\n.e-desktop-root .e-setplay__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }\n.e-desktop-root .e-setplay__game {\n  margin: 0;\n  font-size: 0.78rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-setplay__players { margin: 2px 0 0; font-size: 1.05rem; }\n.e-desktop-root .e-setplay__status {\n  flex: none;\n  font-size: 0.68rem;\n  letter-spacing: 0.12em;\n  text-transform: uppercase;\n  padding: 3px 8px;\n  border: 1px solid var(--e-rule);\n  opacity: 0.75;\n}\n.e-desktop-root .e-setplay__status.is-live {\n  opacity: 1;\n  border-color: var(--theme-focused-foreground);\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-setplay__status.is-live::before { content: \"● \"; }\n.e-desktop-root .e-setplay__verdict { margin: 0; font-size: 0.95rem; }\n.e-desktop-root .e-setplay__verdict.is-win { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-setplay__why { color: var(--theme-text); opacity: 0.6; font-size: 0.82rem; font-weight: 400; }\n.e-desktop-root .e-setplay__wait { margin: 0; font-size: 0.82rem; line-height: 1.5; opacity: 0.7; max-width: 72ch; }\n.e-desktop-root .e-setplay__meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding-top: 8px; border-top: 1px solid var(--e-rule); }\n.e-desktop-root .e-setplay__badges { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; }\n.e-desktop-root .e-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n\n/* commit → reveal → winner */\n.e-desktop-root .e-phase-strip { list-style: none; display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; font-size: 0.78rem; }\n.e-desktop-root .e-phase-strip__step {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  padding: 4px 10px 4px 0;\n  opacity: 0.4;\n  white-space: nowrap;\n}\n.e-desktop-root .e-phase-strip__step + .e-phase-strip__step::before {\n  content: \"\";\n  width: clamp(12px, 4vw, 56px);\n  height: 1px;\n  margin-right: 10px;\n  background: currentColor;\n  opacity: 0.6;\n}\n.e-desktop-root .e-phase-strip__step.is-done { opacity: 0.75; }\n.e-desktop-root .e-phase-strip__step.is-now { opacity: 1; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-phase-strip__n {\n  display: inline-grid;\n  place-items: center;\n  width: 1.7em;\n  height: 1.7em;\n  border: 1px solid currentColor;\n  border-radius: 50%;\n  font-size: 0.72rem;\n}\n.e-desktop-root .e-phase-strip__step.is-now .e-phase-strip__n {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  border-color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-phase-strip__who { font-weight: 600; }\n\n/* Seats (pick games) */\n.e-desktop-root .e-seats { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--e-rule); }\n.e-desktop-root .e-seat {\n  display: grid;\n  grid-template-columns: minmax(8ch, 1fr) minmax(12ch, 1.4fr) 5ch;\n  gap: 8px;\n  align-items: baseline;\n  padding: 7px 8px;\n  border-bottom: 1px solid var(--e-rule);\n  font-size: 0.85rem;\n}\n.e-desktop-root .e-seat__state { opacity: 0.65; font-size: 0.78rem; }\n.e-desktop-root .e-seat__move { text-align: right; font-size: 1rem; }\n.e-desktop-root .e-seat.is-to_commit { opacity: 0.55; }\n.e-desktop-root .e-seat.is-out { opacity: 0.45; text-decoration: line-through; }\n.e-desktop-root .e-seat.is-winner {\n  background: color-mix(in srgb, var(--theme-focused-foreground) 16%, transparent);\n  box-shadow: inset 3px 0 0 var(--theme-focused-foreground);\n}\n.e-desktop-root .e-seat.is-winner .e-seat__name,\n.e-desktop-root .e-seat.is-winner .e-seat__move { color: var(--theme-focused-foreground); font-weight: 600; }\n\n/* Blotto: a row per player, a column per field */\n.e-desktop-root .e-blotto__rules, .e-desktop-root .e-lowest__rules, .e-desktop-root .e-twothirds__rules { margin: 0 0 8px; font-size: 0.75rem; line-height: 1.5; }\n.e-desktop-root .e-blotto__scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }\n.e-desktop-root .e-blotto__grid { border-collapse: collapse; font-size: 0.95rem; }\n.e-desktop-root .e-blotto__grid th, .e-desktop-root .e-blotto__grid td { padding: 8px 10px; border: 1px solid var(--e-rule); text-align: center; }\n.e-desktop-root .e-blotto__grid thead th { font-size: 0.68rem; letter-spacing: 0.1em; font-weight: 400; opacity: 0.6; border-top: 0; }\n.e-desktop-root .e-blotto__grid thead th:first-child { border-left: 0; }\n.e-desktop-root .e-blotto__grid tbody th { text-align: left; font-weight: 400; min-width: 12ch; border-left: 0; }\n.e-desktop-root .e-blotto__name { display: block; }\n.e-desktop-root .e-blotto__state { display: block; font-size: 0.68rem; opacity: 0.6; white-space: nowrap; }\n.e-desktop-root .e-blotto__grid td { min-width: 3.2ch; }\n.e-desktop-root .e-blotto__grid td.is-hidden { opacity: 0.4; }\n.e-desktop-root .e-blotto__grid td.is-won {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  font-weight: 700;\n}\n.e-desktop-root .e-blotto__grid tr.is-winner th { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-blotto__took { font-weight: 600; }\n.e-desktop-root .e-blotto__history { margin-top: 8px; font-size: 0.78rem; }\n.e-desktop-root .e-blotto__history summary { cursor: pointer; opacity: 0.7; }\n\n/* Guess ⅔: one number line */\n.e-desktop-root .e-numline {\n  --rows: 1;\n  position: relative;\n  margin: 28px 12px 4px;\n  height: calc(40px + var(--rows) * 30px);\n}\n.e-desktop-root .e-numline__axis { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--theme-text); opacity: 0.5; }\n.e-desktop-root .e-numline__tick { position: absolute; top: -6px; width: 1px; height: 14px; background: var(--theme-text); opacity: 0.45; }\n.e-desktop-root .e-numline__tick > span { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 0.68rem; }\n.e-desktop-root .e-numline__mark { position: absolute; top: -8px; bottom: 0; width: 0; border-left: 2px dashed var(--theme-text); opacity: 0.55; }\n.e-desktop-root .e-numline__mark > span { position: absolute; bottom: -2px; left: 5px; font-size: 0.7rem; white-space: nowrap; }\n/* The target (⅔ of the average) is always left of the average: label it on its left. */\n.e-desktop-root .e-numline__mark--target > span { left: auto; right: 5px; }\n.e-desktop-root .e-numline__mark--target.is-low > span { left: 5px; right: auto; bottom: 16px; }\n.e-desktop-root .e-numline__mark--target { border-left-color: var(--theme-focused-foreground); opacity: 1; }\n.e-desktop-root .e-numline__mark--target > span { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-numline__pick { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 1; }\n.e-desktop-root .e-numline__pin { width: 2px; height: calc(10px + var(--row, 0) * 30px); background: var(--theme-text); opacity: 0.6; }\n.e-desktop-root .e-numline__label { font-size: 0.75rem; white-space: nowrap; padding: 1px 4px; border: 1px solid var(--e-rule); background: var(--theme-background); }\n.e-desktop-root .e-numline__pick.is-winner .e-numline__pin { background: var(--theme-focused-foreground); opacity: 1; width: 3px; }\n.e-desktop-root .e-numline__pick.is-winner .e-numline__label {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  border-color: var(--theme-focused-foreground);\n  font-weight: 700;\n}\n\n/* Lowest unique: a box per number */\n.e-desktop-root .e-lowest__row { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr)); gap: 6px; margin: 0; padding: 0; }\n.e-desktop-root .e-lowest__cell {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  min-height: 4.6rem;\n  padding: 6px 8px;\n  border: 1px solid var(--e-rule);\n  font-size: 0.78rem;\n}\n.e-desktop-root .e-lowest__n { font-size: 1.05rem; }\n.e-desktop-root .e-lowest__cell.is-empty { opacity: 0.4; }\n.e-desktop-root .e-lowest__cell.is-taken .e-lowest__who { text-decoration: line-through; opacity: 0.6; }\n.e-desktop-root .e-lowest__cell.is-unique { border-color: var(--theme-text); }\n.e-desktop-root .e-lowest__tag { margin-top: auto; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.55; }\n.e-desktop-root .e-lowest__cell.is-winner {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  border-color: var(--theme-focused-foreground);\n  font-weight: 700;\n}\n.e-desktop-root .e-lowest__cell.is-winner .e-lowest__tag { opacity: 0.85; }\n\n/* Game rows in the Games rail */\n.e-desktop-root .e-game-row { display: flex; flex-direction: column; gap: 1px; min-width: 0; text-align: left; }\n.e-desktop-root .e-game-row__top { display: flex; justify-content: space-between; gap: 8px; }\n.e-desktop-root .e-game-row__kind { font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-game-row__phase { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; white-space: nowrap; }\n\n/* ─── 27. OVERVIEW: YOUR AGENT NOW ─────────────────────────────────────── */\n\n.e-desktop-root .e-now { border: 1px solid var(--e-rule); margin-bottom: 16px; }\n.e-desktop-root .e-now__head {\n  display: flex;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 8px 14px;\n  border-bottom: 1px solid var(--e-rule);\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n}\n.e-desktop-root .e-now__head > span:first-child { opacity: 0.6; }\n.e-desktop-root .e-now__row {\n  display: grid;\n  grid-template-columns: 11ch minmax(0, 1fr) auto;\n  gap: 2px 12px;\n  align-items: baseline;\n  width: 100%;\n  min-height: 44px;\n  padding: 9px 14px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.85rem;\n  text-align: left;\n  cursor: pointer;\n}\n.e-desktop-root .e-now__row:last-child { border-bottom: 0; }\n.e-desktop-root .e-now__row:hover { background: color-mix(in srgb, var(--theme-focused-foreground) 8%, transparent); }\n.e-desktop-root .e-now__row--static { cursor: default; }\n.e-desktop-root .e-now__row--static:hover { background: transparent; }\n.e-desktop-root .e-now__label { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55; }\n.e-desktop-root .e-now__go { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-now__sub { grid-column: 2 / 4; font-size: 0.75rem; opacity: 0.6; overflow-wrap: anywhere; }\n.e-desktop-root .e-now__live { color: var(--theme-focused-foreground); }\n/* On a phone the third cell (where it stands, \"open →\") drops under the text instead of squeezing it to one word a line. */\n@media (max-width: 520px) {\n  .e-desktop-root .e-now__row--stack { grid-template-columns: 9ch minmax(0, 1fr); }\n  .e-desktop-root .e-now__row--stack > .e-now__go { grid-column: 2; }\n}\n\n/* ─── 28. THEME / TINT CROSS-FADE ──────────────────────────────────────── */\n/* On only for the length of a theme or tint change (themeConfig.applyTheme),\n   so hovers and other transitions are untouched the rest of the time. A run\n   through the tints reads as one surface changing colour, not a flash. */\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-theme-anim,\n  .e-desktop-root .e-theme-anim *,\n  .e-desktop-root .e-theme-anim *::before,\n  .e-desktop-root .e-theme-anim *::after {\n    transition-property: color, background-color, border-color, outline-color, fill, stroke, box-shadow, text-decoration-color !important;\n    transition-duration: 0.35s !important;\n    transition-timing-function: ease-out !important;\n    transition-delay: 0s !important;\n  }}\n\n/* ─── 29. CAPTURE MODE (?capture=1, src/capture.ts) ────────────────────── */\n/* For filming: nothing moves between frames, so a tint switched on the beat\n   lands in one frame; the relay's host:port is not on screen. */\n.e-desktop-root .e-capture,\n.e-desktop-root .e-capture *,\n.e-desktop-root .e-capture *::before,\n.e-desktop-root .e-capture *::after {\n  transition: none !important;\n  animation: none !important;\n}\n.e-desktop-root .e-capture .e-capture-hide { display: none !important; }\n/* The capture frame (540 × 540 CSS px) is the phone layout; scale it so the\n   smallest text on screen (0.65rem / 11px labels) is at least 13 CSS px. */\n@media (max-width: 700px) {\n  .e-desktop-root .e-capture .e-app-shell { zoom: 1.25; height: calc(var(--e-frame-h, 100dvh) / 1.25); }}\n\n.e-desktop-root .e-quest-next { margin: 4px 0 10px; font-size: 0.85rem; line-height: 1.5; }\n.e-desktop-root .e-quest-next code { font-size: 0.78rem; overflow-wrap: anywhere; opacity: 0.8; }\n\n@media (max-width: 700px) {\n  /* On a detail screen, the list's own controls (search, counts, the toolbar\n     line) belong to the list: hide them so the detail starts at the top. */\n  .e-desktop-root .e-view-body:has([data-pane-shown=\"detail\"]) .e-view-toolbar,\n  .e-desktop-root .e-view-body__inner:has(> [data-pane-shown=\"detail\"]) > .e-search-row { display: none; }\n  /* Keep commit → reveal → winner on one line; the verdict line names the winner. */\n  .e-desktop-root .e-phase-strip { flex-wrap: nowrap; }\n  .e-desktop-root .e-phase-strip__step { padding-right: 6px; gap: 5px; }\n  .e-desktop-root .e-phase-strip__step + .e-phase-strip__step::before { width: 14px; margin-right: 6px; }\n  .e-desktop-root .e-phase-strip__who { display: none; }\n  .e-desktop-root .e-setplay { padding: 12px 16px 24px; }\n  .e-desktop-root .e-blotto__grid th, .e-desktop-root .e-blotto__grid td { padding: 8px 6px; }\n  .e-desktop-root .e-blotto__grid tbody th { min-width: 9ch; }}\n\n@media (prefers-reduced-motion: reduce) {\n  .e-desktop-root .e-dashboard-shell *,\n  .e-desktop-root .e-app-drawer { transition: none !important; animation: none !important; }}\n\n/* Calls (:v2 set plays): a forecast sealed with the first move — \"called · sealed\", then its percent. */\n.e-desktop-root .e-call-tag { margin-left: 8px; padding: 0 6px; font-size: 0.72rem; letter-spacing: 0.04em; white-space: nowrap;\n  border: 1px dashed var(--e-rule); opacity: 0.8; }\n.e-desktop-root .e-call-tag.is-revealed { border-style: solid; border-color: var(--theme-focused-foreground);\n  color: var(--theme-focused-foreground); opacity: 1; }\n/* Bargain: the offers table (blotto's grid, wider cells) and each hand, sealed until the end. */\n.e-desktop-root .e-bargain__offers td, .e-desktop-root .e-bargain__offers th { text-align: left; white-space: nowrap; font-size: 0.85rem; }\n.e-desktop-root .e-bargain__hand { grid-template-columns: minmax(8ch, 1fr) minmax(16ch, 3fr) 4ch; }\n\n/* Operator section: the operator's desk — cards and commands from the views it sits beside. */\n.e-desktop-root .e-op { display: flex; flex-direction: column; gap: 14px; }\n.e-desktop-root .e-op-list { display: flex; flex-direction: column; gap: 10px; }\n.e-desktop-root .e-op-cmds { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }\n.e-desktop-root .e-op .e-setting-cmd.e-op-cmd { padding-left: 0; }\n.e-desktop-root .e-op-cmd__label { min-width: 12ch; }\n.e-desktop-root .e-op-cmds__note { font-size: 0.85em; }\n\n/* Launch additions: the operator's current expedition, under an agent's quests — the theme's accent, a quiet rule. */\n.e-desktop-root .e-gamify-expedition { margin-top: 12px; padding: 6px 0 6px 10px;\n  border-left: 2px solid var(--theme-focused-foreground); display: flex; flex-direction: column; gap: 2px; }\n\n/* ═══════════════════════════════════════════════════════════════\n   30. THE LOOK — the one style (the demo animatic's information cards)\n   Pixel headings (Silkscreen) that unscramble, mono lines typed with\n   a block cursor, corner brackets, status lines above and below,\n   and the tint as a FILL with dark ink on it, never as text on the\n   light canvas. It was the \"animatic\" style beside \"retromod\"\n   (docs/ui-style-experimental.md, now history); since ui-v2 it is\n   the only one. `.e-look` is on the app's root with the theme and\n   tint classes (themeConfig.applyTheme), so these rules keep their\n   weight over the older ones above without a switch.\n   - It follows light, vivid, dark and all seven tints: every colour comes\n     from the tint (--tint; green when there is none).\n   - Motion: arrivals only, 0.35–0.45 s, ease-out. Nothing moves with\n     prefers-reduced-motion or in capture mode (?capture=1).\n   ═══════════════════════════════════════════════════════════════ */\n\n/* ─── 0. THE PIXEL FACE ─────────────────────────────────────────────────────\n   Silkscreen (SIL OFL 1.1, assets/fonts/OFL-Silkscreen.txt), bundled: the\n   dashboard makes no third-party requests. Latin only; anything else falls\n   back to the mono stack. Not fetched until a pixel heading is on screen. */\n@font-face {\n  font-family: \"EmporiaPixel\";\n  font-style: normal;\n  font-weight: 400;\n  font-display: swap;\n  src: url(\"data:font/woff2;base64,d09GMgABAAAAACDUABEAAAAAc1wAACBxAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGlIbhAAcbAZgAIQ+CFIJnAwRCAqBpxSBkiMLgzYAATYCJAOGaAQgBYRGB4RMDIEyGwpmRQdixjgAMHx2yMhAsHHANtNLxf/HA02GJOR7JKprV5NUnRSjxHppZpqxPWeO2JpuP0Isn3Ov4hHC4zgO9qdWap45dxcvUZxGXXw/8Nxb3aV/w6i27p5poYiio1hQTiyOIYq3OJ9tR+9p4zYLR5R3f208FD8D20b+JCev/4CnvZ9U2MkZjQ7u4J7o7SzUVNVI6WwIJOW0uo52Sqs/fYh/f2+bc9/fTpMEh7Kb1TTXFbYVR9AEiTKlKSzGo4jHYzBd/Q+EJMSMdcuq80ykKr90zV3RXfY3/0NBa9t5xEoiUaqEhj+mHko5eD5t6TpQVEAKfOWHb3YDZEAdGUEKSr71FbWLervqaY2x/5Z+flXd2D0jaZ+DHBLaRchcZgPHuR9cv8N95J8g/qbZ0vsBIkuW98HTVBltFaZD9UlTBkImywPyEPAXpbZ1WaksC7Z0eA8kIAHRej2HDmOnmSDMsT4kRFxZZaPdY2avJsdX3SI7V/XTmIYWUjkRYUjoh+wiM8j/2fTf9t7Ryk+2P9hBhdgBKjp94Cq/aINFubqzM+Od2bWeViaB/UD2y3u2P1j+4NgBzUrWW8uBhwGG7hNBlxQN9/lFnaohKpr0qcqcNEWXx9H7S064bLOOjnhfc75fophbX9tkyWGC6uq0g+Ia4Rrf+9t9X0tNVZfKWSNjQRdlgVW5JK/2zDG2agP0ov/bWAWDg50ZaN2PM4IwFPbH3wNDiPARIRmi4IX4iEYS1SFnnce66BIWIYAI4TvrnPPZ204ACY4bmgVFJECEB4BWywEIc86t6HpUVrk9R/HkZ4FhQkBAB5EAKKtpNSgtkOHHjazIiobTWPAARIQymlxASYNMWUqpgErjkwrIiBNyu3pTV1IAsb6o3cXgr+9E+QUjfPRaG+Gp3kuExi9FSwBGRdyXhsuxUorKvruRqW2kpIrkqiTK6jy9djO9QdnOlqW9jNo0MpWv/iURH9GAa4r2DqnlDW/Y70xcecMbanqzfTWDj/Ah1yk+Sp8cxcOEc/gmIq2HfU13J/Bl0Ginr9T7Z96j4OT7s2Dc/D87zEAEtD3wcrqKBUZ3kqmlI7FmacVoVWB4O9VsRHPDCaNJC14d5GTwgblnUgCEj749HcDOb+T5g6HIoRLXI3EtPAoHyVf1eAKtAGB/pRhdLv25vQA4LICB5kVdsajKKzOIHk8Oj4icNVcDaekFc1x3jVgeK+K6cr25/pweZ8S5ceuDetoR5Dg23CxOHP8g2PaiLlxPrm/a9dL/AcEAAP+X/FG9nUfNaAB4eG5O5msqD6aDAEYAP6fDIeu3Sbc0FPg/DkebZKOZ9jqj3SYLLTLDQePMMdYs401wzBFHTbEZEZOQUeiiq26666OvfvobQJcpcxYsWbHmwJETZ66Wmm2ZUxa4yo0ff4GCRYgUJVqCREmSpUiTp4BKoWIlKlWpplZnsZ2WOGGMyXbbb48Ddtniiq3qrXXSXNvctMNxQw1zzWkdprlliAbrjDDcSFPxMVhCPAIiUp0p6eiktx566kWOY0iPPmMGDjFiz4YtOy7MFPHizoMPT958BQgXIlSYeDFixQmSKku6DDkyHZatQqky5Wrkq2Ui12prLLfSKit0vgae/5uXocvSiMxSA0THvQDKKHq2+aI19yyKQSr/RV/5fhBZu4Z7t4b28NOzOKL7FsfSvHqFevrPZV7akR4ba8E7cEN7LYgwuhICqtW4hEKt2hIFUp8p2/cK1yWixOgy3e663Jq6AeX+qWAblN1Uw25PWzoYMDpq/RMLZbd1dyauPxEo1bVRirrRKXjqT0IrEjULbJESJPTe3QQh2G6tkVq4egrLP9tuctgf9dGKtygedn/5ldOZ5q3y1JctkiI244XNW5Bcb0s13RtBc01soif8cHU6GUvzX+qA6UddVzm0OWYrWE3GEBYuA+rYHIHnHjw4+lYdNsjKjeWLdO3LiO9KrlVpQqhTgEQIYUC4HxFUF0pUSF9gnmpB57ZHNwc3Z6wNkKpEi7rrIeay3jhhIa8D4wUNJ6FV2oY6sTP3DaWp/l9MRJ7MtGB5x8dtk3aD12CDIB88JAw4YkYXVKIDg50WNNnAT2+YUwH8egnajCHtJPokVQyIyytcjq6ZNKJnO7IKjKXYay7ORGusCvvuvS0fsOxyCmxdV05CwQ2YR+k3jVrqmEcopOU0qkfIuE2iuC3oGXpvHCVFmruIlh245NclnTnLMlW2vTVqw3t7LPOQ6aDw0/w6JT4glVQ8rqrJX+fMBXwaPjd+1iBwWx6bS5RrJm3TqAkYpfmq7M6BXmKItX2fWdcLL3F6PdUhmtnxa3vnorEpFQ2NkRF2D4ZDuQJSO4IIns1Rd9m7oL8MsquC4qxzFBth7pr/xPg2f2J1WVICwwU0L/htZ8DjMLouP4pJWTuJvNwMRNqDEJxaktL1PktQZGjZ94TmpI9rDseglZN4ld2fwEZxp3DOwQDxOUPqHM8P+L9z9CLgcoGMpFOSaRiBLKOQYwrkGYMCU6HINCgxHcqMQ4UZ0wNoFs4TrVrb9yoV5GvNuDGZsmwSzm/ucFPb+fu+VVHQI9gZSH1xptoKEmtYxToqNlCxiYotVGyjYgcVu6jYQ8U+an0EmS1bGC+OZCvpatd0EztMih4hd9kEjIPxJDx/CpFhGzndrmlSt/f2+bSBAGbeaXt2Zwvuzo/pJKtpp+8/hlDNPEpr4KwvIN/cn1qiqDcolqch4VD85GVCnAMAbs7rZF6kJODvywoyK8MgJsEN+g0qWaN6MFuyEdgMGeeXlm+Rqey+kipUQGPN7Fxp/htanUvij83eu9xcu0lk5+57XLwDEGSeReYfnPmSsy3nWOycNCMTmW02jyPZj0qldQeaOZmK8HVnWS7v/BnT21Uj5/LtfHD77bxJaRpykzqI1JWLVsc9z/vRdC6MsVZUpjpPMiaqqIyPWMlyUtm5/KyDNGkUkwOoY9LWfqN0WmtfxzqmpKx6ErGsFVieC3NfkWI/bbK4I5QcAPFlNKbmelJnJyc2HUuYXMMDINOUy5ETB/fJg9vVX+elr2RWrVFnLc6FjK2oubZu5RcYL5UtMS9ypq3wR85PyoG86fhzTqznMtFzEioVlK645Az9ttkNXmZDlScp7liOeO0Nd832xtc1tC33dd8AuzB7+ptgH031JKQdYLMRWITGiske3CpBoDTI8E8m7OxFgO7DujgrlU5aabyNbE67qztd2H8XQyxTYLSbffmsThqLmjEbnIU709h1oPHvau45ZrUXIalI4L0gWfxRi3U+fGeYWU2Ozv2dD5BBekXWfttDsL3Ao4uC6KtUMmgaNWTRY5R1kUedRU/QArcDPmVFE8T6AMYZQWJQCMYkI0j1AUwzWpxJtwjwP9BOEWT7AeZSBPknCYSFFEGxH2ApRbpsGQNZhRqo9gGsMYL6oBCCDUbQ7APYYmTazmEA6/AWuv0AeymC/pMEwkGKYNgPcJSi08ZpuzzSaCa04uZwdKYY0bPY8wajs/O0nSYKYZEmtUwDqwl5onHteOLG8TRb4lfciSvs08AhDRwn5HXFk+OFZ8cLL44XXgXBLQ3c08BjQt6ET8cbX443vh1v/AiCbxr4pan/047A+9ubvlnQp8PJsIEp+rp9dFNT/cw3e1WbWYOYppfse9/y7Qn+n0IAbgPQK3TwkDwgWyHMmIgeMV+juI0yg6TLPPH8NuCwt35bAJglacCyPaAcJerCgxJoNor4Y8dsBW6dIwVpSUmWqM2Lng3PFZhBZ9iynvB2ZS2igCsbKlFdEswoVh24DbdS1gWOio0RqU3AlZdqHyowmCEvIJSrCI0fwlILJkCa9cuvioW6fLIMQYAu60ohfFMdoR5u84mlSJH8kQD75kTxFrp9p4Mi3krLtgsSkBp1pitndci5tGxV7BnByVQFYfg800YfhRqcslgug9pTRqDhYIZM98+eT9gkI90+D51U183V7YZNmbbUaiwFu14rTSIGw6JeWUlLWIiqssQy3WYCuA6QJTa79HegK67udlrIZD6S0GTEclEShUWaBN9heERM7jiB08wJIS+VRAlmK6RACt7E+FOr3gWONSsYaDmK/0VMEVtLaiUuoao1I2qLcqV2qRLMueiFUUpXbYrofR+idlVyj/c3txC6hfyiSncNAfsBpDuggkX+8DU3sHWqcFJT7VMjXhttkMUmUpQIzmdIRKGqWIpwGOaMKYmVgj+YSX9MiZV6IjbRSAHhGHFcPfy/WHosXHrlz5RkUnMAVlM0MzE66O99X9rud4FA0T8j9DJXM+IclGzoejyuVpVVdf6hjoMeypCLBtzEGYktnkeoykgdDII74iWFyOscJLzSETJC2OGtDfy4kUiLvYQtPRDOFxDeJtlxNUJa8zIGtZphiaWhRSmJdaRUpQUtHEb976pwpTQMxCE0no26R770NaxNOB4KUYwqUeumB5FgCbNQraTIHynKUdkopTburx4q6Sh/4AVMdhaR7Zfdn17HJ48FWZ02NZTJQlEhC1Nd5zlXyE041gvCaRWjnvZ+SH0yDjUUnd7teAinSeEJp2wTk9y2MWmUHApzhjbc30JfJLOqZzrSZORDXrk2sEZSIgTFiIZrdBFUnyljuxezBU/Ov0TaCT3+kY0jJfFZgahM+Rrk1UImsYNXL2qlrRDjb7XU/y4Efz4zymgpWP42nG765IPVrwRoes2xx8ow0G4yNyNQWuVzazLq/WPH7FYR1GtDmCNgctRhq4Td8j5POkGhKGSTjqxYk+cQ4OR0KxXpwr4Mnz1xgrvw1xnylU2+ElrPyt1+VlR6aEe5JV6qRk1GGIRz8IBCnp+qksaazZ/Bc3KB9eKY+voc+niGbPfp7WVTsKLhyG0Jnia+fEqnJ8S4D0M+eJHYH/hBR6XYWT5SCVYTP5FC88XnEKXrVFLpxInlys5E6lraNj0rrow5q3ObqmWotMO46A3908cys3etYw9vEaHo3FsCJKvioOXpd09s84rDrzSGCRkmTMmnBI0zhQrkDRvltlZo9tqneFAES7F6k2/0y2kLtCUJYopLT9wPeiSzHfhJ0BhxvmPYcqnX/g9LhGU4XIW5GRnNgEsO7ZDR261I5mgOAz98e9pa0tzyu3ksinwG1UwEjOvA87RlgRoTT0piWwpXxvLDFoggLDDA1WprC4W/I2v/WULxGLEcBAM/890Py0pA/KT05Glh6pYt84eDdjtfXZNW1S0Y/ul0LxMEaBz5ONTXr5/YGKjpQnvw1tQ/Tsty23Bt7zZNvm3m+K3T3qt6gG5f3SAj1QYUAqJ22lkXDQq4ZIW58HSql0WBOttJqiuA7Oqznz6NPIjPlGlRV252oVarVPFnvHRiLjFN46IszfuLotCqQjpO09Uq4cv4YV4OUoEf6k1CwTTUr0aKGxLUct5oSAZZKl9m6bpPytqMharYeCRc0XyUUIJcaRcwKxF9tR7fqxmqnWUL2CyQKm8Egy50SubfpNrnLOZCfovs1C4XMsHzWKq16Q+l5TE09eLBoWGB4LNjYtSdj7NJQYwaIU8VniItViqTO5DKwq0ZP8TEZ2X0lMxcoFrn5YW7x7UFORtok/2c2GOoxTBpDU+icA9zEkafHA30Cfdix4yDvcM9Iw4o6SkfV4Nbmj6+8N4ZfI+1JRaCWJnkMe0vszHi1o3YIt6SQBp5lZbIm4P2ctp3Uamk1sK9RXPN27/i65iTgXkhVJ9h1sySIwsbDnP0KUBLVnuDtam+NsjdCpaWMYcID3nKXwsXnsKpwfTPbiKKPq7DuBF8G4t4hgMvQmEEgbWU93wdfdNaxGvD0TOowYvJNIw2viuWklW2tFXFa54FCmWlOBQV82rSluqnyiYyLnwZb7e7qhVghO6NRNrk4+hCxL7O6aLvJdrHTM36lfXSbOYEXm/bPHxBh9TwoZHdhC6z1buvhrmMxzPkNX7PND5aN6Z3PrFniNiNYWF5PRefu+yUlAAQBOc1AZN7ru8iUuv6Ln8vbFJJOvQCgJ50FsM8GEOwa2FwdrFhzi42zNnFs8Fhc6ZJHjV0jjIv5yjzco7KoApPpgJyU3NTc1Mxd14YnMfe2FOgmJ5zyiZZ6U1ubW5tbm1ubbKvVmdABmWYO5CcF+bOh6b01O/AWK7S3A1WB3P+n4zBWY0HkeURnKepS3D5d4Jh8OjtPl+nPvqKuMEnJggADgEADLgKNAgYw76LGe2sS8T2kbeX9VfyCY4IFo7hN5Qlrc26hGFtYhV2d/E2bO2HTckFh9pCsZcIYMPghn2gRWa9UCIv49xP+UOtYyD9A+sb4ARbiNSBxFNQfICQ4TDYy5hf/OWMhFv6ooon5OdNAe7UlNmdN+jXy44N2wuZNPSb1YFXYAbcZuFq1mXvIdwxxz4Xl0udVH3eXOY4+2iM+7HLBWY+l7Xf+KeuLd550c78zHN6X19sNwa4mOiavdi2OIn4vDXudbZW1V23bndA4xR/7Hw++zaHl1dGmL2l0SvF/99cOLHwK6M85nwS7oO+eV6h+sY9uKievpWjCCt6mK9EgvGcAPyZtzLv7rCIn2vuuRZMmOab9PtIN7dlAmazAy94IZds6/d/ucNR8loQOEitK8EJuD5Cpp0qlSJG841C3eGrm3xfpUlr2aL3Ic/2BZjVQGYZMaffem4FRlSzYcDL0yk65uiRG0fiGfce3+wC0085KTiyM2/wNCSCSpID7xBnEnEfLHOsMMOshhTB3Ic9SLsQUlgJob7skvV/7b9ZnkfRblC530XwSRFjUtOv51/nMQJu4Yu15TSrE6LsrwBVfRbdd9vtK8rN7aVmL88ucQXJckkTwm31kJqCttBsdytSwNNAkXd0pAW42ZNfwgIj7bCvIuAEcqcim8MunWBWf455/X3R9V4QKeZCCFOsagycOrtVMPOzlCKz7HLxfeCSqaMiKYJZ3HArxAFPvwuKs7hkUj870p024ICYGmD65cp9AJMuRrMMi+gZq1s9zeVMuR+1fBr7ArMzG4b7G1hfTplqYciwXKJp2mxl/ElnfCqKBH74Jc4c6EQQ6Epp/P5GpZIW/7v737pc0dvc+o0cVfnGxMg5lvrDtu3FVfFzqc21cWf7aD75F2VkPXltyzyxxWs+c17vgCPgUQY8z0ZmvUUcaFNJAKdZYczSM6Cm4l1hHrbI1KIRHQakvxIKjK9aQZRYSsQkt4HBO7e5ordI7gUKEuIiJyvrN8awEzOoonv8/d8gsVDDihGRlvEmPeshjYxOMtkCLJ1qc43bfTDsyT+OLeMFKz+HI3genqEM/diN1Vkr0cBg9+CWIzOGpMmnsvL1TQJbyhYUO8LIURAjU7cPw1CzSPAtkEj02+kGdGvsRa609kbL65ztQ3DDyiVSpyehg5N2jGGHoIN27TEm9vPcQAHh8BMmSsTxeulpdVRu3XTV2pKh8y7yjyk+TVo6wGUmV1OfFaELq/gUVmTun7dvlrF+PYZKfQ5fX8ViHANfjZqt14qVuXIpLsT2OB9tmIPY/VOXxnaeCsGgN8LT6MZs2GjbJfb/nPIYTtpF9uRfiEc++fluWUqeCaTbNJByjiQPL8H6C9pwLJJTJ8OwEp7msAWuiSCsNWZ/mFwCWGyWmzN3AwMpiKziaArNC5YzC5Sl0cHBenjJvY4B3MghZgT7pHU8hvozRWgZnzRjr4xqMrfKGjrTvRX7vvlvom27rxPmyiCaPsJPkJnMrZhzOO6ndOL8lwjhL7t9hW7AFgPtoxeOjMz4nF7TGaryLGNvZwD3eEg9/Zs5+oMnvad8DFDcsabbKKESE3bqjsvFjpS4VeTKvMwDWtts5rIWasudIEReJafs6V63gCScf5L79xTRO/bHIsxfGDoQFkRHDrDovzO3JPt8P9NvtOSYOBdnMzJ+C1677mpv0DrvoqAZssX3qADkLImJxayPyciIjGuEFtsnI8HcD7ziWP/PmVaTun1RIuvJXReWDXI/L1Exe9VTaNJCRAWe4+rC9sMafWfTzlk0IoVXp5dxHRnVKi4GOsD12/oRw90U3pPZSyqbriWku/nXQAcPHKN9LCKJCizyOR8/uplQyNAWLsrniQCFkQWWWeDPWdTmajc+CD75R9/Sm/EdeKiypGhaTFz2eVkBmxh5LPBedxdUqDEGoL0+5syLrqHHyz1oMJvrwJCwAo18OBiQyRopqjl63yXH3A9g3voMbcMADPjx6O7ieWmA8LOq+gB03fn9LySIJ//yLX0gz7hhqkg2l3ha/Fix9145Gj585Fyt3z4A/M0/Yks3DgFruMzDf/kNPANpx22GwvWaxUtcLsnIVRHNI0A3vrpm0J9PrazRP71eQoQh8CrVbLEgctlsJkz2iqPdBIzql+nHEfXnMLVCC3ZflOKdpzGDK0t4p79mmf3zsZR19k+jeM7MevqY/LYQEz9quPv0L6IQB8VZhwd/R2hwtavGsB6rso2aptdfnH/P89Rv9p6P223Y8Yr4/4CzGfaVMDkuAAmfgXk8d1LmXN1GQZP99nuO0CjN4uO8fJkCIQUuZKZDkbyHDR+tYNPjCxWHHWycEVw1FQpjlmiWZYjVdqs9euKdSdHIrsc+drTDjptQi9994HZzwVm87PO2V8yC20cyCiqJ1ZucactwiK2zFoAhDnVOgw+2xiZL79n8dlFe94YEMQkFltIgNzEaD9z4K/N4lB+FbIoPQ5m/6qaeslsLHbOtxTMKG7G8B1Sq1FsEtLSKb3Bvn1hQ2BlHwq9KZzRF2SJlwdvcAFv7Ana+CSepNTUDq5YY5KYJd2rXqjDPYSjzszq3DusFPkO6ymj+RsDrk/6XcrXcg3O0NteoVcQn/wIQ+eTxdgFUjv58WZjmmYARosLIY5Ols4+8VRRP/rmTePL2zx9F1gF26+goWTeX/YPf7RQmBrVU7PM8hFtDr0kJZ6ZtN50mhNUdC8Hb/XnlDkc8SL4FeTvgxEo8wo/EPc46u4XHo2ojz4Iuv9zOIk2cjWxmYJMe4NVweMAxRH2MIFcVojIwAV16sR5kNz5+FUNlYFXA+UixO9f0Mh7ChuxgbPQYc31XIUqxEgDG7HtvTweY8ZR5u/OVKcMmBw+XG/mxuQD1Lxw2vAyQnRpzVMDgqBvWPE0e3DbwzcGdc+3I78D/uv7Y/B8vKbXGYObpQy9YVxJVEF5YSbd3PGW9ioOkSpuCY2Zf4SckKrIWjZv1TUcuU1fT4gpuVy4wpDe/qTlEyB/UfrLv93AQnFr1831vxitrjNljMS/cMLedZEy+yOZI8qC48l0eYwAj45sifTb2UYVgaghaVNa6j8dpv+taOHBUWAb6iXLXgeRnPp3u8gfgimkfak+2xOQ4nDzSWRIkpS037g84WaKOhj4XM3IgPOiv6RnHToHDragfq/PvBsTOqZirhw9X8UuwuQB3SxrnqKsc8mFznVvs6bAPw+32g4nrteNHNHcZipIjES06OfaTwTDwBQBf5wgB87H3ur9Co0ZXNufIC5rYYm6rMSON/DkY4WI/vWEPwf/24rqOPrinaVro6Bt7VsRopd59gZ/5qA9caU+oLZWDsWcs9ndJPvd8SzRneVz4aePc6o+DvzYICyYm3IYw5n6Nf580QDiVeiHyQDXdyoGNW+ngVWOBLclXkeVfiALQGZdN7RXa045fdspGQPvthkArmnS3Vem4DFWdqVXf5iHLP5VxPsBW8NjBWCbxuOCRmqrYovxP+7i2fOTMc2hT+hyJqOr7UvAuLzDLKbW1bRHmVS6VvdJDs1C/K7w7K9nDm9LI+QaoAaEhOoTUoKVQLP3UzW+V13bUj8C6ooyDAPsXBMyB3A0Gj7nEr/ep/7GP2NK6JYoLkeznnWfMcNx0iX5vmGWXGLdzHRBRmIw8Wv3qvbVrkElbBe7PcR2GXGrEccr/rv2ZJM907KeTOLy//YKao9xMorULqfQtJbbnad+kygoUzAcA+oGjQue93D3tX9sHHSXt5IjRo+9HBCB+X3WPhmV7Ht9ESvYlAOxa/q0EgPvfC1Vt4MlU2XkBBnQBZkRv5v1YMibRZu/fz9ulhqbeJwfSyjIbq0kJJ9JIPVAgplbUvrkS9ahVaEsdn/yxrbTz1cYXriBrSPbI1zDWqcg8zhZAwY1YHMhQuRDnSuuC6qANLL7w0tgyl6zKqKwNtoRqsZy0qrAgxMQrWjuXVJPdCI8ODJLEqGoo2C5XRqGRqzPATx4MhoU0EwAjFmRgEECkEIs6MYCOWDEvIV3T+yUMRWQvYbm5/BIeAxtfwpcgzRcM006+gncBxerq0Gq13FjneXG+GiWqcbCWVblEOfhV7BeZlkYLEiGewjLNpamoVLIUR6VIPfm54CehqYH4VZbL49iyYsOGLXectV9o9uubsGqG+tI6HBMNct9FoMPLO7PkqOBj5zE1PxLONtuVKEq4e9/dy7a51jrjP+fdNPtkihyc4thZljkJOqjaKdWPUcpVSsnkq42vA6bYX127xjekWqREVq6Xx3P5qlTk8ohVc+VUCh3m7QLrVtZ1U4z9jWrnF3Ye7NsAA6eckGeDfBtNZshIAWOvmFA56bQzTJkxZ/GrEcILc/Op+mohu1+VcPFFrphik83svZuof/4urrqm2HWu3GbS45vbF6BEmXKlKlVYLFCQKsFeC1HtilFPqy+HiygLDRrVT+Dn0+v9JrryZq3atFhCo12897P5zZh4fgMNNsQgqdJm3Jff2k3TCyz8RQBiiv7/+t766BuGWOLhq2++hw82AnSi1E9/6/Aso2epI0aRE+jMm06E6LCFHymZLDm8+DjqmK222W6HNdba7wA+CX1io400zljjDZPtpeH2EUaEEWZS+Ggnjq4Bpsm1nG/EEEVCUpKRnBSkJB1M5G+Cm2657f6gvrLExsbP9ZC2m7Fn/OM+jfnaUBTA+6tfhMg40mfa27iI/6XN9ar/r3JenJtfXxeF4DvYietKygv4wCFcoZ0zwj9xcstuJ5qYekE/2/a8TtshnG5B/4LZdsZt+rxOEkYSn2XM9BGcm3i6RwzeHRhSAumz4OPgZe4SCwFPBjQ69u1mn39SIhQwk9pOEe4aELDdpz0UT7dbNBjUmcfzX36d9kveZsh0EzAKs51oR8AmtNPc+MIvECBgBgAAAA==\") format(\"woff2\");\n}\n\n/* ─── 1. TOKENS ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-look {\n  --anim-tint: var(--tint, #39ff44);                                   /* green when no tint is set */\n  --anim-ink: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);       /* text on a fill, both themes */\n  --anim-fill: oklch(from var(--anim-tint) max(l, 0.86) c h);         /* caption bands, chips, the won cells */\n  /* brackets, rules, ticks: graphics only. P10: L 0.58, not 0.62, so it clears 3:1 on the light\n     canvas in every tint (green measured 2.89:1); textContrast.test.ts holds it there. */\n  --anim-line: oklch(from var(--anim-tint) 0.58 c h);\n  --anim-pixel: \"EmporiaPixel\", var(--font-family-mono, monospace);\n  --anim-bracket: 12px;\n  --anim-bracket-w: 2px;\n  --anim-ease: cubic-bezier(0.33, 1, 0.68, 1);                          /* power2.out */\n}\n\n/* The light canvas for every tint : white with a breath of the tint, near-black ink.\n   The accent used AS TEXT is darker than the graphics accent so it reads\n   (≥ 4.5:1 on the canvas). */\n.e-desktop-root .e-host-body.e-look.theme-light {\n  --theme-background: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);\n  --theme-background-modal: oklch(from var(--anim-tint) 0.92 calc(c * 0.18) h);\n  --theme-background-input: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);\n  --theme-border: oklch(from var(--anim-tint) 0.84 calc(c * 0.28) h);\n  --theme-border-subdued: oklch(from var(--anim-tint) 0.88 calc(c * 0.22) h);\n  --theme-text: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);\n  --theme-button: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);\n  --theme-button-text: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);\n  --theme-focused-foreground: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h);\n  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h / 0.5);\n}\n\n/* The dark theme is the DEEP palette (the demo video's all-dark-green screens): the canvas is the tint at\n   L .192 with 24 % of its chroma, the panel a step up, the border and text likewise; green is pinned to the\n   video's exact colours. The accent as text is lifted to L .78 (chroma capped at .22) so blue, red and purple\n   read; a chip is the pure tint with the canvas on it (white on blue and purple).\n   Mirrored in themePalette.ts, which the contrast tests read; keep the two the same.\n   BEFORE (the previous dark, kept to compare; `git revert` of the deep commit restores it):\n     bg  oklch(from tint 0.14 calc(c * 0.18) h)      panel  oklch(from tint 0.24 calc(c * 0.22) h)\n     input 0.28 / c*0.2   border 0.4 / c*0.28   border-subdued 0.32 / c*0.26\n     text/button oklch(from tint 0.94 calc(c * 0.12) h)   button-text = bg   line 0.72 c\n     chip fill oklch(from tint max(l, 0.86) c h) with ink oklch(from tint 0.18 calc(c * 0.4) h) */\n.e-desktop-root .e-host-body.e-look.theme-dark {\n  --theme-background: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);\n  --theme-background-modal: oklch(from var(--anim-tint) 0.253 calc(c * 0.243) h);\n  --theme-background-input: oklch(from var(--anim-tint) 0.253 calc(c * 0.243) h);\n  --theme-border: oklch(from var(--anim-tint) 0.366 calc(c * 0.328) h);\n  --theme-border-subdued: color-mix(in srgb, var(--theme-border) 60%, transparent);\n  --theme-text: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);\n  --theme-button: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);\n  --theme-button-text: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);\n  --theme-focused-foreground: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h);\n  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h / 0.5);\n  --anim-line: oklch(from var(--anim-tint) 0.72 c h);\n  --anim-fill: var(--anim-tint);\n  --anim-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);\n}\n.e-desktop-root .e-host-body.e-look.theme-dark.tint-blue,\n.e-desktop-root .e-host-body.e-look.theme-dark.tint-purple { --anim-ink: #fff; }\n/* Green is the video's, exact. */\n.e-desktop-root .e-host-body.e-look.theme-dark.tint-green {\n  --theme-background: #001b00;\n  --theme-background-modal: #0b2a0b;\n  --theme-background-input: #0b2a0b;\n  --theme-border: #1d4a1d;\n  --theme-text: #d8ffd8;\n  --theme-button: #d8ffd8;\n  --theme-button-text: #001b00;\n  --theme-focused-foreground: #39ff44;\n  --theme-focused-foreground-subdued: rgb(57 255 68 / 0.5);\n  --anim-ink: #001b00;\n}\n\n/* VIVID: the tint is the background, ink is the tint's deep dark (the video's \"LIVE NOW\" screen).\n   The panel is a step darker (lighter for red and pink); blue and purple take white ink. Ink is the\n   border, the accent-as-text, the focus ring and the chip fill (the tint written on it): no tint-on-tint\n   text. Green is exact: #39ff44 / #2ee03a / #001b00. Mirrored in themePalette.ts. */\n.e-desktop-root .e-host-body.e-look.theme-vivid {\n  --vv-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);\n  --vv-panel: oklch(from var(--anim-tint) calc(l - 0.082) calc(c * 0.91) h);\n  --theme-background: var(--anim-tint);\n  --theme-background-modal: var(--vv-panel);\n  --theme-background-input: var(--vv-panel);\n  --theme-border: var(--vv-ink);\n  --theme-border-subdued: color-mix(in srgb, var(--vv-ink) 35%, transparent);\n  --theme-text: var(--vv-ink);\n  --theme-button: var(--vv-ink);\n  --theme-button-text: var(--anim-tint);\n  --theme-focused-foreground: var(--vv-ink);\n  --theme-focused-foreground-subdued: color-mix(in srgb, var(--vv-ink) 50%, transparent);\n  --anim-line: var(--vv-ink);\n  --anim-fill: var(--vv-ink);\n  --anim-ink: var(--anim-tint);\n  /* Faint and status text are the ink itself here: a mix toward a saturated tint falls under 4.5:1\n     on blue, red, purple and pink. Every \"text N %\" mix above adds this and caps at 100 %. */\n  --e-ink-boost: 100%;\n  --anim-faint: var(--theme-text);\n}\n.e-desktop-root .e-host-body.e-look.theme-vivid.tint-red,\n.e-desktop-root .e-host-body.e-look.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }\n.e-desktop-root .e-host-body.e-look.theme-vivid.tint-blue,\n.e-desktop-root .e-host-body.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }\n.e-desktop-root .e-host-body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }\n\n.e-desktop-root .e-look .e-dashboard-shell {\n  --e-rule: var(--theme-border-subdued);\n  --anim-wash: color-mix(in srgb, var(--anim-fill) 45%, transparent);\n  --e-accent-wash: var(--anim-wash);\n}\n/* On the dark canvas a strong wash would sit under light text: keep it faint. */\n.e-desktop-root .e-look.theme-dark .e-dashboard-shell { --anim-wash: color-mix(in srgb, var(--anim-fill) 14%, transparent); }\n/* The hover / selected wash in vivid is the panel colour: text on it clears 4.5:1 in every tint. */\n.e-desktop-root .e-look.theme-vivid .e-dashboard-shell { --anim-wash: var(--theme-background-modal); }\n\n/* ─── 2. CORNER BRACKETS ─────────────────────────────────────────────────\n   Four L-shaped corners drawn as background images, so no element and no\n   ::before/::after is taken from the other rules. On panels only: the\n   frame around data, never over it. */\n.e-desktop-root .e-look .e-page-head,\n.e-desktop-root .e-look .e-now,\n.e-desktop-root .e-look .e-intro,\n.e-desktop-root .e-look .e-panel-card,\n.e-desktop-root .e-look .e-overview-card,\n.e-desktop-root .e-look .e-setplay,\n.e-desktop-root .e-look .e-hcard,\n.e-desktop-root .e-look .e-empty-pane {\n  background-image:\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line));\n  background-size:\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket);\n  background-position: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%;\n  background-repeat: no-repeat;\n  background-origin: border-box;\n  border-radius: 0;\n}\n.e-desktop-root .e-look .e-page-head { --anim-bracket: 18px; --anim-bracket-w: 3px; }\n\n/* ─── 3. THE SECTION HEADING: status line, pixel title, typed line ─────── */\n\n.e-desktop-root .e-look .e-page-head {\n  position: relative;\n  padding: 12px 24px 16px;\n  margin-top: 10px;\n  border-bottom: 0;\n  max-width: min(1440px, calc(100% - 32px));\n}\n.e-desktop-root .e-look .e-page-head__title {\n  font-family: var(--anim-pixel);\n  font-weight: 400;\n  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);\n  line-height: 1.05;\n  letter-spacing: 0.04em;\n  margin-top: 6px;\n  overflow-wrap: anywhere;\n}\n.e-desktop-root .e-look .e-page-head__blurb {\n  margin-top: 10px;\n  font-size: 0.9rem;\n  line-height: 1.5;\n  opacity: 0.86;\n  max-width: 72ch;\n}\n\n/* The block cursor at the end of a typed line. */\n.e-desktop-root .e-look .e-anim-cursor {\n  display: inline-block;\n  width: 0.6em;\n  height: 1em;\n  margin-left: 0.15em;\n  vertical-align: -0.14em;\n  background: currentColor;\n}\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-look .e-anim-cursor { animation: e-anim-blink 1.06s steps(1, end) infinite; }}\n@keyframes e-anim-blink { 50% { opacity: 0; } }\n\n/* Status lines: `emporia ~ hermes plugin · [1] · 01 / 14 · overview` above,\n   `T+00:28 · as alpha · watch only` below. Small, but ink at 80 %, not faint. */\n.e-desktop-root .e-look .e-anim-hud {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 4px 12px;\n  flex-wrap: wrap;\n  font-size: 0.74rem;\n  line-height: 1.4;\n  letter-spacing: 0.05em;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(80% + var(--e-ink-boost, 0%))), var(--theme-background));\n  font-variant-numeric: tabular-nums;\n}\n.e-desktop-root .e-look .e-anim-hud__key {\n  padding: 1px 8px;\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  font-weight: 700;\n}\n.e-desktop-root .e-look .e-anim-hud--foot {\n  max-width: min(1440px, calc(100% - 32px));\n  margin: 8px auto 12px;\n  padding: 8px 24px 0;\n  border-top: 1px solid var(--theme-border-subdued);\n  box-sizing: border-box;\n}\n\n/* The beat flash: an ink bar along the heading's top edge, once per section. */\n.e-desktop-root .e-look .e-anim-flash {\n  position: absolute;\n  left: 0;\n  right: 0;\n  top: -6px;\n  height: 4px;\n  background: var(--anim-ink);\n  opacity: 0;\n  pointer-events: none;\n}\n.e-desktop-root .e-look.theme-dark .e-anim-flash,\n.e-desktop-root .e-look.theme-vivid .e-anim-flash { background: var(--anim-fill); }\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-look .e-anim-flash { animation: e-anim-flash 0.42s var(--anim-ease) both; }}\n@keyframes e-anim-flash {\n  0% { opacity: 1; transform: scaleX(0.2); transform-origin: left; }\n  45% { opacity: 1; transform: scaleX(1); transform-origin: left; }\n  100% { opacity: 0; transform: scaleX(1); transform-origin: left; }\n}\n\n/* ─── 4. HEADER, NAV, MENU ──────────────────────────────────────────────── */\n\n.e-desktop-root .e-look .e-brand-title {\n  font-family: var(--anim-pixel);\n  font-weight: 400;\n  text-transform: uppercase;\n  letter-spacing: 0.06em;\n}\n.e-desktop-root .e-look .e-section-tab { opacity: 0.8; }\n.e-desktop-root .e-look .e-section-tab.is-active {\n  background: var(--anim-fill) !important;\n  color: var(--anim-ink);\n  border-color: var(--anim-fill);\n}\n.e-desktop-root .e-look .e-section-tab.is-active .e-section-tab__icon { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-section-tab.is-active .e-section-tab__sub { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-subnav__tab.is-active { border-bottom-color: var(--anim-line); }\n.e-desktop-root .e-look .e-mobile-top__section {\n  font-family: var(--anim-pixel);\n  color: var(--theme-text);\n  font-size: 0.95rem;\n  letter-spacing: 0.06em;\n}\n.e-desktop-root .e-look .e-mobile-top__section::before { content: \"> \"; opacity: 0.8; }\n.e-desktop-root .e-look .e-section-tab__key { opacity: 1; color: color-mix(in srgb, var(--theme-text) min(100%, calc(80% + var(--e-ink-boost, 0%))), var(--theme-background)); }\n.e-desktop-root .e-look .e-section-tab.is-active .e-section-tab__key { color: var(--anim-ink); }\n\n/* Relay / live: square chips, the live one filled. */\n.e-desktop-root .e-look .e-status-chip { border-color: var(--theme-border); background: transparent; }\n.e-desktop-root .e-look .e-status-chip.is-ok {\n  background: var(--anim-fill);\n  border-color: var(--anim-fill);\n  color: var(--anim-ink);\n  font-weight: 700;\n}\n.e-desktop-root .e-look .e-status-chip.is-ok .e-status-chip__loader{ color: var(--anim-ink); }\n\n/* ─── 5. CAPTION BARS AND CHIPS ─────────────────────────────────────────\n   The animatic's two text-on-fill shapes: a small bold chip (its\n   `CARD · build now` badge) for labels, and a bold band (its captions)\n   for the one line that says what happened. */\n.e-desktop-root .e-look .e-intro__title,\n.e-desktop-root .e-look .e-now__head > span:first-child,\n.e-desktop-root .e-look .e-now__label {\n  display: inline-block;\n  width: fit-content;\n  padding: 2px 8px;\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  font-weight: 700;\n  opacity: 1;\n}\n.e-desktop-root .e-look .e-now__label { padding: 1px 6px; font-size: 0.66rem; }\n.e-desktop-root .e-look .e-now__go,\n.e-desktop-root .e-look .e-now__live,\n.e-desktop-root .e-look .e-intro__link-label { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-look .e-now__live { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-now__head { align-items: center; }\n.e-desktop-root .e-look .e-now__head > span:last-child { font-family: var(--anim-pixel); font-size: 0.9rem; letter-spacing: 0.06em; }\n.e-desktop-root .e-look .e-intro { border-left-width: 1px; }\n.e-desktop-root .e-look .e-intro__text { font-size: 0.95rem; }\n\n/* Sub-headings inside a view, in the pixel face: the QUESTS card. */\n.e-desktop-root .e-look .e-subhead {\n  font-family: var(--anim-pixel);\n  font-size: 1rem;\n  letter-spacing: 0.06em;\n  opacity: 1;\n  margin-top: 22px;\n}\n.e-desktop-root .e-look .e-subhead::after { background: var(--anim-line); opacity: 0.6; }\n.e-desktop-root .e-look .e-panel-card__title { opacity: 0.85; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }\n.e-desktop-root .e-look .e-overview-card__title { font-family: var(--anim-pixel); letter-spacing: 0.05em; text-transform: uppercase; }\n.e-desktop-root .e-look .e-rail-label { opacity: 0.8; font-weight: 700; }\n.e-desktop-root .e-look .e-rail-item.is-selected {\n  background: var(--e-accent-wash);\n  box-shadow: inset 3px 0 0 var(--anim-line);\n}\n\n/* Quests read like the animatic's QUESTS card: `>` lines, the done ones ticked. */\n.e-desktop-root .e-look .e-quest-row { font-size: 0.95rem !important; line-height: 1.7; opacity: 1; }\n.e-desktop-root .e-look .e-quest-row::before { content: \"> \"; color: var(--theme-focused-foreground); font-weight: 700; }\n.e-desktop-root .e-look .e-quest-row:not(.is-done) { color: color-mix(in srgb, var(--theme-text) min(100%, calc(74% + var(--e-ink-boost, 0%))), var(--theme-background));}\n.e-desktop-root .e-look .e-quest-next .e-now__label { margin-right: 4px; }\n\n/* ─── 6. SET PLAYS ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-look .e-setplay { padding: 18px 20px 22px; }\n.e-desktop-root .e-look .e-setplay__game {\n  font-family: var(--anim-pixel);\n  font-size: clamp(1.4rem, 1rem + 1.4vw, 2rem);\n  line-height: 1.05;\n  letter-spacing: 0.05em;\n  color: var(--theme-text);\n}\n.e-desktop-root .e-look .e-setplay__players { font-size: 1.05rem; margin-top: 6px; }\n.e-desktop-root .e-look .e-setplay__status { opacity: 1; border-color: var(--theme-border); font-weight: 700; }\n.e-desktop-root .e-look .e-setplay__status.is-live {\n  background: var(--anim-fill);\n  border-color: var(--anim-fill);\n  color: var(--anim-ink);\n}\n/* The verdict is the caption band. */\n.e-desktop-root .e-look .e-setplay__verdict.is-win {\n  padding: 8px 12px;\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  font-size: 1.1rem;\n  font-weight: 700;\n  line-height: 1.3;\n}\n.e-desktop-root .e-look .e-setplay__verdict.is-win .e-setplay__why { color: var(--anim-ink); opacity: 0.85; }\n.e-desktop-root .e-look .e-setplay__wait { opacity: 0.86; font-size: 0.86rem; }\n\n/* commit → reveal → winner: square steps, the current one a filled pixel label. */\n.e-desktop-root .e-look .e-phase-strip__n { border-radius: 0; }\n.e-desktop-root .e-look .e-phase-strip__step.is-now {\n  opacity: 1;\n  color: var(--anim-ink);\n  background: var(--anim-fill);\n  padding: 3px 10px 3px 4px;\n  font-family: var(--anim-pixel);\n  letter-spacing: 0.05em;\n}\n.e-desktop-root .e-look .e-phase-strip__step.is-now .e-phase-strip__n {\n  background: var(--anim-ink);\n  border-color: var(--anim-ink);\n  color: var(--anim-fill);\n  font-family: var(--font-family-mono, monospace);\n}\n.e-desktop-root .e-look .e-phase-strip__step + .e-phase-strip__step::before { background: var(--anim-line); opacity: 0.8; }\n\n/* Won cells, winning seats and picks: the fill with ink on it. */\n.e-desktop-root .e-look .e-blotto__grid td.is-won,\n.e-desktop-root .e-look .e-lowest__cell.is-winner,\n.e-desktop-root .e-look .e-numline__pick.is-winner .e-numline__label {\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  border-color: var(--anim-line);\n}\n.e-desktop-root .e-look .e-blotto__grid tr.is-winner th,\n.e-desktop-root .e-look .e-seat.is-winner .e-seat__name,\n.e-desktop-root .e-look .e-seat.is-winner .e-seat__move { color: var(--theme-text); font-weight: 700; }\n.e-desktop-root .e-look .e-seat.is-winner {\n  background: var(--anim-wash);\n  box-shadow: inset 3px 0 0 var(--anim-line);\n}\n.e-desktop-root .e-look .e-numline__pick.is-winner .e-numline__pin { background: var(--anim-line); }\n.e-desktop-root .e-look .e-numline__mark--target { border-left-color: var(--anim-line); }\n.e-desktop-root .e-look .e-numline__mark--target > span { color: var(--theme-text); }\n.e-desktop-root .e-look .e-game-row__kind { color: var(--theme-text); font-weight: 700; }\n.e-desktop-root .e-look .e-blotto__grid thead th,\n.e-desktop-root .e-look .e-blotto__state,\n.e-desktop-root .e-look .e-seat__state { opacity: 0.8; }\n\n/* ─── 7. A CALMER FAINT ──────────────────────────────────────────────────\n   Secondary text used to dim to 35–50 % opacity, which falls under\n   4.5:1 on a tinted canvas. Faint is a colour at about 4.6:1 or more. */\n.e-desktop-root .e-look {\n  --anim-faint: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n}\n.e-desktop-root .e-look .e-faint,\n.e-desktop-root .e-look .e-dim,\n.e-desktop-root .e-look .e-rail-item .e-faint,\n.e-desktop-root .e-look .e-relay-status__host,\n.e-desktop-root .e-look .e-relay-status__meta,\n.e-desktop-root .e-look .e-game-row__phase,\n.e-desktop-root .e-look .e-chat-line__time,\n.e-desktop-root .e-look .e-chat-line__type,\n.e-desktop-root .e-look .e-badge--dim,\n.e-desktop-root .e-look .e-slim-card__title,\n.e-desktop-root .e-look .e-blotto__grid td.is-hidden,\n.e-desktop-root .e-look .e-phase-strip__step.is-next,\n.e-desktop-root .e-look .e-meta-grid dt,\n.e-desktop-root .e-look .e-overview-card__body p,\n.e-desktop-root .e-look .e-overview-card--failed .e-overview-card__body,\n.e-desktop-root .e-look .e-empty-pane__hint,\n.e-desktop-root .e-look .e-slim-card__foot,\n.e-desktop-root .e-look .e-hero-stat__label,\n.e-desktop-root .e-look .e-hero-stat__hint,\n.e-desktop-root .e-look .e-chess-players__vs,\n.e-desktop-root .e-look .e-chess-speed__lbl,\n.e-desktop-root .e-look .e-lowest__tag,\n.e-desktop-root .e-look .e-chess-move-idx,\n.e-desktop-root .e-look .e-role-pill--spectator,\n.e-desktop-root .e-look .e-entity-chip--inert,\n.e-desktop-root .e-look .e-inbox-event--read,\n.e-desktop-root .e-look .e-seat.is-to_commit,\n.e-desktop-root .e-look .e-trust-key,\n.e-desktop-root .e-look [style*=\"opacity: 0.4\"],\n.e-desktop-root .e-look [style*=\"opacity: 0.5\"],\n.e-desktop-root .e-look [style*=\"opacity: 0.6\"] {\n  opacity: 1 !important;\n  color: var(--anim-faint);\n}\n.e-desktop-root .e-look .e-phase-strip__step.is-done { opacity: 1; }\n/* Names in a chat are ink, so they read on the tint. */\n.e-desktop-root .e-look .e-chat-line__name { color: var(--theme-text) !important; }\n.e-desktop-root .e-look .e-entity-chip--agent,\n.e-desktop-root .e-look .e-entity-chip--session { opacity: 1; color: var(--theme-focused-foreground); }\n\n/* ─── 8. MOTION ─────────────────────────────────────────────────────────\n   Panels arrive with a short rise when a section opens (they mount with it).\n   Off with reduced motion; capture mode turns every animation off anyway. */\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-look .e-page-head,\n  .e-desktop-root .e-look .e-now,\n  .e-desktop-root .e-look .e-intro,\n  .e-desktop-root .e-look .e-setplay {\n    animation: e-anim-rise 0.38s var(--anim-ease) both;\n  }\n  .e-desktop-root .e-look .e-now { animation-delay: 0.05s; }\n  .e-desktop-root .e-look .e-setplay { animation-delay: 0.04s; }}\n@keyframes e-anim-rise {\n  from { opacity: 0; transform: translateY(6px); }\n  to { opacity: 1; transform: none; }\n}\n\n/* ─── 10. PHONE ──────────────────────────────────────────────────────── */\n@media (max-width: 700px) {\n  .e-desktop-root .e-look .e-page-head { padding: 10px 16px 14px; margin-top: 8px; max-width: calc(100% - 16px); }\n  .e-desktop-root .e-look .e-page-head__title { font-size: 1.55rem; }\n  .e-desktop-root .e-look .e-page-head__blurb { font-size: 0.84rem; }\n  .e-desktop-root .e-look .e-anim-hud { font-size: 0.7rem; }\n  .e-desktop-root .e-look .e-anim-hud--top .e-anim-hud__where { flex-basis: 100%; }\n  .e-desktop-root .e-look .e-anim-hud--foot { padding: 8px 16px 0; max-width: calc(100% - 16px); }\n  .e-desktop-root .e-look .e-setplay__game { font-size: 1.4rem; }}\n\n/* ─── 11. HOME'S FIRST FRAME, THE MONEY CHIP, PLEDGES (review pass 2: P2, P3, P5, P6) ── */\n\n/* Home leads with the agent: \"your agent now\" beside \"next up\" (one column when narrow,\n   or when next up is not shown: auto-fit drops the empty track). */\n.e-desktop-root .e-home-lead {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));\n  gap: 0 16px;\n  align-items: start;\n}\n.e-desktop-root .e-now__row--badges { align-items: center; }\n\n/* Home: \"On the relay now\" is a head, the cards, then rows; the foot is one line of facts and one of what this is. */\n.e-desktop-root .e-home-relay { margin-bottom: 16px; }\n.e-desktop-root .e-home-relay__head { border: 1px solid var(--e-rule); margin-bottom: 10px; }\n.e-desktop-root .e-home-relay__rows { margin-bottom: 0; }\n.e-desktop-root .e-home-foot { margin-top: 4px; }\n.e-desktop-root .e-home-foot__facts { margin: 0 0 8px; font-size: 0.8rem; }\n.e-desktop-root .e-intro--line { border: 0; border-left: 3px solid var(--theme-focused-foreground); padding: 4px 12px; margin: 0; font-size: 0.82rem; max-width: 78ch; }\n.e-desktop-root .e-intro__link-inline {\n  background: transparent; border: 0; padding: 0; font: inherit; color: var(--theme-focused-foreground); cursor: pointer;\n}\n.e-desktop-root .e-intro__link-inline:hover { text-decoration: underline; }\n.e-desktop-root .e-badge-fold > summary { cursor: pointer; padding: 8px 0; }\n.e-desktop-root .e-next__call > summary { cursor: pointer; font-size: 0.78rem; }\n.e-desktop-root .e-now__badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }\n.e-desktop-root .e-now__more { font-size: 0.75rem; }\n\n/* Next up: one row per thing to do, its clock, and the exact call (copy-only). */\n.e-desktop-root .e-next__why { overflow-wrap: anywhere; }\n.e-desktop-root .e-next__clock {\n  display: inline-flex;\n  align-items: baseline;\n  gap: 8px;\n  white-space: nowrap;\n  font-variant-numeric: tabular-nums;\n}\n.e-desktop-root .e-next__row.is-urgent .e-next__clock { color: var(--theme-focused-foreground); font-weight: 700; }\n.e-desktop-root .e-next__open {\n  min-height: 24px;\n  padding: 0;\n  border: 0;\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font: inherit;\n  cursor: pointer;\n}\n.e-desktop-root .e-next__call { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; opacity: 1; }\n.e-desktop-root .e-next__call code { overflow-wrap: anywhere; }\n.e-desktop-root .e-next__foot {\n  margin: 0;\n  padding: 8px 14px 10px;\n  font-size: 0.75rem;\n  line-height: 1.5;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n}\n/* Text another agent wrote: quoted and underlined as data, never styled as the dashboard's own words. */\n.e-desktop-root .e-untrusted { font-style: italic; border-bottom: 1px dotted currentColor; }\n/* Another agent's words are told apart by the italic and the dotted rule, not by quote marks around names and titles. */\n\n/* The relay's pipeline, folded to one chip beside the status line; it opens to the sentence. */\n.e-desktop-root .e-overview-status-row {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: baseline;\n  gap: 4px 12px;\n  margin-bottom: 14px;\n}\n.e-desktop-root .e-overview-status-row .e-overview-status { margin-bottom: 0; }\n.e-desktop-root .e-pipeline-chip { font-size: 0.726rem; max-width: 100%; }\n.e-desktop-root .e-pipeline-chip > summary {\n  display: inline-block;\n  padding: 1px 8px;\n  border: 1px solid var(--e-rule);\n  letter-spacing: 0.04em;\n  cursor: pointer;\n  list-style: none;\n}\n.e-desktop-root .e-pipeline-chip > summary::-webkit-details-marker { display: none; }\n.e-desktop-root .e-pipeline-chip > summary::after { content: \" +\"; }\n.e-desktop-root .e-pipeline-chip[open] > summary::after { content: \" \\2212\"; }\n.e-desktop-root .e-pipeline-chip__text {\n  display: block;\n  margin-top: 6px;\n  overflow-wrap: anywhere;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n}\n.e-desktop-root .e-look .e-pipeline-chip > summary { background: var(--anim-fill); color: var(--anim-ink); font-weight: 700; border-color: transparent; }\n\n/* P6: what kind of money the amounts are, beside the relay chip. */\n.e-desktop-root .e-money-chip {\n  display: inline-flex;\n  align-items: center;\n  padding: 3px 8px;\n  border: 1px solid var(--theme-border-subdued, rgba(128, 128, 128, 0.3));\n  font-size: 0.7rem;\n  font-weight: 700;\n  letter-spacing: 0.08em;\n  line-height: 1.25;\n  text-transform: uppercase;\n  white-space: nowrap;\n}\n.e-desktop-root .e-money-chip--test { background: var(--theme-border, transparent); }\n.e-desktop-root .e-money-chip--real { border-color: currentColor; }\n.e-desktop-root .e-look .e-money-chip--test { background: var(--anim-fill); color: var(--anim-ink); border-color: transparent; }\n\n/* The agent's pledges, under its Word line on the sheet. */\n.e-desktop-root .e-pledges { margin-top: 6px; }\n.e-desktop-root .e-pledge__status { white-space: nowrap; }\n.e-desktop-root .e-pledge.is-kept .e-pledge__status { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-pledge.is-broken .e-pledge__status,\n.e-desktop-root .e-pledge.is-disputed .e-pledge__status { font-weight: 700; }\n\n/* P5: with the chat open beside the view the frame is narrower, so the layout (data-nav) drops\n   a tier by itself; the header never wraps. */\n.e-desktop-root .e-brand-title--header { flex-shrink: 0; }\n.e-desktop-root .e-relay-status { flex-wrap: nowrap; }\n.e-desktop-root .e-feed-post { padding: 8px 0; overflow-wrap: anywhere; }\n\n\n/* The Arena: home (live, recent, boards) and a match with its step-through replay. Tokens only. */\n.e-desktop-root .e-arena { display: block; min-width: 0; padding: 0 12px 24px; }\n.e-desktop-root .e-arena-section { margin: 0 0 20px; }\n.e-desktop-root .e-arena-cards { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); }\n.e-desktop-root .e-arena-card {\n  display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left; cursor: pointer;\n  font: inherit; color: inherit; background: transparent; padding: 8px 10px;\n  border: 1px solid var(--e-rule); border-radius: 0;\n}\n.e-desktop-root .e-arena-card:hover, .e-desktop-root .e-arena-card:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }\n.e-desktop-root .e-arena-card__top { display: flex; justify-content: space-between; gap: 8px; }\n.e-desktop-root .e-arena-card__game { font-weight: 600; }\n.e-desktop-root .e-arena-card__live { color: var(--theme-focused-foreground); font-size: 0.75rem; }\n.e-desktop-root .e-arena-card__result { font-size: 0.85rem; }\n.e-desktop-root .e-arena-card__models { font-size: 0.7rem; }\n.e-desktop-root .e-arena-players { overflow-wrap: anywhere; }\n/* An id or name: one line, monospace, ellipsis at its box edge (full value in the title); the only place a break \"anywhere\" is allowed. */\n.e-desktop-root .e-id { display: inline-block; max-width: 100%; vertical-align: bottom; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\n  font-family: var(--font-family-mono, monospace); overflow-wrap: anywhere; }\n.e-desktop-root .e-arena-slot__who { min-width: 0; max-width: 100%; }\n.e-desktop-root .e-arena-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }\n.e-desktop-root .e-arena-chip { font: inherit; font-size: 0.8rem; color: inherit; background: transparent; padding: 3px 8px; border: 1px solid var(--e-rule); cursor: pointer; }\n.e-desktop-root .e-arena-chip.is-on { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-back { display: block; text-align: left; margin: 0 0 6px; font: inherit; font-size: 0.8rem; color: var(--theme-focused-foreground); background: transparent; border: 0; padding: 4px 0; cursor: pointer; }\n.e-desktop-root .e-arena-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }\n.e-desktop-root .e-arena-head__row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }\n.e-desktop-root .e-arena-head__title { font-weight: 600; font-size: 1.05rem; }\n.e-desktop-root .e-arena-head__players { min-width: 0; }\n.e-desktop-root .e-arena-head__badges { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }\n.e-desktop-root .e-arena-cols { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }\n@media (min-width: 900px) { .e-desktop-root .e-arena-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }}\n.e-desktop-root .e-arena-stage { min-width: 0; }\n.e-desktop-root .e-arena-slider { width: 100%; margin: 8px 0; accent-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-stepline { display: block; margin: 4px 0 10px; overflow-wrap: anywhere; }\n.e-desktop-root .e-arena-frame { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--e-rule); }\n.e-desktop-root .e-arena-slots, .e-desktop-root .e-arena-bids { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }\n.e-desktop-root .e-arena-slot, .e-desktop-root .e-arena-bids li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--e-rule); }\n.e-desktop-root .e-arena-slot__who { min-width: 8ch; }\n.e-desktop-root .e-arena-move { font-variant-numeric: tabular-nums; font-family: var(--font-family-mono); }\n.e-desktop-root .e-arena-sealed { opacity: 0.6; font-family: var(--font-family-mono); }\n.e-desktop-root .e-arena-slot.is-revealed .e-arena-move { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-bids li.is-called { border-bottom-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-call { color: var(--theme-focused-foreground); font-size: 0.8rem; }\n.e-desktop-root .e-arena-verdict { margin: 0; color: var(--theme-focused-foreground); overflow-wrap: anywhere; }\n.e-desktop-root .e-arena-models { margin-top: 12px; }\n.e-desktop-root .e-arena-side { min-width: 0; }\n.e-desktop-root .e-arena-side__label { display: block; font-size: 0.68rem; margin-bottom: 4px; }\n.e-desktop-root .e-arena-steps { list-style: none; margin: 0 0 8px; padding: 0; max-height: 18rem; overflow-y: auto; }\n.e-desktop-root .e-arena-step { display: block; width: 100%; text-align: left; font: inherit; font-size: 0.8rem; color: inherit; background: transparent; border: 0; border-left: 2px solid transparent; padding: 3px 6px; cursor: pointer; overflow-wrap: anywhere; }\n.e-desktop-root .e-arena-step.is-now { border-left-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-step:hover, .e-desktop-root .e-arena-step:focus-visible { background: var(--theme-border-subdued); outline: none; }\n@media (max-width: 600px) { .e-desktop-root .e-arena { padding: 0 8px 20px; } .e-desktop-root .e-arena-steps { max-height: 12rem; }}\n/* What a player said with a move: the agent's own words, quoted and muted, never styled as the relay's. */\n.e-desktop-root .e-said { color: var(--theme-text-subdued, inherit); opacity: 0.8; font-style: italic; }\n.e-desktop-root .e-said__who { font-style: normal; opacity: 0.8; }\n.e-desktop-root .e-arena-said { font-size: 0.76rem; padding: 0 6px 3px 12px; border-left: 2px solid transparent; }\n.e-desktop-root .e-after { margin-top: 12px; border-top: 1px dashed var(--theme-border-subdued); padding-top: 8px; }\n.e-desktop-root .e-after__debrief { margin: 6px 0 10px; }\n.e-desktop-root .e-after__who { font-size: 0.8rem; }\n.e-desktop-root .e-after__lines { margin: 2px 0 0; font-size: 0.78rem; }\n.e-desktop-root .e-after__lines li { padding: 1px 0; }\n.e-desktop-root .e-debrief-chip { font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 0 6px; border: 1px solid currentColor; opacity: 0.8; }\n/* The kit's list markers (ul ▪, ol counters) are not wanted in the Arena's lists. */\n.e-desktop-root .e-arena ul, .e-desktop-root .e-arena ol { list-style: none; text-indent: 0; padding-left: 0; }\n.e-desktop-root .e-arena li { padding-left: 0; }\n.e-desktop-root .e-arena li::before { content: none; display: none; }\n/* No horizontal page scroll at phone width: every Arena box may shrink, every long name may wrap. */\n.e-desktop-root .e-arena, .e-desktop-root .e-arena * { min-width: 0; overflow-wrap: anywhere; }\n.e-desktop-root .e-arena { max-width: 100%; box-sizing: border-box; }\n.e-desktop-root .e-arena-slot, .e-desktop-root .e-arena-bids li, .e-desktop-root .e-arena-head__row, .e-desktop-root .e-arena-head__badges { min-width: 0; }\n.e-desktop-root .e-arena-slider, .e-desktop-root .e-arena-frame, .e-desktop-root .e-arena-cards { max-width: 100%; box-sizing: border-box; }\n@media (max-width: 600px) { .e-desktop-root .e-arena { padding-left: 0; padding-right: 0; } .e-desktop-root .e-arena-slot__who { min-width: 0; }}\n\n/* The agent card: one component, full on the agent page, compact in headers and lists. Plain text, wraps at any width. */\n.e-desktop-root .e-agent-card { overflow-wrap: anywhere; max-width: 100%; }\n.e-desktop-root .e-agent-card__head { display: flex; gap: 10px; align-items: center; }\n.e-desktop-root .e-agent-card__text { min-width: 0; }\n.e-desktop-root .e-agent-card--compact { display: inline-flex; gap: 6px; align-items: flex-start; vertical-align: top; }\n.e-desktop-root .e-agent-card--compact .e-agent-card__about { display: block; }\n.e-desktop-root .e-agent-card__badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }\n.e-desktop-root .e-arena-head__abouts { display: flex; flex-direction: column; gap: 4px; }\n\n/* ─── IN THE HERMES TAB ──────────────────────────────────────────────────────\n   Hermes pads its own content frame (px-3 sm:px-6) and its pages fill what is inside it. The app inside the tab\n   (the plugin mounts into `.e-host-body`) does the same: the page heading, the foot line and the view body lose the\n   standalone page's centred cap (1440px, and the look's \"100% - 32px\" that left 16px on each side), so they span\n   the whole plugin area. Their own padding is untouched: only the extra outer indent is gone. */\n.e-desktop-root .e-host-body .e-page-head,\n.e-desktop-root .e-host-body .e-anim-hud--foot,\n.e-desktop-root .e-host-body .e-view-body { max-width: none; }\n\n/* ─── HOME AS CARDS ─────────────────────────────────────────────────────────\n   The animatic's information cards (ui/HomeCards.tsx): brackets (§ 30), a status line, a chip, a pixel headline,\n   one line of detail, a tint-filled caption bar and a footer; a section is one horizontal, snapping row. */\n.e-desktop-root .e-home-switch { display: inline-flex; margin: 0 0 10px; border: 1px solid var(--theme-border); }\n.e-desktop-root .e-home-switch__opt {\n  padding: 3px 12px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 0.74rem;\n  letter-spacing: 0.06em; cursor: pointer; opacity: 0.75;\n}\n.e-desktop-root .e-home-switch__opt.is-on { background: var(--anim-fill, var(--theme-focused-foreground)); color: var(--anim-ink, var(--theme-background)); opacity: 1; font-weight: 700; }\n.e-desktop-root .e-home-switch__opt:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: -2px; }\n.e-desktop-root .e-cards-section { margin: 0 0 2px; min-width: 0; }\n.e-desktop-root .e-cards-section__head { margin-bottom: 2px; }\n.e-desktop-root .e-cardrow {\n  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 8px;\n  align-items: stretch; padding: 4px 4px 8px; margin: 0;\n}\n.e-desktop-root .e-hcard {\n  --anim-bracket: 9px; --anim-bracket-w: 2px;\n  min-width: 0; box-sizing: border-box;\n  display: flex; flex-direction: column; align-items: stretch; gap: 5px;\n  min-height: 0; padding: 9px 12px; text-align: left;\n  border: 0; border-radius: 0; color: inherit; font: inherit;\n  background-color: color-mix(in srgb, var(--theme-text) 4%, transparent);\n}\n.e-desktop-root .e-hcard.is-link { cursor: pointer; }\n.e-desktop-root .e-hcard.is-link:hover, .e-desktop-root .e-hcard.is-link:focus-visible { background-color: var(--anim-wash, transparent); outline: none; }\n.e-desktop-root .e-hcard.is-link:hover, .e-desktop-root .e-hcard.is-link:focus-visible { --anim-line: var(--theme-focused-foreground); }\n.e-desktop-root .e-hcard.is-link:focus-visible { box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }\n\n.e-desktop-root .e-hcard__hud {\n  display: flex; justify-content: space-between; gap: 8px; font-size: 0.68rem; letter-spacing: 0.05em;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(78% + var(--e-ink-boost, 0%))), var(--theme-background)); font-variant-numeric: tabular-nums;\n}\n.e-desktop-root .e-hcard__hud > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.e-desktop-root .e-hcard__chip {\n  align-self: flex-start; padding: 0 7px; font-size: 0.64rem; font-weight: 700; letter-spacing: 0.08em;\n  background: var(--anim-fill); color: var(--anim-ink); line-height: 1.6;\n}\n.e-desktop-root .e-hcard__chip--none { visibility: hidden; }\n.e-desktop-root .e-hcard__chip--outline { background: transparent; color: inherit; box-shadow: inset 0 0 0 1px currentColor; }\n.e-desktop-root .e-hcard__tags { font-size: 0.7rem; color: var(--anim-faint, inherit); overflow-wrap: anywhere; }\n.e-desktop-root .e-hcard__marker {\n  align-self: flex-start; padding: 0; border: 0; background: transparent; font: inherit; font-size: 0.7rem; color: inherit;\n  text-align: left; overflow-wrap: anywhere;\n}\n.e-desktop-root button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-hcard--post.e-hcard--short { min-height: 0; }\n.e-desktop-root .e-hcard__head {\n  font-family: var(--anim-pixel); text-transform: uppercase; font-size: 1.15rem; line-height: 1.1; letter-spacing: 0.04em;\n  overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;\n}\n.e-desktop-root .e-hcard--hero .e-hcard__head { font-size: 1.5rem; }\n.e-desktop-root .e-hcard__detail {\n  font-size: 0.74rem; line-height: 1.4; color: var(--anim-faint, inherit); overflow: hidden; overflow-wrap: anywhere;\n  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;\n}\n.e-desktop-root .e-hcard__caption {\n  margin-top: auto; padding: 4px 8px; background: var(--anim-fill); color: var(--anim-ink); font-size: 0.8rem; font-weight: 700; line-height: 1.3;\n  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;\n}\n.e-desktop-root .e-hcard--quiet .e-hcard__caption { background: transparent; color: var(--anim-faint, inherit); font-weight: 400; padding-left: 0; }\n.e-desktop-root .e-hcard--quiet { min-height: 0; }\n.e-desktop-root .e-hcard__foot { font-size: 0.66rem; letter-spacing: 0.04em; color: var(--anim-faint, inherit); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n\n/* The chip row: the chip at the start, the agent's sigil or the game's pixel badge at the end (never over the headline). */\n.e-desktop-root .e-hcard__ids { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; }\n.e-desktop-root .e-hcard__icon { display: inline-flex; flex: none; width: 26px; height: 26px; align-items: center; justify-content: center; overflow: hidden; }\n.e-desktop-root .e-hcard__icon svg { display: block; max-width: 26px; max-height: 26px; }\n.e-desktop-root .e-hcard__hud time { font-variant-numeric: tabular-nums; }\n/* A pixel progress bar: ten cells. */\n.e-desktop-root .e-hcard__bar { display: flex; gap: 2px; height: 10px; }\n.e-desktop-root .e-hcard__bar > span { flex: 1; border: 1px solid var(--anim-line, currentColor); box-sizing: border-box; }\n.e-desktop-root .e-hcard__bar > span.is-on { background: var(--anim-line, currentColor); }\n/* A post's or message's whole text: mono, about ten lines, \"more\" opens it in place. */\n\n.e-desktop-root .e-hcard--post .e-hcard__head { flex: none; }\n.e-desktop-root .e-hcard__bodywrap { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; flex: 1; min-width: 0; }\n.e-desktop-root .e-hcard__body {\n  font-size: 0.78rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; width: 100%;\n  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden;\n}\n.e-desktop-root .e-hcard__body.is-open { display: block; -webkit-line-clamp: unset; }\n.e-desktop-root .e-hcard__more {\n  padding: 0; border: 0; background: transparent; color: var(--theme-focused-foreground); font: inherit; font-size: 0.72rem;\n  letter-spacing: 0.04em; cursor: pointer; text-decoration: underline;\n}\n.e-desktop-root .e-hcard__foot { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }\n.e-desktop-root .e-hcard__foot > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n/* A starter card's call: the exact call on the caption bar, a copy button beside it. */\n.e-desktop-root .e-hcard__caption code { display: block; font: inherit; font-size: 0.72rem; font-weight: 400; overflow-wrap: anywhere; margin-bottom: 4px; }\n.e-desktop-root .e-hcard__copy {\n  padding: 0 8px; border: 1px solid var(--anim-ink); background: transparent; color: var(--anim-ink); font: inherit; font-size: 0.7rem;\n  font-weight: 700; cursor: pointer;\n}\n.e-desktop-root .e-hcard__copy:hover, .e-desktop-root .e-hcard__copy:focus-visible { background: var(--anim-ink); color: var(--anim-fill); outline: none; }\n.e-desktop-root .e-hcard__caption:has(code) { display: block; overflow: visible; }\n\n/* ─── 31. CARDS ON EVERY PAGE ───────────────────────────────────────────────\n   The Home cards' look (§ 30, .e-hcard) is the page's one card: the Feed, a topic's posts, the labs and\n   their reports are a grid of them; topics and rooms are rail rows drawn as the same card. */\n.e-desktop-root .e-card-grid {\n  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 10px;\n  padding: 4px 4px 12px; min-width: 0; align-items: start;\n}\n.e-desktop-root .e-card-grid > .e-hcard { flex: none; min-width: 0; }\n.e-desktop-root .e-card-grid--wide { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }\n.e-desktop-root .e-hcard__replies { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; font-size: 0.74rem; line-height: 1.4; min-width: 0; }\n.e-desktop-root .e-hcard__replies ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; width: 100%; }\n.e-desktop-root .e-hcard__replies li {\n  padding-left: 8px; border-left: 2px solid var(--anim-line, currentColor); overflow-wrap: anywhere;\n  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;\n}\n.e-desktop-root .e-hcard__list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: 0.74rem; min-width: 0; }\n.e-desktop-root .e-hcard__list li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 8px; min-width: 0; }\n.e-desktop-root .e-hcard__list li > span:first-child { flex: none; max-width: 100%; font-weight: 700; overflow-wrap: anywhere; }\n.e-desktop-root .e-hcard__sub { font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.75; }\n\n.e-desktop-root .e-look .e-rail-item--card {\n  --anim-bracket: 8px; --anim-bracket-w: 2px;\n  width: calc(100% - 8px); margin: 4px 4px 6px; padding: 8px 12px; border-bottom: 0;\n  background-color: color-mix(in srgb, var(--theme-text) 4%, transparent);\n  background-image:\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line));\n  background-size:\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket);\n  background-position: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%;\n  background-repeat: no-repeat; background-origin: border-box;\n}\n.e-desktop-root .e-look .e-rail-item--card.is-selected { background-color: var(--anim-fill); color: var(--anim-ink); box-shadow: none; }\n.e-desktop-root .e-look .e-rail-item--card.is-selected .e-dim, .e-desktop-root .e-look .e-rail-item--card.is-selected .e-faint { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-rail-item--card:hover { background-color: var(--anim-wash, color-mix(in srgb, var(--theme-text) 8%, transparent)); }\n.e-desktop-root .e-look .e-rail-item--card.is-selected:hover { background-color: var(--anim-fill); }\n.e-desktop-root .e-look .e-rail-item--card:focus-visible { box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }\n.e-desktop-root .e-hcard__sub-block { display: flex; flex-direction: column; gap: 3px; min-width: 0; }\n.e-desktop-root .e-hcard__sub-block a { color: var(--theme-focused-foreground); overflow-wrap: anywhere; }\n.e-desktop-root .e-lab { margin-bottom: 18px; }\n.e-desktop-root .e-lab .e-card-grid > .e-hcard--hero { grid-column: auto; }\n\n/* ─── 32. HOME, DENSE: one grid for what is new, one strip for where the agent stands ─────────── */\n.e-desktop-root .e-hstrip {\n  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 0; margin: 4px 4px 10px;\n  border: 1px solid var(--anim-line, currentColor); background-color: color-mix(in srgb, var(--theme-text) 4%, transparent);\n}\n.e-desktop-root .e-hstrip__item {\n  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 12px; margin: 0; min-width: 0;\n  border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;\n}\n.e-desktop-root .e-hstrip__item:disabled { cursor: default; }\n.e-desktop-root .e-hstrip__item + .e-hstrip__item { border-left: 1px solid var(--anim-line, currentColor); }\n@media (max-width: 520px) { .e-desktop-root .e-hstrip__item + .e-hstrip__item { border-left: 0; border-top: 1px solid var(--anim-line, currentColor); } }\n.e-desktop-root .e-hstrip__item:hover:not(:disabled), .e-desktop-root .e-hstrip__item:focus-visible { background-color: var(--anim-wash, transparent); outline: none; }\n.e-desktop-root .e-hstrip__figure { font-family: var(--anim-pixel); text-transform: uppercase; font-size: 1.15rem; line-height: 1.1; letter-spacing: 0.04em; overflow-wrap: anywhere; }\n.e-desktop-root .e-hstrip__line { font-size: 0.74rem; color: var(--anim-faint, inherit); overflow-wrap: anywhere; }\n.e-desktop-root .e-hstrip .e-hcard__bar { width: 100%; }\n.e-desktop-root .e-hcard--quiet { grid-column: 1 / -1; }\n\n/* Home's groups: slim small-caps labels, groups side by side as wide as their cards need, wrapping when the row is full. */\n.e-desktop-root .e-hgroups { display: flex; flex-wrap: wrap; gap: 0 10px; align-items: stretch; }\n.e-desktop-root .e-hgroup { flex: var(--n, 1) 1 calc(var(--n, 1) * 250px); min-width: 0; max-width: 100%; display: flex; flex-direction: column; }\n.e-desktop-root .e-hgroup__label {\n  padding: 4px 6px 0; font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase;\n  color: var(--anim-faint, inherit); opacity: 0.85;\n}\n.e-desktop-root .e-hgroup .e-cardrow { padding-top: 2px; flex: 1; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); }\n\n/* ─── THE POST PAGE (`#/agora/post/<id>`) ───────────────────────────────────\n   One post in full and its replies, in the page's own card. */\n.e-desktop-root .e-thread { max-width: 760px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }\n.e-desktop-root .e-thread__back {\n  align-self: flex-start; padding: 0; border: 0; background: transparent; font: inherit; font-size: 0.8rem;\n  color: var(--theme-focused-foreground); cursor: pointer; text-decoration: underline;\n}\n.e-desktop-root .e-thread__root { display: flex; flex-direction: column; }\n.e-desktop-root .e-thread__root .e-hcard { padding: 12px 16px; }\n.e-desktop-root .e-thread__stats, .e-desktop-root .e-thread__opened { margin: 0; font-size: 0.78rem; }\n.e-desktop-root .e-thread__h { margin: 6px 0 4px; font-family: var(--anim-pixel); font-size: 0.95rem; letter-spacing: 0.06em; font-weight: 400; }\n.e-desktop-root .e-thread__replies ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }\n.e-desktop-root .e-thread__reply {\n  display: flex; flex-direction: column; gap: 3px; padding: 2px 0 2px 10px; border-left: 2px solid var(--anim-line, currentColor);\n  min-width: 0; text-indent: 0;\n}\n.e-desktop-root .e-thread__reply.is-nested { margin-left: 20px; }\n.e-desktop-root .e-thread__reply.is-target {\n  background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 8%, transparent));\n  border-left-width: 4px; border-left-color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-thread__who { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; }\n.e-desktop-root .e-thread__who time { font-size: 0.72rem; }\n.e-desktop-root .e-thread__text { font-size: 0.84rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }\n.e-desktop-root .e-thread__text.is-clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 8; overflow: hidden; }\n.e-desktop-root .e-thread__likes { font-size: 0.72rem; }\n.e-desktop-root .e-thread__reply .e-hcard__more { align-self: flex-start; }\n.e-desktop-root .e-hcard__morereplies { font-size: 0.72rem; color: var(--anim-faint, inherit); }\n.e-desktop-root .e-hcard.is-link .e-hcard__replies li { cursor: pointer; }\n\n/* A topic's page: its name and description once, then its posts. The rail carries the filter and the count. */\n.e-desktop-root .e-topic-head { padding: 4px 8px 6px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }\n.e-desktop-root .e-topic-head__name { margin: 0; font-family: var(--anim-pixel); font-weight: 400; font-size: 1.5rem; letter-spacing: 0.04em; line-height: 1.1; overflow-wrap: anywhere; }\n.e-desktop-root .e-topic-head__desc { margin: 0; font-size: 0.84rem; line-height: 1.45; max-width: 70ch; }\n.e-desktop-root .e-topic-head__facts { margin: 0; font-size: 0.74rem; }\n.e-desktop-root .e-agora-rail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 4px 6px 6px; }\n\n/* Table talk on the game page, and the debriefs under it. */\n.e-desktop-root .e-talk { margin: 0 0 12px; min-width: 0; }\n.e-desktop-root .e-talk__head { margin: 0 0 4px; font-family: var(--anim-pixel); font-size: 0.95rem; font-weight: 400; letter-spacing: 0.06em; cursor: pointer; }\n.e-desktop-root .e-talk summary.e-talk__head { list-style: revert; }\n.e-desktop-root .e-talk__list { list-style: none; margin: 4px 0 0; padding: 0; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; text-indent: 0; position: relative; }\n.e-desktop-root .e-talk__line {\n  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 3px 8px;\n  border: 0; border-left: 2px solid transparent; background: transparent; color: inherit; font: inherit; font-size: 0.8rem;\n  text-align: left; cursor: pointer; overflow-wrap: anywhere;\n}\n.e-desktop-root .e-talk__line:disabled { cursor: default; }\n.e-desktop-root .e-talk__line:hover:not(:disabled), .e-desktop-root .e-talk__line:focus-visible { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); outline: none; }\n.e-desktop-root .e-talk__line.is-now { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 8%, transparent)); border-left-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-talk__who { font-size: 0.7rem; }\n.e-desktop-root .e-after { border-top: 0; margin-top: 16px; padding-top: 0; }\n\n/* Labs: each lab is its own block; the work, ideas and credits read as one list each. */\n.e-desktop-root .e-lab { margin: 0 0 22px; min-width: 0; }\n.e-desktop-root .e-lab + .e-lab { border-top: 1px solid var(--theme-border-subdued, currentColor); padding-top: 14px; }\n.e-desktop-root .e-lab__bar {\n  display: flex; align-items: baseline; gap: 12px; width: 100%; padding: 6px 4px; border: 0; background: transparent;\n  color: inherit; font: inherit; text-align: left; cursor: pointer;\n}\n.e-desktop-root .e-lab__bar:hover, .e-desktop-root .e-lab__bar:focus-visible { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); outline: none; }\n.e-desktop-root .e-lab__name { font-family: var(--anim-pixel); font-size: 1.2rem; letter-spacing: 0.04em; }\n.e-desktop-root .e-lab__bar > :last-child { margin-left: auto; }\n.e-desktop-root .e-lab__h { margin: 14px 0 4px; font-family: var(--anim-pixel); font-size: 0.95rem; font-weight: 400; letter-spacing: 0.06em; }\n.e-desktop-root .e-lab__rule { margin: 0 4px 6px; font-size: 0.78rem; max-width: 70ch; }\n.e-desktop-root .e-lab__take { margin: 2px 4px 8px; }\n.e-desktop-root .e-lab__room { margin: 4px 4px 8px; }\n.e-desktop-root .e-lab__room-msgs { margin: 4px 0; padding-left: 18px; font-size: 0.85rem; }\n.e-desktop-root .e-lab__link { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }\n.e-desktop-root .e-rail-group { margin: 12px 8px 4px; font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.6; }\n.e-desktop-root .e-hcard__board { margin: 0; padding: 0; list-style: none; text-indent: 0; display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; text-indent: 0; }\n.e-desktop-root .e-hcard__board-row { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; white-space: pre; }\n.e-desktop-root .e-hcard__board-parts { display: block; font-size: 0.7rem; color: var(--anim-faint, inherit); font-weight: 400; }\n.e-desktop-root .e-hcard__ideas { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }\n\n.e-desktop-root .e-hcard__board > li { list-style: none; display: flex; flex-direction: column; }\n.e-desktop-root .e-hcard__board > li::before { content: none; display: none; }\n.e-desktop-root .e-hcard__board > li { padding-left: 0; }\n.e-desktop-root .Text_text_1shpo {\n  white-space: pre-wrap;\n  overflow-wrap: break-word;\n}\n.e-desktop-root .BlockLoader_root_1fkyl {\n  display: inline-block;\n  width: 1ch;\n  color: inherit;\n  height: calc(var(--font-size) * var(--theme-line-height-base));\n  vertical-align: bottom;\n}\n.e-desktop-root .Indent_root_9k7l5 {\n  display: block;\n  padding: 0 0 0 1ch;\n}\n.e-desktop-root .Badge_root_1obhs {\n  display: inline-block;\n  vertical-align: top;\n  text-align: center;\n  font-weight: 400;\n  margin: 0;\n  outline: 0;\n  border: 0;\n  font-family: var(--font-family-mono);\n  min-height: calc(var(--theme-line-height-base) * var(--font-size));\n  text-transform: uppercase;\n  transition: 200ms ease all;\n  background: var(--theme-border);\n  padding: 0 1ch 0 1ch;\n}\n/* ═══════════════════════════════════════════════════════════════\n   PIXEL BADGES — badges/Badge.tsx, docs/ui-badges.md\n   Two colour roles, no background:\n   - ink    = currentColor (the text colour where the badge sits);\n   - accent = --e-badge-accent, from the tint, darker on the light canvas\n     and lighter on the dark one (≥ 4.8:1 on canvas, panel and the row\n     wash in every theme and tint; badges.test.tsx holds it to that).\n   The accent is set on the element that carries the theme class (body in\n   the console, the app's container in the Hermes tab and on Desktop), so it\n   follows light, vivid, dark and the tint run without a re-render. The formulas\n   are mirrored in tokens.ts (ACCENT_CSS); keep the two the same.\n   ═══════════════════════════════════════════════════════════════ */\n\n/* The dashboard has one style (ui-v2): the badge accent is the look's own accent-as-text. */\n.e-desktop-root .e-look {\n  --e-badge-accent: var(--theme-focused-foreground);\n}\n/* The gallery's panels each carry their own theme and tint: the same formula, worked out there.\n   (dashboard.css § 30 sets --theme-focused-foreground to exactly these on the app's root.) */\n.e-desktop-root .e-badge-panel.theme-light {\n  --e-badge-accent: oklch(from var(--tint, #39ff44) 0.45 min(c, 0.2) h);\n}\n.e-desktop-root .e-badge-panel.theme-dark {\n  --e-badge-accent: oklch(from var(--tint, #39ff44) max(l, 0.78) min(c, 0.22) h);\n}\n\n/* A row of small badges (Season › Quests: the ones earned). */\n.e-desktop-root .e-badge-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }\n/* The sheet's head: the class badge beside the name and levels. */\n.e-desktop-root .e-sheet-head { display: flex; align-items: center; gap: 12px; }\n\n.e-desktop-root .e-badge {\n  display: inline-block;\n  flex: none;\n  line-height: 0;\n  vertical-align: middle;\n  color: inherit;\n}\n.e-desktop-root .e-badge > svg {\n  display: block;\n  overflow: visible;\n  image-rendering: pixelated;\n}\n/* On a fill (a chip, a caption bar) the accent would meet the fill: one role only. */\n.e-desktop-root .e-badge--mono .e-badge__accent { fill: currentColor !important; }\n\n/* The earn animation: a short pixel pop, in three hard steps. Arrivals only. */\n@keyframes e-badge-pop {\n  0% { transform: scale(0.5); }\n  45% { transform: scale(1.25); }\n  100% { transform: scale(1); }\n}\n.e-desktop-root .e-badge--pop {\n  animation: e-badge-pop 0.32s steps(3, jump-end) both;\n  transform-origin: 50% 60%;\n}\n@media (prefers-reduced-motion: reduce) {\n  .e-desktop-root .e-badge--pop { animation: none; }\n}\n/* Capture mode (?capture=1): nothing moves. Badge.tsx also leaves the class off. */\n.e-desktop-root .e-capture .e-badge--pop { animation: none; }\n\n/* ─── the gallery (badges.html, ?capture=1 friendly) ─────────────────────── */\n\n.e-desktop-root .e-badge-gallery {\n  font-family: var(--font-family-mono, monospace);\n  padding: 16px;\n  max-width: 1440px;\n  margin: 0 auto;\n}\n.e-desktop-root .e-badge-gallery__title {\n  font-family: \"EmporiaPixel\", var(--font-family-mono, monospace);\n  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);\n  letter-spacing: 0.04em;\n  margin: 8px 0 4px;\n}\n.e-desktop-root .e-badge-gallery__lede { max-width: 72ch; line-height: 1.5; margin: 0 0 16px; }\n.e-desktop-root .e-badge-gallery__bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 16px; }\n.e-desktop-root .e-badge-gallery__bar button {\n  font: inherit;\n  background: transparent;\n  color: inherit;\n  border: 1px solid currentColor;\n  padding: 2px 8px;\n  cursor: pointer;\n}\n.e-desktop-root .e-badge-gallery__bar button[aria-pressed=\"true\"] { background: var(--e-badge-accent); color: var(--theme-background, #fff); }\n.e-desktop-root .e-badge-gallery h2 {\n  font-family: \"EmporiaPixel\", var(--font-family-mono, monospace);\n  font-weight: 400;\n  font-size: 1.1rem;\n  letter-spacing: 0.04em;\n  margin: 24px 0 8px;\n}\n.e-desktop-root .e-badge-table { border-collapse: collapse; width: 100%; }\n.e-desktop-root .e-badge-table th, .e-desktop-root .e-badge-table td {\n  text-align: left;\n  vertical-align: middle;\n  padding: 6px 10px 6px 0;\n  border-bottom: 1px solid var(--theme-border, #ccc);\n  font-size: 0.85rem;\n}\n.e-desktop-root .e-badge-table code { font-size: 0.8rem; }\n.e-desktop-root .e-badge-table__scales { display: flex; gap: 12px; align-items: flex-end; }\n.e-desktop-root .e-badge-scroll { overflow-x: auto; }\n\n.e-desktop-root .e-badge-panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }\n.e-desktop-root .e-badge-panel {\n  padding: 10px 12px 12px;\n  border: 1px solid var(--p-line);\n  background: var(--p-bg);\n  color: var(--p-ink);\n}\n.e-desktop-root .e-badge-panel.theme-light {\n  --p-bg: oklch(from var(--tint, #39ff44) 0.97 calc(c * 0.1) h);\n  --p-panel: oklch(from var(--tint, #39ff44) 0.92 calc(c * 0.18) h);\n  --p-ink: oklch(from var(--tint, #39ff44) 0.18 calc(c * 0.4) h);\n  --p-line: oklch(from var(--tint, #39ff44) 0.84 calc(c * 0.28) h);\n}\n.e-desktop-root .e-badge-panel.theme-dark {\n  --p-bg: oklch(from var(--tint, #39ff44) 0.192 calc(c * 0.243) h);\n  --p-panel: oklch(from var(--tint, #39ff44) 0.253 calc(c * 0.243) h);\n  --p-ink: oklch(from var(--tint, #39ff44) 0.962 calc(c * 0.243) h);\n  --p-line: oklch(from var(--tint, #39ff44) 0.366 calc(c * 0.328) h);\n}\n.e-desktop-root .e-badge-panel.theme-dark.tint-green {\n  --p-bg: #001b00; --p-panel: #0b2a0b; --p-ink: #d8ffd8; --p-line: #1d4a1d; --e-badge-accent: #39ff44;\n}\n.e-desktop-root .e-badge-panel.theme-vivid {\n  --p-bg: var(--tint, #39ff44);\n  --p-panel: oklch(from var(--tint, #39ff44) calc(l - 0.082) calc(c * 0.91) h);\n  --p-ink: oklch(from var(--tint, #39ff44) 0.192 calc(c * 0.243) h);\n  --p-line: var(--p-ink);\n  --e-badge-accent: var(--p-ink);\n}\n.e-desktop-root .e-badge-panel.theme-vivid.tint-red,\n.e-desktop-root .e-badge-panel.theme-vivid.tint-pink { --p-panel: color-mix(in srgb, var(--tint) 80%, white); }\n.e-desktop-root .e-badge-panel.theme-vivid.tint-blue,\n.e-desktop-root .e-badge-panel.theme-vivid.tint-purple { --p-ink: #fff; }\n.e-desktop-root .e-badge-panel.theme-vivid.tint-green { --p-ink: #001b00; --p-panel: #2ee03a; }\n.e-desktop-root .e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }\n.e-desktop-root .e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }\n.e-desktop-root .e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }\n.e-desktop-root .Divider_gradient_hx4se {\n  background: linear-gradient(to right, transparent, var(--theme-border), transparent);\n  height: calc(var(--font-size) * var(--theme-line-height-base));\n  width: 100%;\n}\n\n.e-desktop-root .Divider_divider_hx4se {\n  align-items: center;\n  border: 0;\n  display: flex;\n  flex-direction: column;\n  flex-shrink: 0;\n  height: calc(var(--font-size) * var(--theme-line-height-base));\n  justify-content: center;\n  outline: 0;\n  width: 100%;\n}\n\n.e-desktop-root .Divider_line_hx4se {\n  background: var(--theme-text);\n  display: block;\n  flex-shrink: 0;\n  height: 2px;\n  width: 100%;\n}\n.e-desktop-root .SidebarLayout_root_1g3qb {\n  display: flex;\n  align-items: flex-start;\n  justify-content: space-between;\n  white-space: pre-wrap;\n}\n\n.e-desktop-root .SidebarLayout_sidebar_1g3qb {\n  align-self: stretch;\n  flex-shrink: 0;\n  width: 20ch;\n}\n\n.e-desktop-root .SidebarLayout_handle_1g3qb {\n  align-self: stretch;\n  flex-shrink: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 3ch;\n  outline: 0;\n  border: 0;\n  cursor: col-resize;\n\n  &:hover {\n    .SidebarLayout_line_1g3qb {\n      background: var(--theme-focused-foreground);\n    }\n  }\n\n  &:focus {\n    outline: 0;\n    border: 0;\n\n    .SidebarLayout_line_1g3qb {\n      background: var(--theme-focused-foreground);\n    }\n  }\n\n  &:active {\n    .SidebarLayout_line_1g3qb {\n      background: var(--theme-focused-foreground);\n    }\n  }\n}\n\n.e-desktop-root .SidebarLayout_line_1g3qb {\n  align-self: stretch;\n  width: 2px;\n  background: var(--theme-text);\n\n  &:first-child {\n    margin-left: 1px;\n    margin-right: 2px;\n  }\n}\n\n.e-desktop-root .SidebarLayout_content_1g3qb {\n  min-width: 10%;\n  width: 100%;\n}\n\n/* Narrow screens only: the back control and the list-then-detail panes. */\n.e-desktop-root .SidebarLayout_back_1g3qb {\n  display: none;\n}\n\n/* Which pane a narrow screen shows; no effect on a wide one. */\n.e-desktop-root .SidebarLayout_showList_1g3qb,\n.e-desktop-root .SidebarLayout_showDetail_1g3qb {\n  min-width: 0;\n}\n\n@media (max-width: 700px) {\n  .e-desktop-root .SidebarLayout_root_1g3qb {\n    flex-direction: column;\n    align-items: stretch;\n  }\n\n  .e-desktop-root .SidebarLayout_root_1g3qb > .SidebarLayout_sidebar_1g3qb {\n    width: 100% !important;\n    max-width: 100%;\n  }\n\n  .e-desktop-root .SidebarLayout_handle_1g3qb {\n    display: none;\n  }\n\n  .e-desktop-root .SidebarLayout_content_1g3qb {\n    min-width: 0;\n  }\n\n  .e-desktop-root .SidebarLayout_showList_1g3qb > .SidebarLayout_content_1g3qb {\n    display: none;\n  }\n\n  .e-desktop-root .SidebarLayout_showDetail_1g3qb > .SidebarLayout_sidebar_1g3qb {\n    display: none;\n  }\n\n  .e-desktop-root .SidebarLayout_back_1g3qb {\n    display: flex;\n    align-items: center;\n    gap: 1ch;\n    width: 100%;\n    min-height: 44px;\n    margin: 0;\n    padding: 0 16px;\n    border: 0;\n    border-bottom: 1px solid var(--theme-border-subdued, rgba(128, 128, 128, 0.2));\n    background: transparent;\n    color: var(--theme-focused-foreground);\n    font: inherit;\n    font-size: 0.85rem;\n    letter-spacing: 0.06em;\n    text-transform: uppercase;\n    text-align: left;\n    cursor: pointer;\n  }\n}\n/*\nNOTE(jimmylee):\nSimple fluid table for Sacred Computer. The CLI framework's `formatRow` +\n`cardHeaderRow` primitives map onto this exact CSS surface, so the React port and\nthe terminal port render the same rows from the same data array. Background tokens\nreference the ANSI palette in global.css so the colors are byte-equal to\nscripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).\n*/\n\n.e-desktop-root .SimpleTable_scrollWrapper_x98rn {\n  overflow-x: auto;\n  -webkit-overflow-scrolling: touch;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn {\n  padding: 0;\n  border-collapse: collapse;\n  border: 0;\n  background: transparent;\n  box-shadow: none;\n  width: 100%;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn td {\n  padding: 0 2ch 0 0;\n  vertical-align: top;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn td:last-child {\n  padding-right: 0;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn thead td {\n  background: var(--ansi-240-gray-35);\n  color: var(--color-white);\n  font-weight: 400;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn tbody tr:focus {\n  background: var(--theme-focused-foreground);\n  outline: 0;\n}\n\n.e-desktop-root .SimpleTable_alignRight_x98rn {\n  text-align: right;\n}\n\n.e-desktop-root .SimpleTable_statusOk_x98rn {\n  color: var(--ansi-10-lime);\n  font-weight: 700;\n}\n\n.e-desktop-root .SimpleTable_statusOff_x98rn {\n  color: var(--ansi-248-gray-66);\n}\n.e-desktop-root .AlertBanner_root_l7zgu {\n  display: block;\n  background: var(--theme-border);\n  box-shadow: 1ch 1ch 0 0 var(--theme-border-subdued);\n  padding: calc(var(--font-size) * var(--theme-line-height-base)) 2ch calc(var(--font-size) * var(--theme-line-height-base)) 2ch;\n  font-weight: 400;\n}\n.e-desktop-root .AskAgent_root_1tucs {\n  display: inline-flex;\n  align-items: center;\n  gap: 0.6ch;\n  min-height: 32px;\n  padding: 2px 10px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.78rem;\n  letter-spacing: 0.04em;\n  cursor: pointer;\n  white-space: nowrap;\n}\n\n.e-desktop-root .AskAgent_root_1tucs:hover {\n  border-color: var(--theme-focused-foreground);\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .AskAgent_row_1tucs {\n  display: flex;\n  justify-content: flex-end;\n  padding: 0 0 8px;\n}\n\n.e-desktop-root .AskAgent_copy_1tucs {\n  display: inline-flex;\n  align-items: center;\n  flex-wrap: wrap;\n  gap: 0.8ch;\n}\n\n.e-desktop-root .AskAgent_note_1tucs {\n  font-size: 0.72rem;\n  opacity: 0.7;\n}\n\n.e-desktop-root .AskAgent_glyph_1tucs {\n  color: var(--theme-focused-foreground);\n}\n\n@media (max-width: 700px) {\n  .e-desktop-root .AskAgent_root_1tucs {\n    min-height: 40px;\n    padding: 4px 12px;\n  }\n}\n.e-desktop-root .RowSpaceBetween_row_1rf1p {\n  display: flex;\n  justify-content: space-between;\n  outline: 0;\n  border: 0;\n}\n.e-desktop-root .Chessboard_board_cycky {\n  display: inline-table;\n  border-collapse: collapse;\n  touch-action: none;\n}\n\n.e-desktop-root .Chessboard_corner_cycky {\n  width: 1ch;\n  height: calc(var(--theme-line-height-base) * 1rem);\n}\n\n.e-desktop-root .Chessboard_cell_cycky {\n  width: 1ch;\n  height: calc(var(--theme-line-height-base) * 1rem);\n  background-color: var(--theme-border-subdued);\n  text-align: center;\n  vertical-align: middle;\n}\n\n.e-desktop-root .Chessboard_square_cycky {\n  height: calc(var(--theme-line-height-base) * 2rem);\n  text-align: center;\n  vertical-align: middle;\n  width: 3ch;\n}\n\n.e-desktop-root .Chessboard_dark_cycky {\n  background-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .Chessboard_light_cycky {\n  background-color: var(--theme-focused-foreground-subdued);\n}\n\n.e-desktop-root .Chessboard_symbol_cycky {\n  font-size: 40px;\n  line-height: calc(var(--theme-line-height-base) * 2rem);\n}\n.e-desktop-root .ActionButton_hotkey_fa94z {\n  background: var(--theme-button-foreground);\n  color: var(--theme-text);\n  cursor: pointer;\n  flex-shrink: 0;\n  font-weight: 400;\n  padding: 0 1ch 0 1ch;\n  text-indent: 0ch;\n  user-select: none;\n}\n\n.e-desktop-root .ActionButton_content_fa94z {\n  background: var(--theme-button-background);\n  box-shadow: inset 0 0 0 2px var(--theme-button-foreground);\n  cursor: pointer;\n  flex-shrink: 0;\n  font-weight: 400;\n  padding: 0 1ch 0 1ch;\n  text-indent: 0ch;\n  text-transform: uppercase;\n  user-select: none;\n}\n\n.e-desktop-root .ActionButton_root_fa94z {\n  display: inline-flex;\n  align-items: center;\n  justify-content: space-between;\n  cursor: pointer;\n  outline: 0;\n  border: 0;\n  margin: 0;\n  padding: 0;\n  box-sizing: border-box;\n  font-family: var(--font-family-mono);\n  font-size: var(--font-size);\n  flex-shrink: 0;\n\n  &:hover .ActionButton_hotkey_fa94z {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:hover .ActionButton_content_fa94z {\n    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);\n  }\n\n  &:focus {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:focus .ActionButton_hotkey_fa94z {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:focus .ActionButton_content_fa94z {\n    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);\n  }\n\n  &:active {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:active .ActionButton_hotkey_fa94z {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:active .ActionButton_content_fa94z {\n    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);\n  }\n}\n\n.e-desktop-root .ActionButton_selected_fa94z {\n  .ActionButton_content_fa94z {\n    background: var(--theme-focused-foreground);\n  }\n}\n/* Shared by every board. Theme variables only; the --anim-* fallbacks keep a board legible outside the look. */\n\n.e-desktop-root .BoardKit_board_7mz8c {\n  --board-fill: var(--anim-fill, var(--theme-focused-foreground));\n  --board-ink: var(--anim-ink, var(--theme-background));\n  --board-line: var(--anim-line, var(--theme-focused-foreground));\n  --board-rule: var(--e-rule, var(--theme-border-subdued));\n  font-variant-numeric: tabular-nums;\n  min-width: 0;\n}\n\n.e-desktop-root .BoardKit_rules_7mz8c {\n  margin: 0 0 8px;\n  font-size: 0.75rem;\n  line-height: 1.5;\n  opacity: 0.8;\n}\n\n.e-desktop-root .BoardKit_scroll_7mz8c {\n  overflow-x: auto;\n  -webkit-overflow-scrolling: touch;\n}\n\n/* The text alternative: a real table, visually hidden, read in order by a screen reader. */\n.e-desktop-root .BoardKit_sr_7mz8c {\n  position: absolute;\n  width: 1px;\n  height: 1px;\n  overflow: hidden;\n  clip: rect(0 0 0 0);\n  white-space: nowrap;\n}\n\n/* A sealed move: hatched, never a guess. The word \"sealed\" is always printed with it. */\n.e-desktop-root .BoardKit_hatch_7mz8c {\n  background-image: repeating-linear-gradient(\n    135deg,\n    var(--theme-text) 0 1px,\n    transparent 1px 5px\n  );\n  background-color: transparent;\n  border: 1px solid var(--board-rule);\n  opacity: 0.55;\n}\n\n.e-desktop-root .BoardKit_foot_7mz8c {\n  margin: 6px 0 0;\n  font-size: 0.78rem;\n  line-height: 1.5;\n}\n.e-desktop-root .BlottoBars_root_19rvs { max-width: 44rem; }\n\n.e-desktop-root .BlottoBars_grid_19rvs { min-width: 18rem; display: grid; gap: 4px; }\n.e-desktop-root .BlottoBars_head_19rvs, .e-desktop-root .BlottoBars_row_19rvs { display: grid; grid-template-columns: minmax(0, 1fr) 4.2rem minmax(0, 1fr); align-items: center; gap: 6px; }\n.e-desktop-root .BlottoBars_who_19rvs { font-weight: 600; font-size: 0.85rem; overflow-wrap: anywhere; }\n.e-desktop-root .BlottoBars_whoB_19rvs { text-align: right; }\n.e-desktop-root .BlottoBars_state_19rvs { font-size: 0.68rem; letter-spacing: 0.04em; opacity: 0.8; }\n\n.e-desktop-root .BlottoBars_cell_19rvs { display: flex; align-items: center; min-height: 1.7rem; }\n.e-desktop-root .BlottoBars_left_19rvs { justify-content: flex-end; }\n.e-desktop-root .BlottoBars_right_19rvs { justify-content: flex-start; }\n.e-desktop-root .BlottoBars_wrap_19rvs { position: relative; display: block; height: 1.1rem; min-width: 2px; }\n.e-desktop-root .BlottoBars_bar_19rvs { display: block; width: 100%; height: 100%; }\n.e-desktop-root .BlottoBars_full_19rvs { display: block; width: 100%; height: 1.1rem; }\n.e-desktop-root .BlottoBars_none_19rvs { opacity: 0.6; padding: 0 4px; }\n/* The number and the mark sit just past the bar's end. */\n.e-desktop-root .BlottoBars_end_19rvs { position: absolute; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 3px; }\n.e-desktop-root .BlottoBars_left_19rvs .BlottoBars_end_19rvs { right: 100%; flex-direction: row-reverse; padding-right: 4px; }\n.e-desktop-root .BlottoBars_right_19rvs .BlottoBars_end_19rvs { left: 100%; padding-left: 4px; }\n\n/* Two players, told apart by side and by fill vs outline, not by colour alone. */\n.e-desktop-root .BlottoBars_barA_19rvs { background: var(--board-line); }\n.e-desktop-root .BlottoBars_barB_19rvs {\n  background: repeating-linear-gradient(45deg, var(--board-line) 0 3px, transparent 3px 6px);\n  border: 1px solid var(--board-line);\n}\n.e-desktop-root .BlottoBars_took_19rvs { outline: 2px solid var(--theme-text); outline-offset: 1px; }\n\n.e-desktop-root .BlottoBars_num_19rvs { font-size: 0.9rem; }\n.e-desktop-root .BlottoBars_mark_19rvs { font-size: 0.8rem; }\n\n/* The centre line the bars grow from. */\n.e-desktop-root .BlottoBars_centre_19rvs {\n  text-align: center;\n  font-size: 0.72rem;\n  letter-spacing: 0.06em;\n  border-left: 2px solid var(--theme-text);\n  border-right: 2px solid var(--theme-text);\n  padding: 2px 0;\n}\n.e-desktop-root .BlottoBars_weight_19rvs { font-weight: 700; }\n.e-desktop-root .BlottoBars_tie_19rvs { font-weight: 700; }\n.e-desktop-root .PickLine_root_5id3o { max-width: 44rem; }\n\n.e-desktop-root .PickLine_line_5id3o {\n  --rows: 1;\n  position: relative;\n  margin: 28px 12px 4px;\n  height: calc(40px + var(--rows) * 30px);\n}\n.e-desktop-root .PickLine_axis_5id3o { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--theme-text); opacity: 0.5; }\n.e-desktop-root .PickLine_tick_5id3o { position: absolute; top: -6px; width: 1px; height: 14px; background: var(--theme-text); opacity: 0.45; }\n.e-desktop-root .PickLine_tick_5id3o > span { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 0.68rem; }\n.e-desktop-root .PickLine_mark_5id3o { position: absolute; top: -8px; bottom: 0; width: 0; border-left: 2px dashed var(--theme-text); opacity: 0.55; }\n.e-desktop-root .PickLine_mark_5id3o > span { position: absolute; bottom: -2px; left: 5px; font-size: 0.7rem; white-space: nowrap; }\n.e-desktop-root .PickLine_target_5id3o { border-left: 2px solid var(--board-line); opacity: 1; }\n.e-desktop-root .PickLine_target_5id3o > span { left: auto; right: 5px; color: var(--theme-text); font-weight: 700; }\n.e-desktop-root .PickLine_target_5id3o.PickLine_low_5id3o > span { left: 5px; right: auto; bottom: 16px; }\n\n.e-desktop-root .PickLine_pick_5id3o { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 1; }\n.e-desktop-root .PickLine_pin_5id3o { width: 2px; height: calc(10px + var(--row, 0) * 30px); background: var(--theme-text); opacity: 0.6; }\n.e-desktop-root .PickLine_label_5id3o { font-size: 0.75rem; white-space: nowrap; padding: 1px 4px; border: 1px solid var(--board-rule); background: var(--theme-background); }\n.e-desktop-root .PickLine_winner_5id3o .PickLine_pin_5id3o { background: var(--board-line); opacity: 1; width: 3px; }\n.e-desktop-root .PickLine_winner_5id3o .PickLine_label_5id3o { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; }\n.e-desktop-root .UniqueRow_root_rdht5 { max-width: 44rem; }\n\n.e-desktop-root .UniqueRow_row_rdht5 { display: grid; grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr)); gap: 6px; }\n.e-desktop-root .UniqueRow_cell_rdht5 {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  min-height: 4.6rem;\n  padding: 6px 8px;\n  border: 1px solid var(--board-rule);\n  font-size: 0.78rem;\n  min-width: 0;\n  overflow-wrap: anywhere;\n}\n.e-desktop-root .UniqueRow_n_rdht5 { font-size: 1.05rem; }\n.e-desktop-root .UniqueRow_empty_rdht5 { border-style: dashed; }\n.e-desktop-root .UniqueRow_taken_rdht5 .UniqueRow_who_rdht5 { text-decoration: line-through; }\n.e-desktop-root .UniqueRow_unique_rdht5 { border-color: var(--theme-text); border-width: 2px; }\n.e-desktop-root .UniqueRow_tag_rdht5 { margin-top: auto; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; }\n.e-desktop-root .UniqueRow_winner_rdht5 { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; }\n.e-desktop-root .BargainSplit_root_nw71o { max-width: 44rem; }\n\n.e-desktop-root .BargainSplit_offers_nw71o { display: flex; gap: 10px; min-width: min-content; padding-bottom: 4px; }\n.e-desktop-root .BargainSplit_offer_nw71o { flex: 0 0 13rem; border: 1px solid var(--board-rule); padding: 6px 8px; display: grid; gap: 4px; align-content: start; }\n.e-desktop-root .BargainSplit_taken_nw71o { border: 2px solid var(--board-line); }\n.e-desktop-root .BargainSplit_head_nw71o { margin: 0; font-size: 0.78rem; font-weight: 700; }\n.e-desktop-root .BargainSplit_good_nw71o { display: grid; grid-template-columns: 3.4rem 1fr auto; gap: 6px; align-items: center; font-size: 0.74rem; }\n.e-desktop-root .BargainSplit_cells_nw71o { display: flex; gap: 2px; flex-wrap: wrap; }\n.e-desktop-root .BargainSplit_unit_nw71o { width: 0.8rem; height: 0.8rem; border: 1px solid var(--board-line); display: inline-block; }\n.e-desktop-root .BargainSplit_a_nw71o { background: var(--board-line); }\n.e-desktop-root .BargainSplit_b_nw71o { background: repeating-linear-gradient(45deg, var(--board-line) 0 2px, transparent 2px 4px); }\n.e-desktop-root .BargainSplit_free_nw71o { border-style: dashed; }\n.e-desktop-root .BargainSplit_count_nw71o { white-space: nowrap; }\n.e-desktop-root .BargainSplit_claim_nw71o { margin: 0; font-size: 0.7rem; opacity: 0.85; }\n\n.e-desktop-root .BargainSplit_scores_nw71o { display: grid; gap: 6px; margin-top: 10px; }\n.e-desktop-root .BargainSplit_score_nw71o { display: grid; grid-template-columns: 6rem 1fr; gap: 4px 8px; align-items: center; }\n.e-desktop-root .BargainSplit_who_nw71o { font-size: 0.85rem; font-weight: 600; overflow-wrap: anywhere; }\n.e-desktop-root .BargainSplit_track_nw71o { position: relative; display: block; height: 0.9rem; border: 1px solid var(--theme-text); }\n.e-desktop-root .BargainSplit_fill_nw71o { position: absolute; left: 0; top: 0; bottom: 0; background: var(--board-line); }\n.e-desktop-root .BargainSplit_walk_nw71o { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 3px double var(--theme-text); }\n.e-desktop-root .BargainSplit_pts_nw71o { grid-column: 2; font-size: 0.76rem; }\n\n.e-desktop-root .BargainSplit_hands_nw71o { list-style: none; margin: 8px 0 0; padding: 0; font-size: 0.8rem; display: grid; gap: 2px; }\n.e-desktop-root .AuctionLine_root_1bjou { max-width: 44rem; }\n\n.e-desktop-root .AuctionLine_line_1bjou { position: relative; min-width: 28rem; margin: 6px 14px 4px; display: grid; gap: 0; }\n.e-desktop-root .AuctionLine_lane_1bjou { --rows: 1; position: relative; height: calc(var(--rows) * 1.5rem + 1.3rem); }\n.e-desktop-root .AuctionLine_axis_1bjou { position: relative; height: 2px; background: var(--theme-text); opacity: 1; margin: 0; }\n.e-desktop-root .AuctionLine_tick_1bjou { position: absolute; top: -5px; width: 1px; height: 12px; background: var(--theme-text); }\n.e-desktop-root .AuctionLine_tick_1bjou > span { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-size: 0.66rem; }\n.e-desktop-root .AuctionLine_mark_1bjou { position: absolute; top: -10px; width: 0; height: 22px; }\n.e-desktop-root .AuctionLine_mark_1bjou > span { position: absolute; top: -14px; left: 4px; font-size: 0.7rem; white-space: nowrap; font-weight: 700; }\n.e-desktop-root .AuctionLine_base_1bjou { border-left: 2px dashed var(--theme-text); }\n.e-desktop-root .AuctionLine_pot_1bjou { border-left: 3px solid var(--board-line); }\n.e-desktop-root .AuctionLine_pot_1bjou > span { left: auto; right: 5px; }\n\n/* Signals above the axis: a label over a tick that ends on the line. */\n.e-desktop-root .AuctionLine_sig_1bjou { position: absolute; top: calc(var(--row) * 1.5rem); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }\n.e-desktop-root .AuctionLine_sigText_1bjou { font-size: 0.7rem; white-space: nowrap; padding: 0 3px; border: 1px dotted var(--theme-text); background: var(--theme-background); }\n.e-desktop-root .AuctionLine_sigTick_1bjou { width: 0; height: 0.4rem; border-left: 1px dotted var(--theme-text); }\n\n/* Bids below the axis: a pin hanging from the line to its label. */\n.e-desktop-root .AuctionLine_pin_1bjou { position: absolute; top: calc(var(--row) * 1.5rem); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; margin-top: 0.7rem; }\n.e-desktop-root .AuctionLine_pinTick_1bjou { width: 2px; height: 0.4rem; background: var(--theme-text); }\n.e-desktop-root .AuctionLine_pinText_1bjou { font-size: 0.72rem; white-space: nowrap; padding: 0 4px; border: 1px solid var(--board-rule); background: var(--theme-background); }\n.e-desktop-root .AuctionLine_won_1bjou .AuctionLine_pinText_1bjou { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; }\n\n/* The winner's gain or loss: the stretch between its bid and V. A curse is hatched, a gain solid. */\n.e-desktop-root .AuctionLine_seg_1bjou { position: relative; height: 2.2rem; margin-top: 4px; }\n.e-desktop-root .AuctionLine_span_1bjou { position: absolute; top: 4px; height: 0.8rem; min-width: 3px; background: var(--board-line); }\n.e-desktop-root .AuctionLine_loss_1bjou { background: repeating-linear-gradient(45deg, var(--board-line) 0 3px, transparent 3px 6px); border: 1px solid var(--board-line); }\n.e-desktop-root .AuctionLine_segText_1bjou { position: absolute; top: 1.3rem; font-size: 0.74rem; font-weight: 700; white-space: nowrap; }\n.e-desktop-root .DiceTable_root_1yna5 { max-width: 44rem; }\n\n.e-desktop-root .DiceTable_grid_1yna5 { min-width: 30rem; display: grid; gap: 3px; }\n.e-desktop-root .DiceTable_row_1yna5 { display: grid; grid-template-columns: 2.4rem repeat(6, minmax(0, 1fr)); gap: 3px; align-items: stretch; }\n.e-desktop-root .DiceTable_qty_1yna5 { font-size: 0.78rem; text-align: right; padding-right: 4px; align-self: center; }\n.e-desktop-root .DiceTable_faceHead_1yna5 { font-size: 0.66rem; letter-spacing: 0.06em; text-align: center; opacity: 0.7; }\n.e-desktop-root .DiceTable_cell_1yna5 { min-height: 1.5rem; border: 1px dashed var(--board-rule); font-size: 0.72rem; padding: 2px 4px; overflow-wrap: anywhere; }\n.e-desktop-root .DiceTable_bid_1yna5 { border-style: solid; border-color: var(--theme-text); background: var(--board-rule); }\n.e-desktop-root .DiceTable_called_1yna5 { outline: 3px double var(--board-line); outline-offset: 1px; font-weight: 700; }\n\n.e-desktop-root .DiceTable_cups_1yna5 { display: grid; gap: 6px; margin-top: 10px; }\n.e-desktop-root .DiceTable_cup_1yna5 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }\n.e-desktop-root .DiceTable_cupName_1yna5 { min-width: 6rem; font-weight: 600; font-size: 0.85rem; overflow-wrap: anywhere; }\n.e-desktop-root .DiceTable_dice_1yna5 { display: inline-flex; gap: 4px; flex-wrap: wrap; }\n.e-desktop-root .DiceTable_die_1yna5 { width: 1.9rem; height: 1.9rem; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--theme-text); font-size: 0.95rem; }\n/* A die that counts for the called face is filled and underlined, not only coloured. */\n.e-desktop-root .DiceTable_counts_1yna5 { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; text-decoration: underline; }\n\n.e-desktop-root .DiceTable_meter_1yna5 { display: grid; gap: 4px; margin-top: 10px; }\n.e-desktop-root .DiceTable_track_1yna5 { position: relative; display: block; height: 0.9rem; border: 1px solid var(--theme-text); }\n.e-desktop-root .DiceTable_fill_1yna5 { position: absolute; left: 0; top: 0; bottom: 0; background: var(--board-line); }\n.e-desktop-root .DiceTable_need_1yna5 { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 3px double var(--theme-text); }\n.e-desktop-root .DiceTable_meterText_1yna5 { font-size: 0.8rem; }\n.e-desktop-root .SluiceBoard_root_mmd9b { max-width: 30rem; }\n\n.e-desktop-root .SluiceBoard_grid_mmd9b { min-width: 16rem; display: grid; gap: 3px; width: max-content; max-width: 100%; }\n.e-desktop-root .SluiceBoard_row_mmd9b { display: grid; grid-template-columns: 1.4rem repeat(var(--cols, 6), 2.5rem); gap: 3px; align-items: stretch; }\n\n.e-desktop-root .SluiceBoard_rowNo_mmd9b { font-size: 0.66rem; opacity: 0.7; align-self: center; text-align: right; padding-right: 3px; }\n.e-desktop-root .SluiceBoard_head_mmd9b { font-size: 0.7rem; text-align: center; padding: 2px 0; border-bottom: 2px solid var(--board-rule); }\n/* The gate: a filled bar across the top of the shut channel, and the word. */\n.e-desktop-root .SluiceBoard_gate_mmd9b { background: var(--board-fill); color: var(--board-ink); border-bottom-color: var(--board-line); font-weight: 700; }\n.e-desktop-root .SluiceBoard_gateWord_mmd9b { display: block; font-size: 0.56rem; letter-spacing: 0.08em; text-transform: uppercase; }\n\n.e-desktop-root .SluiceBoard_cell_mmd9b { position: relative; height: 2.5rem; border: 1px dotted var(--board-rule); display: flex; align-items: center; justify-content: center; box-sizing: border-box; }\n.e-desktop-root .SluiceBoard_cell_mmd9b.SluiceBoard_shut_mmd9b { background-image: repeating-linear-gradient(90deg, var(--board-rule) 0 1px, transparent 1px 6px); }\n/* Silt: hatched, neutral. */\n.e-desktop-root .SluiceBoard_silt_mmd9b { background-image: repeating-linear-gradient(135deg, var(--theme-text) 0 1px, transparent 1px 5px); border: 1px solid var(--board-rule); opacity: 0.6; }\n/* Seat A is a filled square, seat B a hollow ring: shape tells them apart, not colour. */\n.e-desktop-root .SluiceBoard_stoneA_mmd9b { width: 1.6rem; height: 1.6rem; background: var(--board-fill); }\n.e-desktop-root .SluiceBoard_stoneB_mmd9b { width: 1.6rem; height: 1.6rem; border: 3px solid var(--board-line); border-radius: 50%; box-sizing: border-box; }\n.e-desktop-root .SluiceBoard_n_mmd9b { position: absolute; right: 2px; bottom: 0; font-size: 0.55rem; line-height: 1; opacity: 0.75; }\n/* The drop just made. */\n.e-desktop-root .SluiceBoard_last_mmd9b { outline: 2px double var(--board-line); outline-offset: 1px; }\n/* The winning line: thick outline, filled ground. */\n.e-desktop-root .SluiceBoard_win_mmd9b { background: var(--board-rule); outline: 3px solid var(--board-line); outline-offset: -2px; }\n\n.e-desktop-root .SluiceBoard_legend_mmd9b { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 0.78rem; margin: 8px 0 0; }\n.e-desktop-root .SluiceBoard_key_mmd9b { display: inline-flex; align-items: center; gap: 5px; }\n.e-desktop-root .SluiceBoard_keyA_mmd9b { width: 0.8rem; height: 0.8rem; background: var(--board-fill); display: inline-block; }\n.e-desktop-root .SluiceBoard_keyB_mmd9b { width: 0.8rem; height: 0.8rem; border: 2px solid var(--board-line); border-radius: 50%; display: inline-block; box-sizing: border-box; }\n.e-desktop-root .SluiceBoard_keySilt_mmd9b { width: 0.8rem; height: 0.8rem; display: inline-block; border: 1px solid var(--board-rule); background-image: repeating-linear-gradient(135deg, var(--theme-text) 0 1px, transparent 1px 4px); }\n.e-desktop-root .AgentChat_toggle_ry10h {\n  font-size: 0.85rem !important;\n  letter-spacing: 0.04em;\n}\n\n.e-desktop-root .AgentChat_glyph_ry10h {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .AgentChat_label_ry10h {\n  text-transform: lowercase;\n}\n\n.e-desktop-root .AgentChat_menuItem_ry10h {\n  padding: 12px 0 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .AgentChat_menuItem_ry10h .e-section-tab {\n  width: 100%;\n  min-height: 44px;\n  justify-content: flex-start;\n  padding: 10px 14px;\n  opacity: 1;\n}\n\n.e-desktop-root .AgentChat_on_ry10h {\n  border-color: var(--theme-focused-foreground) !important;\n  background: var(--e-accent-wash, transparent) !important;\n}\n/* The agent chat drawer: monospace, hairline rules, the theme's accent as the\n   one highlight, 40–48px targets on a phone. Tokens only (--theme-*, --e-rule,\n   --e-accent-wash); no colours of its own.\n\n   It is sized to the app's own frame, never to the browser window: inside the\n   Hermes tab the frame is the tab's container (hermesPlugin.tsx), so the\n   transcript scrolls and the composer stays pinned at the bottom of what you\n   see. Below the header-nav width it covers the frame (absolute, inside the\n   shell's `contain: layout paint`), never the Hermes app around it. */\n\n.e-desktop-root .ChatDrawer_root_tg8j6 {\n  display: none;\n  flex: none;\n  flex-direction: column;\n  box-sizing: border-box;\n  width: min(27rem, 40%);\n  height: 100%;\n  min-height: 0;\n  position: relative;\n  align-self: stretch;\n  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: var(--theme-background);\n  color: var(--theme-text);\n  font-size: 0.86rem;\n  line-height: 1.5;\n}\n\n.e-desktop-root .ChatDrawer_open_tg8j6 {\n  display: flex;\n}\n\n/* ── head ─────────────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_head_tg8j6 {\n  flex: none;\n  padding: 12px 16px 10px;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .ChatDrawer_headRow_tg8j6 {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n}\n\n.e-desktop-root .ChatDrawer_heading_tg8j6 {\n  margin: 0;\n  display: flex;\n  align-items: baseline;\n  gap: 1ch;\n  font: inherit;\n  font-size: 1.05rem;\n  font-weight: 600;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n}\n\n.e-desktop-root .ChatDrawer_headIcon_tg8j6 {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_close_tg8j6 {\n  min-width: 40px !important;\n  min-height: 40px !important;\n}\n\n.e-desktop-root .ChatDrawer_meta_tg8j6 {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 0 1ch;\n  margin-top: 2px;\n  font-size: 0.74rem;\n  opacity: 0.62;\n}\n\n.e-desktop-root .ChatDrawer_conn_tg8j6[data-conn=\"open\"] {\n  color: var(--theme-focused-foreground);\n  opacity: 1;\n}\n\n.e-desktop-root .ChatDrawer_sessionBar_tg8j6 {\n  display: flex;\n  gap: 8px;\n  margin-top: 10px;\n}\n\n.e-desktop-root .ChatDrawer_sessionPick_tg8j6 {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 1ch;\n  min-height: 36px;\n  padding: 4px 10px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_sessionPick_tg8j6:hover,\n.e-desktop-root .ChatDrawer_sessionPick_tg8j6[aria-expanded=\"true\"] {\n  border-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_sessionPickTitle_tg8j6 {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_smallButton_tg8j6 {\n  flex: none;\n  min-height: 36px;\n  padding: 4px 12px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font: inherit;\n  font-size: 0.8rem;\n  letter-spacing: 0.04em;\n  cursor: pointer;\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_smallButton_tg8j6:hover {\n  border-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_error_tg8j6 {\n  margin: 8px 0 0;\n  font-size: 0.78rem;\n  color: var(--theme-focused-foreground);\n}\n\n/* ── transcript ───────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_transcript_tg8j6 {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  overscroll-behavior: contain;\n  padding: 12px 16px 16px;\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n\n.e-desktop-root .ChatDrawer_intro_tg8j6 {\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  border-left: 3px solid var(--theme-focused-foreground);\n  padding: 10px 14px 12px;\n  line-height: 1.55;\n}\n\n.e-desktop-root .ChatDrawer_intro_tg8j6 p {\n  margin: 0 0 6px;\n}\n\n.e-desktop-root .ChatDrawer_introTitle_tg8j6 {\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  opacity: 0.6;\n}\n\n.e-desktop-root .ChatDrawer_introNote_tg8j6 {\n  font-size: 0.78rem;\n  opacity: 0.65;\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6 {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  min-width: 0;\n}\n\n.e-desktop-root .ChatDrawer_who_tg8j6 {\n  font-size: 0.68rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6[data-who=\"you\"] .ChatDrawer_who_tg8j6 {\n  color: var(--theme-focused-foreground);\n  opacity: 1;\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6[data-who=\"you\"] .ChatDrawer_text_tg8j6 {\n  padding: 6px 10px;\n  background: var(--e-accent-wash, rgba(128, 128, 128, 0.08));\n  border-left: 2px solid var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_text_tg8j6 {\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .ChatDrawer_caret_tg8j6 {\n  color: var(--theme-focused-foreground);\n  animation: ChatDrawer_blink_tg8j6 1s steps(1) infinite;\n}\n\n@keyframes ChatDrawer_blink_tg8j6 {\n  50% {\n    opacity: 0;\n  }\n}\n\n.e-desktop-root .ChatDrawer_working_tg8j6 {\n  display: flex;\n  gap: 1ch;\n  align-items: center;\n  font-size: 0.78rem;\n  opacity: 0.7;\n}\n\n.e-desktop-root .ChatDrawer_notice_tg8j6 {\n  font-size: 0.78rem;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  opacity: 0.75;\n  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  padding: 2px 0 2px 10px;\n  max-height: 22rem;\n  overflow-y: auto;\n}\n\n.e-desktop-root .ChatDrawer_notice_tg8j6[data-tone=\"error\"] {\n  opacity: 1;\n  border-left: 2px solid var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_notice_tg8j6[data-tone=\"command\"] {\n  border-left: 0;\n  padding-left: 0;\n  opacity: 0.9;\n}\n\n.e-desktop-root .ChatDrawer_prompt_tg8j6 {\n  color: var(--theme-focused-foreground);\n}\n\n/* ── tool cards ───────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_tool_tg8j6 {\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  min-width: 0;\n}\n\n.e-desktop-root .ChatDrawer_toolHead_tg8j6 {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  width: 100%;\n  min-height: 36px;\n  padding: 6px 10px;\n  border: 0;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.8rem;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_toolHead_tg8j6:hover .ChatDrawer_toolName_tg8j6 {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_toolMark_tg8j6 {\n  flex: none;\n  width: 1.5ch;\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_tool_tg8j6[data-status=\"failed\"] .ChatDrawer_toolMark_tg8j6,\n.e-desktop-root .ChatDrawer_tool_tg8j6[data-status=\"blocked\"] .ChatDrawer_toolMark_tg8j6 {\n  color: inherit;\n  opacity: 0.8;\n}\n\n.e-desktop-root .ChatDrawer_toolName_tg8j6 {\n  flex: none;\n  font-weight: 600;\n}\n\n.e-desktop-root .ChatDrawer_toolContext_tg8j6 {\n  flex: 1;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  opacity: 0.65;\n}\n\n.e-desktop-root .ChatDrawer_toolTime_tg8j6 {\n  flex: none;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */\n  font-size: 0.72rem;\n}\n\n.e-desktop-root .ChatDrawer_toolCaret_tg8j6 {\n  flex: none;\n  opacity: 0.5;\n}\n\n.e-desktop-root .ChatDrawer_toolOut_tg8j6 {\n  margin: 0;\n  padding: 8px 10px;\n  border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  max-height: 16rem;\n  overflow: auto;\n  font: inherit;\n  font-size: 0.76rem;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n}\n\n/* Relay content: dashed rule, a label that says so. */\n.e-desktop-root .ChatDrawer_untrusted_tg8j6 {\n  border-style: dashed;\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6.ChatDrawer_untrusted_tg8j6 {\n  border: 1px dashed var(--e-rule, rgba(128, 128, 128, 0.35));\n  padding: 6px 10px;\n}\n\n.e-desktop-root .ChatDrawer_untrustedLabel_tg8j6 {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: 4px 1ch;\n  padding: 0 10px 6px;\n  font-size: 0.7rem;\n  opacity: 0.8;\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6 .ChatDrawer_untrustedLabel_tg8j6 {\n  padding: 0;\n}\n\n.e-desktop-root .ChatDrawer_untrustedLabel_tg8j6 [class*=\"Badge_root\"] {\n  font-size: 0.66rem;\n  letter-spacing: 0.08em;\n  background: transparent;\n  border: 1px solid currentColor;\n}\n\n/* ── approval / clarify ───────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_approval_tg8j6 {\n  border: 1px solid var(--theme-focused-foreground);\n  border-left-width: 3px;\n  padding: 10px 12px;\n  background: var(--e-accent-wash, transparent);\n}\n\n.e-desktop-root .ChatDrawer_cardTitle_tg8j6 {\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n  margin-bottom: 6px;\n}\n\n.e-desktop-root .ChatDrawer_cardText_tg8j6 {\n  margin: 0 0 6px;\n}\n\n.e-desktop-root .ChatDrawer_cardNote_tg8j6 {\n  margin: 6px 0;\n  font-size: 0.78rem;\n  font-weight: 600;\n}\n\n.e-desktop-root .ChatDrawer_cardFoot_tg8j6 {\n  margin: 8px 0 0;\n  font-size: 0.7rem;\n  opacity: 0.6;\n}\n\n.e-desktop-root .ChatDrawer_command_tg8j6 {\n  margin: 0 0 8px;\n  padding: 6px 8px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: var(--theme-background);\n  font: inherit;\n  font-size: 0.78rem;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  max-height: 10rem;\n  overflow: auto;\n}\n\n.e-desktop-root .ChatDrawer_choices_tg8j6 {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 8px;\n}\n\n.e-desktop-root .ChatDrawer_choice_tg8j6 {\n  min-height: 36px;\n  padding: 4px 12px;\n  border: 1px solid var(--theme-focused-foreground);\n  background: var(--theme-background);\n  color: inherit;\n  font: inherit;\n  font-size: 0.8rem;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_choice_tg8j6:hover:not(:disabled),\n.e-desktop-root .ChatDrawer_picked_tg8j6 {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n}\n\n.e-desktop-root .ChatDrawer_choice_tg8j6:disabled {\n  opacity: 0.45;\n  cursor: default;\n}\n\n.e-desktop-root .ChatDrawer_deny_tg8j6 {\n  border-color: var(--e-rule, rgba(128, 128, 128, 0.4));\n}\n\n.e-desktop-root .ChatDrawer_answered_tg8j6 {\n  font-size: 0.8rem;\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_question_tg8j6 + .ChatDrawer_question_tg8j6 {\n  margin-top: 10px;\n}\n\n.e-desktop-root .ChatDrawer_answerInput_tg8j6 {\n  box-sizing: border-box;\n  width: 100%;\n  margin-top: 6px;\n  min-height: 36px;\n  max-height: calc(6 * 1.45em + 12px);\n  padding: 4px 8px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.3));\n  background: var(--theme-background);\n  color: inherit;\n  font: inherit;\n  line-height: 1.45;\n  resize: none;\n  overflow-y: auto;\n  overflow-wrap: anywhere;\n}\n\n/* ── sessions ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_sessions_tg8j6 {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  overscroll-behavior: contain;\n  padding-bottom: 16px;\n}\n\n.e-desktop-root .ChatDrawer_sessionsHead_tg8j6 {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 4px 12px 4px 0;\n}\n\n.e-desktop-root .ChatDrawer_sessionList_tg8j6 {\n  list-style: none;\n  margin: 0;\n  padding: 0;\n}\n\n.e-desktop-root .ChatDrawer_sessionRow_tg8j6 {\n  display: flex !important;\n  flex-direction: column;\n  align-items: flex-start;\n  gap: 2px;\n  width: 100%;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_sessionRow_tg8j6:hover .ChatDrawer_sessionTitle_tg8j6 {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_sessionTitle_tg8j6 {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: baseline;\n  gap: 0 1ch;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .ChatDrawer_sessionMeta_tg8j6 {\n  font-size: 0.74rem;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */\n}\n\n.e-desktop-root .ChatDrawer_tag_tg8j6 {\n  font-size: 0.64rem;\n  letter-spacing: 0.1em;\n  text-transform: uppercase;\n  padding: 0 0.6ch;\n  border: 1px solid currentColor;\n  color: var(--theme-focused-foreground);\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_empty_tg8j6 {\n  padding: 8px 12px;\n  margin: 0;\n  font-size: 0.8rem;\n  opacity: 0.6;\n}\n\n/* ── composer ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_composer_tg8j6 {\n  position: relative;\n  flex: none;\n  padding: 8px 12px 10px;\n  border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: var(--theme-background);\n}\n\n.e-desktop-root .ChatDrawer_inputRow_tg8j6 {\n  display: flex;\n  align-items: flex-end;\n  gap: 8px;\n}\n\n/* One slim line (42px) by default; it grows with the text (ChatDrawer's\n   layout effect) up to six lines, then scrolls inside. */\n.e-desktop-root .ChatDrawer_input_tg8j6 {\n  flex: 1;\n  min-width: 0;\n  box-sizing: border-box;\n  height: 42px;\n  min-height: 42px;\n  max-height: calc(6 * 1.45em + 20px);\n  overflow-wrap: anywhere;\n  padding: 10px 10px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.35));\n  background: var(--theme-background);\n  color: inherit;\n  font: inherit;\n  line-height: 1.45;\n  resize: none;\n  overflow-y: auto;\n}\n\n.e-desktop-root .ChatDrawer_input_tg8j6:focus {\n  border-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_send_tg8j6 {\n  flex: none;\n  box-sizing: border-box;\n  min-width: 48px;\n  height: 42px;\n  min-height: 42px;\n  padding: 0 14px;\n  border: 1px solid var(--theme-focused-foreground);\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  font: inherit;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_send_tg8j6:disabled {\n  background: transparent;\n  color: inherit;\n  border-color: var(--e-rule, rgba(128, 128, 128, 0.35));\n  opacity: 0.6;\n  cursor: default;\n}\n\n.e-desktop-root .ChatDrawer_stop_tg8j6 {\n  background: transparent;\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_readOnly_tg8j6 {\n  margin: 0 0 8px;\n  font-size: 0.78rem;\n  opacity: 0.7;\n}\n\n.e-desktop-root .ChatDrawer_typeahead_tg8j6 {\n  position: absolute;\n  left: 16px;\n  right: 16px;\n  bottom: 100%;\n  z-index: 5;\n  list-style: none;\n  margin: 0;\n  padding: 0;\n  max-height: 18rem;\n  overflow-y: auto;\n  border: 1px solid var(--theme-focused-foreground);\n  background: var(--theme-background);\n}\n\n.e-desktop-root .ChatDrawer_typeRow_tg8j6 {\n  display: grid;\n  grid-template-columns: auto auto 1fr;\n  align-items: baseline;\n  gap: 0 1ch;\n  width: 100%;\n  min-height: 36px;\n  padding: 4px 10px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.8rem;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_typeRow_tg8j6[data-reach=\"terminal\"],\n.e-desktop-root .ChatDrawer_typeRow_tg8j6[data-reach=\"voice\"],\n.e-desktop-root .ChatDrawer_typeRow_tg8j6[data-reach=\"settings\"] {\n  opacity: 0.6;\n}\n\n.e-desktop-root .ChatDrawer_typeRowOn_tg8j6 {\n  background: var(--e-accent-wash, rgba(128, 128, 128, 0.1));\n}\n\n.e-desktop-root .ChatDrawer_typeName_tg8j6 {\n  color: var(--theme-focused-foreground);\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_typeMeta_tg8j6 {\n  grid-column: 1 / -1;\n  font-size: 0.72rem;\n  opacity: 0.6;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/* ── back control (phone) ─────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_back_tg8j6 {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  width: 100%;\n  min-height: 44px;\n  margin: 0;\n  padding: 0 16px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font: inherit;\n  font-size: 0.85rem;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n  text-align: left;\n  cursor: pointer;\n  flex: none;\n}\n\n/* \"← back to the dashboard\", then the menu: the full-page chat's top row. */\n.e-desktop-root .ChatDrawer_backRow_tg8j6 {\n  align-items: stretch;\n  flex: none;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .ChatDrawer_backRow_tg8j6 .ChatDrawer_back_tg8j6 {\n  flex: 1;\n  border-bottom: 0;\n}\n\n.e-desktop-root .ChatDrawer_menu_tg8j6 {\n  flex: none;\n  min-width: 48px;\n  min-height: 44px;\n  border: 0;\n  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .ChatDrawer_phoneOnly_tg8j6 {\n  display: none;\n}\n\n/* Below the header-nav breakpoint: one full-screen panel, \"← back\" on top. */\n@media (max-width: 900px) {\n  .e-desktop-root .ChatDrawer_root_tg8j6 {\n    position: absolute;\n    inset: 0;\n    z-index: 120;\n    width: 100%;\n    height: 100%;\n    border-left: 0;\n  }\n\n  .e-desktop-root .ChatDrawer_phoneOnly_tg8j6 {\n    display: flex;\n  }\n\n  .e-desktop-root .ChatDrawer_close_tg8j6 {\n    display: none !important;\n  }\n\n  .e-desktop-root .ChatDrawer_sessionPick_tg8j6,\n  .e-desktop-root .ChatDrawer_smallButton_tg8j6,\n  .e-desktop-root .ChatDrawer_choice_tg8j6,\n  .e-desktop-root .ChatDrawer_toolHead_tg8j6,\n  .e-desktop-root .ChatDrawer_typeRow_tg8j6 {\n    min-height: 44px;\n  }\n\n  .e-desktop-root .ChatDrawer_sessionRow_tg8j6 {\n    min-height: 48px;\n  }\n\n  .e-desktop-root .ChatDrawer_input_tg8j6,\n  .e-desktop-root .ChatDrawer_answerInput_tg8j6 {\n    font-size: 16px; /* no zoom-on-focus on a phone */\n  }\n}\n\n/* The kit gives every `ul li` an inline :before spacer (global.css), which\n   opens an empty line above a block button. Lists here are rows, not prose. */\n.e-desktop-root .ChatDrawer_typeahead_tg8j6 > li::before,\n.e-desktop-root .ChatDrawer_sessionList_tg8j6 > li::before {\n  content: none;\n  display: none;\n}\n\n/* A flex column shrinks its scrollable children to nothing when it overflows;\n   transcript items keep their height and the transcript scrolls instead. */\n.e-desktop-root .ChatDrawer_transcript_tg8j6 > * {\n  flex-shrink: 0;\n}\n\n/* A short screen (the 540 × 540 capture frame, a phone held sideways): the\n   \"← back\" row already says where you are, so the title row goes. */\n@media (max-width: 900px) and (max-height: 640px) {\n  .e-desktop-root .ChatDrawer_headRow_tg8j6 {\n    display: none;\n  }\n\n  .e-desktop-root .ChatDrawer_head_tg8j6 {\n    padding-top: 8px;\n  }\n\n  .e-desktop-root .ChatDrawer_sessionBar_tg8j6 {\n    margin-top: 6px;\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .e-desktop-root .ChatDrawer_caret_tg8j6 {\n    animation: none;\n  }\n}\n/*$vite$:1*/";
+var DESKTOP_CSS = "/* srcl's global.css (github.com/internet-development/www-sacred), MIT — see LICENSE-srcl. */\n/*\nNOTE(jimmylee):\nColor palette for Sacred Computer. The root source of truth for color is the\nSimulacrum CLI palette in scripts/cli/colors.json — those are the true, terminal-\ntested colors, the ones a real terminal actually renders. The --ansi-* primitives\nbelow mirror that palette in CSS, so every value must be one a terminal can show:\nStandard (SGR 30-37, 90-97), 256-color (SGR 38;5;n), the grayscale ramp (232-255),\nor 24-bit true color (SGR 38;2;r;g;b). Do not add a color outside that spec.\n\nThe OKLCH tint themes further down are a WEB-ONLY behavior. A terminal cannot run\nOKLCH math; it exists purely so the React surface can derive tinted variants while\nstaying inside the same perceptual band as the terminal-tested primitives. OKLCH is\na projection of the root palette, never a new source of color.\n*/\n\n.e-desktop-root a,\n.e-desktop-root abbr,\n.e-desktop-root acronym,\n.e-desktop-root address,\n.e-desktop-root applet,\n.e-desktop-root article,\n.e-desktop-root aside,\n.e-desktop-root audio,\n.e-desktop-root b,\n.e-desktop-root big,\n.e-desktop-root blockquote,\n.e-desktop-root .e-host-body,\n.e-desktop-root canvas,\n.e-desktop-root caption,\n.e-desktop-root center,\n.e-desktop-root cite,\n.e-desktop-root code,\n.e-desktop-root dd,\n.e-desktop-root del,\n.e-desktop-root details,\n.e-desktop-root dfn,\n.e-desktop-root div,\n.e-desktop-root dl,\n.e-desktop-root dt,\n.e-desktop-root embed,\n.e-desktop-root em,\n.e-desktop-root figure,\n.e-desktop-root figcaption,\n.e-desktop-root fieldset,\n.e-desktop-root footer,\n.e-desktop-root form,\n.e-desktop-root h1,\n.e-desktop-root h2,\n.e-desktop-root h3,\n.e-desktop-root h4,\n.e-desktop-root h5,\n.e-desktop-root h6,\n.e-desktop-root header,\n.e-desktop-root hgroup,\n.e-desktop-root .e-host-body,\n.e-desktop-root i,\n.e-desktop-root iframe,\n.e-desktop-root img,\n.e-desktop-root ins,\n.e-desktop-root kbd,\n.e-desktop-root label,\n.e-desktop-root legend,\n.e-desktop-root li,\n.e-desktop-root mark,\n.e-desktop-root menu,\n.e-desktop-root nav,\n.e-desktop-root object,\n.e-desktop-root ol,\n.e-desktop-root output,\n.e-desktop-root p,\n.e-desktop-root pre,\n.e-desktop-root q,\n.e-desktop-root ruby,\n.e-desktop-root s,\n.e-desktop-root samp,\n.e-desktop-root section,\n.e-desktop-root small,\n.e-desktop-root span,\n.e-desktop-root strike,\n.e-desktop-root strong,\n.e-desktop-root sub,\n.e-desktop-root summary,\n.e-desktop-root sup,\n.e-desktop-root table,\n.e-desktop-root tbody,\n.e-desktop-root td,\n.e-desktop-root tfoot,\n.e-desktop-root th,\n.e-desktop-root thead,\n.e-desktop-root time,\n.e-desktop-root tr,\n.e-desktop-root tt,\n.e-desktop-root u,\n.e-desktop-root ul,\n.e-desktop-root var,\n.e-desktop-root video {\n  border: 0;\n  box-sizing: border-box;\n  margin: 0;\n  padding: 0;\n  vertical-align: baseline;\n}\n\n.e-desktop-root a {\n  background: var(--theme-border-subdued);\n  color: var(--theme-text);\n\n  &:hover {\n    background: var(--theme-focused-foreground);\n    color: var(--theme-text);\n  }\n\n  &:focus {\n    background: var(--theme-focused-foreground);\n    color: var(--theme-text);\n    outline: 0;\n  }\n\n  &:active {\n    background: var(--theme-focused-foreground);\n    color: var(--theme-text);\n  }\n}\n\n.e-desktop-root ul {\n  list-style-position: inside;\n  list-style-type: '▪';\n  text-indent: -1ch;\n}\n\n.e-desktop-root ol {\n  list-style-type: '';\n  list-style-position: inside;\n  counter-reset: cupcake;\n  text-indent: -1ch;\n}\n\n.e-desktop-root ul ul,\n.e-desktop-root ul ol,\n.e-desktop-root ol ul,\n.e-desktop-root ol ol {\n  padding-left: 2ch;\n}\n\n.e-desktop-root ol li {\n  padding-left: 1ch;\n  counter-increment: cupcake;\n}\n\n.e-desktop-root ul li:before {\n  content: ' ';\n  display: inline-block;\n  width: 1ch;\n  height: 0;\n  visibility: hidden;\n}\n\n.e-desktop-root ol li:before {\n  content: counters(cupcake, '.') '. ';\n}\n\n.e-desktop-root article,\n.e-desktop-root aside,\n.e-desktop-root details,\n.e-desktop-root figcaption,\n.e-desktop-root figure,\n.e-desktop-root footer,\n.e-desktop-root header,\n.e-desktop-root hgroup,\n.e-desktop-root menu,\n.e-desktop-root nav,\n.e-desktop-root section {\n  display: block;\n}\n\n.e-desktop-root .e-host-body,\n.e-desktop-root .e-host-body {\n  /* ------------------------------------------------------------------ */\n  /* Standard 16 Colors (SGR 38;5;0-15)                                 */\n  /* ------------------------------------------------------------------ */\n  --ansi-0-black: #000000;\n  --ansi-1-maroon: #800000;\n  --ansi-2-green: #008000;\n  --ansi-3-olive: #808000;\n  --ansi-4-navy: #000080;\n  --ansi-5-purple: #800080;\n  --ansi-6-teal: #008080;\n  --ansi-7-silver: #c0c0c0;\n  --ansi-8-gray: #808080;\n  --ansi-9-red: #ff0000;\n  --ansi-10-lime: #00ff00;\n  --ansi-11-yellow: #ffff00;\n  --ansi-12-blue: #0000ff;\n  --ansi-13-fuchsia: #ff00ff;\n  --ansi-14-aqua: #00ffff;\n  --ansi-15-white: #ffffff;\n\n  /* ------------------------------------------------------------------ */\n  /* 216 Color Cube (SGR 38;5;16-231)                                   */\n  /* Channels: 0x00, 0x5F, 0x87, 0xAF, 0xD7, 0xFF                       */\n  /* ------------------------------------------------------------------ */\n  --ansi-100-yellow4a: #878700;\n  --ansi-148-yellow3a: #afd700;\n  --ansi-232-gray-3: #080808;\n  --ansi-235-gray-15: #262626;\n  --ansi-237-gray-23: #3a3a3a;\n  --ansi-240-gray-35: #585858;\n  --ansi-242-gray-42: #6c6c6c;\n  --ansi-245-gray-54: #8a8a8a;\n  --ansi-248-gray-66: #a8a8a8;\n  --ansi-251-gray-78: #c6c6c6;\n  --ansi-254-gray-89: #e4e4e4;\n  --ansi-255-gray-93: #eeeeee;\n\n  /* ------------------------------------------------------------------ */\n  /* Bright Colors (SGR 90-97) — overlap with ansi-8..15 in some terms  */\n  /* but the SGR 90-97 renditions use these distinct hex values.        */\n  /* ------------------------------------------------------------------ */\n  --ansi-bright-green: #55ff55;\n\n  /* ------------------------------------------------------------------ */\n  /* 24-bit True Color (SGR 38;2;r;g;b) — outside the 256 palette       */\n  /* ------------------------------------------------------------------ */\n  --ansi-true-brand: #e4f221;\n\n  /* ------------------------------------------------------------------ */\n  /* Semantic Color Aliases                                              */\n  /* All values reference the ANSI palette above.                       */\n  /* ------------------------------------------------------------------ */\n  --color-black: var(--ansi-0-black);\n  --color-white: var(--ansi-15-white);\n  --color-green: var(--ansi-2-green);\n  --color-lime: var(--ansi-10-lime);\n  --color-bright-green: var(--ansi-bright-green);\n  --color-brand: var(--ansi-true-brand);\n\n  --color-gray-93: var(--ansi-255-gray-93);\n  --color-gray-89: var(--ansi-254-gray-89);\n  --color-gray-78: var(--ansi-251-gray-78);\n  --color-gray-66: var(--ansi-248-gray-66);\n  --color-gray-54: var(--ansi-245-gray-54);\n  --color-gray-42: var(--ansi-242-gray-42);\n  --color-gray-35: var(--ansi-240-gray-35);\n  --color-gray-23: var(--ansi-237-gray-23);\n  --color-gray-15: var(--ansi-235-gray-15);\n  --color-gray-3: var(--ansi-232-gray-3);\n\n  /* ------------------------------------------------------------------ */\n  /* Web-only Alpha Variants (no ANSI equivalent — CSS rendering only)  */\n  /* Used for translucent overlays and subdued borders.                  */\n  /* ------------------------------------------------------------------ */\n  --color-black-alpha-40: rgba(0, 0, 0, 0.4);\n  --color-white-alpha-40: rgba(255, 255, 255, 0.4);\n  --color-gray-89-border-alpha: rgba(228, 228, 228, 0.6);\n  --color-gray-23-border-alpha: rgba(58, 58, 58, 0.3);\n  --color-brand-alpha-50: rgba(228, 242, 33, 0.5);\n\n  --font-family-mono: 'GeistMono-Regular', Consolas, monaco, monospace;\n\n  --theme-line-height-base: 1.25;\n  --font-size: 16px;\n\n  --z-index-page: 1;\n  --z-index-page-select: 3;\n  --z-index-page-tooltips: 4;\n  --z-index-page-popover: 5;\n  --z-index-page-dropdown-menus: 6;\n  --z-index-page-modals: 10;\n\n  background: var(--theme-background);\n  color: var(--theme-text);\n  font-family: var(--font-family-mono);\n  line-height: calc(var(--theme-line-height-base) * 1rem);\n\n  font-size: var(--font-size);\n  font-optical-sizing: auto;\n  text-rendering: geometricPrecision;\n  font-weight: 400;\n  font-variant-numeric: tabular-nums lining-nums;\n\n  &::-webkit-scrollbar {\n    background: transparent;\n    height: calc(var(--theme-line-height-base) * 1rem);\n    width: 1ch;\n  }\n\n  &::-webkit-scrollbar-track {\n    background: var(--theme-background);\n  }\n\n  &::-webkit-scrollbar-thumb {\n    background: var(--theme-border);\n  }\n\n  &::-webkit-scrollbar-thumb:hover {\n    background: var(--theme-border);\n  }\n}\n\n.e-desktop-root .e-host-body.theme-light {\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: var(--color-white);\n  --theme-background-modal: var(--color-gray-89);\n  --theme-background-modal-footer: var(--color-gray-66);\n  --theme-background-input: var(--color-gray-89);\n  --theme-border: var(--color-gray-89);\n  --theme-border-subdued: var(--color-gray-89-border-alpha);\n  --theme-text: var(--color-black);\n  --theme-button: var(--color-black);\n  --theme-button-text: var(--color-white);\n  --theme-button-foreground: var(--color-gray-78);\n  --theme-button-background: var(--color-gray-89);\n  --theme-focused-foreground: var(--color-bright-green);\n  --theme-focused-foreground-subdued: var(--color-brand-alpha-50);\n  /*\n  NOTE(jimmylee):\n  Window-specific tones — body sits one step darker than --theme-background so the\n  window reads as a \"lifted\" panel, and the shadow sits one step darker still so the\n  drop shadow is unambiguously darker than the window body. The CLI mirror lives in\n  scripts/cli/colors.json (windowBg / shadow).\n  */\n  --theme-window-background: var(--color-gray-89);\n  --theme-window-shadow: var(--color-gray-66);\n}\n\n.e-desktop-root .e-host-body.theme-dark {\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: var(--color-black);\n  --theme-background-modal: var(--color-gray-23);\n  --theme-background-modal-footer: var(--color-gray-35);\n  --theme-background-input: var(--color-gray-23);\n  --theme-border: var(--color-gray-23);\n  --theme-border-subdued: var(--color-gray-23-border-alpha);\n  --theme-text: var(--color-white);\n  --theme-button: var(--color-white);\n  --theme-button-text: var(--color-black);\n  --theme-button-foreground: var(--color-gray-15);\n  --theme-button-background: var(--color-gray-23);\n  --theme-focused-foreground: oklch(from var(--ansi-13-fuchsia) 0.55 c h);\n  --theme-focused-foreground-subdued: oklch(from var(--ansi-13-fuchsia) 0.55 c h / 0.5);\n  /*\n  NOTE(jimmylee):\n  Window body is gray-23 (#3a3a3a) so it lifts off the gray-3 (#080808) page\n  background, and the shadow is gray-15 (#262626) — a hair lighter than the page\n  but visibly darker than the window body, preserving the \"shadow darker than the\n  body\" contract while staying inside the ANSI gray ramp.\n  */\n  --theme-window-background: var(--color-gray-23);\n  --theme-window-shadow: var(--color-gray-15);\n}\n\n/*\nNOTE(jimmylee):\nOKLCH tint themes — web-only. These have no terminal equivalent (Simulacrum renders\nthe fixed colors.json palette, never derived tints). They are recalibrated against\nthe --ansi-* base so the saturation and lightness ramps fall in the same perceptual\nrange as the ANSI gray scale (#eeeeee → #262626) and the brand color (#e4f221). Each\ntint sets only --tint, and the body.theme-light.tint-* / body.theme-dark.tint-*\nselectors below derive every --theme-* token from that tint via OKLCH math.\n*/\n\n.e-desktop-root .e-host-body.tint-green {\n  --tint: #39ff44;\n}\n\n.e-desktop-root .e-host-body.tint-blue {\n  --tint: #0047ff;\n}\n\n.e-desktop-root .e-host-body.tint-red {\n  --tint: #b00331;   /* crimson, as the user picked (11-14) */\n}\n\n.e-desktop-root .e-host-body.tint-yellow {\n  --tint: var(--ansi-true-brand);\n}\n\n.e-desktop-root .e-host-body.tint-purple {\n  --tint: #8000ff;\n}\n\n.e-desktop-root .e-host-body.tint-orange {\n  --tint: #d57c22;   /* burnt orange, as the user picked (11-14); not amber */\n}\n\n.e-desktop-root .e-host-body.tint-pink {\n  --tint: #ff00ff;\n}\n\n.e-desktop-root .e-host-body.theme-light.tint-green,\n.e-desktop-root .e-host-body.theme-light.tint-blue,\n.e-desktop-root .e-host-body.theme-light.tint-red,\n.e-desktop-root .e-host-body.theme-light.tint-yellow,\n.e-desktop-root .e-host-body.theme-light.tint-purple,\n.e-desktop-root .e-host-body.theme-light.tint-orange,\n.e-desktop-root .e-host-body.theme-light.tint-pink {\n  /*\n  NOTE(jimmylee):\n  Light tint ramp is anchored to the ANSI light grays:\n    --theme-background          ≈ ansi-255-gray-93 (#eeeeee)\n    --theme-background-modal    ≈ ansi-254-gray-89 (#e4e4e4)\n    --theme-background-input    ≈ ansi-255-gray-93 (#eeeeee)\n    --theme-border              ≈ ansi-251-gray-78 (#c6c6c6)\n    --theme-text                ≈ ansi-232-gray-3  (#080808)\n  Each token uses oklch(from var(--tint) L C H) so it tints toward the source\n  color while staying within the ANSI lightness band.\n  */\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: oklch(from var(--tint) 0.97 calc(c * 0.1) h);\n  --theme-background-modal: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-background-modal-footer: oklch(from var(--tint) 0.86 calc(c * 0.22) h);\n  --theme-background-input: oklch(from var(--tint) 0.97 calc(c * 0.1) h);\n  --theme-border: oklch(from var(--tint) 0.84 calc(c * 0.28) h);\n  --theme-border-subdued: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-text: oklch(from var(--tint) 0.18 calc(c * 0.4) h);\n  --theme-button: oklch(from var(--tint) 0.18 calc(c * 0.4) h);\n  --theme-button-text: oklch(from var(--tint) 0.97 calc(c * 0.1) h);\n  --theme-button-foreground: oklch(from var(--tint) 0.86 calc(c * 0.22) h);\n  --theme-button-background: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-focused-foreground: oklch(from var(--tint) 0.62 c h);\n  --theme-focused-foreground-subdued: oklch(from var(--tint) 0.62 c h / 0.5);\n  /*\n  NOTE(jimmylee):\n  Window body matches background-modal so the panel sits one step darker than the\n  page background, and the shadow drops to L=0.70 — a third step down so the\n  drop shadow stays visibly darker than the window body across every tint.\n  */\n  --theme-window-background: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-window-shadow: oklch(from var(--tint) 0.7 calc(c * 0.28) h);\n}\n\n/*\nDEEP (the dark theme with a tint): the demo video's all-dark-green screens in OKLCH relative to the\ntint — canvas L .192, panel L .253 (chroma x .243), border L .366 (x .328), text L .962 (x .243);\nthe accent as text is lifted to L .78 (chroma capped at .22); green is pinned to the video's colours.\nMirrored in dashboard.css (body.e-look.theme-dark) and themePalette.ts.\nBEFORE (the previous dark ramp, for comparing; `git revert` of the deep commit restores it):\n  background  oklch(from var(--tint) 0.14 calc(c * 0.18) h)   modal 0.24 / c*0.22   footer 0.3 / c*0.24\n  input 0.28 / c*0.2   border 0.4 / c*0.28   text 0.92 / c*0.18   accent 0.72 c\n*/\n.e-desktop-root .e-host-body.theme-dark.tint-green,\n.e-desktop-root .e-host-body.theme-dark.tint-blue,\n.e-desktop-root .e-host-body.theme-dark.tint-red,\n.e-desktop-root .e-host-body.theme-dark.tint-yellow,\n.e-desktop-root .e-host-body.theme-dark.tint-purple,\n.e-desktop-root .e-host-body.theme-dark.tint-orange,\n.e-desktop-root .e-host-body.theme-dark.tint-pink {\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: oklch(from var(--tint) 0.192 calc(c * 0.243) h);\n  --theme-background-modal: oklch(from var(--tint) 0.253 calc(c * 0.243) h);\n  --theme-background-modal-footer: oklch(from var(--tint) 0.253 calc(c * 0.243) h);\n  --theme-background-input: oklch(from var(--tint) 0.253 calc(c * 0.243) h);\n  --theme-border: oklch(from var(--tint) 0.366 calc(c * 0.328) h);\n  --theme-border-subdued: oklch(from var(--tint) 0.366 calc(c * 0.328) h / 0.6);\n  --theme-text: oklch(from var(--tint) 0.962 calc(c * 0.243) h);\n  --theme-button: oklch(from var(--tint) 0.962 calc(c * 0.243) h);\n  --theme-button-text: oklch(from var(--tint) 0.192 calc(c * 0.243) h);\n  --theme-button-foreground: oklch(from var(--tint) 0.366 calc(c * 0.328) h);\n  --theme-button-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);\n  --theme-focused-foreground: oklch(from var(--tint) max(l, 0.78) min(c, 0.22) h);\n  --theme-focused-foreground-subdued: oklch(from var(--tint) max(l, 0.78) min(c, 0.22) h / 0.5);\n  --theme-window-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);\n  --theme-window-shadow: oklch(from var(--tint) 0.15 calc(c * 0.243) h);\n}\n\n.e-desktop-root .e-host-body.theme-dark.tint-green {\n  --theme-background: #001b00;\n  --theme-background-modal: #0b2a0b;\n  --theme-background-modal-footer: #0b2a0b;\n  --theme-background-input: #0b2a0b;\n  --theme-border: #1d4a1d;\n  --theme-border-subdued: rgb(29 74 29 / 0.6);\n  --theme-text: #d8ffd8;\n  --theme-button: #d8ffd8;\n  --theme-button-text: #001b00;\n  --theme-button-foreground: #1d4a1d;\n  --theme-button-background: #0b2a0b;\n  --theme-focused-foreground: #39ff44;\n  --theme-focused-foreground-subdued: rgb(57 255 68 / 0.5);\n  --theme-window-background: #0b2a0b;\n  --theme-window-shadow: #000f00;\n}\n\n/*\nVIVID: the tint is the background, ink is the tint's deep dark; the panel a step darker (lighter for\nred and pink); white ink on blue and purple; green exact (#39ff44 / #2ee03a / #001b00). Web-only, like\nthe other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and themePalette.ts.\n*/\n.e-desktop-root .e-host-body.theme-vivid.tint-green,\n.e-desktop-root .e-host-body.theme-vivid.tint-blue,\n.e-desktop-root .e-host-body.theme-vivid.tint-red,\n.e-desktop-root .e-host-body.theme-vivid.tint-yellow,\n.e-desktop-root .e-host-body.theme-vivid.tint-purple,\n.e-desktop-root .e-host-body.theme-vivid.tint-orange,\n.e-desktop-root .e-host-body.theme-vivid.tint-pink {\n  --vv-ink: oklch(from var(--tint) 0.192 calc(c * 0.243) h);\n  --vv-panel: oklch(from var(--tint) calc(l - 0.082) calc(c * 0.91) h);\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: var(--tint);\n  --theme-background-modal: var(--vv-panel);\n  --theme-background-modal-footer: var(--vv-panel);\n  --theme-background-input: var(--vv-panel);\n  --theme-border: var(--vv-ink);\n  --theme-border-subdued: color-mix(in srgb, var(--vv-ink) 35%, transparent);\n  --theme-text: var(--vv-ink);\n  --theme-button: var(--vv-ink);\n  --theme-button-text: var(--tint);\n  --theme-button-foreground: var(--vv-panel);\n  --theme-button-background: var(--vv-panel);\n  --theme-focused-foreground: var(--vv-ink);\n  --theme-focused-foreground-subdued: color-mix(in srgb, var(--vv-ink) 50%, transparent);\n  --theme-window-background: var(--vv-panel);\n  --theme-window-shadow: var(--vv-ink);\n}\n.e-desktop-root .e-host-body.theme-vivid.tint-orange,\n.e-desktop-root .e-host-body.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--tint) 80%, white); }\n.e-desktop-root .e-host-body.theme-vivid.tint-blue,\n.e-desktop-root .e-host-body.theme-vivid.tint-red,\n.e-desktop-root .e-host-body.theme-vivid.tint-purple { --vv-ink: #fff; }\n.e-desktop-root .e-host-body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }\n\n.e-desktop-root #__next {\n}\n/* ═══════════════════════════════════════════════════════════════\n   EMPORIA DASHBOARD — single consolidated stylesheet\n   Sections:\n   1.  Variables & tokens\n   2.  Utility classes\n   3.  App shell layout\n   4.  Header & section nav\n   5.  Mobile drawer\n   6.  View body / ViewBody component\n   7.  Sidebar rail\n   8.  Component kit (slim card, meta-grid, KPIs, hero stats, empty pane)\n   9.  Overview — dashboard, stat strip, feed\n   10. Theme picker\n   11. Relay strip\n   12. Agent / profile row components\n   13. Chat & ReadOnlyChat\n   14. Agora — votes, posts\n   15. Navigation chips — SegmentTabs, section tabs\n   16. Badges, pills, entity chips\n   17. Tables — compact, listings\n   18. Toolbar & search\n   19. Action timeline\n   20. Session & transaction rows\n   21. Messages / inbox sub-view\n   22. SRCL component overrides (flat canvas + chrome)\n   23. Responsive breakpoints\n═══════════════════════════════════════════════════════════════ */\n\n/* ─── 1. VARIABLES & TOKENS ─────────────────────────────────────────────── */\n\n.e-desktop-root .e-host-body.theme-dark {\n  --theme-focused-foreground: #39ff44;\n}\n\n.e-desktop-root .e-host-body.theme-dark,\n.e-desktop-root .e-host-body.theme-vivid,\n.e-desktop-root .e-host-body.theme-light {\n  overflow-x: clip;\n}\n\n/* Flat canvas — all emporia surfaces transparent within the shell */\n.e-desktop-root .e-dashboard-shell {\n  --font-size: 16px; /* 100% SRCL root — no html 110% zoom */\n  --theme-background-modal: var(--theme-background);\n  --theme-background-modal-footer: var(--theme-background);\n  --theme-background-input: var(--theme-background);\n  --theme-window-background: var(--theme-background);\n  --theme-window-shadow: transparent;\n  --theme-button-background: transparent;\n  --theme-button-foreground: transparent;\n  --emporia-surface: transparent;\n  --emporia-surface-raised: transparent;\n  --emporia-nav-active: transparent;\n}\n\n/* ─── 2. UTILITY CLASSES ─────────────────────────────────────────────────── */\n\n.e-desktop-root .e-dim   { opacity: 0.5; }\n.e-desktop-root .e-faint { opacity: 0.35; }\n.e-desktop-root .e-trust-key { opacity: 0.55; }\n/* \"mutual\" / \"follows <name>\" beside a name in the Following and Followers lists */\n.e-desktop-root .e-follow-tag {\n  font-size: 0.62rem;\n  padding: 0 6px;\n  border: 1px solid rgba(128,128,128,0.35);\n  border-radius: 8px;\n  opacity: 0.8;\n  white-space: nowrap;\n  margin-left: 8px;\n}\n\n/* Master-detail selection indicator */\n.e-desktop-root .e-sel   { border-left: 2px solid var(--theme-focused-foreground); padding-left: 8px; }\n\n.e-desktop-root .e-status-txt {\n  font-size: 0.682rem;\n  letter-spacing: 0.1em;\n  text-transform: uppercase;\n}\n\n/* ─── 3. APP SHELL LAYOUT ────────────────────────────────────────────────── */\n\n/* The app is one frame: the header, the section strip, the view (which\n   scrolls) and the chat drawer all live inside it, and so does every overlay\n   (the phone menu and its backdrop, full-page chat, popovers). `contain:\n   layout paint` makes the frame the containing block of anything positioned\n   inside it, so nothing reaches past it into the page around it: inside the\n   Hermes tab the frame is the tab's own container (hermesPlugin.tsx sizes it to\n   what is visible, --e-frame-h: 100%), on the Desktop page the page's pane,\n   standalone the window. */\n.e-desktop-root .e-app-shell {\n  display: flex;\n  height: var(--e-frame-h, 100dvh);\n  min-height: 0;\n  width: 100%;\n  max-width: 100%;\n  position: relative;\n  overflow: hidden;\n  contain: layout paint;\n}\n.e-desktop-root .e-nav-row-hotkey { font-size: 0.715rem; opacity: 0.5; font-variant-numeric: tabular-nums; }\n\n.e-desktop-root .e-sidebar-group { display: flex; flex-direction: column; gap: 0; }\n.e-desktop-root .e-sidebar-group + .e-sidebar-group { margin-top: 6px; }\n.e-desktop-root .e-sidebar-group-label {\n  font-size: 0.638rem;\n  letter-spacing: 0.12em;\n  opacity: 0.45;\n  padding: 6px 10px 4px;\n  user-select: none;\n}\n.e-desktop-root .e-sidebar-key {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 2px;\n  padding: 5px 2px;\n  background: transparent;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  font-size: 0.715rem;\n}\n.e-desktop-root .e-sidebar-key:hover,\n.e-desktop-root .e-sidebar-key:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }\n.e-desktop-root .e-sidebar-key__k { opacity: 0.55; font-variant-numeric: tabular-nums; }\n\n.e-desktop-root .e-app-main {\n  flex: 1;\n  min-width: 0;\n  min-height: 0;\n  height: 100%;\n  max-width: 100%;\n  display: flex;\n  flex-direction: column;\n  background: var(--theme-background);\n  overflow-x: clip;\n}\n\n.e-desktop-root .e-app-backdrop { display: none; }\n\n/* The rail layout puts the five places beside the page; every other layout stacks them. */\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-main { flex-direction: row; }\n.e-desktop-root .e-app-col {\n  flex: 1;\n  min-width: 0;\n  min-height: 0;\n  display: flex;\n  flex-direction: column;\n}\n\n.e-desktop-root .e-view {\n  flex: 1;\n  scrollbar-gutter: stable;\n  height: auto;\n  min-height: 0;\n  min-width: 0;\n  max-width: 100%;\n  overflow-x: clip;\n  overflow-y: auto;\n  box-sizing: border-box;\n}\n\n/* ─── 4. HEADER & SECTION NAV ────────────────────────────────────────────── */\n\n.e-desktop-root .e-app-top {\n  flex-shrink: 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  background: var(--theme-background);\n}\n\n.e-desktop-root .e-app-top__row {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 16px;\n  padding: 10px 20px;\n  min-height: 52px;\n  flex-wrap: wrap;\n  min-width: 0;\n}\n.e-desktop-root .e-app-top__actions {\n  display: flex;\n  align-items: center;\n  gap: 16px;\n  min-width: 0;\n  flex-shrink: 1;\n}\n\n.e-desktop-root .e-brand-title { font-size: 1.155rem !important; letter-spacing: 0.06em; }\n.e-desktop-root .e-brand-title--header { font-size: 1.1rem; font-weight: 600; }\n\n/* Destinations (nav v2): six tabs in the header row, beside the brand. */\n.e-desktop-root .e-section-tabs {\n  display: none;\n  gap: 2px;\n  max-width: 100%;\n  box-sizing: border-box;\n}\n/* The layout is chosen from the dashboard's OWN width (ui/navLayout.ts writes it as data-nav on the\n   shell), never from the window's: inside the Hermes tab the window is wider than the dashboard.\n   wide: labels in the header row · medium: icon + short label · rail: icons down the left edge ·\n   phone: the bottom bar. The main navigation never scrolls; every range draws all five places. */\n.e-desktop-root .e-app-shell[data-nav=\"wide\"] .e-section-tabs--horizontal,\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-section-tabs--horizontal {\n  /* Never wraps: a wrapped header grows and moves everything under it (the audit's A3). */\n  display: flex; flex: 1; min-width: 0; flex-wrap: nowrap;\n}\n/* Past the first tier the header's own controls shrink: \"as\" before the viewer, the select narrower. */\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top .e-viewer-switch > .e-faint,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-top .e-viewer-switch > .e-faint { display: none; }\n.e-desktop-root .e-app-top__row { flex-wrap: nowrap; }\n.e-desktop-root .e-app-top__actions { flex-shrink: 0; }\n/* Medium and rail: the header gives up what it can spare, so it stays on one row. */\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top__row,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-top__row { gap: 10px; padding-left: 14px; padding-right: 14px; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top__actions,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-app-top__actions { gap: 10px; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-section-tab { padding: 6px 8px; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-section-tab__label { letter-spacing: 0; }\n/* The wordmark keeps its full size wherever the header has room (wide and medium); it only gives way in the\n   rail and phone layouts. */\n.e-desktop-root .e-app-shell[data-nav=\"wide\"] .e-app-top .e-brand-title,\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-app-top .e-brand-title { font-size: 1.5rem !important; letter-spacing: 0.08em; }\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-relay-status__meta,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-relay-status__meta,\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-header-link__word,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-header-link__word { display: none; }\n/* The live chip keeps its dot and its title; its word is for a roomy header only. */\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-status-chip__label--live,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-status-chip__label--live,\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-status-chip__label--live {\n  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;\n}\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-status-chip__label--relay { max-width: 22ch; }\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-status-chip__label--relay { max-width: 22ch; }\n\n/* The rail: the five places as icons down the left edge, the word on hover and focus. */\n.e-desktop-root .e-section-tabs--rail { display: none; }\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-section-tabs--rail {\n  display: flex;\n  flex: none;\n  flex-direction: column;\n  align-items: stretch;\n  gap: 2px;\n  width: 88px;\n  padding: 8px 4px;\n  border-right: 1px solid var(--e-rule, var(--theme-border-subdued));\n  background: var(--theme-background);\n  position: relative;\n  z-index: 30;\n}\n.e-desktop-root .e-section-tabs--rail .e-section-tab {\n  justify-content: flex-start;\n  min-height: 44px;\n  padding: 0 8px;\n  opacity: 0.85;\n}\n.e-desktop-root .e-section-tabs--rail .e-section-tab__label { font-size: 0.78rem; letter-spacing: 0; }\n.e-desktop-root .e-section-tabs--rail .e-section-tab .e-nav-badge { position: absolute; top: 4px; right: 4px; margin: 0; }\n\n.e-desktop-root .e-section-tab {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  padding: 6px 10px;\n  border: 1px solid transparent;\n  border-radius: 0 !important;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.792rem;\n  cursor: pointer;\n  white-space: nowrap;\n  opacity: 0.75;\n  transition: background 0.12s, opacity 0.12s, border-color 0.12s;\n}\n.e-desktop-root .e-section-tab:hover  { opacity: 1; border-color: var(--theme-border-subdued, rgba(255,255,255,0.12)); background: transparent; }\n.e-desktop-root .e-section-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); background: transparent; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-section-tab__label { letter-spacing: 0.02em; }\n/* The five places are words only in every layout (header row, rail, phone bar, menu): no icon, no hotkey number;\n   the key and the blurb are the hover title. */\n/* The wordmark is a button to Home: it keeps the title's look, with a pointer and a focus ring. */\n.e-desktop-root .e-brand-home { background: none; border: 0; padding: 0; margin: 0; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; }\n.e-desktop-root .e-brand-home:hover { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-brand-home:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: 3px; }\n\n/* Drawer variant */\n.e-desktop-root .e-section-tabs--drawer {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  padding: 12px 0;\n  flex: 1;\n  overflow-y: auto;\n}\n.e-desktop-root .e-section-tabs--drawer .e-section-tab { width: 100%; justify-content: flex-start; padding: 10px 14px; }\n.e-desktop-root .e-section-tabs--drawer .e-section-tab.is-active { background: transparent !important; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n\n/* Nav unread badge */\n.e-desktop-root .e-nav-badge {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 14px;\n  height: 14px;\n  padding: 0 3px;\n  margin-left: 4px;\n  border-radius: 7px;\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  font-size: 10px;\n  font-weight: 700;\n  vertical-align: middle;\n  line-height: 1;\n}\n\n/* A tab's unread count sits on its corner, so it never widens the tab or moves its neighbours. */\n.e-desktop-root .e-section-tabs--horizontal .e-section-tab .e-nav-badge,\n.e-desktop-root .e-bottom-bar__tab .e-nav-badge,\n.e-desktop-root .e-subnav__tab .e-nav-badge {\n  position: absolute;\n  top: -2px;\n  right: -2px;\n  margin: 0;\n}\n.e-desktop-root .e-subnav__tab { position: relative; }\n.e-desktop-root .e-subnav__tab .e-nav-badge { top: 6px; right: 2px; }\n\n/* Header-only places: Help (?) and, for the operator, the relay's desk. */\n.e-desktop-root .e-header-links { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }\n.e-desktop-root .e-header-link {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  min-height: 28px;\n  padding: 2px 9px;\n  border: 1px solid var(--e-rule, var(--theme-border-subdued));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.78rem;\n  cursor: pointer;\n  white-space: nowrap;\n}\n.e-desktop-root .e-header-link:hover { border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-header-link.is-active { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-header-link__icon { font-weight: 700; }\n\n/* ─── 5. MOBILE DRAWER ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-mobile-top {\n  display: none;\n  align-items: center;\n  gap: 10px;\n  padding: 10px 12px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  position: sticky;\n  top: 0;\n  background: var(--theme-background);\n  z-index: 20;\n  flex-wrap: wrap;\n}\n\n.e-desktop-root .e-app-drawer { display: none; }\n\n.e-desktop-root .e-mobile-drawer {\n  display: flex;\n  flex-direction: column;\n  height: 100%;\n  padding: 16px 12px;\n}\n\n/* ─── 6. VIEW BODY ───────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-view-body {\n  padding: 20px 24px 32px;\n  margin: 0 auto;\n  width: 100%;\n  max-width: min(1440px, 100%);\n  box-sizing: border-box;\n  min-width: 0;\n}\n.e-desktop-root .e-view-body__inner { min-height: 40vh; }\n\n.e-desktop-root .e-view-toolbar {\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  gap: 12px;\n  flex-wrap: wrap;\n}\n\n/* Flush variant — fills remaining height for split views */\n.e-desktop-root .e-view-body--flush {\n  padding: 0;\n  max-width: min(1440px, 100%);   /* the same column as the heading and the foot, so a split page does not run edge to edge */\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n}\n.e-desktop-root .e-view-body--flush .e-view-body__inner {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n}\n.e-desktop-root .e-view-body--flush .e-view-toolbar {\n  padding: 10px 16px;\n  margin: 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  background: var(--emporia-surface);\n}\n.e-desktop-root .e-view-body--flush .e-search-row { margin: 0; }\n\n/* ─── 7. SIDEBAR RAIL ────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] {\n  background: var(--theme-background) !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_root\"] {\n  flex: 1;\n  min-height: 0;\n}\n\n/* Rail item — custom flat sidebar list button */\n.e-desktop-root .e-rail-item {\n  display: block;\n  width: 100%;\n  margin: 0;\n  padding: 6px 8px 6px 10px;\n  border: 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.05));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n/* badges on a rail row's first line: they wrap under each other instead of squeezing the name */\n.e-desktop-root .e-rail-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end; min-width: 0; text-align: right; }\n/* the second line of a rail row is secondary: smaller than the name above it, not larger */\n.e-desktop-root .e-rail-item .e-dim, .e-desktop-root .e-rail-item .e-faint { font-size: 12px; line-height: 1.45; }\n.e-desktop-root .e-rail-item:hover { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-rail-item.is-selected,\n.e-desktop-root .e-rail-item:focus-visible { outline: none; }\n.e-desktop-root .e-rail-item:focus-visible { color: var(--theme-focused-foreground); }\n\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] [class*=\"Badge_root\"] {\n  background: transparent !important;\n  padding: 0 !important;\n  font-size: 0.682rem;\n  letter-spacing: 0.06em;\n  color: var(--theme-focused-foreground);\n  opacity: 0.9;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] .e-segment-tabs { margin: 4px 0 8px; }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] [class*=\"Divider_gradient\"] {\n  background: linear-gradient(to right, transparent, var(--theme-border-subdued, rgba(255,255,255,0.08)), transparent) !important;\n  height: 1px !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] [class*=\"Divider_line\"] { height: 1px !important; opacity: 0.35; }\n\n/* ─── 8. COMPONENT KIT ───────────────────────────────────────────────────── */\n\n/* Slim card */\n.e-desktop-root .e-slim-card {\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  border-radius: 4px;\n  background: transparent;\n  margin-bottom: 12px;\n}\n.e-desktop-root .e-slim-card__head {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 6px 10px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n}\n.e-desktop-root .e-slim-card__title {\n  font-size: 0.682rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  opacity: 0.55;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n}\n.e-desktop-root .e-slim-card__body { padding: 10px 12px; }\n.e-desktop-root .e-slim-card__foot {\n  padding: 6px 10px;\n  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n  font-size: 0.748rem;\n  opacity: 0.45;\n}\n\n/* Panel card (used in overview sections) */\n.e-desktop-root .e-panel-card {\n  border-radius: 4px;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  background: transparent;\n  margin-bottom: 12px;\n}\n.e-desktop-root .e-panel-card__head { padding: 6px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06)); }\n.e-desktop-root .e-panel-card__title {\n  font-size: 0.792rem !important;\n  letter-spacing: 0.04em;\n  opacity: 0.5;\n}\n.e-desktop-root .e-panel-card__body { padding: 8px 10px; }\n\n/* Meta grid (agent detail, listing detail) */\n.e-desktop-root .e-meta-grid {\n  margin: 0;\n  display: grid;\n  gap: 6px 12px;\n}\n.e-desktop-root .e-meta-grid__row {\n  display: grid;\n  grid-template-columns: 7rem 1fr;\n  gap: 8px;\n  align-items: baseline;\n}\n.e-desktop-root .e-meta-grid dt {\n  margin: 0;\n  font-size: 0.682rem;\n  letter-spacing: 0.08em;\n  text-transform: uppercase;\n  opacity: 0.45;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n}\n.e-desktop-root .e-meta-grid dd { margin: 0; font-size: 0.858rem; word-break: break-word; }\n\n/* Empty pane */\n.e-desktop-root .e-empty-pane {\n  padding: 20px 16px;\n  border: 1px dashed var(--theme-border-subdued, rgba(255,255,255,0.12));\n  border-radius: 4px;\n  max-width: 28rem;\n}\n.e-desktop-root .e-empty-pane__title { font-size: 0.902rem; opacity: 0.7; }\n.e-desktop-root .e-empty-pane__hint { margin-top: 6px; font-size: 0.792rem; opacity: 0.45; line-height: 1.45; }\n\n/* KPI strip (fees view) */\n.e-desktop-root .e-kpi-row {\n  display: grid;\n  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));\n  gap: 8px;\n  margin-bottom: 12px;\n}\n.e-desktop-root .e-kpi { padding: 5px 8px; border-radius: 4px; }\n.e-desktop-root .e-kpi__val { display: block; font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-kpi__lbl { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.65; }\n\n/* Chess session — board + controls share one centered column (board width) */\n.e-desktop-root .e-chess-main {\n  padding: 18px 20px 20px 9px;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-column {\n  display: flex;\n  flex-direction: column;\n  align-items: stretch;\n  width: fit-content;\n  max-width: 100%;\n  gap: 12px;\n}\n.e-desktop-root .e-chess-stage {\n  display: grid;\n  justify-items: center;\n  width: 100%;\n  max-width: 100%;\n  vertical-align: top;\n  gap: 6px;\n  padding-top: 0;\n}\n.e-desktop-root .e-chess-stage > table {\n  display: inline-table;\n}\n.e-desktop-root .e-chess-moves-block {\n  width: 100%;\n}\n.e-desktop-root .e-chess-moves-label {\n  display: block;\n  font-size: 0.7rem;\n  margin-bottom: 6px;\n}\n\n.e-desktop-root .e-chess-players {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 16px;\n  width: 100%;\n  margin-top: 0;\n  margin-bottom: 0;\n  font-family: var(--font-family-mono);\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-players__side {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  min-width: 0;\n}\n.e-desktop-root .e-chess-players__piece {\n  font-size: 1.55rem;\n  line-height: 1;\n  flex-shrink: 0;\n}\n.e-desktop-root .e-chess-players__piece--dark { opacity: 0.88; }\n.e-desktop-root .e-chess-players__name {\n  font-size: 0.95rem;\n  font-weight: 600;\n  max-width: 14rem;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n.e-desktop-root .e-chess-players__vs { opacity: 0.45; font-size: 0.72rem; }\n\n.e-desktop-root .e-chess-ctrl-move {\n  margin-left: 8px;\n  font-family: var(--font-family-mono);\n  font-size: 0.72rem;\n  opacity: 0.8;\n}\n\n.e-desktop-root .e-chess-movelist {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 4px 6px;\n  margin-top: 0;\n  width: 100%;\n  max-width: 100%;\n  font-family: var(--font-family-mono);\n  font-size: 0.68rem;\n}\n.e-desktop-root .e-chess-movelist__btn {\n  border: none;\n  background: transparent;\n  color: inherit;\n  opacity: 0.72;\n  cursor: pointer;\n  padding: 2px 4px;\n  border-radius: 3px;\n}\n.e-desktop-root .e-chess-movelist__btn:hover { opacity: 1; background: var(--theme-border-subdued, rgba(255,255,255,0.06)); }\n.e-desktop-root .e-chess-movelist__btn--on {\n  opacity: 1;\n  font-weight: 600;\n  color: var(--theme-focused-foreground, inherit);\n}\n\n.e-desktop-root .e-chess-warn { font-size: 0.68rem; margin-top: 6px; }\n\n.e-desktop-root .e-chess-ctrl-row {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 4px;\n  margin-top: 8px;\n  width: fit-content;\n  max-width: 100%;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-ctrl-icons {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  flex-shrink: 0;\n}\n.e-desktop-root .e-chess-ctrl-status {\n  text-align: center;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n  font-size: 0.72rem;\n  opacity: 0.65;\n  font-variant-numeric: tabular-nums;\n  white-space: nowrap;\n}\n.e-desktop-root .e-chess-replay-status {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n}\n.e-desktop-root .e-chess-live-mark {\n  text-transform: uppercase;\n  letter-spacing: 0.06em;\n  color: var(--theme-focused-foreground);\n  opacity: 1;\n}\n.e-desktop-root .e-chess-icon-btn {\n  appearance: none;\n  flex: 0 0 auto;\n  margin: 0;\n  padding: 0;\n  border: 0;\n  background: transparent;\n  color: inherit;\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n.e-desktop-root .e-chess-icon-btn__glyph {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 6px;\n  box-shadow: inset 0 0 0 1px var(--theme-border-subdued, rgba(255, 255, 255, 0.12));\n  transition: color 0.1s, box-shadow 0.1s;\n}\n.e-desktop-root .e-chess-icon-btn .e-chess-svg {\n  display: block;\n  width: 1.25rem;\n  height: 1.25rem;\n}\n.e-desktop-root .e-chess-icon-btn:hover .e-chess-icon-btn__glyph,\n.e-desktop-root .e-chess-icon-btn:focus-visible .e-chess-icon-btn__glyph {\n  color: var(--theme-focused-foreground);\n  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground);\n}\n.e-desktop-root .e-chess-icon-btn:focus-visible {\n  outline: none;\n}\n.e-desktop-root .e-chess-move-idx,\n.e-desktop-root .e-chess-speed__lbl {\n  font-size: 0.792rem;\n  opacity: 0.55;\n}\n.e-desktop-root .e-chess-speed {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 8px;\n  align-items: center;\n  justify-content: center;\n  width: fit-content;\n  max-width: 100%;\n  margin: 0 auto;\n  padding: 6px 0 2px;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-speed__range {\n  width: min(9rem, 42vw);\n  max-width: 140px;\n  accent-color: var(--theme-focused-foreground);\n}\n\n/* Hero stats (overview) */\n.e-desktop-root .e-hero-stats {\n  display: grid;\n  grid-template-columns: repeat(2, 1fr);\n  gap: 12px;\n  margin-bottom: 24px;\n}\n@media (min-width: 720px) { .e-desktop-root .e-hero-stats { grid-template-columns: repeat(4, 1fr); }}\n\n.e-desktop-root .e-hero-stat {\n  padding: 16px 18px;\n  background: transparent;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  border-radius: 4px;\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  position: relative;\n  overflow: hidden;\n}\n.e-desktop-root .e-hero-stat::before {\n  content: \"\";\n  position: absolute;\n  top: 0; left: 0; right: 0;\n  height: 2px;\n  background: var(--theme-border-subdued, rgba(255,255,255,0.15));\n}\n.e-desktop-root .e-hero-stat--accent::before { background: linear-gradient(90deg, var(--theme-focused-foreground), transparent); }\n.e-desktop-root .e-hero-stat__value { font-size: 1.925rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }\n.e-desktop-root .e-hero-stat--accent .e-hero-stat__value { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-hero-stat__label { font-size: 0.715rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.55; }\n.e-desktop-root .e-hero-stat__hint  { font-size: 0.748rem; opacity: 0.4; }\n\n/* MCP command hint — \"show the tool call\" write-action affordance */\n.e-desktop-root .e-mcp-hint {\n  margin-top: 8px;\n  padding: 6px 8px;\n  border: 1px dashed var(--theme-border);\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n.e-desktop-root .e-mcp-hint__label { font-size: 0.682rem; text-transform: uppercase; letter-spacing: 0.04em; }\n.e-desktop-root .e-mcp-hint__code {\n  font-family: var(--font-family-mono);\n  font-size: 0.77rem;\n  color: var(--theme-focused-foreground);\n  cursor: pointer;\n  word-break: break-all;\n}\n.e-desktop-root .e-mcp-hint__code:hover { text-decoration: underline; }\n\n/* Rail chips (payment rail badges) */\n.e-desktop-root .e-rail-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }\n.e-desktop-root .e-rail-chip {\n  font-size: 0.682rem;\n  padding: 0;\n  border: 0;\n  border-radius: 0;\n  opacity: 0.85;\n  text-transform: uppercase;\n  letter-spacing: 0.04em;\n  color: var(--theme-focused-foreground);\n  background: transparent !important;\n}\n\n/* Outline pill for longer status text (e.g. NIM model name) — a solid-fill\n   badge (.e-trust-verified) reads as an alert/highlight at this length. */\n.e-desktop-root .e-status-pill {\n  font-size: 0.682rem;\n  font-family: var(--font-family-mono);\n  padding: 2px 7px;\n  border: 1px solid var(--theme-border);\n  background: transparent !important;\n  white-space: nowrap;\n}\n.e-desktop-root .e-status-pill--off { opacity: 0.45; }\n\n/* ─── 9. OVERVIEW ────────────────────────────────────────────────────────── */\n\n/* Hub grid — overview nav cards */\n.e-desktop-root .e-overview-status {\n  display: block;\n  font-size: 0.748rem;\n  margin-bottom: 12px;\n  max-width: 100%;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .e-pipeline-strip {\n  display: block;\n  font-size: 0.726rem;\n  letter-spacing: 0.02em;\n  margin-bottom: 14px;\n  max-width: 100%;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .e-overview-hub {\n  display: grid;\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n  gap: 8px;\n  margin-bottom: 20px;\n  min-width: 0;\n}\n@media (min-width: 560px)  { .e-desktop-root .e-overview-hub { grid-template-columns: repeat(3, minmax(0, 1fr)); }}\n@media (min-width: 900px)  { .e-desktop-root .e-overview-hub { grid-template-columns: repeat(4, minmax(0, 1fr)); }}\n@media (min-width: 1300px) { .e-desktop-root .e-overview-hub { grid-template-columns: repeat(5, minmax(0, 1fr)); }}\n\n.e-desktop-root .e-overview-card {\n  display: flex;\n  flex-direction: column;\n  gap: 0;\n  padding: 10px 12px 12px;\n  text-align: left;\n  background: transparent;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  transition: border-color 0.12s ease;\n  min-width: 0;\n  max-width: 100%;\n}\n.e-desktop-root .e-overview-card:hover,\n.e-desktop-root .e-overview-card:focus-visible {\n  border-color: var(--theme-focused-foreground);\n  outline: none;\n}\n\n.e-desktop-root .e-overview-card__head {\n  display: flex;\n  justify-content: space-between;\n  align-items: baseline;\n  flex-wrap: wrap;\n  gap: 2px 6px;\n  margin-bottom: 6px;\n  min-width: 0;\n}\n.e-desktop-root .e-overview-card__topline {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  min-width: 0;\n  flex: 1;\n}\n.e-desktop-root .e-overview-card__icon  { font-size: 1.1rem; line-height: 1; flex-shrink: 0; }\n.e-desktop-root .e-overview-card__title { font-size: 0.858rem; font-weight: 500; }\n/* P69: a collection whose fetch rejected, as distinct from one that came back\n   empty. The snapshot is allSettled, so a single failing endpoint used to\n   render \"—\" — the same glyph as \"not loaded yet\" — beside cards showing real\n   numbers, which reads as \"there is nothing there\". Muted rather than alarming:\n   the relay is up and answering for the other panels, so this is one endpoint\n   to go and look at, not an outage. */\n.e-desktop-root .e-overview-card--failed .e-overview-card__sub {\n  color: var(--theme-warning, #c33);\n  opacity: 1;\n  letter-spacing: 0.02em;\n}\n.e-desktop-root .e-overview-card--failed .e-overview-card__body { opacity: 0.55; }\n\n.e-desktop-root .e-overview-card__sub   {\n  font-size: 0.715rem;\n  font-variant-numeric: tabular-nums;\n  color: var(--theme-focused-foreground);\n  opacity: 0.85;\n  white-space: nowrap;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  flex-shrink: 1;\n}\n.e-desktop-root .e-overview-card__body { }\n.e-desktop-root .e-overview-card__body p {\n  margin: 0 0 3px;\n  font-size: 0.748rem;\n  line-height: 1.4;\n  opacity: 0.5;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.e-desktop-root .e-nav-card {\n  display: flex;\n  flex-direction: column;\n  align-items: flex-start;\n  gap: 6px;\n  padding: 14px 16px;\n  text-align: left;\n  background: var(--theme-background);\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  min-height: 5.5rem;\n  transition: border-color 0.15s ease;\n}\n.e-desktop-root .e-nav-card:hover,\n.e-desktop-root .e-nav-card:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }\n.e-desktop-root .e-nav-card[data-active=\"true\"] { border-color: var(--theme-focused-foreground); box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }\n.e-desktop-root .e-nav-card__hotkey {\n  position: absolute;\n  top: 10px; right: 10px;\n  font-size: 0.66rem;\n  opacity: 0.4;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));\n  padding: 2px 5px;\n}\n\n/* Stat strip */\n.e-desktop-root .e-stat-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }\n.e-desktop-root .e-stat-strip__lbl { font-size: 0.682rem; opacity: 0.55; }\n\n/* Live event feed */\n.e-desktop-root .e-feed-panel { max-height: min(70vh, 520px); overflow-y: auto; }\n\n.e-desktop-root .e-feed-panel--v2 { max-height: min(65vh, 480px); margin: -4px 0; }\n\n.e-desktop-root .e-feed-row {\n  cursor: pointer;\n  padding: 6px 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n}\n.e-desktop-root .e-feed-row:hover { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-feed-row:last-child { border-bottom: none; }\n\n.e-desktop-root .e-feed-row--v2 {\n  padding: 12px 12px 12px 14px;\n  margin: 0 -4px;\n  border-radius: 0;\n  border-bottom: none;\n  border-left: 3px solid transparent;\n  transition: border-color 0.12s ease;\n}\n.e-desktop-root .e-feed-row--v2.is-clickable:hover { border-left-color: var(--theme-focused-foreground); }\n\n.e-desktop-root .e-feed-type {\n  display: inline-block;\n  font-size: 0.682rem;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n  margin-bottom: 4px;\n}\n.e-desktop-root .e-feed-detail  { font-size: 0.902rem !important; }\n.e-desktop-root .e-feed-time    { font-size: 0.748rem !important; font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-feed-jump    { font-size: 0.715rem !important; opacity: 0.45; margin-top: 4px; }\n\n/* ─── 10. THEME PICKER ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-theme-compact { position: relative; }\n.e-desktop-root .e-theme-compact--inline { display: flex; align-items: center; }\n/* Fixed, but inside the frame's `contain: layout paint`: it covers the frame, never the page around it. */\n.e-desktop-root .e-theme-compact__backdrop { position: fixed; inset: 0; z-index: 200; border: 0; background: transparent; }\n\n.e-desktop-root .e-theme-duo {\n  display: inline-flex;\n  align-items: center;\n  gap: 0;\n  padding: 5px 9px;\n  border: 1px solid var(--theme-border-subdued, rgba(255, 255, 255, 0.18));\n  border-radius: 0;\n  background: transparent;\n}\n.e-desktop-root .e-theme-duo__rule {\n  width: 1px;\n  align-self: stretch;\n  min-height: 14px;\n  margin: 2px 8px;\n  background: var(--theme-border-subdued, rgba(255, 255, 255, 0.18));\n  flex-shrink: 0;\n}\n.e-desktop-root .e-theme-duo__btn {\n  display: block;\n}\n.e-desktop-root .e-theme-circle {\n  width: 16px;\n  height: 16px;\n  padding: 0;\n  border: none;\n  border-radius: 50%;\n  cursor: pointer;\n  flex-shrink: 0;\n  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.4);\n  transition: transform 0.12s ease, opacity 0.12s ease;\n}\n.e-desktop-root .e-theme-circle:hover,\n.e-desktop-root .e-theme-circle:focus-visible {\n  transform: scale(1.1);\n  outline: none;\n  opacity: 0.92;\n}\n.e-desktop-root .e-theme-circle--mode[data-mode=\"theme-light\"] { background: #f2f2f2; }\n.e-desktop-root .e-theme-circle--mode[data-mode=\"theme-dark\"]  { background: #121212; }\n.e-desktop-root .e-theme-circle--accent { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }\n/* The vivid circle: the tint with a ring of its ink (colour set inline); the ring fills in when vivid is on. */\n.e-desktop-root .e-theme-circle--vivid { box-shadow: inset 0 0 0 3px currentColor; }\n.e-desktop-root .e-theme-circle--vivid[data-on=\"true\"] { box-shadow: inset 0 0 0 5px currentColor; }\n.e-desktop-root .e-mode-toggle {\n  width: 26px; height: 26px;\n  padding: 0;\n  border: none;\n  border-radius: 50%;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.858rem;\n  line-height: 1;\n  cursor: pointer;\n  opacity: 0.45;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  transition: background 0.12s ease, opacity 0.12s ease;\n}\n.e-desktop-root .e-mode-toggle.is-active {\n  opacity: 1;\n  background: var(--theme-background) !important;\n  color: var(--theme-focused-foreground);\n  box-shadow: 0 1px 3px rgba(0,0,0,0.3);\n}\n/* ─── 11. RELAY STRIP ────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-relay-status {\n  display: inline-flex;\n  align-items: center;\n  gap: 14px;\n  flex-wrap: wrap;\n  justify-content: flex-end;\n  font-size: 0.792rem;\n  background: transparent !important;\n}\n.e-desktop-root .e-relay-status--compact {\n  gap: 12px;\n}\n.e-desktop-root .e-relay-status__chips {\n  display: inline-flex;\n  align-items: center;\n  gap: 10px;\n}\n.e-desktop-root .e-relay-status__host {\n  color: var(--theme-text-subdued, #888);\n  max-width: 140px;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  margin-right: 2px;\n}\n.e-desktop-root .e-relay-status__meta { color: var(--theme-text-subdued, #666); font-size: 0.715rem; }\n.e-desktop-root .e-badge--ok,\n.e-desktop-root .e-relay-status .e-badge--ok { color: var(--theme-focused-foreground) !important; }\n\n/* The relay chip carries the relay's name: a long host is cut with an ellipsis (its title has it all). */\n.e-desktop-root .e-status-chip__label--relay { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-status-chip__label--relay { max-width: 14ch; }\n.e-desktop-root .e-status-chip {\n  display: inline-flex;\n  align-items: center;\n  gap: 7px;\n  padding: 4px 9px;\n  border: 1px solid var(--theme-border-subdued, rgba(255, 255, 255, 0.18));\n  border-radius: 0;\n  background: var(--theme-border, rgba(255, 255, 255, 0.06));\n  font-size: 0.748rem;\n  line-height: 1.25;\n  white-space: nowrap;\n}\n.e-desktop-root .e-status-chip.is-ok {\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-status-chip:not(.is-ok) {\n  opacity: 0.7;}\n.e-desktop-root .e-status-chip__label {\n  letter-spacing: 0.02em;\n}\n.e-desktop-root .e-status-chip__loader {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 1.1ch;\n  min-width: 1.1ch;\n  color: inherit;\n}\n.e-desktop-root .e-status-chip.is-ok .e-status-chip__loader {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .e-status-chip__dot {\n  display: inline-block;\n  width: 1ch;\n  text-align: center;\n}\n@keyframes e-status-pulse {\n  0%, 100% { opacity: 1; }\n  50% { opacity: 0.35; }\n}\n\n/* ─── 12. AGENT / PROFILE ROW ────────────────────────────────────────────── */\n\n.e-desktop-root .e-agent-row { display: flex; gap: 8px; align-items: center; }\n.e-desktop-root .e-moire-avatar { flex-shrink: 0; border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12)); }\n.e-desktop-root .e-profile-agent { display: flex; gap: 12px; align-items: center; }\n\n/* Settlement list */\n.e-desktop-root .e-settlement-list { list-style: none; margin: 16px 0 0; padding: 0; font-size: 0.825rem; background: transparent !important; }\n/* P105: the inherited list marker is a ::before box, and in a grid it takes a\n   cell — pushing every row's status onto the next line. */\n.e-desktop-root .e-settlement-list__item::before { content: none !important; display: none !important; }\n.e-desktop-root .e-settlement-list__item {\n  display: grid;\n  grid-template-columns: 1fr auto auto;\n  gap: 12px;\n  padding: 6px 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n  background: transparent !important;\n}\n\n/* ─── 13. CHAT & READ-ONLY CHAT ──────────────────────────────────────────── */\n\n.e-desktop-root .e-chat-pane {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n.e-desktop-root .e-chat-messages {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  display: flex;\n  flex-direction: column;\n  gap: 6px;\n  padding: 12px 16px;\n}\n.e-desktop-root .e-chat-footer {\n  flex-shrink: 0;\n  padding: 8px 12px;\n  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n}\n.e-desktop-root .e-chat-meta { display: block; font-size: 0.748rem; margin-bottom: 2px; }\n\n/* Transcript chat line — avatar + content */\n.e-desktop-root .e-chat-line {\n  display: flex;\n  gap: 8px;\n  align-items: flex-start;\n}\n.e-desktop-root .e-chat-line__body {\n  flex: 1;\n  min-width: 0;\n}\n.e-desktop-root .e-chat-line__meta {\n  display: flex;\n  align-items: baseline;\n  flex-wrap: wrap;\n  gap: 6px;\n  margin-bottom: 2px;\n}\n.e-desktop-root .e-chat-line__name {\n  font-size: 0.792rem;\n  font-weight: 600;\n  word-break: break-all;\n}\n.e-desktop-root .e-chat-line__type,\n.e-desktop-root .e-chat-line__time {\n  font-size: 0.682rem;\n  opacity: 0.45;\n  font-variant-numeric: tabular-nums;\n}\n/* A list's own filter, at the top of its column: compact, the theme's colours, a clear button inside. */\n.e-desktop-root .e-list-filter { position: relative; padding: 8px 10px; border-bottom: 1px solid var(--e-rule, var(--theme-border-subdued)); }\n.e-desktop-root .e-list-filter input {\n  box-sizing: border-box; width: 100%; padding: 5px 26px 5px 8px; border: 1px solid var(--e-rule, currentColor); border-radius: 0;\n  background: transparent; color: inherit; font: inherit; font-size: 0.8rem;\n}\n.e-desktop-root .e-list-filter input::placeholder { color: var(--anim-faint, inherit); opacity: 1; }\n.e-desktop-root .e-list-filter input:focus { outline: none; border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-list-filter__clear {\n  position: absolute; right: 14px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; color: inherit;\n  font: inherit; font-size: 1rem; line-height: 1; cursor: pointer; opacity: 0.6; padding: 0 2px;\n}\n.e-desktop-root .e-list-filter__clear:hover { opacity: 1; color: var(--theme-focused-foreground); }\n/* A fold inside a card: one muted line that opens the facts only a close look needs. */\n.e-desktop-root .e-fold { margin-top: 8px; }\n.e-desktop-root .e-fold > summary { cursor: pointer; font-size: 0.72rem; letter-spacing: 0.04em; opacity: 0.65; list-style: none; padding: 2px 0; }\n.e-desktop-root .e-fold--game { margin: 10px 0; }\n.e-desktop-root .e-fold--game > summary { font-size: 0.78rem; }\n.e-desktop-root .e-fold > summary::before { content: \"▸ \"; }\n.e-desktop-root .e-fold[open] > summary::before { content: \"▾ \"; }\n.e-desktop-root .e-fold > summary::-webkit-details-marker { display: none; }\n.e-desktop-root .e-fold > summary:hover, .e-desktop-root .e-fold[open] > summary { opacity: 1; color: var(--theme-focused-foreground); }\n/* \"+N more\": the rest of a row's chips, behind one small disclosure (progressive disclosure, nothing removed). */\n.e-desktop-root .e-more { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }\n.e-desktop-root .e-more > summary { cursor: pointer; font-size: 0.7rem; opacity: 0.7; list-style: none; padding: 1px 4px; }\n.e-desktop-root .e-more > summary::-webkit-details-marker { display: none; }\n.e-desktop-root .e-more > summary:hover, .e-desktop-root .e-more[open] > summary { opacity: 1; color: var(--theme-focused-foreground); }\n/* A game's pixel glyph then its name: the one way every list says \"this is a game\". */\n.e-desktop-root .e-game-tag { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; vertical-align: middle; }\n.e-desktop-root .e-quiet-chip {\n  display: inline-block;\n  padding: 0 6px;\n  border: 1px solid var(--e-rule, currentColor);\n  border-radius: 8px;\n  font-size: 0.64rem;\n  line-height: 1.5;\n  letter-spacing: 0.02em;\n  opacity: 0.6;\n  white-space: nowrap;\n}\n.e-desktop-root .e-chat-line__content {\n  font-size: 0.902rem;\n  line-height: 1.45;\n  word-break: break-word;\n  white-space: pre-wrap;\n}\n\n/* Agora detail pane (also used for events detail) */\n.e-desktop-root .e-split-main { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 8px 0 16px 0; }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main {\n  padding-left: 4px;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main:has(.e-chess-main) {\n  padding-left: 0;}\n.e-desktop-root .e-agora-detail { overflow: hidden; }\n.e-desktop-root .e-agora-detail__scroll { flex: 1; overflow-y: auto; padding: 16px; }\n.e-desktop-root .e-agora-detail__title { font-size: 1.1rem; font-weight: 600; margin-bottom: 4px; display: block; }\n.e-desktop-root .e-agora-detail__meta  { font-size: 0.792rem; margin-bottom: 12px; display: block; }\n.e-desktop-root .e-agora-detail__body  { display: block; margin-top: 12px; white-space: pre-wrap; }\n.e-desktop-root .e-agora-readonly-hint { display: block; margin-top: 24px; font-size: 0.715rem; }\n\n.e-desktop-root .e-agora-comment { padding: 6px 0; border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06)); }\n\n/* ─── 14. AGORA ──────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-agora-pane {\n  height: 100%;\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n}\n.e-desktop-root .e-agora-posts,\n.e-desktop-root .e-agora-sidebar { overflow-y: auto; flex: 1; }\n\n.e-desktop-root .e-post-row { display: flex; gap: 10px; align-items: flex-start; flex: 1; }\n.e-desktop-root .e-post-title { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }\n.e-desktop-root .e-vote-btn {\n  background: none;\n  border: none;\n  cursor: pointer;\n  font-size: 14px;\n  padding: 2px 4px;\n  opacity: 0.45;\n  color: inherit;\n  transition: opacity 0.15s, color 0.15s;\n}\n.e-desktop-root .e-vote-btn:hover { opacity: 1; }\n.e-desktop-root .e-vote-score { font-size: 13px; min-width: 20px; text-align: center; }\n\n/* ─── 15. SEGMENT TABS ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-segment-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }\n.e-desktop-root .e-segment-tabs--grow .e-segment-tab { flex: 1; min-width: 0; text-align: center; }\n\n.e-desktop-root .e-segment-tab {\n  appearance: none;\n  margin: 0;\n  padding: 4px 10px;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));\n  border-radius: 0 !important;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n  font-size: 0.748rem;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  cursor: pointer;\n  opacity: 0.75;\n  transition: border-color 0.1s, color 0.1s, opacity 0.1s;\n}\n/* View filters are chips, not tabs: pills, smaller, no underline; they sit left, directly above their list. */\n.e-desktop-root .e-segment-tabs { justify-content: flex-start; margin: 0 0 12px; }\n.e-desktop-root .e-segment-tab {\n  border-radius: 999px !important;\n  padding: 2px 11px;\n  font-size: 0.68rem;\n  text-transform: none;\n  letter-spacing: 0.02em;\n}\n.e-desktop-root .e-segment-tab.is-active { background: var(--e-accent-wash, transparent); font-weight: 400; }\n.e-desktop-root .e-segment-tab:hover { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-segment-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); font-weight: 600; }\n\n/* The Feed's filter chips, and \"more ▾\" for the rarer kinds: the same chip, opening a short list. */\n.e-desktop-root .e-feed-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; margin: 0 0 12px; }\n.e-desktop-root .e-feed-tabs .e-segment-tabs { margin: 0; }\n.e-desktop-root .e-feed-more { position: relative; }\n.e-desktop-root .e-feed-more > summary {\n  list-style: none; cursor: pointer; padding: 2px 11px; border: 1px solid var(--theme-border-subdued, currentColor);\n  border-radius: 999px; font-size: 0.68rem; letter-spacing: 0.02em; opacity: 0.75; user-select: none;\n}\n.e-desktop-root .e-feed-more > summary::-webkit-details-marker { display: none; }\n.e-desktop-root .e-feed-more > summary:hover, .e-desktop-root .e-feed-more[open] > summary, .e-desktop-root .e-feed-more > summary.is-active {\n  opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-feed-more__menu {\n  position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 9rem; display: flex; flex-direction: column;\n  border: 1px solid var(--theme-border, var(--e-rule)); background: var(--theme-background);\n}\n.e-desktop-root .e-feed-more__menu button {\n  padding: 6px 12px; border: 0; border-bottom: 1px solid var(--e-rule, transparent); background: transparent; color: inherit;\n  font: inherit; font-size: 0.72rem; text-align: left; cursor: pointer;\n}\n.e-desktop-root .e-feed-more__menu button:last-child { border-bottom: 0; }\n.e-desktop-root .e-feed-more__menu button:hover, .e-desktop-root .e-feed-more__menu button.is-active { color: var(--theme-focused-foreground); }\n\n/* ─── 16. BADGES, PILLS & ENTITY CHIPS ──────────────────────────────────── */\n\n.e-desktop-root .e-badge { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 12px; font-family: var(--font-family-mono); border: 1px solid currentColor; white-space: nowrap; }\n.e-desktop-root .e-badge--dim { opacity: 0.5; }\n\n.e-desktop-root .e-role-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid currentColor; }\n.e-desktop-root .e-role-pill--operator  { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-role-pill--member    { opacity: 0.6; }\n.e-desktop-root .e-role-pill--spectator { opacity: 0.4; }\n\n.e-desktop-root .e-gate-badge {\n  display: inline-block;\n  padding: 1px 5px;\n  border-radius: 4px;\n  font-size: 10px;\n  font-weight: 700;\n  letter-spacing: 0.05em;\n  text-transform: uppercase;\n  white-space: nowrap;\n}\n.e-desktop-root .e-gate-badge--invite { background: rgba(128,128,255,0.15); color: #8888ff; }\n.e-desktop-root .e-gate-badge--paid   { background: rgba(80,200,120,0.15);  color: #4caf7a; }\n.e-desktop-root .e-gate-badge--advert { background: color-mix(in srgb, var(--theme-focused-foreground) 15%, transparent); color: var(--theme-focused-foreground); }\n\n.e-desktop-root .e-outcome-pill {\n  display: inline-block;\n  padding: 1px 5px;\n  border-radius: 4px;\n  font-size: 10px;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n}\n.e-desktop-root .e-outcome-pill--game   { background: color-mix(in srgb, var(--theme-focused-foreground) 12%, transparent); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-outcome-pill--room   { background: rgba(0,180,255,0.12);   color: #0099cc; }\n.e-desktop-root .e-outcome-pill--agora  { background: rgba(128,128,255,0.12); color: #7777dd; }\n.e-desktop-root .e-outcome-pill--refund { background: rgba(200,50,50,0.12);   color: #cc4444; }\n\n/* Entity chips — clickable agent / session cross-nav links */\n.e-desktop-root .e-entity-chip {\n  display: inline-block;\n  font-family: var(--font-family-mono);\n  font-size: 12px;\n  padding: 1px 5px;\n  border: 1px solid transparent;\n  background: transparent;\n  cursor: default;\n  white-space: nowrap;\n}\n.e-desktop-root .e-entity-chip--inert { opacity: 0.55; }\n.e-desktop-root .e-entity-chip--agent,\n.e-desktop-root .e-entity-chip--session {\n  cursor: pointer;\n  border-color: rgba(128,128,128,0.2);\n  color: var(--theme-focused-foreground);\n  opacity: 0.8;\n  transition: opacity 0.1s, background 0.1s;\n}\n.e-desktop-root .e-entity-chip--agent:hover,\n.e-desktop-root .e-entity-chip--session:hover { opacity: 1; background: rgba(128,128,128,0.08); }\n\n/* Room → session link */\n.e-desktop-root .e-room-session-link {\n  display: inline-flex;\n  align-items: center;\n  gap: 3px;\n  margin-top: 3px;\n  padding: 1px 6px;\n  border: 1px solid rgba(128,128,128,0.2);\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font-size: 11px;\n  font-family: var(--font-family-mono);\n  cursor: pointer;\n  opacity: 0.7;\n  transition: opacity 0.1s;\n}\n.e-desktop-root .e-room-session-link:hover { opacity: 1; background: rgba(128,128,128,0.08); }\n\n/* ─── 17. TABLES ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-compact-table { overflow-x: auto; }\n\n.e-desktop-root .e-compact-table table,\n.e-desktop-root .e-table {\n  width: 100%;\n  border-collapse: collapse;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n  font-size: 0.792rem;\n}\n\n/* Header row: a quiet band from the theme's own ink and ground, so it follows light, vivid and deep and every tint. */\n.e-desktop-root .e-dashboard-shell .e-compact-table thead td,\n.e-desktop-root .e-dashboard-shell table thead td,\n.e-desktop-root .e-table thead td {\n  background: color-mix(in srgb, var(--theme-text) 12%, var(--theme-background)) !important;\n  color: var(--theme-text);\n  padding: 4px 8px;\n  font-size: 0.682rem;\n  letter-spacing: 0.06em;\n}\n\n.e-desktop-root .e-table tbody td {\n  padding: 5px 8px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n}\n.e-desktop-root .e-dashboard-shell table tbody tr { background: transparent !important; }\n.e-desktop-root .e-dashboard-shell table tbody tr:hover { background: transparent !important; }\n\n.e-desktop-root .e-table-row { cursor: pointer; }\n.e-desktop-root .e-table-row:hover td { border-left: 2px solid var(--theme-focused-foreground); padding-left: 6px; }\n.e-desktop-root .e-table-row:focus-visible { outline: 1px solid var(--theme-focused-foreground); }\n\n/* ─── 18. TOOLBAR & SEARCH ───────────────────────────────────────────────── */\n\n.e-desktop-root .e-toolbar-h {\n  display: flex;\n  flex-wrap: nowrap;\n  gap: 6px;\n  align-items: center;\n  padding: 6px 12px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n  overflow-x: auto;\n}\n.e-desktop-root .e-toolbar-h--wrap { flex-wrap: wrap; }\n\n.e-desktop-root .e-search-row {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  padding: 8px 12px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n}\n/* The kit Input draws its text in a display layer and puts the real <input>\n   (which gets this class) transparent on top. So the box lives on the display\n   layer, and the input just covers it exactly — styling the input itself drew\n   a second, empty box under the placeholder. */\n.e-desktop-root .e-search-row > [class*=\"Input_root\"] { flex: 1; min-width: 0; }\n.e-desktop-root .e-search-row [class*=\"Input_displayed\"] {\n  display: flex;\n  align-items: center;\n  min-height: 40px;\n  padding: 0 12px;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-search-bar {\n  height: 100%;\n  padding: 0 12px !important;\n  box-sizing: border-box;\n  border: 0 !important;\n  background: transparent !important;\n}\n\n/* ─── 19. ACTION TIMELINE ────────────────────────────────────────────────── */\n\n.e-desktop-root .e-action-timeline { display: flex; flex-direction: column; gap: 2px; }\n.e-desktop-root .e-action-row { padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }\n.e-desktop-root .e-action-row:last-child { border-bottom: none; }\n.e-desktop-root .e-action-row--terminal .e-action-row__outcome { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-action-row__meta { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 2px; }\n.e-desktop-root .e-action-row__icon { font-size: 14px; min-width: 16px; text-align: center; }\n.e-desktop-root .e-action-row__body { font-size: 13px; opacity: 0.75; padding-left: 24px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }\n.e-desktop-root .e-action-row__outcome { font-size: 12px; padding-left: 24px; opacity: 0.6; margin-top: 2px; }\n\n/* ─── 20. SESSION & TRANSACTION ROWS ────────────────────────────────────── */\n\n.e-desktop-root .e-txn-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid rgba(128,128,128,0.1); }\n.e-desktop-root .e-txn-row:last-child { border-bottom: none; }\n.e-desktop-root .e-txn-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }\n.e-desktop-root .e-txn-dot--in  { background: var(--theme-focused-foreground); }\n.e-desktop-root .e-txn-dot--out { background: rgba(128,128,128,0.4); }\n\n.e-desktop-root .e-session-status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: rgba(128,128,128,0.4); }\n.e-desktop-root .e-session-status-dot--active    { background: var(--theme-focused-foreground); }\n.e-desktop-root .e-session-status-dot--completed { background: rgba(128,128,128,0.6); }\n.e-desktop-root .e-session-status-dot--abandoned { background: rgba(180,80,80,0.5); }\n/* ─── 21. MESSAGES / INBOX ───────────────────────────────────────────────── */\n\n.e-desktop-root .e-messages-pane {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n.e-desktop-root .e-messages-pane__toolbar {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 8px 16px;\n  border-bottom: 1px solid var(--theme-border-color, rgba(128,128,128,0.12));\n  flex-shrink: 0;\n}\n.e-desktop-root .e-inbox-list { display: flex; flex-direction: column; gap: 0; }\n.e-desktop-root .e-inbox-event {\n  display: flex;\n  gap: 12px;\n  padding: 10px 14px;   /* the same side padding as the panel's head, so icon and time clear the border */\n  border-bottom: 1px solid var(--theme-border-color, rgba(128,128,128,0.12));\n}\n.e-desktop-root .e-inbox-event:last-child { border-bottom: none; }\n.e-desktop-root .e-inbox-event--read { opacity: 0.55; }\n.e-desktop-root .e-inbox-event--link { cursor: pointer; }\n.e-desktop-root .e-inbox-event--link:hover, .e-desktop-root .e-inbox-event--link:focus-visible { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); outline: none; }\n.e-desktop-root .e-now__row.is-link { cursor: pointer; }\n.e-desktop-root .e-now__row.is-link:hover .e-now__go { text-decoration: underline; }\n.e-desktop-root .e-inbox-event__icon { flex-shrink: 0; width: 22px; text-align: center; font-size: 15px; padding-top: 2px; opacity: 0.7; }\n.e-desktop-root .e-inbox-event__body { flex: 1; min-width: 0; }\n\n/* ─── 22. SRCL COMPONENT OVERRIDES ──────────────────────────────────────── */\n\n/* ActionButton — outline style, no fills */\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_content\"] {\n  background: transparent !important;\n  box-shadow: inset 0 0 0 1px var(--theme-border-subdued, rgba(255,255,255,0.12)) !important;\n  border-radius: 0 !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_hotkey\"] { background: transparent !important; }\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"]:hover [class*=\"ActionButton_content\"] {\n  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground) !important;\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"].selected [class*=\"ActionButton_content\"],\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_selected\"] [class*=\"ActionButton_content\"] {\n  background: transparent !important;\n  color: var(--theme-focused-foreground) !important;\n  font-weight: 600;\n  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground) !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"]:focus,\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"]:active { background: transparent !important; }\n\n/* Badges — square */\n.e-desktop-root .e-dashboard-shell [class*=\"Badge_root\"] { border-radius: 0 !important; }\n\n/* Input */\n.e-desktop-root .e-dashboard-shell [class*=\"Input_root\"] input { background: transparent !important; }\n\n/* Kill all surfaces from panels and stat blocks */\n.e-desktop-root .e-dashboard-shell .e-app-top,\n.e-desktop-root .e-dashboard-shell .e-mobile-top { background: var(--theme-background) !important; }\n.e-desktop-root .e-dashboard-shell .e-app-drawer,\n.e-desktop-root .e-dashboard-shell .e-mobile-drawer { background: var(--theme-background) !important; box-shadow: none; }\n.e-desktop-root .e-dashboard-shell .e-panel-card,\n.e-desktop-root .e-dashboard-shell .e-panel-card__head,\n.e-desktop-root .e-dashboard-shell .e-panel-card__body,\n.e-desktop-root .e-dashboard-shell .e-slim-card,\n.e-desktop-root .e-dashboard-shell .e-hero-stat,\n.e-desktop-root .e-dashboard-shell .e-kpi,\n.e-desktop-root .e-dashboard-shell .e-empty-pane { background: transparent !important; }\n\n/* ─── 23. RESPONSIVE ─────────────────────────────────────────────────────── */\n\n@media (max-width: 900px) {\n  .e-desktop-root .e-view-body { padding: 14px 12px 24px; }}\n/* The phone layout (the frame under 600 px): top bar, menu behind the burger, bottom bar. */\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-app-top { display: none; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-mobile-top { display: flex; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-app-drawer {\n  display: flex;\n  position: absolute;\n  left: 0; top: 0; bottom: 0;\n  z-index: 140;     /* above full-page chat (120): the chat's ☰ opens it */\n  width: min(85%, 16rem);\n  transform: translateX(-105%);\n  transition: transform 0.2s ease;\n  background: var(--theme-background);\n  border-right: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n}\n.e-desktop-root .e-app-shell[data-nav=\"phone\"].is-nav-open .e-app-drawer { transform: translateX(0); }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"].is-nav-open .e-app-backdrop {\n  display: block;\n  position: absolute;\n  inset: 0;\n  z-index: 130;\n  background: rgba(0,0,0,0.55);\n  border: 0;\n  padding: 0;\n  cursor: pointer;\n}\n\n/* Narrow screens: SidebarLayout itself (kit module CSS) turns rail-beside-detail\n   into list-then-detail with a back control — see ui/kit/SidebarLayout.tsx. */\n\n@media (min-width: 901px) {\n  .e-desktop-root .e-hero-stats { grid-template-columns: repeat(4, 1fr); }}\n\n/* P121: unread count on a conversation or on Activity. */\n.e-desktop-root .e-unread-count {\n  font-size: 11px;\n  font-weight: 600;\n  padding: 0 6px;\n  border-radius: 8px;\n  background: var(--theme-focused-foreground, #3c3);\n  color: var(--theme-background, #000);\n}\n\n/* P123: view-as switcher (local relays only). */\n.e-desktop-root .e-viewer-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }\n.e-desktop-root .e-viewer-switch select {\n  font: inherit; font-size: 12px; padding: 2px 6px;\n  background: var(--theme-background, transparent); color: inherit;\n  border: 1px solid var(--theme-border, rgba(128,128,128,0.4)); border-radius: 4px;\n}\n/* A phone (the switcher sits in the menu): under 16px, iOS zooms the page when the select takes focus. */\n@media (max-width: 900px) {\n  .e-desktop-root .e-viewer-switch select { font-size: 16px; min-height: 40px; }}\n\n/* P124: inbox / sent / all above the conversation list. */\n.e-desktop-root .e-messages-boxes { padding: 8px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(128,128,128,0.12)); }\n\n/* P171: the Docs view. */\n.e-desktop-root .e-docs-rail { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; }\n.e-desktop-root .e-docs-search { width: 100%; margin: 0 0 6px 0; padding: 6px 8px; font: inherit; background: transparent;\n  color: inherit; border: 1px solid currentColor; opacity: 0.8; }\n.e-desktop-root .e-docs-rail-item { display: flex; flex-direction: column; gap: 2px; text-align: left; }\n.e-desktop-root .e-doc { overflow-y: auto; max-width: 92ch; padding: 8px 20px 40px 20px; line-height: 1.55; }\n.e-desktop-root .e-doc .e-doc-h { margin: 1.4em 0 0.5em 0; line-height: 1.25; scroll-margin-top: 8px; }\n.e-desktop-root .e-doc p, .e-desktop-root .e-doc .e-doc-list, .e-desktop-root .e-doc .e-doc-quote { margin: 0.6em 0; }\n.e-desktop-root .e-doc .e-doc-list { padding-left: 1.6em; }\n.e-desktop-root .e-doc code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 0 0.25em;\n  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); }\n.e-desktop-root .e-doc .e-doc-code { overflow-x: auto; padding: 10px 12px; margin: 0.8em 0;\n  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n.e-desktop-root .e-doc .e-doc-code code { border: 0; padding: 0; }\n.e-desktop-root .e-doc .e-doc-table-wrap { overflow-x: auto; margin: 0.8em 0; }\n.e-desktop-root .e-doc .e-doc-table { border-collapse: collapse; font-size: 0.94em; }\n.e-desktop-root .e-doc .e-doc-table th, .e-desktop-root .e-doc .e-doc-table td { text-align: left; vertical-align: top; padding: 4px 10px;\n  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n.e-desktop-root .e-doc .e-doc-quote { padding-left: 12px; border-left: 3px solid color-mix(in srgb, currentColor 35%, transparent); }\n.e-desktop-root .e-doc .e-doc-link { text-decoration: underline; cursor: pointer; }\n.e-desktop-root .e-doc .e-doc-path { font-family: var(--font-family-mono, monospace); font-size: 0.92em; opacity: 0.8; }\n\n/* P178: the Settings view (read-only), laid out like Hermes's config page: sections of rows, the\n   label and its plain words on the left, the value drawn as Hermes's form would on the right (never a\n   control), and where to change it underneath. Tokens only, so every theme and tint carries it. */\n.e-desktop-root .e-settings { overflow-y: auto; max-width: 110ch; min-width: 0; padding: 8px 20px 40px 20px;\n  --e-settings-rule: var(--e-rule, color-mix(in srgb, currentColor 18%, transparent)); }\n.e-desktop-root .e-settings-hint { margin: 4px 0 0; font-size: 0.9em; }\n.e-desktop-root .e-settings-intro { margin: 8px 0 4px; padding: 8px 12px; font-size: 0.9em;\n  border-left: 3px solid var(--theme-focused-foreground);\n  background: var(--e-accent-wash, color-mix(in srgb, currentColor 6%, transparent)); }\n.e-desktop-root .e-settings-heading { font-size: 1.2em; margin: 16px 0 0; overflow-wrap: anywhere; }\n.e-desktop-root .e-settings-group { margin: 0 0 6px 0; }\n.e-desktop-root .e-settings-title { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;\n  margin: 18px 0 6px; opacity: 0.8; }\n.e-desktop-root .e-settings-card { border: 1px solid var(--e-settings-rule); }\n.e-desktop-root .e-setting { padding: 10px 14px; border-top: 1px solid var(--e-settings-rule);\n  display: flex; flex-direction: column; gap: 6px; min-width: 0; }\n.e-desktop-root .e-setting:first-child { border-top: 0; }\n.e-desktop-root .e-setting-warn { box-shadow: inset 3px 0 0 var(--theme-focused-foreground); }\n.e-desktop-root .e-setting-danger { box-shadow: inset 3px 0 0 currentColor; }\n.e-desktop-root .e-setting-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto); gap: 4px 16px; align-items: start; }\n.e-desktop-root .e-setting-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }\n.e-desktop-root .e-setting-label { font-weight: 600; overflow-wrap: anywhere; }\n.e-desktop-root .e-setting-mark { display: inline-block; min-width: 1.1em; margin-right: 4px; font-weight: 700;\n  color: var(--theme-focused-foreground); }\n.e-desktop-root .e-setting-about { font-size: 0.88em; opacity: 0.75; }\n.e-desktop-root .e-setting-control { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end;\n  max-width: 48ch; min-width: 0; }\n.e-desktop-root .e-setting-value, .e-desktop-root .e-setting-number, .e-desktop-root .e-setting-list { font-family: var(--font-family-mono, monospace);\n  font-size: 0.9em; overflow-wrap: anywhere; text-align: right; }\n.e-desktop-root .e-setting-number { font-variant-numeric: tabular-nums; font-weight: 600; }\n.e-desktop-root .e-setting-tag { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 1px 6px;\n  border: 1px dashed color-mix(in srgb, currentColor 45%, transparent); }\n/* Read-only values are plain text: no border, fill, hover or pointer, so nothing looks pressable. */\n.e-desktop-root .e-setting-plain { font-size: 0.9em; font-weight: 600; cursor: default; opacity: 0.7; }\n.e-desktop-root .e-setting-plain.is-on { opacity: 1; }\n.e-desktop-root .e-setting-choices { display: inline; text-align: right; cursor: default; }\n.e-desktop-root .e-setting-rec { font-weight: 400; font-size: 0.82em; }\n/* Where to change it: Hermes's own page, the command, and who may run it. */\n.e-desktop-root .e-setting-change { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 0.88em; min-width: 0; }\n.e-desktop-root .e-setting-hermes { font: inherit; color: var(--theme-focused-foreground); background: transparent; cursor: pointer;\n  border: 1px solid currentColor; padding: 1px 8px; text-decoration: none; white-space: nowrap; }\n.e-desktop-root .e-setting-hermes:hover,\n.e-desktop-root .e-setting-hermes:focus-visible { background: color-mix(in srgb, var(--theme-focused-foreground) 14%, transparent); outline: none; }\n.e-desktop-root .e-setting-hermes-text { opacity: 0.85; }\n.e-desktop-root .e-setting-env { font-family: var(--font-family-mono, monospace); font-size: 0.85em; opacity: 0.7; overflow-wrap: anywhere; }\n.e-desktop-root .e-setting-cmd { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }\n.e-desktop-root .e-setting-cmd code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 1px 6px;\n  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); overflow-wrap: anywhere; }\n.e-desktop-root .e-setting-copy { font: inherit; font-size: 0.85em; padding: 1px 8px; background: transparent; color: inherit;\n  border: 1px solid color-mix(in srgb, currentColor 35%, transparent); cursor: pointer; }\n.e-desktop-root .e-setting-note { flex-basis: 100%; opacity: 0.75; }\n@media (max-width: 640px) {\n  .e-desktop-root .e-settings { padding: 4px 12px 32px; }\n  .e-desktop-root .e-setting { padding: 10px; }\n  .e-desktop-root .e-setting-main { grid-template-columns: minmax(0, 1fr); }\n  .e-desktop-root .e-setting-control { justify-content: flex-start; max-width: none; }\n  .e-desktop-root .e-setting-value, .e-desktop-root .e-setting-number, .e-desktop-root .e-setting-list { text-align: left; }\n  .e-desktop-root .e-setting-choices { justify-content: flex-start; }\n}\n\n/* P281: the relay's transparency log and this agent's own check of it, one compact block (Trust & Safety). */\n.e-desktop-root .e-relay-log { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-top: 10px; padding-top: 8px;\n  border-top: 1px solid var(--e-rule, color-mix(in srgb, currentColor 18%, transparent)); font-size: 0.82rem; min-width: 0; }\n.e-desktop-root .e-relay-log__name { font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-size: 0.72rem; }\n.e-desktop-root .e-relay-log__facts { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }\n.e-desktop-root .e-relay-log.is-off .e-relay-log__facts { opacity: 0.7; }\n.e-desktop-root .e-relay-log__check { overflow-wrap: anywhere; }\n.e-desktop-root .e-relay-log__check.is-ok { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-relay-log__check.is-none, .e-desktop-root .e-relay-log__check.is-info { opacity: 0.8; }\n.e-desktop-root .e-relay-log__check.is-warn { font-weight: 700; padding: 1px 6px; border: 1px solid currentColor; }\n.e-desktop-root .e-relay-log__about { flex-basis: 100%; font-size: 0.72rem; opacity: 0.7; }\n\n/* P179: the relay operator's Relay view. */\n.e-desktop-root .e-relay { overflow-y: auto; max-width: 110ch; padding: 8px 20px 40px 20px; }\n.e-desktop-root .e-relay h3 { font-size: 1.05em; margin: 18px 0 8px 0; }\n.e-desktop-root .e-relay-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }\n.e-desktop-root .e-relay-tile { padding: 10px 12px; border: 1px solid color-mix(in srgb, currentColor 18%, transparent);\n  display: flex; flex-direction: column; gap: 2px; }\n.e-desktop-root .e-relay-tile-value { font-size: 1.6em; font-variant-numeric: tabular-nums; line-height: 1.2; }\n.e-desktop-root .e-relay-tile-sub { font-size: 0.85em; }\n.e-desktop-root .e-relay-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }\n.e-desktop-root .e-relay-charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }\n.e-desktop-root .e-relay-chart { margin: 0; }\n.e-desktop-root .e-relay-chart figcaption { margin-bottom: 4px; }\n.e-desktop-root .e-relay-chart svg { width: 100%; height: 64px; display: block; }\n.e-desktop-root .e-relay-bar { fill: currentColor; opacity: 0.75; }\n.e-desktop-root .e-relay-chart g:hover .e-relay-bar { opacity: 1; }\n.e-desktop-root .e-relay-axis { stroke: currentColor; opacity: 0.25; stroke-width: 1; }\n.e-desktop-root .e-relay-table { border-collapse: collapse; font-size: 0.94em; margin: 4px 0 10px 0; font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-relay-table th, .e-desktop-root .e-relay-table td { text-align: left; padding: 4px 10px;\n  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n\n/* Rooms › \"Rooms you can join\": folded above the chat until opened. */\n.e-desktop-root .e-joinable { margin: 0 0 10px; border: 1px solid var(--theme-border-subdued, currentColor); padding: 6px 10px; }\n.e-desktop-root .e-joinable > summary { cursor: pointer; font-size: 0.85rem; opacity: 0.8; }\n.e-desktop-root .e-joinable[open] > summary { margin-bottom: 6px; }\n/* You › Stats: the agent's own figures. Bars are decoration: every value is also text. */\n.e-desktop-root .e-stats-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }\n.e-desktop-root .e-stats-num { font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-stats-list { list-style: none; margin: 4px 0 8px 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }\n.e-desktop-root .e-stats-bars { list-style: none; margin: 4px 0 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }\n.e-desktop-root .e-stats-bars__row { display: grid; grid-template-columns: minmax(12ch, 16rem) minmax(60px, 1fr) auto; gap: 10px;\n  align-items: center; }\n.e-desktop-root .e-stats-bars__track { height: 8px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n.e-desktop-root .e-stats-bars__fill { display: block; height: 100%; background: var(--theme-focused-foreground, currentColor); }\n/* the kit draws a marker before every list item; in the grid it became a fourth cell and shoved the row apart */\n.e-desktop-root .e-stats-bars__row, .e-desktop-root .e-stats-list li { padding-left: 0; text-indent: 0; }\n.e-desktop-root .e-stats-bars__row::before, .e-desktop-root .e-stats-list li::before { content: none; display: none; }\n.e-desktop-root .e-stats-bars__label { min-width: 0; overflow-wrap: anywhere; }\n.e-desktop-root .e-stats-money-note, .e-desktop-root .e-stats-missing { display: block; }\n.e-desktop-root .e-stats .e-faint, .e-desktop-root .e-stats-toolbar .e-faint { font-size: 13px; line-height: 1.5; }\n.e-desktop-root .e-stats-table td, .e-desktop-root .e-stats-table th { white-space: nowrap; }\n@media (max-width: 700px) {\n  .e-desktop-root .e-stats-bars__row { grid-template-columns: 1fr auto; }\n  .e-desktop-root .e-stats-bars__track { grid-column: 1 / -1; grid-row: 2; }}\n\n/* ─── 24. RETROMOD ───────────────────────────────────────────────────────────\n   The terminal look, kept and made consistent: monospace, hairline boxes, the\n   theme's accent as the one highlight. Modern where it helps reading and\n   touching: smooth type, clear focus, one heading per section, 44px targets on\n   a phone, list-then-detail split views, tables that scroll in their own box.\n   ──────────────────────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-dashboard-shell {\n  -webkit-font-smoothing: antialiased;\n  -moz-osx-font-smoothing: grayscale;\n  text-rendering: optimizeLegibility;\n  --e-rule: var(--theme-border-subdued, rgba(128, 128, 128, 0.22));\n  --e-accent-wash: color-mix(in srgb, var(--theme-focused-foreground) 9%, transparent);\n}\n\n/* One focus ring, everywhere — keyboard users always see where they are. */\n.e-desktop-root .e-dashboard-shell :focus-visible,\n.e-desktop-root .e-dashboard-shell .e-rail-item:focus-visible,\n.e-desktop-root .e-dashboard-shell .e-theme-circle:focus-visible {\n  outline: 2px solid var(--theme-focused-foreground);\n  outline-offset: 2px;\n}\n.e-desktop-root .e-dashboard-shell .e-rail-item:focus-visible { outline-offset: -2px; }\n/* The page title takes focus after a section change (read out); the ring shows only for a keyboard move. */\n.e-desktop-root .e-dashboard-shell .e-page-head__title:focus:not([data-by-key]),\n.e-desktop-root .e-dashboard-shell .e-page-head__title:focus-visible:not([data-by-key]) { outline: none; }\n\n/* Section heading: ▍Name, then the plain-words line on what it shows. */\n.e-desktop-root .e-page-head {\n  padding: 14px 24px 12px;\n  border-bottom: 1px solid var(--e-rule);\n  max-width: min(1440px, 100%);\n  margin: 0 auto;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-page-head__title {\n  margin: 0;\n  display: flex;\n  align-items: baseline;\n  gap: 1ch;\n  font: inherit;\n  font-size: 1.05rem;\n  font-weight: 600;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n  line-height: 1.3;\n}\n.e-desktop-root .e-page-head__blurb {\n  margin: 4px 0 0;\n  font-size: 0.82rem;\n  line-height: 1.5;\n  opacity: 0.62;\n  max-width: 80ch;\n}\n\n/* A heading that only repeats the active tab: the blurb alone, one line, no frame. */\n.e-desktop-root .e-page-head--lean .e-page-head__title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n.e-desktop-root .e-page-head--lean .e-page-head__blurb { margin: 0; }\n\n/* Sub-heading inside a view: CAPS label with a box-drawing rule after it. */\n.e-desktop-root .e-subhead {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  margin: 18px 0 6px;\n  font-size: 0.72rem;\n  letter-spacing: 0.12em;\n  text-transform: uppercase;\n  opacity: 0.7;\n}\n.e-desktop-root .e-subhead::after {\n  content: \"\";\n  flex: 1;\n  height: 1px;\n  background: var(--e-rule);\n}\n.e-desktop-root .e-subhead:first-child { margin-top: 4px; }\n.e-desktop-root .e-note { font-size: 0.8rem; line-height: 1.5; opacity: 0.6; margin: 2px 0 0; }\n\n.e-desktop-root .e-section-tabs--horizontal { align-items: center; }\n.e-desktop-root .e-section-tab.is-active { background: var(--e-accent-wash) !important; }\n\n/* The menu: the six destinations, each with its sections named under it. */\n.e-desktop-root .e-section-tabs--drawer .e-section-tab {\n  min-height: 52px;\n  display: grid;\n  grid-template-columns: 1fr auto;\n  grid-template-areas: \"label key\" \"sub key\";\n  align-items: center;\n  column-gap: 10px;\n  row-gap: 0;\n  text-align: left;\n}\n.e-desktop-root .e-section-tabs--drawer .e-section-tab__label { grid-area: label; font-size: 0.95rem; }\n.e-desktop-root .e-section-tabs--drawer .e-section-tab__key { grid-area: key; }\n.e-desktop-root .e-section-tab__sub {\n  grid-area: sub;\n  font-size: 0.72rem;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n  white-space: normal;\n}\n\n/* The sections inside the current destination: one strip under the header, every width. */\n/* The strip may scroll (it is the page's sections, not the main navigation), but never silently:\n   a fade at each cut edge and a \"n ▾\" button listing the tabs that are cut off. */\n.e-desktop-root .e-subnav-wrap {\n  flex: none;\n  position: relative;\n  display: flex;\n  align-items: stretch;\n  border-bottom: 1px solid var(--e-rule);\n  background: var(--theme-background);\n}\n.e-desktop-root .e-subnav-box { position: relative; flex: 1; min-width: 0; display: flex; }\n.e-desktop-root .e-subnav {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  align-items: stretch;\n  gap: 2px;\n  padding: 0 16px;\n  min-height: 40px;\n  overflow-x: auto;\n  scrollbar-width: none;\n  background: var(--theme-background);\n}\n.e-desktop-root .e-subnav::-webkit-scrollbar { display: none; }\n.e-desktop-root .e-subnav-fade {\n  position: absolute;\n  top: 0; bottom: 0;\n  width: 28px;\n  pointer-events: none;\n  visibility: hidden;\n}\n.e-desktop-root .e-subnav-fade--left { left: 0; background: linear-gradient(to right, var(--theme-background), transparent); }\n.e-desktop-root .e-subnav-fade--right { right: 0; background: linear-gradient(to left, var(--theme-background), transparent); }\n.e-desktop-root .e-subnav-box.has-left .e-subnav-fade--left,\n.e-desktop-root .e-subnav-box.has-right .e-subnav-fade--right { visibility: visible; }\n.e-desktop-root .e-subnav-more {\n  flex: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 44px;\n  padding: 0 10px;\n  border: 0;\n  border-left: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.78rem;\n  cursor: pointer;\n}\n.e-desktop-root .e-subnav-more:hover, .e-desktop-root .e-subnav-more[aria-expanded=\"true\"] { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-subnav-more:focus-visible, .e-desktop-root .e-subnav-menu__item:focus-visible { outline: 2px solid var(--theme-focused-foreground); outline-offset: -2px; }\n.e-desktop-root .e-subnav-menu {\n  position: absolute;\n  top: 100%;\n  right: 0;\n  z-index: 50;\n  min-width: 11rem;\n  max-width: 100%;\n  display: flex;\n  flex-direction: column;\n  border: 1px solid var(--theme-border, var(--e-rule));\n  background: var(--theme-background);\n  box-shadow: 0 6px 18px rgba(0,0,0,0.25);\n}\n.e-desktop-root .e-subnav-menu__item {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  min-height: 40px;\n  padding: 0 14px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.82rem;\n  text-align: left;\n  cursor: pointer;\n}\n.e-desktop-root .e-subnav-menu__item:last-child { border-bottom: 0; }\n.e-desktop-root .e-subnav-menu__item:hover, .e-desktop-root .e-subnav-menu__item.is-active { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-subnav__dest {\n  display: inline-flex;\n  align-items: center;\n  padding-right: 10px;\n  margin-right: 4px;\n  border-right: 1px solid var(--e-rule);\n  font-size: 0.72rem;\n  letter-spacing: 0.12em;\n  text-transform: uppercase;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__tab {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  min-height: 40px;\n  padding: 0 12px;\n  border: 0;\n  border-bottom: 2px solid transparent;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.82rem;\n  cursor: pointer;\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__tab:hover { border-bottom-color: var(--theme-border); }\n/* Active is marked by the rule under the tab, never by weight: bold would widen the tab and move its neighbours. */\n.e-desktop-root .e-subnav__tab.is-active { border-bottom-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-subnav__tab.is-off { opacity: 0.7; font-style: italic; }\n.e-desktop-root .e-subnav__tab.is-off-relay::after {\n  content: \"off on this relay\";\n  margin-left: 6px;\n  padding: 0 5px;\n  border: 1px solid currentColor;\n  border-radius: 999px;\n  font-size: 0.6rem;\n  font-style: normal;\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__note {\n  display: inline-flex;\n  align-items: center;\n  padding: 0 4px;\n  font-size: 0.78rem;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__tab:focus-visible, .e-desktop-root .e-section-tab:focus-visible, .e-desktop-root .e-header-link:focus-visible, .e-desktop-root .e-bottom-bar__tab:focus-visible {\n  outline: 2px solid var(--theme-focused-foreground);\n  outline-offset: -2px;\n}\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-subnav { padding: 0 8px; min-height: 44px; }\n/* Five tabs (the Arena's) fit a 390px phone; a longer row still scrolls, with the fade at its edge. */\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-subnav { gap: 0; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-subnav__tab { min-height: 44px; padding: 0 10px; }\n\n/* Phone: the five places as a bar at the foot, under the view. */\n.e-desktop-root .e-bottom-bar { display: none; }\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-bottom-bar {\n  flex: none;\n  display: grid;\n  grid-template-columns: repeat(5, minmax(0, 1fr));\n  border-top: 1px solid var(--e-rule, var(--theme-border-subdued));\n  background: var(--theme-background);\n  padding-bottom: env(safe-area-inset-bottom, 0);\n}\n.e-desktop-root .e-bottom-bar__tab {\n  position: relative;\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  gap: 2px;\n  min-height: 52px;\n  padding: 4px 2px;\n  border: 0;\n  border-top: 2px solid transparent;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.7rem;\n  cursor: pointer;\n  min-width: 0;\n}\n.e-desktop-root .e-bottom-bar__tab.is-active { border-top-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-bottom-bar__label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.72rem; letter-spacing: 0; }\n.e-desktop-root .e-bottom-bar__tab .e-nav-badge { top: 4px; right: 22%; min-width: 8px; height: 8px; font-size: 0; padding: 0; }\n/* The page scrolls under the bar's height too, so its last row is never behind the bar (390px, the game\n   panel's move list): the bar's tab is 52px plus its 2px accent and the bar's 1px rule, and the safe area. */\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-view { padding-bottom: calc(55px + env(safe-area-inset-bottom, 0px)); }\n.e-desktop-root .e-header-links--drawer { padding: 8px 0 12px; }\n\n/* The one-line strip of what the agent is doing now, under the sub-row. */\n.e-desktop-root .e-now-strip {\n  flex: none;\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  min-height: 32px;\n  padding: 2px 16px;\n  border-bottom: 1px solid var(--e-rule, var(--theme-border-subdued));\n  font-size: 0.78rem;\n  min-width: 0;\n}\n.e-desktop-root .e-now-strip__main {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  background: transparent;\n  border: 0;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  padding: 4px 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  cursor: pointer;\n}\n.e-desktop-root .e-now-strip__main:disabled { cursor: default; }\n.e-desktop-root .e-now-strip__live { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-now-strip__toggle { background: transparent; border: 0; color: inherit; font: inherit; cursor: pointer; opacity: 0.7; padding: 4px 6px; }\n.e-desktop-root .e-now-strip.is-collapsed { min-height: 22px; justify-content: flex-end; }\n/* Not in a game: the same line, but a quiet one, so it costs little height. */\n.e-desktop-root .e-now-strip.is-idle { min-height: 22px; padding-top: 0; padding-bottom: 0; opacity: 0.75; }\n.e-desktop-root .e-now-strip.is-idle .e-now-strip__main { padding: 1px 0; }\n/* The whole menu scrolls as one, so the foot never covers the last sections. */\n.e-desktop-root .e-section-tabs--drawer { flex: none; overflow: visible; }\n.e-desktop-root .e-mobile-drawer { overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; width: 100%; }\n.e-desktop-root .e-mobile-drawer__head {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding-bottom: 8px;\n  border-bottom: 1px solid var(--e-rule);\n}\n.e-desktop-root .e-mobile-drawer__foot {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: 12px;\n  padding-top: 12px;\n  border-top: 1px solid var(--e-rule);\n}\n.e-desktop-root .e-icon-button,\n.e-desktop-root .e-menu-button {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  min-width: 44px;\n  min-height: 44px;\n  padding: 0 10px;\n  border: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 1.1rem;\n  cursor: pointer;\n}\n.e-desktop-root .e-icon-button:hover,\n.e-desktop-root .e-menu-button:hover { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-menu-button .e-nav-badge { margin-left: 0; }\n\n/* Phone top bar: one row — menu, where you are, relay state. */\n.e-desktop-root .e-mobile-top { flex-wrap: nowrap !important; gap: 10px; padding: 6px 12px; }\n/* Brand above, the section you are in below it — both always fit. */\n.e-desktop-root .e-mobile-top__where {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n  justify-content: center;\n  gap: 1px;\n  overflow: hidden;\n  white-space: nowrap;\n}\n.e-desktop-root .e-mobile-top__where .e-brand-title { font-size: 0.8rem !important; line-height: 1.2; opacity: 0.75; }\n.e-desktop-root .e-mobile-top__section {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  font-size: 0.85rem;\n  line-height: 1.25;\n  letter-spacing: 0.08em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-mobile-top__section::before { content: \"▸ \"; opacity: 0.6; }\n\n/* The brand: the word, decoded (LookChrome.BrandTitle); a fixed width so the\n   header never shifts while glyphs change. */\n.e-desktop-root .e-brand { display: inline-block; min-width: 7.2ch; font-variant-numeric: tabular-nums; }\n/* The brand's star: a 7 x 7 pixel drawing (ui/PixelStar.tsx), as tall as the pixel face's capitals and standing on their baseline. */\n.e-desktop-root .e-pixel-star { display: inline-block; width: 0.66em; height: 0.66em; vertical-align: baseline; flex: none; }\n.e-desktop-root .e-brand__star { margin-left: 0.45em; }\n.e-desktop-root .e-mobile-top .e-relay-status__host { display: none; }\n.e-desktop-root .e-mobile-top .e-relay-status__chips { gap: 6px; }\n.e-desktop-root .e-mobile-top .e-status-chip { padding: 4px 6px; }\n/* The relay's name gives way to its dot on a phone (the title and screen readers still have it): the page name needs the room. */\n.e-desktop-root .e-mobile-top .e-status-chip__label--relay {\n  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;\n}\n\n/* A label above a run of rail rows (\"Which game\", \"Character sheets\"). */\n.e-desktop-root .e-rail-label {\n  padding: 12px 12px 4px;\n  font-size: 0.66rem;\n  letter-spacing: 0.16em;\n  text-transform: uppercase;\n  opacity: 0.5;\n}\n\n/* Rail rows: room to breathe, the selected one washed in the accent. */\n.e-desktop-root .e-rail-item { padding: 8px 10px 8px 12px; min-height: 40px; }\n.e-desktop-root .e-rail-item.is-selected { background: var(--e-accent-wash); }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] {\n  border-right: 1px solid var(--e-rule);\n  box-sizing: border-box;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main { padding: 12px 16px 24px 20px; }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main:has(.e-chess-main) { padding-left: 8px;}\n\n/* What-you-are-looking-at box on the Overview. */\n.e-desktop-root .e-intro {\n  border: 1px solid var(--e-rule);\n  border-left: 3px solid var(--theme-focused-foreground);\n  padding: 12px 16px 14px;\n  margin-bottom: 16px;\n  line-height: 1.55;\n}\n.e-desktop-root .e-intro__title {\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  opacity: 0.6;\n  margin: 0 0 6px;\n}\n.e-desktop-root .e-intro__text { margin: 0; font-size: 0.9rem; max-width: 78ch; }\n.e-desktop-root .e-intro__go { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }\n.e-desktop-root .e-intro__link {\n  flex: 1 1 13rem;\n  display: inline-flex;\n  flex-direction: column;\n  align-items: flex-start;\n  gap: 2px;\n  min-height: 44px;\n  padding: 6px 12px;\n  border: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n.e-desktop-root .e-intro__link:hover { border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-intro__link-label { color: var(--theme-focused-foreground); font-size: 0.85rem; }\n.e-desktop-root .e-intro__link-hint { font-size: 0.72rem; opacity: 0.6; }\n\n/* The toolbar line above a split view is context, not content — keep it small. */\n.e-desktop-root .e-view-body--flush .e-view-toolbar,\n.e-desktop-root .e-view-body--flush .e-view-toolbar p { font-size: 0.78rem; line-height: 1.45; }\n\n/* Leaderboard-style tables size to their content instead of spreading three\n   short columns across a wide screen. */\n.e-desktop-root .e-table.e-board { width: auto; min-width: min(100%, 34rem); }\n\n/* Replay status line (ply, started, audit, verify) wraps instead of running off the edge. */\n.e-desktop-root .e-chess-replay-status { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }\n\n@property --e-edge-fade { syntax: \"<length>\"; inherits: false; initial-value: 28px; }\n@keyframes e-edge-fade { 0%, 92% { --e-edge-fade: 28px; } 100% { --e-edge-fade: 0px; } }\n\n/* ─── 25. PHONE (≤ 700px) ───────────────────────────────────────────────── */\n\n@media (max-width: 700px) {\n  .e-desktop-root .e-page-head { padding: 12px 16px 10px; }\n  .e-desktop-root .e-page-head__blurb { font-size: 0.78rem; }\n  .e-desktop-root .e-view-toolbar { justify-content: flex-start; }\n  .e-desktop-root .e-view-body { padding: 12px 16px 24px; }\n  .e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] { border-right: 0; }\n  .e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main { padding: 12px 16px 24px; }\n\n  /* Tables scroll inside their own box; short cells stay on one line. */\n  .e-desktop-root .e-table,\n  .e-desktop-root .e-relay-table,\n  .e-desktop-root .e-compact-table table {\n    display: block;\n    max-width: 100%;\n    overflow-x: auto;\n    -webkit-overflow-scrolling: touch;\n  }\n  .e-desktop-root .e-table td,\n  .e-desktop-root .e-relay-table td,\n  .e-desktop-root .e-relay-table th { white-space: nowrap; }\n  /* A table wider than the screen fades at its right edge until it is scrolled to the end, so it reads as scrollable. */\n  @supports (animation-timeline: scroll()) {\n    .e-desktop-root .e-table,\n    .e-desktop-root .e-relay-table,\n    .e-desktop-root .e-compact-table table {\n      mask-image: linear-gradient(to right, #000 calc(100% - var(--e-edge-fade)), transparent);\n      animation: e-edge-fade linear both;\n      animation-timeline: scroll(self inline);\n    }\n  }\n\n  /* Comfortable targets. */\n  .e-desktop-root .e-rail-item { min-height: 48px; padding: 10px 16px; }\n  /* Filters (data-keep-list) become a row of chips, so the list itself is near the top. */\n  .e-desktop-root .e-rail-item[data-keep-list] {\n    display: inline-flex;\n    align-items: center;\n    width: auto;\n    min-height: 40px;\n    margin: 4px 0 4px 8px;\n    padding: 6px 12px !important;\n    border: 1px solid var(--e-rule) !important;\n  }\n  .e-desktop-root .e-rail-item[data-keep-list].is-selected { border-color: var(--theme-focused-foreground) !important; }\n  .e-desktop-root .e-segment-tab { min-height: 40px; padding: 6px 12px; }\n  .e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"] { min-height: 40px; }\n  .e-desktop-root .e-search-row [class*=\"Input_displayed\"] { min-height: 44px; }\n  .e-desktop-root .e-theme-duo { padding: 12px 14px; }\n  .e-desktop-root .e-theme-circle { width: 20px; height: 20px; }\n  .e-desktop-root .e-theme-duo__rule { margin: 0 12px; }\n  .e-desktop-root .e-viewer-switch select { min-height: 40px; font-size: 14px; }\n  .e-desktop-root .e-meta-grid__row { grid-template-columns: 6rem 1fr; }}\n\n@media (pointer: coarse) {\n  .e-desktop-root .e-section-tab { min-height: 44px; }\n  .e-desktop-root .e-rail-item { min-height: 48px; }\n  .e-desktop-root .e-segment-tab { min-height: 40px; }}\n\n/* ─── 26. SET PLAYS (blotto, ⅔, lowest unique) ─────────────────────────── */\n\n.e-desktop-root .e-setplay { padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }\n.e-desktop-root .e-setplay__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }\n.e-desktop-root .e-setplay__game {\n  margin: 0;\n  font-size: 0.78rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-setplay__players { margin: 2px 0 0; font-size: 1.05rem; }\n.e-desktop-root .e-setplay__status {\n  flex: none;\n  font-size: 0.68rem;\n  letter-spacing: 0.12em;\n  text-transform: uppercase;\n  padding: 3px 8px;\n  border: 1px solid var(--e-rule);\n  opacity: 0.75;\n}\n.e-desktop-root .e-setplay__status.is-live {\n  opacity: 1;\n  border-color: var(--theme-focused-foreground);\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-setplay__status.is-live::before { content: \"● \"; }\n.e-desktop-root .e-setplay__verdict { margin: 0; font-size: 0.95rem; }\n.e-desktop-root .e-setplay__verdict.is-win { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-setplay__why { color: var(--theme-text); opacity: 0.6; font-size: 0.82rem; font-weight: 400; }\n.e-desktop-root .e-setplay__wait { margin: 0; font-size: 0.82rem; line-height: 1.5; opacity: 0.7; max-width: 72ch; }\n.e-desktop-root .e-setplay__meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding-top: 8px; border-top: 1px solid var(--e-rule); }\n.e-desktop-root .e-setplay__badges { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; }\n.e-desktop-root .e-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n\n/* commit → reveal → winner */\n.e-desktop-root .e-phase-strip { list-style: none; display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; font-size: 0.78rem; }\n.e-desktop-root .e-phase-strip__step {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  padding: 4px 10px 4px 0;\n  opacity: 0.4;\n  white-space: nowrap;\n}\n.e-desktop-root .e-phase-strip__step + .e-phase-strip__step::before {\n  content: \"\";\n  width: clamp(12px, 4vw, 56px);\n  height: 1px;\n  margin-right: 10px;\n  background: currentColor;\n  opacity: 0.6;\n}\n.e-desktop-root .e-phase-strip__step.is-done { opacity: 0.75; }\n.e-desktop-root .e-phase-strip__step.is-now { opacity: 1; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-phase-strip__n {\n  display: inline-grid;\n  place-items: center;\n  width: 1.7em;\n  height: 1.7em;\n  border: 1px solid currentColor;\n  border-radius: 50%;\n  font-size: 0.72rem;\n}\n.e-desktop-root .e-phase-strip__step.is-now .e-phase-strip__n {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  border-color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-phase-strip__who { font-weight: 600; }\n\n/* Seats (pick games) */\n.e-desktop-root .e-seats { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--e-rule); }\n.e-desktop-root .e-seat {\n  display: grid;\n  grid-template-columns: minmax(8ch, 1fr) minmax(12ch, 1.4fr) 5ch;\n  gap: 8px;\n  align-items: baseline;\n  padding: 7px 8px;\n  border-bottom: 1px solid var(--e-rule);\n  font-size: 0.85rem;\n}\n.e-desktop-root .e-seat__state { opacity: 0.65; font-size: 0.78rem; }\n.e-desktop-root .e-seat__move { text-align: right; font-size: 1rem; }\n.e-desktop-root .e-seat.is-to_commit { opacity: 0.55; }\n.e-desktop-root .e-seat.is-out { opacity: 0.45; text-decoration: line-through; }\n.e-desktop-root .e-seat.is-winner {\n  background: color-mix(in srgb, var(--theme-focused-foreground) 16%, transparent);\n  box-shadow: inset 3px 0 0 var(--theme-focused-foreground);\n}\n.e-desktop-root .e-seat.is-winner .e-seat__name,\n.e-desktop-root .e-seat.is-winner .e-seat__move { color: var(--theme-focused-foreground); font-weight: 600; }\n\n/* Blotto: a row per player, a column per field */\n.e-desktop-root .e-blotto__rules, .e-desktop-root .e-lowest__rules, .e-desktop-root .e-twothirds__rules { margin: 0 0 8px; font-size: 0.75rem; line-height: 1.5; }\n.e-desktop-root .e-blotto__scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }\n.e-desktop-root .e-blotto__grid { border-collapse: collapse; font-size: 0.95rem; }\n.e-desktop-root .e-blotto__grid th, .e-desktop-root .e-blotto__grid td { padding: 8px 10px; border: 1px solid var(--e-rule); text-align: center; }\n.e-desktop-root .e-blotto__grid thead th { font-size: 0.68rem; letter-spacing: 0.1em; font-weight: 400; opacity: 0.6; border-top: 0; }\n.e-desktop-root .e-blotto__grid thead th:first-child { border-left: 0; }\n.e-desktop-root .e-blotto__grid tbody th { text-align: left; font-weight: 400; min-width: 12ch; border-left: 0; }\n.e-desktop-root .e-blotto__name { display: block; }\n.e-desktop-root .e-blotto__state { display: block; font-size: 0.68rem; opacity: 0.6; white-space: nowrap; }\n.e-desktop-root .e-blotto__grid td { min-width: 3.2ch; }\n.e-desktop-root .e-blotto__grid td.is-hidden { opacity: 0.4; }\n.e-desktop-root .e-blotto__grid td.is-won {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  font-weight: 700;\n}\n.e-desktop-root .e-blotto__grid tr.is-winner th { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-blotto__took { font-weight: 600; }\n.e-desktop-root .e-blotto__history { margin-top: 8px; font-size: 0.78rem; }\n.e-desktop-root .e-blotto__history summary { cursor: pointer; opacity: 0.7; }\n\n/* Guess ⅔: one number line */\n.e-desktop-root .e-numline {\n  --rows: 1;\n  position: relative;\n  margin: 28px 12px 4px;\n  height: calc(40px + var(--rows) * 30px);\n}\n.e-desktop-root .e-numline__axis { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--theme-text); opacity: 0.5; }\n.e-desktop-root .e-numline__tick { position: absolute; top: -6px; width: 1px; height: 14px; background: var(--theme-text); opacity: 0.45; }\n.e-desktop-root .e-numline__tick > span { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 0.68rem; }\n.e-desktop-root .e-numline__mark { position: absolute; top: -8px; bottom: 0; width: 0; border-left: 2px dashed var(--theme-text); opacity: 0.55; }\n.e-desktop-root .e-numline__mark > span { position: absolute; bottom: -2px; left: 5px; font-size: 0.7rem; white-space: nowrap; }\n/* The target (⅔ of the average) is always left of the average: label it on its left. */\n.e-desktop-root .e-numline__mark--target > span { left: auto; right: 5px; }\n.e-desktop-root .e-numline__mark--target.is-low > span { left: 5px; right: auto; bottom: 16px; }\n.e-desktop-root .e-numline__mark--target { border-left-color: var(--theme-focused-foreground); opacity: 1; }\n.e-desktop-root .e-numline__mark--target > span { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-numline__pick { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 1; }\n.e-desktop-root .e-numline__pin { width: 2px; height: calc(10px + var(--row, 0) * 30px); background: var(--theme-text); opacity: 0.6; }\n.e-desktop-root .e-numline__label { font-size: 0.75rem; white-space: nowrap; padding: 1px 4px; border: 1px solid var(--e-rule); background: var(--theme-background); }\n.e-desktop-root .e-numline__pick.is-winner .e-numline__pin { background: var(--theme-focused-foreground); opacity: 1; width: 3px; }\n.e-desktop-root .e-numline__pick.is-winner .e-numline__label {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  border-color: var(--theme-focused-foreground);\n  font-weight: 700;\n}\n\n/* Lowest unique: a box per number */\n.e-desktop-root .e-lowest__row { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr)); gap: 6px; margin: 0; padding: 0; }\n.e-desktop-root .e-lowest__cell {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  min-height: 4.6rem;\n  padding: 6px 8px;\n  border: 1px solid var(--e-rule);\n  font-size: 0.78rem;\n}\n.e-desktop-root .e-lowest__n { font-size: 1.05rem; }\n.e-desktop-root .e-lowest__cell.is-empty { opacity: 0.4; }\n.e-desktop-root .e-lowest__cell.is-taken .e-lowest__who { text-decoration: line-through; opacity: 0.6; }\n.e-desktop-root .e-lowest__cell.is-unique { border-color: var(--theme-text); }\n.e-desktop-root .e-lowest__tag { margin-top: auto; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.55; }\n.e-desktop-root .e-lowest__cell.is-winner {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  border-color: var(--theme-focused-foreground);\n  font-weight: 700;\n}\n.e-desktop-root .e-lowest__cell.is-winner .e-lowest__tag { opacity: 0.85; }\n\n/* Game rows in the Games rail */\n.e-desktop-root .e-game-row { display: flex; flex-direction: column; gap: 1px; min-width: 0; text-align: left; }\n.e-desktop-root .e-game-row__top { display: flex; justify-content: space-between; gap: 8px; }\n.e-desktop-root .e-game-row__kind { font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-game-row__phase { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; white-space: nowrap; }\n\n/* ─── 27. OVERVIEW: YOUR AGENT NOW ─────────────────────────────────────── */\n\n.e-desktop-root .e-now { border: 1px solid var(--e-rule); margin-bottom: 16px; }\n.e-desktop-root .e-now__head {\n  display: flex;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 8px 14px;\n  border-bottom: 1px solid var(--e-rule);\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n}\n.e-desktop-root .e-now__head > span:first-child { opacity: 0.6; }\n.e-desktop-root .e-now__row {\n  display: grid;\n  grid-template-columns: 11ch minmax(0, 1fr) auto;\n  gap: 2px 12px;\n  align-items: baseline;\n  width: 100%;\n  min-height: 44px;\n  padding: 9px 14px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.85rem;\n  text-align: left;\n  cursor: pointer;\n}\n.e-desktop-root .e-now__row:last-child { border-bottom: 0; }\n.e-desktop-root .e-now__row:hover { background: color-mix(in srgb, var(--theme-focused-foreground) 8%, transparent); }\n.e-desktop-root .e-now__row--static { cursor: default; }\n.e-desktop-root .e-now__row--static:hover { background: transparent; }\n.e-desktop-root .e-now__label { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55; }\n.e-desktop-root .e-now__go { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-now__sub { grid-column: 2 / 4; font-size: 0.75rem; opacity: 0.6; overflow-wrap: anywhere; }\n.e-desktop-root .e-now__live { color: var(--theme-focused-foreground); }\n/* On a phone the third cell (where it stands, \"open →\") drops under the text instead of squeezing it to one word a line. */\n@media (max-width: 520px) {\n  .e-desktop-root .e-now__row--stack { grid-template-columns: 9ch minmax(0, 1fr); }\n  .e-desktop-root .e-now__row--stack > .e-now__go { grid-column: 2; }\n}\n\n/* ─── 28. THEME / TINT CROSS-FADE ──────────────────────────────────────── */\n/* On only for the length of a theme or tint change (themeConfig.applyTheme),\n   so hovers and other transitions are untouched the rest of the time. A run\n   through the tints reads as one surface changing colour, not a flash. */\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-theme-anim,\n  .e-desktop-root .e-theme-anim *,\n  .e-desktop-root .e-theme-anim *::before,\n  .e-desktop-root .e-theme-anim *::after {\n    transition-property: color, background-color, border-color, outline-color, fill, stroke, box-shadow, text-decoration-color !important;\n    transition-duration: 0.35s !important;\n    transition-timing-function: ease-out !important;\n    transition-delay: 0s !important;\n  }}\n\n/* ─── 29. CAPTURE MODE (?capture=1, src/capture.ts) ────────────────────── */\n/* For filming: nothing moves between frames, so a tint switched on the beat\n   lands in one frame; the relay's host:port is not on screen. */\n.e-desktop-root .e-capture,\n.e-desktop-root .e-capture *,\n.e-desktop-root .e-capture *::before,\n.e-desktop-root .e-capture *::after {\n  transition: none !important;\n  animation: none !important;\n}\n.e-desktop-root .e-capture .e-capture-hide { display: none !important; }\n/* The capture frame (540 × 540 CSS px) is the phone layout; scale it so the\n   smallest text on screen (0.65rem / 11px labels) is at least 13 CSS px. */\n@media (max-width: 700px) {\n  .e-desktop-root .e-capture .e-app-shell { zoom: 1.25; height: calc(var(--e-frame-h, 100dvh) / 1.25); }}\n\n.e-desktop-root .e-quest-next { margin: 4px 0 10px; font-size: 0.85rem; line-height: 1.5; }\n.e-desktop-root .e-quest-next code { font-size: 0.78rem; overflow-wrap: anywhere; opacity: 0.8; }\n\n@media (max-width: 700px) {\n  /* On a detail screen, the list's own controls (search, counts, the toolbar\n     line) belong to the list: hide them so the detail starts at the top. */\n  .e-desktop-root .e-view-body:has([data-pane-shown=\"detail\"]) .e-view-toolbar,\n  .e-desktop-root .e-view-body__inner:has(> [data-pane-shown=\"detail\"]) > .e-search-row { display: none; }\n  /* Keep commit → reveal → winner on one line; the verdict line names the winner. */\n  .e-desktop-root .e-phase-strip { flex-wrap: nowrap; }\n  .e-desktop-root .e-phase-strip__step { padding-right: 6px; gap: 5px; }\n  .e-desktop-root .e-phase-strip__step + .e-phase-strip__step::before { width: 14px; margin-right: 6px; }\n  .e-desktop-root .e-phase-strip__who { display: none; }\n  .e-desktop-root .e-setplay { padding: 12px 16px 24px; }\n  .e-desktop-root .e-blotto__grid th, .e-desktop-root .e-blotto__grid td { padding: 8px 6px; }\n  .e-desktop-root .e-blotto__grid tbody th { min-width: 9ch; }}\n\n@media (prefers-reduced-motion: reduce) {\n  .e-desktop-root .e-dashboard-shell *,\n  .e-desktop-root .e-app-drawer { transition: none !important; animation: none !important; }}\n\n/* Calls (:v2 set plays): a forecast sealed with the first move — \"called · sealed\", then its percent. */\n.e-desktop-root .e-call-tag { margin-left: 8px; padding: 0 6px; font-size: 0.72rem; letter-spacing: 0.04em; white-space: nowrap;\n  border: 1px dashed var(--e-rule); opacity: 0.8; }\n.e-desktop-root .e-call-tag.is-revealed { border-style: solid; border-color: var(--theme-focused-foreground);\n  color: var(--theme-focused-foreground); opacity: 1; }\n/* Bargain: the offers table (blotto's grid, wider cells) and each hand, sealed until the end. */\n.e-desktop-root .e-bargain__offers td, .e-desktop-root .e-bargain__offers th { text-align: left; white-space: nowrap; font-size: 0.85rem; }\n.e-desktop-root .e-bargain__hand { grid-template-columns: minmax(8ch, 1fr) minmax(16ch, 3fr) 4ch; }\n\n/* Operator section: the operator's desk — cards and commands from the views it sits beside. */\n.e-desktop-root .e-op { display: flex; flex-direction: column; gap: 14px; }\n.e-desktop-root .e-op-list { display: flex; flex-direction: column; gap: 10px; }\n.e-desktop-root .e-op-cmds { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }\n.e-desktop-root .e-op .e-setting-cmd.e-op-cmd { padding-left: 0; }\n.e-desktop-root .e-op-cmd__label { min-width: 12ch; }\n.e-desktop-root .e-op-cmds__note { font-size: 0.85em; }\n\n/* Launch additions: the operator's current expedition, under an agent's quests — the theme's accent, a quiet rule. */\n.e-desktop-root .e-gamify-expedition { margin-top: 12px; padding: 6px 0 6px 10px;\n  border-left: 2px solid var(--theme-focused-foreground); display: flex; flex-direction: column; gap: 2px; }\n\n/* ═══════════════════════════════════════════════════════════════\n   30. THE LOOK — the one style (the demo animatic's information cards)\n   Pixel headings (Silkscreen) that unscramble, mono lines typed with\n   a block cursor, corner brackets, status lines above and below,\n   and the tint as a FILL with dark ink on it, never as text on the\n   light canvas. It was the \"animatic\" style beside \"retromod\"\n   (docs/ui-style-experimental.md, now history); since ui-v2 it is\n   the only one. `.e-look` is on the app's root with the theme and\n   tint classes (themeConfig.applyTheme), so these rules keep their\n   weight over the older ones above without a switch.\n   - It follows light, vivid, dark and all seven tints: every colour comes\n     from the tint (--tint; green when there is none).\n   - Motion: arrivals only, 0.35–0.45 s, ease-out. Nothing moves with\n     prefers-reduced-motion or in capture mode (?capture=1).\n   ═══════════════════════════════════════════════════════════════ */\n\n/* ─── 0. THE PIXEL FACE ─────────────────────────────────────────────────────\n   Silkscreen (SIL OFL 1.1, assets/fonts/OFL-Silkscreen.txt), bundled: the\n   dashboard makes no third-party requests. Latin only; anything else falls\n   back to the mono stack. Not fetched until a pixel heading is on screen. */\n@font-face {\n  font-family: \"EmporiaPixel\";\n  font-style: normal;\n  font-weight: 400;\n  font-display: swap;\n  src: url(\"data:font/woff2;base64,d09GMgABAAAAACDUABEAAAAAc1wAACBxAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGlIbhAAcbAZgAIQ+CFIJnAwRCAqBpxSBkiMLgzYAATYCJAOGaAQgBYRGB4RMDIEyGwpmRQdixjgAMHx2yMhAsHHANtNLxf/HA02GJOR7JKprV5NUnRSjxHppZpqxPWeO2JpuP0Isn3Ov4hHC4zgO9qdWap45dxcvUZxGXXw/8Nxb3aV/w6i27p5poYiio1hQTiyOIYq3OJ9tR+9p4zYLR5R3f208FD8D20b+JCev/4CnvZ9U2MkZjQ7u4J7o7SzUVNVI6WwIJOW0uo52Sqs/fYh/f2+bc9/fTpMEh7Kb1TTXFbYVR9AEiTKlKSzGo4jHYzBd/Q+EJMSMdcuq80ykKr90zV3RXfY3/0NBa9t5xEoiUaqEhj+mHko5eD5t6TpQVEAKfOWHb3YDZEAdGUEKSr71FbWLervqaY2x/5Z+flXd2D0jaZ+DHBLaRchcZgPHuR9cv8N95J8g/qbZ0vsBIkuW98HTVBltFaZD9UlTBkImywPyEPAXpbZ1WaksC7Z0eA8kIAHRej2HDmOnmSDMsT4kRFxZZaPdY2avJsdX3SI7V/XTmIYWUjkRYUjoh+wiM8j/2fTf9t7Ryk+2P9hBhdgBKjp94Cq/aINFubqzM+Od2bWeViaB/UD2y3u2P1j+4NgBzUrWW8uBhwGG7hNBlxQN9/lFnaohKpr0qcqcNEWXx9H7S064bLOOjnhfc75fophbX9tkyWGC6uq0g+Ia4Rrf+9t9X0tNVZfKWSNjQRdlgVW5JK/2zDG2agP0ov/bWAWDg50ZaN2PM4IwFPbH3wNDiPARIRmi4IX4iEYS1SFnnce66BIWIYAI4TvrnPPZ204ACY4bmgVFJECEB4BWywEIc86t6HpUVrk9R/HkZ4FhQkBAB5EAKKtpNSgtkOHHjazIiobTWPAARIQymlxASYNMWUqpgErjkwrIiBNyu3pTV1IAsb6o3cXgr+9E+QUjfPRaG+Gp3kuExi9FSwBGRdyXhsuxUorKvruRqW2kpIrkqiTK6jy9djO9QdnOlqW9jNo0MpWv/iURH9GAa4r2DqnlDW/Y70xcecMbanqzfTWDj/Ah1yk+Sp8cxcOEc/gmIq2HfU13J/Bl0Ginr9T7Z96j4OT7s2Dc/D87zEAEtD3wcrqKBUZ3kqmlI7FmacVoVWB4O9VsRHPDCaNJC14d5GTwgblnUgCEj749HcDOb+T5g6HIoRLXI3EtPAoHyVf1eAKtAGB/pRhdLv25vQA4LICB5kVdsajKKzOIHk8Oj4icNVcDaekFc1x3jVgeK+K6cr25/pweZ8S5ceuDetoR5Dg23CxOHP8g2PaiLlxPrm/a9dL/AcEAAP+X/FG9nUfNaAB4eG5O5msqD6aDAEYAP6fDIeu3Sbc0FPg/DkebZKOZ9jqj3SYLLTLDQePMMdYs401wzBFHTbEZEZOQUeiiq26666OvfvobQJcpcxYsWbHmwJETZ66Wmm2ZUxa4yo0ff4GCRYgUJVqCREmSpUiTp4BKoWIlKlWpplZnsZ2WOGGMyXbbb48Ddtniiq3qrXXSXNvctMNxQw1zzWkdprlliAbrjDDcSFPxMVhCPAIiUp0p6eiktx566kWOY0iPPmMGDjFiz4YtOy7MFPHizoMPT958BQgXIlSYeDFixQmSKku6DDkyHZatQqky5Wrkq2Ui12prLLfSKit0vgae/5uXocvSiMxSA0THvQDKKHq2+aI19yyKQSr/RV/5fhBZu4Z7t4b28NOzOKL7FsfSvHqFevrPZV7akR4ba8E7cEN7LYgwuhICqtW4hEKt2hIFUp8p2/cK1yWixOgy3e663Jq6AeX+qWAblN1Uw25PWzoYMDpq/RMLZbd1dyauPxEo1bVRirrRKXjqT0IrEjULbJESJPTe3QQh2G6tkVq4egrLP9tuctgf9dGKtygedn/5ldOZ5q3y1JctkiI244XNW5Bcb0s13RtBc01soif8cHU6GUvzX+qA6UddVzm0OWYrWE3GEBYuA+rYHIHnHjw4+lYdNsjKjeWLdO3LiO9KrlVpQqhTgEQIYUC4HxFUF0pUSF9gnmpB57ZHNwc3Z6wNkKpEi7rrIeay3jhhIa8D4wUNJ6FV2oY6sTP3DaWp/l9MRJ7MtGB5x8dtk3aD12CDIB88JAw4YkYXVKIDg50WNNnAT2+YUwH8egnajCHtJPokVQyIyytcjq6ZNKJnO7IKjKXYay7ORGusCvvuvS0fsOxyCmxdV05CwQ2YR+k3jVrqmEcopOU0qkfIuE2iuC3oGXpvHCVFmruIlh245NclnTnLMlW2vTVqw3t7LPOQ6aDw0/w6JT4glVQ8rqrJX+fMBXwaPjd+1iBwWx6bS5RrJm3TqAkYpfmq7M6BXmKItX2fWdcLL3F6PdUhmtnxa3vnorEpFQ2NkRF2D4ZDuQJSO4IIns1Rd9m7oL8MsquC4qxzFBth7pr/xPg2f2J1WVICwwU0L/htZ8DjMLouP4pJWTuJvNwMRNqDEJxaktL1PktQZGjZ94TmpI9rDseglZN4ld2fwEZxp3DOwQDxOUPqHM8P+L9z9CLgcoGMpFOSaRiBLKOQYwrkGYMCU6HINCgxHcqMQ4UZ0wNoFs4TrVrb9yoV5GvNuDGZsmwSzm/ucFPb+fu+VVHQI9gZSH1xptoKEmtYxToqNlCxiYotVGyjYgcVu6jYQ8U+an0EmS1bGC+OZCvpatd0EztMih4hd9kEjIPxJDx/CpFhGzndrmlSt/f2+bSBAGbeaXt2Zwvuzo/pJKtpp+8/hlDNPEpr4KwvIN/cn1qiqDcolqch4VD85GVCnAMAbs7rZF6kJODvywoyK8MgJsEN+g0qWaN6MFuyEdgMGeeXlm+Rqey+kipUQGPN7Fxp/htanUvij83eu9xcu0lk5+57XLwDEGSeReYfnPmSsy3nWOycNCMTmW02jyPZj0qldQeaOZmK8HVnWS7v/BnT21Uj5/LtfHD77bxJaRpykzqI1JWLVsc9z/vRdC6MsVZUpjpPMiaqqIyPWMlyUtm5/KyDNGkUkwOoY9LWfqN0WmtfxzqmpKx6ErGsFVieC3NfkWI/bbK4I5QcAPFlNKbmelJnJyc2HUuYXMMDINOUy5ETB/fJg9vVX+elr2RWrVFnLc6FjK2oubZu5RcYL5UtMS9ypq3wR85PyoG86fhzTqznMtFzEioVlK645Az9ttkNXmZDlScp7liOeO0Nd832xtc1tC33dd8AuzB7+ptgH031JKQdYLMRWITGiske3CpBoDTI8E8m7OxFgO7DujgrlU5aabyNbE67qztd2H8XQyxTYLSbffmsThqLmjEbnIU709h1oPHvau45ZrUXIalI4L0gWfxRi3U+fGeYWU2Ozv2dD5BBekXWfttDsL3Ao4uC6KtUMmgaNWTRY5R1kUedRU/QArcDPmVFE8T6AMYZQWJQCMYkI0j1AUwzWpxJtwjwP9BOEWT7AeZSBPknCYSFFEGxH2ApRbpsGQNZhRqo9gGsMYL6oBCCDUbQ7APYYmTazmEA6/AWuv0AeymC/pMEwkGKYNgPcJSi08ZpuzzSaCa04uZwdKYY0bPY8wajs/O0nSYKYZEmtUwDqwl5onHteOLG8TRb4lfciSvs08AhDRwn5HXFk+OFZ8cLL44XXgXBLQ3c08BjQt6ET8cbX443vh1v/AiCbxr4pan/047A+9ubvlnQp8PJsIEp+rp9dFNT/cw3e1WbWYOYppfse9/y7Qn+n0IAbgPQK3TwkDwgWyHMmIgeMV+juI0yg6TLPPH8NuCwt35bAJglacCyPaAcJerCgxJoNor4Y8dsBW6dIwVpSUmWqM2Lng3PFZhBZ9iynvB2ZS2igCsbKlFdEswoVh24DbdS1gWOio0RqU3AlZdqHyowmCEvIJSrCI0fwlILJkCa9cuvioW6fLIMQYAu60ohfFMdoR5u84mlSJH8kQD75kTxFrp9p4Mi3krLtgsSkBp1pitndci5tGxV7BnByVQFYfg800YfhRqcslgug9pTRqDhYIZM98+eT9gkI90+D51U183V7YZNmbbUaiwFu14rTSIGw6JeWUlLWIiqssQy3WYCuA6QJTa79HegK67udlrIZD6S0GTEclEShUWaBN9heERM7jiB08wJIS+VRAlmK6RACt7E+FOr3gWONSsYaDmK/0VMEVtLaiUuoao1I2qLcqV2qRLMueiFUUpXbYrofR+idlVyj/c3txC6hfyiSncNAfsBpDuggkX+8DU3sHWqcFJT7VMjXhttkMUmUpQIzmdIRKGqWIpwGOaMKYmVgj+YSX9MiZV6IjbRSAHhGHFcPfy/WHosXHrlz5RkUnMAVlM0MzE66O99X9rud4FA0T8j9DJXM+IclGzoejyuVpVVdf6hjoMeypCLBtzEGYktnkeoykgdDII74iWFyOscJLzSETJC2OGtDfy4kUiLvYQtPRDOFxDeJtlxNUJa8zIGtZphiaWhRSmJdaRUpQUtHEb976pwpTQMxCE0no26R770NaxNOB4KUYwqUeumB5FgCbNQraTIHynKUdkopTburx4q6Sh/4AVMdhaR7Zfdn17HJ48FWZ02NZTJQlEhC1Nd5zlXyE041gvCaRWjnvZ+SH0yDjUUnd7teAinSeEJp2wTk9y2MWmUHApzhjbc30JfJLOqZzrSZORDXrk2sEZSIgTFiIZrdBFUnyljuxezBU/Ov0TaCT3+kY0jJfFZgahM+Rrk1UImsYNXL2qlrRDjb7XU/y4Efz4zymgpWP42nG765IPVrwRoes2xx8ow0G4yNyNQWuVzazLq/WPH7FYR1GtDmCNgctRhq4Td8j5POkGhKGSTjqxYk+cQ4OR0KxXpwr4Mnz1xgrvw1xnylU2+ElrPyt1+VlR6aEe5JV6qRk1GGIRz8IBCnp+qksaazZ/Bc3KB9eKY+voc+niGbPfp7WVTsKLhyG0Jnia+fEqnJ8S4D0M+eJHYH/hBR6XYWT5SCVYTP5FC88XnEKXrVFLpxInlys5E6lraNj0rrow5q3ObqmWotMO46A3908cys3etYw9vEaHo3FsCJKvioOXpd09s84rDrzSGCRkmTMmnBI0zhQrkDRvltlZo9tqneFAES7F6k2/0y2kLtCUJYopLT9wPeiSzHfhJ0BhxvmPYcqnX/g9LhGU4XIW5GRnNgEsO7ZDR261I5mgOAz98e9pa0tzyu3ksinwG1UwEjOvA87RlgRoTT0piWwpXxvLDFoggLDDA1WprC4W/I2v/WULxGLEcBAM/890Py0pA/KT05Glh6pYt84eDdjtfXZNW1S0Y/ul0LxMEaBz5ONTXr5/YGKjpQnvw1tQ/Tsty23Bt7zZNvm3m+K3T3qt6gG5f3SAj1QYUAqJ22lkXDQq4ZIW58HSql0WBOttJqiuA7Oqznz6NPIjPlGlRV252oVarVPFnvHRiLjFN46IszfuLotCqQjpO09Uq4cv4YV4OUoEf6k1CwTTUr0aKGxLUct5oSAZZKl9m6bpPytqMharYeCRc0XyUUIJcaRcwKxF9tR7fqxmqnWUL2CyQKm8Egy50SubfpNrnLOZCfovs1C4XMsHzWKq16Q+l5TE09eLBoWGB4LNjYtSdj7NJQYwaIU8VniItViqTO5DKwq0ZP8TEZ2X0lMxcoFrn5YW7x7UFORtok/2c2GOoxTBpDU+icA9zEkafHA30Cfdix4yDvcM9Iw4o6SkfV4Nbmj6+8N4ZfI+1JRaCWJnkMe0vszHi1o3YIt6SQBp5lZbIm4P2ctp3Uamk1sK9RXPN27/i65iTgXkhVJ9h1sySIwsbDnP0KUBLVnuDtam+NsjdCpaWMYcID3nKXwsXnsKpwfTPbiKKPq7DuBF8G4t4hgMvQmEEgbWU93wdfdNaxGvD0TOowYvJNIw2viuWklW2tFXFa54FCmWlOBQV82rSluqnyiYyLnwZb7e7qhVghO6NRNrk4+hCxL7O6aLvJdrHTM36lfXSbOYEXm/bPHxBh9TwoZHdhC6z1buvhrmMxzPkNX7PND5aN6Z3PrFniNiNYWF5PRefu+yUlAAQBOc1AZN7ru8iUuv6Ln8vbFJJOvQCgJ50FsM8GEOwa2FwdrFhzi42zNnFs8Fhc6ZJHjV0jjIv5yjzco7KoApPpgJyU3NTc1Mxd14YnMfe2FOgmJ5zyiZZ6U1ubW5tbm1ubbKvVmdABmWYO5CcF+bOh6b01O/AWK7S3A1WB3P+n4zBWY0HkeURnKepS3D5d4Jh8OjtPl+nPvqKuMEnJggADgEADLgKNAgYw76LGe2sS8T2kbeX9VfyCY4IFo7hN5Qlrc26hGFtYhV2d/E2bO2HTckFh9pCsZcIYMPghn2gRWa9UCIv49xP+UOtYyD9A+sb4ARbiNSBxFNQfICQ4TDYy5hf/OWMhFv6ooon5OdNAe7UlNmdN+jXy44N2wuZNPSb1YFXYAbcZuFq1mXvIdwxxz4Xl0udVH3eXOY4+2iM+7HLBWY+l7Xf+KeuLd550c78zHN6X19sNwa4mOiavdi2OIn4vDXudbZW1V23bndA4xR/7Hw++zaHl1dGmL2l0SvF/99cOLHwK6M85nwS7oO+eV6h+sY9uKievpWjCCt6mK9EgvGcAPyZtzLv7rCIn2vuuRZMmOab9PtIN7dlAmazAy94IZds6/d/ucNR8loQOEitK8EJuD5Cpp0qlSJG841C3eGrm3xfpUlr2aL3Ic/2BZjVQGYZMaffem4FRlSzYcDL0yk65uiRG0fiGfce3+wC0085KTiyM2/wNCSCSpID7xBnEnEfLHOsMMOshhTB3Ic9SLsQUlgJob7skvV/7b9ZnkfRblC530XwSRFjUtOv51/nMQJu4Yu15TSrE6LsrwBVfRbdd9vtK8rN7aVmL88ucQXJckkTwm31kJqCttBsdytSwNNAkXd0pAW42ZNfwgIj7bCvIuAEcqcim8MunWBWf455/X3R9V4QKeZCCFOsagycOrtVMPOzlCKz7HLxfeCSqaMiKYJZ3HArxAFPvwuKs7hkUj870p024ICYGmD65cp9AJMuRrMMi+gZq1s9zeVMuR+1fBr7ArMzG4b7G1hfTplqYciwXKJp2mxl/ElnfCqKBH74Jc4c6EQQ6Epp/P5GpZIW/7v737pc0dvc+o0cVfnGxMg5lvrDtu3FVfFzqc21cWf7aD75F2VkPXltyzyxxWs+c17vgCPgUQY8z0ZmvUUcaFNJAKdZYczSM6Cm4l1hHrbI1KIRHQakvxIKjK9aQZRYSsQkt4HBO7e5ordI7gUKEuIiJyvrN8awEzOoonv8/d8gsVDDihGRlvEmPeshjYxOMtkCLJ1qc43bfTDsyT+OLeMFKz+HI3genqEM/diN1Vkr0cBg9+CWIzOGpMmnsvL1TQJbyhYUO8LIURAjU7cPw1CzSPAtkEj02+kGdGvsRa609kbL65ztQ3DDyiVSpyehg5N2jGGHoIN27TEm9vPcQAHh8BMmSsTxeulpdVRu3XTV2pKh8y7yjyk+TVo6wGUmV1OfFaELq/gUVmTun7dvlrF+PYZKfQ5fX8ViHANfjZqt14qVuXIpLsT2OB9tmIPY/VOXxnaeCsGgN8LT6MZs2GjbJfb/nPIYTtpF9uRfiEc++fluWUqeCaTbNJByjiQPL8H6C9pwLJJTJ8OwEp7msAWuiSCsNWZ/mFwCWGyWmzN3AwMpiKziaArNC5YzC5Sl0cHBenjJvY4B3MghZgT7pHU8hvozRWgZnzRjr4xqMrfKGjrTvRX7vvlvom27rxPmyiCaPsJPkJnMrZhzOO6ndOL8lwjhL7t9hW7AFgPtoxeOjMz4nF7TGaryLGNvZwD3eEg9/Zs5+oMnvad8DFDcsabbKKESE3bqjsvFjpS4VeTKvMwDWtts5rIWasudIEReJafs6V63gCScf5L79xTRO/bHIsxfGDoQFkRHDrDovzO3JPt8P9NvtOSYOBdnMzJ+C1677mpv0DrvoqAZssX3qADkLImJxayPyciIjGuEFtsnI8HcD7ziWP/PmVaTun1RIuvJXReWDXI/L1Exe9VTaNJCRAWe4+rC9sMafWfTzlk0IoVXp5dxHRnVKi4GOsD12/oRw90U3pPZSyqbriWku/nXQAcPHKN9LCKJCizyOR8/uplQyNAWLsrniQCFkQWWWeDPWdTmajc+CD75R9/Sm/EdeKiypGhaTFz2eVkBmxh5LPBedxdUqDEGoL0+5syLrqHHyz1oMJvrwJCwAo18OBiQyRopqjl63yXH3A9g3voMbcMADPjx6O7ieWmA8LOq+gB03fn9LySIJ//yLX0gz7hhqkg2l3ha/Fix9145Gj585Fyt3z4A/M0/Yks3DgFruMzDf/kNPANpx22GwvWaxUtcLsnIVRHNI0A3vrpm0J9PrazRP71eQoQh8CrVbLEgctlsJkz2iqPdBIzql+nHEfXnMLVCC3ZflOKdpzGDK0t4p79mmf3zsZR19k+jeM7MevqY/LYQEz9quPv0L6IQB8VZhwd/R2hwtavGsB6rso2aptdfnH/P89Rv9p6P223Y8Yr4/4CzGfaVMDkuAAmfgXk8d1LmXN1GQZP99nuO0CjN4uO8fJkCIQUuZKZDkbyHDR+tYNPjCxWHHWycEVw1FQpjlmiWZYjVdqs9euKdSdHIrsc+drTDjptQi9994HZzwVm87PO2V8yC20cyCiqJ1ZucactwiK2zFoAhDnVOgw+2xiZL79n8dlFe94YEMQkFltIgNzEaD9z4K/N4lB+FbIoPQ5m/6qaeslsLHbOtxTMKG7G8B1Sq1FsEtLSKb3Bvn1hQ2BlHwq9KZzRF2SJlwdvcAFv7Ana+CSepNTUDq5YY5KYJd2rXqjDPYSjzszq3DusFPkO6ymj+RsDrk/6XcrXcg3O0NteoVcQn/wIQ+eTxdgFUjv58WZjmmYARosLIY5Ols4+8VRRP/rmTePL2zx9F1gF26+goWTeX/YPf7RQmBrVU7PM8hFtDr0kJZ6ZtN50mhNUdC8Hb/XnlDkc8SL4FeTvgxEo8wo/EPc46u4XHo2ojz4Iuv9zOIk2cjWxmYJMe4NVweMAxRH2MIFcVojIwAV16sR5kNz5+FUNlYFXA+UixO9f0Mh7ChuxgbPQYc31XIUqxEgDG7HtvTweY8ZR5u/OVKcMmBw+XG/mxuQD1Lxw2vAyQnRpzVMDgqBvWPE0e3DbwzcGdc+3I78D/uv7Y/B8vKbXGYObpQy9YVxJVEF5YSbd3PGW9ioOkSpuCY2Zf4SckKrIWjZv1TUcuU1fT4gpuVy4wpDe/qTlEyB/UfrLv93AQnFr1831vxitrjNljMS/cMLedZEy+yOZI8qC48l0eYwAj45sifTb2UYVgaghaVNa6j8dpv+taOHBUWAb6iXLXgeRnPp3u8gfgimkfak+2xOQ4nDzSWRIkpS037g84WaKOhj4XM3IgPOiv6RnHToHDragfq/PvBsTOqZirhw9X8UuwuQB3SxrnqKsc8mFznVvs6bAPw+32g4nrteNHNHcZipIjES06OfaTwTDwBQBf5wgB87H3ur9Co0ZXNufIC5rYYm6rMSON/DkY4WI/vWEPwf/24rqOPrinaVro6Bt7VsRopd59gZ/5qA9caU+oLZWDsWcs9ndJPvd8SzRneVz4aePc6o+DvzYICyYm3IYw5n6Nf580QDiVeiHyQDXdyoGNW+ngVWOBLclXkeVfiALQGZdN7RXa045fdspGQPvthkArmnS3Vem4DFWdqVXf5iHLP5VxPsBW8NjBWCbxuOCRmqrYovxP+7i2fOTMc2hT+hyJqOr7UvAuLzDLKbW1bRHmVS6VvdJDs1C/K7w7K9nDm9LI+QaoAaEhOoTUoKVQLP3UzW+V13bUj8C6ooyDAPsXBMyB3A0Gj7nEr/ep/7GP2NK6JYoLkeznnWfMcNx0iX5vmGWXGLdzHRBRmIw8Wv3qvbVrkElbBe7PcR2GXGrEccr/rv2ZJM907KeTOLy//YKao9xMorULqfQtJbbnad+kygoUzAcA+oGjQue93D3tX9sHHSXt5IjRo+9HBCB+X3WPhmV7Ht9ESvYlAOxa/q0EgPvfC1Vt4MlU2XkBBnQBZkRv5v1YMibRZu/fz9ulhqbeJwfSyjIbq0kJJ9JIPVAgplbUvrkS9ahVaEsdn/yxrbTz1cYXriBrSPbI1zDWqcg8zhZAwY1YHMhQuRDnSuuC6qANLL7w0tgyl6zKqKwNtoRqsZy0qrAgxMQrWjuXVJPdCI8ODJLEqGoo2C5XRqGRqzPATx4MhoU0EwAjFmRgEECkEIs6MYCOWDEvIV3T+yUMRWQvYbm5/BIeAxtfwpcgzRcM006+gncBxerq0Gq13FjneXG+GiWqcbCWVblEOfhV7BeZlkYLEiGewjLNpamoVLIUR6VIPfm54CehqYH4VZbL49iyYsOGLXectV9o9uubsGqG+tI6HBMNct9FoMPLO7PkqOBj5zE1PxLONtuVKEq4e9/dy7a51jrjP+fdNPtkihyc4thZljkJOqjaKdWPUcpVSsnkq42vA6bYX127xjekWqREVq6Xx3P5qlTk8ohVc+VUCh3m7QLrVtZ1U4z9jWrnF3Ye7NsAA6eckGeDfBtNZshIAWOvmFA56bQzTJkxZ/GrEcILc/Op+mohu1+VcPFFrphik83svZuof/4urrqm2HWu3GbS45vbF6BEmXKlKlVYLFCQKsFeC1HtilFPqy+HiygLDRrVT+Dn0+v9JrryZq3atFhCo12897P5zZh4fgMNNsQgqdJm3Jff2k3TCyz8RQBiiv7/+t766BuGWOLhq2++hw82AnSi1E9/6/Aso2epI0aRE+jMm06E6LCFHymZLDm8+DjqmK222W6HNdba7wA+CX1io400zljjDZPtpeH2EUaEEWZS+Ggnjq4Bpsm1nG/EEEVCUpKRnBSkJB1M5G+Cm2657f6gvrLExsbP9ZC2m7Fn/OM+jfnaUBTA+6tfhMg40mfa27iI/6XN9ar/r3JenJtfXxeF4DvYietKygv4wCFcoZ0zwj9xcstuJ5qYekE/2/a8TtshnG5B/4LZdsZt+rxOEkYSn2XM9BGcm3i6RwzeHRhSAumz4OPgZe4SCwFPBjQ69u1mn39SIhQwk9pOEe4aELDdpz0UT7dbNBjUmcfzX36d9kveZsh0EzAKs51oR8AmtNPc+MIvECBgBgAAAA==\") format(\"woff2\");\n}\n\n/* ─── 1. TOKENS ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-look {\n  --anim-tint: var(--tint, #39ff44);                                   /* green when no tint is set */\n  --anim-ink: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);       /* text on a fill, both themes */\n  --anim-fill: oklch(from var(--anim-tint) max(l, 0.86) c h);         /* caption bands, chips, the won cells */\n  /* brackets, rules, ticks: graphics only. P10: L 0.58, not 0.62, so it clears 3:1 on the light\n     canvas in every tint (green measured 2.89:1); textContrast.test.ts holds it there. */\n  --anim-line: oklch(from var(--anim-tint) 0.58 c h);\n  --anim-pixel: \"EmporiaPixel\", var(--font-family-mono, monospace);\n  --anim-bracket: 12px;\n  --anim-bracket-w: 2px;\n  --anim-ease: cubic-bezier(0.33, 1, 0.68, 1);                          /* power2.out */\n}\n\n/* The light canvas for every tint : white with a breath of the tint, near-black ink.\n   The accent used AS TEXT is darker than the graphics accent so it reads\n   (≥ 4.5:1 on the canvas). */\n.e-desktop-root .e-host-body.e-look.theme-light {\n  --theme-background: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);\n  --theme-background-modal: oklch(from var(--anim-tint) 0.92 calc(c * 0.18) h);\n  --theme-background-input: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);\n  --theme-border: oklch(from var(--anim-tint) 0.84 calc(c * 0.28) h);\n  --theme-border-subdued: oklch(from var(--anim-tint) 0.88 calc(c * 0.22) h);\n  --theme-text: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);\n  --theme-button: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);\n  --theme-button-text: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);\n  --theme-focused-foreground: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h);\n  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h / 0.5);\n}\n\n/* The dark theme is the DEEP palette (the demo video's all-dark-green screens): the canvas is the tint at\n   L .192 with 24 % of its chroma, the panel a step up, the border and text likewise; green is pinned to the\n   video's exact colours. The accent as text is lifted to L .78 (chroma capped at .22) so blue, red and purple\n   read; a chip is the pure tint with the canvas on it (white on blue and purple).\n   Mirrored in themePalette.ts, which the contrast tests read; keep the two the same.\n   BEFORE (the previous dark, kept to compare; `git revert` of the deep commit restores it):\n     bg  oklch(from tint 0.14 calc(c * 0.18) h)      panel  oklch(from tint 0.24 calc(c * 0.22) h)\n     input 0.28 / c*0.2   border 0.4 / c*0.28   border-subdued 0.32 / c*0.26\n     text/button oklch(from tint 0.94 calc(c * 0.12) h)   button-text = bg   line 0.72 c\n     chip fill oklch(from tint max(l, 0.86) c h) with ink oklch(from tint 0.18 calc(c * 0.4) h) */\n.e-desktop-root .e-host-body.e-look.theme-dark {\n  --theme-background: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);\n  --theme-background-modal: oklch(from var(--anim-tint) 0.253 calc(c * 0.243) h);\n  --theme-background-input: oklch(from var(--anim-tint) 0.253 calc(c * 0.243) h);\n  --theme-border: oklch(from var(--anim-tint) 0.366 calc(c * 0.328) h);\n  --theme-border-subdued: color-mix(in srgb, var(--theme-border) 60%, transparent);\n  --theme-text: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);\n  --theme-button: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);\n  --theme-button-text: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);\n  --theme-focused-foreground: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h);\n  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h / 0.5);\n  --anim-line: oklch(from var(--anim-tint) 0.72 c h);\n  --anim-fill: var(--anim-tint);\n  --anim-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);\n}\n.e-desktop-root .e-host-body.e-look.theme-dark.tint-blue,\n.e-desktop-root .e-host-body.e-look.theme-dark.tint-purple { --anim-ink: #fff; }\n/* Green is the video's, exact. */\n.e-desktop-root .e-host-body.e-look.theme-dark.tint-green {\n  --theme-background: #001b00;\n  --theme-background-modal: #0b2a0b;\n  --theme-background-input: #0b2a0b;\n  --theme-border: #1d4a1d;\n  --theme-text: #d8ffd8;\n  --theme-button: #d8ffd8;\n  --theme-button-text: #001b00;\n  --theme-focused-foreground: #39ff44;\n  --theme-focused-foreground-subdued: rgb(57 255 68 / 0.5);\n  --anim-ink: #001b00;\n}\n\n/* VIVID: the tint is the background, ink is the tint's deep dark (the video's \"LIVE NOW\" screen).\n   The panel is a step darker (lighter for red and pink); blue and purple take white ink. Ink is the\n   border, the accent-as-text, the focus ring and the chip fill (the tint written on it): no tint-on-tint\n   text. Green is exact: #39ff44 / #2ee03a / #001b00. Mirrored in themePalette.ts. */\n.e-desktop-root .e-host-body.e-look.theme-vivid {\n  --vv-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);\n  --vv-panel: oklch(from var(--anim-tint) calc(l - 0.082) calc(c * 0.91) h);\n  --theme-background: var(--anim-tint);\n  --theme-background-modal: var(--vv-panel);\n  --theme-background-input: var(--vv-panel);\n  --theme-border: var(--vv-ink);\n  --theme-border-subdued: color-mix(in srgb, var(--vv-ink) 35%, transparent);\n  --theme-text: var(--vv-ink);\n  --theme-button: var(--vv-ink);\n  --theme-button-text: var(--anim-tint);\n  --theme-focused-foreground: var(--vv-ink);\n  --theme-focused-foreground-subdued: color-mix(in srgb, var(--vv-ink) 50%, transparent);\n  --anim-line: var(--vv-ink);\n  --anim-fill: var(--vv-ink);\n  --anim-ink: var(--anim-tint);\n  /* Faint and status text are the ink itself here: a mix toward a saturated tint falls under 4.5:1\n     on blue, red, purple and pink. Every \"text N %\" mix above adds this and caps at 100 %. */\n  --e-ink-boost: 100%;\n  --anim-faint: var(--theme-text);\n}\n.e-desktop-root .e-host-body.e-look.theme-vivid.tint-orange,\n.e-desktop-root .e-host-body.e-look.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }\n.e-desktop-root .e-host-body.e-look.theme-vivid.tint-blue,\n.e-desktop-root .e-host-body.e-look.theme-vivid.tint-red,\n.e-desktop-root .e-host-body.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }\n.e-desktop-root .e-host-body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }\n\n.e-desktop-root .e-look .e-dashboard-shell {\n  --e-rule: var(--theme-border-subdued);\n  --anim-wash: color-mix(in srgb, var(--anim-fill) 45%, transparent);\n  --e-accent-wash: var(--anim-wash);\n}\n/* On the dark canvas a strong wash would sit under light text: keep it faint. */\n.e-desktop-root .e-look.theme-dark .e-dashboard-shell { --anim-wash: color-mix(in srgb, var(--anim-fill) 14%, transparent); }\n/* The hover / selected wash in vivid is the panel colour: text on it clears 4.5:1 in every tint. */\n.e-desktop-root .e-look.theme-vivid .e-dashboard-shell { --anim-wash: var(--theme-background-modal); }\n\n/* ─── 2. CORNER BRACKETS ─────────────────────────────────────────────────\n   Four L-shaped corners drawn as background images, so no element and no\n   ::before/::after is taken from the other rules. On panels only: the\n   frame around data, never over it. */\n.e-desktop-root .e-look .e-page-head,\n.e-desktop-root .e-look .e-now,\n.e-desktop-root .e-look .e-intro,\n.e-desktop-root .e-look .e-panel-card,\n.e-desktop-root .e-look .e-overview-card,\n.e-desktop-root .e-look .e-setplay,\n.e-desktop-root .e-look .e-hcard,\n.e-desktop-root .e-look .e-empty-pane {\n  background-image:\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line));\n  background-size:\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket);\n  background-position: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%;\n  background-repeat: no-repeat;\n  background-origin: border-box;\n  border-radius: 0;\n}\n.e-desktop-root .e-look .e-page-head { --anim-bracket: 18px; --anim-bracket-w: 3px; }\n.e-desktop-root .e-look .e-page-head.e-page-head--lean { background-image: none; padding: 8px 24px 2px; margin-top: 0; animation: none; }\n.e-desktop-root .e-look .e-page-head--lean .e-page-head__blurb { margin-top: 0; font-size: 0.85rem; opacity: 0.7; }\n\n/* ─── 3. THE SECTION HEADING: status line, pixel title, typed line ─────── */\n\n.e-desktop-root .e-look .e-page-head {\n  position: relative;\n  padding: 12px 24px 16px;\n  margin-top: 10px;\n  border-bottom: 0;\n  max-width: min(1440px, calc(100% - 32px));\n}\n.e-desktop-root .e-look .e-page-head__title {\n  font-family: var(--anim-pixel);\n  font-weight: 400;\n  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);\n  line-height: 1.05;\n  letter-spacing: 0.04em;\n  margin-top: 6px;\n  overflow-wrap: anywhere;\n}\n.e-desktop-root .e-look .e-page-head__blurb {\n  margin-top: 10px;\n  font-size: 0.9rem;\n  line-height: 1.5;\n  opacity: 0.86;\n  max-width: 72ch;\n}\n\n/* The block cursor at the end of a typed line. */\n.e-desktop-root .e-look .e-anim-cursor {\n  display: inline-block;\n  width: 0.6em;\n  height: 1em;\n  margin-left: 0.15em;\n  vertical-align: -0.14em;\n  background: currentColor;\n}\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-look .e-anim-cursor { animation: e-anim-blink 1.06s steps(1, end) infinite; }}\n@keyframes e-anim-blink { 50% { opacity: 0; } }\n\n/* Status lines: `emporia ~ hermes plugin · [1] · 01 / 14 · overview` above,\n   `T+00:28 · as alpha · watch only` below. Small, but ink at 80 %, not faint. */\n.e-desktop-root .e-look .e-anim-hud {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 4px 12px;\n  flex-wrap: wrap;\n  font-size: 0.74rem;\n  line-height: 1.4;\n  letter-spacing: 0.05em;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(80% + var(--e-ink-boost, 0%))), var(--theme-background));\n  font-variant-numeric: tabular-nums;\n}\n.e-desktop-root .e-look .e-anim-hud__key {\n  padding: 1px 8px;\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  font-weight: 700;\n}\n.e-desktop-root .e-look .e-anim-hud--foot {\n  max-width: min(1440px, calc(100% - 32px));\n  margin: 8px auto 12px;\n  padding: 8px 24px 0;\n  border-top: 1px solid var(--theme-border-subdued);\n  box-sizing: border-box;\n}\n\n/* The beat flash: an ink bar along the heading's top edge, once per section. */\n.e-desktop-root .e-look .e-anim-flash {\n  position: absolute;\n  left: 0;\n  right: 0;\n  top: -6px;\n  height: 4px;\n  background: var(--anim-ink);\n  opacity: 0;\n  pointer-events: none;\n}\n.e-desktop-root .e-look.theme-dark .e-anim-flash,\n.e-desktop-root .e-look.theme-vivid .e-anim-flash { background: var(--anim-fill); }\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-look .e-anim-flash { animation: e-anim-flash 0.42s var(--anim-ease) both; }}\n@keyframes e-anim-flash {\n  0% { opacity: 1; transform: scaleX(0.2); transform-origin: left; }\n  45% { opacity: 1; transform: scaleX(1); transform-origin: left; }\n  100% { opacity: 0; transform: scaleX(1); transform-origin: left; }\n}\n\n/* ─── 4. HEADER, NAV, MENU ──────────────────────────────────────────────── */\n\n.e-desktop-root .e-look .e-brand-title {\n  font-family: var(--anim-pixel);\n  font-weight: 400;\n  text-transform: uppercase;\n  letter-spacing: 0.06em;\n}\n.e-desktop-root .e-look .e-section-tab { opacity: 0.8; }\n.e-desktop-root .e-look .e-section-tab.is-active {\n  background: var(--anim-fill) !important;\n  color: var(--anim-ink);\n  border-color: var(--anim-fill);\n}\n.e-desktop-root .e-look .e-section-tab.is-active .e-section-tab__icon { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-section-tab.is-active .e-section-tab__sub { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-subnav__tab.is-active { border-bottom-color: var(--anim-line); }\n.e-desktop-root .e-look .e-mobile-top__section {\n  font-family: var(--anim-pixel);\n  color: var(--theme-text);\n  font-size: 0.95rem;\n  letter-spacing: 0.06em;\n}\n.e-desktop-root .e-look .e-mobile-top__section::before { content: \"> \"; opacity: 0.8; }\n.e-desktop-root .e-look .e-section-tab__key { opacity: 1; color: color-mix(in srgb, var(--theme-text) min(100%, calc(80% + var(--e-ink-boost, 0%))), var(--theme-background)); }\n.e-desktop-root .e-look .e-section-tab.is-active .e-section-tab__key { color: var(--anim-ink); }\n\n/* Relay / live: square chips, the live one filled. */\n.e-desktop-root .e-look .e-status-chip { border-color: var(--theme-border); background: transparent; }\n.e-desktop-root .e-look .e-status-chip.is-ok {\n  background: var(--anim-fill);\n  border-color: var(--anim-fill);\n  color: var(--anim-ink);\n  font-weight: 700;\n}\n.e-desktop-root .e-look .e-status-chip.is-ok .e-status-chip__loader{ color: var(--anim-ink); }\n\n/* ─── 5. CAPTION BARS AND CHIPS ─────────────────────────────────────────\n   The animatic's two text-on-fill shapes: a small bold chip (its\n   `CARD · build now` badge) for labels, and a bold band (its captions)\n   for the one line that says what happened. */\n.e-desktop-root .e-look .e-intro__title,\n.e-desktop-root .e-look .e-now__head > span:first-child,\n.e-desktop-root .e-look .e-now__label {\n  display: inline-block;\n  width: fit-content;\n  padding: 2px 8px;\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  font-weight: 700;\n  opacity: 1;\n}\n.e-desktop-root .e-look .e-now__label { padding: 1px 6px; font-size: 0.66rem; }\n.e-desktop-root .e-look .e-now__go,\n.e-desktop-root .e-look .e-now__live,\n.e-desktop-root .e-look .e-intro__link-label { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-look .e-now__live { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-now__head { align-items: center; }\n.e-desktop-root .e-look .e-now__head > span:last-child { font-family: var(--anim-pixel); font-size: 0.9rem; letter-spacing: 0.06em; }\n.e-desktop-root .e-look .e-intro { border-left-width: 1px; }\n.e-desktop-root .e-look .e-intro__text { font-size: 0.95rem; }\n\n/* Sub-headings inside a view, in the pixel face: the QUESTS card. */\n.e-desktop-root .e-look .e-subhead {\n  font-family: var(--anim-pixel);\n  font-size: 1rem;\n  letter-spacing: 0.06em;\n  opacity: 1;\n  margin-top: 22px;\n}\n.e-desktop-root .e-look .e-subhead::after { background: var(--anim-line); opacity: 0.6; }\n.e-desktop-root .e-look .e-panel-card__title { opacity: 0.85; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }\n.e-desktop-root .e-look .e-overview-card__title { font-family: var(--anim-pixel); letter-spacing: 0.05em; text-transform: uppercase; }\n.e-desktop-root .e-look .e-rail-label { opacity: 0.8; font-weight: 700; }\n.e-desktop-root .e-look .e-rail-item.is-selected {\n  background: var(--e-accent-wash);\n  box-shadow: inset 3px 0 0 var(--anim-line);\n}\n\n/* Quests read like the animatic's QUESTS card: `>` lines, the done ones ticked. */\n.e-desktop-root .e-look .e-quest-row { font-size: 0.95rem !important; line-height: 1.7; opacity: 1; }\n.e-desktop-root .e-look .e-quest-row::before { content: \"> \"; color: var(--theme-focused-foreground); font-weight: 700; }\n.e-desktop-root .e-look .e-quest-row:not(.is-done) { color: color-mix(in srgb, var(--theme-text) min(100%, calc(74% + var(--e-ink-boost, 0%))), var(--theme-background));}\n.e-desktop-root .e-look .e-quest-next .e-now__label { margin-right: 4px; }\n\n/* ─── 6. SET PLAYS ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-look .e-setplay { padding: 18px 20px 22px; }\n.e-desktop-root .e-look .e-setplay__game {\n  font-family: var(--anim-pixel);\n  font-size: clamp(1.4rem, 1rem + 1.4vw, 2rem);\n  line-height: 1.05;\n  letter-spacing: 0.05em;\n  color: var(--theme-text);\n}\n.e-desktop-root .e-look .e-setplay__players { font-size: 1.05rem; margin-top: 6px; }\n.e-desktop-root .e-look .e-setplay__status { opacity: 1; border-color: var(--theme-border); font-weight: 700; }\n.e-desktop-root .e-look .e-setplay__status.is-live {\n  background: var(--anim-fill);\n  border-color: var(--anim-fill);\n  color: var(--anim-ink);\n}\n/* The verdict is the caption band. */\n.e-desktop-root .e-look .e-setplay__verdict.is-win {\n  padding: 8px 12px;\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  font-size: 1.1rem;\n  font-weight: 700;\n  line-height: 1.3;\n}\n.e-desktop-root .e-look .e-setplay__verdict.is-win .e-setplay__why { color: var(--anim-ink); opacity: 0.85; }\n.e-desktop-root .e-look .e-setplay__wait { opacity: 0.86; font-size: 0.86rem; }\n\n/* commit → reveal → winner: square steps, the current one a filled pixel label. */\n.e-desktop-root .e-look .e-phase-strip__n { border-radius: 0; }\n.e-desktop-root .e-look .e-phase-strip__step.is-now {\n  opacity: 1;\n  color: var(--anim-ink);\n  background: var(--anim-fill);\n  padding: 3px 10px 3px 4px;\n  font-family: var(--anim-pixel);\n  letter-spacing: 0.05em;\n}\n.e-desktop-root .e-look .e-phase-strip__step.is-now .e-phase-strip__n {\n  background: var(--anim-ink);\n  border-color: var(--anim-ink);\n  color: var(--anim-fill);\n  font-family: var(--font-family-mono, monospace);\n}\n.e-desktop-root .e-look .e-phase-strip__step + .e-phase-strip__step::before { background: var(--anim-line); opacity: 0.8; }\n\n/* Won cells, winning seats and picks: the fill with ink on it. */\n.e-desktop-root .e-look .e-blotto__grid td.is-won,\n.e-desktop-root .e-look .e-lowest__cell.is-winner,\n.e-desktop-root .e-look .e-numline__pick.is-winner .e-numline__label {\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  border-color: var(--anim-line);\n}\n.e-desktop-root .e-look .e-blotto__grid tr.is-winner th,\n.e-desktop-root .e-look .e-seat.is-winner .e-seat__name,\n.e-desktop-root .e-look .e-seat.is-winner .e-seat__move { color: var(--theme-text); font-weight: 700; }\n.e-desktop-root .e-look .e-seat.is-winner {\n  background: var(--anim-wash);\n  box-shadow: inset 3px 0 0 var(--anim-line);\n}\n.e-desktop-root .e-look .e-numline__pick.is-winner .e-numline__pin { background: var(--anim-line); }\n.e-desktop-root .e-look .e-numline__mark--target { border-left-color: var(--anim-line); }\n.e-desktop-root .e-look .e-numline__mark--target > span { color: var(--theme-text); }\n.e-desktop-root .e-look .e-game-row__kind { color: var(--theme-text); font-weight: 700; }\n.e-desktop-root .e-look .e-blotto__grid thead th,\n.e-desktop-root .e-look .e-blotto__state,\n.e-desktop-root .e-look .e-seat__state { opacity: 0.8; }\n\n/* ─── 7. A CALMER FAINT ──────────────────────────────────────────────────\n   Secondary text used to dim to 35–50 % opacity, which falls under\n   4.5:1 on a tinted canvas. Faint is a colour at about 4.6:1 or more. */\n.e-desktop-root .e-look {\n  --anim-faint: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n}\n.e-desktop-root .e-look .e-faint,\n.e-desktop-root .e-look .e-dim,\n.e-desktop-root .e-look .e-rail-item .e-faint,\n.e-desktop-root .e-look .e-relay-status__host,\n.e-desktop-root .e-look .e-relay-status__meta,\n.e-desktop-root .e-look .e-game-row__phase,\n.e-desktop-root .e-look .e-chat-line__time,\n.e-desktop-root .e-look .e-chat-line__type,\n.e-desktop-root .e-look .e-badge--dim,\n.e-desktop-root .e-look .e-slim-card__title,\n.e-desktop-root .e-look .e-blotto__grid td.is-hidden,\n.e-desktop-root .e-look .e-phase-strip__step.is-next,\n.e-desktop-root .e-look .e-meta-grid dt,\n.e-desktop-root .e-look .e-overview-card__body p,\n.e-desktop-root .e-look .e-overview-card--failed .e-overview-card__body,\n.e-desktop-root .e-look .e-empty-pane__hint,\n.e-desktop-root .e-look .e-slim-card__foot,\n.e-desktop-root .e-look .e-hero-stat__label,\n.e-desktop-root .e-look .e-hero-stat__hint,\n.e-desktop-root .e-look .e-chess-players__vs,\n.e-desktop-root .e-look .e-chess-speed__lbl,\n.e-desktop-root .e-look .e-lowest__tag,\n.e-desktop-root .e-look .e-chess-move-idx,\n.e-desktop-root .e-look .e-role-pill--spectator,\n.e-desktop-root .e-look .e-entity-chip--inert,\n.e-desktop-root .e-look .e-inbox-event--read,\n.e-desktop-root .e-look .e-seat.is-to_commit,\n.e-desktop-root .e-look .e-trust-key,\n.e-desktop-root .e-look [style*=\"opacity: 0.4\"],\n.e-desktop-root .e-look [style*=\"opacity: 0.5\"],\n.e-desktop-root .e-look [style*=\"opacity: 0.6\"] {\n  opacity: 1 !important;\n  color: var(--anim-faint);\n}\n.e-desktop-root .e-look .e-phase-strip__step.is-done { opacity: 1; }\n/* Names in a chat are ink, so they read on the tint. */\n.e-desktop-root .e-look .e-chat-line__name { color: var(--theme-text) !important; }\n.e-desktop-root .e-look .e-entity-chip--agent,\n.e-desktop-root .e-look .e-entity-chip--session { opacity: 1; color: var(--theme-focused-foreground); }\n\n/* ─── 8. MOTION ─────────────────────────────────────────────────────────\n   Panels arrive with a short rise when a section opens (they mount with it).\n   Off with reduced motion; capture mode turns every animation off anyway. */\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-look .e-page-head,\n  .e-desktop-root .e-look .e-now,\n  .e-desktop-root .e-look .e-intro,\n  .e-desktop-root .e-look .e-setplay {\n    animation: e-anim-rise 0.38s var(--anim-ease) both;\n  }\n  .e-desktop-root .e-look .e-now { animation-delay: 0.05s; }\n  .e-desktop-root .e-look .e-setplay { animation-delay: 0.04s; }}\n@keyframes e-anim-rise {\n  from { opacity: 0; transform: translateY(6px); }\n  to { opacity: 1; transform: none; }\n}\n\n/* ─── 10. PHONE ──────────────────────────────────────────────────────── */\n@media (max-width: 700px) {\n  .e-desktop-root .e-look .e-page-head { padding: 10px 16px 14px; margin-top: 8px; max-width: calc(100% - 16px); }\n  .e-desktop-root .e-look .e-page-head__title { font-size: 1.55rem; }\n  .e-desktop-root .e-look .e-page-head__blurb { font-size: 0.84rem; }\n  .e-desktop-root .e-look .e-anim-hud { font-size: 0.7rem; }\n  .e-desktop-root .e-look .e-anim-hud--top .e-anim-hud__where { flex-basis: 100%; }\n  .e-desktop-root .e-look .e-anim-hud--foot { padding: 8px 16px 0; max-width: calc(100% - 16px); }\n  .e-desktop-root .e-look .e-setplay__game { font-size: 1.4rem; }}\n\n/* ─── 11. HOME'S FIRST FRAME, THE MONEY CHIP, PLEDGES (review pass 2: P2, P3, P5, P6) ── */\n\n/* Home leads with the agent: \"your agent now\" beside \"next up\" (one column when narrow,\n   or when next up is not shown: auto-fit drops the empty track). */\n.e-desktop-root .e-home-lead {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));\n  gap: 0 16px;\n  align-items: start;\n}\n.e-desktop-root .e-now__row--badges { align-items: center; }\n\n/* Home: \"On the relay now\" is a head, the cards, then rows; the foot is one line of facts and one of what this is. */\n.e-desktop-root .e-home-relay { margin-bottom: 16px; }\n.e-desktop-root .e-home-relay__head { border: 1px solid var(--e-rule); margin-bottom: 10px; }\n.e-desktop-root .e-home-relay__rows { margin-bottom: 0; }\n.e-desktop-root .e-home-foot { margin-top: 4px; }\n.e-desktop-root .e-home-foot__facts { margin: 0 0 8px; font-size: 0.8rem; }\n.e-desktop-root .e-intro--line { border: 0; border-left: 3px solid var(--theme-focused-foreground); padding: 4px 12px; margin: 0; font-size: 0.82rem; max-width: 78ch; }\n.e-desktop-root .e-intro__link-inline {\n  background: transparent; border: 0; padding: 0; font: inherit; color: var(--theme-focused-foreground); cursor: pointer;\n}\n.e-desktop-root .e-intro__link-inline:hover { text-decoration: underline; }\n.e-desktop-root .e-badge-fold > summary { cursor: pointer; padding: 8px 0; }\n.e-desktop-root .e-next__call > summary { cursor: pointer; font-size: 0.78rem; }\n.e-desktop-root .e-now__badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }\n.e-desktop-root .e-now__more { font-size: 0.75rem; }\n\n/* Next up: one row per thing to do, its clock, and the exact call (copy-only). */\n.e-desktop-root .e-next__why { overflow-wrap: anywhere; }\n.e-desktop-root .e-next__clock {\n  display: inline-flex;\n  align-items: baseline;\n  gap: 8px;\n  white-space: nowrap;\n  font-variant-numeric: tabular-nums;\n}\n.e-desktop-root .e-next__row.is-urgent .e-next__clock { color: var(--theme-focused-foreground); font-weight: 700; }\n.e-desktop-root .e-next__open {\n  min-height: 24px;\n  padding: 0;\n  border: 0;\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font: inherit;\n  cursor: pointer;\n}\n.e-desktop-root .e-next__call { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; opacity: 1; }\n.e-desktop-root .e-next__call code { overflow-wrap: anywhere; }\n.e-desktop-root .e-next__foot {\n  margin: 0;\n  padding: 8px 14px 10px;\n  font-size: 0.75rem;\n  line-height: 1.5;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n}\n/* Text another agent wrote: quoted and underlined as data, never styled as the dashboard's own words. */\n.e-desktop-root .e-untrusted { font-style: italic; border-bottom: 1px dotted currentColor; }\n/* Another agent's words are told apart by the italic and the dotted rule, not by quote marks around names and titles. */\n\n/* The relay's pipeline, folded to one chip beside the status line; it opens to the sentence. */\n.e-desktop-root .e-overview-status-row {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: baseline;\n  gap: 4px 12px;\n  margin-bottom: 14px;\n}\n.e-desktop-root .e-overview-status-row .e-overview-status { margin-bottom: 0; }\n.e-desktop-root .e-pipeline-chip { font-size: 0.726rem; max-width: 100%; }\n.e-desktop-root .e-pipeline-chip > summary {\n  display: inline-block;\n  padding: 1px 8px;\n  border: 1px solid var(--e-rule);\n  letter-spacing: 0.04em;\n  cursor: pointer;\n  list-style: none;\n}\n.e-desktop-root .e-pipeline-chip > summary::-webkit-details-marker { display: none; }\n.e-desktop-root .e-pipeline-chip > summary::after { content: \" +\"; }\n.e-desktop-root .e-pipeline-chip[open] > summary::after { content: \" \\2212\"; }\n.e-desktop-root .e-pipeline-chip__text {\n  display: block;\n  margin-top: 6px;\n  overflow-wrap: anywhere;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));\n}\n.e-desktop-root .e-look .e-pipeline-chip > summary { background: var(--anim-fill); color: var(--anim-ink); font-weight: 700; border-color: transparent; }\n\n/* P6: what kind of money the amounts are, beside the relay chip. */\n.e-desktop-root .e-money-chip {\n  display: inline-flex;\n  align-items: center;\n  padding: 3px 8px;\n  border: 1px solid var(--theme-border-subdued, rgba(128, 128, 128, 0.3));\n  font-size: 0.7rem;\n  font-weight: 700;\n  letter-spacing: 0.08em;\n  line-height: 1.25;\n  text-transform: uppercase;\n  white-space: nowrap;\n}\n.e-desktop-root .e-money-chip--test { background: var(--theme-border, transparent); }\n.e-desktop-root .e-money-chip--real { border-color: currentColor; }\n.e-desktop-root .e-look .e-money-chip--test { background: var(--anim-fill); color: var(--anim-ink); border-color: transparent; }\n\n/* The agent's pledges, under its Word line on the sheet. */\n.e-desktop-root .e-pledges { margin-top: 6px; }\n.e-desktop-root .e-pledge__status { white-space: nowrap; }\n.e-desktop-root .e-pledge.is-kept .e-pledge__status { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-pledge.is-broken .e-pledge__status,\n.e-desktop-root .e-pledge.is-disputed .e-pledge__status { font-weight: 700; }\n\n/* P5: with the chat open beside the view the frame is narrower, so the layout (data-nav) drops\n   a tier by itself; the header never wraps. */\n.e-desktop-root .e-brand-title--header { flex-shrink: 0; }\n.e-desktop-root .e-relay-status { flex-wrap: nowrap; }\n.e-desktop-root .e-feed-post { padding: 8px 0; overflow-wrap: anywhere; }\n\n\n/* The Arena: home (live, recent, boards) and a match with its step-through replay. Tokens only. */\n.e-desktop-root .e-arena { display: block; min-width: 0; padding: 0 12px 24px; }\n.e-desktop-root .e-arena-section { margin: 0 0 20px; }\n.e-desktop-root .e-arena-cards { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); }\n.e-desktop-root .e-arena-card {\n  display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left; cursor: pointer;\n  font: inherit; color: inherit; background: transparent; padding: 8px 10px;\n  border: 1px solid var(--e-rule); border-radius: 0;\n}\n.e-desktop-root .e-arena-card:hover, .e-desktop-root .e-arena-card:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }\n.e-desktop-root .e-arena-card__top { display: flex; justify-content: space-between; gap: 8px; }\n.e-desktop-root .e-arena-card__game { font-weight: 600; }\n.e-desktop-root .e-arena-card__live { color: var(--theme-focused-foreground); font-size: 0.75rem; }\n.e-desktop-root .e-arena-card__result { font-size: 0.85rem; }\n.e-desktop-root .e-arena-card__models { font-size: 0.7rem; }\n.e-desktop-root .e-arena-players { overflow-wrap: anywhere; }\n/* An id or name: one line, monospace, ellipsis at its box edge (full value in the title); the only place a break \"anywhere\" is allowed. */\n.e-desktop-root .e-id { display: inline-block; max-width: 100%; vertical-align: bottom; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\n  font-family: var(--font-family-mono, monospace); overflow-wrap: anywhere; }\n.e-desktop-root .e-arena-slot__who { min-width: 0; max-width: 100%; }\n.e-desktop-root .e-arena-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }\n.e-desktop-root .e-arena-chip { font: inherit; font-size: 0.8rem; color: inherit; background: transparent; padding: 3px 8px; border: 1px solid var(--e-rule); cursor: pointer; }\n.e-desktop-root .e-arena-chip.is-on { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-back { display: block; text-align: left; margin: 0 0 6px; font: inherit; font-size: 0.8rem; color: var(--theme-focused-foreground); background: transparent; border: 0; padding: 4px 0; cursor: pointer; }\n.e-desktop-root .e-arena-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }\n.e-desktop-root .e-arena-head__row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }\n.e-desktop-root .e-arena-head__title { font-weight: 600; font-size: 1.05rem; }\n.e-desktop-root .e-arena-head__players { min-width: 0; }\n.e-desktop-root .e-arena-head__badges { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }\n.e-desktop-root .e-arena-cols { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }\n@media (min-width: 900px) { .e-desktop-root .e-arena-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }}\n.e-desktop-root .e-arena-stage { min-width: 0; }\n.e-desktop-root .e-arena-slider { width: 100%; margin: 8px 0; accent-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-stepline { display: block; margin: 4px 0 10px; overflow-wrap: anywhere; }\n.e-desktop-root .e-arena-frame { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--e-rule); }\n.e-desktop-root .e-arena-slots, .e-desktop-root .e-arena-bids { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }\n.e-desktop-root .e-arena-slot, .e-desktop-root .e-arena-bids li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--e-rule); }\n.e-desktop-root .e-arena-slot__who { min-width: 8ch; }\n.e-desktop-root .e-arena-move { font-variant-numeric: tabular-nums; font-family: var(--font-family-mono); }\n.e-desktop-root .e-arena-sealed { opacity: 0.6; font-family: var(--font-family-mono); }\n.e-desktop-root .e-arena-slot.is-revealed .e-arena-move { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-bids li.is-called { border-bottom-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-call { color: var(--theme-focused-foreground); font-size: 0.8rem; }\n.e-desktop-root .e-arena-verdict { margin: 0; color: var(--theme-focused-foreground); overflow-wrap: anywhere; }\n.e-desktop-root .e-arena-models { margin-top: 12px; }\n.e-desktop-root .e-arena-side { min-width: 0; }\n.e-desktop-root .e-arena-side__label { display: block; font-size: 0.68rem; margin-bottom: 4px; }\n.e-desktop-root .e-arena-steps { list-style: none; margin: 0 0 8px; padding: 0; max-height: 18rem; overflow-y: auto; }\n.e-desktop-root .e-arena-step { display: block; width: 100%; text-align: left; font: inherit; font-size: 0.8rem; color: inherit; background: transparent; border: 0; border-left: 2px solid transparent; padding: 3px 6px; cursor: pointer; overflow-wrap: anywhere; }\n.e-desktop-root .e-arena-step.is-now { border-left-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-arena-step:hover, .e-desktop-root .e-arena-step:focus-visible { background: var(--theme-border-subdued); outline: none; }\n@media (max-width: 600px) { .e-desktop-root .e-arena { padding: 0 8px 20px; } .e-desktop-root .e-arena-steps { max-height: 12rem; }}\n/* What a player said with a move: the agent's own words, quoted and muted, never styled as the relay's. */\n.e-desktop-root .e-said { color: var(--theme-text-subdued, inherit); opacity: 0.8; font-style: italic; }\n.e-desktop-root .e-said__who { font-style: normal; opacity: 0.8; }\n.e-desktop-root .e-arena-said { font-size: 0.76rem; padding: 0 6px 3px 12px; border-left: 2px solid transparent; }\n.e-desktop-root .e-after { margin-top: 12px; border-top: 1px dashed var(--theme-border-subdued); padding-top: 8px; }\n.e-desktop-root .e-after__debrief { margin: 6px 0 10px; }\n.e-desktop-root .e-after__who { font-size: 0.8rem; }\n.e-desktop-root .e-after__lines { margin: 2px 0 0; font-size: 0.78rem; }\n.e-desktop-root .e-after__lines li { padding: 1px 0; }\n.e-desktop-root .e-debrief-chip { font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 0 6px; border: 1px solid currentColor; opacity: 0.8; }\n/* The kit's list markers (ul ▪, ol counters) are not wanted in the Arena's lists. */\n.e-desktop-root .e-arena ul, .e-desktop-root .e-arena ol { list-style: none; text-indent: 0; padding-left: 0; }\n.e-desktop-root .e-arena li { padding-left: 0; }\n.e-desktop-root .e-arena li::before { content: none; display: none; }\n/* No horizontal page scroll at phone width: every Arena box may shrink, every long name may wrap. */\n.e-desktop-root .e-arena, .e-desktop-root .e-arena * { min-width: 0; overflow-wrap: anywhere; }\n.e-desktop-root .e-arena { max-width: 100%; box-sizing: border-box; }\n.e-desktop-root .e-arena-slot, .e-desktop-root .e-arena-bids li, .e-desktop-root .e-arena-head__row, .e-desktop-root .e-arena-head__badges { min-width: 0; }\n.e-desktop-root .e-arena-slider, .e-desktop-root .e-arena-frame, .e-desktop-root .e-arena-cards { max-width: 100%; box-sizing: border-box; }\n@media (max-width: 600px) { .e-desktop-root .e-arena { padding-left: 0; padding-right: 0; } .e-desktop-root .e-arena-slot__who { min-width: 0; }}\n\n/* The agent card: one component, full on the agent page, compact in headers and lists. Plain text, wraps at any width. */\n.e-desktop-root .e-agent-card { overflow-wrap: anywhere; max-width: 100%; }\n.e-desktop-root .e-agent-card__head { display: flex; gap: 10px; align-items: center; }\n.e-desktop-root .e-agent-card__text { min-width: 0; }\n.e-desktop-root .e-agent-card--compact { display: inline-flex; gap: 6px; align-items: flex-start; vertical-align: top; }\n.e-desktop-root .e-agent-card--compact .e-agent-card__about { display: block; }\n.e-desktop-root .e-agent-card__badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }\n.e-desktop-root .e-arena-head__abouts { display: flex; flex-direction: column; gap: 4px; }\n\n/* ─── IN THE HERMES TAB ──────────────────────────────────────────────────────\n   Hermes pads its own content frame (px-3 sm:px-6) and its pages fill what is inside it. The app inside the tab\n   (the plugin mounts into `.e-host-body`) does the same: the page heading, the foot line and the view body lose the\n   standalone page's centred cap (1440px, and the look's \"100% - 32px\" that left 16px on each side), so they span\n   the whole plugin area. Their own padding is untouched: only the extra outer indent is gone. */\n.e-desktop-root .e-host-body .e-page-head,\n.e-desktop-root .e-host-body .e-anim-hud--foot,\n.e-desktop-root .e-host-body .e-view-body { max-width: none; }\n\n/* ─── HOME AS CARDS ─────────────────────────────────────────────────────────\n   The animatic's information cards (ui/HomeCards.tsx): brackets (§ 30), a status line, a chip, a pixel headline,\n   one line of detail, a tint-filled caption bar and a footer; a section is one horizontal, snapping row. */\n.e-desktop-root .e-home-switch { display: inline-flex; margin: 0 0 10px; border: 1px solid var(--theme-border); }\n.e-desktop-root .e-home-switch__opt {\n  padding: 3px 12px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 0.74rem;\n  letter-spacing: 0.06em; cursor: pointer; opacity: 0.75;\n}\n.e-desktop-root .e-home-switch__opt.is-on { background: var(--anim-fill, var(--theme-focused-foreground)); color: var(--anim-ink, var(--theme-background)); opacity: 1; font-weight: 700; }\n.e-desktop-root .e-home-switch__opt:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: -2px; }\n.e-desktop-root .e-cards-section { margin: 0 0 2px; min-width: 0; }\n.e-desktop-root .e-cards-section__head { margin-bottom: 2px; }\n.e-desktop-root .e-cardrow {\n  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 8px;\n  align-items: stretch; padding: 4px 4px 8px; margin: 0;\n}\n.e-desktop-root .e-hcard {\n  --anim-bracket: 9px; --anim-bracket-w: 2px;\n  min-width: 0; box-sizing: border-box;\n  display: flex; flex-direction: column; align-items: stretch; gap: 5px;\n  min-height: 0; padding: 9px 12px; text-align: left;\n  border: 0; border-radius: 0; color: inherit; font: inherit;\n  background-color: color-mix(in srgb, var(--theme-text) 4%, transparent);\n}\n.e-desktop-root .e-hcard.is-link { cursor: pointer; }\n.e-desktop-root .e-hcard.is-link:hover, .e-desktop-root .e-hcard.is-link:focus-visible { background-color: var(--anim-wash, transparent); outline: none; }\n.e-desktop-root .e-hcard.is-link:hover, .e-desktop-root .e-hcard.is-link:focus-visible { --anim-line: var(--theme-focused-foreground); }\n.e-desktop-root .e-hcard.is-link:focus-visible { box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }\n\n.e-desktop-root .e-hcard__hud {\n  display: flex; justify-content: space-between; gap: 8px; font-size: 0.68rem; letter-spacing: 0.05em;\n  color: color-mix(in srgb, var(--theme-text) min(100%, calc(78% + var(--e-ink-boost, 0%))), var(--theme-background)); font-variant-numeric: tabular-nums;\n}\n.e-desktop-root .e-hcard__hud > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.e-desktop-root .e-hcard__chip {\n  align-self: flex-start; padding: 0 7px; font-size: 0.64rem; font-weight: 700; letter-spacing: 0.08em;\n  background: var(--anim-fill); color: var(--anim-ink); line-height: 1.6;\n}\n.e-desktop-root .e-hcard__chip--none { visibility: hidden; }\n.e-desktop-root .e-hcard__chip--outline { background: transparent; color: inherit; box-shadow: inset 0 0 0 1px currentColor; }\n.e-desktop-root .e-hcard__tags { font-size: 0.7rem; color: var(--anim-faint, inherit); overflow-wrap: anywhere; }\n.e-desktop-root .e-hcard__marker {\n  align-self: flex-start; padding: 0; border: 0; background: transparent; font: inherit; font-size: 0.7rem; color: inherit;\n  text-align: left; overflow-wrap: anywhere;\n}\n.e-desktop-root button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-hcard--post.e-hcard--short { min-height: 0; }\n.e-desktop-root .e-hcard__head {\n  font-family: var(--anim-pixel); text-transform: uppercase; font-size: 1.15rem; line-height: 1.1; letter-spacing: 0.04em;\n  overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;\n}\n.e-desktop-root .e-hcard--hero .e-hcard__head { font-size: 1.5rem; }\n.e-desktop-root .e-hcard__detail {\n  font-size: 0.74rem; line-height: 1.4; color: var(--anim-faint, inherit); overflow: hidden; overflow-wrap: anywhere;\n  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;\n}\n.e-desktop-root .e-hcard__caption {\n  margin-top: auto; padding: 4px 8px; background: var(--anim-fill); color: var(--anim-ink); font-size: 0.8rem; font-weight: 700; line-height: 1.3;\n  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;\n}\n/* A post's or message's caption (its topic, its sender) is metadata: outlined, so the solid fill stays for state and selection. */\n.e-desktop-root .e-hcard--post .e-hcard__caption { background: transparent; color: inherit; box-shadow: inset 0 0 0 1px var(--anim-line, currentColor); font-weight: 600; }\n.e-desktop-root .e-hcard--quiet .e-hcard__caption { background: transparent; color: var(--anim-faint, inherit); font-weight: 400; padding-left: 0; }\n.e-desktop-root .e-hcard--quiet { min-height: 0; }\n.e-desktop-root .e-hcard__foot { font-size: 0.66rem; letter-spacing: 0.04em; color: var(--anim-faint, inherit); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n\n/* The chip row: the chip at the start, the agent's sigil or the game's pixel badge at the end (never over the headline). */\n.e-desktop-root .e-hcard__ids { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; }\n.e-desktop-root .e-hcard__icon { display: inline-flex; flex: none; width: 26px; height: 26px; align-items: center; justify-content: center; overflow: hidden; }\n.e-desktop-root .e-hcard__icon svg { display: block; max-width: 26px; max-height: 26px; }\n.e-desktop-root .e-hcard__hud time { font-variant-numeric: tabular-nums; }\n/* A pixel progress bar: ten cells. */\n.e-desktop-root .e-hcard__bar { display: flex; gap: 2px; height: 10px; }\n.e-desktop-root .e-hcard__bar > span { flex: 1; border: 1px solid var(--anim-line, currentColor); box-sizing: border-box; }\n.e-desktop-root .e-hcard__bar > span.is-on { background: var(--anim-line, currentColor); }\n/* A post's or message's whole text: mono, about ten lines, \"more\" opens it in place. */\n\n.e-desktop-root .e-hcard--post .e-hcard__head { flex: none; }\n.e-desktop-root .e-hcard__bodywrap { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; flex: 1; min-width: 0; }\n.e-desktop-root .e-hcard__body {\n  font-size: 0.78rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; width: 100%;\n  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden;\n}\n.e-desktop-root .e-hcard__body.is-open { display: block; -webkit-line-clamp: unset; }\n/* A post as Markdown: blocks inside, so the pre-wrap of plain text is off and the headings stay body-sized. */\n.e-desktop-root .e-hcard__body--md { white-space: normal; }\n.e-desktop-root .e-hcard__body--md > * { margin: 0 0 0.6em; }\n.e-desktop-root .e-hcard__body--md > :last-child { margin-bottom: 0; }\n.e-desktop-root .e-hcard__body--md h2, .e-desktop-root .e-hcard__body--md h3, .e-desktop-root .e-hcard__body--md h4, .e-desktop-root .e-hcard__body--md h5, .e-desktop-root .e-hcard__body--md h6 { font-size: 0.86rem; font-weight: 700; line-height: 1.3; }\n.e-desktop-root .e-hcard__body--md ul, .e-desktop-root .e-hcard__body--md ol { padding-left: 1.3em; }\n.e-desktop-root .e-hcard__body--md pre { overflow-x: auto; white-space: pre; padding: 6px 8px; border: 1px solid var(--theme-border); }\n.e-desktop-root .e-hcard__body--md a { color: var(--theme-focused-foreground); text-decoration: underline; }\n.e-desktop-root .e-hcard__body--md table { border-collapse: collapse; }\n.e-desktop-root .e-hcard__body--md th, .e-desktop-root .e-hcard__body--md td { border: 1px solid var(--theme-border); padding: 2px 6px; }\n.e-desktop-root .e-hcard__more {\n  padding: 0; border: 0; background: transparent; color: var(--theme-focused-foreground); font: inherit; font-size: 0.72rem;\n  letter-spacing: 0.04em; cursor: pointer; text-decoration: underline;\n}\n.e-desktop-root .e-hcard__foot { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }\n.e-desktop-root .e-hcard__foot > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n/* A starter card's call: the exact call on the caption bar, a copy button beside it. */\n.e-desktop-root .e-hcard__caption code { display: block; font: inherit; font-size: 0.72rem; font-weight: 400; overflow-wrap: anywhere; margin-bottom: 4px; }\n.e-desktop-root .e-hcard__copy {\n  padding: 0 8px; border: 1px solid var(--anim-ink); background: transparent; color: var(--anim-ink); font: inherit; font-size: 0.7rem;\n  font-weight: 700; cursor: pointer;\n}\n.e-desktop-root .e-hcard__copy:hover, .e-desktop-root .e-hcard__copy:focus-visible { background: var(--anim-ink); color: var(--anim-fill); outline: none; }\n.e-desktop-root .e-hcard__caption:has(code) { display: block; overflow: visible; }\n\n/* ─── 31. CARDS ON EVERY PAGE ───────────────────────────────────────────────\n   The Home cards' look (§ 30, .e-hcard) is the page's one card: the Feed, a topic's posts, the labs and\n   their reports are a grid of them; topics and rooms are rail rows drawn as the same card. */\n.e-desktop-root .e-card-grid {\n  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 10px;\n  padding: 4px 4px 12px; min-width: 0; align-items: start;\n}\n.e-desktop-root .e-card-grid > .e-hcard { flex: none; min-width: 0; }\n.e-desktop-root .e-card-grid--wide { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }\n.e-desktop-root .e-hcard__replies { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; font-size: 0.74rem; line-height: 1.4; min-width: 0; }\n.e-desktop-root .e-hcard__replies ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; width: 100%; }\n.e-desktop-root .e-hcard__replies li {\n  padding-left: 8px; border-left: 2px solid var(--anim-line, currentColor); overflow-wrap: anywhere;\n  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;\n}\n.e-desktop-root .e-hcard__list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: 0.74rem; min-width: 0; }\n.e-desktop-root .e-hcard__list li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 8px; min-width: 0; }\n.e-desktop-root .e-hcard__list li > span:first-child { flex: none; max-width: 100%; font-weight: 700; overflow-wrap: anywhere; }\n.e-desktop-root .e-hcard__sub { font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.75; }\n\n.e-desktop-root .e-look .e-rail-item--card {\n  --anim-bracket: 8px; --anim-bracket-w: 2px;\n  width: calc(100% - 8px); margin: 4px 4px 6px; padding: 8px 12px; border-bottom: 0;\n  background-color: color-mix(in srgb, var(--theme-text) 4%, transparent);\n  background-image:\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line));\n  background-size:\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket);\n  background-position: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%;\n  background-repeat: no-repeat; background-origin: border-box;\n}\n.e-desktop-root .e-look .e-rail-item--card.is-selected { background-color: var(--anim-fill); color: var(--anim-ink); box-shadow: none; }\n.e-desktop-root .e-look .e-rail-item--card.is-selected .e-dim, .e-desktop-root .e-look .e-rail-item--card.is-selected .e-faint { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-rail-item--card:hover { background-color: var(--anim-wash, color-mix(in srgb, var(--theme-text) 8%, transparent)); }\n.e-desktop-root .e-look .e-rail-item--card.is-selected:hover { background-color: var(--anim-fill); }\n.e-desktop-root .e-look .e-rail-item--card:focus-visible { box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }\n.e-desktop-root .e-hcard__sub-block { display: flex; flex-direction: column; gap: 3px; min-width: 0; }\n.e-desktop-root .e-hcard__sub-block a { color: var(--theme-focused-foreground); overflow-wrap: anywhere; }\n.e-desktop-root .e-lab { margin-bottom: 18px; }\n.e-desktop-root .e-lab .e-card-grid > .e-hcard--hero { grid-column: auto; }\n\n/* ─── 32. HOME, DENSE: one grid for what is new, one strip for where the agent stands ─────────── */\n.e-desktop-root .e-hstrip {\n  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 0; margin: 4px 4px 10px;\n  border: 1px solid var(--anim-line, currentColor); background-color: color-mix(in srgb, var(--theme-text) 4%, transparent);\n}\n.e-desktop-root .e-hstrip__item {\n  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 12px; margin: 0; min-width: 0;\n  border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;\n}\n.e-desktop-root .e-hstrip__item:disabled { cursor: default; }\n.e-desktop-root .e-hstrip__item + .e-hstrip__item { border-left: 1px solid var(--anim-line, currentColor); }\n@media (max-width: 520px) { .e-desktop-root .e-hstrip__item + .e-hstrip__item { border-left: 0; border-top: 1px solid var(--anim-line, currentColor); } }\n.e-desktop-root .e-hstrip__item:hover:not(:disabled), .e-desktop-root .e-hstrip__item:focus-visible { background-color: var(--anim-wash, transparent); outline: none; }\n.e-desktop-root .e-hstrip__figure { font-family: var(--anim-pixel); text-transform: uppercase; font-size: 1.15rem; line-height: 1.1; letter-spacing: 0.04em; overflow-wrap: anywhere; }\n.e-desktop-root .e-hstrip__line { font-size: 0.74rem; color: var(--anim-faint, inherit); overflow-wrap: anywhere; }\n.e-desktop-root .e-hstrip .e-hcard__bar { width: 100%; }\n.e-desktop-root .e-hcard--quiet { grid-column: 1 / -1; }\n\n/* Home's groups: slim small-caps labels, groups side by side as wide as their cards need, wrapping when the row is full. */\n.e-desktop-root .e-hgroups { display: flex; flex-wrap: wrap; gap: 0 10px; align-items: stretch; }\n.e-desktop-root .e-hgroup { flex: var(--n, 1) 1 calc(var(--n, 1) * 250px); min-width: 0; max-width: 100%; display: flex; flex-direction: column; }\n.e-desktop-root .e-hgroup__label {\n  padding: 4px 6px 0; font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase;\n  color: var(--anim-faint, inherit); opacity: 0.85;\n}\n.e-desktop-root .e-hgroup .e-cardrow { padding-top: 2px; flex: 1; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); }\n\n/* ─── THE POST PAGE (`#/agora/post/<id>`) ───────────────────────────────────\n   One post in full and its replies, in the page's own card. */\n.e-desktop-root .e-thread { max-width: 760px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }\n.e-desktop-root .e-thread__back {\n  align-self: flex-start; padding: 0; border: 0; background: transparent; font: inherit; font-size: 0.8rem;\n  color: var(--theme-focused-foreground); cursor: pointer; text-decoration: underline;\n}\n.e-desktop-root .e-thread__root { display: flex; flex-direction: column; }\n.e-desktop-root .e-thread__root .e-hcard { padding: 12px 16px; }\n.e-desktop-root .e-thread__stats, .e-desktop-root .e-thread__opened { margin: 0; font-size: 0.78rem; }\n.e-desktop-root .e-thread__h { margin: 6px 0 4px; font-family: var(--anim-pixel); font-size: 0.95rem; letter-spacing: 0.06em; font-weight: 400; }\n.e-desktop-root .e-thread__replies ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }\n.e-desktop-root .e-thread__reply {\n  display: flex; flex-direction: column; gap: 3px; padding: 2px 0 2px 10px; border-left: 2px solid var(--anim-line, currentColor);\n  min-width: 0; text-indent: 0;\n}\n.e-desktop-root .e-thread__reply.is-nested { margin-left: 20px; }\n.e-desktop-root .e-thread__reply.is-target {\n  background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 8%, transparent));\n  border-left-width: 4px; border-left-color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-thread__who { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; }\n.e-desktop-root .e-thread__who time { font-size: 0.72rem; }\n.e-desktop-root .e-thread__text { font-size: 0.84rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }\n.e-desktop-root .e-thread__text.is-clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 8; overflow: hidden; }\n.e-desktop-root .e-thread__likes { font-size: 0.72rem; }\n.e-desktop-root .e-thread__reply .e-hcard__more { align-self: flex-start; }\n.e-desktop-root .e-hcard__morereplies { font-size: 0.72rem; color: var(--anim-faint, inherit); }\n.e-desktop-root .e-hcard.is-link .e-hcard__replies li { cursor: pointer; }\n\n/* A topic's page: its name and description once, then its posts. The rail carries the filter and the count. */\n.e-desktop-root .e-topic-head { padding: 4px 8px 6px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }\n.e-desktop-root .e-topic-head__name { margin: 0; font-family: var(--anim-pixel); font-weight: 400; font-size: 1.5rem; letter-spacing: 0.04em; line-height: 1.1; overflow-wrap: anywhere; }\n.e-desktop-root .e-topic-head__desc { margin: 0; font-size: 0.84rem; line-height: 1.45; max-width: 70ch; }\n.e-desktop-root .e-topic-head__facts { margin: 0; font-size: 0.74rem; }\n.e-desktop-root .e-agora-rail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 4px 6px 6px; }\n\n/* Table talk on the game page, and the debriefs under it. */\n.e-desktop-root .e-talk { margin: 0 0 12px; min-width: 0; }\n.e-desktop-root .e-talk__head { margin: 0 0 4px; font-family: var(--anim-pixel); font-size: 0.95rem; font-weight: 400; letter-spacing: 0.06em; cursor: pointer; }\n.e-desktop-root .e-talk summary.e-talk__head { list-style: revert; }\n.e-desktop-root .e-talk__list { list-style: none; margin: 4px 0 0; padding: 0; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; text-indent: 0; position: relative; }\n.e-desktop-root .e-talk__line {\n  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 3px 8px;\n  border: 0; border-left: 2px solid transparent; background: transparent; color: inherit; font: inherit; font-size: 0.8rem;\n  text-align: left; cursor: pointer; overflow-wrap: anywhere;\n}\n.e-desktop-root .e-talk__line:disabled { cursor: default; }\n.e-desktop-root .e-talk__line:hover:not(:disabled), .e-desktop-root .e-talk__line:focus-visible { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); outline: none; }\n.e-desktop-root .e-talk__line.is-now { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 8%, transparent)); border-left-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-talk__who { font-size: 0.7rem; }\n.e-desktop-root .e-after { border-top: 0; margin-top: 16px; padding-top: 0; }\n\n/* Labs: each lab is its own block; the work, ideas and credits read as one list each. */\n.e-desktop-root .e-lab { margin: 0 0 22px; min-width: 0; }\n.e-desktop-root .e-lab + .e-lab { border-top: 1px solid var(--theme-border-subdued, currentColor); padding-top: 14px; }\n.e-desktop-root .e-lab__bar {\n  display: flex; align-items: baseline; gap: 12px; width: 100%; padding: 6px 4px; border: 0; background: transparent;\n  color: inherit; font: inherit; text-align: left; cursor: pointer;\n}\n.e-desktop-root .e-lab__bar:hover, .e-desktop-root .e-lab__bar:focus-visible { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); outline: none; }\n.e-desktop-root .e-lab__name { font-family: var(--anim-pixel); font-size: 1.2rem; letter-spacing: 0.04em; }\n.e-desktop-root .e-lab__bar > :last-child { margin-left: auto; }\n.e-desktop-root .e-lab__h { margin: 14px 0 4px; font-family: var(--anim-pixel); font-size: 0.95rem; font-weight: 400; letter-spacing: 0.06em; }\n.e-desktop-root .e-lab__rule { margin: 0 4px 6px; font-size: 0.78rem; max-width: 70ch; }\n.e-desktop-root .e-lab__take { margin: 2px 4px 8px; }\n.e-desktop-root .e-lab__room { margin: 4px 4px 8px; }\n.e-desktop-root .e-lab__room-msgs { margin: 4px 0; padding-left: 18px; font-size: 0.85rem; }\n.e-desktop-root .e-lab__link { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }\n.e-desktop-root .e-rail-group { margin: 12px 8px 4px; font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.6; }\n.e-desktop-root .e-hcard__board { margin: 0; padding: 0; list-style: none; text-indent: 0; display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; text-indent: 0; }\n.e-desktop-root .e-hcard__board-row { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; white-space: pre; }\n.e-desktop-root .e-hcard__board-parts { display: block; font-size: 0.7rem; color: var(--anim-faint, inherit); font-weight: 400; }\n.e-desktop-root .e-hcard__ideas { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }\n\n.e-desktop-root .e-hcard__board > li { list-style: none; display: flex; flex-direction: column; }\n.e-desktop-root .e-hcard__board > li::before { content: none; display: none; }\n.e-desktop-root .e-hcard__board > li { padding-left: 0; }\n\n/* ─── AGENT PAGE: hero in the page-title frame, now strip, record, underline tabs ─────────── */\n.e-desktop-root .e-agent-page { min-width: 0; max-width: 100%; }\n.e-desktop-root .e-agent-hero { display: flex; gap: 16px; align-items: flex-start; }\n.e-desktop-root .e-agent-hero__glyph { flex: none; line-height: 0; border: 1px solid var(--e-rule); }\n.e-desktop-root .e-agent-hero__glyph .e-moire-avatar { image-rendering: pixelated; display: block; }\n.e-desktop-root .e-agent-hero__text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }\n.e-desktop-root .e-agent-hero__name { flex-wrap: wrap; overflow-wrap: anywhere; font-size: 1.5rem; }\n.e-desktop-root .e-look .e-agent-hero__name { font-family: var(--anim-pixel); }\n.e-desktop-root .e-agent-hero__relay { font-size: 0.8rem; font-weight: 400; letter-spacing: 0; text-transform: none; }\n.e-desktop-root .e-agent-hero__bio { overflow-wrap: anywhere; max-width: 80ch; opacity: 0.8; }\n.e-desktop-root .e-agent-hero__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }\n.e-desktop-root .e-agent-now { margin: 0; }\n.e-desktop-root .e-agent-now .e-now-strip__main { min-width: 0; overflow-wrap: anywhere; text-align: left; }\n.e-desktop-root .e-agent-page .e-subhead { padding: 0 16px; justify-content: space-between; }\n.e-desktop-root .e-agent-page .e-hero-stats { padding: 0 16px; }\n.e-desktop-root .e-utabs {\n  display: flex; gap: 0; overflow-x: auto; scrollbar-width: none; max-width: 100%;\n  border-bottom: 1px solid var(--e-rule); margin-top: 14px; padding: 0 8px;\n}\n.e-desktop-root .e-utabs::-webkit-scrollbar { display: none; }\n.e-desktop-root .e-utabs__tab { flex: none; }\n.e-desktop-root .e-utabs__count { font-size: 0.7rem; margin-left: 2px; }\n.e-desktop-root .e-agent-tab { padding: 12px 16px 24px; min-width: 0; }\n.e-desktop-root .e-agent-badges { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 110px), 1fr)); }\n.e-desktop-root .e-agent-badges li { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; font-size: 0.74rem; overflow-wrap: anywhere; }\n@media (max-width: 600px) {\n  .e-desktop-root .e-agent-hero { flex-direction: column; }\n  .e-desktop-root .e-agent-hero__name { font-size: 1.2rem; }\n}\n\n/* The agents directory: a list or cards of the agents on this relay; a row opens the agent's page. */\n.e-desktop-root .e-agent-dir { padding: 8px 16px 24px; min-width: 0; }\n.e-desktop-root .e-agent-dir__bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; }\n.e-desktop-root .e-agent-dir__bar .e-list-filter { flex: 1; min-width: 160px; }\n.e-desktop-root .e-agent-dir__bar .e-home-switch { margin: 0; }\n.e-desktop-root .e-agent-dir__row {\n  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 10px; align-items: center; width: 100%;\n  padding: 8px 10px; text-align: left; font: inherit; color: inherit; background: transparent; border: 0;\n  border-bottom: 1px solid var(--e-rule); cursor: pointer;\n}\n.e-desktop-root .e-agent-dir__row:hover, .e-desktop-root .e-agent-dir__row:focus-visible { background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); outline: none; }\n.e-desktop-root .e-agent-dir__who { min-width: 0; overflow-wrap: anywhere; }\n.e-desktop-root .e-agent-dir__meta { font-size: 0.74rem; white-space: nowrap; }\n@media (max-width: 600px) {\n  .e-desktop-root .e-agent-dir__row { grid-template-columns: auto minmax(0, 1fr); }\n  .e-desktop-root .e-agent-dir__meta { grid-column: 2; white-space: normal; }\n}\n.e-desktop-root .e-agent-card-tile { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; font: inherit; color: inherit;\n  background: transparent; border: 1px solid var(--e-rule); padding: 10px 12px; cursor: pointer; min-width: 0; overflow-wrap: anywhere; }\n.e-desktop-root .e-agent-card-tile:hover, .e-desktop-root .e-agent-card-tile:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }\n\n/* An agent's name or glyph that opens its page: looks like what it wraps, shows it is clickable on hover and focus. */\n.e-desktop-root .e-agent-link { cursor: pointer; }\n.e-desktop-root .e-agent-link--glyph { display: inline-flex; line-height: 0; }\n.e-desktop-root .e-agent-link:hover:not(.e-agent-link--glyph) { text-decoration: underline; }\n.e-desktop-root .e-agent-link:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: 1px; }\n\n/* A count beside a title (\"3 agents\"): ink on the theme's ground, bordered, so it reads in light, deep and vivid and every tint. */\n.e-desktop-root .e-count-chip { display: inline-block; padding: 0 1ch; border: 1px solid var(--theme-border); color: var(--theme-text);\n  background: transparent; font-family: var(--font-family-mono); font-size: 0.75rem; text-transform: uppercase; }\n/* The agent page's chips and record strip. */\n.e-desktop-root .e-agent-hero__chips .e-quiet-chip { opacity: 1; color: var(--theme-text); }\n.e-desktop-root .e-look.theme-vivid .e-agent-hero__chips .e-quiet-chip { border-color: var(--theme-text); }\n.e-desktop-root .e-agent-page .e-hero-stat__value { white-space: nowrap; }\n@media (max-width: 600px) { .e-desktop-root .e-agent-page .e-hero-stat__value { font-size: 1.35rem; } .e-desktop-root .e-agent-page .e-hero-stat { padding: 12px 12px; } }\n\n/* \"TESTNET · EXPERIMENTAL\" on a roomy header; just \"TESTNET\" where the header already shortens things. */\n.e-desktop-root .e-app-shell[data-nav=\"medium\"] .e-stage-word,\n.e-desktop-root .e-app-shell[data-nav=\"rail\"] .e-stage-word,\n.e-desktop-root .e-app-shell[data-nav=\"phone\"] .e-stage-word { display: none; }\n\n/* ─── The header row never overlaps and never clips ──────────────────────────────────────────────────\n   Left to right: the title, the five places, then the actions. The title and the five places keep their\n   width and never move under anything; the actions take the rest, and give things up from the least\n   important: the version, the Help and desk words (the icons stay), the stage word, the \"as\" and \"live\"\n   words, and last the relay host, which only ever shortens with an ellipsis. The tiers follow the\n   header row's own width (a container query), so they hold in the Hermes tab as in a window. */\n.e-desktop-root .e-app-top__row { container-type: inline-size; container-name: etop; }\n.e-desktop-root .e-app-top__row > .e-section-tabs--horizontal { flex: 0 0 auto; }\n.e-desktop-root .e-app-top__actions { flex: 1 1 0; justify-content: flex-end; gap: 12px; }\n.e-desktop-root .e-app-top__actions > * { flex-shrink: 0; }\n.e-desktop-root .e-app-top__actions > .e-relay-status { flex-shrink: 1; min-width: 0; }\n.e-desktop-root .e-app-top .e-relay-status__chips { min-width: 0; }\n.e-desktop-root .e-app-top .e-status-chip:has(.e-status-chip__label--relay) { min-width: 0; flex-shrink: 1; }\n.e-desktop-root .e-app-top .e-status-chip__label--relay { min-width: 0; max-width: 24ch; }\n/* The agent's name shows whole up to 20 characters, then an ellipsis; the select gives way last. */\n.e-desktop-root .e-app-top .e-viewer-switch select { box-sizing: content-box; max-width: 24ch; text-overflow: ellipsis; }\n\n\n@container etop (max-width: 1760px) {\n  .e-desktop-root .e-app-top .e-relay-status__meta { display: none; }\n}\n@container etop (max-width: 1640px) {\n  .e-desktop-root .e-app-top .e-header-link__word { display: none; }\n}\n@container etop (max-width: 1560px) {\n  .e-desktop-root .e-app-top .e-stage-word { display: none; }\n}\n@container etop (max-width: 1240px) {\n  .e-desktop-root .e-app-top .e-viewer-switch > .e-faint { display: none; }\n  .e-desktop-root .e-app-top .e-status-chip__label--live {\n    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;\n  }\n  .e-desktop-root .e-app-top .e-status-chip__label--relay { max-width: 16ch; }\n}\n@container etop (max-width: 1100px) {\n  .e-desktop-root .e-app-top__actions { gap: 8px; }\n}\n@container etop (max-width: 940px) {\n  .e-desktop-root .e-app-top .e-status-chip__label--relay { max-width: 10ch; }\n}\n@container etop (max-width: 640px) {\n  .e-desktop-root .e-app-top__row { gap: 8px; }\n  .e-desktop-root .e-app-top__actions { gap: 6px; }\n  .e-desktop-root .e-app-top .e-theme-duo { padding: 5px 6px; }\n  .e-desktop-root .e-app-top .e-theme-duo__rule { margin: 2px 5px; }\n}\n/* A tight header: the relay chip keeps its dot and its title; its host is the hover text. This is the medium\n   layout (title + five words + actions, no rail) and the narrowest rail. */\n@container etop (max-width: 1130px) and (min-width: 941px) {\n  .e-desktop-root .e-app-top .e-status-chip__label--relay {\n    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;\n  }\n}\n@container etop (max-width: 600px) {\n  .e-desktop-root .e-app-top .e-status-chip__label--relay {\n    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;\n  }\n}\n\n/* A long agent name (a select with data-long, over 12 characters) leaves the relay chip less room: in the bands where\n   it is already a dot, the chips, the theme circles and the gaps between them tighten too. */\n@container etop (max-width: 1130px) and (min-width: 941px) {\n  .e-desktop-root .e-app-top__row:has(.e-viewer-switch select[data-long]) { gap: 6px; padding-left: 8px; padding-right: 8px; }\n  .e-desktop-root .e-app-top__row:has(.e-viewer-switch select[data-long]) :is(.e-status-chip, .e-money-chip) { padding-left: 4px; padding-right: 4px; }\n  .e-desktop-root .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-theme-duo { padding: 5px 5px; }\n  .e-desktop-root .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-theme-duo__rule { margin: 2px 4px; }\n  .e-desktop-root .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-app-top__actions { gap: 4px; }\n}\n@container etop (max-width: 680px) {\n  .e-desktop-root .e-app-top__row:has(.e-viewer-switch select[data-long]) { padding-left: 8px; padding-right: 8px; }\n  .e-desktop-root .e-app-top__row:has(.e-viewer-switch select[data-long]) :is(.e-status-chip, .e-money-chip) { padding-left: 4px; padding-right: 4px; }\n  .e-desktop-root .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-theme-duo { padding: 5px 5px; }\n  .e-desktop-root .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-theme-duo__rule { margin: 2px 4px; }\n  .e-desktop-root .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-app-top__actions { gap: 4px; }\n}\n\n/* A small phone: the foot is one short line, no key hints (there is no keyboard). */\n@media (max-width: 480px) {\n  .e-desktop-root .e-look .e-anim-hud--foot > span:first-child,\n  .e-desktop-root .e-anim-hud__keys { display: none; }\n}\n\n/* Book (the Chronicle, read only): chapters of one arc, the card as badges, apocrypha in a fold, practice pages apart. */\n.e-desktop-root .e-book { min-width: 0; max-width: 72ch; }\n.e-desktop-root .e-book__note { margin: 0 0 12px; font-size: 0.78rem; }\n.e-desktop-root .e-book__legend { margin: 0 0 12px; font-size: 0.76rem; line-height: 1.5; opacity: 0.8; }\n.e-desktop-root .e-book__legend > div { display: inline; }\n.e-desktop-root .e-book__legend dt { display: inline; font-weight: 700; }\n.e-desktop-root .e-book__legend dt::after { content: \":\"; }\n.e-desktop-root .e-book__legend dd { display: inline; margin: 0 10px 0 0; }\n.e-desktop-root .e-book__h2 { margin: 18px 0 6px; font-family: var(--anim-pixel); font-size: 1.05rem; font-weight: 400; letter-spacing: 0.06em; }\n.e-desktop-root .e-book__h { margin: 12px 0 4px; font-family: var(--anim-pixel); font-size: 0.85rem; font-weight: 400; letter-spacing: 0.06em; }\n.e-desktop-root .e-book__toc { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 2px; font-size: 0.85rem; }\n.e-desktop-root .e-book__toc [aria-current=\"true\"] { font-weight: 700; }\n.e-desktop-root .e-book__recap .e-book__text { margin: 0 0 4px; }\n.e-desktop-root .e-book__chapter { margin: 0 0 22px; padding: 12px 0 0; border-top: 1px solid var(--theme-border-subdued, currentColor); min-width: 0; }\n.e-desktop-root .e-book__chapter--practice { border-top-style: dashed; }\n.e-desktop-root .e-book__chead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }\n.e-desktop-root .e-book__title { margin: 0; font-family: var(--anim-pixel); font-size: 1.2rem; font-weight: 400; letter-spacing: 0.04em; }\n.e-desktop-root .e-book__flag {\n  padding: 0 7px; font-size: 0.64rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1.6;\n  box-shadow: inset 0 0 0 1px currentColor;\n}\n.e-desktop-root .e-book__badges { margin: 6px 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px 6px; }\n.e-desktop-root .e-book__badge { padding: 0 7px; font-size: 0.72rem; line-height: 1.6; overflow-wrap: anywhere; background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); }\n.e-desktop-root .e-book__badge-k { opacity: 0.6; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.62rem; }\n.e-desktop-root .e-book__practice { margin: 4px 0 8px; font-size: 0.78rem; opacity: 0.75; }\n.e-desktop-root .e-book__passage { margin: 8px 0 12px; min-width: 0; }\n.e-desktop-root .e-book__text { margin: 0; padding: 0 0 0 12px; border-left: 2px solid var(--theme-border-subdued, currentColor); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }\n.e-desktop-root .e-book__recap p.e-book__text { padding-left: 0; border-left: 0; }\n.e-desktop-root .e-book__meta { margin: 4px 0 0; font-size: 0.74rem; opacity: 0.75; overflow-wrap: anywhere; }\n.e-desktop-root .e-book__tie { margin: 0 0 6px; font-size: 0.78rem; font-style: italic; }\n.e-desktop-root .e-book__nocanon { margin: 8px 0; }\n.e-desktop-root .e-book__cites { margin: 6px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: 0.72rem; }\n.e-desktop-root .e-book__cite { overflow-wrap: anywhere; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-book__cite--plain { color: inherit; opacity: 0.8; }\n.e-desktop-root .e-book__cite-kind { text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.6rem; opacity: 0.7; }\n.e-desktop-root .e-book__picks { margin: 0; padding-left: 18px; font-size: 0.78rem; overflow-wrap: anywhere; }\n.e-desktop-root .e-book__reason { opacity: 0.75; }\n.e-desktop-root .e-book__fold { margin: 10px 0 0; }\n.e-desktop-root .e-book__fold > summary { cursor: pointer; font-size: 0.8rem; letter-spacing: 0.04em; }\n.e-desktop-root .e-book__aside { opacity: 0.85; }\n.e-desktop-root .e-book__broke { margin: 2px 0 8px; font-size: 0.76rem; font-weight: 700; }\n.e-desktop-root .e-book__practice-sec { margin-top: 28px; }\n@media (max-width: 480px) { .e-desktop-root .e-book__title { font-size: 1.05rem; } }\n\n/* ─── 31. LOOK SWITCHES ─────────────────────────────────────────────────────\n   The viewer's own font (Pixel, Serif, Type) and text ink (Auto, White, Black), and the playful controls\n   for them. Classes come from themeConfig.applyTheme: look-font-*, look-ink-*, look-body-ink, look-cover.\n   Pixel is the default and is §0 above, untouched. Serif and Type use system font stacks (no font file is\n   fetched, so the no-remote-fonts rule holds). Motion: CSS only, none under prefers-reduced-motion or in\n   capture mode. */\n.e-desktop-root .e-look.look-font-serif {\n  --anim-pixel: \"Iowan Old Style\", \"Palatino Linotype\", Palatino, \"Book Antiqua\", Georgia, \"DejaVu Serif\", serif;\n  --font-family-mono: Charter, \"Iowan Old Style\", Georgia, \"DejaVu Serif\", serif;\n}\n.e-desktop-root .e-look.look-font-type {\n  --anim-pixel: \"Space Mono\", ui-monospace, \"SF Mono\", Menlo, Consolas, \"DejaVu Sans Mono\", monospace;\n  --font-family-mono: var(--anim-pixel);\n}\n/* Headings and the title: Serif is widely spaced capitals, Type is lowercase. */\n.e-desktop-root .e-look.look-font-serif :is(.e-brand-title, .e-overview-card__title, .e-now__head > span:last-child, .e-hstrip__figure,\n  .e-thread__h, .e-topic-head__name, .e-talk__head, .e-lab__name, .e-lab__h, .e-agent-hero__name, .e-mobile-top__section) {\n  letter-spacing: 0.2em;\n  font-weight: 400;\n}\n.e-desktop-root .e-look.look-font-serif .e-section-tab { letter-spacing: 0.08em; text-transform: uppercase; }\n.e-desktop-root .e-look.look-font-type :is(.e-brand-title, .e-overview-card__title, .e-now__head > span:last-child, .e-hstrip__figure,\n  .e-thread__h, .e-topic-head__name, .e-talk__head, .e-lab__name, .e-lab__h, .e-agent-hero__name, .e-mobile-top__section,\n  .e-section-tab) {\n  text-transform: lowercase;\n  letter-spacing: 0;\n}\n/* The wordmark's letters are typed uppercase and sit in a button, which does not inherit text-transform. */\n.e-desktop-root .e-look.look-font-type .e-brand { text-transform: lowercase; }\n/* Type: the title reads \"emporia.✶\". */\n.e-desktop-root .e-look.look-font-type .e-brand > span:first-child::after { content: \".\"; }\n.e-desktop-root .e-look.look-font-type .e-brand__star > svg { display: none; }\n.e-desktop-root .e-look.look-font-type .e-brand__star::after { content: \"✶\"; }\n.e-desktop-root .e-look.look-font-type .e-brand__star { margin-left: 0; }\n\n/* Ink: the title always follows White / Black; body text only where it reaches 4.5:1 (look-body-ink). */\n.e-desktop-root .e-look.look-ink-white :is(.e-brand-title, .e-brand-home, .e-mobile-top__section) { color: #fff; }\n.e-desktop-root .e-look.look-ink-black :is(.e-brand-title, .e-brand-home, .e-mobile-top__section) { color: #000; }\n.e-desktop-root .e-look.look-ink-white.look-body-ink { --theme-text: #fff; }\n.e-desktop-root .e-look.look-ink-black.look-body-ink { --theme-text: #000; }\n.e-desktop-root .e-lowcontrast {\n  font-size: 0.62rem; line-height: 1; margin-left: 6px; padding: 2px 4px; white-space: nowrap;\n  border: 1px solid currentColor; opacity: 0.85;\n}\n\n/* Cover mode (shift-click the title): the title set the way the chosen font's cover is. */\n.e-desktop-root .e-look.look-cover .e-brand-title { font-size: 1.5rem !important; }\n.e-desktop-root .e-look.look-cover.look-font-pixel .e-brand-title { letter-spacing: 0.14em; }\n.e-desktop-root .e-look.look-cover.look-font-serif .e-brand-title {\n  letter-spacing: 0.5em; padding: 2px 0 2px 0.5em;\n  border-top: 1px solid currentColor; border-bottom: 1px solid currentColor;\n}\n.e-desktop-root .e-look.look-cover.look-font-type .e-brand-title { letter-spacing: -0.02em; font-weight: 700; text-transform: lowercase; }\n\n/* The controls. */\n.e-desktop-root .e-sleeve {\n  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px;\n  height: 18px; min-width: 18px; padding: 0 6px; border: 1px solid rgba(127,127,127,0.5); border-radius: 0;\n  font: inherit; font-size: 0.66rem; line-height: 1; cursor: pointer; flex-shrink: 0;\n  box-shadow: 2px 2px 0 rgba(0,0,0,0.25);\n  animation: e-sleeve-flip 0.4s ease-out;\n}\n.e-desktop-root .e-sleeve:focus-visible, .e-desktop-root .e-inkwell:focus-visible, .e-desktop-root .e-key:focus-visible { outline: 2px solid var(--theme-focused-foreground); outline-offset: 2px; }\n.e-desktop-root .e-sleeve__name { white-space: nowrap; }\n@keyframes e-sleeve-flip { from { transform: perspective(60px) rotateY(-90deg); } to { transform: perspective(60px) rotateY(0); } }\n\n.e-desktop-root .e-inkwell {\n  --well: var(--anim-ink, currentColor);\n  position: relative; width: 16px; height: 18px; padding: 0; background: var(--well);\n  border: 1px solid rgba(127,127,127,0.55); border-radius: 3px 3px 8px 8px; cursor: pointer; flex-shrink: 0;\n  box-shadow: inset 0 3px 0 rgba(255,255,255,0.25);\n}\n.e-desktop-root .e-inkwell[data-ink=\"auto\"] { background: var(--theme-text); }\n.e-desktop-root .e-inkwell__drip { position: absolute; left: 50%; top: 100%; width: 3px; height: 0; margin-left: -1px; border-radius: 0 0 3px 3px; background: var(--well); }\n.e-desktop-root .e-inkwell[data-ink=\"auto\"] .e-inkwell__drip { background: var(--theme-text); }\n.e-desktop-root .e-inkwell:active .e-inkwell__drip { animation: e-ink-drip 0.45s ease-out; }\n@keyframes e-ink-drip { 0% { height: 0; } 60% { height: 6px; } 100% { height: 0; opacity: 0; } }\n/* The new colour runs down into the title. */\n.e-desktop-root .e-look.look-drip .e-brand-title { animation: e-title-drip 0.7s ease-out; }\n@keyframes e-title-drip { from { clip-path: inset(0 0 100% 0); text-shadow: 0 -0.5em 0 currentColor; } to { clip-path: inset(0 0 0 0); text-shadow: 0 0 0 transparent; } }\n\n.e-desktop-root .e-keys { display: inline-flex; gap: 3px; }\n.e-desktop-root .e-key {\n  width: 18px; height: 18px; padding: 0; display: inline-flex; align-items: center; justify-content: center;\n  border: 1px solid currentColor; border-radius: 50%; background: transparent; color: inherit; cursor: pointer;\n  font-size: 0.7rem; line-height: 1; box-shadow: 0 2px 0 currentColor; transform: translateY(0);\n  transition: transform 0.08s ease, box-shadow 0.08s ease;\n}\n.e-desktop-root .e-key--pixel { font-family: \"EmporiaPixel\", monospace; }\n.e-desktop-root .e-key--serif { font-family: Georgia, \"DejaVu Serif\", serif; }\n.e-desktop-root .e-key--type { font-family: \"Space Mono\", ui-monospace, Menlo, Consolas, monospace; }\n.e-desktop-root .e-key:active, .e-desktop-root .e-key[aria-pressed=\"true\"] { transform: translateY(2px); box-shadow: 0 0 0 currentColor; }\n.e-desktop-root .e-key[aria-pressed=\"true\"] { background: var(--theme-text); color: var(--theme-background); }\n\n@media (prefers-reduced-motion: reduce) {\n  .e-desktop-root .e-sleeve, .e-desktop-root .e-inkwell__drip, .e-desktop-root .e-look.look-drip .e-brand-title { animation: none !important; }\n  .e-desktop-root .e-key { transition: none; }\n}\n.e-desktop-root .e-capture .e-sleeve, .e-desktop-root .e-capture .e-inkwell__drip, .e-desktop-root .e-capture.look-drip .e-brand-title { animation: none !important; }\n.e-desktop-root .e-capture .e-key { transition: none; }\n\n/* Header tiers (the existing etop container): the swatch's name goes first, then the keys shrink. */\n@container etop (max-width: 1240px) {\n  .e-desktop-root .e-app-top .e-sleeve__name { display: none; }\n  .e-desktop-root .e-app-top .e-sleeve { width: 18px; padding: 0; }\n  .e-desktop-root .e-app-top .e-lowcontrast { font-size: 0; padding: 2px 5px; }\n  .e-desktop-root .e-app-top .e-lowcontrast::before { content: \"!\"; font-size: 0.66rem; }\n}\n@container etop (max-width: 940px) {\n  .e-desktop-root .e-app-top .e-key { width: 15px; height: 15px; font-size: 0.6rem; }\n  .e-desktop-root .e-app-top .e-inkwell { width: 13px; height: 15px; }\n  .e-desktop-root .e-app-top .e-sleeve { height: 15px; width: 15px; }\n}\n.e-desktop-root .e-mobile-drawer .e-theme-duo { flex-wrap: wrap; row-gap: 8px; }\n.e-desktop-root .Text_text_1shpo {\n  white-space: pre-wrap;\n  overflow-wrap: break-word;\n}\n.e-desktop-root .BlockLoader_root_1fkyl {\n  display: inline-block;\n  width: 1ch;\n  color: inherit;\n  height: calc(var(--font-size) * var(--theme-line-height-base));\n  vertical-align: bottom;\n}\n.e-desktop-root .Indent_root_9k7l5 {\n  display: block;\n  padding: 0 0 0 1ch;\n}\n/* ═══════════════════════════════════════════════════════════════\n   PIXEL BADGES — badges/Badge.tsx, docs/ui-badges.md\n   Two colour roles, no background:\n   - ink    = currentColor (the text colour where the badge sits);\n   - accent = --e-badge-accent, from the tint, darker on the light canvas\n     and lighter on the dark one (≥ 4.8:1 on canvas, panel and the row\n     wash in every theme and tint; badges.test.tsx holds it to that).\n   The accent is set on the element that carries the theme class (body in\n   the console, the app's container in the Hermes tab and on Desktop), so it\n   follows light, vivid, dark and the tint run without a re-render. The formulas\n   are mirrored in tokens.ts (ACCENT_CSS); keep the two the same.\n   ═══════════════════════════════════════════════════════════════ */\n\n/* The dashboard has one style (ui-v2): the badge accent is the look's own accent-as-text. */\n.e-desktop-root .e-look {\n  --e-badge-accent: var(--theme-focused-foreground);\n}\n/* The gallery's panels each carry their own theme and tint: the same formula, worked out there.\n   (dashboard.css § 30 sets --theme-focused-foreground to exactly these on the app's root.) */\n.e-desktop-root .e-badge-panel.theme-light {\n  --e-badge-accent: oklch(from var(--tint, #39ff44) 0.45 min(c, 0.2) h);\n}\n.e-desktop-root .e-badge-panel.theme-dark {\n  --e-badge-accent: oklch(from var(--tint, #39ff44) max(l, 0.78) min(c, 0.22) h);\n}\n\n/* A row of small badges (Season › Quests: the ones earned). */\n.e-desktop-root .e-badge-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }\n/* The sheet's head: the class badge beside the name and levels. */\n.e-desktop-root .e-sheet-head { display: flex; align-items: center; gap: 12px; }\n\n.e-desktop-root .e-badge {\n  display: inline-block;\n  flex: none;\n  line-height: 0;\n  vertical-align: middle;\n  color: inherit;\n}\n.e-desktop-root .e-badge > svg {\n  display: block;\n  overflow: visible;\n  image-rendering: pixelated;\n}\n/* On a fill (a chip, a caption bar) the accent would meet the fill: one role only. */\n.e-desktop-root .e-badge--mono .e-badge__accent { fill: currentColor !important; }\n\n/* The earn animation: a short pixel pop, in three hard steps. Arrivals only. */\n@keyframes e-badge-pop {\n  0% { transform: scale(0.5); }\n  45% { transform: scale(1.25); }\n  100% { transform: scale(1); }\n}\n.e-desktop-root .e-badge--pop {\n  animation: e-badge-pop 0.32s steps(3, jump-end) both;\n  transform-origin: 50% 60%;\n}\n@media (prefers-reduced-motion: reduce) {\n  .e-desktop-root .e-badge--pop { animation: none; }\n}\n/* Capture mode (?capture=1): nothing moves. Badge.tsx also leaves the class off. */\n.e-desktop-root .e-capture .e-badge--pop { animation: none; }\n\n/* ─── the gallery (badges.html, ?capture=1 friendly) ─────────────────────── */\n\n.e-desktop-root .e-badge-gallery {\n  font-family: var(--font-family-mono, monospace);\n  padding: 16px;\n  max-width: 1440px;\n  margin: 0 auto;\n}\n.e-desktop-root .e-badge-gallery__title {\n  font-family: \"EmporiaPixel\", var(--font-family-mono, monospace);\n  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);\n  letter-spacing: 0.04em;\n  margin: 8px 0 4px;\n}\n.e-desktop-root .e-badge-gallery__lede { max-width: 72ch; line-height: 1.5; margin: 0 0 16px; }\n.e-desktop-root .e-badge-gallery__bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 16px; }\n.e-desktop-root .e-badge-gallery__bar button {\n  font: inherit;\n  background: transparent;\n  color: inherit;\n  border: 1px solid currentColor;\n  padding: 2px 8px;\n  cursor: pointer;\n}\n.e-desktop-root .e-badge-gallery__bar button[aria-pressed=\"true\"] { background: var(--e-badge-accent); color: var(--theme-background, #fff); }\n.e-desktop-root .e-badge-gallery h2 {\n  font-family: \"EmporiaPixel\", var(--font-family-mono, monospace);\n  font-weight: 400;\n  font-size: 1.1rem;\n  letter-spacing: 0.04em;\n  margin: 24px 0 8px;\n}\n.e-desktop-root .e-badge-table { border-collapse: collapse; width: 100%; }\n.e-desktop-root .e-badge-table th, .e-desktop-root .e-badge-table td {\n  text-align: left;\n  vertical-align: middle;\n  padding: 6px 10px 6px 0;\n  border-bottom: 1px solid var(--theme-border, #ccc);\n  font-size: 0.85rem;\n}\n.e-desktop-root .e-badge-table code { font-size: 0.8rem; }\n.e-desktop-root .e-badge-table__scales { display: flex; gap: 12px; align-items: flex-end; }\n.e-desktop-root .e-badge-scroll { overflow-x: auto; }\n\n.e-desktop-root .e-badge-panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }\n.e-desktop-root .e-badge-panel {\n  padding: 10px 12px 12px;\n  border: 1px solid var(--p-line);\n  background: var(--p-bg);\n  color: var(--p-ink);\n}\n.e-desktop-root .e-badge-panel.theme-light {\n  --p-bg: oklch(from var(--tint, #39ff44) 0.97 calc(c * 0.1) h);\n  --p-panel: oklch(from var(--tint, #39ff44) 0.92 calc(c * 0.18) h);\n  --p-ink: oklch(from var(--tint, #39ff44) 0.18 calc(c * 0.4) h);\n  --p-line: oklch(from var(--tint, #39ff44) 0.84 calc(c * 0.28) h);\n}\n.e-desktop-root .e-badge-panel.theme-dark {\n  --p-bg: oklch(from var(--tint, #39ff44) 0.192 calc(c * 0.243) h);\n  --p-panel: oklch(from var(--tint, #39ff44) 0.253 calc(c * 0.243) h);\n  --p-ink: oklch(from var(--tint, #39ff44) 0.962 calc(c * 0.243) h);\n  --p-line: oklch(from var(--tint, #39ff44) 0.366 calc(c * 0.328) h);\n}\n.e-desktop-root .e-badge-panel.theme-dark.tint-green {\n  --p-bg: #001b00; --p-panel: #0b2a0b; --p-ink: #d8ffd8; --p-line: #1d4a1d; --e-badge-accent: #39ff44;\n}\n.e-desktop-root .e-badge-panel.theme-vivid {\n  --p-bg: var(--tint, #39ff44);\n  --p-panel: oklch(from var(--tint, #39ff44) calc(l - 0.082) calc(c * 0.91) h);\n  --p-ink: oklch(from var(--tint, #39ff44) 0.192 calc(c * 0.243) h);\n  --p-line: var(--p-ink);\n  --e-badge-accent: var(--p-ink);\n}\n.e-desktop-root .e-badge-panel.theme-vivid.tint-red,\n.e-desktop-root .e-badge-panel.theme-vivid.tint-pink { --p-panel: color-mix(in srgb, var(--tint) 80%, white); }\n.e-desktop-root .e-badge-panel.theme-vivid.tint-blue,\n.e-desktop-root .e-badge-panel.theme-vivid.tint-purple { --p-ink: #fff; }\n.e-desktop-root .e-badge-panel.theme-vivid.tint-green { --p-ink: #001b00; --p-panel: #2ee03a; }\n.e-desktop-root .e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }\n.e-desktop-root .e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }\n.e-desktop-root .e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }\n.e-desktop-root .Badge_root_1obhs {\n  display: inline-block;\n  vertical-align: top;\n  text-align: center;\n  font-weight: 400;\n  margin: 0;\n  outline: 0;\n  border: 0;\n  font-family: var(--font-family-mono);\n  min-height: calc(var(--theme-line-height-base) * var(--font-size));\n  text-transform: uppercase;\n  transition: 200ms ease all;\n  background: var(--theme-border);\n  padding: 0 1ch 0 1ch;\n}\n.e-desktop-root .AlertBanner_root_l7zgu {\n  display: block;\n  background: var(--theme-border);\n  box-shadow: 1ch 1ch 0 0 var(--theme-border-subdued);\n  padding: calc(var(--font-size) * var(--theme-line-height-base)) 2ch calc(var(--font-size) * var(--theme-line-height-base)) 2ch;\n  font-weight: 400;\n}\n.e-desktop-root .AskAgent_root_1tucs {\n  display: inline-flex;\n  align-items: center;\n  gap: 0.6ch;\n  min-height: 32px;\n  padding: 2px 10px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.78rem;\n  letter-spacing: 0.04em;\n  cursor: pointer;\n  white-space: nowrap;\n}\n\n.e-desktop-root .AskAgent_root_1tucs:hover {\n  border-color: var(--theme-focused-foreground);\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .AskAgent_row_1tucs {\n  display: flex;\n  justify-content: flex-end;\n  padding: 0 0 8px;\n}\n\n.e-desktop-root .AskAgent_copy_1tucs {\n  display: inline-flex;\n  align-items: center;\n  flex-wrap: wrap;\n  gap: 0.8ch;\n}\n\n.e-desktop-root .AskAgent_note_1tucs {\n  font-size: 0.72rem;\n  opacity: 0.7;\n}\n\n.e-desktop-root .AskAgent_glyph_1tucs {\n  color: var(--theme-focused-foreground);\n}\n\n@media (max-width: 700px) {\n  .e-desktop-root .AskAgent_root_1tucs {\n    min-height: 40px;\n    padding: 4px 12px;\n  }\n}\n.e-desktop-root .RowSpaceBetween_row_1rf1p {\n  display: flex;\n  justify-content: space-between;\n  outline: 0;\n  border: 0;\n}\n.e-desktop-root .SidebarLayout_root_1g3qb {\n  display: flex;\n  align-items: flex-start;\n  justify-content: space-between;\n  white-space: pre-wrap;\n}\n\n.e-desktop-root .SidebarLayout_sidebar_1g3qb {\n  align-self: stretch;\n  flex-shrink: 0;\n  width: 20ch;\n}\n\n.e-desktop-root .SidebarLayout_handle_1g3qb {\n  align-self: stretch;\n  flex-shrink: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 3ch;\n  outline: 0;\n  border: 0;\n  cursor: col-resize;\n\n  &:hover {\n    .SidebarLayout_line_1g3qb {\n      background: var(--theme-focused-foreground);\n    }\n  }\n\n  &:focus {\n    outline: 0;\n    border: 0;\n\n    .SidebarLayout_line_1g3qb {\n      background: var(--theme-focused-foreground);\n    }\n  }\n\n  &:active {\n    .SidebarLayout_line_1g3qb {\n      background: var(--theme-focused-foreground);\n    }\n  }\n}\n\n.e-desktop-root .SidebarLayout_line_1g3qb {\n  align-self: stretch;\n  width: 2px;\n  background: var(--theme-text);\n\n  &:first-child {\n    margin-left: 1px;\n    margin-right: 2px;\n  }\n}\n\n.e-desktop-root .SidebarLayout_content_1g3qb {\n  min-width: 10%;\n  width: 100%;\n}\n\n/* Narrow screens only: the back control and the list-then-detail panes. */\n.e-desktop-root .SidebarLayout_back_1g3qb {\n  display: none;\n}\n\n/* Which pane a narrow screen shows; no effect on a wide one. */\n.e-desktop-root .SidebarLayout_showList_1g3qb,\n.e-desktop-root .SidebarLayout_showDetail_1g3qb {\n  min-width: 0;\n}\n\n@media (max-width: 700px) {\n  .e-desktop-root .SidebarLayout_root_1g3qb {\n    flex-direction: column;\n    align-items: stretch;\n  }\n\n  .e-desktop-root .SidebarLayout_root_1g3qb > .SidebarLayout_sidebar_1g3qb {\n    width: 100% !important;\n    max-width: 100%;\n  }\n\n  .e-desktop-root .SidebarLayout_handle_1g3qb {\n    display: none;\n  }\n\n  .e-desktop-root .SidebarLayout_content_1g3qb {\n    min-width: 0;\n  }\n\n  .e-desktop-root .SidebarLayout_showList_1g3qb > .SidebarLayout_content_1g3qb {\n    display: none;\n  }\n\n  .e-desktop-root .SidebarLayout_showDetail_1g3qb > .SidebarLayout_sidebar_1g3qb {\n    display: none;\n  }\n\n  .e-desktop-root .SidebarLayout_back_1g3qb {\n    display: flex;\n    align-items: center;\n    gap: 1ch;\n    width: 100%;\n    min-height: 44px;\n    margin: 0;\n    padding: 0 16px;\n    border: 0;\n    border-bottom: 1px solid var(--theme-border-subdued, rgba(128, 128, 128, 0.2));\n    background: transparent;\n    color: var(--theme-focused-foreground);\n    font: inherit;\n    font-size: 0.85rem;\n    letter-spacing: 0.06em;\n    text-transform: uppercase;\n    text-align: left;\n    cursor: pointer;\n  }\n}\n.e-desktop-root .Chessboard_board_cycky {\n  display: inline-table;\n  border-collapse: collapse;\n  touch-action: none;\n}\n\n.e-desktop-root .Chessboard_corner_cycky {\n  width: 1ch;\n  height: calc(var(--theme-line-height-base) * 1rem);\n}\n\n.e-desktop-root .Chessboard_cell_cycky {\n  width: 1ch;\n  height: calc(var(--theme-line-height-base) * 1rem);\n  background-color: var(--theme-border-subdued);\n  text-align: center;\n  vertical-align: middle;\n}\n\n.e-desktop-root .Chessboard_square_cycky {\n  height: calc(var(--theme-line-height-base) * 2rem);\n  text-align: center;\n  vertical-align: middle;\n  width: 3ch;\n}\n\n.e-desktop-root .Chessboard_dark_cycky {\n  background-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .Chessboard_light_cycky {\n  background-color: var(--theme-focused-foreground-subdued);\n}\n\n.e-desktop-root .Chessboard_symbol_cycky {\n  font-size: 40px;\n  line-height: calc(var(--theme-line-height-base) * 2rem);\n}\n.e-desktop-root .Divider_gradient_hx4se {\n  background: linear-gradient(to right, transparent, var(--theme-border), transparent);\n  height: calc(var(--font-size) * var(--theme-line-height-base));\n  width: 100%;\n}\n\n.e-desktop-root .Divider_divider_hx4se {\n  align-items: center;\n  border: 0;\n  display: flex;\n  flex-direction: column;\n  flex-shrink: 0;\n  height: calc(var(--font-size) * var(--theme-line-height-base));\n  justify-content: center;\n  outline: 0;\n  width: 100%;\n}\n\n.e-desktop-root .Divider_line_hx4se {\n  background: var(--theme-text);\n  display: block;\n  flex-shrink: 0;\n  height: 2px;\n  width: 100%;\n}\n/* Shared by every board. Theme variables only; the --anim-* fallbacks keep a board legible outside the look. */\n\n.e-desktop-root .BoardKit_board_7mz8c {\n  --board-fill: var(--anim-fill, var(--theme-focused-foreground));\n  --board-ink: var(--anim-ink, var(--theme-background));\n  --board-line: var(--anim-line, var(--theme-focused-foreground));\n  --board-rule: var(--e-rule, var(--theme-border-subdued));\n  font-variant-numeric: tabular-nums;\n  min-width: 0;\n}\n\n.e-desktop-root .BoardKit_rules_7mz8c {\n  margin: 0 0 8px;\n  font-size: 0.75rem;\n  line-height: 1.5;\n  opacity: 0.8;\n}\n\n.e-desktop-root .BoardKit_scroll_7mz8c {\n  overflow-x: auto;\n  -webkit-overflow-scrolling: touch;\n}\n\n/* The text alternative: a real table, visually hidden, read in order by a screen reader. */\n.e-desktop-root .BoardKit_sr_7mz8c {\n  position: absolute;\n  width: 1px;\n  height: 1px;\n  overflow: hidden;\n  clip: rect(0 0 0 0);\n  white-space: nowrap;\n}\n\n/* A sealed move: hatched, never a guess. The word \"sealed\" is always printed with it. */\n.e-desktop-root .BoardKit_hatch_7mz8c {\n  background-image: repeating-linear-gradient(\n    135deg,\n    var(--theme-text) 0 1px,\n    transparent 1px 5px\n  );\n  background-color: transparent;\n  border: 1px solid var(--board-rule);\n  opacity: 0.55;\n}\n\n.e-desktop-root .BoardKit_foot_7mz8c {\n  margin: 6px 0 0;\n  font-size: 0.78rem;\n  line-height: 1.5;\n}\n.e-desktop-root .BlottoBars_root_19rvs { max-width: 44rem; }\n\n.e-desktop-root .BlottoBars_grid_19rvs { min-width: 18rem; display: grid; gap: 4px; }\n.e-desktop-root .BlottoBars_head_19rvs, .e-desktop-root .BlottoBars_row_19rvs { display: grid; grid-template-columns: minmax(0, 1fr) 4.2rem minmax(0, 1fr); align-items: center; gap: 6px; }\n.e-desktop-root .BlottoBars_who_19rvs { font-weight: 600; font-size: 0.85rem; overflow-wrap: anywhere; }\n.e-desktop-root .BlottoBars_whoB_19rvs { text-align: right; }\n.e-desktop-root .BlottoBars_state_19rvs { font-size: 0.68rem; letter-spacing: 0.04em; opacity: 0.8; }\n\n.e-desktop-root .BlottoBars_cell_19rvs { display: flex; align-items: center; min-height: 1.7rem; }\n.e-desktop-root .BlottoBars_left_19rvs { justify-content: flex-end; }\n.e-desktop-root .BlottoBars_right_19rvs { justify-content: flex-start; }\n.e-desktop-root .BlottoBars_wrap_19rvs { position: relative; display: block; height: 1.1rem; min-width: 2px; }\n.e-desktop-root .BlottoBars_bar_19rvs { display: block; width: 100%; height: 100%; }\n.e-desktop-root .BlottoBars_full_19rvs { display: block; width: 100%; height: 1.1rem; }\n.e-desktop-root .BlottoBars_none_19rvs { opacity: 0.6; padding: 0 4px; }\n/* The number and the mark sit just past the bar's end. */\n.e-desktop-root .BlottoBars_end_19rvs { position: absolute; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 3px; }\n.e-desktop-root .BlottoBars_left_19rvs .BlottoBars_end_19rvs { right: 100%; flex-direction: row-reverse; padding-right: 4px; }\n.e-desktop-root .BlottoBars_right_19rvs .BlottoBars_end_19rvs { left: 100%; padding-left: 4px; }\n\n/* Two players, told apart by side and by fill vs outline, not by colour alone. */\n.e-desktop-root .BlottoBars_barA_19rvs { background: var(--board-line); }\n.e-desktop-root .BlottoBars_barB_19rvs {\n  background: repeating-linear-gradient(45deg, var(--board-line) 0 3px, transparent 3px 6px);\n  border: 1px solid var(--board-line);\n}\n.e-desktop-root .BlottoBars_took_19rvs { outline: 2px solid var(--theme-text); outline-offset: 1px; }\n\n.e-desktop-root .BlottoBars_num_19rvs { font-size: 0.9rem; }\n.e-desktop-root .BlottoBars_mark_19rvs { font-size: 0.8rem; }\n\n/* The centre line the bars grow from. */\n.e-desktop-root .BlottoBars_centre_19rvs {\n  text-align: center;\n  font-size: 0.72rem;\n  letter-spacing: 0.06em;\n  border-left: 2px solid var(--theme-text);\n  border-right: 2px solid var(--theme-text);\n  padding: 2px 0;\n}\n.e-desktop-root .BlottoBars_weight_19rvs { font-weight: 700; }\n.e-desktop-root .BlottoBars_tie_19rvs { font-weight: 700; }\n.e-desktop-root .PickLine_root_5id3o { max-width: 44rem; }\n\n.e-desktop-root .PickLine_line_5id3o {\n  --rows: 1;\n  position: relative;\n  margin: 28px 12px 4px;\n  height: calc(40px + var(--rows) * 30px);\n}\n.e-desktop-root .PickLine_axis_5id3o { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--theme-text); opacity: 0.5; }\n.e-desktop-root .PickLine_tick_5id3o { position: absolute; top: -6px; width: 1px; height: 14px; background: var(--theme-text); opacity: 0.45; }\n.e-desktop-root .PickLine_tick_5id3o > span { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 0.68rem; }\n.e-desktop-root .PickLine_mark_5id3o { position: absolute; top: -8px; bottom: 0; width: 0; border-left: 2px dashed var(--theme-text); opacity: 0.55; }\n.e-desktop-root .PickLine_mark_5id3o > span { position: absolute; bottom: -2px; left: 5px; font-size: 0.7rem; white-space: nowrap; }\n.e-desktop-root .PickLine_target_5id3o { border-left: 2px solid var(--board-line); opacity: 1; }\n.e-desktop-root .PickLine_target_5id3o > span { left: auto; right: 5px; color: var(--theme-text); font-weight: 700; }\n.e-desktop-root .PickLine_target_5id3o.PickLine_low_5id3o > span { left: 5px; right: auto; bottom: 16px; }\n\n.e-desktop-root .PickLine_pick_5id3o { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 1; }\n.e-desktop-root .PickLine_pin_5id3o { width: 2px; height: calc(10px + var(--row, 0) * 30px); background: var(--theme-text); opacity: 0.6; }\n.e-desktop-root .PickLine_label_5id3o { font-size: 0.75rem; white-space: nowrap; padding: 1px 4px; border: 1px solid var(--board-rule); background: var(--theme-background); }\n.e-desktop-root .PickLine_winner_5id3o .PickLine_pin_5id3o { background: var(--board-line); opacity: 1; width: 3px; }\n.e-desktop-root .PickLine_winner_5id3o .PickLine_label_5id3o { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; }\n.e-desktop-root .UniqueRow_root_rdht5 { max-width: 44rem; }\n\n.e-desktop-root .UniqueRow_row_rdht5 { display: grid; grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr)); gap: 6px; }\n.e-desktop-root .UniqueRow_cell_rdht5 {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  min-height: 4.6rem;\n  padding: 6px 8px;\n  border: 1px solid var(--board-rule);\n  font-size: 0.78rem;\n  min-width: 0;\n  overflow-wrap: anywhere;\n}\n.e-desktop-root .UniqueRow_n_rdht5 { font-size: 1.05rem; }\n.e-desktop-root .UniqueRow_empty_rdht5 { border-style: dashed; }\n.e-desktop-root .UniqueRow_taken_rdht5 .UniqueRow_who_rdht5 { text-decoration: line-through; }\n.e-desktop-root .UniqueRow_unique_rdht5 { border-color: var(--theme-text); border-width: 2px; }\n.e-desktop-root .UniqueRow_tag_rdht5 { margin-top: auto; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; }\n.e-desktop-root .UniqueRow_winner_rdht5 { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; }\n.e-desktop-root .BargainSplit_root_nw71o { max-width: 44rem; }\n\n.e-desktop-root .BargainSplit_offers_nw71o { display: flex; gap: 10px; min-width: min-content; padding-bottom: 4px; }\n.e-desktop-root .BargainSplit_offer_nw71o { flex: 0 0 13rem; border: 1px solid var(--board-rule); padding: 6px 8px; display: grid; gap: 4px; align-content: start; }\n.e-desktop-root .BargainSplit_taken_nw71o { border: 2px solid var(--board-line); }\n.e-desktop-root .BargainSplit_head_nw71o { margin: 0; font-size: 0.78rem; font-weight: 700; }\n.e-desktop-root .BargainSplit_good_nw71o { display: grid; grid-template-columns: 3.4rem 1fr auto; gap: 6px; align-items: center; font-size: 0.74rem; }\n.e-desktop-root .BargainSplit_cells_nw71o { display: flex; gap: 2px; flex-wrap: wrap; }\n.e-desktop-root .BargainSplit_unit_nw71o { width: 0.8rem; height: 0.8rem; border: 1px solid var(--board-line); display: inline-block; }\n.e-desktop-root .BargainSplit_a_nw71o { background: var(--board-line); }\n.e-desktop-root .BargainSplit_b_nw71o { background: repeating-linear-gradient(45deg, var(--board-line) 0 2px, transparent 2px 4px); }\n.e-desktop-root .BargainSplit_free_nw71o { border-style: dashed; }\n.e-desktop-root .BargainSplit_count_nw71o { white-space: nowrap; }\n.e-desktop-root .BargainSplit_claim_nw71o { margin: 0; font-size: 0.7rem; opacity: 0.85; }\n\n.e-desktop-root .BargainSplit_scores_nw71o { display: grid; gap: 6px; margin-top: 10px; }\n.e-desktop-root .BargainSplit_score_nw71o { display: grid; grid-template-columns: 6rem 1fr; gap: 4px 8px; align-items: center; }\n.e-desktop-root .BargainSplit_who_nw71o { font-size: 0.85rem; font-weight: 600; overflow-wrap: anywhere; }\n.e-desktop-root .BargainSplit_track_nw71o { position: relative; display: block; height: 0.9rem; border: 1px solid var(--theme-text); }\n.e-desktop-root .BargainSplit_fill_nw71o { position: absolute; left: 0; top: 0; bottom: 0; background: var(--board-line); }\n.e-desktop-root .BargainSplit_walk_nw71o { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 3px double var(--theme-text); }\n.e-desktop-root .BargainSplit_pts_nw71o { grid-column: 2; font-size: 0.76rem; }\n\n.e-desktop-root .BargainSplit_hands_nw71o { list-style: none; margin: 8px 0 0; padding: 0; font-size: 0.8rem; display: grid; gap: 2px; }\n.e-desktop-root .AuctionLine_root_1bjou { max-width: 44rem; }\n\n.e-desktop-root .AuctionLine_line_1bjou { position: relative; min-width: 28rem; margin: 6px 14px 4px; display: grid; gap: 0; }\n.e-desktop-root .AuctionLine_lane_1bjou { --rows: 1; position: relative; height: calc(var(--rows) * 1.5rem + 1.3rem); }\n.e-desktop-root .AuctionLine_axis_1bjou { position: relative; height: 2px; background: var(--theme-text); opacity: 1; margin: 0; }\n.e-desktop-root .AuctionLine_tick_1bjou { position: absolute; top: -5px; width: 1px; height: 12px; background: var(--theme-text); }\n.e-desktop-root .AuctionLine_tick_1bjou > span { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-size: 0.66rem; }\n.e-desktop-root .AuctionLine_mark_1bjou { position: absolute; top: -10px; width: 0; height: 22px; }\n.e-desktop-root .AuctionLine_mark_1bjou > span { position: absolute; top: -14px; left: 4px; font-size: 0.7rem; white-space: nowrap; font-weight: 700; }\n.e-desktop-root .AuctionLine_base_1bjou { border-left: 2px dashed var(--theme-text); }\n.e-desktop-root .AuctionLine_pot_1bjou { border-left: 3px solid var(--board-line); }\n.e-desktop-root .AuctionLine_pot_1bjou > span { left: auto; right: 5px; }\n\n/* Signals above the axis: a label over a tick that ends on the line. */\n.e-desktop-root .AuctionLine_sig_1bjou { position: absolute; top: calc(var(--row) * 1.5rem); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }\n.e-desktop-root .AuctionLine_sigText_1bjou { font-size: 0.7rem; white-space: nowrap; padding: 0 3px; border: 1px dotted var(--theme-text); background: var(--theme-background); }\n.e-desktop-root .AuctionLine_sigTick_1bjou { width: 0; height: 0.4rem; border-left: 1px dotted var(--theme-text); }\n\n/* Bids below the axis: a pin hanging from the line to its label. */\n.e-desktop-root .AuctionLine_pin_1bjou { position: absolute; top: calc(var(--row) * 1.5rem); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; margin-top: 0.7rem; }\n.e-desktop-root .AuctionLine_pinTick_1bjou { width: 2px; height: 0.4rem; background: var(--theme-text); }\n.e-desktop-root .AuctionLine_pinText_1bjou { font-size: 0.72rem; white-space: nowrap; padding: 0 4px; border: 1px solid var(--board-rule); background: var(--theme-background); }\n.e-desktop-root .AuctionLine_won_1bjou .AuctionLine_pinText_1bjou { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; }\n\n/* The winner's gain or loss: the stretch between its bid and V. A curse is hatched, a gain solid. */\n.e-desktop-root .AuctionLine_seg_1bjou { position: relative; height: 2.2rem; margin-top: 4px; }\n.e-desktop-root .AuctionLine_span_1bjou { position: absolute; top: 4px; height: 0.8rem; min-width: 3px; background: var(--board-line); }\n.e-desktop-root .AuctionLine_loss_1bjou { background: repeating-linear-gradient(45deg, var(--board-line) 0 3px, transparent 3px 6px); border: 1px solid var(--board-line); }\n.e-desktop-root .AuctionLine_segText_1bjou { position: absolute; top: 1.3rem; font-size: 0.74rem; font-weight: 700; white-space: nowrap; }\n.e-desktop-root .DiceTable_root_1yna5 { max-width: 44rem; }\n\n.e-desktop-root .DiceTable_grid_1yna5 { min-width: 30rem; display: grid; gap: 3px; }\n.e-desktop-root .DiceTable_row_1yna5 { display: grid; grid-template-columns: 2.4rem repeat(6, minmax(0, 1fr)); gap: 3px; align-items: stretch; }\n.e-desktop-root .DiceTable_qty_1yna5 { font-size: 0.78rem; text-align: right; padding-right: 4px; align-self: center; }\n.e-desktop-root .DiceTable_faceHead_1yna5 { font-size: 0.66rem; letter-spacing: 0.06em; text-align: center; opacity: 0.7; }\n.e-desktop-root .DiceTable_cell_1yna5 { min-height: 1.5rem; border: 1px dashed var(--board-rule); font-size: 0.72rem; padding: 2px 4px; overflow-wrap: anywhere; }\n.e-desktop-root .DiceTable_bid_1yna5 { border-style: solid; border-color: var(--theme-text); background: var(--board-rule); }\n.e-desktop-root .DiceTable_called_1yna5 { outline: 3px double var(--board-line); outline-offset: 1px; font-weight: 700; }\n\n.e-desktop-root .DiceTable_cups_1yna5 { display: grid; gap: 6px; margin-top: 10px; }\n.e-desktop-root .DiceTable_cup_1yna5 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }\n.e-desktop-root .DiceTable_cupName_1yna5 { min-width: 6rem; font-weight: 600; font-size: 0.85rem; overflow-wrap: anywhere; }\n.e-desktop-root .DiceTable_dice_1yna5 { display: inline-flex; gap: 4px; flex-wrap: wrap; }\n.e-desktop-root .DiceTable_die_1yna5 { width: 1.9rem; height: 1.9rem; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--theme-text); font-size: 0.95rem; }\n/* A die that counts for the called face is filled and underlined, not only coloured. */\n.e-desktop-root .DiceTable_counts_1yna5 { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; text-decoration: underline; }\n\n.e-desktop-root .DiceTable_meter_1yna5 { display: grid; gap: 4px; margin-top: 10px; }\n.e-desktop-root .DiceTable_track_1yna5 { position: relative; display: block; height: 0.9rem; border: 1px solid var(--theme-text); }\n.e-desktop-root .DiceTable_fill_1yna5 { position: absolute; left: 0; top: 0; bottom: 0; background: var(--board-line); }\n.e-desktop-root .DiceTable_need_1yna5 { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 3px double var(--theme-text); }\n.e-desktop-root .DiceTable_meterText_1yna5 { font-size: 0.8rem; }\n.e-desktop-root .SluiceBoard_root_mmd9b { max-width: 30rem; }\n\n.e-desktop-root .SluiceBoard_grid_mmd9b { min-width: 16rem; display: grid; gap: 3px; width: max-content; max-width: 100%; }\n.e-desktop-root .SluiceBoard_row_mmd9b { display: grid; grid-template-columns: 1.4rem repeat(var(--cols, 6), 2.5rem); gap: 3px; align-items: stretch; }\n\n.e-desktop-root .SluiceBoard_rowNo_mmd9b { font-size: 0.66rem; opacity: 0.7; align-self: center; text-align: right; padding-right: 3px; }\n.e-desktop-root .SluiceBoard_head_mmd9b { font-size: 0.7rem; text-align: center; padding: 2px 0; border-bottom: 2px solid var(--board-rule); }\n/* The gate: a filled bar across the top of the shut channel, and the word. */\n.e-desktop-root .SluiceBoard_gate_mmd9b { background: var(--board-fill); color: var(--board-ink); border-bottom-color: var(--board-line); font-weight: 700; }\n.e-desktop-root .SluiceBoard_gateWord_mmd9b { display: block; font-size: 0.56rem; letter-spacing: 0.08em; text-transform: uppercase; }\n\n.e-desktop-root .SluiceBoard_cell_mmd9b { position: relative; height: 2.5rem; border: 1px dotted var(--board-rule); display: flex; align-items: center; justify-content: center; box-sizing: border-box; }\n.e-desktop-root .SluiceBoard_cell_mmd9b.SluiceBoard_shut_mmd9b { background-image: repeating-linear-gradient(90deg, var(--board-rule) 0 1px, transparent 1px 6px); }\n/* Silt: hatched, neutral. */\n.e-desktop-root .SluiceBoard_silt_mmd9b { background-image: repeating-linear-gradient(135deg, var(--theme-text) 0 1px, transparent 1px 5px); border: 1px solid var(--board-rule); opacity: 0.6; }\n/* Seat A is a filled square, seat B a hollow ring: shape tells them apart, not colour. */\n.e-desktop-root .SluiceBoard_stoneA_mmd9b { width: 1.6rem; height: 1.6rem; background: var(--board-fill); }\n.e-desktop-root .SluiceBoard_stoneB_mmd9b { width: 1.6rem; height: 1.6rem; border: 3px solid var(--board-line); border-radius: 50%; box-sizing: border-box; }\n.e-desktop-root .SluiceBoard_n_mmd9b { position: absolute; right: 2px; bottom: 0; font-size: 0.55rem; line-height: 1; opacity: 0.75; }\n/* The drop just made. */\n.e-desktop-root .SluiceBoard_last_mmd9b { outline: 2px double var(--board-line); outline-offset: 1px; }\n/* The winning line: thick outline, filled ground. */\n.e-desktop-root .SluiceBoard_win_mmd9b { background: var(--board-rule); outline: 3px solid var(--board-line); outline-offset: -2px; }\n\n.e-desktop-root .SluiceBoard_legend_mmd9b { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 0.78rem; margin: 8px 0 0; }\n.e-desktop-root .SluiceBoard_key_mmd9b { display: inline-flex; align-items: center; gap: 5px; }\n.e-desktop-root .SluiceBoard_keyA_mmd9b { width: 0.8rem; height: 0.8rem; background: var(--board-fill); display: inline-block; }\n.e-desktop-root .SluiceBoard_keyB_mmd9b { width: 0.8rem; height: 0.8rem; border: 2px solid var(--board-line); border-radius: 50%; display: inline-block; box-sizing: border-box; }\n.e-desktop-root .SluiceBoard_keySilt_mmd9b { width: 0.8rem; height: 0.8rem; display: inline-block; border: 1px solid var(--board-rule); background-image: repeating-linear-gradient(135deg, var(--theme-text) 0 1px, transparent 1px 4px); }\n/* Tesseract's table: theme variables only (the board kit's), no colour of its own. */\n.e-desktop-root .TesseractBoard_root_1igqw { max-width: 44rem; }\n\n.e-desktop-root .TesseractBoard_seats_1igqw { list-style: none; margin: 4px 0 10px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }\n.e-desktop-root .TesseractBoard_seat_1igqw { padding: 2px 8px; border: 1px solid var(--board-rule); font-size: 0.8rem; }\n.e-desktop-root .TesseractBoard_winner_1igqw { border-color: var(--board-line); font-weight: 700; }\n\n.e-desktop-root .TesseractBoard_round_1igqw { margin: 0 0 10px; }\n.e-desktop-root .TesseractBoard_bars_1igqw { display: grid; grid-template-columns: 5.5rem repeat(4, minmax(0, 1fr)); gap: 4px; align-items: stretch; }\n.e-desktop-root .TesseractBoard_label_1igqw { font-size: 0.72rem; align-self: center; opacity: 0.8; }\n.e-desktop-root .TesseractBoard_bar_1igqw { position: relative; display: block; min-height: 1.4rem; border: 1px solid var(--board-rule); overflow: hidden; }\n.e-desktop-root .TesseractBoard_fill_1igqw { position: absolute; inset: 0 auto 0 0; background: var(--board-fill); opacity: 0.35; }\n.e-desktop-root .TesseractBoard_value_1igqw { position: relative; font-size: 0.72rem; padding: 0 4px; line-height: 1.4rem; white-space: nowrap; }\n\n.e-desktop-root .TesseractBoard_pushes_1igqw { margin: 2px 0 0 5.5rem; font-size: 0.72rem; line-height: 1.4; opacity: 0.85; overflow-wrap: anywhere; }\n.e-desktop-root .TesseractBoard_results_1igqw { margin: 6px 0 0; padding-left: 1.4rem; font-size: 0.8rem; line-height: 1.5; }\n.e-desktop-root .AgentChat_toggle_ry10h {\n  font-size: 0.85rem !important;\n  letter-spacing: 0.04em;\n}\n\n.e-desktop-root .AgentChat_glyph_ry10h {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .AgentChat_label_ry10h {\n  text-transform: lowercase;\n}\n\n.e-desktop-root .AgentChat_menuItem_ry10h {\n  padding: 12px 0 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .AgentChat_menuItem_ry10h .e-section-tab {\n  width: 100%;\n  min-height: 44px;\n  justify-content: flex-start;\n  padding: 10px 14px;\n  opacity: 1;\n}\n\n.e-desktop-root .AgentChat_on_ry10h {\n  border-color: var(--theme-focused-foreground) !important;\n  background: var(--e-accent-wash, transparent) !important;\n}\n/* The agent chat drawer: monospace, hairline rules, the theme's accent as the\n   one highlight, 40–48px targets on a phone. Tokens only (--theme-*, --e-rule,\n   --e-accent-wash); no colours of its own.\n\n   It is sized to the app's own frame, never to the browser window: inside the\n   Hermes tab the frame is the tab's container (hermesPlugin.tsx), so the\n   transcript scrolls and the composer stays pinned at the bottom of what you\n   see. Below the header-nav width it covers the frame (absolute, inside the\n   shell's `contain: layout paint`), never the Hermes app around it. */\n\n.e-desktop-root .ChatDrawer_root_tg8j6 {\n  display: none;\n  flex: none;\n  flex-direction: column;\n  box-sizing: border-box;\n  width: min(27rem, 40%);\n  height: 100%;\n  min-height: 0;\n  position: relative;\n  align-self: stretch;\n  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: var(--theme-background);\n  color: var(--theme-text);\n  font-size: 0.86rem;\n  line-height: 1.5;\n}\n\n.e-desktop-root .ChatDrawer_open_tg8j6 {\n  display: flex;\n}\n\n/* ── head ─────────────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_head_tg8j6 {\n  flex: none;\n  padding: 12px 16px 10px;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .ChatDrawer_headRow_tg8j6 {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n}\n\n.e-desktop-root .ChatDrawer_heading_tg8j6 {\n  margin: 0;\n  display: flex;\n  align-items: baseline;\n  gap: 1ch;\n  font: inherit;\n  font-size: 1.05rem;\n  font-weight: 600;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n}\n\n.e-desktop-root .ChatDrawer_headIcon_tg8j6 {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_close_tg8j6 {\n  min-width: 40px !important;\n  min-height: 40px !important;\n}\n\n.e-desktop-root .ChatDrawer_meta_tg8j6 {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 0 1ch;\n  margin-top: 2px;\n  font-size: 0.74rem;\n  opacity: 0.62;\n}\n\n.e-desktop-root .ChatDrawer_conn_tg8j6[data-conn=\"open\"] {\n  color: var(--theme-focused-foreground);\n  opacity: 1;\n}\n\n.e-desktop-root .ChatDrawer_sessionBar_tg8j6 {\n  display: flex;\n  gap: 8px;\n  margin-top: 10px;\n}\n\n.e-desktop-root .ChatDrawer_sessionPick_tg8j6 {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 1ch;\n  min-height: 36px;\n  padding: 4px 10px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_sessionPick_tg8j6:hover,\n.e-desktop-root .ChatDrawer_sessionPick_tg8j6[aria-expanded=\"true\"] {\n  border-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_sessionPickTitle_tg8j6 {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_smallButton_tg8j6 {\n  flex: none;\n  min-height: 36px;\n  padding: 4px 12px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font: inherit;\n  font-size: 0.8rem;\n  letter-spacing: 0.04em;\n  cursor: pointer;\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_smallButton_tg8j6:hover {\n  border-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_error_tg8j6 {\n  margin: 8px 0 0;\n  font-size: 0.78rem;\n  color: var(--theme-focused-foreground);\n}\n\n/* ── transcript ───────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_transcript_tg8j6 {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  overscroll-behavior: contain;\n  padding: 12px 16px 16px;\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n\n.e-desktop-root .ChatDrawer_intro_tg8j6 {\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  border-left: 3px solid var(--theme-focused-foreground);\n  padding: 10px 14px 12px;\n  line-height: 1.55;\n}\n\n.e-desktop-root .ChatDrawer_intro_tg8j6 p {\n  margin: 0 0 6px;\n}\n\n.e-desktop-root .ChatDrawer_introTitle_tg8j6 {\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  opacity: 0.6;\n}\n\n.e-desktop-root .ChatDrawer_introNote_tg8j6 {\n  font-size: 0.78rem;\n  opacity: 0.65;\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6 {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  min-width: 0;\n}\n\n.e-desktop-root .ChatDrawer_who_tg8j6 {\n  font-size: 0.68rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6[data-who=\"you\"] .ChatDrawer_who_tg8j6 {\n  color: var(--theme-focused-foreground);\n  opacity: 1;\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6[data-who=\"you\"] .ChatDrawer_text_tg8j6 {\n  padding: 6px 10px;\n  background: var(--e-accent-wash, rgba(128, 128, 128, 0.08));\n  border-left: 2px solid var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_text_tg8j6 {\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .ChatDrawer_caret_tg8j6 {\n  color: var(--theme-focused-foreground);\n  animation: ChatDrawer_blink_tg8j6 1s steps(1) infinite;\n}\n\n@keyframes ChatDrawer_blink_tg8j6 {\n  50% {\n    opacity: 0;\n  }\n}\n\n.e-desktop-root .ChatDrawer_working_tg8j6 {\n  display: flex;\n  gap: 1ch;\n  align-items: center;\n  font-size: 0.78rem;\n  opacity: 0.7;\n}\n\n.e-desktop-root .ChatDrawer_notice_tg8j6 {\n  font-size: 0.78rem;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  opacity: 0.75;\n  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  padding: 2px 0 2px 10px;\n  max-height: 22rem;\n  overflow-y: auto;\n}\n\n.e-desktop-root .ChatDrawer_notice_tg8j6[data-tone=\"error\"] {\n  opacity: 1;\n  border-left: 2px solid var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_notice_tg8j6[data-tone=\"command\"] {\n  border-left: 0;\n  padding-left: 0;\n  opacity: 0.9;\n}\n\n.e-desktop-root .ChatDrawer_prompt_tg8j6 {\n  color: var(--theme-focused-foreground);\n}\n\n/* ── tool cards ───────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_tool_tg8j6 {\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  min-width: 0;\n}\n\n.e-desktop-root .ChatDrawer_toolHead_tg8j6 {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  width: 100%;\n  min-height: 36px;\n  padding: 6px 10px;\n  border: 0;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.8rem;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_toolHead_tg8j6:hover .ChatDrawer_toolName_tg8j6 {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_toolMark_tg8j6 {\n  flex: none;\n  width: 1.5ch;\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_tool_tg8j6[data-status=\"failed\"] .ChatDrawer_toolMark_tg8j6,\n.e-desktop-root .ChatDrawer_tool_tg8j6[data-status=\"blocked\"] .ChatDrawer_toolMark_tg8j6 {\n  color: inherit;\n  opacity: 0.8;\n}\n\n.e-desktop-root .ChatDrawer_toolName_tg8j6 {\n  flex: none;\n  font-weight: 600;\n}\n\n.e-desktop-root .ChatDrawer_toolContext_tg8j6 {\n  flex: 1;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  opacity: 0.65;\n}\n\n.e-desktop-root .ChatDrawer_toolTime_tg8j6 {\n  flex: none;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */\n  font-size: 0.72rem;\n}\n\n.e-desktop-root .ChatDrawer_toolCaret_tg8j6 {\n  flex: none;\n  opacity: 0.5;\n}\n\n.e-desktop-root .ChatDrawer_toolOut_tg8j6 {\n  margin: 0;\n  padding: 8px 10px;\n  border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  max-height: 16rem;\n  overflow: auto;\n  font: inherit;\n  font-size: 0.76rem;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n}\n\n/* Relay content: dashed rule, a label that says so. */\n.e-desktop-root .ChatDrawer_untrusted_tg8j6 {\n  border-style: dashed;\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6.ChatDrawer_untrusted_tg8j6 {\n  border: 1px dashed var(--e-rule, rgba(128, 128, 128, 0.35));\n  padding: 6px 10px;\n}\n\n.e-desktop-root .ChatDrawer_untrustedLabel_tg8j6 {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: 4px 1ch;\n  padding: 0 10px 6px;\n  font-size: 0.7rem;\n  opacity: 0.8;\n}\n\n.e-desktop-root .ChatDrawer_line_tg8j6 .ChatDrawer_untrustedLabel_tg8j6 {\n  padding: 0;\n}\n\n.e-desktop-root .ChatDrawer_untrustedLabel_tg8j6 [class*=\"Badge_root\"] {\n  font-size: 0.66rem;\n  letter-spacing: 0.08em;\n  background: transparent;\n  border: 1px solid currentColor;\n}\n\n/* ── approval / clarify ───────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_approval_tg8j6 {\n  border: 1px solid var(--theme-focused-foreground);\n  border-left-width: 3px;\n  padding: 10px 12px;\n  background: var(--e-accent-wash, transparent);\n}\n\n.e-desktop-root .ChatDrawer_cardTitle_tg8j6 {\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n  margin-bottom: 6px;\n}\n\n.e-desktop-root .ChatDrawer_cardText_tg8j6 {\n  margin: 0 0 6px;\n}\n\n.e-desktop-root .ChatDrawer_cardNote_tg8j6 {\n  margin: 6px 0;\n  font-size: 0.78rem;\n  font-weight: 600;\n}\n\n.e-desktop-root .ChatDrawer_cardFoot_tg8j6 {\n  margin: 8px 0 0;\n  font-size: 0.7rem;\n  opacity: 0.6;\n}\n\n.e-desktop-root .ChatDrawer_command_tg8j6 {\n  margin: 0 0 8px;\n  padding: 6px 8px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: var(--theme-background);\n  font: inherit;\n  font-size: 0.78rem;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  max-height: 10rem;\n  overflow: auto;\n}\n\n.e-desktop-root .ChatDrawer_choices_tg8j6 {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 8px;\n}\n\n.e-desktop-root .ChatDrawer_choice_tg8j6 {\n  min-height: 36px;\n  padding: 4px 12px;\n  border: 1px solid var(--theme-focused-foreground);\n  background: var(--theme-background);\n  color: inherit;\n  font: inherit;\n  font-size: 0.8rem;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_choice_tg8j6:hover:not(:disabled),\n.e-desktop-root .ChatDrawer_picked_tg8j6 {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n}\n\n.e-desktop-root .ChatDrawer_choice_tg8j6:disabled {\n  opacity: 0.45;\n  cursor: default;\n}\n\n.e-desktop-root .ChatDrawer_deny_tg8j6 {\n  border-color: var(--e-rule, rgba(128, 128, 128, 0.4));\n}\n\n.e-desktop-root .ChatDrawer_answered_tg8j6 {\n  font-size: 0.8rem;\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_question_tg8j6 + .ChatDrawer_question_tg8j6 {\n  margin-top: 10px;\n}\n\n.e-desktop-root .ChatDrawer_answerInput_tg8j6 {\n  box-sizing: border-box;\n  width: 100%;\n  margin-top: 6px;\n  min-height: 36px;\n  max-height: calc(6 * 1.45em + 12px);\n  padding: 4px 8px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.3));\n  background: var(--theme-background);\n  color: inherit;\n  font: inherit;\n  line-height: 1.45;\n  resize: none;\n  overflow-y: auto;\n  overflow-wrap: anywhere;\n}\n\n/* ── sessions ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_sessions_tg8j6 {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  overscroll-behavior: contain;\n  padding-bottom: 16px;\n}\n\n.e-desktop-root .ChatDrawer_sessionsHead_tg8j6 {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 4px 12px 4px 0;\n}\n\n.e-desktop-root .ChatDrawer_sessionList_tg8j6 {\n  list-style: none;\n  margin: 0;\n  padding: 0;\n}\n\n.e-desktop-root .ChatDrawer_sessionRow_tg8j6 {\n  display: flex !important;\n  flex-direction: column;\n  align-items: flex-start;\n  gap: 2px;\n  width: 100%;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_sessionRow_tg8j6:hover .ChatDrawer_sessionTitle_tg8j6 {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_sessionTitle_tg8j6 {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: baseline;\n  gap: 0 1ch;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .ChatDrawer_sessionMeta_tg8j6 {\n  font-size: 0.74rem;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */\n}\n\n.e-desktop-root .ChatDrawer_tag_tg8j6 {\n  font-size: 0.64rem;\n  letter-spacing: 0.1em;\n  text-transform: uppercase;\n  padding: 0 0.6ch;\n  border: 1px solid currentColor;\n  color: var(--theme-focused-foreground);\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_empty_tg8j6 {\n  padding: 8px 12px;\n  margin: 0;\n  font-size: 0.8rem;\n  opacity: 0.6;\n}\n\n/* ── composer ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_composer_tg8j6 {\n  position: relative;\n  flex: none;\n  padding: 8px 12px 10px;\n  border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: var(--theme-background);\n}\n\n.e-desktop-root .ChatDrawer_inputRow_tg8j6 {\n  display: flex;\n  align-items: flex-end;\n  gap: 8px;\n}\n\n/* One slim line (42px) by default; it grows with the text (ChatDrawer's\n   layout effect) up to six lines, then scrolls inside. */\n.e-desktop-root .ChatDrawer_input_tg8j6 {\n  flex: 1;\n  min-width: 0;\n  box-sizing: border-box;\n  height: 42px;\n  min-height: 42px;\n  max-height: calc(6 * 1.45em + 20px);\n  overflow-wrap: anywhere;\n  padding: 10px 10px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.35));\n  background: var(--theme-background);\n  color: inherit;\n  font: inherit;\n  line-height: 1.45;\n  resize: none;\n  overflow-y: auto;\n}\n\n.e-desktop-root .ChatDrawer_input_tg8j6:focus {\n  border-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_send_tg8j6 {\n  flex: none;\n  box-sizing: border-box;\n  min-width: 48px;\n  height: 42px;\n  min-height: 42px;\n  padding: 0 14px;\n  border: 1px solid var(--theme-focused-foreground);\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  font: inherit;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_send_tg8j6:disabled {\n  background: transparent;\n  color: inherit;\n  border-color: var(--e-rule, rgba(128, 128, 128, 0.35));\n  opacity: 0.6;\n  cursor: default;\n}\n\n.e-desktop-root .ChatDrawer_stop_tg8j6 {\n  background: transparent;\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_readOnly_tg8j6 {\n  margin: 0 0 8px;\n  font-size: 0.78rem;\n  opacity: 0.7;\n}\n\n.e-desktop-root .ChatDrawer_typeahead_tg8j6 {\n  position: absolute;\n  left: 16px;\n  right: 16px;\n  bottom: 100%;\n  z-index: 5;\n  list-style: none;\n  margin: 0;\n  padding: 0;\n  max-height: 18rem;\n  overflow-y: auto;\n  border: 1px solid var(--theme-focused-foreground);\n  background: var(--theme-background);\n}\n\n.e-desktop-root .ChatDrawer_typeRow_tg8j6 {\n  display: grid;\n  grid-template-columns: auto auto 1fr;\n  align-items: baseline;\n  gap: 0 1ch;\n  width: 100%;\n  min-height: 36px;\n  padding: 4px 10px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.8rem;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_typeRow_tg8j6[data-reach=\"terminal\"],\n.e-desktop-root .ChatDrawer_typeRow_tg8j6[data-reach=\"voice\"],\n.e-desktop-root .ChatDrawer_typeRow_tg8j6[data-reach=\"settings\"] {\n  opacity: 0.6;\n}\n\n.e-desktop-root .ChatDrawer_typeRowOn_tg8j6 {\n  background: var(--e-accent-wash, rgba(128, 128, 128, 0.1));\n}\n\n.e-desktop-root .ChatDrawer_typeName_tg8j6 {\n  color: var(--theme-focused-foreground);\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_typeMeta_tg8j6 {\n  grid-column: 1 / -1;\n  font-size: 0.72rem;\n  opacity: 0.6;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/* ── back control (phone) ─────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_back_tg8j6 {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  width: 100%;\n  min-height: 44px;\n  margin: 0;\n  padding: 0 16px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font: inherit;\n  font-size: 0.85rem;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n  text-align: left;\n  cursor: pointer;\n  flex: none;\n}\n\n/* \"← back to the dashboard\", then the menu: the full-page chat's top row. */\n.e-desktop-root .ChatDrawer_backRow_tg8j6 {\n  align-items: stretch;\n  flex: none;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .ChatDrawer_backRow_tg8j6 .ChatDrawer_back_tg8j6 {\n  flex: 1;\n  border-bottom: 0;\n}\n\n.e-desktop-root .ChatDrawer_menu_tg8j6 {\n  flex: none;\n  min-width: 48px;\n  min-height: 44px;\n  border: 0;\n  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .ChatDrawer_phoneOnly_tg8j6 {\n  display: none;\n}\n\n/* Below the header-nav breakpoint: one full-screen panel, \"← back\" on top. */\n@media (max-width: 900px) {\n  .e-desktop-root .ChatDrawer_root_tg8j6 {\n    position: absolute;\n    inset: 0;\n    z-index: 120;\n    width: 100%;\n    height: 100%;\n    border-left: 0;\n  }\n\n  .e-desktop-root .ChatDrawer_phoneOnly_tg8j6 {\n    display: flex;\n  }\n\n  .e-desktop-root .ChatDrawer_close_tg8j6 {\n    display: none !important;\n  }\n\n  .e-desktop-root .ChatDrawer_sessionPick_tg8j6,\n  .e-desktop-root .ChatDrawer_smallButton_tg8j6,\n  .e-desktop-root .ChatDrawer_choice_tg8j6,\n  .e-desktop-root .ChatDrawer_toolHead_tg8j6,\n  .e-desktop-root .ChatDrawer_typeRow_tg8j6 {\n    min-height: 44px;\n  }\n\n  .e-desktop-root .ChatDrawer_sessionRow_tg8j6 {\n    min-height: 48px;\n  }\n\n  .e-desktop-root .ChatDrawer_input_tg8j6,\n  .e-desktop-root .ChatDrawer_answerInput_tg8j6 {\n    font-size: 16px; /* no zoom-on-focus on a phone */\n  }\n}\n\n/* The kit gives every `ul li` an inline :before spacer (global.css), which\n   opens an empty line above a block button. Lists here are rows, not prose. */\n.e-desktop-root .ChatDrawer_typeahead_tg8j6 > li::before,\n.e-desktop-root .ChatDrawer_sessionList_tg8j6 > li::before {\n  content: none;\n  display: none;\n}\n\n/* A flex column shrinks its scrollable children to nothing when it overflows;\n   transcript items keep their height and the transcript scrolls instead. */\n.e-desktop-root .ChatDrawer_transcript_tg8j6 > * {\n  flex-shrink: 0;\n}\n\n/* A short screen (the 540 × 540 capture frame, a phone held sideways): the\n   \"← back\" row already says where you are, so the title row goes. */\n@media (max-width: 900px) and (max-height: 640px) {\n  .e-desktop-root .ChatDrawer_headRow_tg8j6 {\n    display: none;\n  }\n\n  .e-desktop-root .ChatDrawer_head_tg8j6 {\n    padding-top: 8px;\n  }\n\n  .e-desktop-root .ChatDrawer_sessionBar_tg8j6 {\n    margin-top: 6px;\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .e-desktop-root .ChatDrawer_caret_tg8j6 {\n    animation: none;\n  }\n}\n/*$vite$:1*/";
 /**
 * Desktop's own global CSS reaches the page (there is no shadow root): its base
 * layer (`@layer base`: `* { border: 0 solid; margin: 0; padding: 0 }`, `svg
@@ -32567,11 +34475,16 @@ var DESKTOP_CSS = "/* srcl's global.css (github.com/internet-development/www-sac
 * is unlayered, so it wins over Desktop's layered base rules; and `:where()`
 * gives it no specificity, so every rule of the app's own still wins over it.
 * Inherited properties (font, colour) still come from the app's own root.
+*
+* What is inside an <svg> is left alone: its fill and stroke are presentation
+* attributes (`<g fill="currentColor">`), which count as author rules, so
+* `all: revert` threw them away and every pixel glyph drew black on the dark
+* canvas (the game glyph in the Arena was an empty oval).
 */
 var DESKTOP_RESET = `
-:where(.e-desktop-root) *,
-:where(.e-desktop-root) *::before,
-:where(.e-desktop-root) *::after {
+:where(.e-desktop-root) :not(svg *),
+:where(.e-desktop-root) :not(svg *)::before,
+:where(.e-desktop-root) :not(svg *)::after {
   all: revert;
 }
 `;
@@ -32746,7 +34659,7 @@ function NotSetUp({ profile }) {
 		children: [
 			/* @__PURE__ */ jsx("h2", { children: "Emporia is not set up in this profile" }),
 			/* @__PURE__ */ jsxs("p", { children: [
-				"Emporia is a marketplace where agents play, trade and pay each other. To make an agent (in a new profile, or this one, ",
+				"An experimental playground for AI agents, on an open network. To make an agent (in a new profile, or this one, ",
 				/* @__PURE__ */ jsx("b", { children: profile }),
 				"), run in a terminal:"
 			] }),
