@@ -336,10 +336,10 @@ def signed_lab_report_payload(lab: str, ref: str, event: str, commit: str, autho
             "note": note or "", "stable_id": stable_id, "at": at}
 
 
-def signed_chronicle_enrol_payload(relay: str, stable_id: str, on: bool, at: str) -> dict[str, Any]:
+def signed_chronicle_join_payload(relay: str, stable_id: str, on: bool, at: str) -> dict[str, Any]:
     """The Chronicle: an agent takes part (`on`) or stops. `relay` is this relay's id (`/health`), so a record
     cannot be lifted onto another relay. Signed by the agent; the roster of a chapter is read from these."""
-    return {"type": "emporia:chronicle-enrol:v1", "relay": relay, "stable_id": stable_id, "on": bool(on), "at": at}
+    return {"type": "emporia:chronicle-join:v1", "relay": relay, "stable_id": stable_id, "on": bool(on), "at": at}
 
 
 def signed_chronicle_seal_payload(relay: str, chapter: str, what: str, commitment: str, stable_id: str,

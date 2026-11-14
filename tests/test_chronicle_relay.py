@@ -31,11 +31,11 @@ _timeline = itertools.count(1)
 
 @pytest.fixture
 def mk(monkeypatch):
-    """`make(operators=6, per_op=1, ...)` -> (world, agent names): a fresh book, agents registered and enrolled."""
+    """`make(operators=6, per_op=1, ...)` -> (world, agent names): a fresh book, agents registered and joined."""
     worlds: list[E.World] = []
 
     def make(operators: int = 6, per_op: int = 1, *, epoch: int = DAY, age_days: float | list = 100,
-             enrol: bool = True, house: bool = False, tag: str | None = None):
+             join: bool = True, house: bool = False, tag: str | None = None):
         tag = tag or uuid.uuid4().hex[:5]
         client = TestClient(rs.app, client=("127.0.0.1", 51600 + len(worlds)))
         base = int(time.time() // DAY) * DAY
@@ -51,11 +51,11 @@ def mk(monkeypatch):
             from tests.ids import house_env
             house_env(monkeypatch, names[-1])
         w.seed(names[0])
-        if enrol:
+        if join:
             w.clock.at(w.start - 3600)
             for n in names:
                 with w.tools(n) as t:
-                    assert t.chronicle(enrol=True)["success"]
+                    assert t.chronicle(join=True)["success"]
         return w, names
     yield make
     for w in reversed(worlds):               # last made, first undone: each restores what it found
@@ -426,16 +426,16 @@ def test_farm_stacking_fresh_labels_a_late_agent_has_no_seat_and_a_new_label_wei
             break
     assert all(0.1 <= x < 0.25 for x in weights.get(fresh_unit, {0.1})), "a days-old agent weighs next to the floor"
     assert all(v == {1.0} for u, v in weights.items() if u != fresh_unit)
-    # an agent that enrols after a call is on no roster until the chapter after next
+    # an agent that joins after a call is on no roster until the chapter after next
     late = w.register(f"late_{uuid.uuid4().hex[:5]}", "oplate", age_days=100)
     played = len(w.get("/chronicle/chapters").json()["chapters"])
     _to(w, played + 1, 0.01)
     with w.tools(late) as t:
-        assert t.chronicle(enrol=True)["success"]
+        assert t.chronicle(join=True)["success"]
     w.activity(w.start + (played + 1.8) * w.epoch, names)
     _to(w, played + 2, 0.04)
     v = _view(w, late)
-    assert v["enrolled"] and v["role"] is None
+    assert v["joined"] and v["role"] is None
     r = raw_seal(w, late, v["chapter"], "passage", "d" * 64)
     assert r.status_code == 403 and "roster" in r.text
     w.activity(w.start + (played + 2.8) * w.epoch, names + [late])
@@ -648,7 +648,7 @@ def test_farm_the_house_is_never_seated_or_counted_in_a_live_chapter(mk):
     w.activity(w.start + 0.8 * w.epoch, names)
     _to(w, 1, 0.04)
     v = _view(w, house)
-    assert v["enrolled"] and v["role"] is None
+    assert v["joined"] and v["role"] is None
     seats = chapter(w, "1")["seats"]
     assert E.World  # the house's unit token is never among the seated
     assert "house" not in {u for k in seats.values() for u in k}
@@ -711,9 +711,9 @@ def test_the_first_call_with_four_operators_is_chapter_one_after_practice_pages(
     _to(w, 1, 0.5)
     for n in extra:
         with w.tools(n) as t:
-            assert t.chronicle(enrol=True)["success"]
+            assert t.chronicle(join=True)["success"]
     everyone = names + extra
-    day(w, everyone, 2)                                          # prev call is slot 1's: enrolled after it: still practice
+    day(w, everyone, 2)                                          # prev call is slot 1's: joined after it: still practice
     assert chapter(w, "pp-2")["mode"] == "practice"
     day(w, everyone, 3)
     b = chapter(w, "1")
@@ -746,7 +746,7 @@ def test_xp_red_team_a_swarm_a_pair_of_aged_sybils_and_a_pick_trader_stay_within
     w.clock.at(w.start - 1800)
     for n in swarm:
         with w.tools(n) as t:
-            assert t.chronicle(enrol=True)["success"]
+            assert t.chronicle(join=True)["success"]
     everyone = names + swarm                                     # one operator with 10 agents
     pair = names[3:5]                                            # two aged operators trading picks
 
@@ -817,9 +817,9 @@ def test_whats_next_and_happening_carry_the_chronicle_lines(mk):
     w, names = mk(6)
     stranger = w.register(f"str_{uuid.uuid4().hex[:5]}", "opstr", age_days=100)
     assert w.get(f"/agents/{stranger}/next", agent=stranger).json()["chronicle"] == {
-        "enrol": True, "practice_note": "counts toward nothing: written before four operators had joined"}
+        "join": True, "practice_note": "counts toward nothing: written before four operators had joined"}
     items = N.rank(w.get(f"/agents/{stranger}/next", agent=stranger).json(), P.PRESETS["custom"], limit=20)
-    assert any(i["kind"] == "chronicle" and i["call"] == "chronicle(enrol=true)" for i in items)
+    assert any(i["kind"] == "chronicle" and i["call"] == "chronicle(join=true)" for i in items)
     w.activity(w.start + 0.8 * w.epoch, names)
     _to(w, 1, 0.04)
     rl = roles(w, names)
@@ -853,7 +853,7 @@ def test_a_relay_without_the_module_has_no_chronicle_line_and_no_routes(monkeypa
                                                          "issued": time.time(), "exp": int(time.time() + 600)})}
     assert "chronicle" not in client.get(f"/agents/{name}/next", headers=tok).json()
     assert client.get(f"/agents/{name}/chronicle", headers=tok).status_code == 404
-    assert client.post("/chronicle/enrol", headers=tok, json={"on": True, "at": "x", "signature": "y"}).status_code == 404
+    assert client.post("/chronicle/join", headers=tok, json={"on": True, "at": "x", "signature": "y"}).status_code == 404
     assert "chronicle" not in client.get("/happening", headers=tok).json()
 
 

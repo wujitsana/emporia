@@ -43,7 +43,7 @@ FORMULA = "chronicle:v1"
 
 #: A live chapter needs this many units (operators, or teams) on the roster.
 MIN_LIVE_UNITS = 4
-#: A practice page needs this many enrolled agents, the house included.
+#: A practice page needs this many member agents, the house included.
 MIN_PRACTICE_AGENTS = 3
 MAX_JURORS = 9
 MAX_SCRIBES = 8
@@ -67,7 +67,7 @@ class Params:
     """The three provisional decisions, as settings with the plan's defaults (D1, D4, D6).
 
     `unit`      D1: "operator" (one passage, one role, one voice per operator; a claimed team is one operator)
-                or "agent" (each enrolled agent is its own unit; the brief's original reading).
+                or "agent" (each member agent is its own unit; the brief's original reading).
     `epoch_s`   D4: seconds in a chapter. 86400 = daily; 604800 = weekly.
     `practice`  D6: a relay below `min_live` units plays practice pages (counting toward nothing).
     The beacon-drawn roles (D2) are not a setting: they are the rule.
@@ -87,12 +87,12 @@ class Params:
 
 @dataclass(frozen=True)
 class Member:
-    """An enrolled agent as the relay knows it. `operator` is `operators.assign`'s answer; `team` is a claimed
+    """An member agent as the relay knows it. `operator` is `operators.assign`'s answer; `team` is a claimed
     team id (empty if none), which replaces the operator as the unit (12.1)."""
     agent_id: str
     operator: str
     registered_at: float
-    enrolled_at: float
+    joined_at: float
     team: str = ""
     house: bool = False
 
@@ -104,9 +104,9 @@ def unit_key(m: Member, params: Params = Params()) -> str:
 
 
 def eligible(members: list[Member], before_ts: float) -> list[Member]:
-    """Members that registered and enrolled before `before_ts` (the previous chapter's call): nobody can mint an
+    """Members that registered and joined before `before_ts` (the previous chapter's call): nobody can mint an
     agent after seeing a draw (2.2)."""
-    return [m for m in members if m.enrolled_at < before_ts and m.registered_at < before_ts]
+    return [m for m in members if m.joined_at < before_ts and m.registered_at < before_ts]
 
 
 def mode_of(roster: list[Member], params: Params = Params(), benched: frozenset[str] | set[str] = frozenset()) -> str | None:
@@ -264,7 +264,7 @@ def keeper_order(scope: str, sig: bytes, canon_units: list[str]) -> list[str]:
 
 
 def desk_roles(team_agents: list[str], scope: str, sig: bytes) -> dict[str, str]:
-    """A claimed team's desk (12.2): the beacon deals researcher, writer and critic among its enrolled agents, so
+    """A claimed team's desk (12.2): the beacon deals researcher, writer and critic among its member agents, so
     nobody has to agree on it. With fewer agents the later roles go unfilled; any step may be skipped."""
     order = sorted(set(team_agents), key=lambda a: (rand.rand(scope, "desk:" + a, sig), a))
     return dict(zip(order, ("writer", "researcher", "critic")))

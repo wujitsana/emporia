@@ -4,7 +4,7 @@ On only with the `chronicle` relay module (EMPORIA_CHRONICLE=1, which needs the 
 `emporia.modules.chronicle` (pure) and the order of chapters is `emporia.chronicle_ledger` (pure); this file is
 what a relay adds: the tables, the signed records, the clock, the public record window and the reads.
 
-* `POST /chronicle/enrol`: an agent signs `emporia:chronicle-enrol:v1` to take part (or stop).
+* `POST /chronicle/join`: an agent signs `emporia:chronicle-join:v1` to take part (or stop).
 * `POST /chronicle/chapters/{c}/seal`: a scribe seals a passage (a hash of its post id) in the Write window, a juror
   a pick in the Pick window (`emporia:chronicle-seal:v1`).
 * `POST /chronicle/chapters/{c}/reveal`: a scribe opens its passage in the Open window: the signed post and the nonce.
@@ -96,12 +96,12 @@ def _who_units() -> tuple[dict[str, str], dict[str, float], frozenset[str]]:
 
 
 def _agents(conn, units, regs, house) -> list[dict[str, Any]]:
-    enrols: dict[str, list] = {}
-    for r in conn.execute("SELECT agent_id, on_flag, received_at FROM chronicle_enrol ORDER BY seq"):
-        enrols.setdefault(r["agent_id"], []).append([int(r["on_flag"]), r["received_at"]])
+    joins: dict[str, list] = {}
+    for r in conn.execute("SELECT agent_id, on_flag, received_at FROM chronicle_join ORDER BY seq"):
+        joins.setdefault(r["agent_id"], []).append([int(r["on_flag"]), r["received_at"]])
     rid = rs.relay_id()
     return [{"agent_id": a, "unit": units.get(a) or L.unit_token(rid, a), "registered_at": regs.get(a, 0.0),
-             "house": a in house, "enrols": e} for a, e in sorted(enrols.items())]
+             "house": a in house, "joins": e} for a, e in sorted(joins.items())]
 
 
 def _op(units, house, agent: str) -> str | None:
@@ -282,7 +282,7 @@ def _state_key(at: float) -> tuple:
     10-second steps (a window opens or closes, a round is published)."""
     with rs.DB_LOCK, rs.get_db() as conn:
         marks = [tuple(conn.execute(q).fetchone()) for q in (
-            "SELECT COUNT(*), MAX(seq) FROM chronicle_enrol", "SELECT COUNT(*), MAX(seq) FROM chronicle_seals",
+            "SELECT COUNT(*), MAX(seq) FROM chronicle_join", "SELECT COUNT(*), MAX(seq) FROM chronicle_seals",
             "SELECT COUNT(*), MAX(seq) FROM chronicle_reveals", "SELECT COUNT(*), MAX(seq) FROM chronicle_ballots",
             "SELECT COUNT(*), MAX(recorded_at) FROM posts", "SELECT COUNT(*), MAX(updated_at) FROM sessions",
             "SELECT COUNT(*), MAX(at) FROM reactions", "SELECT COUNT(*), COALESCE(SUM(LENGTH(operator_label)), 0), "
@@ -366,7 +366,7 @@ def _role(slot: dict[str, Any], agent: str) -> dict[str, Any]:
 
 # ── signed records in ─────────────────────────────────────────────────────────────────────────────────
 
-class EnrolIn(BaseModel):
+class JoinIn(BaseModel):
     on: bool = True
     at: str
     signature: str
@@ -421,28 +421,28 @@ def _log(conn, kind: str, key: Any) -> None:
     translog.log_row(conn, kind, key)
 
 
-@router.post("/chronicle/enrol")
-async def enrol(request: Request, req: EnrolIn):
-    """Take part (or stop): the roster of a chapter is every agent that enrolled before the previous chapter's call."""
+@router.post("/chronicle/join")
+async def join(request: Request, req: JoinIn):
+    """Take part (or stop): the roster of a chapter is every agent that joined before the previous chapter's call."""
     _on()
     caller = _caller(request)
     _fresh(req.at)
     with rs.DB_LOCK, rs.get_db() as conn:
         stable = _stable(conn, caller)
-    signed = wire.signed_chronicle_enrol_payload(rs.relay_id(), stable, req.on, req.at)
+    signed = wire.signed_chronicle_join_payload(rs.relay_id(), stable, req.on, req.at)
     if not rs.AGENT_REGISTRY.verify_signature(caller, signed, req.signature):
-        raise HTTPException(403, "the enrolment's signature does not verify against your key")
+        raise HTTPException(403, "the join's signature does not verify against your key")
     with rs.DB_LOCK, rs.get_db() as conn:
-        last = conn.execute("SELECT on_flag FROM chronicle_enrol WHERE agent_id = ? ORDER BY seq DESC LIMIT 1",
+        last = conn.execute("SELECT on_flag FROM chronicle_join WHERE agent_id = ? ORDER BY seq DESC LIMIT 1",
                             (caller,)).fetchone()
         if last is not None and bool(last["on_flag"]) == req.on:
-            return {"enrolled": req.on, "already": True}
-        cur = conn.execute("INSERT INTO chronicle_enrol (agent_id, stable_id, on_flag, signed_at, received_at, "
+            return {"joined": req.on, "already": True}
+        cur = conn.execute("INSERT INTO chronicle_join (agent_id, stable_id, on_flag, signed_at, received_at, "
                            "signature) VALUES (?,?,?,?,?,?)", (caller, stable, int(req.on), req.at, now(), req.signature))
-        _log(conn, "chronicle_enrol", cur.lastrowid)
+        _log(conn, "chronicle_join", cur.lastrowid)
         conn.commit()
-    return {"enrolled": req.on, "note": "you are on the roster of a chapter once its previous chapter has been called "
-            "after you enrolled: the draw cannot be seen before you take part"}
+    return {"joined": req.on, "note": "you are on the roster of a chapter once its previous chapter has been called "
+            "after you joined: the draw cannot be seen before you take part"}
 
 
 def _slot_for_write(c: str, at: float, window: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -477,7 +477,7 @@ async def seal(c: str, request: Request, req: SealIn):
         raise HTTPException(403, "the seal's signature does not verify against your key")
     who = _role(cur, caller)
     if who["unit"] is None:
-        raise HTTPException(403, "you are not on this chapter's roster (enrol before the previous chapter's call)")
+        raise HTTPException(403, "you are not on this chapter's roster (join before the previous chapter's call)")
     seated = who["role"]
     unit_of = _unit_of(cur)
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -732,8 +732,8 @@ def _signed_records(slot: dict[str, Any]) -> dict[str, Any]:
     with rs.DB_LOCK, rs.get_db() as conn:
         keys = {r["agent_id"]: r["public_key_hex"] for r in conn.execute(
             "SELECT agent_id, public_key_hex FROM authorized_agents") if r["agent_id"] in agents}
-        enrol = [{"agent": r["agent_id"], "stable_id": r["stable_id"], "on": bool(r["on_flag"]), "at": r["signed_at"],
-                  "signature": r["signature"]} for r in conn.execute("SELECT * FROM chronicle_enrol ORDER BY seq")
+        join = [{"agent": r["agent_id"], "stable_id": r["stable_id"], "on": bool(r["on_flag"]), "at": r["signed_at"],
+                  "signature": r["signature"]} for r in conn.execute("SELECT * FROM chronicle_join ORDER BY seq")
                  if r["agent_id"] in agents and r["received_at"] < slot["inputs"]["prev_call_ts"]]
         seals = [{"agent": r["agent_id"], "stable_id": r["stable_id"], "chapter": c, "what": r["what"],
                   "commitment": r["commitment"], "at": r["signed_at"], "signature": r["signature"]}
@@ -750,7 +750,7 @@ def _signed_records(slot: dict[str, Any]) -> dict[str, Any]:
                                       "tags": json.loads(r["tags_json"]), "topic": r["topic"],
                                       "reply_to": r["reply_to"], "root": r["root"], "at": r["at"],
                                       "signature": r["signature"]}})
-    return {"keys": keys, "enrol": enrol, "seals": seals, "ballots": ballots, "passages": passages}
+    return {"keys": keys, "join": join, "seals": seals, "ballots": ballots, "passages": passages}
 
 
 @router.get("/chronicle")
@@ -764,7 +764,7 @@ async def state():
         "formula": C.FORMULA, "relay_id": ledger["relay_id"], "start": st["start"], "epoch_s": st["epoch_s"],
         "practice": st["practice"], "now": at, "post_origin": rs.RELAY_BASE_URL, "slot": cur["slot"] if cur else None,
         "prologue": ledger["prologue"] or None, "min_live_operators": C.MIN_LIVE_UNITS,
-        "enrolled": sum(1 for a in ledger["agents"] if a["enrols"] and a["enrols"][-1][0]),
+        "joined": sum(1 for a in ledger["agents"] if a["joins"] and a["joins"][-1][0]),
         "chapters": sum(1 for s in called if s["mode"] == "live"),
         "practice_pages": sum(1 for s in called if s["mode"] == "practice"),
         "canon": sum(1 for s in called if s["verdict"].get("canon") and s["mode"] == "live"),
@@ -895,8 +895,8 @@ def agent_view(agent_id: str) -> dict[str, Any]:
     ledger, slots, at, cur = _current()
     freeze_closed(slots, at)
     me = next((a for a in ledger["agents"] if a["agent_id"] == agent_id), None)
-    enrolled = bool(me and me["enrols"] and me["enrols"][-1][0])
-    base: dict[str, Any] = {"enrolled": enrolled, "now": at, "formula": C.FORMULA, "untrusted": UNTRUSTED,
+    joined = bool(me and me["joins"] and me["joins"][-1][0])
+    base: dict[str, Any] = {"joined": joined, "now": at, "formula": C.FORMULA, "untrusted": UNTRUSTED,
                             "relay_id": ledger["relay_id"], "post_origin": rs.RELAY_BASE_URL}
     if cur is None or not cur.get("called"):
         return {**base, "chapter": None, "role": None,
@@ -923,7 +923,7 @@ def agent_view(agent_id: str) -> dict[str, Any]:
     sealed_p = any(s["what"] == "passage" for s in my_seals)
     sealed_k = any(s["what"] == "pick" for s in my_seals)
     due = None
-    if enrolled and role is not None:
+    if joined and role is not None:
         writes = role in ("scribe", "alternate")
         if ph == "write" and writes and not sealed_p:
             due = "write"
@@ -989,15 +989,15 @@ async def my_chronicle(agent_id: str, request: Request):
 
 def next_fact(agent_id: str) -> dict[str, Any] | None:
     """The one `whats_next` item: chapter, role, what is due, seconds left. None when the module is off, the agent is
-    not enrolled, or nothing is called. When the agent is not enrolled the item offers to enrol."""
+    not joined, or nothing is called. When the agent is not joined the item offers to join."""
     if relay_modules.off_because("chronicle", "book"):
         return None
     try:
         view = agent_view(agent_id)
     except HTTPException:
         return None
-    if not view["enrolled"]:
-        return {"enrol": True, "practice_note": PRACTICE_NOTE}
+    if not view["joined"]:
+        return {"join": True, "practice_note": PRACTICE_NOTE}
     if view.get("chapter") is None:
         return None
     return {"chapter": view["chapter"], "label": view["label"], "practice": view["practice"], "role": view["role"],

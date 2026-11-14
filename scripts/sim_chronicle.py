@@ -179,7 +179,7 @@ def crit1(chapters: int = 1000, seed: int = 11) -> dict:
         events = [{"ref": f"{rng.choice(['session', 'post', 'gh_pr', 'room'])}:{idx}-{i}", "line": f"event {i}",
                    "operators": [rng.choice(ops), rng.choice(ops)], "at": call_ts - DAY + 60 + i} for i in range(n_events)]
         sigs = {"call": fake_sig(seed, idx, "c"), "show": fake_sig(seed, idx, "s"), "count": fake_sig(seed, idx, "n")}
-        roster = [m for m in members if m.enrolled_at < prev and m.registered_at < prev]
+        roster = [m for m in members if m.joined_at < prev and m.registered_at < prev]
         # ground truth, written again
         live_units = {(m.team or m.operator) for m in roster if not m.house}
         mode = "live" if len(live_units) >= 4 else "practice" if len(roster) >= 3 else None

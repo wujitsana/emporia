@@ -172,7 +172,7 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("topic-act", "signed_topic_act_payload", "join", "routine membership"),
     # the Chronicle: taking part, a sealed passage or pick, an opened pick; nothing leaves the agent but a hash
     # until it opens it, and nothing is money
-    _k("chronicle-enrol", "signed_chronicle_enrol_payload", "chronicle", "taking part in the relay's book; no money"),
+    _k("chronicle-join", "signed_chronicle_join_payload", "chronicle", "taking part in the relay's book; no money"),
     _k("chronicle-seal", "signed_chronicle_seal_payload", "chronicle", "a hash of a passage or a pick, sealed"),
     _k("chronicle-ballot", "signed_chronicle_ballot_payload", "chronicle", "a pick opened; no money"),
     # rooms

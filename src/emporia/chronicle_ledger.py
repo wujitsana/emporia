@@ -9,7 +9,7 @@ A **ledger** is plain JSON-able data (the relay builds it from its tables; a ver
 the public routes):
 
     relay_id, start, epoch_s, practice, prologue        the clock and the book's first post
-    agents   [{agent_id, unit, registered_at, house, enrols: [[on, ts], ...]}]    `unit` is an opaque token
+    agents   [{agent_id, unit, registered_at, house, joins: [[on, ts], ...]}]    `unit` is an opaque token
     events   [{ref, line, operators, at}]                the public record, as `chronicle.record_window` reads it
     beacons  {"<round>": "<hex signature>"}              every drand round the chapters drew from
     seals, reveals, ballots                              each with its `chapter` id ("7" or "pp-2") and `at`
@@ -53,12 +53,12 @@ def params_of(ledger: dict[str, Any]) -> C.Params:
 
 
 def members_at(agents: list[dict[str, Any]], before_ts: float) -> list[C.Member]:
-    """The enrolled agents as of `before_ts` (the previous chapter's call): an agent is a member if its latest enrolment
-    record before then is `on`, and it enrolled when that stretch of `on` records began."""
+    """The member agents as of `before_ts` (the previous chapter's call): an agent is a member if its latest join
+    record before then is `on`, and it joined when that stretch of `on` records began."""
     out = []
     for a in agents:
         since: float | None = None
-        for on, ts in sorted(a["enrols"], key=lambda e: e[1]):
+        for on, ts in sorted(a["joins"], key=lambda e: e[1]):
             if ts >= before_ts:
                 break
             if on and since is None:

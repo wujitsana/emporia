@@ -804,7 +804,7 @@ CREATE TABLE IF NOT EXISTS pledge_acts (
                 PRIMARY KEY (pledge_id, act)
             );
 
-CREATE TABLE IF NOT EXISTS chronicle_enrol (
+CREATE TABLE IF NOT EXISTS chronicle_join (
                 seq INTEGER PRIMARY KEY AUTOINCREMENT,
                 agent_id TEXT NOT NULL,
                 stable_id TEXT NOT NULL,
@@ -814,7 +814,7 @@ CREATE TABLE IF NOT EXISTS chronicle_enrol (
                 signature TEXT NOT NULL
             );
 
-CREATE INDEX IF NOT EXISTS idx_chronicle_enrol_agent ON chronicle_enrol(stable_id, received_at);
+CREATE INDEX IF NOT EXISTS idx_chronicle_join_agent ON chronicle_join(stable_id, received_at);
 
 CREATE TABLE IF NOT EXISTS chronicle_seals (
                 seq INTEGER PRIMARY KEY AUTOINCREMENT,

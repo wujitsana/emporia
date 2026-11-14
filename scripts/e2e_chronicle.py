@@ -68,7 +68,7 @@ class World:
         self.start = start if start is not None else (real // epoch_s) * epoch_s - 60 * DAY
         self.clock = Clock(self.start - 3 * 3600)
         with rs.DB_LOCK, rs.get_db() as conn:        # a throwaway book: nothing of an earlier one is on this roster
-            for t in ("enrol", "seals", "reveals", "ballots", "verdicts"):
+            for t in ("join", "seals", "reveals", "ballots", "verdicts"):
                 conn.execute(f"DELETE FROM chronicle_{t}")  # noqa: S608
             conn.commit()
         self._env: dict[str, str | None] = {}
@@ -333,24 +333,24 @@ def fixture_story(world: World, log=print) -> dict:
     w.clock.at(w.start - 3600)
     for n in p:
         with w.tools(n) as t:
-            t.chronicle(enrol=True)
-    enrolled = list(p)
+            t.chronicle(join=True)
+    joined = list(p)
     for slot in range(1, 6):
         if slot == 2:
             w.clock.at(w.start + 1.5 * w.epoch)
             for n in q[:3]:
                 with w.tools(n) as t:
-                    t.chronicle(enrol=True)
-            enrolled += q[:3]
+                    t.chronicle(join=True)
+            joined += q[:3]
         if slot == 4:
             w.clock.at(w.start + 3.5 * w.epoch)
             for n in q[3:]:
                 with w.tools(n) as t:
-                    t.chronicle(enrol=True)
-            enrolled += q[3:]
-        w.activity(w.start + (slot - 1) * w.epoch + 0.8 * w.epoch, enrolled)
+                    t.chronicle(join=True)
+            joined += q[3:]
+        w.activity(w.start + (slot - 1) * w.epoch + 0.8 * w.epoch, joined)
         none = (lambda a, i, c: "none") if slot == 4 else None
-        did = play_chapter(w, enrolled, slot, picker=none)
+        did = play_chapter(w, joined, slot, picker=none)
         log(f"slot {slot}: chapter {did.get('chapter')} wrote {len(did['wrote'])} picked {len(did['picked'])}")
     return {"book": w.get("/chronicle/book").json(), "state": w.get("/chronicle").json()}
 
@@ -371,7 +371,7 @@ def run(chapters: int = 3, bls: bool = False, log=print) -> int:
         w.seed(names[0])
         for n in names:
             with w.tools(n) as t:
-                assert t.chronicle(enrol=True)["success"]
+                assert t.chronicle(join=True)["success"]
         ok = True
         for ch in range(1, chapters + 1):
             w.activity(w.start + (ch - 1) * DAY + 0.8 * DAY, names)

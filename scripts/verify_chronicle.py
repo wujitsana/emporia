@@ -12,7 +12,7 @@ For every finished chapter (`GET /chronicle/chapters`, then `GET /chronicle/chap
    candidate, quorum, tie and tally rules written the same way, apart from `modules/chronicle.py`), and compares;
 3. checks every beacon signature the chapter drew from against drand's pinned key (BLS, pure Python; `--no-bls` for a
    relay on a test beacon);
-4. checks the agents' signatures on the enrolments, seals, ballots and passages the chapter used, against their keys;
+4. checks the agents' signatures on the joins, seals, ballots and passages the chapter used, against their keys;
 5. checks the frozen receipt (the hash the log carries) against the recomputed verdict;
 6. checks continuity: a chapter's number, reply target and benched units are what the earlier verified chapters make
    them.
@@ -55,7 +55,7 @@ def independent_count(inp: dict[str, Any]) -> dict[str, Any]:
     the hard checks are the core's own (they are tested by fixtures, as T0 criterion 9)."""
     members = inp["members"]
     call, prev, E = inp["call_ts"], inp["prev_call_ts"], inp["params"]["epoch_s"]
-    roster = [m for m in members if m["enrolled_at"] < prev and m["registered_at"] < prev]
+    roster = [m for m in members if m["joined_at"] < prev and m["registered_at"] < prev]
     bench = set(inp.get("bench", []))
     live_units = {(m["team"] or m["operator"]) for m in roster if not m["house"]} - bench
     mode = "live" if len(live_units) >= 4 else "practice" if inp["params"]["practice"] and len(roster) >= 3 else None
@@ -171,15 +171,15 @@ def check_signatures(signed: dict[str, Any], relay_id: str, origin: str) -> list
     from emporia import identity
     bad: list[str] = []
     keys = signed.get("keys", {})
-    for kind, rows in (("enrol", signed.get("enrol", [])), ("seal", signed.get("seals", [])),
+    for kind, rows in (("join", signed.get("join", [])), ("seal", signed.get("seals", [])),
                        ("ballot", signed.get("ballots", [])), ("passage", signed.get("passages", []))):
         for r in rows:
             key = keys.get(r["agent"])
             if not key:
                 bad.append(f"{kind} by {r['agent']}: no key to check against")
                 continue
-            if kind == "enrol":
-                pay = wire.signed_chronicle_enrol_payload(relay_id, r["stable_id"], bool(r["on"]), r["at"])
+            if kind == "join":
+                pay = wire.signed_chronicle_join_payload(relay_id, r["stable_id"], bool(r["on"]), r["at"])
             elif kind == "seal":
                 pay = wire.signed_chronicle_seal_payload(relay_id, r["chapter"], r["what"], r["commitment"],
                                                          r["stable_id"], r["at"])

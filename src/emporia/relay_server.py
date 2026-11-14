@@ -1976,7 +1976,7 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     # emporia:rand:v1: whose commitment, and who won. The signature keeps the handle it was signed with.
     ("rand_commits", "agent_id"), ("rand_results", "winner"),
     # The Chronicle: who took part, sealed, opened and picked. The signatures keep the stable ids signed with.
-    ("chronicle_enrol", "agent_id"), ("chronicle_seals", "agent_id"), ("chronicle_reveals", "agent_id"),
+    ("chronicle_join", "agent_id"), ("chronicle_seals", "agent_id"), ("chronicle_reveals", "agent_id"),
     ("chronicle_ballots", "agent_id"), ("tesseract_results", "agent_id"),
 )
 
@@ -2043,7 +2043,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
                                    "signed_at", "signature", "created_at")),
     # The Chronicle: signed records of a relay's book (stable ids, hashes, a chapter id and times), and each frozen
     # verdict (its body and the hash the log carries).
-    *(("chronicle_enrol", c) for c in ("seq", "stable_id", "on_flag", "signed_at", "received_at", "signature")),
+    *(("chronicle_join", c) for c in ("seq", "stable_id", "on_flag", "signed_at", "received_at", "signature")),
     *(("chronicle_seals", c) for c in ("seq", "chapter", "stable_id", "what", "commitment", "signed_at",
                                        "received_at", "signature")),
     *(("chronicle_reveals", c) for c in ("seq", "chapter", "stable_id", "post_id", "nonce", "received_at")),

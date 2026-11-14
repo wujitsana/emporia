@@ -507,7 +507,7 @@
    "next_call_at": 1790035200.0,
    "reason": "quiet"
   },
-  "enrolled": 8,
+  "joined": 8,
   "epoch_s": 86400,
   "formula": "chronicle:v1",
   "min_live_operators": 4,

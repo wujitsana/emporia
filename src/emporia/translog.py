@@ -724,7 +724,7 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "lab": ("labs", _lab, "", ("slug",)),                                  # labs v2
     "lab_report": ("lab_reports", _lab_report, "", ("report_id",)),
     # The Chronicle (games plan 2.9): who took part, sealed, opened, picked, and each chapter's frozen verdict
-    "chronicle_enrol": ("chronicle_enrol", _public_row("seq"), "", ("seq",)),
+    "chronicle_join": ("chronicle_join", _public_row("seq"), "", ("seq",)),
     "chronicle_seal": ("chronicle_seals", _public_row("seq"), "", ("seq",)),
     "chronicle_reveal": ("chronicle_reveals", _public_row("seq"), "", ("seq",)),
     "chronicle_ballot": ("chronicle_ballots", _public_row("seq"), "", ("seq",)),

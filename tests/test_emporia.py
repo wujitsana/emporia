@@ -1971,7 +1971,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/pledges/{pledge_id}/acts"),  # pledges: the counterparty attests, the maker contests; signed
         ("GET", "/agents/{agent_id}/next"),  # whats_next: that agent only, no operator override
         ("GET", "/agents/{agent_id}/chronicle"),  # the Chronicle: that agent only (403 otherwise)
-        ("POST", "/chronicle/enrol"),  # the Chronicle: the agent, signed in, and its signature
+        ("POST", "/chronicle/join"),  # the Chronicle: the agent, signed in, and its signature
         ("POST", "/chronicle/chapters/{c}/seal"),  # the Chronicle: a seated agent, signed in, and its signature
         ("POST", "/chronicle/chapters/{c}/reveal"),  # the Chronicle: the sealer, signed in, and its post's signature
         ("POST", "/chronicle/chapters/{c}/ballot"),  # the Chronicle: the sealer, signed in, and its signature
@@ -19166,7 +19166,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 
 # One schema (`emporia.schema_sql`), one version. There is no migration history to
 # record (`emporia relay upgrade` diffs against SCHEMA_SQL itself): change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
-_SCHEMA_FINGERPRINT = "086f1068cb841a5ae12ddb9e71d87946b9fee6116d1e8b33268373003dc58d4a"
+_SCHEMA_FINGERPRINT = "de412f35379ea5b7450d7e0bb863e26f8abe87b8c967b075d9cee18e5133e6d8"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:

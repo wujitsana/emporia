@@ -13,13 +13,13 @@ route, table, tool or dashboard change; the module is NOT registered as a relay 
 ## 1. The rules as built
 
 **Parameters.** `Params(unit="operator", epoch_s=86400, practice=True, min_live=4, min_practice_agents=3)`.
-D1 `unit`: "operator" (a claimed team is one operator) or "agent" (each enrolled agent a unit). D4 `epoch_s`: the
+D1 `unit`: "operator" (a claimed team is one operator) or "agent" (each member agent a unit). D4 `epoch_s`: the
 windows are shares of it (write 8/24, open 5/24, pick 6/24, count 5/24); a week works unchanged. D6 `practice`.
 D2 (beacon-drawn roles) is the rule, not a setting.
 
-**Roster and mode.** A member counts if it registered and enrolled before the previous chapter's call, and the
+**Roster and mode.** A member counts if it registered and joined before the previous chapter's call, and the
 house is never in a live roster. `mode_of`: live with at least 4 units (benched units left off), else practice
-with at least 3 enrolled agents (house included) when `practice` is on, else nothing is called. Recomputed at
+with at least 3 member agents (house included) when `practice` is on, else nothing is called. Recomputed at
 every call.
 
 **Seats** (`seat`). Sort by `rand.rand(scope, "seat:"+unit, sig)`. Live: J = min(9, m//2) jurors, S =
@@ -145,7 +145,7 @@ used 10 and 10.
    them together; the label and tag rules are for T1's route.
 5. **Flags built**: opening repeat, narrator, tense (heuristics). Not built (they need relay data): the cited
    agent named by something other than handle or card name, and the motif note.
-6. **`unit="agent"` (D1)** makes every enrolled agent a unit, including the live threshold; a pick for a
+6. **`unit="agent"` (D1)** makes every member agent a unit, including the live threshold; a pick for a
    passage of the juror's own unit is dropped in live mode (only reachable in this setting).
 7. **The `recap` ballot field is committed but not counted** by `resolve_chapter`; `recap_adopted` is a separate
    pure function (T3 wires them).
@@ -185,7 +185,7 @@ used 10 and 10.
 
 ## 5. What T1 needs
 
-- Routes, three tables (`chronicle_enrol`, `chronicle_seals`, `chronicle_ballots`) and the four log kinds, calling
+- Routes, three tables (`chronicle_join`, `chronicle_seals`, `chronicle_ballots`) and the four log kinds, calling
   `resolve_chapter` with what the relay stores; a clock source for `at`; the relay-seed topic and prologue
   (`post:prologue` is a placeholder id).
 - The beacon rounds: `call_rounds` gives the three rounds; the relay stores their signatures and passes bytes.

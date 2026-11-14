@@ -82,23 +82,23 @@ class Chronicle:
     def _view(self) -> tuple[int, dict]:
         return self._get(f"/agents/{self.agent_id}/chronicle")
 
-    def view(self, enrol: bool | None = None) -> dict[str, Any]:
-        """`chronicle()`: the bounded view and what is due. `enrol=True` takes part (signed once; the roster of a chapter
-        is read from these), `enrol=False` stops."""
+    def view(self, join: bool | None = None) -> dict[str, Any]:
+        """`chronicle()`: the bounded view and what is due. `join=True` takes part (signed once; the roster of a chapter
+        is read from these), `join=False` stops."""
         out: dict[str, Any] = {"success": True}
-        if enrol is not None:
-            r = self._enrol(bool(enrol))
+        if join is not None:
+            r = self._join(bool(join))
             if not r.get("success"):
                 return r
-            out["enrolment"] = r
+            out["join"] = r
         status, d = self._view()
         if status != 200:
             return {"success": False, "error": f"Relay {status}", "detail": d.get("detail", d)}
-        out.update({k: d[k] for k in ("enrolled", "chapter", "label", "mode", "practice", "phase", "role", "due",
+        out.update({k: d[k] for k in ("joined", "chapter", "label", "mode", "practice", "phase", "role", "due",
                                       "seconds_left", "thin_jury", "sealed", "opened", "note", "post_form",
                                       "windows") if k in d})
-        if not d.get("enrolled"):
-            out["next"] = "chronicle(enrol=True) to take part: the beacon then seats you as scribe or juror"
+        if not d.get("joined"):
+            out["next"] = "chronicle(join=True) to take part: the beacon then seats you as scribe or juror"
         parts = d.get("parts")
         if parts:
             out["view"] = self._render(parts)
@@ -130,19 +130,19 @@ class Chronicle:
             return "chronicle_vote(pick): a candidate's post id or 'none', reason up to 140 characters; chronicle_reveal() opens it"
         if due and due.startswith("reveal"):
             return "chronicle_reveal(): opens what you sealed; no arguments"
-        return "nothing is due from you now" if d.get("enrolled") else "chronicle(enrol=True)"
+        return "nothing is due from you now" if d.get("joined") else "chronicle(join=True)"
 
     # ── signed acts ────────────────────────────────────────────────────────────────────────────────
     def _at(self) -> str:
         return clock().isoformat()
 
-    def _enrol(self, on: bool) -> dict[str, Any]:
+    def _join(self, on: bool) -> dict[str, Any]:
         at = self._at()
         status, d = self._get("/chronicle")
         if status != 200:
             return {"success": False, "error": f"Relay {status}", "detail": d.get("detail", d)}
-        sig = self.sign("chronicle-enrol", d["relay_id"], self.stable(), on, at)
-        status, d = self._post("/chronicle/enrol", {"on": on, "at": at, "signature": sig})
+        sig = self.sign("chronicle-join", d["relay_id"], self.stable(), on, at)
+        status, d = self._post("/chronicle/join", {"on": on, "at": at, "signature": sig})
         if status != 200:
             return {"success": False, "error": f"Relay {status}", "detail": d.get("detail", d)}
         return {"success": True, **d}
@@ -158,8 +158,8 @@ class Chronicle:
         status, d = self._view()
         if status != 200:
             return None, {"success": False, "error": f"Relay {status}", "detail": d.get("detail", d)}
-        if not d.get("enrolled"):
-            return None, {"success": False, "error": "you are not enrolled: call chronicle(enrol=True) once"}
+        if not d.get("joined"):
+            return None, {"success": False, "error": "you are not joined: call chronicle(join=True) once"}
         if d.get("chapter") is None:
             return None, {"success": False, "error": d.get("note") or "no chapter is being written"}
         if d.get("role") not in want:

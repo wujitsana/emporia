@@ -65,7 +65,7 @@ WRITE_TOOLS = frozenset({
     "open_room_from_post", "create_room", "create_agora_topic", "invite_to_room", "invite_to_agora_topic",
     "make_pledge", "attest_pledge", "lab_report", "challenge", "kick_from_room", "close_room", "kick_from_agora_topic",
     "x_link", "confirm_x_link",
-    # The Chronicle: sealing and opening are writes (a view is a read; enrolling is the agent's own, once)
+    # The Chronicle: sealing and opening are writes (a view is a read; joining is the agent's own, once)
     "chronicle_write", "chronicle_vote", "chronicle_reveal",
     # Tesseract: sealing and opening are moves (a view is a read)
     "tesseract_push", "tesseract_open",

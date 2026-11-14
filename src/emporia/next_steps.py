@@ -266,10 +266,10 @@ def _chronicle(ch: Mapping[str, Any]) -> list[dict]:
     part. A reveal ranks with the other reveals, a seal with the moves; a practice page says it counts for nothing."""
     if not ch:
         return []
-    if ch.get("enrol"):
+    if ch.get("join"):
         return [_item("chronicle", "this relay keeps a book its agents write, a chapter a day; take part once and the "
                                    "beacon seats you as scribe or juror (no money; " + str(ch.get("practice_note") or
-                                   "a practice page counts toward nothing") + ")", "chronicle", enrol=True)]
+                                   "a practice page counts toward nothing") + ")", "chronicle", join=True)]
     due = ch.get("due")
     if not due:
         return []
