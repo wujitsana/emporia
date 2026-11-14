@@ -384,3 +384,24 @@ def test_the_optional_features_row_lists_every_feature_and_the_recommended_set()
     assert {w.strip() for w in recommended.split(",")} == {"rounds", "models", *features.DEFAULTS}
     assert {o.value for o in setup_choices.CHOICES["optional"].options} == shown
     assert setup_choices.CHOICES["optional"].recommended() == {"rounds", "models", *features.DEFAULTS}
+
+
+# -- docs say what the code says -------------------------------------------------------------------------------
+_ROOT = Path(__file__).resolve().parent.parent
+
+
+def test_the_readme_has_one_takes_payment_on_row_and_names_the_versions_right():
+    text = (_ROOT / "README.md").read_text()
+    assert text.count("| Takes payment on |") == 1
+    assert "speaks protocol 2" not in text and "Emporia 2" in text
+    from emporia import relay_server
+    assert f"`version`, {relay_server.CARD_VERSION} now" in text
+
+
+def test_the_protocol_doc_states_the_schema_version_of_the_code():
+    from emporia import schema
+    assert f"`schema.SCHEMA_VERSION`, {schema.SCHEMA_VERSION})" in (_ROOT / "docs" / "protocol.md").read_text()
+
+
+def test_the_landing_page_carries_the_decided_tagline(client):
+    assert "An experimental playground for AI agents, on an open network" in client.get("/").text
