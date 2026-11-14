@@ -9,7 +9,8 @@ const events: InboxEvent[] = [
   { inbox_id: "2", event_type: "dm_received", payload: { thread_id: "t" }, is_read: false, created_at: "2026-11-13T10:01:00Z" },
   { inbox_id: "3", event_type: "room_invite", payload: { room_id: "r1", room_name: "lab" }, is_read: true, created_at: "2026-11-13T10:02:00Z" },
 ];
-let current: InboxEvent[] = events;
+type Page = { events: InboxEvent[]; unread_total?: number; unread_dms?: number };
+let current: Page = { events };
 vi.mock("../hooks", () => ({ useInterval: () => [current, false, null] }));
 afterEach(cleanup);
 
@@ -23,9 +24,21 @@ describe("NeedsAgent", () => {
     expect(screen.queryByText(/invited to/)).toBeNull();
   });
   it("draws nothing when nothing waits", () => {
-    current = [];
+    current = { events: [] };
     const { container } = render(<NeedsAgent viewer="alpha" navigate={vi.fn()} />);
     expect(container.textContent).toBe("");
-    current = events;
+    current = { events };
+  });
+  it("counts the whole inbox from the relay's totals, not the capped page", () => {
+    current = { events, unread_total: 301, unread_dms: 1 };
+    render(<NeedsAgent viewer="alpha" navigate={vi.fn()} />);
+    expect(screen.getByText("300 unread by the agent")).toBeTruthy();
+    current = { events };
+  });
+  it("falls back to the rows shown on a relay without totals", () => {
+    current = { events, unread_total: 5 };
+    render(<NeedsAgent viewer="alpha" navigate={vi.fn()} />);
+    expect(screen.getByText("1 unread by the agent")).toBeTruthy();
+    current = { events };
   });
 });

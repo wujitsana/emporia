@@ -70,3 +70,14 @@ export function needsAgent(events: InboxEvent[]): InboxEvent[] {
   return splitInbox(events).activity.filter((e) => !e.is_read)
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
+
+/** The "N unread by the agent" number on Home: the unread events that are not DMs. The page we read is at most
+ *  200 events, oldest first, so past that its length is wrong: the relay's own totals (`unread_total` less
+ *  `unread_dms`, over the whole inbox) count them all. `skip` types are shown elsewhere; the ones seen on the page are
+ *  taken off. Without both totals (an older relay) it is the shown rows. Never fewer than the rows shown. */
+export function needsAgentCount(inbox: { events?: InboxEvent[]; unread_total?: number; unread_dms?: number },
+  shown: InboxEvent[], skip: string[] = []): number {
+  if (typeof inbox.unread_total !== "number" || typeof inbox.unread_dms !== "number") return shown.length;
+  const skipped = needsAgent(inbox.events ?? []).filter((e) => skip.includes(e.event_type)).length;
+  return Math.max(shown.length, inbox.unread_total - inbox.unread_dms - skipped);
+}
