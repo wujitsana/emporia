@@ -108,6 +108,9 @@ SOURCE_VARS = {
     "phrase": "EMPORIA_X402_PHRASE_SOURCE",
 }
 STORAGE_VAR = "EMPORIA_KEY_STORAGE"     # "env": new keys go to the profile .env, not files
+#: Env-kept retired encryption keys (comma-separated hex). Here, not in identity, so the setting names can be listed
+#: while identity is still importing (config loads the profile .env at import, and that lists them).
+RETIRED_ENC_KEYS_VAR = "EMPORIA_ENCRYPTION_RETIRED_KEYS"
 
 
 def store_in_env() -> bool:

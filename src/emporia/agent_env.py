@@ -141,8 +141,7 @@ def network_names() -> list[str]:
 
 
 def key_names() -> list[str]:
-    from emporia.identity import RETIRED_ENC_KEYS_VAR
-    from emporia.key_source import ENV_KEY_NAMES, SOURCE_VARS, STORAGE_VAR
+    from emporia.key_source import ENV_KEY_NAMES, RETIRED_ENC_KEYS_VAR, SOURCE_VARS, STORAGE_VAR
     return [*ENV_KEY_NAMES.values(), *SOURCE_VARS.values(), STORAGE_VAR, RETIRED_ENC_KEYS_VAR]
 
 

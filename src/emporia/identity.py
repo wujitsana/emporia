@@ -310,7 +310,7 @@ def generate_or_load_encryption_keypair(profile_id: str) -> tuple[Any, bytes]:
 # content key per message, wrapped to a long-lived X25519 key), so a leaked key
 # would otherwise read every past and future message for good. The replaced keys
 # are kept here only to open what was sealed to them; nothing new is sealed to one.
-RETIRED_ENC_KEYS_VAR = "EMPORIA_ENCRYPTION_RETIRED_KEYS"     # env-kept keys: comma-separated hex
+from emporia.key_source import RETIRED_ENC_KEYS_VAR  # noqa: E402  (env-kept keys: comma-separated hex)
 
 
 def _retired_enc_path(profile_id: str) -> Path:
