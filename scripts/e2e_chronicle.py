@@ -28,12 +28,7 @@ for p in (REPO / "src", REPO / "tests", REPO / "scripts"):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
-os.environ.setdefault("EMPORIA_LOG_LEVEL", "WARNING")
 import conftest  # noqa: E402,F401 — pins the suite's environment on a throwaway root, before emporia loads
-
-os.environ.setdefault("EMPORIA_CHRONICLE", "1")
-os.environ.setdefault("EMPORIA_GAMIFY", "sheets,quests")
-os.environ.setdefault("EMPORIA_TRANSPARENCY_LOG", "on")
 
 DAY = 86_400
 
@@ -63,7 +58,8 @@ class World:
     """A throwaway relay with the Chronicle on, scripted agents, and the fake clock and beacon."""
 
     def __init__(self, client, *, epoch_s: int = DAY, start: float | None = None, monkeypatch=None):
-        from emporia import deletion, relay_server as rs
+        from emporia import deletion
+        from emporia import relay_server as rs
         from emporia import chronicle_client
         from emporia.routes import beacon as beacon_route
         from emporia.routes import chronicle as route
@@ -71,8 +67,16 @@ class World:
         real = datetime.now(UTC).timestamp()
         self.start = start if start is not None else (real // epoch_s) * epoch_s - 60 * DAY
         self.clock = Clock(self.start - 3 * 3600)
-        os.environ["EMPORIA_CHRONICLE_START"] = datetime.fromtimestamp(self.start, UTC).isoformat()
-        os.environ["EMPORIA_CHRONICLE_EPOCH"] = str(epoch_s)
+        with rs.DB_LOCK, rs.get_db() as conn:        # a throwaway book: nothing of an earlier one is on this roster
+            for t in ("enrol", "seals", "reveals", "ballots", "verdicts"):
+                conn.execute(f"DELETE FROM chronicle_{t}")  # noqa: S608
+            conn.commit()
+        self._env: dict[str, str | None] = {}
+        for k, v in {"EMPORIA_CHRONICLE": "1", "EMPORIA_GAMIFY": "sheets,quests", "EMPORIA_TRANSPARENCY_LOG": "on",
+                     "EMPORIA_CHRONICLE_START": datetime.fromtimestamp(self.start, UTC).isoformat(),
+                     "EMPORIA_CHRONICLE_EPOCH": str(epoch_s)}.items():
+            self._env[k] = os.environ.get(k)
+            os.environ[k] = v
         self._undo: list = []
 
         def patch(obj, name, value):
@@ -83,7 +87,8 @@ class World:
         patch(route, "_SEQ", {"key": None, "value": None})
         patch(chronicle_client, "clock", lambda: datetime.fromtimestamp(self.clock.t, UTC))
         patch(beacon_route, "signature", fake_beacon_sig)
-        patch(deletion, "FRESH", timedelta(days=36500))      # posts and replies are signed with the fake clock
+        patch(deletion, "FRESH", timedelta(days=36500))
+        patch(rs.AGENT_REGISTRY, "check_rate_limit", lambda agent_id, *a: True)      # scripted agents write fast      # posts and replies are signed with the fake clock
         self.agents: dict[str, dict] = {}
         self.keeper = ""
 
@@ -91,6 +96,12 @@ class World:
         for obj, name, old in reversed(self._undo):
             setattr(obj, name, old)
         self._undo.clear()
+        for k, v in self._env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        self.rs.forget_who()
 
     # ── agents ──────────────────────────────────────────────────────────────────────────────────
     def token(self, agent: str) -> dict[str, str]:
@@ -127,6 +138,10 @@ class World:
         """The chronicle topic and the prologue, by `keeper` (the relay operator's role)."""
         from emporia import identity, wire
         self.keeper = keeper
+        with self.rs.DB_LOCK, self.rs.get_db() as conn:
+            have = self.route.prologue_ref(conn)
+        if have:                      # a relay seeds once; a later throwaway book on the same database reuses it
+            return have.removeprefix("post:")
         h = self.token(keeper)
         body = {"name": "Chronicle", "description": "The relay's book.", "slug": "chronicle",
                 "nonce": wire.new_message_nonce()}
@@ -157,19 +172,37 @@ class World:
         assert r.status_code == 200, r.text
         return r.json()["post_id"]
 
-    def activity(self, around: float, agents: list[str]) -> None:
-        """A day's public record at `around`: each agent posts, and the next two agents (other operators) reply, so
-        every post is answered by two other operators."""
-        ids = {}
+    def activity(self, around: float, agents: list[str], *, only: list[str] | None = None) -> None:
+        """A day's public record at `around`: each agent posts, and two agents of two other operators reply (where the
+        relay has them), so a post is answered by two other operators. `only`: just these agents post."""
+        unit = self.epoch / 1000
+        each = 2 if len(agents) < 6 else 1        # a small relay needs enough events for a practice page
+        ids: dict[tuple[str, int], str] = {}
         for i, a in enumerate(agents):
-            self.clock.at(around + i * 60)
-            ids[a] = self.post(a, f"{a} reports on the day at the gate, tally {i}")
+            if only is not None and a not in only:
+                continue
+            for j in range(each):
+                self.clock.at(around + (i * each + j) * unit)
+                ids[(a, j)] = self.post(a, f"{a} reports on the day at the gate, tally {i}.{j}")
         n = len(agents)
         for i, a in enumerate(agents):
-            for k in (1, 2):
-                self.clock.at(around + 600 + (i * 2 + k) * 30)
-                self.post(agents[(i + k) % n], f"{agents[(i + k) % n]} answers {a} about the ledger",
-                          reply_to=f"post:{ids[a]}")
+            if (a, 0) not in ids:
+                continue
+            mine = self.agents[a]["operator"]
+            answerers: list[str] = []
+            for k in range(1, n):
+                b = agents[(i + k) % n]
+                ob = self.agents[b]["operator"]
+                if ob != mine and ob not in {self.agents[x]["operator"] for x in answerers}:
+                    answerers.append(b)
+                if len(answerers) == 2:
+                    break
+            if only is not None:               # a day of one operator's agents only
+                answerers = [b for b in agents if b != a and self.agents[b]["operator"] == mine][:2]
+            for j in range(each):
+                for m, b in enumerate(answerers or [agents[(i + 1) % n]]):
+                    self.clock.at(around + 20 * unit + ((i * each + j) * 2 + m) * unit)
+                    self.post(b, f"{b} answers {a} about the ledger {j}", reply_to=f"post:{ids[(a, j)]}")
 
     # ── reading ─────────────────────────────────────────────────────────────────────────────────
     def get(self, path: str, agent: str | None = None, **params):
@@ -231,8 +264,9 @@ def pick_cites(world: World, chapter: str) -> list[str]:
     return [anchors[0], *(others[:1] or anchors[1:2])]
 
 
-def play_chapter(world: World, names: list[str], slot: int, *, picker=None, log=print) -> dict:
-    """One chapter, slot `slot`, by every agent in `names`: write, open, pick, open. Returns what was done."""
+def play_chapter(world: World, names: list[str], slot: int, *, picker=None, skip_open=(), log=print) -> dict:
+    """One chapter, slot `slot`, by every agent in `names`: write, open, pick, open. Returns what was done.
+    `skip_open`: agents that seal but never open (they miss)."""
     call = world.start + slot * world.epoch
     E = world.epoch
     did: dict = {"slot": slot, "wrote": [], "picked": [], "opened": []}
@@ -254,6 +288,8 @@ def play_chapter(world: World, names: list[str], slot: int, *, picker=None, log=
             did["wrote"].append((a, r))
     world.clock.at(call + 0.40 * E)
     for a in names:
+        if a in skip_open:
+            continue
         with world.tools(a) as t:
             r = t.reveal()
         if r.get("opened"):
@@ -269,12 +305,51 @@ def play_chapter(world: World, names: list[str], slot: int, *, picker=None, log=
                 did["picked"].append((a, pick, r))
     world.clock.at(call + 0.90 * E)
     for a in names:
+        if a in skip_open:
+            continue
         with world.tools(a) as t:
             r = t.reveal()
         if r.get("opened"):
             did["opened"].append((a, r))
     world.clock.at(call + E + 60)
     return did
+
+
+def fixture_story(world: World, log=print) -> dict:
+    """A relay's first days, for the Book page's fixtures: three agents of one operator play two practice pages; three
+    more operators join and the call with four operators is Chapter 1 (a thin jury); in Chapter 2 every juror
+    picks none (no canon); two more operators join and Chapter 3 has a full jury. Returns the public reads."""
+    w = world
+    p = ["fx_p1", "fx_p2", "fx_p3"]
+    q = [f"fx_q{i}" for i in range(1, 6)]
+    for n in p:
+        w.register(n, "op_p", age_days=60)
+    for i, n in enumerate(q):
+        w.register(n, f"op_q{i}", age_days=10 + 30 * (i % 2))
+    w.seed(p[0])
+    w.clock.at(w.start - 3600)
+    for n in p:
+        with w.tools(n) as t:
+            t.chronicle(enrol=True)
+    enrolled = list(p)
+    for slot in range(1, 6):
+        if slot == 2:
+            w.clock.at(w.start + 1.5 * w.epoch)
+            for n in q[:3]:
+                with w.tools(n) as t:
+                    t.chronicle(enrol=True)
+            enrolled += q[:3]
+        if slot == 4:
+            w.clock.at(w.start + 3.5 * w.epoch)
+            for n in q[3:]:
+                with w.tools(n) as t:
+                    t.chronicle(enrol=True)
+            enrolled += q[3:]
+        w.activity(w.start + (slot - 1) * w.epoch + 0.8 * w.epoch, enrolled)
+        none = (lambda a, i, c: "none") if slot == 4 else None
+        did = play_chapter(w, enrolled, slot, picker=none)
+        log(f"slot {slot}: chapter {did.get('chapter')} wrote {len(did['wrote'])} picked {len(did['picked'])}")
+    return {"book": w.get("/chronicle/book").json(), "state": w.get("/chronicle").json()}
 
 
 def run(chapters: int = 3, bls: bool = False, log=print) -> int:
@@ -313,7 +388,23 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--chapters", type=int, default=3)
     ap.add_argument("--no-bls", action="store_true", help="the test beacon has no BLS signatures to check (default here)")
+    ap.add_argument("--dump-book", metavar="PATH", help="instead: play a relay's first days (practice pages, then "
+                    "chapters) and write the public reads the Book page shows to PATH as JSON")
     args = ap.parse_args()
+    os.environ.setdefault("EMPORIA_LOG_LEVEL", "WARNING")
+    if args.dump_book:
+        from fastapi.testclient import TestClient
+
+        from emporia import relay_server as rs
+        rs.init_db()
+        w = World(TestClient(rs.app, client=("127.0.0.1", 51412)))
+        try:
+            out = fixture_story(w)
+        finally:
+            w.close()
+        Path(args.dump_book).write_text(json.dumps(out, indent=1, sort_keys=True))
+        print(f"wrote {args.dump_book}")
+        return 0
     return run(args.chapters, bls=False)
 
 

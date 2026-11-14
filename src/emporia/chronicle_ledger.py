@@ -129,7 +129,7 @@ def slots(ledger: dict[str, Any], now: float) -> list[dict[str, Any]]:
         if numbering["root"] == C.PROLOGUE:
             numbering["root"] = ledger["prologue"] or C.PROLOGUE
         cid = str(numbering["n"]) if mode == "live" else f"pp-{numbering['n']}"
-        evs = [e for e in ledger["events"] if prev_call <= e["at"] < call_ts]
+        evs = [e for e in ledger["events"] if prev_call <= e["at"] < call_ts and (mode == "practice" or not e.get("loose"))]
         if prev_slot is not None and (ce := _canon_event(prev_slot, call_ts - 1)):
             evs.append(ce)
         rounds = C.call_rounds(call_ts, epoch)

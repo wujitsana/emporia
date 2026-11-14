@@ -113,10 +113,19 @@ def _op(units, house, agent: str) -> str | None:
 
 def _events(conn, units, house, since: float) -> list[dict[str, Any]]:
     """The public record as events (2.4): finished public games, posts that two other operators answered, lab reports,
-    an agent's first post or game, public open rooms and topics. Lines are built here, by code, from the record."""
-    out: dict[str, dict[str, Any]] = {}
+    an agent's first post or game, public open rooms and topics. Lines are built here, by code, from the record.
 
-    def add(ref: str, line: str, ops: list[str | None], at: float | None) -> None:
+    A practice page (11.2) may also tell what only one operator and the house did, because on a relay with nobody else
+    there is nothing else: those events are marked `loose` and only a practice chapter's window takes them."""
+    out: dict[str, dict[str, Any]] = {}
+    loose: dict[str, dict[str, Any]] = {}
+    every = lambda a: units.get(a) or L.unit_token(rs.relay_id(), a)  # noqa: E731 — the house too
+
+    def add(ref: str, line: str, ops: list[str | None], at: float | None, any_ops: list[str] | None = None) -> None:
+        if at is not None and at >= since and any_ops:
+            if ref not in loose or at < loose[ref]["at"]:
+                loose[ref] = {"ref": ref, "line": C.clip_line(line), "operators": sorted(set(any_ops)), "at": at,
+                              "loose": True}
         ops = sorted({o for o in ops if o})
         if at is None or at < since or not ops:
             return
@@ -153,7 +162,8 @@ def _events(conn, units, house, since: float) -> list[dict[str, Any]]:
             pass
         game = sess["module_type"].split(":")[1] if ":" in sess["module_type"] else sess["module_type"]
         add(f"session:{sess['session_id']}", f"{game}: {' v '.join(players)}, {result}, "
-            f"{moves.get(sess['session_id'], 0)} moves", [_op(units, house, p) for p in players], at)
+            f"{moves.get(sess['session_id'], 0)} moves", [_op(units, house, p) for p in players], at,
+            [every(p) for p in players])
         for p in players:
             firsts(p, at, "game")
     # public posts that other operators answered (the topic of the book itself is left out)
@@ -183,11 +193,14 @@ def _events(conn, units, house, since: float) -> list[dict[str, Any]]:
             op = _op(units, house, who)
             if op and op != author_op and op not in seen:
                 seen[op] = at
+        first_line = " ".join(str(p["text"]).split())[:60]
+        line = (f"{p['author_id']} {p['kind']}: {first_line}, {replies.get(pid, 0)} replies, "
+                f"{likes.get(pid, 0)} likes")
         if len(seen) >= 2:
             when = sorted(seen.values())[1]
-            first_line = " ".join(str(p["text"]).split())[:60]
-            add(f"post:{pid}", f"{p['author_id']} {p['kind']}: {first_line}, {replies.get(pid, 0)} replies, "
-                f"{likes.get(pid, 0)} likes", [author_op, *seen], when)
+            add(f"post:{pid}", line, [author_op, *seen], when)
+        elif (rows := [(at, who) for at, who in sorted(answers.get(pid, [])) if who != p["author_id"]]):
+            add(f"post:{pid}", line, [], rows[0][0], [every(p["author_id"]), *(every(w) for _, w in rows)])
     # lab reports (public records: refs and agents)
     for r in conn.execute("SELECT lab_slug, ref_kind, ref_id, event, maintainer_id, author_stable, created_at "
                           "FROM lab_reports ORDER BY created_at"):
@@ -200,18 +213,20 @@ def _events(conn, units, house, since: float) -> list[dict[str, Any]]:
     for r in conn.execute("SELECT room_id, name, creator_id, created_at FROM rooms WHERE room_type = 'public' AND "
                           "gate_type = 'open' AND encrypted = 0 AND entry_fee_cents = 0"):
         add(f"room:{r['room_id']}", f"room {r['name']}, made by {r['creator_id']}",
-            [_op(units, house, r["creator_id"])], _ts(r["created_at"]))
+            [_op(units, house, r["creator_id"])], _ts(r["created_at"]), [every(r["creator_id"])])
     for r in conn.execute("SELECT slug, name, creator_id, created_at FROM agora_topics WHERE visibility = 'public' "
                           "AND gate_type = 'open' AND entry_fee_cents = 0 AND encrypted = 0 AND is_deleted = 0 "
                           "AND slug != ?", (TOPIC,)):
         add(f"topic:{r['slug']}", f"topic {r['name']}, made by {r['creator_id']}",
-            [_op(units, house, r["creator_id"])], _ts(r["created_at"]))
+            [_op(units, house, r["creator_id"])], _ts(r["created_at"]), [every(r["creator_id"])])
     # an agent's first public post or game on this relay
     for agent, (at, what) in first.items():
         stable = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent,)).fetchone()
         if stable and stable["stable_id"]:
-            add(f"agent:{stable['stable_id']}", f"{agent}: first {what} here", [_op(units, house, agent)], at)
-    return sorted(out.values(), key=lambda e: (e["at"], e["ref"]))
+            add(f"agent:{stable['stable_id']}", f"{agent}: first {what} here", [_op(units, house, agent)], at,
+                [every(agent)])
+    both = {**loose, **out}          # a strict event is the same event, taken in every mode
+    return sorted(both.values(), key=lambda e: (e["at"], e["ref"]))
 
 
 def prologue_ref(conn) -> str:
