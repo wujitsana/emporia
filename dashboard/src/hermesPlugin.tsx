@@ -152,7 +152,7 @@ function runtimeBanner(message: string, host: HTMLElement): HTMLElement {
   const bar = document.createElement("div");
   bar.setAttribute("role", "status");
   bar.style.cssText = "position:absolute;top:0;left:0;right:0;z-index:1000;display:flex;gap:8px;align-items:center;"
-    + "padding:6px 12px;font:13px/1.4 system-ui,sans-serif;background:#fff3cd;color:#4a3b00;border-bottom:1px solid #e0c36a";
+    + "padding:6px 12px;font:13px/1.4 ui-monospace,monospace;background:#39ff44;color:#001b00;border-bottom:1px solid #001b00";  // the TESTNET chip's green (no amber anywhere)
   const text = document.createElement("span");
   text.style.flex = "1";
   text.textContent = message;
