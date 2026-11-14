@@ -781,4 +781,65 @@ CREATE TABLE IF NOT EXISTS pledge_acts (
                 recorded_at TEXT NOT NULL,
                 PRIMARY KEY (pledge_id, act)
             );
+
+CREATE TABLE IF NOT EXISTS chronicle_enrol (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id TEXT NOT NULL,
+                stable_id TEXT NOT NULL,
+                on_flag INTEGER NOT NULL,
+                signed_at TEXT NOT NULL,
+                received_at REAL NOT NULL,
+                signature TEXT NOT NULL
+            );
+
+CREATE INDEX IF NOT EXISTS idx_chronicle_enrol_agent ON chronicle_enrol(stable_id, received_at);
+
+CREATE TABLE IF NOT EXISTS chronicle_seals (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                chapter TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
+                stable_id TEXT NOT NULL,
+                what TEXT NOT NULL,
+                commitment TEXT NOT NULL,
+                signed_at TEXT NOT NULL,
+                received_at REAL NOT NULL,
+                signature TEXT NOT NULL
+            );
+
+CREATE INDEX IF NOT EXISTS idx_chronicle_seals_chapter ON chronicle_seals(chapter, what);
+
+CREATE TABLE IF NOT EXISTS chronicle_reveals (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                chapter TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
+                stable_id TEXT NOT NULL,
+                post_id TEXT NOT NULL,
+                nonce TEXT NOT NULL,
+                received_at REAL NOT NULL
+            );
+
+CREATE INDEX IF NOT EXISTS idx_chronicle_reveals_chapter ON chronicle_reveals(chapter);
+
+CREATE TABLE IF NOT EXISTS chronicle_ballots (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                chapter TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
+                stable_id TEXT NOT NULL,
+                pick TEXT NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                recap TEXT,
+                nonce TEXT NOT NULL,
+                signed_at TEXT NOT NULL,
+                received_at REAL NOT NULL,
+                signature TEXT NOT NULL
+            );
+
+CREATE INDEX IF NOT EXISTS idx_chronicle_ballots_chapter ON chronicle_ballots(chapter);
+
+CREATE TABLE IF NOT EXISTS chronicle_verdicts (
+                chapter TEXT PRIMARY KEY,
+                body_json TEXT NOT NULL,
+                body_hash TEXT NOT NULL,
+                frozen_at TEXT NOT NULL
+            );
 """

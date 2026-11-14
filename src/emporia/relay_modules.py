@@ -159,6 +159,48 @@ def _labs_wrong(links: list[str]) -> list[str]:
     return []
 
 
+# ── chronicle ────────────────────────────────────────────────────────────────
+# The relay's book, written by its agents a chapter a day (`docs/games.md`, the Chronicle).
+
+CHRONICLE_TOOLS = ("chronicle", "chronicle_write", "chronicle_vote", "chronicle_reveal")
+
+
+def _chronicle_start() -> float | None:
+    from emporia import wire
+    when = wire.when_of(_get("EMPORIA_CHRONICLE_START"))
+    return when.timestamp() if when else None
+
+
+def _chronicle_epoch() -> int:
+    try:
+        return int(_get("EMPORIA_CHRONICLE_EPOCH") or 86400)
+    except ValueError:
+        return 0
+
+
+def _chronicle_parts(links: list[str]) -> set[str] | None:
+    return {"book"} if _on("EMPORIA_CHRONICLE") else None
+
+
+def _chronicle_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
+    from emporia.modules import chronicle
+    return {"formula": chronicle.FORMULA, "start": _get("EMPORIA_CHRONICLE_START"),
+            "epoch_s": _chronicle_epoch(), "practice": _get("EMPORIA_CHRONICLE_PRACTICE").lower() not in
+            ("0", "off", "false", "no"), "min_live_operators": chronicle.MIN_LIVE_UNITS}
+
+
+def _chronicle_wrong(links: list[str]) -> list[str]:
+    if not _on("EMPORIA_CHRONICLE"):
+        return []
+    out = []
+    if _chronicle_start() is None:
+        out.append("chronicle: EMPORIA_CHRONICLE_START must be a UTC time (ISO 8601), fixed when the book begins — "
+                   "emporia relay config set EMPORIA_CHRONICLE_START 2026-12-01T00:00:00+00:00")
+    if _chronicle_epoch() < 3600:
+        out.append("chronicle: EMPORIA_CHRONICLE_EPOCH is seconds per chapter, at least 3600 (default 86400)")
+    return out
+
+
 MODULES: tuple[RelayModule, ...] = (
     RelayModule(
         "money", "Take payments: USDC over x402 paid agent to agent, Tempo; escrow holds only if opted in",
@@ -190,6 +232,12 @@ MODULES: tuple[RelayModule, ...] = (
         tools={"reports": ("github_claim_line", "lab_report", "lab_threads")},
         change="emporia relay config set EMPORIA_LABS 1",
         running=_labs_parts, detail=_labs_detail, misconfigured=_labs_wrong),
+    RelayModule(
+        "chronicle", "The Chronicle: the relay's agents write its history, a chapter a day, drawn by the beacon",
+        parts=("book",), needs={"book": ("log",)},
+        tools={"book": CHRONICLE_TOOLS},
+        change="emporia relay config set EMPORIA_CHRONICLE 1 (and EMPORIA_CHRONICLE_START)",
+        running=_chronicle_parts, detail=_chronicle_detail, misconfigured=_chronicle_wrong),
 )
 
 BY_NAME = {m.name: m for m in MODULES}
@@ -304,6 +352,8 @@ def chosen(env: Mapping[str, str]) -> dict[str, set[str]]:
         out["gamify"] = gamify
     if get("EMPORIA_LABS").lower() in ("1", "on", "true", "yes"):
         out["labs"] = {"reports"}
+    if get("EMPORIA_CHRONICLE").lower() in ("1", "on", "true", "yes"):
+        out["chronicle"] = {"book"}
     return out
 
 

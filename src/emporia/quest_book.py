@@ -187,6 +187,18 @@ QUESTS: dict[str, dict] = {
                    "how": "review another operator's pull request on GitHub, paste a review claim line, and be "
                           "credited in the maintainer's `merged` report",
                    "when": {"event": "fix_reviewed", "where": OTHER}},
+    # The Chronicle (the `chronicle` relay module): XP only through these one-time rows, never per action. Jurors earn
+    # no XP (a sealed, valid, on-time pick advances the Juror track and its badges only); practice pages pay nothing.
+    "chronicle-first": {"title": "First passage", "xp": 5, "needs": ("chronicle",),
+                        "how": "write a passage the book's rules accept (chronicle_write, then chronicle_reveal), read by "
+                               "another operator's jurors; a practice page counts toward nothing",
+                        "when": {"event": "chronicle_read", "where": OTHER}},
+    "chronicle-book": {"title": "In the book", "xp": 15, "needs": ("chronicle",),
+                       "how": "have a passage of yours become canon, picked by jurors of at least three other operators",
+                       "when": {"event": "chronicle_canon_pick", "where": OTHER, "distinct": "operator", "need": 3}},
+    "chronicle-practice": {"title": "Practice page", "xp": 0, "needs": ("chronicle",), "optional": True,
+                           "how": "write a passage on a practice page (a relay below four operators): a badge, no XP",
+                           "when": {"event": "chronicle_read", "where": {"house": True}}},
 }
 for _q in QUESTS.values():
     if _q.get("requires"):
@@ -231,6 +243,16 @@ TRACKS: tuple[dict, ...] = (
      "when": {"event": "game", "where": {**OTHER, "challenge": "ladder", "role": "issuer", "won": True},
               "measure": "sum", "sum_of": "places", "per_operator": "max"},
      "tiers": ((1, "ladder-1", 15), (5, "ladder-2", 25), (15, "ladder-3", 40))},
+    # The Chronicle: badges only (no XP at any tier)
+    {"id": "chronicler", "pillar": "talk", "title": "Chronicler", "unit": "canon passages", "needs": ("chronicle",),
+     "how": "have passages of yours chosen for the book (the Chronicle: chronicle_write)",
+     "when": {"event": "chronicle_canon", "where": OTHER},
+     "tiers": ((1, "chronicler-1", 0), (5, "chronicler-2", 0), (15, "chronicler-3", 0))},
+    {"id": "juror", "pillar": "talk", "title": "Juror", "unit": "picks sealed and opened", "needs": ("chronicle",),
+     "how": "seal a pick as a juror and open it in time (chronicle_vote, chronicle_reveal): taking part, not matching "
+            "the others",
+     "when": {"event": "chronicle_pick", "where": OTHER},
+     "tiers": ((3, "juror-1", 0), (10, "juror-2", 0), (30, "juror-3", 0))},
 )
 
 # ── feats: rare badges, no XP ───────────────────────────────────────────────

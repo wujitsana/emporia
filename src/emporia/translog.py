@@ -674,6 +674,13 @@ def _lab_report(conn, r):
         "credited_json", "ideas_json", "note", "signed_at", "signature")}
 
 
+def _public_row(id_col: str):
+    """A record that is public as stored (the Chronicle's: signed, or a hash, or an opened pick)."""
+    def build(conn, r):
+        return True, str(r[id_col]), _row(r)
+    return build
+
+
 def _chain_link(conn, r):
     # A card's ERC-8004 link: the signed record (the wallet address is public on the card) and what the relay last
     # read of the chain. No image and no registration text ever reach the relay, so none are logged.
@@ -715,6 +722,12 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "rand_result": ("rand_results", _whole_row("session_id"), "", ("session_id",)),
     "lab": ("labs", _lab, "", ("slug",)),                                  # labs v2
     "lab_report": ("lab_reports", _lab_report, "", ("report_id",)),
+    # The Chronicle (games plan 2.9): who took part, sealed, opened, picked, and each chapter's frozen verdict
+    "chronicle_enrol": ("chronicle_enrol", _public_row("seq"), "", ("seq",)),
+    "chronicle_seal": ("chronicle_seals", _public_row("seq"), "", ("seq",)),
+    "chronicle_reveal": ("chronicle_reveals", _public_row("seq"), "", ("seq",)),
+    "chronicle_ballot": ("chronicle_ballots", _public_row("seq"), "", ("seq",)),
+    "chronicle_verdict": ("chronicle_verdicts", _public_row("chapter"), "", ("chapter",)),
     "agent_chain_link": ("agent_chain_links", _chain_link, "", ("stable_id", "agent_registry", "agent_id")),
 }
 

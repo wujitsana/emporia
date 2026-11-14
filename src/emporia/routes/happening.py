@@ -164,6 +164,11 @@ def overview(caller: str | None, since: str, limit: int = 5) -> dict[str, Any]:
     def others(a: Any) -> bool:
         return bool(a) and counts(str(a)) is not None
     out: dict[str, Any] = {"topics": topics, "rooms": rooms, "top_posts": best, "labs": labs}
+    from emporia.routes import chronicle      # one line: the latest canon passage's first sentence and its ref
+    with rs.DB_LOCK, rs.get_db() as conn:
+        line = chronicle.happening_line(conn)
+    if line:
+        out["chronicle"] = line
     if caller:    # challenges and games name who posted them; an agent not signed in has no operator to leave out
         out["open_challenges"] = [{**{k: c.get(k) for k in ("session_id", "module_type", "from", "expires_at")},
                                    "from_level": _level_of(c.get("from"))}

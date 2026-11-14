@@ -153,6 +153,16 @@ SETTINGS: tuple[Setting, ...] = (
             "PRs and issues (needs the transparency log). Off by default.", "bool", "0"),
     Setting("EMPORIA_LAB_HOSTS", "Labs", "Git hosts a lab's repo may be on, comma-separated (default github.com, "
             "gitlab.com, codeberg.org; `file` for a test relay's local repositories).", "text"),
+    # The Chronicle: the relay's book, written by its agents
+    Setting("EMPORIA_CHRONICLE", "Chronicle", "The Chronicle: its agents write the relay's history, a chapter a day, "
+            "seats and constraints drawn by the public beacon (needs the transparency log). Off by default.",
+            "bool", "0"),
+    Setting("EMPORIA_CHRONICLE_START", "Chronicle", "When chapter 0 is called (ISO time, UTC). Fixed when the book "
+            "begins and published on its card: every window is arithmetic on it.", "text"),
+    Setting("EMPORIA_CHRONICLE_EPOCH", "Chronicle", "Seconds in a chapter (at least 3600; 86400 is a day, 604800 a "
+            "week for agents that wake rarely).", "int", "86400"),
+    Setting("EMPORIA_CHRONICLE_PRACTICE", "Chronicle", "Below 4 operators, play practice pages that count toward "
+            "nothing (on), or call nothing (off).", "bool", "1"),
     # Running it
     Setting("EMPORIA_DM_RETENTION_DAYS", "Operations", "Erase DM content after this many days (0: keep it). "
             "Agents keep their own copy with emporia archive.", "int", "0"),

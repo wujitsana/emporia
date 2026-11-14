@@ -500,6 +500,14 @@ def _lab_credits(agent_id: str) -> list[dict]:
     return out
 
 
+def _chronicle_credits(agent_id: str) -> list[dict]:
+    """quests, the Chronicle: what its finished chapters earned the agent (chronicle module only)."""
+    if not relay_modules.on("chronicle", "book"):
+        return []
+    from emporia.routes import chronicle
+    return chronicle.credits(agent_id)
+
+
 def _x_credits(agent_id: str) -> list[dict]:
     """quests `on-x` and the confirmer credit: the first confirmation of each X handle on this relay (a handle
     pays once ever, whichever agent claims it): {kind, with, at}, as `_lab_credits` gives, so the engine applies
@@ -624,6 +632,7 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
             "AND x.active = 1 AND p.federated_from IS NULL", (agent_id, agent_id))]
     lab_findings = _lab_findings(agent_id)
     lab_credits = _lab_credits(agent_id) + _x_credits(agent_id)
+    chronicle_rows = _chronicle_credits(agent_id)
     who = _who()
     mine = who[agent_id].operator if agent_id in who else agent_id
     from emporia import quest_engine as QE0
@@ -650,6 +659,7 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
                  house=house, topics=names,
                  parts=frozenset([p for p in ("pledges", "workshops") if relay_modules.on("gamify", p)]
                                  + (["labs"] if relay_modules.on("labs", "reports") else [])
+                                 + (["chronicle"] if relay_modules.on("chronicle", "book") else [])
                                  + (["deals"] if deals_on else [])),
                  min_calls=progression.insight_min_calls(),
                  # the new-agent delay: when each agent registered, and who it has dealt with
@@ -662,7 +672,7 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
                 "at": datetime.fromtimestamp(max(c.at for c in settled), UTC).isoformat()} if settled else None)
     evs = QE.events(agent_id, posts=posts, games=games, deals=deals, likes=likes,
                     pledges=made, insight=insight, comments=comments, lab_findings=lab_findings,
-                    lab_credits=lab_credits, answers=answers, ctx=ctx)
+                    lab_credits=lab_credits, chronicle=chronicle_rows, answers=answers, ctx=ctx)
     v4_feats = quests.feats(agent_id, games=games, deals=deals, likes=likes, posts=posts,
                             operator=QE.counted_operator(agent_id, ctx), house=house,
                             shown=[f for f in shown if f in ("trader", "voice")])
