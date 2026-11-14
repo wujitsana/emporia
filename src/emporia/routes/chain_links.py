@@ -117,6 +117,9 @@ def _outcome(link: dict[str, Any], chain: str) -> tuple[str, dict[str, Any]]:
     got = read_link(link)
     if got is None:                              # no RPC of ours for this chain
         recovered = erc8004.signature_recovers(link)
+        if recovered is None:
+            raise HTTPException(400, "this relay cannot check a wallet signature (no signature library, and no RPC "
+                                     "for that chain), so it records no claim")
         if recovered is False:
             raise HTTPException(400, "this relay has no RPC for that chain, so it can check only a signature from an "
                                      "ordinary account, and this one is not (a contract wallet's is settled by a read)")
@@ -130,6 +133,30 @@ def _outcome(link: dict[str, Any], chain: str) -> tuple[str, dict[str, Any]]:
 
 def _rank(status: str, issued_at: int) -> tuple[int, int]:
     return (1 if status == "checked" else 0, issued_at)
+
+
+def _supersede(conn: Any, stable: str, registry: str, agent_id: str, status: str, issued_at: int) -> str:
+    """Settle one 8004 identity between agents. Only a `checked` link supersedes another agent's link. An unproven
+    (`claimed`) one never does: it is refused (409) where another agent holds a claimed link, and stored as
+    superseded where a checked one stands. Returns the stable id of the agent that outranks this link, or ''."""
+    loser_to = ""
+    for other in conn.execute("SELECT stable_id, status, issued_at FROM agent_chain_links WHERE agent_registry = ? "
+                              "AND agent_id = ? AND stable_id <> ? AND status IN ('claimed','checked','stale')",
+                              (registry, agent_id, stable)).fetchall():
+        if status != "checked":
+            if other["status"] == "claimed":
+                raise HTTPException(409, f"that ERC-8004 agent is already claimed by {other['stable_id']}; "
+                                         "a checked link takes it over")
+            if other["status"] == "checked":
+                loser_to = other["stable_id"]
+            continue
+        if _rank(status, issued_at) > _rank("checked" if other["status"] == "checked" else "claimed",
+                                            other["issued_at"]):
+            conn.execute("UPDATE agent_chain_links SET status = 'superseded', superseded_by = ? WHERE stable_id = ? "
+                         "AND agent_registry = ? AND agent_id = ?", (stable, other["stable_id"], registry, agent_id))
+        else:
+            loser_to = other["stable_id"]
+    return loser_to
 
 
 @router.post("/agents/{agent_id}/links/erc8004")
@@ -179,17 +206,7 @@ async def record_chain_link(agent_id: str, req: ChainLinkIn, request: Request):
                             "('claimed','checked','stale') AND NOT (agent_registry = ? AND agent_id = ?)", key).fetchone()[0]
         if live >= MAX_LINKS:
             raise HTTPException(409, f"an agent links at most {MAX_LINKS} ERC-8004 identities: unlink one first")
-        loser_to = ""
-        for other in conn.execute("SELECT stable_id, status, issued_at FROM agent_chain_links WHERE agent_registry = ? "
-                                  "AND agent_id = ? AND stable_id <> ? AND status IN ('claimed','checked','stale')",
-                                  (req.agent_registry, req.agent_id, stable)).fetchall():
-            if _rank(status, req.issued_at) > _rank("checked" if other["status"] == "checked" else "claimed",
-                                                    other["issued_at"]):
-                conn.execute("UPDATE agent_chain_links SET status = 'superseded', superseded_by = ? WHERE stable_id = ? "
-                             "AND agent_registry = ? AND agent_id = ?",
-                             (stable, other["stable_id"], req.agent_registry, req.agent_id))
-            else:
-                loser_to = other["stable_id"]
+        loser_to = _supersede(conn, stable, req.agent_registry, req.agent_id, status, req.issued_at)
         shown = "superseded" if loser_to else status
         conn.execute(
             "INSERT OR REPLACE INTO agent_chain_links (stable_id, agent_registry, agent_id, signer, issued_at, wallet_sig, "
@@ -236,10 +253,17 @@ def recheck_link(key: tuple[str, str, str]) -> str:
                     conn.execute("UPDATE agent_chain_links SET attempted_at = ? WHERE stable_id = ? AND "
                                  "agent_registry = ? AND agent_id = ? AND status = 'checked'", (now, *key))
                     return "checked"
-                conn.execute("UPDATE agent_chain_links SET status = 'checked', tier = ?, owner = ?, block_number = ?, "
-                             "block_hash = ?, checked_at = ?, attempted_at = ? WHERE stable_id = ? AND agent_registry = ? "
-                             "AND agent_id = ? AND status IN ('claimed','checked','stale')",
-                             (got["tier"], got["owner"], got["block_number"], got["block_hash"], now, now, *key))
+                try:
+                    loser_to = _supersede(conn, key[0], key[1], key[2], "checked", row["issued_at"])
+                except HTTPException:                # cannot happen for a checked link; never break a re-read
+                    loser_to = ""
+                conn.execute("UPDATE agent_chain_links SET status = ?, tier = ?, owner = ?, block_number = ?, "
+                             "block_hash = ?, checked_at = ?, attempted_at = ?, superseded_by = ? WHERE stable_id = ? "
+                             "AND agent_registry = ? AND agent_id = ? AND status IN ('claimed','checked','stale')",
+                             ("superseded" if loser_to else "checked", got["tier"], got["owner"], got["block_number"],
+                              got["block_hash"], now, now, loser_to, *key))
+                if loser_to:
+                    return "superseded"
                 return "checked"
             if got["status"] in ("not-proven", "invalid"):
                 if row["status"] == "stale":

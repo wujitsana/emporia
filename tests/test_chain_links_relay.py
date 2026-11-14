@@ -503,3 +503,71 @@ def test_a_recheck_writes_a_log_entry_only_when_status_tier_or_owner_change(rela
     assert cl.recheck_link(k) == "checked"
     assert len(_logged(stable)) == base + 2
     assert run(card(a, a))[0]["checked"]["block_number"] == 150
+
+
+# -- an unproven claim never knocks out a real link -----------------------------------------------------
+def test_an_unproven_claim_does_not_supersede_a_claimed_link_of_another_agent(relay, monkeypatch):
+    monkeypatch.delenv("EMPORIA_RPC_84532")
+    key, addr = keypair()
+    evil, evil_addr = keypair()
+    owned_by(relay, addr)
+
+    async def go():
+        a, b = agent(relay), agent(relay, "evil")
+        await a.register(), await b.register()
+        r1 = await link(a, key, addr, issued=int(time.time()) - 100)
+        r2 = await link(b, evil, evil_addr, issued=int(time.time()) - 5)
+        return r1, r2, await card(a, a), await card(b, b)
+
+    r1, r2, victim, attacker = run(go())
+    assert r1.status_code == 200 and victim[0]["status"] == "claimed", "the first claim stays"
+    assert r2.status_code == 409 and "already claimed by" in r2.text and "checked link takes it" in r2.text
+    assert attacker == []
+
+
+def test_a_checked_link_still_takes_a_claimed_one_over(relay, monkeypatch):
+    key, addr = keypair()
+    owned_by(relay, addr)
+    monkeypatch.delenv("EMPORIA_RPC_84532")
+
+    async def go():
+        a, b = agent(relay, "claimer"), agent(relay, "prover")
+        await a.register(), await b.register()
+        await link(a, key, addr, issued=int(time.time()) - 100)
+        monkeypatch.setenv("EMPORIA_RPC_84532", "http://fake.invalid")
+        await link(b, key, addr, issued=int(time.time()) - 5)
+        return await card(a, a), await card(b, b)
+
+    old, new = run(go())
+    assert old[0]["status"] == "superseded" and new[0]["status"] == "checked"
+
+
+def test_a_claim_is_stored_beside_nothing_when_a_checked_link_stands(relay, monkeypatch):
+    key, addr = keypair()
+    owned_by(relay, addr)
+
+    async def go():
+        a, b = agent(relay, "first"), agent(relay, "second")
+        await a.register(), await b.register()
+        await link(a, key, addr, issued=int(time.time()) - 100)
+        ch = relay.chain["chain"]
+        ch.down = True                                  # an RPC outage: the second is only claimed
+        r = await link(b, key, addr, issued=int(time.time()) - 5)
+        return r, await card(a, a), await card(b, b)
+
+    r, first, second = run(go())
+    assert r.status_code == 200 and first[0]["status"] == "checked" and second[0]["status"] == "superseded"
+
+
+def test_a_relay_that_cannot_check_a_signature_refuses_the_claim(relay, monkeypatch):
+    monkeypatch.delenv("EMPORIA_RPC_84532")
+    monkeypatch.setattr(erc8004, "available", lambda: False)
+    key, addr = keypair()
+
+    async def go():
+        a = agent(relay)
+        await a.register()
+        return await link(a, key, addr, sig="0x" + "11" * 65), await card(a, a)
+
+    r, links = run(go())
+    assert r.status_code == 400 and "cannot check a wallet signature" in r.text and links == []
