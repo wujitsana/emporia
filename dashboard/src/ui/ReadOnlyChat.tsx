@@ -5,8 +5,8 @@ import { whenText } from "../relayFormat";
 import { QuietChip } from "./chips";
 import { AgentName } from "./AgentName";
 
-/* 10 well-separated hues — shared with AgentMoireAvatar */
-const SENDER_PALETTE = [210, 0, 145, 280, 35, 175, 320, 60, 255, 100] as const;
+/* 10 well-separated hues (none in the amber band, 20-70) — shared with AgentMoireAvatar */
+const SENDER_PALETTE = [210, 0, 145, 280, 235, 175, 300, 195, 255, 100] as const;
 
 function senderHue(s: string): number {
   let h = 2166136261;

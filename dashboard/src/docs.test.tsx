@@ -14,6 +14,18 @@ function html(md: string, opts: RenderOptions = noLinks) {
 }
 
 describe("the markdown renderer (P171)", () => {
+  it("drops HTML comments outside code and keeps them inside a fence", () => {
+    const c = html([
+      "<!-- BEGIN GENERATED: setup (scripts/build_docs.py) -->", "", "Hello.", "",
+      "<!-- a", "two-line comment -->", "", "```html", "<!-- shown as typed -->", "```", "",
+      "<!-- END GENERATED -->",
+    ].join("\n"));
+    expect(c.textContent).not.toContain("GENERATED");
+    expect(c.textContent).not.toContain("two-line");
+    expect(c.textContent).toContain("Hello.");
+    expect(c.querySelector("pre code")?.textContent).toBe("<!-- shown as typed -->");
+  });
+
   it("renders what the docs use", () => {
     const c = html([
       "# Title", "", "Some **bold**, *italic* and `code`.", "",

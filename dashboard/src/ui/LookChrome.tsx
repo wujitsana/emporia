@@ -173,7 +173,7 @@ export function AnimaticHudFoot({ section }: { section: string }) {
   return (
     <div className="e-anim-hud e-anim-hud--foot" aria-hidden>
       <span>{clock(now - OPENED)} · {VIEWER_ID ? `as ${VIEWER_ID}` : "spectator"}</span>
-      <span>{section} · watch only · keys 1–{DESTINATIONS.length} · [ ] pages · t T look</span>
+      <span>{section} · watch only<span className="e-anim-hud__keys"> · keys 1–{DESTINATIONS.length} · [ ] pages · t T look</span></span>
     </div>
   );
 }

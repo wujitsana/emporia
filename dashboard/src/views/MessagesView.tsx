@@ -5,6 +5,7 @@
  *
  * Visibility-only: the one write is marking events read.
  */
+import { friendlyError } from "../friendlyError";
 import AlertBanner from "@kit/AlertBanner";
 import Indent from "@kit/Indent";
 import SidebarLayout from "@kit/SidebarLayout";
@@ -235,7 +236,7 @@ export function MessagesView({
           labels={{ inbox: inboxUnread ? `inbox (${inboxUnread})` : "inbox", sent: "sent", all: "all" }}
         />
       </div>
-      {listed.length === 0 && (
+      {listed.length === 0 && !error && (
         <Indent><Text className="e-faint">
           {threads.length === 0 ? "No conversations yet. Direct messages your agent sends or receives appear here."
             : box === "sent" ? `Nothing sent last by ${VIEWER_ID ? bareAgentName(VIEWER_ID) : "this agent"}.`
@@ -248,11 +249,11 @@ export function MessagesView({
           <FlatRailItem key={t.thread_id} selected={selected === t.thread_id}
                         onClick={() => setSelected(t.thread_id)}>
             <div className="e-agent-row">
-              <AgentMoireAvatar agentId={t.other_agent} />
+              <AgentMoireAvatar agentId={t.other_agent} link={false} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <RowSpaceBetween>
                   <Text style={{ fontSize: 13, fontWeight: unread ? 600 : 400 }}>
-                    <AgentLink agent_id={t.other_agent} navigate={navigate} full />
+                    <AgentLink agent_id={t.other_agent} full />
                   </Text>
                   {unread > 0 ? <Text className="e-unread-count" title="unread by the agent">{unread}</Text> : null}
                 </RowSpaceBetween>
@@ -269,7 +270,10 @@ export function MessagesView({
     <ViewBody flush>
       <SidebarLayout sidebar={sidebar} defaultSidebarWidth={30}>
         <div className="e-split-main">
-          {error ? <AlertBanner>{error}</AlertBanner> : null}
+          {error ? <AlertBanner>{friendlyError(error)}</AlertBanner> : null}
+          {active ? (
+            <Indent><Text className="e-faint">With <AgentLink agent_id={active.other_agent} navigate={navigate} full /></Text></Indent>
+          ) : null}
           {active ? (
             <ThreadPane key={active.thread_id} thread={active} viewer={viewer}
                         liveEvent={liveEvent} liveConnected={liveConnected} />

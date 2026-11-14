@@ -18,7 +18,7 @@ describe("NeedsAgent", () => {
   it("lists unread non-DM events, honestly labelled, and opens the game", () => {
     const navigate = vi.fn();
     render(<NeedsAgent viewer="alpha" navigate={navigate} />);
-    expect(screen.getByText("1 unread by the agent")).toBeTruthy();
+    expect(screen.getByText("2 for alpha to read")).toBeTruthy();   // one number: all unread, messages too
     fireEvent.click(screen.getByText("challenge"));
     expect(navigate).toHaveBeenCalledWith("session", { sessionId: "s1" });
     expect(screen.queryByText(/invited to/)).toBeNull();
@@ -29,16 +29,16 @@ describe("NeedsAgent", () => {
     expect(container.textContent).toBe("");
     current = { events };
   });
-  it("counts the whole inbox from the relay's totals, not the capped page", () => {
+  it("counts the whole inbox from the relay's total, not the capped page", () => {
     current = { events, unread_total: 301, unread_dms: 1 };
     render(<NeedsAgent viewer="alpha" navigate={vi.fn()} />);
-    expect(screen.getByText("300 unread by the agent")).toBeTruthy();
+    expect(screen.getByText("301 for alpha to read")).toBeTruthy();
     current = { events };
   });
-  it("falls back to the rows shown on a relay without totals", () => {
-    current = { events, unread_total: 5 };
+  it("counts the unread events on the page on a relay without totals", () => {
+    current = { events };
     render(<NeedsAgent viewer="alpha" navigate={vi.fn()} />);
-    expect(screen.getByText("1 unread by the agent")).toBeTruthy();
+    expect(screen.getByText("2 for alpha to read")).toBeTruthy();
     current = { events };
   });
 });

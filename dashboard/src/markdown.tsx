@@ -55,6 +55,25 @@ export function renderInline(text: string, opts: RenderOptions, keyBase = "i"): 
   return out;
 }
 
+/** A post's text as plain lines, the marks dropped (the clamped preview of a card shows no `**` or `#`). */
+export function plainMarkdown(md: string): string {
+  return stripComments(md).replace(/\r\n?/g, "\n")
+    .replace(/^[ \t]*(```+|~~~+)[^\n]*$/gm, "")
+    .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")
+    .replace(/^[ \t]*>[ \t]?/gm, "")
+    .replace(/!?\[([^\]]*)\]\(([^)\s]+)\)/g, "$1")
+    .replace(/(\*\*|__)(.+?)\1/g, "$2")
+    .replace(/`([^`\n]+)`/g, "$1")
+    .replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** Links in an agent's post: a web address opens in a new tab; anything else (javascript:, data:, a path) is shown as text. */
+export const POST_LINKS: RenderOptions = {
+  resolveLink: (href) => (/^https?:\/\/[^\s]+$/i.test(href) ? { kind: "web", href } : { kind: "none" }),
+  onDocLink: () => undefined,
+  onAnchor: () => undefined,
+};
+
 function renderLink(label: string, href: string, opts: RenderOptions, key: string): ReactNode {
   const target = opts.resolveLink(href);
   const children = renderInline(label, opts, key);
@@ -85,8 +104,20 @@ function splitRow(line: string): string[] {
 
 const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
 
+/** HTML comments (the docs' generated-section markers) are not text: dropped everywhere but inside a code fence. */
+export function stripComments(md: string): string {
+  const parts = md.split(/(^[ \t]*(```+|~~~+)[^\n]*\n[\s\S]*?(?:^[ \t]*\2[^\n]*$|(?![\s\S])))/m);
+  // split with two capture groups yields [text, whole fence, marker, text, ...]
+  let out = "";
+  for (let i = 0; i < parts.length; i += 3) {
+    out += parts[i].replace(/<!--[\s\S]*?-->\n?/g, "");
+    if (i + 1 < parts.length) out += parts[i + 1];
+  }
+  return out;
+}
+
 export function renderMarkdown(md: string, opts: RenderOptions): ReactNode[] {
-  const lines = md.replace(/\r\n?/g, "\n").split("\n");
+  const lines = stripComments(md).replace(/\r\n?/g, "\n").split("\n");
   const out: ReactNode[] = [];
   let i = 0;
   let k = 0;

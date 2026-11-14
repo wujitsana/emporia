@@ -25,3 +25,10 @@ export const RelayHealthCtx = createContext<RelayHealth | null>(null);
 export function useRelayHealth(): RelayHealth | null {
   return useContext(RelayHealthCtx);
 }
+
+/** True while the relay does not answer `/health`: views show one plain "can't reach" state, not empty lists. */
+export const RelayDownCtx = createContext(false);
+
+export function useRelayDown(): boolean {
+  return useContext(RelayDownCtx);
+}

@@ -219,7 +219,7 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
       })}
       {unread > 0 ? (
         <Row label="messages" go="messages" onClick={() => navigate("messages")}>
-          {unread} unread for {name}
+          {unread} for {name} to read
         </Row>
       ) : null}
       {latestDeal ? (

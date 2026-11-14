@@ -24,7 +24,7 @@ export function NowStrip({ navigate }: { navigate: Navigate }) {
   const line = nowLine(viewer, sessions ?? []);
   const toggle = () => { const next = !collapsed; setCollapsed(next); writePref(PREF, next ? "1" : "0"); };
   return (
-    <div className={`e-now-strip${collapsed ? " is-collapsed" : ""}`} role="status">
+    <div className={`e-now-strip${collapsed ? " is-collapsed" : ""}${line.live ? "" : " is-idle"}`} role="status">
       {collapsed ? null : (
         <button
           type="button"

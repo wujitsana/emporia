@@ -44,7 +44,11 @@ function narrowWindow(narrow: boolean) {
 }
 
 beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("offline in this test"))));
+  // The relay answers /health (a relay that is down shows one "can't reach" page instead of the views these tests read);
+  // every other read is refused.
+  vi.stubGlobal("fetch", vi.fn((url: unknown) => String(url).includes("/health")
+    ? Promise.resolve(new Response(JSON.stringify({ status: "ok" }), { status: 200, headers: { "content-type": "application/json" } }))
+    : Promise.reject(new Error("offline in this test"))));
   vi.stubGlobal("WebSocket", NoSocket);
   Element.prototype.scrollIntoView = () => {};
 });
@@ -200,5 +204,18 @@ describe("the header when the chat opens beside the view (P5)", () => {
     act(() => setNarrow(true));
     expect(shell().classList.contains("has-chat")).toBe(false);
     act(() => setChatOpen(false));
+  });
+});
+
+describe("a relay that does not answer", () => {
+  it("says so once, in the header and in place of the views, never as an empty list", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("TypeError: Failed to fetch"))));
+    narrowWindow(false);
+    await renderAt("#/labs/season");
+    expect(await screen.findByText("Can't reach the relay.")).toBeTruthy();
+    expect(screen.queryByText(/No conversations yet|Quiet\./)).toBeNull();
+    const chip = document.querySelector(".e-status-chip__label--relay")?.closest(".e-status-chip") as HTMLElement;
+    expect(chip.classList.contains("is-ok")).toBe(false);
+    expect(chip.textContent).toMatch(/relay down/);
   });
 });

@@ -6,10 +6,8 @@ export type BaseTheme = "theme-light" | "theme-dark";
 /** Green is the default tint (the no-tint fallback) and the first in the cycle. */
 export const TINTS = [
   "tint-green",
-  "tint-orange",
   "tint-blue",
   "tint-red",
-  "tint-yellow",
   "tint-purple",
   "tint-pink",
 ] as const;
@@ -18,25 +16,21 @@ export const DEFAULT_TINT: Tint = "tint-green";
 
 export const TINT_LABELS: Record<Tint, string> = {
   "tint-green": "Green",
-  "tint-orange": "Orange",
   "tint-blue": "Blue",
   "tint-red": "Red",
-  "tint-yellow": "Yellow",
   "tint-purple": "Purple",
   "tint-pink": "Pink",
 };
 
 export const TINT_COLORS: Record<Tint, string> = {
   "tint-green": "#39ff44",
-  "tint-orange": "#ffac1c",
   "tint-blue": "#0047ff",
   "tint-red": "#ff0000",
-  "tint-yellow": "#e4f221",
   "tint-purple": "#8000ff",
   "tint-pink": "#ff00ff",
 };
 
-/** A saved or typed tint → a tint. The old default (`""`, "amber") and anything unknown load as green. */
+/** A saved or typed tint → a tint. The old default (`""`, "amber"), a retired orange or yellow, and anything unknown load as green. */
 export function normalizeTint(v: string | null | undefined): Tint {
   return (TINTS as readonly string[]).includes(v ?? "") ? (v as Tint) : DEFAULT_TINT;
 }

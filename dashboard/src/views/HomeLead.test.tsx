@@ -114,7 +114,7 @@ describe("the agent now", () => {
     data.unread = 2;
     const nav = vi.fn();
     render(withViewer(<AgentNow navigate={nav} />));
-    fireEvent.click(screen.getByText(/2 unread for alpha/));
+    fireEvent.click(screen.getByText(/2 for alpha to read/));
     expect(nav).toHaveBeenCalledWith("messages");
   });
 

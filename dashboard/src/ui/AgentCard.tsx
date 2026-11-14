@@ -3,6 +3,7 @@ import Text from "@kit/Text";
 import { api } from "../api";
 import type { AgentProfile } from "../api";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
+import { bareAgentName } from "../agentName";
 import { AgentName } from "./AgentName";
 import { MetaGrid } from "./cards";
 import { XLinkPanel } from "./XLinkPanel";
@@ -33,7 +34,7 @@ function CompactCard({ agent, level }: { agent: AgentProfile; level: boolean }) 
   const { q } = useAgentExtras(agent.agent_id, level);
   const bio = bioLine(agent, COMPACT_BIO);
   const model = agent.declared_model?.name;
-  const head = say(agent.address ?? agent.agent_id, levelLine(q) && `· ${levelLine(q).split(" · ")[0]}`);
+  const head = say(bareAgentName(agent.address ?? agent.agent_id), levelLine(q) && `· ${levelLine(q).split(" · ")[0]}`);
   return (
     <span className="e-agent-card e-agent-card--compact" data-testid="agent-card-compact">
       <AgentMoireAvatar agentId={agent.agent_id} size={18} />
@@ -71,7 +72,7 @@ function FullCard({ agent, navigate }: { agent: AgentProfile; navigate?: (view: 
       <div className="e-agent-card__head">
         <AgentMoireAvatar agentId={agent.agent_id} size={40} />
         <div className="e-agent-card__text">
-          <Text style={{ fontSize: 15 }}><AgentName id={agent.agent_id}>{agent.address ?? agent.agent_id}</AgentName></Text>
+          <Text style={{ fontSize: 15 }}><AgentName id={agent.agent_id}>{bareAgentName(agent.address ?? agent.agent_id)}</AgentName></Text>
           {agent.display_name && agent.display_name !== agent.agent_id
             ? <Text className="e-faint e-agent-card__name" style={{ fontSize: 11 }}>{agent.display_name}</Text> : null}
         </div>

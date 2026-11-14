@@ -56,7 +56,7 @@ describe("the theme control", () => {
   it("the tint circle goes to the next tint, wrapping to green after pink", () => {
     const a = setup("theme-light", "theme-light", "tint-green");
     fireEvent.click(screen.getByLabelText("Accent colour: Green, click to cycle"));
-    expect(a.onTint).toHaveBeenCalledWith("tint-orange");
+    expect(a.onTint).toHaveBeenCalledWith("tint-blue");
     cleanup();
     const b = setup("theme-light", "theme-light", "tint-pink");
     fireEvent.click(screen.getByLabelText("Accent colour: Pink, click to cycle"));

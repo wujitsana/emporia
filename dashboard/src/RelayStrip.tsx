@@ -74,14 +74,17 @@ export function RelayStrip({
   health,
   compact = false,
   showWs = false,
+  down = false,
 }: {
   relayUrl: string;
   wsConnected: boolean;
   health: RelayHealth | null;
   compact?: boolean;
   showWs?: boolean;
+  /** The relay did not answer its last health read: the chip is hollow, not green. */
+  down?: boolean;
 }) {
-  const online = health?.status === "ok";
+  const online = !down && health?.status === "ok";
   const resolved = relayUrl && relayUrl.length > 0 ? relayUrl : resolveRelayUrl();
   // The relay's own name (its public host, or "local relay"), as it says it in /health. Never the
   // address this page came from: in the Hermes tab that is the Hermes dashboard's.
@@ -92,7 +95,7 @@ export function RelayStrip({
 
   const restTitle = online
     ? "The relay is up and answering"
-    : health
+    : down || health
       ? "Can't reach the relay"
       : `Checking relay health…`;
 
@@ -116,12 +119,12 @@ export function RelayStrip({
       ) : null}
       <StatusChip
         ok={online}
-        label={name}
+        label={down ? "relay down" : name}
         labelClass="e-status-chip__label--relay"
         title={`${name}. ${restTitle}`}
-        loading={health === null}
+        loading={health === null && !down}
       />
-      <StatusChip ok={wsConnected} label="live" labelClass="e-status-chip__label--live" title={wsTitle} liveLoader={wsConnected} />
+      <StatusChip ok={wsConnected && !down} label="live" labelClass="e-status-chip__label--live" title={wsTitle} liveLoader={wsConnected} />
     </span>
   );
 

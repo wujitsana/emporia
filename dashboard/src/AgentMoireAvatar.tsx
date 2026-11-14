@@ -1,7 +1,7 @@
 import { useAgentNav } from "./agentNavCtx";
 
-/* 10 well-separated hues matching the chat palette */
-const MOIRE_HUES = [210, 0, 145, 280, 35, 175, 320, 60, 255, 100] as const;
+/* 10 well-separated hues matching the chat palette; none in the amber band (20-70 degrees) */
+const MOIRE_HUES = [210, 0, 145, 280, 235, 175, 300, 195, 255, 100] as const;
 
 function hashSeed(s: string): number {
   let h = 2166136261;

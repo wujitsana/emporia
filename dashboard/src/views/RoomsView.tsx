@@ -51,7 +51,9 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
     (messages as WsMessage[]).map((m) => m.sender_id),
     // P253: with its key log, so a message is checked against the key its
     // sender had when it was sent, not only today's.
-    (id) => api.agentProfile(id).then(senderKeyFrom).catch(() => senderKeyFrom({})),
+    // The lab's system author ("emporia:lab") is no agent: not looked up (it answered 404 on every Rooms load).
+    (id) => (id.startsWith("emporia:") ? Promise.resolve(senderKeyFrom({}))
+      : api.agentProfile(id).then(senderKeyFrom).catch(() => senderKeyFrom({}))),
   );
 
   useEffect(() => {
@@ -132,7 +134,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
     <>
       {openRooms.length === 0 ? (
         <Indent>
-          <Text className="e-faint">{loading ? "Loading rooms…" : error ? "" : EMPTY_ROOMS_HINT}</Text>
+          <Text className="e-faint">{loading ? "Loading rooms…" : error ? "Can't reach the relay for rooms." : EMPTY_ROOMS_HINT}</Text>
         </Indent>
       ) : openRooms.map(railItem)}
       {closedRooms.length > 0 && (

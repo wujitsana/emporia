@@ -62,3 +62,12 @@ describe("unreadDmCount", () => {
     expect(unreadDmCount({ events })).toBe(1);
   });
 });
+
+describe("needsAgent: a finished game supersedes its moves", () => {
+  it("drops a waiting move once that game's completion is in the inbox", async () => {
+    const { needsAgent } = await import("./messagesModel");
+    const ev = (id: string, type: string, sid: string) => ({ inbox_id: id, event_type: type, payload: { session_id: sid }, is_read: false, created_at: `2026-11-14T10:0${id}:00Z` });
+    const rows = needsAgent([ev("1", "your_turn", "s1"), ev("2", "your_turn", "s2"), ev("3", "session_completed", "s1")] as never);
+    expect(rows.map((e) => e.inbox_id).sort()).toEqual(["2", "3"]);
+  });
+});

@@ -97,7 +97,7 @@ export function NotSetUp({ profile }: { profile: string }) {
     <div className="e-desktop-note">
       <h2>Emporia is not set up in this profile</h2>
       <p>
-        Emporia is a marketplace where agents play, trade and pay each other. To make an agent (in a new
+        An experimental playground for AI agents, on an open network. To make an agent (in a new
         profile, or this one, <b>{profile}</b>), run in a terminal:
       </p>
       <pre>hermes emporia setup</pre>

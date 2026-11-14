@@ -396,7 +396,7 @@ body.theme-light {
 /* Flush variant — fills remaining height for split views */
 .e-view-body--flush {
   padding: 0;
-  max-width: none;
+  max-width: min(1440px, 100%);   /* the same column as the heading and the foot, so a split page does not run edge to edge */
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -1390,7 +1390,7 @@ body.theme-light {
 }
 .e-gate-badge--invite { background: rgba(128,128,255,0.15); color: #8888ff; }
 .e-gate-badge--paid   { background: rgba(80,200,120,0.15);  color: #4caf7a; }
-.e-gate-badge--advert { background: rgba(255,190,80,0.15);  color: #d9a441; }
+.e-gate-badge--advert { background: color-mix(in srgb, var(--theme-focused-foreground) 15%, transparent); color: var(--theme-focused-foreground); }
 
 .e-outcome-pill {
   display: inline-block;
@@ -1401,7 +1401,7 @@ body.theme-light {
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.e-outcome-pill--game   { background: rgba(255,180,0,0.12);   color: #c89a00; }
+.e-outcome-pill--game   { background: color-mix(in srgb, var(--theme-focused-foreground) 12%, transparent); color: var(--theme-focused-foreground); }
 .e-outcome-pill--room   { background: rgba(0,180,255,0.12);   color: #0099cc; }
 .e-outcome-pill--agora  { background: rgba(128,128,255,0.12); color: #7777dd; }
 .e-outcome-pill--refund { background: rgba(200,50,50,0.12);   color: #cc4444; }
@@ -1565,7 +1565,7 @@ body.theme-light {
 .e-inbox-event {
   display: flex;
   gap: 12px;
-  padding: 10px 0;
+  padding: 10px 14px;   /* the same side padding as the panel's head, so icon and time clear the border */
   border-bottom: 1px solid var(--theme-border-color, rgba(128,128,128,0.12));
 }
 .e-inbox-event:last-child { border-bottom: none; }
@@ -1872,6 +1872,10 @@ body.theme-light {
   max-width: 80ch;
 }
 
+/* A heading that only repeats the active tab: the blurb alone, one line, no frame. */
+.e-page-head--lean .e-page-head__title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.e-page-head--lean .e-page-head__blurb { margin: 0; }
+
 /* Sub-heading inside a view: CAPS label with a box-drawing rule after it. */
 .e-subhead {
   display: flex;
@@ -2126,6 +2130,9 @@ body.theme-light {
 .e-now-strip__live { color: var(--theme-focused-foreground); }
 .e-now-strip__toggle { background: transparent; border: 0; color: inherit; font: inherit; cursor: pointer; opacity: 0.7; padding: 4px 6px; }
 .e-now-strip.is-collapsed { min-height: 22px; justify-content: flex-end; }
+/* Not in a game: the same line, but a quiet one, so it costs little height. */
+.e-now-strip.is-idle { min-height: 22px; padding-top: 0; padding-bottom: 0; opacity: 0.75; }
+.e-now-strip.is-idle .e-now-strip__main { padding: 1px 0; }
 /* The whole menu scrolls as one, so the foot never covers the last sections. */
 .e-section-tabs--drawer { flex: none; overflow: visible; }
 .e-mobile-drawer { overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; width: 100%; }
@@ -2270,6 +2277,9 @@ body.theme-light {
 /* Replay status line (ply, started, audit, verify) wraps instead of running off the edge. */
 .e-chess-replay-status { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
 
+@property --e-edge-fade { syntax: "<length>"; inherits: false; initial-value: 28px; }
+@keyframes e-edge-fade { 0%, 92% { --e-edge-fade: 28px; } 100% { --e-edge-fade: 0px; } }
+
 /* ─── 25. PHONE (≤ 700px) ───────────────────────────────────────────────── */
 
 @media (max-width: 700px) {
@@ -2292,6 +2302,16 @@ body.theme-light {
   .e-table td,
   .e-relay-table td,
   .e-relay-table th { white-space: nowrap; }
+  /* A table wider than the screen fades at its right edge until it is scrolled to the end, so it reads as scrollable. */
+  @supports (animation-timeline: scroll()) {
+    .e-table,
+    .e-relay-table,
+    .e-compact-table table {
+      mask-image: linear-gradient(to right, #000 calc(100% - var(--e-edge-fade)), transparent);
+      animation: e-edge-fade linear both;
+      animation-timeline: scroll(self inline);
+    }
+  }
 
   /* Comfortable targets. */
   .e-rail-item { min-height: 48px; padding: 10px 16px; }
@@ -2780,6 +2800,8 @@ body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }
   border-radius: 0;
 }
 .e-look .e-page-head { --anim-bracket: 18px; --anim-bracket-w: 3px; }
+.e-look .e-page-head.e-page-head--lean { background-image: none; padding: 8px 24px 2px; margin-top: 0; animation: none; }
+.e-look .e-page-head--lean .e-page-head__blurb { margin-top: 0; font-size: 0.85rem; opacity: 0.7; }
 
 /* ─── 3. THE SECTION HEADING: status line, pixel title, typed line ─────── */
 
@@ -3369,6 +3391,8 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   margin-top: auto; padding: 4px 8px; background: var(--anim-fill); color: var(--anim-ink); font-size: 0.8rem; font-weight: 700; line-height: 1.3;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
 }
+/* A post's or message's caption (its topic, its sender) is metadata: outlined, so the solid fill stays for state and selection. */
+.e-hcard--post .e-hcard__caption { background: transparent; color: inherit; box-shadow: inset 0 0 0 1px var(--anim-line, currentColor); font-weight: 600; }
 .e-hcard--quiet .e-hcard__caption { background: transparent; color: var(--anim-faint, inherit); font-weight: 400; padding-left: 0; }
 .e-hcard--quiet { min-height: 0; }
 .e-hcard__foot { font-size: 0.66rem; letter-spacing: 0.04em; color: var(--anim-faint, inherit); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3391,6 +3415,16 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden;
 }
 .e-hcard__body.is-open { display: block; -webkit-line-clamp: unset; }
+/* A post as Markdown: blocks inside, so the pre-wrap of plain text is off and the headings stay body-sized. */
+.e-hcard__body--md { white-space: normal; }
+.e-hcard__body--md > * { margin: 0 0 0.6em; }
+.e-hcard__body--md > :last-child { margin-bottom: 0; }
+.e-hcard__body--md h2, .e-hcard__body--md h3, .e-hcard__body--md h4, .e-hcard__body--md h5, .e-hcard__body--md h6 { font-size: 0.86rem; font-weight: 700; line-height: 1.3; }
+.e-hcard__body--md ul, .e-hcard__body--md ol { padding-left: 1.3em; }
+.e-hcard__body--md pre { overflow-x: auto; white-space: pre; padding: 6px 8px; border: 1px solid var(--theme-border); }
+.e-hcard__body--md a { color: var(--theme-focused-foreground); text-decoration: underline; }
+.e-hcard__body--md table { border-collapse: collapse; }
+.e-hcard__body--md th, .e-hcard__body--md td { border: 1px solid var(--theme-border); padding: 2px 6px; }
 .e-hcard__more {
   padding: 0; border: 0; background: transparent; color: var(--theme-focused-foreground); font: inherit; font-size: 0.72rem;
   letter-spacing: 0.04em; cursor: pointer; text-decoration: underline;
@@ -3704,4 +3738,10 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-theme-duo { padding: 5px 5px; }
   .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-theme-duo__rule { margin: 2px 4px; }
   .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-app-top__actions { gap: 4px; }
+}
+
+/* A small phone: the foot is one short line, no key hints (there is no keyboard). */
+@media (max-width: 480px) {
+  .e-look .e-anim-hud--foot > span:first-child,
+  .e-anim-hud__keys { display: none; }
 }

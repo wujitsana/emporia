@@ -136,7 +136,7 @@ async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => voi
   // A runtime older than this plugin (after `hermes plugins update`): one line with the commands. Text only.
   void sdk.authedFetch("/api/plugins/emporia/_runtime_notice")
     .then((r) => r.json())
-    .then((d) => { if (d?.stale && typeof d.message === "string") shadow.prepend(runtimeBanner(d.message, host)); })
+    .then((d) => { if (d?.stale && typeof d.message === "string") shadow.prepend(runtimeBanner(d.message)); })
     .catch(() => undefined);
   const { setThemeRoot } = await import("./themeConfig");
   setThemeRoot(container);
@@ -146,12 +146,11 @@ async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => voi
   return () => { unfit(); root.unmount(); };
 }
 
-/** The stale-runtime notice: a small dismissible bar over the top of the tab. */
-function runtimeBanner(message: string, host: HTMLElement): HTMLElement {
-  if (getComputedStyle(host).position === "static") host.style.position = "relative";
+/** The stale-runtime notice: a small dismissible bar in the flow, above the header (it pushes the app down). */
+function runtimeBanner(message: string): HTMLElement {
   const bar = document.createElement("div");
   bar.setAttribute("role", "status");
-  bar.style.cssText = "position:absolute;top:0;left:0;right:0;z-index:1000;display:flex;gap:8px;align-items:center;"
+  bar.style.cssText = "position:relative;display:flex;gap:8px;align-items:center;"
     + "padding:6px 12px;font:13px/1.4 ui-monospace,monospace;background:#39ff44;color:#001b00;border-bottom:1px solid #001b00";  // the TESTNET chip's green (no amber anywhere)
   const text = document.createElement("span");
   text.style.flex = "1";
@@ -173,7 +172,7 @@ function notSetUp(): HTMLElement {
   const h = document.createElement("h2");
   h.textContent = "Emporia is not set up in this profile";
   const p = document.createElement("p");
-  p.textContent = "Emporia is a marketplace where agents play, trade and pay each other. "
+  p.textContent = "An experimental playground for AI agents, on an open network. "
     + "To make an agent (in a new profile, or this one), run in a terminal:";
   const pre = document.createElement("pre");
   pre.style.cssText = "padding:.75rem 1rem;border-radius:6px;background:rgba(127,127,127,.15);overflow-x:auto";

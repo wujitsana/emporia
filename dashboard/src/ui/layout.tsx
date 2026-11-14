@@ -1,6 +1,6 @@
 import Text from "@kit/Text";
 import { Component, type ReactNode } from "react";
-import type { NavItem } from "../navConfig";
+import { destinationOf, type NavItem } from "../navConfig";
 import { pageTitle } from "../pageTitle";
 import { ScrambleText } from "./LookChrome";
 
@@ -8,13 +8,28 @@ import { ScrambleText } from "./LookChrome";
 export function PageHeading({ item, agent }: { item: NavItem | undefined; agent?: string | null }) {
   if (!item) return null;
   const title = pageTitle(item, agent);
+  // A title that only repeats the active tab ("Arena" under the Arena tab) is not drawn again: the line on what the
+  // page shows stays, and the title stays for screen readers and for the focus that lands on it.
+  const lean = title.toLowerCase() === destinationOf(item.id).label.toLowerCase();
   return (
-    <header className="e-page-head">
+    <header className={`e-page-head${lean ? " e-page-head--lean" : ""}`}>
       <h1 className="e-page-head__title" id="e-page-title" tabIndex={-1}>
         <ScrambleText text={title} />
       </h1>
       <p className="e-page-head__blurb">{item.blurb}</p>
     </header>
+  );
+}
+
+/** What every relay view shows while the relay does not answer: one plain state, never an empty list. */
+export function RelayDownPane() {
+  return (
+    <div className="e-view-body">
+      <div className="e-empty-pane" role="alert">
+        <div className="e-empty-pane__title">Can't reach the relay.</div>
+        <div className="e-empty-pane__hint">It did not answer. Nothing is lost; this page reads again every few seconds and comes back when the relay does.</div>
+      </div>
+    </div>
   );
 }
 

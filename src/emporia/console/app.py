@@ -36,6 +36,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -185,6 +187,22 @@ def content_security_policy(index_html: str = "") -> str:
             "base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'")
 
 
+_LINK_PAGE = ("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+              "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+              "<title>Emporia console</title></head><body>"
+              "<h1>Open the link the console printed</h1><p>{why}</p>"
+              "<p>Each link opens once. If you lost it, stop the console and start it again for a new one.</p>"
+              "</body></html>")
+
+
+def _link_needed(request: Request, why: str = "This browser has not opened the console yet.") -> Response:
+    """A plain page for a person who arrives without the cookie (a link used twice, another browser);
+    the JSON answer stays for the page's own calls."""
+    if "text/html" in request.headers.get("accept", ""):
+        return Response(_LINK_PAGE.format(why=why), status_code=401, media_type="text/html; charset=utf-8")
+    return JSONResponse({"detail": "open the console with the link it printed"}, status_code=401)
+
+
 def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -207,7 +225,7 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
             response = await call_next(request)
         elif not _authorized(console, dict(request.cookies), request.headers.get("host", ""),
                              request.headers.get(SECRET_HEADER, "")):
-            response = JSONResponse({"detail": "open the console with the link it printed"}, status_code=401)
+            response = _link_needed(request)
         else:
             response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
@@ -219,9 +237,9 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
         return response
 
     @app.get("/session")
-    async def session(key: str = ""):
+    async def session(request: Request, key: str = ""):
         if console.link_key is None or not secrets.compare_digest(key, console.link_key):
-            raise HTTPException(401, "invalid link — each link opens once; restart the console for a new one")
+            return _link_needed(request, "That link was already used or is not valid.")
         console.link_key = None
         r = RedirectResponse("/", status_code=303)
         r.set_cookie(COOKIE, console.cookie_secret, httponly=True, samesite="strict",
@@ -273,8 +291,12 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
         if request.method not in ("GET", "HEAD"):
             raise HTTPException(405, "the dashboard only reads — act through the agent or the emporia command")
         agent = console.agent(agent_id)
-        r = await console.relay.forward(agent, request.method, path, request.url.query,
-                                        dict(request.headers), await request.body())
+        try:
+            r = await console.relay.forward(agent, request.method, path, request.url.query,
+                                            dict(request.headers), await request.body())
+        except httpx.TransportError:
+            # The relay did not answer at all: a 502 the page can tell apart from the relay's own 500.
+            raise HTTPException(502, "can't reach the relay")
         return Response(r.content, status_code=r.status_code, headers=response_headers(r))
 
     @app.post("/dm/{agent_id}/open")

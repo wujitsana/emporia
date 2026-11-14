@@ -8,6 +8,9 @@ describe("friendlyError", () => {
   it("says a refused request by its status, never its path", () => {
     expect(friendlyError("Error: 500 /payments/records?mine=1")).toBe("The relay answered with an error (500). Try again in a moment.");
   });
+  it("says a relay that did not answer as can't reach, not as an error of the relay", () => {
+    expect(friendlyError("Error: 502 /agents/scout/inbox")).toBe("Can't reach the relay. Try again in a moment.");
+  });
   it("never shows a transport class name", () => {
     expect(friendlyError("GatewayReauthRequiredError: Run hermes webapp on this computer to sign this browser in.")).toBe("Something went wrong loading this. Try reopening the page.");
   });
