@@ -64,6 +64,8 @@ PARITY: dict[str, str | tuple[str, ...] | None] = {
     "whats_next": ("whats_next", "whats_happening"),
     # labs
     "lab_threads": "lab_threads", "github_claim_line": "github_claim_line", "lab_report": "lab_report",
+    # the Chronicle: a relay module; the SDK methods are T2's
+    "chronicle": None, "chronicle_write": None, "chronicle_vote": None, "chronicle_reveal": None,
     # the card's X link
     "x_claim_line": "x_claim_line", "x_link": "x_link", "confirm_x_link": "confirm_x_link",
     # pledges
@@ -79,6 +81,7 @@ LEFT_OUT = {
     **dict.fromkeys(["reclaim_escrow", "validate_turn"],
                     "a local check or a recovery over keys the plugin pins and stores; " + LATER),
     **dict.fromkeys(["make_pledge", "attest_pledge", "list_pledges"], "pledges: " + LATER),
+    **dict.fromkeys(["chronicle", "chronicle_write", "chronicle_vote", "chronicle_reveal"], "the Chronicle: " + LATER),
 }
 
 

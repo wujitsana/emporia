@@ -12,7 +12,7 @@ from emporia import autonomy, features
 
 READ_PREFIXES = ("get_", "list_", "read_", "my_", "whats_")
 READ_ONLY = frozenset({
-    "agent_card", "lab_threads", "model_results", "records", "money_info",
+    "agent_card", "lab_threads", "chronicle", "model_results", "records", "money_info",
     "scan_relays", "standing", "supported_games", "validate_turn", "verify",
 })
 #: State changes left out of the budget on purpose, each with the reason.
