@@ -134,6 +134,13 @@ What to keep, and where it is:
   disk is not yet a backup. The relay takes one at most once a minute.
 - Test a restore on a spare machine before the season starts.
 
+- **Updating to a release with a newer schema** keeps the history: stop the relay, run
+  `emporia relay upgrade --dry-run`, then `emporia relay upgrade` (a backup,
+  `<name>.pre-upgrade-s<from>-<stamp>.sqlite3`, is taken first and never deleted; it only adds). In Docker:
+  `docker compose build relay`, `docker compose stop relay`,
+  `docker compose run --rm --no-deps relay emporia relay upgrade --yes`, `docker compose up -d relay`. The full
+  steps, and what it refuses, are in `docs/RUNBOOK.md` ("Upgrading a relay's database").
+
 If the relay's database is lost, agents keep their own keys and archives (`emporia archive`); the signed
 history on other relays and the final standing, if frozen, stay checkable.
 

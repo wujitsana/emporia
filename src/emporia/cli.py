@@ -503,6 +503,8 @@ def cmd_relay(args: argparse.Namespace) -> int:
         from emporia import relay_db
         return relay_db.cli(args.url, list(args.names), dest=args.dir, yes=args.yes,
                             person=_persons_terminal(), ask=ask)
+    if args.action == "upgrade":
+        return cmd_relay_upgrade(args)
     if args.action == "rotate-sign-in-secret":
         return cmd_relay_rotate_sign_in_secret(args)
     if args.action == "config":
@@ -4726,6 +4728,31 @@ def _stable_ids_of(raw: str, relay: str) -> str:
         out.append(str(stable).lower())
         print(f"  {item} -> {stable[:12]}… (its stable id)")
     return ",".join(out)
+
+
+def _relay_db_path(args: argparse.Namespace) -> Path:
+    """The relay's database: --db, else the folder given with --dir (its .env's EMPORIA_DB_PATH, else
+    emporia.sqlite3 in it), else this profile's relay (EMPORIA_DB_PATH or the default)."""
+    if getattr(args, "db", ""):
+        return Path(args.db).expanduser().resolve()
+    if getattr(args, "dir", ""):
+        folder = Path(args.dir).expanduser().resolve()
+        env = installer().harvest_env(folder) if (folder / ".env").exists() else {}
+        raw = env.get("EMPORIA_DB_PATH", "")
+        if raw:
+            path = Path(raw).expanduser()
+            return path if path.is_absolute() else folder / path
+        return folder / "emporia.sqlite3"
+    from emporia import config
+    return config.database_path().resolve()
+
+
+def cmd_relay_upgrade(args: argparse.Namespace) -> int:
+    """`emporia relay upgrade [--db PATH | --dir FOLDER] [--dry-run] [--yes]`: carry a relay database from an
+    older schema version to this one, additive changes only, backup first (emporia.schema_upgrade)."""
+    from emporia import schema_upgrade
+    return schema_upgrade.cli(_relay_db_path(args), dry=bool(getattr(args, "dry_run", False)),
+                              yes=bool(args.yes), tty=_TTY, ask=ask)
 
 
 def cmd_relay_config(args: argparse.Namespace) -> int:
@@ -9477,7 +9504,7 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("relay", help="start, stop or inspect this machine's relay; `use` moves agents to another; "
                                      "`host` runs one for other machines, in Docker behind https")
     r.add_argument("action", choices=["start", "stop", "restart", "status", "logs", "use", "host", "link", "unlink", "links",
-                                      "access", "members", "move", "backup", "db", "rotate-key", "rotate-sign-in-secret",
+                                      "access", "members", "move", "backup", "db", "upgrade", "rotate-key", "rotate-sign-in-secret",
                                       "config", "modules", "overview", "owner-key", "remove", "seed", "watch"])
     r.add_argument("url", nargs="?", default="", help="use, link, unlink: the other relay's URL; modules: add or remove; "
                                                       "seed: the operator agent's profile; watch: the relay whose /health "
@@ -9506,7 +9533,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "can capture or void a held payment, so the relay has a say in who gets paid")
     r.add_argument("--admin", default=None, help="host: a Hermes profile that is its operator")
     r.add_argument("--yes", action="store_true", help="move: go ahead even if the old relay is not answering; "
-                        "db restore: do not ask (the warning is still printed)")
+                        "db restore, upgrade: do not ask (the warning is still printed)")
+    r.add_argument("--db", default="", help="upgrade: the database file (default: --dir's emporia.sqlite3, else this "
+                        "relay's EMPORIA_DB_PATH)")
+    r.add_argument("--dry-run", action="store_true", help="upgrade: print the plan and change nothing")
     r.add_argument("--remove", action="store_true", help="backup: stop using this relay as a backup")
     r.add_argument("--keys-dir", default="", help="owner-key: where to keep the key (default ~/.emporia-owner/keys)")
     r.add_argument("--access", choices=["open", "read-only", "closed"], default="",

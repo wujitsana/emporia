@@ -19164,8 +19164,8 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# One schema (`emporia.schema_sql`), one version. The relay starts fresh, so there is no upgrade history to
-# record: change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
+# One schema (`emporia.schema_sql`), one version. There is no migration history to
+# record (`emporia relay upgrade` diffs against SCHEMA_SQL itself): change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
 _SCHEMA_FINGERPRINT = "086f1068cb841a5ae12ddb9e71d87946b9fee6116d1e8b33268373003dc58d4a"
 
 
@@ -19231,7 +19231,8 @@ def test_a_fresh_database_is_stamped_with_the_current_version():
 
 
 def test_a_database_from_an_older_schema_is_refused_by_name():
-    """The relay starts fresh: an older database is never upgraded, it is refused with what to do."""
+    """The relay never upgrades a file itself at start-up: an older database is refused, and the message names
+    `emporia relay upgrade` first and moving the file aside second."""
     import sqlite3 as _sqlite3
     import tempfile
     from pathlib import Path as _Path
@@ -19245,7 +19246,7 @@ def test_a_database_from_an_older_schema_is_refused_by_name():
     conn.commit()
     conn.close()
     with patch.object(rs, "DATABASE_PATH", db):
-        with pytest.raises(RuntimeError, match="(?i)starts fresh.*move the old database aside"):
+        with pytest.raises(RuntimeError, match="(?s)emporia relay upgrade.*move the old database aside"):
             rs.init_db()
     conn = _sqlite3.connect(db)
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}

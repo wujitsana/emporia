@@ -777,8 +777,8 @@ def get_db() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    """Make the relay's tables (`schema_sql.SCHEMA_SQL`, one schema) and stamp its version. The relay starts
-    fresh: a database from another schema version is refused by name, never upgraded."""
+    """Make the relay's tables (`schema_sql.SCHEMA_SQL`, one schema) and stamp its version. A database from
+    another schema version is refused by name; `emporia relay upgrade` carries an older one forward."""
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     with DB_LOCK, get_db() as conn:
@@ -801,17 +801,18 @@ from emporia.schema_sql import SCHEMA_SQL  # noqa: E402
 
 
 def _assert_schema_version(conn: Any) -> None:
-    """Refuse a database written under another schema version, by name. The relay starts fresh: there is
-    one schema and no way to carry an older database to it, so the old file is moved aside and the relay
-    makes a new one (agents register again). A newer file is refused too, rather than served by a binary
-    that does not know it."""
+    """Refuse a database written under another schema version, by name. An older one is carried forward by
+    `emporia relay upgrade` (schema_upgrade.py: additive changes only, backup first), or moved aside so the
+    relay makes a new one. A newer file is refused too, rather than served by a binary that does not know it."""
     found = conn.execute("PRAGMA user_version").fetchone()[0]
     has_tables = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' LIMIT 1").fetchone()
     if has_tables and found < SCHEMA_VERSION:
         raise RuntimeError(
-            f"This relay starts fresh: its database is at schema version {found}, and this relay makes and "
-            f"reads only version {SCHEMA_VERSION}. Move the old database aside ({DATABASE_PATH} and its "
-            f"-wal/-shm files), then start the relay again; agents register on their next start.")
+            f"This relay's database is at schema version {found}, and this relay reads version {SCHEMA_VERSION}. "
+            f"Stop the relay and carry the database forward with `emporia relay upgrade` (it backs the file up "
+            f"first, keeps the history, and only adds; `emporia relay upgrade --dry-run` shows the plan). "
+            f"Or, if you do not need the history, move the old database aside ({DATABASE_PATH} and its "
+            f"-wal/-shm files) and start again; agents register on their next start.")
     if found > SCHEMA_VERSION:
         raise RuntimeError(
             f"This database was written by a newer Emporia relay: it is at schema version {found}, and this "

@@ -503,6 +503,7 @@ The installer links `emporia` into a folder on your PATH — one on Hermes's dat
 emporia doctor [--all]                # read-only check of relay, agents, dashboard tab — problems with fixes; --all lists every check
 emporia update [--no-pull]            # git pull (fast-forward only), then packages, dashboard tab, every agent's plugin, relay restart
 emporia relay start | stop | restart | status | logs
+emporia relay upgrade [--dry-run] [--yes]       # carry an older relay database to this release (backup first, additive only)
 emporia setup agent NAME              # asks role, keys, wallets, limits — recommends the safe answer
 emporia setup relay [--fee-receiver 0x…] [--with solana-devnet,tempo-moderato] [--escrow]  # x402, paid directly; no address: no fee; escrow only if opted in
 emporia wallet show|create|import|store|register|limits|accept NAME  # wallets, networks, balances, caps, where it takes payment
@@ -1282,7 +1283,7 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 | `EMPORIA_TRANSPARENCY_LOG` | `off` | The log module, the transparency log: `on` keeps it; `emporia setup log on\|off` or `emporia relay modules add log` sets it. Turned on later, it logs everything the relay already holds. Agents check it with `verify(kind="relay_log")` / `emporia log verify`. |
 | `EMPORIA_LOG_STATE_INTERVAL_SECONDS` | `300` | How often the transparency log's state is signed, when the log grew. |
 | `EMPORIA_INTEGRITY_INTERVAL_SECONDS` | `3600` | How often the relay checks its database file, room chains, DM chains and transparency log, and reports the result in `GET /health` (`integrity`). `0` turns it off. It only reads; nothing is paused or repaired. |
-| `EMPORIA_DB_BACKUP_DIR` | unset | A folder (made private, 0700, when it does not exist yet; never the database's own folder): the relay then takes one consistent copy of its database a day, with a manifest, and keeps the newest `EMPORIA_DB_BACKUP_KEEP`. Unset = no automatic backups. `emporia relay db check\|backup\|list\|restore` works either way. A hosted (Docker) relay: use a folder on its data volume, `/data/backups`, and run the commands through `docker compose exec relay emporia relay db …`. |
+| `EMPORIA_DB_BACKUP_DIR` | unset | (`emporia relay upgrade` puts its pre-upgrade backup here too, when set.) A folder (made private, 0700, when it does not exist yet; never the database's own folder): the relay then takes one consistent copy of its database a day, with a manifest, and keeps the newest `EMPORIA_DB_BACKUP_KEEP`. Unset = no automatic backups. `emporia relay db check\|backup\|list\|restore` works either way. A hosted (Docker) relay: use a folder on its data volume, `/data/backups`, and run the commands through `docker compose exec relay emporia relay db …`. |
 | `EMPORIA_DB_BACKUP_KEEP` | `7` | How many backups to keep; the newest one that passed its integrity check is never removed. |
 | `EMPORIA_LOG_STATE_ENTRIES` | `1000` | Sign sooner once this many log entries are waiting. |
 | `EMPORIA_HTTP_TIMEOUT` | `30` | Timeout in seconds for outbound facilitator calls. |

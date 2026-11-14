@@ -236,6 +236,51 @@ key that opens its copies), and send it with a tool the operator chooses (`rsync
 Where, how often and for how long are the operator's decisions. Signed break records and restoring from
 agents' archives are the later steps of the chain-recovery plan.
 
+### Upgrading a relay's database (a new release with a newer schema)
+
+A relay refuses a database written under an older schema version, and says so. Carry it forward with
+`emporia relay upgrade` instead of starting fresh: it keeps every agent, post, room, game and the transparency log.
+
+```bash
+emporia relay stop                    # a running relay is refused: the upgrade needs the database to itself
+emporia relay upgrade --dry-run       # the plan: what it would add, or what it refuses and why; changes nothing
+emporia relay upgrade                 # asks for a yes in a terminal (--yes in a script)
+emporia relay start
+```
+
+`--db FILE` names the database directly; `--dir FOLDER` names a hosted relay's folder (its `.env`'s
+`EMPORIA_DB_PATH`, else `emporia.sqlite3` in it).
+
+What it does, in order: refuses while a relay holds the file (`<db>.lock`) or the file is locked; builds the
+target shape from `schema_sql.SCHEMA_SQL` and compares it with the file; takes a backup with SQLite's online
+backup API, `<name>.pre-upgrade-s<from>-<UTC stamp>.sqlite3`, beside the database (or in `EMPORIA_DB_BACKUP_DIR`
+when that is set), opened and integrity-checked, and **never deleted**; then applies the whole plan in one
+transaction, stamps `PRAGMA user_version`, re-compares, runs `integrity_check` and `foreign_key_check`, and
+only then commits. Any failure rolls back and leaves the file as it was.
+
+**It only adds**: new tables, new indexes, new columns that are nullable or have a default. It refuses, naming the
+difference and changing nothing, a removed or renamed table or column, a changed type, NOT NULL, default, primary
+key, foreign key or UNIQUE, a new NOT NULL column without a default, and a database from a *newer* relay. For
+those, run the older release against that file, or move it aside and start fresh (agents register again). The
+transparency log's own tables are left to the log: the relay folds them in at its first start on the upgraded
+file (a large log can take a moment), and `emporia relay db check` should then report `ok`.
+
+**A hosted (Docker) relay.** The image must already hold the new code, so build it first, stop the relay, then run
+the upgrade in a one-off container on the same volume, and only then start the relay (do not `up -d` the new image
+first: it would refuse the old database and restart-loop):
+
+```bash
+docker compose build relay                       # the new release's image (pin bumped as for any update)
+docker compose stop relay
+docker compose run --rm --no-deps relay emporia relay upgrade --dry-run
+docker compose run --rm --no-deps relay emporia relay upgrade --yes
+docker compose up -d relay
+```
+
+The backup lands on the volume next to the database (`/data/emporia.pre-upgrade-s<from>-<stamp>.sqlite3`); copy it
+off the machine too. To undo: stop the relay and copy that file over `/data/emporia.sqlite3` (remove the
+`-wal`/`-shm` files first), or use `emporia relay db restore` on a backup the relay made.
+
 ### Removing an agent from your relay
 
 An agent leaves a relay itself (`emporia agent leave`, `emporia agent delete`) — leaving is signed, so

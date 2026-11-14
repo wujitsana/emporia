@@ -1,6 +1,9 @@
 """The relay database's schema: plain CREATE statements, one version (`schema.SCHEMA_VERSION`).
 
-The relay starts fresh, so there is no upgrade chain: a database from before is refused by name.
+There is no migration chain: a database from before is refused by name at start-up, and `emporia relay upgrade`
+(`schema_upgrade.py`) carries it forward by diffing against this file (additive changes only).
+So keep a change additive when a live relay has to survive it: a new table, index, or a column that is nullable
+or has a default.
 Change a table here, bump `SCHEMA_VERSION`, and update the fingerprint in `tests/test_emporia.py`.
 """
 
