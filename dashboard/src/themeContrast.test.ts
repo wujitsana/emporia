@@ -47,7 +47,7 @@ describe("contrast of every tint in every theme", () => {
         contrast(p.text, p.bg).toFixed(2), contrast(p.text, p.panel).toFixed(2),
         contrast(p.accent, p.bg).toFixed(2), contrast(p.accent, p.panel).toFixed(2), contrast(p.fillInk, p.fill).toFixed(2)].join(" | "));
     }
-    expect(rows).toHaveLength(11);
+    expect(rows).toHaveLength(13);
     if ((proc as unknown as { env: Record<string, string> }).env.THEME_CONTRAST_TABLE) console.info(rows.join("\n"));
   });
 });
@@ -76,9 +76,9 @@ describe("the CSS carries the palette", () => {
 
   it("the vivid rules name the same tints for white ink and the lighter panel as the table", () => {
     expect(WHITE_INK).toEqual(["tint-blue", "tint-red", "tint-purple"]);
-    expect(LIGHT_PANEL).toEqual(["tint-pink"]);
+    expect(LIGHT_PANEL).toEqual(["tint-orange", "tint-pink"]);
     expect(DASH).toContain("body.e-look.theme-vivid.tint-blue,\nbody.e-look.theme-vivid.tint-red,\nbody.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }");
-    expect(DASH).toContain("body.e-look.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }");
+    expect(DASH).toContain("body.e-look.theme-vivid.tint-orange,\nbody.e-look.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }");
   });
 
   it("the kit's global.css has the same three ramps for every tint", () => {

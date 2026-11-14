@@ -2756,6 +2756,7 @@ body.e-look.theme-vivid {
   --e-ink-boost: 100%;
   --anim-faint: var(--theme-text);
 }
+body.e-look.theme-vivid.tint-orange,
 body.e-look.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }
 body.e-look.theme-vivid.tint-blue,
 body.e-look.theme-vivid.tint-red,

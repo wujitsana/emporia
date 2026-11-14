@@ -381,7 +381,7 @@ body.tint-purple {
 }
 
 body.tint-orange {
-  --tint: #ffac1c;
+  --tint: #d57c22;   /* burnt orange, as the user picked (11-14); not amber */
 }
 
 body.tint-pink {
@@ -513,6 +513,7 @@ body.theme-vivid.tint-pink {
   --theme-window-background: var(--vv-panel);
   --theme-window-shadow: var(--vv-ink);
 }
+body.theme-vivid.tint-orange,
 body.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--tint) 80%, white); }
 body.theme-vivid.tint-blue,
 body.theme-vivid.tint-red,

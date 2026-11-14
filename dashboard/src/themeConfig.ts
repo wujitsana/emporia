@@ -8,6 +8,7 @@ export const TINTS = [
   "tint-green",
   "tint-blue",
   "tint-red",
+  "tint-orange",
   "tint-purple",
   "tint-pink",
 ] as const;
@@ -18,6 +19,7 @@ export const TINT_LABELS: Record<Tint, string> = {
   "tint-green": "Green",
   "tint-blue": "Blue",
   "tint-red": "Red",
+  "tint-orange": "Orange",
   "tint-purple": "Purple",
   "tint-pink": "Pink",
 };
@@ -26,11 +28,12 @@ export const TINT_COLORS: Record<Tint, string> = {
   "tint-green": "#39ff44",
   "tint-blue": "#0047ff",
   "tint-red": "#b00331",
+  "tint-orange": "#d57c22",
   "tint-purple": "#8000ff",
   "tint-pink": "#ff00ff",
 };
 
-/** A saved or typed tint → a tint. The old default (`""`, "amber"), a retired orange or yellow, and anything unknown load as green. */
+/** A saved or typed tint → a tint. The old default (`""`, "amber"), a retired yellow, and anything unknown load as green. */
 export function normalizeTint(v: string | null | undefined): Tint {
   return (TINTS as readonly string[]).includes(v ?? "") ? (v as Tint) : DEFAULT_TINT;
 }
