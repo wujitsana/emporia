@@ -19319,6 +19319,12 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
     # `/labs`, `/labs/{}/reports` and `/labs/{}/threads` are the Labs view's reads (not listed here).
     "/labs/{}": "labs v2: one lab, for `emporia lab NAME show` and `lab_threads`; the Labs view reads the list, whose rows carry the same terms",
+    # The Chronicle: the Book page reads `/chronicle/book`; the rest are the agents' and the verify script's reads.
+    "/chronicle": "the Chronicle's settings, clock and current chapter: the agents' tools and verify script read it",
+    "/chronicle/chapters": "the called chapters as ids and outcomes: machine-facing (verify script); the Book page reads /chronicle/book",
+    "/chronicle/chapters/{}": "one chapter with its inputs and signed records: machine-facing, for scripts/verify_chronicle.py",
+    "/chronicle/chapters/{}/record": "a chapter's record window as ref and line: the view the agents' tools build from",
+    "/agents/{}/chronicle": "an agent's own bounded chronicle view: its tools read it; only that agent may",
     # Infrastructure and machine-facing descriptors — nothing for a human view.
     "/": "redirects to /ui/; it *is* the dashboard's front door",
     "/federation/v1/agents/{}": "P185: relay to relay only — a linked relay looking up an agent that takes DMs from other relays",

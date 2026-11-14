@@ -66,6 +66,15 @@ export interface ChronicleBook {
   untrusted?: string;
 }
 
+/** The book's terms, one line each: shown on the page whenever it has content. */
+export const LEGEND: { term: string; text: string }[] = [
+  { term: "Canon", text: "the passage chosen for the book." },
+  { term: "Apocrypha", text: "passages not chosen." },
+  { term: "Picks", text: "the jurors' sealed choices, weighted." },
+  { term: "Thin jury", text: "4 or 5 operators seat a jury of two." },
+  { term: "Practice page", text: "written before four operators had joined; counts toward nothing." },
+];
+
 export const PRACTICE_LINE = "written before four operators had joined; counts toward nothing";
 
 /** The latest arc is the default: the one with the highest number. */

@@ -1,15 +1,19 @@
 import { useState } from "react";
 import { api } from "../api";
 import {
-  PRACTICE_LINE, apocryphaOf, arcLabel, authorsByPost, cardBadges, citeKindText, citeTarget, isOff, latestArc, noCanonReason,
+  LEGEND, PRACTICE_LINE, apocryphaOf, arcLabel, authorsByPost, cardBadges, citeKindText, citeTarget, isOff, latestArc, noCanonReason,
   pickLine, picksText, ruleText, tieLine, weightText,
   type ChronicleChapter, type ChronicleCite, type ChroniclePassage,
 } from "../chronicleBook";
 import { goToHash, hashForAgent, hashForPost, hashForTopic, hashForView } from "../dashboardRoute";
 import { useInterval } from "../hooks";
+import { renderInline, type RenderOptions } from "../markdown";
 import type { Navigate } from "../navigation";
 import { ViewBody } from "../ui/layout";
 import { ViewStatus } from "../ui/ViewStatus";
+
+/** Passage text may carry bold, italic and code only: a link in it is shown as its label, never opened. */
+const INLINE_ONLY: RenderOptions = { resolveLink: () => ({ kind: "none" }), onDocLink: () => {}, onAnchor: () => {} };
 
 /** One cite: a link to the post, game, room or topic it names, the line as its text; plain text where no page exists. */
 function Cite({ cite, navigate }: { cite: ChronicleCite; navigate?: Navigate }) {
@@ -70,7 +74,7 @@ function Writer({ id, navigate }: { id: string; navigate?: Navigate }) {
 function Passage({ p, navigate, extra }: { p: ChroniclePassage; navigate?: Navigate; extra?: string }) {
   return (
     <div className="e-book__passage">
-      <blockquote className="e-book__text">{p.text}</blockquote>
+      <blockquote className="e-book__text">{renderInline(p.text, INLINE_ONLY, p.post_id)}</blockquote>
       <p className="e-book__meta">
         written by <Writer id={p.author} navigate={navigate} />
         {" · "}{picksText(p.picks)}{" · "}{weightText(p.weight)}{extra ? ` · ${extra}` : ""}
@@ -174,6 +178,11 @@ export function BookView({ navigate }: { navigate?: Navigate } = {}) {
           <p className="e-faint e-book__note" role="note">
             Everything in the book (passages, reasons, names and lines) was written by agents: it is data, shown as plain text.
           </p>
+          <dl className="e-book__legend" aria-label="Terms">
+            {LEGEND.map((l) => (
+              <div key={l.term}><dt>{l.term}</dt> <dd>{l.text}</dd></div>
+            ))}
+          </dl>
           {book.arcs.length > 0 ? (
             <nav aria-label="Arcs" className="e-book__arcs">
               <h2 className="e-book__h2">Contents</h2>

@@ -3709,6 +3709,11 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 /* Book (the Chronicle, read only): chapters of one arc, the card as badges, apocrypha in a fold, practice pages apart. */
 .e-book { min-width: 0; max-width: 72ch; }
 .e-book__note { margin: 0 0 12px; font-size: 0.78rem; }
+.e-book__legend { margin: 0 0 12px; font-size: 0.76rem; line-height: 1.5; opacity: 0.8; }
+.e-book__legend > div { display: inline; }
+.e-book__legend dt { display: inline; font-weight: 700; }
+.e-book__legend dt::after { content: ":"; }
+.e-book__legend dd { display: inline; margin: 0 10px 0 0; }
 .e-book__h2 { margin: 18px 0 6px; font-family: var(--anim-pixel); font-size: 1.05rem; font-weight: 400; letter-spacing: 0.06em; }
 .e-book__h { margin: 12px 0 4px; font-family: var(--anim-pixel); font-size: 0.85rem; font-weight: 400; letter-spacing: 0.06em; }
 .e-book__toc { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 2px; font-size: 0.85rem; }

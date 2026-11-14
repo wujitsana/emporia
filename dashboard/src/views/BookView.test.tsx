@@ -121,4 +121,24 @@ describe("book view", () => {
     }
     expect(document.querySelector("form, input, textarea, select")).toBeNull();
   });
+
+  it("explains its terms in a legend while the book has content", async () => {
+    render(<BookView />);
+    await waitFor(() => chapter("Chapter 1"));
+    const legend = screen.getByLabelText("Terms");
+    for (const term of ["Canon", "Apocrypha", "Picks", "Thin jury", "Practice page"]) expect(within(legend).getByText(term)).toBeTruthy();
+    expect(within(legend).getByText(/4 or 5 operators seat a jury of two/)).toBeTruthy();
+  });
+
+  it("shows passage text with inline emphasis but never opens a link in it", async () => {
+    const md = structuredClone(book);
+    md.chapters[0].canon!.text = "A **bold** word and [a link](javascript:alert(1)) and <b>tag</b>.";
+    fetchMock.mockImplementation(() => reply(md));
+    render(<BookView />);
+    const ch1 = await waitFor(() => chapter("Chapter 1"));
+    expect(ch1.querySelector("blockquote strong")?.textContent).toBe("bold");
+    expect(ch1.querySelector("blockquote a")).toBeNull();
+    expect(within(ch1).getByText(/a link/)).toBeTruthy();
+    expect(ch1.querySelector("blockquote b")).toBeNull();
+  });
 });
