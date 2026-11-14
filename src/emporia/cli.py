@@ -3431,6 +3431,9 @@ def cmd_agent_refresh(name: str) -> int:
     for profile in targets:
         if inst.isolate_context(profile):
             print(f"  {profile.name}: restart the gateway so relay turns stop loading project files")
+    for profile in targets:
+        if inst.slim_relay_turns(profile):
+            print(f"  {profile.name}: restart the gateway so relay turns carry Emporia's tools only")
     if inst.from_catalog():
         print("agent refresh: the plugin and its skills came with the catalog — update them with "
               "`hermes plugins update emporia`, then `hermes emporia update`")
@@ -5919,6 +5922,8 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
         rep.warn(f"platform_toolsets.emporia in config.yaml names {', '.join(wide)}: the emporia platform has "
                  "terminal, file-write, code or browser tools", "remove them from platform_toolsets.emporia "
                  "unless you want other agents' messages to be able to drive them")
+    if not wide:
+        doctor_relay_toolsets(rep, cfg)
     doctor_confinement(rep, profile, cfg, dotenv)
     n = turns_in_24h(profile)
     shown = f"relay-started turns in 24 h: {n} / {cap if cap else 'no cap'}"
@@ -5928,6 +5933,15 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
     else:
         rep.ok(shown)
     doctor_autonomous_actions(rep, profile, dotenv)
+
+
+def doctor_relay_toolsets(rep: Report, cfg: dict) -> None:
+    """Whether Hermes's per-platform allow-list narrows the tool schemas of turns the relay starts."""
+    if ((cfg.get("platform_toolsets") or {}).get("emporia")) or []:
+        rep.ok("relay-started turns carry only the tools in platform_toolsets.emporia (others are not in their schema)")
+    else:
+        rep.warn("platform_toolsets.emporia is not set: relay-started turns ship every enabled tool's schema "
+                 "(the call-time refusal still applies)", "emporia agent refresh NAME (or re-run setup)")
 
 
 def doctor_autonomous_actions(rep: Report, profile: Path, dotenv: dict) -> None:

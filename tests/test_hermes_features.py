@@ -133,3 +133,83 @@ def test_the_cost_by_kind_views_read_a_dated_chat_id_as_the_same_kind(tmp_path):
     assert analytics._DAY_SUFFIX.sub("", "dm:bob:2026-11-14") == "dm:bob"
     assert analytics._DAY_SUFFIX.sub("", ":2026-11-14").lstrip(":") == ""
     assert analytics._DAY_SUFFIX.sub("", "session:s1") == "session:s1"
+
+
+# ── 1 + 3: the relay-turn tool allow-list and the busy-input mode ───────────────────────────────
+
+def _inst():
+    from emporia import cli
+    return cli.installer()
+
+
+def _profile(tmp_path, cfg=None):
+    p = tmp_path / "profiles" / "alpha"
+    p.mkdir(parents=True)
+    if cfg is not None:
+        (p / "config.yaml").write_text(yaml.dump(cfg))
+    return p
+
+
+def test_setup_writes_the_relay_turn_allow_list_and_merges_with_what_is_there(tmp_path, capsys):
+    inst = _inst()
+    p = _profile(tmp_path, {"platform_toolsets": {"telegram": ["web"]}, "model": {"default": "m"},
+                            "agent": {"disabled_toolsets": ["terminal"]}})
+    assert inst.slim_relay_turns(p) == ["platform_toolsets.emporia: " + ", ".join(inst.RELAY_TURN_TOOLSETS)]
+    cfg = yaml.safe_load((p / "config.yaml").read_text())
+    assert cfg["platform_toolsets"]["emporia"] == ["mcp-emporia", "skills", "todo", "session_search", "clarify"]
+    assert cfg["platform_toolsets"]["telegram"] == ["web"] and cfg["model"] == {"default": "m"}
+    assert cfg["agent"] == {"disabled_toolsets": ["terminal"]}
+    assert "cron" not in cfg["platform_toolsets"], "rounds keep the profile's own tools (call-time refusal)"
+    assert not any(t in cfg["platform_toolsets"]["emporia"]
+                   for t in ("delegation", "web", "memory", "tts", "vision", "connections", "terminal", "file"))
+
+
+def test_the_allow_list_names_only_what_the_call_time_allow_list_lets_through():
+    inst = _inst()
+    relay_turn = importlib.util.spec_from_file_location("emporia_relay_turn_hf", PLUGIN / "relay_turn.py")
+    mod = importlib.util.module_from_spec(relay_turn)
+    relay_turn.loader.exec_module(mod)
+    toolset_of = {"skills_list": "skills", "skill_view": "skills", "todo_list": "todo",
+                  "session_search": "session_search", "clarify": "clarify"}
+    allowed_hermes = set(mod.ALLOWED) - {"tool_search", "tool_describe"}     # the bridge comes with Tool Search
+    assert {toolset_of[t] for t in allowed_hermes} == set(inst.RELAY_TURN_TOOLSETS) - {"mcp-emporia"}
+
+
+def test_running_setup_again_changes_nothing_and_keeps_an_operators_own_list(tmp_path, capsys):
+    inst = _inst()
+    p = _profile(tmp_path, {})
+    inst.slim_relay_turns(p)
+    first = (p / "config.yaml").read_text()
+    assert inst.slim_relay_turns(p) == [] and (p / "config.yaml").read_text() == first
+    own = _profile(tmp_path.parent / (tmp_path.name + "_b"), {"platform_toolsets": {"emporia": ["emporia", "web"]}})
+    assert inst.slim_relay_turns(own) == []
+    assert yaml.safe_load((own / "config.yaml").read_text())["platform_toolsets"]["emporia"] == ["emporia", "web"]
+
+
+def test_a_new_profile_queues_a_second_event_and_an_existing_one_gets_one_line_of_advice(tmp_path, capsys):
+    inst = _inst()
+    new = _profile(tmp_path, {})
+    inst.slim_relay_turns(new, new_profile=True)
+    assert yaml.safe_load((new / "config.yaml").read_text())["display"]["busy_input_mode"] == "queue"
+    assert "Tip:" not in capsys.readouterr().out
+    old = _profile(tmp_path.parent / (tmp_path.name + "_old"), {"display": {"skin": "x"}})
+    inst.slim_relay_turns(old, new_profile=False)
+    out = capsys.readouterr().out
+    assert out.count("Tip:") == 1 and "-p alpha config set display.busy_input_mode queue" in out
+    assert "busy_input_mode" not in yaml.safe_load((old / "config.yaml").read_text())["display"]
+    chosen = _profile(tmp_path.parent / (tmp_path.name + "_chosen"), {"display": {"busy_input_mode": "steer"}})
+    inst.slim_relay_turns(chosen, new_profile=False)
+    assert "Tip:" not in capsys.readouterr().out, "an operator's own choice is not argued with"
+
+
+def test_doctor_says_whether_relay_turns_are_slimmed(tmp_path, capsys):
+    from emporia import cli
+    inst = _inst()
+    p = _profile(tmp_path, {})
+    rep = cli.Report()
+    cli.doctor_relay_toolsets(rep, inst.load_yaml(p / "config.yaml"))
+    assert "platform_toolsets.emporia is not set" in capsys.readouterr().out
+    inst.slim_relay_turns(p)
+    rep = cli.Report()
+    cli.doctor_relay_toolsets(rep, inst.load_yaml(p / "config.yaml"))
+    assert "only the tools in platform_toolsets.emporia" in capsys.readouterr().out and not rep.failed
