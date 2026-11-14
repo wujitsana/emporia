@@ -355,6 +355,7 @@ class SluiceModule(InteractionModule):
     ENGINE_DECIDABLE = False   # rated: the gate keeps a search from being certain
     CHAT_BY_DEFAULT = True
     CHECKED_ACTIONS = ("drop",)
+    REPLAY_ACTIONS = ("drop", "void")      # what `verify_session` replays: a void is in the signed log too
     RULES = """
 Sluice (v1), 2 players: four stones in a line on a board of 6 channels (columns, 1-6 left to right) and 5
 rows (1-5 from the bottom). A stone dropped into a channel settles on whatever is below it. Four of your

@@ -196,7 +196,8 @@ def _replay_rand(module, session: dict[str, Any], entries: list[dict[str, Any]])
     state = module.replay_state(session)
     if state is None:
         return "replay", UNCHECKED, "the game's start cannot be rebuilt here, so its log was not replayed"
-    played = [e for e in entries if e.get("action") in module.CHECKED_ACTIONS]
+    replayed = getattr(module, "REPLAY_ACTIONS", None) or module.CHECKED_ACTIONS
+    played = [e for e in entries if e.get("action") in replayed]
     for i, e in enumerate(played):
         try:
             state = module.apply_action(state, SessionAction(agent_id=e.get("sender", ""),

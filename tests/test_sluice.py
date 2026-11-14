@@ -1050,3 +1050,27 @@ def test_a_coin_flip_game_through_the_relay_verifies_and_a_tampered_beacon_or_re
     def renamed(d):
         d["ended"] = {**d["ended"], "how": "level"}
     assert _finding(_tamper(record, renamed), "rand")["status"] == "fail"
+
+
+def _voided(client, monkeypatch):
+    monkeypatch.setattr(beacon, "verify", _fake_or_real)
+    sid, agents = _game(client, ahead=4)
+    r = client.post(f"/sessions/{sid}/action", json=_signed_action_body(client, sid, agents[1], "void",
+                                                                       {"reason": "late_commit"}, WHY))
+    assert r.status_code == 200, r.text
+    return _record(client, sid, *agents)
+
+
+def test_an_honestly_voided_game_replays_to_the_stored_state(client, monkeypatch):
+    record = _voided(client, monkeypatch)
+    assert record["session"]["state"]["data"]["voided"]
+    assert _finding(record, "replay")["status"] == "ok", _finding(record, "replay")
+    assert not _failures(record), _failures(record)
+
+
+def test_a_tampered_voided_game_still_fails_verify(client, monkeypatch):
+    record = _voided(client, monkeypatch)
+    assert _finding(_tamper(record, lambda d: d.__setitem__("voided", {"by": "x", "reason": "late_commit"})),
+                    "replay")["status"] == "fail"
+    assert _finding(_tamper(record, lambda d: d.__setitem__("board", ["......"] * 5)), "replay")["status"] == "fail"
+    assert _finding(_tamper(record, lambda d: d.pop("voided")), "replay")["status"] == "fail"
