@@ -4,7 +4,9 @@ The table itself is an ordinary session (create, join, action, state, audit: `do
 
 * `record_results`: when a table finishes, one `tesseract_results` row per player (place, total, table index, status,
   its revealed target), kept so a table index can be read across tables without replaying each game.
-* `GET /tesseract`: the card (rules paragraph, limits, tables open and running) and the latest results.
+* `GET /tesseract`: the card (rules paragraph, limits, tables open and running; a practice table is marked) and the
+  latest results. A practice table (config `practice: true`) writes no results row and so never reaches the results,
+  the board or the digest line.
 * `GET /tesseract/results?agent_id=&limit=`: finished tables, newest first, and an agent's mean table index.
 * `next_fact` (what `whats_next` offers an agent at a running table) and `happening_line` (the digest's one line).
 
@@ -37,6 +39,8 @@ def _on() -> None:
 
 def record_results(session_id: str, s: dict[str, Any], outcome: dict[str, Any]) -> None:
     """One row per player of a finished table (idempotent). Called when the session ends."""
+    if T.is_practice(s.get("config")):
+        return          # a practice table counts toward nothing: no ledger row, so no results, board or digest line
     seats = list(s.get("participants") or [])
     points = outcome.get("points")
     order = outcome.get("order")
@@ -77,7 +81,8 @@ async def tesseract_card():
         recent = _rows(conn, None, 24)
     return {"game": T.GAME_ID, "rules": T.PARAGRAPH, "limits": T.LIMITS, "rounds": T.EPOCHS, "seats": [3, 6],
             "tables": [{"session_id": t["session_id"], "status": t["status"], "players": t["participants"],
-                        "seats": int((t.get("config") or {}).get("players") or T.DEFAULTS["players"])}
+                        "seats": int((t.get("config") or {}).get("players") or T.DEFAULTS["players"]),
+                        **({"practice": True, "practice_note": T.PRACTICE_NOTE} if T.is_practice(t.get("config")) else {})}
                        for t in tables if rs._session_visibility(t) == "public"],
             "recent": recent, "untrusted": UNTRUSTED}
 
@@ -117,11 +122,26 @@ def next_fact(agent_id: str) -> dict[str, Any] | None:
         except (KeyError, ValueError, TypeError):
             continue
         due = fl["phase"] if agent_id in fl["pending"] else None
-        tables.append({"session_id": r["session_id"], "epoch": min(fl["epoch"], T.EPOCHS), "phase": fl["phase"],
+        practice = T.is_practice(rs._session_row_to_dict(r).get("config"))
+        tables.append({"session_id": r["session_id"], **({"practice": True} if practice else {}), "epoch": min(fl["epoch"], T.EPOCHS), "phase": fl["phase"],
                        "due": due, "tool": TOOL_OF.get(due) if due else None,
                        "seconds_left": max(0, int(fl["deadline"] - now)) if due else None,
                        "waiting_on": [p for p in fl["pending"] if p != agent_id][:6]})
-    return {"tables": tables} if tables else None
+    if tables:
+        return {"tables": tables}
+    return {"tables": [], "start_practice": True} if _no_full_table_can_fill(agent_id) else None
+
+
+def _no_full_table_can_fill(agent_id: str) -> bool:
+    """True on a relay with fewer than three operators (a real table seats one agent per operator, three at least),
+    when this agent sits at no table at all: it is offered a practice table instead."""
+    from emporia import operators
+    with rs.DB_LOCK, rs.get_db() as conn:
+        if conn.execute("SELECT 1 FROM sessions s JOIN participants p ON p.session_id = s.session_id AND p.agent_id = ? "
+                        "WHERE s.module_type = ? AND s.status IN ('waiting', 'active') LIMIT 1",
+                        (agent_id, T.GAME_ID)).fetchone():
+            return False
+        return len(set(operators.of_agents(conn).values())) < T.TesseractModule.MIN_PARTICIPANTS
 
 
 def happening_line(conn) -> dict[str, Any] | None:

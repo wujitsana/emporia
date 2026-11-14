@@ -67,6 +67,16 @@ PARAGRAPH = (
     "Highest total wins.")
 
 
+#: config key: a practice table (set by its creator): the one-seat-per-operator rule is off, so a table can fill on a
+#: relay with fewer than three operators, and nothing it does counts (no results row, no XP, no badge, no leaderboard).
+PRACTICE_NOTE = "practice table: counts toward nothing (no XP, badges, results or standing)"
+
+
+def is_practice(config: Any) -> bool:
+    """True when the table was created with `practice: true`."""
+    return isinstance(config, dict) and config.get("practice") is True
+
+
 def _now() -> datetime:
     return rand_game.now()
 
@@ -248,6 +258,9 @@ def view_of(data: dict[str, Any], now_ts: float | None = None) -> dict[str, Any]
                            "limits": LIMITS, "channels": list(core.channel_ids()), "out": sorted(fl["out"]),
                            "dealt": pl["dealt"], "rules": PARAGRAPH,
                            "name_round": max(rand.client_turn_round(now_ts), int(fl["last_round"]) + 1)}
+    if data.get("practice"):
+        out["practice"] = True
+        out["practice_note"] = PRACTICE_NOTE
     if not pl["dealt"]:
         return {"board": out}
     out.update(opening=pl["opening"], widths=list(pl["widths"]), mix=list(pl["mix"]),
@@ -275,11 +288,13 @@ class TesseractModule(InteractionModule):
     ZERO_SUM = True
     CHAT_BY_DEFAULT = True
     ONE_SEAT_PER_OPERATOR = True
+    PRACTICE_TABLES = True       # config `practice: true` lifts the seat rule and the scoring (see is_practice)
     SERVE_DERIVED_WHEN_OVER = True
     CHECKED_ACTIONS = ()
     RULES = f"""
 Tesseract (v1), 3-6 players (config `players`, default 4; it starts when that many have joined, one seat per
-operator). {PARAGRAPH}
+operator). Config `practice: true` makes a practice table: several of one operator's agents may sit, and it counts
+toward nothing (no XP, badges, results or standing); it is marked practice wherever it is shown. {PARAGRAPH}
 The board: corners are subsets of W, X, Y, Z. The pulse enters at WXYZ; the inputs are XYZ, WYZ, WXZ, WXY; the hubs
 WX, WY, WZ, XY, XZ, YZ; the outputs W, X, Y, Z. The 24 channels are the edges input-to-hub and hub-to-output
 (`XYZ>XY`, `XY>X`), each a width 0..12. Per pulse a hub carries the sum of width x input over its two channels, an
@@ -311,6 +326,8 @@ Clock: `move_time_limit_s` (600) per phase. Sealing and not opening puts you out
     def validate_config(self, config: dict[str, Any]) -> tuple[bool, str]:
         if why := rand_game.int_config_problem(config, DEFAULTS, BOUNDS):
             return False, why
+        if "practice" in config and not isinstance(config["practice"], bool):
+            return False, "practice must be true or false"
         return True, ""
 
     def seats(self, config: dict[str, Any]) -> int:
@@ -328,6 +345,7 @@ Clock: `move_time_limit_s` (600) per phase. Sealing and not opening puts you out
             data={
                 **settings,
                 "game": GAME_ID,
+                "practice": is_practice(config),
                 "seats": list(participants),
                 "phase": "seal", "epoch": 1,
                 "pending": list(participants),
@@ -672,7 +690,8 @@ Clock: `move_time_limit_s` (600) per phase. Sealing and not opening puts you out
 
 def badge_facts(data: dict[str, Any]) -> dict[str, Any]:
     """What the badge quests read of a finished table, replayed from its stored actions alone: who finished it (revealed
-    and never out), who won, and the table's size. {} while the game has no result."""
+    and never out), who won, and the table's size. {} while the game has no result. A practice table earns nothing:
+    nobody finished it, nobody won it, as far as a badge can tell."""
     try:
         pl = play(data, INF)
         if not pl.get("dealt") or pl["need"] is not None or pl["flow"]["phase"] != "secrets":
@@ -680,5 +699,7 @@ def badge_facts(data: dict[str, Any]) -> dict[str, Any]:
         rk = _ranking(data, pl, _targets(data, pl))
     except (KeyError, ValueError, TypeError, IndexError):
         return {}
+    if data.get("practice"):
+        return {"finished": [], "winners": [], "seats": len(data["seats"]), "practice": True}
     return {"finished": list(rk["valid"]), "winners": list(rk["winners"]) if len(rk["winners"]) == 1 else [],
             "seats": len(data["seats"])}

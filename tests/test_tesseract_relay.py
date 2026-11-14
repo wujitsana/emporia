@@ -512,3 +512,64 @@ def test_the_replay_of_the_stored_actions_gives_the_stored_record(w):
     assert data["published"]["1"] == data["board"]["done"][0]
     assert mod.derived(sess["state"]["data"])["board"]["done"] == data["board"]["done"]
     assert T.badge_facts(sess["state"]["data"])["finished"] == names
+
+
+# ── practice tables: opt-in, seat rule lifted, counts toward nothing ─────────────────────────────────────
+
+def test_a_practice_table_of_one_operators_agents_fills_plays_verifies_and_counts_for_nothing(w, monkeypatch):
+    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
+    a = agents(w, 1)[0]
+    names = [a, *(w.register(f"ts{uuid.uuid4().hex[:6]}_p{i}", operator=a) for i in range(2))]
+    sid = w.create(a, players=3, practice=True)
+    card = w.client.get("/tesseract").json()
+    assert next(t for t in card["tables"] if t["session_id"] == sid)["practice"] is True
+    assert w.client.get(f"/sessions/{sid}").json().get("config", {}).get("practice") is True
+    for seat, n in enumerate(names[1:], start=1):
+        assert w.join(sid, n, seat).status_code == 200
+    assert w.state(sid)["status"] == "active"
+    E.play(w, sid, names, {})
+    verified(w, sid)
+    assert w.state(sid)["status"] == "completed"
+    assert w.state(sid)["state"]["data"]["practice"] is True
+    for n in names:
+        got = xp_of(n)
+        assert got["play"] == 0, "a practice table pays no XP"
+        assert not {b for b in got["badges"] if b.startswith("tesseract")}
+        assert not {q for q in got["quests"] if "tesseract" in q}
+    assert ledger_of(w, sid) == [], "a practice table writes no results row"
+    assert T.badge_facts(w.state(sid)["state"]["data"]) == {"finished": [], "winners": [], "seats": 3, "practice": True}
+    board = T.view_of(w.state(sid)["state"]["data"])["board"]
+    assert board["practice"] is True and "counts toward nothing" in board["practice_note"]
+    assert T.is_practice({"practice": True}) and not T.is_practice({"practice": 1}) and not T.is_practice({})
+
+
+def test_a_table_without_practice_still_refuses_the_second_seat_even_when_it_says_false(w):
+    a = agents(w, 1)[0]
+    twin = w.register(f"ts{uuid.uuid4().hex[:6]}_twin", operator=a)
+    sid = w.create(a, players=3, practice=False)
+    r = w.join(sid, twin, 1)
+    assert r.status_code == 409 and "one seat per operator" in r.text
+
+
+def test_practice_must_be_true_or_false(w):
+    from conftest import make_test_commit, signed_session_body
+    from emporia import wire
+    a = agents(w, 1)[0]
+    body = signed_session_body(a, {"module_type": GAME, "config": {"players": 3, "practice": "yes"}})
+    sid = wire.session_id_for(body["nonce"])
+    r = w.client.post("/sessions", json={**body, "rand_commit": make_test_commit(sid, a, 0)}, headers=w.hdr(a))
+    assert r.status_code == 400 and "practice" in r.text
+
+
+def test_a_relay_that_cannot_fill_a_real_table_offers_a_practice_one(w, monkeypatch):
+    from emporia import operators
+    from emporia import next_steps
+    from emporia.routes import tesseract as route
+    a = agents(w, 1)[0]
+    monkeypatch.setattr(operators, "of_agents", lambda conn: {a: "op1", "b": "op1", "c": "op2"})
+    fact = route.next_fact(a)
+    assert fact == {"tables": [], "start_practice": True}
+    items = next_steps._tesseract(fact)
+    assert items and items[0]["tool"] == "create_session" and items[0]["args"]["config"]["practice"] is True
+    monkeypatch.setattr(operators, "of_agents", lambda conn: {a: "op1", "b": "op2", "c": "op3"})
+    assert route.next_fact(a) is None

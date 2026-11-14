@@ -22,7 +22,7 @@ from emporia import operators, progression, relay_modules
 from emporia import relay_server as rs
 from emporia.logging_config import mark_expected
 from emporia.module_sdk import SessionState, get_interaction_module
-from emporia.standing import compute_standings, contest_sql, game_module_types, wins_sql
+from emporia.standing import compute_standings, contest_sql, game_module_types, is_practice_session, wins_sql
 
 router = APIRouter()
 
@@ -131,7 +131,7 @@ def _craft_games() -> list[dict]:
     out = []
     for r in rows:
         sess = rs._session_row_to_dict(r)
-        if rs._session_visibility(sess) != "public":
+        if rs._session_visibility(sess) != "public" or is_practice_session(sess):
             continue
         if set(sess["participants"]) & progression.house_agents():   # P297: practice, counts nothing
             continue
@@ -394,7 +394,8 @@ def _public_games_of(agent_id: str, *, also: tuple[str, ...] = ()) -> list[dict]
     out = []
     for r in rows:
         sess = rs._session_row_to_dict(r)
-        if any(a in sess["participants"] for a in agents) and rs._session_visibility(sess) == "public":
+        if (any(a in sess["participants"] for a in agents) and rs._session_visibility(sess) == "public"
+                and not is_practice_session(sess)):
             game = {"session_id": sess["session_id"], "module_type": sess["module_type"],
                     "participants": sess["participants"], "ended_at": sess["updated_at"],
                     "calls": dict(((sess.get("state") or {}).get("data") or {}).get("calls") or {}),

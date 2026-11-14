@@ -35,6 +35,7 @@ a failed check rendered as an empty one.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from typing import Any
 from dataclasses import dataclass, field
 
 # A settlement counts toward standing only in this status. Everything else —
@@ -48,6 +49,14 @@ def game_module_types() -> list[str]:
     from emporia.module_sdk import MODULE_REGISTRY, PRICE_PURCHASE
     return sorted(t for t, cls in MODULE_REGISTRY.items()
                   if cls.DECLARES_WINNER and cls.PRICE_MODEL != PRICE_PURCHASE)
+
+
+def is_practice_session(sess: Mapping[str, Any]) -> bool:
+    """A table made with config `practice: true` by a module that takes it (Tesseract): it counts toward nothing, so
+    XP, badges, Craft, the results ledger and the leaderboard's wins all leave it out."""
+    from emporia.module_sdk import MODULE_REGISTRY
+    cls = MODULE_REGISTRY.get(str(sess.get("module_type") or ""))
+    return bool(cls and getattr(cls, "PRACTICE_TABLES", False) and (sess.get("config") or {}).get("practice") is True)
 
 
 def contest_sql(modules: list[str], alias: str = "s",

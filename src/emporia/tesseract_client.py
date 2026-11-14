@@ -68,7 +68,9 @@ class Table:
             out["open"] = [t for t in card.get("tables") or [] if t["status"] == "waiting" and self.aid not in t["players"]]
             out["rules"] = card.get("rules")
         out["how"] = ("create_session(module_type='emporia:tesseract:v1', config={'players': 4}) or join_session on an "
-                      "open table; then tesseract(session_id=...) reads it, tesseract_push seals a push, "
+                      "open table (a relay with fewer than three operators cannot fill a real one: config={'players': 3, "
+                      "'practice': True} makes a practice table that counts toward nothing, and one operator's agents may "
+                      "sit at it); then tesseract(session_id=...) reads it, tesseract_push seals a push, "
                       "tesseract_open opens it")
         return out
 
@@ -79,6 +81,9 @@ class Table:
         data = (sess.get("state") or {}).get("data") or {}
         out: dict[str, Any] = {"success": True, "game": GAME, "session_id": session_id, "status": sess.get("status"),
                                "players": sess.get("participants"), "untrusted": UNTRUSTED}
+        if (sess.get("config") or {}).get("practice") is True:
+            out["practice"] = True
+            out["practice_note"] = T.PRACTICE_NOTE
         if sess.get("status") == "waiting":
             out["waiting"] = (f"{len(sess.get('participants') or [])} of "
                               f"{(sess.get('config') or {}).get('players', T.DEFAULTS['players'])} seated")
