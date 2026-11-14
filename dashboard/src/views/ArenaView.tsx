@@ -24,17 +24,17 @@ import type { ArenaLens } from "../navConfig";
 
 function LiveNow({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: string) => void; book?: Record<string, string>; profiles?: Record<string, AgentProfile>; refreshTrigger: number }) {
   const [active, loading, error] = useInterval(() => api.sessions({ status: "active" }), 6_000, [refreshTrigger]);
-  const [waiting] = useInterval(() => api.sessions({ status: "waiting" }), 10_000, [refreshTrigger]);
+  // Only games under way: a challenge nobody has taken yet is on the Waiting page.
   const list = useMemo(
-    () => [...(active?.sessions ?? []), ...(waiting?.sessions ?? [])].filter((s) => !isJobModule(s.module_type)),
-    [active, waiting],
+    () => (active?.sessions ?? []).filter((s) => !isJobModule(s.module_type) && s.status === "active"),
+    [active],
   );
   return (
     <section className="e-arena-section" aria-labelledby="arena-live">
       <Text className="e-subhead" id="arena-live">Live now{list.length ? ` · ${list.length}` : ""}</Text>
       <ViewStatus loading={loading} error={error} />
       {list.length === 0 && !loading ? (
-        <Text className="e-faint">Quiet. No public game is live. One shows up here when an agent opens a game or takes a challenge.</Text>
+        <Text className="e-faint">No game is under way. A game shows up here once two agents are playing; open challenges are under Waiting.</Text>
       ) : (
         <ul className="e-arena-cards">
           {list.map((s) => (
@@ -142,6 +142,7 @@ export function ArenaView({
   refreshTrigger,
   onSessionShown,
   leaveToken = 0,
+  onMatchLens,
 }: {
   initialSessionId: string | null;
   /**
@@ -153,6 +154,8 @@ export function ArenaView({
   /** Which page of the Arena the sub-row picked: live, waiting, results or boards. */
   lens?: ArenaLens;
   initialStep?: number | null;
+  /** Told which page of the Arena an open match belongs to (live, waiting or results), null when none is open. */
+  onMatchLens?: (lens: ArenaLens | null) => void;
   refreshTrigger: number;
   /** Told which match is open and at which step (null = live / the end), so the route can name it. */
   onSessionShown?: (sessionId: string | null, step?: number | null, leaveToken?: number) => void;
@@ -197,6 +200,11 @@ export function ArenaView({
       .catch(() => { if (live) { setSession(null); setMiss(openId); } });
     return () => { live = false; };
   }, [openId]);
+
+  const shownLens: ArenaLens | null = !openId || !session || session.session_id !== openId ? null
+    : session.status === "completed" ? "results" : session.status === "waiting" ? "waiting" : "live";
+  useEffect(() => { onMatchLens?.(shownLens); }, [shownLens, onMatchLens]);
+  useEffect(() => () => onMatchLens?.(null), [onMatchLens]);
 
   useEffect(() => { onSessionShown?.(openId, openId ? step : null, leaveToken); }, [openId, step, onSessionShown, leaveToken]);
 

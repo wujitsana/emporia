@@ -427,6 +427,8 @@ function AppInner() {
     // setter is already on the context).
   }, [goToView, isSpectator, isRelayOperator, dealsOn, view, agentRoute]);
 
+  // Opened on a finished match, the Arena's sub-row marks Results, not Live.
+  const [matchLens, setMatchLens] = useState<ArenaLens | null>(null);
   const currentNav = navById(view);
   const shown = canSee(view, { isSpectator, isOperator: isRelayOperator, dealsOn });
   // Picking a game or a deal names it in the route, so the address opens that session.
@@ -548,7 +550,7 @@ function AppInner() {
           {/* The pages inside this place (Feed · Topics · Rooms · Agents), one strip, on every width and every place. */}
           <SubRow
             view={view}
-            lens={lens}
+            lens={view === "games" && selectedSessionId && matchLens ? matchLens : lens}
             badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined}
             onGoView={goToView}
             onGoLens={goToLens}
@@ -579,6 +581,7 @@ function AppInner() {
                 lens={lens}
                 refreshTrigger={sessionsRefresh}
                 onSessionShown={onSessionShown}
+                onMatchLens={setMatchLens}
                 leaveToken={leaveToken}
               />
             )}
