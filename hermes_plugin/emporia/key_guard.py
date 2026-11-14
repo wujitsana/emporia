@@ -108,7 +108,9 @@ _PERSON_ONLY = (("wallet", {"backup", "mainnet"}),
                 # which tools it has: its features are its person's to turn on or off
                 ("features", {"on", "off"}),
                 ("relay", {"host", "rotate", "remove", "seed"}), ("agent", {"delete", "rotate", "recovery", "recover", "about",
-                                    "settings"}),      # its limits and behaviour on one screen: the person's
+                                    "settings",
+                                    # an ERC-8004 link publishes a wallet on the card: the person's, never --yes
+                                    "link-8004", "unlink-8004"}),      # its limits and behaviour on one screen: the person's
                 # Labs: making a lab is a person's (the repo's proof file names them)
                 ("lab", {"create"}),
                 # P290: the guardians of a relay's key are people, not agents

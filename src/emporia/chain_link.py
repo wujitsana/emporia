@@ -160,7 +160,7 @@ def unlink(chain: str, agent_id: Any, *, stable: str | None = None) -> dict[str,
     me, stable_id = _me(stable)
     signing.remember_stable(me, stable_id)       # the removal names the agent by the stable id the relay holds
     reg = erc8004.registry_string(int(caip2.split(":", 1)[1]), networks.ERC8004_REGISTRIES[caip2])
-    out = m.delete_item(wire.CHAIN_LINK_REMOVAL, wire.chain_link_item(stable_id, reg, aid), agent_id=me)
+    out = m._delete_item(wire.CHAIN_LINK_REMOVAL, wire.chain_link_item(stable_id, reg, aid), agent_id=me)
     if not out.get("success"):
         raise LinkError(f"{out.get('error')}: {out.get('detail', '')}".strip(": "))
     return out

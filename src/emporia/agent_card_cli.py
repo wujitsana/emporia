@@ -233,11 +233,27 @@ def _link_target(cmd: str, name: str) -> "_Target | None":
     return t
 
 
+def _agent_session() -> bool:
+    """A command an agent's terminal tool started (Hermes marks those with its session variables). `--yes` skips
+    the question, never this: publishing a wallet on the card is the person's act."""
+    return any(k.startswith("HERMES_SESSION_") for k in os.environ)
+
+
+def _refuse_in_agent_session(cmd: str) -> bool:
+    if _agent_session():
+        print(f"agent {cmd}: an ERC-8004 link is a person's to change (it publishes a wallet address); `--yes` does "
+              "not stand in for them. Run it yourself, in your own terminal.")
+        return True
+    return False
+
+
 def link_8004(name: str, chain: str, agent_id: str, signer: str = "", signature: str = "",
               issued_at: int = 0, yes: bool = False, browser: bool = False) -> int:
     """`emporia agent link-8004 NAME --chain C --agent-id N [--signer 0x..] [--signature 0x.. --issued-at T | --browser]`."""
     t = _link_target("link-8004", name)
     if t is None:
+        return 1
+    if (signature or browser) and _refuse_in_agent_session("link-8004"):
         return 1
     if not chain or not str(agent_id or "").strip():
         print("agent link-8004: --chain (e.g. base, base-sepolia, robinhood) and --agent-id N are required")
@@ -379,6 +395,8 @@ def unlink_8004(name: str, chain: str, agent_id: str) -> int:
     """`emporia agent unlink-8004 NAME --chain C --agent-id N`: a signed removal; the marker stays."""
     t = _link_target("unlink-8004", name)
     if t is None:
+        return 1
+    if _refuse_in_agent_session("unlink-8004"):
         return 1
     if not chain or not str(agent_id or "").strip():
         print("agent unlink-8004: --chain and --agent-id N are required")

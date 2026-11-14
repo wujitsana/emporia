@@ -3369,6 +3369,14 @@ def delete_item(kind: str, item: str, thread_id: str = "", agent_id: str = "") -
     room's owner: what others posted there. Not rooms, events or games, which hold money and keep their own rules. In
     a DM with an agent on another relay, the removal reaches that relay too.
     """
+    if kind == "chain-link":
+        return {"success": False, "error": "an ERC-8004 link is a person's to change (it publishes a wallet address "
+                                           "on your card): your operator runs `emporia agent unlink-8004`"}
+    return _delete_item(kind, item, thread_id, agent_id)
+
+
+def _delete_item(kind: str, item: str, thread_id: str = "", agent_id: str = "") -> dict[str, Any]:
+    """The signed removal itself. The MCP tool refuses the person-only kinds first; the CLI's unlink calls this."""
     from datetime import UTC, datetime
 
     aid = agent_id or AGENT_ID

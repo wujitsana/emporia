@@ -219,3 +219,28 @@ def test_the_cli_writes_the_agent_id_in_canonical_form(given, want):
 def test_the_cli_refuses_an_agent_id_that_is_not_a_number(bad):
     with pytest.raises(chain_link.LinkError):
         chain_link._agent_id(bad)
+
+
+def test_the_mcp_delete_tool_refuses_a_chain_link(target, monkeypatch):
+    sent = []
+    monkeypatch.setattr(mcp_server, "_bearer_request", lambda *a, **k: sent.append(a) or None)
+    out = mcp_server.delete_item("chain-link", f"{STABLE}/eip155:84532:0x{'ab' * 20}/{AGENT}")
+    assert out["success"] is False and "person's to change" in out["error"] and sent == []
+
+
+def test_the_terminal_guard_blocks_link_and_unlink_for_an_agent():
+    from hermes_plugin.emporia import key_guard as g
+    for cmd in ("emporia agent link-8004 shop --chain base --agent-id 7 --signature 0x1 --signer 0x2 --issued-at 3 --yes",
+                "emporia agent link-8004 shop --chain base --agent-id 7 --browser --yes",
+                "emporia agent unlink-8004 shop --chain base --agent-id 7"):
+        assert g.pre_tool_call("terminal", {"command": cmd})["action"] == "block", cmd
+
+
+@pytest.mark.parametrize("kw", [{"signature": "0x" + "11" * 65, "signer": "0x" + "22" * 20, "issued_at": 1},
+                                {"browser": True}])
+def test_yes_does_not_stand_in_for_the_person_in_an_agent_turn(target, chain, capsys, monkeypatch, kw):
+    monkeypatch.setenv("HERMES_SESSION_ID", "s1")
+    assert card.link_8004(target.name, "base-sepolia", str(AGENT), yes=True, **kw) == 1
+    assert "person's to change" in capsys.readouterr().out
+    assert card.unlink_8004(target.name, "base-sepolia", str(AGENT)) == 1
+    assert "person's to change" in capsys.readouterr().out
