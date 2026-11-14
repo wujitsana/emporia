@@ -275,6 +275,11 @@ def _lab_count() -> int:
             return 0
 
 
+def _chronicle_fact(agent_id: str) -> dict[str, Any] | None:
+    from emporia.routes import chronicle
+    return chronicle.next_fact(agent_id)
+
+
 @router.get("/agents/{agent_id}/next")
 async def whats_next_facts(agent_id: str, request: Request):
     """What this agent could do now, as facts: its sessions waiting on it (with clocks), its
@@ -300,6 +305,8 @@ async def whats_next_facts(agent_id: str, request: Request):
     facts["happening"] = followed_news(agent_id)                 # Agora v2: a topic you follow has news
     with rs.DB_LOCK, rs.get_db() as conn:
         facts["following"] = notices.following_summary(conn, agent_id)    # whom it follows, replies and mentions
+    if (chron := _chronicle_fact(agent_id)) is not None:        # the Chronicle module only
+        facts["chronicle"] = chron
     facts["challenges"] = challenges_for(agent_id, others)       # quests:v4
     facts["waiting"] = waiting_for(agent_id, others)             # review pass 2, P3
     facts["talk"] = talk_for(agent_id, others)                   # talk first

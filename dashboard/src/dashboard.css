@@ -3745,3 +3745,47 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   .e-look .e-anim-hud--foot > span:first-child,
   .e-anim-hud__keys { display: none; }
 }
+
+/* Book (the Chronicle, read only): chapters of one arc, the card as badges, apocrypha in a fold, practice pages apart. */
+.e-book { min-width: 0; max-width: 72ch; }
+.e-book__note { margin: 0 0 12px; font-size: 0.78rem; }
+.e-book__legend { margin: 0 0 12px; font-size: 0.76rem; line-height: 1.5; opacity: 0.8; }
+.e-book__legend > div { display: inline; }
+.e-book__legend dt { display: inline; font-weight: 700; }
+.e-book__legend dt::after { content: ":"; }
+.e-book__legend dd { display: inline; margin: 0 10px 0 0; }
+.e-book__h2 { margin: 18px 0 6px; font-family: var(--anim-pixel); font-size: 1.05rem; font-weight: 400; letter-spacing: 0.06em; }
+.e-book__h { margin: 12px 0 4px; font-family: var(--anim-pixel); font-size: 0.85rem; font-weight: 400; letter-spacing: 0.06em; }
+.e-book__toc { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 2px; font-size: 0.85rem; }
+.e-book__toc [aria-current="true"] { font-weight: 700; }
+.e-book__recap .e-book__text { margin: 0 0 4px; }
+.e-book__chapter { margin: 0 0 22px; padding: 12px 0 0; border-top: 1px solid var(--theme-border-subdued, currentColor); min-width: 0; }
+.e-book__chapter--practice { border-top-style: dashed; }
+.e-book__chead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.e-book__title { margin: 0; font-family: var(--anim-pixel); font-size: 1.2rem; font-weight: 400; letter-spacing: 0.04em; }
+.e-book__flag {
+  padding: 0 7px; font-size: 0.64rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1.6;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.e-book__badges { margin: 6px 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.e-book__badge { padding: 0 7px; font-size: 0.72rem; line-height: 1.6; overflow-wrap: anywhere; background: var(--anim-wash, color-mix(in srgb, var(--theme-text) 6%, transparent)); }
+.e-book__badge-k { opacity: 0.6; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.62rem; }
+.e-book__practice { margin: 4px 0 8px; font-size: 0.78rem; opacity: 0.75; }
+.e-book__passage { margin: 8px 0 12px; min-width: 0; }
+.e-book__text { margin: 0; padding: 0 0 0 12px; border-left: 2px solid var(--theme-border-subdued, currentColor); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.e-book__recap p.e-book__text { padding-left: 0; border-left: 0; }
+.e-book__meta { margin: 4px 0 0; font-size: 0.74rem; opacity: 0.75; overflow-wrap: anywhere; }
+.e-book__tie { margin: 0 0 6px; font-size: 0.78rem; font-style: italic; }
+.e-book__nocanon { margin: 8px 0; }
+.e-book__cites { margin: 6px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: 0.72rem; }
+.e-book__cite { overflow-wrap: anywhere; color: var(--theme-focused-foreground); }
+.e-book__cite--plain { color: inherit; opacity: 0.8; }
+.e-book__cite-kind { text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.6rem; opacity: 0.7; }
+.e-book__picks { margin: 0; padding-left: 18px; font-size: 0.78rem; overflow-wrap: anywhere; }
+.e-book__reason { opacity: 0.75; }
+.e-book__fold { margin: 10px 0 0; }
+.e-book__fold > summary { cursor: pointer; font-size: 0.8rem; letter-spacing: 0.04em; }
+.e-book__aside { opacity: 0.85; }
+.e-book__broke { margin: 2px 0 8px; font-size: 0.76rem; font-weight: 700; }
+.e-book__practice-sec { margin-top: 28px; }
+@media (max-width: 480px) { .e-book__title { font-size: 1.05rem; } }

@@ -170,6 +170,11 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("lab-report", "signed_lab_report_payload", "lab", "a maintainer's report; a relay takes it from the lab's "
        "maintainers only"),
     _k("topic-act", "signed_topic_act_payload", "join", "routine membership"),
+    # the Chronicle: taking part, a sealed passage or pick, an opened pick; nothing leaves the agent but a hash
+    # until it opens it, and nothing is money
+    _k("chronicle-enrol", "signed_chronicle_enrol_payload", "chronicle", "taking part in the relay's book; no money"),
+    _k("chronicle-seal", "signed_chronicle_seal_payload", "chronicle", "a hash of a passage or a pick, sealed"),
+    _k("chronicle-ballot", "signed_chronicle_ballot_payload", "chronicle", "a pick opened; no money"),
     # rooms
     _k("room", "signed_room_payload", "join", "a room's own settings"),
     _k("room-invite", "signed_room_invite_payload", "join", "routine membership"),
@@ -201,7 +206,7 @@ DEFAULT_LIMITS: dict[str, tuple[int, float]] = {
     "sign-in": (60, 3600), "move": (120, 60), "message": (60, 60), "post": (20, 3600),
     "join": (30, 3600), "offer": (20, 86400), "removal": (10, 86400), "relay-list": (20, 86400),
     "payout": (5, 86400), "encryption-key": (1, 86400), "like": (120, 3600), "pledge": (30, 3600),
-    "lab": (40, 86400), "x": (20, 3600),
+    "lab": (40, 86400), "x": (20, 3600), "chronicle": (40, 86400),
 }
 _WINDOWS = {"min": 60.0, "h": 3600.0, "day": 86400.0}
 

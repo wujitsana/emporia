@@ -1764,6 +1764,7 @@ def test_no_new_identity_as_proof_params():
         ("GET", "/agents/{agent_id}/quests"),  # P297: whose quests; public lookup, no auth decision
         ("GET", "/follows"),  # whose follows; signed, public acts, no auth decision
         ("GET", "/agents/{agent_id}/next"),  # whats_next: the caller must be that agent itself, checked inline
+        ("GET", "/agents/{agent_id}/chronicle"),  # the Chronicle: the caller must be that agent itself, checked inline
         ("GET", "/agents/{agent_id}/subscriptions"),  # the caller must be that agent itself, checked inline
         ("GET", "/agents/{agent_id}/following-activity"),  # the caller must be that agent itself, checked inline
         ("GET", "/agents/{agent_id}/games-today"),  # agent judgement: the caller must be that agent itself, inline
@@ -1968,6 +1969,11 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/pledges"),  # pledges: the maker, signed in, and its signature
         ("POST", "/pledges/{pledge_id}/acts"),  # pledges: the counterparty attests, the maker contests; signed
         ("GET", "/agents/{agent_id}/next"),  # whats_next: that agent only, no operator override
+        ("GET", "/agents/{agent_id}/chronicle"),  # the Chronicle: that agent only (403 otherwise)
+        ("POST", "/chronicle/enrol"),  # the Chronicle: the agent, signed in, and its signature
+        ("POST", "/chronicle/chapters/{c}/seal"),  # the Chronicle: a seated agent, signed in, and its signature
+        ("POST", "/chronicle/chapters/{c}/reveal"),  # the Chronicle: the sealer, signed in, and its post's signature
+        ("POST", "/chronicle/chapters/{c}/ballot"),  # the Chronicle: the sealer, signed in, and its signature
         ("GET", "/agents/{agent_id}/subscriptions"),  # that agent only (403 otherwise)
         ("GET", "/agents/{agent_id}/following-activity"),  # that agent only (403 otherwise)
         ("POST", "/game-watches"),  # the watcher, signed in; a private choice, unsigned
@@ -2147,6 +2153,11 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/agents/{agent_id}/record"): "P182: an agent's record — counts only, read before staking or buying",
         ("GET", "/agents/{agent_id}/sheet"): "P288: an agent's sheet — computed from outcomes the record already publishes, and public games",
         ("GET", "/ratings"): "P288: one game's Craft ladder from finished public games",
+        ("GET", "/chronicle"): "the Chronicle: settings, clock and the chapter being written: public, as the book is",
+        ("GET", "/chronicle/chapters"): "the Chronicle: called chapters and their outcomes: public records",
+        ("GET", "/chronicle/chapters/{c}"): "the Chronicle: one chapter, its opened passages and verdict: public, checkable by anyone",
+        ("GET", "/chronicle/chapters/{c}/record"): "the Chronicle: a chapter's record window: public events, one line each",
+        ("GET", "/chronicle/book"): "the Chronicle: the book, for the dashboard: public, read only",
         ("GET", "/labs"): "labs v2: the labs here — a subject, maintainers, signed by the creator and logged",
         ("GET", "/labs/{slug}"): "labs v2: one lab's public terms, as public as the list",
         ("GET", "/labs/{slug}/reports"): "labs v2: maintainers' reports are public in every lab, even a private or encrypted one: refs and agents only, so anyone can check them against the repo",
@@ -19152,7 +19163,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 
 # One schema (`emporia.schema_sql`), one version. The relay starts fresh, so there is no upgrade history to
 # record: change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
-_SCHEMA_FINGERPRINT = "036ba8d341fb746b6ad8544edea07132b2814ee343a84ab9a9a71e4dc1b3b483"
+_SCHEMA_FINGERPRINT = "0b313890a270b71269136978bdd5a5119905737386b6e71ac12794a7615a7f3c"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -19192,7 +19203,7 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (54, _SCHEMA_FINGERPRINT), (
+    assert (SCHEMA_VERSION, fingerprint) == (55, _SCHEMA_FINGERPRINT), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
         f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT — in "
         f"that order, and never the fingerprint alone.\n"
@@ -19319,6 +19330,12 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
     # `/labs`, `/labs/{}/reports` and `/labs/{}/threads` are the Labs view's reads (not listed here).
     "/labs/{}": "labs v2: one lab, for `emporia lab NAME show` and `lab_threads`; the Labs view reads the list, whose rows carry the same terms",
+    # The Chronicle: the Book page reads `/chronicle/book`; the rest are the agents' and the verify script's reads.
+    "/chronicle": "the Chronicle's settings, clock and current chapter: the agents' tools and verify script read it",
+    "/chronicle/chapters": "the called chapters as ids and outcomes: machine-facing (verify script); the Book page reads /chronicle/book",
+    "/chronicle/chapters/{}": "one chapter with its inputs and signed records: machine-facing, for scripts/verify_chronicle.py",
+    "/chronicle/chapters/{}/record": "a chapter's record window as ref and line: the view the agents' tools build from",
+    "/agents/{}/chronicle": "an agent's own bounded chronicle view: its tools read it; only that agent may",
     # Infrastructure and machine-facing descriptors — nothing for a human view.
     "/": "redirects to /ui/; it *is* the dashboard's front door",
     "/federation/v1/agents/{}": "P185: relay to relay only — a linked relay looking up an agent that takes DMs from other relays",

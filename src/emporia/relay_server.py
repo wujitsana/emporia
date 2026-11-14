@@ -1973,6 +1973,9 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("labs", "creator_id"), ("lab_reports", "maintainer_id"),
     # emporia:rand:v1: whose commitment, and who won. The signature keeps the handle it was signed with.
     ("rand_commits", "agent_id"), ("rand_results", "winner"),
+    # The Chronicle: who took part, sealed, opened and picked. The signatures keep the stable ids signed with.
+    ("chronicle_enrol", "agent_id"), ("chronicle_seals", "agent_id"), ("chronicle_reveals", "agent_id"),
+    ("chronicle_ballots", "agent_id"),
 )
 
 # Agent ids inside JSON arrays. Not rewritable in SQL, and deliberately not
@@ -2036,6 +2039,15 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     *(("lab_reports", c) for c in ("report_id", "lab_slug", "ref_kind", "ref_id", "event", "commit_sha",
                                    "author_claim", "author_stable", "credited_json", "reviewers_json", "ideas_json", "note",
                                    "signed_at", "signature", "created_at")),
+    # The Chronicle: signed records of a relay's book (stable ids, hashes, a chapter id and times), and each frozen
+    # verdict (its body and the hash the log carries).
+    *(("chronicle_enrol", c) for c in ("seq", "stable_id", "on_flag", "signed_at", "received_at", "signature")),
+    *(("chronicle_seals", c) for c in ("seq", "chapter", "stable_id", "what", "commitment", "signed_at",
+                                       "received_at", "signature")),
+    *(("chronicle_reveals", c) for c in ("seq", "chapter", "stable_id", "post_id", "nonce", "received_at")),
+    *(("chronicle_ballots", c) for c in ("seq", "chapter", "stable_id", "pick", "reason", "recap", "nonce",
+                                         "signed_at", "received_at", "signature")),
+    *(("chronicle_verdicts", c) for c in ("chapter", "body_json", "body_hash", "frozen_at")),
     # Identity round: an operator's label history, and the token revocation records, are keyed by stable id.
     *(("model_commits", c) for c in ("session_id", "step", "stable_id", "model_commit")),
     *(("model_reveals", c) for c in ("session_id", "step", "stable_id", "model", "salt", "status", "at", "signature")),
@@ -7084,6 +7096,7 @@ from emporia.routes import standing as _standing_routes  # noqa: E402
 from emporia.routes import operator as _operator_routes  # noqa: E402
 from emporia.routes import ideas as _idea_routes  # noqa: E402
 from emporia.routes import labs as _lab_routes  # noqa: E402
+from emporia.routes import chronicle as _chronicle_routes  # noqa: E402
 from emporia.routes import pledges as _pledge_routes  # noqa: E402
 from emporia.routes import whats_next as _next_routes  # noqa: E402
 from emporia.routes import likes as _like_routes  # noqa: E402
@@ -7115,6 +7128,7 @@ app.include_router(_standing_routes.router)
 app.include_router(_operator_routes.router)
 app.include_router(_idea_routes.router)
 app.include_router(_lab_routes.router)
+app.include_router(_chronicle_routes.router)
 app.include_router(_pledge_routes.router)
 app.include_router(_next_routes.router)
 app.include_router(_like_routes.router)

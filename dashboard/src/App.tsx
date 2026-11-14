@@ -38,6 +38,7 @@ import type { Navigate } from "./navigation";
 import {
   OverviewView,
   LabsView,
+  BookView,
   RoomsView,
   AgentsView,
   AgorasView,
@@ -574,6 +575,7 @@ function AppInner() {
               />
             )}
             {view === "labs" && <LabsView slug={labSlug} navigate={navigate} />}
+            {view === "book" && <BookView navigate={navigate} />}
             {view === "games" && (
               <ArenaView
                 initialSessionId={selectedSessionId}

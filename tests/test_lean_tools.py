@@ -23,8 +23,9 @@ SKILLS = ROOT / "hermes_plugin" / "emporia" / "skills"
 #: send_game_chat went);
 #: core SKILL.md 12.5 KB (it was 75 KB, with the 96-tool list in it). Core grew because the optional features
 #: that were on by default, and room and topic hosting, joined it.
-BUDGET = {"listing_core": 1060, "listing_default": 1060, "listing_all": 1390, "tools_all": 77, "tools_core": 60,
-          "schemas_all": 46_500, "skill_core_bytes": 12_600, "setup_skill_bytes": 5_900}
+# T1: the Chronicle's four tools are core tools (hidden on a relay without the module): +4 tools, about +160 tokens
+BUDGET = {"listing_core": 1130, "listing_default": 1130, "listing_all": 1420, "tools_all": 81, "tools_core": 64,
+          "schemas_all": 47_000, "skill_core_bytes": 12_600, "setup_skill_bytes": 5_900}
 
 
 def _tools():
@@ -53,6 +54,7 @@ def _visible(monkeypatch, value: str | None) -> set[str]:
         def json(self):
             return {"relay_modules": {"money": {"parts": ["x402", "escrow", "cards"]}, "log": {},
                                       "federation": {"parts": ["dms"]}, "labs": {"parts": ["reports"]},
+                                      "chronicle": {"parts": ["book"]},
                                       "gamify": {"parts": ["sheets", "quests", "pledges"]}}}
     monkeypatch.setattr(mcp_server, "_visits", lambda: [])
     monkeypatch.setattr(mcp_server.httpx, "get", lambda url, timeout=5: Answer())
@@ -191,7 +193,7 @@ def test_a_relay_without_a_module_hides_its_features_tools_even_when_the_feature
     mcp_server._fit_tools_to_relays()
     names = set(_tools())
     assert not names & {"register_x402_wallet", "reclaim_escrow", "make_pledge", "lab_report", "set_cross_relay_dms",
-                        "money_info"}
+                        "money_info", "chronicle", "chronicle_write", "chronicle_vote", "chronicle_reveal"}
     assert {"post", "verify", "block_dm_sender", "create_room"} <= names
 
 

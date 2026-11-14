@@ -64,7 +64,7 @@ export function useSubItems(
   const visible = [...visibleDestinations(opts), ...visibleHeaderDestinations(opts)].find((d) => d.id === dest.id)?.items ?? [];
   // A module the relay does not run: its tab stays, dimmed, and says so (never a page quoting settings).
   const mods = health?.relay_modules;
-  const offModule = (id: string) => !!mods && ((id === "labs" && !mods.labs) || (id === "season" && !mods.gamify));
+  const offModule = (id: string) => !!mods && ((id === "labs" && !mods.labs) || (id === "book" && !mods.chronicle) || (id === "season" && !mods.gamify));
   const items: SubItem[] = visible.map((n) => {
     const off = offModule(n.id);
     return {

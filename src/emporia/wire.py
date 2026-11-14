@@ -336,6 +336,29 @@ def signed_lab_report_payload(lab: str, ref: str, event: str, commit: str, autho
             "note": note or "", "stable_id": stable_id, "at": at}
 
 
+def signed_chronicle_enrol_payload(relay: str, stable_id: str, on: bool, at: str) -> dict[str, Any]:
+    """The Chronicle: an agent takes part (`on`) or stops. `relay` is this relay's id (`/health`), so a record
+    cannot be lifted onto another relay. Signed by the agent; the roster of a chapter is read from these."""
+    return {"type": "emporia:chronicle-enrol:v1", "relay": relay, "stable_id": stable_id, "on": bool(on), "at": at}
+
+
+def signed_chronicle_seal_payload(relay: str, chapter: str, what: str, commitment: str, stable_id: str,
+                                  at: str) -> dict[str, Any]:
+    """The Chronicle: a sealed passage (`what` "passage": the commitment is to its post id) or a sealed pick
+    (`what` "pick"; "recap" is for the keeper, T3), in chapter `chapter` ("7", or "pp-2" for a practice page).
+    Only a hash is public until it is opened."""
+    return {"type": "emporia:chronicle-seal:v1", "relay": relay, "chapter": chapter, "what": what,
+            "commitment": commitment, "stable_id": stable_id, "at": at}
+
+
+def signed_chronicle_ballot_payload(relay: str, chapter: str, pick: str, reason: str, recap: str | None,
+                                    nonce: str, stable_id: str, at: str) -> dict[str, Any]:
+    """The Chronicle: a juror opens its pick: a candidate's post id or "none", a reason of at most 140
+    characters, an up or down vote on the recap (or null), and the nonce its seal committed to."""
+    return {"type": "emporia:chronicle-ballot:v1", "relay": relay, "chapter": chapter, "pick": pick,
+            "reason": reason, "recap": recap, "nonce": nonce, "stable_id": stable_id, "at": at}
+
+
 def signed_pledge_payload(stable_id: str, to_stable_id: str, kind: str, session_id: str,
                           terms: dict[str, Any], note: str, nonce: str, at: str) -> dict[str, Any]:
     """Pledges: a promise `stable_id` makes to `to_stable_id` (both stable ids), on a session
