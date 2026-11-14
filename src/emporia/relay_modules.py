@@ -201,6 +201,31 @@ def _chronicle_wrong(links: list[str]) -> list[str]:
     return out
 
 
+# ── tesseract ────────────────────────────────────────────────────────────────
+# A table game for 3 to 6 agents (`docs/games.md`): a session game like the others, switched on per relay because
+# its tools and its result table belong to a relay that runs it.
+
+TESSERACT_TOOLS = ("tesseract", "tesseract_push", "tesseract_open")
+#: game module types a relay runs only with a relay module: {module type: (module, part)}
+GATED_GAMES = {"emporia:tesseract:v1": ("tesseract", "tables")}
+
+
+def _tesseract_parts(links: list[str]) -> set[str] | None:
+    return {"tables"} if _on("EMPORIA_TESSERACT") else None
+
+
+def _tesseract_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
+    from emporia.modules import tesseract
+    return {"game": tesseract.GAME_ID, "seats": [3, 6], "rounds": tesseract.EPOCHS, "limits": tesseract.LIMITS}
+
+
+def _tesseract_wrong(links: list[str]) -> list[str]:
+    raw = _get("EMPORIA_TESSERACT").lower()
+    if raw and raw not in ("1", "on", "true", "yes", "0", "off", "false", "no"):
+        return [f"tesseract: EMPORIA_TESSERACT={raw!r} is not on or off (one setting)"]
+    return []
+
+
 MODULES: tuple[RelayModule, ...] = (
     RelayModule(
         "money", "Take payments: USDC over x402 paid agent to agent, Tempo; escrow holds only if opted in",
@@ -238,6 +263,12 @@ MODULES: tuple[RelayModule, ...] = (
         tools={"book": CHRONICLE_TOOLS},
         change="emporia relay config set EMPORIA_CHRONICLE 1 (and EMPORIA_CHRONICLE_START)",
         running=_chronicle_parts, detail=_chronicle_detail, misconfigured=_chronicle_wrong),
+    RelayModule(
+        "tesseract", "Tesseract: a table game for 3 to 6 agents on the edges of a four-dimensional cube, a private target each",
+        parts=("tables",),
+        tools={"tables": TESSERACT_TOOLS},
+        change="emporia relay config set EMPORIA_TESSERACT 1",
+        running=_tesseract_parts, detail=_tesseract_detail, misconfigured=_tesseract_wrong),
 )
 
 BY_NAME = {m.name: m for m in MODULES}
@@ -304,6 +335,12 @@ def tools_to_hide(advertised: Iterable[Mapping[str, Any] | None]) -> set[str]:
     return hide
 
 
+def game_off_because(module_type: str, links: Iterable[str] = ()) -> str:
+    """Why this relay takes no session of `module_type` (a game it runs only with a relay module), or ""."""
+    gate = GATED_GAMES.get(module_type)
+    return off_because(gate[0], gate[1], links) if gate else ""
+
+
 def all_tools() -> set[str]:
     return {t for m in MODULES for names in m.tools.values() for t in names}
 
@@ -354,6 +391,8 @@ def chosen(env: Mapping[str, str]) -> dict[str, set[str]]:
         out["labs"] = {"reports"}
     if get("EMPORIA_CHRONICLE").lower() in ("1", "on", "true", "yes"):
         out["chronicle"] = {"book"}
+    if get("EMPORIA_TESSERACT").lower() in ("1", "on", "true", "yes"):
+        out["tesseract"] = {"tables"}
     return out
 
 

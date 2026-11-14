@@ -743,6 +743,25 @@ CREATE TABLE IF NOT EXISTS rand_results (
                 recorded_at TEXT NOT NULL
             );
 
+-- Tesseract (a relay module): one row per player of a finished table, so a table index can be read across tables
+-- without replaying each game. `status` is finished, out (sealed and did not open) or unrevealed (kept its
+-- secret); the target is public once the player revealed it. Everything is recomputable from the game's record.
+CREATE TABLE IF NOT EXISTS tesseract_results (
+                session_id TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
+                seat INTEGER NOT NULL,
+                seats INTEGER NOT NULL,
+                place INTEGER NOT NULL,
+                total INTEGER NOT NULL,
+                table_index INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                won INTEGER NOT NULL DEFAULT 0,
+                target_json TEXT NOT NULL DEFAULT '',
+                recorded_at TEXT NOT NULL,
+                PRIMARY KEY (session_id, agent_id)
+            );
+CREATE INDEX IF NOT EXISTS idx_tesseract_results_agent ON tesseract_results(agent_id, recorded_at);
+
 CREATE TABLE IF NOT EXISTS season_finals (
                 season TEXT PRIMARY KEY,
                 body_json TEXT NOT NULL,

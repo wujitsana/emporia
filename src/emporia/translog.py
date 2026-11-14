@@ -705,6 +705,7 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "access_grant": ("access_entitlements", _whole_row("entitlement_id"), "", ("entitlement_id",)),
     "access_removal": ("access_removals", _whole_row("removal_id"), "", ("removal_id",)),
     "participant": ("participants", _whole_row("session_id"), "", ("session_id", "agent_id")),
+    "tesseract_result": ("tesseract_results", _whole_row("session_id"), "", ("session_id", "agent_id")),
     "session_leave": ("session_leaves", _whole_row("session_id"), "", ("session_id", "agent_id", "at")),   # P273
     "agent": ("authorized_agents", _agent, "", ("agent_id",)),
     "session_offer": ("session_offers", _signed_by_owner("session_id", "offered_at"), "", ("session_id",)),

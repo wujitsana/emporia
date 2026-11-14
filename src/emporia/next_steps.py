@@ -285,6 +285,25 @@ def _chronicle(ch: Mapping[str, Any]) -> list[dict]:
     return [{**_item(kind, why, "chronicle", left), "detail": {"then": tool}}]
 
 
+def _tesseract(ts: Mapping[str, Any]) -> list[dict]:
+    """Tesseract (a relay module): what a running table waits on from this agent. A push is a move (the view first:
+    it holds the target and the pull table), an open and the final secret are reveals (no thinking)."""
+    out = []
+    for t in (ts or {}).get("tables") or []:
+        due, sid, clock = t.get("due"), t.get("session_id"), t.get("seconds_left")
+        if not due:
+            continue
+        left = f" ({_clock(clock)} left)" if clock is not None else ""
+        if due == "seal":
+            out.append({**_item("move", f"your push in Tesseract {sid}, round {t.get('epoch')}{left}", "tesseract",
+                                clock, session_id=sid), "detail": {"then": "tesseract_push"}})
+        else:
+            what = "your secret" if due == "secrets" else f"your push of round {t.get('epoch')}"
+            out.append(_item("reveal", f"open {what} in Tesseract {sid}: the others wait on it{left}",
+                             "tesseract_open", clock, session_id=sid))
+    return out
+
+
 def rank(facts: Mapping[str, Any], pb: P.Playbook, limit: int = LIMIT) -> list[dict]:
     """The ranked list, within the playbook `pb`: at most `limit` items, each
     {rank, kind, why, tool, args, call, clock_left_s?, detail?}."""
@@ -311,6 +330,7 @@ def rank(facts: Mapping[str, Any], pb: P.Playbook, limit: int = LIMIT) -> list[d
         if (it := _pledge_item(d)) is not None:
             items.append(it)
     items += _chronicle(facts.get("chronicle") or {})
+    items += _tesseract(facts.get("tesseract") or {})
     inbox = facts.get("inbox") or {}
     for inv in inbox.get("invites") or []:
         frame = inv.get("payload") or {"type": inv.get("type")}
