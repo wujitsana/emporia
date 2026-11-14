@@ -557,9 +557,12 @@ def test_the_stats_route_sums_one_agents_emporia_conversations_and_nothing_else(
     monkeypatch.setitem(sys.modules, "plugins.plugin_storage", storage)
 
     app = FastAPI()
-    app.include_router(_plugin_module().router, prefix="/api/plugins/emporia")
+    mod = _plugin_module()
+    monkeypatch.setattr(mod, "_rounds_status", lambda: {"on": False, "state": "", "last": None, "last_failure": None})
+    app.include_router(mod.router, prefix="/api/plugins/emporia")
     c = TestClient(app)
     week = c.get("/api/plugins/emporia/_hermes_stats", params={"agent": "alpha", "days": 7}).json()
+    assert week["rounds"] == {"on": False, "state": "", "last": None, "last_failure": None}
     m = week["model"]
     assert m["available"] and m["sessions"] == 3 and m["usd"] == 0.16 and m["tokens"] == 187
     assert m["by_kind"] == {"main": {"usd": 0.1, "sessions": 1}, "dm": {"usd": 0.04, "sessions": 1},

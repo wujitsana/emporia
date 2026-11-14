@@ -295,3 +295,69 @@ def status_line(profile: str, profile_dir: Path | None = None) -> str:
     j = found[0]
     gate = "; skips quiet rounds" if profile_dir is not None and gate_path(profile_dir).exists() else ""
     return f"{j.state}, {j.schedule or '?'} (job {j.id}){gate}; a round has the agent's own tools, delivers nowhere"
+
+
+# ─── what the last rounds did (read-only: `hermes cron runs`) ────────────────────────────────
+
+_RUN_LINE = re.compile(r"^([0-9a-f]{6,64})\s+(\w+)\s+job=([0-9a-f]+)\s+(?:source=\S+\s+)?(\d{4}-\d\d-\d\dT\S+)\s*$")
+#: Run states Hermes records (`cron/executions.py`): `failed` and `unknown` (a run that was lost) are the bad ones.
+BAD_STATES = ("failed", "unknown")
+_NOTE_MAX = 160
+
+
+def _plain(text: str, limit: int = _NOTE_MAX) -> str:
+    """One line a person may be shown: control characters out, clipped. Failure text can quote what an agent said."""
+    clean = re.sub(r"[\x00-\x1f\x7f]+", " ", text).strip()
+    return clean if len(clean) <= limit else clean[: limit - 1].rstrip() + "…"
+
+
+def parse_runs(listing: str) -> list[dict]:
+    """`hermes cron runs` rows, newest first as Hermes prints them: {id, status, job, at, note} (note = the first
+    line of the error text under a row, if any)."""
+    rows: list[dict] = []
+    for line in listing.splitlines():
+        m = _RUN_LINE.match(line)
+        if m:
+            rows.append({"id": m.group(1), "status": m.group(2).lower(), "job": m.group(3), "at": m.group(4), "note": ""})
+        elif rows and line.strip() and line[:1].isspace() and not rows[-1]["note"]:
+            rows[-1]["note"] = _plain(line)
+    return rows
+
+
+def last_runs(profile: str, limit: int = 30) -> dict:
+    """The rounds job's last run and last failure, from Hermes's own run records (read-only; no state is changed).
+    {"job": id|"", "last": row|None, "last_failure": row|None, "error": str}. Never raises."""
+    out: dict = {"job": "", "last": None, "last_failure": None, "error": ""}
+    try:
+        found = jobs(profile)
+        if not found:
+            return out
+        out["job"] = found[0].id
+        rows = parse_runs(run_hermes([*_scope(profile), "cron", "runs", found[0].id, "--limit", str(limit)]))
+    except RoundsError as e:
+        out["error"] = str(e)
+        return out
+    rows = [r for r in rows if r["job"] == out["job"] and r["status"] not in ("claimed",)]
+    out["last"] = rows[0] if rows else None
+    out["last_failure"] = next((r for r in rows if r["status"] in BAD_STATES), None)
+    return out
+
+
+def runs_report(profile: str) -> tuple[str, str, str]:
+    """(level, text, fix) for `doctor`: level is "ok", "warn" or "off" (no rounds job: nothing to say)."""
+    r = last_runs(profile)
+    if r["error"]:
+        return "warn", f"the last rounds could not be read ({r['error']})", ""
+    if not r["job"]:
+        return "off", "", ""
+    last, bad = r["last"], r["last_failure"]
+    if last is None:
+        return "ok", "no round has run yet", ""
+    when = last["at"][:16].replace("T", " ") + " UTC"
+    fix = f"hermes -p {profile} cron runs {r['job']}" if profile not in ("", "default") else f"hermes cron runs {r['job']}"
+    if last["status"] in BAD_STATES:
+        return "warn", f"the last round failed ({when}){': ' + last['note'] if last['note'] else ''}", fix
+    text = f"the last round {last['status']} ({when})"
+    if bad is not None:
+        text += f"; last failure {bad['at'][:16].replace('T', ' ')} UTC" + (f": {bad['note']}" if bad["note"] else "")
+    return "ok", text, ""

@@ -5923,7 +5923,14 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
         rep.ok(f"wake mode {wake_mode}: {_wake.ABOUT[wake_mode]}")
     except _wake.WakeError as e:
         rep.warn(f"{e}; treated as closed", f"emporia wake {_wake.DEFAULT}")
-    rep.ok("rounds " + _rounds.status_line(this_profile_name(profile), profile))
+    rounds_state = _rounds.status_line(this_profile_name(profile), profile)
+    rep.ok("rounds " + rounds_state)
+    if not rounds_state.startswith(("off", "unknown")):       # a job exists: what its last runs did (read-only)
+        level, text, fix = _rounds.runs_report(this_profile_name(profile))
+        if level == "warn":
+            rep.warn(text, fix)
+        elif level == "ok":
+            rep.ok(text)
     cfg = installer().load_yaml(profile / "config.yaml") if (profile / "config.yaml").exists() else {}
     wide = sorted({t for t in (((cfg.get("platform_toolsets") or {}).get("emporia")) or []) if t in RISKY_TOOLSETS})
     if wide:

@@ -25,7 +25,7 @@ import { friendlyError } from "../friendlyError";
 import { bareAgentName } from "../agentName";
 import type { AgentRecord } from "../settings";
 import {
-  agentStats, allTestMoney, includedText, pct, PERIODS, railNetwork, SOURCE_LABELS, SOURCES,
+  agentStats, allTestMoney, includedText, pct, PERIODS, railNetwork, roundsText, SOURCE_LABELS, SOURCES,
   type AgentStats, type HermesStats, type Period, type StatsInput, type StatsSettlement,
 } from "../statsModel";
 import { consoleUrl, httpFetch, IN_HERMES } from "../transport";
@@ -332,6 +332,11 @@ export function StatsView() {
             <Text>
               <span className="e-stats-num">{hermes.turns_24h}</span> relay-started turns in the last 24 hours{" "}
               <Text className="e-faint">(capped by EMPORIA_DAILY_TURNS, 300 unless set)</Text>
+            </Text>
+          )}
+          {hermes && roundsText(hermes.rounds) && (
+            <Text className={hermes.rounds?.last?.status === "failed" || hermes.rounds?.last?.status === "unknown" ? "" : "e-faint"}>
+              {roundsText(hermes.rounds)}
             </Text>
           )}
           <ModelCost hermes={current} error={hermesError} st={st} name={name} />

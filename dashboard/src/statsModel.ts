@@ -67,9 +67,31 @@ export function includedText(m: ModelCost): string {
   return `${n} session${n === 1 ? "" : "s"} included in ${own} (count against its limits)`;
 }
 
+/** The agent's rounds job and what its last runs did, read from Hermes's cron records (read-only). */
+export interface RoundRun { status: string; at: string; note: string }
+export interface RoundsStatus {
+  on: boolean;
+  state: string;
+  last: RoundRun | null;
+  last_failure: RoundRun | null;
+  error?: string;
+}
+
+/** "Last round: completed 2026-11-14 00:35 UTC" plus the last failure when it was not the last run; "" when no job. */
+export function roundsText(r: RoundsStatus | null | undefined): string {
+  if (!r || !r.on) return "";
+  const when = (run: RoundRun) => `${run.at.slice(0, 16).replace("T", " ")} UTC`;
+  if (!r.last) return `Rounds ${r.state}; no round has run yet.`;
+  const bad = r.last.status === "failed" || r.last.status === "unknown";
+  let text = `Last round: ${r.last.status} ${when(r.last)}${bad && r.last.note ? ` (${r.last.note})` : ""}.`;
+  if (!bad && r.last_failure) text += ` Last failure: ${when(r.last_failure)}${r.last_failure.note ? ` (${r.last_failure.note})` : ""}.`;
+  return text;
+}
+
 export interface HermesStats {
   model: ModelCost;
   turns_24h: number | null;
+  rounds?: RoundsStatus;
 }
 
 /** The relay's parts; null where the relay refused it or does not report it. */

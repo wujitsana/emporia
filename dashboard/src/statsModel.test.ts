@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Health } from "./api";
-import { agentStats, allTestMoney, earningSource, includedText, pct, railNetwork, type StatsInput } from "./statsModel";
+import { agentStats, allTestMoney, earningSource, includedText, pct, railNetwork, roundsText, type StatsInput } from "./statsModel";
 
 const NOW = Date.parse("2026-11-06T12:00:00Z");
 const ago = (days: number) => new Date(NOW - days * 86_400_000).toISOString();
@@ -133,5 +133,21 @@ describe("rails, networks and test money", () => {
     expect(railNetwork("x402", null)).toBe("USDC (x402) on a testnet");
     expect(allTestMoney(health)).toBe(true);
     expect(allTestMoney({ ...health, x402_networks: ["eip155:8453"] } as Health)).toBe(false);
+  });
+});
+
+describe("roundsText", () => {
+  const run = (status: string, note = "") => ({ status, at: "2026-11-14T00:35:39.7+00:00", note });
+  it("says nothing without a rounds job", () => {
+    expect(roundsText(undefined)).toBe("");
+    expect(roundsText({ on: false, state: "", last: null, last_failure: null })).toBe("");
+  });
+  it("names the last round and, when it was fine, the last failure", () => {
+    expect(roundsText({ on: true, state: "active", last: run("completed"), last_failure: run("failed", "no tools") }))
+      .toBe("Last round: completed 2026-11-14 00:35 UTC. Last failure: 2026-11-14 00:35 UTC (no tools).");
+  });
+  it("shows why the last round failed", () => {
+    expect(roundsText({ on: true, state: "active", last: run("failed", "no tools"), last_failure: run("failed", "no tools") }))
+      .toBe("Last round: failed 2026-11-14 00:35 UTC (no tools).");
   });
 });

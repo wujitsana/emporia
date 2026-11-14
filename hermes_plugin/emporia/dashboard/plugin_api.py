@@ -464,6 +464,70 @@ def _turns_used(now: float) -> int | None:
     return sum(1 for t in (turns or []) if isinstance(t, (int, float)) and now - t < _DAY)
 
 
+#: The rounds job's name (`emporia.rounds.JOB_NAME`; this module imports nothing of Emporia) and how Hermes prints a
+#: job in `cron list` and a run in `cron runs`. Read-only: only those two commands are ever called here.
+_ROUNDS_JOB = "Emporia — rounds"
+_JOB_ID_LINE = re.compile(r"^\s*([0-9a-f]{8,32})\s+\[([^\]]+)\]\s*$")
+_JOB_NAME_LINE = re.compile(r"^\s+Name:\s*(.*?)\s*$")
+_RUN_LINE = re.compile(r"^([0-9a-f]{6,64})\s+(\w+)\s+job=([0-9a-f]+)\s+(?:source=\S+\s+)?(\d{4}-\d\d-\d\dT\S+)\s*$")
+_BAD_RUN_STATES = ("failed", "unknown")
+_ROUNDS_TTL = 60.0
+_rounds_cache: dict = {"at": 0.0, "value": None}
+
+
+def _plain(text: str, limit: int = 160) -> str:
+    clean = re.sub(r"[\x00-\x1f\x7f]+", " ", text).strip()
+    return clean if len(clean) <= limit else clean[: limit - 1].rstrip() + "…"
+
+
+def _hermes_cron(*args: str) -> str:
+    import shutil
+    hermes = os.environ.get("EMPORIA_HERMES_BIN", "").strip() or shutil.which("hermes")
+    if not hermes:
+        raise OSError("no hermes on PATH")
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONHOME", "PYTHONPATH")}
+    out = subprocess.run([hermes, "cron", *args], capture_output=True, text=True, timeout=25, check=True,
+                         stdin=subprocess.DEVNULL, env=env)
+    return out.stdout
+
+
+def _rounds_status() -> dict:
+    """The rounds job of this profile and what its last runs did, from `hermes cron list` and `hermes cron runs`
+    (read-only; cached a minute). {"on": bool, "state", "last": {status, at, note}|None, "last_failure": ...|None,
+    "error"?}. A failure's note is the first line of Hermes's error text, control characters removed and clipped."""
+    import time
+    now = time.time()
+    if _rounds_cache["value"] is not None and now - _rounds_cache["at"] < _ROUNDS_TTL:
+        return _rounds_cache["value"]
+    out: dict = {"on": False, "state": "", "last": None, "last_failure": None}
+    try:
+        job_id, state, cur = "", "", None
+        for line in _hermes_cron("list", "--all").splitlines():
+            m = _JOB_ID_LINE.match(line)
+            if m:
+                cur = (m.group(1), m.group(2).strip())
+                continue
+            n = _JOB_NAME_LINE.match(line)
+            if n and cur and n.group(1) == _ROUNDS_JOB and not job_id:
+                job_id, state = cur
+        if job_id:
+            rows: list[dict] = []
+            for line in _hermes_cron("runs", job_id, "--limit", "30").splitlines():
+                m = _RUN_LINE.match(line)
+                if m:
+                    rows.append({"status": m.group(2).lower(), "job": m.group(3), "at": m.group(4), "note": ""})
+                elif rows and line.strip() and line[:1].isspace() and not rows[-1]["note"]:
+                    rows[-1]["note"] = _plain(line)
+            rows = [r for r in rows if r["job"] == job_id and r["status"] != "claimed"]
+            pick = lambda r: None if r is None else {k: r[k] for k in ("status", "at", "note")}  # noqa: E731
+            out.update({"on": True, "state": state, "last": pick(rows[0] if rows else None),
+                        "last_failure": pick(next((r for r in rows if r["status"] in _BAD_RUN_STATES), None))})
+    except Exception:  # noqa: BLE001 — a view must never break the page
+        out["error"] = "the rounds job could not be read here"
+    _rounds_cache.update({"at": now, "value": out})
+    return out
+
+
 @router.get("/_hermes_stats")
 async def hermes_stats(request: Request):
     """Stats view: the Hermes side of an agent's figures — model cost per Emporia
@@ -479,7 +543,8 @@ async def hermes_stats(request: Request):
         days = 30
     now = time.time()
     model = await asyncio.to_thread(_model_cost, agent, days, now)
-    return JSONResponse({"agent_id": agent, "model": model, "turns_24h": _turns_used(now)},
+    rounds = await asyncio.to_thread(_rounds_status)
+    return JSONResponse({"agent_id": agent, "model": model, "turns_24h": _turns_used(now), "rounds": rounds},
                         headers={"Cache-Control": "no-store"})
 
 

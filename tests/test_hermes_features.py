@@ -390,3 +390,85 @@ def test_rounds_on_accepts_the_new_flags():
     assert ns.skip_quiet and ns.model == "m" and ns.reasoning_effort == "low"
     ns = cli.build_parser().parse_args(["rounds", "on"])
     assert not ns.skip_quiet and ns.model == "" and ns.reasoning_effort == ""
+
+
+# ── 4: the last rounds, read-only ───────────────────────────────────────────────────────────────
+
+RUNS = """59878d43b4494c9da77985df0a0c7ce6  failed     job=bbbbbbbbbbbb  source=builtin  2026-11-14T00:35:39.723369+00:00
+    Emporia round could not run: no Emporia tools exist in this session.
+
+Evidence: `tool_search` returned zero matches.
+d4b73c3458904c93976de0d3c99b2aac  completed  job=bbbbbbbbbbbb  source=builtin  2026-11-13T16:35:09.116980+00:00
+c34a24b06da049a4ae61e0e3fd0e1ddf  missed     job=aaaaaaaaaaaa  source=builtin  2026-11-13T08:35:09.131973+00:00
+"""
+
+
+def test_cron_runs_rows_are_parsed_with_the_first_line_of_a_failure():
+    from emporia import rounds
+    rows = rounds.parse_runs(RUNS)
+    assert [r["status"] for r in rows] == ["failed", "completed", "missed"]
+    assert rows[0]["note"] == "Emporia round could not run: no Emporia tools exist in this session."
+    assert rows[1]["note"] == "" and rows[0]["job"] == "bbbbbbbbbbbb"
+    assert rounds.parse_runs("No cron execution attempts recorded.\n") == []
+    bad = rounds.parse_runs("aa11bb22cc33  failed  job=bbbbbbbbbbbb  source=builtin  2026-11-14T00:00:00+00:00\n"
+                            "    \x1b[31mred\x1b[0m " + "x" * 400)
+    assert "\x1b" not in bad[0]["note"] and len(bad[0]["note"]) <= 160
+
+
+def test_doctor_text_names_the_last_round_and_the_last_failure(monkeypatch):
+    from emporia import rounds
+    seen = []
+
+    def fake(argv):
+        seen.append(list(argv))
+        if "list" in argv:
+            return LISTING
+        return RUNS
+    monkeypatch.setattr(rounds, "run_hermes", fake)
+    level, text, fix = rounds.runs_report("beta")
+    assert level == "warn" and "the last round failed (2026-11-14 00:35 UTC)" in text and "no Emporia tools" in text
+    assert fix == "hermes -p beta cron runs bbbbbbbbbbbb"
+    assert any(a[:5] == ["-p", "beta", "cron", "runs", "bbbbbbbbbbbb"] for a in seen)
+    assert not any(w in a for a in seen for w in ("run", "edit", "remove", "create", "pause", "resume", "cancel")
+                   if a[2:3] == [w]), "only list and runs are called"
+    monkeypatch.setattr(rounds, "run_hermes", lambda argv: LISTING if "list" in argv else RUNS.split("\n", 4)[-1])
+    level, text, _ = rounds.runs_report("beta")
+    assert level == "ok" and "the last round completed" in text
+
+
+def test_with_no_rounds_job_or_an_unreadable_hermes_nothing_is_claimed(monkeypatch):
+    from emporia import rounds
+    monkeypatch.setattr(rounds, "run_hermes", lambda argv: "")
+    assert rounds.runs_report("beta")[0] == "off"
+
+    def boom(argv):
+        raise rounds.RoundsError("hermes failed")
+    monkeypatch.setattr(rounds, "run_hermes", boom)
+    assert rounds.runs_report("beta")[0] == "warn"
+
+
+def test_the_dashboard_reads_the_rounds_state_through_two_read_only_cron_commands(monkeypatch):
+    spec = importlib.util.spec_from_file_location("emporia_plugin_api_hf", PLUGIN / "dashboard" / "plugin_api.py")
+    api = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(api)
+    asked = []
+
+    def cron(*args):
+        asked.append(args)
+        return LISTING if args[0] == "list" else RUNS
+    monkeypatch.setattr(api, "_hermes_cron", cron)
+    got = api._rounds_status()
+    assert got["on"] and got["state"] == "active"
+    assert got["last"]["status"] == "failed" and "no Emporia tools" in got["last"]["note"]
+    assert got["last_failure"]["at"].startswith("2026-11-14")
+    assert [a[0] for a in asked] == ["list", "runs"], "only list and runs: the dashboard writes nothing"
+    api._rounds_cache.update({"at": 0.0, "value": None})
+    monkeypatch.setattr(api, "_hermes_cron", lambda *a: "")
+    assert api._rounds_status()["on"] is False
+    api._rounds_cache.update({"at": 0.0, "value": None})
+
+    def boom(*a):
+        raise OSError("no hermes")
+    monkeypatch.setattr(api, "_hermes_cron", boom)
+    assert api._rounds_status()["error"]
+    api._rounds_cache.update({"at": 0.0, "value": None})
