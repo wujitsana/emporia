@@ -210,8 +210,6 @@ body.theme-light {
 /* Past the first tier the header's own controls shrink: "as" before the viewer, the select narrower. */
 .e-app-shell[data-nav="medium"] .e-app-top .e-viewer-switch > .e-faint,
 .e-app-shell[data-nav="rail"] .e-app-top .e-viewer-switch > .e-faint { display: none; }
-.e-app-shell[data-nav="medium"] .e-app-top .e-viewer-switch select,
-.e-app-shell[data-nav="rail"] .e-app-top .e-viewer-switch select { max-width: 7rem; }
 .e-app-top__row { flex-wrap: nowrap; }
 .e-app-top__actions { flex-shrink: 0; }
 /* Medium and rail: the header gives up what it can spare, so it stays on one row. */
@@ -3631,3 +3629,79 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 .e-app-shell[data-nav="medium"] .e-stage-word,
 .e-app-shell[data-nav="rail"] .e-stage-word,
 .e-app-shell[data-nav="phone"] .e-stage-word { display: none; }
+
+/* ─── The header row never overlaps and never clips ──────────────────────────────────────────────────
+   Left to right: the title, the five places, then the actions. The title and the five places keep their
+   width and never move under anything; the actions take the rest, and give things up from the least
+   important: the version, the Help and desk words (the icons stay), the stage word, the "as" and "live"
+   words, and last the relay host, which only ever shortens with an ellipsis. The tiers follow the
+   header row's own width (a container query), so they hold in the Hermes tab as in a window. */
+.e-app-top__row { container-type: inline-size; container-name: etop; }
+.e-app-top__row > .e-section-tabs--horizontal { flex: 0 0 auto; }
+.e-app-top__actions { flex: 1 1 0; justify-content: flex-end; gap: 12px; }
+.e-app-top__actions > * { flex-shrink: 0; }
+.e-app-top__actions > .e-relay-status { flex-shrink: 1; min-width: 0; }
+.e-app-top .e-relay-status__chips { min-width: 0; }
+.e-app-top .e-status-chip:has(.e-status-chip__label--relay) { min-width: 0; flex-shrink: 1; }
+.e-app-top .e-status-chip__label--relay { min-width: 0; max-width: 24ch; }
+/* The agent's name shows whole up to 20 characters, then an ellipsis; the select gives way last. */
+.e-app-top .e-viewer-switch select { box-sizing: content-box; max-width: 24ch; text-overflow: ellipsis; }
+
+
+@container etop (max-width: 1760px) {
+  .e-app-top .e-relay-status__meta { display: none; }
+}
+@container etop (max-width: 1640px) {
+  .e-app-top .e-header-link__word { display: none; }
+}
+@container etop (max-width: 1560px) {
+  .e-app-top .e-stage-word { display: none; }
+}
+@container etop (max-width: 1240px) {
+  .e-app-top .e-viewer-switch > .e-faint { display: none; }
+  .e-app-top .e-status-chip__label--live {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  .e-app-top .e-status-chip__label--relay { max-width: 16ch; }
+}
+@container etop (max-width: 1100px) {
+  .e-app-top__actions { gap: 8px; }
+}
+@container etop (max-width: 940px) {
+  .e-app-top .e-status-chip__label--relay { max-width: 10ch; }
+}
+@container etop (max-width: 640px) {
+  .e-app-top__row { gap: 8px; }
+  .e-app-top__actions { gap: 6px; }
+  .e-app-top .e-theme-duo { padding: 5px 6px; }
+  .e-app-top .e-theme-duo__rule { margin: 2px 5px; }
+}
+/* A tight header: the relay chip keeps its dot and its title; its host is the hover text. This is the medium
+   layout (title + five words + actions, no rail) and the narrowest rail. */
+@container etop (max-width: 1130px) and (min-width: 941px) {
+  .e-app-top .e-status-chip__label--relay {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+}
+@container etop (max-width: 600px) {
+  .e-app-top .e-status-chip__label--relay {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+}
+
+/* A long agent name (a select with data-long, over 12 characters) leaves the relay chip less room: in the bands where
+   it is already a dot, the chips, the theme circles and the gaps between them tighten too. */
+@container etop (max-width: 1130px) and (min-width: 941px) {
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) { gap: 6px; padding-left: 8px; padding-right: 8px; }
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) :is(.e-status-chip, .e-money-chip) { padding-left: 4px; padding-right: 4px; }
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-theme-duo { padding: 5px 5px; }
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-theme-duo__rule { margin: 2px 4px; }
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-app-top__actions { gap: 4px; }
+}
+@container etop (max-width: 680px) {
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) { padding-left: 8px; padding-right: 8px; }
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) :is(.e-status-chip, .e-money-chip) { padding-left: 4px; padding-right: 4px; }
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-theme-duo { padding: 5px 5px; }
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-theme-duo__rule { margin: 2px 4px; }
+  .e-app-top__row:has(.e-viewer-switch select[data-long]) .e-app-top__actions { gap: 4px; }
+}

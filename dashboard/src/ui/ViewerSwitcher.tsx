@@ -27,6 +27,12 @@ export function ViewerSwitcher() {
   return hermes ? <HermesProfileSelect current={hermes} /> : <ViewerSelect />;
 }
 
+/** The select is as wide as the name it shows (up to 20 characters, then an ellipsis), not as the longest
+ *  agent in its list: the header gives room for the one name, and the name is never cut short. */
+export function selectWidth(name: string): string {
+  return `${Math.min(Math.max(name.length, 6), 20) + 3}ch`;
+}
+
 /**
  * P234: inside the Hermes dashboard the tab belongs to a Hermes profile, so
  * picking an agent switches *Hermes's* profile — its own picker follows (it
@@ -63,7 +69,9 @@ function HermesProfileSelect({ current }: { current: { name: string; isAgent: bo
   return (
     <label className="e-viewer-switch" title="Switch the Hermes profile to this agent's">
       <span className="e-faint">as</span>
-      <select value={current.isAgent ? current.name : ""} onChange={choose} aria-label="Agent">
+      <select value={current.isAgent ? current.name : ""} onChange={choose} aria-label="Agent"
+        style={{ width: selectWidth(current.isAgent ? current.name : "choose an agent") }}
+        data-long={(current.isAgent ? current.name : "").length > 12 ? "" : undefined}>
         {!current.isAgent && <option value="">choose an agent</option>}
         {ids.map((id) => <option key={id} value={id}>{id}</option>)}
       </select>
@@ -98,7 +106,9 @@ function ViewerSelect() {
   return (
     <label className="e-viewer-switch" title="View this dashboard as another agent on this relay (local only)">
       <span className="e-faint">as</span>
-      <select value={VIEWER_ID ?? ""} onChange={choose} aria-label="View as agent">
+      <select value={VIEWER_ID ?? ""} onChange={choose} aria-label="View as agent"
+        style={{ width: selectWidth(VIEWER_ID ?? "spectator") }}
+        data-long={(VIEWER_ID ?? "").length > 12 ? "" : undefined}>
         {!VIEWER_ID && <option value="">spectator</option>}
         {ids.map((id) => <option key={id} value={id}>{id}</option>)}
       </select>

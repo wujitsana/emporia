@@ -180,8 +180,31 @@ describe("the header and the main navigation", () => {
   });
 
   it("gates no navigation on the window's width: only content padding and touch sizes use a media query", () => {
-    const nav = ALL.filter((d) => d.file === "dashboard.css" && /max-width|min-width/.test(d.media)
+    const nav = ALL.filter((d) => d.file === "dashboard.css" && /max-width|min-width/.test(d.media) && !d.media.startsWith("etop ")
       && /e-section-tab|e-bottom-bar|e-subnav|e-app-top|e-mobile-top|e-app-drawer|e-app-backdrop/.test(d.sel)).map((d) => d.sel);
     expect(nav).toEqual([]);
+  });
+
+  // The header row's own width (a container query, not the window's) decides what gives way, from the least
+  // important: version, then the Help and desk words, then the stage word, then the "as" and live words, and the
+  // relay host last. The title and the five places never shrink and never move under the actions.
+  it("gives up the least important things first, by the header row's own width", () => {
+    expect(find("dashboard.css", ".e-app-top__row", "container-type").at(-1)?.value).toBe("inline-size");
+    const tier = (what: RegExp) => {
+      const hits = ALL.filter((d) => d.file === "dashboard.css" && d.prop === "display" && d.value === "none"
+        && d.media.startsWith("etop ") && what.test(d.sel));
+      expect(hits.length).toBeGreaterThan(0);
+      return Math.max(...hits.map((d) => Number(/max-width: (\d+)px/.exec(d.media)?.[1])));
+    };
+    const meta = tier(/e-relay-status__meta/);
+    const words = tier(/e-header-link__word/);
+    const stage = tier(/e-stage-word/);
+    const as = tier(/e-viewer-switch > \.e-faint/);
+    expect(meta).toBeGreaterThan(words);
+    expect(words).toBeGreaterThan(stage);
+    expect(stage).toBeGreaterThan(as);
+    expect(find("dashboard.css", ".e-app-top__row > .e-section-tabs--horizontal", "flex").at(-1)?.value).toBe("0 0 auto");
+    // The agent's name shows whole (20 characters), the select as wide as that name.
+    expect(find("dashboard.css", ".e-app-top .e-viewer-switch select", "max-width").at(-1)?.value).toBe("24ch");
   });
 });
