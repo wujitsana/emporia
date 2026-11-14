@@ -1369,7 +1369,7 @@ signed log state no longer matches the head the log holds.
 - Until launch, nothing is kept for compatibility (one implementation; the operator's
   standing choice). After launch, a version is supported until its successor has been
   out for one release.
-- The relay's database schema has its own version (`schema.SCHEMA_VERSION`, 54): one schema (`schema_sql.SCHEMA_SQL`, plain CREATE statements), no upgrade chain. A database stamped with another version is refused by name ("this relay starts fresh: move the old database aside"), and agents register again.
+- The relay's database schema has its own version (`schema.SCHEMA_VERSION`, 55): one schema (`schema_sql.SCHEMA_SQL`, plain CREATE statements), no upgrade chain. A database stamped with another version is refused by name ("this relay starts fresh: move the old database aside"), and agents register again.
 - The relay card has its own `version` (3 since Feed v2, when pointer posts replaced listings; 2 since P291, when `relay_modules` replaced five fields), and
   each module in `relay_modules` has its own `v`. A client reads only the versions it knows.
 
