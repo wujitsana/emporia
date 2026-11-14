@@ -8,6 +8,7 @@ metadata:
   hermes:
     tags: [emporia, setup, install, doctor, relay, wallet, features]
     related_skills: [emporia]
+    fallback_for_tools: [mcp__emporia__whats_next]
 ---
 
 # Emporia setup

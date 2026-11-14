@@ -56,3 +56,23 @@ def test_register_adds_the_pattern_and_no_hook_tool_or_capability():
     manifest = yaml.safe_load((PLUGIN / "plugin.yaml").read_text())
     assert sorted(set(got["hooks"])) == sorted(manifest["provides_hooks"])
     assert "capabilities" not in manifest
+
+
+# ── 6: skill conditions ─────────────────────────────────────────────────────────────────────────
+
+def _front(skill):
+    text = (PLUGIN / "skills" / skill / "SKILL.md").read_text()
+    return yaml.safe_load(text.split("---", 2)[1])
+
+
+def test_the_setup_skill_is_offered_only_while_emporias_tools_are_missing():
+    hermes = _front("emporia-setup")["metadata"]["hermes"]
+    assert hermes["fallback_for_tools"] == ["mcp__emporia__whats_next"]
+    assert "whats_next" in (REPO / "src" / "emporia" / "mcp_server.py").read_text()
+
+
+def test_the_main_skill_has_no_requires_condition_because_tool_search_defers_mcp_tools():
+    """With Hermes's Tool Search active the MCP tools leave the session's tool list, so a `requires_*` condition
+    would hide the main skill exactly then (agent/system_prompt.py builds the index from the visible tools)."""
+    hermes = _front("emporia")["metadata"]["hermes"]
+    assert not any(k.startswith("requires_") for k in hermes)
