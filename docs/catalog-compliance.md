@@ -32,7 +32,7 @@ runtime it installs.
 |---|------|---------|---------------|
 | 1 | Human-merged gate | pass | Submitted as a PR to hermes-agent by the owner; nothing automated. |
 | 2 | Exact SHA pins | pass | The entry pins a full sha at release, and the plugin pins its runtime by commit and tree (release procedure below). |
-| 3 | No self-updating code | pass | Nothing fetches or installs code by itself. The runtime comes only from the pin, verified by commit and tree after every checkout. `--runtime-from` is gone. The one other install setup runs (the GitHub form for a profile it made, while the catalog does not list Emporia) installs the same pinned commit on the person's terminal, with Hermes's scan question answered by them. |
+| 3 | No self-updating code | pass | Nothing fetches or installs code by itself. The runtime comes only from the pin, verified by commit and tree after every checkout. `--runtime-from` is gone. The only other install setup runs is the catalog form (`hermes -p NAME plugins install emporia --enable`) for a profile it made; there is no git-URL fallback and no `--plugin-source` option. |
 | 4 | SHA bumps are new PRs | pass | The runtime pin lives in the plugin tree, so it moves only with a new entry PR. |
 | 5 | Owner submissions | pass | Submitted by the repo owner. |
 | 6 | Capabilities match | pass | Generated from Hermes's own probe, and kept in step with the manifest by a test. |

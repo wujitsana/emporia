@@ -21,7 +21,7 @@ def _relays_answer(monkeypatch):
 
 def _args(**kw):
     return argparse.Namespace(**{"profile": None, "here": False, "relay": "https://r.test", "rest": [],
-                                 "plugin_source": "emporia", **kw})
+                                 **kw})
 
 
 def test_it_asks_current_or_new_and_recommends_new():
@@ -48,103 +48,39 @@ def test_without_a_terminal_it_asks_nothing_and_needs_the_choice_as_a_flag(capsy
     assert "--agent-profile shop" in out and "--profile shop" not in out.replace("--agent-profile", "")
 
 
-def _fake_install(monkeypatch, tty):
-    """Hermes stand-in: the catalog install fails (not listed), the GitHub fallback is recorded."""
+def _fake_hermes(monkeypatch, returncode):
     calls = []
 
     def run(argv, **kw):
         calls.append((list(argv), kw))
-        return type("R", (), {"returncode": 1 if "emporia" in argv else 0})()
+        return type("R", (), {"returncode": returncode})()
 
     monkeypatch.setattr(setup_cli.shutil, "which", lambda n: "/bin/hermes")
     monkeypatch.setattr(setup_cli.subprocess, "run", run)
-    monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://github.com/o/r", "sha": "a" * 40})
-    monkeypatch.setattr(setup_cli, "_has_terminal", lambda: tty)
-    monkeypatch.setattr(setup_cli, "installed_ref", lambda home=None: "")
     return calls
 
 
-def test_the_github_fallback_never_forces_past_hermess_scan_question(monkeypatch, capsys):
-    """Catalog rule 12: with a terminal Hermes shows its findings and asks the person (their terminal is
-    its stdin); the install never carries --force."""
-    calls = _fake_install(monkeypatch, True)
+def test_the_plugin_comes_from_the_catalog_only_and_never_forces(monkeypatch, capsys):
+    calls = _fake_hermes(monkeypatch, 0)
     assert setup_cli._install_plugin_into("shop") is True
-    argvs = [a for a, _ in calls]
-    assert all("--force" not in a for a in argvs), argvs
-    argv, kw = calls[-1]
-    assert "--ref" in argv and "--enable" in argv
-    assert kw.get("stdin") is None
+    assert [a for a, _ in calls] == [["/bin/hermes", "-p", "shop", "plugins", "install", "emporia", "--enable"]]
+    assert calls[0][1]["stdin"] is setup_cli.subprocess.DEVNULL
 
 
-def test_the_github_fallback_without_a_terminal_runs_with_no_stdin_and_never_forces(monkeypatch, capsys):
-    calls = _fake_install(monkeypatch, False)
-    assert setup_cli._install_plugin_into("shop") is True
-    assert len(calls) == 2, calls                                  # the catalog attempt, then the fallback
-    argv, kw = calls[-1]
-    assert "--ref" in argv and "--force" not in argv
-    assert kw["stdin"] is setup_cli.subprocess.DEVNULL
-
-
-def test_the_github_fallback_failing_without_a_terminal_prints_hermess_reason_and_the_command(monkeypatch, capsys):
-    calls = []
-
-    def run(argv, **kw):
-        calls.append(list(argv))
-        if "--ref" in argv:
-            return type("R", (), {"returncode": 1, "stdout": "", "stderr": "\nBlocked: scan found caution\nmore"})()
-        return type("R", (), {"returncode": 1})()
-
-    monkeypatch.setattr(setup_cli.shutil, "which", lambda n: "/bin/hermes")
-    monkeypatch.setattr(setup_cli.subprocess, "run", run)
-    monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://github.com/o/r", "sha": "a" * 40})
-    monkeypatch.setattr(setup_cli, "installed_ref", lambda: "")
-    monkeypatch.setattr(setup_cli, "_has_terminal", lambda: False)
+def test_a_failed_catalog_install_stops_with_the_catalog_command_and_no_git_fallback(monkeypatch, capsys):
+    calls = _fake_hermes(monkeypatch, 1)
     assert setup_cli._install_plugin_into("shop") is False
+    assert len(calls) == 1, "no second, git-URL install"
     out = capsys.readouterr().out
-    assert "Blocked: scan found caution" in out and "more" not in out
-    assert "hermes -p shop plugins install" in out and "--ref " + "a" * 40 in out
-    assert "runtime commit" in out and "--force" not in out
+    assert "hermes -p shop plugins install emporia --enable" in out
+    assert "--ref" not in out and "github.com" not in out
 
 
-def test_the_new_profile_gets_the_plugin_commit_hermes_recorded_not_the_runtime_commit(monkeypatch, tmp_path):
-    real_installed_ref = setup_cli.installed_ref
-    calls = _fake_install(monkeypatch, False)
-    home = tmp_path / "home"
-    (home / "plugins").mkdir(parents=True)
-    (home / "plugins" / ".install-metadata.json").write_text(
-        '{"emporia": {"pinned": true, "revision": "' + "B" * 40
-        + '", "source": "https://github.com/o/r.git#hermes_plugin/emporia"}, "other": {}}')
-    monkeypatch.setattr(setup_cli, "hermes_home", lambda: home)
-    monkeypatch.setattr(setup_cli, "installed_ref", real_installed_ref)
-    assert setup_cli.installed_ref() == "b" * 40
-    assert setup_cli._install_plugin_into("shop") is True
-    assert calls[-1][0][calls[-1][0].index("--ref") + 1] == "b" * 40
-
-
-def test_the_recorded_revision_is_trusted_only_for_this_releases_own_repo_and_pin(monkeypatch, tmp_path):
-    (tmp_path / "plugins").mkdir()
-    meta = tmp_path / "plugins" / ".install-metadata.json"
-
-    def record(source):
-        meta.write_text('{"emporia": {"revision": "' + "c" * 40 + '", "source": "' + source + '"}}')
-    pin = {"repo": "https://github.com/o/r", "sha": "a" * 40}
-    monkeypatch.setattr(setup_cli, "source", lambda: pin)
-    record("https://github.com/o/r")
-    assert setup_cli.installed_ref(tmp_path) == "c" * 40
-    record("https://github.com/someone-else/r"), "another repository"
-    assert setup_cli.installed_ref(tmp_path) == ""
-    record("")
-    assert setup_cli.installed_ref(tmp_path) == "", "no recorded source"
-    record("https://github.com/o/r")
-    monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://github.com/o/r", "sha": ""})
-    assert setup_cli.installed_ref(tmp_path) == "", "the installed plugin names no pin"
-
-
-def test_installed_ref_is_empty_without_a_full_commit(tmp_path):
-    assert setup_cli.installed_ref(tmp_path) == ""
-    (tmp_path / "plugins").mkdir()
-    (tmp_path / "plugins" / ".install-metadata.json").write_text('{"emporia": {"revision": "abc"}}')
-    assert setup_cli.installed_ref(tmp_path) == ""
+def test_no_git_url_install_path_or_plugin_source_option_remains():
+    parser = argparse.ArgumentParser()
+    setup_cli.register_cli(parser)
+    assert "--plugin-source" not in set(_option_strings(parser))
+    assert not hasattr(setup_cli, "installed_ref")
 
 
 def _option_strings(parser):
@@ -617,7 +553,7 @@ def test_a_new_profile_gets_the_plugin_before_its_agent_is_set_up(monkeypatch, t
     monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://x.test/e", "sha": "a" * 40})
     monkeypatch.setattr(setup_cli, "python_of", lambda r: Path(sys.executable))
     monkeypatch.setattr(setup_cli, "_create_profile", lambda n: order.append(("create", n)) or True)
-    monkeypatch.setattr(setup_cli, "_install_plugin_into", lambda n, s: order.append(("plugin", n)) or True)
+    monkeypatch.setattr(setup_cli, "_install_plugin_into", lambda n: order.append(("plugin", n)) or True)
     monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: order.append(("setup", a[2]) if a[0] == "setup" else (a[0],)) or 0)
     assert setup_cli.cmd_setup(_args(profile="shop")) == 0
     assert order == [("create", "shop"), ("plugin", "shop"), ("setup", "shop"), ("welcome",)]
@@ -637,7 +573,7 @@ def test_setup_agent_hears_that_the_profile_was_made_just_now(monkeypatch, tmp_p
     monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://x.test/e", "sha": "a" * 40})
     monkeypatch.setattr(setup_cli, "python_of", lambda r: Path(sys.executable))
     monkeypatch.setattr(setup_cli, "_create_profile", lambda n: made)
-    monkeypatch.setattr(setup_cli, "_install_plugin_into", lambda n, s: True)
+    monkeypatch.setattr(setup_cli, "_install_plugin_into", lambda n: True)
     monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: ran.append(a) or 0)
     assert setup_cli.cmd_setup(_args(profile="shop")) == 0
     assert ("--new-profile" in ran[0]) is flag
@@ -721,7 +657,7 @@ def test_an_existing_profile_is_not_called_new(monkeypatch, tmp_path, capsys):
     (plugin / "plugin.yaml").write_text("name: emporia\n")
     ran = []
     monkeypatch.setattr(setup_cli, "_create_profile", lambda n: pytest.fail("it exists"))
-    monkeypatch.setattr(setup_cli, "_install_plugin_into", lambda n, s: pytest.fail("it has the plugin"))
+    monkeypatch.setattr(setup_cli, "_install_plugin_into", lambda n: pytest.fail("it has the plugin"))
     monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: ran.append(a) or 0)
     assert setup_cli.cmd_setup(_args(profile="alpha")) == 0
     out = capsys.readouterr().out
@@ -734,7 +670,7 @@ def test_a_profile_made_for_a_setup_that_failed_is_not_left_behind(monkeypatch, 
     _catalog_setup(monkeypatch, tmp_path)
     removed = []
     monkeypatch.setattr(setup_cli, "_create_profile", lambda n: "made")
-    monkeypatch.setattr(setup_cli, "_install_plugin_into", lambda n, s: fails != "plugin")
+    monkeypatch.setattr(setup_cli, "_install_plugin_into", lambda n: fails != "plugin")
     monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: 1)
     monkeypatch.setattr(setup_cli, "_remove_profile", lambda n: removed.append(n))
     assert setup_cli.cmd_setup(_args(profile="shop")) == 1

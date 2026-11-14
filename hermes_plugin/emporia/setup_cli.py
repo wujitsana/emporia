@@ -615,72 +615,21 @@ def choose_profile(args: argparse.Namespace, here: str, tty: bool, ask=input) ->
         print(f"  A profile name is {PROFILE_NAME_RULE}.")
 
 
-def installed_ref(home: Path | None = None) -> str:
-    """The commit Hermes recorded when this profile's plugin was installed: the `revision` of the
-    `emporia` row in `<home>/plugins/.install-metadata.json`, the profile-local, non-secret record
-    Hermes keeps of every plugin source (`hermes plugins list --json` shows only its first 8
-    characters). "" when there is no such row or it is not a full commit."""
-    path = (home or hermes_home()) / "plugins" / ".install-metadata.json"
-    try:
-        row = json.loads(path.read_text(encoding="utf-8-sig")).get("emporia")
-    except (OSError, ValueError, AttributeError):
-        return ""
-    rev = row.get("revision") if isinstance(row, dict) else None
-    if not (isinstance(rev, str) and re.fullmatch(r"[0-9a-fA-F]{40}", rev)):
-        return ""
-    # The record is trusted only when it describes THIS release's own source: the installed plugin names a
-    # pinned commit, and the row was recorded for the same repository. Anything else (another repository, or a
-    # plugin that names no pin) falls back to the pin.
-    pin = source()
-    if not pin.get("sha") or not _same_repo(row.get("source"), pin.get("repo")):
-        return ""
-    return rev.lower()
-
-
-def _same_repo(recorded: Any, pinned: Any) -> bool:
-    def norm(url: Any) -> str:
-        u = str(url or "").split("#", 1)[0].strip().rstrip("/").lower()
-        return u[:-4] if u.endswith(".git") else u
-    return bool(norm(recorded)) and norm(recorded) == norm(pinned)
-
-
-def _install_plugin_into(name: str, plugin_source: str = "emporia") -> bool:
-    """The plugin into a profile setup just created, through Hermes's own installer:
-    the catalog entry, or `--plugin-source` (a git URL, `<url>#hermes_plugin/emporia`)."""
+def _install_plugin_into(name: str) -> bool:
+    """The plugin into a profile setup just created, through Hermes's own installer and the catalog entry only.
+    No git-URL fallback: that install is pinned and never updates, and it shows as a second "User" plugin."""
     hermes = shutil.which("hermes")
+    cmd = f"hermes -p {name} plugins install emporia --enable"
     if not hermes:
-        print(f"  ✗ hermes is not on PATH: run `hermes -p {name} plugins install emporia --enable` yourself")
+        print(f"  ✗ hermes is not on PATH: install the plugin from the catalog yourself: `{cmd}`")
         return False
-    print(f"  Installing the Emporia plugin into {name} ({plugin_source})")
-    r = subprocess.run([hermes, "-p", name, "plugins", "install", plugin_source, "--enable"],
+    print(f"  Installing the Emporia plugin into {name} (the catalog)")
+    r = subprocess.run([hermes, "-p", name, "plugins", "install", "emporia", "--enable"],
                        stdin=subprocess.DEVNULL, timeout=_TIMEOUT_S, env=_child_env())
     if r.returncode == 0:
         return True
-    if plugin_source != "emporia":
-        return False
-    # The catalog does not list Emporia yet: the person installed this plugin from GitHub, so the new profile
-    # gets the same plugin commit from the same place (the one Hermes recorded for the person's install; the
-    # runtime commit in the pin file is the code commit before it, whose own pin is blank). Hermes scans it
-    # (a safe scan asks nothing) and blocks a source it will not install without a person; never `--force`.
-    src = source()
-    sha, how = installed_ref(), "the plugin commit installed here"
-    if not sha:
-        sha, how = src.get("sha", ""), "the runtime commit (the installed plugin commit was not found)"
-    if not sha:
-        return False
-    url = f"{src.get('repo', '')}#hermes_plugin/emporia"
-    cmd = [hermes, "-p", name, "plugins", "install", url, "--ref", sha, "--enable"]
-    print(f"  The catalog does not list Emporia yet; installing from GitHub ({url}, {sha[:12]}: {how}).")
-    if _has_terminal():
-        r = subprocess.run(cmd, timeout=_TIMEOUT_S, env=_child_env())
-        return r.returncode == 0
-    r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                       timeout=_TIMEOUT_S, env=_child_env())
-    if r.returncode == 0:
-        return True
-    lines = [ln.strip() for ln in f"{r.stderr or ''}\n{r.stdout or ''}".splitlines() if ln.strip()]
-    print(f"  ✗ Hermes did not install it without a terminal: {lines[0] if lines else 'no output'}\n"
-          f"    Run this in a terminal:\n\n    {shlex.join(cmd)}\n")
+    print(f"  ✗ Hermes could not install Emporia from the catalog. Install it from the catalog, then run setup again:\n"
+          f"    `{cmd}`")
     return False
 
 
@@ -824,7 +773,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
         made = _create_profile(name)
         if not made:
             return 1
-        if not _install_plugin_into(name, args.plugin_source):
+        if not _install_plugin_into(name):
             if made == "made":
                 _remove_profile(name)
             return 1
@@ -835,7 +784,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
             extra = ["--new-profile", *extra]
     elif from_catalog(rt) and name != here and not (_hermes_root() / "profiles" / name / "plugins" / "emporia"
                                                     / "plugin.yaml").is_file():
-        if not _install_plugin_into(name, args.plugin_source):       # an existing profile without it
+        if not _install_plugin_into(name):       # an existing profile without it
             return 1
     code = _emporia(rt, "setup", "agent", name, *extra)
     if code == 0:
@@ -1042,9 +991,6 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
                        help="The profile to set up as the agent; made if it does not exist")
     where.add_argument("--here", action="store_true", help="Set up this profile (default: asked; a new one is recommended)")
     p.add_argument("--relay", help="The relay to join (https URL); needed without a terminal, there is no default")
-    p.add_argument("--plugin-source", default="emporia",
-                   help="Where a new profile's plugin comes from (default: the catalog entry; before it is "
-                        "listed: https://github.com/wujitsana/emporia#hermes_plugin/emporia)")
     p.add_argument("rest", nargs=argparse.REMAINDER,
                    help="After --: options for `emporia setup agent` (--role, --keys, --wallet, …)")
     sub.add_parser("status", help="Where the runtime is, and this agent on its relay")

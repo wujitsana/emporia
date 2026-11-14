@@ -117,7 +117,7 @@ def test_every_command_the_guide_gives_exists(command):
     if command.startswith("hermes") and argv[0] == "setup":
         # the plugin's own setup: its flags, then `--` and `emporia setup agent`'s
         head, tail = (argv[:argv.index("--")], argv[argv.index("--") + 1:]) if "--" in argv else (argv, [])
-        assert {a for a in head if a.startswith("--")} <= {"--agent-profile", "--here", "--relay", "--plugin-source"}
+        assert {a for a in head if a.startswith("--")} <= {"--agent-profile", "--here", "--relay"}
         if tail:
             assert _parses(["setup", "agent", "alpha", *tail]), f"`{command}`: its options after -- do not parse"
         return
