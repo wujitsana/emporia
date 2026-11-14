@@ -493,8 +493,9 @@ Same as `installer/install.py --seed-only`.
 
 ### Installing the plugin from GitHub, pinned
 
-Until the Hermes plugin catalog lists Emporia (`hermes plugins install emporia`), an operator installs the
-plugin from the repo's GitHub URL at one full commit, so `hermes plugins update` follows the same source later:
+The Hermes plugin catalog lists Emporia (`hermes plugins install emporia`); that is how operators install it.
+To try a commit the catalog does not pin yet, install the plugin from the repo's GitHub URL at one full commit,
+so `hermes plugins update` follows the same source later (a test install; go back to the catalog after):
 
 ```bash
 hermes plugins install "https://github.com/wujitsana/emporia#hermes_plugin/emporia" --ref <40-character commit> --enable
