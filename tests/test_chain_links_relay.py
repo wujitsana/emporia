@@ -571,3 +571,27 @@ def test_a_relay_that_cannot_check_a_signature_refuses_the_claim(relay, monkeypa
 
     r, links = run(go())
     assert r.status_code == 400 and "cannot check a wallet signature" in r.text and links == []
+
+
+def test_a_leading_zero_agent_id_is_refused_by_the_relay(relay):
+    key, addr = keypair()
+    owned_by(relay, addr)
+
+    async def go():
+        a = agent(relay)
+        await a.register()
+        stable = await stable_of(a)
+        issued = int(time.time()) - 5
+        reg = f"{SEPOLIA}:{ERC8004_REGISTRIES[SEPOLIA].lower()}"
+        at = datetime.now(UTC).isoformat()
+        wsig = sign(key, 84532, ERC8004_REGISTRIES[SEPOLIA], AGENT, addr, stable, issued=issued)
+        body = {"agent_registry": reg, "agent_id": "0%d" % AGENT, "signer": addr, "issued_at": issued,
+                "wallet_sig": wsig, "at": at}
+        payload = {"type": wire.ERC8004_LINK_TYPE, "stable_id": stable, "agent_registry": reg,
+                   "agent_id": body["agent_id"], "signer": addr, "issued_at": issued, "wallet_sig": wsig, "at": at}
+        body["signature"] = identity.sign(payload, a.agent_id)
+        return await a._bearer_request("post", f"http://testserver/agents/{a.agent_id}/links/erc8004", json=body), \
+            await card(a, a)
+
+    r, links = run(go())
+    assert r.status_code == 400 and "canonical" in r.text and links == []

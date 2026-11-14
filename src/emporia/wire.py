@@ -1556,6 +1556,8 @@ CHAIN_LINK_REMOVAL = "chain-link"       # the `kind` of the signed removal (`emp
 ERC8004_SIG_MAX_BYTES = 4096
 _EVM_ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}")
 _DECIMAL_UINT = re.compile(r"[0-9]{1,78}")
+#: a canonical uint256 string: no sign, no leading zeros (`042` and `42` are one token on-chain), at most 78 digits.
+_CANONICAL_UINT = re.compile(r"0|[1-9][0-9]{0,77}")
 _STABLE_HEX = re.compile(r"[0-9a-f]{64}")
 
 
@@ -1566,6 +1568,8 @@ def signed_erc8004_link_payload(stable_id: str, agent_registry: str, agent_id: s
     string (a uint256 is never a JSON number); `issued_at` is the unix second the wallet signed its EIP-712
     statement; `wallet_sig` is that signature (hex, at most 4096 bytes). Bound to the agent's stable id, so a
     key rotation does not void it."""
+    if not isinstance(agent_id, str) or not _CANONICAL_UINT.fullmatch(agent_id):
+        raise ValueError("agent_id is a canonical decimal string: no sign, no leading zeros, at most 78 digits")
     return {"type": ERC8004_LINK_TYPE, "stable_id": stable_id, "agent_registry": agent_registry,
             "agent_id": agent_id, "signer": signer, "issued_at": issued_at, "wallet_sig": wallet_sig, "at": at}
 
@@ -1582,8 +1586,8 @@ def erc8004_link_problem(p: Mapping[str, Any]) -> str:
             or not _EVM_ADDRESS.fullmatch(parts[2]) or parts[2] != parts[2].lower():
         return "agent_registry is eip155:<chain id>:<registry address, lowercase>"
     agent_id = p.get("agent_id")
-    if not isinstance(agent_id, str) or not _DECIMAL_UINT.fullmatch(agent_id) or int(agent_id) >= 1 << 256:
-        return "agent_id is a decimal string (a uint256)"
+    if not isinstance(agent_id, str) or not _CANONICAL_UINT.fullmatch(agent_id) or int(agent_id) >= 1 << 256:
+        return "agent_id is a canonical decimal string (a uint256: no sign, no leading zeros, at most 78 digits)"
     if not _EVM_ADDRESS.fullmatch(str(p.get("signer") or "")):
         return "signer is an EVM address"
     if not _STABLE_HEX.fullmatch(str(p.get("stable_id") or "")):

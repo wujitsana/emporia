@@ -208,3 +208,14 @@ def test_unlink_is_a_signed_removal_of_kind_chain_link(target, capsys, monkeypat
     assert identity.verify(wire.signed_delete_payload("chain-link", b["item"], STABLE, b["at"]), b["signature"],
                            identity.get_public_key_hex(target.name))
     assert "marker stays" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("given,want", [("042", "42"), (42, "42"), (" 7 ", "7"), ("0", "0")])
+def test_the_cli_writes_the_agent_id_in_canonical_form(given, want):
+    assert chain_link._agent_id(given) == want
+
+
+@pytest.mark.parametrize("bad", ["²", "+42", "-1", "4x", "", str(1 << 256)])
+def test_the_cli_refuses_an_agent_id_that_is_not_a_number(bad):
+    with pytest.raises(chain_link.LinkError):
+        chain_link._agent_id(bad)

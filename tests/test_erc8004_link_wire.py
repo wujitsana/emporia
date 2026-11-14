@@ -79,3 +79,15 @@ def test_unlinking_is_the_existing_signed_removal_naming_the_link():
     assert item == f"{STABLE}/{REGISTRY}/42"
     p = wire.signed_delete_payload(wire.CHAIN_LINK_REMOVAL, item, STABLE, AT)
     assert p == {"type": "emporia:delete:v3", "kind": "chain-link", "item": item, "stable_id": STABLE, "at": AT}
+
+
+@pytest.mark.parametrize("bad", ["042", "00", "+42", "-1", "4 2", "٤٢", "1" * 79])
+def test_a_non_canonical_agent_id_is_refused_and_cannot_be_built(bad):
+    assert wire.erc8004_link_problem(_payload(agent_id=bad))
+    with pytest.raises(ValueError):
+        wire.signed_erc8004_link_payload(STABLE, REGISTRY, bad, SIGNER, 1760000000, WALLET_SIG, AT)
+
+
+def test_zero_and_a_plain_number_are_canonical():
+    assert wire.erc8004_link_problem(_payload(agent_id="0")) == ""
+    assert wire.erc8004_link_problem(_payload(agent_id="1" + "0" * 76)) == ""

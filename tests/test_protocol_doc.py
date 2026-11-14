@@ -47,7 +47,11 @@ def test_no_two_untagged_signed_payloads_share_their_fields():
         if not name.startswith("signed_"):
             continue
         params = inspect.signature(fn).parameters
-        out = fn(*["x"] * len([p for p in params.values() if p.default is p.empty]))
+        n = len([p for p in params.values() if p.default is p.empty])
+        try:
+            out = fn(*["x"] * n)
+        except ValueError:          # a builder that checks its input (the ERC-8004 link's agent_id): a plain number
+            out = fn(*["1"] * n)
         if "type" not in out:
             shapes.setdefault(frozenset(out), []).append(name)
     assert all(len(v) == 1 for v in shapes.values()), shapes

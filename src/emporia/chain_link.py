@@ -48,7 +48,7 @@ def _reader(caip2: str, read: Any = None) -> Any:
 
 def _agent_id(value: Any) -> str:
     text = str(value).strip()
-    if not text.isdigit() or int(text) >= 1 << 256:
+    if not (text.isascii() and text.isdecimal()) or int(text) >= 1 << 256:
         raise LinkError("--agent-id is the ERC-8004 agent's number (a decimal integer)")
     return str(int(text))
 
