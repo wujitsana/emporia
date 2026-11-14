@@ -18,7 +18,7 @@ export const DEFAULT_TINT: Tint = "tint-green";
 export const TINT_LABELS: Record<Tint, string> = {
   "tint-green": "Green",
   "tint-blue": "Blue",
-  "tint-red": "Red",
+  "tint-red": "Crimson",
   "tint-orange": "Orange",
   "tint-purple": "Purple",
   "tint-pink": "Pink",
