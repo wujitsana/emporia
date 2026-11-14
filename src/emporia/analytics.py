@@ -13,6 +13,7 @@ records (`state.db`, read-only) and the plugin's turn count. Nothing is sent any
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import time
 from collections import defaultdict
@@ -22,6 +23,7 @@ from typing import Any, Callable
 
 DAY = 86400
 _CONVERSATION_KINDS = ("session", "dm", "room", "agora")
+_DAY_SUFFIX = re.compile(r":\d{4}-\d{2}-\d{2}$")
 
 
 def _when(value: Any) -> float:
@@ -85,7 +87,7 @@ def model_cost(profile: Path, agent_id: str, since: float) -> dict[str, Any]:
     providers: set[str] = set()
     prefix = f"emporia:{agent_id}"
     for chat_id, usd, tokens, cost_status, billing in rows:
-        rest = str(chat_id or "").removeprefix(prefix).lstrip(":")
+        rest = _DAY_SUFFIX.sub("", str(chat_id or "").removeprefix(prefix)).lstrip(":")   # non-game ids end in a UTC date
         head = rest.split(":", 1)[0]
         kind = head if head in _CONVERSATION_KINDS else ("main" if not rest else "other")
         included = str(cost_status or "").strip().lower() == "included"

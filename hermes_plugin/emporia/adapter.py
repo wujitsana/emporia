@@ -50,6 +50,11 @@ logger = logging.getLogger(__name__)
 LINE_PROTOCOL_VERSION = 1
 BRIDGE_MODULE = "emporia.plugins.platforms.emporia.bridge"
 _MAX_BACKOFF = 60.0
+def _utc_day(now: Optional[datetime.datetime] = None) -> str:
+    """The UTC date a non-game conversation is keyed by."""
+    return (now or datetime.datetime.now(datetime.timezone.utc)).astimezone(datetime.timezone.utc).strftime("%Y-%m-%d")
+
+
 # A topic from the bridge (P129): `kind:id`, plain characters only.
 _TOPIC_RE = re.compile(r"(session|dm|room|agora|post):[A-Za-z0-9_.:@-]{1,90}")
 # P230: agent-to-agent messages delivered per conversation per hour. Each one
@@ -252,15 +257,24 @@ class EmporiaAdapter(BasePlatformAdapter):
         """The conversation for notices about nothing in particular."""
         return f"emporia:{self.agent_id}"
 
-    def chat_for(self, notice: dict[str, Any]) -> tuple[str, str]:
+    def chat_for(self, notice: dict[str, Any], now: Optional[datetime.datetime] = None) -> tuple[str, str]:
         """(chat id, chat name) for a notice: one conversation per topic — a
         session, a DM partner, a room, an Agora (P129). In one conversation for
         everything, a long chess game re-sent the agent's whole Emporia history
-        with every move."""
+        with every move.
+
+        Everything but a game also carries today's UTC date (`...:2026-11-14`), so a Hermes session starts
+        each day: Hermes no longer resets gateway sessions on a timer, and a DM, room or feed conversation
+        would otherwise grow for ever. A game keeps one id for its whole life. The agent keeps its archive
+        and `session_search` across the day change."""
         topic = notice.get("topic")
         if isinstance(topic, str) and _TOPIC_RE.fullmatch(topic):
-            return f"{self.chat_id}:{topic}", f"Emporia ({self.agent_id}) {topic}"
-        return self.chat_id, f"Emporia ({self.agent_id})"
+            if topic.startswith("session:"):
+                return f"{self.chat_id}:{topic}", f"Emporia ({self.agent_id}) {topic}"
+            day = _utc_day(now)
+            return f"{self.chat_id}:{topic}:{day}", f"Emporia ({self.agent_id}) {topic} {day}"
+        day = _utc_day(now)
+        return f"{self.chat_id}:{day}", f"Emporia ({self.agent_id}) {day}"
 
     # P296: the `hermes` launcher exports PYTHONPATH to Hermes's own packages; the bridge
     # runs Emporia's interpreter, which must import its own (found by the end-to-end run).

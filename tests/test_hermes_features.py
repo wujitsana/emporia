@@ -76,3 +76,60 @@ def test_the_main_skill_has_no_requires_condition_because_tool_search_defers_mcp
     would hide the main skill exactly then (agent/system_prompt.py builds the index from the visible tools)."""
     hermes = _front("emporia")["metadata"]["hermes"]
     assert not any(k.startswith("requires_") for k in hermes)
+
+
+# ── 5: daily session rotation for non-game chats ────────────────────────────────────────────────
+
+HERMES_PYTHON = Path("/opt/hermes/.venv/bin/python")
+
+
+def test_non_game_chats_carry_the_utc_date_and_a_game_keeps_one_id(tmp_path):
+    import json
+    import subprocess
+
+    import pytest
+    if not HERMES_PYTHON.exists():
+        pytest.skip("Hermes is not installed here")
+    harness = tmp_path / "harness.py"
+    harness.write_text(f'''
+import datetime, importlib.util, json, sys
+from pathlib import Path
+d = Path({str(PLUGIN)!r})
+spec = importlib.util.spec_from_file_location("emporia_platform", d / "__init__.py", submodule_search_locations=[str(d)])
+mod = importlib.util.module_from_spec(spec); sys.modules["emporia_platform"] = mod
+spec.loader.exec_module(mod)
+from emporia_platform.adapter import EmporiaAdapter
+a = EmporiaAdapter.__new__(EmporiaAdapter)
+a.agent_id = "alice"
+utc = datetime.timezone.utc
+late = datetime.datetime(2026, 11, 14, 23, 59, tzinfo=utc)
+early = datetime.datetime(2026, 11, 15, 0, 1, tzinfo=utc)
+est = datetime.datetime(2026, 11, 14, 22, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=-5)))   # 03:00 UTC next day
+out = {{}}
+for label, topic in (("none", None), ("dm", "dm:bob"), ("room", "room:r1"), ("agora", "agora:chess"),
+                     ("post", "post:p1"), ("game", "session:sess_1"), ("bad", "session:a b")):
+    n = {{"topic": topic}} if topic else {{}}
+    out[label] = [a.chat_for(n, late)[0], a.chat_for(n, early)[0]]
+out["tz"] = a.chat_for({{"topic": "dm:bob"}}, est)[0]
+out["name"] = a.chat_for({{"topic": "dm:bob"}}, late)[1]
+print(json.dumps(out))
+''')
+    r = subprocess.run([str(HERMES_PYTHON), str(harness)], cwd="/opt/hermes", capture_output=True, text=True, timeout=60,
+                       env={"PATH": "/usr/bin:/bin", "HERMES_HOME": str(tmp_path / "home"), "PYTHONPATH": "/opt/hermes"})
+    assert r.returncode == 0, r.stderr[-1500:]
+    got = json.loads(r.stdout.strip().splitlines()[-1])
+    assert got["none"] == ["emporia:alice:2026-11-14", "emporia:alice:2026-11-15"]
+    assert got["dm"] == ["emporia:alice:dm:bob:2026-11-14", "emporia:alice:dm:bob:2026-11-15"]
+    assert got["room"][0] == "emporia:alice:room:r1:2026-11-14" and got["agora"][1] == "emporia:alice:agora:chess:2026-11-15"
+    assert got["post"][0] == "emporia:alice:post:p1:2026-11-14"
+    assert got["game"] == ["emporia:alice:session:sess_1"] * 2, "a game is one conversation for its whole life"
+    assert got["bad"][0] == "emporia:alice:2026-11-14", "a malformed topic falls to the day's general chat"
+    assert got["tz"] == "emporia:alice:dm:bob:2026-11-15", "the date is the UTC date"
+    assert "2026-11-14" in got["name"]
+
+
+def test_the_cost_by_kind_views_read_a_dated_chat_id_as_the_same_kind(tmp_path):
+    from emporia import analytics
+    assert analytics._DAY_SUFFIX.sub("", "dm:bob:2026-11-14") == "dm:bob"
+    assert analytics._DAY_SUFFIX.sub("", ":2026-11-14").lstrip(":") == ""
+    assert analytics._DAY_SUFFIX.sub("", "session:s1") == "session:s1"

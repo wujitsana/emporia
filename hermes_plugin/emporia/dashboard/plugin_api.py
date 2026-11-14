@@ -368,7 +368,10 @@ async def hermes_profile(request: Request):
     return JSONResponse({"profile": name, "sockets": _sockets_carried()}, headers={"Cache-Control": "no-store"})
 
 
-#: The bridge's conversation ids: `emporia:<agent>`, or `emporia:<agent>:<kind>:<id>` (adapter.chat_for).
+#: The bridge's conversation ids: `emporia:<agent>:<utc date>` (no topic), `emporia:<agent>:<kind>:<id>:<utc date>`
+#: for a DM, room, agora or post, and `emporia:<agent>:session:<id>` for a game (adapter.chat_for). An id from
+#: before the date suffix has none.
+_DAY_SUFFIX = re.compile(r":\d{4}-\d{2}-\d{2}$")
 _CONVERSATION_KINDS = ("session", "dm", "room", "agora")
 _AGENT_ID = re.compile(r"[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]")     # the relay's own rule
 _PAGE = 200
@@ -412,7 +415,7 @@ def _model_cost(agent: str, days: int, now: float) -> dict:
                 chat = str(row.get("chat_id") or "")
                 if chat != prefix and not chat.startswith(prefix + ":"):
                     continue
-                rest = chat[len(prefix):].lstrip(":")
+                rest = _DAY_SUFFIX.sub("", chat[len(prefix):]).lstrip(":")
                 head = rest.split(":", 1)[0]
                 kind = head if head in _CONVERSATION_KINDS else ("main" if not rest else "other")
                 cost = row.get("actual_cost_usd")

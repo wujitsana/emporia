@@ -331,10 +331,12 @@ asyncio.run(main())
                          capture_output=True, text=True, timeout=60)
     assert out.returncode == 0, out.stderr[-2000:]
     result = json.loads(out.stdout.strip().splitlines()[-1])
+    import datetime
+    today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")   # non-game chats rotate daily
     assert result["got"] == [
-        ["[Emporia] DM from bob: hi", "bob", "emporia:alice"],
+        ["[Emporia] DM from bob: hi", "bob", f"emporia:alice:{today}"],
         ["[Emporia] Your turn", "emporia:relay", "emporia:alice:session:sess_1"],
-        ["[Emporia] odd", "emporia:relay", "emporia:alice"],
+        ["[Emporia] odd", "emporia:relay", f"emporia:alice:{today}"],
     ]
     assert result["stopped"]
 
