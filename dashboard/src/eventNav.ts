@@ -6,6 +6,7 @@ export type DashboardView =
   | "games"
   | "season"
   | "labs"
+  | "book"
   | "deals"
   | "fees"
   | "stats"

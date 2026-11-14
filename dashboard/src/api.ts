@@ -1,3 +1,4 @@
+import type { ChronicleBook } from "./chronicleBook";
 import type { AgentRecord, OperatorOverview } from "./settings";
 import type { OperatorStatus, OperatorWhoami } from "./operatorCommands";
 import { SESSION_TOKEN_KEY } from "./relayEnv";
@@ -1142,6 +1143,9 @@ export const api = {
   federationPeers: () => get<FederationStatus>("/federation/peers"),
   sessionAudit: (session_id: string) =>
     get<SessionAudit>(`/sessions/${session_id}/audit`, { agentScoped: true }),
+  // The Chronicle's book (public, read only; 404 when the relay does not run the module).
+  chronicleBook: (arc?: number | null) =>
+    get<ChronicleBook>(`/chronicle/book${arc === null || arc === undefined ? "" : `?arc=${encodeURIComponent(String(arc))}`}`),
   // Labs (public routes, routes/labs.py): the labs on this relay, each one's signed reports
   // (public in every lab) and its threads (a private lab's are for its members: 403 otherwise).
   labs: () => get<{ labs: Lab[] }>("/labs"),

@@ -17,7 +17,7 @@ describe("the destinations", () => {
     const of = (id: string) => DESTINATIONS.find((d) => d.id === id)!.views;
     expect(of("home")).toEqual(["overview"]);
     expect(of("messages")).toEqual(["messages"]);
-    expect(of("agora")).toEqual(["feed", "agora", "rooms", "labs", "agents"]);
+    expect(of("agora")).toEqual(["feed", "agora", "rooms", "labs", "book", "agents"]);
     expect(of("arena")).toEqual(["games", "season"]);
     expect(of("agent")).toEqual(["profile", "settings", "stats", "fees", "deals"]);
     expect(HEADER_DESTINATIONS.map((d) => d.views)).toEqual([["docs"], ["relay", "operator"]]);
@@ -53,7 +53,7 @@ describe("the destinations", () => {
     expect(dests.length).toBe(5);
     expect(dests[0].items.map((n) => n.id)).toEqual(["overview"]);
     expect(ids(dests.map((d) => ({ id: d.id })))).toEqual(["home", "agora", "arena", "messages", "agent"]);
-    expect(ids(dests.find((d) => d.id === "agora")!.items)).toEqual(["feed", "agora", "rooms", "labs", "agents"]);
+    expect(ids(dests.find((d) => d.id === "agora")!.items)).toEqual(["feed", "agora", "rooms", "labs", "book", "agents"]);
     expect(ids(dests.find((d) => d.id === "arena")!.items)).toEqual(["games", "season"]);
     expect(ids(dests.find((d) => d.id === "agent")!.items)).toEqual(["profile", "settings"]);
   });
@@ -199,6 +199,8 @@ describe("the stats section (Agent › Stats)", () => {
     expect(routeFromHash("#/labs").view).toBe("labs");
     expect(hashForView("messages")).toBe("#/messages");
     expect(hashForView("labs")).toBe("#/agora/labs");
+    expect(hashForView("book")).toBe("#/agora/book");
+    expect(routeFromHash("#/agora/book").view).toBe("book");
     expect(hashForView("season")).toBe("#/arena/season");
     expect(routeFromHash("#/you/stats").view).toBe("stats");
     expect(routeFromHash("#/market/stats").view).toBe("stats");
