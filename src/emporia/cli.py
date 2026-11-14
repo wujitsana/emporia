@@ -4114,6 +4114,16 @@ def cmd_rounds(args: argparse.Namespace) -> int:
                   "and ends in one line, so --model can name a cheap one.")
             print("  Each round is the agent's own turn; it never pays or accepts a deal. `emporia rounds off` removes it.")
             print("  Rounds missed while Hermes was off are skipped, not run at once when it returns (catch-up off).")
+        elif args.action == "digest":
+            if args.digest_action == "on":
+                print("  " + R.digest_on(pname, profile, args.deliver))
+                print("  A Hermes no-agent job: no model. Each morning it sends a few lines of counts and ids "
+                      "(what waits on the agent, unread messages) and stays silent when nothing does. Nothing a "
+                      "stranger wrote is in it. `emporia rounds digest off` removes it.")
+            elif args.digest_action == "off":
+                print("  " + R.digest_off(pname, profile))
+            else:
+                print(f"  Digest      {R.digest_status(pname)}")
         elif args.action == "off":
             print("  " + R.turn_off(pname, profile))
         elif args.action == "pause":
@@ -9702,7 +9712,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
     rd = sub.add_parser("rounds", help="let the agent act on its own, on a schedule (one Hermes cron job)")
-    rd.add_argument("action", choices=["on", "off", "status", "pause", "resume"], nargs="?", default="status")
+    rd.add_argument("action", choices=["on", "off", "status", "pause", "resume", "digest"], nargs="?", default="status")
+    rd.add_argument("digest_action", choices=["on", "off", "status"], nargs="?", default="status",
+                    help="(digest) on|off|status: a daily summary of counts and ids, sent by Hermes, no model")
+    rd.add_argument("--deliver", default="", help="(digest on) where Hermes sends it, e.g. telegram or telegram:<chat id>")
     rd.add_argument("--every", default="4h", choices=["2h", "4h", "8h", "12h", "24h"], help="how often (default 4h)")
     rd.add_argument("--agent", default="", help="the agent's profile (default: this one)")
     rd.add_argument("--skip-quiet", action="store_true",

@@ -39,6 +39,13 @@ CATCH_UP = ("--catch-up", "off")
 GATE_SCRIPT = "emporia_rounds_gate.py"
 GATE_TEMPLATE = "rounds_gate.py.txt"
 GATE_MAX_LINES = 4
+#: The optional daily digest (`emporia rounds digest on --deliver TARGET`): a Hermes no-agent job that runs one script
+#: (`data/digest_script.py.txt`) and delivers its few lines of counts and ids to a target the operator names.
+DIGEST_NAME = "Emporia — digest"
+DIGEST_SCRIPT = "emporia_digest.py"
+DIGEST_TEMPLATE = "digest_script.py.txt"
+DIGEST_SCHEDULE = "0 9 * * *"
+_TARGET = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_:@.#!/-]{0,119}")
 INTERVALS = ("2h", "4h", "8h", "12h", "24h")
 DEFAULT_EVERY = "4h"
 PROMPT_FILE = "rounds_prompt.md"
@@ -209,10 +216,10 @@ def parse_jobs(listing: str) -> list[Job]:
     return jobs
 
 
-def jobs(profile: str) -> list[Job]:
-    """This profile's rounds jobs: those named JOB_NAME, and no other."""
+def jobs(profile: str, name: str = JOB_NAME) -> list[Job]:
+    """This profile's rounds jobs: those named JOB_NAME (or, for the digest, DIGEST_NAME), and no other."""
     listing = run_hermes([*_scope(profile), "cron", "list", "--all"])
-    return [j for j in parse_jobs(listing) if j.name == JOB_NAME]
+    return [j for j in parse_jobs(listing) if j.name == name]
 
 
 def turn_on(profile: str, every: str = DEFAULT_EVERY, plugin_dir: Path | None = None, *,
@@ -361,3 +368,75 @@ def runs_report(profile: str) -> tuple[str, str, str]:
     if bad is not None:
         text += f"; last failure {bad['at'][:16].replace('T', ' ')} UTC" + (f": {bad['note']}" if bad["note"] else "")
     return "ok", text, ""
+
+
+# ─── the optional digest: no model, counts and ids only ─────────────────────────────────────────
+
+def digest_path(profile_dir: Path) -> Path:
+    return scripts_dir(profile_dir) / DIGEST_SCRIPT
+
+
+def _write_script(path: Path, template: str) -> None:
+    try:
+        hermes = hermes_bin()
+    except RoundsError:
+        hermes = ""
+    text = (Path(__file__).resolve().parent / "data" / template).read_text(encoding="utf-8").replace(
+        "__HERMES__", repr(hermes))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists() or path.read_text(encoding="utf-8") != text:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o700)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.chmod(path, 0o700)
+
+
+def digest_on(profile: str, profile_dir: Path, deliver: str) -> str:
+    """Create (or update) the digest job: `hermes cron create ... --no-agent --script emporia_digest.py --deliver T`.
+    Hermes delivers to the target; Emporia holds no chat credentials. Failures stay local."""
+    deliver = (deliver or "").strip()
+    if not _TARGET.fullmatch(deliver):
+        raise RoundsError("--deliver names a Hermes delivery target, e.g. telegram or telegram:<chat id>")
+    if deliver in ("origin",):
+        raise RoundsError("--deliver origin means nothing for a scheduled job; name a target such as telegram")
+    _write_script(digest_path(profile_dir), DIGEST_TEMPLATE)
+    base = _scope(profile)
+    existing = jobs(profile, DIGEST_NAME)
+    if existing:
+        job = existing[0]
+        run_hermes([*base, "cron", "edit", job.id, "--schedule", DIGEST_SCHEDULE, "--name", DIGEST_NAME,
+                    "--script", DIGEST_SCRIPT, "--no-agent", "--deliver", deliver, "--failure-deliver", "local",
+                    *CATCH_UP])
+        if job.state.lower().startswith("paus"):
+            run_hermes([*base, "cron", "resume", job.id])
+        return f"digest updated: daily at 9:00, to {deliver} (job {job.id})"
+    out = run_hermes([*base, "cron", "create", DIGEST_SCHEDULE, "--name", DIGEST_NAME, "--no-agent",
+                      "--script", DIGEST_SCRIPT, "--deliver", deliver, "--failure-deliver", "local", *CATCH_UP])
+    m = re.search(r"Created job:\s*([0-9a-f]+)", out)
+    return f"digest on: daily at 9:00, to {deliver} (job {m.group(1) if m else '?'})"
+
+
+def digest_off(profile: str, profile_dir: Path | None) -> str:
+    found = jobs(profile, DIGEST_NAME)
+    for job in found:
+        run_hermes([*_scope(profile), "cron", "remove", job.id])
+    gone = False
+    if profile_dir is not None:
+        try:
+            digest_path(profile_dir).unlink()
+            gone = True
+        except FileNotFoundError:
+            pass
+    return "digest off: the job is removed" + (" (and its script)" if gone else "") if found else (
+        "the digest was not on" + (" (its script is removed)" if gone else ""))
+
+
+def digest_status(profile: str) -> str:
+    try:
+        found = jobs(profile, DIGEST_NAME)
+    except RoundsError as e:
+        return f"unknown ({e})"
+    if not found:
+        return "off"
+    j = found[0]
+    return f"{j.state}, {j.schedule or '?'} (job {j.id}); counts and ids only, no model"

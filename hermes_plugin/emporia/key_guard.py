@@ -104,7 +104,7 @@ _SENSITIVE = (
 # relay to other machines.
 _PERSON_ONLY = (("wallet", {"backup", "mainnet"}),
                 # Activation: who may wake the agent, and whether it acts on its own, are its person's
-                ("wake", {"closed", "direct", "open"}), ("rounds", {"on", "off", "pause", "resume"}),
+                ("wake", {"closed", "direct", "open"}), ("rounds", {"on", "off", "pause", "resume", "digest"}),
                 # which tools it has: its features are its person's to turn on or off
                 ("features", {"on", "off"}),
                 ("relay", {"host", "rotate", "remove", "seed"}), ("agent", {"delete", "rotate", "recovery", "recover", "about",
