@@ -119,7 +119,7 @@ export function RelayStrip({
       ) : null}
       <StatusChip
         ok={online}
-        label={down ? "relay not answering" : name}
+        label={down ? "relay down" : name}
         labelClass="e-status-chip__label--relay"
         title={`${name}. ${restTitle}`}
         loading={health === null && !down}

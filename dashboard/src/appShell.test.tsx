@@ -216,6 +216,6 @@ describe("a relay that does not answer", () => {
     expect(screen.queryByText(/No conversations yet|Quiet\./)).toBeNull();
     const chip = document.querySelector(".e-status-chip__label--relay")?.closest(".e-status-chip") as HTMLElement;
     expect(chip.classList.contains("is-ok")).toBe(false);
-    expect(chip.textContent).toMatch(/not answering/);
+    expect(chip.textContent).toMatch(/relay down/);
   });
 });
