@@ -369,7 +369,7 @@ body.tint-blue {
 }
 
 body.tint-red {
-  --tint: #ff0000;
+  --tint: #b00331;   /* crimson, as the user picked (11-14) */
 }
 
 body.tint-yellow {
@@ -513,9 +513,9 @@ body.theme-vivid.tint-pink {
   --theme-window-background: var(--vv-panel);
   --theme-window-shadow: var(--vv-ink);
 }
-body.theme-vivid.tint-red,
 body.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--tint) 80%, white); }
 body.theme-vivid.tint-blue,
+body.theme-vivid.tint-red,
 body.theme-vivid.tint-purple { --vv-ink: #fff; }
 body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }
 

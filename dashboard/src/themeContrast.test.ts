@@ -75,10 +75,10 @@ describe("the CSS carries the palette", () => {
   });
 
   it("the vivid rules name the same tints for white ink and the lighter panel as the table", () => {
-    expect(WHITE_INK).toEqual(["tint-blue", "tint-purple"]);
-    expect(LIGHT_PANEL).toEqual(["tint-red", "tint-pink"]);
-    expect(DASH).toContain("body.e-look.theme-vivid.tint-blue,\nbody.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }");
-    expect(DASH).toContain("body.e-look.theme-vivid.tint-red,\nbody.e-look.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }");
+    expect(WHITE_INK).toEqual(["tint-blue", "tint-red", "tint-purple"]);
+    expect(LIGHT_PANEL).toEqual(["tint-pink"]);
+    expect(DASH).toContain("body.e-look.theme-vivid.tint-blue,\nbody.e-look.theme-vivid.tint-red,\nbody.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }");
+    expect(DASH).toContain("body.e-look.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }");
   });
 
   it("the kit's global.css has the same three ramps for every tint", () => {
