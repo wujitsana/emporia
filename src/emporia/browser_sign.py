@@ -24,7 +24,8 @@ import json
 import re
 import secrets
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from typing import Any
 
 TIMEOUT = 600.0                      # seconds the page stays up
@@ -156,6 +157,9 @@ def csp(nonce: str) -> str:
             "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 
 
+CONN_TIMEOUT = 5.0                  # seconds a connection may sit silent before it is dropped
+
+
 class SigningPage:
     """One page, one signature. `start()` binds; `wait()` serves until a signature arrives or the time is up."""
 
@@ -166,6 +170,7 @@ class SigningPage:
         self.timeout = timeout
         self.result: dict | None = None
         self._server: HTTPServer | None = None
+        self._lock = threading.Lock()
         self._signer = str(typed_data["message"]["signer"]).lower()
 
     @property
@@ -181,6 +186,8 @@ class SigningPage:
         page = self
 
         class Handler(BaseHTTPRequestHandler):
+            timeout = CONN_TIMEOUT      # a silent or slow connection is dropped; it never holds the page
+
             protocol_version = "HTTP/1.0"
             server_version = "emporia-sign"
             sys_version = ""
@@ -248,10 +255,16 @@ class SigningPage:
                         or len(sig.removeprefix("0x")) % 2 or len(sig.removeprefix("0x")) > 2 * MAX_SIG_BYTES \
                         or not _ADDR.fullmatch(account) or account.lower() != page._signer:
                     return self._send(400, b"not a signature for the signer")
-                page.result = {"signature": sig if sig.startswith("0x") else "0x" + sig, "account": account}
+                with page._lock:
+                    if page.result is not None:
+                        return self._send(409, b"a signature was already received")
+                    page.result = {"signature": sig if sig.startswith("0x") else "0x" + sig, "account": account}
                 self._send(200, b'{"ok":true}', "application/json")
 
-        self._server = HTTPServer((HOST, 0), Handler)
+        # One thread per connection (daemon, never joined), so an idle browser pre-connection cannot hold the
+        # accept loop past the time limit; each connection's socket times out on its own (CONN_TIMEOUT).
+        self._server = ThreadingHTTPServer((HOST, 0), Handler)
+        self._server.daemon_threads = True
         self._server.timeout = 0.2
         return self
 

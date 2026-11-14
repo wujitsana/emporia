@@ -410,3 +410,45 @@ def test_browser_flow_is_refused_while_an_unattended_turn_is_live(target, chain,
     target.live = "relay"
     assert card.link_8004(target.name, "base-sepolia", str(AGENT), browser=True) == 1
     assert "person's to change" in capsys.readouterr().out
+
+
+def test_an_idle_connection_does_not_hold_the_server_past_its_time_limit():
+    import socket
+    p = page(timeout=1.0)
+    idle = socket.create_connection((bs.HOST, p.port))          # a browser's spare pre-connection: sends nothing
+    try:
+        t0 = time.monotonic()
+        with pytest.raises(bs.BrowserSignError, match="no signature arrived"):
+            p.wait()
+        assert time.monotonic() - t0 < 4
+    finally:
+        idle.close()
+
+
+def test_an_idle_connection_does_not_stop_the_page_or_the_signature(monkeypatch):
+    import socket
+    p = page(timeout=10.0)
+    idle = socket.create_connection((bs.HOST, p.port))
+    try:
+        t, box = serve(p)
+        assert request(p, "GET", "/" + p.token)[0] == 200
+        status, _, _ = request(p, "POST", "/" + p.token + "/sign", {"signature": SIG, "account": p._signer})
+        t.join(5)
+        assert status == 200 and box.get("result", {}).get("signature") == SIG
+    finally:
+        idle.close()
+
+
+def test_a_connection_that_stops_mid_request_is_dropped_after_the_socket_timeout(monkeypatch):
+    import socket
+    monkeypatch.setattr(bs, "CONN_TIMEOUT", 0.5)
+    p = page(timeout=3.0)
+    t, _box = serve(p)
+    s = socket.create_connection((bs.HOST, p.port))
+    try:
+        s.sendall(b"POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 50\r\n")     # never finishes
+        s.settimeout(5)
+        assert s.recv(10) == b""                                              # the server hung up on it
+    finally:
+        s.close()
+        t.join(6)
