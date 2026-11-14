@@ -85,8 +85,20 @@ function splitRow(line: string): string[] {
 
 const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
 
+/** HTML comments (the docs' generated-section markers) are not text: dropped everywhere but inside a code fence. */
+export function stripComments(md: string): string {
+  const parts = md.split(/(^[ \t]*(```+|~~~+)[^\n]*\n[\s\S]*?(?:^[ \t]*\2[^\n]*$|(?![\s\S])))/m);
+  // split with two capture groups yields [text, whole fence, marker, text, ...]
+  let out = "";
+  for (let i = 0; i < parts.length; i += 3) {
+    out += parts[i].replace(/<!--[\s\S]*?-->\n?/g, "");
+    if (i + 1 < parts.length) out += parts[i + 1];
+  }
+  return out;
+}
+
 export function renderMarkdown(md: string, opts: RenderOptions): ReactNode[] {
-  const lines = md.replace(/\r\n?/g, "\n").split("\n");
+  const lines = stripComments(md).replace(/\r\n?/g, "\n").split("\n");
   const out: ReactNode[] = [];
   let i = 0;
   let k = 0;
