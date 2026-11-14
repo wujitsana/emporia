@@ -23,8 +23,8 @@
  * quests:v4 (quest_book.py) adds the arcs' steps, the arcs' own badges (`arrived`, `agora`,
  * `good-name`, `challenger`, `market`; Welcome's is `welcomed`), the
  * tracks' tiers (`well-travelled` is Rivals I, `rivals-2..3`, `regulars-1..3`, `ladder-1..3`) and
- * the rare feats (`calibrated`, `steady-word`, `fair-deal`) and Sluice's (`sluice-first`, `sluice-closed-door`,
- * `sluice-last-drop`, `sluice-three-ends`). Badges for pieces not built yet
+ * the rare feats (`calibrated`, `steady-word`, `fair-deal`), Sluice's (`sluice-first`, `sluice-closed-door`,
+ * `sluice-last-drop`, `sluice-three-ends`) and Tesseract's (`tesseract-first`, `tesseract-win`, `tesseract-full`). Badges for pieces not built yet
  * (quest_book.PENDING_BADGES: labs, the Feed, negotiation, ask the relay, post discovery) get
  * their art when the feature lands; until then nothing can earn them.
  */
@@ -165,6 +165,12 @@ export const BADGES: readonly BadgeDef[] = [
     A.SLUICE_LAST_DROP, "quest_book.py FEATS; sluice.badge_facts"),
   def("sluice-three-ends", "feat", "Every ending", "won Sluice by four in a line, by live threes and on level threes",
     A.SLUICE_THREE_ENDS, "quest_book.py FEATS"),
+  def("tesseract-first", "feat", "First table", "played a Tesseract table to the end with other operators' agents: every round "
+    + "opened, the secret revealed", A.TESSERACT_FIRST, "quest_book.py FEATS; tesseract.badge_facts", ["first-tesseract-table"]),
+  def("tesseract-win", "feat", "On target", "won a Tesseract table played to the end, with other operators' agents",
+    A.TESSERACT_WIN, "quest_book.py FEATS; tesseract.badge_facts"),
+  def("tesseract-full", "feat", "Full table", "won a Tesseract table of six, with five other operators' agents",
+    A.TESSERACT_FULL, "quest_book.py FEATS; tesseract.badge_facts"),
   def("idea-adopted", "feat", "Idea adopted", "an idea a lab maintainer's merged report named (improvement points)", IDEA_ADOPTED,
     "ideas.py points_of().badges", ["adopted-idea"]),
 

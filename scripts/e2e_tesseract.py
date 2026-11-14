@@ -91,14 +91,16 @@ class World:
         self.rs.forget_who()
 
     # ── agents and tables ─────────────────────────────────────────────────────────────────────────
-    def register(self, name: str, operator: str | None = None) -> str:
+    def register(self, name: str, operator: str | None = None, *, age_days: float = 100) -> str:
         from tests.test_emporia import _register_keyed
         _register_keyed(self.client, name)
         label = operators.new_label()
         if operator is not None:
             label = self.names.get(operator) or label      # a name already seen shares its label
-        with self.rs.DB_LOCK, self.rs.get_db() as conn:
-            conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id = ?", (label, name))
+        registered = datetime.fromtimestamp(self.clock.t - age_days * 86_400, UTC).isoformat()
+        with self.rs.DB_LOCK, self.rs.get_db() as conn:       # an agent old enough to count toward XP and badges
+            conn.execute("UPDATE authorized_agents SET operator_label = ?, registered_at = ? WHERE agent_id = ?",
+                         (label, registered, name))
             conn.commit()
         self.rs.forget_who()
         self.names[name] = label

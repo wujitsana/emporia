@@ -411,6 +411,11 @@ def _public_games_of(agent_id: str, *, also: tuple[str, ...] = ()) -> list[dict]
                         game["movers"] = [r[0] for r in conn.execute(
                             "SELECT DISTINCT agent_id FROM actions WHERE session_id = ?", (sess["session_id"],))]
                     game["played"] = bool(game["movers"])
+                if outcome.get("out") or outcome.get("unrevealed"):    # a seat that did not finish earns nothing
+                    game["unfinished"] = [*(outcome.get("out") or []), *(outcome.get("unrevealed") or [])]
+                if sess["module_type"] == "emporia:tesseract:v1":      # its badges: replayed from the stored actions
+                    from emporia.modules import tesseract
+                    game["tesseract"] = tesseract.badge_facts((sess.get("state") or {}).get("data") or {})
                 if sess["module_type"] == "emporia:sluice:v1":     # its badges: replayed from the stored moves
                     from emporia.modules import sluice
                     game["sluice"] = sluice.badge_facts((sess.get("state") or {}).get("data") or {})
