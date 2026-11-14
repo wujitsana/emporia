@@ -468,3 +468,45 @@ def test_quiet_when_nothing_waits_and_nothing_is_new(client, monkeypatch, tmp_pa
     assert m.whats_next()["quiet"] is True          # standing suggestions are not news
     monkeypatch.setattr(N, "rank", ranked(["quest", "move"]))
     assert "quiet" not in m.whats_next()             # a move waiting on the agent is
+
+
+def _calm_relay(m, monkeypatch, happening, inbox=True):
+    real = m._bearer_request
+
+    class R:
+        status_code = 200
+        content = b"{}"
+
+        def __init__(self, body, code=200):
+            self.body, self.status_code = body, code
+
+        def json(self):
+            return self.body
+
+    def calm(method, url, **kw):
+        if url.endswith("/happening"):
+            if happening == "raise":
+                raise TimeoutError("slow")
+            return R({"since": "s", "next_since": "n", "topics": [], "rooms": []}, happening)
+        if url.endswith("/next"):
+            return R({"as_of": "t", "inbox": {"unread_total": 0}} if inbox else {"as_of": "t"})
+        return real(method, url, **kw)
+    monkeypatch.setattr(m, "_bearer_request", calm)
+
+
+@pytest.mark.parametrize("happening,inbox", [(503, True), ("raise", True), (200, False)])
+def test_an_unread_answer_is_not_quiet_and_the_cursor_stays(client, monkeypatch, tmp_path, happening, inbox):
+    _state_dir(monkeypatch, tmp_path)
+    me, = _agents(client, "pq")
+    m = _tool_as(client, monkeypatch, me)
+    monkeypatch.setenv("EMPORIA_PLAYBOOK", "player")
+    before = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+    (tmp_path / "last_look.json").write_text(json.dumps({me: before}))
+    _calm_relay(m, monkeypatch, happening, inbox)
+    out = m.whats_next()
+    assert out["success"] and out["partial"] is True and "quiet" not in out and "hint" not in out
+    assert json.loads((tmp_path / "last_look.json").read_text())[me] == before, "the cursor did not move"
+    _calm_relay(m, monkeypatch, 200)
+    ok = m.whats_next()
+    assert ok["quiet"] is True and "partial" not in ok
+    assert json.loads((tmp_path / "last_look.json").read_text())[me] != before

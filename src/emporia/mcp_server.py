@@ -4385,23 +4385,33 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
     out["since_last_look"] = {"at": prev_look}
     if not since and prev_look:
         since = prev_look
+    news_read = False
     try:
         h = _bearer_request("get", f"{_base()}/happening", agent_id=aid, timeout=10,
                             params={k: v for k, v in {"since": since, "limit": 3}.items() if v not in ("", None)})
         if h.status_code == 200:
             body = h.json()
             out["happening"] = {k: body.get(k) for k in ("since", "next_since", "topics", "rooms")}
+            news_read = True
     except Exception:  # noqa: BLE001 — the news is extra; the steps above stand without it
         pass
+    # An unread answer is not a quiet one: the news (or the inbox of /next) could not be read, so say so, never
+    # tell the agent to end silently, and leave the last-look cursor where it was.
+    if not news_read or not isinstance(d.get("inbox"), dict):
+        out["partial"] = True
+        out["partial_note"] = ("some of what is new could not be read just now: do not treat this as quiet; "
+                               "call whats_next again soon")
     recent = _your_recent(aid)
     if recent is not None:
         out["your_recent"] = recent
         out["last_word_threads"] = sorted({p["thread"] for p in recent if p.get("last_word") and p.get("thread")})
     hp = out.get("happening") or {}
-    if not any(i.get("kind") not in _STANDING_KINDS for i in items) and not out["unread_total"] and not hp.get("topics") and not hp.get("rooms"):
+    if not out.get("partial") and not any(i.get("kind") not in _STANDING_KINDS for i in items) \
+            and not out["unread_total"] and not hp.get("topics") and not hp.get("rooms"):
         out["quiet"] = True
         out["hint"] = "nothing new since your last look; [SILENT] is a fine result in a round"
-    _note_last_look(aid)
+    if not out.get("partial"):
+        _note_last_look(aid)
     return out
 
 
