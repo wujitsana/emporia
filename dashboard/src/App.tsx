@@ -22,7 +22,7 @@ import { NotOnRelayNote } from "./ui/NotOnRelayNote";
 import { hermesProfile, MODE } from "./transport";
 import { readPref, writePref } from "./prefs";
 import { DESKTOP_ROOT } from "./shadowScope";
-import { RelayHealthCtx } from "./healthCtx";
+import { RelayDownCtx, RelayHealthCtx } from "./healthCtx";
 import { applyTheme, nextTint, normalizeBase, normalizeTheme, normalizeTint, toggleTheme, type BaseTheme, type Theme, type Tint } from "./themeConfig";
 import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
 import { ARENA_LENSES, canSee, dealsAvailable, destById, destinationOf, navById, navForHotkey, siblingView, type ArenaLens, type Destination, type View } from "./navConfig";
@@ -31,7 +31,7 @@ import { recall, recallOf, remember } from "./viewMemory";
 import { restoreScroll, saveScroll } from "./scrollMemory";
 import { isNarrow, useNarrow, useOverlayFocus } from "./ui/overlayFocus";
 import { useNavLayout } from "./ui/navLayout";
-import { PageHeading, ViewBoundary } from "./ui/layout";
+import { PageHeading, RelayDownPane, ViewBoundary } from "./ui/layout";
 import { isTyping } from "./keyTarget";
 import { sessionSection } from "./eventNav";
 import type { Navigate } from "./navigation";
@@ -161,7 +161,11 @@ function AppInner() {
   /* P43-2: the app's ONE /health poll. Three other components polled it
      independently — one of them while receiving this very value as a prop.
      They read `useRelayHealth()` now. */
-  const [healthPoll] = useInterval(() => api.health(), 30_000);
+  // Not answering: read again sooner, so the page comes back soon after the relay does.
+  const [healthDownNow, setHealthDownNow] = useState(false);
+  const [healthPoll, , healthError] = useInterval(() => api.health(), healthDownNow ? 5_000 : 30_000, [healthDownNow]);
+  const relayDown = !!healthError;
+  useEffect(() => { setHealthDownNow(relayDown); }, [relayDown]);
 
   /* P38-1: the per-agent notification channel, opened once here so every view
      shares one connection (calling useAgentWs in each consumer would open a
@@ -189,7 +193,7 @@ function AppInner() {
     30_000, [VIEWER_ID, isSpectator],
   );
   useAttentionTitle(attentionCount(rankNext(nextFacts), inboxUnread));
-  const relayHealth = healthPoll ?? seed;
+  const relayHealth = relayDown ? null : (healthPoll ?? seed);
   // Agent names are bare on this relay and "name@host" only for visitors (agentName.ts).
   setOwnHost((relayHealth as { host?: string } | null)?.host);
   // Deals (You › Deals) is drawn only on a relay that can sell services: escrow on, or cards live.
@@ -454,6 +458,7 @@ function AppInner() {
 
   return (
     <RelayHealthCtx.Provider value={relayHealth}>
+    <RelayDownCtx.Provider value={relayDown}>
     <AgentNavCtx.Provider value={navigate}>
     <div ref={shellRef} data-nav={navLayout} className={`e-app-shell e-dashboard-shell e-app-shell--header-nav${navOpen ? " is-nav-open" : ""}${chatBeside ? " has-chat" : ""}`}>
         <aside ref={drawerRef} className="e-app-drawer" aria-label="Menu" inert={!navOpen}>
@@ -510,6 +515,7 @@ function AppInner() {
                   relayUrl={RELAY}
                   wsConnected={wsConnected}
                   health={relayHealth}
+                  down={relayDown}
                 />
               </div>
             </div>
@@ -535,6 +541,7 @@ function AppInner() {
               relayUrl={RELAY}
               wsConnected={wsConnected}
               health={relayHealth}
+              down={relayDown}
               compact
             />
           </div>
@@ -546,14 +553,15 @@ function AppInner() {
             onGoView={goToView}
             onGoLens={goToLens}
           />
-          {!hermesNonAgent && VIEWER_ID && view !== "overview" ? <NowStrip navigate={navigate} /> : null}
+          {!hermesNonAgent && VIEWER_ID && view !== "overview" && !relayDown ? <NowStrip navigate={navigate} /> : null}
           <div className="e-view">
             <NotAnAgentNote />
             {!hermesNonAgent && <NotOnRelayNote />}
             {!hermesNonAgent && !(view === "agents" && agentRoute) && <PageHeading item={currentNav} agent={VIEWER_ID} />}
             {/* P234: a Hermes profile that is no agent shows nothing of the relay. */}
             {!hermesNonAgent && !shown && <GatedNote view={view} />}
-            {!hermesNonAgent && shown && (<ViewBoundary key={view} name={currentNav?.label ?? "This section"}>
+            {!hermesNonAgent && shown && relayDown && view !== "docs" && view !== "settings" && <RelayDownPane />}
+            {!hermesNonAgent && shown && !(relayDown && view !== "docs" && view !== "settings") && (<ViewBoundary key={view} name={currentNav?.label ?? "This section"}>
             {view === "overview" && (
               <OverviewView
                 events={events}
@@ -626,6 +634,7 @@ function AppInner() {
         <AgentChatDrawer onMenu={() => setNavOpen(true)} covered={navOpen} />
     </div>
     </AgentNavCtx.Provider>
+    </RelayDownCtx.Provider>
     </RelayHealthCtx.Provider>
   );
 }

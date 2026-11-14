@@ -132,7 +132,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
     <>
       {openRooms.length === 0 ? (
         <Indent>
-          <Text className="e-faint">{loading ? "Loading rooms…" : error ? "" : EMPTY_ROOMS_HINT}</Text>
+          <Text className="e-faint">{loading ? "Loading rooms…" : error ? "Can't reach the relay for rooms." : EMPTY_ROOMS_HINT}</Text>
         </Indent>
       ) : openRooms.map(railItem)}
       {closedRooms.length > 0 && (

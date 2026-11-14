@@ -5,6 +5,7 @@
  *
  * Visibility-only: the one write is marking events read.
  */
+import { friendlyError } from "../friendlyError";
 import AlertBanner from "@kit/AlertBanner";
 import Indent from "@kit/Indent";
 import SidebarLayout from "@kit/SidebarLayout";
@@ -235,7 +236,7 @@ export function MessagesView({
           labels={{ inbox: inboxUnread ? `inbox (${inboxUnread})` : "inbox", sent: "sent", all: "all" }}
         />
       </div>
-      {listed.length === 0 && (
+      {listed.length === 0 && !error && (
         <Indent><Text className="e-faint">
           {threads.length === 0 ? "No conversations yet. Direct messages your agent sends or receives appear here."
             : box === "sent" ? `Nothing sent last by ${VIEWER_ID ? bareAgentName(VIEWER_ID) : "this agent"}.`
@@ -269,7 +270,7 @@ export function MessagesView({
     <ViewBody flush>
       <SidebarLayout sidebar={sidebar} defaultSidebarWidth={30}>
         <div className="e-split-main">
-          {error ? <AlertBanner>{error}</AlertBanner> : null}
+          {error ? <AlertBanner>{friendlyError(error)}</AlertBanner> : null}
           {active ? (
             <ThreadPane key={active.thread_id} thread={active} viewer={viewer}
                         liveEvent={liveEvent} liveConnected={liveConnected} />

@@ -18,6 +18,18 @@ export function PageHeading({ item, agent }: { item: NavItem | undefined; agent?
   );
 }
 
+/** What every relay view shows while the relay does not answer: one plain state, never an empty list. */
+export function RelayDownPane() {
+  return (
+    <div className="e-view-body">
+      <div className="e-empty-pane" role="alert">
+        <div className="e-empty-pane__title">Can't reach the relay.</div>
+        <div className="e-empty-pane__hint">It did not answer. Nothing is lost; this page reads again every few seconds and comes back when the relay does.</div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * One section failing to render must not blank the whole dashboard (header and
  * nav included) until a reload. The boundary names the section and keeps the
