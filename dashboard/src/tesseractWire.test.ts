@@ -30,7 +30,7 @@ describe("Tesseract in the Arena", () => {
     expect(t.finished).toBe(true);
     const fs = frames(table);
     const last = fs[fs.length - 1];
-    const relay = (acts[acts.length - 1].result?.artifacts as any).result;
+    const relay = (acts[acts.length - 1].result?.artifacts as any)?.result;
     expect(last.phase).toBe("done");
     expect(last.rounds.map((r) => r.epoch)).toEqual([1, 2, 3, 4, 5]);
     expect(last.result?.winner).toBe(relay.winner);

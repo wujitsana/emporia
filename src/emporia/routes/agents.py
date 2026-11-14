@@ -498,7 +498,6 @@ def _add_last_word(conn, viewer_id, agent_id: str, pairs: list) -> None:
     """Give each (view, row) in `pairs` its `thread`, `last_word` and `replies_after`, from one query over
     the threads they are in. Only what the viewer may read counts: a reply it may not read is neither counted
     nor decides who spoke last."""
-    from emporia import refs
     from emporia.routes import posts as pv
     keys = {_thread_key(r) for _, r in pairs}
     root_ids = [k.partition(":")[2] for k in keys if k.startswith("post:") and "@" not in k]

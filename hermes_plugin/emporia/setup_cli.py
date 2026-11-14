@@ -38,7 +38,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
 from urllib.parse import urlparse
 
 HERE = Path(__file__).resolve().parent

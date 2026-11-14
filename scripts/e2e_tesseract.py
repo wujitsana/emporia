@@ -32,7 +32,7 @@ for p in (REPO, REPO / "src", REPO / "tests", REPO / "scripts"):
 
 import conftest  # noqa: E402,F401 — pins the suite's environment on a throwaway root, before emporia loads
 
-from emporia import commit_reveal, operators  # noqa: E402
+from emporia import operators  # noqa: E402
 from emporia.modules import tesseract as T  # noqa: E402
 
 WHY = "Playing the network toward my own target"

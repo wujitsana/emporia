@@ -9,7 +9,7 @@ import pytest
 from emporia import agent_card_cli as card
 from emporia import chain_link, erc8004, identity, mcp_server, wire
 from emporia.networks import ERC8004_REGISTRIES
-from tests.test_erc8004_verify import AGENT, C, FakeChain, bound_chain, keypair, needs_lib, sign
+from tests.test_erc8004_verify import AGENT, FakeChain, bound_chain, keypair, needs_lib, sign
 from tests.test_x_link_cli import FakeTarget
 
 pytestmark = needs_lib

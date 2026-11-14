@@ -7,14 +7,13 @@ import shutil
 import subprocess
 import threading
 import time
-import uuid
 from pathlib import Path
 
 import pytest
 
 from emporia import agent_card_cli as card
 from emporia import browser_sign as bs
-from emporia import chain_link, erc8004, mcp_server
+from emporia import erc8004, mcp_server
 from emporia.networks import ERC8004_REGISTRIES
 from tests.test_chain_link_cli import STABLE, _owned_by_eoa, chain, target  # noqa: F401  (fixtures)
 from tests.test_erc8004_verify import AGENT, keypair, needs_lib

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectWidth } from "./ViewerSwitcher";
+import { selectWidth } from "./selectWidth";
 
 describe("the header's agent select", () => {
   it("is as wide as the name it shows: 20 characters whole, then it stops growing (an ellipsis)", () => {

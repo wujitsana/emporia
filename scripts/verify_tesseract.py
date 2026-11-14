@@ -174,7 +174,7 @@ def verify(get: Get, bls: bool = True, only: str = "") -> dict[str, Any]:
         if sess.get("status") != "completed":
             tables.append({"session_id": sid, "ok": False, "problems": [f"the table is {sess.get('status')}"]})
             continue
-        verdict = next((r for r in get(f"/results?module_type=emporia:tesseract:v1&limit=200").get("results") or []
+        verdict = next((r for r in get("/results?module_type=emporia:tesseract:v1&limit=200").get("results") or []
                         if r["session_id"] == sid), None)
         ledger = [r for r in get("/tesseract/results?limit=200").get("results") or [] if r["session_id"] == sid]
         problems = check_table(sess, verdict, ledger, bls)

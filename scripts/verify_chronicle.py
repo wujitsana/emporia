@@ -39,7 +39,7 @@ for p in (REPO / "src", REPO / "scripts"):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
-from emporia import beacon, commit_reveal, rand, rand_game, wire  # noqa: E402
+from emporia import beacon, commit_reveal, rand_game, wire  # noqa: E402
 from emporia import chronicle_ledger as L  # noqa: E402
 from emporia.modules import chronicle as C  # noqa: E402
 from sim_chronicle import _ramp, _truth_seats  # noqa: E402 — the T0 simulation's own seat and weight rules

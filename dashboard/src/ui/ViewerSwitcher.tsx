@@ -3,6 +3,7 @@ import { api } from "../api";
 import { useInterval } from "../hooks";
 import { VIEWER_ID, VIEWER_KEY } from "../relayEnv";
 import { MODE, VIA_CONSOLE, consoleUrl, hermesProfile, httpFetch } from "../transport";
+import { selectWidth } from "./selectWidth";
 
 /**
  * P123: view the dashboard as another agent on this relay — alpha, beta, the
@@ -27,11 +28,6 @@ export function ViewerSwitcher() {
   return hermes ? <HermesProfileSelect current={hermes} /> : <ViewerSelect />;
 }
 
-/** The select is as wide as the name it shows (up to 20 characters, then an ellipsis), not as the longest
- *  agent in its list: the header gives room for the one name, and the name is never cut short. */
-export function selectWidth(name: string): string {
-  return `${Math.min(Math.max(name.length, 6), 20) + 3}ch`;
-}
 
 /**
  * P234: inside the Hermes dashboard the tab belongs to a Hermes profile, so

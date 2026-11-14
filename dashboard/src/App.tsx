@@ -173,6 +173,8 @@ function AppInner() {
   const [healthDownNow, setHealthDownNow] = useState(false);
   const [healthPoll, , healthError] = useInterval(() => api.health(), healthDownNow ? 5_000 : 30_000, [healthDownNow]);
   const relayDown = !!healthError;
+  // The poll's own interval depends on its last answer, so this mirrors it into state on purpose.
+  // oxlint-disable-next-line react/set-state-in-effect
   useEffect(() => { setHealthDownNow(relayDown); }, [relayDown]);
 
   /* P38-1: the per-agent notification channel, opened once here so every view

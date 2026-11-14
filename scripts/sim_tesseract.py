@@ -462,7 +462,6 @@ def tournament(tag, rules, composition, games, epochs, workers, shuffle=True):
             per[s]["score"].append(tot[p] / sc)
             per[s]["win"].append(ws[p])
             allscores.append(tot[p] / sc)
-    n = len(composition)
     rows = {}
     for s, d in per.items():
         k = composition.count(s)

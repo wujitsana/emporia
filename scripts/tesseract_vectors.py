@@ -91,7 +91,7 @@ def build() -> dict:
                "mix": list(core.mix(widths, core.draw_pulses(seed0, 0, RULES), None, RULES))}
     targets = {p: core.deal_target(rand.priv(SCOPE, i, "target", sig0, bytes.fromhex(secret(i))), RULES)
                for i, p in enumerate(SEATS)}
-    epochs, cur, last = [], widths, R0
+    epochs, cur = [], widths
     for e in range(1, core.DEFAULT.epochs + 1):
         named = [int(s["round"]) for s in data["seals"][str(e)].values()]
         rnd = max(named)
@@ -103,7 +103,7 @@ def build() -> dict:
                        "mix": list(pub.mix), "pushes": {p: m["push"] for p, m in moves.items() if m["push"]},
                        "pull": {c: {k: list(v) for k, v in row.items()} for c, row in pub.pull.items()},
                        "points": {p: pts[p] for p in SEATS}})
-        cur, last = pub.widths_after, rnd
+        cur = pub.widths_after
     totals = {p: sum(x["points"][p]["points"] for x in epochs) for p in SEATS}
     return {
         "game": core.GAME_ID, "rules": {"width_cap": 12, "open_hi": 12, "unit_cap": 4, "budget": 8, "channels": 4},

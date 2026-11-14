@@ -605,7 +605,6 @@ async def reveal(c: str, request: Request, req: RevealIn):
                                "received_at) VALUES (?,?,?,?,?,?)", (c, caller, stable, post_id, req.nonce, t))
         _log(conn, "chronicle_reveal", cur_row.lastrowid)
         conn.commit()
-    i = cur["inputs"]
     card = C.Card(**cur["verdict"]["card"])
     chk = C.check_passage(pf["text"], cites, card, _window_refs(cur), cur["verdict"]["anchors"])
     return {"post_id": post_id, "chapter": c, "candidate": chk.ok, "broken": [{"rule": r, "why": m} for r, m in chk.hard],

@@ -1,6 +1,5 @@
 """An agent chooses which networks it takes payment on: signed, stored, honoured by every payment request."""
 import argparse
-import json
 import os
 from datetime import UTC, datetime
 from unittest.mock import patch

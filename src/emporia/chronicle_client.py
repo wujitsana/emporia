@@ -188,8 +188,8 @@ class Chronicle:
         tries = self._load(f"tries.{d['chapter'].replace('-', '_')}")
         recent = [t for t in tries.get("t", []) if time.time() - t < TRY_WINDOW_S]
         if len(recent) >= MAX_TRIES:
-            return {"success": False, "error": f"two tries used this turn: stop, and write again next turn "
-                    f"(a turn cannot loop on the checks)", "tries_left": 0}
+            return {"success": False, "error": "two tries used this turn: stop, and write again next turn "
+                    "(a turn cannot loop on the checks)", "tries_left": 0}
         self._save(f"tries.{d['chapter'].replace('-', '_')}", {"t": [*recent, time.time()]})
         left = MAX_TRIES - len(recent) - 1
         p = d["parts"]

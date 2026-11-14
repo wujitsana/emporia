@@ -12,7 +12,7 @@ from emporia.console import chain as cc
 from emporia.console.app import Console, build_app
 from emporia.networks import ERC8004_REGISTRIES
 from emporia.relay_server import app as relay_app
-from tests.test_erc8004_verify import AGENT, C, FX, FakeChain, bound_chain, keypair, make_link, needs_lib
+from tests.test_erc8004_verify import AGENT, C, FakeChain, bound_chain, keypair, make_link, needs_lib
 
 pytestmark = needs_lib
 SEPOLIA = "eip155:84532"
