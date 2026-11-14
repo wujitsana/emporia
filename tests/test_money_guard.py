@@ -227,3 +227,109 @@ def test_the_list_is_every_tool_that_reaches_the_wallet():
 def test_the_hook_is_registered():
     src = (REPO / "hermes_plugin" / "emporia" / "__init__.py").read_text()
     assert 'ctx.register_hook("pre_tool_call", money_guard.pre_tool_call)' in src
+
+
+# --- The stale-runtime notice: text only, from the same check that blocks a mainnet payment ---
+
+def _no_fetch(monkeypatch):
+    """Anything that could fetch or run something fails the test."""
+    import socket
+    import subprocess
+    import urllib.request
+
+    def boom(*a, **k):
+        raise AssertionError("the notice must not fetch, spawn or update anything")
+    monkeypatch.setattr(subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "Popen", boom)
+    monkeypatch.setattr(subprocess, "check_output", boom)
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    monkeypatch.setattr(socket, "create_connection", boom)
+    monkeypatch.setattr(socket.socket, "connect", boom)
+
+
+def test_the_notice_is_given_for_a_stale_runtime_with_both_commands_and_not_for_a_current_one(monkeypatch, tmp_path):
+    _no_fetch(monkeypatch)
+    monkeypatch.setattr(mg, "_setting", _setting(""))
+    _runtime(tmp_path, monkeypatch, head="b" * 40, pinned="a" * 40)
+    notice = mg.stale_runtime_notice()
+    assert notice == mg.STALE_RUNTIME_NOTICE
+    assert "`hermes emporia update`" in notice and "`hermes gateway restart`" in notice
+    assert notice.startswith("The Emporia runtime is older than this plugin")
+    _runtime(tmp_path, monkeypatch, head="a" * 40, pinned="a" * 40)
+    assert mg.stale_runtime_notice() == ""
+
+
+def test_the_notice_blocks_nothing_on_testnet(monkeypatch, tmp_path):
+    monkeypatch.setattr(mg, "_setting", _setting(""))                       # testnet
+    _runtime(tmp_path, monkeypatch, head="b" * 40)
+    assert mg.stale_runtime_notice()
+    assert mg.pre_tool_call(tool_name="mcp__emporia__join_room", args={}, **_person_turn()) is None
+    monkeypatch.setattr(mg, "_setting", _setting("1"))                      # mainnet: still refused, as before
+    assert mg.pre_tool_call(tool_name="mcp__emporia__join_room", args={}, **_person_turn())["action"] == "block"
+
+
+def _setup_cli():
+    spec = importlib.util.spec_from_file_location("emporia_setup_cli_ng", REPO / "hermes_plugin" / "emporia" / "setup_cli.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_status_prints_the_notice_for_a_stale_runtime_and_fetches_nothing(monkeypatch, tmp_path, capsys):
+    setup_cli = _setup_cli()
+    monkeypatch.setattr(setup_cli, "runtime", lambda: REPO)
+    monkeypatch.setattr(setup_cli, "runtime_note", lambda rt, src: "x")
+    monkeypatch.setattr(setup_cli, "_setting", lambda n: "")
+    monkeypatch.setattr(setup_cli, "_registered", lambda *a: True)
+    monkeypatch.setattr(setup_cli, "_tools_line", lambda: "tools")
+    monkeypatch.setattr(setup_cli, "_git_head", lambda rt: "a" * 40)
+    monkeypatch.setattr(mg, "_setting", _setting(""))
+    _no_fetch(monkeypatch)
+    # the status's own helper loads a fresh money_guard by path: give it a stale runtime to find
+    _runtime(tmp_path, monkeypatch, head="b" * 40, pinned="a" * 40)
+    monkeypatch.setattr(setup_cli, "HERE", REPO / "hermes_plugin" / "emporia")
+    monkeypatch.setattr(setup_cli, "_stale_notice", lambda: mg.stale_runtime_notice())
+    setup_cli.cmd_status(type("A", (), {})())
+    out = capsys.readouterr().out
+    assert "Notice  : The Emporia runtime is older than this plugin" in out
+    assert "hermes emporia update" in out and "hermes gateway restart" in out
+    _runtime(tmp_path, monkeypatch, head="a" * 40, pinned="a" * 40)
+    setup_cli.cmd_status(type("A", (), {})())
+    assert "Notice" not in capsys.readouterr().out
+
+
+def test_status_loads_the_same_check_by_path(monkeypatch):
+    """`_stale_notice` is the real money_guard check, not a second one."""
+    setup_cli = _setup_cli()
+    assert setup_cli._stale_notice() in ("", mg.STALE_RUNTIME_NOTICE)
+
+
+def test_the_dashboard_route_reports_the_notice_and_fetches_nothing(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    spec = importlib.util.spec_from_file_location(
+        "emporia_dash_api", REPO / "hermes_plugin" / "emporia" / "dashboard" / "plugin_api.py")
+    api = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(api)
+    app = FastAPI()
+    app.include_router(api.router, prefix="/api/plugins/emporia")
+    client = TestClient(app)
+    monkeypatch.setattr(api, "_stale_runtime_notice", lambda: mg.STALE_RUNTIME_NOTICE)
+    body = client.get("/api/plugins/emporia/_runtime_notice").json()
+    assert body == {"stale": True, "message": mg.STALE_RUNTIME_NOTICE}
+    monkeypatch.setattr(api, "_stale_runtime_notice", lambda: "")
+    assert client.get("/api/plugins/emporia/_runtime_notice").json() == {"stale": False, "message": ""}
+
+
+def test_the_dashboard_loads_money_guards_own_check(monkeypatch):
+    spec = importlib.util.spec_from_file_location(
+        "emporia_dash_api2", REPO / "hermes_plugin" / "emporia" / "dashboard" / "plugin_api.py")
+    api = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(api)
+    _no_fetch(monkeypatch)
+    assert api._stale_runtime_notice() in ("", mg.STALE_RUNTIME_NOTICE)
+
+
+def test_the_gateway_start_logs_the_notice_from_the_same_check():
+    src = (REPO / "hermes_plugin" / "emporia" / "adapter.py").read_text()
+    assert "money_guard.stale_runtime_notice()" in src and 'logger.warning("Emporia: %s", notice)' in src

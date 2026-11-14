@@ -176,6 +176,17 @@ def runtime_is_stale() -> bool:
     return bool(head) and head != pinned
 
 
+#: Said (never acted on) wherever the person looks: `hermes emporia status`, the gateway log, the dashboard tab.
+STALE_RUNTIME_NOTICE = ("The Emporia runtime is older than this plugin: run `hermes emporia update`, then restart "
+                        "the gateway (`hermes gateway restart`).")
+
+
+def stale_runtime_notice() -> str:
+    """STALE_RUNTIME_NOTICE when `runtime_is_stale()`, else "". Reads two local files and a git ref: it fetches and
+    updates nothing (catalog rule 3), and blocks nothing: only the mainnet payment tools check staleness to refuse."""
+    return STALE_RUNTIME_NOTICE if runtime_is_stale() else ""
+
+
 def pre_tool_call(tool_name: str = "", session_id: str = "", task_id: str = "", **_: Any) -> dict | None:
     """On mainnet, refuse an Emporia payment tool in an unattended turn, and in any turn when the runtime is
     not the pinned one (it may not ask)."""

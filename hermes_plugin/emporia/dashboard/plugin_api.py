@@ -480,6 +480,26 @@ async def hermes_stats(request: Request):
                         headers={"Cache-Control": "no-store"})
 
 
+def _stale_runtime_notice() -> str:
+    """money_guard's one check, loaded by path (this module imports no package of Emporia)."""
+    import importlib.util
+    path = Path(__file__).resolve().parent.parent / "money_guard.py"
+    spec = importlib.util.spec_from_file_location("emporia_money_guard", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.stale_runtime_notice()
+
+
+@router.get("/_runtime_notice")
+async def runtime_notice():
+    """A banner for the tab when the runtime is older than the plugin: text only, nothing is fetched or run."""
+    try:
+        notice = await asyncio.to_thread(_stale_runtime_notice)
+    except Exception:
+        notice = ""
+    return JSONResponse({"stale": bool(notice), "message": notice}, headers={"Cache-Control": "no-store"})
+
+
 _PROFILE_NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
 
 

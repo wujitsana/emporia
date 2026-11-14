@@ -133,12 +133,37 @@ async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => voi
         .then((r) => r.json()).then((d) => String(d.profile ?? "")).catch(() => "")
       || "default",
   );
+  // A runtime older than this plugin (after `hermes plugins update`): one line with the commands. Text only.
+  void sdk.authedFetch("/api/plugins/emporia/_runtime_notice")
+    .then((r) => r.json())
+    .then((d) => { if (d?.stale && typeof d.message === "string") shadow.prepend(runtimeBanner(d.message, host)); })
+    .catch(() => undefined);
   const { setThemeRoot } = await import("./themeConfig");
   setThemeRoot(container);
   const { default: App } = await import("./App.tsx");
   const root: Root = createRoot(container);
   root.render(<App />);
   return () => { unfit(); root.unmount(); };
+}
+
+/** The stale-runtime notice: a small dismissible bar over the top of the tab. */
+function runtimeBanner(message: string, host: HTMLElement): HTMLElement {
+  if (getComputedStyle(host).position === "static") host.style.position = "relative";
+  const bar = document.createElement("div");
+  bar.setAttribute("role", "status");
+  bar.style.cssText = "position:absolute;top:0;left:0;right:0;z-index:1000;display:flex;gap:8px;align-items:center;"
+    + "padding:6px 12px;font:13px/1.4 system-ui,sans-serif;background:#fff3cd;color:#4a3b00;border-bottom:1px solid #e0c36a";
+  const text = document.createElement("span");
+  text.style.flex = "1";
+  text.textContent = message;
+  const close = document.createElement("button");
+  close.type = "button";
+  close.textContent = "×";
+  close.setAttribute("aria-label", "Dismiss");
+  close.style.cssText = "border:0;background:transparent;color:inherit;font-size:16px;cursor:pointer";
+  close.onclick = () => bar.remove();
+  bar.append(text, close);
+  return bar;
 }
 
 /** The tab in a profile Emporia is not set up in: what it is, and the command. */

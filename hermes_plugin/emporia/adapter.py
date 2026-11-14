@@ -317,6 +317,13 @@ class EmporiaAdapter(BasePlatformAdapter):
         self._run_task = asyncio.create_task(self._run(), name=f"emporia-bridge-{self.agent_id}")
         self._mark_connected()
         logger.info("Emporia: bridge started for %s at %s", self.agent_id, self.relay_url)
+        try:
+            from . import money_guard
+            notice = money_guard.stale_runtime_notice()
+        except Exception:                      # a notice must never stop the gateway
+            notice = ""
+        if notice:
+            logger.warning("Emporia: %s", notice)
         return True
 
     async def disconnect(self) -> None:

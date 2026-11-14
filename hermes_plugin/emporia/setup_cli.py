@@ -838,6 +838,21 @@ def runtime_note(rt: Path, src: dict) -> str:
     return "pinned, verified"
 
 
+def _stale_notice() -> str:
+    """money_guard's check (the one that refuses a mainnet payment on a stale runtime), as text; "" if it cannot run."""
+    try:
+        try:
+            from . import money_guard
+        except ImportError:                                   # loaded as a bare file (tests, tools)
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("emporia_money_guard", HERE / "money_guard.py")
+            money_guard = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(money_guard)
+        return money_guard.stale_runtime_notice()
+    except Exception:                                         # a notice never breaks `status`
+        return ""
+
+
 def cmd_status(_args: argparse.Namespace) -> int:
     src, rt = source(), runtime()
     print(f"Profile : {profile_name()} ({hermes_home()})")
@@ -847,6 +862,9 @@ def cmd_status(_args: argparse.Namespace) -> int:
     note = runtime_note(rt, src)
     head = _git_head(rt)
     print(f"Runtime : {rt} @ {head[:12] or '?'} ({note})")
+    stale = _stale_notice()
+    if stale:
+        print(f"Notice  : {stale}")
     agent, relay = _setting("EMPORIA_AGENT_ID"), _setting("EMPORIA_RELAY_URL")
     if not agent:
         print("Agent   : not set up — run `hermes emporia setup`")
