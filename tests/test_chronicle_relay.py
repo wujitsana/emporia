@@ -58,7 +58,7 @@ def mk(monkeypatch):
                     assert t.chronicle(enrol=True)["success"]
         return w, names
     yield make
-    for w in worlds:
+    for w in reversed(worlds):               # last made, first undone: each restores what it found
         w.close()
 
 
@@ -279,7 +279,8 @@ def test_no_pick_at_all_means_no_canon_even_from_a_thin_jury(mk):
 def test_a_tie_between_two_passages_is_drawn_by_the_beacon_and_the_book_says_so(mk):
     w, names = mk(4)
     w.activity(w.start + 0.8 * w.epoch, names)
-    E.play_chapter(w, names, 1, picker=lambda a, i, cands: cands[i % len(cands)])
+    turn = itertools.count()                                      # the two jurors split: first and second candidate
+    E.play_chapter(w, names, 1, picker=lambda a, i, cands: cands[next(turn) % 2])
     body = chapter(w, "1")
     v = body["verdict"]
     assert v["tie"] and len(v["tie"]["among"]) == 2 and v["canon"] in v["tie"]["among"]
@@ -612,7 +613,7 @@ def test_a_flag_needs_a_change_or_confirm_and_the_voice_note_stays_on_the_agents
         if first_person and len(first_person) <= card["limit"] and C.check_passage(
                 first_person, cites, C.Card(**{k: card[k] for k in ("word", "limit", "shape", "voice")}),
                 set(cites), cites[:1]).ok:
-            r = t.write(first_person, cites, voice_note="dry, short")
+            r = t.write(first_person, cites, voice_note="dry, short", confirm=False)
             assert not r["success"] and r["flags"] and len(r["questions"]) == 3 and r["tries_left"] == 1
             r = t.write(first_person, cites, confirm=True)
             assert r["success"] and r["sealed"]

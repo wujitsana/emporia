@@ -241,6 +241,9 @@ class _AsAgent:
         return self._tool("chronicle")(**kw)
 
     def write(self, text, cites, **kw):
+        # a scripted writer has no judgement to apply to a flag (a tense or opening heuristic that depends on the card
+        # drawn): it confirms, as a model would after answering the three questions. Pass confirm=False to see flags.
+        kw.setdefault("confirm", True)
         return self._tool("chronicle_write")(text, cites, **kw)
 
     def vote(self, pick, reason="", **kw):

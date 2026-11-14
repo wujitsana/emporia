@@ -1017,7 +1017,7 @@ def happening_line(conn) -> dict[str, Any] | None:
         v = s.get("verdict") or {}
         if s.get("called") and s["mode"] == "live" and v.get("canon") and not v.get("provisional"):
             text = _passage_text(conn, v["canon"])
-            return {"label": s["inputs"]["numbering"]["label"], "first_sentence": C.first_sentence(text),
+            return {"label": s["inputs"]["numbering"]["label"], "first_sentence": C.first_sentence(" ".join(text.split())),
                     "ref": f"post:{v['canon']}", "untrusted": True}
     return None
 
