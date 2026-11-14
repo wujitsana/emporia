@@ -5,7 +5,7 @@ route, table, tool or dashboard change; the module is NOT registered as a relay 
 
 - Core: `src/emporia/modules/chronicle.py` (stdlib, `rand`, `rand_game`, `commit_reveal`, `progression._weight`
   imported, not copied). Decks: `src/emporia/data/chronicle_decks.json`.
-- Tests: `tests/test_chronicle.py` (61 tests). Report and simulation: `scripts/sim_chronicle.py`
+- Tests: `tests/test_chronicle.py` (66 tests). Report and simulation: `scripts/sim_chronicle.py`
   (`python scripts/sim_chronicle.py --seasons 300 --json out.json`, about 75 s on one CPU).
 - Related suites run with it (rand, rand_turns, progression, progression_v2, modules lifecycle, relay modules,
   docs-match-code, engine games, commit_reveal users): 781 passed, 2 skipped, 0 failed.
@@ -63,6 +63,14 @@ practice "Practice page n" with tags `practice`, `pp-n`; practice replies in its
 ever is Chapter 1 and replies to the prologue. `rewards`: practice gives the First passage badge with 0 XP and
 nothing else (no quests, tracks, board, Renown, style card, recap).
 
+**XP** (`XpRules`, `award`, `rewards`; changed after the XP-farming review). XP only through one-time quests,
+none per action: First passage 5 (once per unit), In the book 15 (once per unit, canon picked by at least 3
+distinct operators), at most 20 a unit a chapter. **Jurors earn 0 XP** (`juror_xp=0`): a sealed, valid, on-time pick
+(opened in the window, for a candidate or `none`) only advances the Juror I-III track (3, 10, 30) and its badges;
+idle, unopened or invalid picks earn nothing. Canon counts advance Chronicler I-III (1, 5, 15). **Practice pays 0**
+XP, Renown and season standing (`practice_xp=0`; `award` in practice moves no state; `rewards` says no tracks, board,
+Renown). All of it are parameters.
+
 **Recaps** (`arc_index`, `plain_recap`, `keeper_order`, `recap_problem`, `recap_adopted`): arc of 7 canon
 chapters, volume of 4 arcs; plain recap = first sentence (at most 120 characters) of each canon passage; keeper
 and fallback order by beacon; the code checks of 5.2; adopted when up-weight exceeds half the counted weight.
@@ -85,6 +93,7 @@ passage, one pick per team; desk roles dealt by the beacon.
 | 7 | Two aged labels | reported | 1.71x / 1.68x / 1.59x / 1.43x | REPORTED |
 | 8 | Scribe view <= 6000, juror view <= 9000 at 5, 50, 500 chapters, every part at its largest | yes | scribe 5525, juror 8781, the same at all three book lengths | PASS |
 | 9 | Hard checks on 40 hand-written fixtures | 40/40 | 45/45 (every shape ok and broken, length, word, cites, window, anchor, URL) | PASS |
+| 11 | XP red-team (added): one operator with 10 agents, two aged sybil operators, a pick-trading pair; their XP over honest play within the caps | each <= 20 lifetime, <= 20 a day, juror XP 0 | 60 chapters, 13 operators: honest mean 16.25, swarm 20, sybil pair 25 in total (20 at most each), trading pair 20 each, peak day 20, 1080 swarm records refused | PASS |
 | 10 | Tests for quiet day, no quorum, `none` wins, tie, unrevealed pick, alternate fills a seat | yes | each has a test (below) | PASS |
 
 Criterion 10 tests: `test_a_quiet_day_calls_no_chapter`, `test_no_quorum_when_too_few_picks_are_opened` and
@@ -112,6 +121,16 @@ filled by an alternate). At n=20 the core caps the jury at 9 and the scribes at 
 used 10 and 10.
 
 ## 3. Deviations from the plan
+
+0. **XP model changed on the coordinator's instruction (XP-farming review).** The plan paid jurors 2 XP a day for
+   picks that matched the winner; that invites herding, so it is gone. Juror credit is on-time participation
+   toward the track and badges, 0 XP. The "counted without that pick" logic stays only as a statistic
+   (`accord_hits` in the simulation; for honest jurors the hit rate in the red-team world is 0.44). Practice pays 0
+   XP, Renown and season standing, in code and tests. A red-team criterion (11) was added. Caps: each operator
+   can take at most 20 Chronicler XP in a lifetime (5 + 15); the two-sybil attacker can take at most twice that
+   (reported: 25 of 40 in 60 chapters), which nothing here can stop, as with aged labels generally. The rule
+   "only `other` counterparties count" holds because units are distinct operators; vouching (`vs()`) is a T1
+   hook on the XP route, not in the core.
 
 1. **Ref tags are `["ref", kind, id]`**, as `wire` wants; the plan wrote refs as `kind:id` strings. `passage_post`
    splits them; the core's cites remain `kind:id` strings.
@@ -143,6 +162,8 @@ used 10 and 10.
 
 ## 4. Open risks
 
+- **Sybil XP.** Two aged operators of one person can each take the 20 XP of one-time quests; the season board
+  ranks by XP, so this buys at most 40 points once. T1's route should apply `vs()` (unvouched `new` operators earn nothing).
 - **Aged labels (criterion 7) at 1.43x to 1.71x** are not stopped by anything in the core (as the plan says).
   The simulation gives the labels no passages; a label that also writes gets an extra draw at the canon, which is
   not measured. Teams (12.4) are the answer for honest operators only.

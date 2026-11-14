@@ -678,3 +678,85 @@ def test_a_writers_ballot_strategy_gains_nothing_and_honest_voters_find_the_best
     for st in ("bury", "random", "none"):
         r = sim._cell(n, "none", 1.0, 5, 12, strategy=st)
         assert r["wins"][0] == base["wins"][0]
+
+
+# ---------------------------------------------------------------- XP: one-time quests, tracks, no juror XP, practice pays nothing
+
+def _live_verdict(n=8, pick_none_for=()):
+    run = Run(mk_members(n))
+    posts = run.write_all()
+    cand = sorted(posts.values())
+    for i, j in enumerate(run.seats.jurors):
+        if j in pick_none_for:
+            run.pick(j, cand[0], reveal=False)           # sealed, never opened: no credit
+        else:
+            run.pick(j, cand[0])
+    return run, run.resolve(), posts
+
+
+def test_a_juror_earns_no_xp_for_any_pick_and_the_pick_counts_on_the_track_only():
+    run, v, posts = _live_verdict(pick_none_for={"op0", "op1", "op2", "op3", "op4", "op5", "op6", "op7"})
+    assert C.XpRules().juror_xp == 0 and C.rewards(v)["juror_xp"] == 0
+    got, st = C.award(v, C.new_state())
+    assert set(v["pick_units"]) == set(run.seats.jurors) - {"op0", "op1", "op2", "op3", "op4", "op5", "op6", "op7"} == set()
+    run, v, posts = _live_verdict()
+    got, st = C.award(v, C.new_state())
+    assert sorted(v["pick_units"]) == sorted(run.seats.jurors)
+    for j in run.seats.jurors:
+        assert st["juror"][j] == 1 and got[j]["xp"] == 0 and got[j]["events"] == []
+    # a juror's third on-time pick earns the Juror I badge, still 0 XP
+    s2 = {**C.new_state(), "juror": {j: 2 for j in run.seats.jurors}}
+    got, _ = C.award(v, s2)
+    assert all("juror_1" in got[j]["badges"] and got[j]["xp"] == 0 for j in run.seats.jurors)
+
+
+def test_an_unopened_or_invalid_pick_is_no_participation():
+    run = Run(mk_members(8))
+    cand = sorted(run.write_all().values())
+    j = run.seats.jurors
+    run.pick(j[0], cand[0])
+    run.pick(j[1], cand[0], reveal=False)
+    run.pick(j[2], "pst_nowhere")                     # a pick for nothing on the ballot
+    v = run.resolve()
+    assert v["pick_units"] == [j[0]]
+
+
+def test_quest_xp_is_once_and_the_book_needs_three_operators():
+    run, v, posts = _live_verdict()
+    got, st = C.award(v, C.new_state())
+    author = v["authors"][v["canon"]]
+    assert got[author]["xp"] == 20 and set(got[author]["events"]) == {"first_passage", "in_the_book"}
+    assert all(r["xp"] == 5 for u, r in got.items() if u != author and u in v["authors"].values())
+    again, st2 = C.award(v, st)                       # the same unit winning again pays nothing more
+    assert all(r["xp"] == 0 for r in again.values()) and st2["canon"][author] == 2
+    thin = dict(v, counted=v["counted"][:2], unit_operator=v["unit_operator"])
+    got, _ = C.award(thin, C.new_state())
+    assert "in_the_book" not in got[author]["events"] and got[author]["xp"] == 5
+    capped, _ = C.award(v, C.new_state(), C.XpRules(unit_day_cap=7))
+    assert capped[author]["xp"] == 7
+
+
+def test_practice_pays_zero_xp_renown_and_standing_in_code_and_in_award():
+    rules = C.XpRules()
+    assert rules.practice_xp == 0
+    run = Run(mk_members(1, per=3, house=True))
+    posts = run.write_all()
+    for j in run.seats.jurors:
+        run.pick(j, sorted(posts.values())[0])
+    v = run.resolve()
+    got, st = C.award(v, C.new_state())
+    assert v["mode"] == "practice" and got and all(r["xp"] == 0 and r["events"] == [] for r in got.values())
+    assert st == C.new_state()                         # no first-passage, canon, book or juror count moved
+    r = C.rewards(v)
+    assert r["first_passage_xp"] == 0 and r["juror_xp"] == 0 and not r["renown"] and not r["board"] and not r["tracks"]
+    # even with live-sized XP rules, practice pays 0 unless practice_xp is changed on purpose
+    got, _ = C.award(v, C.new_state(), C.XpRules(first_passage_xp=50, in_the_book_xp=50, juror_xp=5))
+    assert all(r["xp"] == 0 for r in got.values())
+
+
+def test_the_xp_red_team_stays_within_the_caps():
+    r = sim.xp_redteam()
+    assert r["pass"] and r["juror_xp_rule"] == 0 and r["peak_day"] <= C.XpRules().unit_day_cap
+    assert r["xp"]["swarm (1 operator, 10 agents)"] <= r["lifetime_cap_per_operator"]
+    assert r["xp"]["sybil pair (2 aged operators), total"] <= 2 * r["lifetime_cap_per_operator"]
+    assert r["refused_records"] > 0                    # the swarm's other agents were refused, not counted

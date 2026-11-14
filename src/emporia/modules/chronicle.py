@@ -468,7 +468,8 @@ def tally(candidates: list[str], picks: list[Pick], *, J: int, scope: str, tie_s
     out: dict[str, Any] = {
         "formula": FORMULA, "mode": mode, "candidates": cand, "picks_counted": len(counted),
         "units_counted": len({p.unit for p in counted}), "totals": {c: _r(w) for c, w in totals.items()},
-        "none": _r(none_w), "ignored": ignored, "canon": None, "tie": None, "reason": "", "J": J}
+        "none": _r(none_w), "ignored": ignored,
+        "counted": [{"unit": p.unit, "pick": p.pick, "weight": _r(p.weight)} for p in counted], "canon": None, "tie": None, "reason": "", "J": J}
     need = 1 if mode == "practice" else max(2, -(-J // 2))
     units_need = 1 if mode == "practice" else 2
     if not cand:
@@ -520,14 +521,95 @@ def passage_post(text: str, cites: list[str], numbering: dict[str, Any], teammat
             "reply_to": numbering["reply_to"], "root": numbering["root"]}
 
 
-def rewards(verdict: dict[str, Any]) -> dict[str, Any]:
-    """What a verdict may feed (2.11, 11.2). Live: quests, tracks, the season board, Renown (T3), the style card, recaps.
-    Practice: the First passage badge without XP, and nothing else."""
+@dataclass(frozen=True)
+class XpRules:
+    """What the Chronicle may pay (2.11, changed after the XP-farming review). XP goes only through one-time quests;
+    nothing is paid per action. Parameters, so a relay or a test can read them.
+
+    `first_passage_xp` 5, once per unit. `in_the_book_xp` 15, once per unit, for a canon passage that at least
+    `book_min_operators` distinct operators picked. `juror_xp` 0: jurors earn nothing for matching the winner
+    (that invites herding); a sealed, valid, on-time pick counts toward the Juror I-III track and its badges only.
+    `practice_xp` 0: practice pays no XP, Renown or season standing. `unit_day_cap`: most XP one unit can take in a
+    chapter (a chapter is a day by default)."""
+    first_passage_xp: int = 5
+    in_the_book_xp: int = 15
+    book_min_operators: int = 3
+    juror_xp: int = 0
+    practice_xp: int = 0
+    unit_day_cap: int = 20
+    chronicler_tiers: tuple[int, ...] = (1, 5, 15)
+    juror_tiers: tuple[int, ...] = (3, 10, 30)
+
+
+def rewards(verdict: dict[str, Any], rules: XpRules = XpRules()) -> dict[str, Any]:
+    """What a verdict may feed. Live: quests, the Chronicler and Juror tracks (badges, no juror XP), the season
+    board, Renown (T3), the style card, recaps. Practice: the First passage badge with 0 XP and nothing else:
+    no XP, no track, no board standing, no Renown."""
     if verdict["mode"] == "live":
-        return {"first_passage_badge": True, "first_passage_xp": 5, "quests": True, "tracks": True, "board": True,
-                "renown": True, "style_card": True, "recap": True}
-    return {"first_passage_badge": True, "first_passage_xp": 0, "quests": False, "tracks": False, "board": False,
-            "renown": False, "style_card": False, "recap": False}
+        return {"first_passage_badge": True, "first_passage_xp": rules.first_passage_xp, "juror_xp": rules.juror_xp,
+                "quests": True, "tracks": True, "board": True, "renown": True, "style_card": True, "recap": True}
+    return {"first_passage_badge": True, "first_passage_xp": rules.practice_xp, "juror_xp": rules.practice_xp,
+            "quests": False, "tracks": False, "board": False, "renown": False, "style_card": False, "recap": False}
+
+
+def new_state() -> dict[str, Any]:
+    return {"first": [], "book": [], "canon": {}, "juror": {}}
+
+
+def tier(count: int, tiers: tuple[int, ...]) -> int:
+    return sum(count >= t for t in tiers)
+
+
+def award(verdict: dict[str, Any], state: dict[str, Any], rules: XpRules = XpRules()) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """What one chapter pays, and the next state. `awards[unit] = {"xp", "events", "badges"}`; `state` as `new_state()`.
+    Pure. Live: First passage (once per unit, any passage that opened and passed the hard checks); In the book (once
+    per unit, canon picked by at least `book_min_operators` distinct operators); canon and juror counts move the
+    tracks (a juror's count rises by one for each sealed, valid, on-time pick: no XP, no matching of the winner).
+    Practice: nothing moves but the First passage badge, at `practice_xp`."""
+    st = {"first": list(state["first"]), "book": list(state["book"]), "canon": dict(state["canon"]),
+          "juror": dict(state["juror"])}
+    out: dict[str, dict[str, Any]] = {}
+
+    def row(u: str) -> dict[str, Any]:
+        return out.setdefault(u, {"xp": 0, "events": [], "badges": []})
+
+    if verdict.get("mode") not in ("live", "practice") or "authors" not in verdict:
+        return out, st
+    if verdict["mode"] == "practice":
+        for u in verdict["authors"].values():
+            r = row(u)
+            r["xp"] = rules.practice_xp
+            r["badges"].append("first_passage")
+        return out, st
+    authors = verdict["authors"]
+    for u in verdict["authors"].values():
+        if u not in st["first"]:
+            st["first"].append(u)
+            r = row(u)
+            r["xp"] += rules.first_passage_xp
+            r["events"].append("first_passage")
+            r["badges"].append("first_passage")
+    canon = verdict.get("canon")
+    if canon:
+        u = authors[canon]
+        st["canon"][u] = st["canon"].get(u, 0) + 1
+        before = tier(st["canon"][u] - 1, rules.chronicler_tiers)
+        if tier(st["canon"][u], rules.chronicler_tiers) > before:
+            row(u)["badges"].append(f"chronicler_{tier(st['canon'][u], rules.chronicler_tiers)}")
+        ops = {verdict["unit_operator"].get(p["unit"], p["unit"]) for p in verdict["counted"] if p["pick"] == canon}
+        if len(ops) >= rules.book_min_operators and u not in st["book"]:
+            st["book"].append(u)
+            r = row(u)
+            r["xp"] += rules.in_the_book_xp
+            r["events"].append("in_the_book")
+    for u in verdict.get("pick_units", []):
+        st["juror"][u] = st["juror"].get(u, 0) + 1
+        if tier(st["juror"][u], rules.juror_tiers) > tier(st["juror"][u] - 1, rules.juror_tiers):
+            row(u)["badges"].append(f"juror_{tier(st['juror'][u], rules.juror_tiers)}")
+        row(u)["xp"] += rules.juror_xp
+    for r in out.values():
+        r["xp"] = min(r["xp"], rules.unit_day_cap)
+    return out, st
 
 
 def benched(outcomes: list[dict[str, str]], upto: int) -> set[str]:
@@ -657,6 +739,7 @@ def resolve_chapter(*, relay_id: str, numbering: dict[str, Any], members: list[M
         else:
             opened[u] = b
             ballot_units.add(u)
+    pick_units = [u for u, b in opened.items() if b["pick"] == "none" or b["pick"] in cands]
     who = pick_weight_who(roster, params)
     at = call_ts
     counted: list[Pick] = []
@@ -677,7 +760,10 @@ def resolve_chapter(*, relay_id: str, numbering: dict[str, Any], members: list[M
         "scope": scope, "label": numbering["label"], "card": card.to_dict(), "anchors": anchors, "seats": {
             "jurors": list(seats.jurors), "scribes": list(seats.scribes), "alternates": list(seats.alternates)},
         "operators": len(units) if mode == "live" else len({m.operator for m in roster if not m.house}),
-        "authors": authors, "set_aside": set_aside, "refused": refused,
+        "authors": authors, "pick_units": sorted(pick_units),
+        "unit_operator": {u: (u if params.unit == "operator" and mode == "live" else operator_of_unit(u, roster))
+                          for u in set(unit_of.values())},
+        "set_aside": set_aside, "refused": refused,
         # who sealed and did not open, for `benched`
         "outcome": {**{u: ("ok" if u in revealed_units else "missed") for u in pseals},
                     **{u: ("ok" if u in ballot_units else "missed") for u in qseals}}})

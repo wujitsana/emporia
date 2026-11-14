@@ -459,11 +459,97 @@ def crit8() -> dict:
     return {"sizes": out, "pass": ok}
 
 
+# ---------------------------------------------------------------- criterion 11: the XP red-team
+
+def accord_hits(verdict: dict) -> dict[str, bool]:
+    """Statistic only (no longer a reward): for each counted pick, whether it equals the result counted without it."""
+    picks = [C.Pick(p["unit"], p["pick"], p["weight"]) for p in verdict["counted"]]
+    out = {}
+    for i, p in enumerate(picks):
+        rest = C.tally(verdict["candidates"], picks[:i] + picks[i + 1:], J=verdict["J"], scope="x", tie_sig=b"t", mode="live")
+        out[p.unit] = rest["canon"] == p.pick and p.pick != "none"
+    return out
+
+
+def xp_redteam(seed: int = 9, chapters: int = 60, rules: C.XpRules = C.XpRules()) -> dict:
+    """One world: 8 honest operators, one operator with 10 agents (swarm), two aged sybil operators that back each
+    other, and a pair that picks each other's passage. Everyone is aged. Plays `chapters` live chapters through
+    `resolve_chapter` and `award`, and reports each side's XP against honest play."""
+    rng = random.Random(seed)
+    members = []
+    for i in range(8):
+        members.append(C.Member(f"h{i}", f"h{i}", NOW - 100 * DAY, NOW - 90 * DAY))
+    members += [C.Member(f"swarm{k}", "swarm", NOW - 100 * DAY, NOW - 90 * DAY) for k in range(10)]
+    members += [C.Member("sybA", "sybA", NOW - 100 * DAY, NOW - 90 * DAY), C.Member("sybB", "sybB", NOW - 100 * DAY, NOW - 90 * DAY)]
+    members += [C.Member("tradeA", "tradeA", NOW - 100 * DAY, NOW - 90 * DAY), C.Member("tradeB", "tradeB", NOW - 100 * DAY, NOW - 90 * DAY)]
+    unit_agents: dict[str, list[str]] = {}
+    for m in members:
+        unit_agents.setdefault(C.unit_key(m), []).append(m.agent_id)
+    friends = {"sybA": "sybB", "sybB": "sybA", "tradeA": "tradeB", "tradeB": "tradeA"}
+    skill = {u: rng.gauss(0, 0.7) for u in unit_agents}
+    state = C.new_state()
+    xp = Counter()
+    peak_day = Counter()
+    history, hits, refused = [], [0, 0], 0
+    for ch in range(chapters):
+        call_ts = NOW + (ch + 1) * DAY
+        prev = call_ts - DAY
+        events = [{"ref": f"{['session', 'post', 'gh_pr', 'room'][i % 4]}:c{ch}e{i}", "line": "e", "operators": [f"o{i % 5}", f"o{(i + 1) % 5}"],
+                   "at": prev + 60 + i} for i in range(8)]
+        sigs = {"call": fake_sig(seed, ch, "c"), "show": fake_sig(seed, ch, "s"), "count": fake_sig(seed, ch, "n")}
+        numbering = C.next_numbering(history, "live")
+        scope = C.chapter_scope("r", numbering, "live")
+        seats = C.seat(sorted(unit_agents), scope, sigs["call"])
+        window = C.record_window(events, prev, call_ts)
+        card = C.draw_card(scope, sigs["call"])
+        anchors = C.draw_anchors(window, scope, sigs["call"])
+        w = C.windows(call_ts)
+        cites = [anchors[0], next(e["ref"] for e in window if e["ref"] != anchors[0])]
+        seals, reveals, ballots = [], [], []
+        quality = {}
+        for u in seats.scribes:
+            for k, a in enumerate(unit_agents[u]):               # every agent of the unit tries; the first acts
+                post, n = f"pst{ch}_{u}_{k}", "%064x" % rng.getrandbits(256)
+                seals.append({"agent": a, "what": "passage", "commitment": C.passage_commitment(post, n), "at": w["write"][0] + 1 + k})
+                reveals.append({"agent": a, "post_id": post, "text": valid_passage(card), "cites": cites, "nonce": n, "at": w["open"][0] + 1})
+            quality[f"pst{ch}_{u}_0"] = skill[u] + rng.gauss(0, 1)
+        pid = {u: f"pst{ch}_{u}_0" for u in seats.scribes}
+        for u in seats.jurors:
+            for k, a in enumerate(unit_agents[u]):
+                perceived = {p: q + rng.gauss(0, SIG) for p, q in quality.items()}
+                pick = max(perceived, key=perceived.get)
+                if u in friends and friends[u] in pid:
+                    pick = pid[friends[u]]
+                n = "%064x" % rng.getrandbits(256)
+                seals.append({"agent": a, "what": "pick", "commitment": C.pick_commitment(pick, "", None, n), "at": w["pick"][0] + 1 + k})
+                ballots.append({"agent": a, "pick": pick, "reason": "", "recap": None, "nonce": n, "at": w["count"][0] + 1})
+        v = C.resolve_chapter(relay_id="r", numbering=numbering, members=members, prev_call_ts=prev, call_ts=call_ts,
+                              events=events, sigs=sigs, seals=seals, reveals=reveals, ballots=ballots)
+        refused += len(v["refused"])
+        history.append({"mode": "live", "canon": v.get("canon")})
+        got, state = C.award(v, state, rules)
+        for u, r in got.items():
+            xp[u] += r["xp"]
+            peak_day[u] = max(peak_day[u], r["xp"])
+        for hit in accord_hits(v).values():
+            hits[0] += hit
+            hits[1] += 1
+    side = {"honest (mean of 8)": sum(xp[f"h{i}"] for i in range(8)) / 8, "swarm (1 operator, 10 agents)": xp["swarm"],
+            "sybil pair (2 aged operators), total": xp["sybA"] + xp["sybB"], "sybil, each (max)": max(xp["sybA"], xp["sybB"]),
+            "pick-trading pair, each (max)": max(xp["tradeA"], xp["tradeB"])}
+    lifetime = rules.first_passage_xp + rules.in_the_book_xp
+    return {"chapters": chapters, "xp": side, "lifetime_cap_per_operator": lifetime, "peak_day": max(peak_day.values(), default=0),
+            "refused_records": refused, "juror_xp_rule": rules.juror_xp,
+            "juror_track_picks": {u: state["juror"].get(u, 0) for u in ("swarm", "h0")},
+            "hit_rate_statistic": hits[0] / max(hits[1], 1),
+            "pass": all(xp[u] <= lifetime for u in unit_agents) and max(peak_day.values(), default=0) <= rules.unit_day_cap}
+
+
 # ---------------------------------------------------------------- the report
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--criteria", default="1,2,3,4,5,6,7,8,9")
+    ap.add_argument("--criteria", default="1,2,3,4,5,6,7,8,9,11")
     ap.add_argument("--seed", type=int, default=5)
     ap.add_argument("--seasons", type=int, default=150)
     ap.add_argument("--chapters", type=int, default=1000)
@@ -482,6 +568,8 @@ def main() -> int:
         res[8] = crit8()
     if 9 in want:
         res[9] = run_fixtures()
+    if 11 in want:
+        res[11] = xp_redteam()
     res["seconds"] = round(time.time() - t0, 1)
     print(json.dumps(res, indent=1, default=str))
     if a.json:
