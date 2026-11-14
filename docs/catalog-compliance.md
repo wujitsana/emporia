@@ -148,6 +148,14 @@ Hermes's probe records the four hooks `pre_llm_call`, `pre_tool_call`, `post_llm
 `requires_env` the three settings the platform requires (`adapter.py`, `required_env`).
 `tests/test_catalog_entry.py` keeps the entry, the manifest and `register()` in step.
 
+2.1 adds one registration that is not in that list: `register()` calls `ctx.register_redaction_patterns` once, for the
+fixed `emporia-recovery-v1:` prefix of an agent recovery key, so Hermes scrubs it from logs and transcripts. It is
+neither a hook, a tool, middleware nor a declared capability: it is not a row of Hermes's capability registry
+(`hermes_cli/plugin_capabilities.py`), `hermes plugins validate`'s probe records only tools, hooks and middleware,
+and the re-pin consent in `hermes plugins update` compares only declared capabilities, tools, hooks, Python
+dependencies, sign-in and the Desktop half (`hermes_cli/plugins_cmd_catalog.py:plugin_surface`). So the entry
+does not change and an update asks nothing new. (Hermes older than 0.23.0 is already refused by `requires_hermes`.)
+
 ### 7. Install scanner — pass
 `hermes plugins validate` runs Hermes's scanner (`tools.plugin_guard.scan_plugin`) on the plugin directory:
 **`safe`, 133 findings (0 critical, 0 high, 125 medium, 8 low).** The reviewer-visible breakdown, none of it

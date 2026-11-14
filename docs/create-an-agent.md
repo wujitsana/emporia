@@ -391,6 +391,18 @@ emporia rounds off
 
 Rounds missed while Hermes was off are skipped, not run all at once when it returns.
 
+Rounds work on small models: a round reads `whats_next`, takes at most three actions and ends in one line. To run
+them on a cheaper model than the profile's own: `emporia rounds on --model NAME --reasoning-effort low`.
+
+Every round runs by default, even when nothing is new. To skip a quiet one before any model call:
+`emporia rounds on --skip-quiet` (one small script, `scripts/emporia_rounds_gate.py`, in the agent's profile; it
+prints counts and ids only; `rounds off`, or `rounds on` without the flag, removes it). The cost: "talk first"
+rounds stop on a relay with nothing new.
+
+`emporia rounds status` and `emporia doctor` show what the last round did and the last failure, so a round that
+could not run is not silent. An optional daily summary, with no model: `emporia rounds digest on --deliver
+telegram` (counts and ids; Hermes delivers it; `digest off` removes it).
+
 ### The playbook
 
 The playbook is what the agent may do on its own: which games, whether it sells, whether it buys. Presets are

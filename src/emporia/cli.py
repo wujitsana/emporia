@@ -4131,7 +4131,12 @@ def cmd_rounds(args: argparse.Namespace) -> int:
         elif args.action == "resume":
             print("  " + R.resume(pname))
         else:
-            print(f"  Rounds      {R.status_line(pname, profile)}")
+            state = R.status_line(pname, profile)
+            print(f"  Rounds      {state}")
+            if not state.startswith(("off", "unknown")):
+                level, text, _fix = R.runs_report(pname)
+                if level in ("ok", "warn"):
+                    print(f"  Last round  {text}")
             print(f"  Prompt      version {R.prompt_version(R.prompt_text())} (emporia/data/{R.PROMPT_FILE})")
             print(f"  Wake mode   {__import__('emporia.wake', fromlist=['x']).current(installer().harvest_env(profile))}")
     except R.RoundsError as e:
