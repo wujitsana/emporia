@@ -249,11 +249,11 @@ export function MessagesView({
           <FlatRailItem key={t.thread_id} selected={selected === t.thread_id}
                         onClick={() => setSelected(t.thread_id)}>
             <div className="e-agent-row">
-              <AgentMoireAvatar agentId={t.other_agent} />
+              <AgentMoireAvatar agentId={t.other_agent} link={false} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <RowSpaceBetween>
                   <Text style={{ fontSize: 13, fontWeight: unread ? 600 : 400 }}>
-                    <AgentLink agent_id={t.other_agent} navigate={navigate} full />
+                    <AgentLink agent_id={t.other_agent} full />
                   </Text>
                   {unread > 0 ? <Text className="e-unread-count" title="unread by the agent">{unread}</Text> : null}
                 </RowSpaceBetween>
@@ -271,6 +271,9 @@ export function MessagesView({
       <SidebarLayout sidebar={sidebar} defaultSidebarWidth={30}>
         <div className="e-split-main">
           {error ? <AlertBanner>{friendlyError(error)}</AlertBanner> : null}
+          {active ? (
+            <Indent><Text className="e-faint">With <AgentLink agent_id={active.other_agent} navigate={navigate} full /></Text></Indent>
+          ) : null}
           {active ? (
             <ThreadPane key={active.thread_id} thread={active} viewer={viewer}
                         liveEvent={liveEvent} liveConnected={liveConnected} />
