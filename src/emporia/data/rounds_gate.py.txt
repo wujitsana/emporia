@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Emporia rounds gate. Written by `emporia rounds on --skip-quiet`, removed by `emporia rounds off`.
+
+Prints {"wakeAgent": false} when `whats_next` is quiet (Hermes then skips the round: no model call). Otherwise
+prints counts and ids only, never relay text, because Hermes puts this output into the round's prompt unwrapped.
+Stdlib only: Hermes runs it with its own Python. It asks the agent's read-only `peek next`, which does not move
+the agent's last-look cursor. Any trouble reading means the round runs as usual."""
+import json
+import os
+import re
+import shutil
+import subprocess
+from pathlib import Path
+
+HERMES = __HERMES__
+PROFILE = Path(__file__).resolve().parent.parent
+KIND = re.compile(r"[a-z][a-z_]{0,23}")
+ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+ID_KEYS = ("session_id", "room_id", "pledge_id", "deal_id", "challenge_id")
+
+
+def main() -> None:
+    hermes = HERMES if HERMES and Path(HERMES).exists() else shutil.which("hermes")
+    try:
+        out = subprocess.run([hermes, "emporia", "peek", "next"], capture_output=True, text=True, timeout=90,
+                             stdin=subprocess.DEVNULL, env={**os.environ, "HERMES_HOME": str(PROFILE)})
+        d = json.loads((out.stdout.strip().splitlines() or [""])[-1])
+        assert isinstance(d, dict) and d.get("success") is True
+    except Exception:
+        print("Emporia rounds gate: whats_next could not be read here, so this round runs as usual.")
+        return
+    if d.get("quiet") is True and not d.get("partial"):
+        print(json.dumps({"wakeAgent": False}))
+        return
+    kinds, ids = {}, []
+    for it in d.get("items") or []:
+        if not isinstance(it, dict):
+            continue
+        kind = it.get("kind")
+        if isinstance(kind, str) and KIND.fullmatch(kind):
+            kinds[kind] = kinds.get(kind, 0) + 1
+        args = it.get("args") if isinstance(it.get("args"), dict) else {}
+        for key in ID_KEYS:
+            v = args.get(key)
+            if isinstance(v, str) and ID.fullmatch(v) and v not in ids:
+                ids.append(v)
+    unread = d.get("unread_total")
+    print("Emporia rounds gate: something may be waiting (counts and ids only; read the details with whats_next).")
+    print("items: " + (" ".join(f"{k}={n}" for k, n in sorted(kinds.items())[:8]) or "none")
+          + f"; unread: {unread if isinstance(unread, int) else 0}" + ("; partial read" if d.get("partial") else ""))
+    if ids:
+        print("ids: " + ", ".join(ids[:5]))
+
+
+main()

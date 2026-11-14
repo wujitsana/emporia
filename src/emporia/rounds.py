@@ -33,6 +33,12 @@ SKILL = "emporia:emporia"
 #: Hermes 0.23 `--catch-up off`: rounds missed while Hermes was off are skipped, not fired at once on return
 #: (each shows as a "missed" row in `hermes cron runs`). Applied on create and on every re-run of `rounds on`.
 CATCH_UP = ("--catch-up", "off")
+#: The quiet-round gate (`emporia rounds on --skip-quiet`): one small script in the profile's `scripts/` folder, which
+#: Hermes runs before each round (template: `data/rounds_gate.py.txt`). Removed by `rounds off` and by `rounds on`
+#: without the flag. Its output is at most GATE_MAX_LINES lines, which the plugin's marker check allows for.
+GATE_SCRIPT = "emporia_rounds_gate.py"
+GATE_TEMPLATE = "rounds_gate.py.txt"
+GATE_MAX_LINES = 4
 INTERVALS = ("2h", "4h", "8h", "12h", "24h")
 DEFAULT_EVERY = "4h"
 PROMPT_FILE = "rounds_prompt.md"
@@ -53,6 +59,67 @@ class Job:
     state: str
     name: str
     schedule: str = ""
+
+
+def scripts_dir(profile_dir: Path) -> Path:
+    return Path(profile_dir) / "scripts"
+
+
+def gate_path(profile_dir: Path) -> Path:
+    return scripts_dir(profile_dir) / GATE_SCRIPT
+
+
+def write_gate(profile_dir: Path) -> Path:
+    """The gate script into the profile's scripts folder (owner-only; rewritten only when it differs)."""
+    try:
+        hermes = hermes_bin()
+    except RoundsError:
+        hermes = ""
+    template = Path(__file__).resolve().parent / "data" / GATE_TEMPLATE
+    text = template.read_text(encoding="utf-8").replace("__HERMES__", repr(hermes))
+    path = gate_path(profile_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists() or path.read_text(encoding="utf-8") != text:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o700)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.chmod(path, 0o700)
+    return path
+
+
+def remove_gate(profile_dir: Path | None) -> bool:
+    """Delete the gate script; True when there was one."""
+    if profile_dir is None:
+        return False
+    try:
+        gate_path(profile_dir).unlink()
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def has_gate(profile_dir: Path | None) -> bool:
+    return profile_dir is not None and gate_path(profile_dir).exists()
+
+
+def gate_supported(profile_dir: Path) -> str:
+    """"" when the plugin installed in this profile still recognises a round that has the gate's output block ahead
+    of its prompt, else why not. An older plugin would take such a round for a person's own turn, with every tool,
+    so the gate is refused until the plugin is updated."""
+    import importlib.util
+    path = Path(profile_dir) / "plugins" / "emporia" / "relay_turn.py"
+    if not path.is_file():
+        return "the Emporia plugin is not installed in this profile (hermes emporia setup)"
+    try:
+        spec = importlib.util.spec_from_file_location("emporia_relay_turn_probe", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        block = ("## Script Output\nThe following data was collected by a pre-run script. Use it as context for your "
+                 "analysis.\n\n```\n" + "\n".join(f"line {i}" for i in range(GATE_MAX_LINES)) + "\n```\n\n")
+        return "" if mod.is_rounds_prompt(block + marker() + "\nrest") else (
+            "the installed Emporia plugin is older than this option needs (hermes plugins update emporia)")
+    except Exception as e:  # noqa: BLE001 — an unreadable plugin is not proof of safety
+        return f"the installed plugin could not be checked ({type(e).__name__})"
 
 
 def hours(every: str) -> int:
@@ -148,31 +215,59 @@ def jobs(profile: str) -> list[Job]:
     return [j for j in parse_jobs(listing) if j.name == JOB_NAME]
 
 
-def turn_on(profile: str, every: str = DEFAULT_EVERY, plugin_dir: Path | None = None) -> str:
-    """Create the job (or bring the existing one to this schedule and prompt, and resume it)."""
+def turn_on(profile: str, every: str = DEFAULT_EVERY, plugin_dir: Path | None = None, *,
+            profile_dir: Path | None = None, skip_quiet: bool = False, model: str = "",
+            reasoning_effort: str = "") -> str:
+    """Create the job (or bring the existing one to this schedule and prompt, and resume it).
+
+    `skip_quiet` (needs `profile_dir`) writes the gate script and attaches it to the job; without it the script is
+    removed and cleared from the job. `model` and `reasoning_effort` pin the job's model and thinking effort when
+    given (Hermes validates them); left empty the job keeps what it has, which for a new job is the profile's own."""
     schedule = f"every {hours(every)}h"
     text = prompt_text(plugin_dir)
     base = _scope(profile)
+    if skip_quiet:
+        if profile_dir is None:
+            raise RoundsError("--skip-quiet needs the agent's profile folder")
+        if why := gate_supported(profile_dir):
+            raise RoundsError(f"--skip-quiet is not set up: {why}")
+        write_gate(profile_dir)
+    pins: list[str] = []
+    if model.strip():
+        pins += ["--model", model.strip()]
+    if reasoning_effort.strip():
+        pins += ["--reasoning-effort", reasoning_effort.strip()]
+    note = ", skips quiet rounds" if skip_quiet else ""
+    had_gate = has_gate(profile_dir)       # the job carries our script only if we wrote it: clear it with the file
     existing = jobs(profile)
     if existing:
         job = existing[0]
         run_hermes([*base, "cron", "edit", job.id, "--schedule", schedule, "--prompt", text, "--name", JOB_NAME,
                     "--deliver", "local", "--failure-deliver", "local", "--skill", SKILL,
-                    *CATCH_UP])
+                    *(["--script", GATE_SCRIPT] if skip_quiet else ["--script", ""] if had_gate else []),
+                    *pins, *CATCH_UP])
+        if not skip_quiet:
+            remove_gate(profile_dir)
         if job.state.lower().startswith("paus"):
             run_hermes([*base, "cron", "resume", job.id])
-        return f"rounds updated: every {every} (job {job.id}, prompt v{prompt_version(text)})"
+        return f"rounds updated: every {every} (job {job.id}, prompt v{prompt_version(text)}{note})"
     out = run_hermes([*base, "cron", "create", schedule, text, "--name", JOB_NAME, "--deliver", "local",
-                      "--failure-deliver", "local", "--skill", SKILL, *CATCH_UP])
+                      "--failure-deliver", "local", "--skill", SKILL, *CATCH_UP,
+                      *(["--script", GATE_SCRIPT] if skip_quiet else []), *pins])
+    if not skip_quiet:
+        remove_gate(profile_dir)
     m = re.search(r"Created job:\s*([0-9a-f]+)", out)
-    return f"rounds on: every {every} (job {m.group(1) if m else '?'}, prompt v{prompt_version(text)})"
+    return f"rounds on: every {every} (job {m.group(1) if m else '?'}, prompt v{prompt_version(text)}{note})"
 
 
-def turn_off(profile: str) -> str:
+def turn_off(profile: str, profile_dir: Path | None = None) -> str:
     found = jobs(profile)
     for job in found:
         run_hermes([*_scope(profile), "cron", "remove", job.id])
-    return "rounds off: the job is removed" if found else "rounds were not on"
+    gone = remove_gate(profile_dir)
+    if found:
+        return "rounds off: the job is removed" + (" (and its gate script)" if gone else "")
+    return "rounds were not on" + (" (its gate script is removed)" if gone else "")
 
 
 def pause(profile: str) -> str:
@@ -189,7 +284,7 @@ def resume(profile: str) -> str:
     return "rounds resumed" if found else "rounds are not on (`emporia rounds on`)"
 
 
-def status_line(profile: str) -> str:
+def status_line(profile: str, profile_dir: Path | None = None) -> str:
     """One line for `rounds status` and `doctor`: never raises."""
     try:
         found = jobs(profile)
@@ -198,4 +293,5 @@ def status_line(profile: str) -> str:
     if not found:
         return "off"
     j = found[0]
-    return f"{j.state}, {j.schedule or '?'} (job {j.id}); a round has the agent's own tools, delivers nowhere"
+    gate = "; skips quiet rounds" if profile_dir is not None and gate_path(profile_dir).exists() else ""
+    return f"{j.state}, {j.schedule or '?'} (job {j.id}){gate}; a round has the agent's own tools, delivers nowhere"

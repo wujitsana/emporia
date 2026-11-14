@@ -172,7 +172,7 @@ def profiles(tmp_path, monkeypatch):
     monkeypatch.setattr(inst, "_install_skill_link", lambda *a, **k: None)
     monkeypatch.setattr(inst, "_TOUCHED_PROFILES", [])
     jobs = []
-    monkeypatch.setattr(rounds, "turn_on", lambda p, every, plugin_dir=None: jobs.append((p, every)) or f"rounds on: {every}")
+    monkeypatch.setattr(rounds, "turn_on", lambda p, every, plugin_dir=None, **kw: jobs.append((p, every)) or f"rounds on: {every}")
     monkeypatch.setattr(rounds, "status_line", lambda p: "off")
     return root, jobs
 

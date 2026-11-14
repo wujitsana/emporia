@@ -149,8 +149,8 @@ def test_a_preset_starts_the_playbook_clean(shop):
 
 def test_rounds_go_through_the_rounds_code(shop, monkeypatch, capsys):
     calls = []
-    monkeypatch.setattr(rounds, "turn_on", lambda name, every: calls.append(("on", name, every)) or "rounds on")
-    monkeypatch.setattr(rounds, "turn_off", lambda name: calls.append(("off", name)) or "rounds off")
+    monkeypatch.setattr(rounds, "turn_on", lambda name, every, **kw: calls.append(("on", name, every)) or "rounds on")
+    monkeypatch.setattr(rounds, "turn_off", lambda name, *a: calls.append(("off", name)) or "rounds off")
     assert run("--set", "rounds=8h") == 0
     assert run("--set", "rounds=off") == 0
     assert calls == [("on", "shop", "8h"), ("off", "shop")]

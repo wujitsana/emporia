@@ -60,7 +60,7 @@ def test_unset_dot_and_relative_cwd_are_not_a_confinement(tmp_path):
 def _doctor(prof, monkeypatch, capsys, dotenv=None):
     monkeypatch.setattr(cli, "turns_in_24h", lambda p: 0)
     monkeypatch.setattr(cli, "hermes_context_probe", lambda cwd: None)
-    monkeypatch.setattr("emporia.rounds.status_line", lambda profile: "off")   # never the real `hermes cron list`
+    monkeypatch.setattr("emporia.rounds.status_line", lambda profile, *a: "off")   # never the real `hermes cron list`
     rep = Report()
     cli.doctor_agent_hardening(rep, prof, dotenv or {})
     return rep, capsys.readouterr().out

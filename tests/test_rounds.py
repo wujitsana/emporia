@@ -178,7 +178,7 @@ def test_a_round_delivers_nowhere_chatty(hermes):
 def _opt(rounds_flag, tmp_path, monkeypatch, tty=False):
     monkeypatch.setattr(cli, "_TTY", tty)
     seen = []
-    monkeypatch.setattr(rounds, "turn_on", lambda p, every, plugin_dir=None: seen.append((p, every)) or "on")
+    monkeypatch.setattr(rounds, "turn_on", lambda p, every, plugin_dir=None, **kw: seen.append((p, every)) or "on")
     monkeypatch.setattr(cli.installer(), "harvest_env", lambda p: {})
     prof = tmp_path / "profiles" / "shop"
     prof.mkdir(parents=True, exist_ok=True)
@@ -199,7 +199,7 @@ def test_doctor_shows_the_wake_mode_and_the_rounds_job(tmp_path, monkeypatch, ca
     prof = tmp_path / "profiles" / "shop"
     prof.mkdir(parents=True)
     (prof / "config.yaml").write_text("{}")
-    monkeypatch.setattr(rounds, "status_line", lambda p: "active, every 240m (job x)")
+    monkeypatch.setattr(rounds, "status_line", lambda p, *a: "active, every 240m (job x)")
     rep = cli.Report(compact=False)
     cli.doctor_agent_hardening(rep, prof, {"EMPORIA_WAKE": "open"})
     out = capsys.readouterr().out

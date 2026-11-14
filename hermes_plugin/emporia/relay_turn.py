@@ -162,10 +162,15 @@ def _text(message: Any) -> str:
     return ""
 
 
+#: How many leading non-empty lines may precede the rounds marker (the gate's script-output block is at most 8).
+ROUNDS_WINDOW = 12
+
+
 def is_rounds_prompt(message: Any) -> bool:
     """A rounds prompt starts with the marker (as its first line; a host's own preamble lines
-    before it are tolerated up to the first five non-empty lines)."""
-    lines = [ln.strip() for ln in _text(message).splitlines() if ln.strip()][:5]
+    before it are tolerated up to the first twelve non-empty lines: a rounds job with the quiet-round gate gets
+    Hermes's "Script Output" block, eight lines at most, ahead of its prompt)."""
+    lines = [ln.strip() for ln in _text(message).splitlines() if ln.strip()][:ROUNDS_WINDOW]
     return any(ln == ROUNDS_MARKER or ln.startswith(ROUNDS_MARKER + " ") for ln in lines)
 
 

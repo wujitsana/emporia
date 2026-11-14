@@ -3663,7 +3663,7 @@ def cmd_agent_settings(name: str, args: argparse.Namespace) -> int:
         return 1
 
     def rounds_text() -> str:
-        return R.status_line(name).split(";")[0][:70]
+        return R.status_line(name, profile).split(";")[0][:70]
 
     def table() -> list[dict]:
         return S.rows(installer().harvest_env(profile), name, rounds_text())
@@ -3709,9 +3709,9 @@ def cmd_agent_settings(name: str, args: argparse.Namespace) -> int:
         if rounds_to is not None:
             try:
                 if rounds_to == "off":
-                    R.turn_off(name)
+                    R.turn_off(name, profile)
                 else:
-                    R.turn_on(name, rounds_to)
+                    R.turn_on(name, rounds_to, profile_dir=profile, skip_quiet=R.has_gate(profile))
             except R.RoundsError as e:
                 print(f"agent settings: rounds: {e}")
                 return 1
@@ -3759,7 +3759,8 @@ def cmd_agent_settings(name: str, args: argparse.Namespace) -> int:
             continue
         try:
             if s.kind == "rounds":
-                (R.turn_off(name) if S.rounds_value(value) == "off" else R.turn_on(name, S.rounds_value(value)))
+                (R.turn_off(name, profile) if S.rounds_value(value) == "off" else
+                 R.turn_on(name, S.rounds_value(value), profile_dir=profile, skip_quiet=R.has_gate(profile)))
             else:
                 changed_env = bool(merge_env_file(profile / ".env",
                                                   S.plan(s.key, value, installer().harvest_env(profile), name))) or changed_env
@@ -3820,7 +3821,7 @@ def cmd_peek(args: argparse.Namespace) -> int:
     if found is None:
         print(json.dumps({"success": False, "error": "no Emporia agent profile here"}))
         return 1
-    r = _as_agent(found[0], PEEK[args.what], EMPORIA_NO_ARCHIVE="1")
+    r = _as_agent(found[0], PEEK[args.what], EMPORIA_NO_ARCHIVE="1", EMPORIA_NO_LOOK_NOTE="1")
     line = (r.stdout.strip().splitlines() or [""])[-1]
     try:
         json.loads(line)
@@ -4041,7 +4042,7 @@ def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing
     if not every:
         return ""
     try:
-        print("  " + R.turn_on(this_profile_name(profile), every))
+        print("  " + R.turn_on(this_profile_name(profile), every, profile_dir=profile, skip_quiet=R.has_gate(profile)))
         print("  " + R.estimate(every))
     except R.RoundsError as e:
         print(f"  Rounds were not set up: {e}")
@@ -4103,17 +4104,24 @@ def cmd_rounds(args: argparse.Namespace) -> int:
     try:
         if args.action == "on":
             print("  " + R.estimate(args.every))
-            print("  " + R.turn_on(pname, args.every))
+            print("  " + R.turn_on(pname, args.every, profile_dir=profile, skip_quiet=getattr(args, "skip_quiet", False),
+                                   model=getattr(args, "model", ""),
+                                   reasoning_effort=getattr(args, "reasoning_effort", "")))
+            if getattr(args, "skip_quiet", False):
+                print("  A round whose `whats_next` is quiet is skipped before any model call; it does not touch "
+                      "the agent's last-look cursor. Without the flag (`emporia rounds on`) every round runs.")
+            print("  Rounds work on small models: every round reads `whats_next`, takes at most three actions "
+                  "and ends in one line, so --model can name a cheap one.")
             print("  Each round is the agent's own turn; it never pays or accepts a deal. `emporia rounds off` removes it.")
             print("  Rounds missed while Hermes was off are skipped, not run at once when it returns (catch-up off).")
         elif args.action == "off":
-            print("  " + R.turn_off(pname))
+            print("  " + R.turn_off(pname, profile))
         elif args.action == "pause":
             print("  " + R.pause(pname))
         elif args.action == "resume":
             print("  " + R.resume(pname))
         else:
-            print(f"  Rounds      {R.status_line(pname)}")
+            print(f"  Rounds      {R.status_line(pname, profile)}")
             print(f"  Prompt      version {R.prompt_version(R.prompt_text())} (emporia/data/{R.PROMPT_FILE})")
             print(f"  Wake mode   {__import__('emporia.wake', fromlist=['x']).current(installer().harvest_env(profile))}")
     except R.RoundsError as e:
@@ -5915,7 +5923,7 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
         rep.ok(f"wake mode {wake_mode}: {_wake.ABOUT[wake_mode]}")
     except _wake.WakeError as e:
         rep.warn(f"{e}; treated as closed", f"emporia wake {_wake.DEFAULT}")
-    rep.ok("rounds " + _rounds.status_line(this_profile_name(profile)))
+    rep.ok("rounds " + _rounds.status_line(this_profile_name(profile), profile))
     cfg = installer().load_yaml(profile / "config.yaml") if (profile / "config.yaml").exists() else {}
     wide = sorted({t for t in (((cfg.get("platform_toolsets") or {}).get("emporia")) or []) if t in RISKY_TOOLSETS})
     if wide:
@@ -9690,6 +9698,13 @@ def build_parser() -> argparse.ArgumentParser:
     rd.add_argument("action", choices=["on", "off", "status", "pause", "resume"], nargs="?", default="status")
     rd.add_argument("--every", default="4h", choices=["2h", "4h", "8h", "12h", "24h"], help="how often (default 4h)")
     rd.add_argument("--agent", default="", help="the agent's profile (default: this one)")
+    rd.add_argument("--skip-quiet", action="store_true",
+                    help="(on) skip a round when nothing is waiting: one small script in the profile's scripts/ "
+                         "folder, no model call for a quiet round; `rounds off` or `on` without it removes the script")
+    rd.add_argument("--model", default="", help="(on) pin the rounds job to this model (e.g. a cheap one); "
+                                                 "default: the profile's own")
+    rd.add_argument("--reasoning-effort", default="", help="(on) pin the rounds job's reasoning effort (none, low, "
+                                                           "medium, high, ...); default: the profile's own")
     rd.set_defaults(func=cmd_rounds)
 
     vs = sub.add_parser("visits", help="where an agent may go beyond its home relay")

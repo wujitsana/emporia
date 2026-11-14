@@ -102,8 +102,8 @@ def profiles(tmp_path, monkeypatch):
     monkeypatch.setattr(inst, "install_platform_plugin", lambda *a, **k: None)
     monkeypatch.setattr(inst, "_install_skill_link", lambda *a, **k: None)
     monkeypatch.setattr(inst, "_TOUCHED_PROFILES", [])
-    monkeypatch.setattr(rounds, "turn_on", lambda p, every, plugin_dir=None: f"rounds on: {every}")
-    monkeypatch.setattr(rounds, "status_line", lambda p: "off")
+    monkeypatch.setattr(rounds, "turn_on", lambda p, every, plugin_dir=None, **kw: f"rounds on: {every}")
+    monkeypatch.setattr(rounds, "status_line", lambda p, *a: "off")
     return root
 
 

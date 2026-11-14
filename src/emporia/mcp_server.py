@@ -4444,6 +4444,8 @@ def _last_look(aid: str) -> str | None:
 def _note_last_look(aid: str) -> None:
     """Write now as this agent's last look. Never fails whats_next."""
     from datetime import UTC, datetime
+    if os.getenv("EMPORIA_NO_LOOK_NOTE") == "1":      # a read-only peek (rounds gate, `emporia peek next`) must not move the cursor
+        return
     try:
         path = _look_file()
         try:
