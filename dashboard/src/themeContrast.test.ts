@@ -47,7 +47,7 @@ describe("contrast of every tint in every theme", () => {
         contrast(p.text, p.bg).toFixed(2), contrast(p.text, p.panel).toFixed(2),
         contrast(p.accent, p.bg).toFixed(2), contrast(p.accent, p.panel).toFixed(2), contrast(p.fillInk, p.fill).toFixed(2)].join(" | "));
     }
-    expect(rows).toHaveLength(15);
+    expect(rows).toHaveLength(11);
     if ((proc as unknown as { env: Record<string, string> }).env.THEME_CONTRAST_TABLE) console.info(rows.join("\n"));
   });
 });

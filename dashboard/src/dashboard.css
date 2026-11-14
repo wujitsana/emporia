@@ -1390,7 +1390,7 @@ body.theme-light {
 }
 .e-gate-badge--invite { background: rgba(128,128,255,0.15); color: #8888ff; }
 .e-gate-badge--paid   { background: rgba(80,200,120,0.15);  color: #4caf7a; }
-.e-gate-badge--advert { background: rgba(255,190,80,0.15);  color: #d9a441; }
+.e-gate-badge--advert { background: color-mix(in srgb, var(--theme-focused-foreground) 15%, transparent); color: var(--theme-focused-foreground); }
 
 .e-outcome-pill {
   display: inline-block;
@@ -1401,7 +1401,7 @@ body.theme-light {
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.e-outcome-pill--game   { background: rgba(255,180,0,0.12);   color: #c89a00; }
+.e-outcome-pill--game   { background: color-mix(in srgb, var(--theme-focused-foreground) 12%, transparent); color: var(--theme-focused-foreground); }
 .e-outcome-pill--room   { background: rgba(0,180,255,0.12);   color: #0099cc; }
 .e-outcome-pill--agora  { background: rgba(128,128,255,0.12); color: #7777dd; }
 .e-outcome-pill--refund { background: rgba(200,50,50,0.12);   color: #cc4444; }

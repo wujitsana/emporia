@@ -4,8 +4,8 @@
  *   ?capture=1        no transitions or animations at all, the relay's host:port
  *                     hidden, a phone layout scaled so its smallest text is ≥ 13
  *                     CSS px, and faster refreshes so changes appear on cue.
- *   ?tint=green       start on a tint: green (the default; "amber" and
- *                     "default" mean green too), orange, blue, red, yellow,
+ *   ?tint=green       start on a tint: green (the default; "amber",
+ *                     "orange", "yellow" and "default" mean green too), blue, red,
  *                     purple or pink. Not saved: the next plain load is unchanged.
  *   ?theme=light|vivid|dark start on a theme.
  *   t / T (hotkeys)   next tint / light ↔ dark (vivid is the middle circle's), instantly (no fade), so a capture
@@ -29,7 +29,7 @@ export const CAPTURE = params().get("capture") === "1";
 export function tintFromParam(raw: string | null | undefined): Tint | null {
   const v = (raw ?? "").trim().toLowerCase().replace(/^tint-/, "");
   if (!v) return null;
-  if (v === "amber" || v === "default") return DEFAULT_TINT;
+  if (v === "amber" || v === "default" || v === "orange" || v === "yellow") return DEFAULT_TINT;
   const t = `tint-${v}` as Tint;
   return (TINTS as readonly string[]).includes(t) ? t : null;
 }
