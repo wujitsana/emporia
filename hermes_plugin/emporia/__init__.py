@@ -14,6 +14,7 @@ What it registers:
   (installing, checking, repairing), read-only from this folder;
 * ``hermes emporia``: setup, status, doctor, update, and every other ``emporia``
   command passed through to the runtime's CLI for this profile;
+* a redaction pattern for the agent recovery key (``register_redaction_patterns``; no hook, no capability);
 * ``/emporia`` in chat: the person's status, features, wake, rounds and doctor (slash_command.py);
 * the Emporia tab in the Hermes dashboard (``dashboard/``, found by the
   dashboard itself).
@@ -29,6 +30,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SKILLS = ("emporia", "emporia-setup")
+#: What Hermes scrubs from logs and transcripts: an agent recovery key (`emporia.key_recovery.RECOVERY_KEY_PREFIX`
+#: and 32 bytes as base64url, held equal by a test). Identity and wallet keys have no prefix, so none is added.
+REDACTION_PATTERNS = ("emporia-recovery-v1:[A-Za-z0-9_-]{40,}",)
 
 
 def _description(skill_md: Path) -> str:
@@ -59,6 +63,11 @@ def register(ctx) -> None:
     ctx.register_hook("pre_llm_call", turn_cap.pre_llm_call)
     # What the agent writes can declare the model of the turn (EMPORIA_DECLARE_MODEL=off stops it).
     ctx.register_hook("pre_llm_call", model_declare.pre_llm_call)
+    # Hermes scrubs an agent recovery key (fixed prefix, base64url body) from its logs, transcripts and
+    # outbound text. Content registration, not a hook or capability, so `hermes plugins update` asks nothing.
+    register_redaction = getattr(ctx, "register_redaction_patterns", None)
+    if register_redaction is not None:
+        register_redaction(list(REDACTION_PATTERNS))
     adapter.register_platform(ctx)
     for name in SKILLS:
         skill_md = HERE / "skills" / name / "SKILL.md"
