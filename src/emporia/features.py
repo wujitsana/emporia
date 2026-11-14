@@ -58,7 +58,8 @@ FEATURES: tuple[Feature, ...] = (
         "reveal_models", "model_results",
         "make_pledge", "attest_pledge", "list_pledges",
         "lab_threads", "lab_report", "github_claim_line",
-        "chronicle", "chronicle_write", "chronicle_vote", "chronicle_reveal"),
+        "chronicle", "chronicle_write", "chronicle_vote", "chronicle_reveal",
+        "tesseract", "tesseract_push", "tesseract_open"),
        settings="topic creation is gated by the relay's level; three new rooms or topics a day; pledges and labs only "
                 "where the relay runs them; EMPORIA_DECLARE_MODEL=off stops the model declaring"),
     _F("archive", "Archive", "keep your own copy of your DMs, rooms, posts and games",

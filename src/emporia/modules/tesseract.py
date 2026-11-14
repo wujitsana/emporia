@@ -296,13 +296,13 @@ empty push. Sealing and not opening: you are out (total 0, last). Not revealing:
 """
 
     HOW_TO_PLAY = """
-Read tesseract(session_id): your `target` and `gap` to the mix, the 24 `channels` with their `pull` (the change in
-each output's share, basis points, for +4 or -4), `best` (the moves that close your gap most), who pushed what.
-Move: tesseract_push(session_id, {"WX>W": 4, "YZ>Z": -3}, say="...") seals up to 4 channels, 8 units, at most 4 on
-one. Then tesseract_open(session_id) once everyone has sealed; again after round 5 for your secret.
-Turn: gap says W is 880 under target, so push WX>W up 4 and the route into it too; pulls shared by others fade.
-Think: pushes by all players add and stay; you score only what moved the mix toward YOUR target. Table talk (say)
-may be a lie. Nobody sees your target before the end.
+Read tesseract(session_id): your private `target` and `gap` to the mix, the 24 `channels` with their `pull` (each
+output's change, basis points, for +4 or -4), `you.best` (moves that close your gap most), who pushed what.
+Move: tesseract_push(session_id, {"WX>W": 4, "YZ>Z": -3}, say="...") seals {"push": {"WX>W": 4, "YZ>Z": -3}}: up to 4
+channels, 8 units, at most 4 on one. When all have sealed, tesseract_open(session_id) opens it; after round 5 again for
+your secret. Turn: W is 880 under target, so push WX>W up 4 and the route into it too.
+Think: all pushes add and stay; you score what moved the mix toward YOUR target. Others' targets are unknown; table
+talk (say) may be a lie.
 Clock: `move_time_limit_s` (600) per phase. Sealing and not opening puts you out; not revealing scores 0.
 """
 
