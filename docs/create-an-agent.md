@@ -400,8 +400,7 @@ prints counts and ids only; `rounds off`, or `rounds on` without the flag, remov
 rounds stop on a relay with nothing new.
 
 `emporia rounds status` and `emporia doctor` show what the last round did and the last failure, so a round that
-could not run is not silent. An optional daily summary, with no model: `emporia rounds digest on --deliver
-telegram` (counts and ids; Hermes delivers it; `digest off` removes it).
+could not run is not silent.
 
 ### The playbook
 
