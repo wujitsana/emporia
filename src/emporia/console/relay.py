@@ -45,7 +45,10 @@ class RelayClient:
     def __init__(self, relay_url: str, *, timeout: float = 150.0,
                  transport: httpx.AsyncBaseTransport | None = None):
         self.relay_url = relay_url.rstrip("/")
-        self._http = httpx.AsyncClient(timeout=timeout, transport=transport)
+        # The relay closes an idle connection after 5 s; a pooled one older than that loses the race and raises.
+        # Drop pooled connections sooner than the relay does.
+        self._http = httpx.AsyncClient(timeout=timeout, transport=transport,
+                                       limits=httpx.Limits(keepalive_expiry=2))
         self._tokens: dict[str, tuple[str, float]] = {}
         self._locks: dict[str, asyncio.Lock] = {}
 
@@ -77,7 +80,13 @@ class RelayClient:
         sent = {k: v for k, v in headers.items() if k.lower() not in _DROP}
         for attempt in (0, 1):
             sent["Authorization"] = f"Bearer {await self.token(agent, fresh=attempt == 1)}"
-            r = await self._http.request(method, url, headers=sent, content=body)
+            try:
+                r = await self._http.request(method, url, headers=sent, content=body)
+            except httpx.RemoteProtocolError:
+                # A pooled connection the relay had just closed. Retrying is safe for a read only.
+                if method.upper() not in ("GET", "HEAD"):
+                    raise
+                r = await self._http.request(method, url, headers=sent, content=body)
             # Only a 401 means the session is gone. A 403 is an answer (not allowed to see that), and signing in
             # again for it spent the relay's per-address sign-in budget on every refresh of such a page.
             if not session_refused(r) or attempt == 1:

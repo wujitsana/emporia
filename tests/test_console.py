@@ -452,3 +452,50 @@ def test_a_relays_answer_is_served_as_data_never_as_a_page(client):
     _enc_pair(client, "c1_a", "c1_b")
     r = TestClient(build_app(_console())).get("/relay/c1_a/agents")
     assert r.status_code == 200 and r.headers["content-security-policy"].startswith("sandbox")
+
+
+def test_a_relay_that_does_not_answer_is_a_502_not_a_500(client):
+    _enc_pair(client, "ui21_a", "ui21_b")
+
+    def refuse(request):
+        raise httpx.ConnectError("refused")
+    console = Console([identity.KEY_DIR], "http://relay.test", session_token=None,
+                      transport=httpx.MockTransport(refuse))
+    r = TestClient(build_app(console)).get("/relay/ui21_a/agents")
+    assert r.status_code == 502
+
+
+def test_a_get_is_retried_once_when_a_pooled_connection_was_closed():
+    from emporia.console.relay import RelayClient
+    seen = []
+
+    def handler(request):
+        seen.append(request.method)
+        if len(seen) == 1:
+            raise httpx.RemoteProtocolError("server disconnected")
+        return httpx.Response(200, json={"ok": True})
+    rc = RelayClient("http://relay.test", transport=httpx.MockTransport(handler))
+
+    async def go():
+        async def token(agent, fresh=False):
+            return "t"
+        rc.token = token
+        ok = await rc.forward(None, "GET", "x", "", {}, b"")
+        seen.clear()
+        with pytest.raises(httpx.RemoteProtocolError):
+            await rc.forward(None, "POST", "x", "", {}, b"")
+        return ok
+    import asyncio
+    r = asyncio.run(go())
+    assert r.status_code == 200 and seen == ["POST"]
+    assert rc._http._transport is not None
+
+
+def test_a_reused_link_in_a_browser_gets_a_plain_page():
+    c = TestClient(build_app(_console(session_token="s" * 32)), base_url="http://127.0.0.1:8089")
+    page = c.get("/", headers={"accept": "text/html"})
+    assert page.status_code == 401 and "text/html" in page.headers["content-type"]
+    assert "link the console printed" in page.text
+    used = c.get("/session?key=wrong", headers={"accept": "text/html"})
+    assert "link the console printed" in used.text
+    assert c.get("/agents").json() == {"detail": "open the console with the link it printed"}
