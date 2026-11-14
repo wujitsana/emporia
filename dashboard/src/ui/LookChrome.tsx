@@ -81,7 +81,7 @@ export const BRAND_REPLAY_MS = 520;
  * opening) runs a short, gentler decode. Still, finished, under reduced motion and
  * in capture mode. Screen readers read the word, never the glyphs.
  */
-export function BrandTitle({ replay = "", onHome }: { replay?: string; onHome?: () => void }) {
+export function BrandTitle({ replay = "", onHome, onCover }: { replay?: string; onHome?: () => void; onCover?: () => void }) {
   const moving = motionAllowed();
   const first = useRef(true);
   const root = useRef<HTMLSpanElement>(null);
@@ -127,7 +127,7 @@ export function BrandTitle({ replay = "", onHome }: { replay?: string; onHome?: 
   // With a way home the wordmark is a button: Home, the same as the Home tab and key 1.
   if (!onHome) return word;
   return (
-    <button type="button" className="e-brand-home" onClick={onHome} title="Emporia — Home" aria-label="Emporia — Home">
+    <button type="button" className="e-brand-home" onClick={(e) => { if (e.shiftKey && onCover) onCover(); else onHome(); }} title="Emporia — Home" aria-label="Emporia — Home">
       {word}
     </button>
   );

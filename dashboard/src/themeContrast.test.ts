@@ -9,6 +9,7 @@ import { contrast, type Gamut } from "./badges/color.ts";
 import { TINTS, TINT_LABELS } from "./themeConfig.ts";
 import { WHITE_INK, LIGHT_PANEL, rgbHex, deepPalette, vividPalette } from "./themePalette.ts";
 import { themeColors, type ThemeName } from "./badges/tokens.ts";
+import { bodyInkApplies } from "./lookPrefs.ts";
 
 type Fs = { readFileSync(p: string, enc: "utf8"): string };
 const proc = (globalThis as unknown as { process: { cwd(): string; getBuiltinModule(m: string): unknown } }).process;
@@ -97,5 +98,27 @@ describe("the CSS carries the palette", () => {
       expect(read(f), f).not.toMatch(/#f0a832|#f5b84a/i);
     }
     expect(read("badges/tokens.ts")).not.toMatch(/\bAMBER\b/);
+  });
+});
+
+describe("ink choice (White / Black) on every tint and theme", () => {
+  const INK_RGB = { white: [1, 1, 1], black: [0, 0, 0] } as const;
+  it("body text takes White or Black only where it reaches 4.5:1 on the canvas and the panel; otherwise it stays Auto", () => {
+    for (const theme of ["theme-light", "theme-vivid", "theme-dark"] as const) for (const tint of TINTS) for (const ink of ["auto", "white", "black"] as const) {
+      const applies = bodyInkApplies(theme, tint, ink);
+      if (ink === "auto") { expect(applies).toBe(true); continue; }
+      let worst = Infinity;
+      for (const gamut of ["css", "clip"] as Gamut[]) {
+        const t = themeColors("animatic", theme.replace("theme-", "") as ThemeName, tint, gamut);
+        for (const s of t.surfaces.filter((x) => x.name !== "wash")) worst = Math.min(worst, contrast(INK_RGB[ink] as unknown as [number, number, number], s.rgb));
+      }
+      expect(applies, `${theme} ${TINT_LABELS[tint]} ${ink}: ${worst.toFixed(2)}`).toBe(worst >= AA);
+    }
+  });
+  it("Auto is never low contrast (it is the table above), and each ink applies somewhere", () => {
+    for (const ink of ["white", "black"] as const) {
+      const some = (["theme-light", "theme-vivid", "theme-dark"] as const).some((th) => TINTS.some((ti) => bodyInkApplies(th, ti, ink)));
+      expect(some).toBe(true);
+    }
   });
 });
