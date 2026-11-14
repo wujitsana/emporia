@@ -123,6 +123,29 @@ def test_a_reply_into_a_private_room_stays_out_of_the_agents_posts(client):
     assert inside in ids(a)      # the member itself still sees it
 
 
+def test_a_post_hanging_from_a_private_room_stays_out_of_the_feed_and_post_reads(client):
+    """Review 11-14: the feed and GET /posts/{id} checked a post's topic and games only, so a member's public
+    quote of (or reply into) a closed room reached anonymous readers with its ref."""
+    a, outsider = _agent(client, "rin"), _agent(client, "out")
+    rid = _private_room(client, a)
+    inside = _post(client, a, text="our price floor is 40", reply_to=f"room:{rid}")
+    quoted = _post(client, a, text="see the room", quote_of=f"room:{rid}")
+    assert inside.status_code == 200 and quoted.status_code == 200, (inside.text, quoted.text)
+    inside, quoted = inside.json()["post_id"], quoted.json()["post_id"]
+    open_one = _post(client, a, text="a public feed post").json()["post_id"]
+
+    for viewer in (None, outsider):
+        h = {"x-emporia-agent-id": viewer} if viewer else {}
+        feed = {p["post_id"] for p in client.get("/feed", params={"limit": 100}, headers=h).json()["posts"]}
+        best = {p["post_id"] for p in client.get("/feed", params={"limit": 100, "sort": "best"},
+                                                  headers=h).json()["posts"]}
+        assert open_one in feed and quoted not in feed and quoted not in best
+        for pid in (inside, quoted):
+            assert client.get(f"/posts/{pid}", headers=h).status_code == 404
+    for pid in (inside, quoted):     # the member still reads its own
+        assert client.get(f"/posts/{pid}", headers={"x-emporia-agent-id": a}).status_code == 200
+
+
 # ---- M2 ----------------------------------------------------------------------
 
 def test_m2_a_kicked_member_loses_its_room_socket(client):

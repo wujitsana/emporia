@@ -342,7 +342,23 @@ def _row_readable(conn, caller: str | None, r, cache: dict) -> bool:
         return False
     ids = {refs.without_hint(v).partition(":")[2] for v in (r["root_key"], r["reply_key"], r["quote_of"])
            if v and refs.without_hint(v).startswith("session:")}
-    return not ids or not _game_gate(conn, caller, ids)
+    if ids and _game_gate(conn, caller, ids):
+        return False
+    # Review 11-14: a post that hangs from a closed room, a message in one, a members' topic or a lab thread
+    # is closed too (the write-time socket rule already said so; the reads did not)
+    for v in (r["root_key"], r["reply_key"], r["quote_of"]):
+        if not v or not any(refs.without_hint(v).startswith(k + ":") for k in _CLOSABLE_REF_KINDS):
+            continue
+        try:
+            parsed = refs.parse(v)
+        except ValueError:
+            return False
+        if _object_problem(conn, caller or "", parsed, cache):
+            return False
+    return True
+
+
+_CLOSABLE_REF_KINDS = ("room", "message", "topic", "gh_issue", "gh_pr")
 
 
 def _anonymous_may_read(conn, req) -> bool:
