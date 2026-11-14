@@ -23,7 +23,9 @@ import { hermesProfile, MODE } from "./transport";
 import { readPref, writePref } from "./prefs";
 import { DESKTOP_ROOT } from "./shadowScope";
 import { RelayDownCtx, RelayHealthCtx } from "./healthCtx";
-import { applyTheme, nextTint, normalizeBase, normalizeTheme, normalizeTint, toggleTheme, type BaseTheme, type Theme, type Tint } from "./themeConfig";
+import { bodyInkApplies, normalizeFont, normalizeInk, LS_FONT, LS_INK, type Font, type Ink } from "./lookPrefs";
+import { motionAllowed } from "./look";
+import { applyTheme, dripTitle, nextTint, normalizeBase, normalizeTheme, normalizeTint, toggleTheme, type BaseTheme, type Theme, type Tint } from "./themeConfig";
 import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
 import { ARENA_LENSES, canSee, dealsAvailable, destById, destinationOf, navById, navForHotkey, siblingView, type ArenaLens, type Destination, type View } from "./navConfig";
 import { GatedNote } from "./ui/GatedNote";
@@ -109,6 +111,11 @@ function AppInner() {
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [tint, setTint] = useState<Tint>(readTint);
   const [base, setBase] = useState<BaseTheme>(() => readBase(theme));
+  // The viewer's own font and ink (this browser only, like the theme); cover mode is the title's easter egg.
+  const [font, setFont] = useState<Font>(() => (CAPTURE ? "pixel" : normalizeFont(readPref(LS_FONT))));
+  const [ink, setInk] = useState<Ink>(() => (CAPTURE ? "auto" : normalizeInk(readPref(LS_INK))));
+  const [cover, setCover] = useState(false);
+  const bodyInk = bodyInkApplies(theme, tint, ink);
   const baseRef = useRef(base);
   useEffect(() => { baseRef.current = base; }, [base]);
   const [navOpen, setNavOpen] = useState(false);
@@ -220,9 +227,15 @@ function AppInner() {
   // A change from the theme picker fades; one from the t/T hotkeys (or any in capture mode) is instant.
   const instantNext = useRef(false);
   useEffect(() => {
-    applyTheme(theme, tint, { fade: !CAPTURE && !instantNext.current, capture: CAPTURE });
+    applyTheme(theme, tint, { fade: !CAPTURE && !instantNext.current, capture: CAPTURE, look: { font, ink, bodyInk, cover } });
     instantNext.current = false;
-  }, [theme, tint]);
+  }, [theme, tint, font, ink, bodyInk, cover]);
+
+  const look = {
+    font, ink, bodyInk,
+    onFont: (f: Font) => { setFont(f); if (!CAPTURE) writePref(LS_FONT, f); },
+    onInk: (i: Ink) => { setInk(i); if (!CAPTURE) writePref(LS_INK, i); if (motionAllowed()) dripTitle(); },
+  };
 
   const setThemeAndApply = (t: Theme) => {
     setTheme(t);
@@ -475,6 +488,7 @@ function AppInner() {
             tint={tint}
             onTheme={setThemeAndApply}
             onTint={setTintAndApply}
+            look={look}
             badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined}
             lead={<ChatMenuItem onOpen={() => setNavOpen(false)} />}
           />
@@ -496,7 +510,7 @@ function AppInner() {
           <div className="e-app-col">
           <header className="e-app-top">
             <div className="e-app-top__row">
-              <Text className="e-brand-title e-brand-title--header"><BrandTitle replay={view} onHome={() => goToDest("home")} /></Text>
+              <Text className="e-brand-title e-brand-title--header"><BrandTitle replay={view} onHome={() => goToDest("home")} onCover={() => setCover((c) => !c)} /></Text>
               <SectionTabs
                 view={view}
                 onGoDest={goToDest}
@@ -510,6 +524,7 @@ function AppInner() {
                   tint={tint}
                   onTheme={setThemeAndApply}
                   onTint={setTintAndApply}
+                  look={look}
                 />
                 <ViewerSwitcher />
                 <HeaderLinks view={view} onGo={goToView} />
@@ -536,7 +551,7 @@ function AppInner() {
               {inboxUnread > 0 && <span className="e-nav-badge" title="unread by the agent" aria-label={`${inboxUnread} unread by the agent`}>{inboxUnread > 99 ? "99+" : inboxUnread}</span>}
             </button>
             <span className="e-mobile-top__where">
-              <Text className="e-brand-title"><BrandTitle replay={view} onHome={() => goToDest("home")} /></Text>
+              <Text className="e-brand-title"><BrandTitle replay={view} onHome={() => goToDest("home")} onCover={() => setCover((c) => !c)} /></Text>
               {currentNav && <span className="e-mobile-top__section">{currentNav.label}</span>}
             </span>
             <ChatToggle compact />
