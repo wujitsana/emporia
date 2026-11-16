@@ -296,7 +296,7 @@ def test_a_registered_visitor_cannot_write_when_the_operator_closes_the_door(cli
     register(client, m)
     register(client, n, "none")
     post = lambda who: client.post(f"/agents/{who}/relay-list", headers=_hdr(who), json={})
-    for mode, refused in (("welcome", ()), ("homed-only", (n,)), ("read-only", (v, n)), ("closed", (v, n))):
+    for mode, refused in (("welcome", ()), ("homed-only", (v, n)), ("read-only", (v, n)), ("closed", (v, n))):
         monkeypatch.setenv("EMPORIA_VISITORS", mode)
         for who in (v, m, n):
             r = post(who)
@@ -438,3 +438,55 @@ def test_the_agent_card_tool_shows_the_passport(client, monkeypatch):
     out = mcp_server._passport_of(ORIGIN, a)
     assert out["kind"] == "emporia-passport" and out["checks"] == [{"relay": rs.RELAY_BASE_URL, "ok": True}]
     assert out["reach"]["weighted"] is False
+
+
+def test_the_home_check_never_calls_a_private_address_and_tells_nothing_of_why(monkeypatch):
+    """The home is declared by the agent: loopback, private, link-local, metadata and plain-http targets are not
+    called, and a failed check says one thing whatever went wrong."""
+    from emporia import fetch
+    monkeypatch.setattr(fetch, "_PASSTHROUGH", False)
+    called: list[str] = []
+    monkeypatch.setattr(fetch, "get", lambda url, **kw: called.append(url))
+    for url in ("https://127.0.0.1", "https://10.0.0.5:8080", "https://169.254.169.254", "https://192.168.1.1",
+                "https://[::1]", "https://0.0.0.0", "http://8.8.8.8", "ftp://8.8.8.8"):
+        visitors.forget()
+        assert visitors._pull(url) == {"error": visitors._UNANSWERED}, url
+    assert called == []
+    assert visitors.target_problem("https://8.8.8.8") == ""
+    got = visitors.confirm({"kind": "relay", "url": "https://10.0.0.5"}, "ab" * 32)
+    assert got["status"] == "unconfirmed" and got["reason"] == visitors._UNANSWERED
+
+
+def test_homed_only_lets_a_visitor_act_only_once_its_home_confirmed_it(client, monkeypatch):
+    v = name("conf")
+    fake_home(monkeypatch, [pub_of(v)])
+    register(client, v, visiting())
+    monkeypatch.setenv("EMPORIA_VISITORS", "homed-only")
+    assert visitors.write_refusal("relay", False) and "has not confirmed" in visitors.write_refusal("relay", False)
+    assert visitors.write_refusal("relay", True) == ""
+    assert client.post(f"/agents/{v}/relay-list", headers=_hdr(v), json={}).status_code != 403
+
+
+def test_the_listing_filters_in_sql_so_a_big_relay_does_not_drop_its_home_agents(client, monkeypatch):
+    held = len(client.get("/federation/v1/listed-agents").json()["agents"])
+    limit = held + 1                      # room for exactly one more; the cap used to cut rows before this filter
+    others = [name("far") for _ in range(2 * limit + 1)]
+    for who in others:
+        register(client, who, visiting())
+        assert _publish_list(client, who, HOME).status_code == 200      # lists that do not name this relay
+    a = name("late")
+    register(client, a)
+    assert _publish_list(client, a, rs.RELAY_BASE_URL).status_code == 200
+    monkeypatch.setattr(visitors, "LISTING_LIMIT", limit)
+    keys = [x["public_key_hex"] for x in client.get("/federation/v1/listed-agents").json()["agents"]]
+    assert pub_of(a) in keys and len(keys) == limit
+
+
+def test_an_old_plugin_that_registers_at_every_start_is_logged_once(client, caplog):
+    import logging
+    a = name("oldrep")
+    with caplog.at_level(logging.WARNING, logger="emporia.relay"):
+        for _ in range(3):
+            assert register(client, a, card_type="v2").status_code == 426        # every start gets the same answer
+    told = [r for r in caplog.records if r.getMessage() == "old_client_registration_refused"]
+    assert len(told) == 1 and "hermes plugins update emporia" in told[0].detail

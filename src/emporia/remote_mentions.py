@@ -85,8 +85,8 @@ def decide(conn, to_agent: str, from_relay: str, author: str, key: str, post_id:
     if conn.execute("SELECT COUNT(*) FROM remote_mention_log WHERE to_agent = ? AND from_relay = ? AND at >= ?",
                     (to_agent, from_relay, day)).fetchone()[0] >= PER_RELAY_PER_AGENT_DAILY:
         return False
-    if conn.execute("SELECT COUNT(*) FROM remote_mention_log WHERE author_address = ? AND at >= ?",
-                    (author, (now - timedelta(hours=1)).isoformat())).fetchone()[0] >= PER_AUTHOR_HOURLY:
+    if conn.execute("SELECT COUNT(*) FROM remote_mention_log WHERE from_relay = ? AND author_address = ? AND at >= ?",
+                    (from_relay, author, (now - timedelta(hours=1)).isoformat())).fetchone()[0] >= PER_AUTHOR_HOURLY:
         return False
     conn.execute("INSERT INTO remote_mention_log (to_agent, from_relay, post_id, author_address, topic_key, at) "
                  "VALUES (?,?,?,?,?,?)", (to_agent, from_relay, post_id, author, key, now.isoformat()))
@@ -119,7 +119,7 @@ async def receive(peer: str, body: dict[str, Any]) -> bool:
     slug, host = wire.split_topic(key)
     if not (name and slug and host and same_host(host, host_of(peer)) and "@" in author):
         return False
-    if len(post_id) > 64:
+    if not post_id or len(post_id) > 64:       # no id, no once-only check: refused
         return False
     preview = " ".join(str(body.get("preview") or "").split())
     with rs.DB_LOCK, rs.get_db() as conn:

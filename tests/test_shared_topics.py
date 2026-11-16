@@ -65,11 +65,11 @@ class Peer:
         self.priv = Ed25519PrivateKey.generate()
         self.pub = self.priv.public_key().public_bytes_raw().hex()
 
-    def headers(self, method: str, path: str, body: bytes = b"", *, proto=None, to_host=None) -> dict:
-        ts = str(int(time.time()))
-        sig = self.priv.sign(fd._request_bytes(method, to_host or own_host(), path, ts, body)).hex()
-        h = {"X-Emporia-Relay": self.url, "X-Emporia-Relay-Time": ts, "X-Emporia-Relay-Signature": sig,
-             "Content-Type": "application/json"}
+    def headers(self, method: str, path: str, body: bytes = b"", *, proto=None, to_host=None, nonce=None) -> dict:
+        ts, nonce = str(int(time.time())), nonce or secrets.token_hex(16)
+        sig = self.priv.sign(fd._request_bytes(method, to_host or own_host(), path, ts, nonce, body)).hex()
+        h = {"X-Emporia-Relay": self.url, "X-Emporia-Relay-Time": ts, "X-Emporia-Relay-Nonce": nonce,
+             "X-Emporia-Relay-Signature": sig, "Content-Type": "application/json"}
         if proto is not False:
             h["X-Emporia-Relay-Protocol"] = str(rs.CARD_VERSION if proto is None else proto)
         return h
@@ -77,7 +77,7 @@ class Peer:
     def call(self, client, method: str, path: str, payload=None, **kw):
         body = json.dumps(payload).encode() if payload is not None else b""
         return client.request(method, path, content=body or None,
-                              headers=self.headers(method, path.partition("?")[0], body, **kw))
+                              headers=self.headers(method, path, body, **kw))
 
     def sign_batch(self, key: str, items: list) -> dict:
         sig = self.priv.sign(identity.federation_signable_bytes(self.url, key, items)).hex()
@@ -257,7 +257,7 @@ def test_forgeries_are_refused(host, client):
     key = host.key
     # an unlinked relay
     dan = RemoteAgent(d)
-    assert _hand_in(client, d, host.slug, dan, dan.post(key)).status_code == 403
+    assert _hand_in(client, d, host.slug, dan, dan.post(key)).status_code == 404
     # B speaks only for its own agents: carol is homed on C (her post names C as origin)
     assert _hand_in(client, b, host.slug, carol, carol.post(key)).status_code == 403
     # carol's post claiming B as origin, B vouching for carol's keys under B's name: the signature is carol's
@@ -290,7 +290,7 @@ def test_forgeries_are_refused(host, client):
     body = json.dumps({"post": bob.post(key), "sender": bob.record}).encode()
     path = f"/federation/v1/topics/{host.slug}/posts"
     r = client.post(path, content=body, headers=b.headers("POST", path, body, to_host="elsewhere.test"))
-    assert r.status_code == 401
+    assert r.status_code == 404           # a stranger and a bad signature get the one answer a missing path gets
 
 
 def test_what_may_not_cross_is_refused_on_arrival(host, client):
@@ -496,7 +496,7 @@ def test_only_the_host_of_a_topic_tells_of_mentions_in_it(home, client, monkeypa
     monkeypatch.setitem(rs._FEDERATION_PEER_PUBKEYS, other.url, other.pub)
     assert _notice(client, home, x, peer=other).status_code == 404
     # an unlinked relay, an old protocol, and a message of another type
-    assert _notice(client, home, x, peer=Peer("http://u-relay.test")).status_code == 403
+    assert _notice(client, home, x, peer=Peer("http://u-relay.test")).status_code == 404
     assert _notice(client, home, x, proto=3).status_code == 426
     r = home.h.call(client, "POST", "/federation/v1/notices", {"type": "poke", "to_agent": x})
     assert r.status_code == 404
@@ -800,3 +800,78 @@ def test_scan_relays_reads_a_directory_and_finds_the_shared_topic_by_its_hosts_r
     assert bt["relay_id"] == b.card()["relay_id"] and bt["title"] == "B's town"
     assert {e["relay"]["id"] for e in out} == {rs.relay_id(), b.card()["relay_id"]}      # the unlisted C is absent
     assert [e for e in out if e["relay"]["id"] == b.card()["relay_id"]][0]["relay"]["says"] == {"agents": 7}
+
+
+def test_a_bare_slug_post_of_another_origin_is_not_this_topics(carrier):
+    """A post an agent of C signed for C's own topic of the same name (bare slug) is a replay when the host serves it
+    in its topic; the same goes for a forged post claiming a third origin."""
+    carol = RemoteAgent(Peer(C_URL))
+    replay = carol.post(carrier.slug, "meant for c's own topic")
+    forged = RemoteAgent(Peer(C_URL)).post(carrier.slug, "never said", origin="http://z-relay.test")
+    ok = RemoteAgent(carrier.h).post(carrier.slug, "the host's own")
+    for p in (replay, forged, ok):
+        carrier.fake.add(p)
+    out = _pull(carrier)[carrier.key]
+    assert out["kept"] == 1 and out["refused"] == 2, out
+
+
+def test_a_third_relays_agent_under_another_key_than_the_pinned_one_is_refused(carrier):
+    carol = RemoteAgent(Peer(C_URL))
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("INSERT INTO remote_agents (address, peer_url, public_key_hex, encryption_public_key, "
+                     "encryption_key_signature, updated_at, stable_id, key_log_json, encryption_key_at) "
+                     "VALUES (?,?,?,?,?,?,?,?,?)", (carol.address, C_URL, "ab" * 32, "cd" * 32, "", "now",
+                                                    wire.stable_id_for("ab" * 32), "[]", ""))
+    carrier.fake.add(carol.post(carrier.key, "under a key that is not hers"))
+    out = _pull(carrier)[carrier.key]
+    assert out["kept"] == 0 and out["refused"] == 1, out
+
+
+def test_the_feed_leaves_out_what_a_local_stranger_may_not_read_and_what_expired(host, monkeypatch):
+    """Gated (hangs from a room or game), sealed-adjacent and expired posts do not leave the relay. Verification is
+    stubbed so only the feed's own gates decide."""
+    from tests.topic_posts import seed_post_row
+    at = datetime.now(UTC).isoformat()
+    seed_post_row(host.owner, host.slug, "open one", at)
+    seed_post_row(host.owner, host.slug, "room reply", at, reply_to="room:rm_secret")
+    seed_post_row(host.owner, host.slug, "game reply", at, reply_to="session:ses_private")
+    old = seed_post_row(host.owner, host.slug, "expired", at)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE posts SET expires_at = 1 WHERE post_id = ?", (old,))
+    monkeypatch.setattr(wire, "post_verdict", lambda *a, **k: "")
+    page = shared_topics.feed_page(host.slug, 0)
+    assert [p["text"] for p in page["posts"]] == ["open one"]
+    assert page["cursor"] > 0      # the cursor still moves past what was left out
+
+
+def test_a_peer_request_is_accepted_once_and_covers_its_query(host, client):
+    b = host.peers["b"]
+    path = f"/federation/v1/topics/{host.slug}/posts?after=0"
+    headers = b.headers("GET", path)
+    assert client.get(path, headers=headers).status_code == 200
+    assert client.get(path, headers=headers).status_code == 404          # the same request again: a replay
+    # the query is signed: a captured request with another `after` is not the request that was signed
+    headers = b.headers("GET", path)
+    assert client.get(path.replace("after=0", "after=5"), headers=headers).status_code == 404
+    # a request with no nonce is not one
+    bare = b.headers("GET", path)
+    del bare["X-Emporia-Relay-Nonce"]
+    assert client.get(path, headers=bare).status_code == 404
+    # every refusal of a stranger on the peer routes is the one 404; only a linked relay on an old protocol hears 426
+    assert host.peers["d"].call(client, "GET", "/federation/v1/topics").status_code == 404
+    assert client.get("/federation/v1/topics").status_code == 404
+    assert b.call(client, "GET", "/federation/v1/topics", proto=3).status_code == 426
+
+
+def test_a_mention_notice_needs_a_post_id_and_one_relay_cannot_spend_anothers_author_budget(home, client):
+    x = home.x
+    _post_in_carried(client, home, x)
+    body = {"type": "mention", "to_agent": x, "topic": home.key, "author_address": "q@far.test", "preview": "hey"}
+    assert home.h.call(client, "POST", "/federation/v1/notices", body).status_code == 404
+    with rs.DB_LOCK, rs.get_db() as conn:
+        now = datetime.now(UTC)
+        for i in range(remote_mentions.PER_AUTHOR_HOURLY):
+            conn.execute("INSERT INTO remote_mention_log (to_agent, from_relay, post_id, author_address, topic_key, at) "
+                         "VALUES (?,?,?,?,?,?)", (x, "evil.test", f"p{i}", "bob@far.test", home.key, now.isoformat()))
+        assert not remote_mentions.decide(conn, x, "evil.test", "bob@far.test", home.key, "p_new")
+        assert remote_mentions.decide(conn, x, host_of(H_URL), "bob@far.test", home.key, "p_real")

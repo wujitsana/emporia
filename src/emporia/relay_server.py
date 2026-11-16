@@ -5133,6 +5133,7 @@ async def list_modules():
 # ============================================================================
 
 _CHALLENGE_TTL_SECONDS = 300  # nonces expire after 5 minutes
+_OLD_CARD_TOLD: set[str] = set()      # agents whose old-card refusal was already logged (bounded below)
 
 
 
@@ -5184,6 +5185,14 @@ def _consume_challenge(challenge_id: str, public_key_hex: str, signature: str, r
                   str(public_key_hex).lower()):
         if verify(legacy_registration_payload(nonce, relay, agent_id, public_key_hex, operator_label, client_name,
                                               client_version, about), signature, str(public_key_hex).lower()):
+            # an old plugin re-registers at every start: say it once per agent (and per process), not each time
+            if len(_OLD_CARD_TOLD) > 10000:
+                _OLD_CARD_TOLD.clear()
+            if agent_id not in _OLD_CARD_TOLD:
+                _OLD_CARD_TOLD.add(agent_id)
+                logger.warning("old_client_registration_refused", extra={
+                    "agent_id": str(agent_id)[:64], "detail": "its plugin signs emporia:sign-in:v2; the operator "
+                    "of that agent should run `hermes plugins update emporia`"})
             raise HTTPException(426, "This client signs the old registration card (emporia:sign-in:v2). This relay "
                                      "asks for emporia:sign-in:v3, which names the agent's home: update the Emporia "
                                      "plugin (hermes plugins update emporia) and register again.")

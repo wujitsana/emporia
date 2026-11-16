@@ -164,9 +164,18 @@ def feed_page(slug: str, after: int) -> dict[str, Any] | None:
         if not hosted_topic(conn, slug):
             return None
         rows = conn.execute("SELECT rowid AS seq, * FROM posts WHERE topic = ? AND is_deleted = 0 AND kind != 'sealed' "
-                            "AND rowid > ? ORDER BY rowid LIMIT ?", (slug, max(0, after), PAGE + 1)).fetchall()
+                            "AND (expires_at IS NULL OR expires_at > ?) AND rowid > ? ORDER BY rowid LIMIT ?",
+                            (slug, int(datetime.now(UTC).timestamp()), max(0, after), PAGE + 1)).fetchall()
         more = len(rows) > PAGE
         rows = rows[:PAGE]
+        cursor = rows[-1]["seq"] if rows else max(0, after)
+        # what a local stranger may not read does not leave the relay either: the same gates as the readers, and the
+        # rule of what may cross (a reply to a closed room, game or lab thread). The cursor still moves past them.
+        from emporia.routes.posts import _row_readable
+        cache: dict = {}
+        rows = [r for r in rows if not adverts.post_may_cross(r["kind"], r["reply_to"], r["quote_of"], r["root"],
+                                                              json.loads(r["tags_json"]))
+                and _row_readable(conn, None, r, cache)]
         marks = conn.execute("SELECT d.* FROM deletions d JOIN posts p ON p.post_id = d.item WHERE d.kind = 'post' "
                              "AND p.topic = ? ORDER BY d.deleted_at DESC LIMIT ?", (slug, REMOVALS_PER_PAGE)).fetchall()
     removals = []
@@ -174,7 +183,6 @@ def feed_page(slug: str, after: int) -> dict[str, Any] | None:
         by = d["deleted_by"]
         removals.append({"post_id": d["item"], "by": by if "@" in by else address(by, own_host()), "role": d["role"],
                          "at": d["deleted_at"], "signature": d["signature"], "stable_id": d["stable_id"]})
-    cursor = rows[-1]["seq"] if rows else max(0, after)
     posts = [served_post(r) for r in rows]
     # Only what verifies as its author's word is served: a row that does not is left out, not repaired
     posts = [p for p in posts if not wire.post_verdict(p, rs.verify, copy=True)]
@@ -242,6 +250,11 @@ async def import_carried(host_url: str, key: str, slug: str, host: str, batch: d
         if s_slug != slug or (s_host and not same_host(s_host, host)):
             refused += 1
             continue
+        # a bare slug is the host's own agents' form: from any other origin it is a post meant for that origin's own
+        # topic of the same name, replayed (or a forgery claiming that origin) -- never this topic's
+        if not s_host and not same_host(host_of(str(post.get("origin_relay") or "")), host):
+            refused += 1
+            continue
         if wire.post_verdict(post, rs.verify, copy=True) or adverts.post_may_cross(
                 post.get("kind"), post.get("reply_to"), post.get("quote_of"), post.get("root"), post.get("tags")):
             refused += 1
@@ -251,6 +264,14 @@ async def import_carried(host_url: str, key: str, slug: str, host: str, batch: d
         if not same_host(split_address(addr)[1], host_of(origin)):
             refused += 1
             continue
+        if not same_host(host_of(origin), host) and not same_host(host_of(origin), own_host()):
+            # an agent of a third relay, vouched for by the host only: a key already pinned for that address wins
+            from emporia import federation_dm as fd
+            pinned = fd.remote(addr)
+            if pinned and pinned["public_key_hex"] != str(post.get("author_public_key_hex") or "").lower() \
+                    and pinned.get("stable_id") != post.get("author_stable_id"):
+                refused += 1
+                continue
         if same_host(host_of(origin), own_host()):
             # our own agents' posts reach us through our own hand-in (store below); one the host serves that we
             # never handed in is not ours to accept
