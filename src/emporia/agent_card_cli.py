@@ -226,9 +226,9 @@ def x_link(name: str, handle: str, post: str) -> int:
 
 
 
-def _chain_run(t: _Target, fn: str, *args: Any, mod: str = "chain_link") -> dict[str, Any]:
-    """`chain_link.<fn>(*args)` (or `<mod>.<fn>`) as the agent; the answer, or {"error": ...}."""
-    argtext = ", ".join(repr(a) for a in args)
+def _chain_run(t: _Target, fn: str, *args: Any, mod: str = "chain_link", **kwargs: Any) -> dict[str, Any]:
+    """`chain_link.<fn>(*args, **kwargs)` (or `<mod>.<fn>`) as the agent; the answer, or {"error": ...}."""
+    argtext = ", ".join([repr(a) for a in args] + [f"{k}={v!r}" for k, v in kwargs.items()])
     try:
         r = t.run(f"import json\nfrom emporia import {mod} as c\n"
                   "try:\n"
@@ -472,9 +472,9 @@ def _cmd_chain(chain: str) -> str:
 
 def register_8004(name: str, chain: str, tx: str = "", sender: str = "", yes: bool = False,
                   browser: bool = False, wait: bool = False, from_agent_wallet: bool = False,
-                  max_gas: int = 0) -> int:
+                  max_gas: int = 0, no_image: bool = False) -> int:
     """`emporia agent register-8004 NAME --chain C [--from 0x..] [--browser | --tx HASH | --from-agent-wallet --max-gas N]
-    [--wait]`: the own-wallet path. `--wait` (with --tx, --browser or --from-agent-wallet) waits for the receipt to be
+    [--no-image] [--wait]`: the own-wallet path. The registration carries the agent's token picture unless `--no-image`. `--wait` (with --tx, --browser or --from-agent-wallet) waits for the receipt to be
     safe and the block finalized, then links."""
     t = _link_target("register-8004", name)
     if t is None:
@@ -494,15 +494,18 @@ def register_8004(name: str, chain: str, tx: str = "", sender: str = "", yes: bo
     if max_gas and not from_agent_wallet:
         print("agent register-8004: --max-gas goes with --from-agent-wallet")
         return 1
+    if no_image and tx:
+        print("agent register-8004: --no-image shapes the registration that gets sent; --tx reads one already sent")
+        return 1
     if wait and not (tx or browser or from_agent_wallet):
         print("agent register-8004: --wait goes with --tx (a transaction already sent), --browser or "
               "--from-agent-wallet (which send it)")
         return 1
     if from_agent_wallet:
-        return _register_from_agent_wallet(t, name, chain, yes, max_gas, wait)
+        return _register_from_agent_wallet(t, name, chain, yes, max_gas, wait, no_image)
     if tx:
         return _register_after(t, name, chain, tx, yes, wait=wait)
-    out = _chain_run(t, "build", chain, sender, mod="chain_register")
+    out = _chain_run(t, "build", chain, sender, mod="chain_register", no_image=no_image)
     if not out.get("success"):
         print(f"agent register-8004: {out.get('error')}")
         return 1
@@ -529,13 +532,14 @@ def _ask_to_send(question: str) -> bool:
     return True
 
 
-def _register_from_agent_wallet(t: _Target, name: str, chain: str, yes: bool, max_gas: int, wait: bool) -> int:
+def _register_from_agent_wallet(t: _Target, name: str, chain: str, yes: bool, max_gas: int, wait: bool,
+                                no_image: bool = False) -> int:
     """`--from-agent-wallet`: quote (read-only), show the cost, ask, then send one transaction from the agent's own wallet
     and go on as `--tx` does. The wallet that sends owns the new identity, and signs its link itself."""
     from emporia import chain_send
     if not _person_at_terminal("register-8004"):
         return 1
-    out = _chain_run(t, "quote_register", chain, max_gas or 0, mod="chain_register")
+    out = _chain_run(t, "quote_register", chain, max_gas or 0, mod="chain_register", no_image=no_image)
     if not out.get("success"):
         print(f"agent register-8004: {out.get('error')}")
         return 1
@@ -545,7 +549,7 @@ def _register_from_agent_wallet(t: _Target, name: str, chain: str, yes: bool, ma
         print(f"  Note: the registration points at {out['relay']}, which is this machine. Other people cannot reach "
               "it; set the agent's relay to its public address first if that matters.\n")
     print("  The registration file that goes on-chain:")
-    print(json.dumps(out["file"], indent=2))
+    print(_file_text(out))
     print(f"\n  to:          {out['registry']}  (the ERC-8004 identity registry, chain id {out['chain_id']})")
     print(f"  function:    register(string agentURI), selector {out['selector']}")
     print(f"  checked:     the registry would accept it and mint agent #{out['would_register_id']} "
@@ -555,7 +559,7 @@ def _register_from_agent_wallet(t: _Target, name: str, chain: str, yes: bool, ma
     if not _ask_to_send(f"Send it from {out['wallet']} on {out['chain_label']}? [y/N]"):
         return 0
     sent = _chain_run(t, "send_register", chain, max_gas, out["calldata_digest"], out["quote"]["max_cost_wei"],
-                      mod="chain_register")
+                      mod="chain_register", no_image=no_image)
     if not sent.get("success"):
         print(f"agent register-8004: {sent.get('error')}")
         if sent.get("timeout"):
@@ -570,6 +574,19 @@ AGENT_WALLET_EXPLAIN = ("The agent's own Emporia EVM wallet sends the transactio
                         "sends: one transaction, no more. Afterwards the registration is public.")
 
 
+def _file_text(out: dict[str, Any]) -> str:
+    """The registration file as shown: the picture's long address is replaced by a line saying it is included and how
+    large it is (or that it is left out), so the file stays readable. The calldata and agentURI carry the whole file."""
+    shown = dict(out["file"])
+    n = out.get("picture_bytes") or 0
+    if "image" in shown:
+        shown["image"] = f"(the agent's token picture, an SVG of {n} bytes, on-chain in the data: address)"
+        note = f"\n  Picture: included, the agent's token picture ({n} bytes of SVG, inside the registration)."
+    else:
+        note = "\n  Picture: left out (--no-image); the registration has no image."
+    return json.dumps(shown, indent=2) + note
+
+
 def _print_register(name: str, out: dict[str, Any]) -> None:
     from emporia import networks
     print(f"  Register {name} on ERC-8004, {out['chain_label']}\n")
@@ -578,7 +595,7 @@ def _print_register(name: str, out: dict[str, Any]) -> None:
         print(f"  Note: the registration points at {out['relay']}, which is this machine. Other people cannot reach "
               "it; set the agent's relay to its public address first if that matters.\n")
     print("  The registration file that goes on-chain:")
-    print(json.dumps(out["file"], indent=2))
+    print(_file_text(out))
     print("\n  Send this contract call from your own wallet (value 0):")
     print(f"    chain id:   {out['chain_id']}  ({out['chain_label']})")
     print(f"    to:         {out['registry']}  (the ERC-8004 identity registry)")

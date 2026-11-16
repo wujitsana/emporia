@@ -66,9 +66,18 @@ def _about() -> str:
         return ""
 
 
+def _picture_bytes(file: dict[str, Any]) -> int:
+    """The size of the SVG the registration carries as its image; 0 when it has none."""
+    import base64
+    img = file.get("image")
+    return len(base64.b64decode(img.split(",", 1)[1])) if isinstance(img, str) and ";base64," in img else 0
+
+
 def build(chain: str, sender: str = "", *, read: Any = None, stable: str | None = None, about: str | None = None,
-          relay: str | None = None, x402: bool | None = None, image: str | None = None) -> dict[str, Any]:
-    """The registration file, the call and what the chain says about it (a simulation and a gas estimate)."""
+          relay: str | None = None, x402: bool | None = None, image: str | None = None,
+          no_image: bool = False) -> dict[str, Any]:
+    """The registration file, the call and what the chain says about it (a simulation and a gas estimate). Unless
+    `no_image`, the file carries the agent's token picture (an `image` given wins); the estimate is for that file."""
     if not erc8004.available():
         raise LinkError("these checks need eth-account (the x402 extra): pip install 'emporia[x402]'")
     caip2 = _chain(chain)
@@ -77,6 +86,8 @@ def build(chain: str, sender: str = "", *, read: Any = None, stable: str | None 
         from emporia import mcp_server as m
         relay = m.RELAY_URL
     try:
+        if image is None and not no_image:
+            image = reg.token_picture(stable_id)
         file = reg.registration_file(me, _about() if about is None else about, relay, stable_id,
                                      _x402_support() if x402 is None else x402, image)
         uri = reg.data_uri(file)
@@ -90,7 +101,7 @@ def build(chain: str, sender: str = "", *, read: Any = None, stable: str | None 
                            "registry": registry, "agent": me, "stable_id": stable_id, "file": file, "agent_uri": uri,
                            "calldata": "0x" + data.hex(), "selector": "0x" + reg.SEL_REGISTER_URI.hex(),
                            "sender_for_estimate": who, "explain": EXPLAIN, "relay": relay,
-                           "local_relay": _is_local(relay)}
+                           "local_relay": _is_local(relay), "picture_bytes": _picture_bytes(file)}
     try:
         out["would_register_id"] = str(reg.decode_registered_id(reader.simulate(registry, data, who)))
         out["gas_estimate"] = reader.estimate_gas(registry, data, who)
@@ -126,7 +137,7 @@ def _digest(data: bytes) -> str:
 
 def quote_register(chain: str, max_gas: Any, *, read: Any = None, signer: Any = None, stable: str | None = None,
                    about: str | None = None, relay: str | None = None, x402: bool | None = None,
-                   image: str | None = None) -> dict[str, Any]:
+                   image: str | None = None, no_image: bool = False) -> dict[str, Any]:
     """`build` with the agent's own wallet as the sender, plus what sending it would cost at most (read-only):
     the answer of `chain_send.quote` under `quote`, and the calldata's digest the send must match."""
     from emporia import chain_send
@@ -134,7 +145,8 @@ def quote_register(chain: str, max_gas: Any, *, read: Any = None, signer: Any = 
         raise LinkError("these checks need eth-account (the x402 extra): pip install 'emporia[x402]'")
     _chain(chain)
     wallet = signer or own_wallet()
-    out = build(chain, wallet.address, read=read, stable=stable, about=about, relay=relay, x402=x402, image=image)
+    out = build(chain, wallet.address, read=read, stable=stable, about=about, relay=relay, x402=x402, image=image,
+                no_image=no_image)
     data = bytes.fromhex(out["calldata"][2:])
     out["wallet"] = wallet.address
     out["calldata_digest"] = _digest(data)
@@ -145,14 +157,14 @@ def quote_register(chain: str, max_gas: Any, *, read: Any = None, signer: Any = 
 
 def send_register(chain: str, max_gas: Any, expect_digest: str, confirmed_cost_wei: int, *, read: Any = None, signer: Any = None,
                   stable: str | None = None, about: str | None = None, relay: str | None = None,
-                  x402: bool | None = None, image: str | None = None) -> dict[str, Any]:
+                  x402: bool | None = None, image: str | None = None, no_image: bool = False) -> dict[str, Any]:
     """Quote again, refuse if the call is no longer the one the person confirmed, then send exactly one transaction
     from the agent's own wallet. The answer is the hash; `confirm` takes it from there."""
     from emporia import chain_send
     chain_link.person_only("sending from the agent's own wallet")
     wallet = signer or own_wallet()
     q = quote_register(chain, max_gas, read=read, signer=wallet, stable=stable, about=about, relay=relay, x402=x402,
-                       image=image)
+                       image=image, no_image=no_image)
     if q["quote"]["max_cost_wei"] > int(confirmed_cost_wei or 0):
         raise LinkError("the fee rose since you confirmed it (the worst case is now "
                         f"{chain_send.eth(q['quote']['max_cost_wei'])}, you confirmed {chain_send.eth(int(confirmed_cost_wei or 0))}): "

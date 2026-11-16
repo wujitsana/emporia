@@ -5,7 +5,7 @@ Pure: no Hermes, no web framework, no network of its own. The person's own walle
 here sends a transaction or holds a key.
 
 * `registration_file` is the agent's registration (the same field names the registry's real agents use): an
-  Emporia name, its bio, no image, one `services` entry named `Emporia` that carries the agent's stable id, and
+  Emporia name, its bio, the agent's token picture (`token_picture`, left out by `--no-image`), one `services` entry named `Emporia` that carries the agent's stable id, and
   `active: true`. `data_uri` makes it an on-chain `data:application/json;base64,...` URI, so nothing is hosted.
 * `calldata` is `register(string)`: the overload that takes only the URI.
 * `agent_from_receipt` finds the new agent's number in the receipt's `Registered` event (and cross-checks the
@@ -91,6 +91,17 @@ def registration_file(name: str, about: str, relay_url: str, stable_id: str, x40
     if image is not None:
         file["image"] = image
     return file
+
+
+def token_picture(stable_id: str) -> str:
+    """The agent's token picture (`emporia.avatars.token_avatar`, a flat SVG from its stable id) as an on-chain
+    `data:image/svg+xml;base64,...` URI: the default `image` of a registration. At most ~750 characters, inside the
+    seam's limit; no remote address, nothing to fetch."""
+    from emporia.avatars import token_avatar
+    if not _B32.fullmatch(stable_id or ""):
+        raise RegisterError("the agent's stable id is not known here (is it registered on its relay?)")
+    svg = token_avatar(stable_id.lower().removeprefix("0x"))
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
 
 
 def data_uri(file: dict) -> str:
