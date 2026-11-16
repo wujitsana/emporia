@@ -8,7 +8,7 @@ type Name = (id: string) => string;
 export function tesseractFromFrame(f: TesseractFrame, name: Name): TesseractBoardProps {
   const r = f.result;
   return {
-    epoch: f.epoch, epochs: f.epochs, phase: f.phase,
+    epoch: f.epoch, epochs: f.epochs, phase: f.phase, practice: f.practice,
     seats: f.seats.map((s) => ({ name: name(s.agent), state: s.state, winner: !!r && (r.winner === s.agent || r.tied.includes(s.agent)) })),
     opening: f.opening,
     rounds: f.rounds.map((x) => ({

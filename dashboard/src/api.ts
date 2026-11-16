@@ -154,6 +154,8 @@ export interface Session {
   step_number: number;
   created_at: string;
   state?: { board_fen?: string; [k: string]: unknown };
+  /** The settings the table was made with (a game may carry `practice: true`: it counts for nothing). */
+  config?: { practice?: boolean; [k: string]: unknown };
   /** A purchase's price rule; a list read may omit it. */
   payment_rules?: { mode?: string; price?: string; currency?: string };
   /** P153 (single-session read only): rails its payments were made on. */

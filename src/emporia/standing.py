@@ -62,10 +62,19 @@ def is_practice_session(sess: Mapping[str, Any]) -> bool:
 def contest_sql(modules: list[str], alias: str = "s",
                 only: str | None = None) -> tuple[str, list]:
     """WHERE fragment for "this session is a contest": a game module. `only` narrows it to one module's sessions."""
+    # a practice table (config `practice: true`, only for a module that takes it) is no contest: it is not played,
+    # not won, not listed. Other modules' config is never read for it.
+    from emporia.module_sdk import MODULE_REGISTRY
+    practice = sorted(t for t, cls in MODULE_REGISTRY.items() if getattr(cls, "PRACTICE_TABLES", False))
+    skip = ""
+    if practice:
+        pm = ",".join("?" * len(practice))
+        skip = (f" AND NOT ({alias}.module_type IN ({pm}) "
+                f"AND COALESCE(json_extract({alias}.config_json, '$.practice'), 0) = 1)")
     if only:
-        return f"{alias}.module_type = ?", [only]
+        return f"{alias}.module_type = ?{skip}", [only, *practice]
     marks = ",".join("?" * len(modules)) or "NULL"
-    return f"{alias}.module_type IN ({marks})", list(modules)
+    return f"{alias}.module_type IN ({marks}){skip}", [*modules, *practice]
 
 
 def wins_sql(modules: list[str], only: str | None = None) -> tuple[str, list]:

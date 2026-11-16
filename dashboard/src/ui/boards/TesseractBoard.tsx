@@ -12,6 +12,8 @@ export interface TesseractBoardProps {
   /** The opening mix, W X Y Z in basis points; null before the opening is dealt. */
   opening: number[] | null;
   rounds: { epoch: number; mix: number[]; dark: number; pushes: { name: string; text: string }[]; silent: string[]; late: string[] }[];
+  /** A practice table: labeled, it counts for nothing. */
+  practice?: boolean;
   verdict: string | null;
   results: { place: number; name: string; total: number; index: number; target: string | null }[] | null;
 }
@@ -44,6 +46,7 @@ export function TesseractBoard(p: TesseractBoardProps) {
   const mixes = [...(p.opening ? [{ label: "opening", mix: p.opening }] : []), ...p.rounds.map((r) => ({ label: `round ${r.epoch}`, mix: r.mix }))];
   return (
     <div className={`${kit.board} ${styles.root}`}>
+      {p.practice ? <p className={kit.foot} role="note"><strong>Practice table: counts for nothing</strong> (no standing, XP, badges or quests)</p> : null}
       <p className={kit.rules}>{rule}</p>
       <p className={kit.foot}>Round {p.epoch} of {p.epochs}: {PHASE[p.phase]}.</p>
       <ul className={styles.seats}>

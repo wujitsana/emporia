@@ -37,6 +37,11 @@ def _axes(values: Any) -> dict[str, int]:
     return dict(zip(core.AXES, (int(v) for v in values), strict=True))
 
 
+def _practice_mark(sess: dict[str, Any]) -> dict[str, Any]:
+    """The label every output of a practice table carries, so a reader never takes it for a counted game."""
+    return {"practice": True, "practice_note": T.PRACTICE_NOTE} if T.is_practice((sess or {}).get("config")) else {}
+
+
 class Table:
     def __init__(self, aid: str, *, get: Callable[[str], tuple[int, Any]],
                  act: Callable[..., dict[str, Any]], private: Callable[[dict[str, Any]], dict[str, Any]],
@@ -81,9 +86,7 @@ class Table:
         data = (sess.get("state") or {}).get("data") or {}
         out: dict[str, Any] = {"success": True, "game": GAME, "session_id": session_id, "status": sess.get("status"),
                                "players": sess.get("participants"), "untrusted": UNTRUSTED}
-        if (sess.get("config") or {}).get("practice") is True:
-            out["practice"] = True
-            out["practice_note"] = T.PRACTICE_NOTE
+        out.update(_practice_mark(sess))
         if sess.get("status") == "waiting":
             out["waiting"] = (f"{len(sess.get('participants') or [])} of "
                               f"{(sess.get('config') or {}).get('players', T.DEFAULTS['players'])} seated")
@@ -141,7 +144,8 @@ class Table:
         over, res = mod.is_terminal(SessionState.from_dict(sess["state"]))
         keep = ("winner", "outcome_type", "termination", "tied", "points", "table_index", "order", "out", "unrevealed",
                 "targets", "reason")
-        return {k: res[k] for k in keep if k in res} if over else {}
+        out = {k: res[k] for k in keep if k in res} if over else {}
+        return {**out, **_practice_mark(sess)} if out else out
 
     def _due(self, board: dict[str, Any]) -> str | None:
         """The tool this agent should call now, or None (it waits on the others, or is out)."""
@@ -200,7 +204,7 @@ class Table:
             with self._sealed(session_id) as saved:
                 saved.pop(str(epoch), None)
             return {"success": False, "error": res.get("error") or "the relay refused the seal", "detail": res.get("detail")}
-        return {"success": True, "sealed": f"round {epoch}", "push": clean["push"],
+        return {"success": True, **_practice_mark(sess), "sealed": f"round {epoch}", "push": clean["push"],
                 "next": "once everyone has sealed, tesseract_open(session_id) opens it (no thinking needed)",
                 "step_number": res.get("step_number")}
 
@@ -209,18 +213,19 @@ class Table:
         if sess is None:
             return {"success": False, "error": why}
         if sess.get("status") != "active":
-            return {"success": True, "done": f"the table is {sess.get('status')}", "result": self._result(
+            return {"success": True, **_practice_mark(sess), "done": f"the table is {sess.get('status')}", "result": self._result(
                 (sess.get("state") or {}).get("data") or {}, sess)}
         data = (sess.get("state") or {}).get("data") or {}
         fl = T.flow(data, self._now())
+        mark = _practice_mark(sess)
         if self.aid not in fl["pending"]:
-            return {"success": True, "nothing_due": True, "phase": fl["phase"], "epoch": min(fl["epoch"], T.EPOCHS),
+            return {"success": True, **mark, "nothing_due": True, "phase": fl["phase"], "epoch": min(fl["epoch"], T.EPOCHS),
                     "waiting_on": fl["pending"][:6],
                     "note": ("you are out of this game" if self.aid in fl["out"] else
                              "nothing is due from you now; the others are still to act")}
         e = fl["epoch"]
         if fl["phase"] == "seal":
-            return {"success": True, "nothing_due": True, "phase": "seal", "epoch": e,
+            return {"success": True, **mark, "nothing_due": True, "phase": "seal", "epoch": e,
                     "note": "your push for this round is not sealed yet: tesseract_push(session_id, {...})"}
         if fl["phase"] == "open":
             with self._sealed(session_id) as saved:
@@ -233,7 +238,7 @@ class Table:
             if not res.get("success"):
                 return {"success": False, "error": res.get("error") or "the relay refused the open",
                         "detail": res.get("detail")}
-            return {"success": True, "opened": f"round {e}", "push": rec["move"]["push"],
+            return {"success": True, **mark, "opened": f"round {e}", "push": rec["move"]["push"],
                     "next": "the round resolves when the drand round is published; then read tesseract(session_id)"}
         with self._secret(session_id) as saved:    # the secrets phase: the secret never leaves this machine until now
             rec = dict(saved) if saved else None
@@ -244,7 +249,7 @@ class Table:
         if not res.get("success"):
             return {"success": False, "error": res.get("error") or "the relay refused the reveal",
                     "detail": res.get("detail")}
-        return {"success": True, "revealed": "your secret", "is_terminal": bool(res.get("is_terminal")),
+        return {"success": True, **mark, "revealed": "your secret", "is_terminal": bool(res.get("is_terminal")),
                 **({"outcome": {k: v for k, v in (res.get("outcome") or {}).items()
                                 if k in ("winner", "outcome_type", "points", "table_index", "order")}}
                    if res.get("is_terminal") else {"next": "the table ends when everyone has revealed or the window "

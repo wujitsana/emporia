@@ -961,7 +961,7 @@ def _sheet_body(agent_id: str) -> dict:
     deals, abandoned = [], []
     for row in rows:
         sess = rs._session_row_to_dict(row)
-        if agent_id not in sess["participants"]:
+        if agent_id not in sess["participants"] or is_practice_session(sess):    # practice counts nothing
             continue
         if sess["module_type"] in game_types and sess["status"] == "abandoned":
             abandoned.append({"participants": sess["participants"], "current_agent": quitter_of(sess),
@@ -1080,7 +1080,7 @@ async def counterparty_record(agent_id: str):
     seller = {"sales": 0, "paid": 0, "disputed": 0, "never_delivered": 0, "cancelled": 0}
     for row in rows:
         sess = rs._session_row_to_dict(row)
-        if agent_id not in sess["participants"]:
+        if agent_id not in sess["participants"] or is_practice_session(sess):    # practice counts nothing
             continue
         try:
             module = get_interaction_module(sess["module_type"])

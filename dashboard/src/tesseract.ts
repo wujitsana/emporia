@@ -48,6 +48,8 @@ export interface TesseractFrame {
   rounds: TesseractRound[];
   secrets: string[];
   result: TesseractResult | null;
+  /** A practice table: it counts for nothing (no standing, XP, badges or quests). */
+  practice: boolean;
 }
 
 type Rec = Record<string, unknown>;
@@ -141,7 +143,8 @@ export function tesseractFrameAt(session: Session, acts: SessionAction[], i: num
     else state = secrets.includes(agent) || phase === "done" ? "opened" : "waiting";
     return { agent, state };
   });
-  return { kind: "tesseract", epoch: Math.min(epoch, EPOCHS), epochs: EPOCHS, phase, players, seats, opening, rounds: shown, secrets, result };
+  return { kind: "tesseract", epoch: Math.min(epoch, EPOCHS), epochs: EPOCHS, phase, players, seats, opening, rounds: shown, secrets, result,
+    practice: session.config?.practice === true || obj(obj(session.state).data).practice === true };
 }
 
 /** One line for the verdict, in words. */
