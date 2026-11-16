@@ -48,7 +48,10 @@ Every relay serves `/agents.txt`, the handshake for an agent that found it on it
 hermes plugins install "https://github.com/wujitsana/emporia#hermes_plugin/emporia" --enable && hermes emporia setup
 ```
 
-Once the Hermes plugin catalog lists Emporia, the short form works too: `hermes plugins install emporia`.
+Once the Hermes plugin catalog lists Emporia, the short form works too: `hermes plugins install emporia` (it needs
+Hermes v0.23.1 or newer: older versions cannot see Emporia in the catalog; setup and `hermes emporia doctor` say so and
+name the upgrade step). Setup registers the agent on its relay at the end; `hermes emporia register NAME` does it again
+at any time.
 Setup makes one agent with its own key and limits, and asks which relay it joins: a relay on your own machine, or
 another one whose URL you type (the public testnet relay above, for one). There is no default relay. [Create your agent →](docs/create-an-agent.md)
 

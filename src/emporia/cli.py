@@ -6074,6 +6074,8 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
                  "unless you want other agents' messages to be able to drive them")
     if not wide:
         doctor_relay_toolsets(rep, cfg)
+    doctor_busy_input(rep, cfg, name)
+    doctor_hermes_version(rep)
     doctor_confinement(rep, profile, cfg, dotenv)
     n = turns_in_24h(profile)
     shown = f"relay-started turns in 24 h: {n} / {cap if cap else 'no cap'}"
@@ -6092,6 +6094,31 @@ def doctor_relay_toolsets(rep: Report, cfg: dict) -> None:
     else:
         rep.warn("platform_toolsets.emporia is not set: relay-started turns ship every enabled tool's schema "
                  "(the call-time refusal still applies)", "emporia agent refresh NAME (or re-run setup)")
+
+
+def doctor_busy_input(rep: Report, cfg: dict, name: str) -> None:
+    """Hermes aborts a running turn when a second event arrives in the same conversation, unless the profile's
+    `display.busy_input_mode` is `queue` (or `steer`). Setup writes `queue` for a profile it makes; an existing
+    profile keeps its own choice, so doctor advises the one command."""
+    mode = str(((cfg.get("display") or {}) if isinstance(cfg.get("display"), dict) else {}).get("busy_input_mode")
+               or "").strip().lower()
+    if mode in ("queue", "steer"):
+        rep.ok(f"a second event while a turn runs is handled ({mode}), not allowed to abort it")
+    else:
+        scope = f"-p {name} " if name != "default" else ""
+        rep.warn("display.busy_input_mode is not queue: a second event in the same conversation aborts the running "
+                 "turn, and the agent's move with it",
+                 f"hermes {scope}config set display.busy_input_mode queue (it also applies to this profile's own chats)")
+
+
+def doctor_hermes_version(rep: Report) -> None:
+    """Hermes older than v0.23.1 cannot see Emporia in its catalog: say so, with the upgrade step."""
+    from emporia import hermes_version
+    state, what, fix = hermes_version.check()
+    if state == "old":
+        rep.warn(what, fix)
+    elif state == "ok":
+        rep.ok(f"{what} (v{'.'.join(map(str, hermes_version.MIN_VERSION))} or newer lists Emporia in its catalog)")
 
 
 def doctor_autonomous_actions(rep: Report, profile: Path, dotenv: dict) -> None:
@@ -7134,6 +7161,15 @@ def _holds_an_agent(profile: Path) -> bool:
     return keys.is_dir() and any(keys.glob("*.priv")) or keys.is_dir() and any(keys.glob("*.signer.pub"))
 
 
+def _say_if_hermes_is_old() -> None:
+    """Setup's first words when Hermes is older than v0.23.1 (it cannot see Emporia in its catalog): what is
+    wrong and the exact upgrade step. Nothing is printed for a new enough or unreadable Hermes."""
+    from emporia import hermes_version
+    state, what, fix = hermes_version.check()
+    if state == "old":
+        print(f"  ! {what}.\n    {fix}")
+
+
 @wizard
 def cmd_setup_agent(args: argparse.Namespace) -> int:
     saved = _TTY
@@ -7145,6 +7181,7 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
 
 def _setup_agent_body(args: argparse.Namespace) -> int:
     inst = installer()
+    _say_if_hermes_is_old()
     me = this_profile()
     name = args.name or prompt("Agent name (its Hermes profile; lowercase, digits, - or _)")
     if not name:
