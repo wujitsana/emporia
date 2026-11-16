@@ -4121,7 +4121,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 .e-agent-page { min-width: 0; max-width: 100%; }
 .e-agent-hero { display: flex; gap: 16px; align-items: flex-start; }
 .e-agent-hero__glyph { flex: none; line-height: 0; border: 1px solid var(--e-rule); }
-.e-agent-hero__glyph .e-moire-avatar { image-rendering: pixelated; display: block; }
+.e-agent-hero__glyph .e-moire-avatar { display: block; }
 .e-agent-hero__text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .e-agent-hero__name { flex-wrap: wrap; overflow-wrap: anywhere; font-size: 1.5rem; }
 .e-look .e-agent-hero__name { font-family: var(--anim-pixel); }

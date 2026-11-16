@@ -11661,10 +11661,10 @@ var EmporiaHermesPlugin = (function(exports) {
 		BlockLoader_module_default = { root: root$16 };
 	}));
 	// src/ui/kit/BlockLoader.tsx
-	var import_react$72, import_jsx_runtime$124, SEQUENCES, BlockLoader;
+	var import_react$74, import_jsx_runtime$124, SEQUENCES, BlockLoader;
 	var init_BlockLoader = __esmMin((() => {
 		init_BlockLoader_module();
-		import_react$72 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$74 = /* @__PURE__ */ __toESM(require_react(), 1);
 		import_jsx_runtime$124 = require_jsx_runtime();
 		SEQUENCES = [
 			[
@@ -11770,10 +11770,10 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		];
 		BlockLoader = ({ mode = 0 }) => {
-			const [index, setIndex] = import_react$72.useState(0);
+			const [index, setIndex] = import_react$74.useState(0);
 			const frames = SEQUENCES[mode];
 			const length = frames ? frames.length : 0;
-			import_react$72.useEffect(() => {
+			import_react$74.useEffect(() => {
 				if (!length) return;
 				const timer = window.setInterval(() => setIndex((i) => (i + 1) % length), 100);
 				return () => clearInterval(timer);
@@ -12318,12 +12318,12 @@ var EmporiaHermesPlugin = (function(exports) {
 	* `deps` changes (use a version counter to force a refresh from outside).
 	*/
 	function useInterval(fn, ms, deps = []) {
-		const [data, setData] = (0, import_react$71.useState)(null);
-		const [loading, setLoading] = (0, import_react$71.useState)(true);
-		const [error, setError] = (0, import_react$71.useState)(null);
-		const fnRef = (0, import_react$71.useRef)(fn);
+		const [data, setData] = (0, import_react$73.useState)(null);
+		const [loading, setLoading] = (0, import_react$73.useState)(true);
+		const [error, setError] = (0, import_react$73.useState)(null);
+		const fnRef = (0, import_react$73.useRef)(fn);
 		fnRef.current = fn;
-		(0, import_react$71.useEffect)(() => {
+		(0, import_react$73.useEffect)(() => {
 			let mounted = true;
 			const run = () => fnRef.current().then((d) => {
 				if (mounted) {
@@ -12375,19 +12375,19 @@ var EmporiaHermesPlugin = (function(exports) {
 	* existing polls stay as a slow safety net for a dropped socket.
 	*/
 	function useAgentWs(relayUrl, agentId) {
-		const [connected, setConnected] = (0, import_react$71.useState)(false);
-		const [last, setLast] = (0, import_react$71.useState)(null);
-		const [eventCount, setEventCount] = (0, import_react$71.useState)(0);
-		const wsRef = (0, import_react$71.useRef)(null);
+		const [connected, setConnected] = (0, import_react$73.useState)(false);
+		const [last, setLast] = (0, import_react$73.useState)(null);
+		const [eventCount, setEventCount] = (0, import_react$73.useState)(0);
+		const wsRef = (0, import_react$73.useRef)(null);
 		const target = `${relayUrl}\n${agentId ?? ""}`;
-		const [prevTarget, setPrevTarget] = (0, import_react$71.useState)(target);
+		const [prevTarget, setPrevTarget] = (0, import_react$73.useState)(target);
 		if (prevTarget !== target) {
 			setPrevTarget(target);
 			setConnected(false);
 			setLast(null);
 			setEventCount(0);
 		}
-		(0, import_react$71.useEffect)(() => {
+		(0, import_react$73.useEffect)(() => {
 			if (!agentId) return;
 			const lifetime = new AbortController();
 			const isClosed = () => lifetime.signal.aborted;
@@ -12450,14 +12450,14 @@ var EmporiaHermesPlugin = (function(exports) {
 	* with exponential back-off on drop.
 	*/
 	function useRoomWs(relayUrl, roomId, agentId, fetchHistory) {
-		const [messages, setMessages] = (0, import_react$71.useState)([]);
-		const [connected, setConnected] = (0, import_react$71.useState)(false);
-		const wsRef = (0, import_react$71.useRef)(null);
-		const fetchRef = (0, import_react$71.useRef)(fetchHistory);
-		(0, import_react$71.useEffect)(() => {
+		const [messages, setMessages] = (0, import_react$73.useState)([]);
+		const [connected, setConnected] = (0, import_react$73.useState)(false);
+		const wsRef = (0, import_react$73.useRef)(null);
+		const fetchRef = (0, import_react$73.useRef)(fetchHistory);
+		(0, import_react$73.useEffect)(() => {
 			fetchRef.current = fetchHistory;
 		});
-		(0, import_react$71.useEffect)(() => {
+		(0, import_react$73.useEffect)(() => {
 			if (!roomId || connected || !fetchRef.current) return;
 			const lifetime = new AbortController();
 			const load = () => fetchRef.current?.(roomId).then((m) => {
@@ -12471,13 +12471,13 @@ var EmporiaHermesPlugin = (function(exports) {
 			};
 		}, [roomId, connected]);
 		const target = `${relayUrl}\n${roomId ?? ""}\n${agentId ?? ""}`;
-		const [prevTarget, setPrevTarget] = (0, import_react$71.useState)(target);
+		const [prevTarget, setPrevTarget] = (0, import_react$73.useState)(target);
 		if (prevTarget !== target) {
 			setPrevTarget(target);
 			setMessages([]);
 			setConnected(false);
 		}
-		(0, import_react$71.useEffect)(() => {
+		(0, import_react$73.useEffect)(() => {
 			if (!roomId) return;
 			const lifetime = new AbortController();
 			const isClosed = () => lifetime.signal.aborted;
@@ -12545,22 +12545,22 @@ var EmporiaHermesPlugin = (function(exports) {
 	* the first request lands never re-requests the same id.
 	*/
 	function useSenderPubkeys(senderIds, fetchPubkey) {
-		const [pubkeys, setPubkeys] = (0, import_react$71.useState)({});
-		const pubkeysRef = (0, import_react$71.useRef)(pubkeys);
-		(0, import_react$71.useEffect)(() => {
+		const [pubkeys, setPubkeys] = (0, import_react$73.useState)({});
+		const pubkeysRef = (0, import_react$73.useRef)(pubkeys);
+		(0, import_react$73.useEffect)(() => {
 			pubkeysRef.current = pubkeys;
 		});
-		const requestedRef = (0, import_react$71.useRef)(/* @__PURE__ */ new Set());
-		const fetchRef = (0, import_react$71.useRef)(fetchPubkey);
-		(0, import_react$71.useEffect)(() => {
+		const requestedRef = (0, import_react$73.useRef)(/* @__PURE__ */ new Set());
+		const fetchRef = (0, import_react$73.useRef)(fetchPubkey);
+		(0, import_react$73.useEffect)(() => {
 			fetchRef.current = fetchPubkey;
 		});
-		const unmountedRef = (0, import_react$71.useRef)(false);
-		(0, import_react$71.useEffect)(() => () => {
+		const unmountedRef = (0, import_react$73.useRef)(false);
+		(0, import_react$73.useEffect)(() => () => {
 			unmountedRef.current = true;
 		}, []);
 		const senderKey = [...new Set(senderIds)].sort().join(" ");
-		(0, import_react$71.useEffect)(() => {
+		(0, import_react$73.useEffect)(() => {
 			const unknown = (senderKey ? senderKey.split(" ") : []).filter((id) => !(id in pubkeysRef.current) && !requestedRef.current.has(id));
 			if (unknown.length === 0) return;
 			unknown.forEach((id) => requestedRef.current.add(id));
@@ -12580,10 +12580,10 @@ var EmporiaHermesPlugin = (function(exports) {
 	* to seed the Overview instantly before the first HTTP poll completes.
 	*/
 	function useGlobalEvents() {
-		const [events, setEvents] = (0, import_react$71.useState)([]);
-		const [seed, setSeed] = (0, import_react$71.useState)(null);
-		const [wsConnected, setWsConnected] = (0, import_react$71.useState)(false);
-		(0, import_react$71.useEffect)(() => {
+		const [events, setEvents] = (0, import_react$73.useState)([]);
+		const [seed, setSeed] = (0, import_react$73.useState)(null);
+		const [wsConnected, setWsConnected] = (0, import_react$73.useState)(false);
+		(0, import_react$73.useEffect)(() => {
 			let closed = false;
 			let retryMs = 1e3;
 			let ws;
@@ -12635,9 +12635,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			wsConnected
 		};
 	}
-	var import_react$71;
+	var import_react$73;
 	var init_hooks = __esmMin((() => {
-		import_react$71 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$73 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_transport();
 		init_api();
 	}));
@@ -12961,11 +12961,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		import_jsx_runtime$123 = require_jsx_runtime();
 	}));
 	// src/agentNavCtx.ts
-	var import_react$70, AgentNavCtx, useAgentNav;
+	var import_react$72, AgentNavCtx, useAgentNav;
 	var init_agentNavCtx = __esmMin((() => {
-		import_react$70 = /* @__PURE__ */ __toESM(require_react(), 1);
-		AgentNavCtx = (0, import_react$70.createContext)(null);
-		useAgentNav = () => (0, import_react$70.useContext)(AgentNavCtx);
+		import_react$72 = /* @__PURE__ */ __toESM(require_react(), 1);
+		AgentNavCtx = (0, import_react$72.createContext)(null);
+		useAgentNav = () => (0, import_react$72.useContext)(AgentNavCtx);
 	}));
 	// src/messagesModel.ts
 	function splitInbox(events) {
@@ -13365,7 +13365,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	/** Whether the window is below the header-nav width, following resizes. */
 	function useNarrow() {
-		return (0, import_react$69.useSyncExternalStore)(subscribeNarrow, isNarrow, () => false);
+		return (0, import_react$71.useSyncExternalStore)(subscribeNarrow, isNarrow, () => false);
 	}
 	/** The first focusable element in `root` that is drawn (else the first at all: jsdom draws nothing). */
 	function firstFocusable(root) {
@@ -13377,11 +13377,11 @@ var EmporiaHermesPlugin = (function(exports) {
 	* focusable element); when it closes, back on what had it before.
 	*/
 	function useOverlayFocus(open, container, initial) {
-		const pick = (0, import_react$69.useRef)(initial);
-		(0, import_react$69.useEffect)(() => {
+		const pick = (0, import_react$71.useRef)(initial);
+		(0, import_react$71.useEffect)(() => {
 			pick.current = initial;
 		});
-		(0, import_react$69.useEffect)(() => {
+		(0, import_react$71.useEffect)(() => {
 			const el = container.current;
 			if (!open || !el) return;
 			const before = focusedWithin(el);
@@ -13391,9 +13391,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			};
 		}, [open, container]);
 	}
-	var import_react$69, NARROW, FOCUSABLE$1;
+	var import_react$71, NARROW, FOCUSABLE$1;
 	var init_overlayFocus = __esmMin((() => {
-		import_react$69 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$71 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_keyTarget();
 		NARROW = "(max-width: 900px)";
 		FOCUSABLE$1 = "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex=\"-1\"])";
@@ -13438,8 +13438,8 @@ var EmporiaHermesPlugin = (function(exports) {
 	* be measured, as in jsdom) it falls back to the window's own phone width.
 	*/
 	function useNavLayout(frame) {
-		const [width, setWidth] = (0, import_react$68.useState)(0);
-		(0, import_react$68.useLayoutEffect)(() => {
+		const [width, setWidth] = (0, import_react$70.useState)(0);
+		(0, import_react$70.useLayoutEffect)(() => {
 			const el = frame.current;
 			if (!el) return;
 			const read = () => setWidth(el.getBoundingClientRect().width);
@@ -13452,7 +13452,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			ro.observe(el);
 			return () => ro.disconnect();
 		}, [frame]);
-		(0, import_react$68.useEffect)(() => {
+		(0, import_react$70.useEffect)(() => {
 			const el = frame.current;
 			if (!el) return;
 			const t = setTimeout(() => setWidth(el.getBoundingClientRect().width), 120);
@@ -13460,9 +13460,9 @@ var EmporiaHermesPlugin = (function(exports) {
 		}, [frame]);
 		return navLayoutFor(width, isNarrow());
 	}
-	var import_react$68, NAV_MIN_WIDTH;
+	var import_react$70, NAV_MIN_WIDTH;
 	var init_navLayout = __esmMin((() => {
-		import_react$68 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$70 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_overlayFocus();
 		NAV_MIN_WIDTH = {
 			wide: 1240,
@@ -13473,11 +13473,11 @@ var EmporiaHermesPlugin = (function(exports) {
 	}));
 	// src/relayCtx.ts
 	function useRelayCtx() {
-		return (0, import_react$67.useContext)(RelayCtx);
+		return (0, import_react$69.useContext)(RelayCtx);
 	}
-	var import_react$67, DEFAULT, RelayCtx;
+	var import_react$69, DEFAULT, RelayCtx;
 	var init_relayCtx = __esmMin((() => {
-		import_react$67 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$69 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_relayEnv();
 		DEFAULT = {
 			viewerId: null,
@@ -13495,18 +13495,18 @@ var EmporiaHermesPlugin = (function(exports) {
 			setDashboardToken: () => {},
 			refresh: () => {}
 		};
-		RelayCtx = (0, import_react$67.createContext)(DEFAULT);
+		RelayCtx = (0, import_react$69.createContext)(DEFAULT);
 	}));
 	// src/healthCtx.ts
 	/** The current `/health` snapshot, or null before the first response. */
 	function useRelayHealth() {
-		return (0, import_react$66.useContext)(RelayHealthCtx);
+		return (0, import_react$68.useContext)(RelayHealthCtx);
 	}
-	var import_react$66, RelayHealthCtx, RelayDownCtx;
+	var import_react$68, RelayHealthCtx, RelayDownCtx;
 	var init_healthCtx = __esmMin((() => {
-		import_react$66 = /* @__PURE__ */ __toESM(require_react(), 1);
-		RelayHealthCtx = (0, import_react$66.createContext)(null);
-		RelayDownCtx = (0, import_react$66.createContext)(false);
+		import_react$68 = /* @__PURE__ */ __toESM(require_react(), 1);
+		RelayHealthCtx = (0, import_react$68.createContext)(null);
+		RelayDownCtx = (0, import_react$68.createContext)(false);
 	}));
 	// src/subNavItems.ts
 	/** What decides which pages this viewer may reach: who they are, and what the relay can do. */
@@ -14088,8 +14088,8 @@ var EmporiaHermesPlugin = (function(exports) {
 	* agents registered on the relay, with keys here and a Hermes profile.
 	*/
 	function HermesProfileSelect({ current }) {
-		const [ids, setIds] = import_react$65.useState([]);
-		import_react$65.useEffect(() => {
+		const [ids, setIds] = import_react$67.useState([]);
+		import_react$67.useEffect(() => {
 			let cancelled = false;
 			(async () => {
 				const local = await httpFetch(consoleUrl("/agents")).then((r) => r.json()).then((d) => d.agents ?? []).catch(() => []);
@@ -14168,9 +14168,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			})]
 		});
 	}
-	var import_react$65, import_jsx_runtime$121;
+	var import_react$67, import_jsx_runtime$121;
 	var init_ViewerSwitcher = __esmMin((() => {
-		import_react$65 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$67 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_hooks();
 		init_relayEnv();
@@ -14286,11 +14286,11 @@ var EmporiaHermesPlugin = (function(exports) {
 	* an entrance never shows its end state first.
 	*/
 	function useArrival(key, ms, moving, stepMs = 0) {
-		const [tick, setTick] = (0, import_react$64.useState)({
+		const [tick, setTick] = (0, import_react$66.useState)({
 			key: "",
 			at: 0
 		});
-		(0, import_react$64.useEffect)(() => {
+		(0, import_react$66.useEffect)(() => {
 			if (!moving) return;
 			const h = {
 				raf: 0,
@@ -14347,13 +14347,13 @@ var EmporiaHermesPlugin = (function(exports) {
 	*/
 	function BrandTitle({ replay = "", onHome, onCover }) {
 		const moving = motionAllowed();
-		const first = (0, import_react$64.useRef)(true);
-		const root = (0, import_react$64.useRef)(null);
-		const [run, setRun] = (0, import_react$64.useState)({
+		const first = (0, import_react$66.useRef)(true);
+		const root = (0, import_react$66.useRef)(null);
+		const [run, setRun] = (0, import_react$66.useState)({
 			key: `open:${replay}`,
 			ms: 900
 		});
-		(0, import_react$64.useEffect)(() => {
+		(0, import_react$66.useEffect)(() => {
 			if (first.current) {
 				first.current = false;
 				return;
@@ -14363,7 +14363,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				ms: 520
 			});
 		}, [replay]);
-		(0, import_react$64.useEffect)(() => {
+		(0, import_react$66.useEffect)(() => {
 			const el = root.current;
 			if (!el || !moving || typeof IntersectionObserver === "undefined") return;
 			const seen = {
@@ -14437,8 +14437,8 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	/** The status line under the view: time since this dashboard opened, who it views as, and that it only watches. */
 	function AnimaticHudFoot({ section }) {
-		const [now, setNow] = (0, import_react$64.useState)(() => Date.now());
-		(0, import_react$64.useEffect)(() => {
+		const [now, setNow] = (0, import_react$66.useState)(() => Date.now());
+		(0, import_react$66.useEffect)(() => {
 			const t = setInterval(() => setNow(Date.now()), 1e3);
 			return () => clearInterval(t);
 		}, []);
@@ -14463,9 +14463,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			] })]
 		});
 	}
-	var import_react$64, import_jsx_runtime$119, SCRAMBLE_MS, MAX_SCRAMBLE, ease, BRAND, BRAND_SCRAMBLED, OPENED;
+	var import_react$66, import_jsx_runtime$119, SCRAMBLE_MS, MAX_SCRAMBLE, ease, BRAND, BRAND_SCRAMBLED, OPENED;
 	var init_LookChrome = __esmMin((() => {
-		import_react$64 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$66 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_relayEnv();
 		init_navConfig();
 		init_look();
@@ -14567,15 +14567,15 @@ var EmporiaHermesPlugin = (function(exports) {
 	* the same x everywhere (no destination label in front of the tabs; the page title names the place).
 	*/
 	function SubNav({ label, items, note }) {
-		const navRef = (0, import_react$63.useRef)(null);
-		const wrapRef = (0, import_react$63.useRef)(null);
-		const [edges, setEdges] = (0, import_react$63.useState)({
+		const navRef = (0, import_react$65.useRef)(null);
+		const wrapRef = (0, import_react$65.useRef)(null);
+		const [edges, setEdges] = (0, import_react$65.useState)({
 			left: false,
 			right: false,
 			hidden: []
 		});
-		const [open, setOpen] = (0, import_react$63.useState)(false);
-		(0, import_react$63.useLayoutEffect)(() => {
+		const [open, setOpen] = (0, import_react$65.useState)(false);
+		(0, import_react$65.useLayoutEffect)(() => {
 			const nav = navRef.current;
 			if (!nav) return;
 			const read = () => {
@@ -14593,13 +14593,13 @@ var EmporiaHermesPlugin = (function(exports) {
 		}, [items, note]);
 		const activeKey = items.find((i) => i.active)?.key;
 		const anyHidden = edges.hidden.length > 0;
-		(0, import_react$63.useLayoutEffect)(() => {
+		(0, import_react$65.useLayoutEffect)(() => {
 			const nav = navRef.current;
 			const tab = nav?.querySelector(".e-subnav__tab.is-active");
 			if (!nav || !tab || nav.scrollWidth <= nav.clientWidth) return;
 			nav.scrollLeft = Math.max(0, tab.offsetLeft - (nav.clientWidth - tab.offsetWidth) / 2);
 		}, [activeKey, anyHidden]);
-		(0, import_react$63.useEffect)(() => {
+		(0, import_react$65.useEffect)(() => {
 			if (!open) return;
 			const onKey = (e) => {
 				if (e.key === "Escape") setOpen(false);
@@ -14771,9 +14771,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	var import_react$63, import_jsx_runtime$118;
+	var import_react$65, import_jsx_runtime$118;
 	var init_AppNav = __esmMin((() => {
-		import_react$63 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$65 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_navConfig();
 		init_arrowKeys();
 		init_navLayout();
@@ -15244,7 +15244,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	*/
 	function NowStrip({ navigate }) {
 		const viewer = VIEWER_ID;
-		const [collapsed, setCollapsed] = (0, import_react$62.useState)(() => readPref(PREF) === "1");
+		const [collapsed, setCollapsed] = (0, import_react$64.useState)(() => readPref(PREF) === "1");
 		const [sessions] = useInterval(() => viewer ? api.agentSessions(viewer).then((r) => r.sessions) : Promise.resolve([]), poll(1e4), [viewer]);
 		if (!viewer) return null;
 		const line = nowLine(viewer, sessions ?? []);
@@ -15279,9 +15279,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			})]
 		});
 	}
-	var import_react$62, import_jsx_runtime$117, PREF;
+	var import_react$64, import_jsx_runtime$117, PREF;
 	var init_NowStrip = __esmMin((() => {
-		import_react$62 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$64 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_capture();
 		init_hooks();
@@ -15412,15 +15412,15 @@ var EmporiaHermesPlugin = (function(exports) {
 			})]
 		});
 	}
-	var import_react$60, import_jsx_runtime$115, ViewBoundary;
+	var import_react$62, import_jsx_runtime$115, ViewBoundary;
 	var init_layout = __esmMin((() => {
 		init_Text();
-		import_react$60 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$62 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_navConfig();
 		init_pageTitle();
 		init_LookChrome();
 		import_jsx_runtime$115 = require_jsx_runtime();
-		ViewBoundary = class extends import_react$60.Component {
+		ViewBoundary = class extends import_react$62.Component {
 			state = { error: null };
 			static getDerivedStateFromError(error) {
 				return { error };
@@ -15508,79 +15508,1354 @@ var EmporiaHermesPlugin = (function(exports) {
 		}), `Reach: ${c.reach.text} (unweighted)`];
 	}
 	var init_presence = __esmMin((() => {}));
-	// src/AgentMoireAvatar.tsx
-	function hashSeed(s) {
-		let h = 2166136261;
-		for (let i = 0; i < s.length; i++) {
-			h ^= s.charCodeAt(i);
-			h = Math.imul(h, 16777619);
-		}
-		return h >>> 0;
+	// src/avatars.ts
+	function idBytes(id) {
+		const b = [];
+		for (let i = 0; i < 32; i++) b.push(parseInt(id.substr(i * 2, 2), 16));
+		return b;
 	}
-	/** Deterministic moiré tile per agent_id */
-	function AgentMoireAvatar({ agentId, size = 28, link = true }) {
+	function fill$4(color, d) {
+		return d ? "<path fill=\"" + color + "\" d=\"" + d + "\"/>" : "";
+	}
+	function ground(color) {
+		return fill$4(color, "M0 0h32v32H0z");
+	}
+	function everydayAvatar(id, uid) {
+		const b = idBytes(id), t = b[0] % 6, u = uid || id.substr(0, 12);
+		const gi = GUEST[t][b[2] % GUEST[t].length], bright = TINT[t][4], guest = CHAT[gi];
+		const swap = b[1] % 2;
+		const rotA = b[3] % 180, rotB = rotA + 55 + b[4] % 21;
+		const low = BRIGHT_L[t] < CHAT_L[gi] ? BRIGHT_L[t] : CHAT_L[gi];
+		let step = b[9] % 4;
+		while (low - GROUND_L[step] < 22) step--;
+		return SVG_OPEN + "<defs><pattern id=\"a" + u + "\" width=\"4\" height=\"4\" patternUnits=\"userSpaceOnUse\" patternTransform=\"rotate(" + rotA + " 16 16)\"><path stroke=\"" + (swap ? guest : bright) + "\" d=\"M0 0V4\"/></pattern><pattern id=\"b" + u + "\" width=\"4\" height=\"4\" patternUnits=\"userSpaceOnUse\" patternTransform=\"rotate(" + rotB + " 16 16)\"><path stroke=\"" + (swap ? bright : guest) + "\" stroke-width=\".8\" d=\"M0 0H4\"/></pattern></defs>" + ground(GROUNDS[b[8] % 16][step]) + "<path fill=\"url(#a" + u + ")\" opacity=\".85\" d=\"M0 0h32v32H0z\"/><path fill=\"url(#b" + u + ")\" opacity=\".65\" d=\"M0 0h32v32H0z\"/></svg>";
+	}
+	var TINT, CHAT, GUEST, SVG_OPEN, GROUNDS, GROUND_L, BRIGHT_L, CHAT_L;
+	var init_avatars = __esmMin((() => {
+		TINT = [
+			[
+				"#39ff44",
+				"#001b01",
+				"#ebfaea",
+				"#01680c",
+				"#6cf96c",
+				1
+			],
+			[
+				"#0047ff",
+				"#051232",
+				"#f0f5ff",
+				"#1446c2",
+				"#93b7fe",
+				0
+			],
+			[
+				"#b00331",
+				"#250a0c",
+				"#fef2f2",
+				"#a1022c",
+				"#fe9498",
+				0
+			],
+			[
+				"#d57c22",
+				"#121212",
+				"#eeeeee",
+				"#d57c22",
+				"#d57c22",
+				1
+			],
+			[
+				"#8000ff",
+				"#170b30",
+				"#f5f3ff",
+				"#612db6",
+				"#bca7ff",
+				0
+			],
+			[
+				"#ff00ff",
+				"#250325",
+				"#fff0fd",
+				"#8b0b8b",
+				"#ff7cfc",
+				1
+			]
+		];
+		CHAT = [
+			"#4e94da",
+			"#da4e4e",
+			"#4eda88",
+			"#ab4eda",
+			"#4e5ada",
+			"#4edace",
+			"#da4eda",
+			"#4eb7da",
+			"#714eda",
+			"#7dda4e"
+		];
+		GUEST = [
+			[
+				0,
+				1,
+				3,
+				4,
+				5,
+				6,
+				7,
+				8
+			],
+			[
+				1,
+				2,
+				3,
+				6,
+				9
+			],
+			[
+				0,
+				2,
+				3,
+				4,
+				5,
+				7,
+				8,
+				9
+			],
+			[
+				0,
+				2,
+				3,
+				4,
+				5,
+				6,
+				7,
+				8,
+				9
+			],
+			[
+				0,
+				1,
+				2,
+				5,
+				9
+			],
+			[
+				0,
+				1,
+				2,
+				4,
+				5,
+				7,
+				9
+			]
+		];
+		SVG_OPEN = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\">";
+		GROUNDS = [
+			[
+				"#001a01",
+				"#013003",
+				"#024807",
+				"#00620a"
+			],
+			[
+				"#041132",
+				"#0b2256",
+				"#14347d",
+				"#1e47a6"
+			],
+			[
+				"#2b0308",
+				"#4b0913",
+				"#6d1120",
+				"#911a2e"
+			],
+			[
+				"#121212",
+				"#262626",
+				"#3a3a3a",
+				"#4e4e4e"
+			],
+			[
+				"#170a2f",
+				"#2b1851",
+				"#412676",
+				"#58359d"
+			],
+			[
+				"#230523",
+				"#3f0e3e",
+				"#5c185b",
+				"#7b237a"
+			],
+			[
+				"#031527",
+				"#0a2844",
+				"#123c64",
+				"#1c5285"
+			],
+			[
+				"#2a0506",
+				"#480e10",
+				"#6a181b",
+				"#8d2427"
+			],
+			[
+				"#011a0a",
+				"#003016",
+				"#024724",
+				"#006033"
+			],
+			[
+				"#1e072a",
+				"#361249",
+				"#511e6a",
+				"#6d2b8d"
+			],
+			[
+				"#0b0f31",
+				"#191f55",
+				"#28307a",
+				"#3842a3"
+			],
+			[
+				"#011816",
+				"#012e2a",
+				"#024440",
+				"#035d57"
+			],
+			[
+				"#230523",
+				"#3e0e3e",
+				"#5c185c",
+				"#7b237b"
+			],
+			[
+				"#00171f",
+				"#002b38",
+				"#024153",
+				"#005970"
+			],
+			[
+				"#140b30",
+				"#271953",
+				"#3c2878",
+				"#5138a0"
+			],
+			[
+				"#061900",
+				"#112f01",
+				"#1c4600",
+				"#285f01"
+			]
+		];
+		GROUND_L = [
+			19,
+			27,
+			35,
+			43
+		];
+		BRIGHT_L = [
+			87,
+			78,
+			78,
+			67,
+			78,
+			78
+		];
+		CHAT_L = [
+			65,
+			61,
+			79,
+			60,
+			53,
+			81,
+			66,
+			73,
+			54,
+			80
+		];
+	}));
+	// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
+	function fromBig(n, le = false) {
+		if (le) return {
+			h: Number(n & U32_MASK64),
+			l: Number(n >> _32n & U32_MASK64)
+		};
+		return {
+			h: Number(n >> _32n & U32_MASK64) | 0,
+			l: Number(n & U32_MASK64) | 0
+		};
+	}
+	function split(lst, le = false) {
+		const len = lst.length;
+		let Ah = new Uint32Array(len);
+		let Al = new Uint32Array(len);
+		for (let i = 0; i < len; i++) {
+			const { h, l } = fromBig(lst[i], le);
+			[Ah[i], Al[i]] = [h, l];
+		}
+		return [Ah, Al];
+	}
+	function setU64FromNum(view, byteOffset, n, isLE) {
+		const h = fromNumH(n);
+		const l = fromNumL(n);
+		view.setUint32(byteOffset, isLE ? l : h, isLE);
+		view.setUint32(byteOffset + 4, isLE ? h : l, isLE);
+	}
+	function add$1(Ah, Al, Bh, Bl) {
+		const l = (Al >>> 0) + (Bl >>> 0);
+		return {
+			h: Ah + Bh + (l / 2 ** 32 | 0) | 0,
+			l: l | 0
+		};
+	}
+	var U32_MASK64, _32n, fromNumH, fromNumL, shrSH, shrSL, rotrSH, rotrSL, rotrBH, rotrBL, add3L, add3H, add4L, add4H, add5L, add5H;
+	var init__u64 = __esmMin((() => {
+		U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();
+		_32n = /* @__PURE__ */ BigInt(32);
+		fromNumH = (n) => n / 2 ** 32 | 0;
+		fromNumL = (n) => n >>> 0;
+		shrSH = (h, _l, s) => h >>> s;
+		shrSL = (h, l, s) => h << 32 - s | l >>> s;
+		rotrSH = (h, l, s) => h >>> s | l << 32 - s;
+		rotrSL = (h, l, s) => h << 32 - s | l >>> s;
+		rotrBH = (h, l, s) => h << 64 - s | l >>> s - 32;
+		rotrBL = (h, l, s) => h >>> s - 32 | l << 64 - s;
+		add3L = (Al, Bl, Cl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0);
+		add3H = (low, Ah, Bh, Ch) => Ah + Bh + Ch + (low / 2 ** 32 | 0) | 0;
+		add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0);
+		add4H = (low, Ah, Bh, Ch, Dh) => Ah + Bh + Ch + Dh + (low / 2 ** 32 | 0) | 0;
+		add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
+		add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
+	}));
+	// ../../../../dashboard/node_modules/@noble/hashes/utils.js
+	/**
+	* Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
+	* @param a - value to test
+	* @returns `true` when the value is a Uint8Array-compatible view.
+	* @example
+	* Check whether a value is a Uint8Array-compatible view.
+	* ```ts
+	* isBytes(new Uint8Array([1, 2, 3]));
+	* ```
+	*/
+	function isBytes$1(a) {
+		return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
+	}
+	/**
+	* Asserts something is a non-negative integer.
+	* @param n - number to validate
+	* @param title - label included in thrown errors
+	* @returns The validated number.
+	* @throws On wrong argument types. {@link TypeError}
+	* @throws On wrong argument ranges or values. {@link RangeError}
+	* @example
+	* Validate a non-negative integer option.
+	* ```ts
+	* anumber(32, 'length');
+	* ```
+	*/
+	function anumber$1(n, title = "") {
+		if (typeof n !== "number") throw new TypeError(atitle$1(title) + "expected number, got " + typeof n);
+		if (!Number.isSafeInteger(n) || n < 0) throw new RangeError(atitle$1(title) + "expected integer >= 0, got " + n);
+		return n;
+	}
+	/**
+	* Asserts something is Uint8Array.
+	* @param value - value to validate
+	* @param length - optional exact length constraint
+	* @param title - label included in thrown errors
+	* @returns The validated byte array.
+	* @throws On wrong argument types. {@link TypeError}
+	* @throws On wrong argument ranges or values. {@link RangeError}
+	* @example
+	* Validate that a value is a byte array.
+	* ```ts
+	* abytes(new Uint8Array([1, 2, 3]));
+	* ```
+	*/
+	function abytes$1(value, length, title = "") {
+		if (isBytes$1(value) && (length === void 0 || value.length === length)) return value;
+		if (length !== void 0) anumber$1(length, "length");
+		const bytes = isBytes$1(value);
+		const ofLen = length !== void 0 ? ` of length ${length}` : "";
+		const got = bytes ? `length=${value.length}` : `type=${typeof value}`;
+		const message = atitle$1(title) + "expected Uint8Array" + ofLen + ", got " + got;
+		if (!bytes) throw new TypeError(message);
+		throw new RangeError(message);
+	}
+	/**
+	* Asserts a hash instance has not been destroyed or finished.
+	* @param instance - hash instance to validate
+	* @param checkFinished - whether to reject finalized instances
+	* @throws If the hash instance has already been destroyed or finalized. {@link Error}
+	* @example
+	* Validate that a hash instance is still usable.
+	* ```ts
+	* import { aexists } from '@noble/hashes/utils.js';
+	* import { sha256 } from '@noble/hashes/sha2.js';
+	* const hash = sha256.create();
+	* aexists(hash);
+	* ```
+	*/
+	function aexists(instance, checkFinished = true) {
+		if (instance.destroyed) throw new Error("hash was destroyed");
+		if (checkFinished && instance.finished) throw new Error("digest() was already called");
+	}
+	/**
+	* Asserts output is a sufficiently-sized byte array.
+	* @param out - destination buffer
+	* @param instance - hash instance providing output length
+	* Oversized buffers are allowed; downstream code only promises to fill the first `outputLen` bytes.
+	* @throws On wrong argument types. {@link TypeError}
+	* @throws On wrong argument ranges or values. {@link RangeError}
+	* @example
+	* Validate a caller-provided digest buffer.
+	* ```ts
+	* import { aoutput } from '@noble/hashes/utils.js';
+	* import { sha256 } from '@noble/hashes/sha2.js';
+	* const hash = sha256.create();
+	* aoutput(new Uint8Array(hash.outputLen), hash);
+	* ```
+	*/
+	function aoutput(out, instance) {
+		abytes$1(out, void 0, "output");
+		const min = instance.outputLen;
+		if (!(out.length >= min)) throw new RangeError("\"output\" expected length >= " + min);
+	}
+	/**
+	* Zeroizes typed arrays in place. Warning: JS provides no guarantees.
+	* @param arrays - arrays to overwrite with zeros
+	* @example
+	* Zeroize sensitive buffers in place.
+	* ```ts
+	* clean(new Uint8Array([1, 2, 3]));
+	* ```
+	*/
+	function clean$1(...arrays) {
+		for (let i = 0; i < arrays.length; i++) arrays[i].fill(0);
+	}
+	/**
+	* Creates a DataView for byte-level manipulation.
+	* @param arr - source typed array
+	* @returns DataView over the same buffer region.
+	* @example
+	* Create a DataView over an existing buffer.
+	* ```ts
+	* createView(new Uint8Array(4));
+	* ```
+	*/
+	function createView(arr) {
+		return new DataView(arr.buffer, arr.byteOffset, arr.byteLength);
+	}
+	/**
+	* Rotate-right operation for uint32 values.
+	* @param word - source word
+	* @param shift - shift amount in bits
+	* @returns Rotated word.
+	* @example
+	* Rotate a 32-bit word to the right.
+	* ```ts
+	* rotr(0x12345678, 8);
+	* ```
+	*/
+	function rotr(word, shift) {
+		return word << 32 - shift | word >>> shift;
+	}
+	/**
+	* Convert byte array to hex string.
+	* Uses the built-in function when available and assumes it matches the tested
+	* fallback semantics.
+	* @param bytes - bytes to encode
+	* @returns Lowercase hexadecimal string.
+	* @throws On wrong argument types. {@link TypeError}
+	* @example
+	* Convert bytes to lowercase hexadecimal.
+	* ```ts
+	* bytesToHex(Uint8Array.from([0xca, 0xfe, 0x01, 0x23])); // 'cafe0123'
+	* ```
+	*/
+	function bytesToHex$2(bytes) {
+		abytes$1(bytes);
+		if (hasHexBuiltin) return bytes.toHex();
+		let hex = "";
+		for (let i = 0; i < bytes.length; i++) hex += hexes[bytes[i]];
+		return hex;
+	}
+	function asciiToBase16(ch) {
+		return ch >= 48 && ch <= 57 ? ch - 48 : ch >= 65 && ch <= 70 ? ch - 55 : ch >= 97 && ch <= 102 ? ch - 87 : void 0;
+	}
+	/**
+	* Convert hex string to byte array. Uses built-in function, when available.
+	* @param hex - hexadecimal string to decode
+	* @returns Decoded bytes.
+	* @throws On wrong argument types. {@link TypeError}
+	* @throws On wrong argument ranges or values. {@link RangeError}
+	* @example
+	* Decode lowercase hexadecimal into bytes.
+	* ```ts
+	* hexToBytes('cafe0123'); // Uint8Array.from([0xca, 0xfe, 0x01, 0x23])
+	* ```
+	*/
+	function hexToBytes$2(hex) {
+		if (typeof hex !== "string") throw new TypeError("hex string expected, got " + typeof hex);
+		if (hasHexBuiltin) try {
+			return Uint8Array.fromHex(hex);
+		} catch (error) {
+			if (error instanceof SyntaxError) throw new RangeError(error.message);
+			throw error;
+		}
+		const hl = hex.length;
+		const al = hl / 2;
+		if (hl % 2) throw new RangeError("hex string expected, got unpadded hex of length " + hl);
+		const array = new Uint8Array(al);
+		for (let ai = 0, hi = 0; ai < al; ai++, hi += 2) {
+			const n1 = asciiToBase16(hex.charCodeAt(hi));
+			const n2 = asciiToBase16(hex.charCodeAt(hi + 1));
+			if (n1 === void 0 || n2 === void 0) {
+				const char = hex[hi] + hex[hi + 1];
+				throw new RangeError("hex string expected, got non-hex character \"" + char + "\" at index " + hi);
+			}
+			array[ai] = n1 * 16 + n2;
+		}
+		return array;
+	}
+	/**
+	* Copies several Uint8Arrays into one.
+	* @param arrays - arrays to concatenate
+	* @returns Concatenated byte array.
+	* @throws On wrong argument types. {@link TypeError}
+	* @example
+	* Concatenate multiple byte arrays.
+	* ```ts
+	* concatBytes(new Uint8Array([1]), new Uint8Array([2]));
+	* ```
+	*/
+	function concatBytes$1(...arrays) {
+		let sum = 0;
+		for (let i = 0; i < arrays.length; i++) {
+			const a = arrays[i];
+			abytes$1(a);
+			sum += a.length;
+		}
+		const res = new Uint8Array(sum);
+		for (let i = 0, pad = 0; i < arrays.length; i++) {
+			const a = arrays[i];
+			res.set(a, pad);
+			pad += a.length;
+		}
+		return res;
+	}
+	/**
+	* Merges default options and passed options.
+	* @param defaults - base option object
+	* @param opts - user overrides
+	* @param title - label included in thrown override errors
+	* @returns Fresh merged option object with a null prototype.
+	* @throws On wrong argument types. {@link TypeError}
+	* @example
+	* Merge user overrides onto default options.
+	* ```ts
+	* checkOpts({ dkLen: 32 }, { asyncTick: 10 });
+	* ```
+	*/
+	function checkOpts(defaults, opts, title = "opts") {
+		aopts(defaults, "defaults");
+		if (opts !== void 0) aopts(opts, title);
+		return Object.assign(Object.create(null), defaults, opts);
+	}
+	/**
+	* Creates a callable hash function from a stateful class constructor.
+	* @param hashCons - hash constructor or factory
+	* @param info - optional metadata such as DER OID
+	* @returns Frozen callable hash wrapper with `.create()`.
+	*   Wrapper construction eagerly calls `hashCons(undefined)` once to read
+	*   `outputLen` / `blockLen`, so constructor side effects happen at module
+	*   init time.
+	* @throws On wrong argument types. {@link TypeError}
+	* @example
+	* Wrap a stateful hash constructor into a callable helper.
+	* ```ts
+	* import { createHasher } from '@noble/hashes/utils.js';
+	* import { sha256 } from '@noble/hashes/sha2.js';
+	* const wrapped = createHasher(sha256.create, { oid: sha256.oid });
+	* wrapped(new Uint8Array([1]));
+	* ```
+	*/
+	function createHasher(hashCons, info = {}) {
+		if (typeof hashCons !== "function") throw new TypeError("\"hashCons\" expected function, got type=" + typeof hashCons);
+		info = checkOpts({}, info, "info");
+		const hashC = (msg, opts) => hashCons(opts).update(msg).digest();
+		const tmp = hashCons(void 0);
+		hashC.outputLen = tmp.outputLen;
+		hashC.blockLen = tmp.blockLen;
+		hashC.canXOF = tmp.canXOF;
+		hashC.create = (opts) => hashCons(opts);
+		Object.assign(hashC, info);
+		return Object.freeze(hashC);
+	}
+	/**
+	* Cryptographically secure PRNG backed by `crypto.getRandomValues`.
+	* @param bytesLength - number of random bytes to generate
+	* @returns Random bytes.
+	* The platform `getRandomValues()` implementation still defines any
+	* single-call length cap, and this helper rejects oversize requests
+	* with a stable library `RangeError` instead of host-specific errors.
+	* @throws On wrong argument types. {@link TypeError}
+	* @throws On wrong argument ranges or values. {@link RangeError}
+	* @throws If the current runtime does not provide `crypto.getRandomValues`. {@link Error}
+	* @example
+	* Generate a fresh random key or nonce.
+	* ```ts
+	* const key = randomBytes(16);
+	* ```
+	*/
+	function randomBytes$1(bytesLength = 32) {
+		anumber$1(bytesLength, "bytesLength");
+		const cr = typeof globalThis === "object" ? globalThis.crypto : null;
+		if (typeof cr?.getRandomValues !== "function") throw new Error("crypto.getRandomValues must be defined");
+		if (bytesLength > 65536) throw new RangeError(`"bytesLength" expected <= 65536, got ${bytesLength}`);
+		return cr.getRandomValues(new Uint8Array(bytesLength));
+	}
+	var atitle$1, aobject$1, aopts, hasHexBuiltin, hexes, oidNist;
+	var init_utils$1 = __esmMin((() => {
+		atitle$1 = (title) => title ? `"${title}" ` : "";
+		aobject$1 = (value, label) => {
+			if (value === null || typeof value !== "object" || Array.isArray(value)) throw new TypeError((label === "object" ? "" : `"${label}" `) + "expected object, got type=" + typeof value);
+		};
+		aopts = (value, label) => {
+			aobject$1(value, label);
+			const proto = Object.getPrototypeOf(value);
+			if (proto !== Object.prototype && proto !== null) throw new TypeError(`"${label}" expected plain object`);
+			if (Object.hasOwn(value, "__proto__")) throw new TypeError(`"${label}.__proto__" is not allowed`);
+		};
+		hasHexBuiltin = /* @__PURE__ */ (() => typeof Uint8Array.from([]).toHex === "function" && typeof Uint8Array.fromHex === "function")();
+		hexes = /* @__PURE__ */ Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, "0"));
+		oidNist = (suffix) => ({ oid: Uint8Array.from([
+			6,
+			9,
+			96,
+			134,
+			72,
+			1,
+			101,
+			3,
+			4,
+			2,
+			suffix
+		]) });
+	}));
+	// ../../../../dashboard/node_modules/@noble/hashes/_md.js
+	/**
+	* Shared 32-bit conditional boolean primitive reused by SHA-256, SHA-1, and MD5 `F`.
+	* Returns bits from `b` when `a` is set, otherwise from `c`.
+	* The XOR form is equivalent to MD5's `F(X,Y,Z) = XY v not(X)Z` because the masked terms never
+	* set the same bit.
+	* @param a - selector word
+	* @param b - word chosen when selector bit is set
+	* @param c - word chosen when selector bit is clear
+	* @returns Mixed 32-bit word.
+	* @example
+	* Combine three words with the shared 32-bit choice primitive.
+	* ```ts
+	* Chi(0xffffffff, 0x12345678, 0x87654321);
+	* ```
+	*/
+	function Chi(a, b, c) {
+		return a & b ^ ~a & c;
+	}
+	/**
+	* Shared 32-bit majority primitive reused by SHA-256 and SHA-1.
+	* Returns bits shared by at least two inputs.
+	* @param a - first input word
+	* @param b - second input word
+	* @param c - third input word
+	* @returns Mixed 32-bit word.
+	* @example
+	* Combine three words with the shared 32-bit majority primitive.
+	* ```ts
+	* Maj(0xffffffff, 0x12345678, 0x87654321);
+	* ```
+	*/
+	function Maj(a, b, c) {
+		return a & b ^ a & c ^ b & c;
+	}
+	var HashMD, SHA256_IV, SHA512_IV;
+	var init__md = __esmMin((() => {
+		init__u64();
+		init_utils$1();
+		HashMD = class {
+			blockLen;
+			outputLen;
+			canXOF = false;
+			padOffset;
+			isLE;
+			buffer;
+			view;
+			finished = false;
+			length = 0;
+			pos = 0;
+			destroyed = false;
+			constructor(blockLen, outputLen, padOffset, isLE) {
+				this.blockLen = blockLen;
+				this.outputLen = outputLen;
+				this.padOffset = padOffset;
+				this.isLE = isLE;
+				this.buffer = new Uint8Array(blockLen);
+				this.view = createView(this.buffer);
+			}
+			update(data) {
+				aexists(this);
+				abytes$1(data);
+				const { view, buffer, blockLen } = this;
+				const len = data.length;
+				let processed = false;
+				for (let pos = 0; pos < len;) {
+					const take = Math.min(blockLen - this.pos, len - pos);
+					if (take === blockLen) {
+						const dataView = createView(data);
+						for (; blockLen <= len - pos; pos += blockLen) this.process(dataView, pos);
+						processed = true;
+						continue;
+					}
+					buffer.set(pos === 0 && take === len ? data : data.subarray(pos, pos + take), this.pos);
+					this.pos += take;
+					pos += take;
+					if (this.pos === blockLen) {
+						this.process(view, 0);
+						this.pos = 0;
+						processed = true;
+					}
+				}
+				this.length += data.length;
+				if (processed) this.roundClean();
+				return this;
+			}
+			digestInto(out) {
+				aexists(this);
+				aoutput(out, this);
+				this.finished = true;
+				const { buffer, view, blockLen, isLE } = this;
+				let { pos } = this;
+				buffer[pos++] = 128;
+				buffer.fill(0, pos);
+				if (this.padOffset > blockLen - pos) {
+					this.process(view, 0);
+					buffer.fill(0);
+				}
+				setU64FromNum(view, blockLen - 8, this.length * 8, isLE);
+				this.process(view, 0);
+				this.roundClean();
+				const oview = out === buffer ? view : createView(out);
+				const len = this.outputLen;
+				const outLen = len / 4;
+				const state = this.get();
+				if (len % 4 || outLen > state.length) throw new Error("invalid outputLen");
+				for (let i = 0; i < outLen; i++) oview.setUint32(4 * i, state[i], isLE);
+			}
+			digest() {
+				const { buffer, outputLen } = this;
+				this.digestInto(buffer);
+				const res = buffer.slice(0, outputLen);
+				this.destroy();
+				return res;
+			}
+			_cloneIntoMeta(to) {
+				const { buffer, length, finished, destroyed, pos } = this;
+				to.destroyed = destroyed;
+				to.finished = finished;
+				to.length = length;
+				to.pos = pos;
+				if (pos) to.buffer.set(buffer);
+				return to;
+			}
+			clone() {
+				return this._cloneInto();
+			}
+		};
+		SHA256_IV = /* @__PURE__ */ Uint32Array.from([
+			1779033703,
+			3144134277,
+			1013904242,
+			2773480762,
+			1359893119,
+			2600822924,
+			528734635,
+			1541459225
+		]);
+		SHA512_IV = /* @__PURE__ */ Uint32Array.from([
+			1779033703,
+			4089235720,
+			3144134277,
+			2227873595,
+			1013904242,
+			4271175723,
+			2773480762,
+			1595750129,
+			1359893119,
+			2917565137,
+			2600822924,
+			725511199,
+			528734635,
+			4215389547,
+			1541459225,
+			327033209
+		]);
+	}));
+	// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
+	var SHA256_K, SHA256_W, SHA2_32B, _SHA256, K512, SHA512_Kh, SHA512_Kl, SHA512_W_H, SHA512_W_L, SHA2_64B, _SHA512, sha256, sha512;
+	var init_sha2 = __esmMin((() => {
+		init__md();
+		init__u64();
+		init_utils$1();
+		SHA256_K = /* @__PURE__ */ Uint32Array.from([
+			1116352408,
+			1899447441,
+			3049323471,
+			3921009573,
+			961987163,
+			1508970993,
+			2453635748,
+			2870763221,
+			3624381080,
+			310598401,
+			607225278,
+			1426881987,
+			1925078388,
+			2162078206,
+			2614888103,
+			3248222580,
+			3835390401,
+			4022224774,
+			264347078,
+			604807628,
+			770255983,
+			1249150122,
+			1555081692,
+			1996064986,
+			2554220882,
+			2821834349,
+			2952996808,
+			3210313671,
+			3336571891,
+			3584528711,
+			113926993,
+			338241895,
+			666307205,
+			773529912,
+			1294757372,
+			1396182291,
+			1695183700,
+			1986661051,
+			2177026350,
+			2456956037,
+			2730485921,
+			2820302411,
+			3259730800,
+			3345764771,
+			3516065817,
+			3600352804,
+			4094571909,
+			275423344,
+			430227734,
+			506948616,
+			659060556,
+			883997877,
+			958139571,
+			1322822218,
+			1537002063,
+			1747873779,
+			1955562222,
+			2024104815,
+			2227730452,
+			2361852424,
+			2428436474,
+			2756734187,
+			3204031479,
+			3329325298
+		]);
+		SHA256_W = /* @__PURE__ */ new Uint32Array(64);
+		SHA2_32B = class extends HashMD {
+			A = 0;
+			B = 0;
+			C = 0;
+			D = 0;
+			E = 0;
+			F = 0;
+			G = 0;
+			H = 0;
+			constructor(outputLen, IV) {
+				super(64, outputLen, 8, false);
+				this.A = IV[0] | 0;
+				this.B = IV[1] | 0;
+				this.C = IV[2] | 0;
+				this.D = IV[3] | 0;
+				this.E = IV[4] | 0;
+				this.F = IV[5] | 0;
+				this.G = IV[6] | 0;
+				this.H = IV[7] | 0;
+			}
+			get() {
+				const { A, B, C, D, E, F, G, H } = this;
+				return [
+					A,
+					B,
+					C,
+					D,
+					E,
+					F,
+					G,
+					H
+				];
+			}
+			set(A, B, C, D, E, F, G, H) {
+				this.A = A | 0;
+				this.B = B | 0;
+				this.C = C | 0;
+				this.D = D | 0;
+				this.E = E | 0;
+				this.F = F | 0;
+				this.G = G | 0;
+				this.H = H | 0;
+			}
+			_cloneInto(to) {
+				(to ||= new this.constructor()).set(...this.get());
+				return this._cloneIntoMeta(to);
+			}
+			process(view, offset) {
+				for (let i = 0; i < 16; i++, offset += 4) SHA256_W[i] = view.getUint32(offset, false);
+				for (let i = 16; i < 64; i++) {
+					const W15 = SHA256_W[i - 15];
+					const W2 = SHA256_W[i - 2];
+					const s0 = rotr(W15, 7) ^ rotr(W15, 18) ^ W15 >>> 3;
+					const s1 = rotr(W2, 17) ^ rotr(W2, 19) ^ W2 >>> 10;
+					SHA256_W[i] = s1 + SHA256_W[i - 7] + s0 + SHA256_W[i - 16] | 0;
+				}
+				let { A, B, C, D, E, F, G, H } = this;
+				for (let i = 0; i < 64; i++) {
+					const sigma1 = rotr(E, 6) ^ rotr(E, 11) ^ rotr(E, 25);
+					const T1 = H + sigma1 + Chi(E, F, G) + SHA256_K[i] + SHA256_W[i] | 0;
+					const T2 = (rotr(A, 2) ^ rotr(A, 13) ^ rotr(A, 22)) + Maj(A, B, C) | 0;
+					H = G;
+					G = F;
+					F = E;
+					E = D + T1 | 0;
+					D = C;
+					C = B;
+					B = A;
+					A = T1 + T2 | 0;
+				}
+				A = A + this.A | 0;
+				B = B + this.B | 0;
+				C = C + this.C | 0;
+				D = D + this.D | 0;
+				E = E + this.E | 0;
+				F = F + this.F | 0;
+				G = G + this.G | 0;
+				H = H + this.H | 0;
+				this.set(A, B, C, D, E, F, G, H);
+			}
+			roundClean() {
+				clean$1(SHA256_W);
+			}
+			destroy() {
+				this.destroyed = true;
+				this.set(0, 0, 0, 0, 0, 0, 0, 0);
+				clean$1(this.buffer);
+			}
+		};
+		_SHA256 = class extends SHA2_32B {
+			constructor() {
+				super(32, SHA256_IV);
+			}
+		};
+		K512 = /* @__PURE__ */ (() => split([
+			"0x428a2f98d728ae22",
+			"0x7137449123ef65cd",
+			"0xb5c0fbcfec4d3b2f",
+			"0xe9b5dba58189dbbc",
+			"0x3956c25bf348b538",
+			"0x59f111f1b605d019",
+			"0x923f82a4af194f9b",
+			"0xab1c5ed5da6d8118",
+			"0xd807aa98a3030242",
+			"0x12835b0145706fbe",
+			"0x243185be4ee4b28c",
+			"0x550c7dc3d5ffb4e2",
+			"0x72be5d74f27b896f",
+			"0x80deb1fe3b1696b1",
+			"0x9bdc06a725c71235",
+			"0xc19bf174cf692694",
+			"0xe49b69c19ef14ad2",
+			"0xefbe4786384f25e3",
+			"0x0fc19dc68b8cd5b5",
+			"0x240ca1cc77ac9c65",
+			"0x2de92c6f592b0275",
+			"0x4a7484aa6ea6e483",
+			"0x5cb0a9dcbd41fbd4",
+			"0x76f988da831153b5",
+			"0x983e5152ee66dfab",
+			"0xa831c66d2db43210",
+			"0xb00327c898fb213f",
+			"0xbf597fc7beef0ee4",
+			"0xc6e00bf33da88fc2",
+			"0xd5a79147930aa725",
+			"0x06ca6351e003826f",
+			"0x142929670a0e6e70",
+			"0x27b70a8546d22ffc",
+			"0x2e1b21385c26c926",
+			"0x4d2c6dfc5ac42aed",
+			"0x53380d139d95b3df",
+			"0x650a73548baf63de",
+			"0x766a0abb3c77b2a8",
+			"0x81c2c92e47edaee6",
+			"0x92722c851482353b",
+			"0xa2bfe8a14cf10364",
+			"0xa81a664bbc423001",
+			"0xc24b8b70d0f89791",
+			"0xc76c51a30654be30",
+			"0xd192e819d6ef5218",
+			"0xd69906245565a910",
+			"0xf40e35855771202a",
+			"0x106aa07032bbd1b8",
+			"0x19a4c116b8d2d0c8",
+			"0x1e376c085141ab53",
+			"0x2748774cdf8eeb99",
+			"0x34b0bcb5e19b48a8",
+			"0x391c0cb3c5c95a63",
+			"0x4ed8aa4ae3418acb",
+			"0x5b9cca4f7763e373",
+			"0x682e6ff3d6b2b8a3",
+			"0x748f82ee5defb2fc",
+			"0x78a5636f43172f60",
+			"0x84c87814a1f0ab72",
+			"0x8cc702081a6439ec",
+			"0x90befffa23631e28",
+			"0xa4506cebde82bde9",
+			"0xbef9a3f7b2c67915",
+			"0xc67178f2e372532b",
+			"0xca273eceea26619c",
+			"0xd186b8c721c0c207",
+			"0xeada7dd6cde0eb1e",
+			"0xf57d4f7fee6ed178",
+			"0x06f067aa72176fba",
+			"0x0a637dc5a2c898a6",
+			"0x113f9804bef90dae",
+			"0x1b710b35131c471b",
+			"0x28db77f523047d84",
+			"0x32caab7b40c72493",
+			"0x3c9ebe0a15c9bebc",
+			"0x431d67c49c100d4c",
+			"0x4cc5d4becb3e42b6",
+			"0x597f299cfc657e2a",
+			"0x5fcb6fab3ad6faec",
+			"0x6c44198c4a475817"
+		].map((n) => BigInt(n))))();
+		SHA512_Kh = /* @__PURE__ */ (() => K512[0])();
+		SHA512_Kl = /* @__PURE__ */ (() => K512[1])();
+		SHA512_W_H = /* @__PURE__ */ new Uint32Array(80);
+		SHA512_W_L = /* @__PURE__ */ new Uint32Array(80);
+		SHA2_64B = class extends HashMD {
+			Ah = 0;
+			Al = 0;
+			Bh = 0;
+			Bl = 0;
+			Ch = 0;
+			Cl = 0;
+			Dh = 0;
+			Dl = 0;
+			Eh = 0;
+			El = 0;
+			Fh = 0;
+			Fl = 0;
+			Gh = 0;
+			Gl = 0;
+			Hh = 0;
+			Hl = 0;
+			constructor(outputLen, IV) {
+				super(128, outputLen, 16, false);
+				this.Ah = IV[0] | 0;
+				this.Al = IV[1] | 0;
+				this.Bh = IV[2] | 0;
+				this.Bl = IV[3] | 0;
+				this.Ch = IV[4] | 0;
+				this.Cl = IV[5] | 0;
+				this.Dh = IV[6] | 0;
+				this.Dl = IV[7] | 0;
+				this.Eh = IV[8] | 0;
+				this.El = IV[9] | 0;
+				this.Fh = IV[10] | 0;
+				this.Fl = IV[11] | 0;
+				this.Gh = IV[12] | 0;
+				this.Gl = IV[13] | 0;
+				this.Hh = IV[14] | 0;
+				this.Hl = IV[15] | 0;
+			}
+			get() {
+				const { Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl } = this;
+				return [
+					Ah,
+					Al,
+					Bh,
+					Bl,
+					Ch,
+					Cl,
+					Dh,
+					Dl,
+					Eh,
+					El,
+					Fh,
+					Fl,
+					Gh,
+					Gl,
+					Hh,
+					Hl
+				];
+			}
+			set(Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl) {
+				this.Ah = Ah | 0;
+				this.Al = Al | 0;
+				this.Bh = Bh | 0;
+				this.Bl = Bl | 0;
+				this.Ch = Ch | 0;
+				this.Cl = Cl | 0;
+				this.Dh = Dh | 0;
+				this.Dl = Dl | 0;
+				this.Eh = Eh | 0;
+				this.El = El | 0;
+				this.Fh = Fh | 0;
+				this.Fl = Fl | 0;
+				this.Gh = Gh | 0;
+				this.Gl = Gl | 0;
+				this.Hh = Hh | 0;
+				this.Hl = Hl | 0;
+			}
+			_cloneInto(to) {
+				(to ||= new this.constructor()).set(...this.get());
+				return this._cloneIntoMeta(to);
+			}
+			process(view, offset) {
+				for (let i = 0; i < 16; i++, offset += 4) {
+					SHA512_W_H[i] = view.getUint32(offset);
+					SHA512_W_L[i] = view.getUint32(offset += 4);
+				}
+				for (let i = 16; i < 80; i++) {
+					const W15h = SHA512_W_H[i - 15] | 0;
+					const W15l = SHA512_W_L[i - 15] | 0;
+					const s0h = rotrSH(W15h, W15l, 1) ^ rotrSH(W15h, W15l, 8) ^ shrSH(W15h, W15l, 7);
+					const s0l = rotrSL(W15h, W15l, 1) ^ rotrSL(W15h, W15l, 8) ^ shrSL(W15h, W15l, 7);
+					const W2h = SHA512_W_H[i - 2] | 0;
+					const W2l = SHA512_W_L[i - 2] | 0;
+					const s1h = rotrSH(W2h, W2l, 19) ^ rotrBH(W2h, W2l, 61) ^ shrSH(W2h, W2l, 6);
+					const s1l = rotrSL(W2h, W2l, 19) ^ rotrBL(W2h, W2l, 61) ^ shrSL(W2h, W2l, 6);
+					const SUMl = add4L(s0l, s1l, SHA512_W_L[i - 7], SHA512_W_L[i - 16]);
+					const SUMh = add4H(SUMl, s0h, s1h, SHA512_W_H[i - 7], SHA512_W_H[i - 16]);
+					SHA512_W_H[i] = SUMh | 0;
+					SHA512_W_L[i] = SUMl | 0;
+				}
+				let { Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl } = this;
+				for (let i = 0; i < 80; i++) {
+					const sigma1h = rotrSH(Eh, El, 14) ^ rotrSH(Eh, El, 18) ^ rotrBH(Eh, El, 41);
+					const sigma1l = rotrSL(Eh, El, 14) ^ rotrSL(Eh, El, 18) ^ rotrBL(Eh, El, 41);
+					const CHIh = Eh & Fh ^ ~Eh & Gh;
+					const CHIl = El & Fl ^ ~El & Gl;
+					const T1ll = add5L(Hl, sigma1l, CHIl, SHA512_Kl[i], SHA512_W_L[i]);
+					const T1h = add5H(T1ll, Hh, sigma1h, CHIh, SHA512_Kh[i], SHA512_W_H[i]);
+					const T1l = T1ll | 0;
+					const sigma0h = rotrSH(Ah, Al, 28) ^ rotrBH(Ah, Al, 34) ^ rotrBH(Ah, Al, 39);
+					const sigma0l = rotrSL(Ah, Al, 28) ^ rotrBL(Ah, Al, 34) ^ rotrBL(Ah, Al, 39);
+					const MAJh = Ah & Bh ^ Ah & Ch ^ Bh & Ch;
+					const MAJl = Al & Bl ^ Al & Cl ^ Bl & Cl;
+					Hh = Gh | 0;
+					Hl = Gl | 0;
+					Gh = Fh | 0;
+					Gl = Fl | 0;
+					Fh = Eh | 0;
+					Fl = El | 0;
+					({h: Eh, l: El} = add$1(Dh | 0, Dl | 0, T1h | 0, T1l | 0));
+					Dh = Ch | 0;
+					Dl = Cl | 0;
+					Ch = Bh | 0;
+					Cl = Bl | 0;
+					Bh = Ah | 0;
+					Bl = Al | 0;
+					const All = add3L(T1l, sigma0l, MAJl);
+					Ah = add3H(All, T1h, sigma0h, MAJh);
+					Al = All | 0;
+				}
+				({h: Ah, l: Al} = add$1(this.Ah | 0, this.Al | 0, Ah | 0, Al | 0));
+				({h: Bh, l: Bl} = add$1(this.Bh | 0, this.Bl | 0, Bh | 0, Bl | 0));
+				({h: Ch, l: Cl} = add$1(this.Ch | 0, this.Cl | 0, Ch | 0, Cl | 0));
+				({h: Dh, l: Dl} = add$1(this.Dh | 0, this.Dl | 0, Dh | 0, Dl | 0));
+				({h: Eh, l: El} = add$1(this.Eh | 0, this.El | 0, Eh | 0, El | 0));
+				({h: Fh, l: Fl} = add$1(this.Fh | 0, this.Fl | 0, Fh | 0, Fl | 0));
+				({h: Gh, l: Gl} = add$1(this.Gh | 0, this.Gl | 0, Gh | 0, Gl | 0));
+				({h: Hh, l: Hl} = add$1(this.Hh | 0, this.Hl | 0, Hh | 0, Hl | 0));
+				this.set(Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl);
+			}
+			roundClean() {
+				clean$1(SHA512_W_H, SHA512_W_L);
+			}
+			destroy() {
+				this.destroyed = true;
+				clean$1(this.buffer);
+				this.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+			}
+		};
+		_SHA512 = class extends SHA2_64B {
+			constructor() {
+				super(64, SHA512_IV);
+			}
+		};
+		sha256 = /* @__PURE__ */ createHasher(() => new _SHA256(), /* @__PURE__ */ oidNist(1));
+		sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
+	}));
+	// src/encoding.ts
+	/** Hex and base64url, as the relay writes keys and signatures. */
+	function base64UrlToBytes(b64url) {
+		const b64 = (b64url + "=".repeat((4 - b64url.length % 4) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+		const bin = atob(b64);
+		const bytes = new Uint8Array(bin.length);
+		for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+		return bytes;
+	}
+	function hexToBytes$1(hex) {
+		const bytes = new Uint8Array(hex.length / 2);
+		for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+		return bytes;
+	}
+	function bytesToHex$1(bytes) {
+		return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+	}
+	var init_encoding = __esmMin((() => {}));
+	// src/agentPicture.ts
+	/** Normalizes a stable id (lower case, no 0x), or "" when it is not one. */
+	function cleanStableId(s) {
+		return s && STABLE.test(s) ? s.toLowerCase().replace(/^0x/, "") : "";
+	}
+	/** Learn an agent's real stable id (a profile, a room message, a lab board row carries it). */
+	function rememberStableId(handle, stable) {
+		const s = cleanStableId(stable);
+		if (handle && s) known.set(handle, s);
+	}
+	/** The agent's real stable id when given or learned on this page, else "". */
+	function stableOf(handle, stable) {
+		return cleanStableId(stable) || known.get(handle) || "";
+	}
+	/** The 64-hex id the pictures are drawn from: the stable id when given or learned, else SHA-256 of the handle. */
+	function pictureId(handle, stable) {
+		return stableOf(handle, stable) || bytesToHex$1(sha256(new TextEncoder().encode(handle || "?")));
+	}
+	function notify() {
+		listeners$3.forEach((f) => f());
+	}
+	async function fetchPicture(stable) {
+		try {
+			const r = await httpFetch(consoleUrl(`/chain-picture/${encodeURIComponent(VIEWER_ID ?? "")}?stable=${stable}`));
+			if (r.status !== 200) return null;
+			const b = await r.blob();
+			return b.type.startsWith("image/") ? URL.createObjectURL(b) : null;
+		} catch {
+			return null;
+		}
+	}
+	function ensure(stable) {
+		const now = Date.now();
+		const e = entries.get(stable);
+		if (e && !e.stale && (e.url || now - e.at < NO_PICTURE_RETRY_MS)) return;
+		if (e?.pending) return;
+		const entry = e ?? {
+			url: null,
+			at: 0,
+			stale: false,
+			pending: null
+		};
+		entries.set(stable, entry);
+		entry.pending = fetchPicture(stable).then((url) => {
+			const old = entry.url;
+			Object.assign(entry, {
+				url,
+				at: Date.now(),
+				stale: false,
+				pending: null
+			});
+			if (old && old !== url) URL.revokeObjectURL(old);
+			notify();
+		});
+	}
+	/** Call after the console has (re)checked a link: pictures are asked for again, and an agent no longer proven goes
+	*  back to its everyday picture. */
+	function refreshChainPictures() {
+		entries.forEach((e) => {
+			e.stale = true;
+		});
+		notify();
+	}
+	/** The address (a local object URL of the console's image) of this agent's proven on-chain picture, or null. */
+	function useChainPicture(stable) {
+		const live = VIA_CONSOLE && !!VIEWER_ID && !!stable;
+		const [, tick] = (0, import_react$61.useState)(0);
+		(0, import_react$61.useEffect)(() => {
+			if (!live) return;
+			const f = () => {
+				tick((n) => n + 1);
+				ensure(stable);
+			};
+			listeners$3.add(f);
+			ensure(stable);
+			return () => {
+				listeners$3.delete(f);
+			};
+		}, [live, stable]);
+		return live ? entries.get(stable)?.url ?? null : null;
+	}
+	var import_react$61, STABLE, known, entries, listeners$3, NO_PICTURE_RETRY_MS;
+	var init_agentPicture = __esmMin((() => {
+		import_react$61 = /* @__PURE__ */ __toESM(require_react(), 1);
+		init_sha2();
+		init_encoding();
+		init_relayEnv();
+		init_transport();
+		STABLE = /^(?:0x)?[0-9a-f]{64}$/i;
+		known = /* @__PURE__ */ new Map();
+		entries = /* @__PURE__ */ new Map();
+		listeners$3 = /* @__PURE__ */ new Set();
+		NO_PICTURE_RETRY_MS = 6e4;
+	}));
+	// src/AgentMoireAvatar.tsx
+	/** The inside of a generated SVG (its outer tag removed), so the host can set the size. The string comes from
+	*  `avatars.ts` (literal tables and integers only), never from an agent's text. */
+	function svgInner(svg) {
+		return svg.slice(svg.indexOf(">") + 1, svg.lastIndexOf("</svg>"));
+	}
+	/** An agent's picture: the everyday picture drawn from its stable id (SHA-256 of the handle where only the handle is
+	*  known), or, for an agent whose ERC-8004 link this console has already proven, the identity token's on-chain image. */
+	function AgentMoireAvatar({ agentId, stableId, size = 28, link = true }) {
 		const nav = useAgentNav();
-		const seed = hashSeed(agentId || "?");
-		const hue = MOIRE_HUES[seed % MOIRE_HUES.length];
-		const rotA = seed % 7 * 13 - 40;
-		const rotB = rotA + 55 + seed % 20;
-		const safe = agentId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 12) || "x";
-		const idA = `moire-a-${safe}-${size}`;
-		const idB = `moire-b-${safe}-${size}`;
-		const glyph = /* @__PURE__ */ (0, import_jsx_runtime$113.jsxs)("svg", {
+		rememberStableId(agentId, stableId);
+		const pid = pictureId(agentId, stableId);
+		const uid = pid.slice(0, 12) + (0, import_react$60.useId)().replace(/[^a-zA-Z0-9]/g, "");
+		const inner = (0, import_react$60.useMemo)(() => svgInner(everydayAvatar(pid, uid)), [pid, uid]);
+		const onChain = useChainPicture(stableOf(agentId, stableId));
+		const glyph = onChain ? /* @__PURE__ */ (0, import_jsx_runtime$113.jsx)("img", {
+			className: "e-moire-avatar",
+			src: onChain,
+			width: size,
+			height: size,
+			alt: "",
+			"aria-hidden": true,
+			referrerPolicy: "no-referrer",
+			decoding: "async",
+			"data-testid": "avatar-onchain",
+			style: { objectFit: "cover" }
+		}) : /* @__PURE__ */ (0, import_jsx_runtime$113.jsx)("svg", {
 			width: size,
 			height: size,
 			className: "e-moire-avatar",
 			viewBox: "0 0 32 32",
 			"aria-hidden": true,
-			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$113.jsxs)("defs", { children: [/* @__PURE__ */ (0, import_jsx_runtime$113.jsx)("pattern", {
-					id: idA,
-					width: "4",
-					height: "4",
-					patternUnits: "userSpaceOnUse",
-					patternTransform: `rotate(${rotA}, 16, 16)`,
-					children: /* @__PURE__ */ (0, import_jsx_runtime$113.jsx)("line", {
-						x1: "0",
-						y1: "0",
-						x2: "0",
-						y2: "4",
-						stroke: `hsl(${hue}, 70%, 60%)`,
-						strokeWidth: "1"
-					})
-				}), /* @__PURE__ */ (0, import_jsx_runtime$113.jsx)("pattern", {
-					id: idB,
-					width: "4",
-					height: "4",
-					patternUnits: "userSpaceOnUse",
-					patternTransform: `rotate(${rotB}, 16, 16)`,
-					children: /* @__PURE__ */ (0, import_jsx_runtime$113.jsx)("line", {
-						x1: "0",
-						y1: "0",
-						x2: "4",
-						y2: "0",
-						stroke: `hsl(${(hue + 72) % 360}, 60%, 68%)`,
-						strokeWidth: "0.8"
-					})
-				})] }),
-				/* @__PURE__ */ (0, import_jsx_runtime$113.jsx)("rect", {
-					width: "32",
-					height: "32",
-					fill: `hsl(${hue}, 28%, 18%)`
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$113.jsx)("rect", {
-					width: "32",
-					height: "32",
-					fill: `url(#${idA})`,
-					opacity: "0.85"
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$113.jsx)("rect", {
-					width: "32",
-					height: "32",
-					fill: `url(#${idB})`,
-					opacity: "0.65"
-				})
-			]
+			dangerouslySetInnerHTML: { __html: inner }
 		});
 		if (!link || !nav) return glyph;
 		const open = (e) => {
@@ -15602,22 +16877,13 @@ var EmporiaHermesPlugin = (function(exports) {
 			children: glyph
 		});
 	}
-	var import_jsx_runtime$113, MOIRE_HUES;
+	var import_react$60, import_jsx_runtime$113;
 	var init_AgentMoireAvatar = __esmMin((() => {
+		import_react$60 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_agentNavCtx();
+		init_avatars();
+		init_agentPicture();
 		import_jsx_runtime$113 = require_jsx_runtime();
-		MOIRE_HUES = [
-			210,
-			0,
-			145,
-			280,
-			235,
-			175,
-			300,
-			195,
-			255,
-			100
-		];
 	}));
 	// src/badges/badges.css
 	var init_badges$1 = __esmMin((() => {}));
@@ -17210,941 +18476,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_agentName();
 		init_attention();
 	}));
-	// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
-	function fromBig(n, le = false) {
-		if (le) return {
-			h: Number(n & U32_MASK64),
-			l: Number(n >> _32n & U32_MASK64)
-		};
-		return {
-			h: Number(n >> _32n & U32_MASK64) | 0,
-			l: Number(n & U32_MASK64) | 0
-		};
-	}
-	function split(lst, le = false) {
-		const len = lst.length;
-		let Ah = new Uint32Array(len);
-		let Al = new Uint32Array(len);
-		for (let i = 0; i < len; i++) {
-			const { h, l } = fromBig(lst[i], le);
-			[Ah[i], Al[i]] = [h, l];
-		}
-		return [Ah, Al];
-	}
-	function setU64FromNum(view, byteOffset, n, isLE) {
-		const h = fromNumH(n);
-		const l = fromNumL(n);
-		view.setUint32(byteOffset, isLE ? l : h, isLE);
-		view.setUint32(byteOffset + 4, isLE ? h : l, isLE);
-	}
-	function add$1(Ah, Al, Bh, Bl) {
-		const l = (Al >>> 0) + (Bl >>> 0);
-		return {
-			h: Ah + Bh + (l / 2 ** 32 | 0) | 0,
-			l: l | 0
-		};
-	}
-	var U32_MASK64, _32n, fromNumH, fromNumL, shrSH, shrSL, rotrSH, rotrSL, rotrBH, rotrBL, add3L, add3H, add4L, add4H, add5L, add5H;
-	var init__u64 = __esmMin((() => {
-		U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();
-		_32n = /* @__PURE__ */ BigInt(32);
-		fromNumH = (n) => n / 2 ** 32 | 0;
-		fromNumL = (n) => n >>> 0;
-		shrSH = (h, _l, s) => h >>> s;
-		shrSL = (h, l, s) => h << 32 - s | l >>> s;
-		rotrSH = (h, l, s) => h >>> s | l << 32 - s;
-		rotrSL = (h, l, s) => h << 32 - s | l >>> s;
-		rotrBH = (h, l, s) => h << 64 - s | l >>> s - 32;
-		rotrBL = (h, l, s) => h >>> s - 32 | l << 64 - s;
-		add3L = (Al, Bl, Cl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0);
-		add3H = (low, Ah, Bh, Ch) => Ah + Bh + Ch + (low / 2 ** 32 | 0) | 0;
-		add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0);
-		add4H = (low, Ah, Bh, Ch, Dh) => Ah + Bh + Ch + Dh + (low / 2 ** 32 | 0) | 0;
-		add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
-		add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
-	}));
-	// ../../../../dashboard/node_modules/@noble/hashes/utils.js
-	/**
-	* Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
-	* @param a - value to test
-	* @returns `true` when the value is a Uint8Array-compatible view.
-	* @example
-	* Check whether a value is a Uint8Array-compatible view.
-	* ```ts
-	* isBytes(new Uint8Array([1, 2, 3]));
-	* ```
-	*/
-	function isBytes$1(a) {
-		return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
-	}
-	/**
-	* Asserts something is a non-negative integer.
-	* @param n - number to validate
-	* @param title - label included in thrown errors
-	* @returns The validated number.
-	* @throws On wrong argument types. {@link TypeError}
-	* @throws On wrong argument ranges or values. {@link RangeError}
-	* @example
-	* Validate a non-negative integer option.
-	* ```ts
-	* anumber(32, 'length');
-	* ```
-	*/
-	function anumber$1(n, title = "") {
-		if (typeof n !== "number") throw new TypeError(atitle$1(title) + "expected number, got " + typeof n);
-		if (!Number.isSafeInteger(n) || n < 0) throw new RangeError(atitle$1(title) + "expected integer >= 0, got " + n);
-		return n;
-	}
-	/**
-	* Asserts something is Uint8Array.
-	* @param value - value to validate
-	* @param length - optional exact length constraint
-	* @param title - label included in thrown errors
-	* @returns The validated byte array.
-	* @throws On wrong argument types. {@link TypeError}
-	* @throws On wrong argument ranges or values. {@link RangeError}
-	* @example
-	* Validate that a value is a byte array.
-	* ```ts
-	* abytes(new Uint8Array([1, 2, 3]));
-	* ```
-	*/
-	function abytes$1(value, length, title = "") {
-		if (isBytes$1(value) && (length === void 0 || value.length === length)) return value;
-		if (length !== void 0) anumber$1(length, "length");
-		const bytes = isBytes$1(value);
-		const ofLen = length !== void 0 ? ` of length ${length}` : "";
-		const got = bytes ? `length=${value.length}` : `type=${typeof value}`;
-		const message = atitle$1(title) + "expected Uint8Array" + ofLen + ", got " + got;
-		if (!bytes) throw new TypeError(message);
-		throw new RangeError(message);
-	}
-	/**
-	* Asserts a hash instance has not been destroyed or finished.
-	* @param instance - hash instance to validate
-	* @param checkFinished - whether to reject finalized instances
-	* @throws If the hash instance has already been destroyed or finalized. {@link Error}
-	* @example
-	* Validate that a hash instance is still usable.
-	* ```ts
-	* import { aexists } from '@noble/hashes/utils.js';
-	* import { sha256 } from '@noble/hashes/sha2.js';
-	* const hash = sha256.create();
-	* aexists(hash);
-	* ```
-	*/
-	function aexists(instance, checkFinished = true) {
-		if (instance.destroyed) throw new Error("hash was destroyed");
-		if (checkFinished && instance.finished) throw new Error("digest() was already called");
-	}
-	/**
-	* Asserts output is a sufficiently-sized byte array.
-	* @param out - destination buffer
-	* @param instance - hash instance providing output length
-	* Oversized buffers are allowed; downstream code only promises to fill the first `outputLen` bytes.
-	* @throws On wrong argument types. {@link TypeError}
-	* @throws On wrong argument ranges or values. {@link RangeError}
-	* @example
-	* Validate a caller-provided digest buffer.
-	* ```ts
-	* import { aoutput } from '@noble/hashes/utils.js';
-	* import { sha256 } from '@noble/hashes/sha2.js';
-	* const hash = sha256.create();
-	* aoutput(new Uint8Array(hash.outputLen), hash);
-	* ```
-	*/
-	function aoutput(out, instance) {
-		abytes$1(out, void 0, "output");
-		const min = instance.outputLen;
-		if (!(out.length >= min)) throw new RangeError("\"output\" expected length >= " + min);
-	}
-	/**
-	* Zeroizes typed arrays in place. Warning: JS provides no guarantees.
-	* @param arrays - arrays to overwrite with zeros
-	* @example
-	* Zeroize sensitive buffers in place.
-	* ```ts
-	* clean(new Uint8Array([1, 2, 3]));
-	* ```
-	*/
-	function clean$1(...arrays) {
-		for (let i = 0; i < arrays.length; i++) arrays[i].fill(0);
-	}
-	/**
-	* Creates a DataView for byte-level manipulation.
-	* @param arr - source typed array
-	* @returns DataView over the same buffer region.
-	* @example
-	* Create a DataView over an existing buffer.
-	* ```ts
-	* createView(new Uint8Array(4));
-	* ```
-	*/
-	function createView(arr) {
-		return new DataView(arr.buffer, arr.byteOffset, arr.byteLength);
-	}
-	/**
-	* Rotate-right operation for uint32 values.
-	* @param word - source word
-	* @param shift - shift amount in bits
-	* @returns Rotated word.
-	* @example
-	* Rotate a 32-bit word to the right.
-	* ```ts
-	* rotr(0x12345678, 8);
-	* ```
-	*/
-	function rotr(word, shift) {
-		return word << 32 - shift | word >>> shift;
-	}
-	/**
-	* Convert byte array to hex string.
-	* Uses the built-in function when available and assumes it matches the tested
-	* fallback semantics.
-	* @param bytes - bytes to encode
-	* @returns Lowercase hexadecimal string.
-	* @throws On wrong argument types. {@link TypeError}
-	* @example
-	* Convert bytes to lowercase hexadecimal.
-	* ```ts
-	* bytesToHex(Uint8Array.from([0xca, 0xfe, 0x01, 0x23])); // 'cafe0123'
-	* ```
-	*/
-	function bytesToHex$2(bytes) {
-		abytes$1(bytes);
-		if (hasHexBuiltin) return bytes.toHex();
-		let hex = "";
-		for (let i = 0; i < bytes.length; i++) hex += hexes[bytes[i]];
-		return hex;
-	}
-	function asciiToBase16(ch) {
-		return ch >= 48 && ch <= 57 ? ch - 48 : ch >= 65 && ch <= 70 ? ch - 55 : ch >= 97 && ch <= 102 ? ch - 87 : void 0;
-	}
-	/**
-	* Convert hex string to byte array. Uses built-in function, when available.
-	* @param hex - hexadecimal string to decode
-	* @returns Decoded bytes.
-	* @throws On wrong argument types. {@link TypeError}
-	* @throws On wrong argument ranges or values. {@link RangeError}
-	* @example
-	* Decode lowercase hexadecimal into bytes.
-	* ```ts
-	* hexToBytes('cafe0123'); // Uint8Array.from([0xca, 0xfe, 0x01, 0x23])
-	* ```
-	*/
-	function hexToBytes$2(hex) {
-		if (typeof hex !== "string") throw new TypeError("hex string expected, got " + typeof hex);
-		if (hasHexBuiltin) try {
-			return Uint8Array.fromHex(hex);
-		} catch (error) {
-			if (error instanceof SyntaxError) throw new RangeError(error.message);
-			throw error;
-		}
-		const hl = hex.length;
-		const al = hl / 2;
-		if (hl % 2) throw new RangeError("hex string expected, got unpadded hex of length " + hl);
-		const array = new Uint8Array(al);
-		for (let ai = 0, hi = 0; ai < al; ai++, hi += 2) {
-			const n1 = asciiToBase16(hex.charCodeAt(hi));
-			const n2 = asciiToBase16(hex.charCodeAt(hi + 1));
-			if (n1 === void 0 || n2 === void 0) {
-				const char = hex[hi] + hex[hi + 1];
-				throw new RangeError("hex string expected, got non-hex character \"" + char + "\" at index " + hi);
-			}
-			array[ai] = n1 * 16 + n2;
-		}
-		return array;
-	}
-	/**
-	* Copies several Uint8Arrays into one.
-	* @param arrays - arrays to concatenate
-	* @returns Concatenated byte array.
-	* @throws On wrong argument types. {@link TypeError}
-	* @example
-	* Concatenate multiple byte arrays.
-	* ```ts
-	* concatBytes(new Uint8Array([1]), new Uint8Array([2]));
-	* ```
-	*/
-	function concatBytes$1(...arrays) {
-		let sum = 0;
-		for (let i = 0; i < arrays.length; i++) {
-			const a = arrays[i];
-			abytes$1(a);
-			sum += a.length;
-		}
-		const res = new Uint8Array(sum);
-		for (let i = 0, pad = 0; i < arrays.length; i++) {
-			const a = arrays[i];
-			res.set(a, pad);
-			pad += a.length;
-		}
-		return res;
-	}
-	/**
-	* Merges default options and passed options.
-	* @param defaults - base option object
-	* @param opts - user overrides
-	* @param title - label included in thrown override errors
-	* @returns Fresh merged option object with a null prototype.
-	* @throws On wrong argument types. {@link TypeError}
-	* @example
-	* Merge user overrides onto default options.
-	* ```ts
-	* checkOpts({ dkLen: 32 }, { asyncTick: 10 });
-	* ```
-	*/
-	function checkOpts(defaults, opts, title = "opts") {
-		aopts(defaults, "defaults");
-		if (opts !== void 0) aopts(opts, title);
-		return Object.assign(Object.create(null), defaults, opts);
-	}
-	/**
-	* Creates a callable hash function from a stateful class constructor.
-	* @param hashCons - hash constructor or factory
-	* @param info - optional metadata such as DER OID
-	* @returns Frozen callable hash wrapper with `.create()`.
-	*   Wrapper construction eagerly calls `hashCons(undefined)` once to read
-	*   `outputLen` / `blockLen`, so constructor side effects happen at module
-	*   init time.
-	* @throws On wrong argument types. {@link TypeError}
-	* @example
-	* Wrap a stateful hash constructor into a callable helper.
-	* ```ts
-	* import { createHasher } from '@noble/hashes/utils.js';
-	* import { sha256 } from '@noble/hashes/sha2.js';
-	* const wrapped = createHasher(sha256.create, { oid: sha256.oid });
-	* wrapped(new Uint8Array([1]));
-	* ```
-	*/
-	function createHasher(hashCons, info = {}) {
-		if (typeof hashCons !== "function") throw new TypeError("\"hashCons\" expected function, got type=" + typeof hashCons);
-		info = checkOpts({}, info, "info");
-		const hashC = (msg, opts) => hashCons(opts).update(msg).digest();
-		const tmp = hashCons(void 0);
-		hashC.outputLen = tmp.outputLen;
-		hashC.blockLen = tmp.blockLen;
-		hashC.canXOF = tmp.canXOF;
-		hashC.create = (opts) => hashCons(opts);
-		Object.assign(hashC, info);
-		return Object.freeze(hashC);
-	}
-	/**
-	* Cryptographically secure PRNG backed by `crypto.getRandomValues`.
-	* @param bytesLength - number of random bytes to generate
-	* @returns Random bytes.
-	* The platform `getRandomValues()` implementation still defines any
-	* single-call length cap, and this helper rejects oversize requests
-	* with a stable library `RangeError` instead of host-specific errors.
-	* @throws On wrong argument types. {@link TypeError}
-	* @throws On wrong argument ranges or values. {@link RangeError}
-	* @throws If the current runtime does not provide `crypto.getRandomValues`. {@link Error}
-	* @example
-	* Generate a fresh random key or nonce.
-	* ```ts
-	* const key = randomBytes(16);
-	* ```
-	*/
-	function randomBytes$1(bytesLength = 32) {
-		anumber$1(bytesLength, "bytesLength");
-		const cr = typeof globalThis === "object" ? globalThis.crypto : null;
-		if (typeof cr?.getRandomValues !== "function") throw new Error("crypto.getRandomValues must be defined");
-		if (bytesLength > 65536) throw new RangeError(`"bytesLength" expected <= 65536, got ${bytesLength}`);
-		return cr.getRandomValues(new Uint8Array(bytesLength));
-	}
-	var atitle$1, aobject$1, aopts, hasHexBuiltin, hexes, oidNist;
-	var init_utils$1 = __esmMin((() => {
-		atitle$1 = (title) => title ? `"${title}" ` : "";
-		aobject$1 = (value, label) => {
-			if (value === null || typeof value !== "object" || Array.isArray(value)) throw new TypeError((label === "object" ? "" : `"${label}" `) + "expected object, got type=" + typeof value);
-		};
-		aopts = (value, label) => {
-			aobject$1(value, label);
-			const proto = Object.getPrototypeOf(value);
-			if (proto !== Object.prototype && proto !== null) throw new TypeError(`"${label}" expected plain object`);
-			if (Object.hasOwn(value, "__proto__")) throw new TypeError(`"${label}.__proto__" is not allowed`);
-		};
-		hasHexBuiltin = /* @__PURE__ */ (() => typeof Uint8Array.from([]).toHex === "function" && typeof Uint8Array.fromHex === "function")();
-		hexes = /* @__PURE__ */ Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, "0"));
-		oidNist = (suffix) => ({ oid: Uint8Array.from([
-			6,
-			9,
-			96,
-			134,
-			72,
-			1,
-			101,
-			3,
-			4,
-			2,
-			suffix
-		]) });
-	}));
-	// ../../../../dashboard/node_modules/@noble/hashes/_md.js
-	/**
-	* Shared 32-bit conditional boolean primitive reused by SHA-256, SHA-1, and MD5 `F`.
-	* Returns bits from `b` when `a` is set, otherwise from `c`.
-	* The XOR form is equivalent to MD5's `F(X,Y,Z) = XY v not(X)Z` because the masked terms never
-	* set the same bit.
-	* @param a - selector word
-	* @param b - word chosen when selector bit is set
-	* @param c - word chosen when selector bit is clear
-	* @returns Mixed 32-bit word.
-	* @example
-	* Combine three words with the shared 32-bit choice primitive.
-	* ```ts
-	* Chi(0xffffffff, 0x12345678, 0x87654321);
-	* ```
-	*/
-	function Chi(a, b, c) {
-		return a & b ^ ~a & c;
-	}
-	/**
-	* Shared 32-bit majority primitive reused by SHA-256 and SHA-1.
-	* Returns bits shared by at least two inputs.
-	* @param a - first input word
-	* @param b - second input word
-	* @param c - third input word
-	* @returns Mixed 32-bit word.
-	* @example
-	* Combine three words with the shared 32-bit majority primitive.
-	* ```ts
-	* Maj(0xffffffff, 0x12345678, 0x87654321);
-	* ```
-	*/
-	function Maj(a, b, c) {
-		return a & b ^ a & c ^ b & c;
-	}
-	var HashMD, SHA256_IV, SHA512_IV;
-	var init__md = __esmMin((() => {
-		init__u64();
-		init_utils$1();
-		HashMD = class {
-			blockLen;
-			outputLen;
-			canXOF = false;
-			padOffset;
-			isLE;
-			buffer;
-			view;
-			finished = false;
-			length = 0;
-			pos = 0;
-			destroyed = false;
-			constructor(blockLen, outputLen, padOffset, isLE) {
-				this.blockLen = blockLen;
-				this.outputLen = outputLen;
-				this.padOffset = padOffset;
-				this.isLE = isLE;
-				this.buffer = new Uint8Array(blockLen);
-				this.view = createView(this.buffer);
-			}
-			update(data) {
-				aexists(this);
-				abytes$1(data);
-				const { view, buffer, blockLen } = this;
-				const len = data.length;
-				let processed = false;
-				for (let pos = 0; pos < len;) {
-					const take = Math.min(blockLen - this.pos, len - pos);
-					if (take === blockLen) {
-						const dataView = createView(data);
-						for (; blockLen <= len - pos; pos += blockLen) this.process(dataView, pos);
-						processed = true;
-						continue;
-					}
-					buffer.set(pos === 0 && take === len ? data : data.subarray(pos, pos + take), this.pos);
-					this.pos += take;
-					pos += take;
-					if (this.pos === blockLen) {
-						this.process(view, 0);
-						this.pos = 0;
-						processed = true;
-					}
-				}
-				this.length += data.length;
-				if (processed) this.roundClean();
-				return this;
-			}
-			digestInto(out) {
-				aexists(this);
-				aoutput(out, this);
-				this.finished = true;
-				const { buffer, view, blockLen, isLE } = this;
-				let { pos } = this;
-				buffer[pos++] = 128;
-				buffer.fill(0, pos);
-				if (this.padOffset > blockLen - pos) {
-					this.process(view, 0);
-					buffer.fill(0);
-				}
-				setU64FromNum(view, blockLen - 8, this.length * 8, isLE);
-				this.process(view, 0);
-				this.roundClean();
-				const oview = out === buffer ? view : createView(out);
-				const len = this.outputLen;
-				const outLen = len / 4;
-				const state = this.get();
-				if (len % 4 || outLen > state.length) throw new Error("invalid outputLen");
-				for (let i = 0; i < outLen; i++) oview.setUint32(4 * i, state[i], isLE);
-			}
-			digest() {
-				const { buffer, outputLen } = this;
-				this.digestInto(buffer);
-				const res = buffer.slice(0, outputLen);
-				this.destroy();
-				return res;
-			}
-			_cloneIntoMeta(to) {
-				const { buffer, length, finished, destroyed, pos } = this;
-				to.destroyed = destroyed;
-				to.finished = finished;
-				to.length = length;
-				to.pos = pos;
-				if (pos) to.buffer.set(buffer);
-				return to;
-			}
-			clone() {
-				return this._cloneInto();
-			}
-		};
-		SHA256_IV = /* @__PURE__ */ Uint32Array.from([
-			1779033703,
-			3144134277,
-			1013904242,
-			2773480762,
-			1359893119,
-			2600822924,
-			528734635,
-			1541459225
-		]);
-		SHA512_IV = /* @__PURE__ */ Uint32Array.from([
-			1779033703,
-			4089235720,
-			3144134277,
-			2227873595,
-			1013904242,
-			4271175723,
-			2773480762,
-			1595750129,
-			1359893119,
-			2917565137,
-			2600822924,
-			725511199,
-			528734635,
-			4215389547,
-			1541459225,
-			327033209
-		]);
-	}));
-	// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
-	var SHA256_K, SHA256_W, SHA2_32B, _SHA256, K512, SHA512_Kh, SHA512_Kl, SHA512_W_H, SHA512_W_L, SHA2_64B, _SHA512, sha256, sha512;
-	var init_sha2 = __esmMin((() => {
-		init__md();
-		init__u64();
-		init_utils$1();
-		SHA256_K = /* @__PURE__ */ Uint32Array.from([
-			1116352408,
-			1899447441,
-			3049323471,
-			3921009573,
-			961987163,
-			1508970993,
-			2453635748,
-			2870763221,
-			3624381080,
-			310598401,
-			607225278,
-			1426881987,
-			1925078388,
-			2162078206,
-			2614888103,
-			3248222580,
-			3835390401,
-			4022224774,
-			264347078,
-			604807628,
-			770255983,
-			1249150122,
-			1555081692,
-			1996064986,
-			2554220882,
-			2821834349,
-			2952996808,
-			3210313671,
-			3336571891,
-			3584528711,
-			113926993,
-			338241895,
-			666307205,
-			773529912,
-			1294757372,
-			1396182291,
-			1695183700,
-			1986661051,
-			2177026350,
-			2456956037,
-			2730485921,
-			2820302411,
-			3259730800,
-			3345764771,
-			3516065817,
-			3600352804,
-			4094571909,
-			275423344,
-			430227734,
-			506948616,
-			659060556,
-			883997877,
-			958139571,
-			1322822218,
-			1537002063,
-			1747873779,
-			1955562222,
-			2024104815,
-			2227730452,
-			2361852424,
-			2428436474,
-			2756734187,
-			3204031479,
-			3329325298
-		]);
-		SHA256_W = /* @__PURE__ */ new Uint32Array(64);
-		SHA2_32B = class extends HashMD {
-			A = 0;
-			B = 0;
-			C = 0;
-			D = 0;
-			E = 0;
-			F = 0;
-			G = 0;
-			H = 0;
-			constructor(outputLen, IV) {
-				super(64, outputLen, 8, false);
-				this.A = IV[0] | 0;
-				this.B = IV[1] | 0;
-				this.C = IV[2] | 0;
-				this.D = IV[3] | 0;
-				this.E = IV[4] | 0;
-				this.F = IV[5] | 0;
-				this.G = IV[6] | 0;
-				this.H = IV[7] | 0;
-			}
-			get() {
-				const { A, B, C, D, E, F, G, H } = this;
-				return [
-					A,
-					B,
-					C,
-					D,
-					E,
-					F,
-					G,
-					H
-				];
-			}
-			set(A, B, C, D, E, F, G, H) {
-				this.A = A | 0;
-				this.B = B | 0;
-				this.C = C | 0;
-				this.D = D | 0;
-				this.E = E | 0;
-				this.F = F | 0;
-				this.G = G | 0;
-				this.H = H | 0;
-			}
-			_cloneInto(to) {
-				(to ||= new this.constructor()).set(...this.get());
-				return this._cloneIntoMeta(to);
-			}
-			process(view, offset) {
-				for (let i = 0; i < 16; i++, offset += 4) SHA256_W[i] = view.getUint32(offset, false);
-				for (let i = 16; i < 64; i++) {
-					const W15 = SHA256_W[i - 15];
-					const W2 = SHA256_W[i - 2];
-					const s0 = rotr(W15, 7) ^ rotr(W15, 18) ^ W15 >>> 3;
-					const s1 = rotr(W2, 17) ^ rotr(W2, 19) ^ W2 >>> 10;
-					SHA256_W[i] = s1 + SHA256_W[i - 7] + s0 + SHA256_W[i - 16] | 0;
-				}
-				let { A, B, C, D, E, F, G, H } = this;
-				for (let i = 0; i < 64; i++) {
-					const sigma1 = rotr(E, 6) ^ rotr(E, 11) ^ rotr(E, 25);
-					const T1 = H + sigma1 + Chi(E, F, G) + SHA256_K[i] + SHA256_W[i] | 0;
-					const T2 = (rotr(A, 2) ^ rotr(A, 13) ^ rotr(A, 22)) + Maj(A, B, C) | 0;
-					H = G;
-					G = F;
-					F = E;
-					E = D + T1 | 0;
-					D = C;
-					C = B;
-					B = A;
-					A = T1 + T2 | 0;
-				}
-				A = A + this.A | 0;
-				B = B + this.B | 0;
-				C = C + this.C | 0;
-				D = D + this.D | 0;
-				E = E + this.E | 0;
-				F = F + this.F | 0;
-				G = G + this.G | 0;
-				H = H + this.H | 0;
-				this.set(A, B, C, D, E, F, G, H);
-			}
-			roundClean() {
-				clean$1(SHA256_W);
-			}
-			destroy() {
-				this.destroyed = true;
-				this.set(0, 0, 0, 0, 0, 0, 0, 0);
-				clean$1(this.buffer);
-			}
-		};
-		_SHA256 = class extends SHA2_32B {
-			constructor() {
-				super(32, SHA256_IV);
-			}
-		};
-		K512 = /* @__PURE__ */ (() => split([
-			"0x428a2f98d728ae22",
-			"0x7137449123ef65cd",
-			"0xb5c0fbcfec4d3b2f",
-			"0xe9b5dba58189dbbc",
-			"0x3956c25bf348b538",
-			"0x59f111f1b605d019",
-			"0x923f82a4af194f9b",
-			"0xab1c5ed5da6d8118",
-			"0xd807aa98a3030242",
-			"0x12835b0145706fbe",
-			"0x243185be4ee4b28c",
-			"0x550c7dc3d5ffb4e2",
-			"0x72be5d74f27b896f",
-			"0x80deb1fe3b1696b1",
-			"0x9bdc06a725c71235",
-			"0xc19bf174cf692694",
-			"0xe49b69c19ef14ad2",
-			"0xefbe4786384f25e3",
-			"0x0fc19dc68b8cd5b5",
-			"0x240ca1cc77ac9c65",
-			"0x2de92c6f592b0275",
-			"0x4a7484aa6ea6e483",
-			"0x5cb0a9dcbd41fbd4",
-			"0x76f988da831153b5",
-			"0x983e5152ee66dfab",
-			"0xa831c66d2db43210",
-			"0xb00327c898fb213f",
-			"0xbf597fc7beef0ee4",
-			"0xc6e00bf33da88fc2",
-			"0xd5a79147930aa725",
-			"0x06ca6351e003826f",
-			"0x142929670a0e6e70",
-			"0x27b70a8546d22ffc",
-			"0x2e1b21385c26c926",
-			"0x4d2c6dfc5ac42aed",
-			"0x53380d139d95b3df",
-			"0x650a73548baf63de",
-			"0x766a0abb3c77b2a8",
-			"0x81c2c92e47edaee6",
-			"0x92722c851482353b",
-			"0xa2bfe8a14cf10364",
-			"0xa81a664bbc423001",
-			"0xc24b8b70d0f89791",
-			"0xc76c51a30654be30",
-			"0xd192e819d6ef5218",
-			"0xd69906245565a910",
-			"0xf40e35855771202a",
-			"0x106aa07032bbd1b8",
-			"0x19a4c116b8d2d0c8",
-			"0x1e376c085141ab53",
-			"0x2748774cdf8eeb99",
-			"0x34b0bcb5e19b48a8",
-			"0x391c0cb3c5c95a63",
-			"0x4ed8aa4ae3418acb",
-			"0x5b9cca4f7763e373",
-			"0x682e6ff3d6b2b8a3",
-			"0x748f82ee5defb2fc",
-			"0x78a5636f43172f60",
-			"0x84c87814a1f0ab72",
-			"0x8cc702081a6439ec",
-			"0x90befffa23631e28",
-			"0xa4506cebde82bde9",
-			"0xbef9a3f7b2c67915",
-			"0xc67178f2e372532b",
-			"0xca273eceea26619c",
-			"0xd186b8c721c0c207",
-			"0xeada7dd6cde0eb1e",
-			"0xf57d4f7fee6ed178",
-			"0x06f067aa72176fba",
-			"0x0a637dc5a2c898a6",
-			"0x113f9804bef90dae",
-			"0x1b710b35131c471b",
-			"0x28db77f523047d84",
-			"0x32caab7b40c72493",
-			"0x3c9ebe0a15c9bebc",
-			"0x431d67c49c100d4c",
-			"0x4cc5d4becb3e42b6",
-			"0x597f299cfc657e2a",
-			"0x5fcb6fab3ad6faec",
-			"0x6c44198c4a475817"
-		].map((n) => BigInt(n))))();
-		SHA512_Kh = /* @__PURE__ */ (() => K512[0])();
-		SHA512_Kl = /* @__PURE__ */ (() => K512[1])();
-		SHA512_W_H = /* @__PURE__ */ new Uint32Array(80);
-		SHA512_W_L = /* @__PURE__ */ new Uint32Array(80);
-		SHA2_64B = class extends HashMD {
-			Ah = 0;
-			Al = 0;
-			Bh = 0;
-			Bl = 0;
-			Ch = 0;
-			Cl = 0;
-			Dh = 0;
-			Dl = 0;
-			Eh = 0;
-			El = 0;
-			Fh = 0;
-			Fl = 0;
-			Gh = 0;
-			Gl = 0;
-			Hh = 0;
-			Hl = 0;
-			constructor(outputLen, IV) {
-				super(128, outputLen, 16, false);
-				this.Ah = IV[0] | 0;
-				this.Al = IV[1] | 0;
-				this.Bh = IV[2] | 0;
-				this.Bl = IV[3] | 0;
-				this.Ch = IV[4] | 0;
-				this.Cl = IV[5] | 0;
-				this.Dh = IV[6] | 0;
-				this.Dl = IV[7] | 0;
-				this.Eh = IV[8] | 0;
-				this.El = IV[9] | 0;
-				this.Fh = IV[10] | 0;
-				this.Fl = IV[11] | 0;
-				this.Gh = IV[12] | 0;
-				this.Gl = IV[13] | 0;
-				this.Hh = IV[14] | 0;
-				this.Hl = IV[15] | 0;
-			}
-			get() {
-				const { Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl } = this;
-				return [
-					Ah,
-					Al,
-					Bh,
-					Bl,
-					Ch,
-					Cl,
-					Dh,
-					Dl,
-					Eh,
-					El,
-					Fh,
-					Fl,
-					Gh,
-					Gl,
-					Hh,
-					Hl
-				];
-			}
-			set(Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl) {
-				this.Ah = Ah | 0;
-				this.Al = Al | 0;
-				this.Bh = Bh | 0;
-				this.Bl = Bl | 0;
-				this.Ch = Ch | 0;
-				this.Cl = Cl | 0;
-				this.Dh = Dh | 0;
-				this.Dl = Dl | 0;
-				this.Eh = Eh | 0;
-				this.El = El | 0;
-				this.Fh = Fh | 0;
-				this.Fl = Fl | 0;
-				this.Gh = Gh | 0;
-				this.Gl = Gl | 0;
-				this.Hh = Hh | 0;
-				this.Hl = Hl | 0;
-			}
-			_cloneInto(to) {
-				(to ||= new this.constructor()).set(...this.get());
-				return this._cloneIntoMeta(to);
-			}
-			process(view, offset) {
-				for (let i = 0; i < 16; i++, offset += 4) {
-					SHA512_W_H[i] = view.getUint32(offset);
-					SHA512_W_L[i] = view.getUint32(offset += 4);
-				}
-				for (let i = 16; i < 80; i++) {
-					const W15h = SHA512_W_H[i - 15] | 0;
-					const W15l = SHA512_W_L[i - 15] | 0;
-					const s0h = rotrSH(W15h, W15l, 1) ^ rotrSH(W15h, W15l, 8) ^ shrSH(W15h, W15l, 7);
-					const s0l = rotrSL(W15h, W15l, 1) ^ rotrSL(W15h, W15l, 8) ^ shrSL(W15h, W15l, 7);
-					const W2h = SHA512_W_H[i - 2] | 0;
-					const W2l = SHA512_W_L[i - 2] | 0;
-					const s1h = rotrSH(W2h, W2l, 19) ^ rotrBH(W2h, W2l, 61) ^ shrSH(W2h, W2l, 6);
-					const s1l = rotrSL(W2h, W2l, 19) ^ rotrBL(W2h, W2l, 61) ^ shrSL(W2h, W2l, 6);
-					const SUMl = add4L(s0l, s1l, SHA512_W_L[i - 7], SHA512_W_L[i - 16]);
-					const SUMh = add4H(SUMl, s0h, s1h, SHA512_W_H[i - 7], SHA512_W_H[i - 16]);
-					SHA512_W_H[i] = SUMh | 0;
-					SHA512_W_L[i] = SUMl | 0;
-				}
-				let { Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl } = this;
-				for (let i = 0; i < 80; i++) {
-					const sigma1h = rotrSH(Eh, El, 14) ^ rotrSH(Eh, El, 18) ^ rotrBH(Eh, El, 41);
-					const sigma1l = rotrSL(Eh, El, 14) ^ rotrSL(Eh, El, 18) ^ rotrBL(Eh, El, 41);
-					const CHIh = Eh & Fh ^ ~Eh & Gh;
-					const CHIl = El & Fl ^ ~El & Gl;
-					const T1ll = add5L(Hl, sigma1l, CHIl, SHA512_Kl[i], SHA512_W_L[i]);
-					const T1h = add5H(T1ll, Hh, sigma1h, CHIh, SHA512_Kh[i], SHA512_W_H[i]);
-					const T1l = T1ll | 0;
-					const sigma0h = rotrSH(Ah, Al, 28) ^ rotrBH(Ah, Al, 34) ^ rotrBH(Ah, Al, 39);
-					const sigma0l = rotrSL(Ah, Al, 28) ^ rotrBL(Ah, Al, 34) ^ rotrBL(Ah, Al, 39);
-					const MAJh = Ah & Bh ^ Ah & Ch ^ Bh & Ch;
-					const MAJl = Al & Bl ^ Al & Cl ^ Bl & Cl;
-					Hh = Gh | 0;
-					Hl = Gl | 0;
-					Gh = Fh | 0;
-					Gl = Fl | 0;
-					Fh = Eh | 0;
-					Fl = El | 0;
-					({h: Eh, l: El} = add$1(Dh | 0, Dl | 0, T1h | 0, T1l | 0));
-					Dh = Ch | 0;
-					Dl = Cl | 0;
-					Ch = Bh | 0;
-					Cl = Bl | 0;
-					Bh = Ah | 0;
-					Bl = Al | 0;
-					const All = add3L(T1l, sigma0l, MAJl);
-					Ah = add3H(All, T1h, sigma0h, MAJh);
-					Al = All | 0;
-				}
-				({h: Ah, l: Al} = add$1(this.Ah | 0, this.Al | 0, Ah | 0, Al | 0));
-				({h: Bh, l: Bl} = add$1(this.Bh | 0, this.Bl | 0, Bh | 0, Bl | 0));
-				({h: Ch, l: Cl} = add$1(this.Ch | 0, this.Cl | 0, Ch | 0, Cl | 0));
-				({h: Dh, l: Dl} = add$1(this.Dh | 0, this.Dl | 0, Dh | 0, Dl | 0));
-				({h: Eh, l: El} = add$1(this.Eh | 0, this.El | 0, Eh | 0, El | 0));
-				({h: Fh, l: Fl} = add$1(this.Fh | 0, this.Fl | 0, Fh | 0, Fl | 0));
-				({h: Gh, l: Gl} = add$1(this.Gh | 0, this.Gl | 0, Gh | 0, Gl | 0));
-				({h: Hh, l: Hl} = add$1(this.Hh | 0, this.Hl | 0, Hh | 0, Hl | 0));
-				this.set(Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl);
-			}
-			roundClean() {
-				clean$1(SHA512_W_H, SHA512_W_L);
-			}
-			destroy() {
-				this.destroyed = true;
-				clean$1(this.buffer);
-				this.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-			}
-		};
-		_SHA512 = class extends SHA2_64B {
-			constructor() {
-				super(64, SHA512_IV);
-			}
-		};
-		sha256 = /* @__PURE__ */ createHasher(() => new _SHA256(), /* @__PURE__ */ oidNist(1));
-		sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
-	}));
 	// ../../../../dashboard/node_modules/@noble/curves/utils.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
@@ -18461,14 +18792,14 @@ var EmporiaHermesPlugin = (function(exports) {
 		iter(fields, false);
 		iter(optFields, true);
 	}
-	var abytes, anumber, bytesToHex$1, concatBytes, hexToBytes$1, isBytes, randomBytes, _0n$3, _1n$4, atitle, bitMask;
+	var abytes, anumber, bytesToHex, concatBytes, hexToBytes, isBytes, randomBytes, _0n$3, _1n$4, atitle, bitMask;
 	var init_utils = __esmMin((() => {
 		init_utils$1();
 		abytes = (value, length, title) => abytes$1(value, length, title);
 		anumber = anumber$1;
-		bytesToHex$1 = bytesToHex$2;
+		bytesToHex = bytesToHex$2;
 		concatBytes = (...arrays) => concatBytes$1(...arrays);
-		hexToBytes$1 = (hex) => hexToBytes$2(hex);
+		hexToBytes = (hex) => hexToBytes$2(hex);
 		isBytes = isBytes$1;
 		randomBytes = (bytesLength) => randomBytes$1(bytesLength);
 		_0n$3 = /* @__PURE__ */ BigInt(0);
@@ -19667,7 +19998,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				});
 			}
 			static fromHex(hex, zip215 = false) {
-				return Point.fromBytes(hexToBytes$1(hex), zip215);
+				return Point.fromBytes(hexToBytes(hex), zip215);
 			}
 			get x() {
 				return this.toAffine().x;
@@ -19804,7 +20135,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				return bytes;
 			}
 			toHex() {
-				return bytesToHex$1(this.toBytes());
+				return bytesToHex(this.toBytes());
 			}
 			toString() {
 				return `<Point ${this.is0() ? "ZERO" : this.toHex()}>`;
@@ -20092,24 +20423,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		Fp = /* @__PURE__ */ (() => ed25519_Point.Fp)();
 		ed25519 = /* @__PURE__ */ ed({});
 	}));
-	// src/encoding.ts
-	/** Hex and base64url, as the relay writes keys and signatures. */
-	function base64UrlToBytes(b64url) {
-		const b64 = (b64url + "=".repeat((4 - b64url.length % 4) % 4)).replace(/-/g, "+").replace(/_/g, "/");
-		const bin = atob(b64);
-		const bytes = new Uint8Array(bin.length);
-		for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-		return bytes;
-	}
-	function hexToBytes(hex) {
-		const bytes = new Uint8Array(hex.length / 2);
-		for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
-		return bytes;
-	}
-	function bytesToHex(bytes) {
-		return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-	}
-	var init_encoding = __esmMin((() => {}));
 	// src/pyJson.ts
 	/**
 	* Python's canonical signing JSON, byte for byte (moved here from
@@ -20166,11 +20479,11 @@ var EmporiaHermesPlugin = (function(exports) {
 	// src/keyLog.ts
 	function prefixedHash(prefix, keyHex) {
 		const head = new TextEncoder().encode(prefix);
-		const key = hexToBytes(keyHex.trim().toLowerCase());
+		const key = hexToBytes$1(keyHex.trim().toLowerCase());
 		const data = new Uint8Array(head.length + key.length);
 		data.set(head);
 		data.set(key, head.length);
-		return bytesToHex(sha256(data));
+		return bytesToHex$1(sha256(data));
 	}
 	/** wire.when_of, as microseconds since the epoch (Python keeps microseconds;
 	*  a Date only milliseconds). An ISO time without a zone is UTC. */
@@ -20186,7 +20499,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	function verifySigned(payload, signature, keyHex) {
 		try {
-			return ed25519.verify(base64UrlToBytes(signature), new TextEncoder().encode(pyCanonicalJson(payload)), hexToBytes(keyHex), { zip215: false });
+			return ed25519.verify(base64UrlToBytes(signature), new TextEncoder().encode(pyCanonicalJson(payload)), hexToBytes$1(keyHex), { zip215: false });
 		} catch {
 			return false;
 		}
@@ -20829,6 +21142,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			"data-testid": "agent-card-compact",
 			children: [/* @__PURE__ */ (0, import_jsx_runtime$108.jsx)(AgentMoireAvatar, {
 				agentId: agent.agent_id,
+				stableId: agent.stable_id,
 				size: 18
 			}), /* @__PURE__ */ (0, import_jsx_runtime$108.jsxs)("span", {
 				className: "e-agent-card__text",
@@ -20894,6 +21208,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					className: "e-agent-card__head",
 					children: [/* @__PURE__ */ (0, import_jsx_runtime$108.jsx)(AgentMoireAvatar, {
 						agentId: agent.agent_id,
+						stableId: agent.stable_id,
 						size: 40
 					}), /* @__PURE__ */ (0, import_jsx_runtime$108.jsxs)("div", {
 						className: "e-agent-card__text",
@@ -23851,6 +24166,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		(0, import_react$45.useEffect)(() => {
 			let live = true;
 			if (VIA_CONSOLE && VIEWER_ID && link.status !== "superseded") fetchChainView(VIEWER_ID, link, stable, payTo).then((v) => {
+				refreshChainPictures();
 				if (live) setView(v);
 			});
 			return () => {
@@ -23930,6 +24246,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_relayEnv();
 		init_transport();
 		init_chainlink();
+		init_agentPicture();
 		init_cards();
 		init_CopyCommand();
 		import_jsx_runtime$97 = require_jsx_runtime();
@@ -24275,6 +24592,7 @@ var EmporiaHermesPlugin = (function(exports) {
 						className: "e-agent-hero__glyph",
 						children: /* @__PURE__ */ (0, import_jsx_runtime$95.jsx)(AgentMoireAvatar, {
 							agentId: a.agent_id,
+							stableId: a.stable_id,
 							size: 96,
 							link: false
 						})
@@ -29105,6 +29423,7 @@ var EmporiaHermesPlugin = (function(exports) {
 						className: "e-chat-line",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime$72.jsx)(AgentMoireAvatar, {
 							agentId: m.sender_id,
+							stableId: m.sender_stable_id,
 							size: 26
 						}), /* @__PURE__ */ (0, import_jsx_runtime$72.jsxs)("div", {
 							className: "e-chat-line__body",
@@ -29234,7 +29553,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		try {
 			const messageBytes = new TextEncoder().encode(canonicalSignPayload(payload));
 			const sigBytes = base64UrlToBytes(signature);
-			const pubKeyBytes = hexToBytes(senderPublicKeyHex);
+			const pubKeyBytes = hexToBytes$1(senderPublicKeyHex);
 			return ed25519.verify(sigBytes, messageBytes, pubKeyBytes, { zip215: false });
 		} catch {
 			return false;
@@ -29363,7 +29682,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	function verifyRaw(dataBytes, sigHex, pubkeyHex) {
 		try {
-			return ed25519.verify(hexToBytes(sigHex), dataBytes, hexToBytes(pubkeyHex), { zip215: false });
+			return ed25519.verify(hexToBytes$1(sigHex), dataBytes, hexToBytes$1(pubkeyHex), { zip215: false });
 		} catch {
 			return false;
 		}
@@ -30142,6 +30461,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		const chatLines = markReplayedNonces(messages).map((m) => ({
 			id: m.message_id,
 			sender_id: m.sender_id,
+			sender_stable_id: m.sender_stable_id,
 			content: opened[m.message_id] !== void 0 ? postDisplay(opened[m.message_id] ?? "") : postDisplay(dmDisplayContent(m.content)),
 			model: postParts(opened[m.message_id] ?? m.content)?.model ?? null,
 			note: opened[m.message_id] !== void 0 ? "opened here" : looksLikeEncryptedEnvelope(m.content) ? "sealed" : void 0,
@@ -30455,6 +30775,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			children: [
 				/* @__PURE__ */ (0, import_jsx_runtime$63.jsx)(AgentMoireAvatar, {
 					agentId: a.agent_id,
+					stableId: a.stable_id,
 					size: 40
 				}),
 				who,
@@ -30472,6 +30793,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			children: [
 				/* @__PURE__ */ (0, import_jsx_runtime$63.jsx)(AgentMoireAvatar, {
 					agentId: a.agent_id,
+					stableId: a.stable_id,
 					size: 32
 				}),
 				who,
