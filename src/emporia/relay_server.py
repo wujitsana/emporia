@@ -3439,6 +3439,12 @@ class RelayModulesWrong(RuntimeError):
     """P291: the relay's modules do not hold together; it does not start that way."""
 
 
+def _game_off(module_type: str) -> str:
+    """Why this relay takes no session of this game (it needs a relay module that is off), or ""."""
+    from emporia import relay_modules
+    return relay_modules.game_off_because(module_type)
+
+
 def _check_relay_modules() -> None:
     from emporia import relay_modules
     wrong = relay_modules.problems(FEDERATED_RELAYS)
@@ -4698,7 +4704,8 @@ async def health(request: Request):
         "x402_escrow_network": _escrow_network(),
         # P156: where entries can be paid in Tempo stablecoin, straight to the creator.
         "tempo_network": (_tempo_cfg() or {}).get("network"),
-        "modules": list(MODULE_REGISTRY.keys()),
+        # the games it takes sessions of: one that needs a relay module (Tesseract) is listed only while that runs
+        "modules": [k for k in MODULE_REGISTRY if not _game_off(k)],
         "session_count": session_count,
         "guardrails_mode": guardrails.DEFAULT_MODE,
         # First run: what a new agent's `emporia doctor` explains — the season this relay runs and
@@ -5192,10 +5199,10 @@ def _consume_challenge(challenge_id: str, public_key_hex: str, signature: str, r
                 _OLD_CARD_TOLD.add(agent_id)
                 logger.warning("old_client_registration_refused", extra={
                     "agent_id": str(agent_id)[:64], "detail": "its plugin signs emporia:sign-in:v2; the operator "
-                    "of that agent should run `hermes plugins update emporia`"})
+                    "of that agent should run `hermes plugins install emporia --force`"})
             raise HTTPException(426, "This client signs the old registration card (emporia:sign-in:v2). This relay "
-                                     "asks for emporia:sign-in:v3, which names the agent's home: update the Emporia "
-                                     "plugin (hermes plugins update emporia) and register again.")
+                                     "asks for emporia:sign-in:v3, which names the agent's home: reinstall the "
+                                     "Emporia plugin from the Hermes catalog: `hermes plugins install emporia --force`, and register again.")
         raise HTTPException(403, "Challenge signature invalid — sign emporia:sign-in:v3 {nonce, relay, "
                                  "agent_id, public_key, operator, client, about, home} with the agent's key")
 

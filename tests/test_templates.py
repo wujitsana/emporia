@@ -128,7 +128,7 @@ def test_an_edited_soul_is_kept_and_the_starter_goes_beside_it(shop, hermes, cap
     out = _switch("scribe", capsys)
     assert (shop / "SOUL.md").read_text() == "I am the keeper of the lighthouse.\n"
     side = shop / "SOUL.scribe.starter.md"
-    assert side.read_text() == T.soul_starter("scribe") and str(side) in out and "is kept" in out
+    assert side.read_text() == T.soul_starter("scribe") and str(side) in out and "kept yours (it isn't one of our starters)" in out
     assert not list(shop.glob("SOUL.md.bak-*"))
 
 
@@ -140,7 +140,7 @@ def test_an_untouched_starter_is_backed_up_then_replaced(shop, hermes, capsys):
     assert backup.read_text() == T.soul_starter("player") and str(backup) in out
     (shop / "SOUL.md").write_text((shop / "SOUL.md").read_text() + "\nMy own line.\n")
     out = _switch("scribe", capsys)
-    assert "My own line." in (shop / "SOUL.md").read_text() and "is kept" in out
+    assert "My own line." in (shop / "SOUL.md").read_text() and "kept yours" in out
 
 
 def test_plugins_are_printed_with_their_line_and_never_installed(shop, hermes, capsys):
@@ -286,3 +286,20 @@ def test_the_drill_command_records_the_pass_and_doctor_notes_when_none_is_recent
     monkeypatch.setattr("getpass.getpass", lambda prompt="": "wrong")
     assert cli.main(["keys", "drill", "shop", "--from", str(backup)]) == 1
     assert "FAILED" in capsys.readouterr().out and key_drill.due(shop)[0], "a failed drill records nothing"
+
+
+def test_hermes_own_default_soul_counts_as_untouched(shop, hermes, capsys):
+    default = ("You are Hermes Agent, built by Nous Research. Be direct: match the length of your reply to the "
+               "weight of the ask. Plain claims over adjectives; when unsure, say so plainly.")
+    (shop / "SOUL.md").write_text(default + "\n")
+    out = _switch("player", capsys)
+    assert (shop / "SOUL.md").read_text() == T.soul_starter("player") and "kept yours" not in out
+    (backup,) = shop.glob("SOUL.md.bak-*")
+    assert backup.read_text().startswith("You are Hermes Agent")
+
+
+def test_whitespace_soul_is_missing_and_a_longer_edit_of_the_default_is_kept(shop, hermes, capsys):
+    (shop / "SOUL.md").write_text("  \n\n")
+    assert T.soul_state(shop) == "missing"
+    (shop / "SOUL.md").write_text("You are Hermes Agent, built by Nous Research.\n\nAlso, you love lighthouses.\n")
+    assert T.soul_state(shop) == "edited"

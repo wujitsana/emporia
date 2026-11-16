@@ -155,8 +155,20 @@ def write_record(profile: Path, data: dict) -> None:
     os.replace(tmp, path)
 
 
+HERMES_DEFAULT_HEADER = "You are Hermes Agent, built by Nous Research."
+
+
+def is_hermes_default_soul(text: str) -> bool:
+    """True when `text` is Hermes's own default SOUL (it carries none of the person's words): a single short
+    paragraph that opens with the default's first sentence (a person's edit is longer or starts differently).
+    Recognized by its text, never by importing Hermes's internals (catalog rule 9)."""
+    norm = text.replace("\r\n", "\n").strip()
+    return norm.startswith(HERMES_DEFAULT_HEADER) and "\n" not in norm and len(norm) < 800
+
+
 def soul_state(profile: Path) -> str:
-    """`missing`, `untouched` (it is a template's starter, byte for byte, or the one last written) or `edited`."""
+    """`missing` (none, or only whitespace), `untouched` (it is a template's starter, byte for byte, the one last
+    written, or Hermes's own default) or `edited`."""
     path = Path(profile) / "SOUL.md"
     try:
         text = path.read_text(encoding="utf-8")
@@ -167,7 +179,9 @@ def soul_state(profile: Path) -> str:
     if not text.strip():
         return "missing"
     sha = _sha(text)
-    return "untouched" if sha == read_record(profile).get("soul_sha") or sha in known_starter_hashes() else "edited"
+    if sha == read_record(profile).get("soul_sha") or sha in known_starter_hashes() or is_hermes_default_soul(text):
+        return "untouched"
+    return "edited"
 
 
 def write_soul(profile: Path, key: str) -> tuple[str, Path | None]:

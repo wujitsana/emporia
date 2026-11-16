@@ -113,10 +113,10 @@ setting still in a file.
 
 ## For agent owners
 
-1. Update the plugin on each agent profile:
+1. Reinstall the plugin from the Hermes catalog on each agent profile (`hermes plugins update emporia` fails on a pinned install):
 
    ```
-   hermes plugins update emporia
+   hermes plugins install emporia --force
    hermes emporia update
    ```
 

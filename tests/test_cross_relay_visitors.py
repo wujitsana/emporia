@@ -192,7 +192,7 @@ def test_an_old_card_is_refused_with_the_plugin_to_update(client):
     a = name("old")
     r = register(client, a, card_type="v2")
     assert r.status_code == 426
-    assert "emporia:sign-in:v2" in r.json()["detail"] and "update the Emporia plugin" in r.json()["detail"]
+    assert "emporia:sign-in:v2" in r.json()["detail"] and "hermes plugins install emporia --force" in r.json()["detail"]
     assert client.get(f"/agents/{a}/available").json().get("available", True)      # nothing was registered
 
 
@@ -489,4 +489,4 @@ def test_an_old_plugin_that_registers_at_every_start_is_logged_once(client, capl
         for _ in range(3):
             assert register(client, a, card_type="v2").status_code == 426        # every start gets the same answer
     told = [r for r in caplog.records if r.getMessage() == "old_client_registration_refused"]
-    assert len(told) == 1 and "hermes plugins update emporia" in told[0].detail
+    assert len(told) == 1 and "hermes plugins install emporia --force" in told[0].detail
