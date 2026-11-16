@@ -40,16 +40,19 @@ function ChannelTable({ st, name, live }: { st: BoardState; name: (id: string) =
   return (
     <div className={s.tableWrap}>
       <table className={s.table}>
-        <caption>The 24 channels, {st.step === 0 ? "as opened" : `after round ${st.step}`}{st.darkCount ? `; ${st.darkCount} dark that round` : ""}</caption>
+        <caption>
+          The 24 channels, {st.step === 0 ? "as opened" : `after round ${st.step}`}{st.darkCount ? `; ${st.darkCount} carried nothing that round` : ""}.
+          {" "}Share change: how each output's share would move, in points, if one more push of +4 (or −4) went on that channel.
+        </caption>
         <thead>
           <tr>
             <th scope="col">Channel</th>
             <th scope="col" className={s.num}>Width</th>
             <th scope="col" className={s.num}>Net push</th>
             <th scope="col">Pushed by</th>
-            <th scope="col">Dark</th>
-            <th scope="col">Pull for +4</th>
-            <th scope="col">Pull for −4</th>
+            <th scope="col">Carried nothing</th>
+            <th scope="col">Share change for +4</th>
+            <th scope="col">Share change for −4</th>
           </tr>
         </thead>
         <tbody>
@@ -59,7 +62,7 @@ function ChannelTable({ st, name, live }: { st: BoardState; name: (id: string) =
               <td className={s.num}>{c.width}</td>
               <td className={s.num}>{st.step === 0 ? "n/a" : signed(c.net)}</td>
               <td>{c.pushes.length ? c.pushes.map((x) => `${name(x.agent)} ${signed(x.amount)}`).join(", ") : st.step === 0 ? "n/a" : "no one"}</td>
-              <td>{st.step === 0 ? "n/a" : c.dark ? "dark" : "lit"}</td>
+              <td>{st.step === 0 ? "n/a" : c.dark ? "yes" : "no"}</td>
               <td>{live && c.pull ? pullText(c.pull.up) : "n/a"}</td>
               <td>{live && c.pull ? pullText(c.pull.down) : "n/a"}</td>
             </tr>
@@ -141,7 +144,7 @@ export function TesseractPanel({ frame, name }: { frame: TesseractFrame; name: (
     return (
       <div className={s.root} data-testid="tesseract-panel">
         {frame.practice ? <p className={s.note} role="note"><strong>Practice table: counts for nothing</strong></p> : null}
-        <p className={s.note}>The network is dealt once every seat has sealed its commitment to the public beacon. {phaseNote(frame)}</p>
+        <p className={s.note}>The network appears once all seats are in and the public random draw it uses is published. {phaseNote(frame)}</p>
       </div>
     );
   }
@@ -184,8 +187,8 @@ export function TesseractPanel({ frame, name }: { frame: TesseractFrame; name: (
       </div>
       <MixBars mix={st.mix} target={target} />
       <p className={s.dist}>
-        {st.label === "opening" ? "Opening mix" : `Mix after ${st.label}`}: {OUTPUTS.map((o, k) => `${o} ${pct(st.mix[k] ?? 0)}`).join(" · ")}
-        {dist !== null && chosen ? ` · ${name(chosen)}'s target ${OUTPUTS.map((o, k) => `${o} ${target![k]}`).join(" ")}, distance ${dist} basis points` : ""}
+        {st.label === "opening" ? "Opening mix" : `Mix after ${st.label}`}: {OUTPUTS.map((o, k) => `${o} ${pct(st.mix[k] ?? 0)}%`).join(" · ")}
+        {dist !== null && chosen ? `. ${name(chosen)}'s target is ${OUTPUTS.map((o, k) => `${o} ${target![k]}%`).join(" · ")}: the mix is ${pct(dist)} points away (the four gaps added up).` : ""}
       </p>
       <Graph3D
         nodes={nodes}
@@ -200,11 +203,10 @@ export function TesseractPanel({ frame, name }: { frame: TesseractFrame; name: (
         tableView={<ChannelTable st={st} name={name} live={live} />}
       />
       <p className={s.caption}>
-        The 3D view is the tesseract: 16 corners (the pulse corner, 4 inputs, 6 hubs, 4 outputs and the empty drain) and its 32 edges. The four
-        outputs are the four axes; the mix sits inside the shaded tetrahedron they span, the line behind it is its path round by round, and
-        a ring is a target (shown only when the table is over). Projection from four dimensions keeps straight lines straight, so read it
-        for which corner the mix is heading toward, not for how far: lengths shorten and change as it turns. The distance to a target is the
-        number above and the bars with their ticks.
+        The 3D view is the tesseract itself: 16 corners and 32 edges. The four outputs, W, X, Y and Z, are its four axes. The mix is the dot
+        inside the shaded four-corner solid they span; the line behind it is its path from round to round, and a ring is a target (shown only
+        when the table is over). Use it to see which corner the mix is heading toward, not how far: distances shrink and change as it turns.
+        For how far, read the number above and the bars with their ticks.
       </p>
     </div>
   );

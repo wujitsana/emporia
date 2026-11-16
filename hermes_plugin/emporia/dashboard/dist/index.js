@@ -40786,6 +40786,50 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 	}));
+	// src/ui/graph3d/labels.ts
+	/** Places labels so no two overlap: `wants` in priority order; a label that fits nowhere is left out (null). */
+	function placeLabels(wants, width, height) {
+		const taken = [];
+		return wants.map((w) => {
+			const bw = w.text.length * CHAR;
+			for (const [dx, dy] of SLOTS) {
+				const left = dx < 0;
+				const box = {
+					x: left ? w.x + dx - bw : w.x + dx,
+					y: w.y + dy - LINE + 2,
+					w: bw,
+					h: LINE
+				};
+				if (box.x < 0 || box.y < 0 || box.x + bw > width || box.y + LINE > height) continue;
+				if (taken.some((t) => overlaps(box, t))) continue;
+				taken.push(box);
+				return {
+					x: w.x + dx,
+					y: w.y + dy,
+					end: left
+				};
+			}
+			return null;
+		});
+	}
+	var CHAR, LINE, overlaps, SLOTS;
+	var init_labels = __esmMin((() => {
+		CHAR = 5.9;
+		LINE = 12;
+		overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+		SLOTS = [
+			[8, -4],
+			[8, 12],
+			[-8, -4],
+			[-8, 12],
+			[8, -16],
+			[-8, -16],
+			[8, 24],
+			[-8, 24],
+			[8, -28],
+			[-8, -28]
+		];
+	}));
 	// src/ui/graph3d/edgeStyle.ts
 	/** The accessible name of a node: label, layer, value and the strongest edges touching it. */
 	function nodeName(n, edges, labels, top = 2) {
@@ -40885,6 +40929,20 @@ var EmporiaHermesPlugin = (function(exports) {
 		})).filter((x) => !!x.a && !!x.b);
 		const edgeOrder = depthOrder(drawn.map((d) => (d.a.depth + d.b.depth) / 2));
 		const nodeOrder = depthOrder(placed.map((q) => q.depth));
+		const decorWants = (p.decor?.points ?? []).map((d) => ({
+			x: d.at.x,
+			y: d.at.y,
+			text: d.label ?? ""
+		})).filter((d) => d.text);
+		const nodeWants = nodeOrder.slice().reverse().map((k) => ({
+			k,
+			x: placed[k].x,
+			y: placed[k].y,
+			text: nodes[k].label
+		})).filter((n) => p.allLabels || selected === nodes[n.k].id);
+		const spots = placeLabels([...decorWants, ...nodeWants], p.width, p.height);
+		const decorSpot = new Map(decorWants.map((d, i) => [d.text, spots[i]]));
+		const nodeSpot = new Map(nodeWants.map((n, i) => [n.k, spots[decorWants.length + i]]));
 		const pick = (id) => p.onSelect?.(selected === id ? null : id);
 		const onNodeKey = (ev, id) => {
 			if (ev.key === "Enter" || ev.key === " ") {
@@ -40996,10 +41054,11 @@ var EmporiaHermesPlugin = (function(exports) {
 						cx: d.at.x,
 						cy: d.at.y,
 						r: 4.5 * Math.min(1.6, Math.max(.6, d.at.scale))
-					}), d.label ? /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("text", {
+					}), d.label && decorSpot.get(d.label) ? /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("text", {
 						className: Graph3D_module_default.label,
-						x: d.at.x + 8,
-						y: d.at.y + 12,
+						x: decorSpot.get(d.label).x,
+						y: decorSpot.get(d.label).y,
+						textAnchor: decorSpot.get(d.label).end ? "end" : "start",
 						children: d.label
 					}) : null] }, i))
 				}) : null,
@@ -41033,16 +41092,15 @@ var EmporiaHermesPlugin = (function(exports) {
 				}) }),
 				/* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("g", {
 					"aria-hidden": "true",
-					children: nodeOrder.map((k) => {
-						const n = nodes[k];
-						if (!p.allLabels && selected !== n.id) return null;
-						const q = placed[k];
-						return /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("text", {
+					children: nodeWants.map((n) => {
+						const at = nodeSpot.get(n.k);
+						return at ? /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("text", {
 							className: Graph3D_module_default.label,
-							x: q.x + 8,
-							y: q.y - 8,
-							children: n.label
-						}, n.id);
+							x: at.x,
+							y: at.y,
+							textAnchor: at.end ? "end" : "start",
+							children: nodes[n.k].label
+						}, nodes[n.k].id) : null;
 					})
 				})
 			]
@@ -41052,6 +41110,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	var init_GraphSvg = __esmMin((() => {
 		import_react$21 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_project();
+		init_labels();
 		init_edgeStyle();
 		init_Graph3D_module();
 		import_jsx_runtime$27 = require_jsx_runtime();
@@ -41573,7 +41632,10 @@ var EmporiaHermesPlugin = (function(exports) {
 					/* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)("caption", { children: [
 						"The 24 channels, ",
 						st.step === 0 ? "as opened" : `after round ${st.step}`,
-						st.darkCount ? `; ${st.darkCount} dark that round` : ""
+						st.darkCount ? `; ${st.darkCount} carried nothing that round` : "",
+						".",
+						" ",
+						"Share change: how each output's share would move, in points, if one more push of +4 (or −4) went on that channel."
 					] }),
 					/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)("tr", { children: [
 						/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)("th", {
@@ -41596,15 +41658,15 @@ var EmporiaHermesPlugin = (function(exports) {
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)("th", {
 							scope: "col",
-							children: "Dark"
+							children: "Carried nothing"
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)("th", {
 							scope: "col",
-							children: "Pull for +4"
+							children: "Share change for +4"
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)("th", {
 							scope: "col",
-							children: "Pull for −4"
+							children: "Share change for −4"
 						})
 					] }) }),
 					/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)("tbody", { children: st.channels.map((c) => /* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)("tr", {
@@ -41628,7 +41690,7 @@ var EmporiaHermesPlugin = (function(exports) {
 								children: st.step === 0 ? "n/a" : signed(c.net)
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)("td", { children: c.pushes.length ? c.pushes.map((x) => `${name(x.agent)} ${signed(x.amount)}`).join(", ") : st.step === 0 ? "n/a" : "no one" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)("td", { children: st.step === 0 ? "n/a" : c.dark ? "dark" : "lit" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)("td", { children: st.step === 0 ? "n/a" : c.dark ? "yes" : "no" }),
 							/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)("td", { children: live && c.pull ? pullText(c.pull.up) : "n/a" }),
 							/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)("td", { children: live && c.pull ? pullText(c.pull.down) : "n/a" })
 						]
@@ -41787,7 +41849,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				children: /* @__PURE__ */ (0, import_jsx_runtime$23.jsx)("strong", { children: "Practice table: counts for nothing" })
 			}) : null, /* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)("p", {
 				className: TesseractPanel_module_default.note,
-				children: ["The network is dealt once every seat has sealed its commitment to the public beacon. ", phaseNote(frame)]
+				children: ["The network appears once all seats are in and the public random draw it uses is published. ", phaseNote(frame)]
 			})]
 		});
 		const dist = target ? distance(st.mix, target) : null;
@@ -41865,8 +41927,8 @@ var EmporiaHermesPlugin = (function(exports) {
 					children: [
 						st.label === "opening" ? "Opening mix" : `Mix after ${st.label}`,
 						": ",
-						OUTPUTS.map((o, k) => `${o} ${pct$1(st.mix[k] ?? 0)}`).join(" · "),
-						dist !== null && chosen ? ` · ${name(chosen)}'s target ${OUTPUTS.map((o, k) => `${o} ${target[k]}`).join(" ")}, distance ${dist} basis points` : ""
+						OUTPUTS.map((o, k) => `${o} ${pct$1(st.mix[k] ?? 0)}%`).join(" · "),
+						dist !== null && chosen ? `. ${name(chosen)}'s target is ${OUTPUTS.map((o, k) => `${o} ${target[k]}%`).join(" · ")}: the mix is ${pct$1(dist)} points away (the four gaps added up).` : ""
 					]
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(Graph3D, {
@@ -41891,7 +41953,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)("p", {
 					className: TesseractPanel_module_default.caption,
-					children: "The 3D view is the tesseract: 16 corners (the pulse corner, 4 inputs, 6 hubs, 4 outputs and the empty drain) and its 32 edges. The four outputs are the four axes; the mix sits inside the shaded tetrahedron they span, the line behind it is its path round by round, and a ring is a target (shown only when the table is over). Projection from four dimensions keeps straight lines straight, so read it for which corner the mix is heading toward, not for how far: lengths shorten and change as it turns. The distance to a target is the number above and the bars with their ticks."
+					children: "The 3D view is the tesseract itself: 16 corners and 32 edges. The four outputs, W, X, Y and Z, are its four axes. The mix is the dot inside the shaded four-corner solid they span; the line behind it is its path from round to round, and a ring is a target (shown only when the table is over). Use it to see which corner the mix is heading toward, not how far: distances shrink and change as it turns. For how far, read the number above and the bars with their ticks."
 				})
 			]
 		});
