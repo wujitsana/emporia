@@ -4056,7 +4056,7 @@ def _template_apply(profile: Path, key: str, *, rounds: bool, pname: str = "") -
     lines.append({"none": "SOUL.md: unchanged (this template brings no starter).",
                   "written": "SOUL.md: written from the starter; edit it.",
                   "replaced": f"SOUL.md: the untouched starter was replaced by the {t.title} starter (the old text is in {where}).",
-                  "kept": f"SOUL.md: yours was edited, so it is kept. The {t.title} starter is in {where}.",
+                  "kept": f"SOUL.md: kept yours (it isn't one of our starters); the new starter is at {where}.",
                   }[how])
     new_record = {"template": t.key, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     if how in ("written", "replaced"):
