@@ -70,7 +70,11 @@ def fetch(round_no: int, get: Callable[[str], dict | None], bases: tuple[str, ..
     return None
 
 
+#: Seconds per host. Three hosts are tried in turn, so a dead network costs at most three times this per round.
+HTTP_TIMEOUT_S = 2.0
+
+
 def http_get(url: str) -> dict | None:
     import httpx
-    r = httpx.get(url, timeout=6)
+    r = httpx.get(url, timeout=HTTP_TIMEOUT_S)
     return r.json() if r.status_code == 200 else None
