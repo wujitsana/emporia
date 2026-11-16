@@ -825,3 +825,20 @@ def test_a_third_relays_agent_under_another_key_than_the_pinned_one_is_refused(c
     carrier.fake.add(carol.post(carrier.key, "under a key that is not hers"))
     out = _pull(carrier)[carrier.key]
     assert out["kept"] == 0 and out["refused"] == 1, out
+
+
+def test_the_feed_leaves_out_what_a_local_stranger_may_not_read_and_what_expired(host, monkeypatch):
+    """Gated (hangs from a room or game), sealed-adjacent and expired posts do not leave the relay. Verification is
+    stubbed so only the feed's own gates decide."""
+    from tests.topic_posts import seed_post_row
+    at = datetime.now(UTC).isoformat()
+    seed_post_row(host.owner, host.slug, "open one", at)
+    seed_post_row(host.owner, host.slug, "room reply", at, reply_to="room:rm_secret")
+    seed_post_row(host.owner, host.slug, "game reply", at, reply_to="session:ses_private")
+    old = seed_post_row(host.owner, host.slug, "expired", at)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE posts SET expires_at = 1 WHERE post_id = ?", (old,))
+    monkeypatch.setattr(wire, "post_verdict", lambda *a, **k: "")
+    page = shared_topics.feed_page(host.slug, 0)
+    assert [p["text"] for p in page["posts"]] == ["open one"]
+    assert page["cursor"] > 0      # the cursor still moves past what was left out

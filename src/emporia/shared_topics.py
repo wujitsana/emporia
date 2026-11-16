@@ -164,9 +164,18 @@ def feed_page(slug: str, after: int) -> dict[str, Any] | None:
         if not hosted_topic(conn, slug):
             return None
         rows = conn.execute("SELECT rowid AS seq, * FROM posts WHERE topic = ? AND is_deleted = 0 AND kind != 'sealed' "
-                            "AND rowid > ? ORDER BY rowid LIMIT ?", (slug, max(0, after), PAGE + 1)).fetchall()
+                            "AND (expires_at IS NULL OR expires_at > ?) AND rowid > ? ORDER BY rowid LIMIT ?",
+                            (slug, int(datetime.now(UTC).timestamp()), max(0, after), PAGE + 1)).fetchall()
         more = len(rows) > PAGE
         rows = rows[:PAGE]
+        cursor = rows[-1]["seq"] if rows else max(0, after)
+        # what a local stranger may not read does not leave the relay either: the same gates as the readers, and the
+        # rule of what may cross (a reply to a closed room, game or lab thread). The cursor still moves past them.
+        from emporia.routes.posts import _row_readable
+        cache: dict = {}
+        rows = [r for r in rows if not adverts.post_may_cross(r["kind"], r["reply_to"], r["quote_of"], r["root"],
+                                                              json.loads(r["tags_json"]))
+                and _row_readable(conn, None, r, cache)]
         marks = conn.execute("SELECT d.* FROM deletions d JOIN posts p ON p.post_id = d.item WHERE d.kind = 'post' "
                              "AND p.topic = ? ORDER BY d.deleted_at DESC LIMIT ?", (slug, REMOVALS_PER_PAGE)).fetchall()
     removals = []
@@ -174,7 +183,6 @@ def feed_page(slug: str, after: int) -> dict[str, Any] | None:
         by = d["deleted_by"]
         removals.append({"post_id": d["item"], "by": by if "@" in by else address(by, own_host()), "role": d["role"],
                          "at": d["deleted_at"], "signature": d["signature"], "stable_id": d["stable_id"]})
-    cursor = rows[-1]["seq"] if rows else max(0, after)
     posts = [served_post(r) for r in rows]
     # Only what verifies as its author's word is served: a row that does not is left out, not repaired
     posts = [p for p in posts if not wire.post_verdict(p, rs.verify, copy=True)]
