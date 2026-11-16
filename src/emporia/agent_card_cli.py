@@ -229,12 +229,20 @@ def x_link(name: str, handle: str, post: str) -> int:
 def _chain_run(t: _Target, fn: str, *args: Any, mod: str = "chain_link") -> dict[str, Any]:
     """`chain_link.<fn>(*args)` (or `<mod>.<fn>`) as the agent; the answer, or {"error": ...}."""
     argtext = ", ".join(repr(a) for a in args)
-    return _result(t.run(f"import json\nfrom emporia import {mod} as c\n"
-                         "try:\n"
-                         f"    out = c.{fn}({argtext})\n"
-                         "    print(json.dumps({'success': True, **out}, default=str))\n"
-                         "except c.LinkError as e:\n"
-                         "    print(json.dumps({'success': False, 'error': str(e)}))\n"))
+    try:
+        r = t.run(f"import json\nfrom emporia import {mod} as c\n"
+                  "try:\n"
+                  f"    out = c.{fn}({argtext})\n"
+                  "    print(json.dumps({'success': True, **out}, default=str))\n"
+                  "except c.LinkError as e:\n"
+                  "    print(json.dumps({'success': False, 'error': str(e)}))\n")
+    except subprocess.TimeoutExpired:
+        sent = fn.startswith("send")
+        return {"success": False, "timeout": True,
+                "error": ("the helper timed out. " + ("The transaction may have been sent: look at the agent wallet's address "
+                          "on the block explorer before running anything again (a send you repeat can mint twice)."
+                          if sent else "Nothing was changed; try again."))}
+    return _result(r)
 
 
 def _link_target(cmd: str, name: str) -> _Target | None:
@@ -504,14 +512,18 @@ def register_8004(name: str, chain: str, tx: str = "", sender: str = "", yes: bo
     return _register_in_browser(t, name, chain, out, yes, wait)
 
 
-def _ask_to_send(cmd: str, yes: bool, question: str) -> bool:
-    """The person's y/N before an agent wallet sends (--yes answers it; a terminal that is not a person's cannot)."""
-    cli = _cli()
-    if not yes and not cli._persons_terminal():
-        print(f"agent {cmd}: sending from the agent's own wallet is the person's act and there is no terminal to ask "
-              "in. Run it in your own terminal, or add --yes.")
-        return False
-    if not yes and cli.prompt(question, "n").lower() not in ("y", "yes"):
+def _person_at_terminal(cmd: str) -> bool:
+    """Sending from the agent's own wallet needs a person at a terminal, always: `--yes` never stands in for them."""
+    if _cli()._persons_terminal():
+        return True
+    print(f"agent {cmd}: sending from the agent's own wallet is the person's act: run it in your own terminal, where "
+          "you can answer the question. (--yes does not answer it.)")
+    return False
+
+
+def _ask_to_send(question: str) -> bool:
+    """The person's y/N before an agent wallet sends. Always asked; there is no way around it."""
+    if _cli().prompt(question, "n").lower() not in ("y", "yes"):
         print("  nothing sent.")
         return False
     return True
@@ -521,10 +533,7 @@ def _register_from_agent_wallet(t: _Target, name: str, chain: str, yes: bool, ma
     """`--from-agent-wallet`: quote (read-only), show the cost, ask, then send one transaction from the agent's own wallet
     and go on as `--tx` does. The wallet that sends owns the new identity, and signs its link itself."""
     from emporia import chain_send
-    cli = _cli()
-    if not yes and not cli._persons_terminal():
-        print("agent register-8004: sending from the agent's own wallet is the person's act and there is no terminal "
-              "to ask in. Run it in your own terminal, or add --yes.")
+    if not _person_at_terminal("register-8004"):
         return 1
     out = _chain_run(t, "quote_register", chain, max_gas or 0, mod="chain_register")
     if not out.get("success"):
@@ -543,11 +552,14 @@ def _register_from_agent_wallet(t: _Target, name: str, chain: str, yes: bool, ma
           "(simulated now; the number can change if someone registers first)")
     for line in chain_send.describe(out["quote"]):
         print("  " + line)
-    if not _ask_to_send("register-8004", yes, f"Send it from {out['wallet']} on {out['chain_label']}? [y/N]"):
+    if not _ask_to_send(f"Send it from {out['wallet']} on {out['chain_label']}? [y/N]"):
         return 0
-    sent = _chain_run(t, "send_register", chain, max_gas, out["calldata_digest"], mod="chain_register")
+    sent = _chain_run(t, "send_register", chain, max_gas, out["calldata_digest"], out["quote"]["max_cost_wei"],
+                      mod="chain_register")
     if not sent.get("success"):
         print(f"agent register-8004: {sent.get('error')}")
+        if sent.get("timeout"):
+            print(f"  The wallet is {out['wallet']}.")
         return 1
     print(f"  Sent transaction {sent['tx_hash']} from {sent['wallet']}.")
     return _register_after(t, name, chain, sent["tx_hash"], yes, waiting=True, wait=wait)
@@ -671,9 +683,9 @@ def _link_own_wallet(t: _Target, name: str, chain: str, agent_id: str, yes: bool
     """`link-8004 --from-agent-wallet`: the agent's own wallet owns the identity, so it signs the link statement itself
     (the key stays in the signer; nothing is sent on-chain). Same checks, privacy note and question as a browser wallet."""
     cli = _cli()
-    if not yes and not cli._persons_terminal():
-        print("agent link-8004: recording publishes the wallet address on the card; there is no terminal to ask in. "
-              "Run it in your own terminal, or add --yes.")
+    if not cli._persons_terminal():
+        print("agent link-8004: signing with the agent's own wallet is the person's act: run it in your own terminal. "
+              "(--yes does not stand in for that; it only skips the question about publishing.)")
         return 1
     if wait:
         resume = (f"emporia agent link-8004 {name} --chain {_cmd_chain(chain)} --agent-id {agent_id} "
@@ -783,10 +795,7 @@ def _set_wallet_from_agent_wallet(t: _Target, name: str, chain: str, agent_id: s
                                   wait: bool) -> int:
     """The agent's own wallet owns the identity: it signs the consent and sends the call. Quote, ask, one transaction."""
     from emporia import chain_send
-    cli = _cli()
-    if not yes and not cli._persons_terminal():
-        print("agent set-8004-wallet: sending from the agent's own wallet is the person's act and there is no terminal "
-              "to ask in. Run it in your own terminal, or add --yes.")
+    if not _person_at_terminal("set-8004-wallet"):
         return 1
     out = _chain_run(t, "quote", chain, agent_id, max_gas or 0, mod="chain_wallet")
     if not out.get("success"):
@@ -796,11 +805,13 @@ def _set_wallet_from_agent_wallet(t: _Target, name: str, chain: str, agent_id: s
         return 0
     for line in chain_send.describe(out["quote"]):
         print("    " + line)
-    if not _ask_to_send("set-8004-wallet", yes, f"Send it from {out['wallet']} on {out['chain_label']}? [y/N]"):
+    if not _ask_to_send(f"Send it from {out['wallet']} on {out['chain_label']}? [y/N]"):
         return 0
-    sent = _chain_run(t, "send", chain, agent_id, max_gas, out["owner"], mod="chain_wallet")
+    sent = _chain_run(t, "send", chain, agent_id, max_gas, out["owner"], out["quote"]["max_cost_wei"], mod="chain_wallet")
     if not sent.get("success"):
         print(f"agent set-8004-wallet: {sent.get('error')}")
+        if sent.get("timeout"):
+            print(f"  The wallet is {out['wallet']}.")
         return 1
     print(f"  Sent transaction {sent['tx_hash']} from {sent['wallet']}.")
     return _wallet_after(t, name, chain, agent_id, sent["tx_hash"], waiting=True, wait=wait)
@@ -826,7 +837,8 @@ def _set_wallet_in_browser(t: _Target, name: str, chain: str, built: dict[str, A
                f"and funds do not change. The consent is valid for about {built['valid_seconds'] // 60} minutes. "
                "Emporia sends nothing itself; your wallet shows the gas.")
     page = browser_sign.SendPage({"chain_id": built["chain_id"], "to": built["registry"], "data": built["calldata"]},
-                                 chain_label=built["chain_label"], agent_name=name, summary=summary).start()
+                                 chain_label=built["chain_label"], agent_name=name, summary=summary,
+                                 timeout=float(built["valid_seconds"])).start()      # the page ends with the consent
     print(f"\n  Open this page in the browser that has your wallet (it only exists while this command waits; "
           f"closes after one transaction or {int(page.timeout // 60)} minutes; Ctrl-C cancels). The consent in it "
           f"is valid for about {built['valid_seconds'] // 60} minutes:\n\n    {page.url}\n")

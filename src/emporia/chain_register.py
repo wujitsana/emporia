@@ -2,8 +2,10 @@
 person sends from their own wallet, then read the receipt and find the new agent's number. Run as the agent (its own
 settings) by `emporia agent register-8004`; it is a person's act, so there is no agent tool for it.
 
-Emporia sends nothing here and holds no key: the transaction is the person's, from their wallet. Reads go through
-`chain_read.PinnedReader`; the call is checked first with an `eth_call` simulation and a gas estimate.
+Emporia sends nothing here unless a person runs `register-8004 --from-agent-wallet --max-gas N`: then `send_register`
+signs and broadcasts one transaction from the agent's own Base Sepolia wallet (`chain_send`). Otherwise the transaction is
+the person's, from their wallet. Reads go through `chain_read.PinnedReader`; the call is checked first with an
+`eth_call` simulation and a gas estimate.
 """
 from __future__ import annotations
 
@@ -105,6 +107,7 @@ def own_wallet() -> Any:
     """The agent's own EVM signer (`.address`, `.sign_transaction`, `.sign_typed_data`), or a LinkError saying what is
     missing. Behind the operator signer the keys are not here, and its limits and approvals are the way to spend."""
     from emporia import agent_wallet, mcp_server as m
+    chain_link.person_only("using the agent's own wallet")
     if agent_wallet.remote() is not None:
         raise LinkError("this agent's wallet keys are held by the operator signer, which sends nothing for the "
                         "ERC-8004 commands: use your own wallet (print the call, or --browser)")
@@ -140,15 +143,20 @@ def quote_register(chain: str, max_gas: Any, *, read: Any = None, signer: Any = 
     return out
 
 
-def send_register(chain: str, max_gas: Any, expect_digest: str, *, read: Any = None, signer: Any = None,
+def send_register(chain: str, max_gas: Any, expect_digest: str, confirmed_cost_wei: int, *, read: Any = None, signer: Any = None,
                   stable: str | None = None, about: str | None = None, relay: str | None = None,
                   x402: bool | None = None, image: str | None = None) -> dict[str, Any]:
     """Quote again, refuse if the call is no longer the one the person confirmed, then send exactly one transaction
     from the agent's own wallet. The answer is the hash; `confirm` takes it from there."""
     from emporia import chain_send
+    chain_link.person_only("sending from the agent's own wallet")
     wallet = signer or own_wallet()
     q = quote_register(chain, max_gas, read=read, signer=wallet, stable=stable, about=about, relay=relay, x402=x402,
                        image=image)
+    if q["quote"]["max_cost_wei"] > int(confirmed_cost_wei or 0):
+        raise LinkError("the fee rose since you confirmed it (the worst case is now "
+                        f"{chain_send.eth(q['quote']['max_cost_wei'])}, you confirmed {chain_send.eth(int(confirmed_cost_wei or 0))}): "
+                        "nothing sent; run the command again")
     if q["calldata_digest"] != expect_digest:
         raise LinkError("the registration changed since you confirmed it (the bio or the relay?): nothing sent; "
                         "run the command again")

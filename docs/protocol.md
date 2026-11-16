@@ -1248,7 +1248,8 @@ gated). The badge carries no protocol weight: no XP, quest, trust or gate uses i
    *Later (2.2):* the relay will store the flag with the link and use it as the tie-breaker when two Emporia agents
    claim one 8004 agent and both are proven: the two-way one wins.
 9. **Minting from the agent's own wallet** (`register-8004 NAME --chain base-sepolia --from-agent-wallet --max-gas N`; a person's
-   act on Base Sepolia, never an agent tool: refused in an agent session even with `--yes` (Hermes session variables),
+   act on Base Sepolia, never an agent tool: refused in an agent session (Hermes session variables; the send, consent and
+   own-wallet functions check this and a live unattended turn themselves, so a direct import gets no further),
    refused while an unattended turn is live, on the key guard's person-only list, not in `MONEY_TOOLS`, and the keys
    behind an operator signer are never used). `chain_register.quote_register` builds the same `register(string)` call as
    item 7 with the agent's EVM wallet (`agent_wallet.evm_signer`; the key is read only inside the signer and is never
@@ -1256,8 +1257,9 @@ gated). The badge carries no protocol weight: no XP, quest, trust or gate uses i
    gas estimate (a revert means nothing to send), `--max-gas` as a hard cap on the gas limit (required), an EIP-1559 fee
    of the node's priority fee plus twice the latest base fee (refused above 50 gwei), the wallet's balance (refused when
    it cannot cover the worst case: "get Base Sepolia test ETH for 0x..."), and the next `pending` nonce. The person reads
-   the estimate, balance and worst-case cost and answers y/N (`--yes` answers it, only in a person's terminal). `send_register`
-   quotes again, refuses if the calldata is no longer the digest the person confirmed, signs one type-2 transaction and
+   the estimate, balance and worst-case cost and answers y/N, always at a person's terminal: `--yes` never answers a send and without a terminal the command refuses.
+   `send_register` quotes again, refuses if the calldata is no longer the digest the person confirmed or the worst-case
+   cost is above the one confirmed, refuses while the wallet has a transaction waiting (pending nonce above latest), signs one type-2 transaction and
    broadcasts it (`eth_sendRawTransaction`); the hash is computed locally too, so a lost answer still names it. One
    transaction per run. The wallet then owns the token, so `--tx` (or the same run with `--wait`) finds the owner is the
    agent's own wallet and the link is signed by that wallet itself (`link-8004 --from-agent-wallet`, tier `owner`), after

@@ -1,5 +1,8 @@
 """Read-only chain reads at one pinned block (the plumbing for on-chain verification).
 
+The one exception is `send_raw` (`eth_sendRawTransaction`): only the person-run `register-8004` / `set-8004-wallet
+--from-agent-wallet` commands call it, on Base Sepolia, with the agent's own wallet (`chain_send`).
+
 `PinnedReader` talks JSON-RPC to one or two URLs for a CAIP-2 chain: it checks the chain id, pins one block
 once, and answers `call` / `code` at that block. A failed read is `ChainUnknown`, never a guess, and its text
 never carries a URL (an RPC URL may hold a provider's key).
@@ -280,9 +283,11 @@ class PinnedReader:
         """The account's balance in wei, now."""
         return self._int("eth_getBalance", [address, "latest"])
 
-    def nonce(self, address: str) -> int:
-        """The account's next transaction number, counting what is waiting to be mined."""
-        return self._int("eth_getTransactionCount", [address, "pending"])
+    def nonce(self, address: str, tag: str = "pending") -> int:
+        """The account's next transaction number: `pending` counts what is waiting to be mined, `latest` only what is."""
+        if tag not in ("pending", "latest"):
+            raise ChainUnknown(f"unknown block tag {tag!r}")
+        return self._int("eth_getTransactionCount", [address, tag])
 
     def fee_data(self) -> tuple[int, int]:
         """(suggested priority fee, the latest block's base fee), in wei: what an EIP-1559 fee is built from."""

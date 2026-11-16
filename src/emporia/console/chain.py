@@ -245,8 +245,8 @@ class ChainViews:
         from emporia import erc8004_wallet as W
         try:
             got.agent_wallet = W.decode_address(reader.call(registry, W.get_wallet_calldata(agent_id)))
-        except (ChainRevert, W.WalletError):
-            return
+        except (ChainRevert, ChainUnknown, W.WalletError):
+            return                      # not read: the registration below is still shown, and says nothing of the wallet
         if got.agent_wallet == W.ZERO:
             got.agent_wallet = ""
         if pay_to:

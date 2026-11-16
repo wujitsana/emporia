@@ -45,6 +45,11 @@ _KEY_PATHS = re.compile(
     # Its source is no secret: reading or linting signer.py is fine; running it is not.
     r"|\bimport\s+emporia\.signer\b|\bfrom\s+emporia(?:\.signer)?\s+import\s+[\w\s,]*\b(?:signer|decide|save_policy"
     r"|new_agent_token|admin_token)\b|-m\s+emporia\.signer\b"
+    # the ERC-8004 agent-wallet send and consent code, called directly: a person's commands only
+    r"|\bimport\s+emporia\.(?:chain_send|chain_wallet)\b|\bemporia\.chain_(?:send|wallet)\b"
+    r"|\bfrom\s+emporia(?:\.chain_register|\.chain_link)?\s+import\s+[\w\s,]*\b(?:chain_send|chain_wallet|send_register|link_own_wallet"
+    r"|own_wallet_ask|own_wallet)\b"
+    r"|\b(?:send_register|link_own_wallet|own_wallet_ask|own_wallet)\s*\("
     # P293: its back ends' code (credentials, keys in KMS or a provider) is the signer's too
     r"|\bemporia\.signer_backends\b|\bfrom\s+emporia\s+import\s+[\w\s,]*\bsigner_backends\b"
     # and a MetaMask Agent Wallet back end's: the signer user's `mm` session (~/.metamask)

@@ -1,4 +1,5 @@
 """Sending one transaction from an agent's own EVM wallet, for the ERC-8004 commands (docs/protocol.md section 3.20).
+This is the one place Emporia broadcasts a transaction (`eth_sendRawTransaction`): person-run, Base Sepolia, the agent's wallet.
 
 The wallet is the agent's Emporia EVM wallet (`agent_wallet.evm_signer`: the key is read only inside the signer's
 own `sign_transaction` and is never printed, logged or put in an error). This is a person's act, run by
@@ -49,14 +50,25 @@ def quote(reader: Any, sender: str, to: str, data: bytes, max_gas: Any, *, chain
         raise LinkError("an agent's own wallet sends on Base Sepolia (testnet) only for now")
     cap = max_gas_of(max_gas)
     try:
+        reader.pin()                    # the chain id is checked on this very reader, whatever built the call
+    except AttributeError:
+        pass
+    except ChainUnknown as e:
+        raise LinkError(f"the chain could not be asked ({e}); nothing changed") from None
+    try:
         estimate = reader.estimate_gas(to, data, sender)
         priority, base = reader.fee_data()
         balance = reader.balance(sender)
         nonce = reader.nonce(sender)
+        mined = reader.nonce(sender, "latest")
     except ChainRevert as e:
         raise LinkError(f"the registry would refuse this call ({e}); nothing to send") from None
     except ChainUnknown as e:
         raise LinkError(f"the chain could not be asked ({e}); nothing changed") from None
+    if nonce > mined:
+        raise LinkError(f"the wallet {sender} has a transaction waiting ({nonce - mined} not yet mined): an earlier send may "
+                        "still be in flight. Let it finish and read it with --tx (the explorer lists it under that "
+                        "address) before sending another")
     if estimate > cap:
         raise LinkError(f"the call needs about {estimate:,} gas, over your --max-gas {cap:,}: raise --max-gas if you "
                         "accept that, or stop here")
@@ -86,6 +98,9 @@ def send(reader: Any, signer: Any, q: dict[str, Any], data: bytes) -> str:
     """Sign and broadcast the one transaction `q` quoted; the hash. A failure never carries key material: only the
     kind of error is said, and the hash computed here, in case the node did get it."""
     from eth_utils import keccak
+
+    from emporia.chain_link import person_only
+    person_only("sending from the agent's own wallet")
     if f"eip155:{q['chain_id']}" not in SEND_CHAINS:
         raise LinkError("an agent's own wallet sends on Base Sepolia (testnet) only for now")
     tx = {"type": 2, "chainId": q["chain_id"], "nonce": q["nonce"], "to": q["to"], "value": 0, "data": "0x" + data.hex(),

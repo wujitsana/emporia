@@ -106,8 +106,10 @@ class Chain:
     def balance(self, address):
         return self.balance_wei
 
-    def nonce(self, address):
-        return self.nonce_n
+    latest_nonce = None
+
+    def nonce(self, address, tag="pending"):
+        return self.nonce_n if tag == "pending" or self.latest_nonce is None else self.latest_nonce
 
     def chain_time(self):
         return self.now
@@ -158,6 +160,8 @@ def wallet(monkeypatch):
     from emporia import agent_wallet
     monkeypatch.setattr(agent_wallet, "evm_signer", lambda agent_id: s)
     monkeypatch.setattr(agent_wallet, "remote", lambda: None)
+    for k in [k for k in __import__("os").environ if k.startswith("HERMES_SESSION_")]:
+        monkeypatch.delenv(k)
     return s
 
 
@@ -372,7 +376,7 @@ def test_quote_register_uses_the_wallet_as_sender_and_gives_a_digest(chain, wall
 
 def test_send_register_sends_exactly_one_transaction_with_the_registration(chain, wallet, target):
     q = chain_register.quote_register("base-sepolia", 400_000, stable=STABLE)
-    out = chain_register.send_register("base-sepolia", 400_000, q["calldata_digest"], stable=STABLE)
+    out = chain_register.send_register("base-sepolia", 400_000, q["calldata_digest"], q["quote"]["max_cost_wei"], stable=STABLE)
     assert len(chain.sent) == 1 and out["tx_hash"].startswith("0x") and out["wallet"] == wallet.address
     tx = wallet.signed_tx[0]
     assert tx["to"] == REGISTRY and tx["data"] == q["calldata"] and tx["gas"] <= 400_000 and tx["chainId"] == 84532
@@ -380,7 +384,7 @@ def test_send_register_sends_exactly_one_transaction_with_the_registration(chain
 
 def test_a_registration_that_changed_since_the_question_is_not_sent(chain, wallet, target):
     with pytest.raises(chain_link.LinkError, match="changed since you confirmed"):
-        chain_register.send_register("base-sepolia", 400_000, "0x" + "00" * 32, stable=STABLE)
+        chain_register.send_register("base-sepolia", 400_000, "0x" + "00" * 32, 10**18, stable=STABLE)
     assert chain.sent == []
 
 
@@ -389,7 +393,7 @@ def test_the_agent_wallet_never_sends_on_any_other_chain(chain, wallet, target, 
     with pytest.raises(chain_link.LinkError, match="release owner's go|no ERC-8004 registry"):
         chain_register.quote_register(name, 400_000, stable=STABLE)
     with pytest.raises(chain_link.LinkError, match="release owner's go|no ERC-8004 registry"):
-        chain_register.send_register(name, 400_000, "0x00", stable=STABLE)
+        chain_register.send_register(name, 400_000, "0x00", 10**18, stable=STABLE)
     assert chain.sent == [] and chain.calls == []
 
 
@@ -439,11 +443,11 @@ def test_it_wants_max_gas_and_a_person_and_refuses_the_other_ways_with_it(chain,
     assert chain.sent == []
 
 
-def test_a_terminal_that_is_not_a_persons_is_refused_without_yes_even_when_the_flags_are_right(chain, wallet, target, monkeypatch, capsys):
+def test_a_terminal_that_is_not_a_persons_is_refused_even_when_the_flags_are_right(chain, wallet, target, monkeypatch, capsys):
     from emporia import cli
     monkeypatch.setattr(cli, "_persons_terminal", lambda: False)
     assert card.register_8004(target.name, "base-sepolia", from_agent_wallet=True, max_gas=400_000) == 1
-    assert "no terminal to ask in" in capsys.readouterr().out and chain.sent == []
+    assert "your own terminal" in capsys.readouterr().out and chain.sent == []
 
 
 def test_an_agent_session_cannot_send_from_the_wallet_even_with_yes(chain, wallet, target, monkeypatch, capsys):
@@ -572,12 +576,12 @@ def test_only_the_owner_sends_so_the_agent_wallet_sends_only_when_it_owns_the_id
 def test_the_agent_wallet_as_owner_signs_the_consent_and_sends_one_transaction(chain, wallet, target):
     owned_by_wallet(chain, wallet)
     chain.wallets[AID] = "0x" + "99" * 20       # the identity points elsewhere now
-    out = chain_wallet.send("base-sepolia", AID, 400_000, wallet.address, now=NOW)
+    out = chain_wallet.send("base-sepolia", AID, 400_000, wallet.address, 10**18, now=NOW)
     assert len(chain.sent) == 1 and out["wallet"] == wallet.address
     tx = wallet.signed_tx[0]
     assert tx["to"] == REGISTRY and tx["data"].startswith("0x2d1ef5ae") and tx["gas"] <= 400_000
     with pytest.raises(chain_link.LinkError, match="not the wallet you confirmed"):
-        chain_wallet.send("base-sepolia", AID, 400_000, "0x" + "11" * 20, now=NOW)
+        chain_wallet.send("base-sepolia", AID, 400_000, "0x" + "11" * 20, 10**18, now=NOW)
     assert len(chain.sent) == 1
 
 
@@ -716,10 +720,159 @@ def test_no_agent_tool_mints_sets_a_wallet_or_sends_and_none_is_a_money_tool():
 
 
 def test_the_send_modules_are_only_reachable_from_the_person_run_commands():
-    """chain_send / chain_register.send_register / chain_wallet.send are not imported by the MCP server or any route."""
-    root = pathlib.Path(__file__).resolve().parent.parent / "src" / "emporia"
-    for f in list(root.glob("*.py")) + list(root.glob("routes/*.py")):
-        if f.name in ("chain_send.py", "chain_register.py", "chain_wallet.py", "agent_card_cli.py"):
+    """No MCP server, route, console module, plugin file or other module imports or calls the send and own-wallet
+    functions; only the CLI's child code (agent_card_cli) and the modules that define them do."""
+    import re
+    base = pathlib.Path(__file__).resolve().parent.parent
+    allowed = {"chain_send.py", "chain_register.py", "chain_wallet.py", "chain_link.py", "agent_card_cli.py", "key_guard.py"}
+    use = re.compile(r"import[^\n]*\b(?:chain_send|chain_wallet)\b|\b(?:chain_send|chain_wallet)\.\w|\bsend_register\s*\(|"
+                     r"\blink_own_wallet\s*\(|\bown_wallet(?:_ask)?\s*\(|\.send_raw\s*\(")
+    files = [f for root in ("src/emporia", "hermes_plugin") for f in (base / root).rglob("*.py")]
+    assert len(files) > 100
+    for f in files:
+        if f.name in allowed or "/ui/" in str(f):
             continue
-        text = f.read_text()
-        assert "chain_send" not in text and "send_register" not in text and "chain_wallet" not in text, f.name
+        for line in f.read_text().splitlines():
+            if line.lstrip().startswith("#") or '"""' in line:
+                continue
+            assert not use.search(line), f"{f.name}: {line.strip()}"
+
+
+# -- the security review's fixes ------------------------------------------------------------------------------------
+def test_yes_never_answers_a_send_from_the_agent_wallet_and_no_hint_offers_it(chain, wallet, target, monkeypatch, capsys):
+    """B1: no terminal + --yes, no Hermes variables: nothing is signed or sent, on all three commands."""
+    from emporia import cli
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: False)
+    monkeypatch.setattr(cli, "prompt", lambda *a, **k: pytest.fail("there is no one to ask"))
+    owned_by_wallet(chain, wallet)
+    chain.wallets[AID] = "0x" + "99" * 20
+    for fn in (lambda: card.register_8004(target.name, "base-sepolia", yes=True, from_agent_wallet=True, max_gas=900_000),
+               lambda: card.set_8004_wallet(target.name, "base-sepolia", str(AID), yes=True, from_agent_wallet=True, max_gas=900_000),
+               lambda: card.link_8004(target.name, "base-sepolia", str(AID), yes=True, from_agent_wallet=True)):
+        assert fn() == 1
+        out = capsys.readouterr().out
+        assert "your own terminal" in out and "add --yes" not in out and "or add --yes" not in out
+    assert chain.sent == [] and wallet.signed_tx == [] and wallet.signed_typed == []
+
+
+def test_with_a_terminal_yes_still_does_not_skip_the_send_question(chain, wallet, target, monkeypatch, capsys):
+    from emporia import cli
+    asked = []
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setattr(cli, "prompt", lambda q, d="": asked.append(q) or "n")
+    monkeypatch.setattr(card, "_register_after", lambda *a, **k: 0)
+    assert card.register_8004(target.name, "base-sepolia", yes=True, from_agent_wallet=True, max_gas=900_000) == 0
+    assert len(asked) == 1 and chain.sent == []
+
+
+def test_a_fee_that_rose_since_the_question_is_refused_not_signed(chain, wallet, target, monkeypatch, capsys):
+    """S1 (the review's probe): the second quote sees a base fee 4000 times higher."""
+    from emporia import cli
+    real, n = chain.fee_data, {"n": 0}
+
+    def fee():
+        n["n"] += 1
+        p, b = real()
+        return (p, b) if n["n"] == 1 else (p, b * 4000)
+    monkeypatch.setattr(chain, "fee_data", fee)
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setattr(cli, "prompt", lambda *a, **k: "y")
+    chain.balance_wei = 10**18
+    assert card.register_8004(target.name, "base-sepolia", from_agent_wallet=True, max_gas=900_000) == 1
+    assert "fee rose since you confirmed" in capsys.readouterr().out and chain.sent == []
+    owned_by_wallet(chain, wallet)
+    n["n"] = 1
+    with pytest.raises(chain_link.LinkError, match="fee rose"):
+        chain_wallet.send("base-sepolia", AID, 900_000, wallet.address, 1, now=NOW)
+    assert chain.sent == []
+
+
+def test_the_functions_refuse_an_agent_session_and_a_live_unattended_turn_themselves(chain, wallet, target, monkeypatch):
+    """S2: calling them directly, as `python -c` would."""
+    q = chain_register.quote_register("base-sepolia", 400_000, stable=STABLE)
+    monkeypatch.setenv("HERMES_SESSION_ID", "s1")
+    calls = (lambda: chain_send.send(chain, wallet, q["quote"], b""),
+             lambda: chain_register.send_register("base-sepolia", 400_000, q["calldata_digest"], 10**18, stable=STABLE),
+             lambda: chain_register.own_wallet(),
+             lambda: chain_wallet.build("base-sepolia", AID, now=NOW),
+             lambda: chain_wallet.send("base-sepolia", AID, 400_000, OWNER, 10**18, now=NOW),
+             lambda: chain_link.link_own_wallet("base-sepolia", AID, read=chain, stable=STABLE, now=NOW),
+             lambda: chain_link.own_wallet_ask("base-sepolia", AID, read=chain, stable=STABLE, now=NOW))
+    for call in calls:
+        with pytest.raises(chain_link.LinkError, match="person's"):
+            call()
+    monkeypatch.delenv("HERMES_SESSION_ID")
+    from emporia import autonomy
+    monkeypatch.setattr(autonomy, "current", lambda now=None: type("T", (), {"origin": "relay"})())
+    for call in calls:
+        with pytest.raises(chain_link.LinkError, match="relay turn is live"):
+            call()
+    assert chain.sent == [] and wallet.signed_tx == [] and wallet.signed_typed == []
+
+
+def test_the_key_guard_blocks_direct_use_of_the_send_modules():
+    """S2: the review's probe commands, as a terminal command and as code."""
+    from hermes_plugin.emporia import key_guard as g
+    cmds = ["python -c \"from emporia import chain_register as c; q=c.quote_register('base-sepolia', 900000); "
+            "print(c.send_register('base-sepolia', 900000, q['calldata_digest']))\"",
+            "python3 -c \"from emporia import chain_wallet as w; print(w.send('base-sepolia', 5, 300000, '0x00'))\"",
+            "python -c \"from emporia import chain_link as c; print(c.link_own_wallet('base-sepolia', 5))\"",
+            "python -c \"import emporia.chain_send as s\"",
+            "python -c \"from emporia.chain_register import own_wallet; own_wallet()\"",
+            "env -u HERMES_SESSION_ID emporia agent register-8004 shop --chain base-sepolia --from-agent-wallet --max-gas 400000 --yes",
+            "python -m emporia.cli agent set-8004-wallet shop --chain base-sepolia --agent-id 5",
+            "E=emporia; $E agent register-8004 shop --chain base-sepolia --from-agent-wallet --max-gas 400000 --yes"]
+    for c in cmds:
+        for tool, arg in (("terminal", "command"), ("execute_code", "code")):
+            assert g.pre_tool_call(tool, {arg: c})["action"] == "block", (tool, c)
+    for fine in ("git log --oneline", "python -c \"from emporia import chain_link\"", "ls -la"):
+        assert (g.pre_tool_call("terminal", {"command": fine}) or {}).get("action", "allow") != "block", fine
+
+
+def test_a_wallet_with_a_transaction_waiting_is_not_sent_from_and_a_child_timeout_says_it_may_have_been_sent(chain, wallet, target, monkeypatch, capsys):
+    """S3."""
+    import subprocess
+    from emporia import cli
+    chain.nonce_n, chain.latest_nonce = 8, 7
+    with pytest.raises(chain_link.LinkError, match=rf"{wallet.address}.*transaction waiting|transaction waiting"):
+        chain_register.quote_register("base-sepolia", 400_000, stable=STABLE)
+    chain.latest_nonce = None
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setattr(cli, "prompt", lambda *a, **k: "y")
+    real = target.run
+
+    def slow(code):
+        if "send_register" in code:
+            raise subprocess.TimeoutExpired("x", 120)
+        return real(code)
+    monkeypatch.setattr(target, "run", slow)
+    assert card.register_8004(target.name, "base-sepolia", from_agent_wallet=True, max_gas=400_000) == 1
+    out = capsys.readouterr().out
+    assert "may have been sent" in out and wallet.address in out and "mint twice" in out
+    out = card._chain_run(target, "quote_register", "base-sepolia", 1, mod="chain_register")
+    assert out.get("timeout") is None
+
+
+def test_the_browser_page_ends_with_the_consent(chain, wallet, target, monkeypatch, capsys):
+    """N6."""
+    from emporia import browser_sign
+    from emporia import cli
+    seen = {}
+
+    class Page:
+        url, timeout = "http://127.0.0.1:1/x", 0
+
+        def __init__(self, tx, **kw):
+            seen.update(kw)
+            self.timeout = kw["timeout"]
+
+        def start(self):
+            return self
+
+        def wait(self):
+            raise browser_sign.BrowserSignError("no signature arrived")
+    monkeypatch.setattr(browser_sign, "SendPage", Page)
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setattr(cli, "prompt", lambda *a, **k: "y")
+    card.set_8004_wallet(target.name, "base-sepolia", str(AID), browser=True)
+    assert seen["timeout"] == float(W.DEADLINE_SECONDS)

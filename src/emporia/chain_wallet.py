@@ -58,6 +58,7 @@ def build(chain: str, agent_id: Any, *, read: Any = None, signer: Any = None, no
     if not erc8004.available():
         raise LinkError("these checks need eth-account (the x402 extra): pip install 'emporia[x402]'")
     caip2, aid, registry = _target(chain, agent_id)
+    chain_link.person_only("signing the consent with the agent's own wallet")
     me, _ = chain_link._me(None)
     wallet = signer or chain_register.own_wallet()
     reader = chain_register._reader(caip2, read, "safe")
@@ -106,13 +107,18 @@ def quote(chain: str, agent_id: Any, max_gas: Any, *, read: Any = None, signer: 
     return out
 
 
-def send(chain: str, agent_id: Any, max_gas: Any, expect_owner: str, *, read: Any = None, signer: Any = None,
+def send(chain: str, agent_id: Any, max_gas: Any, expect_owner: str, confirmed_cost_wei: int, *, read: Any = None, signer: Any = None,
          now: float | None = None) -> dict[str, Any]:
     """Quote again (fresh consent, fresh deadline), refuse if the owner is not the one the person confirmed, send one
     transaction from the agent's own wallet. The answer is the hash; `confirm` takes it from there."""
     from emporia import chain_send
+    chain_link.person_only("sending from the agent's own wallet")
     wallet = signer or chain_register.own_wallet()
     q = quote(chain, agent_id, max_gas, read=read, signer=wallet, now=now)
+    if q["quote"]["max_cost_wei"] > int(confirmed_cost_wei or 0):
+        raise LinkError("the fee rose since you confirmed it (the worst case is now "
+                        f"{chain_send.eth(q['quote']['max_cost_wei'])}, you confirmed {chain_send.eth(int(confirmed_cost_wei or 0))}): "
+                        "nothing sent; run the command again")
     if not W.same(q["owner"], expect_owner):
         raise LinkError("the identity's owner is not the wallet you confirmed: nothing sent; run the command again")
     tx_hash = chain_send.send(chain_register._reader(q["chain"], read, "safe"),

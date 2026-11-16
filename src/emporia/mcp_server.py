@@ -1094,31 +1094,47 @@ def _identities_8004(profile: dict[str, Any]) -> dict[str, Any] | None:
     return {"links": lines, "note": erc8004_view.NOTE} if lines else None
 
 
+_IDENTITY_VIEWS: Any = None
+IDENTITY_BUDGET = 15.0          # seconds for one verify(kind="identity") call: what is not read by then says so
+IDENTITY_READ_TIMEOUT = 4.0     # seconds per RPC request in that call
+
+
+def _identity_views() -> Any:
+    """One ChainViews for the process (its ten-minute cache then works across calls), with short RPC timeouts."""
+    global _IDENTITY_VIEWS
+    if _IDENTITY_VIEWS is None:
+        from emporia.chain_read import PinnedReader
+        from emporia.console.chain import RESPONSE_CAP, ChainViews
+        _IDENTITY_VIEWS = ChainViews(reader=lambda caip2: PinnedReader(
+            caip2, timeout=IDENTITY_READ_TIMEOUT, max_response_bytes=RESPONSE_CAP))
+    return _IDENTITY_VIEWS
+
+
 def _identity_check(target: str = "", agent_id: str = "") -> dict[str, Any]:
     """`verify(kind="identity")`: each ERC-8004 link of an agent (default: you), the relay's line plus this machine's
     own chain read at one pinned block (owner and tier, whether its registration names it, whether the identity is paid
-    at its own wallet). Reads only; the registration's own text arrives marked as a stranger's."""
+    at its own wallet). Reads only, within one time budget; the registration's own text arrives marked as a stranger's."""
+    import time
+
     from emporia import erc8004_view
-    from emporia.console.chain import ChainViews
     who = target or agent_id or AGENT_ID
     profile = _agent_profile(who)
     if not profile:
         return {"success": False, "error": f"no profile for {who} on your home relay"}
     links = erc8004_view.erc8004_links(profile.get("links"))
     pay_to, stable = erc8004_view.pay_to_of(profile), str(profile.get("stable_id") or "")
-    out = []
-    try:
-        views = ChainViews()
-    except Exception:  # noqa: BLE001 — no reader here: every link keeps the relay's line below
-        views = None
+    out, end = [], time.monotonic() + IDENTITY_BUDGET
     for link in links:
         parts = str(link.get("agent_registry", "")).split(":")
         try:
-            if views is None:
-                raise RuntimeError("no chain reader")
-            loaded, _ = views.load("eip155:" + parts[1], str(link["agent_id"]), str(link["signer"]),
-                                   {"stable_id": stable, "issued_at": int(link["issued_at"]),
-                                    "wallet_sig": str(link["wallet_sig"])}, pay_to)
+            if time.monotonic() >= end:
+                line = erc8004_view.relay_view([link], pay_to)[0]
+                line["chain_status"], line["chain_reason"] = "unknown", "not checked: time"
+                out.append(line)
+                continue
+            loaded, _ = _identity_views().load("eip155:" + parts[1], str(link["agent_id"]), str(link["signer"]),
+                                               {"stable_id": stable, "issued_at": int(link["issued_at"]),
+                                                "wallet_sig": str(link["wallet_sig"])}, pay_to)
             out.append(erc8004_view.local_view(link, loaded.view()))
         except Exception:  # noqa: BLE001 — a link that cannot be read here keeps the relay's line and says so
             line = erc8004_view.relay_view([link], pay_to)[0]
@@ -4657,7 +4673,7 @@ def _ask_about_8004(aid: str) -> str | None:
     request to its person (it cannot mint, link or change one). Never in a round (a quiet round's `try` line implies the
     agent acts itself), never in a read-only peek, never when anything fails."""
     from datetime import UTC, datetime, timedelta
-    if _in_round() or os.getenv("EMPORIA_NO_LOOK_NOTE") == "1":
+    if _unattended_origin() or os.getenv("EMPORIA_NO_LOOK_NOTE") == "1":
         return None
     try:
         from emporia import agent_wallet, erc8004_view
@@ -4678,13 +4694,16 @@ def _ask_about_8004(aid: str) -> str | None:
         if "evm" not in agent_wallet._families(aid):
             return None
         profile = _agent_profile(aid)
-        if not profile or erc8004_view.erc8004_links(profile.get("links")):
-            return None                     # the profile could not be read, or an identity is already linked
-        known[aid] = datetime.now(UTC).isoformat()
+        if not profile:
+            return None                     # the profile could not be read: nothing is said, nothing is spent
+        has = bool(erc8004_view.erc8004_links(profile.get("links")))
+        known[aid] = datetime.now(UTC).isoformat()      # an agent that has an identity is not asked again for a week either
         path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
             json.dump(known, f)
+        if has:
+            return None
         return erc8004_view.ask_line(aid)
     except Exception:  # noqa: BLE001 — a hint, never a failure of whats_next
         return None
