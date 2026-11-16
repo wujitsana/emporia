@@ -342,6 +342,7 @@ def test_without_the_module_the_tools_are_hidden_the_game_is_not_listed_and_no_t
     assert set(relay_modules.TESSERACT_TOOLS) <= hide
     assert GAME not in {m["module_type"] for m in w.client.get("/modules").json()["modules"]}
     assert w.client.get("/tesseract").status_code == 404
+    assert GAME not in w.client.get("/health").json()["modules"]          # /health agrees with /modules
     names = agents(w, 3)
     from conftest import make_test_commit, signed_session_body
     body = signed_session_body(names[0], {"module_type": GAME, "config": {"players": 3}})
@@ -352,6 +353,7 @@ def test_without_the_module_the_tools_are_hidden_the_game_is_not_listed_and_no_t
     assert mods["tesseract"]["parts"] == ["tables"] and mods["tesseract"]["game"] == GAME
     assert not set(relay_modules.TESSERACT_TOOLS) & relay_modules.tools_to_hide([mods])
     assert GAME in {m["module_type"] for m in w.client.get("/modules").json()["modules"]}
+    assert GAME in w.client.get("/health").json()["modules"]
     assert w.client.get("/tesseract").json()["rounds"] == 5
     del make_test_commit
 
