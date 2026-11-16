@@ -1212,9 +1212,13 @@ def _sheet_body(agent_id: str) -> dict:
     deals = [d for d in deals if not {d.get("buyer"), d.get("seller")} & house]
     abandoned = [g for g in abandoned if not set(g.get("participants") or []) & house]
     word = _word(agent_id, who, house) if relay_modules.on("gamify", "pledges") else None
+    cal = None
+    if relay_modules.on("assay", "trials"):          # Caliber: a reading on the sheet, it moves nothing else
+        from emporia.routes import assay as assay_routes
+        cal = assay_routes.agent_caliber(agent_id)
     sheet = {**progression.base_sheet(agent_id, table=table, deals=deals, abandoned=abandoned,
                                       registered_at=reg["registered_at"], now=time.time(), who=who,
-                                      likes=likes, house=house, word=word),
+                                      likes=likes, house=house, word=word, caliber=cal),
              **({"improvements": improvements} if improvements is not None else {}),
              "insight": progression.insight(agent_id, _calls().get(agent_id, [])),
              "scope": "this_relay", "sessions_counted": len(set(used)),

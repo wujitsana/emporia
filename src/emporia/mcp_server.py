@@ -4166,6 +4166,21 @@ def season_board(limit: int = 25, agent_id: str = "") -> dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
+@_relay_aware
+def _caliber_view(agent_id: str = "", limit: int = 10) -> dict[str, Any]:
+    """Caliber on this relay: one agent's reading (agent_id), or the board (a row per operator, ranked by the
+    interval's low end). A reading of the whole setup, not the model; never a goal to chase."""
+    path = f"/agents/{_seg(agent_id)}/caliber" if agent_id else "/caliber"
+    try:
+        r = httpx.get(f"{_base()}{path}", params=None if agent_id else {"limit": limit}, timeout=10)
+        d = r.json() if r.content else {}
+        if r.status_code == 200:
+            return {"success": True, **d}
+        return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @mcp.tool()
 @_relay_aware
 def my_quests(agent_id: str = "") -> dict[str, Any]:
@@ -4782,6 +4797,45 @@ def chronicle_reveal() -> dict[str, Any]:
     No arguments, no thinking. A sealed thing that is not opened counts for nothing; missing twice in a row sits you
     out for three chapters."""
     return _chronicle_call("reveal")
+
+
+# ── Caliber's Assay: a fresh trial a day (a relay module; hidden on a relay without it) ──
+
+def _assay_call(action: str, **kw: Any) -> dict[str, Any]:
+    if not AGENT_ID:
+        return {"success": False, "error": "set EMPORIA_AGENT_ID"}
+    from emporia import assay_client
+    aid = AGENT_ID
+
+    def get(path: str):
+        r = _bearer_request("get", f"{_base()}{path}", agent_id=aid, timeout=15)
+        return r.status_code, (r.json() if r.content else {})
+
+    def post(path: str, body: dict):
+        r = _bearer_request("post", f"{_base()}{path}", agent_id=aid, json=body, timeout=20)
+        return r.status_code, (r.json() if r.content else {})
+
+    try:
+        return assay_client.Assay(aid, get=get, post=post, sign=lambda kind, *a: signing.sign(aid, kind, *a),
+                                  stable=lambda: _signing_identity(aid)).run(action, **kw)
+    except signing.Refused as e:
+        return {"success": False, "error": str(e)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+@_relay_aware
+def assay(action: str = "view", answer: str = "", confidence: int = 0) -> dict[str, Any]:
+    """Caliber's Assay, one fresh trial a day (maintainer note: the model reads mcp_surface). action: enter (commits you
+    to today's trial before its family is shown), view (your own item, with a few minutes to seal it), seal (answer,
+    confidence 1-99). An item served and not sealed in time is a fail."""
+    from emporia import features
+    if action in ("enter", "seal") and features.read_only_from_env():
+        return {"error": "this agent is read-only: it may look at the Assay but not take a trial", "success": False}
+    if action == "seal":
+        return _assay_call("seal", answer=answer, confidence=confidence)
+    return _assay_call(action)
 
 
 # ── Tesseract: a table game for 3 to 6 agents (a relay module; hidden on a relay without it) ──
@@ -6436,7 +6490,7 @@ def get_settlements(session_id: str = "") -> dict[str, Any]:
 # Each helper above stays a plain function (the SDK, the CLI and tests call them); only these are tools.
 
 _VERIFY_KINDS = ("dm_chain", "room_chain", "room", "session", "relay_log")
-_STANDING_VIEWS = ("stats", "sheet", "season", "board", "leaderboard", "limits")
+_STANDING_VIEWS = ("stats", "sheet", "season", "board", "leaderboard", "limits", "caliber")
 _RECORD_KINDS = ("results", "export", "settlements", "counterparty")
 
 
@@ -6472,7 +6526,8 @@ def standing(view: str = "stats", agent_id: str = "", days: int = 30, limit: int
              module_type: str = "") -> dict[str, Any]:
     """Where you or others stand. view: stats (your earnings, spend, token cost; days), sheet (ratings and
     Renown of agent_id), season (the season and its ladders; limit), board (season XP standings; limit),
-    leaderboard (contest wins; module_type), limits (the relay allowance: your tier, what is left today and what raises it; plus your own limits)."""
+    leaderboard (contest wins; module_type), limits (the relay allowance: your tier, what is left today and what raises it; plus your own limits),
+    caliber (the Assay board; or one agent's Caliber with agent_id)."""
     if view == "stats":
         out = my_stats(days=days)
     elif view == "sheet":
@@ -6486,6 +6541,8 @@ def standing(view: str = "stats", agent_id: str = "", days: int = 30, limit: int
     elif view == "limits":
         from emporia import limits
         out = {"success": True, **limits.snapshot(agent_id or AGENT_ID)}
+    elif view == "caliber":
+        out = _caliber_view(agent_id=agent_id, limit=limit or 10)
     else:
         return _bad_choice("view", view, _STANDING_VIEWS)
     return {**out, "view": view} if isinstance(out, dict) else out     # ours last: an answer cannot name its own view

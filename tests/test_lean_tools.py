@@ -26,8 +26,9 @@ SKILLS = ROOT / "hermes_plugin" / "emporia" / "skills"
 # T1: the Chronicle's four tools are core tools (hidden on a relay without the module): +4 tools, about +160 tokens
 # Games skill: a pointer to the Chronicle and Tesseract sections in references/games.md: +120 bytes
 # Tesseract T1: its three tools are core tools too (hidden on a relay without the module): +3 tools
-BUDGET = {"listing_core": 1230, "listing_default": 1230, "listing_all": 1520, "tools_all": 84, "tools_core": 67,
-          "schemas_all": 48_500, "skill_core_bytes": 12_750, "setup_skill_bytes": 5_900}
+# Caliber: one tool, `assay` (hidden on a relay without the module): +1 tool, about +280 bytes of schema
+BUDGET = {"listing_core": 1230, "listing_default": 1230, "listing_all": 1520, "tools_all": 85, "tools_core": 68,
+          "schemas_all": 49_000, "skill_core_bytes": 12_750, "setup_skill_bytes": 5_900}
 
 
 def _tools():
@@ -56,7 +57,7 @@ def _visible(monkeypatch, value: str | None) -> set[str]:
         def json(self):
             return {"relay_modules": {"money": {"parts": ["x402", "escrow", "cards"]}, "log": {},
                                       "federation": {"parts": ["dms"]}, "labs": {"parts": ["reports"]},
-                                      "chronicle": {"parts": ["book"]}, "tesseract": {"parts": ["tables"]},
+                                      "chronicle": {"parts": ["book"]}, "tesseract": {"parts": ["tables"]}, "assay": {"parts": ["trials"]},
                                       "gamify": {"parts": ["sheets", "quests", "pledges"]}}}
     monkeypatch.setattr(mcp_server, "_visits", lambda: [])
     monkeypatch.setattr(mcp_server.httpx, "get", lambda url, timeout=5: Answer())
@@ -196,7 +197,7 @@ def test_a_relay_without_a_module_hides_its_features_tools_even_when_the_feature
     names = set(_tools())
     assert not names & {"register_x402_wallet", "reclaim_escrow", "make_pledge", "lab_report", "set_cross_relay_dms",
                         "money_info", "chronicle", "chronicle_write", "chronicle_vote", "chronicle_reveal",
-                        "tesseract", "tesseract_push", "tesseract_open"}
+                        "tesseract", "tesseract_push", "tesseract_open", "assay"}
     assert {"post", "verify", "block_dm_sender", "create_room"} <= names
 
 

@@ -681,6 +681,15 @@ def _public_row(id_col: str):
     return build
 
 
+def _assay_round(conn, r):
+    # the commitment only: the salt is private until its reveal, so it is not in this row
+    return True, r["day"], {k: r[k] for k in ("day", "beacon_round", "salt_hash", "committed_at")}
+
+
+def _assay_key(conn, r):
+    return True, f"{r['day']}:{r['agent_id']}", _row(r)
+
+
 def _chain_link(conn, r):
     # A card's ERC-8004 link: the signed record (the wallet address is public on the card) and what the relay last
     # read of the chain. No image and no registration text ever reach the relay, so none are logged.
@@ -729,6 +738,13 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "chronicle_reveal": ("chronicle_reveals", _public_row("seq"), "", ("seq",)),
     "chronicle_ballot": ("chronicle_ballots", _public_row("seq"), "", ("seq",)),
     "chronicle_verdict": ("chronicle_verdicts", _public_row("chapter"), "", ("chapter",)),
+    # Caliber's Assay: the salt's commitment (the salt itself stays out until its reveal), who entered, what was served
+    # (family and tier only) and each sealed answer; the reveal is the salt, logged once the window has closed
+    "assay_round": ("assay_rounds", _assay_round, "", ("day",)),
+    "assay_reveal": ("assay_reveals", _public_row("day"), "", ("day",)),
+    "assay_enter": ("assay_entries", _assay_key, "", ("day", "agent_id")),
+    "assay_serve": ("assay_serves", _assay_key, "", ("day", "agent_id")),
+    "assay_seal": ("assay_seals", _assay_key, "", ("day", "agent_id")),
     "agent_chain_link": ("agent_chain_links", _chain_link, "", ("stable_id", "agent_registry", "agent_id")),
 }
 
