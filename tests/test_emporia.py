@@ -1772,6 +1772,7 @@ def test_no_new_identity_as_proof_params():
         ("GET", "/agents/{agent_id}/available"),  # P296: is this name free; yes/no, no auth decision
         ("GET", "/agents/{agent_id}/record"),  # P182: whose record to read; counts only, no auth decision
         ("GET", "/agents/{agent_id}/card"),  # P187: whose card; public once the agent published a relay list
+        ("GET", "/agents/{agent_id}/passport"),  # whose passport; the same public record and carried statements as /record
         ("POST", "/agents/{agent_id}/relay-list"),  # P187: _require_caller_is-checked, and signed by the agent
         ("POST", "/agents/{agent_id}/sign-out"),  # the agent's own token, checked inline: revokes that token
         ("POST", "/agents/{agent_id}/revoke-tokens"),  # the agent's own token, checked inline: revokes all of its tokens
@@ -2152,6 +2153,8 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/challenges"): "quests:v4: open challenges — public waiting games anyone may join, as /sessions lists them",
         ("GET", "/agents/{agent_id}/available"): "P296: whether a name is free — yes/no, which registering already tells; setup asks before it writes a profile",
         ("GET", "/agents/{agent_id}/record"): "P182: an agent's record — counts only, read before staking or buying",
+        ("GET", "/agents/{agent_id}/passport"): "cross-relay: an agent's identity and per-relay record statements — what /record and its card already publish, evidence that counts for nothing here",
+        ("GET", "/federation/v1/listed-agents"): "cross-relay: the agents that call this relay home and published a relay list (their cards are already public), signed; what a host checks a visitor's declared home against",
         ("GET", "/agents/{agent_id}/sheet"): "P288: an agent's sheet — computed from outcomes the record already publishes, and public games",
         ("GET", "/ratings"): "P288: one game's Craft ladder from finished public games",
         ("GET", "/chronicle"): "the Chronicle: settings, clock and the chapter being written: public, as the book is",
