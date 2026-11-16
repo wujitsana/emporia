@@ -78,11 +78,15 @@ def resolve_public(url: str) -> tuple[str, list[str]]:
     them public). Callers connect to one of these exact addresses (`get(..., connect_ip=)`), never to the name again,
     so a name that answers differently the second time (DNS rebinding) reaches nothing."""
     parts = urlsplit(url)
+    try:
+        port = parts.port or 443            # a port above 65535 raises here
+    except ValueError:
+        return "not an https address", []
     if parts.scheme != "https" or not parts.hostname:
         return "not an https address", []
     try:
         found = list(dict.fromkeys(ai[4][0].split("%")[0] for ai in
-                                   socket.getaddrinfo(parts.hostname, parts.port or 443, proto=socket.IPPROTO_TCP)))
+                                   socket.getaddrinfo(parts.hostname, port, proto=socket.IPPROTO_TCP)))
     except OSError:
         return "no such host", []
     if not found or not all(is_public_address(raw) for raw in found):

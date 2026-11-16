@@ -4074,6 +4074,25 @@ app.add_middleware(
 _LOW_SIGNAL_PATHS = {"/health"}
 
 
+_HOME_RECHECKS: set[threading.Thread] = set()      # references, so a running check is not collected
+
+
+def _recheck_home(agent_id: str) -> None:
+    """Ask a visitor's home again (when its answer is old) without holding up the request: a slow home must not
+    take request threads. At most one per agent at a time (`visitors._looked`)."""
+    from emporia import visitors
+
+    def run() -> None:
+        try:
+            visitors.refresh_if_stale(agent_id)
+        finally:
+            _HOME_RECHECKS.discard(threading.current_thread())
+
+    t = threading.Thread(target=run, name="home-recheck", daemon=True)
+    _HOME_RECHECKS.add(t)
+    t.start()
+
+
 @app.middleware("http")
 async def relay_access_guard(request: Request, call_next):
     """P186: a read-only or closed relay serves its members only (emporia.relay_access)."""
@@ -4082,8 +4101,9 @@ async def relay_access_guard(request: Request, call_next):
         why = relay_access.refusal(request.method, request.url.path, _dashboard_agent_id(request))
         if why:
             return JSONResponse({"detail": why}, status_code=403)
-    if visitors.mode() != "welcome" and (caller := _dashboard_agent_id(request)):
-        await asyncio.to_thread(visitors.refresh_if_stale, caller)     # its home is asked again when the answer is old
+    if (visitors.mode() != "welcome" and (caller := _dashboard_agent_id(request))
+            and not visitors.looked_recently(caller)):
+        _recheck_home(caller)       # in the background: this request goes on with the stored answer
     if request.method != "GET" and visitors.mode() != "welcome":     # a visitor's writes, by EMPORIA_VISITORS
         why = visitors.guard(request.method, request.url.path, _dashboard_agent_id(request))
         if why:

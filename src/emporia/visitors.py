@@ -170,10 +170,10 @@ def _resolve(url: str) -> tuple[str, list[str]]:
 
 def _pull(url: str) -> dict[str, Any]:
     from emporia.identity import federation_signable_bytes, verify_raw
-    problem, addrs = _resolve(url)
-    if problem:
-        return {"error": _UNANSWERED}
     try:
+        problem, addrs = _resolve(url)
+        if problem:
+            return {"error": _UNANSWERED}
         r = _get_listing(f"{url}/federation/v1/listed-agents", addrs)
         if r.status_code != 200:
             return {"error": _UNANSWERED}
@@ -192,7 +192,8 @@ def _pull(url: str) -> dict[str, Any]:
 
 
 RECHECK_S = 24 * 3600          # a confirmed home is asked again after this long
-RETRY_S = 3600                 # an unconfirmed one (a home that was down) is asked again after this long
+RETRY_S = 3600                 # a home that did not answer, or an unconfirmed one, is asked again after this long
+MISSING_S = 7 * 24 * 3600      # a confirmed home that has not answered for this long is no longer confirmed
 _looked: dict[str, float] = {}
 
 
@@ -203,15 +204,32 @@ def _age_s(at: str) -> float:
         return 0.0
 
 
+def looked_recently(agent_id: str) -> bool:
+    """Whether this agent's home was looked at in the last five minutes (a cheap test, no I/O)."""
+    return time.monotonic() - _looked.get(agent_id, -1e9) < 300
+
+
+def _due(check: dict[str, Any]) -> bool:
+    status = check.get("status")
+    if status == "confirmed":
+        return _age_s(check.get("at", "")) >= RECHECK_S and (not check.get("tried") or
+                                                             _age_s(check["tried"]) >= RETRY_S)
+    if status == "unconfirmed":
+        return _age_s(check.get("at", "")) >= RETRY_S
+    return True            # never checked (the first check did not run or did not finish): check now
+
+
 def refresh_if_stale(agent_id: str) -> None:
     """Ask the home relay again when the last answer is old, lazily: called when the visitor next acts or reads.
-    A home that no longer lists the agent (or does not answer) turns "confirmed" into "unconfirmed", which
-    `homed-only` then refuses. Blocking (one short network call); run it off the event loop. Never raises."""
+    A confirmed home that answers and no longer lists the agent (or names another relay) turns "confirmed" into
+    "unconfirmed", which `homed-only` then refuses. A confirmed home that merely did not answer stays confirmed and
+    is asked again after RETRY_S (an honest visitor is not locked out by its home restarting); it falls back to
+    "unconfirmed" only after MISSING_S without an answer. Blocking (network calls); the relay runs it in the
+    background, never inside a request. Never raises."""
     import json
-    now = time.monotonic()
-    if now - _looked.get(agent_id, -1e9) < 300:
+    if looked_recently(agent_id):
         return
-    _looked[agent_id] = now
+    _looked[agent_id] = time.monotonic()
     if len(_looked) > 5000:
         _looked.clear()
     try:
@@ -222,14 +240,15 @@ def refresh_if_stale(agent_id: str) -> None:
         if not row or kind_of(row["home_json"]) != "relay":
             return
         check = json.loads(row["home_check_json"] or "{}")
-        status = check.get("status")
-        age = _age_s(check.get("at", ""))
-        if not ((status == "confirmed" and age >= RECHECK_S) or (status == "unconfirmed" and age >= RETRY_S)):
+        if not _due(check):
             return
         home = json.loads(row["home_json"])
         with _lock:
             _cache.pop(home.get("url", ""), None)           # a fresh answer, not the cached one
         result = confirm(home, row["public_key_hex"] or "", row["stable_id"] or "")
+        if (check.get("status") == "confirmed" and result.get("reason") == _UNANSWERED
+                and _age_s(check.get("at", "")) < MISSING_S):
+            result = {**check, "tried": result["at"]}       # no answer is not a "no": keep it, try again in RETRY_S
         with rs.DB_LOCK, rs.get_db() as conn:
             conn.execute("UPDATE authorized_agents SET home_check_json = ? WHERE agent_id = ?",
                          (json.dumps(result, sort_keys=True), agent_id))
@@ -238,15 +257,20 @@ def refresh_if_stale(agent_id: str) -> None:
 
 
 def _get_listing(url: str, addrs: list[str]):
-    """The listing, from the exact address the name resolved to when it was checked (the next one if it does not
-    connect). No second resolution: a name that answers differently now is not asked."""
+    """The listing, from the exact address the name resolved to when it was checked (the second one if the first
+    does not connect; no more than two, within one deadline of 8 seconds across them). No second resolution: a name
+    that answers differently now is not asked."""
     import httpx
 
     from emporia import fetch
+    deadline = time.monotonic() + 8.0
     last: Exception | None = None
-    for ip in addrs or [None]:
+    for ip in (addrs or [None])[:2]:
+        left = deadline - time.monotonic()
+        if left <= 0.5:
+            break
         try:
-            return fetch.get(url, timeout=_TIMEOUT_S, max_bytes=2 * 1024 * 1024, total=8.0, connect_ip=ip)
+            return fetch.get(url, timeout=min(_TIMEOUT_S, left), max_bytes=2 * 1024 * 1024, total=left, connect_ip=ip)
         except (httpx.ConnectError, httpx.ConnectTimeout) as e:
             last = e
     raise last or httpx.ConnectError("no address")
