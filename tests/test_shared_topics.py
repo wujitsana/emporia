@@ -800,3 +800,28 @@ def test_scan_relays_reads_a_directory_and_finds_the_shared_topic_by_its_hosts_r
     assert bt["relay_id"] == b.card()["relay_id"] and bt["title"] == "B's town"
     assert {e["relay"]["id"] for e in out} == {rs.relay_id(), b.card()["relay_id"]}      # the unlisted C is absent
     assert [e for e in out if e["relay"]["id"] == b.card()["relay_id"]][0]["relay"]["says"] == {"agents": 7}
+
+
+def test_a_bare_slug_post_of_another_origin_is_not_this_topics(carrier):
+    """A post an agent of C signed for C's own topic of the same name (bare slug) is a replay when the host serves it
+    in its topic; the same goes for a forged post claiming a third origin."""
+    carol = RemoteAgent(Peer(C_URL))
+    replay = carol.post(carrier.slug, "meant for c's own topic")
+    forged = RemoteAgent(Peer(C_URL)).post(carrier.slug, "never said", origin="http://z-relay.test")
+    ok = RemoteAgent(carrier.h).post(carrier.slug, "the host's own")
+    for p in (replay, forged, ok):
+        carrier.fake.add(p)
+    out = _pull(carrier)[carrier.key]
+    assert out["kept"] == 1 and out["refused"] == 2, out
+
+
+def test_a_third_relays_agent_under_another_key_than_the_pinned_one_is_refused(carrier):
+    carol = RemoteAgent(Peer(C_URL))
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("INSERT INTO remote_agents (address, peer_url, public_key_hex, encryption_public_key, "
+                     "encryption_key_signature, updated_at, stable_id, key_log_json, encryption_key_at) "
+                     "VALUES (?,?,?,?,?,?,?,?,?)", (carol.address, C_URL, "ab" * 32, "cd" * 32, "", "now",
+                                                    wire.stable_id_for("ab" * 32), "[]", ""))
+    carrier.fake.add(carol.post(carrier.key, "under a key that is not hers"))
+    out = _pull(carrier)[carrier.key]
+    assert out["kept"] == 0 and out["refused"] == 1, out

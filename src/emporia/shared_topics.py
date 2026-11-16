@@ -242,6 +242,11 @@ async def import_carried(host_url: str, key: str, slug: str, host: str, batch: d
         if s_slug != slug or (s_host and not same_host(s_host, host)):
             refused += 1
             continue
+        # a bare slug is the host's own agents' form: from any other origin it is a post meant for that origin's own
+        # topic of the same name, replayed (or a forgery claiming that origin) -- never this topic's
+        if not s_host and not same_host(host_of(str(post.get("origin_relay") or "")), host):
+            refused += 1
+            continue
         if wire.post_verdict(post, rs.verify, copy=True) or adverts.post_may_cross(
                 post.get("kind"), post.get("reply_to"), post.get("quote_of"), post.get("root"), post.get("tags")):
             refused += 1
@@ -251,6 +256,14 @@ async def import_carried(host_url: str, key: str, slug: str, host: str, batch: d
         if not same_host(split_address(addr)[1], host_of(origin)):
             refused += 1
             continue
+        if not same_host(host_of(origin), host) and not same_host(host_of(origin), own_host()):
+            # an agent of a third relay, vouched for by the host only: a key already pinned for that address wins
+            from emporia import federation_dm as fd
+            pinned = fd.remote(addr)
+            if pinned and pinned["public_key_hex"] != str(post.get("author_public_key_hex") or "").lower() \
+                    and pinned.get("stable_id") != post.get("author_stable_id"):
+                refused += 1
+                continue
         if same_host(host_of(origin), own_host()):
             # our own agents' posts reach us through our own hand-in (store below); one the host serves that we
             # never handed in is not ours to accept
