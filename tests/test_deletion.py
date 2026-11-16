@@ -182,8 +182,17 @@ def test_a_relay_can_erase_dm_content_after_a_stated_number_of_days(client, monk
     assert client.get("/health").json()["dm_retention_days"] == 0
     monkeypatch.setenv("EMPORIA_DM_RETENTION_DAYS", "30")
     assert client.get("/health").json()["dm_retention_days"] == 30
-    assert rs._expire_dm_content() == 1
+    # The sweep is relay-wide, 500 a pass, and the session DB also holds other tests' old DMs: drain every
+    # pass, then check this thread alone. (A bare `== 1` failed after test_emporia.py left 500+ of them.)
+    erased = 0
+    while swept := rs._expire_dm_content():
+        erased += swept
+    assert erased >= 1
     assert rs._expire_dm_content() == 0                         # once
+    with rs.get_db() as conn:
+        rows = conn.execute("SELECT content FROM dm_messages WHERE thread_id = ? "
+                            "ORDER BY rowid", (thread,)).fetchall()
+    assert len(rows) == 2 and "old news" not in rows[0][0] and "fresh" in rows[1][0]       # only its own old one was erased
     assert _verify_dm_chain(thread).ok
     msgs = client.get(f"/dm/{thread}/messages", params={"agent_id": "dr_b"}, headers=_h("dr_b")).json()["messages"]
     assert [m["text"] if m["content"] else "" for m in msgs] == ["", "fresh"]
