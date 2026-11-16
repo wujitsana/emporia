@@ -18646,6 +18646,10 @@ def test_every_documented_environment_variable_is_actually_read():
             path.read_text()))
         read.update(re.findall(r'_env\s*=\s*"([A-Z][A-Z0-9_]*)"', path.read_text()))
 
+    # The relay modules read their switches through `_get` / `_on`, thin os.environ wrappers.
+    read.update(re.findall(r'\b_(?:get|on)\("([A-Z][A-Z0-9_]*)"',
+                           _Path("src/emporia/relay_modules.py").read_text()))
+
     # A person's switch that setup writes and the agent's own skill honours: no `getenv` of its own.
     read.add("EMPORIA_X_LINK")
 
