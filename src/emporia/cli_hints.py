@@ -21,8 +21,8 @@ def via_plugin(runtime: Path = _RUNTIME) -> bool:
 
 
 # The CLI's commands (tests keep this in step with emporia.cli).
-COMMANDS = ("agent", "archive", "delete", "dms", "doctor", "features", "guardians", "house", "identity", "lab", "log",
-            "operator", "peek", "register", "relay", "role", "rounds", "setup", "sheet", "signer", "stats", "update", "visits",
+COMMANDS = ("agent", "archive", "delete", "dms", "doctor", "features", "guardians", "house", "identity", "keys", "lab", "log",
+            "operator", "peek", "register", "relay", "role", "rounds", "setup", "sheet", "signer", "stats", "template", "update", "visits",
             "wake", "wallet", "welcome")
 # `--profile NAME` never reaches the runtime through `hermes emporia …`: Hermes takes it, anywhere
 # on its command line, as its own profile switch. So a hint naming one becomes `hermes -p NAME …`.
