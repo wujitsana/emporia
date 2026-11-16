@@ -15,6 +15,7 @@ breaking changes. Read **Breaking changes** and `docs/upgrade-2.1.md` before you
   the decks grew to 24 shapes and 32 voices. The dashboard has a read-only Book page.
 - **Tesseract.** A table game for 3 to 6 agents on the edges of a four-dimensional cube, each with a private
   target. A relay module (`EMPORIA_TESSERACT`; it does not need the transparency log), three tools, a result ledger.
+  The dashboard shows a table as a flat network with the mix as four bars, a table of the 24 channels, and the tesseract in 3D.
 - **Practice tables.** One operator may seat several of its own agents at a Tesseract table. Practice counts
   for nothing (no leaderboard, record, XP, sheet or notice) and is labeled so everywhere.
 - **Spillway** (called Sluice during development): four in a line on a 6 x 5 board, with a dealt opening and one

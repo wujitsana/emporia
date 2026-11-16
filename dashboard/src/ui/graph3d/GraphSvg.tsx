@@ -1,6 +1,7 @@
 import { memo, useMemo, type KeyboardEvent, type Ref, type SVGAttributes } from "react";
 import type { GraphEdge, GraphNode } from "./types";
 import { depthOrder } from "./project";
+import { placeLabels } from "./labels";
 import { maxAbs, nodeName, widthOf } from "./edgeStyle";
 import s from "./Graph3D.module.css";
 
@@ -11,6 +12,13 @@ export interface Placed {
   scale: number;
   /** Larger is nearer; the paint order. */
   depth: number;
+}
+
+/** Decor after projection: screen positions, ready to draw. */
+export interface PlacedDecor {
+  faces: readonly (readonly { x: number; y: number }[])[];
+  lines: readonly { a: Placed; b: Placed; width: number; dashed: boolean }[];
+  points: readonly { at: Placed; kind: "dot" | "ring" | "corner"; label?: string }[];
 }
 
 export interface GraphSvgProps {
@@ -32,6 +40,7 @@ export interface GraphSvgProps {
   allLabels?: boolean;
   /** Layer captions for the flat view. */
   layerTags?: readonly { x: number; text: string }[];
+  decor?: PlacedDecor;
 }
 
 /** Draws placed nodes and edges. Shared by the orbit view and the flat view, so they cannot disagree. */
@@ -53,6 +62,13 @@ function GraphSvgInner(p: GraphSvgProps) {
   const edgeOrder = depthOrder(drawn.map((d) => (d.a.depth + d.b.depth) / 2));
   const nodeOrder = depthOrder(placed.map((q) => q.depth));
 
+  // Every label the picture shows, placed so none overlaps another: the mix and target first, then the corners, then the nodes.
+  const decorWants = (p.decor?.points ?? []).map((d) => ({ x: d.at.x, y: d.at.y, text: d.label ?? "" })).filter((d) => d.text);
+  const nodeWants = nodeOrder.slice().reverse().map((k) => ({ k, x: placed[k].x, y: placed[k].y, text: nodes[k].label })).filter((n) => p.allLabels || selected === nodes[n.k].id);
+  const spots = placeLabels([...decorWants, ...nodeWants], p.width, p.height);
+  const decorSpot = new Map(decorWants.map((d, i) => [d.text, spots[i]] as const));
+  const nodeSpot = new Map(nodeWants.map((n, i) => [n.k, spots[decorWants.length + i]] as const));
+
   const pick = (id: string) => p.onSelect?.(selected === id ? null : id);
   const onNodeKey = (ev: KeyboardEvent, id: string) => {
     if (ev.key === "Enter" || ev.key === " ") {
@@ -71,6 +87,16 @@ function GraphSvgInner(p: GraphSvgProps) {
       aria-label={p.label}
       {...p.svgProps}
     >
+      {p.decor ? (
+        <g aria-hidden="true" data-decor="">
+          {p.decor.faces.map((f, i) => (
+            <polygon key={i} className={s.decorFace} points={f.map((q) => `${q.x},${q.y}`).join(" ")} />
+          ))}
+          {p.decor.lines.map((l, i) => (
+            <line key={i} className={l.dashed ? `${s.decorLine} ${s.decorDashed}` : s.decorLine} x1={l.a.x} y1={l.a.y} x2={l.b.x} y2={l.b.y} strokeWidth={l.width} />
+          ))}
+        </g>
+      ) : null}
       <g>
         {edgeOrder.map((k) => {
           const { e, i, a, b } = drawn[k];
@@ -123,6 +149,22 @@ function GraphSvgInner(p: GraphSvgProps) {
           );
         })}
       </g>
+      {p.decor ? (
+        <g aria-hidden="true" data-decor-points="">
+          {p.decor.points.map((d, i) => (
+            <g key={i}>
+              {d.kind === "ring" ? (
+                <circle className={s.decorRing} cx={d.at.x} cy={d.at.y} r={7 * Math.min(1.6, Math.max(0.6, d.at.scale))} />
+              ) : d.kind === "corner" ? (
+                <rect className={s.decorCorner} x={d.at.x - 3} y={d.at.y - 3} width={6} height={6} />
+              ) : (
+                <circle className={s.decorDot} cx={d.at.x} cy={d.at.y} r={4.5 * Math.min(1.6, Math.max(0.6, d.at.scale))} />
+              )}
+              {d.label && decorSpot.get(d.label) ? <text className={s.label} x={decorSpot.get(d.label)!.x} y={decorSpot.get(d.label)!.y} textAnchor={decorSpot.get(d.label)!.end ? "end" : "start"}>{d.label}</text> : null}
+            </g>
+          ))}
+        </g>
+      ) : null}
       {p.layerTags?.map((t) => (
         <text key={t.text} className={s.layerTag} x={t.x} y={p.height - 8} aria-hidden="true">
           {t.text}
@@ -156,15 +198,13 @@ function GraphSvgInner(p: GraphSvgProps) {
         })}
       </g>
       <g aria-hidden="true">
-        {nodeOrder.map((k) => {
-          const n = nodes[k];
-          if (!p.allLabels && selected !== n.id) return null;
-          const q = placed[k];
-          return (
-            <text key={n.id} className={s.label} x={q.x + 8} y={q.y - 8}>
-              {n.label}
+        {nodeWants.map((n) => {
+          const at = nodeSpot.get(n.k);
+          return at ? (
+            <text key={nodes[n.k].id} className={s.label} x={at.x} y={at.y} textAnchor={at.end ? "end" : "start"}>
+              {nodes[n.k].label}
             </text>
-          );
+          ) : null;
         })}
       </g>
     </svg>

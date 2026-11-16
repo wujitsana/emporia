@@ -1,14 +1,14 @@
 {
  "actions": [
   {
-   "action_id": "act_bdfbbe91a6aa",
+   "action_id": "act_b68bba0a8a69",
    "action_type": "seal",
    "agent_id": "fx_0",
-   "created_at": "2026-11-14T07:09:55.565398+00:00",
+   "created_at": "2026-11-16T17:23:01.342984+00:00",
    "payload": {
-    "commitment": "19822255d8675a34d9315465df6995dd465ade88c62e78b3209e2a99a351f839",
+    "commitment": "fe4329b18f69876da89c7a56d16957dbb6bb4975c4d044db4b50d69058f64edc",
     "epoch": 1,
-    "round": 33945621
+    "round": 34015483
    },
    "result": {
     "artifacts": null,
@@ -16,14 +16,14 @@
    }
   },
   {
-   "action_id": "act_fb294cdf21fa",
+   "action_id": "act_3dc5da9107cf",
    "action_type": "seal",
    "agent_id": "fx_1",
-   "created_at": "2026-11-14T07:09:55.785022+00:00",
+   "created_at": "2026-11-16T17:23:01.483125+00:00",
    "payload": {
-    "commitment": "dbf870690e63972e25c4b078b1f874a91c2344ef5d4ac86ffae3f71544319298",
+    "commitment": "65266963d246533eeca9462d0d12b016fe2879d1ea622c847c24abd3112fc0df",
     "epoch": 1,
-    "round": 33945621
+    "round": 34015483
    },
    "result": {
     "artifacts": null,
@@ -31,14 +31,14 @@
    }
   },
   {
-   "action_id": "act_6de29641b2f0",
+   "action_id": "act_6519295d788a",
    "action_type": "seal",
    "agent_id": "fx_2",
-   "created_at": "2026-11-14T07:09:56.060798+00:00",
+   "created_at": "2026-11-16T17:23:01.613330+00:00",
    "payload": {
-    "commitment": "bf6485570a952424ea5b9c156e2a27e532823f67649b2575aeb0928b610481ff",
+    "commitment": "bedaba63f78a1b3ea972ce3c2667527d57f440219c550fc4f310960313a35968",
     "epoch": 1,
-    "round": 33945621
+    "round": 34015483
    },
    "result": {
     "artifacts": null,
@@ -46,14 +46,14 @@
    }
   },
   {
-   "action_id": "act_a1fef12ffe4e",
+   "action_id": "act_8acda13603fa",
    "action_type": "seal",
    "agent_id": "fx_3",
-   "created_at": "2026-11-14T07:09:56.321910+00:00",
+   "created_at": "2026-11-16T17:23:01.765187+00:00",
    "payload": {
-    "commitment": "1cfbc7b58780573f2e0fcc2f60707eef9414a4d8987a01390e5468f498780af2",
+    "commitment": "61b16106c75be4f4b7a35f4ca3bdccdcbda1cbf7be1341fb764687e3458cdc94",
     "epoch": 1,
-    "round": 33945621
+    "round": 34015483
    },
    "result": {
     "artifacts": null,
@@ -61,19 +61,19 @@
    }
   },
   {
-   "action_id": "act_70326eae3ecf",
+   "action_id": "act_63bce33364b9",
    "action_type": "open",
    "agent_id": "fx_0",
-   "created_at": "2026-11-14T07:09:56.470881+00:00",
+   "created_at": "2026-11-16T17:23:01.882756+00:00",
    "payload": {
     "epoch": 1,
     "move": {
      "push": {
-      "WXY>XY": -4,
-      "WY>Y": -4
+      "WYZ>YZ": -4,
+      "WZ>Z": -4
      }
     },
-    "nonce": "b285c96361d5def22f1c24a95c59fa8957fc5bba75ad5d20a719ca70813104a7"
+    "nonce": "9c9efbc1a7538c8148088f143ce23fa066c2e24a75aff7a63c5ccebb1b8e04fc"
    },
    "result": {
     "artifacts": null,
@@ -81,19 +81,19 @@
    }
   },
   {
-   "action_id": "act_66188e93e434",
+   "action_id": "act_9a1344481fcf",
    "action_type": "open",
    "agent_id": "fx_1",
-   "created_at": "2026-11-14T07:09:56.626934+00:00",
+   "created_at": "2026-11-16T17:23:01.971245+00:00",
    "payload": {
     "epoch": 1,
     "move": {
      "push": {
-      "WY>W": -4,
-      "XYZ>XY": 4
+      "WX>X": -4,
+      "WZ>Z": -4
      }
     },
-    "nonce": "677157e95b97bde248f4bf8a0af314c67e1f3147c2e0062de6c0abace937b3fe"
+    "nonce": "e31b4580b789eba14e684b580c7d80a490eef6938e3ae479f2ce901fca99250e"
    },
    "result": {
     "artifacts": null,
@@ -101,10 +101,10 @@
    }
   },
   {
-   "action_id": "act_ec30c5c6a22c",
+   "action_id": "act_9a110f59867c",
    "action_type": "open",
    "agent_id": "fx_2",
-   "created_at": "2026-11-14T07:09:56.759005+00:00",
+   "created_at": "2026-11-16T17:23:02.060379+00:00",
    "payload": {
     "epoch": 1,
     "move": {
@@ -113,7 +113,7 @@
       "WXZ>WZ": -4
      }
     },
-    "nonce": "5af69b71a1b523f4709f1947fa47ebdee94ccdd18a8dd977a665841a26fd81de"
+    "nonce": "e15efbbc5215dcfa42efb0ba25dd1bc641419cd7a4725afffcbce6f3661d427c"
    },
    "result": {
     "artifacts": null,
@@ -121,16 +121,16 @@
    }
   },
   {
-   "action_id": "act_07a55e3da1bc",
+   "action_id": "act_c66b48ec5ab9",
    "action_type": "open",
    "agent_id": "fx_3",
-   "created_at": "2026-11-14T07:09:57.124020+00:00",
+   "created_at": "2026-11-16T17:23:02.159272+00:00",
    "payload": {
     "epoch": 1,
     "move": {
      "push": {}
     },
-    "nonce": "7928db734b64762aad524d9835a5de8300596618b98881fd19ff2695e9ac7b4e"
+    "nonce": "e508700a557f1df09e1076c6a7f6bfaa6729bea33c601fcfebc3d80279c93338"
    },
    "result": {
     "artifacts": null,
@@ -138,14 +138,14 @@
    }
   },
   {
-   "action_id": "act_2520c289402e",
+   "action_id": "act_65875d7ff5f8",
    "action_type": "seal",
    "agent_id": "fx_0",
-   "created_at": "2026-11-14T07:09:57.440287+00:00",
+   "created_at": "2026-11-16T17:23:02.339655+00:00",
    "payload": {
-    "commitment": "a75ea4e5682e705e8637ef20839b9c2d64af7df2da2c301a1041f900252ba83b",
+    "commitment": "2d42eab90a7e3ccb57c7aafe4090a5d5a427e210f7d311dbf7438af2edd8cbd0",
     "epoch": 2,
-    "round": 33945627
+    "round": 34015490
    },
    "result": {
     "artifacts": null,
@@ -153,14 +153,14 @@
    }
   },
   {
-   "action_id": "act_3aa91c567979",
+   "action_id": "act_d9824f1191c5",
    "action_type": "seal",
    "agent_id": "fx_1",
-   "created_at": "2026-11-14T07:09:57.647140+00:00",
+   "created_at": "2026-11-16T17:23:02.478401+00:00",
    "payload": {
-    "commitment": "35a4c3f824d8a35e11974441c3808e136c2677d607d834a3dc4356777ac25a4a",
+    "commitment": "53f9ccd4a2b502d61b2f994f99082490641e3d8c50dd2f400daf839621dcf70e",
     "epoch": 2,
-    "round": 33945627
+    "round": 34015490
    },
    "result": {
     "artifacts": null,
@@ -168,14 +168,14 @@
    }
   },
   {
-   "action_id": "act_0bb8ea7f2cb1",
+   "action_id": "act_76eba8659a08",
    "action_type": "seal",
    "agent_id": "fx_2",
-   "created_at": "2026-11-14T07:09:57.869773+00:00",
+   "created_at": "2026-11-16T17:23:02.631283+00:00",
    "payload": {
-    "commitment": "6c4d12f1f9451b2b112afeb74f5520b2c4d8389ad9694c19ec372090794477da",
+    "commitment": "c94fdb806a10dbbbb7bbe2912cbb65db1341cea4ca19ff57a2971a418556c208",
     "epoch": 2,
-    "round": 33945627
+    "round": 34015490
    },
    "result": {
     "artifacts": null,
@@ -183,14 +183,14 @@
    }
   },
   {
-   "action_id": "act_22d140099486",
+   "action_id": "act_3c582f13c4c5",
    "action_type": "seal",
    "agent_id": "fx_3",
-   "created_at": "2026-11-14T07:09:58.070263+00:00",
+   "created_at": "2026-11-16T17:23:02.760533+00:00",
    "payload": {
-    "commitment": "63d2d2d20fb5079fef3500d147f59e3a7e548f8394b00f6a431a36162361df86",
+    "commitment": "68ca8ce562d2bafab855fcc83f5cb2d79638f6727b107efe48b8bccb13bb2249",
     "epoch": 2,
-    "round": 33945627
+    "round": 34015490
    },
    "result": {
     "artifacts": null,
@@ -198,19 +198,19 @@
    }
   },
   {
-   "action_id": "act_a3b4177003c6",
+   "action_id": "act_dbdbabef8c76",
    "action_type": "open",
    "agent_id": "fx_0",
-   "created_at": "2026-11-14T07:09:58.267813+00:00",
+   "created_at": "2026-11-16T17:23:02.887839+00:00",
    "payload": {
     "epoch": 2,
     "move": {
      "push": {
-      "WXY>XY": -4,
-      "WY>Y": -4
+      "WX>W": 4,
+      "WYZ>YZ": -4
      }
     },
-    "nonce": "f2495a1e0e2b1a7c617c5492699885cd5aa0c451aa15b550cd9c7e4b1cb585d6"
+    "nonce": "5729ab0f32b79e5f2bc88869246ce7daf2dee3d4fe8dff4cfd03eee906f33c49"
    },
    "result": {
     "artifacts": null,
@@ -218,19 +218,19 @@
    }
   },
   {
-   "action_id": "act_e2ec1f84c78b",
+   "action_id": "act_378220f183f3",
    "action_type": "open",
    "agent_id": "fx_1",
-   "created_at": "2026-11-14T07:09:58.425454+00:00",
+   "created_at": "2026-11-16T17:23:02.987621+00:00",
    "payload": {
     "epoch": 2,
     "move": {
      "push": {
-      "WZ>Z": -4,
-      "YZ>Z": -4
+      "WX>W": 4,
+      "XYZ>XZ": -4
      }
     },
-    "nonce": "9af3a1052a7d81efdad0e0f490181d90e31714af7b69752bfeb3ad78f3d8f051"
+    "nonce": "bf08293f0cd112dbeffdb828f286509f2e5eae53fcb943b806b6b8b4377b2de3"
    },
    "result": {
     "artifacts": null,
@@ -238,10 +238,10 @@
    }
   },
   {
-   "action_id": "act_66c18458ab02",
+   "action_id": "act_11a16f52c469",
    "action_type": "open",
    "agent_id": "fx_2",
-   "created_at": "2026-11-14T07:09:58.545515+00:00",
+   "created_at": "2026-11-16T17:23:03.100187+00:00",
    "payload": {
     "epoch": 2,
     "move": {
@@ -250,7 +250,7 @@
       "WYZ>WZ": -4
      }
     },
-    "nonce": "ef7666f72d088acb80aba214700dbea8588d666a7a8ce74d121767e9ea0f46ee"
+    "nonce": "39d0446a94ea15cf3671d522a40e817737ba9589e070747918e57495526e6337"
    },
    "result": {
     "artifacts": null,
@@ -258,16 +258,16 @@
    }
   },
   {
-   "action_id": "act_4351aa8dfcc0",
+   "action_id": "act_d43398d263ad",
    "action_type": "open",
    "agent_id": "fx_3",
-   "created_at": "2026-11-14T07:09:58.664480+00:00",
+   "created_at": "2026-11-16T17:23:03.209052+00:00",
    "payload": {
     "epoch": 2,
     "move": {
      "push": {}
     },
-    "nonce": "cb417a16a8b9a9403a56747d051d672349b38dc366999af23447e1eef2321ba4"
+    "nonce": "c58c3aaecfeff771953757be3f1bed45a1d221d8bfb69fa028510ac45538dffa"
    },
    "result": {
     "artifacts": null,
@@ -275,14 +275,14 @@
    }
   },
   {
-   "action_id": "act_22608644ef2d",
+   "action_id": "act_fbea0a4039f9",
    "action_type": "seal",
    "agent_id": "fx_1",
-   "created_at": "2026-11-14T07:09:58.977946+00:00",
+   "created_at": "2026-11-16T17:23:03.415899+00:00",
    "payload": {
-    "commitment": "a569b1cdb48f6e5b4edc4deccd8f9d29c86c7cd20f799bfb20ea1e2e0f4b9ef0",
+    "commitment": "0e3d80bd1fe1e740b870ab9280ed784da781f94c58df883b39e57ccb079d4c19",
     "epoch": 3,
-    "round": 33945634
+    "round": 34015496
    },
    "result": {
     "artifacts": null,
@@ -290,14 +290,14 @@
    }
   },
   {
-   "action_id": "act_1f5f3cb5d4b0",
+   "action_id": "act_f0a208f45c60",
    "action_type": "seal",
    "agent_id": "fx_2",
-   "created_at": "2026-11-14T07:09:59.181952+00:00",
+   "created_at": "2026-11-16T17:23:03.559679+00:00",
    "payload": {
-    "commitment": "584bf59ef0a5488a40a2245cc6ef980fa9634912646bc3a63dc4a4738448bef7",
+    "commitment": "e93e61611d3b7b512a72cc1e7c74024e74092cd80ec85b2784af041d11f20c48",
     "epoch": 3,
-    "round": 33945634
+    "round": 34015496
    },
    "result": {
     "artifacts": null,
@@ -305,14 +305,14 @@
    }
   },
   {
-   "action_id": "act_dfd604779b18",
+   "action_id": "act_4ab3ee7cff8b",
    "action_type": "seal",
    "agent_id": "fx_3",
-   "created_at": "2026-11-14T07:09:59.522987+00:00",
+   "created_at": "2026-11-16T17:23:03.714759+00:00",
    "payload": {
-    "commitment": "c639ee9d5e5a85bcaf07de71f3fc6d3b640ab36e9c3054deebc59f6171fbf610",
+    "commitment": "12ae19be0a097b8d13e8e2013dd668629cf21b70607caa49bda1561d5ac8a169",
     "epoch": 3,
-    "round": 33945634
+    "round": 34015496
    },
    "result": {
     "artifacts": null,
@@ -320,19 +320,19 @@
    }
   },
   {
-   "action_id": "act_c0bf6441a297",
+   "action_id": "act_41757fffca4d",
    "action_type": "open",
    "agent_id": "fx_1",
-   "created_at": "2026-11-14T07:09:59.730162+00:00",
+   "created_at": "2026-11-16T17:23:03.815419+00:00",
    "payload": {
     "epoch": 3,
     "move": {
      "push": {
-      "WXY>XY": 4,
-      "WY>W": -4
+      "WYZ>YZ": 4,
+      "XYZ>YZ": 4
      }
     },
-    "nonce": "5048f112ac903abb3c676e4ed0ccef0872f895728c734cf17035abc2116bae55"
+    "nonce": "9004dd5c9a01a8d45a499c2809d5cee662d5d6282ae539ba96987376b5be8000"
    },
    "result": {
     "artifacts": null,
@@ -340,10 +340,10 @@
    }
   },
   {
-   "action_id": "act_4b6d63a4ac4b",
+   "action_id": "act_83e0fa3faeac",
    "action_type": "open",
    "agent_id": "fx_2",
-   "created_at": "2026-11-14T07:10:00.019936+00:00",
+   "created_at": "2026-11-16T17:23:03.920878+00:00",
    "payload": {
     "epoch": 3,
     "move": {
@@ -352,7 +352,7 @@
       "XYZ>XY": 2
      }
     },
-    "nonce": "7777a2d4071d28785bed07a1acd98c8ef46f55fe9180e04e57e2d6c462fdaa2e"
+    "nonce": "22d01277f72cde345917162b212d0c29b0ce347ed634adf7b0616d057adfd46a"
    },
    "result": {
     "artifacts": null,
@@ -360,16 +360,16 @@
    }
   },
   {
-   "action_id": "act_a8176447db40",
+   "action_id": "act_d74041a9d3db",
    "action_type": "open",
    "agent_id": "fx_3",
-   "created_at": "2026-11-14T07:10:00.170460+00:00",
+   "created_at": "2026-11-16T17:23:04.009712+00:00",
    "payload": {
     "epoch": 3,
     "move": {
      "push": {}
     },
-    "nonce": "9cf1e94ce4fba8bf04b7d633605df4358f53cf228d1e096420a3ef59a6b63b88"
+    "nonce": "fb6ac52ae7c4bde380073d4916188c7c3b76c5deb18d3e43a3771bcc7458c5ca"
    },
    "result": {
     "artifacts": null,
@@ -377,14 +377,14 @@
    }
   },
   {
-   "action_id": "act_772755526100",
+   "action_id": "act_61d4b7c513f1",
    "action_type": "seal",
    "agent_id": "fx_0",
-   "created_at": "2026-11-14T07:10:00.481945+00:00",
+   "created_at": "2026-11-16T17:23:04.203276+00:00",
    "payload": {
-    "commitment": "2f6680ab044dd8c1e08cb03ebb5827aa9fc30e3f02d5771173e8e507c99a4a3b",
+    "commitment": "7abf1e7e05f02a24dd561f32affd3ac7d03ad3049f2b694eaa02315654c29853",
     "epoch": 4,
-    "round": 33945841
+    "round": 34015703
    },
    "result": {
     "artifacts": null,
@@ -392,14 +392,14 @@
    }
   },
   {
-   "action_id": "act_c3b73e78ce15",
+   "action_id": "act_48475b5cdd9c",
    "action_type": "seal",
    "agent_id": "fx_1",
-   "created_at": "2026-11-14T07:10:00.752121+00:00",
+   "created_at": "2026-11-16T17:23:04.370214+00:00",
    "payload": {
-    "commitment": "27c3f453c7b19d395909ef8226a8acc415ff7bbdef70958135d43d6eb826f7ca",
+    "commitment": "4e0bcdc14d6d38a534a2d75f951953d4217908476491136e49cc392b5ef4da2f",
     "epoch": 4,
-    "round": 33945841
+    "round": 34015703
    },
    "result": {
     "artifacts": null,
@@ -407,14 +407,14 @@
    }
   },
   {
-   "action_id": "act_b53736277a2b",
+   "action_id": "act_b98f6e2eb068",
    "action_type": "seal",
    "agent_id": "fx_2",
-   "created_at": "2026-11-14T07:10:00.959816+00:00",
+   "created_at": "2026-11-16T17:23:04.527943+00:00",
    "payload": {
-    "commitment": "12c1c62d819a8cd64c646a90a20f33a2f60623f5f6ad04488bd3258d5f122bad",
+    "commitment": "7f19b10c5d2d7a480f48f4e82bca894ae5a414ed4dc398ec9431fda89d179cf9",
     "epoch": 4,
-    "round": 33945841
+    "round": 34015703
    },
    "result": {
     "artifacts": null,
@@ -422,14 +422,14 @@
    }
   },
   {
-   "action_id": "act_c3e3fccfd7bc",
+   "action_id": "act_f6c6ee67c50e",
    "action_type": "seal",
    "agent_id": "fx_3",
-   "created_at": "2026-11-14T07:10:01.153869+00:00",
+   "created_at": "2026-11-16T17:23:04.689135+00:00",
    "payload": {
-    "commitment": "43115a0d3781940377692c24fec4e6ec738158da2cc52b01357fa4eb6594842b",
+    "commitment": "093d5ad513340738481e18014deae364a5088c997e28d484fa592c70dfa04fd6",
     "epoch": 4,
-    "round": 33945841
+    "round": 34015703
    },
    "result": {
     "artifacts": null,
@@ -437,19 +437,19 @@
    }
   },
   {
-   "action_id": "act_6ee4940774fc",
+   "action_id": "act_c3a29ec17608",
    "action_type": "open",
    "agent_id": "fx_0",
-   "created_at": "2026-11-14T07:10:01.316830+00:00",
+   "created_at": "2026-11-16T17:23:04.836534+00:00",
    "payload": {
     "epoch": 4,
     "move": {
      "push": {
-      "WXY>XY": -4,
-      "WY>W": 4
+      "WYZ>YZ": -4,
+      "XYZ>YZ": -4
      }
     },
-    "nonce": "63ce004b6e07d57765387fbef03376ecc677b91f7bd961a716f3db268c1b1f56"
+    "nonce": "b776510b59b287d19722a6fc5cb8ee109b4d1dca4129c8a6833abeebc7d52f4a"
    },
    "result": {
     "artifacts": null,
@@ -457,19 +457,19 @@
    }
   },
   {
-   "action_id": "act_77f2442b56c4",
+   "action_id": "act_0e98cb4d542f",
    "action_type": "open",
    "agent_id": "fx_1",
-   "created_at": "2026-11-14T07:10:01.466394+00:00",
+   "created_at": "2026-11-16T17:23:04.930183+00:00",
    "payload": {
     "epoch": 4,
     "move": {
      "push": {
-      "WX>W": -4,
+      "WX>X": -4,
       "WY>Y": 4
      }
     },
-    "nonce": "1eb312f1ed06ab36069877ecb5fcbc9e4faedb230e565456d32e9aaa83bcfe32"
+    "nonce": "209c330e2eb69189cea271f202480aaa1795c180c3d86af94e6496b039b660b2"
    },
    "result": {
     "artifacts": null,
@@ -477,10 +477,10 @@
    }
   },
   {
-   "action_id": "act_86f1f45617c9",
+   "action_id": "act_7643093641f1",
    "action_type": "open",
    "agent_id": "fx_2",
-   "created_at": "2026-11-14T07:10:01.642992+00:00",
+   "created_at": "2026-11-16T17:23:05.034506+00:00",
    "payload": {
     "epoch": 4,
     "move": {
@@ -489,7 +489,7 @@
       "WZ>W": 2
      }
     },
-    "nonce": "819c383c3e666156b2ad03657e5814e52454e30835e402c014f5c09d3b79ce6a"
+    "nonce": "486027e4e0fe7f0481b322cba2a004c1cead08e118cb5115d5f5ab3ea48b8f21"
    },
    "result": {
     "artifacts": null,
@@ -497,14 +497,14 @@
    }
   },
   {
-   "action_id": "act_675e1828999a",
+   "action_id": "act_4185c801c635",
    "action_type": "seal",
    "agent_id": "fx_0",
-   "created_at": "2026-11-14T07:10:01.950538+00:00",
+   "created_at": "2026-11-16T17:23:05.216325+00:00",
    "payload": {
-    "commitment": "3f99f2cb3e1b827d268539270ca669b46f196349a427f93cfd36fd7f3a94b18c",
+    "commitment": "30b3d50a20a3642d93d2124e8efd95857bdc9884dc38964be57400e49aac2a87",
     "epoch": 5,
-    "round": 33946048
+    "round": 34015910
    },
    "result": {
     "artifacts": null,
@@ -512,14 +512,14 @@
    }
   },
   {
-   "action_id": "act_fb2d7be14ec0",
+   "action_id": "act_af70e8604e1d",
    "action_type": "seal",
    "agent_id": "fx_1",
-   "created_at": "2026-11-14T07:10:02.223802+00:00",
+   "created_at": "2026-11-16T17:23:05.373368+00:00",
    "payload": {
-    "commitment": "c872613e95fc2ea3cf12ea345338e89d98acfef4aa6176410fc8cb383fc69999",
+    "commitment": "7f257fae63591298c239a8d697a914c81804e8cc9da0d1d3fcb85c2b4ccd0847",
     "epoch": 5,
-    "round": 33946048
+    "round": 34015910
    },
    "result": {
     "artifacts": null,
@@ -527,14 +527,14 @@
    }
   },
   {
-   "action_id": "act_48d4ba9482c7",
+   "action_id": "act_b9fe9dd11aa0",
    "action_type": "seal",
    "agent_id": "fx_2",
-   "created_at": "2026-11-14T07:10:02.435126+00:00",
+   "created_at": "2026-11-16T17:23:05.528451+00:00",
    "payload": {
-    "commitment": "6d4889e9681374d4e6368a0fa3eaac01d8a719c62161e0ecd5dd5b944d965469",
+    "commitment": "13b434828554650d05ea1a72fcbaeae5a78582dc1909f45c06f7de7b7cdb7ea9",
     "epoch": 5,
-    "round": 33946048
+    "round": 34015910
    },
    "result": {
     "artifacts": null,
@@ -542,19 +542,19 @@
    }
   },
   {
-   "action_id": "act_81bc0dff9dff",
+   "action_id": "act_83ee33983fce",
    "action_type": "open",
    "agent_id": "fx_0",
-   "created_at": "2026-11-14T07:10:02.578582+00:00",
+   "created_at": "2026-11-16T17:23:05.644600+00:00",
    "payload": {
     "epoch": 5,
     "move": {
      "push": {
-      "WY>W": 4,
-      "WY>Y": -4
+      "WX>X": 4,
+      "XYZ>XZ": 4
      }
     },
-    "nonce": "75249b89586e9a5c60d6a7571c77145a329a591b4add4e7e32ae3d3896e56b6b"
+    "nonce": "373fd203d8558f73bb2b4b8806a43e5a98c370f07e83b3ea647374dc10bf6d30"
    },
    "result": {
     "artifacts": null,
@@ -562,19 +562,19 @@
    }
   },
   {
-   "action_id": "act_12bc862e70fd",
+   "action_id": "act_3da7d01eb4e9",
    "action_type": "open",
    "agent_id": "fx_1",
-   "created_at": "2026-11-14T07:10:02.760059+00:00",
+   "created_at": "2026-11-16T17:23:05.760327+00:00",
    "payload": {
     "epoch": 5,
     "move": {
      "push": {
-      "WY>W": -4,
-      "WY>Y": 4
+      "WYZ>YZ": 4,
+      "XYZ>YZ": 4
      }
     },
-    "nonce": "2338ac1cd3ac095eb48c3f1cd8a4b31a65a5ee9079ee786c8b00de627c65167f"
+    "nonce": "14e67a611339eb8e575caa55fbc8c71d1d7fecc92babf172007974e0f532c74f"
    },
    "result": {
     "artifacts": null,
@@ -582,10 +582,10 @@
    }
   },
   {
-   "action_id": "act_a6172fb7a41d",
+   "action_id": "act_150421bc03dd",
    "action_type": "open",
    "agent_id": "fx_2",
-   "created_at": "2026-11-14T07:10:02.930623+00:00",
+   "created_at": "2026-11-16T17:23:05.871108+00:00",
    "payload": {
     "epoch": 5,
     "move": {
@@ -594,7 +594,7 @@
       "WYZ>YZ": 2
      }
     },
-    "nonce": "99fc65af1530a371bab659e8b73074d75d07b384f64ce078cfa8e8ac38e3c74e"
+    "nonce": "8fdc59f4c54f610671a8014db62ab5daecefde27b3d3b0a53bf00697738262ae"
    },
    "result": {
     "artifacts": null,
@@ -602,13 +602,13 @@
    }
   },
   {
-   "action_id": "act_29fbdb8b7ae1",
+   "action_id": "act_9cf8dfd27f54",
    "action_type": "reveal",
    "agent_id": "fx_0",
-   "created_at": "2026-11-14T07:10:03.156942+00:00",
+   "created_at": "2026-11-16T17:23:06.034202+00:00",
    "payload": {
-    "nonce": "218ae037b30eef695444f9339e8b325f886760c3736f314ef30982449bfaf43a",
-    "s": "6c86658974611d8be7a82b2994e7570aeec5e3447717df34ea68f53a86dc2320"
+    "nonce": "cd895395223370488641e3a5e00591ebdf66c6c416de4efaa95696c2c378ed0a",
+    "s": "8336f10523ed87c47f464734a931b2a9af55f1083b1c83dac64d64fbba397f92"
    },
    "result": {
     "artifacts": null,
@@ -616,13 +616,13 @@
    }
   },
   {
-   "action_id": "act_37f880906195",
+   "action_id": "act_e78c358331d9",
    "action_type": "reveal",
    "agent_id": "fx_1",
-   "created_at": "2026-11-14T07:10:03.337627+00:00",
+   "created_at": "2026-11-16T17:23:06.152377+00:00",
    "payload": {
-    "nonce": "34bfca593af9fb9c3c2e9bc9ebba9080e4ae215b75d25db69620de17a581e649",
-    "s": "6c93197d0b1313ab69347f81db421833be42bd3d980939e09416f0ab455b80a1"
+    "nonce": "18c819ef5e538c3c3225881828798c6530062cc738d3c05c7fdb35e54c18ccab",
+    "s": "759debf92e7144101d90ac18187f240385db59888e08761cb6ce65aa3b28ca7a"
    },
    "result": {
     "artifacts": null,
@@ -630,46 +630,43 @@
    }
   },
   {
-   "action_id": "act_9a1af1daa5ca",
+   "action_id": "act_e5fbb40710cd",
    "action_type": "reveal",
    "agent_id": "fx_2",
-   "created_at": "2026-11-14T07:10:03.480831+00:00",
+   "created_at": "2026-11-16T17:23:06.265058+00:00",
    "payload": {
-    "nonce": "30c198aa2207e7188ab9ff6161b6141ae1e41d47e1440e434f7b14fc158c07ad",
-    "s": "02183c32898e04d79851752963d936f820163683eaf247fdd2b77347658bba9d"
+    "nonce": "6fc94596d1984d6cbc97f32c8560d7af574d5469c36c43cd587f1e169a84d41f",
+    "s": "dbbb7d839bf6085892520d06074c7052a71b57a7a0d8b6bf2c1a6a16350283a7"
    },
    "result": {
     "artifacts": {
      "result": {
       "epochs": [
        {
-        "dark": [
-         "WX>W",
-         "WZ>W"
-        ],
+        "dark": [],
         "epoch": 1,
         "late": [],
         "mix": [
-         1115,
-         2987,
-         3323,
-         2542
+         2360,
+         3123,
+         2796,
+         1687
         ],
         "points": {
          "fx_0": {
-          "first": 1390,
-          "last": 1114,
-          "points": 2504
+          "first": 979,
+          "last": 829,
+          "points": 1808
          },
          "fx_1": {
-          "first": -1,
-          "last": 79,
-          "points": 78
+          "first": 1607,
+          "last": 1021,
+          "points": 2628
          },
          "fx_2": {
-          "first": -524,
-          "last": -626,
-          "points": -1150
+          "first": 453,
+          "last": 251,
+          "points": 704
          },
          "fx_3": {
           "first": 0,
@@ -679,174 +676,170 @@
         },
         "pulses": [
          [
+          3,
+          1,
+          7,
+          2
+         ],
+         [
           6,
+          4,
+          2,
+          9
+         ],
+         [
+          0,
+          7,
+          5,
+          1
+         ],
+         [
+          4,
+          2,
+          3,
+          2
+         ],
+         [
+          9,
+          7,
+          6,
+          1
+         ],
+         [
+          3,
+          3,
+          4,
+          5
+         ],
+         [
+          9,
+          2,
+          4,
+          1
+         ],
+         [
+          1,
+          3,
+          5,
+          0
+         ],
+         [
           5,
           1,
+          8,
+          4
+         ],
+         [
+          8,
+          5,
+          1,
+          4
+         ],
+         [
+          2,
+          3,
+          1,
+          7
+         ],
+         [
+          7,
+          0,
+          4,
           7
          ],
          [
           8,
           9,
+          6,
+          8
+         ],
+         [
           9,
-          1
-         ],
-         [
-          3,
           4,
-          5,
-          5
-         ],
-         [
-          2,
           8,
-          0,
-          6
-         ],
-         [
-          4,
-          5,
-          8,
-          9
-         ],
-         [
-          2,
-          5,
-          4,
-          1
-         ],
-         [
-          0,
-          5,
-          3,
-          6
-         ],
-         [
-          0,
-          9,
-          3,
-          3
-         ],
-         [
-          5,
-          5,
-          2,
-          3
-         ],
-         [
-          0,
-          7,
-          5,
           2
          ],
          [
           8,
-          8,
-          7,
-          3
-         ],
-         [
-          8,
           2,
-          0,
-          6
-         ],
-         [
-          2,
-          4,
-          3,
-          3
-         ],
-         [
-          9,
-          9,
-          9,
-          9
-         ],
-         [
-          0,
           5,
-          9,
           3
          ],
          [
+          9,
+          9,
           4,
-          3,
-          1,
-          0
+          1
          ]
         ],
         "pushes": {
          "fx_0": {
-          "WXY>XY": -4,
-          "WY>Y": -4
+          "WYZ>YZ": -4,
+          "WZ>Z": -4
          },
          "fx_1": {
-          "WY>W": -4,
-          "XYZ>XY": 4
+          "WX>X": -4,
+          "WZ>Z": -4
          },
          "fx_2": {
           "WXY>WX": 4,
           "WXZ>WZ": -4
          }
         },
-        "round": 33945621,
+        "round": 34015483,
         "silent": [],
         "widths": [
-         7,
-         6,
-         11,
-         7,
-         6,
+         5,
+         5,
          2,
-         11,
+         2,
+         9,
+         5,
+         12,
          7,
          3,
-         5,
-         12,
-         5,
-         12,
-         5,
-         5,
-         7,
-         4,
-         10,
          12,
          12,
-         11,
+         5,
          2,
+         3,
+         8,
          4,
-         6
+         4,
+         0,
+         10,
+         11,
+         10,
+         9,
+         12,
+         8
         ]
        },
        {
-        "dark": [
-         "XYZ>XZ",
-         "WXZ>XZ",
-         "WXY>XY"
-        ],
+        "dark": [],
         "epoch": 2,
         "late": [],
         "mix": [
-         5025,
-         2215,
-         1609,
-         1116
+         4961,
+         2465,
+         1736,
+         808
         ],
         "points": {
          "fx_0": {
-          "first": 234,
-          "last": -609,
-          "points": -375
+          "first": 2023,
+          "last": -833,
+          "points": 1190
          },
          "fx_1": {
-          "first": 942,
-          "last": 851,
-          "points": 1793
+          "first": 505,
+          "last": -861,
+          "points": -356
          },
          "fx_2": {
-          "first": 184,
-          "last": -324,
-          "points": -140
+          "first": -278,
+          "last": -335,
+          "points": -613
          },
          "fx_3": {
           "first": 0,
@@ -856,157 +849,154 @@
         },
         "pulses": [
          [
-          2,
+          1,
           3,
-          8,
-          5
+          6,
+          8
          ],
          [
-          0,
-          3,
-          9,
+          6,
+          7,
+          4,
           2
          ],
          [
-          7,
-          7,
+          9,
+          9,
           1,
           6
          ],
          [
-          6,
-          8,
           2,
-          1
+          8,
+          8,
+          9
          ],
          [
-          6,
-          6,
-          1,
-          2
-         ],
-         [
-          3,
+          4,
+          8,
           5,
-          8,
-          1
+          3
          ],
          [
-          8,
+          5,
+          1,
           9,
-          8,
-          7
+          5
+         ],
+         [
+          7,
+          1,
+          7,
+          6
          ],
          [
           1,
+          8,
+          7,
+          0
+         ],
+         [
+          1,
+          9,
+          0,
+          9
+         ],
+         [
+          8,
+          4,
           3,
-          7,
-          7
-         ],
-         [
-          7,
-          8,
-          2,
-          7
+          0
          ],
          [
           2,
-          8,
-          8,
+          7,
+          9,
+          5
+         ],
+         [
+          5,
+          1,
+          2,
+          8
+         ],
+         [
+          0,
+          5,
+          1,
+          0
+         ],
+         [
+          4,
+          2,
+          7,
           4
          ],
          [
-          2,
-          0,
-          6,
-          6
-         ],
-         [
-          7,
-          7,
-          7,
-          9
-         ],
-         [
-          2,
-          0,
-          1,
-          9
-         ],
-         [
-          7,
+          5,
           8,
-          0,
-          9
-         ],
-         [
-          0,
-          1,
-          3,
-          5
-         ],
-         [
-          3,
-          4,
-          7,
+          2,
           2
+         ],
+         [
+          9,
+          9,
+          6,
+          7
          ]
         ],
         "pushes": {
          "fx_0": {
-          "WXY>XY": -4,
-          "WY>Y": -4
+          "WX>W": 4,
+          "WYZ>YZ": -4
          },
          "fx_1": {
-          "WZ>Z": -4,
-          "YZ>Z": -4
+          "WX>W": 4,
+          "XYZ>XZ": -4
          },
          "fx_2": {
           "WY>Y": -4,
           "WYZ>WZ": -4
          }
         },
-        "round": 33945627,
+        "round": 34015490,
         "silent": [],
         "widths": [
-         7,
-         6,
-         11,
-         7,
-         2,
-         2,
-         11,
-         7,
-         3,
          5,
-         12,
+         1,
+         2,
+         2,
+         5,
          1,
          12,
+         7,
+         3,
+         12,
+         12,
          5,
-         5,
+         10,
+         3,
+         8,
          0,
          4,
-         6,
-         12,
-         12,
+         0,
+         10,
          11,
-         2,
-         4,
-         2
+         10,
+         9,
+         12,
+         8
         ]
        },
        {
-        "dark": [
-         "XY>X",
-         "YZ>Y"
-        ],
+        "dark": [],
         "epoch": 3,
         "late": [],
         "mix": [
-         3054,
-         2789,
-         2440,
-         1685
+         3156,
+         2504,
+         2986,
+         1321
         ],
         "points": {
          "fx_0": {
@@ -1015,14 +1005,14 @@
           "points": 0
          },
          "fx_1": {
-          "first": 1781,
-          "last": 1949,
-          "points": 3730
+          "first": 2441,
+          "last": 2346,
+          "points": 4787
          },
          "fx_2": {
-          "first": 175,
-          "last": -695,
-          "points": -520
+          "first": 1723,
+          "last": 1484,
+          "points": 3207
          },
          "fx_3": {
           "first": 0,
@@ -1032,145 +1022,146 @@
         },
         "pulses": [
          [
-          6,
-          1,
-          3,
-          4
-         ],
-         [
-          5,
           8,
-          6,
-          7
-         ],
-         [
-          0,
-          8,
-          3,
-          5
-         ],
-         [
-          2,
           5,
-          2,
+          7,
           6
          ],
          [
-          4,
-          8,
           3,
+          7,
+          7,
           3
          ],
          [
+          6,
           2,
+          4,
+          6
+         ],
+         [
           9,
+          2,
+          8,
+          2
+         ],
+         [
+          0,
+          5,
+          2,
+          9
+         ],
+         [
+          4,
+          4,
+          2,
+          2
+         ],
+         [
+          9,
+          7,
           3,
+          2
+         ],
+         [
+          2,
+          4,
+          0,
           8
          ],
          [
-          6,
+          5,
           4,
-          9,
-          6
+          0,
+          8
          ],
          [
-          7,
-          9,
+          5,
           0,
+          1,
+          2
+         ],
+         [
+          2,
+          8,
+          9,
           3
          ],
          [
-          1,
-          6,
-          5,
+          8,
+          4,
+          0,
           7
          ],
          [
-          1,
-          3,
-          5,
-          0
-         ],
-         [
-          0,
-          6,
+          4,
           9,
-          0
-         ],
-         [
-          1,
-          2,
-          3,
-          1
-         ],
-         [
           8,
-          8,
-          0,
-          1
+          3
          ],
          [
-          2,
-          7,
-          8,
-          2
-         ],
-         [
-          7,
+          6,
           2,
           6,
-          2
+          8
          ],
          [
           8,
-          5,
+          1,
+          3,
+          2
+         ],
+         [
           2,
-          3
+          9,
+          8,
+          8
          ]
         ],
         "pushes": {
          "fx_1": {
-          "WXY>XY": 4,
-          "WY>W": -4
+          "WYZ>YZ": 4,
+          "XYZ>YZ": 4
          },
          "fx_2": {
           "WX>W": -4,
           "XYZ>XY": 2
          }
         },
-        "round": 33945634,
+        "round": 34015496,
         "silent": [
          "fx_0"
         ],
         "widths": [
-         9,
-         6,
-         11,
          7,
+         1,
+         6,
          2,
-         2,
-         11,
+         5,
+         5,
+         12,
          7,
          3,
-         5,
+         12,
          12,
          5,
+         6,
+         3,
          8,
-         5,
-         1,
          0,
          4,
-         6,
-         12,
-         12,
+         0,
+         10,
          11,
-         2,
-         4,
-         2
+         10,
+         9,
+         12,
+         8
         ]
        },
        {
         "dark": [
+         "YZ>Y",
          "YZ>Z"
         ],
         "epoch": 4,
@@ -1178,26 +1169,26 @@
          "fx_3"
         ],
         "mix": [
-         2808,
-         3232,
-         3119,
-         805
+         4329,
+         2485,
+         2540,
+         612
         ],
         "points": {
          "fx_0": {
-          "first": 2946,
-          "last": 2568,
-          "points": 5514
+          "first": 0,
+          "last": 0,
+          "points": 0
          },
          "fx_1": {
-          "first": 873,
-          "last": 2098,
-          "points": 2971
+          "first": 1384,
+          "last": 1294,
+          "points": 2678
          },
          "fx_2": {
-          "first": 490,
-          "last": 473,
-          "points": 963
+          "first": -675,
+          "last": -683,
+          "points": -1358
          },
          "fx_3": {
           "first": 0,
@@ -1208,108 +1199,108 @@
         "pulses": [
          [
           7,
-          8,
           6,
-          6
+          2,
+          7
          ],
          [
           2,
-          2,
-          9,
-          8
+          5,
+          7,
+          7
          ],
          [
-          2,
+          5,
           3,
-          1,
-          3
+          3,
+          4
          ],
          [
-          4,
-          6,
+          5,
+          5,
+          3,
+          1
+         ],
+         [
+          8,
+          2,
           9,
+          7
+         ],
+         [
+          7,
+          0,
+          4,
+          9
+         ],
+         [
+          1,
+          9,
+          8,
+          4
+         ],
+         [
+          5,
+          6,
+          4,
           5
          ],
          [
-          0,
+          9,
+          4,
+          3,
+          0
+         ],
+         [
+          2,
+          3,
+          2,
+          1
+         ],
+         [
+          7,
+          1,
+          1,
+          1
+         ],
+         [
+          1,
           5,
-          0,
-          7
+          8,
+          1
          ],
          [
           8,
-          8,
-          0,
-          7
-         ],
-         [
-          2,
-          2,
-          0,
-          2
-         ],
-         [
           3,
-          0,
-          8,
-          8
-         ],
-         [
-          0,
-          3,
-          3,
-          3
+          9,
+          1
          ],
          [
           6,
-          1,
-          0,
-          1
-         ],
-         [
-          2,
-          5,
-          3,
-          7
-         ],
-         [
-          9,
-          0,
+          6,
           7,
-          4
+          5
          ],
          [
+          4,
+          4,
           2,
-          8,
-          0,
-          4
+          0
          ],
          [
+          7,
           5,
           7,
-          2,
-          8
-         ],
-         [
-          5,
-          0,
-          5,
-          8
-         ],
-         [
-          2,
-          3,
-          1,
-          1
+          0
          ]
         ],
         "pushes": {
          "fx_0": {
-          "WXY>XY": -4,
-          "WY>W": 4
+          "WYZ>YZ": -4,
+          "XYZ>YZ": -4
          },
          "fx_1": {
-          "WX>W": -4,
+          "WX>X": -4,
           "WY>Y": 4
          },
          "fx_2": {
@@ -1317,60 +1308,62 @@
           "WZ>W": 2
          }
         },
-        "round": 33945841,
+        "round": 34015703,
         "silent": [],
         "widths": [
-         9,
-         6,
-         11,
          7,
+         1,
          2,
          2,
-         11,
+         5,
+         1,
+         12,
          9,
          3,
-         5,
          12,
-         1,
-         4,
+         12,
          5,
-         5,
+         6,
+         0,
+         8,
          4,
          6,
-         6,
-         12,
-         12,
+         0,
+         10,
          11,
-         2,
-         4,
-         2
+         10,
+         9,
+         12,
+         8
         ]
        },
        {
-        "dark": [],
+        "dark": [
+         "WX>W"
+        ],
         "epoch": 5,
         "late": [],
         "mix": [
-         2713,
-         3332,
-         2606,
-         1318
+         1905,
+         3143,
+         3195,
+         1727
         ],
         "points": {
          "fx_0": {
-          "first": 1179,
-          "last": 1654,
-          "points": 2833
+          "first": 201,
+          "last": 1325,
+          "points": 1526
          },
          "fx_1": {
-          "first": 1784,
-          "last": 1657,
-          "points": 3441
+          "first": 416,
+          "last": 321,
+          "points": 737
          },
          "fx_2": {
-          "first": -68,
-          "last": -68,
-          "points": -136
+          "first": 451,
+          "last": 108,
+          "points": 559
          },
          "fx_3": {
           "first": 0,
@@ -1380,179 +1373,179 @@
         },
         "pulses": [
          [
-          4,
           0,
-          1,
-          0
-         ],
-         [
-          4,
-          3,
-          7,
-          3
-         ],
-         [
           5,
           0,
-          0,
-          4
+          7
          ],
          [
-          5,
+          9,
           4,
-          4,
-          4
+          6,
+          1
          ],
          [
           2,
-          0,
-          7,
-          5
-         ],
-         [
-          6,
-          5,
           4,
+          9,
           0
          ],
          [
+          7,
           0,
+          3,
+          7
+         ],
+         [
+          3,
+          2,
+          6,
+          4
+         ],
+         [
+          6,
+          4,
+          6,
+          2
+         ],
+         [
           1,
-          1,
+          2,
+          8,
           9
          ],
          [
-          0,
-          8,
+          1,
+          5,
           8,
           1
          ],
          [
-          7,
-          6,
-          2,
-          0
-         ],
-         [
-          0,
-          2,
-          2,
-          4
-         ],
-         [
-          0,
-          2,
-          7,
+          9,
+          1,
+          8,
           5
-         ],
-         [
-          2,
-          2,
-          7,
-          4
          ],
          [
           9,
           3,
-          3,
-          6
+          2,
+          3
          ],
          [
           2,
-          2,
           5,
-          8
-         ],
-         [
-          5,
-          4,
-          3,
+          0,
           0
          ],
          [
+          4,
           0,
-          8,
+          9,
+          2
+         ],
+         [
+          5,
+          1,
+          9,
+          9
+         ],
+         [
+          4,
+          1,
           6,
-          6
+          7
+         ],
+         [
+          8,
+          3,
+          5,
+          9
+         ],
+         [
+          2,
+          6,
+          1,
+          8
          ]
         ],
         "pushes": {
          "fx_0": {
-          "WY>W": 4,
-          "WY>Y": -4
+          "WX>X": 4,
+          "XYZ>XZ": 4
          },
          "fx_1": {
-          "WY>W": -4,
-          "WY>Y": 4
+          "WYZ>YZ": 4,
+          "XYZ>YZ": 4
          },
          "fx_2": {
           "WYZ>WY": -2,
           "WYZ>YZ": 2
          }
         },
-        "round": 33946048,
+        "round": 34015910,
         "silent": [],
         "widths": [
-         9,
-         6,
-         11,
+         7,
          5,
-         2,
-         4,
-         11,
+         6,
+         0,
+         5,
+         7,
+         12,
          9,
          3,
-         5,
          12,
-         1,
+         12,
+         5,
+         6,
          4,
-         5,
-         5,
+         8,
          4,
          6,
-         6,
-         12,
-         12,
+         0,
+         10,
          11,
-         2,
-         4,
-         2
+         10,
+         9,
+         12,
+         8
         ]
        }
       ],
       "opening": {
-       "attempt": 2,
+       "attempt": 0,
        "mix": [
-        2790,
-        2167,
-        3154,
-        1856
+        2192,
+        2665,
+        2757,
+        2355
        ],
        "widths": [
-        3,
-        6,
-        11,
-        7,
-        6,
+        5,
+        5,
         2,
-        11,
+        2,
+        9,
+        9,
+        12,
         11,
         3,
-        1,
-        12,
         9,
         12,
         5,
-        9,
-        11,
+        2,
+        7,
+        8,
+        4,
+        4,
         4,
         10,
-        12,
-        12,
         11,
-        2,
-        4,
-        6
+        10,
+        9,
+        12,
+        8
        ]
       },
       "order": [
@@ -1566,35 +1559,35 @@
       ],
       "outcome_type": "won",
       "points": {
-       "fx_0": 10476,
-       "fx_1": 12013,
-       "fx_2": -983,
+       "fx_0": 4524,
+       "fx_1": 10474,
+       "fx_2": 2499,
        "fx_3": 0
       },
       "table_index": {
-       "fx_0": 1863,
-       "fx_1": 2136,
-       "fx_2": 0,
+       "fx_0": 1034,
+       "fx_1": 2394,
+       "fx_2": 571,
        "fx_3": 0
       },
       "targets": {
        "fx_0": [
-        38,
-        10,
+        37,
+        33,
         20,
-        32
+        10
        ],
        "fx_1": [
-        19,
         31,
+        17,
         39,
-        11
+        13
        ],
        "fx_2": [
-        35,
-        18,
-        12,
-        35
+        14,
+        36,
+        34,
+        16
        ]
       },
       "termination": "table",
@@ -1613,49 +1606,49 @@
    "rand": {
     "commits": {
      "fx_0": {
-      "at": "2026-11-14T07:09:54.938320+00:00",
-      "beacon_round": 33945605,
-      "hash": "7a2aa4ceaa466acac200042b025097687226cb68e008b7d8c9b19fff5278cc21",
+      "at": "2026-11-16T17:23:00.935193+00:00",
+      "beacon_round": 34015467,
+      "hash": "eebef15b73f35025f4f17c25163a7285193e04825df3689614038d270f36a4e8",
       "seat": 0,
-      "signature": "6iJBVcvhTaAzWqjzWPRbUmiC8eTUGp5dUmZz788nycfpYX1orlCVug0Od7dxLp9HPyhJz0fSV-3xnIV-ZcnHCA",
-      "stable_id": "e3786b3e3e4047128a8ea7c70a7a9fae54345e7d44038d35dc0f6d863f064439"
+      "signature": "e9J4_5WW8JFuGHD_9Rp_z-m_mN4gtv74Z8Ade8v8m5ssNhwXOw89w1byenKnYBBONmMJI9S-rXH9qG0TDVauCQ",
+      "stable_id": "d41d1431fde79165fa52e3b2778e4c14e098f4389ba694c11336361283a9b3cf"
      },
      "fx_1": {
-      "at": "2026-11-14T07:09:55.038337+00:00",
-      "beacon_round": 33945605,
-      "hash": "539dc4c14e0e589e10ad00c98fce2897e6354dcaf0d77967ab7598a4298e7cb5",
+      "at": "2026-11-16T17:23:00.997601+00:00",
+      "beacon_round": 34015467,
+      "hash": "a9b6a0fab3c16daddb390399e8d13ce2399d0333178c41ce94b561eb0bd90cb4",
       "seat": 1,
-      "signature": "vA_vkpOZJk5N-XmjcsXIibGbpJMTr2uJaw6AI8PC4EV0b9CmD6ob2IdxAoatG2XPwG9vByCrN7q5GGyy4AdECQ",
-      "stable_id": "877d081fcd6af3ed86b50f8190b5e489b4be4b8feb74571ef69b0897a932e770"
+      "signature": "L5rssAxXOGl3-mVMMHTNTHHR-PBPiMuqiO-FNQTeF6QACh6hmIusTVi9EZLX3NGIetrt4cvAXxGHBJLoQ0tzCw",
+      "stable_id": "cb107a61bd67753e1950603b4441aadbb6b43cf561febcd84d337491d9deb4f2"
      },
      "fx_2": {
-      "at": "2026-11-14T07:09:55.129959+00:00",
-      "beacon_round": 33945605,
-      "hash": "541e273e9381f606b3cb6bbbd389c586574a442410b73cd3f996f38d16b3bdb9",
+      "at": "2026-11-16T17:23:01.047305+00:00",
+      "beacon_round": 34015467,
+      "hash": "65d13c66d0a1d89b9ab73878a6354cac9a38a7adf76dc6168b7b64fc4f9dd510",
       "seat": 2,
-      "signature": "LT6uIoGznytfITgEh0gKigF4iVnjAwab10vsU2Gz6ZpdeSsAnetpRwFlQQos_Hp5zh41JjZO0zGQZyBzfe5TDQ",
-      "stable_id": "879b248c43c1a933a09ca47ef6efc2cc5a89898e41eefaab26af7e5acf68130b"
+      "signature": "VsyV_riK33XmAe58uFV3umC6kzvaYjDRcangHAVSRBVnWb0QFZtOkbFHPTuLKcwVsPcU45m2TufQBakIb9cODQ",
+      "stable_id": "ce636c5a777b80f454951b91bd091463d8d49c0d934678ad8013b8dca8f5b05a"
      },
      "fx_3": {
-      "at": "2026-11-14T07:09:55.234452+00:00",
-      "beacon_round": 33945605,
-      "hash": "1bb085cde9467f402530975f69b18a9e306221cc53de136f1bf90c7a30133aa2",
+      "at": "2026-11-16T17:23:01.108468+00:00",
+      "beacon_round": 34015467,
+      "hash": "82a0909c61d1ac24d5691331ae57838039232885ec47821f87aa322bdbed3134",
       "seat": 3,
-      "signature": "G6p1FFZSUDDQFzD9E7ZwK-nsG_gQovCL8Pmb7capO77jthtLOSVr44XRmInDSOxL7iORh1rwCkptk4vgGWfcAg",
-      "stable_id": "a55ce12309bd0fc3f22e050c9e65f04288ab4fe1891eae3467c56ea05ac67f9e"
+      "signature": "x5SBVmo4LAk3dBzWmJegvJeOBiSv2JjGv-qq4w0QoUyCxY0ufsDskDu4FQ5qNH8MvK3F7JatuqfLAtaucdlJCQ",
+      "stable_id": "2e67229b3e9c9e884756d28fd4ff0baaeb83222352a93ae8a15713536a5a78bd"
      }
     },
-    "scope": "sess_01cec1730cc5"
+    "scope": "sess_876d9a10a165"
    }
   },
-  "created_at": "2026-11-14T07:09:54.968023+00:00",
+  "created_at": "2026-11-16T17:23:00.964476+00:00",
   "creation": {
    "creator": "fx_0",
    "joins": {
     "fx_0": {
-     "at": "2026-11-14T07:09:54.934111+00:00",
-     "signature": "t_77JA9uXP9ME0N83Hr-VzSTF5LJjFJslKFHekbwA-d6sqbAjrhJ4Nf9E8VBGnGNovVj90AgJiUnFmQ2nRtDDA",
-     "stable_id": "e3786b3e3e4047128a8ea7c70a7a9fae54345e7d44038d35dc0f6d863f064439"
+     "at": "2026-11-16T17:23:00.930951+00:00",
+     "signature": "JalCI48VU3_YLDviiXHiDMssrlSGP4mU6TuA56wie2KpFTRxF6MCr_SvsOdrsMuveVIAOOZdJj6N8Y6s8qKhBA",
+     "stable_id": "d41d1431fde79165fa52e3b2778e4c14e098f4389ba694c11336361283a9b3cf"
     }
    },
    "keys": {
@@ -1663,9 +1656,9 @@
      "at": "",
      "encryption_public_key": "",
      "key_log": [],
-     "public_key_hex": "611fa8d5b2bba1639db1a9e566514f680c74637356e5d483b51e4ab81fcabb03",
+     "public_key_hex": "19ad1ab324d6b795e9ade99f6a252e8098cfa5dd4b298c6bc9a60bf42c9ea03b",
      "signature": "",
-     "stable_id": "e3786b3e3e4047128a8ea7c70a7a9fae54345e7d44038d35dc0f6d863f064439"
+     "stable_id": "d41d1431fde79165fa52e3b2778e4c14e098f4389ba694c11336361283a9b3cf"
     }
    }
   },
@@ -1694,12 +1687,12 @@
   },
   "private_text_fields": [],
   "sealed": false,
-  "session_id": "sess_01cec1730cc5",
+  "session_id": "sess_876d9a10a165",
   "state": {
    "current_agent": "fx_0",
    "data": {
     "board": {
-     "by": "2026-11-14T07:41:48+00:00",
+     "by": "2026-11-16T17:54:54+00:00",
      "channels": [
       "XYZ>XY",
       "XYZ>XZ",
@@ -1729,468 +1722,459 @@
      "dealt": true,
      "done": [
       {
-       "dark": [
-        "WX>W",
-        "WZ>W"
-       ],
+       "dark": [],
        "epoch": 1,
        "late": [],
        "mix": [
-        1115,
-        2987,
-        3323,
-        2542
+        2360,
+        3123,
+        2796,
+        1687
        ],
        "pulses": [
         [
+         3,
+         1,
+         7,
+         2
+        ],
+        [
          6,
+         4,
+         2,
+         9
+        ],
+        [
+         0,
+         7,
+         5,
+         1
+        ],
+        [
+         4,
+         2,
+         3,
+         2
+        ],
+        [
+         9,
+         7,
+         6,
+         1
+        ],
+        [
+         3,
+         3,
+         4,
+         5
+        ],
+        [
+         9,
+         2,
+         4,
+         1
+        ],
+        [
+         1,
+         3,
+         5,
+         0
+        ],
+        [
          5,
          1,
+         8,
+         4
+        ],
+        [
+         8,
+         5,
+         1,
+         4
+        ],
+        [
+         2,
+         3,
+         1,
+         7
+        ],
+        [
+         7,
+         0,
+         4,
          7
         ],
         [
          8,
          9,
+         6,
+         8
+        ],
+        [
          9,
-         1
-        ],
-        [
-         3,
          4,
-         5,
-         5
-        ],
-        [
-         2,
          8,
-         0,
-         6
-        ],
-        [
-         4,
-         5,
-         8,
-         9
-        ],
-        [
-         2,
-         5,
-         4,
-         1
-        ],
-        [
-         0,
-         5,
-         3,
-         6
-        ],
-        [
-         0,
-         9,
-         3,
-         3
-        ],
-        [
-         5,
-         5,
-         2,
-         3
-        ],
-        [
-         0,
-         7,
-         5,
          2
         ],
         [
          8,
-         8,
-         7,
-         3
-        ],
-        [
-         8,
          2,
-         0,
-         6
-        ],
-        [
-         2,
-         4,
-         3,
-         3
-        ],
-        [
-         9,
-         9,
-         9,
-         9
-        ],
-        [
-         0,
          5,
-         9,
          3
         ],
         [
+         9,
+         9,
          4,
-         3,
-         1,
-         0
+         1
         ]
        ],
        "pushes": {
         "fx_0": {
-         "WXY>XY": -4,
-         "WY>Y": -4
+         "WYZ>YZ": -4,
+         "WZ>Z": -4
         },
         "fx_1": {
-         "WY>W": -4,
-         "XYZ>XY": 4
+         "WX>X": -4,
+         "WZ>Z": -4
         },
         "fx_2": {
          "WXY>WX": 4,
          "WXZ>WZ": -4
         }
        },
-       "round": 33945621,
+       "round": 34015483,
        "silent": [],
        "widths": [
-        7,
-        6,
-        11,
-        7,
-        6,
+        5,
+        5,
         2,
-        11,
+        2,
+        9,
+        5,
+        12,
         7,
         3,
-        5,
-        12,
-        5,
-        12,
-        5,
-        5,
-        7,
-        4,
-        10,
         12,
         12,
-        11,
+        5,
         2,
+        3,
+        8,
         4,
-        6
+        4,
+        0,
+        10,
+        11,
+        10,
+        9,
+        12,
+        8
        ]
       },
       {
-       "dark": [
-        "XYZ>XZ",
-        "WXZ>XZ",
-        "WXY>XY"
-       ],
+       "dark": [],
        "epoch": 2,
        "late": [],
        "mix": [
-        5025,
-        2215,
-        1609,
-        1116
+        4961,
+        2465,
+        1736,
+        808
        ],
        "pulses": [
         [
-         2,
+         1,
          3,
-         8,
-         5
+         6,
+         8
         ],
         [
-         0,
-         3,
-         9,
+         6,
+         7,
+         4,
          2
         ],
         [
-         7,
-         7,
+         9,
+         9,
          1,
          6
         ],
         [
-         6,
-         8,
          2,
-         1
+         8,
+         8,
+         9
         ],
         [
-         6,
-         6,
-         1,
-         2
-        ],
-        [
-         3,
+         4,
+         8,
          5,
-         8,
-         1
+         3
         ],
         [
-         8,
+         5,
+         1,
          9,
-         8,
-         7
+         5
+        ],
+        [
+         7,
+         1,
+         7,
+         6
         ],
         [
          1,
+         8,
+         7,
+         0
+        ],
+        [
+         1,
+         9,
+         0,
+         9
+        ],
+        [
+         8,
+         4,
          3,
-         7,
-         7
-        ],
-        [
-         7,
-         8,
-         2,
-         7
+         0
         ],
         [
          2,
-         8,
-         8,
+         7,
+         9,
+         5
+        ],
+        [
+         5,
+         1,
+         2,
+         8
+        ],
+        [
+         0,
+         5,
+         1,
+         0
+        ],
+        [
+         4,
+         2,
+         7,
          4
         ],
         [
-         2,
-         0,
-         6,
-         6
-        ],
-        [
-         7,
-         7,
-         7,
-         9
-        ],
-        [
-         2,
-         0,
-         1,
-         9
-        ],
-        [
-         7,
+         5,
          8,
-         0,
-         9
-        ],
-        [
-         0,
-         1,
-         3,
-         5
-        ],
-        [
-         3,
-         4,
-         7,
+         2,
          2
+        ],
+        [
+         9,
+         9,
+         6,
+         7
         ]
        ],
        "pushes": {
         "fx_0": {
-         "WXY>XY": -4,
-         "WY>Y": -4
+         "WX>W": 4,
+         "WYZ>YZ": -4
         },
         "fx_1": {
-         "WZ>Z": -4,
-         "YZ>Z": -4
+         "WX>W": 4,
+         "XYZ>XZ": -4
         },
         "fx_2": {
          "WY>Y": -4,
          "WYZ>WZ": -4
         }
        },
-       "round": 33945627,
+       "round": 34015490,
        "silent": [],
        "widths": [
-        7,
-        6,
-        11,
-        7,
-        2,
-        2,
-        11,
-        7,
-        3,
         5,
-        12,
+        1,
+        2,
+        2,
+        5,
         1,
         12,
+        7,
+        3,
+        12,
+        12,
         5,
-        5,
+        10,
+        3,
+        8,
         0,
         4,
-        6,
-        12,
-        12,
+        0,
+        10,
         11,
-        2,
-        4,
-        2
+        10,
+        9,
+        12,
+        8
        ]
       },
       {
-       "dark": [
-        "XY>X",
-        "YZ>Y"
-       ],
+       "dark": [],
        "epoch": 3,
        "late": [],
        "mix": [
-        3054,
-        2789,
-        2440,
-        1685
+        3156,
+        2504,
+        2986,
+        1321
        ],
        "pulses": [
         [
-         6,
-         1,
-         3,
-         4
-        ],
-        [
-         5,
          8,
-         6,
-         7
-        ],
-        [
-         0,
-         8,
-         3,
-         5
-        ],
-        [
-         2,
          5,
-         2,
+         7,
          6
         ],
         [
-         4,
-         8,
          3,
+         7,
+         7,
          3
         ],
         [
+         6,
          2,
+         4,
+         6
+        ],
+        [
          9,
+         2,
+         8,
+         2
+        ],
+        [
+         0,
+         5,
+         2,
+         9
+        ],
+        [
+         4,
+         4,
+         2,
+         2
+        ],
+        [
+         9,
+         7,
          3,
+         2
+        ],
+        [
+         2,
+         4,
+         0,
          8
         ],
         [
-         6,
+         5,
          4,
-         9,
-         6
+         0,
+         8
         ],
         [
-         7,
-         9,
+         5,
          0,
+         1,
+         2
+        ],
+        [
+         2,
+         8,
+         9,
          3
         ],
         [
-         1,
-         6,
-         5,
+         8,
+         4,
+         0,
          7
         ],
         [
-         1,
-         3,
-         5,
-         0
-        ],
-        [
-         0,
-         6,
+         4,
          9,
-         0
-        ],
-        [
-         1,
-         2,
-         3,
-         1
-        ],
-        [
          8,
-         8,
-         0,
-         1
+         3
         ],
         [
-         2,
-         7,
-         8,
-         2
-        ],
-        [
-         7,
+         6,
          2,
          6,
-         2
+         8
         ],
         [
          8,
-         5,
+         1,
+         3,
+         2
+        ],
+        [
          2,
-         3
+         9,
+         8,
+         8
         ]
        ],
        "pushes": {
         "fx_1": {
-         "WXY>XY": 4,
-         "WY>W": -4
+         "WYZ>YZ": 4,
+         "XYZ>YZ": 4
         },
         "fx_2": {
          "WX>W": -4,
          "XYZ>XY": 2
         }
        },
-       "round": 33945634,
+       "round": 34015496,
        "silent": [
         "fx_0"
        ],
        "widths": [
-        9,
-        6,
-        11,
         7,
+        1,
+        6,
         2,
-        2,
-        11,
+        5,
+        5,
+        12,
         7,
         3,
-        5,
+        12,
         12,
         5,
+        6,
+        3,
         8,
-        5,
-        1,
         0,
         4,
-        6,
-        12,
-        12,
+        0,
+        10,
         11,
-        2,
-        4,
-        2
+        10,
+        9,
+        12,
+        8
        ]
       },
       {
        "dark": [
+        "YZ>Y",
         "YZ>Z"
        ],
        "epoch": 4,
@@ -2198,116 +2182,116 @@
         "fx_3"
        ],
        "mix": [
-        2808,
-        3232,
-        3119,
-        805
+        4329,
+        2485,
+        2540,
+        612
        ],
        "pulses": [
         [
          7,
-         8,
          6,
-         6
+         2,
+         7
         ],
         [
          2,
-         2,
-         9,
-         8
+         5,
+         7,
+         7
         ],
         [
-         2,
+         5,
          3,
-         1,
-         3
+         3,
+         4
         ],
         [
-         4,
-         6,
+         5,
+         5,
+         3,
+         1
+        ],
+        [
+         8,
+         2,
          9,
+         7
+        ],
+        [
+         7,
+         0,
+         4,
+         9
+        ],
+        [
+         1,
+         9,
+         8,
+         4
+        ],
+        [
+         5,
+         6,
+         4,
          5
         ],
         [
-         0,
+         9,
+         4,
+         3,
+         0
+        ],
+        [
+         2,
+         3,
+         2,
+         1
+        ],
+        [
+         7,
+         1,
+         1,
+         1
+        ],
+        [
+         1,
          5,
-         0,
-         7
+         8,
+         1
         ],
         [
          8,
-         8,
-         0,
-         7
-        ],
-        [
-         2,
-         2,
-         0,
-         2
-        ],
-        [
          3,
-         0,
-         8,
-         8
-        ],
-        [
-         0,
-         3,
-         3,
-         3
+         9,
+         1
         ],
         [
          6,
-         1,
-         0,
-         1
-        ],
-        [
-         2,
-         5,
-         3,
-         7
-        ],
-        [
-         9,
-         0,
+         6,
          7,
-         4
+         5
         ],
         [
+         4,
+         4,
          2,
-         8,
-         0,
-         4
+         0
         ],
         [
+         7,
          5,
          7,
-         2,
-         8
-        ],
-        [
-         5,
-         0,
-         5,
-         8
-        ],
-        [
-         2,
-         3,
-         1,
-         1
+         0
         ]
        ],
        "pushes": {
         "fx_0": {
-         "WXY>XY": -4,
-         "WY>W": 4
+         "WYZ>YZ": -4,
+         "XYZ>YZ": -4
         },
         "fx_1": {
-         "WX>W": -4,
+         "WX>X": -4,
          "WY>Y": 4
         },
         "fx_2": {
@@ -2315,184 +2299,186 @@
          "WZ>W": 2
         }
        },
-       "round": 33945841,
+       "round": 34015703,
        "silent": [],
        "widths": [
-        9,
-        6,
-        11,
         7,
+        1,
         2,
         2,
-        11,
+        5,
+        1,
+        12,
         9,
         3,
-        5,
         12,
-        1,
-        4,
+        12,
         5,
-        5,
+        6,
+        0,
+        8,
         4,
         6,
-        6,
-        12,
-        12,
+        0,
+        10,
         11,
-        2,
-        4,
-        2
+        10,
+        9,
+        12,
+        8
        ]
       },
       {
-       "dark": [],
+       "dark": [
+        "WX>W"
+       ],
        "epoch": 5,
        "late": [],
        "mix": [
-        2713,
-        3332,
-        2606,
-        1318
+        1905,
+        3143,
+        3195,
+        1727
        ],
        "pulses": [
         [
-         4,
          0,
-         1,
-         0
-        ],
-        [
-         4,
-         3,
-         7,
-         3
-        ],
-        [
          5,
          0,
-         0,
-         4
+         7
         ],
         [
-         5,
+         9,
          4,
-         4,
-         4
+         6,
+         1
         ],
         [
          2,
-         0,
-         7,
-         5
-        ],
-        [
-         6,
-         5,
          4,
+         9,
          0
         ],
         [
+         7,
          0,
+         3,
+         7
+        ],
+        [
+         3,
+         2,
+         6,
+         4
+        ],
+        [
+         6,
+         4,
+         6,
+         2
+        ],
+        [
          1,
-         1,
+         2,
+         8,
          9
         ],
         [
-         0,
-         8,
+         1,
+         5,
          8,
          1
         ],
         [
-         7,
-         6,
-         2,
-         0
-        ],
-        [
-         0,
-         2,
-         2,
-         4
-        ],
-        [
-         0,
-         2,
-         7,
+         9,
+         1,
+         8,
          5
-        ],
-        [
-         2,
-         2,
-         7,
-         4
         ],
         [
          9,
          3,
-         3,
-         6
+         2,
+         3
         ],
         [
          2,
-         2,
          5,
-         8
-        ],
-        [
-         5,
-         4,
-         3,
+         0,
          0
         ],
         [
+         4,
          0,
-         8,
+         9,
+         2
+        ],
+        [
+         5,
+         1,
+         9,
+         9
+        ],
+        [
+         4,
+         1,
          6,
-         6
+         7
+        ],
+        [
+         8,
+         3,
+         5,
+         9
+        ],
+        [
+         2,
+         6,
+         1,
+         8
         ]
        ],
        "pushes": {
         "fx_0": {
-         "WY>W": 4,
-         "WY>Y": -4
+         "WX>X": 4,
+         "XYZ>XZ": 4
         },
         "fx_1": {
-         "WY>W": -4,
-         "WY>Y": 4
+         "WYZ>YZ": 4,
+         "XYZ>YZ": 4
         },
         "fx_2": {
          "WYZ>WY": -2,
          "WYZ>YZ": 2
         }
        },
-       "round": 33946048,
+       "round": 34015910,
        "silent": [],
        "widths": [
-        9,
-        6,
-        11,
+        7,
         5,
-        2,
-        4,
-        11,
+        6,
+        0,
+        5,
+        7,
+        12,
         9,
         3,
-        5,
         12,
-        1,
+        12,
+        5,
+        6,
         4,
-        5,
-        5,
+        8,
         4,
         6,
-        6,
-        12,
-        12,
+        0,
+        10,
         11,
-        2,
-        4,
-        2
+        10,
+        9,
+        12,
+        8
        ]
       }
      ],
@@ -2509,80 +2495,418 @@
       ]
      },
      "mix": [
-      2713,
-      3332,
-      2606,
-      1318
+      1905,
+      3143,
+      3195,
+      1727
      ],
-     "name_round": 33946055,
+     "name_round": 34015917,
      "opening": {
-      "attempt": 2,
+      "attempt": 0,
       "mix": [
-       2790,
-       2167,
-       3154,
-       1856
+       2192,
+       2665,
+       2757,
+       2355
       ],
       "widths": [
-       3,
-       6,
-       11,
-       7,
-       6,
+       5,
+       5,
        2,
-       11,
+       2,
+       9,
+       9,
+       12,
        11,
        3,
-       1,
-       12,
        9,
        12,
        5,
-       9,
-       11,
+       2,
+       7,
+       8,
+       4,
+       4,
        4,
        10,
-       12,
-       12,
        11,
-       2,
-       4,
-       6
+       10,
+       9,
+       12,
+       8
       ]
      },
-     "opens_at": "2026-11-14T07:31:48+00:00",
+     "opens_at": "2026-11-16T17:44:54+00:00",
      "out": [
       "fx_3"
      ],
      "pending": [],
      "phase": "secrets",
+     "pull": {
+      "WX>W": {
+       "down": [
+        -687,
+        289,
+        262,
+        137
+       ],
+       "up": [
+        559,
+        -230,
+        -212,
+        -114
+       ]
+      },
+      "WX>X": {
+       "down": [
+        343,
+        -741,
+        262,
+        137
+       ],
+       "up": [
+        -276,
+        607,
+        -212,
+        -114
+       ]
+      },
+      "WXY>WX": {
+       "down": [
+        -94,
+        -43,
+        100,
+        40
+       ],
+       "up": [
+        0,
+        0,
+        0,
+        0
+       ]
+      },
+      "WXY>WY": {
+       "down": [
+        -142,
+        119,
+        -23,
+        49
+       ],
+       "up": [
+        0,
+        0,
+        0,
+        0
+       ]
+      },
+      "WXY>XY": {
+       "down": [
+        269,
+        -164,
+        -194,
+        92
+       ],
+       "up": [
+        -214,
+        135,
+        159,
+        -79
+       ]
+      },
+      "WXZ>WX": {
+       "down": [
+        -126,
+        -53,
+        108,
+        68
+       ],
+       "up": [
+        0,
+        0,
+        0,
+        0
+       ]
+      },
+      "WXZ>WZ": {
+       "down": [
+        -179,
+        77,
+        61,
+        38
+       ],
+       "up": [
+        127,
+        -53,
+        -44,
+        -29
+       ]
+      },
+      "WXZ>XZ": {
+       "down": [
+        223,
+        -162,
+        156,
+        -220
+       ],
+       "up": [
+        -240,
+        177,
+        -171,
+        234
+       ]
+      },
+      "WY>W": {
+       "down": [
+        -288,
+        119,
+        120,
+        49
+       ],
+       "up": [
+        255,
+        -101,
+        -108,
+        -45
+       ]
+      },
+      "WY>Y": {
+       "down": [
+        146,
+        119,
+        -312,
+        49
+       ],
+       "up": [
+        -127,
+        -101,
+        278,
+        -45
+       ]
+      },
+      "WYZ>WY": {
+       "down": [
+        0,
+        0,
+        0,
+        0
+       ],
+       "up": [
+        136,
+        -77,
+        5,
+        -64
+       ]
+      },
+      "WYZ>WZ": {
+       "down": [
+        -142,
+        44,
+        59,
+        33
+       ],
+       "up": [
+        131,
+        -40,
+        -56,
+        -33
+       ]
+      },
+      "WYZ>YZ": {
+       "down": [
+        180,
+        156,
+        -192,
+        -147
+       ],
+       "up": [
+        -146,
+        -125,
+        154,
+        117
+       ]
+      },
+      "WZ>W": {
+       "down": [
+        -399,
+        157,
+        149,
+        91
+       ],
+       "up": [
+        347,
+        -136,
+        -130,
+        -83
+       ]
+      },
+      "WZ>Z": {
+       "down": [
+        0,
+        0,
+        0,
+        0
+       ],
+       "up": [
+        -158,
+        -136,
+        -130,
+        423
+       ]
+      },
+      "XY>X": {
+       "down": [
+        122,
+        -309,
+        125,
+        62
+       ],
+       "up": [
+        -59,
+        147,
+        -58,
+        -31
+       ]
+      },
+      "XY>Y": {
+       "down": [
+        122,
+        118,
+        -305,
+        62
+       ],
+       "up": [
+        -29,
+        -26,
+        70,
+        -17
+       ]
+      },
+      "XYZ>XY": {
+       "down": [
+        201,
+        -157,
+        -181,
+        135
+       ],
+       "up": [
+        -170,
+        131,
+        150,
+        -114
+       ]
+      },
+      "XYZ>XZ": {
+       "down": [
+        181,
+        -174,
+        211,
+        -215
+       ],
+       "up": [
+        -153,
+        152,
+        -177,
+        179
+       ]
+      },
+      "XYZ>YZ": {
+       "down": [
+        191,
+        211,
+        -228,
+        -174
+       ],
+       "up": [
+        -163,
+        -175,
+        193,
+        143
+       ]
+      },
+      "XZ>X": {
+       "down": [
+        92,
+        -223,
+        84,
+        49
+       ],
+       "up": [
+        -43,
+        108,
+        -40,
+        -26
+       ]
+      },
+      "XZ>Z": {
+       "down": [
+        92,
+        89,
+        84,
+        -261
+       ],
+       "up": [
+        -64,
+        -60,
+        -59,
+        183
+       ]
+      },
+      "YZ>Y": {
+       "down": [
+        113,
+        113,
+        -305,
+        81
+       ],
+       "up": [
+        0,
+        0,
+        0,
+        0
+       ]
+      },
+      "YZ>Z": {
+       "down": [
+        113,
+        113,
+        139,
+        -364
+       ],
+       "up": [
+        -106,
+        -100,
+        -124,
+        323
+       ]
+      }
+     },
      "ready": true,
      "rules": "Tesseract. Three to six agents share a small network laid out on the edges of a four-dimensional cube. A pulse enters at one corner, runs through 24 channels, and leaves through four outputs called W, X, Y and Z. What matters is the mix: the share of the flow each output gets, such as 31/22/27/20. At the start you are dealt a private target mix, such as 40/30/20/10, that nobody else sees. There are five rounds. Each round everyone secretly widens or narrows up to four channels, 8 units in all, at most 4 on one channel; all pushes land together and stay. Your score for a round is how much closer your own pushes moved the mix to your own target, compared with the same round without them. Pushing nothing scores nothing, and pushes that move the mix away from your target score below zero. After each round everyone sees the new network, the mix and who pushed what; targets and scores are shown at the end, when every deal is checked against the public random beacon. Highest total wins.",
      "widths": [
-      9,
-      6,
-      11,
+      7,
       5,
-      2,
-      4,
-      11,
+      6,
+      0,
+      5,
+      7,
+      12,
       9,
       3,
-      5,
       12,
-      1,
+      12,
+      5,
+      6,
       4,
-      5,
-      5,
+      8,
       4,
       6,
-      6,
-      12,
-      12,
+      0,
+      10,
       11,
-      2,
-      4,
-      2
+      10,
+      9,
+      12,
+      8
      ]
     },
     "ended": {
@@ -2595,644 +2919,636 @@
     "opens": {
      "1": {
       "fx_0": {
-       "at": "2026-11-14T07:10:12.050514+00:00",
+       "at": "2026-11-16T17:23:19.033319+00:00",
        "move": {
         "push": {
-         "WXY>XY": -4,
-         "WY>Y": -4
+         "WYZ>YZ": -4,
+         "WZ>Z": -4
         }
        },
-       "nonce": "b285c96361d5def22f1c24a95c59fa8957fc5bba75ad5d20a719ca70813104a7"
+       "nonce": "9c9efbc1a7538c8148088f143ce23fa066c2e24a75aff7a63c5ccebb1b8e04fc"
       },
       "fx_1": {
-       "at": "2026-11-14T07:10:12.050514+00:00",
+       "at": "2026-11-16T17:23:19.033319+00:00",
        "move": {
         "push": {
-         "WY>W": -4,
-         "XYZ>XY": 4
+         "WX>X": -4,
+         "WZ>Z": -4
         }
        },
-       "nonce": "677157e95b97bde248f4bf8a0af314c67e1f3147c2e0062de6c0abace937b3fe"
+       "nonce": "e31b4580b789eba14e684b580c7d80a490eef6938e3ae479f2ce901fca99250e"
       },
       "fx_2": {
-       "at": "2026-11-14T07:10:12.050514+00:00",
+       "at": "2026-11-16T17:23:19.033319+00:00",
        "move": {
         "push": {
          "WXY>WX": 4,
          "WXZ>WZ": -4
         }
        },
-       "nonce": "5af69b71a1b523f4709f1947fa47ebdee94ccdd18a8dd977a665841a26fd81de"
+       "nonce": "e15efbbc5215dcfa42efb0ba25dd1bc641419cd7a4725afffcbce6f3661d427c"
       },
       "fx_3": {
-       "at": "2026-11-14T07:10:12.050514+00:00",
+       "at": "2026-11-16T17:23:19.033319+00:00",
        "move": {
         "push": {}
        },
-       "nonce": "7928db734b64762aad524d9835a5de8300596618b98881fd19ff2695e9ac7b4e"
+       "nonce": "e508700a557f1df09e1076c6a7f6bfaa6729bea33c601fcfebc3d80279c93338"
       }
      },
      "2": {
       "fx_0": {
-       "at": "2026-11-14T07:10:32.050514+00:00",
+       "at": "2026-11-16T17:23:39.033319+00:00",
        "move": {
         "push": {
-         "WXY>XY": -4,
-         "WY>Y": -4
+         "WX>W": 4,
+         "WYZ>YZ": -4
         }
        },
-       "nonce": "f2495a1e0e2b1a7c617c5492699885cd5aa0c451aa15b550cd9c7e4b1cb585d6"
+       "nonce": "5729ab0f32b79e5f2bc88869246ce7daf2dee3d4fe8dff4cfd03eee906f33c49"
       },
       "fx_1": {
-       "at": "2026-11-14T07:10:32.050514+00:00",
+       "at": "2026-11-16T17:23:39.033319+00:00",
        "move": {
         "push": {
-         "WZ>Z": -4,
-         "YZ>Z": -4
+         "WX>W": 4,
+         "XYZ>XZ": -4
         }
        },
-       "nonce": "9af3a1052a7d81efdad0e0f490181d90e31714af7b69752bfeb3ad78f3d8f051"
+       "nonce": "bf08293f0cd112dbeffdb828f286509f2e5eae53fcb943b806b6b8b4377b2de3"
       },
       "fx_2": {
-       "at": "2026-11-14T07:10:32.050514+00:00",
+       "at": "2026-11-16T17:23:39.033319+00:00",
        "move": {
         "push": {
          "WY>Y": -4,
          "WYZ>WZ": -4
         }
        },
-       "nonce": "ef7666f72d088acb80aba214700dbea8588d666a7a8ce74d121767e9ea0f46ee"
+       "nonce": "39d0446a94ea15cf3671d522a40e817737ba9589e070747918e57495526e6337"
       },
       "fx_3": {
-       "at": "2026-11-14T07:10:32.050514+00:00",
+       "at": "2026-11-16T17:23:39.033319+00:00",
        "move": {
         "push": {}
        },
-       "nonce": "cb417a16a8b9a9403a56747d051d672349b38dc366999af23447e1eef2321ba4"
+       "nonce": "c58c3aaecfeff771953757be3f1bed45a1d221d8bfb69fa028510ac45538dffa"
       }
      },
      "3": {
       "fx_1": {
-       "at": "2026-11-14T07:20:53.050514+00:00",
+       "at": "2026-11-16T17:34:00.033319+00:00",
        "move": {
         "push": {
-         "WXY>XY": 4,
-         "WY>W": -4
+         "WYZ>YZ": 4,
+         "XYZ>YZ": 4
         }
        },
-       "nonce": "5048f112ac903abb3c676e4ed0ccef0872f895728c734cf17035abc2116bae55"
+       "nonce": "9004dd5c9a01a8d45a499c2809d5cee662d5d6282ae539ba96987376b5be8000"
       },
       "fx_2": {
-       "at": "2026-11-14T07:20:53.050514+00:00",
+       "at": "2026-11-16T17:34:00.033319+00:00",
        "move": {
         "push": {
          "WX>W": -4,
          "XYZ>XY": 2
         }
        },
-       "nonce": "7777a2d4071d28785bed07a1acd98c8ef46f55fe9180e04e57e2d6c462fdaa2e"
+       "nonce": "22d01277f72cde345917162b212d0c29b0ce347ed634adf7b0616d057adfd46a"
       },
       "fx_3": {
-       "at": "2026-11-14T07:20:53.050514+00:00",
+       "at": "2026-11-16T17:34:00.033319+00:00",
        "move": {
         "push": {}
        },
-       "nonce": "9cf1e94ce4fba8bf04b7d633605df4358f53cf228d1e096420a3ef59a6b63b88"
+       "nonce": "fb6ac52ae7c4bde380073d4916188c7c3b76c5deb18d3e43a3771bcc7458c5ca"
       }
      },
      "4": {
       "fx_0": {
-       "at": "2026-11-14T07:21:13.050514+00:00",
+       "at": "2026-11-16T17:34:20.033319+00:00",
        "move": {
         "push": {
-         "WXY>XY": -4,
-         "WY>W": 4
+         "WYZ>YZ": -4,
+         "XYZ>YZ": -4
         }
        },
-       "nonce": "63ce004b6e07d57765387fbef03376ecc677b91f7bd961a716f3db268c1b1f56"
+       "nonce": "b776510b59b287d19722a6fc5cb8ee109b4d1dca4129c8a6833abeebc7d52f4a"
       },
       "fx_1": {
-       "at": "2026-11-14T07:21:13.050514+00:00",
+       "at": "2026-11-16T17:34:20.033319+00:00",
        "move": {
         "push": {
-         "WX>W": -4,
+         "WX>X": -4,
          "WY>Y": 4
         }
        },
-       "nonce": "1eb312f1ed06ab36069877ecb5fcbc9e4faedb230e565456d32e9aaa83bcfe32"
+       "nonce": "209c330e2eb69189cea271f202480aaa1795c180c3d86af94e6496b039b660b2"
       },
       "fx_2": {
-       "at": "2026-11-14T07:21:13.050514+00:00",
+       "at": "2026-11-16T17:34:20.033319+00:00",
        "move": {
         "push": {
          "WXZ>WZ": 2,
          "WZ>W": 2
         }
        },
-       "nonce": "819c383c3e666156b2ad03657e5814e52454e30835e402c014f5c09d3b79ce6a"
+       "nonce": "486027e4e0fe7f0481b322cba2a004c1cead08e118cb5115d5f5ab3ea48b8f21"
       }
      },
      "5": {
       "fx_0": {
-       "at": "2026-11-14T07:31:34.050514+00:00",
+       "at": "2026-11-16T17:44:41.033319+00:00",
        "move": {
         "push": {
-         "WY>W": 4,
-         "WY>Y": -4
+         "WX>X": 4,
+         "XYZ>XZ": 4
         }
        },
-       "nonce": "75249b89586e9a5c60d6a7571c77145a329a591b4add4e7e32ae3d3896e56b6b"
+       "nonce": "373fd203d8558f73bb2b4b8806a43e5a98c370f07e83b3ea647374dc10bf6d30"
       },
       "fx_1": {
-       "at": "2026-11-14T07:31:34.050514+00:00",
+       "at": "2026-11-16T17:44:41.033319+00:00",
        "move": {
         "push": {
-         "WY>W": -4,
-         "WY>Y": 4
+         "WYZ>YZ": 4,
+         "XYZ>YZ": 4
         }
        },
-       "nonce": "2338ac1cd3ac095eb48c3f1cd8a4b31a65a5ee9079ee786c8b00de627c65167f"
+       "nonce": "14e67a611339eb8e575caa55fbc8c71d1d7fecc92babf172007974e0f532c74f"
       },
       "fx_2": {
-       "at": "2026-11-14T07:31:34.050514+00:00",
+       "at": "2026-11-16T17:44:41.033319+00:00",
        "move": {
         "push": {
          "WYZ>WY": -2,
          "WYZ>YZ": 2
         }
        },
-       "nonce": "99fc65af1530a371bab659e8b73074d75d07b384f64ce078cfa8e8ac38e3c74e"
+       "nonce": "8fdc59f4c54f610671a8014db62ab5daecefde27b3d3b0a53bf00697738262ae"
       }
      }
     },
     "pending": [],
     "phase": "secrets",
-    "phase_started_at": "2026-11-14T07:09:52.050514+00:00",
+    "phase_started_at": "2026-11-16T17:22:59.033319+00:00",
     "players": 4,
+    "practice": false,
     "published": {
      "1": {
-      "dark": [
-       "WX>W",
-       "WZ>W"
-      ],
+      "dark": [],
       "epoch": 1,
       "late": [],
       "mix": [
-       1115,
-       2987,
-       3323,
-       2542
+       2360,
+       3123,
+       2796,
+       1687
       ],
       "pulses": [
        [
+        3,
+        1,
+        7,
+        2
+       ],
+       [
         6,
+        4,
+        2,
+        9
+       ],
+       [
+        0,
+        7,
+        5,
+        1
+       ],
+       [
+        4,
+        2,
+        3,
+        2
+       ],
+       [
+        9,
+        7,
+        6,
+        1
+       ],
+       [
+        3,
+        3,
+        4,
+        5
+       ],
+       [
+        9,
+        2,
+        4,
+        1
+       ],
+       [
+        1,
+        3,
+        5,
+        0
+       ],
+       [
         5,
         1,
+        8,
+        4
+       ],
+       [
+        8,
+        5,
+        1,
+        4
+       ],
+       [
+        2,
+        3,
+        1,
+        7
+       ],
+       [
+        7,
+        0,
+        4,
         7
        ],
        [
         8,
         9,
+        6,
+        8
+       ],
+       [
         9,
-        1
-       ],
-       [
-        3,
         4,
-        5,
-        5
-       ],
-       [
-        2,
         8,
-        0,
-        6
-       ],
-       [
-        4,
-        5,
-        8,
-        9
-       ],
-       [
-        2,
-        5,
-        4,
-        1
-       ],
-       [
-        0,
-        5,
-        3,
-        6
-       ],
-       [
-        0,
-        9,
-        3,
-        3
-       ],
-       [
-        5,
-        5,
-        2,
-        3
-       ],
-       [
-        0,
-        7,
-        5,
         2
        ],
        [
         8,
-        8,
-        7,
-        3
-       ],
-       [
-        8,
         2,
-        0,
-        6
-       ],
-       [
-        2,
-        4,
-        3,
-        3
-       ],
-       [
-        9,
-        9,
-        9,
-        9
-       ],
-       [
-        0,
         5,
-        9,
         3
        ],
        [
+        9,
+        9,
         4,
-        3,
-        1,
-        0
+        1
        ]
       ],
       "pushes": {
        "fx_0": {
-        "WXY>XY": -4,
-        "WY>Y": -4
+        "WYZ>YZ": -4,
+        "WZ>Z": -4
        },
        "fx_1": {
-        "WY>W": -4,
-        "XYZ>XY": 4
+        "WX>X": -4,
+        "WZ>Z": -4
        },
        "fx_2": {
         "WXY>WX": 4,
         "WXZ>WZ": -4
        }
       },
-      "round": 33945621,
+      "round": 34015483,
       "silent": [],
       "widths": [
-       7,
-       6,
-       11,
-       7,
-       6,
+       5,
+       5,
        2,
-       11,
+       2,
+       9,
+       5,
+       12,
        7,
        3,
-       5,
-       12,
-       5,
-       12,
-       5,
-       5,
-       7,
-       4,
-       10,
        12,
        12,
-       11,
+       5,
        2,
+       3,
+       8,
        4,
-       6
+       4,
+       0,
+       10,
+       11,
+       10,
+       9,
+       12,
+       8
       ]
      },
      "2": {
-      "dark": [
-       "XYZ>XZ",
-       "WXZ>XZ",
-       "WXY>XY"
-      ],
+      "dark": [],
       "epoch": 2,
       "late": [],
       "mix": [
-       5025,
-       2215,
-       1609,
-       1116
+       4961,
+       2465,
+       1736,
+       808
       ],
       "pulses": [
        [
-        2,
+        1,
         3,
-        8,
-        5
+        6,
+        8
        ],
        [
-        0,
-        3,
-        9,
+        6,
+        7,
+        4,
         2
        ],
        [
-        7,
-        7,
+        9,
+        9,
         1,
         6
        ],
        [
-        6,
-        8,
         2,
-        1
+        8,
+        8,
+        9
        ],
        [
-        6,
-        6,
-        1,
-        2
-       ],
-       [
-        3,
+        4,
+        8,
         5,
-        8,
-        1
+        3
        ],
        [
-        8,
+        5,
+        1,
         9,
-        8,
-        7
+        5
+       ],
+       [
+        7,
+        1,
+        7,
+        6
        ],
        [
         1,
+        8,
+        7,
+        0
+       ],
+       [
+        1,
+        9,
+        0,
+        9
+       ],
+       [
+        8,
+        4,
         3,
-        7,
-        7
-       ],
-       [
-        7,
-        8,
-        2,
-        7
+        0
        ],
        [
         2,
-        8,
-        8,
+        7,
+        9,
+        5
+       ],
+       [
+        5,
+        1,
+        2,
+        8
+       ],
+       [
+        0,
+        5,
+        1,
+        0
+       ],
+       [
+        4,
+        2,
+        7,
         4
        ],
        [
-        2,
-        0,
-        6,
-        6
-       ],
-       [
-        7,
-        7,
-        7,
-        9
-       ],
-       [
-        2,
-        0,
-        1,
-        9
-       ],
-       [
-        7,
+        5,
         8,
-        0,
-        9
-       ],
-       [
-        0,
-        1,
-        3,
-        5
-       ],
-       [
-        3,
-        4,
-        7,
+        2,
         2
+       ],
+       [
+        9,
+        9,
+        6,
+        7
        ]
       ],
       "pushes": {
        "fx_0": {
-        "WXY>XY": -4,
-        "WY>Y": -4
+        "WX>W": 4,
+        "WYZ>YZ": -4
        },
        "fx_1": {
-        "WZ>Z": -4,
-        "YZ>Z": -4
+        "WX>W": 4,
+        "XYZ>XZ": -4
        },
        "fx_2": {
         "WY>Y": -4,
         "WYZ>WZ": -4
        }
       },
-      "round": 33945627,
+      "round": 34015490,
       "silent": [],
       "widths": [
-       7,
-       6,
-       11,
-       7,
-       2,
-       2,
-       11,
-       7,
-       3,
        5,
-       12,
+       1,
+       2,
+       2,
+       5,
        1,
        12,
+       7,
+       3,
+       12,
+       12,
        5,
-       5,
+       10,
+       3,
+       8,
        0,
        4,
-       6,
-       12,
-       12,
+       0,
+       10,
        11,
-       2,
-       4,
-       2
+       10,
+       9,
+       12,
+       8
       ]
      },
      "3": {
-      "dark": [
-       "XY>X",
-       "YZ>Y"
-      ],
+      "dark": [],
       "epoch": 3,
       "late": [],
       "mix": [
-       3054,
-       2789,
-       2440,
-       1685
+       3156,
+       2504,
+       2986,
+       1321
       ],
       "pulses": [
        [
-        6,
-        1,
-        3,
-        4
-       ],
-       [
-        5,
         8,
-        6,
-        7
-       ],
-       [
-        0,
-        8,
-        3,
-        5
-       ],
-       [
-        2,
         5,
-        2,
+        7,
         6
        ],
        [
-        4,
-        8,
         3,
+        7,
+        7,
         3
        ],
        [
+        6,
         2,
+        4,
+        6
+       ],
+       [
         9,
+        2,
+        8,
+        2
+       ],
+       [
+        0,
+        5,
+        2,
+        9
+       ],
+       [
+        4,
+        4,
+        2,
+        2
+       ],
+       [
+        9,
+        7,
         3,
+        2
+       ],
+       [
+        2,
+        4,
+        0,
         8
        ],
        [
-        6,
+        5,
         4,
-        9,
-        6
+        0,
+        8
        ],
        [
-        7,
-        9,
+        5,
         0,
+        1,
+        2
+       ],
+       [
+        2,
+        8,
+        9,
         3
        ],
        [
-        1,
-        6,
-        5,
+        8,
+        4,
+        0,
         7
        ],
        [
-        1,
-        3,
-        5,
-        0
-       ],
-       [
-        0,
-        6,
+        4,
         9,
-        0
-       ],
-       [
-        1,
-        2,
-        3,
-        1
-       ],
-       [
         8,
-        8,
-        0,
-        1
+        3
        ],
        [
-        2,
-        7,
-        8,
-        2
-       ],
-       [
-        7,
+        6,
         2,
         6,
-        2
+        8
        ],
        [
         8,
-        5,
+        1,
+        3,
+        2
+       ],
+       [
         2,
-        3
+        9,
+        8,
+        8
        ]
       ],
       "pushes": {
        "fx_1": {
-        "WXY>XY": 4,
-        "WY>W": -4
+        "WYZ>YZ": 4,
+        "XYZ>YZ": 4
        },
        "fx_2": {
         "WX>W": -4,
         "XYZ>XY": 2
        }
       },
-      "round": 33945634,
+      "round": 34015496,
       "silent": [
        "fx_0"
       ],
       "widths": [
-       9,
-       6,
-       11,
        7,
+       1,
+       6,
        2,
-       2,
-       11,
+       5,
+       5,
+       12,
        7,
        3,
-       5,
+       12,
        12,
        5,
+       6,
+       3,
        8,
-       5,
-       1,
        0,
        4,
-       6,
-       12,
-       12,
+       0,
+       10,
        11,
-       2,
-       4,
-       2
+       10,
+       9,
+       12,
+       8
       ]
      },
      "4": {
       "dark": [
+       "YZ>Y",
        "YZ>Z"
       ],
       "epoch": 4,
@@ -3240,116 +3556,116 @@
        "fx_3"
       ],
       "mix": [
-       2808,
-       3232,
-       3119,
-       805
+       4329,
+       2485,
+       2540,
+       612
       ],
       "pulses": [
        [
         7,
-        8,
         6,
-        6
+        2,
+        7
        ],
        [
         2,
-        2,
-        9,
-        8
+        5,
+        7,
+        7
        ],
        [
-        2,
+        5,
         3,
-        1,
-        3
+        3,
+        4
        ],
        [
-        4,
-        6,
+        5,
+        5,
+        3,
+        1
+       ],
+       [
+        8,
+        2,
         9,
+        7
+       ],
+       [
+        7,
+        0,
+        4,
+        9
+       ],
+       [
+        1,
+        9,
+        8,
+        4
+       ],
+       [
+        5,
+        6,
+        4,
         5
        ],
        [
-        0,
+        9,
+        4,
+        3,
+        0
+       ],
+       [
+        2,
+        3,
+        2,
+        1
+       ],
+       [
+        7,
+        1,
+        1,
+        1
+       ],
+       [
+        1,
         5,
-        0,
-        7
+        8,
+        1
        ],
        [
         8,
-        8,
-        0,
-        7
-       ],
-       [
-        2,
-        2,
-        0,
-        2
-       ],
-       [
         3,
-        0,
-        8,
-        8
-       ],
-       [
-        0,
-        3,
-        3,
-        3
+        9,
+        1
        ],
        [
         6,
-        1,
-        0,
-        1
-       ],
-       [
-        2,
-        5,
-        3,
-        7
-       ],
-       [
-        9,
-        0,
+        6,
         7,
-        4
+        5
        ],
        [
+        4,
+        4,
         2,
-        8,
-        0,
-        4
+        0
        ],
        [
+        7,
         5,
         7,
-        2,
-        8
-       ],
-       [
-        5,
-        0,
-        5,
-        8
-       ],
-       [
-        2,
-        3,
-        1,
-        1
+        0
        ]
       ],
       "pushes": {
        "fx_0": {
-        "WXY>XY": -4,
-        "WY>W": 4
+        "WYZ>YZ": -4,
+        "XYZ>YZ": -4
        },
        "fx_1": {
-        "WX>W": -4,
+        "WX>X": -4,
         "WY>Y": 4
        },
        "fx_2": {
@@ -3357,384 +3673,386 @@
         "WZ>W": 2
        }
       },
-      "round": 33945841,
+      "round": 34015703,
       "silent": [],
       "widths": [
-       9,
-       6,
-       11,
        7,
+       1,
        2,
        2,
-       11,
+       5,
+       1,
+       12,
        9,
        3,
-       5,
        12,
-       1,
-       4,
+       12,
        5,
-       5,
+       6,
+       0,
+       8,
        4,
        6,
-       6,
-       12,
-       12,
+       0,
+       10,
        11,
-       2,
-       4,
-       2
+       10,
+       9,
+       12,
+       8
       ]
      },
      "5": {
-      "dark": [],
+      "dark": [
+       "WX>W"
+      ],
       "epoch": 5,
       "late": [],
       "mix": [
-       2713,
-       3332,
-       2606,
-       1318
+       1905,
+       3143,
+       3195,
+       1727
       ],
       "pulses": [
        [
-        4,
         0,
-        1,
-        0
-       ],
-       [
-        4,
-        3,
-        7,
-        3
-       ],
-       [
         5,
         0,
-        0,
-        4
+        7
        ],
        [
-        5,
+        9,
         4,
-        4,
-        4
+        6,
+        1
        ],
        [
         2,
-        0,
-        7,
-        5
-       ],
-       [
-        6,
-        5,
         4,
+        9,
         0
        ],
        [
+        7,
         0,
+        3,
+        7
+       ],
+       [
+        3,
+        2,
+        6,
+        4
+       ],
+       [
+        6,
+        4,
+        6,
+        2
+       ],
+       [
         1,
-        1,
+        2,
+        8,
         9
        ],
        [
-        0,
-        8,
+        1,
+        5,
         8,
         1
        ],
        [
-        7,
-        6,
-        2,
-        0
-       ],
-       [
-        0,
-        2,
-        2,
-        4
-       ],
-       [
-        0,
-        2,
-        7,
+        9,
+        1,
+        8,
         5
-       ],
-       [
-        2,
-        2,
-        7,
-        4
        ],
        [
         9,
         3,
-        3,
-        6
+        2,
+        3
        ],
        [
         2,
-        2,
         5,
-        8
-       ],
-       [
-        5,
-        4,
-        3,
+        0,
         0
        ],
        [
+        4,
         0,
-        8,
+        9,
+        2
+       ],
+       [
+        5,
+        1,
+        9,
+        9
+       ],
+       [
+        4,
+        1,
         6,
-        6
+        7
+       ],
+       [
+        8,
+        3,
+        5,
+        9
+       ],
+       [
+        2,
+        6,
+        1,
+        8
        ]
       ],
       "pushes": {
        "fx_0": {
-        "WY>W": 4,
-        "WY>Y": -4
+        "WX>X": 4,
+        "XYZ>XZ": 4
        },
        "fx_1": {
-        "WY>W": -4,
-        "WY>Y": 4
+        "WYZ>YZ": 4,
+        "XYZ>YZ": 4
        },
        "fx_2": {
         "WYZ>WY": -2,
         "WYZ>YZ": 2
        }
       },
-      "round": 33946048,
+      "round": 34015910,
       "silent": [],
       "widths": [
-       9,
-       6,
-       11,
+       7,
        5,
-       2,
-       4,
-       11,
+       6,
+       0,
+       5,
+       7,
+       12,
        9,
        3,
-       5,
        12,
-       1,
+       12,
+       5,
+       6,
        4,
-       5,
-       5,
+       8,
        4,
        6,
-       6,
-       12,
-       12,
+       0,
+       10,
        11,
-       2,
-       4,
-       2
+       10,
+       9,
+       12,
+       8
       ]
      },
      "opening": {
-      "attempt": 2,
+      "attempt": 0,
       "mix": [
-       2790,
-       2167,
-       3154,
-       1856
+       2192,
+       2665,
+       2757,
+       2355
       ],
       "widths": [
-       3,
-       6,
-       11,
-       7,
-       6,
+       5,
+       5,
        2,
-       11,
+       2,
+       9,
+       9,
+       12,
        11,
        3,
-       1,
-       12,
        9,
        12,
        5,
-       9,
-       11,
+       2,
+       7,
+       8,
+       4,
+       4,
        4,
        10,
-       12,
-       12,
        11,
-       2,
-       4,
-       6
+       10,
+       9,
+       12,
+       8
       ]
      }
     },
     "rand": {
-     "beacon_sig": "3e328cd0710b6df99c3bd3521b36160c953b941a34a950cfc418bce771aa6612ae4ab55a4fda4b0f3c59f2989d24ca46",
+     "beacon_sig": "d8bbd5a2c729ae66c5757c34b35ad0c249cb4565fa13ecc0e308643cc795cd6f1e6c3e3c69c11480b304b172a913a1ef",
      "beacons": {
-      "33945605": "3e328cd0710b6df99c3bd3521b36160c953b941a34a950cfc418bce771aa6612ae4ab55a4fda4b0f3c59f2989d24ca46",
-      "33945621": "02b476ee810d67504747dd8b29ccc3e14d84a5a500f9589e6fc6d55ce00d0ba49eaaf167fa799c53b75142a800afeb98",
-      "33945627": "abaa747ef69464a806604dce8f455bef57e85205656ed667927eaf628bb3f226df809307b199a5ed4e28e206af907c19",
-      "33945634": "3660bbad5f5db38d44682ebe2a73426cbf93b6b0f2afbc87d81273cd51023911dd89fa42eb51b4cd1cdc5330d425fe60",
-      "33945841": "0defb0d13ae94dc182c71c8897ada2fc1b7ed099f33b0f05f0e8e415b642c5b20fb88b86cf728644755e6d00d6ad0c61",
-      "33946048": "b524f8dca5629417855180c3d10f75126cfc2dc5fc9a9a3678559f747e8d9df85ccd80b20ff715f8c043156ec291eaba"
+      "34015467": "d8bbd5a2c729ae66c5757c34b35ad0c249cb4565fa13ecc0e308643cc795cd6f1e6c3e3c69c11480b304b172a913a1ef",
+      "34015483": "0c88e771645db36cfad527da0f43102b8de4e0db0864e67a7f33f9beee6c80d76ce839aa3436aaa29defd28560ef7cf2",
+      "34015490": "6ed12868864d0f6aa0f79057afaf9bf02323e4157a9dd3644002de093150cd5cb8aaf050faa1478456f5be28e2921899",
+      "34015496": "099ac0b4feb1f7828e13ed06de25e0577346aef791c7656306ed30fe552d092b7709a3e9273a819f3c5559acf8f4b338",
+      "34015703": "8f4121b7a1bcbc3b168e59d67947dfa1646c3799191b44cc4afaa3396641013fa9fce54d512e6464d216d24681b7bd8b",
+      "34015910": "caaf3b51f650faead3b2d1450efbdc9642355b3276926e01fb2b0ce73a61c2e905ccb786ead93f4c1552ac9d49958e1e"
      },
      "commits": {
       "fx_0": {
-       "at": "2026-11-14T07:09:54.938320+00:00",
-       "beacon_round": 33945605,
-       "hash": "7a2aa4ceaa466acac200042b025097687226cb68e008b7d8c9b19fff5278cc21",
+       "at": "2026-11-16T17:23:00.935193+00:00",
+       "beacon_round": 34015467,
+       "hash": "eebef15b73f35025f4f17c25163a7285193e04825df3689614038d270f36a4e8",
        "seat": 0,
-       "signature": "6iJBVcvhTaAzWqjzWPRbUmiC8eTUGp5dUmZz788nycfpYX1orlCVug0Od7dxLp9HPyhJz0fSV-3xnIV-ZcnHCA",
-       "stable_id": "e3786b3e3e4047128a8ea7c70a7a9fae54345e7d44038d35dc0f6d863f064439"
+       "signature": "e9J4_5WW8JFuGHD_9Rp_z-m_mN4gtv74Z8Ade8v8m5ssNhwXOw89w1byenKnYBBONmMJI9S-rXH9qG0TDVauCQ",
+       "stable_id": "d41d1431fde79165fa52e3b2778e4c14e098f4389ba694c11336361283a9b3cf"
       },
       "fx_1": {
-       "at": "2026-11-14T07:09:55.038337+00:00",
-       "beacon_round": 33945605,
-       "hash": "539dc4c14e0e589e10ad00c98fce2897e6354dcaf0d77967ab7598a4298e7cb5",
+       "at": "2026-11-16T17:23:00.997601+00:00",
+       "beacon_round": 34015467,
+       "hash": "a9b6a0fab3c16daddb390399e8d13ce2399d0333178c41ce94b561eb0bd90cb4",
        "seat": 1,
-       "signature": "vA_vkpOZJk5N-XmjcsXIibGbpJMTr2uJaw6AI8PC4EV0b9CmD6ob2IdxAoatG2XPwG9vByCrN7q5GGyy4AdECQ",
-       "stable_id": "877d081fcd6af3ed86b50f8190b5e489b4be4b8feb74571ef69b0897a932e770"
+       "signature": "L5rssAxXOGl3-mVMMHTNTHHR-PBPiMuqiO-FNQTeF6QACh6hmIusTVi9EZLX3NGIetrt4cvAXxGHBJLoQ0tzCw",
+       "stable_id": "cb107a61bd67753e1950603b4441aadbb6b43cf561febcd84d337491d9deb4f2"
       },
       "fx_2": {
-       "at": "2026-11-14T07:09:55.129959+00:00",
-       "beacon_round": 33945605,
-       "hash": "541e273e9381f606b3cb6bbbd389c586574a442410b73cd3f996f38d16b3bdb9",
+       "at": "2026-11-16T17:23:01.047305+00:00",
+       "beacon_round": 34015467,
+       "hash": "65d13c66d0a1d89b9ab73878a6354cac9a38a7adf76dc6168b7b64fc4f9dd510",
        "seat": 2,
-       "signature": "LT6uIoGznytfITgEh0gKigF4iVnjAwab10vsU2Gz6ZpdeSsAnetpRwFlQQos_Hp5zh41JjZO0zGQZyBzfe5TDQ",
-       "stable_id": "879b248c43c1a933a09ca47ef6efc2cc5a89898e41eefaab26af7e5acf68130b"
+       "signature": "VsyV_riK33XmAe58uFV3umC6kzvaYjDRcangHAVSRBVnWb0QFZtOkbFHPTuLKcwVsPcU45m2TufQBakIb9cODQ",
+       "stable_id": "ce636c5a777b80f454951b91bd091463d8d49c0d934678ad8013b8dca8f5b05a"
       },
       "fx_3": {
-       "at": "2026-11-14T07:09:55.234452+00:00",
-       "beacon_round": 33945605,
-       "hash": "1bb085cde9467f402530975f69b18a9e306221cc53de136f1bf90c7a30133aa2",
+       "at": "2026-11-16T17:23:01.108468+00:00",
+       "beacon_round": 34015467,
+       "hash": "82a0909c61d1ac24d5691331ae57838039232885ec47821f87aa322bdbed3134",
        "seat": 3,
-       "signature": "G6p1FFZSUDDQFzD9E7ZwK-nsG_gQovCL8Pmb7capO77jthtLOSVr44XRmInDSOxL7iORh1rwCkptk4vgGWfcAg",
-       "stable_id": "a55ce12309bd0fc3f22e050c9e65f04288ab4fe1891eae3467c56ea05ac67f9e"
+       "signature": "x5SBVmo4LAk3dBzWmJegvJeOBiSv2JjGv-qq4w0QoUyCxY0ufsDskDu4FQ5qNH8MvK3F7JatuqfLAtaucdlJCQ",
+       "stable_id": "2e67229b3e9c9e884756d28fd4ff0baaeb83222352a93ae8a15713536a5a78bd"
       }
      },
      "reveals": {
       "fx_0": {
-       "nonce": "218ae037b30eef695444f9339e8b325f886760c3736f314ef30982449bfaf43a",
-       "s": "6c86658974611d8be7a82b2994e7570aeec5e3447717df34ea68f53a86dc2320"
+       "nonce": "cd895395223370488641e3a5e00591ebdf66c6c416de4efaa95696c2c378ed0a",
+       "s": "8336f10523ed87c47f464734a931b2a9af55f1083b1c83dac64d64fbba397f92"
       },
       "fx_1": {
-       "nonce": "34bfca593af9fb9c3c2e9bc9ebba9080e4ae215b75d25db69620de17a581e649",
-       "s": "6c93197d0b1313ab69347f81db421833be42bd3d980939e09416f0ab455b80a1"
+       "nonce": "18c819ef5e538c3c3225881828798c6530062cc738d3c05c7fdb35e54c18ccab",
+       "s": "759debf92e7144101d90ac18187f240385db59888e08761cb6ce65aa3b28ca7a"
       },
       "fx_2": {
-       "nonce": "30c198aa2207e7188ab9ff6161b6141ae1e41d47e1440e434f7b14fc158c07ad",
-       "s": "02183c32898e04d79851752963d936f820163683eaf247fdd2b77347658bba9d"
+       "nonce": "6fc94596d1984d6cbc97f32c8560d7af574d5469c36c43cd587f1e169a84d41f",
+       "s": "dbbb7d839bf6085892520d06074c7052a71b57a7a0d8b6bf2c1a6a16350283a7"
       }
      },
-     "round": 33945605,
-     "scope": "sess_01cec1730cc5"
+     "round": 34015467,
+     "scope": "sess_876d9a10a165"
     },
-    "reveal_by": "2026-11-14T07:41:48+00:00",
+    "reveal_by": "2026-11-16T17:54:54+00:00",
     "reveal_window_s": 600,
     "seals": {
      "1": {
       "fx_0": {
-       "at": "2026-11-14T07:10:12.050514+00:00",
-       "commitment": "19822255d8675a34d9315465df6995dd465ade88c62e78b3209e2a99a351f839",
-       "round": 33945621
+       "at": "2026-11-16T17:23:19.033319+00:00",
+       "commitment": "fe4329b18f69876da89c7a56d16957dbb6bb4975c4d044db4b50d69058f64edc",
+       "round": 34015483
       },
       "fx_1": {
-       "at": "2026-11-14T07:10:12.050514+00:00",
-       "commitment": "dbf870690e63972e25c4b078b1f874a91c2344ef5d4ac86ffae3f71544319298",
-       "round": 33945621
+       "at": "2026-11-16T17:23:19.033319+00:00",
+       "commitment": "65266963d246533eeca9462d0d12b016fe2879d1ea622c847c24abd3112fc0df",
+       "round": 34015483
       },
       "fx_2": {
-       "at": "2026-11-14T07:10:12.050514+00:00",
-       "commitment": "bf6485570a952424ea5b9c156e2a27e532823f67649b2575aeb0928b610481ff",
-       "round": 33945621
+       "at": "2026-11-16T17:23:19.033319+00:00",
+       "commitment": "bedaba63f78a1b3ea972ce3c2667527d57f440219c550fc4f310960313a35968",
+       "round": 34015483
       },
       "fx_3": {
-       "at": "2026-11-14T07:10:12.050514+00:00",
-       "commitment": "1cfbc7b58780573f2e0fcc2f60707eef9414a4d8987a01390e5468f498780af2",
-       "round": 33945621
+       "at": "2026-11-16T17:23:19.033319+00:00",
+       "commitment": "61b16106c75be4f4b7a35f4ca3bdccdcbda1cbf7be1341fb764687e3458cdc94",
+       "round": 34015483
       }
      },
      "2": {
       "fx_0": {
-       "at": "2026-11-14T07:10:32.050514+00:00",
-       "commitment": "a75ea4e5682e705e8637ef20839b9c2d64af7df2da2c301a1041f900252ba83b",
-       "round": 33945627
+       "at": "2026-11-16T17:23:39.033319+00:00",
+       "commitment": "2d42eab90a7e3ccb57c7aafe4090a5d5a427e210f7d311dbf7438af2edd8cbd0",
+       "round": 34015490
       },
       "fx_1": {
-       "at": "2026-11-14T07:10:32.050514+00:00",
-       "commitment": "35a4c3f824d8a35e11974441c3808e136c2677d607d834a3dc4356777ac25a4a",
-       "round": 33945627
+       "at": "2026-11-16T17:23:39.033319+00:00",
+       "commitment": "53f9ccd4a2b502d61b2f994f99082490641e3d8c50dd2f400daf839621dcf70e",
+       "round": 34015490
       },
       "fx_2": {
-       "at": "2026-11-14T07:10:32.050514+00:00",
-       "commitment": "6c4d12f1f9451b2b112afeb74f5520b2c4d8389ad9694c19ec372090794477da",
-       "round": 33945627
+       "at": "2026-11-16T17:23:39.033319+00:00",
+       "commitment": "c94fdb806a10dbbbb7bbe2912cbb65db1341cea4ca19ff57a2971a418556c208",
+       "round": 34015490
       },
       "fx_3": {
-       "at": "2026-11-14T07:10:32.050514+00:00",
-       "commitment": "63d2d2d20fb5079fef3500d147f59e3a7e548f8394b00f6a431a36162361df86",
-       "round": 33945627
+       "at": "2026-11-16T17:23:39.033319+00:00",
+       "commitment": "68ca8ce562d2bafab855fcc83f5cb2d79638f6727b107efe48b8bccb13bb2249",
+       "round": 34015490
       }
      },
      "3": {
       "fx_1": {
-       "at": "2026-11-14T07:10:52.050514+00:00",
-       "commitment": "a569b1cdb48f6e5b4edc4deccd8f9d29c86c7cd20f799bfb20ea1e2e0f4b9ef0",
-       "round": 33945634
+       "at": "2026-11-16T17:23:59.033319+00:00",
+       "commitment": "0e3d80bd1fe1e740b870ab9280ed784da781f94c58df883b39e57ccb079d4c19",
+       "round": 34015496
       },
       "fx_2": {
-       "at": "2026-11-14T07:10:52.050514+00:00",
-       "commitment": "584bf59ef0a5488a40a2245cc6ef980fa9634912646bc3a63dc4a4738448bef7",
-       "round": 33945634
+       "at": "2026-11-16T17:23:59.033319+00:00",
+       "commitment": "e93e61611d3b7b512a72cc1e7c74024e74092cd80ec85b2784af041d11f20c48",
+       "round": 34015496
       },
       "fx_3": {
-       "at": "2026-11-14T07:10:52.050514+00:00",
-       "commitment": "c639ee9d5e5a85bcaf07de71f3fc6d3b640ab36e9c3054deebc59f6171fbf610",
-       "round": 33945634
+       "at": "2026-11-16T17:23:59.033319+00:00",
+       "commitment": "12ae19be0a097b8d13e8e2013dd668629cf21b70607caa49bda1561d5ac8a169",
+       "round": 34015496
       }
      },
      "4": {
       "fx_0": {
-       "at": "2026-11-14T07:21:13.050514+00:00",
-       "commitment": "2f6680ab044dd8c1e08cb03ebb5827aa9fc30e3f02d5771173e8e507c99a4a3b",
-       "round": 33945841
+       "at": "2026-11-16T17:34:20.033319+00:00",
+       "commitment": "7abf1e7e05f02a24dd561f32affd3ac7d03ad3049f2b694eaa02315654c29853",
+       "round": 34015703
       },
       "fx_1": {
-       "at": "2026-11-14T07:21:13.050514+00:00",
-       "commitment": "27c3f453c7b19d395909ef8226a8acc415ff7bbdef70958135d43d6eb826f7ca",
-       "round": 33945841
+       "at": "2026-11-16T17:34:20.033319+00:00",
+       "commitment": "4e0bcdc14d6d38a534a2d75f951953d4217908476491136e49cc392b5ef4da2f",
+       "round": 34015703
       },
       "fx_2": {
-       "at": "2026-11-14T07:21:13.050514+00:00",
-       "commitment": "12c1c62d819a8cd64c646a90a20f33a2f60623f5f6ad04488bd3258d5f122bad",
-       "round": 33945841
+       "at": "2026-11-16T17:34:20.033319+00:00",
+       "commitment": "7f19b10c5d2d7a480f48f4e82bca894ae5a414ed4dc398ec9431fda89d179cf9",
+       "round": 34015703
       },
       "fx_3": {
-       "at": "2026-11-14T07:21:13.050514+00:00",
-       "commitment": "43115a0d3781940377692c24fec4e6ec738158da2cc52b01357fa4eb6594842b",
-       "round": 33945841
+       "at": "2026-11-16T17:34:20.033319+00:00",
+       "commitment": "093d5ad513340738481e18014deae364a5088c997e28d484fa592c70dfa04fd6",
+       "round": 34015703
       }
      },
      "5": {
       "fx_0": {
-       "at": "2026-11-14T07:31:34.050514+00:00",
-       "commitment": "3f99f2cb3e1b827d268539270ca669b46f196349a427f93cfd36fd7f3a94b18c",
-       "round": 33946048
+       "at": "2026-11-16T17:44:41.033319+00:00",
+       "commitment": "30b3d50a20a3642d93d2124e8efd95857bdc9884dc38964be57400e49aac2a87",
+       "round": 34015910
       },
       "fx_1": {
-       "at": "2026-11-14T07:31:34.050514+00:00",
-       "commitment": "c872613e95fc2ea3cf12ea345338e89d98acfef4aa6176410fc8cb383fc69999",
-       "round": 33946048
+       "at": "2026-11-16T17:44:41.033319+00:00",
+       "commitment": "7f257fae63591298c239a8d697a914c81804e8cc9da0d1d3fcb85c2b4ccd0847",
+       "round": 34015910
       },
       "fx_2": {
-       "at": "2026-11-14T07:31:34.050514+00:00",
-       "commitment": "6d4889e9681374d4e6368a0fa3eaac01d8a719c62161e0ecd5dd5b944d965469",
-       "round": 33946048
+       "at": "2026-11-16T17:44:41.033319+00:00",
+       "commitment": "13b434828554650d05ea1a72fcbaeae5a78582dc1909f45c06f7de7b7cdb7ea9",
+       "round": 34015910
       }
      }
     },
@@ -3746,28 +4064,28 @@
     ],
     "targets": {
      "fx_0": [
-      38,
-      10,
+      37,
+      33,
       20,
-      32
+      10
      ],
      "fx_1": [
-      19,
       31,
+      17,
       39,
-      11
+      13
      ],
      "fx_2": [
-      35,
-      18,
-      12,
-      35
+      14,
+      36,
+      34,
+      16
      ]
     },
     "voided": null
    },
    "metadata": {
-    "created_at": "2026-11-14T07:09:52.050514+00:00",
+    "created_at": "2026-11-16T17:22:59.033319+00:00",
     "participants": [
      "fx_0",
      "fx_1",
@@ -3779,6 +4097,6 @@
   },
   "status": "completed",
   "step_number": 38,
-  "updated_at": "2026-11-14T07:10:03.475554+00:00"
+  "updated_at": "2026-11-16T17:23:06.258699+00:00"
  }
 }

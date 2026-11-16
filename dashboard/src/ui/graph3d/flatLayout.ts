@@ -5,7 +5,7 @@ export const FLAT_W = 640;
 export const FLAT_H = 420;
 
 /** The same graph as a layered 2D diagram: one column per layer, nodes evenly down it. */
-export function flatLayout(nodes: readonly GraphNode[], width = FLAT_W, height = FLAT_H): { placed: Placed[]; tags: { x: number; text: string }[] } {
+export function flatLayout(nodes: readonly GraphNode[], width = FLAT_W, height = FLAT_H, layerNames?: readonly string[]): { placed: Placed[]; tags: { x: number; text: string }[] } {
   const layers = [...new Set(nodes.map((n) => n.layer))].sort((a, b) => a - b);
   const padX = 48;
   const padY = 30;
@@ -29,6 +29,6 @@ export function flatLayout(nodes: readonly GraphNode[], width = FLAT_W, height =
     const y = c <= 1 ? height / 2 : padY + (k / (c - 1)) * (height - 2 * padY - 12);
     return { x: colX(n.layer), y, scale: 1, depth: 0 };
   });
-  return { placed, tags: layers.map((l) => ({ x: colX(l), text: `layer ${l + 1}` })) };
+  return { placed, tags: layers.map((l) => ({ x: colX(l), text: layerNames?.[l] ?? `layer ${l + 1}` })) };
 }
 
