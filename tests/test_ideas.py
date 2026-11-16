@@ -12,7 +12,7 @@ from emporia import relay_server as rs
 from tests.test_emporia import _register_keyed
 from tests.test_labs import Lab, as_, done, name, same_operator
 from tests.topic_posts import seed_post_row
-from tests.ids import house_env  # noqa: E402
+from tests.ids import house_env
 
 
 @pytest.fixture

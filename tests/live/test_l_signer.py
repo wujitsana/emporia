@@ -54,7 +54,7 @@ def _gone(pid: int) -> bool:
 
 
 def test_a_wallet_moves_behind_the_signer_pays_waits_for_approval_and_comes_back(
-        profiles, tmp_path, monkeypatch, capsys):  # noqa: F811
+        profiles, tmp_path, monkeypatch, capsys):
     root, _ = profiles
     monkeypatch.setattr(cli, "profiles_root", lambda: root)
     for k in [k for k in os.environ if k.startswith(("HERMES_SESSION_", "EMPORIA_SIGNER_"))]:

@@ -76,7 +76,7 @@ from starlette.responses import JSONResponse
 # which named a *different file in a different directory*. Those defaults agreed
 # with this one only when `relay_server` happened to be imported first, because
 # this import is what ran the merge. See config.py's docstring.
-from emporia.config import database_path as _database_path  # noqa: E402
+from emporia.config import database_path as _database_path
 
 from emporia.engine import guardrails
 from emporia.engine.guardrails import (
@@ -126,21 +126,21 @@ if TYPE_CHECKING:
     from emporia.payments import PaymentRef
 
 # Trigger module registration — import all bundled modules at startup
-import emporia.modules.bargain  # noqa: F401
-import emporia.modules.cv_auction  # noqa: F401
-import emporia.modules.liars_dice  # noqa: F401
-import emporia.modules.spillway  # noqa: F401
-import emporia.modules.tesseract  # noqa: F401
-import emporia.modules.blotto  # noqa: F401
-import emporia.modules.chess  # noqa: F401
-import emporia.modules.code_review  # noqa: F401
-import emporia.modules.research  # noqa: F401
-import emporia.modules.lowest_unique  # noqa: F401
-import emporia.modules.service  # noqa: F401
+import emporia.modules.bargain
+import emporia.modules.cv_auction
+import emporia.modules.liars_dice
+import emporia.modules.spillway
+import emporia.modules.tesseract
+import emporia.modules.blotto
+import emporia.modules.chess
+import emporia.modules.code_review
+import emporia.modules.research
+import emporia.modules.lowest_unique
+import emporia.modules.service
 import emporia.modules.two_thirds  # noqa: F401
 # P133: an operator's own games (EMPORIA_MODULES=pkg.module,...), loaded
 # explicitly — a module that names winners decides who is paid.
-from emporia.module_sdk import load_operator_modules as _load_operator_modules  # noqa: E402
+from emporia.module_sdk import load_operator_modules as _load_operator_modules
 
 _OPERATOR_MODULES = _load_operator_modules(os.environ.get("EMPORIA_MODULES", ""))
 
@@ -549,7 +549,7 @@ def house_names() -> frozenset[str]:
     if not ids:
         return frozenset()
     with DB_LOCK, get_db() as conn:
-        rows = conn.execute(f"SELECT agent_id FROM authorized_agents WHERE stable_id IN ({','.join('?' * len(ids))})",  # noqa: S608
+        rows = conn.execute(f"SELECT agent_id FROM authorized_agents WHERE stable_id IN ({','.join('?' * len(ids))})",
                             ids).fetchall()
     return frozenset(r["agent_id"] for r in rows)
 
@@ -566,7 +566,7 @@ def vouched_names() -> frozenset[str]:
     if not ids:
         return frozenset()
     with DB_LOCK, get_db() as conn:
-        rows = conn.execute(f"SELECT agent_id FROM authorized_agents WHERE stable_id IN ({','.join('?' * len(ids))})",  # noqa: S608
+        rows = conn.execute(f"SELECT agent_id FROM authorized_agents WHERE stable_id IN ({','.join('?' * len(ids))})",
                             ids).fetchall()
     return frozenset(r["agent_id"] for r in rows)
 
@@ -799,8 +799,8 @@ def init_db() -> None:
 # a fingerprint of every table and column and fails if the shape moved without
 # this number moving, so it cannot quietly stop meaning anything. It lives in
 # emporia.schema (P139) so `emporia doctor` can read it without the relay.
-from emporia.schema import SCHEMA_VERSION  # noqa: E402
-from emporia.schema_sql import SCHEMA_SQL  # noqa: E402
+from emporia.schema import SCHEMA_VERSION
+from emporia.schema_sql import SCHEMA_SQL
 
 
 def _assert_schema_version(conn: Any) -> None:
@@ -878,7 +878,7 @@ def _accept_list_problem(creator_id: str | None) -> str:
     if accepted is None or _x402_pay_to_by_network(creator_id):
         return ""
     offered = [n for n in _x402_networks() if _x402_network_parts(n)]
-    names = lambda ids: ", ".join(nets.label(n) for n in ids) or "no network"  # noqa: E731
+    names = lambda ids: ", ".join(nets.label(n) for n in ids) or "no network"
     return f"{creator_id} takes payment on {names(accepted)}; this relay offers {names(offered)}"
 
 
@@ -1170,7 +1170,7 @@ async def _verify_x402_payment(
     request: Request | None = None,
     pay_to_override: str | None = None,
     verify_only: bool = False,
-) -> "PaymentRef | None":
+) -> PaymentRef | None:
     """Verify a client-supplied x402 credential against what this
     relay actually requires for this resource, then settle it. Raises
     HTTPException(402) on any binding/verification/settlement failure.
@@ -1334,7 +1334,7 @@ async def _pay_split_x402(
     request: Request, creator_payload: dict[str, Any], fee_payload: dict[str, Any] | None, *,
     creator_id: str | None, creator_cents: int, fee_cents: int, currency: str, challenge_resource: str,
     payer_id: str, resource_type: str, resource_id: str, fee_pay_to: dict[str, str], refuse,
-) -> "PaymentRef | JSONResponse":
+) -> PaymentRef | JSONResponse:
     """A paid entry: the creator's share and the relay's fee, two x402 payments in one action. Both are
     checked before either settles, and the entry is granted only when both have. The relay is the payee of
     neither's money in transit: each settles straight to its own address, so nothing is ever held."""
@@ -1377,7 +1377,7 @@ async def _verify_and_confirm_payment(
     challenge_resource: str,
     creator_id: str | None = None,
     x402_split: bool = False,
-) -> "PaymentRef | JSONResponse":
+) -> PaymentRef | JSONResponse:
     """Verify a payment credential (x402 `PAYMENT-SIGNATURE` or a Tempo credential) against the
     expected amount/currency/resource binding, then return a `PaymentRef` — the confirmed
     reference, tagged with the rail it was verified on. This is the one funnel that mints a
@@ -2824,7 +2824,7 @@ class AgentRegistry:
                 # the operator's removal bar is by stable id, never by name: not rewritten
                 bar = " AND resource_type != 'relay'" if table == "access_removals" else ""
                 conn.execute(
-                    f"UPDATE {table} SET {column} = ? WHERE {column} = ?{bar}",  # noqa: S608
+                    f"UPDATE {table} SET {column} = ? WHERE {column} = ?{bar}",
                     (new_agent_id, agent_id),
                 )
             for table, column in _RENAME_JSON_COLUMNS:
@@ -3424,7 +3424,7 @@ def _hold_the_database() -> None:
         return
     path = DATABASE_PATH.with_name(DATABASE_PATH.name + ".lock")
     path.parent.mkdir(parents=True, exist_ok=True)
-    handle = open(path, "a")       # noqa: SIM115 - held until the process ends
+    handle = open(path, "a")
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
@@ -6610,7 +6610,7 @@ async def _settle_access_payment(
     payer_id: str,
     creator_id: str,
     amount_cents: int,
-    payment_ref: "PaymentRef",
+    payment_ref: PaymentRef,
     access_duration_days: int | None,
 ) -> None:
     """The pay-to-access settlement seam, shared by join_room() and
@@ -7216,31 +7216,31 @@ def uvicorn_limits() -> dict[str, Any]:
 # ============================================================================
 
 from emporia.routes import agents as _agent_routes
-from emporia.routes import standing as _standing_routes  # noqa: E402
-from emporia.routes import operator as _operator_routes  # noqa: E402
-from emporia.routes import ideas as _idea_routes  # noqa: E402
-from emporia.routes import labs as _lab_routes  # noqa: E402
-from emporia.routes import chronicle as _chronicle_routes  # noqa: E402
-from emporia.routes import tesseract as _tesseract_routes  # noqa: E402
-from emporia.routes import assay as _assay_routes  # noqa: E402
-from emporia.routes import pledges as _pledge_routes  # noqa: E402
-from emporia.routes import whats_next as _next_routes  # noqa: E402
-from emporia.routes import likes as _like_routes  # noqa: E402
-from emporia.routes import posts as _post_routes  # noqa: E402
-from emporia.routes import beacon as _beacon_routes  # noqa: E402
-from emporia.routes import games_export as _games_export_routes  # noqa: E402
-from emporia.routes import happening as _happening_routes  # noqa: E402
-from emporia.routes import deletion as _deletion_routes  # noqa: E402
-from emporia.routes import agoras as _agora_routes  # noqa: E402
-from emporia.routes import dm as _dm_routes  # noqa: E402
-from emporia.routes import federation as _federation_routes  # noqa: E402
-from emporia.routes import shared_topics as _shared_topic_routes  # noqa: E402
-from emporia.routes import rooms as _room_routes  # noqa: E402
-from emporia.routes import sessions as _session_routes  # noqa: E402
-from emporia.routes import translog as _translog_routes  # noqa: E402
-from emporia.routes import models as _model_routes  # noqa: E402
-from emporia.routes import x_links as _x_link_routes  # noqa: E402
-from emporia.routes import chain_links as _chain_link_routes  # noqa: E402
+from emporia.routes import standing as _standing_routes
+from emporia.routes import operator as _operator_routes
+from emporia.routes import ideas as _idea_routes
+from emporia.routes import labs as _lab_routes
+from emporia.routes import chronicle as _chronicle_routes
+from emporia.routes import tesseract as _tesseract_routes
+from emporia.routes import assay as _assay_routes
+from emporia.routes import pledges as _pledge_routes
+from emporia.routes import whats_next as _next_routes
+from emporia.routes import likes as _like_routes
+from emporia.routes import posts as _post_routes
+from emporia.routes import beacon as _beacon_routes
+from emporia.routes import games_export as _games_export_routes
+from emporia.routes import happening as _happening_routes
+from emporia.routes import deletion as _deletion_routes
+from emporia.routes import agoras as _agora_routes
+from emporia.routes import dm as _dm_routes
+from emporia.routes import federation as _federation_routes
+from emporia.routes import shared_topics as _shared_topic_routes
+from emporia.routes import rooms as _room_routes
+from emporia.routes import sessions as _session_routes
+from emporia.routes import translog as _translog_routes
+from emporia.routes import models as _model_routes
+from emporia.routes import x_links as _x_link_routes
+from emporia.routes import chain_links as _chain_link_routes
 
 app.include_router(_model_routes.router)
 app.include_router(_x_link_routes.router)

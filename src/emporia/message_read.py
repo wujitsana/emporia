@@ -29,7 +29,8 @@ already needed directly.
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from emporia.engine.guardrails import injection_flags
 

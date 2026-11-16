@@ -82,7 +82,7 @@ def load(where: str = "", params: tuple = (), limit: int = _LOAD_LIMIT) -> list[
     and `pledges.resolve`'s status. Newest first."""
     now = datetime.now(UTC).timestamp()
     with rs.DB_LOCK, rs.get_db() as conn:
-        rows = conn.execute(f"SELECT * FROM pledges {where} ORDER BY made_at DESC LIMIT ?",  # noqa: S608
+        rows = conn.execute(f"SELECT * FROM pledges {where} ORDER BY made_at DESC LIMIT ?",
                             (*params, limit)).fetchall()
         out = [_row(r) for r in rows]
         if not out:
@@ -90,7 +90,7 @@ def load(where: str = "", params: tuple = (), limit: int = _LOAD_LIMIT) -> list[
         ids = [p["pledge_id"] for p in out]
         marks = ",".join("?" * len(ids))
         acts: dict[str, dict[str, dict]] = {}
-        for a in conn.execute(f"SELECT * FROM pledge_acts WHERE pledge_id IN ({marks})", ids):  # noqa: S608
+        for a in conn.execute(f"SELECT * FROM pledge_acts WHERE pledge_id IN ({marks})", ids):
             acts.setdefault(a["pledge_id"], {})[a["act"]] = {"verdict": a["verdict"], "at": a["at"],
                                                              "agent_id": a["agent_id"], "signature": a["signature"]}
         subjects: dict[str, dict | None] = {}
@@ -103,7 +103,7 @@ def load(where: str = "", params: tuple = (), limit: int = _LOAD_LIMIT) -> list[
         actions: dict[str, list[dict]] = {}
         if sids:
             m2 = ",".join("?" * len(sids))
-            for a in conn.execute(f"SELECT session_id, agent_id, action_type, payload_json, created_at FROM actions "  # noqa: S608
+            for a in conn.execute(f"SELECT session_id, agent_id, action_type, payload_json, created_at FROM actions "
                                   f"WHERE session_id IN ({m2}) ORDER BY created_at", sids):
                 try:
                     payload = json.loads(a["payload_json"] or "{}")
@@ -302,7 +302,7 @@ async def act_on_pledge(pledge_id: str, req: PledgeActIn, request: Request):
             conn.execute("INSERT INTO pledge_acts (pledge_id, act, agent_id, verdict, at, signature, recorded_at) "
                          "VALUES (?,?,?,?,?,?,?)", (pledge_id, req.act, caller, req.verdict, req.at, req.signature,
                                                      _now()))
-        except Exception as e:  # noqa: BLE001 — the primary key: two at once
+        except Exception as e:
             raise HTTPException(409, "already recorded: an act on a pledge is final") from e
         row = conn.execute("SELECT rowid FROM pledge_acts WHERE pledge_id = ? AND act = ?",
                            (pledge_id, req.act)).fetchone()

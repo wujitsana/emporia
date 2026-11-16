@@ -13,11 +13,11 @@ import pytest
 
 pytest.importorskip("eth_account")
 
-from eth_abi import decode  # noqa: E402
-from eth_account import Account  # noqa: E402
+from eth_abi import decode
+from eth_account import Account
 
-from emporia import escrow, escrow_chain as ec  # noqa: E402
-from emporia.operator_signer import LocalKeySigner  # noqa: E402
+from emporia import escrow, escrow_chain as ec
+from emporia.operator_signer import LocalKeySigner
 
 ENV = {
     "EMPORIA_ESCROW_NETWORK": "eip155:84532",

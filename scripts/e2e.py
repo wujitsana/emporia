@@ -403,7 +403,7 @@ class Run:
         """A release of the commit this run started at, made here and pushed nowhere: the plugin at
         that commit, its emporia_source.json pinning the https repo, the commit and its tree (what
         scripts/pin_plugin_runtime.py records), in a throwaway git repo to install it from."""
-        git = lambda *a, cwd=self.repo: self.run(["git", "-C", str(cwd), *a]).stdout.strip()  # noqa: E731
+        git = lambda *a, cwd=self.repo: self.run(["git", "-C", str(cwd), *a]).stdout.strip()
         self.tree = git("rev-parse", f"{self.sha}^{{tree}}")
         pinned = json.loads(git("show", f"{self.sha}:hermes_plugin/emporia/emporia_source.json"))
         self.https_repo = str(pinned.get("repo") or "")
@@ -1059,7 +1059,7 @@ class Run:
     def x_link_flow(self) -> str:
         """The card's X link, end to end, with a fake handle and a fake post id: nothing here touches X."""
         a, b = self.player, self.beta
-        inner = lambda r: r.get("untrusted_content", r)             # noqa: E731 - the shape of a marked answer
+        inner = lambda r: r.get("untrusted_content", r)
         claim = self.tool(a, "x_claim_line", "E2E_Player", style="arena")
         check(claim.get("success") and claim["post_text"].endswith(claim["claim_line"])
               and claim["post_length"] <= 280 and claim["claim_line"].startswith(f"emporia\u00b7{a}@"),

@@ -3,7 +3,7 @@ import random
 from datetime import UTC, datetime, timedelta
 
 from emporia import house as H
-from tests.ids import house_env  # noqa: E402
+from tests.ids import house_env
 
 
 def test_its_moves_are_legal():

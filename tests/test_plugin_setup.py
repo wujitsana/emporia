@@ -313,7 +313,7 @@ def _repo(tmp_path):
     import subprocess
     repo = tmp_path / "src-repo"
     repo.mkdir()
-    run = lambda *a: subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True,  # noqa: E731
+    run = lambda *a: subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True,
                                     check=True).stdout.strip()
     run("init", "-q")
     (repo / "code.py").write_text("print('reviewed')\n")

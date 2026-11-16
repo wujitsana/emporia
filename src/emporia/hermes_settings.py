@@ -235,12 +235,12 @@ def write(home: Path, updates: dict[str, str] | None = None, unset=()) -> None:
     if not sets and not unsets:
         return
     cache_key = str(home.resolve()) if home.exists() else str(home)
-    kept = lambda v: v.replace("\n", "").replace("\r", "").encode("ascii", "ignore").decode("ascii")  # noqa: E731
+    kept = lambda v: v.replace("\n", "").replace("\r", "").encode("ascii", "ignore").decode("ascii")
     try:
         held = _fetch(home, sorted({*sets, *unsets}), vault=False)
         sets = {k: v for k, v in sets.items() if held.get(k) != kept(v)}
         unsets = [n for n in unsets if n in held]
-        plain = lambda n: n in PLAIN_SETTINGS  # noqa: E731
+        plain = lambda n: n in PLAIN_SETTINGS
         secret = {"set": {k: v for k, v in sets.items() if not plain(k)}, "unset": [n for n in unsets if not plain(n)]}
         if secret["set"] or secret["unset"]:
             try:

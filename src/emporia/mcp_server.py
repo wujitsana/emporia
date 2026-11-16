@@ -141,7 +141,7 @@ def _ask_operator(message: str, title: str = "Approve this payment") -> bool | N
             "approve": {"type": "boolean", "title": title, "default": False}}}
         result = anyio.from_thread.run(lambda: ctx.session.elicit(
             message=message, requested_schema=schema, related_request_id=ctx.request_id))
-    except Exception:  # noqa: BLE001 — no request context, no elicitation support, or no answer
+    except Exception:
         logger.info("operator approval could not be asked", exc_info=True)
         return None
     if result.action != "accept":
@@ -152,7 +152,7 @@ def _ask_operator(message: str, title: str = "Approve this payment") -> bool | N
     content = result.content or {}
     return content.get("approve") is True if content else True
 
-from emporia import agent_wallet as _agent_wallet  # noqa: E402
+from emporia import agent_wallet as _agent_wallet
 _agent_wallet.APPROVER = _ask_operator
 
 
@@ -585,7 +585,7 @@ def _archive_in_background(aid: str) -> None:
         token = _RELAY_CTX.set(relay)
         try:
             archive_now(agent_id=aid)
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.info("archive run failed", exc_info=True)
         finally:
             _RELAY_CTX.reset(token)
@@ -608,7 +608,7 @@ def _keep_own_record(aid: str) -> None:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
             f.write(r.text)
-    except Exception:  # noqa: BLE001 — a convenience, never a reason to fail registering
+    except Exception:
         logger.info("could not keep a copy of this agent's record", exc_info=True)
 
 
@@ -1103,7 +1103,7 @@ def _follow_facts(agent_id: str) -> dict[str, Any]:
         d = r.json()
         followers, following = d.get("followers") or [], d.get("following") or []
         out = {"followers": d.get("followers_count", len(followers)), "following": d.get("following_count", len(following))}
-        if AGENT_ID and AGENT_ID != agent_id:
+        if AGENT_ID and agent_id != AGENT_ID:
             you, them = AGENT_ID in followers, AGENT_ID in following
             out.update(you_follow=you, follows_you=them, mutual=you and them)
         return out
@@ -1352,7 +1352,7 @@ def _signing_identity(aid: str) -> str:
         r = _bearer_request("get", f"{_base()}/agents/{_seg(aid)}", agent_id=aid, timeout=10)
         if r.status_code == 200 and r.json().get("stable_id"):
             return r.json()["stable_id"]
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.info("could not ask the relay for this agent's stable id", exc_info=True)
     return stable_id_for(get_public_key_hex(aid))
 
@@ -3172,7 +3172,7 @@ def _sync_mention_policy() -> None:
 
 
 @mcp.tool()
-def block_dm_sender(sender: str = "", list: bool = False, agent_id: str = "") -> dict[str, Any]:  # noqa: A002
+def block_dm_sender(sender: str = "", list: bool = False, agent_id: str = "") -> dict[str, Any]:
     """Take no more DMs from one sender (P273) — an agent id here, or another
     relay's agent by its address (bob@relay.example). Your relay refuses its
     messages, so they never reach your inbox; what it sent before stays.
@@ -3767,7 +3767,7 @@ def _record_reason(tool: str, session_id: str, outcome: str, reason: str) -> Non
     try:
         from emporia import autonomy
         autonomy.log_action(autonomy.current(), tool, session_id, outcome, why=reason)
-    except Exception:  # noqa: BLE001 — a record that cannot be kept never undoes the join
+    except Exception:
         logger.debug("reason not recorded", exc_info=True)
 
 
@@ -3992,7 +3992,7 @@ def _offer_session(aid: str, session_id: str) -> bool:
         r = _bearer_request("post", f"{_base()}/sessions/{_seg(session_id)}/offer", agent_id=aid,
                             json={"signature": sig}, timeout=10)
         return r.status_code == 200
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.info("could not offer a session", exc_info=True)
         return False
 
@@ -5454,7 +5454,7 @@ def verify_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
     from emporia.verify import verify_game
     aid = agent_id or AGENT_ID
     try:
-        get = lambda path, **kw: _bearer_request("get", f"{_base()}{path}", agent_id=aid,  # noqa: E731
+        get = lambda path, **kw: _bearer_request("get", f"{_base()}{path}", agent_id=aid,
                                                  timeout=15, **kw)
         session = get(f"/sessions/{session_id}").json()
         if "session_id" not in session:
@@ -6700,7 +6700,7 @@ def _register_later(waits: tuple[int, ...] | None = None, sleep: Any = None) -> 
 
 # "Rate limit exceeded — 30 requests per 60s per IP" is the relay's 429 body without the number: agents sharing
 # one address can fill the sign-in bucket together, and a later try gets in.
-from emporia.backoff import TRANSIENT_REFUSAL as _TRANSIENT_REFUSAL  # noqa: E402
+from emporia.backoff import TRANSIENT_REFUSAL as _TRANSIENT_REFUSAL
 
 
 def _register_once() -> str:

@@ -551,7 +551,7 @@ def _add_last_word(conn, viewer_id, agent_id: str, pairs: list) -> None:
     from emporia.routes import posts as pv
     keys = {_thread_key(r) for _, r in pairs}
     root_ids = [k.partition(":")[2] for k in keys if k.startswith("post:") and "@" not in k]
-    marks = lambda n: ",".join("?" * n)  # noqa: E731
+    marks = lambda n: ",".join("?" * n)
     now = int(datetime.now(UTC).timestamp())
     rows = conn.execute(
         f"SELECT rowid AS rid, * FROM posts WHERE is_deleted = 0 AND (expires_at IS NULL OR expires_at > ?) "

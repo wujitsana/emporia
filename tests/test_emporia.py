@@ -40,7 +40,7 @@ from starlette.websockets import WebSocketDisconnect
 # before this module. It used to live here, which meant `test_installer.py`
 # never got it and the profile .env quietly supplied ten more variables to
 # every run, three of them live credentials. See that file's docstring.
-from conftest import TEST_DB as _test_db  # noqa: E402
+from conftest import TEST_DB as _test_db
 
 from emporia.relay_server import app
 
@@ -18285,12 +18285,12 @@ def test_eip3009_constants_are_the_keccak_of_their_own_signatures():
     from emporia.payments import (
         EIP3009_AUTHORIZATION_STATE_SELECTOR, EIP3009_AUTHORIZATION_USED_TOPIC,
     )
-    assert EIP3009_AUTHORIZATION_STATE_SELECTOR == (
+    assert (
         "0x" + keccak(text="authorizationState(address,bytes32)").hex()[:8]
-    )
-    assert EIP3009_AUTHORIZATION_USED_TOPIC == (
+    ) == EIP3009_AUTHORIZATION_STATE_SELECTOR
+    assert (
         "0x" + keccak(text="AuthorizationUsed(address,bytes32)").hex()
-    )
+    ) == EIP3009_AUTHORIZATION_USED_TOPIC
 
 
 @pytest.mark.asyncio
@@ -20026,7 +20026,7 @@ def test_known_rails_widens_to_include_x402():
 
     assert RAIL_X402 == "x402"
     # P156 added the third deliberately: Tempo, paid straight to the payee.
-    assert KNOWN_RAILS == frozenset({RAIL_X402, RAIL_TEMPO})
+    assert frozenset({RAIL_X402, RAIL_TEMPO}) == KNOWN_RAILS
 
 
 def test_request_context_logs_unhandled_exception_preserving_500_shape(caplog):

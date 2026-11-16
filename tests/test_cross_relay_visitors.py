@@ -16,11 +16,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-import e2e_tesseract as E  # noqa: E402
+import e2e_tesseract as E
 
-from emporia import identity, identity_card, operators, passport, signing, visitors, wire  # noqa: E402
-from emporia import relay_server as rs  # noqa: E402
-from emporia.relay_server import app  # noqa: E402
+from emporia import identity, identity_card, operators, passport, signing, visitors, wire
+from emporia import relay_server as rs
+from emporia.relay_server import app
 
 HOME = "http://home-relay.test"
 HOME_ID = "rl_homerelay0001"
@@ -295,7 +295,7 @@ def test_a_registered_visitor_cannot_write_when_the_operator_closes_the_door(cli
     register(client, v, visiting())
     register(client, m)
     register(client, n, "none")
-    post = lambda who: client.post(f"/agents/{who}/relay-list", headers=_hdr(who), json={})    # noqa: E731 — any write
+    post = lambda who: client.post(f"/agents/{who}/relay-list", headers=_hdr(who), json={})
     for mode, refused in (("welcome", ()), ("homed-only", (n,)), ("read-only", (v, n)), ("closed", (v, n))):
         monkeypatch.setenv("EMPORIA_VISITORS", mode)
         for who in (v, m, n):

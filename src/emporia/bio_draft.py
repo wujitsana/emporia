@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 from emporia import hermes_layout, wire
 

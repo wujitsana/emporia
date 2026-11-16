@@ -9,12 +9,12 @@ from unittest.mock import patch
 import pytest
 
 pytest.importorskip("solders")
-from solders.keypair import Keypair  # noqa: E402
-from solders.message import to_bytes_versioned  # noqa: E402
-from solders.transaction import VersionedTransaction  # noqa: E402
+from solders.keypair import Keypair
+from solders.message import to_bytes_versioned
+from solders.transaction import VersionedTransaction
 
-from emporia import agent_wallet, identity, x402_payer, x402_svm  # noqa: E402
-from emporia.agent_wallet import AgentWalletError  # noqa: E402
+from emporia import agent_wallet, identity, x402_payer, x402_svm
+from emporia.agent_wallet import AgentWalletError
 
 DEVNET = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"
 USDC_DEVNET = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"

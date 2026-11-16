@@ -141,7 +141,7 @@ TEST_ENVIRONMENT: dict[str, str] = {
 os.environ.update(TEST_ENVIRONMENT)
 
 
-def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
+def pytest_sessionfinish(session, exitstatus):
     shutil.rmtree(TEST_ROOT, ignore_errors=True)
 
 
@@ -272,9 +272,9 @@ def _no_real_signer(monkeypatch):
 # reaches the relay, and an Authorization or X-Emporia-Authorization the test set
 # itself is left alone. Tests about the header being refused switch this off with
 # `header_shim_off()`.
-import contextlib  # noqa: E402
-import time as _time  # noqa: E402
-from urllib.parse import parse_qsl, urlencode  # noqa: E402
+import contextlib
+import time as _time
+from urllib.parse import parse_qsl, urlencode
 
 _HEADER_SHIM = {"on": True}
 

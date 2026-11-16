@@ -3,7 +3,7 @@
 Each player commits to a secret with its create/join; its hand and walk-away come from that secret and
 a public drand round (`emporia:rand:v1`). The relay holds neither. The tests use the shim's fake
 beacon (conftest `rand_testmode`); the real BLS check has its own tests in test_rand.py."""
-from tests.ids import house_env, stable_of  # noqa: E402
+from tests.ids import house_env, stable_of
 import asyncio
 import copy
 import json

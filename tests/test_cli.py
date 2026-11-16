@@ -341,7 +341,7 @@ def test_doctor_finds_two_identity_keys_and_names_the_one_the_relay_knows(tmp_pa
 
     file_key, env_key = (ed25519.Ed25519PrivateKey.generate() for _ in range(2))
     (tmp_path / f"{_keyfile_stem('ag')}.priv").write_bytes(file_key.private_bytes_raw())
-    pub = lambda k: k.public_key().public_bytes_raw().hex()  # noqa: E731
+    pub = lambda k: k.public_key().public_bytes_raw().hex()
 
     class Resp:
         status_code = 200

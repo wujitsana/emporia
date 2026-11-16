@@ -519,7 +519,7 @@ def _rounds_status() -> dict:
                 elif rows and line.strip() and line[:1].isspace() and not rows[-1]["note"]:
                     rows[-1]["note"] = _plain(line)
             rows = [r for r in rows if r["job"] == job_id and r["status"] != "claimed"]
-            pick = lambda r: None if r is None else {k: r[k] for k in ("status", "at", "note")}  # noqa: E731
+            pick = lambda r: None if r is None else {k: r[k] for k in ("status", "at", "note")}
             out.update({"on": True, "state": state, "last": pick(rows[0] if rows else None),
                         "last_failure": pick(next((r for r in rows if r["status"] in _BAD_RUN_STATES), None))})
     except Exception:  # noqa: BLE001 — a view must never break the page

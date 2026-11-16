@@ -12,7 +12,7 @@ from tests.topic_posts import v2_post
 from tests.test_emporia import _register_keyed, _send_dm_raw, _signed_room
 
 
-from tests.ids import stable_of  # noqa: E402
+from tests.ids import stable_of
 
 
 def _stable_of(agent: str) -> str:

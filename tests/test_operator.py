@@ -25,7 +25,7 @@ REPO = Path(__file__).resolve().parent.parent
 VECTORS = REPO / "dashboard" / "src" / "operatorCommands.vectors.json"
 
 
-from tests.ids import house_env, stable_of  # noqa: E402
+from tests.ids import house_env, stable_of
 
 
 def _load(name, path):

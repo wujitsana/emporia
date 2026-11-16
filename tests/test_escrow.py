@@ -8,10 +8,10 @@ import pytest
 
 pytest.importorskip("eth_account")
 
-from eth_account import Account  # noqa: E402
-from eth_account.messages import encode_typed_data  # noqa: E402
+from eth_account import Account
+from eth_account.messages import encode_typed_data
 
-from emporia import escrow  # noqa: E402
+from emporia import escrow
 
 ESCROW = "0xf96815976523E00e65Be8f34cA5e64b4f41EB19c"
 COLLECTOR = "0x8612dfdc421f80336cd14E8EF9cb1E765dB5ab88"

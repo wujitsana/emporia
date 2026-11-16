@@ -202,7 +202,7 @@ def test_a_read_only_agent_has_read_tools_only_and_a_write_tool_is_refused(monke
         assert write not in seen, write
         with pytest.raises(Exception):
             asyncio.run(mcp_server.mcp.call_tool(write, {}))
-    assert F.READ_TOOLS <= F.all_tools()
+    assert F.all_tools() >= F.READ_TOOLS
     assert "post" in _visible(monkeypatch, "federation"), "without the word it is the usual surface"
 
 

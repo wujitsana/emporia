@@ -131,7 +131,7 @@ def test_the_card_is_a_pure_draw_from_the_beacon():
 
 # ---- no repeats inside a window, and deck versions by chapter
 
-import random  # noqa: E402
+import random
 
 
 def _chain(n, seed=1, versions=None):

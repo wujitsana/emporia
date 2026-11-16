@@ -26,8 +26,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from emporia import features as F  # noqa: E402
-from emporia import setup_choices as sc  # noqa: E402
+from emporia import features as F
+from emporia import setup_choices as sc
 
 #: Hermes setup's questions, in the order `emporia setup agent` asks them (rounds' interval follows the optional list).
 HERMES_ORDER = ("profile", "sync_model", "relay", "home", "role", "keys", "wallet", "accept", "about", "register", "signer",

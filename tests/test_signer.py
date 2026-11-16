@@ -86,7 +86,7 @@ def test_the_signer_says_whether_it_runs_apart_from_the_agents(held):
                                          "in_container": in_container()}
 
 
-def test_a_tester_adds_an_agent_to_the_signer_and_removes_it(profiles, tmp_path, monkeypatch, capsys):  # noqa: F811
+def test_a_tester_adds_an_agent_to_the_signer_and_removes_it(profiles, tmp_path, monkeypatch, capsys):
     """Optional on testnet: add, pay, and remove puts everything back."""
     from emporia import cli
     from tests.test_wallet_setup import _env_of
@@ -123,7 +123,7 @@ def test_a_tester_adds_an_agent_to_the_signer_and_removes_it(profiles, tmp_path,
     assert not signer.agent_dir("taster").exists()
 
 
-def test_the_signer_menu_starts_it_and_adds_an_agent(profiles, tmp_path, monkeypatch):  # noqa: F811
+def test_the_signer_menu_starts_it_and_adds_an_agent(profiles, tmp_path, monkeypatch):
     """`emporia signer` in a terminal: start it, add an agent — each by number."""
     from emporia import cli
     from tests.test_wallet_setup import _typing
@@ -148,7 +148,7 @@ def test_the_signer_menu_starts_it_and_adds_an_agent(profiles, tmp_path, monkeyp
     assert state["calls"] == ["start"] and signer.policy("menuist")["token_sha256"]
 
 
-def test_setup_offers_to_start_the_signer_and_keep_the_new_wallet_there(profiles, tmp_path, monkeypatch):  # noqa: F811
+def test_setup_offers_to_start_the_signer_and_keep_the_new_wallet_there(profiles, tmp_path, monkeypatch):
     from emporia import cli
     root, _ = profiles
     monkeypatch.setattr(cli, "profiles_root", lambda: root)
@@ -197,7 +197,7 @@ def test_the_signer_takes_the_agents_network_settings(tmp_path, monkeypatch):
     monkeypatch.delenv("EMPORIA_X402_SOLANA_RPC_URL")
 
 
-def test_real_money_needs_the_signer_to_run_as_another_user(profiles, tmp_path, monkeypatch, capsys):  # noqa: F811
+def test_real_money_needs_the_signer_to_run_as_another_user(profiles, tmp_path, monkeypatch, capsys):
     """P206: as the agents' user, its folder is in their reach — testnet only."""
     from emporia import cli
     root, _ = profiles
@@ -213,7 +213,7 @@ def test_real_money_needs_the_signer_to_run_as_another_user(profiles, tmp_path, 
     assert signer.policy("richer")["env"].get("EMPORIA_X402_MAINNET") != "1"
 
 
-def test_an_agent_setting_up_a_wallet_is_not_offered_the_signer(profiles, monkeypatch, capsys):  # noqa: F811
+def test_an_agent_setting_up_a_wallet_is_not_offered_the_signer(profiles, monkeypatch, capsys):
     from emporia import cli
     monkeypatch.setattr(cli, "_persons_terminal", lambda: False)
     with patch.dict(os.environ):
@@ -223,7 +223,7 @@ def test_an_agent_setting_up_a_wallet_is_not_offered_the_signer(profiles, monkey
     assert not signer.agent_dir("helped").exists()
 
 
-def test_signer_host_writes_its_own_container_or_a_service(profiles, tmp_path, monkeypatch, capsys):  # noqa: F811
+def test_signer_host_writes_its_own_container_or_a_service(profiles, tmp_path, monkeypatch, capsys):
     """P207: apart from the agents — a container beside Hermes's, or a system user."""
     import yaml
 
@@ -248,7 +248,7 @@ def test_signer_host_writes_its_own_container_or_a_service(profiles, tmp_path, m
     assert "sudo env HERMES_HOME=" in capsys.readouterr().out
 
 
-def test_a_developer_may_hold_a_wallet_behind_a_signer_running_apart(profiles, monkeypatch, capsys):  # noqa: F811
+def test_a_developer_may_hold_a_wallet_behind_a_signer_running_apart(profiles, monkeypatch, capsys):
     from emporia import cli
     added = []
     monkeypatch.setattr(cli, "_persons_terminal", lambda: True)

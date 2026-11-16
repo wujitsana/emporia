@@ -499,7 +499,7 @@ Clock: `move_time_limit_s` (600) per phase. Sealing and not opening puts you out
         data = {**state.data, "seals": {k: dict(v) for k, v in (state.data.get("seals") or {}).items()},
                 "opens": {k: dict(v) for k, v in (state.data.get("opens") or {}).items()},
                 "targets": dict(state.data.get("targets") or {}),
-                "rand": {**state.data["rand"], "reveals": dict((state.data["rand"].get("reveals") or {}))}}
+                "rand": {**state.data["rand"], "reveals": dict(state.data["rand"].get("reveals") or {})}}
         now = _now()
         if action.action_type == "void":
             data["voided"] = {"by": me, "reason": "late_commit"}

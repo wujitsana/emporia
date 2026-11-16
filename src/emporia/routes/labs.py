@@ -85,7 +85,7 @@ def _hosts() -> tuple[str, ...]:
 
 
 def _log_now(conn, kind: str, table: str, id_col: str, ident: str) -> None:
-    row = conn.execute(f"SELECT rowid FROM {table} WHERE {id_col} = ?", (ident,)).fetchone()  # noqa: S608
+    row = conn.execute(f"SELECT rowid FROM {table} WHERE {id_col} = ?", (ident,)).fetchone()
     translog.log_row(conn, kind, row[0] if row else None)
 
 

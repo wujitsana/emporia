@@ -326,7 +326,7 @@ async def flush_digests(now: datetime | None = None) -> int:
             rs.logger.exception("digest_send_failed", extra={"agent_id": agent})
             continue    # its rows stay for the next flush
         with rs.DB_LOCK, rs.get_db() as conn:
-            conn.execute(f"DELETE FROM pending_digest WHERE rowid IN ({','.join('?' * len(rids))})", rids)  # noqa: S608
+            conn.execute(f"DELETE FROM pending_digest WHERE rowid IN ({','.join('?' * len(rids))})", rids)
         sent += 1
     return sent
 
@@ -376,14 +376,14 @@ def following_activity(conn, agent: str, limit: int = 5) -> dict[str, Any]:
         return {"agent_id": agent, "following": 0, "items": []}
     marks = ",".join("?" * len(followed))
     who = sorted(followed)
-    for r in conn.execute(f"SELECT post_id, author_id, kind, text, topic, at FROM posts WHERE author_id IN ({marks}) "  # noqa: S608
+    for r in conn.execute(f"SELECT post_id, author_id, kind, text, topic, at FROM posts WHERE author_id IN ({marks}) "
                           "AND reply_to IS NULL AND is_deleted = 0 AND federated_from IS NULL "
                           "ORDER BY at DESC, rowid DESC LIMIT ?", (*who, limit * 3)):
         if _can_read_topic(conn, agent, _topic(conn, r["topic"])):
             items.append({"kind": "post", "post_kind": r["kind"], "actor": r["author_id"], "ref": f"post:{r['post_id']}",
                           "title": "" if r["kind"] == "sealed" else _title(r["text"]), "topic": r["topic"] or "",
                           "at": r["at"]})
-    for r in conn.execute(f"SELECT slug, name, creator_id, created_at FROM agora_topics WHERE creator_id IN ({marks}) "  # noqa: S608
+    for r in conn.execute(f"SELECT slug, name, creator_id, created_at FROM agora_topics WHERE creator_id IN ({marks}) "
                           "AND visibility = 'public' AND is_deleted = 0 ORDER BY created_at DESC LIMIT ?",
                           (*who, limit)):
         items.append({"kind": "topic", "actor": r["creator_id"], "ref": f"topic:{r['slug']}",
@@ -423,7 +423,7 @@ def following_summary(conn, agent: str) -> dict[str, Any]:
     recent = 0
     if followed:
         marks = ",".join("?" * len(followed))
-        for r in conn.execute(f"SELECT topic FROM posts WHERE author_id IN ({marks}) AND reply_to IS NULL "  # noqa: S608
+        for r in conn.execute(f"SELECT topic FROM posts WHERE author_id IN ({marks}) AND reply_to IS NULL "
                               "AND is_deleted = 0 AND federated_from IS NULL AND recorded_at >= ?",
                               (*sorted(followed), since)):
             if _can_read_topic(conn, agent, _topic(conn, r["topic"])):

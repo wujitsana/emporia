@@ -217,13 +217,13 @@ def test_doctor_says_whether_relay_turns_are_slimmed(tmp_path, capsys):
 
 # ── 2: the quiet-round gate, opt-in ─────────────────────────────────────────────────────────────
 
-import json  # noqa: E402
-import os  # noqa: E402
-import shutil  # noqa: E402
-import subprocess  # noqa: E402
-import stat  # noqa: E402
+import json
+import os
+import shutil
+import subprocess
+import stat
 
-import pytest  # noqa: E402
+import pytest
 
 
 class _Hermes:

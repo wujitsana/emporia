@@ -96,12 +96,12 @@ LANES = [
 # actually depends on.
 
 def _http(url: str, *, data: bytes | None = None, timeout: float = 10.0):
-    req = urllib.request.Request(  # noqa: S310
+    req = urllib.request.Request(
         url, data=data,
         headers={"User-Agent": "emporia-testnet-preflight",
                  **({"Content-Type": "application/json"} if data else {})},
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.status, resp.read()
 
 

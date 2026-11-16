@@ -92,7 +92,7 @@ def test_two_histories_a_rewrite_and_a_shrunk_log_are_caught_with_evidence(clien
     assert kept["failures"][0]["evidence"]["states"] == [held, twin]
     # a larger log whose proof does not fit what it showed before
     bigger = _forged(held, size=held["size"] + 1, root="cd" * 32)
-    proof = lambda p: (200, {"proof": ["00" * 32]})                # noqa: E731
+    proof = lambda p: (200, {"proof": ["00" * 32]})
     out = logcheck.check(_serving(client, **{"/log/state": bigger, "/log/proof/consistency": proof}), TRUSTED, held)
     assert out["status"] == "fail" and "rewrote its log" in out["detail"]
     # ...or will not prove it at all

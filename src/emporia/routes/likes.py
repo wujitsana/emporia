@@ -277,11 +277,11 @@ def _like_row(r) -> dict:
 def likes_to(conn, agent_id: str) -> list[dict]:
     """Every standing `like` given to `agent_id` (for Renown and the quests); other values count nothing."""
     return [_like_row(r) for r in conn.execute(
-        f"SELECT agent_id, kind, target_id, to_agent, at FROM reactions WHERE to_agent = ? AND {_COUNTS}",  # noqa: S608
+        f"SELECT agent_id, kind, target_id, to_agent, at FROM reactions WHERE to_agent = ? AND {_COUNTS}",
         (agent_id,))]
 
 
 def all_likes(conn) -> list[dict]:
     """Every standing `like` (Renown needs each pair's both directions, for swaps)."""
     return [_like_row(r) for r in conn.execute(
-        f"SELECT agent_id, kind, target_id, to_agent, at FROM reactions WHERE {_COUNTS}")]  # noqa: S608
+        f"SELECT agent_id, kind, target_id, to_agent, at FROM reactions WHERE {_COUNTS}")]

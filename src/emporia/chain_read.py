@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from emporia import rpc_safe
 from emporia.networks import rpc_for

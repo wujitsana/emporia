@@ -17,7 +17,7 @@ from emporia import labs, refs, signing, translog, wire
 from emporia import relay_server as rs
 from emporia import rooms as rooms_db
 from tests.test_emporia import _register_keyed
-from tests.ids import house_env  # noqa: E402
+from tests.ids import house_env
 
 REPO_NAME = "acme/widgets"
 

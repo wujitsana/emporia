@@ -18,10 +18,10 @@ import pytest
 
 pytest.importorskip("eth_account")
 
-from eth_account import Account  # noqa: E402
+from eth_account import Account
 
-from emporia import agent_wallet, identity, mcp_server  # noqa: E402
-from emporia.agent_wallet import AgentWalletError  # noqa: E402
+from emporia import agent_wallet, identity, mcp_server
+from emporia.agent_wallet import AgentWalletError
 
 NET = "eip155:84532"
 

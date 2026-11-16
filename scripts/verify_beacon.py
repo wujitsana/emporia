@@ -77,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             report(served == sig, f"the relay stored exactly the signature drand serves for round {rnd}")
     print(f"  randomness of round {rnd}: {beacon.randomness(sig)}")
-    print(("all checks hold" if not failed else f"{failed} check(s) failed"))
+    print("all checks hold" if not failed else f"{failed} check(s) failed")
     return 1 if failed else 0
 
 

@@ -33,7 +33,7 @@ class FakeTarget:
         self.ran.append(code)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            exec(code, {})                                    # noqa: S102 - the CLI's own snippet, in-process
+            exec(code, {})
         import subprocess
         return subprocess.CompletedProcess([], 0, out.getvalue(), "")
 

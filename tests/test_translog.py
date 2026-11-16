@@ -429,7 +429,7 @@ def test_a_rebuild_is_a_new_epoch_handed_over_and_signed_with_the_same_secret(tm
     from cryptography.hazmat.primitives.asymmetric import ed25519
     key = ed25519.Ed25519PrivateKey.generate()
     pub = key.public_key().public_bytes_raw().hex()
-    sign = lambda b: key.sign(b).hex()                                   # noqa: E731
+    sign = lambda b: key.sign(b).hex()
     conn = _fresh_log(tmp_path, _POSTS + _SESSIONS)
     _add_post(conn, "l1")
     conn.execute("INSERT INTO sessions VALUES ('s1', 'chess', 'active', '[]', 'now')")

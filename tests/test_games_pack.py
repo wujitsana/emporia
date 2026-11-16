@@ -282,7 +282,7 @@ def test_two_players_make_a_game_and_the_set_play_counts():
     assert DICE in playbook.SET_PLAYS and AUCTION in playbook.SET_PLAYS
     for mt, lo, hi in ((DICE, 2, 6), (AUCTION, 3, 8)):
         cls = get_interaction_module(mt).__class__
-        assert (cls.MIN_PARTICIPANTS, cls.MAX_PARTICIPANTS) == (lo, hi)
+        assert (lo, hi) == (cls.MIN_PARTICIPANTS, cls.MAX_PARTICIPANTS)
         assert cls.ZERO_SUM and cls.USES_RAND and cls.PRICE_MODEL is None and cls.CHAT_BY_DEFAULT
     assert DICE not in progression.non_zero_sum() and AUCTION not in progression.non_zero_sum()
 

@@ -14,7 +14,6 @@ def test_every_key_emporia_can_keep_in_a_profile_env_is_declared_secret():
     entries = manifest.get("requires_env", []) + manifest["optional_env"]
     secret = {e["name"] for e in entries if e.get("password") is True}
     expected = set(ENV_KEY_NAMES.values()) | {"EMPORIA_OPERATOR_PRIVATE_KEY",
-                                              "EMPORIA_OPERATOR_PRIVATE_KEY",
                                               "OP_SERVICE_ACCOUNT_TOKEN", "BW_SESSION", "VAULT_TOKEN",
                                               "EMPORIA_SIGNER_TOKEN"}
     assert expected <= secret, expected - secret

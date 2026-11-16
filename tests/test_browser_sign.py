@@ -342,7 +342,7 @@ def _post_recorder(monkeypatch):
 
         class R:
             status_code = 200
-            def json(self_):  # noqa: N805
+            def json(self_):
                 return {"link": {"status": "claimed"}, "links": []}
         return R()
     monkeypatch.setattr(mcp_server, "_bearer_request", fake_request)

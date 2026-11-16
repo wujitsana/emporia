@@ -8,7 +8,7 @@ from tests.test_emporia import _register, _register_keyed
 from tests.test_posts_v2 import _body
 
 
-from tests.ids import stable_of  # noqa: E402
+from tests.ids import stable_of
 
 
 @pytest.fixture
@@ -167,7 +167,7 @@ def test_the_operator_removes_an_agent_that_cannot_leave(client, monkeypatch, ca
     from emporia import cli
     _register(client, "ra_lost_keys")      # its keys on disk are not these, so it cannot sign
     _register(client, "ra_viewer")
-    listed = lambda: [a["agent_id"] for a in client.get("/agents", params={"limit": 200},   # noqa: E731
+    listed = lambda: [a["agent_id"] for a in client.get("/agents", params={"limit": 200},
                                                           headers=_as("ra_viewer")).json()["agents"]]
     assert "ra_lost_keys" in listed()
     monkeypatch.setattr(cli, "_persons_terminal", lambda: True)

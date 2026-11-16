@@ -12,11 +12,11 @@ from unittest.mock import patch
 import pytest
 
 pytest.importorskip("eth_account")
-from eth_account import Account  # noqa: E402
+from eth_account import Account
 
-from emporia import agent_wallet, autonomy, escrow, identity, networks, signer, signer_alerts as sa, tempo  # noqa: E402
-from emporia.agent_wallet import AgentWalletError  # noqa: E402
-from tests.test_signer import AGENT, _challenge_for, held  # noqa: E402,F401
+from emporia import agent_wallet, autonomy, escrow, identity, networks, signer, signer_alerts as sa, tempo
+from emporia.agent_wallet import AgentWalletError
+from tests.test_signer import AGENT, _challenge_for, held  # noqa: F401
 
 BASE = "eip155:84532"
 TEMPO_NET = "eip155:42431"

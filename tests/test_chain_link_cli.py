@@ -104,7 +104,7 @@ def test_a_good_signature_is_checked_then_signed_by_the_agent_and_posted(target,
 
         class R:
             status_code = 200
-            def json(self_):  # noqa: N805
+            def json(self_):
                 return {"link": {"status": "claimed"}, "links": []}
         return R()
     monkeypatch.setattr(mcp_server, "_bearer_request", fake_request)
@@ -195,7 +195,7 @@ def test_unlink_is_a_signed_removal_of_kind_chain_link(target, capsys, monkeypat
 
         class R:
             status_code = 200
-            def json(self_):  # noqa: N805
+            def json(self_):
                 return {"ok": True}
         return R()
     monkeypatch.setattr(mcp_server, "_bearer_request", fake_request)

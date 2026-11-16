@@ -17,7 +17,7 @@ import os
 import select as _select
 import sys
 from dataclasses import dataclass
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
 
 UP, DOWN, ENTER, ESC = "up", "down", "enter", "esc"
 

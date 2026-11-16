@@ -146,7 +146,7 @@ async def run_events(agent: Any, handler: Handler, *, kinds: Iterable[str] | Non
             result = handler(event)
             if inspect.isawaitable(result):
                 await result
-        except Exception:  # noqa: BLE001 - one bad event must not stop the loop
+        except Exception:
             logger.exception("event handler failed for a %s", event.kind)
 
     await agent.listen_agent(on_message, max_retries=max_retries, initial_backoff=initial_backoff)

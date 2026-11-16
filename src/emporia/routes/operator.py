@@ -141,7 +141,7 @@ def expedition(conn) -> dict[str, Any]:
     marks = ",".join("?" * len(by))
     v2 = conn.execute("SELECT p.post_id, p.author_id, p.text, p.at FROM posts p JOIN agora_topics t "
                       "ON p.topic = t.slug WHERE t.slug = ? AND t.visibility = 'public' AND p.is_deleted = 0 "
-                      f"AND p.reply_to IS NULL AND p.author_id IN ({marks}) ORDER BY p.at DESC LIMIT 1",  # noqa: S608
+                      f"AND p.reply_to IS NULL AND p.author_id IN ({marks}) ORDER BY p.at DESC LIMIT 1",
                       (topic, *by)).fetchone()
     if v2 is not None:
         out["current"] = {"post_id": v2["post_id"], "author_id": v2["author_id"],
@@ -169,10 +169,10 @@ def _last_active(conn, agent_id: str) -> str | None:
         if not _has_table(conn, table):
             continue
         if col.endswith("_json"):
-            sql = (f"SELECT MAX({table}.{at}) FROM {table}, json_each({table}.{col}) AS j "  # noqa: S608
+            sql = (f"SELECT MAX({table}.{at}) FROM {table}, json_each({table}.{col}) AS j "
                    "WHERE j.value = ?")
         else:
-            sql = f"SELECT MAX({at}) FROM {table} WHERE {col} = ?"  # noqa: S608
+            sql = f"SELECT MAX({at}) FROM {table} WHERE {col} = ?"
         row = conn.execute(sql, (agent_id,)).fetchone()
         if row and row[0] and str(row[0]) > latest:
             latest = str(row[0])
@@ -191,10 +191,10 @@ def _last_active_many(conn, agent_ids: list[str]) -> dict[str, str]:
         if not _has_table(conn, table):
             continue
         if col.endswith("_json"):
-            sql = (f"SELECT j.value AS who, MAX({table}.{at}) AS at FROM {table}, json_each({table}.{col}) AS j "  # noqa: S608
+            sql = (f"SELECT j.value AS who, MAX({table}.{at}) AS at FROM {table}, json_each({table}.{col}) AS j "
                    f"WHERE j.value IN ({marks}) GROUP BY j.value")
         else:
-            sql = f"SELECT {col} AS who, MAX({at}) AS at FROM {table} WHERE {col} IN ({marks}) GROUP BY {col}"  # noqa: S608
+            sql = f"SELECT {col} AS who, MAX({at}) AS at FROM {table} WHERE {col} IN ({marks}) GROUP BY {col}"
         for r in conn.execute(sql, ids):
             if r["who"] and r["at"] and str(r["at"]) > latest.get(r["who"], ""):
                 latest[r["who"]] = str(r["at"])

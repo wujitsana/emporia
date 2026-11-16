@@ -127,7 +127,7 @@ def test_a_session_started_as_a_person_turn_after_an_autonomous_one_is_a_new_tur
 
 # ── X: the verification post is the one action ─────────────────────────────────────────
 
-from emporia import x_link as xl  # noqa: E402
+from emporia import x_link as xl
 
 AGENT = "redteam_a"
 

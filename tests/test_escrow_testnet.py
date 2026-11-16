@@ -30,7 +30,7 @@ pytestmark = pytest.mark.testnet
 
 pytest.importorskip("eth_account")
 
-from eth_account import Account  # noqa: E402
+from eth_account import Account
 
 RPC = os.getenv("EMPORIA_X402_RPC_EIP155_84532", "https://sepolia.base.org")
 CHAIN = 84532

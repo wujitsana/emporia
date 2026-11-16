@@ -167,7 +167,7 @@ def test_the_menu_picks_a_number_shows_the_options_and_keeps_on_enter(shop, monk
     monkeypatch.setattr(cli, "_TTY", True)
     monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
     keys = [s.key for s in S.SETTINGS]
-    number = lambda key: str(keys.index(key) + 1)        # noqa: E731
+    number = lambda key: str(keys.index(key) + 1)
     typed = iter([number("daily_turns"), "120",                  # a number, then its value
                   number("games_per_operator"), "",              # Enter keeps
                   number("wake"),                                # a choice

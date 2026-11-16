@@ -20,7 +20,7 @@ def game(a, b, winner, day, module="emporia:blotto:v2", **extra):
 
 def test_glicko2_matches_glickmans_worked_example():
     r = pg.Rating("a", "m", 1500, 200, 0.06)
-    opp = lambda x, d: pg.Rating("o", "m", x, d)  # noqa: E731
+    opp = lambda x, d: pg.Rating("o", "m", x, d)
     rating, rd, vol = pg._update(r, 200 / pg.SCALE, [(opp(1400, 30), 1, 1), (opp(1550, 100), 0, 1),
                                                      (opp(1700, 300), 0, 1)])
     assert round(rating, 1) == 1464.1 and round(rd, 1) == 151.5 and round(vol, 5) == 0.06

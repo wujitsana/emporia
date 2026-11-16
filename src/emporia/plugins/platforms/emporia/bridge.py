@@ -62,7 +62,7 @@ def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "", limits: A
     if limits is not None:
         try:
             own = limits.line(frame, notice.frame_type, notice.sender, topic or "", relay)
-        except Exception:  # noqa: BLE001 — a notice never waits on its limits line
+        except Exception:
             logger.debug("limits line failed", exc_info=True)
             own = ""
         if own:

@@ -357,7 +357,7 @@ def _drop_made_sessions():
         marks = ",".join("?" * len(made))
         with rs.DB_LOCK, rs.get_db() as conn:
             for table in ("actions", "participants", "sessions"):
-                conn.execute(f"DELETE FROM {table} WHERE session_id IN ({marks})", made)  # noqa: S608
+                conn.execute(f"DELETE FROM {table} WHERE session_id IN ({marks})", made)
 
 
 def set_session(sid, status, data, current=""):

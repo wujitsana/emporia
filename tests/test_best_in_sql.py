@@ -70,7 +70,7 @@ def test_ranking_in_sql_equals_counting_in_python_on_small_data(client, monkeypa
         counts = hp._counter(who)
         with rs.DB_LOCK, rs.get_db() as conn:
             old, new = _old_top_posts(conn, since, counts, 500), _new_top_posts(conn, since, counts, 500)
-            same = lambda a, b: sorted(a) == sorted(b) and [n for _, n in a] == [n for _, n in b]  # noqa: E731
+            same = lambda a, b: sorted(a) == sorted(b) and [n for _, n in a] == [n for _, n in b]
             # (posts from other tests may tie on likes and time: the order inside a tie is not defined)
             assert same(old, new), (who, old, new)
             assert same(_old_top_posts(conn, "", counts, 500), _new_top_posts(conn, "", counts, 500))

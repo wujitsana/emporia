@@ -716,7 +716,7 @@ def ensure_local_relay(url: str) -> str:
         else:
             agent = _dotenv_names(os.environ.get("EMPORIA_DOTENV", ""))
         env = {k: v for k, v in os.environ.items() if not k.startswith("EMPORIA_") and k not in agent}
-        quiet = lambda *_: None   # noqa: E731 — the bridge's stdout is its event stream
+        quiet = lambda *_: None
         return "started" if _start_relay(env, url, say=quiet) == 0 else "did not start — see `emporia relay logs`"
 
 
@@ -4537,7 +4537,7 @@ def cmd_visits(args: argparse.Namespace) -> int:
         return 1
     profile = agents[args.name]
     env = installer().harvest_env(profile)
-    split = lambda raw: [u.strip().rstrip("/") for u in raw.split(",") if u.strip()]   # noqa: E731
+    split = lambda raw: [u.strip().rstrip("/") for u in raw.split(",") if u.strip()]
     allow, deny = split(env.get("EMPORIA_VISIT_RELAYS", "")), split(env.get("EMPORIA_VISIT_DENY", ""))
     updates: dict[str, str] = {}
     if args.policy:
@@ -4973,7 +4973,7 @@ def _stable_ids_of(raw: str, relay: str) -> str:
         try:
             # The public card (no sign-in needed); /agents/{id} itself is for signed-in callers.
             r = httpx.get(f"{relay.rstrip('/')}/agents/{item}/card", timeout=8)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             raise ValueError(f"cannot look {item!r} up: the relay at {relay} is not answering ({type(e).__name__}); "
                              "give its stable id (64 hex) instead") from e
         stable = ((r.json().get("card") or {}).get("stable_id") or "") if r.status_code == 200 else ""
@@ -5039,7 +5039,7 @@ def cmd_relay_config(args: argparse.Namespace) -> int:
     in_docker = (env_path.parent / "compose.yaml").exists()
     secrets = env_path.parent / "secrets"
 
-    def shown(st: "rc.Setting") -> str:
+    def shown(st: rc.Setting) -> str:
         if st.secret:
             if current.get(st.name):
                 return "set, in the .env — move it: set it again" if in_docker else "set"
@@ -5049,7 +5049,7 @@ def cmd_relay_config(args: argparse.Namespace) -> int:
             return f"{len([k for k in value.split(',') if k.strip()])} " + ("key(s)" if st.kind == "keys" else "id(s)")
         return value or (f"{st.default} (default)" if st.default else "—")
 
-    def write_secret(st: "rc.Setting", clear: bool) -> int:
+    def write_secret(st: rc.Setting, clear: bool) -> int:
         if clear:
             (secrets / st.name).unlink(missing_ok=True)
             value = ""
@@ -5081,7 +5081,7 @@ def cmd_relay_config(args: argparse.Namespace) -> int:
                                                    else ": emporia relay restart"))
         return 0
 
-    def write(st: "rc.Setting", raw: str | None) -> int:
+    def write(st: rc.Setting, raw: str | None) -> int:
         if raw is None:
             was_set = st.name in current
             if was_set:
@@ -5195,7 +5195,7 @@ def cmd_relay_overview(args: argparse.Namespace) -> int:
             print(f"      change: {item['command']}")
     with rs.DB_LOCK, rs.get_db() as conn:
         st = relay_admin.stats(conn)
-    dollars = lambda c: f"${c / 100:,.2f}"   # noqa: E731
+    dollars = lambda c: f"${c / 100:,.2f}"
     a, ss, cm, mo = st["agents"], st["sessions"], st["community"], st["money"]
     print("\nActivity")
     print(f"  agents: {a['registered']} ({a.get('new_7d', 0)} new this week, {a.get('active_7d', 0)} active)")
@@ -7850,7 +7850,7 @@ def machine_settings(url: str = "") -> list[dict[str, Any]]:
     h = health(timeout=3, url=url)
     base = (url or relay_url()).rstrip("/")
     local = installer()._is_local_relay(base)
-    row = lambda label_, value, about, command="", level="ok", **form: setting_item(   # noqa: E731
+    row = lambda label_, value, about, command="", level="ok", **form: setting_item(
         _G_MACHINE, label_, value, about, command, level, **form)
     out = [row("Relay", f"{base} — " + (_relay_brief(h) if h else "not answering"),
                "The relay this dashboard reads; each agent picks its own.",

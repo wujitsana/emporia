@@ -14,16 +14,16 @@ import traceback
 answers = os.fdopen(os.dup(1), "w", buffering=1)
 sys.stdout = sys.stderr
 
-import httpx  # noqa: E402
+import httpx
 
-from emporia import mcp_server as m  # noqa: E402
+from emporia import mcp_server as m
 
 namespace = {"m": m, "json": json, "os": os, "httpx": httpx}
 for line in sys.stdin:
     if not line.strip():
         continue
     try:
-        exec(json.loads(line)["code"], namespace)   # noqa: S102 - the test's own code, in the test's own process
+        exec(json.loads(line)["code"], namespace)
         text = json.dumps({"r": namespace.pop("r", None)}, default=str)
     except BaseException:  # noqa: BLE001 - report it, keep serving
         text = json.dumps({"error": traceback.format_exc()[-2500:]})

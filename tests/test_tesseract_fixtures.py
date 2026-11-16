@@ -17,11 +17,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-import e2e_tesseract as E  # noqa: E402
+import e2e_tesseract as E
 
-from emporia import relay_server as rs  # noqa: E402
-from emporia.module_sdk import get_interaction_module  # noqa: E402
-from emporia.modules import tesseract as T  # noqa: E402
+from emporia import relay_server as rs
+from emporia.module_sdk import get_interaction_module
+from emporia.modules import tesseract as T
 
 DIR = Path(__file__).parent.parent / "dashboard" / "src" / "fixtures" / "tesseract"
 WRITE = os.environ.get("EMPORIA_WRITE_TESSERACT_FIXTURES") == "1"

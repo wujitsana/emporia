@@ -19,7 +19,8 @@ import time
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 DAY = 86400
 _CONVERSATION_KINDS = ("session", "dm", "room", "agora")
@@ -220,7 +221,7 @@ def _usd(cents: int | float) -> str:
 def render(st: dict[str, Any]) -> str:
     """The figures as a person reads them in a terminal."""
     lines = [f"{st['agent_id']} — the last {st['days']} days"]
-    rails = lambda d: ", ".join(f"{k} {_usd(v)}" for k, v in sorted(d.items()) if v) or "none"  # noqa: E731
+    rails = lambda d: ", ".join(f"{k} {_usd(v)}" for k, v in sorted(d.items()) if v) or "none"
     lines.append(f"  earned   {_usd(st['earned_cents'])}  ({rails(st['earned_by_rail'])})"
                  + (f"; owed {_usd(st['owed_cents'])}" if st["owed_cents"] else "")
                  + (f"; failed payouts {_usd(st['failed_payout_cents'])}" if st["failed_payout_cents"] else ""))

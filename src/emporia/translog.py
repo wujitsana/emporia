@@ -288,7 +288,7 @@ def init_schema(conn: Any) -> None:
             last = conn.execute("SELECT * FROM translog_states ORDER BY size DESC LIMIT 1").fetchone()
         for t in ("translog_leaves", "translog_nodes", "translog_states", "translog_seen", "translog_outbox",
                   *_OLD_TABLES):
-            conn.execute(f"DROP TABLE IF EXISTS {t}")  # noqa: S608
+            conn.execute(f"DROP TABLE IF EXISTS {t}")
     conn.executescript(SCHEMA)
     if "epoch" not in {r[1] for r in conn.execute("PRAGMA table_info(translog_states)").fetchall()}:
         conn.execute("ALTER TABLE translog_states ADD COLUMN epoch INTEGER")
@@ -825,7 +825,7 @@ def install_triggers(conn: Any) -> None:
 def drop_triggers(conn: Any) -> None:
     for (name,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'translog_%'"
                                 ).fetchall():
-        conn.execute(f"DROP TRIGGER IF EXISTS {name}")  # noqa: S608
+        conn.execute(f"DROP TRIGGER IF EXISTS {name}")
 
 
 def backfill(conn: Any) -> None:
@@ -837,11 +837,11 @@ def backfill(conn: Any) -> None:
     for kind, (table, _build, cond, cols) in SOURCES.items():
         if table in tables:
             where = f" WHERE {cond.format(row=table)}" if cond else ""
-            conn.execute(f"INSERT INTO translog_outbox (kind, ref, backfill) SELECT ?, {_key_sql(table, cols)}, 1 "  # noqa: S608
+            conn.execute(f"INSERT INTO translog_outbox (kind, ref, backfill) SELECT ?, {_key_sql(table, cols)}, 1 "
                          f"FROM {table}{where} ORDER BY rowid", (kind,))
     for chain, (table, column) in CHAINS.items():
         if table in tables:
-            conn.execute(f"INSERT INTO translog_outbox (kind, ref) SELECT DISTINCT ?, {column} FROM {table}",  # noqa: S608
+            conn.execute(f"INSERT INTO translog_outbox (kind, ref) SELECT DISTINCT ?, {column} FROM {table}",
                          (f"{chain}_chain",))
     # P269: and every row the log already holds, so one removed while the log was
     # off is logged as gone (one still there is found unchanged and adds nothing)
@@ -861,7 +861,7 @@ def _ingest_row(conn: Any, kind: str, ref: str, backfilled: bool = False) -> Non
     key = f"{kind}#{ref}"
     held = _held(conn, key)
     values = ref.split(_SEP)
-    r = (conn.execute(f"SELECT * FROM {table} WHERE " + " AND ".join(f"{c} = ?" for c in cols),  # noqa: S608
+    r = (conn.execute(f"SELECT * FROM {table} WHERE " + " AND ".join(f"{c} = ?" for c in cols),
                       values).fetchone() if len(values) == len(cols) else None)
     if r is None:
         if held:
@@ -882,7 +882,7 @@ def _ingest_row(conn: Any, kind: str, ref: str, backfilled: bool = False) -> Non
 
 def _ingest_chain(conn: Any, chain: str, ident: str) -> None:
     table, column = CHAINS[chain]
-    row = conn.execute(f"SELECT chain_hash, (SELECT COUNT(*) FROM {table} WHERE {column} = ? "  # noqa: S608
+    row = conn.execute(f"SELECT chain_hash, (SELECT COUNT(*) FROM {table} WHERE {column} = ? "
                        f"AND chain_hash IS NOT NULL) n FROM {table} WHERE {column} = ? AND chain_hash IS NOT NULL "
                        "ORDER BY created_at DESC, rowid DESC LIMIT 1", (ident, ident)).fetchone()
     if not row:
@@ -956,7 +956,7 @@ def log_row(conn: Any, kind: str, rowid: int | None) -> None:
     if not enabled() or rowid is None:
         return
     table, _build, _cond, cols = SOURCES[kind]
-    r = conn.execute(f"SELECT {', '.join(cols)} FROM {table} WHERE rowid = ?", (rowid,)).fetchone()  # noqa: S608
+    r = conn.execute(f"SELECT {', '.join(cols)} FROM {table} WHERE rowid = ?", (rowid,)).fetchone()
     if r is not None and all(v is not None for v in r):
         _ingest_row(conn, kind, _SEP.join(str(v) for v in r))
 

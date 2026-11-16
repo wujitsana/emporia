@@ -30,10 +30,10 @@ for p in (REPO, REPO / "src", REPO / "tests", REPO / "scripts"):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
-import conftest  # noqa: E402,F401 — pins the suite's environment on a throwaway root, before emporia loads
+import conftest  # noqa: F401 — pins the suite's environment on a throwaway root, before emporia loads
 
-from emporia import operators  # noqa: E402
-from emporia.modules import tesseract as T  # noqa: E402
+from emporia import operators
+from emporia.modules import tesseract as T
 
 WHY = "Playing the network toward my own target"
 

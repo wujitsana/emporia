@@ -102,8 +102,8 @@ MEMORY_REFUSED = ("Blocked by Emporia: memory writes from autonomous turns (ones
 # into no later session, so it stays allowed.
 
 _lock = threading.Lock()
-_origin: "OrderedDict[str, str]" = OrderedDict()   # session or task id -> platform
-_kind: "OrderedDict[str, str]" = OrderedDict()     # session or task id -> "relay" | "rounds" | "person"
+_origin: OrderedDict[str, str] = OrderedDict()   # session or task id -> platform
+_kind: OrderedDict[str, str] = OrderedDict()     # session or task id -> "relay" | "rounds" | "person"
 _MAX = 4096
 STATE_FILE, LOG_FILE = "autonomy.json", "autonomous-actions.jsonl"
 TURN_TTL = 20 * 60          # a live entry older than this is ignored (a missed post_llm_call)

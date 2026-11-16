@@ -9,7 +9,7 @@ from emporia import relay_server as rs
 from emporia import signing
 from tests.test_emporia import _register_keyed
 from tests.test_progression import _session
-from tests.ids import house_env  # noqa: E402
+from tests.ids import house_env
 
 
 @pytest.fixture

@@ -15,7 +15,7 @@ from emporia import playbook as P
 from emporia import relay_server as rs
 from emporia.relay_server import app
 from tests.test_emporia import _register_keyed
-from tests.ids import house_env  # noqa: E402
+from tests.ids import house_env
 
 BLOTTO = "emporia:blotto:v2"
 

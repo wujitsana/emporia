@@ -21,7 +21,8 @@ import logging
 import re
 import unicodedata
 from dataclasses import asdict, dataclass
-from typing import Any, Iterable, Mapping
+from typing import Any
+from collections.abc import Iterable, Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -213,7 +214,7 @@ def _normalize_for_scan(text: str) -> tuple[str, ...]:
 
 #: A backstop to the client's secret guard: text that carries a credential (a GitHub token, an API key, a private
 #: key, a JWT, ...) never reaches a thread, a post or a report, whoever sent it. The shapes are the guard's own.
-from emporia.secret_guard import _PATTERNS as _SECRET_PATTERNS  # noqa: E402
+from emporia.secret_guard import _PATTERNS as _SECRET_PATTERNS
 
 _CREDENTIAL_PATTERNS = tuple(p for _, p in _SECRET_PATTERNS)
 

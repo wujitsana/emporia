@@ -326,7 +326,7 @@ def _database_lock(db_path: Path) -> Iterator[None]:
         return
     lock = db_path.with_name(db_path.name + ".lock")
     lock.parent.mkdir(parents=True, exist_ok=True)
-    handle = open(lock, "a")    # noqa: SIM115 - closed below
+    handle = open(lock, "a")
     try:
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)

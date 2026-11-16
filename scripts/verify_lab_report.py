@@ -68,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.relay:
         url = f"{args.relay.rstrip('/')}/labs/{args.source}/reports?limit=200"
-        with urllib.request.urlopen(url, timeout=30) as r:  # noqa: S310 — the operator's own relay URL
+        with urllib.request.urlopen(url, timeout=30) as r:
             data = json.load(r)
     else:
         with open(args.source) as f:

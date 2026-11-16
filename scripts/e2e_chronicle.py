@@ -28,7 +28,7 @@ for p in (REPO / "src", REPO / "tests", REPO / "scripts"):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
-import conftest  # noqa: E402,F401 — pins the suite's environment on a throwaway root, before emporia loads
+import conftest  # noqa: F401 — pins the suite's environment on a throwaway root, before emporia loads
 
 DAY = 86_400
 
@@ -69,7 +69,7 @@ class World:
         self.clock = Clock(self.start - 3 * 3600)
         with rs.DB_LOCK, rs.get_db() as conn:        # a throwaway book: nothing of an earlier one is on this roster
             for t in ("join", "seals", "reveals", "ballots", "verdicts"):
-                conn.execute(f"DELETE FROM chronicle_{t}")  # noqa: S608
+                conn.execute(f"DELETE FROM chronicle_{t}")
             conn.commit()
         self._env: dict[str, str | None] = {}
         for k, v in {"EMPORIA_CHRONICLE": "1", "EMPORIA_GAMIFY": "sheets,quests", "EMPORIA_TRANSPARENCY_LOG": "on",

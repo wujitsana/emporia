@@ -20,7 +20,7 @@ def _scan(conn, since: str) -> set[str]:
     for table, col, at in standing._ACTIVITY:
         if not standing._has_table(conn, table):
             continue
-        for r in conn.execute(f"SELECT {col} FROM {table} WHERE {at} >= ?", (since,)):  # noqa: S608
+        for r in conn.execute(f"SELECT {col} FROM {table} WHERE {at} >= ?", (since,)):
             v = r[0] or ""
             agents |= set(json.loads(v)) if col.endswith("_json") else {v}
     return agents
@@ -37,7 +37,7 @@ def _relay_db(missing: tuple[str, ...] = ()) -> sqlite3.Connection:
             when = (now - timedelta(minutes=37 * i)).isoformat()
             who = (json.dumps([f"p{i % 7}", f"p{(i * 3) % 11}", "shared"]) if col.endswith("_json")
                    else ("" if i % 13 == 0 else f"{table[:3]}{i % 9}"))
-            conn.execute(f"INSERT INTO {table} VALUES (?, ?)", (who, when))  # noqa: S608
+            conn.execute(f"INSERT INTO {table} VALUES (?, ?)", (who, when))
     return conn
 
 

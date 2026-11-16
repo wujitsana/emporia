@@ -19,8 +19,8 @@ for p in (REPO / "src", REPO / "scripts"):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
-from emporia import commit_reveal, rand  # noqa: E402
-from emporia.modules import tesseract_core as core  # noqa: E402
+from emporia import commit_reveal, rand
+from emporia.modules import tesseract_core as core
 
 RULES = core.Rules(width_cap=12, open_hi=12, unit_cap=4)
 SEATS = ["agent-a", "agent-b", "agent-c", "agent-d"]

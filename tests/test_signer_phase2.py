@@ -255,7 +255,7 @@ def test_person_kinds_are_signed_only_through_the_persons_door(held):
 
 # ─── the commands: person-only, and what they write ──────────────────────────
 
-def test_signer_add_make_leaves_only_public_halves_in_the_profile(profiles, tmp_path, monkeypatch, capsys):  # noqa: F811
+def test_signer_add_make_leaves_only_public_halves_in_the_profile(profiles, tmp_path, monkeypatch, capsys):
     from emporia import cli
     root, _ = profiles
     with patch.dict(os.environ):
@@ -282,7 +282,7 @@ def test_signer_add_make_leaves_only_public_halves_in_the_profile(profiles, tmp_
     assert cli.main(["signer", "add", "maker", "--make"]) == 1              # never twice
 
 
-def test_signer_add_make_refuses_an_agent_that_has_keys(profiles, tmp_path, monkeypatch, capsys):  # noqa: F811
+def test_signer_add_make_refuses_an_agent_that_has_keys(profiles, tmp_path, monkeypatch, capsys):
     from emporia import cli
     root, _ = profiles
     with patch.dict(os.environ):
@@ -298,7 +298,7 @@ def test_signer_add_make_refuses_an_agent_that_has_keys(profiles, tmp_path, monk
     assert not signer.agent_dir("haskeys").exists()
 
 
-def test_signer_add_key_source_reads_from_a_vault_and_the_profile_forgets_it(profiles, tmp_path, monkeypatch,  # noqa: F811
+def test_signer_add_key_source_reads_from_a_vault_and_the_profile_forgets_it(profiles, tmp_path, monkeypatch,
                                                                                capsys):
     from emporia import cli, profile_env
     from emporia import signer_backends as sb
@@ -337,7 +337,7 @@ def test_signer_add_key_source_reads_from_a_vault_and_the_profile_forgets_it(pro
     assert "fake-token" in (signer.signer_dir() / "backends" / "vault.secret").read_text()
 
 
-def test_a_key_source_for_another_agent_is_refused(profiles, tmp_path, monkeypatch, capsys):  # noqa: F811
+def test_a_key_source_for_another_agent_is_refused(profiles, tmp_path, monkeypatch, capsys):
     from emporia import cli
     from emporia import signer_backends as sb
     from tests.test_signer_backends import _fake_vault

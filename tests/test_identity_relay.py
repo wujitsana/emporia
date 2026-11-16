@@ -42,7 +42,7 @@ def test_a_lookalike_of_an_existing_or_reserved_handle_is_refused(client):
     assert client.post("/agents/register", json={"agent_id": other, "public_key_hex": _test_pubkey(other)}).status_code == 200
 
 
-def test_a_rename_to_a_lookalike_is_refused(client):  # noqa: F811
+def test_a_rename_to_a_lookalike_is_refused(client):
     """The route is off (names are fixed); the registry's rename keeps the rule for operator tooling."""
     name = f"rn_owner_{uuid.uuid4().hex[:4]}"
     victim = f"rn_victim{uuid.uuid4().hex[:4]}"

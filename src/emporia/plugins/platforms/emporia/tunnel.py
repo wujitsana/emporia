@@ -14,7 +14,8 @@ import logging
 
 import httpx
 import urllib.parse
-from typing import Any, Awaitable, Callable
+from typing import Any
+from collections.abc import Awaitable, Callable
 
 
 def _refusal_wait(response: Any, attempt: int, max_backoff: float = 60.0) -> float:
@@ -29,7 +30,7 @@ def _refusal_wait(response: Any, attempt: int, max_backoff: float = 60.0) -> flo
     return backoff.refusal_wait(status, attempt, retry_after, cap=max_backoff)
 
 
-from emporia.backoff import full_jitter  # noqa: E402
+from emporia.backoff import full_jitter
 
 logger = logging.getLogger("emporia.bridge")
 

@@ -85,7 +85,7 @@ def test_a_paid_invite_says_what_is_left_of_the_spend(monkeypatch):
     # live run 11-10: the notice showed the wallet's daily cap ($24.85) when the turn could spend 20 cents
     spend = {"left_today_cents": 2485, "unattended_allowance_cents": 25, "unattended_left_today_cents": 20}
     monkeypatch.setattr(limits, "spend", lambda aid: spend)
-    room = lambda fee: format_frame({"type": "room_invite", "room_id": "room_1", "invited_by": "bob",  # noqa: E731
+    room = lambda fee: format_frame({"type": "room_invite", "room_id": "room_1", "invited_by": "bob",
                                      "entry_fee_cents": fee, "gate_type": "paid"}, ME).text
     assert "it costs $0.30; a turn like this may spend $0.20 more today; it is over that, so it is your person's call." in room(30)
     assert "it costs $0.05; a turn like this may spend $0.20 more today." in room(5)

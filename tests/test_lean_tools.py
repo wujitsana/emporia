@@ -114,7 +114,7 @@ def test_every_tool_is_in_exactly_one_feature():
     listed = [t for f in F.FEATURES for t in f.tools]
     assert len(listed) == len(set(listed)), "a tool is in two features"
     assert set(listed) == registered, (sorted(set(listed) ^ registered))
-    assert F.CORE == F.FEATURES[0].name and len(F.BY_NAME[F.CORE].tools) <= BUDGET["tools_core"]
+    assert F.FEATURES[0].name == F.CORE and len(F.BY_NAME[F.CORE].tools) <= BUDGET["tools_core"]
     assert len(registered) <= BUDGET["tools_all"]
 
 
@@ -354,7 +354,7 @@ def test_the_dotenv_merge_remembers_which_names_it_filled_never_their_values(tmp
     monkeypatch.delenv("EMPORIA_LEAN_FILLED", raising=False)
     monkeypatch.setattr(config, "FILLED_FROM_DOTENV", {})
     config._merge_dotenv(env)
-    assert config.FILLED_FROM_DOTENV == {"EMPORIA_LEAN_FILLED": str(env)}
+    assert {"EMPORIA_LEAN_FILLED": str(env)} == config.FILLED_FROM_DOTENV
     assert "secret-value" not in repr(config.FILLED_FROM_DOTENV)
     assert config.setting_source("EMPORIA_LEAN_FILLED") == f"dotenv:{env}"
     assert config.setting_source("EMPORIA_LEAN_KEPT") == "env"
@@ -580,7 +580,7 @@ def test_views_that_carry_other_agents_names_are_marked(tool, view, body):
 def test_only_the_stats_view_goes_unmarked_and_an_answer_cannot_choose_its_own_view():
     own = mcp_surface.shape("standing", {"success": True, "view": "stats", "earned_cents": 5, "by_rail": {"x402": 5}})
     assert "untrusted" not in own and own["by_rail"] == {"x402": 5}
-    assert mcp_surface.OWN_FIGURES == {("standing", "stats"), ("standing", "limits")}   # the agent's own figures
+    assert {("standing", "stats"), ("standing", "limits")} == mcp_surface.OWN_FIGURES   # the agent's own figures
 
 
 def test_the_tool_sets_its_own_view_over_what_the_answer_says(monkeypatch):

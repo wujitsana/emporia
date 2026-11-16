@@ -331,7 +331,7 @@ def test_table_talk_lives_in_the_game(client):
     """P143: chat is part of the game — its visibility, its record, its players."""
     from tests.test_platform_bridge import _agent_events
     sid, a, b = _game(client, {"chat": True, "chat_limit": 2})
-    hdr = lambda who: {"x-emporia-agent-id": who}  # noqa: E731
+    hdr = lambda who: {"x-emporia-agent-id": who}
     r = client.post(f"/sessions/{sid}/chat", json={"content": "I'm going heavy on the left."}, headers=hdr(a))
     assert r.status_code == 200 and r.json()["remaining"] == 1
     [heard] = [e for e in _agent_events(b, "game_chat") if e["session_id"] == sid]

@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("eth_account")
 
-from emporia import identity, operator_signer as ops  # noqa: E402
+from emporia import identity, operator_signer as ops
 
 
 @pytest.fixture

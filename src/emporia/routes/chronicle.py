@@ -119,7 +119,7 @@ def _events(conn, units, house, since: float) -> list[dict[str, Any]]:
     there is nothing else: those events are marked `loose` and only a practice chapter's window takes them."""
     out: dict[str, dict[str, Any]] = {}
     loose: dict[str, dict[str, Any]] = {}
-    every = lambda a: units.get(a) or L.unit_token(rs.relay_id(), a)  # noqa: E731 — the house too
+    every = lambda a: units.get(a) or L.unit_token(rs.relay_id(), a)
 
     def add(ref: str, line: str, ops: list[str | None], at: float | None, any_ops: list[str] | None = None) -> None:
         if at is not None and at >= since and any_ops:
@@ -143,7 +143,7 @@ def _events(conn, units, house, since: float) -> list[dict[str, Any]]:
     from emporia.standing import game_module_types, is_practice_session
     games = [m for m in game_module_types() if m != "emporia:service:v1"]
     marks = ",".join("?" * len(games)) or "NULL"
-    for r in conn.execute(f"SELECT * FROM sessions WHERE status = 'completed' AND module_type IN ({marks})",  # noqa: S608
+    for r in conn.execute(f"SELECT * FROM sessions WHERE status = 'completed' AND module_type IN ({marks})",
                           games).fetchall():
         sess = rs._session_row_to_dict(r)
         if rs._session_visibility(sess) != "public" or is_practice_session(sess):   # practice counts nothing
@@ -172,7 +172,7 @@ def _events(conn, units, house, since: float) -> list[dict[str, Any]]:
     posts = {r["post_id"]: r for r in conn.execute(
         "SELECT p.post_id, p.author_id, p.kind, p.text, p.at, p.topic FROM posts p WHERE p.is_deleted = 0 AND "
         "p.federated_from IS NULL AND p.kind != 'sealed' AND p.reply_to IS NULL AND COALESCE(p.topic, '') != ? "
-        f"AND {public}", (TOPIC,)).fetchall()}  # noqa: S608
+        f"AND {public}", (TOPIC,)).fetchall()}
     answers: dict[str, list[tuple[float, str]]] = {}
     for r in conn.execute("SELECT c.reply_key AS k, c.author_id AS a, c.at FROM posts c WHERE c.is_deleted = 0 AND "
                           "c.reply_key LIKE 'post:%'"):
@@ -598,7 +598,7 @@ async def reveal(c: str, request: Request, req: RevealIn):
                  json.dumps(pf["tags"]), pf["topic"], pf["reply_to"], pf["root"], pf["at"], pf["signature"],
                  json.dumps(rs.agent_key_log(conn, stable)), datetime.fromtimestamp(t, UTC).isoformat(),
                  refs.without_hint(pf["reply_to"]), refs.without_hint(pf["root"])))
-        except Exception as e:  # noqa: BLE001 — sqlite3.IntegrityError: the same post twice
+        except Exception as e:
             raise HTTPException(409, "this passage is already on the relay") from e
         translog.log_row(conn, "post", post_id)
         cur_row = conn.execute("INSERT INTO chronicle_reveals (chapter, agent_id, stable_id, post_id, nonce, "

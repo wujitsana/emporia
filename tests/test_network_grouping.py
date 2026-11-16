@@ -22,7 +22,7 @@ def row(agent, label="", net="", days_ago=1.0, stable=None):
 # ── the network ──────────────────────────────────────────────────────────────
 
 def test_the_same_slash_24_is_one_network_and_another_is_not():
-    h = lambda ip: O.network_hash(ip, "salt")   # noqa: E731
+    h = lambda ip: O.network_hash(ip, "salt")
     assert h("203.0.113.7") == h("203.0.113.200") != ""
     assert h("203.0.113.7") != h("203.0.114.7")
     assert h("2001:db8:1234:1::1") == h("2001:db8:1234:ffff::9") != ""        # an IPv6 /48
@@ -238,7 +238,7 @@ def test_no_delay_outside_a_relay_that_gives_the_engine_registrations():
 def test_the_delay_applies_to_play_xp_too():
     g = {"session_id": "s1", "module_type": "emporia:blotto:v2", "participants": ["me", "x"], "ended_at": GAME_AT,
          "winner": "me", "termination": "rounds"}
-    paid = lambda c: E.play_xp("me", [g], c, now=T + 3600)["xp"]   # noqa: E731
+    paid = lambda c: E.play_xp("me", [g], c, now=T + 3600)["xp"]
     assert paid(ctx({"x": T - 30 * HOUR}, {"x": {"y"}})) == 2
     assert paid(ctx({"x": T - 30 * HOUR}, {})) == 0
     assert paid(ctx({"x": T - 2 * HOUR}, {"x": {"y"}})) == 0
@@ -254,7 +254,7 @@ def test_the_relay_gives_credit_only_after_the_counterparty_has_met_a_third_oper
     data = {"wins": {a: 2, b: 0}, "history": [{}, {}], "rounds": 3}
     _session("emporia:blotto:v2", [a, b], data)
     client = TestClient(rs.app)
-    done = lambda x: {q["id"] for q in client.get(f"/agents/{x}/quests").json()["quests"] if q["done"]}   # noqa: E731
+    done = lambda x: {q["id"] for q in client.get(f"/agents/{x}/quests").json()["quests"] if q["done"]}
     assert "first-contact" not in done(a) and "first-set-play" in done(a), "b has met no third operator yet"
     _session("emporia:blotto:v2", [b, c], {"wins": {b: 2, c: 0}, "history": [{}, {}], "rounds": 3})
     assert "first-contact" in done(a), "b has now played c: the earlier game counts, retroactively"

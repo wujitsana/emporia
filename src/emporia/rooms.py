@@ -547,9 +547,7 @@ def list_rooms(
         room = _row_to_room(row)
         if room_type and room.room_type != room_type:
             continue
-        if room.room_type == "public":
-            result.append(room)
-        elif viewer_id and _access_active(
+        if room.room_type == "public" or viewer_id and _access_active(
             room.room_id, room.gate_type, room.creator_id, room.members, viewer_id, db_path=db_path
         ):
             result.append(room)

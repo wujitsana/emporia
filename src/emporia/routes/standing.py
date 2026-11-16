@@ -317,7 +317,7 @@ async def relay_summary():
             if slugs:
                 marks = ",".join("?" * len(slugs))
                 topics = conn.execute(
-                    f"SELECT COUNT(DISTINCT topic) FROM posts WHERE is_deleted = 0 AND topic IN ({marks}) "  # noqa: S608
+                    f"SELECT COUNT(DISTINCT topic) FROM posts WHERE is_deleted = 0 AND topic IN ({marks}) "
                     "AND at >= ?", (*slugs, since)).fetchone()[0]
         if _has_table(conn, "labs"):
             labs = conn.execute("SELECT COUNT(*) FROM labs").fetchone()[0]
@@ -347,10 +347,10 @@ def _active_agents(conn, since: str) -> set[str]:
         if not _has_table(conn, table):
             continue
         if col.endswith("_json"):
-            sql = (f"SELECT DISTINCT j.value FROM {table}, json_each({table}.{col}) AS j "  # noqa: S608
+            sql = (f"SELECT DISTINCT j.value FROM {table}, json_each({table}.{col}) AS j "
                    f"WHERE {table}.{at} >= ?")
         else:
-            sql = f"SELECT DISTINCT {col} FROM {table} WHERE {at} >= ?"  # noqa: S608
+            sql = f"SELECT DISTINCT {col} FROM {table} WHERE {at} >= ?"
         agents.update(r[0] or "" for r in conn.execute(sql, (since,)))
     return agents
 
@@ -388,7 +388,7 @@ def _public_games_of(agent_id: str, *, also: tuple[str, ...] = ()) -> list[dict]
     agents = list(dict.fromkeys((agent_id, *also)))
     who = ",".join("?" * len(agents))
     with rs.DB_LOCK, rs.get_db() as conn:
-        rows = conn.execute(f"SELECT * FROM sessions WHERE status = 'completed' AND module_type IN ({marks}) "  # noqa: S608
+        rows = conn.execute(f"SELECT * FROM sessions WHERE status = 'completed' AND module_type IN ({marks}) "
                             f"AND session_id IN (SELECT session_id FROM participants WHERE agent_id IN ({who})) "
                             "ORDER BY updated_at", (*games, *agents)).fetchall()
     out = []
@@ -444,7 +444,7 @@ def _expeditions(conn, topic: str, limit: int = 1) -> list:
                         "p.text AS content, "
                         "p.at AS created_at FROM posts p JOIN agora_topics t ON p.topic = t.slug "
                         "WHERE t.slug = ? AND t.visibility = 'public' AND p.is_deleted = 0 AND p.reply_to IS NULL "
-                        f"AND p.author_id IN ({marks}) ORDER BY created_at DESC LIMIT ?",  # noqa: S608
+                        f"AND p.author_id IN ({marks}) ORDER BY created_at DESC LIMIT ?",
                         (topic, *sorted(by), limit)).fetchall()
 
 
@@ -626,9 +626,9 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
         comments += [{"with": r["other"], "at": r["at"]} for r in conn.execute(
             "SELECT p.author_id AS other, c.at FROM posts c JOIN posts p ON c.reply_key = 'post:' || p.post_id "
             "WHERE c.author_id = ? AND c.is_deleted = 0 AND p.is_deleted = 0 AND p.federated_from IS NULL "
-            f"AND {public} UNION ALL "  # noqa: S608
+            f"AND {public} UNION ALL "
             "SELECT c.author_id AS other, c.at FROM posts c JOIN posts p ON c.reply_key = 'post:' || p.post_id "
-            f"WHERE p.author_id = ? AND c.is_deleted = 0 AND p.is_deleted = 0 AND {public}",  # noqa: S608
+            f"WHERE p.author_id = ? AND c.is_deleted = 0 AND p.is_deleted = 0 AND {public}",
             (agent_id, agent_id))]
         answers = [{"author": agent_id, "by": r["by"], "kind": r["kind"], "at": r["at"]} for r in conn.execute(
             "SELECT p.kind, c.author_id AS by, c.at FROM posts p JOIN posts c ON c.reply_key = 'post:' || p.post_id "
@@ -872,7 +872,7 @@ def usage(conn, agents: list[str]) -> dict[str, int]:
     (UTC), challenges and games open now."""
     marks = ",".join("?" * len(agents))
     since = _today()
-    one = lambda sql, *args: conn.execute(sql, args).fetchone()[0]  # noqa: E731
+    one = lambda sql, *args: conn.execute(sql, args).fetchone()[0]
     posts = one(f"SELECT COUNT(*) FROM posts WHERE author_id IN ({marks}) AND federated_from IS NULL AND recorded_at >= ?",
                 *agents, since)
     # a reply to a shared topic another relay hosts is stored under the author's address, marked carried: it counts

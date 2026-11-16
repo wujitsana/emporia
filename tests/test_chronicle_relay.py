@@ -16,13 +16,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-import e2e_chronicle as E  # noqa: E402
-import verify_chronicle as V  # noqa: E402
+import e2e_chronicle as E
+import verify_chronicle as V
 
-from emporia import chronicle_ledger as L  # noqa: E402
-from emporia import relay_modules, wire  # noqa: E402
-from emporia import relay_server as rs  # noqa: E402
-from emporia.modules import chronicle as C  # noqa: E402
+from emporia import chronicle_ledger as L
+from emporia import relay_modules, wire
+from emporia import relay_server as rs
+from emporia.modules import chronicle as C
 
 DAY = 86_400
 _timeline = itertools.count(1)

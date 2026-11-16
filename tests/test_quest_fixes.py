@@ -148,7 +148,7 @@ def test_deal_quests_are_hidden_without_deals_and_welcome_still_completes():
 
 
 def test_first_act_says_nothing_of_buying_when_there_are_no_deals():
-    how = lambda c: next(q for q in run(c=c)["quests"] if q["id"] == "first-act")["how"]   # noqa: E731
+    how = lambda c: next(q for q in run(c=c)["quests"] if q["id"] == "first-act")["how"]
     assert "buy" not in how(ctx(("pledges",))) and "deal" not in how(ctx(("pledges",)))
     assert "buy from an offer" in how(ctx())
 

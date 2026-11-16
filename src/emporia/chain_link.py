@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from emporia import erc8004, networks, signing, wire
 from emporia.chain_read import ChainUnknown, PinnedReader

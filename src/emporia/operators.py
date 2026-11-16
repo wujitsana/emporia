@@ -46,7 +46,8 @@ import os
 import re
 import secrets
 import time
-from typing import Any, Iterable
+from typing import Any
+from collections.abc import Iterable
 
 LABEL_PREFIX = "op_"
 _LABEL = re.compile(r"op_[a-z2-7]{26}")

@@ -325,7 +325,7 @@ def test_a_pointer_names_only_what_could_be_advertised(client):
             conn.execute("INSERT INTO rooms (room_id, name, room_type, gate_type, creator_id, created_at, updated_at) "
                          "VALUES (?,?,?,?,?,?,?)", (rid, rid, rt, gt, a, "2026-11-05T00:00:00+00:00",
                                                     "2026-11-05T00:00:00+00:00"))
-    ok = lambda ref: _post(client, a, kind="pointer", text="x", tags=[ref]).status_code  # noqa: E731
+    ok = lambda ref: _post(client, a, kind="pointer", text="x", tags=[ref]).status_code
     assert ok(["ref", "room", "rm_inv"]) == 400 and ok(["ref", "topic", slug_priv]) == 400
     assert ok(["ref", "room", "rm_open"]) == 200 and ok(["ref", "topic", slug_pub]) == 200
     assert ok(["ref", "room", "somewhere-else"]) == 200, "what this relay does not hold is taken as named"

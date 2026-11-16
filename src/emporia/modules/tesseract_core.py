@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cache
 from itertools import combinations
 
 GAME_ID = "emporia:tesseract:v1"
@@ -65,7 +65,7 @@ DEFAULT = Rules()
 # -- board ---------------------------------------------------------------------
 
 
-@lru_cache(maxsize=None)
+@cache
 def topology() -> tuple[tuple[str, ...], tuple[tuple[int, int, int, str], ...]]:
     """(node ids, channels as (layer, from_index, to_index, id)) in the fixed order.
 
@@ -84,12 +84,12 @@ def topology() -> tuple[tuple[str, ...], tuple[tuple[int, int, int, str], ...]]:
     return _INPUTS + _HUBS + _OUTPUTS, tuple(ch)
 
 
-@lru_cache(maxsize=None)
+@cache
 def channel_ids() -> tuple[str, ...]:
     return tuple(c[3] for c in topology()[1])
 
 
-@lru_cache(maxsize=None)
+@cache
 def channel_index() -> dict[str, int]:
     return {cid: n for n, cid in enumerate(channel_ids())}
 
@@ -98,7 +98,7 @@ def n_channels() -> int:
     return len(channel_ids())
 
 
-@lru_cache(maxsize=None)
+@cache
 def _layers():
     out = ([], [])
     for n, (layer, i, j, _) in enumerate(topology()[1]):
@@ -178,7 +178,7 @@ def open_network(seed: bytes, rules: Rules = DEFAULT) -> tuple[tuple[int, ...], 
 # -- targets ---------------------------------------------------------------------
 
 
-@lru_cache(maxsize=None)
+@cache
 def targets(rules: Rules = DEFAULT) -> tuple[tuple[int, int, int, int], ...]:
     """Every whole-percent mix summing to 100, each part target_min..target_max, at exactly
     target_l1 from 25/25/25/25. Sorted, so an index names one (726 by default)."""

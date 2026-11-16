@@ -221,7 +221,7 @@ def _chain_run(t: _Target, fn: str, *args: Any) -> dict[str, Any]:
                          "    print(json.dumps({'success': False, 'error': str(e)}))\n"))
 
 
-def _link_target(cmd: str, name: str) -> "_Target | None":
+def _link_target(cmd: str, name: str) -> _Target | None:
     t = _Target(name)
     if not t.found:
         print(f"agent {cmd}: no agent {name!r} here (a Hermes agent profile, or one made with `emporia agent init`)")
@@ -298,7 +298,7 @@ def link_8004(name: str, chain: str, agent_id: str, signer: str = "", signature:
     return 0
 
 
-def _link_in_browser(t: "_Target", name: str, chain: str, agent_id: str, signer: str, yes: bool, *,
+def _link_in_browser(t: _Target, name: str, chain: str, agent_id: str, signer: str, yes: bool, *,
                      timeout: float | None = None) -> int:
     """`--browser`: read the chain, serve one local page for the wallet to sign (browser_sign), then check and record
     what comes back exactly as `--signature` does. Nothing is served unless the chain backs the signer."""

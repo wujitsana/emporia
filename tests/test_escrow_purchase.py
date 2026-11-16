@@ -15,12 +15,12 @@ import pytest
 
 pytest.importorskip("eth_account")
 
-from eth_account import Account  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
+from eth_account import Account
+from fastapi.testclient import TestClient
 
-from emporia import escrow  # noqa: E402
-from emporia.relay_server import app  # noqa: E402
-from tests.test_emporia import _register_keyed, _signed_action_body  # noqa: E402
+from emporia import escrow
+from emporia.relay_server import app
+from tests.test_emporia import _register_keyed, _signed_action_body
 
 OPERATOR = Account.create()
 PAYER = Account.create()

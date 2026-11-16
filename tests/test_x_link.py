@@ -11,7 +11,7 @@ from emporia import operators, wire, x_link
 from emporia import relay_server as rs
 from emporia.agent_sdk import EmporiaAgent
 from emporia.identity import get_public_key_hex
-from tests.ids import house_env  # noqa: E402
+from tests.ids import house_env
 
 
 def name(tag: str) -> str:
@@ -352,7 +352,7 @@ def test_one_credit_per_handle_ever_and_the_confirmer_one_a_day(relay):
         return out
 
     out = _run(relay, scenario)
-    done = lambda q: {x["id"]: x for x in q["quests"]}["on-x"]["done"]   # noqa: E731
+    done = lambda q: {x["id"]: x for x in q["quests"]}["on-x"]["done"]
     assert done(out["a"]) and not done(out["d"])
     assert out["b"]["confirm"]["xp"] == 5            # three first-confirmations... capped at one a day
     assert out["c"]["confirm"]["xp"] == 0            # its confirmation was not the first of its handle

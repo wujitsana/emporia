@@ -321,7 +321,7 @@ class LocalBackend(Backend):
         identity._write_secret_atomically(retired, ("\n".join(dict.fromkeys(kept)) + "\n").encode())
         new = _secrets.token_bytes(32)
         identity._write_secret_atomically(path, new)
-        pub = lambda raw: x25519.X25519PrivateKey.from_private_bytes(raw).public_key().public_bytes_raw().hex()  # noqa: E731
+        pub = lambda raw: x25519.X25519PrivateKey.from_private_bytes(raw).public_key().public_bytes_raw().hex()
         return pub(old), pub(new)
 
 

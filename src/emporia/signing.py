@@ -65,7 +65,7 @@ class Kind:
     group: str                                    # which rate limit it counts against
     why: str                                      # what the rule protects, shown with a refusal
     person: bool = False                          # the person's own: never signed for an agent's tools
-    check: Callable[[dict[str, Any], "Context"], str] | None = None   # "" or the reason it is refused
+    check: Callable[[dict[str, Any], Context], str] | None = None   # "" or the reason it is refused
 
 
 @dataclass

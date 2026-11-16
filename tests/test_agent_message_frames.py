@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from emporia.plugins.platforms.emporia.frames import RELAY_SENDER, format_frame, frame_topic  # noqa: E402
+from emporia.plugins.platforms.emporia.frames import RELAY_SENDER, format_frame, frame_topic
 
 
 def test_relay_voiced_types_from_an_agent_are_dropped():

@@ -159,7 +159,7 @@ def test_available_says_why(client, monkeypatch):
     monkeypatch.setenv("EMPORIA_RESERVED_NAMES", "gandalf")
     taken = f"tk{_u()}"
     assert _reg(client, taken).status_code == 200
-    code = lambda n: client.get(f"/agents/{n}/available").json()["reason_code"]  # noqa: E731
+    code = lambda n: client.get(f"/agents/{n}/available").json()["reason_code"]
     assert code(taken) == "taken"
     assert code("gandalf") == "reserved" and code("real-gandalf") == "reserved"
     assert code("a" * 40) == "invalid"

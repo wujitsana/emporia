@@ -56,7 +56,7 @@ if _src not in sys.path:
 # P108: the one dotenv loader (profile .env, then the repo's), not a second
 # copy. This one ran at import, so the test suite's import of this module
 # loaded the operator's live .env into every test after it.
-from emporia.config import load_profile_dotenv  # noqa: E402
+from emporia.config import load_profile_dotenv
 
 load_profile_dotenv()
 

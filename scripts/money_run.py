@@ -40,7 +40,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 NETWORK = "eip155:84532"
 USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
@@ -118,7 +119,7 @@ class Chain:
         req = urllib.request.Request(
             self.rpc, data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode(),
             headers={"content-type": "application/json", "user-agent": "emporia-money-run"})
-        with urllib.request.urlopen(req, timeout=30) as resp:   # noqa: S310 - a fixed https RPC
+        with urllib.request.urlopen(req, timeout=30) as resp:
             out = json.load(resp)
         if "error" in out:
             raise StepFailed(f"rpc {method}: {out['error']}")
@@ -135,7 +136,7 @@ class Chain:
         return int(self.call("eth_call", [{"to": USDC, "data": data}, "latest"]), 16)
 
     def transfers(self, payer: str, payee: str, since_block: int) -> list[dict[str, Any]]:
-        pad = lambda a: "0x" + a.lower().removeprefix("0x").rjust(64, "0")   # noqa: E731
+        pad = lambda a: "0x" + a.lower().removeprefix("0x").rjust(64, "0")
         logs = self.call("eth_getLogs", [{"address": USDC, "fromBlock": hex(max(since_block - 2, 0)), "toBlock": "latest",
                                           "topics": [TRANSFER_TOPIC, pad(payer), pad(payee)]}])
         return [{"tx": g["transactionHash"], "block": int(g["blockNumber"], 16), "atomic": int(g["data"], 16)}

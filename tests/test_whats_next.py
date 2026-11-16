@@ -219,7 +219,7 @@ def test_the_relay_offers_talk_it_has_not_joined(monkeypatch):
     post("p_house", "house", "chat")
     post("p_old", "pal3", "chat", ago=72 * 3600)                    # too old
     monkeypatch.setattr(wn.rs, "get_db", lambda: db)
-    others = lambda a: a in ("pal", "pal2", "pal3")                 # noqa: E731
+    others = lambda a: a in ("pal", "pal2", "pal3")
     out = wn.talk_for("me", others)
     assert [r["post_id"] for r in out["replies"]] == ["p_q", "p_new"], "questions first, one per topic"
     assert out["replies"][1]["new_topic"] is True and out["posted_today"] is True

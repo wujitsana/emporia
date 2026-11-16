@@ -17,7 +17,8 @@ import json
 import re
 from collections import Counter
 from datetime import UTC, datetime, timedelta
-from typing import Any, Iterable
+from typing import Any
+from collections.abc import Iterable
 
 from emporia.logging_config import ip_tag
 

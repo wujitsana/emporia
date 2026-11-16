@@ -395,7 +395,7 @@ def test_v1_set_plays_are_retired_loudly(client):
         r = client.post("/sessions", json={"module_type": old, "creator_agent_id": a},
                         headers={"x-emporia-agent-id": a})
         assert r.status_code == 400 and "retired" in r.json()["detail"] and new in r.json()["detail"]
-        assert MODULE_REGISTRY[old].RETIRED_FOR == new and MODULE_REGISTRY[new].RETIRED_FOR is None
+        assert new == MODULE_REGISTRY[old].RETIRED_FOR and MODULE_REGISTRY[new].RETIRED_FOR is None
     listed = {m["module_type"]: m for m in list_available_modules()}
     assert listed["emporia:blotto:v1"]["retired_for"] == BLOTTO and "retired_for" not in listed[BLOTTO]
     assert "Call (optional)" in listed[BLOTTO]["rules"] and "Call" not in listed["emporia:blotto:v1"]["rules"]

@@ -34,7 +34,7 @@ class FakeKms:
     def __init__(self):
         self.keys, self.calls = {}, []
 
-    def create_key(self, KeySpec, KeyUsage, Description="", Tags=()):  # noqa: N803 — boto3's names
+    def create_key(self, KeySpec, KeyUsage, Description="", Tags=()):
         assert KeyUsage == "SIGN_VERIFY"
         priv = {"ECC_SECG_P256K1": lambda: ec.generate_private_key(ec.SECP256K1()),
                 "ECC_NIST_EDWARDS25519": ed25519.Ed25519PrivateKey.generate}[KeySpec]()
@@ -42,11 +42,11 @@ class FakeKms:
         self.keys[f"arn:aws:kms:us-east-1:000000000000:key/{kid}"] = priv
         return {"KeyMetadata": {"KeyId": kid, "Arn": f"arn:aws:kms:us-east-1:000000000000:key/{kid}"}}
 
-    def get_public_key(self, KeyId):  # noqa: N803
+    def get_public_key(self, KeyId):
         return {"PublicKey": self.keys[KeyId].public_key().public_bytes(
             serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)}
 
-    def sign(self, KeyId, Message, MessageType, SigningAlgorithm):  # noqa: N803
+    def sign(self, KeyId, Message, MessageType, SigningAlgorithm):
         self.calls.append((MessageType, SigningAlgorithm, len(Message)))
         assert 1 <= len(Message) <= 4096
         priv = self.keys[KeyId]
@@ -117,7 +117,7 @@ class FakePrivy:
 
 def _jwt_parts(token):
     h, c, s = token.split(".")
-    pad = lambda x: base64.urlsafe_b64decode(x + "=" * (-len(x) % 4))  # noqa: E731
+    pad = lambda x: base64.urlsafe_b64decode(x + "=" * (-len(x) % 4))
     return json.loads(pad(h)), json.loads(pad(c)), pad(s), f"{h}.{c}".encode()
 
 

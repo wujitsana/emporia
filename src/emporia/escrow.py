@@ -82,7 +82,7 @@ class PaymentInfo:
         return {k: (str(v) if isinstance(v, int) else v) for k, v in asdict(self).items()}
 
     @classmethod
-    def from_json(cls, data: dict) -> "PaymentInfo":
+    def from_json(cls, data: dict) -> PaymentInfo:
         fields = {f: data[f] for f in cls.__dataclass_fields__}
         for f in ("max_amount", "pre_approval_expiry", "authorization_expiry",
                   "refund_expiry", "min_fee_bps", "max_fee_bps", "salt"):

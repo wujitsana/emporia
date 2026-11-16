@@ -69,7 +69,7 @@ class Choice:
 
     def labels(self) -> list[tuple[str, str]]:
         """(value, line) pairs for a menu: the effect, and (recommended) with its reason on one option."""
-        cap = lambda t: t[:1].upper() + t[1:]   # noqa: E731
+        cap = lambda t: t[:1].upper() + t[1:]
         def line(o: Option) -> str:
             text = (f"{o.title or o.value}  (recommended)\n{cap(o.effect)} {o.why}".rstrip() if o.recommended
                     else f"{o.title or o.value}\n{cap(o.effect)}")
@@ -123,7 +123,7 @@ def _feature_options() -> tuple[Option, ...]:
     return tuple(out)
 
 
-YES_NO = lambda yes, no, rec_yes=True, why="": (   # noqa: E731
+YES_NO = lambda yes, no, rec_yes=True, why="": (
     _o("yes", yes, rec_yes, why if rec_yes else ""), _o("no", no, not rec_yes, why if not rec_yes else ""))
 
 

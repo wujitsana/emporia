@@ -202,7 +202,7 @@ async def _dm_start_remote(caller: str, agent_id: str, peer: str, encrypted: boo
             "federated": True, "my_label": me, "peer_label": them, "peer_relay": peer}
 
 
-async def _deliver_remote(thread: Any, caller: str, sender_label: str, req: "DMSendRequest",
+async def _deliver_remote(thread: Any, caller: str, sender_label: str, req: DMSendRequest,
                           msg_type: str) -> None:
     from emporia import federation_dm as fd
     if not fd.enabled() or not fd.linked_peer(fd.host_of(thread["peer_url"] or "")):

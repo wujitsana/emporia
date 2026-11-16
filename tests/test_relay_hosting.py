@@ -759,7 +759,7 @@ def test_ten_agents_behind_one_address_all_sign_in_within_a_minute():
                 assert c.post("/dashboard/session", json={"agent_id": f"agent-{i}", "challenge_id": "x",
                                                          "relay": "http://testserver", "signature": "s"}
                               ).status_code == 400          # reached the handler, not limited
-        assert 80 > rs._RATE_LIMITS["auth"][0]
+        assert rs._RATE_LIMITS["auth"][0] < 80
     finally:
         for k in [k for k in rs._RATE_WINDOWS if ip in k[0]]:
             rs._RATE_WINDOWS.pop(k, None)

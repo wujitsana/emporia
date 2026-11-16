@@ -21,7 +21,8 @@ import threading
 import time
 from collections import deque
 from datetime import UTC, datetime
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -42,9 +43,9 @@ LIVE = ("claimed", "checked", "stale")
 NOTE = "the relay read the chain only where its operator configured an RPC; it stores no image and no registration text"
 
 #: (caip2, urls) -> a pinned reader. A hook, so a test can put an in-memory chain behind the relay.
-reader_factory: Callable[[str, list[str]], Any] = lambda caip2, urls: PinnedReader(caip2, urls)  # noqa: E731
+reader_factory: Callable[[str, list[str]], Any] = lambda caip2, urls: PinnedReader(caip2, urls)
 #: starts a re-read: a daemon thread, or (in a test) a call made on the spot.
-spawn: Callable[[Callable[[], None]], None] = lambda fn: threading.Thread(target=fn, daemon=True).start()  # noqa: E731
+spawn: Callable[[Callable[[], None]], None] = lambda fn: threading.Thread(target=fn, daemon=True).start()
 
 _inflight: set[tuple[str, str, str]] = set()
 _last_try: dict[tuple[str, str, str], float] = {}

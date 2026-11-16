@@ -68,7 +68,7 @@ def test_agent_card_checks_every_signature(client):
     from emporia import mcp_server
     _register_keyed(client, "ad_checked")
     assert _publish(client, "ad_checked", datetime.now(UTC)).status_code == 200
-    path_of = lambda url: "/" + url.split("/", 3)[3]   # noqa: E731 — the relay under test, whatever its URL
+    path_of = lambda url: "/" + url.split("/", 3)[3]
     with patch("httpx.get", lambda url, timeout=10: client.get(path_of(url))):
         out = mcp_server.agent_card("ad_checked")
     assert out["success"] and out["verified"], out

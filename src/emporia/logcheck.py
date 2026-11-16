@@ -28,7 +28,8 @@ import os
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from emporia import translog
 

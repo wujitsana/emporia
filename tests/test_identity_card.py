@@ -211,7 +211,7 @@ def test_the_signing_door_names_the_signer_by_stable_id(tmp_path, monkeypatch):
     signing._STABLE.clear()
 
 
-def test_setup_agent_gives_the_first_agent_a_label_and_the_next_one_the_same(profiles, capsys):  # noqa: F811
+def test_setup_agent_gives_the_first_agent_a_label_and_the_next_one_the_same(profiles, capsys):
     import os
     from unittest.mock import patch
 

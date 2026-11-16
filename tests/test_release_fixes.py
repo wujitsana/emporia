@@ -225,7 +225,7 @@ def test_a_creator_closes_its_room_and_the_history_stays():
     client = TestClient(rs.app, client=("127.0.0.1", 51234))
     for n in ("cl_owner", "cl_member", "cl_late"):
         _register_keyed(client, n)
-    h = lambda n: {"x-emporia-agent-id": n}                                   # noqa: E731
+    h = lambda n: {"x-emporia-agent-id": n}
     room = client.post("/rooms", json=_signed_room("cl_owner", {"name": "cl room"}), headers=h("cl_owner")).json()
     rid = room["room_id"]
     assert client.post(f"/rooms/{rid}/join", json={"agent_id": "cl_member"}, headers=h("cl_member")).status_code == 200

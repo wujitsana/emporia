@@ -182,7 +182,7 @@ class SigningPage:
     def url(self) -> str:
         return f"http://{HOST}:{self.port}/{self.token}"
 
-    def start(self) -> "SigningPage":
+    def start(self) -> SigningPage:
         page = self
 
         class Handler(BaseHTTPRequestHandler):

@@ -117,7 +117,7 @@ def test_a_wrong_token_or_unknown_kind_is_refused(held):
         signing.sign(AGENT, "anything-new")
 
 
-def test_a_person_moves_the_identity_key_in_and_back(profiles, tmp_path, monkeypatch, capsys):  # noqa: F811
+def test_a_person_moves_the_identity_key_in_and_back(profiles, tmp_path, monkeypatch, capsys):
     from emporia import cli
     root, _ = profiles
     with patch.dict(os.environ):

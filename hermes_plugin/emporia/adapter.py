@@ -36,7 +36,7 @@ import logging
 import os
 import re
 import time
-from typing import Any, Optional
+from typing import Any
 
 from gateway.config import Platform
 from gateway.platforms._shared import get_scoped_secret as _get_scoped_secret
@@ -50,9 +50,9 @@ logger = logging.getLogger(__name__)
 LINE_PROTOCOL_VERSION = 1
 BRIDGE_MODULE = "emporia.plugins.platforms.emporia.bridge"
 _MAX_BACKOFF = 60.0
-def _utc_day(now: Optional[datetime.datetime] = None) -> str:
+def _utc_day(now: datetime.datetime | None = None) -> str:
     """The UTC date a non-game conversation is keyed by."""
-    return (now or datetime.datetime.now(datetime.timezone.utc)).astimezone(datetime.timezone.utc).strftime("%Y-%m-%d")
+    return (now or datetime.datetime.now(datetime.UTC)).astimezone(datetime.UTC).strftime("%Y-%m-%d")
 
 
 # A topic from the bridge (P129): `kind:id`, plain characters only.
@@ -110,7 +110,7 @@ def _setting(extra: dict, env: str, key: str, default: str = "") -> str:
     return str(_get_scoped_secret(env) or extra.get(key, default) or "").strip()
 
 
-def parse_line(raw: str) -> Optional[dict[str, Any]]:
+def parse_line(raw: str) -> dict[str, Any] | None:
     """One bridge line -> a notice dict, or None for anything malformed or from a
     bridge speaking a different protocol version (logged, never dispatched)."""
     try:
@@ -244,8 +244,8 @@ class EmporiaAdapter(BasePlatformAdapter):
         self.wake_listed = frozenset(s.strip() for s in _setting(extra, "EMPORIA_ALLOWED_USERS", "allowed_users")
                                      .split(",") if s.strip())
         self._admitted: dict[str, float] = {}
-        self._proc: Optional[asyncio.subprocess.Process] = None
-        self._run_task: Optional[asyncio.Task] = None
+        self._proc: asyncio.subprocess.Process | None = None
+        self._run_task: asyncio.Task | None = None
         self._stopping = False
 
     @property
@@ -257,7 +257,7 @@ class EmporiaAdapter(BasePlatformAdapter):
         """The conversation for notices about nothing in particular."""
         return f"emporia:{self.agent_id}"
 
-    def chat_for(self, notice: dict[str, Any], now: Optional[datetime.datetime] = None) -> tuple[str, str]:
+    def chat_for(self, notice: dict[str, Any], now: datetime.datetime | None = None) -> tuple[str, str]:
         """(chat id, chat name) for a notice: one conversation per topic — a
         session, a DM partner, a room, an Agora (P129). In one conversation for
         everything, a long chess game re-sent the agent's whole Emporia history
@@ -433,7 +433,7 @@ class EmporiaAdapter(BasePlatformAdapter):
             # on x` (or `/new`, `/stop`) must not reach the gateway's command dispatch.
             allow_gateway_control=False))
 
-    def _admit(self, sender: str, now: Optional[float] = None) -> None:
+    def _admit(self, sender: str, now: float | None = None) -> None:
         """Remember that the wake mode let this sender's notice through (see resolved_allowlist_user_ids)."""
         now = time.monotonic() if now is None else now
         self._admitted = {s: t for s, t in self._admitted.items() if t > now}
@@ -471,7 +471,7 @@ class EmporiaAdapter(BasePlatformAdapter):
         logger.info("Emporia: talk wakes over the hourly cap (%d): a notice not delivered", TALK_WAKES_PER_HOUR)
         return None
 
-    def _within_limit(self, notice: dict[str, Any], sender: str, now: Optional[float] = None) -> Optional[str]:
+    def _within_limit(self, notice: dict[str, Any], sender: str, now: float | None = None) -> str | None:
         """The notice's text, or None when this conversation is over its hourly
         limit (P230). The first notice past the limit becomes a note saying so,
         so the agent stops rather than wondering; the rest are not delivered
@@ -494,7 +494,7 @@ class EmporiaAdapter(BasePlatformAdapter):
         return (str(notice.get("frame_type") or "") in _CAPPED_FRAMES and sender not in self.wake_listed
                 and "*" not in self.wake_listed)
 
-    def _thread_check(self, notice: dict[str, Any], sender: str, now: float) -> Optional[str]:
+    def _thread_check(self, notice: dict[str, Any], sender: str, now: float) -> str | None:
         topic = notice.get("topic")
         # Only the home relay's own sender is exempt — a visited relay's
         # (`emporia:relay@<host>`) is limited like an agent's (11-05 audit follow-up).
@@ -520,8 +520,8 @@ class EmporiaAdapter(BasePlatformAdapter):
         logger.info("Emporia: %s over its hourly limit (%d) — a notice not delivered", topic, limit)
         return None
 
-    async def send(self, chat_id: str, content: str, reply_to: Optional[str] = None,
-                   metadata: Optional[dict[str, Any]] = None) -> SendResult:
+    async def send(self, chat_id: str, content: str, reply_to: str | None = None,
+                   metadata: dict[str, Any] | None = None) -> SendResult:
         # Inbound only, by design: anything the agent does on Emporia goes
         # through the MCP server's signed tools, so a plain reply has no
         # destination on the relay. Accepted rather than failed, so the gateway

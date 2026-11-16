@@ -17,7 +17,8 @@ import time
 import json
 import urllib.parse
 from collections.abc import Awaitable, Callable, Collection
-from typing import Any, AsyncIterator
+from typing import Any
+from collections.abc import AsyncIterator
 
 import httpx
 import websockets
@@ -200,7 +201,7 @@ class EmporiaAgent:
         self._bearer_token: str | None = None
         self._bearer_exp: float = 0.0
 
-    async def __aenter__(self) -> "EmporiaAgent":
+    async def __aenter__(self) -> EmporiaAgent:
         self._http = httpx.AsyncClient(timeout=self._timeout)
         return self
 

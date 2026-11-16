@@ -9,7 +9,7 @@ from emporia.relay_server import app
 from tests.test_emporia import _register
 
 
-from tests.test_emporia import _op_env  # noqa: E402
+from tests.test_emporia import _op_env
 
 
 @pytest.fixture

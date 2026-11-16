@@ -260,7 +260,7 @@ def w(monkeypatch):
     monkeypatch.setattr(rs.AGENT_REGISTRY, "check_rate_limit", lambda agent_id, *a: True)
     with rs.DB_LOCK, rs.get_db() as conn:
         for t in ("rounds", "reveals", "entries", "serves", "seals"):
-            conn.execute(f"DELETE FROM assay_{t}")  # noqa: S608
+            conn.execute(f"DELETE FROM assay_{t}")
         conn.commit()
     world = W(TestClient(rs.app, client=("127.0.0.1", 51900)), clock)
     yield world

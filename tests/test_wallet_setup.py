@@ -1044,7 +1044,7 @@ def test_relay_config_shows_checks_and_writes_settings(tmp_path, monkeypatch, ca
     folder = tmp_path / "hosted"
     folder.mkdir()
     monkeypatch.setattr(cli, "_TTY", False)
-    run = lambda *a: cli.main(["relay", "config", *a, "--dir", str(folder)])   # noqa: E731
+    run = lambda *a: cli.main(["relay", "config", *a, "--dir", str(folder)])
     assert run("set", "EMPORIA_FEE_BPS", "300") == 0 and _env_of(folder)["EMPORIA_FEE_BPS"] == "300"
     assert run("set", "EMPORIA_FEE_BPS", "lots") == 1
     assert run("set", "EMPORIA_FEE_BPS", "5000") == 1                       # at most 10%
@@ -1175,7 +1175,7 @@ def test_the_house_agents_are_one_setting_by_stable_id_that_relay_config_persist
     folder = tmp_path / "hosted"
     folder.mkdir()
     monkeypatch.setattr(cli, "_TTY", False)
-    run = lambda *a: cli.main(["relay", "config", *a, "--dir", str(folder)])   # noqa: E731
+    run = lambda *a: cli.main(["relay", "config", *a, "--dir", str(folder)])
     assert "EMPORIA_HOUSE_STABLE_IDS" in rc.BY_NAME and "EMPORIA_HOUSE_AGENTS" not in rc.BY_NAME
     assert run("set", "EMPORIA_HOUSE_AGENTS", "house") == 1
     sid, other = "ab" * 32, "CD" * 32

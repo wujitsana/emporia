@@ -36,8 +36,8 @@ from multiprocessing.pool import ThreadPool
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import sim_tesseract as sim  # noqa: E402
-from emporia.modules import tesseract_core as tc  # noqa: E402
+import sim_tesseract as sim
+from emporia.modules import tesseract_core as tc
 
 RULES = replace(tc.DEFAULT, width_cap=12, open_hi=12, unit_cap=4)
 BOTS = ["random", "greedy", "smart"]

@@ -31,7 +31,7 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 # none exists, it then silently minted a new identity there. Found when a
 # verification script did exactly that. config imports nothing from emporia, so
 # importing it here cannot cycle.
-from emporia import config as _config  # noqa: E402,F401
+from emporia import config as _config  # noqa: F401
 
 KEY_DIR = Path(os.getenv("EMPORIA_KEYS_DIR", "~/.hermes/keys")).expanduser()
 # P113: key files keep `-`. The relay accepts `[a-z0-9_-]` in an agent id, and
@@ -310,7 +310,7 @@ def generate_or_load_encryption_keypair(profile_id: str) -> tuple[Any, bytes]:
 # content key per message, wrapped to a long-lived X25519 key), so a leaked key
 # would otherwise read every past and future message for good. The replaced keys
 # are kept here only to open what was sealed to them; nothing new is sealed to one.
-from emporia.key_source import RETIRED_ENC_KEYS_VAR  # noqa: E402  (env-kept keys: comma-separated hex)
+from emporia.key_source import RETIRED_ENC_KEYS_VAR
 
 
 def _retired_enc_path(profile_id: str) -> Path:
@@ -607,7 +607,7 @@ class _locked:
     def __init__(self, path: Path):
         self.path = path
 
-    def __enter__(self) -> "_locked":
+    def __enter__(self) -> _locked:
         import fcntl
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)

@@ -437,7 +437,7 @@ async def hand_in(host_url: str, slug: str, post: dict[str, Any], sender: dict[s
     from emporia import federation_dm as fd
     try:
         r = await fd.call_peer(host_url, "POST", f"/federation/v1/topics/{slug}/posts", {"post": post, "sender": sender})
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"the host of this topic ({host_of(host_url)}) did not answer: {type(e).__name__}") from e
     if r.status_code == 200:
         return r.json()

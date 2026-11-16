@@ -10,7 +10,7 @@ from emporia import relay_server as rs
 from tests.test_progression import _register, _session
 
 
-from tests.ids import house_env, stable_of  # noqa: E402
+from tests.ids import house_env, stable_of
 
 
 def test_the_quests_come_from_the_records():

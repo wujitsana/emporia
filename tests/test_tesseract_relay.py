@@ -16,14 +16,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-import e2e_tesseract as E  # noqa: E402
-import verify_tesseract as V  # noqa: E402
+import e2e_tesseract as E
+import verify_tesseract as V
 
-from emporia import commit_reveal, relay_modules  # noqa: E402
-from emporia import relay_server as rs  # noqa: E402
-from emporia.module_sdk import SessionState, get_interaction_module  # noqa: E402
-from emporia.modules import tesseract as T  # noqa: E402
-from tests.test_emporia import _signed_action_body  # noqa: E402
+from emporia import commit_reveal, relay_modules
+from emporia import relay_server as rs
+from emporia.module_sdk import SessionState, get_interaction_module
+from emporia.modules import tesseract as T
+from tests.test_emporia import _signed_action_body
 
 GAME = T.GAME_ID
 

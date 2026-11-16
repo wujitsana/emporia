@@ -24,7 +24,8 @@ import re
 import time
 import unicodedata
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 from urllib.parse import unquote_to_bytes
 
 from emporia import erc8004, networks

@@ -74,7 +74,7 @@ def games_today_with(me: str, other: str) -> tuple[bool, int]:
         midnight = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         marks = ",".join("?" * len(peers))
         row = conn.execute(
-            "SELECT COUNT(DISTINCT s.session_id) AS n FROM sessions s "   # noqa: S608 — placeholders only
+            "SELECT COUNT(DISTINCT s.session_id) AS n FROM sessions s "
             "JOIN participants a ON a.session_id = s.session_id AND a.agent_id = ? "
             f"JOIN participants b ON b.session_id = s.session_id AND b.agent_id IN ({marks}) "
             "WHERE s.created_at >= ? AND s.status IN ('active', 'completed') AND s.module_type != ?",
@@ -935,7 +935,7 @@ async def _remind(session_id: str, agents: list[str], step: int, delay_s: float,
         return
     data = ((s.get("state") or {}).get("data") or {})
     if reveal:
-        done = set(((data.get("rand") or {}).get("reveals") or {}))
+        done = set((data.get("rand") or {}).get("reveals") or {})
         due = [a for a in agents if a not in done]
     else:
         if int(s.get("step_number") or 0) != step:

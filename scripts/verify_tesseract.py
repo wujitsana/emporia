@@ -30,8 +30,8 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO / "src") not in sys.path:
     sys.path.insert(0, str(REPO / "src"))
 
-from emporia import commit_reveal, rand  # noqa: E402
-from emporia.modules import tesseract_core as core  # noqa: E402
+from emporia import commit_reveal, rand
+from emporia.modules import tesseract_core as core
 
 #: the rules the game runs (the T0 report's recommended set), written out here and not imported from the module
 RULES = core.Rules(width_cap=12, open_hi=12, unit_cap=4)
