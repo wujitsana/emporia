@@ -438,3 +438,20 @@ def test_the_agent_card_tool_shows_the_passport(client, monkeypatch):
     out = mcp_server._passport_of(ORIGIN, a)
     assert out["kind"] == "emporia-passport" and out["checks"] == [{"relay": rs.RELAY_BASE_URL, "ok": True}]
     assert out["reach"]["weighted"] is False
+
+
+def test_the_home_check_never_calls_a_private_address_and_tells_nothing_of_why(monkeypatch):
+    """The home is declared by the agent: loopback, private, link-local, metadata and plain-http targets are not
+    called, and a failed check says one thing whatever went wrong."""
+    from emporia import fetch
+    monkeypatch.setattr(fetch, "_PASSTHROUGH", False)
+    called: list[str] = []
+    monkeypatch.setattr(fetch, "get", lambda url, **kw: called.append(url))
+    for url in ("https://127.0.0.1", "https://10.0.0.5:8080", "https://169.254.169.254", "https://192.168.1.1",
+                "https://[::1]", "https://0.0.0.0", "http://8.8.8.8", "ftp://8.8.8.8"):
+        visitors.forget()
+        assert visitors._pull(url) == {"error": visitors._UNANSWERED}, url
+    assert called == []
+    assert visitors.target_problem("https://8.8.8.8") == ""
+    got = visitors.confirm({"kind": "relay", "url": "https://10.0.0.5"}, "ab" * 32)
+    assert got["status"] == "unconfirmed" and got["reason"] == visitors._UNANSWERED

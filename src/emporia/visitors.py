@@ -138,25 +138,58 @@ def pull_listing(url: str) -> dict[str, Any]:
     return result
 
 
+_UNANSWERED = "it did not answer as a relay"      # all a stranger is told of a failed check, whatever went wrong
+
+
+def target_problem(url: str) -> str:
+    """Why the home check may not call this URL, or "". The home is declared by the agent, so the call is one anyone
+    can aim: https only, a host name or public address (no loopback, private, link-local, unspecified or metadata
+    address, by the address itself or by any address its name resolves to). The tests that stand in for other relays
+    patch the fetch (`fetch._PASSTHROUGH`) and skip this."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlsplit
+
+    from emporia import fetch
+    if fetch._PASSTHROUGH:
+        return ""
+    parts = urlsplit(url)
+    if parts.scheme != "https" or not parts.hostname:
+        return "not an https address"
+    try:
+        found = {ai[4][0] for ai in socket.getaddrinfo(parts.hostname, parts.port or 443, proto=socket.IPPROTO_TCP)}
+    except OSError:
+        return "no such host"
+    for raw in found:
+        ip = ipaddress.ip_address(raw.split("%")[0])
+        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+            ip = ip.ipv4_mapped
+        if not ip.is_global or ip.is_multicast:
+            return "not a public address"
+    return ""
+
+
 def _pull(url: str) -> dict[str, Any]:
     from emporia import fetch
     from emporia.identity import federation_signable_bytes, verify_raw
+    if target_problem(url):
+        return {"error": _UNANSWERED}
     try:
         r = fetch.get(f"{url}/federation/v1/listed-agents", timeout=_TIMEOUT_S, max_bytes=2 * 1024 * 1024, total=8.0)
         if r.status_code != 200:
-            return {"error": f"it answered {r.status_code}"}
+            return {"error": _UNANSWERED}
         body = r.json()
         agents = body["agents"]
         if not isinstance(agents, list) or len(agents) > LISTING_LIMIT:
-            return {"error": "its list is not one"}
+            return {"error": _UNANSWERED}
         if not verify_raw(federation_signable_bytes(body["origin_relay"], "listed_agents", agents),
                           body["signature"], body["origin_public_key_hex"]):
-            return {"error": "its list is not signed by the key it presented"}
+            return {"error": _UNANSWERED}
         keys = {str(a.get("public_key_hex", "")).lower() for a in agents if isinstance(a, dict)}
         stables = {str(a.get("stable_id", "")) for a in agents if isinstance(a, dict) and a.get("stable_id")}
         return {"relay_id": str(body.get("relay_id") or ""), "keys": keys, "stables": stables}
     except Exception as e:  # noqa: BLE001 — unreachable, slow, not JSON: unconfirmed, never an error that blocks
-        return {"error": f"it did not answer ({type(e).__name__})"}
+        return {"error": _UNANSWERED}
 
 
 def confirm(home: dict[str, Any], public_key_hex: str, stable_id: str = "") -> dict[str, Any]:
