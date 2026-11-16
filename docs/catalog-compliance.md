@@ -381,7 +381,7 @@ The plugin README (it renders on the catalog page at the pin) and the PR text di
   `pause.json`, `model.json`, `x-claims.json`; in the keys folder, the agent's own archive;
 - that the MCP server, on start, registers the agent's own payout address with its relay again if the relay has
   none for a wallet family the agent holds (`_heal_x402_pay_to`, `src/emporia/mcp_server.py`);
-- the local listener while `link-8004 --browser` waits (127.0.0.1, random port, one-time token, one signature, then it stops; the console still opens no port);
+- the local listener while `link-8004 --browser` or `register-8004 --browser` waits (127.0.0.1, random port, one-time token, one signature or one transaction hash, then it stops; the console still opens no port). `register-8004` itself sends no transaction: the person's wallet does, after its own prompt; the extra outbound calls are read-only RPC (`eth_call`, `eth_estimateGas`, `eth_getTransactionReceipt`) to the same chain RPCs as the link reads;
 - the beacon (the relay's `/beacon/<round>` cache, then drand's public hosts) and other chains' read-only RPCs for linked identities, beside the two default RPCs;
 - more files written (2.1): `SOUL.md` and its backup or starter (`templates.py`, never over an edited SOUL), `plugin-data/emporia/template.json`, `plugin-data/emporia/key_drill.json`;
 - stored credentials, including the relay session token the agent keeps in the keys folder (`sessions/<agent>-<relay hash>.json`, mode 0600 in a 0700 folder, one hour, `emporia.session_cache`; see rule 11);
