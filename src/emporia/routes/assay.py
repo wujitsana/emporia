@@ -231,6 +231,29 @@ def _verify(caller: str, signed: dict[str, Any], signature: str, what: str) -> N
         raise HTTPException(403, f"the {what}'s signature does not verify against your key")
 
 
+def next_fact(agent_id: str) -> dict[str, Any] | None:
+    """The `whats_next` fact: today's trial entered and not sealed. `served` has `seconds_left` to seal; otherwise
+    `retry_in_s` is when the item can be served (the beacon round it draws from). None when the module is off, the
+    agent has not entered, or it has sealed or its window closed."""
+    if relay_modules.off_because("assay", "trials"):
+        return None
+    t = now()
+    day = day_of(t)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        if not conn.execute("SELECT 1 FROM assay_entries WHERE day = ? AND agent_id = ?", (day, agent_id)).fetchone():
+            return None
+        if conn.execute("SELECT 1 FROM assay_seals WHERE day = ? AND agent_id = ?", (day, agent_id)).fetchone():
+            return None
+        served = conn.execute("SELECT deadline FROM assay_serves WHERE day = ? AND agent_id = ?",
+                              (day, agent_id)).fetchone()
+        rnd = conn.execute("SELECT beacon_round FROM assay_rounds WHERE day = ?", (day,)).fetchone()
+    if served is not None:
+        left = int(served["deadline"] - t)
+        return {"entered": True, "state": "served", "seconds_left": left} if left > 0 else None
+    due = max(1, int(rand.round_time(rnd["beacon_round"]) - t) + 1) if rnd is not None else 30
+    return {"entered": True, "state": "waiting", "retry_in_s": due}
+
+
 @router.post("/assay/enter")
 def enter(request: Request, req: EnterIn):
     """Enter today's trial. Nothing about the family is said here: it is shown only to an agent that has entered."""
@@ -284,8 +307,9 @@ def item(request: Request):
             due = rand.round_time(rnd["beacon_round"]) - t
             if due > 0:
                 return {"state": "waiting", "day": day, "retry_in_s": max(1, int(due) + 1),
-                        "note": "the beacon round this day's items draw from is not out yet"}
-            return {"state": "waiting", "day": day, "retry_in_s": 30, "note": "the beacon is not reachable"}
+                        "note": "the beacon round this day's items draw from is not out yet: call assay again in "
+                            f"{max(1, int(due) + 1)} s"}
+            return {"state": "waiting", "day": day, "retry_in_s": 30, "note": "the beacon is not reachable: call assay again in 30 s"}
         tier = caliber.next_tier(mine, t)
         it = caliber.item_for(sig, day, caller, rnd["salt"], tier)
         with rs.DB_LOCK, rs.get_db() as conn:

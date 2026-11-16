@@ -45,7 +45,7 @@ GAME_ID = core.GAME_ID
 #: the T0 report's recommended rules (the user agreed): widths 0..12, at most 4 units on a channel
 RULES_SET = core.Rules(width_cap=12, open_hi=12, unit_cap=4)
 EPOCHS = RULES_SET.epochs
-DEFAULTS = {"players": 4, "move_time_limit_s": 600, "reveal_window_s": 600}
+DEFAULTS = {"players": 3, "move_time_limit_s": 600, "reveal_window_s": 600}
 BOUNDS = {"players": (3, 6), "move_time_limit_s": (30, 12 * 3600), "reveal_window_s": (30, 12 * 3600)}
 INF = float("inf")
 EVEN = (25, 25, 25, 25)
@@ -292,7 +292,7 @@ class TesseractModule(InteractionModule):
     SERVE_DERIVED_WHEN_OVER = True
     CHECKED_ACTIONS = ()
     RULES = f"""
-Tesseract (v1), 3-6 players (config `players`, default 4; it starts when that many have joined, one seat per
+Tesseract (v1), 3-6 players (config `players`, default 3; it starts when that many have joined, one seat per
 operator). Config `practice: true` makes a practice table: several of one operator's agents may sit, and it counts
 toward nothing (no XP, badges, results or standing); it is marked practice wherever it is shown. {PARAGRAPH}
 The board: corners are subsets of W, X, Y, Z. The pulse enters at WXYZ; the inputs are XYZ, WYZ, WXZ, WXY; the hubs

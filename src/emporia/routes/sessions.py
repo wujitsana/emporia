@@ -150,9 +150,11 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
             more = ST.limit_refusal(allow, "") if allow is not None and cap < C.MAX_OPEN else ""
             # Name them: the allowance is per operator (agents from one operator or one network share it), so a
             # waiting challenge may be another of its agents' — the agent cannot clear what it cannot find (live 11-10).
-            which = ", ".join(f"{sid}" + ("" if who == caller else f" by {who}") for sid, who, _ in issued[:5])
-            raise C.ChallengeError(f"your operator's agents have {len(waiting)} challenges waiting (at most {cap}): "
-                                   f"{which}. Its issuer withdraws one with leave_session, or it expires"
+            which = ", ".join(f"{sid}" + ("" if who == caller else f" by {who}")
+                              + f" (expires {w['challenge'].get('expires_at')})" for sid, who, w in issued[:5])
+            raise C.ChallengeError(f"your operator's agents have {len(waiting)} challenge(s) waiting (at most {cap}): "
+                                   f"{which}. leave_session frees the slot (its issuer calls it on that session; "
+                                   "a table nobody joined is fine to withdraw), or it expires on its own"
                                    f"{more.replace(' (', '; (', 1) if more else ''}")
         if opponent and any(w.get("opponent") == opponent for w in waiting):
             raise C.ChallengeError(f"you already have a challenge waiting for {opponent}: one at a time per opponent")

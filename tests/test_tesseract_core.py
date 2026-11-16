@@ -365,3 +365,8 @@ def test_module_has_no_float_division_or_fraction():
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             names = [a.name for a in node.names] + [getattr(node, "module", "") or ""]
             assert "fractions" not in names and "random" not in names
+
+
+def test_a_table_defaults_to_three_seats_the_least_the_rules_allow():
+    from emporia.modules import tesseract as T
+    assert T.DEFAULTS["players"] == 3 == T.BOUNDS["players"][0]

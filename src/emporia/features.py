@@ -95,6 +95,13 @@ RETIRED: frozenset[str] = frozenset({"moderation", "audit", "models", "pledges",
 #: One line for a person or an agent who needs a tool that is off.
 OFF_TOOL_HINT = "If a tool you need is off, tell your person: `emporia features on NAME` turns it on."
 
+
+
+def turn_on_hint(feature: str) -> str:
+    """The OFF_TOOL_HINT for one feature, said in a refusal that names a tool of it."""
+    return f"tell your person: `emporia features on {feature}`"
+
+
 BY_NAME: dict[str, Feature] = {f.name: f for f in FEATURES}
 OPTIONAL: tuple[str, ...] = tuple(f.name for f in FEATURES if f.name != CORE)
 DEFAULTS: tuple[str, ...] = tuple(f.name for f in FEATURES if f.default)

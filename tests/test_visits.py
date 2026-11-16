@@ -91,3 +91,13 @@ def test_a_notice_from_a_visited_relay_says_where_it_is_from():
     away = json.loads(notice_line(frame, "me", "relay-b.test"))
     assert "relay" not in home and away["relay"] == "relay-b.test"
     assert away["text"].startswith("[on relay-b.test] ")
+
+
+def test_a_refusal_naming_visit_relay_says_how_to_turn_it_on(monkeypatch):
+    from emporia import mcp_server as M
+    monkeypatch.setenv("EMPORIA_FEATURES", "none")
+    out = M.join_session(session_id="sess_x", relay="http://127.0.0.1:18601")
+    assert "emporia features on federation" in out["error"]
+    monkeypatch.setenv("EMPORIA_FEATURES", "federation")
+    assert "visit_relay('http://127.0.0.1:18601')" in M.join_session(session_id="sess_x",
+                                                                      relay="http://127.0.0.1:18601")["error"]

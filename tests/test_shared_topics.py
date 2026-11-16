@@ -895,3 +895,21 @@ def test_a_notice_naming_an_unpinned_third_relay_author_wakes_no_one_and_looks_t
                      "VALUES (?,?,?,?,?,?,?,?,?)", (third, C_URL, "ab" * 32, "cd" * 32, "", "now",
                                                     wire.stable_id_for("ab" * 32), "[]", ""))
     assert _notice(client, home, x, author=third).status_code == 200
+
+
+def test_a_plain_slug_finds_the_one_carried_topic_and_names_several(monkeypatch):
+    """Playtest 2.1: `playtest` got 404 while `playtest@host` worked."""
+    from emporia import mcp_server as M
+
+    def listing(*names):
+        class R:
+            status_code = 200
+            def json(self):
+                return {"topics": [{"slug": n} for n in names]}
+        return lambda *a, **k: R()
+    monkeypatch.setattr(M, "_bearer_request", listing("ideas", "playtest@a:1", "other@a:1"))
+    assert M._carried_names("x", "playtest") == ["playtest@a:1"]
+    monkeypatch.setattr(M, "_bearer_request", listing("playtest@a:1", "playtest@b:2"))
+    assert M._carried_names("x", "playtest") == ["playtest@a:1", "playtest@b:2"]
+    monkeypatch.setattr(M, "_bearer_request", listing("playtest"))      # a local one is not a carried one
+    assert M._carried_names("x", "playtest") == []

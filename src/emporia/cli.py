@@ -4554,6 +4554,9 @@ def cmd_visits(args: argparse.Namespace) -> int:
         updates["EMPORIA_VISIT_RELAYS"], updates["EMPORIA_VISIT_DENY"] = ",".join(allow), ",".join(deny)
     if updates:
         merge_env_file(profile / ".env", updates)
+        # The server reads the policy from its MCP entry's env: a setting the entry has no reference for
+        # is not seen (the agent's my_settings said "ask" while this printed "linked"). Same refresh as `features`.
+        installer().refresh_mcp_references(profile)
         print(f"  {args.name}: updated — it applies when its MCP server restarts "
               f"(hermes -p {args.name} gateway restart)")
         env = {**env, **updates}

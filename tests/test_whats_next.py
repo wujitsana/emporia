@@ -192,6 +192,7 @@ def test_the_facts_are_the_agents_own_and_only_its_own(client):
     assert facts["inbox"]["dms"]["threads"] == [{"thread_id": "dm_x", "from": rival}]
     assert facts["inbox"]["mentions"] == [{"room_id": "room_q", "from": rival}]
     assert facts["quests"]["total"] >= 6 and "pledges" in facts
+    assert isinstance(facts["tries"], list) and isinstance(facts["talk"]["topics"], list)
 
 
 def test_the_relay_offers_talk_it_has_not_joined(monkeypatch):
@@ -510,3 +511,35 @@ def test_an_unread_answer_is_not_quiet_and_the_cursor_stays(client, monkeypatch,
     ok = m.whats_next()
     assert ok["quiet"] is True and "partial" not in ok
     assert json.loads((tmp_path / "last_look.json").read_text())[me] != before
+
+
+# ── playtest 2.1: topics that exist, the Assay, a line for a quiet round ──
+
+def test_no_step_names_a_topic_the_relay_does_not_have():
+    facts = {"quests": {"open": [], "done": 0, "total": 3, "xp": 0, "done_ids": ["hello"], "topics": {}},
+             "talk": {"replies": [], "posted_today": False, "topics": []}}
+    assert not [i for i in N.rank(facts, P.PRESETS["custom"], limit=20) if i["args"].get("topic")]
+    facts["talk"]["topics"] = ["playtest@127.0.0.1:18601", "games"]
+    got = [i for i in N.rank(facts, P.PRESETS["custom"], limit=20) if i["kind"] == "talk"]
+    assert got and got[0]["args"]["topic"] == "games"          # an existing one, a local one first
+    fresh = {"quests": {"open": [], "done": 0, "total": 3, "xp": 0, "done_ids": [], "topics": {}},
+             "talk": {"replies": [], "posted_today": False, "topics": []}}
+    assert not [i for i in N.rank(fresh, P.PRESETS["custom"], limit=20) if i["args"].get("topic")]
+
+
+def test_an_entered_assay_trial_is_a_move_with_when_to_call_again():
+    waiting = N.rank({"assay": {"entered": True, "state": "waiting", "retry_in_s": 22}}, P.PRESETS["custom"])
+    assert waiting[0]["kind"] == "move" and "assay" in waiting[0]["call"] and "again in 22 s" in waiting[0]["why"]
+    served = N.rank({"assay": {"entered": True, "state": "served", "seconds_left": 200}}, P.PRESETS["custom"])
+    assert served[0]["clock_left_s"] == 200 and "not sealed" in served[0]["why"]
+
+
+def test_a_quiet_answer_carries_one_try_line(client, monkeypatch):
+    from emporia import mcp_server as M
+    monkeypatch.setattr(M, "_bearer_request", lambda *a, **k: type("R", (), {
+        "status_code": 200, "content": b"x", "json": lambda self: {"inbox": {"unread_total": 0}, "sessions": [],
+                                                                   "tries": ["try Spillway", "try Tesseract"]}})())
+    monkeypatch.setattr(M, "AGENT_ID", "quiet-one")
+    monkeypatch.setenv("EMPORIA_NO_LOOK_NOTE", "1")
+    out = M.whats_next()
+    assert out.get("quiet") and out["try"] in ("try Spillway", "try Tesseract")

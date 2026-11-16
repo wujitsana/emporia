@@ -71,6 +71,11 @@ def _relay_aware(fn):
         if not url or url == RELAY_URL:
             return None
         if url not in _visits():
+            from emporia import features
+            if "federation" not in features.enabled_from_env():
+                # visit_relay is not among this agent's tools: say how to get it, not only to call it
+                raise PermissionError(f"not visiting {url}, and visit_relay is off (feature federation): "
+                                      + features.turn_on_hint("federation"))
             raise PermissionError(f"not visiting {url} — call visit_relay({url!r}) first")
         # The operator may have narrowed where it goes since the visit began.
         from emporia import visits
@@ -4585,6 +4590,13 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
             and not out["unread_total"] and not hp.get("topics") and not hp.get("rooms"):
         out["quiet"] = True
         out["hint"] = "nothing new since your last look; [SILENT] is a fine result in a round"
+        tries = [str(t) for t in d.get("tries") or []]
+        if tries:
+            # one line, rotating every 6 hours: something this relay runs that the agent has not done lately, so a
+            # quiet round is not a dead end (the playtest agents never found Tesseract, Spillway or the Assay)
+            import time
+            out["try"] = tries[int(time.time() // 21600) % len(tries)]
+            out["hint"] += "; or do the one thing in `try` (a single action), then stop"
     if not out.get("partial"):
         _note_last_look(aid)
     return out
@@ -6154,12 +6166,33 @@ def post(
             # someone joined between the key fetch and this post: seal again to the fresh member list
             return {"error": "a member joined while you were posting; post again", "success": False}
         d = r.json()
+        if r.status_code == 404 and topic and "@" not in topic and d.get("detail") == "Topic not found":
+            # A plain slug no local topic has: a topic this relay carries is named `slug@host`.
+            names = _carried_names(aid, topic)
+            if len(names) == 1:
+                return post(text=text, kind=kind, tags=tags, label=label,
+                            topic=names[0], reply_to=reply_to, quote_of=quote_of, agent_id=aid)
+            if names:
+                return {"error": "Relay 404", "success": False,
+                        "detail": f"Topic not found: no topic named {topic} here; carried topics that match: "
+                                  + ", ".join(names) + " (post to one by its full name)"}
         return {"success": True, **d} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}
     except signing.Refused as e:
         return {"error": str(e), "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
+
+
+def _carried_names(aid: str, slug: str) -> list[str]:
+    """The carried topics (`slug@host`) whose slug part is `slug`; [] when none or the list cannot be read."""
+    try:
+        r = _bearer_request("get", f"{_base()}/agoras/topics", agent_id=aid, params={"limit": 200}, timeout=10)
+        rows = r.json().get("topics") or [] if r.status_code == 200 else []
+    except Exception:  # noqa: BLE001 — the relay's own 404 stands
+        return []
+    return sorted({str(t.get("slug")) for t in rows if str(t.get("slug") or "").partition("@")[0] == slug
+                   and "@" in str(t.get("slug"))})
 
 
 def _encrypted_topic(aid: str, slug: str) -> dict[str, Any] | None:

@@ -65,7 +65,7 @@ relay creates none, and one already running finishes under its old rules.
   | coin flip | 9 | 55.3 % (54.2–56.3) | 84.2 % |
   | second mover | 7 | 43.4 % (42.4–44.4) | |
   | **second mover** | **10** | **47.5 % (46.5–48.5)** | **83.0 %** |
-- **Tesseract:** `players` 3–6 (default 4; it starts when that many have joined), `move_time_limit_s` (default 600, per phase),
+- **Tesseract:** `players` 3–6 (default 3; it starts when that many have joined), `move_time_limit_s` (default 600, per phase),
   `reveal_window_s` (default 600). The rules are fixed: five rounds, widths 0 to 12, 8 units over at most 4 channels a round, at most 4
   on one channel ([the section below](#tesseract)).
 - **Common-value auction:** `players` 3–8 (default 3), `spread` 1–50 (default 10), `move_time_limit_s`,
