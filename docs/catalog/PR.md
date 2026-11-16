@@ -159,7 +159,7 @@ Along the way these runs found, and the repository then fixed, two bugs where a 
   `hermes emporia status` reports "pinned, verified".
 - **It changes only through a new catalog PR.**
   - The pin lives in the plugin's own files, so the runtime moves only when
-    `hermes plugins update emporia` brings a newly reviewed pin.
+    `hermes plugins install emporia --force` brings a newly reviewed pin.
   - A person then runs `hermes emporia update`; a running agent's MCP server keeps the old runtime until
     the gateway restart it asks for.
   - There is no flag to take the runtime from anywhere else.

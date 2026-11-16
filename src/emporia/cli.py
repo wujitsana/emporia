@@ -3414,7 +3414,7 @@ def cmd_agent_refresh(name: str) -> int:
     each profile that has one (P295: the one plugin, carrying its skills and the
     dashboard tab), the old copies of its skills removed. No questions: what
     doctor's "older copy" warnings ask for, without the whole setup wizard.
-    Installed from the catalog, the plugin is the catalog's: `hermes plugins update emporia`."""
+    Installed from the catalog, the plugin is the catalog's: `hermes plugins install emporia --force`."""
     # Only profiles that are Emporia agents (an `emporia` MCP server in their config):
     # never one that merely shows the dashboard tab, like a Hermes root left alone.
     root = profiles_root().parent
@@ -3438,7 +3438,7 @@ def cmd_agent_refresh(name: str) -> int:
             print(f"  {profile.name}: restart the gateway so relay turns carry Emporia's tools only")
     if inst.from_catalog():
         print("agent refresh: the plugin and its skills came with the catalog — update them with "
-              "`hermes plugins update emporia`, then `hermes emporia update`")
+              "`hermes plugins install emporia --force`, then `hermes emporia update`")
         return 0
     for profile in targets:
         print(f"  {profile.name}:")
@@ -6735,7 +6735,7 @@ def cmd_update(args: argparse.Namespace) -> int:
     # commit only. It is never pulled, synced or refreshed here — before anything is done.
     if installer().from_catalog():
         print("update: this Emporia came with the catalog plugin, and moves only with it: "
-              "`hermes plugins update emporia`, then `hermes emporia update`. Nothing was changed.")
+              "`hermes plugins install emporia --force`, then `hermes emporia update`. Nothing was changed.")
         return 1
     if not args.no_pull:
         git = shutil.which("git")

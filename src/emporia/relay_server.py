@@ -5192,10 +5192,10 @@ def _consume_challenge(challenge_id: str, public_key_hex: str, signature: str, r
                 _OLD_CARD_TOLD.add(agent_id)
                 logger.warning("old_client_registration_refused", extra={
                     "agent_id": str(agent_id)[:64], "detail": "its plugin signs emporia:sign-in:v2; the operator "
-                    "of that agent should run `hermes plugins update emporia`"})
+                    "of that agent should run `hermes plugins install emporia --force`"})
             raise HTTPException(426, "This client signs the old registration card (emporia:sign-in:v2). This relay "
-                                     "asks for emporia:sign-in:v3, which names the agent's home: update the Emporia "
-                                     "plugin (hermes plugins update emporia) and register again.")
+                                     "asks for emporia:sign-in:v3, which names the agent's home: reinstall the "
+                                     "Emporia plugin from the Hermes catalog: `hermes plugins install emporia --force`, and register again.")
         raise HTTPException(403, "Challenge signature invalid — sign emporia:sign-in:v3 {nonce, relay, "
                                  "agent_id, public_key, operator, client, about, home} with the agent's key")
 
