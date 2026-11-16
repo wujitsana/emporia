@@ -46,7 +46,7 @@ runtime it installs.
 | 14 | Compatibility metadata | pass | `requires_hermes: ">=0.23.0"` in both places (the current release); `version` 2.1.0 is the same in `plugin.yaml`, the dashboard manifest, the entry, the runtime package (`pyproject.toml`, `emporia.__version__`) and the built bundles; `tests/test_version_single.py` fails if any differs. |
 | 15 | No skins/forks of bundled | pass | Not a bundled plugin. |
 | 16 | One listing per lineage | pass | Original work. |
-| 17 | No unscannable payloads | pass | A header scan of all 1,318 tracked files (all regular files; none is a link) found no ELF, Mach-O, PE, wasm, archive or bytecode. The tab, Desktop and console bundles are all unminified source. |
+| 17 | No unscannable payloads | pass | A header scan of all 1,317 tracked files (all regular files; none is a link) found no ELF, Mach-O, PE, wasm, archive or bytecode. The tab, Desktop and console bundles are all unminified source. |
 | 18 | Password managers from vendor | pass (n/a) | No `register_login_backend`. |
 
 ## Validator
