@@ -26,7 +26,7 @@ class Fake:
         res, err = None, None
         if m == "eth_chainId":
             res = hex(self.chain)
-        elif m == "eth_getBlockByNumber" and p[0] == "finalized":
+        elif m == "eth_getBlockByNumber" and p[0] in ("finalized", "safe"):
             if self.finalized:
                 res = {"number": "0x10", "hash": self.block_hash}
             else:
@@ -46,6 +46,10 @@ class Fake:
                 res = self.call
         elif m == "eth_getCode":
             res = self.code
+        elif m == "eth_estimateGas":
+            res = "0x7fb18"
+        elif m == "eth_getTransactionReceipt":
+            res = None if p[0] == "0x" + "00" * 32 else {"transactionHash": p[0], "status": "0x1"}
         out = {"jsonrpc": "2.0", "id": req["id"], **({"error": err} if err else {"result": res})}
         data = json.dumps(out).encode()
         if self.big:
@@ -201,3 +205,31 @@ def test_each_call_starts_a_fresh_deadline(monkeypatch):
     r = reader(fast, timeout=8.0)
     for _ in range(4):
         r.code("0x" + "11" * 20)   # the first pins (4 reads) and reads; later ones read once
+
+
+def test_the_safe_tag_pins_the_safe_block_and_an_unknown_tag_is_refused():
+    f = Fake()
+    assert reader(f, tag="safe").pin() == (16, H1)
+    assert ("https://a.example", "eth_getBlockByNumber", ["safe", False]) in [(u, m, p) for u, m, p, _ in f.log]
+    with pytest.raises(ChainUnknown):
+        reader(Fake(), tag="latest")
+
+
+def test_simulate_and_estimate_gas_use_the_sender_at_latest_and_are_not_pinned():
+    f = Fake(call="0x" + "00" * 31 + "2a")
+    r = reader(f)
+    assert int.from_bytes(r.simulate("0xabc", b"\x01\x02", "0xdead"), "big") == 42
+    assert r.estimate_gas("0xabc", "0x0102", "0xdead") == 0x7fb18
+    sent = [(m, p) for _, m, p, _ in f.log if m in ("eth_call", "eth_estimateGas")]
+    assert sent[0] == ("eth_call", [{"from": "0xdead", "to": "0xabc", "data": "0x0102"}, "latest"])
+    assert sent[1] == ("eth_estimateGas", [{"from": "0xdead", "to": "0xabc", "data": "0x0102"}])
+    assert all(m != "eth_getBlockByNumber" for _, m, _, _ in f.log), "nothing was pinned"
+    with pytest.raises(ChainRevert):
+        reader(Fake(revert=True)).simulate("0xabc", b"", "0xdead")
+
+
+def test_receipt_is_none_until_mined_and_block_hash_at_reads_a_height():
+    r = reader(Fake())
+    assert r.receipt("0x" + "00" * 32) is None
+    assert r.receipt("0x" + "11" * 32)["status"] == "0x1"
+    assert r.block_hash_at(7) == H1

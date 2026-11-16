@@ -1,0 +1,30 @@
+{
+ "note": "Registration files like the ones real Base Sepolia agents store on-chain (field names as seen 11-16; values neutral).",
+ "files": {
+  "a": {
+   "active": true,
+   "description": "An agent with one web service.",
+   "image": "https://example.org/a.webp",
+   "name": "Example A",
+   "services": [
+    {
+     "endpoint": "https://example.org/",
+     "name": "web"
+    }
+   ],
+   "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+   "x402Support": false
+  },
+  "b": {
+   "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+   "name": "Example B",
+   "description": "Test registration",
+   "image": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=",
+   "services": [],
+   "active": false,
+   "x402Support": false,
+   "registrations": [],
+   "supportedTrust": []
+  }
+ }
+}

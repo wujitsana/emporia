@@ -63,13 +63,17 @@ def _hex(n: int) -> str:
 
 class PinnedReader:
     def __init__(self, caip2: str, urls: list[str] | None = None, *, timeout: float = 8.0,
-                 max_response_bytes: int = 256 * 1024, gas_cap: int = 5_000_000, http: Http | None = None):
+                 max_response_bytes: int = 256 * 1024, gas_cap: int = 5_000_000, http: Http | None = None,
+                 tag: str = "finalized"):
         if not caip2.startswith("eip155:"):
             raise ChainUnknown(f"not an EVM chain: {caip2}")
         try:
             self.chain_id = int(caip2.split(":", 1)[1])
         except ValueError:
             raise ChainUnknown(f"not an EVM chain: {caip2}") from None
+        if tag not in ("finalized", "safe"):
+            raise ChainUnknown(f"unknown block tag {tag!r}")
+        self.tag = tag                  # which block the reader pins: `finalized`, or `safe` (minutes, not a quarter hour)
         self.caip2 = caip2
         self.urls = list(urls) if urls else rpc_for(caip2)
         if not self.urls:
@@ -161,9 +165,9 @@ class PinnedReader:
                 raise ChainUnknown(f"the RPC is not chain {self.chain_id}")
         block = None
         try:
-            block = self._parse_block(self._rpc(self.urls[0], "eth_getBlockByNumber", ["finalized", False]))
+            block = self._parse_block(self._rpc(self.urls[0], "eth_getBlockByNumber", [self.tag, False]))
         except ChainUnknown:
-            block = None  # `finalized` unsupported: fall back to latest minus a margin
+            block = None  # the tag is unsupported: fall back to latest minus a margin
         if block is None:
             latest = self._rpc(self.urls[0], "eth_blockNumber", [])
             try:
@@ -224,3 +228,42 @@ class PinnedReader:
 
     def code(self, address: str) -> bytes:
         return self._bytes(self._at_block("eth_getCode", [address]))
+
+    # -- not pinned: what a person's wallet has done, or would do, now ---------------------------------
+    def _first(self, method: str, params: list) -> Any:
+        """One read on the first URL, at no pinned block (a quote or a receipt, not a fact the verifier relies on)."""
+        own = self._begin()
+        try:
+            return self._rpc(self.urls[0], method, params)
+        finally:
+            if own:
+                self._until = None
+
+    def simulate(self, to: str, data: bytes | str, sender: str) -> bytes:
+        """`eth_call` of a transaction from `sender` at the latest block: what it would return. A revert is ChainRevert."""
+        payload = data if isinstance(data, str) else "0x" + bytes(data).hex()
+        return self._bytes(self._first("eth_call", [{"from": sender, "to": to, "data": payload}, "latest"]))
+
+    def estimate_gas(self, to: str, data: bytes | str, sender: str) -> int:
+        payload = data if isinstance(data, str) else "0x" + bytes(data).hex()
+        got = self._first("eth_estimateGas", [{"from": sender, "to": to, "data": payload}])
+        try:
+            return int(got, 16)
+        except (TypeError, ValueError):
+            raise ChainUnknown("the RPC answered something unexpected") from None
+
+    def receipt(self, tx_hash: str) -> dict | None:
+        """The receipt of a mined transaction, or None while it is not mined (on the first URL)."""
+        got = self._first("eth_getTransactionReceipt", [tx_hash])
+        if got is None:
+            return None
+        if not isinstance(got, dict):
+            raise ChainUnknown("the RPC answered something unexpected")
+        return got
+
+    def block_hash_at(self, number: int) -> str:
+        """The hash of block `number` on the first URL (to check a receipt's block is the one pinned)."""
+        b = self._parse_block(self._first("eth_getBlockByNumber", [_hex(number), False]))
+        if b is None:
+            raise ChainUnknown("the RPC answered no block")
+        return b[1]

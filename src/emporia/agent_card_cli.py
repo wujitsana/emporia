@@ -1,4 +1,4 @@
-"""`emporia agent about | x-claim | x-link | link-8004 | unlink-8004`: the card's bio and links, from a person's terminal.
+"""`emporia agent about | x-claim | x-link | link-8004 | unlink-8004 | register-8004`: the card's bio and links, from a person's terminal.
 
 * `about NAME "text"` sets the bio (`EMPORIA_ABOUT`, at most 160 characters, plain text, no link) and registers
   the agent again so the relay's card carries it; `about NAME` shows it (and a suggestion); `about NAME ""`
@@ -12,6 +12,10 @@
   binding and tier it expects, the privacy note and the EIP-712 message to sign in a wallet; with `--signature 0x..
   --issued-at T` it verifies that locally, then signs and posts the link (`chain_link`). `unlink-8004` removes it
   (a signed removal; the marker stays). Both are refused while an unattended turn is live.
+* `register-8004 NAME --chain base-sepolia` builds the call that gives the agent its own ERC-8004 identity (the
+  registration file as an on-chain `data:` URI) for the person's own wallet to send; Emporia sends nothing and spends
+  nothing. `--browser` has the person's browser wallet send it from a one-shot local page. `--tx HASH` reads the
+  receipt, checks the registration names this agent, and continues into `link-8004`. Testnet only for now.
 
 Works for a Hermes agent profile and for an agent made with `emporia agent init` (its key directory).
 """
@@ -210,10 +214,10 @@ def x_link(name: str, handle: str, post: str) -> int:
 
 
 
-def _chain_run(t: _Target, fn: str, *args: Any) -> dict[str, Any]:
-    """`chain_link.<fn>(*args)` as the agent; the answer, or {"error": ...}."""
+def _chain_run(t: _Target, fn: str, *args: Any, mod: str = "chain_link") -> dict[str, Any]:
+    """`chain_link.<fn>(*args)` (or `<mod>.<fn>`) as the agent; the answer, or {"error": ...}."""
     argtext = ", ".join(repr(a) for a in args)
-    return _result(t.run("import json\nfrom emporia import chain_link as c\n"
+    return _result(t.run(f"import json\nfrom emporia import {mod} as c\n"
                          "try:\n"
                          f"    out = c.{fn}({argtext})\n"
                          "    print(json.dumps({'success': True, **out}, default=str))\n"
@@ -389,6 +393,123 @@ def _print_ask(name: str, out: dict[str, Any]) -> None:
 def _short(caip2: str) -> str:
     from emporia import chain_link
     return next((k for k, v in chain_link.chains().items() if v == caip2), caip2)
+
+
+def _cmd_chain(chain: str) -> str:
+    return _short(chain) if chain.startswith("eip155:") else chain
+
+
+def register_8004(name: str, chain: str, tx: str = "", sender: str = "", yes: bool = False,
+                  browser: bool = False) -> int:
+    """`emporia agent register-8004 NAME --chain C [--from 0x..] [--browser | --tx HASH]`: the own-wallet path."""
+    t = _link_target("register-8004", name)
+    if t is None:
+        return 1
+    if _refuse_in_agent_session("register-8004"):
+        return 1
+    if not chain:
+        print("agent register-8004: --chain is required (base-sepolia is the only one open for now)")
+        return 1
+    if browser and tx:
+        print("agent register-8004: --browser sends the transaction; --tx reads one already sent: give one of them")
+        return 1
+    if tx:
+        return _register_after(t, name, chain, tx, yes)
+    out = _chain_run(t, "build", chain, sender, mod="chain_register")
+    if not out.get("success"):
+        print(f"agent register-8004: {out.get('error')}")
+        return 1
+    _print_register(name, out)
+    if not browser:
+        return 0
+    return _register_in_browser(t, name, chain, out, yes)
+
+
+def _print_register(name: str, out: dict[str, Any]) -> None:
+    from emporia import networks
+    print(f"  Register {name} on ERC-8004, {out['chain_label']}\n")
+    print("  " + out["explain"] + "\n")
+    if out.get("local_relay"):
+        print(f"  Note: the registration points at {out['relay']}, which is this machine. Other people cannot reach "
+              "it; set the agent's relay to its public address first if that matters.\n")
+    print("  The registration file that goes on-chain:")
+    print(json.dumps(out["file"], indent=2))
+    print("\n  Send this contract call from your own wallet (value 0):")
+    print(f"    chain id:   {out['chain_id']}  ({out['chain_label']})")
+    print(f"    to:         {out['registry']}  (the ERC-8004 identity registry)")
+    print(f"    function:   register(string agentURI), selector {out['selector']}")
+    print(f"    calldata:   {out['calldata']}")
+    print(f"    agentURI:   {out['agent_uri']}")
+    print(f"    checked:    the registry would accept it and mint agent #{out['would_register_id']} "
+          f"(simulated now; the number can change if someone registers first)")
+    print(f"    gas:        about {out['gas_estimate']:,} (test ETH; the wallet shows the price)")
+    n = networks.NETWORKS.get(out["chain"])
+    explorer = f"{n.address_explorer}{out['registry']}#writeProxyContract" if n and n.address_explorer else ""
+    print("\n  How: in any wallet that can send a contract call with data, paste the chain, `to` and `calldata`. Or "
+          + (f"open {explorer} and use the write-as-proxy tab: register with the agentURI above."
+             if explorer else "use the explorer's write-as-proxy tab for the registry: register with the agentURI above."))
+    print(f"  Or let your browser wallet send it: emporia agent register-8004 {name} --chain {_cmd_chain(out['chain'])} --browser")
+    print(f"\n  When it is mined: emporia agent register-8004 {name} --chain {_cmd_chain(out['chain'])} --tx 0xHASH")
+
+
+def _register_in_browser(t: _Target, name: str, chain: str, built: dict[str, Any], yes: bool) -> int:
+    """`--browser`: serve one local page that has the person's wallet send the call, then continue as `--tx`."""
+    import webbrowser
+
+    from emporia import browser_sign
+    cli = _cli()
+    if not yes and not cli._persons_terminal():
+        print("agent register-8004: sending is the person's act and there is no terminal to ask in. Run it in your own "
+              "terminal, or add --yes.")
+        return 1
+    if not yes and cli.prompt(f"Open the page that asks your wallet to send this on {built['chain_label']}? [y/N]",
+                              "n").lower() not in ("y", "yes"):
+        print("  nothing sent.")
+        return 0
+    summary = (f"Sends register(agentURI) to the ERC-8004 identity registry on {built['chain_label']}, from the account "
+               f"you pick in your wallet. That account will own the new identity. Emporia sends nothing itself; "
+               f"your wallet shows the gas.")
+    page = browser_sign.SendPage({"chain_id": built["chain_id"], "to": built["registry"], "data": built["calldata"]},
+                                 chain_label=built["chain_label"], agent_name=name, summary=summary).start()
+    print(f"\n  Open this page in the browser that has your wallet (it only exists while this command waits; "
+          f"closes after one transaction or {int(page.timeout // 60)} minutes; Ctrl-C cancels):\n\n    {page.url}\n")
+    try:
+        webbrowser.open(page.url)           # best effort: the URL above is the fallback
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        got = page.wait()
+    except browser_sign.BrowserSignError as e:
+        print(f"agent register-8004: {e}; nothing sent")
+        return 1
+    except KeyboardInterrupt:
+        page.close()
+        print("\n  cancelled; nothing sent (if your wallet already sent it, use --tx with its hash).")
+        return 1
+    print(f"  Your wallet sent transaction {got['tx_hash']} from {got['account']}.")
+    return _register_after(t, name, chain, got["tx_hash"], yes, waiting=True)
+
+
+def _register_after(t: _Target, name: str, chain: str, tx: str, yes: bool, *, waiting: bool = False) -> int:
+    """Read the receipt, say what was registered, and go on to link-8004 for that agent."""
+    out = _chain_run(t, "confirm", chain, tx, mod="chain_register")
+    if not out.get("success"):
+        print(f"agent register-8004: {out.get('error')}")
+        if waiting:
+            print(f"  Once it is mined: emporia agent register-8004 {name} --chain {_cmd_chain(chain)} --tx {tx}")
+        return 1
+    print(f"  Registered: ERC-8004 #{out['agent_id']} on {out['chain_label']}, owned by {out['owner']} "
+          f"(block {out['block_number']}).")
+    print(f"  Two-way: its on-chain registration names {name} (stable id {out['stable_id'][:12]}...).")
+    fin = out.get("finalized_block")
+    cmd = f"emporia agent link-8004 {name} --chain {_cmd_chain(chain)} --agent-id {out['agent_id']}"
+    if fin is None or fin < out["block_number"]:
+        gap = "" if fin is None else f" (about {max(1, (out['block_number'] - fin) * 2 // 60)} minutes at 2-second blocks)"
+        print(f"\n  Linking reads the chain at its finalized block, which has not reached yours yet{gap}. "
+              f"Run this when it has:\n\n    {cmd}   (add --browser to sign in your browser wallet)")
+        return 0
+    print(f"\n  Next: linking it to {name}'s card (the same as `{cmd}`).\n")
+    return link_8004(name, chain, out["agent_id"], "", "", 0, yes, False)
 
 
 def unlink_8004(name: str, chain: str, agent_id: str) -> int:

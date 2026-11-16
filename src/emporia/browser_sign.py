@@ -1,6 +1,6 @@
-"""A one-shot local page for signing the ERC-8004 link statement with a browser wallet.
+"""A one-shot local page for signing the ERC-8004 link statement (or sending the registration transaction) with a browser wallet.
 
-Runs only while `emporia agent link-8004 NAME --browser` waits, and never inside the dashboard (which has no wallet UI).
+Runs only while `emporia agent link-8004 NAME --browser` (or `register-8004 NAME --browser`) waits, and never inside the dashboard (which has no wallet UI).
 The standard library only: `http.server` on 127.0.0.1 at a random port, one page, one POST.
 
 * The address carries a one-time token (`/<token>`). Any other path, or a wrong token, is a plain 404; the Host
@@ -34,6 +34,7 @@ MAX_SIG_BYTES = 4096
 HOST = "127.0.0.1"
 _ADDR = re.compile(r"0x[0-9a-fA-F]{40}")
 _HEX = re.compile(r"(0x)?[0-9a-fA-F]+")
+_TX = re.compile(r"0x[0-9a-fA-F]{64}")
 
 
 class BrowserSignError(Exception):
@@ -58,7 +59,8 @@ button,select{font:inherit;padding:.5rem 1rem;margin:.25rem 0}#status{min-height
 SCRIPT = r"""
 (() => {
   const doc = JSON.parse(document.getElementById("page-data").textContent);
-  const td = doc.typed_data, wantChain = Number(td.domain.chainId), signer = String(td.message.signer).toLowerCase();
+  const td = doc.typed_data, tx = doc.tx;
+  const wantChain = Number(td ? td.domain.chainId : tx.chain_id), signer = td ? String(td.message.signer).toLowerCase() : "";
   const $ = (id) => document.getElementById(id);
   const say = (text, cls) => { const s = $("status"); s.textContent = text; s.className = cls || ""; };
   const found = [];
@@ -81,6 +83,31 @@ SCRIPT = r"""
   const hexChain = (n) => "0x" + n.toString(16);
   const refused = (e) => e && (e.code === 4001 || e.code === "ACTION_REJECTED");
   async function chainId(p) { return parseInt(await p.request({ method: "eth_chainId" }), 16); }
+  // Make the wallet's chain the page's: false (and said why) when it is not.
+  async function ensureChain(p) {
+    if (await chainId(p) === wantChain) return true;
+    say("Your wallet is on another chain. Asking it to switch to " + doc.chain_label + "...");
+    try {
+      await p.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexChain(wantChain) }] });
+    } catch (e) {
+      say("Your wallet did not switch to " + doc.chain_label + " (chain id " + wantChain + ")" +
+          (refused(e) ? ": you declined" : e && e.code === 4902 ? ": it does not know that chain" : "") +
+          ". Switch it yourself, then press the button again.", "bad");
+      return false;
+    }
+    if (await chainId(p) !== wantChain) {
+      say("Your wallet is still not on " + doc.chain_label + ". Switch it yourself, then press the button again.", "bad");
+      return false;
+    }
+    return true;
+  }
+  async function post(body) {
+    const r = await fetch(location.pathname.replace(/\/$/, "") + "/sign", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (!r.ok) { say("The terminal did not accept it: " + (await r.text()), "bad"); $("sign").disabled = false; return false; }
+    return true;
+  }
   async function go() {
     $("sign").disabled = true;
     const chosen = found[Number($("wallet").value || 0)];
@@ -89,35 +116,29 @@ SCRIPT = r"""
     try {
       say("Asking your wallet for the account...");
       const accounts = (await p.request({ method: "eth_requestAccounts" })).map((a) => String(a).toLowerCase());
-      if (!accounts.includes(signer)) {
+      if (td && !accounts.includes(signer)) {
         say("Your wallet did not offer the account " + td.message.signer + ". Select that account in your wallet, then press Sign again.", "bad");
         $("sign").disabled = false; return;
       }
-      if (await chainId(p) !== wantChain) {
-        say("Your wallet is on another chain. Asking it to switch to " + doc.chain_label + "...");
-        try {
-          await p.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexChain(wantChain) }] });
-        } catch (e) {
-          say("Your wallet did not switch to " + doc.chain_label + " (chain id " + wantChain + ")" +
-              (refused(e) ? ": you declined" : e && e.code === 4902 ? ": it does not know that chain" : "") +
-              ". Switch it yourself, then press Sign again.", "bad");
-          $("sign").disabled = false; return;
+      if (!accounts.length) { say("Your wallet offered no account.", "bad"); $("sign").disabled = false; return; }
+      if (!(await ensureChain(p))) { $("sign").disabled = false; return; }
+      if (td) {
+        say("Waiting for your signature in the wallet...");
+        const signature = await p.request({ method: "eth_signTypedData_v4", params: [td.message.signer, JSON.stringify(td)] });
+        if (!(await post({ signature, account: td.message.signer }))) return;
+        say("Signed. The terminal has it: you can close this tab.", "good");
+      } else {
+        say("Waiting for you to confirm the transaction in the wallet...");
+        const hash = await p.request({ method: "eth_sendTransaction", params: [{ from: accounts[0], to: tx.to, data: tx.data, value: "0x0" }] });
+        if (!(await post({ tx_hash: hash, account: accounts[0] }))) {
+          $("sign").disabled = true;      // it was sent: never offer to send a second one
+          say("The transaction was sent (hash " + hash + ") but the terminal did not take the hash. Give it to the terminal with --tx.", "bad");
+          return;
         }
-        if (await chainId(p) !== wantChain) {
-          say("Your wallet is still not on " + doc.chain_label + ". Switch it yourself, then press Sign again.", "bad");
-          $("sign").disabled = false; return;
-        }
+        say("Sent. The terminal has the transaction hash: you can close this tab.", "good");
       }
-      say("Waiting for your signature in the wallet...");
-      const signature = await p.request({ method: "eth_signTypedData_v4", params: [td.message.signer, JSON.stringify(td)] });
-      const r = await fetch(location.pathname.replace(/\/$/, "") + "/sign", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signature, account: td.message.signer }),
-      });
-      if (!r.ok) { say("The terminal did not accept it: " + (await r.text()), "bad"); $("sign").disabled = false; return; }
-      say("Signed. The terminal has it: you can close this tab.", "good");
     } catch (e) {
-      say(refused(e) ? "You declined to sign. Nothing was sent. Press Sign to try again." : "The wallet said: " + ((e && e.message) || e), "bad");
+      say(refused(e) ? "You declined. Nothing was sent. Press the button to try again." : "The wallet said: " + ((e && e.message) || e), "bad");
       $("sign").disabled = false;
     }
   }
@@ -152,6 +173,32 @@ the message below with the signer's wallet some other way and give it to the ter
 """
 
 
+def tx_page_html(tx: dict, *, chain_label: str, agent_name: str, summary: str, nonce: str) -> str:
+    """The page for sending one transaction from the person's wallet. `tx` is `{chain_id, to, data}`; `summary` is the
+    plain-words account of what it does (the CLI printed it too). Nothing is sent without the wallet's own prompt."""
+    data = _json_for_html({"tx": tx, "chain_label": chain_label})
+    shown = html.escape(json.dumps({"chain id": tx["chain_id"], "to (the registry)": tx["to"], "value": "0",
+                                    "data": tx["data"]}, indent=2))
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer"><title>Send the registration</title>
+<style nonce="{nonce}">{STYLE}</style></head><body>
+<h1>Register {html.escape(agent_name)} on ERC-8004</h1>
+<p>{html.escape(summary)}</p>
+<p class="dim">Your wallet will ask you to confirm one transaction on {html.escape(chain_label)}. Check its prompt against
+the call below before you confirm.</p>
+<p><select id="wallet" hidden aria-label="wallet"></select> <button id="sign" type="button" disabled>Send the registration</button></p>
+<p id="status" role="status"></p>
+<p id="nowallet" class="dim" hidden>No wallet was found in this browser. Open this page where your browser wallet is, or send
+the call below from your wallet some other way and give the transaction hash to the terminal with <code>--tx</code>.</p>
+<p class="dim">The call (a contract call with data, value 0):</p>
+<pre>{shown}</pre>
+<script type="application/json" id="page-data">{data}</script>
+<script nonce="{nonce}">{SCRIPT}</script>
+</body></html>
+"""
+
+
 def csp(nonce: str) -> str:
     return (f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; connect-src 'self'; "
             "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
@@ -161,7 +208,8 @@ CONN_TIMEOUT = 5.0                  # seconds a connection may sit silent before
 
 
 class SigningPage:
-    """One page, one signature. `start()` binds; `wait()` serves until a signature arrives or the time is up."""
+    """One page, one signature. `start()` binds; `wait()` serves until a signature arrives or the time is up.
+    `SendPage` is the same page for sending one transaction: it overrides `render` and `accept` only."""
 
     def __init__(self, typed_data: dict, *, chain_label: str, agent_name: str, token: str | None = None,
                  timeout: float = TIMEOUT):
@@ -172,6 +220,21 @@ class SigningPage:
         self._server: HTTPServer | None = None
         self._lock = threading.Lock()
         self._signer = str(typed_data["message"]["signer"]).lower()
+
+    def render(self, nonce: str) -> str:
+        return page_html(self.typed_data, chain_label=self.chain_label, agent_name=self.agent_name, nonce=nonce)
+
+    def accept(self, body: Any) -> dict | None:
+        """The result for a well-formed POST body, else None (a refused POST does not use the one)."""
+        try:
+            sig, account = body["signature"], body["account"]
+        except (KeyError, TypeError):
+            return None
+        if not isinstance(sig, str) or not isinstance(account, str) or not _HEX.fullmatch(sig) \
+                or len(sig.removeprefix("0x")) % 2 or len(sig.removeprefix("0x")) > 2 * MAX_SIG_BYTES \
+                or not _ADDR.fullmatch(account) or account.lower() != self._signer:
+            return None
+        return {"signature": sig if sig.startswith("0x") else "0x" + sig, "account": account}
 
     @property
     def port(self) -> int:
@@ -224,8 +287,7 @@ class SigningPage:
                 if not self._own_host() or self._route() != "page":
                     return self._send(404, b"not found")
                 nonce = secrets.token_urlsafe(16)
-                body = page_html(page.typed_data, chain_label=page.chain_label, agent_name=page.agent_name,
-                                 nonce=nonce).encode()
+                body = page.render(nonce).encode()
                 self._send(200, body, "text/html; charset=utf-8", nonce)
 
             do_HEAD = do_GET
@@ -248,17 +310,15 @@ class SigningPage:
                     return self._send(413, b"too large")
                 try:
                     body = json.loads(self.rfile.read(length))
-                    sig, account = body["signature"], body["account"]
-                except (ValueError, KeyError, TypeError):
+                except ValueError:
                     return self._send(400, b"malformed")
-                if not isinstance(sig, str) or not isinstance(account, str) or not _HEX.fullmatch(sig) \
-                        or len(sig.removeprefix("0x")) % 2 or len(sig.removeprefix("0x")) > 2 * MAX_SIG_BYTES \
-                        or not _ADDR.fullmatch(account) or account.lower() != page._signer:
-                    return self._send(400, b"not a signature for the signer")
+                got = page.accept(body)
+                if got is None:
+                    return self._send(400, b"not what this page asks for")
                 with page._lock:
                     if page.result is not None:
                         return self._send(409, b"a signature was already received")
-                    page.result = {"signature": sig if sig.startswith("0x") else "0x" + sig, "account": account}
+                    page.result = got
                 self._send(200, b'{"ok":true}', "application/json")
 
         # One thread per connection (daemon, never joined), so an idle browser pre-connection cannot hold the
@@ -284,3 +344,34 @@ class SigningPage:
     def close(self) -> None:
         if self._server is not None:
             self._server.server_close()
+
+
+class SendPage(SigningPage):
+    """One page, one transaction the person's wallet sends. The page returns only the transaction hash (and the account
+    that sent it); the CLI then reads the chain itself, trusting nothing the page says. `tx` is `{chain_id, to, data}`."""
+
+    def __init__(self, tx: dict, *, chain_label: str, agent_name: str, summary: str, token: str | None = None,
+                 timeout: float = TIMEOUT):
+        self.tx, self.summary = tx, summary
+        self.typed_data = {}
+        self.chain_label, self.agent_name = chain_label, agent_name
+        self.token = token or secrets.token_urlsafe(24)
+        self.timeout = timeout
+        self.result = None
+        self._server = None
+        self._lock = threading.Lock()
+        self._signer = ""
+
+    def render(self, nonce: str) -> str:
+        return tx_page_html(self.tx, chain_label=self.chain_label, agent_name=self.agent_name, summary=self.summary,
+                            nonce=nonce)
+
+    def accept(self, body: Any) -> dict | None:
+        try:
+            tx_hash, account = body["tx_hash"], body["account"]
+        except (KeyError, TypeError):
+            return None
+        if not isinstance(tx_hash, str) or not _TX.fullmatch(tx_hash) or not isinstance(account, str) \
+                or not _ADDR.fullmatch(account):
+            return None
+        return {"tx_hash": tx_hash.lower(), "account": account}
