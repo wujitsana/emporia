@@ -828,6 +828,42 @@ def test_a_third_relays_agent_under_another_key_than_the_pinned_one_is_refused(c
     assert out["kept"] == 0 and out["refused"] == 1, out
 
 
+def _unverified(post_id: str) -> int:
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return conn.execute("SELECT author_unverified FROM posts WHERE post_id = ?", (post_id,)).fetchone()[0]
+
+
+def test_the_unpinned_mark_clears_when_that_agents_key_is_pinned(carrier, client):
+    carol, dave = RemoteAgent(Peer(C_URL)), RemoteAgent(Peer(C_URL))
+    pc, pd = carol.post(carrier.key, "from c"), dave.post(carrier.key, "from c too")
+    carrier.fake.add(pc)
+    carrier.fake.add(pd)
+    assert _pull(carrier)[carrier.key]["kept"] == 2
+    assert _unverified(pc["post_id"]) == _unverified(pd["post_id"]) == 1
+    fd.pin_remote(C_URL, carol.record)                    # her own relay's signed record, as a DM lookup brings it
+    assert _unverified(pc["post_id"]) == 0 and _unverified(pd["post_id"]) == 1     # only hers, only under that key
+
+
+def test_a_carrier_asks_a_linked_third_relay_for_the_key_so_the_post_is_not_marked(carrier, monkeypatch):
+    monkeypatch.setattr(rs, "FEDERATED_RELAYS", [H_URL, C_URL])
+    carol, dave = RemoteAgent(Peer(C_URL)), RemoteAgent(Peer(C_URL))
+    asked = []
+
+    async def look_up(peer, agent_id):
+        asked.append(agent_id)
+        if agent_id != carol.name:
+            raise RuntimeError("does not take DMs")      # dave's relay will not say: his post stays marked
+        return fd.pin_remote(peer, carol.record)
+    monkeypatch.setattr(fd, "look_up", look_up)
+    pc, pd = carol.post(carrier.key, "from c"), dave.post(carrier.key, "from c too")
+    pc2 = carol.post(carrier.key, "and again")
+    for p in (pc, pd, pc2):
+        carrier.fake.add(p)
+    assert _pull(carrier)[carrier.key]["kept"] == 3
+    assert (_unverified(pc["post_id"]), _unverified(pc2["post_id"]), _unverified(pd["post_id"])) == (0, 0, 1)
+    assert sorted(asked) == sorted([carol.name, dave.name])      # once per agent, not once per post
+
+
 def test_the_feed_leaves_out_what_a_local_stranger_may_not_read_and_what_expired(host, monkeypatch):
     """Gated (hangs from a room or game), sealed-adjacent and expired posts do not leave the relay. Verification is
     stubbed so only the feed's own gates decide."""
@@ -895,6 +931,23 @@ def test_a_notice_naming_an_unpinned_third_relay_author_wakes_no_one_and_looks_t
                      "VALUES (?,?,?,?,?,?,?,?,?)", (third, C_URL, "ab" * 32, "cd" * 32, "", "now",
                                                     wire.stable_id_for("ab" * 32), "[]", ""))
     assert _notice(client, home, x, author=third).status_code == 200
+
+
+def test_a_mention_by_a_local_agent_is_vouched_only_by_its_own_post(home, client):
+    """Bob and Alice share this carrier; the host tells us of Bob's `@alice@here`. Bob is ours, so the notice alone
+    proves nothing: it counts only when it names a post we hold under Bob's address in that topic."""
+    x = home.x
+    bob = _agent(client, "mb")
+    _post_in_carried(client, home, x)
+    _post_in_carried(client, home, bob)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        bobs = conn.execute("SELECT post_id FROM posts WHERE author_id = ?", (f"{bob}@{own_host()}",)).fetchone()[0]
+        xs = conn.execute("SELECT post_id FROM posts WHERE author_id = ?", (f"{x}@{own_host()}",)).fetchone()[0]
+    author = f"{bob}@{own_host()}"
+    assert _notice(client, home, x, author=author).status_code == 404                       # a made-up post id
+    assert _notice(client, home, x, author=author, post_id=xs).status_code == 404           # someone else's post
+    assert _notice(client, home, x, author=author, post_id=bobs, topic=f"other@{home.h.host}").status_code == 404
+    assert _notice(client, home, x, author=author, post_id=bobs).status_code == 200
 
 
 def test_a_plain_slug_finds_the_one_carried_topic_and_names_several(monkeypatch):

@@ -220,6 +220,21 @@ def _put_check(agent: str, check: dict) -> None:
         conn.execute("UPDATE authorized_agents SET home_check_json = ? WHERE agent_id = ?", (json.dumps(check), agent))
 
 
+def test_a_first_write_before_the_home_check_answers_is_retryable_not_refused(vclient, monkeypatch):
+    from emporia import visitors
+    v = V.name("pending1")
+    V.fake_home(monkeypatch, [V.pub_of(v)])
+    V.register(vclient, v, V.visiting())
+    _put_check(v, {})                                       # registered a moment ago: no answer recorded yet
+    monkeypatch.setenv("EMPORIA_VISITORS", "homed-only")
+    monkeypatch.setattr(visitors, "refresh_if_stale", lambda agent: None)      # the check is still running
+    r = vclient.post(f"/agents/{v}/relay-list", headers=V._hdr(v), json={})
+    assert r.status_code == 503 and r.json()["retry_in_s"] == visitors.RETRY_IN_S and r.headers["retry-after"]
+    assert "being checked" in r.json()["detail"]
+    _put_check(v, {"status": "unconfirmed", "reason": "no", "at": "2026-01-01T00:00:00+00:00"})
+    assert vclient.post(f"/agents/{v}/relay-list", headers=V._hdr(v), json={}).status_code == 403   # a real "no"
+
+
 def test_a_home_silent_for_a_week_is_no_longer_confirmed_and_one_that_names_another_relay_is_downgraded_at_once(
         vclient, monkeypatch):
     v = V.name("recheck3")

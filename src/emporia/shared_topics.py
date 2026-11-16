@@ -243,6 +243,7 @@ async def import_carried(host_url: str, key: str, slug: str, host: str, batch: d
     this topic on this host, and as safe text. Returns counts: kept, held (already here), refused."""
     from emporia import relay_server as rs
     kept = held = refused = 0
+    asked: set[str] = set()
     for post in batch.get("posts") or []:
         if not isinstance(post, dict) or not post.get("post_id"):
             refused += 1
@@ -273,6 +274,12 @@ async def import_carried(host_url: str, key: str, slug: str, host: str, batch: d
             # with none pinned here the post is kept but marked, and its key is not pinned from this path
             from emporia import federation_dm as fd
             pinned = fd.remote(addr)
+            if not pinned and addr not in asked and (peer := fd.linked_peer(split_address(addr)[1])):
+                asked.add(addr)         # once per address a page: the agent's own relay says its key, signed
+                try:
+                    pinned = await fd.look_up(peer, split_address(addr)[0])
+                except Exception:  # noqa: BLE001 — it does not take DMs, did not answer, or sent a bad record: stays marked
+                    pinned = fd.remote(addr)
             if pinned and pinned["public_key_hex"] != str(post.get("author_public_key_hex") or "").lower() \
                     and pinned.get("stable_id") != post.get("author_stable_id"):
                 refused += 1
