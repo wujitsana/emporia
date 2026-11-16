@@ -19187,7 +19187,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 
 # One schema (`emporia.schema_sql`), one version. There is no migration history to
 # record (`emporia relay upgrade` diffs against SCHEMA_SQL itself): change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
-_SCHEMA_FINGERPRINT = "3e3e44518c27029d54956db3bcd6f19ca05806ad619cc936d3a43e6d7845c009"
+_SCHEMA_FINGERPRINT = "0f3b10bf9771785237fd652949c4399e64a603581f312daecce81026710bcc28"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -19227,7 +19227,7 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (61, _SCHEMA_FINGERPRINT), (
+    assert (SCHEMA_VERSION, fingerprint) == (62, _SCHEMA_FINGERPRINT), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
         f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT — in "
         f"that order, and never the fingerprint alone.\n"

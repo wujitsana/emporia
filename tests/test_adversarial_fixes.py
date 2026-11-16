@@ -1,0 +1,231 @@
+"""Regression tests for the adversarial check of 2.1: each is an attack that worked, now refused."""
+from __future__ import annotations
+
+import pytest
+
+from emporia import federation_dm as fd
+from tests import test_shared_topics as T
+
+B_URL = T.B_URL
+client, host, carrier = T.client, T.host, T.carrier       # the shared-topics fixtures, reused
+
+
+def _forget_nonces():
+    from emporia import relay_server as rs
+    fd._SEEN_NONCES.clear()
+    getattr(fd, "_PEER_HITS", {}).clear()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("DELETE FROM peer_nonces")
+
+
+def test_one_peer_filling_its_nonce_cache_locks_out_only_itself(host, client, monkeypatch):
+    """Was: one global cache of 20000, so one linked relay's flood refused every peer."""
+    for name in ("_MAX_SEEN", "_MAX_SEEN_PER_PEER"):
+        monkeypatch.setattr(fd, name, 5, raising=False)
+    monkeypatch.setattr(fd, "PEER_RATE_PER_MIN", 10_000, raising=False)
+    _forget_nonces()
+    b, c = host.peers["b"], host.peers["c"]
+    codes = [b.call(client, "GET", "/federation/v1/topics").status_code for _ in range(8)]
+    assert codes[:5] == [200] * 5 and set(codes[5:]) <= {404, 429}      # B is refused once its own cache is full
+    assert c.call(client, "GET", "/federation/v1/topics").status_code == 200       # C is not
+    assert b.call(client, "GET", "/federation/v1/topics").status_code != 200
+
+
+def test_a_peer_over_its_rate_is_refused_before_its_nonce_is_stored(host, client, monkeypatch):
+    monkeypatch.setattr(fd, "PEER_RATE_PER_MIN", 3, raising=False)
+    _forget_nonces()
+    b, c = host.peers["b"], host.peers["c"]
+    codes = [b.call(client, "GET", "/federation/v1/topics").status_code for _ in range(5)]
+    assert codes == [200, 200, 200, 429, 429]
+    assert len(fd._SEEN_NONCES.get(B_URL, {})) == 3          # the refused calls stored no nonce
+    assert c.call(client, "GET", "/federation/v1/topics").status_code == 200
+
+
+def test_a_captured_peer_request_is_not_valid_again_after_a_restart(host, client):
+    """Was: the nonce cache was memory only, so a restart made a captured in-window request valid again."""
+    b = host.peers["b"]
+    h = b.headers("GET", "/federation/v1/topics")
+    assert client.get("/federation/v1/topics", headers=h).status_code == 200
+    assert client.get("/federation/v1/topics", headers=h).status_code != 200
+    fd._SEEN_NONCES.clear()                 # the process restarts: memory is empty
+    assert client.get("/federation/v1/topics", headers=h).status_code != 200
+
+
+def test_nonces_past_their_window_are_dropped_from_the_table():
+    from emporia import relay_server as rs
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO peer_nonces (peer, nonce, expires_at) VALUES ('http://old.test', 'aa', 1)")
+    fd._SEEN_NONCES.pop("http://old.test", None)
+    assert fd._first_use("http://old.test", "aa") == "new"          # expired: not remembered
+    with rs.DB_LOCK, rs.get_db() as conn:
+        assert conn.execute("SELECT expires_at FROM peer_nonces WHERE peer = 'http://old.test'").fetchone()[0] > 1000
+
+
+# ── the home check: one resolution, the exact address, and one address rule ──────────────────────────
+
+def test_a_name_that_answers_differently_the_second_time_reaches_nothing(monkeypatch):
+    """DNS rebinding: the name was public when checked and loopback when connected."""
+    import socket
+
+    from emporia import fetch, visitors
+    monkeypatch.setattr(fetch, "_PASSTHROUGH", False)
+    real_gai = socket.getaddrinfo
+    lookups: list[int] = []
+    dialed: list[tuple] = []
+
+    def gai(host, port, *a, **k):
+        if host == "rebind.test":
+            lookups.append(1)
+            ip = "93.184.216.34" if len(lookups) == 1 else "127.0.0.1"
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, port))]
+        return real_gai(host, port, *a, **k)
+
+    def cc(address, *a, **k):
+        dialed.append(address)
+        raise ConnectionRefusedError("test: nothing is dialed for real")
+
+    monkeypatch.setattr(socket, "getaddrinfo", gai)
+    monkeypatch.setattr(socket, "create_connection", cc)
+    assert visitors._pull("https://rebind.test:8443") == {"error": visitors._UNANSWERED}
+    assert len(lookups) == 1                                        # resolved once
+    assert dialed and all(a[0] == "93.184.216.34" for a in dialed), dialed       # only the checked address
+
+
+def test_the_pinned_call_keeps_the_name_as_host_and_tls_server_name(monkeypatch):
+    import httpx
+
+    from emporia import fetch
+    monkeypatch.setattr(fetch, "_PASSTHROUGH", False)
+    seen = {}
+
+    def stream(self, method, url, **kw):
+        seen.update(url=str(url), headers=kw.get("headers"), ext=kw.get("extensions"))
+        raise httpx.ConnectError("test")
+
+    monkeypatch.setattr(httpx.Client, "stream", stream)
+    with pytest.raises(httpx.ConnectError):
+        fetch.get("https://relay.example:8443/federation/v1/listed-agents", connect_ip="93.184.216.34")
+    assert seen["url"] == "https://93.184.216.34:8443/federation/v1/listed-agents"
+    assert seen["headers"]["Host"] == "relay.example:8443" and seen["ext"] == {"sni_hostname": "relay.example"}
+    with pytest.raises(httpx.ConnectError):
+        fetch.get("https://relay.example/x", connect_ip="2606:4700::1111")
+    assert seen["url"] == "https://[2606:4700::1111]/x" and seen["headers"]["Host"] == "relay.example"
+
+
+@pytest.mark.parametrize("raw", [
+    "64:ff9b::7f00:1", "64:ff9b::a00:1", "64:ff9b::a9fe:a9fe", "64:ff9b:1::a00:1", "::7f00:1", "::1", "::",
+    "::ffff:127.0.0.1", "::ffff:0:7f00:1", "fec0::1", "2002:7f00:1::1", "2002:a00:1::1",
+    "2002:c0a8:101::1", "fe80::1", "fd00::1", "ff02::1", "127.0.0.1", "10.1.2.3", "169.254.169.254", "100.64.0.1"])
+def test_an_address_that_is_not_public_or_carries_one_that_is_not_is_refused(raw):
+    from emporia import fetch
+    assert not fetch.is_public_address(raw), raw
+
+
+@pytest.mark.parametrize("raw", ["8.8.8.8", "93.184.216.34", "2606:4700::1111", "64:ff9b::808:808", "2002:808:808::1"])
+def test_public_addresses_still_pass(raw):
+    from emporia import fetch
+    assert fetch.is_public_address(raw), raw
+
+
+def test_the_home_check_refuses_those_as_hosts(monkeypatch):
+    from emporia import fetch, visitors
+    monkeypatch.setattr(fetch, "_PASSTHROUGH", False)
+    for u in ("https://[64:ff9b::7f00:1]", "https://[::7f00:1]", "https://[::ffff:0:7f00:1]", "https://[fec0::1]",
+              "https://[2002:a00:1::1]"):
+        assert visitors.target_problem(u) == "not a public address", u
+
+
+# ── a confirmed home is asked again ──────────────────────────────────────────────────────────────────
+
+from tests import test_cross_relay_visitors as V
+
+vclient, _fresh = V.client, V._fresh
+
+
+def _age_check(agent: str, hours: float, status: str | None = None):
+    import json
+    from datetime import UTC, datetime, timedelta
+
+    from emporia import relay_server as rs
+    with rs.DB_LOCK, rs.get_db() as conn:
+        c = json.loads(conn.execute("SELECT home_check_json FROM authorized_agents WHERE agent_id = ?",
+                                    (agent,)).fetchone()[0])
+        c["at"] = (datetime.now(UTC) - timedelta(hours=hours)).isoformat(timespec="seconds")
+        c["status"] = status or c["status"]
+        conn.execute("UPDATE authorized_agents SET home_check_json = ? WHERE agent_id = ?", (json.dumps(c), agent))
+
+
+def test_a_home_that_stops_listing_the_agent_is_found_out_after_a_day(vclient, monkeypatch):
+    from emporia import visitors
+    v = V.name("recheck")
+    V.fake_home(monkeypatch, [V.pub_of(v)])
+    V.register(vclient, v, V.visiting())
+    monkeypatch.setenv("EMPORIA_VISITORS", "homed-only")
+    write = lambda: vclient.post(f"/agents/{v}/relay-list", headers=V._hdr(v), json={}).status_code
+    assert write() != 403
+    asked = V.fake_home(monkeypatch, [])                    # the home no longer lists it
+    visitors._looked.clear()
+    assert write() != 403 and asked == []                   # a fresh answer is not asked again within a day
+    _age_check(v, 25)
+    visitors._looked.clear()
+    assert write() == 403 and asked                         # asked again after a day: unconfirmed, refused
+    assert V.presence(vclient, v)["check"]["status"] == "unconfirmed"
+
+
+def test_a_home_that_does_not_answer_falls_back_to_unconfirmed_and_is_tried_again(vclient, monkeypatch):
+    from emporia import visitors
+    v = V.name("recheck2")
+    V.fake_home(monkeypatch, [V.pub_of(v)])
+    V.register(vclient, v, V.visiting())
+    monkeypatch.setenv("EMPORIA_VISITORS", "homed-only")           # the re-check runs where the setting makes it matter
+    _age_check(v, 25)
+    V.fake_home(monkeypatch, None, fail=True)
+    visitors._looked.clear()
+    assert V.presence(vclient, v)["check"]["status"] == "confirmed"        # nobody acted yet: lazily, on the visitor's own call
+    vclient.get(f"/agents/{v}", headers=V._hdr(v))
+    assert V.presence(vclient, v)["check"]["status"] == "unconfirmed"
+    asked = V.fake_home(monkeypatch, [V.pub_of(v)])         # it is back; an hour later it is asked again
+    _age_check(v, 2)
+    visitors._looked.clear()
+    vclient.get(f"/agents/{v}", headers=V._hdr(v))
+    assert asked and V.presence(vclient, v)["check"]["status"] == "confirmed"
+
+
+# ── a host vouching for an agent of a third relay ────────────────────────────────────────────────────
+
+def _flag(post_id: str):
+    from emporia import relay_server as rs
+    with rs.DB_LOCK, rs.get_db() as conn:
+        r = conn.execute("SELECT author_unverified FROM posts WHERE post_id = ?", (post_id,)).fetchone()
+    return None if r is None else r[0]
+
+
+def test_a_third_relays_unpinned_author_is_kept_marked_and_never_wakes_or_pins(carrier, client):
+    from emporia import relay_server as rs
+    x = T._agent(client, "dx")
+    assert T._set_mode(client, x, "any").status_code == 200
+    ghost = T.RemoteAgent(T.Peer(T.C_URL), "ghostzz")        # the host puts words in the mouth of c's agent
+    pinned = T.RemoteAgent(T.Peer(T.C_URL), "carolpin")
+    own = T.RemoteAgent(carrier.h, "hostguy")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("INSERT INTO remote_agents (address, peer_url, public_key_hex, encryption_public_key, "
+                     "encryption_key_signature, updated_at, stable_id, key_log_json, encryption_key_at) "
+                     "VALUES (?,?,?,?,?,?,?,?,?)", (pinned.address, T.C_URL, pinned.pub, "cd" * 32, "", "now",
+                                                    pinned.stable, "[]", ""))
+    pg, pp = ghost.post(carrier.key, "ghost speaks as a c agent"), pinned.post(carrier.key, "carol, pinned")
+    po = own.post(carrier.slug, "the host's own")
+    for p in (pg, pp, po):
+        carrier.fake.add(p)
+    out = T._pull(carrier)[carrier.key]
+    assert out["kept"] == 3 and out["refused"] == 0, out
+    assert (_flag(pg["post_id"]), _flag(pp["post_id"]), _flag(po["post_id"])) == (1, 0, 0)
+    with rs.DB_LOCK, rs.get_db() as conn:           # this path pinned nobody
+        assert conn.execute("SELECT COUNT(*) FROM remote_agents WHERE address = ?", (ghost.address,)).fetchone()[0] == 0
+    # it is shown in words, and as nothing verified
+    items = {p["post_id"]: p for p in client.get(f"/agoras/topics/{carrier.key}/posts", headers=T._as(x)).json()["posts"]}
+    assert items[pg["post_id"]]["author_unverified"] is True
+    assert items[pg["post_id"]]["author_note"] == "via h-relay.test, author key not pinned here"
+    assert "author_unverified" not in items[pp["post_id"]] and "author_unverified" not in items[po["post_id"]]
+    # a mention notice for that post wakes nobody; one for a pinned author's post still does
+    assert T._notice(client, carrier, x, author=ghost.address, post_id=pg["post_id"]).status_code == 404
+    assert T._notice(client, carrier, x, author=pinned.address, post_id=pp["post_id"]).status_code == 200

@@ -123,6 +123,9 @@ async def receive(peer: str, body: dict[str, Any]) -> bool:
         return False
     preview = " ".join(str(body.get("preview") or "").split())
     with rs.DB_LOCK, rs.get_db() as conn:
+        # a post whose author this relay has not pinned (a third relay's agent, vouched for by the host only) wakes nobody
+        if conn.execute("SELECT 1 FROM posts WHERE post_id = ? AND author_unverified = 1", (post_id,)).fetchone():
+            return False
         if not decide(conn, name, host_of(peer), author, key, post_id):
             return False
     await rs.broadcast_to_agent(name, frame(name, host_of(peer), author, key, post_id, preview))

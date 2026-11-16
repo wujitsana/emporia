@@ -549,7 +549,8 @@ CREATE TABLE IF NOT EXISTS posts (
                 root_key TEXT,
                 is_copy INTEGER NOT NULL DEFAULT 0,
                 expires_at INTEGER,
-                signed_topic TEXT
+                signed_topic TEXT,
+                author_unverified INTEGER NOT NULL DEFAULT 0
             );
 
 CREATE INDEX IF NOT EXISTS idx_posts_feed ON posts(kind, at);
@@ -892,6 +893,15 @@ CREATE TABLE IF NOT EXISTS remote_mention_log (
             );
 
 CREATE INDEX IF NOT EXISTS idx_remote_mention_log_to ON remote_mention_log(to_agent, at);
+
+CREATE TABLE IF NOT EXISTS peer_nonces (
+                peer TEXT NOT NULL,
+                nonce TEXT NOT NULL,
+                expires_at REAL NOT NULL,
+                PRIMARY KEY (peer, nonce)
+            );
+
+CREATE INDEX IF NOT EXISTS idx_peer_nonces_expires ON peer_nonces(expires_at);
 
 CREATE TABLE IF NOT EXISTS assay_rounds (
                 day TEXT PRIMARY KEY,

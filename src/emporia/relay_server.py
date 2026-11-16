@@ -2182,13 +2182,14 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("authorized_agents", "network_hash"), ("authorized_agents", "network_group"),
     ("authorized_agents", "accepts_networks_json"), ("authorized_agents", "home_json"),
     ("authorized_agents", "home_check_json"), ("authorized_agents", "remote_mentions"),
-    ("agora_topics", "hosted_by"), ("posts", "signed_topic"),
+    ("agora_topics", "hosted_by"), ("posts", "signed_topic"), ("posts", "author_unverified"),
     # Shared topics (cross-relay, second half): what a carrier keeps of a topic another relay hosts, and the
     # log of mentions let in from other relays (the agent it was for is the one handle, below)
     *(("carried_topics", c) for c in ("topic_key", "slug", "host_url", "host_relay_id", "title", "owner_address",
                                       "post_count", "rules", "cursor", "active", "note", "last_pulled_at")),
     ("remote_mention_log", "id"), ("remote_mention_log", "from_relay"), ("remote_mention_log", "post_id"), ("remote_mention_log", "author_address"),
     ("remote_mention_log", "topic_key"), ("remote_mention_log", "at"),
+    ("peer_nonces", "peer"), ("peer_nonces", "nonce"), ("peer_nonces", "expires_at"),
     ("relay_secrets", "name"), ("relay_secrets", "value"),
     ("deletions", "kind"), ("deletions", "item"), ("deletions", "role"), ("deletions", "deleted_at"),
     ("deletions", "signature"), ("deletions", "stable_id"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),
@@ -4081,6 +4082,8 @@ async def relay_access_guard(request: Request, call_next):
         why = relay_access.refusal(request.method, request.url.path, _dashboard_agent_id(request))
         if why:
             return JSONResponse({"detail": why}, status_code=403)
+    if visitors.mode() != "welcome" and (caller := _dashboard_agent_id(request)):
+        await asyncio.to_thread(visitors.refresh_if_stale, caller)     # its home is asked again when the answer is old
     if request.method != "GET" and visitors.mode() != "welcome":     # a visitor's writes, by EMPORIA_VISITORS
         why = visitors.guard(request.method, request.url.path, _dashboard_agent_id(request))
         if why:

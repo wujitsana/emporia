@@ -154,38 +154,27 @@ _UNANSWERED = "it did not answer as a relay"      # all a stranger is told of a 
 def target_problem(url: str) -> str:
     """Why the home check may not call this URL, or "". The home is declared by the agent, so the call is one anyone
     can aim: https only, a host name or public address (no loopback, private, link-local, unspecified or metadata
-    address, by the address itself or by any address its name resolves to). The tests that stand in for other relays
+    address, by the address itself or by any address its name resolves to; `fetch.is_public_address` is the one
+    rule, which also sees an IPv4 address carried inside an IPv6 one). The tests that stand in for other relays
     patch the fetch (`fetch._PASSTHROUGH`) and skip this."""
-    import ipaddress
-    import socket
-    from urllib.parse import urlsplit
+    return _resolve(url)[0]
 
+
+def _resolve(url: str) -> tuple[str, list[str]]:
+    """(why not, "") or ("", addresses): the name is resolved here once, and the call connects to one of these."""
     from emporia import fetch
     if fetch._PASSTHROUGH:
-        return ""
-    parts = urlsplit(url)
-    if parts.scheme != "https" or not parts.hostname:
-        return "not an https address"
-    try:
-        found = {ai[4][0] for ai in socket.getaddrinfo(parts.hostname, parts.port or 443, proto=socket.IPPROTO_TCP)}
-    except OSError:
-        return "no such host"
-    for raw in found:
-        ip = ipaddress.ip_address(raw.split("%")[0])
-        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
-            ip = ip.ipv4_mapped
-        if not ip.is_global or ip.is_multicast:
-            return "not a public address"
-    return ""
+        return "", []
+    return fetch.resolve_public(url)
 
 
 def _pull(url: str) -> dict[str, Any]:
-    from emporia import fetch
     from emporia.identity import federation_signable_bytes, verify_raw
-    if target_problem(url):
+    problem, addrs = _resolve(url)
+    if problem:
         return {"error": _UNANSWERED}
     try:
-        r = fetch.get(f"{url}/federation/v1/listed-agents", timeout=_TIMEOUT_S, max_bytes=2 * 1024 * 1024, total=8.0)
+        r = _get_listing(f"{url}/federation/v1/listed-agents", addrs)
         if r.status_code != 200:
             return {"error": _UNANSWERED}
         body = r.json()
@@ -200,6 +189,67 @@ def _pull(url: str) -> dict[str, Any]:
         return {"relay_id": str(body.get("relay_id") or ""), "keys": keys, "stables": stables}
     except Exception:  # noqa: BLE001 — unreachable, slow, not JSON: unconfirmed, never an error that blocks
         return {"error": _UNANSWERED}
+
+
+RECHECK_S = 24 * 3600          # a confirmed home is asked again after this long
+RETRY_S = 3600                 # an unconfirmed one (a home that was down) is asked again after this long
+_looked: dict[str, float] = {}
+
+
+def _age_s(at: str) -> float:
+    try:
+        return (datetime.now(UTC) - datetime.fromisoformat(at)).total_seconds()
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def refresh_if_stale(agent_id: str) -> None:
+    """Ask the home relay again when the last answer is old, lazily: called when the visitor next acts or reads.
+    A home that no longer lists the agent (or does not answer) turns "confirmed" into "unconfirmed", which
+    `homed-only` then refuses. Blocking (one short network call); run it off the event loop. Never raises."""
+    import json
+    now = time.monotonic()
+    if now - _looked.get(agent_id, -1e9) < 300:
+        return
+    _looked[agent_id] = now
+    if len(_looked) > 5000:
+        _looked.clear()
+    try:
+        from emporia import relay_server as rs
+        with rs.DB_LOCK, rs.get_db() as conn:
+            row = conn.execute("SELECT home_json, home_check_json, public_key_hex, stable_id FROM authorized_agents "
+                               "WHERE agent_id = ?", (agent_id,)).fetchone()
+        if not row or kind_of(row["home_json"]) != "relay":
+            return
+        check = json.loads(row["home_check_json"] or "{}")
+        status = check.get("status")
+        age = _age_s(check.get("at", ""))
+        if not ((status == "confirmed" and age >= RECHECK_S) or (status == "unconfirmed" and age >= RETRY_S)):
+            return
+        home = json.loads(row["home_json"])
+        with _lock:
+            _cache.pop(home.get("url", ""), None)           # a fresh answer, not the cached one
+        result = confirm(home, row["public_key_hex"] or "", row["stable_id"] or "")
+        with rs.DB_LOCK, rs.get_db() as conn:
+            conn.execute("UPDATE authorized_agents SET home_check_json = ? WHERE agent_id = ?",
+                         (json.dumps(result, sort_keys=True), agent_id))
+    except Exception:  # noqa: BLE001 — a failed look changes nothing
+        return
+
+
+def _get_listing(url: str, addrs: list[str]):
+    """The listing, from the exact address the name resolved to when it was checked (the next one if it does not
+    connect). No second resolution: a name that answers differently now is not asked."""
+    import httpx
+
+    from emporia import fetch
+    last: Exception | None = None
+    for ip in addrs or [None]:
+        try:
+            return fetch.get(url, timeout=_TIMEOUT_S, max_bytes=2 * 1024 * 1024, total=8.0, connect_ip=ip)
+        except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+            last = e
+    raise last or httpx.ConnectError("no address")
 
 
 def confirm(home: dict[str, Any], public_key_hex: str, stable_id: str = "") -> dict[str, Any]:

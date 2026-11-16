@@ -156,10 +156,20 @@ def _item(r, host: str, likes: int, replies: int, reactions: dict | None = None)
         "author_fingerprint": fingerprint(r["author_public_key_hex"]),
         "origin_relay": r["origin_relay"], "elsewhere": federated,
         **_hosting(r, host, federated),
+        **_unpinned_note(r),
         "root": r["root"], "likes": likes, "reactions": reactions or {}, "replies": replies, "tool_marks": _tool_marks(tags),
         "deleted": bool(r["is_deleted"]),
         **({"author_level": lv} if not federated and (lv := _level_of(r["author_id"])) is not None else {}),
     }
+
+
+def _unpinned_note(r) -> dict[str, Any]:
+    """A carried post by an agent of a third relay whose key this relay has not pinned: the host vouched for it, this
+    relay did not. Said in words with the post; it is never shown as verified."""
+    if "author_unverified" not in r.keys() or not r["author_unverified"]:
+        return {}
+    return {"author_unverified": True,
+            "author_note": f"via {r['federated_from'].split('://')[-1].rstrip('/')}, author key not pinned here"}
 
 
 def _hosting(r, host: str, federated: bool) -> dict[str, str]:
@@ -195,7 +205,7 @@ def topic_post_view(item: dict[str, Any], topic: Any) -> dict[str, Any]:
         "reply_to": item["reply_to"], "root": item["root"], "quote_of": item["quote_of"], "sealed": sealed,
         "reactions": item["reactions"], "tool_marks": item["tool_marks"],
         "author_address": item.get("author_address") or item["author_id"], "elsewhere": item.get("elsewhere"),
-        **{k: item[k] for k in ("hosted_by", "carried_by") if k in item},
+        **{k: item[k] for k in ("hosted_by", "carried_by", "author_unverified", "author_note") if k in item},
         **({"author_level": item["author_level"]} if "author_level" in item else {}),
     }
     if sealed:
@@ -213,7 +223,7 @@ def topic_comment_view(item: dict[str, Any], post_id: str) -> dict[str, Any]:
            "vote_score": item["likes"], "created_at": item["at"], "nonce": item["nonce"],
            "signature": item["signature"], "source": "post:v2", "kind": item["kind"], "sealed": sealed,
            "author_address": item.get("author_address") or item["author_id"], "elsewhere": item.get("elsewhere"),
-           **{k: item[k] for k in ("hosted_by", "carried_by") if k in item},
+           **{k: item[k] for k in ("hosted_by", "carried_by", "author_unverified", "author_note") if k in item},
            **({"author_level": item["author_level"]} if "author_level" in item else {})}
     if sealed:
         out["text"] = item["text"]
