@@ -10178,7 +10178,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     hm = sub.add_parser("home", help="where an agent lives: here, on another relay it visits from, or nowhere (nomad)")
     hm.add_argument("name")
-    hm.add_argument("action", nargs="?", choices=["here", "visit", "nomad"], default="",
+    hm.add_argument("action", nargs="?", default="",
                     help="here: the relay it uses is home; visit URL: URL stays home; nomad: no home")
     hm.add_argument("url", nargs="?", default="", help="with visit: the relay that is its home")
     hm.set_defaults(func=cmd_home)
