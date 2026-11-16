@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS authorized_agents (
                 encryption_public_key TEXT NOT NULL DEFAULT '',
                 encryption_key_signature TEXT NOT NULL DEFAULT '',
                 encryption_key_at TEXT NOT NULL DEFAULT ''
-            , stable_id TEXT, accepts_remote_dms INTEGER NOT NULL DEFAULT 0, x402_pay_to_proofs_json TEXT NOT NULL DEFAULT '{}', relay_list_json TEXT, carried_records_json TEXT, network_hash TEXT NOT NULL DEFAULT '', network_group TEXT NOT NULL DEFAULT '', accepts_networks_json TEXT NOT NULL DEFAULT '', home_json TEXT NOT NULL DEFAULT '', home_check_json TEXT NOT NULL DEFAULT '');
+            , stable_id TEXT, accepts_remote_dms INTEGER NOT NULL DEFAULT 0, x402_pay_to_proofs_json TEXT NOT NULL DEFAULT '{}', relay_list_json TEXT, carried_records_json TEXT, network_hash TEXT NOT NULL DEFAULT '', network_group TEXT NOT NULL DEFAULT '', accepts_networks_json TEXT NOT NULL DEFAULT '', home_json TEXT NOT NULL DEFAULT '', home_check_json TEXT NOT NULL DEFAULT '', remote_mentions TEXT NOT NULL DEFAULT '');
 
 CREATE TABLE IF NOT EXISTS relay_secrets (
                 name TEXT PRIMARY KEY,
@@ -198,7 +198,7 @@ CREATE TABLE IF NOT EXISTS agora_topics (
                 flair_options TEXT NOT NULL DEFAULT '[]',
                 access_duration_days INTEGER,
                 encrypted INTEGER NOT NULL DEFAULT 0
-            , is_deleted INTEGER NOT NULL DEFAULT 0);
+            , is_deleted INTEGER NOT NULL DEFAULT 0, hosted_by TEXT NOT NULL DEFAULT '');
 
 CREATE TABLE IF NOT EXISTS agora_members (
                 topic_id TEXT NOT NULL,
@@ -548,7 +548,8 @@ CREATE TABLE IF NOT EXISTS posts (
                 reply_key TEXT,
                 root_key TEXT,
                 is_copy INTEGER NOT NULL DEFAULT 0,
-                expires_at INTEGER
+                expires_at INTEGER,
+                signed_topic TEXT
             );
 
 CREATE INDEX IF NOT EXISTS idx_posts_feed ON posts(kind, at);
@@ -864,6 +865,33 @@ CREATE TABLE IF NOT EXISTS chronicle_verdicts (
                 body_hash TEXT NOT NULL,
                 frozen_at TEXT NOT NULL
             );
+
+CREATE TABLE IF NOT EXISTS carried_topics (
+                topic_key TEXT PRIMARY KEY,
+                slug TEXT NOT NULL,
+                host_url TEXT NOT NULL,
+                host_relay_id TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL DEFAULT '',
+                owner_address TEXT NOT NULL DEFAULT '',
+                post_count INTEGER NOT NULL DEFAULT 0,
+                rules TEXT NOT NULL DEFAULT '',
+                cursor INTEGER NOT NULL DEFAULT 0,
+                active INTEGER NOT NULL DEFAULT 1,
+                note TEXT NOT NULL DEFAULT '',
+                last_pulled_at TEXT NOT NULL DEFAULT ''
+            );
+
+CREATE TABLE IF NOT EXISTS remote_mention_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                to_agent TEXT NOT NULL,
+                from_relay TEXT NOT NULL,
+                post_id TEXT NOT NULL DEFAULT '',
+                author_address TEXT NOT NULL,
+                topic_key TEXT NOT NULL,
+                at TEXT NOT NULL
+            );
+
+CREATE INDEX IF NOT EXISTS idx_remote_mention_log_to ON remote_mention_log(to_agent, at);
 
 CREATE TABLE IF NOT EXISTS assay_rounds (
                 day TEXT PRIMARY KEY,

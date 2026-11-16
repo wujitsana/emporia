@@ -53,9 +53,13 @@ async def federation_peers():
     rs._ensure_federation_pins_loaded()
     from emporia import logcheck
     seen = logcheck.load(logcheck.PEER_FILE).get("relays") or {}
+    from emporia import shared_topics
     return {
         "relay_url": rs.RELAY_BASE_URL,
         "standalone": not rs.FEDERATED_RELAYS,
+        # shared topics: what this relay shares as host and carries from others (visibility only; the settings
+        # EMPORIA_SHARED_TOPICS / EMPORIA_CARRY_TOPICS are the operator's, never the dashboard's)
+        "shared_topics": {"shares": shared_topics.shared_slugs(), "carried": shared_topics.carried_state()},
         "peers": [
             {
                 "url": peer,

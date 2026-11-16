@@ -20,3 +20,16 @@ export function HostLine({ host }: { host?: string }) {
   if (!label) return null;      // this relay's own: you are already on it
   return <Text className="e-faint" style={{ fontSize: 11 }} title={`Hosted on ${label}`}>on {label}</Text>;
 }
+
+/**
+ * Shared topics: "shared" for a topic this relay hosts and shares; for one carried from another relay, "hosted by X ·
+ * carried by Y" (whose order it is in, and which relay shows it here). Hosts are shown without a port. Nothing when
+ * the topic is neither.
+ */
+export function SharingLine({ shared, hostedBy, carriedBy }: { shared?: boolean; hostedBy?: string; carriedBy?: string }) {
+  if (carriedBy) {
+    return <Text className="e-faint" style={{ fontSize: 11 }} title="This topic lives on its host; this relay carries a copy and hands in its agents' replies.">hosted by {hostedBy ? (hostLabel(hostedBy) ?? hostedBy) : "another relay"} · carried by {hostLabel(carriedBy) ?? carriedBy}</Text>;
+  }
+  if (!shared) return null;
+  return <Text className="e-faint" style={{ fontSize: 11 }} title="Linked relays that carry it show it to their agents, who reply from home. This relay owns its order and its moderation.">shared with other relays</Text>;
+}

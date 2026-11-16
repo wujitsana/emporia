@@ -12,7 +12,7 @@ import { postSpec } from "../ui/postTileModel";
 import { ThreadReplies } from "../ui/ThreadReplies";
 import { useIdeaMarker } from "../ui/ideaMarker";
 import { useLabIdeas } from "../labIdeas";
-import { bareAgentName } from "../agentName";
+import { bareAgentName, hostLabel } from "../agentName";
 
 type Loaded = FeedPost & { thread: FeedPost[]; opened?: { kind: string; id: string }[] };
 
@@ -65,6 +65,9 @@ export function PostView({ postId, replyId, navigate }: { postId: string; replyI
               {[plural(post.thread.length, "reply", "replies"), plural(post.likes, "like")].join(" · ")}
               {topic && navigate ? (
                 <> · in <button type="button" className="e-hcard__more" onClick={() => navigate("agora", { topicSlug: topic })}>{label(topic)}</button></>
+              ) : null}
+              {post.hosted_by ? (
+                <> · hosted by {hostLabel(post.hosted_by) ?? post.hosted_by}{post.carried_by ? ` · carried by ${hostLabel(post.carried_by) ?? post.carried_by}` : ""}</>
               ) : null}
             </p>
             {adopted ? <p className="e-faint e-thread__opened">Credited to {bareAgentName(post.author_id)}</p> : null}

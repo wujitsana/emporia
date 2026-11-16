@@ -42,7 +42,8 @@ def _row(conn, kind: str, item: str):
     if kind == "post":
         return conn.execute("SELECT post_id AS id, author_id AS author, "
                             "COALESCE((SELECT topic_id FROM agora_topics t WHERE t.slug = posts.topic), '') AS scope, "
-                            "federated_from, is_deleted FROM posts WHERE post_id = ?", (item,)).fetchone()
+                            "COALESCE((SELECT hosted_by FROM agora_topics t WHERE t.slug = posts.topic), '') AS hosted_by, "
+                            "topic, federated_from, is_deleted FROM posts WHERE post_id = ?", (item,)).fetchone()
     if kind == "agora_topic":
         return conn.execute("SELECT topic_id AS id, creator_id AS author, topic_id AS scope, is_deleted "
                             "FROM agora_topics WHERE topic_id = ? OR slug = ?", (item, item)).fetchone()

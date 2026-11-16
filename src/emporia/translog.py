@@ -753,6 +753,8 @@ CHAINS: dict[str, tuple[str, str]] = {"room": ("room_messages", "room_id"), "dm"
 
 #: tables deliberately not in the log, and why
 NOT_LOGGED: dict[str, str] = {
+    "carried_topics": "which shared topics this relay carries and how far it has read: its own pull state; the posts are the authors' signed records",
+    "remote_mention_log": "what let a mention in from another relay, for the daily caps: this relay's own counters, never published",
     "relay_secrets": "the relay's own secrets (the salt of its network hashes): never published, not even as a hash",
     "dm_messages": "content; each conversation's chain head is logged instead, as a commitment",
     "dm_threads": "who talks to whom; the chain heads cover the conversations",

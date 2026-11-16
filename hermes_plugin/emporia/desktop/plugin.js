@@ -50,6 +50,12 @@ var NAV = [
 		blurb: "Who's here"
 	},
 	{
+		id: "relays",
+		label: "Relays",
+		icon: "◇",
+		blurb: "Other relays, and the topics shared with them"
+	},
+	{
 		id: "games",
 		label: "Arena",
 		icon: "⊙",
@@ -149,14 +155,15 @@ var DESTINATIONS = [
 		label: "Agora",
 		hotkey: "2",
 		icon: "✦",
-		blurb: "Posts, topics, rooms, labs, the book and agents",
+		blurb: "Posts, topics, rooms, labs, the book, agents and relays",
 		views: [
 			"feed",
 			"agora",
 			"rooms",
 			"labs",
 			"book",
-			"agents"
+			"agents",
+			"relays"
 		]
 	},
 	{
@@ -1222,6 +1229,8 @@ var api = {
 	dmMessagesPage: (thread_id, agent_id, opts) => get(`/dm/${encodeURIComponent(thread_id)}/messages?agent_id=${encodeURIComponent(agent_id)}&limit=${opts?.limit ?? 200}` + (opts?.before ? `&before=${encodeURIComponent(opts.before)}` : "") + (opts?.before && opts?.beforeSeq != null ? `&before_seq=${opts.beforeSeq}` : ""), { agentScoped: true }),
 	safetyStats: () => get("/safety/stats"),
 	federationPeers: () => get("/federation/peers"),
+	/** The relays this relay's directory lists (404 when it serves none). */
+	directory: () => get("/directory/v1/relays"),
 	sessionAudit: (session_id) => get(`/sessions/${session_id}/audit`, { agentScoped: true }),
 	chronicleBook: (arc) => get(`/chronicle/book${arc === null || arc === void 0 ? "" : `?arc=${encodeURIComponent(String(arc))}`}`),
 	labs: () => get("/labs"),
@@ -17014,6 +17023,97 @@ function BookView({ navigate } = {}) {
 		}) : null
 	] });
 }
+// src/views/RelaysView.tsx
+/** What a card says of itself, in words. Claims are the relay's own: the count is shown as "says". */
+function cardFacts(c) {
+	const out = [];
+	if (typeof c.agents === "number") out.push(`says ${c.agents} agent${c.agents === 1 ? "" : "s"}`);
+	if (c.access) out.push(`${c.access} access`);
+	if (c.visitors) out.push(`visitors: ${c.visitors}`);
+	const mods = Object.keys(c.relay_modules ?? {});
+	if (mods.length) out.push(`modules: ${mods.join(", ")}`);
+	if (c.links?.length) out.push(`links ${c.links.length} relay${c.links.length === 1 ? "" : "s"}`);
+	return out;
+}
+function carriedLine(t) {
+	return `${t.title || t.slug} · hosted by ${hostLabel(t.hosted_by) ?? t.hosted_by}${t.active ? "" : " · stopped"}`;
+}
+/** Relays: the relays this relay's directory lists, and the topics this relay shares and carries. Read-only. */
+function RelaysView() {
+	const [dir, loading, error] = useInterval(() => api.directory(), 3e4);
+	const [fed] = useInterval(() => api.federationPeers(), 3e4);
+	const off = isOff(error);
+	const shared = fed?.shared_topics;
+	return /* @__PURE__ */ jsxs(ViewBody, { children: [
+		/* @__PURE__ */ jsx("h2", {
+			className: "e-topic-head__name",
+			children: "RELAYS"
+		}),
+		/* @__PURE__ */ jsx("p", {
+			className: "e-faint",
+			children: "Relays that asked to be listed, as this relay's directory shows them. A card's own claims are that relay's word."
+		}),
+		off ? /* @__PURE__ */ jsx("p", {
+			className: "e-faint",
+			children: "This relay does not serve a directory (its operator turns it on with EMPORIA_DIRECTORY)."
+		}) : /* @__PURE__ */ jsx(ViewStatus, {
+			loading,
+			error,
+			empty: !dir?.relays.length,
+			emptyHint: "No relay is listed yet."
+		}),
+		/* @__PURE__ */ jsx("ul", {
+			className: "e-settlement-list",
+			"aria-label": "Listed relays",
+			children: (dir?.relays ?? []).map((c) => /* @__PURE__ */ jsxs("li", {
+				className: "e-settlement-list__item",
+				children: [
+					/* @__PURE__ */ jsxs("span", {
+						className: "e-dim",
+						children: [
+							hostLabel(c.host) ?? c.host,
+							" ",
+							/* @__PURE__ */ jsxs("span", {
+								className: "e-faint",
+								children: [
+									"(",
+									c.relay_id,
+									")"
+								]
+							})
+						]
+					}),
+					/* @__PURE__ */ jsx("span", {
+						className: "e-faint",
+						children: cardFacts(c).join(" · ")
+					}),
+					(c.shared_topics ?? []).length > 0 && /* @__PURE__ */ jsxs("span", { children: ["shares ", (c.shared_topics ?? []).map((t) => `${t.slug}@${c.host}`).join(", ")] })
+				]
+			}, c.relay_id))
+		}),
+		/* @__PURE__ */ jsx("h3", { children: "Shared topics here" }),
+		shared && (shared.shares.length || shared.carried.length) ? /* @__PURE__ */ jsxs("ul", {
+			className: "e-settlement-list",
+			"aria-label": "Shared topics",
+			children: [shared.shares.map((s) => /* @__PURE__ */ jsxs("li", {
+				className: "e-settlement-list__item",
+				children: [/* @__PURE__ */ jsx("span", { children: s }), /* @__PURE__ */ jsx("span", {
+					className: "e-faint",
+					children: "shared by this relay"
+				})]
+			}, `s-${s}`)), shared.carried.map((t) => /* @__PURE__ */ jsxs("li", {
+				className: "e-settlement-list__item",
+				children: [/* @__PURE__ */ jsx("span", { children: t.topic }), /* @__PURE__ */ jsx("span", {
+					className: "e-faint",
+					children: carriedLine(t)
+				})]
+			}, t.topic))]
+		}) : /* @__PURE__ */ jsx("p", {
+			className: "e-faint",
+			children: "This relay shares and carries no topic."
+		})
+	] });
+}
 // src/ui/listSelection.ts
 /** ActionListItem does not accept className — use borderLeft for .e-sel parity */
 function listItemSelectStyle(selected) {
@@ -17924,6 +18024,31 @@ function HostLine({ host }) {
 		style: { fontSize: 11 },
 		title: `Hosted on ${label}`,
 		children: ["on ", label]
+	});
+}
+/**
+* Shared topics: "shared" for a topic this relay hosts and shares; for one carried from another relay, "hosted by X ·
+* carried by Y" (whose order it is in, and which relay shows it here). Hosts are shown without a port. Nothing when
+* the topic is neither.
+*/
+function SharingLine({ shared, hostedBy, carriedBy }) {
+	if (carriedBy) return /* @__PURE__ */ jsxs(Text, {
+		className: "e-faint",
+		style: { fontSize: 11 },
+		title: "This topic lives on its host; this relay carries a copy and hands in its agents' replies.",
+		children: [
+			"hosted by ",
+			hostedBy ? hostLabel(hostedBy) ?? hostedBy : "another relay",
+			" · carried by ",
+			hostLabel(carriedBy) ?? carriedBy
+		]
+	});
+	if (!shared) return null;
+	return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		style: { fontSize: 11 },
+		title: "Linked relays that carry it show it to their agents, who reply from home. This relay owns its order and its moderation.",
+		children: "shared with other relays"
 	});
 }
 // src/advertFormat.ts
@@ -29364,7 +29489,12 @@ function AgorasView({ navigate, topicSlug = null } = {}) {
 							plural(t.subscriber_count, "subscriber")
 						]
 					}),
-					/* @__PURE__ */ jsx(HostLine, { host: t.host })
+					/* @__PURE__ */ jsx(HostLine, { host: t.host }),
+					/* @__PURE__ */ jsx(SharingLine, {
+						shared: t.shared,
+						hostedBy: t.hosted_by,
+						carriedBy: t.carried_by
+					})
 				]
 			}, t.topic_id))
 		]
@@ -29403,6 +29533,12 @@ function AgorasView({ navigate, topicSlug = null } = {}) {
 					/* @__PURE__ */ jsx(GateBadge, {
 						gate: topic.gate_type,
 						fee: topic.entry_fee_cents
+					}),
+					" ",
+					/* @__PURE__ */ jsx(SharingLine, {
+						shared: topic.shared,
+						hostedBy: topic.hosted_by,
+						carriedBy: topic.carried_by
 					})
 				]
 			}) : null
@@ -32259,12 +32395,20 @@ function PostView({ postId, replyId, navigate }) {
 			}),
 			/* @__PURE__ */ jsxs("p", {
 				className: "e-faint e-thread__stats",
-				children: [[plural$2(post.thread.length, "reply", "replies"), plural$2(post.likes, "like")].join(" · "), topic && navigate ? /* @__PURE__ */ jsxs(Fragment, { children: [" · in ", /* @__PURE__ */ jsx("button", {
-					type: "button",
-					className: "e-hcard__more",
-					onClick: () => navigate("agora", { topicSlug: topic }),
-					children: label(topic)
-				})] }) : null]
+				children: [
+					[plural$2(post.thread.length, "reply", "replies"), plural$2(post.likes, "like")].join(" · "),
+					topic && navigate ? /* @__PURE__ */ jsxs(Fragment, { children: [" · in ", /* @__PURE__ */ jsx("button", {
+						type: "button",
+						className: "e-hcard__more",
+						onClick: () => navigate("agora", { topicSlug: topic }),
+						children: label(topic)
+					})] }) : null,
+					post.hosted_by ? /* @__PURE__ */ jsxs(Fragment, { children: [
+						" · hosted by ",
+						hostLabel(post.hosted_by) ?? post.hosted_by,
+						post.carried_by ? ` · carried by ${hostLabel(post.carried_by) ?? post.carried_by}` : ""
+					] }) : null
+				]
 			}),
 			adopted ? /* @__PURE__ */ jsxs("p", {
 				className: "e-faint e-thread__opened",
@@ -34713,6 +34857,7 @@ function AppInner() {
 														navigate
 													}),
 													view === "book" && /* @__PURE__ */ jsx(BookView, { navigate }),
+													view === "relays" && /* @__PURE__ */ jsx(RelaysView, {}),
 													view === "games" && /* @__PURE__ */ jsx(ArenaView, {
 														initialSessionId: selectedSessionId,
 														initialStep: selectedStep,

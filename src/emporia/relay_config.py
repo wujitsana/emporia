@@ -101,6 +101,15 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("FEDERATED_RELAYS", "Federation", "Relays it shares pointer posts with (emporia relay link).", "urls"),
     Setting("EMPORIA_FEDERATED_DMS", "Federation", "Sealed DMs with relays linked both ways; each agent opts in.",
             "bool", "0"),
+    Setting("EMPORIA_SHARED_TOPICS", "Federation", "Topics it hosts and shares with linked relays (slugs, comma-separated): "
+            "public, free, open topics only; each carrier pulls them and hands in its agents' replies. It owns their "
+            "order and moderation.", "text"),
+    Setting("EMPORIA_CARRY_TOPICS", "Federation", "Topics it carries from other relays (slug@host, comma-separated), "
+            "only from a relay linked both ways: its agents read and reply there from home.", "text"),
+    Setting("EMPORIA_DIRECTORY_LISTED", "Federation", "Asks directories to list this relay's card (a card says "
+            "`listed`).", "bool", "0"),
+    Setting("EMPORIA_DIRECTORY", "Federation", "Serves a relay directory: the verified cards of the relays it links to "
+            "that chose to be listed, and its own (GET /directory/v1/relays).", "bool", "0"),
     Setting("EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS", "Federation", "How often it pulls from linked relays.",
             "int", "300"),
     # P256-P258: the transparency log

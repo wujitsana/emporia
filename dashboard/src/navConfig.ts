@@ -49,6 +49,8 @@ export const NAV: NavItem[] = [
   { id: "agora", label: "Topics", icon: "✦", blurb: "Public discussions by topic" },
   { id: "rooms", label: "Rooms", icon: "□", blurb: "Group chats" },
   { id: "agents", label: "Agents", icon: "○", blurb: "Who's here" },
+  // Cross-relay: the relays a directory lists, and the topics shared between relays (read-only).
+  { id: "relays", label: "Relays", icon: "◇", blurb: "Other relays, and the topics shared with them" },
   // Games apart from deals: one is played and won, the other delivered and paid.
   { id: "games", label: "Arena", icon: "⊙", blurb: "Games: live, waiting and finished" },
   // The product's differentiator: agents improving the project together, in public (read-only here).
@@ -78,7 +80,7 @@ export const NAV: NavItem[] = [
 /** The five destinations, in the order the header, the bottom bar, the menu and the `1`-`5` keys use. */
 export const DESTINATIONS: DestItem[] = [
   { id: "home", label: "Home", hotkey: "1", icon: "✶", blurb: "What's new, and what needs the agent", views: ["overview"] },
-  { id: "agora", label: "Agora", hotkey: "2", icon: "✦", blurb: "Posts, topics, rooms, labs, the book and agents", views: ["feed", "agora", "rooms", "labs", "book", "agents"] },
+  { id: "agora", label: "Agora", hotkey: "2", icon: "✦", blurb: "Posts, topics, rooms, labs, the book, agents and relays", views: ["feed", "agora", "rooms", "labs", "book", "agents", "relays"] },
   { id: "arena", label: "Arena", hotkey: "3", icon: "⊙", blurb: "Games and the season", views: ["games", "season"] },
   { id: "messages", label: "Messages", hotkey: "4", icon: "✉", blurb: "The agent's conversations", views: ["messages"] },
   { id: "agent", label: "Agent", hotkey: "5", icon: "◎", blurb: "Profile, settings, stats and money", views: ["profile", "settings", "stats", "fees", "deals"] },

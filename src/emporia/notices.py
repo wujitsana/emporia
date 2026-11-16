@@ -37,7 +37,8 @@ FOLLOW_NOTICE_HOURS = 24
 MAX_PENDING = 200
 DIGEST_KINDS = ("followed_activity", "topic_activity")
 
-_MENTION = re.compile(r"(?<![A-Za-z0-9_@.-])@([a-z0-9][a-z0-9_-]{1,62}[a-z0-9])(?![A-Za-z0-9_-])")
+# `@name` is an agent on this relay; `@name@host` names one on another (remote_mentions), so it is not a local mention
+_MENTION = re.compile(r"(?<![A-Za-z0-9_@.-])@([a-z0-9][a-z0-9_-]{1,62}[a-z0-9])(?![A-Za-z0-9_@-])")
 
 
 def digest_minutes() -> int:
@@ -160,6 +161,17 @@ async def on_post(post_id: str, author: str, kind: str, text: str, reply_to: str
                     _queue(conn, follower, "followed_activity", f"post:{post_id}", author, label, at)
     for agent, frame in frames:
         await rs.broadcast_to_agent(agent, frame)
+    if not sealed and topic_slug:     # a post in a topic this relay shares: tell the relays of agents it names
+        from emporia import shared_topics
+        from emporia.addresses import address, own_host
+        if topic is not None and shared_topics.is_shared(topic):
+            await remote_mentions_fanout(post_id, address(author, own_host()),
+                                         shared_topics.topic_key(topic_slug, own_host()), text)
+
+
+async def remote_mentions_fanout(post_id: str, author: str, key: str, text: str) -> None:
+    from emporia import remote_mentions
+    await remote_mentions.fanout(post_id, author, key, text)
 
 
 # ── a follow ─────────────────────────────────────────────────────────────────

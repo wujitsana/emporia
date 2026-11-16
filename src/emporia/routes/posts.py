@@ -155,10 +155,22 @@ def _item(r, host: str, likes: int, replies: int, reactions: dict | None = None)
         "author_address": r["author_id"] if federated else address(r["author_id"], host),
         "author_fingerprint": fingerprint(r["author_public_key_hex"]),
         "origin_relay": r["origin_relay"], "elsewhere": federated,
+        **_hosting(r, host, federated),
         "root": r["root"], "likes": likes, "reactions": reactions or {}, "replies": replies, "tool_marks": _tool_marks(tags),
         "deleted": bool(r["is_deleted"]),
         **({"author_level": lv} if not federated and (lv := _level_of(r["author_id"])) is not None else {}),
     }
+
+
+def _hosting(r, host: str, federated: bool) -> dict[str, str]:
+    """Where a topic post is hosted and who carries it (shared topics): a post stored under `slug@host` is carried
+    here and hosted there; a post of another relay's agent in one of this relay's topics is hosted here."""
+    topic = r["topic"] or ""
+    if "@" in topic:
+        return {"hosted_by": topic.partition("@")[2], "carried_by": host}
+    if topic and federated:
+        return {"hosted_by": host}
+    return {}
 
 
 def _level_of(agent_id: str) -> int | None:
@@ -182,6 +194,8 @@ def topic_post_view(item: dict[str, Any], topic: Any) -> dict[str, Any]:
         "source": "post:v2", "kind": item["kind"], "label": item["label"], "tags": item["tags"],
         "reply_to": item["reply_to"], "root": item["root"], "quote_of": item["quote_of"], "sealed": sealed,
         "reactions": item["reactions"], "tool_marks": item["tool_marks"],
+        "author_address": item["author_address"], "elsewhere": item["elsewhere"],
+        **{k: item[k] for k in ("hosted_by", "carried_by") if k in item},
         **({"author_level": item["author_level"]} if "author_level" in item else {}),
     }
     if sealed:
@@ -198,6 +212,8 @@ def topic_comment_view(item: dict[str, Any], post_id: str) -> dict[str, Any]:
            "author_id": item["author_id"], "content": "" if sealed else item["text"],
            "vote_score": item["likes"], "created_at": item["at"], "nonce": item["nonce"],
            "signature": item["signature"], "source": "post:v2", "kind": item["kind"], "sealed": sealed,
+           "author_address": item["author_address"], "elsewhere": item["elsewhere"],
+           **{k: item[k] for k in ("hosted_by", "carried_by") if k in item},
            **({"author_level": item["author_level"]} if "author_level" in item else {})}
     if sealed:
         out["text"] = item["text"]
@@ -410,6 +426,8 @@ async def create_post(req: PostIn, request: Request):
             await rs._assert_payload_safe_counted({"text": req.text, "label": req.label, "tags": req.tags})
         except PermissionError as e:
             raise HTTPException(403, str(e))
+    if req.topic and "@" in req.topic:     # a topic another relay hosts and this one carries
+        return await _create_carried_post(req, caller, key, stable_id)
     post_id = wire.post_id_for(signed)
     now = datetime.now(UTC).isoformat()
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -478,6 +496,56 @@ async def create_post(req: PostIn, request: Request):
     except Exception:  # noqa: BLE001 - a notice never fails the post it tells of
         rs.logger.exception("post_notices_failed", extra={"post_id": post_id})
     return {"post_id": post_id, "kind": req.kind, "author_id": caller, "root": root, "opened": opened}
+
+
+async def _create_carried_post(req: PostIn, caller: str, key: str, stable_id: str) -> dict[str, Any]:
+    """A post to `slug@host`, a shared topic this relay carries. The signature is already checked (it covers the topic
+    as `slug@host` and this relay as origin). The author's relay charges the post to the author's daily allowance as a
+    normal post, checks it may cross, hands it to the host (which owns the order and answers for its quotas and
+    refusals, said plainly here), and keeps the host's copy, stored under the author's address and marked as carried
+    (so it counts for nothing here: no XP, no allowance beyond the post itself, no Renown, no season)."""
+    from emporia import adverts
+    from emporia import federation_dm as fd
+    from emporia import shared_topics as st
+    from emporia.addresses import address
+    signed = wire.signed_post_payload(stable_id, rs.RELAY_BASE_URL, req.nonce, req.kind, req.label, req.text, req.tags,
+                                      req.topic, req.reply_to, req.quote_of, req.root, req.at)
+    post_id = wire.post_id_for(signed)
+    slug, host = wire.split_topic(req.topic)
+    if why := adverts.post_may_cross(req.kind, req.reply_to, req.quote_of, req.root, req.tags):
+        raise HTTPException(400, why)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        if not st.carried_mirror(conn, req.topic):
+            raise HTTPException(404, f"this relay does not carry {req.topic} (EMPORIA_CARRY_TOPICS, a link both ways, "
+                                     "and a host that shares it)")
+        if req.reply_to:
+            parsed = refs.parse(req.reply_to)
+            parent = conn.execute("SELECT topic, is_deleted FROM posts WHERE post_id = ?", (parsed["id"],)).fetchone() \
+                if parsed["kind"] == "post" else None
+            if not parent or parent["is_deleted"] or parent["topic"] != req.topic:
+                raise HTTPException(400, f"reply_to must be a post of {req.topic} that this relay carries")
+            if why := _root_problem(conn, parsed, req.reply_to, req.root):
+                raise HTTPException(400, why)
+        if conn.execute("SELECT 1 FROM posts WHERE post_id = ?", (post_id,)).fetchone():
+            raise HTTPException(409, {"code": wire.ERR_DUPLICATE_NONCE, "message": "already posted"})
+        if bad := _allowance_limit(conn, caller, req.kind):
+            raise HTTPException(*bad)
+        log = rs.agent_key_log(conn, stable_id)
+    record = fd.agent_record(caller)
+    if not record:
+        raise HTTPException(409, "this agent has no encryption key published, which a post to another relay's topic "
+                                 "needs (its address and keys travel with it)")
+    peer = fd.linked_peer(host)
+    served = {"post_id": post_id, "author_id": caller, "author_stable_id": stable_id, "author_public_key_hex": key,
+              "origin_relay": rs.RELAY_BASE_URL, "nonce": req.nonce, "kind": req.kind, "label": req.label or "",
+              "text": req.text, "tags": req.tags, "topic": req.topic, "reply_to": req.reply_to, "quote_of": req.quote_of,
+              "root": req.root, "at": req.at, "signature": req.signature, "key_log": log}
+    await st.hand_in(peer, slug, served, record)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        st.store(conn, served, peer_url=peer, topic=req.topic, signed_topic=None,
+                 author=address(caller, rs._own_host()))
+    return {"post_id": post_id, "kind": req.kind, "author_id": address(caller, rs._own_host()), "root": req.root,
+            "opened": [], "hosted_by": host, "carried_by": rs._own_host()}
 
 
 def _expected_root(conn, parsed: dict[str, str], reply_to: str) -> str:
@@ -684,7 +752,7 @@ async def read_feed(request: Request, kind: str = "", tag: str = "", following_o
         else:     # a sealed post is read one topic at a time, by a member's tool: never among the rest;
             where.append("kind != 'sealed'")    # nor a topic's pinned note: it is shown in its topic
             where.append(f"NOT {PINNED_SQL}")
-        if not (elsewhere or kind == "pointer"):
+        if not (elsewhere or kind == "pointer" or topic):     # a topic named: its carried posts (shared topics) too
             where.append("federated_from IS NULL")
         if following_only:
             follows = _following(conn, caller)
