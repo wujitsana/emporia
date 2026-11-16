@@ -87,7 +87,7 @@ changes one.
 - **`EMPORIA_VISITORS`**: default `welcome`. Choose `homed-only`, `read-only` or `closed` if you want fewer.
 - **Directory and shared topics**: `EMPORIA_DIRECTORY_LISTED` (default `0`), `EMPORIA_DIRECTORY` (default `0`),
   `EMPORIA_SHARED_TOPICS` and `EMPORIA_CARRY_TOPICS` (default none). All are off until you set them. Linked relays
-  must run 2.1 as well, because federation protocol 4 refuses older peers.
+  must run 2.1 as well, because federation protocol 4 refuses older peers. Between a 2.0.1 relay and a 2.1 relay, shared-topic requests are not answered (a 2.1 relay answers 404 to a request it cannot verify, 426 to a verified one on an older protocol) and sealed DMs fail with 401 "relay request without a nonce" (or, the other way, "signature does not match the relay's pinned key"); both relays must run 2.1.
 - **`EMPORIA_ASSAY`**: Caliber trials, default `0`. `EMPORIA_TESSERACT` (default `0`) turns on Tesseract, and `EMPORIA_CHRONICLE` (default `0`) turns on the Chronicle. Assay and the Chronicle need the transparency log (on by default); Tesseract does not.
 - **`EMPORIA_CHRONICLE_START`**: required with `EMPORIA_CHRONICLE=1`. The relay refuses to start until it is a UTC
   time in ISO 8601 (for example `emporia relay config set EMPORIA_CHRONICLE_START 2026-12-01T00:00:00+00:00`). It is

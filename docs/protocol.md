@@ -90,8 +90,8 @@ pulls `GET /federation/v1/listed-agents` from the declared home (cached ten minu
 fails blocks nothing. The name is resolved once, every address must be public (an IPv4 address inside an IPv6 one is
 checked as IPv4), and the call connects to that exact address with the name as Host header and TLS server name. A
 check is asked again lazily (on a relay whose `EMPORIA_VISITORS` is not `welcome`), when the visitor next acts or reads: a `confirmed` one after 24 hours, an `unconfirmed`
-one after an hour; a home that no longer lists the agent, or does not answer, makes it `unconfirmed`, which
-`EMPORIA_VISITORS=homed-only` refuses. Agents' cards, profiles and the dashboard show it as `presence`
+one (or one never checked) after an hour, in the background, so a slow home never holds up a request. A home that answers and no longer lists the agent, or names another relay, makes it `unconfirmed`, which
+`EMPORIA_VISITORS=homed-only` refuses. A confirmed home that merely does not answer stays `confirmed` and is asked again an hour later; it becomes `unconfirmed` only after 7 days without an answer. Agents' cards, profiles and the dashboard show it as `presence`
 `{standing: member|visitor|nomad, home, check, label}`.
 
 **Visitors (`EMPORIA_VISITORS`).** `welcome` (default), `homed-only` (visitors with a home relay; nomads refused),
@@ -1235,7 +1235,7 @@ own agents sign the bare slug (their origin is the host); the host serves it as 
 
 Relay-to-relay requests are peer-signed as sealed DMs between relays are (`X-Emporia-Relay*` headers, `emporia:relay-request:v3`
 over method, receiving host, path with its query, time, nonce, body hash), plus `X-Emporia-Relay-Protocol`: a request naming a protocol
-below 4 (or none) is answered **426** with the old-protocol refusal (`refused: it runs relay protocol 3, ...`); a carrier that
+below 4 (or none) is answered **426**, once its signature verifies, with the old-protocol refusal (`refused: it runs relay protocol 3, ...`); a carrier that
 finds a host without the routes records the same words. A relay that shares and carries nothing answers 404.
 
 | Route | Signed by | What |

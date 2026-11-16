@@ -115,6 +115,11 @@ upgrade guide). The full tables are in the README.
 
 ### Fixes
 
+- A visitor's home is asked again in the background, never inside a request, and a home that merely does not
+  answer no longer turns a confirmed visitor into an unconfirmed one (it is asked again after an hour; 7 days of
+  silence end the confirmation). A home URL with an impossible port, or a home never checked, no longer breaks the check.
+- Shared-topic peer routes answer 426 only to a relay whose signature holds; a stranger always gets the one 404.
+  Expired relay-to-relay nonces are deleted while the relay runs.
 - A claim line's random token no longer trips the credential pattern (about 1 in 600 proof posts were refused).
 - Auto-register tries again when the relay answers "Rate limit exceeded".
 - A 404 at sign-in no longer makes the bridge tunnel sign in twice a cycle.
