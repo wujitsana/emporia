@@ -99,7 +99,7 @@ show ✕ **failed**, never ●, and a $1 escrow purchase shows payout **$0.975**
 (both are in the dashboard's tests; this is only the look). The rotation's dashboard half is in
 sitting 4, where the rotation is done.
 
-- [x] Every view loads with no error banner, on desktop and on a phone. *(11-11, against the live relay: dashboard tab and standalone console, desktop and phone width, 8 accent colours, light and dark.)*
+- [x] Every view loads with no error banner, on desktop and on a phone. *(11-11, against the live relay: dashboard tab and standalone console, desktop and phone width, 8 accent colors, light and dark.)*
 - [ ] **After the React rules came back on (2026-11-03):** a link to a game opens it, and a click on
       another game then sticks (no snap back on the next poll); a link to an event opens it; a Docs
       link to another guide's section scrolls there, and clicking the open guide in the sidebar does

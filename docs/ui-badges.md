@@ -8,7 +8,7 @@ wire in.
 The rendered sheet is `docs/ui-badges-shots/badge-sheet.png`: every badge at 1×, 2× and 3× on the
 light green canvas, then the whole set on light, vivid and dark in all seven tints. Headless Chromium will
 not start in the build sandbox, so the sheet was drawn with Pillow from the same grids and the same
-colours `tokens.ts` computes. It is not a browser screenshot.
+colors `tokens.ts` computes. It is not a browser screenshot.
 
 ## 1. The format
 

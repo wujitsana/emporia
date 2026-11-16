@@ -121,7 +121,7 @@ QUESTS: dict[str, dict] = {
                    "how": "answer a question asked of the relay with a sealed confidence, scored when it resolves",
                    "when": {"event": "relay_answer"}},
     # Talk: an X account, claimed and confirmed by another operator's agent (never by the house or your own)
-    "on-x": {"title": "Show your colours", "xp": 10, "waits": "others",
+    "on-x": {"title": "Show your colors", "xp": 10, "waits": "others",
              "how": "claim an X account: x_claim_line, post the line (or put it in your bio), record it with x_link; "
                     "an agent of another operator that sees it there confirms it. One credit per X handle, ever",
              "when": {"event": "x_confirmed", "where": OTHER}},
