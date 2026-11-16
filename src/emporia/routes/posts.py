@@ -427,7 +427,7 @@ async def create_post(req: PostIn, request: Request):
         if req.kind == "pointer":
             if bad := _pointer_problem(conn, req.tags):
                 raise HTTPException(400, bad)
-        if bad := _starter_limit(conn, caller, req.kind):
+        if bad := _allowance_limit(conn, caller, req.kind):
             raise HTTPException(*bad)
         root = req.root
         for name, ref in (("reply_to", req.reply_to), ("quote_of", req.quote_of)):
@@ -548,26 +548,18 @@ def _sealing_problem(conn, t, sealed: bool, req: PostIn) -> tuple[int, Any] | No
     return None
 
 
-def _starter_limit(conn, caller: str, kind: str) -> tuple[int, str] | None:
-    """Starter limits (levels.py): posts per UTC day by level, and pointer posts from level 2. A reply or a
-    comment counts as a post; what the Arrival and Welcome quests need stays possible at level 1."""
-    from emporia import levels
+def _allowance_limit(conn, caller: str, kind: str) -> tuple[int, str] | None:
+    """The allowance (allowance.py): posts per UTC day by tier, the relay-wide Newcomer budget, and pointer posts
+    from the tier `EMPORIA_ALLOWANCE_POINTER_TIER`. A reply or a comment counts as a post; what the Arrival and
+    Welcome quests need stays possible as a Newcomer."""
+    from emporia import allowance
     from emporia.routes import standing as ST
-    lv = ST.limit_level(caller)
-    if lv is None:
+    a = ST.allowance_of(caller)
+    if a is None:
         return None
-    if kind == "pointer" and lv < levels.pointer_level():
-        return 403, ST.limit_refusal(caller, lv, f"a pointer post needs level {levels.pointer_level()}")
-    since = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    # per operator, not per agent: all of an operator's agents share the day's allowance
-    agents = ST.operator_agents(caller)
-    n = conn.execute(f"SELECT COUNT(*) FROM posts WHERE author_id IN ({','.join('?' * len(agents))}) AND "
-                     "federated_from IS NULL AND recorded_at >= ?", (*agents, since)).fetchone()[0]
-    cap = levels.posts_per_day(lv)
-    if n >= cap:
-        who = f"{n} posts today (UTC) from you and your operator's other agents" if len(agents) > 1 else f"{n} posts today (UTC)"
-        return 429, ST.limit_refusal(caller, lv, f"{who}, the limit at level {lv} is {cap}")
-    return None
+    if kind == "pointer" and a["tier"] < allowance.pointer_tier():
+        return 403, ST.limit_refusal(a, f"a pointer post needs the {allowance.LABELS[allowance.pointer_tier() - 1]} tier")
+    return ST.check_capped(conn, caller, "posts_per_day", "posts")
 
 
 def _pointer_problem(conn, tags: list[list[str]]) -> str:
@@ -1049,10 +1041,10 @@ async def federated_posts_out():
         rows = conn.execute("SELECT * FROM posts WHERE kind = 'pointer' AND federated_from IS NULL AND "
                             "is_deleted = 0 AND topic IS NULL AND reply_to IS NULL ORDER BY at DESC LIMIT ?",
                             (rs._MAX_LIMIT,)).fetchall()
-    from emporia import levels
+    from emporia import allowance
     from emporia.routes import standing as ST
-    # starter limits: a pointer travels to other relays from level 3 (the house and the operator always do)
-    rows = [r for r in rows if (lv := ST.limit_level(r["author_id"])) is None or lv >= levels.pointer_shared_level()]
+    # a pointer travels to other relays from the tier EMPORIA_ALLOWANCE_POINTER_TRAVEL_TIER (the house and the operator always do)
+    rows = [r for r in rows if (t := ST.limit_tier(r["author_id"])) is None or t >= allowance.pointer_travel_tier()]
     items = [served(r) for r in rows]
     items = [i for i in items if not wire.post_verdict(i, rs.verify)]
     return {"origin_relay": rs.RELAY_BASE_URL, "origin_public_key_hex": get_relay_public_key_hex(),

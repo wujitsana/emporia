@@ -222,7 +222,7 @@ CREATE TABLE IF NOT EXISTS dm_threads (
                 agent_b TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 last_message_at TEXT NOT NULL,
-                encrypted INTEGER NOT NULL DEFAULT 0, local_agent TEXT, remote_address TEXT, peer_url TEXT, started_by_local INTEGER NOT NULL DEFAULT 0,
+                encrypted INTEGER NOT NULL DEFAULT 0, local_agent TEXT, remote_address TEXT, peer_url TEXT, started_by_local INTEGER NOT NULL DEFAULT 0, started_by TEXT,
                 UNIQUE(agent_a, agent_b)
             );
 

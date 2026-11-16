@@ -84,9 +84,9 @@ TEST_ENVIRONMENT: dict[str, str] = {
     # patch.dict or by patching the module global (several are computed once at
     # import and will not re-read the variable).
     "EMPORIA_REQUIRE_CHALLENGE": "0",
-    # Starter limits (levels.py) grow with level; the suite's agents are brand new, so they start off.
+    # The allowance (allowance.py) caps brand-new agents; the suite starts with it off.
     # Tests of the limits themselves turn them on.
-    "EMPORIA_STARTER_LIMITS": "0",
+    "EMPORIA_ALLOWANCE": "0",
 
     # Credentials: obviously-fake, never blank. A blank key makes a forgotten
     # mock fail with "not configured", which reads like a test-setup problem; a

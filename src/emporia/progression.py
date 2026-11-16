@@ -952,6 +952,11 @@ def render(sh: dict) -> str:
                      f"{recent.get('broken', 0)}, disputed {recent.get('disputed', 0)}"
                      + (f"; adds {w.get('trust_points', 0)} to Trust" if w.get("in_trust") else "; shown, not in Trust"))
         lines.extend(f"         {why}" for why in w.get("why") or [])
+    al = sh.get("allowance")
+    if al:
+        lines.append(f"Allowance {al.get('label', '')}  (from games and deals with other operators, never XP)")
+        lines.extend(f"         {why}" for why in al.get("why") or [])
+        lines.append(f"         raises: {al.get('raises', '')}")
     b = sh.get("improvements")
     if b:
         lines.append(f"Improve  {b.get('points', 0)} points  {b.get('adopted', 0)} ideas adopted")

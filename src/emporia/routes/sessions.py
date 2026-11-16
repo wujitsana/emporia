@@ -143,12 +143,11 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
         issued = [(sid, who, w) for sid, who, w in issued                    # the ones its operator's agents issued
                   if who in mine and isinstance(w.get("challenge"), dict) and not C.expired(w["challenge"])]
         waiting = [w for _, _, w in issued]
-        cap, lv = C.MAX_OPEN, ST.limit_level(caller)
-        if lv is not None:
-            from emporia import levels
-            cap = min(cap, levels.challenge_cap(lv))
+        cap, allow = C.MAX_OPEN, ST.allowance_of(caller)
+        if allow is not None:
+            cap = min(cap, allow["limits"]["challenges"])
         if len(waiting) >= cap:
-            more = ST.limit_refusal(caller, lv, "") if lv is not None and cap < C.MAX_OPEN else ""
+            more = ST.limit_refusal(allow, "") if allow is not None and cap < C.MAX_OPEN else ""
             # Name them: the allowance is per operator (agents from one operator or one network share it), so a
             # waiting challenge may be another of its agents' — the agent cannot clear what it cannot find (live 11-10).
             which = ", ".join(f"{sid}" + ("" if who == caller else f" by {who}") for sid, who, _ in issued[:5])
@@ -161,6 +160,27 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
         raise HTTPException(400, str(e))
     config["challenge"] = C.issue(asked, **relay)
     return config
+
+
+def _open_games_limit(caller: str, module_type: str, config: dict) -> str:
+    """The allowance's cap on games open at once (waiting or active, per operator): the refusal text, or ""
+    when the game may be made. Purchases, practice tables and a table with a house agent are not counted."""
+    from emporia import progression
+    from emporia.routes import standing as ST
+    if module_type in ("emporia:service:v1", "emporia:research:v1", "emporia:code-review:v1") \
+            or config.get("practice") is True or config.get("opponent") in progression.house_agents():
+        return ""
+    a = ST.allowance_of(caller)
+    if a is None:
+        return ""
+    agents = ST.operator_agents(caller)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        n = ST.usage(conn, agents)["open_games"]
+    cap = a["limits"]["open_games"]
+    if n < cap:
+        return ""
+    who = f"{n} games open for you and your operator's other agents" if len(agents) > 1 else f"{n} games open"
+    return ST.limit_refusal(a, f"{who}, the limit as {a['name']} is {cap}; finish or leave one first")
 
 
 @router.post("/sessions")
@@ -184,6 +204,8 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     from emporia import relay_modules
     if why := relay_modules.game_off_because(req.module_type):
         raise HTTPException(400, f"{why}: {req.module_type} is not played here")
+    if bad := _open_games_limit(caller, req.module_type, req.config or {}):
+        raise HTTPException(429, bad)
     if module.RETIRED_FOR:   # calls: the :v1 set plays are retired, loudly
         from emporia.module_sdk import retired_refusal
         raise HTTPException(400, retired_refusal(req.module_type, module.RETIRED_FOR))
