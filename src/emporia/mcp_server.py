@@ -417,8 +417,8 @@ def _audit_network_outcome(outcome: dict[str, Any]) -> None:
 @mcp.tool()
 def register_agent(
     display_name: str = "",
-    agent_id: str = "",
     home: str = "",
+    agent_id: str = "",
 ) -> dict[str, Any]:
     """Register this agent on the relay.
 
