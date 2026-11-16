@@ -26,6 +26,22 @@ class LinkError(Exception):
     """Said to the person as it is."""
 
 
+def person_only(what: str = "this") -> None:
+    """Refuse unless a person is running this: not an agent's terminal (Hermes marks those with HERMES_SESSION_*), not a
+    live relay-started or rounds turn. The commands check this too; the functions that sign or send check it again
+    themselves, so importing them directly gets no further. Raises LinkError."""
+    import os
+    if any(k.startswith("HERMES_SESSION_") for k in os.environ):
+        raise LinkError(f"{what} is a person's to do, in their own terminal: not from an agent's session")
+    try:
+        from emporia import autonomy
+        origin = autonomy.current().origin
+    except Exception:  # noqa: BLE001 — the state could not be read: the session check above stands
+        return
+    if origin in ("relay", "rounds"):
+        raise LinkError(f"{what} is a person's to do: a {origin} turn is live")
+
+
 def chains() -> dict[str, str]:
     """Short name -> CAIP-2 id, for the chains with a canonical registry."""
     return {k: v for k, v in networks.ALIASES.items() if v in networks.ERC8004_REGISTRIES}
@@ -152,6 +168,38 @@ def record(chain: str, agent_id: Any, signer: str, issued_at: int, signature: st
         raise LinkError(f"the relay refused it ({code}): {answer.get('detail', answer)}")
     return {"checked_here": got, "link": answer.get("link"), "links": answer.get("links"), "chain": caip2,
             "chain_label": _label(caip2), "testnet": networks.is_testnet(caip2)}
+
+
+def own_wallet_ask(chain: str, agent_id: Any, *, read: Any = None, signer: Any = None, stable: str | None = None,
+                   now: float | None = None) -> dict[str, Any]:
+    """`ask` with this agent's own EVM wallet as the signer, and the wallet's signature of the statement: what a link
+    of an identity the agent's own wallet owns needs. Nothing is sent on-chain and no money moves; the key stays in
+    the signer. The answer is `ask`'s, plus `signature`; `tier` says what the chain backs ('' when the wallet does
+    not control the identity)."""
+    from emporia import chain_register
+    person_only("signing with the agent's own wallet")
+    wallet = signer or chain_register.own_wallet()
+    out = ask(chain, agent_id, wallet.address, read=read, stable=stable, now=now)
+    if not out["tier"]:
+        return out
+    try:
+        out["signature"] = wallet.sign_typed_data(erc8004.typed_data_from_json(out["typed_data"]))
+    except Exception as e:  # noqa: BLE001 — never echo a signer's words
+        raise LinkError(f"the agent's wallet could not sign the statement ({type(e).__name__})") from None
+    return out
+
+
+def link_own_wallet(chain: str, agent_id: Any, *, read: Any = None, signer: Any = None, stable: str | None = None,
+                    now: float | None = None, post: Callable[..., Any] | None = None) -> dict[str, Any]:
+    """Sign the link statement with the agent's own wallet and record it (`record` checks the signature and the chain
+    again first): the link of an identity the agent's own wallet owns, without a browser wallet."""
+    person_only("linking with the agent's own wallet")
+    out = own_wallet_ask(chain, agent_id, read=read, signer=signer, stable=stable, now=now)
+    if not out["tier"]:
+        raise LinkError(f"the chain does not back this wallet as controlling it ({out.get('reason') or 'not proven'}): "
+                        "nothing recorded")
+    return record(chain, agent_id, out["signer"], int(out["issued_at"]), out["signature"], read=read, stable=stable,
+                  now=now, post=post)
 
 
 def unlink(chain: str, agent_id: Any, *, stable: str | None = None) -> dict[str, Any]:

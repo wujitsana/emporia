@@ -61,6 +61,8 @@ describe("an ERC-8004 link's wording", () => {
     const v = { status: "checked", block_number: 321, reason: "", signature_checked: true } as ChainView;
     expect(localStatus({ ...v, two_way: true })).toBe("checked by you at block 321 · two-way");
     expect(localStatus({ ...v, two_way: false })).toBe("checked by you at block 321");
+    expect(localStatus({ ...v, two_way: true, paid_at_own_wallet: true })).toBe("checked by you at block 321 · two-way · paid at its own wallet");
+    expect(localStatus({ ...v, paid_at_own_wallet: false })).toBe("checked by you at block 321");
     expect(localStatus({ ...v, status: "not-proven", two_way: true } as ChainView)).not.toContain("two-way");
   });
 

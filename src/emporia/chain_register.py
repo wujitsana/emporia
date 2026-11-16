@@ -2,8 +2,10 @@
 person sends from their own wallet, then read the receipt and find the new agent's number. Run as the agent (its own
 settings) by `emporia agent register-8004`; it is a person's act, so there is no agent tool for it.
 
-Emporia sends nothing here and holds no key: the transaction is the person's, from their wallet. Reads go through
-`chain_read.PinnedReader`; the call is checked first with an `eth_call` simulation and a gas estimate.
+Emporia sends nothing here unless a person runs `register-8004 --from-agent-wallet --max-gas N`: then `send_register`
+signs and broadcasts one transaction from the agent's own Base Sepolia wallet (`chain_send`). Otherwise the transaction is
+the person's, from their wallet. Reads go through `chain_read.PinnedReader`; the call is checked first with an
+`eth_call` simulation and a gas estimate.
 """
 from __future__ import annotations
 
@@ -65,7 +67,7 @@ def _about() -> str:
 
 
 def build(chain: str, sender: str = "", *, read: Any = None, stable: str | None = None, about: str | None = None,
-          relay: str | None = None, x402: bool | None = None) -> dict[str, Any]:
+          relay: str | None = None, x402: bool | None = None, image: str | None = None) -> dict[str, Any]:
     """The registration file, the call and what the chain says about it (a simulation and a gas estimate)."""
     if not erc8004.available():
         raise LinkError("these checks need eth-account (the x402 extra): pip install 'emporia[x402]'")
@@ -76,7 +78,7 @@ def build(chain: str, sender: str = "", *, read: Any = None, stable: str | None 
         relay = m.RELAY_URL
     try:
         file = reg.registration_file(me, _about() if about is None else about, relay, stable_id,
-                                     _x402_support() if x402 is None else x402)
+                                     _x402_support() if x402 is None else x402, image)
         uri = reg.data_uri(file)
     except reg.RegisterError as e:
         raise LinkError(str(e)) from None
@@ -99,6 +101,69 @@ def build(chain: str, sender: str = "", *, read: Any = None, stable: str | None 
     except Exception as e:  # noqa: BLE001 — a malformed answer is 'could not ask', not a crash
         raise LinkError(f"the chain's answer was not understood ({type(e).__name__}); nothing changed") from None
     return out
+
+
+def own_wallet() -> Any:
+    """The agent's own EVM signer (`.address`, `.sign_transaction`, `.sign_typed_data`), or a LinkError saying what is
+    missing. Behind the operator signer the keys are not here, and its limits and approvals are the way to spend."""
+    from emporia import agent_wallet, mcp_server as m
+    chain_link.person_only("using the agent's own wallet")
+    if agent_wallet.remote() is not None:
+        raise LinkError("this agent's wallet keys are held by the operator signer, which sends nothing for the "
+                        "ERC-8004 commands: use your own wallet (print the call, or --browser)")
+    try:
+        return agent_wallet.evm_signer(m.AGENT_ID)
+    except agent_wallet.AgentWalletError as e:
+        raise LinkError(f"{e}") from None
+    except Exception as e:  # noqa: BLE001 — never echo a signer's own words: they may carry key material
+        raise LinkError(f"this agent's EVM wallet could not be opened ({type(e).__name__})") from None
+
+
+def _digest(data: bytes) -> str:
+    from eth_utils import keccak
+    return "0x" + keccak(data).hex()
+
+
+def quote_register(chain: str, max_gas: Any, *, read: Any = None, signer: Any = None, stable: str | None = None,
+                   about: str | None = None, relay: str | None = None, x402: bool | None = None,
+                   image: str | None = None) -> dict[str, Any]:
+    """`build` with the agent's own wallet as the sender, plus what sending it would cost at most (read-only):
+    the answer of `chain_send.quote` under `quote`, and the calldata's digest the send must match."""
+    from emporia import chain_send
+    if not erc8004.available():
+        raise LinkError("these checks need eth-account (the x402 extra): pip install 'emporia[x402]'")
+    _chain(chain)
+    wallet = signer or own_wallet()
+    out = build(chain, wallet.address, read=read, stable=stable, about=about, relay=relay, x402=x402, image=image)
+    data = bytes.fromhex(out["calldata"][2:])
+    out["wallet"] = wallet.address
+    out["calldata_digest"] = _digest(data)
+    out["quote"] = chain_send.quote(_reader(out["chain"], read), wallet.address, out["registry"], data, max_gas,
+                                    chain_id=out["chain_id"])
+    return out
+
+
+def send_register(chain: str, max_gas: Any, expect_digest: str, confirmed_cost_wei: int, *, read: Any = None, signer: Any = None,
+                  stable: str | None = None, about: str | None = None, relay: str | None = None,
+                  x402: bool | None = None, image: str | None = None) -> dict[str, Any]:
+    """Quote again, refuse if the call is no longer the one the person confirmed, then send exactly one transaction
+    from the agent's own wallet. The answer is the hash; `confirm` takes it from there."""
+    from emporia import chain_send
+    chain_link.person_only("sending from the agent's own wallet")
+    wallet = signer or own_wallet()
+    q = quote_register(chain, max_gas, read=read, signer=wallet, stable=stable, about=about, relay=relay, x402=x402,
+                       image=image)
+    if q["quote"]["max_cost_wei"] > int(confirmed_cost_wei or 0):
+        raise LinkError("the fee rose since you confirmed it (the worst case is now "
+                        f"{chain_send.eth(q['quote']['max_cost_wei'])}, you confirmed {chain_send.eth(int(confirmed_cost_wei or 0))}): "
+                        "nothing sent; run the command again")
+    if q["calldata_digest"] != expect_digest:
+        raise LinkError("the registration changed since you confirmed it (the bio or the relay?): nothing sent; "
+                        "run the command again")
+    data = bytes.fromhex(q["calldata"][2:])
+    tx_hash = chain_send.send(_reader(q["chain"], read), wallet, q["quote"], data)
+    return {"tx_hash": tx_hash, "wallet": wallet.address, "chain": q["chain"], "chain_label": q["chain_label"],
+            "max_cost_wei": q["quote"]["max_cost_wei"]}
 
 
 def _is_local(url: str) -> bool:
@@ -150,6 +215,11 @@ def confirm(chain: str, tx_hash: str, *, read: Any = None, finalized: Any = None
                            "block_number": found["block_number"], "block_hash": found["block_hash"],
                            "agent_uri": uri_now, "two_way": reg.names_agent(uri_now, stable_id),
                            "finalized_block": None}
+    out["owner_is_agent_wallet"] = False
+    try:
+        out["owner_is_agent_wallet"] = bool(own_wallet().address.lower() == found["owner"])
+    except Exception:  # noqa: BLE001 — no usable wallet here: the identity is simply not the agent wallet's
+        pass
     if finalized is not None or read is None:
         try:
             out["finalized_block"] = _reader(caip2, finalized, "finalized").block_number

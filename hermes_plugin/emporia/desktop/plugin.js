@@ -12341,7 +12341,7 @@ function relayStatus(l) {
 /** "checked by you at block N", from this machine's own read; never the relay's word. */
 function localStatus(v) {
 	if (v.status === "checked") {
-		const two = v.two_way ? " · two-way" : "";
+		const two = (v.two_way ? " · two-way" : "") + (v.paid_at_own_wallet ? " · paid at its own wallet" : "");
 		return v.signature_checked === false ? `chain control checked by you at block ${v.block_number} (signature not available)${two}` : `checked by you at block ${v.block_number}${two}`;
 	}
 	if (v.status === "not-proven") return `your read does not show it${v.reason ? `: ${v.reason}` : ""}`;
@@ -12350,16 +12350,17 @@ function localStatus(v) {
 }
 /** The query for the console's routes. With the card's stable id and the link's `issued_at` and `wallet_sig` the
 *  console verifies the wallet's signature as well as the chain's control. */
-function query(l, stable) {
-	const base = `registry=${encodeURIComponent(l.agent_registry)}&agent=${encodeURIComponent(l.agent_id)}&signer=${encodeURIComponent(l.signer)}`;
+function query(l, stable, payTo) {
+	const pay = payTo && /^0x[0-9a-fA-F]{40}$/.test(payTo) ? `&pay_to=${payTo}` : "";
+	const base = `registry=${encodeURIComponent(l.agent_registry)}&agent=${encodeURIComponent(l.agent_id)}&signer=${encodeURIComponent(l.signer)}${pay}`;
 	if (!stable || !l.wallet_sig || !l.issued_at) return base;
 	return `${base}&stable=${encodeURIComponent(stable)}&issued=${l.issued_at}&sig=${encodeURIComponent(l.wallet_sig)}`;
 }
 /** The viewer's own read of a link, through the local console; null where there is no console (or it did not answer). */
-async function fetchChainView(viewer, l, stable) {
+async function fetchChainView(viewer, l, stable, payTo) {
 	if (!viewer) return null;
 	try {
-		const r = await httpFetch(consoleUrl(`/chain-link/${encodeURIComponent(viewer)}?${query(l, stable)}`));
+		const r = await httpFetch(consoleUrl(`/chain-link/${encodeURIComponent(viewer)}?${query(l, stable, payTo)}`));
 		return r.ok ? await r.json() : null;
 	} catch {
 		return null;
@@ -12479,17 +12480,21 @@ function Registration({ view }) {
 		]
 	});
 }
-function ChainLinkRow({ link, stable }) {
+function ChainLinkRow({ link, stable, payTo }) {
 	const [view, setView] = useState(null);
 	useEffect(() => {
 		let live = true;
-		if (VIEWER_ID && link.status !== "superseded") fetchChainView(VIEWER_ID, link, stable).then((v) => {
+		if (VIEWER_ID && link.status !== "superseded") fetchChainView(VIEWER_ID, link, stable, payTo).then((v) => {
 			if (live) setView(v);
 		});
 		return () => {
 			live = false;
 		};
-	}, [link, stable]);
+	}, [
+		link,
+		stable,
+		payTo
+	]);
 	return /* @__PURE__ */ jsxs("div", {
 		className: "e-chain-link",
 		"data-testid": "chain-link-row",
@@ -12534,7 +12539,8 @@ function ChainLinkPanel({ agent }) {
 		"data-testid": "chain-link-panel",
 		children: links.length ? /* @__PURE__ */ jsx(MetaGrid, { rows: links.map((l) => ["ERC-8004", /* @__PURE__ */ jsx(ChainLinkRow, {
 			link: l,
-			stable: agent.stable_id
+			stable: agent.stable_id,
+			payTo: agent.x402_pay_to?.evm
 		}, `${l.agent_registry}/${l.agent_id}`)]) }) : /* @__PURE__ */ jsxs("div", {
 			style: {
 				marginTop: 10,

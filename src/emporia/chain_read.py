@@ -1,5 +1,8 @@
 """Read-only chain reads at one pinned block (the plumbing for on-chain verification).
 
+The one exception is `send_raw` (`eth_sendRawTransaction`): only the person-run `register-8004` / `set-8004-wallet
+--from-agent-wallet` commands call it, on Base Sepolia, with the agent's own wallet (`chain_send`).
+
 `PinnedReader` talks JSON-RPC to one or two URLs for a CAIP-2 chain: it checks the chain id, pins one block
 once, and answers `call` / `code` at that block. A failed read is `ChainUnknown`, never a guess, and its text
 never carries a URL (an RPC URL may hold a provider's key).
@@ -267,3 +270,53 @@ class PinnedReader:
         if b is None:
             raise ChainUnknown("the RPC answered no block")
         return b[1]
+
+    # -- what sending a transaction from an agent's own wallet needs (all on the first URL, none pinned) ----------
+    def _int(self, method: str, params: list) -> int:
+        got = self._first(method, params)
+        try:
+            return int(got, 16)
+        except (TypeError, ValueError):
+            raise ChainUnknown("the RPC answered something unexpected") from None
+
+    def balance(self, address: str) -> int:
+        """The account's balance in wei, now."""
+        return self._int("eth_getBalance", [address, "latest"])
+
+    def nonce(self, address: str, tag: str = "pending") -> int:
+        """The account's next transaction number: `pending` counts what is waiting to be mined, `latest` only what is."""
+        if tag not in ("pending", "latest"):
+            raise ChainUnknown(f"unknown block tag {tag!r}")
+        return self._int("eth_getTransactionCount", [address, tag])
+
+    def fee_data(self) -> tuple[int, int]:
+        """(suggested priority fee, the latest block's base fee), in wei: what an EIP-1559 fee is built from."""
+        own = self._begin()
+        try:
+            priority = self._int("eth_maxPriorityFeePerGas", [])
+            block = self._first("eth_getBlockByNumber", ["latest", False])
+            try:
+                base = int(block["baseFeePerGas"], 16)
+            except (KeyError, TypeError, ValueError):
+                raise ChainUnknown("the chain answered no base fee (not an EIP-1559 chain?)") from None
+            return priority, base
+        finally:
+            if own:
+                self._until = None
+
+    def chain_time(self) -> int:
+        """The latest block's timestamp (what a contract's `block.timestamp` is about to be)."""
+        block = self._first("eth_getBlockByNumber", ["latest", False])
+        try:
+            return int(block["timestamp"], 16)
+        except (KeyError, TypeError, ValueError):
+            raise ChainUnknown("the RPC answered no block") from None
+
+    def send_raw(self, raw: bytes | str) -> str:
+        """`eth_sendRawTransaction` on the first URL: the transaction hash the node answers. The one write this
+        class has; only the person-run send commands call it, one transaction per run."""
+        payload = raw if isinstance(raw, str) else "0x" + bytes(raw).hex()
+        got = self._first("eth_sendRawTransaction", [payload])
+        if not isinstance(got, str) or len(got) != 66 or not got.startswith("0x"):
+            raise ChainUnknown("the RPC answered something unexpected")
+        return got.lower()

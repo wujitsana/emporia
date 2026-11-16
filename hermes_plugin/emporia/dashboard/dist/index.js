@@ -23675,7 +23675,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	/** "checked by you at block N", from this machine's own read; never the relay's word. */
 	function localStatus(v) {
 		if (v.status === "checked") {
-			const two = v.two_way ? " · two-way" : "";
+			const two = (v.two_way ? " · two-way" : "") + (v.paid_at_own_wallet ? " · paid at its own wallet" : "");
 			return v.signature_checked === false ? `chain control checked by you at block ${v.block_number} (signature not available)${two}` : `checked by you at block ${v.block_number}${two}`;
 		}
 		if (v.status === "not-proven") return `your read does not show it${v.reason ? `: ${v.reason}` : ""}`;
@@ -23684,16 +23684,17 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	/** The query for the console's routes. With the card's stable id and the link's `issued_at` and `wallet_sig` the
 	*  console verifies the wallet's signature as well as the chain's control. */
-	function query(l, stable) {
-		const base = `registry=${encodeURIComponent(l.agent_registry)}&agent=${encodeURIComponent(l.agent_id)}&signer=${encodeURIComponent(l.signer)}`;
+	function query(l, stable, payTo) {
+		const pay = payTo && /^0x[0-9a-fA-F]{40}$/.test(payTo) ? `&pay_to=${payTo}` : "";
+		const base = `registry=${encodeURIComponent(l.agent_registry)}&agent=${encodeURIComponent(l.agent_id)}&signer=${encodeURIComponent(l.signer)}${pay}`;
 		if (!stable || !l.wallet_sig || !l.issued_at) return base;
 		return `${base}&stable=${encodeURIComponent(stable)}&issued=${l.issued_at}&sig=${encodeURIComponent(l.wallet_sig)}`;
 	}
 	/** The viewer's own read of a link, through the local console; null where there is no console (or it did not answer). */
-	async function fetchChainView(viewer, l, stable) {
+	async function fetchChainView(viewer, l, stable, payTo) {
 		if (!VIA_CONSOLE || !viewer) return null;
 		try {
-			const r = await httpFetch(consoleUrl(`/chain-link/${encodeURIComponent(viewer)}?${query(l, stable)}`));
+			const r = await httpFetch(consoleUrl(`/chain-link/${encodeURIComponent(viewer)}?${query(l, stable, payTo)}`));
 			return r.ok ? await r.json() : null;
 		} catch {
 			return null;
@@ -23845,17 +23846,21 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	function ChainLinkRow({ link, stable }) {
+	function ChainLinkRow({ link, stable, payTo }) {
 		const [view, setView] = (0, import_react$45.useState)(null);
 		(0, import_react$45.useEffect)(() => {
 			let live = true;
-			if (VIA_CONSOLE && VIEWER_ID && link.status !== "superseded") fetchChainView(VIEWER_ID, link, stable).then((v) => {
+			if (VIA_CONSOLE && VIEWER_ID && link.status !== "superseded") fetchChainView(VIEWER_ID, link, stable, payTo).then((v) => {
 				if (live) setView(v);
 			});
 			return () => {
 				live = false;
 			};
-		}, [link, stable]);
+		}, [
+			link,
+			stable,
+			payTo
+		]);
 		return /* @__PURE__ */ (0, import_jsx_runtime$97.jsxs)("div", {
 			className: "e-chain-link",
 			"data-testid": "chain-link-row",
@@ -23900,7 +23905,8 @@ var EmporiaHermesPlugin = (function(exports) {
 			"data-testid": "chain-link-panel",
 			children: links.length ? /* @__PURE__ */ (0, import_jsx_runtime$97.jsx)(MetaGrid, { rows: links.map((l) => ["ERC-8004", /* @__PURE__ */ (0, import_jsx_runtime$97.jsx)(ChainLinkRow, {
 				link: l,
-				stable: agent.stable_id
+				stable: agent.stable_id,
+				payTo: agent.x402_pay_to?.evm
 			}, `${l.agent_registry}/${l.agent_id}`)]) }) : /* @__PURE__ */ (0, import_jsx_runtime$97.jsxs)("div", {
 				style: {
 					marginTop: 10,

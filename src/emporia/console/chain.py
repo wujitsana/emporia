@@ -33,6 +33,7 @@ from emporia.erc8004_register import names_agent
 from emporia.chain_read import ChainRevert, ChainUnknown, PinnedReader
 
 CACHE_SECONDS = 600
+CACHE_MAX = 64                      # looks remembered at once (oldest dropped first)
 REGISTRATION_CAP = 64 * 1024
 TOKEN_JSON_CAP = 1024 * 1024
 IMAGE_CAP = 256 * 1024
@@ -137,12 +138,15 @@ class Loaded:
     image: tuple[str, bytes] | None = field(default=None, repr=False)
     signature_checked: bool = False             # the wallet's signature was verified here too, not only the chain
     two_way: bool = False                       # the on-chain registration's Emporia service names this agent
+    agent_wallet: str = ""                      # the registry's getAgentWallet (lowercase; '' unset or unread)
+    paid_at_own_wallet: bool | None = None      # agent_wallet is the agent's own registered EVM wallet (None: unknown)
 
     def view(self) -> dict[str, Any]:
         return {"status": self.status, "reason": self.reason, "tier": self.tier,
                 "tier_wording": erc8004.TIER_WORDING.get(self.tier, ""), "owner": self.owner, "binding": self.binding,
                 "block_number": self.block_number, "block_hash": self.block_hash, "checked_at": self.checked_at,
-                "signature_checked": self.signature_checked, "two_way": self.two_way, "registration": self.registration,
+                "signature_checked": self.signature_checked, "two_way": self.two_way, "agent_wallet": self.agent_wallet,
+                "paid_at_own_wallet": self.paid_at_own_wallet, "registration": self.registration,
                 "image": {"source": self.image_source, "available": self.image is not None, "note": self.image_note,
                           "type": self.image[0] if self.image else ""}}
 
@@ -153,24 +157,33 @@ class ChainViews:
     def __init__(self, reader: Callable[[str], Any] | None = None, clock: Callable[[], float] = time.time):
         self._reader = reader or (lambda caip2: PinnedReader(caip2, max_response_bytes=RESPONSE_CAP))
         self._clock = clock
-        self._cache: dict[tuple[str, str, str, str], tuple[float, Loaded]] = {}
+        self._cache: dict[tuple[str, str, str, str, str], tuple[float, Loaded]] = {}
 
-    def load(self, caip2: str, agent_id: str, signer: str, signed: dict | None = None) -> tuple[Loaded, bool]:
+    def load(self, caip2: str, agent_id: str, signer: str, signed: dict | None = None,
+             pay_to: str = "") -> tuple[Loaded, bool]:
         """(the look, whether it came from the cache). Blocking: run it in a thread. `signed` is the card's
         `{stable_id, issued_at, wallet_sig}`: with it the wallet's signature is verified here as well as the
-        chain's control (`erc8004.verify`); without it only the chain is read (`erc8004.preview`)."""
+        chain's control (`erc8004.verify`); without it only the chain is read (`erc8004.preview`). `pay_to` is the agent's
+        registered EVM wallet: with it the answer says whether the identity's `agentWallet` is that wallet (visibility
+        only; `agentWallet` is never proof of control)."""
         key = (caip2, str(int(agent_id)), signer.lower(),
-               "" if not signed else f"{signed['stable_id']}/{signed['issued_at']}/{signed['wallet_sig']}")
+               "" if not signed else f"{signed['stable_id']}/{signed['issued_at']}/{signed['wallet_sig']}",
+               pay_to.lower())
         hit = self._cache.get(key)
         now = self._clock()
         if hit and now - hit[0] < CACHE_SECONDS:
             return hit[1], True
-        got = self._read(caip2, key[1], signer, int(now), signed)
+        got = self._read(caip2, key[1], signer, int(now), signed, pay_to)
         if got.status != "unknown":             # an RPC error is not remembered: the next look tries again
+            if len(self._cache) >= CACHE_MAX:   # one process-wide instance serves agents' verify calls: keep it small
+                self._cache = {k: v for k, v in self._cache.items() if now - v[0] < CACHE_SECONDS}
+                while len(self._cache) >= CACHE_MAX:
+                    self._cache.pop(min(self._cache, key=lambda k: self._cache[k][0]))
             self._cache[key] = (now, got)
         return got, False
 
-    def _read(self, caip2: str, agent_id: str, signer: str, now: int, signed: dict | None = None) -> Loaded:
+    def _read(self, caip2: str, agent_id: str, signer: str, now: int, signed: dict | None = None,
+              pay_to: str = "") -> Loaded:
         if not erc8004.available():
             return Loaded("not-checked", "no signature library is installed here", checked_at=now)
         try:
@@ -189,7 +202,7 @@ class ChainViews:
                 if not ok:
                     return got
                 try:
-                    self._show(reader, caip2, agent_id, signer, got, signed["stable_id"])
+                    self._show(reader, caip2, agent_id, signer, got, signed["stable_id"], pay_to)
                 except ChainUnknown:
                     got.image_note = "the registration could not be read now"
                 return got
@@ -201,7 +214,7 @@ class ChainViews:
         if not pv["tier"]:
             return got
         try:
-            self._show(reader, caip2, agent_id, signer, got)
+            self._show(reader, caip2, agent_id, signer, got, "", pay_to)
         except ChainUnknown:
             got.image_note = "the registration could not be read now"
         return got
@@ -232,7 +245,21 @@ class ChainViews:
             raise Refused("not a JSON object")
         return doc
 
-    def _show(self, reader: Any, caip2: str, agent_id: str, signer: str, got: Loaded, stable: str = "") -> None:
+    def _wallet(self, reader: Any, registry: str, agent_id: int, got: Loaded, pay_to: str) -> None:
+        """`getAgentWallet` at the same pinned block, and whether it is the agent's own registered wallet."""
+        from emporia import erc8004_wallet as W
+        try:
+            got.agent_wallet = W.decode_address(reader.call(registry, W.get_wallet_calldata(agent_id)))
+        except (ChainRevert, ChainUnknown, W.WalletError):
+            return                      # not read: the registration below is still shown, and says nothing of the wallet
+        if got.agent_wallet == W.ZERO:
+            got.agent_wallet = ""
+        if pay_to:
+            got.paid_at_own_wallet = W.same(got.agent_wallet, pay_to)
+
+    def _show(self, reader: Any, caip2: str, agent_id: str, signer: str, got: Loaded, stable: str = "",
+              pay_to: str = "") -> None:
+        self._wallet(reader, networks.ERC8004_REGISTRIES[caip2], int(agent_id), got, pay_to)
         reg_image: Any = None
         try:
             registry = networks.ERC8004_REGISTRIES[caip2]
