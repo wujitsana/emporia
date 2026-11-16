@@ -23,6 +23,7 @@ import httpx
 import websockets
 from websockets.exceptions import ConnectionClosedError, InvalidHandshake
 
+from emporia import backoff as backoff_mod
 from emporia import session_cache, signing
 from emporia.wire import DEFAULT_MSG_TYPE, ERR_DUPLICATE_NONCE, error_code
 from emporia.wire import path_id as _seg  # L4: every id in a relay path is one segment
@@ -242,6 +243,15 @@ class EmporiaAgent:
         too: a WS handshake can't carry a custom Authorization header, so
         listen_session/listen_agent/stream_session_events send this in the handshake's
         subprotocols (`ws_subprotocols`), never in the URL. Returns None on any failure."""
+        try:
+            return await self._mint_bearer()
+        except Exception:
+            return None
+
+    async def _mint_bearer(self) -> str:
+        """The bearer token (memory, then the kept one, then a new sign-in). Raises on a failed sign-in, an
+        `httpx.HTTPStatusError` when the relay refused it (404: this agent is not registered there; 429:
+        too many sign-ins), so a caller that retries can tell those apart and wait accordingly."""
         import time
         now = time.time()
         if self._bearer_token and self._bearer_exp > now + 30:
@@ -251,24 +261,21 @@ class EmporiaAgent:
             self._bearer_token, self._bearer_exp = kept[0], kept[1]
             signing.remember_stable(self.profile_id, kept[2])
             return self._bearer_token
-        try:
-            ch_resp = await self._client().post(f"{self.relay_url}/dashboard/challenge", json={"agent_id": self.agent_id})
-            ch_resp.raise_for_status()
-            ch = ch_resp.json()
-            resp = await self._client().post(
-                f"{self.relay_url}/dashboard/session",   # M4: signed for this relay alone
-                json=signing.dashboard_session_body(self.agent_id, ch, self.relay_url, key=self.profile_id),
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            self._bearer_token = data["token"]
-            signing.remember_stable(self.profile_id, data.get("stable_id", ""))   # what its signed acts name it by
-            self._bearer_exp = now + data.get("expires_in", 3600)
-            session_cache.store(self.relay_url, self.agent_id, self._bearer_token, self._bearer_exp,
-                                data.get("stable_id", ""))
-            return self._bearer_token
-        except Exception:
-            return None
+        ch_resp = await self._client().post(f"{self.relay_url}/dashboard/challenge", json={"agent_id": self.agent_id})
+        ch_resp.raise_for_status()
+        ch = ch_resp.json()
+        resp = await self._client().post(
+            f"{self.relay_url}/dashboard/session",   # M4: signed for this relay alone
+            json=signing.dashboard_session_body(self.agent_id, ch, self.relay_url, key=self.profile_id),
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        self._bearer_token = data["token"]
+        signing.remember_stable(self.profile_id, data.get("stable_id", ""))   # what its signed acts name it by
+        self._bearer_exp = now + data.get("expires_in", 3600)
+        session_cache.store(self.relay_url, self.agent_id, self._bearer_token, self._bearer_exp,
+                            data.get("stable_id", ""))
+        return self._bearer_token
 
     async def _bearer_headers(self) -> dict[str, str]:
         """{"Authorization": "Bearer <jwt>"} via _bearer_token_value(). The only
@@ -2953,7 +2960,7 @@ class EmporiaAgent:
                     raise RuntimeError(
                         f"listen_session: max retries ({max_retries}) exhausted: {e}"
                     ) from e
-                await asyncio.sleep(backoff)
+                await asyncio.sleep(backoff_mod.full_jitter(retries, initial_backoff, 60.0))
                 retries += 1
                 backoff = min(backoff * 2, 60.0)
 
@@ -3002,7 +3009,7 @@ class EmporiaAgent:
                     raise RuntimeError(
                         f"listen_agent: max retries ({max_retries}) exhausted: {e}"
                     ) from e
-                await asyncio.sleep(backoff)
+                await asyncio.sleep(backoff_mod.full_jitter(retries, initial_backoff, 60.0))
                 retries += 1
                 backoff = min(backoff * 2, 60.0)
 
