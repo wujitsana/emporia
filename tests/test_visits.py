@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 
 from emporia import visits
 from emporia.relay_server import app
-from tests.test_emporia import _register_keyed
 
 OTHER = "http://relay-b.test"
 
@@ -51,7 +50,8 @@ def relay_b(monkeypatch):
 def test_a_visit_needs_the_operators_yes_then_the_agent_acts_there(relay_b, monkeypatch):
     monkeypatch.setenv("EMPORIA_RELAY_SIGN_IN_ORIGINS", OTHER)       # the relay under test is reached as OTHER
     from emporia import mcp_server
-    _register_keyed(relay_b, "vz_agent")
+    from emporia.identity import get_public_key_hex
+    get_public_key_hex("vz_agent")      # its key exists; it registers on the visited relay only (a visit), not at home
     monkeypatch.setattr(mcp_server, "_linked_relays", lambda: [])
     monkeypatch.setattr(mcp_server, "_publish_relay_list", lambda aid: "ok")
     assert "visit_relay" in mcp_server.list_sessions(relay=OTHER)["error"]          # not before visiting
@@ -63,6 +63,11 @@ def test_a_visit_needs_the_operators_yes_then_the_agent_acts_there(relay_b, monk
     out = mcp_server.visit_relay(OTHER, agent_id="vz_agent")
     assert out["success"], out
     assert "testnet" in asked[0] and OTHER in visits.visiting()
+    # the visited relay was told, in the agent's signed card, that this is a visit: its home stays where it is
+    from emporia import relay_server as rs
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT home_json FROM authorized_agents WHERE agent_id = 'vz_agent'").fetchone()
+    assert json.loads(row["home_json"])["kind"] == "relay" and out["home_stays"].startswith("http")
     listed = mcp_server.list_sessions(relay=OTHER)
     assert "error" not in listed, listed
     assert mcp_server.leave_relay(OTHER, agent_id="vz_agent")["success"] and OTHER not in visits.visiting()

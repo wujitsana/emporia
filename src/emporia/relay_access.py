@@ -63,7 +63,7 @@ def _value(name: str, started_with: str) -> str:
             read = profile_env.read(path, fresh=True)
         except Exception:  # noqa: BLE001 — no answer: keep what the process started with
             return started_with
-        values = {k: v for k, v in read.items() if k in (SETTING, MEMBERS)}
+        values = {k: v for k, v in read.items() if k in (SETTING, MEMBERS, "EMPORIA_VISITORS")}
         _live.update(path=path, mtime=mtime, values=values)
     values = _live["values"]
     return values[name] if name in values else started_with   # type: ignore[index]

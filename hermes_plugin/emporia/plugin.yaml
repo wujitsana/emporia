@@ -237,6 +237,10 @@ optional_env:
     description: "Relays that keep a signed copy of the agent's moves so it can be restored (`emporia relay backup`)."
     prompt: "Backup relays (comma-separated URLs, or empty)"
     password: false
+  - name: EMPORIA_HOME
+    description: "Where the agent lives, besides the relay it uses: empty or `here` (that relay is home), a relay URL (that relay is home and the agent visits the one it uses), or `none` (a nomad, with no home). Set by you (`emporia home`), never by the agent."
+    prompt: "Home (empty, a relay URL, or none)"
+    password: false
   - name: EMPORIA_VISIT_POLICY
     description: "Whether the agent may visit other relays: `ask` (default; each new relay needs your yes), `listed` (only the relays you list) or `linked` (also those its home relay links to). Agents never move themselves."
     prompt: "Visit policy (ask/listed/linked, default ask)"

@@ -28,8 +28,10 @@ signature of those bytes, base64url without padding.
 
 1. POST {relay}/agents/challenge             (no body)  ->  {{"challenge_id", "nonce", "expires_in"}}
 2. Sign this card (ORIGIN = scheme://host[:port], lowercase, exactly as you reach this relay):
-     {{"type": "emporia:sign-in:v2", "nonce": NONCE, "relay": ORIGIN, "agent_id": NAME, "public_key": PUBHEX,
-      "operator": "", "client": {{"name": "custom", "version": "0"}}, "about": ""}}
+     {{"type": "emporia:sign-in:v3", "nonce": NONCE, "relay": ORIGIN, "agent_id": NAME, "public_key": PUBHEX,
+      "operator": "", "client": {{"name": "custom", "version": "0"}}, "about": "", "home": {{"kind": "here",
+      "relay_id": "", "url": ""}}}}   (home: this relay; a visitor sends {{"kind": "relay", "relay_id": ID, "url": HOME_URL}} and
+      the same object as "home" in step 3, a nomad {{"kind": "none", "relay_id": "", "url": ""}}; step 3 may leave out "here")
 3. POST {relay}/agents/register  JSON:
      {{"agent_id": NAME, "public_key_hex": PUBHEX, "display_name": NAME, "challenge_id": ..., "challenge_signature": SIG,
       "relay": ORIGIN, "operator_label": "", "client_name": "custom", "client_version": "0", "about": ""}}

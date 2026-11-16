@@ -16,7 +16,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
@@ -25,6 +25,7 @@ from emporia.addresses import address, fingerprint
 from emporia.logging_config import mark_expected
 
 from emporia import relay_server as rs
+from emporia import visitors
 from emporia.standing import game_module_types, wins_sql
 
 router = APIRouter()
@@ -82,19 +83,60 @@ def record_network(agent_id: str, ip: str | None) -> None:
     rs.forget_who()
 
 
+def _refuse_leaving_home(agent_id: str, home: dict[str, str]) -> None:
+    """A member (home here, or an agent from before homes) does not become a visitor by registering again under
+    another home: leaving home is the agent's own signed relay list (a move), not a registration. A visitor may
+    register as `here` (it made this relay home) or under a new home."""
+    if home["kind"] == "here":
+        return
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT home_json FROM authorized_agents WHERE agent_id = ?",
+                           (rs._normalize_agent_id(agent_id),)).fetchone()
+    if row and visitors.kind_of(row["home_json"]) == "here":
+        raise HTTPException(409, f"{agent_id} lives here: this relay is its home. A visit does not change home, and "
+                                 "an agent at home here is not registered again as a visitor. To leave home, move: "
+                                 "emporia relay use URL NAME, or emporia home NAME nomad.")
+
+
+def _keep_home(agent_id: str, home: dict[str, str], public_key_hex: str, background: BackgroundTasks) -> None:
+    """Record where the agent says it lives; the home check runs after the answer."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET home_json = ?, home_check_json = '' WHERE agent_id = ?",
+                     (json.dumps(home, sort_keys=True), agent_id))
+        row = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+    rs.forget_who()
+    if home["kind"] == "relay":
+        background.add_task(_check_home, agent_id, home, public_key_hex, row["stable_id"] if row else "")
+
+
+def _check_home(agent_id: str, home: dict[str, str], public_key_hex: str, stable_id: str) -> None:
+    """Ask the home relay's public list whether it calls this agent its own; keep the answer (never raises)."""
+    result = visitors.confirm(home, public_key_hex, stable_id)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET home_check_json = ? WHERE agent_id = ?",
+                     (json.dumps(result, sort_keys=True), agent_id))
+
+
 @router.post("/agents/register")
-async def register_agent(req: rs.RegisterAgentRequest, request: Request):
+async def register_agent(req: rs.RegisterAgentRequest, request: Request, background: BackgroundTasks):
     if not req.public_key_hex:
         raise HTTPException(400, "public_key_hex is required")
-    from emporia import relay_access
+    from emporia import relay_access, wire
+    try:
+        home = wire.clean_home(req.home)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     if why := relay_access.registration_refusal(req.public_key_hex):   # P186
+        raise HTTPException(403, why)
+    if why := visitors.registration_refusal(home, req.public_key_hex, relay_access.is_member_key(req.public_key_hex)):
         raise HTTPException(403, why)
     if why := rs.reserved_name_problem(req.agent_id, rs.stable_id_for(req.public_key_hex)):
         raise HTTPException(403, why)
     # Challenge verification — proves the registrant holds the matching private key
     if req.challenge_id and req.challenge_signature:
         rs._consume_challenge(req.challenge_id, req.public_key_hex, req.challenge_signature, req.relay,
-                              req.agent_id, req.operator_label, req.client_name, req.client_version, req.about)
+                              req.agent_id, req.operator_label, req.client_name, req.client_version, req.about,
+                              req.home)
     elif rs.REQUIRE_CHALLENGE:
         raise HTTPException(
             400,
@@ -103,6 +145,7 @@ async def register_agent(req: rs.RegisterAgentRequest, request: Request):
             "and include challenge_id + challenge_signature in this request.",
         )
 
+    _refuse_leaving_home(req.agent_id, home)
     try:
         # P53: off the event loop (registration takes the database lock and writes).
         profile = await run_in_threadpool(
@@ -123,6 +166,7 @@ async def register_agent(req: rs.RegisterAgentRequest, request: Request):
         raise HTTPException(status, msg)
 
     canonical_id = profile["agent_id"]
+    _keep_home(canonical_id, home, req.public_key_hex, background)
     # the client address the relay already resolves (behind its trusted proxy, `proxy_ip`), hashed, never kept
     record_network(canonical_id, request.client.host if request.client else None)
 
@@ -180,7 +224,8 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             rows, has_more = rs._fetch_page(
                 conn,
                 "SELECT agent_id, display_name, registered_at, is_active, "
-                "operator_label, client_name, client_version, about, declared_model, declared_model_at, stable_id "
+                "operator_label, client_name, client_version, about, declared_model, declared_model_at, stable_id, "
+                "home_json, home_check_json "
                 "FROM authorized_agents WHERE (agent_id LIKE ? OR display_name LIKE ?) "
                 + ("" if include_inactive else "AND is_active = 1 ")    # P222: one that left is gone
                 + "ORDER BY registered_at DESC LIMIT ?",
@@ -190,7 +235,8 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             rows, has_more = rs._fetch_page(
                 conn,
                 "SELECT agent_id, display_name, registered_at, is_active, "
-                "operator_label, client_name, client_version, about, declared_model, declared_model_at, stable_id "
+                "operator_label, client_name, client_version, about, declared_model, declared_model_at, stable_id, "
+                "home_json, home_check_json "
                 "FROM authorized_agents " + ("" if include_inactive else "WHERE is_active = 1 ")
                 + "ORDER BY registered_at DESC LIMIT ?",
                 (), limit,
@@ -317,6 +363,9 @@ def _identity_fields(row: Any, caller: str | None, changes: list[str],
         "operator_changed": [{"on": at, "text": f"operator changed on {at[:10]}"} for at in changes],
         "client": {"name": row["client_name"] or "", "version": row["client_version"] or "", "declared": True},
         "declared_model": {"name": model, "at": row["declared_model_at"] or "", "declared": True} if model else None,
+        # where it lives, as its card says (declared) and whether its home relay's own list agrees: member,
+        # visitor ("visiting from <relay>") or nomad. Visibility only.
+        "presence": visitors.view(row["home_json"], row["home_check_json"]),
     }
 
 
@@ -385,7 +434,8 @@ async def get_agent_profile(agent_id: str, request: Request):
         row = conn.execute(
             "SELECT agent_id, display_name, registered_at, is_active, "
             "operator_label, client_name, client_version, about, declared_model, "
-            "declared_model_at, encryption_public_key, public_key_hex, stable_id, accepts_remote_dms "
+            "declared_model_at, encryption_public_key, public_key_hex, stable_id, accepts_remote_dms, "
+            "home_json, home_check_json "
             "FROM authorized_agents WHERE agent_id = ?",
             (agent_id,),
         ).fetchone()
@@ -1047,7 +1097,9 @@ async def set_relay_list(agent_id: str, req: RelayListRequest, request: Request)
     rs._require_caller_is(agent_id, request)
     rs._require_registered(agent_id)
     rs._enforce_agent_rate_limit(agent_id)
-    urls = [req.home, *req.visits, *req.backups, *([req.a2a_url] if req.a2a_url else [])]
+    # a nomad's list names no home (`none`); every other entry is a relay URL
+    urls = [*([] if req.home == "none" else [req.home]), *req.visits, *req.backups,
+            *([req.a2a_url] if req.a2a_url else [])]
     if len(req.visits) > 50 or len(req.backups) > 5 or not all(_relay_url_ok(u) for u in urls):
         raise HTTPException(400, "home, visits (at most 50), backups (at most 5) and a2a_url must be http(s) URLs")
     if why := wire.relay_roles_problem(req.home, req.visits, req.backups, req.roles):
@@ -1077,7 +1129,54 @@ async def set_relay_list(agent_id: str, req: RelayListRequest, request: Request)
         home_here = same_host(home_host, request.headers.get("host", "")) or same_host(home_host, own_host())
         conn.execute("UPDATE authorized_agents SET relay_list_json = ? WHERE agent_id = ?",
                      (json.dumps({"list": payload, "signature": req.signature, "home_here": home_here}), agent_id))
+        # the agent's own signed list is how its home changes (a move, or going nomad): keep what it now says
+        _follow_signed_home(conn, agent_id, req.home, home_here)
     return {"ok": True, "relay_list": payload}
+
+
+@router.get("/agents/{agent_id}/passport")
+async def agent_passport(agent_id: str):
+    """The agent's passport card (emporia.passport): its identity, where it lives, this relay's signed record of it
+    and the records other relays signed that it carried here, and an unweighted Reach count. Public like its
+    record; evidence that counts for nothing here."""
+    from emporia import passport
+    from emporia.routes.standing import counterparty_record
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT agent_id, display_name, public_key_hex, stable_id, registered_at, home_json, "
+                           "home_check_json FROM authorized_agents WHERE agent_id = ? AND is_active = 1",
+                           (agent_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, f"no agent {agent_id!r} on this relay")
+    record = await counterparty_record(agent_id)
+    identity = {"agent_id": row["agent_id"], "address": address(row["agent_id"], rs._own_host()),
+                "display_name": row["display_name"] or row["agent_id"], "stable_id": row["stable_id"],
+                "public_key_hex": row["public_key_hex"], "fingerprint": fingerprint(row["public_key_hex"] or ""),
+                "registered_at": row["registered_at"], "relay": rs.RELAY_BASE_URL,
+                "presence": visitors.view(row["home_json"], row["home_check_json"])}
+    return passport.build(identity, record, record.get("elsewhere") or [])
+
+
+def _follow_signed_home(conn: Any, agent_id: str, home: str, home_here: bool) -> None:
+    """A signed relay list names the agent's home: here, none (a nomad) or another relay (it is then a visitor
+    here). Written only when it differs from what is stored, and a changed home is checked again."""
+    from emporia import wire
+    row = conn.execute("SELECT home_json FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+    if row is None:
+        return
+    if home == "none":
+        new = {"kind": "none", "relay_id": "", "url": ""}
+    elif home_here:
+        new = {"kind": "here", "relay_id": "", "url": ""}
+    else:
+        try:
+            new = {"kind": "relay", "relay_id": "", "url": wire.relay_origin(home)}
+        except ValueError:
+            return
+    if visitors.kind_of(row["home_json"]) == new["kind"] and (new["kind"] != "relay" or json.loads(
+            row["home_json"]).get("url") == new["url"]):
+        return                                  # nothing changed (the relay id the card named is kept)
+    conn.execute("UPDATE authorized_agents SET home_json = ?, home_check_json = '' WHERE agent_id = ?",
+                 (json.dumps(new, sort_keys=True), agent_id))
 
 
 @router.get("/agents/{agent_id}/card")
@@ -1090,8 +1189,8 @@ async def agent_card(agent_id: str):
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute(
             "SELECT agent_id, display_name, public_key_hex, stable_id, encryption_public_key, "
-            "encryption_key_signature, encryption_key_at, relay_list_json FROM authorized_agents "
-            "WHERE agent_id = ? AND is_active = 1", (agent_id,)).fetchone()
+            "encryption_key_signature, encryption_key_at, relay_list_json, home_json, home_check_json "
+            "FROM authorized_agents WHERE agent_id = ? AND is_active = 1", (agent_id,)).fetchone()
         key_log = rs.agent_key_log(conn, row["stable_id"]) if row else []
     if not row or not row["relay_list_json"]:
         raise HTTPException(404, f"No card for {agent_id}")
@@ -1112,6 +1211,8 @@ async def agent_card(agent_id: str):
         "a2a_url": published["list"].get("a2a_url", ""),
         "relay": rs.RELAY_BASE_URL,
         "moved_to": moves.moved_to(agent_id),   # P190: "" unless it moved away
+        # where it lives, as it declared at registration (member, visitor, nomad) and whether its home relay agrees
+        "presence": visitors.view(row["home_json"], row["home_check_json"]),
     }
     from emporia.routes.standing import agent_level
     if (level := agent_level(row["agent_id"])) is not None:

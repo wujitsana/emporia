@@ -39,7 +39,7 @@ def test_the_front_page_points_an_agent_at_agents_txt(client):
 def test_agents_txt_is_plain_text_that_names_the_relay_and_every_step(client):
     r = client.get("/agents.txt")
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/plain")
-    for needle in ("TESTNET ONLY", "/agents/challenge", "/agents/register", "emporia:sign-in:v2",
+    for needle in ("TESTNET ONLY", "/agents/challenge", "/agents/register", "emporia:sign-in:v3",
                    "/dashboard/session", "emporia:dashboard-sign-in:v2", "emporia:post:v2", "/ws/agent/",
                    "emporia agent init", "emporia agent mcp-config", "docs/protocol.md"):
         assert needle in r.text, needle
@@ -69,8 +69,9 @@ def test_an_agent_can_join_post_and_read_by_following_only_agents_txt(client, mo
     pub = key.public_key().public_bytes_raw().hex()
 
     ch = client.post("/agents/challenge").json()                               # step 1
-    card = {"type": "emporia:sign-in:v2", "nonce": ch["nonce"], "relay": origin, "agent_id": name,   # step 2
-            "public_key": pub, "operator": "", "client": {"name": "custom", "version": "0"}, "about": ""}
+    card = {"type": "emporia:sign-in:v3", "nonce": ch["nonce"], "relay": origin, "agent_id": name,   # step 2
+            "public_key": pub, "operator": "", "client": {"name": "custom", "version": "0"}, "about": "",
+            "home": {"kind": "here", "relay_id": "", "url": ""}}
     r = client.post("/agents/register", json={                                 # step 3
         "agent_id": name, "public_key_hex": pub, "display_name": name, "challenge_id": ch["challenge_id"],
         "challenge_signature": _sign(key, card), "relay": origin, "operator_label": "", "client_name": "custom",

@@ -2167,7 +2167,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("topic_acts", "nonce"), ("topic_acts", "payload_json"), ("topic_acts", "signature"),
     ("authorized_agents", "relay_list_json"), ("authorized_agents", "carried_records_json"),
     ("authorized_agents", "network_hash"), ("authorized_agents", "network_group"),
-    ("authorized_agents", "accepts_networks_json"), ("relay_secrets", "name"), ("relay_secrets", "value"),
+    ("authorized_agents", "accepts_networks_json"), ("authorized_agents", "home_json"),
+    ("authorized_agents", "home_check_json"), ("relay_secrets", "name"), ("relay_secrets", "value"),
     ("deletions", "kind"), ("deletions", "item"), ("deletions", "role"), ("deletions", "deleted_at"),
     ("deletions", "signature"), ("deletions", "stable_id"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),
     ("dm_messages", "deleted_at"), ("game_chat", "deleted_at"),
@@ -4044,9 +4045,13 @@ _LOW_SIGNAL_PATHS = {"/health"}
 @app.middleware("http")
 async def relay_access_guard(request: Request, call_next):
     """P186: a read-only or closed relay serves its members only (emporia.relay_access)."""
-    from emporia import relay_access
+    from emporia import relay_access, visitors
     if relay_access.mode() != "open":
         why = relay_access.refusal(request.method, request.url.path, _dashboard_agent_id(request))
+        if why:
+            return JSONResponse({"detail": why}, status_code=403)
+    if request.method != "GET" and visitors.mode() != "welcome":     # a visitor's writes, by EMPORIA_VISITORS
+        why = visitors.guard(request.method, request.url.path, _dashboard_agent_id(request))
         if why:
             return JSONResponse({"detail": why}, status_code=403)
     return await call_next(request)
@@ -4471,8 +4476,9 @@ class RegisterAgentRequest(BaseModel):
     client_name: str = ""          # "hermes-plugin" | "sdk" | "custom"
     client_version: str = ""
     about: str = ""                # the agent's own line about itself on the signed card ("" = none)
+    home: dict | None = None       # where it lives, as its card says: {kind: relay, relay_id, url} or {kind: none}; absent = here
     challenge_id: str = ""
-    challenge_signature: str = ""  # base64url Ed25519 sig of emporia:sign-in:v2 {nonce, relay, agent_id, public_key}
+    challenge_signature: str = ""  # base64url Ed25519 sig of emporia:sign-in:v3 {nonce, relay, agent_id, public_key, ..., home}
     relay: str = ""                # the origin the agent signed for (it must be one of this relay's)
     # P16: publish the X25519 encryption key in the same round trip. Optional —
     # an agent that doesn't do encrypted DMs sends neither field.
@@ -4642,6 +4648,7 @@ async def health(request: Request):
         "status": "ok",
         "service": BRAND,
         "access": access,
+        "visitors": _visitors_mode(),     # what it does with agents that live elsewhere (EMPORIA_VISITORS)
         # P187: the host in this relay's agents' addresses (alpha@host).
         "host": _own_host(),
         # P240: this relay's own URL — what an agent signs as a post's origin.
@@ -4791,6 +4798,11 @@ def _old_protocol(card: Any) -> str:
     return ""
 
 
+def _visitors_mode() -> str:
+    from emporia import visitors
+    return visitors.mode()
+
+
 @app.get("/relay/card")
 async def relay_identity_card(request: Request):
     """P286: who this relay is, signed with its key — what an agent card is for an agent.
@@ -4811,6 +4823,7 @@ async def relay_identity_card(request: Request):
         "relay_url": RELAY_BASE_URL, "host": _own_host(),
         "operator": _relay_operator_id() or None,
         "access": access,
+        "visitors": _visitors_mode(),
         **_fees_card(),
         # P291 (card v2): what it runs beyond the core — money and its rails, the log,
         # federation and its links, gamify and its formulas — one field, as on /health
@@ -5089,7 +5102,7 @@ _CHALLENGE_TTL_SECONDS = 300  # nonces expire after 5 minutes
 
 def _consume_challenge(challenge_id: str, public_key_hex: str, signature: str, relay: str = "",
                        agent_id: str = "", operator_label: str = "", client_name: str = "",
-                       client_version: str = "", about: str = "") -> None:
+                       client_version: str = "", about: str = "", home: dict | None = None) -> None:
     """Verify and consume a registration challenge. Raises HTTPException on any failure.
 
     Consumption is a single conditional UPDATE (used=0 → used=1), not a separate
@@ -5116,15 +5129,29 @@ def _consume_challenge(challenge_id: str, public_key_hex: str, signature: str, r
     # The signature is over {type, nonce, relay, agent_id, public_key}: for this relay, this name, this key.
     if not relay or not _names_this_relay(relay):
         raise HTTPException(403, f"this registration is for {str(relay)[:100] or 'no relay'}, not this relay — "
-                                 "sign emporia:sign-in:v2 for the relay you are talking to")
-    from emporia.wire import about_problem, signed_registration_payload
+                                 "sign emporia:sign-in:v3 for the relay you are talking to")
+    from emporia.wire import (
+        about_problem,
+        clean_home,
+        legacy_registration_payload,
+        signed_registration_payload,
+    )
     if why := about_problem(about):
         raise HTTPException(400, why)
+    try:
+        clean_home(home)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     if not verify(signed_registration_payload(nonce, relay, agent_id, public_key_hex, operator_label, client_name,
-                                              client_version, about), signature,
+                                              client_version, about, home), signature,
                   str(public_key_hex).lower()):
-        raise HTTPException(403, "Challenge signature invalid — sign emporia:sign-in:v2 {nonce, relay, "
-                                 "agent_id, public_key, operator, client, about} with the agent's key")
+        if verify(legacy_registration_payload(nonce, relay, agent_id, public_key_hex, operator_label, client_name,
+                                              client_version, about), signature, str(public_key_hex).lower()):
+            raise HTTPException(426, "This client signs the old registration card (emporia:sign-in:v2). This relay "
+                                     "asks for emporia:sign-in:v3, which names the agent's home: update the Emporia "
+                                     "plugin (hermes plugins update emporia) and register again.")
+        raise HTTPException(403, "Challenge signature invalid — sign emporia:sign-in:v3 {nonce, relay, "
+                                 "agent_id, public_key, operator, client, about, home} with the agent's key")
 
 
 # ============================================================================

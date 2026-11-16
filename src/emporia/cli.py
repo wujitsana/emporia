@@ -4564,6 +4564,89 @@ def cmd_visits(args: argparse.Namespace) -> int:
     return 0
 
 
+def _setup_home(args: argparse.Namespace, existing: bool, current_relay: str, chosen_relay: str) -> str | None:
+    """Setup's home question: the `EMPORIA_HOME` to write ("" home is the relay chosen, `none` a nomad, a URL a home
+    elsewhere), or None when setup must stop. Asked only where it means something: an agent that already lives on
+    one relay (existing, with a current relay) pointed at another, or when `--home` is given. A new agent's first
+    relay is its home. The answer is signed into its card at registration."""
+    kept = installer().harvest_env(profile_dir(args.name)).get("EMPORIA_HOME", "") if existing and args.name else ""
+    choice = args.home
+    changed = bool(existing and current_relay and chosen_relay.rstrip("/") != current_relay.rstrip("/"))
+    if not choice and changed and _TTY:
+        from emporia import setup_choices as _sc
+        heading("Home or visit", _sc.CHOICES["home"].matters)
+        choice = choose_setting("home")
+    if not choice:
+        return kept
+    if choice == "nomad":
+        return "none"
+    if choice == "visit":
+        home = (args.home_relay or (kept if kept not in ("", "none") else current_relay)).rstrip("/")
+        if not home or home == chosen_relay.rstrip("/"):
+            print(localize("setup agent: a visit needs the relay that stays its home: pass --home-relay URL. "
+                           "Nothing was written."))
+            return None
+        return home
+    if existing and current_relay and changed:
+        print(localize(f"  Home is {chosen_relay}. To carry its record and tell {current_relay}, run "
+                       f"`emporia relay use {chosen_relay} {args.name}`."))
+    return ""
+
+
+def cmd_home(args: argparse.Namespace) -> int:
+    """`emporia home NAME [here | visit URL | nomad]` — where an agent lives, and the choice its signed card carries.
+
+    * no action: say where it lives now.
+    * `here`: the relay it uses becomes home. A visitor takes the existing signed move (its record follows, its old
+      home is told); a nomad simply takes a home.
+    * `visit URL`: URL stays (or becomes) its home and the relay it uses is only visited. Register on URL first.
+    * `nomad`: no home. Its record is the set of per-relay statements and its own signed history; sealed DMs and
+      recovery are then its person's.
+    A visit never changes home; changing it is always this command (or `emporia relay use`), never the agent's own."""
+    import json as _json
+    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
+    if args.name not in agents:
+        print(f"home: no agent {args.name!r} ({', '.join(agents) or 'none set up'})")
+        return 1
+    profile = agents[args.name]
+    env = installer().harvest_env(profile)
+    relay = (env.get("EMPORIA_RELAY_URL") or "").rstrip("/")
+    from emporia import identity_card
+    setting = identity_card.home_setting(env)
+    now = "none (a nomad)" if setting == "none" else (setting or relay or "unknown")
+    action = args.action or ""
+    if not action:
+        print(f"{args.name} lives on {now}" + (f" and uses {relay} as a visitor" if setting not in ("", "none") else "")
+              + ("" if setting != "none" else f"; it uses {relay} as a nomad") + ".")
+        return 0
+    if action not in ("here", "visit", "nomad") or (action == "visit") != bool(args.url):
+        print("home: here, nomad, or visit URL (the relay that stays its home)")
+        return 1
+    code = ("import json\nfrom emporia import mcp_server as m\nout = {}\n")
+    if action == "here" and setting not in ("", "none"):
+        # a visitor makes the relay it uses home: the existing signed move, from its old home
+        code += f"out = m.move_home({setting!r})\n"
+        over = {"EMPORIA_HOME": "here"}
+    else:
+        code += ("out['list'] = m._publish_relay_list(m.AGENT_ID)\n"      # the signed list first: it is what leaves home
+                 "r = m.register_agent()\nout.update(r)\n")
+        over = {"EMPORIA_HOME": {"here": "here", "nomad": "none", "visit": args.url.rstrip("/")}[action]}
+    r = _as_agent(profile, code + "print(json.dumps(out))", **over)
+    try:
+        result = _json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        print(f"home: {(r.stderr or r.stdout).strip()[-400:]}")
+        return 1
+    if not result.get("success"):
+        print(f"home: {result.get('error') or result}")
+        return 1
+    merge_env_file(profile / ".env", {"EMPORIA_HOME": "" if action == "here" else over["EMPORIA_HOME"]})
+    where = {"here": f"on {relay}", "nomad": "nowhere (a nomad)", "visit": f"on {args.url.rstrip('/')}"}[action]
+    print(f"  {args.name} now lives {where}; its signed card says so from now on."
+          f" It applies when its MCP server restarts (hermes -p {args.name} gateway restart).")
+    return 0
+
+
 def cmd_relay_move(args: argparse.Namespace) -> int:
     """P190: `emporia relay move URL NAME` — change an agent's home relay, with
     its old relay's help or without it (gone, or refusing).
@@ -7405,6 +7488,9 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
                        "Nothing was written."))
         return 1
     os.environ["EMPORIA_RELAY_URL"] = chosen_relay
+    home_setting = _setup_home(args, existing, current_relay, chosen_relay)
+    if home_setting is None:
+        return 1
     agent_id = _choose_agent_id(args, name, profile, existing, chosen_relay)
     if not agent_id:
         return 1
@@ -7506,6 +7592,8 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     )
     if wallet:   # P166: above this the agent asks its operator, through its own app
         merge_env_file(profile / ".env", {"EMPORIA_PAYMENT_APPROVAL_CENTS": str(args.approve_above_cents)})
+    if home_setting != (installer().harvest_env(profile).get("EMPORIA_HOME", "") if existing else ""):
+        merge_env_file(profile / ".env", {"EMPORIA_HOME": home_setting})   # its person's: signed into its card
     if storage == "env":
         # P165: everything this agent creates from now on — its identity and
         # encryption keys at first start, its wallets now — goes to its .env.
@@ -10088,6 +10176,13 @@ def build_parser() -> argparse.ArgumentParser:
     vs.add_argument("--forget", action="append", help="take a relay off both lists")
     vs.set_defaults(func=cmd_visits)
 
+    hm = sub.add_parser("home", help="where an agent lives: here, on another relay it visits from, or nowhere (nomad)")
+    hm.add_argument("name")
+    hm.add_argument("action", nargs="?", choices=["here", "visit", "nomad"], default="",
+                    help="here: the relay it uses is home; visit URL: URL stays home; nomad: no home")
+    hm.add_argument("url", nargs="?", default="", help="with visit: the relay that is its home")
+    hm.set_defaults(func=cmd_home)
+
     tl = sub.add_parser("log", help="check a relay's transparency log, as one of your agents")
     tls = tl.add_subparsers(dest="what", required=True)
     tv = tls.add_parser("verify", help="the relay's log only grew, holds the key changes followed, "
@@ -10149,6 +10244,11 @@ def build_parser() -> argparse.ArgumentParser:
     ag.add_argument("--relay-url", default="",
                     help="the relay it joins (default: asked; without a terminal, its current one or "
                          "$EMPORIA_RELAY_URL)")
+    ag.add_argument("--home", choices=["here", "visit", "nomad"], default="",
+                    help="where it lives: here (this relay is home), visit (it visits; its home stays on "
+                         "--home-relay, default its current relay) or nomad (no home). Asked when an agent that "
+                         "lives on one relay is pointed at another; default here")
+    ag.add_argument("--home-relay", default="", help="with --home visit: the relay that stays its home")
     ag.add_argument("--max-payment-cents", type=int, default=1000)
     ag.add_argument("--max-daily-cents", type=int, default=2500)
     ag.add_argument("--sync-model", action=argparse.BooleanOptionalAction, default=None,

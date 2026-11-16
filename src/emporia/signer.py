@@ -55,10 +55,10 @@ POLICY_NAMES = ("EMPORIA_X402_PAY_NETWORKS", "EMPORIA_X402_MAX_PAYMENT_CENTS", "
                 "EMPORIA_PAYMENT_APPROVAL_CENTS", "EMPORIA_X402_MAINNET",
                 # P293 (phase 2a): what its signatures may say — signing.py's rules read these
                 *("EMPORIA_SIGN_LIMITS", "EMPORIA_PAYOUT_ADDRESSES", "EMPORIA_RELAY_URL",
-                  "EMPORIA_BACKUP_RELAYS", "EMPORIA_VISIT_RELAYS"),
+                  "EMPORIA_BACKUP_RELAYS", "EMPORIA_VISIT_RELAYS", "EMPORIA_HOME"),
                 # P293 (2b): a cap on openings a minute, off unless set
                 "EMPORIA_SIGNER_OPEN_PER_MIN")
-SIGNING_POLICY = POLICY_NAMES[5:10]
+SIGNING_POLICY = POLICY_NAMES[5:11]
 _LOCK = threading.Lock()
 _AUDIT_LOCK = threading.Lock()
 AUDIT_MAX_BYTES = 5 * 1024 * 1024

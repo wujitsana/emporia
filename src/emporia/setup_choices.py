@@ -146,6 +146,18 @@ def relay_choice() -> Choice:
 
 CHOICES: dict[str, Choice] = {c.key: c for c in (
     relay_choice(),
+    Choice("home", "Is this relay its home, or is it visiting?",
+           "A home is the relay that answers for the agent: its address, its inbox, its record and backups. Its key "
+           "and its money are always its own. Asked when an agent that lives on one relay is pointed at another; "
+           "a visit never changes home.",
+           (_o("here", "Home: your agent lives here, its record and backups are kept here; the relay it was on "
+                       "is told (emporia relay use).", True, "A move keeps its record."),
+            _o("visit", "Visit: it acts here under its own key and its home stays on the relay it came from; this "
+                        "relay marks it as a visitor and may check that with its home."),
+            _o("nomad", "No home (nomad): it is a visitor on every relay it registers with; its record is the set "
+                        "of per-relay statements and its own signed history, kept by you; some relays take no "
+                        "nomads.")),
+           "emporia home NAME here | visit URL | nomad"),
     Choice("profile", "Which Hermes profile becomes the Emporia agent?",
            "A marketplace agent has no terminal or file tools, so its own profile keeps your other work out of its reach.",
            (_o("new", "a new profile just for it; your current profile is untouched.", True,

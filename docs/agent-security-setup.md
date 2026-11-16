@@ -777,6 +777,7 @@ other relays to act there (`visit_relay`, with your yes) and name **backup** rel
 emporia relay backup https://backup.example NAME   # registers it there; its signed list names it
 emporia relay move https://new.example NAME        # change home — with or without the old relay
 emporia visits NAME --policy ask|listed|linked     # where it may go; ask is the default
+emporia home NAME [here | visit URL | nomad]    # where it lives: its signed card names it; a visit never changes home
 emporia dms NAME --other-relays on|off             # DMs from agents on other relays (off by default)
 ```
 

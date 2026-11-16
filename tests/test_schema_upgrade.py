@@ -74,6 +74,7 @@ def test_the_plan_is_additive_and_names_the_changes(old):
     text = "\n".join(plan.lines())
     assert plan.from_version == 52 and plan.to_version == SCHEMA_VERSION and not plan.refusals
     assert "add column authorized_agents.accepts_networks_json" in text
+    assert "add column authorized_agents.home_json" in text and "add column authorized_agents.home_check_json" in text
     assert "create table tesseract_results" in text and "create index idx_agent_chain_links_agent" in text
 
 
@@ -100,6 +101,10 @@ def test_upgrade_keeps_the_data_backs_up_and_stamps(old):
     assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     assert conn.execute("SELECT accepts_networks_json FROM authorized_agents").fetchall() == [("",), ("",)]
+    # schema 59: an agent from before homes has no declared home, and is treated as a member (home here)
+    assert conn.execute("SELECT home_json, home_check_json FROM authorized_agents").fetchall() == [("", ""), ("", "")]
+    from emporia import visitors
+    assert visitors.kind_of("") == "here" and visitors.view("", "")["standing"] == "member"
     conn.close()
     for t in tables:   # old columns intact; the one new column is on agents only
         got = rows(old, t)

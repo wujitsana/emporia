@@ -112,7 +112,13 @@ def dashboard_sign_in_problem(nonce: Any, relay: Any) -> str:
     return ""
 
 
-REGISTRATION_TYPE = "emporia:sign-in:v2"
+REGISTRATION_TYPE = "emporia:sign-in:v3"
+#: The card before it named a home (`home`). Kept only so a relay can tell an old client from a bad signature and
+#: say "update the plugin"; nothing is accepted under it.
+REGISTRATION_TYPE_V2 = "emporia:sign-in:v2"
+#: Where an agent lives, as its signed card says: `here` (the relay it registers with is its home), `relay` (it
+#: visits: its home is the relay named by `relay_id` and `url`) or `none` (a nomad: no home).
+HOME_KINDS = ("here", "relay", "none")
 
 # What a client may call itself on the signed card: the host it runs on, as the agent declares it (never
 # verified). `custom:<name>` names any other host, with the charset of an agent id (shorter); anything else is
@@ -139,23 +145,61 @@ def clean_client_version(version: Any) -> str:
     return value if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+\-]{0,31}", value) else ""
 
 
+def clean_home(home: Any) -> dict[str, str]:
+    """A card's `home` in one shape: `{kind, relay_id, url}`. Nothing (or `here`) is the relay it registers with;
+    `none` a nomad; a relay carries its origin and, when known, its relay id. Raises ValueError for anything else."""
+    if home in (None, "", "here"):
+        return {"kind": "here", "relay_id": "", "url": ""}
+    if home == "none":
+        return {"kind": "none", "relay_id": "", "url": ""}
+    if not isinstance(home, dict) or set(home) - {"kind", "relay_id", "url"} or home.get("kind") not in HOME_KINDS:
+        raise ValueError("home is here, none, or {kind: relay, relay_id, url}")
+    kind = home["kind"]
+    if kind != "relay":
+        if home.get("relay_id") or home.get("url"):
+            raise ValueError(f"home {kind} names no relay")
+        return {"kind": kind, "relay_id": "", "url": ""}
+    relay_id = str(home.get("relay_id") or "")
+    if relay_id and not re.fullmatch(r"[A-Za-z0-9_\-]{4,80}", relay_id):
+        raise ValueError("home relay_id is the relay's id (letters, digits, _ and -)")
+    try:
+        url = relay_origin(str(home.get("url") or ""))
+    except ValueError:
+        raise ValueError("a home relay is named by its URL (http or https)") from None
+    return {"kind": "relay", "relay_id": relay_id, "url": url}
+
+
 def signed_registration_payload(nonce: str, relay: str, agent_id: str, public_key: str, operator: str = "",
                                 client_name: str = "", client_version: str = "",
-                                about: str = "") -> dict[str, Any]:
+                                about: str = "", home: Any = None) -> dict[str, Any]:
     """What an agent signs to register on a relay — its signed card: the relay's nonce, **the relay it is for**
     (its origin, as the agent reaches it), the name it takes, the key it registers, its **operator label** (`op_…`,
-    "" for none) and the **client** it runs (`hermes-plugin`, `sdk` or `custom`, with a version). Bound to all of
+    "" for none), the **client** it runs (`hermes-plugin`, `sdk` or `custom`, with a version) and its **home**
+    (`clean_home`: this relay, another relay, or none for a nomad). Bound to all of
     them, a relay cannot replay the signature to register the agent (or its key under a name of the relay's
-    choosing) anywhere else, and cannot change the label, client or **about** (the agent's own line about itself,
-    `about_problem`) it records. `registration_problem` is the rule signing applies first."""
+    choosing) anywhere else, and cannot change the label, client, **about** (the agent's own line about itself,
+    `about_problem`) or home it records. `registration_problem` is the rule signing applies first."""
     try:
         origin = relay_origin(relay)
     except ValueError:
         origin = str(relay)
+    try:
+        where = clean_home(home)
+    except ValueError:
+        where = {"kind": "invalid", "relay_id": "", "url": ""}
     return {"type": REGISTRATION_TYPE, "nonce": nonce, "relay": origin, "agent_id": agent_id,
             "public_key": str(public_key).lower(), "operator": str(operator or "").lower(),
             "client": {"name": str(client_name or "").lower(), "version": str(client_version or "")},
-            "about": str(about or "")}
+            "about": str(about or ""), "home": where}
+
+
+def legacy_registration_payload(nonce: str, relay: str, agent_id: str, public_key: str, operator: str = "",
+                                client_name: str = "", client_version: str = "",
+                                about: str = "") -> dict[str, Any]:
+    """The card as `emporia:sign-in:v2` signed it (no home). Only for recognizing an old client."""
+    p = signed_registration_payload(nonce, relay, agent_id, public_key, operator, client_name, client_version, about)
+    p.pop("home")
+    return {**p, "type": REGISTRATION_TYPE_V2}
 
 
 ABOUT_MAX = 160
@@ -183,7 +227,7 @@ def about_problem(about: Any) -> str:
 
 
 def registration_problem(nonce: Any, relay: Any, agent_id: Any, public_key: Any, operator: Any = "",
-                         client: Any = None, about: Any = "") -> str:
+                         client: Any = None, about: Any = "", home: Any = None) -> str:
     """Why a registration must not be signed, or "": only a hex nonce (never bytes a relay chose otherwise),
     for an http(s) relay origin, a well-formed agent id, a public key, and an operator label and client that
     are well formed (or empty)."""
@@ -197,6 +241,10 @@ def registration_problem(nonce: Any, relay: Any, agent_id: Any, public_key: Any,
         return "operator is an operator label (op_ and 26 base32 characters) or empty"
     if client is not None and not (isinstance(client, dict) and set(client) <= {"name", "version"}):
         return "client is {name, version}"
+    try:
+        clean_home(home)
+    except ValueError as e:
+        return str(e)
     return about_problem(about)
 
 
@@ -221,6 +269,7 @@ def registration_body(
     client_name: str = "",
     client_version: str = "",
     about: str = "",
+    home: Any = None,
     relay: str = "",
     encryption_public_key_hex: str = "",
     encryption_key_signature: str = "",
@@ -251,6 +300,8 @@ def registration_body(
         body["client_version"] = client_version
     if about:
         body["about"] = about
+    if (where := clean_home(home))["kind"] != "here":     # `here` is what a card without one means
+        body["home"] = where
     if encryption_public_key_hex:
         body["encryption_public_key_hex"] = encryption_public_key_hex
         body["encryption_key_signature"] = encryption_key_signature

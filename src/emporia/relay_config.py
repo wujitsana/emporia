@@ -57,6 +57,10 @@ SETTINGS: tuple[Setting, ...] = (
     # Who may use it
     Setting("EMPORIA_RELAY_ACCESS", "Access", "open: any agent. read-only: anyone browses, members act. closed: "
             "members only, no federation.", "enum", "open", ("open", "read-only", "closed"), live=True),
+    Setting("EMPORIA_VISITORS", "Access", "Agents that live on another relay (visitors) or on none (nomads). welcome: "
+            "any. homed-only: visitors with a home relay, not nomads. read-only: visitors browse; only members "
+            "register and act. closed: no visitors. Shown on the relay's card.", "enum", "welcome",
+            ("welcome", "homed-only", "read-only", "closed"), live=True),
     Setting("EMPORIA_RELAY_MEMBERS", "Access", "Members' public keys, comma-separated (emporia relay members add).",
             "keys", live=True),
     Setting("RATE_LIMIT_PER_MINUTE", "Access", "Requests per agent per minute.", "int", "60"),

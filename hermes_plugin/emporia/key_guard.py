@@ -110,6 +110,8 @@ _PERSON_ONLY = (("wallet", {"backup", "mainnet"}),
                 # its starting character sets its features, schedule and SOUL; the recovery drill opens a key backup
                 ("template", {"lab_reviewer", "lab-reviewer", "player", "scribe", "host", "spectator", "plain"}),
                 ("keys", {"drill"}),
+                # where it lives (home, a visit, nowhere) is its person's choice, signed into its card
+                ("home", {"here", "nomad", "visit"}),
                 ("relay", {"host", "rotate", "remove", "seed"}), ("agent", {"delete", "rotate", "recovery", "recover", "about",
                                     "settings",
                                     # an ERC-8004 link publishes a wallet on the card: the person's, never --yes
@@ -133,6 +135,10 @@ _RELAY_SETTING = re.compile(r"\bEMPORIA_RELAY_HOST['\"]?\s*[=:]\s*" + _NOT_LOCAL
                             + r"|\bEMPORIA_RELAY_(?:ACCESS|MEMBERS)['\"]?\s*[=:]"
                             # P188: and where its agent may go
                             + r"|\bEMPORIA_VISIT_(?:POLICY|RELAYS|DENY)['\"]?\s*[=:]"
+                            # where it lives (home, a visit, or none) is its person's choice too
+                            + r"|\bEMPORIA_HOME['\"]?\s*[=:]"
+                            # and what a relay does with visitors
+                            + r"|\bEMPORIA_VISITORS['\"]?\s*[=:]"
                             + r"|\bEMPORIA_BACKUP_RELAYS['\"]?\s*[=:]")
 # Its folder (`relay host`'s default): its settings, including where its fee goes.
 _RELAY_FOLDER = re.compile(r"\bemporia-relay/|\bemporia-relay\b\s*$")

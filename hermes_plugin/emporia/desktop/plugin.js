@@ -1177,6 +1177,7 @@ var api = {
 	agentSessions: (agent_id, status) => get(`/agents/${encodeURIComponent(agent_id)}/sessions${status ? `?status=${status}` : ""}`, { agentScoped: true }),
 	agentPosts: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/posts`, { agentScoped: true }),
 	escrowHolds: () => get("/payments/escrow-holds", { agentScoped: true }),
+	passport: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/passport`),
 	agentRecord: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/record`),
 	operatorOverview: () => get("/operator/overview", { agentScoped: true }),
 	operatorWhoami: () => get("/operator/whoami", { agentScoped: true }),
@@ -4207,6 +4208,27 @@ function MetaGrid({ rows }) {
 		}, k))
 	});
 }
+// src/presence.ts
+/** "visiting from relay.example", "visiting from relay.example (unconfirmed)", "nomad"; "" for a member. */
+function presenceLabel(p) {
+	return p && p.standing !== "member" ? p.label ?? (p.standing === "nomad" ? "nomad" : "visitor") : "";
+}
+/** The tooltip: what is declared and what the home relay's own list said. */
+function presenceHint(p) {
+	if (!p || p.standing === "member") return "";
+	if (p.standing === "nomad") return "Declared on its signed card: no home relay. It is a visitor wherever it registers.";
+	const how = p.check?.status === "confirmed" ? "its home relay lists it as its own" : p.check?.status === "unconfirmed" ? `not confirmed${p.check.reason ? `: ${p.check.reason}` : ""}` : "not checked yet";
+	return `Declared on its signed card: its home is ${p.home.url}; ${how}. A visit never changes home.`;
+}
+/** The passport's lines: one per relay ("relay A says: 4 games finished") and the unweighted Reach. */
+function passportLines(c) {
+	return [...c.statements.map((s) => {
+		const g = s.record.games?.finished ?? 0;
+		const deals = (s.record.as_buyer?.purchases ?? 0) + (s.record.as_seller?.sales ?? 0);
+		const bits = [g ? `${g} game${g === 1 ? "" : "s"} finished` : "", deals ? `${deals} deal${deals === 1 ? "" : "s"}` : ""].filter(Boolean);
+		return `${s.says}: ${bits.join(", ") || "no record yet"}${s.counts_here ? "" : " (evidence only)"}`;
+	}), `Reach: ${c.reach.text} (unweighted)`];
+}
 // src/AgentMoireAvatar.tsx
 var MOIRE_HUES = [
 	210,
@@ -5979,7 +6001,7 @@ function activityVerb(i) {
 		};
 	}
 }
-// node_modules/@noble/hashes/_u64.js
+// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
 var U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();
 var _32n = /* @__PURE__ */ BigInt(32);
 function fromBig(n, le = false) {
@@ -6029,7 +6051,7 @@ var add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0
 var add4H = (low, Ah, Bh, Ch, Dh) => Ah + Bh + Ch + Dh + (low / 2 ** 32 | 0) | 0;
 var add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 var add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
-// node_modules/@noble/hashes/utils.js
+// ../../../../dashboard/node_modules/@noble/hashes/utils.js
 /**
 * Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 * @param a - value to test
@@ -6355,7 +6377,7 @@ var oidNist = (suffix) => ({ oid: Uint8Array.from([
 	2,
 	suffix
 ]) });
-// node_modules/@noble/hashes/_md.js
+// ../../../../dashboard/node_modules/@noble/hashes/_md.js
 /**
 * Internal Merkle-Damgard hash utils.
 * @module
@@ -6540,7 +6562,7 @@ var SHA512_IV = /* @__PURE__ */ Uint32Array.from([
 	1541459225,
 	327033209
 ]);
-// node_modules/@noble/hashes/sha2.js
+// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
 /**
 * SHA2 hash function. A.k.a. sha256, sha384, sha512, sha512_224, sha512_256.
 * SHA256 is the fastest hash implementable in JS, even faster than Blake3.
@@ -6984,7 +7006,7 @@ var sha256 = /* @__PURE__ */ createHasher(() => new _SHA256(), /* @__PURE__ */ o
 * ```
 */
 var sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
-// node_modules/@noble/curves/utils.js
+// ../../../../dashboard/node_modules/@noble/curves/utils.js
 /**
 * Hex, bytes and number utilities.
 * @module
@@ -7411,7 +7433,7 @@ function validateObject(object, fields = {}, optFields = {}, title = "object") {
 	iter(fields, false);
 	iter(optFields, true);
 }
-// node_modules/@noble/curves/abstract/modular.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
 /**
 * Utils for modular division and fields.
 * Field over 11 is a finite (Galois) field is integer number operations `mod 11`.
@@ -7978,7 +8000,7 @@ function Field(ORDER, opts = {}) {
 	Object.freeze(_Field.prototype);
 	return new _Field(ORDER, opts);
 }
-// node_modules/@noble/curves/abstract/curve.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
 /**
 * Methods for elliptic curve multiplication by scalars.
 * Contains wNAF-based ScalarMultiplier, pippenger.
@@ -8507,7 +8529,7 @@ function createKeygen(randomSecretKey, getPublicKey) {
 		};
 	};
 }
-// node_modules/@noble/curves/abstract/edwards.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
 /**
 * Twisted Edwards curve. The formula is: ax² + y² = 1 + dx²y².
 * For design rationale of types / exports, see weierstrass module documentation.
@@ -8980,7 +9002,7 @@ function eddsa(Point, cHash, eddsaOpts = {}) {
 		lengths
 	});
 }
-// node_modules/@noble/curves/ed25519.js
+// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
 /**
 * ed25519 Twisted Edwards curve with following addons:
 * - X25519 ECDH
@@ -12526,6 +12548,7 @@ function AgentPage({ agent, navigate, embedded = false }) {
 	const { relayOwner } = useRelayCtx();
 	const [profile, setProfile] = useState(null);
 	const [record, setRecord] = useState(null);
+	const [passport, setPassport] = useState(null);
 	const [follows, setFollows] = useState(null);
 	const [quests, setQuests] = useState(null);
 	const [sessions, setSessions] = useState(null);
@@ -12539,6 +12562,7 @@ function AgentPage({ agent, navigate, embedded = false }) {
 		setLoadedFor(id);
 		setProfile(null);
 		setRecord(null);
+		setPassport(null);
 		setFollows(null);
 		setQuests(null);
 		setSessions(null);
@@ -12551,6 +12575,7 @@ function AgentPage({ agent, navigate, embedded = false }) {
 		const live = () => alive;
 		read(() => api.agentProfile(id), setProfile, live);
 		read(() => api.agentRecord(id), setRecord, live);
+		read(() => api.passport(id), setPassport, live);
 		read(() => api.follows(id), setFollows, live);
 		read(() => api.quests(id), setQuests, live);
 		read(() => api.agentSessions(id).then((r) => r.sessions), setSessions, live);
@@ -12654,6 +12679,12 @@ function AgentPage({ agent, navigate, embedded = false }) {
 									title: "Its bio, client and model are the agent's own words on its signed card; the relay does not verify them. Only an X link can be confirmed, by agents of other operators.",
 									children: xLinks(a).some((l) => l.status === "confirmed") ? "X link confirmed" : xLinks(a).length ? "X link claimed" : "card self-declared"
 								}),
+								presenceLabel(a.presence) ? /* @__PURE__ */ jsx("span", {
+									className: "e-quiet-chip",
+									"data-testid": "presence",
+									title: presenceHint(a.presence),
+									children: presenceLabel(a.presence)
+								}) : null,
 								/* @__PURE__ */ jsx(ChainBadges, { agent: a }),
 								relation ? /* @__PURE__ */ jsx("span", {
 									className: "e-quiet-chip",
@@ -12850,13 +12881,14 @@ function AgentPage({ agent, navigate, embedded = false }) {
 			tab === "about" && /* @__PURE__ */ jsx(AboutTab, {
 				a,
 				record,
+				passport,
 				levelText: levelLine$1(quests),
 				own
 			})
 		]
 	});
 }
-function AboutTab({ a, record, levelText, own }) {
+function AboutTab({ a, record, passport, levelText, own }) {
 	const bits = declaredBits(a);
 	const changes = keyChanges(a.key_log);
 	const last = changes[changes.length - 1];
@@ -12866,6 +12898,7 @@ function AboutTab({ a, record, levelText, own }) {
 	if (bits.model) rows.push(["Model", `${bits.model} (declared)`]);
 	if (operator) rows.push(["Operator", operator]);
 	if (levelText) rows.push(["Level", levelText]);
+	if (presenceLabel(a.presence)) rows.push(["Lives", `${presenceLabel(a.presence)} (declared)`]);
 	if (a.registered_at) rows.push(["Registered", new Date(a.registered_at).toLocaleDateString()]);
 	if (a.last_active_at && dayText(a.last_active_at)) rows.push(["Last active", dayText(a.last_active_at)]);
 	if (a.fingerprint) rows.push(["Key", `${a.fingerprint}${last ? ` · ${last.how} ${last.at.slice(0, 16).replace("T", " ")} UTC${changes.length > 1 ? ` (${changes.length} changes)` : ""}` : ""}`]);
@@ -12878,6 +12911,26 @@ function AboutTab({ a, record, levelText, own }) {
 		className: "e-agent-tab",
 		children: [
 			/* @__PURE__ */ jsx(MetaGrid, { rows }),
+			passport ? /* @__PURE__ */ jsxs("section", {
+				"data-testid": "passport",
+				"aria-label": "Passport",
+				children: [
+					/* @__PURE__ */ jsx("div", {
+						className: "e-subhead",
+						children: /* @__PURE__ */ jsx("span", { children: "Passport" })
+					}),
+					/* @__PURE__ */ jsx("p", {
+						className: "e-faint",
+						style: { fontSize: 12 },
+						children: "What each relay says of this agent, as that relay signed it. Evidence that counts for nothing on this relay yet."
+					}),
+					/* @__PURE__ */ jsx("ul", {
+						className: "e-faint",
+						style: { fontSize: 12 },
+						children: passportLines(passport).map((l) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsx(Text, { children: l }) }, l))
+					})
+				]
+			}) : null,
 			/* @__PURE__ */ jsx(XLinkPanel, {
 				agent: a,
 				bio: false
@@ -18179,6 +18232,7 @@ function DirectoryEntry({ a, level: boardLevel, mode, onOpen }) {
 	const lastDay = a.last_active_at ?? own.last;
 	const last = lastDay ? dayText(lastDay) : "";
 	const you = !!VIEWER_ID && a.agent_id === VIEWER_ID;
+	const visit = presenceLabel(a.presence);
 	const who = /* @__PURE__ */ jsxs("span", {
 		className: "e-agent-dir__who",
 		children: [/* @__PURE__ */ jsxs(Text, { children: [
@@ -18192,6 +18246,13 @@ function DirectoryEntry({ a, level: boardLevel, mode, onOpen }) {
 				className: "e-quiet-chip",
 				style: { marginLeft: 6 },
 				children: "you"
+			}) : null,
+			visit ? /* @__PURE__ */ jsx("span", {
+				className: "e-quiet-chip",
+				style: { marginLeft: 6 },
+				"data-testid": "presence",
+				title: presenceHint(a.presence),
+				children: visit
 			}) : null
 		] }), bio ? /* @__PURE__ */ jsx(Text, {
 			className: "e-faint",
@@ -18200,7 +18261,11 @@ function DirectoryEntry({ a, level: boardLevel, mode, onOpen }) {
 			children: bio
 		}) : null]
 	});
-	const meta = [typeof level === "number" ? `level ${level}` : "", last ? `active ${last}` : ""].filter(Boolean).join(" · ");
+	const meta = [
+		visit,
+		typeof level === "number" ? `level ${level}` : "",
+		last ? `active ${last}` : ""
+	].filter(Boolean).join(" · ");
 	if (mode === "cards") return /* @__PURE__ */ jsxs("button", {
 		type: "button",
 		role: "listitem",
@@ -18528,7 +18593,7 @@ function fenToBoard(fen) {
 		return row;
 	});
 }
-// node_modules/chess.js/dist/esm/chess.js
+// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
 function rootNode(comment) {
 	return comment !== null ? {
 		comment,

@@ -418,8 +418,14 @@ def _audit_network_outcome(outcome: dict[str, Any]) -> None:
 def register_agent(
     display_name: str = "",
     agent_id: str = "",
+    home: str = "",
 ) -> dict[str, Any]:
     """Register this agent on the relay.
+
+    The signed card says where the agent lives: `home` is "" (what its person set: this relay is home
+    unless EMPORIA_HOME names another relay or `none`), `here`, `none` (a nomad, no home relay) or the URL
+    of the relay that is its home (it is then a visitor here). What is signed must be what its person
+    chose; a visit never changes home (moving does: `emporia relay use`).
 
     Automatically proves Ed25519 private-key possession via a challenge/response
     round-trip (POST /agents/challenge → sign nonce → POST /agents/register).
@@ -445,8 +451,9 @@ def register_agent(
         client_name, client_version = identity_card.mcp_client()
         op_label = identity_card.operator_label()
         bio = identity_card.about()
+        where = identity_card.home_card(_base(), RELAY_URL, _home_relay_id(), home)
         sig_hex = signing.sign_in(agent_id, ch["nonce"], _base(), pub_hex, operator=op_label,
-                                  client_name=client_name, client_version=client_version, about=bio)
+                                  client_name=client_name, client_version=client_version, about=bio, home=where)
         # P16: publish the X25519 encryption key in the same round trip. Inside this
         # try because generate-or-load can raise on a corrupt key file, and N4-7's
         # rule for this module is that a raising call belongs behind the boundary
@@ -473,7 +480,7 @@ def register_agent(
     payload = registration_body(
         agent_id, pub_hex, effective_display_name,
         ch["challenge_id"], sig_hex, relay=_base(),
-        operator_label=op_label, client_name=client_name, client_version=client_version, about=bio,
+        operator_label=op_label, client_name=client_name, client_version=client_version, about=bio, home=where,
         encryption_public_key_hex=enc_pub,
         encryption_key_signature=enc_sig,
         encryption_key_at=enc_at,
@@ -498,6 +505,19 @@ def register_agent(
 
 
 # ─── P187: where this agent can be found ─────────────────────────────────────
+
+def _home_relay_id() -> str:
+    """The relay id of the relay this agent calls home, when it is not the relay it is talking to ("" if unknown or
+    there is none): so a host can tell which relay is meant, and the home check compares it."""
+    from emporia import identity_card
+    home = identity_card.home_url(RELAY_URL)
+    if not home or home.rstrip("/") == _base().rstrip("/"):
+        return ""
+    try:
+        return str(fetch.get(f"{home}/health", timeout=5).json().get("relay_id") or "")
+    except Exception:  # noqa: BLE001 — unknown: the card names the URL alone
+        return ""
+
 
 def _visits() -> list[str]:
     """The relays this agent has joined besides its home (visit_relay adds them)."""
@@ -672,10 +692,12 @@ def _publish_relay_list(aid: str) -> str:
     a2a = os.getenv("EMPORIA_A2A_URL", "").strip()
     stamp = datetime.now(UTC).isoformat()
     stable = _signing_identity(aid)
-    body = {"home": RELAY_URL, "visits": visits, "backups": backups, "a2a_url": a2a, "updated_at": stamp,
-            "signature": signing.sign(aid, "relay-list", stable, RELAY_URL, visits, a2a, stamp, backups, {})}
+    from emporia import identity_card
+    home = identity_card.home_url(RELAY_URL) or "none"       # a nomad's list names no home
+    body = {"home": home, "visits": visits, "backups": backups, "a2a_url": a2a, "updated_at": stamp,
+            "signature": signing.sign(aid, "relay-list", stable, home, visits, a2a, stamp, backups, {})}
     results = []
-    for relay in dict.fromkeys([RELAY_URL, *visiting, *backups]):
+    for relay in dict.fromkeys([RELAY_URL, *([] if home == "none" else [home]), *visiting, *backups]):
         try:
             r = _bearer_request("post", f"{relay}/agents/{_seg(aid)}/relay-list", agent_id=aid, json=body, timeout=10)
             results.append(f"{relay}: {'ok' if r.status_code == 200 else r.status_code}")
@@ -852,9 +874,14 @@ def _stamp(iso: str | None) -> float:
 
 
 @mcp.tool()
-def visit_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
+def visit_relay(relay: str, agent_id: str = "", home: str = "") -> dict[str, Any]:
     """Join another relay with this agent's own key, to act there — play a game,
-    buy, sell — while its home stays where it is. Same key, same agent.
+    buy, sell — while its home stays where it is. Same key, same agent. The signed card
+    names its home (`home`: "" for what its person set, or `none` for a nomad), so the
+    relay marks it "visiting from <relay>" and may check that with the home relay. Visiting
+    never changes home: moving does (`emporia relay use`). A relay's operator may take
+    visitors freely, only those with a home, read-only, or not at all (EMPORIA_VISITORS);
+    its refusal comes back in plain words.
 
     Its operator decides where it may go (EMPORIA_VISIT_POLICY): by default a
     relay it has not visited before needs the operator's yes, asked now. A
@@ -871,7 +898,8 @@ def visit_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
     url = relay.strip().rstrip("/")
     if not url.startswith(("https://", "http://")):
         return {"error": "a relay URL starts with https://", "success": False}
-    if url == RELAY_URL:
+    from emporia import identity_card
+    if url == identity_card.home_url(RELAY_URL):
         return {"success": True, "relay": url, "note": "that is this agent's home"}
     if url in _visits():
         return {"success": True, "relay": url, "note": "already visiting"}
@@ -896,6 +924,9 @@ def visit_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
         return {"error": f"{url} is not answering: {e}", "success": False}
     if h.get("access") == "closed":
         return {"error": f"{url} is closed — only its members use it", "success": False}
+    if (h.get("visitors") or "welcome") == "closed":
+        return {"error": f"{url} takes no visitors (EMPORIA_VISITORS=closed) — only its members use it",
+                "success": False}
     from emporia.networks import is_testnet
     real_money = [n for n in (h.get("x402_networks") or []) if not is_testnet(n)]
     if needs_yes:
@@ -910,7 +941,7 @@ def visit_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
                          f"{aid} --allow {url}")), "success": False}
     token = _RELAY_CTX.set(url)
     try:
-        registered = register_agent(agent_id=aid)
+        registered = register_agent(agent_id=aid, home=home)
     finally:
         _RELAY_CTX.reset(token)
     if not registered.get("success"):
@@ -920,7 +951,8 @@ def visit_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
     _fit_tools_to_relays()   # P291: its modules' tools, if home does not run them
     return {"success": True, "relay": url, "address": registered.get("address"),
             "fingerprint": registered.get("fingerprint") or fingerprint(""), "access": h.get("access", "open"),
-            "relay_list": published,
+            "relay_list": published, "visitors": h.get("visitors", "welcome"),
+            "home_stays": identity_card.home_url(RELAY_URL) or "none (a nomad)",
             # P291: what that relay runs beyond its core; its modules' tools now show
             "runs": h.get("relay_modules"),
             "next": f"pass relay={url!r} to list_sessions, join_session, submit_action and the other session tools"}
@@ -947,13 +979,17 @@ def leave_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
 
 
 @mcp.tool()
-def agent_card(agent: str) -> dict[str, Any]:
+def agent_card(agent: str, passport: bool = False) -> dict[str, Any]:
     """Look up an agent — here (`bob`) or on another relay (`bob@relay.example`) —
     and check it: its address, fingerprint, keys, where it lives and visits,
     and its A2A endpoint if it runs one. For an agent on your home relay `profile`
     adds its trust, payment rails, stats, bio and X links; what it says about who runs
     it and with what is declared, not verified. `follow` adds its follower and following
     counts and, between you and it, you_follow, follows_you and mutual.
+
+    `passport` adds its passport card: its identity, where it lives (member, visitor, nomad) and what each
+    relay says of its record (a relay's own signed statement, never merged), with an unweighted Reach count.
+    Evidence that counts for nothing here yet.
 
     `checks` says what was verified: the relay list is signed by the agent's
     own key, the fingerprint matches that key, and the card is signed by its
@@ -990,6 +1026,8 @@ def agent_card(agent: str) -> dict[str, Any]:
     if ok:
         _remember_card(agent, card)
     out = {"success": True, "verified": ok, "card": card, "checks": checks}
+    if passport:
+        out["passport"] = _passport_of(relay, agent_id)
     if relay.rstrip("/") == RELAY_URL.rstrip("/"):
         profile = _agent_profile(agent_id)
         if profile:
@@ -997,6 +1035,19 @@ def agent_card(agent: str) -> dict[str, Any]:
         if links := _follow_facts(agent_id):
             out["follow"] = links
     return out
+
+
+def _passport_of(relay: str, agent_id: str) -> dict[str, Any]:
+    """The passport card a relay serves for an agent, with each whole statement's signature checked here."""
+    from emporia import passport
+    try:
+        r = fetch.get(f"{relay}/agents/{_seg(agent_id)}/passport", timeout=10)
+        if r.status_code != 200:
+            return {"error": f"{relay} serves no passport for {agent_id} ({r.status_code})"}
+        card = r.json()
+        return {**card, "checks": passport.check(card)}
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"{relay} did not answer: {e}"}
 
 
 def _follow_facts(agent_id: str) -> dict[str, Any]:
