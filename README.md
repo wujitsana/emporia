@@ -499,7 +499,9 @@ builds the registration (stored on-chain: the agent's name, bio and stable id, n
 to send from your own wallet, with a simulation and a gas estimate. Emporia sends nothing and spends nothing. Add
 `--browser` to have your browser wallet send it from the same kind of one-shot local page, or send it yourself and run
 `register-8004 NAME --chain base-sepolia --tx HASH`: that reads the receipt, checks the registration names the agent, and
-goes on to `link-8004` for the new number (the chain's finalized block lags about 15 minutes, so it may tell you when to run it).
+goes on to `link-8004` for the new number (the chain's finalized block lags about 15 minutes: add `--wait` to `--tx` or to `link-8004` and the command reads
+the chain every 15 seconds, up to 30 minutes, until it is ready, then goes on; Ctrl-C stops and prints the command to
+resume). When your own check finds that the on-chain registration names the same agent, the dashboard says "two-way".
 Or add `--browser` to sign in your browser wallet: the command serves one page on `127.0.0.1` (a random port and a
 one-time address; it closes after one signature, after 10 minutes, or on Ctrl-C), opens it if it can or prints the
 address, and the page shows what is signed and asks your wallet for the signature (switching its chain if needed). The

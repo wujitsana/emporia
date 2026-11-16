@@ -57,6 +57,13 @@ describe("an ERC-8004 link's wording", () => {
     expect(localStatus({ ...v, status: "unknown" } as ChainView)).toContain("could not reach");
   });
 
+  it("adds 'two-way' only when this machine's own read found the registration naming the agent", () => {
+    const v = { status: "checked", block_number: 321, reason: "", signature_checked: true } as ChainView;
+    expect(localStatus({ ...v, two_way: true })).toBe("checked by you at block 321 · two-way");
+    expect(localStatus({ ...v, two_way: false })).toBe("checked by you at block 321");
+    expect(localStatus({ ...v, status: "not-proven", two_way: true } as ChainView)).not.toContain("two-way");
+  });
+
   it("says when the wallet's signature was not part of the check", () => {
     const v = { status: "checked", block_number: 321, reason: "" } as ChainView;
     expect(localStatus({ ...v, signature_checked: true })).toBe("checked by you at block 321");

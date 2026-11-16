@@ -85,6 +85,8 @@ export interface ChainView {
   checked_at: number;
   /** True when the console verified the wallet's signature too, not only the chain's control. */
   signature_checked?: boolean;
+  /** True when the registration, read on-chain at the same block, names this agent's stable id (never fetched from a URL). */
+  two_way?: boolean;
   cached: boolean;
   registration: { name?: string; description?: string; flags?: string[]; active?: boolean | null; note?: string } | null;
   image: { source: string; available: boolean; note: string; type: string };
@@ -94,8 +96,9 @@ export interface ChainView {
 /** "checked by you at block N", from this machine's own read; never the relay's word. */
 export function localStatus(v: ChainView): string {
   if (v.status === "checked") {
-    return v.signature_checked === false ? `chain control checked by you at block ${v.block_number} (signature not available)`
-      : `checked by you at block ${v.block_number}`;
+    const two = v.two_way ? " · two-way" : "";
+    return v.signature_checked === false ? `chain control checked by you at block ${v.block_number} (signature not available)${two}`
+      : `checked by you at block ${v.block_number}${two}`;
   }
   if (v.status === "not-proven") return `your read does not show it${v.reason ? `: ${v.reason}` : ""}`;
   if (v.status === "not-checked") return "not checked here";

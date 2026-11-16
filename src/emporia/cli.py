@@ -9985,6 +9985,10 @@ def build_parser() -> argparse.ArgumentParser:
                      help="link-8004: sign in your browser wallet instead: serves one local page (127.0.0.1, one-time "
                           "address, closes after one signature or 10 minutes), then checks and records the signature; "
                           "register-8004: your browser wallet sends the registration the same way")
+    ag2.add_argument("--wait", action="store_true",
+                     help="register-8004 (with --tx or --browser), link-8004: read the chain every 15 seconds, up to 30 "
+                          "minutes, until the block is safe/finalized, then continue; Ctrl-C stops and prints the "
+                          "command to resume")
     ag2.add_argument("--draft", default=None, metavar="NOTES",
                      help="about: a few words; the agent's own model drafts the bio (one model turn), you keep, edit "
                           "or redraft it")
@@ -9998,9 +10002,9 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.set_defaults(func=lambda a: _card.about(a.url_or_name, a.name, a.draft, a.use_soul) if a.action == "about" else
                      _card.x_claim(a.url_or_name, a.handle, a.style, a.text, a.bio) if a.action == "x-claim" else
                      _card.x_link(a.url_or_name, a.handle, a.post) if a.action == "x-link" else
-                     _card.link_8004(a.url_or_name, a.chain, a.agent_8004, a.signer, a.signature, a.issued_at, a.yes, a.browser) if a.action == "link-8004" else
+                     _card.link_8004(a.url_or_name, a.chain, a.agent_8004, a.signer, a.signature, a.issued_at, a.yes, a.browser, a.wait) if a.action == "link-8004" else
                      _card.unlink_8004(a.url_or_name, a.chain, a.agent_8004) if a.action == "unlink-8004" else
-                     _card.register_8004(a.url_or_name, a.chain, a.tx, a.signer, a.yes, a.browser) if a.action == "register-8004" else
+                     _card.register_8004(a.url_or_name, a.chain, a.tx, a.signer, a.yes, a.browser, a.wait) if a.action == "register-8004" else
                      _agent_init.run(_agent_init.namespace_from_cli(a)) if a.action == "init" else
                      _agent_init.mcp_config(a) if a.action == "mcp-config" else
                      cmd_agent_secure(a.url_or_name) if a.action == "secure" else

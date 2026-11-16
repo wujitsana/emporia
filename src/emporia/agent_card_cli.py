@@ -26,6 +26,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -252,8 +253,9 @@ def _refuse_in_agent_session(cmd: str) -> bool:
 
 
 def link_8004(name: str, chain: str, agent_id: str, signer: str = "", signature: str = "",
-              issued_at: int = 0, yes: bool = False, browser: bool = False) -> int:
-    """`emporia agent link-8004 NAME --chain C --agent-id N [--signer 0x..] [--signature 0x.. --issued-at T | --browser]`."""
+              issued_at: int = 0, yes: bool = False, browser: bool = False, wait: bool = False) -> int:
+    """`emporia agent link-8004 NAME --chain C --agent-id N [--signer 0x..] [--signature 0x.. --issued-at T | --browser]
+    [--wait]`. `--wait` first waits (reads only) until the chain's finalized state holds the agent."""
     t = _link_target("link-8004", name)
     if t is None:
         return 1
@@ -266,6 +268,13 @@ def link_8004(name: str, chain: str, agent_id: str, signer: str = "", signature:
         print("agent link-8004: --browser gets the signature from your browser wallet; do not give --signature or "
               "--issued-at with it")
         return 1
+    if wait:
+        resume = (f"emporia agent link-8004 {name} --chain {_cmd_chain(chain)} --agent-id {agent_id}"
+                  + (f" --signer {signer}" if signer else "") + (" --browser" if browser else "") + " --wait")
+        seen = _wait_for(lambda: _chain_run(t, "ask", chain, agent_id, signer), lambda o: not _not_yet(o),
+                         f"#{agent_id} to be finalized on {_cmd_chain(chain)}", resume)
+        if seen is None:
+            return 1
     if browser:
         return _link_in_browser(t, name, chain, agent_id, signer, yes)
     if not signature:
@@ -390,6 +399,41 @@ def _print_ask(name: str, out: dict[str, Any]) -> None:
           f"--agent-id {out['agent_id']} --signer {out['signer']} --issued-at {out['issued_at']} --signature 0x...")
 
 
+WAIT_EVERY = 15.0                 # seconds between reads while --wait waits for the chain
+WAIT_LIMIT = 30 * 60.0            # --wait gives up after this long and prints the command to run again
+#: what a read says while the chain has not caught up (an unmined transaction, a block not yet safe or finalized,
+#: an agent the finalized state does not hold yet). Any other answer, good or bad, ends the wait.
+_NOT_YET = ("not mined yet", "safe block", "finalized", "does not exist in that registry", "named no owner",
+            "the agent has no owner", "could not be read")
+
+
+def _not_yet(out: dict[str, Any]) -> bool:
+    err = str(out.get("error") or "")
+    return not out.get("success") and any(w in err for w in _NOT_YET)
+
+
+def _wait_for(call: Any, ready: Any, what: str, resume: str) -> dict[str, Any] | None:
+    """`--wait`: run `call()` every WAIT_EVERY seconds, up to WAIT_LIMIT, until `ready(answer)`; one short progress line
+    per try. Returns the answer, or None when it ran out of time or the person pressed Ctrl-C (it then prints the exact
+    command that picks up from here). Reads only."""
+    start = time.monotonic()
+    try:
+        while True:
+            out = call()
+            if ready(out):
+                return out
+            waited = int(time.monotonic() - start)
+            if waited >= WAIT_LIMIT:
+                print(f"  gave up waiting for {what} after {waited // 60} minutes. Pick up from here:\n\n    {resume}")
+                return None
+            print(f"  waiting for {what} ({waited // 60}m{waited % 60:02d}s; checking every {int(WAIT_EVERY)}s; "
+                  "Ctrl-C stops)")
+            time.sleep(WAIT_EVERY)
+    except KeyboardInterrupt:
+        print(f"\n  stopped waiting; nothing was changed. Pick up from here:\n\n    {resume}")
+        return None
+
+
 def _short(caip2: str) -> str:
     from emporia import chain_link
     return next((k for k, v in chain_link.chains().items() if v == caip2), caip2)
@@ -400,8 +444,9 @@ def _cmd_chain(chain: str) -> str:
 
 
 def register_8004(name: str, chain: str, tx: str = "", sender: str = "", yes: bool = False,
-                  browser: bool = False) -> int:
-    """`emporia agent register-8004 NAME --chain C [--from 0x..] [--browser | --tx HASH]`: the own-wallet path."""
+                  browser: bool = False, wait: bool = False) -> int:
+    """`emporia agent register-8004 NAME --chain C [--from 0x..] [--browser | --tx HASH] [--wait]`: the own-wallet
+    path. `--wait` (with --tx or --browser) waits for the receipt to be safe and the block finalized, then links."""
     t = _link_target("register-8004", name)
     if t is None:
         return 1
@@ -413,8 +458,11 @@ def register_8004(name: str, chain: str, tx: str = "", sender: str = "", yes: bo
     if browser and tx:
         print("agent register-8004: --browser sends the transaction; --tx reads one already sent: give one of them")
         return 1
+    if wait and not (tx or browser):
+        print("agent register-8004: --wait goes with --tx (a transaction already sent) or --browser (which sends it)")
+        return 1
     if tx:
-        return _register_after(t, name, chain, tx, yes)
+        return _register_after(t, name, chain, tx, yes, wait=wait)
     out = _chain_run(t, "build", chain, sender, mod="chain_register")
     if not out.get("success"):
         print(f"agent register-8004: {out.get('error')}")
@@ -422,7 +470,7 @@ def register_8004(name: str, chain: str, tx: str = "", sender: str = "", yes: bo
     _print_register(name, out)
     if not browser:
         return 0
-    return _register_in_browser(t, name, chain, out, yes)
+    return _register_in_browser(t, name, chain, out, yes, wait)
 
 
 def _print_register(name: str, out: dict[str, Any]) -> None:
@@ -452,7 +500,7 @@ def _print_register(name: str, out: dict[str, Any]) -> None:
     print(f"\n  When it is mined: emporia agent register-8004 {name} --chain {_cmd_chain(out['chain'])} --tx 0xHASH")
 
 
-def _register_in_browser(t: _Target, name: str, chain: str, built: dict[str, Any], yes: bool) -> int:
+def _register_in_browser(t: _Target, name: str, chain: str, built: dict[str, Any], yes: bool, wait: bool = False) -> int:
     """`--browser`: serve one local page that has the person's wallet send the call, then continue as `--tx`."""
     import webbrowser
 
@@ -487,12 +535,28 @@ def _register_in_browser(t: _Target, name: str, chain: str, built: dict[str, Any
         print("\n  cancelled; nothing sent (if your wallet already sent it, use --tx with its hash).")
         return 1
     print(f"  Your wallet sent transaction {got['tx_hash']} from {got['account']}.")
-    return _register_after(t, name, chain, got["tx_hash"], yes, waiting=True)
+    return _register_after(t, name, chain, got["tx_hash"], yes, waiting=True, wait=wait)
 
 
-def _register_after(t: _Target, name: str, chain: str, tx: str, yes: bool, *, waiting: bool = False) -> int:
-    """Read the receipt, say what was registered, and go on to link-8004 for that agent."""
-    out = _chain_run(t, "confirm", chain, tx, mod="chain_register")
+def _register_after(t: _Target, name: str, chain: str, tx: str, yes: bool, *, waiting: bool = False,
+                    wait: bool = False) -> int:
+    """Read the receipt, say what was registered, and go on to link-8004 for that agent. With `wait`, reads again every
+    15 seconds until the receipt is at the safe block and that block is finalized (what the link reads at)."""
+    def ask() -> dict[str, Any]:
+        return _chain_run(t, "confirm", chain, tx, mod="chain_register")
+
+    if wait:
+        def done(o: dict[str, Any]) -> bool:
+            if not o.get("success"):
+                return not _not_yet(o)
+            fin = o.get("finalized_block")
+            return fin is None or fin >= o["block_number"]
+        out = _wait_for(ask, done, "the transaction to be safe and finalized",
+                        f"emporia agent register-8004 {name} --chain {_cmd_chain(chain)} --tx {tx} --wait")
+        if out is None:
+            return 1
+    else:
+        out = ask()
     if not out.get("success"):
         print(f"agent register-8004: {out.get('error')}")
         if waiting:
@@ -509,7 +573,7 @@ def _register_after(t: _Target, name: str, chain: str, tx: str, yes: bool, *, wa
               f"Run this when it has:\n\n    {cmd}   (add --browser to sign in your browser wallet)")
         return 0
     print(f"\n  Next: linking it to {name}'s card (the same as `{cmd}`).\n")
-    return link_8004(name, chain, out["agent_id"], "", "", 0, yes, False)
+    return link_8004(name, chain, out["agent_id"], "", "", 0, yes, False, wait)
 
 
 def unlink_8004(name: str, chain: str, agent_id: str) -> int:

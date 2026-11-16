@@ -406,7 +406,7 @@ def test_tx_reads_the_receipt_and_hands_on_to_link_8004_once_the_chain_is_final(
     assert card.register_8004(target.name, "base-sepolia", TX) == 0
     out = capsys.readouterr().out
     assert "ERC-8004 #10727" in out and "Two-way" in out
-    assert handed == [(target.name, "base-sepolia", "10727", "", "", 0, False, False)]
+    assert handed == [(target.name, "base-sepolia", "10727", "", "", 0, False, False, False)]
 
 
 def test_tx_before_the_chain_is_final_prints_the_link_command_instead(target, fake, monkeypatch, capsys):
@@ -569,3 +569,19 @@ def test_register_is_not_an_agent_tool_and_touches_no_money_path():
     names = {n for n in dir(mcp_server) if "8004" in n}
     assert not any("register" in n for n in names), names
     assert "register-8004" not in " ".join(getattr(mcp_server, "MONEY_TOOLS", ()))
+
+
+def test_tx_wait_polls_until_final_then_links_with_wait(target, fake, monkeypatch, capsys):
+    minted(fake)
+    handed, sleeps = [], []
+    blk = int(REAL["receipt"]["blockNumber"], 16)
+    fin = FakeReg(finalized=blk - 500)
+    fin.block_number = blk - 500
+    monkeypatch.setattr(card.time, "sleep", lambda s: (sleeps.append(s), setattr(fin, "block_number", blk + 1)))
+    monkeypatch.setattr(chain_register, "_reader",
+                        lambda caip2, read=None, tag="finalized": fin if tag == "finalized" else fake)
+    monkeypatch.setattr(card, "link_8004", lambda *a, **k: handed.append(a) or 0)
+    assert card.register_8004(target.name, "base-sepolia", TX, wait=True) == 0
+    out = capsys.readouterr().out
+    assert sleeps == [15.0] and "waiting for the transaction" in out
+    assert handed == [(target.name, "base-sepolia", "10727", "", "", 0, False, False, True)]

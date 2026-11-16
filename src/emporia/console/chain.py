@@ -29,6 +29,7 @@ from collections.abc import Callable
 from urllib.parse import unquote_to_bytes
 
 from emporia import erc8004, networks
+from emporia.erc8004_register import names_agent
 from emporia.chain_read import ChainRevert, ChainUnknown, PinnedReader
 
 CACHE_SECONDS = 600
@@ -135,12 +136,13 @@ class Loaded:
     image_note: str = ""
     image: tuple[str, bytes] | None = field(default=None, repr=False)
     signature_checked: bool = False             # the wallet's signature was verified here too, not only the chain
+    two_way: bool = False                       # the on-chain registration's Emporia service names this agent
 
     def view(self) -> dict[str, Any]:
         return {"status": self.status, "reason": self.reason, "tier": self.tier,
                 "tier_wording": erc8004.TIER_WORDING.get(self.tier, ""), "owner": self.owner, "binding": self.binding,
                 "block_number": self.block_number, "block_hash": self.block_hash, "checked_at": self.checked_at,
-                "signature_checked": self.signature_checked, "registration": self.registration,
+                "signature_checked": self.signature_checked, "two_way": self.two_way, "registration": self.registration,
                 "image": {"source": self.image_source, "available": self.image is not None, "note": self.image_note,
                           "type": self.image[0] if self.image else ""}}
 
@@ -187,7 +189,7 @@ class ChainViews:
                 if not ok:
                     return got
                 try:
-                    self._show(reader, caip2, agent_id, signer, got)
+                    self._show(reader, caip2, agent_id, signer, got, signed["stable_id"])
                 except ChainUnknown:
                     got.image_note = "the registration could not be read now"
                 return got
@@ -205,7 +207,7 @@ class ChainViews:
         return got
 
     # -- what the agent says of itself (a stranger's words, and its picture) ---------------------------
-    def _token_json(self, reader: Any, to: str, token: int, cap: int) -> dict:
+    def _token_uri(self, reader: Any, to: str, token: int) -> str:
         from eth_abi import decode, encode
         try:
             raw = reader.call(to, SEL_TOKEN_URI + encode(["uint256"], [token]))
@@ -216,6 +218,11 @@ class ChainViews:
             raise
         except Exception:  # noqa: BLE001 — any parse failure becomes Refused, the one answer the caller handles
             raise Refused("an unreadable token URI") from None
+        return uri
+
+    def _token_json(self, reader: Any, to: str, token: int, cap: int, uri: str | None = None) -> dict:
+        if uri is None:
+            uri = self._token_uri(reader, to, token)
         mime, data = parse_data_uri(uri, cap)
         try:
             doc = json.loads(data.decode("utf-8"))
@@ -225,10 +232,15 @@ class ChainViews:
             raise Refused("not a JSON object")
         return doc
 
-    def _show(self, reader: Any, caip2: str, agent_id: str, signer: str, got: Loaded) -> None:
+    def _show(self, reader: Any, caip2: str, agent_id: str, signer: str, got: Loaded, stable: str = "") -> None:
         reg_image: Any = None
         try:
-            doc = self._token_json(reader, networks.ERC8004_REGISTRIES[caip2], int(agent_id), REGISTRATION_CAP)
+            registry = networks.ERC8004_REGISTRIES[caip2]
+            uri = self._token_uri(reader, registry, int(agent_id))
+            # two-way: the registration, read at the same pinned block, names this agent's stable id. Only an
+            # on-chain data: URI counts; a remote URL is never fetched.
+            got.two_way = bool(stable) and names_agent(uri, stable)
+            doc = self._token_json(reader, registry, int(agent_id), REGISTRATION_CAP, uri)
             name, nflags = stranger_text(doc.get("name"), NAME_CAP)
             desc, dflags = stranger_text(doc.get("description"), DESCRIPTION_CAP)
             got.registration = {"name": name, "description": desc, "flags": sorted(set(nflags + dflags)),

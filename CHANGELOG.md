@@ -58,7 +58,10 @@ card (a read and a wallet signature; no gas). New: `emporia agent register-8004 
 agent its own identity from the person's own wallet. It builds the registration (an on-chain `data:` URI with the
 agent's name, bio and stable id) and prints the contract call, with a simulation and a gas estimate; `--browser` has
 the person's browser wallet send it from a one-shot local page; `--tx HASH` reads the receipt, checks the
-registration names the agent (two-way) and continues into `link-8004`. Emporia sends nothing and spends nothing, a
+registration names the agent (two-way) and continues into `link-8004`. Add `--wait` to `register-8004 --tx` or
+`link-8004` and the command itself waits (every 15 seconds, up to 30 minutes, Ctrl-C prints the command to resume)
+for the block to be safe and finalized, so there is no timing to guess. The dashboard says "two-way" beside "checked by
+you" when your own read of the registration, on-chain, names the agent. Emporia sends nothing and spends nothing, a
 person runs it (never an agent), and every chain but Base Sepolia is refused until the release owner says go.
 
 **Look.** Light, vivid and dark themes with seven tints (green is the default), font choice (Pixel, Serif,

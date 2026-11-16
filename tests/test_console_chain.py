@@ -277,3 +277,29 @@ def test_the_route_takes_the_cards_signature_and_refuses_a_malformed_one(console
     assert j["status"] == "checked" and j["signature_checked"] is True
     for bad in ({"sig": "zz"}, {"issued": "x"}, {"stable": "0x12"}, {"sig": "00" * 5000}):
         assert c.get(f"/chain-link/{name}", params={**q, **bad}).status_code == 400, bad
+
+
+# -- two-way: the registration names this agent, read at the same block ---------------------------------
+def test_two_way_when_the_registration_names_the_stable_id_and_not_otherwise():
+    key, addr = keypair()
+    signed = _signed(key, addr)
+    svc = {"name": "Emporia", "endpoint": "https://r.example/agents/a", "stableId": signed["stable_id"].removeprefix("0x")}
+    got, _ = views(owned(addr, name="a", services=[svc])).load(SEPOLIA, str(AGENT), addr, signed)
+    assert got.two_way is True and got.view()["two_way"] is True
+    other = dict(svc, stableId="ab" * 32)
+    got, _ = views(owned(addr, name="a", services=[other])).load(SEPOLIA, str(AGENT), addr, signed)
+    assert got.status == "checked" and got.two_way is False
+    got, _ = views(owned(addr, name="a")).load(SEPOLIA, str(AGENT), addr, signed)
+    assert got.two_way is False
+    # without the card's stable id there is nothing to compare
+    got, _ = views(owned(addr, name="a", services=[svc])).load(SEPOLIA, str(AGENT), addr)
+    assert got.two_way is False
+
+
+def test_two_way_ignores_a_remote_registration_url():
+    key, addr = keypair()
+    signed = _signed(key, addr)
+    ch = owned(addr)
+    ch.uris[(REG.lower(), AGENT)] = "https://evil.example/reg.json"
+    got, _ = views(ch).load(SEPOLIA, str(AGENT), addr, signed)
+    assert got.two_way is False

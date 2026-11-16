@@ -23628,7 +23628,10 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	/** "checked by you at block N", from this machine's own read; never the relay's word. */
 	function localStatus(v) {
-		if (v.status === "checked") return v.signature_checked === false ? `chain control checked by you at block ${v.block_number} (signature not available)` : `checked by you at block ${v.block_number}`;
+		if (v.status === "checked") {
+			const two = v.two_way ? " · two-way" : "";
+			return v.signature_checked === false ? `chain control checked by you at block ${v.block_number} (signature not available)${two}` : `checked by you at block ${v.block_number}${two}`;
+		}
 		if (v.status === "not-proven") return `your read does not show it${v.reason ? `: ${v.reason}` : ""}`;
 		if (v.status === "not-checked") return "not checked here";
 		return "your read could not reach the chain just now";

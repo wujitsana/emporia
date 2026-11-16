@@ -41,6 +41,12 @@ describe("the ERC-8004 badge and panel", () => {
     expect(badges[0].textContent).not.toContain("testnet");
   });
 
+  it("says two-way beside the viewer's own read when it found it", async () => {
+    fetchView.mockResolvedValue(view({ two_way: true }));
+    render(<ChainLinkPanel agent={agent([link()])} />);
+    await waitFor(() => expect(screen.getByTestId("chain-local-status").textContent).toBe("checked by you at block 321 · two-way"));
+  });
+
   it("shows the relay's status beside the viewer's own read, and the registration text as a stranger's", async () => {
     fetchView.mockResolvedValue(view({ registration: { name: "Chad", description: "hello", flags: ["injection-pattern"], active: false } }));
     render(<ChainLinkPanel agent={agent([link()])} />);

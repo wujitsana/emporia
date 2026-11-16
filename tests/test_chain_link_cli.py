@@ -244,3 +244,64 @@ def test_yes_does_not_stand_in_for_the_person_in_an_agent_turn(target, chain, ca
     assert "person's to change" in capsys.readouterr().out
     assert card.unlink_8004(target.name, "base-sepolia", str(AGENT)) == 1
     assert "person's to change" in capsys.readouterr().out
+
+
+# -- --wait: poll the chain until it has caught up, then continue ----------------------------------------
+def _no_sleep(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(card.time, "sleep", lambda s: sleeps.append(s))
+    return sleeps
+
+
+def test_wait_polls_every_15_seconds_prints_progress_and_returns_the_ready_answer(monkeypatch, capsys):
+    sleeps = _no_sleep(monkeypatch)
+    answers = iter([{"success": False, "error": "that transaction is not mined yet"},
+                    {"success": False, "error": "the chain's safe block is 5"}, {"success": True, "x": 1}])
+    got = card._wait_for(lambda: next(answers), lambda o: not card._not_yet(o), "it", "resume me")
+    assert got == {"success": True, "x": 1} and sleeps == [15.0, 15.0]
+    assert capsys.readouterr().out.count("waiting for it") == 2
+
+
+def test_wait_ends_on_an_answer_that_is_not_just_a_matter_of_time(monkeypatch):
+    _no_sleep(monkeypatch)
+    bad = {"success": False, "error": "the registry's owner of that token is not the one in the receipt"}
+    assert card._wait_for(lambda: bad, lambda o: not card._not_yet(o), "it", "r") == bad
+
+
+def test_wait_gives_up_after_30_minutes_and_prints_the_command(monkeypatch, capsys):
+    clock = [0.0]
+    monkeypatch.setattr(card.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(card.time, "sleep", lambda s: clock.__setitem__(0, clock[0] + 600))
+    nope = {"success": False, "error": "not mined yet"}
+    assert card._wait_for(lambda: nope, lambda o: False, "it", "emporia agent resume --wait") is None
+    out = capsys.readouterr().out
+    assert "gave up" in out and "emporia agent resume --wait" in out and card.WAIT_LIMIT == 1800
+
+
+def test_wait_stops_cleanly_on_ctrl_c_and_prints_the_resume_command(monkeypatch, capsys):
+    def boom(_):
+        raise KeyboardInterrupt
+    monkeypatch.setattr(card.time, "sleep", boom)
+    nope = {"success": False, "error": "not mined yet"}
+    assert card._wait_for(lambda: nope, lambda o: False, "it", "emporia agent resume --wait") is None
+    assert "stopped waiting" in capsys.readouterr().out
+
+
+def test_link_wait_waits_for_the_agent_then_goes_on(target, chain, monkeypatch, capsys):
+    sleeps = _no_sleep(monkeypatch)
+    key, addr = _owned_by_eoa(chain)
+    real, calls = card._chain_run, []
+
+    def late(t, fn, *a, **k):
+        calls.append(fn)
+        if fn == "ask" and len(calls) < 3:
+            return {"success": False, "error": "the agent does not exist in that registry"}
+        return real(t, fn, *a, **k)
+    monkeypatch.setattr(card, "_chain_run", late)
+    assert card.link_8004(target.name, "base-sepolia", str(AGENT), wait=True) == 0
+    assert sleeps == [15.0, 15.0] and "waiting for #" in capsys.readouterr().out
+
+
+def test_register_wait_needs_a_transaction_or_the_browser(target, capsys):
+    assert card.register_8004(target.name, "base-sepolia", wait=True) == 1
+    assert "--wait goes with --tx" in capsys.readouterr().out
