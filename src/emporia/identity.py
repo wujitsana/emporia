@@ -1810,7 +1810,7 @@ def walk_relay_history(history: list[dict], start: str, guardians: dict | None =
     """Follow a relay's key history from `start`: (the keys, each validly handed
     over to by the one before; the guardian set in force at the end)."""
     chain, state = [], guardians
-    for key, _state in _history_steps(history, start, guardians):
+    for key, state in _history_steps(history, start, guardians):  # noqa: B007 — rebinds state on purpose: the guardian set in force at the end is returned
         if not chain or chain[-1] != key:
             chain.append(key)
     return chain, state

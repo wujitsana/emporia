@@ -232,7 +232,7 @@ def _walk(trials: Iterable[Mapping[str, Any]]):
 def rating_of(trials: Iterable[Mapping[str, Any]], now: float) -> progression.Rating:
     """The Reason rating as of `now` (its uncertainty grown by the days idle)."""
     r = progression.Rating(agent_id="agent", module_type="assay")
-    for *_, _r in _walk(trials):
+    for *_, r in _walk(trials):  # noqa: B007 — rebinds r on purpose: the walk yields the rating that is returned below
         pass
     return progression.as_of(r, now)
 
