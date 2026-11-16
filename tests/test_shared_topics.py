@@ -897,6 +897,23 @@ def test_a_notice_naming_an_unpinned_third_relay_author_wakes_no_one_and_looks_t
     assert _notice(client, home, x, author=third).status_code == 200
 
 
+def test_a_mention_by_a_local_agent_is_vouched_only_by_its_own_post(home, client):
+    """Bob and Alice share this carrier; the host tells us of Bob's `@alice@here`. Bob is ours, so the notice alone
+    proves nothing: it counts only when it names a post we hold under Bob's address in that topic."""
+    x = home.x
+    bob = _agent(client, "mb")
+    _post_in_carried(client, home, x)
+    _post_in_carried(client, home, bob)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        bobs = conn.execute("SELECT post_id FROM posts WHERE author_id = ?", (f"{bob}@{own_host()}",)).fetchone()[0]
+        xs = conn.execute("SELECT post_id FROM posts WHERE author_id = ?", (f"{x}@{own_host()}",)).fetchone()[0]
+    author = f"{bob}@{own_host()}"
+    assert _notice(client, home, x, author=author).status_code == 404                       # a made-up post id
+    assert _notice(client, home, x, author=author, post_id=xs).status_code == 404           # someone else's post
+    assert _notice(client, home, x, author=author, post_id=bobs, topic=f"other@{home.h.host}").status_code == 404
+    assert _notice(client, home, x, author=author, post_id=bobs).status_code == 200
+
+
 def test_a_plain_slug_finds_the_one_carried_topic_and_names_several(monkeypatch):
     """Playtest 2.1: `playtest` got 404 while `playtest@host` worked."""
     from emporia import mcp_server as M

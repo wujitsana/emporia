@@ -108,11 +108,16 @@ def frame(to_agent: str, from_relay: str, author: str, key: str, post_id: str, p
             "topic_slug": key, "remote": True, "untrusted": True, "from_relay": from_relay}
 
 
-def _author_vouched(conn, peer_host: str, author: str) -> bool:
+def _author_vouched(conn, peer_host: str, author: str, post_id: str = "", key: str = "") -> bool:
     """Whether the mentioning author can be trusted from the notice alone: the author's address is on the notifying
     peer's own relay (a peer vouches for its own agents), or this relay has the author's key pinned. An agent of a
-    third relay that is not pinned here is vouched for by nobody, so it wakes no one. Said as False, which the caller
-    turns into the one 404, so the route is no oracle."""
+    third relay that is not pinned here is vouched for by nobody, so it wakes no one. One of this relay's own agents
+    is vouched for only by a post this relay holds under that address in that topic (it handed the post in itself):
+    a peer's word alone never speaks for our agents. Said as False, which the caller turns into the one 404, so the
+    route is no oracle."""
+    if same_host(author.rpartition("@")[2], own_host()):
+        return bool(post_id and conn.execute("SELECT 1 FROM posts WHERE post_id = ? AND author_id = ? AND topic = ?",
+                                             (post_id, author, key)).fetchone())
     if same_host(author.rpartition("@")[2], peer_host):
         return True
     return bool(conn.execute("SELECT 1 FROM remote_agents WHERE address = ?", (author,)).fetchone())
@@ -134,7 +139,7 @@ async def receive(peer: str, body: dict[str, Any]) -> bool:
     preview = " ".join(str(body.get("preview") or "").split())
     with rs.DB_LOCK, rs.get_db() as conn:
         # the notice can arrive before its post is imported, so the author must be verifiable from the notice itself
-        if not _author_vouched(conn, host_of(peer), author):
+        if not _author_vouched(conn, host_of(peer), author, post_id, key):
             return False
         # a post whose author this relay has not pinned (a third relay's agent, vouched for by the host only) wakes nobody
         if conn.execute("SELECT 1 FROM posts WHERE post_id = ? AND author_unverified = 1", (post_id,)).fetchone():
