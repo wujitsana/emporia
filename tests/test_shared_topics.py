@@ -828,6 +828,42 @@ def test_a_third_relays_agent_under_another_key_than_the_pinned_one_is_refused(c
     assert out["kept"] == 0 and out["refused"] == 1, out
 
 
+def _unverified(post_id: str) -> int:
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return conn.execute("SELECT author_unverified FROM posts WHERE post_id = ?", (post_id,)).fetchone()[0]
+
+
+def test_the_unpinned_mark_clears_when_that_agents_key_is_pinned(carrier, client):
+    carol, dave = RemoteAgent(Peer(C_URL)), RemoteAgent(Peer(C_URL))
+    pc, pd = carol.post(carrier.key, "from c"), dave.post(carrier.key, "from c too")
+    carrier.fake.add(pc)
+    carrier.fake.add(pd)
+    assert _pull(carrier)[carrier.key]["kept"] == 2
+    assert _unverified(pc["post_id"]) == _unverified(pd["post_id"]) == 1
+    fd.pin_remote(C_URL, carol.record)                    # her own relay's signed record, as a DM lookup brings it
+    assert _unverified(pc["post_id"]) == 0 and _unverified(pd["post_id"]) == 1     # only hers, only under that key
+
+
+def test_a_carrier_asks_a_linked_third_relay_for_the_key_so_the_post_is_not_marked(carrier, monkeypatch):
+    monkeypatch.setattr(rs, "FEDERATED_RELAYS", [H_URL, C_URL])
+    carol, dave = RemoteAgent(Peer(C_URL)), RemoteAgent(Peer(C_URL))
+    asked = []
+
+    async def look_up(peer, agent_id):
+        asked.append(agent_id)
+        if agent_id != carol.name:
+            raise RuntimeError("does not take DMs")      # dave's relay will not say: his post stays marked
+        return fd.pin_remote(peer, carol.record)
+    monkeypatch.setattr(fd, "look_up", look_up)
+    pc, pd = carol.post(carrier.key, "from c"), dave.post(carrier.key, "from c too")
+    pc2 = carol.post(carrier.key, "and again")
+    for p in (pc, pd, pc2):
+        carrier.fake.add(p)
+    assert _pull(carrier)[carrier.key]["kept"] == 3
+    assert (_unverified(pc["post_id"]), _unverified(pc2["post_id"]), _unverified(pd["post_id"])) == (0, 0, 1)
+    assert sorted(asked) == sorted([carol.name, dave.name])      # once per agent, not once per post
+
+
 def test_the_feed_leaves_out_what_a_local_stranger_may_not_read_and_what_expired(host, monkeypatch):
     """Gated (hangs from a room or game), sealed-adjacent and expired posts do not leave the relay. Verification is
     stubbed so only the feed's own gates decide."""

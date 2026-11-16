@@ -373,6 +373,10 @@ def pin_remote(peer: str, record: dict[str, Any]) -> dict[str, Any]:
             "stable_id = excluded.stable_id, key_log_json = excluded.key_log_json, "
             "encryption_key_at = excluded.encryption_key_at",
             (addr, peer, pub, enc, enc_sig, datetime.now(UTC).isoformat(), stable_id, json.dumps(log), enc_at))
+        # carried posts kept "author key not pinned here": each was verified as signed by its own key, so those
+        # signed by the key now pinned are no longer unverified
+        conn.execute("UPDATE posts SET author_unverified = 0 WHERE author_unverified = 1 AND author_id = ? "
+                     "AND lower(author_public_key_hex) = ?", (addr, pub))
     return {"address": addr, "public_key_hex": pub, "encryption_public_key": enc,
             "encryption_key_signature": enc_sig, "encryption_key_at": enc_at, "stable_id": stable_id,
             "key_log": log}
