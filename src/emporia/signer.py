@@ -733,14 +733,14 @@ def backup(agent_id: str, passphrase: str) -> tuple[bytes, list[str]]:
     return out, notes
 
 
-def restore(agent_id: str, data: bytes, passphrase: str) -> list[str]:
-    """A backup back into this signer, for the same agent; never over a key it holds."""
+def open_backup(agent_id: str, data: bytes, passphrase: str) -> dict:
+    """The contents of a backup for this agent: {"agent", "keys": {role: hex}, "routes", "made"}. Raises ValueError
+    (a plain sentence, never the key or the passphrase) for a wrong passphrase, a file that is not a backup, or one
+    made for another agent. Writes nothing."""
     import base64
 
     from cryptography.exceptions import InvalidTag
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-    from emporia import signer_backends as sb
     try:
         outer = json.loads(data)
         if outer.get("format") != BACKUP_PREFIX:
@@ -753,6 +753,13 @@ def restore(agent_id: str, data: bytes, passphrase: str) -> list[str]:
         raise ValueError("that is not a signer backup") from None
     if body.get("agent") != agent_id:
         raise ValueError(f"that backup is {body.get('agent')!r}'s, not {agent_id!r}'s")
+    return body
+
+
+def restore(agent_id: str, data: bytes, passphrase: str) -> list[str]:
+    """A backup back into this signer, for the same agent; never over a key it holds."""
+    from emporia import signer_backends as sb
+    body = open_backup(agent_id, data, passphrase)
     local = sb.LocalBackend("local")
     roles = [r for r in sb.ROLES if r in body["keys"]]
     if held := [r for r in roles if holds(agent_id, r)]:

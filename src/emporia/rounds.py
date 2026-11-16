@@ -148,9 +148,14 @@ def prompt_path(plugin_dir: Path | None = None) -> Path:
     return p
 
 
-def prompt_text(plugin_dir: Path | None = None) -> str:
-    """The prompt, which must begin with the marker line a hook recognizes a round by."""
-    text = prompt_path(plugin_dir).read_text(encoding="utf-8").strip()
+def prompt_text(plugin_dir: Path | None = None, template: str = "") -> str:
+    """The prompt, which must begin with the marker line a hook recognizes a round by. With a setup template
+    (`emporia.templates`) it is that template's variant: its own steps, the stock rules word for word."""
+    if template:
+        from emporia import templates
+        text = templates.rounds_prompt(template)
+    else:
+        text = prompt_path(plugin_dir).read_text(encoding="utf-8").strip()
     if text.splitlines()[0] != marker():
         raise RoundsError("the rounds prompt does not begin with its marker line")
     return text
@@ -217,14 +222,14 @@ def jobs(profile: str) -> list[Job]:
 
 def turn_on(profile: str, every: str = DEFAULT_EVERY, plugin_dir: Path | None = None, *,
             profile_dir: Path | None = None, skip_quiet: bool = False, model: str = "",
-            reasoning_effort: str = "") -> str:
+            reasoning_effort: str = "", template: str = "") -> str:
     """Create the job (or bring the existing one to this schedule and prompt, and resume it).
 
     `skip_quiet` (needs `profile_dir`) writes the gate script and attaches it to the job; without it the script is
     removed and cleared from the job. `model` and `reasoning_effort` pin the job's model and thinking effort when
     given (Hermes validates them); left empty the job keeps what it has, which for a new job is the profile's own."""
     schedule = f"every {hours(every)}h"
-    text = prompt_text(plugin_dir)
+    text = prompt_text(plugin_dir, template)
     base = _scope(profile)
     if skip_quiet:
         if profile_dir is None:

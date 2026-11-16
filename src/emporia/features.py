@@ -25,6 +25,17 @@ from pathlib import Path
 
 SETTING = "EMPORIA_FEATURES"
 CORE = "core"
+#: A word in the setting's list, not a feature: the agent's tools are read-only (the Spectator template). Every tool
+#: that writes (post, play, deal, DM, vote, join, pay) is left off the server's surface, whichever features are on.
+READ_ONLY = "readonly"
+#: The tools a read-only agent keeps: they only look. Anything not named here (a new tool included) is hidden when
+#: the agent is read-only, so a write tool can never slip in by being forgotten. `chronicle` is here, and refuses
+#: its one writing form (`join=True`) itself.
+READ_TOOLS: frozenset[str] = frozenset({
+    "my_settings", "agent_card", "list_agents", "supported_games", "list_sessions", "get_session", "list_challenges",
+    "get_game_chat", "whats_next", "my_quests", "get_inbox", "read_feed", "read_thread", "list_rooms",
+    "get_room_messages", "list_agora_topics", "verify", "records", "standing", "model_results", "list_pledges",
+    "lab_threads", "chronicle", "tesseract", "scan_relays"})
 
 
 @dataclass(frozen=True)
@@ -100,7 +111,7 @@ def parse(value: str) -> list[str]:
     names: set[str] = set()
     for raw in (value or "").replace(";", ",").split(","):
         word = raw.strip().lower()
-        if not word or word == CORE or word == "none" or word in RETIRED:
+        if not word or word == CORE or word == "none" or word == READ_ONLY or word in RETIRED:
             continue
         if word == "default":
             names |= set(DEFAULTS)
@@ -134,6 +145,15 @@ def implied_by(env: Mapping[str, str], key_dir: str | os.PathLike | None = None)
     if str(env.get("EMPORIA_X_LINK") or "").strip().lower() in ("on", "1", "true", "yes"):
         out.add("x_link")
     return [n for n in OPTIONAL if n in out]
+
+
+def read_only(value: str) -> bool:
+    """Whether the setting's list says `readonly` (see READ_ONLY)."""
+    return READ_ONLY in {w.strip().lower() for w in (value or "").replace(";", ",").split(",")}
+
+
+def read_only_from_env() -> bool:
+    return read_only(os.environ.get(SETTING, ""))
 
 
 def enabled_from(env: Mapping[str, str], key_dir: str | os.PathLike | None = None) -> list[str]:
@@ -180,9 +200,12 @@ def needs_note(off: Iterable[str]) -> str:
     return "needs: feature " + ", ".join(off) + ": your person turns it on with `emporia features on " + " ".join(off) + "`"
 
 
-def render(names: Iterable[str]) -> str:
-    """What goes in the setting: `moderation,audit,money` (`none` when only core is on)."""
+def render(names: Iterable[str], read_only: bool = False) -> str:
+    """What goes in the setting: `moderation,audit,money` (`none` when only core is on); `readonly` is added last
+    for a read-only agent."""
     got = [n for n in OPTIONAL if n in set(names)]
+    if read_only:
+        got.append(READ_ONLY)
     return ",".join(got) or "none"
 
 
@@ -196,9 +219,11 @@ def all_tools() -> set[str]:
     return set(FEATURE_OF)
 
 
-def hidden_by_features(names: Iterable[str]) -> set[str]:
-    """The tools to leave out for an agent with these optional features."""
-    return all_tools() - tools_of(names)
+def hidden_by_features(names: Iterable[str], read_only: bool = False) -> set[str]:
+    """The tools to leave out for an agent with these optional features; a read-only agent also loses every tool
+    that is not in READ_TOOLS."""
+    hidden = all_tools() - tools_of(names)
+    return hidden | (all_tools() - READ_TOOLS) if read_only else hidden
 
 
 def features_from_argv(argv: Iterable[str]) -> str | None:
