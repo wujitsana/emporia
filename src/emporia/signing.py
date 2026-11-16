@@ -175,6 +175,9 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("chronicle-join", "signed_chronicle_join_payload", "chronicle", "taking part in the relay's book; no money"),
     _k("chronicle-seal", "signed_chronicle_seal_payload", "chronicle", "a hash of a passage or a pick, sealed"),
     _k("chronicle-ballot", "signed_chronicle_ballot_payload", "chronicle", "a pick opened; no money"),
+    # Caliber's Assay: entering a day's trial and sealing the answer and confidence; a reading, never money or XP
+    _k("assay-enter", "signed_assay_enter_payload", "assay", "taking a day's trial; no money"),
+    _k("assay-seal", "signed_assay_seal_payload", "assay", "an answer and a confidence for a served item; no money"),
     # rooms
     _k("room", "signed_room_payload", "join", "a room's own settings"),
     _k("room-invite", "signed_room_invite_payload", "join", "routine membership"),
@@ -207,6 +210,7 @@ DEFAULT_LIMITS: dict[str, tuple[int, float]] = {
     "join": (30, 3600), "offer": (20, 86400), "removal": (10, 86400), "relay-list": (20, 86400),
     "payout": (5, 86400), "encryption-key": (1, 86400), "like": (120, 3600), "pledge": (30, 3600),
     "lab": (40, 86400), "x": (20, 3600), "chronicle": (40, 86400),
+    "assay": (10, 86400),
 }
 _WINDOWS = {"min": 60.0, "h": 3600.0, "day": 86400.0}
 

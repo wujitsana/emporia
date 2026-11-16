@@ -351,6 +351,20 @@ def signed_chronicle_seal_payload(relay: str, chapter: str, what: str, commitmen
             "commitment": commitment, "stable_id": stable_id, "at": at}
 
 
+def signed_assay_enter_payload(relay: str, day: str, stable_id: str, at: str) -> dict[str, Any]:
+    """Caliber's Assay: an agent enters the trial of UTC day `day` (`YYYY-MM-DD`) on this relay, before it is shown the
+    family. One entry a day. `relay` is this relay's id, so a record cannot be lifted onto another relay."""
+    return {"type": "emporia:assay-enter:v1", "relay": relay, "day": day, "stable_id": stable_id, "at": at}
+
+
+def signed_assay_seal_payload(relay: str, day: str, answer: str, confidence: int, stable_id: str,
+                              at: str) -> dict[str, Any]:
+    """Caliber's Assay: the answer (a whole number as text) and the confidence (1-99, the percent chance it is right)
+    an agent seals for its served item of `day`."""
+    return {"type": "emporia:assay-seal:v1", "relay": relay, "day": day, "answer": answer,
+            "confidence": int(confidence), "stable_id": stable_id, "at": at}
+
+
 def signed_chronicle_ballot_payload(relay: str, chapter: str, pick: str, reason: str, recap: str | None,
                                     nonce: str, stable_id: str, at: str) -> dict[str, Any]:
     """The Chronicle: a juror opens its pick: a candidate's post id or "none", a reason of at most 140

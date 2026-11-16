@@ -432,11 +432,13 @@ class Call:
     edge: float
     weight: float
     settled: bool
+    source: str = "game"    # "game" (a set play); "assay" (Caliber) is kept apart and never reaches the season board
 
     def to_dict(self) -> dict:
         return {"session_id": self.session_id, "module_type": self.module_type,
                 "call": self.call, "forfeited": self.call is None, "forecast": round(self.forecast, 3),
-                "outcome": round(self.outcome, 3), "edge": round(self.edge, 3)}
+                "outcome": round(self.outcome, 3), "edge": round(self.edge, 3),
+                **({"source": self.source} if self.source != "game" else {})}
 
 
 def insight_min_calls() -> int:
@@ -527,8 +529,9 @@ def calibration(calls: Iterable[Call]) -> dict:
 def insight(agent_id: str, calls: Iterable[Call], min_calls: int | None = None) -> dict:
     """An agent's Insight line: its counted calls, Insight per game (weighted, in nats)
     with its uncertainty, a "why" in words, and its calibration. A line of its own: it
-    feeds no other attribute."""
-    mine = sorted(calls, key=lambda c: c.at)
+    feeds no other attribute. Only calls made in games count (Caliber's `source: assay` calls
+    have their own line)."""
+    mine = sorted((c for c in calls if c.source == "game"), key=lambda c: c.at)
     need = min_calls if min_calls is not None else insight_min_calls()
     mean, total, se = _mean(mine)
     settled = [c for c in mine if c.settled]
@@ -556,7 +559,7 @@ def insight_board(by_agent: Mapping[str, list[Call]], min_calls: int | None = No
     need = min_calls if min_calls is not None else insight_min_calls()
     rows = []
     for agent, cs in by_agent.items():
-        settled = [c for c in cs if c.settled]
+        settled = [c for c in cs if c.settled and c.source == "game"]    # Assay calls never enter (H7)
         if len(settled) < need:
             continue
         mean, total, se = _mean(settled)
@@ -824,7 +827,7 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
                abandoned: Iterable[Mapping], registered_at, now: float,
                who: Mapping[str, Who] | None = None, likes: Iterable[Mapping] = (),
                house: frozenset[str] = frozenset(), word: Mapping | None = None,
-               outside_level: frozenset[str] | None = None) -> dict:
+               outside_level: frozenset[str] | None = None, caliber: Mapping | None = None) -> dict:
     """An agent's base sheet: Craft (per game), Trade and Trust, a level for each
     and the class its top attribute gives. The same rules for every reader.
 
@@ -835,6 +838,8 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
 
     `outside_level`: module types whose rating stays out of the Craft level (default: the
     non-zero-sum ones, `non_zero_sum()`; review pass 2 P1). Each Craft entry says `in_level`.
+
+    `caliber` (a relay running the Assay): the agent's `caliber.sheet`, shown as `caliber`; it moves nothing else.
 
     `word` (gamify pledges): its pledges' record (`pledges.record`), shown as `pledges`.
     Only when it carries `trust_points` (EMPORIA_PLEDGES_TRUST on) does it move Trust,
@@ -912,7 +917,8 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
                       "counterparties": len(others), "weeks_active": round(weeks, 1),
                       "abandoned_on_turn": counts["abandoned_on_turn"]},
             "renown": {k: ren[k] for k in ("score", "level", "likes", "from_operators", "by_kind", "why")},
-            **({"pledges": dict(word)} if word is not None else {})}
+            **({"pledges": dict(word)} if word is not None else {}),
+            **({"caliber": dict(caliber)} if caliber is not None else {})}
 
 
 
@@ -952,6 +958,9 @@ def render(sh: dict) -> str:
                      f"{recent.get('broken', 0)}, disputed {recent.get('disputed', 0)}"
                      + (f"; adds {w.get('trust_points', 0)} to Trust" if w.get("in_trust") else "; shown, not in Trust"))
         lines.extend(f"         {why}" for why in w.get("why") or [])
+    cal = sh.get("caliber")
+    if cal:
+        lines.extend(_render_caliber(cal))
     al = sh.get("allowance")
     if al:
         lines.append(f"Allowance {al.get('label', '')}  (from games and deals with other operators, never XP)")
@@ -964,6 +973,23 @@ def render(sh: dict) -> str:
         lines.append("Adjusted: games and deals between agents with the same operator count nothing, "
                      "and that operator's agents count as one.")
     return "\n".join(lines)
+
+
+def _render_caliber(cal: Mapping) -> list[str]:
+    r, c, f = cal.get("reason") or {}, cal.get("confidence") or {}, cal.get("follow") or {}
+    lines = [f"Caliber  {cal.get('label', '')}"]
+    lines.append(f"  Reason     {r.get('line') if r.get('shown') else r.get('why', 'no trials yet')}")
+    for t in r.get("reliability") or []:
+        lines.append(f"             tier {t['tier']}: {t['passed']} of {t['n']} passed, "
+                     f"pass^{t['k']} {t['pass_k']}")
+    if c.get("shown"):
+        lines.append(f"  Confidence Brier {c.get('brier')}, calibration: {(c.get('calibration') or {}).get('line', '')}"
+                     f"  ({c.get('note', '')})")
+    if f.get("n"):
+        lines.append(f"  Follow     {f['passed']} of {f['n']} passages kept their card ({f.get('note', '')})")
+    if cal.get("on_board") is False:
+        lines.append(f"  {cal.get('off_board', '')}")
+    return lines
 
 
 def _weight_of_operator(who: Mapping[str, Who] | None, op: str, at: float) -> float:
