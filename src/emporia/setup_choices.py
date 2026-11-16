@@ -93,6 +93,15 @@ def _o(value, effect, recommended=False, why="", title="", installs=""):
     return Option(value, effect, recommended, why, title, installs)
 
 
+def _template_options() -> tuple[Option, ...]:
+    """One option per setup template (emporia.templates): the one-line effect and its rounds schedule; Plain is
+    today's behavior and the recommended one."""
+    from emporia import templates as T
+    return tuple(_o(t.key, f"{t.effect[:1].lower() + t.effect[1:]}" + ("" if t.key == T.DEFAULT else f" Rounds every {t.cadence}."),
+                    t.key == T.DEFAULT, "No change from the usual setup." if t.key == T.DEFAULT else "", title=t.title)
+                 for t in T.TEMPLATES)
+
+
 def _feature_options() -> tuple[Option, ...]:
     """One checkbox per optional feature (emporia.features): what it gives, and on its own line what it installs."""
     from emporia import features as F
@@ -151,6 +160,11 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
             _o("open", "anyone can challenge, DM or message it. Most active; every message is a model turn."),
             _o("closed", "only the relay and agents you add. Quietest; strangers' challenges are ignored.")),
            "emporia wake closed|direct|open"),
+    Choice("template", "Which starting character should it have?",
+           "A starting character is a SOUL to edit, a version of the rounds prompt, a schedule and a tool surface in one "
+           "choice. It never gives the agent a tool its role does not allow; every part is yours to edit afterward.",
+           _template_options(),
+           "emporia template (lists them) · emporia template NAME switches; your own SOUL.md is never overwritten"),
     Choice("rounds", "How often should it act on its own?",
            "A round is one model turn in which it looks around, replies and plays; it can never pay or "
            "accept a deal in one.",
@@ -328,7 +342,7 @@ FIXED = {
 
 def installed_lines(dotenv: dict[str, str], *, role: str, keys: str, wallets: list[str], rounds: str,
                     chosen: set[str] = frozenset(), name: str = "NAME", registered: bool | None = None,
-                    accepts: list[str] | None = None) -> list[str]:
+                    accepts: list[str] | None = None, template: str = "plain") -> list[str]:
     """One line per setting setup leaves in the profile: `Setting  value — why. Change: …`.
     `chosen`: the settings the person answered themselves; the rest are marked as the recommended default."""
     def line(label: str, value: str, why: str, change: str, key: str = "") -> str:
@@ -361,6 +375,7 @@ def installed_lines(dotenv: dict[str, str], *, role: str, keys: str, wallets: li
         line("Rounds", rounds or "off",
              _first(c["rounds"], rounds or "off") + ("; one Hermes cron job named 'Emporia — rounds'" if rounds else ""),
              c["rounds"].change, "rounds"),
+        line("Template", template, _first(c["template"], template), c["template"].change, "template"),
         line("Playbook", pb, _first(c["playbook"], pb), c["playbook"].change.replace("NAME", name), "playbook"),
         line("Features", F.summary(feats), "each optional feature brings its tools and its skill reference; "
              "core is always on", "emporia features (list) · emporia features on|off NAME · applies on the next MCP start",

@@ -107,6 +107,9 @@ _PERSON_ONLY = (("wallet", {"backup", "mainnet"}),
                 ("wake", {"closed", "direct", "open"}), ("rounds", {"on", "off", "pause", "resume"}),
                 # which tools it has: its features are its person's to turn on or off
                 ("features", {"on", "off"}),
+                # its starting character sets its features, schedule and SOUL; the recovery drill opens a key backup
+                ("template", {"lab_reviewer", "lab-reviewer", "player", "scribe", "host", "spectator", "plain"}),
+                ("keys", {"drill"}),
                 ("relay", {"host", "rotate", "remove", "seed"}), ("agent", {"delete", "rotate", "recovery", "recover", "about",
                                     "settings",
                                     # an ERC-8004 link publishes a wallet on the card: the person's, never --yes

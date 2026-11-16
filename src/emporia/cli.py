@@ -3916,11 +3916,14 @@ def cmd_features(args: argparse.Namespace) -> int:
             verb = "turned on" if will and not was else "turned off" if was and not will else "already " + args.action
             print(f"  {f.title}: {verb} ({len(f.tools)} tools: {', '.join(f.tools)}; skill reference {n.replace('_', '-')}.md)")
         if new != now:
-            save(F.render(new))
+            save(F.render(new, F.read_only(held.get(F.SETTING, ""))))      # a read-only agent stays read-only
             print(f"  Saved. {F.summary(new)}.")
             print(f"  It applies on the next MCP start: {restart}.")
         now = new
     print(f"  Features    {F.summary(now)}")
+    if F.read_only(held.get(F.SETTING, "")):
+        print("  Read-only   its tools only look: no posts, plays, deals, messages or votes "
+              "(the Spectator template; `emporia template player` turns writes back on)")
     for f in F.FEATURES:
         if f.name == F.CORE:
             mark = "always"
@@ -4000,6 +4003,115 @@ def _setup_about(profile: Path, name: str, about: str | None, existing: bool) ->
             print(f"  Bio: {text!r}  (change it: emporia agent about {name} \"text\")")
 
 
+def _setup_template(profile: Path, name: str, args: argparse.Namespace, existing: bool) -> str:
+    """setup's starting-character question (emporia.templates), asked before the optional features so its schedule
+    is the rounds answer. `--template NAME` skips it; without a terminal a new agent is Plain (today's behavior); an
+    existing agent keeps its own unless --template says otherwise. A template other than Plain makes its cadence
+    the rounds answer (never over --rounds). Returns the key to apply ('' = leave the agent as it is)."""
+    from emporia import templates as T
+    key = getattr(args, "template", "") or ""
+    if not key:
+        if existing:
+            return ""
+        if not _TTY:
+            key = T.DEFAULT
+        else:
+            heading("Starting character", __import__("emporia.setup_choices", fromlist=["x"]).CHOICES["template"].matters)
+            key = choose_setting("template")
+    chosen = T.get(key)
+    args.template_key = "" if chosen.key == T.DEFAULT else chosen.key
+    if chosen.key != T.DEFAULT and not args.rounds:
+        args.rounds = chosen.cadence
+    return chosen.key
+
+
+def _template_apply(profile: Path, key: str, *, rounds: bool, pname: str = "") -> list[str]:
+    """Put a template on a profile and return one line per thing that changed (the closing summary). The tool
+    surface (EMPORIA_FEATURES, `readonly` for the Spectator), the SOUL (never over the person's edits: backed up
+    when untouched, else the new starter is written beside it), the record of which template the profile has, and,
+    with `rounds`, the rounds job (`hermes cron edit`, via `rounds.turn_on`) when one exists. Recommended plugins
+    are printed with their install lines and never installed."""
+    from emporia import features as F, rounds as R, templates as T
+    t = T.get(key)
+    held = installer().harvest_env(profile)
+    raw_now = held.get(F.SETTING, "")
+    record = T.read_record(profile)
+    old = T.current(profile)
+    lines = [f"Template: {T.get(old).title} -> {t.title}" if old != t.key else f"Template: {t.title} (applied again)"]
+    new_raw, before = T.features_for(t.key, raw_now, record)
+    if new_raw != raw_now:
+        merge_env_file(profile / ".env", {F.SETTING: new_raw})
+        installer().refresh_mcp_references(profile)
+        if F.read_only(new_raw):
+            lines.append(f"Tools: read-only; features {', '.join(F.parse(new_raw)) or 'core only'}. "
+                         "It cannot post, play, deal, message or vote.")
+        elif F.read_only(raw_now):
+            lines.append(f"Tools: writes are on again; features {', '.join(F.parse(new_raw)) or 'core only'}.")
+        else:
+            lines.append(f"Features: {', '.join(F.parse(new_raw)) or 'core only'}.")
+        lines.append("It applies on the next MCP start (restart the gateway, or /reload-mcp in its chat).")
+    else:
+        lines.append("Tools: unchanged.")
+    how, where = T.write_soul(profile, t.key)
+    lines.append({"none": "SOUL.md: unchanged (this template brings no starter).",
+                  "written": "SOUL.md: written from the starter; edit it.",
+                  "replaced": f"SOUL.md: the untouched starter was replaced by the {t.title} starter (the old text is in {where}).",
+                  "kept": f"SOUL.md: yours was edited, so it is kept. The {t.title} starter is in {where}.",
+                  }[how])
+    new_record = {"template": t.key, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    if how in ("written", "replaced"):
+        new_record["soul_sha"] = T._sha(T.soul_starter(t.key))
+    elif record.get("soul_sha"):
+        new_record["soul_sha"] = record["soul_sha"]
+    if before is not None:
+        new_record["features_before"] = before
+    T.write_record(profile, new_record)
+    if rounds:
+        try:
+            job = R.jobs(pname)
+        except R.RoundsError as e:
+            lines.append(f"Rounds: not checked ({e}); `emporia rounds on --every {t.cadence}` will use this template's prompt.")
+        else:
+            if job:
+                lines.append("Rounds: " + R.turn_on(pname, t.cadence, profile_dir=profile, skip_quiet=R.has_gate(profile),
+                                                    template=("" if t.key == T.DEFAULT else t.key)) + ".")
+            else:
+                lines.append(f"Rounds: off, so nothing was scheduled. `emporia rounds on --every {t.cadence}` turns them on "
+                             f"with the {t.title} prompt." + (" The Spectator's digest needs them." if t.read_only else ""))
+    lines.append(f"Model: {t.model_hint} (a suggestion; nothing was changed: `hermes model`, or `emporia rounds on --model`).")
+    for kind, nm, why, install in t.recommended:
+        lines.append(f"Recommended {kind}: {nm} ({why})" + (f". Install it yourself: {install}" if install else
+                                                              ". Bundled with Hermes; turn it on in `hermes skills`, nothing was installed."))
+    return lines
+
+
+def cmd_template(args: argparse.Namespace) -> int:
+    """`emporia template [NAME] [--agent AGENT]`: list the starting characters (the profile's marked), or switch
+    to one. A person's setting: the key guard holds the switch from an agent's tools."""
+    from emporia import templates as T
+    found = _own_profile(args)
+    if found is None:
+        print("template: no Emporia agent profile here (run it as `hermes -p NAME emporia template …`, or pass --agent NAME)")
+        return 1
+    profile, name = found
+    if not args.name:
+        print(f"  Starting characters for {name} (* is the current one):")
+        for line in T.list_lines(profile):
+            print(line)
+        print("  Switch: emporia template NAME. Your own SOUL.md is never overwritten; plugins are only suggested.")
+        return 0
+    try:
+        t = T.get(args.name)
+        lines = _template_apply(profile, t.key, rounds=True, pname=this_profile_name(profile))
+    except (T.TemplateError, OSError) as e:
+        print(f"template: {e}")
+        return 1
+    print(f"  {name}: switched to {t.title}. What changed:")
+    for line in lines:
+        print(f"    - {line}")
+    return 0
+
+
 def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing: bool, *,
                     wallet: bool = False) -> str:
     """The optional pieces setup installs, as one checkbox list (recommended ones ticked): rounds
@@ -4044,7 +4156,8 @@ def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing
     if not every:
         return ""
     try:
-        print("  " + R.turn_on(this_profile_name(profile), every, profile_dir=profile, skip_quiet=R.has_gate(profile)))
+        print("  " + R.turn_on(this_profile_name(profile), every, profile_dir=profile, skip_quiet=R.has_gate(profile),
+                               template=getattr(args, "template_key", "")))
         print("  " + R.estimate(every))
     except R.RoundsError as e:
         print(f"  Rounds were not set up: {e}")
@@ -4079,18 +4192,65 @@ def _closing_block(profile: Path, name: str, role: str, args: argparse.Namespace
     flags = {"role": args.role, "keys": args.keys, "wake": args.wake, "playbook": args.playbook,
              "rounds": args.rounds, "wallet": "x" if (args.wallet or args.solana) else "",
              "about": "x" if args.about is not None else "",
-             "accept": getattr(args, "accept_networks", "")}
+             "accept": getattr(args, "accept_networks", ""), "template": getattr(args, "template", "")}
     chosen = set(sc.CHOICES) if chosen_all else {k for k, v in flags.items() if v}
     heading(f"Settings installed for {name}", "Each line: the value, why, and how to change or undo it.")
     keys = "env" if dotenv.get("EMPORIA_KEY_STORAGE") == "env" else "files"
     for line in sc.installed_lines(dotenv, role=role, keys=keys, wallets=wallets, rounds=rounds, chosen=chosen,
-                                   name=name, accepts=accepts):
+                                   name=name, accepts=accepts,
+                                   template=__import__("emporia.templates", fromlist=["x"]).current(profile)):
         print(localize(line))
     print(f"\n  Guide: {CREATE_GUIDE}  (giving it a character, how it behaves, safety habits, your first day, fixing problems)")
 
 
 #: The people's guide to making an agent; setup's closing blocks point at it.
 CREATE_GUIDE = "docs/create-an-agent.md"
+
+
+def cmd_keys(args: argparse.Namespace) -> int:
+    """`emporia keys drill NAME --from BACKUP`: prove the agent's key backup brings the same agent back (see
+    emporia.key_drill). In a person's own terminal: it asks for the backup's passphrase and shows no key."""
+    import getpass
+
+    from emporia import key_drill
+    if args.action != "drill":
+        print("keys: drill NAME --from BACKUP")
+        return 1
+    if not _persons_terminal():
+        print("keys drill: only a person runs this, in their own terminal.")
+        return 1
+    name = args.name or (this_profile().name if this_profile() else "")
+    profile, agent_id, env = _agent(name)
+    src = Path(getattr(args, "from_", "") or "").expanduser()
+    if not env or not src.is_file():
+        print("keys drill: NAME --from BACKUP (the file `emporia signer backup NAME --out PATH` made)")
+        return 1
+    from emporia.identity import _keyfile_stem
+    key_dir = Path(env.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    marker = key_dir / f"{_keyfile_stem(agent_id)}.signer.pub"
+    try:
+        identity_pub = marker.read_text().strip() if marker.exists() else (_expected_public(profile, agent_id, "identity") or "")
+        expected = {"identity": identity_pub, "encryption": _expected_public(profile, agent_id, "encryption") or ""}
+        receipt = key_drill.drill([name, agent_id], src.read_bytes(), getpass.getpass("  The backup's passphrase (nothing is shown): "),
+                                  expected, profile / "plugin-data" / "emporia")
+    except (key_drill.DrillError, OSError) as e:
+        print(f"keys drill: FAILED. {e}")
+        return 1
+    key_drill.record_pass(profile, agent_id)
+    print(f"  Recovery drill passed for {name} ({key_drill.now_stamp()}).")
+    print(f"    agent {receipt['agent']}: identity key matches its public key (fingerprint {receipt['identity_fingerprint']}); "
+          "a local test message was signed and verified.")
+    if "encryption_fingerprint" in receipt:
+        print(f"    encryption key matches (fingerprint {receipt['encryption_fingerprint']}).")
+    print("    Nothing was sent; the throwaway folder is deleted. Next drill is due in 90 days.")
+    return 0
+
+
+def _current_template(profile: Path) -> str:
+    """The rounds variant a profile's template uses ('' = the stock prompt)."""
+    from emporia import templates as T
+    key = T.current(profile)
+    return "" if key == T.DEFAULT else key
 
 
 def cmd_rounds(args: argparse.Namespace) -> int:
@@ -4108,7 +4268,8 @@ def cmd_rounds(args: argparse.Namespace) -> int:
             print("  " + R.estimate(args.every))
             print("  " + R.turn_on(pname, args.every, profile_dir=profile, skip_quiet=getattr(args, "skip_quiet", False),
                                    model=getattr(args, "model", ""),
-                                   reasoning_effort=getattr(args, "reasoning_effort", "")))
+                                   reasoning_effort=getattr(args, "reasoning_effort", ""),
+                                   template=_current_template(profile)))
             if getattr(args, "skip_quiet", False):
                 print("  A round whose `whats_next` is quiet is skipped before any model call; it does not touch "
                       "the agent's last-look cursor. Without the flag (`emporia rounds on`) every round runs.")
@@ -4129,7 +4290,8 @@ def cmd_rounds(args: argparse.Namespace) -> int:
                 level, text, _fix = R.runs_report(pname)
                 if level in ("ok", "warn"):
                     print(f"  Last round  {text}")
-            print(f"  Prompt      version {R.prompt_version(R.prompt_text())} (emporia/data/{R.PROMPT_FILE})")
+            print(f"  Prompt      version {R.prompt_version(R.prompt_text(template=_current_template(profile)))} "
+                  f"(emporia/data/{R.PROMPT_FILE}; template {__import__('emporia.templates', fromlist=['x']).current(profile)})")
             print(f"  Wake mode   {__import__('emporia.wake', fromlist=['x']).current(installer().harvest_env(profile))}")
     except R.RoundsError as e:
         print(f"rounds: {e}")
@@ -5837,6 +5999,13 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     if _phrase_state(profile, agent_id) in ("file", "env"):
         rep.warn("its recovery phrase is stored beside its keys — not backed up yet",
                  f"emporia wallet backup {name}   (in your own terminal, never through an agent)")
+    from emporia import key_drill
+    drill_due, drill_note = key_drill.due(profile)
+    if drill_due:
+        rep.warn(drill_note, f"emporia keys drill {name} --from BACKUP   (in your own terminal; BACKUP is what "
+                             f"`emporia signer backup {name} --out PATH` made)")
+    else:
+        rep.ok(drill_note)
     # P167/P168: what its own tools can reach. A wallet plus a shell on the
     # keys' disk is the one combination that puts money in reach.
     backend = _backend(profile)
@@ -7413,7 +7582,11 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     apply_role(profile, role)
     _setup_playbook(profile, name, args.playbook, existing)
     _setup_wake(profile, name, args.wake, existing)
+    template_key = _setup_template(profile, name, args, existing)
     rounds_every = _setup_optional(profile, name, args, existing, wallet=bool(wallet))
+    if template_key:
+        for line in _template_apply(profile, template_key, rounds=False):
+            print(localize(line))
     _setup_summary(profile, name, role, registered if args.register else None)
     _closing_block(profile, name, role, args, answered, rounds_every, accepts=accept_list)
     inst.sync_mcp_costs(profile)      # the limits set above, as Hermes's price and chat limit on the paying tools
@@ -9882,6 +10055,17 @@ def build_parser() -> argparse.ArgumentParser:
     pk.set_defaults(func=cmd_peek)
 
 
+    ky = sub.add_parser("keys", help="check the agent's key backup: `drill NAME --from BACKUP` (a person's, in their own terminal)")
+    ky.add_argument("action", choices=["drill"])
+    ky.add_argument("name", nargs="?", default="", help="the agent (default: this profile's)")
+    ky.add_argument("--from", dest="from_", default="", metavar="BACKUP", help="the sealed backup file")
+    ky.set_defaults(func=cmd_keys)
+
+    tp = sub.add_parser("template", help="the agent's starting character: list them, or switch (a person's setting)")
+    tp.add_argument("name", nargs="?", default="", help="lab_reviewer, player, scribe, host, spectator or plain (none: list)")
+    tp.add_argument("--agent", default="", help="the agent's profile (default: this one)")
+    tp.set_defaults(func=cmd_template)
+
     rd = sub.add_parser("rounds", help="let the agent act on its own, on a schedule (one Hermes cron job)")
     rd.add_argument("action", choices=["on", "off", "status", "pause", "resume"], nargs="?", default="status")
     rd.add_argument("--every", default="4h", choices=["2h", "4h", "8h", "12h", "24h"], help="how often (default 4h)")
@@ -9930,6 +10114,9 @@ def build_parser() -> argparse.ArgumentParser:
     ag.add_argument("--playbook", choices=["custom", "player", "merchant", "scout", "host", "operator"], default="",
                     help="what it may do on its own (P297; default custom: no bounds beyond its limits). "
                          "Change it later with `emporia agent playbook NAME`")
+    ag.add_argument("--template", default="", choices=["", "lab_reviewer", "player", "scribe", "host", "spectator", "plain"],
+                    help="its starting character (a SOUL starter, rounds prompt, schedule and tool surface); "
+                         "default: asked, Plain without a terminal. Change it later with `emporia template NAME`")
     ag.add_argument("--wake", choices=["closed", "direct", "open"], default="",
                     help="which relay events start its turns (default direct; change later with `emporia wake`)")
     ag.add_argument("--about", default=None, help="the agent's bio on its card: at most 160 characters, plain text, "
