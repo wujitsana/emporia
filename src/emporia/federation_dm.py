@@ -45,10 +45,15 @@ SETTING = "EMPORIA_FEDERATED_DMS"
 #: P267: when each peer's key was last re-checked after a bad signature
 _REPIN_TRIED: dict[str, float] = {}
 WINDOW_SECONDS = 300
-#: S7: request nonces seen from each peer inside the window: {(peer, nonce): expires (monotonic)}. A request is
-#: accepted once; a captured one replayed within the window is refused.
-_SEEN_NONCES: dict[tuple[str, str], float] = {}
-_MAX_SEEN = 20000
+#: S7: request nonces seen from each linked relay inside the window: {peer: {nonce: expires}}. A request is accepted
+#: once; a captured one replayed within the window is refused. One cache per peer, each with its own cap, so a relay
+#: that fills its own cannot lock out any other (it is refused alone).
+_SEEN_NONCES: dict[str, dict[str, float]] = {}
+_MAX_SEEN_PER_PEER = 4000
+#: Signed requests one linked relay may make per minute (counted after its signature verified, before its nonce is
+#: stored). 4000 nonces live 600 s, so the cap above is above what this rate can fill.
+PEER_RATE_PER_MIN = 300
+_PEER_HITS: dict[str, Any] = {}
 _NONCE = re.compile(r"[0-9a-f]{16,64}")
 _HOST_RE = re.compile(r"^[a-z0-9.-]+(?::\d{1,5})?$")
 
@@ -128,18 +133,33 @@ def signed_headers(method: str, to_host: str, target: str, body: bytes = b"") ->
             "Content-Type": "application/json"}
 
 
-def _first_use(peer: str, nonce: str) -> bool:
-    """True the first time this peer's nonce is seen inside the window; remembered until the window has passed."""
+def _rate_ok(peer: str) -> bool:
+    """Whether this verified peer is inside its signed-request rate (a sliding minute); counts the call if so."""
+    from collections import deque
     now = time.monotonic()
-    if len(_SEEN_NONCES) > _MAX_SEEN // 2:
-        for k in [k for k, exp in _SEEN_NONCES.items() if exp <= now]:
-            del _SEEN_NONCES[k]
-    if _SEEN_NONCES.get((peer, nonce), 0) > now:
+    q = _PEER_HITS.setdefault(peer, deque())
+    while q and now - q[0] >= 60:
+        q.popleft()
+    if len(q) >= PEER_RATE_PER_MIN:
         return False
-    if len(_SEEN_NONCES) >= _MAX_SEEN:
-        return False        # a flood from signed peers: refuse rather than forget what was seen
-    _SEEN_NONCES[(peer, nonce)] = now + 2 * WINDOW_SECONDS
+    q.append(now)
     return True
+
+
+def _first_use(peer: str, nonce: str) -> str:
+    """`"new"` the first time this peer's nonce is seen inside the window (it is remembered until the window has
+    passed), `"seen"` for a replay, `"full"` when this peer's own cache is full. Only this peer is affected."""
+    now = time.time()
+    seen = _SEEN_NONCES.setdefault(peer, {})
+    if len(seen) > _MAX_SEEN_PER_PEER // 2:
+        for k in [k for k, exp in seen.items() if exp <= now]:
+            del seen[k]
+    if seen.get(nonce, 0) > now:
+        return "seen"
+    if len(seen) >= _MAX_SEEN_PER_PEER:
+        return "full"       # a flood from one signed peer: refuse that peer rather than forget what was seen
+    seen[nonce] = now + 2 * WINDOW_SECONDS
+    return "new"
 
 
 async def peer_key(peer: str) -> str:
@@ -216,7 +236,13 @@ async def verified_peer(request: Request, body: bytes, feature: str = "dms") -> 
         new = (h or {}).get("relay_public_key", "")
         if not (new and verify_raw(signed, sig, new) and await rs._repin_if_rotated(peer, new)):
             raise refuse(401, "relay request signature does not match the relay's pinned key")
-    if not _first_use(peer, nonce):
+    # the peer is now known by its signature: its rate is checked before its nonce is stored
+    if not _rate_ok(peer):
+        raise HTTPException(429, "too many requests from this relay; slow down")
+    got = _first_use(peer, nonce)
+    if got == "full":
+        raise HTTPException(429, "too many recent requests from this relay; wait a few minutes")
+    if got != "new":
         raise refuse(401, "relay request already seen")
     return peer
 
