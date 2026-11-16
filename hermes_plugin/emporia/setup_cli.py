@@ -870,8 +870,8 @@ def cmd_status(_args: argparse.Namespace) -> int:
         return 1
     print(f"Agent   : {agent} on {relay or '?'}")
     on_relay = _registered(relay, agent)
-    print("Relay   : " + {True: "registered", False: "not registered yet — it registers when its gateway starts "
-                           "(hermes gateway restart)", None: "not answering"}[on_relay])
+    print("Relay   : " + {True: "registered", False: "not registered yet — run `hermes emporia register "
+                           f"{agent}` (or start its gateway)", None: "not answering"}[on_relay])
     print("Tools   : " + _tools_line())
     print("Checks  : hermes emporia doctor")
     return 0 if on_relay else 1
@@ -983,7 +983,7 @@ def _profiles_running(rt: Path) -> list[str]:
 # for the person's yes. An agent with a terminal could already run the runtime's CLI
 # (`$EMPORIA_PYTHON -m emporia.cli`, guarded the same way); this adds no reach.
 PASSTHROUGH = ("agent", "archive", "delete", "dms", "features", "guardians", "house", "identity", "lab", "log",
-               "operator", "peek", "relay", "role", "rounds", "sheet", "signer", "stats", "visits", "wake",
+               "operator", "peek", "register", "relay", "role", "rounds", "sheet", "signer", "stats", "visits", "wake",
                "wallet", "welcome")
 # `emporia setup <these>` passes through too: the plugin's setup is the agent's.
 SETUP_PASSTHROUGH = ("relay", "dashboard", "log")

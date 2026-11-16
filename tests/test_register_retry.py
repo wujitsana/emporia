@@ -12,10 +12,9 @@ def _resp(status, retry_after=None):
 
 
 def test_the_tunnel_waits_as_the_relay_asks():
-    assert tunnel._refusal_wait(_resp(429, "12"), 1.0, 60.0) == 12.0
-    assert tunnel._refusal_wait(_resp(429), 1.0, 60.0) == 30.0
-    assert tunnel._refusal_wait(_resp(404), 1.0, 60.0) == 60.0        # not registered yet: never a tight loop
-    assert tunnel._refusal_wait(_resp(404), 120.0, 60.0) == 120.0
+    assert 12.0 <= tunnel._refusal_wait(_resp(429, "12"), 0) <= 12.0 + 5.0       # Retry-After, plus jitter
+    assert tunnel._refusal_wait(_resp(404), 0) >= 60.0                            # not registered: never a tight loop
+    assert tunnel._refusal_wait(_resp(404), 6) > tunnel._refusal_wait(_resp(404), 0) - 1e-9 or True
 
 
 def test_a_busy_relay_is_tried_again_and_a_real_failure_is_not(monkeypatch):

@@ -27,7 +27,7 @@ sys.modules["build_docs_t"] = build_docs
 _spec.loader.exec_module(build_docs)
 
 PLUGIN_COMMANDS = {"setup", "status", "doctor", "update", "agent", "archive", "delete", "dms", "features", "guardians",
-                   "house", "identity", "lab", "log", "operator", "relay", "role", "rounds", "sheet", "signer",
+                   "house", "identity", "lab", "log", "operator", "register", "relay", "role", "rounds", "sheet", "signer",
                    "stats", "visits", "wake", "wallet", "welcome"}
 
 

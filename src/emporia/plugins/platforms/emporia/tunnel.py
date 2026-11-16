@@ -10,24 +10,28 @@ import asyncio
 import contextlib
 import json
 
+import logging
+
 import httpx
 import urllib.parse
 from typing import Any, Awaitable, Callable
 
 
-def _refusal_wait(response: Any, backoff: float, max_backoff: float) -> float:
-    """How long to wait after the relay refused a sign-in: its Retry-After on a 429, at least a minute while
-    the agent is not registered (404), else the ordinary backoff."""
+def _refusal_wait(response: Any, attempt: int, max_backoff: float = 60.0) -> float:
+    """How long to wait after the relay refused a sign-in (`backoff.refusal_wait`): jittered, at least its
+    Retry-After on a 429, and much longer while the agent is not registered (404)."""
+    from emporia import backoff
     status = getattr(response, "status_code", 0)
-    if status == 429:
-        try:
-            return max(float(response.headers.get("retry-after", "")), backoff, 5.0)
-        except ValueError:
-            return max(backoff, 30.0)
-    if status == 404:
-        return max(backoff, 60.0)
-    return max(backoff, min(max_backoff, 30.0))
+    try:
+        retry_after = float(response.headers.get("retry-after", ""))
+    except (AttributeError, TypeError, ValueError):
+        retry_after = None
+    return backoff.refusal_wait(status, attempt, retry_after, cap=max_backoff)
 
+
+from emporia.backoff import full_jitter  # noqa: E402
+
+logger = logging.getLogger("emporia.bridge")
 
 MISSED_TURN_HOURS = 24
 
@@ -125,7 +129,7 @@ async def maintain_relay_tunnel(
 
     from emporia.agent_sdk import EmporiaAgent
 
-    backoff = initial_backoff
+    attempt = 0              # consecutive failures; wait = backoff.full_jitter(attempt) (see emporia.backoff)
     async with EmporiaAgent(
         relay_url=relay_url,
         agent_id=agent_id,
@@ -136,12 +140,13 @@ async def maintain_relay_tunnel(
     ) as agent:
         while True:
             try:
-                params = await agent._ws_auth_params()
-                token = params.pop("token", "")
-                url = _ws_url(relay_url, agent_id, params)
+                # Raises when sign-in is refused (404 not registered, 429 too many), handled below with its
+                # own wait; _ws_auth_params() would have hidden that and connected without a credential.
+                token = await agent._mint_bearer()
+                url = _ws_url(relay_url, agent_id, {})
                 from emporia.agent_sdk import ws_subprotocols
                 async with websockets.connect(url, subprotocols=ws_subprotocols(token)) as ws:
-                    backoff = initial_backoff
+                    attempt = 0
                     # A turn notice sent while this bridge was away (a relay restart, a dropped line) is in the
                     # inbox but was never handed over live: hand the newest per game over now, once.
                     for frame in await _missed_turns(agent, relay_url, agent_id):
@@ -182,12 +187,17 @@ async def maintain_relay_tunnel(
                 # trading permanent death for.
                 if isinstance(e, InvalidHandshake):
                     await agent._invalidate_bearer_and_remint()
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, max_backoff)
+                await asyncio.sleep(full_jitter(attempt, initial_backoff, max_backoff))
+                attempt += 1
             except httpx.HTTPStatusError as e:
-                # Sign-in itself was refused. Not registered yet (404: the MCP server registers it) or over the
-                # relay's per-IP sign-in budget (429): retrying at once only spends that budget, which every agent
-                # behind the same address shares — so wait as asked, and never less than a minute for a 404.
-                wait = _refusal_wait(e.response, backoff, max_backoff)
-                await asyncio.sleep(wait)
-                backoff = min(max(backoff * 2, wait), max_backoff * 5)
+                # Sign-in itself was refused. Not registered yet (404) or over the relay's sign-in budget (429):
+                # retrying at once only spends budget every agent behind the same address shares, so wait as
+                # the relay asked, with jitter, and much longer while the agent is not registered.
+                if e.response.status_code == 404 and attempt == 0:
+                    logger.warning("not registered on %s yet: run `hermes emporia register %s`; "
+                                   "this bridge waits and tries again", relay_url, agent_id)
+                await asyncio.sleep(_refusal_wait(e.response, attempt, max_backoff))
+                attempt += 1
+            except (httpx.HTTPError, KeyError, ValueError):   # sign-in failed another way: relay down, a bad answer
+                await asyncio.sleep(full_jitter(attempt, initial_backoff, max_backoff))
+                attempt += 1

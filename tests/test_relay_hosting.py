@@ -293,12 +293,12 @@ def test_behind_the_tunnel_each_client_has_its_own_limit_and_a_forged_header_get
     direct = TestClient(wrapped, client=("203.0.113.9", 5001))          # not the proxy: reached some other way
     try:
         limit = rs._RATE_LIMITS["auth"][0]
-        codes = [via.post("/dashboard/challenge", headers={"CF-Connecting-IP": "198.51.100.7"}).status_code
+        codes = [via.post("/agents/challenge", headers={"CF-Connecting-IP": "198.51.100.7"}).status_code
                  for _ in range(limit + 1)]
         assert codes[-1] == 429 and set(codes[:-1]) == {200}
-        assert via.post("/dashboard/challenge", headers={"CF-Connecting-IP": "198.51.100.8"}).status_code == 200
+        assert via.post("/agents/challenge", headers={"CF-Connecting-IP": "198.51.100.8"}).status_code == 200
         # a header from a stranger changes nothing: its own address is what is counted
-        codes = [direct.post("/dashboard/challenge", headers={"CF-Connecting-IP": f"198.51.100.{100 + i}"}).status_code
+        codes = [direct.post("/agents/challenge", headers={"CF-Connecting-IP": f"198.51.100.{100 + i}"}).status_code
                  for i in range(limit + 1)]
         assert codes[-1] == 429
     finally:
@@ -311,11 +311,11 @@ def test_behind_caddy_the_real_client_is_the_rightmost_untrusted_forwarded_addre
     try:
         limit = rs._RATE_LIMITS["auth"][0]
         for _ in range(limit):
-            assert via.post("/dashboard/challenge", headers={"X-Forwarded-For": "198.51.100.20"}).status_code == 200
-        assert via.post("/dashboard/challenge", headers={"X-Forwarded-For": "198.51.100.20"}).status_code == 429
+            assert via.post("/agents/challenge", headers={"X-Forwarded-For": "198.51.100.20"}).status_code == 200
+        assert via.post("/agents/challenge", headers={"X-Forwarded-For": "198.51.100.20"}).status_code == 429
         # padding the front of the list with fresh addresses does not buy a fresh budget
-        assert via.post("/dashboard/challenge", headers={"X-Forwarded-For": "9.9.9.9, 198.51.100.20"}).status_code == 429
-        assert via.post("/dashboard/challenge", headers={"X-Forwarded-For": "198.51.100.21"}).status_code == 200
+        assert via.post("/agents/challenge", headers={"X-Forwarded-For": "9.9.9.9, 198.51.100.20"}).status_code == 429
+        assert via.post("/agents/challenge", headers={"X-Forwarded-For": "198.51.100.21"}).status_code == 200
     finally:
         _clear(rs, "198.51.100.20", "198.51.100.21", "9.9.9.9", "172.29.231.10")
 
@@ -743,3 +743,66 @@ def test_operator_commands_sign_in_once(monkeypatch, tmp_path):
     assert len(sign_ins) == 1 and len(calls) == 5
     assert all(env.get("EMPORIA_CLI_SESSION") == "tok123" for _code, env in calls)
     assert all("tok123" not in code for code, _env in runs), "the token never goes in a child's argv"
+
+
+# ─── sign-in is limited per agent, registration per address ───────────────────
+
+def test_ten_agents_behind_one_address_all_sign_in_within_a_minute():
+    from emporia import relay_server as rs
+    ip = "203.0.113.70"
+    c = TestClient(rs.app, client=(ip, 5000))
+    try:
+        # 10 agents x 4 x (challenge + session) = 80 requests, past the strict anonymous limit
+        for i in range(10):
+            for _ in range(4):
+                assert c.post("/dashboard/challenge", json={"agent_id": f"agent-{i}"}).status_code == 200
+                assert c.post("/dashboard/session", json={"agent_id": f"agent-{i}", "challenge_id": "x",
+                                                         "relay": "http://testserver", "signature": "s"}
+                              ).status_code == 400          # reached the handler, not limited
+        assert 80 > rs._RATE_LIMITS["auth"][0]
+    finally:
+        for k in [k for k in rs._RATE_WINDOWS if ip in k[0]]:
+            rs._RATE_WINDOWS.pop(k, None)
+
+
+def test_one_agent_hammering_sign_in_is_limited_and_others_are_not():
+    from emporia import relay_server as rs
+    ip = "203.0.113.71"
+    c = TestClient(rs.app, client=(ip, 5000))
+    try:
+        limit = rs._RATE_LIMITS["signin_agent"][0]
+        codes = [c.post("/dashboard/challenge", json={"agent_id": "loopy"}).status_code for _ in range(limit + 1)]
+        assert codes[-1] == 429 and set(codes[:-1]) == {200}
+        r = c.post("/dashboard/challenge", json={"agent_id": "loopy"})
+        assert "Rate limit exceeded" in r.json()["detail"] and "Retry-After" in r.headers
+        assert c.post("/dashboard/challenge", json={"agent_id": "calm"}).status_code == 200
+        # the same agent's session attempts share that budget
+        s = c.post("/dashboard/session", json={"agent_id": "loopy", "challenge_id": "x", "relay": "r", "signature": "s"})
+        assert s.status_code == 429
+        # the same name from another address has its own budget
+        other = TestClient(rs.app, client=("203.0.113.72", 5000))
+        assert other.post("/dashboard/challenge", json={"agent_id": "loopy"}).status_code == 200
+    finally:
+        for k in [k for k in rs._RATE_WINDOWS if "203.0.113.7" in k[0]]:
+            rs._RATE_WINDOWS.pop(k, None)
+
+
+def test_registrations_from_one_address_stay_strictly_limited():
+    from emporia import relay_server as rs
+    ip = "203.0.113.73"
+    c = TestClient(rs.app, client=(ip, 5000))
+    try:
+        auth = rs._RATE_LIMITS["auth"][0]
+        codes = [c.post("/agents/challenge", json={}).status_code for _ in range(auth + 1)]
+        assert codes[-1] == 429 and set(codes[:-1]) == {200}
+        # and sign-in from that address is a separate, looser budget
+        assert c.post("/dashboard/challenge", json={"agent_id": "someone"}).status_code == 200
+    finally:
+        for k in [k for k in rs._RATE_WINDOWS if ip in k[0]]:
+            rs._RATE_WINDOWS.pop(k, None)
+
+
+def test_signin_limits_are_settings_with_defaults():
+    from emporia import relay_config as rc
+    assert rc.BY_NAME["EMPORIA_SIGNIN_PER_AGENT_PER_MINUTE"].default == "20"
+    assert rc.BY_NAME["EMPORIA_IP_RATE_SIGNIN_PER_MINUTE"].default == "600"

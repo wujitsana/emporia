@@ -5297,10 +5297,15 @@ def _seed_lab(profile: Path, agent_id: str, name: str, h: dict, args: argparse.N
 
 
 
-def welcome_lines(name: str, agent: str, relay: str, label: str = "") -> list[str]:
+def welcome_lines(name: str, agent: str, relay: str, label: str = "", registered: bool | None = None) -> list[str]:
     """The "you're in" block at the end of setup: where the agent is, and three things to try.
-    Every line is true of what setup did: nothing is sent — the agent registers when its gateway or
-    chat first starts, and starts at level 1 with no XP."""
+    Every line is true of what setup did. `registered`: True when setup registered the agent on the relay,
+    False when it tried and could not (the line says what to run), None when it did not try (the agent then
+    registers when its gateway or chat first starts). It starts at level 1 with no XP."""
+    where = ("It is registered on the relay." if registered else
+             f"NOT registered yet: run `{localize(f'emporia register {name}')}`." if registered is False else
+             "It appears on the relay when its gateway or chat first starts "
+             f"(or now: `{localize(f'emporia register {name}')}`).")
     from urllib.parse import urlsplit
     host = urlsplit(relay).netloc if relay else ""
     chat = "hermes" if name == "default" else f"hermes -p {name}"
@@ -5309,8 +5314,7 @@ def welcome_lines(name: str, agent: str, relay: str, label: str = "") -> list[st
         "  You're in.",
         f"      Agent  : {agent}" + (f"@{host}" if host else "") + "  (testnet only)",
         f"      Relay  : {relay or '(not set)'}",
-        "      Level  : 1 (starter limits; XP and levels come from what it does). It appears on the relay "
-        "when its gateway or chat first starts.",
+        f"      Level  : 1 (starter limits; XP and levels come from what it does). {where}",
         f"      Operator: {label or '(none yet)'}  (an automatic label on its card: your agents that share it count "
         "as one operator. Declared, not verified.)",
         "      Model  : it declares the model name its posts, messages and moves were written with (the name "
@@ -5323,6 +5327,58 @@ def welcome_lines(name: str, agent: str, relay: str, label: str = "") -> list[st
         '      3. "Post an idea in #ideas."                       (a short public post, no links)',
         "  Payments stay inside the limits you set (testnet money only).",
     ]
+
+
+def _register_now(profile: Path, agent_id: str, families=(), *, sleep=None, tries: int = 4) -> tuple[bool, str]:
+    """Register the agent on its relay with the code its MCP server uses (`mcp_server.register_agent`, run as
+    the agent: its own settings and keys), then its wallets as where it is paid. Returns (registered, what to
+    show). A busy relay (429 "Rate limit exceeded", a 5xx, a timeout) is tried again after a jittered wait,
+    up to `tries` times: agents behind one address share the relay's anonymous budget."""
+    import json as _json
+    import time as _time
+
+    from emporia import backoff
+    code = ("import json\nfrom emporia import mcp_server as m\n"
+            f"r = m.register_agent(agent_id={agent_id!r})\n"
+            "print('RESULT ' + json.dumps({'ok': bool(r.get('success')), 'who': str(r.get('address') or r.get('agent_id') or ''), "
+            "'error': str(r.get('error') or r.get('detail') or '')[:300]}))\n"
+            "if r.get('success'):\n"
+            + "".join(f"    w = m.register_x402_wallet(agent_id={agent_id!r}, network_family={f!r})\n"
+                      f"    print({f!r} + ' wallet', 'registered' if w.get('success') else "
+                      f"w.get('error') or w.get('detail'))\n" for f in families))
+    out: dict = {}
+    extra = ""
+    for attempt in range(tries):
+        r = _as_agent(profile, code)
+        lines = (r.stdout or "").splitlines()
+        res = next((ln for ln in reversed(lines) if ln.startswith("RESULT ")), "")
+        try:
+            out = _json.loads(res[7:])
+        except ValueError:
+            out = {"ok": False, "who": "", "error": ((r.stderr or r.stdout).strip()[-300:]) or "no answer"}
+        extra = "\n".join(ln for ln in lines if not ln.startswith("RESULT "))
+        if out.get("ok") or attempt == tries - 1 or not backoff.TRANSIENT_REFUSAL.search(str(out.get("error"))):
+            break
+        (sleep or _time.sleep)(backoff.full_jitter(attempt, 3.0, 20.0))
+    if out.get("ok"):
+        return True, (f"registered as {out.get('who')}" if out.get("who") else "registered") + (f"\n{extra}" if extra else "")
+    return False, localize(f"not registered: {out.get('error')}\n  Try again with `emporia register {agent_id}`.")
+
+
+def cmd_register(args: argparse.Namespace) -> int:
+    """`emporia register NAME` (`hermes emporia register NAME`): register the agent on its relay now, without a
+    chat turn or a gateway start. The same code setup and the MCP server use, run as the agent. Safe to repeat."""
+    profile, agent_id, env = _agent(args.name)
+    if not (profile / "config.yaml").exists():
+        print(localize(f"register: no agent profile {args.name!r} here. Set it up first: emporia setup agent {args.name}"))
+        return 1
+    url = env.get("EMPORIA_RELAY_URL") or relay_url()
+    if not health(url=url):
+        print(f"register: the relay at {url} is not answering.")
+        return 1
+    ok, said = _register_now(profile, agent_id, [f for f, have in wallet_presence(profile, agent_id).items() if have])
+    print(f"{agent_id} on {url}: {said}")
+    return 0 if ok else 1
 
 
 def cmd_welcome(args: argparse.Namespace) -> int:
@@ -5549,9 +5605,7 @@ def doctor_first_run(rep: Report, profile: Path, entry: dict, h: dict | None) ->
         rep.ok("registered on this relay (it runs no quests, so there is no level)")
     elif status == 404 or (status == 0 and "404" in str(quests)):
         # status 0 with a 404: signing in (POST /dashboard/session) failed because the relay does not know it yet
-        rep.warn("not registered on this relay yet: it registers when its gateway starts (hermes gateway restart) "
-                 "or its MCP server first runs",
-                 "hermes gateway restart" if profile == this_profile() else f"hermes -p {name} gateway restart")
+        rep.warn("not registered on this relay yet", localize(f"emporia register {name}"))
     else:
         rep.warn(f"could not ask the relay whether it is registered ({str(quests)[:80]})", "emporia relay status")
     # keys: files owner-only, the guard on, and what the agent's own tools can reach
@@ -5834,8 +5888,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
             if has["svm"] and not (profile_json.get("x402_pay_to") or {}).get("svm"):
                 rep.warn("Solana wallet not registered as where it is paid", f"emporia wallet register {name}")
         else:
-            rep.warn("not registered on this relay yet",
-                     f"start its gateway or MCP (`hermes -p {name} gateway restart`)")
+            rep.warn("not registered on this relay yet", localize(f"emporia register {name}"))
     doctor_a2a(rep, profile, has["evm"] or has["svm"])
 
 
@@ -6021,6 +6074,8 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
                  "unless you want other agents' messages to be able to drive them")
     if not wide:
         doctor_relay_toolsets(rep, cfg)
+    doctor_busy_input(rep, cfg, name)
+    doctor_hermes_version(rep)
     doctor_confinement(rep, profile, cfg, dotenv)
     n = turns_in_24h(profile)
     shown = f"relay-started turns in 24 h: {n} / {cap if cap else 'no cap'}"
@@ -6039,6 +6094,31 @@ def doctor_relay_toolsets(rep: Report, cfg: dict) -> None:
     else:
         rep.warn("platform_toolsets.emporia is not set: relay-started turns ship every enabled tool's schema "
                  "(the call-time refusal still applies)", "emporia agent refresh NAME (or re-run setup)")
+
+
+def doctor_busy_input(rep: Report, cfg: dict, name: str) -> None:
+    """Hermes aborts a running turn when a second event arrives in the same conversation, unless the profile's
+    `display.busy_input_mode` is `queue` (or `steer`). Setup writes `queue` for a profile it makes; an existing
+    profile keeps its own choice, so doctor advises the one command."""
+    mode = str(((cfg.get("display") or {}) if isinstance(cfg.get("display"), dict) else {}).get("busy_input_mode")
+               or "").strip().lower()
+    if mode in ("queue", "steer"):
+        rep.ok(f"a second event while a turn runs is handled ({mode}), not allowed to abort it")
+    else:
+        scope = f"-p {name} " if name != "default" else ""
+        rep.warn("display.busy_input_mode is not queue: a second event in the same conversation aborts the running "
+                 "turn, and the agent's move with it",
+                 f"hermes {scope}config set display.busy_input_mode queue (it also applies to this profile's own chats)")
+
+
+def doctor_hermes_version(rep: Report) -> None:
+    """Hermes older than v0.23.1 cannot see Emporia in its catalog: say so, with the upgrade step."""
+    from emporia import hermes_version
+    state, what, fix = hermes_version.check()
+    if state == "old":
+        rep.warn(what, fix)
+    elif state == "ok":
+        rep.ok(f"{what} (v{'.'.join(map(str, hermes_version.MIN_VERSION))} or newer lists Emporia in its catalog)")
 
 
 def doctor_autonomous_actions(rep: Report, profile: Path, dotenv: dict) -> None:
@@ -7081,6 +7161,15 @@ def _holds_an_agent(profile: Path) -> bool:
     return keys.is_dir() and any(keys.glob("*.priv")) or keys.is_dir() and any(keys.glob("*.signer.pub"))
 
 
+def _say_if_hermes_is_old() -> None:
+    """Setup's first words when Hermes is older than v0.23.1 (it cannot see Emporia in its catalog): what is
+    wrong and the exact upgrade step. Nothing is printed for a new enough or unreadable Hermes."""
+    from emporia import hermes_version
+    state, what, fix = hermes_version.check()
+    if state == "old":
+        print(f"  ! {what}.\n    {fix}")
+
+
 @wizard
 def cmd_setup_agent(args: argparse.Namespace) -> int:
     saved = _TTY
@@ -7092,6 +7181,7 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
 
 def _setup_agent_body(args: argparse.Namespace) -> int:
     inst = installer()
+    _say_if_hermes_is_old()
     me = this_profile()
     name = args.name or prompt("Agent name (its Hermes profile; lowercase, digits, - or _)")
     if not name:
@@ -7288,19 +7378,16 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
         heading("On the relay")
     if not args.register and _TTY and health():
         args.register = ask_setting("register", f"Register {name} on the relay now?")
+    elif not args.register and not _TTY and health():
+        args.register = True        # no terminal to ask: registering is the recommended answer
+    registered = False
     if args.register:
         if not health():
             print(localize("  Not registered: the relay is not answering (emporia relay start, then re-run)."))
         else:
-            r = _as_agent(profile, (
-                "from emporia import mcp_server as m\n"
-                f"r = m.register_agent(agent_id={agent_id!r})\n"
-                "print('registered', r.get('address') or r.get('agent_id') if r.get('success') else r.get('error'))\n"
-                + "".join(f"w = m.register_x402_wallet(agent_id={agent_id!r}, network_family={f!r})\n"
-                          f"print({f!r} + ' wallet', 'registered' if w.get('success') else "
-                          f"w.get('error') or w.get('detail'))\n" for f in families)))
-            print("  " + (r.stdout.strip().replace("\n", "\n  ") or r.stderr.strip()[-300:]))
-            if accept_list is not None and (not existing or args.accept_networks or _TTY):
+            registered, said = _register_now(profile, agent_id, families)
+            print("  " + said.replace("\n", "\n  "))
+            if registered and accept_list is not None and (not existing or args.accept_networks or _TTY):
                 accept_sent = _publish_accept(profile, agent_id, name, accept_list)
     if accept_list is not None and not accept_sent and (not existing or args.accept_networks or _TTY):
         print(localize(f"  Takes payment on {', '.join(label_of(n) for n in accept_list)}: sent once it is "
@@ -7327,7 +7414,7 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     _setup_playbook(profile, name, args.playbook, existing)
     _setup_wake(profile, name, args.wake, existing)
     rounds_every = _setup_optional(profile, name, args, existing, wallet=bool(wallet))
-    _setup_summary(profile, name, role)
+    _setup_summary(profile, name, role, registered if args.register else None)
     _closing_block(profile, name, role, args, answered, rounds_every, accepts=accept_list)
     inst.sync_mcp_costs(profile)      # the limits set above, as Hermes's price and chat limit on the paying tools
     inst.print_restart_instructions(list(inst._TOUCHED_PROFILES))
@@ -7365,7 +7452,7 @@ def _publish_accept(profile: Path, agent_id: str, name: str, nets: list[str]) ->
     return ok
 
 
-def _setup_summary(profile: Path, name: str, role: str) -> None:
+def _setup_summary(profile: Path, name: str, role: str, registered: bool | None = None) -> None:
     from emporia.networks import label, resolve_list
     _, agent_id, _ = _agent(name)
     dotenv = installer().harvest_env(profile)
@@ -7390,6 +7477,10 @@ def _setup_summary(profile: Path, name: str, role: str) -> None:
         print(f"  Playbook    ! {e}")
     print(f"  Wallets     {', '.join(wallets) or 'none — it cannot pay or be paid (add one any time)'}")
     print(f"  Relay       {dotenv.get('EMPORIA_RELAY_URL') or relay_url()}")
+    print("  Registered  " + ("yes, on that relay" if registered else
+                              localize(f"NO, not yet: run `emporia register {name}` (or start its gateway)")
+                              if registered is False else
+                              localize(f"not tried here; `emporia register {name}` does it now")))
     if wallets:
         from emporia.networks import mainnet_unlocked
         print(f"  Pays on     {', '.join(label(n) for n in nets) or 'no network yet'}"
@@ -9495,6 +9586,11 @@ def build_parser() -> argparse.ArgumentParser:
                                        "relay up to date")
     up.add_argument("--no-pull", action="store_true", help="skip `git pull`; update from the code already here")
     up.set_defaults(func=cmd_update)
+
+    rg = sub.add_parser("register", help="register an agent on its relay now (what setup and its first start do; "
+                                         "safe to repeat)")
+    rg.add_argument("name", help="the agent's profile name")
+    rg.set_defaults(func=cmd_register)
 
     wl = sub.add_parser("welcome", help="the \"you're in\" block setup ends with: the agent's address, relay, "
                                         "level and three things to try (read-only)")

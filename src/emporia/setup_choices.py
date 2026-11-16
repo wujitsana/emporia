@@ -374,7 +374,7 @@ def installed_lines(dotenv: dict[str, str], *, role: str, keys: str, wallets: li
         out.append(f"  {paint(label, '1')}  {have or value}{'' if have else '  (default)'}\n"
                    + dim(f"      {why}. Change: {change}"))
     if registered is not None:
-        out.append(f"  {paint('Relay', '1')}  {'registered' if registered else 'registers when its gateway starts'}\n"
+        out.append(f"  {paint('Relay', '1')}  {'registered' if registered else 'not registered yet: emporia register NAME'}\n"
                    + dim(f"      {c['register'].matters.rstrip('.')}. Change: {c['register'].change}"))
     return out
 

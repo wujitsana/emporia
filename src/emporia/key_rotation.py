@@ -73,7 +73,7 @@ def _sign(key: Any, kind: str, *args: Any) -> str:
 def _session(http: Any, agent_id: str, priv: Any) -> dict[str, str]:
     """Sign in to the relay as the agent with `priv` — the same challenge the
     agent's own tools answer — and return the header that carries the token."""
-    ch = http.post("/dashboard/challenge").json()
+    ch = http.post("/dashboard/challenge", json={"agent_id": agent_id}).json()
     relay = str(http.base_url)                  # M4: the sign-in names the relay it is for
     payload = wire.signed_dashboard_sign_in_payload(ch.get("nonce"), relay)
     if why := wire.dashboard_sign_in_problem(payload["nonce"], payload["relay"]):

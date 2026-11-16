@@ -63,7 +63,7 @@ class RelayClient:
             if cached and not fresh and cached[1] > time.time() + 30:
                 return cached[0]
             from emporia.wire import dashboard_session_body
-            ch = (await self._http.post(f"{self.relay_url}/dashboard/challenge")).json()
+            ch = (await self._http.post(f"{self.relay_url}/dashboard/challenge", json={"agent_id": agent.agent_id})).json()
             signature = dashboard_sign_in(agent, ch["nonce"], self.relay_url)   # M4: names this relay
             r = await self._http.post(
                 f"{self.relay_url}/dashboard/session",

@@ -15281,7 +15281,7 @@ async def test_p28_tunnel_authenticates_and_refreshes_per_attempt():
         raise AssertionError("no frame should arrive")
 
     with patch("websockets.connect", _FailingConnect), \
-         patch.object(EmporiaAgent, "_bearer_token_value", fake_token):
+         patch.object(EmporiaAgent, "_mint_bearer", fake_token):
         task = asyncio.create_task(maintain_relay_tunnel(
             "http://relay.example", "p28_tunnel_agent", on_frame,
             initial_backoff=0.01, max_backoff=0.01,
@@ -15477,7 +15477,7 @@ async def test_p29_tunnel_keeps_trying_to_remint_after_a_failed_remint():
         raise AssertionError("no frame should arrive")
 
     with patch("websockets.connect", _RejectingConnect), \
-         patch.object(EmporiaAgent, "_bearer_token_value", fake_token), \
+         patch.object(EmporiaAgent, "_mint_bearer", fake_token), \
          patch.object(EmporiaAgent, "_invalidate_bearer_and_remint", failing_remint):
         task = asyncio.create_task(maintain_relay_tunnel(
             "http://relay.example", "p29_tunnel_agent", on_frame,

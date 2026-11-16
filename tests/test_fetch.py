@@ -103,10 +103,10 @@ def test_behind_a_proxy_each_client_has_its_own_rate_limit():
     from emporia import relay_server as rs
     proxied = TestClient(ProxyHeadersMiddleware(rs.app, trusted_hosts="*"), client=("172.18.0.5", 40000))
     try:
-        codes = [proxied.post("/dashboard/challenge", headers={"X-Forwarded-For": "198.51.100.7"}).status_code
+        codes = [proxied.post("/agents/challenge", headers={"X-Forwarded-For": "198.51.100.7"}).status_code
                  for _ in range(rs._RATE_LIMITS["auth"][0] + 1)]
         assert codes[-1] == 429 and set(codes[:-1]) == {200}
-        assert proxied.post("/dashboard/challenge", headers={"X-Forwarded-For": "198.51.100.8"}).status_code == 200
+        assert proxied.post("/agents/challenge", headers={"X-Forwarded-For": "198.51.100.8"}).status_code == 200
     finally:
         for ip in ("198.51.100.7", "198.51.100.8", "172.18.0.5"):
             for bucket in rs._RATE_LIMITS:
