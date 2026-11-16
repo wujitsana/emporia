@@ -5583,23 +5583,17 @@ def welcome_lines(name: str, agent: str, relay: str, label: str = "", registered
     ]
 
 
-def _register_now(profile: Path, agent_id: str, families=(), *, sleep=None, tries: int = 4) -> tuple[bool, str]:
+def _register_now(profile: Path, agent_id: str, families=(), *, sleep=None, tries: int = 4, name: str = "") -> tuple[bool, str]:
     """Register the agent on its relay with the code its MCP server uses (`mcp_server.register_agent`, run as
     the agent: its own settings and keys), then its wallets as where it is paid. Returns (registered, what to
     show). A busy relay (429 "Rate limit exceeded", a 5xx, a timeout) is tried again after a jittered wait,
-    up to `tries` times: agents behind one address share the relay's anonymous budget."""
+    up to `tries` times: agents behind one address share the relay's anonymous budget. `name` is the profile
+    name the retry command takes (`emporia register` takes the profile, not the agent id)."""
     import json as _json
     import time as _time
 
     from emporia import backoff
-    code = ("import json\nfrom emporia import mcp_server as m\n"
-            f"r = m.register_agent(agent_id={agent_id!r})\n"
-            "print('RESULT ' + json.dumps({'ok': bool(r.get('success')), 'who': str(r.get('address') or r.get('agent_id') or ''), "
-            "'error': str(r.get('error') or r.get('detail') or '')[:300]}))\n"
-            "if r.get('success'):\n"
-            + "".join(f"    w = m.register_x402_wallet(agent_id={agent_id!r}, network_family={f!r})\n"
-                      f"    print({f!r} + ' wallet', 'registered' if w.get('success') else "
-                      f"w.get('error') or w.get('detail'))\n" for f in families))
+    code = f"from emporia import register_run\nregister_run.run({agent_id!r}, {list(families)!r})\n"
     out: dict = {}
     extra = ""
     for attempt in range(tries):
@@ -5616,7 +5610,7 @@ def _register_now(profile: Path, agent_id: str, families=(), *, sleep=None, trie
         (sleep or _time.sleep)(backoff.full_jitter(attempt, 3.0, 20.0))
     if out.get("ok"):
         return True, (f"registered as {out.get('who')}" if out.get("who") else "registered") + (f"\n{extra}" if extra else "")
-    return False, localize(f"not registered: {out.get('error')}\n  Try again with `emporia register {agent_id}`.")
+    return False, localize(f"not registered: {out.get('error')}\n  Try again with `emporia register {name or agent_id}`.")
 
 
 def cmd_register(args: argparse.Namespace) -> int:
@@ -5630,7 +5624,8 @@ def cmd_register(args: argparse.Namespace) -> int:
     if not health(url=url):
         print(f"register: the relay at {url} is not answering.")
         return 1
-    ok, said = _register_now(profile, agent_id, [f for f, have in wallet_presence(profile, agent_id).items() if have])
+    ok, said = _register_now(profile, agent_id, [f for f, have in wallet_presence(profile, agent_id).items() if have],
+                             name=args.name)
     print(f"{agent_id} on {url}: {said}")
     return 0 if ok else 1
 
@@ -7656,7 +7651,7 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
         if not health():
             print(localize("  Not registered: the relay is not answering (emporia relay start, then re-run)."))
         else:
-            registered, said = _register_now(profile, agent_id, families)
+            registered, said = _register_now(profile, agent_id, families, name=name)
             print("  " + said.replace("\n", "\n  "))
             if registered and accept_list is not None and (not existing or args.accept_networks or _TTY):
                 accept_sent = _publish_accept(profile, agent_id, name, accept_list)

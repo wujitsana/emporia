@@ -22,7 +22,50 @@ def test_register_runs_register_agent_as_the_agent_and_says_so(monkeypatch, tmp_
     monkeypatch.setattr(cli, "_as_agent", fake)
     ok, said = cli._register_now(tmp_path, "shop", ["evm"])
     assert ok and "registered as shop@relay.example" in said
-    assert "m.register_agent(agent_id='shop')" in seen[0] and "register_x402_wallet" in seen[0]
+    assert "register_run.run('shop', ['evm'])" in seen[0]
+
+
+def _run_register(monkeypatch, capsys, families):
+    """register_run.run with a stand-in MCP module; returns what it printed."""
+    import sys
+    import types
+    from emporia import register_run
+    calls = []
+    fake = types.SimpleNamespace(
+        register_agent=lambda agent_id: {"success": True, "address": "shop@r.example"},
+        register_x402_wallet=lambda agent_id, network_family: calls.append(network_family) or {"success": True})
+    monkeypatch.setitem(sys.modules, "emporia.mcp_server", fake)
+    monkeypatch.setattr("emporia.mcp_server", fake, raising=False)
+    register_run.run("shop", families)
+    return capsys.readouterr().out, calls
+
+
+def test_register_code_runs_with_no_wallet_one_wallet_and_both(monkeypatch, capsys):
+    for fams in ([], ["evm"], ["evm", "svm"]):
+        out, calls = _run_register(monkeypatch, capsys, fams)
+        assert out.startswith("RESULT ") and '"ok": true' in out
+        assert calls == fams and out.count(" wallet registered") == len(fams)
+
+
+def test_the_generated_code_is_valid_python_for_any_families():
+    import ast
+    for fams in ([], ["evm"], ["evm", "svm"]):
+        seen = []
+        orig = cli._as_agent
+        try:
+            cli._as_agent = lambda profile, code, **e: seen.append(code) or SimpleNamespace(
+                returncode=0, stdout='RESULT {"ok": true, "who": "a", "error": ""}\n', stderr="")
+            cli._register_now(None, "shop", fams)
+        finally:
+            cli._as_agent = orig
+        ast.parse(seen[0])
+
+
+def test_the_retry_hint_names_the_profile_not_the_agent_id(monkeypatch, tmp_path):
+    fake, _ = _run(['RESULT {"ok": false, "who": "", "error": "nope"}\n'])
+    monkeypatch.setattr(cli, "_as_agent", fake)
+    ok, said = cli._register_now(tmp_path, "e2eagent", name="e2e21")
+    assert not ok and "register e2e21" in said and "register e2eagent" not in said
 
 
 def test_a_busy_relay_is_retried_with_a_jittered_wait_and_a_refusal_is_not(monkeypatch, tmp_path):
