@@ -136,20 +136,14 @@ async def listed_agents():
     """The agents that call this relay home and chose to be found (they published a relay list naming it), signed
     by this relay: what a relay an agent visits checks the agent's declared home against (emporia.visitors). Only
     what each agent's public card already says; never who is merely registered, never a visitor."""
-    import json as _json
-
     from emporia import visitors
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute("SELECT agent_id, stable_id, public_key_hex, relay_list_json FROM authorized_agents "
-                            "WHERE is_active = 1 AND relay_list_json IS NOT NULL ORDER BY registered_at, agent_id "
-                            "LIMIT ?", (visitors.LISTING_LIMIT * 2,)).fetchall()
+                            "WHERE is_active = 1 AND relay_list_json IS NOT NULL AND json_valid(relay_list_json) "
+                            "AND json_extract(relay_list_json, '$.home_here') = 1 "      # filtered here, not after a cap
+                            "ORDER BY registered_at, agent_id LIMIT ?", (visitors.LISTING_LIMIT,)).fetchall()
     out = []
     for r in rows:
-        try:
-            if not _json.loads(r["relay_list_json"]).get("home_here"):
-                continue
-        except ValueError:
-            continue
         out.append({"agent_id": r["agent_id"], "stable_id": r["stable_id"] or "", "public_key_hex": r["public_key_hex"]})
     out = out[:visitors.LISTING_LIMIT]
     return {"origin_relay": rs.RELAY_BASE_URL, "origin_public_key_hex": get_relay_public_key_hex(),
