@@ -11,6 +11,7 @@ relay asked (`Retry-After`). Pure: no I/O and no sleeping; the caller sleeps.
 from __future__ import annotations
 
 import random
+import re
 from collections.abc import Callable
 
 MIN_WAIT = 0.5                 # seconds: the floor of any wait (or the ceiling itself when that is smaller)
@@ -39,3 +40,8 @@ def refusal_wait(status: int, attempt: int, retry_after: float | None = None, *,
     if status == 429:
         return max(retry_after or 0.0, 0.0) + full_jitter(attempt, 5.0, RATE_LIMITED_CAP, rng)
     return full_jitter(attempt, base, cap, rng)
+
+
+# A refusal worth another try: a 429 (the relay's body says "Rate limit exceeded", no number), a 5xx while the
+# relay restarts, a page that is not JSON (a proxy's error page), a timeout.
+TRANSIENT_REFUSAL = re.compile(r"\b(429|50[0234])\b|Expecting value|timed out|temporarily|rate.?limit", re.IGNORECASE)

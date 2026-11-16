@@ -165,6 +165,25 @@ _agent_wallet.APPROVER = _ask_operator
 # process needs just to read step_number and sign its own turn. This obtains and caches
 # that token via the challenge/sign_raw/session exchange, for MCP's own outbound HTTP calls.
 _dashboard_token_cache: dict[str, tuple[str, float]] = {}
+# `relay|agent` -> when the relay last answered a sign-in with 404 (it does not know this agent). While that is
+# recent (UNREGISTERED_RECHECK_SECONDS) no new sign-in is tried: it would fail the same way, and spends the
+# sign-in budget every agent behind one address shares. register_agent success clears it.
+_unregistered_at: dict[str, float] = {}
+UNREGISTERED_RECHECK_SECONDS = 60.0
+NOT_REGISTERED_MESSAGE = ("not registered on this relay yet — run `emporia register {agent}` (or ask your person)")
+
+
+def _is_unregistered(relay_url: str = "", agent_id: str = "") -> bool:
+    """The relay said (recently) that it does not know this agent."""
+    key = f"{relay_url or _base()}|{agent_id or AGENT_ID}"
+    at = _unregistered_at.get(key)
+    return bool(at and time.time() - at < UNREGISTERED_RECHECK_SECONDS)
+
+
+def not_registered_message(agent_id: str = "") -> str:
+    """What to tell an agent (or its person) the relay does not know: how to fix it, `hermes emporia register`
+    where the plugin runs the runtime."""
+    return localize(NOT_REGISTERED_MESSAGE.format(agent=agent_id or AGENT_ID or "NAME"))
 
 
 def _dashboard_bearer_headers(relay_url: str = "", agent_id: str = "") -> dict[str, str]:
@@ -182,6 +201,8 @@ def _dashboard_bearer_headers(relay_url: str = "", agent_id: str = "") -> dict[s
     now = time.time()
     if cached and cached[1] > now + 30:
         return {"Authorization": f"Bearer {cached[0]}"}
+    if _is_unregistered(target, aid):
+        return {}
     from emporia import session_cache
     if kept := session_cache.load(target, aid):          # kept by an earlier process of this agent
         _dashboard_token_cache[cache_key] = (kept[0], kept[1])
@@ -194,7 +215,11 @@ def _dashboard_bearer_headers(relay_url: str = "", agent_id: str = "") -> dict[s
             json=signing.dashboard_session_body(aid, ch, target),   # M4: names `target`
             timeout=10,
         )
+        if r.status_code == 404:                 # the relay does not know this agent
+            _unregistered_at[cache_key] = now
+            return {}
         r.raise_for_status()
+        _unregistered_at.pop(cache_key, None)
         data = r.json()
         _dashboard_token_cache[cache_key] = (data["token"], now + data.get("expires_in", 3600))
         session_cache.store(target, aid, data["token"], now + data.get("expires_in", 3600), data.get("stable_id", ""))
@@ -280,6 +305,11 @@ def _bearer_request(
     if session_refused(r):          # an expired session, not a refusal of the request (a 403 is an answer)
         _invalidate_dashboard_bearer(relay_url=relay, agent_id=agent_id)
         r = fn(url, headers=headers(), **kwargs)
+    if r.status_code in (401, 403) and _is_unregistered(relay, agent_id):
+        # No token could be had because the relay does not know this agent: that, not a bare 403, is what is wrong.
+        # Only the words change; the answer was a refusal and stays one, so nothing more is readable.
+        return httpx.Response(403, json={"detail": not_registered_message(agent_id or AGENT_ID),
+                                         "not_registered": True}, request=r.request)
     return r
 
 
@@ -454,6 +484,7 @@ def register_agent(
         if r.status_code in (200, 201):
             # what its signed acts name it by from now on: the stable id its relay holds (a rotated key keeps it)
             signing.remember_stable(agent_id, data.get("stable_id", ""))
+            _unregistered_at.clear()                 # it is known now: sign in again at the next call
             published = _publish_relay_list(data.get("agent_id") or agent_id)
             _keep_own_record(data.get("agent_id") or agent_id)
             _archive_in_background(data.get("agent_id") or agent_id)
@@ -4370,6 +4401,8 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
         r = _bearer_request("get", f"{_base()}/agents/{_seg(aid)}/next", agent_id=aid, timeout=10)
         d = r.json() if r.content else {}
         if r.status_code != 200:
+            if d.get("not_registered"):
+                return {"error": d["detail"], "success": False, "registered": False}
             return {"error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
@@ -6487,8 +6520,7 @@ def _register_later(waits: tuple[int, ...] | None = None, sleep: Any = None) -> 
 
 # "Rate limit exceeded — 30 requests per 60s per IP" is the relay's 429 body without the number: agents sharing
 # one address can fill the sign-in bucket together, and a later try gets in.
-_TRANSIENT_REFUSAL = re.compile(r"\b(429|50[0234])\b|Expecting value|timed out|temporarily|rate.?limit",
-                                re.IGNORECASE)
+from emporia.backoff import TRANSIENT_REFUSAL as _TRANSIENT_REFUSAL  # noqa: E402
 
 
 def _register_once() -> str:
