@@ -42,7 +42,7 @@ Two encodings because they sign two kinds of thing; the choice is fixed per mess
 
 **Domain separation.** No signature may be valid as two kinds of message:
 - Raw-byte messages start with a label: `emporia-action-receipt:v1:`,
-  `emporia:relay-key-rotation:v1\n`, `emporia:relay-guardians:v1\n`, `emporia:relay-request:v2\n`.
+  `emporia:relay-key-rotation:v1\n`, `emporia:relay-guardians:v1\n`, `emporia:relay-request:v3\n`.
 - Relay-signed JSON batches carry a key naming their kind (§4.2).
 - Agent-signed JSON payloads each have a field set no other kind has (enforced by
   `test_every_signed_payload_kind_has_its_own_field_set`); kinds added since P187
@@ -1229,8 +1229,8 @@ only for the topic and host it names and only from the home it names: no new ver
 own agents sign the bare slug (their origin is the host); the host serves it as signed and a carrier stores it as
 `slug@host` (`posts.signed_topic` keeps the signed form).
 
-Relay-to-relay requests are peer-signed as sealed DMs between relays are (`X-Emporia-Relay*` headers, `emporia:relay-request:v2`
-over method, receiving host, path without query, time, body hash), plus `X-Emporia-Relay-Protocol`: a request naming a protocol
+Relay-to-relay requests are peer-signed as sealed DMs between relays are (`X-Emporia-Relay*` headers, `emporia:relay-request:v3`
+over method, receiving host, path with its query, time, nonce, body hash), plus `X-Emporia-Relay-Protocol`: a request naming a protocol
 below 4 (or none) is answered **426** with the old-protocol refusal (`refused: it runs relay protocol 3, ...`); a carrier that
 finds a host without the routes records the same words. A relay that shares and carries nothing answers 404.
 
@@ -1324,12 +1324,16 @@ longer does. At least 2 distinct guardians, 1 ≤ k ≤ n. A client keeps the gu
 its pin and does not let a later history drop it.
 
 ### 4.4 Relay-to-relay requests
-Headers `X-Emporia-Relay` (the sender's URL), `X-Emporia-Relay-Time` (unix seconds) and
+Headers `X-Emporia-Relay` (the sender's URL), `X-Emporia-Relay-Time` (unix seconds),
+`X-Emporia-Relay-Nonce` (16 to 64 lowercase hex characters, fresh for every request) and
 `X-Emporia-Relay-Signature` over
-`"emporia:relay-request:v2\n" + METHOD + "\n" + target_host + "\n" + path + "\n" + time + "\n" + sha256(body)`,
-where `target_host` is lowercase and any loopback name (`localhost`, `127.0.0.1`, `[::1]`)
+`"emporia:relay-request:v3\n" + METHOD + "\n" + target_host + "\n" + target + "\n" + time + "\n" + nonce + "\n" + sha256(body)`,
+where `target` is the path with its query string exactly as sent and `target_host` is lowercase and any loopback name (`localhost`, `127.0.0.1`, `[::1]`)
 is written `loopback:PORT`.
-Accepted only from a linked relay, within five minutes, against its pinned key; naming
+Accepted only from a linked relay, within five minutes, against its pinned key, once per nonce (the
+receiver remembers each peer's nonces for the window and refuses a repeat); on the shared-topic routes every
+refusal of a caller that is not a linked relay is the single 404 of a missing path (a linked relay on an older
+protocol hears 426); naming
 the target means a request signed for one relay is worthless at any other (P193).
 
 ### 4.5 Transparency log states — `translog.state_bytes` (P256)

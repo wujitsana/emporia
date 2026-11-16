@@ -45,6 +45,11 @@ SETTING = "EMPORIA_FEDERATED_DMS"
 #: P267: when each peer's key was last re-checked after a bad signature
 _REPIN_TRIED: dict[str, float] = {}
 WINDOW_SECONDS = 300
+#: S7: request nonces seen from each peer inside the window: {(peer, nonce): expires (monotonic)}. A request is
+#: accepted once; a captured one replayed within the window is refused.
+_SEEN_NONCES: dict[tuple[str, str], float] = {}
+_MAX_SEEN = 20000
+_NONCE = re.compile(r"[0-9a-f]{16,64}")
 _HOST_RE = re.compile(r"^[a-z0-9.-]+(?::\d{1,5})?$")
 
 
@@ -104,20 +109,37 @@ def refuse_unless_peer_takes_dms(peer: str) -> None:
 
 # ─── relay-to-relay requests ─────────────────────────────────────────────────
 
-def _request_bytes(method: str, to_host: str, path: str, ts: str, body: bytes) -> bytes:
-    """P193: names the relay it is for, so a request signed for one relay is
-    worthless at any other."""
-    return "\n".join(("emporia:relay-request:v2", method.upper(), canonical_host(to_host), path, ts,
+def _request_bytes(method: str, to_host: str, target: str, ts: str, nonce: str, body: bytes) -> bytes:
+    """P193: names the relay it is for, so a request signed for one relay is worthless at any other. `target` is
+    the path with its query as sent (a changed `?after=` is a different request); the nonce makes each request
+    one the receiver accepts once."""
+    return "\n".join(("emporia:relay-request:v3", method.upper(), canonical_host(to_host), target, ts, nonce,
                       hashlib.sha256(body).hexdigest())).encode()
 
 
-def signed_headers(method: str, to_host: str, path: str, body: bytes = b"") -> dict[str, str]:
+def signed_headers(method: str, to_host: str, target: str, body: bytes = b"") -> dict[str, str]:
+    import secrets
+
     from emporia import relay_server as rs
-    ts = str(int(time.time()))
+    ts, nonce = str(int(time.time())), secrets.token_hex(16)
     return {"X-Emporia-Relay": normalize_peer_url(rs.RELAY_BASE_URL), "X-Emporia-Relay-Time": ts,
-            "X-Emporia-Relay-Protocol": str(rs.CARD_VERSION),
-            "X-Emporia-Relay-Signature": sign_raw_relay(_request_bytes(method, to_host, path, ts, body)),
+            "X-Emporia-Relay-Nonce": nonce, "X-Emporia-Relay-Protocol": str(rs.CARD_VERSION),
+            "X-Emporia-Relay-Signature": sign_raw_relay(_request_bytes(method, to_host, target, ts, nonce, body)),
             "Content-Type": "application/json"}
+
+
+def _first_use(peer: str, nonce: str) -> bool:
+    """True the first time this peer's nonce is seen inside the window; remembered until the window has passed."""
+    now = time.monotonic()
+    if len(_SEEN_NONCES) > _MAX_SEEN // 2:
+        for k in [k for k, exp in _SEEN_NONCES.items() if exp <= now]:
+            del _SEEN_NONCES[k]
+    if _SEEN_NONCES.get((peer, nonce), 0) > now:
+        return False
+    if len(_SEEN_NONCES) >= _MAX_SEEN:
+        return False        # a flood from signed peers: refuse rather than forget what was seen
+    _SEEN_NONCES[(peer, nonce)] = now + 2 * WINDOW_SECONDS
+    return True
 
 
 async def peer_key(peer: str) -> str:
@@ -141,32 +163,49 @@ async def peer_key(peer: str) -> str:
 async def verified_peer(request: Request, body: bytes, feature: str = "dms") -> str:
     """The linked relay that signed this request, or a refusal. `feature` is what the request is for: sealed DMs
     (`EMPORIA_FEDERATED_DMS`) or shared topics (`EMPORIA_SHARED_TOPICS` / `EMPORIA_CARRY_TOPICS`); a relay that
-    does not run it answers 404, as for any path it does not have. A request for shared topics also names its
-    protocol version, and a relay on an older one is refused in the words every old-protocol refusal uses."""
+    does not run it answers 404, as for any path it does not have. For shared topics every refusal to a caller that
+    is not a linked relay (unlinked, outside the window, no nonce, a bad or replayed signature) is that same 404, so
+    a stranger learns neither that the feature is on nor who is linked; a linked relay on an older protocol is told
+    so (426) in the words every old-protocol refusal uses. The request is signed with a nonce and its full target
+    (path and query); each nonce is accepted once."""
     from emporia import shared_topics
-    if not (enabled() if feature == "dms" else shared_topics.enabled()):
+    topics = feature != "dms"
+    if not (shared_topics.enabled() if topics else enabled()):
         raise HTTPException(404, "not found")
+
+    def refuse(code: int, why: str) -> HTTPException:
+        return HTTPException(404, "not found") if topics else HTTPException(code, why)
+
     claimed = normalize_peer_url(request.headers.get("X-Emporia-Relay", ""))
     ts = request.headers.get("X-Emporia-Relay-Time", "")
+    nonce = request.headers.get("X-Emporia-Relay-Nonce", "")
     sig = request.headers.get("X-Emporia-Relay-Signature", "")
     peer = linked_peer(host_of(claimed)) if claimed else ""     # the link as configured here
     if not peer:
-        raise HTTPException(403, "not a relay linked to this one")
+        raise refuse(403, "not a relay linked to this one")
     if not ts.isdigit() or abs(time.time() - int(ts)) > WINDOW_SECONDS:
-        raise HTTPException(401, "relay request outside its time window")
-    if feature != "dms":
+        raise refuse(401, "relay request outside its time window")
+    if topics:
         from emporia import relay_server as rs
         proto = request.headers.get("X-Emporia-Relay-Protocol", "")
         if why := rs._old_protocol({"version": int(proto) if proto.isdigit() else 0}):
             raise HTTPException(426, f"refused: {why}")
-    signed = _request_bytes(request.method, own_host(), request.url.path, ts, body)
-    if not verify_raw(signed, sig, await peer_key(peer)):
+    if not _NONCE.fullmatch(nonce):
+        raise refuse(401, "relay request without a nonce")
+    query = request.scope.get("query_string", b"").decode("latin-1")
+    target = request.url.path + (f"?{query}" if query else "")
+    signed = _request_bytes(request.method, own_host(), target, ts, nonce, body)
+    try:
+        key = await peer_key(peer)
+    except HTTPException as e:
+        raise refuse(e.status_code, str(e.detail)) from e
+    if not verify_raw(signed, sig, key):
         # P191: it may have rotated its key — follow its signed hand-over, never a bare change.
         # P267: at most once a minute per peer: anyone can send a badly signed
         # request naming a linked relay, and each would make this one call it.
         from emporia import relay_server as rs
         if time.monotonic() - _REPIN_TRIED.get(peer, -1e9) < 60:
-            raise HTTPException(401, "relay request signature does not match the relay's pinned key")
+            raise refuse(401, "relay request signature does not match the relay's pinned key")
         _REPIN_TRIED[peer] = time.monotonic()
         h = None
         try:
@@ -176,16 +215,18 @@ async def verified_peer(request: Request, body: bytes, feature: str = "dms") -> 
             h = None
         new = (h or {}).get("relay_public_key", "")
         if not (new and verify_raw(signed, sig, new) and await rs._repin_if_rotated(peer, new)):
-            raise HTTPException(401, "relay request signature does not match the relay's pinned key")
+            raise refuse(401, "relay request signature does not match the relay's pinned key")
+    if not _first_use(peer, nonce):
+        raise refuse(401, "relay request already seen")
     return peer
 
 
 async def call_peer(peer: str, method: str, path: str, payload: dict | None = None) -> Any:
     from emporia import fetch      # P270: a peer's answer read within limits
     body = json.dumps(payload).encode() if payload is not None else b""
-    # the signature names the path without its query, as the receiving side reads it
+    # the signature covers the path with its query, as the receiving side reads it
     return await fetch.request(method, f"{peer}{path}", content=body or None,
-                               headers=signed_headers(method, host_of(peer), path.partition("?")[0], body), timeout=15)
+                               headers=signed_headers(method, host_of(peer), path, body), timeout=15)
 
 
 # ─── agents on other relays ──────────────────────────────────────────────────
