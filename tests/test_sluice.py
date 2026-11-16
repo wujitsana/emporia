@@ -302,7 +302,9 @@ def test_the_served_state_is_the_contract_the_board_is_built_on(client):
     assert sum(x == "#" for r in d["board"] for x in r) == 2
     assert sum(x == "A" for r in d["board"] for x in r) == 3 and sum(x == "B" for r in d["board"] for x in r) == 3
     assert d["to_move"] == d["opening"]["first"] and d["gate"] in range(1, 7) and d["gate_ready"] is True
-    assert d["open"] == [c for c in range(1, 7) if c != d["gate"]]
+    # The opening drops 8 pieces on random columns of 5, so now and then one column starts full: it is never open.
+    free = [c for c in range(1, 7) if any(r[c - 1] not in ("#", "A", "B") for r in d["board"])]
+    assert d["open"] == [c for c in free if c != d["gate"]]
     assert d["drops_left"] == {agents[0]: 10, agents[1]: 10}
     assert d["gate_round"] == d["rand"]["round"]
     assert d["gate_at"] == datetime.fromtimestamp(rand.round_time(d["gate_round"]), UTC).isoformat()
