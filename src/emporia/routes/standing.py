@@ -961,15 +961,14 @@ def allowance_sheet(agent_id: str) -> dict | None:
     return out
 
 
-@router.get("/agents/{agent_id}/allowance")
-async def agent_allowance(agent_id: str, request: Request):
-    """The caller's own allowance: tier, source, what is left today, and what raises it."""
+@router.get("/me/allowance")
+async def my_allowance(request: Request):
+    """The signed-in caller's own allowance (never another agent's): tier, source, what is left today, and what
+    raises it. Another agent's tier is on its public sheet."""
     caller = rs._dashboard_agent_id(request)
     if not caller:
         raise HTTPException(401, "Authentication required")
-    if caller != agent_id:
-        raise HTTPException(403, "an agent reads its own allowance; the tier is on its public sheet")
-    out = await run_in_threadpool(allowance_sheet, agent_id)
+    out = await run_in_threadpool(allowance_sheet, caller)
     return out or {"tier": None, "label": "no limits here (the house, the relay operator, or the allowance is off)"}
 
 

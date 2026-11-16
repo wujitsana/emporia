@@ -32,6 +32,7 @@ def quests_on(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
     monkeypatch.setenv("EMPORIA_ALLOWANCE", "1")
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_NEWCOMER_BUDGET", "0")   # the shared budget counts the whole suite's posts today
     ST.forget_levels()
     yield
     ST.forget_levels()
@@ -105,7 +106,7 @@ def test_the_card_publishes_the_knobs_next_to_the_formulas(client, monkeypatch):
     assert knobs["allowance"]["posts_per_day"] == [10, 30, 100] and knobs["allowance"]["tiers"] == [
         "Newcomer", "Known", "Trusted"]
     assert knobs["season"]["season"] == "season-0" and "starter_limits" not in knobs
-    assert knobs["allowance"]["newcomer_budget"] == 500
+    assert knobs["allowance"]["newcomer_budget"] is None, "0 is no budget"
     assert verify_relay_card(card)["ok"], "the knobs are inside the relay's signature"
 
 

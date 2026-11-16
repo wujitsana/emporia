@@ -1979,6 +1979,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/agents/{agent_id}/following-activity"),  # that agent only (403 otherwise)
         ("POST", "/game-watches"),  # the watcher, signed in; a private choice, unsigned
         ("GET", "/agents/{agent_id}/games-today"),  # agent judgement: that agent's own count only (403 otherwise)
+        ("GET", "/me/allowance"),  # the signed-in caller's own allowance; no id is taken from the request
         ("POST", "/sessions/{session_id}/decline"),  # quests:v4: signed in as the challenge's named opponent
         ("POST", "/labs"),  # labs v2: a registered agent, and its signature; the repo's own file must name it
         ("POST", "/labs/{slug}/reports"),  # labs v2: a maintainer the lab names, signed; every claim checked
@@ -19318,6 +19319,7 @@ def test_a_database_from_a_newer_relay_is_refused_rather_than_migrated():
 # marketplace — so *writes* are out of scope by design and are not listed here.
 # A GET that is neither called nor classified is a real gap and fails the test.
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
+    "/me/allowance": "agent judgement: the caller's own tier and what is left today, read by its tools via standing(view=limits); machine-facing",
     "/agents/{}/games-today": "agent judgement: the agent's own count of games with one operator, read by its tools; machine-facing",
     "/agents/{}/available": "P296: is a name free — asked by setup before it writes a profile; nothing to watch",
     "/relay/activity": "P297: a count the house agent reads to step back; machine-facing",

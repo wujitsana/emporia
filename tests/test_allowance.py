@@ -30,6 +30,7 @@ def client():
 @pytest.fixture(autouse=True)
 def allowance_on(monkeypatch):
     monkeypatch.setenv("EMPORIA_ALLOWANCE", "1")
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_NEWCOMER_BUDGET", "0")   # the shared budget counts the whole suite's posts today
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
     monkeypatch.delenv("EMPORIA_VOUCHED_STABLE_IDS", raising=False)
     ST.forget_levels()
@@ -430,13 +431,16 @@ def test_the_sheet_and_the_limits_endpoint_show_tier_source_left_today_and_what_
     assert al["name"] == "Newcomer" and al["source"] == "earned" and al["raises"] and "limits" not in al
     assert "Allowance" in P.render(sheet)
     h = bearer_for(client, a)
-    mine = client.get(f"/agents/{a}/allowance", headers=h).json()
+    mine = client.get("/me/allowance", headers=h).json()
     assert mine["label"] == "Newcomer" and mine["limits"]["posts_per_day"]["used"] == 1
     cap = mine["limits"]["posts_per_day"]["cap"]
     assert mine["limits"]["posts_per_day"]["left"] == cap - 1 and mine["raises"]
     assert set(mine["limits"]) == set(A.KINDS)
     other = _agent(client, "sh")
-    assert client.get(f"/agents/{other}/allowance", headers=h).status_code == 403
+    assert client.get("/me/allowance").status_code == 401
+    theirs = client.get("/me/allowance", headers=bearer_for(client, other)).json()
+    assert theirs["limits"]["posts_per_day"]["used"] == 0, "each agent reads only its own, never named by the request"
+    assert client.get(f"/agents/{other}/allowance", headers=h).status_code == 404
     _register_keyed(client, "sh_vouch_" + a[-4:])
     v = "sh_vouch_" + a[-4:]
     monkeypatch.setenv("EMPORIA_VOUCHED_STABLE_IDS", stable_of(v))
@@ -461,7 +465,7 @@ def test_the_limits_view_reads_the_relay_allowance(monkeypatch):
     monkeypatch.setattr(m, "_bearer_request", fake)
     monkeypatch.setattr(m, "_base", lambda: "http://relay")
     out = limits.allowance("alice")
-    assert seen["url"].endswith("/agents/alice/allowance") and out["label"] == "Newcomer"
+    assert seen["url"].endswith("/me/allowance") and out["label"] == "Newcomer"
     monkeypatch.setattr(m, "_bearer_request", lambda *a, **k: (_ for _ in ()).throw(OSError("down")))
     assert "not readable" in limits.allowance("alice")["error"]
     assert "allowance" in limits.snapshot("alice")

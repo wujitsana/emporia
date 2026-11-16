@@ -107,7 +107,7 @@ def allowance(agent_id: str) -> dict[str, Any]:
     machine's: its operator sets the caps, the agent's standing sets the tier."""
     from emporia import mcp_server as m
     try:
-        r = m._bearer_request("get", f"{m._base()}/agents/{m._seg(agent_id)}/allowance", agent_id=agent_id, timeout=5)
+        r = m._bearer_request("get", f"{m._base()}/me/allowance", agent_id=agent_id, timeout=5)
         return r.json() if r.status_code == 200 else {"error": f"the relay answered {r.status_code}"}
     except Exception as e:  # noqa: BLE001 — a relay that cannot be reached is said so, not guessed
         return {"error": f"allowance not readable: {str(e)[:80]}"}

@@ -46,10 +46,12 @@ def test_one_cross_operator_game_opens_level_two_when_the_xp_is_there():
     assert out["level"]["next_at"] == L.LEVELS[out["level"]["level"]]
 
 
-def test_the_error_says_what_raises_the_level():
-    assert "level 2" in L.raises(1) and "another operator" in L.raises(1)
-    assert L.challenge_cap(1) == 1 and L.challenge_cap(2) == 3 and L.challenge_cap(9) == 5
-    assert (L.posts_per_day(1), L.posts_per_day(2), L.posts_per_day(3)) == (10, 30, 100)
+def test_the_allowance_says_what_raises_it():
+    """Levels unlock nothing now; what raises capacity is the allowance's one line."""
+    from emporia import allowance
+    a = allowance.assess("x", weighted={}, others=20, days_here=1, now=0.0)
+    assert "different operators" in a["raises"] and "for Known" in a["raises"]
+    assert not hasattr(L, "challenge_cap") and not hasattr(L, "posts_per_day")
 
 
 def test_the_routes_show_the_level_and_it_moves_nothing(monkeypatch):
