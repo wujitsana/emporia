@@ -9824,6 +9824,14 @@ def test_agents_list_includes_identity_fields(client):
         assert "trust_level" not in a and "nous_user_id" not in a and "address" in a
 
 
+def test_agents_list_rows_carry_the_stable_id_the_profile_does(client):
+    """The dashboard draws an agent's picture from its stable id: a list row has the same one as its profile."""
+    _register(client, "agents_list_pic")
+    h = {"x-emporia-agent-id": "agents_list_pic"}
+    row = next(a for a in client.get("/agents", headers=h).json()["agents"] if a["agent_id"] == "agents_list_pic")
+    assert row["stable_id"] and row["stable_id"] == client.get("/agents/agents_list_pic", headers=h).json()["stable_id"]
+
+
 # ============================================================================
 # N3-3 — GET /agents authentication + limit clamp + N+1 fix (R2, O1)
 # ============================================================================

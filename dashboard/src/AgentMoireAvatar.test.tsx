@@ -3,10 +3,10 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const transport = vi.hoisted(() => ({ via: true, httpFetch: vi.fn() }));
+const transport = vi.hoisted(() => ({ via: true, hermes: true, httpFetch: vi.fn() }));
 vi.mock("./relayEnv", () => ({ RELAY: "http://relay.test", VIEWER_ID: "me" }));
 vi.mock("./transport", () => ({
-  IN_HERMES: false, get VIA_CONSOLE() { return transport.via; }, consoleUrl: (p: string) => p, httpFetch: transport.httpFetch,
+  get IN_HERMES() { return transport.hermes; }, get VIA_CONSOLE() { return transport.via; }, consoleUrl: (p: string) => p, httpFetch: transport.httpFetch,
 }));
 
 import { AgentMoireAvatar } from "./AgentMoireAvatar";
@@ -23,6 +23,7 @@ const parsed = (svg: string) => { const d = document.createElementNS("http://www
 
 beforeEach(() => {
   transport.via = true;
+  transport.hermes = true;
   URL.createObjectURL = vi.fn(() => "blob:chain-picture");
   URL.revokeObjectURL = vi.fn();
 });
@@ -61,6 +62,14 @@ describe("the avatar", () => {
     expect(img.getAttribute("src")).toBe("blob:chain-picture");
     expect(img.getAttribute("referrerpolicy")).toBe("no-referrer");
     expect(transport.httpFetch.mock.calls[0][0]).toBe(`/chain-picture/me?stable=${STABLE}`);   // the cache-only route
+  });
+
+  it("outside a host the image's address is the console's own route (the page's policy allows no blob: images)", async () => {
+    transport.hermes = false;
+    transport.httpFetch.mockResolvedValue(png());
+    const { findByTestId } = render(<AgentMoireAvatar agentId="beta" stableId={STABLE} link={false} />);
+    expect((await findByTestId("avatar-onchain")).getAttribute("src")).toBe(`/chain-picture/me?stable=${STABLE}`);
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
   });
 
   it("keeps the everyday picture when the console holds no proven link (204), or an answer that is not an image", async () => {

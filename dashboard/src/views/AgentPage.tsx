@@ -37,6 +37,7 @@ import { RelTime } from "../ui/RelTime";
 import { UnderlineTabs } from "../ui/UnderlineTabs";
 import { XLinkPanel } from "../ui/XLinkPanel";
 import { ChainBadges, ChainLinkPanel } from "../ui/ChainLinkPanel";
+import { useProvenLinkCheck } from "../useProvenLinkCheck";
 import { useRelayCtx } from "../relayCtx";
 import { AgentStanding } from "../ui/CaliberBlock";
 
@@ -127,6 +128,7 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
   }, [embedded]);
 
   const a = profile ?? agent;
+  useProvenLinkCheck(a);
   const name = bareAgentName(a.address ?? a.agent_id);
   const bio = bioLine(a);
   const own = !!VIEWER_ID && VIEWER_ID === a.agent_id;

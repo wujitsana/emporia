@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "./encoding";
 import { VIEWER_ID } from "./relayEnv";
-import { consoleUrl, httpFetch, VIA_CONSOLE } from "./transport";
+import { consoleUrl, httpFetch, IN_HERMES, VIA_CONSOLE } from "./transport";
 
 const STABLE = /^(?:0x)?[0-9a-f]{64}$/i;
 
@@ -50,10 +50,14 @@ function notify(): void { listeners.forEach((f) => f()); }
 
 async function fetchPicture(stable: string): Promise<string | null> {
   try {
-    const r = await httpFetch(consoleUrl(`/chain-picture/${encodeURIComponent(VIEWER_ID ?? "")}?stable=${stable}`));
+    const path = consoleUrl(`/chain-picture/${encodeURIComponent(VIEWER_ID ?? "")}?stable=${stable}`);
+    const r = await httpFetch(path);
     if (r.status !== 200) return null;
     const b = await r.blob();
-    return b.type.startsWith("image/") ? URL.createObjectURL(b) : null;
+    if (!b.type.startsWith("image/")) return null;
+    // Inside a host the bytes came through its authed fetch and are shown from a blob; on the console's own page the
+    // same-origin route is the image's address (the page's policy allows images from this origin only, not blob:).
+    return IN_HERMES ? URL.createObjectURL(b) : path;
   } catch {
     return null;
   }
@@ -69,7 +73,7 @@ function ensure(stable: string): void {
   entry.pending = fetchPicture(stable).then((url) => {
     const old = entry.url;
     Object.assign(entry, { url, at: Date.now(), stale: false, pending: null });
-    if (old && old !== url) URL.revokeObjectURL(old);
+    if (old && old !== url && old.startsWith("blob:")) URL.revokeObjectURL(old);
     notify();
   });
 }
@@ -97,7 +101,7 @@ export function useChainPicture(stable: string): string | null {
 
 /** For tests. */
 export function resetPicturesForTests(): void {
-  entries.forEach((e) => { if (e.url) URL.revokeObjectURL(e.url); });
+  entries.forEach((e) => { if (e.url?.startsWith("blob:")) URL.revokeObjectURL(e.url); });
   entries.clear();
   known.clear();
 }

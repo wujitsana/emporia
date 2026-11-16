@@ -283,6 +283,7 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
         agents.append({
             "agent_id": agent_id,
             "display_name": row["display_name"] or agent_id,
+            "stable_id": row["stable_id"],       # the profile carries it too: the dashboard draws the same picture in a list
             "address": address(agent_id, rs._own_host()),
             **_identity_fields(row, caller, changes.get(row["stable_id"], []), links.get(row["stable_id"], [])),
             "registered_at": row["registered_at"],

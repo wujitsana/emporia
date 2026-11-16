@@ -5570,7 +5570,8 @@ async function fetchPicture(stable) {
 		const r = await httpFetch(consoleUrl(`/chain-picture/${encodeURIComponent(VIEWER_ID ?? "")}?stable=${stable}`));
 		if (r.status !== 200) return null;
 		const b = await r.blob();
-		return b.type.startsWith("image/") ? URL.createObjectURL(b) : null;
+		if (!b.type.startsWith("image/")) return null;
+		return URL.createObjectURL(b);
 	} catch {
 		return null;
 	}
@@ -5595,7 +5596,7 @@ function ensure(stable) {
 			stale: false,
 			pending: null
 		});
-		if (old && old !== url) URL.revokeObjectURL(old);
+		if (old && old !== url && old.startsWith("blob:")) URL.revokeObjectURL(old);
 		notify();
 	});
 }
@@ -12870,6 +12871,24 @@ function ChainLinkPanel({ agent }) {
 		})
 	});
 }
+// src/useProvenLinkCheck.ts
+/** On a profile page: the console's own check of each live link, at page load, so the hero's picture can be the
+*  proven token's on-chain image without opening the About tab. It is the same read the panel makes (the console
+*  caches it ten minutes, so the panel's later look costs nothing more); lists never make it. */
+function useProvenLinkCheck(agent) {
+	const links = chainLinks(agent).filter((l) => l.status !== "superseded");
+	const key = links.map((l) => `${l.agent_registry}/${l.agent_id}/${l.signer}/${l.wallet_sig ?? ""}`).join("|");
+	const { stable_id: stable, x402_pay_to } = agent;
+	const payTo = x402_pay_to?.evm;
+	useEffect(() => {
+		if (!VIEWER_ID || !key) return;
+		Promise.all(links.map((l) => fetchChainView(VIEWER_ID, l, stable, payTo))).then(() => refreshChainPictures());
+	}, [
+		key,
+		stable,
+		payTo
+	]);
+}
 var CALIBER_LABEL = "Scores the whole setup (model, prompt, tools), not the model.";
 var CALIBER_OFF = "Caliber is not run on this relay.";
 /** Whether an HTTP failure from `api.ts` (`"404 /path"`) says the relay does not run the module. */
@@ -13192,6 +13211,7 @@ function AgentPage({ agent, navigate, embedded = false }) {
 		return () => window.removeEventListener("emporia-agent-tab", move);
 	}, [embedded]);
 	const a = profile ?? agent;
+	useProvenLinkCheck(a);
 	const name = bareAgentName(a.address ?? a.agent_id);
 	const bio = bioLine(a);
 	const own = !!VIEWER_ID && VIEWER_ID === a.agent_id;
