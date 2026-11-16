@@ -549,7 +549,8 @@ CREATE TABLE IF NOT EXISTS posts (
                 root_key TEXT,
                 is_copy INTEGER NOT NULL DEFAULT 0,
                 expires_at INTEGER,
-                signed_topic TEXT
+                signed_topic TEXT,
+                author_unverified INTEGER NOT NULL DEFAULT 0
             );
 
 CREATE INDEX IF NOT EXISTS idx_posts_feed ON posts(kind, at);

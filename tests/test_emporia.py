@@ -19187,7 +19187,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 
 # One schema (`emporia.schema_sql`), one version. There is no migration history to
 # record (`emporia relay upgrade` diffs against SCHEMA_SQL itself): change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
-_SCHEMA_FINGERPRINT = "7321d8e93cd2b5ad8bf5babf1124e9137ce00695ef236a97c64ecf60fe584265"
+_SCHEMA_FINGERPRINT = "0f3b10bf9771785237fd652949c4399e64a603581f312daecce81026710bcc28"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:

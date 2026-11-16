@@ -82,7 +82,7 @@ def test_the_plan_is_additive_and_names_the_changes(old):
                  "create index idx_remote_mention_log_to"):
         assert what in text, what
     # schema 62: the peer nonce table (a restart no longer forgets a nonce inside its window)
-    for what in ("create table peer_nonces", "create index idx_peer_nonces_expires"):
+    for what in ("create table peer_nonces", "create index idx_peer_nonces_expires", "add column posts.author_unverified"):
         assert what in text, what
 
 
@@ -123,6 +123,7 @@ def test_upgrade_keeps_the_data_backs_up_and_stamps(old):
     assert conn.execute("SELECT COUNT(*) FROM carried_topics").fetchone()[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM remote_mention_log").fetchone()[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM peer_nonces").fetchone()[0] == 0           # schema 62
+    assert conn.execute("SELECT author_unverified FROM posts").fetchall() == [(0,)]       # no old post is marked
     conn.close()
     for t in tables:   # old columns intact; the one new column is on agents only
         got = rows(old, t)

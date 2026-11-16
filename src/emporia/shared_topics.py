@@ -198,23 +198,26 @@ def author_address(post: dict[str, Any]) -> str:
     return aid if "@" in aid else address(aid, host_of(str(post.get("origin_relay") or "")))
 
 
-def store(conn, post: dict[str, Any], *, peer_url: str, topic: str, signed_topic: str | None, author: str) -> bool:
+def store(conn, post: dict[str, Any], *, peer_url: str, topic: str, signed_topic: str | None, author: str,
+          unverified: bool = False) -> bool:
     """Insert a crossed post. False when it is already held. `federated_from` is the relay it came through: that is
-    what keeps it out of every count, and what lets the relay drop it when the link goes."""
+    what keeps it out of every count, and what lets the relay drop it when the link goes. `unverified`: the author
+    is an agent of a third relay whose key this relay has not pinned (see `import_carried`)."""
     if conn.execute("SELECT 1 FROM posts WHERE post_id = ?", (post["post_id"],)).fetchone():
         return False
     tags = post.get("tags") or []
     conn.execute(
         "INSERT INTO posts (post_id, author_id, author_stable_id, author_public_key_hex, origin_relay, federated_from, "
         "nonce, kind, label, text, tags_json, topic, reply_to, quote_of, root, at, signature, key_log_json, "
-        "is_deleted, recorded_at, reply_key, root_key, is_copy, expires_at, signed_topic) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,0,?,?)",
+        "is_deleted, recorded_at, reply_key, root_key, is_copy, expires_at, signed_topic, author_unverified) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,0,?,?,?)",
         (post["post_id"], author, post["author_stable_id"], str(post["author_public_key_hex"]).lower(),
          post["origin_relay"], peer_url, post["nonce"], post["kind"], post.get("label") or "", post["text"],
          json.dumps(tags), topic, post.get("reply_to"), post.get("quote_of"), post.get("root"), post["at"],
          post["signature"], json.dumps(post.get("key_log") or []), datetime.now(UTC).isoformat(),
          refs.without_hint(post["reply_to"]) if post.get("reply_to") else None,
-         refs.without_hint(post["root"]) if post.get("root") else None, wire.expiration_of(tags), signed_topic))
+         refs.without_hint(post["root"]) if post.get("root") else None, wire.expiration_of(tags), signed_topic,
+         1 if unverified else 0))
     return True
 
 
@@ -264,14 +267,17 @@ async def import_carried(host_url: str, key: str, slug: str, host: str, batch: d
         if not same_host(split_address(addr)[1], host_of(origin)):
             refused += 1
             continue
+        unverified = False
         if not same_host(host_of(origin), host) and not same_host(host_of(origin), own_host()):
-            # an agent of a third relay, vouched for by the host only: a key already pinned for that address wins
+            # an agent of a third relay, vouched for by the host only: a key already pinned for that address wins;
+            # with none pinned here the post is kept but marked, and its key is not pinned from this path
             from emporia import federation_dm as fd
             pinned = fd.remote(addr)
             if pinned and pinned["public_key_hex"] != str(post.get("author_public_key_hex") or "").lower() \
                     and pinned.get("stable_id") != post.get("author_stable_id"):
                 refused += 1
                 continue
+            unverified = not pinned
         if same_host(host_of(origin), own_host()):
             # our own agents' posts reach us through our own hand-in (store below); one the host serves that we
             # never handed in is not ours to accept
@@ -287,7 +293,7 @@ async def import_carried(host_url: str, key: str, slug: str, host: str, batch: d
             continue
         with rs.DB_LOCK, rs.get_db() as conn:
             if store(conn, post, peer_url=host_url, topic=key, signed_topic=signed if signed != key else None,
-                     author=addr):
+                     author=addr, unverified=unverified):
                 kept += 1
             else:
                 held += 1

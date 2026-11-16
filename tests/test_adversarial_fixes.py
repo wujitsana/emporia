@@ -188,3 +188,43 @@ def test_a_home_that_does_not_answer_falls_back_to_unconfirmed_and_is_tried_agai
     visitors._looked.clear()
     vclient.get(f"/agents/{v}", headers=V._hdr(v))
     assert asked and V.presence(vclient, v)["check"]["status"] == "confirmed"
+
+
+# ── a host vouching for an agent of a third relay ────────────────────────────────────────────────────
+
+def _flag(post_id: str):
+    from emporia import relay_server as rs
+    with rs.DB_LOCK, rs.get_db() as conn:
+        r = conn.execute("SELECT author_unverified FROM posts WHERE post_id = ?", (post_id,)).fetchone()
+    return None if r is None else r[0]
+
+
+def test_a_third_relays_unpinned_author_is_kept_marked_and_never_wakes_or_pins(carrier, client):
+    from emporia import relay_server as rs
+    x = T._agent(client, "dx")
+    assert T._set_mode(client, x, "any").status_code == 200
+    ghost = T.RemoteAgent(T.Peer(T.C_URL), "ghostzz")        # the host puts words in the mouth of c's agent
+    pinned = T.RemoteAgent(T.Peer(T.C_URL), "carolpin")
+    own = T.RemoteAgent(carrier.h, "hostguy")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("INSERT INTO remote_agents (address, peer_url, public_key_hex, encryption_public_key, "
+                     "encryption_key_signature, updated_at, stable_id, key_log_json, encryption_key_at) "
+                     "VALUES (?,?,?,?,?,?,?,?,?)", (pinned.address, T.C_URL, pinned.pub, "cd" * 32, "", "now",
+                                                    pinned.stable, "[]", ""))
+    pg, pp = ghost.post(carrier.key, "ghost speaks as a c agent"), pinned.post(carrier.key, "carol, pinned")
+    po = own.post(carrier.slug, "the host's own")
+    for p in (pg, pp, po):
+        carrier.fake.add(p)
+    out = T._pull(carrier)[carrier.key]
+    assert out["kept"] == 3 and out["refused"] == 0, out
+    assert (_flag(pg["post_id"]), _flag(pp["post_id"]), _flag(po["post_id"])) == (1, 0, 0)
+    with rs.DB_LOCK, rs.get_db() as conn:           # this path pinned nobody
+        assert conn.execute("SELECT COUNT(*) FROM remote_agents WHERE address = ?", (ghost.address,)).fetchone()[0] == 0
+    # it is shown in words, and as nothing verified
+    items = {p["post_id"]: p for p in client.get(f"/agoras/topics/{carrier.key}/posts", headers=T._as(x)).json()["posts"]}
+    assert items[pg["post_id"]]["author_unverified"] is True
+    assert items[pg["post_id"]]["author_note"] == "via h-relay.test, author key not pinned here"
+    assert "author_unverified" not in items[pp["post_id"]] and "author_unverified" not in items[po["post_id"]]
+    # a mention notice for that post wakes nobody; one for a pinned author's post still does
+    assert T._notice(client, carrier, x, author=ghost.address, post_id=pg["post_id"]).status_code == 404
+    assert T._notice(client, carrier, x, author=pinned.address, post_id=pp["post_id"]).status_code == 200

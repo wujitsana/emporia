@@ -2182,7 +2182,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("authorized_agents", "network_hash"), ("authorized_agents", "network_group"),
     ("authorized_agents", "accepts_networks_json"), ("authorized_agents", "home_json"),
     ("authorized_agents", "home_check_json"), ("authorized_agents", "remote_mentions"),
-    ("agora_topics", "hosted_by"), ("posts", "signed_topic"),
+    ("agora_topics", "hosted_by"), ("posts", "signed_topic"), ("posts", "author_unverified"),
     # Shared topics (cross-relay, second half): what a carrier keeps of a topic another relay hosts, and the
     # log of mentions let in from other relays (the agent it was for is the one handle, below)
     *(("carried_topics", c) for c in ("topic_key", "slug", "host_url", "host_relay_id", "title", "owner_address",
