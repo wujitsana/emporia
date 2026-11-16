@@ -146,6 +146,9 @@ def _rate_ok(peer: str) -> bool:
     return True
 
 
+_LAST_PRUNE = 0.0      # when expired nonce rows were last deleted
+
+
 def _remembered(peer: str) -> dict[str, float]:
     """This peer's nonces: the table the relay keeps (so a restart forgets none inside the window), read once into
     memory when the relay first hears from the peer."""
@@ -178,9 +181,13 @@ def _first_use(peer: str, nonce: str) -> str:
     if len(seen) >= _MAX_SEEN_PER_PEER:
         return "full"       # a flood from one signed peer: refuse that peer rather than forget what was seen
     seen[nonce] = expires = now + 2 * WINDOW_SECONDS
+    global _LAST_PRUNE
     try:
         from emporia import relay_server as rs
         with rs.DB_LOCK, rs.get_db() as conn:
+            if now - _LAST_PRUNE >= 60:         # expired rows leave the table while the relay runs, not only at a start
+                _LAST_PRUNE = now
+                conn.execute("DELETE FROM peer_nonces WHERE expires_at <= ?", (now,))
             conn.execute("INSERT OR REPLACE INTO peer_nonces (peer, nonce, expires_at) VALUES (?,?,?)",
                          (peer, nonce, expires))
     except Exception:  # noqa: BLE001
@@ -212,7 +219,7 @@ async def verified_peer(request: Request, body: bytes, feature: str = "dms") -> 
     does not run it answers 404, as for any path it does not have. For shared topics every refusal to a caller that
     is not a linked relay (unlinked, outside the window, no nonce, a bad or replayed signature) is that same 404, so
     a stranger learns neither that the feature is on nor who is linked; a linked relay on an older protocol is told
-    so (426) in the words every old-protocol refusal uses. The request is signed with a nonce and its full target
+    so (426), only after its signature verifies, in the words every old-protocol refusal uses. The request is signed with a nonce and its full target
     (path and query); each nonce is accepted once."""
     from emporia import shared_topics
     topics = feature != "dms"
@@ -231,11 +238,6 @@ async def verified_peer(request: Request, body: bytes, feature: str = "dms") -> 
         raise refuse(403, "not a relay linked to this one")
     if not ts.isdigit() or abs(time.time() - int(ts)) > WINDOW_SECONDS:
         raise refuse(401, "relay request outside its time window")
-    if topics:
-        from emporia import relay_server as rs
-        proto = request.headers.get("X-Emporia-Relay-Protocol", "")
-        if why := rs._old_protocol({"version": int(proto) if proto.isdigit() else 0}):
-            raise HTTPException(426, f"refused: {why}")
     if not _NONCE.fullmatch(nonce):
         raise refuse(401, "relay request without a nonce")
     query = request.scope.get("query_string", b"").decode("latin-1")
@@ -262,6 +264,11 @@ async def verified_peer(request: Request, body: bytes, feature: str = "dms") -> 
         new = (h or {}).get("relay_public_key", "")
         if not (new and verify_raw(signed, sig, new) and await rs._repin_if_rotated(peer, new)):
             raise refuse(401, "relay request signature does not match the relay's pinned key")
+    if topics:      # told only once the signature holds: before that, a stranger gets the one 404
+        proto = request.headers.get("X-Emporia-Relay-Protocol", "")
+        from emporia import relay_server as rs
+        if why := rs._old_protocol({"version": int(proto) if proto.isdigit() else 0}):
+            raise HTTPException(426, f"refused: {why}")
     # the peer is now known by its signature: its rate is checked before its nonce is stored
     if not _rate_ok(peer):
         raise HTTPException(429, "too many requests from this relay; slow down")

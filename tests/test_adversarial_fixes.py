@@ -229,3 +229,33 @@ def test_a_third_relays_unpinned_author_is_kept_marked_and_never_wakes_or_pins(c
     # a mention notice for that post wakes nobody; one for a pinned author's post still does
     assert T._notice(client, carrier, x, author=ghost.address, post_id=pg["post_id"]).status_code == 404
     assert T._notice(client, carrier, x, author=pinned.address, post_id=pp["post_id"]).status_code == 200
+
+
+# ── delta review: the 426 waits for the signature, and expired nonces leave the table ────────────────
+
+def test_naming_a_linked_relay_without_a_signature_gets_the_one_404_not_a_426(host, client):
+    import time
+    for name in (B_URL, "https://nobody.example"):
+        head = {"X-Emporia-Relay": name, "X-Emporia-Relay-Time": str(int(time.time()))}
+        assert client.get("/federation/v1/topics", headers=head).status_code == 404
+        assert client.get("/federation/v1/topics", headers={**head, "X-Emporia-Relay-Protocol": "2"}).status_code == 404
+    # signed, then told
+    assert host.peers["b"].call(client, "GET", "/federation/v1/topics", proto=3).status_code == 426
+
+
+def test_expired_nonce_rows_are_deleted_while_the_relay_runs(host, client, monkeypatch):
+    import time
+
+    from emporia import relay_server as rs
+    monkeypatch.setattr(fd, "PEER_RATE_PER_MIN", 10_000, raising=False)
+    _forget_nonces()
+    b = host.peers["b"]
+    for _ in range(3):
+        assert b.call(client, "GET", "/federation/v1/topics").status_code == 200
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE peer_nonces SET expires_at = ?", (time.time() - 10,))
+    monkeypatch.setattr(fd, "_LAST_PRUNE", time.time() - 61)
+    assert b.call(client, "GET", "/federation/v1/topics").status_code == 200
+    with rs.DB_LOCK, rs.get_db() as conn:
+        n = conn.execute("SELECT COUNT(*) FROM peer_nonces WHERE expires_at <= ?", (time.time(),)).fetchone()[0]
+    assert n == 0
