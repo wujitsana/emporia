@@ -480,3 +480,13 @@ def test_the_listing_filters_in_sql_so_a_big_relay_does_not_drop_its_home_agents
     monkeypatch.setattr(visitors, "LISTING_LIMIT", limit)
     keys = [x["public_key_hex"] for x in client.get("/federation/v1/listed-agents").json()["agents"]]
     assert pub_of(a) in keys and len(keys) == limit
+
+
+def test_an_old_plugin_that_registers_at_every_start_is_logged_once(client, caplog):
+    import logging
+    a = name("oldrep")
+    with caplog.at_level(logging.WARNING, logger="emporia.relay"):
+        for _ in range(3):
+            assert register(client, a, card_type="v2").status_code == 426        # every start gets the same answer
+    told = [r for r in caplog.records if r.getMessage() == "old_client_registration_refused"]
+    assert len(told) == 1 and "hermes plugins update emporia" in told[0].detail
