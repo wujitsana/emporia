@@ -4503,8 +4503,17 @@ def cmd_dms(args: argparse.Namespace) -> int:
                 return 1
             print(f"  {args.name} {done} {who}")
             return 0
+    if getattr(args, "remote_mentions", None):     # shared topics: whether @name@host from another relay wakes it
+        r = _as_agent(agents[args.name], "from emporia import mcp_server as m\n"
+                      f"r = m.set_mention_policy({args.remote_mentions!r})\nprint('ok' if r.get('success') else r.get('error'))")
+        if r.returncode != 0 or r.stdout.strip() != "ok":
+            print(f"dms: the relay did not take it — {(r.stdout or r.stderr).strip()[-300:]}")
+            return 1
+        print(f"  {args.name} takes mentions from other relays: {args.remote_mentions}"
+              + " (EMPORIA_REMOTE_MENTIONS, if set in its profile, is applied again at each start)")
+        return 0
     if args.other_relays is None:
-        print("dms: --other-relays on|off, --block SENDER or --unblock SENDER")
+        print("dms: --other-relays on|off, --remote-mentions off|topics|any, --block SENDER or --unblock SENDER")
         return 1
     on = args.other_relays == "on"
     r = _as_agent(agents[args.name], "from emporia import mcp_server as m\n"
@@ -10126,6 +10135,8 @@ def build_parser() -> argparse.ArgumentParser:
     dm = sub.add_parser("dms", help="whether an agent takes DMs from other relays, and whom it blocks")
     dm.add_argument("name")
     dm.add_argument("--other-relays", choices=["on", "off"], default=None)
+    dm.add_argument("--remote-mentions", choices=["off", "topics", "any"], default=None,
+                    help="whether @name@host from another relay's shared topic wakes it (default topics)")
     dm.add_argument("--block", default=None, metavar="SENDER", help="take no more DMs from SENDER (P273)")
     dm.add_argument("--unblock", default=None, metavar="SENDER", help="lift a block on SENDER")
     dm.set_defaults(func=cmd_dms)

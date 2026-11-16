@@ -115,6 +115,7 @@ def signed_headers(method: str, to_host: str, path: str, body: bytes = b"") -> d
     from emporia import relay_server as rs
     ts = str(int(time.time()))
     return {"X-Emporia-Relay": normalize_peer_url(rs.RELAY_BASE_URL), "X-Emporia-Relay-Time": ts,
+            "X-Emporia-Relay-Protocol": str(rs.CARD_VERSION),
             "X-Emporia-Relay-Signature": sign_raw_relay(_request_bytes(method, to_host, path, ts, body)),
             "Content-Type": "application/json"}
 
@@ -137,9 +138,13 @@ async def peer_key(peer: str) -> str:
     return key
 
 
-async def verified_peer(request: Request, body: bytes) -> str:
-    """The linked relay that signed this request, or a refusal."""
-    if not enabled():
+async def verified_peer(request: Request, body: bytes, feature: str = "dms") -> str:
+    """The linked relay that signed this request, or a refusal. `feature` is what the request is for: sealed DMs
+    (`EMPORIA_FEDERATED_DMS`) or shared topics (`EMPORIA_SHARED_TOPICS` / `EMPORIA_CARRY_TOPICS`); a relay that
+    does not run it answers 404, as for any path it does not have. A request for shared topics also names its
+    protocol version, and a relay on an older one is refused in the words every old-protocol refusal uses."""
+    from emporia import shared_topics
+    if not (enabled() if feature == "dms" else shared_topics.enabled()):
         raise HTTPException(404, "not found")
     claimed = normalize_peer_url(request.headers.get("X-Emporia-Relay", ""))
     ts = request.headers.get("X-Emporia-Relay-Time", "")
@@ -149,6 +154,11 @@ async def verified_peer(request: Request, body: bytes) -> str:
         raise HTTPException(403, "not a relay linked to this one")
     if not ts.isdigit() or abs(time.time() - int(ts)) > WINDOW_SECONDS:
         raise HTTPException(401, "relay request outside its time window")
+    if feature != "dms":
+        from emporia import relay_server as rs
+        proto = request.headers.get("X-Emporia-Relay-Protocol", "")
+        if why := rs._old_protocol({"version": int(proto) if proto.isdigit() else 0}):
+            raise HTTPException(426, f"refused: {why}")
     signed = _request_bytes(request.method, own_host(), request.url.path, ts, body)
     if not verify_raw(signed, sig, await peer_key(peer)):
         # P191: it may have rotated its key — follow its signed hand-over, never a bare change.
@@ -173,8 +183,9 @@ async def verified_peer(request: Request, body: bytes) -> str:
 async def call_peer(peer: str, method: str, path: str, payload: dict | None = None) -> Any:
     from emporia import fetch      # P270: a peer's answer read within limits
     body = json.dumps(payload).encode() if payload is not None else b""
+    # the signature names the path without its query, as the receiving side reads it
     return await fetch.request(method, f"{peer}{path}", content=body or None,
-                               headers=signed_headers(method, host_of(peer), path, body), timeout=15)
+                               headers=signed_headers(method, host_of(peer), path.partition("?")[0], body), timeout=15)
 
 
 # ─── agents on other relays ──────────────────────────────────────────────────

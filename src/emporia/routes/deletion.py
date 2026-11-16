@@ -47,7 +47,10 @@ async def delete_item(req: DeleteRequest, request: Request):
         if row["is_deleted"]:
             return {"ok": True, "already": deletion.removal_of(conn, req.kind, req.item)}
         role = deletion.role_of(conn, req.kind, row, caller, req.by)
-        if req.kind == "post" and row["federated_from"] and role != "operator":
+        # A post of another relay's agent lives where it was posted, unless it is in a topic this relay hosts: there
+        # the host's moderators own it (shared topics), and its removal travels to the carriers as a marker. In a
+        # topic this relay only carries, only its operator hides it (here, and nowhere else).
+        if req.kind == "post" and row["federated_from"] and (row["hosted_by"] or not row["topic"]) and role != "operator":
             raise HTTPException(403, f"it lives on {row['federated_from']} — remove it there")
         if req.kind == "agora_topic" and role == "author":
             role = "owner"

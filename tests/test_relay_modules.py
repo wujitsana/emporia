@@ -67,7 +67,7 @@ def test_card_and_health_say_it_in_one_field(core):
     core.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
     client = TestClient(rs.app, client=("127.0.0.1", 51900))
     card, health = client.get("/relay/card").json(), client.get("/health").json()
-    assert card["version"] == rs.CARD_VERSION == 3 and card["relay_modules"] == health["relay_modules"]
+    assert card["version"] == rs.CARD_VERSION and card["relay_modules"] == health["relay_modules"]
     assert set(card["relay_modules"]) == {"log"}
     for gone in ("transparency_log", "gamify", "formulas", "money", "links"):
         assert gone not in card, gone

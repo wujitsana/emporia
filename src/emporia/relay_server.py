@@ -265,6 +265,9 @@ _FEDERATION_LAST_SYNC: dict[str, dict[str, Any]] = {}
 # P291: what each linked relay runs beyond its core, from its signed card, read at
 # each sync. Absent: not known yet (never synced, or an older relay with no card).
 _FEDERATION_PEER_MODULES: dict[str, dict[str, Any]] = {}
+# Shared topics: each linked relay's signed card, kept only once it verified against the key pinned for it and runs this
+# protocol. A directory lists these (those with `listed: true`) and a card's `links` name relays by id.
+_FEDERATION_PEER_CARDS: dict[str, dict[str, Any]] = {}
 
 
 def peer_runs(peer_url: str, module: str, part: str = "") -> bool | None:
@@ -1936,7 +1939,7 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("agent_inbox", "agent_id"),
     ("agora_invites", "agent_id"), ("agora_invites", "invited_by"),
     ("agora_members", "agent_id"),
-    ("agora_topics", "creator_id"),
+    ("agora_topics", "creator_id"), ("remote_mention_log", "to_agent"),
     ("dm_messages", "sender_id"),
     ("dm_threads", "agent_a"), ("dm_threads", "agent_b"), ("dm_threads", "local_agent"),
     ("dm_threads", "started_by"),                                  # allowance: who began the thread
@@ -2169,7 +2172,15 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("authorized_agents", "relay_list_json"), ("authorized_agents", "carried_records_json"),
     ("authorized_agents", "network_hash"), ("authorized_agents", "network_group"),
     ("authorized_agents", "accepts_networks_json"), ("authorized_agents", "home_json"),
-    ("authorized_agents", "home_check_json"), ("relay_secrets", "name"), ("relay_secrets", "value"),
+    ("authorized_agents", "home_check_json"), ("authorized_agents", "remote_mentions"),
+    ("agora_topics", "hosted_by"), ("posts", "signed_topic"),
+    # Shared topics (cross-relay, second half): what a carrier keeps of a topic another relay hosts, and the
+    # log of mentions let in from other relays (the agent it was for is the one handle, below)
+    *(("carried_topics", c) for c in ("topic_key", "slug", "host_url", "host_relay_id", "title", "owner_address",
+                                      "post_count", "rules", "cursor", "active", "note", "last_pulled_at")),
+    ("remote_mention_log", "id"), ("remote_mention_log", "from_relay"), ("remote_mention_log", "post_id"), ("remote_mention_log", "author_address"),
+    ("remote_mention_log", "topic_key"), ("remote_mention_log", "at"),
+    ("relay_secrets", "name"), ("relay_secrets", "value"),
     ("deletions", "kind"), ("deletions", "item"), ("deletions", "role"), ("deletions", "deleted_at"),
     ("deletions", "signature"), ("deletions", "stable_id"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),
     ("dm_messages", "deleted_at"), ("game_chat", "deleted_at"),
@@ -4790,22 +4801,55 @@ def _relay_modules() -> dict[str, dict]:
 
 
 #: The card's `version` is the federation protocol version. 3 (Feed v2): pointer posts replaced listings and
-#: adverts in the relay-to-relay sync. A linked relay on 2 or less is refused by name (see _old_protocol).
-CARD_VERSION = 3
+#: adverts in the relay-to-relay sync. 4 (shared topics): topics a host shares and carriers carry, peer-signed
+#: replies and mention notices, the relay card v2 and the directory. A linked relay on an older version is
+#: refused by name (see _old_protocol); there is no compatibility shim.
+CARD_VERSION = 4
 
 
 def _old_protocol(card: Any) -> str:
     """Why a peer's card names a protocol too old to sync with, or ""."""
     v = card.get("version") if isinstance(card, dict) else None
     if isinstance(v, int) and v < CARD_VERSION:
-        return (f"it runs relay protocol {v}, which shared listings and adverts; this relay shares pointer posts "
-                f"(emporia:post:v2, protocol {CARD_VERSION}). Upgrade it to sync")
+        what = "shared listings and adverts" if v < 3 else "has no shared topics, notices or directory"
+        return (f"it runs relay protocol {v}, which {what}; this relay speaks protocol {CARD_VERSION} "
+                f"(emporia:post:v2 pointer posts, shared topics, notices). Upgrade it to sync")
     return ""
 
 
 def _visitors_mode() -> str:
     from emporia import visitors
     return visitors.mode()
+
+
+def build_relay_card() -> dict[str, Any]:
+    """The relay's signed card (P286; v2 for shared topics and the directory). Also what its own directory lists."""
+    from emporia import directory, relay_access
+    card = {
+        "kind": "emporia-relay-card", "version": CARD_VERSION,
+        "relay_id": relay_id(),
+        "relay_public_key": get_relay_public_key_hex(),
+        "relay_key_history": relay_key_history(),
+        # P290: the keys that must agree to change its key, if it has named them
+        "guardians": _relay_guardians(),
+        "relay_url": RELAY_BASE_URL, "host": _own_host(),
+        "operator": _relay_operator_id() or None,
+        "access": relay_access.mode(),
+        "visitors": _visitors_mode(),
+        **_fees_card(),
+        # P291 (card v2): what it runs beyond the core — money and its rails, the log,
+        # federation and its links, gamify and its formulas — one field, as on /health
+        "relay_modules": _relay_modules(),
+        # Shared topics (protocol 4): whether it is listed in directories, how many agents it says it has (its own
+        # word), the topics it shares, the relays it links to (by id), and leagues (none until relays form them)
+        **directory.card_fields(),
+        "games": list(MODULE_REGISTRY.keys()),
+        "software": __version__,
+        "at": datetime.now(UTC).isoformat(timespec="seconds"),
+    }
+    from emporia.identity import relay_card_bytes, sign_raw_relay
+    card["signature"] = sign_raw_relay(relay_card_bytes(card))
+    return card
 
 
 @app.get("/relay/card")
@@ -4818,28 +4862,7 @@ async def relay_identity_card(request: Request):
     access = relay_access.mode()
     if access == "closed" and (request.client.host if request.client else "") not in ("127.0.0.1", "::1"):
         raise HTTPException(404, "closed relay")
-    card = {
-        "kind": "emporia-relay-card", "version": CARD_VERSION,
-        "relay_id": relay_id(),
-        "relay_public_key": get_relay_public_key_hex(),
-        "relay_key_history": relay_key_history(),
-        # P290: the keys that must agree to change its key, if it has named them
-        "guardians": _relay_guardians(),
-        "relay_url": RELAY_BASE_URL, "host": _own_host(),
-        "operator": _relay_operator_id() or None,
-        "access": access,
-        "visitors": _visitors_mode(),
-        **_fees_card(),
-        # P291 (card v2): what it runs beyond the core — money and its rails, the log,
-        # federation and its links, gamify and its formulas — one field, as on /health
-        "relay_modules": _relay_modules(),
-        "games": list(MODULE_REGISTRY.keys()),
-        "software": __version__,
-        "at": datetime.now(UTC).isoformat(timespec="seconds"),
-    }
-    from emporia.identity import relay_card_bytes, sign_raw_relay
-    card["signature"] = sign_raw_relay(relay_card_bytes(card))
-    return card
+    return build_relay_card()
 
 
 @app.get("/relay-card")
@@ -5984,7 +6007,9 @@ async def _pull_federated_posts(peer_url: str) -> int:
     # The batch is the peer's whole current list: a post it no longer sends was withdrawn there.
     if peer_batch_size <= _MAX_LIMIT:
         with DB_LOCK, get_db() as conn:
-            for r in conn.execute("SELECT post_id FROM posts WHERE federated_from = ? AND is_copy = 0",
+            # pointer posts only: a topic post carried from this relay (topic set) is the shared-topic pull's, which
+            # keeps its own cursor and removal markers
+            for r in conn.execute("SELECT post_id FROM posts WHERE federated_from = ? AND is_copy = 0 AND topic IS NULL",
                                   (peer_url,)).fetchall():
                 if r["post_id"] not in kept:
                     conn.execute("DELETE FROM posts WHERE post_id = ? AND federated_from = ?",
@@ -6037,6 +6062,11 @@ async def _sync_all_federated_peers() -> dict[str, int]:
             await _pull_peer_modules(normalize_peer_url(peer))
         except Exception:
             logger.exception("federation_modules_pull_raised_unexpectedly", extra={"peer_url": peer})
+        try:   # shared topics: carry what this relay carries from it
+            from emporia import shared_topics
+            await shared_topics.pull_peer(peer)
+        except Exception:
+            logger.exception("shared_topics_pull_raised_unexpectedly", extra={"peer_url": peer})
         try:   # P281: and its log's state, checked against the one kept from last time
             if peer_runs(peer, "log") is False:
                 _note_peer_log_off(normalize_peer_url(peer))
@@ -6084,12 +6114,15 @@ async def _pull_peer_modules(peer_url: str) -> dict[str, Any] | None:
     if not (isinstance(card, dict) and pinned and card.get("relay_public_key") == pinned
             and verify_relay_card(card)["ok"] and isinstance(card.get("relay_modules"), dict)):
         sync["relay_modules_error"] = "its card is not signed by the key pinned for it, or names no modules"
+        _FEDERATION_PEER_CARDS.pop(peer_url, None)
         return None
     if old := _old_protocol(card):
         sync["relay_modules_error"] = f"refused: {old}"
+        _FEDERATION_PEER_CARDS.pop(peer_url, None)
         return None
     mods = card["relay_modules"]
     _FEDERATION_PEER_MODULES[peer_url] = mods
+    _FEDERATION_PEER_CARDS[peer_url] = card
     sync.pop("relay_modules_error", None)
     sync["relay_modules"] = mods
     back = (mods.get("federation") or {}).get("links") or []
@@ -7191,6 +7224,7 @@ from emporia.routes import deletion as _deletion_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
 from emporia.routes import dm as _dm_routes  # noqa: E402
 from emporia.routes import federation as _federation_routes  # noqa: E402
+from emporia.routes import shared_topics as _shared_topic_routes  # noqa: E402
 from emporia.routes import rooms as _room_routes  # noqa: E402
 from emporia.routes import sessions as _session_routes  # noqa: E402
 from emporia.routes import translog as _translog_routes  # noqa: E402
@@ -7203,6 +7237,7 @@ app.include_router(_x_link_routes.router)
 app.include_router(_chain_link_routes.router)
 app.include_router(_dm_routes.router)
 app.include_router(_federation_routes.router)
+app.include_router(_shared_topic_routes.router)
 app.include_router(_agora_routes.router)
 app.include_router(_room_routes.router)
 app.include_router(_session_routes.router)

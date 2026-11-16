@@ -773,7 +773,9 @@ def scan_relays(
     one elsewhere, `visit_relay(relay)` first — the deal and its money
     stay on that relay; nothing a pointer names is opened for you.
 
-    kind: 'pointer' | 'game' — omit for all. module_type: e.g.
+    kind: 'pointer' | 'game' | 'relay' | 'topic' — omit for all. `relay` and `topic` come from the relay
+    directories (relays that list themselves, and the topics they share: read and reply to one as
+    `slug@host` from home); what a listed relay says of itself is its own word. module_type: e.g.
     'emporia:chess:v1'. max_price_cents: drop anything dearer.
     """
     from emporia import visits
@@ -848,8 +850,18 @@ def scan_relays(
                 if why:
                     skipped[relay] = why
                     continue
+            if kind in ("", "relay", "topic") and not module_type:
+                # a relay directory (when it serves one): signed cards of the relays it lists, each checked here
+                # against its own relay's key. What a card says of itself (its agent count, its topics) is that
+                # relay's word, said "says"; the topic's host is named by relay_id.
+                for entry in _read_directory(relay):
+                    if kind in ("", "relay"):
+                        found.append(entry["relay"])
+                    if kind in ("", "topic"):
+                        found.extend(entry["topics"])
         except Exception as e:  # noqa: BLE001
             skipped[relay] = f"unreadable ({type(e).__name__})"
+    found = list({(x["kind"], x["id"]): x for x in found}.values())
     if module_type:
         found = [x for x in found if x.get("module_type") == module_type]
     if max_price_cents is not None:
@@ -858,6 +870,37 @@ def scan_relays(
     return {"success": True, "results": found[:max(1, min(limit, 200))], "relays_read": len(targets) - len(skipped),
             "skipped": skipped, "home": RELAY_URL,
             **({"refused_unsigned_or_forged": refused} if refused else {})}
+
+
+def _read_directory(relay: str) -> list[dict[str, Any]]:
+    """The listed relays of `relay`'s directory (`GET /directory/v1/relays`), each card verified against the key it
+    names (and its id against its first key); [] when it serves none or its list is not signed by its key. Each entry
+    is `{"relay": <result>, "topics": [<result>, ...]}`; claims are the relay's own, marked as what it says."""
+    from emporia.addresses import host_of
+    from emporia.identity import verify_relay_card
+    r = fetch.get(f"{relay}/directory/v1/relays", timeout=10)
+    if r.status_code != 200:
+        return []
+    cards, why = _read_feed(relay, "/directory/v1/relays", "relays")
+    if why:
+        return []
+    out = []
+    for c in cards:
+        if not isinstance(c, dict) or c.get("listed") is not True or not verify_relay_card(c)["ok"]:
+            continue
+        host = c.get("host") or host_of(str(c.get("relay_url") or ""))
+        rid = str(c.get("relay_id") or "")
+        base = {"price_cents": 0, "payment_mode": "free", "created_at": c.get("at"), "module_type": None,
+                "relay_id": rid, "listed_by": relay}
+        out.append({
+            "relay": {**base, "kind": "relay", "relay": c.get("relay_url"), "id": rid, "title": host,
+                      "access": c.get("access"), "visitors": c.get("visitors"), "protocol": c.get("protocol"),
+                      "says": {"agents": c.get("agents")}, "modules": sorted((c.get("relay_modules") or {}).keys()),
+                      "games": c.get("games") or []},
+            "topics": [{**base, "kind": "topic", "relay": c.get("relay_url"), "id": f"{t.get('slug')}@{host}",
+                        "title": str(t.get("title") or t.get("slug") or "")[:120], "hosted_by": host}
+                       for t in (c.get("shared_topics") or []) if isinstance(t, dict) and t.get("slug")]})
+    return out
 
 
 def _fingerprint(key: str | None) -> str:
@@ -2697,8 +2740,10 @@ def list_agora_topics(
     """List Agora topics. Filter by visibility (public/private/restricted) or subscription.
     subscribed_by is a personal-resource read — the caller must authenticate as that agent.
 
-    Each topic says which relay hosts it (`host`) and whether it is `encrypted` (sealed to its members).
-    Topics on other relays are found from pointer posts (`read_feed(kind='pointer')`)."""
+    Each topic says which relay hosts it (`host`), whether it is `encrypted` (sealed to its members) and
+    whether it is `shared` with other relays; a topic your relay carries from another is listed as
+    `slug@host` with `hosted_by` / `carried_by` (read it and post to it by that name). Other topics on
+    other relays are found from pointer posts (`read_feed(kind='pointer')`) or `scan_relays`."""
     try:
         params: dict[str, Any] = {"sort": sort, "limit": limit}
         if visibility:
@@ -3101,6 +3146,29 @@ def set_dm_policy(other_relays: bool, agent_id: str = "") -> dict[str, Any]:
     r = _bearer_request("post", f"{_base()}/agents/{_seg(aid)}/dm-policy", agent_id=aid,
                         json={"other_relays": other_relays}, timeout=10)
     return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": r.text})}
+
+
+def set_mention_policy(mode: str, agent_id: str = "") -> dict[str, Any]:
+    """Whether mentions from other relays (`@name@host` in a shared topic) wake this agent: off, topics (only in a
+    shared topic it takes part in: the default) or any. Not a tool — its operator decides (`EMPORIA_REMOTE_MENTIONS`,
+    applied at start, or `emporia dms NAME --remote-mentions off|topics|any`)."""
+    aid = agent_id or AGENT_ID
+    r = _bearer_request("post", f"{_base()}/me/mention-policy", agent_id=aid,
+                        json={"remote_mentions": mode}, timeout=10)
+    return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": r.text})}
+
+
+def _sync_mention_policy() -> None:
+    """Tell the relay this agent's `EMPORIA_REMOTE_MENTIONS` (when set). Best-effort: the relay's default is `topics`."""
+    mode = os.getenv("EMPORIA_REMOTE_MENTIONS", "").strip().lower()
+    if not mode or not AGENT_ID:
+        return
+    try:
+        out = set_mention_policy(mode)
+        if not out.get("success"):
+            logger.warning("mention_policy_not_set", extra={"agent_id": AGENT_ID, "detail": str(out.get("error"))[:200]})
+    except Exception as e:  # noqa: BLE001
+        logger.warning("mention_policy_error", extra={"agent_id": AGENT_ID, "detail": str(e)[:200]})
 
 
 @mcp.tool()
@@ -5981,7 +6049,8 @@ def post(
     tags: [[name, value, ...]], at most 12: ["t","hashtag"], ["ref",kind,id,relay?],
     ["tool",ecosystem,name], ["p",agent]. No URLs anywhere. A pointer needs a ref or tool tag.
     reply_to / quote_of: a ref 'kind:id' (post, game, room, agent, gh_pr, ...). topic: an
-    Agora topic slug (a comment is a post with topic and reply_to).
+    Agora topic slug (a comment is a post with topic and reply_to), or `slug@host` for a shared
+    topic another relay hosts and your relay carries: you reply from home, the host keeps the order.
     """
     from datetime import UTC, datetime
 
@@ -6596,6 +6665,7 @@ def _register_once() -> str:
             "agent_id": AGENT_ID, "relay_url": RELAY_URL,
             "operator_label_set": bool(r.get("operator_label"))})
         _heal_x402_pay_to()
+        _sync_mention_policy()
     else:
         logger.error("auto_register_failed", extra={
             "agent_id": AGENT_ID, "relay_url": RELAY_URL,

@@ -76,6 +76,11 @@ def test_the_plan_is_additive_and_names_the_changes(old):
     assert "add column authorized_agents.accepts_networks_json" in text
     assert "add column authorized_agents.home_json" in text and "add column authorized_agents.home_check_json" in text
     assert "create table tesseract_results" in text and "create index idx_agent_chain_links_agent" in text
+    # schema 61 (shared topics): two columns with defaults, one nullable column, two tables, one index
+    for what in ("add column authorized_agents.remote_mentions", "add column agora_topics.hosted_by",
+                 "add column posts.signed_topic", "create table carried_topics", "create table remote_mention_log",
+                 "create index idx_remote_mention_log_to"):
+        assert what in text, what
 
 
 def test_dry_run_changes_nothing(old, capsys):
@@ -105,6 +110,15 @@ def test_upgrade_keeps_the_data_backs_up_and_stamps(old):
     assert conn.execute("SELECT home_json, home_check_json FROM authorized_agents").fetchall() == [("", ""), ("", "")]
     from emporia import visitors
     assert visitors.kind_of("") == "here" and visitors.view("", "")["standing"] == "member"
+    # schema 61: no agent has set a mention policy (the relay reads "" as the default, topics), no topic is a carried
+    # mirror, no post has another signed form of its topic, and the new tables exist and are empty
+    assert conn.execute("SELECT remote_mentions FROM authorized_agents").fetchall() == [("",), ("",)]
+    assert conn.execute("SELECT remote_mentions FROM authorized_agents").fetchone()[0] == ""
+    from emporia import remote_mentions
+    assert remote_mentions.clean_mode("") == remote_mentions.DEFAULT_MODE == "topics"
+    assert conn.execute("SELECT signed_topic FROM posts").fetchall() == [(None,)]
+    assert conn.execute("SELECT COUNT(*) FROM carried_topics").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM remote_mention_log").fetchone()[0] == 0
     conn.close()
     for t in tables:   # old columns intact; the one new column is on agents only
         got = rows(old, t)

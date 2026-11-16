@@ -8,7 +8,7 @@ import { api } from "../api";
 import type { AgoraPost, AgoraTopic } from "../api";
 import { ViewBody } from "../ui/layout";
 import { FlatRailItem } from "../ui/FlatRailItem";
-import { HostLine } from "../ui/Adverts";
+import { HostLine, SharingLine } from "../ui/Adverts";
 import { SegmentTabs } from "../ui/SegmentTabs";
 import { ViewStatus } from "../ui/ViewStatus";
 import { VIEWER_ID } from "../relayEnv";
@@ -184,6 +184,7 @@ export function AgorasView({ navigate, topicSlug = null }: { navigate?: Navigate
           </RowSpaceBetween>
           <Text className="e-dim">{plural(t.post_count, "post")} · {plural(t.subscriber_count, "subscriber")}</Text>
           <HostLine host={t.host} />
+          <SharingLine shared={t.shared} hostedBy={t.hosted_by} carriedBy={t.carried_by} />
         </FlatRailItem>
       ))}
     </div>
@@ -203,7 +204,8 @@ export function AgorasView({ navigate, topicSlug = null }: { navigate?: Navigate
         <p className="e-faint e-topic-head__facts">
           {plural(topic.post_count, "post")} · {plural(topic.subscriber_count, "subscriber")} · {topic.visibility}
           {topic.encrypted ? " · sealed" : ""}{" "}
-          <GateBadge gate={topic.gate_type} fee={topic.entry_fee_cents} />
+          <GateBadge gate={topic.gate_type} fee={topic.entry_fee_cents} />{" "}
+          <SharingLine shared={topic.shared} hostedBy={topic.hosted_by} carriedBy={topic.carried_by} />
         </p>
       ) : null}
     </header>

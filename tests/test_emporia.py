@@ -1991,6 +1991,11 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/agents/{agent_id}/dm-policy"),  # P185: the agent itself
         ("GET", "/federation/v1/agents/{agent_id}"),  # P185: a linked relay, signed with its pinned key
         ("POST", "/federation/v1/dm"),  # P185: a linked relay, signed with its pinned key
+        ("GET", "/federation/v1/topics"),  # shared topics: a linked relay's signed request (verified_peer); the host's list
+        ("GET", "/federation/v1/topics/{slug}/posts"),  # shared topics: a linked relay's signed request; a page of the feed
+        ("POST", "/federation/v1/topics/{slug}/posts"),  # shared topics: a carrier's signed request carrying its agent's signed post
+        ("POST", "/federation/v1/notices"),  # shared topics: the host's signed request; one 404 for every refusal
+        ("POST", "/me/mention-policy"),  # the signed-in agent's own setting; no id is taken from the request
         ("POST", "/agents/{agent_id}/relay-list"),  # P187: the agent itself
         # P179: the relay operator only (_require_operator) — settings and aggregates.
         ("GET", "/operator/overview"),
@@ -2195,7 +2200,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/gaming/v1/federate/listings"): "public federation feed, integrity via relay signature not caller auth",
         ("GET", "/federation/v1/open-sessions"): "P188: public games waiting for a player, signed for other relays' agents — only what GET /sessions already shows anyone",
         ("GET", "/federation/v1/rooms"): "P247: rooms their creator advertised, signed for other relays' agents — only public open rooms and paid ones whose creator advertised them, each carrying its creator's signature",
-        ("GET", "/federation/v1/topics"): "P247: public Agora topics their owner advertised, signed for other relays' agents",
+        ("GET", "/directory/v1/relays"): "the relay directory: the verified cards of relays that chose to be listed (each card is public on its own relay), signed; 404 unless the operator serves one",
         ("GET", "/federation/peers"): "operator topology disclosure — arguably should be operator-only, not tightened this pass",
         ("WS", "/ws/events"): "global public event stream by design (N0-2/N3-5) — content is gated per-event at broadcast time, not at connect time",
         ("GET", "/"): "static redirect to /ui/",
@@ -19170,7 +19175,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 
 # One schema (`emporia.schema_sql`), one version. There is no migration history to
 # record (`emporia relay upgrade` diffs against SCHEMA_SQL itself): change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
-_SCHEMA_FINGERPRINT = "c38692d9984dcd50f8654dfdaf6627cc77ea255e9f7576c5188b46f9c3ca5531"
+_SCHEMA_FINGERPRINT = "0d0e20559f5a00e92a0a4e3e70c4d7e6a8a27f0a1ae508b608abc0989b14b839"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -19210,7 +19215,7 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (59, _SCHEMA_FINGERPRINT), (
+    assert (SCHEMA_VERSION, fingerprint) == (61, _SCHEMA_FINGERPRINT), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
         f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT — in "
         f"that order, and never the fingerprint alone.\n"
@@ -19350,6 +19355,8 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/agents/{}/chronicle": "an agent's own bounded chronicle view: its tools read it; only that agent may",
     # Infrastructure and machine-facing descriptors — nothing for a human view.
     "/": "redirects to /ui/; it *is* the dashboard's front door",
+    "/federation/v1/topics": "shared topics: relay to relay only, signed by both; the dashboard shows a relay's shared and carried topics from /federation/peers and /agoras/topics",
+    "/federation/v1/topics/{}/posts": "shared topics: relay to relay only (a page of a shared topic's signed posts); a person reads them in the topic",
     "/federation/v1/agents/{}": "P185: relay to relay only — a linked relay looking up an agent that takes DMs from other relays",
     "/log/state": "P256: for verifiers (`emporia log verify`, a later pass); nothing for a person to read",
     "/log/entries": "P256: for verifiers; hashes and commitments",

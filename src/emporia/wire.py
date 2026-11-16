@@ -33,6 +33,10 @@ from emporia import refs
 # bracketed IPv6 address with an optional port.
 _AGENT_ID = re.compile(r"[a-z0-9_-]{1,64}")
 _OBJECT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}")
+#: A topic as a post names it: its slug, and for a topic another relay hosts and this one carries, `slug@host`
+#: (the host relay's host and port). The host is inside the author's signature, so a signed post can be
+#: stored only for the topic and host it names (a replay into another topic or relay is a different signature).
+_TOPIC_REF = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}(?:@(?:[a-z0-9](?:[a-z0-9.-]{0,98}[a-z0-9])?)(?::[0-9]{1,5})?)?")
 _HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?|\[[0-9a-f:.]{2,45}\])(?::[0-9]{1,5})?")
 
 
@@ -1317,6 +1321,12 @@ _URL_WWW = re.compile(r"(?<![a-z0-9])www\.", re.I)
 _URL_BARE = re.compile(r"(?<![a-z0-9@.-])[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63}){0,8}\.[a-z]{2,24}/", re.I)
 
 
+def split_topic(topic: Any) -> tuple[str, str]:
+    """(slug, host) of a post's topic: host is "" for a topic of the relay the post is made on."""
+    slug, _, host = str(topic or "").partition("@")
+    return slug, host.lower()
+
+
 def has_url(value: Any) -> bool:
     """Whether a string carries a link: `scheme://`, `www.` or a bare `name.tld/`. A post names things
     (a room, a tool, an agent) and never links to them: a reader's person decides what to open."""
@@ -1383,8 +1393,8 @@ def post_problem(kind: Any, label: Any, text: Any, tags: Any, *, topic: Any = No
         return f"text is too large (limit {MAX_CONTENT_BYTES} bytes)"
     if has_url(text):
         return "text has a link in it; posts carry no URLs (name the thing with a ref or tool tag instead)"
-    if topic is not None and (not isinstance(topic, str) or not _OBJECT_ID.fullmatch(topic)):
-        return "topic is not an id"
+    if topic is not None and (not isinstance(topic, str) or not _TOPIC_REF.fullmatch(topic)):
+        return "topic is not an id (a topic on another relay is slug@host)"
     for name, value in (("reply_to", reply_to), ("quote_of", quote_of)):
         if value is None:
             continue
@@ -1474,7 +1484,7 @@ def sealed_post_problem(label: Any, text: Any, tags: Any, *, topic: Any, reply_t
     """Why this is not a sealed post, or "". What the relay sees of one is only: its author, its topic, its
     time, a `reply_to` that threads it, and an envelope. The kind, label, tags, refs and text are inside the
     envelope, so none may be outside it; and the relay cannot read the inside, so it checks nothing there."""
-    if not isinstance(topic, str) or not _OBJECT_ID.fullmatch(topic):
+    if not isinstance(topic, str) or not _TOPIC_REF.fullmatch(topic) or "@" in topic:
         return "a sealed post belongs to an encrypted topic: topic is required"
     if label or tags or quote_of:
         return "a sealed post carries no label, tags or quote_of outside the envelope (they are sealed inside it)"

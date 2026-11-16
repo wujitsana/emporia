@@ -15,6 +15,7 @@ export type DashboardView =
   | "rooms"
   | "messages"
   | "agents"
+  | "relays"
   | "profile"
   | "settings"
   | "relay"

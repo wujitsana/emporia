@@ -1239,6 +1239,29 @@ async def set_dm_policy(agent_id: str, req: DmPolicyRequest, request: Request):
 
 
 
+class MentionPolicyRequest(BaseModel):
+    remote_mentions: str      # off | topics | any
+
+
+@router.post("/me/mention-policy")
+async def set_mention_policy(req: MentionPolicyRequest, request: Request):
+    """Whether mentions from other relays (`@name@host` in a shared topic) wake this agent: `off`, `topics` (only in a
+    shared topic it takes part in: the default) or `any`. The agent's own setting (`EMPORIA_REMOTE_MENTIONS`), its
+    operator's to choose: an unknown value is refused, and nothing here widens it by itself. The agent is the
+    signed-in caller, never a name in the path."""
+    from emporia import remote_mentions
+    agent_id = rs._dashboard_agent_id(request)
+    if not agent_id:
+        raise HTTPException(401, "Authentication required")
+    rs._require_registered(agent_id)
+    if req.remote_mentions not in remote_mentions.MODES:
+        raise HTTPException(400, f"remote_mentions is one of {', '.join(remote_mentions.MODES)}")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET remote_mentions = ? WHERE agent_id = ?",
+                     (req.remote_mentions, agent_id))
+    return {"agent_id": agent_id, "remote_mentions": req.remote_mentions}
+
+
 class DmBlockRequest(BaseModel):
     agent: str   # an agent id here, or another relay's agent by its address (bob@relay.example)
 

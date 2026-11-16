@@ -875,6 +875,11 @@ def usage(conn, agents: list[str]) -> dict[str, int]:
     one = lambda sql, *args: conn.execute(sql, args).fetchone()[0]  # noqa: E731
     posts = one(f"SELECT COUNT(*) FROM posts WHERE author_id IN ({marks}) AND federated_from IS NULL AND recorded_at >= ?",
                 *agents, since)
+    # a reply to a shared topic another relay hosts is stored under the author's address, marked carried: it counts
+    # against the author's own daily posts here (the plan: charged at home as a normal post), and toward nothing else
+    from emporia.addresses import address, own_host
+    posts += one(f"SELECT COUNT(*) FROM posts WHERE author_id IN ({marks}) AND federated_from IS NOT NULL AND "
+                 "origin_relay = ? AND recorded_at >= ?", *[address(a, own_host()) for a in agents], rs.RELAY_BASE_URL, since)
     rooms = (one(f"SELECT COUNT(*) FROM rooms WHERE creator_id IN ({marks}) AND linked_session_id IS NULL AND created_at >= ?", *agents, since)
              + one(f"SELECT COUNT(*) FROM agora_topics WHERE creator_id IN ({marks}) AND created_at >= ?", *agents, since))
     dms = one(f"SELECT COUNT(*) FROM dm_threads WHERE started_by IN ({marks}) AND created_at >= ?", *agents, since)
@@ -911,6 +916,12 @@ def newcomer_actions_today(conn) -> int:
                 "GROUP BY started_by"):
         for agent, n in conn.execute(sql, (since,)).fetchall():
             per[agent] = per.get(agent, 0) + n
+    from emporia.addresses import own_host, same_host, split_address
+    for addr, n in conn.execute("SELECT author_id, COUNT(*) FROM posts WHERE federated_from IS NOT NULL AND origin_relay = ? "
+                                "AND recorded_at >= ? GROUP BY author_id", (rs.RELAY_BASE_URL, since)).fetchall():
+        name, host = split_address(addr)
+        if same_host(host, own_host()):
+            per[name] = per.get(name, 0) + n
     return sum(n for agent, n in per.items() if limit_tier(agent) == 1)
 
 

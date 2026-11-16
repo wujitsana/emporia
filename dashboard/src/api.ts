@@ -320,6 +320,15 @@ export interface SafetyStats {
   unsigned_actions_rejected: number;
 }
 
+/** How one carried topic's last pull went (per `slug@host`): posts kept, already held, refused, or why not. */
+export interface TopicPull {
+  ok: boolean;
+  kept?: number;
+  held?: number;
+  refused?: number;
+  error?: string;
+}
+
 export interface FederationPeer {
   url: string;
   ok: boolean | null;
@@ -328,12 +337,55 @@ export interface FederationPeer {
   error?: string;
   note?: string;
   origin_relay?: string;
+  /** Shared topics this relay carries from that peer, by `slug@host`. */
+  topics?: Record<string, TopicPull>;
+}
+
+/** A topic this relay carries from another relay (read-only: the operator's settings decide). */
+export interface CarriedTopic {
+  topic: string;
+  slug: string;
+  hosted_by: string;
+  host_relay_id: string;
+  title: string;
+  active: boolean;
+  note: string;
+  last_pulled_at: string;
+  post_count: number;
 }
 
 export interface FederationStatus {
   relay_url: string;
   standalone: boolean;
   peers: FederationPeer[];
+  /** What this relay shares as a host (slugs) and carries from others. */
+  shared_topics?: { shares: string[]; carried: CarriedTopic[] };
+}
+
+/** A relay's signed card as a directory lists it. Claims such as `agents` are that relay's own word ("says"). */
+export interface RelayCard {
+  relay_id: string;
+  relay_url: string;
+  host: string;
+  access?: string;
+  visitors?: string;
+  listed?: boolean;
+  /** Self-reported agent count. */
+  agents?: number;
+  shared_topics?: { slug: string; title: string }[];
+  /** The relays it links to, by relay id. */
+  links?: string[];
+  relay_modules?: Record<string, { parts?: string[] }>;
+  games?: string[];
+  protocol?: number;
+  leagues?: unknown[];
+  software?: string;
+  at?: string;
+}
+
+export interface DirectoryReply {
+  origin_relay: string;
+  relays: RelayCard[];
 }
 
 export interface SessionAuditEntry {
@@ -438,6 +490,9 @@ export interface FeedPost {
   author_address: string;
   origin_relay: string;
   elsewhere: boolean;
+  /** A post in a shared topic: the relay that hosts it (whose order it is in), and the one carrying it here. */
+  hosted_by?: string;
+  carried_by?: string;
   likes: number;
   reactions: Record<string, number>;
   replies: number;
@@ -461,6 +516,10 @@ export interface AgoraTopic {
   /** The relay that holds the topic, and whether its posts are sealed to its members. */
   host?: string;
   encrypted?: boolean;
+  /** Shared topics: shared with other relays; a topic carried from another relay says who hosts it and who carries it. */
+  shared?: boolean;
+  hosted_by?: string;
+  carried_by?: string;
 }
 
 export interface AgoraPost {
@@ -487,6 +546,9 @@ export interface AgoraPost {
   tags?: string[][];
   /** A post in an encrypted topic: sealed to its members, so there is no title or content to show. */
   sealed?: boolean;
+  /** A post in a shared topic: whose order it is in, and which relay carries it here. */
+  hosted_by?: string;
+  carried_by?: string;
 }
 
 export interface AgoraComment {
@@ -1168,6 +1230,8 @@ export const api = {
   // Trust & Safety / Federation / Audit
   safetyStats: () => get<SafetyStats>("/safety/stats"),
   federationPeers: () => get<FederationStatus>("/federation/peers"),
+  /** The relays this relay's directory lists (404 when it serves none). */
+  directory: () => get<DirectoryReply>("/directory/v1/relays"),
   sessionAudit: (session_id: string) =>
     get<SessionAudit>(`/sessions/${session_id}/audit`, { agentScoped: true }),
   // The Chronicle's book (public, read only; 404 when the relay does not run the module).

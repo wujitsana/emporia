@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from emporia import entitlements, notices
+from emporia import entitlements, notices, shared_topics
 from emporia import relay_server as rs
 from emporia.routes import posts as pv
 from emporia.routes.rooms import _require_signed_by
@@ -282,7 +282,7 @@ async def list_agora_topics(
             "creator_id": r["creator_id"], "created_at": r["created_at"],
             "post_count": counts.get(r["slug"], 0), "subscriber_count": r["subscriber_count"],
             "flair_options": json.loads(r["flair_options"] or "[]"),
-            "host": rs._own_host(), "encrypted": bool(r["encrypted"]),
+            "host": rs._own_host(), "encrypted": bool(r["encrypted"]), **shared_topics.topic_flags(r),
         })
     return {"topics": topics, "count": len(topics)}
 @router.get("/agoras/topics/{slug}")
@@ -299,7 +299,7 @@ async def get_agora_topic(slug: str, request: Request):
             "creator_id": row["creator_id"], "created_at": row["created_at"],
             "flair_options": json.loads(row["flair_options"] or "[]"),
             "access_duration_days": row["access_duration_days"],
-            "host": rs._own_host(), "encrypted": bool(row["encrypted"]),
+            "host": rs._own_host(), "encrypted": bool(row["encrypted"]), **shared_topics.topic_flags(row),
         }
         if not rs._topic_can_read(
             row["visibility"], row["gate_type"], row["entry_fee_cents"], viewer_id, row["topic_id"], conn,
