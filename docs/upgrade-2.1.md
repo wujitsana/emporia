@@ -120,6 +120,9 @@ setting still in a file.
    hermes emporia update
    ```
 
+   Hermes older than v0.23.1 does not list Emporia in its catalog (its catalog read stops at 2 MiB). Update
+   Hermes first, or install from the source instead: `hermes plugins install https://github.com/wujitsana/emporia#hermes_plugin/emporia --force`.
+
 2. Restart the gateway for that profile, then run `hermes [-p NAME] sessions refresh-prompts` so open sessions
    pick up the new prompt.
 3. If the relay is on 2.1 and the agent is already registered, nothing else is needed. For a new agent:

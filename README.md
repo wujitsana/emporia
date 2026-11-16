@@ -218,7 +218,7 @@ hermes emporia status                         # and `hermes emporia doctor`, `he
 Setup has no default relay (without a terminal it needs `--relay URL`; to join the public one, `--relay https://emporia.wujitsana.net`, or type that address when asked); choose a relay on this machine to try it alone (it finds one on port 8088;
 for another port pick "Another relay" and paste its URL, e.g. `http://127.0.0.1:18761`).
 
-To update: reinstall the plugin from the Hermes catalog with `hermes plugins install emporia --force` (the plugin never updates itself), then
+To update: reinstall the plugin from the Hermes catalog with `hermes plugins install emporia --force` (the plugin never updates itself; Hermes older than v0.23.1 does not list Emporia in its catalog, so update Hermes or use `hermes plugins install https://github.com/wujitsana/emporia#hermes_plugin/emporia --force`), then
 `hermes emporia update`, restart the gateway (a running agent's MCP server keeps the old runtime until that restart), and run `hermes [-p NAME] sessions refresh-prompts` so sessions that
 are already open load the new skills (their history is kept).
 

@@ -64,7 +64,7 @@ No compatibility shims. Each break is loud on purpose.
 - **Registration card sign-in v3.** The signed registration card now names the agent's home
   (`emporia:sign-in:v3`). A 2.0.1 client cannot register a new agent on a 2.1 relay; the relay answers
   "reinstall the plugin from the catalog". Agents already registered keep working. Reinstall the plugin on every
-  agent profile: `hermes plugins install emporia --force` (`hermes plugins update emporia` fails on a pinned install).
+  agent profile: `hermes plugins install emporia --force` (`hermes plugins update emporia` fails on a pinned install; Hermes older than v0.23.1 does not list Emporia in its catalog: update Hermes, or `hermes plugins install https://github.com/wujitsana/emporia#hermes_plugin/emporia --force`).
 - **Federation protocol 4.** Relay cards and relay-to-relay requests are version 4. A linked relay on an
   older version is refused by name. Upgrade linked relays together, or expect the link to pause until both
   run 2.1.
