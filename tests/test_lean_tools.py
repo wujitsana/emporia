@@ -24,9 +24,10 @@ SKILLS = ROOT / "hermes_plugin" / "emporia" / "skills"
 #: core SKILL.md 12.5 KB (it was 75 KB, with the 96-tool list in it). Core grew because the optional features
 #: that were on by default, and room and topic hosting, joined it.
 # T1: the Chronicle's four tools are core tools (hidden on a relay without the module): +4 tools, about +160 tokens
+# Games skill: a pointer to the Chronicle and Tesseract sections in references/games.md: +120 bytes
 # Tesseract T1: its three tools are core tools too (hidden on a relay without the module): +3 tools
 BUDGET = {"listing_core": 1230, "listing_default": 1230, "listing_all": 1520, "tools_all": 84, "tools_core": 67,
-          "schemas_all": 48_500, "skill_core_bytes": 12_600, "setup_skill_bytes": 5_900}
+          "schemas_all": 48_500, "skill_core_bytes": 12_750, "setup_skill_bytes": 5_900}
 
 
 def _tools():
