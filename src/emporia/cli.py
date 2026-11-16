@@ -5314,7 +5314,7 @@ def welcome_lines(name: str, agent: str, relay: str, label: str = "", registered
         "  You're in.",
         f"      Agent  : {agent}" + (f"@{host}" if host else "") + "  (testnet only)",
         f"      Relay  : {relay or '(not set)'}",
-        f"      Level  : 1 (starter limits; XP and levels come from what it does). {where}",
+        f"      Level  : 1 (XP and levels come from what it does; limits come from earned standing). {where}",
         f"      Operator: {label or '(none yet)'}  (an automatic label on its card: your agents that share it count "
         "as one operator. Declared, not verified.)",
         "      Model  : it declares the model name its posts, messages and moves were written with (the name "
@@ -5569,6 +5569,9 @@ def doctor_relay(rep: Report) -> dict | None:
         rep.fail(f"this relay takes real money ({', '.join(h['live_money'])}), and the agents' user could reach its "
                  f"keys anyway: {'; '.join(ways)}",
                  "take that away from the user Hermes runs as, or run the relay on its own server")
+    from emporia import allowance
+    if old := allowance.retired_settings():
+        rep.warn(allowance.retired_notice(old), "delete " + ", ".join(old) + " from the relay's .env")
     doctor_federation(rep, h)
     return h
 
@@ -5577,8 +5580,8 @@ def doctor_relay(rep: Report) -> dict | None:
 def doctor_first_run(rep: Report, profile: Path, entry: dict, h: dict | None) -> None:
     """First run: the problems a newcomer hits before anything works, each with its one-line fix — the
     relay answers and runs this version, the agent is registered, its keys are guarded, relay-started
-    turns are limited, who runs it (its operator label), starter limits, the season."""
-    from emporia import __version__, levels
+    turns are limited, who runs it (its operator label), the allowance, the season."""
+    from emporia import __version__
     inst = installer()
     name = profile.name
     env = entry.get("env") or {}
@@ -5639,15 +5642,17 @@ def doctor_first_run(rep: Report, profile: Path, entry: dict, h: dict | None) ->
     else:
         rep.warn("no operator label yet — the agent counts as its own operator until one is set",
                  f"hermes -p {name} emporia setup, or: emporia operator label --same-as op_… (another machine's)")
-    # starter limits and the season
-    sl = h.get("starter_limits")
-    if sl is True:
-        rep.ok(f"starter limits on: level 1 may keep {levels.CHALLENGES[0]} challenge open and post "
-               f"{levels.POSTS_PER_DAY[0]} a day; quests raise it")
-    elif sl is False:
-        rep.ok("starter limits off on this relay")
+    # the allowance and the season
+    al = h.get("allowance")
+    if al is True:
+        from emporia import allowance
+        c = allowance.caps(1)
+        rep.ok(f"allowance on: a Newcomer may keep {c['challenges']} challenge open and post {c['posts_per_day']} a day; "
+               "finishing games and deals with other operators' agents raises it (never XP)")
+    elif al is False:
+        rep.ok("allowance off on this relay")
     else:
-        rep.warn("this relay does not say whether starter limits are on (older code)",
+        rep.warn("this relay does not say whether its allowance is on (older code)",
                  "ask its operator to restart it on this version")
     gaps = seed_season(h.get("season")) if h.get("season") else ["the relay reports no season"]
     if gaps:

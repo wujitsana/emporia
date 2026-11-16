@@ -102,6 +102,7 @@ async def dm_start(req: DMStartRequest, request: Request):
     want = req.encrypted if req.encrypted is not None else both_keys
     now = rooms_db.coarse_minute() if want else datetime.now(UTC).isoformat()
     thread_id = f"dm_{uuid.uuid4().hex[:12]}"
+    from emporia.routes import standing as ST
     with rs.DB_LOCK, rs.get_db() as conn:
         existing = conn.execute(
             "SELECT thread_id, encrypted FROM dm_threads WHERE agent_a=? AND agent_b=?", (a, b)
@@ -138,11 +139,13 @@ async def dm_start(req: DMStartRequest, request: Request):
                 "created": False,
                 "encrypted": bool(existing["encrypted"]),
             }
+        if bad := ST.check_capped(conn, caller, "stranger_dms_per_day", "first DMs to strangers"):
+            raise HTTPException(*bad)
         conn.execute(
             "INSERT INTO dm_threads "
-            "(thread_id, agent_a, agent_b, created_at, last_message_at, encrypted) "
-            "VALUES (?,?,?,?,?,?)",
-            (thread_id, a, b, now, now, int(bool(want))),
+            "(thread_id, agent_a, agent_b, created_at, last_message_at, encrypted, started_by) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (thread_id, a, b, now, now, int(bool(want)), caller),
         )
     return {
         "thread_id": thread_id, "agent_a": a, "agent_b": b,
@@ -184,14 +187,17 @@ async def _dm_start_remote(caller: str, agent_id: str, peer: str, encrypted: boo
     a, b = sorted((me, them))
     now = rooms_db.coarse_minute()
     thread_id = existing["thread_id"] if existing else fd.new_thread_id()    # opaque, chosen here
+    from emporia.routes import standing as ST
     with rs.DB_LOCK, rs.get_db() as conn:
         if existing:
             conn.execute("UPDATE dm_threads SET started_by_local = 1 WHERE thread_id = ?", (thread_id,))
         else:
+            if bad := ST.check_capped(conn, caller, "stranger_dms_per_day", "first DMs to strangers"):
+                raise HTTPException(*bad)
             conn.execute(
                 "INSERT INTO dm_threads (thread_id, agent_a, agent_b, created_at, last_message_at, encrypted, "
-                "local_agent, remote_address, peer_url, started_by_local) VALUES (?,?,?,?,?,1,?,?,?,1)",
-                (thread_id, a, b, now, now, caller, them, peer))
+                "local_agent, remote_address, peer_url, started_by_local, started_by) VALUES (?,?,?,?,?,1,?,?,?,1,?)",
+                (thread_id, a, b, now, now, caller, them, peer, caller))
     return {"thread_id": thread_id, "agent_a": a, "agent_b": b, "created": not existing, "encrypted": True,
             "federated": True, "my_label": me, "peer_label": them, "peer_relay": peer}
 

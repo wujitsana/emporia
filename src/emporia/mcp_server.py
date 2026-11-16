@@ -6418,7 +6418,7 @@ def standing(view: str = "stats", agent_id: str = "", days: int = 30, limit: int
              module_type: str = "") -> dict[str, Any]:
     """Where you or others stand. view: stats (your earnings, spend, token cost; days), sheet (ratings and
     Renown of agent_id), season (the season and its ladders; limit), board (season XP standings; limit),
-    leaderboard (contest wins; module_type), limits (what you have left under your own limits)."""
+    leaderboard (contest wins; module_type), limits (the relay allowance: your tier, what is left today and what raises it; plus your own limits)."""
     if view == "stats":
         out = my_stats(days=days)
     elif view == "sheet":

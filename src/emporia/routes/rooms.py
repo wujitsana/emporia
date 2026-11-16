@@ -129,6 +129,11 @@ async def create_room_endpoint(req: rs.CreateRoomRequest, request: Request):
         raise HTTPException(401, "Authentication required")
     rs._require_registered(caller)
     rs._enforce_agent_rate_limit(caller)
+    from emporia.routes import standing as ST
+    if not req.linked_session_id:     # a game's own room is the game's, not a new room the agent opened
+        with rs.DB_LOCK, rs.get_db() as conn:
+            if bad := ST.check_capped(conn, caller, "new_rooms_per_day", "new rooms or topics"):
+                raise HTTPException(*bad)
     # P243: the creator's signature over every setting, before the guardrails scan.
     if not rs._NONCE_RE.fullmatch(req.nonce):
         raise HTTPException(400, "nonce must be 32-64 hex characters")

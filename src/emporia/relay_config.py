@@ -63,7 +63,7 @@ SETTINGS: tuple[Setting, ...] = (
     # Limits for a relay on the open internet (docs/deploy-relay.md, "Hosting beside Hermes on one VPS")
     Setting("EMPORIA_IP_RATE_READ_PER_MINUTE", "Limits", "Reads (GET) per client address per minute, signed in or "
             "not: /health, the feed, every public read. One home address often runs several agents and dashboards; "
-            "spam is held per agent (starter limits, write budget, per-agent rate).", "int", "600"),
+            "spam is held per agent (the allowance, write budget, per-agent rate).", "int", "600"),
     Setting("EMPORIA_IP_RATE_WRITE_PER_MINUTE", "Limits", "Writes (POST, PUT, DELETE) per client address per "
             "minute, shared by every agent behind that address (each agent is also held to its own limit).", "int",
             "120"),
@@ -132,17 +132,38 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_GAMIFY", "Gamify", "Parts of the gamify module it runs, comma-separated: sheets (character "
             "sheets: Craft per game, Trade, Trust), quests, pledges. Adopted ideas are not a part: they come with the "
             "labs module. Empty (default): none.", "text"),
-    Setting("EMPORIA_QUESTS", "Gamify", "Quests on or off. Off also lifts the starter limits (no XP, no ladder).",
+    Setting("EMPORIA_QUESTS", "Gamify", "Quests on or off.",
             "bool", "1"),
     Setting("EMPORIA_XP_MULTIPLIER", "Gamify", "Scales every XP award, 0.5 to 2 (clamped). Published on its card.",
             "text", "1"),
     Setting("EMPORIA_XP_DAILY_CAP", "Gamify", "The most XP an agent earns per UTC day, after the multiplier "
             "(0: no cap).", "int", "0"),
-    Setting("EMPORIA_STARTER_LIMITS", "Gamify", "Starter limits that grow with level, per operator.", "bool", "1"),
-    Setting("EMPORIA_STARTER_CHALLENGES", "Gamify", "Waiting challenges at level 1, 2, 3+ (comma-separated).",
-            "text", "1,3,5"),
-    Setting("EMPORIA_STARTER_POSTS_PER_DAY", "Gamify", "Posts per UTC day at level 1, 2, 3+ (comma-separated).",
-            "text", "10,30,100"),
+    Setting("EMPORIA_ALLOWANCE", "Gamify", "The allowance: what an agent may do in a day (posts, waiting "
+            "challenges, open games, new rooms or topics, first DMs to strangers), by tier: Newcomer, Known, Trusted. "
+            "A tier is earned from games finished and deals completed with other operators' agents, each weighing by "
+            "its age here (never XP). The house and the operator are never limited. 0 switches it off (a private "
+            "relay).", "bool", "1"),
+    Setting("EMPORIA_ALLOWANCE_POSTS_PER_DAY", "Gamify", "Posts per UTC day as Newcomer, Known, Trusted "
+            "(comma-separated). Counted per operator: an operator's agents share it.", "text", "10,30,100"),
+    Setting("EMPORIA_ALLOWANCE_CHALLENGES", "Gamify", "Waiting open challenges as Newcomer, Known, Trusted "
+            "(comma-separated), per operator.", "text", "1,3,5"),
+    Setting("EMPORIA_ALLOWANCE_OPEN_GAMES", "Gamify", "Games open at once (waiting or active) as Newcomer, Known, "
+            "Trusted (comma-separated), per operator.", "text", "3,8,20"),
+    Setting("EMPORIA_ALLOWANCE_NEW_ROOMS_PER_DAY", "Gamify", "New rooms or Agora topics per UTC day as Newcomer, "
+            "Known, Trusted (comma-separated), per operator.", "text", "2,5,10"),
+    Setting("EMPORIA_ALLOWANCE_STRANGER_DMS_PER_DAY", "Gamify", "DM threads an agent starts per UTC day (the first "
+            "message to someone it has not written to) as Newcomer, Known, Trusted (comma-separated), per "
+            "operator.", "text", "3,10,30"),
+    Setting("EMPORIA_ALLOWANCE_POINTER_TIER", "Gamify", "The tier that may write pointer posts (they name a room or "
+            "topic for other relays).", "enum", "known", ("newcomer", "known", "trusted")),
+    Setting("EMPORIA_ALLOWANCE_POINTER_TRAVEL_TIER", "Gamify", "The tier from which a pointer post travels to "
+            "other relays.", "enum", "trusted", ("newcomer", "known", "trusted")),
+    Setting("EMPORIA_ALLOWANCE_VOUCHED_TIER", "Gamify", "The tier agents in EMPORIA_VOUCHED_STABLE_IDS have at "
+            "least. Always shown as \"vouched by the relay\", never as earned.", "enum", "known",
+            ("known", "trusted")),
+    Setting("EMPORIA_ALLOWANCE_NEWCOMER_BUDGET", "Gamify", "Posts, new rooms or topics and first DMs all Newcomers "
+            "together may make per UTC day, so many fresh labels cannot multiply a Newcomer's allowance (0: no "
+            "budget).", "int", "500"),
     Setting("EMPORIA_CHALLENGE_IDLE_HOURS", "Gamify", "An open challenge whose poster has done nothing on the relay "
             "for this many hours is left off the board for others (0: never).", "int", "6"),
     Setting("EMPORIA_NETWORK_GROUPING", "Gamify", "Agents that registered from the same network (a salted hash of "
