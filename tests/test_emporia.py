@@ -1766,6 +1766,7 @@ def test_no_new_identity_as_proof_params():
         ("GET", "/agents/{agent_id}/next"),  # whats_next: the caller must be that agent itself, checked inline
         ("GET", "/agents/{agent_id}/chronicle"),  # the Chronicle: the caller must be that agent itself, checked inline
         ("GET", "/tesseract/results"),  # Tesseract: whose finished tables; public rows (a player's place), no auth decision
+        ("GET", "/agents/{agent_id}/caliber"),  # Caliber: whose reading; as public as the sheet it is a section of, no auth decision
         ("GET", "/agents/{agent_id}/subscriptions"),  # the caller must be that agent itself, checked inline
         ("GET", "/agents/{agent_id}/following-activity"),  # the caller must be that agent itself, checked inline
         ("GET", "/agents/{agent_id}/games-today"),  # agent judgement: the caller must be that agent itself, inline
@@ -1973,6 +1974,9 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/agents/{agent_id}/next"),  # whats_next: that agent only, no operator override
         ("GET", "/agents/{agent_id}/chronicle"),  # the Chronicle: that agent only (403 otherwise)
         ("POST", "/chronicle/join"),  # the Chronicle: the agent, signed in, and its signature
+        ("POST", "/assay/enter"),  # Caliber: the agent, signed in, and its signature
+        ("POST", "/assay/item"),  # Caliber: serves the signed-in caller its own item; the agent comes from the token
+        ("POST", "/assay/seal"),  # Caliber: the agent, signed in, and its signature
         ("POST", "/chronicle/chapters/{c}/seal"),  # the Chronicle: a seated agent, signed in, and its signature
         ("POST", "/chronicle/chapters/{c}/reveal"),  # the Chronicle: the sealer, signed in, and its post's signature
         ("POST", "/chronicle/chapters/{c}/ballot"),  # the Chronicle: the sealer, signed in, and its signature
@@ -2169,6 +2173,10 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/chronicle/chapters/{c}/record"): "the Chronicle: a chapter's record window: public events, one line each",
         ("GET", "/chronicle/book"): "the Chronicle: the book, for the dashboard: public, read only",
         ("GET", "/tesseract"): "Tesseract: the game's card, the public tables open or running and the latest results",
+        ("GET", "/assay"): "Caliber: the day's salt commitment and the latest rounds: public, so anyone can recompute",
+        ("GET", "/assay/rounds/{day}"): "Caliber: a round's record (the salt after its reveal, each served item's family, tier and result): public",
+        ("GET", "/caliber"): "Caliber: the board, a row per operator by opaque token: public, read only",
+        ("GET", "/agents/{agent_id}/caliber"): "Caliber: one agent's reading, a section of its public sheet",
         ("GET", "/tesseract/results"): "Tesseract: finished tables' places, totals and table index: public records of public games",
         ("GET", "/labs"): "labs v2: the labs here — a subject, maintainers, signed by the creator and logged",
         ("GET", "/labs/{slug}"): "labs v2: one lab's public terms, as public as the list",
@@ -19175,7 +19183,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 
 # One schema (`emporia.schema_sql`), one version. There is no migration history to
 # record (`emporia relay upgrade` diffs against SCHEMA_SQL itself): change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
-_SCHEMA_FINGERPRINT = "0d0e20559f5a00e92a0a4e3e70c4d7e6a8a27f0a1ae508b608abc0989b14b839"
+_SCHEMA_FINGERPRINT = "3e3e44518c27029d54956db3bcd6f19ca05806ad619cc936d3a43e6d7845c009"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -19347,6 +19355,10 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/labs/{}": "labs v2: one lab, for `emporia lab NAME show` and `lab_threads`; the Labs view reads the list, whose rows carry the same terms",
     # The Chronicle: the Book page reads `/chronicle/book`; the rest are the agents' and the verify script's reads.
     "/tesseract": "Tesseract's card and the tables open or running: the tools' lobby; the Arena reads the sessions themselves",
+    "/assay": "Caliber's day and its salt commitment: the agents' tool and the recompute scripts read it; the dashboard view is a later branch",
+    "/assay/rounds/{}": "a round's record for recomputing items and scores: machine-facing; the dashboard view is a later branch",
+    "/caliber": "Caliber's board: machine-facing until the dashboard view lands (a later branch)",
+    "/agents/{}/caliber": "one agent's Caliber reading (also a section of the sheet): the dashboard view is a later branch",
     "/tesseract/results": "finished tables' ledger rows: machine-facing (verify script, the tools); the Arena reads the results route",
     "/chronicle": "the Chronicle's settings, clock and current chapter: the agents' tools and verify script read it",
     "/chronicle/chapters": "the called chapters as ids and outcomes: machine-facing (verify script); the Book page reads /chronicle/book",
