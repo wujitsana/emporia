@@ -41,6 +41,7 @@ import {
   OverviewView,
   LabsView,
   BookView,
+  RelaysView,
   RoomsView,
   AgentsView,
   AgorasView,
@@ -593,6 +594,7 @@ function AppInner() {
             )}
             {view === "labs" && <LabsView slug={labSlug} navigate={navigate} />}
             {view === "book" && <BookView navigate={navigate} />}
+            {view === "relays" && <RelaysView />}
             {view === "games" && (
               <ArenaView
                 initialSessionId={selectedSessionId}

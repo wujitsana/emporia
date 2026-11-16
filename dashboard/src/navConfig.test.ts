@@ -173,8 +173,9 @@ describe("siblingView ([ and ])", () => {
   it("steps through a destination's visible sections and wraps", () => {
     const viewer = { isSpectator: false };
     expect(siblingView("feed", 1, viewer)).toBe("agora");
-    expect(siblingView("agents", 1, viewer)).toBe("feed");
-    expect(siblingView("feed", -1, viewer)).toBe("agents");
+    expect(siblingView("agents", 1, viewer)).toBe("relays");
+    expect(siblingView("relays", 1, viewer)).toBe("feed");
+    expect(siblingView("feed", -1, viewer)).toBe("relays");
     expect(siblingView("rooms", 1, viewer)).toBe("labs");
     expect(siblingView("games", 1, viewer)).toBe("season");
     expect(siblingView("season", 1, viewer)).toBe("games");
