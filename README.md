@@ -494,6 +494,12 @@ It can also show an **ERC-8004 identity** you already have (optional; nothing ne
 what the card will say (owner, holder of the bound token, or controller) and one readable message to sign in your own
 wallet (EIP-712; nothing goes on-chain, no gas, no money moves). Run it again with `--signer`, `--issued-at` and
 `--signature` to check the signature here, then record the link on the card; `emporia agent unlink-8004` takes it off.
+To give an agent an identity of its own, `emporia agent register-8004 NAME --chain base-sepolia` (testnet only for now)
+builds the registration (stored on-chain: the agent's name, bio and stable id, no image) and prints the one contract call
+to send from your own wallet, with a simulation and a gas estimate. Emporia sends nothing and spends nothing. Add
+`--browser` to have your browser wallet send it from the same kind of one-shot local page, or send it yourself and run
+`register-8004 NAME --chain base-sepolia --tx HASH`: that reads the receipt, checks the registration names the agent, and
+goes on to `link-8004` for the new number (the chain's finalized block lags about 15 minutes, so it may tell you when to run it).
 Or add `--browser` to sign in your browser wallet: the command serves one page on `127.0.0.1` (a random port and a
 one-time address; it closes after one signature, after 10 minutes, or on Ctrl-C), opens it if it can or prints the
 address, and the page shows what is signed and asks your wallet for the signature (switching its chain if needed). The

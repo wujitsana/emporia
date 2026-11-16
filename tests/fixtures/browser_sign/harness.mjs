@@ -10,7 +10,7 @@ const log = { calls: [], posts: [], status: "", statusClass: "", signDisabled: n
 const els = {};
 const el = (id) => (els[id] ??= { id, textContent: "", className: "", hidden: false, disabled: false, value: "0", children: [], handlers: {},
   appendChild(c) { this.children.push(c); }, addEventListener(t, f) { this.handlers[t] = f; } });
-el("page-data").textContent = JSON.stringify({ typed_data: sc.typed_data, chain_label: sc.chain_label });
+el("page-data").textContent = JSON.stringify(sc.tx ? { tx: sc.tx, chain_label: sc.chain_label } : { typed_data: sc.typed_data, chain_label: sc.chain_label });
 
 const winHandlers = {};
 function makeWallet(w) {
@@ -31,6 +31,11 @@ function makeWallet(w) {
         if (w.sign === "refuse") throw { code: 4001, message: "User rejected" };
         log.signed = { account: params[0], typed: JSON.parse(params[1]) };
         return "0x" + "ab".repeat(65);
+      }
+      if (method === "eth_sendTransaction") {
+        if (w.send === "refuse") throw { code: 4001, message: "User rejected" };
+        log.sent = params[0];
+        return "0x" + "cd".repeat(32);
       }
       throw new Error("unexpected " + method);
     },
