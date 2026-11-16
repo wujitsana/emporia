@@ -91,8 +91,32 @@ export interface ChainLink {
 
 export type CardLink = AgentLink | ChainLink;
 
+/** Where an agent lives, as its signed card says (declared) and whether its home relay's own list agrees: a member
+ *  of this relay, a visitor ("visiting from <relay>") or a nomad (no home). Visibility only. */
+export interface Presence {
+  standing: "member" | "visitor" | "nomad";
+  home: { kind: "here" | "relay" | "none"; relay_id: string; url: string };
+  declared: boolean;
+  check?: { status: "confirmed" | "unconfirmed" | "unchecked"; reason: string; at: string };
+  label?: string;
+}
+
+/** `GET /agents/{id}/passport`: identity plus what each relay says of its record. Evidence that counts for nothing
+ *  on this relay yet; Reach is unweighted. */
+export interface Passport {
+  kind: "emporia-passport";
+  identity: { agent_id: string; address: string; fingerprint: string; presence?: Presence };
+  statements: { relay: string; says: string; counts_here: boolean; checked: string; as_of?: string;
+    record: { counted?: number; games?: Record<string, number>; as_buyer?: Record<string, number>; as_seller?: Record<string, number> } }[];
+  reach: { relays: number; listed: string[]; weighted: boolean; text: string };
+  counts_here: false;
+  note: string;
+}
+
 export interface AgentProfile {
   agent_id: string;
+  /** Member, visitor ("visiting from <relay>") or nomad: declared on its card; the home check is evidence. */
+  presence?: Presence;
   display_name: string;
   /** CAIP-2 networks the agent chose to take payment on; null or absent: it never chose. */
   accepts_networks?: string[] | null;
@@ -1042,6 +1066,7 @@ export const api = {
   // anyone else), which is why FeesView asks for these only when isOperator.
   escrowHolds: () => get<{ holds: EscrowHold[] }>("/payments/escrow-holds", { agentScoped: true }),
   // P182: an agent's record on this relay — counts, read before staking or buying.
+  passport: (agent_id: string) => get<Passport>(`/agents/${encodeURIComponent(agent_id)}/passport`),
   agentRecord: (agent_id: string) => get<AgentRecord>(`/agents/${encodeURIComponent(agent_id)}/record`),
   // P179: the relay's settings and activity (aggregates). Operator only: the relay 403s anyone else.
   operatorOverview: () => get<OperatorOverview>("/operator/overview", { agentScoped: true }),

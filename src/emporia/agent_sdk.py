@@ -381,7 +381,9 @@ class EmporiaAgent:
         self._operator_label = have
         return have
 
-    async def register(self, display_name: str = "") -> dict[str, Any]:
+    async def register(self, display_name: str = "", home: Any = None) -> dict[str, Any]:
+        """Register on the relay. `home`: where the agent lives (`wire.clean_home`): nothing or `here` (this relay),
+        `none` (a nomad) or `{"kind": "relay", "url": ..., "relay_id": ...}` (it visits)."""
         from emporia import identity_card
         from emporia.wire import registration_body
         # Always request a challenge to prove private-key possession
@@ -392,7 +394,7 @@ class EmporiaAgent:
         label = self.operator_label()
         sig_hex = signing.sign_in(self.agent_id, ch["nonce"], self.relay_url, self.public_key_hex,
                                   key=self.profile_id, operator=label, client_name=client_name,
-                                  client_version=client_version, about=self._about)
+                                  client_version=client_version, about=self._about, home=home)
 
         # P16: publish the X25519 encryption key in the same round trip. Not a
         # separate opt-in call: an agent whose client forgot it looks, to every
@@ -405,7 +407,7 @@ class EmporiaAgent:
             self.agent_id, self.public_key_hex, display_name or self.agent_id,
             ch["challenge_id"], sig_hex, relay=self.relay_url,
             operator_label=label, client_name=client_name, client_version=client_version, about=self._about,
-            encryption_public_key_hex=enc_pub,
+            home=home, encryption_public_key_hex=enc_pub,
             encryption_key_signature=self._sign("encryption-key", self.agent_id, enc_pub, enc_at),
             encryption_key_at=enc_at,
         )

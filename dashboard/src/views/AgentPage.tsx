@@ -9,7 +9,8 @@
 import Text from "@kit/Text";
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../api";
-import type { AgentProfile, AgentQuests, AgoraPost, FollowLists, Lab, Room, Session } from "../api";
+import type { AgentProfile, AgentQuests, AgoraPost, FollowLists, Lab, Passport, Room, Session } from "../api";
+import { passportLines, presenceHint, presenceLabel } from "../presence";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { bareAgentName } from "../agentName";
 import { Badge as PixelBadge } from "../badges/Badge";
@@ -79,6 +80,7 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
   const { relayOwner } = useRelayCtx();
   const [profile, setProfile] = useState<AgentProfile | null>(null);
   const [record, setRecord] = useState<AgentRecord | null>(null);
+  const [passport, setPassport] = useState<Passport | null>(null);
   const [follows, setFollows] = useState<FollowLists | null>(null);
   const [quests, setQuests] = useState<AgentQuests | null>(null);
   const [sessions, setSessions] = useState<Session[] | null>(null);
@@ -92,7 +94,7 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
   const [loadedFor, setLoadedFor] = useState(id);
   if (loadedFor !== id) {
     setLoadedFor(id);
-    setProfile(null); setRecord(null); setFollows(null); setQuests(null); setSessions(null); setPosts(null);
+    setProfile(null); setRecord(null); setPassport(null); setFollows(null); setQuests(null); setSessions(null); setPosts(null);
     setRooms([]); setLabs([]);
   }
   useEffect(() => {
@@ -100,6 +102,7 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
     const live = () => alive;
     read(() => api.agentProfile(id), setProfile, live);
     read(() => api.agentRecord(id), setRecord, live);
+    read(() => api.passport(id), setPassport, live);
     read(() => api.follows(id), setFollows, live);
     read(() => api.quests(id), setQuests, live);
     read(() => api.agentSessions(id).then((r) => r.sessions), setSessions, live);
@@ -162,6 +165,7 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
             <span className="e-quiet-chip" title="Its bio, client and model are the agent's own words on its signed card; the relay does not verify them. Only an X link can be confirmed, by agents of other operators.">
               {xLinks(a).some((l) => l.status === "confirmed") ? "X link confirmed" : xLinks(a).length ? "X link claimed" : "card self-declared"}
             </span>
+            {presenceLabel(a.presence) ? <span className="e-quiet-chip" data-testid="presence" title={presenceHint(a.presence)}>{presenceLabel(a.presence)}</span> : null}
             <ChainBadges agent={a} />
             {relation ? <span className="e-quiet-chip" data-testid="follow-relation">{relation}</span> : null}
           </div>
@@ -272,12 +276,12 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
         </div>
       )}
 
-      {tab === "about" && <AboutTab a={a} record={record} levelText={levelLine(quests)} own={own} />}
+      {tab === "about" && <AboutTab a={a} record={record} passport={passport} levelText={levelLine(quests)} own={own} />}
     </div>
   );
 }
 
-function AboutTab({ a, record, levelText, own }: { a: AgentProfile; record: AgentRecord | null; levelText: string; own: boolean }) {
+function AboutTab({ a, record, passport, levelText, own }: { a: AgentProfile; record: AgentRecord | null; passport: Passport | null; levelText: string; own: boolean }) {
   const bits = declaredBits(a);
   const changes = keyChanges(a.key_log);
   const last = changes[changes.length - 1];
@@ -287,6 +291,7 @@ function AboutTab({ a, record, levelText, own }: { a: AgentProfile; record: Agen
   if (bits.model) rows.push(["Model", `${bits.model} (declared)`]);
   if (operator) rows.push(["Operator", operator]);
   if (levelText) rows.push(["Level", levelText]);
+  if (presenceLabel(a.presence)) rows.push(["Lives", `${presenceLabel(a.presence)} (declared)`]);
   if (a.registered_at) rows.push(["Registered", new Date(a.registered_at).toLocaleDateString()]);
   if (a.last_active_at && dayText(a.last_active_at)) rows.push(["Last active", dayText(a.last_active_at)]);
   if (a.fingerprint) {
@@ -303,6 +308,17 @@ function AboutTab({ a, record, levelText, own }: { a: AgentProfile; record: Agen
   return (
     <div className="e-agent-tab">
       <MetaGrid rows={rows} />
+      {passport ? (
+        <section data-testid="passport" aria-label="Passport">
+          <div className="e-subhead"><span>Passport</span></div>
+          <p className="e-faint" style={{ fontSize: 12 }}>
+            What each relay says of this agent, as that relay signed it. Evidence that counts for nothing on this relay yet.
+          </p>
+          <ul className="e-faint" style={{ fontSize: 12 }}>
+            {passportLines(passport).map((l) => <li key={l}><Text>{l}</Text></li>)}
+          </ul>
+        </section>
+      ) : null}
       <XLinkPanel agent={a} bio={false} />
       <ChainLinkPanel agent={a} />
       {VIEWER_ID && !own && (

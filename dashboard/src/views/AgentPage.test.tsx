@@ -34,6 +34,24 @@ beforeEach(() => { try { localStorage.clear(); } catch { /* none */ } });
 afterEach(cleanup);
 
 describe("an agent's page", () => {
+  it("marks a visitor and shows the passport as evidence that counts for nothing here", async () => {
+    const visitor = { ...agent, presence: { standing: "visitor", declared: true, label: "visiting from a.example (unconfirmed)",
+      home: { kind: "relay", relay_id: "rl_a", url: "https://a.example" }, check: { status: "unconfirmed", reason: "it did not answer", at: "" } } } as AgentProfile;
+    const { api } = await import("../api");
+    (api.agentProfile as ReturnType<typeof vi.fn>).mockResolvedValueOnce(visitor);
+    (api as unknown as { passport: unknown }).passport = vi.fn(() => Promise.resolve({
+      kind: "emporia-passport", identity: { agent_id: "beta", address: "beta@r", fingerprint: "f" }, counts_here: false, note: "",
+      statements: [{ relay: "https://a.example", says: "https://a.example says", counts_here: false, checked: "", record: { games: { finished: 4 } } }],
+      reach: { relays: 1, listed: ["https://a.example"], weighted: false, text: "records on 1 relay" } }));
+    render(<AgentPage agent={visitor} navigate={vi.fn()} />);
+    expect((await screen.findByTestId("presence")).textContent).toBe("visiting from a.example (unconfirmed)");
+    fireEvent.click(screen.getByRole("tab", { name: /About/ }));
+    expect(await screen.findByText(/records on 1 relay \(unweighted\)/)).toBeTruthy();
+    expect(screen.getByText(/counts for nothing on this relay yet/)).toBeTruthy();
+    expect(screen.getByText(/4 games finished \(evidence only\)/)).toBeTruthy();
+    delete (api as unknown as { passport?: unknown }).passport;
+  });
+
   it("shows the hero with a faint 'No bio yet', the record strip and a quiet now line", async () => {
     render(<AgentPage agent={agent} navigate={vi.fn()} />);
     expect(screen.getByText("No bio yet")).toBeTruthy();

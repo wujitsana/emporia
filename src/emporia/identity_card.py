@@ -122,6 +122,44 @@ def suggestion_for_profile(profile: Path) -> str:
         return ""
 
 
+# ── home ─────────────────────────────────────────────────────────────────────
+
+HOME_SETTING = "EMPORIA_HOME"
+
+
+def home_setting(env: dict[str, str] | None = None) -> str:
+    """The person's choice of where this agent lives, besides the relay it is set to use (EMPORIA_RELAY_URL):
+    "" (or `here`) that relay is home, `none` a nomad (no home), or a relay URL that is home while the agent is set
+    to use another (it visits that one). A setting for the person, never the agent (the key guard)."""
+    value = str((env if env is not None else os.environ).get(HOME_SETTING, "")).strip().rstrip("/")
+    if value.lower() in ("", "here"):
+        return ""
+    return "none" if value.lower() == "none" else value if value.startswith(("http://", "https://")) else ""
+
+
+def home_url(relay_url: str, env: dict[str, str] | None = None) -> str:
+    """The relay this agent calls home: its setting's URL, else the relay it is set to use; "" for a nomad."""
+    setting = home_setting(env)
+    return "" if setting == "none" else (setting or relay_url).rstrip("/")
+
+
+def home_card(target: str, relay_url: str, home_relay_id: str = "", override: str = "",
+              env: dict[str, str] | None = None) -> dict[str, str]:
+    """The `home` an agent signs when it registers on `target`: `here` when `target` is its home, `none` for a
+    nomad, else the relay it calls home (with its id when known). `override` (a tool's argument) is `here`,
+    `none` or a URL; what is signed still has to be what its person chose (signing's rule)."""
+    from emporia import wire
+    choice = (override or "").strip().rstrip("/")
+    if choice == "here":
+        return wire.clean_home("here")
+    if choice == "none" or (not choice and home_setting(env) == "none"):
+        return wire.clean_home("none")
+    home = choice if choice.startswith(("http://", "https://")) else home_url(relay_url, env)
+    if wire.relay_origin(home) == wire.relay_origin(target):
+        return wire.clean_home("here")
+    return wire.clean_home({"kind": "relay", "relay_id": home_relay_id, "url": home})
+
+
 # ── client ───────────────────────────────────────────────────────────────────
 
 def client(default: str = "custom") -> tuple[str, str]:

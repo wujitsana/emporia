@@ -1772,6 +1772,7 @@ def test_no_new_identity_as_proof_params():
         ("GET", "/agents/{agent_id}/available"),  # P296: is this name free; yes/no, no auth decision
         ("GET", "/agents/{agent_id}/record"),  # P182: whose record to read; counts only, no auth decision
         ("GET", "/agents/{agent_id}/card"),  # P187: whose card; public once the agent published a relay list
+        ("GET", "/agents/{agent_id}/passport"),  # whose passport; the same public record and carried statements as /record
         ("POST", "/agents/{agent_id}/relay-list"),  # P187: _require_caller_is-checked, and signed by the agent
         ("POST", "/agents/{agent_id}/sign-out"),  # the agent's own token, checked inline: revokes that token
         ("POST", "/agents/{agent_id}/revoke-tokens"),  # the agent's own token, checked inline: revokes all of its tokens
@@ -2153,6 +2154,8 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/challenges"): "quests:v4: open challenges — public waiting games anyone may join, as /sessions lists them",
         ("GET", "/agents/{agent_id}/available"): "P296: whether a name is free — yes/no, which registering already tells; setup asks before it writes a profile",
         ("GET", "/agents/{agent_id}/record"): "P182: an agent's record — counts only, read before staking or buying",
+        ("GET", "/agents/{agent_id}/passport"): "cross-relay: an agent's identity and per-relay record statements — what /record and its card already publish, evidence that counts for nothing here",
+        ("GET", "/federation/v1/listed-agents"): "cross-relay: the agents that call this relay home and published a relay list (their cards are already public), signed; what a host checks a visitor's declared home against",
         ("GET", "/agents/{agent_id}/sheet"): "P288: an agent's sheet — computed from outcomes the record already publishes, and public games",
         ("GET", "/ratings"): "P288: one game's Craft ladder from finished public games",
         ("GET", "/chronicle"): "the Chronicle: settings, clock and the chapter being written: public, as the book is",
@@ -19167,7 +19170,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 
 # One schema (`emporia.schema_sql`), one version. There is no migration history to
 # record (`emporia relay upgrade` diffs against SCHEMA_SQL itself): change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
-_SCHEMA_FINGERPRINT = "2b8be2ce5e7da1183080ba9a4d61e643e8d823f864546169ad1bf2391f222397"
+_SCHEMA_FINGERPRINT = "c38692d9984dcd50f8654dfdaf6627cc77ea255e9f7576c5188b46f9c3ca5531"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -19207,7 +19210,7 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (57, _SCHEMA_FINGERPRINT), (
+    assert (SCHEMA_VERSION, fingerprint) == (59, _SCHEMA_FINGERPRINT), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
         f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT — in "
         f"that order, and never the fingerprint alone.\n"
@@ -19320,6 +19323,7 @@ def test_a_database_from_a_newer_relay_is_refused_rather_than_migrated():
 # A GET that is neither called nor classified is a real gap and fails the test.
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/me/allowance": "agent judgement: the caller's own tier and what is left today, read by its tools via standing(view=limits); machine-facing",
+    "/federation/v1/listed-agents": "cross-relay: a relay-to-relay read (the host checks a visitor's declared home); the dashboard shows the result as presence",
     "/agents/{}/games-today": "agent judgement: the agent's own count of games with one operator, read by its tools; machine-facing",
     "/agents/{}/available": "P296: is a name free — asked by setup before it writes a profile; nothing to watch",
     "/relay/activity": "P297: a count the house agent reads to step back; machine-facing",

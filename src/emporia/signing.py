@@ -106,12 +106,34 @@ def _relay_list_ok(p: dict[str, Any], ctx: Context) -> str:
     listed = _csv(ctx.env.get("EMPORIA_VISIT_RELAYS"))
     backups_now = _csv(ctx.env.get("EMPORIA_BACKUP_RELAYS"))
     home = str(p.get("home") or "").rstrip("/")
+    setting = str(ctx.env.get("EMPORIA_HOME", "") or "").strip().rstrip("/")
+    if home == "none":    # a nomad's list: only when its person made it one
+        return "" if setting == "none" else "no home (a nomad): its person sets that — emporia home NAME nomad"
+    if setting.startswith(("http://", "https://")):
+        home_now = {setting}
     if home and home not in home_now | listed:
         return (f"{home} as its home: its home is its person's choice — they move it with "
                 "emporia relay use URL NAME (or list the relay: emporia visits NAME --allow URL)")
     for b in p.get("backups") or []:
         if str(b).rstrip("/") not in backups_now | listed:
             return f"{b} as a backup: only relays its person named — emporia relay backup URL"
+    return ""
+
+
+def _home_ok(p: dict[str, Any], ctx: Context) -> str:
+    """A card's home is its person's choice (EMPORIA_HOME, or the relay it is set to use): an agent signs no
+    other, so it cannot call itself a nomad or name another home on its own."""
+    home = p.get("home") or {}
+    kind = home.get("kind", "here")
+    setting = str(ctx.env.get("EMPORIA_HOME", "") or "").strip().rstrip("/")
+    if kind == "none" and setting != "none":
+        return "no home (a nomad): its person sets that — emporia home NAME nomad"
+    if kind == "relay":
+        mine = setting if setting not in ("", "here", "none") else str(
+            ctx.env.get("EMPORIA_RELAY_URL", "") or "http://localhost:8088").rstrip("/")
+        if str(home.get("url") or "").rstrip("/") != mine.rstrip("/"):
+            return (f"{home.get('url')} as its home: its home is its person's choice — "
+                    "emporia home NAME visit URL (or emporia relay use URL NAME)")
     return ""
 
 
@@ -124,9 +146,10 @@ def _k(name: str, builder: str, group: str, why: str, **kw: Any) -> Kind:
 KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("sign-in", "signed_registration_payload", "sign-in",
        "registering on one relay, as one agent, with one key; no more than the agent already has there",
-       check=lambda p, ctx: wire.registration_problem(p.get("nonce"), p.get("relay"), p.get("agent_id"),
-                                                      p.get("public_key"), p.get("operator", ""),
-                                                      p.get("client"), p.get("about", ""))),
+       check=lambda p, ctx: (wire.registration_problem(p.get("nonce"), p.get("relay"), p.get("agent_id"),
+                                                       p.get("public_key"), p.get("operator", ""),
+                                                       p.get("client"), p.get("about", ""), p.get("home"))
+                             or _home_ok(p, ctx))),
     _k("dashboard-sign-in", "signed_dashboard_sign_in_payload", "sign-in",
        "a session token for the one relay it names; no more than the agent already has there",
        check=lambda p, ctx: wire.dashboard_sign_in_problem(p.get("nonce"), p.get("relay"))),
@@ -369,10 +392,10 @@ def dashboard_session_body(agent_id: str, challenge: dict[str, Any], relay_url: 
 
 
 def sign_in(agent_id: str, nonce: str, relay_url: str, public_key: str, *, key: str = "", operator: str = "",
-            client_name: str = "", client_version: str = "", about: str = "") -> str:
+            client_name: str = "", client_version: str = "", about: str = "", home: Any = None) -> str:
     """A relay's registration challenge, signed over the nonce, that relay's origin, this agent's name and
-    key and its card (operator label, client; `emporia:sign-in:v2`): good on that relay alone, for this agent
+    key and its card (operator label, client, home; `emporia:sign-in:v3`): good on that relay alone, for this agent
     alone. `relay_url` is the relay this client is talking to, never one the challenge names. `key`: the profile
     whose key signs, when it is not named `agent_id`."""
     return sign(key or agent_id, "sign-in", nonce, wire.relay_origin(relay_url), agent_id, public_key, operator,
-                client_name, client_version, about)
+                client_name, client_version, about, wire.clean_home(home))

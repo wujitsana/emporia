@@ -3,6 +3,7 @@ import Text from "@kit/Text";
 import React, { useEffect } from "react";
 import { api } from "../api";
 import type { AgentProfile } from "../api";
+import { presenceHint, presenceLabel } from "../presence";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { bareAgentName } from "../agentName";
 import type { Navigate } from "../navigation";
@@ -56,16 +57,18 @@ function DirectoryEntry({ a, level: boardLevel, mode, onOpen }: { a: AgentProfil
   const lastDay = a.last_active_at ?? own.last;
   const last = lastDay ? dayText(lastDay) : "";
   const you = !!VIEWER_ID && a.agent_id === VIEWER_ID;
+  const visit = presenceLabel(a.presence);
   const who = (
     <span className="e-agent-dir__who">
       <Text>{bareAgentName(a.address ?? a.agent_id)}
         {a.display_name && a.display_name !== a.agent_id ? <span className="e-faint" data-agent-display-name> · {a.display_name.slice(0, 22)}</span> : null}
         {you ? <span className="e-quiet-chip" style={{ marginLeft: 6 }}>you</span> : null}
+        {visit ? <span className="e-quiet-chip" style={{ marginLeft: 6 }} data-testid="presence" title={presenceHint(a.presence)}>{visit}</span> : null}
       </Text>
       {bio ? <Text className="e-faint" data-agent-about style={{ fontSize: 11 }}>{bio}</Text> : null}
     </span>
   );
-  const meta = [typeof level === "number" ? `level ${level}` : "", last ? `active ${last}` : ""].filter(Boolean).join(" · ");
+  const meta = [visit, typeof level === "number" ? `level ${level}` : "", last ? `active ${last}` : ""].filter(Boolean).join(" · ");
   if (mode === "cards") {
     return (
       <button type="button" role="listitem" className="e-agent-card-tile" onClick={onOpen}>

@@ -38,6 +38,8 @@ def moved_to(agent_id: str) -> str:
         return ""
     stored = json.loads(row["relay_list_json"])
     listed = stored["list"]
+    if listed.get("home") == "none":     # a nomad: it left home for nowhere, so there is no one to forward to
+        return ""
     if stored.get("home_here", normalize_peer_url(listed.get("home", "")) == normalize_peer_url(rs.RELAY_BASE_URL)):
         return ""
     try:
