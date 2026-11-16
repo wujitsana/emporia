@@ -139,8 +139,9 @@ async def listed_agents():
     from emporia import visitors
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute("SELECT agent_id, stable_id, public_key_hex, relay_list_json FROM authorized_agents "
-                            "WHERE is_active = 1 AND relay_list_json IS NOT NULL AND json_valid(relay_list_json) "
-                            "AND json_extract(relay_list_json, '$.home_here') = 1 "      # filtered here, not after a cap
+                            "WHERE is_active = 1 AND relay_list_json IS NOT NULL "
+                            "AND CASE WHEN json_valid(relay_list_json) "      # CASE: json_extract never sees a malformed value
+                            "THEN json_extract(relay_list_json, '$.home_here') END = 1 "      # filtered here, not after a cap
                             "ORDER BY registered_at, agent_id LIMIT ?", (visitors.LISTING_LIMIT,)).fetchall()
     out = []
     for r in rows:

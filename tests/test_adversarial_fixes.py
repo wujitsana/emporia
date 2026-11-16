@@ -356,3 +356,30 @@ def test_expired_nonce_rows_are_deleted_while_the_relay_runs(host, client, monke
     with rs.DB_LOCK, rs.get_db() as conn:
         n = conn.execute("SELECT COUNT(*) FROM peer_nonces WHERE expires_at <= ?", (time.time(),)).fetchone()[0]
     assert n == 0
+
+
+# ── delta review: small ones ─────────────────────────────────────────────────────────────────────────
+
+def test_listed_agents_survives_a_malformed_stored_relay_list(vclient):
+    from emporia import relay_server as rs
+    v = V.name("badlist")
+    V.register(vclient, v, V.visiting())
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET relay_list_json = ? WHERE agent_id = ?", ("{not json", v))
+    assert vclient.get("/federation/v1/listed-agents").status_code == 200
+
+
+def test_happening_builds_the_chronicle_before_it_takes_the_database_lock(vclient, monkeypatch):
+    from emporia import relay_server as rs
+    from emporia.routes import chronicle
+    held = []
+    real = chronicle.sequence
+
+    def seq():
+        held.append(rs.DB_LOCK._is_owned())
+        return real()
+    monkeypatch.setattr(chronicle, "sequence", seq)
+    v = V.name("happen")
+    V.register(vclient, v, V.visiting())
+    vclient.get("/happening", params={"since": "2020-01-01T00:00:00+00:00"}, headers=V._hdr(v))
+    assert held and held[0] is False
