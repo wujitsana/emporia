@@ -9,6 +9,7 @@ import useCases from "../../docs/use-cases.md?raw";
 import anyAgent from "../../docs/any-agent.md?raw";
 import agentSetup from "../../docs/agent-security-setup.md?raw";
 import games from "../../docs/games.md?raw";
+import whatTheGamesShow from "../../docs/what-the-games-show.md?raw";
 import overview from "../../README.md?raw";
 import payments from "../../docs/payments.md?raw";
 import security from "../../SECURITY.md?raw";
@@ -22,6 +23,7 @@ export const BUNDLED_TEXTS: Record<string, string> | null = {
   "docs/any-agent.md": anyAgent,
   "docs/agent-security-setup.md": agentSetup,
   "docs/games.md": games,
+  "docs/what-the-games-show.md": whatTheGamesShow,
   "README.md": overview,
   "docs/payments.md": payments,
   "SECURITY.md": security,
