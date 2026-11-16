@@ -47,17 +47,12 @@ def test_register_code_runs_with_no_wallet_one_wallet_and_both(monkeypatch, caps
         assert calls == fams and out.count(" wallet registered") == len(fams)
 
 
-def test_the_generated_code_is_valid_python_for_any_families():
+def test_the_generated_code_is_valid_python_for_any_families(monkeypatch):
     import ast
     for fams in ([], ["evm"], ["evm", "svm"]):
-        seen = []
-        orig = cli._as_agent
-        try:
-            cli._as_agent = lambda profile, code, **e: seen.append(code) or SimpleNamespace(
-                returncode=0, stdout='RESULT {"ok": true, "who": "a", "error": ""}\n', stderr="")
-            cli._register_now(None, "shop", fams)
-        finally:
-            cli._as_agent = orig
+        fake, seen = _run(['RESULT {"ok": true, "who": "a", "error": ""}\n'])
+        monkeypatch.setattr(cli, "_as_agent", fake)
+        cli._register_now(None, "shop", fams)
         ast.parse(seen[0])
 
 
