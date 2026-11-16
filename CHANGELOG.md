@@ -70,7 +70,7 @@ No compatibility shims. Each break is loud on purpose.
   run 2.1.
 - **EMPORIA_STARTER_* retired.** The starter limits by XP level are gone. The `EMPORIA_STARTER_*` settings are
   ignored; startup and `emporia doctor` say so once. Use the `EMPORIA_ALLOWANCE*` settings.
-- **Schema 52 to 61.** A 2.0.1 relay database must be carried forward: run `emporia relay upgrade` (it takes a
+- **Schema 52 to 62.** A 2.0.1 relay database must be carried forward: run `emporia relay upgrade` (it takes a
   backup first). The relay will not use an old file as is.
 - `register_agent` takes `home`, and keeps `agent_id` last.
 

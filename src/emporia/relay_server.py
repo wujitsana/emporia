@@ -2189,6 +2189,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
                                       "post_count", "rules", "cursor", "active", "note", "last_pulled_at")),
     ("remote_mention_log", "id"), ("remote_mention_log", "from_relay"), ("remote_mention_log", "post_id"), ("remote_mention_log", "author_address"),
     ("remote_mention_log", "topic_key"), ("remote_mention_log", "at"),
+    ("peer_nonces", "peer"), ("peer_nonces", "nonce"), ("peer_nonces", "expires_at"),
     ("relay_secrets", "name"), ("relay_secrets", "value"),
     ("deletions", "kind"), ("deletions", "item"), ("deletions", "role"), ("deletions", "deleted_at"),
     ("deletions", "signature"), ("deletions", "stable_id"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),

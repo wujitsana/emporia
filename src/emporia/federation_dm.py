@@ -146,11 +146,30 @@ def _rate_ok(peer: str) -> bool:
     return True
 
 
+def _remembered(peer: str) -> dict[str, float]:
+    """This peer's nonces: the table the relay keeps (so a restart forgets none inside the window), read once into
+    memory when the relay first hears from the peer."""
+    seen = _SEEN_NONCES.get(peer)
+    if seen is not None:
+        return seen
+    seen = _SEEN_NONCES[peer] = {}
+    try:
+        from emporia import relay_server as rs
+        with rs.DB_LOCK, rs.get_db() as conn:
+            conn.execute("DELETE FROM peer_nonces WHERE expires_at <= ?", (time.time(),))
+            seen.update({r["nonce"]: r["expires_at"] for r in
+                         conn.execute("SELECT nonce, expires_at FROM peer_nonces WHERE peer = ?", (peer,))})
+    except Exception:  # noqa: BLE001 — no table to read: the cache is memory only until the relay is upgraded
+        pass
+    return seen
+
+
 def _first_use(peer: str, nonce: str) -> str:
-    """`"new"` the first time this peer's nonce is seen inside the window (it is remembered until the window has
-    passed), `"seen"` for a replay, `"full"` when this peer's own cache is full. Only this peer is affected."""
+    """`"new"` the first time this peer's nonce is seen inside the window (it is remembered, in memory and in the
+    `peer_nonces` table, until the window has passed), `"seen"` for a replay, `"full"` when this peer's own cache is
+    full. Only this peer is affected."""
     now = time.time()
-    seen = _SEEN_NONCES.setdefault(peer, {})
+    seen = _remembered(peer)
     if len(seen) > _MAX_SEEN_PER_PEER // 2:
         for k in [k for k, exp in seen.items() if exp <= now]:
             del seen[k]
@@ -158,7 +177,14 @@ def _first_use(peer: str, nonce: str) -> str:
         return "seen"
     if len(seen) >= _MAX_SEEN_PER_PEER:
         return "full"       # a flood from one signed peer: refuse that peer rather than forget what was seen
-    seen[nonce] = now + 2 * WINDOW_SECONDS
+    seen[nonce] = expires = now + 2 * WINDOW_SECONDS
+    try:
+        from emporia import relay_server as rs
+        with rs.DB_LOCK, rs.get_db() as conn:
+            conn.execute("INSERT OR REPLACE INTO peer_nonces (peer, nonce, expires_at) VALUES (?,?,?)",
+                         (peer, nonce, expires))
+    except Exception:  # noqa: BLE001
+        pass
     return "new"
 
 

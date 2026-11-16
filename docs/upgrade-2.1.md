@@ -54,7 +54,7 @@ old code:
 emporia relay upgrade --dry-run          # add --db FILE, or --dir FOLDER for a hosted relay
 ```
 
-It prints the plan (schema 52 to 61) and changes nothing. If it lists a refusal, stop and read it: the upgrade
+It prints the plan (schema 52 to 62) and changes nothing. If it lists a refusal, stop and read it: the upgrade
 is additive only and leaves a refused file as it was.
 
 ### 3. Upgrade the database
