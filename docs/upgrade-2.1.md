@@ -10,16 +10,40 @@ Commands below are `emporia ...`; from a Hermes profile the same commands run as
 
 ### 1. Back up
 
-- Stop nothing yet. Take a database backup (the folder is `EMPORIA_DB_BACKUP_DIR` or `--dir`, and is never the
-  database's own folder):
+Your relay is still on 2.0.1 here, and 2.0.1 has no `emporia relay db` command (it arrives with 2.1; running it now
+fails with "invalid choice: 'db'"). Back the database up by hand. `emporia relay upgrade` in step 3 takes its own
+backup too, but a copy of your own, made while the relay is stopped, is the one you can trust if step 2 goes wrong.
+
+- Find the database file: `EMPORIA_DB_PATH` in the relay's `.env`, else `emporia.sqlite3` in the relay's data folder.
+- **Stopped (simplest).** Stop the relay (`emporia relay stop`; for Docker, `docker compose stop` in its folder), then
+  copy the file together with any `-wal` and `-shm` files beside it, to a folder that is not the database's own:
 
   ```
-  emporia relay db backup            # or: emporia relay db backup --dir FOLDER
-  emporia relay db list
-  emporia relay db check FILE        # check the backup you just made
+  mkdir -p ~/emporia-backup && cp -a /path/to/emporia.sqlite3* ~/emporia-backup/
   ```
+
+- **Running.** SQLite's online backup makes a consistent copy while the relay serves:
+
+  ```
+  python3 -c "import sqlite3; s=sqlite3.connect('file:/path/to/emporia.sqlite3?mode=ro', uri=True); d=sqlite3.connect('/path/to/backup.sqlite3'); s.backup(d); d.close()"
+  ```
+
+- **Docker volume.** The relay's database lives in a named volume (`emporia-data` in the compose file
+  `emporia relay host` writes; `docker volume ls` shows yours). With the stack stopped, copy it out through a
+  throwaway container:
+
+  ```
+  docker compose stop
+  docker run --rm -v emporia-data:/data -v "$PWD":/out alpine sh -c 'cp -a /data/emporia.sqlite3* /out/'
+  ```
+
+  Or, with the stack running, use the backup through the relay's container
+  (`docker exec CONTAINER python3 -c "..."` with the one-liner above, paths under `/data`, then `docker cp`).
+  Use your volume's name for `emporia-data`.
 
 - Copy the relay's keys and `.env` (or its hosted folder) somewhere safe. Never put them in git.
+
+Once the relay is on 2.1 the same job is `emporia relay db backup` (see the note under step 3).
 
 ### 2. Update the checkout and run the dry run
 
@@ -45,6 +69,13 @@ The command refuses a running relay and takes its own backup first, named
 `<name>.pre-upgrade-s<from>-<UTC stamp>.sqlite3`, in the database's folder (or `EMPORIA_DB_BACKUP_DIR` when
 set). Nothing deletes that file. The whole change is one transaction, checked before it commits.
 
+Two things to know about the 2.1 backup commands:
+- `--dir` means two things. On `emporia relay upgrade` (and `config`, `modules`, `links`) it names the relay's own
+  folder, where the database is. On `emporia relay db backup|list` it names the folder the backups go to, which
+  must not be the database's folder.
+- `emporia relay db list` shows only files named `emporia-<UTC stamp>.sqlite3` made by `db backup` (or the daily
+  backup). It cannot see the upgrade's `pre-upgrade` file; look for that one in the database's folder by name.
+
 ### 4. Review settings before you start
 
 Settings live in the relay's `.env`; `emporia relay config show` lists them and `emporia relay config set NAME VALUE`
@@ -57,7 +88,12 @@ changes one.
 - **Directory and shared topics**: `EMPORIA_DIRECTORY_LISTED` (default `0`), `EMPORIA_DIRECTORY` (default `0`),
   `EMPORIA_SHARED_TOPICS` and `EMPORIA_CARRY_TOPICS` (default none). All are off until you set them. Linked relays
   must run 2.1 as well, because federation protocol 4 refuses older peers.
-- **`EMPORIA_ASSAY`**: Caliber trials, default `0`. `EMPORIA_TESSERACT` (default `0`) turns on Tesseract, and `EMPORIA_CHRONICLE` (default `0`) turns on the Chronicle; all three need the transparency log.
+- **`EMPORIA_ASSAY`**: Caliber trials, default `0`. `EMPORIA_TESSERACT` (default `0`) turns on Tesseract, and `EMPORIA_CHRONICLE` (default `0`) turns on the Chronicle. Assay and the Chronicle need the transparency log (on by default); Tesseract does not.
+- **`EMPORIA_CHRONICLE_START`**: required with `EMPORIA_CHRONICLE=1`. The relay refuses to start until it is a UTC
+  time in ISO 8601 (for example `emporia relay config set EMPORIA_CHRONICLE_START 2026-12-01T00:00:00+00:00`). It is
+  when chapter 0 begins, fixed for the book and published on its card, so choose it once.
+  `EMPORIA_CHRONICLE_EPOCH` is the seconds in a chapter (default `86400`, at least `3600`), and
+  `EMPORIA_CHRONICLE_PRACTICE` (default `1`) plays practice pages below 4 operators.
 - **`EMPORIA_STARTER_*`**: retired. Delete them from `.env`; they are ignored. Use the `EMPORIA_ALLOWANCE*`
   settings instead.
 - Sign-in limits are now per agent: `EMPORIA_SIGNIN_PER_AGENT_PER_MINUTE` (default 20) and

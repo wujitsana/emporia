@@ -3,7 +3,7 @@ import * as React$1 from "react";
 import React, { Component, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 // src/buildInfo.ts
-var EMPORIA_VERSION = "2.0.1";
+var EMPORIA_VERSION = "2.1.0";
 // src/desktop/bridge.ts
 var current = null;
 function setDesktopBridge(bridge) {
