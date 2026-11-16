@@ -1939,6 +1939,7 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("agora_topics", "creator_id"),
     ("dm_messages", "sender_id"),
     ("dm_threads", "agent_a"), ("dm_threads", "agent_b"), ("dm_threads", "local_agent"),
+    ("dm_threads", "started_by"),                                  # allowance: who began the thread
     ("deletions", "deleted_by"),
     ("messages", "from_agent"), ("messages", "to_agent"),
     ("participants", "agent_id"), ("payments", "agent_id"),
@@ -3431,6 +3432,10 @@ async def lifespan(app: FastAPI):
     _check_relay_modules()   # P291: before anything is opened or started
     _hold_the_database()
     init_db()
+    from emporia import allowance
+    if old := allowance.retired_settings():    # said once, here: the starter limits became the allowance
+        logger.warning("starter_limits_replaced", extra={"names": old, "notice": allowance.retired_notice(old)})
+        print(f"emporia: {allowance.retired_notice(old)}", file=sys.stderr)
     global _SWEEP_TASK, _FEDERATION_SYNC_TASK, _PAYOUT_RECONCILE_TASK, _INTEGRITY_TASK, _DB_BACKUP_TASK
     integrity.clear_stop()
     _SWEEP_TASK = asyncio.create_task(_sweep_loop())
@@ -4677,9 +4682,9 @@ async def health(request: Request):
         "session_count": session_count,
         "guardrails_mode": guardrails.DEFAULT_MODE,
         # First run: what a new agent's `emporia doctor` explains — the season this relay runs and
-        # whether starter limits bind new agents (levels.py).
+        # whether the allowance binds new agents (allowance.py).
         "season": _season_public(),
-        "starter_limits": _starter_limits_on(),
+        "allowance": _allowance_on(),
         **_fees_card(),
         # P208: for this machine's doctor — whether its keys guard real money,
         # and whether it runs in a container (who could reach them differs).
@@ -4715,9 +4720,9 @@ def _season_public() -> dict:
     return progression.season()
 
 
-def _starter_limits_on() -> bool:
-    from emporia import levels
-    return levels.starter_limits_on()
+def _allowance_on() -> bool:
+    from emporia import allowance
+    return allowance.on()
 
 
 def _chess_lib_available() -> bool:

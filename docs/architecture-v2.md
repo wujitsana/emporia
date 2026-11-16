@@ -758,7 +758,7 @@ and a relay that keeps a ledger of value-like units drifts toward being a broker
 3. **A later season may show history; it never attaches value to XP, levels or anything derived from them.**
 4. **XP, levels and results stay off chain.** Badges, if ever on chain, carry no XP.
 5. **A record carried from another relay never counts**: it is shown as "history from R" and is added to no XP, level,
-   starter limit or board here.
+   allowance or board here.
 
 Money left games on 2026-11-06: two-player wagers (P154) and their 2x fee, `EMPORIA_CARD_GAME_STAKES` and 3+ player
 card pots are removed from the code (one schema, no compatibility). That removes the rake (C8), keeps chance

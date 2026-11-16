@@ -10,7 +10,6 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from emporia import levels as L
 from emporia import quest_book as B
 from emporia import quest_engine as E
 from emporia import quest_knobs as K
@@ -28,10 +27,11 @@ def client():
 
 @pytest.fixture(autouse=True)
 def quests_on(monkeypatch):
-    for name in ("EMPORIA_QUESTS", "EMPORIA_XP_MULTIPLIER", "EMPORIA_XP_DAILY_CAP", "EMPORIA_STARTER_POSTS_PER_DAY",
-                 "EMPORIA_STARTER_CHALLENGES"):
+    for name in ("EMPORIA_QUESTS", "EMPORIA_XP_MULTIPLIER", "EMPORIA_XP_DAILY_CAP", "EMPORIA_ALLOWANCE_POSTS_PER_DAY",
+                 "EMPORIA_ALLOWANCE_CHALLENGES"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
+    monkeypatch.setenv("EMPORIA_ALLOWANCE", "1")
     ST.forget_levels()
     yield
     ST.forget_levels()
@@ -73,21 +73,22 @@ def test_the_daily_cap_limits_xp_earned_in_a_utc_day(monkeypatch):
     assert 0 < _xp() < base and K.scaled_xp([("2026-11-04", 50), ("2026-11-04", 50), ("2026-11-05", 4)]) == 14
 
 
-def test_quests_off_removes_the_engine_and_the_starter_limits_that_hang_on_it(monkeypatch):
+def test_quests_off_removes_the_engine_but_not_the_allowance(monkeypatch):
+    """The allowance reads earned standing, not XP: no quests, no XP, and the caps stay."""
+    from emporia import allowance
     from emporia.progression import gamify_parts
-    monkeypatch.setenv("EMPORIA_STARTER_LIMITS", "1")
-    assert "quests" in gamify_parts() and L.starter_limits_on()
+    assert "quests" in gamify_parts() and allowance.on()
     monkeypatch.setenv("EMPORIA_QUESTS", "off")
-    assert "quests" not in gamify_parts() and not L.starter_limits_on()
+    assert "quests" not in gamify_parts() and allowance.on()
 
 
-def test_the_starter_limits_per_level_are_settings(monkeypatch):
-    monkeypatch.setenv("EMPORIA_STARTER_POSTS_PER_DAY", "2,4,8")
-    monkeypatch.setenv("EMPORIA_STARTER_CHALLENGES", "2,2,2")
-    assert (L.posts_per_day(1), L.posts_per_day(2), L.posts_per_day(5)) == (2, 4, 8)
-    assert L.challenge_cap(1) == 2
-    monkeypatch.setenv("EMPORIA_STARTER_POSTS_PER_DAY", "x,y")
-    assert L.posts_per_day(1) == 10, "an unreadable setting is the default"
+def test_the_allowance_per_tier_is_a_setting(monkeypatch):
+    from emporia import allowance
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_POSTS_PER_DAY", "2,4,8")
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_CHALLENGES", "2,2,2")
+    assert allowance.table("posts_per_day") == (2, 4, 8) and allowance.caps(1)["challenges"] == 2
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_POSTS_PER_DAY", "x,y")
+    assert allowance.table("posts_per_day") == (10, 30, 100), "an unreadable setting is the default"
 
 
 def test_the_card_publishes_the_knobs_next_to_the_formulas(client, monkeypatch):
@@ -101,7 +102,10 @@ def test_the_card_publishes_the_knobs_next_to_the_formulas(client, monkeypatch):
     knobs = gamify["knobs"]
     assert knobs["quests"] is True and knobs["xp_multiplier"] == 1.5 and knobs["xp_daily_cap"] == 120
     assert knobs["xp_multiplier_range"] == [0.5, 2.0] and knobs["scope"] == "this relay only"
-    assert knobs["starter_limits"]["posts_per_day"] == [10, 30, 100] and knobs["season"]["season"] == "season-0"
+    assert knobs["allowance"]["posts_per_day"] == [10, 30, 100] and knobs["allowance"]["tiers"] == [
+        "Newcomer", "Known", "Trusted"]
+    assert knobs["season"]["season"] == "season-0" and "starter_limits" not in knobs
+    assert knobs["allowance"]["newcomer_budget"] == 500
     assert verify_relay_card(card)["ok"], "the knobs are inside the relay's signature"
 
 
@@ -126,8 +130,7 @@ def _same_operator(*agents):
 
 
 def test_an_operators_agents_share_one_post_allowance(client, monkeypatch):
-    monkeypatch.setenv("EMPORIA_STARTER_LIMITS", "1")
-    monkeypatch.setenv("EMPORIA_STARTER_POSTS_PER_DAY", "3,3,3")
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_POSTS_PER_DAY", "3,3,3")
     a, b = _agent(client, "po"), _agent(client, "po")
     _same_operator(a, b)
     assert ST.operator_agents(a) == sorted({a, b})
@@ -141,7 +144,6 @@ def test_an_operators_agents_share_one_post_allowance(client, monkeypatch):
 
 
 def test_an_operators_agents_share_the_waiting_challenge_allowance(client, monkeypatch):
-    monkeypatch.setenv("EMPORIA_STARTER_LIMITS", "1")
     a, b = _agents(client, "oa", "ob")
     _same_operator(a, b)
     assert _challenge(client, a).status_code == 200
@@ -153,9 +155,8 @@ def test_an_operators_agents_share_the_waiting_challenge_allowance(client, monke
 
 def test_the_house_agent_does_not_use_up_its_operators_allowances(client, monkeypatch):
     """Live 11-13: the house agent shares an operator with the person's other agents; its posts and its open
-    challenge used up their level-1 allowance. The house is exempt from starter limits, so it counts for none."""
-    monkeypatch.setenv("EMPORIA_STARTER_LIMITS", "1")
-    monkeypatch.setenv("EMPORIA_STARTER_POSTS_PER_DAY", "2,2,2")
+    challenge used up their Newcomer allowance. The house is exempt from the allowance, so it counts for none."""
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_POSTS_PER_DAY", "2,2,2")
     h, a = _agent(client, "hs"), _agent(client, "hs")
     with rs.DB_LOCK, rs.get_db() as conn:      # an operator of their own: the shared test DB has others on _ONE_OP
         for x in (h, a):
@@ -165,7 +166,7 @@ def test_the_house_agent_does_not_use_up_its_operators_allowances(client, monkey
     assert h in rs.house_names()
     assert ST.operator_agents(a) == [a], "the house is not one of the agents an allowance counts"
     for _ in range(3):
-        assert _post(client, h).status_code == 200, "the house has no starter limit of its own"
+        assert _post(client, h).status_code == 200, "the house has no allowance of its own"
     assert _post(client, a).status_code == 200 and _post(client, a).status_code == 200
     assert _post(client, a).status_code == 429, "the agent's own allowance still binds it"
 
@@ -202,7 +203,6 @@ def _signed_record_from_another_relay(agent_id: str, public_key_hex: str, relay:
 
 def test_farm_on_one_relay_move_to_another_and_the_new_relay_still_shows_level_one_and_no_xp(client, monkeypatch):
     from tests.test_emporia import bearer_for
-    monkeypatch.setenv("EMPORIA_STARTER_LIMITS", "1")
     agent = f"mv_{uuid.uuid4().hex[:6]}"
     _register_keyed(client, agent)
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -221,7 +221,7 @@ def test_farm_on_one_relay_move_to_another_and_the_new_relay_still_shows_level_o
 
     q = client.get(f"/agents/{agent}/quests").json()
     assert q["xp"] == 0 and q["level"]["level"] == 1 and q["label"].startswith("0 XP, level 1 on relay ")
-    assert ST.limit_level(agent) == 1, "starter limits bind it as a newcomer"
+    assert ST.limit_tier(agent) == 1, "the allowance binds it as a Newcomer: a carried record is no standing here"
     assert agent not in [row["agent_id"] for row in client.get("/season/board").json()["standings"]]
     sheet = client.get(f"/agents/{agent}/sheet").json()
     assert sheet["overall_level"] == 1

@@ -97,7 +97,7 @@ def test_seed_refuses_without_a_terminal(capsys, monkeypatch):
 
 def test_health_and_summary_serve_the_first_run_facts(client):
     h = client.get("/health").json()
-    assert h["season"]["season"] and h["starter_limits"] in (True, False)
+    assert h["season"]["season"] and h["allowance"] in (True, False)
     s = client.get("/relay/summary").json()
     assert set(s) >= {"agents", "operators", "open_challenges", "active_topics", "labs", "season"}
     assert all(isinstance(s[k], int) for k in ("agents", "operators", "open_challenges", "active_topics", "labs"))

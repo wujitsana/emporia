@@ -18,7 +18,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
-from emporia import operators, progression, relay_modules
+from emporia import allowance, operators, progression, relay_modules
 from emporia import relay_server as rs
 from emporia.logging_config import mark_expected
 from emporia.module_sdk import SessionState, get_interaction_module
@@ -707,7 +707,8 @@ _LEVEL_TTL = 20.0
 
 def agent_level(agent_id: str) -> int | None:
     """The agent's overall level (`level:v1`, from its quest XP), or None where this relay runs no quests
-    (or the agent is not one of its own). Kept for a few seconds: feeds ask for many authors at once."""
+    (or the agent is not one of its own). A label for quests, titles and seasons: it unlocks no capacity
+    (that is `allowance_of`). Kept for a few seconds: feeds ask for many authors at once."""
     if not agent_id or relay_modules.off_because("gamify", "quests"):
         return None
     hit = _LEVELS.get(agent_id)
@@ -721,41 +722,267 @@ def agent_level(agent_id: str) -> int | None:
     return level
 
 
-def limit_level(agent_id: str) -> int | None:
-    """The level whose starter limits bind `agent_id` (`levels.py`), or None where none do: limits switched
-    off (EMPORIA_STARTER_LIMITS=0), no quests on this relay, the house, or the relay operator's own agent."""
-    from emporia import levels
-    if not levels.starter_limits_on() or agent_id in progression.house_agents() or agent_id == rs._relay_operator_id():
+# ── the allowance (allowance.py): what the relay lets an agent do in a day, from earned standing ──
+
+_ALLOWANCE: dict[str, tuple[float, dict | None]] = {}
+_ALLOWANCE_TTL = 20.0
+_EVIDENCE: dict = {"key": None, "value": None}
+
+
+def _exempt() -> set[str]:
+    """The house and the relay operator's own agent: never limited, never counted."""
+    return set(progression.house_agents()) | {rs._relay_operator_id()}
+
+
+def _evidence() -> dict:
+    """What every agent's tier is read from, computed once for the relay and kept until sessions, posts or
+    agents change: contacts (who each agent finished a game or completed a deal with, by operator), games left
+    on a turn, the operators active in the last 30 days, and the standing data (`_who`)."""
+    table, games, who = _craft_table()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        key = (tuple(conn.execute("SELECT COUNT(*), MAX(updated_at) FROM sessions").fetchone()),
+               tuple(conn.execute("SELECT COUNT(*), MAX(recorded_at) FROM posts").fetchone()), id(who),
+               int(time.time() // 300))
+        if _EVIDENCE["key"] == key:
+            return _EVIDENCE["value"]
+        deals = _deal_records(conn)
+        cutoff = datetime.fromtimestamp(time.time() - allowance.WINDOW_DAYS * 86_400, UTC).isoformat()
+        active = {r[0] for r in conn.execute("SELECT DISTINCT author_id FROM posts WHERE recorded_at >= ? "
+                                             "AND federated_from IS NULL", (cutoff,))}
+        active |= {r[0] for r in conn.execute("SELECT DISTINCT p.agent_id FROM participants p JOIN sessions s "
+                                              "ON s.session_id = p.session_id WHERE s.updated_at >= ?", (cutoff,))}
+        active |= {r[0] for r in conn.execute("SELECT agent_id FROM authorized_agents WHERE is_active = 1 AND "
+                                              "registered_at >= ?", (cutoff,))}
+        live = {r[0] for r in conn.execute("SELECT agent_id FROM authorized_agents WHERE is_active = 1")}
+    abandons: dict[str, list[float]] = {}
+    for g in games:
+        quitter = g.get("abandoned_by")
+        if quitter and any(progression._operator(who, p) != progression._operator(who, quitter)
+                           for p in g.get("participants") or []):
+            abandons.setdefault(quitter, []).append(progression._ts(g["ended_at"]))
+    skip = _exempt()
+    value = {"contacts": allowance.contacts(games, deals, who), "abandons": abandons, "who": who,
+             "operators": {who[a].operator if a in who else a for a in (active & live) - skip}}
+    _EVIDENCE.update(key=key, value=value)
+    return value
+
+
+def _deal_records(conn) -> list[dict]:
+    """Completed purchases (the service module's finished sessions) as `progression` reads a deal, the house's left out."""
+    house = progression.house_agents()
+    out = []
+    for row in conn.execute("SELECT * FROM sessions WHERE module_type = 'emporia:service:v1' AND status = 'completed'"):
+        sess = rs._session_row_to_dict(row)
+        try:
+            _, outcome = get_interaction_module(sess["module_type"]).is_terminal(SessionState.from_dict(sess["state"]))
+        except Exception:  # noqa: BLE001 — a record that cannot be read is no deal
+            continue
+        data = (sess.get("state") or {}).get("data") or {}
+        if {data.get("buyer"), data.get("seller")} & house:
+            continue
+        out.append({"session_id": sess["session_id"], "buyer": data.get("buyer"), "seller": data.get("seller"),
+                    "status": outcome.get("status"), "paid": bool(rs.session_paid_by(sess["session_id"])),
+                    "ended_at": sess["updated_at"]})
+    return out
+
+
+def _operator_removals(conn, agent_id: str, now: float) -> list[float]:
+    """When the relay's operator removed this agent's content in the last 30 days (`deletions` rows with role
+    `operator`; an author's own and a moderator's removal are not counted)."""
+    from emporia import deletion
+    cutoff = datetime.fromtimestamp(now - allowance.WINDOW_DAYS * 86_400, UTC).isoformat()
+    out = []
+    for r in conn.execute("SELECT kind, item, deleted_at FROM deletions WHERE role = 'operator' AND deleted_at >= ? "
+                          "AND kind IN ('post', 'agora_topic', 'room_message', 'game_chat')", (cutoff,)).fetchall():
+        try:
+            row = deletion._row(conn, r["kind"], r["item"])
+        except Exception:  # noqa: BLE001 — a record that cannot be read is not counted
+            continue
+        if row is not None and row["author"] == agent_id:
+            out.append(progression._ts(r["deleted_at"]))
+    return sorted(out)
+
+
+def allowance_of(agent_id: str) -> dict | None:
+    """`allowance:v1` for `agent_id` (allowance.py): {tier 1..3, label, source earned|vouched, why, raises,
+    limits: the caps at that tier, …}; or None where no allowance binds: switched off (EMPORIA_ALLOWANCE=0),
+    the house, or the relay operator's own agent. Kept a few seconds."""
+    if not agent_id or not allowance.on() or agent_id in _exempt():
         return None
-    return agent_level(agent_id)
+    hit = _ALLOWANCE.get(agent_id)
+    if hit and time.time() - hit[0] < _ALLOWANCE_TTL:
+        return hit[1]
+    try:
+        out = _allowance_now(agent_id)
+    except Exception:  # noqa: BLE001 — a tier that cannot be read is Newcomer's, never a failed write
+        rs.logger.exception("allowance_failed", extra={"agent_id": agent_id})
+        out = {**allowance.assess(agent_id, weighted={}, now=time.time()), "error": "tier could not be read"}
+        out["limits"] = allowance.caps(out["tier"])
+    _ALLOWANCE[agent_id] = (time.time(), out)
+    return out
+
+
+def _allowance_now(agent_id: str) -> dict:
+    ev = _evidence()
+    now = time.time()
+    who = ev["who"]
+    with rs.DB_LOCK, rs.get_db() as conn:
+        removals = _operator_removals(conn, agent_id, now)
+        reg = conn.execute("SELECT registered_at FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+    registered = progression._ts(reg["registered_at"]) if reg else now
+    mine = progression._operator(who, agent_id)
+    out = allowance.assess(
+        agent_id, weighted=allowance.weights(ev["contacts"].get(agent_id, {}), who, now),
+        abandons=ev["abandons"].get(agent_id, ()), removals=removals,
+        vouched=agent_id in progression.vouched_agents(), others=len(ev["operators"] - {mine}),
+        days_here=(now - registered) / 86_400, now=now)
+    out["limits"] = allowance.caps(out["tier"])
+    return out
+
+
+def limit_tier(agent_id: str) -> int | None:
+    """The tier (1 Newcomer, 2 Known, 3 Trusted) binding `agent_id`, or None where none does."""
+    a = allowance_of(agent_id)
+    return a["tier"] if a else None
 
 
 def operator_agents(agent_id: str) -> list[str]:
-    """`agent_id` and every other agent of the same operator (`operators.operator_of`): what a starter limit
+    """`agent_id` and every other agent of the same operator (`operators.operator_of`): what an allowance
     counts, so a second agent is not a second allowance. The house and the relay operator's own agent are left
-    out: they are exempt from starter limits (`limit_level`), so what they post or issue is the relay's own work
+    out: they are exempt from the allowance (`allowance_of`), so what they post or issue is the relay's own work
     and never uses up the allowance of the operator's other agents (live 11-13: the house agent's posts and its
-    open challenge kept the same person's agents at their level-1 limits)."""
+    open challenge kept the same person's agents at their limits)."""
     from emporia import operators
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute("SELECT agent_id, operator_label, stable_id, registered_at, network_hash, network_group, "
                             "is_active FROM authorized_agents").fetchall()
     grouped = operators.assign(rows)          # every agent, so a link through a retired one still holds
     active = {r["agent_id"] for r in rows if r["is_active"]}
-    exempt = set(progression.house_agents()) | {rs._relay_operator_id()}
+    exempt = _exempt()
     mine = grouped.get(agent_id) or operators.operator_of(None, None, agent_id)
     return sorted({a for a, op in grouped.items() if op == mine and a in active and a not in exempt} | {agent_id})
 
 
-def limit_refusal(agent_id: str, level: int, what: str, need: int | None = None) -> str:
-    """The error text for a starter limit: the limit, the agent's level, and what raises it."""
-    from emporia import levels
-    return (f"{what} (you are level {level}; starter limits grow with level, EMPORIA_STARTER_LIMITS=0 switches "
-            f"them off on a private relay): {levels.raises(level)}")
+def _today() -> str:
+    return datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+
+def usage(conn, agents: list[str]) -> dict[str, int]:
+    """What `agents` (one operator's) have used against each cap: posts, new rooms or topics and first DMs today
+    (UTC), challenges and games open now."""
+    marks = ",".join("?" * len(agents))
+    since = _today()
+    one = lambda sql, *args: conn.execute(sql, args).fetchone()[0]  # noqa: E731
+    posts = one(f"SELECT COUNT(*) FROM posts WHERE author_id IN ({marks}) AND federated_from IS NULL AND recorded_at >= ?",
+                *agents, since)
+    rooms = (one(f"SELECT COUNT(*) FROM rooms WHERE creator_id IN ({marks}) AND linked_session_id IS NULL AND created_at >= ?", *agents, since)
+             + one(f"SELECT COUNT(*) FROM agora_topics WHERE creator_id IN ({marks}) AND created_at >= ?", *agents, since))
+    dms = one(f"SELECT COUNT(*) FROM dm_threads WHERE started_by IN ({marks}) AND created_at >= ?", *agents, since)
+    open_games = 0
+    house = progression.house_agents()
+    for r in conn.execute(f"SELECT s.* FROM sessions s WHERE s.status IN ('waiting', 'active') AND s.module_type NOT IN "
+                          f"('emporia:service:v1', 'emporia:research:v1', 'emporia:code-review:v1') AND s.session_id IN "
+                          f"(SELECT session_id FROM participants WHERE agent_id IN ({marks}))", agents).fetchall():
+        sess = rs._session_row_to_dict(r)
+        if not is_practice_session(sess) and not set(sess["participants"]) & house:
+            open_games += 1
+    from emporia import challenges as C
+    waiting = 0
+    for r in conn.execute(f"SELECT s.config_json, s.participants_json FROM sessions s JOIN participants p ON "
+                          f"s.session_id = p.session_id WHERE p.agent_id IN ({marks}) AND s.status = 'waiting' "
+                          "AND s.config_json LIKE '%\"challenge\"%'", agents).fetchall():
+        cfg = json.loads(r["config_json"] or "{}")
+        first = (json.loads(r["participants_json"] or "[]") or [""])[0]
+        if first in agents and isinstance(cfg.get("challenge"), dict) and not C.expired(cfg["challenge"]):
+            waiting += 1
+    return {"posts_per_day": posts, "new_rooms_per_day": rooms, "stranger_dms_per_day": dms, "open_games": open_games,
+            "challenges": waiting}
+
+
+def newcomer_actions_today(conn) -> int:
+    """Capped actions (posts, new rooms or topics, first DMs) taken today (UTC) by agents whose tier is Newcomer:
+    what the relay-wide Newcomer budget is spent on (H10: a fresh label must not multiply the allowance)."""
+    since = _today()
+    per: dict[str, int] = {}
+    for sql in ("SELECT author_id, COUNT(*) FROM posts WHERE federated_from IS NULL AND recorded_at >= ? GROUP BY author_id",
+                "SELECT creator_id, COUNT(*) FROM rooms WHERE linked_session_id IS NULL AND created_at >= ? GROUP BY creator_id",
+                "SELECT creator_id, COUNT(*) FROM agora_topics WHERE created_at >= ? GROUP BY creator_id",
+                "SELECT started_by, COUNT(*) FROM dm_threads WHERE started_by IS NOT NULL AND created_at >= ? "
+                "GROUP BY started_by"):
+        for agent, n in conn.execute(sql, (since,)).fetchall():
+            per[agent] = per.get(agent, 0) + n
+    return sum(n for agent, n in per.items() if limit_tier(agent) == 1)
+
+
+def check_capped(conn, caller: str, kind: str, what: str, *, extra: int = 0) -> tuple[int, str] | None:
+    """The refusal (status, text) when `caller` is at the cap for `kind` (allowance.KINDS: posts_per_day,
+    new_rooms_per_day, stranger_dms_per_day; counted per operator) or, as a Newcomer, the relay-wide Newcomer
+    budget is spent; None when it may go ahead."""
+    a = allowance_of(caller)
+    if a is None:
+        return None
+    agents = operator_agents(caller)
+    n, cap = usage(conn, agents)[kind], a["limits"][kind]
+    if n + extra >= cap:
+        who = f"{n} {allowance.WORDS[kind]} from you and your operator's other agents" if len(agents) > 1 \
+            else f"{n} {allowance.WORDS[kind]}"
+        return 429, allowance.refusal(a, f"{who}, the limit as {a['name']} is {cap}")
+    budget = allowance.newcomer_budget()
+    if a["tier"] == 1 and budget and newcomer_actions_today(conn) >= budget:
+        return 429, allowance.refusal(a, f"all Newcomers on this relay have used today's shared budget of {budget} "
+                                         "actions; it resets at 00:00 UTC")
+    return None
+
+
+def public_allowance(a: dict | None) -> dict | None:
+    """What a sheet shows of an allowance: the tier, its source, the thresholds in force, why, and what raises it."""
+    if a is None:
+        return None
+    return {k: a[k] for k in ("formula", "tier", "name", "source", "label", "weight", "operators_counted",
+                              "thresholds", "why", "raises", "scope")}
+
+
+def allowance_sheet(agent_id: str) -> dict | None:
+    """The caps at the agent's tier with what is left of each today (its own eyes only):
+    {**public_allowance, limits: {kind: {cap, used, left}}, newcomer_budget}. None where no allowance binds."""
+    a = allowance_of(agent_id)
+    if a is None:
+        return None
+    with rs.DB_LOCK, rs.get_db() as conn:
+        used = usage(conn, operator_agents(agent_id))
+        budget = allowance.newcomer_budget()
+        spent = newcomer_actions_today(conn) if a["tier"] == 1 and budget else None
+    limits = {k: {"cap": cap, "used": used[k], "left": max(0, cap - used[k]), "counts": allowance.WORDS[k]}
+              for k, cap in a["limits"].items()}
+    out = {**public_allowance(a), "limits": limits, "counted": "per operator: your operator's agents share these"}
+    if spent is not None:
+        out["newcomer_budget"] = {"cap": budget, "used": spent, "left": max(0, budget - spent),
+                                  "about": "shared by every Newcomer on this relay, per UTC day"}
+    return out
+
+
+@router.get("/agents/{agent_id}/allowance")
+async def agent_allowance(agent_id: str, request: Request):
+    """The caller's own allowance: tier, source, what is left today, and what raises it."""
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    if caller != agent_id:
+        raise HTTPException(403, "an agent reads its own allowance; the tier is on its public sheet")
+    out = await run_in_threadpool(allowance_sheet, agent_id)
+    return out or {"tier": None, "label": "no limits here (the house, the relay operator, or the allowance is off)"}
+
+
+def limit_refusal(a: dict, what: str) -> str:
+    """The error text for an allowance limit: what, the agent's tier, and what raises it."""
+    return allowance.refusal(a, what)
 
 
 def forget_levels() -> None:
+    """Forget the kept levels and allowances (a test, or a change the caches would not see)."""
     _LEVELS.clear()
+    _ALLOWANCE.clear()
+    _EVIDENCE.update(key=None, value=None)
 
 
 def _due(agent_id: str) -> list[dict]:
@@ -993,6 +1220,7 @@ def _sheet_body(agent_id: str) -> dict:
              "insight": progression.insight(agent_id, _calls().get(agent_id, [])),
              "scope": "this_relay", "sessions_counted": len(set(used)),
              **({"overall_level": lv} if (lv := agent_level(agent_id)) is not None else {}),
+             **({"allowance": al} if (al := public_allowance(allowance_of(agent_id))) is not None else {}),
              "records_hash": progression.records_hash(used),
              "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
     from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay

@@ -1,4 +1,7 @@
-"""What this agent has left under its own limits, read-only (`standing(view="limits")`).
+"""What this agent has left under its own limits and the relay's allowance, read-only (`standing(view="limits")`).
+
+The relay's allowance (tier, what is left today, what raises it) is read from the relay; the rest are this
+agent's own guards, set by its person.
 
 An agent that decides like a player weighs what it can finish before it accepts: a game it would have to
 abandon, a paid room over its spend left. Every number here is read from the guard that enforces it, never
@@ -96,6 +99,18 @@ def _fetch_open_games(agent_id: str) -> int | None:
         return None
     return sum(1 for x in r.json().get("sessions", []) if x.get("status") in ("waiting", "active")
                and x.get("module_type") not in m._NOT_GAMES)
+
+
+def allowance(agent_id: str) -> dict[str, Any]:
+    """The relay's allowance for this agent (`allowance.py`): its tier, whether it is earned or vouched by the
+    relay, what is left of each cap today, and what raises it. One relay read; the relay's word, not this
+    machine's: its operator sets the caps, the agent's standing sets the tier."""
+    from emporia import mcp_server as m
+    try:
+        r = m._bearer_request("get", f"{m._base()}/agents/{m._seg(agent_id)}/allowance", agent_id=agent_id, timeout=5)
+        return r.json() if r.status_code == 200 else {"error": f"the relay answered {r.status_code}"}
+    except Exception as e:  # noqa: BLE001 — a relay that cannot be reached is said so, not guessed
+        return {"error": f"allowance not readable: {str(e)[:80]}"}
 
 
 class LimitsLine:
@@ -204,6 +219,7 @@ def snapshot(agent_id: str) -> dict[str, Any]:
     return {
         "games_per_operator_per_day": pb.games_per_operator_per_day,
         "open_games_cap": open_cap,
+        "allowance": allowance(agent_id),
         "spend": spend(agent_id),
         "writes": writes(),
         "turns": turns(),

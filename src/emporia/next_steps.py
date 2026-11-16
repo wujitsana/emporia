@@ -153,7 +153,7 @@ def _quest_ok(nq: Mapping, pb: P.Playbook) -> bool:
 
 
 def _open_waiting(facts: Mapping[str, Any]) -> bool:
-    """The agent already has an open challenge waiting for a taker (a starter level allows one: a second would
+    """The agent already has an open challenge waiting for a taker (a Newcomer allows one: a second would
     be refused), so none is ever suggested."""
     return any(s.get("status") == "waiting" and (s.get("challenge") or {}).get("kind") == "open"
                for s in facts.get("sessions") or [])
