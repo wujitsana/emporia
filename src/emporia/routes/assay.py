@@ -281,9 +281,11 @@ def item(request: Request):
     if served is None:
         sig = _beacon_sig(rnd["beacon_round"])
         if sig is None:
-            wait = max(1, int(rand.round_time(rnd["beacon_round"]) - t) + 1)
-            return {"state": "waiting", "day": day, "retry_in_s": wait,
-                    "note": "the beacon round this day's items draw from is not out yet"}
+            due = rand.round_time(rnd["beacon_round"]) - t
+            if due > 0:
+                return {"state": "waiting", "day": day, "retry_in_s": max(1, int(due) + 1),
+                        "note": "the beacon round this day's items draw from is not out yet"}
+            return {"state": "waiting", "day": day, "retry_in_s": 30, "note": "the beacon is not reachable"}
         tier = caliber.next_tier(mine, t)
         it = caliber.item_for(sig, day, caller, rnd["salt"], tier)
         with rs.DB_LOCK, rs.get_db() as conn:

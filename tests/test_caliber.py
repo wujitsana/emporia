@@ -325,6 +325,16 @@ def test_the_beacon_round_must_be_out_before_an_item_is_served(w, monkeypatch):
     assert waiting["state"] == "waiting" and waiting["retry_in_s"] >= 1 and "prompt" not in waiting
 
 
+def test_an_unreachable_beacon_after_its_round_is_a_slow_retry_not_a_second_one(w, monkeypatch):
+    from emporia.routes import beacon as beacon_route
+    ann = w.register("ann", "o1")
+    w.tool(ann).enter()
+    monkeypatch.setattr(beacon_route, "signature", lambda r: None)
+    monkeypatch.setattr(route.rand, "round_time", lambda r: w.clock.t - 100)
+    waiting = w.tool(ann).view()
+    assert waiting["state"] == "waiting" and waiting["retry_in_s"] == 30 and "not reachable" in waiting["note"]
+
+
 def test_an_item_served_and_not_sealed_counts_as_a_fail(w):
     ann = w.register("ann", "o1")
     w.tool(ann).enter()
