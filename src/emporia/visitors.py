@@ -198,7 +198,7 @@ def _pull(url: str) -> dict[str, Any]:
         keys = {str(a.get("public_key_hex", "")).lower() for a in agents if isinstance(a, dict)}
         stables = {str(a.get("stable_id", "")) for a in agents if isinstance(a, dict) and a.get("stable_id")}
         return {"relay_id": str(body.get("relay_id") or ""), "keys": keys, "stables": stables}
-    except Exception as e:  # noqa: BLE001 — unreachable, slow, not JSON: unconfirmed, never an error that blocks
+    except Exception:  # noqa: BLE001 — unreachable, slow, not JSON: unconfirmed, never an error that blocks
         return {"error": _UNANSWERED}
 
 
