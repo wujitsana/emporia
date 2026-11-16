@@ -368,7 +368,10 @@ async def whats_next_facts(agent_id: str, request: Request):
     facts["challenges"] = challenges_for(agent_id, others)       # quests:v4
     facts["waiting"] = waiting_for(agent_id, others)             # review pass 2, P3
     facts["talk"] = talk_for(agent_id, others)                   # talk first
-    facts["tries"] = tries_for(agent_id)                         # for a quiet round: something not done lately
+    try:
+        facts["tries"] = tries_for(agent_id)                     # for a quiet round: something not done lately
+    except Exception:  # noqa: BLE001 — a hint only: whats_next answers without it rather than fail
+        facts["tries"] = []
     if (asy := _assay_fact(agent_id)) is not None:               # the Assay module only
         facts["assay"] = asy
     if relay_modules.on("gamify", "quests"):
