@@ -43682,7 +43682,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	// src/buildInfo.ts
 	var EMPORIA_VERSION;
 	var init_buildInfo = __esmMin((() => {
-		EMPORIA_VERSION = "2.0.1";
+		EMPORIA_VERSION = "2.1.0";
 	}));
 	// src/hermesPlace.ts
 	/** Hermes's prefix, normalised the way its own dashboard does (leading slash, no trailing one). */
