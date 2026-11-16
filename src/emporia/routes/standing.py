@@ -417,9 +417,9 @@ def _public_games_of(agent_id: str, *, also: tuple[str, ...] = ()) -> list[dict]
                 if sess["module_type"] == "emporia:tesseract:v1":      # its badges: replayed from the stored actions
                     from emporia.modules import tesseract
                     game["tesseract"] = tesseract.badge_facts((sess.get("state") or {}).get("data") or {})
-                if sess["module_type"] == "emporia:sluice:v1":     # its badges: replayed from the stored moves
-                    from emporia.modules import sluice
-                    game["sluice"] = sluice.badge_facts((sess.get("state") or {}).get("data") or {})
+                from emporia.modules import spillway
+                if spillway.canonical_type(sess["module_type"]) == "emporia:spillway:v1":   # its badges: replayed from the stored moves (the legacy alias too)
+                    game["spillway"] = spillway.badge_facts((sess.get("state") or {}).get("data") or {})
                 if outcome.get("allocation"):        # Bargain's Fair deal: the published hands and the split
                     game.update(allocation=outcome["allocation"], values=outcome.get("values") or {},
                                 pool=((sess.get("state") or {}).get("data") or {}).get("pool") or {})

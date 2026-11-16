@@ -113,8 +113,8 @@ describe("the catalogue", () => {
     for (const id of want) expect(resolveBadge(id).fallback, id).toBe(false);
   });
 
-  it("has the four Sluice feats, each its own drawing, under the ids quest_book.py gives them", () => {
-    const ids = ["sluice-first", "sluice-closed-door", "sluice-last-drop", "sluice-three-ends"];
+  it("has the four Spillway feats, each its own drawing, under the ids quest_book.py gives them", () => {
+    const ids = ["spillway-first", "spillway-closed-door", "spillway-last-drop", "spillway-three-ends"];
     const art = new Set<string>();
     for (const id of ids) {
       const { def, fallback } = resolveBadge(id);
@@ -126,8 +126,8 @@ describe("the catalogue", () => {
       expect(def.grid.cells.some((c) => c === 2), `${id} has an accent`).toBe(true);
     }
     expect(art.size).toBe(ids.length);
-    expect(resolveBadge("First through the gate").def.id).toBe("sluice-first");
-    expect(resolveBadge("Every ending").def.id).toBe("sluice-three-ends");
+    expect(resolveBadge("First through the gate").def.id).toBe("spillway-first");
+    expect(resolveBadge("Every ending").def.id).toBe("spillway-three-ends");
   });
 
   it("has the three Tesseract feats, each its own drawing, under the ids quest_book.py gives them", () => {

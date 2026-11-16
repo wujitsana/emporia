@@ -1,11 +1,11 @@
 import { BoardTable } from "./BoardTable";
 import { plural } from "./boardKit";
 import kit from "./BoardKit.module.css";
-import styles from "./SluiceBoard.module.css";
+import styles from "./SpillwayBoard.module.css";
 
-export interface SluiceMoveRow { n: number; name: string; channel: number; row: number | null; gate: number | null }
+export interface SpillwayMoveRow { n: number; name: string; channel: number; row: number | null; gate: number | null }
 
-export interface SluiceBoardProps {
+export interface SpillwayBoardProps {
   cols: number;
   rows: number;
   /** Seat A then seat B, already short display names. */
@@ -15,7 +15,7 @@ export interface SluiceBoardProps {
   nameRound: number | null;
   /** Rows top first; `.` empty, `#` silt, `A`, `B`. */
   board: string[][];
-  moves: SluiceMoveRow[];
+  moves: SpillwayMoveRow[];
   /** The move number of the stone dropped last (marked), and its place. */
   last: { n: number; name: string; channel: number; row: number | null } | null;
   /** The shut channel and whether it is shut for the next drop (`now`) or was shut for the last one. */
@@ -31,11 +31,11 @@ export interface SluiceBoardProps {
 const same = (a: [number, number][] | null, c: number, r: number) => !!a?.some(([x, y]) => x === c && y === r);
 
 /**
- * Sluice: six channels, five rows, a gate across the top of the channel the beacon shut, neutral silt, a
+ * Spillway: six channels, five rows, a gate across the top of the channel the beacon shut, neutral silt, a
  * filled square for seat A and a hollow ring for seat B, the last drop marked, the winning four outlined
  * and, at the cap, the live threes. The drawing is `aria-hidden`; a table states every cell, another the moves.
  */
-export function SluiceBoard(p: SluiceBoardProps) {
+export function SpillwayBoard(p: SpillwayBoardProps) {
   const channels = Array.from({ length: p.cols }, (_, i) => i + 1);
   const rule = `${p.cols} channels, ${p.rows} rows · each turn the beacon shuts one channel · four of your stones in a line wins; silt and the other side's stones break a line · at the cap, more live threes wins, level: the player who moved second wins`;
   if (!p.dealt) {
@@ -48,7 +48,7 @@ export function SluiceBoard(p: SluiceBoardProps) {
   }
   const word = (m: string) => (m === "A" ? p.seats[0] : m === "B" ? p.seats[1] : m === "#" ? "silt" : "empty");
   const gateWhere = p.gate ? (p.gate.now ? `Channel ${p.gate.channel} is shut for the next drop.` : `Channel ${p.gate.channel} was shut for the last drop.`) : null;
-  const caption = `Sluice: ${p.cols} channels by ${p.rows} rows, ${plural(p.moves.length, "drop")}${p.gate ? `, channel ${p.gate.channel} ${p.gate.now ? "shut now" : "was shut"}` : ""}`;
+  const caption = `Spillway: ${p.cols} channels by ${p.rows} rows, ${plural(p.moves.length, "drop")}${p.gate ? `, channel ${p.gate.channel} ${p.gate.now ? "shut now" : "was shut"}` : ""}`;
   return (
     <div className={`${kit.board} ${styles.root}`}>
       <p className={kit.rules}>{rule}</p>
@@ -108,7 +108,7 @@ export function SluiceBoard(p: SluiceBoardProps) {
           </tr>
         ))}
       </BoardTable>
-      <BoardTable caption="Sluice drops in order" head={["move", "by", "channel", "row", "channel shut"]}>
+      <BoardTable caption="Spillway drops in order" head={["move", "by", "channel", "row", "channel shut"]}>
         {p.moves.map((m) => (
           <tr key={m.n}><th scope="row">{m.n}</th><td>{m.name}</td><td>{m.channel}</td><td>{m.row ?? ""}</td><td>{m.gate ?? "none"}</td></tr>
         ))}

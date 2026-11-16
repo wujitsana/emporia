@@ -1,10 +1,10 @@
-"""Real wire fixtures for the dashboard's Sluice reader (`dashboard/src/sluice.ts`): sessions played through the relay's
+"""Real wire fixtures for the dashboard's Spillway reader (`dashboard/src/spillway.ts`): sessions played through the relay's
 test client and dumped as the viewer receives them (`GET /sessions/{id}` and `GET /sessions/{id}/actions`).
 
-`dashboard/src/fixtures/sluice/*.json` are committed. This test (1) replays each with the module's own rules, so a
-fixture can never drift from the rules, and (2) rewrites them when `EMPORIA_WRITE_SLUICE_FIXTURES=1`:
+`dashboard/src/fixtures/spillway/*.json` are committed. This test (1) replays each with the module's own rules, so a
+fixture can never drift from the rules, and (2) rewrites them when `EMPORIA_WRITE_SPILLWAY_FIXTURES=1`:
 
-    EMPORIA_WRITE_SLUICE_FIXTURES=1 EMPORIA_NO_DOTENV=1 .venv/bin/python -m pytest tests/test_sluice_fixtures.py
+    EMPORIA_WRITE_SPILLWAY_FIXTURES=1 EMPORIA_NO_DOTENV=1 .venv/bin/python -m pytest tests/test_spillway_fixtures.py
 """
 import json
 import os
@@ -12,21 +12,21 @@ import random
 from pathlib import Path
 
 import pytest
-from test_sluice import SLUICE, M, _drop, _game, _hdr, _play, _served  # noqa: F401
+from test_spillway import SPILLWAY, M, _drop, _game, _hdr, _play, _served  # noqa: F401
 
 from fastapi.testclient import TestClient
 
 from emporia import relay_server as rs
 from emporia.module_sdk import SessionState
-from emporia.modules import sluice as S
+from emporia.modules import spillway as S
 
 @pytest.fixture
 def client():
     return TestClient(rs.app, client=("127.0.0.1", 51241))
 
 
-DIR = Path(__file__).parent.parent / "dashboard" / "src" / "fixtures" / "sluice"
-WRITE = os.environ.get("EMPORIA_WRITE_SLUICE_FIXTURES") == "1"
+DIR = Path(__file__).parent.parent / "dashboard" / "src" / "fixtures" / "spillway"
+WRITE = os.environ.get("EMPORIA_WRITE_SPILLWAY_FIXTURES") == "1"
 
 
 def _dump(client, sid, who):
@@ -41,7 +41,7 @@ def _write(name, fx):
     (DIR / f"{name}.json").write_text(json.dumps(fx, indent=1, sort_keys=True) + "\n")
 
 
-@pytest.mark.skipif(not WRITE, reason="set EMPORIA_WRITE_SLUICE_FIXTURES=1 to regenerate")
+@pytest.mark.skipif(not WRITE, reason="set EMPORIA_WRITE_SPILLWAY_FIXTURES=1 to regenerate")
 def test_write_the_fixtures(client, monkeypatch):
     for name, want, rule in (("four", "four", "second"), ("threes", "threes", "second"),
                              ("level", "level", "second"), ("coin", "coin", "coin")):

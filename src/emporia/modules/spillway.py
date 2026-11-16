@@ -1,4 +1,4 @@
-"""Sluice (`emporia:sluice:v1`), 2 players: four stones in a line on a 6 x 5 board, with chance from drand.
+"""Spillway (`emporia:spillway:v1`), 2 players: four stones in a line on a 6 x 5 board, with chance from drand.
 
 Channels (columns) 1-6 left to right, rows 1-5 from the bottom. A stone dropped into a channel settles on
 whatever is below it. Four of your stones in a line, any direction, wins at once. Only imports: stdlib, the
@@ -17,7 +17,7 @@ No secret is used or revealed. Everything here is a pure function of the stored 
 with more *live threes* (a line of four cells holding three of your stones and one empty cell) wins; level goes
 to the player who moved second. There is no draw. Result: winner +1, loser -1.
 
-BALANCE (measured with `scripts/sim_sluice.py`, 3 seeds x 3000 games each, 9000 per cell, look-ahead bot v itself;
+BALANCE (measured with `scripts/sim_spillway.py`, 3 seeds x 3000 games each, 9000 per cell, look-ahead bot v itself;
 "first" = share of games the first mover wins, +- standard error of the pooled rate; look2 v greedy = look2's wins):
 
     level rule      drops   first mover wins (95 %)       look2 v greedy   ended by (four / threes / level or coin)
@@ -343,8 +343,8 @@ def badge_facts(data: dict[str, Any]) -> dict[str, Any]:
 
 
 @register_module
-class SluiceModule(InteractionModule):
-    MODULE_TYPE = "emporia:sluice:v1"
+class SpillwayModule(InteractionModule):
+    MODULE_TYPE = "emporia:spillway:v1"
     DECLARES_WINNER = True
     MIN_PARTICIPANTS = MAX_PARTICIPANTS = 2
     TIMED = True
@@ -357,7 +357,7 @@ class SluiceModule(InteractionModule):
     CHECKED_ACTIONS = ("drop",)
     REPLAY_ACTIONS = ("drop", "void")      # what `verify_session` replays: a void is in the signed log too
     RULES = """
-Sluice (v1), 2 players: four stones in a line on a board of 6 channels (columns, 1-6 left to right) and 5
+Spillway (v1), 2 players: four stones in a line on a board of 6 channels (columns, 1-6 left to right) and 5
 rows (1-5 from the bottom). A stone dropped into a channel settles on whatever is below it. Four of your
 stones in a line, any direction, wins at once. Silt (#, a neutral block) and the other side's stones break a
 line. You are the first seat (A, a filled square) if you created the game, else the second (B, a ring).
@@ -567,7 +567,7 @@ Clock: `move_time_limit_s` (default 600) per drop; missing it loses. Winner +1, 
             over, result = self.is_terminal(new)
             return SessionResult(success=True, new_state=new, artifacts={"result": result} if over else None)
         if action.action_type != "drop":
-            raise ValueError(f"{action.action_type!r} is not a Sluice move")
+            raise ValueError(f"{action.action_type!r} is not a Spillway move")
         if data.get("ended") or data.get("voided"):
             raise ValueError("the game is over")
         view = _view(state.data)       # raises below, not here, when the beacons are missing
@@ -709,7 +709,7 @@ Clock: `move_time_limit_s` (default 600) per drop; missing it loses. Winner +1, 
 
     def private(self, data: dict[str, Any], scope: str, seat: int, sig: bytes, s: bytes,
                 sess: dict[str, Any]) -> dict[str, Any]:
-        """Nothing in Sluice is hidden: a player's own view is the public one (so the client does not fall back to
+        """Nothing in Spillway is hidden: a player's own view is the public one (so the client does not fall back to
         another game's hand)."""
         view = _view(data)
         if view is None:
@@ -718,3 +718,22 @@ Clock: `move_time_limit_s` (default 600) per drop; missing it loses. Winner +1, 
                "gate_ready": view["gate_ready"], "open": view["open"], "drops_left": view["drops_left"],
                "you_are": SEAT_MARKS[seat], "hidden": "nothing: every draw is public"}
         return out
+
+
+#: The game's first name, "sluice", clashed with another plugin's. Finished sessions already stored under it must still
+#: display, export and verify, so the old type stays registered as a read-only alias of this module: same rules, no new
+#: sessions (`RETIRED_FOR`, refused with `RETIRED_MESSAGE`).
+LEGACY_TYPE = "emporia:sluice:v1"
+
+
+def canonical_type(module_type: Any) -> Any:
+    """The current type for a stored one: the legacy alias reads as Spillway."""
+    return SpillwayModule.MODULE_TYPE if module_type == LEGACY_TYPE else module_type
+
+
+@register_module
+class LegacySpillwayModule(SpillwayModule):
+    MODULE_TYPE = LEGACY_TYPE
+    RETIRED_FOR = SpillwayModule.MODULE_TYPE
+    RETIRED_MESSAGE = ("this game is now called Spillway: create emporia:spillway:v1 instead (same rules). "
+                       "Games already played or running under the old name stay readable and finish as they were.")

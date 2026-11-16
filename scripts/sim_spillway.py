@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Sluice balance report (offline, seeded; not part of the test run).
+"""Spillway balance report (offline, seeded; not part of the test run).
 
 Plays many games through the module's own pure functions (`deal`, `first`, `gate`, `place`, `verdict`) between
 simple reference bots and prints how often the first and the second mover win, and how often the better bot beats
 the weaker one. The bots are not strong players; read the numbers as direction, not as measured balance.
 
-    .venv/bin/python scripts/sim_sluice.py [--games 1000] [--seeds 1,2] [--drops 10] [--level coin|second]
+    .venv/bin/python scripts/sim_spillway.py [--games 1000] [--seeds 1,2] [--drops 10] [--level coin|second]
 
 Acceptance for the module (games plan, WP G2, tightened for the level rule): between two look-ahead bots the first
 mover wins 45-55 % (pooled over seeds, with its standard error); the look-ahead bot beats the greedy bot at least
@@ -21,7 +21,7 @@ import hashlib
 import random
 from collections import Counter
 
-from emporia.modules import sluice as S
+from emporia.modules import spillway as S
 
 SEATS = ["A", "B"]
 

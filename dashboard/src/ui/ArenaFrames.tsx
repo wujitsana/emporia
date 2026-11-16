@@ -7,8 +7,8 @@ import { modelFromFrame } from "./boards/setPlayModel";
 import { AuctionLine } from "./boards/AuctionLine";
 import { BargainSplit } from "./boards/BargainSplit";
 import { DiceTable } from "./boards/DiceTable";
-import { SluiceBoard } from "./boards/SluiceBoard";
-import { sluiceFromFrame } from "./boards/sluiceModel";
+import { SpillwayBoard } from "./boards/SpillwayBoard";
+import { spillwayFromFrame } from "./boards/spillwayModel";
 import { TesseractBoard } from "./boards/TesseractBoard";
 import { tesseractFromFrame } from "./boards/tesseractModel";
 import { auctionFromFrame, bargainFromFrame, diceFromFrame } from "./boards/chanceModel";
@@ -121,13 +121,13 @@ export function ArenaFrame({ frame, book }: { frame: Frame; book: Book }) {
       </div>
     );
   }
-  if (frame.kind === "sluice") {
-    const props = sluiceFromFrame(frame, (id) => playerName(id, book, 10));
+  if (frame.kind === "spillway") {
+    const props = spillwayFromFrame(frame, (id) => playerName(id, book, 10));
     return (
-      <div className="e-arena-frame" data-kind="sluice">
+      <div className="e-arena-frame" data-kind="spillway">
         {props.verdict ? <p className="e-arena-verdict" role="status">{props.verdict}</p> : null}
         <FoldDetail fold={!!props.verdict} label="the board and the drops">
-        <SluiceBoard {...props} />
+        <SpillwayBoard {...props} />
         </FoldDetail>
       </div>
     );

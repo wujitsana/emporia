@@ -1,16 +1,16 @@
-"""The Sluice badges (quest_book FEATS `sluice-*`): earned only from a finished game's stored moves
-(`sluice.badge_facts`), against another operator's agent, and never for a win on the clock or against the house."""
+"""The Spillway badges (quest_book FEATS `spillway-*`): earned only from a finished game's stored moves
+(`spillway.badge_facts`), against another operator's agent, and never for a win on the clock or against the house."""
 import random
 
 from conftest import fake_beacon_sig
 
 from emporia import quest_book as B
 from emporia import quest_engine as E
-from emporia.modules import sluice as S
+from emporia.modules import spillway as S
 
 ME = "me"
 OPS = {"me": "label:ME", "mine2": "label:ME", "b1": "label:B", "c1": "label:C", "d1": "label:D", "house": "label:HOUSE"}
-SLUICE_IDS = ("sluice-first", "sluice-closed-door", "sluice-last-drop", "sluice-three-ends")
+SPILLWAY_IDS = ("spillway-first", "spillway-closed-door", "spillway-last-drop", "spillway-three-ends")
 
 
 def _sig(rnd):
@@ -72,10 +72,10 @@ def ctx():
     return E.Ctx(operator=lambda a: OPS.get(a, a), house=frozenset({"house"}), parts=frozenset())
 
 
-def sluice_game(opp, ending="four", winner=ME, **facts):
-    return {"session_id": f"s_{random.randrange(10**9)}", "module_type": B.SLUICE, "participants": [ME, opp],
+def spillway_game(opp, ending="four", winner=ME, **facts):
+    return {"session_id": f"s_{random.randrange(10**9)}", "module_type": B.SPILLWAY, "participants": [ME, opp],
             "ended_at": f"2026-11-1{random.randrange(10)}T10:00:00+00:00", "winner": winner, "termination": ending,
-            "sluice": {"ending": ending, "second_mover": False, "shut_block": False, **facts}}
+            "spillway": {"ending": ending, "second_mover": False, "shut_block": False, **facts}}
 
 
 def earned(*games):
@@ -85,63 +85,63 @@ def earned(*games):
 
 
 def test_the_book_names_the_four_feats_with_no_xp():
-    ids = [f["id"] for f in B.FEATS if f["id"].startswith("sluice-")]
-    assert tuple(ids) == SLUICE_IDS
+    ids = [f["id"] for f in B.FEATS if f["id"].startswith("spillway-")]
+    assert tuple(ids) == SPILLWAY_IDS
     assert all("when" in f for f in B.FEATS if f["id"] in ids)
     assert not [f for f in E.events(ME, games=[], ctx=ctx())]
 
 
 def test_a_win_against_another_operator_is_the_first_badge_and_only_that():
-    got, out = earned(sluice_game("b1", "threes"))
-    assert got == {"sluice-first"} and out["xp"] >= 0
-    assert "sluice-first" in out["badges"]
+    got, out = earned(spillway_game("b1", "threes"))
+    assert got == {"spillway-first"} and out["xp"] >= 0
+    assert "spillway-first" in out["badges"]
 
 
 def test_a_loss_a_draw_or_a_win_on_the_clock_earns_nothing():
-    assert earned(sluice_game("b1", winner="b1"))[0] == set()
-    assert earned(sluice_game("b1", ending="timeout"))[0] == set()
-    assert earned(sluice_game("b1", ending="forfeit"))[0] == set()
+    assert earned(spillway_game("b1", winner="b1"))[0] == set()
+    assert earned(spillway_game("b1", ending="timeout"))[0] == set()
+    assert earned(spillway_game("b1", ending="forfeit"))[0] == set()
 
 
 def test_the_house_your_own_operator_and_a_game_nobody_moved_count_for_nothing():
-    assert earned(sluice_game("house"))[0] == set()
-    assert earned(sluice_game("mine2"))[0] == set()
-    assert earned({**sluice_game("b1"), "played": False})[0] == set()
+    assert earned(spillway_game("house"))[0] == set()
+    assert earned(spillway_game("mine2"))[0] == set()
+    assert earned({**spillway_game("b1"), "played": False})[0] == set()
 
 
 def test_a_new_agent_counts_for_nothing_like_every_other_cross_operator_step():
     c = E.Ctx(operator=lambda a: OPS.get(a, a), house=frozenset({"house"}), parts=frozenset(),
               registered={"b1": 1_000_000_000.0}, contacts={}, new_agent_s=3600.0)
-    g = sluice_game("b1")
+    g = spillway_game("b1")
     g["ended_at"] = "2001-09-09T01:46:50+00:00"
     out = E.evaluate(ME, E.events(ME, games=[g], ctx=c), c)
-    assert not [f for f in out["feats"] if f["done"] and f["id"].startswith("sluice-")]
+    assert not [f for f in out["feats"] if f["done"] and f["id"].startswith("spillway-")]
 
 
 def test_the_closed_door_and_the_last_drop_read_the_replayed_facts():
-    got, _ = earned(sluice_game("b1", shut_block=True))
-    assert got == {"sluice-first", "sluice-closed-door"}
-    got, _ = earned(sluice_game("b1", ending="level", second_mover=True))
-    assert got == {"sluice-first", "sluice-last-drop"}
+    got, _ = earned(spillway_game("b1", shut_block=True))
+    assert got == {"spillway-first", "spillway-closed-door"}
+    got, _ = earned(spillway_game("b1", ending="level", second_mover=True))
+    assert got == {"spillway-first", "spillway-last-drop"}
     # the facts are the relay's: a game record that does not carry them earns neither
-    bare = sluice_game("b1", ending="level")
-    bare.pop("sluice")
-    assert earned(bare)[0] == {"sluice-first"}
+    bare = spillway_game("b1", ending="level")
+    bare.pop("spillway")
+    assert earned(bare)[0] == {"spillway-first"}
     # a closed-door claim on a lost game is nothing
-    assert earned(sluice_game("b1", winner="b1", shut_block=True))[0] == set()
+    assert earned(spillway_game("b1", winner="b1", shut_block=True))[0] == set()
 
 
 def test_every_ending_needs_four_threes_and_level_wins_and_three_of_one_is_not_enough():
-    assert "sluice-three-ends" not in earned(*[sluice_game("b1", "four") for _ in range(5)])[0]
-    got, _ = earned(sluice_game("b1", "four"), sluice_game("c1", "threes"))
-    assert "sluice-three-ends" not in got
-    got, _ = earned(sluice_game("b1", "four"), sluice_game("c1", "threes"), sluice_game("d1", "level", second_mover=True))
-    assert "sluice-three-ends" in got
+    assert "spillway-three-ends" not in earned(*[spillway_game("b1", "four") for _ in range(5)])[0]
+    got, _ = earned(spillway_game("b1", "four"), spillway_game("c1", "threes"))
+    assert "spillway-three-ends" not in got
+    got, _ = earned(spillway_game("b1", "four"), spillway_game("c1", "threes"), spillway_game("d1", "level", second_mover=True))
+    assert "spillway-three-ends" in got
 
 
 def test_farming_a_friend_gives_one_badge_per_rule_and_the_badges_pay_no_xp(monkeypatch):
-    games = [sluice_game("b1", "four") for _ in range(30)]
+    games = [spillway_game("b1", "four") for _ in range(30)]
     got, out = earned(*games)
-    assert got == {"sluice-first"}
-    monkeypatch.setattr(B, "FEATS", tuple(f for f in B.FEATS if not f["id"].startswith("sluice-")))
+    assert got == {"spillway-first"}
+    monkeypatch.setattr(B, "FEATS", tuple(f for f in B.FEATS if not f["id"].startswith("spillway-")))
     assert earned(*games)[1]["xp"] == out["xp"], "a feat adds no XP; the play caps are play_xp's own"

@@ -15,10 +15,10 @@ import { bargainView, type BargainOffer, type BargainView, type Goods } from "./
 import { chanceView, isCvAuction, isLiarsDice, type Bid, type ChanceResult } from "./chance";
 import { isBargain, isSetPlay, gameBase, setPlayView, stateData, blottoWeights, type Verdict, fieldWinnersOf } from "./setPlay";
 import { SET_PLAYS } from "./setPlay";
-import { dropText, isSluice, sluiceFrameAt, sluiceView, type SluiceFrame } from "./sluice";
+import { dropText, isSpillway, spillwayFrameAt, spillwayView, type SpillwayFrame } from "./spillway";
 import { isTesseract, pushText, tesseractFrameAt, type TesseractFrame } from "./tesseract";
 
-export type ArenaKind = "blotto" | "two-thirds" | "lowest-unique" | "dice" | "auction" | "bargain" | "sluice" | "tesseract" | "chess" | "log";
+export type ArenaKind = "blotto" | "two-thirds" | "lowest-unique" | "dice" | "auction" | "bargain" | "spillway" | "tesseract" | "chess" | "log";
 
 export interface Step {
   /** 0 is the start; i is after the i-th action. */
@@ -96,7 +96,7 @@ export type Frame =
       hands: Record<string, Goods> | null;
       result: BargainView["result"];
     }
-  | SluiceFrame
+  | SpillwayFrame
   | TesseractFrame
   | { kind: "chess" }
   | { kind: "log"; rows: { n: number; agent: string; type: string; text: string }[] };
@@ -127,7 +127,7 @@ export function arenaKind(moduleType: string): ArenaKind {
   if (isBargain(moduleType)) return "bargain";
   if (isLiarsDice(moduleType)) return "dice";
   if (isCvAuction(moduleType)) return "auction";
-  if (isSluice(moduleType)) return "sluice";
+  if (isSpillway(moduleType)) return "spillway";
   if (isTesseract(moduleType)) return "tesseract";
   return "log";
 }
@@ -228,18 +228,18 @@ export function buildTimeline(session: Session, actionLog: SessionAction[] | nul
   const kind = arenaKind(session.module_type);
   const players = session.participants ?? [];
   const finished = session.status === "completed";
-  // Sluice: the record knows the row and the gate of each drop; say them (the n-th drop is the n-th move).
-  const sluice = kind === "sluice" ? sluiceView(session, actionLog) : null;
+  // Spillway: the record knows the row and the gate of each drop; say them (the n-th drop is the n-th move).
+  const spillway = kind === "spillway" ? spillwayView(session, actionLog) : null;
   let drops = 0;
   const labelOf = (a: SessionAction): string => {
-    if (sluice && a.action_type === "drop") {
-      const m = sluice.moves[drops++];
+    if (spillway && a.action_type === "drop") {
+      const m = spillway.moves[drops++];
       if (m && m.by === a.agent_id) return dropText(m);
     }
     return stepLabel(kind, a);
   };
   const steps: Step[] = [
-    { index: 0, actionId: null, agent: null, type: "start", label: kind === "sluice" || kind === "tesseract" ? "the table as the beacon dealt it" : "the table before the first move" },
+    { index: 0, actionId: null, agent: null, type: "start", label: kind === "spillway" || kind === "tesseract" ? "the table as the beacon dealt it" : "the table before the first move" },
     ...acts.map((a, n) => ({ index: n + 1, actionId: a.action_id, agent: a.agent_id, type: a.action_type, label: labelOf(a) })),
   ];
   const last = acts.length;
@@ -306,10 +306,10 @@ export function buildTimeline(session: Session, actionLog: SessionAction[] | nul
       const hands = atEnd && Object.keys(bv.hands).length ? bv.hands : null;
       return { kind: "bargain", players, pool: bv.pool, offers, ended, hands, result: atEnd ? bv.result : null };
     }
-    if (kind === "sluice" && sluice) {
+    if (kind === "spillway" && spillway) {
       // Each action that took effect is one move of the log; a void or a say is not a stone.
       const stones = acts.slice(0, i).filter((a) => a.action_type === "drop").length;
-      return sluiceFrameAt(sluice, stones, atEnd);
+      return spillwayFrameAt(spillway, stones, atEnd);
     }
     if (kind === "tesseract") return tesseractFrameAt(session, acts, i, finished);
     if (kind === "chess") return { kind: "chess" };

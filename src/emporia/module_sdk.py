@@ -162,6 +162,8 @@ class InteractionModule(ABC):
     #: retired type creates no new session (POST /sessions refuses it, naming the
     #: successor); one already running finishes under its own rules.
     RETIRED_FOR: str | None = None
+    #: What POST /sessions says for a retired type, when the calls wording does not fit (a rename).
+    RETIRED_MESSAGE: str | None = None
 
     #: Review pass 2, P1 (decided 11-06): False when one player's gain is not the other's
     #: loss (Bargain: a good deal raises both). Such a game keeps its own Craft ladder and

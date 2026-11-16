@@ -1,20 +1,20 @@
-// Sluice as the relay really serves it: sessions played through the relay's test client and dumped to
-// src/fixtures/sluice/*.json (tests/test_sluice_fixtures.py writes and replays them). Not hand-written shapes.
+// Spillway as the relay really serves it: sessions played through the relay's test client and dumped to
+// src/fixtures/spillway/*.json (tests/test_spillway_fixtures.py writes and replays them). Not hand-written shapes.
 import { describe, expect, it } from "vitest";
 import type { Session, SessionAction } from "./api";
-import { boardAt, findFour, liveThrees, sluiceFrameAt, sluiceVerdict, sluiceView } from "./sluice";
-import four from "./fixtures/sluice/four.json";
-import threes from "./fixtures/sluice/threes.json";
-import level from "./fixtures/sluice/level.json";
-import coin from "./fixtures/sluice/coin.json";
-import mid from "./fixtures/sluice/mid.json";
-import pre from "./fixtures/sluice/pre.json";
+import { boardAt, findFour, liveThrees, spillwayFrameAt, spillwayVerdict, spillwayView } from "./spillway";
+import four from "./fixtures/spillway/four.json";
+import threes from "./fixtures/spillway/threes.json";
+import level from "./fixtures/spillway/level.json";
+import coin from "./fixtures/spillway/coin.json";
+import mid from "./fixtures/spillway/mid.json";
+import pre from "./fixtures/spillway/pre.json";
 
 type Fx = { session: unknown; actions: unknown };
 const session = (fx: Fx) => fx.session as unknown as Session;
 const actions = (fx: Fx) => fx.actions as unknown as SessionAction[];
 const data = (fx: Fx) => (session(fx).state as unknown as { data: Record<string, any> }).data;
-const view = (fx: Fx) => sluiceView(session(fx), actions(fx))!;
+const view = (fx: Fx) => spillwayView(session(fx), actions(fx))!;
 const rows = (b: string[][]) => b.map((r) => r.join(""));
 const name = (s: string) => s;
 const finished = { four, threes, level, coin };
@@ -46,7 +46,7 @@ describe.each(Object.entries(finished))("a finished %s game from the relay", (wo
     expect(v.result?.termination).toBe(word);
     expect(d.ended.how).toBe(word);
     expect(v.result?.winner).toBe(d.ended.winner);
-    const bare = sluiceView(session(fx))!;      // actions not loaded: `ended` is read
+    const bare = spillwayView(session(fx))!;      // actions not loaded: `ended` is read
     expect(bare.result?.termination).toBe(word);
     expect(bare.result?.winner).toBe(d.ended.winner);
     expect(bare.result?.line).toEqual(v.result?.line);
@@ -69,8 +69,8 @@ describe.each(Object.entries(finished))("a finished %s game from the relay", (wo
 describe("the verdict in words", () => {
   const verdict = (fx: Fx) => {
     const v = view(fx);
-    const f = sluiceFrameAt(v, v.moves.length, true);
-    return { text: sluiceVerdict(f, v.result!, name), f, v };
+    const f = spillwayFrameAt(v, v.moves.length, true);
+    return { text: spillwayVerdict(f, v.result!, name), f, v };
   };
 
   it("four in a line", () => {
@@ -113,7 +113,7 @@ describe("a live game", () => {
     expect(v.toMove).toBeNull();
     expect(v.gate).toBeNull();
     expect(v.nameRound).toBe(d.rand.round);
-    const f = sluiceFrameAt(v, 0, false);
+    const f = spillwayFrameAt(v, 0, false);
     expect(f.dealt).toBe(false);
     expect(f.next).toBeNull();
   });
@@ -129,7 +129,7 @@ describe("a live game", () => {
     expect(v.gateRound).toBe(d.gate_round);
     expect(rows(boardAt(v, v.moves.length))).toEqual(d.board);
     expect(v.result).toBeNull();
-    const f = sluiceFrameAt(v, v.moves.length, false);
+    const f = spillwayFrameAt(v, v.moves.length, false);
     expect(f.next?.toMove).toBe(d.to_move);
     expect(f.next?.gate).toBeNull();
     expect(v.secondsLeft).not.toBeNull();
@@ -138,10 +138,10 @@ describe("a live game", () => {
   it("a gate that is drawn is read from the flat state", () => {
     const d = data(mid);
     const drawn = { ...session(mid), state: { data: { ...d, gate_ready: true, gate: 3, open: [1, 2, 4, 5, 6] } } } as unknown as Session;
-    const v = sluiceView(drawn)!;
+    const v = spillwayView(drawn)!;
     expect(v.gateReady).toBe(true);
     expect(v.gate).toBe(3);
     expect(v.open).toEqual([1, 2, 4, 5, 6]);
-    expect(sluiceFrameAt(v, v.moves.length, false).next).toEqual({ toMove: d.to_move, gate: 3, round: d.gate_round });
+    expect(spillwayFrameAt(v, v.moves.length, false).next).toEqual({ toMove: d.to_move, gate: 3, round: d.gate_round });
   });
 });

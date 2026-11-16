@@ -14814,17 +14814,17 @@ var EmporiaHermesPlugin = (function(exports) {
 	function isChanceModule(moduleType) {
 		return !!moduleType && CHANCE.has(gameBase(moduleType));
 	}
-	/** Sluice (the four-in-a-line game, read by sluice.ts): a table play of its own. */
-	function isSluiceModule(moduleType) {
-		return !!moduleType && gameBase(moduleType) === "emporia:sluice";
+	/** Spillway (the four-in-a-line game, read by spillway.ts): a table play of its own. */
+	function isSpillwayModule(moduleType) {
+		return !!moduleType && (gameBase(moduleType) === "emporia:spillway" || moduleType === "emporia:sluice:v1");
 	}
 	/** Tesseract (the network game for three to six, read by tesseract.ts): a table play of its own. */
 	function isTesseractModule(moduleType) {
 		return !!moduleType && gameBase(moduleType) === "emporia:tesseract";
 	}
-	/** What the Games section lists under "set plays": the commit-and-reveal ones, Bargain, the games pack, Sluice and Tesseract. */
+	/** What the Games section lists under "set plays": the commit-and-reveal ones, Bargain, the games pack, Spillway and Tesseract. */
 	function isTablePlay(moduleType) {
-		return isSetPlay(moduleType) || isBargain(moduleType) || isChanceModule(moduleType) || isSluiceModule(moduleType) || isTesseractModule(moduleType);
+		return isSetPlay(moduleType) || isBargain(moduleType) || isChanceModule(moduleType) || isSpillwayModule(moduleType) || isTesseractModule(moduleType);
 	}
 	/** A session's module state. The relay sends `state.data`; older fixtures sent it flat. */
 	function stateData(session) {
@@ -15121,7 +15121,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			"emporia:bargain": "bargain",
 			"emporia:liars-dice": "liar's dice",
 			"emporia:cv-auction": "common-value auction",
-			"emporia:sluice": "Sluice",
+			"emporia:spillway": "Spillway",
 			"emporia:tesseract": "Tesseract"
 		};
 		SET_PLAY_NAMES = Object.fromEntries(Object.entries(NAMES$1).flatMap(([base, name]) => [[`${base}:v1`, name], [`${base}:v2`, name]]));
@@ -15816,7 +15816,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		INK_FILL = "currentColor";
 	}));
 	// src/badges/glyphs.ts
-	var HELLO, SET_PLAY, DEAL, IDEA, BULB, DEBRIEF, WELCOMED, CALL, BARGAIN, KEPT_WORD, WELL_TRAVELLED, TRADER, VOICE, TICK, STRATEGIST, MERCHANT, WARDEN, BARD, NO_CLASS, UNKNOWN, LAUREL, LAUREL_NUM, RANK_CROWN, RANK_RIBBON, RANK_PLAIN, RANK_NUM, PENNANT, PENNANT_NUM, GAME_BLOTTO, GAME_TWO_THIRDS, GAME_LOWEST_UNIQUE, GAME_CHESS, GAME_BARGAIN, LIVE, SEALED, VERIFIED, TESTNET, HOUSE, DISCUSSION, FIRST_ACT, NOTICED, HOUSE_GAME, FIRST_CONTACT, FIRST_TRADE, OPEN_TABLE, TAKEN_UP, REMATCH, ARRIVED, AGORA, GOOD_NAME, CHALLENGER, MARKET, CALIBRATED, STEADY_WORD, SLUICE_FIRST, SLUICE_CLOSED_DOOR, SLUICE_LAST_DROP, SLUICE_THREE_ENDS, TESSERACT_FIRST, TESSERACT_WIN, TESSERACT_FULL, REGULARS, REGULARS_NUM, LADDER, LADDER_NUM, RIVALS_NUM;
+	var HELLO, SET_PLAY, DEAL, IDEA, BULB, DEBRIEF, WELCOMED, CALL, BARGAIN, KEPT_WORD, WELL_TRAVELLED, TRADER, VOICE, TICK, STRATEGIST, MERCHANT, WARDEN, BARD, NO_CLASS, UNKNOWN, LAUREL, LAUREL_NUM, RANK_CROWN, RANK_RIBBON, RANK_PLAIN, RANK_NUM, PENNANT, PENNANT_NUM, GAME_BLOTTO, GAME_TWO_THIRDS, GAME_LOWEST_UNIQUE, GAME_CHESS, GAME_BARGAIN, LIVE, SEALED, VERIFIED, TESTNET, HOUSE, DISCUSSION, FIRST_ACT, NOTICED, HOUSE_GAME, FIRST_CONTACT, FIRST_TRADE, OPEN_TABLE, TAKEN_UP, REMATCH, ARRIVED, AGORA, GOOD_NAME, CHALLENGER, MARKET, CALIBRATED, STEADY_WORD, SPILLWAY_FIRST, SPILLWAY_CLOSED_DOOR, SPILLWAY_LAST_DROP, SPILLWAY_THREE_ENDS, TESSERACT_FIRST, TESSERACT_WIN, TESSERACT_FULL, REGULARS, REGULARS_NUM, LADDER, LADDER_NUM, RIVALS_NUM;
 	var init_glyphs = __esmMin((() => {
 		HELLO = [
 			"................",
@@ -16697,7 +16697,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			"................",
 			"................"
 		];
-		SLUICE_FIRST = [
+		SPILLWAY_FIRST = [
 			"................",
 			"..##........##..",
 			"..##.######.##..",
@@ -16715,7 +16715,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			"..############..",
 			"................"
 		];
-		SLUICE_CLOSED_DOOR = [
+		SPILLWAY_CLOSED_DOOR = [
 			"................",
 			"................",
 			"......####......",
@@ -16733,7 +16733,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			"................",
 			"................"
 		];
-		SLUICE_LAST_DROP = [
+		SPILLWAY_LAST_DROP = [
 			"................",
 			"...#........#...",
 			"...#..#..#..#...",
@@ -16751,7 +16751,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			"...##########...",
 			"................"
 		];
-		SLUICE_THREE_ENDS = [
+		SPILLWAY_THREE_ENDS = [
 			"................",
 			".##############.",
 			".#............#.",
@@ -17061,10 +17061,10 @@ var EmporiaHermesPlugin = (function(exports) {
 			def("fair-deal", "feat", "Fair deal", "a bargain deal no split beat for both, worth more than half to each side", FAIR_DEAL, "quest_book.py FEATS"),
 			def("trader", "feat", "Trader", "a deal as the buyer and another as the seller, with other operators' agents", TRADER, "quests.py FEATS"),
 			def("voice", "feat", "Voice", "a public post liked by agents of 3 different operators", VOICE, "quests.py FEATS"),
-			def("sluice-first", "feat", "First through the gate", "won a Sluice game played to its end against another operator's agent", SLUICE_FIRST, "quest_book.py FEATS; modules/sluice.py", ["first-sluice-win"]),
-			def("sluice-closed-door", "feat", "Closed door", "made four in Sluice on the turn after the gate shut the one channel that could stop it", SLUICE_CLOSED_DOOR, "quest_book.py FEATS; sluice.badge_facts"),
-			def("sluice-last-drop", "feat", "Last drop", "won a Sluice game on level live threes as the player who moved second", SLUICE_LAST_DROP, "quest_book.py FEATS; sluice.badge_facts"),
-			def("sluice-three-ends", "feat", "Every ending", "won Sluice by four in a line, by live threes and on level threes", SLUICE_THREE_ENDS, "quest_book.py FEATS"),
+			def("spillway-first", "feat", "First through the gate", "won a Spillway game played to its end against another operator's agent", SPILLWAY_FIRST, "quest_book.py FEATS; modules/spillway.py", ["first-spillway-win"]),
+			def("spillway-closed-door", "feat", "Closed door", "made four in Spillway on the turn after the gate shut the one channel that could stop it", SPILLWAY_CLOSED_DOOR, "quest_book.py FEATS; spillway.badge_facts"),
+			def("spillway-last-drop", "feat", "Last drop", "won a Spillway game on level live threes as the player who moved second", SPILLWAY_LAST_DROP, "quest_book.py FEATS; spillway.badge_facts"),
+			def("spillway-three-ends", "feat", "Every ending", "won Spillway by four in a line, by live threes and on level threes", SPILLWAY_THREE_ENDS, "quest_book.py FEATS"),
 			def("tesseract-first", "feat", "First table", "played a Tesseract table to the end with other operators' agents: every round opened, the secret revealed", TESSERACT_FIRST, "quest_book.py FEATS; tesseract.badge_facts", ["first-tesseract-table"]),
 			def("tesseract-win", "feat", "On target", "won a Tesseract table played to the end, with other operators' agents", TESSERACT_WIN, "quest_book.py FEATS; tesseract.badge_facts"),
 			def("tesseract-full", "feat", "Full table", "won a Tesseract table of six, with five other operators' agents", TESSERACT_FULL, "quest_book.py FEATS; tesseract.badge_facts"),
@@ -21073,7 +21073,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		obj$2 = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
 		num$8 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
 	}));
-	// src/sluice.ts
+	// src/spillway.ts
 	function cell$5(v) {
 		if (Array.isArray(v) && v.length === 2 && int(v[0]) !== null && int(v[1]) !== null) return [v[0], v[1]];
 		const o = obj$1(v);
@@ -21137,9 +21137,9 @@ var EmporiaHermesPlugin = (function(exports) {
 		}
 		return null;
 	}
-	/** Pure: a Sluice session (and its actions) in, what to draw out; null for any other game. */
-	function sluiceView(session, actions, now = Date.now()) {
-		if (!isSluice(session.module_type)) return null;
+	/** Pure: a Spillway session (and its actions) in, what to draw out; null for any other game. */
+	function spillwayView(session, actions, now = Date.now()) {
+		if (!isSpillway(session.module_type)) return null;
 		const d = stateData(session);
 		const st = obj$1(session.state);
 		const dv = {
@@ -21153,7 +21153,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		const ended = d.ended !== null && d.ended !== void 0;
 		const opening = readOpening(d.opening ?? dv.opening, seats);
 		return {
-			kind: "sluice",
+			kind: "spillway",
 			cols: num$7(d.cols, 6),
 			rows: num$7(d.rows, 5),
 			drops: num$7(d.drops, 7),
@@ -21231,7 +21231,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		return t;
 	}
 	/** The table after the first `upTo` moves. `atEnd` is the last step of a finished game (the verdict shows). */
-	function sluiceFrameAt(v, upTo, atEnd) {
+	function spillwayFrameAt(v, upTo, atEnd) {
 		const step = Math.max(0, Math.min(v.moves.length, upTo));
 		const board = boardAt(v, step);
 		const last = step ? v.moves[step - 1] : null;
@@ -21249,7 +21249,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		}
 		const live = !result && step === v.moves.length;
 		return {
-			kind: "sluice",
+			kind: "spillway",
 			seats: v.seats,
 			cols: v.cols,
 			rows: v.rows,
@@ -21278,7 +21278,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		return `dropped in channel ${m.channel}${m.row ? `, row ${m.row}` : ""}${m.gate ? `; channel ${m.gate} was gated` : ""}`;
 	}
 	/** "alpha wins with four in a line", "alpha wins on live threes (2 to 1)", … in words, from a result. */
-	function sluiceVerdict(f, r, name) {
+	function spillwayVerdict(f, r, name) {
 		const w = r.winner ? name(r.winner) : null;
 		switch (r.termination) {
 			case "four": return `${w ?? "nobody"} wins with four in a line`;
@@ -21290,10 +21290,10 @@ var EmporiaHermesPlugin = (function(exports) {
 			default: return w ? `${w} wins` : "No winner";
 		}
 	}
-	var isSluice, obj$1, int, num$7, cells$1, DIRS, markAt;
-	var init_sluice = __esmMin((() => {
+	var isSpillway, obj$1, int, num$7, cells$1, DIRS, markAt;
+	var init_spillway = __esmMin((() => {
 		init_setPlay();
-		isSluice = (m) => !!m && (m ?? "").replace(/:v\d+$/, "") === "emporia:sluice:v1".replace(/:v\d+$/, "");
+		isSpillway = (m) => !!m && (m === "emporia:sluice:v1" || (m ?? "").replace(/:v\d+$/, "") === "emporia:spillway:v1".replace(/:v\d+$/, ""));
 		obj$1 = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
 		int = (v) => typeof v === "number" && Number.isInteger(v) ? v : null;
 		num$7 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
@@ -21451,7 +21451,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		if (isBargain(moduleType)) return "bargain";
 		if (isLiarsDice(moduleType)) return "dice";
 		if (isCvAuction(moduleType)) return "auction";
-		if (isSluice(moduleType)) return "sluice";
+		if (isSpillway(moduleType)) return "spillway";
 		if (isTesseract(moduleType)) return "tesseract";
 		return "log";
 	}
@@ -21567,11 +21567,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		const kind = arenaKind(session.module_type);
 		const players = session.participants ?? [];
 		const finished = session.status === "completed";
-		const sluice = kind === "sluice" ? sluiceView(session, actionLog) : null;
+		const spillway = kind === "spillway" ? spillwayView(session, actionLog) : null;
 		let drops = 0;
 		const labelOf = (a) => {
-			if (sluice && a.action_type === "drop") {
-				const m = sluice.moves[drops++];
+			if (spillway && a.action_type === "drop") {
+				const m = spillway.moves[drops++];
 				if (m && m.by === a.agent_id) return dropText(m);
 			}
 			return stepLabel(kind, a);
@@ -21581,7 +21581,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			actionId: null,
 			agent: null,
 			type: "start",
-			label: kind === "sluice" || kind === "tesseract" ? "the table as the beacon dealt it" : "the table before the first move"
+			label: kind === "spillway" || kind === "tesseract" ? "the table as the beacon dealt it" : "the table before the first move"
 		}, ...acts.map((a, n) => ({
 			index: n + 1,
 			actionId: a.action_id,
@@ -21688,9 +21688,9 @@ var EmporiaHermesPlugin = (function(exports) {
 					result: atEnd ? bv.result : null
 				};
 			}
-			if (kind === "sluice" && sluice) {
+			if (kind === "spillway" && spillway) {
 				const stones = acts.slice(0, i).filter((a) => a.action_type === "drop").length;
-				return sluiceFrameAt(sluice, stones, atEnd);
+				return spillwayFrameAt(spillway, stones, atEnd);
 			}
 			if (kind === "tesseract") return tesseractFrameAt(session, acts, i, finished);
 			if (kind === "chess") return { kind: "chess" };
@@ -21739,7 +21739,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_bargain();
 		init_chance();
 		init_setPlay();
-		init_sluice();
+		init_spillway();
 		init_tesseract();
 		HIDDEN_KEYS = /* @__PURE__ */ new Set([
 			"s",
@@ -21857,8 +21857,8 @@ var EmporiaHermesPlugin = (function(exports) {
 				kind: "set"
 			},
 			{
-				id: "emporia:sluice:v1",
-				label: "sluice",
+				id: "emporia:spillway:v1",
+				label: "spillway",
 				kind: "set"
 			},
 			{
@@ -37890,30 +37890,30 @@ var EmporiaHermesPlugin = (function(exports) {
 		import_jsx_runtime$30 = require_jsx_runtime();
 		num$2 = { fontVariantNumeric: "tabular-nums" };
 	}));
-	// src/ui/boards/SluiceBoard.module.css
-	var root$2, grid, row, rowNo, head$1, gate, gateWord, cell, shut, silt, stoneA, stoneB, n$1, last, win, legend, key, keyA, keyB, keySilt, SluiceBoard_module_default;
-	var init_SluiceBoard_module = __esmMin((() => {
-		root$2 = "SluiceBoard_root_mmd9b";
-		grid = "SluiceBoard_grid_mmd9b";
-		row = "SluiceBoard_row_mmd9b";
-		rowNo = "SluiceBoard_rowNo_mmd9b";
-		head$1 = "SluiceBoard_head_mmd9b";
-		gate = "SluiceBoard_gate_mmd9b";
-		gateWord = "SluiceBoard_gateWord_mmd9b";
-		cell = "SluiceBoard_cell_mmd9b";
-		shut = "SluiceBoard_shut_mmd9b";
-		silt = "SluiceBoard_silt_mmd9b";
-		stoneA = "SluiceBoard_stoneA_mmd9b";
-		stoneB = "SluiceBoard_stoneB_mmd9b";
-		n$1 = "SluiceBoard_n_mmd9b";
-		last = "SluiceBoard_last_mmd9b";
-		win = "SluiceBoard_win_mmd9b";
-		legend = "SluiceBoard_legend_mmd9b";
-		key = "SluiceBoard_key_mmd9b";
-		keyA = "SluiceBoard_keyA_mmd9b";
-		keyB = "SluiceBoard_keyB_mmd9b";
-		keySilt = "SluiceBoard_keySilt_mmd9b";
-		SluiceBoard_module_default = {
+	// src/ui/boards/SpillwayBoard.module.css
+	var root$2, grid, row, rowNo, head$1, gate, gateWord, cell, shut, silt, stoneA, stoneB, n$1, last, win, legend, key, keyA, keyB, keySilt, SpillwayBoard_module_default;
+	var init_SpillwayBoard_module = __esmMin((() => {
+		root$2 = "SpillwayBoard_root_vtso3";
+		grid = "SpillwayBoard_grid_vtso3";
+		row = "SpillwayBoard_row_vtso3";
+		rowNo = "SpillwayBoard_rowNo_vtso3";
+		head$1 = "SpillwayBoard_head_vtso3";
+		gate = "SpillwayBoard_gate_vtso3";
+		gateWord = "SpillwayBoard_gateWord_vtso3";
+		cell = "SpillwayBoard_cell_vtso3";
+		shut = "SpillwayBoard_shut_vtso3";
+		silt = "SpillwayBoard_silt_vtso3";
+		stoneA = "SpillwayBoard_stoneA_vtso3";
+		stoneB = "SpillwayBoard_stoneB_vtso3";
+		n$1 = "SpillwayBoard_n_vtso3";
+		last = "SpillwayBoard_last_vtso3";
+		win = "SpillwayBoard_win_vtso3";
+		legend = "SpillwayBoard_legend_vtso3";
+		key = "SpillwayBoard_key_vtso3";
+		keyA = "SpillwayBoard_keyA_vtso3";
+		keyB = "SpillwayBoard_keyB_vtso3";
+		keySilt = "SpillwayBoard_keySilt_vtso3";
+		SpillwayBoard_module_default = {
 			root: root$2,
 			grid,
 			row,
@@ -37936,17 +37936,17 @@ var EmporiaHermesPlugin = (function(exports) {
 			keySilt
 		};
 	}));
-	// src/ui/boards/SluiceBoard.tsx
+	// src/ui/boards/SpillwayBoard.tsx
 	/**
-	* Sluice: six channels, five rows, a gate across the top of the channel the beacon shut, neutral silt, a
+	* Spillway: six channels, five rows, a gate across the top of the channel the beacon shut, neutral silt, a
 	* filled square for seat A and a hollow ring for seat B, the last drop marked, the winning four outlined
 	* and, at the cap, the live threes. The drawing is `aria-hidden`; a table states every cell, another the moves.
 	*/
-	function SluiceBoard(p) {
+	function SpillwayBoard(p) {
 		const channels = Array.from({ length: p.cols }, (_, i) => i + 1);
 		const rule = `${p.cols} channels, ${p.rows} rows · each turn the beacon shuts one channel · four of your stones in a line wins; silt and the other side's stones break a line · at the cap, more live threes wins, level: the player who moved second wins`;
 		if (!p.dealt) return /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("div", {
-			className: `${BoardKit_module_default.board} ${SluiceBoard_module_default.root}`,
+			className: `${BoardKit_module_default.board} ${SpillwayBoard_module_default.root}`,
 			children: [/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("p", {
 				className: BoardKit_module_default.rules,
 				children: rule
@@ -37957,9 +37957,9 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 		const word = (m) => m === "A" ? p.seats[0] : m === "B" ? p.seats[1] : m === "#" ? "silt" : "empty";
 		const gateWhere = p.gate ? p.gate.now ? `Channel ${p.gate.channel} is shut for the next drop.` : `Channel ${p.gate.channel} was shut for the last drop.` : null;
-		const caption = `Sluice: ${p.cols} channels by ${p.rows} rows, ${plural$1(p.moves.length, "drop")}${p.gate ? `, channel ${p.gate.channel} ${p.gate.now ? "shut now" : "was shut"}` : ""}`;
+		const caption = `Spillway: ${p.cols} channels by ${p.rows} rows, ${plural$1(p.moves.length, "drop")}${p.gate ? `, channel ${p.gate.channel} ${p.gate.now ? "shut now" : "was shut"}` : ""}`;
 		return /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("div", {
-			className: `${BoardKit_module_default.board} ${SluiceBoard_module_default.root}`,
+			className: `${BoardKit_module_default.board} ${SpillwayBoard_module_default.root}`,
 			children: [
 				/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("p", {
 					className: BoardKit_module_default.rules,
@@ -37968,40 +37968,40 @@ var EmporiaHermesPlugin = (function(exports) {
 				/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("div", {
 					className: BoardKit_module_default.scroll,
 					children: /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("div", {
-						className: SluiceBoard_module_default.grid,
+						className: SpillwayBoard_module_default.grid,
 						style: { ["--cols"]: p.cols },
 						"aria-hidden": true,
 						children: [/* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("div", {
-							className: SluiceBoard_module_default.row,
+							className: SpillwayBoard_module_default.row,
 							children: [/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("span", {}), channels.map((c) => /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("span", {
-								className: `${SluiceBoard_module_default.head}${p.gate?.channel === c ? ` ${SluiceBoard_module_default.gate}` : ""}`,
+								className: `${SpillwayBoard_module_default.head}${p.gate?.channel === c ? ` ${SpillwayBoard_module_default.gate}` : ""}`,
 								children: [c, p.gate?.channel === c ? /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("span", {
-									className: SluiceBoard_module_default.gateWord,
+									className: SpillwayBoard_module_default.gateWord,
 									children: "shut"
 								}) : null]
 							}, c))]
 						}), p.board.map((cells, ri) => {
 							const r = p.rows - ri;
 							return /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("div", {
-								className: SluiceBoard_module_default.row,
+								className: SpillwayBoard_module_default.row,
 								children: [/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("span", {
-									className: SluiceBoard_module_default.rowNo,
+									className: SpillwayBoard_module_default.rowNo,
 									children: r
 								}), cells.map((m, ci) => {
 									const c = ci + 1;
 									const n = p.moves.find((x) => x.channel === c && x.row === r)?.n;
 									const isLast = !!p.last && p.last.channel === c && p.last.row === r;
 									const cls = [
-										SluiceBoard_module_default.cell,
-										m === "#" ? SluiceBoard_module_default.silt : "",
-										same(p.line, c, r) ? SluiceBoard_module_default.win : "",
-										isLast ? SluiceBoard_module_default.last : "",
-										p.gate?.channel === c && m === "." ? SluiceBoard_module_default.shut : ""
+										SpillwayBoard_module_default.cell,
+										m === "#" ? SpillwayBoard_module_default.silt : "",
+										same(p.line, c, r) ? SpillwayBoard_module_default.win : "",
+										isLast ? SpillwayBoard_module_default.last : "",
+										p.gate?.channel === c && m === "." ? SpillwayBoard_module_default.shut : ""
 									].filter(Boolean).join(" ");
 									return /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("span", {
 										className: cls,
-										children: [m === "A" ? /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("span", { className: SluiceBoard_module_default.stoneA }) : m === "B" ? /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("span", { className: SluiceBoard_module_default.stoneB }) : null, n !== void 0 && (m === "A" || m === "B") ? /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("span", {
-											className: SluiceBoard_module_default.n,
+										children: [m === "A" ? /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("span", { className: SpillwayBoard_module_default.stoneA }) : m === "B" ? /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("span", { className: SpillwayBoard_module_default.stoneB }) : null, n !== void 0 && (m === "A" || m === "B") ? /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("span", {
+											className: SpillwayBoard_module_default.n,
 											children: n
 										}) : null]
 									}, c);
@@ -38011,28 +38011,28 @@ var EmporiaHermesPlugin = (function(exports) {
 					})
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("p", {
-					className: SluiceBoard_module_default.legend,
+					className: SpillwayBoard_module_default.legend,
 					"aria-hidden": true,
 					children: [
 						/* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("span", {
-							className: SluiceBoard_module_default.key,
+							className: SpillwayBoard_module_default.key,
 							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("span", { className: SluiceBoard_module_default.keyA }),
+								/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("span", { className: SpillwayBoard_module_default.keyA }),
 								" ",
 								p.seats[0]
 							]
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("span", {
-							className: SluiceBoard_module_default.key,
+							className: SpillwayBoard_module_default.key,
 							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("span", { className: SluiceBoard_module_default.keyB }),
+								/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("span", { className: SpillwayBoard_module_default.keyB }),
 								" ",
 								p.seats[1]
 							]
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("span", {
-							className: SluiceBoard_module_default.key,
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("span", { className: SluiceBoard_module_default.keySilt }), " silt"]
+							className: SpillwayBoard_module_default.key,
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("span", { className: SpillwayBoard_module_default.keySilt }), " silt"]
 						})
 					]
 				}),
@@ -38104,7 +38104,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					}), cells.map((m, ci) => /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("td", { children: [word(m), same(p.line, ci + 1, p.rows - ri) ? " (in the winning line)" : ""] }, ci))] }, ri))
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)(BoardTable, {
-					caption: "Sluice drops in order",
+					caption: "Spillway drops in order",
 					head: [
 						"move",
 						"by",
@@ -38136,16 +38136,16 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 	}
 	var import_jsx_runtime$29, same;
-	var init_SluiceBoard = __esmMin((() => {
+	var init_SpillwayBoard = __esmMin((() => {
 		init_BoardTable();
 		init_boardKit();
 		init_BoardKit_module();
-		init_SluiceBoard_module();
+		init_SpillwayBoard_module();
 		import_jsx_runtime$29 = require_jsx_runtime();
 		same = (a, c, r) => !!a?.some(([x, y]) => x === c && y === r);
 	}));
-	// src/ui/boards/sluiceModel.ts
-	function sluiceFromFrame(f, name) {
+	// src/ui/boards/spillwayModel.ts
+	function spillwayFromFrame(f, name) {
 		return {
 			cols: f.cols,
 			rows: f.rows,
@@ -38176,36 +38176,36 @@ var EmporiaHermesPlugin = (function(exports) {
 			line: f.line,
 			threes: f.threes,
 			left: f.left,
-			verdict: f.result ? sluiceVerdict(f, f.result, name) : null
+			verdict: f.result ? spillwayVerdict(f, f.result, name) : null
 		};
 	}
 	/** The Games panel: the board as it stands now (or at the end, with the verdict). */
-	function sluiceFromView(v, name = (s) => s) {
-		return sluiceFromFrame(sluiceFrameAt(v, v.moves.length, !!v.result), name);
+	function spillwayFromView(v, name = (s) => s) {
+		return spillwayFromFrame(spillwayFrameAt(v, v.moves.length, !!v.result), name);
 	}
-	var init_sluiceModel = __esmMin((() => {
-		init_sluice();
+	var init_spillwayModel = __esmMin((() => {
+		init_spillway();
 	}));
-	// src/ui/SluicePanel.tsx
-	function SluicePanel({ session: initial }) {
+	// src/ui/SpillwayPanel.tsx
+	function SpillwayPanel({ session: initial }) {
 		const id = initial.session_id;
 		const running = initial.status === "active" || initial.status === "waiting";
 		const [fresh] = useInterval(() => api.session(id), running ? 4e3 : 36e5, [id, running]);
 		const [acts] = useInterval(() => api.sessionActions(id), running ? 4e3 : 36e5, [id, running]);
 		const session = fresh ?? initial;
-		const v = sluiceView(session, acts?.actions);
+		const v = spillwayView(session, acts?.actions);
 		if (!v) return null;
 		const live = session.status === "active" || session.status === "waiting";
 		const clock = clockText(v.secondsLeft);
-		const props = sluiceFromView(v);
+		const props = spillwayFromView(v);
 		return /* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)("div", {
-			className: "e-setplay e-sluice",
+			className: "e-setplay e-spillway",
 			children: [
 				/* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)("header", {
 					className: "e-setplay__head",
 					children: [/* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("p", {
 						className: "e-setplay__game",
-						children: "Sluice"
+						children: "Spillway"
 					}), /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("p", {
 						className: "e-setplay__players",
 						children: session.participants.join(" v ")
@@ -38244,7 +38244,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(FoldDetail, {
 					fold: !!v.result,
 					label: "the board and the rules",
-					children: /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(SluiceBoard, { ...props })
+					children: /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(SpillwayBoard, { ...props })
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)("div", {
 					className: "e-setplay__meta",
@@ -38297,7 +38297,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 	}
 	var import_jsx_runtime$28, num$1;
-	var init_SluicePanel = __esmMin((() => {
+	var init_SpillwayPanel = __esmMin((() => {
 		init_Text();
 		init_api();
 		init_agentName();
@@ -38305,14 +38305,14 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_relayEnv();
 		init_relayFormat();
 		init_setPlay();
-		init_sluice();
+		init_spillway();
 		init_AuditBadge();
 		init_FoldDetail();
 		init_GameChat();
 		init_McpCommandHint();
 		init_VerifyBadge();
-		init_SluiceBoard();
-		init_sluiceModel();
+		init_SpillwayBoard();
+		init_spillwayModel();
 		import_jsx_runtime$28 = require_jsx_runtime();
 		num$1 = { fontVariantNumeric: "tabular-nums" };
 	}));
@@ -40094,7 +40094,7 @@ var EmporiaHermesPlugin = (function(exports) {
 							prompt: gamePrompt(selected),
 							label: selected.module_type === "emporia:service:v1" ? "ask agent about this deal" : "ask agent about this game"
 						}) : null,
-						selected && isSetPlay(selected.module_type) ? /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)(SetPlayPanel, { session: selected }, selected.session_id) : selected && isBargain(selected.module_type) ? /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)(BargainPanel, { session: selected }, selected.session_id) : selected && isChanceGame(selected.module_type) ? /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)(ChancePanel, { session: selected }, selected.session_id) : selected && isSluice(selected.module_type) ? /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)(SluicePanel, { session: selected }, selected.session_id) : selected && isChessSelected ? /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)(ChessReplayPanel, { session: selected }, selected.session_id) : selected ? /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)(NonChessSessionPanel, { session: selected }, selected.session_id) : null
+						selected && isSetPlay(selected.module_type) ? /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)(SetPlayPanel, { session: selected }, selected.session_id) : selected && isBargain(selected.module_type) ? /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)(BargainPanel, { session: selected }, selected.session_id) : selected && isChanceGame(selected.module_type) ? /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)(ChancePanel, { session: selected }, selected.session_id) : selected && isSpillway(selected.module_type) ? /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)(SpillwayPanel, { session: selected }, selected.session_id) : selected && isChessSelected ? /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)(ChessReplayPanel, { session: selected }, selected.session_id) : selected ? /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)(NonChessSessionPanel, { session: selected }, selected.session_id) : null
 					]
 				})
 			})
@@ -40146,8 +40146,8 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_BargainPanel();
 		init_ChancePanel();
 		init_chance();
-		init_sluice();
-		init_SluicePanel();
+		init_spillway();
+		init_SpillwayPanel();
 		init_GamifyView();
 		init_AskAgent();
 		init_askPrompts();
@@ -40706,11 +40706,11 @@ var EmporiaHermesPlugin = (function(exports) {
 				})
 			]
 		});
-		if (frame.kind === "sluice") {
-			const props = sluiceFromFrame(frame, (id) => playerName(id, book, 10));
+		if (frame.kind === "spillway") {
+			const props = spillwayFromFrame(frame, (id) => playerName(id, book, 10));
 			return /* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)("div", {
 				className: "e-arena-frame",
-				"data-kind": "sluice",
+				"data-kind": "spillway",
 				children: [props.verdict ? /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)("p", {
 					className: "e-arena-verdict",
 					role: "status",
@@ -40718,7 +40718,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				}) : null, /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(FoldDetail, {
 					fold: !!props.verdict,
 					label: "the board and the drops",
-					children: /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(SluiceBoard, { ...props })
+					children: /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(SpillwayBoard, { ...props })
 				})]
 			});
 		}
@@ -40776,8 +40776,8 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_AuctionLine();
 		init_BargainSplit();
 		init_DiceTable();
-		init_SluiceBoard();
-		init_sluiceModel();
+		init_SpillwayBoard();
+		init_spillwayModel();
 		init_TesseractBoard();
 		init_tesseractModel();
 		init_chanceModel();

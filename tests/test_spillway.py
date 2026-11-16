@@ -1,4 +1,4 @@
-"""Sluice (`emporia:sluice:v1`): four in a line on 6 channels x 5 rows, with a dealt opening and one channel shut
+"""Spillway (`emporia:spillway:v1`): four in a line on 6 channels x 5 rows, with a dealt opening and one channel shut
 by a drand draw every turn. The rules are tested as pure functions; the relay path is played as
 test_games_pack.py plays its games (conftest `rand_testmode`: any round is published with a fake signature);
 verify runs on honest and tampered records, with the two recorded real rounds of test_rand.py for BLS."""
@@ -17,16 +17,16 @@ from fastapi.testclient import TestClient
 from emporia import beacon, game_export, rand, wire
 from emporia import relay_server as rs
 from emporia.module_sdk import HOW_TO_PLAY_MAX, MODULE_REGISTRY, SessionState, get_interaction_module
-from emporia.modules import sluice as S
+from emporia.modules import spillway as S
 from emporia.relay_server import app
 from emporia.routes import beacon as beacon_route
 from emporia.verify import verify_game
 from tests.test_emporia import _register_keyed, _signed_action_body
 from tests.test_rand import R1000, R_LATE
 
-SLUICE = "emporia:sluice:v1"
+SPILLWAY = "emporia:spillway:v1"
 WHY = "Reading the board and the gate before I drop"
-M = S.SluiceModule
+M = S.SpillwayModule
 
 
 @pytest.fixture
@@ -240,9 +240,9 @@ def _game(client, config=None, ahead=None):
         _register_keyed(client, a)
     cfg = dict(config or {})
     if ahead is None:
-        r = client.post("/sessions", json={"module_type": SLUICE, "config": cfg}, headers=_hdr(agents[0]))
+        r = client.post("/sessions", json={"module_type": SPILLWAY, "config": cfg}, headers=_hdr(agents[0]))
     else:
-        body = signed_session_body(agents[0], {"module_type": SLUICE, "config": cfg})
+        body = signed_session_body(agents[0], {"module_type": SPILLWAY, "config": cfg})
         sid0 = wire.session_id_for(body["nonce"])
         r = client.post("/sessions", json={**body, "rand_commit": make_test_commit(sid0, agents[0], 0, round_offset=ahead)},
                         headers=_hdr(agents[0]))
@@ -411,7 +411,7 @@ def test_a_void_is_for_a_late_commitment_before_the_round_only(client):
     assert r.status_code == 200, r.text
     s = rs.load_session(sid)
     assert s["status"] == "completed"
-    out = get_interaction_module(SLUICE).is_terminal(SessionState.from_dict(s["state"]))[1]
+    out = get_interaction_module(SPILLWAY).is_terminal(SessionState.from_dict(s["state"]))[1]
     assert out["termination"] == "void" and out["winner"] is None
     sid2, agents2 = _game(client)
     r = client.post(f"/sessions/{sid2}/action", json=_signed_action_body(client, sid2, agents2[0], "void",
@@ -432,7 +432,7 @@ def test_running_out_of_time_loses(client):
     asyncio.run(sweep_service_deadlines())
     s = rs.load_session(sid)
     assert s["status"] == "completed"
-    out = get_interaction_module(SLUICE).is_terminal(SessionState.from_dict(s["state"]))[1]
+    out = get_interaction_module(SPILLWAY).is_terminal(SessionState.from_dict(s["state"]))[1]
     winner = agents[1] if mover == agents[0] else agents[0]
     assert out["termination"] == "timeout" and out["winner"] == winner and out["points"] == {winner: 1, mover: -1}
 
@@ -514,7 +514,7 @@ def _finish_on_the_last_drop(client, want, seed=1, drops=5):
     assert r.status_code == 200, r.text
     s = rs.load_session(sid)
     assert s["status"] == "completed"
-    return sid, agents, s, get_interaction_module(SLUICE).is_terminal(SessionState.from_dict(s["state"]))[1], opening
+    return sid, agents, s, get_interaction_module(SPILLWAY).is_terminal(SessionState.from_dict(s["state"]))[1], opening
 
 
 def _board_after(d, agents):
@@ -596,7 +596,7 @@ def test_an_honest_game_checks_every_round_the_signatures_and_the_replay(finishe
     assert report["verdict"] == "ok", [f for f in report["findings"] if f["status"] != "ok"]
     assert _finding(record, "rand")["status"] == "ok" and _finding(record, "replay")["status"] == "ok"
     assert "signed move" in _finding(record, "replay")["detail"]
-    assert get_interaction_module(SLUICE).rand_problem(d, record["session"]["participants"], record["relay_verdict"]) == ""
+    assert get_interaction_module(SPILLWAY).rand_problem(d, record["session"]["participants"], record["relay_verdict"]) == ""
 
 
 def _tamper(record, edit):
@@ -699,7 +699,7 @@ def test_a_round_outside_its_moves_window_fails_verify(finished):
 
 def test_an_export_line_verifies_offline_and_a_forged_beacon_in_it_fails(finished):
     client, sid, agents, _ = finished
-    r = client.get("/games/export", params={"module": SLUICE, "limit": 200})
+    r = client.get("/games/export", params={"module": SPILLWAY, "limit": 200})
     line = next(json.loads(x) for x in r.text.splitlines() if json.loads(x)["session_id"] == sid)
     report = game_export.verify_line(line)
     statuses = {f["check"]: f["status"] for f in report["findings"]}
@@ -771,17 +771,17 @@ def test_submit_action_fills_the_round_in_before_signing(client, monkeypatch):
 
 
 def test_the_registry_the_listing_and_the_guide(client):
-    cls = MODULE_REGISTRY[SLUICE]
+    cls = MODULE_REGISTRY[SPILLWAY]
     assert (cls.USES_RAND, cls.REPLAY_WITH_RAND, cls.TIMED, cls.TURN_ORDER, cls.ZERO_SUM, cls.DECLARES_WINNER,
             cls.ENGINE_DECIDABLE, cls.CHAT_BY_DEFAULT, cls.CHECKED_ACTIONS) == \
         (True, True, True, False, True, True, False, True, ("drop",))
     assert cls.MIN_PARTICIPANTS == cls.MAX_PARTICIPANTS == 2 and len(cls.HOW_TO_PLAY.strip()) <= HOW_TO_PLAY_MAX
     listed = {m["module_type"]: m for m in client.get("/modules").json()["modules"]}
-    assert listed[SLUICE]["uses_rand"] is True and listed[SLUICE]["how_to_play"] == cls.HOW_TO_PLAY.strip()
-    assert "gate" in listed[SLUICE]["rules"] and "second" in listed[SLUICE]["rules"]
+    assert listed[SPILLWAY]["uses_rand"] is True and listed[SPILLWAY]["how_to_play"] == cls.HOW_TO_PLAY.strip()
+    assert "gate" in listed[SPILLWAY]["rules"] and "second" in listed[SPILLWAY]["rules"]
     from emporia import house, playbook, quests
-    assert SLUICE in quests.SET_PLAYS and SLUICE in quests.CHANCE_GAMES and SLUICE in playbook.SET_PLAYS
-    assert SLUICE not in house.SET_PLAYS and SLUICE not in house.PLAYING, "the house agent stays out"
+    assert SPILLWAY in quests.SET_PLAYS and SPILLWAY in quests.CHANCE_GAMES and SPILLWAY in playbook.SET_PLAYS
+    assert SPILLWAY not in house.SET_PLAYS and SPILLWAY not in house.PLAYING, "the house agent stays out"
     ok, why = cls().validate_config({"drops": 7, "move_time_limit_s": 600})
     assert ok, why
     for bad in ({"drops": 3}, {"drops": 11}, {"drops": "7"}, {"move_time_limit_s": 5}, {"drops": True}):
@@ -790,12 +790,12 @@ def test_the_registry_the_listing_and_the_guide(client):
 
 def test_the_start_notice_does_not_claim_a_first_mover_the_beacon_has_not_drawn():
     from emporia.plugins.platforms.emporia.frames import format_frame
-    frame = {"type": "session_started", "session_id": "sess_x", "module_type": SLUICE, "participants": ["alpha", "beta"],
+    frame = {"type": "session_started", "session_id": "sess_x", "module_type": SPILLWAY, "participants": ["alpha", "beta"],
              "current_agent": "alpha", "opens_at": "2026-11-10T00:36:24+00:00"}
     for me in ("alpha", "beta"):
         text = format_frame(frame, me).text
         assert "You move first" not in text and "The first move is not yours" not in text and "beacon picks who moves first" in text
-    turn = format_frame({"type": "your_turn", "session_id": "sess_x", "module_type": SLUICE}, "alpha").text
+    turn = format_frame({"type": "your_turn", "session_id": "sess_x", "module_type": SPILLWAY}, "alpha").text
     assert "drop" in turn and "gate" in turn and "to_move" in turn
 
 
@@ -824,7 +824,7 @@ def _stored_game(agents=("alpha", "beta")):
 def test_only_the_drawn_first_mover_is_told_it_is_their_turn():
     data = _stored_game()
     first = S._opening_for(data, _sig(5000))["first"]
-    bcast = _tell({"status": "active", "step_number": 0, "module_type": SLUICE, "current_agent": "alpha",
+    bcast = _tell({"status": "active", "step_number": 0, "module_type": SPILLWAY, "current_agent": "alpha",
                    "participants": ["alpha", "beta"], "state": {"data": data}})
     sent = [(c.args[0], c.args[1]["type"]) for c in bcast.await_args_list]
     assert {a for a, _ in sent} == {first} and ("your_turn" in {t for _, t in sent}), sent
@@ -838,10 +838,10 @@ def test_nobody_is_told_while_the_draw_is_not_stored_and_other_games_are_unchang
     data = _stored_game()
     data["rand"] = {**data["rand"], "beacon_sig": None, "beacons": {}}
     assert M().first_to_move(data) == []
-    bcast = _tell({"status": "active", "step_number": 0, "module_type": SLUICE, "current_agent": "alpha",
+    bcast = _tell({"status": "active", "step_number": 0, "module_type": SPILLWAY, "current_agent": "alpha",
                    "participants": ["alpha", "beta"], "state": {"data": data}})
     bcast.assert_not_awaited()
-    from emporia.modules.sluice import SluiceModule  # noqa: F401
+    from emporia.modules.spillway import SpillwayModule  # noqa: F401
     other = get_interaction_module("emporia:bargain:v2")
     assert other.first_to_move({}) is None, "the default: the state's own pending / current agent"
 
@@ -861,7 +861,7 @@ def test_the_start_frame_does_not_name_seat_a_as_the_mover():
                  "initial_state": lambda self, p, c: state, "first_to_move": cls.first_to_move,
                  "TURN_ORDER": False})()), \
              patch.object(sessions.rs, "broadcast_to_agent", new=AsyncMock(side_effect=lambda a, f: frames.append(f))):
-            await sessions._start("sess_x", {"module_type": SLUICE, "config": {}, "created_at": "t"},
+            await sessions._start("sess_x", {"module_type": SPILLWAY, "config": {}, "created_at": "t"},
                                   ["alpha", "beta"], {})
     asyncio.run(run())
     assert frames and all(f["type"] == "session_started" and "current_agent" not in f and "opens_at" in f for f in frames)
@@ -885,7 +885,7 @@ class _Clock:
 
 
 def _served_state(gate_at, ready, step=3):
-    return {"step_number": step, "module_type": SLUICE,
+    return {"step_number": step, "module_type": SPILLWAY,
             "state": {"data": {"gate_ready": ready, "gate_at": datetime.fromtimestamp(gate_at, UTC).isoformat(),
                                "gate": 2 if ready else None, "open": [1, 3] if ready else [], "gate_round": 9}}}
 
@@ -1030,13 +1030,13 @@ def test_a_coin_flip_game_through_the_relay_verifies_and_a_tampered_beacon_or_re
         raise AssertionError("no level game found")
     s = rs.load_session(sid)
     data = s["state"]["data"]
-    out = get_interaction_module(SLUICE).is_terminal(SessionState.from_dict(s["state"]))[1]
+    out = get_interaction_module(SPILLWAY).is_terminal(SessionState.from_dict(s["state"]))[1]
     assert out["termination"] == "coin" and data["ended"]["how"] == "coin" and out["winner"] == data["ended"]["winner"]
     assert out["threes"][agents[0]] == out["threes"][agents[1]]
     record = _record(client, sid, *agents)
     report = verify_game(**record)
     assert report["verdict"] == "ok", [f for f in report["findings"] if f["status"] != "ok"]
-    assert get_interaction_module(SLUICE).rand_problem(data, agents, record["relay_verdict"]) == ""
+    assert get_interaction_module(SPILLWAY).rand_problem(data, agents, record["relay_verdict"]) == ""
 
     def flip(d):
         d["ended"] = {**d["ended"], "winner": next(p for p in d["seats"] if p != d["ended"]["winner"])}

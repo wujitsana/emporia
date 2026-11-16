@@ -1,5 +1,5 @@
 /**
- * Sluice as a viewer sees it in the Games section: who is seated, the board as it stands, the gate, the
+ * Spillway as a viewer sees it in the Games section: who is seated, the board as it stands, the gate, the
  * drops left and the clock; after the end the winning line or the live-three count. Visibility only: the
  * dashboard never drops a stone. A player's next move is shown as the MCP call to copy.
  */
@@ -12,34 +12,34 @@ import { useInterval } from "../hooks";
 import { VIEWER_ID } from "../relayEnv";
 import { whenText } from "../relayFormat";
 import { clockText } from "../setPlay";
-import { sluiceView, type SluiceView } from "../sluice";
+import { spillwayView, type SpillwayView } from "../spillway";
 import { AuditBadge } from "./AuditBadge";
 import { FoldDetail } from "./FoldDetail";
 import { GameChat } from "./GameChat";
 import { McpCommandHint } from "./McpCommandHint";
 import { VerifyBadge } from "./VerifyBadge";
-import { SluiceBoard } from "./boards/SluiceBoard";
-import { sluiceFromView } from "./boards/sluiceModel";
+import { SpillwayBoard } from "./boards/SpillwayBoard";
+import { spillwayFromView } from "./boards/spillwayModel";
 
 const num: CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
-export function SluicePanel({ session: initial }: { session: Session }) {
+export function SpillwayPanel({ session: initial }: { session: Session }) {
   const id = initial.session_id;
   const running = initial.status === "active" || initial.status === "waiting";
   const [fresh] = useInterval(() => api.session(id), running ? 4_000 : 3_600_000, [id, running]);
   const [acts] = useInterval(() => api.sessionActions(id), running ? 4_000 : 3_600_000, [id, running]);
   const session = fresh ?? initial;
-  const v = sluiceView(session, acts?.actions);
+  const v = spillwayView(session, acts?.actions);
   if (!v) return null;
   const live = session.status === "active" || session.status === "waiting";
   const clock = clockText(v.secondsLeft);
-  const props = sluiceFromView(v);
+  const props = spillwayFromView(v);
 
   return (
-    <div className="e-setplay e-sluice">
+    <div className="e-setplay e-spillway">
       <header className="e-setplay__head">
         <div>
-          <p className="e-setplay__game">Sluice</p>
+          <p className="e-setplay__game">Spillway</p>
           <p className="e-setplay__players">{session.participants.join(" v ")}</p>
         </div>
         <span className={`e-setplay__status${live ? " is-live" : ""}`}>
@@ -60,7 +60,7 @@ export function SluicePanel({ session: initial }: { session: Session }) {
       )}
 
       <FoldDetail fold={!!v.result} label="the board and the rules">
-        <SluiceBoard {...props} />
+        <SpillwayBoard {...props} />
       </FoldDetail>
 
       <div className="e-setplay__meta">
@@ -79,14 +79,14 @@ export function SluicePanel({ session: initial }: { session: Session }) {
   );
 }
 
-function progress(v: SluiceView, clock?: string | null): string {
+function progress(v: SpillwayView, clock?: string | null): string {
   const tail = clock ? ` · ${clock}` : "";
   if (!v.opening) return v.nameRound !== null ? `The opening is dealt when drand round ${v.nameRound} is published.` : "The opening is dealt when the beacon's round is published.";
   const gate = v.gate ? ` Channel ${v.gate} is shut.` : "";
   return `${v.toMove ?? "A player"}'s drop${tail} · ${v.moves.length} ${v.moves.length === 1 ? "drop" : "drops"} so far.${gate}`;
 }
 
-function NextMoveHint({ session, v }: { session: Session; v: SluiceView }) {
+function NextMoveHint({ session, v }: { session: Session; v: SpillwayView }) {
   if (!VIEWER_ID || session.status !== "active" || v.result || !v.opening || v.toMove !== VIEWER_ID) return null;
   const open = v.open.length ? v.open.join(" | ") : "1-6";
   return <McpCommandHint label={`${bareAgentName(VIEWER_ID)}'s move: it drops a stone with`} tool="submit_action"

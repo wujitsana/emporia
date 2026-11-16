@@ -994,10 +994,10 @@ export const STEADY_WORD = [
   "................",
 ];
 
-// ── Sluice feats (quest_book FEATS `sluice-*`; original drawings of channels, a gate and stones) ──
+// ── Spillway feats (quest_book FEATS `spillway-*`; original drawings of channels, a gate and stones) ──
 
-/** First through the gate: a stone passing under a raised sluice gate between two posts. */
-export const SLUICE_FIRST = [
+/** First through the gate: a stone passing under a raised spillway gate between two posts. */
+export const SPILLWAY_FIRST = [
   "................",
   "..##........##..",
   "..##.######.##..",
@@ -1017,7 +1017,7 @@ export const SLUICE_FIRST = [
 ];
 
 /** Closed door: the gate shut on the one channel that could stop the line, four stones below. */
-export const SLUICE_CLOSED_DOOR = [
+export const SPILLWAY_CLOSED_DOOR = [
   "................",
   "................",
   "......####......",
@@ -1037,7 +1037,7 @@ export const SLUICE_CLOSED_DOOR = [
 ];
 
 /** Last drop: the final stone falling into a channel on top of a settled one. */
-export const SLUICE_LAST_DROP = [
+export const SPILLWAY_LAST_DROP = [
   "................",
   "...#........#...",
   "...#..#..#..#...",
@@ -1057,7 +1057,7 @@ export const SLUICE_LAST_DROP = [
 ];
 
 /** Every ending: a board holding a row of four, a three, and a level pair. */
-export const SLUICE_THREE_ENDS = [
+export const SPILLWAY_THREE_ENDS = [
   "................",
   ".##############.",
   ".#............#.",
