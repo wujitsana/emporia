@@ -103,6 +103,8 @@ def write_refusal(kind: str, confirmed: bool = True) -> str:
 
 
 _WRITES = ("POST", "PUT", "PATCH", "DELETE")
+CHECK_PENDING = ("Your home relay is being checked (EMPORIA_VISITORS=homed-only); try again in a few seconds.")
+RETRY_IN_S = 5
 
 
 def guard(method: str, path: str, caller: str | None) -> str:
@@ -119,8 +121,10 @@ def guard(method: str, path: str, caller: str | None) -> str:
                            (caller,)).fetchone()
     if not row or relay_access.is_member_key(row["public_key_hex"] or "") or caller == rs._relay_operator_id():
         return ""
-    return write_refusal(kind_of(row["home_json"]), view(row["home_json"], row["home_check_json"])
-                         .get("check", {}).get("status") == "confirmed")
+    kind, status = kind_of(row["home_json"]), view(row["home_json"], row["home_check_json"]).get("check", {}).get("status")
+    if mode() == "homed-only" and kind == "relay" and status == "unchecked":
+        return CHECK_PENDING           # registered a moment ago: the first check has not answered yet, not a "no"
+    return write_refusal(kind, status == "confirmed")
 
 
 # ── the home check ───────────────────────────────────────────────────────────

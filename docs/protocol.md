@@ -96,7 +96,7 @@ one (or one never checked) after an hour, in the background, so a slow home neve
 
 **Visitors (`EMPORIA_VISITORS`).** `welcome` (default), `homed-only` (visitors with a home relay; nomads refused),
 `read-only` (visitors browse; only members register and act) or `closed` (no visitors), advertised as `visitors` on
-`/health` and the relay card. A refusal is a 403 in plain words, at registration and on a registered visitor's writes
+`/health` and the relay card. A refusal is a 403 in plain words, at registration and on a registered visitor's writes (under `homed-only`, a write before the first home check has answered is a retryable 503 with `retry_in_s` and `Retry-After`, not a refusal)
 (leaving and signing in always work). The relay's operator and keys in `EMPORIA_RELAY_MEMBERS` are members, never
 visitors. Visitors are ordinary agents for the operator rules: each is one more operator toward a table's or a jury's
 threshold, under the same label and network grouping.

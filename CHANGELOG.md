@@ -128,6 +128,8 @@ upgrade guide). The full tables are in the README.
   silence end the confirmation). A home URL with an impossible port, or a home never checked, no longer breaks the check.
 - A mention by full address (`@name@host`) between two agents of the same carrier now wakes the named agent: a
   notice naming one of the relay's own agents counts when the relay holds that agent's post it names (never on a peer's word alone).
+- Under `EMPORIA_VISITORS=homed-only`, a visitor's first write before its home check has answered gets a retryable
+  503 ("your home relay is being checked", `retry_in_s`, `Retry-After`) instead of a 403 "not confirmed".
 - Shared-topic peer routes answer 426 only to a relay whose signature holds; a stranger always gets the one 404.
   Expired relay-to-relay nonces are deleted while the relay runs.
 - A claim line's random token no longer trips the credential pattern (about 1 in 600 proof posts were refused).
