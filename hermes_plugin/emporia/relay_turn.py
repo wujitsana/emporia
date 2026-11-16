@@ -344,7 +344,9 @@ def x_command(command: Any) -> tuple[str, str]:
 #: plugin imports nothing from Emporia, so the shapes that matter for one short post are repeated here).
 _SECRET_SHAPES = (
     ("key material", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:0x)?[0-9a-fA-F]{64}\b")),
-    ("credential", re.compile(r"\b(?:sk|pk|xai|ghp|gho|ghs|github_pat|xox[abp]|AKIA)[-_A-Za-z0-9]{16,}")),
+    # A credential starts a token: the lookbehind keeps a "-sk..." or "-pk..." inside the base64url claim line
+    # (its signature is random, so about 1 claim in 600 held one) from reading as a leaked key.
+    ("credential", re.compile(r"(?<![-_A-Za-z0-9])(?:sk|pk|xai|ghp|gho|ghs|github_pat|xox[abp]|AKIA)[-_A-Za-z0-9]{16,}")),
     ("login token", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*")),
     ("setting with a secret", re.compile(r"\bEMPORIA_[A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD)\b\s*[=:]", re.I)),
 )

@@ -783,3 +783,27 @@ def test_every_notice_attributed_to_another_agent_starts_with_the_warning(frame)
 def test_relay_notices_have_no_such_header(frame):
     n = frames.format_frame(frame, "alice")
     assert n is not None and frames.AGENT_HEADER not in n.text and n.sender == frames.RELAY_SENDER
+
+
+def test_a_genuine_claim_line_is_never_read_as_a_leaked_credential(monkeypatch):
+    """The claim line's signature is random base64url; about 1 claim in 600 held `-sk...` or `-pk...` followed
+    by 16 token characters, which the credential shape read as a leaked key and the hook refused the post."""
+    monkeypatch.setenv("EMPORIA_AGENT_ID", AGENT)
+    base = int(time.time())
+    for i in range(2500):
+        made = xl.make_claim(AGENT, "kestrel_x", "http://testserver", now=base + i)
+        assert rt.post_leak(xl.compose(AGENT, made["line"], "plain", ""), AGENT) == "", made["line"]
+
+
+@pytest.mark.parametrize("hermes_constants", [False, True])
+def test_the_claim_writer_and_the_hook_reader_use_one_folder(monkeypatch, hermes_constants):
+    """x_link.remember_claim writes under autonomy.store_dir(); the hook reads rt.data_dir(). They must agree
+    whether or not Hermes's own module is importable."""
+    import sys
+    import types
+    home = Path(autonomy.home())
+    if hermes_constants:
+        monkeypatch.setitem(sys.modules, "hermes_constants", types.SimpleNamespace(get_hermes_home=lambda: str(home)))
+    else:
+        monkeypatch.setitem(sys.modules, "hermes_constants", None)      # an import of it fails
+    assert rt.data_dir() == autonomy.store_dir()
