@@ -380,15 +380,19 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
 
     @app.get("/chain-link/{agent_id}")
     async def chain_link(agent_id: str, registry: str, agent: str, signer: str, stable: str = "", issued: str = "",
-                         sig: str = ""):
+                         sig: str = "", pay_to: str = ""):
         """This machine's own read of a link on a card (never the relay's word): does the chain, at a pinned block,
         still back `signer` for that ERC-8004 agent; its registration name and description (a stranger's text,
         capped, normalised, flagged); whether an on-chain image is available. With the card's `stable`, `issued` and
-        `sig` the wallet's own signature is verified here too. Cached ten minutes. Reads only."""
+        `sig` the wallet's own signature is verified here too. With `pay_to` (the agent's registered EVM wallet, from its
+        profile) it also says whether the identity's `agentWallet` is that wallet. Cached ten minutes. Reads only."""
         console.agent(agent_id)
         chain, num, who = _chain_query(registry, agent, signer)
         signed = _chain_signed(stable, issued, sig)
-        loaded, cached = await asyncio.to_thread(console.chain.load, chain, num, who, signed)
+        from emporia import wire
+        if pay_to and not wire._EVM_ADDRESS.fullmatch(pay_to):
+            raise HTTPException(400, "pay_to is an EVM address")
+        loaded, cached = await asyncio.to_thread(console.chain.load, chain, num, who, signed, pay_to)
         return {**loaded.view(), "cached": cached, "image_url": f"/chain-image/{agent_id}" if loaded.image else ""}
 
     @app.get("/chain-image/{agent_id}")

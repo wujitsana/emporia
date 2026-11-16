@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-B_bNg9pe.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-BKgOJd9e.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -5735,7 +5735,7 @@ function activityVerb(i) {
 		};
 	}
 }
-// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
+// node_modules/@noble/hashes/_u64.js
 var U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();
 var _32n = /* @__PURE__ */ BigInt(32);
 function fromBig(n, le = false) {
@@ -5785,7 +5785,7 @@ var add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0
 var add4H = (low, Ah, Bh, Ch, Dh) => Ah + Bh + Ch + Dh + (low / 2 ** 32 | 0) | 0;
 var add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 var add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
-// ../../../../dashboard/node_modules/@noble/hashes/utils.js
+// node_modules/@noble/hashes/utils.js
 /**
 * Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 * @param a - value to test
@@ -6111,7 +6111,7 @@ var oidNist = (suffix) => ({ oid: Uint8Array.from([
 	2,
 	suffix
 ]) });
-// ../../../../dashboard/node_modules/@noble/hashes/_md.js
+// node_modules/@noble/hashes/_md.js
 /**
 * Internal Merkle-Damgard hash utils.
 * @module
@@ -6296,7 +6296,7 @@ var SHA512_IV = /* @__PURE__ */ Uint32Array.from([
 	1541459225,
 	327033209
 ]);
-// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
+// node_modules/@noble/hashes/sha2.js
 /**
 * SHA2 hash function. A.k.a. sha256, sha384, sha512, sha512_224, sha512_256.
 * SHA256 is the fastest hash implementable in JS, even faster than Blake3.
@@ -6740,7 +6740,7 @@ var sha256 = /* @__PURE__ */ createHasher(() => new _SHA256(), /* @__PURE__ */ o
 * ```
 */
 var sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
-// ../../../../dashboard/node_modules/@noble/curves/utils.js
+// node_modules/@noble/curves/utils.js
 /**
 * Hex, bytes and number utilities.
 * @module
@@ -7167,7 +7167,7 @@ function validateObject(object, fields = {}, optFields = {}, title = "object") {
 	iter(fields, false);
 	iter(optFields, true);
 }
-// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
+// node_modules/@noble/curves/abstract/modular.js
 /**
 * Utils for modular division and fields.
 * Field over 11 is a finite (Galois) field is integer number operations `mod 11`.
@@ -7734,7 +7734,7 @@ function Field(ORDER, opts = {}) {
 	Object.freeze(_Field.prototype);
 	return new _Field(ORDER, opts);
 }
-// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
+// node_modules/@noble/curves/abstract/curve.js
 /**
 * Methods for elliptic curve multiplication by scalars.
 * Contains wNAF-based ScalarMultiplier, pippenger.
@@ -8263,7 +8263,7 @@ function createKeygen(randomSecretKey, getPublicKey) {
 		};
 	};
 }
-// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
+// node_modules/@noble/curves/abstract/edwards.js
 /**
 * Twisted Edwards curve. The formula is: ax² + y² = 1 + dx²y².
 * For design rationale of types / exports, see weierstrass module documentation.
@@ -8736,7 +8736,7 @@ function eddsa(Point, cHash, eddsaOpts = {}) {
 		lengths
 	});
 }
-// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
+// node_modules/@noble/curves/ed25519.js
 /**
 * ed25519 Twisted Edwards curve with following addons:
 * - X25519 ECDH
@@ -12230,7 +12230,7 @@ function relayStatus(l) {
 /** "checked by you at block N", from this machine's own read; never the relay's word. */
 function localStatus(v) {
 	if (v.status === "checked") {
-		const two = v.two_way ? " · two-way" : "";
+		const two = (v.two_way ? " · two-way" : "") + (v.paid_at_own_wallet ? " · paid at its own wallet" : "");
 		return v.signature_checked === false ? `chain control checked by you at block ${v.block_number} (signature not available)${two}` : `checked by you at block ${v.block_number}${two}`;
 	}
 	if (v.status === "not-proven") return `your read does not show it${v.reason ? `: ${v.reason}` : ""}`;
@@ -12239,16 +12239,17 @@ function localStatus(v) {
 }
 /** The query for the console's routes. With the card's stable id and the link's `issued_at` and `wallet_sig` the
 *  console verifies the wallet's signature as well as the chain's control. */
-function query(l, stable) {
-	const base = `registry=${encodeURIComponent(l.agent_registry)}&agent=${encodeURIComponent(l.agent_id)}&signer=${encodeURIComponent(l.signer)}`;
+function query(l, stable, payTo) {
+	const pay = payTo && /^0x[0-9a-fA-F]{40}$/.test(payTo) ? `&pay_to=${payTo}` : "";
+	const base = `registry=${encodeURIComponent(l.agent_registry)}&agent=${encodeURIComponent(l.agent_id)}&signer=${encodeURIComponent(l.signer)}${pay}`;
 	if (!stable || !l.wallet_sig || !l.issued_at) return base;
 	return `${base}&stable=${encodeURIComponent(stable)}&issued=${l.issued_at}&sig=${encodeURIComponent(l.wallet_sig)}`;
 }
 /** The viewer's own read of a link, through the local console; null where there is no console (or it did not answer). */
-async function fetchChainView(viewer, l, stable) {
+async function fetchChainView(viewer, l, stable, payTo) {
 	if (!VIA_CONSOLE || !viewer) return null;
 	try {
-		const r = await httpFetch(consoleUrl(`/chain-link/${encodeURIComponent(viewer)}?${query(l, stable)}`));
+		const r = await httpFetch(consoleUrl(`/chain-link/${encodeURIComponent(viewer)}?${query(l, stable, payTo)}`));
 		return r.ok ? await r.json() : null;
 	} catch {
 		return null;
@@ -12368,17 +12369,21 @@ function Registration({ view }) {
 		]
 	});
 }
-function ChainLinkRow({ link, stable }) {
+function ChainLinkRow({ link, stable, payTo }) {
 	const [view, setView] = (0, import_react.useState)(null);
 	(0, import_react.useEffect)(() => {
 		let live = true;
-		if (VIA_CONSOLE && VIEWER_ID && link.status !== "superseded") fetchChainView(VIEWER_ID, link, stable).then((v) => {
+		if (VIA_CONSOLE && VIEWER_ID && link.status !== "superseded") fetchChainView(VIEWER_ID, link, stable, payTo).then((v) => {
 			if (live) setView(v);
 		});
 		return () => {
 			live = false;
 		};
-	}, [link, stable]);
+	}, [
+		link,
+		stable,
+		payTo
+	]);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "e-chain-link",
 		"data-testid": "chain-link-row",
@@ -12423,7 +12428,8 @@ function ChainLinkPanel({ agent }) {
 		"data-testid": "chain-link-panel",
 		children: links.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MetaGrid, { rows: links.map((l) => ["ERC-8004", /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChainLinkRow, {
 			link: l,
-			stable: agent.stable_id
+			stable: agent.stable_id,
+			payTo: agent.x402_pay_to?.evm
 		}, `${l.agent_registry}/${l.agent_id}`)]) }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 			style: {
 				marginTop: 10,
@@ -18916,7 +18922,7 @@ function fenToBoard(fen) {
 		return row;
 	});
 }
-// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
+// node_modules/chess.js/dist/esm/chess.js
 function rootNode(comment) {
 	return comment !== null ? {
 		comment,

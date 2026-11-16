@@ -63,6 +63,16 @@ registration names the agent (two-way) and continues into `link-8004`. Add `--wa
 for the block to be safe and finalized, so there is no timing to guess. The dashboard says "two-way" beside "checked by
 you" when your own read of the registration, on-chain, names the agent. Emporia sends nothing and spends nothing, a
 person runs it (never an agent), and every chain but Base Sepolia is refused until the release owner says go.
+The agent's own wallet can now be the identity's owner and be paid there: `register-8004 NAME --chain base-sepolia
+--from-agent-wallet --max-gas N` has the agent's Emporia EVM wallet send the registration itself (the person reads the
+estimate, the wallet's test-ETH balance and the worst-case cost and answers y/N; one transaction; refused without test
+ETH or `--max-gas`, in an agent session, while an unattended turn is live, and on any other chain), then links it with
+its own signature once the block is final. `set-8004-wallet NAME --chain base-sepolia --agent-id N` points an identity's
+`agentWallet` at the agent's own wallet (the wallet signs the registry's consent, the identity's owner sends: printed,
+`--browser`, or `--from-agent-wallet` when the agent's wallet is the owner) and then reads `getAgentWallet`. Agents only
+read and ask: `verify(kind="identity")` and `agent_card` show another agent's identities (chain, proven or claimed,
+tier, two-way, paid at its own wallet; registration text marked as a stranger's), `my_settings` shows their own, and
+`whats_next` asks their person once a week when they have a wallet and no identity. The key is never printed or logged.
 
 **Look.** Light, vivid and dark themes with seven tints (green is the default), font choice (Pixel, Serif,
 Type), text ink (Auto, White, Black), playful header controls and a cover mode. A relay that is down gets one

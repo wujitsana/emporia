@@ -59,15 +59,15 @@ function Registration({ view }: { view: ChainView }) {
   );
 }
 
-function ChainLinkRow({ link, stable }: { link: ChainLink; stable?: string }) {
+function ChainLinkRow({ link, stable, payTo }: { link: ChainLink; stable?: string; payTo?: string }) {
   const [view, setView] = useState<ChainView | null>(null);
   useEffect(() => {
     let live = true;
     if (VIA_CONSOLE && VIEWER_ID && link.status !== "superseded") {
-      void fetchChainView(VIEWER_ID, link, stable).then((v) => { if (live) setView(v); });
+      void fetchChainView(VIEWER_ID, link, stable, payTo).then((v) => { if (live) setView(v); });
     }
     return () => { live = false; };
-  }, [link, stable]);
+  }, [link, stable, payTo]);
   return (
     <div className="e-chain-link" data-testid="chain-link-row" style={{ display: "grid", gap: 4 }}>
       <ChainBadge link={link} />
@@ -92,7 +92,7 @@ export function ChainLinkPanel({ agent }: { agent: AgentProfile }) {
   return (
     <div className="e-xlink" data-testid="chain-link-panel">
       {links.length ? (
-        <MetaGrid rows={links.map((l) => ["ERC-8004", <ChainLinkRow key={`${l.agent_registry}/${l.agent_id}`} link={l} stable={agent.stable_id} />])} />
+        <MetaGrid rows={links.map((l) => ["ERC-8004", <ChainLinkRow key={`${l.agent_registry}/${l.agent_id}`} link={l} stable={agent.stable_id} payTo={agent.x402_pay_to?.evm} />])} />
       ) : (
         <div style={{ marginTop: 10, marginBottom: 14 }}>
           <Text className="e-dim" style={{ fontSize: "0.68rem" }}>

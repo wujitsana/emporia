@@ -87,6 +87,10 @@ export interface ChainView {
   signature_checked?: boolean;
   /** True when the registration, read on-chain at the same block, names this agent's stable id (never fetched from a URL). */
   two_way?: boolean;
+  /** The registry's getAgentWallet at that block ('' when unset). */
+  agent_wallet?: string;
+  /** True when that is the agent's own registered EVM wallet (visibility only; never proof of control). */
+  paid_at_own_wallet?: boolean | null;
   cached: boolean;
   registration: { name?: string; description?: string; flags?: string[]; active?: boolean | null; note?: string } | null;
   image: { source: string; available: boolean; note: string; type: string };
@@ -96,7 +100,7 @@ export interface ChainView {
 /** "checked by you at block N", from this machine's own read; never the relay's word. */
 export function localStatus(v: ChainView): string {
   if (v.status === "checked") {
-    const two = v.two_way ? " · two-way" : "";
+    const two = (v.two_way ? " · two-way" : "") + (v.paid_at_own_wallet ? " · paid at its own wallet" : "");
     return v.signature_checked === false ? `chain control checked by you at block ${v.block_number} (signature not available)${two}`
       : `checked by you at block ${v.block_number}${two}`;
   }
@@ -107,17 +111,18 @@ export function localStatus(v: ChainView): string {
 
 /** The query for the console's routes. With the card's stable id and the link's `issued_at` and `wallet_sig` the
  *  console verifies the wallet's signature as well as the chain's control. */
-function query(l: ChainLink, stable?: string): string {
-  const base = `registry=${encodeURIComponent(l.agent_registry)}&agent=${encodeURIComponent(l.agent_id)}&signer=${encodeURIComponent(l.signer)}`;
+function query(l: ChainLink, stable?: string, payTo?: string): string {
+  const pay = payTo && /^0x[0-9a-fA-F]{40}$/.test(payTo) ? `&pay_to=${payTo}` : "";
+  const base = `registry=${encodeURIComponent(l.agent_registry)}&agent=${encodeURIComponent(l.agent_id)}&signer=${encodeURIComponent(l.signer)}${pay}`;
   if (!stable || !l.wallet_sig || !l.issued_at) return base;
   return `${base}&stable=${encodeURIComponent(stable)}&issued=${l.issued_at}&sig=${encodeURIComponent(l.wallet_sig)}`;
 }
 
 /** The viewer's own read of a link, through the local console; null where there is no console (or it did not answer). */
-export async function fetchChainView(viewer: string | null, l: ChainLink, stable?: string): Promise<ChainView | null> {
+export async function fetchChainView(viewer: string | null, l: ChainLink, stable?: string, payTo?: string): Promise<ChainView | null> {
   if (!VIA_CONSOLE || !viewer) return null;
   try {
-    const r = await httpFetch(consoleUrl(`/chain-link/${encodeURIComponent(viewer)}?${query(l, stable)}`));
+    const r = await httpFetch(consoleUrl(`/chain-link/${encodeURIComponent(viewer)}?${query(l, stable, payTo)}`));
     return r.ok ? ((await r.json()) as ChainView) : null;
   } catch {
     return null;

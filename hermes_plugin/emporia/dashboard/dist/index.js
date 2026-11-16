@@ -39,7 +39,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		value: mod,
 		enumerable: true
 	}) : target, mod));
-	// ../../../../dashboard/node_modules/scheduler/cjs/scheduler.production.js
+	// node_modules/scheduler/cjs/scheduler.production.js
 	/**
 	* @license React
 	* scheduler.production.js
@@ -293,11 +293,11 @@ var EmporiaHermesPlugin = (function(exports) {
 			};
 		};
 	}));
-	// ../../../../dashboard/node_modules/scheduler/index.js
+	// node_modules/scheduler/index.js
 	var require_scheduler = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_scheduler_production();
 	}));
-	// ../../../../dashboard/node_modules/react/cjs/react.production.js
+	// node_modules/react/cjs/react.production.js
 	/**
 	* @license React
 	* react.production.js
@@ -683,11 +683,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		exports.version = "19.3.1";
 	}));
-	// ../../../../dashboard/node_modules/react/index.js
+	// node_modules/react/index.js
 	var require_react = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_react_production();
 	}));
-	// ../../../../dashboard/node_modules/react-dom/cjs/react-dom.production.js
+	// node_modules/react-dom/cjs/react-dom.production.js
 	/**
 	* @license React
 	* react-dom.production.js
@@ -839,7 +839,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		exports.version = "19.3.1";
 	}));
-	// ../../../../dashboard/node_modules/react-dom/index.js
+	// node_modules/react-dom/index.js
 	var require_react_dom = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		function checkDCE() {
 			if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ === "undefined" || typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.checkDCE !== "function") return;
@@ -852,7 +852,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		checkDCE();
 		module.exports = require_react_dom_production();
 	}));
-	// ../../../../dashboard/node_modules/react-dom/cjs/react-dom-client.production.js
+	// node_modules/react-dom/cjs/react-dom-client.production.js
 	/**
 	* @license React
 	* react-dom-client.production.js
@@ -11473,7 +11473,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		} catch {}
 		return null;
 	}
-	// ../../../../dashboard/node_modules/react/cjs/react-jsx-runtime.production.js
+	// node_modules/react/cjs/react-jsx-runtime.production.js
 	/**
 	* @license React
 	* react-jsx-runtime.production.js
@@ -11507,7 +11507,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		exports.jsx = jsxProd;
 		exports.jsxs = jsxProd;
 	}));
-	// ../../../../dashboard/node_modules/react/jsx-runtime.js
+	// node_modules/react/jsx-runtime.js
 	var require_jsx_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_react_jsx_runtime_production();
 	}));
@@ -17210,7 +17210,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_agentName();
 		init_attention();
 	}));
-	// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
+	// node_modules/@noble/hashes/_u64.js
 	function fromBig(n, le = false) {
 		if (le) return {
 			h: Number(n & U32_MASK64),
@@ -17263,7 +17263,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 		add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
 	}));
-	// ../../../../dashboard/node_modules/@noble/hashes/utils.js
+	// node_modules/@noble/hashes/utils.js
 	/**
 	* Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 	* @param a - value to test
@@ -17580,7 +17580,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			suffix
 		]) });
 	}));
-	// ../../../../dashboard/node_modules/@noble/hashes/_md.js
+	// node_modules/@noble/hashes/_md.js
 	/**
 	* Shared 32-bit conditional boolean primitive reused by SHA-256, SHA-1, and MD5 `F`.
 	* Returns bits from `b` when `a` is set, otherwise from `c`.
@@ -17737,7 +17737,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			327033209
 		]);
 	}));
-	// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
+	// node_modules/@noble/hashes/sha2.js
 	var SHA256_K, SHA256_W, SHA2_32B, _SHA256, K512, SHA512_Kh, SHA512_Kl, SHA512_W_H, SHA512_W_L, SHA2_64B, _SHA512, sha256, sha512;
 	var init_sha2 = __esmMin((() => {
 		init__md();
@@ -18145,7 +18145,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		sha256 = /* @__PURE__ */ createHasher(() => new _SHA256(), /* @__PURE__ */ oidNist(1));
 		sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
 	}));
-	// ../../../../dashboard/node_modules/@noble/curves/utils.js
+	// node_modules/@noble/curves/utils.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* Validates that a value is an array, optionally validating each element.
@@ -18479,7 +18479,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			return (_1n$4 << BigInt(n)) - _1n$4;
 		};
 	}));
-	// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
+	// node_modules/@noble/curves/abstract/modular.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* @param a - Dividend value.
@@ -19032,7 +19032,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			}
 		};
 	}));
-	// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
+	// node_modules/@noble/curves/abstract/curve.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* Validates the static surface of a point constructor.
@@ -19534,7 +19534,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			}
 		};
 	}));
-	// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
+	// node_modules/@noble/curves/abstract/edwards.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	function isEdValidXY(Fp, CURVE, x, y) {
 		const x2 = Fp.sqr(x);
@@ -20009,7 +20009,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		_4n = /* @__PURE__ */ BigInt(4);
 		_8n$1 = /* @__PURE__ */ BigInt(8);
 	}));
-	// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
+	// node_modules/@noble/curves/ed25519.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	function ed25519_pow_2_252_3(x) {
 		const _10n = BigInt(10), _20n = BigInt(20), _40n = BigInt(40), _80n = BigInt(80);
@@ -23629,7 +23629,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	/** "checked by you at block N", from this machine's own read; never the relay's word. */
 	function localStatus(v) {
 		if (v.status === "checked") {
-			const two = v.two_way ? " · two-way" : "";
+			const two = (v.two_way ? " · two-way" : "") + (v.paid_at_own_wallet ? " · paid at its own wallet" : "");
 			return v.signature_checked === false ? `chain control checked by you at block ${v.block_number} (signature not available)${two}` : `checked by you at block ${v.block_number}${two}`;
 		}
 		if (v.status === "not-proven") return `your read does not show it${v.reason ? `: ${v.reason}` : ""}`;
@@ -23638,16 +23638,17 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	/** The query for the console's routes. With the card's stable id and the link's `issued_at` and `wallet_sig` the
 	*  console verifies the wallet's signature as well as the chain's control. */
-	function query(l, stable) {
-		const base = `registry=${encodeURIComponent(l.agent_registry)}&agent=${encodeURIComponent(l.agent_id)}&signer=${encodeURIComponent(l.signer)}`;
+	function query(l, stable, payTo) {
+		const pay = payTo && /^0x[0-9a-fA-F]{40}$/.test(payTo) ? `&pay_to=${payTo}` : "";
+		const base = `registry=${encodeURIComponent(l.agent_registry)}&agent=${encodeURIComponent(l.agent_id)}&signer=${encodeURIComponent(l.signer)}${pay}`;
 		if (!stable || !l.wallet_sig || !l.issued_at) return base;
 		return `${base}&stable=${encodeURIComponent(stable)}&issued=${l.issued_at}&sig=${encodeURIComponent(l.wallet_sig)}`;
 	}
 	/** The viewer's own read of a link, through the local console; null where there is no console (or it did not answer). */
-	async function fetchChainView(viewer, l, stable) {
+	async function fetchChainView(viewer, l, stable, payTo) {
 		if (!VIA_CONSOLE || !viewer) return null;
 		try {
-			const r = await httpFetch(consoleUrl(`/chain-link/${encodeURIComponent(viewer)}?${query(l, stable)}`));
+			const r = await httpFetch(consoleUrl(`/chain-link/${encodeURIComponent(viewer)}?${query(l, stable, payTo)}`));
 			return r.ok ? await r.json() : null;
 		} catch {
 			return null;
@@ -23799,17 +23800,21 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	function ChainLinkRow({ link, stable }) {
+	function ChainLinkRow({ link, stable, payTo }) {
 		const [view, setView] = (0, import_react$41.useState)(null);
 		(0, import_react$41.useEffect)(() => {
 			let live = true;
-			if (VIA_CONSOLE && VIEWER_ID && link.status !== "superseded") fetchChainView(VIEWER_ID, link, stable).then((v) => {
+			if (VIA_CONSOLE && VIEWER_ID && link.status !== "superseded") fetchChainView(VIEWER_ID, link, stable, payTo).then((v) => {
 				if (live) setView(v);
 			});
 			return () => {
 				live = false;
 			};
-		}, [link, stable]);
+		}, [
+			link,
+			stable,
+			payTo
+		]);
 		return /* @__PURE__ */ (0, import_jsx_runtime$92.jsxs)("div", {
 			className: "e-chain-link",
 			"data-testid": "chain-link-row",
@@ -23854,7 +23859,8 @@ var EmporiaHermesPlugin = (function(exports) {
 			"data-testid": "chain-link-panel",
 			children: links.length ? /* @__PURE__ */ (0, import_jsx_runtime$92.jsx)(MetaGrid, { rows: links.map((l) => ["ERC-8004", /* @__PURE__ */ (0, import_jsx_runtime$92.jsx)(ChainLinkRow, {
 				link: l,
-				stable: agent.stable_id
+				stable: agent.stable_id,
+				payTo: agent.x402_pay_to?.evm
 			}, `${l.agent_registry}/${l.agent_id}`)]) }) : /* @__PURE__ */ (0, import_jsx_runtime$92.jsxs)("div", {
 				style: {
 					marginTop: 10,
@@ -30781,7 +30787,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	var init_fen = __esmMin((() => {
 		STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 	}));
-	// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
+	// node_modules/chess.js/dist/esm/chess.js
 	function rootNode(comment) {
 		return comment !== null ? {
 			comment,

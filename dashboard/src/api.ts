@@ -129,6 +129,8 @@ export interface AgentProfile {
   /** On a `GET /agents` row: the agent's overall level (null where the relay runs no quests). */
   level?: number | null;
   links?: CardLink[];
+  /** Where it is paid over x402, per network family (public: every payment request names it). */
+  x402_pay_to?: Record<string, string>;
   /** Declared on the signed card, never verified. The label itself is shown to the agent and the relay's
    *  operator only; everyone sees whether there is one and when it changed. */
   operator_label?: string | null;

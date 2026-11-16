@@ -1080,9 +1080,51 @@ def agent_card(agent: str, passport: bool = False) -> dict[str, Any]:
         profile = _agent_profile(agent_id)
         if profile:
             out["profile"] = profile
+            if ids := _identities_8004(profile):
+                out["identity_8004"] = ids      # the relay's word, per ERC-8004 link; verify(kind="identity") reads the chain
         if links := _follow_facts(agent_id):
             out["follow"] = links
     return out
+
+
+def _identities_8004(profile: dict[str, Any]) -> dict[str, Any] | None:
+    """An agent's linked ERC-8004 identities as its relay's card serves them (no chain read here): None when it has none."""
+    from emporia import erc8004_view
+    lines = erc8004_view.relay_view(profile.get("links"), erc8004_view.pay_to_of(profile))
+    return {"links": lines, "note": erc8004_view.NOTE} if lines else None
+
+
+def _identity_check(target: str = "", agent_id: str = "") -> dict[str, Any]:
+    """`verify(kind="identity")`: each ERC-8004 link of an agent (default: you), the relay's line plus this machine's
+    own chain read at one pinned block (owner and tier, whether its registration names it, whether the identity is paid
+    at its own wallet). Reads only; the registration's own text arrives marked as a stranger's."""
+    from emporia import erc8004_view
+    from emporia.console.chain import ChainViews
+    who = target or agent_id or AGENT_ID
+    profile = _agent_profile(who)
+    if not profile:
+        return {"success": False, "error": f"no profile for {who} on your home relay"}
+    links = erc8004_view.erc8004_links(profile.get("links"))
+    pay_to, stable = erc8004_view.pay_to_of(profile), str(profile.get("stable_id") or "")
+    out = []
+    try:
+        views = ChainViews()
+    except Exception:  # noqa: BLE001 — no reader here: every link keeps the relay's line below
+        views = None
+    for link in links:
+        parts = str(link.get("agent_registry", "")).split(":")
+        try:
+            if views is None:
+                raise RuntimeError("no chain reader")
+            loaded, _ = views.load("eip155:" + parts[1], str(link["agent_id"]), str(link["signer"]),
+                                   {"stable_id": stable, "issued_at": int(link["issued_at"]),
+                                    "wallet_sig": str(link["wallet_sig"])}, pay_to)
+            out.append(erc8004_view.local_view(link, loaded.view()))
+        except Exception:  # noqa: BLE001 — a link that cannot be read here keeps the relay's line and says so
+            line = erc8004_view.relay_view([link], pay_to)[0]
+            line["chain_status"], line["chain_reason"] = "unknown", "this machine could not read the chain for it"
+            out.append(line)
+    return {"success": True, "agent": who, "links": out, "note": erc8004_view.NOTE}
 
 
 def _passport_of(relay: str, agent_id: str) -> dict[str, Any]:
@@ -3469,10 +3511,12 @@ def my_settings(agent_id: str = "") -> dict[str, Any]:
     aid = agent_id or AGENT_ID
     takes = None
     accepts = None
+    identity = None
     try:
         r = _bearer_request("get", f"{RELAY_URL}/agents/{aid}", agent_id=aid, timeout=10)
         takes = r.json().get("takes_dms_from_other_relays") if r.status_code == 200 else None
         accepts = r.json().get("accepts_networks") if r.status_code == 200 else None
+        identity = _identities_8004(r.json()) if r.status_code == 200 else None
     except Exception:  # noqa: BLE001
         pass
     return {"success": True, "agent_id": aid, "home": RELAY_URL,
@@ -3486,6 +3530,8 @@ def my_settings(agent_id: str = "") -> dict[str, Any]:
             "asks_operator_above_cents": agent_wallet.approval_threshold_cents(),
             "daily_turns": _daily_turns(),
             "wallet": "money_info",
+            # your linked ERC-8004 identities as your card shows them (none: null); minting or linking is your operator's
+            "identity_8004": identity,
             "playbook": _playbook_view(),
             "how_to_change": {k: localize(v) for k, v in {
                 "where it may go": f"emporia visits {aid} --policy ask|listed|linked --allow URL --deny URL",
@@ -3496,7 +3542,9 @@ def my_settings(agent_id: str = "") -> dict[str, Any]:
                 "networks it takes payment on": f"emporia wallet accept {aid} (your operator only)",
                 "daily turns": f"EMPORIA_DAILY_TURNS in {aid}'s .env (your operator; 0 = no cap)",
                 "playbook": f"emporia agent playbook {aid} (your operator)",
-                "home relay": f"emporia relay move URL {aid} (your operator only)"}.items()}}
+                "home relay": f"emporia relay move URL {aid} (your operator only)",
+                "ERC-8004 identity": f"emporia agent register-8004 {aid} --chain base-sepolia (your operator only; "
+                                     "you cannot mint, link or change it)"}.items()}}
 
 
 @mcp.tool()
@@ -4597,9 +4645,49 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
             import time
             out["try"] = tries[int(time.time() // 21600) % len(tries)]
             out["hint"] += "; or do the one thing in `try` (a single action), then stop"
+    if line := _ask_about_8004(aid):
+        out["ask_your_person"] = line
     if not out.get("partial"):
         _note_last_look(aid)
     return out
+
+
+def _ask_about_8004(aid: str) -> str | None:
+    """One line, at most once a week, for an agent that has an EVM wallet and no ERC-8004 identity on an open chain: a
+    request to its person (it cannot mint, link or change one). Never in a round (a quiet round's `try` line implies the
+    agent acts itself), never in a read-only peek, never when anything fails."""
+    from datetime import UTC, datetime, timedelta
+    if _in_round() or os.getenv("EMPORIA_NO_LOOK_NOTE") == "1":
+        return None
+    try:
+        from emporia import agent_wallet, erc8004_view
+        path = _look_file().with_name("ask_8004.json")
+        try:
+            known = json.loads(path.read_text())
+            known = known if isinstance(known, dict) else {}
+        except Exception:  # noqa: BLE001
+            known = {}
+        try:
+            when = datetime.fromisoformat(str(known.get(aid)))
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=UTC)
+            if timedelta(0) <= datetime.now(UTC) - when < timedelta(days=7):
+                return None
+        except (TypeError, ValueError):
+            pass
+        if "evm" not in agent_wallet._families(aid):
+            return None
+        profile = _agent_profile(aid)
+        if not profile or erc8004_view.erc8004_links(profile.get("links")):
+            return None                     # the profile could not be read, or an identity is already linked
+        known[aid] = datetime.now(UTC).isoformat()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(known, f)
+        return erc8004_view.ask_line(aid)
+    except Exception:  # noqa: BLE001 — a hint, never a failure of whats_next
+        return None
 
 
 _LOOK_MAX_DAYS = 7
@@ -6591,7 +6679,7 @@ def get_settlements(session_id: str = "") -> dict[str, Any]:
 # ─── lean surface: read-only families behind one tool each ───────────────────
 # Each helper above stays a plain function (the SDK, the CLI and tests call them); only these are tools.
 
-_VERIFY_KINDS = ("dm_chain", "room_chain", "room", "session", "relay_log")
+_VERIFY_KINDS = ("dm_chain", "room_chain", "room", "session", "relay_log", "identity")
 _STANDING_VIEWS = ("stats", "sheet", "season", "board", "leaderboard", "limits", "caliber")
 _RECORD_KINDS = ("results", "export", "settlements", "counterparty")
 
@@ -6606,7 +6694,8 @@ def verify(kind: str, target: str = "", agent_id: str = "", max_messages: int | 
            ignore_pin: bool = False, compare_with: str = "") -> dict[str, Any]:
     """Check something yourself instead of trusting the relay. kind: dm_chain (target: thread id),
     room_chain (room id), room (room id: settings, invites, kicks signed by members), session (session id:
-    evidence file), relay_log (no target; compare_with: other relay URLs)."""
+    evidence file), relay_log (no target; compare_with: other relay URLs), identity (target: an agent, default you:
+    its ERC-8004 links, each read from the chain by you)."""
     if kind == "dm_chain":
         out = verify_dm_chain(thread_id=target, agent_id=agent_id, max_messages=max_messages, ignore_pin=ignore_pin)
     elif kind == "room_chain":
@@ -6617,6 +6706,8 @@ def verify(kind: str, target: str = "", agent_id: str = "", max_messages: int | 
         out = verify_session(session_id=target, agent_id=agent_id)
     elif kind == "relay_log":
         out = check_relay_log(compare_with=compare_with)
+    elif kind == "identity":
+        out = _identity_check(target=target, agent_id=agent_id)
     else:
         return _bad_choice("kind", kind, _VERIFY_KINDS)
     return {**out, "kind": kind} if isinstance(out, dict) else out
