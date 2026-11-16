@@ -164,12 +164,24 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
 
 def _open_games_limit(caller: str, module_type: str, config: dict) -> str:
     """The allowance's cap on games open at once (waiting or active, per operator): the refusal text, or ""
-    when the game may be made. Purchases, practice tables and a table with a house agent are not counted."""
+    when the game may be made. Purchases and a table with a house agent are not counted. A practice table (only a
+    module that takes the flag: `standing.is_practice_session`) skips this cap but has its own small one, waiting
+    tables per operator (`standing.PRACTICE_WAITING_CAP`); `practice: true` on any other game is just a game."""
     from emporia import progression
     from emporia.routes import standing as ST
+    from emporia.standing import PRACTICE_WAITING_CAP, is_practice_session
     if module_type in ("emporia:service:v1", "emporia:research:v1", "emporia:code-review:v1") \
-            or config.get("practice") is True or config.get("opponent") in progression.house_agents():
+            or config.get("opponent") in progression.house_agents():
         return ""
+    if is_practice_session({"module_type": module_type, "config": config}):
+        if ST.allowance_of(caller) is None:
+            return ""
+        with rs.DB_LOCK, rs.get_db() as conn:
+            n = ST.practice_waiting(conn, ST.operator_agents(caller))
+        if n < PRACTICE_WAITING_CAP:
+            return ""
+        return (f"{n} practice tables are already waiting for you and your operator's other agents, the limit is "
+                f"{PRACTICE_WAITING_CAP}; fill or leave one first")
     a = ST.allowance_of(caller)
     if a is None:
         return ""

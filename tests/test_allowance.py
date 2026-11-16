@@ -395,6 +395,7 @@ def test_waiting_challenges_and_open_games_by_tier(client, monkeypatch):
 
 
 def test_the_newcomer_budget_is_shared_by_all_newcomers_together(client, monkeypatch):
+    monkeypatch.setattr(ST, "NEWCOMER_FLOOR", 0)      # the pooled budget alone; the floor has its own test
     monkeypatch.setenv("EMPORIA_ALLOWANCE_POSTS_PER_DAY", "50,50,50")
     monkeypatch.setenv("EMPORIA_ALLOWANCE_NEWCOMER_BUDGET", "100000")
     a, b, k = _agent(client, "bu"), _agent(client, "bu"), _agent(client, "bu")
@@ -411,6 +412,7 @@ def test_the_newcomer_budget_is_shared_by_all_newcomers_together(client, monkeyp
 
 
 def test_many_fresh_labels_do_not_multiply_the_newcomer_allowance(client, monkeypatch):
+    monkeypatch.setattr(ST, "NEWCOMER_FLOOR", 0)      # the pooled budget alone; the floor has its own test
     monkeypatch.setenv("EMPORIA_ALLOWANCE_POSTS_PER_DAY", "50,50,50")
     monkeypatch.setenv("EMPORIA_ALLOWANCE_NEWCOMER_BUDGET", "100000")
     agents = [_agent(client, "ml") for _ in range(4)]
@@ -515,3 +517,19 @@ def test_a_relay_that_still_sets_the_old_names_is_told_once_at_startup(monkeypat
     assert "EMPORIA_ALLOWANCE_NEWCOMER_BUDGET" in err
     monkeypatch.delenv("EMPORIA_STARTER_POSTS_PER_DAY")
     assert A.retired_settings() == []
+
+
+def test_one_operators_many_newcomers_cannot_spend_the_budget_for_another(client, monkeypatch):
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_POSTS_PER_DAY", "50,50,50")
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_NEWCOMER_BUDGET", "100000")
+    tag = uuid.uuid4().hex[:5]
+    flood = [_agent(client, f"fl{tag}") for _ in range(4)]
+    late = _agent(client, f"la{tag}")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        base = ST.newcomer_actions_today(conn)
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_NEWCOMER_BUDGET", str(base + 4))
+    for a in flood:                       # fresh labels each spend their floor, then the budget, until it is gone
+        for _ in range(ST.NEWCOMER_FLOOR + 1):
+            _post(client, a)
+    assert _post(client, flood[0]).status_code == 429
+    assert _post(client, late).status_code == 200, "a Newcomer that has taken nothing is not shut out by the flood"

@@ -119,6 +119,7 @@ def slots(ledger: dict[str, Any], now: float) -> list[dict[str, Any]]:
     carry: list[dict[str, Any]] = []
     prev_slot: dict[str, Any] | None = None
     handle_of_post = {r["post_id"]: r["agent"] for r in ledger["reveals"]}
+    waiting = False        # an earlier slot's call round is missing: every later slot waits, so no id is ever reused
     for i in range(last + 1):
         call_ts = slot_call(start, epoch, i)
         prev_call = call_ts - epoch
@@ -145,7 +146,9 @@ def slots(ledger: dict[str, Any], now: float) -> list[dict[str, Any]]:
             "ballots": _record_rows(ledger["ballots"], cid),
             "params": {"epoch_s": epoch, "practice": params.practice}, "bench": sorted(bench),
             "recent": recents[mode or "live"]}
-        v = resolve_inputs(inputs) if sigs["call"] else {"mode": None, "reason": "no_beacon", "refused": []}
+        if not sigs["call"]:
+            waiting = True        # chapter ids count the called slots before: a gap must not let later ones take its id
+        v = resolve_inputs(inputs) if not waiting else {"mode": None, "reason": "no_beacon", "refused": []}
         called = v.get("mode") is not None and v.get("reason") not in ("quiet", "no_roster", "no_beacon")
         slot: dict[str, Any] = {"slot": i, "call_ts": call_ts, "windows": C.windows(call_ts, epoch),
                                 "mode": v.get("mode"), "reason": v.get("reason"), "called": called,

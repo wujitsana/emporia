@@ -190,6 +190,33 @@ def test_the_ledger_carries_the_chain_and_the_verifier_rule_recomputes_every_car
         assert c["word"] not in {y["word"] for y in cards[max(0, i - 64):i]}
 
 
+def test_a_missing_earlier_round_keeps_every_later_chapter_waiting_so_ids_never_shift():
+    from emporia import chronicle_ledger as L
+    N, E = 12, DAY
+    start = CALL
+    rng = random.Random(5)
+    agents = [{"agent_id": f"a{i}", "unit": f"u{i}", "registered_at": start - 200 * DAY, "house": False,
+               "joins": [[True, start - 100 * DAY]]} for i in range(6)]
+    events = [{"ref": f"post:e{d}_{k}", "line": "x", "operators": [f"op{k % 3}", f"op{(k + 1) % 3}"],
+               "at": start + d * E - E + 100 + k} for d in range(N + 1) for k in range(8)]
+    beacons = {}
+    for i in range(N):
+        for r in C.call_rounds(start + i * E, E).values():
+            beacons[str(r)] = rng.randbytes(32).hex()
+    base = {"relay_id": "r", "start": start, "epoch_s": E, "practice": True, "prologue": "post:p",
+            "agents": agents, "events": events, "seals": [], "reveals": [], "ballots": []}
+    full = L.slots({**base, "beacons": beacons}, start + (N - 1) * E)
+    ids = {x["slot"]: x["id"] for x in full if x["called"]}
+    gap = 4
+    assert gap in ids
+    holed = dict(beacons)
+    del holed[str(C.call_rounds(start + gap * E, E)["call"])]
+    part = L.slots({**base, "beacons": holed}, start + (N - 1) * E)
+    assert all(not x["called"] for x in part if x["slot"] >= gap)
+    # the chapters before the gap are what they will always be; once the round arrives nothing renumbers
+    assert {x["slot"]: x["id"] for x in part if x["called"]} == {k: v for k, v in ids.items() if k < gap}
+
+
 def test_a_later_deck_version_changes_nothing_before_its_chapter(monkeypatch):
     base = C.deck_versions()
     v1 = base[0]

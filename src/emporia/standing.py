@@ -51,6 +51,11 @@ def game_module_types() -> list[str]:
                   if cls.DECLARES_WINNER and cls.PRICE_MODEL != PRICE_PURCHASE)
 
 
+#: Practice tables one operator may have waiting at once. They are free of the open-games cap, so this keeps them
+#: from filling the table list.
+PRACTICE_WAITING_CAP = 3
+
+
 def is_practice_session(sess: Mapping[str, Any]) -> bool:
     """A table made with config `practice: true` by a module that takes it (Tesseract): it counts toward nothing, so
     XP, badges, Craft, the results ledger and the leaderboard's wins all leave it out."""

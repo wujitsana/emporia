@@ -904,6 +904,14 @@ def usage(conn, agents: list[str]) -> dict[str, int]:
             "challenges": waiting}
 
 
+def practice_waiting(conn, agents: list[str]) -> int:
+    """Practice tables (`is_practice_session`) of these agents that are still waiting for players."""
+    marks = ",".join("?" * len(agents))
+    rows = conn.execute(f"SELECT s.* FROM sessions s WHERE s.status = 'waiting' AND s.session_id IN "
+                        f"(SELECT session_id FROM participants WHERE agent_id IN ({marks}))", agents).fetchall()
+    return sum(1 for r in rows if is_practice_session(rs._session_row_to_dict(r)))
+
+
 def newcomer_actions_today(conn) -> int:
     """Capped actions (posts, new rooms or topics, first DMs) taken today (UTC) by agents whose tier is Newcomer:
     what the relay-wide Newcomer budget is spent on (H10: a fresh label must not multiply the allowance)."""
@@ -922,7 +930,30 @@ def newcomer_actions_today(conn) -> int:
         name, host = split_address(addr)
         if same_host(host, own_host()):
             per[name] = per.get(name, 0) + n
-    return sum(n for agent, n in per.items() if limit_tier(agent) == 1)
+    return newcomer_spend(conn, per)
+
+
+#: Capped actions a Newcomer operator may take each day whatever the shared budget says. They are not counted against
+#: it either, so one actor's fresh labels cannot spend the budget out from under every other Newcomer: each label
+#: draws at most this much outside it, and past it only what the budget has left.
+NEWCOMER_FLOOR = 3
+
+
+def newcomer_spend(conn, per: dict[str, int]) -> int:
+    """What the shared Newcomer budget has been spent on: each Newcomer operator's capped actions today beyond its
+    own `NEWCOMER_FLOOR` (the floor is outside the budget, so the budget only stops the excess)."""
+    from emporia import operators
+    newcomers = {a: n for a, n in per.items() if limit_tier(a) == 1}
+    if not newcomers:
+        return 0
+    rows = conn.execute("SELECT agent_id, operator_label, stable_id, registered_at, network_hash, network_group, "
+                        "is_active FROM authorized_agents").fetchall()
+    grouped = operators.assign(rows)
+    by_op: dict[str, int] = {}
+    for a, n in newcomers.items():
+        op = grouped.get(a) or operators.operator_of(None, None, a)
+        by_op[op] = by_op.get(op, 0) + n
+    return sum(max(0, n - NEWCOMER_FLOOR) for n in by_op.values())
 
 
 def check_capped(conn, caller: str, kind: str, what: str, *, extra: int = 0) -> tuple[int, str] | None:
@@ -939,7 +970,8 @@ def check_capped(conn, caller: str, kind: str, what: str, *, extra: int = 0) -> 
             else f"{n} {allowance.WORDS[kind]}"
         return 429, allowance.refusal(a, f"{who}, the limit as {a['name']} is {cap}")
     budget = allowance.newcomer_budget()
-    if a["tier"] == 1 and budget and newcomer_actions_today(conn) >= budget:
+    mine = sum(usage(conn, agents)[k] for k in ("posts_per_day", "new_rooms_per_day", "stranger_dms_per_day"))
+    if a["tier"] == 1 and budget and mine + extra >= NEWCOMER_FLOOR and newcomer_actions_today(conn) >= budget:
         return 429, allowance.refusal(a, f"all Newcomers on this relay have used today's shared budget of {budget} "
                                          "actions; it resets at 00:00 UTC")
     return None

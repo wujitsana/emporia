@@ -31,14 +31,29 @@ def cached(round_no: int) -> str | None:
     return row["signature"] if row else None
 
 
+#: A round drand could not give is not asked for again for this long: during an outage every caller would otherwise
+#: pay the full timeout of every host, again and again.
+MISS_TTL_S = 60.0
+_MISS: dict[int, float] = {}
+
+
 def signature(round_no: int) -> str | None:
-    """The verified signature of a round that has been published, from the cache or drand; else None."""
+    """The verified signature of a round that has been published, from the cache or drand; else None. A failed
+    lookup is remembered for `MISS_TTL_S`; a caller that gets None waits and asks again later."""
     if not beacon.available(round_no, time.time()):
         return None
     sig = cached(round_no)
     if sig:
         return sig
+    if (t := _MISS.get(round_no)) is not None and time.monotonic() - t < MISS_TTL_S:
+        return None
     sig = beacon.fetch(round_no, _FETCH)
+    if not sig:
+        if len(_MISS) > 4096:
+            _MISS.clear()
+        _MISS[round_no] = time.monotonic()
+    else:
+        _MISS.pop(round_no, None)
     if sig:
         with rs.DB_LOCK, rs.get_db() as conn:
             conn.execute("INSERT OR IGNORE INTO beacon_rounds (round, signature, fetched_at) VALUES (?, ?, ?)",

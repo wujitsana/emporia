@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -238,17 +239,47 @@ def prologue_ref(conn) -> str:
 
 
 _BEACONS: dict[int, str] = {}
+_INFLIGHT: set[int] = set()
+_BEACON_LOCK = threading.Lock()
+#: How long a call waits for a fetch it started itself. Never longer: the event loop is calling.
+BEACON_WAIT_S = 0.25
+
+
+def _fetch_rounds(rounds: list[int]) -> None:
+    from emporia.routes import beacon as beacon_route
+    for r in rounds:
+        try:
+            sig = beacon_route.signature(r)       # keeps its own failure cache
+        except Exception:  # noqa: BLE001 - an unreachable beacon is a wait, never a crash
+            sig = None
+        with _BEACON_LOCK:
+            if sig:
+                _BEACONS[r] = sig
+            _INFLIGHT.discard(r)
 
 
 def _beacons(start: float, epoch: int, at: float) -> dict[str, str]:
-    from emporia.routes import beacon as beacon_route
+    """The published rounds the chapters draw from. The rule for a late or missing round: the chapter waits (its
+    verdict is provisional or `no_beacon`, and later chapters wait behind it, so no id moves). Nothing here blocks:
+    a round not yet known is fetched by a background thread; this call waits for it at most `BEACON_WAIT_S`, and the
+    next call (the sequence cache key includes the count of known rounds) sees what arrived."""
     out: dict[str, str] = {}
+    need: list[int] = []
     for i in range(max(0, L.slot_at(start, epoch, at)) + 1):
         for r in C.call_rounds(L.slot_call(start, epoch, i), epoch).values():
             if r in _BEACONS:
                 out[str(r)] = _BEACONS[r]
-            elif rand.round_time(r) <= at and (sig := beacon_route.signature(r)):
-                _BEACONS[r] = out[str(r)] = sig
+            elif rand.round_time(r) <= at:
+                need.append(r)
+    with _BEACON_LOCK:
+        todo = [r for r in dict.fromkeys(need) if r not in _INFLIGHT]
+        _INFLIGHT.update(todo)
+    if todo:
+        worker = threading.Thread(target=_fetch_rounds, args=(todo,), daemon=True, name="chronicle-beacons")
+        worker.start()
+        worker.join(BEACON_WAIT_S)
+    with _BEACON_LOCK:
+        out.update({str(r): _BEACONS[r] for r in need if r in _BEACONS})
     return out
 
 

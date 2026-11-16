@@ -668,3 +668,41 @@ def test_a_practice_table_is_marked_in_the_waiting_view_the_tools_and_whats_next
     assert done["practice"] is True and done["result"]["practice"] is True
     assert "counts toward nothing" in done["result"]["practice_note"]
     assert w.tools(a).open(sid)["practice"] is True      # nothing due on a finished table, still labeled
+
+
+def test_practice_tables_have_their_own_small_cap_and_sit_after_real_tables_on_the_card(w, monkeypatch):
+    monkeypatch.setenv("EMPORIA_ALLOWANCE", "1")
+    from emporia.standing import PRACTICE_WAITING_CAP
+    a = agents(w, 1)[0]
+    real = w.create(a, players=4)
+    made = [w.create(a, players=3, practice=True) for _ in range(PRACTICE_WAITING_CAP)]
+    from conftest import make_test_commit, signed_session_body
+    from emporia import wire
+    body = signed_session_body(a, {"module_type": GAME, "config": {"players": 3, "practice": True}})
+    sid = wire.session_id_for(body["nonce"])
+    r = w.client.post("/sessions", json={**body, "rand_commit": make_test_commit(sid, a, 0)}, headers=w.hdr(a))
+    assert r.status_code in (400, 429) and "practice tables" in r.text, r.text
+    ids = [t["session_id"] for t in w.client.get("/tesseract").json()["tables"]]
+    assert ids.index(real) < min(ids.index(m) for m in made), "real tables come first"
+
+
+def test_practice_true_on_a_game_without_practice_tables_does_not_skip_the_open_games_cap(w, monkeypatch):
+    monkeypatch.setenv("EMPORIA_ALLOWANCE", "1")
+    from emporia.routes import sessions as sessions_route
+    from emporia.routes import standing as ST
+    a = agents(w, 1)[0]
+    cap = ST.allowance_of(a)["limits"]["open_games"]
+    other = "emporia:chess:v1"
+    from emporia.module_sdk import MODULE_REGISTRY
+    if other not in MODULE_REGISTRY:
+        other = next(t for t, c in MODULE_REGISTRY.items() if not getattr(c, "PRACTICE_TABLES", False)
+                     and t not in ("emporia:service:v1", "emporia:research:v1", "emporia:code-review:v1"))
+    # a practice flag on a module that ignores it is not exempt; Tesseract's is
+    import emporia.routes.standing as S
+    real_usage = S.usage
+    S.usage = lambda conn, agents: {**real_usage(conn, agents), "open_games": cap}
+    try:
+        assert "games open" in sessions_route._open_games_limit(a, other, {"practice": True})
+        assert sessions_route._open_games_limit(a, GAME, {"practice": True}) == ""
+    finally:
+        S.usage = real_usage
