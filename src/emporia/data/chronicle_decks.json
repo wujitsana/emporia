@@ -1,398 +1,499 @@
 {
- "version": 1,
- "words": [
-  "lantern",
-  "salt",
-  "ledger",
-  "tide",
-  "anchor",
-  "bridge",
-  "candle",
-  "compass",
-  "copper",
-  "cradle",
-  "crown",
-  "dagger",
-  "dawn",
-  "desk",
-  "door",
-  "dust",
-  "ember",
-  "engine",
-  "fable",
-  "feather",
-  "fence",
-  "ferry",
-  "field",
-  "flint",
-  "flute",
-  "forge",
-  "fountain",
-  "frost",
-  "garden",
-  "gate",
-  "glass",
-  "harbor",
-  "hammer",
-  "harvest",
-  "hearth",
-  "hinge",
-  "hive",
-  "horizon",
-  "island",
-  "ivory",
-  "jar",
-  "kettle",
-  "key",
-  "kiln",
-  "knot",
-  "ladder",
-  "lamp",
-  "lark",
-  "latch",
-  "leaf",
-  "lens",
-  "lever",
-  "lock",
-  "loom",
-  "map",
-  "marble",
-  "market",
-  "mast",
-  "meadow",
-  "mirror",
-  "moon",
-  "moss",
-  "needle",
-  "nest",
-  "oar",
-  "orchard",
-  "ore",
-  "paper",
-  "path",
-  "pebble",
-  "pillar",
-  "plank",
-  "plow",
-  "pond",
-  "porch",
-  "quarry",
-  "quill",
-  "rafter",
-  "rain",
-  "reed",
-  "ribbon",
-  "ridge",
-  "ring",
-  "river",
-  "roof",
-  "rope",
-  "saddle",
-  "sail",
-  "scale",
-  "shelf",
-  "shore",
-  "sickle",
-  "signal",
-  "silk",
-  "slate",
-  "smoke",
-  "spindle",
-  "spring",
-  "stair",
-  "stone",
-  "storm",
-  "stream",
-  "thimble",
-  "thread",
-  "thunder",
-  "timber",
-  "tower",
-  "trail",
-  "trowel",
-  "valley",
-  "vessel",
-  "village",
-  "wagon",
-  "wall",
-  "well",
-  "wheel",
-  "willow",
-  "window",
-  "wing",
-  "wire",
-  "wool",
-  "yarn",
-  "orchid",
-  "abbey",
-  "acorn",
-  "alley",
-  "almanac",
-  "altar",
-  "apple",
-  "arch",
-  "armor",
-  "arrow",
-  "atlas",
-  "attic",
-  "bakery",
-  "banner",
-  "barrel",
-  "basket",
-  "beacon",
-  "bell",
-  "bench",
-  "blanket",
-  "boat",
-  "bone",
-  "bottle",
-  "bowl",
-  "bread",
-  "brick",
-  "brook",
-  "bucket",
-  "button",
-  "cabin",
-  "cage",
-  "canal",
-  "canvas",
-  "cart",
-  "castle",
-  "cellar",
-  "chain",
-  "chair",
-  "chapel",
-  "chest",
-  "chimney",
-  "cistern",
-  "clock",
-  "cloak",
-  "cloud",
-  "coast",
-  "coin",
-  "column",
-  "corner",
-  "cottage",
-  "cup",
-  "curtain",
-  "dam",
-  "deck",
-  "dish",
-  "dock",
-  "drum",
-  "eagle",
-  "fabric",
-  "feast",
-  "ferment",
-  "fiddle",
-  "fig",
-  "flag",
-  "flask",
-  "flour",
-  "fog",
-  "fork",
-  "fort",
-  "frame",
-  "furnace",
-  "gallery",
-  "gem",
-  "glove",
-  "goblet",
-  "grain",
-  "granary",
-  "grove",
-  "guild",
-  "hall",
-  "harp",
-  "hat",
-  "haven",
-  "hedge",
-  "helm",
-  "hill",
-  "hollow",
-  "hook",
-  "hut",
-  "inkwell",
-  "iron",
-  "jug",
-  "keel",
-  "kite",
-  "knife",
-  "lagoon",
-  "lace",
-  "larder",
-  "lightship",
-  "loft",
-  "mantle",
-  "mill",
-  "mint",
-  "moat",
-  "monk",
-  "mortar",
-  "mountain",
-  "nail",
-  "net",
-  "oven",
-  "paddle",
-  "palace",
-  "parchment",
-  "pasture",
-  "pier",
-  "pigeon",
-  "pitcher",
-  "pottery",
-  "pulley",
-  "rake",
-  "raft",
-  "reef",
-  "roster",
-  "rudder",
-  "sack",
-  "sandal",
-  "scroll",
-  "seed",
-  "shed",
-  "shield",
-  "shutter",
-  "sieve",
-  "spade",
-  "spire"
- ],
- "limits": [
-  280,
-  400,
-  600
- ],
- "shapes": [
+ "versions": [
   {
-   "id": "only_questions",
-   "text": "Only questions: every sentence ends with a question mark."
-  },
-  {
-   "id": "three_sentences",
-   "text": "Exactly three sentences."
-  },
-  {
-   "id": "short_sentences",
-   "text": "No sentence longer than twelve words."
-  },
-  {
-   "id": "one_quote",
-   "text": "Exactly one line of speech, in double quotes."
-  },
-  {
-   "id": "distinct_initials",
-   "text": "Every sentence begins with a different letter."
-  },
-  {
-   "id": "list_of_five",
-   "text": "A list of exactly five things: five lines, each starting with a hyphen and a space."
-  },
-  {
-   "id": "second_person",
-   "text": "Second person throughout: every sentence speaks to you."
-  },
-  {
-   "id": "echo_end",
-   "text": "End on the word you began with."
-  },
-  {
-   "id": "two_paragraphs",
-   "text": "Exactly two paragraphs, separated by a blank line."
-  },
-  {
-   "id": "no_commas",
-   "text": "No commas."
-  },
-  {
-   "id": "one_numeral",
-   "text": "Exactly one number written in digits."
-  },
-  {
-   "id": "the_start",
-   "text": "Every sentence begins with the word The."
-  },
-  {
-   "id": "ends_with_question",
-   "text": "The last sentence is a question."
-  },
-  {
-   "id": "five_sentences",
-   "text": "Exactly five sentences."
-  },
-  {
-   "id": "no_long_words",
-   "text": "No word longer than nine letters."
-  },
-  {
-   "id": "one_semicolon",
-   "text": "Exactly one semicolon."
-  }
- ],
- "voices": [
-  {
-   "id": "myth",
-   "text": "As a myth of how something began."
-  },
-  {
-   "id": "ships_log",
-   "text": "As a ship's log."
-  },
-  {
-   "id": "weather",
-   "text": "As a weather report."
-  },
-  {
-   "id": "newcomer_letter",
-   "text": "As a letter to a newcomer."
-  },
-  {
-   "id": "recipe",
-   "text": "As a recipe."
-  },
-  {
-   "id": "field_notes",
-   "text": "As field notes."
-  },
-  {
-   "id": "inventory",
-   "text": "As an inventory."
-  },
-  {
-   "id": "rumour",
-   "text": "As a rumour overheard."
-  },
-  {
-   "id": "court_record",
-   "text": "As a court record."
-  },
-  {
-   "id": "almanac",
-   "text": "As an almanac entry."
-  },
-  {
-   "id": "proverb_set",
-   "text": "As a handful of proverbs that came out of it."
-  },
-  {
-   "id": "auction_lot",
-   "text": "As a lot description at an auction."
-  },
-  {
-   "id": "lullaby",
-   "text": "As the words of a lullaby."
-  },
-  {
-   "id": "map_legend",
-   "text": "As the legend of a map."
-  },
-  {
-   "id": "sermon",
-   "text": "As a short sermon."
-  },
-  {
-   "id": "telegram",
-   "text": "As a telegram."
+   "version": 1,
+   "from_chapter": 1,
+   "words": [
+    "lantern",
+    "salt",
+    "ledger",
+    "tide",
+    "anchor",
+    "bridge",
+    "candle",
+    "compass",
+    "copper",
+    "cradle",
+    "crown",
+    "dagger",
+    "dawn",
+    "desk",
+    "door",
+    "dust",
+    "ember",
+    "engine",
+    "fable",
+    "feather",
+    "fence",
+    "ferry",
+    "field",
+    "flint",
+    "flute",
+    "forge",
+    "fountain",
+    "frost",
+    "garden",
+    "gate",
+    "glass",
+    "harbor",
+    "hammer",
+    "harvest",
+    "hearth",
+    "hinge",
+    "hive",
+    "horizon",
+    "island",
+    "ivory",
+    "jar",
+    "kettle",
+    "key",
+    "kiln",
+    "knot",
+    "ladder",
+    "lamp",
+    "lark",
+    "latch",
+    "leaf",
+    "lens",
+    "lever",
+    "lock",
+    "loom",
+    "map",
+    "marble",
+    "market",
+    "mast",
+    "meadow",
+    "mirror",
+    "moon",
+    "moss",
+    "needle",
+    "nest",
+    "oar",
+    "orchard",
+    "ore",
+    "paper",
+    "path",
+    "pebble",
+    "pillar",
+    "plank",
+    "plow",
+    "pond",
+    "porch",
+    "quarry",
+    "quill",
+    "rafter",
+    "rain",
+    "reed",
+    "ribbon",
+    "ridge",
+    "ring",
+    "river",
+    "roof",
+    "rope",
+    "saddle",
+    "sail",
+    "scale",
+    "shelf",
+    "shore",
+    "sickle",
+    "signal",
+    "silk",
+    "slate",
+    "smoke",
+    "spindle",
+    "spring",
+    "stair",
+    "stone",
+    "storm",
+    "stream",
+    "thimble",
+    "thread",
+    "thunder",
+    "timber",
+    "tower",
+    "trail",
+    "trowel",
+    "valley",
+    "vessel",
+    "village",
+    "wagon",
+    "wall",
+    "well",
+    "wheel",
+    "willow",
+    "window",
+    "wing",
+    "wire",
+    "wool",
+    "yarn",
+    "orchid",
+    "abbey",
+    "acorn",
+    "alley",
+    "almanac",
+    "altar",
+    "apple",
+    "arch",
+    "armor",
+    "arrow",
+    "atlas",
+    "attic",
+    "bakery",
+    "banner",
+    "barrel",
+    "basket",
+    "beacon",
+    "bell",
+    "bench",
+    "blanket",
+    "boat",
+    "bone",
+    "bottle",
+    "bowl",
+    "bread",
+    "brick",
+    "brook",
+    "bucket",
+    "button",
+    "cabin",
+    "cage",
+    "canal",
+    "canvas",
+    "cart",
+    "castle",
+    "cellar",
+    "chain",
+    "chair",
+    "chapel",
+    "chest",
+    "chimney",
+    "cistern",
+    "clock",
+    "cloak",
+    "cloud",
+    "coast",
+    "coin",
+    "column",
+    "corner",
+    "cottage",
+    "cup",
+    "curtain",
+    "dam",
+    "deck",
+    "dish",
+    "dock",
+    "drum",
+    "eagle",
+    "fabric",
+    "feast",
+    "ferment",
+    "fiddle",
+    "fig",
+    "flag",
+    "flask",
+    "flour",
+    "fog",
+    "fork",
+    "fort",
+    "frame",
+    "furnace",
+    "gallery",
+    "gem",
+    "glove",
+    "goblet",
+    "grain",
+    "granary",
+    "grove",
+    "guild",
+    "hall",
+    "harp",
+    "hat",
+    "haven",
+    "hedge",
+    "helm",
+    "hill",
+    "hollow",
+    "hook",
+    "hut",
+    "inkwell",
+    "iron",
+    "jug",
+    "keel",
+    "kite",
+    "knife",
+    "lagoon",
+    "lace",
+    "larder",
+    "lightship",
+    "loft",
+    "mantle",
+    "mill",
+    "mint",
+    "moat",
+    "monk",
+    "mortar",
+    "mountain",
+    "nail",
+    "net",
+    "oven",
+    "paddle",
+    "palace",
+    "parchment",
+    "pasture",
+    "pier",
+    "pigeon",
+    "pitcher",
+    "pottery",
+    "pulley",
+    "rake",
+    "raft",
+    "reef",
+    "roster",
+    "rudder",
+    "sack",
+    "sandal",
+    "scroll",
+    "seed",
+    "shed",
+    "shield",
+    "shutter",
+    "sieve",
+    "spade",
+    "spire"
+   ],
+   "limits": [
+    280,
+    400,
+    600
+   ],
+   "shapes": [
+    {
+     "id": "only_questions",
+     "text": "Only questions: every sentence ends with a question mark."
+    },
+    {
+     "id": "three_sentences",
+     "text": "Exactly three sentences."
+    },
+    {
+     "id": "short_sentences",
+     "text": "No sentence longer than twelve words."
+    },
+    {
+     "id": "one_quote",
+     "text": "Exactly one line of speech, in double quotes."
+    },
+    {
+     "id": "distinct_initials",
+     "text": "Every sentence begins with a different letter."
+    },
+    {
+     "id": "list_of_five",
+     "text": "A list of exactly five things: five lines, each starting with a hyphen and a space."
+    },
+    {
+     "id": "second_person",
+     "text": "Second person throughout: every sentence speaks to you."
+    },
+    {
+     "id": "echo_end",
+     "text": "End on the word you began with."
+    },
+    {
+     "id": "two_paragraphs",
+     "text": "Exactly two paragraphs, separated by a blank line."
+    },
+    {
+     "id": "no_commas",
+     "text": "No commas."
+    },
+    {
+     "id": "one_numeral",
+     "text": "Exactly one number written in digits."
+    },
+    {
+     "id": "the_start",
+     "text": "Every sentence begins with the word The."
+    },
+    {
+     "id": "ends_with_question",
+     "text": "The last sentence is a question."
+    },
+    {
+     "id": "five_sentences",
+     "text": "Exactly five sentences."
+    },
+    {
+     "id": "no_long_words",
+     "text": "No word longer than nine letters."
+    },
+    {
+     "id": "one_semicolon",
+     "text": "Exactly one semicolon."
+    },
+    {
+     "id": "one_exclamation",
+     "text": "Exactly one exclamation mark."
+    },
+    {
+     "id": "all_lowercase",
+     "text": "No capital letters anywhere."
+    },
+    {
+     "id": "three_lines",
+     "text": "Exactly three lines, each one sentence."
+    },
+    {
+     "id": "one_colon",
+     "text": "Exactly one colon."
+    },
+    {
+     "id": "no_the",
+     "text": "The word the never appears."
+    },
+    {
+     "id": "first_person",
+     "text": "First person throughout: every sentence says I or we."
+    },
+    {
+     "id": "one_parenthesis",
+     "text": "Exactly one thing in parentheses."
+    },
+    {
+     "id": "rising_sentences",
+     "text": "Each sentence is longer than the one before."
+    }
+   ],
+   "voices": [
+    {
+     "id": "myth",
+     "text": "As a myth of how something began."
+    },
+    {
+     "id": "ships_log",
+     "text": "As a ship's log."
+    },
+    {
+     "id": "weather",
+     "text": "As a weather report."
+    },
+    {
+     "id": "newcomer_letter",
+     "text": "As a letter to a newcomer."
+    },
+    {
+     "id": "recipe",
+     "text": "As a recipe."
+    },
+    {
+     "id": "field_notes",
+     "text": "As field notes."
+    },
+    {
+     "id": "inventory",
+     "text": "As an inventory."
+    },
+    {
+     "id": "rumour",
+     "text": "As a rumour overheard."
+    },
+    {
+     "id": "court_record",
+     "text": "As a court record."
+    },
+    {
+     "id": "almanac",
+     "text": "As an almanac entry."
+    },
+    {
+     "id": "proverb_set",
+     "text": "As a handful of proverbs that came out of it."
+    },
+    {
+     "id": "auction_lot",
+     "text": "As a lot description at an auction."
+    },
+    {
+     "id": "lullaby",
+     "text": "As the words of a lullaby."
+    },
+    {
+     "id": "map_legend",
+     "text": "As the legend of a map."
+    },
+    {
+     "id": "sermon",
+     "text": "As a short sermon."
+    },
+    {
+     "id": "telegram",
+     "text": "As a telegram."
+    },
+    {
+     "id": "oath",
+     "text": "As an oath sworn in public."
+    },
+    {
+     "id": "eulogy",
+     "text": "As a eulogy."
+    },
+    {
+     "id": "riddle",
+     "text": "As a riddle with the answer left out."
+    },
+    {
+     "id": "postcard",
+     "text": "As a postcard from far away."
+    },
+    {
+     "id": "toast",
+     "text": "As a toast at a long table."
+    },
+    {
+     "id": "museum_label",
+     "text": "As a label beside a glass case."
+    },
+    {
+     "id": "radio_bulletin",
+     "text": "As a bulletin read out on the radio."
+    },
+    {
+     "id": "challenge",
+     "text": "As a challenge to a duel."
+    },
+    {
+     "id": "trail_warning",
+     "text": "As a warning painted on a trail marker."
+    },
+    {
+     "id": "minutes",
+     "text": "As the minutes of a meeting."
+    },
+    {
+     "id": "brochure",
+     "text": "As a brochure for a place nobody should visit."
+    },
+    {
+     "id": "apology",
+     "text": "As an apology that explains too much."
+    },
+    {
+     "id": "lost_notice",
+     "text": "As a notice about something lost."
+    },
+    {
+     "id": "dream",
+     "text": "As a dream told over breakfast."
+    },
+    {
+     "id": "kitchen_note",
+     "text": "As a note left on a kitchen table."
+    },
+    {
+     "id": "charm",
+     "text": "As a charm spoken over a small wound."
+    }
+   ]
   }
  ]
 }

@@ -119,13 +119,93 @@ def test_url_check_agrees_with_the_wire_rule():
 def test_decks_are_what_the_plan_says():
     d = C.decks()
     assert len(d["words"]) == 256 == len(set(d["words"])) and all(w.isalpha() and w == w.lower() and len(w) <= 9 for w in d["words"])
-    assert d["limits"] == [280, 400, 600] and len(d["shapes"]) == 16 and len(d["voices"]) == 16
+    assert d["limits"] == [280, 400, 600] and len(d["shapes"]) == 24 and len(d["voices"]) == 32
     assert {s["id"] for s in d["shapes"]} == set(C.SHAPES)
+    assert len({v["id"] for v in d["voices"]}) == 32 and d["version"] == 1 == d["from_chapter"]
 
 
 def test_the_card_is_a_pure_draw_from_the_beacon():
     a, b = C.draw_card("s", sig(1)), C.draw_card("s", sig(1))
     assert a == b and C.draw_card("s", sig(2)) != a or C.draw_card("t", sig(1)) != a
+
+
+# ---- no repeats inside a window, and deck versions by chapter
+
+import random  # noqa: E402
+
+
+def _chain(n, seed=1, versions=None):
+    rng = random.Random(seed)
+    return C.draw_chain([("s", rng.randbytes(32), i + 1) for i in range(n)])
+
+
+def test_no_shape_or_voice_within_8_chapters_and_no_word_within_64_over_200_chapters():
+    for seed in range(5):
+        cards = _chain(200, seed)
+        for i, c in enumerate(cards):
+            assert c.shape not in {x.shape for x in cards[max(0, i - 8):i]}, (seed, i)
+            assert c.voice not in {x.voice for x in cards[max(0, i - 8):i]}, (seed, i)
+            assert c.word not in {x.word for x in cards[max(0, i - 64):i]}, (seed, i)
+
+
+def test_the_chain_is_recomputed_from_the_beacon_alone():
+    rng = random.Random(7)
+    draws = [("s", rng.randbytes(32), i + 1) for i in range(120)]
+    assert C.draw_chain(draws) == C.draw_chain(list(draws))
+    # a chapter's card depends on the beacons before it (that is the chain), and on nothing else
+    other = list(draws)
+    other[0] = ("s", b"\x01" * 32, 1)
+    assert C.draw_chain(other)[-1] != C.draw_chain(draws)[-1] or C.draw_chain(other)[1:3] != C.draw_chain(draws)[1:3]
+    assert C.draw_chain(draws[:50]) == C.draw_chain(draws)[:50]
+
+
+def test_the_ledger_carries_the_chain_and_the_verifier_rule_recomputes_every_card():
+    from emporia import chronicle_ledger as L
+    N, E = 90, DAY
+    start = CALL
+    rng = random.Random(3)
+    agents = [{"agent_id": f"a{i}", "unit": f"u{i}", "registered_at": start - 200 * DAY, "house": False,
+               "joins": [[True, start - 100 * DAY]]} for i in range(6)]
+    events = [{"ref": f"post:e{d}_{k}", "line": "x", "operators": [f"op{k % 3}", f"op{(k + 1) % 3}"],
+               "at": start + d * E - E + 100 + k} for d in range(N + 1) for k in range(8)]
+    beacons = {}
+    for i in range(N):
+        for r in C.call_rounds(start + i * E, E).values():
+            beacons[str(r)] = rng.randbytes(32).hex()
+    ledger = {"relay_id": "r", "start": start, "epoch_s": E, "practice": True, "prologue": "post:p",
+              "agents": agents, "events": events, "beacons": beacons, "seals": [], "reveals": [], "ballots": []}
+    called = [x for x in L.slots(ledger, start + (N - 1) * E) if x["called"]]
+    assert len(called) > 60
+    recent = C.new_recent()
+    for x in called:
+        inp = x["inputs"]
+        assert inp["recent"] == recent
+        card = C.draw_card(C.chapter_scope("r", inp["numbering"], x["mode"]), bytes.fromhex(inp["sigs"]["call"]),
+                           inp["numbering"]["n"], recent)
+        assert card.to_dict() == x["verdict"]["card"]
+        recent = C.push_recent(recent, card)
+    cards = [x["verdict"]["card"] for x in called]
+    for i, c in enumerate(cards):
+        assert c["shape"] not in {y["shape"] for y in cards[max(0, i - 8):i]}
+        assert c["word"] not in {y["word"] for y in cards[max(0, i - 64):i]}
+
+
+def test_a_later_deck_version_changes_nothing_before_its_chapter(monkeypatch):
+    base = C.deck_versions()
+    v1 = base[0]
+    v2 = {"version": 2, "from_chapter": 40, "limits": [300],
+          "words": v1["words"][:100] + ["zebra", "plank"], "shapes": v1["shapes"][:10], "voices": v1["voices"][:12]}
+    rng = random.Random(11)
+    draws = [("s", rng.randbytes(32), i + 1) for i in range(100)]
+    before = C.draw_chain(draws)
+    monkeypatch.setattr(C, "deck_versions", lambda: (v1, v2))
+    after = C.draw_chain(draws)
+    assert after[:39] == before[:39] and all(c.deck == 1 for c in after[:39])
+    assert all(c.deck == 2 and c.limit == 300 for c in after[39:])
+    assert all(c.shape in {s["id"] for s in v2["shapes"]} for c in after[39:])
+    assert C.decks(39)["version"] == 1 and C.decks(40)["version"] == 2 and C.decks()["version"] == 2
+    # an old card keeps its own deck's text
+    assert C.card_text(before[0]) == C.card_text(after[0])
 
 
 def test_every_shape_has_a_passage_that_passes_for_every_word_and_limit():
@@ -140,7 +220,7 @@ def test_every_shape_has_a_passage_that_passes_for_every_word_and_limit():
 def test_each_shape_rejects_a_plain_paragraph_that_does_not_follow_it():
     plain = "Lantern light is not a shape, but it is a sentence, and so is this one, which goes on for a while."
     for shape, fn in C.SHAPES.items():
-        if shape in ("no_long_words", "short_sentences", "ends_with_question", "distinct_initials"):
+        if shape in ("no_long_words", "no_the", "short_sentences", "ends_with_question", "distinct_initials"):
             continue
         assert not fn(plain), shape
 

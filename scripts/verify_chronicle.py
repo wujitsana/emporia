@@ -15,7 +15,8 @@ For every finished chapter (`GET /chronicle/chapters`, then `GET /chronicle/chap
 4. checks the agents' signatures on the joins, seals, ballots and passages the chapter used, against their keys;
 5. checks the frozen receipt (the hash the log carries) against the recomputed verdict;
 6. checks continuity: a chapter's number, reply target and benched units are what the earlier verified chapters make
-   them.
+   them, and so are the earlier cards its draw avoided (a shape or voice does not come back within 8 chapters, a word
+   within 64); the card is then drawn again from the beacon, the deck version of that chapter and those cards.
 
 What it does not check, and says so: the **record window's events and the units' operator grouping** are the relay's
 word (events are public things on the relay, the grouping is private by design: units are opaque tokens). Both are
@@ -74,7 +75,7 @@ def independent_count(inp: dict[str, Any]) -> dict[str, Any]:
     jurors, scribes, alts = _truth_seats(units, scope, sigs["call"], mode)
     refs = {e["ref"] for e in window}
     anchors = C.draw_anchors(window, scope, sigs["call"])
-    card = C.draw_card(scope, sigs["call"])
+    card = C.draw_card(scope, sigs["call"], n, inp.get("recent"))
     w_write, w_open, w_pick, w_count = (C.windows(call, E)[k] for k in ("write", "open", "pick", "count"))
 
     def inside(w, at):
@@ -206,6 +207,7 @@ def verify(get: Callable[[str], dict], *, bls: bool = True, only: str = "") -> d
     out: list[dict[str, Any]] = []
     history: list[dict[str, Any]] = []
     live_outcomes: list[dict[str, str]] = []
+    recents = {"live": C.new_recent(), "practice": C.new_recent()}
     for row in rows:
         if not row["complete"]:
             continue
@@ -244,6 +246,13 @@ def verify(get: Callable[[str], dict], *, bls: bool = True, only: str = "") -> d
                 problems.append(f"numbering {k}: earlier chapters make it {want[k]!r}, the chapter has {inp['numbering'][k]!r}")
         if C.benched(live_outcomes, len(live_outcomes)) != set(inp.get("bench", [])):
             problems.append("benched units differ from what the earlier chapters' missed seals make them")
+        if (inp.get("recent") or C.new_recent()) != recents[mode]:
+            problems.append("the cards the draw avoided are not the earlier chapters' cards (shape and voice 8, word 64)")
+        if v.get("card"):
+            want_card = C.draw_card(inp_scope(inp, mode), bytes.fromhex(inp["sigs"]["call"]), int(inp["numbering"]["n"]), recents[mode])
+            if want_card.to_dict() != v["card"]:
+                problems.append("the card is not the beacon's draw from the deck version and the earlier cards")
+            recents[mode] = C.push_recent(recents[mode], v["card"])
         history.append({"mode": mode, "canon": ("post:" + v["canon"]) if v.get("canon") else None})
         if mode == "live":
             live_outcomes.append(v.get("outcome") or {})
@@ -253,6 +262,10 @@ def verify(get: Callable[[str], dict], *, bls: bool = True, only: str = "") -> d
                         "thin_jury": bool(v.get("thin_jury")), "mode": mode})
     return {"relay_id": state["relay_id"], "formula": state["formula"], "chapters": out,
             "ok": all(c["ok"] for c in out), "bls": bls}
+
+
+def inp_scope(inp: dict[str, Any], mode: str) -> str:
+    return C.chapter_scope(inp["relay_id"], inp["numbering"], mode)
 
 
 def mode_called(v: dict[str, Any]) -> bool:

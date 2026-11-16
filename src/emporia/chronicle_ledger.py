@@ -11,6 +11,7 @@ the public routes):
     relay_id, start, epoch_s, practice, prologue        the clock and the book's first post
     agents   [{agent_id, unit, registered_at, house, joins: [[on, ts], ...]}]    `unit` is an opaque token
     events   [{ref, line, operators, at}]                the public record, as `chronicle.record_window` reads it
+    (each chapter's inputs carry `recent`: the cards of the earlier chapters of its kind that its draw avoids)
     beacons  {"<round>": "<hex signature>"}              every drand round the chapters drew from
     seals, reveals, ballots                              each with its `chapter` id ("7" or "pp-2") and `at`
 
@@ -88,7 +89,8 @@ def resolve_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
         relay_id=inputs["relay_id"], numbering=inputs["numbering"], members=members,
         prev_call_ts=inputs["prev_call_ts"], call_ts=inputs["call_ts"], events=inputs["events"],
         carry=inputs.get("carry", []), sigs=sigs, seals=inputs["seals"], reveals=inputs["reveals"],
-        ballots=inputs["ballots"], params=params, bench=frozenset(inputs.get("bench", [])))
+        ballots=inputs["ballots"], params=params, bench=frozenset(inputs.get("bench", [])),
+        recent=inputs.get("recent"))
     v["provisional"] = not all(inputs["sigs"].get(k) for k in ("call", "show", "count"))
     return v
 
@@ -113,6 +115,7 @@ def slots(ledger: dict[str, Any], now: float) -> list[dict[str, Any]]:
     history: list[dict[str, Any]] = []         # called pages: {"mode", "canon"}
     live_outcomes: list[dict[str, str]] = []
     state = C.new_state()
+    recents = {"live": C.new_recent(), "practice": C.new_recent()}   # the cards the next draw must avoid, per kind
     carry: list[dict[str, Any]] = []
     prev_slot: dict[str, Any] | None = None
     handle_of_post = {r["post_id"]: r["agent"] for r in ledger["reveals"]}
@@ -140,7 +143,8 @@ def slots(ledger: dict[str, Any], now: float) -> list[dict[str, Any]]:
             "sigs": sigs, "rounds": rounds,
             "seals": _record_rows(ledger["seals"], cid), "reveals": _record_rows(ledger["reveals"], cid),
             "ballots": _record_rows(ledger["ballots"], cid),
-            "params": {"epoch_s": epoch, "practice": params.practice}, "bench": sorted(bench)}
+            "params": {"epoch_s": epoch, "practice": params.practice}, "bench": sorted(bench),
+            "recent": recents[mode or "live"]}
         v = resolve_inputs(inputs) if sigs["call"] else {"mode": None, "reason": "no_beacon", "refused": []}
         called = v.get("mode") is not None and v.get("reason") not in ("quiet", "no_roster", "no_beacon")
         slot: dict[str, Any] = {"slot": i, "call_ts": call_ts, "windows": C.windows(call_ts, epoch),
@@ -149,6 +153,7 @@ def slots(ledger: dict[str, Any], now: float) -> list[dict[str, Any]]:
         if called:
             canon = v.get("canon")
             slot["canon_agent"] = handle_of_post.get(canon, "") if canon else ""
+            recents[v["mode"]] = C.push_recent(recents[v["mode"]], v["card"])
             history.append({"mode": v["mode"], "canon": ("post:" + canon) if canon else None})
             if v["mode"] == "live":
                 live_outcomes.append(v.get("outcome") or {})

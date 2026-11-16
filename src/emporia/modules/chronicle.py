@@ -14,7 +14,7 @@ What is in here, in the plan's order:
   parameters and modes   `Params`, `Member`, `mode_of`, `eligible`, `unit_key`        (2.2, 11, 12)
   the clock              `windows`, `call_rounds`                                      (2.3)
   the record window      `record_window`, `quiet_day`, `draw_anchors`                  (2.4, 2.5)
-  decks and the card     `decks`, `draw_card`                                          (2.5)
+  decks and the card     `decks`, `draw_card`, `draw_chain`                            (2.5)
   seats                  `seat`                                                         (2.5, 11.2)
   passage checks         `check_passage`                                                (4.3)
   commitments            `passage_commitment`, `pick_commitment`
@@ -198,11 +198,37 @@ def draw_anchors(window: list[dict[str, Any]], scope: str, sig: bytes) -> list[s
 
 # ---------------------------------------------------------------- decks and the card (2.5)
 
+#: How many chapters a card part stays out of the draw once drawn: a shape or a voice for 8, a word for 64.
+#: The limits (three values) have no window: with only three, a rule against repeats would be a rotation.
+WINDOWS = {"words": 64, "shapes": 8, "voices": 8}
+
+
 @lru_cache(maxsize=1)
-def decks() -> dict[str, Any]:
+def deck_versions() -> tuple[dict[str, Any], ...]:
+    """Every deck version, oldest first. A version starts at `from_chapter` and holds until the next one starts, so
+    editing the decks later means appending a version, never changing one: past chapters keep the cards they drew."""
     d = json.loads((Path(__file__).resolve().parent.parent / "data" / "chronicle_decks.json").read_text())
-    assert len(d["words"]) == 256 and len(set(d["words"])) == 256 and len(d["shapes"]) == 16 and len(d["voices"]) == 16
-    return d
+    vs = tuple(sorted(d["versions"], key=lambda v: v["from_chapter"]))
+    assert vs and vs[0]["from_chapter"] == 1 and len({v["version"] for v in vs}) == len(vs)
+    assert len({v["from_chapter"] for v in vs}) == len(vs)
+    for v in vs:
+        assert len(v["words"]) == len(set(v["words"])) >= WINDOWS["words"] + 1
+        for part in ("shapes", "voices"):
+            ids = [x["id"] for x in v[part]]
+            assert len(ids) == len(set(ids)) >= WINDOWS[part] + 1
+    return vs
+
+
+def decks(chapter: int | None = None) -> dict[str, Any]:
+    """The deck version in force at `chapter` (the latest when none is given)."""
+    vs = deck_versions()
+    if chapter is None:
+        return vs[-1]
+    return [v for v in vs if v["from_chapter"] <= chapter][-1]
+
+
+def deck_of(version: int) -> dict[str, Any]:
+    return next(v for v in deck_versions() if v["version"] == version)
 
 
 @dataclass(frozen=True)
@@ -211,21 +237,58 @@ class Card:
     limit: int
     shape: str          # a shape id (code-checked)
     voice: str          # a voice id (judged by the jury)
+    deck: int = 1       # the deck version it was drawn from, so its text is always read from that version
 
     def to_dict(self) -> dict[str, Any]:
-        return {"word": self.word, "limit": self.limit, "shape": self.shape, "voice": self.voice}
+        return {"word": self.word, "limit": self.limit, "shape": self.shape, "voice": self.voice, "deck": self.deck}
 
 
-def draw_card(scope: str, sig: bytes) -> Card:
-    d = decks()
-    return Card(word=d["words"][rand_game.pick(scope, "card:word", sig, len(d["words"]))],
+def new_recent() -> dict[str, list[str]]:
+    return {k: [] for k in WINDOWS}
+
+
+def push_recent(recent: dict[str, list[str]] | None, card: Card | dict[str, Any]) -> dict[str, list[str]]:
+    """The recent cards after `card`: the last `WINDOWS[part]` of each part, oldest first. A new dict."""
+    c = card.to_dict() if isinstance(card, Card) else card
+    r = recent or new_recent()
+    return {k: (list(r.get(k, [])) + [c[key]])[-n:] for (k, n), key in zip(WINDOWS.items(), ("word", "shape", "voice"))}
+
+
+def _fresh(deck: list[Any], recent: list[str], key: Any) -> list[Any]:
+    out = [x for x in deck if key(x) not in recent]
+    return out or list(deck)
+
+
+def draw_card(scope: str, sig: bytes, chapter: int = 1, recent: dict[str, list[str]] | None = None) -> Card:
+    """The card of `chapter`, from the beacon: each part is the beacon's pick among the deck's entries that are not
+    in `recent` (the cards of the chapters before, see `WINDOWS`). `recent` is itself a pure function of the earlier
+    chapters' beacons (`draw_chain`), so anyone with the rounds and the deck recomputes every card."""
+    d = decks(chapter)
+    r = recent or new_recent()
+    words = _fresh(d["words"], r.get("words", []), lambda x: x)
+    shapes = _fresh(d["shapes"], r.get("shapes", []), lambda x: x["id"])
+    voices = _fresh(d["voices"], r.get("voices", []), lambda x: x["id"])
+    return Card(word=words[rand_game.pick(scope, "card:word", sig, len(words))],
                 limit=d["limits"][rand_game.pick(scope, "card:limit", sig, len(d["limits"]))],
-                shape=d["shapes"][rand_game.pick(scope, "card:shape", sig, len(d["shapes"]))]["id"],
-                voice=d["voices"][rand_game.pick(scope, "card:voice", sig, len(d["voices"]))]["id"])
+                shape=shapes[rand_game.pick(scope, "card:shape", sig, len(shapes))]["id"],
+                voice=voices[rand_game.pick(scope, "card:voice", sig, len(voices))]["id"],
+                deck=d["version"])
+
+
+def draw_chain(draws: list[tuple[str, bytes, int]]) -> list[Card]:
+    """The cards of consecutive called chapters of one kind (live or practice), from `(scope, call sig, chapter)`
+    alone: the whole chain a verifier needs."""
+    out: list[Card] = []
+    recent = new_recent()
+    for scope, sig, chapter in draws:
+        card = draw_card(scope, sig, chapter, recent)
+        recent = push_recent(recent, card)
+        out.append(card)
+    return out
 
 
 def card_text(card: Card) -> dict[str, str]:
-    d = decks()
+    d = deck_of(card.deck)
     shape = next(s["text"] for s in d["shapes"] if s["id"] == card.shape)
     voice = next(v["text"] for v in d["voices"] if v["id"] == card.voice)
     return {"word": card.word, "limit": f"{card.limit} characters at most", "shape": shape, "voice": voice}
@@ -279,6 +342,7 @@ _URL_BARE = re.compile(r"(?<![a-z0-9@.-])[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63}){0,
 _SPLIT = re.compile(r"(?<=[.!?])[\"')\]]*\s+")
 _WORD = re.compile(r"[A-Za-z0-9']+")
 _YOU = re.compile(r"\byou(?:r|rs|rself|rselves)?\b", re.I)
+_I_OR_WE = re.compile(r"\b(?:I|[Ww]e)\b")
 _FIRST = re.compile(r"\b(?:I|me|my|mine|we|us|our|ours)\b")
 
 
@@ -310,6 +374,10 @@ def _paragraphs(text: str) -> list[str]:
     return [p for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
 
 
+def _lines(text: str) -> list[str]:
+    return [ln for ln in text.strip().splitlines() if ln.strip()]
+
+
 def _bare(w: str) -> str:
     return w.strip("'").lower()
 
@@ -335,6 +403,16 @@ SHAPES = {
     "five_sentences": lambda t: len(sentences(t)) == 5,
     "no_long_words": lambda t: all(len(re.sub(r"[^A-Za-z]", "", w)) <= 9 for w in words(t)),
     "one_semicolon": lambda t: t.count(";") == 1,
+    "one_exclamation": lambda t: t.count("!") == 1,
+    "all_lowercase": lambda t: t == t.lower() and any(ch.isalpha() for ch in t),
+    "three_lines": lambda t: len(_lines(t)) == 3 and all(len(sentences(ln)) == 1 for ln in _lines(t)),
+    "one_colon": lambda t: t.count(":") == 1,
+    "no_the": lambda t: not re.search(r"\bthe\b", t.translate(_CURLY), re.I),
+    "first_person": lambda t: bool(sentences(t)) and all(_I_OR_WE.search(s) for s in sentences(t)),
+    "one_parenthesis": lambda t: t.count("(") == 1 and t.count(")") == 1 and t.index("(") < t.index(")")
+        and bool(t[t.index("(") + 1:t.index(")")].strip()),
+    "rising_sentences": lambda t: len(sentences(t)) >= 2 and all(
+        a < b for a, b in zip([len(words(s)) for s in sentences(t)], [len(words(s)) for s in sentences(t)][1:])),
 }
 
 
@@ -369,7 +447,7 @@ def check_passage(text: Any, cites: Any, card: Card, window_refs: set[str] | fro
     if not re.search(rf"\b(?:{re.escape(card.word)}(?:s|es)?"
                      + (rf"|{re.escape(card.word[:-1])}ies" if card.word.endswith("y") else "") + r")\b", text, re.I):
         c.hard.append(("word", f"the word '{card.word}' does not appear"))
-    shape = next(s["text"] for s in decks()["shapes"] if s["id"] == card.shape)
+    shape = next(s["text"] for s in deck_of(card.deck)["shapes"] if s["id"] == card.shape)
     if not SHAPES[card.shape](text):
         c.hard.append(("shape", f"does not follow the shape: {shape}"))
     if has_url(text):
@@ -641,7 +719,8 @@ def resolve_chapter(*, relay_id: str, numbering: dict[str, Any], members: list[M
                     call_ts: float, events: list[dict[str, Any]], carry: list[dict[str, Any]] = (),
                     sigs: dict[str, bytes], seals: list[dict[str, Any]], reveals: list[dict[str, Any]],
                     ballots: list[dict[str, Any]], params: Params = Params(),
-                    bench: frozenset[str] | set[str] = frozenset(), practice_mode: str | None = None) -> dict[str, Any]:
+                    bench: frozenset[str] | set[str] = frozenset(), practice_mode: str | None = None,
+                    recent: dict[str, list[str]] | None = None) -> dict[str, Any]:
     """Everything a verifier needs, from signed records only: the verdict of one chapter.
 
     Inputs are what the relay stores: `members`, `events` (the public record), the three beacon `sigs`
@@ -662,7 +741,7 @@ def resolve_chapter(*, relay_id: str, numbering: dict[str, Any], members: list[M
         return {"mode": mode, "reason": "quiet", "refused": [], "events": len(window)}
     refs = {e["ref"] for e in window}
     anchors = draw_anchors(window, scope, sigs["call"])
-    card = draw_card(scope, sigs["call"])
+    card = draw_card(scope, sigs["call"], int(numbering["n"]), recent)
     seats = seat(units, scope, sigs["call"], mode)
     unit_of = {m.agent_id: (m.agent_id if mode == "practice" else unit_key(m, params)) for m in roster}
     team_of = {m.agent_id: m.team for m in roster if m.team and params.unit == "operator" and mode == "live"}
