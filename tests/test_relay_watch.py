@@ -217,11 +217,11 @@ def test_an_ip_rate_limit_refusal_is_a_named_event_with_a_hashed_client(caplog):
     rs._RATE_WINDOWS.clear()
     with patch.dict(rs._RATE_LIMITS, {"auth": (1, 60.0)}), \
          caplog.at_level(logging.INFO, logger="emporia.relay"):
-        assert tc.post("/dashboard/challenge").status_code == 200
-        assert tc.post("/dashboard/challenge").status_code == 429
+        assert tc.post("/agents/challenge").status_code == 200
+        assert tc.post("/agents/challenge").status_code == 429
     rs._RATE_WINDOWS.clear()
     ev = _records(caplog, "rate_limited")[0]
-    assert ev.limit == "ip_auth" and ev.path == "/dashboard/challenge"
+    assert ev.limit == "ip_auth" and ev.path == "/agents/challenge"
     assert ev.ip_tag == ip_tag("203.0.113.77")
     assert not hasattr(ev, "client_ip")
     assert "203.0.113.77" not in json.dumps({k: str(v) for k, v in ev.__dict__.items()})

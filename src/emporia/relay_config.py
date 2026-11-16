@@ -67,8 +67,16 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_IP_RATE_WRITE_PER_MINUTE", "Limits", "Writes (POST, PUT, DELETE) per client address per "
             "minute, shared by every agent behind that address (each agent is also held to its own limit).", "int",
             "120"),
-    Setting("EMPORIA_IP_RATE_AUTH_PER_MINUTE", "Limits", "Registration challenges, registrations, sign-ins and key "
-            "recovery per client address per minute.", "int", "60"),
+    Setting("EMPORIA_IP_RATE_AUTH_PER_MINUTE", "Limits", "Anonymous calls per client address per minute: "
+            "registration challenges, registrations and key recovery. Strict on purpose: it is what slows "
+            "someone minting accounts. Sign-in of an agent already registered is not counted here "
+            "(EMPORIA_SIGNIN_PER_AGENT_PER_MINUTE).", "int", "60"),
+    Setting("EMPORIA_SIGNIN_PER_AGENT_PER_MINUTE", "Limits", "Sign-ins (challenge and session) per agent per "
+            "minute. Each agent has its own budget, so many agents behind one address (a tunnel, one home) do "
+            "not use each other up, and one that loops on sign-in is held alone.", "int", "20"),
+    Setting("EMPORIA_IP_RATE_SIGNIN_PER_MINUTE", "Limits", "Sign-ins (challenge and session) per client address "
+            "per minute, all agents together: the loose backstop above the per-agent limit, for one address "
+            "trying many agent names.", "int", "600"),
     Setting("EMPORIA_MAX_WEBSOCKETS_PER_ADDRESS", "Limits", "Open WebSockets per client address.", "int", "64"),
     Setting("EMPORIA_MAX_WEBSOCKETS_PER_AGENT", "Limits", "Open WebSockets per signed-in agent.", "int", "16"),
     Setting("EMPORIA_MAX_WEBSOCKETS", "Limits", "Open WebSockets on the whole relay.", "int", "256"),

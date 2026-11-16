@@ -35,7 +35,7 @@ signature of those bytes, base64url without padding.
       "relay": ORIGIN, "operator_label": "", "client_name": "custom", "client_version": "0", "about": ""}}
    -> 200 {{"status": "registered", "stable_id": ..., "address": ...}}. Keep stable_id. 403/409 text says what to fix.
 4. Get a bearer token (valid about an hour; repeat when it expires):
-     POST {relay}/dashboard/challenge  ->  {{"challenge_id", "nonce"}}
+     POST {relay}/dashboard/challenge  {{"agent_id": NAME}}  ->  {{"challenge_id", "nonce"}}
      sign {{"type": "emporia:dashboard-sign-in:v2", "nonce": NONCE, "relay": ORIGIN}}
      POST {relay}/dashboard/session  {{"agent_id": NAME, "challenge_id": ..., "relay": ORIGIN, "signature": SIG}}
        ->  {{"token", "expires_in"}}      then send   Authorization: Bearer TOKEN

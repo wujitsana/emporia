@@ -3520,10 +3520,39 @@ _RATE_WINDOWS: dict[tuple[str, str], _deque] = defaultdict(lambda: _deque())
 # Settings: EMPORIA_IP_RATE_{READ,WRITE,AUTH}_PER_MINUTE.
 _RATE_LIMITS: dict[str, tuple[int, float]] = {
     "default":   (_int_or(os.getenv("EMPORIA_IP_RATE_READ_PER_MINUTE"), 600), 60.0),    # GET/HEAD
-    "auth":      (_int_or(os.getenv("EMPORIA_IP_RATE_AUTH_PER_MINUTE"), 60), 60.0),     # challenge, register, sign-in, key recovery
+    "auth":      (_int_or(os.getenv("EMPORIA_IP_RATE_AUTH_PER_MINUTE"), 60), 60.0),     # anonymous: registration challenge, register, key recovery
+    "signin":    (_int_or(os.getenv("EMPORIA_IP_RATE_SIGNIN_PER_MINUTE"), 600), 60.0),  # sign-in of known agents: the per-address backstop
+    "signin_agent": (_int_or(os.getenv("EMPORIA_SIGNIN_PER_AGENT_PER_MINUTE"), 20), 60.0),  # sign-in, per agent (and address)
     "write":     (_int_or(os.getenv("EMPORIA_IP_RATE_WRITE_PER_MINUTE"), 120), 60.0),    # POST/PUT/DELETE
 }
-_AUTH_PATHS = {"/dashboard/challenge", "/dashboard/session", "/agents/challenge", "/agents/register"}
+# Anonymous calls (no identity yet): held strictly per address. Sign-in belongs to an agent that is
+# already registered, so it is held per agent (`_check_signin_agent_limit`) with a looser address ceiling.
+_AUTH_PATHS = {"/agents/challenge", "/agents/register"}
+_SIGNIN_PATHS = {"/dashboard/challenge", "/dashboard/session"}
+
+
+def _check_signin_agent_limit(request: Request, agent_id: str) -> None:
+    """Sign-in (challenge + session) is limited per agent_id (and address), not per address alone: agents
+    behind one tunnel address each get their own budget, and one agent that loops on sign-in only
+    exhausts its own. The key holds the address too, so someone naming another agent's id from elsewhere
+    cannot use up that agent's budget. 429 when over."""
+    agent_id = str(agent_id or "")[:64]
+    ip = (request.client.host if request.client else "unknown")
+    if not agent_id or ip in _RATE_LIMIT_EXEMPT_HOSTS or ip == "testclient":
+        return
+    limit, window = _RATE_LIMITS["signin_agent"]
+    now = time.time()
+    q = _RATE_WINDOWS[(f"{ip}|{agent_id}", "signin_agent")]
+    while q and q[0] < now - window:
+        q.popleft()
+    if len(q) >= limit:
+        RATE_LIMIT_HITS["ip"] += 1
+        logger.warning("rate_limited", extra={"limit": "signin_agent", "per_minute": limit,
+                                              "ip_tag": ip_tag(ip), "path": request.url.path,
+                                              "agent_id": agent_id})
+        raise HTTPException(429, f"Rate limit exceeded — {limit} sign-ins per {int(window)}s for this agent",
+                            headers={"Retry-After": str(max(1, int(window - (now - q[0]))))})
+    q.append(now)
 
 
 def _check_rate_limit(request: Request) -> JSONResponse | None:
@@ -3541,7 +3570,12 @@ def _check_rate_limit(request: Request) -> JSONResponse | None:
         return None
     path = request.url.path
     # P246: the key-recovery route takes no credential but a signature, so it is throttled like sign-in.
-    bucket = "auth" if path in _AUTH_PATHS or path.endswith("/key-recovery") else ("write" if request.method not in ("GET", "HEAD") else "default")
+    if path in _AUTH_PATHS or path.endswith("/key-recovery"):
+        bucket = "auth"
+    elif path in _SIGNIN_PATHS:
+        bucket = "signin"
+    else:
+        bucket = "write" if request.method not in ("GET", "HEAD") else "default"
     limit, window = _RATE_LIMITS[bucket]
     now = time.time()
     key = (ip, bucket)
@@ -4928,6 +4962,14 @@ async def dashboard_challenge(request: Request):
     The client (the local console, the SDK, key rotation) signs this nonce with the agent's key and
     submits the signature to POST /dashboard/session for a JWT.
     """
+    # A client that knows its agent_id says so ({"agent_id": ...}) and is limited per agent; one that
+    # does not is held only by the per-address ceiling.
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001 — no body, or not JSON: an anonymous challenge
+        body = None
+    if isinstance(body, dict) and isinstance(body.get("agent_id"), str):
+        _check_signin_agent_limit(request, body["agent_id"])
     # Prune expired challenges
     now = time.time()
     expired = [k for k, (_, exp) in _CHALLENGE_STORE.items() if exp < now]
@@ -4960,7 +5002,7 @@ def _signin_failed(reason: str, agent_id: str, *, expected: bool = False) -> Non
 
 
 @app.post("/dashboard/session")
-async def dashboard_session(req: DashboardSessionRequest):
+async def dashboard_session(req: DashboardSessionRequest, request: Request):
     """Step 2 of dashboard auth: verify Ed25519 signature → issue JWT.
 
     The JWT is scoped to this relay (relay_id in payload). It expires in 1 hour
@@ -4971,6 +5013,7 @@ async def dashboard_session(req: DashboardSessionRequest):
     (`sign_in_origins`). The v1 form — a signature over the bare nonce, good
     wherever the nonce was issued — is refused by name.
     """
+    _check_signin_agent_limit(request, req.agent_id)
     if req.signature_hex or not req.signature or not req.relay:
         _signin_failed("old_or_malformed_request", req.agent_id)
         raise HTTPException(400, "dashboard sign-in v1 (a signature over the bare nonce) is gone: sign "

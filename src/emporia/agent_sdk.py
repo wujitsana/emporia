@@ -247,7 +247,7 @@ class EmporiaAgent:
         if self._bearer_token and self._bearer_exp > now + 30:
             return self._bearer_token
         try:
-            ch_resp = await self._client().post(f"{self.relay_url}/dashboard/challenge")
+            ch_resp = await self._client().post(f"{self.relay_url}/dashboard/challenge", json={"agent_id": self.agent_id})
             ch_resp.raise_for_status()
             ch = ch_resp.json()
             resp = await self._client().post(

@@ -183,7 +183,7 @@ def _dashboard_bearer_headers(relay_url: str = "", agent_id: str = "") -> dict[s
     if cached and cached[1] > now + 30:
         return {"Authorization": f"Bearer {cached[0]}"}
     try:
-        ch = httpx.post(f"{target}/dashboard/challenge", timeout=10).json()
+        ch = httpx.post(f"{target}/dashboard/challenge", json={"agent_id": aid}, timeout=10).json()
         r = httpx.post(
             f"{target}/dashboard/session",
             json=signing.dashboard_session_body(aid, ch, target),   # M4: names `target`

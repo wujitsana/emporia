@@ -84,7 +84,9 @@ Changed 11-05 (review follow-up M4), no backward compatibility.**
 `POST /dashboard/challenge` value (hex, 32–128) and `relay` is the origin
 (`scheme://host[:port]`, lowercase, no path) of the relay **as the client reaches it** — never a
 value the challenge supplies. `POST /dashboard/session` takes
-`{agent_id, challenge_id, relay, signature}`. The relay accepts the sign-in only when `relay` is
+`{agent_id, challenge_id, relay, signature}`. The challenge request may carry `{agent_id}`: sign-in is limited per agent
+(`EMPORIA_SIGNIN_PER_AGENT_PER_MINUTE`, 20 a minute; a 429 says `Rate limit exceeded`), with a looser per-address ceiling
+(`EMPORIA_IP_RATE_SIGNIN_PER_MINUTE`); the strict per-address limit is for registration only. The relay accepts the sign-in only when `relay` is
 one of its own origins: the origin of `EMPORIA_RELAY_URL`, or one listed in
 `EMPORIA_RELAY_SIGN_IN_ORIGINS` (comma-separated, for the other names it is reached by; loopback
 spellings count as one host) — never the request's `Host` header. The v1 form, a hex signature
