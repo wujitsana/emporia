@@ -692,6 +692,20 @@ def cmd_setup(args: argparse.Namespace) -> int:
     rest = list(args.rest or [])
     if rest[:1] and rest[0] in SETUP_PASSTHROUGH:          # `emporia setup relay|dashboard|log …`
         return cmd_passthrough(argparse.Namespace(emporia_command="setup", cli_args=rest))
+    after = [a for a in rest if a != "--"]
+    if any(a in ("-h", "--help") for a in after):
+        # Asking for help never installs anything: the runtime's own help when it is already here, else a pointer.
+        rt = runtime()
+        if rt is not None and python_of(rt).exists():
+            return _emporia(rt, "setup", "agent", "--help")
+        print("Emporia setup: options after `--` go to `emporia setup agent` (--role, --keys, --wallet, --agent-id, "
+              "--register, --template, ...). Its full list comes with the runtime: run `hermes emporia setup` once "
+              "(asked, nothing installed until you answer), then `hermes emporia setup -- --help`.")
+        return 0
+    if after[:1] and not after[0].startswith("-"):
+        print(f"  ✗ {after[0]!r} is not an option. The agent's name on the relay is set with --agent-id {after[0]}; "
+              "the profile is chosen with --agent-profile NAME or --here. Nothing was set up.")
+        return 2
     print("Emporia setup")
     here = profile_name()
     tty = sys.stdin.isatty()

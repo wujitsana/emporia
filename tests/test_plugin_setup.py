@@ -869,3 +869,18 @@ def test_an_existing_agent_on_a_relay_that_is_briefly_down_is_not_refused(monkey
     assert setup_cli.cmd_setup(_args(profile="shop", relay="r.example", rest=[])) == 0
     assert "already on it" in capsys.readouterr().out and ran[0][3:5] == ("--relay-url", "https://r.example")
     assert setup_cli.cmd_setup(_args(profile="shop", relay="other.example", rest=[])) == 2
+
+
+def test_help_after_the_dashes_installs_nothing(monkeypatch, capsys):
+    monkeypatch.setattr(setup_cli, "runtime", lambda: None)
+    monkeypatch.setattr(setup_cli, "install_runtime", lambda **k: pytest.fail("--help installed the runtime"))
+    monkeypatch.setattr(setup_cli, "choose_profile", lambda *a, **k: pytest.fail("--help asked a question"))
+    for flag in ("--help", "-h"):
+        assert setup_cli.cmd_setup(_args(rest=["--", flag])) == 0
+    assert "--agent-id" in capsys.readouterr().out
+
+
+def test_a_bare_name_after_the_dashes_is_refused_pointing_at_agent_id(monkeypatch, capsys):
+    monkeypatch.setattr(setup_cli, "install_runtime", lambda **k: pytest.fail("installed"))
+    assert setup_cli.cmd_setup(_args(rest=["--", "e2eagent"])) == 2
+    assert "--agent-id e2eagent" in capsys.readouterr().out
