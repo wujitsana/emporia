@@ -468,12 +468,15 @@ def test_homed_only_lets_a_visitor_act_only_once_its_home_confirmed_it(client, m
 
 
 def test_the_listing_filters_in_sql_so_a_big_relay_does_not_drop_its_home_agents(client, monkeypatch):
-    others = [name("far") for _ in range(3)]
+    held = len(client.get("/federation/v1/listed-agents").json()["agents"])
+    limit = held + 1                      # room for exactly one more; the cap used to cut rows before this filter
+    others = [name("far") for _ in range(2 * limit + 1)]
     for who in others:
         register(client, who, visiting())
         assert _publish_list(client, who, HOME).status_code == 200      # lists that do not name this relay
     a = name("late")
     register(client, a)
     assert _publish_list(client, a, rs.RELAY_BASE_URL).status_code == 200
-    monkeypatch.setattr(visitors, "LISTING_LIMIT", 1)
-    assert [x["public_key_hex"] for x in client.get("/federation/v1/listed-agents").json()["agents"]] == [pub_of(a)]
+    monkeypatch.setattr(visitors, "LISTING_LIMIT", limit)
+    keys = [x["public_key_hex"] for x in client.get("/federation/v1/listed-agents").json()["agents"]]
+    assert pub_of(a) in keys and len(keys) == limit
