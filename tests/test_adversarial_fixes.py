@@ -1,6 +1,8 @@
 """Regression tests for the adversarial check of 2.1: each is an attack that worked, now refused."""
 from __future__ import annotations
 
+import pytest
+
 from emporia import federation_dm as fd
 from tests import test_shared_topics as T
 
@@ -57,3 +59,77 @@ def test_nonces_past_their_window_are_dropped_from_the_table():
     assert fd._first_use("http://old.test", "aa") == "new"          # expired: not remembered
     with rs.DB_LOCK, rs.get_db() as conn:
         assert conn.execute("SELECT expires_at FROM peer_nonces WHERE peer = 'http://old.test'").fetchone()[0] > 1000
+
+
+# ── the home check: one resolution, the exact address, and one address rule ──────────────────────────
+
+def test_a_name_that_answers_differently_the_second_time_reaches_nothing(monkeypatch):
+    """DNS rebinding: the name was public when checked and loopback when connected."""
+    import socket
+
+    from emporia import fetch, visitors
+    monkeypatch.setattr(fetch, "_PASSTHROUGH", False)
+    real_gai = socket.getaddrinfo
+    lookups: list[int] = []
+    dialed: list[tuple] = []
+
+    def gai(host, port, *a, **k):
+        if host == "rebind.test":
+            lookups.append(1)
+            ip = "93.184.216.34" if len(lookups) == 1 else "127.0.0.1"
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, port))]
+        return real_gai(host, port, *a, **k)
+
+    def cc(address, *a, **k):
+        dialed.append(address)
+        raise ConnectionRefusedError("test: nothing is dialed for real")
+
+    monkeypatch.setattr(socket, "getaddrinfo", gai)
+    monkeypatch.setattr(socket, "create_connection", cc)
+    assert visitors._pull("https://rebind.test:8443") == {"error": visitors._UNANSWERED}
+    assert len(lookups) == 1                                        # resolved once
+    assert dialed and all(a[0] == "93.184.216.34" for a in dialed), dialed       # only the checked address
+
+
+def test_the_pinned_call_keeps_the_name_as_host_and_tls_server_name(monkeypatch):
+    import httpx
+
+    from emporia import fetch
+    monkeypatch.setattr(fetch, "_PASSTHROUGH", False)
+    seen = {}
+
+    def stream(self, method, url, **kw):
+        seen.update(url=str(url), headers=kw.get("headers"), ext=kw.get("extensions"))
+        raise httpx.ConnectError("test")
+
+    monkeypatch.setattr(httpx.Client, "stream", stream)
+    with pytest.raises(httpx.ConnectError):
+        fetch.get("https://relay.example:8443/federation/v1/listed-agents", connect_ip="93.184.216.34")
+    assert seen["url"] == "https://93.184.216.34:8443/federation/v1/listed-agents"
+    assert seen["headers"]["Host"] == "relay.example:8443" and seen["ext"] == {"sni_hostname": "relay.example"}
+    with pytest.raises(httpx.ConnectError):
+        fetch.get("https://relay.example/x", connect_ip="2606:4700::1111")
+    assert seen["url"] == "https://[2606:4700::1111]/x" and seen["headers"]["Host"] == "relay.example"
+
+
+@pytest.mark.parametrize("raw", [
+    "64:ff9b::7f00:1", "64:ff9b::a00:1", "64:ff9b::a9fe:a9fe", "64:ff9b:1::a00:1", "::7f00:1", "::1", "::",
+    "::ffff:127.0.0.1", "::ffff:0:7f00:1", "fec0::1", "2002:7f00:1::1", "2002:a00:1::1",
+    "2002:c0a8:101::1", "fe80::1", "fd00::1", "ff02::1", "127.0.0.1", "10.1.2.3", "169.254.169.254", "100.64.0.1"])
+def test_an_address_that_is_not_public_or_carries_one_that_is_not_is_refused(raw):
+    from emporia import fetch
+    assert not fetch.is_public_address(raw), raw
+
+
+@pytest.mark.parametrize("raw", ["8.8.8.8", "93.184.216.34", "2606:4700::1111", "64:ff9b::808:808", "2002:808:808::1"])
+def test_public_addresses_still_pass(raw):
+    from emporia import fetch
+    assert fetch.is_public_address(raw), raw
+
+
+def test_the_home_check_refuses_those_as_hosts(monkeypatch):
+    from emporia import fetch, visitors
+    monkeypatch.setattr(fetch, "_PASSTHROUGH", False)
+    for u in ("https://[64:ff9b::7f00:1]", "https://[::7f00:1]", "https://[::ffff:0:7f00:1]", "https://[fec0::1]",
+              "https://[2002:a00:1::1]"):
+        assert visitors.target_problem(u) == "not a public address", u

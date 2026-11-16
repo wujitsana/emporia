@@ -15,8 +15,11 @@ The answer is an ordinary, fully read `httpx.Response`, so callers keep using
 
 from __future__ import annotations
 
+import ipaddress
+import socket
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -43,13 +46,74 @@ def _finish(resp: httpx.Response, chunks, max_bytes: int, deadline: float) -> ht
     return httpx.Response(resp.status_code, headers=resp.headers, content=bytes(body), request=resp.request)
 
 
+def is_public_address(raw: str) -> bool:
+    """Whether an IP address is one a call to an address someone else chose may reach: global unicast, and not one
+    that merely carries a private IPv4 address in an IPv6 one. The embedded IPv4 is extracted and checked for
+    IPv4-mapped (::ffff:0:0/96), IPv4-translated (::ffff:0:0:0/96), IPv4-compatible (::/96), NAT64 (64:ff9b::/96)
+    and 6to4 (2002::/16); NAT64 local-use (64:ff9b:1::/48) and site-local (fec0::/10) are refused outright."""
+    try:
+        ip = ipaddress.ip_address(str(raw).split("%")[0])
+    except ValueError:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address):
+        n = int(ip)
+        if ip in ipaddress.ip_network("64:ff9b:1::/48") or ip in ipaddress.ip_network("fec0::/10"):
+            return False
+        embedded = None
+        if ip.ipv4_mapped is not None:
+            embedded = ip.ipv4_mapped
+        elif n >> 32 == 0 or n >> 32 == 0xFFFF0000:
+            embedded = ipaddress.IPv4Address(n & 0xFFFFFFFF)          # ::/96 and ::ffff:0:0:0/96
+        elif ip in ipaddress.ip_network("64:ff9b::/96"):
+            embedded = ipaddress.IPv4Address(n & 0xFFFFFFFF)
+        elif ip in ipaddress.ip_network("2002::/16"):
+            embedded = ipaddress.IPv4Address((n >> 80) & 0xFFFFFFFF)
+        if embedded is not None:
+            return is_public_address(str(embedded))
+    return ip.is_global and not ip.is_multicast
+
+
+def resolve_public(url: str) -> tuple[str, list[str]]:
+    """Resolve the host of `url` once: (why it may not be called, "") or ("", the addresses to connect to, all of
+    them public). Callers connect to one of these exact addresses (`get(..., connect_ip=)`), never to the name again,
+    so a name that answers differently the second time (DNS rebinding) reaches nothing."""
+    parts = urlsplit(url)
+    if parts.scheme != "https" or not parts.hostname:
+        return "not an https address", []
+    try:
+        found = list(dict.fromkeys(ai[4][0].split("%")[0] for ai in
+                                   socket.getaddrinfo(parts.hostname, parts.port or 443, proto=socket.IPPROTO_TCP)))
+    except OSError:
+        return "no such host", []
+    if not found or not all(is_public_address(raw) for raw in found):
+        return "not a public address", []
+    return "", found
+
+
+def _pinned(url: str, ip: str, headers: dict[str, str] | None) -> tuple[str, dict[str, str], dict[str, Any]]:
+    """`url` with its host replaced by `ip`: the Host header and the TLS server name stay the name, so the
+    certificate is still checked against the name."""
+    parts = urlsplit(url)
+    name = parts.hostname or ""
+    port = f":{parts.port}" if parts.port else ""
+    literal = f"[{ip}]" if ":" in ip else ip
+    host_header = name + port
+    return (parts._replace(netloc=f"{literal}{port}").geturl(), {**(headers or {}), "Host": host_header},
+            {"sni_hostname": name})
+
+
 def get(url: str, *, params: dict[str, Any] | None = None, timeout: float = 10.0,
-        max_bytes: int = MAX_BYTES, total: float = TOTAL_SECONDS) -> httpx.Response:
-    """`httpx.get`, read within limits."""
+        max_bytes: int = MAX_BYTES, total: float = TOTAL_SECONDS, connect_ip: str | None = None) -> httpx.Response:
+    """`httpx.get`, read within limits. With `connect_ip` the connection goes to that exact address (no second name
+    resolution), with the name as Host header and TLS server name."""
     if _PASSTHROUGH:
         return httpx.get(url, timeout=timeout, **({"params": params} if params is not None else {}))
     deadline = time.monotonic() + total
-    with httpx.Client(timeout=timeout) as client, client.stream("GET", url, params=params) as resp:
+    headers, ext = None, None
+    if connect_ip:
+        url, headers, ext = _pinned(url, connect_ip, None)
+    with httpx.Client(timeout=timeout) as client, \
+            client.stream("GET", url, params=params, headers=headers, extensions=ext) as resp:
         return _finish(resp, resp.iter_bytes(), max_bytes, deadline)
 
 

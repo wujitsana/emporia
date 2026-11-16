@@ -154,38 +154,27 @@ _UNANSWERED = "it did not answer as a relay"      # all a stranger is told of a 
 def target_problem(url: str) -> str:
     """Why the home check may not call this URL, or "". The home is declared by the agent, so the call is one anyone
     can aim: https only, a host name or public address (no loopback, private, link-local, unspecified or metadata
-    address, by the address itself or by any address its name resolves to). The tests that stand in for other relays
+    address, by the address itself or by any address its name resolves to; `fetch.is_public_address` is the one
+    rule, which also sees an IPv4 address carried inside an IPv6 one). The tests that stand in for other relays
     patch the fetch (`fetch._PASSTHROUGH`) and skip this."""
-    import ipaddress
-    import socket
-    from urllib.parse import urlsplit
+    return _resolve(url)[0]
 
+
+def _resolve(url: str) -> tuple[str, list[str]]:
+    """(why not, "") or ("", addresses): the name is resolved here once, and the call connects to one of these."""
     from emporia import fetch
     if fetch._PASSTHROUGH:
-        return ""
-    parts = urlsplit(url)
-    if parts.scheme != "https" or not parts.hostname:
-        return "not an https address"
-    try:
-        found = {ai[4][0] for ai in socket.getaddrinfo(parts.hostname, parts.port or 443, proto=socket.IPPROTO_TCP)}
-    except OSError:
-        return "no such host"
-    for raw in found:
-        ip = ipaddress.ip_address(raw.split("%")[0])
-        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
-            ip = ip.ipv4_mapped
-        if not ip.is_global or ip.is_multicast:
-            return "not a public address"
-    return ""
+        return "", []
+    return fetch.resolve_public(url)
 
 
 def _pull(url: str) -> dict[str, Any]:
-    from emporia import fetch
     from emporia.identity import federation_signable_bytes, verify_raw
-    if target_problem(url):
+    problem, addrs = _resolve(url)
+    if problem:
         return {"error": _UNANSWERED}
     try:
-        r = fetch.get(f"{url}/federation/v1/listed-agents", timeout=_TIMEOUT_S, max_bytes=2 * 1024 * 1024, total=8.0)
+        r = _get_listing(f"{url}/federation/v1/listed-agents", addrs)
         if r.status_code != 200:
             return {"error": _UNANSWERED}
         body = r.json()
@@ -200,6 +189,21 @@ def _pull(url: str) -> dict[str, Any]:
         return {"relay_id": str(body.get("relay_id") or ""), "keys": keys, "stables": stables}
     except Exception:  # noqa: BLE001 — unreachable, slow, not JSON: unconfirmed, never an error that blocks
         return {"error": _UNANSWERED}
+
+
+def _get_listing(url: str, addrs: list[str]):
+    """The listing, from the exact address the name resolved to when it was checked (the next one if it does not
+    connect). No second resolution: a name that answers differently now is not asked."""
+    import httpx
+
+    from emporia import fetch
+    last: Exception | None = None
+    for ip in addrs or [None]:
+        try:
+            return fetch.get(url, timeout=_TIMEOUT_S, max_bytes=2 * 1024 * 1024, total=8.0, connect_ip=ip)
+        except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+            last = e
+    raise last or httpx.ConnectError("no address")
 
 
 def confirm(home: dict[str, Any], public_key_hex: str, stable_id: str = "") -> dict[str, Any]:
