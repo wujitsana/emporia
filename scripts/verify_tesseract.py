@@ -154,6 +154,10 @@ def check_table(sess: dict[str, Any], verdict: dict[str, Any] | None, ledger: li
         want = got["winners"][0] if len(got["winners"]) == 1 else None
         if verdict.get("termination") in ("table", None) and verdict.get("winner") != want:
             problems.append(f"the rules give {want!r} as the winner, the relay declared {verdict.get('winner')!r}")
+    if (sess.get("config") or {}).get("practice") is True:       # a practice table counts toward nothing: no ledger row
+        if ledger:
+            problems.append("a practice table has ledger rows: it counts toward nothing")
+        return problems
     rows = {r["agent_id"]: r for r in ledger}
     for place, p in enumerate(got["order"], start=1):
         row = rows.get(p)

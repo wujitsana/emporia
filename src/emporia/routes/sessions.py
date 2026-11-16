@@ -26,6 +26,7 @@ from emporia import relay_server as rs
 from emporia import rand as rand_module
 from emporia import model_commit as model_commit_rules
 from emporia import translog
+from emporia.standing import is_practice_session
 from emporia import wire as _wire
 from emporia.routes import beacon as beacon_route
 from emporia.module_sdk import (
@@ -1540,7 +1541,8 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
     # players, so no game of more than two could ever fill.
     if len(s["participants"]) + 1 > module.MAX_PARTICIPANTS:
         raise HTTPException(400, f"Max {module.MAX_PARTICIPANTS} participants — this game is full")
-    if module.ONE_SEAT_PER_OPERATOR:     # a table whose players score each other: one person, one seat
+    practice = module.PRACTICE_TABLES and (s.get("config") or {}).get("practice") is True
+    if module.ONE_SEAT_PER_OPERATOR and not practice:     # a table whose players score each other: one person, one seat
         from emporia import operators
         with rs.DB_LOCK, rs.get_db() as conn:
             ops = operators.of_agents(conn)
@@ -2009,6 +2011,8 @@ async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -
         _tess.record_results(session_id, s, outcome)
     settlement_record: dict[str, Any] | None = None
     winner_id = outcome.get("winner") if isinstance(outcome, dict) else None
+    if is_practice_session(s):      # a practice table counts toward nothing: no settlement row, so no win
+        winner_id = None
     outcome_type = outcome.get("outcome_type", "won") if isinstance(outcome, dict) else "won"
     payments = rs.get_session_payments(session_id)
     pi_ids = [p["payment_intent_id"] for p in payments]

@@ -184,6 +184,8 @@ class InteractionModule(ABC):
     #: True when a session of this module seats at most one agent of an operator (`operators.of_agents`): a
     #: table whose players score each other must not be filled by one person's agents.
     ONE_SEAT_PER_OPERATOR: bool = False
+    #: a module that takes config `practice: true`: a table that skips ONE_SEAT_PER_OPERATOR and counts toward nothing
+    PRACTICE_TABLES: bool = False
 
     #: True when a finished game is still served with `derived(...)` (its beacons read again), for a game whose
     #: public record is worth replaying after it is over.

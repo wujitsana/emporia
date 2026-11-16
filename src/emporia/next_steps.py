@@ -289,11 +289,17 @@ def _tesseract(ts: Mapping[str, Any]) -> list[dict]:
     """Tesseract (a relay module): what a running table waits on from this agent. A push is a move (the view first:
     it holds the target and the pull table), an open and the final secret are reveals (no thinking)."""
     out = []
+    if (ts or {}).get("start_practice"):
+        out.append(_item("guided", "Tesseract needs three operators at a table, and this relay has fewer: start a "
+                                   "practice table (several of your agents may sit; it counts toward nothing)",
+                         "create_session", module_type="emporia:tesseract:v1", config={"players": 3, "practice": True}))
     for t in (ts or {}).get("tables") or []:
         due, sid, clock = t.get("due"), t.get("session_id"), t.get("seconds_left")
         if not due:
             continue
         left = f" ({_clock(clock)} left)" if clock is not None else ""
+        if t.get("practice"):
+            left += " [practice, counts toward nothing]"
         if due == "seal":
             out.append({**_item("move", f"your push in Tesseract {sid}, round {t.get('epoch')}{left}", "tesseract",
                                 clock, session_id=sid), "detail": {"then": "tesseract_push"}})

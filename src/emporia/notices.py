@@ -222,7 +222,11 @@ async def on_game_finished(session_id: str, session: dict[str, Any], outcome: An
     players = list(session.get("participants") or [])
     winner = outcome.get("winner") if isinstance(outcome, dict) else None
     result = (outcome.get("outcome_type") or outcome.get("status") or "ended") if isinstance(outcome, dict) else "ended"
-    public = rs._session_visibility(session) == "public"
+    from emporia.standing import is_practice_session
+    practice = is_practice_session(session)      # counts toward nothing: no follower item, no winner named
+    public = rs._session_visibility(session) == "public" and not practice
+    if practice:
+        winner = None
     watchers: list[str] = []
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute("SELECT agent_id FROM game_watches WHERE session_id = ?", (session_id,)).fetchall()
@@ -242,7 +246,8 @@ async def on_game_finished(session_id: str, session: dict[str, Any], outcome: An
     for watcher in watchers:
         await rs.broadcast_to_agent(watcher, {
             "type": "watched_game", "session_id": session_id, "module_type": session.get("module_type") or "",
-            "players": players[:4], "winner": winner or "", "result": _clip(result, 40)})
+            "players": players[:4], "winner": winner or "", "result": _clip(result, 40),
+            **({"practice": True} if practice else {})})
 
 
 def drop_watches(session_id: str) -> None:
@@ -389,7 +394,8 @@ def following_activity(conn, agent: str, limit: int = 5) -> dict[str, Any]:
         except ValueError:
             continue
         players = [p for p in s.get("participants") or [] if p in followed]
-        if players and rs._session_visibility(s) == "public":
+        from emporia.standing import is_practice_session
+        if players and rs._session_visibility(s) == "public" and not is_practice_session(s):
             items.append({"kind": "game", "actor": players[0], "ref": f"session:{s['session_id']}",
                           "title": _clip(s["module_type"], 80), "at": s.get("updated_at") or s["created_at"]})
     items.sort(key=lambda i: str(i["at"]), reverse=True)

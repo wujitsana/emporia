@@ -47,7 +47,12 @@ def get_json(w: E.World):
 def verdict_of(w: E.World, sid: str) -> dict:
     s = w.state(sid)
     rows = w.client.get("/results", params={"module_type": GAME, "agent_id": s["participants"][0], "limit": 50}).json()
-    return next(r for r in rows["results"] if r["session_id"] == sid)
+    got = next((r for r in rows["results"] if r["session_id"] == sid), None)
+    if got is None:      # a practice table is not listed in /results: read its verdict as the listing would have
+        assert T.is_practice(s.get("config")), "only a practice table is missing from /results"
+        from emporia.routes.standing import _result_of
+        got = _result_of(s)
+    return got
 
 
 def ledger_of(w: E.World, sid: str) -> list[dict]:
@@ -512,3 +517,150 @@ def test_the_replay_of_the_stored_actions_gives_the_stored_record(w):
     assert data["published"]["1"] == data["board"]["done"][0]
     assert mod.derived(sess["state"]["data"])["board"]["done"] == data["board"]["done"]
     assert T.badge_facts(sess["state"]["data"])["finished"] == names
+
+
+# ── practice tables: opt-in, seat rule lifted, counts toward nothing ─────────────────────────────────────
+
+def test_a_practice_table_of_one_operators_agents_fills_plays_verifies_and_counts_for_nothing(w, monkeypatch):
+    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
+    a = agents(w, 1)[0]
+    names = [a, *(w.register(f"ts{uuid.uuid4().hex[:6]}_p{i}", operator=a) for i in range(2))]
+    sid = w.create(a, players=3, practice=True)
+    card = w.client.get("/tesseract").json()
+    assert next(t for t in card["tables"] if t["session_id"] == sid)["practice"] is True
+    assert w.client.get(f"/sessions/{sid}").json().get("config", {}).get("practice") is True
+    for seat, n in enumerate(names[1:], start=1):
+        assert w.join(sid, n, seat).status_code == 200
+    assert w.state(sid)["status"] == "active"
+    E.play(w, sid, names, {})
+    verified(w, sid)
+    assert w.state(sid)["status"] == "completed"
+    assert w.state(sid)["state"]["data"]["practice"] is True
+    for n in names:
+        got = xp_of(n)
+        assert got["play"] == 0, "a practice table pays no XP"
+        assert not {b for b in got["badges"] if b.startswith("tesseract")}
+        assert not {q for q in got["quests"] if "tesseract" in q}
+    assert ledger_of(w, sid) == [], "a practice table writes no results row"
+    assert T.badge_facts(w.state(sid)["state"]["data"]) == {"finished": [], "winners": [], "seats": 3, "practice": True}
+    board = T.view_of(w.state(sid)["state"]["data"])["board"]
+    assert board["practice"] is True and "counts toward nothing" in board["practice_note"]
+    assert T.is_practice({"practice": True}) and not T.is_practice({"practice": 1}) and not T.is_practice({})
+
+
+def test_a_table_without_practice_still_refuses_the_second_seat_even_when_it_says_false(w):
+    a = agents(w, 1)[0]
+    twin = w.register(f"ts{uuid.uuid4().hex[:6]}_twin", operator=a)
+    sid = w.create(a, players=3, practice=False)
+    r = w.join(sid, twin, 1)
+    assert r.status_code == 409 and "one seat per operator" in r.text
+
+
+def test_practice_must_be_true_or_false(w):
+    from conftest import make_test_commit, signed_session_body
+    from emporia import wire
+    a = agents(w, 1)[0]
+    body = signed_session_body(a, {"module_type": GAME, "config": {"players": 3, "practice": "yes"}})
+    sid = wire.session_id_for(body["nonce"])
+    r = w.client.post("/sessions", json={**body, "rand_commit": make_test_commit(sid, a, 0)}, headers=w.hdr(a))
+    assert r.status_code == 400 and "practice" in r.text
+
+
+def test_a_relay_that_cannot_fill_a_real_table_offers_a_practice_one(w, monkeypatch):
+    from emporia import operators
+    from emporia import next_steps
+    from emporia.routes import tesseract as route
+    a = agents(w, 1)[0]
+    monkeypatch.setattr(operators, "of_agents", lambda conn: {a: "op1", "b": "op1", "c": "op2"})
+    fact = route.next_fact(a)
+    assert fact == {"tables": [], "start_practice": True}
+    items = next_steps._tesseract(fact)
+    assert items and items[0]["tool"] == "create_session" and items[0]["args"]["config"]["practice"] is True
+    monkeypatch.setattr(operators, "of_agents", lambda conn: {a: "op1", "b": "op2", "c": "op3"})
+    assert route.next_fact(a) is None
+
+
+def _practice_table(w, tag_n: int = 3):
+    a = agents(w, 1)[0]
+    names = [a, *(w.register(f"ts{uuid.uuid4().hex[:6]}_q{i}", operator=a) for i in range(tag_n - 1))]
+    sid = w.create(a, players=tag_n, practice=True)
+    for seat, n in enumerate(names[1:], start=1):
+        assert w.join(sid, n, seat).status_code == 200
+    E.play(w, sid, names, {})
+    assert w.state(sid)["status"] == "completed"
+    return sid, names
+
+
+def test_a_practice_result_reaches_no_standing_record_sheet_rating_or_settlement(w, monkeypatch):
+    """A control table (real, four operators) shows each path DOES count a played table; the practice table, played to
+    the end by one operator's three agents, shows up in none of them."""
+    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
+    real_sid, real, _ = finished(w, 4)
+    sid, names = _practice_table(w)
+    # leaderboard: games played and wins
+    board = {r["agent_id"]: r for r in w.client.get("/leaderboard", params={"module_type": GAME}).json()["standings"]}
+    assert all(n in board for n in real), "control: a real table is on the leaderboard"
+    assert not set(names) & set(board), "a practice table is no contest: nobody is ranked for it"
+    # settlements: a practice table writes no win
+    with rs.DB_LOCK, rs.get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM settlements WHERE session_id = ?", (real_sid,)).fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM settlements WHERE session_id = ?", (sid,)).fetchone()[0] == 0
+    # results list, the agent record and the sheet (Craft, Insight, Trade, Trust read the same finished games)
+    for n in names:
+        assert w.client.get("/results", params={"agent_id": n}).json()["results"] == []
+        assert w.client.get(f"/agents/{n}/record").json()["games"]["finished"] == 0
+        sheet = w.client.get(f"/agents/{n}/sheet").json()
+        assert sheet["sessions_counted"] == 0 and sid not in json.dumps(sheet.get("records_hash", ""))
+        assert w.client.get(f"/agents/{n}/quests").json()["play"]["xp"] == 0
+    for n in real:
+        assert w.client.get(f"/agents/{n}/record").json()["games"]["finished"] == 1
+        assert w.client.get(f"/agents/{n}/sheet").json()["sessions_counted"] == 1
+    # Craft ladder and the season
+    for path in ("/ratings", "/season", "/season/board"):
+        text = w.client.get(path, params={"module_type": GAME} if path == "/ratings" else {}).text
+        assert not any(n in text for n in names), f"{path} names a practice player"
+    from emporia.routes import standing as ST
+    assert sid not in {g["session_id"] for g in ST._craft_games()}
+    assert real_sid in {g["session_id"] for g in ST._craft_games()}
+
+
+def test_a_practice_end_names_no_winner_to_followers_or_watchers(w):
+    import asyncio
+
+    from emporia import notices
+    sid, names = _practice_table(w)
+    sess = w.state(sid)
+    sent: list[dict] = []
+
+    async def spy(agent, event):
+        sent.append(event)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        notices.watch(conn, "someone_else", sid, True)
+    import unittest.mock as m
+    with m.patch.object(rs, "broadcast_to_agent", spy):
+        asyncio.run(notices.on_game_finished(sid, sess, {"winner": names[0], "outcome_type": "won"}))
+    assert sent and all(e["winner"] == "" and e["practice"] is True for e in sent)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        assert notices.following_activity(conn, names[0])["items"] == []
+
+
+def test_a_practice_table_is_marked_in_the_waiting_view_the_tools_and_whats_next(w):
+    a = agents(w, 1)[0]
+    mates = [w.register(f"ts{uuid.uuid4().hex[:6]}_m{i}", operator=a) for i in range(2)]
+    sid = w.create(a, players=3, practice=True)
+    waiting = w.tools(a).view(sid)
+    assert waiting["practice"] is True and "counts toward nothing" in waiting["practice_note"] and "waiting" in waiting
+    open_row = next(t for t in w.tools(mates[0]).overview()["open"] if t["session_id"] == sid)
+    assert open_row["practice"] is True
+    for seat, n in enumerate(mates, start=1):
+        assert w.join(sid, n, seat).status_code == 200
+    nxt = w.client.get(f"/agents/{a}/next", headers=w.hdr(a)).json()
+    assert nxt["tesseract"]["tables"][0]["practice"] is True
+    from emporia import next_steps
+    step = next(i for i in next_steps._tesseract(nxt["tesseract"]) if i["kind"] != "guided")
+    assert "practice" in step["why"] and "counts toward nothing" in step["why"]
+    E.play(w, sid, [a, *mates], {})
+    done = w.tools(a).view(sid)
+    assert done["practice"] is True and done["result"]["practice"] is True
+    assert "counts toward nothing" in done["result"]["practice_note"]
+    assert w.tools(a).open(sid)["practice"] is True      # nothing due on a finished table, still labeled

@@ -140,13 +140,13 @@ def _events(conn, units, house, since: float) -> list[dict[str, Any]]:
 
     # finished public games
     moves = {r[0]: r[1] for r in conn.execute("SELECT session_id, COUNT(*) FROM actions GROUP BY session_id")}
-    from emporia.standing import game_module_types
+    from emporia.standing import game_module_types, is_practice_session
     games = [m for m in game_module_types() if m != "emporia:service:v1"]
     marks = ",".join("?" * len(games)) or "NULL"
     for r in conn.execute(f"SELECT * FROM sessions WHERE status = 'completed' AND module_type IN ({marks})",  # noqa: S608
                           games).fetchall():
         sess = rs._session_row_to_dict(r)
-        if rs._session_visibility(sess) != "public":
+        if rs._session_visibility(sess) != "public" or is_practice_session(sess):   # practice counts nothing
             continue
         at = _ts(sess["updated_at"])
         players = sess["participants"]

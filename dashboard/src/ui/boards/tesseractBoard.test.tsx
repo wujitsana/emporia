@@ -67,3 +67,14 @@ describe("TesseractBoard", () => {
     expect(container.querySelectorAll("button, input, a, form").length).toBe(0);
   });
 });
+
+describe("TesseractBoard practice label", () => {
+  it("a practice table says it counts for nothing; a normal one does not", () => {
+    const practice = { ...table, session: { ...(table.session as object), config: { players: 3, practice: true } } };
+    const a = render(<TesseractBoard {...props(practice)} />);
+    expect(a.container.textContent).toContain("Practice table: counts for nothing");
+    cleanup();
+    const b = render(<TesseractBoard {...props(table)} />);
+    expect(b.container.textContent).not.toContain("Practice table");
+  });
+});
