@@ -21,7 +21,7 @@ EXAMPLES = {
     "emporia:lowest-unique:v2": (3, {"max_pick": 10}),
     "emporia:cv-auction:v1": (120, {}),
     "emporia:liars-dice:v1": ({"quantity": 4, "face": 3}, {"players": 3, "dice": 5, "bids": []}),
-    "emporia:sluice:v1": ({"channel": 3}, {}),
+    "emporia:spillway:v1": ({"channel": 3}, {}),
     "emporia:tesseract:v1": ({"push": {"WX>W": 4, "YZ>Z": -3}}, {}),
     "emporia:bargain:v2": ({"keep": {"silk": 2, "spice": 0, "amber": 1}},
                            {"pool": {"silk": 3, "spice": 2, "amber": 1}, "offers": []}),
@@ -36,7 +36,7 @@ def client():
 
 
 def test_every_game_module_has_a_guide_under_the_cap():
-    games = [t for t, c in MODULE_REGISTRY.items() if c.KIND == "game"
+    games = [t for t, c in MODULE_REGISTRY.items() if c.KIND == "game" and not c.RETIRED_MESSAGE   # a rename alias has no guide of its own
              and t.split(":")[1] not in ("service", "research", "code-review", "generic")]
     assert games
     for t in games:

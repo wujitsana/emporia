@@ -127,8 +127,8 @@ export const LOWEST_UNIQUE_TIE = {
   ],
 };
 
-/** Sluice (section 2.5 of the games plan): the dealt opening, the drops with the gate shut for each. */
-const sluiceData = (moves: unknown[], extra: Record<string, unknown> = {}) => ({
+/** Spillway (section 2.5 of the games plan): the dealt opening, the drops with the gate shut for each. */
+const spillwayData = (moves: unknown[], extra: Record<string, unknown> = {}) => ({
   cols: 6, rows: 5, drops: 4, move_time_limit_s: 600, seats: ["alpha", "beta"],
   opening: {
     silt: [[1, 1], [6, 1]],
@@ -139,8 +139,8 @@ const sluiceData = (moves: unknown[], extra: Record<string, unknown> = {}) => ({
 });
 
 /** A game won by four in a line: alpha's column, because the gate shut beta's only block. */
-export const SLUICE = {
-  session: session("emporia:sluice:v1", sluiceData([{ n: 1, by: "alpha", channel: 4, row: 2, gate: 6, round: 1000, at: "2026-11-13T12:00:00Z" },
+export const SPILLWAY = {
+  session: session("emporia:spillway:v1", spillwayData([{ n: 1, by: "alpha", channel: 4, row: 2, gate: 6, round: 1000, at: "2026-11-13T12:00:00Z" },
     { n: 2, by: "beta", channel: 5, row: 2, gate: 1, round: 1001, at: "2026-11-13T12:01:00Z" },
     { n: 3, by: "alpha", channel: 4, row: 3, gate: 2, round: 1002, at: "2026-11-13T12:02:00Z" },
     { n: 4, by: "beta", channel: 1, row: 2, gate: 4, round: 1003, at: "2026-11-13T12:03:00Z" },
@@ -155,8 +155,8 @@ export const SLUICE = {
 };
 
 /** The drops run out: alpha has two live threes to beta's one. */
-export const SLUICE_THREES = {
-  session: session("emporia:sluice:v1", sluiceData([{ n: 1, by: "alpha", channel: 2, row: 3, gate: 1, round: 1000, at: "2026-11-13T12:00:00Z" },
+export const SPILLWAY_THREES = {
+  session: session("emporia:spillway:v1", spillwayData([{ n: 1, by: "alpha", channel: 2, row: 3, gate: 1, round: 1000, at: "2026-11-13T12:00:00Z" },
     { n: 2, by: "beta", channel: 4, row: 2, gate: 1, round: 1001, at: "2026-11-13T12:01:00Z" },
     { n: 3, by: "alpha", channel: 4, row: 3, gate: 2, round: 1002, at: "2026-11-13T12:02:00Z" },
     { n: 4, by: "beta", channel: 6, row: 2, gate: 3, round: 1003, at: "2026-11-13T12:03:00Z" },
@@ -177,8 +177,8 @@ export const SLUICE_THREES = {
 };
 
 /** The drops run out level on live threes: the player who moved second (beta) wins. */
-export const SLUICE_LEVEL = {
-  session: session("emporia:sluice:v1", sluiceData([{ n: 1, by: "alpha", channel: 2, row: 3, gate: 3, round: 1000, at: "2026-11-13T12:00:00Z" },
+export const SPILLWAY_LEVEL = {
+  session: session("emporia:spillway:v1", spillwayData([{ n: 1, by: "alpha", channel: 2, row: 3, gate: 3, round: 1000, at: "2026-11-13T12:00:00Z" },
     { n: 2, by: "beta", channel: 1, row: 2, gate: 4, round: 1001, at: "2026-11-13T12:01:00Z" },
     { n: 3, by: "alpha", channel: 6, row: 2, gate: 1, round: 1002, at: "2026-11-13T12:02:00Z" },
     { n: 4, by: "beta", channel: 4, row: 2, gate: 1, round: 1003, at: "2026-11-13T12:03:00Z" },
@@ -199,7 +199,7 @@ export const SLUICE_LEVEL = {
 };
 
 /** Before the beacon's round is published: no opening yet. */
-export const SLUICE_PRE = {
-  session: session("emporia:sluice:v1", { cols: 6, rows: 5, drops: 4, seats: ["alpha", "beta"], opening: null, moves: [], ended: null, rand: { round: 4242, reveals: {} } }, "active"),
+export const SPILLWAY_PRE = {
+  session: session("emporia:spillway:v1", { cols: 6, rows: 5, drops: 4, seats: ["alpha", "beta"], opening: null, moves: [], ended: null, rand: { round: 4242, reveals: {} } }, "active"),
   actions: [] as SessionAction[],
 };

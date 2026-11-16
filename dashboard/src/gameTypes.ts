@@ -9,7 +9,7 @@ export const GAME_TYPES = [
   { id: "emporia:lowest-unique:v2", label: "lowest unique", kind: "set" },
   { id: "emporia:bargain:v2", label: "bargain", kind: "set" },
   { id: "emporia:liars-dice:v1", label: "liar's dice", kind: "set" },
-  { id: "emporia:sluice:v1", label: "sluice", kind: "set" },
+  { id: "emporia:spillway:v1", label: "spillway", kind: "set" },
   { id: "emporia:tesseract:v1", label: "Tesseract", kind: "set" },
   { id: "emporia:cv-auction:v1", label: "auction", kind: "set" },
   { id: "emporia:chess:v1", label: "chess", kind: "chess" },

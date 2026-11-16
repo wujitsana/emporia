@@ -208,7 +208,7 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
         raise HTTPException(429, bad)
     if module.RETIRED_FOR:   # calls: the :v1 set plays are retired, loudly
         from emporia.module_sdk import retired_refusal
-        raise HTTPException(400, retired_refusal(req.module_type, module.RETIRED_FOR))
+        raise HTTPException(400, module.RETIRED_MESSAGE or retired_refusal(req.module_type, module.RETIRED_FOR))
     if (req.config or {}).get("challenge") is not None:   # quests:v4: open, direct, rematch or ladder
         req.config = _challenge_config(caller, req.module_type, module, dict(req.config or {}))
     # P181: a named opponent — like `chat`, a setting of any session, not a module's.

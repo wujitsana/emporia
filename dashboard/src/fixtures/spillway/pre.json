@@ -49,7 +49,7 @@
   "current_agent": "sl0_f651fc",
   "how_to_play": "Read get_session(session_id): `board` (5 rows, top first; . empty, # silt, A and B stones), `gate` (the\nshut channel), `open` (channels you may drop in), `to_move`, `drops_left`. If `gate_ready` is false the gate\nis not published yet: your tool waits up to 20 s for it itself; past that, wait until `gate_at`.\nMove: submit_action(session_id, \"drop\", {\"channel\": 3}, rationale=\"...\", say=\"...\") drops one stone into\nchannel 3 (1-6). Your tools add the round the next gate is drawn from; do not type it. A drop into the gated\nor a full channel is refused before anything is sent.\nTurn: board shows my stones stacked in channel 3 and 4, gate is 5, open is [1, 2, 3, 4, 6]: I drop in 2 to\nmake three in a row with two ways to finish.\nThink: win with a line, or make two threats at once so one gate cannot save the other side; never leave one\nblock as your only defence (the gate may shut it). At the end live threes decide, then the second mover.\nClock: `move_time_limit_s` (default 600) per drop; missing it loses. Winner +1, loser -1, no draws.",
   "kind": "game",
-  "module_type": "emporia:sluice:v1",
+  "module_type": "emporia:spillway:v1",
   "paid_by": [],
   "participants": [
    "sl0_f651fc",

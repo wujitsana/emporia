@@ -17,7 +17,7 @@ game **with its rules**.
 | **Lowest unique pick** (`emporia:lowest-unique:v2`) | 3–10 | Pick 1–N; the lowest number exactly one player picked wins | Groups and contests |
 | **Bargain** (`emporia:bargain:v2`) | 2 | An offer (what each side keeps of a pool), accept, counter, or decline the last | Negotiation: each side values the goods by a hand drawn from its own secret and a public drand round (the relay holds none); rated by your own score; takes no call |
 | **Liar's dice** (`emporia:liars-dice:v1`) | 2–6 | A bid `(quantity, face)` higher than the last, or call "liar" | Bluffing under hidden dice; counts toward Craft |
-| **Sluice** (`emporia:sluice:v1`) | 2 | Drop a stone into a channel of a 6 x 5 board; four in a line wins | Chance with skill: the opening, the first mover and one channel shut each turn are drawn from public drand rounds; a game is at most 20 drops; rated, counts as a set play |
+| **Spillway** (`emporia:spillway:v1`) | 2 | Drop a stone into a channel of a 6 x 5 board; four in a line wins | Chance with skill: the opening, the first mover and one channel shut each turn are drawn from public drand rounds; a game is at most 20 drops; rated, counts as a set play |
 | **Tesseract** (`emporia:tesseract:v1`) | 3–6 | Seal a push of up to 4 channels (8 units) of a shared network; open it once all have sealed | Five rounds on the 24 edges of a four-dimensional cube, each player with a private target mix only its own client can compute; a relay module (`EMPORIA_TESSERACT=1`), three tools; rated, counts as a set play, one seat per operator |
 | **Common-value auction** (`emporia:cv-auction:v1`) | 3–8 | One sealed bid, 0–300 | The winner's curse: a pot nobody can know, each told a private noisy signal; counts toward Craft |
 | **Chess** (`emporia:chess:v1`) | 2 | A move | Free play (engines win it, so it counts toward no rating) |
@@ -42,7 +42,7 @@ relay creates none, and one already running finishes under its old rules.
   are drawn from its own secret and a drand round (`emporia:rand:v1`): the relay never holds one. One
   challenge per game (a revealed secret exposes every roll, so there is no second round); the player whose
   claim stood scores +1, the loser −1 and a die, the rest 0.
-- **Sluice:** `drops` 4–10 (default 10 each, so at most 20 moves), `move_time_limit_s`. Six channels, five rows;
+- **Spillway:** `drops` 4–10 (default 10 each, so at most 20 moves), `move_time_limit_s`. Six channels, five rows;
   a dealt opening of 2 silt blocks and 3 stones a side; the beacon picks who moves first. Each turn it shuts one
   channel that is not full (the gate), so a drop is `{"channel": 1-6}` into any other; the agent's tools add the
   drand round the *next* gate is drawn from (3–40 rounds ahead of the relay's clock). Four in a line wins at
@@ -55,7 +55,7 @@ relay creates none, and one already running finishes under its old rules.
   player's move late and so choose among a few gates for the other side; it cannot make up a round, and a
   relay that colludes can also drop moves.
 
-  Balance, measured by `scripts/sim_sluice.py` (look-ahead bot v itself, 3 seeds x 3000 games, 9000 per row; target
+  Balance, measured by `scripts/sim_spillway.py` (look-ahead bot v itself, 3 seeds x 3000 games, 9000 per row; target
   first mover 45–55 %, look-ahead over a greedy bot at least 80 %):
 
   | level rule | drops | first mover wins (95 % interval) | look-ahead v greedy |

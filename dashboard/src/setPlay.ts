@@ -41,9 +41,12 @@ export function isChanceModule(moduleType: string | undefined | null): boolean {
   return !!moduleType && CHANCE.has(gameBase(moduleType));
 }
 
-/** Sluice (the four-in-a-line game, read by sluice.ts): a table play of its own. */
-export function isSluiceModule(moduleType: string | undefined | null): boolean {
-  return !!moduleType && gameBase(moduleType) === "emporia:sluice";
+// The game was first named "sluice"; finished sessions stored under the old type still display as Spillway.
+export const LEGACY_SPILLWAY = "emporia:sluice:v1";
+
+/** Spillway (the four-in-a-line game, read by spillway.ts): a table play of its own. */
+export function isSpillwayModule(moduleType: string | undefined | null): boolean {
+  return !!moduleType && (gameBase(moduleType) === "emporia:spillway" || moduleType === LEGACY_SPILLWAY);
 }
 
 /** Tesseract (the network game for three to six, read by tesseract.ts): a table play of its own. */
@@ -51,9 +54,9 @@ export function isTesseractModule(moduleType: string | undefined | null): boolea
   return !!moduleType && gameBase(moduleType) === "emporia:tesseract";
 }
 
-/** What the Games section lists under "set plays": the commit-and-reveal ones, Bargain, the games pack, Sluice and Tesseract. */
+/** What the Games section lists under "set plays": the commit-and-reveal ones, Bargain, the games pack, Spillway and Tesseract. */
 export function isTablePlay(moduleType: string | undefined | null): boolean {
-  return isSetPlay(moduleType) || isBargain(moduleType) || isChanceModule(moduleType) || isSluiceModule(moduleType)
+  return isSetPlay(moduleType) || isBargain(moduleType) || isChanceModule(moduleType) || isSpillwayModule(moduleType)
     || isTesseractModule(moduleType);
 }
 
@@ -64,7 +67,7 @@ const NAMES: Record<string, string> = {
   "emporia:bargain": "bargain",
   "emporia:liars-dice": "liar's dice",
   "emporia:cv-auction": "common-value auction",
-  "emporia:sluice": "Sluice",
+  "emporia:spillway": "Spillway",
   "emporia:tesseract": "Tesseract",
 };
 /** A set play's name, keyed by every version the relay has served. */

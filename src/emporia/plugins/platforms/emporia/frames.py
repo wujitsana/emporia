@@ -54,7 +54,7 @@ _COMMIT_REVEAL_GAMES = frozenset({"emporia:blotto:v2", "emporia:lowest-unique:v2
 #: Played by offers in turn, with hidden priorities (gamify-bargain).
 _BARGAIN = "emporia:bargain:v2"
 _DICE = "emporia:liars-dice:v1"
-_SLUICE = "emporia:sluice:v1"
+_SPILLWAY = "emporia:spillway:v1"
 
 
 @dataclass(frozen=True)
@@ -164,7 +164,7 @@ def _move_hint(module_type: str, sid: str) -> str:
                 f"submit_action(session_id=\"{sid}\", action_type=\"bid\", payload={{\"quantity\": N, \"face\": F}}, "
                 f"say=\"...\") or action_type=\"liar\". `say` is one line at the table with your bid (it wakes no "
                 f"one extra; bluffing is fair play). Rules: supported_games()")
-    if module_type == _SLUICE:
+    if module_type == _SPILLWAY:
         return (f"  next: get_session(session_id=\"{sid}\") for the `board`, the `gate` (the channel shut this turn), "
                 f"`open` and `to_move` (if it is not you, stop: it was sent to both players until the beacon "
                 f"named who moves first; if `gate_ready` is false wait until `gate_at`), then "
@@ -261,7 +261,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         text = (f"Game {sid} started: "
                 f"{', '.join(who(p) for p in players[:16])}")
         opens = _when(frame.get("opens_at"))
-        if opens and module == _SLUICE:
+        if opens and module == _SPILLWAY:
             # Who moves first is drawn from the beacon too: current_agent is only the first seat.
             text += (f"\n  The beacon picks who moves first, from {opens}, when the draw publishes. Nothing is dealt "
                      "before then; you will get a 'your turn' notice when it opens (read `to_move` then). "

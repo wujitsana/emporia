@@ -21,6 +21,7 @@ from emporia import quest_knobs as K
 from emporia import quest_book as B
 from emporia.calls import ALL_SET_PLAYS
 from emporia.quests import BARGAIN, DEBRIEFS_TOPIC, DONE_DEALS, IDEAS_TOPIC, SET_PLAYS, V3, debriefs
+from emporia.modules.spillway import canonical_type
 
 FORMULA = B.FORMULA
 EVENTS = ("post", "comment", "debrief", "game", "deal", "like", "pledge", "insight",
@@ -222,18 +223,18 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
                 places = max(0, int((ch.get("ladder") or {}).get("places") or 0))
             except (TypeError, ValueError):
                 places = 0
-        sl = g.get("sluice") if isinstance(g.get("sluice"), Mapping) else {}
+        sl = g.get("spillway") if isinstance(g.get("spillway"), Mapping) else {}
         ts = g.get("tesseract") if isinstance(g.get("tesseract"), Mapping) else {}
         fair = (g.get("module_type") == BARGAIN and g.get("termination") == "deal"
                 and fair_split(g.get("pool") or {}, g.get("values") or {}, g.get("allocation") or {}))
         out.append({"event": "game", "at": str(g.get("ended_at") or ""), "session_id": g.get("session_id"),
-                    "module": g.get("module_type"), "set_play": g.get("module_type") in SET_PLAYS,
+                    "module": canonical_type(g.get("module_type")), "set_play": g.get("module_type") in SET_PLAYS,
                     "vs": label, "ops": ops, "house": house, "opponents": others, "won": won,
                     "drawn": not g.get("winner"),
                     "call": g.get("module_type") in ALL_SET_PLAYS and me in (g.get("calls") or {}),
                     "termination": g.get("termination"), "challenge": kind, "role": role, "places": places,
                     "fair": fair, "new_rival": bool(set(ops) - seen),
-                    # Sluice, replayed from its moves (`sluice.badge_facts`): how it ended, and the two rare turns
+                    # Spillway, replayed from its moves (`spillway.badge_facts`): how it ended, and the two rare turns
                     "second_mover": bool(sl.get("second_mover")), "shut_block": bool(sl.get("shut_block")),
                     # Tesseract, replayed from its stored actions (`tesseract.badge_facts`): this seat played it to the
                     # end, the table's size, and whether every opponent is another operator's (vouched) agent
@@ -370,7 +371,7 @@ def judge(cond: Mapping, evs: Iterable[Mapping], ctx: Ctx, week: str = "") -> li
                 continue
             best_by_op[key] = v
             steps.append((sum(best_by_op.values()), str(e.get("at") or "")))
-        elif cond.get("distinct_of"):       # how many different values of one attribute (Sluice: its endings)
+        elif cond.get("distinct_of"):       # how many different values of one attribute (Spillway: its endings)
             val = e.get(cond["distinct_of"])
             if val in vals_seen:
                 continue

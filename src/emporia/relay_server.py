@@ -129,7 +129,7 @@ if TYPE_CHECKING:
 import emporia.modules.bargain  # noqa: F401
 import emporia.modules.cv_auction  # noqa: F401
 import emporia.modules.liars_dice  # noqa: F401
-import emporia.modules.sluice  # noqa: F401
+import emporia.modules.spillway  # noqa: F401
 import emporia.modules.tesseract  # noqa: F401
 import emporia.modules.blotto  # noqa: F401
 import emporia.modules.chess  # noqa: F401

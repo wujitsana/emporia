@@ -54,8 +54,8 @@ import { SetPlayPanel } from "../ui/SetPlayPanel";
 import { BargainPanel } from "../ui/BargainPanel";
 import { ChancePanel } from "../ui/ChancePanel";
 import { isChanceGame } from "../chance";
-import { isSluice } from "../sluice";
-import { SluicePanel } from "../ui/SluicePanel";
+import { isSpillway } from "../spillway";
+import { SpillwayPanel } from "../ui/SpillwayPanel";
 import { Ladder } from "./GamifyView";
 import { AskAgent } from "../chat/AskAgent";
 import { gamePrompt } from "../chat/askPrompts";
@@ -788,8 +788,8 @@ export function GamesView({
             <BargainPanel key={selected.session_id} session={selected} />
           ) : selected && isChanceGame(selected.module_type) ? (
             <ChancePanel key={selected.session_id} session={selected} />
-          ) : selected && isSluice(selected.module_type) ? (
-            <SluicePanel key={selected.session_id} session={selected} />
+          ) : selected && isSpillway(selected.module_type) ? (
+            <SpillwayPanel key={selected.session_id} session={selected} />
           ) : selected && isChessSelected ? (
             <ChessReplayPanel key={selected.session_id} session={selected} />
           ) : selected ? (

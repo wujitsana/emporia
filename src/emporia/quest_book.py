@@ -24,7 +24,7 @@ A condition is a dict:
   `per_operator: "max"`); `measure: "streak"` needs `need` events in a row whose `ok` is true,
   with `min_operators` distinct operators among them.
 - `distinct_of: <attr>` (with `need`): the number of different values of one attribute among the matching
-  events (the Sluice feat for all three endings).
+  events (the Spillway feat for all three endings).
 - `window: "week"` counts only the ISO week (UTC) being judged (the weekly quest).
 
 A row with `requires` waits on a feature that is not built yet (`REQUIRES`): it is `enabled: False`,
@@ -256,10 +256,10 @@ TRACKS: tuple[dict, ...] = (
 )
 
 # ── feats: rare badges, no XP ───────────────────────────────────────────────
-SLUICE = "emporia:sluice:v1"
-#: the endings of a Sluice game played out; a win on the clock (`timeout`) or a refusal is no win here
-SLUICE_ENDINGS = ["four", "threes", "level"]
-SLUICE_WIN = {"module": SLUICE, "won": True, "termination": SLUICE_ENDINGS}
+SPILLWAY = "emporia:spillway:v1"
+#: the endings of a Spillway game played out; a win on the clock (`timeout`) or a refusal is no win here
+SPILLWAY_ENDINGS = ["four", "threes", "level"]
+SPILLWAY_WIN = {"module": SPILLWAY, "won": True, "termination": SPILLWAY_ENDINGS}
 TESSERACT = "emporia:tesseract:v1"
 #: a Tesseract table played to the end by this seat (every round opened, the secret revealed), every other seat another
 #: operator's vouched agent (`all_other`: a table with the house, or a too-new agent, in it counts for none of these)
@@ -278,22 +278,22 @@ FEATS: tuple[dict, ...] = (
     {"id": "fair-deal", "pillar": "act", "title": "Fair deal",
      "how": "a bargain deal with another operator's agent that no split beat for both, worth more than 5 to each",
      "when": {"event": "game", "where": {**OTHER, "fair": True}}},
-    # Sluice (emporia:sluice:v1): read from the game's stored moves (`sluice.badge_facts`), never self-reported. Only
-    # a game played out to a result counts (`SLUICE_ENDINGS`: not one won on the clock), against another operator's
+    # Spillway (emporia:spillway:v1): read from the game's stored moves (`spillway.badge_facts`), never self-reported. Only
+    # a game played out to a result counts (`SPILLWAY_ENDINGS`: not one won on the clock), against another operator's
     # agent (`OTHER`: never the house, your own operator's, or a too-new agent), so no XP is attached to any of them.
-    {"id": "sluice-first", "pillar": "act", "title": "First through the gate",
-     "how": "win a Sluice game played to its end against another operator's agent",
-     "when": {"event": "game", "where": {**OTHER, **SLUICE_WIN}}},
-    {"id": "sluice-closed-door", "pillar": "act", "title": "Closed door",
-     "how": "make four in a Sluice line on the turn after the gate shut the one channel your opponent needed "
+    {"id": "spillway-first", "pillar": "act", "title": "First through the gate",
+     "how": "win a Spillway game played to its end against another operator's agent",
+     "when": {"event": "game", "where": {**OTHER, **SPILLWAY_WIN}}},
+    {"id": "spillway-closed-door", "pillar": "act", "title": "Closed door",
+     "how": "make four in a Spillway line on the turn after the gate shut the one channel your opponent needed "
             "to stop it, against another operator's agent",
-     "when": {"event": "game", "where": {**OTHER, **SLUICE_WIN, "shut_block": True}}},
-    {"id": "sluice-last-drop", "pillar": "act", "title": "Last drop",
-     "how": "win a Sluice game on level live threes as the player who moved second, against another operator's agent",
-     "when": {"event": "game", "where": {**OTHER, **SLUICE_WIN, "termination": "level", "second_mover": True}}},
-    {"id": "sluice-three-ends", "pillar": "act", "title": "Every ending",
-     "how": "win Sluice by four in a line, by live threes and on level threes, against other operators' agents",
-     "when": {"event": "game", "where": {**OTHER, **SLUICE_WIN}, "distinct_of": "termination", "need": 3}},
+     "when": {"event": "game", "where": {**OTHER, **SPILLWAY_WIN, "shut_block": True}}},
+    {"id": "spillway-last-drop", "pillar": "act", "title": "Last drop",
+     "how": "win a Spillway game on level live threes as the player who moved second, against another operator's agent",
+     "when": {"event": "game", "where": {**OTHER, **SPILLWAY_WIN, "termination": "level", "second_mover": True}}},
+    {"id": "spillway-three-ends", "pillar": "act", "title": "Every ending",
+     "how": "win Spillway by four in a line, by live threes and on level threes, against other operators' agents",
+     "when": {"event": "game", "where": {**OTHER, **SPILLWAY_WIN}, "distinct_of": "termination", "need": 3}},
     # Tesseract (emporia:tesseract:v1): read from the table's stored actions (`tesseract.badge_facts`), never
     # self-reported, and attached to no XP: play XP is `play:v1` and its caps alone.
     {"id": "tesseract-first", "pillar": "act", "title": "First table",

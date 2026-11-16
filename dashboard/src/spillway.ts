@@ -1,6 +1,6 @@
 /**
- * Sluice (`emporia:sluice:v1`), the four-in-a-line game, as a viewer sees it — pure: a session (and its
- * actions) in, what to draw out. Drawn by ui/SluicePanel.tsx and, step by step, by the Arena.
+ * Spillway (`emporia:spillway:v1`), the four-in-a-line game, as a viewer sees it — pure: a session (and its
+ * actions) in, what to draw out. Drawn by ui/SpillwayPanel.tsx and, step by step, by the Arena.
  *
  * This file is the one place that knows the wire (the contract is section 2.5 of the games plan): if the
  * module reports a difference, change the readers here and nothing else. The board at any step is rebuilt
@@ -8,14 +8,14 @@
  * never drops a stone. Cells are `[channel, row]`: channel 1-6 left to right, row 1-5 from the bottom.
  */
 import type { Session, SessionAction } from "./api";
-import { stateData } from "./setPlay";
+import { LEGACY_SPILLWAY, stateData } from "./setPlay";
 
-export const SLUICE = "emporia:sluice:v1";
-export const isSluice = (m: string | undefined | null) => !!m && (m ?? "").replace(/:v\d+$/, "") === SLUICE.replace(/:v\d+$/, "");
+export const SPILLWAY = "emporia:spillway:v1";
+export const isSpillway = (m: string | undefined | null) => !!m && (m === LEGACY_SPILLWAY || (m ?? "").replace(/:v\d+$/, "") === SPILLWAY.replace(/:v\d+$/, ""));
 
 export type Cell = [channel: number, row: number];
 
-export interface SluiceMove {
+export interface SpillwayMove {
   n: number;
   by: string;
   channel: number;
@@ -25,14 +25,14 @@ export interface SluiceMove {
   round: number | null;
 }
 
-export interface SluiceOpening {
+export interface SpillwayOpening {
   silt: Cell[];
   /** Stones per seat, in seat order. */
   stones: [Cell[], Cell[]];
   first: string | null;
 }
 
-export interface SluiceResult {
+export interface SpillwayResult {
   winner: string | null;
   /** `four` | `threes` | `level` (second mover) | `coin` (a drand flip) | `timeout` | `void` */
   termination: string;
@@ -42,15 +42,15 @@ export interface SluiceResult {
   points: Record<string, number> | null;
 }
 
-export interface SluiceView {
-  kind: "sluice";
+export interface SpillwayView {
+  kind: "spillway";
   cols: number;
   rows: number;
   drops: number;
   /** Seat A then seat B. */
   seats: string[];
-  opening: SluiceOpening | null;
-  moves: SluiceMove[];
+  opening: SpillwayOpening | null;
+  moves: SpillwayMove[];
   toMove: string | null;
   gate: number | null;
   open: number[];
@@ -61,7 +61,7 @@ export interface SluiceView {
   gateAt: string | null;
   /** The drand round that deals the opening, while it is not dealt yet. */
   nameRound: number | null;
-  result: SluiceResult | null;
+  result: SpillwayResult | null;
   secondsLeft: number | null;
 }
 
@@ -77,7 +77,7 @@ function cell(v: unknown): Cell | null {
 }
 const cells = (v: unknown): Cell[] => (Array.isArray(v) ? v.flatMap((c) => { const x = cell(c); return x ? [x] : []; }) : []);
 
-function readOpening(v: unknown, seats: string[]): SluiceOpening | null {
+function readOpening(v: unknown, seats: string[]): SpillwayOpening | null {
   const o = obj(v);
   if (!Object.keys(o).length) return null;
   const st = obj(o.stones);
@@ -88,7 +88,7 @@ function readOpening(v: unknown, seats: string[]): SluiceOpening | null {
   };
 }
 
-function readMoves(v: unknown): SluiceMove[] {
+function readMoves(v: unknown): SpillwayMove[] {
   return (Array.isArray(v) ? v : []).flatMap((m, k) => {
     const o = obj(m);
     const channel = int(o.channel);
@@ -98,7 +98,7 @@ function readMoves(v: unknown): SluiceMove[] {
 }
 
 /** The ending the relay stores in the state (`ended: {how, winner, line}`), for a session whose actions are not loaded. */
-function endedResult(d: Data, seats: string[]): SluiceResult | null {
+function endedResult(d: Data, seats: string[]): SpillwayResult | null {
   const e = obj(d.ended);
   if (typeof e.how !== "string") return null;
   const winner = typeof e.winner === "string" ? e.winner : null;
@@ -109,7 +109,7 @@ function endedResult(d: Data, seats: string[]): SluiceResult | null {
   };
 }
 
-function readResult(actions?: SessionAction[] | null): SluiceResult | null {
+function readResult(actions?: SessionAction[] | null): SpillwayResult | null {
   for (const a of [...(actions ?? [])].reverse()) {
     const r = (a.result?.artifacts as { result?: Data } | undefined)?.result;
     if (!r || typeof r !== "object") continue;
@@ -126,9 +126,9 @@ function readResult(actions?: SessionAction[] | null): SluiceResult | null {
   return null;
 }
 
-/** Pure: a Sluice session (and its actions) in, what to draw out; null for any other game. */
-export function sluiceView(session: Session, actions?: SessionAction[] | null, now: number = Date.now()): SluiceView | null {
-  if (!isSluice(session.module_type)) return null;
+/** Pure: a Spillway session (and its actions) in, what to draw out; null for any other game. */
+export function spillwayView(session: Session, actions?: SessionAction[] | null, now: number = Date.now()): SpillwayView | null {
+  if (!isSpillway(session.module_type)) return null;
   const d = stateData(session);
   const st = obj(session.state);
   // the relay serves the draws flat in `state.data` (to_move, gate, gate_ready, open, gate_round, gate_at, name_round)
@@ -140,7 +140,7 @@ export function sluiceView(session: Session, actions?: SessionAction[] | null, n
   const ended = d.ended !== null && d.ended !== undefined;
   const opening = readOpening(d.opening ?? dv.opening, seats);
   return {
-    kind: "sluice",
+    kind: "spillway",
     cols: num(d.cols, 6),
     rows: num(d.rows, 5),
     drops: num(d.drops, 7),
@@ -163,7 +163,7 @@ export function sluiceView(session: Session, actions?: SessionAction[] | null, n
 export type Board = string[][];
 
 /** Rebuild the board after the first `upTo` moves. */
-export function boardAt(v: Pick<SluiceView, "cols" | "rows" | "seats" | "opening" | "moves">, upTo: number): Board {
+export function boardAt(v: Pick<SpillwayView, "cols" | "rows" | "seats" | "opening" | "moves">, upTo: number): Board {
   const g: Board = Array.from({ length: v.rows }, () => Array.from({ length: v.cols }, () => "."));
   const put = ([c, r]: Cell, mark: string) => { if (c >= 1 && c <= v.cols && r >= 1 && r <= v.rows) g[v.rows - r][c - 1] = mark; };
   v.opening?.silt.forEach((c) => put(c, "#"));
@@ -221,8 +221,8 @@ export function liveThrees(b: Board): [number, number] {
   return t;
 }
 
-export interface SluiceFrame {
-  kind: "sluice";
+export interface SpillwayFrame {
+  kind: "spillway";
   seats: string[];
   cols: number;
   rows: number;
@@ -234,8 +234,8 @@ export interface SluiceFrame {
   /** Moves applied; 0 is the opening as dealt. */
   step: number;
   /** The moves applied so far, and the last of them. */
-  moves: SluiceMove[];
-  last: SluiceMove | null;
+  moves: SpillwayMove[];
+  last: SpillwayMove | null;
   /** The channel shut for the drop that made this board; null when none was. */
   gate: number | null;
   /** Live game, board is current: whose drop is next, the channel shut for it and the round to name. */
@@ -245,13 +245,13 @@ export interface SluiceFrame {
   /** Only on the last step of a finished game. */
   line: Cell[] | null;
   threes: [number, number] | null;
-  result: SluiceResult | null;
+  result: SpillwayResult | null;
   /** Who moved first, and so who wins a level count. */
   first: string | null;
 }
 
 /** The table after the first `upTo` moves. `atEnd` is the last step of a finished game (the verdict shows). */
-export function sluiceFrameAt(v: SluiceView, upTo: number, atEnd: boolean): SluiceFrame {
+export function spillwayFrameAt(v: SpillwayView, upTo: number, atEnd: boolean): SpillwayFrame {
   const step = Math.max(0, Math.min(v.moves.length, upTo));
   const board = boardAt(v, step);
   const last = step ? v.moves[step - 1] : null;
@@ -269,7 +269,7 @@ export function sluiceFrameAt(v: SluiceView, upTo: number, atEnd: boolean): Slui
   }
   const live = !result && step === v.moves.length;
   return {
-    kind: "sluice", seats: v.seats, cols: v.cols, rows: v.rows, drops: v.drops,
+    kind: "spillway", seats: v.seats, cols: v.cols, rows: v.rows, drops: v.drops,
     dealt: !!v.opening, nameRound: v.nameRound, board, step, moves: v.moves.slice(0, step), last,
     gate: last?.gate ?? null,
     next: live && v.opening ? { toMove: v.toMove, gate: v.gate, round: v.gateRound } : null,
@@ -279,12 +279,12 @@ export function sluiceFrameAt(v: SluiceView, upTo: number, atEnd: boolean): Slui
 }
 
 /** One line for a drop step: "dropped in channel 3, row 2; channel 5 was gated". */
-export function dropText(m: SluiceMove): string {
+export function dropText(m: SpillwayMove): string {
   return `dropped in channel ${m.channel}${m.row ? `, row ${m.row}` : ""}${m.gate ? `; channel ${m.gate} was gated` : ""}`;
 }
 
 /** "alpha wins with four in a line", "alpha wins on live threes (2 to 1)", … in words, from a result. */
-export function sluiceVerdict(f: Pick<SluiceFrame, "seats" | "threes" | "first">, r: SluiceResult, name: (id: string) => string): string {
+export function spillwayVerdict(f: Pick<SpillwayFrame, "seats" | "threes" | "first">, r: SpillwayResult, name: (id: string) => string): string {
   const w = r.winner ? name(r.winner) : null;
   switch (r.termination) {
     case "four": return `${w ?? "nobody"} wins with four in a line`;
