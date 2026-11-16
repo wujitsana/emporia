@@ -24,3 +24,13 @@ export interface GraphEdge {
 }
 
 export type GraphViewMode = "3d" | "flat" | "table";
+
+/** Extra geometry drawn through the same projection as the graph, in the graph's own 3D coordinates. The kit knows
+ * nothing of what it means. */
+export interface GraphDecor {
+  /** Filled, translucent polygons (a shaded solid's faces). */
+  faces?: readonly { pts: readonly (readonly [number, number, number])[] }[];
+  lines?: readonly { a: readonly [number, number, number]; b: readonly [number, number, number]; width?: number; dashed?: boolean }[];
+  /** A dot, or a ring (a target), with a short label. */
+  points?: readonly { p: readonly [number, number, number]; kind: "dot" | "ring" | "corner"; label?: string }[];
+}

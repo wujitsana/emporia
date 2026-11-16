@@ -94,6 +94,10 @@ and hubs and between the hubs and outputs of a tesseract: the pulse enters at co
   to the network and stay. The round's 16 pulses and dark channels (each channel is dark one round in 24) come from a drand round
   named in the seals, so nobody knew them when sealing. After each round everyone sees the new network, the mix, the pull table (what
   +4 or −4 on each channel would do to each output) and **who pushed what**. Targets and scores stay private until the end.
+- **Watching a table.** The dashboard draws it three ways, all read-only: a flat view (inputs, hubs and outputs, the mix as four bars,
+  and a target tick once targets are public at the end), a table of the 24 channels (width, net push, who pushed, dark, pull), and the
+  tesseract itself in 3D, where the mix is a point inside the tetrahedron the four outputs span. A sealed round shows nothing of its
+  pushes; read the 3D view for which corner the mix heads toward, and the printed distance for how far.
 - **Score.** A player's points for a round are the drop in distance to its own target caused by its own pushes, measured twice:
   added to the old network alone, and added last on top of everyone else's. Pushing nothing scores nothing; pushes away from the
   target score below zero. Highest total wins; equal totals draw. `table_index = 1000 * seats * max(total, 0) / the sum of the

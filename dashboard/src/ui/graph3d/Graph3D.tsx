@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { motionAllowed } from "../../look";
-import type { GraphEdge, GraphNode, GraphViewMode } from "./types";
-import { DEFAULT_VIEW, clampView, layerLayout, orbitBy, panBy, projectAll, zoomBy, type View } from "./project";
-import { GraphSvg, type Placed } from "./GraphSvg";
+import type { GraphDecor, GraphEdge, GraphNode, GraphViewMode } from "./types";
+import { DEFAULT_VIEW, clampView, layerLayout, orbitBy, panBy, project, projectAll, zoomBy, type Vec3, type View } from "./project";
+import { GraphSvg, type Placed, type PlacedDecor } from "./GraphSvg";
 import { FlatGraph } from "./FlatGraph";
 import { FLAT_H, FLAT_W } from "./flatLayout";
 import { EdgeTable } from "./EdgeTable";
@@ -22,6 +22,16 @@ export interface Graph3DProps {
   /** Which view opens: the orbit view, the flat diagram, or the table. Flat when motion is off. */
   initialMode?: GraphViewMode;
   label?: string;
+  /** Node positions in 3D, in place of the layered layout (a node missing here is put at the origin). */
+  positions?: ReadonlyMap<string, Vec3>;
+  /** Extra geometry drawn through the same projection (3D view only). */
+  decor?: GraphDecor;
+  /** Names for the flat view's columns (default "layer 1", ...). */
+  layerNames?: readonly string[];
+  /** A table in place of the generic edge table. */
+  tableView?: ReactNode;
+  /** Told when the view mode changes (and once at the start). */
+  onMode?: (m: GraphViewMode) => void;
 }
 
 const MODES: { id: GraphViewMode; text: string }[] = [
@@ -50,11 +60,24 @@ export function Graph3D(props: Graph3DProps) {
     [props],
   );
 
-  const home = useMemo(() => layerLayout(nodes), [nodes]);
+  const layered = useMemo(() => layerLayout(nodes), [nodes]);
+  const home = props.positions ?? layered;
   const placed: Placed[] = useMemo(() => {
     const pts = nodes.map((n) => home.get(n.id) ?? ([0, 0, 0] as const));
     return projectAll(pts, view, BOX);
   }, [nodes, home, view]);
+  const placedDecor: PlacedDecor | undefined = useMemo(() => {
+    const d = props.decor;
+    if (!d) return undefined;
+    const at = (p: Vec3) => project(p, view, BOX);
+    return {
+      faces: (d.faces ?? []).map((f) => f.pts.map((p) => at(p))),
+      lines: (d.lines ?? []).map((l) => ({ a: at(l.a), b: at(l.b), width: l.width ?? 1, dashed: !!l.dashed })),
+      points: (d.points ?? []).map((q) => ({ at: at(q.p), kind: q.kind, label: q.label })),
+    };
+  }, [props.decor, view]);
+  const { onMode } = props;
+  useEffect(() => onMode?.(mode), [mode, onMode]);
 
   // Pointer tracking: one pointer turns (or pans with shift / right button), two pinch and pan.
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -196,6 +219,7 @@ export function Graph3D(props: Graph3DProps) {
             className={s.svg}
             label={`${label}, 3D view`}
             allLabels={nodes.length <= 24}
+            decor={placedDecor}
             svgProps={{
               onPointerDown,
               onPointerMove,
@@ -212,10 +236,10 @@ export function Graph3D(props: Graph3DProps) {
         </div>
       ) : mode === "flat" ? (
         <div className={s.stage}>
-          <FlatGraph nodes={nodes} edges={edges} selected={selected} onSelect={select} animate={animate} label={`${label}, flat view`} />
+          <FlatGraph nodes={nodes} edges={edges} selected={selected} onSelect={select} animate={animate} label={`${label}, flat view`} layerNames={props.layerNames} />
         </div>
       ) : (
-        <EdgeTable nodes={nodes} edges={edges} selected={selected} />
+        props.tableView ?? <EdgeTable nodes={nodes} edges={edges} selected={selected} />
       )}
     </div>
   );

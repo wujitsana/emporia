@@ -13,6 +13,13 @@ export interface Placed {
   depth: number;
 }
 
+/** Decor after projection: screen positions, ready to draw. */
+export interface PlacedDecor {
+  faces: readonly (readonly { x: number; y: number }[])[];
+  lines: readonly { a: Placed; b: Placed; width: number; dashed: boolean }[];
+  points: readonly { at: Placed; kind: "dot" | "ring" | "corner"; label?: string }[];
+}
+
 export interface GraphSvgProps {
   nodes: readonly GraphNode[];
   edges: readonly GraphEdge[];
@@ -32,6 +39,7 @@ export interface GraphSvgProps {
   allLabels?: boolean;
   /** Layer captions for the flat view. */
   layerTags?: readonly { x: number; text: string }[];
+  decor?: PlacedDecor;
 }
 
 /** Draws placed nodes and edges. Shared by the orbit view and the flat view, so they cannot disagree. */
@@ -71,6 +79,16 @@ function GraphSvgInner(p: GraphSvgProps) {
       aria-label={p.label}
       {...p.svgProps}
     >
+      {p.decor ? (
+        <g aria-hidden="true" data-decor="">
+          {p.decor.faces.map((f, i) => (
+            <polygon key={i} className={s.decorFace} points={f.map((q) => `${q.x},${q.y}`).join(" ")} />
+          ))}
+          {p.decor.lines.map((l, i) => (
+            <line key={i} className={l.dashed ? `${s.decorLine} ${s.decorDashed}` : s.decorLine} x1={l.a.x} y1={l.a.y} x2={l.b.x} y2={l.b.y} strokeWidth={l.width} />
+          ))}
+        </g>
+      ) : null}
       <g>
         {edgeOrder.map((k) => {
           const { e, i, a, b } = drawn[k];
@@ -123,6 +141,22 @@ function GraphSvgInner(p: GraphSvgProps) {
           );
         })}
       </g>
+      {p.decor ? (
+        <g aria-hidden="true" data-decor-points="">
+          {p.decor.points.map((d, i) => (
+            <g key={i}>
+              {d.kind === "ring" ? (
+                <circle className={s.decorRing} cx={d.at.x} cy={d.at.y} r={7 * Math.min(1.6, Math.max(0.6, d.at.scale))} />
+              ) : d.kind === "corner" ? (
+                <rect className={s.decorCorner} x={d.at.x - 3} y={d.at.y - 3} width={6} height={6} />
+              ) : (
+                <circle className={s.decorDot} cx={d.at.x} cy={d.at.y} r={4.5 * Math.min(1.6, Math.max(0.6, d.at.scale))} />
+              )}
+              {d.label ? <text className={s.label} x={d.at.x + 8} y={d.at.y + 12}>{d.label}</text> : null}
+            </g>
+          ))}
+        </g>
+      ) : null}
       {p.layerTags?.map((t) => (
         <text key={t.text} className={s.layerTag} x={t.x} y={p.height - 8} aria-hidden="true">
           {t.text}

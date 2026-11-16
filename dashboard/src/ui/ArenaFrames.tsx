@@ -10,6 +10,7 @@ import { DiceTable } from "./boards/DiceTable";
 import { SpillwayBoard } from "./boards/SpillwayBoard";
 import { spillwayFromFrame } from "./boards/spillwayModel";
 import { TesseractBoard } from "./boards/TesseractBoard";
+import { TesseractPanel } from "./TesseractPanel";
 import { tesseractFromFrame } from "./boards/tesseractModel";
 import { auctionFromFrame, bargainFromFrame, diceFromFrame } from "./boards/chanceModel";
 
@@ -138,6 +139,7 @@ export function ArenaFrame({ frame, book }: { frame: Frame; book: Book }) {
       <div className="e-arena-frame" data-kind="tesseract">
         {props.verdict ? <p className="e-arena-verdict" role="status">{props.verdict}</p> : null}
         <FoldDetail fold={!!props.verdict} label="the rounds and the pushes">
+        <TesseractPanel frame={frame} name={(id) => playerName(id, book, 10)} />
         <TesseractBoard {...props} />
         </FoldDetail>
       </div>

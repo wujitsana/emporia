@@ -11,8 +11,9 @@ export function FlatGraph(props: {
   onSelect?: (id: string | null) => void;
   animate: boolean;
   label?: string;
+  layerNames?: readonly string[];
 }) {
-  const { placed, tags } = useMemo(() => flatLayout(props.nodes), [props.nodes]);
+  const { placed, tags } = useMemo(() => flatLayout(props.nodes, FLAT_W, FLAT_H, props.layerNames), [props.nodes, props.layerNames]);
   return (
     <GraphSvg
       nodes={props.nodes}

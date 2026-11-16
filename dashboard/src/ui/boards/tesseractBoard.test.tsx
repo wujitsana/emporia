@@ -64,7 +64,13 @@ describe("TesseractBoard", () => {
     const t = tl(table);
     const { container } = render(<ArenaFrame frame={t.frameAt(t.steps.length - 1)} book={undefined} />);
     expect(container.querySelector("[data-kind=tesseract]")).not.toBeNull();
-    expect(container.querySelectorAll("button, input, a, form").length).toBe(0);
+    // nothing acts: no links, forms or text inputs anywhere; the only controls are the view's own (which network to
+    // look at, which player's pushes, which target), inside the board view, and every one of them is a view switch
+    expect(container.querySelectorAll("input, a, form, textarea").length).toBe(0);
+    const outside = [...container.querySelectorAll("button, select")].filter((e) => !e.closest("[data-testid=tesseract-panel]"));
+    expect(outside.length).toBe(0);
+    const names = [...container.querySelectorAll("[data-testid=tesseract-panel] button")].map((b) => b.textContent);
+    expect(names.every((n) => /^(opening|round \d|3D|Flat|Table|Reset view)$/.test(n ?? ""))).toBe(true);
   });
 });
 

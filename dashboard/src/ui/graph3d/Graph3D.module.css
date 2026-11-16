@@ -155,3 +155,34 @@
   font-size: 9px;
   text-anchor: middle;
 }
+
+/* Decor: a shaded solid, its edges, the corners and a mix or target drawn over it. Theme tokens only. */
+.decorFace {
+  fill: var(--anim-fill, var(--theme-focused-foreground));
+  fill-opacity: 0.1;
+  stroke: none;
+}
+.decorLine {
+  stroke: var(--anim-line, var(--theme-text));
+  stroke-opacity: 0.55;
+  stroke-linecap: round;
+  fill: none;
+}
+.decorDashed {
+  stroke-dasharray: 3 4;
+}
+.decorDot {
+  fill: var(--theme-text);
+  stroke: var(--theme-background);
+  stroke-width: 1.5;
+}
+.decorRing {
+  fill: none;
+  stroke: var(--theme-text);
+  stroke-width: 2;
+}
+.decorCorner {
+  fill: var(--theme-background);
+  stroke: var(--anim-line, var(--theme-text));
+  stroke-width: 1.2;
+}

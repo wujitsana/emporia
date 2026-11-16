@@ -15,6 +15,17 @@ export const isTesseract = (m: string | undefined | null) => !!m && m.replace(/:
 export const AXES = ["W", "X", "Y", "Z"] as const;
 export const EPOCHS = 5;
 
+/** The board is the edge set of a four-dimensional cube: a corner is a subset of W X Y Z. Same order as the relay's
+ * `tesseract_core.topology()` (pinned to the vectors in the tests): inputs, hubs, outputs; channels input-to-hub first. */
+export const INPUTS = ["XYZ", "WYZ", "WXZ", "WXY"] as const;
+export const HUBS = ["WX", "WY", "WZ", "XY", "XZ", "YZ"] as const;
+export const OUTPUTS = ["W", "X", "Y", "Z"] as const;
+export const CHANNELS: readonly string[] = [
+  ...INPUTS.flatMap((i) => HUBS.filter((h) => [...h].every((c) => i.includes(c))).map((h) => `${i}>${h}`)),
+  ...HUBS.flatMap((h) => OUTPUTS.filter((o) => h.includes(o)).map((o) => `${h}>${o}`)),
+];
+export type Pull = Record<string, { up: number[]; down: number[] }>;
+
 export type TesseractSeatState = "waiting" | "sealed" | "opened" | "out";
 export interface TesseractRound {
   epoch: number;
@@ -23,6 +34,10 @@ export interface TesseractRound {
   /** Who pushed what, once opened: {agent: {channel: amount}}. */
   pushes: Record<string, Record<string, number>>;
   dark: number;
+  /** The dark channels' ids (dark for this round only). */
+  darkIds: string[];
+  /** The 24 widths after this round's pushes, in channel order. */
+  widths: number[];
   /** Seated players who sealed nothing this round, and those put out in it. */
   silent: string[];
   late: string[];
@@ -50,6 +65,11 @@ export interface TesseractFrame {
   result: TesseractResult | null;
   /** A practice table: it counts for nothing (no standing, XP, badges or quests). */
   practice: boolean;
+  /** The opening network's widths (public from the start), the widest a channel can be, and, only when the frame is the
+   * table as it stands now, the pull table the relay serves (an output's change in basis points for +4 / -4). */
+  openingWidths: number[] | null;
+  widthMax: number;
+  pull: Pull | null;
 }
 
 type Rec = Record<string, unknown>;
@@ -82,7 +102,7 @@ export function pushText(push: Record<string, number> | undefined): string {
   return e.length ? e.map(([c, n]) => `${c} ${n > 0 ? "+" : "−"}${Math.abs(n)}`).join(", ") : "nothing";
 }
 
-function published(session: Session): { opening: number[] | null; rounds: Map<number, TesseractRound> } {
+function published(session: Session): { opening: number[] | null; openingWidths: number[] | null; rounds: Map<number, TesseractRound> } {
   const pub = obj(stateData(session).published);
   const rounds = new Map<number, TesseractRound>();
   for (const [k, v] of Object.entries(pub)) {
@@ -91,17 +111,35 @@ function published(session: Session): { opening: number[] | null; rounds: Map<nu
     rounds.set(Number(k), {
       epoch: Number(k), mix: nums(r.mix), pushes: obj(r.pushes) as TesseractRound["pushes"],
       dark: Array.isArray(r.dark) ? r.dark.length : 0,
+      darkIds: Array.isArray(r.dark) ? (r.dark as string[]) : [], widths: nums(r.widths),
       silent: Array.isArray(r.silent) ? (r.silent as string[]) : [], late: Array.isArray(r.late) ? (r.late as string[]) : [],
     });
   }
   const o = obj(pub.opening);
-  return { opening: Array.isArray(o.mix) ? nums(o.mix) : null, rounds };
+  return { opening: Array.isArray(o.mix) ? nums(o.mix) : null, openingWidths: Array.isArray(o.widths) ? nums(o.widths) : null, rounds };
+}
+
+const board = (session: Session): Rec => obj(stateData(session).board);
+function widthMax(session: Session): number {
+  const w = board(session).limits;
+  const hi = Array.isArray(obj(w).width) ? (obj(w).width as unknown[])[1] : undefined;
+  return typeof hi === "number" && hi > 0 ? hi : 20;
+}
+/** The relay's pull table, only when `shown` rounds are all the rounds it has resolved: it describes the network as it
+ * stands now, so a step back in a replay must not show it. */
+function pullNow(session: Session, shown: number): Pull | null {
+  const b = board(session);
+  const pull = obj(b.pull);
+  if (!Object.keys(pull).length || !Array.isArray(b.done) || b.done.length !== shown) return null;
+  const out: Pull = {};
+  for (const [c, row] of Object.entries(pull)) out[c] = { up: nums(obj(row).up), down: nums(obj(row).down) };
+  return out;
 }
 
 /** The table after the first `i` actions (`acts` are those that took effect), `finished`: the table is over. */
 export function tesseractFrameAt(session: Session, acts: SessionAction[], i: number, finished: boolean): TesseractFrame {
   const players = session.participants ?? [];
-  const { opening, rounds } = published(session);
+  const { opening, openingWidths, rounds } = published(session);
   const sealed = new Map<number, Set<string>>();
   const opened = new Map<number, Map<string, Record<string, number>>>();
   const secrets: string[] = [];
@@ -144,7 +182,8 @@ export function tesseractFrameAt(session: Session, acts: SessionAction[], i: num
     return { agent, state };
   });
   return { kind: "tesseract", epoch: Math.min(epoch, EPOCHS), epochs: EPOCHS, phase, players, seats, opening, rounds: shown, secrets, result,
-    practice: session.config?.practice === true || obj(obj(session.state).data).practice === true };
+    practice: session.config?.practice === true || obj(obj(session.state).data).practice === true,
+    openingWidths, widthMax: widthMax(session), pull: pullNow(session, shown.length) };
 }
 
 /** One line for the verdict, in words. */
