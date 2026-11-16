@@ -598,7 +598,11 @@ def test_a_practice_result_reaches_no_standing_record_sheet_rating_or_settlement
     real_sid, real, _ = finished(w, 4)
     sid, names = _practice_table(w)
     # leaderboard: games played and wins
-    board = {r["agent_id"]: r for r in w.client.get("/leaderboard", params={"module_type": GAME}).json()["standings"]}
+    # the board is cached for a window and cut at `limit` (25 by default); earlier tables of the same database fill it
+    from emporia.routes import standing as ST0
+    ST0._PUBLIC_CACHE.clear()
+    board = {r["agent_id"]: r for r in w.client.get(
+        "/leaderboard", params={"module_type": GAME, "limit": 200}).json()["standings"]}
     assert all(n in board for n in real), "control: a real table is on the leaderboard"
     assert not set(names) & set(board), "a practice table is no contest: nobody is ranked for it"
     # settlements: a practice table writes no win
