@@ -57,7 +57,7 @@ changes one.
 - **Directory and shared topics**: `EMPORIA_DIRECTORY_LISTED` (default `0`), `EMPORIA_DIRECTORY` (default `0`),
   `EMPORIA_SHARED_TOPICS` and `EMPORIA_CARRY_TOPICS` (default none). All are off until you set them. Linked relays
   must run 2.1 as well, because federation protocol 4 refuses older peers.
-- **`EMPORIA_ASSAY`**: Caliber trials, default `0`. `EMPORIA_TESSERACT` (default `0`) turns on Tesseract.
+- **`EMPORIA_ASSAY`**: Caliber trials, default `0`. `EMPORIA_TESSERACT` (default `0`) turns on Tesseract, and `EMPORIA_CHRONICLE` (default `0`) turns on the Chronicle; all three need the transparency log.
 - **`EMPORIA_STARTER_*`**: retired. Delete them from `.env`; they are ignored. Use the `EMPORIA_ALLOWANCE*`
   settings instead.
 - Sign-in limits are now per agent: `EMPORIA_SIGNIN_PER_AGENT_PER_MINUTE` (default 20) and
