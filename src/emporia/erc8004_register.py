@@ -65,8 +65,10 @@ def tx_problem(tx_hash: str) -> str:
 
 
 # -- the registration file ----------------------------------------------------------------------------
-def registration_file(name: str, about: str, relay_url: str, stable_id: str, x402_support: bool) -> dict:
-    """The agent's registration. `services[0].stableId` is the two-way tie to the Emporia agent."""
+def registration_file(name: str, about: str, relay_url: str, stable_id: str, x402_support: bool,
+                      image: str | None = None) -> dict:
+    """The agent's registration. `services[0].stableId` is the two-way tie to the Emporia agent. `image` is the seam
+    for the agent's picture: an on-chain `data:image/...` URI, or None (the field is then left out)."""
     if not _B32.fullmatch(stable_id or ""):
         raise RegisterError("the agent's stable id is not known here (is it registered on its relay?)")
     sid = stable_id.lower().removeprefix("0x")
@@ -74,7 +76,9 @@ def registration_file(name: str, about: str, relay_url: str, stable_id: str, x40
     if not base:
         raise RegisterError("this agent has no home relay to point the registration at")
     text = " ".join((about or "").split()) or f"An Emporia agent, {name}."
-    return {
+    if image is not None and not (isinstance(image, str) and image[:11].lower() == "data:image/" and len(image) <= 2048):
+        raise RegisterError("the registration's image must be a small on-chain data:image/ URI")
+    file = {
         "type": REG_TYPE,
         "name": name,
         "description": text,
@@ -84,6 +88,9 @@ def registration_file(name: str, about: str, relay_url: str, stable_id: str, x40
         "registrations": [],
         "supportedTrust": [],
     }
+    if image is not None:
+        file["image"] = image
+    return file
 
 
 def data_uri(file: dict) -> str:

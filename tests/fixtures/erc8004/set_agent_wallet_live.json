@@ -1,0 +1,20 @@
+{
+  "note": "Recorded 11-16 from Base Sepolia (public RPC, read-only eth_call): the registry's eip712Domain() answer and the registry's replies to simulations of setAgentWallet from the owner of agent 10727 (an EOA), with a consent signed by a throwaway key. Source: the verified implementation 0x7274e874ca62410a93bd8bf61c69d8045e399c02 (IdentityRegistryUpgradeable.sol).",
+  "registry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+  "chain_id": 84532,
+  "eip712Domain": {"fields": "0x0f", "name": "ERC8004IdentityRegistry", "version": "1", "chainId": 84532,
+                   "verifyingContract": "0x8004a818bfb912233c491871b3d84c89a494bd9e"},
+  "struct": "AgentWalletSet(uint256 agentId,address newWallet,address owner,uint256 deadline)",
+  "typehash": "0x678b53cd718d595370ab070ebf48edfdcd834beac116bf23e625fc7f4d5b7d32",
+  "agent_id": 10727,
+  "owner": "0xcea60a35c0d78e2daa2bb754868cb90defd7af04",
+  "live_simulations": {
+    "consent signed by the new wallet, sent by the owner, deadline = block time + 240": "accepted (returns 0x)",
+    "consent signed by another key": "execution reverted: invalid wallet sig",
+    "owner field wrong in the typed data": "execution reverted: invalid wallet sig",
+    "sent by a non-owner": "execution reverted: Not authorized",
+    "deadline in the past": "execution reverted: expired",
+    "deadline 3600 s ahead": "execution reverted: deadline too far"
+  },
+  "fee_data": {"maxPriorityFeePerGas": "0xf4240", "baseFeePerGas": "0x4c4b40", "gasPrice": "0x5b8d80"}
+}

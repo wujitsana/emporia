@@ -9936,7 +9936,8 @@ def build_parser() -> argparse.ArgumentParser:
                                        "(recovery-key) or replaced with it when lost (recover)")
     ag2.add_argument("action", choices=["leave", "delete", "secure", "refresh", "inbox-clear", "rotate-key",
                                         "rotate-encryption-key", "recovery-key", "recover", "playbook", "settings", "init",
-                                        "mcp-config", "about", "x-claim", "x-link", "link-8004", "unlink-8004", "register-8004"])
+                                        "mcp-config", "about", "x-claim", "x-link", "link-8004", "unlink-8004", "register-8004",
+                                        "set-8004-wallet"])
     ag2.add_argument("url_or_name", nargs="?", default="",
                      help="leave: the relay's URL; delete, secure, refresh, inbox-clear, rotate-key: "
                           "the agent (secure, refresh, inbox-clear: or all)")
@@ -9974,8 +9975,8 @@ def build_parser() -> argparse.ArgumentParser:
                                                "intact, as its last line")
     ag2.add_argument("--bio", action="store_true", help="x-claim: print only the claim line, to put in the X bio")
     ag2.add_argument("--post", default="", help="x-link: the post's number, or bio")
-    ag2.add_argument("--chain", default="", help="link-8004, unlink-8004: base, base-sepolia, robinhood, robinhood-testnet; register-8004: base-sepolia")
-    ag2.add_argument("--agent-id", dest="agent_8004", default="", help="link-8004, unlink-8004: the ERC-8004 agent's number")
+    ag2.add_argument("--chain", default="", help="link-8004, unlink-8004: base, base-sepolia, robinhood, robinhood-testnet; register-8004, set-8004-wallet: base-sepolia")
+    ag2.add_argument("--agent-id", dest="agent_8004", default="", help="link-8004, unlink-8004, set-8004-wallet: the ERC-8004 agent's number")
     ag2.add_argument("--signer", default="", help="link-8004: the wallet that controls it (default: the registry's owner); "
                                                   "register-8004: the wallet that will send (only for the gas estimate; default: any)")
     ag2.add_argument("--tx", default="", help="register-8004: the hash of the transaction your wallet sent; reads it, then continues into link-8004")
@@ -9985,8 +9986,15 @@ def build_parser() -> argparse.ArgumentParser:
                      help="link-8004: sign in your browser wallet instead: serves one local page (127.0.0.1, one-time "
                           "address, closes after one signature or 10 minutes), then checks and records the signature; "
                           "register-8004: your browser wallet sends the registration the same way")
+    ag2.add_argument("--from-agent-wallet", dest="from_agent_wallet", action="store_true",
+                     help="register-8004: the agent's own Emporia EVM wallet sends the registration (needs --max-gas; "
+                          "Base Sepolia test ETH only; it then owns the identity); set-8004-wallet: that wallet owns "
+                          "the identity and sends; link-8004: that wallet signs the link of an identity it owns")
+    ag2.add_argument("--max-gas", dest="max_gas", type=int, default=0,
+                     help="--from-agent-wallet: the most gas the transaction may use (required; the command shows the "
+                          "estimate, the wallet's balance and the worst-case cost, then asks)")
     ag2.add_argument("--wait", action="store_true",
-                     help="register-8004 (with --tx or --browser), link-8004: read the chain every 15 seconds, up to 30 "
+                     help="register-8004 (with --tx, --browser or --from-agent-wallet), set-8004-wallet, link-8004: read the chain every 15 seconds, up to 30 "
                           "minutes, until the block is safe/finalized, then continue; Ctrl-C stops and prints the "
                           "command to resume")
     ag2.add_argument("--draft", default=None, metavar="NOTES",
@@ -10002,9 +10010,10 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.set_defaults(func=lambda a: _card.about(a.url_or_name, a.name, a.draft, a.use_soul) if a.action == "about" else
                      _card.x_claim(a.url_or_name, a.handle, a.style, a.text, a.bio) if a.action == "x-claim" else
                      _card.x_link(a.url_or_name, a.handle, a.post) if a.action == "x-link" else
-                     _card.link_8004(a.url_or_name, a.chain, a.agent_8004, a.signer, a.signature, a.issued_at, a.yes, a.browser, a.wait) if a.action == "link-8004" else
+                     _card.link_8004(a.url_or_name, a.chain, a.agent_8004, a.signer, a.signature, a.issued_at, a.yes, a.browser, a.wait, a.from_agent_wallet) if a.action == "link-8004" else
                      _card.unlink_8004(a.url_or_name, a.chain, a.agent_8004) if a.action == "unlink-8004" else
-                     _card.register_8004(a.url_or_name, a.chain, a.tx, a.signer, a.yes, a.browser, a.wait) if a.action == "register-8004" else
+                     _card.register_8004(a.url_or_name, a.chain, a.tx, a.signer, a.yes, a.browser, a.wait, a.from_agent_wallet, a.max_gas) if a.action == "register-8004" else
+                     _card.set_8004_wallet(a.url_or_name, a.chain, a.agent_8004, a.tx, a.yes, a.browser, a.wait, a.from_agent_wallet, a.max_gas) if a.action == "set-8004-wallet" else
                      _agent_init.run(_agent_init.namespace_from_cli(a)) if a.action == "init" else
                      _agent_init.mcp_config(a) if a.action == "mcp-config" else
                      cmd_agent_secure(a.url_or_name) if a.action == "secure" else

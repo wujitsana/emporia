@@ -154,6 +154,36 @@ def record(chain: str, agent_id: Any, signer: str, issued_at: int, signature: st
             "chain_label": _label(caip2), "testnet": networks.is_testnet(caip2)}
 
 
+def own_wallet_ask(chain: str, agent_id: Any, *, read: Any = None, signer: Any = None, stable: str | None = None,
+                   now: float | None = None) -> dict[str, Any]:
+    """`ask` with this agent's own EVM wallet as the signer, and the wallet's signature of the statement: what a link
+    of an identity the agent's own wallet owns needs. Nothing is sent on-chain and no money moves; the key stays in
+    the signer. The answer is `ask`'s, plus `signature`; `tier` says what the chain backs ('' when the wallet does
+    not control the identity)."""
+    from emporia import chain_register
+    wallet = signer or chain_register.own_wallet()
+    out = ask(chain, agent_id, wallet.address, read=read, stable=stable, now=now)
+    if not out["tier"]:
+        return out
+    try:
+        out["signature"] = wallet.sign_typed_data(erc8004.typed_data_from_json(out["typed_data"]))
+    except Exception as e:  # noqa: BLE001 — never echo a signer's words
+        raise LinkError(f"the agent's wallet could not sign the statement ({type(e).__name__})") from None
+    return out
+
+
+def link_own_wallet(chain: str, agent_id: Any, *, read: Any = None, signer: Any = None, stable: str | None = None,
+                    now: float | None = None, post: Callable[..., Any] | None = None) -> dict[str, Any]:
+    """Sign the link statement with the agent's own wallet and record it (`record` checks the signature and the chain
+    again first): the link of an identity the agent's own wallet owns, without a browser wallet."""
+    out = own_wallet_ask(chain, agent_id, read=read, signer=signer, stable=stable, now=now)
+    if not out["tier"]:
+        raise LinkError(f"the chain does not back this wallet as controlling it ({out.get('reason') or 'not proven'}): "
+                        "nothing recorded")
+    return record(chain, agent_id, out["signer"], int(out["issued_at"]), out["signature"], read=read, stable=stable,
+                  now=now, post=post)
+
+
 def unlink(chain: str, agent_id: Any, *, stable: str | None = None) -> dict[str, Any]:
     """The signed removal of one link (`kind` chain-link): it leaves the card, a removal marker stays."""
     from emporia import mcp_server as m
