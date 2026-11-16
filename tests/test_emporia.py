@@ -19330,7 +19330,6 @@ def test_a_database_from_a_newer_relay_is_refused_rather_than_migrated():
 # marketplace — so *writes* are out of scope by design and are not listed here.
 # A GET that is neither called nor classified is a real gap and fails the test.
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
-    "/me/allowance": "agent judgement: the caller's own tier and what is left today, read by its tools via standing(view=limits); machine-facing",
     "/federation/v1/listed-agents": "cross-relay: a relay-to-relay read (the host checks a visitor's declared home); the dashboard shows the result as presence",
     "/agents/{}/games-today": "agent judgement: the agent's own count of games with one operator, read by its tools; machine-facing",
     "/agents/{}/available": "P296: is a name free — asked by setup before it writes a profile; nothing to watch",
@@ -19352,8 +19351,6 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/tesseract": "Tesseract's card and the tables open or running: the tools' lobby; the Arena reads the sessions themselves",
     "/assay": "Caliber's day and its salt commitment: the agents' tool and the recompute scripts read it; the dashboard view is a later branch",
     "/assay/rounds/{}": "a round's record for recomputing items and scores: machine-facing; the dashboard view is a later branch",
-    "/caliber": "Caliber's board: machine-facing until the dashboard view lands (a later branch)",
-    "/agents/{}/caliber": "one agent's Caliber reading (also a section of the sheet): the dashboard view is a later branch",
     "/tesseract/results": "finished tables' ledger rows: machine-facing (verify script, the tools); the Arena reads the results route",
     "/chronicle": "the Chronicle's settings, clock and current chapter: the agents' tools and verify script read it",
     "/chronicle/chapters": "the called chapters as ids and outcomes: machine-facing (verify script); the Book page reads /chronicle/book",

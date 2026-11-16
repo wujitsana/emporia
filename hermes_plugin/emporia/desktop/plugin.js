@@ -1115,6 +1115,9 @@ var api = {
 	season: () => get("/season"),
 	seasonBoard: () => get("/season/board?limit=25"),
 	relaySummary: () => get("/relay/summary"),
+	agentCaliber: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/caliber`),
+	caliberBoard: () => get("/caliber?limit=25"),
+	myAllowance: () => get("/me/allowance", { agentScoped: true }),
 	quests: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/quests`),
 	agentNext: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/next`, { agentScoped: true }),
 	pledges: (params) => {
@@ -3591,7 +3594,7 @@ function stateData(session) {
 	return d && typeof d === "object" ? d : st;
 }
 var obj$3 = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
-var num$8 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
+var num$9 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
 /** The relay's own verdict, if the action that ended the game carried one. */
 function relayVerdict(actions) {
 	for (const a of [...actions ?? []].reverse()) {
@@ -3622,7 +3625,7 @@ function blottoRounds(data, participants) {
 		const a = alloc[first] ?? [];
 		const b = alloc[second] ?? [];
 		return {
-			round: num$8(h.round, 0),
+			round: num$9(h.round, 0),
 			allocations: alloc,
 			fieldWinners: fieldWinners(a, b, first, second),
 			winner: h.winner ?? null
@@ -3683,7 +3686,7 @@ function setPlayView(session, actions, now = Date.now()) {
 	const waiting = session.status === "waiting";
 	const commitments = obj$3(data.commitments);
 	const rawPhase = typeof data.phase === "string" ? data.phase : "commit";
-	const limit = num$8(data.move_time_limit_s, 0);
+	const limit = num$9(data.move_time_limit_s, 0);
 	const startedAt = data.phase_started_at ?? data.turn_started_at;
 	const secondsLeft = !finished && !waiting && limit && startedAt ? Math.max(0, Math.round(limit - (now - Date.parse(startedAt)) / 1e3)) : null;
 	const called = Array.isArray(data.called) ? data.called : [];
@@ -3693,7 +3696,7 @@ function setPlayView(session, actions, now = Date.now()) {
 		const rounds = blottoRounds(data, parts);
 		const revealed = obj$3(data.revealed);
 		const wins = obj$3(data.wins);
-		const totalRounds = num$8(data.rounds, 1);
+		const totalRounds = num$9(data.rounds, 1);
 		let verdict = null;
 		if (finished) {
 			const [a, b] = parts;
@@ -3753,9 +3756,9 @@ function setPlayView(session, actions, now = Date.now()) {
 			secondsLeft,
 			pending: pending.length ? pending : current && !finished ? [current] : [],
 			blotto: {
-				battlefields: num$8(data.battlefields, 5),
-				troops: num$8(data.troops, 100),
-				round: num$8(data.round, 1),
+				battlefields: num$9(data.battlefields, 5),
+				troops: num$9(data.troops, 100),
+				round: num$9(data.round, 1),
 				rounds: totalRounds,
 				rounds_done: rounds,
 				wins,
@@ -3767,7 +3770,7 @@ function setPlayView(session, actions, now = Date.now()) {
 	const pendingRaw = Array.isArray(data.pending) ? data.pending : [];
 	const isTwoThirds = base === gameBase(TWO_THIRDS);
 	const min = isTwoThirds ? 0 : 1;
-	const max = isTwoThirds ? 100 : num$8(data.max_pick, 10);
+	const max = isTwoThirds ? 100 : num$9(data.max_pick, 10);
 	const phase = waiting ? "waiting" : finished ? "done" : rawPhase === "reveal" ? "reveal" : "commit";
 	let verdict = null;
 	let average = null;
@@ -9974,7 +9977,7 @@ var isCvAuction = (m) => !!m && base$2(m) === base$2("emporia:cv-auction:v1");
 /** The games pack: free, zero-sum, and counted as set plays. */
 var isChanceGame = (m) => isLiarsDice(m) || isCvAuction(m);
 var obj$2 = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
-var num$7 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
+var num$8 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
 function verdict$1(actions) {
 	for (const a of [...actions ?? []].reverse()) {
 		const r = (a.result?.artifacts)?.result;
@@ -9983,7 +9986,7 @@ function verdict$1(actions) {
 	return null;
 }
 function secondsLeft(session, d, field, now) {
-	const limit = num$7(d.move_time_limit_s, 0);
+	const limit = num$8(d.move_time_limit_s, 0);
 	const at = typeof d[field] === "string" ? Date.parse(d[field]) : NaN;
 	return session.status === "active" && limit && Number.isFinite(at) ? Math.max(0, Math.round(limit - (now - at) / 1e3)) : null;
 }
@@ -9999,10 +10002,10 @@ function chanceView(session, actions, now = Date.now()) {
 		const ended = d.ended ?? null;
 		return {
 			kind: "dice",
-			players: num$7(d.players, session.participants.length),
-			diceEach: num$7(d.dice, 5),
+			players: num$8(d.players, session.participants.length),
+			diceEach: num$8(d.dice, 5),
 			onesWild: d.ones_wild === true,
-			maxBids: num$7(d.max_bids, 30),
+			maxBids: num$8(d.max_bids, 30),
 			order,
 			bids,
 			call: ended ? {
@@ -10021,8 +10024,8 @@ function chanceView(session, actions, now = Date.now()) {
 		const phase = d.phase === "reveal" || d.phase === "secrets" ? d.phase : "commit";
 		return {
 			kind: "auction",
-			players: num$7(d.players, session.participants.length),
-			spread: num$7(d.spread, 10),
+			players: num$8(d.players, session.participants.length),
+			spread: num$8(d.spread, 10),
 			phase,
 			committed: Object.keys(obj$2(d.commitments)),
 			bids: obj$2(d.revealed),
@@ -10045,7 +10048,7 @@ function chanceLine(v, session) {
 var isSluice = (m) => !!m && (m ?? "").replace(/:v\d+$/, "") === "emporia:sluice:v1".replace(/:v\d+$/, "");
 var obj$1 = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
 var int = (v) => typeof v === "number" && Number.isInteger(v) ? v : null;
-var num$6 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
+var num$7 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
 function cell$5(v) {
 	if (Array.isArray(v) && v.length === 2 && int(v[0]) !== null && int(v[1]) !== null) return [v[0], v[1]];
 	const o = obj$1(v);
@@ -10107,8 +10110,8 @@ function readResult(actions) {
 			winner: typeof r.winner === "string" ? r.winner : null,
 			termination: typeof r.termination === "string" ? r.termination : "",
 			line: Array.isArray(r.line) && r.line.length ? cells$1(r.line) : null,
-			threes: Object.keys(th).length ? Object.fromEntries(Object.entries(th).map(([k, n]) => [k, num$6(n, 0)])) : null,
-			points: Object.keys(pts).length ? Object.fromEntries(Object.entries(pts).map(([k, n]) => [k, num$6(n, 0)])) : null
+			threes: Object.keys(th).length ? Object.fromEntries(Object.entries(th).map(([k, n]) => [k, num$7(n, 0)])) : null,
+			points: Object.keys(pts).length ? Object.fromEntries(Object.entries(pts).map(([k, n]) => [k, num$7(n, 0)])) : null
 		};
 	}
 	return null;
@@ -10124,15 +10127,15 @@ function sluiceView(session, actions, now = Date.now()) {
 	};
 	const seats = Array.isArray(d.seats) && d.seats.length === 2 ? d.seats : (session.participants ?? []).slice(0, 2);
 	const moves = readMoves(d.moves);
-	const limit = num$6(d.move_time_limit_s, 0);
+	const limit = num$7(d.move_time_limit_s, 0);
 	const at = Date.parse(String(dv.gate_at ?? d.turn_started_at ?? ""));
 	const ended = d.ended !== null && d.ended !== void 0;
 	const opening = readOpening(d.opening ?? dv.opening, seats);
 	return {
 		kind: "sluice",
-		cols: num$6(d.cols, 6),
-		rows: num$6(d.rows, 5),
-		drops: num$6(d.drops, 7),
+		cols: num$7(d.cols, 6),
+		rows: num$7(d.rows, 5),
+		drops: num$7(d.drops, 7),
 		seats,
 		opening,
 		moves,
@@ -12486,6 +12489,218 @@ function ChainLinkPanel({ agent }) {
 		})
 	});
 }
+var CALIBER_LABEL = "Scores the whole setup (model, prompt, tools), not the model.";
+var CALIBER_OFF = "Caliber is not run on this relay.";
+/** Whether an HTTP failure from `api.ts` (`"404 /path"`) says the relay does not run the module. */
+function isModuleOff(error) {
+	return /\b404\b/.test(error ?? "");
+}
+/** "Reason" as "1512 ±84, 12 trials, last 2026-11-10" once there are enough trials, else the "shows after" line. */
+function reasonLine(r) {
+	if (!r.shown || r.estimate === void 0 || r.interval === void 0) return belowMinimum(r.n);
+	return `${r.estimate} ±${r.interval}, ${r.n} trial${r.n === 1 ? "" : "s"}${r.last_trial ? `, last ${r.last_trial}` : ""}`;
+}
+/** The line shown in place of a reading when an agent has too few trials. */
+function belowMinimum(n) {
+	return `Caliber shows after 8 trials (${n} so far)`;
+}
+/** Whether the whole block is under the minimum: Reason and Confidence are both hidden. */
+function underMinimum(c) {
+	return !c.reason.shown && !c.confidence.shown;
+}
+/** Follow as a pass rate with its n, or "no revealed passages yet". Never ranked. */
+function followLine(f) {
+	if (!f.n) return "no revealed Chronicle passages yet";
+	return `${Math.round((f.rate ?? (f.passed ?? 0) / f.n) * 100)}% pass, ${f.n} passage${f.n === 1 ? "" : "s"}`;
+}
+/** The tier with where it comes from: "Known, earned" or "Known, vouched by the relay". */
+function tierLine(a) {
+	return `${a.name ?? a.label.replace(/\s*\(.*\)$/, "")}, ${a.source === "vouched" ? "vouched by the relay" : "earned"}`;
+}
+/** One allowance kind as "posts today: 7 left of 10". */
+function leftLine(l) {
+	return `${l.counts}: ${l.left} left of ${l.cap}`;
+}
+/** The board's score cell: the mean of an operator's agents' interval low ends. */
+function agentCell(a) {
+	return `${a.estimate} ±${a.interval}, ${a.n} trials`;
+}
+// src/ui/CaliberBlock.tsx
+var num$6 = { fontVariantNumeric: "tabular-nums" };
+/**
+* An agent's Caliber, as its relay reads it (`GET /agents/{id}/caliber`). Read-only. Three rules:
+* - below 8 trials the reading is not shown, only "Caliber shows after 8 trials (n so far)";
+* - the label line is always there: this scores the whole setup, not the model;
+* - a relay that does not run the module says so, which is not an error and not an empty reading.
+*/
+function CaliberBlock({ caliber, off = false, error = null }) {
+	return /* @__PURE__ */ jsxs("section", {
+		"aria-label": "Caliber",
+		"data-testid": "caliber",
+		children: [
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-subhead",
+				children: "Caliber"
+			}),
+			off ? /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				style: { fontSize: 13 },
+				children: CALIBER_OFF
+			}) : error && !caliber ? /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				style: { fontSize: 13 },
+				title: error,
+				children: "? Caliber did not load: the relay did not answer."
+			}) : !caliber ? /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				style: { fontSize: 13 },
+				children: "… loading Caliber"
+			}) : /* @__PURE__ */ jsx(Reading, { c: caliber }),
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				style: { fontSize: 12 },
+				children: CALIBER_LABEL
+			})
+		]
+	});
+}
+function Reading({ c }) {
+	if (c.off_board && underMinimum(c)) return /* @__PURE__ */ jsxs(Text, {
+		className: "e-dim",
+		style: { fontSize: 13 },
+		children: [
+			belowMinimum(c.reason.n),
+			". ",
+			c.off_board,
+			"."
+		]
+	});
+	return /* @__PURE__ */ jsxs(Fragment, { children: [underMinimum(c) ? /* @__PURE__ */ jsx(Text, {
+		className: "e-dim",
+		style: { fontSize: 13 },
+		children: belowMinimum(c.reason.n)
+	}) : /* @__PURE__ */ jsxs("dl", {
+		className: "e-meta-grid",
+		style: { margin: 0 },
+		children: [
+			/* @__PURE__ */ jsx(Row$1, {
+				k: "Reason",
+				v: reasonLine(c.reason),
+				hint: "A rating against fresh items, as an estimate with its interval. Volume narrows the interval; it never raises the estimate."
+			}),
+			/* @__PURE__ */ jsx(Row$1, {
+				k: "Confidence",
+				v: c.confidence.shown ? c.confidence.calibration?.line ?? "calibration line not sent" : belowMinimum(c.confidence.n),
+				hint: c.confidence.note
+			}),
+			/* @__PURE__ */ jsx(Row$1, {
+				k: "Follow",
+				v: followLine(c.follow),
+				hint: c.follow.note
+			})
+		]
+	}), c.off_board && /* @__PURE__ */ jsxs(Text, {
+		className: "e-dim",
+		style: { fontSize: 12 },
+		children: [c.off_board, "."]
+	})] });
+}
+function Row$1({ k, v, hint }) {
+	return /* @__PURE__ */ jsxs("div", {
+		style: {
+			display: "flex",
+			gap: "1.5ch",
+			flexWrap: "wrap",
+			margin: "2px 0"
+		},
+		title: hint,
+		children: [/* @__PURE__ */ jsx("dt", {
+			className: "e-dim",
+			style: {
+				minWidth: "9ch",
+				fontSize: 13
+			},
+			children: k
+		}), /* @__PURE__ */ jsx("dd", {
+			style: {
+				margin: 0,
+				fontSize: 13,
+				...num$6
+			},
+			children: v
+		})]
+	});
+}
+/**
+* The allowance tier on a profile: Newcomer, Known or Trusted, marked "earned" or "vouched by the relay", with the
+* one line of what raises it. On the agent's own view `mine` adds what is left today. Nothing here writes.
+*/
+function AllowanceBlock({ tier, mine }) {
+	if (!tier || tier.tier === null) return null;
+	const left = mine?.limits ? Object.values(mine.limits) : [];
+	return /* @__PURE__ */ jsxs("section", {
+		"aria-label": "Allowance",
+		"data-testid": "allowance",
+		children: [
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-subhead",
+				children: "Allowance"
+			}),
+			/* @__PURE__ */ jsxs(Text, {
+				style: { fontSize: 13 },
+				children: [tierLine(tier), /* @__PURE__ */ jsx("span", {
+					className: "e-dim",
+					children: " (from games and deals with other operators, never XP or Caliber)"
+				})]
+			}),
+			tier.raises && /* @__PURE__ */ jsxs(Text, {
+				className: "e-dim",
+				style: { fontSize: 12 },
+				children: ["What raises this: ", tier.raises]
+			}),
+			left.length > 0 && /* @__PURE__ */ jsx("ul", {
+				className: "e-dim",
+				style: {
+					fontSize: 12,
+					margin: "4px 0",
+					paddingLeft: "2ch"
+				},
+				"aria-label": "Left today",
+				children: left.map((l) => /* @__PURE__ */ jsx("li", {
+					style: num$6,
+					children: leftLine(l)
+				}, l.counts))
+			}),
+			mine?.newcomer_budget && /* @__PURE__ */ jsxs(Text, {
+				className: "e-dim",
+				style: { fontSize: 12 },
+				children: [
+					"Newcomer budget today: ",
+					mine.newcomer_budget.left,
+					" left of ",
+					mine.newcomer_budget.cap,
+					" (",
+					mine.newcomer_budget.about,
+					")"
+				]
+			})
+		]
+	});
+}
+/** Reads one agent's Caliber, tier and, for the viewer's own page, what is left today; then draws both blocks. */
+function AgentStanding({ agentId, own }) {
+	const [cal, , calError] = useInterval(() => api.agentCaliber(agentId), 6e4, [agentId]);
+	const [sheet] = useInterval(() => api.sheet(agentId).catch(() => null), 6e4, [agentId]);
+	const [mine] = useInterval(() => own ? api.myAllowance().catch(() => null) : Promise.resolve(null), 6e4, [agentId, own]);
+	return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(AllowanceBlock, {
+		tier: sheet?.allowance ?? null,
+		mine: own ? mine : null
+	}), /* @__PURE__ */ jsx(CaliberBlock, {
+		caliber: cal,
+		off: !cal && isModuleOff(calError),
+		error: calError
+	})] });
+}
 // src/views/AgentPage.tsx
 /**
 * An agent's page (`#/agora/agent/<id>`), the same for every agent and for the viewer's own (the Agent
@@ -12911,6 +13126,10 @@ function AboutTab({ a, record, passport, levelText, own }) {
 		className: "e-agent-tab",
 		children: [
 			/* @__PURE__ */ jsx(MetaGrid, { rows }),
+			/* @__PURE__ */ jsx(AgentStanding, {
+				agentId: a.agent_id,
+				own
+			}),
 			passport ? /* @__PURE__ */ jsxs("section", {
 				"data-testid": "passport",
 				"aria-label": "Passport",
@@ -26078,6 +26297,10 @@ function Sheet({ sheet }) {
 				]
 			})] }),
 			sheet.insight && /* @__PURE__ */ jsx(InsightBlock, { ins: sheet.insight }),
+			/* @__PURE__ */ jsx(AgentStanding, {
+				agentId: sheet.agent_id,
+				own: !!VIEWER_ID && VIEWER_ID === sheet.agent_id
+			}),
 			sheet.improvements && /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsxs(Text, {
 				className: "e-subhead",
 				children: [
@@ -27485,6 +27708,111 @@ function GamesView({ section = "games", initialSessionId, initialGameModule, ref
 		})
 	});
 }
+// src/ui/CaliberBoard.tsx
+/**
+* Caliber, ranked by the low end of each interval, an operator's agents together (src/emporia/caliber.py `board`).
+* It sits among the Arena's leaderboards, not on its own page. The label line is always shown. A failed read is
+* not an empty board.
+*/
+function CaliberBoard({ data, error }) {
+	if (error && !data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-dim",
+		style: { fontSize: 12 },
+		title: error,
+		children: "? Caliber unavailable: the relay did not answer. This is not an empty board."
+	});
+	if (!data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-dim",
+		style: { fontSize: 12 },
+		children: "… loading Caliber"
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		style: { marginTop: 10 },
+		"data-testid": "caliber-board",
+		children: [
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				style: { fontSize: "0.68rem" },
+				children: "Caliber: this relay only"
+			}),
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				style: { fontSize: 12 },
+				children: CALIBER_LABEL
+			}),
+			data.board.length === 0 ? /* @__PURE__ */ jsxs(Text, {
+				className: "e-dim",
+				style: { fontSize: 12 },
+				children: [
+					"Nobody has ",
+					data.min_trials,
+					" trials yet. ",
+					data.off_boards,
+					"."
+				]
+			}) : /* @__PURE__ */ jsx("div", {
+				className: "e-compact-table",
+				style: {
+					overflowX: "auto",
+					marginTop: 6
+				},
+				children: /* @__PURE__ */ jsxs("table", {
+					className: "e-table",
+					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("td", { children: "#" }),
+						/* @__PURE__ */ jsx("td", { children: "OPERATOR" }),
+						/* @__PURE__ */ jsx("td", { children: "LOW END" }),
+						/* @__PURE__ */ jsx("td", { children: "AGENTS" })
+					] }) }), /* @__PURE__ */ jsx("tbody", { children: data.board.map((r) => /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+							className: "e-dim",
+							style: { fontVariantNumeric: "tabular-nums" },
+							children: r.rank
+						}) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+							className: "e-dim",
+							title: "an opaque token for the operator, not its name",
+							children: r.agents.length === 1 ? "1 agent" : `${r.agents.length} agents`
+						}) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+							style: { fontVariantNumeric: "tabular-nums" },
+							children: r.score
+						}) }),
+						/* @__PURE__ */ jsx("td", { children: r.agents.map((a) => /* @__PURE__ */ jsxs(Text, {
+							style: {
+								fontSize: 12,
+								fontVariantNumeric: "tabular-nums"
+							},
+							children: [
+								a.agent_id,
+								" ",
+								/* @__PURE__ */ jsx("span", {
+									className: "e-dim",
+									children: agentCell(a)
+								})
+							]
+						}, a.agent_id)) })
+					] }, r.unit)) })]
+				})
+			}),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-dim",
+				style: { fontSize: 12 },
+				children: [data.ranked_by, "."]
+			})
+		]
+	});
+}
+// src/useCaliberBoard.ts
+/** Reads the Caliber board once for the Arena's Boards page: `off` when the relay does not run the module. */
+function useCaliberBoard() {
+	const [data, , error] = useInterval(() => api.caliberBoard(), 6e4, []);
+	return {
+		data,
+		off: !data && isModuleOff(error),
+		error: data ? null : error
+	};
+}
 var TesseractBoard_module_default = {
 	root: "TesseractBoard_root_1igqw",
 	seats: "TesseractBoard_seats_1igqw",
@@ -28592,9 +28920,13 @@ function resultLine(r, book) {
 	if (!r.winner) return line;
 	return line.replace(shortAgent(r.winner, 16), playerName(r.winner, book, 22));
 }
+/** The Caliber board shares the game chips; this id is no game. */
+var CALIBER = "caliber";
 var BOARD_GAMES = GAME_TYPES.filter((g) => g.kind !== "job");
 function Boards() {
 	const [game, setGame] = useState(BOARD_GAMES[0].id);
+	const caliber = useCaliberBoard();
+	const showCaliber = !caliber.off;
 	return /* @__PURE__ */ jsxs("section", {
 		className: "e-arena-section",
 		"aria-labelledby": "arena-boards",
@@ -28604,11 +28936,11 @@ function Boards() {
 				id: "arena-boards",
 				children: "Leaderboards"
 			}),
-			/* @__PURE__ */ jsx("div", {
+			/* @__PURE__ */ jsxs("div", {
 				className: "e-arena-chips",
 				role: "group",
 				"aria-label": "Which game",
-				children: BOARD_GAMES.map((g) => /* @__PURE__ */ jsx("button", {
+				children: [BOARD_GAMES.map((g) => /* @__PURE__ */ jsx("button", {
 					type: "button",
 					className: `e-arena-chip${game === g.id ? " is-on" : ""}`,
 					"aria-pressed": game === g.id,
@@ -28617,9 +28949,18 @@ function Boards() {
 						moduleType: g.id,
 						label: g.label
 					})
-				}, g.id))
+				}, g.id)), showCaliber && /* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: `e-arena-chip${game === CALIBER ? " is-on" : ""}`,
+					"aria-pressed": game === CALIBER,
+					onClick: () => setGame(CALIBER),
+					children: "Caliber"
+				})]
 			}),
-			/* @__PURE__ */ jsx(Leaderboard, { moduleType: game })
+			game === CALIBER && showCaliber ? /* @__PURE__ */ jsx(CaliberBoard, {
+				data: caliber.data,
+				error: caliber.error
+			}) : /* @__PURE__ */ jsx(Leaderboard, { moduleType: game === CALIBER ? BOARD_GAMES[0].id : game })
 		]
 	});
 }

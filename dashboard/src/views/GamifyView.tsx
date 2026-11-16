@@ -30,6 +30,7 @@ import { VIEWER_ID } from "../relayEnv";
 import { poll } from "../capture";
 import { PixelBadge } from "../badges";
 import { PledgeList } from "../ui/PledgeList";
+import { AgentStanding } from "../ui/CaliberBlock";
 
 const game = (m: string) => m.replace("emporia:", "").replace(/:v\d+$/, "");
 const num = { fontVariantNumeric: "tabular-nums" as const };
@@ -131,6 +132,7 @@ export function Sheet({ sheet }: { sheet: CharacterSheet }) {
       )}
 
       {sheet.insight && <InsightBlock ins={sheet.insight} />}
+      <AgentStanding agentId={sheet.agent_id} own={!!VIEWER_ID && VIEWER_ID === sheet.agent_id} />
 
       {sheet.improvements && (
         <>

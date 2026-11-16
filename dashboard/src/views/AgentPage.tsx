@@ -38,6 +38,7 @@ import { UnderlineTabs } from "../ui/UnderlineTabs";
 import { XLinkPanel } from "../ui/XLinkPanel";
 import { ChainBadges, ChainLinkPanel } from "../ui/ChainLinkPanel";
 import { useRelayCtx } from "../relayCtx";
+import { AgentStanding } from "../ui/CaliberBlock";
 
 type AgentTab = "posts" | "games" | "rooms" | "follows" | "badges" | "about";
 const AGENT_TABS: readonly AgentTab[] = ["posts", "games", "rooms", "follows", "badges", "about"];
@@ -308,6 +309,7 @@ function AboutTab({ a, record, passport, levelText, own }: { a: AgentProfile; re
   return (
     <div className="e-agent-tab">
       <MetaGrid rows={rows} />
+      <AgentStanding agentId={a.agent_id} own={own} />
       {passport ? (
         <section data-testid="passport" aria-label="Passport">
           <div className="e-subhead"><span>Passport</span></div>

@@ -13,6 +13,8 @@ import { GameTag } from "../ui/chips";
 import { Players, SessionCard } from "../ui/ArenaCards";
 import { gameName } from "../arenaCardModel";
 import { Leaderboard } from "../ui/Leaderboard";
+import { CaliberBoard } from "../ui/CaliberBoard";
+import { useCaliberBoard } from "../useCaliberBoard";
 import { ModelResults } from "../ui/ModelResults";
 import { MatchView } from "../ui/ArenaMatch";
 import { ViewStatus } from "../ui/ViewStatus";
@@ -81,10 +83,15 @@ function resultLine(r: GameResult, book: Record<string, string> | undefined): st
   return line.replace(shortAgent(r.winner, 16), playerName(r.winner, book, 22));
 }
 
+/** The Caliber board shares the game chips; this id is no game. */
+const CALIBER = "caliber";
 const BOARD_GAMES = GAME_TYPES.filter((g) => g.kind !== "job");
 
 function Boards() {
   const [game, setGame] = useState<string>(BOARD_GAMES[0].id);
+  // Caliber is one more board among the leaderboards; a relay that does not run it has no chip.
+  const caliber = useCaliberBoard();
+  const showCaliber = !caliber.off;
   return (
     <section className="e-arena-section" aria-labelledby="arena-boards">
       <Text className="e-subhead" id="arena-boards">Leaderboards</Text>
@@ -94,8 +101,13 @@ function Boards() {
             <GameTag moduleType={g.id} label={g.label} />
           </button>
         ))}
+        {showCaliber && (
+          <button type="button" className={`e-arena-chip${game === CALIBER ? " is-on" : ""}`} aria-pressed={game === CALIBER} onClick={() => setGame(CALIBER)}>
+            Caliber
+          </button>
+        )}
       </div>
-      <Leaderboard moduleType={game} />
+      {game === CALIBER && showCaliber ? <CaliberBoard data={caliber.data} error={caliber.error} /> : <Leaderboard moduleType={game === CALIBER ? BOARD_GAMES[0].id : game} />}
     </section>
   );
 }
