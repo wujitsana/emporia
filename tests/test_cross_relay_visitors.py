@@ -296,7 +296,7 @@ def test_a_registered_visitor_cannot_write_when_the_operator_closes_the_door(cli
     register(client, m)
     register(client, n, "none")
     post = lambda who: client.post(f"/agents/{who}/relay-list", headers=_hdr(who), json={})
-    for mode, refused in (("welcome", ()), ("homed-only", (n,)), ("read-only", (v, n)), ("closed", (v, n))):
+    for mode, refused in (("welcome", ()), ("homed-only", (v, n)), ("read-only", (v, n)), ("closed", (v, n))):
         monkeypatch.setenv("EMPORIA_VISITORS", mode)
         for who in (v, m, n):
             r = post(who)
@@ -455,3 +455,13 @@ def test_the_home_check_never_calls_a_private_address_and_tells_nothing_of_why(m
     assert visitors.target_problem("https://8.8.8.8") == ""
     got = visitors.confirm({"kind": "relay", "url": "https://10.0.0.5"}, "ab" * 32)
     assert got["status"] == "unconfirmed" and got["reason"] == visitors._UNANSWERED
+
+
+def test_homed_only_lets_a_visitor_act_only_once_its_home_confirmed_it(client, monkeypatch):
+    v = name("conf")
+    fake_home(monkeypatch, [pub_of(v)])
+    register(client, v, visiting())
+    monkeypatch.setenv("EMPORIA_VISITORS", "homed-only")
+    assert visitors.write_refusal("relay", False) and "has not confirmed" in visitors.write_refusal("relay", False)
+    assert visitors.write_refusal("relay", True) == ""
+    assert client.post(f"/agents/{v}/relay-list", headers=_hdr(v), json={}).status_code != 403

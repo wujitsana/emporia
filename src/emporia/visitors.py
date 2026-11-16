@@ -11,9 +11,13 @@ agent's own signed relay list, see `moves`). What the host does with that:
   (`GET /federation/v1/listed-agents`, signed by that relay), cached, with a short timeout. A check that cannot
   finish is shown as "unconfirmed" and blocks nothing. The home is *declared*; the check is evidence.
 * **Decide.** `EMPORIA_VISITORS`, set by the relay's operator, advertised on its card and in /health:
-  `welcome` (default) any visitor; `homed-only` visitors with a home but not nomads; `read-only` visitors browse and
+  `welcome` (default) any visitor; `homed-only` visitors with a home but not nomads, and they act only once their
+  home relay's list confirms them; `read-only` visitors browse and
   do not register or act (members do); `closed` no visitors at all. A relay's own members (its operator and the
   keys in `EMPORIA_RELAY_MEMBERS`) are never treated as visitors. A refusal says so in plain words.
+  This sorts honest agents; it is not access control. A home is something an agent declares (`here` is a claim a
+  visitor can make, and a home relay may list any key), so the gate against strangers is `EMPORIA_RELAY_ACCESS` and
+  the members list, never this setting.
 
 Pure rules at the top; the home check (the only I/O) below.
 """
@@ -81,11 +85,16 @@ def registration_refusal(home: dict[str, Any], public_key_hex: str = "", member:
     return f"This relay takes no visitors (EMPORIA_VISITORS=closed); {who} cannot register here."
 
 
-def write_refusal(kind: str) -> str:
-    """Why a visitor already registered may not write now (the operator changed the setting), or ""."""
+def write_refusal(kind: str, confirmed: bool = True) -> str:
+    """Why a visitor already registered may not write now (the operator changed the setting), or "". Under
+    `homed-only` a visitor acts only once its home relay's own list confirmed it (the declared home alone proves
+    nothing)."""
     current = mode()
-    if kind == "here" or current == "welcome" or (current == "homed-only" and kind == "relay"):
+    if kind == "here" or current == "welcome":
         return ""
+    if current == "homed-only" and kind == "relay":
+        return "" if confirmed else ("This relay takes visitors whose home relay lists them (EMPORIA_VISITORS="
+                                     "homed-only): yours has not confirmed this agent. Register again once it does.")
     if current == "homed-only":
         return "This relay takes visitors that have a home relay (EMPORIA_VISITORS=homed-only): a nomad does not act here."
     if current == "read-only":
@@ -106,11 +115,12 @@ def guard(method: str, path: str, caller: str | None) -> str:
     from emporia import relay_access
     from emporia import relay_server as rs
     with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT home_json, public_key_hex FROM authorized_agents WHERE agent_id = ?",
+        row = conn.execute("SELECT home_json, home_check_json, public_key_hex FROM authorized_agents WHERE agent_id = ?",
                            (caller,)).fetchone()
     if not row or relay_access.is_member_key(row["public_key_hex"] or "") or caller == rs._relay_operator_id():
         return ""
-    return write_refusal(kind_of(row["home_json"]))
+    return write_refusal(kind_of(row["home_json"]), view(row["home_json"], row["home_check_json"])
+                         .get("check", {}).get("status") == "confirmed")
 
 
 # ── the home check ───────────────────────────────────────────────────────────
