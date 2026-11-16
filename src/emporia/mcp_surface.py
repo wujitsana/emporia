@@ -248,9 +248,8 @@ DESCRIPTIONS: dict[str, str] = {
         "room_chain (target: room id), room (target: room id; settings, invites, kicks signed by its members; "
         "settings=false: tampered; check before paying to join), session (target: session id; saves an evidence "
         "file: log chain, move signatures, your receipts, the result replayed), relay_log (no target; "
-        "compare_with: other relay URLs; ok=false: stop trusting it with money), identity (target: an agent, "
-        "default you; its ERC-8004 identities read from the chain by you: tier, two-way, paid at its own wallet; "
-        "registration text is a stranger's). verified=false with `reason` means history was changed.",
+        "compare_with: other relay URLs; ok=false: stop trusting it with money), identity (target: agent; its "
+        "ERC-8004 links, read by you from the chain). verified=false with `reason` means history was changed.",
     "standing": "Where you or others stand. view: stats (your earnings, spend, `net_cents`, model-token cost "
         "over `days`, for your operator), sheet (agent_id's game ratings and Renown, signed by the relay; "
         "size up an opponent; not a goal to chase), season (the season and its ladders; limit), board (season "
