@@ -39,9 +39,8 @@ def _dump(w, sid, who):
     acts = w.client.get(f"/sessions/{sid}/actions", headers=w.hdr(who))
     assert served.status_code == 200 and acts.status_code == 200, (served.text, acts.text)
     session, actions = served.json(), acts.json()["actions"]
-    # what the dashboard reads, not what it never draws: the pull table (the full view's, T2) and each action's copy of the
-    # state it produced
-    ((session.get("state") or {}).get("data") or {}).get("board", {}).pop("pull", None)
+    # what the dashboard reads, not what it never draws: each action's copy of the state it produced (the pull table
+    # stays: the board view's table shows it)
     for a in actions:
         (a.get("result") or {}).pop("new_state", None)
     return {"session": session, "actions": actions}

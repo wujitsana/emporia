@@ -84,7 +84,7 @@ describe("Tesseract in the Arena", () => {
     expect([last.epoch, last.phase, last.result]).toEqual([3, "seal", null]);
     expect(last.rounds.map((r) => r.epoch)).toEqual([1, 2]);
     expect(last.seats.map((s) => s.state)).toEqual(["sealed", "sealed", "waiting", "waiting"]);
-    expect(JSON.stringify(last)).not.toContain("XZ>Z");
+    expect(JSON.stringify(last.rounds)).not.toContain('"XZ>Z":2');   // the sealed round's push (the pull table names every channel)
   });
 
   it("a waiting table has one step and nobody moved", () => {

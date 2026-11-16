@@ -7,33 +7,33 @@
    "rand": {
     "commits": {
      "fz_0": {
-      "at": "2026-11-14T07:10:06.094799+00:00",
-      "beacon_round": 33945609,
-      "hash": "5601b3a431ff2b0cce28da9d76d800b41269d682dbaa55e4b6fc4f6b999bf539",
+      "at": "2026-11-16T17:23:08.563952+00:00",
+      "beacon_round": 34015469,
+      "hash": "ddb72ecd06ce9518ed86e3d25942df98f4dd3a3445542ec770034f54db1edd3f",
       "seat": 0,
-      "signature": "Z9Mldx3vYH_yBq0ZE96EXMF-glNS-HzYG2WrQtr4FtkpjnOJSk4tV_s5MWkeaNi8wMhtkg1ocGv1E56qpyH4AA",
-      "stable_id": "2c4771ccb6023e7c7ce87f338470e7abe0b9a696208ceb38b930ca7c255691e9"
+      "signature": "Xmup1ug5IvQDORg1ypNFA6Xq79ZifqWPUY3AAiJ4krb1-gsmTZkABlIJEbdlz-Nfm8xXXeqmhnr_yIWKurDyBA",
+      "stable_id": "e0a0e8962bc5687c128392a77c9fc32923b98600c0a9a43d1f83498d0293530e"
      },
      "fz_1": {
-      "at": "2026-11-14T07:10:06.174823+00:00",
-      "beacon_round": 33945609,
-      "hash": "26f6865ccca5f9e3fef606f88c9eb0d56a06d547a5603a2e136f1f7993a577d6",
+      "at": "2026-11-16T17:23:08.636319+00:00",
+      "beacon_round": 34015469,
+      "hash": "b9f90241d98d2b504620921e45eac64fb560c775803338f31992229ed5fc8eed",
       "seat": 1,
-      "signature": "6MKWxxhDSkliQp6vioQR8aXMx6EfidsqPv50TkqpYQUm1bMRtRLUDOyaRP4iBfdGrbLIhimO2lSjxS-xin_5Aw",
-      "stable_id": "85bee5236ed999a3afc1d00ae1c077558515ccd755051312a40c18c3a55fd4cc"
+      "signature": "FMUfrErjz7k1vxSwUdqzoolXfhYf6v5tPJv7h2v3WmDZ9bxaKu79ACjeMBInHdH9BDBVU5c8paPS2vdxrhDYCw",
+      "stable_id": "3d94dfa6d976edaf86e1d0d14b7e5ace6681c986c6a3089d9afe26085b0fc45d"
      }
     },
-    "scope": "sess_500117f4dc7c"
+    "scope": "sess_3bd656c5963a"
    }
   },
-  "created_at": "2026-11-14T07:10:06.124549+00:00",
+  "created_at": "2026-11-16T17:23:08.586401+00:00",
   "creation": {
    "creator": "fz_0",
    "joins": {
     "fz_0": {
-     "at": "2026-11-14T07:10:06.091871+00:00",
-     "signature": "fEZJrVYOIlNCV7RbMCvbv-nuK7YmvKM7wT2Kk5zwL2yZ6XtflIAWfsqt9ypRcA5FOCRUM-KzohD8vUvOzLszCA",
-     "stable_id": "2c4771ccb6023e7c7ce87f338470e7abe0b9a696208ceb38b930ca7c255691e9"
+     "at": "2026-11-16T17:23:08.561133+00:00",
+     "signature": "v4purgBG3abIbA1FYGPwiUtz0FQP8WLgpBJbyJQvQchqp4p7yd_jOXolNnuZOTF2r49Yh302qjmhTTkwdHT2Ag",
+     "stable_id": "e0a0e8962bc5687c128392a77c9fc32923b98600c0a9a43d1f83498d0293530e"
     }
    },
    "keys": {
@@ -41,9 +41,9 @@
      "at": "",
      "encryption_public_key": "",
      "key_log": [],
-     "public_key_hex": "9105c0a7dc3d463a770a4610d7498c9258a124892985ba895e9c4b40381f0290",
+     "public_key_hex": "ac35b7531fcf87262b0bc655577440b91e759260494529eb58b5fdf54eb086d9",
      "signature": "",
-     "stable_id": "2c4771ccb6023e7c7ce87f338470e7abe0b9a696208ceb38b930ca7c255691e9"
+     "stable_id": "e0a0e8962bc5687c128392a77c9fc32923b98600c0a9a43d1f83498d0293530e"
     }
    }
   },
@@ -70,7 +70,7 @@
   },
   "private_text_fields": [],
   "sealed": false,
-  "session_id": "sess_500117f4dc7c",
+  "session_id": "sess_3bd656c5963a",
   "state": {
    "current_agent": "fz_0",
    "data": {
@@ -84,25 +84,26 @@
      "fz_0"
     ],
     "phase": "seal",
-    "phase_started_at": "2026-11-14T07:32:54.050514+00:00",
+    "phase_started_at": "2026-11-16T17:46:01.033319+00:00",
     "players": 4,
+    "practice": false,
     "published": {},
     "rand": {
      "beacon_sig": null,
      "beacons": {},
      "commits": {
       "fz_0": {
-       "at": "2026-11-14T07:10:06.094799+00:00",
-       "beacon_round": 33945609,
-       "hash": "5601b3a431ff2b0cce28da9d76d800b41269d682dbaa55e4b6fc4f6b999bf539",
+       "at": "2026-11-16T17:23:08.563952+00:00",
+       "beacon_round": 34015469,
+       "hash": "ddb72ecd06ce9518ed86e3d25942df98f4dd3a3445542ec770034f54db1edd3f",
        "seat": 0,
-       "signature": "Z9Mldx3vYH_yBq0ZE96EXMF-glNS-HzYG2WrQtr4FtkpjnOJSk4tV_s5MWkeaNi8wMhtkg1ocGv1E56qpyH4AA",
-       "stable_id": "2c4771ccb6023e7c7ce87f338470e7abe0b9a696208ceb38b930ca7c255691e9"
+       "signature": "Xmup1ug5IvQDORg1ypNFA6Xq79ZifqWPUY3AAiJ4krb1-gsmTZkABlIJEbdlz-Nfm8xXXeqmhnr_yIWKurDyBA",
+       "stable_id": "e0a0e8962bc5687c128392a77c9fc32923b98600c0a9a43d1f83498d0293530e"
       }
      },
      "reveals": {},
      "round": null,
-     "scope": "sess_500117f4dc7c"
+     "scope": "sess_3bd656c5963a"
     },
     "reveal_by": null,
     "reveal_window_s": 600,
@@ -114,7 +115,7 @@
     "voided": null
    },
    "metadata": {
-    "created_at": "2026-11-14T07:32:54.050514+00:00",
+    "created_at": "2026-11-16T17:46:01.033319+00:00",
     "participants": [
      "fz_0"
     ]
@@ -123,6 +124,6 @@
   },
   "status": "waiting",
   "step_number": 0,
-  "updated_at": "2026-11-14T07:10:06.235803+00:00"
+  "updated_at": "2026-11-16T17:23:08.673555+00:00"
  }
 }

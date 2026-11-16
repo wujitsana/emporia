@@ -1,14 +1,14 @@
 {
  "actions": [
   {
-   "action_id": "act_437ce9e4ecbe",
+   "action_id": "act_720958778fef",
    "action_type": "seal",
    "agent_id": "fy_0",
-   "created_at": "2026-11-14T07:10:04.251560+00:00",
+   "created_at": "2026-11-16T17:23:06.856294+00:00",
    "payload": {
-    "commitment": "2f03b67ce54628944da7f7a0d4587fa3de830ac9d51dc294102e28a9e8771e8e",
+    "commitment": "0e978b451ea5cd820e2cbc5f3c59d2e3eafd96104d628fbcd1eb485721a35daf",
     "epoch": 1,
-    "round": 33946061
+    "round": 34015924
    },
    "result": {
     "artifacts": null,
@@ -16,14 +16,14 @@
    }
   },
   {
-   "action_id": "act_9d310b0d7e0d",
+   "action_id": "act_1584a6c85796",
    "action_type": "seal",
    "agent_id": "fy_1",
-   "created_at": "2026-11-14T07:10:04.355982+00:00",
+   "created_at": "2026-11-16T17:23:06.945334+00:00",
    "payload": {
-    "commitment": "a5d6ed2600722410689c9da13478213b0e6e653328e5eac765f2358b37e30004",
+    "commitment": "d5d35fc98dd22c64acbd4924c98c1e7c8e29afd693d8de7b97c9cc68392c4d27",
     "epoch": 1,
-    "round": 33946061
+    "round": 34015924
    },
    "result": {
     "artifacts": null,
@@ -31,14 +31,14 @@
    }
   },
   {
-   "action_id": "act_6b386616dd23",
+   "action_id": "act_7f28cf2da21d",
    "action_type": "seal",
    "agent_id": "fy_2",
-   "created_at": "2026-11-14T07:10:04.479358+00:00",
+   "created_at": "2026-11-16T17:23:07.041413+00:00",
    "payload": {
-    "commitment": "646a6047f84d1de7ea76e132bc905ba855c77c5234fd5af2f879137d0bce104e",
+    "commitment": "b487a7acbd1ffecc624ccd607caef9535378b99c80a10ef6c19d525500e31cf9",
     "epoch": 1,
-    "round": 33946061
+    "round": 34015924
    },
    "result": {
     "artifacts": null,
@@ -46,14 +46,14 @@
    }
   },
   {
-   "action_id": "act_ae7dd138d8be",
+   "action_id": "act_f1288295e42c",
    "action_type": "seal",
    "agent_id": "fy_3",
-   "created_at": "2026-11-14T07:10:04.602234+00:00",
+   "created_at": "2026-11-16T17:23:07.139883+00:00",
    "payload": {
-    "commitment": "38530436014d7fe9a587ccf4fc858aac5c998ed53ef8edb057cfed2f1b5fa313",
+    "commitment": "2b8386f507506318806f51d34810eedfc0eab2f7d199d11efa94a7a36e7a1aa8",
     "epoch": 1,
-    "round": 33946061
+    "round": 34015924
    },
    "result": {
     "artifacts": null,
@@ -61,10 +61,10 @@
    }
   },
   {
-   "action_id": "act_372bfcfa238e",
+   "action_id": "act_58fcb00af296",
    "action_type": "open",
    "agent_id": "fy_0",
-   "created_at": "2026-11-14T07:10:04.702457+00:00",
+   "created_at": "2026-11-16T17:23:07.231471+00:00",
    "payload": {
     "epoch": 1,
     "move": {
@@ -73,7 +73,7 @@
       "XY>X": 4
      }
     },
-    "nonce": "8acb14fb9f79301856e111abf7dd9463305be9c37120d6b7cf831fe83d71a24d"
+    "nonce": "5cade0ccc4ea49193150aadee9df1f05b64043f2b7cefbb68efc2db31bc72b17"
    },
    "result": {
     "artifacts": null,
@@ -81,10 +81,10 @@
    }
   },
   {
-   "action_id": "act_a1258c511238",
+   "action_id": "act_c1e2de6a51fe",
    "action_type": "open",
    "agent_id": "fy_1",
-   "created_at": "2026-11-14T07:10:04.797672+00:00",
+   "created_at": "2026-11-16T17:23:07.342651+00:00",
    "payload": {
     "epoch": 1,
     "move": {
@@ -93,7 +93,7 @@
       "XY>X": 4
      }
     },
-    "nonce": "48771d67fadbb65b7840c89d832a0412e7cec3f4a0a6a4e7fcc7123057189b5e"
+    "nonce": "67a84bbb3257d78cb05f9f4b4d0d4dc0193a5b2f7ba854bc4b105f94d74d87d5"
    },
    "result": {
     "artifacts": null,
@@ -101,10 +101,10 @@
    }
   },
   {
-   "action_id": "act_3d23ae6f5b94",
+   "action_id": "act_3dba920d644b",
    "action_type": "open",
    "agent_id": "fy_2",
-   "created_at": "2026-11-14T07:10:04.893246+00:00",
+   "created_at": "2026-11-16T17:23:07.430679+00:00",
    "payload": {
     "epoch": 1,
     "move": {
@@ -113,7 +113,7 @@
       "XY>X": 4
      }
     },
-    "nonce": "3dbe93f5b66788cd035d26aa14879e68acb608c2e22dd01a8e9c54321fb39234"
+    "nonce": "37c86838e4502295abbf32a8820add048ac6b239072f3b467593466e3b003dd9"
    },
    "result": {
     "artifacts": null,
@@ -121,10 +121,10 @@
    }
   },
   {
-   "action_id": "act_1cf6792743b3",
+   "action_id": "act_9fff13faf3ce",
    "action_type": "open",
    "agent_id": "fy_3",
-   "created_at": "2026-11-14T07:10:04.975727+00:00",
+   "created_at": "2026-11-16T17:23:07.512953+00:00",
    "payload": {
     "epoch": 1,
     "move": {
@@ -133,7 +133,7 @@
       "XY>X": 4
      }
     },
-    "nonce": "44bac042dea837f70107c87af69a33c795e450b6dfc0dde7c154b181e742e525"
+    "nonce": "26cadb9d3a7ad6fde425dca9f3ed7eab44ff8c794f0f1320331625a6db37e43f"
    },
    "result": {
     "artifacts": null,
@@ -141,14 +141,14 @@
    }
   },
   {
-   "action_id": "act_284b0be8d849",
+   "action_id": "act_936b86cbd0ee",
    "action_type": "seal",
    "agent_id": "fy_0",
-   "created_at": "2026-11-14T07:10:05.088539+00:00",
+   "created_at": "2026-11-16T17:23:07.621515+00:00",
    "payload": {
-    "commitment": "4b15e5389795ebd9adbf96d8c0ff6010c49651c1e4b31d1b14b864eeba011f18",
+    "commitment": "553ad2b1d20f8d4ac5ec82531db408b2f4ffc622c615e45e6e0aacd486924531",
     "epoch": 2,
-    "round": 33946068
+    "round": 34015930
    },
    "result": {
     "artifacts": null,
@@ -156,14 +156,14 @@
    }
   },
   {
-   "action_id": "act_508ba9c84676",
+   "action_id": "act_f65c00d8b43f",
    "action_type": "seal",
    "agent_id": "fy_1",
-   "created_at": "2026-11-14T07:10:05.243111+00:00",
+   "created_at": "2026-11-16T17:23:07.704822+00:00",
    "payload": {
-    "commitment": "619c3f9dca2fcfb1828bdde320da6626016d0be98f9e4c73b1d11fe9eeea7b8f",
+    "commitment": "063d7acc81c9f92b33d48df5f57c87c0e6c88f1cdc58d32a0acb4ad9db870c2f",
     "epoch": 2,
-    "round": 33946068
+    "round": 34015930
    },
    "result": {
     "artifacts": null,
@@ -171,14 +171,14 @@
    }
   },
   {
-   "action_id": "act_5d999c1ed55e",
+   "action_id": "act_1db75a153dcb",
    "action_type": "seal",
    "agent_id": "fy_2",
-   "created_at": "2026-11-14T07:10:05.344198+00:00",
+   "created_at": "2026-11-16T17:23:07.802760+00:00",
    "payload": {
-    "commitment": "8d0a20552028506808ed9aac4dee12e033a67deca7cdd7b88ce6f3ee3850a4b5",
+    "commitment": "5c092272ff9a5161acf6437018f253d2c4772d86c168310f07bea4a65a206e9e",
     "epoch": 2,
-    "round": 33946068
+    "round": 34015930
    },
    "result": {
     "artifacts": null,
@@ -186,14 +186,14 @@
    }
   },
   {
-   "action_id": "act_ca0b712da94c",
+   "action_id": "act_28a209bd06a7",
    "action_type": "seal",
    "agent_id": "fy_3",
-   "created_at": "2026-11-14T07:10:05.434545+00:00",
+   "created_at": "2026-11-16T17:23:07.896477+00:00",
    "payload": {
-    "commitment": "4d5a6a4a0cb58a73844c4b5f689c2d324d80d2a2e6b44d2f5e0fdc3e722ab257",
+    "commitment": "c02457a5b8ea042fc92faae69594bf3559df261abe98045d2fcd0f24134c8c31",
     "epoch": 2,
-    "round": 33946068
+    "round": 34015930
    },
    "result": {
     "artifacts": null,
@@ -201,10 +201,10 @@
    }
   },
   {
-   "action_id": "act_1ba6f50b2bd4",
+   "action_id": "act_f7d425e15914",
    "action_type": "open",
    "agent_id": "fy_0",
-   "created_at": "2026-11-14T07:10:05.532035+00:00",
+   "created_at": "2026-11-16T17:23:08.005185+00:00",
    "payload": {
     "epoch": 2,
     "move": {
@@ -212,7 +212,7 @@
       "YZ>Z": 3
      }
     },
-    "nonce": "134f2a2033080a144780a5bcad37afa7f6825df2bd284d553fc4acd1f2e01335"
+    "nonce": "226e9af9d80ffb8ee1134a5d24eb5d22c4eaea5bd4974c0478dca2f3e6f17fc4"
    },
    "result": {
     "artifacts": null,
@@ -220,10 +220,10 @@
    }
   },
   {
-   "action_id": "act_eb739dba91a3",
+   "action_id": "act_7436efd83d48",
    "action_type": "open",
    "agent_id": "fy_1",
-   "created_at": "2026-11-14T07:10:05.620362+00:00",
+   "created_at": "2026-11-16T17:23:08.095173+00:00",
    "payload": {
     "epoch": 2,
     "move": {
@@ -231,7 +231,7 @@
       "YZ>Z": 3
      }
     },
-    "nonce": "a83403764929f30ca7005d3b7bb66468dca8eb218ab22c737e59f0350970dcfc"
+    "nonce": "188caa672b8abd9297e2d7b45900247cbcfd32796f992488844b5cb036f2e813"
    },
    "result": {
     "artifacts": null,
@@ -239,10 +239,10 @@
    }
   },
   {
-   "action_id": "act_98adc60667c5",
+   "action_id": "act_a6b9aa1bed36",
    "action_type": "open",
    "agent_id": "fy_2",
-   "created_at": "2026-11-14T07:10:05.703021+00:00",
+   "created_at": "2026-11-16T17:23:08.179022+00:00",
    "payload": {
     "epoch": 2,
     "move": {
@@ -250,7 +250,7 @@
       "YZ>Z": 3
      }
     },
-    "nonce": "f1dbf2161bfebf223aee409fcdca90e062e0a678274ab4b8eac79a5bac5aa813"
+    "nonce": "f2b64aba3e084808b5a71400a036b7e9c46a7393ac8bfaf6ada5c7be873eef4c"
    },
    "result": {
     "artifacts": null,
@@ -258,10 +258,10 @@
    }
   },
   {
-   "action_id": "act_eedc8b130c10",
+   "action_id": "act_ce4856fb8fa6",
    "action_type": "open",
    "agent_id": "fy_3",
-   "created_at": "2026-11-14T07:10:05.797090+00:00",
+   "created_at": "2026-11-16T17:23:08.286627+00:00",
    "payload": {
     "epoch": 2,
     "move": {
@@ -269,7 +269,7 @@
       "YZ>Z": 3
      }
     },
-    "nonce": "c41917e6dba02ac916a627a314a3c900c8a595c1ffa84f0cad77f72bd2bb7b96"
+    "nonce": "5ccb6f27133157d3c66b3e94352eb3b587ca20114f3a1cd09d89a3d747769f46"
    },
    "result": {
     "artifacts": null,
@@ -277,14 +277,14 @@
    }
   },
   {
-   "action_id": "act_e4311de58e88",
+   "action_id": "act_b06e95511e3f",
    "action_type": "seal",
    "agent_id": "fy_0",
-   "created_at": "2026-11-14T07:10:05.916372+00:00",
+   "created_at": "2026-11-16T17:23:08.388769+00:00",
    "payload": {
-    "commitment": "0e8254cb7ea95b5caf760a7183034b90db92fabb28a51bc9017973d8503dfc7f",
+    "commitment": "dfd2109aa2b092c5974b4737c640d79426306ccd4cc19c792a2725a9649238cb",
     "epoch": 3,
-    "round": 33946075
+    "round": 34015937
    },
    "result": {
     "artifacts": null,
@@ -292,14 +292,14 @@
    }
   },
   {
-   "action_id": "act_23889785d0ff",
+   "action_id": "act_e1c1aeb47559",
    "action_type": "seal",
    "agent_id": "fy_1",
-   "created_at": "2026-11-14T07:10:06.001959+00:00",
+   "created_at": "2026-11-16T17:23:08.474004+00:00",
    "payload": {
-    "commitment": "2c8897f8b1d6a8b057464a998912dd5be5ef309f378527028fa4432db9536fc6",
+    "commitment": "aaa1bf7dc2e064625b3d3ebc908b0b019afdb8c0458a295bcf18a4d81ad5d328",
     "epoch": 3,
-    "round": 33946075
+    "round": 34015937
    },
    "result": {
     "artifacts": null,
@@ -314,49 +314,49 @@
    "rand": {
     "commits": {
      "fy_0": {
-      "at": "2026-11-14T07:10:03.891302+00:00",
-      "beacon_round": 33945608,
-      "hash": "eaf30ec7a87300d7d524397fb1f112033d8c9185d2a6924b72e1430cc9299fc7",
+      "at": "2026-11-16T17:23:06.550171+00:00",
+      "beacon_round": 34015469,
+      "hash": "ba036865a56c216269c97e5d1230deb9384e7cf6d0b2b200fcd3e8842a3dc1a8",
       "seat": 0,
-      "signature": "0xqBJTTtOB72rP8Z-BaQYq7FrsmDnb3DXiJDaPzWkmAj4wxwdEGh47G0ipx59w3d-0XM2tugJRfNXmFH7PArDw",
-      "stable_id": "44f7d27e87bc5491d42c623f84bacdcd747b24d99ec640ab56b9a0c9db97ec8d"
+      "signature": "etbklI8gAGt-cTHr1z3shOSQZG9CUr-zjW7ez7pqBEWtxdcyUB4Vsq5B7o0aWvm7xKb7p92HOl8n21BvKYJOAQ",
+      "stable_id": "a5b0b0b52f1919c44098ab03d93bbab6ba4bec89be2bc5eced8b2f85d5698fe4"
      },
      "fy_1": {
-      "at": "2026-11-14T07:10:03.958735+00:00",
-      "beacon_round": 33945608,
-      "hash": "20abcdc0d7f1ea4c877626bcddbe81eb74f12a48d0d7222414d60362c5d8faed",
+      "at": "2026-11-16T17:23:06.607276+00:00",
+      "beacon_round": 34015469,
+      "hash": "84806745575690d7b92a561c7e7fe98b3203d49fede5b391a7846aa24cfdfeca",
       "seat": 1,
-      "signature": "DdTg7sT4jCKZuOR2lYlKFetdoY1aV3aWXKlGMyShYeKGWa7ZoOG-QHchtI3JRmwMdOBhThDLO8n_p-iOaK38CA",
-      "stable_id": "11885d5e74bd12ac443d21c4e6d7c78c3f481f3d35173c8cb7466422eb03c523"
+      "signature": "aSAvU9iQ--kyy2uyM2atMgsdh2v6X2_4C09F4fpCw6Efhh1qjc99TtFmVAZRN4vfR7zO5HHAe5i2m6l6_FKDDQ",
+      "stable_id": "17c6ad756cadac8fd442576e2615076383e4986ade451dc885dd0ed0ccefcf9d"
      },
      "fy_2": {
-      "at": "2026-11-14T07:10:04.025536+00:00",
-      "beacon_round": 33945608,
-      "hash": "876e24bacf4d8904756692f7726b1c6892869b4150de5b609cbb74c49a40c486",
+      "at": "2026-11-16T17:23:06.655071+00:00",
+      "beacon_round": 34015469,
+      "hash": "ef4efc693ea9c1215ff250c2ba4d2039cfde9ee3e45b0443202b8719cfc82c2d",
       "seat": 2,
-      "signature": "WtnZthdVuhA797vyRM1tvpkHIfSCbU2iG0nyuehqP4wPaxu9RG_fieMGeooAxS_3YoJE4W9QRcV-o4S7xHSfCg",
-      "stable_id": "329d95fcffd17249360bd00d08962f4d4b73df40c29e226f87413ce182e37ab6"
+      "signature": "TYte3oeYGiTsZ2JgT5WdPrLzAu46k-HUh2coY_D9TrmcJmil2qZQ5byvYKrjx7a08fS32v7-PvnfCN_rCyBdAA",
+      "stable_id": "954239a82627710603f3eb0a65b8217bbe8716132a1d6a8bd3dd452a6fa6e63c"
      },
      "fy_3": {
-      "at": "2026-11-14T07:10:04.066833+00:00",
-      "beacon_round": 33945608,
-      "hash": "91dfadfe6e5f071925977d4f1b3f8baf5b2121c94a6a2abb479e5e9dedd4af57",
+      "at": "2026-11-16T17:23:06.710356+00:00",
+      "beacon_round": 34015469,
+      "hash": "bb1e050f31152b48549f09d31d240b90c1f05856dcf172ded5b26484c1e8bab2",
       "seat": 3,
-      "signature": "tdtUN3NAZUhYYy5Hw2NtgvNcOaRmdLMnGYh0HhSL8QyLLh3udgxQEBHBw6yUU0CJByB8jwmmNSHCJN2YAfdiCg",
-      "stable_id": "8f910875a441dddd4cfe00e56a1af6f54fe11ff9746ba3ce1e4f979d0876762f"
+      "signature": "ILyo7kA23U5JiujJqQ3Ja5NLXrQA7KIahok3aTSkNLCC5L-WZkVlEzBHNZl4rjK8WgvPY9CZ19A1Go4PgpozCQ",
+      "stable_id": "3199ef2d95c7d4c38887585818ba5e1a1cadd5bcb21fd29da117f96b6e4258bb"
      }
     },
-    "scope": "sess_11dbd22bfbfa"
+    "scope": "sess_d7d31d001a3c"
    }
   },
-  "created_at": "2026-11-14T07:10:03.923119+00:00",
+  "created_at": "2026-11-16T17:23:06.574223+00:00",
   "creation": {
    "creator": "fy_0",
    "joins": {
     "fy_0": {
-     "at": "2026-11-14T07:10:03.887808+00:00",
-     "signature": "aNtC0uno0rTVXdl1EvrOxuELmWBJWU8CLGPXcQnveS5fg7kz7_0Z9GTJiigTrCos055yNo7TzLm0EqXVh807Cg",
-     "stable_id": "44f7d27e87bc5491d42c623f84bacdcd747b24d99ec640ab56b9a0c9db97ec8d"
+     "at": "2026-11-16T17:23:06.546514+00:00",
+     "signature": "U0BPpdJGKvH0oeSrdfqKSU3NgUjl6Z85hkLkrQ2FfUjOBjYX3wCG2Qa1RN92EIB3vQncBslv8aLcNqZ04wVKAQ",
+     "stable_id": "a5b0b0b52f1919c44098ab03d93bbab6ba4bec89be2bc5eced8b2f85d5698fe4"
     }
    },
    "keys": {
@@ -364,9 +364,9 @@
      "at": "",
      "encryption_public_key": "",
      "key_log": [],
-     "public_key_hex": "9204222a92fefc83df01266cf373d77df291ac1a3db5560e03279571a688c494",
+     "public_key_hex": "e1b8148e18d296fc7e68246dac95bb0bf7a318f574b7ac1afbdb280eb15f81e2",
      "signature": "",
-     "stable_id": "44f7d27e87bc5491d42c623f84bacdcd747b24d99ec640ab56b9a0c9db97ec8d"
+     "stable_id": "a5b0b0b52f1919c44098ab03d93bbab6ba4bec89be2bc5eced8b2f85d5698fe4"
     }
    }
   },
@@ -395,12 +395,12 @@
   },
   "private_text_fields": [],
   "sealed": false,
-  "session_id": "sess_11dbd22bfbfa",
+  "session_id": "sess_d7d31d001a3c",
   "state": {
    "current_agent": "fy_2",
    "data": {
     "board": {
-     "by": "2026-11-14T07:42:48+00:00",
+     "by": "2026-11-16T17:55:54+00:00",
      "channels": [
       "XYZ>XY",
       "XYZ>XZ",
@@ -431,270 +431,272 @@
      "done": [
       {
        "dark": [
+        "XYZ>XZ",
         "WXY>WX",
-        "XZ>X"
+        "WZ>Z"
        ],
        "epoch": 1,
        "late": [],
        "mix": [
-        1617,
-        3074,
-        3797,
-        1486
+        2874,
+        3558,
+        3086,
+        451
        ],
        "pulses": [
         [
-         2,
          9,
-         2,
+         4,
+         3,
+         8
+        ],
+        [
+         8,
+         7,
+         0,
          7
         ],
         [
-         7,
-         3,
          0,
+         8,
+         2,
+         3
+        ],
+        [
+         0,
+         5,
+         8,
          1
+        ],
+        [
+         8,
+         1,
+         9,
+         1
+        ],
+        [
+         9,
+         0,
+         9,
+         0
+        ],
+        [
+         7,
+         5,
+         3,
+         5
         ],
         [
          3,
          1,
-         1,
-         2
+         0,
+         0
         ],
         [
          5,
          3,
+         8,
+         1
+        ],
+        [
+         3,
+         6,
+         7,
+         9
+        ],
+        [
+         3,
+         3,
+         1,
+         4
+        ],
+        [
+         0,
+         1,
+         5,
+         6
+        ],
+        [
+         3,
+         4,
+         1,
+         3
+        ],
+        [
+         6,
          9,
+         2,
+         1
+        ],
+        [
+         1,
+         2,
+         5,
+         0
+        ],
+        [
+         4,
+         8,
+         7,
+         0
+        ]
+       ],
+       "pushes": {
+        "fy_0": {
+         "WX>W": -2,
+         "XY>X": 4
+        },
+        "fy_1": {
+         "WX>W": -2,
+         "XY>X": 4
+        },
+        "fy_2": {
+         "WX>W": -2,
+         "XY>X": 4
+        },
+        "fy_3": {
+         "WX>W": -2,
+         "XY>X": 4
+        }
+       },
+       "round": 34015924,
+       "silent": [],
+       "widths": [
+        2,
+        8,
+        4,
+        4,
+        8,
+        3,
+        8,
+        6,
+        1,
+        1,
+        1,
+        10,
+        0,
+        6,
+        9,
+        3,
+        6,
+        4,
+        12,
+        9,
+        9,
+        5,
+        7,
+        2
+       ]
+      },
+      {
+       "dark": [
+        "WXY>WY",
+        "YZ>Y"
+       ],
+       "epoch": 2,
+       "late": [],
+       "mix": [
+        1759,
+        4001,
+        1683,
+        2524
+       ],
+       "pulses": [
+        [
+         3,
+         0,
+         1,
+         1
+        ],
+        [
+         9,
+         5,
+         6,
+         0
+        ],
+        [
+         4,
+         3,
+         5,
          7
         ],
         [
-         8,
-         8,
-         8,
-         6
-        ],
-        [
+         2,
+         2,
          6,
-         7,
-         6,
-         6
+         7
         ],
         [
          7,
-         3,
+         9,
+         7,
+         9
+        ],
+        [
+         1,
+         8,
+         5,
+         0
+        ],
+        [
+         1,
+         9,
+         1,
+         2
+        ],
+        [
+         1,
+         8,
+         7,
+         0
+        ],
+        [
+         4,
+         7,
+         6,
+         7
+        ],
+        [
+         7,
+         1,
+         9,
+         1
+        ],
+        [
+         6,
+         1,
+         4,
+         7
+        ],
+        [
+         2,
+         1,
          4,
          9
         ],
         [
          2,
-         5,
          1,
-         6
-        ],
-        [
-         5,
-         0,
-         2,
-         4
-        ],
-        [
-         5,
-         2,
-         0,
+         3,
          0
         ],
         [
-         9,
-         1,
-         1,
-         3
-        ],
-        [
-         7,
-         4,
-         4,
-         6
-        ],
-        [
-         1,
-         9,
-         1,
-         2
-        ],
-        [
-         8,
-         3,
-         2,
-         7
-        ],
-        [
-         6,
-         7,
+         0,
+         0,
          2,
          4
         ],
         [
-         9,
-         0,
-         0,
-         2
-        ]
-       ],
-       "pushes": {
-        "fy_0": {
-         "WX>W": -2,
-         "XY>X": 4
-        },
-        "fy_1": {
-         "WX>W": -2,
-         "XY>X": 4
-        },
-        "fy_2": {
-         "WX>W": -2,
-         "XY>X": 4
-        },
-        "fy_3": {
-         "WX>W": -2,
-         "XY>X": 4
-        }
-       },
-       "round": 33946061,
-       "silent": [],
-       "widths": [
-        9,
-        4,
-        9,
-        11,
-        1,
-        10,
-        3,
-        12,
-        5,
-        5,
-        7,
-        10,
-        3,
-        11,
-        6,
-        1,
-        6,
-        9,
-        12,
-        10,
-        6,
-        1,
-        5,
-        3
-       ]
-      },
-      {
-       "dark": [
-        "WX>X"
-       ],
-       "epoch": 2,
-       "late": [],
-       "mix": [
-        1768,
-        2415,
-        2642,
-        3144
-       ],
-       "pulses": [
-        [
-         2,
-         9,
          1,
-         2
-        ],
-        [
-         3,
-         3,
          5,
-         5
-        ],
-        [
-         6,
-         1,
-         8,
-         7
-        ],
-        [
-         8,
-         4,
          2,
-         2
-        ],
-        [
-         5,
-         9,
-         4,
          4
         ],
         [
-         1,
-         6,
-         5,
-         5
-        ],
-        [
-         0,
-         3,
-         0,
-         2
-        ],
-        [
-         5,
-         5,
-         6,
-         5
-        ],
-        [
-         2,
-         7,
-         9,
-         7
-        ],
-        [
          4,
          0,
-         7,
-         1
-        ],
-        [
-         9,
-         2,
-         5,
-         1
-        ],
-        [
-         8,
-         0,
          4,
-         6
-        ],
-        [
-         3,
-         2,
-         5,
-         4
-        ],
-        [
-         9,
-         1,
-         0,
-         6
-        ],
-        [
-         8,
-         7,
-         2,
-         2
-        ],
-        [
-         6,
-         9,
-         6,
-         2
+         8
         ]
        ],
        "pushes": {
@@ -711,32 +713,32 @@
          "YZ>Z": 3
         }
        },
-       "round": 33946068,
+       "round": 34015930,
        "silent": [],
        "widths": [
-        9,
+        2,
+        8,
         4,
-        9,
-        11,
+        4,
+        8,
+        3,
+        8,
+        6,
+        1,
+        1,
         1,
         10,
+        0,
+        6,
+        9,
         3,
+        6,
+        4,
         12,
-        5,
+        9,
+        9,
         5,
         7,
-        10,
-        3,
-        11,
-        6,
-        1,
-        6,
-        9,
-        12,
-        10,
-        6,
-        1,
-        5,
         12
        ]
       }
@@ -754,80 +756,418 @@
       ]
      },
      "mix": [
-      1768,
-      2415,
-      2642,
-      3144
+      1759,
+      4001,
+      1683,
+      2524
      ],
-     "name_round": 33946075,
+     "name_round": 34015937,
      "opening": {
-      "attempt": 0,
+      "attempt": 3,
       "mix": [
-       2488,
-       2977,
-       2773,
-       1728
+       2749,
+       2731,
+       2800,
+       1686
       ],
       "widths": [
-       9,
+       2,
+       8,
        4,
-       9,
-       11,
+       4,
+       8,
+       3,
+       8,
+       6,
+       1,
+       1,
        1,
        10,
+       7,
+       6,
+       9,
        3,
-       12,
-       5,
+       6,
+       4,
+       3,
+       9,
+       9,
        5,
        7,
-       10,
-       11,
-       11,
-       6,
-       1,
-       6,
-       9,
-       9,
-       10,
-       6,
-       1,
-       5,
-       3
+       2
       ]
      },
-     "opens_at": "2026-11-14T07:32:48+00:00",
+     "opens_at": "2026-11-16T17:45:54+00:00",
      "out": [],
      "pending": [
       "fy_2",
       "fy_3"
      ],
      "phase": "seal",
+     "pull": {
+      "WX>W": {
+       "down": [
+        0,
+        0,
+        0,
+        0
+       ],
+       "up": [
+        438,
+        -201,
+        -111,
+        -127
+       ]
+      },
+      "WX>X": {
+       "down": [
+        109,
+        -381,
+        125,
+        145
+       ],
+       "up": [
+        -96,
+        330,
+        -111,
+        -127
+       ]
+      },
+      "WXY>WX": {
+       "down": [
+        11,
+        -48,
+        24,
+        13
+       ],
+       "up": [
+        -41,
+        173,
+        -81,
+        -53
+       ]
+      },
+      "WXY>WY": {
+       "down": [
+        -104,
+        71,
+        4,
+        27
+       ],
+       "up": [
+        365,
+        -256,
+        -12,
+        -99
+       ]
+      },
+      "WXY>XY": {
+       "down": [
+        177,
+        -182,
+        -221,
+        223
+       ],
+       "up": [
+        -69,
+        69,
+        86,
+        -88
+       ]
+      },
+      "WXZ>WX": {
+       "down": [
+        74,
+        -257,
+        80,
+        99
+       ],
+       "up": [
+        -68,
+        230,
+        -73,
+        -92
+       ]
+      },
+      "WXZ>WZ": {
+       "down": [
+        -288,
+        255,
+        137,
+        -105
+       ],
+       "up": [
+        246,
+        -220,
+        -121,
+        92
+       ]
+      },
+      "WXZ>XZ": {
+       "down": [
+        41,
+        -65,
+        46,
+        -27
+       ],
+       "up": [
+        -149,
+        220,
+        -165,
+        90
+       ]
+      },
+      "WY>W": {
+       "down": [
+        -201,
+        80,
+        54,
+        67
+       ],
+       "up": [
+        143,
+        -56,
+        -38,
+        -48
+       ]
+      },
+      "WY>Y": {
+       "down": [
+        48,
+        58,
+        -155,
+        50
+       ],
+       "up": [
+        -60,
+        -76,
+        193,
+        -64
+       ]
+      },
+      "WYZ>WY": {
+       "down": [
+        -325,
+        177,
+        -43,
+        191
+       ],
+       "up": [
+        263,
+        -146,
+        32,
+        -150
+       ]
+      },
+      "WYZ>WZ": {
+       "down": [
+        -183,
+        143,
+        104,
+        -66
+       ],
+       "up": [
+        156,
+        -123,
+        -85,
+        55
+       ]
+      },
+      "WYZ>YZ": {
+       "down": [
+        226,
+        215,
+        -149,
+        -290
+       ],
+       "up": [
+        -210,
+        -222,
+        143,
+        286
+       ]
+      },
+      "WZ>W": {
+       "down": [
+        -673,
+        271,
+        167,
+        232
+       ],
+       "up": [
+        554,
+        -231,
+        -141,
+        -188
+       ]
+      },
+      "WZ>Z": {
+       "down": [
+        201,
+        271,
+        167,
+        -645
+       ],
+       "up": [
+        -158,
+        -231,
+        -141,
+        527
+       ]
+      },
+      "XY>X": {
+       "down": [
+        88,
+        -395,
+        181,
+        124
+       ],
+       "up": [
+        0,
+        0,
+        0,
+        0
+       ]
+      },
+      "XY>Y": {
+       "down": [
+        88,
+        301,
+        -514,
+        124
+       ],
+       "up": [
+        -60,
+        -192,
+        329,
+        -83
+       ]
+      },
+      "XYZ>XY": {
+       "down": [
+        73,
+        -95,
+        -115,
+        134
+       ],
+       "up": [
+        -124,
+        153,
+        186,
+        -217
+       ]
+      },
+      "XYZ>XZ": {
+       "down": [
+        100,
+        -179,
+        145,
+        -67
+       ],
+       "up": [
+        -84,
+        149,
+        -123,
+        57
+       ]
+      },
+      "XYZ>YZ": {
+       "down": [
+        140,
+        400,
+        -166,
+        -374
+       ],
+       "up": [
+        -111,
+        -302,
+        126,
+        289
+       ]
+      },
+      "XZ>X": {
+       "down": [
+        67,
+        -283,
+        92,
+        118
+       ],
+       "up": [
+        -47,
+        189,
+        -63,
+        -80
+       ]
+      },
+      "XZ>Z": {
+       "down": [
+        67,
+        177,
+        92,
+        -343
+       ],
+       "up": [
+        -61,
+        -160,
+        -87,
+        303
+       ]
+      },
+      "YZ>Y": {
+       "down": [
+        70,
+        115,
+        -280,
+        91
+       ],
+       "up": [
+        -66,
+        -109,
+        259,
+        -87
+       ]
+      },
+      "YZ>Z": {
+       "down": [
+        70,
+        115,
+        69,
+        -257
+       ],
+       "up": [
+        0,
+        0,
+        0,
+        0
+       ]
+      }
+     },
      "ready": true,
      "rules": "Tesseract. Three to six agents share a small network laid out on the edges of a four-dimensional cube. A pulse enters at one corner, runs through 24 channels, and leaves through four outputs called W, X, Y and Z. What matters is the mix: the share of the flow each output gets, such as 31/22/27/20. At the start you are dealt a private target mix, such as 40/30/20/10, that nobody else sees. There are five rounds. Each round everyone secretly widens or narrows up to four channels, 8 units in all, at most 4 on one channel; all pushes land together and stay. Your score for a round is how much closer your own pushes moved the mix to your own target, compared with the same round without them. Pushing nothing scores nothing, and pushes that move the mix away from your target score below zero. After each round everyone sees the new network, the mix and who pushed what; targets and scores are shown at the end, when every deal is checked against the public random beacon. Highest total wins.",
      "widths": [
-      9,
+      2,
+      8,
       4,
-      9,
-      11,
+      4,
+      8,
+      3,
+      8,
+      6,
+      1,
+      1,
       1,
       10,
+      0,
+      6,
+      9,
       3,
+      6,
+      4,
       12,
-      5,
+      9,
+      9,
       5,
       7,
-      10,
-      3,
-      11,
-      6,
-      1,
-      6,
-      9,
-      12,
-      10,
-      6,
-      1,
-      5,
       12
      ]
     },
@@ -839,82 +1179,82 @@
     "opens": {
      "1": {
       "fy_0": {
-       "at": "2026-11-14T07:32:14.050514+00:00",
+       "at": "2026-11-16T17:45:21.033319+00:00",
        "move": {
         "push": {
          "WX>W": -2,
          "XY>X": 4
         }
        },
-       "nonce": "8acb14fb9f79301856e111abf7dd9463305be9c37120d6b7cf831fe83d71a24d"
+       "nonce": "5cade0ccc4ea49193150aadee9df1f05b64043f2b7cefbb68efc2db31bc72b17"
       },
       "fy_1": {
-       "at": "2026-11-14T07:32:14.050514+00:00",
+       "at": "2026-11-16T17:45:21.033319+00:00",
        "move": {
         "push": {
          "WX>W": -2,
          "XY>X": 4
         }
        },
-       "nonce": "48771d67fadbb65b7840c89d832a0412e7cec3f4a0a6a4e7fcc7123057189b5e"
+       "nonce": "67a84bbb3257d78cb05f9f4b4d0d4dc0193a5b2f7ba854bc4b105f94d74d87d5"
       },
       "fy_2": {
-       "at": "2026-11-14T07:32:14.050514+00:00",
+       "at": "2026-11-16T17:45:21.033319+00:00",
        "move": {
         "push": {
          "WX>W": -2,
          "XY>X": 4
         }
        },
-       "nonce": "3dbe93f5b66788cd035d26aa14879e68acb608c2e22dd01a8e9c54321fb39234"
+       "nonce": "37c86838e4502295abbf32a8820add048ac6b239072f3b467593466e3b003dd9"
       },
       "fy_3": {
-       "at": "2026-11-14T07:32:14.050514+00:00",
+       "at": "2026-11-16T17:45:21.033319+00:00",
        "move": {
         "push": {
          "WX>W": -2,
          "XY>X": 4
         }
        },
-       "nonce": "44bac042dea837f70107c87af69a33c795e450b6dfc0dde7c154b181e742e525"
+       "nonce": "26cadb9d3a7ad6fde425dca9f3ed7eab44ff8c794f0f1320331625a6db37e43f"
       }
      },
      "2": {
       "fy_0": {
-       "at": "2026-11-14T07:32:34.050514+00:00",
+       "at": "2026-11-16T17:45:41.033319+00:00",
        "move": {
         "push": {
          "YZ>Z": 3
         }
        },
-       "nonce": "134f2a2033080a144780a5bcad37afa7f6825df2bd284d553fc4acd1f2e01335"
+       "nonce": "226e9af9d80ffb8ee1134a5d24eb5d22c4eaea5bd4974c0478dca2f3e6f17fc4"
       },
       "fy_1": {
-       "at": "2026-11-14T07:32:34.050514+00:00",
+       "at": "2026-11-16T17:45:41.033319+00:00",
        "move": {
         "push": {
          "YZ>Z": 3
         }
        },
-       "nonce": "a83403764929f30ca7005d3b7bb66468dca8eb218ab22c737e59f0350970dcfc"
+       "nonce": "188caa672b8abd9297e2d7b45900247cbcfd32796f992488844b5cb036f2e813"
       },
       "fy_2": {
-       "at": "2026-11-14T07:32:34.050514+00:00",
+       "at": "2026-11-16T17:45:41.033319+00:00",
        "move": {
         "push": {
          "YZ>Z": 3
         }
        },
-       "nonce": "f1dbf2161bfebf223aee409fcdca90e062e0a678274ab4b8eac79a5bac5aa813"
+       "nonce": "f2b64aba3e084808b5a71400a036b7e9c46a7393ac8bfaf6ada5c7be873eef4c"
       },
       "fy_3": {
-       "at": "2026-11-14T07:32:34.050514+00:00",
+       "at": "2026-11-16T17:45:41.033319+00:00",
        "move": {
         "push": {
          "YZ>Z": 3
         }
        },
-       "nonce": "c41917e6dba02ac916a627a314a3c900c8a595c1ffa84f0cad77f72bd2bb7b96"
+       "nonce": "5ccb6f27133157d3c66b3e94352eb3b587ca20114f3a1cd09d89a3d747769f46"
       }
      }
     },
@@ -923,275 +1263,278 @@
      "fy_3"
     ],
     "phase": "seal",
-    "phase_started_at": "2026-11-14T07:31:54.050514+00:00",
+    "phase_started_at": "2026-11-16T17:45:01.033319+00:00",
     "players": 4,
+    "practice": false,
     "published": {
      "1": {
       "dark": [
+       "XYZ>XZ",
        "WXY>WX",
-       "XZ>X"
+       "WZ>Z"
       ],
       "epoch": 1,
       "late": [],
       "mix": [
-       1617,
-       3074,
-       3797,
-       1486
+       2874,
+       3558,
+       3086,
+       451
       ],
       "pulses": [
        [
-        2,
         9,
-        2,
+        4,
+        3,
+        8
+       ],
+       [
+        8,
+        7,
+        0,
         7
        ],
        [
-        7,
-        3,
         0,
+        8,
+        2,
+        3
+       ],
+       [
+        0,
+        5,
+        8,
         1
+       ],
+       [
+        8,
+        1,
+        9,
+        1
+       ],
+       [
+        9,
+        0,
+        9,
+        0
+       ],
+       [
+        7,
+        5,
+        3,
+        5
        ],
        [
         3,
         1,
-        1,
-        2
+        0,
+        0
        ],
        [
         5,
         3,
+        8,
+        1
+       ],
+       [
+        3,
+        6,
+        7,
+        9
+       ],
+       [
+        3,
+        3,
+        1,
+        4
+       ],
+       [
+        0,
+        1,
+        5,
+        6
+       ],
+       [
+        3,
+        4,
+        1,
+        3
+       ],
+       [
+        6,
         9,
+        2,
+        1
+       ],
+       [
+        1,
+        2,
+        5,
+        0
+       ],
+       [
+        4,
+        8,
+        7,
+        0
+       ]
+      ],
+      "pushes": {
+       "fy_0": {
+        "WX>W": -2,
+        "XY>X": 4
+       },
+       "fy_1": {
+        "WX>W": -2,
+        "XY>X": 4
+       },
+       "fy_2": {
+        "WX>W": -2,
+        "XY>X": 4
+       },
+       "fy_3": {
+        "WX>W": -2,
+        "XY>X": 4
+       }
+      },
+      "round": 34015924,
+      "silent": [],
+      "widths": [
+       2,
+       8,
+       4,
+       4,
+       8,
+       3,
+       8,
+       6,
+       1,
+       1,
+       1,
+       10,
+       0,
+       6,
+       9,
+       3,
+       6,
+       4,
+       12,
+       9,
+       9,
+       5,
+       7,
+       2
+      ]
+     },
+     "2": {
+      "dark": [
+       "WXY>WY",
+       "YZ>Y"
+      ],
+      "epoch": 2,
+      "late": [],
+      "mix": [
+       1759,
+       4001,
+       1683,
+       2524
+      ],
+      "pulses": [
+       [
+        3,
+        0,
+        1,
+        1
+       ],
+       [
+        9,
+        5,
+        6,
+        0
+       ],
+       [
+        4,
+        3,
+        5,
         7
        ],
        [
-        8,
-        8,
-        8,
-        6
-       ],
-       [
+        2,
+        2,
         6,
-        7,
-        6,
-        6
+        7
        ],
        [
         7,
-        3,
+        9,
+        7,
+        9
+       ],
+       [
+        1,
+        8,
+        5,
+        0
+       ],
+       [
+        1,
+        9,
+        1,
+        2
+       ],
+       [
+        1,
+        8,
+        7,
+        0
+       ],
+       [
+        4,
+        7,
+        6,
+        7
+       ],
+       [
+        7,
+        1,
+        9,
+        1
+       ],
+       [
+        6,
+        1,
+        4,
+        7
+       ],
+       [
+        2,
+        1,
         4,
         9
        ],
        [
         2,
-        5,
         1,
-        6
-       ],
-       [
-        5,
-        0,
-        2,
-        4
-       ],
-       [
-        5,
-        2,
-        0,
+        3,
         0
        ],
        [
-        9,
-        1,
-        1,
-        3
-       ],
-       [
-        7,
-        4,
-        4,
-        6
-       ],
-       [
-        1,
-        9,
-        1,
-        2
-       ],
-       [
-        8,
-        3,
-        2,
-        7
-       ],
-       [
-        6,
-        7,
+        0,
+        0,
         2,
         4
        ],
        [
-        9,
-        0,
-        0,
-        2
-       ]
-      ],
-      "pushes": {
-       "fy_0": {
-        "WX>W": -2,
-        "XY>X": 4
-       },
-       "fy_1": {
-        "WX>W": -2,
-        "XY>X": 4
-       },
-       "fy_2": {
-        "WX>W": -2,
-        "XY>X": 4
-       },
-       "fy_3": {
-        "WX>W": -2,
-        "XY>X": 4
-       }
-      },
-      "round": 33946061,
-      "silent": [],
-      "widths": [
-       9,
-       4,
-       9,
-       11,
-       1,
-       10,
-       3,
-       12,
-       5,
-       5,
-       7,
-       10,
-       3,
-       11,
-       6,
-       1,
-       6,
-       9,
-       12,
-       10,
-       6,
-       1,
-       5,
-       3
-      ]
-     },
-     "2": {
-      "dark": [
-       "WX>X"
-      ],
-      "epoch": 2,
-      "late": [],
-      "mix": [
-       1768,
-       2415,
-       2642,
-       3144
-      ],
-      "pulses": [
-       [
-        2,
-        9,
         1,
-        2
-       ],
-       [
-        3,
-        3,
         5,
-        5
-       ],
-       [
-        6,
-        1,
-        8,
-        7
-       ],
-       [
-        8,
-        4,
         2,
-        2
-       ],
-       [
-        5,
-        9,
-        4,
         4
        ],
        [
-        1,
-        6,
-        5,
-        5
-       ],
-       [
-        0,
-        3,
-        0,
-        2
-       ],
-       [
-        5,
-        5,
-        6,
-        5
-       ],
-       [
-        2,
-        7,
-        9,
-        7
-       ],
-       [
         4,
         0,
-        7,
-        1
-       ],
-       [
-        9,
-        2,
-        5,
-        1
-       ],
-       [
-        8,
-        0,
         4,
-        6
-       ],
-       [
-        3,
-        2,
-        5,
-        4
-       ],
-       [
-        9,
-        1,
-        0,
-        6
-       ],
-       [
-        8,
-        7,
-        2,
-        2
-       ],
-       [
-        6,
-        9,
-        6,
-        2
+        8
        ]
       ],
       "pushes": {
@@ -1208,173 +1551,173 @@
         "YZ>Z": 3
        }
       },
-      "round": 33946068,
+      "round": 34015930,
       "silent": [],
       "widths": [
-       9,
+       2,
+       8,
        4,
-       9,
-       11,
+       4,
+       8,
+       3,
+       8,
+       6,
+       1,
+       1,
        1,
        10,
+       0,
+       6,
+       9,
        3,
+       6,
+       4,
        12,
-       5,
+       9,
+       9,
        5,
        7,
-       10,
-       3,
-       11,
-       6,
-       1,
-       6,
-       9,
-       12,
-       10,
-       6,
-       1,
-       5,
        12
       ]
      },
      "opening": {
-      "attempt": 0,
+      "attempt": 3,
       "mix": [
-       2488,
-       2977,
-       2773,
-       1728
+       2749,
+       2731,
+       2800,
+       1686
       ],
       "widths": [
-       9,
+       2,
+       8,
        4,
-       9,
-       11,
+       4,
+       8,
+       3,
+       8,
+       6,
+       1,
+       1,
        1,
        10,
+       7,
+       6,
+       9,
        3,
-       12,
-       5,
+       6,
+       4,
+       3,
+       9,
+       9,
        5,
        7,
-       10,
-       11,
-       11,
-       6,
-       1,
-       6,
-       9,
-       9,
-       10,
-       6,
-       1,
-       5,
-       3
+       2
       ]
      }
     },
     "rand": {
-     "beacon_sig": "1dbc1e0084c79da5229c4017c90b6beacd7647da028bcc8049d08aac7e0c404dc450c12db57f94d510d56d4589042d04",
+     "beacon_sig": "9cb5ff0ed1804b11c1b69f0e4e93732d5d3d4db236616d9d98a19b37c6f1edea2cf751e6487d2b58a992311440538412",
      "beacons": {
-      "33945608": "1dbc1e0084c79da5229c4017c90b6beacd7647da028bcc8049d08aac7e0c404dc450c12db57f94d510d56d4589042d04",
-      "33946061": "a2a80d10befb8c270b870ad949ca279470d4dee8398be7ba0dd84f5c93456b0b565ebd0b5dee9fb95ad31b86aa528d9d",
-      "33946068": "a7aeed16b35804aba65c00f88a29f7a67f08b5c41b10346cce96807f714618e6b4bfa608a48b7afefe235921ddeb2276"
+      "34015469": "9cb5ff0ed1804b11c1b69f0e4e93732d5d3d4db236616d9d98a19b37c6f1edea2cf751e6487d2b58a992311440538412",
+      "34015924": "d2be6a05a3d035e08ee41b814a5d5683fa29f58f629c1b522f93b9bf9974edaf735026260274115d8b5eb9b32da21603",
+      "34015930": "232573cc7e594a0dd092de0ee29504e1ba015dc7510b11bdbf2bc9c82c92f5b9a6061f374d77ddc231c1cdb11436e8ff"
      },
      "commits": {
       "fy_0": {
-       "at": "2026-11-14T07:10:03.891302+00:00",
-       "beacon_round": 33945608,
-       "hash": "eaf30ec7a87300d7d524397fb1f112033d8c9185d2a6924b72e1430cc9299fc7",
+       "at": "2026-11-16T17:23:06.550171+00:00",
+       "beacon_round": 34015469,
+       "hash": "ba036865a56c216269c97e5d1230deb9384e7cf6d0b2b200fcd3e8842a3dc1a8",
        "seat": 0,
-       "signature": "0xqBJTTtOB72rP8Z-BaQYq7FrsmDnb3DXiJDaPzWkmAj4wxwdEGh47G0ipx59w3d-0XM2tugJRfNXmFH7PArDw",
-       "stable_id": "44f7d27e87bc5491d42c623f84bacdcd747b24d99ec640ab56b9a0c9db97ec8d"
+       "signature": "etbklI8gAGt-cTHr1z3shOSQZG9CUr-zjW7ez7pqBEWtxdcyUB4Vsq5B7o0aWvm7xKb7p92HOl8n21BvKYJOAQ",
+       "stable_id": "a5b0b0b52f1919c44098ab03d93bbab6ba4bec89be2bc5eced8b2f85d5698fe4"
       },
       "fy_1": {
-       "at": "2026-11-14T07:10:03.958735+00:00",
-       "beacon_round": 33945608,
-       "hash": "20abcdc0d7f1ea4c877626bcddbe81eb74f12a48d0d7222414d60362c5d8faed",
+       "at": "2026-11-16T17:23:06.607276+00:00",
+       "beacon_round": 34015469,
+       "hash": "84806745575690d7b92a561c7e7fe98b3203d49fede5b391a7846aa24cfdfeca",
        "seat": 1,
-       "signature": "DdTg7sT4jCKZuOR2lYlKFetdoY1aV3aWXKlGMyShYeKGWa7ZoOG-QHchtI3JRmwMdOBhThDLO8n_p-iOaK38CA",
-       "stable_id": "11885d5e74bd12ac443d21c4e6d7c78c3f481f3d35173c8cb7466422eb03c523"
+       "signature": "aSAvU9iQ--kyy2uyM2atMgsdh2v6X2_4C09F4fpCw6Efhh1qjc99TtFmVAZRN4vfR7zO5HHAe5i2m6l6_FKDDQ",
+       "stable_id": "17c6ad756cadac8fd442576e2615076383e4986ade451dc885dd0ed0ccefcf9d"
       },
       "fy_2": {
-       "at": "2026-11-14T07:10:04.025536+00:00",
-       "beacon_round": 33945608,
-       "hash": "876e24bacf4d8904756692f7726b1c6892869b4150de5b609cbb74c49a40c486",
+       "at": "2026-11-16T17:23:06.655071+00:00",
+       "beacon_round": 34015469,
+       "hash": "ef4efc693ea9c1215ff250c2ba4d2039cfde9ee3e45b0443202b8719cfc82c2d",
        "seat": 2,
-       "signature": "WtnZthdVuhA797vyRM1tvpkHIfSCbU2iG0nyuehqP4wPaxu9RG_fieMGeooAxS_3YoJE4W9QRcV-o4S7xHSfCg",
-       "stable_id": "329d95fcffd17249360bd00d08962f4d4b73df40c29e226f87413ce182e37ab6"
+       "signature": "TYte3oeYGiTsZ2JgT5WdPrLzAu46k-HUh2coY_D9TrmcJmil2qZQ5byvYKrjx7a08fS32v7-PvnfCN_rCyBdAA",
+       "stable_id": "954239a82627710603f3eb0a65b8217bbe8716132a1d6a8bd3dd452a6fa6e63c"
       },
       "fy_3": {
-       "at": "2026-11-14T07:10:04.066833+00:00",
-       "beacon_round": 33945608,
-       "hash": "91dfadfe6e5f071925977d4f1b3f8baf5b2121c94a6a2abb479e5e9dedd4af57",
+       "at": "2026-11-16T17:23:06.710356+00:00",
+       "beacon_round": 34015469,
+       "hash": "bb1e050f31152b48549f09d31d240b90c1f05856dcf172ded5b26484c1e8bab2",
        "seat": 3,
-       "signature": "tdtUN3NAZUhYYy5Hw2NtgvNcOaRmdLMnGYh0HhSL8QyLLh3udgxQEBHBw6yUU0CJByB8jwmmNSHCJN2YAfdiCg",
-       "stable_id": "8f910875a441dddd4cfe00e56a1af6f54fe11ff9746ba3ce1e4f979d0876762f"
+       "signature": "ILyo7kA23U5JiujJqQ3Ja5NLXrQA7KIahok3aTSkNLCC5L-WZkVlEzBHNZl4rjK8WgvPY9CZ19A1Go4PgpozCQ",
+       "stable_id": "3199ef2d95c7d4c38887585818ba5e1a1cadd5bcb21fd29da117f96b6e4258bb"
       }
      },
      "reveals": {},
-     "round": 33945608,
-     "scope": "sess_11dbd22bfbfa"
+     "round": 34015469,
+     "scope": "sess_d7d31d001a3c"
     },
     "reveal_by": null,
     "reveal_window_s": 600,
     "seals": {
      "1": {
       "fy_0": {
-       "at": "2026-11-14T07:32:14.050514+00:00",
-       "commitment": "2f03b67ce54628944da7f7a0d4587fa3de830ac9d51dc294102e28a9e8771e8e",
-       "round": 33946061
+       "at": "2026-11-16T17:45:21.033319+00:00",
+       "commitment": "0e978b451ea5cd820e2cbc5f3c59d2e3eafd96104d628fbcd1eb485721a35daf",
+       "round": 34015924
       },
       "fy_1": {
-       "at": "2026-11-14T07:32:14.050514+00:00",
-       "commitment": "a5d6ed2600722410689c9da13478213b0e6e653328e5eac765f2358b37e30004",
-       "round": 33946061
+       "at": "2026-11-16T17:45:21.033319+00:00",
+       "commitment": "d5d35fc98dd22c64acbd4924c98c1e7c8e29afd693d8de7b97c9cc68392c4d27",
+       "round": 34015924
       },
       "fy_2": {
-       "at": "2026-11-14T07:32:14.050514+00:00",
-       "commitment": "646a6047f84d1de7ea76e132bc905ba855c77c5234fd5af2f879137d0bce104e",
-       "round": 33946061
+       "at": "2026-11-16T17:45:21.033319+00:00",
+       "commitment": "b487a7acbd1ffecc624ccd607caef9535378b99c80a10ef6c19d525500e31cf9",
+       "round": 34015924
       },
       "fy_3": {
-       "at": "2026-11-14T07:32:14.050514+00:00",
-       "commitment": "38530436014d7fe9a587ccf4fc858aac5c998ed53ef8edb057cfed2f1b5fa313",
-       "round": 33946061
+       "at": "2026-11-16T17:45:21.033319+00:00",
+       "commitment": "2b8386f507506318806f51d34810eedfc0eab2f7d199d11efa94a7a36e7a1aa8",
+       "round": 34015924
       }
      },
      "2": {
       "fy_0": {
-       "at": "2026-11-14T07:32:34.050514+00:00",
-       "commitment": "4b15e5389795ebd9adbf96d8c0ff6010c49651c1e4b31d1b14b864eeba011f18",
-       "round": 33946068
+       "at": "2026-11-16T17:45:41.033319+00:00",
+       "commitment": "553ad2b1d20f8d4ac5ec82531db408b2f4ffc622c615e45e6e0aacd486924531",
+       "round": 34015930
       },
       "fy_1": {
-       "at": "2026-11-14T07:32:34.050514+00:00",
-       "commitment": "619c3f9dca2fcfb1828bdde320da6626016d0be98f9e4c73b1d11fe9eeea7b8f",
-       "round": 33946068
+       "at": "2026-11-16T17:45:41.033319+00:00",
+       "commitment": "063d7acc81c9f92b33d48df5f57c87c0e6c88f1cdc58d32a0acb4ad9db870c2f",
+       "round": 34015930
       },
       "fy_2": {
-       "at": "2026-11-14T07:32:34.050514+00:00",
-       "commitment": "8d0a20552028506808ed9aac4dee12e033a67deca7cdd7b88ce6f3ee3850a4b5",
-       "round": 33946068
+       "at": "2026-11-16T17:45:41.033319+00:00",
+       "commitment": "5c092272ff9a5161acf6437018f253d2c4772d86c168310f07bea4a65a206e9e",
+       "round": 34015930
       },
       "fy_3": {
-       "at": "2026-11-14T07:32:34.050514+00:00",
-       "commitment": "4d5a6a4a0cb58a73844c4b5f689c2d324d80d2a2e6b44d2f5e0fdc3e722ab257",
-       "round": 33946068
+       "at": "2026-11-16T17:45:41.033319+00:00",
+       "commitment": "c02457a5b8ea042fc92faae69594bf3559df261abe98045d2fcd0f24134c8c31",
+       "round": 34015930
       }
      },
      "3": {
       "fy_0": {
-       "at": "2026-11-14T07:32:54.050514+00:00",
-       "commitment": "0e8254cb7ea95b5caf760a7183034b90db92fabb28a51bc9017973d8503dfc7f",
-       "round": 33946075
+       "at": "2026-11-16T17:46:01.033319+00:00",
+       "commitment": "dfd2109aa2b092c5974b4737c640d79426306ccd4cc19c792a2725a9649238cb",
+       "round": 34015937
       },
       "fy_1": {
-       "at": "2026-11-14T07:32:54.050514+00:00",
-       "commitment": "2c8897f8b1d6a8b057464a998912dd5be5ef309f378527028fa4432db9536fc6",
-       "round": 33946075
+       "at": "2026-11-16T17:46:01.033319+00:00",
+       "commitment": "aaa1bf7dc2e064625b3d3ebc908b0b019afdb8c0458a295bcf18a4d81ad5d328",
+       "round": 34015937
       }
      }
     },
@@ -1388,7 +1731,7 @@
     "voided": null
    },
    "metadata": {
-    "created_at": "2026-11-14T07:31:54.050514+00:00",
+    "created_at": "2026-11-16T17:45:01.033319+00:00",
     "participants": [
      "fy_0",
      "fy_1",
@@ -1400,6 +1743,6 @@
   },
   "status": "active",
   "step_number": 18,
-  "updated_at": "2026-11-14T07:10:05.997993+00:00"
+  "updated_at": "2026-11-16T17:23:08.470700+00:00"
  }
 }
