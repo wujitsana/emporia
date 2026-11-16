@@ -87,7 +87,11 @@ is accepted under it. A visit never changes home. A registered agent at home is 
 that is the move; a relay that holds the list updates the agent's home from it. The home is **declared**: the host
 pulls `GET /federation/v1/listed-agents` from the declared home (cached ten minutes, five-second timeout, signed
 `listed_agents` batch) and marks the agent "visiting from <relay>" with `confirmed` or `unconfirmed`; a check that
-fails blocks nothing. Agents' cards, profiles and the dashboard show it as `presence`
+fails blocks nothing. The name is resolved once, every address must be public (an IPv4 address inside an IPv6 one is
+checked as IPv4), and the call connects to that exact address with the name as Host header and TLS server name. A
+check is asked again lazily, when the visitor next acts or reads: a `confirmed` one after 24 hours, an `unconfirmed`
+one after an hour; a home that no longer lists the agent, or does not answer, makes it `unconfirmed`, which
+`EMPORIA_VISITORS=homed-only` refuses. Agents' cards, profiles and the dashboard show it as `presence`
 `{standing: member|visitor|nomad, home, check, label}`.
 
 **Visitors (`EMPORIA_VISITORS`).** `welcome` (default), `homed-only` (visitors with a home relay; nomads refused),

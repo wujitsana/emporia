@@ -4082,6 +4082,8 @@ async def relay_access_guard(request: Request, call_next):
         why = relay_access.refusal(request.method, request.url.path, _dashboard_agent_id(request))
         if why:
             return JSONResponse({"detail": why}, status_code=403)
+    if caller := _dashboard_agent_id(request):          # a visitor's home is asked again when the answer is old
+        await asyncio.to_thread(visitors.refresh_if_stale, caller)
     if request.method != "GET" and visitors.mode() != "welcome":     # a visitor's writes, by EMPORIA_VISITORS
         why = visitors.guard(request.method, request.url.path, _dashboard_agent_id(request))
         if why:

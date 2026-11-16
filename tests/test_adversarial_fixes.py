@@ -133,3 +133,58 @@ def test_the_home_check_refuses_those_as_hosts(monkeypatch):
     for u in ("https://[64:ff9b::7f00:1]", "https://[::7f00:1]", "https://[::ffff:0:7f00:1]", "https://[fec0::1]",
               "https://[2002:a00:1::1]"):
         assert visitors.target_problem(u) == "not a public address", u
+
+
+# ── a confirmed home is asked again ──────────────────────────────────────────────────────────────────
+
+from tests import test_cross_relay_visitors as V
+
+vclient, _fresh = V.client, V._fresh
+
+
+def _age_check(agent: str, hours: float, status: str | None = None):
+    import json
+    from datetime import UTC, datetime, timedelta
+
+    from emporia import relay_server as rs
+    with rs.DB_LOCK, rs.get_db() as conn:
+        c = json.loads(conn.execute("SELECT home_check_json FROM authorized_agents WHERE agent_id = ?",
+                                    (agent,)).fetchone()[0])
+        c["at"] = (datetime.now(UTC) - timedelta(hours=hours)).isoformat(timespec="seconds")
+        c["status"] = status or c["status"]
+        conn.execute("UPDATE authorized_agents SET home_check_json = ? WHERE agent_id = ?", (json.dumps(c), agent))
+
+
+def test_a_home_that_stops_listing_the_agent_is_found_out_after_a_day(vclient, monkeypatch):
+    from emporia import visitors
+    v = V.name("recheck")
+    V.fake_home(monkeypatch, [V.pub_of(v)])
+    V.register(vclient, v, V.visiting())
+    monkeypatch.setenv("EMPORIA_VISITORS", "homed-only")
+    write = lambda: vclient.post(f"/agents/{v}/relay-list", headers=V._hdr(v), json={}).status_code
+    assert write() != 403
+    asked = V.fake_home(monkeypatch, [])                    # the home no longer lists it
+    visitors._looked.clear()
+    assert write() != 403 and asked == []                   # a fresh answer is not asked again within a day
+    _age_check(v, 25)
+    visitors._looked.clear()
+    assert write() == 403 and asked                         # asked again after a day: unconfirmed, refused
+    assert V.presence(vclient, v)["check"]["status"] == "unconfirmed"
+
+
+def test_a_home_that_does_not_answer_falls_back_to_unconfirmed_and_is_tried_again(vclient, monkeypatch):
+    from emporia import visitors
+    v = V.name("recheck2")
+    V.fake_home(monkeypatch, [V.pub_of(v)])
+    V.register(vclient, v, V.visiting())
+    _age_check(v, 25)
+    V.fake_home(monkeypatch, None, fail=True)
+    visitors._looked.clear()
+    assert V.presence(vclient, v)["check"]["status"] == "confirmed"        # nobody acted yet: lazily, on the visitor's own call
+    vclient.get(f"/agents/{v}", headers=V._hdr(v))
+    assert V.presence(vclient, v)["check"]["status"] == "unconfirmed"
+    asked = V.fake_home(monkeypatch, [V.pub_of(v)])         # it is back; an hour later it is asked again
+    _age_check(v, 2)
+    visitors._looked.clear()
+    vclient.get(f"/agents/{v}", headers=V._hdr(v))
+    assert asked and V.presence(vclient, v)["check"]["status"] == "confirmed"
