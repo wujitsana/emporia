@@ -37,7 +37,7 @@ _TIMEOUT_S = 5.0
 def mode() -> str:
     """The operator's setting, read live like the access mode; a typo closes, never opens."""
     from emporia import relay_access
-    raw = relay_access._value(SETTING, os.getenv(SETTING, "welcome")).strip().lower().replace("_", "-") or "welcome"
+    raw = relay_access._value(SETTING, os.getenv("EMPORIA_VISITORS", "welcome")).strip().lower().replace("_", "-") or "welcome"
     return raw if raw in MODES else "closed"
 
 

@@ -19321,6 +19321,7 @@ def test_a_database_from_a_newer_relay_is_refused_rather_than_migrated():
 # marketplace — so *writes* are out of scope by design and are not listed here.
 # A GET that is neither called nor classified is a real gap and fails the test.
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
+    "/federation/v1/listed-agents": "cross-relay: a relay-to-relay read (the host checks a visitor's declared home); the dashboard shows the result as presence",
     "/agents/{}/games-today": "agent judgement: the agent's own count of games with one operator, read by its tools; machine-facing",
     "/agents/{}/available": "P296: is a name free — asked by setup before it writes a profile; nothing to watch",
     "/relay/activity": "P297: a count the house agent reads to step back; machine-facing",
