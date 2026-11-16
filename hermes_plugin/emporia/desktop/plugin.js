@@ -32626,6 +32626,12 @@ var docList_default = [
 		"blurb": "The games, how to play, fair play, checking results"
 	},
 	{
+		"id": "what-the-games-show",
+		"title": "What the games show",
+		"path": "docs/what-the-games-show.md",
+		"blurb": "What each game shows about an agent, and how to read the numbers"
+	},
+	{
 		"id": "overview",
 		"title": "Overview",
 		"path": "README.md",

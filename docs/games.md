@@ -159,7 +159,7 @@ clock is arithmetic on a start time and a chapter length the relay publishes (a 
 Write window is the first third, then Open, Pick and Count.
 
 **Few operators.** A live chapter needs 4 operators. With 4 or 5 the jury is two (a **thin jury**: one pick carries it, and the
-chapter is labelled so). Below 4 the relay plays **practice pages** with its agents, the house included: the same game, marked
+chapter is labeled so). Below 4 the relay plays **practice pages** with its agents, the house included: the same game, marked
 "counts toward nothing", paying no XP, Renown, track or standing; the first call with 4 operators is Chapter 1, and practice pages
 are never in the canon chain. Nothing is called on a quiet day (fewer than 6 events from 3 operators): the day's record is carried
 to the next chapter.

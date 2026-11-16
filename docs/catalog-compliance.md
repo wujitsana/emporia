@@ -2,7 +2,7 @@
 
 An audit of the Emporia Hermes plugin (`hermes_plugin/emporia/`) against the 18 admission
 rules in Hermes's `plugin-catalog/README.md` and its submission guide, with evidence, the
-validator's output, and how each rule is met. Re-derived on 2026-11-10 against the catalog README
+validator's output, and how each rule is met. Re-derived on 2026-11-10 and its counts and validator output refreshed on 2026-11-16 for 2.1.0, against the catalog README
 as installed with Hermes v0.23.0 (the first derivation was 2026-11-06, see
 `docs/archive/review-pass-2026-11-06-release.md`). Every rule is treated as a hard requirement: nothing below is
 a "defensible risk".
@@ -36,7 +36,7 @@ runtime it installs.
 | 4 | SHA bumps are new PRs | pass | The runtime pin lives in the plugin tree, so it moves only with a new entry PR. |
 | 5 | Owner submissions | pass | Submitted by the repo owner. |
 | 6 | Capabilities match | pass | Generated from Hermes's own probe, and kept in step with the manifest by a test. |
-| 7 | Install scanner | pass | `hermes plugins validate`: `security scan — safe` for the plugin dir (134 findings, none high or critical: 125 medium, 9 low). The runtime it installs scans `dangerous` (92 high or critical findings, each explained below). |
+| 7 | Install scanner | pass | `hermes plugins validate`: `security scan — safe` for the plugin dir (132 findings, none high or critical: 123 medium, 9 low). The runtime it installs scans `dangerous` (92 high or critical findings, each explained below). |
 | 8 | Desktop SDK surface | pass | `desktop/plugin.js` imports only `@hermes/plugin-sdk`, `react` and `react/jsx-runtime`; no `eval`, `new Function`, dynamic `import()`, script tags, prototype patching (the one `.prototype.` write is the bundled PEG parser's own class) or reads of Desktop's markup; `desktop surface` passes. |
 | 9 | No core overrides | pass | No core overrides, no write into Hermes's own files (the MCP tool-list cache is no longer touched: see rule 9 below); imports only the Hermes modules listed under rule 9. The tab's WebSocket is authenticated with the plugin's own single-use ticket, minted by an authenticated route. |
 | 10 | Dependency policy | pass | The plugin declares no Python dependencies. The runtime's are bounded (floor and upper bound, dev tools included) and locked; `installer/runtime-requirements.txt` is exact pins with hashes. |
@@ -46,13 +46,13 @@ runtime it installs.
 | 14 | Compatibility metadata | pass | `requires_hermes: ">=0.23.0"` in both places (the current release); `version` 2.1.0 is the same in `plugin.yaml`, the dashboard manifest, the entry, the runtime package (`pyproject.toml`, `emporia.__version__`) and the built bundles; `tests/test_version_single.py` fails if any differs. |
 | 15 | No skins/forks of bundled | pass | Not a bundled plugin. |
 | 16 | One listing per lineage | pass | Original work. |
-| 17 | No unscannable payloads | pass | A header scan of all 1,284 tracked files (1,282 regular files; two are links) found no ELF, Mach-O, PE, wasm, archive or bytecode. The tab, Desktop and console bundles are all unminified source. |
+| 17 | No unscannable payloads | pass | A header scan of all 1,318 tracked files (all regular files; none is a link) found no ELF, Mach-O, PE, wasm, archive or bytecode. The tab, Desktop and console bundles are all unminified source. |
 | 18 | Password managers from vendor | pass (n/a) | No `register_login_backend`. |
 
 ## Validator
 
-`hermes plugins validate hermes_plugin/emporia`, run on 2026-11-10 (Hermes Agent v0.23.0) on the branch
-`catalog-recheck`:
+`hermes plugins validate hermes_plugin/emporia`, run on 2026-11-16 (Hermes Agent v0.23.0) on the branch
+`docs-2.1` (the 2.1.0 release candidate plus its documentation pass):
 
 ```
 ✓ manifest — plugin.yaml parses
@@ -158,12 +158,12 @@ does not change and an update asks nothing new. (Hermes older than 0.23.0 is alr
 
 ### 7. Install scanner — pass
 `hermes plugins validate` runs Hermes's scanner (`tools.plugin_guard.scan_plugin`) on the plugin directory:
-**`safe`, 134 findings (0 critical, 0 high, 125 medium, 9 low).** The reviewer-visible breakdown, none of it
+**`safe`, 132 findings (0 critical, 0 high, 123 medium, 9 low).** The reviewer-visible breakdown, none of it
 a problem:
 
 | Pattern (severity) | Count | Where | Why it is benign |
 |---|---|---|---|
-| `js_char_code` (medium) | 44 | `dashboard/dist/index.js`, `desktop/plugin.js` | `String.fromCharCode` in the bundled libraries (the noble crypto packages, the markdown renderer, React) |
+| `js_char_code` (medium) | 42 | `dashboard/dist/index.js`, `desktop/plugin.js` | `String.fromCharCode` in the bundled libraries (the noble crypto packages, the markdown renderer, React) |
 | `path_traversal`, `path_traversal_deep` (medium) | 59 | the same two bundles, `key_guard.py` | `../` in bundled library source and in the key guard's own deny pattern for it |
 | `python_subprocess` (medium) | 10 | `setup_cli.py` (8), `slash_command.py`, `dashboard/plugin_api.py` | the disclosed shell commands: git, uv/pip, `hermes` itself, the runtime's CLI, the console process |
 | `sudo_usage` (medium) | 5 | `README.md`, `setup_cli.py`, `desktop/plugin.js` | the word in prose: instructions that tell a person to use sudo |
@@ -171,7 +171,7 @@ a problem:
 | `oversized_file` (medium) | 2 | the two bundles | unminified source of the bundled libraries (read by a reviewer, never obfuscated) |
 | `hardcoded_ip_port`, `agent_config_ref` (low) | 4 | the bundles, `README.md` | `127.0.0.1:port` examples and a mention of a config file |
 
-The runtime this plugin installs (`src/emporia`, which a reviewer reads at the pin) scans `dangerous` (273
+The runtime this plugin installs (`src/emporia`, which a reviewer reads at the pin) scans `dangerous` (275
 findings: 2 critical, 90 high). Those 92 are the whole high and critical list, each legitimate, none a payload:
 
 | Finding | Where | Why it is legitimate |
