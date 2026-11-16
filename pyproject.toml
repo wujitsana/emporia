@@ -90,10 +90,18 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-# Correctness-only for now: pyflakes + syntax errors. The full default ruleset (E402,
-# BLE001, S110, etc.) surfaces ~250 pre-existing style findings across the repo that
-# aren't part of this pass — tracked separately, not gating CI yet.
-select = ["E9", "F"]
+# The gate: pyflakes + syntax errors, bugbear (B), pyupgrade (UP), unused noqa (RUF100),
+# blind except (BLE001) and the behavior-safe flake8-simplify rules. A deliberate break of
+# a rule carries `# noqa: RULE - reason` at the line.
+select = [
+    "E9", "F", "B", "UP", "RUF100", "BLE001",
+    "SIM109", "SIM114", "SIM201", "SIM300",
+]
+ignore = [
+    # B008: the flagged defaults are shared rule objects (Params, XpRules) used as
+    # defaults on purpose; moving them into the body is a judgment call per function.
+    "B008",
+]
 
 [dependency-groups]
 dev = [
