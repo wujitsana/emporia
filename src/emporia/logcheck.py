@@ -298,7 +298,7 @@ def key_steps_logged(relay: str, get: Get, state: dict, pins: dict[str, Any]) ->
                 continue
             want = {k: step[k] for k in ("old", "new", "at", "signature", "commitment") if k in step}
             seen = included(get, state, f"agent_key:{sid}:{i}:{step.get('at')}",
-                            lambda r, want=want: r.get("stable_id") == sid and isinstance(r.get("step"), dict)
+                            lambda r, want=want: r.get("stable_id") == sid and isinstance(r.get("step"), dict)  # noqa: B023 — the closure runs inside the same iteration that defines it
                             and all(r["step"].get(k) == v for k, v in want.items()))
             if seen is False and _after(step.get("at"), state.get("at")):
                 seen = None      # made after the state was signed: maybe not folded in yet (review of P281)

@@ -327,7 +327,7 @@ def _play_and_truth(rng, idx, numbering, mode, roster, window, sigs, call_ts, re
             counted.append((u, *opened[u]))
     totals = {c: 0.0 for c in cands}
     none_w = 0.0
-    for u, agent, pick in counted:
+    for _u, agent, pick in counted:
         if mode == "practice":
             wt = 1.0
         else:
@@ -424,7 +424,7 @@ def _cell(n: int, attack: str, new_w: float, seed: int, seasons: int, chapters: 
     played = acc = 0
     for si in range(seasons):
         r = _season(n, attack, new_w, seed, si, chapters, strategy)
-        wins = [a + b for a, b in zip(wins, r["wins"])]
+        wins = [a + b for a, b in zip(wins, r["wins"], strict=False)]
         played += r["played"]
         acc += r["acc"]
     return {"wins": wins, "played": played, "acc": acc / max(played, 1)}

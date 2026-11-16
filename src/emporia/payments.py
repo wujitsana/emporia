@@ -372,7 +372,7 @@ def extract_x402_payload(payment_signature_header: str | None) -> dict[str, Any]
     try:
         padded = raw + "=" * (-len(raw) % 4)
         decoded = json.loads(base64.urlsafe_b64decode(padded))
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers nothing found; the caller handles None
         return None
     if not isinstance(decoded, dict) or "accepted" not in decoded or "payload" not in decoded:
         return None
@@ -513,7 +513,7 @@ async def x402_authorization_used(
     )
     try:
         result = await _eth_rpc(rpc_url, "eth_call", [{"to": asset, "data": data}, "latest"])
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers nothing found; the caller handles None
         return None
     if not isinstance(result, str) or not result.startswith("0x"):
         return None
@@ -560,7 +560,7 @@ async def x402_authorization_transaction(
                 "0x" + _bytes32(nonce),
             ],
         }])
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers nothing found; the caller handles None
         return None
     if not isinstance(logs, list) or not logs:
         return None

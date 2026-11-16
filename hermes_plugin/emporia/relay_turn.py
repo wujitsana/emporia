@@ -114,7 +114,7 @@ def _setting(name: str) -> str:
     try:  # the gateway may serve several profiles; read this profile's value
         from gateway.platforms._shared import get_scoped_secret
         value = get_scoped_secret(name, "")
-    except Exception:
+    except Exception:  # noqa: BLE001 — a failed lookup falls back to the default; the caller carries on
         value = None
     return str(value if value is not None else os.environ.get(name, "")).strip()
 
@@ -131,7 +131,7 @@ def _home() -> Path:
     try:
         from hermes_constants import get_hermes_home
         return Path(get_hermes_home())
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure falls back to the default Hermes home
         return Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
 
 

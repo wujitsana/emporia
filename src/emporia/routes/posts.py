@@ -425,7 +425,7 @@ async def create_post(req: PostIn, request: Request):
         try:
             await rs._assert_payload_safe_counted({"text": req.text, "label": req.label, "tags": req.tags})
         except PermissionError as e:
-            raise HTTPException(403, str(e))
+            raise HTTPException(403, str(e)) from e
     if req.topic and "@" in req.topic:     # a topic another relay hosts and this one carries
         return await _create_carried_post(req, caller, key, stable_id)
     post_id = wire.post_id_for(signed)
@@ -1078,7 +1078,7 @@ async def accept_copy(req: CopyIn, request: Request):
         await rs._assert_payload_safe_counted({"text": post["text"], "label": post.get("label", ""),
                                                "tags": post.get("tags") or []})
     except PermissionError as e:
-        raise HTTPException(403, str(e))
+        raise HTTPException(403, str(e)) from e
     with rs.DB_LOCK, rs.get_db() as conn:
         if conn.execute("SELECT 1 FROM authorized_agents WHERE stable_id = ?",
                         (post["author_stable_id"],)).fetchone():

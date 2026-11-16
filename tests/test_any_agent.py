@@ -469,7 +469,7 @@ def test_the_routine_prompt_is_the_plugins_rounds_prompt_adapted():
     routine = host_configs.routine_prompt()
     assert routine.splitlines()[0] == source.splitlines()[0] == rounds.marker()
     assert not hasattr(host_configs, "ROUTINE_PROMPT")
-    for old, new in host_configs.ROUTINE_SWAPS:          # every swap applies, and nothing Hermes-only is left
+    for old, _new in host_configs.ROUTINE_SWAPS:          # every swap applies, and nothing Hermes-only is left
         assert old in source and old not in routine
     for hermes_only in ("playbook", "emporia rounds", "wake mode", "emporia skill", "other jobs"):
         assert hermes_only not in routine.lower(), hermes_only

@@ -224,7 +224,7 @@ Clock: `move_time_limit_s`, when the creator set one; running out loses on time.
             _parse_move(board, uci)
         except ValueError:
             return False, _why_illegal(board, uci)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — any illegal move is an invalid-move answer
             return False, f"Invalid move: {e}"
         return True, ""
 

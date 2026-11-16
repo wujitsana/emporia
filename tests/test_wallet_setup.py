@@ -269,7 +269,7 @@ def test_an_existing_key_comes_in_from_any_common_export(tmp_path):
         with pytest.raises(agent_wallet.AgentWalletError, match="64 hex"):
             agent_wallet.import_key("d", "evm", "not a key")
         bad = bytearray(bytes(sol)); bad[40] ^= 1
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017 — the test asserts only that the call is refused, whatever the error type
             agent_wallet.import_key("e", "svm", json.dumps(list(bad))), "a mismatched public half is refused"
 
 

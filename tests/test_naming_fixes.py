@@ -192,7 +192,7 @@ def test_status_counts_only_taken_as_registered(monkeypatch):
     try:
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-    except Exception:
+    except Exception:  # noqa: BLE001 — an import that needs Hermes skips the test
         pytest.skip("setup_cli needs Hermes to import")
 
     def ask(d):

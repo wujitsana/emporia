@@ -244,7 +244,7 @@ def verdict(data: dict[str, Any]) -> dict[str, Any] | None:
     order = _order(data, opening)
     grid = _grid_of(data, opening)
     moves = data.get("moves") or []
-    for i, m in enumerate(moves):
+    for _i, m in enumerate(moves):
         who = m["by"]
         grid, _ = place(grid, m["channel"], marks[who])
         if line := four_line(grid, marks[who]):

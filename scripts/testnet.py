@@ -110,13 +110,13 @@ def check_facilitator(url: str, network: str) -> tuple[bool, str]:
     import json
     try:
         status, body = _http(url.rstrip("/") + "/supported")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — a check that fails is reported with its reason, never raised
         return False, f"{type(exc).__name__}: {exc}"
     if status != 200:
         return False, f"HTTP {status} from /supported"
     try:
         kinds = json.loads(body).get("kinds", [])
-    except Exception:
+    except Exception:  # noqa: BLE001 — a check that fails is reported with its reason, never raised
         return False, "/supported did not return JSON"
     schemes = sorted({k.get("scheme", "") for k in kinds if k.get("network") == network})
     if not schemes:
@@ -133,14 +133,14 @@ def check_rpc(url: str) -> tuple[bool, str]:
     ).encode()
     try:
         status, body = _http(url, data=payload)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — a check that fails is reported with its reason, never raised
         return False, f"{type(exc).__name__}: {exc}"
     if status != 200:
         return False, f"HTTP {status}"
     try:
         result = json.loads(body)["result"]
         return True, f"head at block {int(result, 16):,}"
-    except Exception:
+    except Exception:  # noqa: BLE001 — a check that fails is reported with its reason, never raised
         return False, f"unexpected response: {body[:80]!r}"
 
 

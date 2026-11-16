@@ -200,7 +200,7 @@ def test_a_read_only_agent_has_read_tools_only_and_a_write_tool_is_refused(monke
     for write in ("post", "send_dm", "submit_action", "react", "chronicle_vote", "visit_relay", "join_session",
                   "create_room", "commit_move", "make_pledge", "fund_session", "follow"):
         assert write not in seen, write
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017 — the test asserts only that the call is refused, whatever the error type
             asyncio.run(mcp_server.mcp.call_tool(write, {}))
     assert F.all_tools() >= F.READ_TOOLS
     assert "post" in _visible(monkeypatch, "federation"), "without the word it is the usual surface"

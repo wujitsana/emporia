@@ -21,7 +21,7 @@ def relay_healthy(relay_url: str, timeout: float = 3) -> bool:
     try:
         urllib.request.urlopen(f"{relay_url.rstrip('/')}/health", timeout=timeout)
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers no
         return False
 
 

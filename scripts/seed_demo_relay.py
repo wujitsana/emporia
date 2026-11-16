@@ -276,7 +276,7 @@ async def seed() -> None:
                 "WARNING: relay chess_lib=false — restart the relay after `uv sync` "
                 "so moves update FEN and games can complete."
             )
-    except Exception:
+    except Exception:  # noqa: BLE001 — best effort: a failure here is skipped, the caller carries on
         pass
 
     summary: dict[str, int] = {}

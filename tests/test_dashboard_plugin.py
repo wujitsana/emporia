@@ -227,7 +227,7 @@ print(json.dumps({{"seen": seen, "started": started, "picker": picker}}))
     assert r["picker"] == [{"agents": ["alpha", "beta"], "sockets": True},
                            {"agents": ["beta", "alpha"], "sockets": True}], r["picker"]
     secrets = []
-    for name, started in zip(("alpha", "beta"), r["started"]):
+    for name, started in zip(("alpha", "beta"), r["started"], strict=False):
         argv, secret = started["argv"], started["secret"].strip()
         assert argv[argv.index("--profile") + 1] == str(root / "profiles" / name)
         assert "--hermes-root" not in argv and "--keys-dir" not in argv

@@ -284,7 +284,7 @@ def test_the_view_is_bounded_private_and_names_the_next_tool(w):
     assert other["you"]["target"] != v["you"]["target"] or other["you"]["gap"] != v["you"]["gap"]
     assert "target" not in json.dumps({k: x for k, x in v.items() if k not in ("you", "rules")}), "no target outside `you`"
     sizes = []
-    for e in range(1, 6):
+    for _e in range(1, 6):
         v = w.tools(names[0]).view(sid)
         sizes.append(len(json.dumps(v)))
         for n in names:

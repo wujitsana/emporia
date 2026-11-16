@@ -65,9 +65,9 @@ def test_s2_a_negative_tempo_amount_cannot_poison_the_daily_ledger(wallet_env):
 def test_s2_every_pay_path_refuses_non_positive_or_fractional_amounts(wallet_env, bad):
     with pytest.raises((AgentWalletError, Exception)):
         agent_wallet.sign_exact("payer_one", _x402_body(bad))
-    with pytest.raises(Exception):
+    with pytest.raises(Exception):  # noqa: B017 — the test asserts only that the call is refused, whatever the error type
         agent_wallet.pay_tempo("payer_one", _tempo_offer(amount=bad))
-    with pytest.raises(Exception):
+    with pytest.raises(Exception):  # noqa: B017 — the test asserts only that the call is refused, whatever the error type
         agent_wallet.sign_escrow("payer_one", {}, expected_amount=int(bad) if bad.lstrip("-").isdigit() else 0)
     assert agent_wallet.ledger_spent("payer_one") == 0
 

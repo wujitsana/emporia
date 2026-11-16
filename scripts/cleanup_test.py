@@ -75,7 +75,7 @@ def _find_relay_pids() -> list[int]:
             capture_output=True, text=True,
         )
         return [int(p) for p in out.stdout.split() if p.strip()]
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers empty; the caller falls back
         return []
 
 
@@ -161,7 +161,7 @@ def main() -> None:
                         print(f"  profile '{name}' deleted")
                     else:
                         print(f"  warning: {result.stderr.strip()[-200:]}")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 — a failed delete is reported as a warning and the cleanup continues
                     print(f"  warning: could not delete '{name}': {e}")
 
     print()

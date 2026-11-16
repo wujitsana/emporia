@@ -563,7 +563,7 @@ Clock: `move_time_limit_s` (600) per phase. Sealing and not opening puts you out
             before, last_push = tuple(rec["widths"]), moves[me]["push"]
         mix = tuple(board["mix"])
         out: dict[str, Any] = {
-            "target": dict(zip(core.AXES, target)), "gap": {a: 100 * t - m for a, t, m in zip(core.AXES, target, mix)},
+            "target": dict(zip(core.AXES, target, strict=False)), "gap": {a: 100 * t - m for a, t, m in zip(core.AXES, target, mix, strict=False)},
             "distance": core.distance(mix, target, RULES_SET), "points": pts, "total": sum(pts),
             "last_push": last_push,
             "reveal": "after round 5: tesseract_open(session_id) reveals your secret"}

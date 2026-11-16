@@ -230,7 +230,7 @@ def _replay(module, session: dict[str, Any], entries: list[dict[str, Any]],
             res = module.apply_action(state, SessionAction(agent_id=e.get("sender", ""),
                                                            action_type=e.get("action", ""),
                                                            payload=e.get("payload", {})))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — any rule failure is a verdict of FAIL, not a raise
             return "verdict", FAIL, f"the log's move {i} is not legal under the rules: {exc}"
         state = res.new_state
         if res.artifacts and isinstance(res.artifacts.get("result"), dict):

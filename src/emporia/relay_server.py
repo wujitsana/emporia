@@ -368,7 +368,7 @@ def _jwt_decode(token: str) -> dict | None:
         return None
     try:
         payload = _json.loads(base64.urlsafe_b64decode(body + "=="))
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers nothing found; the caller handles None
         return None
     if payload.get("exp", 0) < time.time():
         return None
@@ -1266,7 +1266,7 @@ async def _verify_x402_payment(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(402, f"x402 verification failed: {e}")
+        raise HTTPException(402, f"x402 verification failed: {e}") from e
 
     if verify_only:
         return None     # a split entry checks both payments before it settles either
@@ -1321,7 +1321,7 @@ async def _verify_x402_payment(
         # stays `settling` and is resolved against the chain on the retry.
         # Marking it failed here is the one shortcut that would re-open the
         # double charge.
-        raise HTTPException(402, f"x402 settlement failed: {e}")
+        raise HTTPException(402, f"x402 settlement failed: {e}") from e
 
     transaction = settle_result.get("transaction")
     if not transaction:
@@ -2487,8 +2487,8 @@ class AgentRegistry:
         try:
             if len(bytes.fromhex(public_key_hex)) != 32:
                 raise ValueError()
-        except ValueError:
-            raise ValueError("public_key_hex must be a 64-char hex string (Ed25519 public key)")
+        except ValueError as exc:
+            raise ValueError("public_key_hex must be a 64-char hex string (Ed25519 public key)") from exc
 
         operator_label = (operator_label or "").strip().lower()
         if operator_label and not operators.valid_label(operator_label):
@@ -2653,8 +2653,8 @@ class AgentRegistry:
         try:
             if len(bytes.fromhex(new_public_key_hex)) != 32:
                 raise ValueError()
-        except ValueError:
-            raise ValueError("public_key_hex must be a 64-char hex string (Ed25519 public key)")
+        except ValueError as exc:
+            raise ValueError("public_key_hex must be a 64-char hex string (Ed25519 public key)") from exc
         new_public_key_hex = new_public_key_hex.lower()
 
         with DB_LOCK, get_db() as conn:
@@ -2886,7 +2886,7 @@ class AgentRegistry:
                 return {}
             data = json.loads(row["x402_pay_to_json"] or "{}")
             return data if isinstance(data, dict) else {}
-        except Exception:
+        except Exception:  # noqa: BLE001 — any failure answers empty; the caller falls back
             return {}
 
     def get_x402_receive(self, agent_id: str) -> tuple[dict[str, str], list[str] | None]:
@@ -2900,13 +2900,13 @@ class AgentRegistry:
                 return {}, None
             wallets = json.loads(row["x402_pay_to_json"] or "{}")
             wallets = wallets if isinstance(wallets, dict) else {}
-        except Exception:
+        except Exception:  # noqa: BLE001 — an unreadable wallet row answers no wallets
             return {}, None
         try:
             data = json.loads(row["accepts_networks_json"] or "null")
             nets = data.get("networks") if isinstance(data, dict) else None
             accepted = [str(n) for n in nets] if isinstance(nets, list) and nets else None
-        except Exception:
+        except Exception:  # noqa: BLE001 — a failed lookup falls back to the default; the caller carries on
             accepted = None
         return wallets, accepted
 
@@ -2944,7 +2944,7 @@ class AgentRegistry:
             data = json.loads((row["accepts_networks_json"] if row else "") or "null")
             nets = data.get("networks") if isinstance(data, dict) else None
             return [str(n) for n in nets] if isinstance(nets, list) and nets else None
-        except Exception:
+        except Exception:  # noqa: BLE001 — any failure answers nothing found; the caller handles None
             return None
 
     def accepts_networks_proof(self, agent_id: str) -> dict[str, Any] | None:
@@ -2977,7 +2977,7 @@ class AgentRegistry:
                     return None
                 log = agent_key_log(conn, row["stable_id"])
             proofs = json.loads(row["x402_pay_to_proofs_json"] or "{}")
-        except Exception:
+        except Exception:  # noqa: BLE001 — any failure answers nothing found; the caller handles None
             return None
         return {"agent_id": row["agent_id"], "stable_id": row["stable_id"] or "",
                 "public_key_hex": row["public_key_hex"], "key_log": log,
@@ -3001,7 +3001,7 @@ class AgentRegistry:
             if not row:
                 return "", ""
             return row["encryption_public_key"] or "", row["encryption_key_signature"] or ""
-        except Exception:
+        except Exception:  # noqa: BLE001 — any failure answers empty; the caller falls back
             return "", ""
 
     def set_encryption_key(self, agent_id: str, public_key_hex: str, signature: str, at: str = "") -> None:
@@ -3026,7 +3026,7 @@ class AgentRegistry:
                     "SELECT is_active FROM authorized_agents WHERE agent_id = ?", (agent_id,)
                 ).fetchone()
             return row is not None and bool(row[0])
-        except Exception:
+        except Exception:  # noqa: BLE001 — any failure answers no
             return False
 
     def verify_signature(self, agent_id: str, payload: dict[str, Any], signature: str) -> bool:
@@ -3040,7 +3040,7 @@ class AgentRegistry:
                 # No key registered — reject. Agents MUST register with a pubkey.
                 return False
             return verify(payload, signature, row[0])
-        except Exception:
+        except Exception:  # noqa: BLE001 — any failure answers no
             return False
 
     def check_rate_limit(self, agent_id: str, limit: int | None = None) -> bool:
@@ -3368,7 +3368,7 @@ async def broadcast_to_session(session_id: str, message: dict[str, Any]) -> None
             continue
         try:
             await ws.send_json(message)
-        except Exception:
+        except Exception:  # noqa: BLE001 — a socket that fails to send is dropped from the set
             dead.add(ws)
     for ws in dead:
         ws_connections[session_id].discard(ws)
@@ -3388,7 +3388,7 @@ async def broadcast_to_agent(agent_id: str, message: dict[str, Any]) -> None:
             continue
         try:
             await ws.send_json({**message, "inbox_id": inbox_id})
-        except Exception:
+        except Exception:  # noqa: BLE001 — a socket that fails to send is dropped from the set
             dead.add(ws)
     for ws in dead:
         ws_connections[key].discard(ws)
@@ -3927,7 +3927,7 @@ class WebSocketLimit:
             return await self.inner(scope, receive, send)
         try:
             agent = _ws_agent_id(WebSocket(scope, receive, send)) or ""
-        except Exception:
+        except Exception:  # noqa: BLE001 — a failed lookup falls back to the default; the caller carries on
             agent = ""
         over = ("address", _WS_OPEN[ip], _WS_PER_ADDRESS) if _WS_OPEN[ip] >= _WS_PER_ADDRESS else (
             ("agent", _WS_OPEN_AGENT[agent], _WS_PER_AGENT) if agent and _WS_OPEN_AGENT[agent] >= _WS_PER_AGENT else (
@@ -4151,7 +4151,7 @@ CLIENT_IP_HEADER = os.getenv("EMPORIA_CLIENT_IP_HEADER", "").strip().lower()
 try:
     TRUSTED_PROXIES = _proxy_ip.parse_trusted(os.getenv("EMPORIA_TRUSTED_PROXIES", ""))
 except ValueError as _e:
-    raise SystemExit(f"emporia relay: EMPORIA_TRUSTED_PROXIES is not a list of addresses or networks: {_e}")
+    raise SystemExit(f"emporia relay: EMPORIA_TRUSTED_PROXIES is not a list of addresses or networks: {_e}") from _e
 if CLIENT_IP_HEADER and CLIENT_IP_HEADER not in _proxy_ip.HEADERS:
     raise SystemExit(f"emporia relay: EMPORIA_CLIENT_IP_HEADER is one of {', '.join(_proxy_ip.HEADERS)}")
 if CLIENT_IP_HEADER and not TRUSTED_PROXIES:
@@ -4664,7 +4664,7 @@ async def health(request: Request):
                 tuple(_SESSION_TERMINAL_STATUSES),
             ).fetchone()
             session_count = row2["c"] if row2 else 0
-    except Exception:
+    except Exception:  # noqa: BLE001 — best effort: a failure here is skipped, the caller carries on
         pass
     payment_rails = _payment_rails()
     from emporia import deletion, integrity
@@ -4750,7 +4750,7 @@ def _chess_lib_available() -> bool:
         from emporia.modules import chess as _cm
 
         return bool(getattr(_cm, "_HAS_CHESS", False))
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers no
         return False
 
 
@@ -5250,10 +5250,10 @@ def _validated_encryption_key(agent_id: str, public_key_hex: str, signature: str
     try:
         if len(bytes.fromhex(key)) != 32:
             raise ValueError()
-    except ValueError:
+    except ValueError as exc:
         raise HTTPException(
             400, "encryption_public_key_hex must be a 64-char hex string (X25519 public key)"
-        )
+        ) from exc
     # P19 (H1): any 32 bytes pass the length check above and *were* being accepted
     # as a published key — including a low-order/all-zeros point, which is a
     # well-formed public key that produces a fixed, attacker-known shared secret
@@ -5269,12 +5269,12 @@ def _validated_encryption_key(agent_id: str, public_key_hex: str, signature: str
 
     try:
         X25519PrivateKey.generate().exchange(X25519PublicKey.from_public_bytes(bytes.fromhex(key)))
-    except ValueError:
+    except ValueError as exc:
         raise HTTPException(
             400,
             "encryption_public_key_hex is not usable for key agreement (a low-order "
             "or all-zeros point) — generate a real X25519 keypair",
-        )
+        ) from exc
     # Verified here, at publish time, so a key whose binding doesn't check out
     # never reaches storage. The relay is the one *serving* this key to peers, so
     # a peer who skipped the check would otherwise be trusting the relay's word —
@@ -5909,7 +5909,7 @@ async def _pull_federated_posts(peer_url: str) -> int:
     peer_url = normalize_peer_url(peer_url)  # N13-2 (R2): one identity for this peer
     try:
         data = await _fetch_federation_batch(f"{peer_url}/federation/v1/posts")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — the failure is kept as the reason in the result
         why = str(e)
         try:    # an older relay has no posts feed: say which protocol it runs rather than that a path is missing
             from emporia import fetch
@@ -5939,7 +5939,7 @@ async def _pull_federated_posts(peer_url: str) -> int:
             bytes.fromhex(signature_hex),
             federation_signable_bytes(origin, "posts", posts),
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 — any verification failure rejects the batch
         return _reject("signature verification failed — batch may be tampered or corrupt")
 
     # A peer speaks only for itself: the origin it names must be the URL it was linked and fetched at.
@@ -5991,7 +5991,7 @@ async def _pull_federated_posts(peer_url: str) -> int:
             # N12-6: untrusted external text landing in a store the dashboard renders.
             await _assert_payload_safe_counted({"text": post["text"], "label": post.get("label", ""),
                                                 "tags": post.get("tags") or []})
-        except Exception:
+        except Exception:  # noqa: BLE001 — best effort: a failure here is skipped, the caller carries on
             continue
         from emporia.addresses import address, host_of
         with DB_LOCK, get_db() as conn:
@@ -6089,7 +6089,7 @@ async def _sync_all_federated_peers() -> dict[str, int]:
 
     def _coerce(results: list) -> dict[str, int]:
         counts: dict[str, int] = {}
-        for peer, result in zip(peers, results):
+        for peer, result in zip(peers, results, strict=False):
             if isinstance(result, BaseException):
                 logger.error(
                     "federation_sync_peer_raised_unexpectedly",
@@ -6488,7 +6488,7 @@ async def ws_global_events(ws: WebSocket):
                     tuple(_SESSION_TERMINAL_STATUSES),
                 ).fetchone()
                 health_data["session_count"] = row2["c"] if row2 else 0
-        except Exception:
+        except Exception:  # noqa: BLE001 — best effort: a failure here is skipped, the caller carries on
             pass
         await ws.send_json({"type": "connected", "health": health_data})
         while True:

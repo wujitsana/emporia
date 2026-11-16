@@ -295,7 +295,7 @@ def test_pull_rows_and_toward():
     row = pl["WX>W"]
     w = list(W0)
     w[tc.channel_index()["WX>W"]] = min(20, w[tc.channel_index()["WX>W"]] + 4)
-    assert tuple(a + b for a, b in zip(base, row["up"])) == tc.mix(tuple(w), PULSES, None)
+    assert tuple(a + b for a, b in zip(base, row["up"], strict=False)) == tc.mix(tuple(w), PULSES, None)
     g = tc.toward(row, base, T_W)
     assert g["up"] == tc.distance(base, T_W) - tc.distance(tc.mix(tuple(w), PULSES, None), T_W)
     # a clamped push reports the clamped effect
@@ -310,7 +310,7 @@ def test_pull_rows_and_toward():
 def _scripted_game():
     seeds = [hashlib.sha256(f"e{e}".encode()).digest() for e in range(1, 6)]
     moves = []
-    for e in range(5):
+    for _e in range(5):
         moves.append(
             {
                 "a": push(WX_W=4, WY_W=2, XYZ_XY=2),

@@ -188,7 +188,7 @@ def _profile_values() -> dict[str, str]:
     try:
         from agent.secret_scope import current_secret_scope
         scope = current_secret_scope()
-    except Exception:
+    except Exception:  # noqa: BLE001 — a failed lookup falls back to the default; the caller carries on
         scope = None
     names = set(scope) if scope is not None else set(os.environ)
     out: dict[str, str] = {}
@@ -334,7 +334,7 @@ class EmporiaAdapter(BasePlatformAdapter):
         try:
             from . import money_guard
             notice = money_guard.stale_runtime_notice()
-        except Exception:                      # a notice must never stop the gateway
+        except Exception:                      # noqa: BLE001 — a failed look at the notice is no notice; the bridge keeps running; a notice must never stop the gateway
             notice = ""
         if notice:
             logger.warning("Emporia: %s", notice)

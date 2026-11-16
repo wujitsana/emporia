@@ -176,7 +176,7 @@ def _decoded_blobs(text: str) -> list[str]:
         raw = blob.replace("-", "+").replace("_", "/")
         try:
             decoded = base64.b64decode(raw + "=" * (-len(raw) % 4), validate=True).decode("utf-8")
-        except Exception:
+        except Exception:  # noqa: BLE001 — best effort: a failure here is skipped, the caller carries on
             continue
         if len(decoded) >= 8 and sum(c.isalpha() or c.isspace() for c in decoded) >= 0.8 * len(decoded):
             out.append(decoded)
@@ -337,5 +337,5 @@ def injection_flags(value: Any) -> list[str]:
         payload = value if isinstance(value, (str, Mapping)) else {"v": value}
         hit = scan_payload(payload, mode="enforce")
         return [] if hit.ok and hit.matched_pattern is None else [INJECTION_FLAG]
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers empty; the caller falls back
         return []

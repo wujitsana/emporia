@@ -24,7 +24,7 @@ def test_an_unregistered_agent_waits_a_minute_at_least_and_grows_to_about_fiftee
     hi = [backoff.refusal_wait(404, a, rng=lambda: 0.999999) for a in range(8)]
     assert min(lo) >= backoff.UNREGISTERED_FLOOR
     assert hi[-1] <= backoff.UNREGISTERED_CAP + 1e-6 and hi[-1] > 800
-    assert all(b >= a for a, b in zip(hi, hi[1:]))
+    assert all(b >= a for a, b in zip(hi, hi[1:], strict=False))
 
 
 def test_a_429_waits_at_least_what_the_relay_asked():

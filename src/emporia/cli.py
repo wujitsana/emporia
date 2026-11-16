@@ -769,7 +769,7 @@ def normalize_relay_url(raw: str, plain_remote: bool = True) -> str:
         url = ("http://" if host in _LOCAL_HOSTS else "https://") + url
     try:
         parts = urllib.parse.urlparse(url)
-        parts.port                                          # a port that is no number raises
+        parts.port                                          # a port that is no number raises  # noqa: B018 — the access is the check: it raises on a bad value
     except ValueError:
         return ""
     if parts.scheme not in ("http", "https") or not parts.hostname:
@@ -2207,7 +2207,7 @@ def cmd_signer(args: argparse.Namespace) -> int:
     if args.action == "status":
         try:
             h = signer_client.Client(url, "", "").health()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — an unreachable signer is reported to the person with exit 1
             print(f"signer: not reachable at {url} — {e}")
             return 1
         apart = h.get("uid") != os.getuid()
@@ -2317,7 +2317,7 @@ def _signer_up(url: str) -> dict | None:
     def look() -> dict | None:
         try:
             return signer_client.Client(url, "", "").health()
-        except Exception:
+        except Exception:  # noqa: BLE001 — any failure answers nothing found; the caller handles None
             return None
     return _wiz_lookup(("signer", url), look)
 
@@ -2591,7 +2591,7 @@ def _signer_daemon(args: argparse.Namespace, url: str) -> int:
         signer_client.Client(url, "", "").health()
         print(f"signer: already up at {url}")
         return 0
-    except Exception:
+    except Exception:  # noqa: BLE001 — best effort: a failure here is skipped, the caller carries on
         pass
     folder.mkdir(mode=0o700, parents=True, exist_ok=True)
     argv = [sys.executable, "-m", "emporia.cli", "signer", "serve", "--dir", str(folder)]
@@ -2610,7 +2610,7 @@ def _signer_daemon(args: argparse.Namespace, url: str) -> int:
                   "adds no protection against a rogue agent; for that, emporia signer host\n"
                   "  Next: emporia signer add NAME — then restart the gateway. Undo: emporia signer remove NAME")
             return 0
-        except Exception:
+        except Exception:  # noqa: BLE001 — a probe that fails keeps polling until the deadline
             if proc.poll() is not None:
                 break
             time.sleep(0.25)
@@ -3720,7 +3720,7 @@ def cmd_agent_settings(name: str, args: argparse.Namespace) -> int:
         after = table()
         lines = diff(before, after)
         if want_json:
-            print(json.dumps({"agent": name, "changed": [a["key"] for a, b in zip(after, before)
+            print(json.dumps({"agent": name, "changed": [a["key"] for a, b in zip(after, before, strict=False)
                                            if (a["value"], a["default"]) != (b["value"], b["default"])],
                               "restart": S.restart_command(name), "settings": after}, indent=2))
             return 0
@@ -6590,7 +6590,7 @@ def doctor_signer(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
     from emporia import signer_client
     try:
         h = signer_client.Client(url, "", "").health()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — an unreachable signer is reported as a failed check, never raised
         rep.fail(f"its wallet is behind the signer at {url}, which is not answering — it cannot pay ({e})",
                  "start it: emporia signer serve (as the signer's user)")
         return
@@ -6925,7 +6925,7 @@ def _agent_child_env(profile: Path, env_over: dict[str, str]) -> dict[str, str]:
         raise RuntimeError(f"{', '.join(bad)} in the profile's MCP entry is a cmd: source; not run as root")
     try:
         held = dict(installer().harvest_env(profile))
-    except Exception:
+    except Exception:  # noqa: BLE001 — a failed lookup falls back to the default; the caller carries on
         held = {}
     values = {**held, **entry}
     handed = {n: values[n] for n in agent_env.names(values)
@@ -8774,7 +8774,7 @@ def _backup_phrase(profile: Path, agent_id: str) -> int:
     phrase = " ".join((phrase_file.read_text() if state == "file"
                        else dotenv.get(ENV_KEY_NAMES["phrase"], "")).split()).lower()
     try:
-        raws = dict(zip(("evm", "svm"), aw.derive_from_phrase(phrase)))
+        raws = dict(zip(("evm", "svm"), aw.derive_from_phrase(phrase), strict=False))
     except aw.AgentWalletError as e:
         print(f"wallet backup: the stored phrase does not read ({e}); nothing changed.")
         return 1

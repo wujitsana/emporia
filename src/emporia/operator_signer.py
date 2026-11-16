@@ -153,7 +153,7 @@ def _local_signer() -> LocalKeySigner:
     if raw_hex:
         try:
             return LocalKeySigner(Account.from_key(raw_hex))
-        except Exception:
+        except Exception:  # noqa: BLE001 — re-raised as OperatorSignerError without echoing the key
             # The value is not repeated back: it is a private key.
             raise OperatorSignerError(
                 "EMPORIA_OPERATOR_PRIVATE_KEY is set but is not a valid secp256k1 "

@@ -541,7 +541,7 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
             # bug the room route calls out as the *other* case: wrapped only for
             # self. 400 is correct and test_encrypted_message_must_be_readable_by_
             # every_participant pins it.
-            raise HTTPException(400, f"this DM thread is end-to-end encrypted — {e}")
+            raise HTTPException(400, f"this DM thread is end-to-end encrypted — {e}") from e
     elif crypto_box.looks_like_envelope(req.content):
         raise HTTPException(
             400,
@@ -610,7 +610,7 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
         try:
             await rs._assert_payload_safe_counted({"content": req.content})
         except PermissionError as e:
-            raise HTTPException(403, str(e))
+            raise HTTPException(403, str(e)) from e
     # P185: in a thread with another relay's agent the sender is named by its
     # address, and the message goes to that relay first — stored here only once
     # it was accepted there, so the two copies never disagree.

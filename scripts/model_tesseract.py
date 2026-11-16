@@ -56,7 +56,7 @@ def _gains(widths, pulses, tgt):
     pl = tc.pull(widths, pulses, RULES)
     base = tc.mix(widths, pulses, None, RULES)
     rows = []
-    for cid, w in zip(tc.channel_ids(), widths):
+    for cid, w in zip(tc.channel_ids(), widths, strict=False):
         g = tc.toward(pl[cid], base, tgt, RULES)
         rows.append(f"{cid} w={w} up={list(pl[cid]['up'])} down={list(pl[cid]['down'])} gain up={g['up']} down={g['down']}")
     return base, rows
@@ -197,7 +197,7 @@ def run_game(seed, seats, caller, epochs=5):
     history, log = [], []
     for e in range(1, epochs + 1):
         moves, notes = {}, {}
-        for p, s in zip(names, seats):
+        for p, s in zip(names, seats, strict=False):
             if s == "model":
                 moves[p], notes[p] = model_move(caller, seed, e, p, tgt[p], widths, last_samples, last_mix, history)
                 continue
@@ -271,7 +271,7 @@ def main():
             for r in rs:
                 f.write(json.dumps({"who": tag, **r}) + "\n")
     ms, ls = [r["score"] for r in mod], [r["score"] for r in base]
-    diff = [m - l for m, l in zip(ms, ls)]
+    diff = [m - l for m, l in zip(ms, ls, strict=False)]
     res = {"games": a.games, "calls": caller.n, "reused": caller.reused, **STATS,
            "model_mean": statistics.mean(ms), "model_ci": ci(ms), "lite_mean": statistics.mean(ls), "lite_ci": ci(ls),
            "diff_mean": statistics.mean(diff), "diff_ci": ci(diff),

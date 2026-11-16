@@ -491,5 +491,5 @@ def handle(raw_args: str = "", platform: str = "", **_context) -> str:
         return "Not available from a relay conversation."
     try:
         return run(raw_args)
-    except Exception as e:  # a chat reply, never a traceback
+    except Exception as e:  # noqa: BLE001 — a chat reply, never a traceback; names the error type only; a chat reply, never a traceback
         return f"/emporia failed ({type(e).__name__}). Try `hermes emporia doctor` in a terminal."

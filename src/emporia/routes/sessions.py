@@ -157,7 +157,7 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
         if opponent and any(w.get("opponent") == opponent for w in waiting):
             raise C.ChallengeError(f"you already have a challenge waiting for {opponent}: one at a time per opponent")
     except C.ChallengeError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
     config["challenge"] = C.issue(asked, **relay)
     return config
 
@@ -248,8 +248,8 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
         from emporia.modules.service import MAX_DEADLINE_HOURS
         try:
             hours = float((req.config or {}).get("deadline_hours", 0) or 0)
-        except (TypeError, ValueError):
-            raise HTTPException(400, "deadline_hours must be a number")
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, "deadline_hours must be a number") from exc
         if hours > MAX_DEADLINE_HOURS:
             raise HTTPException(400, (
                 f"deadline_hours is at most {MAX_DEADLINE_HOURS}: delivery and the buyer's "
@@ -688,10 +688,10 @@ def _require_sealed(s: dict[str, Any], value: str, what: str) -> None:
     try:
         crypto_box.validate_envelope_for(value, set(s["participants"]))
     except crypto_box.MissingRecipients as e:
-        raise HTTPException(409, f"{what} is sealed for too few players; missing {', '.join(e.missing)}")
-    except ValueError:
+        raise HTTPException(409, f"{what} is sealed for too few players; missing {', '.join(e.missing)}") from e
+    except ValueError as exc:
         raise HTTPException(400, (f"This session is private and its players publish encryption keys: "
-                                  f"{what} must be sealed to them (your Emporia tools do this)"))
+                                  f"{what} must be sealed to them (your Emporia tools do this)")) from exc
 
 
 def _check_chat(s: dict[str, Any], agent_id: str, content: str) -> None:
@@ -1057,7 +1057,7 @@ async def _chain_outcome(cfg, info) -> str | None:
     from emporia import escrow_chain
     try:
         st = await escrow_chain.payment_state(cfg, info)
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers nothing found; the caller handles None
         return None
     if st["capturable"] > 0:
         return "held"
@@ -1093,7 +1093,7 @@ async def _release_on_rail(payment: dict[str, Any]) -> dict[str, Any]:
                 return {"payment_intent_id": ref, "status": f"already {hold['state']}"}
             try:
                 tx = await escrow_chain.void(cfg, signer, info)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 — the chain decides next; the failure is read, not raised
                 # P111: read the chain before calling it failed, and leave a
                 # still-held hold for the reconciler to void, not to expire.
                 outcome = await _chain_outcome(cfg, info)
@@ -1105,7 +1105,7 @@ async def _release_on_rail(payment: dict[str, Any]) -> dict[str, Any]:
             rs.update_escrow_hold(ref, state="voided", **({"void_tx": tx} if tx else {}))
             return {"payment_intent_id": ref, "status": "voided", "transaction": tx}
         return {"payment_intent_id": ref, "status": "no_hold"}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"payment_intent_id": ref, "error": str(e)}
 
 
@@ -1126,7 +1126,7 @@ async def _settle_escrow_purchase(session_id: str, seller: str, total_cents: int
         ref = p["payment_intent_id"]
         try:
             cfg, signer, info, hold = _escrow_hold_for(p)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — a failed capture is recorded in the result and the loop goes on
             failed = True
             captures.append({"payment_intent_id": ref, "status": f"capture_failed: {e}"})
             continue
@@ -1138,7 +1138,7 @@ async def _settle_escrow_purchase(session_id: str, seller: str, total_cents: int
         payout_atomic += amount - fee_amount(info, amount)
         try:
             tx = await escrow_chain.capture(cfg, signer, info, amount)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — the chain decides; a failed capture is left for the reconciler to retry
             # P111: the chain decides. A capture whose receipt timed out may
             # have landed; one that truly failed is left `capture_pending` for
             # reconcile_escrow_holds() to retry until the hold expires — before
@@ -1226,7 +1226,7 @@ async def reconcile_escrow_holds(limit: int = 100) -> dict[str, int]:
                 rs.update_escrow_hold(ref, state="voided", void_tx=tx)
                 rs.mark_payment_released(ref)
                 counts["escrow_voided"] += 1
-        except Exception:
+        except Exception:  # noqa: BLE001 — logged and retried on the next reconcile pass
             rs.logger.warning("escrow reconcile: %s for %s will be retried",
                               "capture" if capturing else "void", ref, exc_info=True)
             counts["escrow_retry_later"] += 1
@@ -1305,8 +1305,8 @@ async def _fund_with_escrow(request: Request, s: dict[str, Any], session_id: str
         submitted = json.loads(base64.b64decode(request.headers[ESCROW_HEADER]))
         info = escrow.PaymentInfo.from_json(submitted["payment_info"])
         signature = bytes.fromhex(str(submitted["signature"]).removeprefix("0x"))
-    except Exception:
-        raise HTTPException(400, f"{ESCROW_HEADER} must be base64(JSON {{payment_info, signature}}).")
+    except Exception as exc:
+        raise HTTPException(400, f"{ESCROW_HEADER} must be base64(JSON {{payment_info, signature}}).") from exc
     amount = int(_x402_amount_atomic(amount_cents))
     try:
         escrow.check_submitted(info, operator=signer.address, receiver=wallet, token=cfg.token,
@@ -1317,9 +1317,9 @@ async def _fund_with_escrow(request: Request, s: dict[str, Any], session_id: str
             info, signature, chain_id=cfg.chain_id, escrow=cfg.contract,
             collector=cfg.collector, token_name=cfg.token_name, token_version=cfg.token_version)
     except escrow.EscrowError as e:
-        raise HTTPException(402, f"Escrow hold refused: {e}")
-    except Exception:
-        raise HTTPException(402, "Escrow hold refused: the signature does not verify.")
+        raise HTTPException(402, f"Escrow hold refused: {e}") from e
+    except Exception as exc:
+        raise HTTPException(402, "Escrow hold refused: the signature does not verify.") from exc
     if signed_by.lower() != info.payer.lower():
         raise HTTPException(402, "Escrow hold refused: the signature is not the payer's.")
 
@@ -1340,7 +1340,7 @@ async def _fund_with_escrow(request: Request, s: dict[str, Any], session_id: str
             if (await _chain_outcome(cfg, info)) != "held":
                 rs._record_x402_settlement(request, {"success": False, "errorReason": str(e)},
                                            network=cfg.network, payer=info.payer)
-                raise HTTPException(402, f"Escrow hold could not be placed: {e}")
+                raise HTTPException(402, f"Escrow hold could not be placed: {e}") from e
             tx = e.tx_hash or ""
         state = await escrow_chain.payment_state(cfg, info)
         if state["capturable"] != amount:
@@ -1348,7 +1348,7 @@ async def _fund_with_escrow(request: Request, s: dict[str, Any], session_id: str
             try:
                 await escrow_chain.void(cfg, signer, info)
                 released = "It was voided back to the payer."
-            except Exception:
+            except Exception:  # noqa: BLE001 — a failed void is reported in the 502 that follows
                 released = "Voiding it failed; the payer can reclaim it after it expires."
             raise HTTPException(502, (
                 f"The hold was submitted ({tx}) but holds {state['capturable']}, not {amount}. "
@@ -1700,11 +1700,11 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         await rs._assert_payload_safe_counted(full_payload, caller=req.agent_id)
     except PermissionError as e:
         if not req.say:
-            raise HTTPException(403, str(e))
+            raise HTTPException(403, str(e)) from e
         try:
             await rs._assert_payload_safe_counted({**full_payload, "say": "", "say_tags": []})
-        except PermissionError:
-            raise HTTPException(403, str(e))
+        except PermissionError as exc:
+            raise HTTPException(403, str(e)) from exc
         say_dropped = True
         rs.logger.warning("table_talk_dropped", extra={"session_id": session_id, "agent_id": req.agent_id})
 
@@ -1715,7 +1715,7 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     try:
         rs.validate_proof_of_reasoning(full_payload)
     except PermissionError as e:
-        raise HTTPException(403, str(e))
+        raise HTTPException(403, str(e)) from e
 
     # 5. Audit log
     log_private_event(session_id, req.agent_id, "action", full_payload)

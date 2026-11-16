@@ -101,6 +101,9 @@ ignore = [
     # B008: the flagged defaults are shared rule objects (Params, XpRules) used as
     # defaults on purpose; moving them into the body is a judgment call per function.
     "B008",
+    # UP031: %-format to .format()/f-string is not always the same text (a tuple operand,
+    # %d on a float, %s on None), so each site wants a human check, not a rewrite.
+    "UP031",
 ]
 
 [dependency-groups]

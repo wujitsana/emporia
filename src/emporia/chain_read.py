@@ -100,7 +100,7 @@ class PinnedReader:
             status, data = self._http(url, body, headers, left, self.max_bytes)
         except ChainUnknown:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — every RPC failure becomes ChainUnknown (the caller's one 'cannot tell' answer)
             raise ChainUnknown(rpc_safe.describe(e)) from None
         if status != 200:
             raise ChainUnknown(f"the RPC request failed (HTTP {status})")

@@ -148,7 +148,7 @@ def _check_local_relay(relay_url: str) -> str:
             from emporia.cli import health
             return "up" if health(timeout=2, url=relay_url) else "waiting to retry"
         what = ensure_local_relay(relay_url)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — a failed relay check is logged and reported as 'check failed'
         logger.warning("local relay check failed: %s", e)
         return "check failed"
     if what not in ("up", "not on this machine") and not what.startswith(("not started here", "not the relay")):

@@ -64,15 +64,15 @@ def bundles(pool: tuple[int, ...]) -> tuple[tuple[int, ...], ...]:
 
 
 def worth(values: tuple[int, ...], bundle: tuple[int, ...]) -> int:
-    return sum(v * k for v, k in zip(values, bundle))
+    return sum(v * k for v, k in zip(values, bundle, strict=False))
 
 
 def rest(pool: tuple[int, ...], bundle: tuple[int, ...]) -> tuple[int, ...]:
-    return tuple(n - k for n, k in zip(pool, bundle))
+    return tuple(n - k for n, k in zip(pool, bundle, strict=False))
 
 
 def _as_dict(vec: tuple[int, ...]) -> dict[str, int]:
-    return dict(zip(GOODS, vec))
+    return dict(zip(GOODS, vec, strict=False))
 
 
 def _as_vec(d: dict[str, int]) -> tuple[int, ...]:

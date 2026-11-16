@@ -22,7 +22,7 @@ async def flood_chat_transaction(client: httpx.AsyncClient, target_url: str, ses
         response = await client.post(f"{target_url}/api/v1/agent/call", json=payload, timeout=2.0)
         latency = time.perf_counter() - start_time
         return {"status": "SUCCESS" if response.status_code == 200 else "FAILED", "latency": latency}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"status": "ERROR", "error": str(e), "latency": time.perf_counter() - start_time}
 
 async def run_stress_validation(concurrent_tasks: int = 50):

@@ -922,7 +922,7 @@ class Run:
             time.sleep(5)
         else:
             raise StepFailed(f"the signals never appeared on the players' side: {seen}")
-        bids = {who: seen[who]["signal"] - shade for who, shade in zip(who3, (12, 5, 9))}
+        bids = {who: seen[who]["signal"] - shade for who, shade in zip(who3, (12, 5, 9), strict=False)}
         for who in who3:
             r = self.tool(who, "commit_move", sid, bids[who], "shading my bid below my signal, the winner's curse")
             check(r.get("success"), f"{who}'s sealed bid: {r}")
@@ -1386,7 +1386,7 @@ class Run:
             return
         self._torn_down = True
         t0 = time.monotonic()
-        for name, proc in list(self.workers.items()):
+        for _name, proc in list(self.workers.items()):
             try:
                 proc.stdin.close()
             except OSError:

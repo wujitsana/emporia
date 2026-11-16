@@ -965,7 +965,7 @@ def _run(request: Request, fn):
         except sb.BackendError as e:   # P293: its back end cannot, or would not
             audit({"agent": aid, "op": op, "result": "refused", "why": str(e)[:300]})
             raise HTTPException(403, {"error": f"not paid: {e}"}) from None
-        except Exception as e:   # a malformed offer, a refused requirement: say so, never a traceback
+        except Exception as e:   # noqa: BLE001 — audited, then refused as a 400 naming the error; a malformed offer, a refused requirement: say so, never a traceback
             audit({"agent": aid, "op": op, "result": "error", "why": _safe_error(e)[:300]})
             raise HTTPException(400, {"error": _safe_error(e)}) from None
         audit({"agent": aid, "op": op, "result": "signed",
@@ -1063,7 +1063,7 @@ def _signing_call(request: Request, kind: str, fn, key: str = "signature"):
         audit({"agent": aid, "op": "sign", "kind": kind, "result": "refused", "why": str(e)[:300]})
         _alert(aid, "refused", f"{kind if kind in signing.KINDS else 'unknown kind'}: {e}")
         raise HTTPException(403, {"error": str(e)}) from None
-    except Exception as e:   # wrong arguments for the kind: say so, never a traceback
+    except Exception as e:   # noqa: BLE001 — audited, then refused as a 400 naming the error; wrong arguments for the kind: say so, never a traceback
         audit({"agent": aid, "op": "sign", "kind": kind, "result": "error", "why": f"{type(e).__name__}: {e}"[:300]})
         raise HTTPException(400, {"error": f"{type(e).__name__}: {e}"}) from None
     audit({"agent": aid, "op": "sign", "kind": kind, "result": "signed"})

@@ -203,7 +203,7 @@ def test_health_season_and_a_snapshot(client, monkeypatch, tmp_path):
 def test_a_rate_limit_hit_is_counted(client, monkeypatch):
     before = dict(rs.RATE_LIMIT_HITS)
     monkeypatch.setattr(rs.AGENT_REGISTRY, "check_rate_limit", lambda agent_id: False)
-    with pytest.raises(Exception):
+    with pytest.raises(Exception):  # noqa: B017 — the test asserts only that the call is refused, whatever the error type
         rs._enforce_agent_rate_limit("anyone")
     assert rs.RATE_LIMIT_HITS["agent"] == before["agent"] + 1
 

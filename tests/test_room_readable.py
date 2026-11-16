@@ -40,7 +40,7 @@ EXPECTED = {
 @pytest.mark.parametrize("name", list(CASES))
 def test_both_readers_agree_on_who_may_read_a_room(name):
     room_id = _room(**CASES[name])
-    for caller, expected in zip((MEMBER, STRANGER, ""), EXPECTED[name]):
+    for caller, expected in zip((MEMBER, STRANGER, ""), EXPECTED[name], strict=False):
         with rs.DB_LOCK, rs.get_db() as conn:
             threads = room_threads._readable_room(conn, caller, room_id) is not None
             problem = post_routes._object_problem(conn, caller, {"kind": "room", "id": room_id}, {})

@@ -154,7 +154,7 @@ async def create_room_endpoint(req: rs.CreateRoomRequest, request: Request):
     try:
         await rs._assert_payload_safe_counted(req.model_dump(), caller=caller)
     except PermissionError as e:
-        raise HTTPException(403, str(e))
+        raise HTTPException(403, str(e)) from e
     if req.room_type not in ("public", "private"):
         raise HTTPException(400, "room_type must be 'public' or 'private'")
     if req.gate_type not in ("open", "invite", "paid"):
@@ -207,7 +207,7 @@ async def create_room_endpoint(req: rs.CreateRoomRequest, request: Request):
             })
         return room.to_dict(viewer_id=caller, db_path=rs.DATABASE_PATH)
     except Exception as e:
-        raise HTTPException(422, str(e))
+        raise HTTPException(422, str(e)) from e
 def _card(room: rooms_db.Room) -> dict[str, Any]:
     """What an invitee may see of a room before joining: the terms of joining and the head count, never
     who is in it, what was said, or which game session it is tied to."""
@@ -384,7 +384,7 @@ async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
                     rail=confirmed_pi.rail,
                 )
             except ValueError as e:
-                raise HTTPException(402, str(e))
+                raise HTTPException(402, str(e)) from e
 
     # Membership grant — N5 review R2: this must commit before the payout below (and
     # before returning) so that a retry after a mid-flight failure is caught by the
@@ -396,7 +396,7 @@ async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
     try:
         rooms_db.add_member(room_id, req.agent_id, db_path=rs.DATABASE_PATH)
     except ValueError as e:
-        raise HTTPException(403, str(e))
+        raise HTTPException(403, str(e)) from e
     _record_act(room_id, "join", req.agent_id, req.agent_id, req.at, joined, req.signature)
 
     if room.gate_type == "paid" and confirmed_pi:
@@ -652,9 +652,9 @@ async def send_room_message(room_id: str, req: rs.SendRoomMessageRequest, reques
             raise HTTPException(409, {
                 "code": ERR_MISSING_RECIPIENTS,
                 "message": f"this room is end-to-end encrypted — {e}",
-            })
+            }) from e
         except ValueError as e:
-            raise HTTPException(400, f"this room is end-to-end encrypted — {e}")
+            raise HTTPException(400, f"this room is end-to-end encrypted — {e}") from e
     elif crypto_box.looks_like_envelope(req.content):
         raise HTTPException(
             400,
@@ -713,7 +713,7 @@ async def send_room_message(room_id: str, req: rs.SendRoomMessageRequest, reques
             await rs._assert_payload_safe_counted(
                 {"text": body["text"], "label": body["label"], "tags": body["tags"]})
         except PermissionError as e:
-            raise HTTPException(403, str(e))
+            raise HTTPException(403, str(e)) from e
 
     try:
         msg = rooms_db.post_message(

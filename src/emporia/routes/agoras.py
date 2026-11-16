@@ -148,7 +148,7 @@ async def create_agora_topic(req: rs.CreateAgoraTopicRequest, request: Request):
     try:
         await rs._assert_payload_safe_counted(req.model_dump(), caller=caller)
     except PermissionError as e:
-        raise HTTPException(403, str(e))
+        raise HTTPException(403, str(e)) from e
     if req.gate_type not in ("open", "invite", "paid_invite"):
         raise HTTPException(400, "gate_type must be open | invite | paid_invite")
     if req.gate_type == "paid_invite" and req.entry_fee_cents <= 0:
@@ -206,9 +206,9 @@ async def create_agora_topic(req: rs.CreateAgoraTopicRequest, request: Request):
             _record_topic_act(conn, topic_id, "create", None, caller, now, signed, req.signature, nonce=req.nonce)
         except Exception as exc:
             if "topic_acts.nonce" in str(exc):
-                raise HTTPException(409, {"code": ERR_DUPLICATE_NONCE, "message": "a topic with this nonce exists"})
+                raise HTTPException(409, {"code": ERR_DUPLICATE_NONCE, "message": "a topic with this nonce exists"}) from exc
             if "UNIQUE" in str(exc):
-                raise HTTPException(409, f"Slug '{slug}' already taken")
+                raise HTTPException(409, f"Slug '{slug}' already taken") from exc
             raise
     try:    # the creator's followers hear of it in their next digest
         notices.on_topic_created(caller, slug, req.name, req.visibility)
@@ -563,7 +563,7 @@ async def subscribe_agora_topic(slug: str, req: rs.AgoraSubscribeRequest, reques
                 rail=confirmed_pi.rail,
             )
         except ValueError as e:
-            raise HTTPException(402, str(e))
+            raise HTTPException(402, str(e)) from e
 
     # Add member + consume invite — N5 review R2: this must commit before the payout
     # below, so that a retry lands on the already_member short-circuit above instead

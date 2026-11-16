@@ -142,7 +142,7 @@ def _walk_rooms(db_path: Path, budget: _Budget) -> dict[str, Any]:
             break
         try:
             v = rooms.verify_chain(room_id, db_path)
-        except Exception as e:      # a check that cannot run is a finding, not a crash
+        except Exception as e:      # noqa: BLE001 — a check that cannot run is reported as failed, never raised; a check that cannot run is a finding, not a crash
             ok, detail = False, f"could not be checked: {type(e).__name__}: {e}"
         else:
             ok, detail = v.ok, v.message
@@ -172,7 +172,7 @@ def _check_dms(db_path: Path, budget: _Budget) -> dict[str, Any]:
             break
         try:
             v = _verify_dm_chain(thread_id, None, db_path)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — a check that cannot run is reported as failed, never raised
             ok, detail = False, f"could not be checked: {type(e).__name__}: {e}"
         else:
             ok, detail = v.ok, v.message

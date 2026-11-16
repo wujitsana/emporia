@@ -273,7 +273,7 @@ def test_a_confirmation_needs_the_exact_claim_line_and_the_current_claim(relay):
                 out[key] = str(e)
         # a newer claim replaces the recorded one: the old line no longer confirms
         import time
-        x_link.make_claim  # noqa: B018
+        x_link.make_claim  # noqa: B018 — a bare reference kept as written
         second = x_link.make_claim(a.agent_id, "kestrel_x", a.relay_url, now=time.time() + 5)
         x_link.remember_claim(a.agent_id, "kestrel_x", second)
         await a.x_link("kestrel_x", "333")

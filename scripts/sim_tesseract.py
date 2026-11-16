@@ -40,14 +40,14 @@ def fmix(widths, rules, samples=NOMINAL):
         if t == 0:
             acc = [a + 0.25 for a in acc]
         else:
-            acc = [a + x / t for a, x in zip(acc, amt)]
+            acc = [a + x / t for a, x in zip(acc, amt, strict=False)]
     return [a / len(samples) for a in acc]
 
 
 def fdist(sh, tfrac, rules):
     if rules.score_power == 2:
-        return sum((a - b) ** 2 for a, b in zip(sh, tfrac))
-    return sum(abs(a - b) for a, b in zip(sh, tfrac))
+        return sum((a - b) ** 2 for a, b in zip(sh, tfrac, strict=False))
+    return sum(abs(a - b) for a, b in zip(sh, tfrac, strict=False))
 
 
 def per_channel_cap(rules):
@@ -201,7 +201,7 @@ def _others_drift(v):
     if v.prev_widths is None:
         return None
     idx = tc.channel_index()
-    d = [a - b for a, b in zip(v.widths, v.prev_widths)]
+    d = [a - b for a, b in zip(v.widths, v.prev_widths, strict=False)]
     for cid, x in (v.my_last or {"push": {}})["push"].items():
         d[idx[cid]] -= x
     return d
@@ -213,7 +213,7 @@ def s_smart(v):
     d = _others_drift(v)
     if d is None:
         return s_greedy(v)
-    pred = tuple(max(r.width_min, min(r.width_cap, w + x)) for w, x in zip(v.widths, d))
+    pred = tuple(max(r.width_min, min(r.width_cap, w + x)) for w, x in zip(v.widths, d, strict=False))
     return to_move(plan(pred, r, _obj(v))[0])
 
 
@@ -221,7 +221,7 @@ def _moved(v, sign):
     r = v.rules
     if v.prev_widths is None:
         return None
-    d = [(abs(a - b), n, sign * (1 if a > b else -1)) for n, (a, b) in enumerate(zip(v.widths, v.prev_widths)) if a != b]
+    d = [(abs(a - b), n, sign * (1 if a > b else -1)) for n, (a, b) in enumerate(zip(v.widths, v.prev_widths, strict=False)) if a != b]
     d.sort(reverse=True)
     amount = min(r.push_budget // 3, per_channel_cap(r))
     return to_move({n: s * amount for _, n, s in d[:3]})
@@ -375,7 +375,7 @@ def run_game(seed, rules, seats, epochs=5, verify=False):
     history, per_epoch, all_moves = [], [], []
     for e in range(1, epochs + 1):
         moves, teams = {}, defaultdict(list)
-        for p, s in zip(names, seats):
+        for p, s in zip(names, seats, strict=False):
             v = View()
             v.rules, v.n, v.me, v.epoch, v.widths = rules, n, p, e, widths
             v.prev_widths, v.last_samples, v.my_last = prev_widths, last_samples, my_last[p]
@@ -454,11 +454,11 @@ def tournament(tag, rules, composition, games, epochs, workers, shuffle=True):
     sc = scale_of(rules)
     per = defaultdict(lambda: {"score": [], "win": []})
     allscores, ties = [], 0
-    for seats, (tot, _) in zip(perms, out):
+    for seats, (tot, _) in zip(perms, out, strict=False):
         ws = win_shares(tot)
         if sum(1 for x in ws.values() if x > 0) > 1:
             ties += 1
-        for p, s in zip(tot, seats):
+        for p, s in zip(tot, seats, strict=False):
             per[s]["score"].append(tot[p] / sc)
             per[s]["win"].append(ws[p])
             allscores.append(tot[p] / sc)
@@ -547,7 +547,7 @@ def degenerate_cells(rules, base, strats, games, epochs, workers, n=5, tag="deg"
         odd = [t[f"p{n - 1}"] / sc for t, _ in out]
         mine = [statistics.mean(t[f"p{i}"] for i in range(n - 1)) / sc for t, _ in out]
         win_odd = statistics.mean(win_shares(t)[f"p{n - 1}"] for t, _ in out)
-        diff = [m - o for m, o in zip(mine, odd)]
+        diff = [m - o for m, o in zip(mine, odd, strict=False)]
         res[strat] = {"odd": statistics.mean(odd), "odd_ci": ci(odd), "base": statistics.mean(mine), "base_ci": ci(mine),
                       "win": win_odd, "diff": statistics.mean(diff), "diff_ci": ci(diff)}
     return res
@@ -571,7 +571,7 @@ def coalition_rows(rules, solo, n, games, epochs, workers, kinds):
         comp = [f"team:{kind}", f"team:{kind}"] + [solo] * (n - 2)
         out = pmap([(f"co-{n}-{i}", rules, comp, epochs) for i in range(games)], workers)
         pair = [t["p0"] + t["p1"] for t, _ in out]
-        diff = [x - y for x, y in zip(pair, bp)]
+        diff = [x - y for x, y in zip(pair, bp, strict=False)]
         win = statistics.mean(win_shares(t)["p0"] + win_shares(t)["p1"] for t, _ in out)
         others = statistics.mean(statistics.mean(t[f"p{i}"] for i in range(2, n)) for t, _ in out)
         rows[kind] = {"pair": statistics.mean(pair), "ratio": statistics.mean(pair) / statistics.mean(bp),

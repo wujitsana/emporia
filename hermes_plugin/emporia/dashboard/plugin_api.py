@@ -305,7 +305,7 @@ async def _close(socket: WebSocket, code: int, reason: str = "") -> None:
 async def ws(socket: WebSocket, path: str):
     try:
         authorized = _ws_authorized(socket)
-    except Exception:
+    except Exception:  # noqa: BLE001 — a failed lookup falls back to the default; the caller carries on
         authorized = False                                    # fail closed
     if not authorized:
         # Before accept: the same 403 for every refusal, so it says nothing about the plugin.
@@ -313,7 +313,7 @@ async def ws(socket: WebSocket, path: str):
         return
     try:
         sock, secret = await _ensure_console()
-    except Exception as e:                                    # not set up, no console, no folder
+    except Exception as e:                                    # noqa: BLE001 — an unreachable console is reported to the tab over the socket, never raised; not set up, no console, no folder
         # The credential passed: accept, then say why, with a close code the tab can read.
         await socket.accept(subprotocol=WS_PROTOCOL)
         await _close(socket, 1011, f"the Emporia console is not running: {e}")
@@ -342,7 +342,7 @@ async def ws(socket: WebSocket, path: str):
             # The console's own close code and reason, passed on (a refused room, a finished game).
             if upstream.close_code is not None:
                 code, reason = upstream.close_code, upstream.close_reason or ""
-    except Exception:
+    except Exception:  # noqa: BLE001 — any socket failure closes the socket with a code the tab can read
         code, reason = 1011, "the console's socket failed"
     finally:
         if code in (1005, 1006, 1015):                        # codes no endpoint may send
@@ -398,7 +398,7 @@ def _model_cost(agent: str, days: int, now: float) -> dict:
     by_kind: dict[str, dict] = {}
     try:
         db = SessionDB(read_only=True)
-    except Exception:
+    except Exception:  # noqa: BLE001 — unreadable session records are reported as a reason in the result
         out["reason"] = "this profile has no Hermes session records yet"
         return out
     try:
@@ -437,7 +437,7 @@ def _model_cost(agent: str, days: int, now: float) -> dict:
             if len(rows) < _PAGE:
                 done = True
             offset += _PAGE
-    except Exception:
+    except Exception:  # noqa: BLE001 — unreadable session records are reported as a reason in the result
         out.update({"usd": 0.0, "tokens": 0, "sessions": 0, "included_sessions": 0, "included_tokens": 0,
                     "included_providers": [], "reason": "Hermes's session records could not be read"})
         return out
@@ -563,7 +563,7 @@ async def runtime_notice():
     """A banner for the tab when the runtime is older than the plugin: text only, nothing is fetched or run."""
     try:
         notice = await asyncio.to_thread(_stale_runtime_notice)
-    except Exception:
+    except Exception:  # noqa: BLE001 — a failed notice look answers no notice
         notice = ""
     return JSONResponse({"stale": bool(notice), "message": notice}, headers={"Cache-Control": "no-store"})
 

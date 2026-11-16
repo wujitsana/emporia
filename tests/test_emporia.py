@@ -2272,7 +2272,7 @@ def _path_shadows(earlier_path: str, later_path: str) -> bool:
     later_segs = later_path.strip("/").split("/")
     if len(earlier_segs) != len(later_segs):
         return False
-    for e, l in zip(earlier_segs, later_segs):
+    for e, l in zip(earlier_segs, later_segs, strict=False):
         if e.startswith("{") and e.endswith("}"):
             continue
         if e != l:
@@ -15154,7 +15154,7 @@ def test_relay_server_hardcodes_no_version_literal():
     for i, line in enumerate(src.splitlines(), 1):
         if line.strip().startswith("#"):
             continue
-        for m in re.finditer(r'"\d+\.\d+\.\d+"', line):
+        for _m in re.finditer(r'"\d+\.\d+\.\d+"', line):
             literals.append(f"{i}: {line.strip()}")
     assert not literals, (
         "relay_server.py hardcodes a version literal; import emporia.__version__ "
@@ -17770,7 +17770,7 @@ def test_rename_rewrites_every_mapped_column(client):
             if table == "authorized_agents":
                 continue  # the real row, already there
             cols, values = [], []
-            for cid, name, ctype, notnull, default, pk in conn.execute(
+            for _cid, name, ctype, notnull, default, pk in conn.execute(
                 f"PRAGMA table_info({table})"
             ).fetchall():
                 if name == column:

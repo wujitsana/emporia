@@ -134,7 +134,7 @@ def windows(call_ts: float, epoch_s: int = 86_400) -> dict[str, tuple[float, flo
     """{write, open, pick, count}: [start, end) in unix seconds. Arithmetic on the call time, so every beacon round
     that matters is known long before it exists."""
     out, t = {}, call_ts
-    for name, share in zip(("write", "open", "pick", "count"), WINDOW_SHARES):
+    for name, share in zip(("write", "open", "pick", "count"), WINDOW_SHARES, strict=False):
         end = t + epoch_s * share / 24
         out[name] = (t, end)
         t = end
@@ -251,7 +251,7 @@ def push_recent(recent: dict[str, list[str]] | None, card: Card | dict[str, Any]
     """The recent cards after `card`: the last `WINDOWS[part]` of each part, oldest first. A new dict."""
     c = card.to_dict() if isinstance(card, Card) else card
     r = recent or new_recent()
-    return {k: (list(r.get(k, [])) + [c[key]])[-n:] for (k, n), key in zip(WINDOWS.items(), ("word", "shape", "voice"))}
+    return {k: (list(r.get(k, [])) + [c[key]])[-n:] for (k, n), key in zip(WINDOWS.items(), ("word", "shape", "voice"), strict=False)}
 
 
 def _fresh(deck: list[Any], recent: list[str], key: Any) -> list[Any]:
@@ -330,7 +330,7 @@ def desk_roles(team_agents: list[str], scope: str, sig: bytes) -> dict[str, str]
     """A claimed team's desk (12.2): the beacon deals researcher, writer and critic among its member agents, so
     nobody has to agree on it. With fewer agents the later roles go unfilled; any step may be skipped."""
     order = sorted(set(team_agents), key=lambda a: (rand.rand(scope, "desk:" + a, sig), a))
-    return dict(zip(order, ("writer", "researcher", "critic")))
+    return dict(zip(order, ("writer", "researcher", "critic"), strict=False))
 
 
 # ---------------------------------------------------------------- passage checks (4.3)
@@ -412,7 +412,7 @@ SHAPES = {
     "one_parenthesis": lambda t: t.count("(") == 1 and t.count(")") == 1 and t.index("(") < t.index(")")
         and bool(t[t.index("(") + 1:t.index(")")].strip()),
     "rising_sentences": lambda t: len(sentences(t)) >= 2 and all(
-        a < b for a, b in zip([len(words(s)) for s in sentences(t)], [len(words(s)) for s in sentences(t)][1:])),
+        a < b for a, b in zip([len(words(s)) for s in sentences(t)], [len(words(s)) for s in sentences(t)][1:], strict=False)),
 }
 
 

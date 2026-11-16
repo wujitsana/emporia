@@ -899,7 +899,7 @@ def verify_chain_page(
                 "ordering-tiebreak gap)",
             )
 
-    for older, newer in zip(page, page[1:]):
+    for older, newer in zip(page, page[1:], strict=False):
         if not link_ok(older["chain_hash"], newer):
             return False, None, "hash mismatch within a page — history may have been rewritten"
 

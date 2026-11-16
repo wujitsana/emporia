@@ -387,7 +387,7 @@ def test_a_day_that_is_not_today_cannot_be_entered(w):
 def _seed(agent: str, trials: list[dict]) -> None:
     """Trial records straight into the tables (to give an agent a history without eight days of play)."""
     with rs.DB_LOCK, rs.get_db() as conn:
-        for i, t in enumerate(trials):
+        for _i, t in enumerate(trials):
             day = t["day"]
             conn.execute("INSERT OR REPLACE INTO assay_serves VALUES (?,?,?,?,?,?)",
                          (day, agent, "chain", t["tier"], t["at"], t["at"] + 900))

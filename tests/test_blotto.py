@@ -139,7 +139,7 @@ def test_one_unreadable_session_does_not_stop_the_deadline_sweep(client, caplog)
     # does not parse, one that parses but is no state the module can read.
     bad = [f"sess_bad_{uuid.uuid4().hex[:8]}" for _ in range(2)]
     with rs.DB_LOCK, rs.get_db() as conn:
-        for sid_bad, state_json in zip(bad, ("{not json", "[]")):
+        for sid_bad, state_json in zip(bad, ("{not json", "[]"), strict=False):
             conn.execute("INSERT INTO sessions (session_id, module_type, config_json, payment_rules_json, "
                          "state_json, current_agent, step_number, status, participants_json, created_at, "
                          "updated_at) VALUES (?, ?, '{}', '{}', ?, ?, 0, 'active', ?, ?, ?)",

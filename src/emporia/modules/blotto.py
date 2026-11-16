@@ -50,7 +50,7 @@ def _now() -> datetime:
 
 def _score(a: list[int], b: list[int], weights: list[int] | None = None) -> tuple[int, int]:
     w = weights or [1] * len(a)
-    return sum(k for x, y, k in zip(a, b, w) if x > y), sum(k for x, y, k in zip(a, b, w) if y > x)
+    return sum(k for x, y, k in zip(a, b, w, strict=False) if x > y), sum(k for x, y, k in zip(a, b, w, strict=False) if y > x)
 
 
 MAX_WEIGHT = 5

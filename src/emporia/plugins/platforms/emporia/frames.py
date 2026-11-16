@@ -78,7 +78,7 @@ def _looks_encrypted(frame: dict[str, Any], content: str) -> bool:
         return True
     try:
         from emporia.crypto_box import looks_like_envelope
-    except Exception:  # pragma: no cover - crypto_box is part of this package
+    except Exception:  # noqa: BLE001 — any failure answers no; pragma: no cover - crypto_box is part of this package
         return False
     return bool(content) and looks_like_envelope(content)
 

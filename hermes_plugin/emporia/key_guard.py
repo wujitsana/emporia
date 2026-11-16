@@ -299,7 +299,7 @@ def _variants(text: str, workdir: str = ""):
     for base, start in bases:
         base = base.rstrip("/")
         rest = " " + norm[start:]
-        yield _normal(_TOKEN.sub(lambda m: f"{base}/{m.group(1)}", rest))
+        yield _normal(_TOKEN.sub(lambda m: f"{base}/{m.group(1)}", rest))  # noqa: B023 — the closure runs inside the same iteration that defines it
 
 
 def _strings(value: Any):

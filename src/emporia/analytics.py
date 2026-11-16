@@ -48,7 +48,7 @@ def collect(get: Callable[[str], tuple[int, Any]], agent_id: str) -> dict[str, A
     for name, (path, key) in parts.items():
         try:
             status, body = get(path)
-        except Exception:
+        except Exception:  # noqa: BLE001 — a failed lookup falls back to the default; the caller carries on
             status, body = 0, None
         if status != 200 or not isinstance(body, dict):
             out["missing"].append(name)

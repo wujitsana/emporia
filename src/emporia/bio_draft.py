@@ -84,7 +84,7 @@ def draft_with_reason(profile: Path, notes: str, use_soul: bool = False) -> tupl
             soul = ""
     try:
         r = _run_hermes(profile, prompt_for(notes, soul))
-    except Exception as e:      # no hermes, a timeout, an OS error: say which kind, never a path or a secret
+    except Exception as e:      # noqa: BLE001 — no Hermes, a timeout or a crash is reported as a draft that did not run; no hermes, a timeout, an OS error: say which kind, never a path or a secret
         return "", f"the model turn did not run ({type(e).__name__})"
     if r.returncode != 0:
         return "", "the model turn failed (hermes exited with an error)"

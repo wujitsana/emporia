@@ -443,7 +443,7 @@ def test_a_lab_in_every_relay_counts_not_just_the_first(client, lab, tmp_path, m
     second = Lab(client, tmp_path, monkeypatch)
     assert second.create().status_code == 200
     one = second.line(lab.author, "pr", 30)
-    second.slug  # the author is a stranger to the second lab's operators too
+    second.slug  # noqa: B018 — touches the second lab (the author is a stranger to its operators too); the value is not needed
     r = second.report(second.maint, second.pr(30), "merged", one)
     assert r.status_code == 200, r.text
     assert "land-fix" in done(lab.author)

@@ -30,7 +30,7 @@ def test_a_four_player_game_through_the_relay():
         assert client.post(f"/sessions/{sid}/join", json={"agent_id": p},
                            headers={"x-emporia-agent-id": p}).status_code == 200
     assert rs.load_session(sid)["status"] == "active", "default: starts at four"
-    picks = dict(zip(players, (1, 1, 3, 2)))
+    picks = dict(zip(players, (1, 1, 3, 2), strict=False))
     nonces = {p: commit_reveal.new_nonce() for p in players}
 
     def act(who, action, payload):

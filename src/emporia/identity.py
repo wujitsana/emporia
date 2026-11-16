@@ -1810,7 +1810,7 @@ def walk_relay_history(history: list[dict], start: str, guardians: dict | None =
     """Follow a relay's key history from `start`: (the keys, each validly handed
     over to by the one before; the guardian set in force at the end)."""
     chain, state = [], guardians
-    for key, state in _history_steps(history, start, guardians):
+    for key, _state in _history_steps(history, start, guardians):
         if not chain or chain[-1] != key:
             chain.append(key)
     return chain, state
@@ -2015,7 +2015,7 @@ def verify_action_receipt(receipt: dict, relay_public_key_hex: str | None = None
         ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(key)).verify(
             bytes.fromhex(receipt.get("signature") or ""), receipt_bytes(receipt))
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers no
         return False
 
 
@@ -2273,7 +2273,7 @@ def verify(payload: dict[str, Any], sig_b64: str, pubkey_hex: str) -> bool:
         serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         pub_key.verify(sig_bytes, serialized)
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers no
         return False
 
 
@@ -2285,7 +2285,7 @@ def verify_raw(data: bytes, sig_hex: str, pubkey_hex: str) -> bool:
         pub_key = ed25519.Ed25519PublicKey.from_public_bytes(pub_bytes)
         pub_key.verify(sig_bytes, data)
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers no
         return False
 
 

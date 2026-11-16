@@ -294,7 +294,7 @@ def distance(mix_bp, target_pct, rules: Rules = DEFAULT) -> int:
     """Sum over the four outputs of the gap (basis points) between a mix and a target given
     in percent; each gap squared when ``score_power`` is 2."""
     total = 0
-    for m, t in zip(mix_bp, target_pct):
+    for m, t in zip(mix_bp, target_pct, strict=False):
         g = abs(m - 100 * t)
         total += g * g if rules.score_power == 2 else g
     return total
@@ -359,7 +359,7 @@ def pull(
             w = list(widths)
             w[n] = max(rules.width_min, min(rules.width_cap, w[n] + sign * step))
             m = mix(tuple(w), pulses, None, rules)
-            row[name] = tuple(a - b for a, b in zip(m, base))
+            row[name] = tuple(a - b for a, b in zip(m, base, strict=False))
         out[cid] = row
     return out
 
@@ -369,7 +369,7 @@ def toward(pull_row: dict, mix_bp, target_pct, rules: Rules = DEFAULT) -> dict[s
     that row's change. ``{"up": gain, "down": gain}``."""
     here = distance(mix_bp, target_pct, rules)
     return {
-        k: here - distance(tuple(a + b for a, b in zip(mix_bp, pull_row[k])), target_pct, rules)
+        k: here - distance(tuple(a + b for a, b in zip(mix_bp, pull_row[k], strict=False)), target_pct, rules)
         for k in ("up", "down")
     }
 
@@ -426,7 +426,7 @@ def play_game(
     widths, _ = open_network(seed0, rules)
     publics, points = [], []
     totals = {p: 0 for p in targets_by_player}
-    for e, (seed, moves) in enumerate(zip(epoch_seeds, epoch_moves), start=1):
+    for e, (seed, moves) in enumerate(zip(epoch_seeds, epoch_moves, strict=False), start=1):
         moves = {p: validate_move(m, rules) for p, m in moves.items()}
         pub = play_epoch(seed, e, widths, moves, rules)
         pts = epoch_points(widths, moves, targets_by_player, pub.pulses, pub.dark, rules)

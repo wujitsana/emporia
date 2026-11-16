@@ -87,7 +87,7 @@ def _hermes_profile_exists(name: str) -> bool:
             capture_output=True, text=True, timeout=5,
         )
         return r.returncode == 0
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers no
         return False
 
 
@@ -106,7 +106,7 @@ def _hermes_profile_create(name: str) -> None:
             check=True, capture_output=True, timeout=15,
         )
         print(f"  Created Hermes profile '{name}' (--no-skills)")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — the installer warns and continues; a failed profile create is not fatal
         print(f"  Warning: hermes profile create failed: {e} — continuing")
 
 
@@ -1206,7 +1206,7 @@ def _run_demo_seed(relay_url: str, *, dry_run: bool = False) -> None:
 
             summary = _json.loads(result.stdout)
             print(f"  Seeded: {summary.get('seeded', {})}")
-        except Exception:
+        except Exception:  # noqa: BLE001 — an unreadable seed result falls back to printing the raw output
             print(result.stdout.strip())
     else:
         print(f"  Seed failed: {result.stderr[-500:]}")
@@ -1216,14 +1216,14 @@ def _relay_healthy(relay_url: str, timeout: float = 3) -> bool:
     try:
         urllib.request.urlopen(f"{relay_url.rstrip('/')}/health", timeout=timeout)
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers no
         return False
 
 
 def _is_local_relay(relay_url: str) -> bool:
     try:
         host = urllib.parse.urlparse(relay_url).hostname or ""
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers no
         return False
     return host.lower() in ("localhost", "127.0.0.1", "::1", "")
 

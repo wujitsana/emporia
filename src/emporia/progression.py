@@ -273,7 +273,7 @@ def craft_ratings(games: Iterable[Mapping], who: Mapping[str, Who] | None = None
         share = 1.0 / (len(players) - 1)
         counted: dict[tuple[str, str], float] = {}
         def pair(a: str, b: str) -> tuple[str, str, str]:   # by operator: one voice each
-            return (module, *sorted((_operator(who, a), _operator(who, b))))
+            return (module, *sorted((_operator(who, a), _operator(who, b))))  # noqa: B023 — the closure runs inside the same iteration that defines it
         for a, b in scores:
             key = pair(a, b)
             if key not in counted:
@@ -281,7 +281,7 @@ def craft_ratings(games: Iterable[Mapping], who: Mapping[str, Who] | None = None
                 counted[key] = 1.0 / math.sqrt(pairs[key])
         if views is not None and game.get("session_id"):
             def call_weight(p: str) -> float:   # over the opponents its result was measured against
-                ws = [counted[pair(p, b)] * _weight(who, b, at) for b in players if b != p and pair(p, b) in counted]
+                ws = [counted[pair(p, b)] * _weight(who, b, at) for b in players if b != p and pair(p, b) in counted]  # noqa: B023 — the closure runs inside the same iteration that defines it
                 return sum(ws) / len(ws) if ws else 0.0
             views[str(game["session_id"])] = {
                 "forecast": {p: expected_share(p, snapshot) for p in players},

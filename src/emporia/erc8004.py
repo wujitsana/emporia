@@ -117,7 +117,7 @@ def _recover(typed_data: dict, sig: bytes) -> str | None:
     from eth_account.messages import encode_typed_data
     try:
         return Account.recover_message(encode_typed_data(full_message=typed_data), signature=sig[:64] + bytes([v]))
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers nothing found; the caller handles None
         return None
 
 
@@ -225,7 +225,7 @@ def _read_binding(read: Reader, owner: str, agent_id: int) -> tuple[int, str, in
         return None
     except ChainUnknown:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers nothing found; the caller handles None
         return None
     return std, bound, token
 
@@ -269,7 +269,7 @@ def verify(link: dict, read: Reader, *, now: float | None = None) -> dict:
         if not available():
             raise _Stop("not-checked", "no signature library is installed")
         td = agent_link_typed_data(p["chain_id"], canonical, p["agent_id"], p["signer"], p["stable_id"], p["issued_at"])
-        read.block_number  # pin the block first: a dead RPC is unknown before anything else
+        read.block_number  # noqa: B018 — evaluated for its effect: a dead RPC raises here, before anything else
         pinned = read
         _signature_ok(read, p, td)
         try:
@@ -313,7 +313,7 @@ def preview(agent_id: str | int, signer: str, read: Reader, *, now: float | None
     agent_id = int(agent_id)
     chain = read.caip2
     registry = ERC8004_REGISTRIES[chain]
-    read.block_number
+    read.block_number  # noqa: B018 — evaluated for its effect: a dead RPC raises here, before the reads below
     out: dict = {"tier": "", "owner": "", "block_number": read.block_number, "block_hash": read.block_hash,
                  "checked_at": int(now if now is not None else time.time())}
     try:

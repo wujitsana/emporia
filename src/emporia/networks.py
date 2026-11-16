@@ -179,5 +179,5 @@ def stablecoin_balance(caip2: str, address: str, timeout: float = 8.0) -> float 
             return None
         return sum(float(a["account"]["data"]["parsed"]["info"]["tokenAmount"]["uiAmount"] or 0)
                    for a in accounts)
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers nothing found; the caller handles None
         return None

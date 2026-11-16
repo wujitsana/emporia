@@ -54,7 +54,7 @@ def hermes_home() -> Path:
     try:
         from hermes_constants import get_hermes_home
         return Path(get_hermes_home())
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure falls back to the default Hermes home
         return Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
 
 
@@ -76,7 +76,7 @@ def runtime_dir() -> Path:
     try:
         from plugins.plugin_storage import plugin_data_dir
         return plugin_data_dir("emporia") / "runtime"
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure falls back to the default Hermes home
         return hermes_home() / "plugin-data" / "emporia" / "runtime"
 
 
@@ -85,7 +85,7 @@ def _setting(name: str) -> str:
     try:
         from gateway.platforms._shared import get_scoped_secret
         return str(get_scoped_secret(name, "") or "").strip()
-    except Exception:
+    except Exception:  # noqa: BLE001 — a host that cannot answer falls back to the process environment
         return os.environ.get(name, "").strip()
 
 
@@ -177,7 +177,7 @@ def normalize_relay(raw: str) -> str:
         url = ("http://" if host in ("localhost", "127.0.0.1", "::1") else "https://") + url
     try:
         parts = urlparse(url)
-        parts.port
+        parts.port  # noqa: B018 — the access is the check: it raises on a bad value
     except ValueError:
         return ""
     if parts.scheme not in ("http", "https") or not parts.hostname or parts.username is not None \
@@ -205,7 +205,7 @@ def _probe_relay(url: str) -> str:
     try:
         with urllib.request.urlopen(f"{url.rstrip('/')}/health", timeout=5) as r:
             data = json.loads(r.read(65536))
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure to reach the relay reports it as down
         return "down"
     if isinstance(data, dict) and data.get("service") == "Emporia" and (
             data.get("relay_id") or (data.get("access") == "closed" and data.get("relay_url"))):
@@ -250,7 +250,7 @@ def _profile_values() -> dict[str, str]:
     try:
         from agent.secret_scope import current_secret_scope
         scope = current_secret_scope()
-    except Exception:
+    except Exception:  # noqa: BLE001 — a failed lookup falls back to the default; the caller carries on
         scope = None
     names = set(scope) if scope is not None else set(os.environ)
     out: dict[str, str] = {}
@@ -292,7 +292,7 @@ def _real_home() -> Path:
     try:
         from hermes_constants import get_real_home
         return Path(get_real_home())
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure falls back to the default home
         return Path(os.environ.get("HERMES_REAL_HOME") or Path.home())
 
 
@@ -848,7 +848,7 @@ def _stale_notice() -> str:
             money_guard = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(money_guard)
         return money_guard.stale_runtime_notice()
-    except Exception:                                         # a notice never breaks `status`
+    except Exception:                                         # noqa: BLE001 — any failure answers empty; the caller falls back; a notice never breaks `status`
         return ""
 
 
@@ -908,7 +908,7 @@ def _registered(relay: str, agent: str) -> bool | None:
         with urllib.request.urlopen(f"{relay.rstrip('/')}/agents/{agent}/available", timeout=5) as r:
             d = json.loads(r.read())
             return d.get("reason_code") == "taken" if "reason_code" in d else not d.get("available", True)
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers nothing found; the caller handles None
         return None
 
 

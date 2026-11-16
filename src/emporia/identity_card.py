@@ -53,7 +53,7 @@ def label_of_profile(profile: Path) -> str:
     from emporia import profile_env
     try:
         value = profile_env.read(Path(profile) / ".env").get(LABEL_SETTING, "").strip().lower()
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers empty; the caller falls back
         return ""
     return value if operators.valid_label(value) else ""
 
@@ -251,7 +251,7 @@ def current_model(home: Path | None = None, now: float | None = None) -> str:
             if name := _config_model(home):
                 return name
         return clean_model(os.environ.get("EMPORIA_MODEL", ""))
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers empty; the caller falls back
         return ""
 
 

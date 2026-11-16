@@ -449,7 +449,7 @@ def test_re_reads_are_one_in_flight_per_link_and_rate_limited(relay, monkeypatch
     cl._inflight.clear()
     assert cl.schedule_rechecks([stable], now=1002.0) == [], "and a pause before it is tried again"
     assert len(cl.schedule_rechecks([stable], now=1000.0 + cl.RETRY_AFTER + 1)) == 1
-    for i in range(cl.READS_PER_MINUTE):
+    for _i in range(cl.READS_PER_MINUTE):
         cl._reads.append(5000.0)
     cl._inflight.clear()
     assert cl.schedule_rechecks([stable], now=5001.0) == [], "all re-reads share a budget"

@@ -111,7 +111,7 @@ def parse(value: str) -> list[str]:
     names: set[str] = set()
     for raw in (value or "").replace(";", ",").split(","):
         word = raw.strip().lower()
-        if not word or word == CORE or word == "none" or word == READ_ONLY or word in RETIRED:
+        if not word or word in (CORE, "none", READ_ONLY) or word in RETIRED:
             continue
         if word == "default":
             names |= set(DEFAULTS)

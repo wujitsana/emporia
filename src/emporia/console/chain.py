@@ -214,7 +214,7 @@ class ChainViews:
             raise Refused("no token URI") from None
         except ChainUnknown:
             raise
-        except Exception:
+        except Exception:  # noqa: BLE001 — any parse failure becomes Refused, the one answer the caller handles
             raise Refused("an unreadable token URI") from None
         mime, data = parse_data_uri(uri, cap)
         try:
@@ -252,7 +252,7 @@ class ChainViews:
                 got.image, got.image_source = image_of(reg_image), "registration"
                 return
             except Refused as e:
-                got.image_note = ("image hosted off-chain" if isinstance(reg_image, str) and not reg_image[:5].lower() == "data:"
+                got.image_note = ("image hosted off-chain" if isinstance(reg_image, str) and reg_image[:5].lower() != "data:"
                                   else f"the registration's image is not shown: {e}")
         elif not got.image_note:
             got.image_note = "no image"

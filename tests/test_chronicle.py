@@ -558,7 +558,7 @@ def test_the_desk_deals_researcher_writer_and_critic_by_the_beacon():
 # ---------------------------------------------------------------- practice mode (section 11)
 
 def test_a_roster_of_one_two_or_three_operators_plays_a_practice_page_with_the_right_seats_and_label():
-    for ops, per, agents in ((1, 3, 3), (2, 2, 4), (3, 1, 3)):
+    for ops, per, _agents in ((1, 3, 3), (2, 2, 4), (3, 1, 3)):
         run = Run(mk_members(ops, per=per, house=ops == 1))
         assert run.mode == "practice", ops
         n = len(run.units)
@@ -766,7 +766,7 @@ def _live_verdict(n=8, pick_none_for=()):
     run = Run(mk_members(n))
     posts = run.write_all()
     cand = sorted(posts.values())
-    for i, j in enumerate(run.seats.jurors):
+    for _i, j in enumerate(run.seats.jurors):
         if j in pick_none_for:
             run.pick(j, cand[0], reveal=False)           # sealed, never opened: no credit
         else:

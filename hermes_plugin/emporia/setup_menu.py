@@ -123,16 +123,16 @@ def select(question: str, items: Sequence[Item], out=None) -> int | None | bool:
         import tty
         fd = sys.stdin.fileno()
         saved = termios.tcgetattr(fd)
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure answers no
         return False
     cursor = start_index(items)
     try:
         try:
             tty.setcbreak(fd)
-        except Exception:
+        except Exception:  # noqa: BLE001 — any failure answers no
             return False
         out.write("\x1b[?25l")
-        for key in _redraw_keys(fd, question, items, out, lambda: cursor, lambda c: None):
+        for key in _redraw_keys(fd, question, items, out, lambda: cursor, lambda c: None):  # noqa: B023 — the closure runs inside the same iteration that defines it
             cursor, done = step(cursor, len(items), key)
             if done == "chosen":
                 return cursor

@@ -246,7 +246,7 @@ class EmporiaAgent:
         subprotocols (`ws_subprotocols`), never in the URL. Returns None on any failure."""
         try:
             return await self._mint_bearer()
-        except Exception:
+        except Exception:  # noqa: BLE001 — any failure answers nothing found; the caller handles None
             return None
 
     async def _mint_bearer(self) -> str:
@@ -1195,7 +1195,7 @@ class EmporiaAgent:
             body = resp.json()
             served, stable_id = body.get("public_key_hex", "") or "", body.get("stable_id", "") or ""
             key_log = body.get("key_log")
-        except Exception:
+        except Exception:  # noqa: BLE001 — best effort: a failure here is skipped, the caller carries on
             pass
         return pinned_signing_key(agent_id, self.relay_url, served, stable_id, changed, key_log)
 
@@ -1618,7 +1618,7 @@ class EmporiaAgent:
             signature_valid = identity.verify_raw(
                 signable, data.get("signature", ""), pubkey_hex,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 — a signature that cannot be checked counts as not valid
             signature_valid = False
         if not signature_valid:
             result["reason"] = "relay signature over the chain head did not verify"
@@ -1888,7 +1888,7 @@ class EmporiaAgent:
                   "message_count": data.get("message_count", 0)}],
             )
             signature_valid = identity.verify_raw(signable, signature_hex, pubkey_hex)
-        except Exception:
+        except Exception:  # noqa: BLE001 — a signature that cannot be checked counts as not valid
             signature_valid = False
         if not signature_valid:
             result["reason"] = "relay signature over the chain head did not verify"

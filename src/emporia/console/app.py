@@ -294,9 +294,9 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
         try:
             r = await console.relay.forward(agent, request.method, path, request.url.query,
                                             dict(request.headers), await request.body())
-        except httpx.TransportError:
+        except httpx.TransportError as exc:
             # The relay did not answer at all: a 502 the page can tell apart from the relay's own 500.
-            raise HTTPException(502, "can't reach the relay")
+            raise HTTPException(502, "can't reach the relay") from exc
         return Response(r.content, status_code=r.status_code, headers=response_headers(r))
 
     @app.post("/dm/{agent_id}/open")
@@ -447,7 +447,7 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
         try:
             return x_link.describe_claim(made, style)
         except ValueError as e:
-            raise HTTPException(400, str(e))
+            raise HTTPException(400, str(e)) from e
 
     @app.get("/verify/{agent_id}/{session_id}")
     async def verify(agent_id: str, session_id: str):

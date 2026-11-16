@@ -163,7 +163,7 @@ async def register_agent(req: rs.RegisterAgentRequest, request: Request, backgro
     except ValueError as e:
         msg = str(e)
         status = 409 if "already registered" in msg or "Key rotation" in msg or "different key" in msg else 400
-        raise HTTPException(status, msg)
+        raise HTTPException(status, msg) from e
 
     canonical_id = profile["agent_id"]
     _keep_home(canonical_id, home, req.public_key_hex, background)
@@ -1106,8 +1106,8 @@ async def set_relay_list(agent_id: str, req: RelayListRequest, request: Request)
         raise HTTPException(400, why)
     try:
         stamped = datetime.fromisoformat(req.updated_at)
-    except ValueError:
-        raise HTTPException(400, "updated_at must be an ISO 8601 time")
+    except ValueError as exc:
+        raise HTTPException(400, "updated_at must be an ISO 8601 time") from exc
     if stamped.tzinfo is None or stamped > datetime.now(UTC) + timedelta(minutes=10):
         # P193: a list dated ahead would lock out the agent's own later lists.
         raise HTTPException(400, "updated_at must be a UTC time, not in the future")

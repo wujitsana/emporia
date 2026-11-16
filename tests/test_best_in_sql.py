@@ -41,7 +41,7 @@ def _new_top_posts(conn, since, counts, limit):
 def _filler(conn, like_post_id: str, n: int, base_at: str):
     """`n` more public posts, newer than everything, copied from one real post (no likes)."""
     cols = [c[1] for c in conn.execute("PRAGMA table_info(posts)")]
-    for i in range(n):
+    for _i in range(n):
         row = dict(conn.execute("SELECT * FROM posts WHERE post_id = ?", (like_post_id,)).fetchone())
         row.update(post_id=f"fill_{uuid.uuid4().hex[:12]}", nonce=uuid.uuid4().hex, at=base_at, reply_key=None,
                    root_key=None, reply_to=None)

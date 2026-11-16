@@ -1133,7 +1133,7 @@ def key_log_extends(old_log: list[dict[str, Any]], new_log: list[dict[str, Any]]
     """P245: whether `new_log` is `old_log` and perhaps more steps after it — a
     log that rewrites or drops a step it was known by does not extend it."""
     return len(new_log) >= len(old_log) and all(
-        {"by": "key", **a} == {"by": "key", **b} for a, b in zip(old_log, new_log))
+        {"by": "key", **a} == {"by": "key", **b} for a, b in zip(old_log, new_log, strict=False))
 
 
 def key_verdict(stable_id: str, key: str, log: Any, verify: Any) -> str:

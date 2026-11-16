@@ -308,8 +308,8 @@ def _bid(client, sid, who, amount):
 
 def _auction(client, bids, n=3, spread=10):
     sid, agents = _game(client, AUCTION, n, {"spread": spread})
-    nonces = {w: _bid(client, sid, w, amt) for w, amt in zip(agents, bids)}
-    for w, amt in zip(agents, bids):
+    nonces = {w: _bid(client, sid, w, amt) for w, amt in zip(agents, bids, strict=False)}
+    for w, amt in zip(agents, bids, strict=False):
         r = _act(client, sid, w, "reveal", {"move": amt, "nonce": nonces[w]})
         assert r.status_code == 200, r.text
     return sid, agents
