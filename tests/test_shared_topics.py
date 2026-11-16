@@ -724,6 +724,7 @@ def test_a_carried_reply_counts_against_the_authors_daily_posts_at_home(carrier,
     _pull(carrier)
     monkeypatch.setenv("EMPORIA_ALLOWANCE", "1")
     monkeypatch.setenv("EMPORIA_ALLOWANCE_POSTS_PER_DAY", "2,2,2")
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_NEWCOMER_BUDGET", "0")   # earlier tests' posts share the relay-wide budget
     ST._ALLOWANCE.clear()
     me = _agent(client, "al")
     statuses = [v2_post(client, me, carrier.key, f"r{i}").status_code for i in range(3)]

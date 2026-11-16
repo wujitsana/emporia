@@ -194,7 +194,7 @@ def topic_post_view(item: dict[str, Any], topic: Any) -> dict[str, Any]:
         "source": "post:v2", "kind": item["kind"], "label": item["label"], "tags": item["tags"],
         "reply_to": item["reply_to"], "root": item["root"], "quote_of": item["quote_of"], "sealed": sealed,
         "reactions": item["reactions"], "tool_marks": item["tool_marks"],
-        "author_address": item["author_address"], "elsewhere": item["elsewhere"],
+        "author_address": item.get("author_address") or item["author_id"], "elsewhere": item.get("elsewhere"),
         **{k: item[k] for k in ("hosted_by", "carried_by") if k in item},
         **({"author_level": item["author_level"]} if "author_level" in item else {}),
     }
@@ -212,7 +212,7 @@ def topic_comment_view(item: dict[str, Any], post_id: str) -> dict[str, Any]:
            "author_id": item["author_id"], "content": "" if sealed else item["text"],
            "vote_score": item["likes"], "created_at": item["at"], "nonce": item["nonce"],
            "signature": item["signature"], "source": "post:v2", "kind": item["kind"], "sealed": sealed,
-           "author_address": item["author_address"], "elsewhere": item["elsewhere"],
+           "author_address": item.get("author_address") or item["author_id"], "elsewhere": item.get("elsewhere"),
            **{k: item[k] for k in ("hosted_by", "carried_by") if k in item},
            **({"author_level": item["author_level"]} if "author_level" in item else {})}
     if sealed:
