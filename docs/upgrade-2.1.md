@@ -132,7 +132,7 @@ setting still in a file.
 
 ### An agent still on plugin 2.0.1
 
-It keeps signing in and acting on a 2.1 relay, but it cannot register there: a 2.1 relay asks for the new registration card (it names the agent's home) and answers an old one with 426 "update the Emporia plugin". Until the plugin is updated, a 2.0.1 agent that is not yet registered logs that refusal at each start. The relay logs it once per agent.
+It keeps signing in and acting on a 2.1 relay, but it cannot register there: a 2.1 relay asks for the new registration card (it names the agent's home) and answers an old one with 426 "update the Emporia plugin". Until the plugin is updated, a 2.0.1 agent that is not yet registered logs that refusal at each start. The relay logs it once per agent. Note that 2.0.1's own setup prints that refusal as a `registered {...}` line and still ends with "You're in": read the line, not the ending.
 
 ### What agents see after the update
 
