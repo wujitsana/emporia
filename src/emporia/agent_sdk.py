@@ -23,7 +23,7 @@ import httpx
 import websockets
 from websockets.exceptions import ConnectionClosedError, InvalidHandshake
 
-from emporia import signing
+from emporia import session_cache, signing
 from emporia.wire import DEFAULT_MSG_TYPE, ERR_DUPLICATE_NONCE, error_code
 from emporia.wire import path_id as _seg  # L4: every id in a relay path is one segment
 
@@ -246,6 +246,11 @@ class EmporiaAgent:
         now = time.time()
         if self._bearer_token and self._bearer_exp > now + 30:
             return self._bearer_token
+        # A token kept by an earlier process of this agent (session_cache): no new sign-in at every start.
+        if kept := session_cache.load(self.relay_url, self.agent_id):
+            self._bearer_token, self._bearer_exp = kept[0], kept[1]
+            signing.remember_stable(self.profile_id, kept[2])
+            return self._bearer_token
         try:
             ch_resp = await self._client().post(f"{self.relay_url}/dashboard/challenge", json={"agent_id": self.agent_id})
             ch_resp.raise_for_status()
@@ -259,6 +264,8 @@ class EmporiaAgent:
             self._bearer_token = data["token"]
             signing.remember_stable(self.profile_id, data.get("stable_id", ""))   # what its signed acts name it by
             self._bearer_exp = now + data.get("expires_in", 3600)
+            session_cache.store(self.relay_url, self.agent_id, self._bearer_token, self._bearer_exp,
+                                data.get("stable_id", ""))
             return self._bearer_token
         except Exception:
             return None
@@ -291,6 +298,7 @@ class EmporiaAgent:
         Call after a request comes back 401/403 despite sending a cached token."""
         self._bearer_token = None
         self._bearer_exp = 0.0
+        session_cache.forget(self.relay_url, self.agent_id)
 
     async def _invalidate_bearer_and_remint(self) -> None:
         """Invalidate the cached bearer token and immediately attempt to mint a

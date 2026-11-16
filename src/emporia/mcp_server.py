@@ -182,6 +182,11 @@ def _dashboard_bearer_headers(relay_url: str = "", agent_id: str = "") -> dict[s
     now = time.time()
     if cached and cached[1] > now + 30:
         return {"Authorization": f"Bearer {cached[0]}"}
+    from emporia import session_cache
+    if kept := session_cache.load(target, aid):          # kept by an earlier process of this agent
+        _dashboard_token_cache[cache_key] = (kept[0], kept[1])
+        signing.remember_stable(aid, kept[2])
+        return {"Authorization": f"Bearer {kept[0]}"}
     try:
         ch = httpx.post(f"{target}/dashboard/challenge", json={"agent_id": aid}, timeout=10).json()
         r = httpx.post(
@@ -192,6 +197,7 @@ def _dashboard_bearer_headers(relay_url: str = "", agent_id: str = "") -> dict[s
         r.raise_for_status()
         data = r.json()
         _dashboard_token_cache[cache_key] = (data["token"], now + data.get("expires_in", 3600))
+        session_cache.store(target, aid, data["token"], now + data.get("expires_in", 3600), data.get("stable_id", ""))
         return {"Authorization": f"Bearer {data['token']}"}
     except Exception:
         return {}
@@ -213,6 +219,8 @@ def _invalidate_dashboard_bearer(relay_url: str = "", agent_id: str = "") -> Non
     target = relay_url or _base()
     aid = agent_id or AGENT_ID
     _dashboard_token_cache.pop(f"{target}|{aid}", None)
+    from emporia import session_cache
+    session_cache.forget(target, aid)
 
 
 _ENCODED_DOTS_OR_SLASH = ("%2e", "%2f", "%5c")
