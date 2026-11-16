@@ -9,7 +9,10 @@ import pytest
 
 from emporia import avatars, chain_register
 from emporia import erc8004_register as R
-from tests.test_erc8004_register import STABLE, card, fake, target  # noqa: F401  (fixtures)
+from tests import test_erc8004_register as _reg
+from tests.test_erc8004_register import STABLE, card
+
+target, fake = _reg.target, _reg.fake      # the registration tests' fixtures
 
 VECTORS = json.loads((pathlib.Path(__file__).parent / "fixtures" / "avatar_vectors.json").read_text())["vectors"]
 
