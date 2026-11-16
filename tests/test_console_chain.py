@@ -303,3 +303,55 @@ def test_two_way_ignores_a_remote_registration_url():
     ch.uris[(REG.lower(), AGENT)] = "https://evil.example/reg.json"
     got, _ = views(ch).load(SEPOLIA, str(AGENT), addr, signed)
     assert got.two_way is False
+
+
+# -- the avatar's picture: the image of a link already proven here, from the cache only ------------------------
+def _picture_q(stable):
+    return {"stable": stable}
+
+
+def test_the_picture_is_the_on_chain_image_of_a_proven_link_and_only_from_the_cache(console_client):
+    c, console, name = console_client
+    key, addr = keypair()
+    ch = owned(addr, name="a", image=data_uri("image/png", PNG))
+    console.chain = views(ch)
+    s = _signed(key, addr)
+    stable = s["stable_id"]
+    q = {**_q(addr), "stable": stable, "issued": str(s["issued_at"]), "sig": s["wallet_sig"]}
+    assert c.get(f"/chain-picture/{name}", params=_picture_q(stable)).status_code == 204     # nothing checked yet
+    assert ch.calls == [], "asking for a picture never reads the chain"
+    assert c.get(f"/chain-link/{name}", params=q).json()["status"] == "checked"             # the profile's check fills the cache
+    reads = len(ch.calls)
+    r = c.get(f"/chain-picture/{name}", params=_picture_q(stable))
+    assert r.status_code == 200 and r.content == PNG and r.headers["content-type"] == "image/png"
+    assert r.headers["content-security-policy"] == "sandbox; default-src 'none'" and r.headers["x-content-type-options"] == "nosniff"
+    assert c.get(f"/chain-picture/{name}", params=_picture_q(stable.removeprefix("0x"))).status_code == 200
+    assert len(ch.calls) == reads, "and still no read"
+    assert c.get(f"/chain-picture/{name}", params=_picture_q("ab" * 32)).status_code == 204  # another agent: none
+    assert c.get(f"/chain-picture/{name}", params=_picture_q("12")).status_code == 400
+
+
+def test_an_unsigned_or_unproven_look_gives_no_picture(console_client):
+    c, console, name = console_client
+    key, addr = keypair()
+    other, _ = keypair()
+    console.chain = views(owned(addr, name="a", image=data_uri("image/png", PNG)))
+    s = _signed(key, addr)
+    # the chain's control alone (no wallet signature checked) is not a proven link for a picture
+    c.get(f"/chain-link/{name}", params=_q(addr))
+    assert c.get(f"/chain-picture/{name}", params=_picture_q(s["stable_id"])).status_code == 204
+    # a signature by another wallet: not proven
+    bad = _signed(other, addr)
+    c.get(f"/chain-link/{name}", params={**_q(addr), "stable": bad["stable_id"], "issued": str(bad["issued_at"]), "sig": bad["wallet_sig"]})
+    assert c.get(f"/chain-picture/{name}", params=_picture_q(bad["stable_id"])).status_code == 204
+
+
+def test_a_cached_picture_expires_with_the_look():
+    key, addr = keypair()
+    now = [1000.0]
+    v = views(owned(addr, name="a", image=data_uri("image/png", PNG)), clock=lambda: now[0])
+    s = _signed(key, addr)
+    v.load(SEPOLIA, str(AGENT), addr, s)
+    assert v.cached_image(s["stable_id"]) == ("image/png", PNG)
+    now[0] += cc.CACHE_SECONDS + 1
+    assert v.cached_image(s["stable_id"]) is None

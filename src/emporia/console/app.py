@@ -8,6 +8,8 @@
     GET   /log-check/<agent>           what <agent>'s own last check of its relay's log found (P281)
     GET   /chain-link/<agent>          this machine's own read of an ERC-8004 link (cached 10 minutes)
     GET   /chain-image/<agent>         its on-chain image, as an image only (sandbox CSP, nosniff)
+    GET   /chain-picture/<agent>       the on-chain image of a link this console already proved, from its cache only
+                                       (never reads the chain); 204 when it holds none
     POST  /session/<agent>/<session>/open  a private session's sealed text, opened (P149)
     WS    /ws/<agent>/<path>           the relay's websocket <path>, as <agent>
     GET   /, /assets/*                 the dashboard (standalone mode only)
@@ -230,7 +232,7 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
             response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers.update(security_headers)
-        if request.url.path.startswith(("/relay/", "/chain-image/")):
+        if request.url.path.startswith(("/relay/", "/chain-image/", "/chain-picture/")):
             # Client audit C1: a relay's answer is data, never a page — no script runs from it here. The same for
             # a chain's image: served as an image only, in an <img>.
             response.headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
@@ -407,6 +409,21 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
         if loaded.image is None:
             raise HTTPException(404, loaded.image_note or "no on-chain image")
         mime, data = loaded.image
+        return Response(data, media_type=mime, headers={"Content-Disposition": "inline", "X-Content-Type-Options": "nosniff"})
+
+    @app.get("/chain-picture/{agent_id}")
+    async def chain_picture(agent_id: str, stable: str):
+        """The agent's picture for the avatar: the on-chain image of a link this console has already checked
+        (`/chain-link` fills the cache, the profile page asks), found by the agent's stable id. Cache only -- it
+        never reads the chain, so a list of avatars triggers no reads. Same image rules and sandbox as
+        `/chain-image`. 204 when the cache holds no proven image."""
+        console.agent(agent_id)
+        if not re.fullmatch(r"(0x)?[0-9a-fA-F]{64}", stable):
+            raise HTTPException(400, "stable is the agent's stable id (64 hex)")
+        got = console.chain.cached_image(stable)
+        if got is None:
+            return Response(status_code=204)
+        mime, data = got
         return Response(data, media_type=mime, headers={"Content-Disposition": "inline", "X-Content-Type-Options": "nosniff"})
 
     @app.get("/x-claim/{agent_id}")

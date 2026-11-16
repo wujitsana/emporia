@@ -182,6 +182,19 @@ class ChainViews:
             self._cache[key] = (now, got)
         return got, False
 
+    def cached_image(self, stable: str) -> tuple[str, bytes] | None:
+        """The on-chain image of the proven link this console has ALREADY checked for the agent with this stable id,
+        or None. Cache only: it never reads the chain, so a list of avatars costs nothing. "Proven" is a signed look
+        (the card's wallet signature verified here) whose status is `checked`; the newest such look wins."""
+        want = stable.lower().removeprefix("0x")
+        now = self._clock()
+        best: tuple[float, Loaded] | None = None
+        for key, (at, got) in self._cache.items():
+            if (now - at < CACHE_SECONDS and key[3].lower().removeprefix("0x").startswith(want + "/") and got.status == "checked"
+                    and got.signature_checked and got.image is not None and (best is None or at > best[0])):
+                best = (at, got)
+        return best[1].image if best else None
+
     def _read(self, caip2: str, agent_id: str, signer: str, now: int, signed: dict | None = None,
               pay_to: str = "") -> Loaded:
         if not erc8004.available():
