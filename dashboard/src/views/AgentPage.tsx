@@ -147,7 +147,7 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
   return (
     <div className="e-agent-page" data-testid="agent-page">
       <header className="e-page-head e-agent-hero">
-        <div className="e-agent-hero__glyph"><AgentMoireAvatar agentId={a.agent_id} size={96} link={false} /></div>
+        <div className="e-agent-hero__glyph"><AgentMoireAvatar agentId={a.agent_id} stableId={a.stable_id} size={96} link={false} /></div>
         <div className="e-agent-hero__text">
           <h1 className="e-page-head__title e-agent-hero__name" {...(embedded ? {} : { id: "e-page-title", tabIndex: -1 })}>
             <span>{name}</span>

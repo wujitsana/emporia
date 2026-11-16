@@ -1226,7 +1226,7 @@ gated). The badge carries no protocol weight: no XP, quest, trust or gate uses i
 
 7. **Registering an identity** (`emporia agent register-8004`, optional, the own-wallet path; a person's act, no agent tool,
    Base Sepolia only until the release owner opens other chains). `chain_register.build` makes the registration file
-   (`type` `https://eips.ethereum.org/EIPS/eip-8004#registration-v1`, `name`, `description` from the bio, no `image`,
+   (`type` `https://eips.ethereum.org/EIPS/eip-8004#registration-v1`, `name`, `description` from the bio, `image` the agent's token picture (a flat SVG made from its stable id by `emporia.avatars.token_avatar`, 229-544 bytes, as an on-chain `data:image/svg+xml;base64,...` of under 800 characters, inside the seam's 2048-character limit; `--no-image` leaves it out; the printed summary says it is included and its size),
    `services: [{name: "Emporia", endpoint: "<home relay>/agents/<name>", stableId}]`, `x402Support` from whether the
    agent has an EVM wallet, `active: true`, `registrations: []`) and stores it as an on-chain
    `data:application/json;base64,...` URI, so nothing is hosted. The call is `register(string agentURI)` (selector

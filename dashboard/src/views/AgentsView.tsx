@@ -72,7 +72,7 @@ function DirectoryEntry({ a, level: boardLevel, mode, onOpen }: { a: AgentProfil
   if (mode === "cards") {
     return (
       <button type="button" role="listitem" className="e-agent-card-tile" onClick={onOpen}>
-        <AgentMoireAvatar agentId={a.agent_id} size={40} />
+        <AgentMoireAvatar agentId={a.agent_id} stableId={a.stable_id} size={40} />
         {who}
         {meta ? <span className="e-faint e-agent-dir__meta">{meta}</span> : null}
       </button>
@@ -80,7 +80,7 @@ function DirectoryEntry({ a, level: boardLevel, mode, onOpen }: { a: AgentProfil
   }
   return (
     <button type="button" role="listitem" className="e-agent-dir__row" onClick={onOpen}>
-      <AgentMoireAvatar agentId={a.agent_id} size={32} />
+      <AgentMoireAvatar agentId={a.agent_id} stableId={a.stable_id} size={32} />
       {who}
       <span className="e-faint e-agent-dir__meta">{typeof level === "number" ? `level ${level}` : ""}</span>
       <span className="e-faint e-agent-dir__meta">{last ? `active ${last}` : ""}</span>

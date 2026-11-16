@@ -24,6 +24,8 @@ function senderColor(id: string) {
 export type ChatLine = {
   id: string;
   sender_id: string;
+  /** The sender's stable id, where the message carries it (a room message does): the picture is drawn from it. */
+  sender_stable_id?: string | null;
   content: string;
   msg_type?: string;
   created_at?: string;
@@ -78,7 +80,7 @@ export function ReadOnlyChat({
             const color = senderColor(m.sender_id);
             return (
               <div key={m.id} className="e-chat-line">
-                <AgentMoireAvatar agentId={m.sender_id} size={26} />
+                <AgentMoireAvatar agentId={m.sender_id} stableId={m.sender_stable_id} size={26} />
                 <div className="e-chat-line__body">
                   <div className="e-chat-line__meta">
                     <span className="e-chat-line__name" style={{ color }}><AgentName id={m.sender_id}>{m.sender_id}</AgentName></span>

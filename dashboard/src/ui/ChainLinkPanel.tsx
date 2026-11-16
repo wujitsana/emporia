@@ -7,6 +7,7 @@ import {
   badgeLine, chainImagePath, chainLinks, explorerUrl, fetchChainImage, fetchChainView, localStatus, relayStatus, tokenUrl,
   type ChainView,
 } from "../chainlink";
+import { refreshChainPictures } from "../agentPicture";
 import { MetaGrid } from "./cards";
 import { CopyCommand } from "./CopyCommand";
 
@@ -64,7 +65,7 @@ function ChainLinkRow({ link, stable, payTo }: { link: ChainLink; stable?: strin
   useEffect(() => {
     let live = true;
     if (VIA_CONSOLE && VIEWER_ID && link.status !== "superseded") {
-      void fetchChainView(VIEWER_ID, link, stable, payTo).then((v) => { if (live) setView(v); });
+      void fetchChainView(VIEWER_ID, link, stable, payTo).then((v) => { refreshChainPictures(); if (live) setView(v); });
     }
     return () => { live = false; };
   }, [link, stable, payTo]);

@@ -37,7 +37,7 @@ function CompactCard({ agent, level }: { agent: AgentProfile; level: boolean }) 
   const head = say(bareAgentName(agent.address ?? agent.agent_id), levelLine(q) && `· ${levelLine(q).split(" · ")[0]}`);
   return (
     <span className="e-agent-card e-agent-card--compact" data-testid="agent-card-compact">
-      <AgentMoireAvatar agentId={agent.agent_id} size={18} />
+      <AgentMoireAvatar agentId={agent.agent_id} stableId={agent.stable_id} size={18} />
       <span className="e-agent-card__text">
         <span className="e-agent-card__name"><AgentName id={agent.agent_id}>{head}</AgentName></span>
         {model ? <span className="e-faint"> · model {model} (declared)</span> : null}
@@ -70,7 +70,7 @@ function FullCard({ agent, navigate }: { agent: AgentProfile; navigate?: (view: 
   return (
     <div className="e-agent-card e-agent-card--full" data-testid="agent-card-full">
       <div className="e-agent-card__head">
-        <AgentMoireAvatar agentId={agent.agent_id} size={40} />
+        <AgentMoireAvatar agentId={agent.agent_id} stableId={agent.stable_id} size={40} />
         <div className="e-agent-card__text">
           <Text style={{ fontSize: 15 }}><AgentName id={agent.agent_id}>{bareAgentName(agent.address ?? agent.agent_id)}</AgentName></Text>
           {agent.display_name && agent.display_name !== agent.agent_id

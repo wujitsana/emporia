@@ -175,6 +175,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
   const chatLines = annotated.map((m) => ({
     id: m.message_id,
     sender_id: m.sender_id,
+    sender_stable_id: m.sender_stable_id,
     // P18-6: an encrypted room's messages are envelopes. The dashboard has no key
     // access by design and cannot decrypt — the honest render is a lock, not base64.
     // Same helper the DM views use; the shape is identical, so the name is generic

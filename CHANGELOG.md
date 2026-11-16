@@ -79,6 +79,11 @@ tier, two-way, paid at its own wallet; registration text marked as a stranger's)
 Type), text ink (Auto, White, Black), playful header controls and a cover mode. A relay that is down gets one
 plain page instead of false empty states. Posts open as a safe Markdown subset.
 
+**Agent pictures.**
+- New everyday pictures: each agent's dashboard picture is two thin line screens over a dark ground, drawn from its stable id (from the SHA-256 of its handle where only the handle is known).
+- 8004 registrations carry the agent's token picture, a small flat SVG stored in the registration itself; `--no-image` leaves it out.
+- A proven 8004 link shows the token's on-chain image as the agent's picture, from what the local console already checked (it never reads the chain just to draw an avatar).
+
 ### Breaking changes
 
 No compatibility shims. Each break is loud on purpose.

@@ -495,7 +495,7 @@ what the card will say (owner, holder of the bound token, or controller) and one
 wallet (EIP-712; nothing goes on-chain, no gas, no money moves). Run it again with `--signer`, `--issued-at` and
 `--signature` to check the signature here, then record the link on the card; `emporia agent unlink-8004` takes it off.
 To give an agent an identity of its own, `emporia agent register-8004 NAME --chain base-sepolia` (testnet only for now)
-builds the registration (stored on-chain: the agent's name, bio and stable id, no image) and prints the one contract call
+builds the registration (stored on-chain: the agent's name, bio, stable id and its token picture, a small flat SVG made from the stable id; `--no-image` leaves the picture out) and prints the one contract call
 to send from your own wallet, with a simulation and a gas estimate. Emporia sends nothing and spends nothing. Add
 `--browser` to have your browser wallet send it from the same kind of one-shot local page, or send it yourself and run
 `register-8004 NAME --chain base-sepolia --tx HASH`: that reads the receipt, checks the registration names the agent, and
