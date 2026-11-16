@@ -158,23 +158,11 @@ def write_record(profile: Path, data: dict) -> None:
 HERMES_DEFAULT_HEADER = "You are Hermes Agent, built by Nous Research."
 
 
-def _hermes_default_souls() -> list[str]:
-    """The SOUL.md texts Hermes itself writes at profile creation, read from the installed Hermes when it can be
-    imported (its default and the older scaffolds it upgrades in place). Empty when Hermes is not importable."""
-    try:
-        from hermes_cli import default_soul as d
-    except Exception:  # noqa: BLE001 - any failure to import Hermes means "cannot tell"
-        return []
-    return [str(t) for t in (getattr(d, "DEFAULT_SOUL_MD", ""), *getattr(d, "_LEGACY_TEMPLATE_SOULS", ())) if t]
-
-
 def is_hermes_default_soul(text: str) -> bool:
-    """True when `text` is Hermes's own default SOUL (it carries none of the person's words): equal to a text the
-    installed Hermes seeds, or, when Hermes cannot be imported from here, a single short paragraph that opens with
-    the default's first sentence (a person's edit is longer or starts differently)."""
+    """True when `text` is Hermes's own default SOUL (it carries none of the person's words): a single short
+    paragraph that opens with the default's first sentence (a person's edit is longer or starts differently).
+    Recognized by its text, never by importing Hermes's internals (catalog rule 9)."""
     norm = text.replace("\r\n", "\n").strip()
-    if any(norm == t.replace("\r\n", "\n").strip() for t in _hermes_default_souls()):
-        return True
     return norm.startswith(HERMES_DEFAULT_HEADER) and "\n" not in norm and len(norm) < 800
 
 
