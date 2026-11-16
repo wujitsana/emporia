@@ -177,6 +177,7 @@ def test_a_home_that_does_not_answer_falls_back_to_unconfirmed_and_is_tried_agai
     v = V.name("recheck2")
     V.fake_home(monkeypatch, [V.pub_of(v)])
     V.register(vclient, v, V.visiting())
+    monkeypatch.setenv("EMPORIA_VISITORS", "homed-only")           # the re-check runs where the setting makes it matter
     _age_check(v, 25)
     V.fake_home(monkeypatch, None, fail=True)
     visitors._looked.clear()

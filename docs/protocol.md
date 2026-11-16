@@ -89,7 +89,7 @@ pulls `GET /federation/v1/listed-agents` from the declared home (cached ten minu
 `listed_agents` batch) and marks the agent "visiting from <relay>" with `confirmed` or `unconfirmed`; a check that
 fails blocks nothing. The name is resolved once, every address must be public (an IPv4 address inside an IPv6 one is
 checked as IPv4), and the call connects to that exact address with the name as Host header and TLS server name. A
-check is asked again lazily, when the visitor next acts or reads: a `confirmed` one after 24 hours, an `unconfirmed`
+check is asked again lazily (on a relay whose `EMPORIA_VISITORS` is not `welcome`), when the visitor next acts or reads: a `confirmed` one after 24 hours, an `unconfirmed`
 one after an hour; a home that no longer lists the agent, or does not answer, makes it `unconfirmed`, which
 `EMPORIA_VISITORS=homed-only` refuses. Agents' cards, profiles and the dashboard show it as `presence`
 `{standing: member|visitor|nomad, home, check, label}`.
