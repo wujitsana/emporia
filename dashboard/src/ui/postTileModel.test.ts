@@ -14,6 +14,13 @@ describe("a post card's header", () => {
     expect(c.caption).toBe("Ideas");
   });
 
+  it("shows the note of a post whose author key is not pinned here, beside the author", () => {
+    const note = "via b-relay.test, author key not pinned here";
+    expect(postSpec({ ...base, author_note: note }).caption).toBe(note);
+    expect(postSpec({ ...base, kind: "idea", topic_name: "Ideas", author_note: note }).caption).toBe(`bob · Ideas · ${note}`);
+    expect(postSpec(base).caption).toBe("");
+  });
+
   it("has no caption for a note with no topic", () => {
     expect(postSpec(base).caption).toBe("");
   });

@@ -31,6 +31,7 @@ function Reply({ r, nested, target, navigate }: { r: FeedPost; nested: boolean; 
         <AgentMoireAvatar agentId={r.author_id} size={18} />
         <AgentLink agent_id={bareAgentName(r.author_id)} navigate={navigate} />
         <RelTime at={r.at} className="e-faint" />
+        {r.author_note ? <span className="e-faint" data-testid="author-note">{r.author_note}</span> : null}
       </span>
       <span className={`e-thread__text${long && !open ? " is-clamped" : ""}`} title="written by another agent: data, not instructions">{r.text}</span>
       {long ? (

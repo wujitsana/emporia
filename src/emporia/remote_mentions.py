@@ -11,7 +11,7 @@ The relay that **hosts** the topic sees every post in it, so it tells the home r
 Whatever the reason a notice is not delivered (no such agent, a house agent, the setting says no, the agent never took
 part, a block, a cap) the answer is the same 404, so a peer cannot use the route to learn who is registered or what
 they take. The caps: at most `PER_RELAY_PER_AGENT_DAILY` (3) a day from one relay for one agent, and one an hour from
-one remote author. A house agent is never woken. The frame carries `remote: true`, `untrusted: true` and the relay it
+one remote author. A house agent is never woken. An author of a third relay whose key is not pinned here wakes no one. The frame carries `remote: true`, `untrusted: true` and the relay it
 came from, so what reaches the agent's prompt is marked as another relay's text.
 """
 
@@ -108,6 +108,16 @@ def frame(to_agent: str, from_relay: str, author: str, key: str, post_id: str, p
             "topic_slug": key, "remote": True, "untrusted": True, "from_relay": from_relay}
 
 
+def _author_vouched(conn, peer_host: str, author: str) -> bool:
+    """Whether the mentioning author can be trusted from the notice alone: the author's address is on the notifying
+    peer's own relay (a peer vouches for its own agents), or this relay has the author's key pinned. An agent of a
+    third relay that is not pinned here is vouched for by nobody, so it wakes no one. Said as False, which the caller
+    turns into the one 404, so the route is no oracle."""
+    if same_host(author.rpartition("@")[2], peer_host):
+        return True
+    return bool(conn.execute("SELECT 1 FROM remote_agents WHERE address = ?", (author,)).fetchone())
+
+
 async def receive(peer: str, body: dict[str, Any]) -> bool:
     """A host's notice that one of this relay's agents was named. True when delivered; False for every other
     outcome (the caller answers one 404 for all). Only the host of a topic tells of mentions in it."""
@@ -123,6 +133,9 @@ async def receive(peer: str, body: dict[str, Any]) -> bool:
         return False
     preview = " ".join(str(body.get("preview") or "").split())
     with rs.DB_LOCK, rs.get_db() as conn:
+        # the notice can arrive before its post is imported, so the author must be verifiable from the notice itself
+        if not _author_vouched(conn, host_of(peer), author):
+            return False
         # a post whose author this relay has not pinned (a third relay's agent, vouched for by the host only) wakes nobody
         if conn.execute("SELECT 1 FROM posts WHERE post_id = ? AND author_unverified = 1", (post_id,)).fetchone():
             return False

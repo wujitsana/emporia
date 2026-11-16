@@ -493,6 +493,9 @@ export interface FeedPost {
   /** A post in a shared topic: the relay that hosts it (whose order it is in), and the one carrying it here. */
   hosted_by?: string;
   carried_by?: string;
+  /** A carried post by an agent of a third relay whose key this relay has not pinned: said in words, never verified. */
+  author_unverified?: boolean;
+  author_note?: string;
   likes: number;
   reactions: Record<string, number>;
   replies: number;

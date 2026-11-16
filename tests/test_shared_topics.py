@@ -406,7 +406,8 @@ def home(monkeypatch, client):
     return type("Home", (), {"h": h, "x": x, "key": key})
 
 
-def _notice(client, home, to, *, author="zed@far.test", topic=None, post_id=None, peer=None, proto=None):
+def _notice(client, home, to, *, author=None, topic=None, post_id=None, peer=None, proto=None):
+    author = author or f"zed@{home.h.host}"
     body = {"type": "mention", "to_agent": to, "post_id": post_id or f"pst_{uuid.uuid4().hex[:16]}",
             "topic": topic or home.key, "author_address": author, "preview": "hey"}
     return (peer or home.h).call(client, "POST", "/federation/v1/notices", body, **({"proto": proto} if proto is not None else {}))
@@ -440,13 +441,13 @@ def test_a_mention_wakes_an_agent_only_where_its_setting_allows(home, client):
             "SELECT payload_json FROM agent_inbox WHERE agent_id = ? AND event_type = 'mention'", (x,))]
     [frame] = rows
     assert frame["remote"] is True and frame["untrusted"] is True and frame["from_relay"] == home.h.host
-    assert frame["author_id"] == "zed@far.test" and frame["topic_slug"] == home.key
+    assert frame["author_id"] == f"zed@{home.h.host}" and frame["topic_slug"] == home.key
     # off: never, even though it took part
     assert _set_mode(client, x, "off").status_code == 200
-    assert _notice(client, home, x, author="zed2@far.test").status_code == 404
+    assert _notice(client, home, x, author=f"zed2@{home.h.host}").status_code == 404
     # any: from a topic it never joined (the host still must be the relay that tells)
     assert _set_mode(client, x, "any").status_code == 200
-    assert _notice(client, home, x, author="zed3@far.test", topic=f"other@{home.h.host}").status_code == 200
+    assert _notice(client, home, x, author=f"zed3@{home.h.host}", topic=f"other@{home.h.host}").status_code == 200
     # a bad value is refused, and nothing widens it by itself
     assert _set_mode(client, x, "everyone").status_code == 400
 
@@ -473,18 +474,18 @@ def test_no_such_agent_and_not_taking_them_are_the_same_answer(home, client):
 def test_mention_caps(home, client):
     x = home.x
     _post_in_carried(client, home, x)
-    results = [_notice(client, home, x, author=f"a{i}@far.test").status_code for i in range(4)]
+    results = [_notice(client, home, x, author=f"a{i}@{home.h.host}").status_code for i in range(4)]
     assert results == [200, 200, 200, 404], "the fourth of the day from one relay is dropped"
     y = _agent(client, "my")
     _post_in_carried(client, home, y)
-    assert _notice(client, home, y, author="a0@far.test").status_code == 404, "one remote author, once an hour"
-    assert _notice(client, home, y, author="b0@far.test").status_code == 200
+    assert _notice(client, home, y, author=f"a0@{home.h.host}").status_code == 404, "one remote author, once an hour"
+    assert _notice(client, home, y, author=f"b0@{home.h.host}").status_code == 200
     # the same post is not told twice
     pid = f"pst_{uuid.uuid4().hex[:16]}"
     z = _agent(client, "mz")
     _post_in_carried(client, home, z)
-    assert _notice(client, home, z, author="c1@far.test", post_id=pid).status_code == 200
-    assert _notice(client, home, z, author="c2@far.test", post_id=pid).status_code == 404
+    assert _notice(client, home, z, author=f"c1@{home.h.host}", post_id=pid).status_code == 200
+    assert _notice(client, home, z, author=f"c2@{home.h.host}", post_id=pid).status_code == 404
 
 
 def test_only_the_host_of_a_topic_tells_of_mentions_in_it(home, client, monkeypatch):
@@ -866,7 +867,7 @@ def test_a_peer_request_is_accepted_once_and_covers_its_query(host, client):
 def test_a_mention_notice_needs_a_post_id_and_one_relay_cannot_spend_anothers_author_budget(home, client):
     x = home.x
     _post_in_carried(client, home, x)
-    body = {"type": "mention", "to_agent": x, "topic": home.key, "author_address": "q@far.test", "preview": "hey"}
+    body = {"type": "mention", "to_agent": x, "topic": home.key, "author_address": f"q@{home.h.host}", "preview": "hey"}
     assert home.h.call(client, "POST", "/federation/v1/notices", body).status_code == 404
     with rs.DB_LOCK, rs.get_db() as conn:
         now = datetime.now(UTC)
@@ -875,3 +876,22 @@ def test_a_mention_notice_needs_a_post_id_and_one_relay_cannot_spend_anothers_au
                          "VALUES (?,?,?,?,?,?)", (x, "evil.test", f"p{i}", "bob@far.test", home.key, now.isoformat()))
         assert not remote_mentions.decide(conn, x, "evil.test", "bob@far.test", home.key, "p_new")
         assert remote_mentions.decide(conn, x, host_of(H_URL), "bob@far.test", home.key, "p_real")
+
+
+def test_a_notice_naming_an_unpinned_third_relay_author_wakes_no_one_and_looks_the_same(home, client):
+    """The notice can arrive before its post is imported, so the post's unverified mark cannot be relied on: the
+    author must be vouched for by the notice itself (on the notifying peer's relay, or pinned here)."""
+    x = home.x
+    _post_in_carried(client, home, x)
+    third = "carol@c-relay.test"
+    refused = _notice(client, home, x, author=third)
+    gone = _notice(client, home, "nobody_here", author=third)
+    assert refused.status_code == gone.status_code == 404 and refused.text == gone.text
+    with rs.DB_LOCK, rs.get_db() as conn:
+        assert not conn.execute("SELECT 1 FROM agent_inbox WHERE agent_id = ? AND event_type = 'mention'", (x,)).fetchone()
+        # pinned here, the same author is vouched for
+        conn.execute("INSERT INTO remote_agents (address, peer_url, public_key_hex, encryption_public_key, "
+                     "encryption_key_signature, updated_at, stable_id, key_log_json, encryption_key_at) "
+                     "VALUES (?,?,?,?,?,?,?,?,?)", (third, C_URL, "ab" * 32, "cd" * 32, "", "now",
+                                                    wire.stable_id_for("ab" * 32), "[]", ""))
+    assert _notice(client, home, x, author=third).status_code == 200

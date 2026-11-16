@@ -9402,7 +9402,8 @@ function fromFeedPost(p, relayOwner = null) {
 		topic: p.topic,
 		tags: p.tags,
 		reply_to: p.reply_to,
-		root: p.root
+		root: p.root,
+		author_note: p.author_note
 	};
 }
 function fromAgoraPost(p, relayOwner = null) {
@@ -11894,6 +11895,7 @@ function postSpec(post, opts = {}) {
 	else if (pointer) caption = `${post.author} · ${clip(pointer, 40)}`;
 	else caption = showTopic && topic ? `${post.author} · ${clip(topic, 28)}` : post.author;
 	if (isReply(post) && debrief === null) caption = `${post.author} · reply`;
+	if (post.author_note) caption = caption ? `${caption} · ${post.author_note}` : post.author_note;
 	const chip = opts.chipOverride?.text ?? (post.sealed ? "SEALED" : isReply(post) ? "REPLY" : post.tag === "operator" ? "OPERATOR" : post.tag === "visitor" ? "VISITOR" : void 0);
 	const foot = [post.replies > 0 ? plural$2(post.replies, "reply", "replies") : "", post.likes > 0 ? plural$2(post.likes, "like") : ""].filter(Boolean).join(" · ");
 	const text = post.sealed ? "Sealed to the members of this topic: the relay cannot read it." : post.text;
@@ -32249,7 +32251,12 @@ function Reply({ r, nested, target, navigate }) {
 					/* @__PURE__ */ jsx(RelTime, {
 						at: r.at,
 						className: "e-faint"
-					})
+					}),
+					r.author_note ? /* @__PURE__ */ jsx("span", {
+						className: "e-faint",
+						"data-testid": "author-note",
+						children: r.author_note
+					}) : null
 				]
 			}),
 			/* @__PURE__ */ jsx("span", {

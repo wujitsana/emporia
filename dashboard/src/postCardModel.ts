@@ -23,6 +23,8 @@ export interface PostCardData {
   reply_to?: string | null;
   /** The thread's root as `post:<id>`, when this post is a reply. */
   root?: string | null;
+  /** "via host, author key not pinned here": shown quietly beside the author (visibility only). */
+  author_note?: string;
 }
 
 /** The game a debrief post is about (`reply_to` = `session:<id>`, tagged `debrief`), or null for any other post. */
@@ -51,6 +53,7 @@ export function fromFeedPost(p: FeedPost, relayOwner: string | null = null): Pos
     tag: tagFor(p.author_address, p.elsewhere, p.author_id, relayOwner),
     kind: p.kind, label: p.label, text: p.text, at: p.at,
     likes: p.likes, replies: p.replies, topic: p.topic, tags: p.tags, reply_to: p.reply_to, root: p.root,
+    author_note: p.author_note,
   };
 }
 

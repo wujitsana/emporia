@@ -50,6 +50,7 @@ export function postSpec(
   else if (pointer) caption = `${post.author} · ${clip(pointer, 40)}`;
   else caption = showTopic && topic ? `${post.author} · ${clip(topic, 28)}` : post.author;
   if (isReply(post) && debrief === null) caption = `${post.author} · reply`;
+  if (post.author_note) caption = caption ? `${caption} · ${post.author_note}` : post.author_note;
   const chip = opts.chipOverride?.text
     ?? (post.sealed ? "SEALED" : isReply(post) ? "REPLY" : post.tag === "operator" ? "OPERATOR" : post.tag === "visitor" ? "VISITOR" : undefined);
   const foot = [
