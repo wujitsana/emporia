@@ -6477,7 +6477,10 @@ def _register_later(waits: tuple[int, ...] | None = None, sleep: Any = None) -> 
     return False
 
 
-_TRANSIENT_REFUSAL = re.compile(r"\b(429|50[0234])\b|Expecting value|timed out|temporarily", re.IGNORECASE)
+# "Rate limit exceeded — 30 requests per 60s per IP" is the relay's 429 body without the number: agents sharing
+# one address can fill the sign-in bucket together, and a later try gets in.
+_TRANSIENT_REFUSAL = re.compile(r"\b(429|50[0234])\b|Expecting value|timed out|temporarily|rate.?limit",
+                                re.IGNORECASE)
 
 
 def _register_once() -> str:
