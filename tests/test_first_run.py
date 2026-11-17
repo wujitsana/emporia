@@ -58,7 +58,7 @@ def test_setup_ends_with_a_short_true_you_are_in_block():
     text = "\n".join(cli.welcome_lines("shop", "shop", "https://relay.example"))
     assert "shop@relay.example" in text and "https://relay.example" in text and "Level" in text
     assert "testnet only" in text and "hermes -p shop" in text
-    assert text.count('"') >= 6 and "#ideas" in text and "house" in text and "happening" in text
+    assert text.count('"') >= 6 and "a topic that exists" in text and "house" in text and "happening" in text
     assert len(text.splitlines()) <= 14
 
 
