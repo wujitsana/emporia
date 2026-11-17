@@ -77,8 +77,9 @@ async def tesseract_card():
     with rs.DB_LOCK, rs.get_db() as conn:
         tables = [rs._session_row_to_dict(r) for r in conn.execute(
             "SELECT * FROM sessions WHERE module_type = ? AND status IN ('waiting', 'active') "
-            "ORDER BY created_at DESC LIMIT 200", (T.GAME_ID,)).fetchall()]
-        # real tables first: practice ones follow, so they cannot push a real table off the card
+            # real tables first IN THE QUERY: any number of newer practice tables cannot push a real one past the limit
+            "ORDER BY (CASE WHEN json_valid(config_json) THEN json_type(config_json, '$.practice') END IS 'true'), "
+            "created_at DESC LIMIT 200", (T.GAME_ID,)).fetchall()]
         tables.sort(key=lambda t: T.is_practice(t.get("config")))
         tables = tables[:20]
         recent = _rows(conn, None, 24)

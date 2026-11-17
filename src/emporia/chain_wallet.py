@@ -107,24 +107,22 @@ def quote(chain: str, agent_id: Any, max_gas: Any, *, read: Any = None, signer: 
     return out
 
 
-def send(chain: str, agent_id: Any, max_gas: Any, expect_owner: str, confirmed_cost_wei: int, *, read: Any = None, signer: Any = None,
+def send(chain: str, agent_id: Any, max_gas: Any, expect_owner: str, confirmed: dict[str, Any], *, read: Any = None, signer: Any = None,
          now: float | None = None) -> dict[str, Any]:
     """Quote again (fresh consent, fresh deadline), refuse if the owner is not the one the person confirmed, send one
-    transaction from the agent's own wallet. The answer is the hash; `confirm` takes it from there."""
+    transaction from the agent's own wallet, signed with the gas limit and max fee the person confirmed (`confirmed`
+    is the quote they were shown). The answer is the hash; `confirm` takes it from there."""
     from emporia import chain_send
     chain_link.person_only("sending from the agent's own wallet")
     wallet = signer or chain_register.own_wallet()
     q = quote(chain, agent_id, max_gas, read=read, signer=wallet, now=now)
-    if q["quote"]["max_cost_wei"] > int(confirmed_cost_wei or 0):
-        raise LinkError("the fee rose since you confirmed it (the worst case is now "
-                        f"{chain_send.eth(q['quote']['max_cost_wei'])}, you confirmed {chain_send.eth(int(confirmed_cost_wei or 0))}): "
-                        "nothing sent; run the command again")
+    pinned = chain_send.pin_to_confirmed(q["quote"], confirmed)
     if not W.same(q["owner"], expect_owner):
         raise LinkError("the identity's owner is not the wallet you confirmed: nothing sent; run the command again")
     tx_hash = chain_send.send(chain_register._reader(q["chain"], read, "safe"),
-                              wallet, q["quote"], bytes.fromhex(q["calldata"][2:]))
+                              wallet, pinned, bytes.fromhex(q["calldata"][2:]))
     return {"tx_hash": tx_hash, "wallet": wallet.address, "chain": q["chain"], "chain_label": q["chain_label"],
-            "max_cost_wei": q["quote"]["max_cost_wei"]}
+            "max_cost_wei": pinned["max_cost_wei"]}
 
 
 def confirm(chain: str, agent_id: Any, tx_hash: str, *, read: Any = None, signer: Any = None) -> dict[str, Any]:

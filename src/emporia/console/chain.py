@@ -160,7 +160,7 @@ class ChainViews:
         self._cache: dict[tuple[str, str, str, str, str], tuple[float, Loaded]] = {}
 
     def load(self, caip2: str, agent_id: str, signer: str, signed: dict | None = None,
-             pay_to: str = "") -> tuple[Loaded, bool]:
+             pay_to: str = "", deadline: float | None = None) -> tuple[Loaded, bool]:
         """(the look, whether it came from the cache). Blocking: run it in a thread. `signed` is the card's
         `{stable_id, issued_at, wallet_sig}`: with it the wallet's signature is verified here as well as the
         chain's control (`erc8004.verify`); without it only the chain is read (`erc8004.preview`). `pay_to` is the agent's
@@ -173,7 +173,7 @@ class ChainViews:
         now = self._clock()
         if hit and now - hit[0] < CACHE_SECONDS:
             return hit[1], True
-        got = self._read(caip2, key[1], signer, int(now), signed, pay_to)
+        got = self._read(caip2, key[1], signer, int(now), signed, pay_to, deadline)
         if got.status != "unknown":             # an RPC error is not remembered: the next look tries again
             if len(self._cache) >= CACHE_MAX:   # one process-wide instance serves agents' verify calls: keep it small
                 self._cache = {k: v for k, v in self._cache.items() if now - v[0] < CACHE_SECONDS}
@@ -196,11 +196,13 @@ class ChainViews:
         return best[1].image if best else None
 
     def _read(self, caip2: str, agent_id: str, signer: str, now: int, signed: dict | None = None,
-              pay_to: str = "") -> Loaded:
+              pay_to: str = "", deadline: float | None = None) -> Loaded:
         if not erc8004.available():
             return Loaded("not-checked", "no signature library is installed here", checked_at=now)
         try:
             reader = self._reader(caip2)
+            if deadline is not None:
+                reader.hard_deadline = deadline     # every request in this read stops at the caller's overall limit
             if signed:
                 link = {"agent_registry": erc8004.registry_string(int(caip2.split(":", 1)[1]),
                                                                    networks.ERC8004_REGISTRIES[caip2]),

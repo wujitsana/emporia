@@ -253,3 +253,50 @@ def test_the_ask_is_not_spent_in_a_relay_started_turn_and_an_identity_costs_one_
     monkeypatch.setattr(m, "_agent_profile", lambda aid: calls.append(1) or {"links": [entry()]})
     assert m._ask_about_8004("a") is None and m._ask_about_8004("a") is None
     assert len(calls) == 1, "the profile is asked for once a week, not at every look"
+
+
+def test_the_identity_budget_is_a_deadline_inside_each_request(monkeypatch):
+    """R2: a link read that starts with 1 s of the budget left gives its RPC requests at most 1 s, not 4."""
+    import json as _json
+    import time
+
+    from emporia.chain_read import ChainUnknown, PinnedReader
+    from emporia.console.chain import ChainViews
+    seen = []
+
+    def http(url, body, headers, timeout, max_bytes):
+        seen.append(timeout)
+        return 200, _json.dumps({"jsonrpc": "2.0", "id": 1, "result": "0x1"}).encode()
+    built = ChainViews(reader=lambda caip2: PinnedReader(caip2, timeout=4.0, http=http))
+    key, addr = keypair()
+    signed = _signed(key, addr)
+    end = time.monotonic() + 1.0
+    built.load("eip155:84532", AGENT, addr, signed, "", deadline=end)
+    assert seen and all(t <= 1.0 for t in seen), seen
+    # a deadline already spent: no request goes out at all, and the answer is 'unknown'
+    seen.clear()
+    got, _ = built.load("eip155:84532", str(int(AGENT) + 1), addr, signed, "", deadline=time.monotonic() - 1)
+    assert seen == [] and got.status == "unknown"
+    # an ordinary read has no deadline and keeps the reader's own 4 s
+    r = PinnedReader("eip155:84532", timeout=4.0, http=http)
+    assert r.hard_deadline is None
+    with pytest.raises(ChainUnknown, match="too long"):
+        r.hard_deadline = time.monotonic() - 1
+        r.balance("0x" + "11" * 20)
+
+
+def test_the_identity_check_hands_its_budget_to_each_link_read(monkeypatch):
+    got = []
+
+    class Views:
+        def load(self, caip2, agent_id, signer, signed, pay_to, deadline=None):
+            got.append(deadline)
+            raise RuntimeError("stop")
+    monkeypatch.setattr(m, "_identity_views", lambda: Views())
+    link = entry(signer="0x" + "11" * 20, agent_id="5", issued_at=1, wallet_sig="0x" + "00" * 65)
+    monkeypatch.setattr(m, "_agent_profile", lambda who: {"stable_id": "ab" * 32, "links": [link]})
+    import time
+    t0 = time.monotonic()
+    out = m.verify(kind="identity", target="bob")
+    assert len(got) == 1 and t0 < got[0] <= time.monotonic() + m.IDENTITY_BUDGET
+    assert out["links"][0]["chain_status"] == "unknown"

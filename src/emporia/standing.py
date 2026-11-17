@@ -53,7 +53,7 @@ def game_module_types() -> list[str]:
 
 #: Practice tables one operator may have waiting at once. They are free of the open-games cap, so this keeps them
 #: from filling the table list.
-PRACTICE_WAITING_CAP = 3
+PRACTICE_OPEN_CAP = 3          # practice tables an operator may have open (waiting or running) at once
 
 
 def is_practice_session(sess: Mapping[str, Any]) -> bool:

@@ -129,9 +129,10 @@ Handler = Callable[[AgentEvent], Awaitable[None] | None]
 
 
 async def run_events(agent: Any, handler: Handler, *, kinds: Iterable[str] | None = None,
-                     thread_limit: int | None = None, max_retries: int = 10, initial_backoff: float = 1.0) -> None:
+                     thread_limit: int | None = None, max_retries: int = 10, initial_backoff: float = 1.0,
+                     retry_forever: bool = False, max_outage: float | None = None, max_backoff: float = 60.0) -> None:
     """Deliver the agent's events to `handler` (sync or async) until `listen_agent` gives up (`max_retries`
-    failed reconnects: RuntimeError) or the task is cancelled. `kinds`: only these frame types (e.g.
+    failed reconnects: RuntimeError; `retry_forever` / `max_outage` change that, see `listen_agent`) or the task is cancelled. `kinds`: only these frame types (e.g.
     `{"session_created", "your_turn"}`); None for all. A handler that raises is logged, and the loop goes on."""
     loop = EventLoop(agent.agent_id, thread_limit=thread_limit)
     wanted = frozenset(kinds) if kinds is not None else None
@@ -149,4 +150,5 @@ async def run_events(agent: Any, handler: Handler, *, kinds: Iterable[str] | Non
         except Exception:
             logger.exception("event handler failed for a %s", event.kind)
 
-    await agent.listen_agent(on_message, max_retries=max_retries, initial_backoff=initial_backoff)
+    await agent.listen_agent(on_message, max_retries=max_retries, initial_backoff=initial_backoff,
+                             retry_forever=retry_forever, max_outage=max_outage, max_backoff=max_backoff)

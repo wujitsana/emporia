@@ -1083,16 +1083,25 @@ class EmporiaAgent:
         return resp.json()
 
     async def list_sessions(
-        self, status: str | None = None, module_type: str | None = None
+        self, status: str | None = None, module_type: str | None = None, mine: bool = False
     ) -> list[dict[str, Any]]:
+        """The lobby view, on purpose: every session this agent may see (newest 100), so other agents' open
+        challenges and waiting tables are in it. That is how an agent finds a game to take. `mine=True` returns only
+        the sessions this agent is seated in (the relay filters before its limit; the SDK checks again, so an older
+        relay that ignores the filter still gives the same answer)."""
         params: dict[str, Any] = {}
+        if mine:
+            params["participant"] = self.agent_id
         if status:
             params["status"] = status
         if module_type:
             params["module_type"] = module_type
         resp = await self._bearer_request("get", f"{self.relay_url}/sessions", params=params)
         resp.raise_for_status()
-        return resp.json().get("sessions", [])
+        found = resp.json().get("sessions", [])
+        if mine:
+            found = [s for s in found if self.agent_id in (s.get("participants") or [])]
+        return found
 
     # ------------------------------------------------------------------ #
     # Direct Messages
@@ -2881,6 +2890,57 @@ class EmporiaAgent:
     # WebSocket listeners (with exponential backoff reconnect)
     # ------------------------------------------------------------------ #
 
+    async def _listen_loop(self, path: str, label: str, on_message: Any, *, max_retries: int, initial_backoff: float,
+                           retry_forever: bool, max_outage: float | None, max_backoff: float) -> None:
+        """The reconnecting WebSocket loop behind `listen_session` and `listen_agent`.
+
+        Each attempt builds its connect arguments (the bearer token) INSIDE the retry block, so a relay that is down
+        when the token is asked for (an httpx error) is an outage to wait out, like a refused connect, never an
+        exception that escapes the loop. A token that was merely stale is minted fresh (N7 R5); a handshake the relay
+        rejected drops the cached token and mints a new one once per cycle (N8 R5, N9 O2: `_invalidate_bearer_and_remint`
+        keeps the old token when the re-mint fails). A cycle is the time since the last successful connect.
+
+        When to give up (RuntimeError, `<label>: ...exhausted`): by default after `max_retries` failed attempts in a
+        row. With `max_outage` (seconds) after that much time without a connection, however many attempts that
+        took. With `retry_forever` never (a resident host cancels the task to stop it). The wait between attempts is
+        exponential with full jitter, capped at `max_backoff`."""
+        import time
+        retries = 0
+        remint_done_this_cycle = False
+        down_since: float | None = None
+        while True:
+            try:
+                url, subprotocols = await self._ws_connect_args(path)
+                async with websockets.connect(url, subprotocols=subprotocols) as ws:
+                    retries = 0
+                    remint_done_this_cycle = False
+                    down_since = None
+                    async for raw in ws:
+                        try:
+                            msg = json.loads(raw)
+                        except json.JSONDecodeError:
+                            msg = {"raw": raw}
+                        await on_message(msg)
+                    down_since = None          # a clean close after a good connection starts a fresh cycle
+                    await asyncio.sleep(backoff_mod.full_jitter(0, initial_backoff, max_backoff))   # never a hot loop
+            except (ConnectionClosedError, OSError, InvalidHandshake, httpx.TransportError) as e:
+                now = time.monotonic()
+                if down_since is None:
+                    down_since = now
+                if isinstance(e, InvalidHandshake) and not remint_done_this_cycle:
+                    await self._invalidate_bearer_and_remint()
+                    remint_done_this_cycle = True
+                if max_outage is not None:
+                    if now - down_since >= max_outage:
+                        raise RuntimeError(f"{label}: relay unreachable for {max_outage:g} s, giving up (outage "
+                                           f"limit exhausted): {e}") from e
+                elif not retry_forever and retries >= max_retries:
+                    raise RuntimeError(f"{label}: max retries ({max_retries}) exhausted: {e}") from e
+                await asyncio.sleep(backoff_mod.full_jitter(retries, initial_backoff, max_backoff))
+                retries += 1
+                if (retry_forever or max_outage is not None) and initial_backoff * 2 ** min(retries, 30) >= max_backoff:
+                    remint_done_this_cycle = False   # a long outage: one re-mint per capped wait, so a failed one is not final
+
     async def listen_session(
         self,
         session_id: str,
@@ -2888,84 +2948,17 @@ class EmporiaAgent:
         *,
         max_retries: int = 10,
         initial_backoff: float = 1.0,
+        retry_forever: bool = False,
+        max_outage: float | None = None,
+        max_backoff: float = 60.0,
     ) -> None:
-        """Listen to a session WS channel. Reconnects on disconnect with backoff.
-
-        Sends the same credential listen_agent() does (N5 review R6 — this used to
-        send none at all, so a participants-only session was unreachable from here
-        regardless of the caller's actual participation) — see _ws_auth_params()
-        for why both `agent_id` and `token` are sent (N6 review R4: `agent_id`
-        alone is inert on the shipped default config).
-
-        N7 review R5: the connect URL — and the bearer token embedded in it — used
-        to be built once, before the retry loop, then replayed unchanged on every
-        reconnect. _bearer_token_value() caches with a margin specifically because
-        tokens expire (~1h); a long-lived listener that reconnects after expiry
-        was replaying a dead JWT on every attempt, exhausting the whole backoff
-        budget on what was really a token-refresh problem. Rebuilt fresh inside
-        the loop instead — _bearer_token_value() already handles the caching and
-        renewal, so this costs nothing extra when the cached token is still valid.
-        """
-        retries = 0
-        backoff = initial_backoff
-        remint_done_this_cycle = False
-        while retries <= max_retries:
-            url, subprotocols = await self._ws_connect_args(f"/ws/{session_id}")
-            try:
-                async with websockets.connect(url, subprotocols=subprotocols) as ws:
-                    retries = 0
-                    backoff = initial_backoff
-                    remint_done_this_cycle = False
-                    async for raw in ws:
-                        try:
-                            msg = json.loads(raw)
-                        except json.JSONDecodeError:
-                            msg = {"raw": raw}
-                        await on_message(msg)
-            except (ConnectionClosedError, OSError, InvalidHandshake) as e:
-                # N5 review R6: ws_session() (N4-5) now closes with 1008 *before*
-                # accept() on an unauthorized/unknown session, which Starlette
-                # surfaces as a rejected handshake — websockets raises that as
-                # InvalidStatus (a subclass of InvalidHandshake), not
-                # ConnectionClosedError/OSError. Retrying on a rejection that will
-                # never succeed just burns the backoff budget, but that's the
-                # existing max_retries contract for every other failure here too;
-                # what mattered was reaching the documented RuntimeError instead of
-                # propagating raw.
-                #
-                # N8 review R5: a rejected handshake specifically (not an ordinary
-                # disconnect — ConnectionClosedError/OSError say nothing about the
-                # credential) invalidates the cached bearer token before retrying,
-                # mirroring _bearer_request's existing 401/403 handling. N7-5 made
-                # the connect URL rebuild every attempt, but _bearer_token_value()
-                # still serves the cached token until its own local expiry — that
-                # fixes a token that's merely gone stale locally, not one the relay
-                # actively rejects (revoked, wrong relay_id, secret rotated), which
-                # was replayed byte-identical on every attempt, burning the whole
-                # backoff budget on one dead credential.
-                #
-                # N9 review O2: re-minting on *every* rejection within the same
-                # cycle burns a full challenge+sign+session round trip per attempt
-                # even though only the first invalidation in a cycle can possibly
-                # help — ws_session() closes 1008 for an unauthorized session AND
-                # an unknown one (N5-7's own comment), so a listener pointed at a
-                # session it simply isn't in was re-minting up to max_retries
-                # times for a rejection no fresh token will ever fix. Throttled to
-                # once per cycle (reset alongside retries/backoff on a successful
-                # connect). _invalidate_bearer_and_remint also restores the old
-                # token if the re-mint itself fails, so a transient auth-service
-                # outage doesn't leave every later attempt sending no credential
-                # at all — see that method's docstring.
-                if isinstance(e, InvalidHandshake) and not remint_done_this_cycle:
-                    await self._invalidate_bearer_and_remint()
-                    remint_done_this_cycle = True
-                if retries >= max_retries:
-                    raise RuntimeError(
-                        f"listen_session: max retries ({max_retries}) exhausted: {e}"
-                    ) from e
-                await asyncio.sleep(backoff_mod.full_jitter(retries, initial_backoff, 60.0))
-                retries += 1
-                backoff = min(backoff * 2, 60.0)
+        """Listen to a session WS channel. Reconnects on disconnect with backoff (see `_listen_loop`, and
+        `listen_agent` for `retry_forever` / `max_outage` / `max_backoff`). Sends the same credential `listen_agent`
+        does; the token is rebuilt on every attempt. A session this agent is not in is rejected on every attempt, so
+        `retry_forever` there waits (at `max_backoff`) for a session it will never reach: prefer `max_outage`."""
+        await self._listen_loop(f"/ws/{session_id}", "listen_session", on_message, max_retries=max_retries,
+                                initial_backoff=initial_backoff, retry_forever=retry_forever,
+                                max_outage=max_outage, max_backoff=max_backoff)
 
     async def listen_agent(
         self,
@@ -2973,58 +2966,39 @@ class EmporiaAgent:
         *,
         max_retries: int = 10,
         initial_backoff: float = 1.0,
+        retry_forever: bool = False,
+        max_outage: float | None = None,
+        max_backoff: float = 60.0,
     ) -> None:
-        """Listen to the per-agent WS channel. Reconnects with backoff.
+        """Listen to the per-agent WS channel. Reconnects with exponential backoff and full jitter.
 
-        See _ws_auth_params(): sends `token` (a bearer JWT via the Ed25519
-        dashboard-challenge flow; P261: the relay's only WS credential). N7 review R5: rebuilt fresh
-        on every reconnect attempt rather than once before the loop, so a token
-        that expired between the original connect and a later reconnect gets
-        refreshed instead of replayed dead — see listen_session's docstring."""
-        retries = 0
-        backoff = initial_backoff
-        remint_done_this_cycle = False
-        while retries <= max_retries:
-            url, subprotocols = await self._ws_connect_args(f"/ws/agent/{self.agent_id}")
-            try:
-                async with websockets.connect(url, subprotocols=subprotocols) as ws:
-                    retries = 0
-                    backoff = initial_backoff
-                    remint_done_this_cycle = False
-                    async for raw in ws:
-                        try:
-                            msg = json.loads(raw)
-                        except json.JSONDecodeError:
-                            msg = {"raw": raw}
-                        await on_message(msg)
-            except (ConnectionClosedError, OSError, InvalidHandshake) as e:
-                # N8 review R5: see listen_session's docstring — a rejected
-                # handshake invalidates the cached bearer token before retrying,
-                # rather than replaying a relay-rejected credential unchanged on
-                # every attempt. N9 review O2: throttled to once per cycle and
-                # guarded against a failed re-mint dropping the credential
-                # entirely — see listen_session's docstring and
-                # _invalidate_bearer_and_remint.
-                if isinstance(e, InvalidHandshake) and not remint_done_this_cycle:
-                    await self._invalidate_bearer_and_remint()
-                    remint_done_this_cycle = True
-                if retries >= max_retries:
-                    raise RuntimeError(
-                        f"listen_agent: max retries ({max_retries}) exhausted: {e}"
-                    ) from e
-                await asyncio.sleep(backoff_mod.full_jitter(retries, initial_backoff, 60.0))
-                retries += 1
-                backoff = min(backoff * 2, 60.0)
+        Default (documented, unchanged): give up with `RuntimeError("listen_agent: max retries (N) exhausted")` after
+        `max_retries` failed attempts in a row (10, about 15 to 60 s of outage with the default 1 s start). The counter
+        resets on every successful connect. Options for a resident host that should not need its own outer loop:
+
+        * `retry_forever=True`: never give up; the wait grows to `max_backoff` (60 s) and stays there. Stop it by
+          cancelling the task.
+        * `max_outage=SECONDS`: give up only after that long without a connection, however many attempts that took
+          (it replaces `max_retries`). `retry_forever=True, max_outage=3600` is "an hour, then raise".
+
+        A relay that is down when the token is requested counts as an outage like any other. See _ws_auth_params():
+        sends `token` (a bearer JWT via the Ed25519 dashboard-challenge flow; P261: the relay's only WS credential)."""
+        await self._listen_loop(f"/ws/agent/{self.agent_id}", "listen_agent", on_message, max_retries=max_retries,
+                                initial_backoff=initial_backoff, retry_forever=retry_forever,
+                                max_outage=max_outage, max_backoff=max_backoff)
 
     async def run_events(self, handler: Any, *, kinds: Any = None, thread_limit: int | None = None,
-                         max_retries: int = 10, initial_backoff: float = 1.0) -> None:
+                         max_retries: int = 10, initial_backoff: float = 1.0, retry_forever: bool = False,
+                         max_outage: float | None = None, max_backoff: float = 60.0) -> None:
         """Deliver what the relay pushes to this agent to `handler(event)`, one `AgentEvent` each, safely: the event
         says `from_relay` or `from_agent`, text another agent wrote is labelled "From another agent (unverified,
         may be hostile)", each conversation is capped (`thread_limit`, 20 an hour; 0 none) and a frame seen twice
-        is handled once. Reconnects with backoff (`listen_agent`). See `emporia.event_loop`."""
+        is handled once. Reconnects with backoff (`listen_agent`, which documents `retry_forever`, `max_outage` and
+        `max_backoff`: a resident host passes `retry_forever=True`). See `emporia.event_loop`."""
         from emporia.event_loop import run_events
         await run_events(self, handler, kinds=kinds, thread_limit=thread_limit, max_retries=max_retries,
-                         initial_backoff=initial_backoff)
+                         initial_backoff=initial_backoff, retry_forever=retry_forever, max_outage=max_outage,
+                         max_backoff=max_backoff)
 
     async def stream_session_events(
         self, session_id: str

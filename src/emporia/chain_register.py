@@ -155,27 +155,25 @@ def quote_register(chain: str, max_gas: Any, *, read: Any = None, signer: Any = 
     return out
 
 
-def send_register(chain: str, max_gas: Any, expect_digest: str, confirmed_cost_wei: int, *, read: Any = None, signer: Any = None,
+def send_register(chain: str, max_gas: Any, expect_digest: str, confirmed: dict[str, Any], *, read: Any = None, signer: Any = None,
                   stable: str | None = None, about: str | None = None, relay: str | None = None,
                   x402: bool | None = None, image: str | None = None, no_image: bool = False) -> dict[str, Any]:
     """Quote again, refuse if the call is no longer the one the person confirmed, then send exactly one transaction
-    from the agent's own wallet. The answer is the hash; `confirm` takes it from there."""
+    from the agent's own wallet, signed with the gas limit and max fee the person confirmed (`confirmed` is the quote
+    they were shown). The answer is the hash; `confirm` takes it from there."""
     from emporia import chain_send
     chain_link.person_only("sending from the agent's own wallet")
     wallet = signer or own_wallet()
     q = quote_register(chain, max_gas, read=read, signer=wallet, stable=stable, about=about, relay=relay, x402=x402,
                        image=image, no_image=no_image)
-    if q["quote"]["max_cost_wei"] > int(confirmed_cost_wei or 0):
-        raise LinkError("the fee rose since you confirmed it (the worst case is now "
-                        f"{chain_send.eth(q['quote']['max_cost_wei'])}, you confirmed {chain_send.eth(int(confirmed_cost_wei or 0))}): "
-                        "nothing sent; run the command again")
+    pinned = chain_send.pin_to_confirmed(q["quote"], confirmed)
     if q["calldata_digest"] != expect_digest:
         raise LinkError("the registration changed since you confirmed it (the bio or the relay?): nothing sent; "
                         "run the command again")
     data = bytes.fromhex(q["calldata"][2:])
-    tx_hash = chain_send.send(_reader(q["chain"], read), wallet, q["quote"], data)
+    tx_hash = chain_send.send(_reader(q["chain"], read), wallet, pinned, data)
     return {"tx_hash": tx_hash, "wallet": wallet.address, "chain": q["chain"], "chain_label": q["chain_label"],
-            "max_cost_wei": q["quote"]["max_cost_wei"]}
+            "max_cost_wei": pinned["max_cost_wei"]}
 
 
 def _is_local(url: str) -> bool:

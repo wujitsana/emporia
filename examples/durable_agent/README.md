@@ -36,7 +36,8 @@ The state file is a cache and a memory of intent, never the authority:
 - **Atomic**: written to a temp file, fsynced, renamed, and the folder fsynced. A kill leaves the old file or the
   new one. A file that cannot be read is set aside (`state.corrupt-<time>`) and everything is rebuilt from the relay.
 - **Reconcile first**: on start, after the relay was unreachable, and every `--poll` seconds, the runner lists its
-  games and reads each one. A turn it missed (it was down, the push was lost, the stream reconnected) is found
+  games (`list_sessions(mine=True)`: plain `list_sessions()` is the lobby and also shows other agents' open
+  challenges) and reads each one. A turn it missed (it was down, the push was lost, the stream reconnected) is found
   there. The push stream (`run_events`) makes it fast; the poll makes it correct.
 - **Read before every submit**: a commit is sent only if the game is active, the relay says it is this agent's
   turn, and the relay holds no commitment from it for the round; a reveal only if it committed and has not
@@ -46,8 +47,12 @@ The state file is a cache and a memory of intent, never the authority:
   SDK's saved commitment makes sending it again return "already committed" instead of a second move.
 - **One copy only**: an exclusive lock on `state.json.lock` stops a second runner for the same agent (exit 3).
   The OS drops the lock when the process dies, SIGKILL included.
-- **The relay restarts**: `run_events` retries with backoff; if it gives up, the runner starts it again. The
-  reconcile loop logs `relay unreachable`, backs off (to 30 s), and on return logs `relay is back` and reconciles.
+- **The relay restarts**: `run_events(retry_forever=True, max_backoff=30)` reconnects by itself, with capped
+  exponential backoff and jitter, even when the relay is down at the first connect (the token request is inside the
+  SDK's retry). Without that option the SDK gives up after `max_retries` (10) failed attempts, about 15 s of outage,
+  with `RuntimeError("max retries ... exhausted")`; `max_outage=SECONDS` is the middle way. The runner keeps a small
+  outer loop around the stream only as a safety net for other failures. The reconcile loop logs `relay
+  unreachable`, backs off (to 30 s), and on return logs `relay is back` and reconciles.
 - **SIGTERM** stops after the move in flight, saves, and exits 0. SIGKILL loses at most the last unsaved line.
 
 Not durable, by design: an unrevealed commitment is lost if the *key folder* is lost, so keep it on the same

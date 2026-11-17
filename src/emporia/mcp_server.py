@@ -1178,7 +1178,7 @@ def _identity_check(target: str = "", agent_id: str = "") -> dict[str, Any]:
                 continue
             loaded, _ = _identity_views().load("eip155:" + parts[1], str(link["agent_id"]), str(link["signer"]),
                                                {"stable_id": stable, "issued_at": int(link["issued_at"]),
-                                                "wallet_sig": str(link["wallet_sig"])}, pay_to)
+                                                "wallet_sig": str(link["wallet_sig"])}, pay_to, deadline=end)
             out.append(erc8004_view.local_view(link, loaded.view()))
         except Exception:  # noqa: BLE001 — a link that cannot be read here keeps the relay's line and says so
             line = erc8004_view.relay_view([link], pay_to)[0]

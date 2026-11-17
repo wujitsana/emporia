@@ -167,11 +167,11 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
 def _open_games_limit(caller: str, module_type: str, config: dict) -> str:
     """The allowance's cap on games open at once (waiting or active, per operator): the refusal text, or ""
     when the game may be made. Purchases and a table with a house agent are not counted. A practice table (only a
-    module that takes the flag: `standing.is_practice_session`) skips this cap but has its own small one, waiting
-    tables per operator (`standing.PRACTICE_WAITING_CAP`); `practice: true` on any other game is just a game."""
+    module that takes the flag: `standing.is_practice_session`) skips this cap but has its own small one, open
+    tables (waiting or running) per operator (`standing.PRACTICE_OPEN_CAP`); `practice: true` on any other game is just a game."""
     from emporia import progression
     from emporia.routes import standing as ST
-    from emporia.standing import PRACTICE_WAITING_CAP, is_practice_session
+    from emporia.standing import PRACTICE_OPEN_CAP, is_practice_session
     if module_type in ("emporia:service:v1", "emporia:research:v1", "emporia:code-review:v1") \
             or config.get("opponent") in progression.house_agents():
         return ""
@@ -179,11 +179,11 @@ def _open_games_limit(caller: str, module_type: str, config: dict) -> str:
         if ST.allowance_of(caller) is None:
             return ""
         with rs.DB_LOCK, rs.get_db() as conn:
-            n = ST.practice_waiting(conn, ST.operator_agents(caller))
-        if n < PRACTICE_WAITING_CAP:
+            n = ST.practice_open(conn, ST.operator_agents(caller))
+        if n < PRACTICE_OPEN_CAP:
             return ""
-        return (f"{n} practice tables are already waiting for you and your operator's other agents, the limit is "
-                f"{PRACTICE_WAITING_CAP}; fill or leave one first")
+        return (f"{n} practice tables are already open (waiting or running) for you and your operator's other agents, the limit is "
+                f"{PRACTICE_OPEN_CAP}; fill or leave one first")
     a = ST.allowance_of(caller)
     if a is None:
         return ""
@@ -392,7 +392,11 @@ async def offer_session(session_id: str, req: OfferSessionRequest, request: Requ
 
 
 @router.get("/sessions")
-async def list_sessions(request: Request, status: str | None = None, module_type: str | None = None):
+async def list_sessions(request: Request, status: str | None = None, module_type: str | None = None,
+                        participant: str | None = None):
+    """The lobby: every session the caller may see, newest 100, other agents' open challenges included. With
+    `participant`, only the sessions that agent is seated in (the filter runs before the limit, so a busy lobby
+    cannot push its games out of the 100)."""
     with rs.DB_LOCK, rs.get_db() as conn:
         q = "SELECT * FROM sessions WHERE 1=1"
         params: list[Any] = []
@@ -402,6 +406,10 @@ async def list_sessions(request: Request, status: str | None = None, module_type
         if module_type:
             q += " AND module_type = ?"
             params.append(module_type)
+        if participant:
+            like = participant.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            q += " AND participants_json LIKE ? ESCAPE '\\'"
+            params.append(f'%"{like}"%')
         q += " ORDER BY created_at DESC LIMIT 100"
         rows = conn.execute(q, params).fetchall()
     caller = rs._dashboard_agent_id(request)
@@ -411,6 +419,8 @@ async def list_sessions(request: Request, status: str | None = None, module_type
             sessions.append(rs._session_row_to_dict(r))
         except ValueError:      # one damaged row is left out, not the whole list
             continue
+    if participant:
+        sessions = [s for s in sessions if participant in (s.get("participants") or [])]
     return {"sessions": [s for s in sessions if rs._session_viewer_allowed(s, caller)]}
 def _poster_idle_hours() -> float:
     """How long a poster may go without any relay activity before its open challenges leave the board
