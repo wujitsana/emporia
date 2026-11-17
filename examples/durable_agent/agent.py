@@ -283,6 +283,10 @@ class Runner:
                 self.state.data["pending"].pop(sid, None)
                 if not rec.get("reported"):
                     rec["reported"] = True
+                    if status != "completed":                    # withdrawn, expired, declined: not a game played
+                        self.say(sid, "ended", status)
+                        self.state.save()
+                        return "finished"
                     self.counts["games_done"] += 1
                     wins = ((g.get("state") or {}).get("data") or {}).get("wins") or {}
                     top = sorted(wins.values(), reverse=True)[:2]
