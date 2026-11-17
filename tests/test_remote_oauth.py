@@ -185,6 +185,7 @@ async def test_registration_is_rate_limited_capped_and_unused_clients_expire(rig
         r = await c.http.post("/register", json={"client_name": "x", "redirect_uris": [REDIRECT]})
         assert r.status_code == 429
         rig.clock.advance(3601)
+        rig.auth.open_pairing(10)
         r = await c.http.post("/register", json={"client_name": "x", "redirect_uris": [REDIRECT]})
         assert r.status_code == 201                            # the hour passed
         rig.clock.advance(R.CLIENT_UNUSED_TTL + 10)            # a day: the unapproved ones are dropped
@@ -194,6 +195,7 @@ async def test_registration_is_rate_limited_capped_and_unused_clients_expire(rig
     for i in range(R.MAX_CLIENTS):
         rig.store.run("INSERT INTO clients VALUES(?,?,?,?,?,?)", (f"c{i}", "n", "[]", "emporia:read",
                                                                   rig.clock(), 0))
+    rig.auth.open_pairing(10)
     async with rig.running() as c:
         r = await c.http.post("/register", json={"client_name": "x", "redirect_uris": [REDIRECT]})
         assert r.status_code == 429

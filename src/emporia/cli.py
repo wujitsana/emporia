@@ -3392,7 +3392,7 @@ def cmd_serve_remote(args: argparse.Namespace) -> int:
 
 
 def cmd_connector(args: argparse.Namespace) -> int:
-    """`emporia agent connector list|pending|approve|deny|revoke|log|allow-redirect NAME ...` (a person's commands)."""
+    """`emporia agent connector list|pending|open|approve|deny|revoke|log|allow-redirect NAME ...` (a person's commands)."""
     from emporia.remote import cli as remote_cli
     return remote_cli.connector(args)
 
@@ -9966,6 +9966,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help="serve-remote: allow a non-loopback --bind, for a proxy you run on your own network")
     ag2.add_argument("--connector-name", dest="connector_name", default="", help="connector approve: the name to show in the log")
     ag2.add_argument("--all", action="store_true", help="connector revoke: every grant")
+    ag2.add_argument("--minutes", type=float, default=0, help="connector open: how long pairing stays open (default 10)")
+    ag2.add_argument("--proxy-ip", dest="proxy_ip", default="127.0.0.1",
+                     help="serve-remote --behind-proxy: the proxy's address; forwarded headers are believed only from it")
     ag2.add_argument("--tail", action="store_true", help="connector log: keep following the log")
     ag2.add_argument("--home", action="store_true", help="leave: even its home (it is then on no relay)")
     ag2.add_argument("--yes", action="store_true", help="rotate-key, rotate-encryption-key, recover: do not ask first")

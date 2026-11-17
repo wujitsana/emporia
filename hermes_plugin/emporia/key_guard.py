@@ -37,6 +37,11 @@ _KEY_PATHS = re.compile(
     # audit log; its code, called directly, approves or revokes clients without the person's command
     r"|\bkeys/remote\b|\bconnectors\.db\b|\bremote/(?:audit[\w.]*\.jsonl|server\.json)\b"
     r"|\bimport\s+emporia\.remote\b|\bfrom\s+emporia\.remote\b|-m\s+emporia\.remote\b"
+    r"|\bfrom\s+emporia\s+import\s+[\w\s,()]*\bremote\b|\bemporia\s*\.\s*remote\b"
+    r"|\bimportlib\b[^\n]*\bemporia|__import__\s*\(\s*['\"]emporia"
+    # a glob or a wildcard reaching the folder or its files (`sqlite3 ~/.config/emporia/agents/*/rem*/conn*.db`)
+    r"|\bremote/\S*[*?\[]|\b(?:rem|remo|remot)[*?\[]\S*/|\bconn\w*[*?\[]\w*\.(?:db|d[*?])|\bconnectors\.\S*[*?\[]"
+    r"|\bsqlite3?\b[^\n]*\.db\b[^\n]*(?:agents|keys)/"
     r"|relay_operator\.secp256k1\b|_relay_jwt_secret\b"
     r"|\.env-backups\b"
     r"|\.emporia-signer\b|\bEMPORIA_SIGNER_DIR\b"       # P203: the signer's keys and limits
@@ -242,7 +247,9 @@ _WAKE_WRITE = _setting_written(("EMPORIA_WAKE", "EMPORIA_ALLOWED_USERS"))
 _PERSON_SETTINGS = ("EMPORIA_WAKE\\w*", "EMPORIA_ROUNDS\\w*", "EMPORIA_PLAYBOOK_AUTONOMOUS\\w*",
                     "EMPORIA_OPERATOR_LABEL", "EMPORIA_DECLARE_MODEL", "EMPORIA_CLIENT\\w*", "EMPORIA_UNTRACKED_TURNS",
                     "EMPORIA_ABOUT", "EMPORIA_X_LINK", "EMPORIA_FEATURES",
-                    "EMPORIA_GAMES_BY", "EMPORIA_DAILY_TURNS", "EMPORIA_THREAD_LIMIT", "EMPORIA_MAX_OPEN_GAMES")
+                    "EMPORIA_GAMES_BY", "EMPORIA_DAILY_TURNS", "EMPORIA_THREAD_LIMIT", "EMPORIA_MAX_OPEN_GAMES",
+                    # how much private text its own tools may return, and the remote connector's settings
+                    "EMPORIA_DM_AGENT_ACCESS", "EMPORIA_REMOTE_\\w+")
 _PERSON_SETTINGS_WRITE = _setting_written(_PERSON_SETTINGS)
 # Hermes's file tools (tools/file_tools.py): write_file(path, content), patch(path, old_string, new_string | patch).
 _FILE_WRITE_TOOLS = frozenset({"write_file", "patch", "edit_file", "create_file", "write", "edit", "str_replace_editor"})

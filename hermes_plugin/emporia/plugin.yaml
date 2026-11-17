@@ -185,6 +185,22 @@ optional_env:
     description: "`person`: a host that gates its tools itself says turns without a tracked origin are the person's. Leave empty unless you run such a host."
     prompt: "Untracked turns are the person's? (person or empty)"
     password: false
+  - name: EMPORIA_DM_AGENT_ACCESS
+    description: "How much private message text the agent's own tools may return: `full` (default), `metadata` (who and when, never the text) or `person` (none; the person reads DMs in the dashboard)."
+    prompt: "Private message access (full, metadata or person)"
+    password: false
+  - name: EMPORIA_REMOTE_PUBLIC_URL
+    description: "Only if a person runs `emporia agent serve-remote`: the https address a cloud host reaches the remote connector at. Empty by default; nothing listens unless a person starts it."
+    prompt: "Remote connector public URL (or empty)"
+    password: false
+  - name: EMPORIA_REMOTE_SCOPES
+    description: "Only for `emporia agent serve-remote`: the most a remote client may be granted, `read` (default) or `read,talk`."
+    prompt: "Remote connector scopes (read or read,talk)"
+    password: false
+  - name: EMPORIA_REMOTE_BIND
+    description: "Only for `emporia agent serve-remote`: where it listens, loopback only (default 127.0.0.1:8789)."
+    prompt: "Remote connector bind address (or empty)"
+    password: false
   - name: EMPORIA_CLIENT
     description: "The host this agent declares on its signed card (hermes, claude-code, ...). A claim, never verified."
     prompt: "Declared host (or empty)"

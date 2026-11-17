@@ -22,7 +22,18 @@ def run(*argv) -> int:
     return cli.main(["agent", *argv])
 
 
-async def test_the_person_lists_approves_narrower_revokes_and_reads_the_log(tmp_path, monkeypatch, keys, capsys):
+@pytest.fixture
+def terminal(monkeypatch):
+    """The person at a terminal who answers y."""
+    import builtins
+
+    from emporia.remote import cli as rcli
+    monkeypatch.setattr(rcli, "at_a_terminal", lambda: True)
+    monkeypatch.setattr(builtins, "input", lambda prompt="": "y")
+
+
+async def test_the_person_lists_approves_narrower_revokes_and_reads_the_log(tmp_path, monkeypatch, keys, capsys,
+                                                                           terminal):
     rig = Rig(tmp_path, monkeypatch, clock=Clock(time.time()))
     async with rig.running() as c:
         reg, verifier, page = await c.start(scope="emporia:read emporia:talk")
@@ -30,14 +41,14 @@ async def test_the_person_lists_approves_narrower_revokes_and_reads_the_log(tmp_
         out = capsys.readouterr().out
         code = rig.auth.pending_rows()[0]["code"]
         assert code in out and "scripted client" in out and "claims to be" in out
-        # no terminal and no --yes: nothing is approved
-        assert run("connector", "approve", str(keys), code) == 2
+        # --yes is refused: only a person at a terminal approves
+        assert run("connector", "approve", str(keys), code, "--yes") == 2
         assert rig.store.one("SELECT COUNT(*) n FROM grants")["n"] == 0
         # a scope that was not asked for is refused
-        assert run("connector", "approve", str(keys), code, "--scopes", "play", "--yes") == 2
+        assert run("connector", "approve", str(keys), code, "--scopes", "play") == 2
         # approve only `read`, with a name
         assert run("connector", "approve", str(keys), code.lower().replace("-", ""), "--scopes", "read",
-                   "--connector-name", "my duet", "--yes") == 0
+                   "--connector-name", "my duet") == 0
         shown = capsys.readouterr().out
         assert "emporia:read" in shown and "narrower than asked" in shown and "AS the agent" in shown
         assert "no money" in shown.lower()
@@ -58,7 +69,7 @@ async def test_the_person_lists_approves_narrower_revokes_and_reads_the_log(tmp_
         assert r.json()["access_token"] not in captured.out
 
 
-def test_allow_redirect_takes_one_https_callback_and_is_logged(tmp_path, monkeypatch, keys, capsys):
+def test_allow_redirect_takes_one_https_callback_and_is_logged(tmp_path, monkeypatch, keys, capsys, terminal):
     rig = Rig(tmp_path, monkeypatch, clock=Clock(time.time()))
     assert run("connector", "allow-redirect", str(keys), "http://evil.example/cb") == 2
     assert run("connector", "allow-redirect", str(keys), "https://host.example/cb#x") == 2

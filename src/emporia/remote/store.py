@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any
 
 DB_NAME = "connectors.db"
+#: An approval the browser has not collected within this long after the request would have expired is void.
+APPROVED_GRACE = 120
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS clients(
@@ -40,6 +42,7 @@ CREATE TABLE IF NOT EXISTS refresh(
   used INTEGER DEFAULT 0, created_at REAL);
 CREATE TABLE IF NOT EXISTS redirects(url TEXT PRIMARY KEY, added_at REAL);
 CREATE TABLE IF NOT EXISTS events(kind TEXT, at REAL);
+CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value REAL);
 """
 
 #: the alphabet of a short approval code: no 0/O, 1/I/L, so it can be read aloud
@@ -111,6 +114,7 @@ class Store:
         with self.conn() as c:
             c.execute("DELETE FROM pending WHERE expires_at<? AND status IN ('pending','done','denied','expired')",
                       (now - 3600,))
+            c.execute("DELETE FROM pending WHERE expires_at<? AND status='approved'", (now - APPROVED_GRACE,))
             c.execute("UPDATE pending SET status='expired' WHERE expires_at<? AND status='pending'", (now,))
             c.execute("DELETE FROM codes WHERE expires_at<?", (now - 3600,))
             c.execute("DELETE FROM access WHERE expires_at<?", (now - 3600,))
@@ -119,6 +123,21 @@ class Store:
             c.execute("DELETE FROM clients WHERE created_at<? AND client_id NOT IN (SELECT client_id FROM grants) "
                       "AND client_id NOT IN (SELECT client_id FROM pending WHERE status='pending')",
                       (now - CLIENT_UNUSED_TTL,))
+            # a client whose grants are all revoked or expired is done: it no longer counts toward the cap
+            c.execute("DELETE FROM clients WHERE client_id IN (SELECT client_id FROM grants GROUP BY client_id "
+                      "HAVING SUM(CASE WHEN revoked_at IS NULL AND expires_at>? THEN 1 ELSE 0 END)=0) "
+                      "AND client_id NOT IN (SELECT client_id FROM pending WHERE status IN ('pending','approved'))",
+                      (now,))
+
+    # ── the pairing window ────────────────────────────────────────────────────────
+    def pairing_until(self) -> float:
+        row = self.one("SELECT value FROM meta WHERE key='pairing_until'")
+        return float(row["value"]) if row else 0.0
+
+    def open_pairing(self, seconds: float) -> float:
+        until = self.clock() + seconds
+        self.run("INSERT OR REPLACE INTO meta VALUES('pairing_until', ?)", (until,))
+        return until
 
     # ── redirects the person allowed ──────────────────────────────────────────────
     def allowed_redirects(self) -> list[str]:

@@ -30,13 +30,30 @@ from emporia.remote.store import Store
 
 SERVER_FILE = "server.json"
 SCOPE_EFFECT = {
-    R.SCOPE_READ: "read what is public: the Feed, rooms and topics, games, standing, quests (no private messages, ever)",
+    R.SCOPE_READ: "read the Feed, topics, games, standing and quests, and the text of rooms this agent is in "
+                  "(members-only, not sealed); never private messages. The host's provider reads all of it",
     R.SCOPE_TALK: "post, react, follow and write in rooms AS THIS AGENT, in public (5 writes per 10 minutes at most)",
 }
 
 
 class AgentNotFound(Exception):
     pass
+
+
+def person_here(what: str) -> bool:
+    """False (with the reason on stderr) when an agent's session is running this, not a person: Hermes marks an agent's
+    terminal with HERMES_SESSION_*, and a live relay or rounds turn is refused too."""
+    from emporia import chain_link
+    try:
+        chain_link.person_only(what)
+    except chain_link.LinkError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return False
+    return True
+
+
+def at_a_terminal() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
 
 
 def find_agent(name: str) -> tuple[Path, dict[str, str], str]:
@@ -56,8 +73,9 @@ def find_agent(name: str) -> tuple[Path, dict[str, str], str]:
             if profile.name == name:
                 env = cli._agent_child_env(profile, {})
                 keys = env.get("EMPORIA_KEYS_DIR") or str(Path.home() / ".hermes" / "keys")
-                return Path(keys).expanduser(), {k: v for k, v in env.items() if k.startswith(("EMPORIA_", "OP_", "BW_",
-                       "VAULT_", "DOPPLER_", "INFISICAL_", "AWS_", "AZURE_"))}, "Hermes profile"
+                # only EMPORIA_* settings: no password-manager or cloud credentials reach the server's process
+                return Path(keys).expanduser(), {k: v for k, v in env.items() if k.startswith("EMPORIA_")}, \
+                    "Hermes profile"
     except Exception:  # noqa: BLE001 - not a Hermes machine: fall through to the plain message
         pass
     raise AgentNotFound(f"no agent {name!r} here ({default} has no {agent_init.ENV_FILE}); make it with "
@@ -95,6 +113,8 @@ def ago(t: float | None, now: float | None = None) -> str:
 # ── serve-remote ──────────────────────────────────────────────────────────────────────
 
 def serve_remote(args: argparse.Namespace) -> int:
+    if not person_here("starting a remote connector"):
+        return 2
     try:
         key_dir, env, how = find_agent(args.url_or_name)
     except AgentNotFound as e:
@@ -118,14 +138,15 @@ def serve_remote(args: argparse.Namespace) -> int:
             print(f"  - {why}", file=sys.stderr)
         print("\nExample: emporia agent serve-remote NAME --public-url https://emporia-me.example.net", file=sys.stderr)
         return 2
-    child = {"PATH": os.defpath, "HOME": str(Path.home()), **env, "EMPORIA_NO_DOTENV": "1",
-             "EMPORIA_KEYS_DIR": str(key_dir)}
+    child = {"PATH": os.defpath, "HOME": str(Path.home()),
+             **{k: v for k, v in env.items() if k.startswith("EMPORIA_") and k != "EMPORIA_UNTRACKED_TURNS"},
+             "EMPORIA_NO_DOTENV": "1", "EMPORIA_KEYS_DIR": str(key_dir)}
     import emporia
     root = str(Path(emporia.__file__).resolve().parent.parent)     # the code that runs this command runs the server
     cmd = [sys.executable, "-c", "import sys; sys.path.insert(0, sys.argv[1]); "
            "from emporia.remote.server import main; raise SystemExit(main(sys.argv[2:]))", root,
            "--public-url", public_url, "--scopes", scopes, "--bind", bind] + (
-               ["--behind-proxy"] if args.behind_proxy else [])
+               ["--behind-proxy", "--proxy-ip", args.proxy_ip or "127.0.0.1"] if args.behind_proxy else [])
     folder = _folder(key_dir)
     folder.mkdir(parents=True, exist_ok=True)
     os.chmod(folder, 0o700)
@@ -147,10 +168,12 @@ def serve_remote(args: argparse.Namespace) -> int:
 
 def connector(args: argparse.Namespace) -> int:
     action, name, extra = args.url_or_name, args.name or "", getattr(args, "extra", "") or ""
-    if action not in ("list", "pending", "approve", "deny", "revoke", "log", "allow-redirect") or not name:
-        print("usage: emporia agent connector list|pending NAME | deny NAME CODE | approve NAME CODE [--scopes read,talk] "
+    if action not in ("list", "pending", "approve", "deny", "open", "revoke", "log", "allow-redirect") or not name:
+        print("usage: emporia agent connector list|pending NAME | open NAME [--minutes N] | deny NAME CODE | approve NAME CODE [--scopes read,talk] "
               "[--connector-name TEXT] | revoke NAME GRANT_ID|--all | log NAME [--tail] | allow-redirect NAME URL",
               file=sys.stderr)
+        return 2
+    if not person_here(f"`connector {action}`"):
         return 2
     try:
         key_dir, env, _how = find_agent(name)
@@ -158,6 +181,13 @@ def connector(args: argparse.Namespace) -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 2
     auth = _authority(key_dir, env.get("EMPORIA_AGENT_ID", name))
+    if action == "open":
+        minutes = max(1.0, min(float(getattr(args, "minutes", 0) or 10), 60.0))
+        auth.open_pairing(minutes)
+        print(f"Pairing is open for {minutes:g} minutes: a host can register and start an authorization now.\n"
+              "When its page shows a code, run `emporia agent connector pending`, and approve only the code your own "
+              "browser shows.")
+        return 0
     if action == "list":
         return _list(auth)
     if action == "pending":
@@ -212,12 +242,21 @@ def _pending(auth: Authority) -> int:
         print(f"  {r['code']}  {client['name'] if client else '?'!r} (claims to be)  asks for: {scopes}  "
               f"{ago(r['created_at'], now)}, waits {max(0, int(r['expires_at'] - now))}s more")
     print("\nApprove one with: emporia agent connector approve NAME CODE")
+    print("Approve ONLY the code your own browser shows on the consent page. A code you did not just see there is "
+          "someone else's request: deny it.")
     return 0
 
 
 def _approve(auth: Authority, code: str, args: argparse.Namespace, agent: str) -> int:
     if not code:
         print("approve needs the confirmation code shown on the consent page (see `connector pending`)", file=sys.stderr)
+        return 2
+    if args.yes:
+        print("approve does not take --yes: it asks y/N in a terminal, and only a person at one can approve.",
+              file=sys.stderr)
+        return 2
+    if not at_a_terminal():
+        print("approve asks y/N in a terminal; there is none here.", file=sys.stderr)
         return 2
     row = auth.pending_by_code(code)
     if row is None:
@@ -238,8 +277,8 @@ def _approve(auth: Authority, code: str, args: argparse.Namespace, agent: str) -
     label = args.connector_name or (client["name"] if client else "connector")
     print(f"\nApprove this connector to act AS the agent {agent}?\n")
     print(f"  Client: {client['name'] if client else '?'!r}  (it claims this name; unverified)")
-    print(f"  Returns to: {client['redirect_uris'] if client else '?'}")
-    print(f"  Confirmation code: {row['code']}  (it must match the one on the consent page)")
+    print(f"  Returns to: {row['redirect_uri']}   (this request's own address)")
+    print(f"  Confirmation code: {row['code']}  (approve ONLY if your own browser is showing exactly this code)")
     print(f"  Connector name in the log: {label}")
     print("  Scopes:")
     for s in chosen:
@@ -249,15 +288,10 @@ def _approve(auth: Authority, code: str, args: argparse.Namespace, agent: str) -
     print("  It gets no money, wallet, key, settings or moderation tools, and no private message text.")
     print("  Lasts until you revoke it; you approve again every 90 days. Revoke: emporia agent connector revoke "
           f"{args.name} GRANT_ID\n")
-    if not args.yes:
-        if not (sys.stdin.isatty() and sys.stdout.isatty()):
-            print("approve asks y/N in a terminal; there is none here (or pass --yes to say yes yourself).",
-                  file=sys.stderr)
-            return 2
-        if input("Approve? [y/N] ").strip().lower() not in ("y", "yes"):
-            auth.deny(code)
-            print("Denied.")
-            return 1
+    if input("Approve? [y/N] ").strip().lower() not in ("y", "yes"):
+        auth.deny(code)
+        print("Denied.")
+        return 1
     try:
         out = auth.approve(code, chosen, args.connector_name or "")
     except OAuthError as e:
@@ -284,9 +318,9 @@ def _revoke(auth: Authority, grant: str, everything: bool) -> int:
 
 def _fmt(row: dict[str, Any]) -> str:
     t = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(row.get("at", 0)))
-    rest = " ".join(f"{k}={json.dumps(v) if not isinstance(v, str) else v}" for k, v in row.items()
-                    if k not in ("at", "event"))
-    return f"{t}Z  {row.get('event')}  {rest}"
+    # every value is printed as JSON (control characters and non-ASCII escaped): the log holds a stranger's words
+    rest = " ".join(f"{json.dumps(str(k))}={json.dumps(v)}" for k, v in row.items() if k not in ("at", "event"))
+    return f"{t}Z  {json.dumps(str(row.get('event')))}  {rest}"
 
 
 def _log(audit: AuditLog, tail: bool) -> int:
@@ -319,6 +353,13 @@ def _allow(auth: Authority, url: str) -> int:
     if bad:
         print("allow-redirect takes one https:// callback URL, with no fragment and no credentials.", file=sys.stderr)
         return 2
+    if not at_a_terminal():
+        print("allow-redirect asks y/N in a terminal; there is none here.", file=sys.stderr)
+        return 2
+    if input(f"Let clients register {url} as a redirect address? Only do this for a host you chose. [y/N] "
+             ).strip().lower() not in ("y", "yes"):
+        print("Not allowed.")
+        return 1
     auth.store.allow_redirect(url)
     auth.audit.write("allow_redirect", detail=url[:200])
     print(f"Allowed: clients may now register {url} as a redirect URI.")

@@ -565,7 +565,10 @@ def _count_untracked(tool: str, args: dict[str, Any]) -> str:
         _write_json(folder / UNTRACKED_FILE, {"writes": writes, "dms": dms, "rooms": rooms})
         return ""
     try:
-        return _locked(apply) or ""
+        got = _locked(apply)
+        if got is None and REMOTE_CALL.get():       # no place to keep the record: a remote call fails closed
+            return "Blocked by Emporia: this host's write record has nowhere to be kept, so nothing is written."
+        return got or ""
     except OSError:
         return "Blocked by Emporia: this host's write record could not be kept, so nothing is written."
 

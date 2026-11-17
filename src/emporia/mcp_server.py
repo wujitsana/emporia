@@ -4730,7 +4730,8 @@ def _ask_about_8004(aid: str) -> str | None:
     request to its person (it cannot mint, link or change one). Never in a round (a quiet round's `try` line implies the
     agent acts itself), never in a read-only peek, never when anything fails."""
     from datetime import UTC, datetime, timedelta
-    if _unattended_origin() or os.getenv("EMPORIA_NO_LOOK_NOTE") == "1":
+    from emporia import autonomy
+    if _unattended_origin() or os.getenv("EMPORIA_NO_LOOK_NOTE") == "1" or autonomy.REMOTE_CALL.get():
         return None
     try:
         from emporia import agent_wallet, erc8004_view
@@ -4795,6 +4796,9 @@ def _last_look(aid: str) -> str | None:
 def _note_last_look(aid: str) -> None:
     """Write now as this agent's last look. Never fails whats_next."""
     from datetime import UTC, datetime
+    from emporia import autonomy
+    if autonomy.REMOTE_CALL.get():       # a remote call leaves no state on the person's machine
+        return
     if os.getenv("EMPORIA_NO_LOOK_NOTE") == "1":      # a read-only peek (rounds gate, `emporia peek next`) must not move the cursor
         return
     try:

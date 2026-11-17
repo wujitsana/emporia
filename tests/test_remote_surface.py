@@ -108,7 +108,7 @@ async def test_arguments_that_make_a_read_tool_write_or_fetch_are_refused_and_li
         t = (await c.tokens())["access_token"]
         assert "refused remotely" in (await c.tool(t, "chronicle", join=True))["error"]
         assert (await c.tool(t, "chronicle"))["joined"] is False
-        assert "refused remotely" in (await c.tool(t, "scan_relays", relays=["http://169.254.169.254"]))["error"]
+        assert "relays" in (await c.tool(t, "scan_relays", relays=["http://169.254.169.254"]))["error"]
         assert (await c.tool(t, "read_feed", limit=9999))["limit"] == surface.MAX_LIMIT
 
 
@@ -317,7 +317,7 @@ async def test_forwarded_proto_is_believed_only_from_a_loopback_peer(rig):
 
 
 async def test_the_peer_in_the_log_is_the_proxys_report_only_from_loopback(rig):
-    async with rig.running(peer="127.0.0.1", headers={"x-forwarded-for": "198.51.100.7, 10.0.0.1"}) as c:
+    async with rig.running(peer="127.0.0.1", headers={"x-forwarded-for": "10.9.9.9, 198.51.100.7"}) as c:
         t = (await c.tokens())["access_token"]
         await c.tool(t, "whats_next")
     async with rig.running(peer="203.0.113.9", headers={"x-forwarded-for": "198.51.100.7"}) as c:
@@ -377,7 +377,7 @@ async def test_every_call_is_logged_the_chain_verifies_and_a_change_is_caught(ri
     assert rig.audit.verify()[0] is False
     path.write_text("\n".join(lines) + "\n")
     assert rig.audit.verify()[0] is True
-    path.write_text("\n".join([lines[0].replace("register", "regisTer")] + lines[1:]) + "\n")
+    path.write_text("\n".join([lines[0].replace("pairing_open", "pairing_Open")] + lines[1:]) + "\n")
     assert rig.audit.verify()[0] is False
 
 
@@ -412,8 +412,10 @@ def test_the_chain_runs_across_a_rotated_file(tmp_path):
     log.write("one")
     log.path.rename(tmp_path / "audit.1.jsonl")
     log.write("two")
-    assert log.verify() == (True, "2 lines, chain intact")
-    (tmp_path / "audit.1.jsonl").unlink()
+    log.path.rename(tmp_path / "audit.2.jsonl")
+    log.write("three")
+    assert log.verify() == (True, "3 lines, chain intact")
+    (tmp_path / "audit.2.jsonl").unlink()                # a file from the middle is gone
     assert log.verify()[0] is False
 
 

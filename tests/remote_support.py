@@ -80,7 +80,7 @@ def stub_mcp():
 
 class Rig:
     def __init__(self, tmp_path: Path, monkeypatch, scopes=(R.SCOPE_READ, R.SCOPE_TALK), url: str = URL,
-                 clock: Clock | None = None, mcp=None, read_only: bool = False) -> None:
+                 clock: Clock | None = None, mcp=None, read_only: bool = False, proxy_ip: str = "") -> None:
         self.clock = clock or Clock()
         self.url = url
         self.folder = tmp_path / "keys" / "remote"
@@ -96,7 +96,7 @@ class Rig:
         monkeypatch.setattr(secret_guard, "own_secrets", lambda agent_id: [])
         self.mcp = mcp or stub_mcp()
         self.app, self.auth, self.info = server.build(url, tuple(scopes), AGENT, folder=self.folder, clock=self.clock,
-                                                      mcp=self.mcp)
+                                                      mcp=self.mcp, proxy_ip=proxy_ip)
         self.audit = self.auth.audit
         self.store = self.auth.store
         self.limits = self.app.limits
@@ -115,6 +115,7 @@ class Client:
         self.n = 0
 
     async def register(self, redirect: str = REDIRECT, **extra) -> dict:
+        self.rig.auth.open_pairing(10)               # the person opened a pairing window (tests of it do not use this)
         r = await self.http.post("/register", json={"client_name": "scripted client", "redirect_uris": [redirect],
                                                     **extra})
         assert r.status_code == 201, r.text

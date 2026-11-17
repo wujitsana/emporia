@@ -32,7 +32,7 @@ from urllib.parse import urlencode, urlsplit
 
 from emporia import remote as R
 from emporia.remote.audit import AuditLog
-from emporia.remote.store import Store, digest, dumps, new_secret, norm_code, short_code
+from emporia.remote.store import APPROVED_GRACE, Store, digest, dumps, new_secret, norm_code, short_code
 
 #: HTTPS callbacks of hosts that connect through a browser redirect, as their documentation says (the claude.com
 #: variant is listed by the host as a future move; not yet tested here against a real connection). A person adds one with
@@ -151,17 +151,32 @@ class Authority:
         return ("this redirect URI is not allowed: only a loopback address (http://127.0.0.1 or localhost) or a "
                 "callback the person allowed (`emporia agent connector allow-redirect URL`)")
 
+    # ── the pairing window ────────────────────────────────────────────────────────
+    CLOSED = ("pairing is closed: nobody may register or start an authorization now. The person who runs this agent "
+              "opens a window with `emporia agent connector open NAME` and then connects the host within it")
+
+    def pairing_open(self) -> bool:
+        return self.store.pairing_until() > self.clock()
+
+    def open_pairing(self, minutes: float = 10) -> float:
+        until = self.store.open_pairing(minutes * 60)
+        self.audit.write("pairing_open", detail=f"{minutes:g} minutes")
+        return until
+
     # ── registration ──────────────────────────────────────────────────────────────
     def register(self, body: Any) -> dict[str, Any]:
         self.store.purge()
+        if not self.pairing_open():
+            self.audit.write_throttled("register_closed", "register_refused", why="pairing closed")
+            raise OAuthError("temporarily_unavailable", self.CLOSED, 403)
         if not isinstance(body, dict):
             raise OAuthError("invalid_client_metadata", "the body is a JSON object")
         if self.store.events_since("register", 3600) >= R.REGISTRATIONS_PER_HOUR:
-            self.audit.write("register_refused", why="rate limit")
+            self.audit.write_throttled("register_rate", "register_refused", why="rate limit")
             raise OAuthError("temporarily_unavailable", "too many registrations; try again later", 429)
         live = self.store.one("SELECT COUNT(*) n FROM clients")["n"]
         if live >= R.MAX_CLIENTS:
-            self.audit.write("register_refused", why="client cap")
+            self.audit.write_throttled("register_cap", "register_refused", why="client cap")
             raise OAuthError("temporarily_unavailable", "too many clients are registered; the person can revoke "
                              "unused ones", 429)
         method = body.get("token_endpoint_auth_method") or "none"
@@ -180,7 +195,7 @@ class Authority:
             raise OAuthError("invalid_redirect_uri", "redirect_uris: one to five URLs")
         for uri in uris:
             if (why := self.redirect_problem(uri)):
-                self.audit.write("register_refused", why="redirect", detail=uri[:120])
+                self.audit.write_throttled("register_redirect", "register_refused", why="redirect", detail=uri[:120])
                 raise OAuthError("invalid_redirect_uri", why)
         scope = " ".join(str(body.get("scope") or "").split())
         asked = scope.split() if scope else []
@@ -214,6 +229,9 @@ class Authority:
         ("redirect", url): an error the client may be told. Raises PageError for an unknown client or a redirect
         that does not match: those are shown here and never redirected to."""
         self.store.purge()
+        if not self.pairing_open():
+            self.audit.write_throttled("authorize_closed", "authorize_refused", why="pairing closed")
+            raise PageError(self.CLOSED)
         client = self.client(params.get("client_id", ""))
         if client is None:
             raise PageError("This client is not known here (it may have expired). Register it again.")
@@ -223,7 +241,7 @@ class Authority:
         state = (params.get("state") or "")[:512]
 
         def err(code: str, text: str) -> tuple[str, str]:
-            self.audit.write("authorize_refused", client=client["client_id"], connector=client["name"], why=code)
+            self.audit.write_throttled("authorize:" + code, "authorize_refused", client=client["client_id"], connector=client["name"], why=code)
             return "redirect", self._redirect(uri, state, error=code, error_description=text)
 
         if params.get("response_type") != "code":
@@ -306,6 +324,10 @@ class Authority:
         now = self.clock()
         status = row["status"]
         if status == "pending" and row["expires_at"] <= now:
+            self.store.run("UPDATE pending SET status='expired' WHERE page_hash=?", (row["page_hash"],))
+            status = "expired"
+        if status == "approved" and row["expires_at"] + APPROVED_GRACE <= now:
+            # approved long ago and never collected: it is void, and no code is minted from it
             self.store.run("UPDATE pending SET status='expired' WHERE page_hash=?", (row["page_hash"],))
             status = "expired"
         if status == "pending":

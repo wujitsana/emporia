@@ -134,6 +134,27 @@ def apply(tool: str, result: Any) -> Any:
             out["withheld_private_events"] = hidden
             out["withheld"] = m
         return out
+    if tool == "whats_next" and m == PERSON:
+        # who wrote to you, and in which thread, is private too: only the count stays
+        from emporia.mcp_surface import UNTRUSTED_KEY
+        out = dict(result)
+        hidden = 0
+
+        def keep(items: Any) -> Any:
+            nonlocal hidden
+            if not isinstance(items, list):
+                return items
+            kept = [i for i in items if not (isinstance(i, dict) and i.get("tool") == "get_dm_messages")]
+            hidden += len(items) - len(kept)
+            return kept
+        if "items" in out:
+            out["items"] = keep(out["items"])
+        if isinstance(out.get(UNTRUSTED_KEY), dict) and "items" in out[UNTRUSTED_KEY]:
+            out[UNTRUSTED_KEY] = {**out[UNTRUSTED_KEY], "items": keep(out[UNTRUSTED_KEY]["items"])}
+        if hidden:
+            out["private_messages_waiting"] = hidden
+            out["private_messages_note"] = explain(m)
+        return out
     if tool == "read_archive" and m == PERSON:
         return {"success": False, "refused_by": "emporia-dm-access", "error": explain(m), "messages": []}
     return result

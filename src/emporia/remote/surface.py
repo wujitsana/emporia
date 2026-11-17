@@ -51,8 +51,24 @@ TOOLS_OF_SCOPE: dict[str, frozenset[str]] = {R.SCOPE_READ: READ_TOOLS, R.SCOPE_T
 REFUSED_ARGS: dict[tuple[str, str], str] = {
     ("chronicle", "join"): "taking part in the Chronicle is the person's",
     ("scan_relays", "relays"): "a remote caller may not name relays for this agent to fetch from",
+    ("verify", "compare_with"): "a remote caller may not name relays for this agent to fetch from",
 }
-_ID_ARGS = ("agent_id", "sender_id", "from_agent_id", "creator_id", "buyer_id", "invited_by", "caller_id")
+def _id_args() -> tuple[str, ...]:
+    from emporia import mcp_surface
+    return tuple(sorted(mcp_surface.OWN_ID_PARAMS | {"subscribed_by", "viewer_id"}))
+
+
+#: Argument values refused whatever the scope: (tool, argument) -> (the values, why). These tools write local state
+#: (pins, evidence files, the stats of the person's own spending) or answer with what only the person should see.
+REFUSED_VALUES: dict[tuple[str, str], tuple[frozenset[str], str]] = {
+    ("standing", "view"): (frozenset({"stats", "limits"}), "your own earnings, spending and limits are for your person"),
+    ("verify", "kind"): (frozenset({"dm_chain", "room_chain", "session", "relay_log"}),
+                         "that check keeps pins or evidence files on the agent's machine, or reads private messages"),
+}
+#: Arguments that may name a host (an address `x@host`, a URL, a relay): the host must be one of this agent's own
+#: relays. `egress` stops the request itself; this is the first layer, with a plain refusal.
+HOSTY_ARGS = frozenset({"agent", "ref", "relay", "relays", "compare_with", "target", "agent_id", "to_agent",
+                        "to_agent_id", "thread_id", "room_id", "item"})
 MAX_LIMIT = 50
 
 
@@ -153,26 +169,31 @@ class Limits:
 
 # ── answers: size cap and inert links ─────────────────────────────────────────────────
 
-_MD_IMAGE = re.compile(r"!\[([^\]]{0,200})\]\(\s*<?([^)\s>]+)[^)]*\)")
-_MD_LINK = re.compile(r"\[([^\]]{0,200})\]\(\s*<?([^)\s>]+)[^)]*\)")
-_AUTOLINK = re.compile(r"<((?:https?|ftp)://[^>\s]+)>")
-_BARE = re.compile(r"\b(?:https?|ftp)://[^\s<>)\]\"']+", re.I)
-_HTML_IMG = re.compile(r"<\s*(?:img|iframe|script|link|a)\b[^>]*>", re.I)
+_MD_IMAGE = re.compile(r"!\[[^\n]{0,600}?\]\(\s*<?([^)\s>]+)[^)]*\)")
+_MD_LINK = re.compile(r"\[([^\n]{0,600}?)\]\(\s*<?([^)\s>]+)[^)]*\)")
+_MD_REF = re.compile(r"^\s{0,3}\[[^\]\n]+\]:\s*<?(\S+)>?.*$", re.M)
+_AUTOLINK = re.compile(r"<((?:[a-z][a-z0-9+.-]*:)?//[^>\s]+|www\.[^>\s]+)>", re.I)
+_BARE = re.compile(r"(?:\b[a-z][a-z0-9+.-]{1,15}://|(?<![\w:/])//|\bwww\.)[^\s<>)\]\"']+", re.I)
+_HTML_TAG = re.compile(r"<\s*/?\s*(?:img|iframe|script|link|a|video|audio|source|embed|object|svg|style|meta|base|form|"
+                       r"input|button|track|picture|use|image|frame|frameset|area|map|math)\b[^>]*>?", re.I)
 
 
 def _domain(url: str) -> str:
-    m = re.match(r"(?:[a-z]+://)?([^/\s?#:]+)", url.strip(), re.I)
-    return (m.group(1) if m else "link").lower()
+    m = re.match(r"(?:[a-z][a-z0-9+.-]*:)?(?://)?([^/\s?#:]+)", url.strip(), re.I)
+    return (m.group(1) if m else "link").lower().removeprefix("www.")
 
 
 def defang(text: str) -> str:
     """Strangers' text with every way a host could be made to fetch a URL (an image, a link, a bare address)
     turned into plain words that name the domain. Nothing is clickable or loadable; the words stay."""
-    text = _HTML_IMG.sub("[html removed]", text)
-    text = _MD_IMAGE.sub(lambda m: f"[image: {m.group(1) or 'none'} ({_domain(m.group(2))})]", text)
+    text = _HTML_TAG.sub("[html removed]", text)
+    text = _MD_REF.sub(lambda m: f"[reference: {_domain(m.group(1))}]", text)
+    text = _MD_IMAGE.sub(lambda m: f"[image ({_domain(m.group(1))})]", text)
     text = _MD_LINK.sub(lambda m: f"{m.group(1)} [link: {_domain(m.group(2))}]", text)
     text = _AUTOLINK.sub(lambda m: f"[link: {_domain(m.group(1))}]", text)
-    return _BARE.sub(lambda m: f"[link: {_domain(m.group(0))}]", text)
+    text = _BARE.sub(lambda m: f"[link: {_domain(m.group(0))}]", text)
+    # whatever markdown is left that could still make a link or an image: break its syntax
+    return text.replace("](", "] (").replace("![", "[")
 
 
 def _walk(value: Any, fn: Callable[[str], str]) -> Any:
@@ -232,9 +253,21 @@ def cap_filter(tool: str, result: dict[str, Any]) -> dict[str, Any]:
     return cap(result) if autonomy.REMOTE_CALL.get() else result
 
 
+def own_filter(tool: str, result: dict[str, Any]) -> dict[str, Any]:
+    """What the person set for this agent (its playbook) is not for a connector's provider."""
+    from emporia import autonomy
+    if autonomy.REMOTE_CALL.get() and tool == "whats_next":
+        from emporia.mcp_surface import UNTRUSTED_KEY
+        out = {k: v for k, v in result.items() if k != "playbook"}
+        if isinstance(out.get(UNTRUSTED_KEY), dict):
+            out[UNTRUSTED_KEY] = {k: v for k, v in out[UNTRUSTED_KEY].items() if k != "playbook"}
+        return out
+    return result
+
+
 def install_filters() -> None:
     from emporia import mcp_surface
-    for fn in (defang_filter, cap_filter):
+    for fn in (own_filter, defang_filter, cap_filter):
         if fn not in mcp_surface.RESULT_FILTERS:
             mcp_surface.RESULT_FILTERS.append(fn)
 
@@ -254,9 +287,20 @@ def check_call(tool: str, arguments: dict[str, Any] | None, ctx: CallContext | N
     if tool not in tools_for(ctx.scopes):
         return f"`{tool}` needs the scope {scope_of(tool)}, which this connector was not approved for"
     args = _flat(arguments)
-    for key in _ID_ARGS:
+    for key in _id_args():
         if args.get(key) and str(args[key]).strip().lower() != agent_id.lower():
             return "this connector acts as one agent only; another agent_id is refused"
+    for (t, arg), (values, why) in REFUSED_VALUES.items():
+        if t == tool and str(args.get(arg, "")).strip().lower() in values:
+            return f"`{tool}({arg}={args[arg]})` is refused remotely: {why}"
+    from emporia.remote import egress
+    for key in HOSTY_ARGS:
+        raw = args.get(key)
+        for text in ([raw] if isinstance(raw, str) else [x for x in raw if isinstance(x, str)]
+                     if isinstance(raw, (list, tuple)) else []):
+            for host in egress.hosts_named_in(text):
+                if not egress.host_allowed(host):
+                    return f"`{key}` names a host that is not one of this agent's relays; a remote call reaches those only"
     for (t, arg), why in REFUSED_ARGS.items():
         if t == tool and args.get(arg) not in (None, "", False, 0, []):
             return f"`{tool}({arg}=...)` is refused remotely: {why}"

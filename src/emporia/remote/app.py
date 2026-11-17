@@ -38,7 +38,8 @@ Receive = Callable[[], Awaitable[dict[str, Any]]]
 Send = Callable[[dict[str, Any]], Awaitable[None]]
 
 SCOPE_TEXT = {
-    R.SCOPE_READ: "read what is public: the Feed, rooms and topics you could see, games, standing, quests",
+    R.SCOPE_READ: "read the Feed, topics, games, standing and quests, and the text of rooms this agent is in "
+                  "(members-only, not sealed): the host's provider will read all of it",
     R.SCOPE_TALK: "post, react, follow and write in rooms, as this agent, in public; limited to 5 writes in 10 minutes",
 }
 _LOOPBACK = ("127.0.0.1", "::1", "localhost")
@@ -50,8 +51,10 @@ def _json_bytes(obj: Any) -> bytes:
 
 class RemoteApp:
     def __init__(self, authority: Authority, mcp_app: Any, audit: AuditLog, limits: surface.Limits,
-                 agent_id: str = "", clock: Callable[[], float] = time.time) -> None:
+                 agent_id: str = "", clock: Callable[[], float] = time.time, proxy_ip: str = "") -> None:
         self.auth, self.inner, self.audit, self.limits = authority, mcp_app, audit, limits
+        # who may tell us the real protocol and address: a proxy at this IP; by default the loopback peer
+        self.trusted_peers = frozenset({proxy_ip}) if proxy_ip and proxy_ip not in _LOOPBACK else frozenset(_LOOPBACK)
         self.agent_id, self.clock = agent_id, clock
         u = urlsplit(authority.origin)
         self.host = (u.netloc or "").lower()
@@ -72,16 +75,17 @@ class RemoteApp:
         return c[0] if c else ""
 
     def _trusted_proxy(self, scope: Scope) -> bool:
-        return self._peer(scope) in _LOOPBACK
+        return self._peer(scope) in self.trusted_peers
 
     def peer_label(self, scope: Scope, headers: dict[str, str]) -> str:
-        """The peer address as the proxy reports it: the first `X-Forwarded-For` entry, believed only when the
-        connection itself is from loopback (the tunnel or proxy on this machine)."""
+        """The peer address as the proxy reports it: the LAST `X-Forwarded-For` entry (the one our own proxy added;
+        earlier ones are whatever the caller sent), believed only when the connection itself is from the trusted
+        proxy (loopback by default, or `--proxy-ip`)."""
         peer = self._peer(scope)
         if self._trusted_proxy(scope) and headers.get("x-forwarded-for"):
-            first = headers["x-forwarded-for"].split(",")[0].strip()
+            last = headers["x-forwarded-for"].split(",")[-1].strip()      # the one our own proxy added
             try:
-                return str(ipaddress.ip_address(first))
+                return str(ipaddress.ip_address(last))
             except ValueError:
                 return peer
         return peer
@@ -287,7 +291,8 @@ class RemoteApp:
                 f"<p>Confirmation code:</p><p class=code><b>{html.escape(info['code'])}</b></p>"
                 f"<p>Client (it claims this name, unverified): <b>{html.escape(info['client'])}</b>, returning to "
                 f"<code>{html.escape(info['redirect_host'])}</code>.</p><p>It asks for:</p><ul>{scopes}</ul>"
-                f"<p>Only the person who runs this agent can approve, in their own terminal, on that machine:</p>"
+                f"<p>Only the person who runs this agent can approve, in their own terminal, on that machine. They must "
+                f"approve only the code that <b>their own browser</b> shows here:</p>"
                 f"<p><kbd>{cmd}</kbd></p><p>Check that the code there matches the one above. If you did not start "
                 f"this, close this page. It waits 10 minutes.</p><p id=s>Waiting...</p>")
         script = ("const t=location.pathname.split('/')[2];let n=0;async function p(){try{const r=await fetch("

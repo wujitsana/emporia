@@ -96,7 +96,7 @@ def remote_folder() -> Path:
 
 
 def build(public_url: str, scopes: tuple[str, ...], agent_id: str, folder: Path | None = None, clock: Any = None,
-          mcp: Any = None, fit: bool = True):
+          mcp: Any = None, fit: bool = True, proxy_ip: str = "", pairing_minutes: float = 10):
     """The ASGI app for `agent_id` and its pieces: (app, authority, notes). Importing `mcp_server` binds it to the
     agent named in this process's environment."""
     import time
@@ -126,7 +126,16 @@ def build(public_url: str, scopes: tuple[str, ...], agent_id: str, folder: Path 
     mcp.add_middleware(surface.build_middleware(agent_id, audit, limits, authority.lock, clock))
     inner = mcp.http_app(path=R.MCP_PATH, transport="streamable-http", stateless_http=True, json_response=True,
                          host_origin_protection=False)
-    app = RemoteApp(authority, inner, audit, limits, agent_id, clock)
+    app = RemoteApp(authority, inner, audit, limits, agent_id, clock, proxy_ip)
+    from emporia import visits
+    from emporia.addresses import host_of
+    from emporia.env_config import env
+    from emporia.remote import egress
+    egress.ALLOWED_HOSTS = lambda: {host_of(env("RELAY_URL", "http://localhost:8088")),
+                                    *(host_of(u) for u in visits.visiting())}
+    egress.install()
+    if pairing_minutes:
+        authority.open_pairing(pairing_minutes)
     notes = [note] if note else []
     return app, authority, {"kept": kept, "removed": removed, "notes": notes, "ceiling": ceiling}
 
@@ -136,12 +145,15 @@ def describe(url: str, ceiling: tuple[str, ...], agent_id: str, tools: list[str]
              f"  Connector URL (paste this into the host's connector screen): {url}{R.MCP_PATH}",
              f"  Scopes that can be granted: {', '.join(ceiling)}  ({len(tools)} tools)"]
     lines += [f"  Note: {n}" for n in notes]
+    lines += ["  Pairing is OPEN for 10 minutes: a host can register and start an authorization now. After that, "
+              "`emporia agent connector open NAME` opens it again. Approve only the code your own browser shows."]
     lines += ["",
               "What this means, in plain words:",
               "  - A client you approve acts AS this agent, in public, within those scopes. Only you approve, in this "
               "terminal: `emporia agent connector pending|approve|revoke`.",
               "  - It never gets money, wallet, key, settings or moderation tools, and never any private message "
               "text (DMs and sealed rooms stay on this machine).",
+              "  - It reaches only this agent's own relays (home and visited), never another address.",
               "  - Writes (talk) are limited to 5 in 10 minutes, shared across every connector.",
               "  - The host's provider reads whatever the tools return. Keep this agent's public voice only.",
               "  - Everything is in the audit log: `emporia agent connector log`."]
@@ -154,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--scopes", default=os.environ.get("EMPORIA_REMOTE_SCOPES", "read"))
     p.add_argument("--bind", default=os.environ.get("EMPORIA_REMOTE_BIND", R.DEFAULT_BIND))
     p.add_argument("--behind-proxy", action="store_true")
+    p.add_argument("--proxy-ip", default="127.0.0.1")
     a = p.parse_args(argv)
     agent_id = os.environ.get("EMPORIA_AGENT_ID", "").strip()
     problems = startup_problems(public_url=a.public_url, bind=a.bind, behind_proxy=a.behind_proxy, agent_id=agent_id,
@@ -168,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  - {why}", file=sys.stderr)
         return 2
     origin, _ = parse_public_url(a.public_url)
-    app, authority, info = build(origin, scopes, agent_id)
+    app, authority, info = build(origin, scopes, agent_id, proxy_ip=a.proxy_ip)
     print(describe(origin, info["ceiling"], agent_id, info["kept"], info["notes"]), file=sys.stderr, flush=True)
     import uvicorn
     host, port = split_bind(a.bind)
