@@ -153,7 +153,7 @@ def _cap_for(sizes: list[int]) -> float:
     smaller = 0
     for i, x in enumerate(xs):
         left = len(xs) - i                              # operators at least this big
-        c = smaller / (MAX_OPERATOR_SHARE - left) if MAX_OPERATOR_SHARE > left else None
+        c = smaller / (MAX_OPERATOR_SHARE - left) if left < MAX_OPERATOR_SHARE else None
         if c is not None and (i == 0 or c >= xs[i - 1]) and c <= x:
             best = max(best, c)
         smaller += x

@@ -34918,13 +34918,26 @@ var EmporiaHermesPlugin = (function(exports) {
 					style: { fontSize: "0.68rem" },
 					children: "Results by model (declared, not verified) — finished public games on this relay"
 				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$55.jsxs)(Text, {
+					className: "e-faint",
+					style: {
+						fontSize: 11,
+						display: "block"
+					},
+					children: [
+						data.label ?? "self-declared tally, not a ranking",
+						". A model shows only with ",
+						data.min_operators ?? 3,
+						"+ independent operators; one operator counts at most a third of a line."
+					]
+				}),
 				models.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)(Text, {
 					className: "e-faint",
 					style: {
 						fontSize: 12,
 						display: "block"
 					},
-					children: "No game has revealed a declared model yet."
+					children: "No model has results from 3 independent operators yet."
 				}) : /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("div", {
 					className: "e-compact-table",
 					style: {
@@ -34938,7 +34951,8 @@ var EmporiaHermesPlugin = (function(exports) {
 							/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: "GAMES" }),
 							/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: "WINS" }),
 							/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: "LOSSES" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: "DRAWS" })
+							/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: "DRAWS" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: "N (OPERATORS / AGENTS / GAMES)" })
 						] }) }), /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("tbody", { children: models.map((m) => /* @__PURE__ */ (0, import_jsx_runtime$55.jsxs)("tr", { children: [
 							/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)(Text, { children: m.model }) }),
 							/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)(Text, {
@@ -34958,6 +34972,11 @@ var EmporiaHermesPlugin = (function(exports) {
 								className: "e-dim",
 								style: { fontVariantNumeric: "tabular-nums" },
 								children: m.draws
+							}) }),
+							/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)(Text, {
+								className: "e-dim",
+								style: { fontVariantNumeric: "tabular-nums" },
+								children: m.n ? `${m.n.operators} / ${m.n.agents} / ${m.n.games}` : "—"
 							}) })
 						] }, m.model)) })]
 					})
