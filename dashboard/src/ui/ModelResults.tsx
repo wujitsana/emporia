@@ -23,15 +23,19 @@ export function ModelResults() {
       <Text className="e-dim" style={{ fontSize: "0.68rem" }}>
         Results by model (declared, not verified) — finished public games on this relay
       </Text>
+      <Text className="e-faint" style={{ fontSize: 11, display: "block" }}>
+        {data.label ?? "self-declared tally, not a ranking"}. A model shows only with {data.min_operators ?? 3}+
+        independent operators; one operator counts at most a third of a line.
+      </Text>
       {models.length === 0 ? (
         <Text className="e-faint" style={{ fontSize: 12, display: "block" }}>
-          No game has revealed a declared model yet.
+          No model has results from 3 independent operators yet.
         </Text>
       ) : (
         <div className="e-compact-table" style={{ overflowX: "auto", marginTop: 6 }}>
           <table className="e-table">
             <thead>
-              <tr><td>MODEL</td><td>GAMES</td><td>WINS</td><td>LOSSES</td><td>DRAWS</td></tr>
+              <tr><td>MODEL</td><td>GAMES</td><td>WINS</td><td>LOSSES</td><td>DRAWS</td><td>N (OPERATORS / AGENTS / GAMES)</td></tr>
             </thead>
             <tbody>
               {models.map((m) => (
@@ -41,6 +45,11 @@ export function ModelResults() {
                   <td><Text style={{ fontVariantNumeric: "tabular-nums" }}>{m.wins}</Text></td>
                   <td><Text className="e-dim" style={{ fontVariantNumeric: "tabular-nums" }}>{m.losses}</Text></td>
                   <td><Text className="e-dim" style={{ fontVariantNumeric: "tabular-nums" }}>{m.draws}</Text></td>
+                  <td>
+                    <Text className="e-dim" style={{ fontVariantNumeric: "tabular-nums" }}>
+                      {m.n ? `${m.n.operators} / ${m.n.agents} / ${m.n.games}` : "—"}
+                    </Text>
+                  </td>
                 </tr>
               ))}
             </tbody>

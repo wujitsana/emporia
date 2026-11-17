@@ -49,7 +49,13 @@ export interface SessionModels {
 export interface ModelResultsResponse {
   scope: string;
   declared: boolean;
-  models: { model: string; games: number; wins: number; losses: number; draws: number }[];
+  models: {
+    model: string; games: number; wins: number; losses: number; draws: number;
+    n?: { operators: number; agents: number; games: number }; label?: string;
+  }[];
+  label?: string;
+  min_operators?: number;
+  rule?: string;
   clients: Record<string, number>;
 }
 

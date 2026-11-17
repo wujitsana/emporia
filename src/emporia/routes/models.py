@@ -135,6 +135,72 @@ def results_by_model(games: list[dict[str, Any]], model_of: dict[tuple[str, str]
             for m, t in sorted(tally.items(), key=lambda kv: (-kv[1]["games"], kv[0]))]
 
 
+MIN_OPERATORS = 3          # a model's line is shown only when this many independent operators contributed
+MAX_OPERATOR_SHARE = 3     # one operator's share of a line is capped at 1/MAX_OPERATOR_SHARE of its data
+LABEL = "self-declared tally, not a ranking"
+
+
+def _cap_for(sizes: list[int]) -> float:
+    """The cap c on one operator's data so that no operator holds more than a third of the capped total: the
+    largest c with c <= sum(min(x, c)) / 3. With three or more operators one always exists (c = smallest x at
+    worst, c = the largest x when the data is already even)."""
+    xs = sorted(sizes)
+    best = float(xs[0])
+    for c in sorted(set(xs)):
+        if c * MAX_OPERATOR_SHARE <= sum(min(x, c) for x in xs):
+            best = max(best, float(c))
+    # between two sizes the sum is linear in c: solve c = (sum of smaller + c * (count at least c)) / 3
+    smaller = 0
+    for i, x in enumerate(xs):
+        left = len(xs) - i                              # operators at least this big
+        c = smaller / (MAX_OPERATOR_SHARE - left) if MAX_OPERATOR_SHARE > left else None
+        if c is not None and (i == 0 or c >= xs[i - 1]) and c <= x:
+            best = max(best, c)
+        smaller += x
+    return best
+
+
+def guarded_results(games: list[dict[str, Any]], model_of: dict[tuple[str, str], str],
+                    operator_of: dict[str, str]) -> list[dict[str, Any]]:
+    """`results_by_model`, kept to what a self-declared name can honestly show. A model's line appears only when at
+    least `MIN_OPERATORS` independent operators (agents that share an operator, a label or a registration network,
+    are one) contributed to it: one person's agents are not a sample. Each line says `n` (operators, agents, games
+    it covers). One operator's games on a line are capped so that it holds at most a third of the line's data
+    (`_cap_for`): the rest of its games are scaled down in proportion, wins, losses and draws alike, so a few
+    operators cannot make a model look good or bad. Counts in a line are then the capped tallies (a tenth
+    precise); `n.games` is the raw number of distinct games. Always labelled a self-declared tally, not a ranking."""
+    agents_of: dict[str, set[str]] = {}
+    for (_sid, agent), model in model_of.items():
+        if model:
+            agents_of.setdefault(model, set()).add(agent)
+    out = []
+    for model, agents in agents_of.items():
+        ops: dict[str, set[str]] = {}
+        for a in agents:
+            ops.setdefault(operator_of.get(a) or f"agent:{a}", set()).add(a)
+        if len(ops) < MIN_OPERATORS:
+            continue
+        per_op = {}
+        for op, mine in ops.items():
+            sub = {k: v for k, v in model_of.items() if v == model and k[1] in mine}
+            row = next((r for r in results_by_model(games, sub) if r["model"] == model), None)
+            if row and row["games"]:
+                per_op[op] = row
+        if len(per_op) < MIN_OPERATORS:
+            continue
+        cap = _cap_for([r["games"] for r in per_op.values()])
+        tot = {"games": 0.0, "wins": 0.0, "losses": 0.0, "draws": 0.0}
+        for r in per_op.values():
+            w = min(1.0, cap / r["games"])
+            for k in tot:
+                tot[k] += r[k] * w
+        sids = {sid for (sid, a), m in model_of.items() if m == model}
+        out.append({"model": model, **{k: round(v, 1) for k, v in tot.items()},
+                    "n": {"operators": len(per_op), "agents": len(agents), "games": len(sids)},
+                    "label": LABEL})
+    return sorted(out, key=lambda r: (-r["games"], r["model"]))
+
+
 def clients_count(conn) -> dict[str, int]:
     """Active agents by the client on their signed card (declared); `unknown` for one that sent none."""
     rows = conn.execute("SELECT client_name, COUNT(*) AS n FROM authorized_agents WHERE is_active = 1 "
@@ -145,7 +211,8 @@ def clients_count(conn) -> dict[str, int]:
 @router.get("/stats/models")
 async def models_stats():
     """Results by declared model over this relay's finished public games, and the agents by client. Counts only:
-    no names, nothing private. Every model and client here is declared by the agent, never verified."""
+    no names, nothing private. Every model and client here is declared by the agent, never verified. A model's
+    line needs 3+ independent operators and caps one operator at a third (`guarded_results`)."""
     from emporia.routes import standing as st
     games = st._craft_games()
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -158,5 +225,9 @@ async def models_stats():
         by_game.setdefault((r["session_id"], r["agent_id"]), {})[r["step"]] = r["model"]
     model_of = {k: mc.most_revealed(v) for k, v in by_game.items()}
     return {"scope": "finished public games on this relay", "declared": True,
-            "models": results_by_model(games, model_of), "clients": clients,
+            "models": guarded_results(games, model_of, {a: w.operator for a, w in st._who().items()}),
+            "label": LABEL, "min_operators": MIN_OPERATORS,
+            "rule": f"a model shows only with {MIN_OPERATORS}+ independent operators; one operator holds at most "
+                    f"a third of a line's data; names are declared, never verified",
+            "clients": clients,
             "generated_at": datetime.now(UTC).isoformat()}
