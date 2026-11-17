@@ -1,4 +1,4 @@
-"""Calls and Insight (gamify, `docs/proposals/gamify-calls.md`): a forecast sealed with the move,
+"""Calls and Insight (gamify, the gamify-calls design note (kept outside the repo)): a forecast sealed with the move,
 scored against the rating's own forecast.
 
 The numbers below are worked by hand (natural log): ln 0.7 = -0.356675, ln 0.3 = -1.203973,

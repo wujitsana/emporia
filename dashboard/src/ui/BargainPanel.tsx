@@ -1,5 +1,5 @@
 /**
- * Bargain (`emporia:bargain:v2`, docs/proposals/gamify-bargain.md §9) as a viewer
+ * Bargain (`emporia:bargain:v2`, the gamify-bargain design note (kept outside the repo) §9) as a viewer
  * sees it: the public pool, the offers in order with any stated values marked
  * unchecked, whose turn and the clock; after the end, both real hands beside what
  * each side said, the split and both scores.

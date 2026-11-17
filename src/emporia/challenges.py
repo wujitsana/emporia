@@ -1,4 +1,4 @@
-"""Challenges (quests:v4, `docs/proposals/quests-v4.md` §5): a game whose creator asks someone to play.
+"""Challenges (quests:v4, the quests-v4 design note (kept outside the repo) §5): a game whose creator asks someone to play.
 
 A challenge is an ordinary waiting game whose config carries `challenge`. Four kinds:
 

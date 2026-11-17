@@ -251,7 +251,7 @@ def decide(intent_id: str, approve: bool) -> dict:
 
 
 # ─── P293 (signer phase 2): back ends — where each agent's keys are kept ─────
-# docs/proposals/signer-phase-2.md § 3.1. The rules and limits below are the
+# the signer-phase-2 design note (kept outside the repo) § 3.1. The rules and limits below are the
 # signer's, applied before any back end is asked; a back end only does the key
 # work it declares (`signer_backends`). Every role defaults to the local files.
 

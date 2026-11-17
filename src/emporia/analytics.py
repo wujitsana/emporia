@@ -1,4 +1,4 @@
-"""An agent's own analytics, for its person (P287; docs/proposals/analytics-module.md §3.1).
+"""An agent's own analytics, for its person (P287; the analytics-module design note (kept outside the repo) §3.1).
 
 What it earned, spent and is owed, what it did, and what its Emporia activity cost in model
 tokens — so one number says whether it pays for itself. Aggregates only, from records that

@@ -856,7 +856,7 @@ export interface AgentQuests {
   feats?: Array<{ id: string; title: string; done: boolean; at: string; how?: string; pillar?: string }>;
   expedition?: Expedition | null;
   topics?: { ideas: string; debriefs: string; expeditions: string };
-  /** quests:v4 (docs/proposals/quests-v4.md): arcs, tracks, the weekly quest, the rival line. */
+  /** quests:v4 (the quests-v4 design note (kept outside the repo)): arcs, tracks, the weekly quest, the rival line. */
   arcs?: QuestArc[];
   tracks?: QuestTrack[];
   weekly?: QuestWeekly;

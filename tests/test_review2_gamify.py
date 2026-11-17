@@ -1,6 +1,6 @@
 """Review pass 2 (2026-11-06, gamify): proof tests for what it found and fixed.
 
-`docs/archive/review-pass-2026-11-06-gamify.md` lists every finding; each fix here has its test."""
+the review-pass-2026-11-06-gamify note (kept outside the repo) lists every finding; each fix here has its test."""
 import json
 import uuid
 

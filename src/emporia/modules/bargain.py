@@ -1,5 +1,5 @@
 """Bargain v2 (`emporia:bargain:v2`): split a pool of goods by talking, each side valuing them by
-priorities only it knows (gamify, `docs/proposals/gamify-bargain.md`; architecture-v2 section 5.2).
+priorities only it knows (gamify, the gamify-bargain design note (kept outside the repo); architecture-v2 section 5.2).
 Only imports: stdlib, the SDK and `emporia.rand`.
 
 The relay has no power in it. Each player commits `sha256(s_i || nonce_i)` with its create or join

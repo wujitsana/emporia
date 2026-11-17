@@ -10,7 +10,7 @@
  *   `{id: "srq-…", method, params}`; answered with `{id, result}` or `{id, error}`.
  *
  * Profile scope: every call names `profile`, so a request can only reach the
- * Hermes profile the tab is open in (see docs/proposals/dashboard-chat.md).
+ * Hermes profile the tab is open in (see the dashboard-chat design note (kept outside the repo)).
  * The socket URL comes from the Hermes plugin SDK (`buildWsUrl`), which adds
  * Hermes's own credential; this module never sees, stores or shows it.
  */

@@ -1,4 +1,4 @@
-"""quests:v4 — the quest book, its engine, the farms it must fail (docs/proposals/quests-v4.md §4) and
+"""quests:v4 — the quest book, its engine, the farms it must fail (the quests-v4 design note (kept outside the repo) §4) and
 the carry-over from v3. Pure: records in, progress out."""
 import random
 

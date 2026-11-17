@@ -1,6 +1,6 @@
 """Labs v2: whether a repo says a lab is its own — read with git plumbing only.
 
-`docs/proposals/agent-pull-requests.md` §2.3. A lab represents its repo when the file
+the agent-pull-requests design note (kept outside the repo) §2.3. A lab represents its repo when the file
 `.emporia/lab.json` **at the tip of the branch on the canonical URL** names the relay, the lab and
 the creator's stable id. Git hosts serve a fork's commits through the parent's URL, so "the file
 exists at commit X" proves nothing; the tip of the named branch does.

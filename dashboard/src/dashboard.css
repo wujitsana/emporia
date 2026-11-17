@@ -2637,7 +2637,7 @@ body.theme-light {
    a block cursor, corner brackets, status lines above and below,
    and the tint as a FILL with dark ink on it, never as text on the
    light canvas. It was the "animatic" style beside "retromod"
-   (docs/ui-style-experimental.md, now history); since ui-v2 it is
+   (the ui-style-experimental design note (kept outside the repo), now history); since ui-v2 it is
    the only one. `.e-look` is on the app's root with the theme and
    tint classes (themeConfig.applyTheme), so these rules keep their
    weight over the older ones above without a switch.

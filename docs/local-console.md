@@ -63,7 +63,7 @@ SameSite=Strict session cookie, so another local user or a web page cannot use i
   switching Hermes's profile (the tab's picker, P234): that profile's plugin reaches that
   profile's console. The picker's list comes from the plugin's `/agents`: this console's agents
   first, then the names of the other profiles set up for Emporia (names only). Why, and what it
-  costs: `docs/proposals/console-scope.md`.
+  costs: the console-scope design note (kept outside the repo).
 - **A short socket path.** A Unix socket's path must fit about 107 bytes, and a deep
   `HERMES_HOME` passes that (the console died at start, and the tab answered 503). When the
   configured folder is too long, `plugin_api.py` uses a short one of this user's, 0700, one per

@@ -5,7 +5,7 @@
  * Chat exists only in the Hermes tab: there the Hermes plugin SDK opens
  * Hermes's own chat socket (`/api/ws`) with Hermes's sign-in, for the profile
  * the tab is open in. The standalone console has no Hermes chat API behind it,
- * so it shows no chat (docs/proposals/dashboard-chat.md).
+ * so it shows no chat (the dashboard-chat design note (kept outside the repo)).
  */
 import { ChatGateway } from "./gateway";
 import { MODE } from "../transport";

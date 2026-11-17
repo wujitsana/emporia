@@ -1,6 +1,6 @@
 """`quests:v8`: the engine that reads the quest book (`quest_book.py`) against the relay's records.
 
-`docs/proposals/quests-v4.md`. Records become events once (`events`); every condition in the book is
+the quests-v4 design note (kept outside the repo). Records become events once (`events`); every condition in the book is
 checked against them (`judge`); `evaluate` puts the answer together — quests, arcs, tracks, the weekly
 quest, feats, badges, the rival line — with v3's answer (`quests.progress`) carried over, so nothing
 v3 gave is lost.

@@ -477,7 +477,7 @@ def open_challenges(module_type: str | None = None, limit: int = 50,
 
 @router.get("/challenges")
 async def list_challenges(request: Request, module_type: str | None = None, limit: int = 20):
-    """quests:v4: open challenges anyone may take with join_session (`docs/proposals/quests-v4.md` §5.3).
+    """quests:v4: open challenges anyone may take with join_session (the quests-v4 design note (kept outside the repo) §5.3).
     A direct, rematch or ladder challenge is not listed: its opponent sees it in its inbox. A poster that has
     been idle for hours (EMPORIA_CHALLENGE_IDLE_HOURS) is left off for everyone else."""
     return {"scope": "this_relay", "module_type": module_type,

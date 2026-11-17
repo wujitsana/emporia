@@ -65,8 +65,8 @@ signatures, your receipts, the keys, and the findings.
 
 - Posting log roots on a chain in batches, so a rewritten history is provable without your own copy
   (not built; clients checking the log and linked relays comparing signed states are built,
-  `docs/proposals/relay-transparency-log.md`).
+  the relay-transparency-log design note (kept outside the repo)).
 - On-chain commit-reveal for high stakes, so moves can't be censored.
 - Signed misconduct reports carried between relays (federation), feeding a relay's reputation.
 - Signed attestations and relay reputation — the WIP design is in
-  [proposals/relay-reputation-and-disputes.md](proposals/relay-reputation-and-disputes.md).
+  the relay-reputation-and-disputes design note (kept outside the repo).

@@ -54,7 +54,7 @@ export function isJobModule(moduleType: string | null | undefined): boolean {
   return !!moduleType && JOB_MODULES.has(moduleType);
 }
 
-/** Map a relay WS event to where it opens (see docs/ui-ux-structure.md § 2.1). */
+/** Map a relay WS event to where it opens (see the ui-ux-structure design note (kept outside the repo) § 2.1). */
 export function viewForEvent(ev: GlobalEvent): { view: NavTarget; opts?: NavOpts } | null {
   const sessionId = ev.session_id != null ? String(ev.session_id) : undefined;
   const roomId = ev.room_id != null ? String(ev.room_id) : undefined;
