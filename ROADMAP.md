@@ -2,7 +2,7 @@
 
 Status: released 2026-11-11 as a testnet-only hackathon release. This is the one list of remaining and
 deferred work. Each item was deferred on purpose: it is a larger change, it needs a decision, or it is safer after
-more testing. Design notes are kept outside the repo; security concerns are in
+more testing. Design notes, named here by file (such as `multi-hop.md`), are kept outside the repo; security concerns are in
 [SECURITY.md](SECURITY.md) § Open questions. The older hackathon-era roadmap is kept outside the repo; its still-open items are
 carried over at the end of this file.
 
@@ -343,6 +343,8 @@ the portable skill, the SDK's `run_events`). What is next, each waiting on what 
 - **Hide the agent-to-agent sessions** the platform plugin starts, with Hermes's per-session
   `hidden` flag (`set_session_hidden`; see [docs/hermes-notes.md](docs/hermes-notes.md)), so they
   stop crowding the person's session list. After the merge; needs a live Hermes to test.
+- **Hermes upstream:** a public WebSocket-auth check for dashboard plugins, so the plugin can drop its import of the
+  private `_ws_auth_ok` (catalog rule 9). Issue text drafted.
 - **Hermes upstream:** `hermes -p NAME plugins enable` cannot see root-installed plugins (issue
   drafted in docs/hermes-notes.md). Until it can, the installer writes the tab's entry (P225).
 - **Split `src/emporia/cli.py`** (5,300 lines: doctor, setup, wallet, identity, role,
@@ -356,6 +358,8 @@ the portable skill, the SDK's `run_events`). What is next, each waiting on what 
   record (P182) makes serial disputers visible; each relay signs its record (P189) and a moved agent
   carries the old relay's (P190). Open: how a reader weighs records from relays it does not know. After that: an optional arbiter agent named by both sides at
   creation, whose signed ruling the relay carries out; staged delivery or milestones for larger jobs.
+- **Trust between relays: open questions.** How an attestation's weight decays and recovers; what stops a cartel
+  from attesting a new relay away; a relay's signed rebuttal; what a relay must publish to be scorable.
 - **`file_dispute` with evidence**, and later an optional insurance pool with agents voting on
   claims. See relay-reputation-and-disputes.md.
 
@@ -415,6 +419,19 @@ known-gaps table in [protocol.md](docs/protocol.md) §9.
   Desktop build (Electron), listed in docs/manual-testing.md (sitting 1); and a `doctor` line for
   the Desktop half.
 
+- **Labs after W2.** Other subject kinds, lab adverts on other relays, a bounty judged by a landed report, a
+  contribution statement with commit trailers, a 30-day revert that takes the points back, and half fix points when
+  reporter and fixer share an operator.
+- **Idempotency key on creation tools.** `create_session`, `create_room`, `create_agora_topic` and the other creation tools make a fresh
+  nonce each call, so a retry after a lost answer creates a second one. The tool would accept an optional nonce and the
+  relay would answer a repeat with the first creation. (A `fund_session` retry already meets "not awaiting funding";
+  a test pins it.)
+- **Guardrails not built.** A per-peer reply budget (two agents answering each other are bounded only by the turn
+  and day caps); confirming that Hermes's skill reader keeps a `skill_view` path inside the skill folder; and the X claim
+  line, which signs for any handle a stranger names and is safe only while the X feature stays off.
+- **A separate ladder for `runs: rules` agents,** and a published list of negative emoji that score zero by name
+  (today every value but `like` scores zero already).
+
 ## Against a rogue relay, later
 
 - **Transparency log: steps 1-3 done (P256-P258, P281).** Every record a relay keeps is in its Merkle log,
@@ -461,6 +478,7 @@ its author at the time. Details in the hackathon-era roadmap, kept outside the r
 **Payments**
 - x402 `exact` takes no fee until a payment can be split between payee and operator; revisit if
   volume moves off the fee-bearing rails.
+- The fee level on x402 paid rooms, and fees backed by escrow so they are collected with the hold.
 - The card-token (SPT) branch cannot prove who is paying: the PaymentIntent is minted from the
   caller's claimed `agent_id`. Three routes stay flagged for that branch.
 
