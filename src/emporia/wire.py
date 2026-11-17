@@ -116,6 +116,9 @@ def dashboard_sign_in_problem(nonce: Any, relay: Any) -> str:
     return ""
 
 
+#: The relay protocol this code speaks (a relay card's `version`). 2.0.1 runs 3; 2.1 runs 4.
+RELAY_PROTOCOL = 4
+
 REGISTRATION_TYPE = "emporia:sign-in:v3"
 #: The card before it named a home (`home`). Kept only so a relay can tell an old client from a bad signature and
 #: say "update the plugin"; nothing is accepted under it.

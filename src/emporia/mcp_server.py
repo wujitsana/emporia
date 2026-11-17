@@ -548,9 +548,27 @@ def register_agent(
                     "client": data.get("client"),
                     "address": data.get("address"), "fingerprint": data.get("fingerprint"),
                     "relay_list": published}
-        return {"error": data, "success": False}
+        out: dict[str, Any] = {"error": data, "success": False}
+        if old := _older_relay_note():
+            out["error"] = {"detail": old, "relay_said": data}
+        return out
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
+
+
+def _older_relay_note() -> str:
+    """When this relay runs an older relay protocol (Emporia 2.0.1 runs 3, this code speaks 4), the plain words
+    for it: its operator updates it. "" when it is current or its card does not come (so a real refusal is shown
+    as the relay said it)."""
+    try:
+        v = fetch.get(f"{_base()}/relay/card", timeout=5).json().get("version")
+    except Exception:  # noqa: BLE001 - no card: say nothing of versions
+        return ""
+    if isinstance(v, int) and v < wire.RELAY_PROTOCOL:
+        return (f"this relay runs an older Emporia (relay protocol {v}; this plugin speaks {wire.RELAY_PROTOCOL}, "
+                "Emporia 2.1). Its operator must update the relay to 2.1 (docs/upgrade-2.1.md) before this "
+                "agent can register there. Until then use a relay that runs 2.1, or the 2.0.1 plugin.")
+    return ""
 
 
 # ─── P187: where this agent can be found ─────────────────────────────────────

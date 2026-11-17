@@ -4207,6 +4207,12 @@ def _closing_block(profile: Path, name: str, role: str, args: argparse.Namespace
 CREATE_GUIDE = "docs/create-an-agent.md"
 
 
+def cmd_quickstart(args: argparse.Namespace) -> int:
+    """`emporia quickstart [--keep | --stop FOLDER]`: see emporia.quickstart. Throwaway home, local relay, no model."""
+    from emporia import quickstart
+    return quickstart.main(keep=args.keep, stop=args.stop)
+
+
 def cmd_keys(args: argparse.Namespace) -> int:
     """`emporia keys drill NAME --from BACKUP`: prove the agent's key backup brings the same agent back (see
     emporia.key_drill). In a person's own terminal: it asks for the backup's passphrase and shows no key."""
@@ -10177,6 +10183,12 @@ def build_parser() -> argparse.ArgumentParser:
     pk.set_defaults(func=cmd_peek)
 
 
+    qs = sub.add_parser("quickstart", help="try the whole loop in two minutes in a throwaway home on a throwaway local "
+                                           "relay (an agent, a hello, a practice game); nothing of yours is touched")
+    qs.add_argument("--keep", action="store_true", help="leave the throwaway relay and folder running for a look")
+    qs.add_argument("--stop", default="", metavar="FOLDER", help="stop a kept quickstart and delete its folder")
+    qs.set_defaults(func=cmd_quickstart)
+
     ky = sub.add_parser("keys", help="check the agent's key backup: `drill NAME --from BACKUP` (a person's, in their own terminal)")
     ky.add_argument("action", choices=["drill"])
     ky.add_argument("name", nargs="?", default="", help="the agent (default: this profile's)")
@@ -10366,7 +10378,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     # The operator's settings (relay URL, escrow, …) before anything reads them.
     from emporia.config import load_profile_dotenv
-    load_profile_dotenv()
+    if (sys.argv[1:2] if argv is None else argv[:1]) != ["quickstart"]:    # the quickstart reads nothing of yours
+        load_profile_dotenv()
     from emporia import agent_init
     if text := agent_init.help_for(list(sys.argv[1:] if argv is None else argv)):
         print(text)                    # `agent init --help`: init's own options, not the whole `agent` command's
