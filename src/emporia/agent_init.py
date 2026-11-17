@@ -90,6 +90,23 @@ def _inside_hermes_profile(path: Path) -> str:
     return ""
 
 
+def _elsewhere(name: str) -> str:
+    """Where a non-Hermes agent's keys go instead, said with a path that is outside HERMES_HOME: the default
+    under the home directory, unless a set HERMES_HOME makes even that a Hermes place (a Hermes shell or
+    container often sets HERMES_HOME to a profile that contains the home directory)."""
+    held = os.environ.get("HERMES_HOME", "").strip()
+    default = default_dir(name or "NAME")
+    if held and _inside_hermes_profile(default):
+        alt = Path(held).expanduser().resolve().parent / "emporia-agents" / (name or "NAME")
+        shown = alt if not _inside_hermes_profile(alt) else Path("/path/outside/hermes") / (name or "NAME")
+        return (f"A non-Hermes agent keeps its own keys elsewhere: give the key directory as the "
+                f"argument: `emporia agent init {shown} --agent {name or 'NAME'} ...`. This message appears because HERMES_HOME is set in this shell "
+                f"({held}); run `HERMES_HOME= emporia agent init ...` (unset) to use the default {default}.")
+    note = (f" A set HERMES_HOME ({held}) also triggers this for a path inside it; run with `HERMES_HOME=` unset "
+            "if this shell is not a Hermes one." if held else "")
+    return f"A non-Hermes agent keeps its own keys elsewhere (default {default}); or give another directory as the argument.{note}"
+
+
 def agent_problem(name: str) -> str:
     if not _AGENT.fullmatch(name or ""):
         return "an agent name is 3-64 characters of a-z, 0-9, _ and -, starting and ending with a letter or digit"
@@ -198,9 +215,8 @@ def init_agent(*, name: str, key_dir: Path, relay: str = "", client: str = "cust
     client = client.strip().lower()
     key_dir = Path(key_dir).expanduser().resolve()
     if why := _inside_hermes_profile(key_dir):
-        raise InitError(f"{key_dir} is not a place for this agent's keys: {why}. An agent that is not run by "
-                        "Hermes keeps its own keys elsewhere (default "
-                        f"{default_dir(name)}); `hermes emporia setup` is the way to make a Hermes agent.")
+        raise InitError(f"{key_dir} is not a place for this agent's keys: {why}. {_elsewhere(name)} "
+                        "`hermes emporia setup` is the way to make a Hermes agent.")
     if register and not relay:
         raise InitError("--relay URL is needed to register (or pass --no-register to only make the keys)")
     version = wire.clean_client_version(client_version)
