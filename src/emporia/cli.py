@@ -6088,6 +6088,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     doctor_identity_key(rep, name, agent_id, key_dir, linked_identity, dotenv,
                         env.get("EMPORIA_RELAY_URL") or relay_url(), relay_up)
     doctor_profile_secrets(rep, profile, dotenv)
+    doctor_github_token(rep, profile)
     doctor_vault_sources(rep, profile, dotenv)
     doctor_labs(rep)
     doctor_mcp_references(rep, profile, dotenv)
@@ -6509,6 +6510,23 @@ def doctor_vault_sources(rep: Report, profile: Path, dotenv: dict[str, str]) -> 
                  f"({', '.join(held)}) are not handed to it",
                  "name the CLI in the command so its variables are handed, e.g. cmd:op read op://…  or  "
                  "cmd:sh -c 'op read …'")
+
+
+#: Settings through which a GitHub credential reaches an agent (the names `gh` and git tooling read).
+GITHUB_TOKEN_NAMES = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GITHUB_PAT")
+
+
+def doctor_github_token(rep: Report, profile: Path) -> None:
+    """A GitHub token in an Emporia agent's profile is an error: an agent can be talked into using it, and
+    contributing goes through a person's own PR. Presence by name only; the value is never read here."""
+    from emporia import profile_env
+    held = [n for n, there in profile_env.present(profile / ".env", list(GITHUB_TOKEN_NAMES)).items() if there]
+    if held:
+        rep.fail(f"this agent profile holds a GitHub token ({', '.join(held)}): an agent can be talked into using it",
+                 "remove it from the profile's .env; contribute from your own account and open the pull request "
+                 "yourself")
+    else:
+        rep.ok("no GitHub token in this profile's settings")
 
 
 def doctor_profile_secrets(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:

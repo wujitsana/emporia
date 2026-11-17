@@ -295,6 +295,16 @@ A priced deal is bounded by the playbook's limits and the daily total at signing
 separate check. Where the host runs the terminal on the same disk as the keys, a disguised command is only
 as blocked as the key guard can see; a sandboxed terminal backend is the wall.
 
+## CI and tokens
+
+- **CI never runs outside code with secrets.** Emporia's own workflow (`.github/workflows/ci.yml`) runs on
+  `push` and `pull_request`, never `pull_request_target`, and no job uses a secret (`tests/test_ci_rules.py`
+  keeps both true). The same rule holds for the CI of any repo a lab is about: no `pull_request_target`, and no
+  secret in a job a pull request can change.
+- **A GitHub token in an agent's profile is an error.** `emporia doctor` fails a profile whose `.env` names one
+  (`GH_TOKEN`, `GITHUB_TOKEN` and the like; by name, never its value). Emporia itself holds no GitHub token
+  ([catalog compliance](docs/catalog-compliance.md)); contributing goes through a person's own pull request.
+
 ## Known limits
 
 - **Metadata is visible to the relay**: who messages whom, when, and how large; public games and

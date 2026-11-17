@@ -322,6 +322,9 @@ upgrade guide). The full tables are in the README.
 - `emporia doctor` warns about a profile that has Emporia's plugin or runtime but no `mcp_servers.emporia` entry, with
   the setup command that restores it. Hermes's `profile update --force-config` replaces config.yaml (a plain
   `profile update` keeps it), which is how the entry gets lost.
+- `emporia doctor` fails an agent profile whose `.env` names a GitHub token (`GH_TOKEN`, `GITHUB_TOKEN` and the like; by
+  name, never the value). SECURITY.md states the CI rule: no `pull_request_target`, and no secret in a job a pull request
+  can change.
 
 ### Upgrading
 
