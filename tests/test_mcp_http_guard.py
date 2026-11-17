@@ -53,7 +53,7 @@ def test_host_header_check(h, ok):
 
 def test_a_foreign_host_header_gets_403_and_a_local_one_does_not():
     app = ms.mcp.http_app(middleware=ms._http_middleware(), host_origin_protection=False)
-    c = TestClient(app, base_url="http://127.0.0.1:8089")
+    c = TestClient(app, base_url="http://127.0.0.1:8089", raise_server_exceptions=False)
     assert c.post("/mcp", headers={"host": "evil.com"}, json={}).status_code == 403
     assert c.post("/mcp", headers={"host": "evil.com:8089"}, json={}).status_code == 403
     assert c.post("/mcp", headers={"host": "127.0.0.1:8089"}, json={}).status_code != 403
