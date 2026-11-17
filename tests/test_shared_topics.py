@@ -966,3 +966,61 @@ def test_a_plain_slug_finds_the_one_carried_topic_and_names_several(monkeypatch)
     assert M._carried_names("x", "playtest") == ["playtest@a:1", "playtest@b:2"]
     monkeypatch.setattr(M, "_bearer_request", listing("playtest"))      # a local one is not a carried one
     assert M._carried_names("x", "playtest") == []
+
+
+def test_a_carrier_pulls_soon_after_start_not_a_whole_interval_later(monkeypatch):
+    """Second playtest: a carried topic reached the carrier about 7 minutes after start."""
+    import asyncio
+
+    calls: list[float] = []
+    sleeps: list[float] = []
+
+    async def fake_sync():
+        calls.append(len(sleeps))
+        if len(calls) >= 3:
+            raise asyncio.CancelledError
+
+    async def fake_sleep(n):
+        sleeps.append(n)
+
+    monkeypatch.setattr(rs, "_sync_all_federated_peers", fake_sync)
+    monkeypatch.setattr(rs.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(rs, "_FEDERATION_SYNC_INTERVAL_SECONDS", 300.0)
+    monkeypatch.setenv("EMPORIA_CARRY_TOPICS", "playtest@h-relay.test")
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(rs._federation_sync_loop())
+    assert sleeps[:3] == [3.0, 27.0, 300.0]
+    sleeps.clear(); calls.clear()
+    monkeypatch.delenv("EMPORIA_CARRY_TOPICS")           # nothing carried: the interval, as before
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(rs._federation_sync_loop())
+    assert sleeps[:2] == [300.0, 300.0]
+
+
+def test_the_relay_makes_the_chronicle_and_shared_topics_at_start(monkeypatch):
+    """Second playtest: a reveal on a fresh relay was 409 `no chronicle topic`, and a shared slug named in the
+    settings made nothing. (A scratch database: the suite's own must not gain a chronicle topic.)"""
+    import sqlite3
+
+    from emporia import house_topics
+    from emporia.schema_sql import SCHEMA_SQL
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(SCHEMA_SQL)
+    monkeypatch.setenv("EMPORIA_SHARED_TOPICS", "playtest, Bad Slug")
+    monkeypatch.setenv("EMPORIA_AGENT_ID", "the_op")
+    monkeypatch.delenv("EMPORIA_OPERATOR_STABLE_ID", raising=False)
+    assert [w[0] for w in house_topics.wanted()] == ["playtest"]
+    monkeypatch.setattr("emporia.relay_modules.on", lambda name, *a, **k: name == "chronicle")
+    assert [w[0] for w in house_topics.wanted()] == ["chronicle", "playtest"]
+    assert house_topics.ensure(conn) == ["chronicle", "playtest"]
+    assert house_topics.ensure(conn) == []                             # idempotent
+    row = conn.execute("SELECT visibility, gate_type, entry_fee_cents, hosted_by, creator_id FROM agora_topics "
+                       "WHERE slug = 'chronicle'").fetchone()
+    assert tuple(row) == ("public", "open", 0, "", "@relay")           # no operator key pinned: no agent owns it
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", "ab" * 16)
+    conn.execute("DELETE FROM agora_topics WHERE slug = 'chronicle'")
+    house_topics.ensure(conn)
+    assert conn.execute("SELECT creator_id FROM agora_topics WHERE slug = 'chronicle'").fetchone()[0] == "the_op"
+    conn.execute("UPDATE agora_topics SET is_deleted = 1 WHERE slug = 'playtest'")
+    assert house_topics.ensure(conn) == []                             # a removed topic stays removed

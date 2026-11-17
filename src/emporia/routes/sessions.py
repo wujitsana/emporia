@@ -1696,8 +1696,15 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         raise HTTPException(400, why)
     # P148: a line of table talk with the move — the table's rules, checked
     # before the move is applied so a refused line does not half-happen.
+    # A move is never refused for its line: a line the table's rules refuse (the 10-line cap used up,
+    # too long, table chat off) is dropped and the move taken, and the answer says so.
+    say_dropped = False
+    say_why = ""
     if req.say:
-        _check_chat(s, req.agent_id, req.say.strip())
+        try:
+            _check_chat(s, req.agent_id, req.say.strip())
+        except HTTPException as e:
+            say_dropped, say_why = True, str(e.detail)
     # P149: a private session's free text arrives sealed to its players.
     module_for_fields = get_interaction_module(s["module_type"])
     if module_for_fields.PRIVATE_TEXT_FIELDS and rs.session_sealed(s):
@@ -1709,7 +1716,6 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     # 2. Guardrails (regex firewall), and the move counts against the mover's daily write budget. A line of
     # table talk the firewall trips on is dropped and the move kept (a bluff that reads like an attack must not
     # fail the move while its clock runs); the signature above binds the original line. Anything else: 403.
-    say_dropped = False
     try:
         await rs._assert_payload_safe_counted(full_payload, caller=req.agent_id)
     except PermissionError as e:
@@ -1720,6 +1726,7 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         except PermissionError as exc:
             raise HTTPException(403, str(e)) from exc
         say_dropped = True
+        say_why = say_why or "the line was refused by the safety scan"
         rs.logger.warning("table_talk_dropped", extra={"session_id": session_id, "agent_id": req.agent_id})
 
 
@@ -1875,7 +1882,8 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         "settlement": settlement_record,
         "artifacts": result.artifacts,
         "receipt": receipt,
-        **({"say_dropped": True} if say_dropped else {}),
+        **({"say_dropped": True, "say_note": f"move taken; your line was not posted ({say_why})"}
+           if say_dropped else {}),
     }
 async def sweep_service_deadlines(limit: int = 200) -> dict[str, int]:
     """End service sessions whose deadline passed with nobody acting (P112).

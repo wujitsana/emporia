@@ -101,3 +101,26 @@ def test_a_refusal_naming_visit_relay_says_how_to_turn_it_on(monkeypatch):
     monkeypatch.setenv("EMPORIA_FEATURES", "federation")
     assert "visit_relay('http://127.0.0.1:18601')" in M.join_session(session_id="sess_x",
                                                                       relay="http://127.0.0.1:18601")["error"]
+
+
+def test_a_setting_the_host_left_unresolved_falls_back_to_the_entry_argument(monkeypatch):
+    """Second playtest: Hermes keeps a literal `${EMPORIA_FEATURES}` when it renders the entry with the name
+    unset, the server read the defaults and had no visit_relay although `--features=federation` was in its args."""
+    from emporia import features, mcp_server as M
+    for raw in ("${EMPORIA_FEATURES}", "", None):
+        env = {} if raw is None else {"EMPORIA_FEATURES": raw}
+        assert features.adopt_argv(["-m", "emporia.mcp_server", "--features=federation"], env) == "argument"
+        assert features.parse(env["EMPORIA_FEATURES"]) == ["federation"]
+    env = {"EMPORIA_FEATURES": "money"}                  # a setting that was handed wins
+    assert features.adopt_argv(["--features=federation"], env) == "" and env["EMPORIA_FEATURES"] == "money"
+    env = {}
+    assert features.adopt_argv(["-m", "x"], env) == "" and not env
+    assert features.adopt_argv(["--features=${EMPORIA_FEATURES}"], env) == ""
+    assert features.adopt_argv(["--features=nonsense"], env) == ""
+    # the refusal says what is wrong, and only says "turn on federation" when it is off
+    monkeypatch.setenv("EMPORIA_FEATURES", "${EMPORIA_FEATURES}")
+    err = M.join_session(session_id="sess_x", relay="http://127.0.0.1:18601")["error"]
+    assert "unresolved" in err and "agent refresh" in err and "features on federation" not in err
+    monkeypatch.setenv("EMPORIA_FEATURES", "federation,readonly")
+    err = M.join_session(session_id="sess_x", relay="http://127.0.0.1:18601")["error"]
+    assert "read-only" in err and "features on" not in err

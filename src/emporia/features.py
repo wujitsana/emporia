@@ -243,6 +243,37 @@ def features_from_argv(argv: Iterable[str]) -> str | None:
     return None
 
 
+def unresolved(value: str) -> bool:
+    """Whether a setting's value is a placeholder its host did not fill in (`${EMPORIA_FEATURES}`): Hermes
+    keeps the literal reference when the name is unset or empty where it renders the entry, so the server
+    would otherwise read a list of one unknown word, and fall back to the defaults."""
+    v = (value or "").strip()
+    return v.startswith("${") and v.endswith("}")
+
+
+def adopt_argv(argv: Iterable[str], environ: dict[str, str] | None = None) -> str:
+    """Make the MCP entry's `--features=` argument the setting when the server was not handed one: the
+    setting (`EMPORIA_FEATURES`) is missing, empty or an unresolved `${...}` reference. The entry's argument is
+    written from the same setting (`emporia features`, `agent refresh`), and without this a host that fails
+    to render the reference gave the agent the default tools only: no `visit_relay`, whatever the profile
+    said (second playtest). A setting that was handed always wins. Returns "argument" when adopted, else "".
+    `environ` defaults to `os.environ`; only the MCP server calls this, never a CLI whose own `--features`
+    means something else."""
+    env = os.environ if environ is None else environ
+    raw = (env.get(SETTING) or "").strip()
+    if raw and not unresolved(raw):
+        return ""
+    given = features_from_argv(argv)
+    if given is None or unresolved(given):
+        return ""
+    try:
+        parse(given)
+    except FeatureError:
+        return ""
+    env[SETTING] = given
+    return "argument"
+
+
 def argv_matches(argv: Iterable[str], enabled: Iterable[str]) -> bool:
     """Whether the `--features=` argument (if any) names the features that are really on."""
     given = features_from_argv(argv)
