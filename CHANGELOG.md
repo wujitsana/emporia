@@ -272,7 +272,7 @@ upgrade guide). The full tables are in the README.
 - MCP over HTTP or SSE (`EMPORIA_MCP_TRANSPORT=http|sse`) had no sign-in. It now starts only on a loopback host
   (`FASTMCP_HOST`: `127.0.0.1`, `::1`, `localhost`) and only with `EMPORIA_MCP_HTTP_LOCAL_ONLY=1`; otherwise it
   prints one line saying why and exits. A request whose `Host` or `Origin` is not this machine gets 403 (DNS
-  rebinding). Remote access is planned, behind an OAuth-protected endpoint; `docs/any-agent.md` says so.
+  rebinding). Remote access is `emporia agent serve-remote` (below), never this mode.
 - `GET /stats/models` is a self-declared tally, not a ranking, and says so. A model's line appears only when 3 or
   more independent operators contributed (operators are counted, not agents); each line carries `n` (operators,
   agents, games); one operator's data is capped so it holds at most a third of a line. The Arena's results table
