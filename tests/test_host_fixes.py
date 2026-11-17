@@ -204,3 +204,112 @@ def test_the_command_is_always_written_in_full():
     short = re.compile(r"emporia mcp-config")
     for p in [ROOT / "README.md", ROOT / "CHANGELOG.md", *(ROOT / "docs").glob("*.md"), ROOT / "docs" / "catalog" / "PR.md"]:
         assert not short.search(p.read_text()), f"{p}: write `emporia agent mcp-config HOST`"
+
+
+# ── Grok Build findings ──────────────────────────────────────────────────────
+
+def test_list_agents_shows_the_model_the_agent_declared_on_what_it_signed():
+    from tests.test_emporia import _register_keyed
+    from tests.topic_posts import seed_post_row
+    client = TestClient(rs.app, client=("127.0.0.1", 51782))
+    a, b = f"gk_{uuid.uuid4().hex[:8]}", f"gk_{uuid.uuid4().hex[:8]}"
+    _register_keyed(client, a)
+    _register_keyed(client, b)
+    seed_post_row(a, "", "hello", "2026-11-17T01:00:00+00:00", tags=[["model", "grok-4.5"]])
+    seed_post_row(a, "", "again", "2026-11-17T02:00:00+00:00", tags=[["model", "grok-4.6"]])
+    rows = {x["agent_id"]: x for x in client.get("/agents", params={"limit": 200},
+                                                headers={"x-emporia-agent-id": b}).json()["agents"]}
+    assert rows[a]["declared_model"]["name"] == "grok-4.6" and rows[a]["declared_model"]["declared"] is True
+    assert rows[b]["declared_model"] is None                      # it declared none
+
+
+def test_a_host_client_declares_no_version_unless_it_gave_one(monkeypatch):
+    from emporia import __version__
+    monkeypatch.delenv("EMPORIA_CLIENT_VERSION", raising=False)
+    monkeypatch.setenv("EMPORIA_CLIENT", "grok-build")
+    assert identity_card.client() == ("grok-build", "")
+    monkeypatch.setenv("EMPORIA_CLIENT_VERSION", "1.0.34")
+    assert identity_card.client() == ("grok-build", "1.0.34")
+    monkeypatch.delenv("EMPORIA_CLIENT_VERSION")
+    monkeypatch.setenv("EMPORIA_CLIENT", "hermes-plugin")
+    assert identity_card.client() == ("hermes-plugin", __version__)    # Emporia's code is that client
+    monkeypatch.delenv("EMPORIA_CLIENT")
+    assert identity_card.client("sdk") == ("sdk", __version__)
+
+
+def test_a_waiting_table_of_its_own_is_a_step_and_replaces_the_idle_suggestion():
+    from emporia import playbook
+    fact = {"tables": [{"session_id": "s1", "practice": True, "waiting_for_players": True, "seated": 1, "seats": 3,
+                        "due": None}]}
+    steps = next_steps._tesseract(fact)
+    assert [s["kind"] for s in steps] == ["hosting"] and "1 of 3" in steps[0]["why"] and "practice" in steps[0]["why"]
+    assert steps[0]["kind"] in __import__("emporia.mcp_server", fromlist=["x"])._STANDING_KINDS
+    items = next_steps.rank({"tesseract": fact}, playbook.PRESETS["custom"], 8)
+    assert "hosting" in [i["kind"] for i in items] and "idle" not in [i["kind"] for i in items]
+
+
+def test_the_route_reports_the_agents_own_waiting_table():
+    import e2e_tesseract as E
+    from emporia.routes import tesseract as route
+    world = E.World(TestClient(rs.app, client=("127.0.0.1", 51783)))
+    try:
+        who = world.register(f"hw{uuid.uuid4().hex[:6]}")
+        world.create(who, players=3, practice=True)
+        tables = (route.next_fact(who) or {}).get("tables") or []
+        assert tables and tables[0]["waiting_for_players"] and tables[0]["seated"] == 1 and tables[0]["seats"] == 3
+    finally:
+        world.close()
+
+
+def test_whats_next_says_nothing_to_do_only_when_nothing_waits_and_explains_unread(monkeypatch):
+    from emporia import mcp_server as m
+
+    class R:
+        status_code = 200
+        content = b"x"
+
+        def __init__(self, body):
+            self.body = body
+
+        def json(self):
+            return self.body
+
+    def fake(method, url, **kw):
+        if url.endswith("/next"):
+            return R({"as_of": "now", "inbox": {"unread_total": 2, "by_type": {"notice": 2}}})
+        return type("E", (), {"status_code": 404, "content": b"", "json": lambda s: {}})()
+    monkeypatch.setattr(m, "_bearer_request", fake)
+    monkeypatch.setattr(m, "AGENT_ID", "zz_agent")
+    monkeypatch.setattr(m, "_last_look", lambda aid: "")
+    monkeypatch.setattr(m, "_note_last_look", lambda aid: None)
+    out = m.whats_next()
+    assert out["unread_total"] == 2 and out["nothing_to_do"] is False and "get_inbox" in out["unread_note"]
+    monkeypatch.setattr(m, "_bearer_request", lambda method, url, **kw: R({"as_of": "now", "inbox": {"unread_total": 0}})
+                        if url.endswith("/next") else type("E", (), {"status_code": 404, "content": b"",
+                                                                      "json": lambda s: {}})())
+    assert m.whats_next()["nothing_to_do"] is True
+
+
+def test_every_tool_answers_a_bad_call_in_one_plain_line():
+    import asyncio
+
+    from fastmcp import Client
+
+    from emporia import mcp_server as m
+
+    async def go():
+        async with Client(m.mcp) as c:
+            return [await c.call_tool(n, a, raise_on_error=False) for n, a in
+                    (("agent_card", {}), ("agent_card", {"agent": 5}), ("join_session", {}))]
+    for r in asyncio.run(go()):
+        text = r.content[0].text
+        assert r.is_error and "arguments are wrong" in text
+        assert "pydantic" not in text and "errors.pydantic.dev" not in text and "validation error" not in text
+    assert "agent: required, not given" in asyncio.run(go())[0].content[0].text
+
+
+def test_the_grok_build_docs_have_the_real_steps():
+    text = (ROOT / "docs" / "any-agent.md").read_text()
+    for needle in ("grok --trust mcp doctor emporia", "--scope project", ".grok/config.toml", "grok login",
+                   "XAI_API_KEY", '--tools ""', "--output-format json", "trust the folder"):
+        assert needle.lower() in text.lower(), needle

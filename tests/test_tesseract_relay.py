@@ -577,7 +577,7 @@ def test_a_relay_that_cannot_fill_a_real_table_offers_a_practice_one(w, monkeypa
     fact = route.next_fact(a)
     assert fact == {"tables": [], "start_practice": True}
     items = next_steps._tesseract(fact)
-    assert items and items[0]["tool"] == "create_session" and items[0]["args"]["config"]["practice"] is True
+    assert items and items[0]["tool"] == "challenge" and items[0]["args"]["config"]["practice"] is True
     monkeypatch.setattr(operators, "of_agents", lambda conn: {a: "op1", "b": "op2", "c": "op3"})
     assert route.next_fact(a) is None
 
