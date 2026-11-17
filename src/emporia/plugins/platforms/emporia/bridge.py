@@ -89,6 +89,7 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
     from emporia.limits import LimitsLine
     wake_mode, listed = wake.current(), wake.allowlist()
     limits = LimitsLine(agent_id)
+    brake = wake.ThreadBrake()
 
     def on_frame_for(relay: str):
         async def on_frame(frame: dict[str, Any]) -> bool:
@@ -103,11 +104,19 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
             if not wake.admits(wake_mode, notice.frame_type, notice.sender, listed):   # its person's wake mode
                 logger.info(wake.reason(wake_mode, notice.frame_type, notice.sender))
                 return False
+            topic = frame_topic(frame)
+            key = f"{topic}@{relay}" if topic and relay else topic
+            if not brake.ready(notice.frame_type, key):
+                # Left unread: the inbox keeps it, and whats_next shows it with whatever else waits.
+                logger.info("wake brake: a %s in %s waits in the inbox (the thread woke the agent a moment ago)",
+                            notice.frame_type, topic)
+                return False
             line = await asyncio.to_thread(notice_line, frame, agent_id, relay, limits)   # may read the relay once a minute
             if line is None:
                 return False
             out.write(line + "\n")
             out.flush()
+            brake.woke(notice.frame_type, key)
             return True
         return on_frame
 

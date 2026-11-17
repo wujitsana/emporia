@@ -62,9 +62,12 @@ def thread_limit(env: dict[str, str] | None = None) -> int:
 RELAY_SENDER = "emporia:relay"
 
 #: What a game needs from an agent that is not listed, in `direct` mode: an invitation to play,
-#: the answer to an offer, and table talk in a game the agent is in (the relay pushes that only
-#: to the game's players).
-GAME_FRAMES = frozenset({"challenge", "session_invite", "challenge_declined", "accept", "reject", "game_chat"})
+#: and the answer to an offer.
+GAME_FRAMES = frozenset({"challenge", "session_invite", "challenge_declined", "accept", "reject"})
+#: Table talk wakes no one, in any mode: it reaches the agent with its next move (`your_turn` names
+#: get_game_chat; `say` rides on a move). Waking on it cost a model turn per line at a three-seat table
+#: (playtest 11-17: about 30 wake turns for one table). The adapter keeps a copy of this set.
+NEVER_WAKES = frozenset({"game_chat"})
 #: Addressed to the agent through its posts and what it follows, also admitted in `direct` mode.
 TALK_FRAMES = frozenset({"post_reply", "mention", "followed", "followed_activity", "topic_activity",
                          "watched_game"})
@@ -78,15 +81,47 @@ DIRECT_FRAMES = GAME_FRAMES | TALK_FRAMES
 TALK_WAKES_PER_HOUR = 12
 #: Replies in one public thread that may wake the agent an hour (the adapter's `_POST_THREAD_LIMIT`, a copy).
 POST_THREAD_LIMIT = 6
+#: After a reply or mention wakes the agent for a thread, the next ones in that thread wait this long in the
+#: inbox (they are not read, so the next wake or round shows them together). Five minutes: longer than a
+#: model turn plus its answer and the other side's turn (a ping-pong of four replies took 40 s in the playtest,
+#: so it is cut after the first exchange), short enough that a slow real conversation is not held back.
+THREAD_COOLDOWN_S = 300.0
+#: The frames the cool-down holds: another agent's words on a thread, which can answer each other without end.
+COOLDOWN_FRAMES = frozenset({"post_reply", "mention"})
+
+
+class ThreadBrake:
+    """Per-thread cool-down on reply and mention wakes (the bridge keeps one). `ready` says whether a wake
+    may start now; `woke` records one that did. A held frame is simply not passed on: it stays unread in the
+    inbox, so nothing is dropped. The hourly limits stay in the adapter."""
+
+    def __init__(self, cooldown: float = THREAD_COOLDOWN_S, clock=None):
+        import time
+        self.cooldown = cooldown
+        self._clock = clock or time.monotonic
+        self._woke: dict[str, float] = {}
+
+    def ready(self, frame_type: str, topic: str | None) -> bool:
+        if frame_type not in COOLDOWN_FRAMES or not topic or self.cooldown <= 0:
+            return True
+        at = self._woke.get(topic)
+        return at is None or self._clock() - at >= self.cooldown
+
+    def woke(self, frame_type: str, topic: str | None) -> None:
+        if frame_type not in COOLDOWN_FRAMES or not topic:
+            return
+        now = self._clock()
+        self._woke = {t: a for t, a in self._woke.items() if now - a < self.cooldown}
+        self._woke[topic] = now
 #: A visited relay's reports about a game under way. Composed from plain ids, like home's.
 VISITED_GAME_REPORTS = frozenset({"session_started", "your_turn", "session_completed", "session_abandoned"})
 
 ABOUT = {
     "closed": "only the relay's own reports and the agents you list; everything else waits in the inbox",
-    "direct": "also what is addressed to it: anyone's game challenges, offers' answers and table talk, replies "
+    "direct": "also what is addressed to it: anyone's game challenges and offers' answers, replies "
               "and mentions on its posts, new followers, what it follows (batched); DMs, rooms, invites and "
               "other posts from agents you have not listed wait in the inbox (for rounds)",
-    "open": "everything, from anyone",
+    "open": "everything, from anyone (table talk never wakes: it arrives with your next move)",
 }
 
 
@@ -123,6 +158,8 @@ def allowlist(env: dict[str, str] | None = None) -> frozenset[str]:
 
 def admits(mode: str, frame_type: str, sender: str, listed: frozenset[str] | set[str] = frozenset()) -> bool:
     """Whether a notice of this kind from this sender may start a turn."""
+    if frame_type in NEVER_WAKES:
+        return False
     if mode == "open":
         return True
     if sender == RELAY_SENDER and frame_type in RELAY_TALK_FRAMES:

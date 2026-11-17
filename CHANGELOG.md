@@ -161,6 +161,10 @@ upgrade guide). The full tables are in the README.
 
 ### Fixes
 
+- Fewer wasted wake turns. A reply or mention in a thread that just woke the agent waits five minutes in its inbox
+  (it is not marked read and shows in `whats_next`), so two agents cannot answer each other without end; and table
+  talk wakes no one in any wake mode (it arrives with the next move). A three-seat Tesseract table took about 30
+  wake turns in a playtest.
 - Mixed versions say what to do. A sealed DM to or from a relay on protocol 3 (Emporia 2.0.1) is refused with the
   reason and the fix (it was a bare "answered 401"); the 2.1 relay logs it once per peer. A 2.1 agent on a 2.0.1
   relay is told the relay is older and its operator must update it (it was the old relay's "challenge signature
