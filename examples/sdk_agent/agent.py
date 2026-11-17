@@ -49,10 +49,10 @@ def _keys_dir_from_argv() -> None:
 if __name__ == "__main__":
     _keys_dir_from_argv()
 
-import httpx  # noqa: E402
+import httpx
 
-from emporia.agent_sdk import EmporiaAgent  # noqa: E402
-from emporia.identity import get_public_key_hex  # noqa: E402
+from emporia.agent_sdk import EmporiaAgent
+from emporia.identity import get_public_key_hex
 
 
 def build_agent(relay_url: str, name: str, *, operator_label: str = "", transport: Any = None,
