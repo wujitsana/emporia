@@ -87,6 +87,13 @@ class Rig:
         monkeypatch.setenv("EMPORIA_AGENT_ID", AGENT)
         monkeypatch.setenv("EMPORIA_FEATURES", "readonly" if read_only else "federation,money")
         monkeypatch.setenv("EMPORIA_DM_AGENT_ACCESS", "full")          # build() sets person; monkeypatch restores
+        # what other tests left in this process (login tokens a server registered, a label) must not look like a
+        # secret in these tests' posts: the outbound block has its own test, which sets what it needs
+        from emporia import autonomy, identity_card, secret_guard
+        monkeypatch.setattr(autonomy, "TOKEN_SOURCES", [])
+        monkeypatch.setattr(autonomy, "live_commit_secrets", lambda agent_id: [])
+        monkeypatch.setattr(identity_card, "operator_label", lambda: "")
+        monkeypatch.setattr(secret_guard, "own_secrets", lambda agent_id: [])
         self.mcp = mcp or stub_mcp()
         self.app, self.auth, self.info = server.build(url, tuple(scopes), AGENT, folder=self.folder, clock=self.clock,
                                                       mcp=self.mcp)

@@ -55,7 +55,7 @@ def find_agent(name: str) -> tuple[Path, dict[str, str], str]:
         for profile, _entry in cli._agent_profiles(cli.profiles_root()):
             if profile.name == name:
                 env = cli._agent_child_env(profile, {})
-                keys = env.get("EMPORIA_KEYS_DIR") or str(Path(env.get("HOME", "~")) / ".hermes" / "keys")
+                keys = env.get("EMPORIA_KEYS_DIR") or str(Path.home() / ".hermes" / "keys")
                 return Path(keys).expanduser(), {k: v for k, v in env.items() if k.startswith(("EMPORIA_", "OP_", "BW_",
                        "VAULT_", "DOPPLER_", "INFISICAL_", "AWS_", "AZURE_"))}, "Hermes profile"
     except Exception:  # noqa: BLE001 - not a Hermes machine: fall through to the plain message
@@ -118,8 +118,8 @@ def serve_remote(args: argparse.Namespace) -> int:
             print(f"  - {why}", file=sys.stderr)
         print("\nExample: emporia agent serve-remote NAME --public-url https://emporia-me.example.net", file=sys.stderr)
         return 2
-    child = {"PATH": os.defpath if not os.environ.get("PATH") else os.environ["PATH"],
-             "HOME": str(Path.home()), **env, "EMPORIA_NO_DOTENV": "1", "EMPORIA_KEYS_DIR": str(key_dir)}
+    child = {"PATH": os.defpath, "HOME": str(Path.home()), **env, "EMPORIA_NO_DOTENV": "1",
+             "EMPORIA_KEYS_DIR": str(key_dir)}
     import emporia
     root = str(Path(emporia.__file__).resolve().parent.parent)     # the code that runs this command runs the server
     cmd = [sys.executable, "-c", "import sys; sys.path.insert(0, sys.argv[1]); "
@@ -131,7 +131,7 @@ def serve_remote(args: argparse.Namespace) -> int:
     os.chmod(folder, 0o700)
     from emporia.remote.oauth import parse_public_url
     origin, _ = parse_public_url(public_url)
-    ceiling, _note = surface.ceiling_for(S.parse_scopes(scopes), features.read_only(env.get("EMPORIA_FEATURES", "")))
+    ceiling, _note = surface.ceiling_for(S.parse_scopes(scopes), features.read_only(env.get(features.SETTING, "")))
     info = folder / SERVER_FILE
     fd = os.open(info, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:

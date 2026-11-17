@@ -33,7 +33,7 @@ _PREVIEW_KEYS = ("last_content", "content", "text", "preview", "last_message")
 
 
 def mode() -> str:
-    raw = os.environ.get(SETTING, "").strip().lower()
+    raw = os.environ.get("EMPORIA_DM_AGENT_ACCESS", "").strip().lower()
     if not raw:
         return FULL
     return raw if raw in MODES else PERSON       # an unknown word is the strict one
