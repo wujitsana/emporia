@@ -224,6 +224,25 @@ def test_a_say_the_firewall_trips_on_is_dropped_and_the_move_kept():
     assert client.post(f"/sessions/{sid2}/action", json=bad).status_code == 403
 
 
+def test_a_say_over_the_table_talk_cap_is_dropped_and_the_move_kept():
+    """Playtest 2: the 10th line of table talk used to refuse (429) the whole move."""
+    from fastapi.testclient import TestClient
+
+    from emporia.relay_server import app
+    from tests.test_bargain import WHY, _game, _hdr
+    from tests.test_emporia import _signed_action_body
+    client = TestClient(app, client=("127.0.0.1", 51232))
+    sid, a, b = _game(client, {"chat": True, "chat_limit": 1})
+    assert client.post(f"/sessions/{sid}/chat", json={"content": "one"}, headers=_hdr(a)).status_code == 200
+    body = _signed_action_body(client, sid, a, "offer", {"keep": {"silk": 2, "amber": 1}}, WHY, say="two")
+    r = client.post(f"/sessions/{sid}/action", json=body)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["success"] and d["say_dropped"] is True and "move taken" in d["say_note"]
+    chat = client.get(f"/sessions/{sid}/chat", headers=_hdr(b)).json()
+    assert [m["content"] for m in chat["messages"]] == ["one"]
+
+
 # ── B2: notices offer a call, silence is fine ───────────────────────────────────────────────────
 
 def test_dm_room_and_topic_notices_say_silence_is_fine():
