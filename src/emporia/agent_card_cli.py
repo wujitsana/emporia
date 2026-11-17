@@ -226,6 +226,15 @@ def x_link(name: str, handle: str, post: str) -> int:
 
 
 
+def _hash_from_timeout(e: subprocess.TimeoutExpired) -> str:
+    """The transaction hash the send child wrote to stderr before it broadcast, from what the timeout captured ('')."""
+    from emporia import chain_send
+    raw = e.stderr if e.stderr is not None else b""
+    text = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
+    found = re.findall(re.escape(chain_send.HASH_MARK) + r"(0x[0-9a-f]{64})\b", text)
+    return found[-1] if found else ""
+
+
 def _chain_run(t: _Target, fn: str, *args: Any, mod: str = "chain_link", **kwargs: Any) -> dict[str, Any]:
     """`chain_link.<fn>(*args, **kwargs)` (or `<mod>.<fn>`) as the agent; the answer, or {"error": ...}."""
     argtext = ", ".join([repr(a) for a in args] + [f"{k}={v!r}" for k, v in kwargs.items()])
@@ -236,9 +245,12 @@ def _chain_run(t: _Target, fn: str, *args: Any, mod: str = "chain_link", **kwarg
                   "    print(json.dumps({'success': True, **out}, default=str))\n"
                   "except c.LinkError as e:\n"
                   "    print(json.dumps({'success': False, 'error': str(e)}))\n")
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
         sent = fn.startswith("send")
-        return {"success": False, "timeout": True,
+        extra: dict[str, Any] = {}
+        if sent and (h := _hash_from_timeout(e)):
+            extra["tx_hash"] = h
+        return {"success": False, "timeout": True, **extra,
                 "error": ("the helper timed out. " + ("The transaction may have been sent: look at the agent wallet's address "
                           "on the block explorer before running anything again (a send you repeat can mint twice)."
                           if sent else "Nothing was changed; try again."))}
@@ -558,12 +570,14 @@ def _register_from_agent_wallet(t: _Target, name: str, chain: str, yes: bool, ma
         print("  " + line)
     if not _ask_to_send(f"Send it from {out['wallet']} on {out['chain_label']}? [y/N]"):
         return 0
-    sent = _chain_run(t, "send_register", chain, max_gas, out["calldata_digest"], out["quote"]["max_cost_wei"],
+    sent = _chain_run(t, "send_register", chain, max_gas, out["calldata_digest"], out["quote"],
                       mod="chain_register", no_image=no_image)
     if not sent.get("success"):
         print(f"agent register-8004: {sent.get('error')}")
         if sent.get("timeout"):
             print(f"  The wallet is {out['wallet']}.")
+            if sent.get("tx_hash"):
+                print(f"  The transaction, if it was sent, is {sent['tx_hash']}: read it with --tx {sent['tx_hash']}.")
         return 1
     print(f"  Sent transaction {sent['tx_hash']} from {sent['wallet']}.")
     return _register_after(t, name, chain, sent["tx_hash"], yes, waiting=True, wait=wait)
@@ -824,11 +838,13 @@ def _set_wallet_from_agent_wallet(t: _Target, name: str, chain: str, agent_id: s
         print("    " + line)
     if not _ask_to_send(f"Send it from {out['wallet']} on {out['chain_label']}? [y/N]"):
         return 0
-    sent = _chain_run(t, "send", chain, agent_id, max_gas, out["owner"], out["quote"]["max_cost_wei"], mod="chain_wallet")
+    sent = _chain_run(t, "send", chain, agent_id, max_gas, out["owner"], out["quote"], mod="chain_wallet")
     if not sent.get("success"):
         print(f"agent set-8004-wallet: {sent.get('error')}")
         if sent.get("timeout"):
             print(f"  The wallet is {out['wallet']}.")
+            if sent.get("tx_hash"):
+                print(f"  The transaction, if it was sent, is {sent['tx_hash']}: read it with --tx {sent['tx_hash']}.")
         return 1
     print(f"  Sent transaction {sent['tx_hash']} from {sent['wallet']}.")
     return _wallet_after(t, name, chain, agent_id, sent["tx_hash"], waiting=True, wait=wait)

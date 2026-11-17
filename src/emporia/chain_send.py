@@ -14,6 +14,7 @@ refuse an agent's terminal, a live unattended turn, and every chain but Base Sep
 """
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 from emporia import networks
@@ -22,6 +23,7 @@ from emporia.chain_read import ChainRevert, ChainRpcError, ChainUnknown
 
 SEND_CHAINS = ("eip155:84532",)          # the only chain an agent wallet sends on: test ETH only
 GAS_MARGIN_NUM, GAS_MARGIN_DEN = 5, 4    # the limit is the estimate plus a quarter, never above --max-gas
+HASH_MARK = "emporia-tx-hash: "         # the line the send writes to stderr before it broadcasts (the parent reads it on a timeout)
 MAX_FEE_CEILING = 50 * 10**9             # wei per gas: a node that quotes more than this is not believed
 
 
@@ -86,6 +88,31 @@ def quote(reader: Any, sender: str, to: str, data: bytes, max_gas: Any, *, chain
             "balance_wei": balance, "max_cost_wei": cost, "nonce": nonce}
 
 
+def pin_to_confirmed(fresh: dict[str, Any], confirmed: Any) -> dict[str, Any]:
+    """The quote to sign: the gas limit and fees the person confirmed, checked against a fresh quote of the same call.
+    A rise in the fee is not a reason to refuse by itself: the confirmed max fee already has room (twice the base fee).
+    It refuses only when it could not be included or would not fit: the fresh base fee is above the confirmed max fee,
+    the call now needs more gas than the confirmed limit, or the wallet cannot cover the confirmed worst case."""
+    try:
+        limit, fee = int(confirmed["gas_limit"]), int(confirmed["max_fee_per_gas"])
+        priority, cost = int(confirmed["priority_fee_per_gas"]), int(confirmed["max_cost_wei"])
+    except (TypeError, ValueError, KeyError):
+        raise LinkError("the confirmed cost is missing: nothing sent; run the command again") from None
+    if limit <= 0 or fee <= 0 or priority < 0 or limit * fee != cost or fee > MAX_FEE_CEILING:
+        raise LinkError("the confirmed cost does not add up: nothing sent; run the command again")
+    if fresh["base_fee"] > fee:
+        raise LinkError(f"the base fee is now {gwei(fresh['base_fee'])}, above the max fee {gwei(fee)} you confirmed, so "
+                        "the transaction would not be included: nothing sent; run the command again")
+    if fresh["gas_estimate"] > limit:
+        raise LinkError(f"the call now needs about {fresh['gas_estimate']:,} gas, over the limit {limit:,} you confirmed: "
+                        "nothing sent; run the command again")
+    if fresh["balance_wei"] < cost:
+        raise LinkError(f"the wallet holds {eth(fresh['balance_wei'])}, less than the {eth(cost)} worst case you "
+                        "confirmed: nothing sent")
+    return {**fresh, "gas_limit": limit, "max_fee_per_gas": fee, "priority_fee_per_gas": min(priority, fee),
+            "max_cost_wei": cost}
+
+
 def describe(q: dict[str, Any]) -> list[str]:
     """The lines the person reads before the y/N."""
     return [f"from:        {q['sender']}  (the agent's own wallet; holds {eth(q['balance_wei'])})",
@@ -110,6 +137,7 @@ def send(reader: Any, signer: Any, q: dict[str, Any], data: bytes) -> str:
     except Exception as e:  # noqa: BLE001 — never put the signer's own words in front of anyone: they may echo a key
         raise LinkError(f"the wallet could not sign ({type(e).__name__}); nothing sent") from None
     local = "0x" + keccak(raw).hex()
+    print(f"{HASH_MARK}{local}", file=sys.stderr, flush=True)   # before the broadcast: a hang after it still leaves the hash
     try:
         got = reader.send_raw(raw)
     except (ChainRevert, ChainRpcError) as e:
