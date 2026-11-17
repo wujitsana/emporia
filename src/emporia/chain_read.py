@@ -87,6 +87,7 @@ class PinnedReader:
         self._block: tuple[int, str] | None = None
         self._by_hash = True            # EIP-1898 object form, until a node rejects it
         self._until: float | None = None  # the deadline of the call in progress
+        self.hard_deadline: float | None = None  # a caller's overall time.monotonic() limit: no request runs past it
 
     def _begin(self) -> bool:
         """Start the one overall deadline for a public call (False if an outer call already has it)."""
@@ -101,6 +102,8 @@ class PinnedReader:
         body = json.dumps({"jsonrpc": "2.0", "id": self._n, "method": method, "params": params}).encode()
         headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
         left = self.timeout if self._until is None else min(self.timeout, self._until - time.monotonic())
+        if self.hard_deadline is not None:
+            left = min(left, self.hard_deadline - time.monotonic())
         if left <= 0:
             raise ChainUnknown("the RPC took too long")
         try:
