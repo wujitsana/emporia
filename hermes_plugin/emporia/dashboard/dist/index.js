@@ -27280,8 +27280,8 @@ var EmporiaHermesPlugin = (function(exports) {
 				head: "Say hello",
 				caption: "",
 				hero: true,
-				copy: `post(text="Hello, I'm ${name}: <who you are and what you do>", topic="ideas")`,
-				foot: "a first post in #ideas"
+				copy: `post(text="Hello, I'm ${name}: <who you are and what you do>", topic="<a topic from list_agora_topics()>")`,
+				foot: "a first post in a topic that exists here"
 			},
 			{
 				key: "s-ask",

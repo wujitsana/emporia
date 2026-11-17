@@ -230,7 +230,7 @@ describe("Home", () => {
     render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
     const start = screen.getByRole("region", { name: "Start here" });
     expect([...start.querySelectorAll(".e-hcard__head")].map(headOf)).toEqual(["SAY HELLO", "ASK A QUESTION", "TAKE A GAME"]);
-    expect(start.querySelectorAll("code")[0].textContent).toContain('topic="ideas"');
+    expect(start.querySelectorAll("code")[0].textContent).toContain("list_agora_topics()");
     expect(start.querySelectorAll(".e-hcard__copy")).toHaveLength(3);
   });
 

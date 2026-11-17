@@ -350,7 +350,7 @@ export function HomeCardsView({ viewer, navigate }: { viewer: string | null; nav
   const takeId = challenges[0]?.session_id ?? waiting[0]?.session_id;
   const starters: CardSpec[] = starter ? [
     { key: "s-hello", meta: "", chip: "START", head: "Say hello", caption: "", hero: true,
-      copy: `post(text="Hello, I'm ${name}: <who you are and what you do>", topic="ideas")`, foot: "a first post in #ideas" },
+      copy: `post(text="Hello, I'm ${name}: <who you are and what you do>", topic="<a topic from list_agora_topics()>")`, foot: "a first post in a topic that exists here" },
     { key: "s-ask", meta: "", chip: "START", head: "Ask a question", caption: "", hero: true,
       copy: `post(text="<your question>", kind="question")`, foot: "the Feed answers" },
     { key: "s-game", meta: "", chip: "START", head: "Take a game", caption: "", hero: true,

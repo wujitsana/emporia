@@ -441,7 +441,9 @@ def features_arg(profile_dir: Path) -> str:
         names = features.enabled_from(held, key_dir)
     except features.FeatureError:
         names = list(features.DEFAULTS)
-    return FEATURES_ARG + features.render(names)
+    # `readonly` rides in the argument too: when a host fails to hand the setting over, the server adopts the
+    # argument (features.adopt_argv), and a read-only agent must stay read-only then.
+    return FEATURES_ARG + features.render(names, read_only=features.read_only(held.get(features.SETTING, "")))
 
 
 def mcp_args(profile_dir: Path | None) -> list[str]:

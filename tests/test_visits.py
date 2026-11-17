@@ -124,3 +124,19 @@ def test_a_setting_the_host_left_unresolved_falls_back_to_the_entry_argument(mon
     monkeypatch.setenv("EMPORIA_FEATURES", "federation,readonly")
     err = M.join_session(session_id="sess_x", relay="http://127.0.0.1:18601")["error"]
     assert "read-only" in err and "features on" not in err
+
+
+def test_a_read_only_agent_stays_read_only_when_the_server_adopts_the_entry_argument(tmp_path):
+    """The entry's `--features=` carries `readonly`, so a host that fails to hand the setting over (the server
+    then adopts the argument) cannot widen a read-only agent to every write tool."""
+    from emporia import cli, features
+    profile = tmp_path / "profiles" / "ro"
+    profile.mkdir(parents=True)
+    (profile / ".env").write_text("EMPORIA_FEATURES=archive,readonly\n")
+    arg = cli.installer().features_arg(profile)
+    assert arg.endswith(",readonly"), arg
+    env = {"EMPORIA_FEATURES": "${EMPORIA_FEATURES}"}
+    assert features.adopt_argv(["-m", "emporia.mcp_server", arg], env) == "argument"
+    assert features.read_only(env["EMPORIA_FEATURES"]) and features.parse(env["EMPORIA_FEATURES"]) == ["archive"]
+    (profile / ".env").write_text("EMPORIA_FEATURES=archive\n")
+    assert not cli.installer().features_arg(profile).endswith("readonly")
