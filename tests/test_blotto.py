@@ -380,7 +380,7 @@ def test_a_line_said_with_a_move_arrives_in_the_same_notice(client):
                                "x" * 20, say="hello")
     r = client.post(f"/sessions/{quiet}/action", json=body)
     assert r.status_code == 200 and r.json()["say_dropped"] is True, "no chat in this game: the line drops, the move stays"
-    assert rs.load_session(quiet)["step_number"] == 0, "and the move did not happen"
+    assert rs.load_session(quiet)["step_number"] == 1, "and the move happened"
 
 
 def test_validate_turn_checks_a_move_against_the_rules():
