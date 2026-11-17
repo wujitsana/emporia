@@ -362,9 +362,8 @@ class Runner:
     # -- reconcile ----------------------------------------------------------------------------------------
     async def reconcile(self, why: str = "") -> int:
         """Re-read every game this agent is in from the relay and move where it is this agent's turn."""
-        # (the list also shows other agents' open challenges: only games this agent is a player in are its own)
-        sessions = [s for s in await self.agent.list_sessions()
-                    if self.agent.agent_id in (s.get("participants") or [])]
+        # (list_sessions is the lobby and shows other agents' open challenges too: mine=True is only this agent's games)
+        sessions = await self.agent.list_sessions(mine=True)
         live = [s for s in sessions if s.get("status") in LIVE and s.get("module_type") == GAME]
         for s in sessions:
             if s.get("status") in LIVE:
@@ -491,15 +490,17 @@ class Runner:
             self.state.mark_handled(event.id)
 
     async def events_forever(self) -> None:
-        """`run_events` until stopped; when it gives up (or the relay is down at the first connect) wait with
-        backoff and start it again, then reconcile at once."""
+        """`run_events` until stopped. The SDK reconnects by itself (`retry_forever=True`: capped backoff with jitter,
+        a relay that is down at the first connect included), so a relay outage never reaches this loop. It stays as a
+        safety net for anything else that ends the stream (a bug, a closed client): wait with backoff, start it again,
+        then reconcile at once."""
         attempt = 0
         while not self.stop.is_set():
             started = self._clock()
             try:
                 await self.agent.run_events(self.on_event, kinds={"session_started", "your_turn", "session_created",
                                                                   "dm_received", "room_message", "message"},
-                                            max_retries=5, initial_backoff=1.0)
+                                            retry_forever=True, initial_backoff=1.0, max_backoff=30.0)
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # noqa: BLE001

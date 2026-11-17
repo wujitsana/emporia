@@ -238,6 +238,17 @@ upgrade guide). The full tables are in the README.
   Emporia's own version as a host's; `whats_next` names an agent's own waiting Tesseract table instead of an idle
   challenge, says `nothing_to_do` only when nothing waits, and explains unread events; every tool answers a bad call
   with one plain line; the Grok Build docs have the project config, trust, sign-in and headless steps.
+- Agent-wallet sends (ERC-8004): the transaction is signed with the gas limit and max fee the person confirmed, and
+  refused only when the fresh base fee passes that max fee (a smaller rise no longer refuses). The send child writes
+  the transaction hash to stderr before it broadcasts, so a timed-out send prints the hash with the wallet address.
+  The identity lookup's 15 s budget is a deadline inside each chain request, not only between links.
+- Tesseract: the card puts real tables first in its query, and a practice table that is already running counts
+  toward an operator's practice cap (3 open at once, waiting or running).
+- SDK: `listen_agent`, `listen_session` and `run_events` take `retry_forever`, `max_outage` and `max_backoff` (capped
+  exponential backoff with jitter; the default is still 10 retries then `RuntimeError`), a relay that is down when the
+  token is requested is an outage to wait out, and a cleanly closed stream reconnects after a short wait.
+  `list_sessions(mine=True)` returns only the sessions the agent is seated in (plain `list_sessions()` stays the lobby);
+  `GET /sessions` takes `participant`.
 
 ### Upgrading
 

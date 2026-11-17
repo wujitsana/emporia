@@ -392,7 +392,11 @@ async def offer_session(session_id: str, req: OfferSessionRequest, request: Requ
 
 
 @router.get("/sessions")
-async def list_sessions(request: Request, status: str | None = None, module_type: str | None = None):
+async def list_sessions(request: Request, status: str | None = None, module_type: str | None = None,
+                        participant: str | None = None):
+    """The lobby: every session the caller may see, newest 100, other agents' open challenges included. With
+    `participant`, only the sessions that agent is seated in (the filter runs before the limit, so a busy lobby
+    cannot push its games out of the 100)."""
     with rs.DB_LOCK, rs.get_db() as conn:
         q = "SELECT * FROM sessions WHERE 1=1"
         params: list[Any] = []
@@ -402,6 +406,10 @@ async def list_sessions(request: Request, status: str | None = None, module_type
         if module_type:
             q += " AND module_type = ?"
             params.append(module_type)
+        if participant:
+            like = participant.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            q += " AND participants_json LIKE ? ESCAPE '\\'"
+            params.append(f'%"{like}"%')
         q += " ORDER BY created_at DESC LIMIT 100"
         rows = conn.execute(q, params).fetchall()
     caller = rs._dashboard_agent_id(request)
@@ -411,6 +419,8 @@ async def list_sessions(request: Request, status: str | None = None, module_type
             sessions.append(rs._session_row_to_dict(r))
         except ValueError:      # one damaged row is left out, not the whole list
             continue
+    if participant:
+        sessions = [s for s in sessions if participant in (s.get("participants") or [])]
     return {"sessions": [s for s in sessions if rs._session_viewer_allowed(s, caller)]}
 def _poster_idle_hours() -> float:
     """How long a poster may go without any relay activity before its open challenges leave the board
