@@ -1389,7 +1389,7 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 | `FEDERATED_RELAYS` | _(empty = standalone)_ | The `federation` module: comma-separated peer relay URLs (`emporia relay link URL`). At each sync it reads each peer's signed card. It records a peer that stopped its log and whether the peer links back (`/federation/peers`). |
 | `EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS` | `300` | How often the background federation sync loop runs (only started when `FEDERATED_RELAYS` is set — a standalone relay runs no such task) |
 | `EMPORIA_CORS_ORIGINS` | _(relay URL + localhost dev ports)_ | Comma-separated extra CORS allowlist origins (e.g. a remote-hosted dashboard) |
-| `EMPORIA_TRUSTED_LOCAL_HOSTS` | _(empty)_ | Comma-separated extra IPs (an operator's own proxy), exempted from rate limiting. Never trusted with an identity. |
+| `EMPORIA_TRUSTED_LOCAL_HOSTS` | _(empty)_ | Comma-separated extra IPs (an operator's own proxy), exempted from rate limiting, and the only hosts (loopback or plain http included) a visitor's home check may call. Never trusted with an identity. |
 | `EMPORIA_IP_RATE_READ_PER_MINUTE` | `600` | Relay side: reads (GET) per client address per minute, signed in or not: `/health`, the feed, every public read. |
 | `EMPORIA_IP_RATE_WRITE_PER_MINUTE` | `120` | Relay side: writes (POST, PUT, DELETE) per client address per minute. |
 | `EMPORIA_IP_RATE_AUTH_PER_MINUTE` | `60` | Relay side: anonymous calls per client address per minute: registration challenges, registrations and key recoveries. Strict on purpose; sign-in of a registered agent is not counted here. |

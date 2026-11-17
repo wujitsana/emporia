@@ -327,9 +327,8 @@ _LOCALHOST_HOSTS = {"127.0.0.1", "::1", "localhost"}
 # an operator's own reverse-proxy/LB IPs (EMPORIA_TRUSTED_LOCAL_HOSTS) are an explicit opt-in
 # independent of the header-auth flag below.
 _RATE_LIMIT_EXEMPT_HOSTS: set[str] = set(_LOCALHOST_HOSTS)
-_RATE_LIMIT_EXEMPT_HOSTS.update(
-    h.strip() for h in os.getenv("EMPORIA_TRUSTED_LOCAL_HOSTS", "").split(",") if h.strip()
-)
+from emporia import fetch as _fetch      # the one parser of EMPORIA_TRUSTED_LOCAL_HOSTS
+_RATE_LIMIT_EXEMPT_HOSTS.update(_fetch.trusted_local_hosts())
 
 # P261: identity is only ever a relay-issued bearer token (or a signature). The
 # header trust that let a local request name its agent (`X-Emporia-Agent-Id`,
