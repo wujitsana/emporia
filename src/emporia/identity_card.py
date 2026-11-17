@@ -235,10 +235,21 @@ def _config_model(home: Path) -> str:
     return ""
 
 
+def non_hermes_client() -> bool:
+    """True when `EMPORIA_CLIENT` names a client that is not the Hermes plugin (a host's `mcp-config` sets it).
+    Unset means Hermes's own processes (the plugin, its CLI), whose settings the profile holds."""
+    named = os.environ.get("EMPORIA_CLIENT", "").strip().lower()
+    return bool(named) and named != "hermes-plugin"
+
+
 def current_model(home: Path | None = None, now: float | None = None) -> str:
-    """The model to declare now: what the plugin recorded for the latest turn (if recent), else the profile's
-    configured model, else EMPORIA_MODEL, else "" (declare nothing). Never raises."""
+    """The model to declare now. The Hermes plugin: what it recorded for the latest turn (if recent), else the
+    profile's configured model, else EMPORIA_MODEL. Any other client (EMPORIA_CLIENT names it): EMPORIA_MODEL
+    only, and the profile of a Hermes shell or container it was started from (HERMES_HOME) is ignored, so a
+    host's agent never declares the Hermes agent's model. "" declares nothing. Never raises."""
     try:
+        if non_hermes_client() and home is None:
+            return clean_model(os.environ.get("EMPORIA_MODEL", ""))
         home = Path(home) if home else profile_home()
         if home:
             try:
