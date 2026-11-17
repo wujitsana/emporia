@@ -23,7 +23,11 @@ from __future__ import annotations
 
 import functools
 import inspect
+import re
 from typing import Any
+
+from emporia.backoff import TRANSIENT_REFUSAL
+from emporia.cli_hints import localize
 
 # fmt: off
 DESCRIPTIONS: dict[str, str] = {
@@ -352,6 +356,57 @@ def mark_untrusted(result: dict[str, Any], keep: tuple[str, ...] = ()) -> dict[s
     return out
 
 
+#: What the relay does not know about this agent: said by the sign-in path (`mcp_server._bearer_request`) and the
+#: table's next step for the answer that carries it.
+NOT_REGISTERED_MESSAGE = "not registered on this relay yet — run `emporia register {agent}` (or ask your person)"
+#: What to do after a failed relay call, by HTTP status: one plain next step, and whether the same call may
+#: be tried again. The relay's own words (`detail`) stay under `untrusted_content`; these are ours.
+ERROR_NEXT_STEPS: dict[int, tuple[str, bool]] = {
+    400: ("The relay did not accept the request as written. Read `detail`, correct the argument, send it again.",
+          False),
+    401: ("The relay did not accept this agent's sign-in. Do not retry in a loop: tell your person to run "
+          "`emporia doctor`.", False),
+    403: ("This agent may not do that here (not a member or owner, or not registered). Do not retry; ask your "
+          "person if you need access.", False),
+    404: ("Nothing by that id here. Check the id with the matching list tool; it may be removed or live on "
+          "another relay.", False),
+    409: ("It is already done, or its state changed. Read it again before you act; do not repeat the call.",
+          False),
+    422: ("An argument is not valid. Read `detail` and correct it before you try again.", False),
+    429: ("Too many requests. Wait a minute, then try once more.", True),
+    5: ("The relay failed on its side. Wait a minute and try again; if it keeps failing, tell your person.", True),
+}
+NOT_ANSWERED_STEP = ("The relay did not answer in time. Wait a minute and try once more; if it keeps failing, tell "
+                     "your person.")
+_RELAY_STATUS = re.compile(r"^Relay (\d{3})\b")
+
+
+def recovery(result: dict[str, Any]) -> dict[str, Any]:
+    """A failed answer with `next_step` (what to do now) and `retryable` (may the same call be tried again),
+    from the one table above. An answer this package refused itself, one that already has them, and a failure
+    the table has no step for are returned as they are."""
+    if result.get("success") is not False or "refused_by" in result or "next_step" in result:
+        return result
+    error = result.get("error")
+    if not isinstance(error, str):
+        return result
+    from emporia.env_config import env
+    lead = NOT_REGISTERED_MESSAGE.split("{agent}")[0]
+    if any(isinstance(v, str) and v.startswith(lead) for v in (error, result.get("detail"))):
+        step, retry = localize(NOT_REGISTERED_MESSAGE.format(agent=env("AGENT_ID", "") or "NAME")), False
+    elif m := _RELAY_STATUS.match(error):
+        status = int(m.group(1))
+        got = ERROR_NEXT_STEPS.get(status) or (ERROR_NEXT_STEPS[5] if status >= 500 else None)
+        if got is None:
+            return result
+        step, retry = got
+    elif TRANSIENT_REFUSAL.search(error):
+        step, retry = NOT_ANSWERED_STEP, True
+    else:
+        return result
+    return {**result, "next_step": step, "retryable": retry}
+
+
 def _move_failure_text(tool: str, result: dict[str, Any]) -> dict[str, Any]:
     """`detail` and `reason` under `untrusted_content` (the note beside it), whatever the tool. An answer this
     package refused itself (`refused_by`) carries only its own words and is left alone."""
@@ -379,7 +434,7 @@ def shape(tool: str, result: Any) -> Any:
                 and (tool, result.get("view")) not in OWN_FIGURES):
             result = mark_untrusted(result, keep=("reason",) if tool in OWN_REASON_TOOLS else ())
         if isinstance(result, dict):
-            result = _move_failure_text(tool, result)
+            result = _move_failure_text(tool, recovery(result))
     return result
 
 

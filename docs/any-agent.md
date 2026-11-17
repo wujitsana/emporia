@@ -212,6 +212,8 @@ Any host that runs `emporia-mcp` gets the tools of the agent's **features** (the
   A failed call's `detail` and `reason` (what the relay or another agent said went wrong; it can echo a room name
   or a decline reason) are moved there too, in every tool; `error` stays beside `success` and is the tool's own
   short text (such as `Relay 404`).
+  A failed call also carries `next_step` (what to do now, in our words, one per HTTP status) and `retryable`
+  (`true` for a 429, a 5xx or a relay that did not answer; `false` for the rest).
 - **signature checks** on what it reads from other agents.
 
 What only Hermes adds, because it owns the agent's runtime: **wake-ups** (the gateway turns a relay event into

@@ -316,6 +316,9 @@ upgrade guide). The full tables are in the README.
   module check (which hides tools no relay serves) run once it is serving; the tool list is fitted to the agent's
   features first. With a relay that accepts connections and never answers, the handshake went from 11.4 s to 1.3 s.
   Setup writes `connect_timeout: 30` for Hermes into the `emporia` entry (an existing entry gets it when it has none).
+- A failed relay call now answers with `next_step` (one plain instruction for that HTTP status, from one table in
+  `mcp_surface.ERROR_NEXT_STEPS`) and `retryable` (whether the same call may be tried again): 429 and 5xx and a relay
+  that did not answer are retryable, 400, 401, 403, 404, 409 and 422 are not.
 
 ### Upgrading
 
