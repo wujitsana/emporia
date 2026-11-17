@@ -437,12 +437,18 @@ def test_a_failing_startup_step_is_logged_and_the_next_one_still_runs(monkeypatc
 
 
 def test_the_features_fit_makes_no_network_call(monkeypatch):
-    def no_network(*a, **k):
-        raise AssertionError("the start-up fit asked a relay")
+    asked: list[tuple] = []
+
+    def no_network(*a, **k):        # the fit catches a failed request as "relay down", so record, don't raise
+        asked.append(a)
+        raise OSError("the start-up fit asked a relay")
     monkeypatch.setattr(mcp_server.httpx, "get", no_network)
     monkeypatch.setattr(mcp_server.fetch, "get", no_network)
-    mcp_server._fit_tools_to_relays(ask_relays=False)
-    mcp_server._fit_tools_to_relays()           # restore the full fit for later tests
+    try:
+        mcp_server._fit_tools_to_relays(ask_relays=False)
+        assert asked == []
+    finally:                        # the fit hides tools in this process: give later tests the full list back
+        mcp_server.mcp.enable(names=features.all_tools())
 
 
 def test_the_mcp_entry_asks_hermes_for_a_30_second_connect_window(tmp_path):
