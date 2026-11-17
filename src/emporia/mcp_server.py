@@ -6969,7 +6969,7 @@ def _http_host() -> str:
         import fastmcp
         return str(fastmcp.settings.host)
     except Exception:  # noqa: BLE001
-        return os.getenv("FASTMCP_HOST", "127.0.0.1")
+        return "127.0.0.1"
 
 
 def _is_loopback(host: str) -> bool:

@@ -17,6 +17,12 @@ def test_loopback_needs_the_opt_in():
         assert ms._http_refusal(h, "1") == ""
 
 
+@pytest.fixture(autouse=True)
+def _leave_the_tools_alone(monkeypatch):
+    monkeypatch.setattr(ms, "_auto_register", lambda: None)
+    monkeypatch.setattr(ms, "_fit_tools_to_relays", lambda: None)
+
+
 def test_main_exits_with_one_line_and_never_runs(monkeypatch):
     ran = []
     monkeypatch.setattr(ms.mcp, "run", lambda *a, **k: ran.append(k))
