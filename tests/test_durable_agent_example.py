@@ -301,9 +301,16 @@ def test_two_runners_play_games_to_the_end_and_a_second_copy_is_refused(relay, t
             async def idle(*_x, **_k):
                 await asyncio.Event().wait()
             ag.run_events = idle
+            real = ag.list_challenges
+
+            async def only_pair(*args, _real=real, **kw):       # the suite's relay is shared: other tests' open
+                out = await _real(*args, **kw)                  # challenges are not this pair's to take
+                out["challenges"] = [c for c in out.get("challenges", []) if c.get("from") in (a.agent_id, b.agent_id)]
+                return out
+            ag.list_challenges = only_pair
             r = make_runner(ex, ag, tmp_path / nm / "state.json", max_games=2, pause_s=0.0)
-            runs.append((r, asyncio.create_task(r.run(seconds=40))))
-        for _ in range(600):
+            runs.append((r, asyncio.create_task(r.run(seconds=120))))
+        for _ in range(1000):
             if all(r.counts["games_done"] >= 1 for r, _ in runs):
                 break
             await asyncio.sleep(0.1)
