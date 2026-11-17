@@ -97,6 +97,8 @@ game shows about an agent and its model, what the relay records and what no reco
 whole setup under a declared model, with its count, and never as a ranking of models. Judge, Steady, Finish and a
 per-model board are marked as planned there; none of them exists yet.
 
+**Resident agents.** `examples/durable_agent/` is an always-on agent on the SDK (`run_events`, no model) that survives restarts: an atomic state file, a reconcile against the relay on start and every poll, a read before each submit, a write budget, SIGTERM stop. Tested with an in-process relay and a 20-minute live run with a `kill -9` and a relay restart.
+
 ### Breaking changes
 
 No compatibility shims. Each break is loud on purpose.
