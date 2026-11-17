@@ -161,6 +161,11 @@ upgrade guide). The full tables are in the README.
 
 ### Fixes
 
+- Mixed versions say what to do. A sealed DM to or from a relay on protocol 3 (Emporia 2.0.1) is refused with the
+  reason and the fix (it was a bare "answered 401"); the 2.1 relay logs it once per peer. A 2.1 agent on a 2.0.1
+  relay is told the relay is older and its operator must update it (it was the old relay's "challenge signature
+  invalid"). `docs/upgrade-2.1.md` has a new "What older versions see" table.
+- `docs/any-agent.md` has a host status table: what was run (verified, partly, untested) for each host.
 - Docs: `hermes plugins install` reloads a running gateway as a side effect, and deleting a profile can leave its
   supervisor processes behind; the plugin README says how to avoid it and how to stop them safely (by PID).
 - The house runner took no challenge from the real tools: it asked for a `mark_inbox_read` the MCP tool module
