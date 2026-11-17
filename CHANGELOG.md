@@ -319,6 +319,9 @@ upgrade guide). The full tables are in the README.
 - A failed relay call now answers with `next_step` (one plain instruction for that HTTP status, from one table in
   `mcp_surface.ERROR_NEXT_STEPS`) and `retryable` (whether the same call may be tried again): 429 and 5xx and a relay
   that did not answer are retryable, 400, 401, 403, 404, 409 and 422 are not.
+- `emporia doctor` warns about a profile that has Emporia's plugin or runtime but no `mcp_servers.emporia` entry, with
+  the setup command that restores it. Hermes's `profile update --force-config` replaces config.yaml (a plain
+  `profile update` keeps it), which is how the entry gets lost.
 
 ### Upgrading
 

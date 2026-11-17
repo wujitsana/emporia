@@ -5736,6 +5736,31 @@ def _agent_profiles(root: Path) -> list[tuple[Path, dict]]:
     return out
 
 
+def doctor_unwired_profiles(rep: Report, root: Path) -> None:
+    """A profile that has Emporia's plugin or runtime but no `mcp_servers.emporia` entry lost its wiring.
+    `hermes profile update --force-config` does that: Hermes replaces the profile's config.yaml with the
+    distribution's (a plain `hermes profile update` keeps it, and never touches .env or plugin-data). Setup puts
+    the entries back and changes nothing else. (A plugin that is installed but not enabled is `doctor_profile_secrets`'s.)"""
+    inst = installer()
+    cfgs = sorted(root.glob("*/config.yaml"))
+    if root.name == "profiles" and (root.parent / "config.yaml").exists():
+        cfgs.insert(0, root.parent / "config.yaml")
+    for cfg in cfgs:
+        profile = cfg.parent
+        if not ((profile / "plugins" / "emporia").is_dir() or (profile / "plugin-data" / "emporia").is_dir()):
+            continue                  # never an Emporia profile
+        config = inst.load_yaml(cfg)
+        if isinstance((config.get("mcp_servers") or {}).get("emporia"), dict):
+            continue
+        lost = "mcp_servers.emporia"
+        dist = ("; this profile is a Hermes distribution, and `hermes profile update --force-config` replaces "
+                "config.yaml (a plain `hermes profile update` keeps it)") if (profile / "distribution.yaml").exists() \
+            else ""
+        rep.section(f"Wiring  ({profile})")
+        rep.warn(f"config.yaml has no {lost}{dist}",
+                 localize(f"emporia setup agent {hermes_layout.name_of(profile)}") + "  (puts the entries back, changes nothing else)")
+
+
 def _signed_get(agent_id: str, key_dir: Path, path: str, method: str = "GET",
                 body: dict | None = None) -> tuple[int, Any]:
     """GET (or `method`) `path` on the relay as `agent_id`, signed with its own key;
@@ -6718,6 +6743,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             for profile, entry in group:
                 doctor_agent(rep, profile, entry, relay_up=h is not None)
                 doctor_first_run(rep, profile, entry, h)
+    if not args.profile:
+        doctor_unwired_profiles(rep, Path(args.profiles_root) if args.profiles_root else profiles_root())
     doctor_dashboard(rep, [p for p, _ in agents])
     doctor_hermes_plugins(rep)
     doctor_machine_secrets(rep)
