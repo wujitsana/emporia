@@ -556,6 +556,11 @@ def sync_mcp_costs(profile_dir: Path, dry_run: bool = False) -> bool:
     return True
 
 
+#: Seconds Hermes waits for the MCP server's handshake (its default is 60). The server answers without touching
+#: the network, so a slow start is a real fault worth failing fast.
+MCP_CONNECT_TIMEOUT = 30
+
+
 def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "", profile_dir: Path | None = None) -> dict[str, Any]:
     env: dict[str, str] = {
         "EMPORIA_RELAY_URL": relay_url,
@@ -580,6 +585,7 @@ def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "", profi
         "command": _venv_python(),
         "args": mcp_args(profile_dir),
         "env": env,
+        "connect_timeout": MCP_CONNECT_TIMEOUT,
     }
     apply_mcp_costs(entry, harvest_env(profile_dir) if profile_dir else {})
     return entry
@@ -762,6 +768,10 @@ def install_into_profile(
             changed = True
             print(f"  - mcp_servers.{MCP_TOOL_NAME}.env: no longer handed to the agent, removed: {', '.join(gone)}")
         mcp_servers[MCP_TOOL_NAME]["env"] = existing_env
+        if "connect_timeout" not in mcp_servers[MCP_TOOL_NAME]:      # a person's own value stays
+            mcp_servers[MCP_TOOL_NAME]["connect_timeout"] = MCP_CONNECT_TIMEOUT
+            changed = True
+            print(f"  ~ mcp_servers.{MCP_TOOL_NAME}.connect_timeout = {MCP_CONNECT_TIMEOUT}")
         if apply_mcp_costs(mcp_servers[MCP_TOOL_NAME], harvest_env(profile_dir)):
             changed = True
             print(f"  ~ mcp_servers.{MCP_TOOL_NAME}: prices on the paying tools (Hermes asks before going over the limit)")

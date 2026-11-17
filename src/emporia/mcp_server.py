@@ -592,16 +592,17 @@ def _visits() -> list[str]:
     return visiting()
 
 
-def _fit_tools_to_relays() -> set[str]:
+def _fit_tools_to_relays(ask_relays: bool = True) -> set[str]:
     """Show only the tools this agent has: those of its enabled features (`EMPORIA_FEATURES`, see
     `emporia.features`) that a relay it uses can serve (P291). Each relay says what it runs beyond its
     core (`relay_modules` on /health); a module's tools appear when its home or a relay it visits runs
     it: no payment tools on a relay without money, no lab tools on one without labs. A relay that does
     not answer hides nothing of its own: tools never vanish because one was down, and the agent's
-    features alone decide. Returns the tools hidden."""
+    features alone decide. `ask_relays=False` fits to the features alone, with no network (the start-up pass that
+    keeps a down relay off the handshake). Returns the tools hidden."""
     from emporia import features, relay_modules
     seen: list[Any] = []
-    for url in [RELAY_URL, *_visits()]:
+    for url in ([RELAY_URL, *_visits()] if ask_relays else []):
         try:
             r = (httpx.get if url == RELAY_URL else fetch.get)(f"{url}/health", timeout=5)
             seen.append(r.json().get("relay_modules") if r.status_code == 200 else None)
@@ -6916,6 +6917,22 @@ _apply_agent_surface()
 # Main (transport selection)
 # ============================================================================
 
+def _start_in_background(fn: Any, name: str) -> None:
+    import threading
+    threading.Thread(target=fn, name=name, daemon=True).start()
+
+
+def _startup_after_serving() -> None:
+    """What start-up did before the handshake, now beside it: register this agent, then ask the relays what they
+    run and hide the tools none can serve. A failure is logged, never raised: tools are listed and callable
+    whatever happened here."""
+    for step in (_auto_register, _fit_tools_to_relays):
+        try:
+            step()
+        except Exception as e:  # noqa: BLE001 — start-up work must never take the server down
+            logger.warning("startup_step_failed", extra={"step": step.__name__, "detail": str(e)[:200]})
+
+
 def _auto_register() -> None:
     """Register this agent with the relay on MCP startup.
 
@@ -7105,9 +7122,13 @@ def main() -> None:
         logger.warning("features_from_argument", extra={"detail": "EMPORIA_FEATURES was not handed to this server "
                                                         "(unset or an unresolved reference); using the entry's "
                                                         "--features= argument"})
-    _auto_register()
     _check_features_arg()
-    _fit_tools_to_relays()
+    # The handshake waits for nothing on the network: the tool list is fitted to the agent's features now, and
+    # registration and the relays' module check run once the server is serving (a relay that is down costs
+    # seconds each). The relay check can only hide more, so an early tools/list shows a superset; a host that
+    # lists again (a reconnect) gets the fitted list.
+    _fit_tools_to_relays(ask_relays=False)
+    _start_in_background(_startup_after_serving, "emporia-startup")
     transport = os.getenv("EMPORIA_MCP_TRANSPORT", "stdio").lower()
     # A host shows a stdio server's stderr to its person: no FastMCP banner, and no "update available" box (the
     # update check belongs to the banner; turn it off too, in case a FastMCP version asks anyway).

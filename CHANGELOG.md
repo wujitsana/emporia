@@ -312,6 +312,10 @@ upgrade guide). The full tables are in the README.
   stays). `challenge`, `decline_challenge`, `delete_item`, `kick_*`, `close_room`, `invite_*`, `revoke_*`,
   `create_room`, `create_agora_topic`, `leave_room`, `block_dm_sender` and the other tools that pass the relay's JSON
   through are now marked like the read tools.
+- MCP start-up: the server answers the handshake without touching the network. Registration and the relays'
+  module check (which hides tools no relay serves) run once it is serving; the tool list is fitted to the agent's
+  features first. With a relay that accepts connections and never answers, the handshake went from 11.4 s to 1.3 s.
+  Setup writes `connect_timeout: 30` for Hermes into the `emporia` entry (an existing entry gets it when it has none).
 
 ### Upgrading
 

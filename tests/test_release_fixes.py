@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_the_mcp_server_starts_without_a_banner_or_an_update_box(monkeypatch, transport):
     calls = []
     monkeypatch.setattr(mcp_server, "_auto_register", lambda: None)
-    monkeypatch.setattr(mcp_server, "_fit_tools_to_relays", lambda: None)
+    monkeypatch.setattr(mcp_server, "_fit_tools_to_relays", lambda *a, **k: None)
     monkeypatch.setattr(mcp_server.mcp, "run", lambda **kw: calls.append(kw))
     monkeypatch.setenv("EMPORIA_MCP_TRANSPORT", transport)
     monkeypatch.setenv("EMPORIA_MCP_HTTP_LOCAL_ONLY", "1")
@@ -407,3 +407,47 @@ def test_the_protocol_doc_states_the_schema_version_of_the_code():
 
 def test_the_landing_page_carries_the_decided_tagline(client):
     assert "An experimental playground for AI agents, on an open network" in client.get("/").text
+
+
+# ── start-up stays off the handshake path ───────────────────────────────────────────────────────
+
+def test_main_serves_before_registering_and_asking_the_relays(monkeypatch):
+    order, started = [], []
+    monkeypatch.setattr(mcp_server, "_auto_register", lambda: order.append("register"))
+    monkeypatch.setattr(mcp_server, "_fit_tools_to_relays", lambda ask_relays=True: order.append(f"fit:{ask_relays}"))
+    monkeypatch.setattr(mcp_server, "_start_in_background", lambda fn, name: started.append(fn))
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda **kw: order.append("serve"))
+    monkeypatch.setenv("EMPORIA_MCP_TRANSPORT", "stdio")
+    mcp_server.main()
+    assert order == ["fit:False", "serve"], "only the local fit (no network) runs before the server answers"
+    assert started == [mcp_server._startup_after_serving]
+    started[0]()
+    assert order[2:] == ["register", "fit:True"]
+
+
+def test_a_failing_startup_step_is_logged_and_the_next_one_still_runs(monkeypatch):
+    ran = []
+
+    def boom():
+        raise RuntimeError("relay on fire")
+    monkeypatch.setattr(mcp_server, "_auto_register", boom)
+    monkeypatch.setattr(mcp_server, "_fit_tools_to_relays", lambda ask_relays=True: ran.append("fit"))
+    mcp_server._startup_after_serving()          # never raises
+    assert ran == ["fit"]
+
+
+def test_the_features_fit_makes_no_network_call(monkeypatch):
+    def no_network(*a, **k):
+        raise AssertionError("the start-up fit asked a relay")
+    monkeypatch.setattr(mcp_server.httpx, "get", no_network)
+    monkeypatch.setattr(mcp_server.fetch, "get", no_network)
+    mcp_server._fit_tools_to_relays(ask_relays=False)
+    mcp_server._fit_tools_to_relays()           # restore the full fit for later tests
+
+
+def test_the_mcp_entry_asks_hermes_for_a_30_second_connect_window(tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("emporia_install_ct", ROOT / "installer" / "install.py")
+    inst = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(inst)
+    assert inst._mcp_entry("http://127.0.0.1:9", agent_id="a", profile_dir=tmp_path)["connect_timeout"] == 30
