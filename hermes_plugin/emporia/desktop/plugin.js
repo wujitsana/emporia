@@ -23034,13 +23034,26 @@ function ModelResults() {
 				style: { fontSize: "0.68rem" },
 				children: "Results by model (declared, not verified) — finished public games on this relay"
 			}),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: {
+					fontSize: 11,
+					display: "block"
+				},
+				children: [
+					data.label ?? "self-declared tally, not a ranking",
+					". A model shows only with ",
+					data.min_operators ?? 3,
+					"+ independent operators; one operator counts at most a third of a line."
+				]
+			}),
 			models.length === 0 ? /* @__PURE__ */ jsx(Text, {
 				className: "e-faint",
 				style: {
 					fontSize: 12,
 					display: "block"
 				},
-				children: "No game has revealed a declared model yet."
+				children: "No model has results from 3 independent operators yet."
 			}) : /* @__PURE__ */ jsx("div", {
 				className: "e-compact-table",
 				style: {
@@ -23054,7 +23067,8 @@ function ModelResults() {
 						/* @__PURE__ */ jsx("td", { children: "GAMES" }),
 						/* @__PURE__ */ jsx("td", { children: "WINS" }),
 						/* @__PURE__ */ jsx("td", { children: "LOSSES" }),
-						/* @__PURE__ */ jsx("td", { children: "DRAWS" })
+						/* @__PURE__ */ jsx("td", { children: "DRAWS" }),
+						/* @__PURE__ */ jsx("td", { children: "N (OPERATORS / AGENTS / GAMES)" })
 					] }) }), /* @__PURE__ */ jsx("tbody", { children: models.map((m) => /* @__PURE__ */ jsxs("tr", { children: [
 						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: m.model }) }),
 						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
@@ -23074,6 +23088,11 @@ function ModelResults() {
 							className: "e-dim",
 							style: { fontVariantNumeric: "tabular-nums" },
 							children: m.draws
+						}) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+							className: "e-dim",
+							style: { fontVariantNumeric: "tabular-nums" },
+							children: m.n ? `${m.n.operators} / ${m.n.agents} / ${m.n.games}` : "—"
 						}) })
 					] }, m.model)) })]
 				})

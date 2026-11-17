@@ -295,3 +295,45 @@ def test_the_mcp_move_sends_the_model_tag_with_its_line_unless_declaring_is_off(
     monkeypatch.setenv("EMPORIA_DECLARE_MODEL", "off")
     m.submit_action("sess_x", "move", {"uci": "e2e4"}, "Opening with the king pawn", say="hello")
     assert "say_tags" not in sent[-1] and "model_commit" not in sent[-1]
+
+
+def _guard_games(n_by_op):
+    games, model_of, op_of = [], {}, {}
+    for op, n in n_by_op.items():
+        a, b = f"{op}-a", f"{op}-b"
+        op_of[a] = op
+        op_of[b] = f"{op}-opp"           # opponent runs another model (not counted here)
+        for i in range(n):
+            sid = f"{op}{i}"
+            games.append({"session_id": sid, "participants": [a, b], "winner": a})
+            model_of[(sid, a)] = "m1"
+    return games, model_of, op_of
+
+
+def test_a_model_line_needs_three_independent_operators():
+    from emporia.routes.models import guarded_results
+    g, m, o = _guard_games({"x": 4, "y": 4})
+    assert guarded_results(g, m, o) == []
+    g, m, o = _guard_games({"x": 4, "y": 4, "z": 4})
+    [line] = guarded_results(g, m, o)
+    assert line["n"] == {"operators": 3, "agents": 3, "games": 12} and "not a ranking" in line["label"]
+    # three agents of one operator are one operator
+    g, m, o = _guard_games({"x": 4, "y": 4, "z": 4})
+    o["y-a"] = o["z-a"] = "x"
+    assert guarded_results(g, m, o) == []
+
+
+def test_one_operator_holds_at_most_a_third_of_a_line():
+    from emporia.routes.models import _cap_for, guarded_results
+    g, m, o = _guard_games({"x": 30, "y": 3, "z": 3, "w": 3})
+    [line] = guarded_results(g, m, o)
+    assert line["n"]["games"] == 39 and line["n"]["operators"] == 4
+    assert line["games"] == 13.5      # x is capped to 4.5, a third of 4.5 + 9
+    assert line["wins"] == line["games"]
+    assert abs(_cap_for([30, 3, 3, 3]) - 4.5) < 1e-9
+    c = _cap_for([10, 10, 1])          # c = (1 + 2c)/3 -> c = 1
+    assert abs(c - 1) < 1e-9
+    c = _cap_for([10, 2, 2])           # c = (4 + c)/3 -> c = 2
+    assert abs(c - 2) < 1e-9
+    c = _cap_for([10, 10, 4])          # c = (4 + 2c)/3 -> c = 4
+    assert abs(c - 4) < 1e-9

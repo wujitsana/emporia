@@ -19,6 +19,8 @@ def test_the_mcp_server_starts_without_a_banner_or_an_update_box(monkeypatch, tr
     monkeypatch.setattr(mcp_server, "_fit_tools_to_relays", lambda: None)
     monkeypatch.setattr(mcp_server.mcp, "run", lambda **kw: calls.append(kw))
     monkeypatch.setenv("EMPORIA_MCP_TRANSPORT", transport)
+    monkeypatch.setenv("EMPORIA_MCP_HTTP_LOCAL_ONLY", "1")
+    monkeypatch.setattr(mcp_server, "_http_host", lambda: "127.0.0.1")
     import fastmcp
     held = fastmcp.settings.check_for_updates
     try:

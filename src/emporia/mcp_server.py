@@ -6970,6 +6970,80 @@ def _check_features_arg(argv: list[str] | None = None) -> bool:
     return ok
 
 
+def _http_host() -> str:
+    """The host the HTTP/SSE server binds: FastMCP's own setting (FASTMCP_HOST, default 127.0.0.1)."""
+    try:
+        import fastmcp
+        return str(fastmcp.settings.host)
+    except Exception:  # noqa: BLE001
+        return "127.0.0.1"
+
+
+def _is_loopback(host: str) -> bool:
+    import ipaddress
+    h = host.strip().strip("[]").lower()
+    if h == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(h).is_loopback
+    except ValueError:
+        return False
+
+
+def _http_refusal(host: str, opt_in: str) -> str:
+    """Why the HTTP/SSE transport must not start ('' when it may). It has no sign-in: so it runs only on this
+    machine (a loopback bind) and only when the person asked for that, until a protected endpoint exists."""
+    if not _is_loopback(host):
+        return (f"Refusing to serve MCP over HTTP on {host!r}: it has no sign-in. Bind a loopback host "
+                "(FASTMCP_HOST=127.0.0.1) and set EMPORIA_MCP_HTTP_LOCAL_ONLY=1. Remote access is planned, behind OAuth.")
+    if opt_in.strip() != "1":
+        return ("Refusing to serve MCP over HTTP: it has no sign-in and is for this machine only. "
+                "Set EMPORIA_MCP_HTTP_LOCAL_ONLY=1 to run it on loopback. Remote access is planned, behind OAuth.")
+    return ""
+
+
+def _host_allowed(header: str) -> bool:
+    """A Host header that names this machine (127.0.0.1, localhost or [::1], with an optional port)."""
+    h = header.strip().lower()
+    if h.startswith("["):
+        name, _, rest = h.partition("]")
+        name, port = name + "]", rest[1:] if rest.startswith(":") else (rest and None)
+    else:
+        name, _, port = h.partition(":")
+    if port is None or (port and not port.isdigit()):
+        return False
+    return name in ("127.0.0.1", "localhost", "[::1]")
+
+
+class _LocalHostOnly:
+    """ASGI guard: a request whose Host header is not this machine, or whose Origin (a browser sends one) names
+    another site, gets 403. A DNS-rebinding page sends its own name as Host. FastMCP's built-in guard answers 421
+    for a bad Host and is off here, so the answer is one 403 for both."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            hdrs = dict(scope.get("headers") or [])
+            host = hdrs.get(b"host", b"").decode("latin-1")
+            origin = hdrs.get(b"origin", b"").decode("latin-1")
+            if origin and not _host_allowed(origin.partition("://")[2].partition("/")[0]):
+                host = ""
+            if not _host_allowed(host):
+                body = b"Forbidden: this MCP endpoint answers on this machine only"
+                await send({"type": "http.response.start", "status": 403,
+                            "headers": [(b"content-type", b"text/plain"), (b"content-length", str(len(body)).encode())]})
+                await send({"type": "http.response.body", "body": body})
+                return
+        await self.app(scope, receive, send)
+
+
+def _http_middleware() -> list:
+    from starlette.middleware import Middleware
+    return [Middleware(_LocalHostOnly)]
+
+
 def main() -> None:
     import sys
     from emporia import features
@@ -6991,14 +7065,15 @@ def main() -> None:
         pass
     if transport == "stdio":
         mcp.run(transport="stdio", show_banner=False)
-    elif transport in ("streamable-http", "http"):
-        port = int(os.getenv("EMPORIA_MCP_PORT", "8089"))
-        mcp.run(transport="streamable-http", port=port, show_banner=False)
-    elif transport == "sse":
-        port = int(os.getenv("EMPORIA_MCP_PORT", "8089"))
-        mcp.run(transport="sse", port=port, show_banner=False)
-    else:
+        return
+    if transport not in ("streamable-http", "http", "sse"):
         raise ValueError(f"Unknown transport: {transport!r} (stdio/streamable-http/sse)")
+    host = _http_host()
+    if why := _http_refusal(host, os.getenv("EMPORIA_MCP_HTTP_LOCAL_ONLY", "")):
+        raise SystemExit(why)
+    port = int(os.getenv("EMPORIA_MCP_PORT", "8089"))
+    mcp.run(transport="sse" if transport == "sse" else "streamable-http", host=host, port=port, show_banner=False,
+            middleware=_http_middleware(), host_origin_protection=False)
 
 
 if __name__ == "__main__":

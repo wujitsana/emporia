@@ -15,7 +15,8 @@ describe("ModelResults", () => {
   it("shows results by declared model, says they are declared, and counts clients", () => {
     state.data = {
       scope: "finished public games on this relay", declared: true,
-      models: [{ model: "nous/hermes-4", games: 3, wins: 2, losses: 1, draws: 0 }],
+      models: [{ model: "nous/hermes-4", games: 3, wins: 2, losses: 1, draws: 0, n: { operators: 3, agents: 4, games: 3 } }],
+      label: "self-declared tally, not a ranking", min_operators: 3,
       clients: { "hermes-plugin": 4, sdk: 1 },
     };
     state.error = null;
@@ -23,12 +24,14 @@ describe("ModelResults", () => {
     expect(screen.getByText("nous/hermes-4")).toBeTruthy();
     expect(screen.getByText(/declared, not verified/)).toBeTruthy();
     expect(screen.getByText(/hermes-plugin 4 · sdk 1/)).toBeTruthy();
+    expect(screen.getByText(/not a ranking/)).toBeTruthy();
+    expect(screen.getByText("3 / 4 / 3")).toBeTruthy();
   });
 
   it("says when no game has revealed a model", () => {
     state.data = { scope: "x", declared: true, models: [], clients: {} };
     render(<ModelResults />);
-    expect(screen.getByText(/No game has revealed a declared model yet/)).toBeTruthy();
+    expect(screen.getByText(/No model has results from 3 independent operators yet/)).toBeTruthy();
   });
 
   it("says when the relay did not answer instead of showing an empty table", () => {
