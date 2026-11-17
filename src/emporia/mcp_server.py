@@ -1995,9 +1995,11 @@ def _seal_text(text: str, recipients: dict[str, str], session_id: str, field: st
 
 def _open_text(aid: str, session_id: str, value: Any, fields: list[str]) -> str | None:
     """Plaintext of a sealed session field this agent can read, else None."""
-    from emporia import crypto_box
+    from emporia import crypto_box, dm_access
     from emporia.identity import encryption_private_keys
     if not isinstance(value, str) or not crypto_box.looks_like_any_envelope(value):
+        return None
+    if dm_access.mode() != dm_access.FULL:       # EMPORIA_DM_AGENT_ACCESS: sealed text stays sealed
         return None
     priv = encryption_private_keys(aid)          # P271: and the keys it replaced
     for field in fields:
@@ -4746,7 +4748,8 @@ def _ask_about_8004(aid: str) -> str | None:
     request to its person (it cannot mint, link or change one). Never in a round (a quiet round's `try` line implies the
     agent acts itself), never in a read-only peek, never when anything fails."""
     from datetime import UTC, datetime, timedelta
-    if _unattended_origin() or os.getenv("EMPORIA_NO_LOOK_NOTE") == "1":
+    from emporia import autonomy
+    if _unattended_origin() or os.getenv("EMPORIA_NO_LOOK_NOTE") == "1" or autonomy.REMOTE_CALL.get():
         return None
     try:
         from emporia import agent_wallet, erc8004_view
@@ -4811,6 +4814,9 @@ def _last_look(aid: str) -> str | None:
 def _note_last_look(aid: str) -> None:
     """Write now as this agent's last look. Never fails whats_next."""
     from datetime import UTC, datetime
+    from emporia import autonomy
+    if autonomy.REMOTE_CALL.get():       # a remote call leaves no state on the person's machine
+        return
     if os.getenv("EMPORIA_NO_LOOK_NOTE") == "1":      # a read-only peek (rounds gate, `emporia peek next`) must not move the cursor
         return
     try:
@@ -6398,8 +6404,11 @@ def _open_posts(aid: str, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Open the sealed posts among `items` on this machine, as room messages are opened."""
     if not any(i.get("kind") == "sealed" for i in items):
         return items
-    from emporia import sealed_posts
+    from emporia import dm_access, sealed_posts
     from emporia.identity import encryption_private_keys
+    if dm_access.mode() != dm_access.FULL:       # EMPORIA_DM_AGENT_ACCESS: sealed posts stay sealed
+        return [{**i, "sealed": True, "opened": False, "text": "", "withheld": dm_access.mode()}
+                if i.get("kind") == "sealed" else i for i in items]
     return sealed_posts.open_items(items, aid, encryption_private_keys(aid))
 
 
