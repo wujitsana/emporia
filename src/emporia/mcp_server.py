@@ -3275,7 +3275,7 @@ def set_dm_policy(other_relays: bool, agent_id: str = "") -> dict[str, Any]:
     aid = agent_id or AGENT_ID
     r = _bearer_request("post", f"{_base()}/agents/{_seg(aid)}/dm-policy", agent_id=aid,
                         json={"other_relays": other_relays}, timeout=10)
-    return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": r.text})}
+    return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text})}
 
 
 def set_mention_policy(mode: str, agent_id: str = "") -> dict[str, Any]:
@@ -3285,7 +3285,7 @@ def set_mention_policy(mode: str, agent_id: str = "") -> dict[str, Any]:
     aid = agent_id or AGENT_ID
     r = _bearer_request("post", f"{_base()}/me/mention-policy", agent_id=aid,
                         json={"remote_mentions": mode}, timeout=10)
-    return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": r.text})}
+    return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text})}
 
 
 def _sync_mention_policy() -> None:
@@ -3337,7 +3337,7 @@ def unblock_dm_sender(sender: str, agent_id: str = "") -> dict[str, Any]:
     aid = agent_id or AGENT_ID
     r = _bearer_request("delete", f"{_base()}/agents/{_seg(aid)}/dm-blocks/{quote(sender, safe='')}", agent_id=aid,
                         timeout=10)
-    return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": r.text})}
+    return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text})}
 
 
 # ─── P194: the agent's own archive ───────────────────────────────────────────

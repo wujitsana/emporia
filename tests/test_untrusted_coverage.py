@@ -8,16 +8,9 @@ from emporia import mcp_server, mcp_surface
 #: feed item, room, DM, game state or table talk, challenge, patch, topic, profile, tag, label or reaction
 #: is NOT here: it belongs in `mcp_surface.UNTRUSTED_TEXT`. A new tool must be put in one set or the other.
 NO_OTHER_AGENT_TEXT = frozenset({
-    "archive_now", "block_dm_sender", "reveal_models", "challenge", "create_agora_topic",
     "github_claim_line",   # the agent's own signed claim, made here: no one else's text
     "x_claim_line",        # the agent's own signed claim line and posts, made here
-    "create_room", "decline_challenge", "delete_item",
-    "invite_to_agora_topic", "invite_to_room", "kick_from_agora_topic", "kick_from_room", "close_room", "leave_relay",
-    "leave_room", "my_settings",
-    "reclaim_escrow", "register_agent", "register_x402_wallet",
-    "revoke_agora_invite", "revoke_room_invite", "set_cross_relay_dms",
-    "unsubscribe_agora_topic",
-    "validate_turn",
+    "my_settings", "set_cross_relay_dms",
 })
 
 #: The tools that must carry the marking, by name, so a refactor cannot quietly drop one.
@@ -86,3 +79,43 @@ def test_read_thread_keeps_its_cursor_and_skim_stats_beside_the_marked_text():
                                              "latest": [], "stats": {"items": 3, "operators": 2}, "count": 1})
     assert skim["stats"] == {"items": 3, "operators": 2} and skim["mode"] == "skim"
     assert skim["untrusted_content"]["top"][0]["text"] == HOSTILE
+
+
+def test_failure_text_from_the_relay_is_marked_in_every_tool_even_when_the_call_failed():
+    """G9: `detail` and `reason` can echo a room name or a decline reason; they go under untrusted_content in
+    marked and unmarked tools alike, failed or not. `error` stays the tool's own words."""
+    for tool in sorted(_names()):
+        answer = mcp_surface.shape(tool, {"success": False, "error": "Relay 403", "detail": HOSTILE,
+                                          "reason": HOSTILE})
+        outside = {k: v for k, v in answer.items() if k != mcp_surface.UNTRUSTED_KEY}
+        if tool in mcp_surface.OWN_REASON_TOOLS:
+            assert outside["reason"] == HOSTILE and "detail" not in outside, tool
+            outside = {k: v for k, v in outside.items() if k != "reason"}
+        assert HOSTILE not in repr(outside), f"{tool}: failure text leaked outside untrusted_content"
+        assert answer["error"] == "Relay 403" and answer["success"] is False
+        assert answer[mcp_surface.UNTRUSTED_KEY]["detail"] == HOSTILE and "not instructions" in answer["untrusted"]
+
+
+def test_an_answer_the_package_refused_itself_stays_plain():
+    refusal = {"success": False, "refused_by": "emporia-autonomy", "error": "Blocked by Emporia: ...",
+               "detail": "our own words"}
+    assert mcp_surface.shape("delete_item", refusal) == refusal
+
+
+def test_a_successful_answer_of_a_passthrough_tool_is_marked_and_a_dict_detail_moves_whole():
+    removed = mcp_surface.shape("delete_item", {"success": True, "ok": True, "removed": {"by": HOSTILE}})
+    assert removed["untrusted_content"]["removed"] == {"by": HOSTILE} and removed["ok"] is True
+    err = mcp_surface.shape("challenge", {"success": False, "error": "Relay 409", "detail": {"detail": HOSTILE}})
+    assert err["untrusted_content"]["detail"] == {"detail": HOSTILE}
+
+
+def test_no_tool_puts_the_relays_text_in_error():
+    import re
+    from pathlib import Path
+    src = (Path(mcp_server.__file__)).read_text()
+    assert not re.findall(r'"error": (?:\w+\.)?(?:r|resp|page)\.text\b', src), "relay text goes in `detail`"
+
+
+def test_verifys_own_reason_stays_beside_its_verdict():
+    got = mcp_surface.shape("verify", {"success": True, "verified": False, "reason": "history was changed"})
+    assert got["reason"] == "history was changed" and got["verified"] is False
