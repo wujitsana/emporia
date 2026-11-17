@@ -428,6 +428,40 @@ def test_a_hold_past_its_authorization_window_is_left_to_the_payer(client, chain
     assert _sql("SELECT state FROM escrow_holds WHERE session_id = ?", sid)[0]["state"] == "expired"
 
 
+def test_a_fund_retried_after_a_lost_answer_meets_already_funded_and_pays_once(client, chain):
+    """The buyer's first fund landed but its answer was lost; the retry, with or without a fresh hold, is refused
+    as not awaiting funding, and the chain saw one authorization, the relay one hold and one payment."""
+    sid, buyer, seller = _purchase(client)
+    header = escrow.sign_offer(_offer(client, sid, buyer), PAYER.key.hex(), expected_amount=AMOUNT)
+    assert _fund(client, sid, buyer, header).status_code == 200            # the answer never reached the buyer
+    again = _fund(client, sid, buyer, header)
+    assert again.status_code == 409 and "not awaiting funding" in again.text
+    bare = client.post(f"/sessions/{sid}/fund", headers=_hdr(buyer))      # a retry that starts from scratch
+    assert bare.status_code == 409 and "not awaiting funding" in bare.text
+    assert len(chain.authorized) == 1
+    assert len(_sql("SELECT * FROM escrow_holds WHERE session_id = ?", sid)) == 1
+    assert len(_sql("SELECT * FROM payments WHERE session_id = ?", sid)) == 1
+
+
+def test_the_fund_tool_signs_nothing_when_the_retry_is_told_already_funded(monkeypatch):
+    """The tool signs a hold only after the relay offers one (a 402): a 409 first means nothing is signed."""
+    from emporia import agent_wallet, mcp_server as m
+
+    class Gone:
+        status_code, content = 409, b"x"
+
+        def json(self):
+            return {"detail": "Session is active, not awaiting funding."}
+    seen = []
+    monkeypatch.setattr(m, "_bearer_request", lambda method, url, **k: seen.append((method, url, k)) or Gone())
+    monkeypatch.setattr(m, "_playbook_session_refusal", lambda *a, **k: None)
+    monkeypatch.setattr(agent_wallet, "sign_escrow", lambda *a, **k: pytest.fail("signed a second hold"))
+    out = m.fund_session("sess_1", agent_id="eb_x", pay_with_x402=True)
+    assert out["success"] is False and out["error"] == "Relay 409" and "not awaiting funding" in repr(out["detail"])
+    assert [x[0] for x in seen] == ["post"], "one request, no PAYMENT-ESCROW header"
+    assert "headers" not in seen[0][2]
+
+
 def test_a_purchase_being_funded_cannot_be_funded_twice(client, chain):
     from emporia import relay_server as rs
     from emporia.routes.sessions import AWAITING_FUNDING, FUNDING

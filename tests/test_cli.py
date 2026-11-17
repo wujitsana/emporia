@@ -499,3 +499,39 @@ def test_hosting_steps_with_sudo_or_docker_are_shown_and_never_run_without_a_ter
     assert cli._host_steps(steps, "Run these now?", "On the server:") is None
     monkeypatch.setattr(cli, "ask", lambda q, d: True)
     assert cli._host_steps(steps, "Run these now?", "On the server:") is True
+
+
+def test_doctor_says_when_a_profile_lost_its_emporia_entries_and_the_one_command_that_restores_them(profiles, capsys):
+    """`hermes profile update --force-config` replaces config.yaml (a plain update keeps it): a profile with
+    Emporia's plugin but no mcp_servers.emporia gets a line naming the setup command; a wired one is quiet."""
+    root, _ = profiles
+    lost, wired, plain = root / "lost", root / "zeta", root / "omega"
+    for p in (lost, wired, plain):
+        p.mkdir()
+    (lost / "plugin-data" / "emporia").mkdir(parents=True)
+    (lost / "config.yaml").write_text(yaml.dump({"model": {"provider": "nous"}}))
+    (lost / "distribution.yaml").write_text("name: lost\n")
+    (wired / "plugin-data" / "emporia").mkdir(parents=True)
+    (wired / "config.yaml").write_text(yaml.dump({"mcp_servers": {"emporia": {"env": {}}},
+                                                  "plugins": {"enabled": ["emporia"]}}))
+    (plain / "config.yaml").write_text(yaml.dump({"model": {"provider": "nous"}}))     # never Emporia
+    cli.doctor_unwired_profiles(cli.Report(compact=False), root)
+    out = capsys.readouterr().out
+    assert "lost" in out and "no mcp_servers.emporia" in out
+    assert "hermes profile update --force-config" in out and "setup" in out and "lost" in out
+    assert "zeta" not in out and "omega" not in out
+
+
+def test_doctor_calls_a_github_token_in_an_agent_profile_an_error_by_name_only(profiles, capsys):
+    root, _ = profiles
+    prof = root / "gh_agent"
+    prof.mkdir()
+    (prof / ".env").write_text("GITHUB_TOKEN=ghp_" + "a" * 36 + "\nOTHER=1\n")
+    rep = cli.Report(compact=False)
+    cli.doctor_github_token(rep, prof)
+    out = capsys.readouterr().out
+    assert rep.failed and "GITHUB_TOKEN" in out and "ghp_" not in out, "named, never its value"
+    (prof / ".env").write_text("OTHER=1\n")
+    rep = cli.Report(compact=False)
+    cli.doctor_github_token(rep, prof)
+    assert not rep.failed and "no GitHub token" in capsys.readouterr().out

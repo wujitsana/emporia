@@ -289,6 +289,20 @@ def test_declining_the_last_offer_scores_each_its_own_walk_away(client):
     assert out["termination"] == "no_deal" and out["points"] == {a: ha[1], b: hb[1]}
 
 
+def test_with_an_odd_max_offers_the_creator_makes_the_last_offer_and_the_joiner_answers_it(client):
+    """RULES: the creator sets max_offers and opens; an even number gives the joiner the last offer (the test above,
+    where the creator declines it), an odd one the creator."""
+    sid, a, b = _game(client, {"max_offers": 3})
+    for who in (a, b, a):
+        assert _act(client, sid, who, "offer", {"keep": {"silk": 3}}).status_code == 200
+    assert rs.load_session(sid)["current_agent"] == b
+    assert _act(client, sid, b, "offer", {"keep": {"silk": 1}}).status_code != 200, "no offers are left"
+    assert _act(client, sid, b, "decline").status_code == 200
+    from emporia.modules import bargain
+    assert "with an even number the joiner makes the last offer" in bargain.BargainModule.RULES
+    assert "the other\nside is rated as a plain win" in bargain.BargainModule.RULES
+
+
 def test_a_reveal_must_be_the_committed_secret_and_only_after_the_end(client):
     sid, a, b = _game(client)
     s, nonce = RAND_SECRETS[(sid, a)]

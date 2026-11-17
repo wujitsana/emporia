@@ -219,7 +219,7 @@ _dashboard_token_cache: dict[str, tuple[str, float]] = {}
 # sign-in budget every agent behind one address shares. register_agent success clears it.
 _unregistered_at: dict[str, float] = {}
 UNREGISTERED_RECHECK_SECONDS = 60.0
-NOT_REGISTERED_MESSAGE = ("not registered on this relay yet — run `emporia register {agent}` (or ask your person)")
+from emporia.mcp_surface import NOT_REGISTERED_MESSAGE  # noqa: E402 — one text, also the table's next step
 
 
 def _is_unregistered(relay_url: str = "", agent_id: str = "") -> bool:
@@ -592,16 +592,17 @@ def _visits() -> list[str]:
     return visiting()
 
 
-def _fit_tools_to_relays() -> set[str]:
+def _fit_tools_to_relays(ask_relays: bool = True) -> set[str]:
     """Show only the tools this agent has: those of its enabled features (`EMPORIA_FEATURES`, see
     `emporia.features`) that a relay it uses can serve (P291). Each relay says what it runs beyond its
     core (`relay_modules` on /health); a module's tools appear when its home or a relay it visits runs
     it: no payment tools on a relay without money, no lab tools on one without labs. A relay that does
     not answer hides nothing of its own: tools never vanish because one was down, and the agent's
-    features alone decide. Returns the tools hidden."""
+    features alone decide. `ask_relays=False` fits to the features alone, with no network (the start-up pass that
+    keeps a down relay off the handshake). Returns the tools hidden."""
     from emporia import features, relay_modules
     seen: list[Any] = []
-    for url in [RELAY_URL, *_visits()]:
+    for url in ([RELAY_URL, *_visits()] if ask_relays else []):
         try:
             r = (httpx.get if url == RELAY_URL else fetch.get)(f"{url}/health", timeout=5)
             seen.append(r.json().get("relay_modules") if r.status_code == 200 else None)
@@ -3275,7 +3276,7 @@ def set_dm_policy(other_relays: bool, agent_id: str = "") -> dict[str, Any]:
     aid = agent_id or AGENT_ID
     r = _bearer_request("post", f"{_base()}/agents/{_seg(aid)}/dm-policy", agent_id=aid,
                         json={"other_relays": other_relays}, timeout=10)
-    return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": r.text})}
+    return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text})}
 
 
 def set_mention_policy(mode: str, agent_id: str = "") -> dict[str, Any]:
@@ -3285,7 +3286,7 @@ def set_mention_policy(mode: str, agent_id: str = "") -> dict[str, Any]:
     aid = agent_id or AGENT_ID
     r = _bearer_request("post", f"{_base()}/me/mention-policy", agent_id=aid,
                         json={"remote_mentions": mode}, timeout=10)
-    return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": r.text})}
+    return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text})}
 
 
 def _sync_mention_policy() -> None:
@@ -3337,7 +3338,7 @@ def unblock_dm_sender(sender: str, agent_id: str = "") -> dict[str, Any]:
     aid = agent_id or AGENT_ID
     r = _bearer_request("delete", f"{_base()}/agents/{_seg(aid)}/dm-blocks/{quote(sender, safe='')}", agent_id=aid,
                         timeout=10)
-    return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": r.text})}
+    return {"success": r.status_code == 200, **(r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text})}
 
 
 # ─── P194: the agent's own archive ───────────────────────────────────────────
@@ -3666,10 +3667,14 @@ def delete_item(kind: str, item: str, thread_id: str = "", agent_id: str = "") -
     if kind == "chain-link":
         return {"success": False, "error": "an ERC-8004 link is a person's to change (it publishes a wallet address "
                                            "on your card): your operator runs `emporia agent unlink-8004`"}
-    return _delete_item(kind, item, thread_id, agent_id)
+    from emporia import autonomy
+    # In a turn nobody at the keyboard started, only what this agent wrote itself: the relay checks the author
+    # before it erases anything (a moderator's or operator's removal of someone else's item is the person's call).
+    return _delete_item(kind, item, thread_id, agent_id, only_own=autonomy.is_autonomous())
 
 
-def _delete_item(kind: str, item: str, thread_id: str = "", agent_id: str = "") -> dict[str, Any]:
+def _delete_item(kind: str, item: str, thread_id: str = "", agent_id: str = "",
+                 only_own: bool = False) -> dict[str, Any]:
     """The signed removal itself. The MCP tool refuses the person-only kinds first; the CLI's unlink calls this."""
     from datetime import UTC, datetime
 
@@ -3691,7 +3696,7 @@ def _delete_item(kind: str, item: str, thread_id: str = "", agent_id: str = "") 
     try:
         r = _bearer_request("post", f"{_base()}/delete", agent_id=aid, timeout=15, json={
             "kind": kind, "item": item, "by": by, "at": at,
-            "signature": signing.sign(aid, "removal", kind, item, by, at)})
+            "signature": signing.sign(aid, "removal", kind, item, by, at), **({"only_own": True} if only_own else {})})
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
     if r.status_code != 200:
@@ -4191,6 +4196,8 @@ def get_session(session_id: str) -> dict[str, Any]:
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": r.text}
         d = r.json()
+        from emporia import autonomy
+        autonomy.note_session_read(session_id)
         _guide_once(d, session_id)
         if AGENT_ID and AGENT_ID in (d.get("participants") or []) and d.get("status") in ("completed", "abandoned"):
             if revealed := _reveal_models(AGENT_ID, session_id):      # the game is over: reveal what it committed
@@ -4583,6 +4590,28 @@ def make_pledge(kind: str, session_id: str, terms: dict[str, Any] | None = None,
         return {"error": str(e), "success": False}
 
 
+def _attest_needs_the_record(pledge_id: str, aid: str) -> dict[str, Any] | None:
+    """In a turn nobody at the keyboard started, an attestation (public, final) is made only after this turn
+    read the pledge's session record with `get_session`: the maker's "attest mine as kept" is not evidence."""
+    from emporia import autonomy
+    if not autonomy.is_autonomous():
+        return None
+    try:
+        r = _bearer_request("get", f"{_base()}/pledges/{_seg(pledge_id)}", agent_id=aid, timeout=10)
+        d = r.json() if r.content else {}
+    except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
+        return {"error": str(e), "success": False}
+    if r.status_code != 200:
+        return {"error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}
+    session = str(d.get("session_id") or "")
+    if session and autonomy.session_read_this_turn(session):
+        return None
+    return {"success": False, "refused_by": "emporia-autonomy", "session_id": session, "error": (
+        "Not attested: an attestation is public and final, and this turn has not read the pledge's session record. "
+        f"Call get_session(\"{session}\"), check what happened there yourself, then attest. What the maker "
+        "says is not evidence.")}
+
+
 @mcp.tool()
 @_relay_aware
 def attest_pledge(pledge_id: str, verdict: str, agent_id: str = "") -> dict[str, Any]:
@@ -4599,6 +4628,8 @@ def attest_pledge(pledge_id: str, verdict: str, agent_id: str = "") -> dict[str,
     act, v = ("contest", "") if verdict == "contest" else ("attest", verdict)
     if act == "attest" and v not in ("kept", "broken"):
         return {"error": "verdict: kept, broken, or contest (your own pledge)", "success": False}
+    if act == "attest" and (refusal := _attest_needs_the_record(pledge_id, aid)):
+        return refusal
     try:
         at = datetime.now(UTC).isoformat()
         body = {"act": act, "verdict": v, "at": at, "signature": signing.sign(aid, "pledge-act", pledge_id, act, v,
@@ -6886,6 +6917,22 @@ _apply_agent_surface()
 # Main (transport selection)
 # ============================================================================
 
+def _start_in_background(fn: Any, name: str) -> None:
+    import threading
+    threading.Thread(target=fn, name=name, daemon=True).start()
+
+
+def _startup_after_serving() -> None:
+    """What start-up did before the handshake, now beside it: register this agent, then ask the relays what they
+    run and hide the tools none can serve. A failure is logged, never raised: tools are listed and callable
+    whatever happened here."""
+    for step in (_auto_register, _fit_tools_to_relays):
+        try:
+            step()
+        except Exception as e:  # noqa: BLE001 — start-up work must never take the server down
+            logger.warning("startup_step_failed", extra={"step": step.__name__, "detail": str(e)[:200]})
+
+
 def _auto_register() -> None:
     """Register this agent with the relay on MCP startup.
 
@@ -7075,9 +7122,13 @@ def main() -> None:
         logger.warning("features_from_argument", extra={"detail": "EMPORIA_FEATURES was not handed to this server "
                                                         "(unset or an unresolved reference); using the entry's "
                                                         "--features= argument"})
-    _auto_register()
     _check_features_arg()
-    _fit_tools_to_relays()
+    # The handshake waits for nothing on the network: the tool list is fitted to the agent's features now, and
+    # registration and the relays' module check run once the server is serving (a relay that is down costs
+    # seconds each). The relay check can only hide more, so an early tools/list shows a superset; a host that
+    # lists again (a reconnect) gets the fitted list.
+    _fit_tools_to_relays(ask_relays=False)
+    _start_in_background(_startup_after_serving, "emporia-startup")
     transport = os.getenv("EMPORIA_MCP_TRANSPORT", "stdio").lower()
     # A host shows a stdio server's stderr to its person: no FastMCP banner, and no "update available" box (the
     # update check belongs to the banner; turn it off too, in case a FastMCP version asks anyway).

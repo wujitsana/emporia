@@ -5736,6 +5736,31 @@ def _agent_profiles(root: Path) -> list[tuple[Path, dict]]:
     return out
 
 
+def doctor_unwired_profiles(rep: Report, root: Path) -> None:
+    """A profile that has Emporia's plugin or runtime but no `mcp_servers.emporia` entry lost its wiring.
+    `hermes profile update --force-config` does that: Hermes replaces the profile's config.yaml with the
+    distribution's (a plain `hermes profile update` keeps it, and never touches .env or plugin-data). Setup puts
+    the entries back and changes nothing else. (A plugin that is installed but not enabled is `doctor_profile_secrets`'s.)"""
+    inst = installer()
+    cfgs = sorted(root.glob("*/config.yaml"))
+    if root.name == "profiles" and (root.parent / "config.yaml").exists():
+        cfgs.insert(0, root.parent / "config.yaml")
+    for cfg in cfgs:
+        profile = cfg.parent
+        if not ((profile / "plugins" / "emporia").is_dir() or (profile / "plugin-data" / "emporia").is_dir()):
+            continue                  # never an Emporia profile
+        config = inst.load_yaml(cfg)
+        if isinstance((config.get("mcp_servers") or {}).get("emporia"), dict):
+            continue
+        lost = "mcp_servers.emporia"
+        dist = ("; this profile is a Hermes distribution, and `hermes profile update --force-config` replaces "
+                "config.yaml (a plain `hermes profile update` keeps it)") if (profile / "distribution.yaml").exists() \
+            else ""
+        rep.section(f"Wiring  ({profile})")
+        rep.warn(f"config.yaml has no {lost}{dist}",
+                 localize(f"emporia setup agent {hermes_layout.name_of(profile)}") + "  (puts the entries back, changes nothing else)")
+
+
 def _signed_get(agent_id: str, key_dir: Path, path: str, method: str = "GET",
                 body: dict | None = None) -> tuple[int, Any]:
     """GET (or `method`) `path` on the relay as `agent_id`, signed with its own key;
@@ -6063,6 +6088,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     doctor_identity_key(rep, name, agent_id, key_dir, linked_identity, dotenv,
                         env.get("EMPORIA_RELAY_URL") or relay_url(), relay_up)
     doctor_profile_secrets(rep, profile, dotenv)
+    doctor_github_token(rep, profile)
     doctor_vault_sources(rep, profile, dotenv)
     doctor_labs(rep)
     doctor_mcp_references(rep, profile, dotenv)
@@ -6486,6 +6512,23 @@ def doctor_vault_sources(rep: Report, profile: Path, dotenv: dict[str, str]) -> 
                  "cmd:sh -c 'op read …'")
 
 
+#: Settings through which a GitHub credential reaches an agent (the names `gh` and git tooling read).
+GITHUB_TOKEN_NAMES = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GITHUB_PAT")
+
+
+def doctor_github_token(rep: Report, profile: Path) -> None:
+    """A GitHub token in an Emporia agent's profile is an error: an agent can be talked into using it, and
+    contributing goes through a person's own PR. Presence by name only; the value is never read here."""
+    from emporia import profile_env
+    held = [n for n, there in profile_env.present(profile / ".env", list(GITHUB_TOKEN_NAMES)).items() if there]
+    if held:
+        rep.fail(f"this agent profile holds a GitHub token ({', '.join(held)}): an agent can be talked into using it",
+                 "remove it from the profile's .env; contribute from your own account and open the pull request "
+                 "yourself")
+    else:
+        rep.ok("no GitHub token in this profile's settings")
+
+
 def doctor_profile_secrets(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
     """P201: secrets only in the .env, both files owner-only, and Hermes told
     which names are secret (the platform plugin's manifest)."""
@@ -6718,6 +6761,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             for profile, entry in group:
                 doctor_agent(rep, profile, entry, relay_up=h is not None)
                 doctor_first_run(rep, profile, entry, h)
+    if not args.profile:
+        doctor_unwired_profiles(rep, Path(args.profiles_root) if args.profiles_root else profiles_root())
     doctor_dashboard(rep, [p for p, _ in agents])
     doctor_hermes_plugins(rep)
     doctor_machine_secrets(rep)
