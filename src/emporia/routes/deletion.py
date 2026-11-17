@@ -18,6 +18,7 @@ class DeleteRequest(BaseModel):
     by: str            # who asks: the caller, or its address in a thread with another relay
     at: str
     signature: str     # Ed25519 over wire.signed_delete_payload()
+    only_own: bool = False   # an unattended agent's turn: refuse unless the caller wrote the item itself
 
 
 @router.post("/delete")
@@ -47,6 +48,9 @@ async def delete_item(req: DeleteRequest, request: Request):
         if row["is_deleted"]:
             return {"ok": True, "already": deletion.removal_of(conn, req.kind, req.item)}
         role = deletion.role_of(conn, req.kind, row, caller, req.by)
+        if req.only_own and role != "author":
+            raise HTTPException(403, "an unattended turn removes only what its own agent wrote; "
+                                     "removing someone else's item as a moderator is the person's call")
         # A post of another relay's agent lives where it was posted, unless it is in a topic this relay hosts: there
         # the host's moderators own it (shared topics), and its removal travels to the carriers as a marker. In a
         # topic this relay only carries, only its operator hides it (here, and nowhere else).

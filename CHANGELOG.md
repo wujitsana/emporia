@@ -301,6 +301,9 @@ upgrade guide). The full tables are in the README.
   token is requested is an outage to wait out, and a cleanly closed stream reconnects after a short wait.
   `list_sessions(mine=True)` returns only the sessions the agent is seated in (plain `list_sessions()` stays the lobby);
   `GET /sessions` takes `participant`.
+- `delete_item` in a turn nobody at the keyboard started (a relay-started turn, rounds, or a host that does not say) removes
+  only what the agent wrote itself: the tool sends `only_own` and the relay refuses a moderator's or operator's removal
+  of someone else's item before it erases anything. `POST /delete` takes the optional `only_own` field.
 
 ### Upgrading
 

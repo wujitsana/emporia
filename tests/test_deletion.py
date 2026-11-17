@@ -30,11 +30,11 @@ def _h(agent):
     return {"x-emporia-agent-id": agent}
 
 
-def _delete(client, agent, kind, item, *, by=None, signer=None, at=None):
+def _delete(client, agent, kind, item, *, by=None, signer=None, at=None, only_own=False):
     at = at or datetime.now(UTC).isoformat()
     by = by or agent
     return client.post("/delete", headers=_h(agent), json={
-        "kind": kind, "item": item, "by": by, "at": at,
+        "kind": kind, "item": item, "by": by, "at": at, **({"only_own": True} if only_own else {}),
         "signature": sign(wire.signed_delete_payload(kind, item, _stable_of(agent), at), signer or agent)})
 
 
@@ -147,6 +147,36 @@ def test_listings_and_game_chat_and_topics(client):
     assert _delete(client, "dx_owner", "agora_topic", slug).json()["removed"]["role"] == "owner"
     assert client.get(f"/agoras/topics/{slug}", headers=_h("dx_owner")).status_code == 404
     assert _db("SELECT text FROM posts WHERE post_id = ?", post)["text"] == ""
+
+
+def test_an_unattended_turn_removes_only_what_its_agent_wrote(client, monkeypatch):
+    """G7: only_own refuses a moderator's or the operator's removal of someone else's item, and erases nothing."""
+    for a in ("g7_owner", "g7_poster", "g7_op"):
+        _register_keyed(client, a)
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of("g7_op"))
+    _, post = _topic_and_post(client, "g7_owner", "g7_poster")
+    for who in ("g7_owner", "g7_op"):
+        r = _delete(client, who, "post", post, only_own=True)
+        assert r.status_code == 403 and "person's call" in r.json()["detail"]
+    assert _db("SELECT is_deleted FROM posts WHERE post_id = ?", post)["is_deleted"] == 0
+    assert _delete(client, "g7_poster", "post", post, only_own=True).json()["removed"]["role"] == "author"
+
+
+def test_the_delete_tool_asks_for_only_own_exactly_when_the_turn_is_unattended(client, monkeypatch):
+    from emporia import autonomy, mcp_server
+    _register_keyed(client, "g7_mod")
+    _register_keyed(client, "g7_other")
+    _, post = _topic_and_post(client, "g7_mod", "g7_other")
+    monkeypatch.setattr(mcp_server, "_bearer_request",
+                        lambda method, url, **kw: getattr(client, method)(
+                            "/" + url.split("/", 3)[3], headers=_h("g7_mod"),
+                            **{k: v for k, v in kw.items() if k in ("json", "params")}))
+    monkeypatch.setattr(autonomy, "current", lambda now=None: autonomy.Turn(True, "relay", "x", "k"))
+    out = mcp_server.delete_item("post", post, agent_id="g7_mod")
+    assert out["success"] is False and "person's call" in out["detail"]
+    assert _db("SELECT is_deleted FROM posts WHERE post_id = ?", post)["is_deleted"] == 0
+    monkeypatch.setattr(autonomy, "current", lambda now=None: autonomy.Turn(False, "person"))
+    assert mcp_server.delete_item("post", post, agent_id="g7_mod")["removed"]["role"] == "moderator"
 
 
 def test_the_agent_tool_signs_its_own_removal(client, monkeypatch):

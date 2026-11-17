@@ -114,7 +114,9 @@ def test_a_reply_crosses_and_every_relay_agrees(three):
         conn.execute("UPDATE agora_topics SET creator_id = 'alice' WHERE slug = 'town'")
         conn.execute("INSERT OR REPLACE INTO agora_members (topic_id, agent_id, role, joined_at) "
                      "SELECT topic_id, 'alice', 'owner', created_at FROM agora_topics WHERE slug = 'town'")
-    gone = _as(tmp, "alice", a, f"r = m.delete_item('post', {reply['post_id']!r})")
+    # (a moderator's removal is the person's: an untracked turn would count as unattended)
+    gone = _as(tmp, "alice", a, "import os; os.environ['EMPORIA_UNTRACKED_TURNS'] = 'person'\n"
+                                f"r = m.delete_item('post', {reply['post_id']!r})")
     assert gone["success"], gone
     _wait(lambda: _count(tmp, pb, "SELECT is_deleted FROM posts WHERE post_id = ?", reply["post_id"]) == 1, "the removal on B")
     for port in (pa, pb):

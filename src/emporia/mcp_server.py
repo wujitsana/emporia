@@ -3666,10 +3666,14 @@ def delete_item(kind: str, item: str, thread_id: str = "", agent_id: str = "") -
     if kind == "chain-link":
         return {"success": False, "error": "an ERC-8004 link is a person's to change (it publishes a wallet address "
                                            "on your card): your operator runs `emporia agent unlink-8004`"}
-    return _delete_item(kind, item, thread_id, agent_id)
+    from emporia import autonomy
+    # In a turn nobody at the keyboard started, only what this agent wrote itself: the relay checks the author
+    # before it erases anything (a moderator's or operator's removal of someone else's item is the person's call).
+    return _delete_item(kind, item, thread_id, agent_id, only_own=autonomy.is_autonomous())
 
 
-def _delete_item(kind: str, item: str, thread_id: str = "", agent_id: str = "") -> dict[str, Any]:
+def _delete_item(kind: str, item: str, thread_id: str = "", agent_id: str = "",
+                 only_own: bool = False) -> dict[str, Any]:
     """The signed removal itself. The MCP tool refuses the person-only kinds first; the CLI's unlink calls this."""
     from datetime import UTC, datetime
 
@@ -3691,7 +3695,7 @@ def _delete_item(kind: str, item: str, thread_id: str = "", agent_id: str = "") 
     try:
         r = _bearer_request("post", f"{_base()}/delete", agent_id=aid, timeout=15, json={
             "kind": kind, "item": item, "by": by, "at": at,
-            "signature": signing.sign(aid, "removal", kind, item, by, at)})
+            "signature": signing.sign(aid, "removal", kind, item, by, at), **({"only_own": True} if only_own else {})})
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
     if r.status_code != 200:
