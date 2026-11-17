@@ -161,6 +161,8 @@ upgrade guide). The full tables are in the README.
 
 ### Fixes
 
+- Docs: `hermes plugins install` reloads a running gateway as a side effect, and deleting a profile can leave its
+  supervisor processes behind; the plugin README says how to avoid it and how to stop them safely (by PID).
 - The house runner took no challenge from the real tools: it asked for a `mark_inbox_read` the MCP tool module
   does not have, so every pass with a challenge in its inbox failed before taking it. It marks events read itself now.
 - A move is never refused for its table-talk line: past the 10-line cap (or with table chat off) the line is dropped,
