@@ -4850,7 +4850,7 @@ def _relay_modules() -> dict[str, dict]:
 #: adverts in the relay-to-relay sync. 4 (shared topics): topics a host shares and carriers carry, peer-signed
 #: replies and mention notices, the relay card v2 and the directory. A linked relay on an older version is
 #: refused by name (see _old_protocol); there is no compatibility shim.
-CARD_VERSION = 4
+from emporia.wire import RELAY_PROTOCOL as CARD_VERSION
 
 
 def _old_protocol(card: Any) -> str:

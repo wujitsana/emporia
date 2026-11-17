@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import time
@@ -108,8 +109,31 @@ def refuse_unless_peer_takes_dms(peer: str) -> None:
     """P291: a linked relay whose signed card says it takes no sealed DMs from other
     relays is not sent one — said here, not as an error from over there."""
     from emporia import relay_server as rs
+    if old := str(rs._FEDERATION_LAST_SYNC.get(normalize_peer_url(peer), {}).get("relay_modules_error") or ""):
+        if old.startswith("refused:"):
+            raise HTTPException(409, f"{host_of(peer)} cannot exchange sealed DMs with this relay: {old[9:]}. "
+                                     f"{UPGRADE_NOTE}")
     if rs.peer_runs(peer, "federation", "dms") is False:
         raise HTTPException(409, f"{host_of(peer)} does not exchange DMs with other relays (its card says so)")
+
+
+#: said with every refusal of a relay on an older protocol (2.0.1 runs relay protocol 3)
+UPGRADE_NOTE = ("Both relays must run Emporia 2.1 for sealed DMs and shared topics across relays: update the older "
+                "one (docs/upgrade-2.1.md); posts still sync meanwhile.")
+
+
+_OLD_TOLD: set[str] = set()
+
+
+async def old_peer_reason(peer: str) -> str:
+    """Why `peer`'s signed card says it runs a protocol older than this relay's, or "" (also when its card does
+    not come): what a bare 401 or 404 from it most likely means."""
+    from emporia import fetch
+    from emporia import relay_server as rs
+    try:
+        return rs._old_protocol((await fetch.request("GET", f"{peer}/relay/card", timeout=10)).json())
+    except Exception:  # noqa: BLE001 - no card, no reason
+        return ""
 
 
 # ─── relay-to-relay requests ─────────────────────────────────────────────────
@@ -238,6 +262,15 @@ async def verified_peer(request: Request, body: bytes, feature: str = "dms") -> 
         raise refuse(403, "not a relay linked to this one")
     if not ts.isdigit() or abs(time.time() - int(ts)) > WINDOW_SECONDS:
         raise refuse(401, "relay request outside its time window")
+    if not nonce and not request.headers.get("X-Emporia-Relay-Protocol") and sig and not topics:
+        # a relay on protocol 3 (Emporia 2.0.1) signs without a nonce: say so, not "no nonce"
+        from emporia import relay_server as rs
+        if peer not in _OLD_TOLD:      # the older relay only sees the status: its operator here hears why, once
+            _OLD_TOLD.add(peer)
+            logging.getLogger("emporia.relay").warning("old_relay_dm_refused", extra={
+                "peer": peer, "detail": f"{peer} runs relay protocol 3 or older (Emporia 2.0.1); update it to 2.1"})
+        raise HTTPException(426, f"refused: it runs relay protocol 3 or older, which signs relay requests the old way; "
+                                 f"this relay speaks protocol {rs.CARD_VERSION}. {UPGRADE_NOTE}")
     if not _NONCE.fullmatch(nonce):
         raise refuse(401, "relay request without a nonce")
     query = request.scope.get("query_string", b"").decode("latin-1")
@@ -406,6 +439,9 @@ async def look_up(peer: str, agent_id: str) -> dict[str, Any]:
         raise HTTPException(410, {"moved_to": where, "message": f"{agent_id}@{host_of(peer)} moved to "
                                                                 f"{where or 'another relay'}; reach it there."})
     if r.status_code != 200:
+        if r.status_code in (401, 403, 404, 405, 426) and (old := await old_peer_reason(peer)):
+            raise HTTPException(502, f"{host_of(peer)} cannot exchange sealed DMs with this relay: {old}. "
+                                     f"{UPGRADE_NOTE}")
         raise HTTPException(502, f"{peer} answered {r.status_code}")
     data = r.json()
     record = data.get("agent") or {}
