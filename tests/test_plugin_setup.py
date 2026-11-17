@@ -725,7 +725,7 @@ def test_update_with_nothing_to_do_says_so_and_names_each_profile_to_restart(mon
     setup_cli.register_cli(parser)
     assert setup_cli.dispatch(parser.parse_args(["update"])) == 0           # first: installs, then restarts
     out = capsys.readouterr().out
-    assert "hermes -p judge gateway restart" in out and "hermes -p shop gateway restart" in out
+    assert "hermes gateway restart" in out and "hermes gateway restart" in out
     assert "other" not in out and "first time" not in out
     installs = len(ran)
     assert setup_cli.dispatch(parser.parse_args(["update"])) == 0           # again: nothing to do

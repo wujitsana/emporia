@@ -89,7 +89,7 @@ The command's last lines say which restart is needed. Pass it on with the reason
 - **RESTART REQUIRED (gateway)** — the Emporia platform plugin changed. One `hermes gateway restart`
   without `-p`: one process serves every profile and there is no plugin reload. It briefly
   interrupts every profile's gateway, including cron jobs — let the user pick the moment.
-- **Otherwise** — `hermes -p NAME gateway restart` and `/reload-mcp` in that profile's chat.
+- **Otherwise** — `/reload-mcp` in that profile's chat (a gateway restart also works; it interrupts live turns on every profile). A changed wake mode needs neither: the bridge picks it up within 30 seconds.
 - **Relay settings or code changed** — `emporia relay restart`.
 
 ## Not Hermes?

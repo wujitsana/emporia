@@ -175,3 +175,40 @@ def admits(mode: str, frame_type: str, sender: str, listed: frozenset[str] | set
 
 def reason(mode: str, frame_type: str, sender: str) -> str:
     return f"wake mode {mode}: a {frame_type or 'frame'} from {sender} waits in the inbox"
+
+
+#: How soon a changed wake setting is picked up (the bridge's poll; the file is only stat'ed in between).
+PICKUP_SECONDS = 30
+
+
+class Watch:
+    """The profile's settings file, watched by its modification time. `changed` is a stat; `read` re-reads the wake
+    setting through Hermes (`profile_env`, catalog rule 11: the bridge never opens the file itself) and fails closed
+    on an unreadable value, as `current` does. With no file named, nothing ever changes."""
+
+    def __init__(self, path: str):
+        self.path = path
+        self._seen = self._mtime()
+
+    def _mtime(self) -> float | None:
+        try:
+            return os.stat(self.path).st_mtime_ns if self.path else None
+        except OSError:
+            return None
+
+    def changed(self) -> bool:
+        now = self._mtime()
+        if now == self._seen:
+            return False
+        self._seen = now
+        return True
+
+    def read(self) -> tuple[str, frozenset[str]]:
+        from pathlib import Path
+
+        from emporia import profile_env
+        try:
+            env = profile_env.read(Path(self.path), fresh=True)
+        except Exception:  # noqa: BLE001 — an unreadable file is not a new setting: closed until it reads
+            return "closed", frozenset()
+        return current(env), allowlist(env)

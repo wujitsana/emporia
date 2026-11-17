@@ -71,7 +71,7 @@ def test_json_prints_the_table(shop, capsys):
     assert [r["key"] for r in data["settings"]] == [s.key for s in S.SETTINGS]
     games = next(r for r in data["settings"] if r["key"] == "games_per_operator")
     assert games["default"] is True and games["value"] == "6 a day"
-    assert data["restart"] == "hermes -p shop gateway restart"
+    assert data["restart"] == "hermes gateway restart"
 
 
 def test_without_a_terminal_it_changes_nothing(shop, capsys):
@@ -98,7 +98,7 @@ def test_set_writes_through_the_same_writer_and_names_the_restart(shop, capsys, 
     out = capsys.readouterr().out
     assert "Games per operator a day: 6 a day (default) -> 10 a day" in out
     assert "Wake mode: direct (default) -> open" in out
-    assert "hermes -p shop gateway restart" in out
+    assert "hermes gateway restart" in out
     # what the runtime reads is what was set
     from emporia import playbook, wake
     assert playbook.resolve(env).games_per_operator_per_day == 10 and wake.resolve(env) == "open"
@@ -154,7 +154,7 @@ def test_rounds_go_through_the_rounds_code(shop, monkeypatch, capsys):
     assert run("--set", "rounds=8h") == 0
     assert run("--set", "rounds=off") == 0
     assert calls == [("on", "shop", "8h"), ("off", "shop")]
-    assert "hermes -p shop gateway restart" not in capsys.readouterr().out, "rounds are a cron job, not the gateway's"
+    assert "hermes gateway restart" not in capsys.readouterr().out, "rounds are a cron job, not the gateway's"
 
 
 def test_an_unknown_agent_is_said(monkeypatch, capsys):
@@ -195,7 +195,7 @@ def test_the_menu_picks_a_number_shows_the_options_and_keeps_on_enter(shop, monk
     assert out.count("Settings for shop") == 2, "shown once, and again on `list`"
     assert "not allowed. Allowed: a whole number" in out, "a refused value is said, and the menu goes on"
     assert "Changed:" in out and "Relay-started turns a day: 300 in 24 hours (default) -> 120 in 24 hours" in out
-    assert "hermes -p shop gateway restart" in out and "hermes gateway restart" in out
+    assert "hermes gateway restart" in out and "hermes gateway restart" in out
 
 
 def test_in_an_agents_own_terminal_even_a_tty_only_shows(shop, monkeypatch, capsys):

@@ -247,7 +247,7 @@ def test_the_wake_cli_writes_the_setting_and_shows_it(tmp_path, monkeypatch, cap
     assert cli.cmd_wake(argparse.Namespace(mode="open", agent="shop")) == 0
     assert written == {"EMPORIA_WAKE": "open"}
     out = capsys.readouterr().out
-    assert "Wake mode   open" in out and "gateway restart" in out
+    assert "Wake mode   open" in out and "no restart is needed" in out
     assert cli.cmd_wake(argparse.Namespace(mode=None, agent="shop")) == 0
 
 
@@ -318,3 +318,50 @@ def test_the_adapter_copy_of_never_wakes_is_the_same():
     src = (pathlib.Path(__file__).parents[1] / "hermes_plugin" / "emporia" / "adapter.py").read_text()
     m = re.search(r"_WAKE_NEVER = frozenset\(\{([^}]*)\}\)", src)
     assert {x.strip().strip('"') for x in m.group(1).split(",") if x.strip()} == set(wake.NEVER_WAKES)
+
+
+# -- a changed wake setting is picked up without a restart ---------------------
+
+def test_the_watch_sees_a_changed_settings_file_by_its_time_and_reads_it_through_profile_env(tmp_path, monkeypatch):
+    import os
+    profile = tmp_path / "p"
+    profile.mkdir()
+    (profile / "config.yaml").write_text("{}\n")
+    env = profile / ".env"
+    env.write_text("EMPORIA_WAKE=direct\n")
+    seen = {}
+
+    def fake_read(path, *, fresh=False):
+        seen["fresh"] = fresh
+        return {"EMPORIA_WAKE": "open", "EMPORIA_ALLOWED_USERS": "friend"}
+
+    from emporia import profile_env
+    monkeypatch.setattr(profile_env, "read", fake_read)
+    w = wake.Watch(str(env))
+    assert not w.changed(), "an untouched file is only stat'ed"
+    st = env.stat()
+    os.utime(env, ns=(st.st_atime_ns, st.st_mtime_ns + 5_000_000_000))
+    assert w.changed() and not w.changed()
+    assert w.read() == ("open", frozenset({"friend"})) and seen["fresh"] is True
+    assert not wake.Watch("").changed()
+    monkeypatch.setattr(profile_env, "read", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no hermes")))
+    assert w.read() == ("closed", frozenset()), "unreadable fails closed"
+
+
+def test_the_bridge_applies_a_wake_change_to_the_next_frame_and_tells_the_adapter(monkeypatch, tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("x=1\n")
+    states = iter([("open", frozenset())])
+    monkeypatch.setattr(wake.Watch, "changed", lambda self: True)
+    monkeypatch.setattr(wake.Watch, "read", lambda self: next(states, ("open", frozenset())))
+    dm = {"type": "dm_received", "sender_id": "mallory", "thread_id": "d", "content": "hi"}
+    got, lines = _run_bridge(monkeypatch, [dm], {"EMPORIA_WAKE": "direct", "EMPORIA_DOTENV": str(env)})
+    assert got == [True], "direct would have left the DM in the inbox; the changed setting (open) wakes"
+    control = [l for l in lines if l.get("control") == "wake"]
+    assert control and control[0]["mode"] == "open"
+
+
+def test_the_adapter_takes_a_control_line_and_no_text_notice_forges_one():
+    import pathlib
+    src = (pathlib.Path(__file__).parents[1] / "hermes_plugin" / "emporia" / "adapter.py").read_text()
+    assert 'data.get("control") != "wake"' in src and "if mode in WAKE_MODES" in src

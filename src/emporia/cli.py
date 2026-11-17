@@ -3621,7 +3621,7 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
     if updates:
         merge_env_file(profile / ".env", updates)
         print(f"  Saved. {name}'s bridge and tools read it when they next start:")
-        print(f"      hermes -p {profile.name} gateway restart")
+        print(f"      hermes gateway restart")
     _show_playbook(name, pb)
     return 0
 
@@ -3674,7 +3674,7 @@ def cmd_agent_settings(name: str, args: argparse.Namespace) -> int:
         if changed_env:
             print(f"  They apply when its gateway next starts. To restart it yourself:\n"
                   f"      {S.restart_command(name)}\n"
-                  f"  (or, if one gateway serves every profile: hermes gateway restart)")
+                  f"  (one gateway serves every profile: this interrupts live turns on all of them)")
 
     def diff(before: list[dict], after: list[dict]) -> list[str]:
         was = {r["key"]: r["value"] + (" (default)" if r["default"] else "") for r in before}
@@ -3847,8 +3847,7 @@ def cmd_wake(args: argparse.Namespace) -> int:
     if args.mode:
         merge_env_file(profile / ".env", {W.SETTING: args.mode})
         dotenv = {**dotenv, W.SETTING: args.mode}
-        print(f"  Saved. {name}'s bridge reads it when it next starts:")
-        print(f"      hermes {'' if name == 'default' else f'-p {name} '}gateway restart")
+        print(f"  Saved. {name}'s bridge picks it up within {W.PICKUP_SECONDS} seconds; no restart is needed.")
     try:
         mode = W.resolve(dotenv)
     except W.WakeError as e:
@@ -3884,7 +3883,7 @@ def cmd_features(args: argparse.Namespace) -> int:
         profile, name = found
         held = installer().harvest_env(profile)
         key_dir = Path(held.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
-        restart = (f"restart the gateway: `hermes {'' if name == 'default' else f'-p {name} '}gateway restart` "
+        restart = (f"restart the gateway: `hermes gateway restart` "
                    "(or `/reload-mcp` in its chat)")
 
         def save(value: str) -> None:
@@ -4564,7 +4563,7 @@ def cmd_visits(args: argparse.Namespace) -> int:
         # is not seen (the agent's my_settings said "ask" while this printed "linked"). Same refresh as `features`.
         installer().refresh_mcp_references(profile)
         print(f"  {args.name}: updated — it applies when its MCP server restarts "
-              f"(hermes -p {args.name} gateway restart)")
+              f"(hermes gateway restart)")
         env = {**env, **updates}
     key_dir = Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
     try:
@@ -4661,7 +4660,7 @@ def cmd_home(args: argparse.Namespace) -> int:
     merge_env_file(profile / ".env", {"EMPORIA_HOME": "" if action == "here" else over["EMPORIA_HOME"]})
     where = {"here": f"on {relay}", "nomad": "nowhere (a nomad)", "visit": f"on {args.url.rstrip('/')}"}[action]
     print(f"  {args.name} now lives {where}; its signed card says so from now on."
-          f" It applies when its MCP server restarts (hermes -p {args.name} gateway restart).")
+          f" It applies when its MCP server restarts (hermes gateway restart).")
     return 0
 
 
@@ -6150,7 +6149,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
             if not profile_json.get("encryption_public_key"):
                 rep.warn("no encryption key published — DMs and private sessions with it stay "
                          "plaintext, readable by the relay",
-                         f"restart its MCP (`hermes -p {name} gateway restart`); it publishes the key on registering")
+                         f"restart its MCP (`hermes gateway restart`); it publishes the key on registering")
             else:
                 rep.ok("encryption key published — its DMs and private sessions are sealed")
             if has["evm"] and not pay_to:
@@ -6793,7 +6792,7 @@ def cmd_update(args: argparse.Namespace) -> int:
         print(f"  relay: one is answering at {relay_url()}, not started by `emporia relay start`; "
               f"restart it where it was started so it runs the new code")
     installer().print_restart_instructions([])
-    print("Then: hermes gateway restart (or `hermes -p NAME gateway restart` and /reload-mcp in each), "
+    print("Then: hermes gateway restart (one gateway serves every profile; /reload-mcp in a chat reloads its tools), "
           "and `emporia doctor`.")
     return 0
 

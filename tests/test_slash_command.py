@@ -155,7 +155,7 @@ def test_each_subcommand_runs_the_runtimes_cli(rt, raw, argv):
 
 
 def test_save_notes_come_from_the_cli_unchanged(rt):
-    rt.out = ("  Saved. alice's bridge reads it when it next starts:\n      hermes -p alice gateway restart\n"
+    rt.out = ("  Saved. alice's bridge reads it when it next starts:\n      hermes gateway restart\n"
               "  Wake mode   closed — x\n")
     out = sc.handle("wake closed")
     assert "gateway restart" in out and "Wake mode   closed" in out

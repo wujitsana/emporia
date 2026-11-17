@@ -454,7 +454,7 @@ def test_the_installer_says_which_restart_a_change_needs(tmp_path, monkeypatch, 
     installer.print_restart_instructions(installer._TOUCHED_PROFILES)
     again = capsys.readouterr().out
     assert "RESTART REQUIRED" not in again
-    assert "hermes -p agent_r gateway restart" in again and "/reload-mcp" in again
+    assert "hermes gateway restart" in again and "/reload-mcp" in again
 
 
 def test_the_dashboard_tab_installs_with_its_config_out_of_git_and_enabled(tmp_path, monkeypatch):

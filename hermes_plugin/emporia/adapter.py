@@ -399,12 +399,30 @@ class EmporiaAdapter(BasePlatformAdapter):
         got_line = False
         assert proc.stdout is not None
         async for raw in proc.stdout:
+            if self._control(raw.decode("utf-8", "replace")):
+                continue
             notice = parse_line(raw.decode("utf-8", "replace"))
             if notice is None:
                 continue
             got_line = True
             await self._dispatch(notice)
         return got_line
+
+    def _control(self, raw: str) -> bool:
+        """A line from the bridge saying the person changed the wake setting: take it (the bridge reads it through
+        Hermes; this file reads no settings after start). Only a known mode is taken. True for a control line."""
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return False
+        if not isinstance(data, dict) or data.get("v") != LINE_PROTOCOL_VERSION or data.get("control") != "wake":
+            return False
+        mode = str(data.get("mode") or "")
+        if mode in WAKE_MODES:
+            self.wake_mode = mode
+            self.wake_listed = frozenset(str(s) for s in (data.get("allowed") or []) if isinstance(s, str))
+            logger.info("Emporia: wake mode is now %s (the setting changed)", mode)
+        return True
 
     async def _drain_stderr(self, proc: asyncio.subprocess.Process) -> None:
         assert proc.stderr is not None

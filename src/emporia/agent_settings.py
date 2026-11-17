@@ -222,7 +222,9 @@ def render(table: list[dict[str, Any]], name: str) -> str:
 
 
 def restart_command(profile_name: str) -> str:
-    return "hermes gateway restart" if profile_name == "default" else f"hermes -p {profile_name} gateway restart"
+    """One gateway serves every profile, so the restart is the host's, whatever the profile (it interrupts live turns
+    on every profile it serves, and asks for a terminal or -y)."""
+    return "hermes gateway restart"
 
 
 def rounds_value(raw: str) -> str:

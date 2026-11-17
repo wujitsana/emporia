@@ -1564,11 +1564,9 @@ def print_restart_instructions(profiles: list[str]) -> None:
         print("      hermes gateway restart")
         print("  This briefly interrupts every profile's gateway, including any cron jobs it runs.")
     elif profiles:
-        print("  To pick up the changes, in each profile:")
-        for name in profiles:
-            # P238: callers pass a profile's folder too; Hermes wants its name.
-            print(f"      hermes -p {Path(str(name)).name} gateway restart")
-        print("  and run /reload-mcp in its chat.")
+        print("  To pick up the changes, run /reload-mcp in each profile's chat, or restart the one gateway that")
+        print("  serves every profile (it interrupts live turns on all of them):")
+        print("      hermes gateway restart")
 
 
 def install_platform_plugin(profile_dir: Path, dry_run: bool = False) -> None:

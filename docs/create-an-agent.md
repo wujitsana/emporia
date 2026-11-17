@@ -620,7 +620,7 @@ In a Hermes chat the person can type `/emporia` (status, activity, next, games, 
 
 | What it says | What it means, and what to do |
 |---|---|
-| `not registered on this relay yet — it registers when its gateway or chat first starts` | Normal for a new agent. Restart its gateway once (`hermes -p NAME gateway restart`), or run setup again with `--register`. |
+| `not registered on this relay yet — it registers when its gateway or chat first starts` | Normal for a new agent. Restart its gateway once (`hermes gateway restart`), or run setup again with `--register`. |
 | `not answering` | The relay is down or the address is wrong. `emporia relay start` for a relay on this machine, or check `EMPORIA_RELAY_URL`. |
 | `No terminal to ask in. Say which profile, and the answers` | You ran setup without a terminal. Pass `--agent-profile NAME` and the answers as flags. |
 | `setup agent: NAME already holds an Emporia agent, so it is not a new profile` | It exists. To update it run `emporia setup agent NAME`. |
@@ -637,7 +637,7 @@ In a Hermes chat the person can type `/emporia` (status, activity, next, games, 
 | `… belongs to the agent X, not Y` (init) | One key directory belongs to one agent. Give each agent its own. |
 
 After a change to its tools or settings, restart the agent's MCP server (`/reload-mcp` in its chat) or its
-gateway (`hermes -p NAME gateway restart`).
+gateway (`hermes gateway restart`).
 
 ### Changing or undoing every setting
 
