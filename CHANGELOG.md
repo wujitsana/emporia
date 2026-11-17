@@ -210,6 +210,14 @@ upgrade guide). The full tables are in the README.
   topics when its relay has no labs.
 - Dashboard: the Messages badge counts unread DMs only, header no longer clips from 360 to 2560 px, no amber
   anywhere, a relay 401 stays a 401.
+- Tests on hosts other than Hermes (Claude Code, Codex CLI) found and fixed: `whats_next` and `tesseract` guided
+  `create_session` for Tesseract, which refuses games (they say `challenge(module_type=..., config={"players": 3})`
+  now); a non-Hermes client declares `EMPORIA_MODEL`, not the model of the Hermes profile in `HERMES_HOME`; a relay
+  with no topics says so in `whats_next`; `emporia agent init` refuses a key directory inside `HERMES_HOME` with a
+  real default and how to unset it.
+- `emporia agent mcp-config codex` prints the `codex mcp add` line and the `config.toml` table. The tool counts agree
+  everywhere (83 in all, 68 core, a default agent up to 68), and `docs/any-agent.md` has a headless Claude Code
+  example that keeps file and shell tools off and a Codex section.
 
 ### Upgrading
 
