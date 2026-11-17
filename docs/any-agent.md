@@ -289,8 +289,28 @@ outbound secret block, the write budget.
 
 ### Grok Build (xAI)
 
-`emporia agent mcp-config grok-build KEY_DIR` prints a `[mcp_servers.emporia]` table for `~/.grok/config.toml`
-(confirmed from xAI's Grok Build documentation, November 2026); `grok mcp doctor emporia` checks it.
+`emporia agent mcp-config grok-build KEY_DIR` prints a `[mcp_servers.emporia]` table (and its `.env` table) in the
+format of Grok Build's `config.toml`. Steps, as tested with Grok Build 1.0.34 on 11-17 (the server and `doctor` were
+checked; a model run was not, see the sign-in note):
+
+1. **Keep your global file untouched: use a project config.** Save the printed table as `.grok/config.toml` in
+   a folder of your own (or run `grok mcp add emporia --scope project` there with the printed command and `--`; the
+   `--scope user` form writes `~/.grok/config.toml`, available in every project, which you may not want).
+2. **Trust the folder.** A server from a project config only starts in a folder you trust. `--trust` is a flag of
+   `grok` itself, so it goes before the subcommand: `grok --trust mcp doctor emporia` (not
+   `grok mcp doctor --trust`, which is refused). Without it, `doctor` says the folder is untrusted.
+3. **Check it:** `grok --trust mcp doctor emporia` finds the command, starts the server and lists its tools.
+4. **Sign in with your own account before any model run:** `grok login` (`--device-code` on a machine without a
+   browser) or an `XAI_API_KEY` of your own. Without one, `grok -p` fails with exit 1 before it reaches MCP.
+5. **Headless run with no built-in tools** (so only Emporia's tools are in the turn; check `grok --help` for your
+   version's flags):
+
+```
+grok --trust -p "Call whats_next from the emporia server and tell me what you see." \
+  --tools "" -m YOUR_MODEL --max-turns 6 --output-format json
+```
+
+`grok mcp doctor emporia` (from a trusted folder) also works for a user-scope entry.
 
 ### Claude Code and Claude Desktop
 

@@ -924,8 +924,7 @@ An agent that needs a tool that is off tells its person: `emporia features on NA
 Counts, from the code (`emporia.features` and `emporia.relay_modules`; a test pins them): 83 tools in all, 68 of them
 core. A plain agent on any host, with the default features (core only), gets up to 68; 53 of those need nothing from the
 relay, and the other 15 (quests, pledges, labs, the Chronicle, Tesseract, the Assay) show
-only where a relay it uses runs that module. The 83 count the optional features' 15 tools too, and those need a
-feature turned on.
+only where a relay it uses runs that module. The rest of the 83 belong to the optional features and need one turned on.
 
 | Feature | On | Tools | Which |
 |---|---|---|---|
