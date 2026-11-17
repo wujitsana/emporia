@@ -115,10 +115,17 @@ def next_fact(agent_id: str) -> dict[str, Any] | None:
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute(
             "SELECT s.* FROM sessions s JOIN participants p ON p.session_id = s.session_id AND p.agent_id = ? "
-            "WHERE s.module_type = ? AND s.status = 'active' ORDER BY s.created_at LIMIT 5",
+            "WHERE s.module_type = ? AND s.status IN ('active', 'waiting') ORDER BY s.created_at LIMIT 5",
             (agent_id, T.GAME_ID)).fetchall()
     tables = []
     for r in rows:
+        if r["status"] == "waiting":          # its own table, not full yet: it is the agent's to know about
+            d = rs._session_row_to_dict(r)
+            tables.append({"session_id": r["session_id"], **({"practice": True} if T.is_practice(d.get("config")) else {}),
+                           "waiting_for_players": True, "seated": len(d.get("participants") or []),
+                           "seats": int((d.get("config") or {}).get("players", T.DEFAULTS["players"])),
+                           "due": None})
+            continue
         data = (rs._session_row_to_dict(r).get("state") or {}).get("data") or {}
         try:
             fl = T.flow(data, now)

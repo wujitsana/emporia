@@ -32,6 +32,10 @@ import httpx
 from emporia.cli_hints import localize  # `hermes emporia …` where the plugin installed this runtime
 from emporia import fetch, identity_card, signing, wire  # P270: other relays' answers, read within limits
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import ValidationError as FastMCPValidationError
+from fastmcp.server.middleware import Middleware
+from pydantic import ValidationError
 
 from emporia.engine.guardrails import assert_payload_safe
 from emporia.env_config import env
@@ -132,6 +136,39 @@ DB_PATH = Path(env("DB_PATH", "~/.hermes/emporia.sqlite3")).expanduser()
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 mcp = FastMCP("Emporia")
+
+
+def _plain_argument_error(tool: str, err: Exception) -> str:
+    """A pydantic validation error as one plain line for the agent: which argument, what is wrong with it, and
+    where the tool's own description lists the arguments. No library internals, no docs URL."""
+    errors = getattr(err, "errors", None)
+    found = []
+    try:
+        for e in (errors() if callable(errors) else []):
+            arg = ".".join(str(x) for x in e.get("loc") or ()) or "arguments"
+            kind = e.get("type", "")
+            found.append(f"{arg}: " + ("required, not given" if kind == "missing_argument"
+                                        else "not an argument of this tool" if kind == "unexpected_keyword_argument"
+                                        else f"not the right kind of value ({e.get('msg', 'invalid')})"))
+    except Exception:  # noqa: BLE001 — the plain line still says which tool
+        found = []
+    return f"{tool}: the call's arguments are wrong ({'; '.join(found) or 'see the tool description'}); " \
+           "the tool's description lists its arguments"
+
+
+class _PlainArgumentErrors(Middleware):
+    """Every tool's argument errors read the same way: one plain line (see `_plain_argument_error`), never the
+    validation library's dump."""
+
+    async def on_call_tool(self, context, call_next):
+        try:
+            return await call_next(context)
+        except (FastMCPValidationError, ValidationError) as e:
+            raise ToolError(_plain_argument_error(getattr(context.message, "name", "tool"),
+                                                  e.__cause__ or e)) from e
+
+
+mcp.add_middleware(_PlainArgumentErrors())
 
 
 def _ask_operator(message: str, title: str = "Approve this payment") -> bool | None:
@@ -4618,8 +4655,17 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
         items = next_steps.rank(d, pb, n)
     items = _note_needs(items, ("tool", "call"))
     out = {"success": True, "agent_id": aid, "as_of": d.get("as_of"), "playbook": pb.preset, "items": items,
-           "nothing_to_do": not items, "unread_total": (d.get("inbox") or {}).get("unread_total", 0),
+           "nothing_to_do": False, "unread_total": (d.get("inbox") or {}).get("unread_total", 0),
            "untrusted": _UNTRUSTED}
+    # nothing to do = nothing waits on you: standing suggestions (a quest, an idle challenge, your own table filling)
+    # and nothing unread; `items` may still hold those, for a round that wants something to try
+    out["nothing_to_do"] = not out["unread_total"] and not any(i.get("kind") not in _STANDING_KINDS for i in items)
+    if out["unread_total"] and not any(i.get("kind") in ("message", "invite") for i in items):
+        by_type = (d.get("inbox") or {}).get("by_type") or {}
+        out["unread_note"] = (f"{out['unread_total']} unread inbox events ("
+                              f"{', '.join(f'{k} {v}' for k, v in sorted(by_type.items())) or 'no types given'}) "
+                              "with no message to answer among the items: get_inbox lists them")
+
     fl = d.get("following")
     if isinstance(fl, dict) and any(fl.get(k) for k in ("following", "unread_replies", "unread_mentions",
                                                          "new_followers")):
@@ -4715,7 +4761,7 @@ _LOOK_MAX_DAYS = 7
 #: Suggestions that stand from round to round (an open challenge to post, a topic to talk in, a quest, the
 #: expedition, first steps): they do not make a round un-quiet. A move, reveal, deal, pledge, invite,
 #: challenge or message waiting on the agent does.
-_STANDING_KINDS = frozenset({"idle", "talk", "quest", "expedition", "guided"})
+_STANDING_KINDS = frozenset({"idle", "talk", "quest", "expedition", "guided", "hosting"})
 
 
 def _look_file() -> Path:
