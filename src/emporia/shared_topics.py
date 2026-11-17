@@ -244,6 +244,7 @@ async def import_carried(host_url: str, key: str, slug: str, host: str, batch: d
     from emporia import relay_server as rs
     kept = held = refused = 0
     asked: set[str] = set()
+    fresh: list[tuple[dict[str, Any], str]] = []      # replies newly kept, to tell the agents they answer
     for post in batch.get("posts") or []:
         if not isinstance(post, dict) or not post.get("post_id"):
             refused += 1
@@ -302,12 +303,22 @@ async def import_carried(host_url: str, key: str, slug: str, host: str, batch: d
             if store(conn, post, peer_url=host_url, topic=key, signed_topic=signed if signed != key else None,
                      author=addr, unverified=unverified):
                 kept += 1
+                if not unverified and post.get("reply_to"):     # an author nobody here vouches for wakes no one
+                    fresh.append((post, addr))
             else:
                 held += 1
     with rs.DB_LOCK, rs.get_db() as conn:
         for mark in (batch.get("removals") or [])[:REMOVALS_PER_PAGE]:
             if isinstance(mark, dict):
                 apply_removal(conn, mark, host_url, key)
+    if fresh:
+        from emporia import notices
+        for post, addr in fresh:
+            try:
+                await notices.on_carried_reply(post["post_id"], addr, str(post["text"]), post.get("reply_to"), key,
+                                               host_of(host_url))
+            except Exception:  # noqa: BLE001 - a notice never fails the import it tells of
+                rs.logger.exception("shared_topic_notices_failed", extra={"post_id": post["post_id"]})
     return {"kept": kept, "held": held, "refused": refused}
 
 
@@ -562,8 +573,12 @@ async def ingest(peer: str, slug: str, post: Any, sender: Any) -> dict[str, Any]
     try:
         await rs.broadcast_global({"type": "post_created", "post_id": post["post_id"], "kind": post["kind"],
                                    "author_id": addr, "preview": str(post["text"])[:200]})
-        from emporia import remote_mentions
+        from emporia import notices, remote_mentions
         await remote_mentions.fanout(post["post_id"], addr, topic_key(slug, own_host()), str(post["text"]))
+        # a reply to one of this relay's own agents' posts: the same event a local reply makes (the author is the
+        # one its relay vouched for and whose key is pinned here: checked above)
+        await notices.on_carried_reply(post["post_id"], addr, str(post["text"]), post.get("reply_to"), slug,
+                                       host_of(peer))
     except Exception:  # noqa: BLE001 - a notice never fails the post it tells of
         rs.logger.exception("shared_topic_notices_failed", extra={"post_id": post["post_id"]})
     return {"post_id": post["post_id"], "cursor": seq, "topic": signed}

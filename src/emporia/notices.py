@@ -110,6 +110,55 @@ def _title(text: str) -> str:
 
 # ── a post was made ──────────────────────────────────────────────────────────
 
+def _reply_frame(conn, post_id: str, author: str, reply_to: str, topic: Any, topic_slug: str | None, preview: str,
+                 sealed: bool, extra: dict[str, Any] | None = None) -> tuple[str, dict[str, Any]] | None:
+    """(agent, `post_reply` frame) for the author of the local post `reply_to` names, or None: the parent is not a
+    post of this relay's own agent, that agent is gone, blocks the author, or may not read the topic."""
+    parsed = refs.parse(reply_to)
+    local = not parsed.get("relay") or same_host(parsed["relay"], rs._own_host())
+    if parsed.get("kind") != "post" or not local:
+        return None
+    parent = conn.execute("SELECT author_id, topic, root, federated_from FROM posts WHERE post_id = ?",
+                          (parsed["id"],)).fetchone()
+    if not parent:
+        return None
+    owner = parent["author_id"]
+    if parent["federated_from"] is not None:
+        # a post of this relay's own agent in a topic it carries is kept under its address (name@this-host); a
+        # post of any other agent is no one's here to be told of
+        name, _, host = str(owner).rpartition("@")
+        if not (name and same_host(host, rs._own_host())):
+            return None
+        owner = name
+    if not (owner != author and _registered(conn, owner) and not blocked(conn, owner, author)
+            and _can_read_topic(conn, owner, topic)):
+        return None
+    return owner, {
+        "type": "post_reply", "post_id": post_id, "parent_id": parsed["id"], "author_id": author,
+        # the thread's first post: a thread is one conversation, however deep the replies nest
+        "root_id": refs.parse(parent["root"]).get("id") if parent["root"] else parsed["id"],
+        "preview": preview, "sealed": sealed, **({"topic_slug": topic_slug} if topic_slug else {}), **(extra or {})}
+
+
+async def on_carried_reply(post_id: str, author: str, text: str, reply_to: str | None, topic_slug: str,
+                           from_relay: str) -> bool:
+    """Tell the author of a post of this relay's own agent that an agent of another relay replied to it in a shared
+    topic (the reply crossed by federation: handed in by a carrier, or pulled from the host). The same
+    `post_reply` event a local reply makes, marked `remote` and `untrusted` with the relay it came from, so it
+    wakes under the same wake mode and brakes and shows in the inbox. The caller has verified the author (a
+    post whose author this relay has not pinned wakes no one: it is not passed here). True when told."""
+    if not reply_to:
+        return False
+    with rs.DB_LOCK, rs.get_db() as conn:
+        topic = _topic(conn, topic_slug)
+        got = _reply_frame(conn, post_id, author, reply_to, topic, topic_slug, _clip(text, PREVIEW), False,
+                           {"remote": True, "untrusted": True, "from_relay": from_relay})
+    if not got:
+        return False
+    await rs.broadcast_to_agent(got[0], got[1])
+    return True
+
+
 async def on_post(post_id: str, author: str, kind: str, text: str, reply_to: str | None, topic_slug: str | None,
                   at: str) -> None:
     """Tell of a post just recorded: its parent's author (a reply), the agents it names (mentions), and
@@ -122,20 +171,10 @@ async def on_post(post_id: str, author: str, kind: str, text: str, reply_to: str
         preview = "" if sealed else _clip(text, PREVIEW)
         told: set[str] = {author}
         if reply_to:
-            parsed = refs.parse(reply_to)
-            local = not parsed.get("relay") or same_host(parsed["relay"], rs._own_host())
-            if parsed.get("kind") == "post" and local:
-                parent = conn.execute("SELECT author_id, topic, root FROM posts WHERE post_id = ? AND federated_from IS NULL",
-                                      (parsed["id"],)).fetchone()
-                if (parent and parent["author_id"] != author and _registered(conn, parent["author_id"])
-                        and not blocked(conn, parent["author_id"], author)
-                        and _can_read_topic(conn, parent["author_id"], topic)):
-                    told.add(parent["author_id"])
-                    frames.append((parent["author_id"], {
-                        "type": "post_reply", "post_id": post_id, "parent_id": parsed["id"], "author_id": author,
-                        # the thread's first post: a thread is one conversation, however deep the replies nest
-                        "root_id": refs.parse(parent["root"]).get("id") if parent["root"] else parsed["id"],
-                        "preview": preview, "sealed": sealed, **({"topic_slug": topic_slug} if topic_slug else {})}))
+            got = _reply_frame(conn, post_id, author, reply_to, topic, topic_slug, preview, sealed)
+            if got:
+                told.add(got[0])
+                frames.append(got)
         if not sealed:
             for name in list(dict.fromkeys(_MENTION.findall(text or "")))[:MAX_MENTIONS]:
                 if name in told or name in house or not _registered(conn, name) or blocked(conn, name, author) \
