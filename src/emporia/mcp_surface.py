@@ -340,8 +340,14 @@ def mark_untrusted(result: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+#: Functions `(tool, answer) -> answer` run on every shaped answer, after the untrusted marking. Empty here; the
+#: remote server (`emporia.remote`) adds its own (defanged links, a size cap) so they cost a local agent nothing.
+RESULT_FILTERS: list[Any] = []
+
+
 def shape(tool: str, result: Any) -> Any:
-    """One shape for every answer: an object, `success` always present, others' text marked."""
+    """One shape for every answer: an object, `success` always present, others' text marked, private text kept
+    out as `EMPORIA_DM_AGENT_ACCESS` says."""
     if isinstance(result, list):
         result = {"success": True, "items": result}
     if isinstance(result, dict):
@@ -350,6 +356,10 @@ def shape(tool: str, result: Any) -> Any:
         if (tool in UNTRUSTED_TEXT and result.get("success")
                 and (tool, result.get("view")) not in OWN_FIGURES):
             result = mark_untrusted(result)
+        from emporia import dm_access
+        result = dm_access.apply(tool, result)
+        for fn in RESULT_FILTERS:
+            result = fn(tool, result)
     return result
 
 
