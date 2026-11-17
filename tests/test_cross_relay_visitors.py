@@ -490,6 +490,20 @@ def test_an_operator_listed_local_home_is_checked_and_an_unlisted_one_says_it_ca
     assert called and called[0][1] == "127.0.0.1" and called[0][0].startswith("http://127.0.0.1:18622/")
 
 
+def test_a_failed_name_lookup_is_a_retryable_no_answer_not_a_refused_address(monkeypatch):
+    import socket
+
+    from emporia import fetch
+    monkeypatch.setattr(fetch, "_PASSTHROUGH", False)
+
+    def gai(*a, **k):
+        raise socket.gaierror("temporary failure")
+    monkeypatch.setattr(socket, "getaddrinfo", gai)
+    visitors.forget()
+    assert visitors._pull("https://lookup-fails.example") == {"error": visitors._UNANSWERED}
+    assert visitors.confirm({"kind": "relay", "url": "https://lookup-fails.example"}, "ab" * 32)["reason"] == visitors._UNANSWERED
+
+
 def test_the_403_says_when_the_home_check_cannot_run_and_keeps_register_again_for_a_real_no(client, monkeypatch):
     monkeypatch.setenv("EMPORIA_VISITORS", "homed-only")
     cannot = visitors.write_refusal("relay", False, visitors.CANNOT_CHECK)

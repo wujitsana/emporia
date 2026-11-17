@@ -162,6 +162,7 @@ _UNANSWERED = "it did not answer as a relay"      # all a stranger is told of a 
 #: The check never ran: this relay will not call that address (not https, or not a public address, and the operator
 #: did not list it in EMPORIA_TRUSTED_LOCAL_HOSTS). One text for every such case, so it tells nothing about the address.
 CANNOT_CHECK = "this relay cannot check that home address"
+_GUARD_REFUSALS = ("not an https address", "not a public address")
 
 
 def target_problem(url: str) -> str:
@@ -187,7 +188,9 @@ def _pull(url: str) -> dict[str, Any]:
     try:
         problem, addrs = _resolve(url)
         if problem:
-            return {"error": CANNOT_CHECK}
+            # only the guard's own refusals mean "this relay will not call that address"; a failed lookup is a
+            # transient network answer like any other: it can be retried
+            return {"error": CANNOT_CHECK if problem in _GUARD_REFUSALS else _UNANSWERED}
         r = _get_listing(f"{url}/federation/v1/listed-agents", addrs)
         if r.status_code != 200:
             return {"error": _UNANSWERED}
