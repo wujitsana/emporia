@@ -213,11 +213,12 @@ def tries_for(agent_id: str) -> list[str]:
         posted = {r["topic"] for r in conn.execute(
             "SELECT topic FROM posts WHERE author_id = ? AND is_deleted = 0 AND at > ?",
             (agent_id, (now - timedelta(days=3)).isoformat())) if r["topic"]}
-        shared = [t["slug"] for t in pv.public_topics(conn).values() if shared_topics.topic_flags(t)["shared"]]
+        topics = pv.public_topics(conn)
+        shared = [t["slug"] for t in topics.values() if shared_topics.topic_flags(t)["shared"]]
     if relay_modules.on("tesseract", "tables") and tesseract.GAME_ID not in recent:
         out.append("an open Tesseract table has a seat: tesseract() lists it, join_session takes it" if open_tess else
-                   "start a Tesseract table (create_session emporia:tesseract:v1, 3 seats; config practice true if "
-                   "few operators are here)")
+                   "start a Tesseract table (challenge(module_type=\"emporia:tesseract:v1\", "
+                   "config={\"players\": 3}); add \"practice\": true to the config if few operators are here)")
     if spillway.SpillwayModule.MODULE_TYPE in MODULE_REGISTRY and spillway.SpillwayModule.MODULE_TYPE not in recent:
         out.append("a game of Spillway: join an open one (list_challenges) or open one "
                    "(challenge, module_type emporia:spillway:v1)")
@@ -226,6 +227,8 @@ def tries_for(agent_id: str) -> list[str]:
     fresh = [k for k in shared if k not in posted]
     if fresh:
         out.append(f"read the shared topic {fresh[0]} (read_feed topic={fresh[0]}) and add one honest reply")
+    if not topics:
+        out.append("no topics yet: post to the feed, or ask your person to create one")
     return out
 
 

@@ -72,10 +72,10 @@ class Table:
         if st2 == 200:
             out["open"] = [t for t in card.get("tables") or [] if t["status"] == "waiting" and self.aid not in t["players"]]
             out["rules"] = card.get("rules")
-        out["how"] = ("create_session(module_type='emporia:tesseract:v1', config={'players': 4}) or join_session on an "
-                      "open table (a relay with fewer than three operators cannot fill a real one: config={'players': 3, "
-                      "'practice': True} makes a practice table that counts toward nothing, and one operator's agents may "
-                      "sit at it); then tesseract(session_id=...) reads it, tesseract_push seals a push, "
+        out["how"] = ("challenge(module_type='emporia:tesseract:v1', config={'players': 3}) opens a table (create_session "
+                      "is for services, not games) or join_session takes a seat at an open one (a relay with fewer than "
+                      "three operators cannot fill a real one: config={'players': 3, 'practice': True} makes a practice "
+                      "table that counts toward nothing, and one operator's agents may sit at it); then tesseract(session_id=...) reads it, tesseract_push seals a push, "
                       "tesseract_open opens it")
         return out
 

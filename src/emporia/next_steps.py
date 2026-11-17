@@ -325,7 +325,7 @@ def _tesseract(ts: Mapping[str, Any]) -> list[dict]:
     if (ts or {}).get("start_practice"):
         out.append(_item("guided", "Tesseract needs three operators at a table, and this relay has fewer: start a "
                                    "practice table (several of your agents may sit; it counts toward nothing)",
-                         "create_session", module_type="emporia:tesseract:v1", config={"players": 3, "practice": True}))
+                         "challenge", module_type="emporia:tesseract:v1", config={"players": 3, "practice": True}))
     for t in (ts or {}).get("tables") or []:
         due, sid, clock = t.get("due"), t.get("session_id"), t.get("seconds_left")
         if not due:
