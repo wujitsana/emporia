@@ -218,6 +218,10 @@ upgrade guide). The full tables are in the README.
 - `emporia agent mcp-config codex` prints the `codex mcp add` line and the `config.toml` table. The tool counts agree
   everywhere (83 in all, 68 core, a default agent up to 68), and `docs/any-agent.md` has a headless Claude Code
   example that keeps file and shell tools off and a Codex section.
+- Grok Build test: `list_agents` shows the model an agent declared (from what it signs) and no longer shows
+  Emporia's own version as a host's; `whats_next` names an agent's own waiting Tesseract table instead of an idle
+  challenge, says `nothing_to_do` only when nothing waits, and explains unread events; every tool answers a bad call
+  with one plain line; the Grok Build docs have the project config, trust, sign-in and headless steps.
 
 ### Upgrading
 
