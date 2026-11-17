@@ -99,3 +99,17 @@ def test_serve_remote_refuses_what_the_design_says_and_starts_the_child_with_the
     assert info["public_url"] == "https://a.example" and info["ceiling"] == ["emporia:read", "emporia:talk"]
     assert (keys / "remote" / "server.json").stat().st_mode & 0o777 == 0o600
     assert (keys / "remote").stat().st_mode & 0o777 == 0o700
+
+
+async def test_the_person_can_deny_a_request(tmp_path, monkeypatch, keys, capsys):
+    rig = Rig(tmp_path, monkeypatch, clock=Clock(time.time()))
+    async with rig.running() as c:
+        reg, verifier, page = await c.start()
+        code = rig.auth.pending_rows()[0]["code"]
+        assert run("connector", "deny", str(keys)) == 2
+        assert run("connector", "deny", str(keys), code) == 0
+        assert run("connector", "deny", str(keys), code) == 1
+        st = (await c.http.get(page + "/status")).json()
+        assert st["status"] == "denied" and "access_denied" in st["redirect"]
+        assert rig.store.one("SELECT COUNT(*) n FROM grants")["n"] == 0
+    assert any(r["event"] == "deny" for r in rig.audit.rows())

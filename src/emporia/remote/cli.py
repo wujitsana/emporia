@@ -1,4 +1,4 @@
-"""`emporia agent serve-remote NAME` and `emporia agent connector list|pending|approve|revoke|log|allow-redirect NAME`.
+"""`emporia agent serve-remote NAME` and `emporia agent connector list|pending|approve|deny|revoke|log|allow-redirect NAME`.
 
 A person's commands, run in their own terminal (the Hermes key guard refuses them to an agent's tools). NAME is an
 agent made with `emporia agent init` (its key directory defaults to `~/.config/emporia/agents/NAME`), a key directory
@@ -147,8 +147,8 @@ def serve_remote(args: argparse.Namespace) -> int:
 
 def connector(args: argparse.Namespace) -> int:
     action, name, extra = args.url_or_name, args.name or "", getattr(args, "extra", "") or ""
-    if action not in ("list", "pending", "approve", "revoke", "log", "allow-redirect") or not name:
-        print("usage: emporia agent connector list|pending NAME | approve NAME CODE [--scopes read,talk] "
+    if action not in ("list", "pending", "approve", "deny", "revoke", "log", "allow-redirect") or not name:
+        print("usage: emporia agent connector list|pending NAME | deny NAME CODE | approve NAME CODE [--scopes read,talk] "
               "[--connector-name TEXT] | revoke NAME GRANT_ID|--all | log NAME [--tail] | allow-redirect NAME URL",
               file=sys.stderr)
         return 2
@@ -164,6 +164,15 @@ def connector(args: argparse.Namespace) -> int:
         return _pending(auth)
     if action == "approve":
         return _approve(auth, extra, args, env.get("EMPORIA_AGENT_ID", name))
+    if action == "deny":
+        if not extra:
+            print("deny needs the confirmation code (see `connector pending`)", file=sys.stderr)
+            return 2
+        if auth.deny(extra):
+            print("Denied. The host's page ends there.")
+            return 0
+        print("No such request is waiting (it may have expired).", file=sys.stderr)
+        return 1
     if action == "revoke":
         return _revoke(auth, extra, args.all)
     if action == "log":

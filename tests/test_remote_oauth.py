@@ -405,13 +405,18 @@ async def test_an_approval_narrower_than_asked_is_honored_everywhere(rig):
 
 async def test_too_many_waiting_requests_are_refused(rig):
     async with rig.running() as c:
-        reg = await c.register()
         _, challenge = pkce()
-        for _ in range(R.MAX_PENDING):
-            assert (await c.http.get("/authorize", params=c.authorize_params(reg["client_id"], challenge))
-                    ).headers["location"].startswith("/consent/")
-        r = await c.http.get("/authorize", params=c.authorize_params(reg["client_id"], challenge))
-    assert parse_qs(urlsplit(r.headers["location"]).query)["error"] == ["temporarily_unavailable"]
+        regs = [await c.register() for _ in range(4)]
+        n = 0
+        for reg in regs:                                   # 3 each: the global 10 is reached by the 4th client
+            for _ in range(R.MAX_PENDING_PER_CLIENT):
+                loc = (await c.http.get("/authorize", params=c.authorize_params(reg["client_id"], challenge))
+                       ).headers["location"]
+                if not loc.startswith("/consent/"):
+                    assert parse_qs(urlsplit(loc).query)["error"] == ["temporarily_unavailable"]
+                    break
+                n += 1
+        assert n == R.MAX_PENDING
 
 
 async def test_the_agent_name_on_the_page_and_in_the_command_is_the_bound_agent(rig):
@@ -428,3 +433,20 @@ def test_the_database_is_a_sqlite_file_with_only_hashed_token_columns(rig):
     assert "page_hash" in cols["pending"]
     assert not any(c in ("token", "code_plain", "secret", "access_token", "refresh_token")
                    for cs in cols.values() for c in cs)
+
+
+async def test_one_client_cannot_fill_the_pending_slots(rig):
+    from remote_support import REDIRECT as _R
+    async with rig.running() as c:
+        a = await c.register()
+        b = await c.register()
+        _, challenge = pkce()
+        for _ in range(R.MAX_PENDING_PER_CLIENT):
+            assert (await c.http.get("/authorize", params=c.authorize_params(a["client_id"], challenge))
+                    ).headers["location"].startswith("/consent/")
+        r = await c.http.get("/authorize", params=c.authorize_params(a["client_id"], challenge))
+        q = parse_qs(urlsplit(r.headers["location"]).query)
+        assert r.headers["location"].startswith(_R) and q["error"] == ["temporarily_unavailable"]
+        # another client still gets in
+        assert (await c.http.get("/authorize", params=c.authorize_params(b["client_id"], challenge))
+                ).headers["location"].startswith("/consent/")

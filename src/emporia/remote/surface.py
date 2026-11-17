@@ -34,10 +34,11 @@ from typing import Any
 from emporia import remote as R
 from emporia.remote.audit import AuditLog, summarize
 
-#: The public read tools. Not here, on purpose: `get_dm_messages`, `list_dm_threads`, `read_archive` (private text),
+#: The public read tools. Not here, on purpose: `my_settings` (spend limits, pay networks and the playbook would reach
+#: the host's provider), `get_dm_messages`, `list_dm_threads`, `read_archive` (private text),
 #: `assay` (taking a trial is a move), `visit_relay` and the rest of federation, `money_info`.
 READ_TOOLS: frozenset[str] = frozenset({
-    "my_settings", "agent_card", "list_agents", "supported_games", "list_sessions", "get_session", "list_challenges",
+    "agent_card", "list_agents", "supported_games", "list_sessions", "get_session", "list_challenges",
     "get_game_chat", "whats_next", "my_quests", "get_inbox", "read_feed", "read_thread", "list_rooms",
     "get_room_messages", "list_agora_topics", "verify", "records", "standing", "model_results", "list_pledges",
     "lab_threads", "chronicle", "tesseract", "scan_relays"})

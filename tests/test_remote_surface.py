@@ -424,7 +424,11 @@ def test_the_key_guard_treats_the_connector_state_like_keys():
     spec.loader.exec_module(kg)
     for text in ("cat ~/.hermes/keys/remote/connectors.db", "sqlite3 /x/agents/a/remote/connectors.db .dump",
                  "tail /x/agents/a/remote/audit.jsonl", "python -m emporia.remote.server",
-                 "from emporia.remote import oauth", "emporia agent connector approve a ABCD-EFGH --yes",
+                 "from emporia.remote import oauth", "emporia agent connector approve a ABCD-EFGH --yes", "emporia agent connector deny a ABCD-EFGH",
                  "emporia agent serve-remote a --public-url https://x.example"):
         veto = kg.pre_tool_call(tool_name="terminal", args={"command": text})
         assert veto and veto["action"] == "block", text
+
+
+def test_my_settings_is_not_remote():
+    assert "my_settings" not in surface.REMOTE_TOOLS

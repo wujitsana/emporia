@@ -34,12 +34,12 @@ from emporia import remote as R
 from emporia.remote.audit import AuditLog
 from emporia.remote.store import Store, digest, dumps, new_secret, norm_code, short_code
 
-#: HTTPS callbacks of hosts that connect through a browser redirect, as their documentation says (reported, not yet
-#: tested here: each is marked so until a real connection is made). A person adds one with
+#: HTTPS callbacks of hosts that connect through a browser redirect, as their documentation says (the claude.com
+#: variant is listed by the host as a future move; not yet tested here against a real connection). A person adds one with
 #: `emporia agent connector allow-redirect URL`; anything else is refused at registration.
 KNOWN_REDIRECTS: dict[str, str] = {
-    "https://claude.ai/api/mcp/auth_callback": "reported, unverified",
-    "https://claude.com/api/mcp/auth_callback": "reported, unverified",
+    "https://claude.ai/api/mcp/auth_callback": "documented by the host",
+    "https://claude.com/api/mcp/auth_callback": "documented by the host as a future move",
 }
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "[::1]", "::1")
 _CHALLENGE = re.compile(r"[A-Za-z0-9_-]{43}")
@@ -237,6 +237,9 @@ class Authority:
         allowed = set(client["scope"].split()) & set(self.ceiling)
         if not set(asked) <= allowed:
             return err("invalid_scope", "scope: " + ", ".join(sorted(allowed)))
+        if self.store.one("SELECT COUNT(*) n FROM pending WHERE status='pending' AND expires_at>? AND client_id=?",
+                          (self.clock(), client["client_id"]))["n"] >= R.MAX_PENDING_PER_CLIENT:
+            return err("temporarily_unavailable", "this client has too many requests waiting for the person")
         if self.store.one("SELECT COUNT(*) n FROM pending WHERE status='pending' AND expires_at>?",
                           (self.clock(),))["n"] >= R.MAX_PENDING:
             return err("temporarily_unavailable", "too many requests are waiting for the person")

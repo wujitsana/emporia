@@ -38,6 +38,7 @@ PENDING_TTL = 10 * 60                # an authorization request waits 10 minutes
 CLIENT_UNUSED_TTL = 24 * 3600        # a registered client no person approved is dropped after a day
 MAX_CLIENTS = 20
 MAX_PENDING = 10
+MAX_PENDING_PER_CLIENT = 3          # one client cannot fill the slots
 REGISTRATIONS_PER_HOUR = 10
 MAX_REQUEST_BYTES = 1_000_000        # a request to /mcp
 MAX_FORM_BYTES = 64_000              # a request to the OAuth endpoints

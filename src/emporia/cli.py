@@ -3392,7 +3392,7 @@ def cmd_serve_remote(args: argparse.Namespace) -> int:
 
 
 def cmd_connector(args: argparse.Namespace) -> int:
-    """`emporia agent connector list|pending|approve|revoke|log|allow-redirect NAME ...` (a person's commands)."""
+    """`emporia agent connector list|pending|approve|deny|revoke|log|allow-redirect NAME ...` (a person's commands)."""
     from emporia.remote import cli as remote_cli
     return remote_cli.connector(args)
 
