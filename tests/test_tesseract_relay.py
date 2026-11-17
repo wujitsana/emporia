@@ -674,10 +674,10 @@ def test_a_practice_table_is_marked_in_the_waiting_view_the_tools_and_whats_next
 
 def test_practice_tables_have_their_own_small_cap_and_sit_after_real_tables_on_the_card(w, monkeypatch):
     monkeypatch.setenv("EMPORIA_ALLOWANCE", "1")
-    from emporia.standing import PRACTICE_WAITING_CAP
+    from emporia.standing import PRACTICE_OPEN_CAP
     a = agents(w, 1)[0]
     real = w.create(a, players=4)
-    made = [w.create(a, players=3, practice=True) for _ in range(PRACTICE_WAITING_CAP)]
+    made = [w.create(a, players=3, practice=True) for _ in range(PRACTICE_OPEN_CAP)]
     from conftest import make_test_commit, signed_session_body
     from emporia import wire
     body = signed_session_body(a, {"module_type": GAME, "config": {"players": 3, "practice": True}})
@@ -708,3 +708,36 @@ def test_practice_true_on_a_game_without_practice_tables_does_not_skip_the_open_
         assert sessions_route._open_games_limit(a, GAME, {"practice": True}) == ""
     finally:
         S.usage = real_usage
+
+
+def test_the_card_puts_real_tables_first_in_the_query_and_running_practice_tables_count_in_the_cap(w, monkeypatch):
+    """D-N7: 220 newer practice tables cannot push an older real table off the card, and a practice table that is
+    already running still counts toward the operator's cap."""
+    monkeypatch.setenv("EMPORIA_ALLOWANCE", "1")
+    from emporia.standing import PRACTICE_OPEN_CAP
+    a = agents(w, 1)[0]
+    real = w.create(a, players=4)
+    first = w.create(a, players=3, practice=True)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = dict(conn.execute("SELECT * FROM sessions WHERE session_id = ?", (first,)).fetchone())
+        cols = list(row)
+        for i in range(220):
+            vals = {**row, "session_id": f"practice-flood-{i}", "created_at": "2999-01-01T00:00:00+00:00"}
+            conn.execute(f"INSERT INTO sessions ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                         [vals[c] for c in cols])
+        conn.commit()
+    ids = [t["session_id"] for t in w.client.get("/tesseract").json()["tables"]]
+    assert ids and ids[0] == real, "the real table is on the card, first"
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("DELETE FROM sessions WHERE session_id LIKE 'practice-flood-%'")
+        conn.commit()
+    more = [w.create(a, players=3, practice=True) for _ in range(PRACTICE_OPEN_CAP - 1)]
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE sessions SET status = 'active' WHERE session_id = ?", (first,))
+        conn.commit()
+    from conftest import make_test_commit, signed_session_body
+    from emporia import wire
+    body = signed_session_body(a, {"module_type": GAME, "config": {"players": 3, "practice": True}})
+    sid = wire.session_id_for(body["nonce"])
+    r = w.client.post("/sessions", json={**body, "rand_commit": make_test_commit(sid, a, 0)}, headers=w.hdr(a))
+    assert r.status_code in (400, 429) and "practice tables" in r.text and more, r.text

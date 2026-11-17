@@ -904,10 +904,10 @@ def usage(conn, agents: list[str]) -> dict[str, int]:
             "challenges": waiting}
 
 
-def practice_waiting(conn, agents: list[str]) -> int:
-    """Practice tables (`is_practice_session`) of these agents that are still waiting for players."""
+def practice_open(conn, agents: list[str]) -> int:
+    """Practice tables (`is_practice_session`) of these agents that are open: waiting for players or running."""
     marks = ",".join("?" * len(agents))
-    rows = conn.execute(f"SELECT s.* FROM sessions s WHERE s.status = 'waiting' AND s.session_id IN "
+    rows = conn.execute(f"SELECT s.* FROM sessions s WHERE s.status IN ('waiting', 'active') AND s.session_id IN "
                         f"(SELECT session_id FROM participants WHERE agent_id IN ({marks}))", agents).fetchall()
     return sum(1 for r in rows if is_practice_session(rs._session_row_to_dict(r)))
 
