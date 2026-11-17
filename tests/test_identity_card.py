@@ -228,3 +228,21 @@ def test_setup_agent_gives_the_first_agent_a_label_and_the_next_one_the_same(pro
     assert cli.main(["welcome", "second"]) == 0
     out = capsys.readouterr().out
     assert label in out and "EMPORIA_DECLARE_MODEL=off" in out
+
+
+def test_operator_label_new_gives_this_agent_a_label_of_its_own(tmp_path):
+    root = tmp_path / "hermes"
+    a, b = root / "profiles" / "a", root / "profiles" / "b"
+    for p in (a, b):
+        p.mkdir(parents=True)
+        (p / "config.yaml").write_text("{}\n")
+    label, _ = identity_card.assign_operator(a)
+    assert identity_card.assign_operator(b) == (label, "adopted")
+    own, how = identity_card.assign_operator(b, new=True)
+    assert how == "minted" and own != label and operators.valid_label(own)
+    assert identity_card.label_of_profile(b) == own and identity_card.label_of_profile(a) == label
+    # a bad value is refused for a plain assign, and replaced by --new
+    (b / ".env").write_text("EMPORIA_OPERATOR_LABEL=nope\n")
+    with pytest.raises(ValueError, match="not an operator label"):
+        identity_card.assign_operator(b)
+    assert operators.valid_label(identity_card.assign_operator(b, new=True)[0])

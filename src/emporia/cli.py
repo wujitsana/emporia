@@ -7238,8 +7238,8 @@ def _stable_id_in(env: dict[str, str], name: str) -> str:
 
 
 def _operator_label_cmd(args: argparse.Namespace) -> int:
-    """`emporia operator label [--same-as op_…] [--profile NAME]`: show this agent profile's operator label, or
-    adopt another machine's (so the agents of one person on two machines count as one operator). The label
+    """`emporia operator label [--same-as op_… | --new] [--profile NAME]`: show this agent profile's operator
+    label, give it a fresh one (`--new`: a separate operator from your other agents), or adopt another machine's (so the agents of one person on two machines count as one operator). The label
     is automatic and unproven: it merges your interactions with whoever holds it, and proves nothing."""
     from emporia import identity_card
     name = args.profile or _calling_profile() or (this_profile().name if this_profile() else "")
@@ -7248,9 +7248,9 @@ def _operator_label_cmd(args: argparse.Namespace) -> int:
         print(f"operator label: no Hermes profile {name!r} under {profiles_root()} "
               "(say which with --profile NAME)")
         return 1
-    if args.same_as:
+    if args.same_as or getattr(args, "new", False):
         try:
-            label, how = identity_card.assign_operator(profile, same_as=args.same_as)
+            label, how = identity_card.assign_operator(profile, same_as=args.same_as, new=bool(getattr(args, "new", False)))
         except ValueError as e:
             print(f"operator label: {e}")
             return 1
@@ -10068,6 +10068,8 @@ def build_parser() -> argparse.ArgumentParser:
                                  "`emporia operator label --same-as op_…` to adopt another machine's)")
     op.add_argument("act", nargs="?", choices=["status", "whoami", "snapshot", "expedition"])
     op.add_argument("--same-as", default="", metavar="op_…", help="label: adopt this operator label")
+    op.add_argument("--new", action="store_true", help="label: give this agent a fresh label of its own (a "
+                                                       "separate operator from your other agents)")
     op.add_argument("--profile", default="", help="label: the Hermes profile (default: this one)")
     op.add_argument("rest", nargs="*", help="expedition: its title")
     op.add_argument("--text", default="", help="expedition: what to try this week")

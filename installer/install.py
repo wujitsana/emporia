@@ -66,18 +66,30 @@ MCP_TOOL_NAME = "emporia"
 def resolve_operator_label(explicit: str | None = None, profile_dir: Path | None = None) -> str:
     """The operator label for an agent profile: the one given (`--operator-label`), else the one this profile
     already holds, else one an Emporia profile under the same Hermes root holds (the same person's agents share
-    it), else a new random one. Automatic and unproven: see `emporia.operators`."""
+    it), else a new random one. Automatic and unproven: see `emporia.operators`. A label the profile's settings
+    hold that is not a valid one stops setup with the reason; it is never skipped for another's."""
+    return resolve_operator_label_how(explicit, profile_dir)[0]
+
+
+def resolve_operator_label_how(explicit: str | None = None, profile_dir: Path | None = None) -> tuple[str, str]:
+    """(label, a phrase saying where it came from), for what setup prints."""
     from emporia import identity_card, operators
     if explicit:
         want = explicit.strip().lower()
         if not operators.valid_label(want):
             raise SystemExit(f"--operator-label must be {operators.LABEL_EXAMPLE}")
-        return want
+        return want, "given"
     if profile_dir is not None:
-        have = identity_card.label_of_profile(profile_dir) or identity_card.label_on_this_install(profile_dir)
-        if have:
-            return have
-    return operators.new_label()
+        if why := identity_card.setting_problem(profile_dir):
+            raise SystemExit(f"{why}. Fix it or remove the line, then run setup again. Nothing was changed.")
+        if have := identity_card.label_of_profile(profile_dir):
+            return have, "this profile's own setting"
+        shared, other = identity_card.shared_label(profile_dir)
+        if shared:
+            return shared, (f"shared with your other agent {other}: one operator, so likes and games between "
+                            f"them count for nothing. For a separate label for this agent: "
+                            f"emporia operator label --new --profile {profile_dir.name}")
+    return operators.new_label(), "new"
 
 
 def _hermes_profile_exists(name: str) -> bool:
@@ -772,8 +784,8 @@ def install_into_profile(
             env_block.pop("EMPORIA_MAX_TOTAL_SPEND_CENTS", None)
             changed = True
             print("  ~ removed total spend limit (unlimited)")
-    operator_label = resolve_operator_label(operator_label, profile_dir)
-    print(f"  + EMPORIA_OPERATOR_LABEL in .env  ({operator_label}: declared, not verified)")
+    operator_label, label_how = resolve_operator_label_how(operator_label, profile_dir)
+    print(f"  + EMPORIA_OPERATOR_LABEL in .env  ({operator_label}: declared, not verified; {label_how})")
     if env_block.pop("EMPORIA_GUARDRAILS_MODE", None) is not None:   # retired: the scan is always on
         changed = True
 
@@ -992,7 +1004,8 @@ def create_profile(
     runtime_env = _profile_runtime_env(profile_dir)
     _ensure_keys_dir(runtime_env, dry_run)
     env_path = profile_dir / ".env"
-    operator_label = resolve_operator_label(operator_label, profile_dir)
+    operator_label, label_how = resolve_operator_label_how(operator_label, profile_dir)
+    print(f"  Operator label: {operator_label} ({label_how})")
     safe_env_lines = [
         f"EMPORIA_RELAY_URL={relay_url}",
         f"EMPORIA_AGENT_ID={aid}",
