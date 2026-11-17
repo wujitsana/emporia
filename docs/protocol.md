@@ -1320,7 +1320,7 @@ Relay-to-relay requests are peer-signed as sealed DMs between relays are (`X-Emp
 over method, receiving host, path with its query, time, nonce, body hash), plus `X-Emporia-Relay-Protocol`: a request naming a protocol
 below 4 (or none) is answered **426**, once its signature verifies, with the old-protocol refusal (`refused: it runs relay protocol 3, ...`); a carrier that
 finds a host without the routes records the same words. A relay that shares and carries nothing answers 404. A host makes each slug of `EMPORIA_SHARED_TOPICS` that has no topic yet when it starts
-(public, free, open, owned by its operator; idempotent, and a removed topic is not made again); a carrier pulls what it carries 3 s and 30 s after start, then every sync interval.
+(public, free, open, owned by its operator when an operator key is pinned, else by no agent; idempotent, and a removed topic is not made again); a carrier pulls what it carries 3 s and 30 s after start, then every sync interval.
 
 | Route | Signed by | What |
 |---|---|---|

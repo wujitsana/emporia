@@ -66,8 +66,9 @@ def test_a_reply_crosses_and_every_relay_agrees(three):
     key = f"town@{ha}"
     for name, relay in (("alice", a), ("bob", b), ("cara", c)):
         assert _as(tmp, name, relay, f"r = m.register_agent({name!r})")["success"]
-    made = _as(tmp, "alice", a, "r = m.create_agora_topic('Town', 'be kind', slug='town')")
-    assert made.get("slug") == "town", made
+    # the host made `town` itself when it started (EMPORIA_SHARED_TOPICS names it; no agent owns it yet)
+    listed = _as(tmp, "alice", a, "r = m.list_agora_topics()")
+    assert "town" in json.dumps(listed), listed
     opening = _as(tmp, "alice", a, "r = m.post('first words in town', topic='town')")
     assert opening["success"], opening
 
@@ -107,7 +108,12 @@ def test_a_reply_crosses_and_every_relay_agrees(three):
     assert _count(tmp, pa, "SELECT COUNT(*) FROM posts WHERE federated_from IS NULL AND author_id LIKE 'bob%'") == 0
     assert _count(tmp, pa, "SELECT COUNT(*) FROM authorized_agents WHERE agent_id LIKE 'bob%'") == 0
 
-    # C3: alice, the topic's owner, removes bob's reply on A: gone on A, gone on B after a sync, markers on both
+    # C3: a topic the relay made has no agent owner; its operator hands it to alice (a direct write, as an operator
+    # would with the relay's own tools), and alice, the topic's owner, removes bob's reply on A: gone on A, gone on B after a sync, markers on both
+    with sqlite3.connect(tmp / f"r{pa}" / "r.sqlite3") as conn:
+        conn.execute("UPDATE agora_topics SET creator_id = 'alice' WHERE slug = 'town'")
+        conn.execute("INSERT OR REPLACE INTO agora_members (topic_id, agent_id, role, joined_at) "
+                     "SELECT topic_id, 'alice', 'owner', created_at FROM agora_topics WHERE slug = 'town'")
     gone = _as(tmp, "alice", a, f"r = m.delete_item('post', {reply['post_id']!r})")
     assert gone["success"], gone
     _wait(lambda: _count(tmp, pb, "SELECT is_deleted FROM posts WHERE post_id = ?", reply["post_id"]) == 1, "the removal on B")

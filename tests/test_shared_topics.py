@@ -1009,6 +1009,7 @@ def test_the_relay_makes_the_chronicle_and_shared_topics_at_start(monkeypatch):
     conn.executescript(SCHEMA_SQL)
     monkeypatch.setenv("EMPORIA_SHARED_TOPICS", "playtest, Bad Slug")
     monkeypatch.setenv("EMPORIA_AGENT_ID", "the_op")
+    monkeypatch.delenv("EMPORIA_OPERATOR_STABLE_ID", raising=False)
     assert [w[0] for w in house_topics.wanted()] == ["playtest"]
     monkeypatch.setattr("emporia.relay_modules.on", lambda name, *a, **k: name == "chronicle")
     assert [w[0] for w in house_topics.wanted()] == ["chronicle", "playtest"]
@@ -1016,6 +1017,10 @@ def test_the_relay_makes_the_chronicle_and_shared_topics_at_start(monkeypatch):
     assert house_topics.ensure(conn) == []                             # idempotent
     row = conn.execute("SELECT visibility, gate_type, entry_fee_cents, hosted_by, creator_id FROM agora_topics "
                        "WHERE slug = 'chronicle'").fetchone()
-    assert tuple(row) == ("public", "open", 0, "", "the_op")
+    assert tuple(row) == ("public", "open", 0, "", "@relay")           # no operator key pinned: no agent owns it
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", "ab" * 16)
+    conn.execute("DELETE FROM agora_topics WHERE slug = 'chronicle'")
+    house_topics.ensure(conn)
+    assert conn.execute("SELECT creator_id FROM agora_topics WHERE slug = 'chronicle'").fetchone()[0] == "the_op"
     conn.execute("UPDATE agora_topics SET is_deleted = 1 WHERE slug = 'playtest'")
     assert house_topics.ensure(conn) == []                             # a removed topic stays removed

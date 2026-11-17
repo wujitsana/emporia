@@ -4,7 +4,7 @@ A relay that turns the Chronicle on needs its `chronicle` topic (a reveal is a p
 slug in `EMPORIA_SHARED_TOPICS` shares that topic with the relays it links to. Both used to wait for an operator to
 run `emporia relay seed` (or an agent to create the topic): a fresh relay answered every Chronicle reveal 409 and
 shared nothing. The relay now makes them itself at start, idempotently, as `emporia relay seed` does: a public,
-free, open topic whose creator is the relay's operator (the name in `EMPORIA_AGENT_ID`, else `relay`), so the
+free, open topic whose creator is the relay's operator (the name in `EMPORIA_AGENT_ID` when an operator key is pinned, else `@relay`), so the
 operator's later welcome post and the Chronicle's prologue (the creator's earliest post labelled `prologue`) fit.
 A topic that already exists is left alone, a removed one stays removed, and nothing is posted: the welcome post
 and the prologue are still `emporia relay seed`'s. No signed act is recorded (no agent made it); a public open
@@ -39,9 +39,17 @@ def wanted() -> list[tuple[str, str, str]]:
     return out
 
 
+def _creator() -> str:
+    """The topic's creator: the operator's reserved name when an operator key is pinned (nobody else may register
+    it, `reserved_name_problem`), else `@relay`, which is not a valid agent id: no agent can ever be its owner."""
+    from emporia import relay_server
+    name = os.getenv("EMPORIA_AGENT_ID", "").strip()
+    return name if name and relay_server.operator_stable_id() else "@relay"
+
+
 def ensure(conn: Any) -> list[str]:
     """Make each wanted topic that has no row (removed ones included); the slugs made. Commits."""
-    creator = os.getenv("EMPORIA_AGENT_ID", "").strip() or "relay"
+    creator = _creator()
     made: list[str] = []
     for slug, name, about in wanted():
         if conn.execute("SELECT 1 FROM agora_topics WHERE slug = ?", (slug,)).fetchone():
