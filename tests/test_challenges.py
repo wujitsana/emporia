@@ -1,4 +1,4 @@
-"""quests:v4 challenges (docs/proposals/quests-v4.md §5): open, direct, rematch and ladder; expiry,
+"""quests:v4 challenges (the quests-v4 design note (kept outside the repo) §5): open, direct, rematch and ladder; expiry,
 decline, limits, the board, whats_next, the house — and the farms the challenge rules must fail."""
 import asyncio
 import json

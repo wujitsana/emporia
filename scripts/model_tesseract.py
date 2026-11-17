@@ -14,7 +14,7 @@ The model is called one-shot through a throwaway Hermes profile, no tools:
 WARNING: `-t ""` does NOT disable tools. In the first run 15 of 89 answered calls used the profile's
 file/terminal tools (scratch scripts to optimise the push). A clean run needs every toolset
 disabled first (e.g. `hermes -p tesseract-probe tools disable <each toolset>`) and one checked
-call; see docs/games/tesseract-model-test.md.
+call; see the tesseract-model-test report (kept outside the repo).
 
 Hard cap on model calls (default 120); beyond it the seat pushes nothing and says so. Every call
 is logged to DIR/calls.jsonl; games to DIR/games.jsonl.

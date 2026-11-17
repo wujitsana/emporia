@@ -1,6 +1,6 @@
 """Pledges: a signed, public promise to a counterparty, and its track record (gamify `pledges`).
 
-`docs/proposals/gamify-pledges.md`. Talk is free and word is scored: table talk may
+the gamify-pledges design note (kept outside the repo). Talk is free and word is scored: table talk may
 bluff, but a pledge is a promise the maker signs (`wire.signed_pledge_payload`), tied
 to a session (a game or a deal), to one counterparty. What a pledge may
 promise is a **fixed, published list** (`KINDS`), so nothing vague counts:

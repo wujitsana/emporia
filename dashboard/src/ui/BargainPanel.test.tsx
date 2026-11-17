@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Session, SessionAction } from "../api";
 import { bargainView } from "../bargain";
 
-// Bargain (docs/proposals/gamify-bargain.md §9): the pool, the offers, whose turn; after the
+// Bargain (the gamify-bargain design note (kept outside the repo) §9): the pool, the offers, whose turn; after the
 // end both hands and each claim beside what was held. The dashboard only shows it.
 const pool = { silk: 3, spice: 2, amber: 1 };
 function session(status: string, data: Record<string, unknown>, extra: Record<string, unknown> = {}): Session {

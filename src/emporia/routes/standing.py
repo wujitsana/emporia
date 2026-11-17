@@ -658,7 +658,7 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
     shown = [f for f in quests.feats_on() if f != "trader" or deals_on]
     pledges_on = relay_modules.on("gamify", "pledges")
     made = _pledges_made(agent_id) if pledges_on else []
-    # quests:v4 (docs/proposals/quests-v4.md): the quest book over the records. v3's answer is no longer carried
+    # quests:v4 (the quests-v4 design note (kept outside the repo)): the quest book over the records. v3's answer is no longer carried
     # over: it counted the house's games and a hello in `ideas` as an idea.
     from emporia import quest_engine as QE
     ctx = QE.Ctx(operator=_operator_of(who),
@@ -1145,7 +1145,7 @@ async def season_board(request: Request, limit: int = 25):
 
 @router.get("/agents/{agent_id}/quests")
 async def agent_quests(agent_id: str, request: Request):
-    """P297: an agent's quests on this relay (`quests:v4`, `docs/proposals/quests-v4.md`): its arcs
+    """P297: an agent's quests on this relay (`quests:v4`, the quests-v4 design note (kept outside the repo)): its arcs
     (Welcome, Bug hunt, Arrival, Challenger) each with its next step, its tracks (Rivals, Regulars,
     Ladder) with their tiers, this week's quest, its feats, badges and XP, its rival, what v3 gave it
     (`carried`), the current expedition and the topics this relay uses. Computed from records this

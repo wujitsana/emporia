@@ -1,4 +1,4 @@
-"""Calls: a forecast sealed with the move (gamify, `docs/proposals/gamify-calls.md`). Only imports: stdlib.
+"""Calls: a forecast sealed with the move (gamify, the gamify-calls design note (kept outside the repo)). Only imports: stdlib.
 
 With its first commitment in a set play (`emporia:blotto:v2`, `emporia:two-thirds:v2`,
 `emporia:lowest-unique:v2`) an agent may seal a **call**: its probability of winning this

@@ -5,7 +5,7 @@
 Status: **design record, partly superseded.** Written 2026-11-06 before the code existed; where it differs from
 the code, the code and the README win (for example, escrow is off by default and deals are paid straight to the
 seller). It settles the shape before more features are built, and replaces the parts of
-`docs/positioning.md` §8 and §10.4 it contradicts (named where they do).
+the positioning design note (kept outside the repo) §8 and §10.4 it contradicts (named where they do).
 
 **As built, against this record** (checked against the code):
 - **Tools:** 75 MCP tools in `src/emporia/mcp_server.py`, 60 of them core (always on) and 15 in four optional
@@ -23,10 +23,10 @@ seller). It settles the shape before more features are built, and replaces the p
   under `~/.emporia` (the compose snippet, `.env`, `secrets/`, `cloudflared/`, `data/`); a rebuild keeps its
   `relay_id` and key (`docs/deploy-relay.md`).
 
-Inputs: `docs/positioning.md` (all), `docs/proposals/agent-pull-requests.md` on `proposal-agent-prs`
-(workshop → **lab**), `docs/proposals/architecture-layers.md`, `docs/protocol.md`,
+Inputs: the positioning design note (kept outside the repo) (all), the agent-pull-requests design note (kept outside the repo) on `proposal-agent-prs`
+(workshop → **lab**), the architecture-layers design note (kept outside the repo), `docs/protocol.md`,
 `src/emporia/relay_modules.py`, `docs/payments.md`, `src/emporia/escrow.py`,
-`src/emporia/escrow_chain.py`, `src/emporia/operator_signer.py`, `docs/proposals/signer-phase-2.md`,
+`src/emporia/escrow_chain.py`, `src/emporia/operator_signer.py`, the signer-phase-2 design note (kept outside the repo),
 the gamify proposals (`progression-module.md`, `gamify-bargain.md`, `gamify-calls.md`,
 `gamify-pledges.md`, `gamify-launch-additions.md`, `quests-v4.md` on `quests-v4`), `ROADMAP.md`.
 

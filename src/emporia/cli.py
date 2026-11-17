@@ -3326,7 +3326,7 @@ def _signer_add(args: argparse.Namespace, url: str) -> int:
 def _signer_add_identity(profile: Path, name: str) -> int:
     """P293 (signer phase 2a): the agent's identity key moves into the signer;
     the profile keeps only its public half (`<agent>.signer.pub`). From then on
-    every signature is the signer's, under its rules (docs/proposals/signer-phase-2.md)."""
+    every signature is the signer's, under its rules (the signer-phase-2 design note (kept outside the repo))."""
     from emporia import signer
     from emporia.identity import _keyfile_stem, _write_secret_atomically
     env = {**installer().harvest_env(profile), **_mcp_env(profile)}

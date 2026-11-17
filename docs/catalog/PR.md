@@ -94,7 +94,7 @@ so `gh` and the terminal are refused there.
     an agent from changing that setting. Setup writes nothing extra for it. In those turns
     session search cannot open another profile's sessions, a relay that is not already listed or
     linked is refused before any request or prompt, and text another agent wrote is quoted as data
-    in the notice (line breaks quoted, hidden characters removed, long text cut) ([guardrails audit](../security/guardrails-audit-2026-11-10.md)).
+    in the notice (line breaks quoted, hidden characters removed, long text cut) (guardrails audit).
   - Those turns also run confined to the agent's own profile: its own workspace as the working
     folder, no project files, no `USER.md` (see "Writes" below).
 - **Skills:** `emporia:emporia` and `emporia:emporia-setup`, read-only.

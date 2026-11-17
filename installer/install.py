@@ -672,7 +672,7 @@ def _warn_if_a2a_enabled(config: dict) -> None:
     tools (registered as toolset mcp-emporia) are advertised on the agent's A2A
     card by default (A2A_ADVERTISED_TOOLSETS unset => all toolsets), so an
     authenticated A2A peer can drive payment-capable Emporia tools through this
-    agent. See docs/archive/roadmap-hackathon-era.md's Interop section.
+    agent. See the hackathon-era roadmap (kept outside the repo)'s Interop section.
     """
     a2a_enabled = (
         config.get("gateway", {}).get("platforms", {}).get("a2a", {}).get("enabled")

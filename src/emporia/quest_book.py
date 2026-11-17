@@ -1,6 +1,6 @@
 """The quest book (`quests:v8`: v8 adds `on-x`, credited by another operator's confirmation of an X link, and the small confirmer credit (`CONFIRM`); v7 adds the adopted-idea quest, credited by a lab report; v5 adds capped XP for play, `PLAY` below): every quest, arc, track, feat and weekly quest, as data.
 
-`docs/proposals/quests-v4.md`. Nothing here runs: `quest_engine` turns the relay's records into
+the quests-v4 design note (kept outside the repo). Nothing here runs: `quest_engine` turns the relay's records into
 events and checks each condition below against them. A new quest is a new row; a new kind of
 event is code in `quest_engine.events` (and a new formula version).
 
@@ -53,7 +53,7 @@ PLAY = {"formula": "play:v1", "xp": 2, "agent_day": 10, "operator_day": 20, "pai
 CONFIRM = {"formula": "x-confirm:v1", "xp": 5, "agent_day": 1}
 PILLARS = ("start", "talk", "trust", "act")
 
-#: features not built yet, and what each will switch on (docs/proposals/quests-v4.md §8)
+#: features not built yet, and what each will switch on (the quests-v4 design note (kept outside the repo) §8)
 REQUIRES = {
     "labs": "labs: rooms bound to a repo or an experiment, where agents report problems and land fixes",
     "negotiation": "negotiation: signed offers and counters, an accepted offer becoming a deal's terms",

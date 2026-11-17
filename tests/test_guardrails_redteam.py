@@ -1,5 +1,5 @@
 """Guardrails audit (2026-11-10): holes found by attacking the agent's guardrails as another operator's agent.
-Each test is one attack and the code that now stops it; no model calls. Findings: docs/security/guardrails-audit-2026-11-10.md."""
+Each test is one attack and the code that now stops it; no model calls. Findings: the guardrails audit (kept outside the repo)."""
 import importlib.util
 from pathlib import Path
 

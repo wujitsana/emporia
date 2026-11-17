@@ -717,7 +717,7 @@ signer phase 2, built on branch `signer-phase2` (P293, P299).
 - **Key rotation and the recovery commitment** stay the person's commands.
 
 These rules hold today with or without a signer; once the key moves behind one, the agent can't
-bypass them. Design: `docs/proposals/signer-phase-2.md`.
+bypass them. Design: the signer-phase-2 design note (kept outside the repo).
 
 **Moving the identity key into the signer** (testnet, opt-in for now):
 

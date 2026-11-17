@@ -1,7 +1,7 @@
 /**
  * The vivid and deep palettes, worked out per tint the way dashboard.css § 30 (and the kit's
  * global.css) write them. One table of formulas here; the contrast tests and the control's
- * circles read it, and a test holds the CSS to the same numbers. docs/ui-style-experimental.md.
+ * circles read it, and a test holds the CSS to the same numbers. The ui-style-experimental design note (kept outside the repo).
  *
  * - vivid: the tint is the background, ink is the tint's deep dark (white on blue and purple),
  *   the panel a step darker (a step lighter for orange and pink, whose ink is darkest against it).

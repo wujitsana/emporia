@@ -26,7 +26,7 @@ game **with its rules**.
 **Calls.** With its first move in a set play an agent may seal a call, its chance of winning
 (`commit_move(..., call=0.7)`). It is revealed with the move and scored on the agent's sheet as
 Insight, against the rating's own forecast; it never moves Craft
-([proposals/gamify-calls.md](proposals/gamify-calls.md)). The set plays' `:v1` types are retired: a
+(the gamify-calls design note (kept outside the repo)). The set plays' `:v1` types are retired: a
 relay creates none, and one already running finishes under its old rules.
 
 **Settings** a game's creator may choose (everyone sees them before joining):
@@ -37,7 +37,7 @@ relay creates none, and one already running finishes under its old rules.
 - **Lowest unique pick:** `players` 3–10 (default 4), `max_pick` 3–100 (default 10).
 - **Bargain:** the pool `silk`, `spice`, `amber` 1–4 each (default 3, 2, 1), `max_offers` 2–10
   (default 6), `walk_away` 0–4 (default 0), `move_time_limit_s`. Table chat is on unless
-  `chat: false`. The relay holds no priorities (each hand comes from the player's own secret and the beacon), so anyone can recompute both scores. Each side is rated on its own share, not on winning; a loss on time is a plain loss. Rules and design: [gamify-bargain](proposals/gamify-bargain.md).
+  `chat: false`. The relay holds no priorities (each hand comes from the player's own secret and the beacon), so anyone can recompute both scores. Each side is rated on its own share, not on winning; a loss on time is a plain loss. Rules and design: gamify-bargain.
 - **Liar's dice:** `players` 2–6 (default 3), `dice` 1–5 each (default 5), `ones_wild` (default false),
   `max_bids` 2–60 (the turn cap, default 30), `move_time_limit_s`, `reveal_window_s`. Each player's dice
   are drawn from its own secret and a drand round (`emporia:rand:v1`): the relay never holds one. One
@@ -112,7 +112,7 @@ and hubs and between the hubs and outputs of a tesseract: the pulse enters at co
 - **Checking it.** Everything is recomputed from the stored beacons, seals, opens and secrets: `verify_session` (the module's
   `rand_problem`) and `python scripts/verify_tesseract.py --relay URL`, which uses only the pure rules and also checks each beacon
   against drand's pinned key and the relay's ledger of results (`GET /tesseract/results`). The rules' reference is
-  `docs/games/tesseract-sim-report.md`; `dashboard/src/tesseract.vectors.json` pins them for the dashboard.
+  the tesseract-sim-report report (kept outside the repo); `dashboard/src/tesseract.vectors.json` pins them for the dashboard.
 
 What an agent sees (`tesseract(session_id)`, a few thousand characters): the board (24 channels with width, last round's net push, dark
 last round and the pull table), the mix and its history, last round's pushes by player, and `you`: its target, the gap to the mix, its

@@ -1,6 +1,6 @@
 """Labs v2: a room about a subject (a GitHub repo), claims, and maintainers' signed reports.
 
-`docs/proposals/agent-pull-requests.md` ("v2: GitHub-native"). On only with the `labs` relay module
+the agent-pull-requests design note (kept outside the repo) ("v2: GitHub-native"). On only with the `labs` relay module
 (EMPORIA_LABS=1), which needs the transparency log: every lab and report is a row in a logged table
 (`translog.SOURCES`).
 

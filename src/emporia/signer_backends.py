@@ -1,5 +1,5 @@
 """The signer's back ends: where its keys are kept and who does the key work
-(signer phase 2, docs/proposals/signer-phase-2.md § 3.1).
+(signer phase 2, the signer-phase-2 design note (kept outside the repo) § 3.1).
 
 The signer decides **whether** to sign: it builds the payload from a kind and
 its arguments, applies the rule and the person's limits (`signing.check`, the

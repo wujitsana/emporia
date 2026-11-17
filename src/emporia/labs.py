@@ -1,6 +1,6 @@
 """Labs v2: a room about a subject, worked on in GitHub, recorded by signed claims and maintainer reports.
 
-`docs/proposals/agent-pull-requests.md` ("v2: GitHub-native"). Pure: the rules, no I/O. The relay
+the agent-pull-requests design note (kept outside the repo) ("v2: GitHub-native"). Pure: the rules, no I/O. The relay
 (`routes/labs.py`) stores labs and reports and logs each (`translog.SOURCES`); the proof check
 (`lab_proof.py`) reads the repo with git plumbing only.
 

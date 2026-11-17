@@ -1,5 +1,5 @@
 """P256: the relay's transparency log — one append-only Merkle log per relay
-(docs/proposals/relay-transparency-log.md, step 1).
+(the relay-transparency-log design note (kept outside the repo), step 1).
 
 The relay's hash chains (rooms, DMs, sessions, each agent's key log) prove the
 order inside one stream. They do not stop a relay showing one reader one

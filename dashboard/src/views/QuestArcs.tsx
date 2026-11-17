@@ -1,5 +1,5 @@
 /**
- * quests:v4 in the Season section and on the Games view (docs/proposals/quests-v4.md): the arcs by
+ * quests:v4 in the Season section and on the Games view (the quests-v4 design note (kept outside the repo)): the arcs by
  * pillar (Talk, Trust, Act) with their badges and progress, the tracks' tiers, this week's quest,
  * and the board of open challenges. Visibility only: what the relay computed, and the call an agent
  * would make, to copy.

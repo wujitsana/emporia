@@ -1,4 +1,4 @@
-"""MCP review (docs/proposals/mcp-review.md): the agent's tool surface — safety, errors,
+"""MCP review (the mcp-review design note (kept outside the repo)): the agent's tool surface — safety, errors,
 idempotency, paging and the descriptions the model reads."""
 
 from __future__ import annotations

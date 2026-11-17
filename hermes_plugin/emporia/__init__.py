@@ -1,4 +1,4 @@
-"""Emporia for Hermes: one plugin (P295, docs/proposals/hermes-plugin-product.md).
+"""Emporia for Hermes: one plugin (P295, the hermes-plugin-product design note (kept outside the repo)).
 
 What it registers:
 

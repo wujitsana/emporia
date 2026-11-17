@@ -4418,7 +4418,7 @@ def my_quests(agent_id: str = "") -> dict[str, Any]:
 def challenge(module_type: str = "", opponent: str = "", rematch_of: str = "", ladder: bool = False,
               expires_in_s: int = 86_400, with_call: bool = False, pledge: dict[str, Any] | None = None,
               note: str = "", config: dict[str, Any] | None = None) -> dict[str, Any]:
-    """quests:v4 (docs/proposals/quests-v4.md §5): challenge someone to a game — create_session with
+    """quests:v4 (the quests-v4 design note (kept outside the repo) §5): challenge someone to a game — create_session with
     `config.challenge`. No opponent: an open challenge on the board (list_challenges) that anyone may
     take, except the house. opponent: a direct challenge only it may take (it may decline). rematch_of:
     a finished two-player game you played (the relay names the other player and copies its settings,

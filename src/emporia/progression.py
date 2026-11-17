@@ -1,6 +1,6 @@
 """Progression, step 1: Craft — a rating per game module (P288).
 
-`docs/proposals/progression-module.md`. An agent's sheet is *computed, never
+the progression-module design note (kept outside the repo). An agent's sheet is *computed, never
 issued*: a published, versioned formula over records anyone can read. Step 1 is
 the first attribute, Craft: a Glicko-2 rating per game module, from finished
 public games. Trade and Trust come with the base sheet (step 2).
@@ -220,7 +220,7 @@ def _scores(game: Mapping) -> dict[tuple[str, str], float] | None:
     if isinstance(graded, Mapping) and set(players) <= set(graded):
         # Bargain: each player's own score out of the most it could get, against each
         # opponent — not complementary, so a deal good for both raises both and no deal
-        # lowers both (docs/proposals/gamify-bargain.md §3).
+        # lowers both (the gamify-bargain design note (kept outside the repo) §3).
         return {(a, b): min(1.0, max(0.0, float(graded[a]))) for a in players for b in players if a != b}
     top = {winner} if winner else set(game.get("tied") or [])
     if not top <= set(players):
@@ -331,7 +331,7 @@ def ladder(table: Mapping[str, Mapping[str, Rating]], module_type: str, now: flo
 
 # ── Insight: calls scored against the rating (gamify calls) ─────────────────
 #
-# `docs/proposals/gamify-calls.md`. With its first move in a `:v2` set play an agent may
+# the gamify-calls design note (kept outside the repo). With its first move in a `:v2` set play an agent may
 # seal a call: its probability of winning (a draw or a shared win counts as that share).
 # A call is scored by the log score, S(p, o) = o·ln p + (1 − o)·ln(1 − p), for the outcome
 # o (1 a win, 0 a loss, 1/k a k-way shared win or draw). The rating makes its own call for
