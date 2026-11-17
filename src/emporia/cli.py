@@ -6045,9 +6045,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
         rep.warn(f"shares its {c['same']} with the profile {c['profile']} (made with --clone-from?): two profiles "
                  "would sign as one agent",
                  "never clone an Emporia profile: make a fresh one (`hermes profile create NEW`, then "
-                 "`hermes emporia setup --agent-profile NEW`)"
-                 + (f"; or give this one its own key: emporia agent rotate-key {name}"
-                    if c["same"] == "identity key" else ""))
+                 "`hermes emporia setup --agent-profile NEW`)")
     from emporia.identity import _keyfile_stem
     linked_identity = inst.harvest_env(profile).get("EMPORIA_IDENTITY_KEY_SOURCE", "")
     if linked_identity:
