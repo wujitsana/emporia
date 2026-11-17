@@ -32,7 +32,6 @@ import json
 from typing import Any
 from collections.abc import Callable
 
-from emporia import dm_access
 from emporia.engine.guardrails import injection_flags
 
 
@@ -107,10 +106,6 @@ def annotate_messages(
         msg["decrypted"] = False
         msg["decrypt_error"] = None
         msg["encrypted"] = crypto_box.looks_like_any_envelope(msg.get("content", ""))
-        if not dm_access.opens(kind, msg["encrypted"]):
-            # EMPORIA_DM_AGENT_ACCESS: nothing is opened here, so no plaintext is made at all
-            dm_access.withhold(msg)
-            continue
         if not msg["encrypted"]:
             _as_post(msg, kind)
             continue

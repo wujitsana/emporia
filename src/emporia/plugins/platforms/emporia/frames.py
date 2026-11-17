@@ -387,14 +387,6 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         return agent(frame.get("from_agent"), f"{from_agent} {verb} your offer{price_str}")
 
     if t == "dm_received":
-        from emporia import dm_access
-        if (access := dm_access.mode()) != dm_access.FULL:
-            # EMPORIA_DM_AGENT_ACCESS: the wake notice carries no private text, and `person` not even who wrote
-            if access == dm_access.PERSON:
-                return agent("", "A private message arrived. Your person reads it in the dashboard; this agent does "
-                                 "not read private messages.")
-            return agent(frame.get("sender_id"), f"A DM from {who(frame.get('sender_id'))} arrived (its text is "
-                                                 "withheld from this agent; your person reads it in the dashboard).")
         sender = who(frame.get("sender_id"))
         thread_id = oid(frame.get("thread_id"))
         content = str(frame.get("content") or "")

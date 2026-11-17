@@ -33,15 +33,6 @@ _KEY_PATHS = re.compile(
     r"|\bx402\.(?:secp256k1|ed25519|phrase)\b"       # wallet key files
     r"|\.x25519\.priv\b|[\w@.-]+\.priv\b"           # identity / encryption keys
     r"|\.x25519\.retired\b"                          # P271: encryption keys it replaced
-    # the remote connector's state sits in <key dir>/remote: its database holds the hashes of live tokens and the
-    # audit log; its code, called directly, approves or revokes clients without the person's command
-    r"|\bkeys/remote\b|\bconnectors\.db\b|\bremote/(?:audit[\w.]*\.jsonl|server\.json)\b"
-    r"|\bimport\s+emporia\.remote\b|\bfrom\s+emporia\.remote\b|-m\s+emporia\.remote\b"
-    r"|\bfrom\s+emporia\s+import\s+[\w\s,()]*\bremote\b|\bemporia\s*\.\s*remote\b"
-    r"|\bimportlib\b[^\n]*\bemporia|__import__\s*\(\s*['\"]emporia"
-    # a glob or a wildcard reaching the folder or its files (`sqlite3 ~/.config/emporia/agents/*/rem*/conn*.db`)
-    r"|\bremote/\S*[*?\[]|\b(?:rem|remo|remot)[*?\[]\S*/|\bconn\w*[*?\[]\w*\.(?:db|d[*?])|\bconnectors\.\S*[*?\[]"
-    r"|\bsqlite3?\b[^\n]*\.db\b[^\n]*(?:agents|keys)/"
     r"|relay_operator\.secp256k1\b|_relay_jwt_secret\b"
     r"|\.env-backups\b"
     r"|\.emporia-signer\b|\bEMPORIA_SIGNER_DIR\b"       # P203: the signer's keys and limits
@@ -129,10 +120,7 @@ _PERSON_ONLY = (("wallet", {"backup", "mainnet"}),
                 ("relay", {"host", "rotate", "remove", "seed"}), ("agent", {"delete", "rotate", "recovery", "recover", "about",
                                     "settings",
                                     # an ERC-8004 link publishes a wallet on the card: the person's, never --yes
-                                    "link-8004", "unlink-8004", "register-8004", "set-8004-wallet",
-                                    # a remote connector acts as the agent: starting one and approving, listing or
-                                    # revoking its clients is the person's, in their own terminal
-                                    "serve-remote", "connector"}),      # its limits and behaviour on one screen: the person's
+                                    "link-8004", "unlink-8004", "register-8004", "set-8004-wallet"}),      # its limits and behaviour on one screen: the person's
                 # Labs: making a lab is a person's (the repo's proof file names them)
                 ("lab", {"create"}),
                 # P290: the guardians of a relay's key are people, not agents
@@ -247,9 +235,7 @@ _WAKE_WRITE = _setting_written(("EMPORIA_WAKE", "EMPORIA_ALLOWED_USERS"))
 _PERSON_SETTINGS = ("EMPORIA_WAKE\\w*", "EMPORIA_ROUNDS\\w*", "EMPORIA_PLAYBOOK_AUTONOMOUS\\w*",
                     "EMPORIA_OPERATOR_LABEL", "EMPORIA_DECLARE_MODEL", "EMPORIA_CLIENT\\w*", "EMPORIA_UNTRACKED_TURNS",
                     "EMPORIA_ABOUT", "EMPORIA_X_LINK", "EMPORIA_FEATURES",
-                    "EMPORIA_GAMES_BY", "EMPORIA_DAILY_TURNS", "EMPORIA_THREAD_LIMIT", "EMPORIA_MAX_OPEN_GAMES",
-                    # how much private text its own tools may return, and the remote connector's settings
-                    "EMPORIA_DM_AGENT_ACCESS", "EMPORIA_REMOTE_\\w+")
+                    "EMPORIA_GAMES_BY", "EMPORIA_DAILY_TURNS", "EMPORIA_THREAD_LIMIT", "EMPORIA_MAX_OPEN_GAMES")
 _PERSON_SETTINGS_WRITE = _setting_written(_PERSON_SETTINGS)
 # Hermes's file tools (tools/file_tools.py): write_file(path, content), patch(path, old_string, new_string | patch).
 _FILE_WRITE_TOOLS = frozenset({"write_file", "patch", "edit_file", "create_file", "write", "edit", "str_replace_editor"})
