@@ -351,13 +351,13 @@ def shape(tool: str, result: Any) -> Any:
     if isinstance(result, list):
         result = {"success": True, "items": result}
     if isinstance(result, dict):
+        from emporia import dm_access
+        result = dm_access.apply(tool, result)        # before the marking, which moves the lists it reads
         if "success" not in result:
             result = {"success": "error" not in result, **result}
         if (tool in UNTRUSTED_TEXT and result.get("success")
                 and (tool, result.get("view")) not in OWN_FIGURES):
             result = mark_untrusted(result)
-        from emporia import dm_access
-        result = dm_access.apply(tool, result)
         for fn in RESULT_FILTERS:
             result = fn(tool, result)
     return result

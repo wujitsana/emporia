@@ -2145,7 +2145,7 @@ else:
     print(json.dumps([[x.get("created_at", "")[:16], x.get("sender_id"), x.get("content"),
                        x.get("deleted_at") is not None, marks.get(str(x.get("message_id")), "unknown")]
                       for x in msgs]))"""
-    r = _as_agent(profile, code, EMPORIA_NO_ARCHIVE="1")
+    r = _as_agent(profile, code, EMPORIA_NO_ARCHIVE="1", EMPORIA_DM_AGENT_ACCESS="full")  # a person reads their own
     try:
         rows = _json.loads(r.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
@@ -3383,6 +3383,18 @@ def _signer_add_identity(profile: Path, name: str) -> int:
           f"emporia signer log {name} what it signed and how many it opened.")
     installer().print_restart_instructions([profile])
     return 0
+
+
+def cmd_serve_remote(args: argparse.Namespace) -> int:
+    """`emporia agent serve-remote NAME`: the remote MCP endpoint for one agent (see emporia.remote)."""
+    from emporia.remote import cli as remote_cli
+    return remote_cli.serve_remote(args)
+
+
+def cmd_connector(args: argparse.Namespace) -> int:
+    """`emporia agent connector list|pending|approve|revoke|log|allow-redirect NAME ...` (a person's commands)."""
+    from emporia.remote import cli as remote_cli
+    return remote_cli.connector(args)
 
 
 def cmd_agent_secure(name: str) -> int:
@@ -9937,11 +9949,24 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.add_argument("action", choices=["leave", "delete", "secure", "refresh", "inbox-clear", "rotate-key",
                                         "rotate-encryption-key", "recovery-key", "recover", "playbook", "settings", "init",
                                         "mcp-config", "about", "x-claim", "x-link", "link-8004", "unlink-8004", "register-8004",
-                                        "set-8004-wallet"])
+                                        "set-8004-wallet", "serve-remote", "connector"])
     ag2.add_argument("url_or_name", nargs="?", default="",
                      help="leave: the relay's URL; delete, secure, refresh, inbox-clear, rotate-key: "
                           "the agent (secure, refresh, inbox-clear: or all)")
-    ag2.add_argument("name", nargs="?", default=None, help="leave: the agent; about: the bio, in quotes (\"\" clears it)")
+    ag2.add_argument("name", nargs="?", default=None, help="leave: the agent; about: the bio, in quotes (\"\" clears it); "
+                                                           "connector: the agent")
+    ag2.add_argument("extra", nargs="?", default="", help="connector: approve's code, revoke's grant id, allow-redirect's URL")
+    ag2.add_argument("--public-url", dest="public_url", default="",
+                     help="serve-remote: the https:// address the host reaches this server at (a tunnel or proxy to "
+                          "it; http://127.0.0.1:PORT for local tests)")
+    ag2.add_argument("--scopes", default="", help="serve-remote: the most a client may be granted: read or read,talk "
+                                                  "(default read); connector approve: approve only these")
+    ag2.add_argument("--bind", default="", help="serve-remote: host:port to listen on (default 127.0.0.1:8789)")
+    ag2.add_argument("--behind-proxy", dest="behind_proxy", action="store_true",
+                     help="serve-remote: allow a non-loopback --bind, for a proxy you run on your own network")
+    ag2.add_argument("--connector-name", dest="connector_name", default="", help="connector approve: the name to show in the log")
+    ag2.add_argument("--all", action="store_true", help="connector revoke: every grant")
+    ag2.add_argument("--tail", action="store_true", help="connector log: keep following the log")
     ag2.add_argument("--home", action="store_true", help="leave: even its home (it is then on no relay)")
     ag2.add_argument("--yes", action="store_true", help="rotate-key, rotate-encryption-key, recover: do not ask first")
     ag2.add_argument("--agent", default="", help="recovery-key, recover: the agent (default: this profile's); init: its name; "
@@ -10019,6 +10044,8 @@ def build_parser() -> argparse.ArgumentParser:
                      _card.set_8004_wallet(a.url_or_name, a.chain, a.agent_8004, a.tx, a.yes, a.browser, a.wait, a.from_agent_wallet, a.max_gas) if a.action == "set-8004-wallet" else
                      _agent_init.run(_agent_init.namespace_from_cli(a)) if a.action == "init" else
                      _agent_init.mcp_config(a) if a.action == "mcp-config" else
+                     cmd_serve_remote(a) if a.action == "serve-remote" else
+                     cmd_connector(a) if a.action == "connector" else
                      cmd_agent_secure(a.url_or_name) if a.action == "secure" else
                      cmd_agent_refresh(a.url_or_name) if a.action == "refresh" else
                      cmd_agent_rotate_key(a.url_or_name, a.yes) if a.action == "rotate-key" else

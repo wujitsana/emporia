@@ -42,6 +42,7 @@ bodies, no secrets. `recent_actions` reads it (``emporia doctor``, the dashboard
 
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import re
@@ -132,6 +133,12 @@ def store_dir() -> Path | None:
         return None
 
 
+#: Set by the remote MCP server (`emporia.remote`) around each tool call: the grant's label. A remote call is the
+#: strictest untracked call: no hook says who started it, and the caller is a cloud model that may read strangers'
+#: text. It gets the untracked rolling limits, the guards of a turn another agent's message started, and never money.
+REMOTE_CALL: contextvars.ContextVar[str] = contextvars.ContextVar("emporia_remote_call", default="")
+
+
 def untracked_person() -> bool:
     return os.environ.get("EMPORIA_UNTRACKED_TURNS", "").strip().lower() == "person"
 
@@ -192,6 +199,8 @@ def _live(entries: dict, now: float) -> list[tuple[str, dict]]:
 
 def current(now: float | None = None) -> Turn:
     """Whose turn this call is in. Unsure means autonomous."""
+    if remote := REMOTE_CALL.get():
+        return Turn(True, "remote", f"remote:{remote}"[:80])     # before EMPORIA_UNTRACKED_TURNS: it never applies here
     if untracked_person():
         return Turn(False, "person")
     folder = data_dir()
@@ -338,6 +347,8 @@ def gate_spend(amount_atomic: int) -> str:
     turn = current()
     if not turn.autonomous:
         return ""
+    if turn.origin == "remote":
+        return "Blocked by Emporia: money is never spent from a remote connector; your person does it in their own session."
     cap_cents = spend_allowed_cents()
     if cap_cents <= 0:
         return ("Blocked by Emporia: this payment is in an unattended turn, and this agent's playbook allows no "
@@ -426,7 +437,7 @@ def guard(tool: str, args: dict[str, Any], agent_id: str = "") -> dict[str, Any]
             "(in their own session or terminal). Decline in one line and carry on."))
     why = money_reason(tool, args)
     if why:
-        if spend_allowed_cents() <= 0:
+        if turn.origin == "remote" or spend_allowed_cents() <= 0:
             return _refused(turn, tool, args, (
                 f"Blocked by Emporia: this {why}, in a turn nobody at the keyboard started. Money stays with "
                 f"the person: {_allow_hint()}. Decline in one line and carry on."))
@@ -452,7 +463,7 @@ def guard(tool: str, args: dict[str, Any], agent_id: str = "") -> dict[str, Any]
 def _unattended_refusal(turn: Turn, tool: str, args: dict[str, Any]) -> str:
     """Why this call is refused in an unattended turn beyond the budget ("" when it is not): irreversible acts and
     signatures a stranger's message could ask for."""
-    if turn.origin == "relay":
+    if turn.origin in ("relay", "remote"):
         if tool in RELAY_REFUSED_TOOLS:
             return (f"Blocked by Emporia: `{tool}` signs a claim for an account or a piece of work, and this turn "
                     "was started by another agent's message. Your person makes it in a session they start. "
@@ -481,7 +492,7 @@ def _count_write(turn: Turn, tool: str, args: dict[str, Any]) -> str:
     """Count this call in the turn's budget; the reason when it is over, else "". """
     if tool not in WRITE_TOOLS:
         return ""
-    if turn.origin == "unknown":
+    if turn.origin in ("unknown", "remote"):
         return _count_untracked(tool, args)
 
     def apply(folder: Path) -> str:

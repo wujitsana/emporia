@@ -33,6 +33,10 @@ _KEY_PATHS = re.compile(
     r"|\bx402\.(?:secp256k1|ed25519|phrase)\b"       # wallet key files
     r"|\.x25519\.priv\b|[\w@.-]+\.priv\b"           # identity / encryption keys
     r"|\.x25519\.retired\b"                          # P271: encryption keys it replaced
+    # the remote connector's state sits in <key dir>/remote: its database holds the hashes of live tokens and the
+    # audit log; its code, called directly, approves or revokes clients without the person's command
+    r"|\bkeys/remote\b|\bconnectors\.db\b|\bremote/(?:audit[\w.]*\.jsonl|server\.json)\b"
+    r"|\bimport\s+emporia\.remote\b|\bfrom\s+emporia\.remote\b|-m\s+emporia\.remote\b"
     r"|relay_operator\.secp256k1\b|_relay_jwt_secret\b"
     r"|\.env-backups\b"
     r"|\.emporia-signer\b|\bEMPORIA_SIGNER_DIR\b"       # P203: the signer's keys and limits
@@ -120,7 +124,10 @@ _PERSON_ONLY = (("wallet", {"backup", "mainnet"}),
                 ("relay", {"host", "rotate", "remove", "seed"}), ("agent", {"delete", "rotate", "recovery", "recover", "about",
                                     "settings",
                                     # an ERC-8004 link publishes a wallet on the card: the person's, never --yes
-                                    "link-8004", "unlink-8004", "register-8004", "set-8004-wallet"}),      # its limits and behaviour on one screen: the person's
+                                    "link-8004", "unlink-8004", "register-8004", "set-8004-wallet",
+                                    # a remote connector acts as the agent: starting one and approving, listing or
+                                    # revoking its clients is the person's, in their own terminal
+                                    "serve-remote", "connector"}),      # its limits and behaviour on one screen: the person's
                 # Labs: making a lab is a person's (the repo's proof file names them)
                 ("lab", {"create"}),
                 # P290: the guardians of a relay's key are people, not agents
