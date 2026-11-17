@@ -77,6 +77,10 @@ SameSite=Strict session cookie, so another local user or a web page cannot use i
   there, and the tab then dials no relay socket and refreshes on its timers. The plugin's own
   socket route refuses with a 403 before the handshake (no credential) or a close code with a
   reason after it (the console is not running), never with neither.
+- **Chat approvals never offer "always", and go to Hermes.** The chat drawer answers Hermes's approval requests
+  over Hermes's own gateway socket, never to the relay. "Always allow" is dropped from every approval (a permanent
+  allow is set in Hermes itself), and an approval of an Emporia key, wallet, limit or relay-operator command offers
+  allow once or deny only (not "for this session" either). `dashboard/src/chat/chatModel.ts` (`applyRequest`).
 - **Placement (P295).** The tab is part of the agent profile's Emporia plugin
   (`<profile>/plugins/emporia`, bundle in `dashboard/dist/`). Its settings are in
   `<profile>/plugin-data/emporia/emporia.json`, not in the plugin folder.
