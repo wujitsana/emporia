@@ -13,6 +13,8 @@ Formats, as of November 2026:
   known, written from memory of their documentation;
 * `pi`: the `mcpServers` form of the community MCP adapter for Pi, as that adapter's README describes it (Pi has
   no built-in MCP client; this was not tested against Pi itself);
+* `codex`: `codex mcp add emporia --env K=V ... -- COMMAND` (its `--help` syntax, Codex CLI 0.163) and the
+  equivalent `[mcp_servers.emporia]` table of `~/.codex/config.toml`; the client is declared `custom:codex`;
 * `openai-agents`: `MCPServerStdio(params={...})` of the OpenAI Agents SDK;
 * `grok-bot`: no file at all. Third-party guides report that a Grok Bot is given an MCP server by asking it in chat
   and that it runs on its own cloud computer, so the output is the message to paste (reported, not from xAI's
@@ -32,11 +34,11 @@ from pathlib import Path
 from emporia import agent_init
 
 HOSTS = ("claude-desktop", "claude-code", "cursor", "openclaw", "pi", "grok-build", "grok-bot", "openai-agents",
-         "generic")
+         "codex", "generic")
 #: The client a host declares (EMPORIA_CLIENT). `generic` keeps what `emporia agent init` declared.
 CLIENT_OF = {"claude-desktop": "claude-desktop", "claude-code": "claude-code", "cursor": "cursor",
              "openclaw": "openclaw", "pi": "pi", "grok-build": "grok-build", "grok-bot": "grok-bot",
-             "openai-agents": "openai-agents"}
+             "openai-agents": "openai-agents", "codex": "custom:codex"}
 #: The only settings a config may carry. Never a key, token or password: a test scans for this.
 ENV_NAMES = ("EMPORIA_RELAY_URL", "EMPORIA_AGENT_ID", "EMPORIA_KEYS_DIR", "EMPORIA_OPERATOR_LABEL",
              "EMPORIA_CLIENT", "EMPORIA_CLIENT_VERSION", "EMPORIA_DISPLAY_NAME", "EMPORIA_MODEL",
@@ -150,6 +152,18 @@ def render(host: str, env: dict[str, str], command: str) -> tuple[str, list[str]
         return "\n".join(lines), [
             "Add to ~/.grok/config.toml (or .grok/config.toml in a project). Format from xAI's Grok Build "
             "documentation, November 2026. `grok mcp doctor emporia` checks it."]
+    if host == "codex":
+        flags = " ".join(f"--env {shlex.quote(f'{k}={v}')}" for k, v in env.items())
+        table = [f"[mcp_servers.{SERVER_NAME}]", f"command = {_toml_str(command)}", "args = []", "",
+                 f"[mcp_servers.{SERVER_NAME}.env]"] + [f"{k} = {_toml_str(v)}" for k, v in env.items()]
+        text = (f"codex mcp add {SERVER_NAME} {flags} -- {shlex.quote(command)}\n\n"
+                "# or, the same entry by hand in ~/.codex/config.toml:\n" + "\n".join(table))
+        return text, [
+            "Run the `codex mcp add` line once: it saves the server in your Codex config, and every later "
+            "`codex` or `codex exec` starts it. Nothing here runs it for you.",
+            "Codex declares as `custom:codex` (`EMPORIA_CLIENT`). In `codex exec` 0.163 the model may not see the "
+            "tools of a server passed with `-c` only; if it says it has no Emporia tool, tell it in the prompt that "
+            "the `emporia` MCP server's tools exist (docs/any-agent.md, Codex)."]
     if host == "openai-agents":
         params = json.dumps({"command": command, "args": [], "env": env}, indent=4)
         code = ("from agents import Agent, Runner\nfrom agents.mcp import MCPServerStdio\n\n"
