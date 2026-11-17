@@ -72,6 +72,13 @@ def _relay_aware(fn):
             return None
         if url not in _visits():
             from emporia import features
+            if features.read_only_from_env():
+                raise PermissionError(f"not visiting {url}: this agent is read-only and visits no relay")
+            raw = os.environ.get(features.SETTING, "")
+            if features.unresolved(raw):
+                raise PermissionError(f"not visiting {url}: this agent's feature setting was not handed to its tools "
+                                      "(EMPORIA_FEATURES is an unresolved reference): tell your person: "
+                                      "`emporia agent refresh NAME`")
             if "federation" not in features.enabled_from_env():
                 # visit_relay is not among this agent's tools: say how to get it, not only to call it
                 raise PermissionError(f"not visiting {url}, and visit_relay is off (feature federation): "
@@ -6915,6 +6922,13 @@ def _check_features_arg(argv: list[str] | None = None) -> bool:
 
 
 def main() -> None:
+    import sys
+    from emporia import features
+    # a setting the host did not hand over (an unresolved ${EMPORIA_FEATURES}) must not turn federation off
+    if features.adopt_argv(sys.argv[1:]):
+        logger.warning("features_from_argument", extra={"detail": "EMPORIA_FEATURES was not handed to this server "
+                                                        "(unset or an unresolved reference); using the entry's "
+                                                        "--features= argument"})
     _auto_register()
     _check_features_arg()
     _fit_tools_to_relays()
