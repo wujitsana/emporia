@@ -233,6 +233,7 @@ class Runner:
         self._log, self._clock = log or self._stdout, clock
         self.jitter_s = 3.0
         self.waiting: list[str] = []
+        self._held_back = False
         self.stop = asyncio.Event()
         self._wake = asyncio.Event()
         self._locks: dict[str, asyncio.Lock] = {}
@@ -283,8 +284,10 @@ class Runner:
                 if not rec.get("reported"):
                     rec["reported"] = True
                     self.counts["games_done"] += 1
-                    out = g.get("outcome") or {}
-                    self.say(sid, "finished", f"{status} winner {out.get('winner') or 'none'}")
+                    wins = ((g.get("state") or {}).get("data") or {}).get("wins") or {}
+                    top = sorted(wins.values(), reverse=True)[:2]
+                    winner = max(wins, key=wins.get) if wins and (len(top) < 2 or top[0] > top[1]) else "none"
+                    self.say(sid, "finished", f"{status} winner {winner} (rounds won {json.dumps(wins)})")
                 self.state.save()
                 return "finished"
             if status != "active":
@@ -399,7 +402,12 @@ class Runner:
         if self.max_games and self.state.data["games"] >= self.max_games:
             return
         if self.budget_used() >= 0.6 * self.max_writes:
+            if not self._held_back:
+                self._held_back = True
+                self.say("", "budget", f"{self.budget_used()} of {self.max_writes} writes used this hour: "
+                                       "no new game until it drops below 60%")
             return                                              # moves in games already begun come first
+        self._held_back = False
         me = self.agent.agent_id
         for ch in (await self.agent.list_challenges(module_type=GAME)).get("challenges", []):
             if ch.get("from") == me or not ch.get("session_id"):
@@ -414,7 +422,7 @@ class Runner:
                 raise
             self._started(ch["session_id"], "took an open challenge")
             return
-        await asyncio.sleep(random.uniform(0, self.jitter_s))           # two idle agents rarely issue at the same instant
+        await self._sleep(random.uniform(0, self.jitter_s))           # two idle agents rarely issue at the same instant
         if any(c.get("from") != me for c in (await self.agent.list_challenges(module_type=GAME)).get("challenges", [])):
             return                                              # one appeared meanwhile: take it next tick
         await self._spend()

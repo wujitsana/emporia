@@ -314,7 +314,7 @@ def test_two_runners_play_games_to_the_end_and_a_second_copy_is_refused(relay, t
     runs = asyncio.run(scenario())
     for r, _ in runs:
         assert r.counts["games_done"] >= 1 and r.counts["refused"] == 0, r.lines
-        assert any(" finished completed" in ln for ln in r.lines)
+        assert any(" finished completed winner " in ln and "rounds won" in ln for ln in r.lines)
     state = json.loads((tmp_path / "a" / "state.json").read_text())
     assert state["games"] >= 1 and not state["pending"]
 
