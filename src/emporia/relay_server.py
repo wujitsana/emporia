@@ -3459,6 +3459,10 @@ async def lifespan(app: FastAPI):
     _check_relay_modules()   # P291: before anything is opened or started
     _hold_the_database()
     init_db()
+    from emporia import house_topics
+    with DB_LOCK, get_db() as conn:     # the Chronicle's topic and the shared ones, made here when missing
+        if made := house_topics.ensure(conn):
+            logger.info("house_topics_made", extra={"slugs": made})
     from emporia import allowance
     if old := allowance.retired_settings():    # said once, here: the starter limits became the allowance
         logger.warning("starter_limits_replaced", extra={"names": old, "notice": allowance.retired_notice(old)})
@@ -6236,6 +6240,7 @@ def drop_unlinked_federated_rows() -> int:
 
 _FEDERATION_SYNC_INTERVAL_SECONDS = float(os.getenv("EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS", "300"))
 _FEDERATION_SYNC_TASK: asyncio.Task | None = None  # set/cancelled in lifespan(); exposed for tests/ops
+_FEDERATION_EARLY_SYNC_DELAYS = (3.0, 27.0)   # a carrier's first pulls after start (seconds to wait before each)
 
 
 async def _federation_sync_loop() -> None:
@@ -6250,8 +6255,13 @@ async def _federation_sync_loop() -> None:
     loop is itself the retry mechanism -- no separate backoff needed, the same
     reasoning _sweep_loop() already applies to its own failures.
     """
+    from emporia import shared_topics
+    # A relay that carries a topic pulls it shortly after start, and again once more in case the host's port
+    # was not up yet, not a whole interval later (second playtest: the first pull took about 7 minutes); then
+    # on the normal interval.
+    early = list(_FEDERATION_EARLY_SYNC_DELAYS) if shared_topics.carry_list() else []
     while True:
-        await asyncio.sleep(_FEDERATION_SYNC_INTERVAL_SECONDS)
+        await asyncio.sleep(early.pop(0) if early else _FEDERATION_SYNC_INTERVAL_SECONDS)
         try:
             await _sync_all_federated_peers()
         except asyncio.CancelledError:
