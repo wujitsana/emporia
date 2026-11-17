@@ -442,7 +442,8 @@ def test_the_agent_card_tool_shows_the_passport(client, monkeypatch):
 
 def test_the_home_check_never_calls_a_private_address_and_tells_nothing_of_why(monkeypatch):
     """The home is declared by the agent: loopback, private, link-local, metadata and plain-http targets are not
-    called, and a failed check says one thing whatever went wrong."""
+    called; the check says it cannot be made (one text for every such address), and a call that went out and failed says
+    one other thing whatever went wrong."""
     from emporia import fetch
     monkeypatch.setattr(fetch, "_PASSTHROUGH", False)
     called: list[str] = []
@@ -450,11 +451,65 @@ def test_the_home_check_never_calls_a_private_address_and_tells_nothing_of_why(m
     for url in ("https://127.0.0.1", "https://10.0.0.5:8080", "https://169.254.169.254", "https://192.168.1.1",
                 "https://[::1]", "https://0.0.0.0", "http://8.8.8.8", "ftp://8.8.8.8"):
         visitors.forget()
-        assert visitors._pull(url) == {"error": visitors._UNANSWERED}, url
+        assert visitors._pull(url) == {"error": visitors.CANNOT_CHECK}, url
     assert called == []
     assert visitors.target_problem("https://8.8.8.8") == ""
     got = visitors.confirm({"kind": "relay", "url": "https://10.0.0.5"}, "ab" * 32)
-    assert got["status"] == "unconfirmed" and got["reason"] == visitors._UNANSWERED
+    assert got["status"] == "unconfirmed" and got["reason"] == visitors.CANNOT_CHECK
+
+
+def test_an_operator_listed_local_home_is_checked_and_an_unlisted_one_says_it_cannot_be(monkeypatch):
+    """Playtest 11-17: a visitor whose home is a loopback http relay could never be confirmed, and its permanent 403
+    said "register again". EMPORIA_TRUSTED_LOCAL_HOSTS (the relay operator's own list) lets the check call a listed
+    host; unset, nothing changes; the 403 says when the check cannot run."""
+    from emporia import fetch
+    monkeypatch.setattr(fetch, "_PASSTHROUGH", False)
+    monkeypatch.delenv("EMPORIA_TRUSTED_LOCAL_HOSTS", raising=False)
+    assert visitors.target_problem("http://127.0.0.1:18622") == "not an https address"
+    assert visitors.target_problem("https://127.0.0.1:18622") == "not a public address"
+    monkeypatch.setenv("EMPORIA_TRUSTED_LOCAL_HOSTS", "127.0.0.1, my-proxy")
+    assert fetch.trusted_local_hosts() == {"127.0.0.1", "my-proxy"}
+    assert visitors.target_problem("http://127.0.0.1:18622") == ""
+    assert visitors.target_problem("https://127.0.0.1:18622") == ""
+    assert visitors.target_problem("http://127.0.0.2:18622") == "not an https address"       # not listed
+    assert visitors.target_problem("https://127.0.0.2:18622") == "not a public address"
+    assert visitors.target_problem("ftp://127.0.0.1") == "not an https address"             # never another scheme
+    assert visitors.target_problem("https://10.0.0.5") == "not a public address"
+    assert fetch.resolve_public("http://127.0.0.1:18622") == ("not an https address", []), "the guard is for the home check only"
+    assert fetch.resolve_public("http://127.0.0.1:18622", allow_trusted_local=True) == ("", ["127.0.0.1"])
+    # the check calls the listed host, at the exact address, over http
+    called = []
+
+    def get(url, **kw):
+        called.append((url, kw.get("connect_ip")))
+        raise httpx.ConnectError("test: nothing listens")
+
+    monkeypatch.setattr(fetch, "get", get)
+    visitors.forget()
+    assert visitors._pull("http://127.0.0.1:18622") == {"error": visitors._UNANSWERED}
+    assert called and called[0][1] == "127.0.0.1" and called[0][0].startswith("http://127.0.0.1:18622/")
+
+
+def test_a_failed_name_lookup_is_a_retryable_no_answer_not_a_refused_address(monkeypatch):
+    import socket
+
+    from emporia import fetch
+    monkeypatch.setattr(fetch, "_PASSTHROUGH", False)
+
+    def gai(*a, **k):
+        raise socket.gaierror("temporary failure")
+    monkeypatch.setattr(socket, "getaddrinfo", gai)
+    visitors.forget()
+    assert visitors._pull("https://lookup-fails.example") == {"error": visitors._UNANSWERED}
+    assert visitors.confirm({"kind": "relay", "url": "https://lookup-fails.example"}, "ab" * 32)["reason"] == visitors._UNANSWERED
+
+
+def test_the_403_says_when_the_home_check_cannot_run_and_keeps_register_again_for_a_real_no(client, monkeypatch):
+    monkeypatch.setenv("EMPORIA_VISITORS", "homed-only")
+    cannot = visitors.write_refusal("relay", False, visitors.CANNOT_CHECK)
+    assert "cannot be checked from this relay" in cannot and "Register again once it does" not in cannot
+    assert "Register again once it does" in visitors.write_refusal("relay", False, visitors._UNANSWERED)
+    assert visitors.write_refusal("relay", True, "listed by x") == ""
 
 
 def test_homed_only_lets_a_visitor_act_only_once_its_home_confirmed_it(client, monkeypatch):

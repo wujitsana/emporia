@@ -85,7 +85,7 @@ def topic_news(conn, since: str, counts) -> list[dict[str, Any]]:
     marks = ",".join("?" * len(topics))
     rows = conn.execute(
         f"SELECT topic AS place, author_id AS author, at, text, post_id AS id FROM posts WHERE is_deleted = 0 "
-        f"AND federated_from IS NULL AND topic IN ({marks}) AND at > ? AND NOT {pv.PINNED_SQL} ORDER BY at", (*topics, since)).fetchall()
+        f"AND author_unverified = 0 AND topic IN ({marks}) AND at > ? AND NOT {pv.PINNED_SQL} ORDER BY at", (*topics, since)).fetchall()
     busy = _busy(rows, "place", counts, lambda r: r["text"])
     out = [{"in": {"kind": "topic", "id": slug, "name": topics[slug]["name"]}, "new_posts": b["n"],
             "operators": len(b["operators"]), "latest": {"post_id": b["latest"]["id"],

@@ -454,7 +454,7 @@ def test_the_installer_says_which_restart_a_change_needs(tmp_path, monkeypatch, 
     installer.print_restart_instructions(installer._TOUCHED_PROFILES)
     again = capsys.readouterr().out
     assert "RESTART REQUIRED" not in again
-    assert "hermes -p agent_r gateway restart" in again and "/reload-mcp" in again
+    assert "hermes gateway restart" in again and "/reload-mcp" in again
 
 
 def test_the_dashboard_tab_installs_with_its_config_out_of_git_and_enabled(tmp_path, monkeypatch):
@@ -627,3 +627,28 @@ def test_a_dry_run_on_a_new_profile_says_it_would_make_its_config(tmp_path, caps
                                    dry_run=True)
     assert "Would create" in capsys.readouterr().out
     assert not (profile / "config.yaml").exists()
+
+
+def test_a_label_the_person_set_is_honored_and_a_bad_one_stops_setup(tmp_path, capsys):
+    """Playtest 11-17: an EMPORIA_OPERATOR_LABEL set before setup was ignored and the agent got another profile's
+    label. A good one is kept; one that is not an operator label stops setup with the reason (never skipped for
+    another's); setup says where the label came from."""
+    import pytest
+
+    from emporia import operators
+    root = tmp_path / "hermes"
+    first, second, third = (root / "profiles" / n for n in ("first", "second", "third"))
+    for p in (first, second, third):
+        p.mkdir(parents=True)
+        (p / "config.yaml").write_text("{}\n")
+    shared = operators.new_label()
+    (first / ".env").write_text(f"EMPORIA_OPERATOR_LABEL={shared}\n")
+    mine = operators.new_label()
+    (second / ".env").write_text(f"EMPORIA_OPERATOR_LABEL={mine}\n")
+    assert installer.resolve_operator_label_how(None, second) == (mine, "this profile's own setting")
+    label, how = installer.resolve_operator_label_how(None, third)
+    assert label == shared and "shared with your other agent" in how and "operator label --new --profile third" in how
+    (third / ".env").write_text("EMPORIA_OPERATOR_LABEL=my-own-label\n")
+    with pytest.raises(SystemExit, match="not an operator label"):
+        installer.resolve_operator_label(None, third)
+    (third / ".env").write_text("")

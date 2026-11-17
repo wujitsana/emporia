@@ -3621,7 +3621,7 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
     if updates:
         merge_env_file(profile / ".env", updates)
         print(f"  Saved. {name}'s bridge and tools read it when they next start:")
-        print(f"      hermes -p {profile.name} gateway restart")
+        print(f"      hermes gateway restart")
     _show_playbook(name, pb)
     return 0
 
@@ -3674,7 +3674,7 @@ def cmd_agent_settings(name: str, args: argparse.Namespace) -> int:
         if changed_env:
             print(f"  They apply when its gateway next starts. To restart it yourself:\n"
                   f"      {S.restart_command(name)}\n"
-                  f"  (or, if one gateway serves every profile: hermes gateway restart)")
+                  f"  (one gateway serves every profile: this interrupts live turns on all of them)")
 
     def diff(before: list[dict], after: list[dict]) -> list[str]:
         was = {r["key"]: r["value"] + (" (default)" if r["default"] else "") for r in before}
@@ -3847,8 +3847,7 @@ def cmd_wake(args: argparse.Namespace) -> int:
     if args.mode:
         merge_env_file(profile / ".env", {W.SETTING: args.mode})
         dotenv = {**dotenv, W.SETTING: args.mode}
-        print(f"  Saved. {name}'s bridge reads it when it next starts:")
-        print(f"      hermes {'' if name == 'default' else f'-p {name} '}gateway restart")
+        print(f"  Saved. {name}'s bridge picks it up within {W.PICKUP_SECONDS} seconds; no restart is needed.")
     try:
         mode = W.resolve(dotenv)
     except W.WakeError as e:
@@ -3884,7 +3883,7 @@ def cmd_features(args: argparse.Namespace) -> int:
         profile, name = found
         held = installer().harvest_env(profile)
         key_dir = Path(held.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
-        restart = (f"restart the gateway: `hermes {'' if name == 'default' else f'-p {name} '}gateway restart` "
+        restart = (f"restart the gateway: `hermes gateway restart` "
                    "(or `/reload-mcp` in its chat)")
 
         def save(value: str) -> None:
@@ -4564,7 +4563,7 @@ def cmd_visits(args: argparse.Namespace) -> int:
         # is not seen (the agent's my_settings said "ask" while this printed "linked"). Same refresh as `features`.
         installer().refresh_mcp_references(profile)
         print(f"  {args.name}: updated — it applies when its MCP server restarts "
-              f"(hermes -p {args.name} gateway restart)")
+              f"(hermes gateway restart)")
         env = {**env, **updates}
     key_dir = Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
     try:
@@ -4661,7 +4660,7 @@ def cmd_home(args: argparse.Namespace) -> int:
     merge_env_file(profile / ".env", {"EMPORIA_HOME": "" if action == "here" else over["EMPORIA_HOME"]})
     where = {"here": f"on {relay}", "nomad": "nowhere (a nomad)", "visit": f"on {args.url.rstrip('/')}"}[action]
     print(f"  {args.name} now lives {where}; its signed card says so from now on."
-          f" It applies when its MCP server restarts (hermes -p {args.name} gateway restart).")
+          f" It applies when its MCP server restarts (hermes gateway restart).")
     return 0
 
 
@@ -5629,6 +5628,10 @@ def cmd_register(args: argparse.Namespace) -> int:
     if not (profile / "config.yaml").exists():
         print(localize(f"register: no agent profile {args.name!r} here. Set it up first: emporia setup agent {args.name}"))
         return 1
+    from emporia import profile_clash
+    if found := profile_clash.clashes(profile, agent_id):
+        print(f"register: {profile_clash.refusal(args.name, found)}")
+        return 1
     url = env.get("EMPORIA_RELAY_URL") or relay_url()
     if not health(url=url):
         print(f"register: the relay at {url} is not answering.")
@@ -5664,7 +5667,9 @@ def cmd_relay_owner_key(args: argparse.Namespace) -> int:
     keys = Path(args.keys_dir or Path.home() / ".emporia-owner" / "keys").expanduser().resolve()
     keys.mkdir(mode=0o700, parents=True, exist_ok=True)
     env = {"PATH": os.defpath, "HOME": str(Path.home()), "EMPORIA_NO_DOTENV": "1", "EMPORIA_NO_ARCHIVE": "1",
-           "EMPORIA_KEYS_DIR": str(keys), "EMPORIA_RELAY_URL": url, "EMPORIA_AGENT_ID": name}
+           "EMPORIA_KEYS_DIR": str(keys), "EMPORIA_RELAY_URL": url, "EMPORIA_AGENT_ID": name,
+           # the child signs with the code this command runs from, never another copy the interpreter finds
+           "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
     r = subprocess.run([sys.executable, "-c", "import json\nfrom emporia import mcp_server as m\n"
                         f"r = m.register_agent(agent_id={name!r})\nprint(json.dumps(r))"],
                        env=env, capture_output=True, text=True, timeout=60)
@@ -6035,6 +6040,12 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     else:
         rep.ok("MCP entry names this profile's keys, .env and Hermes")
     key_dir = Path(env.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    from emporia import profile_clash
+    for c in profile_clash.clashes(profile, agent_id):
+        rep.warn(f"shares its {c['same']} with the profile {c['profile']} (made with --clone-from?): two profiles "
+                 "would sign as one agent",
+                 "never clone an Emporia profile: make a fresh one (`hermes profile create NEW`, then "
+                 "`hermes emporia setup --agent-profile NEW`)")
     from emporia.identity import _keyfile_stem
     linked_identity = inst.harvest_env(profile).get("EMPORIA_IDENTITY_KEY_SOURCE", "")
     if linked_identity:
@@ -6150,7 +6161,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
             if not profile_json.get("encryption_public_key"):
                 rep.warn("no encryption key published — DMs and private sessions with it stay "
                          "plaintext, readable by the relay",
-                         f"restart its MCP (`hermes -p {name} gateway restart`); it publishes the key on registering")
+                         f"restart its MCP (`hermes gateway restart`); it publishes the key on registering")
             else:
                 rep.ok("encryption key published — its DMs and private sessions are sealed")
             if has["evm"] and not pay_to:
@@ -6793,7 +6804,7 @@ def cmd_update(args: argparse.Namespace) -> int:
         print(f"  relay: one is answering at {relay_url()}, not started by `emporia relay start`; "
               f"restart it where it was started so it runs the new code")
     installer().print_restart_instructions([])
-    print("Then: hermes gateway restart (or `hermes -p NAME gateway restart` and /reload-mcp in each), "
+    print("Then: hermes gateway restart (one gateway serves every profile; /reload-mcp in a chat reloads its tools), "
           "and `emporia doctor`.")
     return 0
 
@@ -7238,8 +7249,8 @@ def _stable_id_in(env: dict[str, str], name: str) -> str:
 
 
 def _operator_label_cmd(args: argparse.Namespace) -> int:
-    """`emporia operator label [--same-as op_…] [--profile NAME]`: show this agent profile's operator label, or
-    adopt another machine's (so the agents of one person on two machines count as one operator). The label
+    """`emporia operator label [--same-as op_… | --new] [--profile NAME]`: show this agent profile's operator
+    label, give it a fresh one (`--new`: a separate operator from your other agents), or adopt another machine's (so the agents of one person on two machines count as one operator). The label
     is automatic and unproven: it merges your interactions with whoever holds it, and proves nothing."""
     from emporia import identity_card
     name = args.profile or _calling_profile() or (this_profile().name if this_profile() else "")
@@ -7248,9 +7259,9 @@ def _operator_label_cmd(args: argparse.Namespace) -> int:
         print(f"operator label: no Hermes profile {name!r} under {profiles_root()} "
               "(say which with --profile NAME)")
         return 1
-    if args.same_as:
+    if args.same_as or getattr(args, "new", False):
         try:
-            label, how = identity_card.assign_operator(profile, same_as=args.same_as)
+            label, how = identity_card.assign_operator(profile, same_as=args.same_as, new=bool(getattr(args, "new", False)))
         except ValueError as e:
             print(f"operator label: {e}")
             return 1
@@ -7511,6 +7522,10 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
         return 1
     agent_id = _choose_agent_id(args, name, profile, existing, chosen_relay)
     if not agent_id:
+        return 1
+    from emporia import profile_clash
+    if found := profile_clash.clashes(profile, agent_id):
+        print(f"setup agent: {profile_clash.refusal(name, found)}")
         return 1
     answered = _TTY and not fast          # the person answered the questions (else: recommended defaults)
     if fast:
@@ -10068,6 +10083,8 @@ def build_parser() -> argparse.ArgumentParser:
                                  "`emporia operator label --same-as op_…` to adopt another machine's)")
     op.add_argument("act", nargs="?", choices=["status", "whoami", "snapshot", "expedition"])
     op.add_argument("--same-as", default="", metavar="op_…", help="label: adopt this operator label")
+    op.add_argument("--new", action="store_true", help="label: give this agent a fresh label of its own (a "
+                                                       "separate operator from your other agents)")
     op.add_argument("--profile", default="", help="label: the Hermes profile (default: this one)")
     op.add_argument("rest", nargs="*", help="expedition: its title")
     op.add_argument("--text", default="", help="expedition: what to try this week")

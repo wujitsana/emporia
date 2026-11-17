@@ -85,13 +85,18 @@ def registration_refusal(home: dict[str, Any], public_key_hex: str = "", member:
     return f"This relay takes no visitors (EMPORIA_VISITORS=closed); {who} cannot register here."
 
 
-def write_refusal(kind: str, confirmed: bool = True) -> str:
+def write_refusal(kind: str, confirmed: bool = True, reason: str = "") -> str:
     """Why a visitor already registered may not write now (the operator changed the setting), or "". Under
     `homed-only` a visitor acts only once its home relay's own list confirmed it (the declared home alone proves
     nothing)."""
     current = mode()
     if kind == "here" or current == "welcome":
         return ""
+    if current == "homed-only" and kind == "relay" and not confirmed and reason == CANNOT_CHECK:
+        return ("This relay takes visitors whose home relay lists them (EMPORIA_VISITORS=homed-only), and your home "
+                "relay cannot be checked from this relay: it will not call that address (it is not a public https "
+                "address). Registering again will not change that: give the agent a home with a public https "
+                "address, or ask this relay's operator.")
     if current == "homed-only" and kind == "relay":
         return "" if confirmed else ("This relay takes visitors whose home relay lists them (EMPORIA_VISITORS="
                                      "homed-only): yours has not confirmed this agent. Register again once it does.")
@@ -124,7 +129,8 @@ def guard(method: str, path: str, caller: str | None) -> str:
     kind, status = kind_of(row["home_json"]), view(row["home_json"], row["home_check_json"]).get("check", {}).get("status")
     if mode() == "homed-only" and kind == "relay" and status == "unchecked":
         return CHECK_PENDING           # registered a moment ago: the first check has not answered yet, not a "no"
-    return write_refusal(kind, status == "confirmed")
+    reason = view(row["home_json"], row["home_check_json"]).get("check", {}).get("reason", "")
+    return write_refusal(kind, status == "confirmed", reason)
 
 
 # ── the home check ───────────────────────────────────────────────────────────
@@ -153,6 +159,10 @@ def pull_listing(url: str) -> dict[str, Any]:
 
 
 _UNANSWERED = "it did not answer as a relay"      # all a stranger is told of a failed check, whatever went wrong
+#: The check never ran: this relay will not call that address (not https, or not a public address, and the operator
+#: did not list it in EMPORIA_TRUSTED_LOCAL_HOSTS). One text for every such case, so it tells nothing about the address.
+CANNOT_CHECK = "this relay cannot check that home address"
+_GUARD_REFUSALS = ("not an https address", "not a public address")
 
 
 def target_problem(url: str) -> str:
@@ -169,7 +179,8 @@ def _resolve(url: str) -> tuple[str, list[str]]:
     from emporia import fetch
     if fetch._PASSTHROUGH:
         return "", []
-    return fetch.resolve_public(url)
+    # a home on the machine's own network is checked only where the operator listed it (EMPORIA_TRUSTED_LOCAL_HOSTS)
+    return fetch.resolve_public(url, allow_trusted_local=True)
 
 
 def _pull(url: str) -> dict[str, Any]:
@@ -177,7 +188,9 @@ def _pull(url: str) -> dict[str, Any]:
     try:
         problem, addrs = _resolve(url)
         if problem:
-            return {"error": _UNANSWERED}
+            # only the guard's own refusals mean "this relay will not call that address"; a failed lookup is a
+            # transient network answer like any other: it can be retried
+            return {"error": CANNOT_CHECK if problem in _GUARD_REFUSALS else _UNANSWERED}
         r = _get_listing(f"{url}/federation/v1/listed-agents", addrs)
         if r.status_code != 200:
             return {"error": _UNANSWERED}

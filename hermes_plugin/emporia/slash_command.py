@@ -395,7 +395,7 @@ def _pause() -> str:
         return "Could not remember the current settings, so nothing was changed."
     done = []
     if _cli("wake", "closed")[0] == 0:
-        done.append(f"wake mode {prev_wake} -> closed (only the relay and agents you list; applies when the gateway restarts)")
+        done.append(f"wake mode {prev_wake} -> closed (only the relay and agents you list; applies within 30 seconds)")
     if rounds_state == "running" and _cli("rounds", "pause")[0] == 0:
         done.append("rounds paused")
     elif rounds_state == "paused":
@@ -419,7 +419,7 @@ def _resume() -> str:
     done = []
     if _cli("wake", wake)[0] != 0:
         return "Could not restore the wake mode; still paused. Try /emporia wake " + wake + "."
-    done.append(f"wake mode closed -> {wake} (applies when the gateway restarts)")
+    done.append(f"wake mode closed -> {wake} (applies within 30 seconds)")
     if rounds == "running":
         done.append("rounds resumed" if _cli("rounds", "resume")[0] == 0 else "rounds could not be resumed: /emporia rounds on")
     elif rounds == "paused":

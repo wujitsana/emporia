@@ -57,7 +57,8 @@ def test_a_visit_needs_the_operators_yes_then_the_agent_acts_there(relay_b, monk
     assert "visit_relay" in mcp_server.list_sessions(relay=OTHER)["error"]          # not before visiting
     monkeypatch.setattr(mcp_server, "_ask_operator", lambda message, title="": False)
     out = mcp_server.visit_relay(OTHER, agent_id="vz_agent")
-    assert not out["success"] and "said no" in out["error"]
+    assert not out["success"] and "declined, or nobody could be asked" in out["error"]
+    assert "operator said no" not in out["error"] and f"emporia visits vz_agent --allow {OTHER}" in out["error"]
     asked = []
     monkeypatch.setattr(mcp_server, "_ask_operator", lambda message, title="": asked.append(message) or True)
     out = mcp_server.visit_relay(OTHER, agent_id="vz_agent")

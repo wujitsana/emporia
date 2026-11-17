@@ -34,6 +34,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 import uuid
 from typing import Any, TextIO
@@ -88,7 +89,9 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
     from emporia.visits import visiting
     from emporia.limits import LimitsLine
     wake_mode, listed = wake.current(), wake.allowlist()
+    watch = wake.Watch(os.environ.get("EMPORIA_DOTENV", ""))
     limits = LimitsLine(agent_id)
+    brake = wake.ThreadBrake()
 
     def on_frame_for(relay: str):
         async def on_frame(frame: dict[str, Any]) -> bool:
@@ -100,14 +103,24 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
             notice = format_frame(frame, agent_id, relay)
             if notice is None:
                 return False
+            nonlocal wake_mode, listed
+            wake_mode, listed = await _reread_wake(watch, wake_mode, listed, out)
             if not wake.admits(wake_mode, notice.frame_type, notice.sender, listed):   # its person's wake mode
                 logger.info(wake.reason(wake_mode, notice.frame_type, notice.sender))
+                return False
+            topic = frame_topic(frame)
+            key = f"{topic}@{relay}" if topic and relay else topic
+            if not brake.ready(notice.frame_type, key):
+                # Left unread: the inbox keeps it, and whats_next shows it with whatever else waits.
+                logger.info("wake brake: a %s in %s waits in the inbox (the thread woke the agent a moment ago)",
+                            notice.frame_type, topic)
                 return False
             line = await asyncio.to_thread(notice_line, frame, agent_id, relay, limits)   # may read the relay once a minute
             if line is None:
                 return False
             out.write(line + "\n")
             out.flush()
+            brake.woke(notice.frame_type, key)
             return True
         return on_frame
 
@@ -126,11 +139,27 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
                 tunnels.pop(url).cancel()
             if tunnels[home].done():
                 return
+            wake_mode, listed = await _reread_wake(watch, wake_mode, listed, out)
             await asyncio.to_thread(_check_local_relay, home)      # P285: a relay that crashed comes back
             await asyncio.sleep(poll_seconds)
     finally:
         for task in tunnels.values():
             task.cancel()
+
+
+async def _reread_wake(watch, mode: str, listed, out: TextIO):
+    """The wake setting again when the profile's settings file changed (a stat, no read, otherwise): read through
+    Hermes (`profile_env`), never from the file. A change is told to the adapter in a control line, so both halves
+    use it without a gateway restart."""
+    if not await asyncio.to_thread(watch.changed):
+        return mode, listed
+    new_mode, new_listed = await asyncio.to_thread(watch.read)
+    if (new_mode, new_listed) != (mode, listed):
+        logger.info("wake mode %s -> %s (the setting changed)", mode, new_mode)
+        out.write(json.dumps({"v": LINE_PROTOCOL_VERSION, "control": "wake", "mode": new_mode,
+                              "allowed": sorted(new_listed)}) + "\n")
+        out.flush()
+    return new_mode, new_listed
 
 
 _RELAY_RETRY_SECONDS = 300

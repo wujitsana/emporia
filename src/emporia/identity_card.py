@@ -58,23 +58,46 @@ def label_of_profile(profile: Path) -> str:
     return value if operators.valid_label(value) else ""
 
 
+def setting_problem(profile: Path) -> str:
+    """Why the label this profile's settings hold cannot be used ("" when it holds none, or a good one). A label
+    the person set that is not an `op_…` label used to be skipped without a word, and setup then gave the agent
+    another profile's label: the person's setting was ignored (playtest 11-17)."""
+    from emporia import profile_env
+    try:
+        raw = profile_env.read(Path(profile) / ".env").get(LABEL_SETTING, "").strip()
+    except Exception:  # noqa: BLE001 — an unreadable setting is not a bad one; the caller falls back
+        return ""
+    if raw and not operators.valid_label(raw.lower()):
+        return f"{LABEL_SETTING} in {Path(profile).name}'s settings is not an operator label (it is {operators.LABEL_EXAMPLE})"
+    return ""
+
+
 def label_on_this_install(profile: Path) -> str:
     """A label an Emporia profile under the same Hermes root already holds (the first found, the root profile
     first), "" when none does."""
+    return shared_label(profile)[0]
+
+
+def shared_label(profile: Path) -> tuple[str, str]:
+    """(label, the name of the profile that holds it) for the first other Emporia profile under the same Hermes
+    root with a label, else ("", "")."""
     from emporia import hermes_layout
     root = hermes_layout.root_of(Path(profile))
     for other in hermes_layout.profiles(root):
         if other.resolve() != Path(profile).resolve() and (label := label_of_profile(other)):
-            return label
-    return ""
+            return label, other.name
+    return "", ""
 
 
-def assign_operator(profile: Path, *, same_as: str = "") -> tuple[str, str]:
+def assign_operator(profile: Path, *, same_as: str = "", new: bool = False) -> tuple[str, str]:
     """Make sure the profile has an operator label: (label, how), how being `kept` (it had one), `adopted`
     (`same_as`, or reused from another Emporia profile under the same Hermes root) or `minted` (new and random).
-    Written through Hermes. `same_as` replaces a label the profile has."""
+    Written through Hermes. `same_as` replaces a label the profile has; `new` replaces it with a fresh one (a
+    separate operator from the person's other agents)."""
     from emporia import profile_env
     profile = Path(profile)
+    if not (new or same_as) and (why := setting_problem(profile)):
+        raise ValueError(why)
     have = label_of_profile(profile)
     if same_as:
         want = same_as.strip().lower()
@@ -86,6 +109,8 @@ def assign_operator(profile: Path, *, same_as: str = "") -> tuple[str, str]:
     elif reuse := label_on_this_install(profile):
         want, how = reuse, "adopted"
     else:
+        want, how = operators.new_label(), "minted"
+    if new and not same_as:
         want, how = operators.new_label(), "minted"
     if want != have:
         profile_env.update(profile / ".env", {LABEL_SETTING: want})

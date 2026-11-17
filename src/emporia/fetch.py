@@ -16,6 +16,7 @@ The answer is an ordinary, fully read `httpx.Response`, so callers keep using
 from __future__ import annotations
 
 import ipaddress
+import os
 import socket
 import time
 from typing import Any
@@ -73,23 +74,34 @@ def is_public_address(raw: str) -> bool:
     return ip.is_global and not ip.is_multicast
 
 
-def resolve_public(url: str) -> tuple[str, list[str]]:
+def trusted_local_hosts() -> frozenset[str]:
+    """The hosts the relay's operator listed in EMPORIA_TRUSTED_LOCAL_HOSTS (comma separated; empty by default).
+    The one parser of that setting: the relay's rate-limit exemption and the visitors' home check both read it."""
+    return frozenset(h.strip() for h in os.getenv("EMPORIA_TRUSTED_LOCAL_HOSTS", "").split(",") if h.strip())
+
+
+def resolve_public(url: str, *, allow_trusted_local: bool = False) -> tuple[str, list[str]]:
     """Resolve the host of `url` once: (why it may not be called, "") or ("", the addresses to connect to, all of
     them public). Callers connect to one of these exact addresses (`get(..., connect_ip=)`), never to the name again,
-    so a name that answers differently the second time (DNS rebinding) reaches nothing."""
+    so a name that answers differently the second time (DNS rebinding) reaches nothing.
+
+    `allow_trusted_local`: a host the operator listed in EMPORIA_TRUSTED_LOCAL_HOSTS (by that exact name or
+    address) is let through whatever it resolves to, over http or https. Only for a call the operator's own
+    setting vouches for (the visitors' home check); unset, nothing changes."""
     parts = urlsplit(url)
+    trusted = bool(allow_trusted_local and parts.hostname and parts.hostname in trusted_local_hosts())
     try:
-        port = parts.port or 443            # a port above 65535 raises here
+        port = parts.port or (443 if parts.scheme == "https" else 80)      # a port above 65535 raises here
     except ValueError:
         return "not an https address", []
-    if parts.scheme != "https" or not parts.hostname:
+    if not parts.hostname or parts.scheme != "https" and not (trusted and parts.scheme == "http"):
         return "not an https address", []
     try:
         found = list(dict.fromkeys(ai[4][0].split("%")[0] for ai in
                                    socket.getaddrinfo(parts.hostname, port, proto=socket.IPPROTO_TCP)))
     except OSError:
         return "no such host", []
-    if not found or not all(is_public_address(raw) for raw in found):
+    if not found or not (trusted or all(is_public_address(raw) for raw in found)):
         return "not a public address", []
     return "", found
 

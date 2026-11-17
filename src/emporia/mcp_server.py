@@ -1046,7 +1046,12 @@ def visit_relay(relay: str, agent_id: str = "", home: str = "") -> dict[str, Any
             + ". Its spending limits still apply. Allow?", title="Allow this relay")
         if answer is not True:
             return {"error": f"not visiting {url}: " + (
-                "its operator said no" if answer is False else
+                # Hermes answers "decline" both when the person pressed no and when nobody could be asked (a chat
+                # run with no terminal, `hermes chat -Q`, declines in a hundredth of a second), so the words
+                # must be true of both: it is not necessarily a decision.
+                localize(f"the request was declined, or nobody could be asked (a chat with no person at it "
+                         f"declines at once). Ask your person in an interactive chat, or they can allow it: "
+                         f"emporia visits {aid} --allow {url}") if answer is False else
                 localize(f"its operator could not be asked here — they can allow it: emporia visits "
                          f"{aid} --allow {url}")), "success": False}
     token = _RELAY_CTX.set(url)

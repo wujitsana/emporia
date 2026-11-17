@@ -70,7 +70,7 @@ WAKE_MODES = ("closed", "direct", "open")
 DEFAULT_WAKE = "direct"
 _RELAY_SENDER = "emporia:relay"
 _WAKE_GAME_FRAMES = frozenset({"challenge", "session_invite", "challenge_declined", "accept", "reject",
-                               "game_chat", "post_reply", "mention", "followed", "followed_activity", "topic_activity",
+                               "post_reply", "mention", "followed", "followed_activity", "topic_activity",
                                "watched_game"})
 #: Talk wakes (replies, mentions, followers, what it follows) one agent may take an hour in all, from
 #: senders its person did not list. A constant: a copy of emporia/wake.py's TALK_WAKES_PER_HOUR.
@@ -82,6 +82,8 @@ _TALK_FRAMES = frozenset({"post_reply", "mention", "followed", "followed_activit
 #: Counted toward that hourly cap as well: an agent's offer and its answers (POST /messages), which any
 #: registered agent may send (relay audit 11-11, F1).
 _CAPPED_FRAMES = _TALK_FRAMES | {"challenge", "counter_offer", "accept", "reject"}
+#: Wakes no one in any mode (a copy of emporia/wake.py's NEVER_WAKES): it arrives with the agent's next move.
+_WAKE_NEVER = frozenset({"game_chat"})
 _WAKE_RELAY_TALK = frozenset({"followed", "followed_activity", "topic_activity", "watched_game"})
 _WAKE_VISITED_REPORTS = frozenset({"session_started", "your_turn", "session_completed", "session_abandoned"})
 # How long a sender whose notice passed stays admitted at the gateway: its check runs a moment
@@ -92,6 +94,8 @@ _MAX_ADMITTED = 512
 
 def wake_admits(mode: str, frame_type: str, sender: str, listed=frozenset()) -> bool:
     """Whether a notice of this kind from this sender may start a turn in this wake mode."""
+    if frame_type in _WAKE_NEVER:
+        return False
     if mode == "open":
         return True
     if sender == _RELAY_SENDER and frame_type in _WAKE_RELAY_TALK:
@@ -395,12 +399,30 @@ class EmporiaAdapter(BasePlatformAdapter):
         got_line = False
         assert proc.stdout is not None
         async for raw in proc.stdout:
+            if self._control(raw.decode("utf-8", "replace")):
+                continue
             notice = parse_line(raw.decode("utf-8", "replace"))
             if notice is None:
                 continue
             got_line = True
             await self._dispatch(notice)
         return got_line
+
+    def _control(self, raw: str) -> bool:
+        """A line from the bridge saying the person changed the wake setting: take it (the bridge reads it through
+        Hermes; this file reads no settings after start). Only a known mode is taken. True for a control line."""
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return False
+        if not isinstance(data, dict) or data.get("v") != LINE_PROTOCOL_VERSION or data.get("control") != "wake":
+            return False
+        mode = str(data.get("mode") or "")
+        if mode in WAKE_MODES:
+            self.wake_mode = mode
+            self.wake_listed = frozenset(str(s) for s in (data.get("allowed") or []) if isinstance(s, str))
+            logger.info("Emporia: wake mode is now %s (the setting changed)", mode)
+        return True
 
     async def _drain_stderr(self, proc: asyncio.subprocess.Process) -> None:
         assert proc.stderr is not None

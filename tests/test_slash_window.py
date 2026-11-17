@@ -212,7 +212,7 @@ def test_pause_and_resume_round_trip(home, monkeypatch):
                           ("wake", "open"): "  Saved.\n", ("rounds", "resume"): "resumed\n"})
     out = sc.handle("pause")
     assert out.startswith("Paused: wake mode open -> closed") and "rounds paused" in out and "resume restores" in out
-    assert "applies when the gateway restarts" in out and "already running is not stopped" in out
+    assert "applies within 30 seconds" in out and "already running is not stopped" in out
     state = json.loads((home / "plugin-data" / "emporia" / "pause.json").read_text())
     assert state["wake"] == "open" and state["rounds"] == "running"
     assert r.calls[-2:] == [["wake", "closed"], ["rounds", "pause"]]

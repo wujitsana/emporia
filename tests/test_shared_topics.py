@@ -1024,3 +1024,74 @@ def test_the_relay_makes_the_chronicle_and_shared_topics_at_start(monkeypatch):
     assert conn.execute("SELECT creator_id FROM agora_topics WHERE slug = 'chronicle'").fetchone()[0] == "the_op"
     conn.execute("UPDATE agora_topics SET is_deleted = 1 WHERE slug = 'playtest'")
     assert house_topics.ensure(conn) == []                             # a removed topic stays removed
+
+
+# ── a reply that crossed relays reaches the agent it answers (playtest 11-17) ────────────────────
+
+def _topic_news(agent):
+    """The topic news `happening` is made of (the endpoint shows only the busiest few of a shared test database)."""
+    from emporia.routes import happening as hp
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return hp.topic_news(conn, "2000-01-01T00:00:00+00:00", hp._counter(agent))
+
+
+def _replies_for(agent):
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return [json.loads(r["payload_json"]) for r in conn.execute(
+            "SELECT payload_json FROM agent_inbox WHERE agent_id = ? AND event_type = 'post_reply'", (agent,))]
+
+
+def test_a_reply_handed_in_by_a_carrier_tells_the_hosts_agent_like_a_local_reply(host, client):
+    bob = RemoteAgent(host.peers["b"])
+    opening = v2_post(client, host.owner, host.slug, "an opening").json()["post_id"]
+    post = bob.post(host.key, "bob answers", reply_to=f"post:{opening}", root=f"post:{opening}")
+    assert _hand_in(client, host.peers["b"], host.slug, bob, post).status_code == 200
+    [frame] = _replies_for(host.owner)
+    assert frame["author_id"] == bob.address and frame["parent_id"] == opening and frame["root_id"] == opening
+    assert frame["remote"] is True and frame["untrusted"] is True and frame["from_relay"] == host.peers["b"].host
+    assert frame["topic_slug"] == host.slug and frame["preview"] == "bob answers"
+    # it reaches whats_next's counts (unread replies) and the happening news of the topic
+    nxt = client.get(f"/agents/{host.owner}/next", headers=_as(host.owner)).json()
+    assert nxt["following"]["unread_replies"] == 1 and nxt["inbox"]["unread_total"] >= 1
+    [t] = [x for x in _topic_news(host.owner) if x["in"]["id"] == host.slug]
+    assert t["latest"]["first_line"] == "bob answers", "a carried reply shows in the topic's news"
+
+
+def test_a_reply_to_someone_elses_or_a_remote_post_tells_no_one(host, client):
+    bob, eve = RemoteAgent(host.peers["b"]), RemoteAgent(host.peers["c"])
+    opening = v2_post(client, host.owner, host.slug, "an opening").json()["post_id"]
+    first = bob.post(host.key, "bob first", reply_to=f"post:{opening}", root=f"post:{opening}")
+    assert _hand_in(client, host.peers["b"], host.slug, bob, first).status_code == 200
+    again = eve.post(host.key, "eve to bob", reply_to=f"post:{first['post_id']}", root=f"post:{opening}")
+    assert _hand_in(client, host.peers["c"], host.slug, eve, again).status_code == 200
+    assert len(_replies_for(host.owner)) == 1, "only the reply to the owner's own post"
+    # a local blocker is not told
+    blocker = host.owner
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("INSERT INTO dm_blocks (agent_id, blocked, created_at) VALUES (?, ?, ?)",
+                     (blocker, eve.address, datetime.now(UTC).isoformat()))
+    third = eve.post(host.key, "eve to owner", reply_to=f"post:{opening}", root=f"post:{opening}")
+    assert _hand_in(client, host.peers["c"], host.slug, eve, third).status_code == 200
+    assert len(_replies_for(host.owner)) == 1
+
+
+def test_a_reply_pulled_by_a_carrier_tells_the_local_agent_it_answers_but_not_for_an_unpinned_author(carrier, client):
+    _pull(carrier)
+    a = RemoteAgent(carrier.h)
+    carrier.fake.add(a.post(carrier.slug, "opening"))
+    _pull(carrier)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        opening = conn.execute("SELECT post_id FROM posts WHERE topic = ?", (carrier.key,)).fetchone()[0]
+    me = _agent(client, "rp")
+    mine = v2_post(client, me, carrier.key, "I answer", reply_to=f"post:{opening}").json()["post_id"]
+    # the host's agent answers me: it comes back with the next pull
+    carrier.fake.add(a.post(carrier.slug, "and you?", reply_to=f"post:{mine}", root=f"post:{opening}"))
+    # a third relay's agent whose key nobody here has pinned answers me too: kept, marked, tells no one
+    stranger = RemoteAgent(Peer(C_URL))
+    carrier.fake.add(stranger.post(carrier.key, "psst", reply_to=f"post:{mine}", root=f"post:{opening}"))
+    out = _pull(carrier)[carrier.key]
+    assert out["kept"] == 2, out
+    [frame] = _replies_for(me)
+    assert frame["author_id"] == f"{a.name}@{carrier.h.host}" and frame["parent_id"] == mine
+    assert frame["remote"] is True and frame["from_relay"] == carrier.h.host
+    assert any(x["in"]["id"] == carrier.key for x in _topic_news(me)), "the carried topic shows in the news"
