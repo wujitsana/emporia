@@ -239,6 +239,27 @@ def is_autonomous() -> bool:
     return current().autonomous
 
 
+# ── sessions read in this turn (an attestation rests on the record, not on a stranger's say-so) ──────
+
+_SESSIONS_READ: dict[tuple[str, str], float] = {}
+
+
+def note_session_read(session_id: str) -> None:
+    """Remember that this turn read this session's record (`get_session` answered). Kept in this process only:
+    a turn is one conversation, and an unknown turn (no key) is a rolling TURN_TTL window."""
+    if not session_id:
+        return
+    now = time.time()
+    for k in [k for k, at in _SESSIONS_READ.items() if now - at > TURN_TTL]:
+        _SESSIONS_READ.pop(k, None)
+    _SESSIONS_READ[(current().key, session_id)] = now
+
+
+def session_read_this_turn(session_id: str) -> bool:
+    at = _SESSIONS_READ.get((current().key, session_id))
+    return at is not None and time.time() - at <= TURN_TTL
+
+
 # ── the record ────────────────────────────────────────────────────────────────────────
 
 def log_action(turn: Turn, tool: str, target: str, outcome: str, why: str = "") -> None:

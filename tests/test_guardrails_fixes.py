@@ -320,3 +320,63 @@ def flood_first(flood):
 
 def flood_rest_none(flood):
     return sum(1 for x in flood if x) == 1
+
+
+# ── G8: an unattended attestation rests on the session record, not on the maker's say-so ────────
+
+class _Answer:
+    def __init__(self, body, status=200):
+        self._body, self.status_code, self.content = body, status, b"x"
+
+    def json(self):
+        return self._body
+
+
+def _attest_setup(monkeypatch, tmp_path, origin):
+    _turn(monkeypatch, tmp_path, origin)
+    monkeypatch.setattr(autonomy, "_SESSIONS_READ", {})
+    monkeypatch.setenv("EMPORIA_PLAYBOOK", "player")
+    monkeypatch.setenv("EMPORIA_PLAYBOOK_PLEDGES", "yes")
+    monkeypatch.setattr(m, "AGENT_ID", "me")
+    monkeypatch.setattr(m, "signing", type("S", (), {"sign": staticmethod(lambda *a, **k: "sig"),
+                                                    "Refused": RuntimeError}))
+    monkeypatch.setattr(m, "_signing_identity", lambda aid: "stable")
+    calls = []
+
+    def fake(method, url, **kw):
+        calls.append((method, url))
+        if url.endswith("/pledges/plg_1") and method == "get":
+            return _Answer({"pledge_id": "plg_1", "session_id": "sess_1"})
+        if url.endswith("/sessions/sess_1"):
+            return _Answer({"status": "completed", "participants": ["me", "bob"], "module_type": "x"})
+        return _Answer({"pledge_id": "plg_1", "status": "kept"})
+    monkeypatch.setattr(m, "_bearer_request", fake)
+    return calls
+
+
+@pytest.mark.parametrize("origin", ["relay", "rounds"])
+def test_an_unattended_attestation_needs_the_session_read_in_the_same_turn(monkeypatch, tmp_path, origin):
+    calls = _attest_setup(monkeypatch, tmp_path, origin)
+    out = m.attest_pledge("plg_1", "kept")
+    assert out["success"] is False and "get_session(\"sess_1\")" in out["error"]
+    assert not [c for c in calls if c[0] == "post"], "nothing was signed or sent"
+    m.get_session("sess_1")
+    assert m.attest_pledge("plg_1", "kept")["success"] is True
+    assert calls[-1][0] == "post"
+
+
+def test_a_session_read_in_an_earlier_turn_does_not_count(monkeypatch, tmp_path):
+    calls = _attest_setup(monkeypatch, tmp_path, "rounds")
+    m.get_session("sess_1")
+    (tmp_path / "autonomy.json").write_text(json.dumps({"turns": {"t2": {
+        "origin": "rounds", "sender": "rounds", "at": time.time(), "writes": 0, "new_dms": []}}}))
+    assert m.attest_pledge("plg_1", "broken")["success"] is False
+    assert not [c for c in calls if c[0] == "post"]
+
+
+def test_a_person_attests_without_the_extra_read_and_a_contest_is_never_held(monkeypatch, tmp_path):
+    calls = _attest_setup(monkeypatch, tmp_path, "person")
+    assert m.attest_pledge("plg_1", "kept")["success"] is True
+    assert not [c for c in calls if c[1].endswith("/pledges/plg_1")], "a person's attestation is not looked up"
+    _turn(monkeypatch, tmp_path, "relay")
+    assert m.attest_pledge("plg_1", "contest")["success"] is True      # the maker's own pledge: not an attestation

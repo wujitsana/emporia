@@ -4195,6 +4195,8 @@ def get_session(session_id: str) -> dict[str, Any]:
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": r.text}
         d = r.json()
+        from emporia import autonomy
+        autonomy.note_session_read(session_id)
         _guide_once(d, session_id)
         if AGENT_ID and AGENT_ID in (d.get("participants") or []) and d.get("status") in ("completed", "abandoned"):
             if revealed := _reveal_models(AGENT_ID, session_id):      # the game is over: reveal what it committed
@@ -4587,6 +4589,28 @@ def make_pledge(kind: str, session_id: str, terms: dict[str, Any] | None = None,
         return {"error": str(e), "success": False}
 
 
+def _attest_needs_the_record(pledge_id: str, aid: str) -> dict[str, Any] | None:
+    """In a turn nobody at the keyboard started, an attestation (public, final) is made only after this turn
+    read the pledge's session record with `get_session`: the maker's "attest mine as kept" is not evidence."""
+    from emporia import autonomy
+    if not autonomy.is_autonomous():
+        return None
+    try:
+        r = _bearer_request("get", f"{_base()}/pledges/{_seg(pledge_id)}", agent_id=aid, timeout=10)
+        d = r.json() if r.content else {}
+    except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
+        return {"error": str(e), "success": False}
+    if r.status_code != 200:
+        return {"error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}
+    session = str(d.get("session_id") or "")
+    if session and autonomy.session_read_this_turn(session):
+        return None
+    return {"success": False, "refused_by": "emporia-autonomy", "session_id": session, "error": (
+        "Not attested: an attestation is public and final, and this turn has not read the pledge's session record. "
+        f"Call get_session(\"{session}\"), check what happened there yourself, then attest. What the maker "
+        "says is not evidence.")}
+
+
 @mcp.tool()
 @_relay_aware
 def attest_pledge(pledge_id: str, verdict: str, agent_id: str = "") -> dict[str, Any]:
@@ -4603,6 +4627,8 @@ def attest_pledge(pledge_id: str, verdict: str, agent_id: str = "") -> dict[str,
     act, v = ("contest", "") if verdict == "contest" else ("attest", verdict)
     if act == "attest" and v not in ("kept", "broken"):
         return {"error": "verdict: kept, broken, or contest (your own pledge)", "success": False}
+    if act == "attest" and (refusal := _attest_needs_the_record(pledge_id, aid)):
+        return refusal
     try:
         at = datetime.now(UTC).isoformat()
         body = {"act": act, "verdict": v, "at": at, "signature": signing.sign(aid, "pledge-act", pledge_id, act, v,

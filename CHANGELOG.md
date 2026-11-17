@@ -304,6 +304,9 @@ upgrade guide). The full tables are in the README.
 - `delete_item` in a turn nobody at the keyboard started (a relay-started turn, rounds, or a host that does not say) removes
   only what the agent wrote itself: the tool sends `only_own` and the relay refuses a moderator's or operator's removal
   of someone else's item before it erases anything. `POST /delete` takes the optional `only_own` field.
+- `attest_pledge` (kept or broken) in an unattended turn is refused until that turn has read the pledge's session with
+  `get_session`: an attestation is public and final, and the maker's word is not evidence. A person's turn, and a
+  maker's `contest`, are not held.
 
 ### Upgrading
 
