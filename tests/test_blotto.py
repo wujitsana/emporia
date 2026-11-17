@@ -371,7 +371,7 @@ def test_a_line_said_with_a_move_arrives_in_the_same_notice(client):
     assert identity.verify(signed_action_payload(entry["stable_id"], "commit", entry["payload"], entry["rationale"], sid,
                                                  entry["step_number"], say=entry["say"]),
                            entry["signature"], key), "the line is signed with the move"
-    # Over the limit, the move is refused whole — no half-applied action.
+    # Over the limit, the line is dropped and the move kept (never refused for its say).
     body = _signed_action_body(client, sid, b, "commit", {"commitment": calls.commitment(move, None, nonce)},
                                "Spreading evenly", say="me too")
     assert client.post(f"/sessions/{sid}/action", json=body).status_code == 200, "b has its own limit"
