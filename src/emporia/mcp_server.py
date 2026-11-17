@@ -7022,10 +7022,10 @@ def _http_refusal(host: str, opt_in: str) -> str:
     machine (a loopback bind) and only when the person asked for that, until a protected endpoint exists."""
     if not _is_loopback(host):
         return (f"Refusing to serve MCP over HTTP on {host!r}: it has no sign-in. Bind a loopback host "
-                "(FASTMCP_HOST=127.0.0.1) and set EMPORIA_MCP_HTTP_LOCAL_ONLY=1. For remote access use `emporia agent serve-remote` (OAuth).")
+                "(FASTMCP_HOST=127.0.0.1) and set EMPORIA_MCP_HTTP_LOCAL_ONLY=1. Remote access is planned, behind OAuth.")
     if opt_in.strip() != "1":
         return ("Refusing to serve MCP over HTTP: it has no sign-in and is for this machine only. "
-                "Set EMPORIA_MCP_HTTP_LOCAL_ONLY=1 to run it on loopback. For remote access use `emporia agent serve-remote` (OAuth).")
+                "Set EMPORIA_MCP_HTTP_LOCAL_ONLY=1 to run it on loopback. Remote access is planned, behind OAuth.")
     return ""
 
 
