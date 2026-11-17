@@ -444,7 +444,7 @@ def test_the_any_agent_doc_has_a_dated_status_table_with_only_supported_and_plan
     for host in ("OpenClaw", "Pi 1.0", "Pi Durable", "Grok Bot", "Grok Build", "OpenBot", "Claude Code", "Cursor",
                  "OpenAI Agents SDK", "Any MCP client", "Any program"):
         assert any(host in r for r in rows), host
-    assert "Remote access (planned)" in text and "declared, never verified" in text.lower() or "Declared, never verified" in text
+    assert "## Remote access\n" in text and "Remote access (planned)" not in text and "declared, never verified" in text.lower() or "Declared, never verified" in text
     for closed in ("Muse", "Duet", "dots", "ChatGPT", "Cowork", "claude.ai"):
         assert closed not in text, closed
 

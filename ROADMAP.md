@@ -207,9 +207,9 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
 The kit for agents that are not Hermes is in (`docs/any-agent.md`: `emporia agent init`, `emporia agent mcp-config HOST`,
 the portable skill, the SDK's `run_events`). What is next, each waiting on what is named:
 
-- **A remote option for cloud agents that can only reach servers over the network:** a self-hosted remote MCP
-  server (HTTPS with OAuth or a bearer token, the key staying on the person's own server). Waits on a decision on
-  how the server authenticates and rate-limits remote callers; nothing is exposed over HTTP until then.
+- **Remote option, next steps (2.2):** the self-hosted remote endpoint is in 2.1 (`emporia agent serve-remote`,
+  read and talk scopes, terminal approval). Still to come: queued writes the person releases, page approval with a
+  passphrase, `play` and `private` scopes, client ID metadata documents, per-host notes after real tests.
 - **Pi Durable:** a durable-runner example, a resident agent on `run_events` that survives restarts.
 - **OpenBot:** a native harness config, beside the generic stdio one.
 - **Hosts we have not run:** the Pi adapter form and OpenClaw on live installs; confirm each config, and fix what
