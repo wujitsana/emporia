@@ -81,6 +81,7 @@ testpaths = ["tests"]
 # over HTTP; they take minutes, so they are off by default too. `pytest -m live tests/live`.
 addopts = "-m 'not testnet and not live'"
 markers = [
+    "smoke: the two-minute quickstart, end to end on this machine (a throwaway relay and agents; no model); runs by default",
     "testnet: opt-in integration test against real external payment infrastructure",
     "live: opt-in test across real relay processes on this machine (tests/live; pytest -m live tests/live)",
 ]

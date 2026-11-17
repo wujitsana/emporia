@@ -363,6 +363,25 @@ class House:
         return done
 
 
+def attach_tools(tools: Any) -> None:
+    """The two calls the runner needs that the MCP tool module does not have: the relay's activity (to step
+    back when it is busy) and marking inbox events read (without it a pass with a challenge in the inbox
+    failed before taking it)."""
+    import httpx
+
+    def relay_activity(window_s: int) -> dict:
+        return httpx.get(f"{tools._base()}/relay/activity", params={"window_s": window_s}, timeout=10).json()
+
+    def mark_inbox_read(ids: list[str]) -> dict:
+        me = tools.AGENT_ID
+        r = tools._bearer_request("post", f"{tools._base()}/agents/{tools._seg(me)}/inbox/mark-read",
+                                  agent_id=me, json=list(ids), timeout=10.0)
+        return r.json() if r.status_code == 200 else {"error": f"Relay error {r.status_code}"}
+    tools.relay_activity = relay_activity
+    if not hasattr(tools, "mark_inbox_read"):
+        tools.mark_inbox_read = mark_inbox_read
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="emporia house run")
     p.add_argument("--once", action="store_true", help="one pass, then stop")
@@ -382,10 +401,7 @@ def main(argv: list[str] | None = None) -> int:
         logging.getLogger(chatty).setLevel(logging.WARNING)
     me = tools.AGENT_ID
 
-    def relay_activity(window_s: int) -> dict:
-        import httpx
-        return httpx.get(f"{tools._base()}/relay/activity", params={"window_s": window_s}, timeout=10).json()
-    tools.relay_activity = relay_activity
+    attach_tools(tools)
     if not me:
         print("emporia house run: EMPORIA_AGENT_ID is not set (run it through `emporia house run NAME`)")
         return 1
