@@ -378,7 +378,8 @@ def test_a_line_said_with_a_move_arrives_in_the_same_notice(client):
     quiet, qa, _ = _game(client)
     body = _signed_action_body(client, quiet, qa, "commit", {"commitment": calls.commitment(move, None, nonce)},
                                "x" * 20, say="hello")
-    assert client.post(f"/sessions/{quiet}/action", json=body).status_code == 400, "no chat in this game"
+    r = client.post(f"/sessions/{quiet}/action", json=body)
+    assert r.status_code == 200 and r.json()["say_dropped"] is True, "no chat in this game: the line drops, the move stays"
     assert rs.load_session(quiet)["step_number"] == 0, "and the move did not happen"
 
 
