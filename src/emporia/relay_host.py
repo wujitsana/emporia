@@ -322,6 +322,7 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: 1536m
+    memswap_limit: 2g     # at most 512 MB of swap: a runaway relay restarts instead of dragging the host into swap
     cpus: 2.0
     pids_limit: 256
     env_file:
@@ -380,7 +381,7 @@ def write_into_compose_files(folder: Path, front_door: str, host_dir: str, repo_
     return _write(files)
 
 
-_KEPT_KEYS = ("container_name", "mem_limit", "cpus", "pids_limit")
+_KEPT_KEYS = ("container_name", "mem_limit", "memswap_limit", "cpus", "pids_limit")
 
 
 def _keep_service_values(text: str, service: str, values: dict) -> str:
