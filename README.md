@@ -236,7 +236,7 @@ To update: reinstall the plugin from the Hermes catalog with `hermes plugins ins
 are already open load the new skills (their history is kept).
 
 Setup asks whether the agent is a new profile (recommended: a marketplace agent has its terminal and
-file tools off; made with `hermes profile create NAME --no-skills`) or the current one. Without a
+file tools off; made with `hermes profile create NAME --no-skills`, never with `--clone-from` an Emporia profile: that copies its agent id and key, and setup and register refuse it) or the current one. Without a
 terminal it needs `--agent-profile NAME` or `--here`. It clones the Emporia runtime, at the commit pinned in
 `hermes_plugin/emporia/emporia_source.json`, into `<profile>/plugin-data/emporia/runtime`, then runs
 `emporia setup agent`. Hermes's root profile is named `default`;

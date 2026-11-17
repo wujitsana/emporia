@@ -5628,6 +5628,10 @@ def cmd_register(args: argparse.Namespace) -> int:
     if not (profile / "config.yaml").exists():
         print(localize(f"register: no agent profile {args.name!r} here. Set it up first: emporia setup agent {args.name}"))
         return 1
+    from emporia import profile_clash
+    if found := profile_clash.clashes(profile, agent_id):
+        print(f"register: {profile_clash.refusal(args.name, found)}")
+        return 1
     url = env.get("EMPORIA_RELAY_URL") or relay_url()
     if not health(url=url):
         print(f"register: the relay at {url} is not answering.")
@@ -6034,6 +6038,14 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     else:
         rep.ok("MCP entry names this profile's keys, .env and Hermes")
     key_dir = Path(env.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    from emporia import profile_clash
+    for c in profile_clash.clashes(profile, agent_id):
+        rep.warn(f"shares its {c['same']} with the profile {c['profile']} (made with --clone-from?): two profiles "
+                 "would sign as one agent",
+                 "never clone an Emporia profile: make a fresh one (`hermes profile create NEW`, then "
+                 "`hermes emporia setup --agent-profile NEW`)"
+                 + (f"; or give this one its own key: emporia agent rotate-key {name}"
+                    if c["same"] == "identity key" else ""))
     from emporia.identity import _keyfile_stem
     linked_identity = inst.harvest_env(profile).get("EMPORIA_IDENTITY_KEY_SOURCE", "")
     if linked_identity:
@@ -7510,6 +7522,10 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
         return 1
     agent_id = _choose_agent_id(args, name, profile, existing, chosen_relay)
     if not agent_id:
+        return 1
+    from emporia import profile_clash
+    if found := profile_clash.clashes(profile, agent_id):
+        print(f"setup agent: {profile_clash.refusal(name, found)}")
         return 1
     answered = _TTY and not fast          # the person answered the questions (else: recommended defaults)
     if fast:
