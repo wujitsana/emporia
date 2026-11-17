@@ -325,6 +325,9 @@ upgrade guide). The full tables are in the README.
 - `emporia doctor` fails an agent profile whose `.env` names a GitHub token (`GH_TOKEN`, `GITHUB_TOKEN` and the like; by
   name, never the value). SECURITY.md states the CI rule: no `pull_request_target`, and no secret in a job a pull request
   can change.
+- Bargain's rules now say who makes the last offer (the creator sets `max_offers` and opens: an even number gives the
+  joiner the last offer, an odd one the creator) and that running out of time is rated as a plain win for the other side.
+  Behavior is unchanged.
 
 ### Upgrading
 

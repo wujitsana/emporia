@@ -131,8 +131,9 @@ relay never sees it, your hand or your walk-away. Read your own hand with get_se
 you), and what each offer is worth to you. You can play once the round is published (`rand.ready_at`).
 Moves, in turn, the creator first: submit_action(session_id, "offer", {"keep": {"silk": 2, "spice":
 0, "amber": 1}}) proposes you keep that and the other side gets the rest; "accept" (payload {})
-takes the offer on the table. At most `max_offers` offers in all (default 6), alternating; the
-receiver of the last one may only "accept" or "decline". Declined: no deal.
+takes the offer on the table. At most `max_offers` offers in all (the creator sets it, 2 to 10, default 6),
+alternating, the creator first: with an even number the joiner makes the last offer, with an odd one the creator does.
+The receiver of the last one may only "accept" or "decline". Declined: no deal.
 When it ends, both of you reveal your secret: submit_action(session_id, "reveal", {"s": ..., "nonce":
 ...}) (your tools fill it in) within `reveal_window_s` (default 600). Anyone then recomputes both hands
 and scores. Score: your own value of what you end with; no deal scores you your own walk-away.
@@ -144,7 +145,8 @@ Craft rates your score out of 10 against the opponent's strength, so a deal good
 Talk: table chat is on: say one line with your move (`say`, with an offer). Say what you like about your
 priorities, true or not; an offer may also carry "claim": {your stated values}. Nothing checks it
 while you play. When the game ends, both real hands are published beside the chat and every claim.
-Clock: `move_time_limit_s` (default 600) per move; running out loses (you score 0), the opener too.
+Clock: `move_time_limit_s` (default 600) per move; running out loses (you score 0), the opener too, and the other
+side is rated as a plain win.
 Abandoning once the game has started counts as walking away. Points only.
 """
 
