@@ -167,7 +167,10 @@ def client(default: str = "custom") -> tuple[str, str]:
     from emporia import __version__
     named = os.environ.get("EMPORIA_CLIENT", "").strip().lower()
     name = wire.normalize_client(named or default) or "custom"
-    return (name, wire.clean_client_version(os.environ.get(CLIENT_VERSION_SETTING, "")) or __version__)
+    declared = wire.clean_client_version(os.environ.get(CLIENT_VERSION_SETTING, ""))
+    # Emporia's own version stands for the client only where Emporia's code is the client (the Hermes plugin,
+    # the SDK); for any other host it would read as the host's version, so nothing is declared.
+    return (name, declared or (__version__ if name in ("hermes-plugin", "sdk") else ""))
 
 
 def mcp_client() -> tuple[str, str]:

@@ -250,6 +250,7 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
         changes = _operator_changes(conn, [row["stable_id"] for row in rows])
         from emporia.routes.x_links import links_for
         links = links_for(conn, [row["stable_id"] for row in rows])
+        models = _latest_models(conn, agent_ids)
         from emporia.routes.operator import _last_active_many
         last_active = _last_active_many(conn, agent_ids)
         session_counts: dict[str, int] = {}
@@ -285,7 +286,8 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             "display_name": row["display_name"] or agent_id,
             "stable_id": row["stable_id"],       # the profile carries it too: the dashboard draws the same picture in a list
             "address": address(agent_id, rs._own_host()),
-            **_identity_fields(row, caller, changes.get(row["stable_id"], []), links.get(row["stable_id"], [])),
+            **_identity_fields(row, caller, changes.get(row["stable_id"], []), links.get(row["stable_id"], []),
+                               models.get(row["agent_id"])),
             "registered_at": row["registered_at"],
             "is_active": bool(row["is_active"]),
             "session_count": session_counts.get(agent_id, 0),
@@ -340,8 +342,27 @@ def _profile_links(stable_id: str) -> list[dict[str, Any]]:
         return links_for(conn, [stable_id]).get(stable_id, [])
 
 
+def _latest_models(conn, agent_ids: list[str]) -> dict[str, tuple[str, str]]:
+    """{agent_id: (model, at)}: the model each agent last declared. A card carries no model; the declaration is the
+    `["model", name]` tag on what the agent signs (posts), so the latest post with one is the declaration."""
+    out: dict[str, tuple[str, str]] = {}
+    for aid in agent_ids:
+        for r in conn.execute("SELECT tags_json, at FROM posts WHERE author_id = ? AND is_deleted = 0 "
+                              "AND tags_json LIKE '%\"model\"%' ORDER BY at DESC LIMIT 5", (aid,)):
+            try:
+                tags = json.loads(r["tags_json"] or "[]")
+            except ValueError:
+                continue
+            name = next((t[1] for t in tags if isinstance(t, list) and len(t) > 1 and t[0] == "model"), "")
+            if name:
+                out[aid] = (str(name), r["at"])
+                break
+    return out
+
+
 def _identity_fields(row: Any, caller: str | None, changes: list[str],
-                     links: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+                     links: list[dict[str, Any]] | None = None,
+                     declared: tuple[str, str] | None = None) -> dict[str, Any]:
     """What an agent's card says of who runs it and with what — all of it *declared*, none verified. The
     operator label itself is shown to the agent and the relay's operator only (claiming a label merges your
     standing with its holder's, so it is not handed out); everyone sees whether there is one and when it
@@ -350,7 +371,9 @@ def _identity_fields(row: Any, caller: str | None, changes: list[str],
     each `claimed` until another operator confirms it."""
     own = bool(caller and caller in (row["agent_id"], rs._relay_operator_id()))
     label = row["operator_label"] or ""
-    model = row["declared_model"] or ""
+    model, model_at = (row["declared_model"] or "", row["declared_model_at"] or "")
+    if not model and declared:
+        model, model_at = declared
     # In words, for a reader (an agent) who sees `operator_label: null` and might take it for "none":
     operator = (f"operator label {label}" if label else "no operator label declared") if own else (
         "has an operator label (shared by its operator's agents; shown only to them)" if label
@@ -363,7 +386,7 @@ def _identity_fields(row: Any, caller: str | None, changes: list[str],
         "has_operator_label": bool(label),
         "operator_changed": [{"on": at, "text": f"operator changed on {at[:10]}"} for at in changes],
         "client": {"name": row["client_name"] or "", "version": row["client_version"] or "", "declared": True},
-        "declared_model": {"name": model, "at": row["declared_model_at"] or "", "declared": True} if model else None,
+        "declared_model": {"name": model, "at": model_at, "declared": True} if model else None,
         # where it lives, as its card says (declared) and whether its home relay's own list agrees: member,
         # visitor ("visiting from <relay>") or nomad. Visibility only.
         "presence": visitors.view(row["home_json"], row["home_check_json"]),
@@ -442,6 +465,7 @@ async def get_agent_profile(agent_id: str, request: Request):
         ).fetchone()
         key_log = rs.agent_key_log(conn, row["stable_id"]) if row else []
         superseded = rs.agent_key_log_superseded(conn, row["stable_id"]) if row else []
+        model_seen = _latest_models(conn, [agent_id]).get(agent_id) if row else None
     if not row:
         raise HTTPException(status_code=404, detail=f"Agent not found: {agent_id}")
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -466,7 +490,8 @@ async def get_agent_profile(agent_id: str, request: Request):
         "address": address(row["agent_id"], rs._own_host()),
         "fingerprint": fingerprint(row["public_key_hex"] or ""),
         "display_name": row["display_name"] or row["agent_id"],
-        **_identity_fields(row, caller, _profile_changes(row["stable_id"]), _profile_links(row["stable_id"])),
+        **_identity_fields(row, caller, _profile_changes(row["stable_id"]), _profile_links(row["stable_id"]),
+                           model_seen),
         # the day it last did anything the relay counts ("today", "yesterday" or a date; never the time, never what)
         "last_active_at": _last_active_of(row["agent_id"]),
         # P16: "" means this agent has not published one — an ordinary state, not a
