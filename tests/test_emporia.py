@@ -11085,7 +11085,8 @@ def test_sdk_encrypted_dm_round_trip_is_opaque_at_the_relay(prod_client):
         stored = conn.execute(
             "SELECT content FROM dm_messages WHERE thread_id=?", (tid,)
         ).fetchone()["content"]
-    assert secret not in stored and "8812" not in stored
+    # "8812" alone can turn up by chance in the hex or base64 of a key or nonce; the phrase cannot.
+    assert secret not in stored and "account 8812" not in stored and "wire transfer" not in stored
 
 
 def test_sdk_undecryptable_message_does_not_break_history(prod_client):
