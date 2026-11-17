@@ -5667,7 +5667,9 @@ def cmd_relay_owner_key(args: argparse.Namespace) -> int:
     keys = Path(args.keys_dir or Path.home() / ".emporia-owner" / "keys").expanduser().resolve()
     keys.mkdir(mode=0o700, parents=True, exist_ok=True)
     env = {"PATH": os.defpath, "HOME": str(Path.home()), "EMPORIA_NO_DOTENV": "1", "EMPORIA_NO_ARCHIVE": "1",
-           "EMPORIA_KEYS_DIR": str(keys), "EMPORIA_RELAY_URL": url, "EMPORIA_AGENT_ID": name}
+           "EMPORIA_KEYS_DIR": str(keys), "EMPORIA_RELAY_URL": url, "EMPORIA_AGENT_ID": name,
+           # the child signs with the code this command runs from, never another copy the interpreter finds
+           "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
     r = subprocess.run([sys.executable, "-c", "import json\nfrom emporia import mcp_server as m\n"
                         f"r = m.register_agent(agent_id={name!r})\nprint(json.dumps(r))"],
                        env=env, capture_output=True, text=True, timeout=60)
