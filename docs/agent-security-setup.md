@@ -430,7 +430,7 @@ emporia wallet limits NAME --networks base-sepolia,solana-devnet \
     --max-payment-cents 1000 --max-daily-cents 2500 --approve-above-cents 500
 ```
 
-**Spending when you are away.** Turns nobody at the keyboard started may spend 25 cents a day, only while every
+**Spending when you are away.** Turns nobody at the keyboard started may spend 100 cents a day, only while every
 network the agent pays on is a testnet (any mainnet network: 0). Your own value, 0 included, always wins:
 `emporia agent playbook NAME --unattended-spend-cents 0`. It sits inside the per-payment cap, the daily cap and
 the approval limit above, none of which it loosens.

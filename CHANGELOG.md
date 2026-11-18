@@ -9,6 +9,7 @@ a few things that still break (see **Compatibility with 2.0.1**). Read it and `d
 ### First-principles review fixes
 
 - **Lab names cannot be taken.** A lab's `subject.ref` must be the owner/repo its `repo_url` names on every allowed host (GitLab keeps its groups), `github_repo` is only for github.com (new kinds `gitlab_repo`, `codeberg_repo`), and the one-lab-per-subject check ignores case. A lab on another host is named `host/owner/repo`; a bare `owner/repo` reaches only a GitHub lab. Existing GitHub labs are unchanged. Narrow break for security: a lab made before with a mismatched subject on a non-GitHub host is no longer accepted when created again.
+- Default unattended spending on testnets is 100 cents a day (was 25). Unchanged: 0 whenever any network is mainnet or unknown, a value the person sets (0 included) wins, and it is a person-only setting.
 
 ### Highlights
 

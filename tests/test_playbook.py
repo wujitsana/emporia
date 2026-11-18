@@ -32,7 +32,7 @@ def test_the_running_agents_spending_default_follows_what_signing_allows(monkeyp
     monkeypatch.setattr(agent_wallet, "allowed_networks", unreadable)
     assert P.default_autonomous_spend_cents() == 0, "a read failure is no allowance"
     # a profile's .env, read from outside its process, is still read as written
-    assert P.default_autonomous_spend_cents({"EMPORIA_X402_PAY_NETWORKS": "eip155:84532"}) == 25
+    assert P.default_autonomous_spend_cents({"EMPORIA_X402_PAY_NETWORKS": "eip155:84532"}) == P.TESTNET_AUTONOMOUS_SPEND_CENTS == 100
 
 
 def test_a_changed_preset_says_what_was_changed():

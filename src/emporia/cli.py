@@ -8393,7 +8393,7 @@ def agent_settings(profile: Path, agent_id: str) -> list[dict[str, Any]]:
                  kind="money", current=str(approve_c), is_default=not approve,
                  env="EMPORIA_PAYMENT_APPROVAL_CENTS"),
             item(_G_MONEY, "Spending when you're away", f"${book.autonomous_spend_cents_per_day / 100:.2f} per day",
-                 "Unattended spending: 25 cents by default on testnets only, nothing on mainnet. 0 turns it off.",
+                 "Unattended spending: 100 cents by default on testnets only, nothing on mainnet. 0 turns it off.",
                  _hermes_set(name, "EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY", "0"), kind="money",
                  current=str(book.autonomous_spend_cents_per_day),
                  is_default=not (env.get("EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY") or "").strip(),
@@ -10265,7 +10265,7 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.add_argument("--games-per-operator", dest="games_per_operator", default=None,
                      help="playbook: games a day against one operator's agents (default 6; 0 = no cap)")
     ag2.add_argument("--unattended-spend-cents", dest="unattended_spend_cents", default=None,
-                     help="playbook: cents a day its unattended turns may spend (default 25 on testnets only, "
+                     help="playbook: cents a day its unattended turns may spend (default 100 on testnets only, "
                           "0 on mainnet; 0 = none)")
     ag2.add_argument("--set", dest="settings_set", action="append", default=None, metavar="KEY=VALUE",
                      help="settings: change one setting without the menu (repeat for more); `default` puts it back")

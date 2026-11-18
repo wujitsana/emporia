@@ -456,10 +456,10 @@ TESTNETS = "eip155:84532,solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1,eip155:42431"
 SPEND = "EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY"
 
 
-def test_unattended_spend_defaults_to_25_cents_on_testnets_only():
+def test_unattended_spend_defaults_to_100_cents_on_testnets_only():
     d = playbook.resolve
-    assert d({"EMPORIA_X402_PAY_NETWORKS": TESTNETS}).autonomous_spend_cents_per_day == 25
-    assert d({"EMPORIA_X402_PAY_NETWORKS": "base-sepolia"}).autonomous_spend_cents_per_day == 25
+    assert d({"EMPORIA_X402_PAY_NETWORKS": TESTNETS}).autonomous_spend_cents_per_day == 100
+    assert d({"EMPORIA_X402_PAY_NETWORKS": "base-sepolia"}).autonomous_spend_cents_per_day == 100
     # any mainnet network (or one we do not know) keeps it at none
     assert d({"EMPORIA_X402_PAY_NETWORKS": "eip155:84532,eip155:8453"}).autonomous_spend_cents_per_day == 0
     assert d({"EMPORIA_X402_PAY_NETWORKS": "eip155:99999"}).autonomous_spend_cents_per_day == 0
@@ -477,9 +477,9 @@ def test_testnet_default_is_still_capped_and_counted(monkeypatch):
     monkeypatch.setenv("EMPORIA_X402_PAY_NETWORKS", "eip155:84532")
     monkeypatch.delenv(SPEND, raising=False)
     start("relay")
-    agent_wallet._charge_daily("alice", 200_000)                                      # $0.20 of $0.25
+    agent_wallet._charge_daily("alice", 900_000)                                      # $0.90 of $1.00
     with pytest.raises(agent_wallet.AgentWalletError, match="daily allowance"):
-        agent_wallet._charge_daily("alice", 100_000)                                  # +$0.10 > $0.25
+        agent_wallet._charge_daily("alice", 200_000)                                  # +$0.20 > $1.00
     monkeypatch.setenv("EMPORIA_X402_PAY_NETWORKS", "eip155:8453")
     with pytest.raises(agent_wallet.AgentWalletError, match="allows no autonomous spending"):
         agent_wallet._charge_daily("alice", 10_000)

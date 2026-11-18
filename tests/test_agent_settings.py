@@ -57,7 +57,7 @@ def test_the_table_lists_every_setting_with_its_current_value_and_default(shop, 
 def test_the_testnet_default_for_unattended_spend_is_shown_as_the_default(shop, capsys):
     cli.merge_env_file(shop / ".env", {"EMPORIA_X402_PAY_NETWORKS": "base-sepolia"})
     run()
-    assert "Unattended spend a day: 25 cents a day (default)" in capsys.readouterr().out
+    assert "Unattended spend a day: 100 cents a day (default)" in capsys.readouterr().out
 
 
 def test_the_table_is_short_enough_for_a_chat_message(shop, capsys):

@@ -69,7 +69,7 @@ SETTINGS: tuple[Setting, ...] = (
             "Cents its turns may spend when nobody at the keyboard started them (rounds, relay events).",
             env="EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY", kind="cents", zero="none", unit="a day",
             rule="whole cents, 0 or more (0 = none); mainnet keeps 0 unless you set it",
-            recommended="the default (25 cents on testnets, 0 on mainnet)"),
+            recommended="the default (100 cents on testnets, 0 on mainnet)"),
     Setting("max_payment_cents", "Money", "Largest single payment",
             "No payment above this, whoever asks.", env="EMPORIA_X402_MAX_PAYMENT_CENTS", kind="cents",
             rule="whole cents, 0 or more", recommended="1000 (the default)"),
