@@ -138,7 +138,7 @@ def test_contact_units_are_opaque_and_scoped_to_the_issuer():
     assert ss.unit_token(a.id, "label:op_x", sa) != ss.unit_token(a.id, "label:op_x", sb), "the secret matters"
     assert "op_x" not in ss.unit_token(a.id, "label:op_x", sa)
     from emporia.chronicle_ledger import unit_token as chronicle_unit
-    assert ss.unit_token(a.id, "k", sa) != chronicle_unit(a.id, "k"), "a statement cannot be matched to a public ballot"
+    assert ss.unit_token(a.id, "k", sa) != chronicle_unit(a.id, "k", sa), "a statement cannot be matched to a public ballot"
     with pytest.raises(ValueError):
         ss.unit_token(a.id, "k", b"")
 
@@ -160,6 +160,21 @@ def test_a_unit_cannot_be_derived_from_the_public_ids_and_the_secret_is_kept_acr
     monkeypatch.setattr(identity, "KEY_DIR", tmp_path / "other")      # another relay
     monkeypatch.setattr(identity, "_UNIT_SECRET_CACHE", {})
     assert ss.unit_token("relayid", "label:alice", identity.relay_unit_secret()) != unit
+
+
+def test_chronicle_units_are_keyed_not_a_plain_hash(monkeypatch):
+    import hashlib
+
+    from emporia.chronicle_ledger import unit_token
+    plain = "u" + hashlib.sha256(b"chronicle-unit:relayid:label:alice").hexdigest()[:10]
+    mine = unit_token("relayid", "label:alice", b"a" * 32)
+    assert mine != plain, "a public label must not hash to a unit"
+    assert mine == unit_token("relayid", "label:alice", b"a" * 32)
+    assert mine != unit_token("relayid", "label:alice", b"b" * 32), "another relay's secret, another unit"
+    assert unit_token("relayid", "k", b"a" * 32) != ss.unit_token("relayid", "k", b"a" * 32), "its own domain"
+    assert "alice" not in mine
+    # default secret is the relay's own
+    assert unit_token("relayid", "label:alice") == unit_token("relayid", "label:alice", identity.relay_unit_secret())
 
 
 def test_shown_is_evidence_with_the_why_and_never_counted():
