@@ -82,7 +82,7 @@ Validation passed.
 - **No failures, no warnings.** One note remains: the isolation note, which every platform
   adapter gets (platform adapters run in the gateway process). (Earlier runs had one warning, `security scan caution:
   dump_all_env`: text with a bare `env` followed by a pipe, which the scanner reads as an environment dump. The
-  identity-store hint `--to env|files` was reworded to `--to env` or `--to files` everywhere, and the scan says `safe`.)
+  identity-store hint `--to env|files` was reworded away everywhere, and the scan says `safe`.)
 - **`--install-deps`** (what the catalog CI runs) has nothing to install. Hermes's own reader
   (`pm.plugin_declarations.read_python_declaration`) reports no `pyproject.toml` and no
   requirements for the plugin dir. It was not run here: it syncs the Hermes install's own
@@ -184,7 +184,7 @@ findings: 2 critical, 90 high). Those 92 are the whole high and critical list, e
 | `dump_all_env` (high, 1) | `console/ui/assets/App-*.js` | prose in a bundled doc inside the console UI (unminified, so a reviewer reads it); no code dumps an environment |
 
 Reworded so the scanner no longer flags text that was harmless: `--to env|files` (read as an environment dump) is
-`--to env` or `--to files`; a guardrail pattern spells `en[v]`; the bidirectional-control characters in
+now plain `--to env`; a guardrail pattern spells `en[v]`; the bidirectional-control characters in
 `names.py` are built from code points (invisible characters in a source file are what a reviewer cannot read); a `chr(10) + chr(10)`
 became `"\n\n"`; and three phrases in the bundled docs were reordered. `hermes plugins validate` also
 scans only the plugin directory, so none of the 92 runtime findings reaches an install of the plugin.
@@ -352,7 +352,7 @@ scans only the plugin directory, so none of the 92 runtime findings reaches an i
   the signer's policy, the approval threshold is 0 (`agent_wallet.require_approval`, also for a wallet behind
   the signer: it asks before handing the payment over). Every payment (x402, Tempo, escrow) goes to Hermes's
   approval prompt as an MCP elicitation carrying the exact amount, network and payee; it is once or deny, not
-  bypassed by YOLO, and with no way to ask, declined or cancelled the payment is refused ("Not paid"); cron and
+  bypassed by YOLO, and with no way to ask, declined or canceled the payment is refused ("Not paid"); cron and
   other unattended runs decline. A turn another agent started has nobody to answer, so the plugin's
   `money_guard` (`pre_tool_call`) refuses `join_room`, `subscribe_agora_topic`, `fund_session` and
   `reclaim_escrow` there at once instead of letting the elicitation wait out its timeout. The spending caps hold

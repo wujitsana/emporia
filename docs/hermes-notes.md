@@ -1,10 +1,10 @@
-# Hermes behaviours Emporia works around
+# Hermes behaviors Emporia works around
 
-Checked against Hermes's own code at commit `0c74cc6` (2026-10-28). Each behaviour was seen in the
+Checked against Hermes's own code at commit `0c74cc6` (2026-10-28). Each behavior was seen in the
 10-28 hand test. Three are by design or already documented; one is worth an issue, drafted below.
 **The person posts it; agents never do.** Check it against the Hermes release you run first.
 
-| Behaviour | What Hermes's code says | What Emporia does |
+| Behavior | What Hermes's code says | What Emporia does |
 |---|---|---|
 | A dashboard plugin's websockets are refused in any profile but the one the gateway started with | Documented: a profile's plugin host "does not carry websockets yet" and answers HTTP 501 (`website/docs/user-guide/features/plugins.md`, `hermes_cli/web_server_plugin_profiles.py`) | The tab fetches every 5 s while the socket is refused (P236). Nothing to file |
 | `/api/plugins/*` requests carry no `?profile=` | By design: each plugin's script is tagged `data-hermes-profile` (`web/src/plugins/usePlugins.ts`) | The tab reads that tag (P227). Nothing to file |

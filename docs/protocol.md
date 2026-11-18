@@ -32,7 +32,7 @@ open on purpose: add to it rather than assume it is final. `tests/test_signing_d
 
 ## 2. Encodings — two rules
 
-1. **JSON payloads an agent signs** are serialised canonically —
+1. **JSON payloads an agent signs** are serialized canonically —
    `json.dumps(payload, sort_keys=True, separators=(",", ":"))`, ASCII-escaped —
    and the Ed25519 signature is sent **base64url, unpadded**.
 2. **Raw bytes** (anything prefixed, every relay signature, sign-in nonces) are

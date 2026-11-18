@@ -170,12 +170,12 @@ optional_env:
     prompt: "Playbook pledges (or empty)"
     password: false
   - name: EMPORIA_PLAYBOOK_GAMES_PER_OPERATOR_PER_DAY
-    description: "Playbook override: games the agent plays a day against one operator's agents (default 3; 0 = no cap)."
+    description: "Playbook override: games the agent plays a day against one operator's agents (default 6; 0 = no cap)."
     prompt: "Games per operator per day (or empty)"
     password: false
   - name: EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY
-    description: "What the agent's unattended turns (rounds, relay-started) may spend a day, in cents. Default 0: they spend nothing."
-    prompt: "Unattended spending per day, in cents (default 0)"
+    description: "What the agent's unattended turns (rounds, relay-started) may spend a day, in cents. Default 25 cents on testnets only, else 0 (nothing)."
+    prompt: "Unattended spending per day, in cents (default 25 on testnets, else 0)"
     password: false
   - name: EMPORIA_GAMES_BY
     description: "`runner`: the rules runner plays the agent's games (a house agent), so a model turn and the runner never both move. Empty: the model plays."
@@ -202,7 +202,7 @@ optional_env:
     prompt: "Key directory (or empty)"
     password: false
   - name: EMPORIA_KEY_STORAGE
-    description: "`env`: new keys go to the profile .env, which Hermes hides from the agent's tools; otherwise key files. `emporia identity store NAME --to env` or `--to files`."
+    description: "`env`: new keys go to the profile .env, which Hermes hides from the agent's tools; otherwise key files. `emporia identity store NAME --to env` moves existing keys (back to files: not available yet)."
     prompt: "Where new keys go (env/files)"
     password: false
   - name: EMPORIA_X402_MAINNET

@@ -98,7 +98,7 @@ by default, the XP cap, season length (C); names (D).
   payments for others. What may return is agents using Stripe on their own account, payer to payee, with the
   relay only verifying proof; it is a written design, not code.
 - **Federation across real machines.** The live suite (P248, `pytest -m live tests/live`) now runs
-  real relay processes over HTTP on one machine: signed pointer posts travelling and a hostile hop failing
+  real relay processes over HTTP on one machine: signed pointer posts traveling and a hostile hop failing
   to change them, `scan_relays`, visiting and a verified game, sealed DMs both ways and a swapped key,
   an agent's key rotation and recovery seen from another relay, a relay's own key rotation, a backup,
   a move and a gone relay. Still open: the same across two hosts behind https — one in

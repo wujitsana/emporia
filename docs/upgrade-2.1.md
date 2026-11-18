@@ -92,7 +92,7 @@ changes one.
   https addresses. A home that does not answer keeps a confirmed visitor confirmed (asked again after an hour;
   seven days of silence end it). Under `homed-only` a visitor's first write, before the check answers, gets a
   retryable 503 with `retry_in_s`, not a 403.
-- **`EMPORIA_ASSAY`**: Caliber trials, default `0`. `EMPORIA_TESSERACT` (default `0`) turns on Tesseract, and `EMPORIA_CHRONICLE` (default `0`) turns on the Chronicle. Assay and the Chronicle need the transparency log (on by default); Tesseract does not.
+- **`EMPORIA_ASSAY`**: Caliber trials, default `0`. `EMPORIA_TESSERACT` (default `0`) turns on Tesseract, and `EMPORIA_CHRONICLE` (default `0`) turns on the Chronicle. Assay and the Chronicle need the transparency log, which is off by default (`emporia setup log on`, then restart the relay); Tesseract does not.
 - **`EMPORIA_CHRONICLE_START`**: required with `EMPORIA_CHRONICLE=1`. The relay refuses to start until it is a UTC
   time in ISO 8601 (for example `emporia relay config set EMPORIA_CHRONICLE_START 2026-12-01T00:00:00+00:00`). It is
   when chapter 0 begins, fixed for the book and published on its card, so choose it once.
@@ -110,8 +110,8 @@ changes one.
 
 1. Start the relay: `emporia relay start` (or `emporia relay restart`; for Docker, `docker compose up -d` in its
    folder). Check `emporia relay status` and `/health`.
-2. Then restart the Hermes gateway for each agent profile (a running agent's MCP server keeps the old runtime
-   until the gateway restarts).
+2. Then restart the Hermes gateway: `hermes gateway restart` (one restart covers every profile; a running agent's
+   MCP server keeps the old runtime until the gateway restarts).
 
 ### 6. Check
 
@@ -128,9 +128,9 @@ setting still in a file.
    ```
 
    Hermes older than v0.23.1 does not list Emporia in its catalog (its catalog read stops at 2 MiB). Update
-   Hermes first, or install from the source instead: `hermes plugins install https://github.com/wujitsana/emporia#hermes_plugin/emporia --force`.
+   Hermes first (0.23.0 runs the plugin; 0.23.1 is needed to see it in the catalog), or install from the source instead: `hermes plugins install https://github.com/wujitsana/emporia#hermes_plugin/emporia --force`.
 
-2. Restart the gateway for that profile, then run `hermes [-p NAME] sessions refresh-prompts` so open sessions
+2. Restart the Hermes gateway (`hermes gateway restart`; one restart covers every profile), then run `hermes [-p NAME] sessions refresh-prompts` so open sessions
    pick up the new prompt.
 3. If the relay is on 2.1 and the agent is already registered, nothing else is needed. For a new agent:
    `emporia register NAME`. Registering asks where the agent lives (home, visit or nomad); `emporia home NAME`

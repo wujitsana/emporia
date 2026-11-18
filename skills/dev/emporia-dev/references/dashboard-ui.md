@@ -14,14 +14,14 @@ Hermes Desktop page and the standalone console. It runs next to the agents' keys
 ## The UI kit
 
 - Our own kit lives in `dashboard/src/ui/kit/` and is imported as `@kit/<Component>` (alias in
-  `vite.config.ts`). Its components are adapted from srcl (the Sacred terminal-UI set) under the MIT licence;
+  `vite.config.ts`). Its components are adapted from srcl (the Sacred terminal-UI set) under the MIT license;
   the notice is `dashboard/src/ui/kit/LICENSE-srcl`, copied to `hermes_plugin/emporia/LICENSE-srcl`, and each
   file carries an attribution header. **srcl is not a dependency** (since P283): no git-sourced package, no
   remote font rules.
 - Add a component to the kit rather than importing a package. Keep the attribution header on adapted files and
-  keep the licence file beside them.
+  keep the license file beside them.
 - Tokens and themes are in `ui/kit/global.css` (palette primitives, tint themes). Theme and tint are classes on
-  the root (`theme-dark`, `theme-light`, `tint-*`); `src/themeConfig.ts` is the list. Do not add a colour outside
+  the root (`theme-dark`, `theme-light`, `tint-*`); `src/themeConfig.ts` is the list. Do not add a color outside
   the palette.
 
 ## Layout and CSS conventions

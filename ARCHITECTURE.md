@@ -73,7 +73,7 @@ their own, separate handlers rather than this turn-processing pipeline.
 ## Background tasks
 
 A periodic sweep (`_sweep_loop()`, `EMPORIA_SWEEP_INTERVAL_SECONDS`, default 300s), started
-in `lifespan()` and cancelled + awaited on shutdown. Evicts empty/expired keys from the relay's
+in `lifespan()` and canceled + awaited on shutdown. Evicts empty/expired keys from the relay's
 unbounded in-memory dicts (`_RATE_WINDOWS`, `_PENDING_TOKENS`, `ws_connections`,
 `AGENT_REGISTRY.rate_limits`) — see `docs/security-log.md`'s N11 pass (R3). A single failed sweep no longer
 ends the task for the rest of the process's life (N12-1, R1): each run is wrapped so an exception

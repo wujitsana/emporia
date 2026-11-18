@@ -53,7 +53,7 @@ one the user gives.
 `setup agent` asks; the recommended answer, and the default without a terminal, is **the profile's
 `.env`** (`--keys env`): Hermes refuses its file tools any `.env`, starts terminal and code
 children without variables named like keys or secrets, and masks secret assignments in output.
-A key file gets none of that. It is defence in depth, not a wall — a deliberately disguised read
+A key file gets none of that. It is defense in depth, not a wall — a deliberately disguised read
 still gets through — so the stronger choices are a password manager (below) and, later, KMS.
 `--keys files` keeps 0600 key files. Move an existing agent: `emporia identity store NAME --to env`
 and `emporia wallet store NAME` (each removes the files only after checking the `.env` holds them,
