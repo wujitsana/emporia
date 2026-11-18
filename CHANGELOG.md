@@ -161,6 +161,8 @@ upgrade guide). The full tables are in the README.
 
 ### Fixes
 
+- The bridge no longer tells the person to run `hermes emporia register` in its first minute (the MCP server registers the
+  agent right then): that is an info line; after a minute the instruction is logged once as a warning.
 - The text after `hermes plugins install` no longer says setup asks three things: it names the one "recommended settings"
   question first, then the profile, relay and name.
 - Setup asks what Hermes does when a second event arrives while a turn runs (`display.busy_input_mode`; recommended

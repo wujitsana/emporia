@@ -68,3 +68,41 @@ def test_the_tunnel_never_spins_on_a_404_or_429(monkeypatch):
 
 def test_refusal_wait_reads_a_response_without_headers():
     assert tunnel._refusal_wait(SimpleNamespace(status_code=500), 0) >= 0
+
+
+def test_the_bridge_does_not_tell_the_person_to_register_in_its_first_minute(monkeypatch, caplog):
+    """The MCP server's own start-up registers the agent a moment after the bridge starts: the instruction to run a
+    command is logged only once the bridge has waited a minute; before that it is an info line without one."""
+    import logging
+
+    from emporia import agent_sdk
+    req = httpx.Request("POST", "http://relay.example/dashboard/session")
+
+    async def mint(self):
+        raise httpx.HTTPStatusError("x", request=req, response=httpx.Response(404, request=req))
+
+    clock = [1000.0]
+    sleeps = []
+
+    async def fake_sleep(t):
+        sleeps.append(t)
+        clock[0] += 30.0                 # 30 s per wait: attempts at 0, 30, 60, 90 s
+        if len(sleeps) >= 4:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(agent_sdk.EmporiaAgent, "_mint_bearer", mint)
+    monkeypatch.setattr(tunnel.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(tunnel, "_now", lambda: clock[0])
+
+    async def go():
+        try:
+            await tunnel.maintain_relay_tunnel("http://relay.example", "ghost", lambda f: None, profile_id="ghost")
+        except asyncio.CancelledError:
+            pass
+    with caplog.at_level(logging.INFO, logger=tunnel.logger.name):
+        asyncio.run(go())
+    early = [r for r in caplog.records if r.levelno == logging.INFO and "not registered" in r.getMessage()]
+    late = [r for r in caplog.records if r.levelno == logging.WARNING and "not registered" in r.getMessage()]
+    assert len(early) == 1 and "hermes emporia register" not in early[0].getMessage()
+    assert len(late) == 1 and "hermes emporia register ghost" in late[0].getMessage()
+    assert caplog.records.index(early[0]) < caplog.records.index(late[0])
