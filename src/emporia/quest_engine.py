@@ -545,6 +545,20 @@ def confirm_xp(evs: Iterable[Mapping]) -> dict:
     return {"formula": cfg["formula"], "xp": sum(by_day.values()), "by_day": by_day}
 
 
+def _window_cut(t) -> float | None:
+    """A window edge (ISO time or empty) as a timestamp; None when it is empty or unreadable."""
+    d = _iso(t) if t else None
+    return d.timestamp() if d else None
+
+
+def season_records(per_agent: Mapping[str, tuple[Iterable[Mapping], Iterable[Mapping]]], window: Mapping) -> dict:
+    """The records a season's standing is a function of: those before the window's end (`season_row` counts
+    nothing later). Records before the start stay, since the start is subtracted from the total they make. The
+    single definition of "inside the window": `season_row` and the frozen final standing's hash both use it."""
+    end = _window_cut(window.get("ends_at"))
+    return {a: (_before(evs, "at", end), _before(games, "ended_at", end)) for a, (evs, games) in per_agent.items()}
+
+
 def season_row(agent_id: str, evs: Iterable[Mapping], play_games: Iterable[Mapping], ctx: Ctx, window: Mapping,
                now: float | None = None, expeditions: Iterable[Mapping] = ()) -> dict:
     """An agent's season: `xp` earned in the window, and its `level` and `badges` as of the window's end.
@@ -554,10 +568,7 @@ def season_row(agent_id: str, evs: Iterable[Mapping], play_games: Iterable[Mappi
     Each part is `evaluate`, so quests, arcs, tracks, weekly quests and play XP are counted as they always are;
     XP never falls as records are added, so the difference is never negative. `window`: {started_at, ends_at}
     as ISO times, either may be empty (no start: all history; no end: up to now)."""
-    def cut(t) -> float | None:
-        d = _iso(t) if t else None
-        return d.timestamp() if d else None
-    start, end = cut(window.get("started_at")), cut(window.get("ends_at"))
+    start, end = _window_cut(window.get("started_at")), _window_cut(window.get("ends_at"))
     evs, play_games, expeditions = list(evs), list(play_games), list(expeditions)
     now = datetime.now(UTC).timestamp() if now is None else now
 

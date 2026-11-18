@@ -50,6 +50,26 @@ def test_standings_and_the_records_hash_do_not_depend_on_order():
     assert [r["rank"] for r in one] == [1, 2] and one[0]["season_xp"] >= one[1]["season_xp"]
 
 
+def test_the_hash_and_standing_ignore_records_after_the_window_end():
+    c = ctx()
+    win = {"started_at": "2026-11-01T00:00:00+00:00", "ends_at": "2026-11-10T00:00:00+00:00"}
+    games = [game("a", "b", "2026-10-30T10:00:00+00:00", "s1"), game("a", "b", "2026-11-03T10:00:00+00:00", "s2")]
+
+    def frozen(gs):
+        per = {x: (E.events(x, games=gs, ctx=c), gs) for x in ("a", "b")}
+        inside = E.season_records(per, win)
+        return E.records_hash(inside), E.season_standings(inside, c, win, NOW)
+    base_hash, base_standing = frozen(games)
+    late = games + [game("a", "b", "2026-11-20T10:00:00+00:00", "s3"), game("a", "b", "2026-12-01T10:00:00+00:00", "s4")]
+    assert frozen(late) == (base_hash, base_standing), "records after the end change neither the hash nor the standing"
+    # the standing is the same at any clock after the end
+    per = {x: (E.events(x, games=late, ctx=c), late) for x in ("a", "b")}
+    assert E.season_standings(E.season_records(per, win), c, win, NOW + 10**7) == base_standing
+    # not vacuous: a record inside the window (or before the start, which feeds the base) changes the hash
+    assert frozen(games + [game("a", "b", "2026-11-05T10:00:00+00:00", "s5")])[0] != base_hash
+    assert frozen(games + [game("a", "b", "2026-10-29T10:00:00+00:00", "s6")])[0] != base_hash
+
+
 def test_the_final_standing_is_signed_frozen_and_recomputes(monkeypatch):
     client = TestClient(rs.app)
     tag = uuid.uuid4().hex[:6]
@@ -70,8 +90,13 @@ def test_the_final_standing_is_signed_frozen_and_recomputes(monkeypatch):
         stored = json.loads(conn.execute("SELECT body_json FROM season_finals WHERE season = ?",
                                          (f"season-{tag}",)).fetchone()[0])
     assert stored["standings"] == final["standings"] and stored["records_hash"] == final["records_hash"]
-    # anyone with the records recomputes it and gets the same standing and the same hash
+    # anyone with the records recomputes it and gets the same standing and the same hash, even with a
+    # record added after the window's end (2021)
     per, c, exp = ST.season_inputs()
+    for a in [a for a in per if a.endswith(f"_{tag}")]:
+        evs, gs = per[a]
+        per[a] = (evs + [{"event": "game", "at": "2030-01-01T00:00:00+00:00", "opponents": ["x"], "won": True}],
+                  gs + [game(a, "x", "2030-01-01T00:00:00+00:00", f"late-{tag}")])
     again = ST._season_standing_body(ST.progression.season(), per, c, exp, NOW)
     assert again["records_hash"] == final["records_hash"] and again["standings"] == stored["standings"]
     assert again["window"] == final["window"]
