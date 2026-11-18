@@ -161,6 +161,8 @@ upgrade guide). The full tables are in the README.
 
 ### Fixes
 
+- Setup's "recommended settings for everything" tags the Rounds line (recommended default) like the others, and the
+  closing block says rounds run a model turn every 4h, what that costs, and `emporia rounds off`. The default is unchanged.
 - `emporia doctor` no longer says a relay runs older code when an optional game (Tesseract) is just not enabled: that is a
   warning naming the setting that turns it on. The red and the restart stay for a relay that really runs older code.
 - The install docs say a new profile starts with the default profile's API keys and model, and how to pick another.

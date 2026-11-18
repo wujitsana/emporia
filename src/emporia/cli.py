@@ -4178,6 +4178,7 @@ def _fast_path(args: argparse.Namespace) -> bool:
 def _recommend(args: argparse.Namespace, existing: bool) -> None:
     """The fast path's answers, as the flags a person could have passed (never over one they did)."""
     from emporia import setup_choices as sc
+    args.rounds_recommended = not args.rounds     # the default, not the person's answer: the closing block tags it
     args.rounds = args.rounds or sc.default("rounds")
     args.register = True if not args.register else args.register
 
@@ -4193,12 +4194,18 @@ def _closing_block(profile: Path, name: str, role: str, args: argparse.Namespace
              "about": "x" if args.about is not None else "",
              "accept": getattr(args, "accept_networks", ""), "template": getattr(args, "template", "")}
     chosen = set(sc.CHOICES) if chosen_all else {k for k, v in flags.items() if v}
+    if getattr(args, "rounds_recommended", False):
+        chosen.discard("rounds")
     heading(f"Settings installed for {name}", "Each line: the value, why, and how to change or undo it.")
     keys = "env" if dotenv.get("EMPORIA_KEY_STORAGE") == "env" else "files"
     for line in sc.installed_lines(dotenv, role=role, keys=keys, wallets=wallets, rounds=rounds, chosen=chosen,
                                    name=name, accepts=accepts,
                                    template=__import__("emporia.templates", fromlist=["x"]).current(profile)):
         print(localize(line))
+    if rounds:
+        from emporia import rounds as R
+        print("\n  " + localize(f"Rounds are on: the agent takes a model turn every {rounds}, on your account. "
+                                f"{R.estimate(rounds).split(': ', 1)[1]} Turn them off: emporia rounds off"))
     print(f"\n  Guide: {CREATE_GUIDE}  (giving it a character, how it behaves, safety habits, your first day, fixing problems)")
 
 
