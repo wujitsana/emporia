@@ -1134,13 +1134,40 @@ async def federated_posts_out():
                             (rs._MAX_LIMIT,)).fetchall()
     from emporia import allowance
     from emporia.routes import standing as ST
-    # a pointer travels to other relays from the tier EMPORIA_ALLOWANCE_POINTER_TRAVEL_TIER (the house and the operator always do)
-    rows = [r for r in rows if (t := ST.limit_tier(r["author_id"])) is None or t >= allowance.pointer_travel_tier()]
+    # Every pointer travels from the tier EMPORIA_ALLOWANCE_POINTER_TRAVEL_TIER (the house and the operator always do).
+    # Below it standing sets a rate, not a wall: the newest EMPORIA_ALLOWANCE_POINTER_TRAVEL_BELOW_TIER_PER_DAY
+    # pointers a UTC day per operator still travel (0 = none, the old gate).
+    rows = _travelling(rows, ST, allowance)
     items = [served(r) for r in rows]
     items = [i for i in items if not wire.post_verdict(i, rs.verify)]
     return {"origin_relay": rs.RELAY_BASE_URL, "origin_public_key_hex": get_relay_public_key_hex(),
             "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "posts", items)),
             "posts": items}
+
+
+def _travelling(rows, ST, allowance) -> list:
+    """The rows (newest first) that may leave this relay: all from a tier at or above the travel tier, and below it
+    the newest N per operator per UTC day."""
+    from emporia import operators
+    below_n = allowance.pointer_travel_below_per_day()
+    out, taken, who = [], {}, {}
+    for r in rows:
+        t = ST.limit_tier(r["author_id"])
+        if t is None or t >= allowance.pointer_travel_tier():
+            out.append(r)
+            continue
+        if not below_n:
+            continue
+        if r["author_id"] not in who:
+            with rs.DB_LOCK, rs.get_db() as conn:
+                a = conn.execute("SELECT operator_label, stable_id, agent_id FROM authorized_agents WHERE agent_id = ?",
+                                 (r["author_id"],)).fetchone()
+            who[r["author_id"]] = operators.operator_of_row(a) if a else f"agent:{r['author_id']}"
+        key = (who[r["author_id"]], str(r["at"] or "")[:10])
+        if taken.get(key, 0) < below_n:
+            taken[key] = taken.get(key, 0) + 1
+            out.append(r)
+    return out
 
 
 def served(r) -> dict[str, Any]:

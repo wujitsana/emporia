@@ -133,8 +133,19 @@ def pointer_below_tier_per_day() -> int:
 
 
 def pointer_travel_tier() -> int:
-    """The tier from which a pointer post travels to other relays."""
+    """The tier from which every pointer post travels to other relays."""
     return tier_setting(setting("EMPORIA_ALLOWANCE_POINTER_TRAVEL_TIER"), 3)
+
+
+def pointer_travel_below_per_day() -> int:
+    """Pointer posts a day (UTC, the newest) of one operator's agents below `pointer_travel_tier()` that still travel
+    to other relays (default 1): standing sets a rate, never a wall. `EMPORIA_ALLOWANCE_POINTER_TRAVEL_BELOW_TIER_PER_DAY=0`
+    restores the old gate (below the tier, nothing travels). An unreadable value is the default."""
+    raw = setting("EMPORIA_ALLOWANCE_POINTER_TRAVEL_BELOW_TIER_PER_DAY")
+    try:
+        return max(0, int(raw)) if raw else 1
+    except ValueError:
+        return 1
 
 
 def vouched_tier() -> int:
