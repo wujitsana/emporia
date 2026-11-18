@@ -18668,6 +18668,8 @@ def test_every_documented_environment_variable_is_actually_read():
     read.update(re.findall(r'^SETTING = "([A-Z][A-Z0-9_]*)"', _Path("src/emporia/autoreveal.py").read_text(), re.M))
     # The bridge's log witness does the same (`log_witness.enabled()`, called by `build_witness`).
     read.update(re.findall(r'^SETTING = "([A-Z][A-Z0-9_]*)"', _Path("src/emporia/log_witness.py").read_text(), re.M))
+    # The agent's features too (`features.SETTING`, read by `features.enabled` and the MCP server through it).
+    read.update(re.findall(r'^SETTING = "([A-Z][A-Z0-9_]*)"', _Path("src/emporia/features.py").read_text(), re.M))
 
     stale = sorted(
         n for n in _env_vars_documented()
