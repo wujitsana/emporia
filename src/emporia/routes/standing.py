@@ -387,7 +387,8 @@ async def season_ladders(limit: int = 25):
         likes = all_likes(conn)
     _, games, who = _craft_table()
     out = {**progression.season_boards(games, likes, who, time.time(), progression.season(),
-                                       progression.house_agents(), rs._clamp_limit(limit), ideas),
+                                       progression.house_agents(), rs._clamp_limit(limit), ideas,
+                                       tiers=_renown_tiers()),
            "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
     if not any(out["boards"].values()):
         # Craft pairs and Renown likes count only across operators (progression.craft_ratings, renown): a relay
@@ -783,6 +784,27 @@ def _evidence() -> dict:
              "operators": {who[a].operator if a in who else a for a in (active & live) - skip}}
     _EVIDENCE.update(key=key, value=value)
     return value
+
+
+def _renown_tiers() -> dict[str, int]:
+    """Renown v3: each operator's best EARNED allowance tier (1 Newcomer, 2 Known, 3 Trusted), from the same
+    evidence as the allowance: weighted distinct other operators it finished games or deals with. Never vouched
+    (a relay's own say-so is no evidence about an agent), never Renown (rings would feed each other). An operator
+    with no contact is Newcomer. Kept with the evidence, so it is recomputed when sessions or agents change."""
+    ev = _evidence()
+    if "tiers" in ev:
+        return ev["tiers"]
+    now, who = time.time(), ev["who"]
+    out: dict[str, int] = {}
+    for agent, mine in ev["contacts"].items():
+        op = progression._operator(who, agent)
+        registered = who[agent].registered_at if agent in who else None
+        a = allowance.assess(agent, weighted=allowance.weights(mine, who, now), abandons=ev["abandons"].get(agent, ()),
+                             others=len(ev["operators"] - {op}),
+                             days_here=((now - registered) / 86_400 if registered is not None else 0.0), now=now)
+        out[op] = max(out.get(op, 1), a["tier"])
+    ev["tiers"] = out
+    return out
 
 
 def _deal_records(conn) -> list[dict]:
@@ -1304,7 +1326,7 @@ def _sheet_body(agent_id: str) -> dict:
         cal = assay_routes.agent_caliber(agent_id)
     sheet = {**progression.base_sheet(agent_id, table=table, deals=deals, abandoned=abandoned,
                                       registered_at=reg["registered_at"], now=time.time(), who=who,
-                                      likes=likes, house=house, word=word, caliber=cal),
+                                      likes=likes, house=house, word=word, caliber=cal, tiers=_renown_tiers()),
              **({"improvements": improvements} if improvements is not None else {}),
              "insight": progression.insight(agent_id, _calls().get(agent_id, [])),
              "scope": "this_relay", "sessions_counted": len(set(used)),

@@ -42,9 +42,12 @@ def test_next_step_words_each_state():
     assert newcomer.next_step(others_here=3, counted_operators=4, tier=3, started=True).startswith("Next: keep")
 
 
-def test_the_lone_agents_sheet_says_what_to_do(client):
+def test_the_lone_agents_sheet_says_what_to_do(client, monkeypatch):
+    from emporia.routes import standing as st
     a, _ = _ids()
     _register(a)
+    # a relay with one operator, whatever other tests left in the shared database
+    monkeypatch.setattr(st, "_evidence", lambda: {"who": {}, "operators": set(), "contacts": {}, "abandons": {}})
     sh = client.get(f"/agents/{a}/sheet").json()
     assert sh["standing"]["counting"] is False and "No other operator" in sh["standing"]["next"]
     assert "weeks_active" in sh["trust"] and sh["trust"]["started"] is False

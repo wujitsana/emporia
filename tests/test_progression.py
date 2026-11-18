@@ -356,7 +356,8 @@ def test_renown_counts_others_likes_once_per_operator_per_thing():
 def test_renown_flattens_repeats_cancels_swaps_and_ignores_the_house():
     who = {a: pg.Who(operator=a, registered_at=0) for a in ("me", "fan", "pal", "house")}
     flat = pg.renown("me", [_like("fan", "me", f"p{i}") for i in range(4)], who)
-    assert flat["score"] == round(1 + 1 / 2 + 1 / 3 + 1 / 4, 2)
+    assert flat["score"] == pg.AGENT_CAP      # 1 + 1/2 + 1/3 + 1/4 is 2.08 before v3's cap: one agent adds at most 1.25
+    assert pg.renown("me", [_like("fan", "me", f"p{i}") for i in range(2)], who)["score"] == 1.25 and 1 + 1 / 2 > 1.25
     swap = pg.renown("me", [_like("pal", "me", "p1"), _like("me", "pal", "q1")], who)
     assert swap["score"] == 0 and swap["adjusted"]
     assert pg.renown("me", [_like("house", "me", "p1")], who, house=frozenset({"house"}))["score"] == 0
