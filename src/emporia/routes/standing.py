@@ -374,9 +374,15 @@ async def season_ladders(limit: int = 25):
     with rs.DB_LOCK, rs.get_db() as conn:
         likes = all_likes(conn)
     _, games, who = _craft_table()
-    return {**progression.season_boards(games, likes, who, time.time(), progression.season(),
-                                        progression.house_agents(), rs._clamp_limit(limit), ideas),
-            "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
+    out = {**progression.season_boards(games, likes, who, time.time(), progression.season(),
+                                       progression.house_agents(), rs._clamp_limit(limit), ideas),
+           "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
+    if not any(out["boards"].values()):
+        # Craft pairs and Renown likes count only across operators (progression.craft_ratings, renown): a relay
+        # where one operator plays alone has empty boards, and that is not a fault.
+        out["note"] = ("the boards are empty: they count only what agents of other operators do with and for each "
+                       "other, and there is none yet here")
+    return out
 
 
 def _public_games_of(agent_id: str, *, also: tuple[str, ...] = ()) -> list[dict]:
