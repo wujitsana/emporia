@@ -52,17 +52,44 @@ WORDS = {"posts_per_day": "posts today", "challenges": "waiting challenges", "op
          "new_rooms_per_day": "new rooms or topics today", "stranger_dms_per_day": "first DMs to strangers today"}
 RETIRED_PREFIX = "EMPORIA_STARTER_"
 _OFF = ("0", "off", "false", "no")
+#: The 2.0.1 starter settings that have a clear counterpart, read as that setting while the new one is unset: the
+#: level tables were `level 1, 2, 3+`, the tiers are `Newcomer, Known, Trusted`. `EMPORIA_STARTER_TOPIC_LEVEL` has
+#: none (a new topic is counted in `new_rooms_per_day`), so it stays ignored, and the notice says so.
+ALIASES = {
+    "EMPORIA_STARTER_LIMITS": "EMPORIA_ALLOWANCE",
+    "EMPORIA_STARTER_CHALLENGES": KINDS["challenges"][0],
+    "EMPORIA_STARTER_POSTS_PER_DAY": KINDS["posts_per_day"][0],
+    "EMPORIA_STARTER_POINTER_LEVEL": "EMPORIA_ALLOWANCE_POINTER_TIER",
+    "EMPORIA_STARTER_POINTER_SHARED_LEVEL": "EMPORIA_ALLOWANCE_POINTER_TRAVEL_TIER",
+}
+_FROM_OLD = {new: old for old, new in ALIASES.items()}
+
+
+def setting(name: str, environ: Mapping[str, str] | None = None) -> str:
+    """The text of allowance setting `name`; when it is unset, that of the 2.0.1 starter setting it replaces (a level
+    number above 3 counts as 3), so a relay that never changed its `.env` keeps its limits through the update."""
+    env = os.environ if environ is None else environ
+    own = str(env.get(name, "") or "").strip()
+    old = _FROM_OLD.get(name)
+    if own or not old:
+        return own
+    value = str(env.get(old, "") or "").strip()
+    if value.isdigit() and name.endswith("_TIER"):
+        value = str(min(int(value), 3))
+    return value
 
 
 def on() -> bool:
-    return os.getenv("EMPORIA_ALLOWANCE", "1").strip().lower() not in _OFF
+    if os.getenv("EMPORIA_ALLOWANCE", "").strip():
+        return os.environ["EMPORIA_ALLOWANCE"].strip().lower() not in _OFF
+    return os.getenv("EMPORIA_STARTER_LIMITS", "1").strip().lower() not in _OFF
 
 
 def table(kind: str) -> tuple[int, int, int]:
     """The three caps (Newcomer, Known, Trusted) for `kind`: the setting as `10,30,100`, else the default.
     Each at least 1, and never below the tier before it."""
     name, default = KINDS[kind]
-    raw = os.getenv(name, "").strip()
+    raw = setting(name)
     try:
         values = [max(1, int(p)) for p in raw.split(",")] if raw else []
     except ValueError:
@@ -87,12 +114,12 @@ def tier_setting(raw: str, default: int) -> int:
 
 def pointer_tier() -> int:
     """The tier that may write pointer posts (they name a room or topic for other relays)."""
-    return tier_setting(os.getenv("EMPORIA_ALLOWANCE_POINTER_TIER", ""), 2)
+    return tier_setting(setting("EMPORIA_ALLOWANCE_POINTER_TIER"), 2)
 
 
 def pointer_travel_tier() -> int:
     """The tier from which a pointer post travels to other relays."""
-    return tier_setting(os.getenv("EMPORIA_ALLOWANCE_POINTER_TRAVEL_TIER", ""), 3)
+    return tier_setting(setting("EMPORIA_ALLOWANCE_POINTER_TRAVEL_TIER"), 3)
 
 
 def vouched_tier() -> int:
@@ -115,12 +142,21 @@ def retired_settings(environ: Mapping[str, str] | None = None) -> list[str]:
 
 
 def retired_notice(names: Iterable[str]) -> str:
-    """Said once at startup and by doctor: the old settings do nothing now."""
+    """Said once at startup and by doctor: what became of the old settings. Those with a counterpart are still read
+    as it; the rest do nothing now."""
     names = list(names)
-    return (f"{', '.join(names)} {'is' if len(names) == 1 else 'are'} replaced and now ignored: limits grow with "
-            "earned standing, not XP. Set " + ", ".join(v[0] for v in KINDS.values()) + ", "
-            "EMPORIA_ALLOWANCE_POINTER_TIER, EMPORIA_ALLOWANCE_POINTER_TRAVEL_TIER and "
-            "EMPORIA_ALLOWANCE_NEWCOMER_BUDGET instead (EMPORIA_ALLOWANCE=0 switches the allowance off).")
+    read = [n for n in names if n in ALIASES]
+    ignored = [n for n in names if n not in ALIASES]
+    parts = []
+    if read:
+        parts.append(", ".join(f"{n} is read as {ALIASES[n]} until that is set" for n in read)
+                     + " (the tiers are Newcomer, Known and Trusted, not XP levels)")
+    if ignored:
+        parts.append(f"{', '.join(ignored)} {'is' if len(ignored) == 1 else 'are'} replaced and now ignored: limits "
+                     "grow with earned standing, not XP. Set " + ", ".join(v[0] for v in KINDS.values())
+                     + ", EMPORIA_ALLOWANCE_POINTER_TIER, EMPORIA_ALLOWANCE_POINTER_TRAVEL_TIER and "
+                     "EMPORIA_ALLOWANCE_NEWCOMER_BUDGET instead (EMPORIA_ALLOWANCE=0 switches the allowance off)")
+    return "; ".join(parts) + "."
 
 
 # ── evidence ────────────────────────────────────────────────────────────────

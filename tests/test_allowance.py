@@ -183,8 +183,28 @@ def test_the_old_starter_settings_are_named_once_with_what_replaces_them():
            "OTHER": "x"}
     assert A.retired_settings(env) == ["EMPORIA_STARTER_LIMITS", "EMPORIA_STARTER_POSTS_PER_DAY"]
     text = A.retired_notice(A.retired_settings(env))
-    assert "replaced" in text and "EMPORIA_ALLOWANCE_POSTS_PER_DAY" in text and "EMPORIA_ALLOWANCE_NEWCOMER_BUDGET" in text
+    assert "is read as EMPORIA_ALLOWANCE_POSTS_PER_DAY" in text and "EMPORIA_STARTER_LIMITS is read as EMPORIA_ALLOWANCE" in text
     assert A.retired_settings({"EMPORIA_ALLOWANCE": "1"}) == []
+    text = A.retired_notice(["EMPORIA_STARTER_TOPIC_LEVEL"])
+    assert "replaced and now ignored" in text and "EMPORIA_ALLOWANCE_NEWCOMER_BUDGET" in text
+
+
+def test_the_starter_settings_a_2_0_1_relay_set_are_read_as_their_allowance_counterparts(monkeypatch):
+    for name in ("EMPORIA_ALLOWANCE", "EMPORIA_ALLOWANCE_POSTS_PER_DAY", "EMPORIA_ALLOWANCE_CHALLENGES",
+                 "EMPORIA_ALLOWANCE_POINTER_TIER", "EMPORIA_ALLOWANCE_POINTER_TRAVEL_TIER"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("EMPORIA_STARTER_POSTS_PER_DAY", "4,8,16")
+    monkeypatch.setenv("EMPORIA_STARTER_CHALLENGES", "2,4,6")
+    monkeypatch.setenv("EMPORIA_STARTER_POINTER_LEVEL", "5")          # a level above the tiers counts as Trusted
+    monkeypatch.setenv("EMPORIA_STARTER_POINTER_SHARED_LEVEL", "2")
+    assert A.table("posts_per_day") == (4, 8, 16) and A.table("challenges") == (2, 4, 6)
+    assert A.pointer_tier() == 3 and A.pointer_travel_tier() == 2
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_POSTS_PER_DAY", "7,8,9")     # the new name wins
+    assert A.table("posts_per_day") == (7, 8, 9)
+    monkeypatch.setenv("EMPORIA_STARTER_LIMITS", "0")
+    assert A.on() is False
+    monkeypatch.setenv("EMPORIA_ALLOWANCE", "1")
+    assert A.on() is True
 
 
 def test_the_new_settings_are_in_the_relay_settings_list_and_the_old_ones_are_gone():
@@ -477,7 +497,7 @@ def test_the_limits_view_reads_the_relay_allowance(monkeypatch):
 
 def test_the_health_card_and_knobs_say_the_allowance_is_on(client):
     h = client.get("/health").json()
-    assert h["allowance"] is True and "starter_limits" not in h
+    assert h["allowance"] is True and h["starter_limits"] is True      # the 2.0.1 name, kept for an old doctor
     json.dumps(client.get("/relay/card").json()["relay_modules"]["gamify"]["knobs"]["allowance"])
 
 
@@ -508,16 +528,19 @@ def test_the_schema_has_the_dm_started_by_column_and_schema_upgrade_adds_it(tmp_
 def test_a_relay_that_still_sets_the_old_names_is_told_once_at_startup(monkeypatch, capsys):
     import asyncio
 
-    monkeypatch.setenv("EMPORIA_STARTER_POSTS_PER_DAY", "5,6,7")
+    monkeypatch.setenv("EMPORIA_STARTER_TOPIC_LEVEL", "2")        # no counterpart: ignored, and said so
+    monkeypatch.setenv("EMPORIA_STARTER_POSTS_PER_DAY", "5,6,7")  # has one: read as the allowance setting
 
     async def start():
         async with rs.lifespan(rs.app):
             pass
     asyncio.run(start())
     err = capsys.readouterr().err
-    assert err.count("EMPORIA_STARTER_POSTS_PER_DAY is replaced and now ignored") == 1
+    assert err.count("EMPORIA_STARTER_TOPIC_LEVEL is replaced and now ignored") == 1
+    assert err.count("EMPORIA_STARTER_POSTS_PER_DAY is read as EMPORIA_ALLOWANCE_POSTS_PER_DAY") == 1
     assert "EMPORIA_ALLOWANCE_NEWCOMER_BUDGET" in err
     monkeypatch.delenv("EMPORIA_STARTER_POSTS_PER_DAY")
+    monkeypatch.delenv("EMPORIA_STARTER_TOPIC_LEVEL")
     assert A.retired_settings() == []
 
 
