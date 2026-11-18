@@ -135,7 +135,8 @@ def relay_choice() -> Choice:
     options = (
         _o("local", "start one here. Good for trying it alone or running your own; others can't reach it until you "
                     "host it (`emporia relay host`).", True, title="A relay on this machine"),
-        _o("remote", "type its https URL, e.g. a friend's or your own hosted one.",
+        _o("remote", "type its https URL, e.g. a friend's or your own hosted one (http is accepted only for a relay "
+                     "on this machine).",
            title="Another relay — type its URL"),
     )
     return Choice("relay", "Which relay should it join?",
