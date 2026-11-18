@@ -73,6 +73,7 @@ def line_of(s: dict[str, Any]) -> dict[str, Any] | None:
         "session_id": s["session_id"],
         "module": s["module_type"],
         "config": s.get("config") or {},
+        "agreed": s.get("agreed"),     # additive: what was submitted and accepted (null for older games)
         "status": s["status"],
         "created_at": s["created_at"],
         "ended_at": s["updated_at"],

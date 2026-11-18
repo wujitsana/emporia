@@ -4,6 +4,8 @@ JSON line that anyone re-verifies offline, with no relay and no network.
 A line is `emporia:game-export:v1`:
 
     session_id, module, config, status, created_at, ended_at
+    agreed       null, or what the creator submitted and the relay accepted (`emporia.agreed`): additive, not
+                 verified offline (the creator's signature does not cover the settings)
     seats        [{seat, agent_id, stable_id, public_key_hex, key_log, operator_distinct}]
     moves        the relay's hash-chained public log: every move with its signer, payload, rationale,
                  table-talk line, step, timestamp and Ed25519 signature

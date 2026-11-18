@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS sessions (
                 participants_json TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                kind TEXT NOT NULL DEFAULT 'game'
+                kind TEXT NOT NULL DEFAULT 'game',
+                agreed_json TEXT
             );
 
 CREATE TABLE IF NOT EXISTS participants (
