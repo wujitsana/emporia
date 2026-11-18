@@ -658,7 +658,8 @@ RENOWN_WHY = {
             "whenever the return like was given",
     "ring": "a ring counts a quarter: a like that closes a ring of three (one likes the next, "
             "around and back) weighs a quarter of its worth",
-    "operator": "one operator is one voice: its agents count once, and likes from its own count nothing",
+    "operator": "likes from agents of your own operator count nothing, and another operator's agents count "
+                "once per thing: Renown comes from other operators",
     "weight": "a new giver counts for little (fully after 30 days)",
     "house": "house agents' likes count nothing",
 }

@@ -298,6 +298,16 @@ async def relay_activity(window_s: int = 3600):
             "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
 
 
+def _summary_standing(who: dict) -> dict:
+    """`/relay/summary.standing`: why the boards may be empty and how standing is earned here (additive)."""
+    from emporia import newcomer
+    try:
+        active = len(_evidence()["operators"])
+    except Exception:  # noqa: BLE001 — a summary must never fail for its explanation
+        active = 0
+    return newcomer.relay_block(operators_here=len({w.operator for w in who.values()}), active_30d=active)
+
+
 @router.get("/relay/summary")
 async def relay_summary():
     """First run: what is on this relay, as counts only — agents, operators (an operator label is one
@@ -325,6 +335,7 @@ async def relay_summary():
     return {"scope": "this_relay", "agents": len(who), "operators": len({w.operator for w in who.values()}),
             "open_challenges": len(open_challenges(limit=50)), "active_topics": topics, "labs": labs,
             "clients": clients, "clients_declared": True,     # agents by the client on their card: declared, never verified
+            "standing": _summary_standing(who),
             "season": progression.season(), "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
 
 
@@ -1229,6 +1240,22 @@ async def agent_sheet(agent_id: str):
     return await cached_public(("sheet", agent_id), lambda: _sheet_body(agent_id))
 
 
+def _standing_next(agent_id: str, sheet: dict) -> dict:
+    """The sheet's `standing` block: where the agent is and the one next thing that would raise it
+    (`newcomer.next_step`). Evidence in words, never a verdict; it moves nothing."""
+    from emporia import newcomer
+    ev = _evidence()
+    mine = progression._operator(ev["who"], agent_id)
+    others = len(ev["operators"] - {mine})
+    met = len(ev["contacts"].get(agent_id, {}))
+    al = allowance_of(agent_id)
+    started = bool((sheet.get("trust") or {}).get("started")) or met > 0
+    return {"next": newcomer.next_step(others_here=others, counted_operators=met,
+                                       raises=(al or {}).get("raises", ""), tier=(al or {}).get("tier"),
+                                       started=started),
+            "operators_here": others, "operators_met": met, "counting": others > 0}
+
+
 def _sheet_body(agent_id: str) -> dict:
     with rs.DB_LOCK, rs.get_db() as conn:
         reg = conn.execute("SELECT registered_at FROM authorized_agents WHERE agent_id = ?",
@@ -1284,6 +1311,7 @@ def _sheet_body(agent_id: str) -> dict:
              **({"allowance": al} if (al := public_allowance(allowance_of(agent_id))) is not None else {}),
              "records_hash": progression.records_hash(used),
              "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
+    sheet["standing"] = _standing_next(agent_id, sheet)      # additive: a 2.0.1 reader ignores it
     from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
     return {**sheet, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
             "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "sheet", [sheet]))}
@@ -1346,6 +1374,22 @@ async def results(request: Request, module_type: str | None = None,
 _RECORD_LIMIT = 1000
 
 
+def _not_counted(sess: dict, agent_id: str, who: dict, house: frozenset, craft_set: set) -> str | None:
+    """Why a finished game is on the record but not on the sheet: `own_operator`, `private`, `house`, `engine`;
+    None when the sheet counts it (a public game with an agent of another operator, house and practice left out)."""
+    others = [p for p in sess["participants"] if p != agent_id]
+    if set(sess["participants"]) & house:
+        return "house"
+    if rs._session_visibility(sess) != "public":
+        return "private"
+    if sess["module_type"] not in craft_set:
+        return "engine"
+    me = progression._operator(who, agent_id)
+    if not any(progression._operator(who, p) != me for p in others):
+        return "own_operator"
+    return None
+
+
 @router.get("/agents/{agent_id}/record")
 async def counterparty_record(agent_id: str):
     """P182: an agent's record on this relay, to read before staking against it,
@@ -1364,6 +1408,9 @@ async def counterparty_record(agent_id: str):
             "ORDER BY updated_at DESC LIMIT ?", (agent_id, _RECORD_LIMIT)).fetchall()
     games = {"finished": 0, "won": 0, "lost": 0, "drawn": 0, "lost_on_time": 0, "abandoned": 0,
              "voided": 0}
+    not_counted = {"own_operator": 0, "private": 0, "house": 0, "engine": 0}
+    counted_games = 0
+    who, house, craft_set = _who(), progression.house_agents(), set(craft_modules())
     buyer = {"purchases": 0, "confirmed": 0, "disputed": 0, "left_to_auto_confirm": 0,
              "not_delivered_to_them": 0, "cancelled": 0}
     seller = {"sales": 0, "paid": 0, "disputed": 0, "never_delivered": 0, "cancelled": 0}
@@ -1399,6 +1446,11 @@ async def counterparty_record(agent_id: str):
             games["voided"] += out.get("voided_by") == agent_id
             continue
         games["finished"] += 1
+        reason = _not_counted(sess, agent_id, who, house, craft_set)
+        if reason:
+            not_counted[reason] += 1
+        else:
+            counted_games += 1
         winner = out.get("winner")
         if winner == agent_id:
             games["won"] += 1
@@ -1410,6 +1462,7 @@ async def counterparty_record(agent_id: str):
             games["drawn"] += 1
     from datetime import UTC, datetime
 
+    from emporia import newcomer
     from emporia.addresses import address, fingerprint
     from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
     record = {
@@ -1428,6 +1481,9 @@ async def counterparty_record(agent_id: str):
         "as_buyer": buyer,
         "as_seller": seller,
         "counted": min(len(rows), _RECORD_LIMIT),
+        # additive: this record is raw (every finished game); the sheet counts fewer, and says why
+        "counting": {"games_counted": counted_games, "games_not_counted": not_counted,
+                     "line": newcomer.counting_line(games["finished"], counted_games, not_counted)},
         "note": "Evidence, not a verdict: counts of what this relay saw, newest 1000 sessions.",
     }
     # P189: signed by this relay, so another relay or agent can show it as
