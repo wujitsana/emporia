@@ -4457,6 +4457,8 @@ def cmd_rounds(args: argparse.Namespace) -> int:
             print(f"  Prompt      version {R.prompt_version(R.prompt_text(template=_current_template(profile)))} "
                   f"(emporia/data/{R.PROMPT_FILE}; template {__import__('emporia.templates', fromlist=['x']).current(profile)})")
             print(f"  Wake mode   {__import__('emporia.wake', fromlist=['x']).current(installer().harvest_env(profile))}")
+            _on = __import__('emporia.autoreveal', fromlist=['x']).enabled(installer().harvest_env(profile))
+            print(f"  Auto-reveal {'on' if _on else 'off'}")
     except R.RoundsError as e:
         print(f"rounds: {e}")
         return 1
@@ -6549,6 +6551,10 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
         rep.ok(f"wake mode {wake_mode}: {_wake.ABOUT[wake_mode]}")
     except _wake.WakeError as e:
         rep.warn(f"{e}; treated as closed", f"emporia wake {_wake.DEFAULT}")
+    from emporia import autoreveal as _auto
+    rep.ok("automatic opens and reveals on: the bridge opens what the agent sealed, no model turn"
+           if _auto.enabled(dotenv) else
+           f"automatic opens and reveals off ({_auto.SETTING}): each open or reveal is a model turn")
     rounds_state = _rounds.status_line(this_profile_name(profile), profile)
     rep.ok("rounds " + rounds_state)
     if not rounds_state.startswith(("off", "unknown")):       # a job exists: what its last runs did (read-only)
@@ -8035,6 +8041,9 @@ def _setup_summary(profile: Path, name: str, role: str, registered: bool | None 
         print(f"  Wake mode   {_wake.resolve(dotenv)}  ({localize('emporia wake')} to change)")
     except _wake.WakeError as e:
         print(f"  Wake mode   ! {e}")
+    from emporia import autoreveal as _auto
+    print(f"  Auto-reveal {'on' if _auto.enabled(dotenv) else 'off'}  (opens and reveals of what it sealed, no model turn; "
+          f"{_auto.SETTING}=off to turn off)")
     try:
         print(f"  Playbook    {_pb.resolve(dotenv).preset}  ({localize(f'emporia agent playbook {name}')} to change)")
     except _pb.PlaybookError as e:

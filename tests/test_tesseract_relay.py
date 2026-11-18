@@ -752,4 +752,4 @@ def test_the_last_sealer_is_told_to_open_now_and_the_others_to_wait(w):
     assert w.tools(names[1]).push(sid, {"XY>X": 2}).get("everyone_sealed") is None
     last = w.tools(names[2]).push(sid, {"XY>X": 2})
     assert last["everyone_sealed"] is True
-    assert last["next"].startswith("everyone has sealed: call tesseract_open(session_id) now")
+    assert last["next"].startswith("everyone has sealed: your bridge opens your push now")
