@@ -27,6 +27,11 @@ from emporia.standing import compute_standings, contest_sql, game_module_types, 
 
 router = APIRouter()
 
+
+def _relay_unit_secret() -> bytes:
+    from emporia.identity import relay_unit_secret
+    return relay_unit_secret()
+
 # Relay audit F9: the public computed endpoints recompute from the whole record set and need no sign-in.
 # Each answer is kept for EMPORIA_PUBLIC_CACHE_SECONDS (default 30; 0 turns it off), keyed by its query
 # parameters, and computed off the event loop. Only answers that are the same for every caller are kept.
@@ -1469,7 +1474,7 @@ def _statement_body(agent_id: str, audience: str | None) -> dict:
     for op in contacts:
         days = (now - oldest[op]) / 86_400 if op in oldest else 0.0
         mix["under_30d" if days < 30 else "d30_to_90" if days < 90 else "over_90d"] += 1
-    units = sorted(((ss.unit_token(relay_id, op), round(wt, 2)) for op, wt in weighted.items()),
+    units = sorted(((ss.unit_token(relay_id, op, _relay_unit_secret()), round(wt, 2)) for op, wt in weighted.items()),
                    key=lambda u: (-u[1], u[0]))[:ss.MAX_UNITS]
     earned = None if agent_id in _exempt() or not allowance.on() else _allowance_now(agent_id, ignore_vouched=True)
     cal = (sheet.get("caliber") or {}).get("reason") or {}

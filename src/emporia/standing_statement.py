@@ -17,8 +17,12 @@ Binding, so a statement cannot be lent to another agent, another relay or anothe
 
 The signature covers `b"emporia-standing:v1:" + canonical JSON` of everything but the signature (domain-separated
 like the relay card). A "vouched" allowance tier is never exported: only the tier earned. The `contact_units` are
-opaque per-issuer tokens for the operators that counted (`unit_token`): a reader holding several statements from one
-issuer can see whether the same few units stand behind everyone, and no one can map a unit to an operator.
+opaque per-issuer tokens for the operators that counted (`unit_token`, an HMAC under a secret only the issuing relay
+holds): a reader holding several statements from one issuer can see whether the same few units stand behind everyone.
+Without the secret no one can turn an operator's label or key into its unit, so a unit cannot be tested against a guessed
+operator. What it does not hide: that this many distinct counterparties stood behind the agent, their weights, and
+that the same unit means the same operator within one issuer. Whoever holds the relay's secret (the operator) can
+recompute them.
 
 Pure: no I/O, no clock unless asked; the relay (`routes/standing.py`) gathers the facts and signs.
 """
@@ -26,6 +30,7 @@ Pure: no I/O, no clock unless asked; the relay (`routes/standing.py`) gathers th
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import math
 import time
@@ -57,10 +62,15 @@ def _ts(text: Any) -> float:
     return datetime.fromisoformat(str(text).replace("Z", "+00:00")).timestamp()
 
 
-def unit_token(relay_id: str, operator: str) -> str:
-    """An operator as a statement shows it: opaque, stable at this issuer, never the label or key. A separate
-    domain from the Chronicle's units, so a statement cannot be matched to a public ballot."""
-    return "u" + hashlib.sha256(f"standing-unit:{relay_id}:{operator}".encode()).hexdigest()[:10]
+def unit_token(relay_id: str, operator: str, secret: bytes) -> str:
+    """An operator as a statement shows it: opaque, stable at this issuer, never the label or key. An HMAC under
+    the issuing relay's secret (`identity.relay_unit_secret`, kept with its keys, never in the database or a log), so
+    the public labels and keys cannot be hashed to match a unit. A separate domain from the Chronicle's units, so a
+    statement cannot be matched to a public ballot."""
+    if not secret:
+        raise ValueError("a unit needs the relay's secret")
+    msg = f"emporia-standing-unit:v1:{relay_id}:{operator}".encode()
+    return "u" + hmac.new(secret, msg, hashlib.sha256).hexdigest()[:10]
 
 
 def signable(st: Mapping[str, Any]) -> bytes:

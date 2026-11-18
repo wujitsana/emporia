@@ -12,6 +12,7 @@ from emporia import identity, passport
 from emporia import relay_server as rs
 from emporia import standing_statement as ss
 
+SECRET = b"s" * 32
 AGENT_KEY = "ab" * 32
 OTHER_KEY = "cd" * 32
 NOW = 1_790_000_000.0
@@ -33,7 +34,7 @@ class FakeRelay:
     def statement(self, *, counted=3, subject_key=AGENT_KEY, audience=None, now=NOW, days=7, facts=None):
         f = {"counted_operators": counted, "operator_weight_sum": float(counted), "renown": {"score": 1.5},
              "trust": {"score": 2.0}, "allowance": {"tier": "Known", "source": "earned"},
-             "contact_units": [{"unit": ss.unit_token(self.id, f"op{i}"), "weight": 1.0} for i in range(counted)]}
+             "contact_units": [{"unit": ss.unit_token(self.id, f"op{i}", SECRET), "weight": 1.0} for i in range(counted)]}
         return ss.build(issuer=self.issuer(), subject={"agent_id": "x", "public_key_hex": subject_key},
                         facts={**f, **(facts or {})}, context={"operators_active_30d": 5},
                         sign=lambda b: self.key.sign(b).hex(), audience=audience, now=now, days=days)
@@ -131,11 +132,34 @@ def test_shape_is_checked_and_nothing_else_rides_along():
 
 def test_contact_units_are_opaque_and_scoped_to_the_issuer():
     a, b = FakeRelay(), FakeRelay()
-    assert ss.unit_token(a.id, "label:op_x") == ss.unit_token(a.id, "label:op_x")
-    assert ss.unit_token(a.id, "label:op_x") != ss.unit_token(b.id, "label:op_x")
-    assert "op_x" not in ss.unit_token(a.id, "label:op_x")
+    sa, sb = b"a" * 32, b"b" * 32
+    assert ss.unit_token(a.id, "label:op_x", sa) == ss.unit_token(a.id, "label:op_x", sa)
+    assert ss.unit_token(a.id, "label:op_x", sa) != ss.unit_token(b.id, "label:op_x", sb)
+    assert ss.unit_token(a.id, "label:op_x", sa) != ss.unit_token(a.id, "label:op_x", sb), "the secret matters"
+    assert "op_x" not in ss.unit_token(a.id, "label:op_x", sa)
     from emporia.chronicle_ledger import unit_token as chronicle_unit
-    assert ss.unit_token(a.id, "k") != chronicle_unit(a.id, "k"), "a statement cannot be matched to a public ballot"
+    assert ss.unit_token(a.id, "k", sa) != chronicle_unit(a.id, "k"), "a statement cannot be matched to a public ballot"
+    with pytest.raises(ValueError):
+        ss.unit_token(a.id, "k", b"")
+
+
+def test_a_unit_cannot_be_derived_from_the_public_ids_and_the_secret_is_kept_across_restarts(tmp_path, monkeypatch):
+    import hashlib
+    monkeypatch.setattr(identity, "KEY_DIR", tmp_path / "keys")
+    monkeypatch.setattr(identity, "_UNIT_SECRET_CACHE", {})
+    secret = identity.relay_unit_secret()
+    assert len(secret) == 32 and identity.relay_unit_secret() == secret
+    assert (tmp_path / "keys" / "_standing_unit.secret").stat().st_mode & 0o777 == 0o600
+    unit = ss.unit_token("relayid", "label:alice", secret)
+    # the old unkeyed form, and a guess without the secret, no longer match
+    old = "u" + hashlib.sha256(b"standing-unit:relayid:label:alice").hexdigest()[:10]
+    assert unit != old and unit != ss.unit_token("relayid", "label:alice", b"\0" * 32)
+    monkeypatch.setattr(identity, "_UNIT_SECRET_CACHE", {})           # a restart: read back from the key directory
+    assert identity.relay_unit_secret() == secret
+    assert ss.unit_token("relayid", "label:alice", identity.relay_unit_secret()) == unit
+    monkeypatch.setattr(identity, "KEY_DIR", tmp_path / "other")      # another relay
+    monkeypatch.setattr(identity, "_UNIT_SECRET_CACHE", {})
+    assert ss.unit_token("relayid", "label:alice", identity.relay_unit_secret()) != unit
 
 
 def test_shown_is_evidence_with_the_why_and_never_counted():

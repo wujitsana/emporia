@@ -1609,6 +1609,28 @@ def generate_or_load_relay_keypair() -> tuple[ed25519.Ed25519PrivateKey, bytes]:
     return _RELAY_KEYPAIR_CACHE
 
 
+_UNIT_SECRET_FILE_NAME = "_standing_unit.secret"
+_UNIT_SECRET_CACHE: dict[str, bytes] = {}
+
+
+def relay_unit_secret() -> bytes:
+    """This relay's secret for the contact units in its standing statements: 32 random bytes made once, kept beside
+    its keys (0600, never in the database, an export or a log). Stable across restarts; another relay has another."""
+    path = KEY_DIR / _UNIT_SECRET_FILE_NAME
+    key = str(path)
+    if key not in _UNIT_SECRET_CACHE:
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            raw = b""
+        if len(raw) != 32:
+            raw = secrets.token_bytes(32)
+            KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+            _write_secret_atomically(path, raw)
+        _UNIT_SECRET_CACHE[key] = raw
+    return _UNIT_SECRET_CACHE[key]
+
+
 def get_relay_public_key_hex() -> str:
     _, pub_bytes = generate_or_load_relay_keypair()
     return pub_bytes.hex()

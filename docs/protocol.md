@@ -126,7 +126,7 @@ the host that reads it (counting is a later release, under the host's own weight
 - `context`: the issuer's own words about itself (`founded_at`, `operators_active_30d`, `formulas`, `season`).
 - `facts`: only what the issuer's rules counted: `counted_operators`, `operator_weight_sum`, `tenure_mix`
   (`under_30d`, `d30_to_90`, `over_90d`), `contact_units` (up to 12 `{unit, weight}`; `unit` is an opaque per-issuer
-  token, `u` plus 10 hex of SHA-256 over `standing-unit:<relay_id>:<operator>`, never the operator, and not the
+  token, `u` plus 10 hex of HMAC-SHA-256 under a per-relay secret over `emporia-standing-unit:v1:<relay_id>:<operator>`, never the operator, and not the
   Chronicle's token), `games_counted`, deals sold, bought, disputed, `not_delivered`, `abandoned_on_turn`, `craft`
   (module, rating, rd, games, opponents), `caliber`, `renown`, `trust`, `first_seen_at`, `weeks_active`, and
   `allowance: {tier, source: "earned"}`. A tier the relay *vouched* for is never exported, only the tier earned.
