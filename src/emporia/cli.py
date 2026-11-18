@@ -6496,41 +6496,11 @@ RISKY_TOOLSETS = frozenset({"terminal", "file", "code_execution", "browser", "co
                             "cronjob", "debugging", "coding", "hermes-cli"})
 
 
-_PROBE_CODE = (
-    "import json, sys\n"
-    "sys.path.insert(0, sys.argv[1])\n"
-    "from agent.context_file_sources import list_context_file_sources as l\n"
-    "print(json.dumps([s['path'] for s in l(cwd=sys.argv[2], skip_soul=True) if s.get('loaded')]))\n"
-)
-
-
-def _hermes_python() -> tuple[str, str] | None:
-    """(Hermes's own interpreter, its install folder): the folder above the `hermes` command that holds
-    `agent/`, and its `.venv`."""
-    import shutil
-    exe = shutil.which("hermes")
-    if not exe:
-        return None
-    for parent in Path(exe).resolve().parents[:5]:
-        if (parent / "agent" / "context_file_sources.py").exists():
-            python = parent / ".venv" / "bin" / "python"
-            return (str(python), str(parent)) if python.exists() else None
-    return None
-
-
 def hermes_context_probe(cwd: str) -> list[str] | None:
-    """The project files Hermes's own listing (`agent.context_file_sources`) says it would load for `cwd`
-    when nothing skips them, asked of Hermes in its own interpreter; None when Hermes cannot be asked."""
-    found = _hermes_python()
-    if found is None:
-        return None
-    try:
-        out = subprocess.run([found[0], "-I", "-c", _PROBE_CODE, found[1], cwd], capture_output=True,
-                             text=True, timeout=30, stdin=subprocess.DEVNULL)
-        data = json.loads(out.stdout.strip().splitlines()[-1]) if out.returncode == 0 and out.stdout.strip() else None
-    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
-        return None
-    return [str(p) for p in data] if isinstance(data, list) else None
+    """The project files Hermes would load for `cwd`: always None. Hermes's listing of them
+    (`agent.context_file_sources`) is not part of its public plugin API (catalog rule 9), so nothing asks it; the
+    checks below read the profile's settings instead."""
+    return None
 
 
 def doctor_confinement(rep: Report, profile: Path, cfg: dict, dotenv: dict[str, str]) -> None:
@@ -6547,7 +6517,7 @@ def doctor_confinement(rep: Report, profile: Path, cfg: dict, dotenv: dict[str, 
     except OSError:             # doctor started from a folder that no longer exists: there is no launch folder to probe
         here = ""
     probe_cwd = str(terminal.get("cwd")) if inst.workspace_set(terminal.get("cwd")) else here
-    # Hermes's own listing (agent.context_file_sources) of what a gateway turn would load from that folder.
+    # What a gateway turn would load from that folder, when something can say (nothing asks Hermes today).
     listed = hermes_context_probe(probe_cwd) if probe_cwd and Path(probe_cwd).is_dir() else None
     seen = (f" (Hermes would load: {', '.join(listed)})" if listed else "")
     if "emporia" in bad:

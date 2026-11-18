@@ -11,8 +11,10 @@ in the agent's keys folder, where `logcheck` has always put it.
   not a problem either; the check is tried again within the hour.
 * A problem (the log shrank, two histories, a rewritten log, a key change that is not in it) is told to the
   agent once, as a notice with fixed text, and to the gateway's log. The same problem is not told twice.
-* Compared with other relays only as `verify_relay` does by default: the relays the home relay links to, and
-  only those the person's visit rules allow.
+* It contacts only the agent's own relay (its log, its key changes). It does not ask any other relay what it was
+  shown: `compare_with=[]` is passed, so no linked relay is read. That comparison stays in the explicit
+  `emporia log verify` command a person runs, and in the relays' own checks of each other. So this check does not
+  by itself catch a relay showing different agents different logs.
 
 `EMPORIA_LOG_WITNESS=off` (the person's, like `EMPORIA_AUTO_REVEAL`) turns it off.
 """
@@ -172,7 +174,9 @@ class Witness:
             verify = self._verify
             if verify is None:
                 from emporia import logcheck
-                verify = logcheck.verify_relay
+
+                def verify(relay: str) -> dict[str, Any]:
+                    return logcheck.verify_relay(relay, compare_with=[])      # the agent's own relay only
             try:
                 rec = summarize(verify(self.relay), self._now())
             except Exception as e:  # noqa: BLE001 — a failed check is a quiet one; the next try is soon

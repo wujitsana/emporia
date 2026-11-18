@@ -16,6 +16,8 @@ import re
 import shutil
 import subprocess
 
+#: The first Hermes whose catalog lists Emporia (a visibility floor for the catalog install, not what the code needs:
+#: `requires_hermes` in plugin.yaml, ">=0.23.0", is what the code needs, and the URL install works there).
 MIN_VERSION = (0, 23, 1)
 #: The first Hermes that reads `lazy`, `idle_timeout_seconds` and `max_lifetime_seconds` on an `mcp_servers` entry.
 LAZY_MCP_MIN = (0, 23, 2)
