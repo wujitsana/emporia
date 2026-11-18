@@ -40,8 +40,8 @@ def test_a_stranger_is_still_told_nothing_of_the_old_protocol(monkeypatch, clien
 def test_no_dm_is_sent_to_a_relay_whose_sync_said_it_is_too_old(monkeypatch):
     monkeypatch.setitem(rs._FEDERATION_LAST_SYNC, OLD_URL, {
         "ok": True, "imported": 0,
-        "relay_modules_error": "refused: it runs relay protocol 3, which has no shared topics, notices or "
-                               "directory; this relay speaks protocol 4. Upgrade it to sync"})
+        "protocol_note": "linked for posts and open sessions; it runs relay protocol 3 (Emporia 2.0.1), so shared "
+                         "topics, notices, the directory and sealed DMs wait until it runs 2.1"})
     with pytest.raises(HTTPException) as e:
         fd.refuse_unless_peer_takes_dms(OLD_URL)
     assert e.value.status_code == 409
@@ -85,3 +85,95 @@ def test_a_2_1_agent_told_by_a_2_0_1_relay_is_given_the_plain_reason(monkeypatch
         raise OSError("down")
     monkeypatch.setattr(m.fetch, "get", boom)
     assert m._older_relay_note() == ""
+
+
+# ── a 2.0.1 relay (protocol 3) stays linked for posts and open sessions ─────────────────────────
+
+def _v3_card(url, *, version=3):
+    """A relay card as 2.0.1 serves it: version 3, signed by the relay's key, modules, no directory fields."""
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    from emporia.identity import relay_card_bytes
+    key = ed25519.Ed25519PrivateKey.generate()
+    pub = key.public_key().public_bytes_raw().hex()
+    card = {"kind": "emporia-relay-card", "version": version, "relay_id": "oldpeer", "relay_public_key": pub,
+            "relay_key_history": [], "relay_url": url,
+            "relay_modules": {"federation": {"v": 1, "parts": ["posts"], "links": []}}}
+    card["signature"] = key.sign(relay_card_bytes(card)).hex()
+    rs._FEDERATION_PEER_PUBKEYS[url] = pub
+    return card
+
+
+@pytest.fixture
+def stub_peer(monkeypatch):
+    from emporia import fetch
+    served = {}
+
+    class Answer:
+        def __init__(self, body):
+            self.body = body
+
+        def json(self):
+            return self.body
+
+    async def request(method, url, **kw):
+        return Answer(served["card"])
+    monkeypatch.setattr(fetch, "request", request)
+    yield served
+    for table in (rs._FEDERATION_PEER_PUBKEYS, rs._FEDERATION_PEER_MODULES, rs._FEDERATION_PEER_CARDS,
+                  rs._FEDERATION_LAST_SYNC):
+        table.pop(OLD_URL, None)
+
+
+def test_a_protocol_3_peer_is_linked_not_refused(stub_peer):
+    import anyio
+    stub_peer["card"] = _v3_card(OLD_URL)
+    mods = anyio.run(rs._pull_peer_modules, OLD_URL)
+    assert mods is not None                                     # its card is believed (signed, pinned)
+    sync = rs._FEDERATION_LAST_SYNC[OLD_URL]
+    assert "relay_modules_error" not in sync and "refused" not in str(sync)
+    assert "protocol 3" in sync["protocol_note"] and "posts and open sessions" in sync["protocol_note"]
+    assert rs.peer_runs(OLD_URL, "federation") is True
+
+
+def test_a_protocol_4_peer_has_no_note(stub_peer):
+    import anyio
+    stub_peer["card"] = _v3_card(OLD_URL, version=4)
+    anyio.run(rs._pull_peer_modules, OLD_URL)
+    assert "protocol_note" not in rs._FEDERATION_LAST_SYNC[OLD_URL]
+
+
+def test_a_protocol_3_peer_is_not_listed_in_the_directory(monkeypatch, stub_peer):
+    import anyio
+
+    from emporia import directory
+    monkeypatch.setattr(rs, "FEDERATED_RELAYS", [OLD_URL])
+    stub_peer["card"] = _v3_card(OLD_URL)
+    stub_peer["card"]["listed"] = True        # (the signature no longer matches: the entry is left out either way)
+    anyio.run(rs._pull_peer_modules, OLD_URL)
+    rs._FEDERATION_PEER_CARDS[OLD_URL] = stub_peer["card"]
+    assert all(c.get("relay_url") != OLD_URL for c in directory.entries())
+
+
+def test_the_posts_of_a_protocol_3_peer_are_imported(monkeypatch):
+    """The public signed feed is the same in 2.0.1 and 2.1, so a pull from a 2.0.1 relay imports as before."""
+    import anyio
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    from emporia import identity
+    key = ed25519.Ed25519PrivateKey.generate()
+    pub = key.public_key().public_bytes_raw().hex()
+    batch = {"origin_relay": OLD_URL, "origin_public_key_hex": pub, "posts": [],
+             "signature": key.sign(identity.federation_signable_bytes(OLD_URL, "posts", [])).hex()}
+
+    async def fetch_batch(url):
+        return batch
+    monkeypatch.setattr(rs, "_fetch_federation_batch", fetch_batch)
+    monkeypatch.setattr(rs, "save_federation_peer_pubkeys", lambda *_: None)
+    rs._FEDERATION_PEER_PUBKEYS.pop(OLD_URL, None)
+    try:
+        assert anyio.run(rs._pull_federated_posts, OLD_URL) == 0
+        assert rs._FEDERATION_LAST_SYNC[OLD_URL]["ok"] is True
+    finally:
+        rs._FEDERATION_PEER_PUBKEYS.pop(OLD_URL, None)
+        rs._FEDERATION_LAST_SYNC.pop(OLD_URL, None)

@@ -4871,8 +4871,8 @@ def _relay_modules() -> dict[str, dict]:
 
 #: The card's `version` is the federation protocol version. 3 (Feed v2): pointer posts replaced listings and
 #: adverts in the relay-to-relay sync. 4 (shared topics): topics a host shares and carriers carry, peer-signed
-#: replies and mention notices, the relay card v2 and the directory. A linked relay on an older version is
-#: refused by name (see _old_protocol); there is no compatibility shim.
+#: replies and mention notices, the relay card v2 and the directory. A linked relay on protocol 3 stays linked for
+#: posts and open sessions; the protocol 4 parts skip it with a note (see _old_protocol, _pull_peer_modules).
 from emporia.wire import RELAY_PROTOCOL as CARD_VERSION
 
 
@@ -4882,7 +4882,7 @@ def _old_protocol(card: Any) -> str:
     if isinstance(v, int) and v < CARD_VERSION:
         what = "shared listings and adverts" if v < 3 else "has no shared topics, notices or directory"
         return (f"it runs relay protocol {v}, which {what}; this relay speaks protocol {CARD_VERSION} "
-                f"(emporia:post:v2 pointer posts, shared topics, notices). Upgrade it to sync")
+                f"(emporia:post:v2 pointer posts, shared topics, notices). Upgrade it to use those")
     return ""
 
 
@@ -6108,6 +6108,8 @@ async def _pull_federated_posts(peer_url: str) -> int:
     if refused:
         sync_record["refused"] = sum(refused.values())
         sync_record["refused_why"] = refused
+    if note := (_FEDERATION_LAST_SYNC.get(peer_url) or {}).get("protocol_note"):
+        sync_record["protocol_note"] = note       # kept until the card is read again, so a DM is not sent meanwhile
     _FEDERATION_LAST_SYNC[peer_url] = sync_record
     return imported
 
@@ -6200,14 +6202,18 @@ async def _pull_peer_modules(peer_url: str) -> dict[str, Any] | None:
         sync["relay_modules_error"] = "its card is not signed by the key pinned for it, or names no modules"
         _FEDERATION_PEER_CARDS.pop(peer_url, None)
         return None
-    if old := _old_protocol(card):
-        sync["relay_modules_error"] = f"refused: {old}"
-        _FEDERATION_PEER_CARDS.pop(peer_url, None)
-        return None
     mods = card["relay_modules"]
     _FEDERATION_PEER_MODULES[peer_url] = mods
     _FEDERATION_PEER_CARDS[peer_url] = card
     sync.pop("relay_modules_error", None)
+    if old := _old_protocol(card):
+        # A relay on protocol 3 (Emporia 2.0.1) stays linked for what both speak: pointer posts and open sessions
+        # (the signed public feeds). What needs protocol 4 (shared topics, notices, the directory, and sealed DMs:
+        # relay requests with a nonce) is skipped, and the link status says so in one line.
+        sync["protocol_note"] = (f"linked for posts and open sessions; {old.split(', which')[0]} (Emporia 2.0.1), "
+                                 "so shared topics, notices, the directory and sealed DMs wait until it runs 2.1")
+    else:
+        sync.pop("protocol_note", None)
     sync["relay_modules"] = mods
     back = (mods.get("federation") or {}).get("links") or []
     sync["links_back"] = normalize_peer_url(RELAY_BASE_URL) in {normalize_peer_url(u) for u in back}
