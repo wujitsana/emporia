@@ -121,6 +121,8 @@ def _check_home(agent_id: str, home: dict[str, str], public_key_hex: str, stable
     with rs.DB_LOCK, rs.get_db() as conn:
         conn.execute("UPDATE authorized_agents SET home_check_json = ? WHERE agent_id = ?",
                      (json.dumps(result, sort_keys=True), agent_id))
+    if result.get("status") == "confirmed":
+        visitors.pull_standing(agent_id, home, public_key_hex)     # its home's word, shown, never counted
 
 
 @router.post("/agents/register")
@@ -396,7 +398,30 @@ def _identity_fields(row: Any, caller: str | None, changes: list[str],
         # where it lives, as its card says (declared) and whether its home relay's own list agrees: member,
         # visitor ("visiting from <relay>") or nomad. Visibility only.
         "presence": visitors.view(row["home_json"], row["home_check_json"]),
+        # a visitor's home relay's word about it, when this relay holds one: "standing at R: …, verified, not counted
+        # here". Evidence in words; it raises, ranks and unlocks nothing here. Empty for an agent at home.
+        "standing_elsewhere": _standing_elsewhere(row),
     }
+
+
+def _standing_elsewhere(row: Any) -> list[dict[str, Any]]:
+    """The standing statements this relay holds for a visitor, each checked again now (so an expired one reads as
+    such) and worded by `standing_statement.shown`."""
+    from emporia import standing_statement as ss
+    try:
+        if visitors.kind_of(row["home_json"]) == "here":
+            return []
+        with rs.DB_LOCK, rs.get_db() as conn:
+            held = conn.execute("SELECT public_key_hex, carried_records_json FROM authorized_agents WHERE agent_id = ?",
+                                (row["agent_id"],)).fetchone()
+        out = []
+        for entry in json.loads((held["carried_records_json"] if held else "") or "[]"):
+            st = entry.get("standing")
+            if isinstance(st, dict):
+                out.append(ss.shown(st, ss.verify(st, subject_key=held["public_key_hex"], audience=rs.relay_id())))
+        return out
+    except Exception:  # noqa: BLE001 — a profile never fails for evidence it cannot read
+        return []
 
 
 @router.post("/agents/{agent_id}/sign-out")
@@ -1185,7 +1210,16 @@ async def agent_passport(agent_id: str):
                 "public_key_hex": row["public_key_hex"], "fingerprint": fingerprint(row["public_key_hex"] or ""),
                 "registered_at": row["registered_at"], "relay": rs.RELAY_BASE_URL,
                 "presence": visitors.view(row["home_json"], row["home_check_json"])}
-    return passport.build(identity, record, record.get("elsewhere") or [])
+    own = None
+    from emporia import relay_modules
+    if not relay_modules.off_because("gamify", "sheets"):     # this relay's own statement, when it runs sheets
+        try:
+            from emporia.routes.standing import _statement_body
+            own = await run_in_threadpool(_statement_body, agent_id, None)
+        except HTTPException:
+            own = None
+    card = passport.build(identity, record, record.get("elsewhere") or [], own, rs.relay_id())
+    return {**card, "host_relay_id": rs.relay_id()}
 
 
 def _follow_signed_home(conn: Any, agent_id: str, home: str, home_here: bool) -> None:
@@ -1380,37 +1414,75 @@ async def list_dm_blocks(agent_id: str, request: Request):
 
 
 class CarriedRecordRequest(BaseModel):
-    record: dict   # GET /agents/{id}/record from the relay it came from, signature and all
+    record: dict | None = None     # GET /agents/{id}/record from the relay it came from, signature and all
+    standing: dict | None = None   # 2.1: GET /agents/{id}/standing-statement from the relay it came from (kept whole)
 
 
 @router.post("/agents/{agent_id}/carried-record")
 async def carry_record(agent_id: str, req: CarriedRecordRequest, request: Request):
     """P190: an agent that moved here brings the record its old relay signed. It
-    is shown beside this relay's own count as that relay's word, never merged."""
+    is shown beside this relay's own count as that relay's word, never merged. 2.1: the request may instead (or
+    also) carry `standing`, a relay's signed standing statement about this agent; it is checked (signature, the
+    agent's key, relay id, audience, expiry) and kept WHOLE so a reader can check it again, and shown as
+    "verified, not counted here". It needs no linked relay: any relay's verified statement is shown, none counts."""
     rs._require_caller_is(agent_id, request)
     rs._require_registered(agent_id)
+    if req.record is None and req.standing is None:
+        raise HTTPException(422, "send a record, a standing statement, or both")
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute("SELECT public_key_hex, carried_records_json FROM authorized_agents WHERE agent_id = ?",
                            (agent_id,)).fetchone()
+    out: dict[str, Any] = {"ok": True}
+    if req.record is not None:
+        out.update(await _carry_signed_record(agent_id, req.record, row))
+    if req.standing is not None:
+        out["standing"] = _carry_standing(agent_id, req.standing, row["public_key_hex"])
+    return out
+
+
+def _carry_standing(agent_id: str, statement: dict, agent_key: str) -> dict:
+    """Check a standing statement for this agent and keep it whole (one per issuing relay)."""
+    from emporia import standing_statement as ss
+    from emporia.identity import normalize_peer_url
+    result = ss.verify(statement, subject_key=agent_key, audience=rs.relay_id())
+    if not result["ok"]:
+        raise HTTPException(422, f"that statement does not verify: {result['reason']}")
+    relay = normalize_peer_url(str(statement["issuer"].get("relay_url") or ""))
+    if not relay or relay == normalize_peer_url(rs.RELAY_BASE_URL):
+        raise HTTPException(400, "that is not another relay's statement")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT carried_records_json FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+        kept = ss.keep(json.loads(row["carried_records_json"] or "[]"), relay, statement)
+        conn.execute("UPDATE authorized_agents SET carried_records_json = ? WHERE agent_id = ?",
+                     (json.dumps(kept), agent_id))
+    return {"ok": True, "issuer": result["relay_id"], "expires_at": result["expires_at"], "counted_here": False}
+
+
+async def _carry_signed_record(agent_id: str, record: dict, row: Any) -> dict:
     if not rs.FEDERATED_RELAYS:
         raise HTTPException(403, "this relay has no linked relays, so it accepts no carried records "
                                  "(a record is taken only from a linked relay, checked with that relay's pinned key)")
     from emporia import federation_dm
     from emporia.addresses import host_of, same_host
-    claimed = str(req.record.get("relay") or "")
+    claimed = str(record.get("relay") or "")
     if same_host(host_of(claimed), rs._own_host()):
         raise HTTPException(400, "that is this relay's own record")
     peer = federation_dm.linked_peer(host_of(claimed))
     if not peer:
         raise HTTPException(403, "that record is from a relay that is not linked to this one")
     pinned = await federation_dm.peer_key(peer)
-    checked = moves.carried_record(req.record, row["public_key_hex"], pinned_relay_key=pinned)
+    checked = moves.carried_record(record, row["public_key_hex"], pinned_relay_key=pinned)
     checked["relay"] = peer
-    carried = [r for r in json.loads(row["carried_records_json"] or "[]") if r.get("relay") != checked["relay"]]
+    before = json.loads(row["carried_records_json"] or "[]")
+    from emporia.identity import normalize_peer_url
+    if (old := next((r.get("standing") for r in before if r.get("standing")
+                     and normalize_peer_url(r.get("relay", "")) == normalize_peer_url(peer)), None)):
+        checked["standing"] = old          # a fresh record does not drop the statement already kept for that relay
+    carried = [r for r in before if normalize_peer_url(r.get("relay", "")) != normalize_peer_url(peer)]
     with rs.DB_LOCK, rs.get_db() as conn:
         conn.execute("UPDATE authorized_agents SET carried_records_json = ? WHERE agent_id = ?",
                      (json.dumps([*carried, checked][-10:]), agent_id))
-    return {"ok": True, "carried_from": checked["relay"]}
+    return {"carried_from": checked["relay"]}
 
 
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -839,7 +840,7 @@ def allowance_of(agent_id: str) -> dict | None:
     return out
 
 
-def _allowance_now(agent_id: str) -> dict:
+def _allowance_now(agent_id: str, *, ignore_vouched: bool = False) -> dict:
     ev = _evidence()
     now = time.time()
     who = ev["who"]
@@ -851,7 +852,7 @@ def _allowance_now(agent_id: str) -> dict:
     out = allowance.assess(
         agent_id, weighted=allowance.weights(ev["contacts"].get(agent_id, {}), who, now),
         abandons=ev["abandons"].get(agent_id, ()), removals=removals,
-        vouched=agent_id in progression.vouched_agents(), others=len(ev["operators"] - {mine}),
+        vouched=not ignore_vouched and agent_id in progression.vouched_agents(), others=len(ev["operators"] - {mine}),
         days_here=(now - registered) / 86_400, now=now)
     out["limits"] = allowance.caps(out["tier"])
     return out
@@ -1315,6 +1316,81 @@ def _sheet_body(agent_id: str) -> dict:
     from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
     return {**sheet, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
             "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "sheet", [sheet]))}
+
+_AUDIENCE = re.compile(r"[a-z2-7]{16}")
+
+
+@router.get("/agents/{agent_id}/standing-statement")
+async def standing_statement(agent_id: str, audience: str = ""):
+    """A relay-signed `emporia-standing` v1 statement about this agent: counted facts only, bound to the agent's
+    key and this relay's id and key, dated and expiring within 14 days (`standing_statement.py`; docs/protocol.md).
+    `audience` (a relay id) binds it to the one relay that asked. Public like the sheet; evidence, not a verdict:
+    a reader decides what it is worth, and on a host it counts for nothing. Never exports a vouched tier."""
+    _sheets_on()
+    if audience and not _AUDIENCE.fullmatch(audience):
+        raise HTTPException(400, "audience is a relay id: 16 characters, a-z and 2-7")
+    return await run_in_threadpool(_statement_body, agent_id, audience or None)
+
+
+def _statement_body(agent_id: str, audience: str | None) -> dict:
+    from emporia import standing_statement as ss
+    from emporia.addresses import address
+    from emporia.identity import get_relay_public_key_hex, relay_key_history, sign_raw_relay
+    with rs.DB_LOCK, rs.get_db() as conn:
+        reg = conn.execute("SELECT registered_at, public_key_hex, stable_id FROM authorized_agents "
+                           "WHERE agent_id = ? AND is_active = 1", (agent_id,)).fetchone()
+    if reg is None:
+        raise HTTPException(404, f"no agent {agent_id!r} on this relay")
+    if not reg["public_key_hex"]:
+        raise HTTPException(409, "this agent has no key on this relay, so a statement cannot be bound to it")
+    sheet = _sheet_body(agent_id)
+    now = time.time()
+    ev = _evidence()
+    who, relay_id = ev["who"], rs.relay_id()
+    contacts = ev["contacts"].get(agent_id, {})
+    weighted = allowance.weights(contacts, who, now)
+    oldest: dict[str, float] = {}
+    for w in who.values():
+        if w.registered_at is not None:
+            oldest[w.operator] = min(oldest.get(w.operator, w.registered_at), w.registered_at)
+    mix = {"under_30d": 0, "d30_to_90": 0, "over_90d": 0}
+    for op in contacts:
+        days = (now - oldest[op]) / 86_400 if op in oldest else 0.0
+        mix["under_30d" if days < 30 else "d30_to_90" if days < 90 else "over_90d"] += 1
+    units = sorted(((ss.unit_token(relay_id, op), round(wt, 2)) for op, wt in weighted.items()),
+                   key=lambda u: (-u[1], u[0]))[:ss.MAX_UNITS]
+    earned = None if agent_id in _exempt() or not allowance.on() else _allowance_now(agent_id, ignore_vouched=True)
+    cal = (sheet.get("caliber") or {}).get("reason") or {}
+    trade, trust, ren = sheet.get("trade") or {}, sheet.get("trust") or {}, sheet.get("renown") or {}
+    facts = {
+        "first_seen_at": str(reg["registered_at"])[:10], "weeks_active": trust.get("weeks_active"),
+        "counted_operators": len(contacts), "operator_weight_sum": round(sum(weighted.values()), 2),
+        "tenure_mix": mix, "contact_units": [{"unit": u, "weight": wt} for u, wt in units],
+        "games_counted": sum(int(c.get("games") or 0) for c in sheet.get("craft") or []),
+        "deals_sold": trade.get("sold"), "deals_bought": trade.get("bought"),
+        "deals_disputed_as_seller": trade.get("disputed_as_seller"), "not_delivered": trade.get("not_delivered"),
+        "abandoned_on_turn": trust.get("abandoned_on_turn"),
+        "craft": [{"module": c["module_type"], "rating": c["rating"], "rd": c["rd"], "games": c["games"],
+                   "opponents": c["opponents"], "provisional": c["provisional"]}
+                  for c in (sheet.get("craft") or [])[:8]],
+        "caliber": {"reason_low": cal.get("low"), "n": cal.get("n")} if cal.get("shown") else None,
+        "renown": {"score": ren.get("score"), "from_operators": ren.get("from_operators")},
+        "trust": {"score": trust.get("score")},
+        # only what was earned: a tier the relay vouched for is not evidence about the agent and is never exported
+        "allowance": {"tier": earned["name"], "source": "earned"} if earned else None,
+    }
+    ages = [w.registered_at for w in who.values() if w.registered_at is not None]
+    context = {"founded_at": datetime.fromtimestamp(min(ages), UTC).strftime("%Y-%m-%d") if ages else None,
+               "operators_active_30d": len(ev["operators"]),
+               "formulas": {"sheet": progression.SHEET_FORMULA, "allowance": allowance.FORMULA},
+               "season": progression.season()["season"]}
+    issuer = {"relay_id": relay_id, "relay_url": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
+              "relay_key_history": relay_key_history()[:8]}
+    subject = {"agent_id": agent_id, "address": address(agent_id, rs._own_host()),
+               "public_key_hex": reg["public_key_hex"], "stable_id": reg["stable_id"] or ""}
+    return ss.build(issuer=issuer, subject=subject, facts=facts, context=context, sign=sign_raw_relay,
+                    audience=audience, now=now)
+
 
 def _result_of(s: dict) -> dict:
     """One finished game, as a reader (or an opponent studying a player) needs

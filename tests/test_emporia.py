@@ -1774,6 +1774,7 @@ def test_no_new_identity_as_proof_params():
         ("GET", "/agents/{agent_id}/record"),  # P182: whose record to read; counts only, no auth decision
         ("GET", "/agents/{agent_id}/card"),  # P187: whose card; public once the agent published a relay list
         ("GET", "/agents/{agent_id}/passport"),  # whose passport; the same public record and carried statements as /record
+        ("GET", "/agents/{agent_id}/standing-statement"),  # whose standing statement; as public as its sheet, signed by this relay, no auth decision
         ("POST", "/agents/{agent_id}/relay-list"),  # P187: _require_caller_is-checked, and signed by the agent
         ("POST", "/agents/{agent_id}/sign-out"),  # the agent's own token, checked inline: revokes that token
         ("POST", "/agents/{agent_id}/revoke-tokens"),  # the agent's own token, checked inline: revokes all of its tokens
@@ -2163,6 +2164,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/challenges"): "quests:v4: open challenges — public waiting games anyone may join, as /sessions lists them",
         ("GET", "/agents/{agent_id}/available"): "P296: whether a name is free — yes/no, which registering already tells; setup asks before it writes a profile",
         ("GET", "/agents/{agent_id}/record"): "P182: an agent's record — counts only, read before staking or buying",
+        ("GET", "/agents/{agent_id}/standing-statement"): "cross-relay: this relay's signed statement of counted facts about an agent (the sheet's numbers, key-bound and expiring); evidence that counts for nothing on the relay that reads it",
         ("GET", "/agents/{agent_id}/passport"): "cross-relay: an agent's identity and per-relay record statements — what /record and its card already publish, evidence that counts for nothing here",
         ("GET", "/federation/v1/listed-agents"): "cross-relay: the agents that call this relay home and published a relay list (their cards are already public), signed; what a host checks a visitor's declared home against",
         ("GET", "/agents/{agent_id}/sheet"): "P288: an agent's sheet — computed from outcomes the record already publishes, and public games",
@@ -19362,6 +19364,7 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/federation/v1/posts": "peer-to-peer federation of pointer posts; humans read the Feed",
     "/beacon/{}": "games v2: drand's public rounds for the randomness service; machine-facing, nothing to watch",
     "/games/export": "games pack: finished public games as JSON lines for offline re-checking; a dataset, machine-facing",
+    "/agents/{}/standing-statement": "a relay's signed statement of counted facts about an agent: machine-facing, for other relays and agents; a host shows a visitor's through its profile and passport",
     "/pledges/{}": "pledges: one pledge — the sheet's pledge list (GET /pledges) carries the same fields",
     "/agents/{}/dm-blocks": "P273: whom an agent blocks — its own tool and its operator's command",
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
