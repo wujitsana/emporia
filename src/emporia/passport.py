@@ -4,9 +4,11 @@
 * **Statements** — one per relay: the record that relay signed (`moves.carried_record` checks the ones another
   relay signed). "Relay A says, math checked": never merged, never summed, never best-of. This relay's own
   statement is its own; every other one has `counts_here: false`.
-* **Reach** — how many relays hold a *verified* standing statement (`standing_statement.py`) whose issuer counted
-  standing (at least two operators), unweighted: "standing on N relays". A bare record, an unverified or expired
-  statement, or one that counted nothing adds nothing. It weighs no relay and counts toward no XP, level,
+* **Reach** — how many relays hold a *verified* standing statement (`standing_statement.py`) whose issuer key the
+  serving relay knows (a linked relay's pinned key, or a statement it pulled from the agent's confirmed home) and
+  whose issuer counted standing (at least two operators), unweighted: "standing on N relays", one per issuer relay
+  id. A bare record, an unverified or expired statement, one signed by a key the relay does not know, or one that
+  counted nothing adds nothing. It weighs no relay and counts toward no XP, level,
   allowance, Renown or season here. Weighing waits until a relay's operator vouches another (a later release).
 * **Standing statements** (2.1) — a relay's signed statement of counted facts about the agent, kept whole so any
   reader can check it again: "standing at R: …, verified: signed by R on <date>; not counted here".
@@ -20,8 +22,8 @@ from typing import Any
 
 KIND = "emporia-passport"
 NOTE = ("Evidence only: each statement is one relay's word about this agent, signed by that relay and counted by "
-        "none other. Reach counts relays whose verified standing statement counted at least two operators, "
-        "unweighted, and counts for nothing on this relay yet.")
+        "none other. Reach counts relays whose verified standing statement, signed by a key this relay knows, counted "
+        "at least two operators, unweighted, and counts for nothing on this relay yet.")
 
 
 def has_record(statement: dict[str, Any]) -> bool:
@@ -58,10 +60,12 @@ def build(identity: dict[str, Any], own_record: dict[str, Any], elsewhere: list[
     key = str(identity.get("public_key_hex") or "") or None
     statements = [statement(own_record, counts_here=True)]
     reach: list[str] = []
+    reach_ids: set[str] = set()                # one per issuer relay id, whatever URL it is filed under
     if own_standing is not None:
         statements[0]["standing_statement"] = own_standing
-        if ss.counts_for_reach(own_standing, subject_key=key, audience=host_relay_id):
+        if ss.counts_for_reach(own_standing, known=True, subject_key=key, audience=host_relay_id):
             reach.append(statements[0]["relay"])
+            reach_ids.add(str((own_standing.get("issuer") or {}).get("relay_id") or ""))
     seen = {own_record.get("relay", "")}
     for rec in elsewhere:
         if rec.get("relay") in seen:
@@ -72,10 +76,16 @@ def build(identity: dict[str, Any], own_record: dict[str, Any], elsewhere: list[
         held = rec.get("standing")
         if isinstance(held, dict):
             result = ss.verify(held, subject_key=key, audience=host_relay_id)
+            known = bool(rec.get("standing_known"))      # the serving relay's own finding, never the statement's claim
+            source = str(rec.get("standing_source") or "")
             st["standing_statement"] = held
-            st["standing"] = ss.shown(held, result)
-            if result["ok"] and ss.counted_operators(held) >= ss.REACH_MIN_OPERATORS:
-                reach.append(st["relay"])
+            st["standing_known"] = known
+            st["standing"] = ss.shown(held, result, known=known, source=source)
+            issuer_id = str((held.get("issuer") or {}).get("relay_id") or "")
+            if (known and result["ok"] and ss.counted_operators(held) >= ss.REACH_MIN_OPERATORS
+                    and issuer_id not in reach_ids):
+                reach.append(source or st["relay"])
+                reach_ids.add(issuer_id)
         statements.append(st)
     return {"kind": KIND, "identity": identity, "statements": statements,
             "reach": {"relays": len(reach), "listed": reach, "weighted": False,
@@ -89,7 +99,8 @@ def check(passport: dict[str, Any]) -> list[dict[str, Any]]:
     """What a reader verifies: the signature of each statement the serving relay signed whole, against the key
     its relay presented. [{relay, ok}]; `ok` is None for a record carried from another relay, which the serving
     relay checked and kept in part (so it cannot be re-checked from what it serves); a standing statement carried
-    with it is kept whole, so `standing_ok` says whether it verifies (signature, key, relay id, audience, expiry). Whether a key is its relay's
+    with it is kept whole, so `standing_ok` says whether it verifies (signature, key, relay id, audience, expiry), or None when the
+    serving relay does not know the issuer's key (`standing_known` false). Whether a key is its relay's
     is the reader's to pin, as for any relay card."""
     from emporia.identity import federation_signable_bytes, verify_raw
     out = []
@@ -99,9 +110,12 @@ def check(passport: dict[str, Any]) -> list[dict[str, Any]]:
             entry = {"relay": st.get("relay", ""), "ok": None}
             if isinstance(st.get("standing_statement"), dict):       # kept whole, so it can be checked again
                 from emporia import standing_statement as ss
+                known = bool(st.get("standing_known"))
+                entry["standing_known"] = known
+                # a statement signed by a key the serving relay does not know proves only "that key says": not checked
                 entry["standing_ok"] = bool(ss.verify(st["standing_statement"],
                                                       subject_key=(passport.get("identity") or {}).get("public_key_hex"),
-                                                      audience=passport.get("host_relay_id"))["ok"])
+                                                      audience=passport.get("host_relay_id"))["ok"]) if known else None
             out.append(entry)
             continue
         ok = bool(st.get("signature")) and verify_raw(
