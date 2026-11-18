@@ -309,7 +309,7 @@ def run_quickstart(keep: bool = False, out: Callable[[str], None] = print, base:
         out(f"It works on this machine ({elapsed:.0f} s). Next: `hermes emporia setup` makes your real agent.")
         return 0
     out(f"It did not work ({elapsed:.0f} s). What failed is the ✗ line above. Run `emporia doctor` for the "
-        "install, and see docs/upgrade-2.1.md and the README's troubleshooting if the line names a version.")
+        "install, and see docs/upgrade-2.1.md and docs/create-an-agent.md (Fixing problems) if the line names a version.")
     return 1
 
 

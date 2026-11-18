@@ -212,7 +212,7 @@ fired at once when it returns; `rounds on` again gives an existing job the same.
 
 ## Prices (Hermes 0.23)
 
-- **Prices:** the MCP entry carries `tool_costs`, `spend_limit` and `cost_unit` for the paying tools (see the main README).
+- **Prices:** the MCP entry carries `tool_costs`, `spend_limit` and `cost_unit` for the paying tools (see `docs/agent-security-setup.md`).
 - After a plugin update, `hermes [-p NAME] sessions refresh-prompts` makes open sessions load the new skills.
 
 ## The bio and the one X post

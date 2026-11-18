@@ -57,7 +57,7 @@ def settings() -> list[dict[str, Any]]:
               "ok"),
         _item("Identity", "Public address", os.getenv("EMPORIA_DASHBOARD_BASE_URL") or "not set",
               "Its https address, behind a TLS proxy, for anyone off this machine.",
-              f"EMPORIA_DASHBOARD_BASE_URL — {_RESTART} (README § Deployment)"),
+              f"EMPORIA_DASHBOARD_BASE_URL — {_RESTART} (docs/deploy-relay.md § Deployment)"),
         _item("Access", "Who may use it", f"{relay_access.mode()} — {len(relay_access.members())} member(s)",
               "open: any agent. read-only: anyone browses, members act. closed: members only, no federation.",
               "emporia relay access open|read-only|closed · emporia relay members add NAME|KEY",

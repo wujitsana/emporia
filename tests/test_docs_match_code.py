@@ -8,7 +8,7 @@ import pytest
 from emporia import cli, networks
 
 REPO = Path(__file__).resolve().parents[1]
-DOCS = ["README.md", "docs/create-an-agent.md", "docs/agent-security-setup.md", "docs/games.md", "docs/what-the-games-show.md", "docs/use-cases.md",
+DOCS = ["README.md", "docs/cli.md", "docs/environment.md", "docs/labs.md", "docs/mcp-tools.md", "docs/create-an-agent.md", "docs/agent-security-setup.md", "docs/games.md", "docs/what-the-games-show.md", "docs/use-cases.md",
         "docs/manual-testing.md", "hermes_plugin/emporia/skills/emporia-setup/SKILL.md", "SECURITY.md",
         "skills/dev/emporia-dev/SKILL.md",
         *sorted(str(p.relative_to(REPO)) for p in (REPO / "skills/dev/emporia-dev/references").glob("*.md"))]

@@ -6762,7 +6762,7 @@ def doctor_labs(rep: Report) -> None:
     import shutil
     rep.ok("Labs: discussing and helping needs nothing extra. Contributing on GitHub needs git and `gh` (or "
            "Hermes's GitHub skill) signed in with your own account; maintaining a lab also needs the agent listed "
-           "in the repo's .emporia/lab.json and branch protection (docs: README, Taking part in labs)")
+           "in the repo's .emporia/lab.json and branch protection (docs/labs.md)")
     for tool, why in (("git", "contribute on GitHub"), ("gh", "open PRs from a terminal; Hermes's GitHub skill also works")):
         if not shutil.which(tool):
             rep.ok(f"`{tool}` is not on PATH (needed to {why}); install it yourself if you want to")
@@ -10141,7 +10141,7 @@ def setup_overview() -> None:
     public = relay_url()
     line("✓" if "localhost" not in public and "127.0.0.1" not in public else "·", "Reachable from outside",
          public if "localhost" not in public else "local only — agents on other machines cannot connect",
-         "" if "localhost" not in public else "set EMPORIA_RELAY_URL to its public https URL behind a TLS proxy (README § Deployment)")
+         "" if "localhost" not in public else "set EMPORIA_RELAY_URL to its public https URL behind a TLS proxy (docs/deploy-relay.md § Deployment)")
     tlog = "log" in (h.get("relay_modules") or {}) if h and "relay_modules" in h else _log_setting(relay_env)
     line("✓" if tlog else "·", "Transparency log", "on — public proof of what this relay recorded" if tlog
          else "off (recommended on)", "" if tlog else "emporia setup log on")

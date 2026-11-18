@@ -16038,7 +16038,7 @@ _DOC_ROOT = Path(__file__).parent.parent
 #: Docs that must name every MCP tool. The agent's skill no longer lists them: the tool descriptions carry
 #: that, and `emporia.features` (tests/test_lean_tools.py) assigns each tool to a feature and its reference.
 _TOOL_INVENTORY_DOCS = (
-    "README.md",
+    "docs/mcp-tools.md",
 )
 
 #: Every place a doc states how many MCP tools there are. Kept as one regex
@@ -16051,6 +16051,7 @@ _TOOL_COUNT_RE = re.compile(
 
 _COUNTED_DOCS = (
     "README.md",
+    "docs/mcp-tools.md",
     "ARCHITECTURE.md",
     "hermes_plugin/emporia/skills/emporia/SKILL.md",
     "skills/dev/emporia-dev/SKILL.md",
@@ -18557,7 +18558,7 @@ _ENV_READ_RE = re.compile(
 # "EMPORIA_X402_ASSET_" + network) never appear as a literal, so they can't be
 # extracted — their table rows carry a `<NETWORK>` placeholder instead and are
 # excluded from the reverse check by that marker, not by an allowlist.
-_ENV_DOC_FILES = ("README.md",)
+_ENV_DOC_FILES = ("docs/environment.md",)
 
 
 def _env_vars_read_by_source() -> dict[str, set[str]]:

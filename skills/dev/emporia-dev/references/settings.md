@@ -1,12 +1,12 @@
 # Settings
 
-Every `EMPORIA_*` setting is a row in the README's **Environment variables** table (`README.md`). That table is
+Every `EMPORIA_*` setting is a row in the **Environment variables** table in `docs/environment.md`. That table is
 the one list; this file does not repeat it. `tests/test_emporia.py` fails when the code reads a variable no table
 row names, and when a row names one the code no longer reads.
 
 ## Adding or changing a setting
 
-1. Read it in one place (`env_config.py`, `relay_config.py` or the module that owns it) and add its README row:
+1. Read it in one place (`env_config.py`, `relay_config.py` or the module that owns it) and add its row in `docs/environment.md`:
    default, who reads it (relay side or agent side) and what it does.
 2. A relay-side setting that changes what a relay runs belongs to a relay module (`relay_modules.py`:
    `running`, `misconfigured`). `emporia relay config` edits relay settings one at a time, checked.

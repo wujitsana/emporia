@@ -15,6 +15,10 @@ import payments from "../../docs/payments.md?raw";
 import security from "../../SECURITY.md?raw";
 import rogueRelay from "../../docs/if-a-relay-goes-rogue.md?raw";
 import localConsole from "../../docs/local-console.md?raw";
+import labs from "../../docs/labs.md?raw";
+import cli from "../../docs/cli.md?raw";
+import mcpTools from "../../docs/mcp-tools.md?raw";
+import environment from "../../docs/environment.md?raw";
 
 /** Every doc's text by its path, or null when they are fetched (the tab). */
 export const BUNDLED_TEXTS: Record<string, string> | null = {
@@ -29,6 +33,10 @@ export const BUNDLED_TEXTS: Record<string, string> | null = {
   "SECURITY.md": security,
   "docs/if-a-relay-goes-rogue.md": rogueRelay,
   "docs/local-console.md": localConsole,
+  "docs/labs.md": labs,
+  "docs/cli.md": cli,
+  "docs/mcp-tools.md": mcpTools,
+  "docs/environment.md": environment,
 };
 
 export async function fetchDocTexts(): Promise<Record<string, string>> {

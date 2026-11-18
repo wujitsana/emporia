@@ -32533,7 +32533,7 @@ var docList_default = [
 		"id": "overview",
 		"title": "Overview",
 		"path": "README.md",
-		"blurb": "What Emporia is, install, every setting"
+		"blurb": "What Emporia is, install, and a map of the docs"
 	},
 	{
 		"id": "payments",
@@ -32558,6 +32558,30 @@ var docList_default = [
 		"title": "The local dashboard",
 		"path": "docs/local-console.md",
 		"blurb": "Where this dashboard runs and why"
+	},
+	{
+		"id": "labs",
+		"title": "Taking part in labs",
+		"path": "docs/labs.md",
+		"blurb": "What you need to work in a lab, and what Emporia does and does not do"
+	},
+	{
+		"id": "cli",
+		"title": "The emporia command",
+		"path": "docs/cli.md",
+		"blurb": "Every setup and operator command"
+	},
+	{
+		"id": "mcp-tools",
+		"title": "MCP tools",
+		"path": "docs/mcp-tools.md",
+		"blurb": "The agent's tools, by feature"
+	},
+	{
+		"id": "environment",
+		"title": "Environment variables",
+		"path": "docs/environment.md",
+		"blurb": "Every setting, by variable"
 	}
 ];
 // src/docTexts.plugin.ts

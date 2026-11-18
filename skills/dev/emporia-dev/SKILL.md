@@ -104,4 +104,4 @@ line, and file `lab_report(lab, ref, event, author_claim, …)`.
 | `references/testing.md` | writing tests, running the suites, seeding a demo relay |
 
 Do not duplicate what the code says: the tool list is `src/emporia/mcp_surface.py`, the routes are
-`src/emporia/routes/`, the settings table is the README's.
+`src/emporia/routes/`, the settings table is `docs/environment.md`.

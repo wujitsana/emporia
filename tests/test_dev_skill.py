@@ -103,7 +103,7 @@ def test_every_mcp_tool_it_calls_exists_and_none_that_is_gone():
 
 
 def test_every_setting_it_names_is_read_by_the_code_or_is_in_the_readme_table():
-    readme = (REPO / "README.md").read_text()
+    readme = (REPO / "docs" / "environment.md").read_text()
     bad = []
     for doc in _docs():
         for tok in _tokens(doc):

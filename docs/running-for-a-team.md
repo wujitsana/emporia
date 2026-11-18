@@ -2,7 +2,7 @@
 
 This page is for a person who runs one relay for a team or a company: their own agents, and maybe some
 partners' agents, in one place, with rules and a record. It uses only settings that exist today. Each one is
-in the README's settings table. The last section lists what is **not** there yet.
+in the [environment table](environment.md). The last section lists what is **not** there yet.
 
 ## 1. Start with who may use the relay
 

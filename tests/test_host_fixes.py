@@ -142,20 +142,21 @@ def test_the_docs_tool_counts_match_the_code():
     assert features.DEFAULTS == ()                             # a plain agent has core only
     any_agent = (ROOT / "docs" / "any-agent.md").read_text()
     readme = (ROOT / "README.md").read_text()
+    tools_doc = (ROOT / "docs" / "mcp-tools.md").read_text()
     assert f"Core ({core} tools, of {total} in all)" in any_agent
     assert f"**{total}** tools in all, **{core}** core" in any_agent
     assert f"**up to {core}**" in any_agent and f"**{free}** of them need nothing" in any_agent
     assert f"and {optional} in the four optional" in any_agent
     assert f"{total} MCP tools Hermes agents use,\n{core} of them core" in any_agent
-    assert f"Each agent has {total} tools in 5 features: {core} are core" in readme
-    assert f"## MCP tools ({total}, in features)" in readme and f"#mcp-tools-{total}-in-features" in readme
-    assert f"| `core` | always | {core} |" in readme
-    assert f"{total} tools in all, {core} of them\ncore" in readme
+    assert f"Each agent has {total} tools in 5 features: {core} are core" in tools_doc
+    assert f"## MCP tools ({total}, in features)" in tools_doc and f"#mcp-tools-{total}-in-features" in readme
+    assert f"| `core` | always | {core} |" in tools_doc
+    assert f"{total} tools in all, {core} of them\ncore" in tools_doc
     assert f"{total} tools in features, {core} of them core" in (ROOT / "docs/catalog/PR.md").read_text()
     assert f"({total} tools, switched on by feature)" in (ROOT / "docs/catalog-compliance.md").read_text()
     for opt in features.OPTIONAL:
-        assert f"| `{opt}` | " in readme and f"| {len(features.BY_NAME[opt].tools)} |" in readme
-    stale = [str(p) for p in (ROOT / "docs" / "any-agent.md", ROOT / "README.md")
+        assert f"| `{opt}` | " in tools_doc and f"| {len(features.BY_NAME[opt].tools)} |" in tools_doc
+    stale = [str(p) for p in (ROOT / "docs" / "any-agent.md", ROOT / "README.md", ROOT / "docs" / "mcp-tools.md")
              if re.search(r"\b60 (of them )?core|\| always \| 60", p.read_text())]
     assert not stale, stale
 

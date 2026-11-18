@@ -19,7 +19,7 @@ GUIDE = REPO / "docs" / "create-an-agent.md"
 #: Everything this work wrote for people; held to the same rules.
 PAGES = [GUIDE, REPO / "docs" / "templates" / "agent-SOUL.md", REPO / "docs" / "templates" / "house-SOUL.md"]
 SUBS = {"NAME": "alpha", "URL": "http://127.0.0.1:8088", "HANDLE": "alpha_x", "OPERATOR_PROFILE": "op",
-        "RELAY_FOLDER": "/tmp/r", "EVERY": "4h"}
+        "RELAY_FOLDER": "/tmp/r", "EVERY": "4h", "ROLE": "marketplace"}
 
 _spec = importlib.util.spec_from_file_location("build_docs_t", REPO / "scripts" / "build_docs.py")
 build_docs = importlib.util.module_from_spec(_spec)
@@ -28,7 +28,7 @@ _spec.loader.exec_module(build_docs)
 
 PLUGIN_COMMANDS = {"setup", "status", "doctor", "update", "agent", "archive", "delete", "dms", "features", "guardians",
                    "house", "identity", "lab", "log", "operator", "register", "relay", "role", "rounds", "sheet", "signer",
-                   "stats", "visits", "wake", "wallet", "welcome", "notices"}
+                   "stats", "visits", "wake", "wallet", "welcome", "notices", "template"}
 
 
 def _top_level_commands() -> set[str]:
@@ -74,7 +74,7 @@ def test_each_question_shows_exactly_one_recommended_option():
 
 
 def _guide_commands() -> list[str]:
-    text = GUIDE.read_text()
+    text = GUIDE.read_text().replace("\\|", "|")      # a table cell escapes its pipes
     spans = re.findall(r"`((?:hermes (?:-p \w+ )?)?emporia [^`]+)`", text)
     spans += [m.group(1) for m in re.finditer(r"^\s*((?:hermes )?emporia [^\n#]+?)\s*(?:#.*)?$", text, re.M)]
     return [s.strip() for s in spans]
@@ -121,7 +121,7 @@ def test_every_command_the_guide_gives_exists(command):
         if tail:
             assert _parses(["setup", "agent", "alpha", *tail]), f"`{command}`: its options after -- do not parse"
         return
-    if argv[0] in ("status", "doctor", "update") and command.startswith("hermes"):
+    if argv[0] in ("status", "doctor", "update", "notices", "template") and command.startswith("hermes"):
         return
     assert _parses(argv), f"`{command}` does not parse as an emporia command"
 

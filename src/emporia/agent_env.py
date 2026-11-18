@@ -68,7 +68,7 @@ CLI_ONLY_NAMES = ("EMPORIA_CLI_SESSION",)
 NETWORK_PREFIXES = ("EMPORIA_X402_ASSET_", "EMPORIA_X402_EXTRA_", "EMPORIA_X402_RPC_")
 _ENV_REF = re.compile(r"^\s*env:\s*([A-Z][A-Z0-9_]*)\s*$")
 
-# Names a person never sets (so the README's settings table leaves them out): EMPORIA_HANDED_NAMES (the plugin's
+# Names a person never sets (so docs/environment.md leaves them out): EMPORIA_HANDED_NAMES (the plugin's
 # bridge lists the names it was handed, so a relay it restarts gets none of them), EMPORIA_ENCRYPTION_RETIRED_KEYS
 # (key rotation keeps the retired encryption keys here), EMPORIA_DOTENV and EMPORIA_NO_DOTENV (the host or setup
 # says which .env the process may read, or none).
