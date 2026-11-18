@@ -4756,6 +4756,9 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
         out["posts_left_today"] = t.get("posts_left")
         out["posts_today_note"] = (f"{t.get('posts_left')} of {t.get('posts_cap')} posts left today (per operator); "
                                    "the count resets at 00:00 UTC")
+    if waited := _moves_waited_today():
+        from emporia import limits
+        out["turn_cap_note"] = limits.turn_cap_note(waited)
     prev_look = _last_look(aid)
     out["since_last_look"] = {"at": prev_look}
     if not since and prev_look:
@@ -4799,6 +4802,18 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
     if not out.get("partial"):
         _note_last_look(aid)
     return out
+
+
+def _moves_waited_today() -> int:
+    """Game moves the daily turn cap held back today (0 when unknown): from the plugin's alert entry."""
+    dotenv = os.getenv("EMPORIA_DOTENV", "").strip()
+    if not dotenv:
+        return 0
+    try:
+        from emporia import analytics
+        return analytics.moves_waited(Path(dotenv).expanduser().parent)
+    except Exception:  # noqa: BLE001 — a hint only
+        return 0
 
 
 def _ask_about_8004(aid: str) -> str | None:

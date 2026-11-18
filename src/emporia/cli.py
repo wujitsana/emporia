@@ -6455,6 +6455,10 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
                  "raise EMPORIA_DAILY_TURNS in its .env (0 = no cap) once you know why it is busy")
     else:
         rep.ok(shown)
+    from emporia import analytics as _an, limits as _limits
+    if waited := _an.moves_waited(profile):
+        rep.warn(_limits.turn_cap_note(waited).replace("NAME", name),
+                 f"emporia agent settings {name} --set daily_turns=...")
     doctor_autonomous_actions(rep, profile, dotenv)
 
 

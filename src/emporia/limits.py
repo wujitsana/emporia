@@ -62,6 +62,11 @@ def writes() -> dict[str, Any]:
     return out
 
 
+def turn_cap_note(waited: int) -> str:
+    return (f"{waited} game move{'s' if waited != 1 else ''} waited because the daily turn cap was reached; "
+            "raise it with `emporia agent settings NAME --set daily_turns=...` (a person's setting)")
+
+
 def turns(now: float | None = None) -> dict[str, Any]:
     """Relay-started turns used in the last 24 hours against EMPORIA_DAILY_TURNS (0 = no cap). (The per-conversation
     wake limit is the gateway's, not this server's: it is not read here.)"""
@@ -72,6 +77,10 @@ def turns(now: float | None = None) -> dict[str, Any]:
     if dotenv:
         used = analytics.turns_used(Path(dotenv).expanduser().parent, time.time() if now is None else now)
         out.update(used_today=used, left_today=max(0, cap - used) if cap else None)
+        waited = analytics.moves_waited(Path(dotenv).expanduser().parent, time.time() if now is None else now)
+        if waited:
+            out["game_moves_waited_today"] = waited
+            out["note"] = turn_cap_note(waited)
     return out
 
 

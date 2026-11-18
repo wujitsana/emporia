@@ -36,6 +36,11 @@ PLATFORM = "emporia"
 DEFAULT_CAP = 300
 WINDOW = 24 * 3600
 FILE = "turns.json"
+#: What the cap leaves for the person to see (the dashboard, `hermes emporia status`, doctor, whats_next): one entry
+#: a UTC day, `{"turn_cap": {"day", "moves_waited", "first_at", "cap"}}`. No outbound message of its own.
+ALERTS = "alerts.json"
+#: What the bridge's own text for a game move opens with (frames.py): a turn the cap blocked while a game waited on it.
+MOVE_MARKERS = ("Your turn in", "now reveal")
 OLD_FILE = "emporia_turns.json"     # at the profile's root, before the counter moved to plugin-data
 _lock = threading.Lock()
 
@@ -91,7 +96,45 @@ def _write(path: Path, data: dict) -> None:
     os.replace(tmp, path)
 
 
-def pre_llm_call(platform: str = "", is_first_turn: bool = False, **_ignored):
+def _game_move(message: object) -> bool:
+    return isinstance(message, str) and any(m in message[:600] for m in MOVE_MARKERS)
+
+
+def _today(now: float) -> str:
+    return time.strftime("%Y-%m-%d", time.gmtime(now))
+
+
+def _note_waited(folder: Path, now: float, limit: int) -> None:
+    """A game move the cap held back: counted in today's alert entry (made once a day, with a gateway log line).
+    Never lets the move through: the cap stays the person's."""
+    path = folder / ALERTS
+    data = _read(path)
+    entry = data.get("turn_cap") if isinstance(data.get("turn_cap"), dict) else {}
+    if entry.get("day") != _today(now):
+        entry = {"day": _today(now), "moves_waited": 0, "first_at": now, "cap": limit}
+        try:
+            import logging
+            logging.getLogger("emporia.turn_cap").warning(
+                "the daily turn cap (%s) is reached: game moves wait; raise it with "
+                "`emporia agent settings NAME --set daily_turns=...`", limit)
+        except Exception:  # noqa: BLE001 — a log line is not worth a failed hook
+            pass
+    entry["moves_waited"] = int(entry.get("moves_waited", 0)) + 1
+    entry["cap"] = limit
+    try:
+        _write(path, {**data, "turn_cap": entry})
+    except OSError:
+        pass
+
+
+def moves_waited(home: Path | None = None, now: float | None = None) -> int:
+    """Game moves that waited today (UTC) because the cap was reached."""
+    now = time.time() if now is None else now
+    entry = _read(data_dir(home or _home()) / ALERTS).get("turn_cap")
+    return int(entry.get("moves_waited", 0)) if isinstance(entry, dict) and entry.get("day") == _today(now) else 0
+
+
+def pre_llm_call(platform: str = "", is_first_turn: bool = False, user_message: object = "", **_ignored):
     """Count a relay-started turn; block it past the cap."""
     if (platform or "").lower() != PLATFORM:
         return None
@@ -114,6 +157,8 @@ def pre_llm_call(platform: str = "", is_first_turn: bool = False, **_ignored):
                 _write(path, {"turns": turns})
                 _forget_old(home)
                 return None
+            if _game_move(user_message):
+                _note_waited(folder, now, limit)
     resume = time.strftime("%H:%M UTC", time.gmtime(min(turns) + WINDOW))
     return {"action": "block", "message": (
         f"Emporia paused: {len(turns)} relay-started turns in the last 24 hours reached the cap of "

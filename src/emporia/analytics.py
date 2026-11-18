@@ -135,6 +135,19 @@ def turns_used(profile: Path, now: float | None = None) -> int:
     return sum(1 for t in (turns or []) if isinstance(t, (int, float)) and now - t < DAY)
 
 
+def moves_waited(profile: Path, now: float | None = None) -> int:
+    """Game moves that waited today (UTC) because the daily turn cap was reached (the plugin's alert entry)."""
+    now = time.time() if now is None else now
+    try:
+        data = json.loads((profile / "plugin-data" / "emporia" / "alerts.json").read_text())
+        entry = data.get("turn_cap") if isinstance(data, dict) else None
+        if isinstance(entry, dict) and entry.get("day") == time.strftime("%Y-%m-%d", time.gmtime(now)):
+            return int(entry.get("moves_waited", 0))
+    except (OSError, ValueError, TypeError):
+        pass
+    return 0
+
+
 # Owed: a payout still to be sent (`pending*`). The relay holds no money, so it writes none.
 _OWED_PREFIXES = ("pending",)
 # Failed: nothing reached the payee.

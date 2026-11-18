@@ -878,6 +878,10 @@ def cmd_status(_args: argparse.Namespace) -> int:
     stale = _stale_notice()
     if stale:
         print(f"Notice  : {stale}")
+    waited = _moves_waited()
+    if waited:
+        print(f"Notice  : {waited} game move{'s' if waited != 1 else ''} waited today because the daily turn cap was "
+              "reached; raise it: emporia agent settings NAME --set daily_turns=...")
     agent, relay = _setting("EMPORIA_AGENT_ID"), _setting("EMPORIA_RELAY_URL")
     if not agent:
         print("Agent   : not set up — run `hermes emporia setup`")
@@ -889,6 +893,21 @@ def cmd_status(_args: argparse.Namespace) -> int:
     print("Tools   : " + _tools_line())
     print("Checks  : hermes emporia doctor")
     return 0 if on_relay else 1
+
+
+def _moves_waited() -> int:
+    """Game moves the turn cap held back today (the plugin's own alert entry); 0 when none or unreadable."""
+    try:
+        try:
+            from . import turn_cap
+        except ImportError:                                   # loaded as a bare file (tests, tools)
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("emporia_turn_cap", HERE / "turn_cap.py")
+            turn_cap = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(turn_cap)
+        return turn_cap.moves_waited(hermes_home())
+    except Exception:                                         # noqa: BLE001 — a notice never breaks `status`
+        return 0
 
 
 def _tools_line() -> str:
