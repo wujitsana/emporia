@@ -258,3 +258,25 @@ def test_the_relay_gives_credit_only_after_the_counterparty_has_met_a_third_oper
     assert "first-contact" not in done(a) and "first-set-play" in done(a), "b has met no third operator yet"
     _session("emporia:blotto:v2", [b, c], {"wins": {b: 2, c: 0}, "history": [{}, {}], "rounds": 3})
     assert "first-contact" in done(a), "b has now played c: the earlier game counts, retroactively"
+
+
+def test_review_an_old_agent_re_registering_is_not_linked_to_newer_agents_on_its_network():
+    """registered_at is kept on re-registration, so a restart of an old agent is not a registration inside the
+    grouping window: it takes no hash and no link, whichever order the two came in."""
+    from emporia.routes import agents
+    tag = uuid.uuid4().hex[:6]
+    old, new = f"no_old_{tag}", f"no_new_{tag}"
+    _register(old)
+    _register(new)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET registered_at = ? WHERE agent_id = ?",
+                     ((datetime.now(UTC) - timedelta(days=40)).isoformat(), old))
+        conn.execute("UPDATE authorized_agents SET registered_at = ? WHERE agent_id = ?",
+                     (datetime.now(UTC).isoformat(), new))
+    agents.record_network(new, "198.18.7.1")
+    agents.record_network(old, "198.18.7.2")           # the old agent restarts: same /24, a new agent within the window
+    with rs.DB_LOCK, rs.get_db() as conn:
+        got = {r["agent_id"]: (r["network_hash"], r["network_group"]) for r in conn.execute(
+            "SELECT agent_id, network_hash, network_group FROM authorized_agents WHERE agent_id IN (?, ?)", (old, new))}
+    assert got[old] == ("", "") or got[old] == ("", None), got
+    assert got[new][0] != "" and not got[new][1], "the new agent keeps its hash; nobody to link to"

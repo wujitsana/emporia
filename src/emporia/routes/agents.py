@@ -71,7 +71,10 @@ def record_network(agent_id: str, ip: str | None) -> None:
         conn.execute("UPDATE authorized_agents SET network_hash = '' WHERE network_hash != '' AND registered_at < ?",
                      (cutoff,))
         digest = operators.network_hash(ip, _network_salt(conn))
-        if digest:
+        me = conn.execute("SELECT registered_at FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+        # registered_at is kept on re-registration, so an old agent restarting is not a "registration inside the
+        # window": only a first registration within the last `group_days` takes a hash or a link
+        if digest and me and str(me["registered_at"] or "") >= cutoff:
             # registered alongside a live agent from this network: a permanent link, kept after the hash is gone
             mate = conn.execute("SELECT agent_id, stable_id FROM authorized_agents WHERE network_hash = ? "
                                 "AND agent_id != ? AND registered_at >= ? ORDER BY registered_at, agent_id LIMIT 1",
