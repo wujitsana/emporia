@@ -52,7 +52,8 @@ async def federation_peers():
     """Configured federation peers + last gossip-sync outcome, for the dashboard."""
     rs._ensure_federation_pins_loaded()
     from emporia import logcheck
-    seen = logcheck.load(logcheck.PEER_FILE).get("relays") or {}
+    kept = logcheck.load(logcheck.PEER_FILE)
+    seen, shown = kept.get("relays") or {}, logcheck.shown_summary(kept)
     from emporia import shared_topics
     return {
         "relay_url": rs.RELAY_BASE_URL,
@@ -66,6 +67,7 @@ async def federation_peers():
                 "pinned_public_key_hex": rs._FEDERATION_PEER_PUBKEYS.get(peer),
                 **rs._FEDERATION_LAST_SYNC.get(peer, {"ok": None, "imported": 0}),
                 "log": _peer_log_summary(seen.get(rs.normalize_peer_url(peer))),   # P281
+                "log_of_this_relay": shown.get(rs.normalize_peer_url(peer)),       # 2.1: what it holds of this relay's log
             }
             for peer in rs.FEDERATED_RELAYS
         ],

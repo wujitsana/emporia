@@ -6174,6 +6174,10 @@ def doctor_federation(rep: Report, h: dict) -> None:
         rep.warn("DMs with other relays are on, but it is linked to none", "emporia relay link URL")
     if links:
         rep.ok("check each link goes both ways: emporia relay links")
+        from emporia import logcheck
+        for problem in logcheck.peer_problems():
+            rep.fail(f"a linked relay's transparency log did not check out: {problem}",
+                     "the evidence is in _peer_log_states.json beside this relay's keys; consider emporia relay unlink URL")
     own = h.get("host", "")
     if own and not same_host(own, host_of(relay_url())):
         rep.warn(f"agents here reach it as {host_of(relay_url())}, it names itself {own} — other relays, "
