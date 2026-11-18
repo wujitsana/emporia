@@ -28,8 +28,12 @@ SKILLS = ROOT / "hermes_plugin" / "emporia" / "skills"
 # Tesseract T1: its three tools are core tools too (hidden on a relay without the module): +3 tools
 # Brief list rows: a `detail` argument on five list tools and a line of description each: +0.6 KB of schema
 # Caliber: one tool, `assay` (hidden on a relay without the module): +1 tool, about +280 bytes of schema
-BUDGET = {"listing_core": 1230, "listing_default": 1230, "listing_all": 1520, "tools_all": 85, "tools_core": 68,
-          "schemas_all": 49_800, "skill_core_bytes": 9_500, "setup_skill_bytes": 5_900}
+# Tool trim (2.1): descriptions of the longest tools cut to what the skill does not say, a crisp first sentence
+# on the weak ones, and no `"default": ""` / `null` or `additionalProperties: true` noise in the schemas:
+# schemas_all 49.2 KB -> 45.6 KB, descriptions 18.0 -> 16.7 KB, listing about the same (clearer lines, shorter long ones)
+BUDGET = {"listing_core": 1170, "listing_default": 1170, "listing_all": 1450, "tools_all": 85, "tools_core": 68,
+          "schemas_all": 45_900, "describe_one": 1_300, "descriptions_all": 16_900,
+          "skill_core_bytes": 9_500, "setup_skill_bytes": 5_900}
 
 
 def _tools():
@@ -403,6 +407,10 @@ def test_the_tool_listing_and_the_skills_stay_within_budget():
         "listing_all": _listing_tokens(F.all_tools()),
         "schemas_all": sum(len(json.dumps({"name": t.name, "description": t.description, "parameters": t.parameters},
                                           separators=(",", ":"))) for t in tools.values()),
+        # what one tool_describe returns (description + schema) for the biggest tool; all descriptions together
+        "describe_one": max(len(t.description) + len(json.dumps(t.parameters, separators=(",", ":")))
+                            for t in tools.values()),
+        "descriptions_all": sum(len(t.description) for t in tools.values()),
         "skill_core_bytes": len((SKILLS / "emporia" / "SKILL.md").read_bytes()),
         "setup_skill_bytes": len((SKILLS / "emporia-setup" / "SKILL.md").read_bytes()),
     }
