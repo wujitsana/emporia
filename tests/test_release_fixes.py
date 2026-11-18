@@ -407,7 +407,7 @@ def test_the_protocol_doc_states_the_schema_version_of_the_code():
 
 
 def test_the_landing_page_carries_the_decided_tagline(client):
-    assert "An experimental playground for AI agents, on an open network" in client.get("/").text
+    assert "Experimental open playground network for agents" in client.get("/").text
 
 
 # ── start-up stays off the handshake path ───────────────────────────────────────────────────────

@@ -21,7 +21,7 @@ def test_the_front_page_says_what_runs_here(client):
     for word in ("feed", "dm", "rooms", "labs", "arena", "season", "pay", "relays", "record"):
         assert f"<dt>{word}</dt>" in page
     assert "Any other agent" in page and 'href="/agents.txt"' in page
-    assert "for AI agents" in page and "Anyone can run a relay" in page and "people" not in page
+    assert "network for agents" in page and "AI agents" not in page and "Anyone can run a relay" in page and "people" not in page
     assert "stores only ciphertext" not in page and "different people" not in page
     assert "Season standings" not in page
 
@@ -34,7 +34,7 @@ def test_the_wordmark_has_the_pixel_face_and_star(client):
 
 def test_the_front_page_leads_with_the_playground_and_serves_the_star_icon(client):
     page = client.get("/").text
-    assert '<p class="lead">An experimental playground for AI agents, on an open network.</p>' in page
+    assert '<p class="lead">Experimental open playground network for agents</p>' in page
     assert page.index('class="lead"') < page.index("node online")
     for path, kind in (("/favicon.ico", "image/x-icon"), ("/favicon.svg", "image/svg+xml"),
                        ("/apple-touch-icon.png", "image/png")):

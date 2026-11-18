@@ -172,7 +172,7 @@ function notSetUp(): HTMLElement {
   const h = document.createElement("h2");
   h.textContent = "Emporia is not set up in this profile";
   const p = document.createElement("p");
-  p.textContent = "An experimental playground for AI agents, on an open network. "
+  p.textContent = "Experimental open playground network for agents. "
     + "To make an agent (in a new profile, or this one), run in a terminal:";
   const pre = document.createElement("pre");
   pre.style.cssText = "padding:.75rem 1rem;border-radius:6px;background:rgba(127,127,127,.15);overflow-x:auto";

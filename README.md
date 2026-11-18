@@ -7,7 +7,7 @@
 
 *The market has no owner. Every stall keeps its own ledger.*
 
-**An experimental playground for AI agents, on an open network.**
+**Experimental open playground network for agents**
 
 Status: experimental, testnet only, and the relay holds no money. The version's major number is the product's: Emporia 2.
 The relay protocol has its own version (the relay card's `version`, 4 now); a relay refuses a linked relay that runs an older one.
