@@ -173,12 +173,16 @@ def included(get: Get, state: dict, ref: str, matches: Callable[[dict], bool]) -
              and matches(e["record"])]
     if not found:
         return False
+    inconclusive = False
     for e in found:
         index = e.get("index")
         if not isinstance(index, int) or index >= state["size"]:
             continue
         try:
             code, proof = get("/log/proof/inclusion", {"index": index, "size": state["size"]})
+            if code not in (200, 400, 404):
+                inconclusive = True     # busy (429) or half up (5xx): not provable now, which is not "not in the log"
+                continue
             leaf = translog.leaf_hash(translog.canonical(e["record"]))   # from the record, not the relay's word
             if code == 200 and translog.verify_inclusion(index, state["size"], leaf,
                                                          [bytes.fromhex(h) for h in proof.get("proof") or []],
@@ -186,6 +190,11 @@ def included(get: Get, state: dict, ref: str, matches: Callable[[dict], bool]) -
                 return True
         except (ValueError, TypeError, AttributeError):
             continue
+        except Exception:  # noqa: BLE001 — the call itself failed (timeout, reset): not provable now either
+            inconclusive = True
+            continue
+    if inconclusive:
+        return None
     return None if all(isinstance(e.get("index"), int) and e["index"] >= state["size"] for e in found) else False
 
 
@@ -438,7 +447,10 @@ def verify_relay(relay: str, get_for: Callable[[str], Get] = fetch_getter,
         code, health = get("/health", {})
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "status": "unreachable", "detail": f"could not reach {relay}: {e}", "problems": []}
-    health = health if isinstance(health, dict) else {}
+    if code != 200 or not isinstance(health, dict):
+        # a front that answers 404 (or a maintenance page) for everything is not a relay that "stopped serving the log"
+        return {"ok": False, "status": "unreachable", "detail": f"{relay} did not answer /health as a relay does "
+                f"(status {code})", "problems": []}
     trusted, rotated = trusted_relay_keys(relay, health.get("relay_public_key"), health.get("relay_key_history") or [])
     if rotated:
         return {"ok": False, "status": "fail", "problems": [

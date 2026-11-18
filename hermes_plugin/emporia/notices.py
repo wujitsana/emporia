@@ -12,7 +12,7 @@ Two parts, both read-only about Emporia and about Hermes:
 
 Every text is fixed here. Nothing a relay or another agent wrote is ever repeated: the relay's update note is
 only noticed (a frame of its type is in the inbox) and said again in our own words. No text carries a link.
-Nothing here fetches or installs code (catalog rule 3): the catalog look reads Hermes's own offline files, and
+Nothing here fetches or installs code (catalog rule 3): it looks at no Hermes catalog file, and
 the update commands are only printed.
 
 Stdlib only, no import of Emporia: it loads standalone by path (the dashboard API and the cron script do).

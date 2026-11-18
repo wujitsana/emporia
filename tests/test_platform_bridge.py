@@ -485,6 +485,42 @@ print(json.dumps(homes))
     assert bridge.log_dir(tmp_path / "keys", homes["alpha"]) == Path("/profiles/alpha/plugin-data/emporia/logs")
 
 
+@pytest.mark.skipif(not HERMES_PYTHON.exists(), reason="Hermes is not installed here")
+def test_without_a_stamped_scope_the_bridge_uses_the_profiles_own_directory_not_the_gateways_root(tmp_path):
+    """An adapter built where no scope home is stamped and no context override is active must not fall back to
+    the process HERMES_HOME (the root's in a multiplexed gateway): the profile's directory comes from where its
+    own settings place its keys (`<profile>/home/.hermes/keys`) or its `.env`."""
+    harness = tmp_path / "harness.py"
+    harness.write_text(f'''
+import importlib.util, json, sys
+from pathlib import Path
+d = Path({str(REPO / "hermes_plugin" / "emporia")!r})
+spec = importlib.util.spec_from_file_location("emporia_platform", d / "__init__.py",
+                                              submodule_search_locations=[str(d)])
+mod = importlib.util.module_from_spec(spec); sys.modules["emporia_platform"] = mod
+spec.loader.exec_module(mod)
+from emporia_platform.adapter import _profile_home
+from agent.secret_scope import reset_secret_scope, set_secret_scope
+out = {{}}
+for label, scope in (("keys", {{"EMPORIA_KEYS_DIR": "/profiles/gamma/home/.hermes/keys"}}),
+                     ("dotenv", {{"EMPORIA_DOTENV": "/profiles/delta/.env"}}), ("none", {{}})):
+    token = set_secret_scope(scope)          # unstamped: no profile_home
+    try:
+        out[label] = _profile_home()
+    finally:
+        reset_secret_scope(token)
+print(json.dumps(out))
+''')
+    root = str(tmp_path / "root")
+    out = subprocess.run([str(HERMES_PYTHON), str(harness)], cwd="/opt/hermes",
+                         env={**os.environ, "HERMES_HOME": root, "PYTHONPATH": "/opt/hermes"},
+                         capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stderr[-2000:]
+    got = json.loads(out.stdout.strip().splitlines()[-1])
+    assert got["keys"] == "/profiles/gamma" and got["dotenv"] == "/profiles/delta"
+    assert got["none"] == root, "with nothing to go by, the process home is still the last resort"
+
+
 def test_an_idle_game_is_abandoned_and_every_stake_released(client, monkeypatch):
     """P129: a wager whose player stopped answering stayed active for good,
     with both holds sitting until they lapsed."""

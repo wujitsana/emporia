@@ -3370,6 +3370,10 @@ def send_dm(
                 where = str((detail or {}).get("moved_to") or "") if isinstance(detail, dict) else ""
             except (ValueError, AttributeError):
                 where = ""
+            from emporia import wire as _wire
+            # whatever the relay wrote is used only when it has the shape of an address (name@host); never as free text
+            if where and (len(where) > 200 or "@" not in where or not _wire.agent_ref(where)):
+                where = ""
             if where:
                 return {"error": f"{to_agent_id} moved to {where}", "moved_to": where, "success": False,
                         "hint": f"send_dm again with to_agent_id=\"{where}\" (same content)"}

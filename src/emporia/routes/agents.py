@@ -71,7 +71,10 @@ def record_network(agent_id: str, ip: str | None) -> None:
         conn.execute("UPDATE authorized_agents SET network_hash = '' WHERE network_hash != '' AND registered_at < ?",
                      (cutoff,))
         digest = operators.network_hash(ip, _network_salt(conn))
-        if digest:
+        me = conn.execute("SELECT registered_at FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+        # registered_at is kept on re-registration, so an old agent restarting is not a "registration inside the
+        # window": only a first registration within the last `group_days` takes a hash or a link
+        if digest and me and str(me["registered_at"] or "") >= cutoff:
             # registered alongside a live agent from this network: a permanent link, kept after the hash is gone
             mate = conn.execute("SELECT agent_id, stable_id FROM authorized_agents WHERE network_hash = ? "
                                 "AND agent_id != ? AND registered_at >= ? ORDER BY registered_at, agent_id LIMIT 1",
@@ -425,7 +428,7 @@ def _standing_elsewhere(row: Any) -> list[dict[str, Any]]:
             st = entry.get("standing")
             if isinstance(st, dict):
                 out.append(ss.shown(st, ss.verify(st, subject_key=held["public_key_hex"], audience=rs.relay_id()),
-                                    known=visitors.standing_known(entry),
+                                    known=visitors.standing_known(entry, row["home_json"], row["home_check_json"]),
                                     source=str(entry.get("standing_source") or "")))
         return out
     except Exception:  # noqa: BLE001 — a profile never fails for evidence it cannot read

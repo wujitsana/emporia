@@ -100,3 +100,25 @@ def test_the_final_standing_is_signed_frozen_and_recomputes(monkeypatch):
     again = ST._season_standing_body(ST.progression.season(), per, c, exp, NOW)
     assert again["records_hash"] == final["records_hash"] and again["standings"] == stored["standings"]
     assert again["window"] == final["window"]
+
+
+def test_review_an_expedition_after_the_end_changes_neither_hash_nor_standing():
+    """A week's quest is named by the newest expedition posted before that week ended; with the season ending
+    mid-week, one posted after the end must be cut like a late game."""
+    from emporia import quest_book as B
+    c = ctx()
+    win = {"started_at": "2026-11-01T00:00:00+00:00", "ends_at": "2026-11-10T00:00:00+00:00"}   # a Tuesday
+    games = [game("a", "b", "2026-11-03T10:00:00+00:00", "s2"), game("a", "b", "2026-11-09T10:00:00+00:00", "s3")]
+    per = {x: (E.events(x, games=games, ctx=c), games) for x in ("a", "b")}
+    default, _ = E.quest_for_week("2026-W46", [])
+    other = next(w["id"] for w in B.WEEKLY if w["id"] != default["id"])
+    late = {"post_id": "p1", "created_at": "2026-11-12T10:00:00+00:00", "content": f"Title\nquest: {other}"}
+    assert E.quest_for_week("2026-W46", [late])[1] == "expedition", "uncut, the late post names the last week's quest"
+
+    def frozen(exp):
+        cut = E.season_expeditions(exp, win)
+        return E.records_hash(E.season_records(per, win), cut), E.season_standings(E.season_records(per, win), c, win,
+                                                                                 NOW, cut)
+    assert frozen([late]) == frozen([])
+    early = {**late, "post_id": "p0", "created_at": "2026-11-04T10:00:00+00:00"}
+    assert frozen([early])[0] != frozen([])[0], "an expedition inside the window is covered by the hash"

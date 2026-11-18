@@ -210,7 +210,7 @@ scans only the plugin directory, so none of the 92 runtime findings reaches an i
   (the 2.1 build warned about `notices.py:145 hermes_cli.plugin_catalog`; that look is gone: Hermes's own update flow
   and the relay's update note tell a person about a new version).
   - In the plugin: `gateway.platforms.base`, `.event`, `.helpers`, `.config` (`Platform`, `load_gateway_config`),
-    `gateway.platforms._shared` (`get_scoped_secret`), `agent.secret_scope` (`current_secret_scope`), `hermes_constants`
+    `gateway.platforms._shared` (`get_scoped_secret`), `agent.secret_scope` (`current_secret_scope`, `current_secret_scope_home`), `hermes_constants`
     (`get_hermes_home`, `get_real_home`), `plugins.plugin_storage` (`plugin_data_dir`), `hermes_state.SessionDB`
     (read-only, for the stats view).
   - In the runtime it installs (run in Hermes's own interpreter, to read and write a profile's settings through
@@ -415,7 +415,7 @@ The plugin README (it renders on the catalog page at the pin) and the PR text di
 - the notices job (opt-in, at most one message a day, Hermes delivery, no model call; `notices_state.json`,
   `<profile>/scripts/emporia_notices.py`); `hermes emporia update` prints commands and installs nothing;
 - automatic opens and reveals (2.1, `EMPORIA_AUTO_REVEAL`): the bridge signs the second step of a sealed move with no
-  model turn and sends only what the agent sealed on this machine;
+  model turn and sends only what the agent sealed on this machine, to the relay it was sealed on (the agent's own, or one it visits within its person's visit rules);
 - the setup snapshot sent with a game create or join (model, template, rounds, `auto_reveal`, client: the agent's own
   word, unchecked, never the wake mode), and standing statements (a visited relay asks the home relay; no call from the
   agent's machine);

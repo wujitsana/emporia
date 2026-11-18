@@ -240,3 +240,41 @@ def test_review_the_cli_and_tools_ask_only_relays_the_operator_allows(monkeypatc
     monkeypatch.setenv("EMPORIA_VISIT_DENY", "http://evil.test")
     assert not logcheck.visit_rules_allow("http://evil.test/")
     assert logcheck.visit_rules_allow("http://fine.test")
+
+
+def _fake_log(proof_code):
+    """A getter for one record at index 0 of a 4-entry log whose proof endpoint answers `proof_code`."""
+    rec = {"k": "v"}
+    state = {"size": 4, "root": "00" * 32}
+
+    def get(path, params):
+        if path == "/log/entries":
+            return 200, {"entries": [{"index": 0, "record": rec}]}
+        if path == "/log/proof/inclusion":
+            return proof_code, {}
+        return 404, {}
+    return get, state
+
+
+@pytest.mark.parametrize("code", [429, 500, 502, 503])
+def test_review_a_busy_proof_answer_is_not_a_key_change_missing_from_the_log(code):
+    get, state = _fake_log(code)
+    assert logcheck.included(get, state, "ref", lambda r: True) is None
+
+
+def test_review_a_failing_proof_call_is_inconclusive_and_a_missing_record_still_fails():
+    state = {"size": 4, "root": "00" * 32}
+
+    def boom(path, params):
+        if path == "/log/entries":
+            return 200, {"entries": [{"index": 0, "record": {"k": 1}}]}
+        raise TimeoutError("slow")
+    assert logcheck.included(boom, state, "ref", lambda r: True) is None
+    get, state = _fake_log(200)
+    assert logcheck.included(get, state, "ref", lambda r: False) is False
+
+
+def test_review_a_front_answering_404_for_everything_is_unreachable_not_stopped():
+    out = logcheck.verify_relay("https://front.example", lambda url: (lambda p, q: (404, {"detail": "nope"})),
+                                compare_with=[])
+    assert out["status"] == "unreachable" and out["problems"] == []

@@ -214,11 +214,28 @@ def _profile_values() -> dict[str, str]:
     return out
 
 
-def _profile_home() -> str:
+def _own_dir_from_settings(extra: dict | None = None) -> str:
+    """The profile's own directory, derived from where its settings say its files are: `EMPORIA_DOTENV` is
+    `<profile>/.env`; `EMPORIA_KEYS_DIR` is `<profile>/home/.hermes/keys`. "" when neither says."""
+    from pathlib import Path
+    extra = extra or {}
+    dotenv = _setting(extra, "EMPORIA_DOTENV", "dotenv")
+    if dotenv and Path(dotenv).name == ".env" and str(Path(dotenv).parent) not in ("", "."):
+        return str(Path(dotenv).parent)
+    keys = _setting(extra, "EMPORIA_KEYS_DIR", "keys_dir")
+    if keys:
+        p = Path(keys)
+        if p.name == "keys" and p.parent.name == ".hermes" and p.parent.parent.name == "home":
+            return str(p.parent.parent.parent)
+    return ""
+
+
+def _profile_home(extra: dict | None = None) -> str:
     """The home of the profile the gateway builds this adapter for, as Hermes gives it: the home the profile's
-    secret scope was built for, else the context-local Hermes home, else HERMES_HOME. In a multiplexed
-    gateway the process's own HERMES_HOME is the ROOT home, shared by every profile: the bridge must never
-    write its files there. Called where the gateway builds the adapter, inside the profile's scope."""
+    secret scope was built for, else a context-local Hermes home override, else the profile's own directory as
+    its settings place it (`_own_dir_from_settings`), and only then HERMES_HOME. In a multiplexed gateway the
+    process's own HERMES_HOME is the ROOT home, shared by every profile: the bridge must never write its files
+    there, so it is the last resort. Called where the gateway builds the adapter, inside the profile's scope."""
     try:
         from agent.secret_scope import current_secret_scope_home
         held = current_secret_scope_home()
@@ -226,11 +243,16 @@ def _profile_home() -> str:
             return str(held)
     except Exception:  # noqa: BLE001 — an older Hermes has no scope home; the next source answers
         pass
+    process = os.environ.get("HERMES_HOME", "").strip()
+    current = ""
     try:
         from hermes_constants import get_hermes_home
-        return str(get_hermes_home())
+        current = str(get_hermes_home())
     except Exception:  # noqa: BLE001
-        return os.environ.get("HERMES_HOME", "").strip()
+        pass
+    if current and current != process:
+        return current                   # a context-local override: Hermes set it for this profile
+    return _own_dir_from_settings(extra) or current or process
 
 
 class EmporiaAdapter(BasePlatformAdapter):
@@ -254,7 +276,7 @@ class EmporiaAdapter(BasePlatformAdapter):
         self.profile_values = _profile_values()
         # The profile's own home (never the gateway's HERMES_HOME, which is the root's when multiplexed):
         # handed to the bridge, which writes its log witness record, autonomy files and logs under it.
-        self.profile_home = _profile_home()
+        self.profile_home = _profile_home(extra)
         self._dedup = MessageDeduplicator()
         try:
             self.thread_limit = int(_setting(extra, "EMPORIA_THREAD_LIMIT", "thread_limit",
