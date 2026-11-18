@@ -25,7 +25,7 @@ def test_every_tool_gets_the_same_table():
 def test_a_relay_that_did_not_answer_is_worth_a_retry_and_other_errors_are_left_alone():
     got = mcp_surface.shape("post", {"error": "timed out"})
     assert got["retryable"] is True and got["next_step"] == mcp_surface.NOT_ANSWERED_STEP
-    plain = mcp_surface.shape("post", {"error": "agent_id required (or set EMPORIA_AGENT_ID)"})
+    plain = mcp_surface.shape("post", {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME"})
     assert "retryable" not in plain and "next_step" not in plain
     odd = mcp_surface.shape("post", {"success": False, "error": "Relay 418", "detail": "teapot"})
     assert "retryable" not in odd

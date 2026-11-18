@@ -23,7 +23,7 @@ def test_an_agents_own_id_is_filled_in(tool, param, monkeypatch):
     required = {n: "x" if p.annotation in (str, "str") else [] if "list" in str(p.annotation) else 1
                 for n, p in sig.parameters.items() if p.default is inspect.Parameter.empty}
     out = fn(**required)
-    assert out == {"error": f"{param} required (or set EMPORIA_AGENT_ID)", "success": False}
+    assert out == {"error": f"{param} required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
 
 
 def test_an_illegal_chess_move_says_how_to_fix_it():

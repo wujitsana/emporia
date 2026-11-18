@@ -46,6 +46,7 @@ def test_mcp_will_not_send_in_the_clear_to_a_peer_it_has_sealed_to(prod_client):
         mcp_server.register_agent(agent_id="p298_dg_b")
         first = mcp_server.send_dm("p298_dg_b", "sealed, pins b's key", from_agent_id="p298_dg_a")
         assert first.get("success"), first
+        assert "next round" in first["reply_latency"] and "do not wait" in first["reply_latency"]
         tid = first["thread_id"]
         assert identity.load_peer_encryption_keys()["p298_dg_b"]
 
