@@ -11,6 +11,10 @@ farmed alone, and capacity must not be for sale to farming.
 * A relay with few operators scales the thresholds down so the first outsider is not stuck: Known needs
   min(2, other operators active here in 30 days) (at least 1), Trusted min(5, the same) (at least 2) and then
   also 30 days on the relay. The sheet states the thresholds in force.
+* Second-order counterparties (`EMPORIA_SECOND_ORDER`, off by default): an operator counts only if it has itself
+  finished with at least r operators besides the agent's own and itself, r = min(2, max(0, others - 1)) (so off on
+  a relay with 2 or fewer other operators). It stops labels that only ever play their target; simulations
+  (tests/test_second_order.py) show it also holds back honest sparse play, hence off by default.
 * Both ways. Only content removed by the relay's operator lowers a tier (a moderator's removal is not counted
   until it is upheld, and nothing records an upheld one yet). One tier per removal day, each expiring after 30
   days; the sheet says why the tier dropped.
@@ -196,6 +200,56 @@ def weights(mine: Mapping[str, float], who: Mapping[str, progression.Who] | None
     """Each operator in `mine` by what it counts now: its contact's worth times that operator's own ramp
     (`progression._weight_of_operator`: a new operator counts fully after 30 days)."""
     return {op: worth * progression._weight_of_operator(who, op, now) for op, worth in mine.items()}
+
+
+# ── second-order counterparties (2.1, review proposal E) ───────────────────────────────────────────────────
+
+SOFT_WEIGHT = 0.25                # what a counterparty that fails the rule weighs in `soft` mode
+
+
+def second_order_mode() -> str:
+    """`EMPORIA_SECOND_ORDER`: `off` (the default), `strict` (an operator that fails counts nothing; `on` means this)
+    or `soft` (it counts a quarter)."""
+    raw = os.getenv("EMPORIA_SECOND_ORDER", "").strip().lower()
+    return "strict" if raw in ("1", "on", "true", "yes", "strict") else "soft" if raw == "soft" else "off"
+
+
+def second_order_required(others: int) -> int:
+    """How many operators besides the agent's own and itself a counterparty must itself have finished with:
+    min(2, others - 1), never below 0. With 2 or fewer other operators on the relay the rule is off (0)."""
+    return min(2, max(0, int(others) - 1))
+
+
+def second_order(others: int) -> dict | None:
+    """The rule in force for an agent on a relay where `others` operators besides its own are active, or None
+    when it is off (switched off, or the relay is too small for it)."""
+    mode, r = second_order_mode(), second_order_required(others)
+    if mode == "off" or r == 0:
+        return None
+    return {"mode": mode, "required": r, "fail_weight": SOFT_WEIGHT if mode == "soft" else 0.0}
+
+
+def operator_graph(contacts: Mapping[str, Mapping[str, float]],
+                   who: Mapping[str, progression.Who] | None) -> dict[str, set[str]]:
+    """{operator: the operators it finished a game or deal with} from `contacts` (agents folded into their operator)."""
+    out: dict[str, set[str]] = {}
+    for agent, mine in contacts.items():
+        out.setdefault(progression._operator(who, agent), set()).update(mine)
+    return out
+
+
+def counted_contacts(mine: Mapping[str, float], me_op: str, graph: Mapping[str, set[str]],
+                     rule: Mapping | None) -> dict[str, float]:
+    """`mine` ({other operator: worth}) with the second-order rule applied: an operator that has finished with fewer
+    than `required` operators besides `me_op` and itself keeps `fail_weight` of its worth; zero worth is dropped."""
+    if not rule:
+        return dict(mine)
+    out = {}
+    for op, worth in mine.items():
+        ok = len(set(graph.get(op, ())) - {me_op, op}) >= rule["required"]
+        if (w := worth if ok else worth * rule["fail_weight"]) > 0:
+            out[op] = w
+    return out
 
 
 def thresholds(others: int) -> dict:

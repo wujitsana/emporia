@@ -1,4 +1,4 @@
-"""progression:v2 — review pass 2, P1, decided 11-06: a non-zero-sum game's rating (Bargain) keeps its
+"""progression:v2 (v3 since 2.1) — review pass 2, P1, decided 11-06: a non-zero-sum game's rating (Bargain) keeps its
 own ladder and board but stays out of the Craft level and the class."""
 from emporia import progression as pg
 from emporia.module_sdk import MODULE_REGISTRY
@@ -40,7 +40,7 @@ def test_fourteen_days_of_fair_bargains_leave_the_craft_level_unchanged():
         bargain = next(c for c in sheet["craft"] if c["module_type"] == BARGAIN)
         assert bargain["rating"] > 1800 and not bargain["in_level"], "the ladder keeps its (drifting) rating"
         assert sheet["levels"]["craft"] == 1 and sheet["class"] != "Strategist", a
-        assert sheet["formula"] == pg.SHEET_FORMULA == "progression:v2"
+        assert sheet["formula"] == pg.SHEET_FORMULA == "progression:v3"
         old = pg.base_sheet(a, table=table, deals=[], abandoned=[], registered_at=START - 60 * DAY, now=now,
                             who=who, outside_level=frozenset())
         assert old["levels"]["craft"] >= 6, "under v1 the same play made a high-level Strategist (F10)"

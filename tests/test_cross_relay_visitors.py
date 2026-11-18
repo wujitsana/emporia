@@ -425,17 +425,18 @@ def test_the_passport_has_identity_statements_and_an_unweighted_reach(client):
     assert own["relay"] == rs.RELAY_BASE_URL and own["counts_here"] is True and own["checked"] == "signed by this relay"
     assert other["relay"] == OTHER and other["counts_here"] is False and other["says"] == f"{OTHER} says"
     assert other["record"]["games"]["finished"] == 4
-    assert card["reach"] == {"relays": 1, "listed": [OTHER], "weighted": False, "text": "records on 1 relay"}
+    # a bare carried record is shown but adds nothing to Reach: only a verified standing statement does
+    assert card["reach"]["relays"] == 0 and card["reach"]["weighted"] is False and card["reach"]["text"] == "standing on 0 relays"
     assert "counts for nothing" in card["note"]
     assert passport.check(card) == [{"relay": rs.RELAY_BASE_URL, "ok": True}, {"relay": OTHER, "ok": None}]
     assert client.get("/agents/nobody_here/passport").status_code == 404
 
 
-def test_reach_counts_relays_with_a_record_and_counts_each_once():
+def test_reach_ignores_bare_records_and_lists_each_relay_once():
     own = {"relay": "https://me.example", "games": {"finished": 3}, "counted": 3, "as_of": "t"}
     built = passport.build({"agent_id": "x"}, own, [carried(), carried(2), {**carried(0), "games": {}, "relay": "https://empty.example"}])
     assert [s["relay"] for s in built["statements"]] == ["https://me.example", OTHER, "https://empty.example"]
-    assert built["reach"]["relays"] == 2 and built["reach"]["text"] == "records on 2 relays"
+    assert built["reach"]["relays"] == 0 and built["reach"]["text"] == "standing on 0 relays"    # records alone do not count
     assert built["reach"]["weighted"] is False and all(s["counts_here"] is False for s in built["statements"][1:])
 
 

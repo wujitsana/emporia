@@ -203,7 +203,9 @@ def _pull(url: str) -> dict[str, Any]:
             return {"error": _UNANSWERED}
         keys = {str(a.get("public_key_hex", "")).lower() for a in agents if isinstance(a, dict)}
         stables = {str(a.get("stable_id", "")) for a in agents if isinstance(a, dict) and a.get("stable_id")}
-        return {"relay_id": str(body.get("relay_id") or ""), "keys": keys, "stables": stables}
+        ids = {str(a.get("public_key_hex", "")).lower(): str(a["agent_id"])[:128]
+               for a in agents if isinstance(a, dict) and a.get("agent_id") and a.get("public_key_hex")}
+        return {"relay_id": str(body.get("relay_id") or ""), "keys": keys, "stables": stables, "ids": ids}
     except Exception:  # noqa: BLE001 — unreachable, slow, not JSON: unconfirmed, never an error that blocks
         return {"error": _UNANSWERED}
 
@@ -314,6 +316,8 @@ def refresh_if_stale(agent_id: str) -> None:
         with rs.DB_LOCK, rs.get_db() as conn:
             conn.execute("UPDATE authorized_agents SET home_check_json = ? WHERE agent_id = ?",
                          (json.dumps(result, sort_keys=True), agent_id))
+        if result.get("status") == "confirmed":
+            pull_standing(agent_id, home, row["public_key_hex"] or "")     # its home's word, shown, never counted
     except Exception:  # noqa: BLE001 — a failed look changes nothing
         return
 
@@ -353,6 +357,46 @@ def confirm(home: dict[str, Any], public_key_hex: str, stable_id: str = "") -> d
         return {"status": "confirmed", "reason": f"listed by {host_name(home.get('url', ''))}", "at": at,
                 "relay_id": got["relay_id"]}
     return {"status": "unconfirmed", "reason": "its home relay does not list this agent as its own", "at": at}
+
+
+def pull_standing(agent_id: str, home: dict[str, Any], public_key_hex: str) -> bool:
+    """Ask a confirmed home relay for its standing statement about this visitor (`GET /agents/{id}/standing-statement`,
+    bound to this relay as audience), check it (signature, the agent's key, relay id, audience, expiry, and that the
+    id is the one the home's own list gave) and keep it WHOLE beside the agent's carried records, to be shown as
+    "verified, not counted here". Same guard, cache and short timeout as the home check, and the same rule: no
+    answer, a refusal or a bad statement changes nothing and blocks nothing. True when one was kept. Never raises."""
+    import json
+    from urllib.parse import quote
+    try:
+        from emporia import relay_server as rs
+        from emporia import standing_statement as ss
+        url = str(home.get("url", ""))
+        got = pull_listing(url)
+        remote = (got.get("ids") or {}).get((public_key_hex or "").lower())
+        if "error" in got or not remote:
+            return False
+        problem, addrs = _resolve(url)
+        if problem:
+            return False
+        host_id = rs.relay_id()
+        r = _get_listing(f"{url}/agents/{quote(remote, safe='')}/standing-statement?audience={host_id}", addrs)
+        if r.status_code != 200:
+            return False
+        statement = r.json()
+        result = ss.verify(statement, subject_key=public_key_hex, audience=host_id)
+        if not result["ok"] or (got.get("relay_id") and result["relay_id"] != got["relay_id"]):
+            return False
+        with rs.DB_LOCK, rs.get_db() as conn:
+            row = conn.execute("SELECT carried_records_json FROM authorized_agents WHERE agent_id = ?",
+                               (agent_id,)).fetchone()
+            if row is None:
+                return False
+            kept = ss.keep(json.loads(row["carried_records_json"] or "[]"), url, statement)
+            conn.execute("UPDATE authorized_agents SET carried_records_json = ? WHERE agent_id = ?",
+                         (json.dumps(kept), agent_id))
+        return True
+    except Exception:  # noqa: BLE001 — a statement that cannot be had is no statement; nothing is blocked
+        return False
 
 
 def view(home_json: str | None, check_json: str | None) -> dict[str, Any]:

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -298,6 +299,16 @@ async def relay_activity(window_s: int = 3600):
             "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
 
 
+def _summary_standing(who: dict) -> dict:
+    """`/relay/summary.standing`: why the boards may be empty and how standing is earned here (additive)."""
+    from emporia import newcomer
+    try:
+        active = len(_evidence()["operators"])
+    except Exception:  # noqa: BLE001 — a summary must never fail for its explanation
+        active = 0
+    return newcomer.relay_block(operators_here=len({w.operator for w in who.values()}), active_30d=active)
+
+
 @router.get("/relay/summary")
 async def relay_summary():
     """First run: what is on this relay, as counts only — agents, operators (an operator label is one
@@ -325,6 +336,7 @@ async def relay_summary():
     return {"scope": "this_relay", "agents": len(who), "operators": len({w.operator for w in who.values()}),
             "open_challenges": len(open_challenges(limit=50)), "active_topics": topics, "labs": labs,
             "clients": clients, "clients_declared": True,     # agents by the client on their card: declared, never verified
+            "standing": _summary_standing(who),
             "season": progression.season(), "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
 
 
@@ -375,7 +387,8 @@ async def season_ladders(limit: int = 25):
         likes = all_likes(conn)
     _, games, who = _craft_table()
     out = {**progression.season_boards(games, likes, who, time.time(), progression.season(),
-                                       progression.house_agents(), rs._clamp_limit(limit), ideas),
+                                       progression.house_agents(), rs._clamp_limit(limit), ideas,
+                                       tiers=_renown_tiers()),
            "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
     if not any(out["boards"].values()):
         # Craft pairs and Renown likes count only across operators (progression.craft_ratings, renown): a relay
@@ -767,10 +780,41 @@ def _evidence() -> dict:
                            for p in g.get("participants") or []):
             abandons.setdefault(quitter, []).append(progression._ts(g["ended_at"]))
     skip = _exempt()
-    value = {"contacts": allowance.contacts(games, deals, who), "abandons": abandons, "who": who,
+    contacts = allowance.contacts(games, deals, who)
+    value = {"contacts": contacts, "graph": allowance.operator_graph(contacts, who), "abandons": abandons, "who": who,
              "operators": {who[a].operator if a in who else a for a in (active & live) - skip}}
     _EVIDENCE.update(key=key, value=value)
     return value
+
+
+def _counted_contacts(agent_id: str, ev: dict) -> dict[str, float]:
+    """The operators an agent's tier and Trust count (`allowance.counted_contacts`): its contacts, less those that
+    fail the second-order rule on a relay that switched it on (EMPORIA_SECOND_ORDER)."""
+    me = progression._operator(ev["who"], agent_id)
+    rule = allowance.second_order(len(ev["operators"] - {me}))
+    return allowance.counted_contacts(ev["contacts"].get(agent_id, {}), me, ev.get("graph", {}), rule)
+
+
+def _renown_tiers() -> dict[str, int]:
+    """Renown v3: each operator's best EARNED allowance tier (1 Newcomer, 2 Known, 3 Trusted), from the same
+    evidence as the allowance: weighted distinct other operators it finished games or deals with. Never vouched
+    (a relay's own say-so is no evidence about an agent), never Renown (rings would feed each other). An operator
+    with no contact is Newcomer. Kept with the evidence, so it is recomputed when sessions or agents change."""
+    ev = _evidence()
+    if "tiers" in ev:
+        return ev["tiers"]
+    now, who = time.time(), ev["who"]
+    out: dict[str, int] = {}
+    for agent in ev["contacts"]:
+        op = progression._operator(who, agent)
+        registered = who[agent].registered_at if agent in who else None
+        a = allowance.assess(agent, weighted=allowance.weights(_counted_contacts(agent, ev), who, now),
+                             abandons=ev["abandons"].get(agent, ()),
+                             others=len(ev["operators"] - {op}),
+                             days_here=((now - registered) / 86_400 if registered is not None else 0.0), now=now)
+        out[op] = max(out.get(op, 1), a["tier"])
+    ev["tiers"] = out
+    return out
 
 
 def _deal_records(conn) -> list[dict]:
@@ -828,7 +872,7 @@ def allowance_of(agent_id: str) -> dict | None:
     return out
 
 
-def _allowance_now(agent_id: str) -> dict:
+def _allowance_now(agent_id: str, *, ignore_vouched: bool = False) -> dict:
     ev = _evidence()
     now = time.time()
     who = ev["who"]
@@ -838,9 +882,9 @@ def _allowance_now(agent_id: str) -> dict:
     registered = progression._ts(reg["registered_at"]) if reg else now
     mine = progression._operator(who, agent_id)
     out = allowance.assess(
-        agent_id, weighted=allowance.weights(ev["contacts"].get(agent_id, {}), who, now),
+        agent_id, weighted=allowance.weights(_counted_contacts(agent_id, ev), who, now),
         abandons=ev["abandons"].get(agent_id, ()), removals=removals,
-        vouched=agent_id in progression.vouched_agents(), others=len(ev["operators"] - {mine}),
+        vouched=not ignore_vouched and agent_id in progression.vouched_agents(), others=len(ev["operators"] - {mine}),
         days_here=(now - registered) / 86_400, now=now)
     out["limits"] = allowance.caps(out["tier"])
     return out
@@ -1229,6 +1273,30 @@ async def agent_sheet(agent_id: str):
     return await cached_public(("sheet", agent_id), lambda: _sheet_body(agent_id))
 
 
+def _second_order_of(agent_id: str) -> dict | None:
+    """What `base_sheet` needs to apply the second-order rule to this agent's Trust, or None when it is off."""
+    ev = _evidence()
+    rule = allowance.second_order(len(ev["operators"] - {progression._operator(ev["who"], agent_id)}))
+    return {**rule, "graph": ev.get("graph", {})} if rule else None
+
+
+def _standing_next(agent_id: str, sheet: dict) -> dict:
+    """The sheet's `standing` block: where the agent is and the one next thing that would raise it
+    (`newcomer.next_step`). Evidence in words, never a verdict; it moves nothing."""
+    from emporia import newcomer
+    ev = _evidence()
+    mine = progression._operator(ev["who"], agent_id)
+    others = len(ev["operators"] - {mine})
+    met = len(_counted_contacts(agent_id, ev))
+    uncounted = len(ev["contacts"].get(agent_id, {})) - met
+    al = allowance_of(agent_id)
+    started = bool((sheet.get("trust") or {}).get("started")) or met > 0
+    return {"next": newcomer.next_step(others_here=others, counted_operators=met,
+                                       raises=(al or {}).get("raises", ""), tier=(al or {}).get("tier"),
+                                       started=started, uncounted=uncounted),
+            "operators_here": others, "operators_met": met, "counting": others > 0}
+
+
 def _sheet_body(agent_id: str) -> dict:
     with rs.DB_LOCK, rs.get_db() as conn:
         reg = conn.execute("SELECT registered_at FROM authorized_agents WHERE agent_id = ?",
@@ -1276,7 +1344,8 @@ def _sheet_body(agent_id: str) -> dict:
         cal = assay_routes.agent_caliber(agent_id)
     sheet = {**progression.base_sheet(agent_id, table=table, deals=deals, abandoned=abandoned,
                                       registered_at=reg["registered_at"], now=time.time(), who=who,
-                                      likes=likes, house=house, word=word, caliber=cal),
+                                      likes=likes, house=house, word=word, caliber=cal, tiers=_renown_tiers(),
+                                      second_order=_second_order_of(agent_id)),
              **({"improvements": improvements} if improvements is not None else {}),
              "insight": progression.insight(agent_id, _calls().get(agent_id, [])),
              "scope": "this_relay", "sessions_counted": len(set(used)),
@@ -1284,9 +1353,85 @@ def _sheet_body(agent_id: str) -> dict:
              **({"allowance": al} if (al := public_allowance(allowance_of(agent_id))) is not None else {}),
              "records_hash": progression.records_hash(used),
              "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
+    sheet["standing"] = _standing_next(agent_id, sheet)      # additive: a 2.0.1 reader ignores it
     from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
     return {**sheet, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
             "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "sheet", [sheet]))}
+
+_AUDIENCE = re.compile(r"[a-z2-7]{16}")
+
+
+@router.get("/agents/{agent_id}/standing-statement")
+async def standing_statement(agent_id: str, audience: str = ""):
+    """A relay-signed `emporia-standing` v1 statement about this agent: counted facts only, bound to the agent's
+    key and this relay's id and key, dated and expiring within 14 days (`standing_statement.py`; docs/protocol.md).
+    `audience` (a relay id) binds it to the one relay that asked. Public like the sheet; evidence, not a verdict:
+    a reader decides what it is worth, and on a host it counts for nothing. Never exports a vouched tier."""
+    _sheets_on()
+    if audience and not _AUDIENCE.fullmatch(audience):
+        raise HTTPException(400, "audience is a relay id: 16 characters, a-z and 2-7")
+    return await run_in_threadpool(_statement_body, agent_id, audience or None)
+
+
+def _statement_body(agent_id: str, audience: str | None) -> dict:
+    from emporia import standing_statement as ss
+    from emporia.addresses import address
+    from emporia.identity import get_relay_public_key_hex, relay_key_history, sign_raw_relay
+    with rs.DB_LOCK, rs.get_db() as conn:
+        reg = conn.execute("SELECT registered_at, public_key_hex, stable_id FROM authorized_agents "
+                           "WHERE agent_id = ? AND is_active = 1", (agent_id,)).fetchone()
+    if reg is None:
+        raise HTTPException(404, f"no agent {agent_id!r} on this relay")
+    if not reg["public_key_hex"]:
+        raise HTTPException(409, "this agent has no key on this relay, so a statement cannot be bound to it")
+    sheet = _sheet_body(agent_id)
+    now = time.time()
+    ev = _evidence()
+    who, relay_id = ev["who"], rs.relay_id()
+    contacts = _counted_contacts(agent_id, ev)
+    weighted = allowance.weights(contacts, who, now)
+    oldest: dict[str, float] = {}
+    for w in who.values():
+        if w.registered_at is not None:
+            oldest[w.operator] = min(oldest.get(w.operator, w.registered_at), w.registered_at)
+    mix = {"under_30d": 0, "d30_to_90": 0, "over_90d": 0}
+    for op in contacts:
+        days = (now - oldest[op]) / 86_400 if op in oldest else 0.0
+        mix["under_30d" if days < 30 else "d30_to_90" if days < 90 else "over_90d"] += 1
+    units = sorted(((ss.unit_token(relay_id, op), round(wt, 2)) for op, wt in weighted.items()),
+                   key=lambda u: (-u[1], u[0]))[:ss.MAX_UNITS]
+    earned = None if agent_id in _exempt() or not allowance.on() else _allowance_now(agent_id, ignore_vouched=True)
+    cal = (sheet.get("caliber") or {}).get("reason") or {}
+    trade, trust, ren = sheet.get("trade") or {}, sheet.get("trust") or {}, sheet.get("renown") or {}
+    facts = {
+        "first_seen_at": str(reg["registered_at"])[:10], "weeks_active": trust.get("weeks_active"),
+        "counted_operators": len(contacts), "operator_weight_sum": round(sum(weighted.values()), 2),
+        "tenure_mix": mix, "contact_units": [{"unit": u, "weight": wt} for u, wt in units],
+        "games_counted": sum(int(c.get("games") or 0) for c in sheet.get("craft") or []),
+        "deals_sold": trade.get("sold"), "deals_bought": trade.get("bought"),
+        "deals_disputed_as_seller": trade.get("disputed_as_seller"), "not_delivered": trade.get("not_delivered"),
+        "abandoned_on_turn": trust.get("abandoned_on_turn"),
+        "craft": [{"module": c["module_type"], "rating": c["rating"], "rd": c["rd"], "games": c["games"],
+                   "opponents": c["opponents"], "provisional": c["provisional"]}
+                  for c in (sheet.get("craft") or [])[:8]],
+        "caliber": {"reason_low": cal.get("low"), "n": cal.get("n")} if cal.get("shown") else None,
+        "renown": {"score": ren.get("score"), "from_operators": ren.get("from_operators")},
+        "trust": {"score": trust.get("score")},
+        # only what was earned: a tier the relay vouched for is not evidence about the agent and is never exported
+        "allowance": {"tier": earned["name"], "source": "earned"} if earned else None,
+    }
+    ages = [w.registered_at for w in who.values() if w.registered_at is not None]
+    context = {"founded_at": datetime.fromtimestamp(min(ages), UTC).strftime("%Y-%m-%d") if ages else None,
+               "operators_active_30d": len(ev["operators"]),
+               "formulas": {"sheet": progression.SHEET_FORMULA, "allowance": allowance.FORMULA},
+               "season": progression.season()["season"]}
+    issuer = {"relay_id": relay_id, "relay_url": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
+              "relay_key_history": relay_key_history()[:8]}
+    subject = {"agent_id": agent_id, "address": address(agent_id, rs._own_host()),
+               "public_key_hex": reg["public_key_hex"], "stable_id": reg["stable_id"] or ""}
+    return ss.build(issuer=issuer, subject=subject, facts=facts, context=context, sign=sign_raw_relay,
+                    audience=audience, now=now)
+
 
 def _result_of(s: dict) -> dict:
     """One finished game, as a reader (or an opponent studying a player) needs
@@ -1346,6 +1491,22 @@ async def results(request: Request, module_type: str | None = None,
 _RECORD_LIMIT = 1000
 
 
+def _not_counted(sess: dict, agent_id: str, who: dict, house: frozenset, craft_set: set) -> str | None:
+    """Why a finished game is on the record but not on the sheet: `own_operator`, `private`, `house`, `engine`;
+    None when the sheet counts it (a public game with an agent of another operator, house and practice left out)."""
+    others = [p for p in sess["participants"] if p != agent_id]
+    if set(sess["participants"]) & house:
+        return "house"
+    if rs._session_visibility(sess) != "public":
+        return "private"
+    if sess["module_type"] not in craft_set:
+        return "engine"
+    me = progression._operator(who, agent_id)
+    if not any(progression._operator(who, p) != me for p in others):
+        return "own_operator"
+    return None
+
+
 @router.get("/agents/{agent_id}/record")
 async def counterparty_record(agent_id: str):
     """P182: an agent's record on this relay, to read before staking against it,
@@ -1364,6 +1525,9 @@ async def counterparty_record(agent_id: str):
             "ORDER BY updated_at DESC LIMIT ?", (agent_id, _RECORD_LIMIT)).fetchall()
     games = {"finished": 0, "won": 0, "lost": 0, "drawn": 0, "lost_on_time": 0, "abandoned": 0,
              "voided": 0}
+    not_counted = {"own_operator": 0, "private": 0, "house": 0, "engine": 0}
+    counted_games = 0
+    who, house, craft_set = _who(), progression.house_agents(), set(craft_modules())
     buyer = {"purchases": 0, "confirmed": 0, "disputed": 0, "left_to_auto_confirm": 0,
              "not_delivered_to_them": 0, "cancelled": 0}
     seller = {"sales": 0, "paid": 0, "disputed": 0, "never_delivered": 0, "cancelled": 0}
@@ -1399,6 +1563,11 @@ async def counterparty_record(agent_id: str):
             games["voided"] += out.get("voided_by") == agent_id
             continue
         games["finished"] += 1
+        reason = _not_counted(sess, agent_id, who, house, craft_set)
+        if reason:
+            not_counted[reason] += 1
+        else:
+            counted_games += 1
         winner = out.get("winner")
         if winner == agent_id:
             games["won"] += 1
@@ -1410,6 +1579,7 @@ async def counterparty_record(agent_id: str):
             games["drawn"] += 1
     from datetime import UTC, datetime
 
+    from emporia import newcomer
     from emporia.addresses import address, fingerprint
     from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
     record = {
@@ -1428,6 +1598,9 @@ async def counterparty_record(agent_id: str):
         "as_buyer": buyer,
         "as_seller": seller,
         "counted": min(len(rows), _RECORD_LIMIT),
+        # additive: this record is raw (every finished game); the sheet counts fewer, and says why
+        "counting": {"games_counted": counted_games, "games_not_counted": not_counted,
+                     "line": newcomer.counting_line(games["finished"], counted_games, not_counted)},
         "note": "Evidence, not a verdict: counts of what this relay saw, newest 1000 sessions.",
     }
     # P189: signed by this relay, so another relay or agent can show it as

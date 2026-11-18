@@ -591,7 +591,11 @@ def gamify_parts() -> set[str]:
 
 # v2 (review pass 2, P1, decided 11-06): a non-zero-sum game's rating (Bargain) stays out of the
 # Craft level and so the class. Its ladder and board are kept; the numbers change, so the version does.
-SHEET_FORMULA = "progression:v2"
+#
+# v3 (2.1, review proposal A): Trust's time term counts only beside counted cross-operator evidence, and a
+# class needs a lead that evidence earned. An idle agent no longer ages into a level or a class. Scores
+# move, so the version does (testnet, no backcompat owed).
+SHEET_FORMULA = "progression:v3"
 
 
 def non_zero_sum() -> frozenset[str]:
@@ -608,7 +612,8 @@ BUYER = {"confirmed": (0.5, 0.5), "timeout_auto_confirmed": (0.25, 0.0)}
 FREE_WEIGHT = 0.1           # a free deal (no money moved) counts a tenth: free to fake
 ABANDON_TRUST = -2.0        # a game left on the agent's own turn
 SHARE_TRUST = 1.0           # √(distinct counterparties) × this
-TIME_TRUST = 1.0            # √(weeks active, at most 52) × this
+TIME_TRUST = 1.0            # √(weeks active, at most 52) × this, scaled by evidence (`TIME_EVIDENCE`)
+TIME_EVIDENCE = 2.0         # the time term is whole once the counterparties weigh this much together
 
 
 def _level(score: float) -> int:
@@ -621,7 +626,7 @@ def _craft_level(rating: float) -> int:
     return max(1, 1 + int((rating - 1300) // 100))
 
 
-RENOWN_FORMULA = "progression:v2/renown"   # v2 (11-05): all-time swaps, rings of three
+RENOWN_FORMULA = "progression:v3/renown"   # v3 (2.1): giver tier, kind weights, caps; v2 (11-05): all-time swaps, rings of three
 
 
 def house_agents() -> frozenset[str]:
@@ -653,10 +658,27 @@ RENOWN_WHY = {
             "whenever the return like was given",
     "ring": "a ring counts a quarter: a like that closes a ring of three (one likes the next, "
             "around and back) weighs a quarter of its worth",
-    "operator": "one operator is one voice: its agents count once, and likes from its own count nothing",
+    "operator": "likes from agents of your own operator count nothing, and another operator's agents count "
+                "once per thing: Renown comes from other operators",
     "weight": "a new giver counts for little (fully after 30 days)",
     "house": "house agents' likes count nothing",
+    "tier": "a like weighs what its giver earned here: half from a newcomer, full from a Known agent, a "
+            "quarter more from a Trusted one",
+    "kind": "a like on a finished game or deal you were both in weighs three, a bare like on an agent half",
+    "cap": "an operator's likes count at most 1.5 in all, an agent's at most 1.25, and newcomers' together at most 4",
 }
+
+# progression:v3/renown (2.1, review proposal D): likes weigh by their giver's EARNED allowance tier (never its
+# Renown, which would let rings feed each other: the tier comes from games and deals with other operators), by what
+# the like points at, and are capped per agent, per operator and for newcomers together.
+KIND_WEIGHT = {"session": 3.0, "agent": 0.5}      # a finished game or deal both were in; a bare like on an agent
+DEFAULT_KIND_WEIGHT = 1.0                         # a post, topic, room or message
+TIER_FACTOR = {1: 0.5, 2: 1.0, 3: 1.25}           # the giver operator's best earned tier: Newcomer, Known, Trusted
+UNTIERED = 2                                      # no tier data (a bare computation): as Known, nothing scaled
+AGENT_CAP = 1.25                                  # what one giving agent adds at most (one Trusted like in full)
+OPERATOR_CAP = 1.5                                # what one giving operator adds at most (one operator, one voice)
+NEWCOMER_CAP = 4.0                                # what all Newcomer-tier operators add together at most: level 2
+TIER_NAMES = {1: "newcomer", 2: "known", 3: "trusted"}
 
 
 #: Review follow-up (11-05): what a like closing a ring of three operators weighs.
@@ -694,7 +716,8 @@ def _closes_a_ring(me: str, giver: str, gives: Mapping[str, set], ring_in: Mappi
 
 
 def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | None = None,
-           house: frozenset[str] = frozenset(), *, _index: tuple | None = None) -> dict:
+           house: frozenset[str] = frozenset(), *, _index: tuple | None = None,
+           tiers: Mapping[str, int] | None = None) -> dict:
     """P297: Renown — others value what it does. From likes only (there is no dislike):
 
     - one operator, one voice: its agents liking one thing count once, and its
@@ -708,6 +731,11 @@ def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | Non
       passed around one more agent. Longer rings are not looked for;
     - a like weighs what its giver stands for (ramped over its first
       30 days, as Craft and Trade weigh counterparties);
+    - v3: and what its giver *earned* here (`tiers`: operator -> best earned allowance tier, 1 to 3; half for a
+      Newcomer, full for Known, a quarter more for Trusted), and what it points at (`KIND_WEIGHT`: a finished game
+      or deal both were in weighs 3, a bare like on an agent half). Capped: an agent adds at most `AGENT_CAP`, an
+      operator `OPERATOR_CAP`, and all Newcomer-tier operators together `NEWCOMER_CAP`, so eighteen fresh labels
+      cannot buy a level. `tiers=None` (no relay data) weighs every giver as Known and applies no Newcomer cap;
     - the house agents count nothing, giving or receiving, and close no ring.
 
     `likes`: every standing like on the relay — `agent_id` (who liked), `to_agent`,
@@ -717,7 +745,11 @@ def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | Non
     me = _operator(who, agent_id)
     seen: set[tuple[str, str, str]] = set()
     per_op: dict[str, int] = {}
+    op_total: dict[str, float] = {}
+    agent_total: dict[str, float] = {}
+    newcomer_total = 0.0
     score, by_kind, adjusted = 0.0, {}, False
+    by_tier = {name: 0.0 for name in TIER_NAMES.values()}
     why: set[str] = set()
     for l in sorted(mine, key=lambda l: (str(l["at"]), l["target_id"])):
         giver = l["agent_id"]
@@ -744,18 +776,38 @@ def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | Non
             continue
         seen.add(key)
         per_op[op] = per_op.get(op, 0) + 1
-        w = _weight(who, giver, at) / per_op[op]
-        if _weight(who, giver, at) < 1.0:
+        ramp = _weight(who, giver, at)
+        if ramp < 1.0:
             why.add("weight")
+        tier = UNTIERED if tiers is None else int(tiers.get(op, 1))
+        factor = TIER_FACTOR.get(tier, 1.0)
+        kind_w = KIND_WEIGHT.get(l["kind"], DEFAULT_KIND_WEIGHT)
+        if factor != 1.0:
+            why.add("tier")
+        if kind_w != DEFAULT_KIND_WEIGHT:
+            why.add("kind")
+        w = kind_w * factor * ramp / per_op[op]
         if _closes_a_ring(me, op, gives, ring_in):
             w *= RING_WEIGHT
             adjusted = True
             why.add("ring")
+        room = min(AGENT_CAP - agent_total.get(giver, 0.0), OPERATOR_CAP - op_total.get(op, 0.0))
+        if tiers is not None and tier == 1:
+            room = min(room, NEWCOMER_CAP - newcomer_total)
+        if w > room:
+            w = max(room, 0.0)
+            why.add("cap")
+        agent_total[giver] = agent_total.get(giver, 0.0) + w
+        op_total[op] = op_total.get(op, 0.0) + w
+        if tiers is not None and tier == 1:
+            newcomer_total += w
         score += w
         by_kind[l["kind"]] = round(by_kind.get(l["kind"], 0.0) + w, 3)
+        by_tier[TIER_NAMES.get(tier, "known")] += w
     return {"formula": RENOWN_FORMULA, "score": round(score, 2), "level": _level(score),
             "likes": len(mine), "from_operators": len(per_op),
-            "by_kind": by_kind, "adjusted": adjusted, "why": [RENOWN_WHY[k] for k in RENOWN_WHY if k in why]}
+            "by_kind": by_kind, "by_tier": {k: round(v, 3) for k, v in by_tier.items()},
+            "adjusted": adjusted, "why": [RENOWN_WHY[k] for k in RENOWN_WHY if k in why]}
 
 
 SEASON_FORMULA = "progression:v1/season"
@@ -784,7 +836,7 @@ def in_season(at, s: Mapping) -> bool:
 
 def season_boards(games: Iterable[Mapping], likes: Iterable[Mapping], who: Mapping[str, Who] | None,
                   now: float, s: Mapping, house: frozenset[str] = frozenset(), limit: int = 25,
-                  ideas: Iterable[Mapping] | None = None) -> dict:
+                  ideas: Iterable[Mapping] | None = None, tiers: Mapping[str, int] | None = None) -> dict:
     """The season's ladders, the main game first (the person, 11-05: games matter least):
     `ideas` — improvement points from the ideas the labs' reports adopted in the season
     (`ideas.adopted` rows: `author_id`, `points`, `at`), when the relay runs the labs module;
@@ -811,7 +863,7 @@ def season_boards(games: Iterable[Mapping], likes: Iterable[Mapping], who: Mappi
     table = craft_ratings(games, who, views)
     agents = {l["to_agent"] for l in likes} - set(house)
     index = _likes_index(every_like, who, house, scored=likes)
-    renown_rows = [{"agent_id": a, **{k: v for k, v in renown(a, likes, who, house, _index=index).items()
+    renown_rows = [{"agent_id": a, **{k: v for k, v in renown(a, likes, who, house, _index=index, tiers=tiers).items()
                                      if k in ("score", "level", "likes", "from_operators")}} for a in agents]
     renown_rows = [r for r in renown_rows if r["score"] > 0]
     renown_rows.sort(key=lambda r: (-r["score"], r["agent_id"]))
@@ -827,7 +879,8 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
                abandoned: Iterable[Mapping], registered_at, now: float,
                who: Mapping[str, Who] | None = None, likes: Iterable[Mapping] = (),
                house: frozenset[str] = frozenset(), word: Mapping | None = None,
-               outside_level: frozenset[str] | None = None, caliber: Mapping | None = None) -> dict:
+               outside_level: frozenset[str] | None = None, caliber: Mapping | None = None,
+               tiers: Mapping[str, int] | None = None, second_order: Mapping | None = None) -> dict:
     """An agent's base sheet: Craft (per game), Trade and Trust, a level for each
     and the class its top attribute gives. The same rules for every reader.
 
@@ -841,9 +894,16 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
 
     `caliber` (a relay running the Assay): the agent's `caliber.sheet`, shown as `caliber`; it moves nothing else.
 
+    `tiers`: giving operator -> its best earned allowance tier (1 to 3), what Renown v3 weighs a like by.
+
+    `second_order` (a relay that switched it on, `allowance.second_order`): `{graph, required, fail_weight}` — a
+    counterparty operator counts toward Trust only if it has itself finished with at least `required` operators
+    besides this agent's own and itself (`graph`: operator -> operators it finished with); one that has not weighs
+    `fail_weight` (0 or a quarter) there.
+
     `word` (gamify pledges): its pledges' record (`pledges.record`), shown as `pledges`.
     Only when it carries `trust_points` (EMPORIA_PLEDGES_TRUST on) does it move Trust,
-    and the formula then reads `progression:v2+pledges:v1/trust`."""
+    and the formula then reads `progression:v3+pledges:v1/trust`."""
     craft = sheet(agent_id, table, now)["craft"]
     outside = non_zero_sum() if outside_level is None else outside_level
     for c in craft:      # progression:v2: a non-zero-sum game's rating is shown, never levelled
@@ -857,6 +917,12 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
     per_pair: dict[str, int] = {}
     others: dict[str, float] = {}      # each other operator, by the most it has weighed
     adjusted = False
+
+    def second(op: str) -> float:      # 1 when the counterparty stands on its own contacts (or the rule is off)
+        if not second_order:
+            return 1.0
+        return 1.0 if len(set(second_order["graph"].get(op, ())) - {me, op}) >= second_order["required"] \
+            else float(second_order["fail_weight"])
     for d in sorted(deals, key=lambda d: (_ts(d["ended_at"]), str(d.get("session_id", "")))):
         side = "seller" if d.get("seller") == agent_id else "buyer" if d.get("buyer") == agent_id else None
         if not side:
@@ -872,8 +938,9 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
             per_pair[op] = per_pair.get(op, 0) + 1
             standing = _weight(who, other, _ts(d["ended_at"]))
             w = (1.0 if d.get("paid") else FREE_WEIGHT) * standing / per_pair[op]   # 1/n: repeat business grows as log n
-            t, u = t * w, u * w
-            others[op] = max(others.get(op, 0.0), standing)
+            t, u = t * w, u * w * second(op)
+            if standing * second(op) > 0:
+                others[op] = max(others.get(op, 0.0), standing * second(op))
             counts["sold" if side == "seller" else "bought"] += 1
         elif side == "seller" and d.get("status") == "disputed":
             counts["disputed_as_seller"] += 1
@@ -891,19 +958,26 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
     for board in table.values():
         if agent_id in board:
             for op in board[agent_id].met:
-                others[op] = max(others.get(op, 0.0), _weight_of_operator(who, op, now))
+                if (w := _weight_of_operator(who, op, now) * second(op)) > 0:
+                    others[op] = max(others.get(op, 0.0), w)
     weeks = 0.0
     if registered_at is not None and registered_at != "":
         weeks = min(52.0, max(0.0, (now - _ts(registered_at)) / (7 * 86_400)))
-    trust += SHARE_TRUST * math.sqrt(sum(others.values())) + TIME_TRUST * math.sqrt(weeks)
+    met_weight = sum(others.values())
+    # progression:v3: tenure counts only beside evidence, in proportion to it (two counterparties' worth
+    # makes it whole, none makes it nothing). Waiting alone earns no Trust.
+    trust_evidence = trust + SHARE_TRUST * math.sqrt(met_weight)
+    trust = trust_evidence + TIME_TRUST * math.sqrt(weeks) * min(1.0, met_weight / TIME_EVIDENCE)
     in_trust = bool(word) and word.get("trust_points") is not None
     if in_trust:
         trust += float(word["trust_points"])
 
-    ren = renown(agent_id, likes, who, house)
+    ren = renown(agent_id, likes, who, house, tiers=tiers)
     levels = {"craft": craft_level, "trade": _level(trade), "trust": _level(trust), "renown": ren["level"]}
-    top = max(levels.values())
-    leaders = [k for k, v in levels.items() if v == top]
+    # the class reads what evidence alone earned: Trust without its time term, so tenure never leads
+    lead = {**levels, "trust": _level(trust_evidence)}
+    top = max(lead.values())
+    leaders = [k for k, v in lead.items() if v == top]
     klass = None if top == 1 or len(leaders) > 1 else {"craft": "Strategist", "trade": "Merchant",
                                                          "trust": "Warden", "renown": "Bard"}[leaders[0]]
     from emporia.pledges import TRUST_FORMULA
@@ -915,8 +989,9 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
                       ("sold", "bought", "disputed_as_seller", "not_delivered")}},
             "trust": {"score": round(trust, 2), "level": levels["trust"],
                       "counterparties": len(others), "weeks_active": round(weeks, 1),
+                      "started": bool(others) or counts["abandoned_on_turn"] > 0,
                       "abandoned_on_turn": counts["abandoned_on_turn"]},
-            "renown": {k: ren[k] for k in ("score", "level", "likes", "from_operators", "by_kind", "why")},
+            "renown": {k: ren[k] for k in ("score", "level", "likes", "from_operators", "by_kind", "by_tier", "why")},
             **({"pledges": dict(word)} if word is not None else {}),
             **({"caliber": dict(caliber)} if caliber is not None else {})}
 
@@ -940,8 +1015,12 @@ def render(sh: dict) -> str:
     t, u = sh.get("trade") or {}, sh.get("trust") or {}
     lines.append(f"Trade    {t.get('score', 0)}  sold {t.get('sold', 0)}, bought {t.get('bought', 0)}, "
                  f"disputed as seller {t.get('disputed_as_seller', 0)}, not delivered {t.get('not_delivered', 0)}")
-    lines.append(f"Trust    {u.get('score', 0)}  {u.get('counterparties', 0)} counterparties, "
-                 f"{u.get('weeks_active', 0)} weeks active, games left on its turn {u.get('abandoned_on_turn', 0)}")
+    if u.get("started") is False:
+        lines.append("Trust    not started: it grows with deals and games with other operators' agents; "
+                     "time alone adds nothing")
+    else:
+        lines.append(f"Trust    {u.get('score', 0)}  {u.get('counterparties', 0)} counterparties, "
+                     f"{u.get('weeks_active', 0)} weeks active, games left on its turn {u.get('abandoned_on_turn', 0)}")
     r = sh.get("renown") or {}
     lines.append(f"Renown   {r.get('score', 0)}  {r.get('likes', 0)} likes from {r.get('from_operators', 0)} operators")
     lines.extend(f"         {why}" for why in r.get("why") or [])
