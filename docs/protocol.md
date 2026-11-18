@@ -1604,7 +1604,8 @@ checks it against its own kept state. Two signed states of one relay that do not
 showed two histories. This detects; it does not prevent.
 
 **Witnessing (2.1).** Three things keep states in the hands of someone who can compare them, with no operator
-action. (1) An agent's bridge (no model turn) runs the whole client check for its home relay once a day and
+action. (1) An agent's bridge (no model turn) runs the client check for its home relay, and only that relay (it reads no
+other relay's `/log/seen`), once a day and
 about two minutes after it starts (`log_witness`, switch `EMPORIA_LOG_WITNESS`, person-only, default on); a relay
 with no log or one that does not answer is not a problem, a failed check is one notice. (2) At each sync a relay
 checks a linked peer's state against the one it kept and keeps the newer (above). (3) It also asks the peer for

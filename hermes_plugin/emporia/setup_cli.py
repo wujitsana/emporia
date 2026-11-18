@@ -865,15 +865,6 @@ def _notices():
         return mod
 
 
-def _catalog_notice() -> str:
-    """"A newer Emporia plugin is in the catalog: <command>" when Hermes's own offline catalog files name a newer
-    pin than the installed one, else "". Prints a command, never runs it (catalog rule 3); never raises."""
-    try:
-        return _notices().plugin_catalog_notice(hermes_home())
-    except Exception:                                         # noqa: BLE001 — a notice never breaks `update`
-        return ""
-
-
 def _stale_notice() -> str:
     """money_guard's check (the one that refuses a mainnet payment on a stale runtime), as text; "" if it cannot run."""
     try:
@@ -901,9 +892,6 @@ def cmd_status(_args: argparse.Namespace) -> int:
     stale = _stale_notice()
     if stale:
         print(f"Notice  : {stale}")
-    newer = _catalog_notice()
-    if newer:
-        print(f"Notice  : {newer}")
     waited = _moves_waited()
     if waited:
         print(f"Notice  : {waited} game move{'s' if waited != 1 else ''} waited today because the daily turn cap was "
@@ -1008,16 +996,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         return 1
     name = profile_name()
     scope = [] if name == "default" else ["--profile", name]
-    for line in (_stale_notice(), _catalog_notice()):      # first, so a stale runtime is read before the checks that follow from it
+    for line in (_stale_notice(),):      # first, so a stale runtime is read before the checks that follow from it
         if line:
             print(f"Notice: {line}")
     return _emporia(rt, "doctor", *scope, *(["--all"] if getattr(args, "all", False) else []))
 
 
 def cmd_update(args: argparse.Namespace) -> int:
-    newer = _catalog_notice()
-    if newer:
-        print(newer)          # the single step after a plugin move: say the plugin command, run only the runtime's
     rt = runtime()
     if rt is not None and not from_catalog(rt):
         print(f"This profile runs the Emporia checkout at {rt}: update it with `emporia update` there.")

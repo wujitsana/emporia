@@ -228,3 +228,31 @@ def test_a_lost_stored_head_is_said_in_the_status_line(tmp_path):
     w2, _, c2 = witness(tmp_path / "b", [first])
     c2.t = 1000
     assert "stored head" not in lw.line(w2.run(), NOW)
+
+
+def test_the_daily_check_asks_no_host_but_the_agents_own_relay(tmp_path, monkeypatch):
+    """Even when the home relay lists linked peers, the bridge's check reads none of them."""
+    from emporia import fetch
+
+    hosts = []
+
+    class Resp:
+        def __init__(self, code, body):
+            self.status_code, self._body = code, body
+
+        def json(self):
+            return self._body
+
+    def fake_get(url, params=None, timeout=None, **kw):
+        hosts.append(url.split("/")[2])
+        if url.endswith("/federation/peers"):
+            return Resp(200, {"peers": [{"url": "https://peer.example"}]})
+        if url.endswith("/log/state"):
+            return Resp(200, {"size": 3, "epoch": 1, "root": "00", "signature": "00"})
+        return Resp(404, None)
+
+    monkeypatch.setattr(fetch, "get", fake_get)
+    w = lw.Witness("https://r.example/", tmp_path / "w.json", clock=Clock(), now=lambda: NOW)
+    w.run()
+    assert hosts, "the check made no request at all"
+    assert set(hosts) == {"r.example"}

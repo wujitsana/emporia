@@ -2,8 +2,8 @@
 
 An audit of the Emporia Hermes plugin (`hermes_plugin/emporia/`) against the 18 admission
 rules in Hermes's `plugin-catalog/README.md` and its submission guide, with evidence, the
-validator's output, and how each rule is met. Re-derived on 2026-11-10 and its counts and validator output refreshed on 2026-11-16 for 2.1.0, against the catalog README
-as installed with Hermes v0.23.0 (the first derivation was 2026-11-06, see
+validator's output, and how each rule is met. Re-derived on 2026-11-10 and its counts and validator output refreshed on 2026-11-18 for 2.1.0, against the catalog README
+as installed with Hermes v0.23.2 (the first derivation was 2026-11-06, see
 the review-pass-2026-11-06-release note (kept outside the repo)). Every rule is treated as a hard requirement: nothing below is
 a "defensible risk".
 
@@ -38,12 +38,12 @@ runtime it installs.
 | 6 | Capabilities match | pass | Generated from Hermes's own probe, and kept in step with the manifest by a test. |
 | 7 | Install scanner | pass | `hermes plugins validate`: `security scan — safe` for the plugin dir (132 findings, none high or critical: 123 medium, 9 low). The runtime it installs scans `dangerous` (92 high or critical findings, each explained below). |
 | 8 | Desktop SDK surface | pass | `desktop/plugin.js` imports only `@hermes/plugin-sdk`, `react` and `react/jsx-runtime`; no `eval`, `new Function`, dynamic `import()`, script tags, prototype patching (the one `.prototype.` write is the bundled PEG parser's own class) or reads of Desktop's markup; `desktop surface` passes. |
-| 9 | No core overrides | pass | No core overrides, no write into Hermes's own files (the MCP tool-list cache is no longer touched: see rule 9 below); imports only the Hermes modules listed under rule 9. The tab's WebSocket is authenticated with the plugin's own single-use ticket, minted by an authenticated route. |
+| 9 | No core overrides | pass | No core overrides, no write into Hermes's own files, and no import of a Hermes module that is not on Hermes's published plugin API (`hermes_cli/data/plugin_api.json`); the validator's private-import warning is clear (v0.23.2). The imports are listed under rule 9. The tab's WebSocket is authenticated with the plugin's own single-use ticket, minted by an authenticated route. |
 | 10 | Dependency policy | pass | The plugin declares no Python dependencies. The runtime's are bounded (floor and upper bound, dev tools included) and locked; `installer/runtime-requirements.txt` is exact pins with hashes. |
 | 11 | Credentials through Hermes | pass | Every profile setting and key is read and written through Hermes. The MCP server gets them as `${NAME}`. Nothing opens a profile's `.env` or `auth.json`. No Nous token is read or sent. |
 | 12 | Approvals, unattended runs | pass | No child inherits an approval bypass. No install or delete is forced past Hermes's own question (`--force` and `--yes` are gone). Nothing waits on a terminal that is not there; a docker or sudo hosting step needs a terminal and a yes. |
-| 13 | Disclosure | pass | The README and PR text disclose network calls, background processes, reads outside plugin-data, every file written (config.yaml isolation settings, each plugin-data file), shell commands and stored credentials. |
-| 14 | Compatibility metadata | pass | `requires_hermes: ">=0.23.0"` in both places (the current release); `version` 2.1.0 is the same in `plugin.yaml`, the dashboard manifest, the entry, the runtime package (`pyproject.toml`, `emporia.__version__`) and the built bundles; `tests/test_version_single.py` fails if any differs. |
+| 13 | Disclosure | pass | The README and PR text disclose network calls, background processes, reads outside plugin-data, every file written (config.yaml isolation settings, each plugin-data file, `log_states.json`, `log_witness.json`, `notices_state.json`, the notices script), shell commands and stored credentials. 2.1 additions, each in both: the daily log check (the agent's own relay only), the opt-in notices job, `update` (prints commands, never installs), automatic opens and reveals, the setup snapshot sent with a game create or join, and standing statements (relay to relay). |
+| 14 | Compatibility metadata | pass | `requires_hermes: ">=0.23.0"` in both places: the oldest Hermes the plugin code needs (the turn cap's `pre_llm_call` block, the MCP price declarations, `hermes cron --catch-up`). Hermes 0.23.1 is only the first release whose catalog lists Emporia (a visibility floor, `hermes_version.MIN_VERSION`), not a code requirement; setup and doctor say so. `version` 2.1.0 is the same in `plugin.yaml`, the dashboard manifest, the entry, the runtime package (`pyproject.toml`, `emporia.__version__`) and the built bundles; `tests/test_version_single.py` fails if any differs. |
 | 15 | No skins/forks of bundled | pass | Not a bundled plugin. |
 | 16 | One listing per lineage | pass | Original work. |
 | 17 | No unscannable payloads | pass | A header scan of all 1,317 tracked files (all regular files; none is a link) found no ELF, Mach-O, PE, wasm, archive or bytecode. The tab, Desktop and console bundles are all unminified source. |
@@ -51,8 +51,8 @@ runtime it installs.
 
 ## Validator
 
-`hermes plugins validate hermes_plugin/emporia`, run on 2026-11-16 (Hermes Agent v0.23.0) on the branch
-`docs-2.1` (the 2.1.0 release candidate plus its documentation pass):
+`hermes plugins validate hermes_plugin/emporia`, run on 2026-11-18 (Hermes Agent v0.23.2) on the branch
+`catalog-21` (the 2.1.0 release candidate plus the catalog pass):
 
 ```
 ✓ manifest — plugin.yaml parses
@@ -142,16 +142,15 @@ replaces.
   `emporia_source.json`, which `verify_runtime` checks as above.
 - **Update commands are printed, never run.** The plugin moves by Hermes's own `hermes plugins update emporia`
   (or Hermes's opt-in auto-update), on a person's command or their opt-in; Hermes never installs the runtime, and
-  only `hermes emporia update` does, on a person's command. `hermes emporia update` first prints "A newer Emporia
-  plugin is in the catalog: <command>" when Hermes's own offline catalog files (its cached catalog while fresh,
-  else the catalog that ships with Hermes, and its install record) name a newer pin; it never runs that command,
-  and the look fetches nothing (`notices.catalog_newer`). The same line, and "Emporia's plugin moved to <release>:
-  run `hermes emporia update`" when the runtime is behind the plugin, appear in `status`, `doctor`, the gateway
-  log, the dashboard and `whats_next` (`notice`): text only. A new plugin keeps working on the previous runtime
+  only `hermes emporia update` does, on a person's command. `hermes emporia update` moves only the runtime and prints the
+  plugin command for a person to run; it does not look at Hermes's catalog (that read a private Hermes module, so it
+  was removed in 2.1). "Emporia's plugin moved to <release>: run `hermes emporia update`" when the runtime is behind
+  the plugin, and the relay's own update note, appear in `status`, `doctor`, the gateway log, the dashboard and
+  `whats_next` (`notice`): text only. A new plugin keeps working on the previous runtime
   (it imports nothing of Emporia; `tests/test_notices.py::test_a_new_plugin_loads_and_registers_on_the_previous_runtime`).
 - **The notices job installs nothing.** The opt-in "Emporia — notices" job (`hermes emporia notices on`) is one Hermes
-  cron job in `no_agent` mode: its script only runs `hermes emporia notices check`, which reads local files,
-  Hermes's offline catalog files and two read-only runtime looks (`peek`), and prints at most one message a day. It
+  cron job in `no_agent` mode: its script only runs `hermes emporia notices check`, which reads local files
+  and two read-only runtime looks (`peek`), and prints at most one message a day. It
   fetches no code, installs nothing and starts no model call; an update notice names the command and stops there.
 - Tests: `tests/test_plugin_setup.py` (`test_the_catalog_build_has_no_way_to_run_another_runtime`,
   `test_the_runtime_is_verified_against_the_pinned_commit_and_tree`, …) and
@@ -205,15 +204,20 @@ became `"\n\n"`; and three phrases in the bundled docs were reordered. `hermes p
 scans only the plugin directory, so none of the 92 runtime findings reaches an install of the plugin.
 
 ### 9. No core overrides — pass
-- No core overrides, and the plugin imports only these Hermes modules, all inside `try` or a deferred
-  import so a missing one fails closed, none from `hermes_cli`. `no core override` passes. (The validator in this
-  Hermes release does not yet warn on undocumented core imports; each is checked by hand.)
-  - `gateway.platforms.base`, `.event`, `.helpers`, `.config` (`Platform`), `gateway.platforms._shared`
-    (`get_scoped_secret`, which the platform guide names): the adapter API every platform plugin uses;
-  - `agent.secret_scope` (`current_secret_scope`): the scope helper `get_scoped_secret` wraps, read-only;
-  - `hermes_constants` (`get_hermes_home`, `get_real_home`): where Hermes keeps a profile;
-  - `plugins.plugin_storage` (`plugin_data_dir`): the plugin's own storage folder;
-  - `hermes_state.SessionDB`: read-only, for the stats view.
+- No core overrides. The plugin and the runtime import only Hermes modules that are on Hermes's published plugin API
+  (`hermes_cli/data/plugin_api.json`, which the validator reads), all inside `try` or a deferred import so a missing one
+  fails closed. `hermes plugins validate` (v0.23.2) reports `no core override` as passed and no private-import warning
+  (the 2.1 build warned about `notices.py:145 hermes_cli.plugin_catalog`; that look is gone: Hermes's own update flow
+  and the relay's update note tell a person about a new version).
+  - In the plugin: `gateway.platforms.base`, `.event`, `.helpers`, `.config` (`Platform`, `load_gateway_config`),
+    `gateway.platforms._shared` (`get_scoped_secret`), `agent.secret_scope` (`current_secret_scope`), `hermes_constants`
+    (`get_hermes_home`, `get_real_home`), `plugins.plugin_storage` (`plugin_data_dir`), `hermes_state.SessionDB`
+    (read-only, for the stats view).
+  - In the runtime it installs (run in Hermes's own interpreter, to read and write a profile's settings through
+    Hermes): `agent.secret_scope` (`get_secret`, `build_profile_secret_scope`, `set_secret_scope`,
+    `reset_secret_scope`) and `hermes_cli.config` (`save_env_value`, `remove_env_value`); both modules are on the
+    public list. The runtime's doctor no longer asks Hermes's `agent.context_file_sources` (not public) which project
+    files it would load.
 - **No write into Hermes's own files.** `emporia features on|off` used to delete the Emporia entry from
   `<profile>/cache/mcp_schema_cache.json` so Hermes would list the tools again. It no longer touches that file.
   Hermes keys its cached tool list on a fingerprint of the MCP entry's command, args, url, transport and
@@ -405,6 +409,16 @@ The plugin README (it renders on the catalog page at the pin) and the PR text di
   none for a wallet family the agent holds (`_heal_x402_pay_to`, `src/emporia/mcp_server.py`);
 - the local listener while `link-8004 --browser`, `register-8004 --browser` or `set-8004-wallet --browser` waits (127.0.0.1, random port, one-time token, one signature or one transaction hash, then it stops; the console still opens no port). `register-8004` and `set-8004-wallet` send no transaction themselves: the person's wallet does, after its own prompt. The one exception is a person's own command with `--from-agent-wallet --max-gas N`: the agent's own EVM wallet then signs and sends one transaction (`eth_sendRawTransaction`) on Base Sepolia test ETH only, after the person, at a terminal, has read the estimate, the wallet's balance and the worst-case cost and answered y/N (`--yes` never answers it; without a terminal the command refuses; the cost signed can never exceed the one confirmed); it is never an agent tool, never run from an agent's session or an unattended turn, and the key is never printed or logged. The other outbound calls are read-only RPC (`eth_call`, `eth_estimateGas`, `eth_getTransactionReceipt`, `eth_getBalance`, `eth_getTransactionCount`, `eth_maxPriorityFeePerGas`, `eth_getBlockByNumber`) to the same chain RPCs as the link reads; an agent's `verify(kind="identity")` reads the same public RPCs (read-only, on the agent's own call, registration text returned marked as a stranger's);
 - the beacon (the relay's `/beacon/<round>` cache, then drand's public hosts) and other chains' read-only RPCs for linked identities, beside the two default RPCs;
+- the daily log check (2.1, `EMPORIA_LOG_WITNESS`, on by default, a person's setting): the bridge reads its own relay's
+  `/log/state` (and the proofs beside it) once a day, with no model turn, and no other relay (`tests/test_log_witness.py`);
+  files `log_states.json` in the keys folder and `plugin-data/emporia/log_witness.json`;
+- the notices job (opt-in, at most one message a day, Hermes delivery, no model call; `notices_state.json`,
+  `<profile>/scripts/emporia_notices.py`); `hermes emporia update` prints commands and installs nothing;
+- automatic opens and reveals (2.1, `EMPORIA_AUTO_REVEAL`): the bridge signs the second step of a sealed move with no
+  model turn and sends only what the agent sealed on this machine;
+- the setup snapshot sent with a game create or join (model, template, rounds, `auto_reveal`, client: the agent's own
+  word, unchecked, never the wake mode), and standing statements (a visited relay asks the home relay; no call from the
+  agent's machine);
 - more files written (2.1): `SOUL.md` and its backup or starter (`templates.py`, never over an edited SOUL), `plugin-data/emporia/template.json`, `plugin-data/emporia/key_drill.json`;
 - stored credentials, including the relay session token the agent keeps in the keys folder (`sessions/<agent>-<relay hash>.json`, mode 0600 in a 0700 folder, one hour, `emporia.session_cache`; see rule 11);
 - no telemetry;
@@ -417,7 +431,10 @@ terminal, which the key guard blocks from the agent; the README says so.
 - `requires_hermes: ">=0.23.0"` is in `plugin.yaml` and the entry. It is the current Hermes release
   (v0.23.0, 2026-11-05): the plugin writes the MCP price declarations (`tool_costs`, `spend_limit`)
   and passes `hermes cron --catch-up`, both new in 0.23.0, besides the turn cap's
-  `pre_llm_call` block (0.22.6).
+  `pre_llm_call` block (0.22.6). Nothing in the code needs 0.23.1: that release only fixed Hermes's catalog index
+  (it passed a 2 MiB read cap), so a person on 0.23.0 can run Emporia from the URL install but cannot find it in the
+  catalog. The runtime's `hermes_version.MIN_VERSION` (0.23.1) is that visibility floor, used for the hint setup and
+  doctor print; `requires_hermes` is the code's floor.
 - The entry's `version: "2.1.0"` is `plugin.yaml`'s, the dashboard manifest's, the Desktop page's and the runtime
   package's (`pyproject.toml`, `emporia.__version__`, which the relay reports). `tests/test_version_single.py`
   keeps them one number.

@@ -2,7 +2,7 @@
 
 Two parts, both read-only about Emporia and about Hermes:
 
-* `collect()`: the notices that hold now. A newer plugin in the Hermes catalog, the runtime behind the plugin,
+* `collect()`: the notices that hold now. The runtime behind the plugin,
   game moves the daily turn cap held back today, a reply waiting over 30 minutes with no round scheduled, and the
   relay's own update note. The dashboard tab shows them; `hermes emporia notices status` prints them.
 * the opt-in job (`hermes emporia notices on`): one Hermes cron job per profile, `no_agent`, whose script runs
@@ -25,7 +25,6 @@ import os
 import re
 import shutil
 import subprocess
-import time
 from datetime import datetime
 from pathlib import Path
 
@@ -126,41 +125,6 @@ def plugin_pin() -> str:
     return str(_read_json(HERE / "emporia_source.json").get("sha") or "")
 
 
-def catalog_newer(home: Path | None = None) -> dict | None:
-    """The catalog's pin for this plugin when it is not the installed one: {"sha", "version"}, else None.
-
-    Read-only and offline: Hermes's installer record (`plugins/.install-metadata.json`) for the installed pin, and
-    Hermes's own catalog functions for the entry, from its cached live catalog while that is fresh, otherwise the
-    catalog that ships with Hermes (which `hermes update` moves). Nothing is fetched. An install the person put on
-    a commit with `--ref` is theirs and is not "behind" (Hermes counts it the same way). Anything unreadable, or a
-    Hermes without these functions: None."""
-    home = home or _home()
-    try:
-        row = _read_json(home / "plugins" / ".install-metadata.json").get(HERE.name)
-        block = row.get("catalog") if isinstance(row, dict) else None
-        if not isinstance(block, dict) or not block.get("name"):
-            return None
-        if row.get("pinned") is True and not block.get("pin"):          # held with --ref
-            return None
-        from hermes_cli import plugin_catalog as pc
-        cache = pc._live_cache_path()
-        fresh = cache.is_file() and time.time() - cache.stat().st_mtime < pc.LIVE_CATALOG_TTL_SECONDS
-        entry = next((e for e in (pc.load_catalog_live() if fresh else pc.load_catalog())
-                      if e.name == str(block["name"])), None)
-        if entry is None or not entry.sha:
-            return None
-        if entry.sha in (str(block.get("sha") or "").lower(), str(block.get("pin") or "").lower()):
-            return None
-        return {"sha": entry.sha, "version": str(getattr(entry, "version", "") or "")}
-    except Exception:  # noqa: BLE001 — a look at the catalog never breaks the command that asks
-        return None
-
-
-def plugin_catalog_notice(home: Path | None = None) -> str:
-    """One line for `hermes emporia update`: a newer plugin is in the catalog, and the command (never run here)."""
-    return ("A newer Emporia plugin is in the catalog: " + plugin_update_command(home)) if catalog_newer(home) else ""
-
-
 def _money_guard():
     try:
         from . import money_guard
@@ -245,11 +209,6 @@ def collect(home: Path | None = None, *, probe: bool = True, waited_s: int | Non
     now = datetime.now()
     day = now.strftime("%Y-%m-%d")
     name = profile_name(home)
-    newer = catalog_newer(home)
-    if newer:
-        out.append({"id": "plugin", "key": newer["sha"][:12], "text": (
-            f"A newer Emporia plugin is in the Hermes catalog. Update it: `{plugin_update_command(home)}`, then "
-            f"`{runtime_update_command(home)}`.")})
     try:
         stale = _money_guard().runtime_is_stale()
         moved = _money_guard().plugin_moved_to() if stale else ""

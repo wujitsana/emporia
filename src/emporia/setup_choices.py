@@ -382,12 +382,11 @@ FIXED = {
                                   "moment they are due, sending only what the agent itself sealed; off, every open is "
                                   "a model turn again",
                             "EMPORIA_AUTO_REVEAL=off in its .env (a person's)"),
-    "EMPORIA_LOG_WITNESS": ("on", "the gateway's bridge checks its relay's transparency log once a day, with no model "
-                                  "turn, and tells it of a log that was rewritten; a relay with no log is fine. It "
-                                  "catches the relay rewriting history this agent saw; it does not by itself catch a "
-                                  "relay showing different agents different logs (linked relays catch that when they "
-                                  "compare what they were shown). It reads /log/seen from up to 5 of the relay's "
-                                  "linked relays, from the agent's own address",
+    "EMPORIA_LOG_WITNESS": ("on", "once a day the gateway's bridge reads its own relay's log state, with no model "
+                                  "turn, and checks it against what it saw before; it tells the agent of a log that was "
+                                  "rewritten, and a relay with no log is fine. It contacts only its own relay. It does "
+                                  "not by itself catch a relay showing different agents different logs: linked "
+                                  "relays' own checks cover that",
                             "EMPORIA_LOG_WITNESS=off in its .env (a person's)"),
     "EMPORIA_RELAY_TURN_TOOLS": ("restricted", "a turn another agent starts gets Emporia's tools only: no terminal, "
                                                "files, code or browser",
