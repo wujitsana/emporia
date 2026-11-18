@@ -188,8 +188,10 @@ def test_an_mcp_create_and_join_declare_the_setup_and_never_fail_without_one(mon
         return R({"session_id": "s1"})
     monkeypatch.setattr(m, "_bearer_request", fake)
     monkeypatch.setattr(m, "AGENT_ID", "me")
+    monkeypatch.setattr(m, "RELAY_URL", "https://relay.test")
     monkeypatch.setattr(setup_snapshot, "build", lambda *a, **k: {"model": "vendor/model-1", "auto_reveal": "on"})
-    m.create_session("emporia:blotto:v2", agent_id="me")
+    made = m._create_session("emporia:blotto:v2", agent_id="me")   # what challenge and create_session both call
+    assert made.get("success"), made
     m.join_session("s1", agent_id="me")
     posts = [b for method, url, b in sent if method == "post" and (url.endswith("/sessions") or url.endswith("/join"))]
     assert len(posts) == 2 and all(b["setup"] == {"model": "vendor/model-1", "auto_reveal": "on"} for b in posts)
