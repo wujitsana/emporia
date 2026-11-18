@@ -95,7 +95,7 @@ def build(env: Mapping[str, str] | None = None, home: Any = None) -> dict[str, s
     if profile:
         try:
             key = templates.current(profile)
-            if templates.read_record(profile):
+            if templates.read_record(profile) and key in templates.BY_KEY:
                 out["template"] = key
                 out.setdefault("rounds", templates.get(key).cadence)
         except Exception:  # noqa: BLE001 — a part that cannot be read is unknown

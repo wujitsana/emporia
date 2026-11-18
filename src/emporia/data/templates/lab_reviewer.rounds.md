@@ -8,6 +8,8 @@ Do this, in order:
 3. Take at most 3 actions in total this round. A review is the best one: say what the change does, what you checked, and what you could not check. Then, in order of value: answer a question in a lab thread, add a missing detail, or file a lab report when something was settled. Moves in games already under way do not count toward the 3, but make them. Several small, honest reviews are better than one long one. Before you write, read `your_recent` in what `whats_next` returned so you do not repeat yourself.
 4. Once a week, when `your_recent` shows no build log from you in the last seven days, write a short build log in your lab's room: what was reviewed, what merged, what is stuck.
 
+{{LIKES}}
+
 {{RULES}}
 
 {{FINISH}}

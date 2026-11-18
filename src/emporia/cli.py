@@ -4180,13 +4180,13 @@ def _template_apply(profile: Path, key: str, *, rounds: bool, pname: str = "") -
     with `rounds`, the rounds job (`hermes cron edit`, via `rounds.turn_on`) when one exists. Recommended plugins
     are printed with their install lines and never installed."""
     from emporia import features as F, rounds as R, templates as T
-    t = T.get(key)
+    t = T.get(key, profile)
     held = installer().harvest_env(profile)
     raw_now = held.get(F.SETTING, "")
     record = T.read_record(profile)
     old = T.current(profile)
-    lines = [f"Template: {T.get(old).title} -> {t.title}" if old != t.key else f"Template: {t.title} (applied again)"]
-    new_raw, before = T.features_for(t.key, raw_now, record)
+    lines = [f"Template: {T.get(old, profile).title} -> {t.title}" if old != t.key else f"Template: {t.title} (applied again)"]
+    new_raw, before = T.features_for(t.key, raw_now, record, profile)
     if new_raw != raw_now:
         merge_env_file(profile / ".env", {F.SETTING: new_raw})
         installer().refresh_mcp_references(profile)
@@ -4195,12 +4195,15 @@ def _template_apply(profile: Path, key: str, *, rounds: bool, pname: str = "") -
                          "It cannot post, play, deal, message or vote.")
         elif F.read_only(raw_now):
             lines.append(f"Tools: writes are on again; features {', '.join(F.parse(new_raw)) or 'core only'}.")
+        elif t.features is not None:
+            lines.append(f"Features: kept only {', '.join(F.parse(new_raw)) or 'core'} (this template turns tools off, never on).")
         else:
             lines.append(f"Features: {', '.join(F.parse(new_raw)) or 'core only'}.")
         lines.append("It applies on the next MCP start (restart the gateway, or /reload-mcp in its chat).")
     else:
         lines.append("Tools: unchanged.")
     how, where = T.write_soul(profile, t.key)
+    starter_text = T.soul_starter(t.key, profile)
     lines.append({"none": "SOUL.md: unchanged (this template brings no starter).",
                   "written": "SOUL.md: written from the starter; edit it.",
                   "replaced": f"SOUL.md: the untouched starter was replaced by the {t.title} starter (the old text is in {where}).",
@@ -4208,7 +4211,7 @@ def _template_apply(profile: Path, key: str, *, rounds: bool, pname: str = "") -
                   }[how])
     new_record = {"template": t.key, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     if how in ("written", "replaced"):
-        new_record["soul_sha"] = T._sha(T.soul_starter(t.key))
+        new_record["soul_sha"] = T._sha(starter_text)
     elif record.get("soul_sha"):
         new_record["soul_sha"] = record["soul_sha"]
     if before is not None:
@@ -4234,22 +4237,43 @@ def _template_apply(profile: Path, key: str, *, rounds: bool, pname: str = "") -
 
 
 def cmd_template(args: argparse.Namespace) -> int:
-    """`emporia template [NAME] [--agent AGENT]`: list the starting characters (the profile's marked), or switch
-    to one. A person's setting: the key guard holds the switch from an agent's tools."""
+    """`emporia template [list | NAME | save NAME [--from-profile] [--replace]] [--agent AGENT]`: list the starting
+    characters (the profile's marked, your own with "yours"), switch to one (stock or your own), or save this
+    profile's SOUL and rounds steps as a character of your own. A person's setting: the key guard holds all of it from
+    an agent's tools."""
     from emporia import templates as T
     found = _own_profile(args)
     if found is None:
         print("template: no Emporia agent profile here (run it as `hermes -p NAME emporia template …`, or pass --agent NAME)")
         return 1
     profile, name = found
-    if not args.name:
+    if args.name == "save":
+        if not args.save_name:
+            print("template: save needs a name: `emporia template save NAME`")
+            return 1
+        try:
+            folder, notes = T.save_custom(profile, args.save_name, replace=args.replace)
+        except (T.TemplateError, OSError) as e:
+            print(f"template: {e}")
+            return 1
+        print(f"  Saved your template {T._norm(args.save_name)!r} in {folder}")
+        print("    - template.yaml (title, effect, cadence, features, recommended skills), soul.md (the SOUL starter) and "
+              "rounds.md (your steps) are yours to edit.")
+        print("    - The likes guidance, the rules that hold every round and the closing line are always added by code, "
+              "never read from the file.")
+        for note in notes:
+            print(f"    - {note}.")
+        print(f"    - Apply it (here or on another agent with --agent): emporia template {T._norm(args.save_name)}")
+        return 0
+    if args.name in ("", "list"):
         print(f"  Starting characters for {name} (* is the current one):")
         for line in T.list_lines(profile):
             print(line)
         print("  Switch: emporia template NAME. Your own SOUL.md is never overwritten; plugins are only suggested.")
+        print(f"  Make your own: emporia template save NAME (kept in {T.custom_dir(profile)}).")
         return 0
     try:
-        t = T.get(args.name)
+        t = T.get(args.name, profile)
         lines = _template_apply(profile, t.key, rounds=True, pname=this_profile_name(profile))
     except (T.TemplateError, OSError) as e:
         print(f"template: {e}")
@@ -4458,7 +4482,7 @@ def cmd_rounds(args: argparse.Namespace) -> int:
                 level, text, _fix = R.runs_report(pname)
                 if level in ("ok", "warn"):
                     print(f"  Last round  {text}")
-            print(f"  Prompt      version {R.prompt_version(R.prompt_text(template=_current_template(profile)))} "
+            print(f"  Prompt      version {R.prompt_version(R.prompt_text(template=_current_template(profile), profile_dir=profile))} "
                   f"(emporia/data/{R.PROMPT_FILE}; template {__import__('emporia.templates', fromlist=['x']).current(profile)})")
             print(f"  Wake mode   {__import__('emporia.wake', fromlist=['x']).current(installer().harvest_env(profile))}")
             _on = __import__('emporia.autoreveal', fromlist=['x']).enabled(installer().harvest_env(profile))
@@ -10495,8 +10519,15 @@ def build_parser() -> argparse.ArgumentParser:
     ky.add_argument("--from", dest="from_", default="", metavar="BACKUP", help="the sealed backup file")
     ky.set_defaults(func=cmd_keys)
 
-    tp = sub.add_parser("template", help="the agent's starting character: list them, or switch (a person's setting)")
-    tp.add_argument("name", nargs="?", default="", help="lab_reviewer, player, scribe, host, spectator or plain (none: list)")
+    tp = sub.add_parser("template", help="the agent's starting character: list them, switch, or save your own (a person's setting)")
+    tp.add_argument("name", nargs="?", default="",
+                    help="lab_reviewer, player, scribe, host, spectator, plain or one of your own (none or `list`: list them); "
+                         "`save` keeps this agent's SOUL and rounds steps as a template of your own")
+    tp.add_argument("save_name", nargs="?", default="", help="with `save`: the new template's name")
+    tp.add_argument("--from-profile", action="store_true",
+                    help="with `save`: take the SOUL from this profile's SOUL.md and the steps from its current template "
+                         "(what it does anyway; accepted so a script can say so)")
+    tp.add_argument("--replace", action="store_true", help="with `save`: overwrite your template of that name")
     tp.add_argument("--agent", default="", help="the agent's profile (default: this one)")
     tp.set_defaults(func=cmd_template)
 
