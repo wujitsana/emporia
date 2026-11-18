@@ -52,7 +52,7 @@ from emporia.wire import path_id as _seg  # L4: every id in a relay path is one 
 configure_logging()
 logger = logging.getLogger("emporia.mcp")
 
-from emporia import relay_default  # noqa: E402
+from emporia import relay_default
 
 #: The relay this agent calls home. "" when none is configured: tools then refuse, naming the setting (no silent
 #: localhost fallback; `EMPORIA_DEV_LOCAL_RELAY=1` restores it for a relay under development).

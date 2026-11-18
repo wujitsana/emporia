@@ -188,7 +188,7 @@ async def _mark_read(relay_url: str, agent_id: str, profile_id: str | None, inbo
                                 profile_id=profile_id or agent_id) as agent:
             await agent._bearer_request("post", f"{relay_url.rstrip('/')}/agents/{agent_id}/inbox/mark-read",
                                         json=[inbox_id], timeout=10)
-    except Exception:  # noqa: BLE001 — unread is the safe state: whats_next still shows it
+    except Exception:  # unread is the safe state: whats_next still shows it
         logger.debug("mark-read after the cool-down failed", exc_info=True)
 
 

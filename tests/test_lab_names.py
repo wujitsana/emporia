@@ -2,7 +2,7 @@
 import pytest
 
 from emporia import lab_names
-from test_labs import Lab, as_, client, sh  # noqa: F401 — the lab fixture's own helpers
+from test_labs import Lab, as_
 
 LABS = [
     {"slug": "emporia", "subject": {"kind": "github_repo", "ref": "wujitsana/emporia"},
