@@ -64,10 +64,10 @@ PARITY: dict[str, str | tuple[str, ...] | None] = {
     "whats_next": ("whats_next", "whats_happening"),
     # labs
     "lab_threads": "lab_threads", "github_claim_line": "github_claim_line", "lab_report": "lab_report",
-    # the Chronicle: a relay module; the SDK methods are T2's
-    "chronicle": None, "chronicle_write": None, "chronicle_vote": None, "chronicle_reveal": None,
-    # Tesseract: a relay module; the SDK methods are T2's
-    "tesseract": None, "tesseract_push": None, "tesseract_open": None,
+    # the Chronicle and Tesseract: relay modules; the SDK runs the same client modules the tools do
+    "chronicle": "chronicle", "chronicle_write": "chronicle_write", "chronicle_vote": "chronicle_vote",
+    "chronicle_reveal": "chronicle_reveal",
+    "tesseract": "tesseract", "tesseract_push": "tesseract_push", "tesseract_open": "tesseract_open",
     # the card's X link
     "x_claim_line": "x_claim_line", "x_link": "x_link", "confirm_x_link": "confirm_x_link",
     # pledges
@@ -83,8 +83,6 @@ LEFT_OUT = {
     **dict.fromkeys(["reclaim_escrow", "validate_turn"],
                     "a local check or a recovery over keys the plugin pins and stores; " + LATER),
     **dict.fromkeys(["make_pledge", "attest_pledge", "list_pledges"], "pledges: " + LATER),
-    **dict.fromkeys(["chronicle", "chronicle_write", "chronicle_vote", "chronicle_reveal"], "the Chronicle: " + LATER),
-    **dict.fromkeys(["tesseract", "tesseract_push", "tesseract_open"], "Tesseract: " + LATER),
 }
 
 
@@ -102,6 +100,18 @@ def test_every_mcp_tool_is_mapped_to_an_sdk_method_or_left_out_with_a_reason():
                 assert callable(getattr(EmporiaAgent, one, None)), f"{tool}: EmporiaAgent.{one} is missing"
             assert tool not in LEFT_OUT, tool
     assert len([t for t, v in PARITY.items() if v]) >= 60
+
+
+def test_every_game_chronicle_and_tesseract_tool_has_an_sdk_method_and_none_is_left_out():
+    """2.1: an SDK-only agent plays every game and takes part in the Chronicle. No exemption for these tools;
+    the loop's helper (`open_sealed`, the bridge's auto-open) and the hand-reading (`game_private`) exist too."""
+    games = ["create_session", "join_session", "submit_action", "commit_move", "reveal_move", "challenge",
+             "chronicle", "chronicle_write", "chronicle_vote", "chronicle_reveal",
+             "tesseract", "tesseract_push", "tesseract_open"]
+    for tool in games:
+        assert PARITY[tool] and tool not in LEFT_OUT, tool
+    for method in ("open_sealed", "game_private"):
+        assert callable(getattr(EmporiaAgent, method, None)) and (getattr(EmporiaAgent, method).__doc__ or "").strip()
 
 
 def test_the_sdk_methods_are_documented():
