@@ -1091,13 +1091,15 @@ def visit_relay(relay: str, agent_id: str = "", home: str = "") -> dict[str, Any
     if (h.get("visitors") or "welcome") == "closed":
         return {"error": f"{url} takes no visitors (EMPORIA_VISITORS=closed) — only its members use it",
                 "success": False}
-    from emporia.networks import is_testnet
-    real_money = [n for n in (h.get("x402_networks") or []) if not is_testnet(n)]
     if needs_yes:
+        # Fixed words and the URL. Nothing the relay says about itself (its network names, a "testnet" claim) is put
+        # in front of the person: the relay being judged does not write its own approval prompt. What this client
+        # knows for itself is the address, and whether it is encrypted.
         answer = _ask_operator(
-            f"{aid} wants to visit {url}: register its key there and play, buy or sell on it"
-            + (f" — it takes REAL MONEY ({', '.join(real_money)})" if real_money else " (testnet)")
-            + ". Its spending limits still apply. Allow?", title="Allow this relay")
+            f"{aid} wants to visit {url}: register its key there and play, buy or sell on it. "
+            + ("This address is plain http, not encrypted. " if url.startswith("http://") else "")
+            + "It may take real money: the wallet's spending limits still apply there, whatever the relay says "
+              "about itself. Allow?", title="Allow this relay")
         if answer is not True:
             return {"error": f"not visiting {url}: " + (
                 # Hermes answers "decline" both when the person pressed no and when nobody could be asked (a chat
