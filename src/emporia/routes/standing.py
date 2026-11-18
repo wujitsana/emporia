@@ -1301,6 +1301,48 @@ def _standing_next(agent_id: str, sheet: dict) -> dict:
             "operators_here": others, "operators_met": met, "counting": others > 0}
 
 
+def _finish_of(agent_id: str, sessions: list[dict], house: set[str]) -> dict:
+    """Caliber's Finish (a floor: never ranked, never on a board, never feeds allowance). Finish counts the agent's public, non-practice games and its services, the Assay and the Chronicle, house
+    games excluded as Follow excludes them; it counts own-operator games too, because what it measures is whether the
+    setup completes, not whom it played, and nothing is paid for it."""
+    from emporia import caliber
+    with rs.DB_LOCK, rs.get_db() as conn:
+        acts: dict[str, list[tuple[str, Any]]] = {}
+        for r in conn.execute("SELECT session_id, action_type, payload_json FROM actions WHERE agent_id = ?",
+                              (agent_id,)).fetchall():
+            try:
+                payload = json.loads(r["payload_json"])
+            except ValueError:
+                payload = {}
+            acts.setdefault(r["session_id"], []).append((r["action_type"], payload))
+    obligations: list[dict] = []
+    game_types = set(game_module_types())
+    for sess in sessions:
+        mod = sess["module_type"]
+        if mod not in game_types and mod != "emporia:service:v1":
+            continue
+        if set(sess["participants"]) & house:
+            continue
+        if mod != "emporia:service:v1" and rs._session_visibility(sess) != "public":
+            continue
+        outcome: dict = {}
+        if sess["status"] == "completed":
+            try:
+                outcome = get_interaction_module(mod).is_terminal(SessionState.from_dict(sess["state"]))[1] or {}
+            except Exception:  # noqa: BLE001 — a record that cannot be read asked nothing of anyone
+                continue
+        row = caliber.session_obligation(
+            agent_id, module=mod, status=sess["status"], participants=sess["participants"], outcome=outcome,
+            quitter=walked_away(sess) if sess["status"] == "abandoned" else None,
+            actions=acts.get(sess["session_id"], []), at=sess["updated_at"])
+        if row:
+            obligations.append(row)
+    if relay_modules.on("assay", "trials") or relay_modules.on("chronicle", "book"):
+        from emporia.routes import assay as assay_routes
+        obligations += assay_routes.finish_obligations(agent_id)
+    return caliber.finish_row(caliber.finish(obligations), agent_id)
+
+
 def _sheet_body(agent_id: str) -> dict:
     with rs.DB_LOCK, rs.get_db() as conn:
         reg = conn.execute("SELECT registered_at FROM authorized_agents WHERE agent_id = ?",
@@ -1314,11 +1356,12 @@ def _sheet_body(agent_id: str) -> dict:
     table, games, who = _craft_table()
     used = [g["session_id"] for g in games if agent_id in g["participants"]]
     game_types = set(game_module_types())
-    deals, abandoned = [], []
+    deals, abandoned, kept = [], [], []
     for row in rows:
         sess = rs._session_row_to_dict(row)
         if agent_id not in sess["participants"] or is_practice_session(sess):    # practice counts nothing
             continue
+        kept.append(sess)
         if sess["module_type"] in game_types and sess["status"] == "abandoned":
             abandoned.append({"participants": sess["participants"], "current_agent": quitter_of(sess),
                               "step_number": 1 if walked_away(sess) else sess["step_number"]})
@@ -1346,11 +1389,13 @@ def _sheet_body(agent_id: str) -> dict:
     if relay_modules.on("assay", "trials"):          # Caliber: a reading on the sheet, it moves nothing else
         from emporia.routes import assay as assay_routes
         cal = assay_routes.agent_caliber(agent_id)
+    finish = _finish_of(agent_id, kept, house)
     sheet = {**progression.base_sheet(agent_id, table=table, deals=deals, abandoned=abandoned,
                                       registered_at=reg["registered_at"], now=time.time(), who=who,
                                       likes=likes, house=house, word=word, caliber=cal, tiers=_renown_tiers(),
                                       second_order=_second_order_of(agent_id)),
              **({"improvements": improvements} if improvements is not None else {}),
+             "finish": finish,                       # 2.1, additive: a floor (never ranked)
              "insight": progression.insight(agent_id, _calls().get(agent_id, [])),
              "scope": "this_relay", "sessions_counted": len(set(used)),
              **({"overall_level": lv} if (lv := agent_level(agent_id)) is not None else {}),

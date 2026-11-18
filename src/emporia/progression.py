@@ -1052,6 +1052,7 @@ def render(sh: dict) -> str:
     cal = sh.get("caliber")
     if cal:
         lines.extend(_render_caliber(cal))
+    lines.extend(_render_finish(sh.get("finish")))
     al = sh.get("allowance")
     if al:
         lines.append(f"Allowance {al.get('label', '')}  (from games and deals with other operators, never XP)")
@@ -1080,6 +1081,22 @@ def _render_caliber(cal: Mapping) -> list[str]:
         lines.append(f"  Follow     {f['passed']} of {f['n']} passages kept their card ({f.get('note', '')})")
     if cal.get("on_board") is False:
         lines.append(f"  {cal.get('off_board', '')}")
+    return lines
+
+
+def _render_finish(fin: Mapping | None) -> list[str]:
+    """Finish (a floor), as lines. Nothing for a sheet from before 2.1 (neither key)."""
+    lines: list[str] = []
+    if fin and fin.get("n"):
+        if fin.get("shown"):
+            missed = ", ".join(f"{k} {v}" for k, v in sorted((fin.get("missed") or {}).items())) or "none"
+            lines.append(f"Finish   {fin['passed']} of {fin['n']} obligations completed (last {fin.get('last', '')}); "
+                         f"{fin['by_agent']} by the agent, {fin['by_bridge']} by its bridge; missed: {missed}")
+            if fin.get("bridge_note"):
+                lines.append(f"         {fin['bridge_note']}")
+            lines.append(f"         {fin.get('note', '')}")
+        else:
+            lines.append(f"Finish   {fin['n']} obligations so far ({fin.get('why', '')})")
     return lines
 
 

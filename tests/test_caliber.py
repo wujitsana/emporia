@@ -523,3 +523,127 @@ def test_the_signed_kinds_are_in_the_signing_table_and_wire():
     p = wire.signed_assay_seal_payload("r", "2026-11-20", "42", 70, "stable", "2026-11-20T00:00:00+00:00")
     assert p["type"] == "emporia:assay-seal:v1" and p["confidence"] == 70
     assert wire.signed_assay_enter_payload("r", "2026-11-20", "s", "t")["type"] == "emporia:assay-enter:v1"
+
+
+# ── Finish: a floor, from records that already exist ─────────────────────────────────────────────────────
+
+def _ob(agent, ok, kind="game", by="agent", at="2026-11-10T10:00:00+00:00"):
+    return {"agent": agent, "kind": kind, "ok": ok, "by": by, "at": at}
+
+
+def test_finish_is_a_pass_rate_with_n_the_split_and_the_last_date():
+    rows = [_ob("ann", True)] * 5 + [_ob("ann", True, "reveal", "bridge")] * 2 + [_ob("ann", False, "clock")] \
+        + [_ob("ann", False, "assay", at="2026-11-12T00:00:00+00:00")]
+    got = caliber.finish(rows)["ann"]
+    assert got["shown"] and got["n"] == 9 and got["passed"] == 7 and got["rate"] == pytest.approx(0.778, abs=1e-3)
+    assert got["by_agent"] == 5 and got["by_bridge"] == 2
+    assert got["missed"] == {"clock": 1, "assay": 1} and got["last"] == "2026-11-12"
+    assert "bridge" in got["bridge_note"] and "setup finishing" in got["bridge_note"]
+    assert "never ranked" in got["note"]
+
+
+def test_finish_is_hidden_below_the_threshold_and_empty_is_n_zero():
+    rows = [_ob("bob", True)] * (caliber.MIN_FINISH - 1)
+    got = caliber.finish(rows)["bob"]
+    assert got["shown"] is False and got["n"] == caliber.MIN_FINISH - 1 and "rate" not in got and got["passed"] is None
+    empty = caliber.finish_row({}, "nobody")
+    assert empty["n"] == 0 and empty["shown"] is False
+    assert caliber.finish([*rows, _ob("bob", False)])["bob"]["rate"] == pytest.approx(0.875)
+
+
+def test_the_bridge_marker_is_read_through_one_function():
+    assert caliber.done_by_bridge({"by": "bridge", "x": 1}) is True
+    assert not caliber.done_by_bridge({"by": "agent"}) and not caliber.done_by_bridge({}) and not caliber.done_by_bridge(None)
+    assert (caliber.BRIDGE_KEY, caliber.BRIDGE_VALUE) == ("by", "bridge")
+
+
+def _obl(agent="ann", **kw):
+    base = dict(module="emporia:tesseract:v1", status="completed", participants=["ann", "zed"], outcome={},
+                quitter=None, actions=[], at="2026-11-10T00:00:00+00:00")
+    base.update(kw)
+    return caliber.session_obligation(agent, **base)
+
+
+def test_session_obligations_from_fixture_sessions():
+    sealed_by_bridge = [("seal", {}), ("open", {"by": "bridge"}), ("reveal", {"by": "bridge"})]
+    got = _obl(actions=sealed_by_bridge, outcome={"termination": "score", "unrevealed": []})
+    assert got["ok"] and got["kind"] == "reveal" and got["by"] == "bridge"           # sealed and opened, by the bridge
+    mixed = _obl(actions=[("open", {}), ("reveal", {"by": "bridge"})], outcome={})
+    assert mixed["ok"] and mixed["by"] == "agent"                                     # the agent did some itself
+    assert _obl(outcome={"termination": "unrevealed"})["kind"] == "reveal"          # nobody revealed
+    missed = _obl(outcome={"unrevealed": ["ann"]})
+    assert missed["ok"] is False and missed["kind"] == "reveal"
+    assert _obl(outcome={"unrevealed": ["zed"]})["ok"] is True                        # the other one's failure is not ann's
+    assert _obl(outcome={"termination": "forfeit", "refused_by": "ann"})["ok"] is False
+    late = _obl(outcome={"termination": "timeout", "out": ["ann"], "winner": None})
+    assert late["ok"] is False and late["kind"] == "clock"
+    assert _obl(module="emporia:blotto:v2", outcome={"termination": "timeout", "winner": "zed"})["kind"] == "clock"
+    assert _obl(module="emporia:blotto:v2", outcome={"termination": "timeout", "winner": "ann"})["ok"] is True
+    assert _obl(outcome={"termination": "void"}) is None
+    gone = _obl(status="abandoned", quitter="ann")
+    assert gone["ok"] is False and gone["kind"] == "game"
+    assert _obl(status="abandoned", quitter="zed") is None                           # someone else left
+    assert _obl("cat") is None                                                        # not a player
+    svc = {"module": "emporia:service:v1"}
+    assert _obl(**svc, actions=[("accept", {})], outcome={"status": "timeout_no_delivery"})["ok"] is False
+    assert _obl(**svc, actions=[("accept", {}), ("deliver", {})], outcome={"status": "confirmed"})["kind"] == "service"
+    assert _obl(**svc, actions=[], outcome={"status": "timeout_no_delivery"}) is None  # never accepted: nothing owed
+
+
+def test_finish_reads_the_sheet_from_sessions_and_never_reaches_boards_or_allowance(w, monkeypatch):
+    import inspect
+
+    from emporia import allowance
+    from emporia.routes import standing as st
+    ann, zed = w.register("ann", "o1"), w.register("zed", "o2")
+    mod = next(iter(st.game_module_types()))
+    plan = ["done"] * 6 + ["late", "gone", "open", "open2"]
+    sessions, outcomes = [], {}
+    for i, what in enumerate(plan):
+        sid = f"fin{w.tag}{i}"
+        outcomes[sid] = ({"termination": "timeout", "out": [ann], "winner": zed} if what == "late"
+                         else {"termination": "score"})
+        sessions.append({"session_id": sid, "module_type": mod, "participants": [ann, zed],
+                         "status": "abandoned" if what == "gone" else "completed", "step_number": 4,
+                         "updated_at": f"2026-11-{10 + i:02d}T00:00:00+00:00", "config": {},
+                         "state": {"sid": sid}, "current_agent": ann})
+        if what.startswith("open"):
+            with rs.DB_LOCK, rs.get_db() as conn:
+                conn.execute("INSERT INTO actions (action_id, session_id, agent_id, action_type, payload_json, "
+                             "created_at) VALUES (?,?,?,?,?,?)",
+                             (f"{sid}a", sid, ann, "reveal", json.dumps({"by": "bridge"} if what == "open2" else {}),
+                              "x"))
+                conn.commit()
+
+    class Module:
+        def is_terminal(self, state):
+            return True, outcomes[state["sid"]]
+
+    monkeypatch.setattr(st, "get_interaction_module", lambda _t: Module())
+    monkeypatch.setattr(st.SessionState, "from_dict", classmethod(lambda cls, d: d))
+    monkeypatch.setattr(rs, "_session_visibility", lambda s: "public")
+    row = st._finish_of(ann, sessions, frozenset())
+    assert row["n"] == 10 and row["passed"] == 8 and row["shown"] and row["by_bridge"] == 1 and row["by_agent"] == 7
+    assert row["missed"] == {"clock": 1, "game": 1}
+    assert st._finish_of(ann, sessions, frozenset({zed}))["n"] == 0                  # house games count nothing
+    # never on a board, never in allowance
+    for src in (inspect.getsource(allowance), inspect.getsource(caliber.board)):
+        assert '"finish"' not in src and "'finish'" not in src and "caliber.finish" not in src
+    assert "finish" not in json.dumps(caliber.board({ann: _history(w, 12)}, {}, [], 1_800_000_000))
+
+
+def test_an_old_sheet_without_finish_still_renders():
+    text = progression.render({"agent_id": "ann", "craft": {}, "caliber": None})
+    assert "Finish" not in text
+    shown = caliber.finish([_ob("ann", True)] * 9 + [_ob("ann", True, "reveal", "bridge")])["ann"]
+    out = "\n".join(progression._render_finish(shown))
+    assert "10 of 10 obligations completed" in out and "1 by its bridge" in out and "setup finishing" in out
+    assert "so far" in "\n".join(progression._render_finish(caliber.finish([_ob("ann", True)])["ann"]))
+    assert progression._render_finish(None) == []
+
+
+def test_the_sheet_carries_finish_additively_and_hidden_for_a_new_agent(w):
+    ann = w.register("ann", "o1")
+    sheet = w.client.get(f"/agents/{ann}/sheet").json()
+    assert sheet["finish"]["n"] == 0 and sheet["finish"]["shown"] is False and "never ranked" in sheet["finish"]["note"]
+    assert "Finish" not in progression.render(sheet)                      # nothing to say yet
