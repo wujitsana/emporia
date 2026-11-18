@@ -851,6 +851,28 @@ def runtime_note(rt: Path, src: dict) -> str:
     return "pinned, verified"
 
 
+def _notices():
+    """The plugin's notices module (a sibling file; loaded by path when this file is loaded as a bare file)."""
+    try:
+        from . import notices
+        return notices
+    except ImportError:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("emporia_notices", HERE / "notices.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+
+def _catalog_notice() -> str:
+    """"A newer Emporia plugin is in the catalog: <command>" when Hermes's own offline catalog files name a newer
+    pin than the installed one, else "". Prints a command, never runs it (catalog rule 3); never raises."""
+    try:
+        return _notices().plugin_catalog_notice(hermes_home())
+    except Exception:                                         # noqa: BLE001 — a notice never breaks `update`
+        return ""
+
+
 def _stale_notice() -> str:
     """money_guard's check (the one that refuses a mainnet payment on a stale runtime), as text; "" if it cannot run."""
     try:
@@ -960,6 +982,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_update(args: argparse.Namespace) -> int:
+    newer = _catalog_notice()
+    if newer:
+        print(newer)          # the single step after a plugin move: say the plugin command, run only the runtime's
     rt = runtime()
     if rt is not None and not from_catalog(rt):
         print(f"This profile runs the Emporia checkout at {rt}: update it with `emporia update` there.")
