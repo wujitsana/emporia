@@ -60,7 +60,7 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("daily_turns", "Activity", "Relay-started turns a day",
             "Cap on model turns the relay's events start in 24 hours: a cost ceiling.",
             env="EMPORIA_DAILY_TURNS", zero="no cap", unit="in 24 hours",
-            rule="a whole number, 0 or more (0 = no cap)", recommended="300 (the default)"),
+            rule="a whole number, 0 or more (0 = no cap)", recommended="80 (the default)"),
     Setting("thread_limit", "Activity", "Messages per conversation an hour",
             "Most messages one conversation may deliver an hour before they stop waking it.",
             env=wake.THREAD_LIMIT_SETTING, zero="no limit", unit="an hour",
@@ -133,7 +133,7 @@ def _defaults(dotenv: dict[str, str]) -> dict[str, int | None]:
         base = P.PRESETS.get((dotenv.get("EMPORIA_PLAYBOOK") or "custom").strip().lower(), P.PRESETS["custom"])
     except Exception:  # noqa: BLE001
         base = P.PRESETS["custom"]
-    return {"games_per_operator": base.games_per_operator_per_day, "open_games": 3, "daily_turns": 300,
+    return {"games_per_operator": base.games_per_operator_per_day, "open_games": 3, "daily_turns": 80,
             "thread_limit": W.DEFAULT_THREAD_LIMIT,
             "unattended_spend_cents": P.default_autonomous_spend_cents(dotenv),
             "max_payment_cents": agent_wallet.DEFAULT_MAX_PAYMENT_CENTS,

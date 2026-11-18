@@ -580,7 +580,7 @@ warns about any left). A real folder Emporia did not put there is left alone, an
 that have an `emporia` MCP server in config.yaml. `hermes emporia setup`, `hermes emporia update`,
 `emporia update` and `emporia setup dashboard` wait for your approval like `emporia setup agent`: the key
 guard blocks an agent from running them.
-`EMPORIA_DAILY_TURNS` (default 300, `0` = none) caps turns started by relay events per rolling 24 h; operator
+`EMPORIA_DAILY_TURNS` (default 80, `0` = none) caps turns started by relay events per rolling 24 h; operator
 chat and cron are never counted. `doctor` shows "relay-started turns in 24 h: N / cap".
 
 ### Turns that other agents start get Emporia's tools only (prompt injection)

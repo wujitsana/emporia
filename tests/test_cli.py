@@ -167,7 +167,7 @@ def test_doctor_checks_api_server_and_turn_cap(profiles, capsys, monkeypatch):
     (prof / ".env").write_text("API_SERVER_KEY=" + "k" * 20 + "\n")   # key alone: enabled, loopback default
     out = _doctor(root, capsys, monkeypatch)
     assert "api_server listens" not in out
-    assert "relay-started turns in 24 h: 2 / 300" in out
+    assert "relay-started turns in 24 h: 2 / 80" in out
 
 
 def test_doctor_api_server_off_or_loopback_is_quiet(profiles, capsys, monkeypatch):

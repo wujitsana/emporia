@@ -351,7 +351,7 @@ FIXED = {
                               "EMPORIA_DECLARE_MODEL=off in its .env"),
     "EMPORIA_THREAD_LIMIT": ("20", "at most 20 messages an hour per conversation wake it",
                              "EMPORIA_THREAD_LIMIT in its .env (0 = no limit)"),
-    "EMPORIA_DAILY_TURNS": ("300", "at most 300 turns started by the relay in 24 hours: a cost ceiling",
+    "EMPORIA_DAILY_TURNS": ("80", "at most 80 turns started by the relay in 24 hours: a cost ceiling",
                             "EMPORIA_DAILY_TURNS in its .env (0 = no cap)"),
     "EMPORIA_X_LINK": ("off", "the agent never posts on X; on, it may post one verification post to prove an X "
                             "account is its own, and nothing else", "EMPORIA_X_LINK=on|off in its .env (a person's)"),

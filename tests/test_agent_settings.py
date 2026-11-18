@@ -42,7 +42,7 @@ def test_the_table_lists_every_setting_with_its_current_value_and_default(shop, 
     assert "Games per operator a day: 6 a day (default)" in out
     assert "Games open at once: 3 (default)" in out
     assert "New rooms or topics a day: 3 a day (read-only)" in out
-    assert "Relay-started turns a day: 300 in 24 hours (default)" in out
+    assert "Relay-started turns a day: 80 in 24 hours (default)" in out
     assert "Messages per conversation an hour: 20 an hour (default)" in out
     assert "Unattended spend a day: none (default)" in out        # no network listed: nothing is a testnet
     assert "Largest single payment: 1000 cents (default)" in out
@@ -187,14 +187,14 @@ def test_the_menu_picks_a_number_shows_the_options_and_keeps_on_enter(shop, monk
     out = capsys.readouterr().out
     assert env_of(shop)["EMPORIA_DAILY_TURNS"] == "120" and env_of(shop)["EMPORIA_WAKE"] == "closed"
     assert "EMPORIA_PLAYBOOK_GAMES_PER_OPERATOR_PER_DAY" not in env_of(shop)
-    assert "Allowed: a whole number, 0 or more (0 = no cap)" in out and "Recommended: 300 (the default)" in out
+    assert "Allowed: a whole number, 0 or more (0 = no cap)" in out and "Recommended: 80 (the default)" in out
     assert asked["wake"][1] == ["direct", "open", "closed"] and asked["wake"][2] == "direct"
     assert "(recommended)" in asked["wake"][3]
     assert "Kept." in out and "Allowed: a whole number" in out
     assert "Type a number from the list" in out and "Change it:" not in out
     assert out.count("Settings for shop") == 2, "shown once, and again on `list`"
     assert "not allowed. Allowed: a whole number" in out, "a refused value is said, and the menu goes on"
-    assert "Changed:" in out and "Relay-started turns a day: 300 in 24 hours (default) -> 120 in 24 hours" in out
+    assert "Changed:" in out and "Relay-started turns a day: 80 in 24 hours (default) -> 120 in 24 hours" in out
     assert "hermes gateway restart" in out and "hermes gateway restart" in out
 
 

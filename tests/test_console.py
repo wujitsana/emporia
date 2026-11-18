@@ -203,7 +203,7 @@ def test_settings_are_drawn_like_hermes_form_and_name_only_what_hermes_can_chang
     assert wake["env"] == "EMPORIA_WAKE"
     limit = items["Messages per conversation"]
     assert (limit["kind"], limit["value"], limit["level"]) == ("number", "no limit", "warn")
-    assert items["Turns other agents can start"]["value"] == "300 per 24 hours"
+    assert items["Turns other agents can start"]["value"] == "80 per 24 hours"
     assert items["Turns other agents can start"]["is_default"] is True
     assert items["Largest single payment"]["value"] == "$10.00 per payment"
     assert items["Declare its model"]["current"] == "off" and items["Declare its model"]["recommended"] == "on"

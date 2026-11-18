@@ -52,6 +52,15 @@ def test_zero_means_no_cap_and_bad_values_fall_back(home, monkeypatch):
     assert cap.cap() == cap.DEFAULT_CAP
 
 
+def test_the_default_is_80_everywhere_it_is_stated(monkeypatch):
+    assert cap.DEFAULT_CAP == 80
+    monkeypatch.delenv("EMPORIA_DAILY_TURNS", raising=False)
+    from emporia import agent_settings, limits
+    assert limits.turns()["daily_cap"] == 80
+    assert agent_settings._defaults({})["daily_turns"] == 80
+    assert "default 80" in (Path(cap.__file__).parent / "plugin.yaml").read_text()
+
+
 def test_a_broken_file_starts_over(home):
     (cap.data_dir(home) / cap.FILE).write_text("{not json")
     assert cap.pre_llm_call(platform="emporia") is None

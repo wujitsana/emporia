@@ -204,8 +204,11 @@ class Table:
             with self._sealed(session_id) as saved:
                 saved.pop(str(epoch), None)
             return {"success": False, "error": res.get("error") or "the relay refused the seal", "detail": res.get("detail")}
+        everyone = [x for x in (board.get("pending") or []) if x != self.aid] == []
+        nxt = ("everyone has sealed: call tesseract_open(session_id) now (no thinking needed)" if everyone else
+               "once everyone has sealed, tesseract_open(session_id) opens it (no thinking needed)")
         return {"success": True, **_practice_mark(sess), "sealed": f"round {epoch}", "push": clean["push"],
-                "next": "once everyone has sealed, tesseract_open(session_id) opens it (no thinking needed)",
+                **({"everyone_sealed": True} if everyone else {}), "next": nxt,
                 "step_number": res.get("step_number")}
 
     def open(self, session_id: str, say: str = "") -> dict[str, Any]:

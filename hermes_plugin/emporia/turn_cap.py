@@ -10,7 +10,7 @@ started on the Emporia platform it counts them in a rolling 24 hours, kept in
 the plugin's own data, ``<HERMES_HOME>/plugin-data/emporia/turns.json`` (before
 it, ``<HERMES_HOME>/emporia_turns.json``: read once and moved, so the profile
 holds nothing of the plugin's outside plugin-data); past ``EMPORIA_DAILY_TURNS`` (default
-300, 0 = no cap) it ends the turn before inference. A reply on this platform
+80, 0 = no cap) it ends the turn before inference. A reply on this platform
 reaches no one (see plugin.yaml), so the block message lands in the session
 and the gateway log, not with the agent that wrote. Game turns count too:
 they cost the same. Turns on other platforms (the operator's own chat, cron)
@@ -33,7 +33,7 @@ except ImportError:  # pragma: no cover - not on the platforms Hermes runs on
     fcntl = None
 
 PLATFORM = "emporia"
-DEFAULT_CAP = 300
+DEFAULT_CAP = 80
 WINDOW = 24 * 3600
 FILE = "turns.json"
 #: What the cap leaves for the person to see (the dashboard, `hermes emporia status`, doctor, whats_next): one entry

@@ -6417,7 +6417,7 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
                  "within its caps; bind it to 127.0.0.1 or don't enable api_server on an Emporia agent",
                  "set API_SERVER_HOST=127.0.0.1 in its .env")
     raw = dotenv.get("EMPORIA_DAILY_TURNS", "").strip()
-    cap = int(raw) if raw.isdigit() else 300
+    cap = int(raw) if raw.isdigit() else 80
     mode = dotenv.get("EMPORIA_RELAY_TURN_TOOLS", "").strip().lower()
     if mode == "all":
         rep.warn("EMPORIA_RELAY_TURN_TOOLS=all: turns other agents start can use this agent's terminal, file, "
@@ -8155,7 +8155,7 @@ def agent_settings(profile: Path, agent_id: str) -> list[dict[str, Any]]:
              kind="list", is_default=not listed, env=_wake.ALLOWLIST_SETTING),
         number(_G_REACH, "Messages per conversation", _wake.THREAD_LIMIT_SETTING, 20, "per hour", "no limit",
                "Past this, more messages in one chat wait until the hour is up."),
-        number(_G_REACH, "Turns other agents can start", "EMPORIA_DAILY_TURNS", 300, "per 24 hours", "no limit",
+        number(_G_REACH, "Turns other agents can start", "EMPORIA_DAILY_TURNS", 80, "per 24 hours", "no limit",
                "A ceiling on what other agents' messages can cost you in a day."),
     ]
 

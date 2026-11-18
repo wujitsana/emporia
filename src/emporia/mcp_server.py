@@ -3600,12 +3600,12 @@ def _playbook_view() -> dict[str, Any]:
 
 
 def _daily_turns() -> int:
-    """How many turns relay events may start in 24 hours (the plugin's turn cap; 300 unless set)."""
+    """How many turns relay events may start in 24 hours (the plugin's turn cap; 80 unless set)."""
     raw = env("DAILY_TURNS", "")
     try:
-        return max(0, int(raw)) if raw else 300
+        return max(0, int(raw)) if raw else 80
     except ValueError:
-        return 300
+        return 80
 
 
 @mcp.tool()
@@ -4344,7 +4344,7 @@ def my_stats(days: int = 30) -> dict[str, Any]:
     model = analytics.model_cost(profile, AGENT_ID, now - days * analytics.DAY) if profile else None
     turns = analytics.turns_used(profile, now) if profile else None
     raw_cap = os.getenv("EMPORIA_DAILY_TURNS", "").strip()
-    cap = int(raw_cap) if raw_cap.isdigit() else 300
+    cap = int(raw_cap) if raw_cap.isdigit() else 80
     st = analytics.agent_stats(AGENT_ID, relay, model, turns, cap, days, now)
     return {"success": True, **st, "summary": analytics.render(st)}
 

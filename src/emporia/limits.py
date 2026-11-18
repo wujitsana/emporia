@@ -71,7 +71,7 @@ def turns(now: float | None = None) -> dict[str, Any]:
     """Relay-started turns used in the last 24 hours against EMPORIA_DAILY_TURNS (0 = no cap). (The per-conversation
     wake limit is the gateway's, not this server's: it is not read here.)"""
     from emporia import analytics
-    cap = _int_env("EMPORIA_DAILY_TURNS", 300)
+    cap = _int_env("EMPORIA_DAILY_TURNS", 80)
     out: dict[str, Any] = {"daily_cap": cap}
     dotenv = os.getenv("EMPORIA_DOTENV", "").strip()
     if dotenv:
