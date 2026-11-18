@@ -2093,6 +2093,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     *(("chronicle_ballots", c) for c in ("seq", "chapter", "stable_id", "pick", "reason", "recap", "nonce",
                                          "signed_at", "received_at", "signature")),
     *(("chronicle_verdicts", c) for c in ("chapter", "body_json", "body_hash", "frozen_at")),
+    # a slot's roster and window events as frozen at its call: history, never renamed (a rename would move a chapter)
+    *(("chronicle_rosters", c) for c in ("epoch_s", "call_ts", "members_json", "events_json", "source", "taken_at")),
     # Tesseract: a player's place at a finished table (numbers, a status word, its revealed target)
     *(("tesseract_results", c) for c in ("session_id", "seat", "seats", "place", "total", "table_index", "status",
                                          "won", "target_json", "recorded_at")),

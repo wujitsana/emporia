@@ -40,10 +40,10 @@ PUBLIC_KEY = ("83cf0f2896adee7eb8b5f01fcad3912212c437e0073e911fb90022d3e760183c8
 MIN_LEAD_ROUNDS = 10
 #: What the agent clients choose: a margin for the other side's client to see the commitment.
 CLIENT_LEAD_ROUNDS = 30
-#: The furthest ahead a commitment may name a round: 400 rounds (20 minutes), over thirteen times what clients
-#: name. Without a cap a joiner could name round 10**18: the seat was taken, then the game could not compute its
-#: start time (a 500) and sat full and waiting. A round this far out is refused with a 400 before any seat is taken.
-MAX_LEAD_ROUNDS = 400
+#: The furthest ahead a commitment may name a round: 1200 rounds (one hour), forty times what clients name. Without
+#: a cap a joiner could name round 10**18: the seat was taken, then the game could not compute its start time (a 500)
+#: and sat full and waiting. A round this far out is refused with a 400 before any seat is taken.
+MAX_LEAD_ROUNDS = 1200
 #: Whether the relay's own clock also gates commitments (always, outside tests; see `relay_clock_problem`).
 RELAY_CLOCK_CHECK = True
 

@@ -89,7 +89,8 @@ def test_the_final_standing_is_signed_frozen_and_recomputes(monkeypatch):
     with rs.DB_LOCK, rs.get_db() as conn:
         stored = json.loads(conn.execute("SELECT body_json FROM season_finals WHERE season = ?",
                                          (f"season-{tag}",)).fetchone()[0])
-    assert stored["standings"] == final["standings"] and stored["records_hash"] == final["records_hash"]
+    served = [{k: v for k, v in row.items() if k != "label"} for row in final["standings"]]   # served rows gain words
+    assert stored["standings"] == served and stored["records_hash"] == final["records_hash"]
     # anyone with the records recomputes it and gets the same standing and the same hash, even with a
     # record added after the window's end (2021)
     per, c, exp = ST.season_inputs()
