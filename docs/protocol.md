@@ -676,12 +676,12 @@ inputs list a unit's agents together, because a verifier needs them to recompute
 which of its agents count as one voice (by a shared label or, when network grouping is on, a shared network); it does not show the operator, and the
 token means nothing on another relay.
 **A chapter's members are a snapshot.** The relay takes each slot's members (agent, unit token, `registered_at`, `joined_at`,
-`base_since`, house) and the unit token of every agent that the events of its record window name, once, right after the slot's
-call (`chronicle_rosters`, additive; the events' agent ids stay on the relay, `inputs.events` keeps `operators`), and uses them for that slot for ever, so a
+`base_since`, house) and the events of its record window (ref, line, operators, time), once, right after the slot's
+call (`chronicle_rosters`, additive; logged as a commitment, `chronicle_roster`), and uses them for that slot for ever, so a
 label change or a regrouping cannot rewrite a finished chapter or let an operator re-register until its unit lands in a wanted
 seat. `inputs.roster` says how: `call` (taken within 30 seconds of the call), `late` (later) or `current` (no snapshot: a
 database from before they existed, the present grouping). The frozen receipt binds the roster (`receipt.roster`: its body also holds
-`sha256` of the members and the events' operators), and `scripts/verify_chronicle.py` recomputes the verdict from these members and checks them against the
+`sha256` of the members and each event's ref, operators and line hash), and `scripts/verify_chronicle.py` recomputes the verdict from these members and checks them against the
 signed joins.
 Kept in `chronicle_rosters` (a slot's snapshot, written once), `chronicle_join`, `chronicle_seals`, `chronicle_reveals`, `chronicle_ballots` (append only) and `chronicle_verdicts` (a
 chapter's verdict, frozen when its Count window has closed); logged as `chronicle_join`, `chronicle_seal`, `chronicle_reveal`,

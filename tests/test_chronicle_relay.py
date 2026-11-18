@@ -7,6 +7,7 @@ verdict, its independent count and the frozen receipt must agree with the relay'
 from __future__ import annotations
 
 import itertools
+import json
 import sys
 import time
 import uuid
@@ -1362,4 +1363,165 @@ def test_agents_in_a_past_chapters_events_who_regroup_later_move_nothing(mk):
     verified(w)
     ledger = w.route.build_ledger()
     # a slot whose window had events holds those agents' units (a quiet window has none to hold)
-    assert any(r["units"] for r in ledger["rosters"].values()), "the snapshot holds the event agents' units"
+    assert any(r["events"] for r in ledger["rosters"].values()), "the snapshot holds the window's events"
+
+
+# ── the re-check (R1-R6): the window's events are snapshotted, removals are respected, the log binds the receipt ───
+
+def _frozen(w: E.World, ids=("1", "2")) -> dict:
+    out = {}
+    for c in ids:
+        b, i = chapter(w, c), chapter(w, c, include="inputs")["inputs"]
+        out[c] = {"events": [(e["ref"], e["operators"], e["at"]) for e in i["events"]], "verdict": b["verdict"],
+                  "receipt": b["receipt"], "anchors": [a["ref"] for a in b["anchors"]], "reason": b["reason"]}
+    return out
+
+
+def _ids(w: E.World) -> list[str]:
+    return [c["id"] for c in w.get("/chronicle/chapters").json()["chapters"]]
+
+
+def test_two_answerers_merging_labels_after_the_freeze_move_no_event_and_no_chapter(mk):
+    """R1, scenario 1: posts both answered no longer have two other operators under the present grouping."""
+    w, names = mk(6)
+    day(w, names, 1)
+    day(w, names, 2)
+    verified(w)
+    before, ids = _frozen(w), _ids(w)
+    present = {e["ref"] for e in w.route.build_ledger()["events"]}
+    _relabel(w, names[2], w.agents[names[1]]["operator"])
+    assert {e["ref"] for e in w.route.build_ledger()["events"]} != present, "the present events did change"
+    assert _frozen(w) == before and _ids(w) == ids
+    verified(w)
+
+
+def test_removing_the_post_that_anchored_a_window_moves_no_chapter_and_withdraws_its_words(mk):
+    """R1, scenario 2: a signed removal (`deletion.py`: text replaced, is_deleted set) of an anchoring post."""
+    w, names = mk(6)
+    day(w, names, 1)
+    day(w, names, 2)
+    verified(w)
+    before, ids = _frozen(w), _ids(w)
+    ref = next(a for a in before["1"]["anchors"] if a.startswith("post:"))
+    original = next(e["line"] for e in chapter(w, "1", include="inputs")["inputs"]["events"] if e["ref"] == ref)
+    assert original != L.REMOVED_LINE
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE posts SET text = '[removed]', label = '', tags_json = '[]', is_deleted = 1 WHERE post_id = ?",
+                     (ref[5:],))
+        conn.commit()
+    w.route._SEQ.update(key=None, value=None)
+    assert _frozen(w) == before and _ids(w) == ids
+    ev = next(e for e in chapter(w, "1", include="inputs")["inputs"]["events"] if e["ref"] == ref)
+    assert ev["line"] == L.REMOVED_LINE and ev["line_hash"] == L.line_hash(original), "the poster's words are withdrawn"
+    assert original not in str(chapter(w, "1")) and original not in str(chapter(w, "1", include="inputs"))
+    verified(w)
+    day(w, names, 3)                                  # the next chapter is still chapter 3
+    assert _ids(w) == [*ids, "3"]
+    verified(w)
+
+
+def test_a_withdrawn_like_and_a_deleted_agent_move_no_chapter(mk):
+    w, names = mk(6)
+    day(w, names, 1)
+    day(w, names, 2)
+    verified(w)
+    before, ids = _frozen(w), _ids(w)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        liked = [r["rowid"] for r in conn.execute("SELECT rowid FROM reactions WHERE value = 'like' AND active = 1 "
+                                                  "AND agent_id IN (%s)" % ",".join("?" * len(names)), names)]
+        conn.execute("UPDATE reactions SET active = 0 WHERE value = 'like' AND agent_id IN (%s)" % ",".join("?" * len(names)),
+                     names)
+        gone = conn.execute("SELECT * FROM authorized_agents WHERE agent_id = ?", (names[5],)).fetchone()
+        cols = list(gone.keys())
+        conn.execute("DELETE FROM authorized_agents WHERE agent_id = ?", (names[5],))
+        conn.commit()
+    rs.forget_who()
+    w.route._SEQ.update(key=None, value=None)
+    try:
+        assert _frozen(w) == before and _ids(w) == ids    # (the verifier needs the deleted agent's key, so it runs after)
+    finally:                                          # the database is shared with other tests
+        with rs.DB_LOCK, rs.get_db() as conn:
+            conn.execute(f"INSERT OR REPLACE INTO authorized_agents ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                         [gone[c] for c in cols])
+            for rid in liked:
+                conn.execute("UPDATE reactions SET active = 1 WHERE rowid = ?", (rid,))
+            conn.commit()
+        rs.forget_who()
+        w.route._SEQ.update(key=None, value=None)
+    verified(w)
+
+
+def test_a_removed_topic_or_room_withdraws_its_name_from_the_chapter_and_keeps_the_count(mk):
+    """The generic path: any snapshotted event whose item is gone keeps ref, operators and time, shows a fixed line and
+    carries the hash of the line it had; the roster hash (the receipt's) is unchanged."""
+    w, names = mk(6)
+    day(w, names, 1)
+    ledger = w.route.build_ledger()
+    now = w.clock()
+    plain = [s for s in L.slots(ledger, now) if s["called"]][0]
+    ref = plain["inputs"]["events"][0]["ref"]
+    gone = [s for s in L.slots({**ledger, "removed": [ref]}, now) if s["called"]][0]
+    ev = next(e for e in gone["inputs"]["events"] if e["ref"] == ref)
+    assert ev["line"] == L.REMOVED_LINE and ev["line_hash"] == L.line_hash(plain["inputs"]["events"][0]["line"])
+    assert gone["verdict"]["canon"] == plain["verdict"]["canon"] and gone["verdict"]["reason"] == plain["verdict"]["reason"]
+    assert L.roster_hash(gone["inputs"]["members"], gone["inputs"]["events"]) == \
+        L.roster_hash(plain["inputs"]["members"], plain["inputs"]["events"])
+
+
+def test_the_snapshot_is_logged_and_the_verifier_reads_the_receipt_from_the_log(mk):
+    from emporia import translog
+    assert "chronicle_roster" in translog.SOURCES
+    w, names = mk(6)
+    day(w, names, 1)
+    rep = verified(w)
+    assert any("roster late" in n for c in rep["chapters"] for n in c["notes"]), "a late roster is noted"
+    receipt = chapter(w, "1")["receipt"]
+    inp = chapter(w, "1", include="inputs")["inputs"]
+    assert V.check_receipt_in_log(lambda p: w.get(p).json(), "1", receipt, inp) == ([], [])
+    bad, _ = V.check_receipt_in_log(lambda p: w.get(p).json(), "1", {**receipt, "hash": "0" * 64}, inp)
+    assert bad and "not the receipt" in bad[0]
+    # a relay with its log off: nothing logged, so the receipt is the relay's word, said so, not failed
+    unlogged = {**inp, **{k: [{**r, "log_index": None} for r in inp[k]] for k in ("seals", "reveals", "ballots")}}
+    bad, notes = V.check_receipt_in_log(lambda p: {}, "1", receipt, unlogged)
+    assert not bad and notes and "no transparency log" in notes[0]
+    bad, _ = V.check_receipt_in_log(lambda p: {}, "1", receipt, inp)            # logged rows, but no verdict entry
+    assert bad
+    assert any("does not bind the roster" in n for n in V.roster_notes("1", inp, {**receipt, "roster": False}))
+
+
+def test_a_snapshot_first_taken_after_the_count_closed_ranks_by_the_beacon_alone(mk):
+    w, names = mk(6)
+    w.clock.at(w.start + w.epoch + 5)
+    w.route.take_rosters()                            # slot 1 at its call
+    w.clock.at(w.start + 4.5 * w.epoch)
+    w.route.take_rosters()                            # slots 2.. long after (slot 2's count has closed)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = {r["call_ts"]: json.loads(r["members_json"]) for r in conn.execute(
+            "SELECT call_ts, members_json FROM chronicle_rosters WHERE epoch_s = ?", (w.epoch,))}
+    assert rows[w.start + w.epoch] and all(m["base_since"] is not None for m in rows[w.start + w.epoch])
+    assert rows[w.start + 2 * w.epoch] and all(m["base_since"] is None for m in rows[w.start + 2 * w.epoch])
+
+
+def test_the_loop_sleeps_until_the_next_call_not_a_fixed_five_seconds(mk):
+    w, _names = mk(6)
+    w.clock.at(w.start + 3 * w.epoch - 10)
+    assert 10.1 < w.route.seconds_to_next_call() <= 10.3
+    w.clock.at(w.start + 3 * w.epoch + 1)
+    assert w.route.seconds_to_next_call() == 30.0     # never more than 30 s, so a missed slot is caught up
+
+
+def test_relabeling_an_old_agent_under_a_young_label_does_not_age_the_label(mk):
+    """R4: a label is dated from when it was first declared (the relay's operator log), not from its declarers' ages."""
+    w, names = mk(5, age_days=[100, 100, 100, 100, 300])
+    victim, old = names[0], names[4]
+    young = w.register("young_" + uuid.uuid4().hex[:5], "opyoung" + uuid.uuid4().hex[:5], age_days=10)
+    young_label = w.agents[young]["operator"]
+    assert w.route._base_since()[victim] < w.route._base_since()[young]
+    with rs.DB_LOCK, rs.get_db() as conn:             # what re-registering with a label does: the row and the log
+        conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id = ?", (young_label, old))
+        conn.execute("INSERT INTO operator_log (stable_id, previous, label, recorded_at) VALUES (?,?,?,?)",
+                     (w.stable(old), w.agents[old]["operator"], young_label, datetime.now(UTC).isoformat()))
+        conn.commit()
+    rs.forget_who()
+    b = w.route._base_since()
+    assert b[young] == b[old] and b[victim] < b[young], "the label is still as young as it was first declared"
