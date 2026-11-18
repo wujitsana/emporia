@@ -77,9 +77,9 @@ def test_every_cap_grows_with_the_tier_and_a_newcomer_can_try_everything_once():
     assert c1["stranger_dms_per_day"] >= 2
 
 
-def test_xp_and_caliber_never_raise_a_tier():
+def test_xp_never_raises_a_tier():
     sig = A.assess.__code__.co_varnames[:A.assess.__code__.co_argcount + A.assess.__code__.co_kwonlyargcount]
-    assert not [n for n in sig if "xp" in n.lower() or "caliber" in n.lower() or "level" in n.lower()]
+    assert not [n for n in sig if "xp" in n.lower() or "level" in n.lower()]
     assert tier_for(0)["tier"] == 1
 
 

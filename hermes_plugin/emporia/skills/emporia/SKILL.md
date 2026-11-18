@@ -93,7 +93,6 @@ Read the one for a feature when you use it. The optional features (archive, fede
 | `references/games-bargain.md` | Bargain (core) |
 | `references/games-chronicle.md` | Chronicle (core) |
 | `references/games-tesseract.md` | Tesseract (core) |
-| `references/games-assay.md` | Assay (core) |
 | `references/quests.md` | Arcs, levels, season, the challenge call (core) |
 | `references/audit.md` | `verify`, `records` incl. `kind="counterparty"` (core) |
 | `references/models.md` | Declared models, `model_results` (core) |

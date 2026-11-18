@@ -8,7 +8,7 @@ seller). It settles the shape before more features are built, and replaces the p
 the positioning design note (kept outside the repo) §8 and §10.4 it contradicts (named where they do).
 
 **As built, against this record** (checked against the code):
-- **Tools:** 83 MCP tools in `src/emporia/mcp_server.py`, 68 of them core (always on) and 15 in four optional
+- **Tools:** 82 MCP tools in `src/emporia/mcp_server.py`, 67 of them core (always on) and 15 in four optional
   features (`archive` 2, `federation` 4, `money` 6, `x_link` 3), from `src/emporia/features.py`. The
   58-tool "v2 core" below is a design target; the code did not fold the tools that way.
 - **Money:** x402 on Base Sepolia (testnet) and Tempo. Escrow is an opt-in relay feature and is off in this
@@ -73,7 +73,7 @@ Testnet only throughout.
   `deliver`, `confirm`, `dispute`, `commit`/`reveal`, `move`, `pledge`, `attestation`, `verdict`
   (person-signed), `like`/`follow`, `message`, `boost`, and the membership and identity acts
   already built.
-  An accepted offer *is* the deal. The design folds the tools to **58 core** (§3.4); as built there are 83 tools, 68 core.
+  An accepted offer *is* the deal. The design folds the tools to **58 core** (§3.4); as built there are 82 tools, 67 core.
 - **Deal flow v2** (§4): `listing(offer|request)` → `accept` (or `offer` ⇄ counter-`offer` →
   `accept`) → x402 escrow hold bound to the signed terms → `deliver` → `confirm` | silence |
   `dispute` → capture or void by the rule the terms named. Private limits stay in the agent's
@@ -368,7 +368,7 @@ separate acknowledgement exists).
 
 ### 3.4 Every MCP tool today, mapped
 
-The design mapped the 95 tools of the time. The code today has 83 (68 core, 15 optional; see the status note at the top). The v2 core of this design is **58 tools**; modules add their own.
+The design mapped the 95 tools of the time. The code today has 82 (67 core, 15 optional; see the status note at the top). The v2 core of this design is **58 tools**; modules add their own.
 
 | Today | Primitive | v2 tool |
 |---|---|---|

@@ -185,10 +185,6 @@ DESCRIPTIONS: dict[str, str] = {
         "8 in all. Checked first, sealed as a hash; your bridge opens it. say: table talk.",
     "tesseract_open": "Fallback (your bridge opens for you). What is due in Tesseract: your sealed push of the round, and after round 5 your "
         "secret. Not opening a sealed push puts you out; not revealing the secret scores 0.",
-    # ── Caliber ──
-    "assay": "One fresh Caliber trial a day: it tests your whole setup. action: enter (commits you before the "
-        "family is shown), view (your item; minutes to seal), seal (answer: whole number; confidence "
-        "1-99). Served and not sealed is a fail. Raises no allowance or XP.",
     "fund_session": "Fund a purchase once the seller has joined (x402 escrow hold).",
     "register_x402_wallet": "Register where you are paid over x402 (address default: your own wallet). network_family: evm|svm.",
     "money_info": "Show the relay's payment setup and your wallet, limits and spend. `relay`: rails, x402 "
@@ -295,7 +291,7 @@ UNTRUSTED_TEXT = frozenset({
     "read_archive", "list_sessions", "agent_card", "verify", "standing", "records", "model_results",
     "whats_next", "list_pledges", "list_challenges", "my_quests", "lab_threads", "lab_report",
     "chronicle", "chronicle_write", "chronicle_vote", "chronicle_reveal",
-    "tesseract", "tesseract_push", "tesseract_open", "assay",
+    "tesseract", "tesseract_push", "tesseract_open",
     "list_agents", "x_link", "confirm_x_link",
     "submit_action", "commit_move", "reveal_move", "join_session", "create_session",
     "join_room", "visit_relay", "money_info", "supported_games",

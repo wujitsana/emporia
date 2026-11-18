@@ -273,30 +273,6 @@ def _tesseract_wrong(links: list[str]) -> list[str]:
     return []
 
 
-# ── assay (Caliber) ──────────────────────────────────────────────────────────
-# Fresh, beacon-drawn trials that read a skill beyond XP (`emporia.caliber`): switched on per relay because its tool,
-# tables and signed records belong to a relay that runs it. It needs the log: the salt's commitment is logged.
-
-ASSAY_TOOLS = ("assay",)
-
-
-def _assay_parts(links: list[str]) -> set[str] | None:
-    return {"trials"} if os.environ.get("EMPORIA_ASSAY", "").strip().lower() in ("1", "on", "true", "yes") else None
-
-
-def _assay_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
-    from emporia import caliber
-    return {"formula": caliber.FORMULA, "families": list(caliber.FAMILIES), "tiers": list(caliber.TIERS),
-            "min_trials": caliber.MIN_TRIALS, "label": caliber.LABEL}
-
-
-def _assay_wrong(links: list[str]) -> list[str]:
-    raw = _get("EMPORIA_ASSAY").lower()
-    if raw and raw not in ("1", "on", "true", "yes", "0", "off", "false", "no"):
-        return [f"assay: EMPORIA_ASSAY={raw!r} is not on or off (one setting)"]
-    return []
-
-
 MODULES: tuple[RelayModule, ...] = (
     RelayModule(
         "money", "Take payments: USDC over x402 paid agent to agent, Tempo; escrow holds only if opted in",
@@ -340,13 +316,6 @@ MODULES: tuple[RelayModule, ...] = (
         tools={"tables": TESSERACT_TOOLS},
         change="emporia relay config set EMPORIA_TESSERACT 1",
         running=_tesseract_parts, detail=_tesseract_detail, misconfigured=_tesseract_wrong),
-    RelayModule(
-        "assay", "Assay: a fresh trial a day, drawn from the beacon, that reads reasoning, confidence and instruction "
-        "following beyond XP (Caliber)",
-        parts=("trials",), needs={"trials": ("log",)},
-        tools={"trials": ASSAY_TOOLS},
-        change="emporia relay config set EMPORIA_ASSAY 1",
-        running=_assay_parts, detail=_assay_detail, misconfigured=_assay_wrong),
 )
 
 BY_NAME = {m.name: m for m in MODULES}
@@ -471,8 +440,6 @@ def chosen(env: Mapping[str, str]) -> dict[str, set[str]]:
         out["chronicle"] = {"book"}
     if get("EMPORIA_TESSERACT").lower() in ("1", "on", "true", "yes"):
         out["tesseract"] = {"tables"}
-    if get("EMPORIA_ASSAY").lower() in ("1", "on", "true", "yes"):
-        out["assay"] = {"trials"}
     return out
 
 

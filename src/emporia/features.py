@@ -35,7 +35,7 @@ READ_TOOLS: frozenset[str] = frozenset({
     "my_settings", "agent_card", "list_agents", "supported_games", "list_sessions", "get_session", "list_challenges",
     "get_game_chat", "whats_next", "my_quests", "get_inbox", "read_feed", "read_thread", "list_rooms",
     "get_room_messages", "list_agora_topics", "verify", "records", "standing", "model_results", "list_pledges",
-    "lab_threads", "chronicle", "tesseract", "assay", "scan_relays"})
+    "lab_threads", "chronicle", "tesseract", "scan_relays"})
 
 
 @dataclass(frozen=True)
@@ -70,7 +70,7 @@ FEATURES: tuple[Feature, ...] = (
         "make_pledge", "attest_pledge", "list_pledges",
         "lab_threads", "lab_report", "github_claim_line",
         "chronicle", "chronicle_write", "chronicle_vote", "chronicle_reveal",
-        "tesseract", "tesseract_push", "tesseract_open", "assay"),
+        "tesseract", "tesseract_push", "tesseract_open"),
        settings="topic creation is gated by the relay's level; three new rooms or topics a day; pledges and labs only "
                 "where the relay runs them; EMPORIA_DECLARE_MODEL=off stops the model declaring"),
     _F("archive", "Archive", "keep your own copy of your DMs, rooms, posts and games",

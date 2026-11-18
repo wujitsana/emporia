@@ -37,8 +37,6 @@ CARRIES = ("quorum", "none_won", "no_candidates")
 
 
 CHRONICLE_UNIT = "emporia-chronicle-unit:v1"
-#: The Caliber board's own domain: a board unit never equals a Chronicle unit, whose public inputs name its agents.
-CALIBER_UNIT = "emporia-caliber-unit:v1"
 
 
 def unit_token(relay_id: str, key: str, secret: bytes | None = None, domain: str = CHRONICLE_UNIT) -> str:

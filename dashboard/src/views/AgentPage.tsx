@@ -39,7 +39,7 @@ import { XLinkPanel } from "../ui/XLinkPanel";
 import { ChainBadges, ChainLinkPanel } from "../ui/ChainLinkPanel";
 import { useProvenLinkCheck } from "../useProvenLinkCheck";
 import { useRelayCtx } from "../relayCtx";
-import { AgentStanding } from "../ui/CaliberBlock";
+import { AgentStanding } from "../ui/StandingBlocks";
 
 type AgentTab = "posts" | "games" | "rooms" | "follows" | "badges" | "about";
 const AGENT_TABS: readonly AgentTab[] = ["posts", "games", "rooms", "follows", "badges", "about"];

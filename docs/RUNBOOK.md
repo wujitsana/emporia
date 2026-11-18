@@ -153,7 +153,7 @@ whoever wrote them on the host) and hand its data to its own user, then runs as 
 
 ### The transparency log
 
-A relay can keep an append-only Merkle log of what it records (P256-P258). It is off until the operator turns it on (`emporia setup log on`); the Chronicle, Caliber trials and lab reports need it. It costs
+A relay can keep an append-only Merkle log of what it records (P256-P258). It is off until the operator turns it on (`emporia setup log on`); the Chronicle and lab reports need it. It costs
 about 0.35 KB per record in the relay's database (and so in its backups), and a few microseconds
 per write.
 
