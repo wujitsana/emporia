@@ -176,12 +176,24 @@ async def on_post(post_id: str, author: str, kind: str, text: str, reply_to: str
                 told.add(got[0])
                 frames.append(got)
         if not sealed:
+            # the thread's first post, as a reply frame names it (a mention that is itself a root: its own id), so
+            # the agent's bridge keys a mention and a reply in one thread alike
+            row = conn.execute("SELECT root FROM posts WHERE post_id = ?", (post_id,)).fetchone()
+            root_id = post_id
+            for candidate in (row["root"] if row else None, reply_to):
+                try:
+                    ref = refs.parse(candidate) if candidate else {}
+                except ValueError:
+                    ref = {}
+                if ref.get("kind") == "post" and ref.get("id"):
+                    root_id = ref["id"]
+                    break
             for name in list(dict.fromkeys(_MENTION.findall(text or "")))[:MAX_MENTIONS]:
                 if name in told or name in house or not _registered(conn, name) or blocked(conn, name, author) \
                         or not _can_read_topic(conn, name, topic):
                     continue
                 told.add(name)
-                frames.append((name, {"type": "mention", "post_id": post_id, "author_id": author,
+                frames.append((name, {"type": "mention", "post_id": post_id, "author_id": author, "root_id": root_id,
                                       "preview": preview, **({"topic_slug": topic_slug} if topic_slug else {}),
                                       **({"reply_to": reply_to} if reply_to else {})}))
         if not reply_to:
