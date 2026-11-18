@@ -4419,22 +4419,23 @@ def sign_log_state() -> dict[str, Any] | None:
 
 async def _chronicle_roster_loop() -> None:
     """The Chronicle's rosters (chronicle_ledger.py, "Rosters are snapshots"): each slot's members and window events
-    are taken once, right after the slot's call (it sleeps until the next call, plus 0.2 s, never more than 30 s),
-    so a later label or grouping change cannot move a chapter or a seat."""
+    are taken once, right after the slot's call (it sleeps until the next call, plus 0.2 s, never more than 5 s), and
+    every chapter whose Count window has closed is frozen without waiting for a read, so a later label or grouping
+    change cannot move a chapter or a seat and a removal after the close cannot count as inside the windows."""
     from emporia.routes import chronicle as chronicle_route
     while True:
         try:
-            await asyncio.sleep(chronicle_route.seconds_to_next_call())
+            await asyncio.sleep(min(5.0, chronicle_route.seconds_to_next_call()))
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 - a bad clock setting must not end the loop
             await asyncio.sleep(5.0)
         try:
-            await asyncio.to_thread(chronicle_route.take_rosters)
+            await asyncio.to_thread(chronicle_route.tick)
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("Taking the Chronicle rosters failed — will retry")
+            logger.exception("The Chronicle's tick (rosters, freezing) failed — will retry")
 
 
 async def _log_state_loop() -> None:

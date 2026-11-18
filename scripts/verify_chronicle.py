@@ -220,17 +220,21 @@ def check_roster(inp: dict[str, Any], signed: dict[str, Any]) -> list[str]:
     return bad
 
 
-def check_signatures(signed: dict[str, Any], relay_id: str, origin: str) -> list[str]:
-    """Each signed record the chapter used verifies against its agent's key; one that cannot be checked is named."""
+def check_signatures(signed: dict[str, Any], relay_id: str, origin: str, notes: list[str] | None = None) -> list[str]:
+    """Each signed record the chapter used verifies against one of its agent's keys (the current one, or one its stable
+    id held before a rotation); a record whose agent has no key at all is a note, not a problem. A removed passage is
+    left out by the relay (its words are withdrawn)."""
     from emporia import identity
     bad: list[str] = []
+    notes = notes if notes is not None else []
     keys = signed.get("keys", {})
     for kind, rows in (("join", signed.get("join", [])), ("seal", signed.get("seals", [])),
                        ("ballot", signed.get("ballots", [])), ("passage", signed.get("passages", []))):
         for r in rows:
-            key = keys.get(r["agent"])
-            if not key:
-                bad.append(f"{kind} by {r['agent']}: no key to check against")
+            held = keys.get(r["agent"])
+            held = [held] if isinstance(held, str) else list(held or [])
+            if not held:
+                notes.append(f"{kind} by {r['agent']}: the relay holds no key for it, so the signature is unchecked")
                 continue
             if kind == "join":
                 pay = wire.signed_chronicle_join_payload(relay_id, r["stable_id"], bool(r["on"]), r["at"])
@@ -248,7 +252,7 @@ def check_signatures(signed: dict[str, Any], relay_id: str, origin: str) -> list
                     bad.append(f"passage {r['post_id']}: its signed fields do not make its id")
                     continue
                 r = {**r, "signature": p["signature"]}
-            if not identity.verify(pay, r["signature"], key):
+            if not any(identity.verify(pay, r["signature"], k) for k in held):
                 bad.append(f"{kind} by {r['agent']}: the signature does not verify")
     return bad
 
@@ -294,17 +298,31 @@ def check_receipt_in_log(get: Callable[[str], dict], chapter: str, receipt: dict
     `/log/entries?ref=chronicle_verdict:<chapter>` holds the row (its `body_hash`). Returns (problems, notes). A relay
     with its log off has no such entry and, with nothing else of the chapter logged either, is noted, not failed."""
     got = get(f"/log/entries?ref=chronicle_verdict:{chapter}&limit=1000").get("entries") or []
-    recs = [e.get("record") or {} for e in got]
-    recs = [r for r in recs if str(r.get("chapter")) == str(chapter) and r.get("body_hash")]
-    if recs:
-        if not any(r["body_hash"] == receipt.get("hash") for r in recs):
-            return [f"the log's frozen verdict of chapter {chapter} is not the receipt the relay serves"], []
-        distinct = {r["body_hash"] for r in recs}
-        if len(distinct) > 1:
-            # the log is append-only: a verdict frozen once and rewritten later leaves both entries in it
-            return [], [f"chapter {chapter}: the log holds {len(distinct)} different frozen verdicts under this id "
-                        f"(a rewrite, or a relay whose chapter ids restarted); the receipt matches one of them"]
-        return [], []
+    entries = sorted(((e.get("index") if e.get("index") is not None else 1 << 60, e.get("record") or {}) for e in got),
+                     key=lambda x: x[0])
+    same: list[dict[str, Any]] = []         # filed for this chapter at this call time
+    other = 0                               # filed under this id for another call time: an earlier run of the book
+    for _idx, r in entries:
+        if str(r.get("chapter")) != str(chapter) or not r.get("body_hash"):
+            continue
+        try:
+            call = json.loads(r.get("body_json") or "{}").get("call_ts")
+        except ValueError:
+            call = None
+        if call == inp["call_ts"]:
+            same.append(r)
+        else:
+            other += 1
+    if same:
+        # the log is append-only: a verdict frozen once and rewritten later leaves both entries in it, and the first
+        # filed is the one the chapter was frozen with (a rewrite cannot change `call_ts`: the hash covers it)
+        if any(r["body_hash"] != receipt.get("hash") for r in same):
+            return [f"the log holds an earlier, different frozen verdict of chapter {chapter} at this call time than "
+                    f"the receipt the relay serves"], []
+        return [], ([f"chapter {chapter}: the log also holds {other} frozen verdict(s) under this id for another call "
+                     f"time (an earlier run of the book)"] if other else [])
+    if other:
+        return [f"the log's frozen verdict of chapter {chapter} is not the receipt the relay serves"], []
     logged = any(r.get("log_index") is not None for k in ("seals", "reveals", "ballots") for r in inp.get(k, []))
     if logged:
         return [f"the log holds no frozen verdict for chapter {chapter}, which the relay serves a receipt for"], []
@@ -336,15 +354,17 @@ def verify(get: Callable[[str], dict], *, bls: bool = True, only: str = "") -> d
         body = get(f"/chronicle/chapters/{row['id']}?include=inputs")
         inp = body["inputs"]
         problems: list[str] = []
-        v = L.resolve_inputs(inp)
+        kept = (body.get("receipt") or {}).get("verdict")
+        removed_after = kept is not None and any(r.get("removed") for r in inp["reveals"])
+        v = kept if removed_after else L.resolve_inputs(inp)
         shown = body.get("verdict", {})
         for k in ("canon", "reason", "totals", "none", "tie", "picks_counted", "units_counted", "thin_jury", "J"):
             if k in shown and json.loads(json.dumps(v.get(k), default=list)) != shown[k]:
                 problems.append(f"the relay says {k} = {shown[k]!r}; recomputed {v.get(k)!r}")
-        ind = independent_count(inp)
+        ind = {} if removed_after else independent_count(inp)
         mine = {"reason": v.get("reason"), "canon": v.get("canon"), "totals": v.get("totals", {}),
                 "none": v.get("none", 0.0)}
-        if mode_called(v) and ind != mine:
+        if not removed_after and mode_called(v) and ind != mine:
             problems.append(f"the independent count says {ind!r}; the core says {mine!r}")
         if inp["rounds"] != C.call_rounds(inp["call_ts"], inp["params"]["epoch_s"]):
             problems.append("the rounds drawn from are not the first ones published after the call and the window closes")
@@ -355,9 +375,12 @@ def verify(get: Callable[[str], dict], *, bls: bool = True, only: str = "") -> d
         elif any(not inp["sigs"].get(k) for k in ("call", "show", "count")):
             problems.append("a beacon round the chapter drew from is missing")
         problems += check_log_order(get, inp)
-        problems += check_signatures(body.get("signed", {}), state["relay_id"], state.get("post_origin", ""))
-        problems += check_roster(inp, body.get("signed", {}))
         notes = roster_notes(row["id"], inp, body.get("receipt"))
+        problems += check_signatures(body.get("signed", {}), state["relay_id"], state.get("post_origin", ""), notes)
+        problems += check_roster(inp, body.get("signed", {}))
+        if removed_after:
+            notes.append(f"chapter {row['id']}: a passage was removed after the freeze: the verdict is the frozen one "
+                         f"(its hash and the log entry are checked) and cannot be recounted")
         if body.get("receipt"):
             bad_log, log_notes = check_receipt_in_log(get, row["id"], body["receipt"], inp)
             problems += bad_log
