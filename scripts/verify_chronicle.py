@@ -85,13 +85,12 @@ def independent_count(inp: dict[str, Any]) -> dict[str, Any]:
     card = C.draw_card(scope, sigs["call"], n, inp.get("recent"))
     w_write, w_open, w_pick, w_count = (C.windows(call, E)[k] for k in ("write", "open", "pick", "count"))
 
-    seniority = {m["agent_id"]: ((m["base_since"], m["registered_at"]) if m.get("base_since") is not None else (0.0, 0.0))
-                 for m in roster}
+    seniority = {m["agent_id"]: (m["base_since"] if m.get("base_since") is not None else 0.0) for m in roster}
 
     def act(agent: str) -> tuple[Any, ...]:
-        # the unit's agents rank by the age of their declared base operator, then their own registration, then the
-        # beacon on "act:" + agent id (lowest first)
-        return (seniority.get(agent, (0.0, 0.0)), rand_game_rand(scope, "act:" + agent, sigs["call"]), agent)
+        # the unit's agents rank by the age of their declared base operator, then the beacon on "act:" + agent id
+        # (lowest first); siblings of one declared base are ordered by the beacon alone
+        return (seniority.get(agent, 0.0), rand_game_rand(scope, "act:" + agent, sigs["call"]), agent)
 
     def inside(w, at):
         return w[0] <= at < w[1]
@@ -181,7 +180,7 @@ def independent_count(inp: dict[str, Any]) -> dict[str, Any]:
 
 def receipt_hash(chapter: str, call_ts: float, verdict: dict[str, Any], roster: str | None = None) -> str:
     """The hash the log carries for a frozen chapter. A receipt frozen with its roster (`receipt["roster"]`) also
-    binds the hash of the published members; one frozen before rosters were snapshotted does not."""
+    binds the hash of the published members and the events' operators; one frozen before rosters were snapshotted does not."""
     parts = {"chapter": chapter, "call_ts": call_ts, "verdict": verdict}
     if roster is not None:
         parts["roster"] = roster
@@ -326,7 +325,7 @@ def verify(get: Callable[[str], dict], *, bls: bool = True, only: str = "") -> d
         problems += check_roster(inp, body.get("signed", {}))
         if body.get("receipt"):
             h = receipt_hash(row["id"], inp["call_ts"], v,
-                             L.roster_hash(inp["members"]) if body["receipt"].get("roster") else None)
+                             L.roster_hash(inp["members"], inp["events"]) if body["receipt"].get("roster") else None)
             if h != body["receipt"]["hash"]:
                 problems.append("the frozen receipt's hash is not the recomputed verdict's")
         else:

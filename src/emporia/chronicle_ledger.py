@@ -10,8 +10,10 @@ the public routes):
 
     relay_id, start, epoch_s, practice, prologue        the clock and the book's first post
     agents   [{agent_id, unit, registered_at, base_since, house, joins: [[on, ts], ...]}]    `unit` is an opaque token
-    rosters  {"<slot>": {members: [Member dicts], source: "call" | "late"}}    each called slot's members, taken
-             once at its call and used for that slot for ever (below); a slot with none uses `agents` as they are now
+    rosters  {"<slot>": {members: [Member dicts], units: {agent: unit token}, source: "call" | "late"}}    each called
+             slot's members, and the unit of every agent its events name, taken once at its call and used for that
+             slot for ever (below); a slot with none uses `agents` and the events' `operators` as they are now
+    (events also carry `agents`, the agent ids behind `operators`; they stay inside the ledger, never in a chapter's inputs)
     events   [{ref, line, operators, at}]                the public record, as `chronicle.record_window` reads it
     (each chapter's inputs carry `recent`: the cards of the earlier chapters of its kind that its draw avoids)
     beacons  {"<round>": "<hex signature>"}              every drand round the chapters drew from
@@ -25,7 +27,8 @@ and the `verdict`.
 **Rosters are snapshots.** A unit token comes from the *present* operator grouping (label, key, network), which
 moves: a member re-registers with a new label, or an unrelated agent registers from the same network. The relay
 therefore takes each slot's members (agent, unit token, registration, join time, house, base-operator age) once, at
-the slot's call (`routes/chronicle.take_rosters`), and every later recomputation of the slot, the relay's and a
+the slot's call (`routes/chronicle.take_rosters`), together with the unit token of every agent that its record window's events name
+(so an event's operators do not move either), and every later recomputation of the slot, the relay's and a
 verifier's, uses that snapshot: it is carried in the chapter's published `inputs["members"]`. A snapshot taken more
 than `SNAPSHOT_GRACE_S` after the call is marked `late` (the draw may already have been public); a slot with no
 snapshot at all (a database from before they existed) uses the present grouping and is marked `current`.
@@ -99,10 +102,32 @@ def members_at(agents: list[dict[str, Any]], before_ts: float) -> list[C.Member]
     return out
 
 
-def roster_hash(members: list[dict[str, Any]]) -> str:
-    """A fingerprint of a chapter's roster as published (`inputs["members"]`), which the frozen receipt binds."""
-    body = json.dumps(sorted(members, key=lambda m: m["agent_id"]), sort_keys=True, separators=(",", ":"), default=list)
+def roster_hash(members: list[dict[str, Any]], events: list[dict[str, Any]] | None = None) -> str:
+    """A fingerprint of everything a chapter's snapshot decides, as published: `inputs["members"]` and each event's
+    `operators` (`inputs["events"]`). The frozen receipt binds it."""
+    body = json.dumps({"members": sorted(members, key=lambda m: m["agent_id"]),
+                       "events": sorted([e["ref"], sorted(e.get("operators", []))] for e in events or [])},
+                      sort_keys=True, separators=(",", ":"), default=list)
     return hashlib.sha256(body.encode()).hexdigest()
+
+
+def event_agents(events: list[dict[str, Any]], lo: float, hi: float) -> list[str]:
+    """The agents named by the events in [lo, hi): the ones whose unit tokens a slot's snapshot must hold."""
+    return sorted({a for e in events if lo <= e["at"] < hi for a in e.get("agents", ())})
+
+
+def _unit_events(events: list[dict[str, Any]], units: dict[str, str] | None) -> list[dict[str, Any]]:
+    """The events as published: `agents` (internal) dropped, and `operators` rebuilt from the slot's snapshot mapping
+    when it has one (every agent of the event in it); otherwise the operators as the ledger holds them (the present
+    grouping)."""
+    out = []
+    for e in events:
+        agents = e.get("agents")
+        e = {k: v for k, v in e.items() if k != "agents"}
+        if units is not None and agents and all(a in units for a in agents):
+            e["operators"] = sorted({units[a] for a in agents})
+        out.append(e)
+    return out
 
 
 def _member_dict(m: C.Member) -> dict[str, Any]:
@@ -158,9 +183,11 @@ def slots(ledger: dict[str, Any], now: float) -> list[dict[str, Any]]:
         call_ts = slot_call(start, epoch, i)
         prev_call = call_ts - epoch
         snap = (ledger.get("rosters") or {}).get(str(i))
+        event_units = None
         if snap is not None:         # taken when the slot was called: later labels and groupings do not move it
             members = [C.Member(**m) for m in snap["members"]]
             roster_source = snap.get("source", "call")
+            event_units = snap.get("units")
         else:                        # no snapshot (a ledger from before they existed): the present grouping
             members = members_at(ledger["agents"], prev_call)
             roster_source = "current"
@@ -174,6 +201,7 @@ def slots(ledger: dict[str, Any], now: float) -> list[dict[str, Any]]:
             numbering["root"] = ledger["prologue"] or C.PROLOGUE
         cid = str(numbering["n"]) if mode == "live" else f"pp-{numbering['n']}"
         evs = [e for e in ledger["events"] if prev_call <= e["at"] < call_ts and (mode == "practice" or not e.get("loose"))]
+        evs = _unit_events(evs, event_units)
         if prev_slot is not None and (ce := _canon_event(prev_slot, call_ts - 1)):
             evs.append(ce)
         rounds = C.call_rounds(call_ts, epoch)

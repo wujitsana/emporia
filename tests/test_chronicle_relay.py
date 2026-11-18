@@ -1278,9 +1278,9 @@ def test_the_frozen_receipt_binds_the_roster_and_a_changed_roster_is_caught(mk):
     assert not rep["ok"] and any("roster:" in p for c in rep["chapters"] for p in c["problems"])
 
 
-def test_a_later_registered_agent_of_a_unit_never_outranks_the_original_in_the_act_draw(mk):
-    """Two agents per operator; the second of each registered 50 days later (a copied label, or merged by network): it
-    wakes first and seals, and still the original's seal counts, whatever the beacon says."""
+def test_siblings_of_one_declared_base_are_ordered_by_the_beacon_not_by_registration(mk):
+    """Two agents per operator (one declared label), the second registered 50 days later: seniority does not replace the
+    draw among an operator's own agents. The act rank is the beacon's: the counted seal is the beacon's top sealer."""
     w, names = mk(5, per_op=2)
     later = [n for n in names if n.endswith("_1")]
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -1289,13 +1289,17 @@ def test_a_later_registered_agent_of_a_unit_never_outranks_the_original_in_the_a
                          (datetime.fromtimestamp(w.start - 50 * DAY, UTC).isoformat(), n))
         conn.commit()
     rs.forget_who()
+    base = w.route._base_since()
+    assert len({base[n] for n in names if n.startswith(names[0].rsplit("_", 1)[0] + "_")}) == 1, "one declared base"
     order = _called(w, names, lambda ranked: list(reversed(ranked)))      # the lowest-ranked wakes and seals first
     E.play_chapter(w, order, 1)
     inp = chapter(w, "1", include="inputs")["inputs"]
     v = chapter(w, "1")["verdict"]
-    assert any(sl["agent"] in later for sl in inp["seals"]), "a later arrival sealed too"
+    scope = C.chapter_scope(inp["relay_id"], inp["numbering"], "live")
+    sig = bytes.fromhex(inp["sigs"]["call"])
     for rec in (*inp["reveals"], *inp["ballots"]):
-        assert rec["agent"].endswith("_0"), "only the original's seal is opened and counted"
+        sibs = [n for n in names if n.rsplit("_", 1)[0] == rec["agent"].rsplit("_", 1)[0]]
+        assert rec["agent"] == C.act_order(sibs, scope, sig)[0], "the beacon's top sibling acts, not the oldest"
     assert v["canon"] and V.independent_count(inp)["canon"] == L.resolve_inputs(inp)["canon"] == v["canon"]
     verified(w)
 
@@ -1320,3 +1324,41 @@ def test_a_network_merged_agent_with_another_label_ranks_after_the_declared_orig
     assert base[victim] < base[merged]
     assert C.act_rank(C.Member("a", "u", base[victim], 0.0, base_since=base[victim])) \
         < C.act_rank(C.Member("b", "u", base[merged], 0.0, base_since=base[merged]))
+    scope = "chronicle:r:1"                          # whatever the beacon draws, the original is first
+    for k in range(20):
+        sg = bytes([k]) * 32
+        assert C.act_order([merged, victim], scope, sg, {victim: base[victim], merged: base[merged]})[0] == victim
+
+
+def test_agents_in_a_past_chapters_events_who_regroup_later_move_nothing(mk):
+    """Events name agents; their operators (the quiet test, the operator count) come from the slot's snapshot too."""
+    from emporia.identity import get_public_key_hex
+    w, names = mk(6)
+    day(w, names, 1)
+    day(w, names, 2)
+    verified(w)
+
+    def state(c):
+        b, i = chapter(w, c), chapter(w, c, include="inputs")["inputs"]
+        return (i["events"], b["verdict"], b["operators"], b["reason"], b["receipt"])
+    before = {c: state(c) for c in ("1", "2")}
+    events_before = {e["ref"]: e["operators"] for e in w.route.build_ledger()["events"]}
+    assert all("agents" not in e for c in before for e in before[c][0]), "agent ids stay out of the published inputs"
+    _relabel(w, names[0], "opnew" + uuid.uuid4().hex[:6])
+    stranger = f"stranger_{uuid.uuid4().hex[:5]}"
+    r = w.client.post("/agents/register", json={"agent_id": stranger, "public_key_hex": get_public_key_hex(stranger)})
+    assert r.status_code == 200, r.text
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET operator_label = '', network_group = ? WHERE agent_id = ?",
+                     (w.stable(names[1]), stranger))
+        conn.commit()
+    rs.forget_who()
+    w.route._SEQ.update(key=None, value=None)
+    events_now = {e["ref"]: e["operators"] for e in w.route.build_ledger()["events"]}
+    assert any(events_now[r] != events_before[r] for r in events_before if r in events_now), \
+        "the present grouping gives these events other operators"
+    for c in ("1", "2"):
+        assert state(c) == before[c], f"chapter {c} moved"
+    verified(w)
+    ledger = w.route.build_ledger()
+    assert all(r["units"] for r in ledger["rosters"].values() if r["members"]), "the snapshot holds the event agents' units"

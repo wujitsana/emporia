@@ -881,6 +881,7 @@ CREATE TABLE IF NOT EXISTS chronicle_rosters (
                 epoch_s INTEGER NOT NULL,
                 call_ts REAL NOT NULL,
                 members_json TEXT NOT NULL,
+                units_json TEXT NOT NULL DEFAULT '{}',
                 source TEXT NOT NULL,
                 taken_at REAL NOT NULL,
                 PRIMARY KEY (epoch_s, call_ts)

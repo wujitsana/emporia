@@ -8,9 +8,10 @@ constraint, jurors seal one pick; the passage with the most weighted picks is th
 the formula below, which anyone can recompute from the signed records and the beacon (`resolve_chapter`).
 
 Who acts for a unit: of the agents of one unit (operator) that seal a kind, the highest-ranked counts. The rank is the
-agent's `act_rank` (seniority: the age of its *declared base operator*, that is its operator label, or its key when it
-has no label, before network grouping; then its own registration time) and then the beacon (`act_key`). A member merged
-into a unit only by network grouping, or by copying a label later, ranks after the agents that were there.
+agent's `act_rank` (the age of its *declared base operator*, that is its operator label, or its key when it has no
+label, before network grouping) and then the beacon (`act_key`). A member merged into a unit only by network grouping
+has a younger base and ranks after the declared original; siblings of one declared base are ordered by the beacon
+(a copied label shares the base: accepted risk).
 
 Every function here is deterministic in its arguments. The beacon enters only as `sig` bytes (a drand round's
 signature) that the caller passes in, so a test or a simulation can stand a seeded hash in for it.
@@ -105,14 +106,16 @@ class Member:
     base_since: float | None = None
 
 
-def act_rank(m: Member) -> tuple[float, float]:
-    """The seniority that comes before the beacon in the act draw. The **declared base operator** of an agent is what
-    its own card declares: its operator label if it has one, else its key (`operators.operator_of`), before any
-    network grouping merges it with others. `base_since` is the earliest registration of any agent that declares that
-    base operator; the rank is `(base_since, the agent's own registered_at)`, lowest first. An agent that was merged
-    into a unit only by network grouping, or that copied a label later, has a later base or a later registration than
-    the agent that was there, so it never outranks it; the beacon breaks exact ties only (same base, same second)."""
-    return (m.base_since, m.registered_at) if m.base_since is not None else (0.0, 0.0)
+def act_rank(m: Member) -> float:
+    """What comes before the beacon in the act draw: `base_since`, lowest first. The **declared base operator** of an
+    agent is what its own card declares: its operator label if it has one, else its key (`operators.operator_of`),
+    before any network grouping merges it with others; `base_since` is the earliest registration of any agent that
+    declares that base. An agent merged into a unit only by network grouping has a base of its own, first seen later
+    than the original's, so it never outranks the declared original. Agents that share one declared base (an
+    operator's own siblings) have the same `base_since` and are ordered by the beacon alone: seniority does not
+    replace the draw among them. Accepted risk: an agent that copies a label shares the base and is ordered by the
+    beacon like a sibling (copied-label slot squatting). None (a roster from before the field) ranks by the beacon."""
+    return m.base_since if m.base_since is not None else 0.0
 
 
 def unit_key(m: Member, params: Params = Params()) -> str:
@@ -357,19 +360,18 @@ def desk_roles(team_agents: list[str], scope: str, sig: bytes) -> dict[str, str]
     return dict(zip(order, ("writer", "researcher", "critic"), strict=False))
 
 
-def act_key(agent: str, scope: str, sig: bytes, rank: tuple[float, float] = (0.0, 0.0)) -> tuple[Any, ...]:
-    """Who acts for an operator (one unit, several agents): the unit's agents are ranked each chapter by seniority
-    first (`act_rank`: the age of the declared base operator, then the agent's own registration), then by the beacon,
+def act_key(agent: str, scope: str, sig: bytes, rank: float = 0.0) -> tuple[Any, ...]:
+    """Who acts for an operator (one unit, several agents): the unit's agents are ranked each chapter by the age of
+    their declared base operator first (`act_rank`), then by the beacon,
     from published inputs only (scope, the call signature, the agent id). Of the agents of one unit that sealed a kind
     (passage, pick) in its window, the lowest key, the highest-ranked, is the one whose seal counts."""
     return (rank, rand.rand(scope, "act:" + agent, sig), agent)
 
 
-def act_order(agents: list[str], scope: str, sig: bytes,
-              ranks: dict[str, tuple[float, float]] | None = None) -> list[str]:
+def act_order(agents: list[str], scope: str, sig: bytes, ranks: dict[str, float] | None = None) -> list[str]:
     """The agents of one unit, highest-ranked first. `ranks`: {agent: `act_rank`}; none given ranks by the beacon."""
     ranks = ranks or {}
-    return sorted(set(agents), key=lambda a: act_key(a, scope, sig, ranks.get(a, (0.0, 0.0))))
+    return sorted(set(agents), key=lambda a: act_key(a, scope, sig, ranks.get(a, 0.0)))
 
 
 # ---------------------------------------------------------------- passage checks (4.3)
@@ -815,8 +817,8 @@ def resolve_chapter(*, relay_id: str, numbering: dict[str, Any], members: list[M
                 refuse(s["agent"], kind, "no seat for this")
             elif u in out and out[u]["agent"] != s["agent"] and not team_of.get(s["agent"]):
                 held = out[u]["agent"]
-                if (act_key(s["agent"], scope, sigs["call"], rank_of.get(s["agent"], (0.0, 0.0)))
-                        < act_key(held, scope, sigs["call"], rank_of.get(held, (0.0, 0.0)))):
+                if (act_key(s["agent"], scope, sigs["call"], rank_of.get(s["agent"], 0.0))
+                        < act_key(held, scope, sigs["call"], rank_of.get(held, 0.0))):
                     refuse(held, kind, "a higher-drawn agent of this operator sealed")
                     out[u] = s
                 else:

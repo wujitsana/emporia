@@ -123,14 +123,19 @@ def _agents(conn, units, regs, house, base=None) -> list[dict[str, Any]]:
              "base_since": base.get(a), "house": a in house, "joins": e} for a, e in sorted(joins.items())]
 
 
-def _rosters(conn, agents: list[dict[str, Any]], st: dict[str, Any], at: float) -> dict[str, dict[str, Any]]:
+def _rosters(conn, agents: list[dict[str, Any]], st: dict[str, Any], at: float, events: list[dict[str, Any]],
+             units: dict[str, str]) -> dict[str, dict[str, Any]]:
     """Each called slot's roster, from `chronicle_rosters`; a slot called but not yet snapshotted is snapshotted now,
     once, from `agents` (the present grouping) and never again. The first resolution after the call is the one that
     counts: `take_rosters` runs every few seconds on a live relay and every read of the book runs it too, so the
     snapshot is taken within seconds of the call. One taken more than `L.SNAPSHOT_GRACE_S` after it is marked `late`
     (the draw may already have been public; a dev database's older chapters are all marked so). The members are
     `members_at` the previous call: the joins are append-only, so only the unit token, the registration time and
-    the base-operator age can have moved since, and those are what is frozen."""
+    the base-operator age can have moved since, and those are what is frozen. The snapshot also holds `units`: the unit
+    token of every agent that an event of the slot's record window (previous call to this call) names, so an event's
+    operators (which decide whether a day is quiet and how many operators a chapter has) are frozen with the members.
+    Only those agents, not every agent: the window is all a slot's events can reach (carried events keep the earlier
+    slot's operators)."""
     start, epoch = float(st["start"]), int(st["epoch_s"])
     have = {r["call_ts"]: r for r in conn.execute("SELECT * FROM chronicle_rosters WHERE epoch_s = ?", (epoch,))}
     out: dict[str, dict[str, Any]] = {}
@@ -139,14 +144,19 @@ def _rosters(conn, agents: list[dict[str, Any]], st: dict[str, Any], at: float) 
         call_ts = L.slot_call(start, epoch, i)
         row = have.get(call_ts)
         if row is not None:
-            out[str(i)] = {"members": json.loads(row["members_json"]), "source": row["source"]}
+            out[str(i)] = {"members": json.loads(row["members_json"]), "units": json.loads(row["units_json"]),
+                           "source": row["source"]}
             continue
         members = [L._member_dict(m) for m in L.members_at(agents, call_ts - epoch)]
         source = "call" if at - call_ts <= L.SNAPSHOT_GRACE_S else "late"
-        cur = conn.execute("INSERT OR IGNORE INTO chronicle_rosters (epoch_s, call_ts, members_json, source, taken_at) "
-                           "VALUES (?,?,?,?,?)", (epoch, call_ts, json.dumps(members, sort_keys=True), source, at))
+        rid = rs.relay_id()
+        mapping = {a: units.get(a) or L.unit_token(rid, a) for a in L.event_agents(events, call_ts - epoch, call_ts)}
+        cur = conn.execute("INSERT OR IGNORE INTO chronicle_rosters "
+                           "(epoch_s, call_ts, members_json, units_json, source, taken_at) VALUES (?,?,?,?,?,?)",
+                           (epoch, call_ts, json.dumps(members, sort_keys=True), json.dumps(mapping, sort_keys=True),
+                            source, at))
         added = added or cur.rowcount > 0
-        out[str(i)] = {"members": members, "source": source}
+        out[str(i)] = {"members": members, "units": mapping, "source": source}
     if added:
         conn.commit()
     return out
@@ -171,7 +181,8 @@ def take_rosters(at: float | None = None) -> None:
     units, regs, house = _who_units()
     base = _base_since()
     with rs.DB_LOCK, rs.get_db() as conn:
-        _rosters(conn, _agents(conn, units, regs, house, base), st, at)
+        events = _events(conn, units, house, st["start"] - st["epoch_s"])
+        _rosters(conn, _agents(conn, units, regs, house, base), st, at, events, units)
 
 
 def _op(units, house, agent: str) -> str | None:
@@ -191,16 +202,20 @@ def _events(conn, units, house, since: float) -> list[dict[str, Any]]:
     loose: dict[str, dict[str, Any]] = {}
     every = lambda a: units.get(a) or L.unit_token(rs.relay_id(), a)
 
-    def add(ref: str, line: str, ops: list[str | None], at: float | None, any_ops: list[str] | None = None) -> None:
-        if at is not None and at >= since and any_ops:
+    def add(ref: str, line: str, agents: list[str], at: float | None, any_agents: list[str] | None = None) -> None:
+        """`agents`: the agents whose operators count (the house is left out); `any_agents`: every agent of a loose
+        (practice) event, the house included. Each event keeps its agent ids (`agents`), which only the ledger sees:
+        a slot's snapshot maps them to the unit tokens of its call (`chronicle_ledger.slots`)."""
+        if at is not None and at >= since and any_agents:
             if ref not in loose or at < loose[ref]["at"]:
-                loose[ref] = {"ref": ref, "line": C.clip_line(line), "operators": sorted(set(any_ops)), "at": at,
-                              "loose": True}
-        ops = sorted({o for o in ops if o})
+                loose[ref] = {"ref": ref, "line": C.clip_line(line), "operators": sorted({every(a) for a in any_agents}),
+                              "at": at, "loose": True, "agents": sorted(set(any_agents))}
+        counted = sorted({a for a in agents if a and _op(units, house, a)})
+        ops = sorted({_op(units, house, a) for a in counted})
         if at is None or at < since or not ops:
             return
         if ref not in out or at < out[ref]["at"]:
-            out[ref] = {"ref": ref, "line": C.clip_line(line), "operators": ops, "at": at}
+            out[ref] = {"ref": ref, "line": C.clip_line(line), "operators": ops, "at": at, "agents": counted}
 
     first: dict[str, tuple[float, str]] = {}
 
@@ -232,8 +247,7 @@ def _events(conn, units, house, since: float) -> list[dict[str, Any]]:
             pass
         game = sess["module_type"].split(":")[1] if ":" in sess["module_type"] else sess["module_type"]
         add(f"session:{sess['session_id']}", f"{game}: {' v '.join(players)}, {result}, "
-            f"{moves.get(sess['session_id'], 0)} moves", [_op(units, house, p) for p in players], at,
-            [every(p) for p in players])
+            f"{moves.get(sess['session_id'], 0)} moves", list(players), at, list(players))
         for p in players:
             firsts(p, at, "game")
     # public posts that other operators answered (the topic of the book itself is left out)
@@ -259,42 +273,42 @@ def _events(conn, units, house, since: float) -> list[dict[str, Any]]:
         author_op = _op(units, house, p["author_id"])
         firsts(p["author_id"], _ts(p["at"]), "post")
         seen: dict[str, float] = {}
+        seen_by: dict[str, str] = {}
         for at, who in sorted(answers.get(pid, [])):
             op = _op(units, house, who)
             if op and op != author_op and op not in seen:
                 seen[op] = at
+                seen_by[op] = who
         first_line = " ".join(str(p["text"]).split())[:60]
         line = (f"{p['author_id']} {p['kind']}: {first_line}, {replies.get(pid, 0)} replies, "
                 f"{likes.get(pid, 0)} likes")
         if len(seen) >= 2:
             when = sorted(seen.values())[1]
-            add(f"post:{pid}", line, [author_op, *seen], when)
+            add(f"post:{pid}", line, [p["author_id"], *seen_by.values()], when)
         elif (rows := [(at, who) for at, who in sorted(answers.get(pid, [])) if who != p["author_id"]]):
-            add(f"post:{pid}", line, [], rows[0][0], [every(p["author_id"]), *(every(w) for _, w in rows)])
+            add(f"post:{pid}", line, [], rows[0][0], [p["author_id"], *(w for _, w in rows)])
     # lab reports (public records: refs and agents)
     for r in conn.execute("SELECT lab_slug, ref_kind, ref_id, event, maintainer_id, author_stable, created_at "
                           "FROM lab_reports ORDER BY created_at"):
         author = conn.execute("SELECT agent_id FROM authorized_agents WHERE stable_id = ?",
                               (r["author_stable"],)).fetchone()
         add(f"{r['ref_kind']}:{r['ref_id']}", f"{r['lab_slug']}: {r['ref_kind']} {r['ref_id']} {r['event']}",
-            [_op(units, house, r["maintainer_id"]), _op(units, house, author["agent_id"] if author else "")],
-            _ts(r["created_at"]))
+            [r["maintainer_id"], author["agent_id"] if author else ""], _ts(r["created_at"]))
     # public open rooms and topics
     for r in conn.execute("SELECT room_id, name, creator_id, created_at FROM rooms WHERE room_type = 'public' AND "
                           "gate_type = 'open' AND encrypted = 0 AND entry_fee_cents = 0"):
         add(f"room:{r['room_id']}", f"room {r['name']}, made by {r['creator_id']}",
-            [_op(units, house, r["creator_id"])], _ts(r["created_at"]), [every(r["creator_id"])])
+            [r["creator_id"]], _ts(r["created_at"]), [r["creator_id"]])
     for r in conn.execute("SELECT slug, name, creator_id, created_at FROM agora_topics WHERE visibility = 'public' "
                           "AND gate_type = 'open' AND entry_fee_cents = 0 AND encrypted = 0 AND is_deleted = 0 "
                           "AND slug != ?", (TOPIC,)):
         add(f"topic:{r['slug']}", f"topic {r['name']}, made by {r['creator_id']}",
-            [_op(units, house, r["creator_id"])], _ts(r["created_at"]), [every(r["creator_id"])])
+            [r["creator_id"]], _ts(r["created_at"]), [r["creator_id"]])
     # an agent's first public post or game on this relay
     for agent, (at, what) in first.items():
         stable = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent,)).fetchone()
         if stable and stable["stable_id"]:
-            add(f"agent:{stable['stable_id']}", f"{agent}: first {what} here", [_op(units, house, agent)], at,
-                [every(agent)])
+            add(f"agent:{stable['stable_id']}", f"{agent}: first {what} here", [agent], at, [agent])
     both = {**loose, **out}          # a strict event is the same event, taken in every mode
     return sorted(both.values(), key=lambda e: (e["at"], e["ref"]))
 
@@ -369,8 +383,8 @@ def build_ledger(at: float | None = None) -> dict[str, Any]:
     base = _base_since()
     with rs.DB_LOCK, rs.get_db() as conn:
         agents = _agents(conn, units, regs, house, base)
-        rosters = _rosters(conn, agents, st, at)
         events = _events(conn, units, house, st["start"] - st["epoch_s"])
+        rosters = _rosters(conn, agents, st, at, events, units)
         prologue = prologue_ref(conn)
         seals = [{"chapter": r["chapter"], "agent": r["agent_id"], "what": r["what"], "commitment": r["commitment"],
                   "at": r["received_at"], "seq": r["seq"], "log_index": _log_index(conn, "chronicle_seal", r["seq"])}
@@ -424,7 +438,7 @@ def _freeze(conn, slot: dict[str, Any]) -> None:
     if conn.execute("SELECT 1 FROM chronicle_verdicts WHERE chapter = ?", (slot["id"],)).fetchone():
         return
     body = json.dumps({"chapter": slot["id"], "call_ts": slot["call_ts"], "verdict": slot["verdict"],
-                       "roster": L.roster_hash(slot["inputs"]["members"])},
+                       "roster": L.roster_hash(slot["inputs"]["members"], slot["inputs"]["events"])},
                       sort_keys=True, separators=(",", ":"), default=list)
     conn.execute("INSERT OR IGNORE INTO chronicle_verdicts (chapter, body_json, body_hash, frozen_at) VALUES (?,?,?,?)",
                  (slot["id"], body, hashlib.sha256(body.encode()).hexdigest(), datetime.now(UTC).isoformat()))
@@ -466,7 +480,7 @@ def _unit_of(slot: dict[str, Any]) -> dict[str, str]:
     return {m["agent_id"]: (m["agent_id"] if practice else m["operator"]) for m in slot["inputs"]["members"]}
 
 
-def _act_ranks(slot: dict[str, Any]) -> dict[str, tuple[float, float]]:
+def _act_ranks(slot: dict[str, Any]) -> dict[str, float]:
     """{agent: `modules/chronicle.act_rank`} of the chapter's members, from its published inputs."""
     return {m["agent_id"]: C.act_rank(C.Member(**m)) for m in slot["inputs"]["members"]}
 
