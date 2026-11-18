@@ -114,20 +114,18 @@ def commit_round_problem(signed_at: str, beacon_round: object) -> str:
     return ""
 
 
-def relay_clock_problem(beacon_round: int, now_ts: float, current_round: int | None = None) -> str:
+def relay_clock_problem(beacon_round: int, now_ts: float) -> str:
     """Why the relay, by its own clock at `now_ts`, refuses a commitment naming `beacon_round`, or "". The
     signed `at` is the signer's word (it may be minutes old), so the round must also still be MIN_LEAD_ROUNDS
-    ahead of the relay's now; and a join is refused once the game's round (`current_round`, the latest any
-    earlier commitment names) is published, since the deal could then be seen before committing."""
+    ahead of the relay's now. A late joiner of a waiting game is fine: the game's round is the latest any
+    commitment names, its own included, so it is still in the future and nobody can see the deal; a table's
+    round exists only once every seat is in, and a full table takes no joins."""
     if not RELAY_CLOCK_CHECK:
         return ""
     need = round_at(now_ts) + MIN_LEAD_ROUNDS
     if beacon_round < need:
         return (f"beacon_round {beacon_round} is too early by the relay's clock: it must be at least "
                 f"{MIN_LEAD_ROUNDS} rounds ({MIN_LEAD_ROUNDS * PERIOD_S} s) ahead of now (round {need} or later)")
-    if current_round is not None and now_ts >= round_time(current_round):
-        return (f"drand round {current_round} of this game is already published, so its draw can be seen: "
-                "a commitment can no longer join it")
     return ""
 
 

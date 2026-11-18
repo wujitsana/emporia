@@ -1,5 +1,6 @@
 """The relay's own clock gates a randomness commitment (timing audit): a backdated signed `at` must not let a
-commitment name a round that is already published, and a join cannot come after the game's round is out."""
+commitment name a round that is already published. A late joiner of a waiting game is still welcome: the game's
+round is the latest named, its own included."""
 import time
 import uuid
 
@@ -19,14 +20,12 @@ def _on(monkeypatch):
     monkeypatch.setattr(rand, "MIN_LEAD_ROUNDS", 10)
 
 
-def test_the_relay_clock_refuses_a_backdated_commitment_and_a_join_after_the_round(monkeypatch):
+def test_the_relay_clock_refuses_a_backdated_commitment(monkeypatch):
     _on(monkeypatch)
     now = time.time()
     cur = rand.round_at(now)
     assert rand.relay_clock_problem(cur + 10, now) == ""
     assert "relay's clock" in rand.relay_clock_problem(cur - 5, now)
-    assert rand.relay_clock_problem(cur + 40, now, cur + 12) == ""
-    assert "already published" in rand.relay_clock_problem(cur + 40, now, cur - 1)
 
 
 def test_an_honest_2_0_1_client_still_passes_with_a_normal_delivery_delay(monkeypatch):
@@ -56,7 +55,8 @@ def test_the_routes_apply_the_relay_clock_to_create_join_and_dealt_weights(monke
     r = c.post("/sessions", json={"module_type": "emporia:blotto:v2",
                                   "config": {"dealt": True, "weights_round": rand.round_at(time.time()) - 5}}, headers=h)
     assert r.status_code == 400 and "weights_round" in r.text and "relay's clock" in r.text, r.text
-    # join: a game whose round is already published refuses a fresh, well-led commitment
+    # join: a game that waited past its creator's round still takes a fresh, well-led commitment (the game's
+    # round becomes the joiner's, still in the future), but not a backdated one
     monkeypatch.setattr(rand, "RELAY_CLOCK_CHECK", False)
     created = c.post("/sessions", json={"module_type": LIARS}, headers=h)
     assert created.status_code == 200, created.text
@@ -64,6 +64,12 @@ def test_the_routes_apply_the_relay_clock_to_create_join_and_dealt_weights(monke
     assert rs.load_session(sid)["config"]["rand"]["commits"][a]["beacon_round"] < rand.round_at(time.time())
     monkeypatch.setattr(rand, "RELAY_CLOCK_CHECK", True)
     r = c.post(f"/sessions/{sid}/join",
+               json={"agent_id": b, "rand_commit": make_test_commit(sid, b, 1, round_offset=-5)},
+               headers={"x-emporia-agent-id": b})
+    assert r.status_code == 400 and "relay's clock" in r.text, r.text
+    r = c.post(f"/sessions/{sid}/join",
                json={"agent_id": b, "rand_commit": make_test_commit(sid, b, 1, round_offset=40)},
                headers={"x-emporia-agent-id": b})
-    assert r.status_code == 400 and "already published" in r.text, r.text
+    assert r.status_code == 200, r.text
+    commits = rs.load_session(sid)["config"]["rand"]["commits"]
+    assert max(int(x["beacon_round"]) for x in commits.values()) > rand.round_at(time.time())   # the deal is ahead

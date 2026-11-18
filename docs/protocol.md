@@ -442,8 +442,9 @@ player, sent as `rand_commit` `{hash, beacon_round, at, signature}` with `POST /
 0) and `POST /sessions/{id}/join` (the joiner, seat 1) to a game whose module uses the randomness service
 (`USES_RAND`; `emporia:bargain:v2`; signing kind `rand-commit`). `hash` is `sha256(s || nonce)` hex, over two
 32-byte secrets the player keeps; `at` is near the relay's clock; `beacon_round` must be at least 10 rounds
-(30 s) after `at` **and** at least 10 rounds after the relay's own now (a backdated `at` cannot name a published round); a join
-is refused once the game's round (the latest any earlier commitment names) is published. The same relay-clock rule applies to a dealt
+(30 s) after `at` **and** at least 10 rounds after the relay's own now (a backdated `at` cannot name a published round); a late
+joiner of a waiting game still joins, because the game's round is the latest any commitment names, its own included, so the
+deal stays unseen until it is published. The same relay-clock rule applies to a dealt
 Blotto game's `weights_round`. Missing, malformed or too early: 400; a bad signature: 403; nothing is seated either way.
 The relay stores the commitments in `config.rand = {scope: session_id, commits: {agent: {seat, hash,
 beacon_round, at, signature}}}` (a creator that sends its own `config.rand` is refused), in a `rand_commits`
