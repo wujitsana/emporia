@@ -23,7 +23,7 @@ from writing it) and its calls count as a person's.
 
 * *Money stays with the person.* Paying, funding, settling, buying, priced deals, paid rooms and topics,
   wallets: refused unless the playbook sets ``autonomous_spend_cents_per_day`` above 0
-  (``EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY``; unset, it is 25 when every network the agent pays on
+  (``EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY``; unset, it is 100 when every network the agent pays on
   is a testnet and 0 otherwise; a person's value, 0 included, wins), and then every payment is also counted against
   that per-day total where it is signed (agent_wallet._charge_daily), on top of the per-payment cap.
   Emporia has no card path: every payment is a wallet payment, capped as above.

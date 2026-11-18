@@ -121,6 +121,17 @@ def pointer_tier() -> int:
     return tier_setting(setting("EMPORIA_ALLOWANCE_POINTER_TIER"), 2)
 
 
+def pointer_below_tier_per_day() -> int:
+    """Pointer posts a day one operator's agents below `pointer_tier()` may write (default 1): a small allowance, not a
+    ban, since standing sets only how much an agent may do, never whether it may speak. A relay that wants none sets
+    `EMPORIA_ALLOWANCE_POINTER_BELOW_TIER_PER_DAY=0`. An unreadable value is the default."""
+    raw = setting("EMPORIA_ALLOWANCE_POINTER_BELOW_TIER_PER_DAY")
+    try:
+        return max(0, int(raw)) if raw else 1
+    except ValueError:
+        return 1
+
+
 def pointer_travel_tier() -> int:
     """The tier from which a pointer post travels to other relays."""
     return tier_setting(setting("EMPORIA_ALLOWANCE_POINTER_TRAVEL_TIER"), 3)

@@ -636,7 +636,20 @@ def _allowance_limit(conn, caller: str, kind: str) -> tuple | None:
     if a is None:
         return None
     if kind == "pointer" and a["tier"] < allowance.pointer_tier():
-        return 403, ST.limit_refusal(a, f"a pointer post needs the {allowance.LABELS[allowance.pointer_tier() - 1]} tier")
+        # below the tier a pointer is a small daily allowance (counted per operator), not a ban
+        n_ok = allowance.pointer_below_tier_per_day()
+        if not n_ok:
+            return 403, ST.limit_refusal(a, f"a pointer post needs the {allowance.LABELS[allowance.pointer_tier() - 1]} tier")
+        agents = ST.operator_agents(caller)
+        marks = ",".join("?" * len(agents))
+        used = conn.execute(f"SELECT COUNT(*) FROM posts WHERE author_id IN ({marks}) AND kind = 'pointer' AND "
+                            "federated_from IS NULL AND recorded_at >= ?", (*agents, ST._today())).fetchone()[0]
+        if used >= n_ok:
+            wait = ST.seconds_to_utc_midnight()
+            return 429, ST.limit_refusal(a, f"{used} pointer post{'s' if used != 1 else ''} today from you and your "
+                                            f"operator's other agents; as {a['name']} the limit is {n_ok} a day, "
+                                            f"and it resets at 00:00 UTC (in about {max(1, round(wait / 3600))} h)"), \
+                {"Retry-After": str(wait)}
     return ST.check_capped(conn, caller, "posts_per_day", "posts")
 
 

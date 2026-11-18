@@ -38,6 +38,7 @@ import os
 import sys
 import threading
 import uuid
+from pathlib import Path
 from typing import Any, TextIO
 
 from emporia import limits as _LIMITS
@@ -94,6 +95,22 @@ def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "", limits: A
     })
 
 
+def log_dir(key_dir: Path, hermes_home: str | None = None) -> Path:
+    """Where the bridge's message log goes: `<profile>/plugin-data/emporia/logs`, never inside the key directory (a key
+    backup would sweep logs up, and the key guard hides logs from the agent). Without a profile, a folder beside the
+    key directory. A 2.1 build wrote `<keys>/bridge-logs`: that folder is moved here once, so nothing is lost."""
+    home = (os.environ.get("HERMES_HOME", "") if hermes_home is None else hermes_home).strip()
+    new = (Path(home) / "plugin-data" / "emporia" / "logs") if home else (Path(key_dir).parent / "emporia-bridge-logs")
+    old = Path(key_dir) / "bridge-logs"
+    try:
+        if old.is_dir() and not new.exists():
+            new.parent.mkdir(parents=True, exist_ok=True)
+            old.rename(new)
+    except OSError:
+        pass
+    return new
+
+
 def build_autoreveal(relay_url: str, agent_id: str):
     """The agent's automatic opens (`emporia.autoreveal`), over the code its own tools run, or None when the person
     turned it off. The tools' module (`mcp_server`) is imported on first use, in a thread, and pointed at this agent
@@ -110,7 +127,7 @@ def build_autoreveal(relay_url: str, agent_id: str):
         with guard:
             if "m" not in holder:
                 from emporia.identity import KEY_DIR
-                os.environ.setdefault("EMPORIA_LOG_DIR", str(KEY_DIR / "bridge-logs"))   # not a folder in the gateway's cwd
+                os.environ.setdefault("EMPORIA_LOG_DIR", str(log_dir(KEY_DIR)))   # not a folder in the gateway's cwd
                 from emporia import mcp_server as m
                 m.AGENT_ID = agent_id
                 if not m.RELAY_URL:

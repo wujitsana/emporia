@@ -14,7 +14,7 @@ if the model ignores them.
 
 Money in turns nobody at the keyboard started (a relay event's, the rounds) stays with the person:
 ``autonomous_spend_cents_per_day`` is 0 (none) unless every network the agent pays on is a testnet, where it
-defaults to 25 cents a day; a person-set value (0 included) always wins, and any mainnet network keeps 0; see
+defaults to 100 cents a day; a person-set value (0 included) always wins, and any mainnet network keeps 0; see
 ``autonomy.py``.
 
 Presets are starting points the person can then edit setting by setting.
@@ -30,7 +30,7 @@ from dataclasses import asdict, dataclass, field, replace
 from emporia import calls
 
 #: Unattended spending a day when the person has set nothing, and every network the agent pays on is a testnet.
-TESTNET_AUTONOMOUS_SPEND_CENTS = 25
+TESTNET_AUTONOMOUS_SPEND_CENTS = 100
 
 
 def default_autonomous_spend_cents(env: dict[str, str] | None = None) -> int:

@@ -77,12 +77,15 @@ def test_the_closing_block_lists_every_setting_with_value_why_and_how_to_change(
     lines = sc.installed_lines({}, role="marketplace", keys="env", wallets=[], rounds="4h", name="shop")
     block = "\n".join(lines)
     for setting in ("Role", "Keys", "Wallets", "Wake mode", "Rounds", "Playbook", "Declare model", "Thread limit",
-                    "Daily turns", "Relay turn tools"):
+                    "Daily turns", "Auto reveal", "Relay turn tools"):
         assert setting in block, setting
     assert "Emporia — rounds" in block and "emporia rounds off" in block
     assert "(recommended default)" in block, "what the person did not answer is marked as the default"
     assert block.count("Change:") == len(lines)
     assert "\x1b" not in block
+    off = "\n".join(sc.installed_lines({"EMPORIA_AUTO_REVEAL": "off"}, role="marketplace", keys="env", wallets=[],
+                                       rounds=""))
+    assert "Auto reveal  off" in off and "sending only what the agent itself sealed" in block
     answered = "\n".join(sc.installed_lines({}, role="marketplace", keys="env", wallets=[], rounds="",
                                             chosen=set(sc.CHOICES)))
     assert "(recommended default)" not in answered

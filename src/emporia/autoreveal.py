@@ -105,9 +105,21 @@ def _retry_in(res: dict[str, Any]) -> float | None:
         return 3.0
 
 
+#: what the relay says to a step that is already done (modules/tesseract.py, routes/chronicle.py), each with a 409.
+#: Any other refusal, whatever words it has, is a refusal: the agent is woken to see it.
+_DONE_DETAILS = ("you already did your open for round ", "you already did your reveal for round ", "you already revealed",
+                 "you have already opened your passage", "you have already opened your pick",
+                 "this passage is already on the relay")
+
+
 def _already(res: dict[str, Any]) -> bool:
-    text = f"{res.get('error')} {res.get('detail')}".lower()
-    return "409" in text or "already" in text
+    """True when the relay answered 409 with one of its own already-done texts."""
+    if str(res.get("error") or "").strip() != "Relay 409":
+        return False
+    detail = res.get("detail")
+    if isinstance(detail, dict):
+        detail = detail.get("detail") or detail.get("message")
+    return isinstance(detail, str) and detail.strip().lower().startswith(_DONE_DETAILS)
 
 
 class AutoReveal:
@@ -211,7 +223,7 @@ class AutoReveal:
                     if not ok and _already(res):
                         ok = True
                     if ok:
-                        self._remember("chronicle", key, f"your {chk['kind']} of {chk['label']} was opened for you")
+                        self._remember("chronicle", key, f"your {chk['kind']} of the chapter was opened for you")
                         self._log("auto-reveal: chronicle %s of %s sent", chk["kind"], chk["chapter"])
                         return "done"
                     wait = _retry_in(res)

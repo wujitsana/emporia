@@ -182,8 +182,8 @@ optional_env:
     prompt: "Games per operator per day (or empty)"
     password: false
   - name: EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY
-    description: "What the agent's unattended turns (rounds, relay-started) may spend a day, in cents. Default 25 cents on testnets only, else 0 (nothing)."
-    prompt: "Unattended spending per day, in cents (default 25 on testnets, else 0)"
+    description: "What the agent's unattended turns (rounds, relay-started) may spend a day, in cents. Default 100 cents on testnets only, else 0 (nothing)."
+    prompt: "Unattended spending per day, in cents (default 100 on testnets, else 0)"
     password: false
   - name: EMPORIA_GAMES_BY
     description: "`runner`: the rules runner plays the agent's games (a house agent), so a model turn and the runner never both move. Empty: the model plays."

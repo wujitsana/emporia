@@ -260,6 +260,7 @@ def _turns(monkeypatch, *, agent_side_autonomous: bool, signer_side_autonomous: 
 
 def test_s1_a_relay_turn_behind_a_signer_is_held_to_the_allowance_in_the_agents_own_process(held, monkeypatch):  # noqa: F811 (the fixture imported above)
     _turns(monkeypatch, agent_side_autonomous=True, signer_side_autonomous=False)   # signer env says "person"
+    monkeypatch.setenv("EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY", "25")
     with pytest.raises(AgentWalletError, match="unattended|allowance"):
         agent_wallet.sign_exact(AGENT, _challenge_for(250))        # $2.50 > the 25 cents a day
     assert agent_wallet.spent_today_atomic(AGENT) == 0             # and the signer was never asked

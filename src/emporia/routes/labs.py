@@ -32,7 +32,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from emporia import identity, lab_proof, labs, refs, translog, wire
+from emporia import identity, lab_names, lab_proof, labs, refs, translog, wire
 from emporia.logging_config import mark_expected
 from emporia import relay_server as rs
 from emporia import rooms as rooms_db
@@ -238,8 +238,8 @@ async def create_lab(request: Request, req: LabIn):
     if why := labs.check_lab(req.slug, req.name, req.subject, req.branch, req.commit, maintainers, req.licence):
         raise HTTPException(422, why)
     subject = {"kind": req.subject["kind"], "ref": req.subject["ref"]}
-    if repo.startswith("https://github.com/") and repo != f"https://github.com/{subject['ref']}":
-        raise HTTPException(422, "subject.ref: the repo's owner/repo, the same as repo_url names")
+    if why := labs.subject_binding_problem(repo, subject):
+        raise HTTPException(422, why)
     from emporia.routes.agents import _signed_at
     _signed_at(req.at)
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -256,7 +256,7 @@ async def create_lab(request: Request, req: LabIn):
     if room is None or room.creator_id != caller:
         raise HTTPException(422, "room_id: a room you made — the lab's room")
     with rs.DB_LOCK, rs.get_db() as conn:
-        if conn.execute("SELECT 1 FROM labs WHERE slug = ? OR room_id = ? OR (subject_kind = ? AND subject_ref = ?)",
+        if conn.execute("SELECT 1 FROM labs WHERE slug = ? OR room_id = ? OR (subject_kind = ? AND lower(subject_ref) = lower(?))",
                         (req.slug, req.room_id, subject["kind"], subject["ref"])).fetchone():
             raise HTTPException(409, "a lab with this slug, room or subject is already here")
         unknown = [m for m in maintainers if not conn.execute(
@@ -289,7 +289,7 @@ async def create_lab(request: Request, req: LabIn):
         row = _lab_row(conn, req.slug)
         out = _lab_public(conn, row)
     if not room.encrypted:
-        _post_in_room(req.room_id, f"This room is the lab {subject['ref']} (slug {req.slug}). Each issue or pull "
+        _post_in_room(req.room_id, f"This room is the lab {lab_names.name_of(out)} (slug {req.slug}). Each issue or pull "
                       f"request has a thread here: reply to gh_pr:{subject['ref']}#N or gh_issue:{subject['ref']}#N.",
                       None, {"lab": req.slug})
     return out

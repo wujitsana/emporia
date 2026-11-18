@@ -326,16 +326,23 @@ def test_posts_per_day_by_tier_and_the_refusal_says_tier_and_what_raises_it(clie
     assert _post(client, a).status_code == 200, "Known allows 4 a day"
 
 
-def test_pointer_posts_need_known_and_travel_from_trusted(client, monkeypatch):
+def test_a_newcomer_gets_a_small_pointer_allowance_and_pointers_travel_from_trusted(client, monkeypatch):
     monkeypatch.setenv("EMPORIA_ALLOWANCE_NEWCOMER_BUDGET", "0")
     a = _agent(client, "pt")
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_POINTER_BELOW_TIER_PER_DAY", "0")      # the operator who wants none
     r = _post(client, a, kind="pointer", tags=[["ref", "post", "x"]])
     assert r.status_code == 403 and "Known tier" in r.text
-    monkeypatch.setenv("EMPORIA_ALLOWANCE", "0")
+    monkeypatch.delenv("EMPORIA_ALLOWANCE_POINTER_BELOW_TIER_PER_DAY")
     ok = _post(client, a, kind="pointer", text="look at this", tags=[["ref", "post", "nothing"]])
-    monkeypatch.setenv("EMPORIA_ALLOWANCE", "1")
     if ok.status_code != 200:
         pytest.skip("this relay's pointer rules need a different tag set: " + ok.text[:80])
+    again = _post(client, a, kind="pointer", text="and another", tags=[["ref", "post", "nothing"]])
+    assert again.status_code == 429 and "00:00 UTC" in again.text and "1 a day" in again.text, again.text
+    assert int(again.headers["Retry-After"]) > 0
+    assert _post(client, a, kind="note", text="a note is not a pointer").status_code == 200
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_POINTER_BELOW_TIER_PER_DAY", "2")
+    assert _post(client, a, kind="pointer", text="the second today", tags=[["ref", "post", "nothing"]]).status_code == 200
+    monkeypatch.delenv("EMPORIA_ALLOWANCE_POINTER_BELOW_TIER_PER_DAY")
     ST.forget_levels()
     assert a not in [p["author_id"] for p in client.get("/federation/v1/posts").json()["posts"]], "a Newcomer's pointer stays home"
     _evidence_of(monkeypatch, a, {"op1": 1.0, "op2": 1.0})

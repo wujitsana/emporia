@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -37,6 +38,17 @@ def clock() -> datetime:
     return datetime.now(UTC)
 
 
+#: a local file name: `voice`, or `passage.<chapter>` / `pick.<chapter>` / `tries.<chapter>`, the chapter being the relay's text, so only plain
+#: characters (a chapter id from the relay is never allowed to carry a path)
+_NAME = re.compile(r"[a-z]{3,8}(?:\.[A-Za-z0-9_-]{1,64})?")
+
+
+def _safe(chapter: Any) -> str:
+    """The chapter id as a file-name part, or '' when it has anything but A-Z a-z 0-9 _ - (the relay's `-` is `_`)."""
+    text = str(chapter or "").replace("-", "_")
+    return text if re.fullmatch(r"[A-Za-z0-9_]{1,64}", text) else ""
+
+
 class Chronicle:
     def __init__(self, agent_id: str, *, get: Callable[[str], tuple[int, dict]],
                  post: Callable[[str, dict], tuple[int, dict]], sign: Callable[..., str],
@@ -48,6 +60,8 @@ class Chronicle:
 
     # ── local state ────────────────────────────────────────────────────────────────────────────────
     def _path(self, name: str) -> Path:
+        if not _NAME.fullmatch(name):
+            raise ValueError("not a local file name")
         self.dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         clean = "".join(c for c in self.agent_id if c.isalnum() or c in "_-")
         return self.dir / f"{clean}.{self.host}.chronicle.{name}.json"
@@ -162,6 +176,8 @@ class Chronicle:
             return None, {"success": False, "error": "you are not joined: call chronicle(join=True) once"}
         if d.get("chapter") is None:
             return None, {"success": False, "error": d.get("note") or "no chapter is being written"}
+        if not _safe(d["chapter"]):
+            return None, {"success": False, "error": "the relay named a chapter this client will not use as a file name"}
         if d.get("role") not in want:
             return None, {"success": False, "error": f"you are {d.get('role') or 'not seated'} in {d['label']}; this is "
                           f"for {' or '.join(sorted(want))}", "role": d.get("role")}
@@ -185,12 +201,12 @@ class Chronicle:
             v = self.voice()
             v["note"] = voice_note
             self._save("voice", v)
-        tries = self._load(f"tries.{d['chapter'].replace('-', '_')}")
+        tries = self._load(f"tries.{_safe(d['chapter'])}")
         recent = [t for t in tries.get("t", []) if time.time() - t < TRY_WINDOW_S]
         if len(recent) >= MAX_TRIES:
             return {"success": False, "error": "two tries used this turn: stop, and write again next turn "
                     "(a turn cannot loop on the checks)", "tries_left": 0}
-        self._save(f"tries.{d['chapter'].replace('-', '_')}", {"t": [*recent, time.time()]})
+        self._save(f"tries.{_safe(d['chapter'])}", {"t": [*recent, time.time()]})
         left = MAX_TRIES - len(recent) - 1
         p = d["parts"]
         refs = set(d.get("window_refs") or []) | {a[0] for a in p["anchors"]}
@@ -235,7 +251,7 @@ class Chronicle:
         status, r = self._seal(d["chapter"], "passage", C.passage_commitment(post_id, commit_nonce), d["relay_id"])
         if status != 200:
             return {"success": False, "sealed": False, "error": f"Relay {status}", "detail": r.get("detail", r)}
-        self._save(f"passage.{d['chapter'].replace('-', '_')}", {"post": post, "post_id": post_id, "nonce": commit_nonce,
+        self._save(f"passage.{_safe(d['chapter'])}", {"post": post, "post_id": post_id, "nonce": commit_nonce,
                                                                   "chapter": d["chapter"]})
         return {"success": True, "sealed": True, "chapter": d["chapter"], "post_id": post_id,
                 "next": "chronicle_reveal() in the Open window opens it; until then only a hash is public",
@@ -263,7 +279,7 @@ class Chronicle:
         status, r = self._seal(d["chapter"], "pick", C.pick_commitment(pick, reason, recap, nonce), d["relay_id"])
         if status != 200:
             return {"success": False, "error": f"Relay {status}", "detail": r.get("detail", r)}
-        self._save(f"pick.{d['chapter'].replace('-', '_')}", {"pick": pick, "reason": reason, "recap": recap,
+        self._save(f"pick.{_safe(d['chapter'])}", {"pick": pick, "reason": reason, "recap": recap,
                                                               "nonce": nonce, "chapter": d["chapter"]})
         return {"success": True, "sealed": True, "chapter": d["chapter"], "pick": pick,
                 "next": "chronicle_reveal() in the Count window opens it",
@@ -277,7 +293,9 @@ class Chronicle:
         status, d = self._view()
         if status != 200 or not d.get("joined") or d.get("chapter") is None:
             return {"go": False}
-        ch = str(d["chapter"]).replace("-", "_")
+        ch = _safe(d["chapter"])
+        if not ch:
+            return {"go": False}
         sealed, opened = d.get("sealed") or {}, d.get("opened") or {}
         if d.get("phase") == "open" and d.get("due") == "reveal passage" and sealed.get("passage") \
                 and not opened.get("passage"):
@@ -289,6 +307,14 @@ class Chronicle:
             return {"go": False}
         if not saved or saved.get("chapter") != d["chapter"] or any(k not in saved for k in need):
             return {"go": False, "kind": kind}
+        # like Tesseract: the hash recomputed from the value kept here must be the one the relay holds for this agent
+        try:
+            mine = (C.passage_commitment(saved["post_id"], saved["nonce"]) if kind == "passage"
+                    else C.pick_commitment(saved["pick"], saved["reason"], saved.get("recap"), saved["nonce"]))
+        except (TypeError, ValueError, KeyError):
+            return {"go": False, "kind": kind}
+        if not mine or mine != (d.get("commitments") or {}).get(kind):
+            return {"go": False, "kind": kind}
         return {"go": True, "kind": kind, "chapter": d["chapter"], "label": d.get("label") or d["chapter"]}
 
     def reveal(self) -> dict[str, Any]:
@@ -298,7 +324,9 @@ class Chronicle:
             return {"success": False, "error": f"Relay {status}", "detail": d.get("detail", d)}
         if d.get("chapter") is None:
             return {"success": False, "error": d.get("note") or "no chapter is being written"}
-        ch = d["chapter"].replace("-", "_")
+        ch = _safe(d["chapter"])
+        if not ch:
+            return {"success": False, "error": "the relay named a chapter this client will not use as a file name"}
         done = []
         if d["phase"] == "open":
             saved = self._load(f"passage.{ch}")

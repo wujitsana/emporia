@@ -18664,6 +18664,8 @@ def test_every_documented_environment_variable_is_actually_read():
 
     # A person's switch that setup writes and the agent's own skill honours: no `getenv` of its own.
     read.add("EMPORIA_X_LINK")
+    # The bridge's auto-reveal reads it as `env.get(SETTING)` (autoreveal.enabled), with the name in a constant.
+    read.add("EMPORIA_AUTO_REVEAL")
     # The allowance reads its settings through `allowance.setting("NAME")` (which falls back to the 2.0.1 name).
     read.update(re.findall(r'\bsetting\("([A-Z][A-Z0-9_]*)"', _Path("src/emporia/allowance.py").read_text()))
     # The bridge's auto-reveal reads its switch through a module constant, `SETTING = "NAME"`.

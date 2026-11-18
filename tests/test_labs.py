@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from emporia import labs, refs, signing, translog, wire
+from emporia import lab_names, lab_proof, labs, refs, signing, translog, wire
 from emporia import relay_server as rs
 from emporia import rooms as rooms_db
 from tests.test_emporia import _register_keyed
@@ -769,3 +769,75 @@ def test_a_member_replies_in_a_lab_thread_with_a_signed_root(client, lab):
                    __import__("emporia.room_post", fromlist=["x"]).body("note", "elsewhere", [], lab.pr(61),
                                                                          root=lab.pr(62))))
     assert bad.status_code == 400
+
+
+# ── a lab's name is its repo's, on its own host ─────────────────────────────
+
+def _post_hosted(client, lb, repo_url, kind, ref, slug=None):
+    slug = slug or lb.slug
+    at = datetime.now(UTC).isoformat()
+    subject = {"kind": kind, "ref": ref}
+    sig = signing.sign(lb.creator, "lab", slug, slug, lb.room.room_id, subject, "main", lb.commit,
+                       [stable_of(lb.maint)], "MIT", stable_of(lb.creator), at)
+    return client.post("/labs", headers=as_(lb.creator), json={
+        "slug": slug, "name": slug, "room_id": lb.room.room_id, "subject": subject, "repo_url": repo_url,
+        "branch": "main", "commit": lb.commit, "maintainers": [stable_of(lb.maint)], "licence": "MIT",
+        "verified": True, "at": at, "signature": sig})
+
+
+def _fake_proof(monkeypatch, seen=None):
+    monkeypatch.setenv("EMPORIA_LAB_HOSTS", "file,github.com,gitlab.com,codeberg.org")
+    def check(*a, **k):
+        if seen is not None:
+            seen.append(a)
+        return {"represents": True, "proof": None, "checked_at": "t", "why": ""}
+    monkeypatch.setattr(lab_proof, "check", check)
+
+
+def test_a_codeberg_repo_cannot_take_another_projects_github_name(client, tmp_path, monkeypatch):
+    lb = Lab(client, tmp_path, monkeypatch)
+    fetched = []
+    _fake_proof(monkeypatch, fetched)
+    r = _post_hosted(client, lb, "https://codeberg.org/me/x", "github_repo", "victim/repo")
+    assert r.status_code == 422 and "subject.kind" in r.json()["detail"]
+    r = _post_hosted(client, lb, "https://codeberg.org/me/x", "codeberg_repo", "victim/repo")
+    assert r.status_code == 422 and "subject.ref" in r.json()["detail"]
+    r = _post_hosted(client, lb, "https://gitlab.com/g/sub/x", "gitlab_repo", "g/x")
+    assert r.status_code == 422 and "subject.ref" in r.json()["detail"]
+    assert not fetched
+
+
+def test_a_real_host_lab_is_named_with_its_host_and_never_answers_to_owner_repo(client, tmp_path, monkeypatch):
+    _fake_proof(monkeypatch)
+    lb = Lab(client, tmp_path, monkeypatch)
+    r = _post_hosted(client, lb, "https://codeberg.org/Me/Widgets", "codeberg_repo", "me/widgets")
+    assert r.status_code == 200, r.text
+    lab = r.json()
+    assert lab["subject"] == {"kind": "codeberg_repo", "ref": "me/widgets"}
+    assert lab_names.name_of(lab) == "codeberg.org/me/widgets"
+    assert lab_names.resolve("codeberg.org/me/widgets", [lab]) == (lab["slug"], "")
+    assert lab_names.resolve("https://codeberg.org/Me/Widgets", [lab]) == (lab["slug"], "")
+    assert lab_names.resolve("me/widgets", [lab])[0] == "", "a bare owner/repo means GitHub"
+    assert lab_names.resolve("https://github.com/me/widgets", [lab])[0] == ""
+    # the same owner/repo on GitHub is another lab and stays free
+    lb.room = rooms_db.create_room("gh", lb.creator, db_path=rs.DATABASE_PATH)
+    gh_slug = "gh" + lb.slug
+    r2 = _post_hosted(client, lb, "https://github.com/me/widgets", "github_repo", "Me/Widgets", slug=gh_slug)
+    assert r2.status_code == 200, r2.text
+    assert lab_names.name_of(r2.json()) == "Me/Widgets"
+    assert lab_names.resolve("me/widgets", [lab, r2.json()]) == (gh_slug, "")
+    # GitLab groups nest
+    lb.room = rooms_db.create_room("gl", lb.creator, db_path=rs.DATABASE_PATH)
+    r3 = _post_hosted(client, lb, "https://gitlab.com/grp/sub/proj", "gitlab_repo", "grp/sub/proj",
+                      slug="gl" + lb.slug)
+    assert r3.status_code == 200, r3.text
+    assert lab_names.name_of(r3.json()) == "gitlab.com/grp/sub/proj"
+
+
+def test_a_lab_subject_is_unique_whatever_its_case(client, tmp_path, monkeypatch):
+    lb = Lab(client, tmp_path, monkeypatch)
+    assert lb.create().status_code == 200
+    lb2 = Lab(client, tmp_path, monkeypatch)
+    lb2.subject = lb.subject.upper()
+    lb2.repo, lb2.commit = make_repo(tmp_path, "y" + lb2.slug, stable_of(lb2.creator), [stable_of(lb2.maint)])
+    assert lb2.create().status_code == 409
