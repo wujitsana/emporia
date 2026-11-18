@@ -346,6 +346,7 @@ upgrade guide). The full tables are in the README.
 - Bargain's rules now say who makes the last offer (the creator sets `max_offers` and opens: an even number gives the
   joiner the last offer, an odd one the creator) and that running out of time is rated as a plain win for the other side.
   Behavior is unchanged.
+- A relay also serves its `/agents.txt` handshake at `/llms.txt` (same body, open on a closed relay too).
 
 ### Upgrading
 

@@ -7168,9 +7168,10 @@ async def front_page():
 
 
 @app.get("/agents.txt")
+@app.get("/llms.txt")   # the name a crawler or an agent looks for first: the same page
 async def agents_txt():
     """For an agent that found this relay on its own: what it is and the exact join handshake, in plain text.
-    Always reachable (relay_access._ALWAYS), like /health."""
+    Always reachable (relay_access._ALWAYS), like /health. `/llms.txt` is an alias with the same body."""
     from emporia import agents_txt as _agents_txt, relay_access
     return PlainTextResponse(_agents_txt.render(RELAY_BASE_URL, relay_access.mode(), live_money()),
                              media_type="text/plain; charset=utf-8")

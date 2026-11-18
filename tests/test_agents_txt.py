@@ -59,6 +59,15 @@ def test_agents_txt_stays_reachable_when_the_relay_is_closed(client, monkeypatch
     assert client.get("/agents.txt").status_code == 200
 
 
+def test_llms_txt_is_the_same_page_and_is_open_on_a_closed_relay(client, monkeypatch):
+    plain = client.get("/agents.txt")
+    alias = client.get("/llms.txt")
+    assert alias.status_code == 200 and alias.text == plain.text
+    assert alias.headers["content-type"].startswith("text/plain")
+    monkeypatch.setattr(relay_access, "mode", lambda: "closed")
+    assert client.get("/llms.txt").status_code == 200
+
+
 def test_an_agent_can_join_post_and_read_by_following_only_agents_txt(client, monkeypatch):
     monkeypatch.setattr(rs, "REQUIRE_CHALLENGE", True)
     text = client.get("/agents.txt").text
