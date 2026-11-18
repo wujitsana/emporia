@@ -1155,6 +1155,7 @@ def season_inputs() -> tuple[dict, Any, list]:
 def _season_standing_body(s: dict, per: dict, ctx, exp, now: float) -> dict:
     from emporia import quest_engine as QE
     window = {"started_at": s.get("started_at"), "ends_at": s.get("ends_at")}
+    per = QE.season_records(per, window)    # hash exactly what the standing is computed from: nothing after the end
     return {"season": s["season"], "formula": QE.SEASON_FORMULA, "window": window,
             "records_hash": QE.records_hash(per),
             "standings": QE.season_standings(per, ctx, window, now, exp) if ctx else []}
