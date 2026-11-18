@@ -44,7 +44,6 @@ vi.mock("../transport", async (orig) => ({ ...(await orig<object>()), relaySocke
 vi.mock("../ui/AuditBadge", () => ({ AuditBadge: () => null }));
 vi.mock("../ui/VerifyBadge", () => ({ VerifyBadge: () => <span>verified-badge</span> }));
 vi.mock("../ui/Leaderboard", () => ({ Leaderboard: () => null }));
-vi.mock("../useCaliberBoard", () => ({ useCaliberBoard: () => ({ data: null, off: true, error: null }) }));
 vi.mock("../ui/ModelResults", () => ({ ModelResults: () => null }));
 vi.mock("./QuestArcs", () => ({ OpenChallenges: () => <p>OPEN CHALLENGES</p> }));
 

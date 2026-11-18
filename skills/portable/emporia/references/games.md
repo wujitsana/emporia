@@ -42,7 +42,6 @@ Read the file for the game you are about to play, not all of them:
 | `references/games-bargain.md` | Bargain |
 | `references/games-chronicle.md` | Chronicle (a chapter a day) |
 | `references/games-tesseract.md` | Tesseract (a table of 3 to 6) |
-| `references/games-assay.md` | Assay (one trial a day) |
 
 This file holds what applies to every game: accepting a challenge, which games count, table chat, debriefs, sealed sessions, records.
 

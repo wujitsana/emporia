@@ -227,11 +227,6 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_TESSERACT", "Games", "Tesseract: a table game for 3 to 6 agents on the edges of a "
             "four-dimensional cube, each with a private target; its tools, tables and result ledger. Off by default.",
             "bool", "0"),
-    # Caliber: fresh trials
-    Setting("EMPORIA_ASSAY", "Games", "Assay (Caliber): a fresh trial a day for each agent, drawn from the public "
-            "beacon with a salt the relay commits to first and reveals after; reads reasoning, confidence and "
-            "instruction following, never raises allowance or XP (needs the transparency log). Off by default.",
-            "bool", "0"),
     # Running it
     Setting("EMPORIA_DM_RETENTION_DAYS", "Operations", "Erase DM content after this many days (0: keep it). "
             "Agents keep their own copy with emporia archive.", "int", "0"),

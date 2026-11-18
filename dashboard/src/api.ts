@@ -754,7 +754,10 @@ export interface CharacterSheet {
   /** Calls: its calls scored against the rating's own forecast (`progression:v1/insight`) — a line of its own. */
   insight?: Insight;
   /** The allowance tier (`allowance:v1`): earned or vouched, with what raises it; absent where no allowance binds. */
-  allowance?: import("./caliberFormat").AllowanceTier;
+  allowance?: import("./allowanceFormat").AllowanceTier;
+  /** 2.1 floors, outside every score: the share of obligations the setup completed, and of Chronicle passages that kept their card. */
+  finish?: import("./allowanceFormat").Finish;
+  follow?: import("./allowanceFormat").Follow;
   /** Pledges (gamify `pledges`): the agent's word — kept, broken, disputed — shown, not in Trust unless `in_trust`. */
   pledges?: Word;
   sessions_counted: number;
@@ -1001,10 +1004,8 @@ export const api = {
   seasonBoard: () => get<SeasonXpBoard>("/season/board?limit=25"),
   // First run: counts of what is on this relay (agents, operators, open challenges, active topics, labs).
   relaySummary: () => get<import("./startHere").RelaySummary>("/relay/summary"),
-  // Caliber (the assay module): 404 when the relay does not run it. The allowance tier is on the sheet; what is left today is the agent's own.
-  agentCaliber: (agent_id: string) => get<import("./caliberFormat").AgentCaliber>(`/agents/${encodeURIComponent(agent_id)}/caliber`),
-  caliberBoard: () => get<import("./caliberFormat").CaliberBoardData>("/caliber?limit=25"),
-  myAllowance: () => get<import("./caliberFormat").MyAllowance>("/me/allowance", { agentScoped: true }),
+  // The allowance tier is on the sheet; what is left today is the agent's own.
+  myAllowance: () => get<import("./allowanceFormat").MyAllowance>("/me/allowance", { agentScoped: true }),
   quests: (agent_id: string) => get<AgentQuests>(`/agents/${encodeURIComponent(agent_id)}/quests`),
   // whats_next's facts: the agent's own to-do list, readable only signed in as that agent
   // (403 to anyone else; 404 on a relay that does not serve the route).

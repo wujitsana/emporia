@@ -1333,12 +1333,66 @@ def _join_bridge_marks(agent_id: str, acts: dict[str, list[tuple[str, Any]]]) ->
                 if isinstance(r, str):
                     rows[i] = (t, {**p, "rationale": r})
 
+def _follow_rows(house) -> dict[str, dict]:
+    """Follow: each agent's revealed Chronicle passages against its card's hard rules, as the Chronicle's own count
+    decided them (a passage set aside broke one). Empty on a relay without the Chronicle."""
+    if relay_modules.off_because("chronicle", "book"):
+        return {}
+    from emporia import finish_follow
+    from emporia.routes import chronicle as ch
+    try:
+        ledger, slots, at = ch.sequence()
+    except Exception:  # noqa: BLE001 — no book yet is no Follow, not an error
+        return {}
+    passages = []
+    for slot in slots:
+        try:
+            if at < slot["windows"]["count"][1]:
+                continue                    # a chapter still being written has not been counted
+            for p in ch._passages(ledger, slot).values():
+                if p["author"] not in house:
+                    passages.append({"agent": p["author"], "ok": not p["set_aside"]})
+        except (KeyError, TypeError):
+            continue
+    return finish_follow.follow(passages)
+
+
+def _chronicle_obligations(agent_id: str) -> list[dict]:
+    """Finish, the Chronicle's share: each seal the agent made in a chapter whose windows have closed, opened or not.
+    The Chronicle's open is the agent's own signed act, so it is never marked as the bridge's. Empty where the
+    Chronicle is off."""
+    out: list[dict] = []
+    if relay_modules.off_because("chronicle", "book") or agent_id in progression.house_agents():
+        return out
+    from emporia.routes import chronicle as ch
+    try:
+        _ledger, slots, at = ch.sequence()
+    except Exception:  # noqa: BLE001 — no book yet is no obligation
+        return out
+    for slot in slots:
+        try:
+            if not slot.get("called") or at < slot["windows"]["count"][1] or slot["mode"] == "practice":
+                continue
+            inp = slot["inputs"]
+            opened = {r["agent"] for r in inp["reveals"]}
+            balloted = {r["agent"] for r in inp["ballots"]}
+            for seal in inp["seals"]:
+                if seal["agent"] != agent_id:
+                    continue
+                done = agent_id in (opened if seal["what"] == "passage" else balloted)
+                out.append({"agent": agent_id, "kind": "chronicle", "ok": done, "by": "agent",
+                            "at": seal.get("at") or slot["call_ts"]})
+        except (KeyError, TypeError):
+            continue
+    return out
+
+
 def _finish_and_setup(agent_id: str, sessions: list[dict], house: set[str]) -> tuple[dict, dict]:
-    """Caliber's Finish (a floor: never ranked, never on a board, never feeds allowance) and the agent's declared
-    setup. Finish counts the agent's public, non-practice games and its services, the Assay and the Chronicle, house
+    """Finish (a floor: never ranked, never on a board, never feeds allowance) and the agent's declared
+    setup. Finish counts the agent's public, non-practice games and its services and the Chronicle, house
     games excluded as Follow excludes them; it counts own-operator games too, because what it measures is whether the
     setup completes, not whom it played, and nothing is paid for it."""
-    from emporia import caliber, setup_snapshot
+    from emporia import finish_follow, setup_snapshot
     with rs.DB_LOCK, rs.get_db() as conn:
         acts: dict[str, list[tuple[str, Any]]] = {}
         for r in conn.execute("SELECT session_id, action_type, payload_json FROM actions WHERE agent_id = ?",
@@ -1368,16 +1422,14 @@ def _finish_and_setup(agent_id: str, sessions: list[dict], house: set[str]) -> t
                 outcome = get_interaction_module(mod).is_terminal(SessionState.from_dict(sess["state"]))[1] or {}
             except Exception:  # noqa: BLE001 — a record that cannot be read asked nothing of anyone
                 continue
-        row = caliber.session_obligation(
+        row = finish_follow.session_obligation(
             agent_id, module=mod, status=sess["status"], participants=sess["participants"], outcome=outcome,
             quitter=walked_away(sess) if sess["status"] == "abandoned" else None,
             actions=acts.get(sess["session_id"], []), at=sess["updated_at"])
         if row:
             obligations.append(row)
-    if relay_modules.on("assay", "trials") or relay_modules.on("chronicle", "book"):
-        from emporia.routes import assay as assay_routes
-        obligations += assay_routes.finish_obligations(agent_id)
-    return caliber.finish_row(caliber.finish(obligations), agent_id), setup
+    obligations += _chronicle_obligations(agent_id)
+    return finish_follow.finish_row(finish_follow.finish(obligations), agent_id), setup
 
 
 def _sheet_body(agent_id: str) -> dict:
@@ -1422,17 +1474,14 @@ def _sheet_body(agent_id: str) -> dict:
     deals = [d for d in deals if not {d.get("buyer"), d.get("seller")} & house]
     abandoned = [g for g in abandoned if not set(g.get("participants") or []) & house]
     word = _word(agent_id, who, house) if relay_modules.on("gamify", "pledges") else None
-    cal = None
-    if relay_modules.on("assay", "trials"):          # Caliber: a reading on the sheet, it moves nothing else
-        from emporia.routes import assay as assay_routes
-        cal = assay_routes.agent_caliber(agent_id)
+    follow = _follow_rows(house).get(agent_id) or {"n": 0}
     finish, setup = _finish_and_setup(agent_id, kept, house)
     sheet = {**progression.base_sheet(agent_id, table=table, deals=deals, abandoned=abandoned,
                                       registered_at=reg["registered_at"], now=time.time(), who=who,
-                                      likes=likes, house=house, word=word, caliber=cal, tiers=_renown_tiers(),
+                                      likes=likes, house=house, word=word, tiers=_renown_tiers(),
                                       second_order=_second_order_of(agent_id)),
              **({"improvements": improvements} if improvements is not None else {}),
-             "finish": finish, "setup": setup,       # 2.1, additive: a floor (never ranked) and the declared setup
+             "finish": finish, "follow": follow, "setup": setup,   # 2.1, additive: two floors (never ranked) and the declared setup
              "insight": progression.insight(agent_id, _calls().get(agent_id, [])),
              "scope": "this_relay", "sessions_counted": len(set(used)),
              **({"overall_level": lv} if (lv := agent_level(agent_id)) is not None else {}),
@@ -1487,7 +1536,6 @@ def _statement_body(agent_id: str, audience: str | None) -> dict:
     units = sorted(((ss.unit_token(relay_id, op, _relay_unit_secret()), round(wt, 2)) for op, wt in weighted.items()),
                    key=lambda u: (-u[1], u[0]))[:ss.MAX_UNITS]
     earned = None if agent_id in _exempt() or not allowance.on() else _allowance_now(agent_id, ignore_vouched=True)
-    cal = (sheet.get("caliber") or {}).get("reason") or {}
     trade, trust, ren = sheet.get("trade") or {}, sheet.get("trust") or {}, sheet.get("renown") or {}
     facts = {
         "first_seen_at": str(reg["registered_at"])[:10], "weeks_active": trust.get("weeks_active"),
@@ -1500,7 +1548,6 @@ def _statement_body(agent_id: str, audience: str | None) -> dict:
         "craft": [{"module": c["module_type"], "rating": c["rating"], "rd": c["rd"], "games": c["games"],
                    "opponents": c["opponents"], "provisional": c["provisional"]}
                   for c in (sheet.get("craft") or [])[:8]],
-        "caliber": {"reason_low": cal.get("low"), "n": cal.get("n")} if cal.get("shown") else None,
         "renown": {"score": ren.get("score"), "from_operators": ren.get("from_operators")},
         "trust": {"score": trust.get("score")},
         # only what was earned: a tier the relay vouched for is not evidence about the agent and is never exported

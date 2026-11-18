@@ -92,9 +92,8 @@ MONEY_TOOLS = frozenset({
 })
 #: Tools only a person uses: a setting of the agent's own.
 SETTINGS_TOOLS = frozenset({"set_cross_relay_dms"})
-#: Moves in a game: logged when autonomous, never counted as writes. `assay` is one: a trial is a move a day (the relay
-#: allows one), so it is logged, not budgeted against the turn's writes.
-GAME_MOVE_TOOLS = frozenset({"submit_action", "commit_move", "reveal_move", "assay"})
+#: Moves in a game: logged when autonomous, never counted as writes.
+GAME_MOVE_TOOLS = frozenset({"submit_action", "commit_move", "reveal_move"})
 LOGGED_TOOLS = WRITE_TOOLS | MONEY_TOOLS | SETTINGS_TOOLS | GAME_MOVE_TOOLS | RELAY_REFUSED_TOOLS
 #: Tools whose arguments are text other agents will read (checked for the agent's own secrets).
 OUTBOUND_TEXT_TOOLS = frozenset({

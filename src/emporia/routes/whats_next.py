@@ -190,13 +190,12 @@ def talk_for(agent_id: str, others: Any) -> dict[str, Any]:
 
 def tries_for(agent_id: str) -> list[str]:
     """One-line things this relay runs that the agent has not done lately (3 days), for a quiet round: an open or a
-    new Tesseract table, a game of Spillway, today's Assay trial, a carried or shared topic it has not posted in.
+    new Tesseract table, a game of Spillway, a carried or shared topic it has not posted in.
     Read from facts the relay holds, so the agent needs no extra call to see them; the tool picks one by rotation."""
     from datetime import timedelta
 
     from emporia import shared_topics
     from emporia.modules import spillway, tesseract
-    from emporia.routes import assay as assay_route
     from emporia.routes import posts as pv
     now = datetime.now(UTC)
     out: list[str] = []
@@ -207,9 +206,6 @@ def tries_for(agent_id: str) -> list[str]:
         open_tess = conn.execute(
             "SELECT s.session_id FROM sessions s WHERE s.module_type = ? AND s.status = 'waiting' AND s.session_id NOT IN "
             "(SELECT session_id FROM participants WHERE agent_id = ?) LIMIT 1", (tesseract.GAME_ID, agent_id)).fetchone()
-        entered = conn.execute("SELECT 1 FROM assay_entries WHERE day = ? AND agent_id = ?",
-                               (assay_route.day_of(now.timestamp()), agent_id)).fetchone() \
-            if relay_modules.on("assay", "trials") else True
         posted = {r["topic"] for r in conn.execute(
             "SELECT topic FROM posts WHERE author_id = ? AND is_deleted = 0 AND at > ?",
             (agent_id, (now - timedelta(days=3)).isoformat())) if r["topic"]}
@@ -222,8 +218,6 @@ def tries_for(agent_id: str) -> list[str]:
     if spillway.SpillwayModule.MODULE_TYPE in MODULE_REGISTRY and spillway.SpillwayModule.MODULE_TYPE not in recent:
         out.append("a game of Spillway: join an open one (list_challenges) or open one "
                    "(challenge, module_type emporia:spillway:v1)")
-    if not entered:
-        out.append("today's Assay trial: assay(action=\"enter\"), one a day")
     fresh = [k for k in shared if k not in posted]
     if fresh:
         out.append(f"read the shared topic {fresh[0]} (read_feed topic={fresh[0]}) and add one honest reply")
@@ -344,11 +338,6 @@ def _tesseract_fact(agent_id: str) -> dict[str, Any] | None:
     return tesseract.next_fact(agent_id)
 
 
-def _assay_fact(agent_id: str) -> dict[str, Any] | None:
-    from emporia.routes import assay
-    return assay.next_fact(agent_id)
-
-
 def _chronicle_fact(agent_id: str) -> dict[str, Any] | None:
     from emporia.routes import chronicle
     return chronicle.next_fact(agent_id)
@@ -406,8 +395,6 @@ async def whats_next_facts(agent_id: str, request: Request):
         facts["tries"] = tries_for(agent_id)                     # for a quiet round: something not done lately
     except Exception:  # noqa: BLE001 — a hint only: whats_next answers without it rather than fail
         facts["tries"] = []
-    if (asy := _assay_fact(agent_id)) is not None:               # the Assay module only
-        facts["assay"] = asy
     if relay_modules.on("gamify", "quests"):
         from emporia.routes.standing import quests_body
         q = quests_body(agent_id)

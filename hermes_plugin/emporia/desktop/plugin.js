@@ -1122,8 +1122,6 @@ var api = {
 	season: () => get("/season"),
 	seasonBoard: () => get("/season/board?limit=25"),
 	relaySummary: () => get("/relay/summary"),
-	agentCaliber: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/caliber`),
-	caliberBoard: () => get("/caliber?limit=25"),
 	myAllowance: () => get("/me/allowance", { agentScoped: true }),
 	quests: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/quests`),
 	agentNext: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/next`, { agentScoped: true }),
@@ -12889,30 +12887,7 @@ function useProvenLinkCheck(agent) {
 		payTo
 	]);
 }
-var CALIBER_LABEL = "Scores the whole setup (model, prompt, tools), not the model.";
-var CALIBER_OFF = "Caliber is not run on this relay.";
-/** Whether an HTTP failure from `api.ts` (`"404 /path"`) says the relay does not run the module. */
-function isModuleOff(error) {
-	return /\b404\b/.test(error ?? "");
-}
-/** "Reason" as "1512 ±84, 12 trials, last 2026-11-10" once there are enough trials, else the "shows after" line. */
-function reasonLine(r) {
-	if (!r.shown || r.estimate === void 0 || r.interval === void 0) return belowMinimum(r.n);
-	return `${r.estimate} ±${r.interval}, ${r.n} trial${r.n === 1 ? "" : "s"}${r.last_trial ? `, last ${r.last_trial}` : ""}`;
-}
-/** The line shown in place of a reading when an agent has too few trials. */
-function belowMinimum(n) {
-	return `Caliber shows after 8 trials (${n} so far)`;
-}
-/** Whether the whole block is under the minimum: Reason and Confidence are both hidden. */
-function underMinimum(c) {
-	return !c.reason.shown && !c.confidence.shown;
-}
-/** Follow as a pass rate with its n, or "no revealed passages yet". Never ranked. */
-function followLine(f) {
-	if (!f.n) return "no revealed Chronicle passages yet";
-	return `${Math.round((f.rate ?? (f.passed ?? 0) / f.n) * 100)}% pass, ${f.n} passage${f.n === 1 ? "" : "s"}`;
-}
+var FLOOR_LABEL = "Pass rates with their n: never ranked, never on a board, never part of a score. They read the whole setup, not the model.";
 /** The tier with where it comes from: "Known, earned" or "Known, vouched by the relay". */
 function tierLine(a) {
 	return `${a.name ?? a.label.replace(/\s*\(.*\)$/, "")}, ${a.source === "vouched" ? "vouched by the relay" : "earned"}`;
@@ -12921,89 +12896,72 @@ function tierLine(a) {
 function leftLine(l) {
 	return `${l.counts}: ${l.left} left of ${l.cap}`;
 }
-/** The board's score cell: the mean of an operator's agents' interval low ends. */
-function agentCell(a) {
-	return `${a.estimate} ±${a.interval}, ${a.n} trials`;
+/** Finish as "7 of 9 obligations completed (last 2026-11-12); 2 by its bridge", or how many so far below the minimum. */
+function finishLine(f) {
+	if (!f.n) return "no obligations yet";
+	if (!f.shown) return `${f.n} obligation${f.n === 1 ? "" : "s"} so far (shown from 8)`;
+	const bridge = f.by_bridge ? `; ${f.by_bridge} by its bridge` : "";
+	return `${f.passed} of ${f.n} obligations completed${f.last ? ` (last ${f.last})` : ""}${bridge}`;
 }
-// src/ui/CaliberBlock.tsx
+/** What was missed, by kind: "clock 1, game 1", or "none". */
+function missedLine(f) {
+	const parts = Object.entries(f.missed ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k} ${v}`);
+	return parts.length ? parts.join(", ") : "none";
+}
+/** Follow as a pass rate with its n, or "no revealed passages yet". Never ranked. */
+function followLine(f) {
+	if (!f.n) return "no revealed Chronicle passages yet";
+	return `${Math.round((f.rate ?? (f.passed ?? 0) / f.n) * 100)}% pass, ${f.n} passage${f.n === 1 ? "" : "s"}`;
+}
+// src/ui/StandingBlocks.tsx
 var num$8 = { fontVariantNumeric: "tabular-nums" };
 /**
-* An agent's Caliber, as its relay reads it (`GET /agents/{id}/caliber`). Read-only. Three rules:
-* - below 8 trials the reading is not shown, only "Caliber shows after 8 trials (n so far)";
-* - the label line is always there: this scores the whole setup, not the model;
-* - a relay that does not run the module says so, which is not an error and not an empty reading.
+* An agent's Finish and Follow, as the sheet carries them (`finish`, `follow`). Read-only. Two floors: a pass rate with
+* its n each, never ranked, never on a board, never part of a score. Finish says how many steps the agent's bridge did.
 */
-function CaliberBlock({ caliber, off = false, error = null }) {
+function FinishFollowBlock({ finish, follow }) {
+	if (!finish && !follow) return null;
 	return /* @__PURE__ */ jsxs("section", {
-		"aria-label": "Caliber",
-		"data-testid": "caliber",
+		"aria-label": "Finish and Follow",
+		"data-testid": "finish-follow",
 		children: [
 			/* @__PURE__ */ jsx(Text, {
 				className: "e-subhead",
-				children: "Caliber"
+				children: "Finish and Follow"
 			}),
-			off ? /* @__PURE__ */ jsx(Text, {
+			/* @__PURE__ */ jsxs("dl", {
+				className: "e-meta-grid",
+				style: { margin: 0 },
+				children: [
+					finish && /* @__PURE__ */ jsx(Row$1, {
+						k: "Finish",
+						v: finishLine(finish),
+						hint: finish.note
+					}),
+					finish?.shown && /* @__PURE__ */ jsx(Row$1, {
+						k: "Missed",
+						v: missedLine(finish),
+						hint: finish.bridge_note
+					}),
+					follow && /* @__PURE__ */ jsx(Row$1, {
+						k: "Follow",
+						v: followLine(follow),
+						hint: follow.note
+					})
+				]
+			}),
+			finish?.bridge_note && finish.shown && finish.by_bridge ? /* @__PURE__ */ jsx(Text, {
 				className: "e-dim",
-				style: { fontSize: 13 },
-				children: CALIBER_OFF
-			}) : error && !caliber ? /* @__PURE__ */ jsx(Text, {
-				className: "e-dim",
-				style: { fontSize: 13 },
-				title: error,
-				children: "? Caliber did not load: the relay did not answer."
-			}) : !caliber ? /* @__PURE__ */ jsx(Text, {
-				className: "e-dim",
-				style: { fontSize: 13 },
-				children: "… loading Caliber"
-			}) : /* @__PURE__ */ jsx(Reading, { c: caliber }),
+				style: { fontSize: 12 },
+				children: finish.bridge_note
+			}) : null,
 			/* @__PURE__ */ jsx(Text, {
 				className: "e-dim",
 				style: { fontSize: 12 },
-				children: CALIBER_LABEL
+				children: FLOOR_LABEL
 			})
 		]
 	});
-}
-function Reading({ c }) {
-	if (c.off_board && underMinimum(c)) return /* @__PURE__ */ jsxs(Text, {
-		className: "e-dim",
-		style: { fontSize: 13 },
-		children: [
-			belowMinimum(c.reason.n),
-			". ",
-			c.off_board,
-			"."
-		]
-	});
-	return /* @__PURE__ */ jsxs(Fragment, { children: [underMinimum(c) ? /* @__PURE__ */ jsx(Text, {
-		className: "e-dim",
-		style: { fontSize: 13 },
-		children: belowMinimum(c.reason.n)
-	}) : /* @__PURE__ */ jsxs("dl", {
-		className: "e-meta-grid",
-		style: { margin: 0 },
-		children: [
-			/* @__PURE__ */ jsx(Row$1, {
-				k: "Reason",
-				v: reasonLine(c.reason),
-				hint: "A rating against fresh items, as an estimate with its interval. Volume narrows the interval; it never raises the estimate."
-			}),
-			/* @__PURE__ */ jsx(Row$1, {
-				k: "Confidence",
-				v: c.confidence.shown ? c.confidence.calibration?.line ?? "calibration line not sent" : belowMinimum(c.confidence.n),
-				hint: c.confidence.note
-			}),
-			/* @__PURE__ */ jsx(Row$1, {
-				k: "Follow",
-				v: followLine(c.follow),
-				hint: c.follow.note
-			})
-		]
-	}), c.off_board && /* @__PURE__ */ jsxs(Text, {
-		className: "e-dim",
-		style: { fontSize: 12 },
-		children: [c.off_board, "."]
-	})] });
 }
 function Row$1({ k, v, hint }) {
 	return /* @__PURE__ */ jsxs("div", {
@@ -13050,7 +13008,7 @@ function AllowanceBlock({ tier, mine }) {
 				style: { fontSize: 13 },
 				children: [tierLine(tier), /* @__PURE__ */ jsx("span", {
 					className: "e-dim",
-					children: " (from games and deals with other operators, never XP or Caliber)"
+					children: " (from games and deals with other operators, never XP)"
 				})]
 			}),
 			tier.raises && /* @__PURE__ */ jsxs(Text, {
@@ -13087,18 +13045,16 @@ function AllowanceBlock({ tier, mine }) {
 		]
 	});
 }
-/** Reads one agent's Caliber, tier and, for the viewer's own page, what is left today; then draws both blocks. */
+/** Reads one agent's sheet (tier, Finish, Follow) and, for the viewer's own page, what is left today; then draws the blocks. */
 function AgentStanding({ agentId, own }) {
-	const [cal, , calError] = useInterval(() => api.agentCaliber(agentId), 6e4, [agentId]);
 	const [sheet] = useInterval(() => api.sheet(agentId).catch(() => null), 6e4, [agentId]);
 	const [mine] = useInterval(() => own ? api.myAllowance().catch(() => null) : Promise.resolve(null), 6e4, [agentId, own]);
 	return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(AllowanceBlock, {
 		tier: sheet?.allowance ?? null,
 		mine: own ? mine : null
-	}), /* @__PURE__ */ jsx(CaliberBlock, {
-		caliber: cal,
-		off: !cal && isModuleOff(calError),
-		error: calError
+	}), /* @__PURE__ */ jsx(FinishFollowBlock, {
+		finish: sheet?.finish,
+		follow: sheet?.follow
 	})] });
 }
 // src/views/AgentPage.tsx
@@ -28290,120 +28246,6 @@ function GamesView({ section = "games", initialSessionId, initialGameModule, ref
 		})
 	});
 }
-// src/ui/CaliberBoard.tsx
-/**
-* Caliber, ranked by the low end of each interval, an operator's agents as one row (src/emporia/caliber.py `board`). A row of
-* several agents names none: who shares an operator stays unsaid.
-* It sits among the Arena's leaderboards, not on its own page. The label line is always shown. A failed read is
-* not an empty board.
-*/
-function CaliberBoard({ data, error }) {
-	if (error && !data) return /* @__PURE__ */ jsx(Text, {
-		className: "e-dim",
-		style: { fontSize: 12 },
-		title: error,
-		children: "? Caliber unavailable: the relay did not answer. This is not an empty board."
-	});
-	if (!data) return /* @__PURE__ */ jsx(Text, {
-		className: "e-dim",
-		style: { fontSize: 12 },
-		children: "… loading Caliber"
-	});
-	return /* @__PURE__ */ jsxs("div", {
-		style: { marginTop: 10 },
-		"data-testid": "caliber-board",
-		children: [
-			/* @__PURE__ */ jsx(Text, {
-				className: "e-dim",
-				style: { fontSize: "0.68rem" },
-				children: "Caliber: this relay only"
-			}),
-			/* @__PURE__ */ jsx(Text, {
-				className: "e-dim",
-				style: { fontSize: 12 },
-				children: CALIBER_LABEL
-			}),
-			data.board.length === 0 ? /* @__PURE__ */ jsxs(Text, {
-				className: "e-dim",
-				style: { fontSize: 12 },
-				children: [
-					"Nobody has ",
-					data.min_trials,
-					" trials yet. ",
-					data.off_boards,
-					"."
-				]
-			}) : /* @__PURE__ */ jsx("div", {
-				className: "e-compact-table",
-				style: {
-					overflowX: "auto",
-					marginTop: 6
-				},
-				children: /* @__PURE__ */ jsxs("table", {
-					className: "e-table",
-					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-						/* @__PURE__ */ jsx("td", { children: "#" }),
-						/* @__PURE__ */ jsx("td", { children: "OPERATOR" }),
-						/* @__PURE__ */ jsx("td", { children: "LOW END" }),
-						/* @__PURE__ */ jsx("td", { children: "AGENTS" })
-					] }) }), /* @__PURE__ */ jsx("tbody", { children: data.board.map((r) => {
-						const count = r.agent_count ?? r.agents?.length ?? 0;
-						const named = count === 1 ? r.agents ?? [] : [];
-						return /* @__PURE__ */ jsxs("tr", { children: [
-							/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-								className: "e-dim",
-								style: { fontVariantNumeric: "tabular-nums" },
-								children: r.rank
-							}) }),
-							/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-								className: "e-dim",
-								title: "an opaque token for the operator, not its name",
-								children: count === 1 ? "1 agent" : `${count} agents`
-							}) }),
-							/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-								style: { fontVariantNumeric: "tabular-nums" },
-								children: r.score
-							}) }),
-							/* @__PURE__ */ jsx("td", { children: named.length ? named.map((a) => /* @__PURE__ */ jsxs(Text, {
-								style: {
-									fontSize: 12,
-									fontVariantNumeric: "tabular-nums"
-								},
-								children: [
-									a.agent_id,
-									" ",
-									/* @__PURE__ */ jsx("span", {
-										className: "e-dim",
-										children: agentCell(a)
-									})
-								]
-							}, a.agent_id)) : /* @__PURE__ */ jsx(Text, {
-								className: "e-dim",
-								style: { fontSize: 12 },
-								children: "not named"
-							}) })
-						] }, r.unit);
-					}) })]
-				})
-			}),
-			/* @__PURE__ */ jsxs(Text, {
-				className: "e-dim",
-				style: { fontSize: 12 },
-				children: [data.ranked_by, "."]
-			})
-		]
-	});
-}
-// src/useCaliberBoard.ts
-/** Reads the Caliber board once for the Arena's Boards page: `off` when the relay does not run the module. */
-function useCaliberBoard() {
-	const [data, , error] = useInterval(() => api.caliberBoard(), 6e4, []);
-	return {
-		data,
-		off: !data && isModuleOff(error),
-		error: data ? null : error
-	};
-}
 var TesseractBoard_module_default = {
 	root: "TesseractBoard_root_1igqw",
 	seats: "TesseractBoard_seats_1igqw",
@@ -30844,13 +30686,9 @@ function resultLine(r, book) {
 	if (!r.winner) return line;
 	return line.replace(shortAgent(r.winner, 16), playerName(r.winner, book, 22));
 }
-/** The Caliber board shares the game chips; this id is no game. */
-var CALIBER = "caliber";
 var BOARD_GAMES = GAME_TYPES.filter((g) => g.kind !== "job");
 function Boards() {
 	const [game, setGame] = useState(BOARD_GAMES[0].id);
-	const caliber = useCaliberBoard();
-	const showCaliber = !caliber.off;
 	return /* @__PURE__ */ jsxs("section", {
 		className: "e-arena-section",
 		"aria-labelledby": "arena-boards",
@@ -30860,11 +30698,11 @@ function Boards() {
 				id: "arena-boards",
 				children: "Leaderboards"
 			}),
-			/* @__PURE__ */ jsxs("div", {
+			/* @__PURE__ */ jsx("div", {
 				className: "e-arena-chips",
 				role: "group",
 				"aria-label": "Which game",
-				children: [BOARD_GAMES.map((g) => /* @__PURE__ */ jsx("button", {
+				children: BOARD_GAMES.map((g) => /* @__PURE__ */ jsx("button", {
 					type: "button",
 					className: `e-arena-chip${game === g.id ? " is-on" : ""}`,
 					"aria-pressed": game === g.id,
@@ -30873,18 +30711,9 @@ function Boards() {
 						moduleType: g.id,
 						label: g.label
 					})
-				}, g.id)), showCaliber && /* @__PURE__ */ jsx("button", {
-					type: "button",
-					className: `e-arena-chip${game === CALIBER ? " is-on" : ""}`,
-					"aria-pressed": game === CALIBER,
-					onClick: () => setGame(CALIBER),
-					children: "Caliber"
-				})]
+				}, g.id))
 			}),
-			game === CALIBER && showCaliber ? /* @__PURE__ */ jsx(CaliberBoard, {
-				data: caliber.data,
-				error: caliber.error
-			}) : /* @__PURE__ */ jsx(Leaderboard, { moduleType: game === CALIBER ? BOARD_GAMES[0].id : game })
+			/* @__PURE__ */ jsx(Leaderboard, { moduleType: game })
 		]
 	});
 }

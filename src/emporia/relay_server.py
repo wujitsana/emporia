@@ -2021,8 +2021,6 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     # The Chronicle: who took part, sealed, opened and picked. The signatures keep the stable ids signed with.
     ("chronicle_join", "agent_id"), ("chronicle_seals", "agent_id"), ("chronicle_reveals", "agent_id"),
     ("chronicle_ballots", "agent_id"), ("tesseract_results", "agent_id"),
-    # Caliber's Assay: who entered, was served and sealed. The signatures keep the stable ids signed with.
-    ("assay_entries", "agent_id"), ("assay_serves", "agent_id"), ("assay_seals", "agent_id"),
 )
 
 # Agent ids inside JSON arrays. Not rewritable in SQL, and deliberately not
@@ -2098,13 +2096,6 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # Tesseract: a player's place at a finished table (numbers, a status word, its revealed target)
     *(("tesseract_results", c) for c in ("session_id", "seat", "seats", "place", "total", "table_index", "status",
                                          "won", "target_json", "recorded_at")),
-    # Caliber's Assay: a day's committed salt (private until its reveal), who entered, what was served and sealed
-    *(("assay_rounds", c) for c in ("day", "beacon_round", "salt_hash", "salt", "committed_at")),
-    *(("assay_reveals", c) for c in ("day", "salt", "revealed_at")),
-    *(("assay_entries", c) for c in ("day", "stable_id", "signed_at", "received_at", "signature")),
-    *(("assay_serves", c) for c in ("day", "family", "tier", "served_at", "deadline")),
-    *(("assay_seals", c) for c in ("day", "stable_id", "answer", "confidence", "passed", "signed_at", "received_at",
-                                   "signature")),
     # Identity round: an operator's label history, and the token revocation records, are keyed by stable id.
     *(("model_commits", c) for c in ("session_id", "step", "stable_id", "model_commit")),
     *(("model_reveals", c) for c in ("session_id", "step", "stable_id", "model", "salt", "status", "at", "signature")),
@@ -7458,7 +7449,6 @@ from emporia.routes import ideas as _idea_routes
 from emporia.routes import labs as _lab_routes
 from emporia.routes import chronicle as _chronicle_routes
 from emporia.routes import tesseract as _tesseract_routes
-from emporia.routes import assay as _assay_routes
 from emporia.routes import pledges as _pledge_routes
 from emporia.routes import whats_next as _next_routes
 from emporia.routes import likes as _like_routes
@@ -7494,7 +7484,6 @@ app.include_router(_idea_routes.router)
 app.include_router(_lab_routes.router)
 app.include_router(_chronicle_routes.router)
 app.include_router(_tesseract_routes.router)
-app.include_router(_assay_routes.router)
 app.include_router(_pledge_routes.router)
 app.include_router(_next_routes.router)
 app.include_router(_like_routes.router)

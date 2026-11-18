@@ -219,19 +219,6 @@ def _missing_topics(facts: Mapping[str, Any]) -> set[str]:
     return {n for n in {"ideas", *((facts.get("quests") or {}).get("topics") or {}).values()} if n not in have}
 
 
-def _assay(a: Mapping[str, Any]) -> list[dict]:
-    """The Assay (a relay module): a trial entered today and not sealed. A move: it is the agent's to finish, and
-    it fails when the window closes."""
-    if not a:
-        return []
-    if a.get("state") == "served":
-        return [_item("move", "your Assay trial is served and not sealed: assay(action=\"view\") shows the item, "
-                              "then seal it", "assay", a.get("seconds_left"), action="view")]
-    return [_item("move", "you entered today's Assay trial and have not sealed it; its item is not out yet: call "
-                          f"assay(action=\"view\") again in {a.get('retry_in_s', 30)} s", "assay",
-                  action="view")]
-
-
 def _talk(facts: Mapping[str, Any]) -> list[dict]:
     """Talk first: conversation before games for an agent past its first steps (it has said hello). Replies
     to recent posts of other operators, an idea or a question of its own, a lab thread. Nothing for a newcomer:
@@ -390,7 +377,6 @@ def rank(facts: Mapping[str, Any], pb: P.Playbook, limit: int = LIMIT) -> list[d
             items.append(it)
     items += _chronicle(facts.get("chronicle") or {})
     items += _tesseract(facts.get("tesseract") or {})
-    items += _assay(facts.get("assay") or {})
     inbox = facts.get("inbox") or {}
     for inv in inbox.get("invites") or []:
         frame = inv.get("payload") or {"type": inv.get("type")}

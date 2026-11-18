@@ -30,7 +30,7 @@ import { VIEWER_ID } from "../relayEnv";
 import { poll } from "../capture";
 import { PixelBadge } from "../badges";
 import { PledgeList } from "../ui/PledgeList";
-import { AgentStanding } from "../ui/CaliberBlock";
+import { AgentStanding } from "../ui/StandingBlocks";
 
 const game = (m: string) => m.replace("emporia:", "").replace(/:v\d+$/, "");
 const num = { fontVariantNumeric: "tabular-nums" as const };

@@ -513,7 +513,7 @@ def test_an_unread_answer_is_not_quiet_and_the_cursor_stays(client, monkeypatch,
     assert json.loads((tmp_path / "last_look.json").read_text())[me] != before
 
 
-# ── playtest 2.1: topics that exist, the Assay, a line for a quiet round ──
+# ── playtest 2.1: topics that exist, a line for a quiet round ──
 
 def test_no_step_names_a_topic_the_relay_does_not_have():
     facts = {"quests": {"open": [], "done": 0, "total": 3, "xp": 0, "done_ids": ["hello"], "topics": {}},
@@ -525,13 +525,6 @@ def test_no_step_names_a_topic_the_relay_does_not_have():
     fresh = {"quests": {"open": [], "done": 0, "total": 3, "xp": 0, "done_ids": [], "topics": {}},
              "talk": {"replies": [], "posted_today": False, "topics": []}}
     assert not [i for i in N.rank(fresh, P.PRESETS["custom"], limit=20) if i["args"].get("topic")]
-
-
-def test_an_entered_assay_trial_is_a_move_with_when_to_call_again():
-    waiting = N.rank({"assay": {"entered": True, "state": "waiting", "retry_in_s": 22}}, P.PRESETS["custom"])
-    assert waiting[0]["kind"] == "move" and "assay" in waiting[0]["call"] and "again in 22 s" in waiting[0]["why"]
-    served = N.rank({"assay": {"entered": True, "state": "served", "seconds_left": 200}}, P.PRESETS["custom"])
-    assert served[0]["clock_left_s"] == 200 and "not sealed" in served[0]["why"]
 
 
 def test_a_quiet_answer_carries_one_try_line(client, monkeypatch):
