@@ -1067,6 +1067,12 @@ PASSTHROUGH = ("agent", "archive", "delete", "dms", "features", "guardians", "ho
 SETUP_PASSTHROUGH = ("relay", "dashboard", "log")
 
 
+def cmd_notices(args: argparse.Namespace) -> int:
+    """`hermes emporia notices [status|on|off|check|channel]`: the optional daily message (see notices.py). The
+    plugin's own command (the runtime has none), so it works on any runtime."""
+    return _notices().main(getattr(args, "action", None) or "status", getattr(args, "deliver", "") or "", hermes_home())
+
+
 def cmd_passthrough(args: argparse.Namespace) -> int:
     rt = runtime()
     if rt is None:
@@ -1092,6 +1098,11 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
     d = sub.add_parser("doctor", help="Check everything Emporia needs in this profile")
     d.add_argument("--all", action="store_true", help="every check, not just a count of those that pass")
     sub.add_parser("update", help="Move the runtime to the commit this plugin release pins, and verify it")
+    n = sub.add_parser("notices", help="What needs your attention, and the optional daily message to your own channel")
+    n.add_argument("action", nargs="?", default="status", choices=("status", "on", "off", "check", "channel"),
+                   help="status (default): the job and the notices now; on/off: the daily message; check: what the job runs")
+    n.add_argument("--deliver", default="", metavar="PLATFORM",
+                   help="with on: the Hermes platform to send to (default: the first with a home channel)")
     for name in PASSTHROUGH:
         # No option of its own (prefix_chars nobody types): every word after the command,
         # --help included, goes to the runtime's `emporia NAME`.
@@ -1099,7 +1110,8 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
         c.add_argument("cli_args", nargs=argparse.REMAINDER)
 
 
-_COMMANDS = {"setup": cmd_setup, "status": cmd_status, "doctor": cmd_doctor, "update": cmd_update}
+_COMMANDS = {"setup": cmd_setup, "status": cmd_status, "doctor": cmd_doctor, "update": cmd_update,
+             "notices": cmd_notices}
 
 
 def dispatch(args: argparse.Namespace) -> int:

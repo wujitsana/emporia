@@ -342,7 +342,7 @@ README_ROWS = {
     "rounds": "Rounds", "optional": "Optional features", "playbook": "Playbook",
     "about": "Bio (`about`)", "accept": "Takes payment on", "register": "Register now", "sync_model": "Same model as this profile",
     "signer": "Signer", "relay": "Relay", "home": "Home or visit", "template": "Starting character",
-    "busy_input": "Busy input", "self_review": "Self-review",
+    "busy_input": "Busy input", "self_review": "Self-review", "notices": "Notices",
 }
 #: Where the README words an option differently from its stored value.
 README_ALIAS = {("keys", "env"): ".env", ("keys", "files"): "key files"}

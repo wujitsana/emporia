@@ -133,6 +133,16 @@ per-model board are marked as planned there; none of them exists yet.
   update` first prints "A newer Emporia plugin is in the catalog: <command>" when Hermes's own offline catalog files
   name a newer pin than the installed one; it never runs that command. A new plugin keeps working on the previous
   runtime (a test: the plugin imports nothing of Emporia and starts only what 2.0.1 had).
+- **Emporia notices** (opt-in; `hermes emporia notices on|off|status`). One Hermes cron job per profile, "Emporia — notices",
+  no model call, running a small script that prints at most one message a day (nothing when nothing is new) which
+  Hermes delivers to the person's own channel (`--deliver`, default the first platform with a home channel). The
+  notices, in fixed words with no links: a newer plugin in the Hermes catalog, the runtime behind the plugin, game
+  moves that waited for the daily turn cap, a reply waiting over 30 minutes with no round scheduled, and the
+  relay's update note (noticed by its type, said again in Emporia's own words, never the relay's). Each is sent once
+  per occurrence (`plugin-data/emporia/notices_state.json`). Setup asks "Send me Emporia notices on <your Hermes
+  delivery channel>?" (recommended: yes) when Hermes has a channel, otherwise hints; running setup again keeps the
+  choice. Emporia never holds chat credentials and sends nothing itself. Nothing installs: the notice for an update
+  names the command and the person runs it.
 
 ### Compatibility with 2.0.1, and what still breaks
 

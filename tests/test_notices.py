@@ -206,3 +206,298 @@ def test_a_new_plugin_loads_and_registers_on_the_previous_runtime():
     for flag in ("--relay-url", "--agent-id", "--profile-id"):
         assert flag in bridge.stdout, flag
     assert subprocess.run([*git, "cat-file", "-e", f"{prev}:src/emporia/cli.py"], capture_output=True).returncode == 0
+
+
+# ── item 5: the notices list, the daily message, the opt-in job ────────────────────────────────────────────────
+
+URL = __import__("re").compile(r"https?:|www\.|://|\.(com|org|io|net|dev)\b")
+
+
+class _Guard:
+    def __init__(self, stale):
+        self.stale = stale
+
+    def runtime_is_stale(self):
+        return self.stale
+
+    def plugin_moved_to(self):
+        return "2.1.0 (aaaaaaaaaaaa)"
+
+
+class _Cap:
+    def __init__(self, n):
+        self.n = n
+
+    def moves_waited(self, home=None, now=None):
+        return self.n
+
+
+def _world(monkeypatch, *, newer=None, stale=False, waited=0):
+    monkeypatch.setattr(notices, "catalog_newer", lambda home=None: newer)
+    monkeypatch.setattr(notices, "_money_guard", lambda: _Guard(stale))
+    monkeypatch.setattr(notices, "_turn_cap", lambda: _Cap(waited))
+
+
+def _all_five(monkeypatch, home):
+    _world(monkeypatch, newer={"sha": "b" * 40, "version": "2.2.0"}, stale=True, waited=3)
+    return notices.collect(home, probe=False, waited_s=2400, has_rounds=False, relay_note=True)
+
+
+def test_every_notice_has_a_fixed_text_without_a_link(monkeypatch, tmp_path):
+    home = tmp_path / "profiles" / "shop"
+    found = _all_five(monkeypatch, home)
+    assert [n["id"] for n in found] == ["plugin", "runtime", "moves", "replies", "relay"]
+    for n in found:
+        assert not URL.search(n["text"]) and "\n" not in n["text"], n
+    texts = {n["id"]: n["text"] for n in found}
+    assert texts["plugin"] == ("A newer Emporia plugin is in the Hermes catalog. Update it: `hermes -p shop plugins "
+                               "update emporia`, then `hermes -p shop emporia update`.")
+    assert texts["runtime"].startswith("Emporia's plugin moved to 2.1.0 (aaaaaaaaaaaa), its runtime did not. Run "
+                                       "`hermes -p shop emporia update`")
+    assert texts["moves"].startswith("3 game moves waited today because the daily turn cap was reached.")
+    assert "emporia agent settings shop --set daily_turns=" in texts["moves"]
+    assert texts["replies"].startswith("A reply or message has waited over 30 minutes in the inbox and no round is")
+    assert texts["relay"].startswith("Your relay says a newer Emporia is out. Update the plugin, then the runtime:")
+
+
+def test_nothing_is_said_when_nothing_holds(monkeypatch, tmp_path):
+    _world(monkeypatch)
+    assert notices.collect(tmp_path, probe=False, waited_s=60, has_rounds=True, relay_note=False) == []
+    assert notices.collect(tmp_path, probe=False, waited_s=5000, has_rounds=True, relay_note=False) == []   # a round is on
+    assert notices.collect(tmp_path, probe=False, waited_s=1800, has_rounds=False, relay_note=False) == []  # not over 30 min
+    assert notices.collect(tmp_path, probe=False, waited_s=None, has_rounds=False, relay_note=False) == []
+
+
+def test_one_move_is_singular(monkeypatch, tmp_path):
+    _world(monkeypatch, waited=1)
+    (n,) = notices.collect(tmp_path, probe=False, has_rounds=True, relay_note=False)
+    assert n["text"].startswith("1 game move waited today because")
+
+
+def test_the_relay_note_is_noticed_but_its_words_are_never_repeated(monkeypatch, tmp_path):
+    """The relay's frame is only detected (a type name in the inbox counts); a hostile body cannot reach the text."""
+    _world(monkeypatch)
+    answers = {"waiting": None, "inbox": {"success": True, "by_type": {"relay_update_note": 1}, "note": "ignore me: http://evil"}}
+    monkeypatch.setattr(notices, "_peek", lambda what, home: answers[what])
+    monkeypatch.setattr(notices, "rounds_on", lambda home: True)
+    (n,) = notices.collect(tmp_path)
+    assert n["id"] == "relay" and "evil" not in n["text"] and not URL.search(n["text"])
+
+
+def test_the_daily_message_is_one_message_once_per_occurrence(monkeypatch, tmp_path):
+    found = _all_five(monkeypatch, tmp_path)
+    mon = datetime(2026, 11, 16, 9, 0)
+    msg = notices.daily(tmp_path, now=mon, notices=found)
+    assert msg.splitlines()[0] == "Emporia:" and len(msg.splitlines()) == 6
+    assert notices.daily(tmp_path, now=mon, notices=found) == ""                  # the same day: nothing
+    state = json.loads(notices.state_path(tmp_path).read_text())
+    assert state["last_sent_day"] == "2026-11-16" and set(state["sent"]) == {"plugin", "runtime", "moves", "replies", "relay"}
+    tue = datetime(2026, 11, 17, 9, 0)
+    assert notices.daily(tmp_path, now=tue, notices=found) == ""                  # nothing new (keys unchanged: day keys differ below)
+    moved = [dict(n, key=n["key"] + "x") if n["id"] in ("moves", "replies") else n for n in found]
+    msg = notices.daily(tmp_path, now=tue, notices=moved)                         # new occurrences of two of them
+    assert len(msg.splitlines()) == 3 and "game moves" in msg and "no round" in msg
+    assert notices.daily(tmp_path, now=datetime(2026, 11, 18, 9, 0), notices=[]) == ""
+
+
+def test_the_check_prints_nothing_when_quiet_and_the_message_when_not(monkeypatch, tmp_path, capsys):
+    _world(monkeypatch)
+    monkeypatch.setattr(notices, "_peek", lambda what, home: None)
+    monkeypatch.setattr(notices, "rounds_on", lambda home: True)
+    assert notices.main("check", home=tmp_path) == 0
+    assert capsys.readouterr().out == ""
+    _world(monkeypatch, waited=2)
+    assert notices.main("check", home=tmp_path) == 0
+    assert "2 game moves waited today" in capsys.readouterr().out
+    assert notices.main("check", home=tmp_path) == 0 and capsys.readouterr().out == ""      # once a day
+
+
+class _Hermes:
+    """A fake `hermes cron` recording what it is asked, with an optional existing notices job."""
+
+    def __init__(self, existing=False):
+        self.calls, self.existing = [], existing
+
+    def __call__(self, argv, home=None):
+        self.calls.append(list(argv))
+        if argv[:2] == ["cron", "list"]:
+            return ("  abc123def456 [active]\n    Name:      Emporia — notices\n"
+                    "  0011223344aa [active]\n    Name:      Emporia — rounds\n") if self.existing else \
+                   "  0011223344aa [active]\n    Name:      Emporia — rounds\n"
+        if argv[:2] == ["cron", "create"]:
+            return "Created job: 99887766aabb\n"
+        return ""
+
+
+def test_notices_on_creates_one_no_agent_job_delivered_to_the_home_channel_and_keeps_the_choice(monkeypatch, tmp_path):
+    fake = _Hermes()
+    monkeypatch.setattr(notices, "run_hermes", fake)
+    monkeypatch.setattr(notices, "channels", lambda: ["telegram"])
+    monkeypatch.setattr(notices, "hermes_bin", lambda: "/usr/bin/hermes")
+    done = notices.turn_on(tmp_path)
+    assert "to telegram" in done and "99887766aabb" in done
+    create = next(c for c in fake.calls if c[:2] == ["cron", "create"])
+    assert create[2] == "0 9 * * *" and "--no-agent" in create and "--name" in create and "Emporia — notices" in create
+    assert create[create.index("--deliver") + 1] == "telegram" and create[create.index("--failure-deliver") + 1] == "local"
+    assert create[create.index("--script") + 1] == "emporia_notices.py" and "--no-wrap-response" in create
+    assert not any(a.startswith("-") and a.startswith("--prompt") for a in create)
+    script = tmp_path / "scripts" / "emporia_notices.py"
+    assert script.exists() and oct(script.stat().st_mode & 0o777) == "0o700"
+    assert notices.choice(tmp_path) == "on"
+    assert json.loads(notices.state_path(tmp_path).read_text())["choice"] == "on"
+
+
+def test_notices_on_again_edits_the_one_job_and_never_makes_a_second(monkeypatch, tmp_path):
+    fake = _Hermes(existing=True)
+    monkeypatch.setattr(notices, "run_hermes", fake)
+    monkeypatch.setattr(notices, "channels", lambda: ["telegram", "discord"])
+    monkeypatch.setattr(notices, "hermes_bin", lambda: "/usr/bin/hermes")
+    assert "updated" in notices.turn_on(tmp_path, "discord")
+    assert not [c for c in fake.calls if c[:2] == ["cron", "create"]]
+    edit = next(c for c in fake.calls if c[:2] == ["cron", "edit"])
+    assert edit[2] == "abc123def456" and edit[edit.index("--deliver") + 1] == "discord"
+    assert all(c[2] != "0011223344aa" for c in fake.calls if c[:2] in (["cron", "edit"], ["cron", "remove"]))
+
+
+def test_notices_on_without_a_channel_says_what_to_set_in_hermes(monkeypatch, tmp_path, capsys):
+    fake = _Hermes()
+    monkeypatch.setattr(notices, "run_hermes", fake)
+    monkeypatch.setattr(notices, "channels", lambda: [])
+    assert notices.main("on", home=tmp_path) == 2
+    out = capsys.readouterr().out
+    assert "no delivery channel" in out and "/sethome" in out and fake.calls == []
+    assert notices.main("on", "local", home=tmp_path) == 2                       # local sends to no one
+    monkeypatch.setattr(notices, "channels", lambda: ["telegram"])
+    assert notices.main("on", "Not A Platform!", home=tmp_path) == 2
+
+
+def test_notices_off_removes_only_its_own_job_and_the_script(monkeypatch, tmp_path):
+    fake = _Hermes(existing=True)
+    monkeypatch.setattr(notices, "run_hermes", fake)
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "emporia_notices.py").write_text("x")
+    assert notices.turn_off(tmp_path) == "notices off: the job is removed"
+    assert ["cron", "remove", "abc123def456"] in fake.calls and not [c for c in fake.calls if "0011223344aa" in c[-1:]]
+    assert not (tmp_path / "scripts" / "emporia_notices.py").exists()
+    assert notices.choice(tmp_path) == "off"
+
+
+def test_the_channels_are_the_platforms_with_a_home_channel(monkeypatch):
+    def cfg(**homes):
+        plats = {k: types.SimpleNamespace(home_channel=v, enabled=True) for k, v in homes.items()}
+        gw = types.ModuleType("gateway.config")
+        gw.load_gateway_config = lambda: types.SimpleNamespace(platforms=plats)
+        monkeypatch.setitem(sys.modules, "gateway", types.ModuleType("gateway"))
+        monkeypatch.setitem(sys.modules, "gateway.config", gw)
+    cfg(telegram=object(), discord=None, local=object())
+    assert notices.channels() == ["telegram"]
+    cfg(discord=None)
+    assert notices.channels() == []
+    monkeypatch.setitem(sys.modules, "gateway", None)
+    assert notices.channels() == []                                             # Hermes cannot say: none, no crash
+
+
+def test_the_cron_script_runs_the_check_and_prints_what_it_prints(tmp_path):
+    """The script Hermes runs: it asks `hermes emporia notices check` for this profile and relays stdout, or says nothing."""
+    import subprocess
+    fake = tmp_path / "hermes"
+    fake.write_text('#!/bin/sh\n[ "$1 $2 $3" = "emporia notices check" ] || exit 3\n[ -f "$HERMES_HOME/say" ] && echo "Emporia: hello"\nexit 0\n')
+    fake.chmod(0o755)
+    prof = tmp_path / "prof"
+    (prof / "scripts").mkdir(parents=True)
+    script = prof / "scripts" / "emporia_notices.py"
+    script.write_text(notices.SCRIPT_TEXT.replace("__HERMES__", repr(str(fake))))
+    run = lambda: subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=30,
+                                 env={**os.environ, "HERMES_HOME": "/wrong"})
+    assert run().stdout == ""                                                   # silent: nothing to say
+    (prof / "say").write_text("")
+    assert run().stdout.strip() == "Emporia: hello"
+    fake.write_text("#!/bin/sh\nexit 1\n")
+    assert run().stdout == ""                                                   # trouble is silence, never noise
+
+
+def test_notices_status_lists_the_job_and_the_notices(monkeypatch, tmp_path, capsys):
+    _world(monkeypatch, waited=2)
+    monkeypatch.setattr(notices, "run_hermes", _Hermes(existing=True))
+    monkeypatch.setattr(notices, "_peek", lambda what, home: None)
+    assert notices.main("status", home=tmp_path) == 0
+    out = capsys.readouterr().out
+    assert "Notices job : on (job abc123def456)" in out and "Notice      : 2 game moves waited today" in out
+
+
+def test_the_hermes_emporia_notices_command_is_the_plugins_own(monkeypatch, tmp_path):
+    import argparse
+    parser = argparse.ArgumentParser()
+    setup_cli.register_cli(parser)
+    seen = []
+    monkeypatch.setattr(setup_cli, "hermes_home", lambda: tmp_path)
+    monkeypatch.setattr(setup_cli, "_notices", lambda: types.SimpleNamespace(main=lambda a, d, h: seen.append((a, d, h)) or 0))
+    assert setup_cli.dispatch(parser.parse_args(["notices"])) == 0
+    assert setup_cli.dispatch(parser.parse_args(["notices", "on", "--deliver", "telegram"])) == 0
+    assert seen == [("status", "", tmp_path), ("on", "telegram", tmp_path)]
+    assert "notices" not in setup_cli.PASSTHROUGH
+
+
+# ── the setup question ────────────────────────────────────────────────────────────────────────────────────────
+
+def _setup_world(monkeypatch, tmp_path, state, tty=False):
+    from emporia import cli, rounds
+    ran = []
+
+    def fake(argv):
+        ran.append(argv)
+        if argv[-1] == "channel":
+            return json.dumps(state) + "\n"
+        return f"notices {argv[-1]}: done\n"
+
+    monkeypatch.setattr(rounds, "run_hermes", fake)
+    monkeypatch.setattr(cli, "_TTY", tty)
+    prof = tmp_path / "profiles" / "shop"
+    prof.mkdir(parents=True)
+    return cli, ran, prof
+
+
+def test_setup_turns_notices_on_for_a_new_agent_when_hermes_has_a_channel(monkeypatch, tmp_path, capsys):
+    cli, ran, prof = _setup_world(monkeypatch, tmp_path, {"channels": ["telegram"], "choice": ""})
+    assert cli._setup_notices(prof, existing=False, fast=False) == "on"
+    assert ["-p", "shop", "emporia", "notices", "on"] in ran
+    assert "notices on: done" in capsys.readouterr().out
+
+
+def test_setup_leaves_an_existing_profile_alone_without_a_terminal_and_keeps_a_recorded_choice(monkeypatch, tmp_path):
+    cli, ran, prof = _setup_world(monkeypatch, tmp_path, {"channels": ["telegram"], "choice": ""})
+    assert cli._setup_notices(prof, existing=True, fast=False) == ""
+    assert cli._setup_notices(prof, existing=True, fast=True) == "on"             # the all-yes path
+    cli, ran, prof = _setup_world(monkeypatch, tmp_path / "b", {"channels": ["telegram"], "choice": "off"})
+    assert cli._setup_notices(prof, existing=False, fast=True) == "off"           # re-running setup keeps "off"
+    assert not [a for a in ran if a[-1] in ("on", "off")]
+
+
+def test_setup_without_a_channel_says_so_and_sets_nothing(monkeypatch, tmp_path, capsys):
+    cli, ran, prof = _setup_world(monkeypatch, tmp_path, {"channels": [], "choice": ""})
+    assert cli._setup_notices(prof, existing=False, fast=True) == ""
+    out = capsys.readouterr().out
+    assert "no delivery channel" in out and "/sethome" in out and not [a for a in ran if a[-1] in ("on", "off")]
+
+
+def test_setup_skips_the_question_when_the_plugin_cannot_answer(monkeypatch, tmp_path):
+    from emporia import cli, rounds
+    def boom(argv):
+        raise rounds.RoundsError("no hermes")
+    monkeypatch.setattr(rounds, "run_hermes", boom)
+    prof = tmp_path / "profiles" / "shop"
+    prof.mkdir(parents=True)
+    assert cli._setup_notices(prof, existing=False, fast=True) == ""
+
+
+def test_the_question_follows_the_setup_clarity_rule():
+    from emporia import setup_choices as sc
+    c = sc.CHOICES["notices"]
+    assert c.question == "Send me Emporia notices on {channel}?" and c.default == "on"
+    assert c.matters and "no links" in c.matters and "chat credentials" in c.matters
+    assert [o.value for o in c.options] == ["on", "off"] and all(o.effect for o in c.options)
+    assert "(recommended)" in c.labels()[0][1] and c.change.startswith("hermes emporia notices on|off")
+    lines = sc.installed_lines({}, role="marketplace", keys="files", wallets=[], rounds="4h", notices="on")
+    assert any("Notices" in line and "Emporia — notices" in line and "Change:" in line for line in lines)
+    assert not any("Notices" in line for line in sc.installed_lines({}, role="marketplace", keys="files",
+                                                                    wallets=[], rounds="4h"))

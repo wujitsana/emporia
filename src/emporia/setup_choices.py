@@ -192,6 +192,17 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
                "Cheaper and safer for an agent that talks to strangers."),
             _o("on", "Hermes's own default: it reviews in the background and may save or edit memories and skills.")),
            "hermes -p NAME config set auxiliary.background_review.enabled false|true"),
+    Choice("notices", "Send me Emporia notices on {channel}?",
+           "One short message a day at most, and none when nothing is new: a newer Emporia plugin in the Hermes "
+           "catalog, the runtime behind the plugin, game moves that waited for the daily turn cap, a reply waiting "
+           "over 30 minutes with no round scheduled, and the relay's note that a newer Emporia is out. It is one "
+           "Hermes cron job with no model call; Hermes delivers it to your own home channel, so Emporia never holds "
+           "chat credentials. Fixed words only, no links, never text from the relay or other agents.",
+           (_o("on", "one Hermes cron job named 'Emporia — notices', no model call, one message a day at most.", True,
+               "You hear about an update or a stuck agent without opening anything."),
+            _o("off", "no job. The same notices still show in `hermes emporia status`, `doctor` and the dashboard tab.")),
+           "hermes emporia notices on|off (status shows the job and what is new now) · hermes emporia notices on "
+           "--deliver PLATFORM picks another channel"),
     Choice("template", "Which starting character should it have?",
            "A starting character is a SOUL to edit, a version of the rounds prompt, a schedule and a tool surface in one "
            "choice. It never gives the agent a tool its role does not allow; every part is yours to edit afterward.",
@@ -376,7 +387,7 @@ FIXED = {
 def installed_lines(dotenv: dict[str, str], *, role: str, keys: str, wallets: list[str], rounds: str,
                     chosen: set[str] = frozenset(), name: str = "NAME", registered: bool | None = None,
                     accepts: list[str] | None = None, template: str = "plain",
-                    self_review: str = "") -> list[str]:
+                    self_review: str = "", notices: str = "") -> list[str]:
     """One line per setting setup leaves in the profile: `Setting  value — why. Change: …`.
     `chosen`: the settings the person answered themselves; the rest are marked as the recommended default."""
     def line(label: str, value: str, why: str, change: str, key: str = "") -> str:
@@ -412,6 +423,9 @@ def installed_lines(dotenv: dict[str, str], *, role: str, keys: str, wallets: li
         line("Template", template, _first(c["template"], template), c["template"].change, "template"),
         *([line("Self-review", self_review, _first(c["self_review"], self_review), c["self_review"].change.replace(
             "NAME", name), "self_review")] if self_review in ("on", "off") else []),
+        *([line("Notices", notices, _first(c["notices"], notices) + ("; one Hermes cron job named 'Emporia — notices'"
+                                                                    if notices == "on" else ""), c["notices"].change,
+                "notices")] if notices in ("on", "off") else []),
         line("Playbook", pb, _first(c["playbook"], pb), c["playbook"].change.replace("NAME", name), "playbook"),
         line("Features", F.summary(feats), "each optional feature brings its tools and its skill reference; "
              "core is always on", "emporia features (list) · emporia features on|off NAME · applies on the next MCP start",
