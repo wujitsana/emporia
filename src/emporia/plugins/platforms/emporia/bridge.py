@@ -146,8 +146,38 @@ def build_autoreveal(relay_url: str, agent_id: str):
                                  chronicle=lambda: server()._chronicle_client(), local=local, log=logger.info)
 
 
+def build_witness(relay_url: str, hermes_home: str | None = None):
+    """The agent's own daily look at its home relay's transparency log (`emporia.log_witness`), or None when the
+    person turned it off. The record goes in the profile's plugin data, beside the other bridge files."""
+    from emporia import log_witness
+    if not log_witness.enabled():
+        logger.info("log witness is off (%s)", log_witness.SETTING)
+        return None
+    home = (os.environ.get("HERMES_HOME", "") if hermes_home is None else hermes_home).strip()
+    return log_witness.Witness(os.environ.get("EMPORIA_RELAY_URL") or relay_url, log_witness.record_path(home or None))
+
+
+async def witness_pass(witness: Any, out: TextIO, name: str) -> None:
+    """One check, in a thread, for at most `TIME_LIMIT_SECONDS`; a problem not told before is one fixed notice on
+    stdout and one gateway log line. No model turn, nothing said when all is well."""
+    from emporia import log_witness
+    try:
+        rec = await asyncio.wait_for(asyncio.to_thread(witness.run), log_witness.TIME_LIMIT_SECONDS)
+    except TimeoutError:
+        logger.info("log witness: the check ran past its time limit; the next pass tries again")
+        return
+    except Exception:
+        logger.debug("log witness failed", exc_info=True)
+        return
+    if rec.get("notice"):
+        logger.warning("transparency log did not check out for %s: %s", rec.get("relay"), "; ".join(rec.get("problems") or []))
+        out.write(log_witness.notice_line(name, rec) + "\n")
+        out.flush()
+
+
 async def run(relay_url: str, agent_id: str, profile_id: str | None,
-              out: TextIO = sys.stdout, poll_seconds: float = 30.0, clock=None, auto: Any = False) -> None:
+              out: TextIO = sys.stdout, poll_seconds: float = 30.0, clock=None, auto: Any = False,
+              witness: Any = False) -> None:
     from emporia import wake
     from emporia.addresses import host_of
     from emporia.visits import visiting
@@ -157,7 +187,10 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
     limits = LimitsLine(agent_id)
     if auto is False:           # (a test passes its own, or None)
         auto = build_autoreveal(relay_url, agent_id)
+    if witness is False:        # (a test passes its own, or None)
+        witness = build_witness(relay_url)
     looking: list[asyncio.Task] = []                 # at most one periodic pass at a time
+    witnessing: list[asyncio.Task] = []              # and at most one log check
     brake = wake.ThreadBrake(clock=clock)
     held: dict[str, dict[str, Any]] = {}          # per thread: the newest frame the brake held back
     timers: dict[str, asyncio.Task] = {}          # per thread: the one re-delivery timer
@@ -242,10 +275,12 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
             wake_mode, listed = await _reread_wake(watch, wake_mode, listed, out)
             if auto is not None and not (looking and not looking[0].done()):
                 looking[:] = [asyncio.create_task(asyncio.to_thread(auto.look))]   # finishes what a restart cut off
+            if witness is not None and witness.due() and not (witnessing and not witnessing[0].done()):
+                witnessing[:] = [asyncio.create_task(witness_pass(witness, out, profile_id or agent_id))]
             await asyncio.to_thread(_check_local_relay, home)      # P285: a relay that crashed comes back
             await asyncio.sleep(poll_seconds)
     finally:
-        for task in [*tunnels.values(), *timers.values(), *looking]:
+        for task in [*tunnels.values(), *timers.values(), *looking, *witnessing]:
             task.cancel()
 
 

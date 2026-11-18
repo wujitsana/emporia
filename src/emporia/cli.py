@@ -6331,6 +6331,12 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
                              f"`emporia signer backup {name} --out PATH` made)")
     else:
         rep.ok(drill_note)
+    from emporia import log_witness
+    witnessed = log_witness.read(log_witness.record_path(profile))
+    if witnessed.get("problems"):
+        rep.fail(log_witness.line(witnessed), f"emporia log verify {name}")
+    elif witnessed:
+        rep.ok(log_witness.line(witnessed))
     # P167/P168: what its own tools can reach. A wallet plus a shell on the
     # keys' disk is the one combination that puts money in reach.
     backend = _backend(profile)

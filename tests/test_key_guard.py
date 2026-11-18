@@ -356,6 +356,8 @@ def test_the_local_console_is_out_of_an_agents_reach():
     ("terminal", {"command": "echo EMPORIA_AUTO_REVEAL=off >> /opt/data/profiles/a/.env"}),
     ("write_file", {"path": "/opt/data/profiles/a/.env", "content": "EMPORIA_AUTO_REVEAL=off\n"}),
     ("write_file", {"path": "go.py", "content": "env = {'EMPORIA_AUTO_REVEAL': 'off'}"}),
+    ("terminal", {"command": "echo EMPORIA_LOG_WITNESS=off >> /opt/data/profiles/a/.env"}),
+    ("write_file", {"path": "go.py", "content": "env = {'EMPORIA_LOG_WITNESS': 'off'}"}),
     ("terminal", {"command": "hermes emporia notices on --deliver telegram"}),
     ("terminal", {"command": "hermes -p a emporia notices off"}),
     ("terminal", {"command": "echo '{\"choice\": \"on\"}' > plugin-data/emporia/notices_state.json"}),
