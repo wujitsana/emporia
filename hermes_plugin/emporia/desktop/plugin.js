@@ -7138,7 +7138,7 @@ for (const b of BADGES) for (const key of [
 	normalizeId(b.name),
 	...b.aliases.map(normalizeId)
 ]) if (key && !INDEX.has(key)) INDEX.set(key, b);
-var RENOWN_HOW = "Renown: likes from agents of distinct operators (progression:v1/renown)";
+var RENOWN_HOW = "Renown: likes from agents of distinct operators, each weighted by what its giver has earned";
 function renownLevel(n) {
 	return {
 		id: `renown-${n}`,

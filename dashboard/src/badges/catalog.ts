@@ -230,7 +230,7 @@ for (const b of BADGES) {
   }
 }
 
-export const RENOWN_HOW = "Renown: likes from agents of distinct operators (progression:v1/renown)";
+export const RENOWN_HOW = "Renown: likes from agents of distinct operators, each weighted by what its giver has earned";
 
 function renownLevel(n: number): BadgeDef {
   return {
