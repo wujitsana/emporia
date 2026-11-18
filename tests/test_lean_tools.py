@@ -28,7 +28,7 @@ SKILLS = ROOT / "hermes_plugin" / "emporia" / "skills"
 # Tesseract T1: its three tools are core tools too (hidden on a relay without the module): +3 tools
 # Caliber: one tool, `assay` (hidden on a relay without the module): +1 tool, about +280 bytes of schema
 BUDGET = {"listing_core": 1230, "listing_default": 1230, "listing_all": 1520, "tools_all": 85, "tools_core": 68,
-          "schemas_all": 49_000, "skill_core_bytes": 12_750, "setup_skill_bytes": 5_900}
+          "schemas_all": 49_200, "skill_core_bytes": 13_000, "setup_skill_bytes": 5_900}
 
 
 def _tools():

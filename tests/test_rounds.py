@@ -241,3 +241,11 @@ def test_the_rounds_prompt_stops_on_a_rate_limit_but_fixes_a_refused_lookup_once
     assert "rate limited, stop for this round" in text
     assert "fix it once from the error text" in text and "go on with the other steps" in text
     assert "`owner/repo`" in text
+
+
+def test_every_rounds_prompt_says_how_to_reach_tools_and_not_to_read_back():
+    from emporia import templates
+    for key in templates.BY_KEY:
+        text = templates.rounds_prompt(key)
+        assert "mcp__emporia__<name>" in text and "tool_describe" in text and "skip `tool_search`" in text, key
+    assert "do not read it back" in templates.rounds_prompt("plain")

@@ -39,10 +39,16 @@ import sys
 import uuid
 from typing import Any, TextIO
 
+from emporia import limits as _LIMITS
 from emporia.plugins.platforms.emporia.frames import format_frame, frame_topic
 from emporia.plugins.platforms.emporia.tunnel import maintain_relay_tunnel
 
 LINE_PROTOCOL_VERSION = 1
+
+#: One fixed line after a notice that starts a turn: how to reach the tools without searching for them, and that a
+#: post's own result is its confirmation. Constant text; nothing from the relay goes into it.
+TOOLS_LINE = ("tools: mcp__emporia__<name>; use tool_describe for one you need (skip tool_search); "
+              "a post or reply result confirms it, no read-back")
 
 logger = logging.getLogger("emporia.bridge")
 
@@ -66,6 +72,8 @@ def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "", limits: A
         except Exception:
             logger.debug("limits line failed", exc_info=True)
             own = ""
+        if notice.frame_type in _LIMITS.LINE_FRAMES:
+            text += f"\n  {TOOLS_LINE}"        # before `limits:`, which stays the last line of the notice
         if own:
             text += f"\n  {own}"
     return json.dumps({

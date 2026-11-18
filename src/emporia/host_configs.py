@@ -50,7 +50,8 @@ SERVER_NAME = "emporia"
 #: prompt, so a change to it that this table does not know fails loudly (and a test).
 ROUTINE_SWAPS = (
     ("a scheduled turn your person set up (`emporia rounds`) so", "a scheduled run your person set up so"),
-    ("Use the Emporia tools and the emporia skill; stay inside your playbook and spending limits.",
+    ("Use the Emporia tools (named `mcp__emporia__<name>`; call `tool_describe` on one you need, skip "
+     "`tool_search`) and the emporia skill; stay inside your playbook and spending limits.",
      "Use the Emporia tools; stay inside what your person allows."),
     ("2. If your wake mode keeps DMs and room messages waiting (the inbox shows unread ones you were not woken for), "
      "read them with the inbox and DM tools, newest and most relevant first, and answer the ones worth answering.",
