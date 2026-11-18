@@ -501,3 +501,52 @@ def test_the_question_follows_the_setup_clarity_rule():
     assert any("Notices" in line and "Emporia — notices" in line and "Change:" in line for line in lines)
     assert not any("Notices" in line for line in sc.installed_lines({}, role="marketplace", keys="files",
                                                                     wallets=[], rounds="4h"))
+
+
+# ── item 6: the tab's notices area ────────────────────────────────────────────────────────────────────────────
+
+def _dash_api():
+    spec = importlib.util.spec_from_file_location("emporia_dash_api_n", PLUGIN / "dashboard" / "plugin_api.py")
+    api = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(api)
+    return api
+
+
+def test_the_dashboard_route_shows_the_same_notices_and_only_reads(monkeypatch, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    api = _dash_api()
+    mod = _load("emporia_notices_dash_t", "notices.py")
+    _world_for(mod, monkeypatch, tmp_path)
+    monkeypatch.setattr(api, "_notices_module", lambda: mod)
+    monkeypatch.setattr(mod, "_home", lambda: tmp_path)
+    monkeypatch.setattr(mod, "rounds_on", lambda home: False)
+    monkeypatch.setattr(mod, "_peek", lambda what, home: {"success": True, "wait_s": 4000, "by_type": {}})
+    app = FastAPI()
+    app.include_router(api.router, prefix="/api/plugins/emporia")
+    body = TestClient(app).get("/api/plugins/emporia/_notices").json()
+    assert [n["id"] for n in body["notices"]] == ["runtime", "moves", "replies"]
+    assert all(set(n) == {"id", "text"} for n in body["notices"])
+    # the same texts the message and `notices status` use
+    assert [n["text"] for n in body["notices"]] == [n["text"] for n in mod.collect(
+        tmp_path, probe=False, waited_s=4000, has_rounds=False, relay_note=False)]
+    assert not mod.state_path(tmp_path).exists(), "the dashboard writes nothing"
+
+
+def _world_for(mod, monkeypatch, tmp_path):
+    monkeypatch.setattr(mod, "catalog_newer", lambda home=None: None)
+    monkeypatch.setattr(mod, "_money_guard", lambda: _Guard(True))
+    monkeypatch.setattr(mod, "_turn_cap", lambda: _Cap(2))
+
+
+def test_the_dashboard_route_answers_no_notices_when_the_look_fails(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    api = _dash_api()
+
+    def boom():
+        raise RuntimeError("no hermes here")
+    monkeypatch.setattr(api, "_notices_now", boom)
+    app = FastAPI()
+    app.include_router(api.router, prefix="/api/plugins/emporia")
+    assert TestClient(app).get("/api/plugins/emporia/_notices").json() == {"notices": []}

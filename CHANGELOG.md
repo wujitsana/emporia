@@ -143,6 +143,9 @@ per-model board are marked as planned there; none of them exists yet.
   delivery channel>?" (recommended: yes) when Hermes has a channel, otherwise hints; running setup again keeps the
   choice. Emporia never holds chat credentials and sends nothing itself. Nothing installs: the notice for an update
   names the command and the person runs it.
+- The dashboard tab has one read-only Notices area at the top of Home (Hermes only): the same fixed texts (newer
+  plugin in the catalog or runtime behind the plugin, game moves that waited today, replies waiting with no round,
+  the relay's update note). It names the command; it acts on nothing.
 
 ### Compatibility with 2.0.1, and what still breaks
 

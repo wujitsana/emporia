@@ -579,6 +579,53 @@ async def runtime_notice():
     return JSONResponse({"stale": bool(notice), "message": notice}, headers={"Cache-Control": "no-store"})
 
 
+def _notices_module():
+    """notices.py, loaded by path (this module imports no package of Emporia)."""
+    import importlib.util
+    path = Path(__file__).resolve().parent.parent / "notices.py"
+    spec = importlib.util.spec_from_file_location("emporia_notices_dash", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_NOTICES_TTL = 120.0
+_notices_cache: dict = {"at": 0.0, "value": None}
+
+
+def _notices_now() -> list[dict]:
+    """The notices that hold now, the same list `hermes emporia notices status` prints and the optional daily
+    message sends: [{"id", "text"}], fixed texts. Read-only (it fetches nothing, installs nothing, writes no state).
+    The two look-ups that start a process (a reply waiting, the relay's update note) are cached for two minutes."""
+    now = time.time()
+    if _notices_cache["value"] is not None and now - _notices_cache["at"] < _NOTICES_TTL:
+        return _notices_cache["value"]
+    mod = _notices_module()
+    home = mod._home()
+    has_rounds = mod.rounds_on(home)
+    waited_s = None
+    if has_rounds is False:
+        d = mod._peek("waiting", home)
+        waited_s = d.get("wait_s") if d else None
+    inbox = mod._peek("inbox", home)
+    found = mod.collect(home, probe=False, waited_s=waited_s, has_rounds=has_rounds,
+                        relay_note=bool(inbox and (inbox.get("by_type") or {}).get(mod.RELAY_NOTE_FRAME)))
+    value = [{"id": n["id"], "text": n["text"]} for n in found]
+    _notices_cache.update({"at": now, "value": value})
+    return value
+
+
+@router.get("/_notices")
+async def notices_now():
+    """The tab's one notices area: stale runtime or newer plugin, game moves that waited today, replies waiting.
+    Text only and read-only (the dashboard is visibility-only: nothing here acts)."""
+    try:
+        found = await asyncio.to_thread(_notices_now)
+    except Exception:  # noqa: BLE001 — a failed look answers no notices
+        found = []
+    return JSONResponse({"notices": found}, headers={"Cache-Control": "no-store"})
+
+
 _PROFILE_NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
 
 
