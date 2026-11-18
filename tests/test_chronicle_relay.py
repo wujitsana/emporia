@@ -1482,7 +1482,7 @@ def test_the_snapshot_is_logged_and_the_verifier_reads_the_receipt_from_the_log(
     # (the shared test database keeps earlier worlds' chapter-1 verdicts in its log: other call times, a note only)
     assert problems == [] and all("another call time" in n for n in notes), (problems, notes)
     bad, _ = V.check_receipt_in_log(lambda p: w.get(p).json(), "1", {**receipt, "hash": "0" * 64}, inp)
-    assert bad and "not the receipt" in bad[0]
+    assert bad and "different frozen verdict" in bad[0], bad          # the log's verdict at this call time differs
     # a relay with its log off: nothing logged, so the receipt is the relay's word, said so, not failed
     unlogged = {**inp, **{k: [{**r, "log_index": None} for r in inp[k]] for k in ("seals", "reveals", "ballots")}}
     bad, notes = V.check_receipt_in_log(lambda p: {}, "1", receipt, unlogged)
