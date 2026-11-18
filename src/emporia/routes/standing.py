@@ -780,10 +780,19 @@ def _evidence() -> dict:
                            for p in g.get("participants") or []):
             abandons.setdefault(quitter, []).append(progression._ts(g["ended_at"]))
     skip = _exempt()
-    value = {"contacts": allowance.contacts(games, deals, who), "abandons": abandons, "who": who,
+    contacts = allowance.contacts(games, deals, who)
+    value = {"contacts": contacts, "graph": allowance.operator_graph(contacts, who), "abandons": abandons, "who": who,
              "operators": {who[a].operator if a in who else a for a in (active & live) - skip}}
     _EVIDENCE.update(key=key, value=value)
     return value
+
+
+def _counted_contacts(agent_id: str, ev: dict) -> dict[str, float]:
+    """The operators an agent's tier and Trust count (`allowance.counted_contacts`): its contacts, less those that
+    fail the second-order rule on a relay that switched it on (EMPORIA_SECOND_ORDER)."""
+    me = progression._operator(ev["who"], agent_id)
+    rule = allowance.second_order(len(ev["operators"] - {me}))
+    return allowance.counted_contacts(ev["contacts"].get(agent_id, {}), me, ev.get("graph", {}), rule)
 
 
 def _renown_tiers() -> dict[str, int]:
@@ -796,10 +805,11 @@ def _renown_tiers() -> dict[str, int]:
         return ev["tiers"]
     now, who = time.time(), ev["who"]
     out: dict[str, int] = {}
-    for agent, mine in ev["contacts"].items():
+    for agent in ev["contacts"]:
         op = progression._operator(who, agent)
         registered = who[agent].registered_at if agent in who else None
-        a = allowance.assess(agent, weighted=allowance.weights(mine, who, now), abandons=ev["abandons"].get(agent, ()),
+        a = allowance.assess(agent, weighted=allowance.weights(_counted_contacts(agent, ev), who, now),
+                             abandons=ev["abandons"].get(agent, ()),
                              others=len(ev["operators"] - {op}),
                              days_here=((now - registered) / 86_400 if registered is not None else 0.0), now=now)
         out[op] = max(out.get(op, 1), a["tier"])
@@ -872,7 +882,7 @@ def _allowance_now(agent_id: str, *, ignore_vouched: bool = False) -> dict:
     registered = progression._ts(reg["registered_at"]) if reg else now
     mine = progression._operator(who, agent_id)
     out = allowance.assess(
-        agent_id, weighted=allowance.weights(ev["contacts"].get(agent_id, {}), who, now),
+        agent_id, weighted=allowance.weights(_counted_contacts(agent_id, ev), who, now),
         abandons=ev["abandons"].get(agent_id, ()), removals=removals,
         vouched=not ignore_vouched and agent_id in progression.vouched_agents(), others=len(ev["operators"] - {mine}),
         days_here=(now - registered) / 86_400, now=now)
@@ -1263,6 +1273,13 @@ async def agent_sheet(agent_id: str):
     return await cached_public(("sheet", agent_id), lambda: _sheet_body(agent_id))
 
 
+def _second_order_of(agent_id: str) -> dict | None:
+    """What `base_sheet` needs to apply the second-order rule to this agent's Trust, or None when it is off."""
+    ev = _evidence()
+    rule = allowance.second_order(len(ev["operators"] - {progression._operator(ev["who"], agent_id)}))
+    return {**rule, "graph": ev.get("graph", {})} if rule else None
+
+
 def _standing_next(agent_id: str, sheet: dict) -> dict:
     """The sheet's `standing` block: where the agent is and the one next thing that would raise it
     (`newcomer.next_step`). Evidence in words, never a verdict; it moves nothing."""
@@ -1270,12 +1287,13 @@ def _standing_next(agent_id: str, sheet: dict) -> dict:
     ev = _evidence()
     mine = progression._operator(ev["who"], agent_id)
     others = len(ev["operators"] - {mine})
-    met = len(ev["contacts"].get(agent_id, {}))
+    met = len(_counted_contacts(agent_id, ev))
+    uncounted = len(ev["contacts"].get(agent_id, {})) - met
     al = allowance_of(agent_id)
     started = bool((sheet.get("trust") or {}).get("started")) or met > 0
     return {"next": newcomer.next_step(others_here=others, counted_operators=met,
                                        raises=(al or {}).get("raises", ""), tier=(al or {}).get("tier"),
-                                       started=started),
+                                       started=started, uncounted=uncounted),
             "operators_here": others, "operators_met": met, "counting": others > 0}
 
 
@@ -1326,7 +1344,8 @@ def _sheet_body(agent_id: str) -> dict:
         cal = assay_routes.agent_caliber(agent_id)
     sheet = {**progression.base_sheet(agent_id, table=table, deals=deals, abandoned=abandoned,
                                       registered_at=reg["registered_at"], now=time.time(), who=who,
-                                      likes=likes, house=house, word=word, caliber=cal, tiers=_renown_tiers()),
+                                      likes=likes, house=house, word=word, caliber=cal, tiers=_renown_tiers(),
+                                      second_order=_second_order_of(agent_id)),
              **({"improvements": improvements} if improvements is not None else {}),
              "insight": progression.insight(agent_id, _calls().get(agent_id, [])),
              "scope": "this_relay", "sessions_counted": len(set(used)),
@@ -1369,7 +1388,7 @@ def _statement_body(agent_id: str, audience: str | None) -> dict:
     now = time.time()
     ev = _evidence()
     who, relay_id = ev["who"], rs.relay_id()
-    contacts = ev["contacts"].get(agent_id, {})
+    contacts = _counted_contacts(agent_id, ev)
     weighted = allowance.weights(contacts, who, now)
     oldest: dict[str, float] = {}
     for w in who.values():

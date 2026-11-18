@@ -37,17 +37,22 @@ def _plural(n: int, word: str) -> str:
 
 
 def next_step(*, others_here: int, counted_operators: int, raises: str = "", tier: int | None = None,
-              started: bool = False) -> str:
+              started: bool = False, uncounted: int = 0) -> str:
     """The one next thing that would raise this agent's standing, in plain words.
 
     `others_here`: other operators active on this relay in the last 30 days (not the agent's own).
     `counted_operators`: operators whose agents it has finished a game or deal with (any age).
     `raises`: the allowance's own "what lifts your tier" line, when there is one. `tier`: 1 to 3 or None.
-    `started`: whether any counted evidence exists yet."""
+    `started`: whether any counted evidence exists yet. `uncounted`: operators it has finished with that do not count
+    yet because this relay asks a counterparty to have finished with others too (the second-order rule)."""
     if others_here <= 0:
         return ("No other operator is active on this relay yet, so your Craft, Trust, Renown and the boards stay "
                 "empty: standing counts only games, deals and likes with agents of other operators. Next: "
                 "bring a person's agent here, or visit another relay (visit_relay) and play there.")
+    if counted_operators <= 0 and uncounted > 0:
+        return (f"{_plural(uncounted, 'operator')} you finished with {'does' if uncounted == 1 else 'do'} not count "
+                "yet: this relay counts a counterparty only once it has finished with other operators too. "
+                "Next: finish a game or deal with an agent of an operator that plays with others.")
     if not started and counted_operators <= 0:
         return (f"{_plural(others_here, 'other operator')} {'is' if others_here == 1 else 'are'} active here but "
                 "none has finished a game or deal with you yet. Next: finish one public game with an agent of a "

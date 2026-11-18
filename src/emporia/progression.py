@@ -880,7 +880,7 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
                who: Mapping[str, Who] | None = None, likes: Iterable[Mapping] = (),
                house: frozenset[str] = frozenset(), word: Mapping | None = None,
                outside_level: frozenset[str] | None = None, caliber: Mapping | None = None,
-               tiers: Mapping[str, int] | None = None) -> dict:
+               tiers: Mapping[str, int] | None = None, second_order: Mapping | None = None) -> dict:
     """An agent's base sheet: Craft (per game), Trade and Trust, a level for each
     and the class its top attribute gives. The same rules for every reader.
 
@@ -895,6 +895,11 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
     `caliber` (a relay running the Assay): the agent's `caliber.sheet`, shown as `caliber`; it moves nothing else.
 
     `tiers`: giving operator -> its best earned allowance tier (1 to 3), what Renown v3 weighs a like by.
+
+    `second_order` (a relay that switched it on, `allowance.second_order`): `{graph, required, fail_weight}` — a
+    counterparty operator counts toward Trust only if it has itself finished with at least `required` operators
+    besides this agent's own and itself (`graph`: operator -> operators it finished with); one that has not weighs
+    `fail_weight` (0 or a quarter) there.
 
     `word` (gamify pledges): its pledges' record (`pledges.record`), shown as `pledges`.
     Only when it carries `trust_points` (EMPORIA_PLEDGES_TRUST on) does it move Trust,
@@ -912,6 +917,12 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
     per_pair: dict[str, int] = {}
     others: dict[str, float] = {}      # each other operator, by the most it has weighed
     adjusted = False
+
+    def second(op: str) -> float:      # 1 when the counterparty stands on its own contacts (or the rule is off)
+        if not second_order:
+            return 1.0
+        return 1.0 if len(set(second_order["graph"].get(op, ())) - {me, op}) >= second_order["required"] \
+            else float(second_order["fail_weight"])
     for d in sorted(deals, key=lambda d: (_ts(d["ended_at"]), str(d.get("session_id", "")))):
         side = "seller" if d.get("seller") == agent_id else "buyer" if d.get("buyer") == agent_id else None
         if not side:
@@ -927,8 +938,9 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
             per_pair[op] = per_pair.get(op, 0) + 1
             standing = _weight(who, other, _ts(d["ended_at"]))
             w = (1.0 if d.get("paid") else FREE_WEIGHT) * standing / per_pair[op]   # 1/n: repeat business grows as log n
-            t, u = t * w, u * w
-            others[op] = max(others.get(op, 0.0), standing)
+            t, u = t * w, u * w * second(op)
+            if standing * second(op) > 0:
+                others[op] = max(others.get(op, 0.0), standing * second(op))
             counts["sold" if side == "seller" else "bought"] += 1
         elif side == "seller" and d.get("status") == "disputed":
             counts["disputed_as_seller"] += 1
@@ -946,7 +958,8 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
     for board in table.values():
         if agent_id in board:
             for op in board[agent_id].met:
-                others[op] = max(others.get(op, 0.0), _weight_of_operator(who, op, now))
+                if (w := _weight_of_operator(who, op, now) * second(op)) > 0:
+                    others[op] = max(others.get(op, 0.0), w)
     weeks = 0.0
     if registered_at is not None and registered_at != "":
         weeks = min(52.0, max(0.0, (now - _ts(registered_at)) / (7 * 86_400)))

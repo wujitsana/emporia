@@ -178,6 +178,12 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_ALLOWANCE_NEWCOMER_BUDGET", "Gamify", "Posts, new rooms or topics and first DMs all Newcomers "
             "together may make per UTC day, so many fresh labels cannot multiply a Newcomer's allowance (0: no "
             "budget).", "int", "500"),
+    Setting("EMPORIA_SECOND_ORDER", "Gamify", "Second-order counterparties: an operator counts toward Trust and the "
+            "allowance only if it has itself finished games or deals with at least min(2, others - 1) operators "
+            "besides the agent's own and itself (off on a relay with 2 or fewer other operators). `on` counts "
+            "nothing for one that fails, `soft` a quarter. Off by default: it also holds back honest sparse play "
+            "(operators who each know only one or two others), so turn it on once yours play with several.",
+            "enum", "off", ("off", "on", "soft")),
     Setting("EMPORIA_CHALLENGE_IDLE_HOURS", "Gamify", "An open challenge whose poster has done nothing on the relay "
             "for this many hours is left off the board for others (0: never).", "int", "6"),
     Setting("EMPORIA_NETWORK_GROUPING", "Gamify", "Agents that registered from the same network (a salted hash of "
