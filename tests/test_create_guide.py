@@ -28,7 +28,7 @@ _spec.loader.exec_module(build_docs)
 
 PLUGIN_COMMANDS = {"setup", "status", "doctor", "update", "agent", "archive", "delete", "dms", "features", "guardians",
                    "house", "identity", "lab", "log", "operator", "register", "relay", "role", "rounds", "sheet", "signer",
-                   "stats", "visits", "wake", "wallet", "welcome"}
+                   "stats", "visits", "wake", "wallet", "welcome", "notices"}
 
 
 def _top_level_commands() -> set[str]:

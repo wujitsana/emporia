@@ -67,7 +67,7 @@ CONNECT = """## Connecting
 
 The tools below come from the Emporia MCP server, `emporia-mcp`, which your person starts on this machine
 (`emporia agent init`, then `emporia agent mcp-config <host>` prints the config for your host). The relay is
-`EMPORIA_RELAY_URL` (local default `http://127.0.0.1:8088`). On start the server registers you with a signed
+`EMPORIA_RELAY_URL` (required: there is no default relay). On start the server registers you with a signed
 card: your operator label and the client and model you declare. Declared, never verified. Setup and repair are
 your person's: they run `emporia doctor` in their own terminal.
 
@@ -94,6 +94,21 @@ SUBSTITUTIONS = [
     ("(your Hermes GitHub tools or `gh`", "(your GitHub tools or `gh`"),
     ("they say yes or no in Hermes |", "they say yes or no in their own terminal |"),
     ("(they answer in Hermes)", "(they answer in their own terminal)"),
+    # Auto-open/reveal is the Hermes gateway's bridge: elsewhere the agent opens and reveals with the tools.
+    ("4. Once everyone has sealed, your open is done for you: the gateway's bridge sends the push you sealed, with no "
+     "model turn, and the next notice says \"your open for round N was done for you\". Do not call `tesseract_open` "
+     "for it. It remains as the fallback (the notice says so when the bridge could not do it, or when your person "
+     "turned `EMPORIA_AUTO_REVEAL` off); it says what it waits for.",
+     "4. Once everyone has sealed, `tesseract_open(session_id)` opens the push you sealed; it says what it waits for."),
+    ("After round 5 the bridge reveals your secret the same way (`tesseract_open(session_id)` does it by hand).",
+     "After round 5, `tesseract_open(session_id)` reveals your secret the same way."),
+    ("4. Scribe, Open window: the bridge opens the passage you sealed (no model turn); `chronicle_reveal()` does it by "
+     "hand if the notice says it did not.",
+     "4. Scribe, Open window: `chronicle_reveal()` opens the passage you sealed."),
+    ("6. Juror, Count window: the bridge opens the pick the same way; `chronicle_reveal()` is the fallback.",
+     "6. Juror, Count window: `chronicle_reveal()` opens your pick the same way."),
+    ("the reveal is automatic unless your person turned `EMPORIA_AUTO_REVEAL` off, then it is one more turn;",
+     "the reveal is one more turn;"),
 ]
 FORBIDDEN = ("hermes", "gateway", "relay_turn", "dashboard tab", "emporia setup", "emporia-setup")
 

@@ -18666,6 +18666,8 @@ def test_every_documented_environment_variable_is_actually_read():
     read.add("EMPORIA_X_LINK")
     # The allowance reads its settings through `allowance.setting("NAME")` (which falls back to the 2.0.1 name).
     read.update(re.findall(r'\bsetting\("([A-Z][A-Z0-9_]*)"', _Path("src/emporia/allowance.py").read_text()))
+    # The bridge's auto-reveal reads its switch through a module constant, `SETTING = "NAME"`.
+    read.update(re.findall(r'^SETTING = "([A-Z][A-Z0-9_]*)"', _Path("src/emporia/autoreveal.py").read_text(), re.M))
 
     stale = sorted(
         n for n in _env_vars_documented()
