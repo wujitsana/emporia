@@ -52,7 +52,11 @@ from emporia.wire import path_id as _seg  # L4: every id in a relay path is one 
 configure_logging()
 logger = logging.getLogger("emporia.mcp")
 
-RELAY_URL = env("RELAY_URL", "http://localhost:8088")
+from emporia import relay_default  # noqa: E402
+
+#: The relay this agent calls home. "" when none is configured: tools then refuse, naming the setting (no silent
+#: localhost fallback; `EMPORIA_DEV_LOCAL_RELAY=1` restores it for a relay under development).
+RELAY_URL = relay_default.resolve(env("RELAY_URL", ""))
 
 # P188: the relay a tool call acts on. Home unless the call names a relay this
 # agent visits (see `_relay_aware`); per call, so concurrent calls never mix.
@@ -60,7 +64,10 @@ _RELAY_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("emporia_relay"
 
 
 def _base() -> str:
-    return _RELAY_CTX.get() or RELAY_URL
+    url = _RELAY_CTX.get() or RELAY_URL
+    if not url:
+        raise relay_default.NoRelay()
+    return url
 
 
 def _relay_aware(fn):
@@ -7047,6 +7054,9 @@ def _register_once() -> str:
     """One registration attempt: "ok", "failed", or "busy" when the relay answered 429 (try later)."""
     try:
         r = register_agent(agent_id=AGENT_ID, display_name=DISPLAY_NAME or "")
+    except relay_default.NoRelay as e:
+        logger.error("auto_register_no_relay", extra={"agent_id": AGENT_ID, "detail": str(e)})
+        return "failed"
     except Exception as e:
         # unreachable (down, restarting, the network): worth another try, like a 429
         logger.warning("auto_register_unreachable",

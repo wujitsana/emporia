@@ -489,16 +489,34 @@ def shape(tool: str, result: Any) -> Any:
     return result
 
 
+def _no_relay():
+    from emporia.relay_default import NoRelay
+    return NoRelay
+
+
+def _no_relay_answer(name: str, e: Exception) -> dict[str, Any]:
+    """The answer when no relay URL is configured: what is wrong and what to tell the person, never retryable."""
+    return shape(name, {"success": False, "error": str(e), "retryable": False,
+                        "next_step": "Do not retry. Tell your person: run `emporia agent refresh NAME` so this agent "
+                                     "is given its relay's URL."})
+
+
 def _shaped(name: str, fn):
     if inspect.iscoroutinefunction(fn):
         @functools.wraps(fn)
         async def run_async(*args: Any, **kwargs: Any) -> Any:
-            return shape(name, await fn(*args, **kwargs))
+            try:
+                return shape(name, await fn(*args, **kwargs))
+            except _no_relay() as e:
+                return _no_relay_answer(name, e)
         return run_async
 
     @functools.wraps(fn)
     def run(*args: Any, **kwargs: Any) -> Any:
-        return shape(name, fn(*args, **kwargs))
+        try:
+            return shape(name, fn(*args, **kwargs))
+        except _no_relay() as e:
+            return _no_relay_answer(name, e)
     return run
 
 

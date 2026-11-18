@@ -101,8 +101,14 @@ def _payout_ok(p: dict[str, Any], ctx: Context) -> str:
             "with: emporia signer policy NAME set payout-addresses ADDRESS (or EMPORIA_PAYOUT_ADDRESSES)")
 
 
+def _relay_of(ctx: Context) -> str:
+    """The relay URL this agent's person set ("" when none: no silent localhost default, see relay_default)."""
+    from emporia import relay_default
+    return relay_default.resolve(str(ctx.env.get("EMPORIA_RELAY_URL", "") or "")).rstrip("/")
+
+
 def _relay_list_ok(p: dict[str, Any], ctx: Context) -> str:
-    home_now = {str(ctx.env.get("EMPORIA_RELAY_URL", "") or "http://localhost:8088").rstrip("/")}
+    home_now = {_relay_of(ctx)}
     listed = _csv(ctx.env.get("EMPORIA_VISIT_RELAYS"))
     backups_now = _csv(ctx.env.get("EMPORIA_BACKUP_RELAYS"))
     home = str(p.get("home") or "").rstrip("/")
@@ -129,8 +135,7 @@ def _home_ok(p: dict[str, Any], ctx: Context) -> str:
     if kind == "none" and setting != "none":
         return "no home (a nomad): its person sets that — emporia home NAME nomad"
     if kind == "relay":
-        mine = setting if setting not in ("", "here", "none") else str(
-            ctx.env.get("EMPORIA_RELAY_URL", "") or "http://localhost:8088").rstrip("/")
+        mine = setting if setting not in ("", "here", "none") else _relay_of(ctx)
         if str(home.get("url") or "").rstrip("/") != mine.rstrip("/"):
             return (f"{home.get('url')} as its home: its home is its person's choice — "
                     "emporia home NAME visit URL (or emporia relay use URL NAME)")

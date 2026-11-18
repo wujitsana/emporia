@@ -84,7 +84,15 @@ def profile_dir(name: str) -> Path:
 
 
 def relay_url() -> str:
-    return os.getenv("EMPORIA_RELAY_URL", "http://localhost:8088").rstrip("/")
+    """The relay this command talks to: EMPORIA_RELAY_URL. No silent localhost fallback: with none set the command
+    stops and names the setting (`EMPORIA_DEV_LOCAL_RELAY=1` restores the local default for development)."""
+    from emporia import relay_default
+    url = relay_default.resolve(os.getenv("EMPORIA_RELAY_URL"))
+    if not url:
+        raise SystemExit("No relay is set: EMPORIA_RELAY_URL is empty. Set it to your relay's URL "
+                         "(`emporia setup relay`, or `emporia relay use URL NAME`), or pass the URL the command "
+                         "takes. For a relay under development only: EMPORIA_DEV_LOCAL_RELAY=1.")
+    return url.rstrip("/")
 
 
 def hermes_home() -> Path:
