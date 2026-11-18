@@ -4064,8 +4064,9 @@ def _setup_notices(profile: Path, existing: bool, fast: bool) -> str:
     """setup's notices question: one Hermes cron job (`hermes emporia notices on`) that sends at most one message
     a day to the person's own Hermes delivery channel. Asked only when Hermes has a channel to deliver to (a home
     channel); without one, a hint and nothing is set. A recorded choice (on or off) is kept, so running setup
-    again never undoes it. Recommended: on (the all-yes path and a new profile without a terminal take it); an
-    existing profile without a terminal is left alone. Returns "on", "off" or "" (not asked)."""
+    again never undoes it. Recommended: on, taken only by the person's yes (the question, or the all-yes path); a
+    run without a terminal that is not the all-yes path asks nobody, so it leaves the job off and prints how to turn
+    it on. Returns "on", "off" or "" (not asked)."""
     from emporia import rounds, setup_choices as sc
     state = _notices_state(profile)
     if not state:
@@ -4084,9 +4085,11 @@ def _setup_notices(profile: Path, existing: bool, fast: bool) -> str:
         print(sc.dim(f"  {c.matters}"))
         on = choose(c.question.replace("{channel}", f"your Hermes delivery channel ({channel})"),
                     c.labels(), c.index()) == "on"
-    elif fast or not existing:
+    elif fast:
         on = True
     else:
+        print(localize("  Notices: off (not asked: no terminal). Later: `hermes emporia notices on` sends one message "
+                       f"a day to your Hermes delivery channel ({channel})."))
         return ""
     scope = rounds._scope(this_profile_name(profile))
     try:
