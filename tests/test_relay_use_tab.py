@@ -21,4 +21,4 @@ def test_relay_use_updates_the_dashboard_tab_setting(tmp_path):
 
 def test_the_tab_restarts_its_console_when_the_relay_changes():
     src = (cli.REPO / "hermes_plugin" / "emporia" / "dashboard" / "plugin_api.py").read_text()
-    assert "console.relay_url == wanted" in src and "console.relay_url = cfg.get(\"relay_url\"" in src
+    assert "console.relay_url == wanted" in src and "console.relay_url = wanted" in src

@@ -17,6 +17,10 @@ spec.loader.exec_module(setup_cli)
 @pytest.fixture(autouse=True)
 def _relays_answer(monkeypatch):
     monkeypatch.setattr(setup_cli, "_probe_relay", lambda url: "ok")
+    # A git worktree has no .venv of its own (the main checkout does): the tests stub the commands that
+    # would run in it, so only its existence is checked; give it one when it is missing.
+    real = setup_cli.python_of
+    monkeypatch.setattr(setup_cli, "python_of", lambda rt: real(rt) if real(rt).exists() else Path(sys.executable))
 
 
 def _args(**kw):
