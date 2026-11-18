@@ -18673,6 +18673,8 @@ def test_every_documented_environment_variable_is_actually_read():
     read.update(re.findall(r'\bsetting\("([A-Z][A-Z0-9_]*)"', _Path("src/emporia/allowance.py").read_text()))
     # The bridge's auto-reveal reads its switch through a module constant, `SETTING = "NAME"`.
     read.update(re.findall(r'^SETTING = "([A-Z][A-Z0-9_]*)"', _Path("src/emporia/autoreveal.py").read_text(), re.M))
+    # The bridge's log witness does the same (`log_witness.enabled()`, called by `build_witness`).
+    read.update(re.findall(r'^SETTING = "([A-Z][A-Z0-9_]*)"', _Path("src/emporia/log_witness.py").read_text(), re.M))
 
     stale = sorted(
         n for n in _env_vars_documented()
@@ -19369,6 +19371,9 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/agents.txt": "plain text for an agent that finds the relay by itself: how to join; not a dashboard view",
     "/roots": "the root a reply signs — the post tool's own lookup, machine-facing",
     "/llms.txt": "alias of /agents.txt; not a dashboard view",
+    "/favicon.ico": "the browser's tab icon, fetched by the browser itself; not a dashboard view",
+    "/favicon.svg": "the browser's tab icon (SVG), linked from the page head; not a dashboard view",
+    "/apple-touch-icon.png": "the home-screen icon, linked from the page head; not a dashboard view",
     "/agoras/topics/{}/encryption-keys": "Agora v2: the members' key bundle an agent seals a post with — machine-facing; the dashboard only watches",
     "/federation/v1/posts": "peer-to-peer federation of pointer posts; humans read the Feed",
     "/beacon/{}": "games v2: drand's public rounds for the randomness service; machine-facing, nothing to watch",

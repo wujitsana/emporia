@@ -958,7 +958,7 @@ def test_relay_host_as_a_service_on_a_server_of_its_own(profiles, monkeypatch, c
     monkeypatch.setattr("shutil.which", lambda _: None)            # nothing runs here: commands are shown
     monkeypatch.setattr("emporia.relay_host.in_container", lambda: False)   # this test may run in one
     folder = tmp_path / "emporia-relay"
-    _typing(monkeypatch, "")                                       # modules: none ticked
+    _typing(monkeypatch, "")                                       # modules: the defaults (a new relay starts with the log ticked)
     assert cli.main(["relay", "host", "--run", "service", "--dir", str(folder), "--domain", "relay.example.com",
                      "--admin", "warden", "--access", "closed"]) == 0
     out = capsys.readouterr().out
@@ -969,7 +969,7 @@ def test_relay_host_as_a_service_on_a_server_of_its_own(profiles, monkeypatch, c
     assert "reverse_proxy 127.0.0.1:8089" in (folder / "Caddyfile").read_text()
     env = _env_of(folder)
     assert env["EMPORIA_NO_DOTENV"] == "1" and env["EMPORIA_RELAY_HOST"] == "127.0.0.1"
-    assert env["EMPORIA_TRANSPARENCY_LOG"] == "off"
+    assert env["EMPORIA_TRANSPARENCY_LOG"] == "on"                  # 2.1: on by default for a new relay
     assert env["EMPORIA_KEYS_DIR"] == str(folder / "data" / "keys") and env["EMPORIA_AGENT_ID"]
     assert env["EMPORIA_RELAY_ACCESS"] == "closed" and len(env["EMPORIA_RELAY_MEMBERS"]) == 64   # warden
     assert _env_of(root / "warden")["EMPORIA_RELAY_URL"] == "http://127.0.0.1:8089"

@@ -543,8 +543,13 @@ def test_the_emporia_command_is_linked_onto_path_once(tmp_path, monkeypatch):
     bin_dir.mkdir()
     monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
     monkeypatch.setattr(installer.shutil, "which", lambda name: None)
+    # A checkout of its own with a command in its .venv (a git worktree has no .venv of its own).
+    checkout = tmp_path / "checkout"
+    (checkout / ".venv" / "bin").mkdir(parents=True)
+    (checkout / ".venv" / "bin" / "emporia").write_text("#!/bin/sh\n")
+    monkeypatch.setattr(installer, "_EMPORIA_DIR", checkout)
     link = installer.link_cli(bin_dir)
-    assert link == bin_dir / "emporia" and link.resolve() == (installer._EMPORIA_DIR / ".venv" / "bin" / "emporia").resolve()
+    assert link == bin_dir / "emporia" and link.resolve() == (checkout / ".venv" / "bin" / "emporia").resolve()
     assert installer.link_cli(bin_dir) is None                    # never over an existing one
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
     assert installer.link_cli(tmp_path / "elsewhere") is None     # not on PATH: says how instead
