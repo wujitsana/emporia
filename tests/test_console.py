@@ -499,3 +499,11 @@ def test_a_reused_link_in_a_browser_gets_a_plain_page():
     used = c.get("/session?key=wrong", headers={"accept": "text/html"})
     assert "link the console printed" in used.text
     assert c.get("/agents").json() == {"detail": "open the console with the link it printed"}
+
+
+def test_the_standalone_console_needs_a_relay_url(monkeypatch, capsys, tmp_path):
+    from emporia.console import __main__ as cm
+    monkeypatch.delenv("EMPORIA_RELAY_URL", raising=False)
+    monkeypatch.delenv("EMPORIA_DEV_LOCAL_RELAY", raising=False)
+    assert cm.main(["--keys-dir", str(tmp_path)]) == 1
+    assert "no relay is configured" in capsys.readouterr().err

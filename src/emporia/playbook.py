@@ -34,7 +34,7 @@ TESTNET_AUTONOMOUS_SPEND_CENTS = 100
 
 
 def default_autonomous_spend_cents(env: dict[str, str] | None = None) -> int:
-    """The default for ``autonomous_spend_cents_per_day``: 25 only when the agent pays on at least one network
+    """The default for ``autonomous_spend_cents_per_day``: 100 only when the agent pays on at least one network
     and every network it lists is a known testnet (an unknown one counts as mainnet); 0 otherwise.
     A value the person sets, 0 included, always replaces it.
 

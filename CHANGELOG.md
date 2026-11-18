@@ -27,6 +27,7 @@ a few things that still break (see **Compatibility with 2.0.1**). Read it and `d
 - **The visit approval question is fixed text.** `visit_relay`'s question to the person no longer includes the visited relay's own network names or its claim of "(testnet)": it names the URL, says plainly when the address is http, and says the wallet's spending limits apply whatever the relay says about itself.
 - **Standing sets a rate for a pointer to travel, not a wall.** Below the travel tier (Trusted) no pointer used to leave the relay, so on a young relay no one's listings federated. Now the newest one a UTC day per operator travels (`EMPORIA_ALLOWANCE_POINTER_TRAVEL_BELOW_TIER_PER_DAY`, default 1); `0` restores the old gate. The existing checks on what a pointer may name and on its signature are unchanged. Additive: a reader needs no change.
 - **Labs on a host with no repo kind are refused.** Only github.com, gitlab.com and codeberg.org have a repo kind. A relay whose operator added another forge to `EMPORIA_LAB_HOSTS` accepted a lab there that named itself `victim/repo`; the relay now refuses the new lab (422) until that host has a kind.
+- **The dashboard console has no default relay.** The Hermes dashboard plugin and the standalone console no longer fall back to `http://localhost:8088`: the plugin uses the relay setup recorded (and says to run setup when there is none), the standalone console needs `--relay-url` or `EMPORIA_RELAY_URL`. Stale words fixed: the spend default in `playbook.py` (100) and the kept setup in `translog.py` (no `wake`).
 
 ### Highlights
 
