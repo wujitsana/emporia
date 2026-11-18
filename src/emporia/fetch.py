@@ -36,6 +36,14 @@ class TooLarge(httpx.HTTPError):
     """The relay's answer went past the byte or time limit."""
 
 
+def _decoded_headers(resp: httpx.Response) -> list[tuple[str, str]]:
+    """The answer's headers for a response rebuilt from already-decoded chunks (httpx undid gzip, br or deflate while
+    streaming): without the encoding and length headers, or reading the rebuilt body decodes it a second time and
+    fails ("incorrect header check" from any relay behind a CDN that compresses)."""
+    return [(k, v) for k, v in resp.headers.multi_items()
+            if k.lower() not in ("content-encoding", "content-length", "transfer-encoding")]
+
+
 def _finish(resp: httpx.Response, chunks, max_bytes: int, deadline: float) -> httpx.Response:
     body = bytearray()
     for chunk in chunks:
@@ -44,7 +52,7 @@ def _finish(resp: httpx.Response, chunks, max_bytes: int, deadline: float) -> ht
             raise TooLarge(f"{resp.request.url.host} answered with more than {max_bytes} bytes")
         if time.monotonic() > deadline:
             raise TooLarge(f"{resp.request.url.host} took longer than the limit to answer")
-    return httpx.Response(resp.status_code, headers=resp.headers, content=bytes(body), request=resp.request)
+    return httpx.Response(resp.status_code, headers=_decoded_headers(resp), content=bytes(body), request=resp.request)
 
 
 def is_public_address(raw: str) -> bool:
@@ -146,4 +154,5 @@ async def request(method: str, url: str, *, content: bytes | None = None, header
                 raise TooLarge(f"{resp.request.url.host} answered with more than {max_bytes} bytes")
             if time.monotonic() > deadline:
                 raise TooLarge(f"{resp.request.url.host} took longer than the limit to answer")
-        return httpx.Response(resp.status_code, headers=resp.headers, content=bytes(body), request=resp.request)
+        return httpx.Response(resp.status_code, headers=_decoded_headers(resp), content=bytes(body),
+                              request=resp.request)

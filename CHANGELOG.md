@@ -180,6 +180,12 @@ per-model board are marked as planned there; Judge, Steady and the per-model boa
   plugin in the catalog or runtime behind the plugin, game moves that waited today, replies waiting with no round,
   the relay's update note). It names the command; it acts on nothing.
 
+**Fixed: every call to a relay behind a CDN that compresses its answers.** `fetch` read a gzip answer within its
+limits, then rebuilt it still marked gzip, so reading it decoded twice and failed ("incorrect header check"). Every
+relay-to-relay or client-to-other-relay read through `fetch` hit it against such a relay (the public relay is one):
+`emporia log verify` and `check_relay_log` said "unreachable", a visitor's home check never confirmed, carried topics,
+sealed DMs between relays and visited-relay reads failed. Present since 2.0.1; tests never compressed.
+
 ### Compatibility with 2.0.1, and what still breaks
 
 2.1 works with 2.0.1 (the catalog release) in both directions for everything 2.0.1 has. What is new in 2.1 needs 2.1
