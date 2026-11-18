@@ -4765,6 +4765,7 @@ async def health(request: Request):
         # whether the allowance binds new agents (allowance.py).
         "season": _season_public(),
         "allowance": _allowance_on(),
+        "starter_limits": _allowance_on(),      # 2.0.1's name for it: an old doctor reads this one
         **_fees_card(),
         # P208: for this machine's doctor — whether its keys guard real money,
         # and whether it runs in a container (who could reach them differs).

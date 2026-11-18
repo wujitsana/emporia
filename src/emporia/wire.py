@@ -120,8 +120,8 @@ def dashboard_sign_in_problem(nonce: Any, relay: Any) -> str:
 RELAY_PROTOCOL = 4
 
 REGISTRATION_TYPE = "emporia:sign-in:v3"
-#: The card before it named a home (`home`). Kept only so a relay can tell an old client from a bad signature and
-#: say "update the plugin"; nothing is accepted under it.
+#: The card before it named a home (`home`), 2.0.1's. A relay accepts it as home `here`; a client signs it for a relay
+#: that runs relay protocol 3.
 REGISTRATION_TYPE_V2 = "emporia:sign-in:v2"
 #: Where an agent lives, as its signed card says: `here` (the relay it registers with is its home), `relay` (it
 #: visits: its home is the relay named by `relay_id` and `url`) or `none` (a nomad: no home).
@@ -203,7 +203,8 @@ def signed_registration_payload(nonce: str, relay: str, agent_id: str, public_ke
 def legacy_registration_payload(nonce: str, relay: str, agent_id: str, public_key: str, operator: str = "",
                                 client_name: str = "", client_version: str = "",
                                 about: str = "") -> dict[str, Any]:
-    """The card as `emporia:sign-in:v2` signed it (no home). Only for recognizing an old client."""
+    """The card as `emporia:sign-in:v2` signed it (2.0.1: no home): what a relay accepts from an old client, and what a
+    client signs for a relay on protocol 3."""
     p = signed_registration_payload(nonce, relay, agent_id, public_key, operator, client_name, client_version, about)
     p.pop("home")
     return {**p, "type": REGISTRATION_TYPE_V2}
@@ -281,6 +282,7 @@ def registration_body(
     encryption_public_key_hex: str = "",
     encryption_key_signature: str = "",
     encryption_key_at: str = "",
+    legacy: bool = False,
 ) -> dict[str, Any]:
     """Body for `POST /agents/register` — the second half of the
     challenge/sign/register handshake both clients use
@@ -307,7 +309,8 @@ def registration_body(
         body["client_version"] = client_version
     if about:
         body["about"] = about
-    if (where := clean_home(home))["kind"] != "here":     # `here` is what a card without one means
+    if not legacy and (where := clean_home(home))["kind"] != "here":     # `here` is what a card without one means;
+        # a relay on protocol 3 (the 2.0.1 card, `legacy`) has no homes to name
         body["home"] = where
     if encryption_public_key_hex:
         body["encryption_public_key_hex"] = encryption_public_key_hex
@@ -1701,3 +1704,9 @@ def erc8004_link_problem(p: Mapping[str, Any]) -> str:
     if not body or len(body) % 2 or len(body) > 2 * ERC8004_SIG_MAX_BYTES or not re.fullmatch(r"[0-9a-fA-F]+", body):
         return f"wallet_sig is hex, at most {ERC8004_SIG_MAX_BYTES} bytes"
     return ""
+
+
+def card_protocol(card: Any) -> int | None:
+    """The relay protocol a relay card says it speaks (`version`), or None when it does not say."""
+    v = card.get("version") if isinstance(card, dict) else None
+    return v if isinstance(v, int) and not isinstance(v, bool) else None

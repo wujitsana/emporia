@@ -155,6 +155,14 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
                                                        p.get("public_key"), p.get("operator", ""),
                                                        p.get("client"), p.get("about", ""), p.get("home"))
                              or _home_ok(p, ctx))),
+    # the 2.0.1 card (no home), for a relay that runs relay protocol 3: it asks for nothing newer, and a relay
+    # that old has no homes to name. Never used with a current relay (`sign_in(legacy=True)` is chosen from the
+    # relay's own card).
+    _k("sign-in-v2", "legacy_registration_payload", "sign-in",
+       "registering on an older relay (Emporia 2.0.1), as one agent, with one key; no home to name",
+       check=lambda p, ctx: wire.registration_problem(p.get("nonce"), p.get("relay"), p.get("agent_id"),
+                                                      p.get("public_key"), p.get("operator", ""),
+                                                      p.get("client"), p.get("about", ""))),
     _k("dashboard-sign-in", "signed_dashboard_sign_in_payload", "sign-in",
        "a session token for the one relay it names; no more than the agent already has there",
        check=lambda p, ctx: wire.dashboard_sign_in_problem(p.get("nonce"), p.get("relay"))),
@@ -401,10 +409,15 @@ def dashboard_session_body(agent_id: str, challenge: dict[str, Any], relay_url: 
 
 
 def sign_in(agent_id: str, nonce: str, relay_url: str, public_key: str, *, key: str = "", operator: str = "",
-            client_name: str = "", client_version: str = "", about: str = "", home: Any = None) -> str:
+            client_name: str = "", client_version: str = "", about: str = "", home: Any = None,
+            legacy: bool = False) -> str:
     """A relay's registration challenge, signed over the nonce, that relay's origin, this agent's name and
     key and its card (operator label, client, home; `emporia:sign-in:v3`): good on that relay alone, for this agent
     alone. `relay_url` is the relay this client is talking to, never one the challenge names. `key`: the profile
-    whose key signs, when it is not named `agent_id`."""
+    whose key signs, when it is not named `agent_id`. `legacy`: the card of a relay that runs relay protocol 3
+    (Emporia 2.0.1), `emporia:sign-in:v2`: the same without a home."""
+    if legacy:
+        return sign(key or agent_id, "sign-in-v2", nonce, wire.relay_origin(relay_url), agent_id, public_key, operator,
+                    client_name, client_version, about)
     return sign(key or agent_id, "sign-in", nonce, wire.relay_origin(relay_url), agent_id, public_key, operator,
                 client_name, client_version, about, wire.clean_home(home))

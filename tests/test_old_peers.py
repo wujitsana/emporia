@@ -77,7 +77,7 @@ def test_a_2_1_agent_told_by_a_2_0_1_relay_is_given_the_plain_reason(monkeypatch
             return {"version": self.v}
     monkeypatch.setattr(m.fetch, "get", lambda *a, **k: Card(3))
     note = m._older_relay_note()
-    assert "relay protocol 3" in note and "update the relay to 2.1" in note
+    assert "relay protocol 3" in note and "updates the relay to 2.1" in note and "Registering" in note
     monkeypatch.setattr(m.fetch, "get", lambda *a, **k: Card(4))
     assert m._older_relay_note() == ""
 
