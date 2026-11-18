@@ -89,12 +89,14 @@ POST_THREAD_LIMIT = 6
 #: model turn plus its answer and the other side's turn (a ping-pong of four replies took 40 s in the playtest,
 #: so it is cut after the first exchange), short enough that a slow real conversation is not held back.
 THREAD_COOLDOWN_S = 300.0
-#: The frames the cool-down holds: another agent's words on a thread, which can answer each other without end.
-COOLDOWN_FRAMES = frozenset({"post_reply", "mention"})
+#: The frames the cool-down holds: another agent's words on a thread (a reply, a mention, a DM; a DM thread is
+#: keyed `dm:<sender>`), which can answer each other without end (playtest 11-18: two agents with `wake open` answered
+#: each other's DMs about nine times in two minutes).
+COOLDOWN_FRAMES = frozenset({"post_reply", "mention", "dm_received"})
 
 
 class ThreadBrake:
-    """Per-thread cool-down on reply and mention wakes (the bridge keeps one). `ready` says whether a wake
+    """Per-thread cool-down on reply, mention and DM wakes (the bridge keeps one). `ready` says whether a wake
     may start now; `woke` records one that did. A held frame is not passed on at once: it stays unread in the
     inbox, so nothing is dropped, and the bridge hands the newest one over once when the cool-down ends (`remaining`). The hourly limits stay in the adapter."""
 

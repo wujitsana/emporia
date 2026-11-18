@@ -457,3 +457,29 @@ def test_a_held_reply_is_not_delivered_if_a_newer_wake_covered_the_thread(monkey
         await asyncio.sleep(0.01)
     lines, marked = _bridge_with_clock(monkeypatch, script)
     assert len(lines) == 2 and marked == [], "p1 and p3 only: the held p2 is not delivered again"
+
+
+def test_a_dm_thread_is_braked_like_a_reply_thread(monkeypatch):
+    assert "dm_received" in wake.COOLDOWN_FRAMES
+    now = [0.0]
+    b = wake.ThreadBrake(clock=lambda: now[0])
+    b.woke("dm_received", "dm:bob")
+    now[0] = 10.0
+    assert not b.ready("dm_received", "dm:bob"), "the answer to the answer waits"
+    assert b.ready("dm_received", "dm:carol"), "another conversation is not held"
+    now[0] = wake.THREAD_COOLDOWN_S + 1
+    assert b.ready("dm_received", "dm:bob")
+
+
+def test_a_held_dm_is_delivered_once_after_the_cooldown(monkeypatch):
+    def dm(inbox):
+        return {"type": "dm_received", "sender_id": "bob", "thread_id": "t1", "content": "hi", "inbox_id": inbox}
+
+    async def script(on_frame, now, marked):
+        assert await on_frame(dm("i1")) is True
+        now[0] = 20.0
+        assert await on_frame(dm("i2")) is False
+        await asyncio.sleep(0.01)
+    monkeypatch.setenv("EMPORIA_ALLOWED_USERS", "bob")      # a listed sender wakes in direct mode
+    lines, marked = _bridge_with_clock(monkeypatch, script)
+    assert len(lines) == 2 and marked == ["i2"]
