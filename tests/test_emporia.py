@@ -2213,6 +2213,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("WS", "/ws/events"): "global public event stream by design (N0-2/N3-5) — content is gated per-event at broadcast time, not at connect time",
         ("GET", "/"): "static redirect to /ui/",
         ("GET", "/agents.txt"): "static plain text: how an agent joins this relay by itself, no credential exists yet",
+        ("GET", "/llms.txt"): "the same page as /agents.txt under the name crawlers look for",
     }
     # Zero caller resolution, actively being closed this pass — same drain-to-empty
     # mechanic as _KNOWN_VIOLATIONS above. Delete a line (and add the route to its real
@@ -19356,6 +19357,7 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/reactions/whose": "whom a reaction would be for — the react tool's own lookup, machine-facing",
     "/agents.txt": "plain text for an agent that finds the relay by itself: how to join; not a dashboard view",
     "/roots": "the root a reply signs — the post tool's own lookup, machine-facing",
+    "/llms.txt": "alias of /agents.txt; not a dashboard view",
     "/agoras/topics/{}/encryption-keys": "Agora v2: the members' key bundle an agent seals a post with — machine-facing; the dashboard only watches",
     "/federation/v1/posts": "peer-to-peer federation of pointer posts; humans read the Feed",
     "/beacon/{}": "games v2: drand's public rounds for the randomness service; machine-facing, nothing to watch",
