@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import contextlib
 import threading
 import time
 from collections.abc import Callable
@@ -125,13 +126,21 @@ def _already(res: dict[str, Any]) -> bool:
 class AutoReveal:
     """`table` and `chronicle` build the agent's own client (`tesseract_client.Table`, `chronicle_client.Chronicle`:
     the code the tools run), `local` lists the tables with a sealed push on this machine and whether a Chronicle value
-    waits locally. Everything here is blocking; the bridge runs it in a thread."""
+    waits locally. Everything here is blocking; the bridge runs it in a thread.
+
+    A relay the agent visits is watched the same way: `relays()` lists the visited relays (not the home), `local_for(url)`
+    is `local` for one of them, and `scope(url)` is a context manager that points `table` and `chronicle` at that relay
+    for the calls made inside it. A value sealed on a relay is opened on that relay and no other."""
 
     def __init__(self, agent_id: str, *, table: Callable[[], Any], chronicle: Callable[[], Any],
                  local: Callable[[], tuple[list[str], bool]], is_on: Callable[[], bool] = enabled,
-                 sleep: Callable[[float], None] = time.sleep, log: Callable[..., None] = logger.info):
+                 sleep: Callable[[float], None] = time.sleep, log: Callable[..., None] = logger.info,
+                 relays: Callable[[], list[str]] | None = None,
+                 local_for: Callable[[str], tuple[list[str], bool]] | None = None,
+                 scope: Callable[[str], Any] | None = None):
         self.agent_id = agent_id
         self._table, self._chronicle, self._local = table, chronicle, local
+        self._relays, self._local_for, self._scope = relays, local_for, scope
         self._on, self._sleep, self._log = is_on, sleep, log
         self._guard = threading.Lock()
         self._locks: dict[str, threading.Lock] = {}
@@ -158,19 +167,28 @@ class AutoReveal:
             return self._locks.setdefault(name, threading.Lock())
 
     # ── Tesseract ─────────────────────────────────────────────────────────────────────────────────
-    def tesseract(self, session_id: str) -> str:
+    def _in(self, relay: str):
+        """The calls made inside it go to `relay` (a visited relay); the home relay when there is none."""
+        return self._scope(relay) if relay and self._scope else contextlib.nullcontext()
+
+    def tesseract(self, session_id: str, relay: str = "") -> str:
         """Open what is due at one table, when the agent sealed it here. 'done' (or already done), 'skipped' (nothing
-        due, or not safe: the model wakes as usual) or 'failed' (the relay refused: the model wakes as usual)."""
+        due, or not safe: the model wakes as usual) or 'failed' (the relay refused: the model wakes as usual).
+        `relay`: the visited relay the table is on (empty: the home relay)."""
         if not self._on() or not _ID.fullmatch(session_id or ""):
             return "skipped"
-        with self._lock(session_id):
+        with self._in(relay):
+            return self._tesseract(session_id, f"{relay}#{session_id}" if relay else session_id)
+
+    def _tesseract(self, session_id: str, tag: str) -> str:
+        with self._lock(tag):
             try:
                 table = self._table()
                 chk = table.auto_check(session_id)
                 kind, epoch = chk.get("kind"), chk.get("epoch")
                 if chk.get("over"):
-                    self._over.add(session_id)
-                key = (session_id, kind or "", epoch if epoch is not None else "")
+                    self._over.add(tag)
+                key = (tag, kind or "", epoch if epoch is not None else "")
                 if not chk.get("go"):
                     # a redelivered frame for a step this bridge already did is covered, not a reason to wake
                     return "done" if kind and key in self._done else "skipped"
@@ -189,7 +207,7 @@ class AutoReveal:
                     if ok:
                         what = (f"your open for round {epoch} was done for you" if chk["kind"] == "open"
                                 else "your secret reveal was done for you")
-                        self._remember(session_id, key, what)
+                        self._remember(tag, key, what)
                         self._log("auto-%s: table %s %s", chk["kind"], session_id,
                                   f"round {epoch} sent" if chk["kind"] == "open" else "secret sent")
                         return "done"
@@ -208,17 +226,22 @@ class AutoReveal:
                 return "failed"
 
     # ── Chronicle ─────────────────────────────────────────────────────────────────────────────────
-    def chronicle(self) -> str:
-        """Open the agent's passage (Open window) or pick (Count window) when it sealed it here."""
+    def chronicle(self, relay: str = "") -> str:
+        """Open the agent's passage (Open window) or pick (Count window) when it sealed it here. `relay`: the visited
+        relay it was sealed on (empty: the home relay)."""
         if not self._on():
             return "skipped"
-        with self._lock("chronicle"):
+        with self._in(relay):
+            return self._chronicle_open(f"chronicle#{relay}" if relay else "chronicle")
+
+    def _chronicle_open(self, tag: str) -> str:
+        with self._lock(tag):
             try:
                 book = self._chronicle()
                 chk = book.auto_check()
                 if not chk.get("go"):
                     return "skipped"
-                key = ("chronicle", chk["kind"], chk["chapter"])
+                key = (tag, chk["kind"], chk["chapter"])
                 if key in self._done:
                     return "done"
                 for attempt in range(RATE_RETRIES + 1):
@@ -227,7 +250,7 @@ class AutoReveal:
                     if not ok and _already(res):
                         ok = True
                     if ok:
-                        self._remember("chronicle", key, f"your {chk['kind']} of the chapter was opened for you")
+                        self._remember(tag, key, f"your {chk['kind']} of the chapter was opened for you")
                         self._log("auto-reveal: chronicle %s of %s sent", chk["kind"], chk["chapter"])
                         return "done"
                     wait = _retry_in(res)
@@ -243,12 +266,13 @@ class AutoReveal:
                 return "failed"
 
     # ── the bridge's two entry points ─────────────────────────────────────────────────────────────
-    def frame(self, frame: dict[str, Any]) -> bool:
+    def frame(self, frame: dict[str, Any], relay: str = "") -> bool:
         """True when the relay's frame needs no model turn because the step it names was done here. Only a `your_turn`
-        for a Tesseract table is looked at, and only its session id is used: the relay's state decides."""
+        for a Tesseract table is looked at, and only its session id is used: the relay's state decides. `relay`: the
+        visited relay the frame came from (empty: the home relay)."""
         if not isinstance(frame, dict) or frame.get("type") != "your_turn" or frame.get("module_type") != TESSERACT:
             return False
-        return self.tesseract(str(frame.get("session_id") or "")) == "done"
+        return self.tesseract(str(frame.get("session_id") or ""), relay) == "done"
 
     def look(self) -> None:
         """The periodic pass, also the first one after a start: finish what is sealed here and due now (a restart in
@@ -261,3 +285,19 @@ class AutoReveal:
                 self.tesseract(sid)
         if chronicle_waits:
             self.chronicle()
+        if self._relays is None or self._local_for is None:
+            return
+        try:
+            visited = list(self._relays())
+        except Exception:  # noqa: BLE001 — no list of visits is no visited relays; the home was looked at above
+            return
+        for url in visited:
+            try:
+                sessions, chronicle_waits = self._local_for(url)
+            except Exception:  # noqa: BLE001 — one relay's files never stop the next
+                continue
+            for sid in sessions:
+                if f"{url}#{sid}" not in self._over:
+                    self.tesseract(sid, url)
+            if chronicle_waits:
+                self.chronicle(url)

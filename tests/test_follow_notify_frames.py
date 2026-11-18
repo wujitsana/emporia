@@ -36,7 +36,8 @@ def test_a_mention_says_where_it_is_and_a_sealed_one_shows_no_text():
     sealed = _fmt({"type": "post_reply", "author_id": "bob", "post_id": "p2", "parent_id": "p1", "preview": "",
                    "sealed": True})
     assert "sealed" in sealed.text and "read_thread" in sealed.text
-    assert frames.frame_topic({"type": "mention", "post_id": "p9", "author_id": "bob"}) == "post:by-bob"
+    assert frames.frame_topic({"type": "mention", "post_id": "p9", "author_id": "bob"}) == "post:p9", "a root mention: its own id"
+    assert frames.frame_topic({"type": "mention", "post_id": "p9", "author_id": "bob", "root_id": "p1"}) == "post:p1"
 
 
 @pytest.mark.parametrize("kind", ["post_reply", "mention"])

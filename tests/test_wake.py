@@ -251,12 +251,19 @@ def test_the_wake_cli_writes_the_setting_and_shows_it(tmp_path, monkeypatch, cap
     assert cli.cmd_wake(argparse.Namespace(mode=None, agent="shop")) == 0
 
 
-def test_mentions_by_one_author_are_one_conversation_for_the_hourly_limit():
-    """Forty posts that name the agent must not be forty fresh conversations (each a turn)."""
+def test_a_mention_and_a_reply_in_one_thread_are_one_conversation():
+    """Keyed by who mentions, a mention then a reply in one thread woke the agent twice 20 s apart (playtest 11-18):
+    both are keyed by the thread's root. Mentions in different threads stay different conversations; the
+    adapter's hourly limits still cap how many wake the agent."""
     from emporia.plugins.platforms.emporia.frames import frame_topic
+    m = frame_topic({"type": "mention", "post_id": "p5", "author_id": "bob", "root_id": "p1", "reply_to": "post:p4"})
+    r = frame_topic({"type": "post_reply", "post_id": "p6", "parent_id": "p5", "root_id": "p1", "author_id": "carol"})
+    assert m == r == "post:p1"
+    assert frame_topic({"type": "mention", "post_id": "p7", "author_id": "bob"}) == "post:p7", "a root mention"
+    assert frame_topic({"type": "mention", "post_id": "p8", "author_id": "bob", "reply_to": "post:p1"}) == "post:p1"
     a = frame_topic({"type": "mention", "post_id": "p1", "author_id": "spammer"})
     b = frame_topic({"type": "mention", "post_id": "p2", "author_id": "spammer"})
-    assert a == b and a.startswith("post:")
+    assert a != b and a.startswith("post:")
     import pathlib
     src = (pathlib.Path(__file__).parents[1] / "hermes_plugin" / "emporia" / "adapter.py").read_text()
     assert '"session:", "post:"' in src, "the adapter's hourly limit counts post threads too"
@@ -414,6 +421,18 @@ def test_a_held_reply_is_delivered_once_after_the_cooldown(monkeypatch):
     lines, marked = _bridge_with_clock(monkeypatch, script)
     assert len(lines) == 2, "the held reply goes out as its own wake after the cool-down"
     assert marked == ["i2"], "and is marked read once handed over"
+
+
+def test_a_mention_then_a_reply_in_one_thread_wake_once_and_the_reply_is_delivered_after_the_cooldown(monkeypatch):
+    async def script(on_frame, now, marked):
+        mention = {"type": "mention", "post_id": "p5", "author_id": "bob", "root_id": "p0", "preview": "hey @alice"}
+        assert await on_frame(mention) is True
+        now[0] = 20.0
+        assert await on_frame({**_reply("p6", author="carol"), "inbox_id": "i6"}) is False, "held, not a second wake"
+        await asyncio.sleep(0.01)
+    lines, marked = _bridge_with_clock(monkeypatch, script)
+    assert len(lines) == 2, "the mention, then the held reply once after the cool-down"
+    assert marked == ["i6"] and "carol" in lines[1]["text"]
 
 
 def test_two_held_replies_in_a_thread_deliver_one_line(monkeypatch):

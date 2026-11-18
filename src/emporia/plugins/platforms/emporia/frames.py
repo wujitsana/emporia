@@ -129,9 +129,16 @@ def frame_topic(frame: dict[str, Any]) -> str | None:
         # new conversation and two agents agreed with each other 61 times in 20 minutes (live run 11-10).
         key = f"post:{frame.get('root_id') or frame['parent_id']}"
     elif t == "mention" and frame.get("author_id"):
-        # Keyed by who mentions, not by the post: forty posts naming the agent are one conversation, and the
-        # hourly per-conversation limit holds them (a fresh key per post would wake it for every one).
-        key = f"post:by-{frame['author_id']}"
+        # One key per thread, the same one a reply in that thread has (`post:<root id>`): a mention and a reply in
+        # one thread are one conversation, so the wake brake holds the reply for the cool-down and delivers it once
+        # (keyed by author, a mention then a reply woke the agent twice 20 s apart; playtest 11-18). A mention that
+        # is itself a root names its own id. A relay that sends no `root_id` (an older one, or a mention carried
+        # from another relay) gives the parent of a reply, else the post. The hourly limits stay in the adapter
+        # (`TALK_WAKES_PER_HOUR`, `_POST_THREAD_LIMIT`).
+        parent = str(frame.get("reply_to") or "")
+        parent = parent.removeprefix("post:") if parent.startswith("post:") and "@" not in parent else ""
+        root = frame.get("root_id") or parent or frame.get("post_id")
+        key = f"post:{root}" if root else f"post:by-{frame['author_id']}"
     elif t == "followed" and frame.get("by"):
         key = f"dm:{frame['by']}"              # a new follower: the conversation with that agent
     else:

@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -142,8 +143,35 @@ def build_autoreveal(relay_url: str, agent_id: str):
         sessions = autoreveal.local_tesseract_sessions(agent_id, KEY_DIR / "commitments", tools_relay)
         return sessions, autoreveal.local_chronicle_waits(agent_id, KEY_DIR / "commitments", tools_relay)
 
+    def visited() -> list[str]:
+        """The relays this agent visits (not its home) that its person still allows: the same rule the tools'
+        `relay` argument applies."""
+        from emporia import visits
+        home = {tools_relay.rstrip("/"), relay_url.rstrip("/")}
+        denied, listed = visits.denied(), visits.policy() == "listed"
+        allowed = visits.allowed() if listed else ()
+        return [u for u in visits.visiting() if u.rstrip("/") not in home and u not in denied
+                and (not listed or u in allowed)]
+
+    def local_for(url: str) -> tuple[list[str], bool]:
+        """`local`, for the files kept on one visited relay (their names carry its host)."""
+        from emporia.identity import KEY_DIR
+        return (autoreveal.local_tesseract_sessions(agent_id, KEY_DIR / "commitments", url),
+                autoreveal.local_chronicle_waits(agent_id, KEY_DIR / "commitments", url))
+
+    @contextlib.contextmanager
+    def scope(url: str):
+        """The tools' own clients, pointed at one visited relay for the calls made inside (as a tool's `relay`)."""
+        m = server()
+        token = m._RELAY_CTX.set(url.rstrip("/"))
+        try:
+            yield
+        finally:
+            m._RELAY_CTX.reset(token)
+
     return autoreveal.AutoReveal(agent_id, table=lambda: server()._tesseract_table(),
-                                 chronicle=lambda: server()._chronicle_client(), local=local, log=logger.info)
+                                 chronicle=lambda: server()._chronicle_client(), local=local, log=logger.info,
+                                 relays=visited, local_for=local_for, scope=scope)
 
 
 def build_witness(relay_url: str, hermes_home: str | None = None):

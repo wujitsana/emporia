@@ -2619,7 +2619,9 @@ class AgentRegistry:
                     "ON CONFLICT(agent_id) DO UPDATE SET "
                     "public_key_hex=excluded.public_key_hex, "
                     "display_name=excluded.display_name, "
-                    "registered_at=excluded.registered_at, "
+                    # `registered_at` is ABSENT from DO UPDATE: it is the first registration. Every MCP
+                    # start, respawn or test re-registers; resetting it dropped members out of Chronicle
+                    # rosters and restarted account age.
                     "is_active=1, "
                     # The signed card's label and client: a registration with none keeps what the row has
                     # (a change of label is logged below, never silent).

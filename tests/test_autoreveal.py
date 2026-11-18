@@ -181,6 +181,42 @@ def test_look_finishes_what_a_restart_cut_off_and_asks_the_relay_only_about_loca
     assert t2.opens == 0, "no sealed value kept here: the relay is not asked"
 
 
+def test_look_opens_a_value_sealed_on_a_visited_relay_on_that_relay():
+    """A visitor's sealed pick (or table push) on relay B was a model turn: the periodic look only watched the home."""
+    import contextlib
+    VISITED = "http://visited.test"
+    now = {"relay": "home"}
+    tables = {"home": FakeTable([GO_OPEN], [OPENED]), VISITED: FakeTable([GO_OPEN], [OPENED])}
+    books = {"home": FakeBook({"go": False}, [{"success": True}]),
+             VISITED: FakeBook({"go": True, "kind": "pick", "chapter": "7"}, [{"success": True, "opened": "pick"}])}
+
+    @contextlib.contextmanager
+    def scope(url):
+        before, now["relay"] = now["relay"], url
+        try:
+            yield
+        finally:
+            now["relay"] = before
+
+    files = {VISITED: (["sess_visited1"], True), "home": ([], False)}
+    a = A.AutoReveal("alice", table=lambda: tables[now["relay"]], chronicle=lambda: books[now["relay"]],
+                     local=lambda: files["home"], log=lambda *x: None,
+                     relays=lambda: [VISITED], local_for=lambda url: files[url], scope=scope)
+    a.look()
+    assert tables["home"].opens == 0 and books["home"].reveals == 0, "nothing was sealed on the home relay"
+    assert tables[VISITED].opens == 1 and books[VISITED].reveals == 1, "opened on the relay it was sealed on"
+    assert now["relay"] == "home", "the scope is left"
+    a.look()
+    assert tables[VISITED].opens == 1 and books[VISITED].reveals == 1, "done once"
+    # a session id on the home relay and the same id on a visited one are two tables
+    both = A.AutoReveal("alice", table=lambda: tables[now["relay"]], chronicle=lambda: books["home"],
+                        local=lambda: (["sess_visited1"], False), log=lambda *x: None,
+                        relays=lambda: [VISITED], local_for=lambda url: (["sess_visited1"], False), scope=scope)
+    tables["home"], tables[VISITED] = FakeTable([GO_OPEN], [OPENED]), FakeTable([GO_OPEN], [OPENED])
+    both.look()
+    assert tables["home"].opens == 1 and tables[VISITED].opens == 1
+
+
 def test_a_finished_table_is_not_looked_at_again():
     t = FakeTable([{"go": False, "why": "the table is completed", "over": True}], [OPENED])
     calls = []
