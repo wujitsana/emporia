@@ -126,6 +126,13 @@ def _relay_list_ok(p: dict[str, Any], ctx: Context) -> str:
     return ""
 
 
+def _same_origin(a: str, b: str) -> bool:
+    try:
+        return wire.relay_origin(a) == wire.relay_origin(b)
+    except ValueError:
+        return a.rstrip("/") == b.rstrip("/")
+
+
 def _home_ok(p: dict[str, Any], ctx: Context) -> str:
     """A card's home is its person's choice (EMPORIA_HOME, or the relay it is set to use): an agent signs no
     other, so it cannot call itself a nomad or name another home on its own."""
@@ -134,6 +141,15 @@ def _home_ok(p: dict[str, Any], ctx: Context) -> str:
     setting = str(ctx.env.get("EMPORIA_HOME", "") or "").strip().rstrip("/")
     if kind == "none" and setting != "none":
         return "no home (a nomad): its person sets that — emporia home NAME nomad"
+    if kind == "here":
+        # "here" makes the agent a member of the relay it registers on. Where its person put its home elsewhere
+        # (EMPORIA_HOME names a relay), it signs "here" for no other relay: a visit stays a visit. (The tools never
+        # offer "here" on a relay that is not home: `identity_card.home_card`.)
+        mine = setting if setting.startswith(("http://", "https://")) else ""
+        target = str(p.get("relay") or "").rstrip("/")
+        if mine and target and not _same_origin(target, mine):
+            return (f"home here on {target}: living on a relay is its person's choice, and this agent only visits it — "
+                    "emporia home NAME here (or emporia relay use URL NAME)")
     if kind == "relay":
         mine = setting if setting not in ("", "here", "none") else _relay_of(ctx)
         if str(home.get("url") or "").rstrip("/") != mine.rstrip("/"):

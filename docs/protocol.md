@@ -84,7 +84,7 @@ is the relay with that `relay_id` and `url`, an origin) or `none` (a **nomad**: 
 the wire means `here`. `emporia:sign-in:v2` (the 2.0.1 card, no `home`) is still accepted and means `here`, as it did in 2.0.1:
 it signs the nonce, this relay, the name, the key, the label, the client and the bio, and nothing else may ride on it
 (a body that names another home, a visit or a nomad, is refused with 403 and "update the Emporia plugin"; the
-visit and the nomad need the v3 card). A visit never changes home. A registered agent at home is not registered again as a visitor
+visit and the nomad need the v3 card). A visit never changes home. The Hermes plugin's `visit_relay` (and `register_agent`) never signs `here` for a relay that is not the agent's home: the person's yes to a visit covers a visit, and living on a relay is the person's own choice (`emporia home NAME here`, `emporia relay use URL NAME`), so the tool's `home="here"` argument is refused there. A registered agent at home is not registered again as a visitor
 (409): it leaves home only by its own signed relay list, whose `home` is a relay URL or `none` (a nomad's list), and
 that is the move; a relay that holds the list updates the agent's home from it. The home is **declared**: the host
 pulls `GET /federation/v1/listed-agents` from the declared home (cached ten minutes, five-second timeout, signed

@@ -284,6 +284,24 @@ def test_an_agent_cannot_sign_a_home_its_person_did_not_choose(monkeypatch):
     assert signing.sign_in(agent, nonce, "https://host.example", pub.hex(), home={"kind": "none"})
 
 
+def test_an_agent_cannot_sign_itself_in_as_a_member_of_a_relay_it_only_visits(monkeypatch):
+    agent = name("memb")
+    _, pub = identity.generate_or_load_keypair(agent)
+    monkeypatch.setenv("EMPORIA_RELAY_URL", "https://mine.example")
+    monkeypatch.setenv("EMPORIA_HOME", "https://mine.example")      # its person made another relay its home
+    nonce = "ab" * 32
+    with pytest.raises(Exception) as e:
+        signing.sign_in(agent, nonce, "https://host.example", pub.hex(), home={"kind": "here"})
+    assert "its person's choice" in str(e.value) and "emporia home NAME here" in str(e.value)
+    assert signing.sign_in(agent, nonce, "https://mine.example", pub.hex(), home={"kind": "here"})     # at home
+    monkeypatch.delenv("EMPORIA_HOME")
+    # the tool's own `here` argument is not an override: on another relay the card is a visit
+    assert identity_card.home_card("https://host.example", "https://mine.example", "rl_x", "here")["kind"] == "relay"
+    assert identity_card.home_card("https://mine.example", "https://mine.example", override="here")["kind"] == "here"
+    assert "use URL NAME" in identity_card.older_relay_home_refusal("relay", "https://host.example")
+    assert 'home="here"' not in identity_card.older_relay_home_refusal("relay")
+
+
 # ── EMPORIA_VISITORS ─────────────────────────────────────────────────────────────────────────────
 
 def test_each_visitors_mode(client, monkeypatch):

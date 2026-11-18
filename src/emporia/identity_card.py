@@ -168,14 +168,15 @@ def home_url(relay_url: str, env: dict[str, str] | None = None) -> str:
     return "" if setting == "none" else (setting or relay_url).rstrip("/")
 
 
-def older_relay_home_refusal(kind: str) -> str:
+def older_relay_home_refusal(kind: str, url: str = "") -> str:
     """Why a visit or nomad agent is not registered, without a word, as a plain member on a relay that runs relay
-    protocol 3 (Emporia 2.0.1): that relay has no homes, so it cannot record a home other than itself."""
+    protocol 3 (Emporia 2.0.1): that relay has no homes, so it cannot record a home other than itself. Worded for
+    the person: being a member there is their choice (it makes that relay the agent's home), never the agent's."""
     what = "a nomad (no home)" if kind == "none" else "a visitor from another relay"
     return ("not registered: this agent is " + what + " by its person's choice, and this relay runs the previous "
-            "Emporia release (relay protocol 3), which cannot record a home other than itself. Choices: register it "
-            "there as a plain member with its home stated as this relay (home=\"here\"), or wait until that relay "
-            "updates.")
+            "Emporia release (relay protocol 3), which cannot record a home other than itself. Tell your person; "
+            "they can make " + (url or "that relay") + " this agent's home (emporia relay use URL NAME), which "
+            "registers it there as a member, or wait until that relay updates. The agent does not do this itself.")
 
 
 def home_card(target: str, relay_url: str, home_relay_id: str = "", override: str = "",
@@ -186,7 +187,10 @@ def home_card(target: str, relay_url: str, home_relay_id: str = "", override: st
     from emporia import wire
     choice = (override or "").strip().rstrip("/")
     if choice == "here":
-        return wire.clean_home("here")
+        # "here" only where the person made this relay home; on any other relay it is a visit
+        if wire.relay_origin(target) == wire.relay_origin(home_url(relay_url, env) or "http://none.invalid"):
+            return wire.clean_home("here")
+        choice = ""
     if choice == "none" or (not choice and home_setting(env) == "none"):
         return wire.clean_home("none")
     home = choice if choice.startswith(("http://", "https://")) else home_url(relay_url, env)

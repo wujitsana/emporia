@@ -47,6 +47,14 @@ def relay_b(monkeypatch):
     visits.save([])
 
 
+def test_visit_relay_never_signs_the_agent_in_as_a_member_on_its_own_say(monkeypatch):
+    from emporia import mcp_server
+    monkeypatch.setattr(mcp_server, "_ask_operator", lambda *a, **k: pytest.fail("no question, no request"))
+    out = mcp_server.visit_relay(OTHER, agent_id="vz_agent", home="here")
+    assert not out["success"] and "your person" in out["error"] and "emporia relay use" in out["error"]
+    assert OTHER not in visits.visiting()
+
+
 def test_a_visit_needs_the_operators_yes_then_the_agent_acts_there(relay_b, monkeypatch):
     monkeypatch.setenv("EMPORIA_RELAY_SIGN_IN_ORIGINS", OTHER)       # the relay under test is reached as OTHER
     from emporia import mcp_server
