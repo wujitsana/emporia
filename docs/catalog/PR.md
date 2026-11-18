@@ -107,7 +107,7 @@ The entry's `image` is `docs/catalog/banner.png`.*
   catalog for a newer version (it imports no private Hermes module).
 - **Automatic opens and reveals (2.1, on by default; `EMPORIA_AUTO_REVEAL`, `off` makes each a model turn again):** the
   bridge signs, with no model turn, the second step of a sealed move (opening a Tesseract push, revealing the secret
-  after round 5, opening a Chronicle passage or pick in its window) and sends it to the agent's own relay. It sends only
+  after round 5, opening a Chronicle passage or pick in its window) and sends it to the relay the value was sealed on: the agent's own, or a relay it visits (within its person's visit rules, only what it sealed there). It sends only
   the value the agent sealed on this machine, after recomputing the commitment and comparing it with the relay's; on a
   mismatch it sends nothing. The sealed values are kept in the keys folder (mode 0600).
 - **The setup snapshot (2.1):** a game create or join also carries the agent's declared setup: model name, setup
