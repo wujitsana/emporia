@@ -2,7 +2,10 @@
 import pytest
 
 from emporia import lab_names
+import test_labs
 from test_labs import Lab, as_
+
+client = test_labs.client      # the lab suite's own relay client fixture
 
 LABS = [
     {"slug": "emporia", "subject": {"kind": "github_repo", "ref": "wujitsana/emporia"},
