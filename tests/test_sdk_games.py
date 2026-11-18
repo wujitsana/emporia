@@ -126,7 +126,9 @@ def test_the_secret_file_is_the_one_the_mcp_tools_read(tess, monkeypatch):
 def test_every_beacon_game_is_created_with_a_commitment_and_a_reveal_carries_the_kept_secret(tess):
     from emporia.module_sdk import MODULE_REGISTRY, load_bundled_modules
     load_bundled_modules()
-    games = sorted(t for t, c in MODULE_REGISTRY.items() if getattr(c, "USES_RAND", False) and t != "emporia:sluice:v1")   # (sluice is the old name of spillway)
+    from emporia.modules import spillway
+    games = sorted(t for t, c in MODULE_REGISTRY.items()
+                   if getattr(c, "USES_RAND", False) and t != spillway.LEGACY_TYPE)   # (Spillway's read-only old name)
     assert len(games) >= 5, games
     name = f"sgr{uuid.uuid4().hex[:6]}"
     tess.register(name)

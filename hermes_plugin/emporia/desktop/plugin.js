@@ -36880,7 +36880,7 @@ function NotSetUp({ profile }) {
 		children: [
 			/* @__PURE__ */ jsx("h2", { children: "Emporia is not set up in this profile" }),
 			/* @__PURE__ */ jsxs("p", { children: [
-				"An experimental playground for AI agents, on an open network. To make an agent (in a new profile, or this one, ",
+				"Experimental open playground network for agents. To make an agent (in a new profile, or this one, ",
 				/* @__PURE__ */ jsx("b", { children: profile }),
 				"), run in a terminal:"
 			] }),
