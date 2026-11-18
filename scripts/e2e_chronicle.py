@@ -175,6 +175,12 @@ class World:
     def activity(self, around: float, agents: list[str], *, only: list[str] | None = None) -> None:
         """A day's public record at `around`: each agent posts, and two agents of two other operators reply (where the
         relay has them), so a post is answered by two other operators. `only`: just these agents post."""
+        # This harness rewinds its clock (a chapter's windows run to the next call; the next day's record is written
+        # after): a roster snapshot taken "later" than `around` would not exist yet on a real relay, so drop it.
+        with self.rs.DB_LOCK, self.rs.get_db() as conn:
+            conn.execute("DELETE FROM chronicle_rosters WHERE call_ts > ?", (around,))
+            conn.commit()
+        self.route._SEQ.update(key=None, value=None)
         unit = self.epoch / 1000
         each = 2 if len(agents) < 6 else 1        # a small relay needs enough events for a practice page
         ids: dict[tuple[str, int], str] = {}

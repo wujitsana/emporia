@@ -1388,9 +1388,10 @@ def test_two_answerers_merging_labels_after_the_freeze_move_no_event_and_no_chap
     day(w, names, 2)
     verified(w)
     before, ids = _frozen(w), _ids(w)
-    present = {e["ref"] for e in w.route.build_ledger()["events"]}
+    present = {(e["ref"], tuple(e["operators"])) for e in w.route.build_ledger()["events"]}
     _relabel(w, names[2], w.agents[names[1]]["operator"])
-    assert {e["ref"] for e in w.route.build_ledger()["events"]} != present, "the present events did change"
+    now_events = {(e["ref"], tuple(e["operators"])) for e in w.route.build_ledger()["events"]}
+    assert now_events != present, "the present grouping does give the record other operators"
     assert _frozen(w) == before and _ids(w) == ids
     verified(w)
 
@@ -1477,7 +1478,9 @@ def test_the_snapshot_is_logged_and_the_verifier_reads_the_receipt_from_the_log(
     assert any("roster late" in n for c in rep["chapters"] for n in c["notes"]), "a late roster is noted"
     receipt = chapter(w, "1")["receipt"]
     inp = chapter(w, "1", include="inputs")["inputs"]
-    assert V.check_receipt_in_log(lambda p: w.get(p).json(), "1", receipt, inp) == ([], [])
+    problems, notes = V.check_receipt_in_log(lambda p: w.get(p).json(), "1", receipt, inp)
+    # (the shared test database keeps earlier worlds' chapter-1 verdicts in its log: a note, never a problem)
+    assert problems == [] and all("different frozen verdicts" in n for n in notes), (problems, notes)
     bad, _ = V.check_receipt_in_log(lambda p: w.get(p).json(), "1", {**receipt, "hash": "0" * 64}, inp)
     assert bad and "not the receipt" in bad[0]
     # a relay with its log off: nothing logged, so the receipt is the relay's word, said so, not failed

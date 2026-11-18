@@ -293,11 +293,17 @@ def check_receipt_in_log(get: Callable[[str], dict], chapter: str, receipt: dict
     """The receipt is the relay's word until the transparency log's own record of the frozen verdict says the same:
     `/log/entries?ref=chronicle_verdict:<chapter>` holds the row (its `body_hash`). Returns (problems, notes). A relay
     with its log off has no such entry and, with nothing else of the chapter logged either, is noted, not failed."""
-    got = get(f"/log/entries?ref=chronicle_verdict:{chapter}&limit=1").get("entries") or []
-    if got:
-        rec = got[0].get("record") or {}
-        if rec.get("body_hash") != receipt.get("hash") or str(rec.get("chapter")) != str(chapter):
+    got = get(f"/log/entries?ref=chronicle_verdict:{chapter}&limit=1000").get("entries") or []
+    recs = [e.get("record") or {} for e in got]
+    recs = [r for r in recs if str(r.get("chapter")) == str(chapter) and r.get("body_hash")]
+    if recs:
+        if not any(r["body_hash"] == receipt.get("hash") for r in recs):
             return [f"the log's frozen verdict of chapter {chapter} is not the receipt the relay serves"], []
+        distinct = {r["body_hash"] for r in recs}
+        if len(distinct) > 1:
+            # the log is append-only: a verdict frozen once and rewritten later leaves both entries in it
+            return [], [f"chapter {chapter}: the log holds {len(distinct)} different frozen verdicts under this id "
+                        f"(a rewrite, or a relay whose chapter ids restarted); the receipt matches one of them"]
         return [], []
     logged = any(r.get("log_index") is not None for k in ("seals", "reveals", "ballots") for r in inp.get(k, []))
     if logged:
