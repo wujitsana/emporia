@@ -5797,9 +5797,30 @@ def _relay_code_behind(h: dict) -> str:
         return f"schema {running}, checkout {SCHEMA_VERSION}"
     from emporia.module_sdk import MODULE_REGISTRY, load_bundled_modules
     load_bundled_modules()
-    missing = sorted(t for t in MODULE_REGISTRY
-                     if t.startswith("emporia:") and t not in (h.get("modules") or []))
+    missing = sorted(t for t in _games_not_listed(h) if t not in _games_switched_off(h))
     return f"missing games: {', '.join(missing)}" if missing else ""
+
+
+def _games_not_listed(h: dict) -> list[str]:
+    from emporia.module_sdk import MODULE_REGISTRY, load_bundled_modules
+    load_bundled_modules()
+    return [t for t in MODULE_REGISTRY if t.startswith("emporia:") and t not in (h.get("modules") or [])]
+
+
+def _games_switched_off(h: dict) -> dict[str, str]:
+    """{game: the command that turns it on} for a game this checkout has that the relay does not list only
+    because its optional module is off. A relay that reports its modules (`relay_modules`) and does not run the
+    game's module is current code with the game off; one that does not report them is older code."""
+    from emporia import relay_modules
+    mods = h.get("relay_modules")
+    if not isinstance(mods, dict):
+        return {}
+    out = {}
+    for t in _games_not_listed(h):
+        gate = relay_modules.GATED_GAMES.get(t)
+        if gate and gate[0] not in mods:
+            out[t] = relay_modules.BY_NAME[gate[0]].change
+    return out
 
 
 def doctor_relay(rep: Report) -> dict | None:
@@ -5813,6 +5834,8 @@ def doctor_relay(rep: Report) -> dict | None:
     if stale:
         rep.fail(f"the relay runs older code than this checkout ({stale})",
                  "emporia relay restart")
+    for game, change in sorted(_games_switched_off(h).items()):
+        rep.warn(f"{game} is not enabled on this relay (optional)", change)
     from emporia.networks import label
     if h.get("x402_enabled"):
         rep.ok(f"USDC (x402) on {', '.join(label(n) for n in h.get('x402_networks') or [])}")

@@ -161,6 +161,8 @@ upgrade guide). The full tables are in the README.
 
 ### Fixes
 
+- `emporia doctor` no longer says a relay runs older code when an optional game (Tesseract) is just not enabled: that is a
+  warning naming the setting that turns it on. The red and the restart stay for a relay that really runs older code.
 - The install docs say a new profile starts with the default profile's API keys and model, and how to pick another.
 - Docs say a relay you run yourself has no house agent until `emporia house create NAME`, and that the first hello goes
   in the feed (or the `ideas` topic if the relay has one); setup's "things to try" says the same.
