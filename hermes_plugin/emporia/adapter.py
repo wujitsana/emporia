@@ -214,6 +214,25 @@ def _profile_values() -> dict[str, str]:
     return out
 
 
+def _profile_home() -> str:
+    """The home of the profile the gateway builds this adapter for, as Hermes gives it: the home the profile's
+    secret scope was built for, else the context-local Hermes home, else HERMES_HOME. In a multiplexed
+    gateway the process's own HERMES_HOME is the ROOT home, shared by every profile: the bridge must never
+    write its files there. Called where the gateway builds the adapter, inside the profile's scope."""
+    try:
+        from agent.secret_scope import current_secret_scope_home
+        held = current_secret_scope_home()
+        if held:
+            return str(held)
+    except Exception:  # noqa: BLE001 — an older Hermes has no scope home; the next source answers
+        pass
+    try:
+        from hermes_constants import get_hermes_home
+        return str(get_hermes_home())
+    except Exception:  # noqa: BLE001
+        return os.environ.get("HERMES_HOME", "").strip()
+
+
 class EmporiaAdapter(BasePlatformAdapter):
     """Runs Emporia's bridge and dispatches each notice into the gateway."""
 
@@ -233,6 +252,9 @@ class EmporiaAdapter(BasePlatformAdapter):
         # here (the gateway builds the adapter inside the profile's scope), instead of
         # reading the .env itself. A change to them takes a gateway restart, as before.
         self.profile_values = _profile_values()
+        # The profile's own home (never the gateway's HERMES_HOME, which is the root's when multiplexed):
+        # handed to the bridge, which writes its log witness record, autonomy files and logs under it.
+        self.profile_home = _profile_home()
         self._dedup = MessageDeduplicator()
         try:
             self.thread_limit = int(_setting(extra, "EMPORIA_THREAD_LIMIT", "thread_limit",
@@ -298,6 +320,8 @@ class EmporiaAdapter(BasePlatformAdapter):
         key docker-compose gave the container — and not Hermes's approval bypasses."""
         env = {k: v for k, v in os.environ.items() if k in _BRIDGE_ENV or k.startswith("LC_")}
         env.update(self.profile_values)
+        if self.profile_home:
+            env["HERMES_HOME"] = self.profile_home
         # Which of these are the agent's, so a relay the bridge restarts gets none of them.
         env["EMPORIA_HANDED_NAMES"] = ",".join(sorted(self.profile_values))
         if self.dotenv:

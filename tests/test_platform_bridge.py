@@ -435,6 +435,48 @@ print(json.dumps({{"scoped": show(scoped._bridge_env()), "single": show(single._
     assert single["secrets"] == [] and single["bypass"] == []
 
 
+@pytest.mark.skipif(not HERMES_PYTHON.exists(), reason="Hermes is not installed here")
+def test_each_profiles_bridge_is_handed_its_own_home_never_the_gateways(tmp_path):
+    """A multiplexed gateway's HERMES_HOME is the ROOT home. Two profiles' bridges wrote one shared
+    log_witness.json (and autonomy files, logs) under it; each is now handed the home Hermes built its
+    adapter for, so the files land in its own profile."""
+    harness = tmp_path / "harness.py"
+    harness.write_text(f'''
+import importlib.util, json, os, sys
+from pathlib import Path
+d = Path({str(REPO / "hermes_plugin" / "emporia")!r})
+spec = importlib.util.spec_from_file_location("emporia_platform", d / "__init__.py",
+                                              submodule_search_locations=[str(d)])
+mod = importlib.util.module_from_spec(spec); sys.modules["emporia_platform"] = mod
+spec.loader.exec_module(mod)
+from gateway.config import PlatformConfig
+from emporia_platform.adapter import EmporiaAdapter
+from agent.secret_scope import reset_secret_scope, set_secret_scope
+extra = {{"relay_url": "http://relay.test", "agent_id": "a", "python": "/x/python"}}
+homes = {{}}
+for name in ("alpha", "beta"):
+    token = set_secret_scope({{"EMPORIA_KEYS_DIR": "/profiles/" + name + "/home/.hermes/keys"}},
+                             profile_home="/profiles/" + name)
+    try:
+        homes[name] = EmporiaAdapter(PlatformConfig(enabled=True, extra=extra))._bridge_env()["HERMES_HOME"]
+    finally:
+        reset_secret_scope(token)
+print(json.dumps(homes))
+''')
+    out = subprocess.run([str(HERMES_PYTHON), str(harness)], cwd="/opt/hermes",
+                         env={**os.environ, "HERMES_HOME": str(tmp_path / "root"), "PYTHONPATH": "/opt/hermes"},
+                         capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stderr[-2000:]
+    homes = json.loads(out.stdout.strip().splitlines()[-1])
+    assert homes == {"alpha": "/profiles/alpha", "beta": "/profiles/beta"}
+    # the bridge writes by that value: two profiles, two records, nothing under the root
+    from emporia.plugins.platforms.emporia import bridge
+    paths = {n: bridge.build_witness("http://relay.test", h).path for n, h in homes.items()}
+    assert paths["alpha"] == Path("/profiles/alpha/plugin-data/emporia/log_witness.json")
+    assert paths["beta"] == Path("/profiles/beta/plugin-data/emporia/log_witness.json")
+    assert bridge.log_dir(tmp_path / "keys", homes["alpha"]) == Path("/profiles/alpha/plugin-data/emporia/logs")
+
+
 def test_an_idle_game_is_abandoned_and_every_stake_released(client, monkeypatch):
     """P129: a wager whose player stopped answering stayed active for good,
     with both holds sitting until they lapsed."""
