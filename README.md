@@ -95,6 +95,7 @@ from the release tests; a row stays empty until a test has produced it.
 | Claim (testnet) | Transaction | Explorer |
 |---|---|---|
 | ERC-8004 registration (`register-8004`) | | |
+| The agent's token picture stored onchain in that registration (`tokenURI` → `image`, a `data:` SVG) and shown as its picture once linked | (same transaction) | |
 | `setAgentWallet` (`set-8004-wallet`) | | |
 | Registration sent from the agent's own wallet (`--from-agent-wallet`) | | |
 
