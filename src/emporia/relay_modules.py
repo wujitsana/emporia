@@ -171,11 +171,46 @@ def _chronicle_start() -> float | None:
     return when.timestamp() if when else None
 
 
+#: the shortest chapter a test relay may run (`EMPORIA_CHRONICLE_TEST_EPOCH`), seconds
+CHRONICLE_TEST_EPOCH_MIN = 300
+_LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+def _chronicle_test_epoch() -> int | None:
+    """`EMPORIA_CHRONICLE_TEST_EPOCH` as seconds (0 when it is not a whole number); None when it is not set."""
+    raw = _get("EMPORIA_CHRONICLE_TEST_EPOCH")
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return 0
+
+
 def _chronicle_epoch() -> int:
+    test = _chronicle_test_epoch()
+    if test is not None:
+        return test
     try:
         return int(_get("EMPORIA_CHRONICLE_EPOCH") or 86400)
     except ValueError:
         return 0
+
+
+def _local_only_problem() -> str:
+    """Why this relay is not a test relay on this machine, or "": it must listen on a loopback address and
+    its public URL must be http://127.0.0.1 or http://localhost."""
+    from urllib.parse import urlsplit
+    host = _get("EMPORIA_RELAY_HOST", "127.0.0.1")
+    from emporia import relay_server
+    served = relay_server._uvicorn_host() or host
+    url = _get("EMPORIA_RELAY_URL") or f"http://localhost:{_get('EMPORIA_RELAY_PORT', '8088')}"
+    parts = urlsplit(url)
+    if served not in _LOCAL_HOSTS:
+        return f"it listens on {served}"
+    if parts.scheme != "http" or (parts.hostname or "") not in _LOCAL_HOSTS:
+        return f"its public URL is {url}"
+    return ""
 
 
 def _chronicle_parts(links: list[str]) -> set[str] | None:
@@ -185,7 +220,8 @@ def _chronicle_parts(links: list[str]) -> set[str] | None:
 def _chronicle_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
     from emporia.modules import chronicle
     return {"formula": chronicle.FORMULA, "start": _get("EMPORIA_CHRONICLE_START"),
-            "epoch_s": _chronicle_epoch(), "practice": _get("EMPORIA_CHRONICLE_PRACTICE").lower() not in
+            "epoch_s": _chronicle_epoch(), **({"test_epoch": True} if _chronicle_test_epoch() else {}),
+            "practice": _get("EMPORIA_CHRONICLE_PRACTICE").lower() not in
             ("0", "off", "false", "no"), "min_live_operators": chronicle.MIN_LIVE_UNITS}
 
 
@@ -196,7 +232,15 @@ def _chronicle_wrong(links: list[str]) -> list[str]:
     if _chronicle_start() is None:
         out.append("chronicle: EMPORIA_CHRONICLE_START must be a UTC time (ISO 8601), fixed when the book begins — "
                    "emporia relay config set EMPORIA_CHRONICLE_START 2026-12-01T00:00:00+00:00")
-    if _chronicle_epoch() < 3600:
+    test = _chronicle_test_epoch()
+    if test is not None:
+        if test < CHRONICLE_TEST_EPOCH_MIN:
+            out.append(f"chronicle: EMPORIA_CHRONICLE_TEST_EPOCH is seconds per chapter, at least "
+                       f"{CHRONICLE_TEST_EPOCH_MIN}, for a test relay on this machine only")
+        elif why := _local_only_problem():
+            out.append(f"chronicle: EMPORIA_CHRONICLE_TEST_EPOCH is for a test relay on this machine only, and {why}. "
+                       "Unset it; a public relay's chapters are at least 3600 seconds (EMPORIA_CHRONICLE_EPOCH)")
+    elif _chronicle_epoch() < 3600:
         out.append("chronicle: EMPORIA_CHRONICLE_EPOCH is seconds per chapter, at least 3600 (default 86400)")
     return out
 

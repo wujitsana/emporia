@@ -67,7 +67,8 @@ def settings() -> dict[str, Any]:
     start = relay_modules._chronicle_start()
     if start is None:
         raise HTTPException(503, "the Chronicle has no start time (EMPORIA_CHRONICLE_START)")
-    return {"start": start, "epoch_s": relay_modules._chronicle_epoch(), "practice": bool(d.get("practice", True))}
+    return {"start": start, "epoch_s": relay_modules._chronicle_epoch(), "practice": bool(d.get("practice", True)),
+            **({"test_epoch": "test epoch"} if d.get("test_epoch") else {})}
 
 
 # ── the ledger, from this relay's tables ──────────────────────────────────────────────────────────────
@@ -792,6 +793,7 @@ async def state():
     called = [s for s in slots if s.get("called")]
     out: dict[str, Any] = {
         "formula": C.FORMULA, "relay_id": ledger["relay_id"], "start": st["start"], "epoch_s": st["epoch_s"],
+        **({"test_epoch": st["test_epoch"]} if st.get("test_epoch") else {}),    # a test relay's short chapter, labeled
         "practice": st["practice"], "now": at, "post_origin": rs.RELAY_BASE_URL, "slot": cur["slot"] if cur else None,
         "prologue": ledger["prologue"] or None, "min_live_operators": C.MIN_LIVE_UNITS,
         "joined": sum(1 for a in ledger["agents"] if a["joins"] and a["joins"][-1][0]),
