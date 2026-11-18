@@ -3945,7 +3945,7 @@ def cmd_features(args: argparse.Namespace) -> int:
         if new != now:
             save(F.render(new, F.read_only(held.get(F.SETTING, ""))))      # a read-only agent stays read-only
             print(f"  Saved. {F.summary(new)}.")
-            print(f"  It applies after a restart, not on its own (a running MCP server keeps the features it started with): {restart}.")
+            print(f"  It applies after a restart, not on its own (a running MCP server keeps the features it started with, so the changed tools answer "Unknown tool" until then): {restart}.")
         now = new
     print(f"  Features    {F.summary(now)}")
     if F.read_only(held.get(F.SETTING, "")):
