@@ -77,6 +77,13 @@ def test_the_routes_apply_the_relay_clock_to_create_join_and_dealt_weights(monke
 
 def test_review_a_commitment_naming_a_far_future_round_is_refused_before_the_seat_is_taken(monkeypatch):
     """A joiner naming round 10**18 got a seat and then a 500 at start, leaving the game full and waiting."""
+    cl = TestClient(app, client=("127.0.0.1", 51241))
+    a, b = f"rf_{uuid.uuid4().hex[:6]}", f"rg_{uuid.uuid4().hex[:6]}"
+    _register_keyed(cl, a)
+    _register_keyed(cl, b)
+    created = cl.post("/sessions", json={"module_type": LIARS}, headers={"x-emporia-agent-id": a})   # the test shim's commit
+    assert created.status_code == 200, created.text
+    sid = created.json()["session_id"]
     _on(monkeypatch)
     now = time.time()
     cur = rand.round_at(now)
@@ -88,13 +95,6 @@ def test_review_a_commitment_naming_a_far_future_round_is_refused_before_the_sea
     assert rand.commit_round_problem(c["at"], c["beacon_round"]) == ""
     assert "too far ahead" in rand.commit_round_problem(c["at"], 10 ** 18)
     assert rand.commit_round_problem(c["at"], rand.round_at(rand.to_ts(c["at"])) + rand.MAX_LEAD_ROUNDS) == ""
-    cl = TestClient(app, client=("127.0.0.1", 51241))
-    a, b = f"rf_{uuid.uuid4().hex[:6]}", f"rg_{uuid.uuid4().hex[:6]}"
-    _register_keyed(cl, a)
-    _register_keyed(cl, b)
-    created = cl.post("/sessions", json={"module_type": LIARS}, headers={"x-emporia-agent-id": a})
-    assert created.status_code == 200, created.text
-    sid = created.json()["session_id"]
     r = cl.post(f"/sessions/{sid}/join",
                 json={"agent_id": b, "rand_commit": make_test_commit(sid, b, 1, round_offset=10 ** 18)},
                 headers={"x-emporia-agent-id": b})
