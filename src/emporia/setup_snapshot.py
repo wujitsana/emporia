@@ -82,6 +82,15 @@ def build(env: Mapping[str, str] | None = None, home: Any = None) -> dict[str, s
         out["model"] = model
     profile = Path(home) if home else identity_card.profile_home()
     if profile:
+        # The wake mode and auto-reveal are gateway-side settings: Hermes does not hand them to the MCP server, so
+        # read just those two names from the profile's own .env (the process's value wins when it has one).
+        try:
+            from emporia import profile_env
+            own = profile_env.read_names(Path(profile) / ".env", ["EMPORIA_WAKE", AUTO_REVEAL_ENV])
+            env = {**own, **{k: v for k, v in dict(env).items() if v}}
+        except Exception:  # noqa: BLE001 — unreadable is unknown
+            pass
+    if profile:
         try:
             key = templates.current(profile)
             if templates.read_record(profile):
@@ -93,8 +102,6 @@ def build(env: Mapping[str, str] | None = None, home: Any = None) -> dict[str, s
         out["wake"] = wake.resolve(dict(env))
     except Exception:  # noqa: BLE001
         pass
-    if (rounds := (env.get("EMPORIA_ROUNDS_EVERY") or "").strip()):
-        out["rounds"] = rounds
     if (flag := (env.get(AUTO_REVEAL_ENV) or "").strip().lower()) in _FLAG:
         out["auto_reveal"] = flag
     return clean(out)

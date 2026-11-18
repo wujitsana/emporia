@@ -647,3 +647,20 @@ def test_the_sheet_carries_finish_additively_and_hidden_for_a_new_agent(w):
     sheet = w.client.get(f"/agents/{ann}/sheet").json()
     assert sheet["finish"]["n"] == 0 and sheet["finish"]["shown"] is False and "never ranked" in sheet["finish"]["note"]
     assert "Finish" not in progression.render(sheet)                      # nothing to say yet
+
+
+def test_finish_reads_the_bridge_mark_from_the_signed_rationale_in_the_audit_log(monkeypatch):
+    """The bridge marks an open by its signed rationale (`[bridge] ...`), which the relay keeps in the session's
+    public audit log, not in `actions`: Finish joins it in and counts the step as the bridge's."""
+    from emporia import caliber
+    from emporia.routes import standing
+    from emporia.tesseract_client import BRIDGE_MARK
+    log = [{"sender": "a", "action": "seal", "rationale": "sealing"},
+           {"sender": "a", "action": "open", "rationale": BRIDGE_MARK + "opening my sealed push of round 1"},
+           {"sender": "b", "action": "open", "rationale": "mine"}]
+    monkeypatch.setattr("emporia.session_audit.get_public_log", lambda sid: log)
+    acts = {"s1": [("seal", {"commitment": "c"}), ("open", {"move": [1], "nonce": "n"})]}
+    standing._join_bridge_marks("a", acts)
+    assert caliber.done_by_bridge(acts["s1"][1][1])
+    assert not caliber.done_by_bridge({"move": [1], "rationale": "opened by hand"})
+    assert caliber.done_by_bridge({"by": "bridge"})

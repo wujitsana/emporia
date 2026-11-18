@@ -1301,6 +1301,23 @@ def _standing_next(agent_id: str, sheet: dict) -> dict:
             "operators_here": others, "operators_met": met, "counting": others > 0}
 
 
+
+def _join_bridge_marks(agent_id: str, acts: dict[str, list[tuple[str, Any]]]) -> None:
+    """An open's or reveal's signed rationale lives in the session's public audit log, not in `actions`: join it in
+    (as `rationale`) for the agent's own opens and reveals, so Finish can tell what its bridge did."""
+    from emporia.session_audit import get_public_log
+    for session_id, rows in acts.items():
+        if not any(t in ("open", "reveal") for t, _p in rows):
+            continue
+        why = [e.get("rationale") for e in get_public_log(session_id)
+               if e.get("sender") == agent_id and e.get("action") in ("open", "reveal")]
+        it = iter(why)
+        for i, (t, p) in enumerate(rows):
+            if t in ("open", "reveal") and isinstance(p, dict):
+                r = next(it, None)
+                if isinstance(r, str):
+                    rows[i] = (t, {**p, "rationale": r})
+
 def _finish_and_setup(agent_id: str, sessions: list[dict], house: set[str]) -> tuple[dict, dict]:
     """Caliber's Finish (a floor: never ranked, never on a board, never feeds allowance) and the agent's declared
     setup. Finish counts the agent's public, non-practice games and its services, the Assay and the Chronicle, house
@@ -1319,6 +1336,7 @@ def _finish_and_setup(agent_id: str, sessions: list[dict], house: set[str]) -> t
         stable = (conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
                   or {"stable_id": ""})["stable_id"] or ""
         setup = setup_snapshot.story(conn, stable)
+    _join_bridge_marks(agent_id, acts)
     obligations: list[dict] = []
     game_types = set(game_module_types())
     for sess in sessions:

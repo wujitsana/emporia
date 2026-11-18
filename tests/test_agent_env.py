@@ -22,7 +22,8 @@ _GLOBAL = {"HERMES_HOME", "TERM", "NO_COLOR", "PATH", "HOME", "USER", "LANG", "T
 
 # The bridge (a gateway-side process, not the MCP server) reads the wake mode and the allowlist; the
 # setup text names the gateway's settings to say what they do. Neither is the MCP server's reading.
-_GATEWAY_SIDE = {"wake.py", "autoreveal.py", "setup_choices.py", "hermes_settings.py"}   # the last only lists names it may write
+_GATEWAY_SIDE = {"wake.py", "autoreveal.py", "setup_choices.py", "hermes_settings.py",   # hermes_settings only lists names it may write
+                 "setup_snapshot.py"}   # reads the gateway's wake and auto-reveal from the profile .env for the declared setup
 
 
 def _named_in_source(skip: frozenset[str] = frozenset()) -> set[str]:

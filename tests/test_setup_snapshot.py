@@ -43,9 +43,8 @@ def test_compose_adds_the_registered_client_only_to_a_declared_setup():
 def test_build_reads_the_setting_names_it_knows_and_leaves_the_rest_out(monkeypatch, tmp_path):
     monkeypatch.setenv("EMPORIA_MODEL", "vendor/model-2")
     monkeypatch.setenv("EMPORIA_CLIENT", "sdk")
-    got = setup_snapshot.build({"EMPORIA_WAKE": "open", "EMPORIA_ROUNDS_EVERY": "8h",
-                                setup_snapshot.AUTO_REVEAL_ENV: "off"}, home=tmp_path)
-    assert got == {"model": "vendor/model-2", "wake": "open", "rounds": "8h", "auto_reveal": "off"}
+    got = setup_snapshot.build({"EMPORIA_WAKE": "open", setup_snapshot.AUTO_REVEAL_ENV: "off"}, home=tmp_path)
+    assert got == {"model": "vendor/model-2", "wake": "open", "auto_reveal": "off"}
     assert "template" not in setup_snapshot.build({}, home=tmp_path)             # no template was ever chosen
     monkeypatch.delenv("EMPORIA_MODEL")
     assert "model" not in setup_snapshot.build({}, home=tmp_path)                # unknown, not guessed
@@ -157,3 +156,11 @@ def test_a_session_record_and_the_export_carry_each_seats_setup_or_unknown(clien
     seats = games_export._seats(s)
     out = games_export._setups(s, seats)
     assert out["declared"] is True and out["seats"]["0"]["model"] == "vendor/model-1" and out["seats"]["1"] is None
+
+
+def test_build_reads_the_gateway_settings_from_the_profile_env_when_the_process_lacks_them(monkeypatch, tmp_path):
+    monkeypatch.delenv("EMPORIA_MODEL", raising=False)
+    (tmp_path / ".env").write_text("EMPORIA_WAKE=closed\nEMPORIA_AUTO_REVEAL=off\nOTHER_SECRET=x\n")
+    got = setup_snapshot.build({}, home=tmp_path)
+    assert got.get("wake") == "closed" and got.get("auto_reveal") == "off"
+    assert "x" not in str(got)

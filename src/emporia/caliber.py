@@ -349,8 +349,13 @@ def follow(passages: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
 # ── Finish: obligations completed, as a pass rate ────────────────────────────────────────────────────────────
 
 def done_by_bridge(payload: Any) -> bool:
-    """True when a signed action's payload carries the bridge's marker. The one place the marker is read."""
-    return isinstance(payload, Mapping) and payload.get(BRIDGE_KEY) == BRIDGE_VALUE
+    """True when a signed action carries the bridge's marker: its signed rationale (kept in the session's public
+    audit log, joined in as `rationale`) starts with `tesseract_client.BRIDGE_MARK`, or a payload names
+    `by: bridge`. The one place the marker is read."""
+    if not isinstance(payload, Mapping):
+        return False
+    from emporia.tesseract_client import made_by_bridge
+    return payload.get(BRIDGE_KEY) == BRIDGE_VALUE or made_by_bridge(payload.get("rationale"))
 
 
 def _day_of(at: Any) -> str:
