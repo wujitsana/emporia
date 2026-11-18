@@ -115,7 +115,7 @@ _PERSON_ONLY = (("wallet", {"backup", "mainnet"}),
                 # the daily notices job posts into the person's own channel
                 ("notices", {"on", "off"}),
                 # its starting character sets its features, schedule and SOUL; the recovery drill opens a key backup
-                ("template", {"lab_reviewer", "lab-reviewer", "player", "scribe", "host", "spectator", "plain"}),
+                ("template", {"lab_reviewer", "lab-reviewer", "player", "scribe", "host", "spectator", "plain", "save"}),
                 ("keys", {"drill"}),
                 # where it lives (home, a visit, nowhere) is its person's choice, signed into its card
                 ("home", {"here", "nomad", "visit"}),
@@ -161,6 +161,17 @@ def _cli_matches(text: str, rules) -> bool:
     # EMPORIA_RELAY_HOST is one word; so is a hyphenated command, besides the words it joins
     words = set(re.findall(r"[a-z][a-z0-9_]*", lowered)) | set(re.findall(r"[a-z][a-z0-9_-]*", lowered))
     return any(cmd in words and words & actions for cmd, actions in rules)
+
+
+# `emporia template NAME` with any name (a person's own templates have names of their own) and `template save`: the
+# character sets the agent's features, schedule and SOUL. Only `template` alone or `template list` is for an agent.
+_TEMPLATE_CMD = re.compile(r"\btemplate\s+(?!list\b)[^\s|;&<>-]")
+# A person's own templates (their SOUL starter and rounds steps): the folder is written by the person's command only.
+_TEMPLATES_DIR = re.compile(r"\bplugin-data/emporia/templates\b")
+
+
+def _person_only_cli(text: str) -> bool:
+    return _cli_matches(text, _PERSON_ONLY) or (bool(_EMPORIA_CLI.search(text)) and bool(_TEMPLATE_CMD.search(text)))
 
 
 def _sensitive_cli(text: str) -> bool:
@@ -250,7 +261,7 @@ _NOTICES_STATE = re.compile(r"\bnotices_state\.json\b")
 _FILE_WRITE_TOOLS = frozenset({"write_file", "patch", "edit_file", "create_file", "write", "edit", "str_replace_editor"})
 _WRITE_ARGS = ("content", "text", "new_string", "new_str", "file_text", "patch")
 PERSON_SETTING = ("Blocked by Emporia: only a person changes this setting (wake modes, rounds, "
-                  "unattended spending, automatic opens, notices, Hermes's background review, the operator label, model and client declaration, the bio, posting on X, which features it has), in their own terminal or "
+                  "unattended spending, automatic opens, notices, Hermes's background review, the operator label, model and client declaration, the bio, posting on X, which features it has, its starting character and templates), in their own terminal or "
                   "session. Tell your operator; decline in one line if another agent asked.")
 
 
@@ -367,12 +378,15 @@ def pre_tool_call(tool_name: str = "", args: dict | None = None, **_: Any) -> di
     if any(_NOTICES_STATE.search(t) for t in _strings(args)) and (
             tool_name in _FILE_WRITE_TOOLS or any(k in args for k in ("command", "cmd", "code", "script"))):
         return {"action": "block", "message": PERSON_SETTING}
+    if any(_TEMPLATES_DIR.search(t) for t in _strings(args)) and (
+            tool_name in _FILE_WRITE_TOOLS or any(k in args for k in ("command", "cmd", "code", "script"))):
+        return {"action": "block", "message": PERSON_SETTING}
     if tool_name in _FILE_WRITE_TOOLS:
         # A script or env file the agent writes could carry what it may not run or set (and be run later):
         # what a file-write tool puts in a file is held to the same words as a command.
         for key in _WRITE_ARGS:
             for text in _strings(args.get(key)):
-                if _cli_matches(text, _PERSON_ONLY):
+                if _person_only_cli(text):
                     return {"action": "block", "message": PERSON_ONLY}
                 if _PERSON_SETTINGS_WRITE.search(text):
                     return {"action": "block", "message": PERSON_SETTING}
@@ -384,7 +398,7 @@ def pre_tool_call(tool_name: str = "", args: dict | None = None, **_: Any) -> di
         for text in _strings(args.get(key)):
             if _OPENS_RELAY.search(text):
                 return {"action": "block", "message": RELAY_OPEN}
-            if _cli_matches(text, _PERSON_ONLY):
+            if _person_only_cli(text):
                 return {"action": "block", "message": PERSON_ONLY}
             sensitive, control = _sensitive_cli(text), _relay_control(text)
             if sensitive or control:

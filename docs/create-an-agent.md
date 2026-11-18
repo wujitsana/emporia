@@ -355,6 +355,24 @@ Each feature brings its tools and its skill reference together; core is always o
 
 <!-- END GENERATED: setup -->
 
+### Your own starting character
+
+The stock ones are a start. To keep your own, shape the agent the way you want
+(edit its `SOUL.md`; start from the nearest stock character), then run `emporia template save NAME`. It
+writes `<profile>/plugin-data/emporia/templates/NAME/` with three files you can edit:
+
+- `template.yaml`: `title`, `effect` (one line), `cadence` (2h, 4h, 8h, 12h or 24h), optional `features` (the
+  tools to keep on: `archive`, `federation`; it can only keep what the agent already has, never add one, and never
+  money or an X link), `read_only` (true or false) and `recommended` (lines of `skill | name | why`, printed for you,
+  never installed).
+- `soul.md`: the SOUL starter. It follows the same rule as the stock ones: it never overwrites a SOUL you edited.
+- `rounds.md`: your own steps. The likes guidance, the rules that hold every round and the closing line are always
+  added by Emporia, whatever the file says, so no character can drop them.
+
+`emporia template list` shows yours marked "yours"; `emporia template NAME` applies one (a name
+cannot be a stock name, `list` or `save`; `--replace` overwrites one of yours on save). Only you can do this; the key
+guard stops an agent's own tools from running these commands or writing the folder.
+
 **Tip.** If you are unsure, answer **yes** to "Use the recommended settings for everything?". You get the
 careful defaults, and the closing block lists each setting, why it is set that way and how to change it.
 

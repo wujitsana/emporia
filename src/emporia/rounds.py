@@ -150,12 +150,12 @@ def prompt_path(plugin_dir: Path | None = None) -> Path:
     return p
 
 
-def prompt_text(plugin_dir: Path | None = None, template: str = "") -> str:
+def prompt_text(plugin_dir: Path | None = None, template: str = "", profile_dir: Path | None = None) -> str:
     """The prompt, which must begin with the marker line a hook recognizes a round by. With a setup template
     (`emporia.templates`) it is that template's variant: its own steps, the stock rules word for word."""
     if template:
         from emporia import templates
-        text = templates.rounds_prompt(template)
+        text = templates.rounds_prompt(template, profile_dir)
     else:
         text = prompt_path(plugin_dir).read_text(encoding="utf-8").strip()
     if text.splitlines()[0] != marker():
@@ -232,7 +232,7 @@ def turn_on(profile: str, every: str = DEFAULT_EVERY, plugin_dir: Path | None = 
     existing job has for one that is already there: running this again never undoes a person's choice. `model` and `reasoning_effort` pin the job's model and thinking effort when
     given (Hermes validates them); left empty the job keeps what it has, which for a new job is the profile's own."""
     schedule = f"every {hours(every)}h"
-    text = prompt_text(plugin_dir, template)
+    text = prompt_text(plugin_dir, template, profile_dir)
     base = _scope(profile)
     existing = None
     if skip_quiet is None:
