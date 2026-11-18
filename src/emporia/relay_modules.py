@@ -204,7 +204,10 @@ def _local_only_problem() -> str:
     host = _get("EMPORIA_RELAY_HOST", "127.0.0.1")
     from emporia import relay_server
     served = relay_server._uvicorn_host() or host
-    url = _get("EMPORIA_RELAY_URL") or f"http://localhost:{_get('EMPORIA_RELAY_PORT', '8088')}"
+    url = _get("EMPORIA_RELAY_URL")
+    if not url:
+        return ("EMPORIA_RELAY_URL is not set (a relay behind a tunnel that connects to 127.0.0.1 would look local); "
+                "a test relay sets it to http://127.0.0.1:PORT")
     parts = urlsplit(url)
     if served not in _LOCAL_HOSTS:
         return f"it listens on {served}"

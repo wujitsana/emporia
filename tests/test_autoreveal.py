@@ -543,3 +543,14 @@ def test_a_chapter_id_from_the_relay_never_becomes_a_path(tmp_path, chapter):
     assert not any(tmp_path.iterdir()) or all(p.parent == tmp_path for p in tmp_path.iterdir())
     with pytest.raises(ValueError):
         book._path("passage.../../x")
+
+
+def test_the_bridge_log_folder_is_not_in_the_key_directory_and_an_old_one_is_moved(tmp_path):
+    keys, home = tmp_path / "keys", tmp_path / "profile"
+    (keys / "bridge-logs").mkdir(parents=True)
+    (keys / "bridge-logs" / "messages.jsonl").write_text("{}\n")
+    got = bridge.log_dir(keys, str(home))
+    assert got == home / "plugin-data" / "emporia" / "logs" and (got / "messages.jsonl").is_file()
+    assert not (keys / "bridge-logs").exists(), "nothing is left among the keys"
+    assert bridge.log_dir(keys, str(home)) == got                         # again: nothing to move, no error
+    assert bridge.log_dir(keys, "") == tmp_path / "emporia-bridge-logs"   # no profile: beside the keys, never inside

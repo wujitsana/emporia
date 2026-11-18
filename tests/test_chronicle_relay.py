@@ -273,6 +273,13 @@ def test_a_test_epoch_is_refused_on_a_relay_that_is_not_local_only(monkeypatch, 
     assert "EMPORIA_CHRONICLE_TEST_EPOCH" in why and "this machine only" in why
 
 
+def test_a_test_epoch_needs_the_relay_url_set_explicitly(monkeypatch):
+    _test_relay(monkeypatch)
+    monkeypatch.delenv("EMPORIA_RELAY_URL")
+    [why] = _chronicle_problems()
+    assert "EMPORIA_CHRONICLE_TEST_EPOCH" in why and "EMPORIA_RELAY_URL is not set" in why
+
+
 def test_a_test_epoch_is_at_least_five_minutes_and_a_number(monkeypatch):
     for bad in ("299", "0", "-5", "soon"):
         _test_relay(monkeypatch, epoch=bad)

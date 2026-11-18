@@ -18,7 +18,7 @@ from pathlib import Path
 HERMES = __HERMES__
 PROFILE = Path(__file__).resolve().parent.parent
 KIND = re.compile(r"[a-z][a-z_]{0,23}")
-ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+ID = re.compile(r"(?:sess|room)_[0-9a-f]{12}|plg_[0-9a-f]{16}")   # the shapes the relay makes: no word-like text
 ID_KEYS = ("session_id", "room_id", "pledge_id", "deal_id", "challenge_id")
 #: A quiet round still runs when none has run for this long (a little under a day, so the daily slot is not missed).
 PASS_AFTER_S = 23 * 3600
