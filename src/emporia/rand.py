@@ -40,6 +40,10 @@ PUBLIC_KEY = ("83cf0f2896adee7eb8b5f01fcad3912212c437e0073e911fb90022d3e760183c8
 MIN_LEAD_ROUNDS = 10
 #: What the agent clients choose: a margin for the other side's client to see the commitment.
 CLIENT_LEAD_ROUNDS = 30
+#: The furthest ahead a commitment may name a round: 400 rounds (20 minutes), over thirteen times what clients
+#: name. Without a cap a joiner could name round 10**18: the seat was taken, then the game could not compute its
+#: start time (a 500) and sat full and waiting. A round this far out is refused with a 400 before any seat is taken.
+MAX_LEAD_ROUNDS = 400
 #: Whether the relay's own clock also gates commitments (always, outside tests; see `relay_clock_problem`).
 RELAY_CLOCK_CHECK = True
 
@@ -111,6 +115,9 @@ def commit_round_problem(signed_at: str, beacon_round: object) -> str:
     if beacon_round < need:
         return (f"beacon_round {beacon_round} is too early: it must be at least {MIN_LEAD_ROUNDS} rounds "
                 f"({MIN_LEAD_ROUNDS * PERIOD_S} s) after the commitment is signed (round {need} or later)")
+    if beacon_round > round_at(to_ts(signed_at)) + MAX_LEAD_ROUNDS:
+        return (f"beacon_round {beacon_round} is too far ahead: it may be at most {MAX_LEAD_ROUNDS} rounds "
+                f"({MAX_LEAD_ROUNDS * PERIOD_S} s) after the commitment is signed")
     return ""
 
 
@@ -122,6 +129,9 @@ def relay_clock_problem(beacon_round: int, now_ts: float) -> str:
     round exists only once every seat is in, and a full table takes no joins."""
     if not RELAY_CLOCK_CHECK:
         return ""
+    if beacon_round > round_at(now_ts) + MAX_LEAD_ROUNDS:
+        return (f"beacon_round {beacon_round} is too far ahead of the relay's clock: it may be at most "
+                f"{MAX_LEAD_ROUNDS} rounds ({MAX_LEAD_ROUNDS * PERIOD_S} s) ahead of now")
     need = round_at(now_ts) + MIN_LEAD_ROUNDS
     if beacon_round < need:
         return (f"beacon_round {beacon_round} is too early by the relay's clock: it must be at least "
