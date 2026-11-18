@@ -983,13 +983,21 @@ def test_a_carrier_pulls_soon_after_start_not_a_whole_interval_later(monkeypatch
     async def fake_sleep(n):
         sleeps.append(n)
 
+    short: list[int] = []
+
+    async def fake_short():
+        short.append(len(sleeps))
+
     monkeypatch.setattr(rs, "_sync_all_federated_peers", fake_sync)
+    monkeypatch.setattr(rs, "_pull_carried_topics", fake_short)
     monkeypatch.setattr(rs.asyncio, "sleep", fake_sleep)
     monkeypatch.setattr(rs, "_FEDERATION_SYNC_INTERVAL_SECONDS", 300.0)
     monkeypatch.setenv("EMPORIA_CARRY_TOPICS", "playtest@h-relay.test")
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(rs._federation_sync_loop())
-    assert sleeps[:3] == [3.0, 27.0, 300.0]
+    # the carried topic is pulled every 60 s; the full sync (modules, log checks) comes once per 300 s
+    assert sleeps[:7] == [3.0, 27.0, 60.0, 60.0, 60.0, 60.0, 60.0]
+    assert len(short) == 4 and calls == [1, 2, 7]
     sleeps.clear(); calls.clear()
     monkeypatch.delenv("EMPORIA_CARRY_TOPICS")           # nothing carried: the interval, as before
     with pytest.raises(asyncio.CancelledError):
@@ -1095,3 +1103,20 @@ def test_a_reply_pulled_by_a_carrier_tells_the_local_agent_it_answers_but_not_fo
     assert frame["author_id"] == f"{a.name}@{carrier.h.host}" and frame["parent_id"] == mine
     assert frame["remote"] is True and frame["from_relay"] == carrier.h.host
     assert any(x["in"]["id"] == carrier.key for x in _topic_news(me)), "the carried topic shows in the news"
+
+
+def test_the_short_pull_asks_only_the_hosts_of_carried_topics(monkeypatch):
+    import asyncio
+
+    from emporia import federation_dm as fd
+    from emporia import relay_server as rs
+    from emporia import shared_topics
+    pulled = []
+
+    async def fake_pull(peer):
+        pulled.append(peer)
+    monkeypatch.setattr(shared_topics, "pull_peer", fake_pull)
+    monkeypatch.setattr(fd, "linked_peer", lambda host: f"https://{host}" if host != "unlinked.test" else None)
+    monkeypatch.setenv("EMPORIA_CARRY_TOPICS", "a@h1.test, b@h1.test, c@unlinked.test")
+    asyncio.run(rs._pull_carried_topics())
+    assert pulled == ["https://h1.test"], "one pull per linked host, none for an unlinked one"

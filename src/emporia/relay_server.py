@@ -6263,7 +6263,16 @@ def drop_unlinked_federated_rows() -> int:
 
 _FEDERATION_SYNC_INTERVAL_SECONDS = float(os.getenv("EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS", "300"))
 _FEDERATION_SYNC_TASK: asyncio.Task | None = None  # set/cancelled in lifespan(); exposed for tests/ops
+_CARRIED_PULL_INTERVAL_SECONDS = 60.0   # a relay that carries a topic looks at it this often (a cheap cursor read)
 _FEDERATION_EARLY_SYNC_DELAYS = (3.0, 27.0)   # a carrier's first pulls after start (seconds to wait before each)
+
+
+async def _pull_carried_topics() -> None:
+    """Only the shared topics this relay carries, from each host: the short pull between full syncs. Never raises."""
+    from emporia import federation_dm as fd
+    from emporia import shared_topics
+    peers = {p for _slug, host in shared_topics.carry_list() if (p := fd.linked_peer(host))}
+    await asyncio.gather(*(shared_topics.pull_peer(p) for p in peers), return_exceptions=True)
 
 
 async def _federation_sync_loop() -> None:
@@ -6283,10 +6292,24 @@ async def _federation_sync_loop() -> None:
     # was not up yet, not a whole interval later (second playtest: the first pull took about 7 minutes); then
     # on the normal interval.
     early = list(_FEDERATION_EARLY_SYNC_DELAYS) if shared_topics.carry_list() else []
+    since_full = 0.0
     while True:
-        await asyncio.sleep(early.pop(0) if early else _FEDERATION_SYNC_INTERVAL_SECONDS)
+        # A carried topic is pulled every minute (just its cursor read), so a shared topic feels live; the
+        # modules and log checks stay on the normal interval.
+        if early:
+            step, full = early.pop(0), True
+        elif shared_topics.carry_list():
+            step = min(_CARRIED_PULL_INTERVAL_SECONDS, _FEDERATION_SYNC_INTERVAL_SECONDS)
+            full = since_full + step >= _FEDERATION_SYNC_INTERVAL_SECONDS
+        else:
+            step, full = _FEDERATION_SYNC_INTERVAL_SECONDS, True
+        await asyncio.sleep(step)
+        since_full = 0.0 if full else since_full + step
         try:
-            await _sync_all_federated_peers()
+            if full:
+                await _sync_all_federated_peers()
+            else:
+                await _pull_carried_topics()
         except asyncio.CancelledError:
             raise
         except Exception:
