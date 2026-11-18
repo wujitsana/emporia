@@ -186,20 +186,42 @@ def test_running_setup_again_changes_nothing_and_keeps_an_operators_own_list(tmp
     assert yaml.safe_load((own / "config.yaml").read_text())["platform_toolsets"]["emporia"] == ["emporia", "web"]
 
 
-def test_a_new_profile_queues_a_second_event_and_an_existing_one_gets_one_line_of_advice(tmp_path, capsys):
+def test_slimming_relay_turns_leaves_busy_input_to_the_setup_question(tmp_path, capsys):
     inst = _inst()
-    new = _profile(tmp_path, {})
-    inst.slim_relay_turns(new, new_profile=True)
-    assert yaml.safe_load((new / "config.yaml").read_text())["display"]["busy_input_mode"] == "queue"
-    assert "Tip:" not in capsys.readouterr().out
-    old = _profile(tmp_path.parent / (tmp_path.name + "_old"), {"display": {"skin": "x"}})
-    inst.slim_relay_turns(old, new_profile=False)
+    p = _profile(tmp_path, {"display": {"skin": "x"}})
+    inst.slim_relay_turns(p)
     out = capsys.readouterr().out
-    assert out.count("Tip:") == 1 and "-p alpha config set display.busy_input_mode queue" in out
-    assert "busy_input_mode" not in yaml.safe_load((old / "config.yaml").read_text())["display"]
-    chosen = _profile(tmp_path.parent / (tmp_path.name + "_chosen"), {"display": {"busy_input_mode": "steer"}})
-    inst.slim_relay_turns(chosen, new_profile=False)
-    assert "Tip:" not in capsys.readouterr().out, "an operator's own choice is not argued with"
+    assert "Tip:" not in out
+    assert "busy_input_mode" not in yaml.safe_load((p / "config.yaml").read_text())["display"]
+
+
+def test_setup_asks_busy_input_and_writes_the_agent_profiles_own_config(tmp_path, capsys, monkeypatch):
+    from emporia import cli
+    asked = []
+    monkeypatch.setattr(cli, "choose_setting", lambda key, *a, **k: asked.append(key) or "steer")
+    monkeypatch.setattr(cli, "heading", lambda *a, **k: None)
+    # a terminal: the person is asked, and the answer is written
+    monkeypatch.setattr(cli, "_TTY", True)
+    p = _profile(tmp_path, {"display": {"skin": "x"}})
+    cli._setup_busy_input(p, existing=True, fast=False)
+    cfg = yaml.safe_load((p / "config.yaml").read_text())
+    assert asked == ["busy_input"] and cfg["display"] == {"skin": "x", "busy_input_mode": "steer"}
+    # a profile that already names a mode is not asked and keeps it
+    cli._setup_busy_input(p, existing=True, fast=False)
+    assert asked == ["busy_input"]
+    # the all-yes path (no questions) takes the recommended value, in an existing profile too
+    monkeypatch.setattr(cli, "_TTY", False)
+    q = _profile(tmp_path.parent / (tmp_path.name + "_fast"), {})
+    cli._setup_busy_input(q, existing=True, fast=True)
+    assert yaml.safe_load((q / "config.yaml").read_text())["display"]["busy_input_mode"] == "queue"
+    # no terminal: a new profile gets queue, an existing one is left alone (doctor says so)
+    n = _profile(tmp_path.parent / (tmp_path.name + "_new"), {})
+    cli._setup_busy_input(n, existing=False, fast=False)
+    assert yaml.safe_load((n / "config.yaml").read_text())["display"]["busy_input_mode"] == "queue"
+    o = _profile(tmp_path.parent / (tmp_path.name + "_old"), {"display": {"skin": "x"}})
+    cli._setup_busy_input(o, existing=True, fast=False)
+    assert "busy_input_mode" not in yaml.safe_load((o / "config.yaml").read_text())["display"]
+    assert asked == ["busy_input"], "never asked without a terminal"
 
 
 def test_doctor_says_whether_relay_turns_are_slimmed(tmp_path, capsys):

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import time
 
 import logging
 
@@ -93,6 +94,15 @@ def _ws_url(relay_url: str, agent_id: str, params: dict[str, str]) -> str:
     return parsed._replace(scheme=ws_scheme).geturl() + f"/ws/agent/{agent_id}?{query}"
 
 
+#: Seconds after the bridge starts during which "not registered yet" is not news: setup (or the MCP server's own
+#: start-up) registers the agent within this time, so the log does not tell the person to run a command yet.
+REGISTER_GRACE_S = 60.0
+
+
+def _now() -> float:
+    return time.monotonic()
+
+
 async def maintain_relay_tunnel(
     relay_url: str,
     agent_id: str,
@@ -131,6 +141,8 @@ async def maintain_relay_tunnel(
     from emporia.agent_sdk import EmporiaAgent
 
     attempt = 0              # consecutive failures; wait = backoff.full_jitter(attempt) (see emporia.backoff)
+    started = _now()
+    told_wait = told_run = False     # the two "not registered" lines, each logged once
     async with EmporiaAgent(
         relay_url=relay_url,
         agent_id=agent_id,
@@ -194,9 +206,16 @@ async def maintain_relay_tunnel(
                 # Sign-in itself was refused. Not registered yet (404) or over the relay's sign-in budget (429):
                 # retrying at once only spends budget every agent behind the same address shares, so wait as
                 # the relay asked, with jitter, and much longer while the agent is not registered.
-                if e.response.status_code == 404 and attempt == 0:
-                    logger.warning("not registered on %s yet: run `hermes emporia register %s`; "
-                                   "this bridge waits and tries again", relay_url, agent_id)
+                if e.response.status_code == 404:
+                    if _now() - started < REGISTER_GRACE_S:
+                        if not told_wait:
+                            told_wait = True
+                            logger.info("not registered on %s yet; this bridge waits and tries again "
+                                        "(setup registers the agent within a minute)", relay_url)
+                    elif not told_run:
+                        told_run = True
+                        logger.warning("not registered on %s yet: run `hermes emporia register %s`; "
+                                       "this bridge waits and tries again", relay_url, agent_id)
                 await asyncio.sleep(_refusal_wait(e.response, attempt, max_backoff))
                 attempt += 1
             except (httpx.HTTPError, KeyError, ValueError):   # sign-in failed another way: relay down, a bad answer

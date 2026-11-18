@@ -3894,6 +3894,7 @@ def cmd_features(args: argparse.Namespace) -> int:
             # again by itself (no file of Hermes's is touched).
             if added := installer().refresh_mcp_references(profile):
                 print(f"  {len(added)} item(s) in its MCP entry updated for Hermes ({', '.join(added)}).")
+            installer().sync_mcp_costs(profile)     # the prices name only tools the features leave on
     try:
         now = F.enabled_from(held, key_dir)
         asked =[w for raw in (args.names or []) for w in [x.strip() for x in raw.split(",") if x.strip()]]
@@ -3950,6 +3951,31 @@ def _setup_wake(profile: Path, name: str, chosen: str, existing: bool) -> None:
         chosen = choose_setting("wake")
     if chosen:
         merge_env_file(profile / ".env", {W.SETTING: chosen})
+
+
+def _setup_busy_input(profile: Path, existing: bool, fast: bool) -> None:
+    """setup's busy-input question: what Hermes does when a second event arrives while a turn runs. Written to this
+    agent profile's own config.yaml (`display.busy_input_mode`; the profile setup is working on, never another).
+    A profile that already names a mode keeps it. Recommended: queue (the all-yes path and a new profile without a
+    terminal take it); an existing profile without a terminal is left alone, and `emporia doctor` says so."""
+    inst = installer()
+    path = profile / "config.yaml"
+    config = inst.load_yaml(path) if path.exists() else {}
+    display = config.get("display") if isinstance(config.get("display"), dict) else {}
+    if str(display.get("busy_input_mode") or "").strip():
+        return
+    if _TTY:
+        heading("Busy input", "What Hermes does when a second event arrives while the agent's turn is running.")
+        mode = choose_setting("busy_input")
+    elif fast or not existing:
+        mode = "queue"
+    else:
+        return
+    display["busy_input_mode"] = mode
+    config["display"] = display
+    inst.save_yaml(path, config)
+    print(localize(f"  + display.busy_input_mode: {mode}"
+                   + (" (a second event waits for the running turn instead of aborting it)" if mode == "queue" else "")))
 
 
 def _setup_about(profile: Path, name: str, about: str | None, existing: bool) -> None:
@@ -4178,6 +4204,7 @@ def _fast_path(args: argparse.Namespace) -> bool:
 def _recommend(args: argparse.Namespace, existing: bool) -> None:
     """The fast path's answers, as the flags a person could have passed (never over one they did)."""
     from emporia import setup_choices as sc
+    args.rounds_recommended = not args.rounds     # the default, not the person's answer: the closing block tags it
     args.rounds = args.rounds or sc.default("rounds")
     args.register = True if not args.register else args.register
 
@@ -4193,12 +4220,18 @@ def _closing_block(profile: Path, name: str, role: str, args: argparse.Namespace
              "about": "x" if args.about is not None else "",
              "accept": getattr(args, "accept_networks", ""), "template": getattr(args, "template", "")}
     chosen = set(sc.CHOICES) if chosen_all else {k for k, v in flags.items() if v}
+    if getattr(args, "rounds_recommended", False):
+        chosen.discard("rounds")
     heading(f"Settings installed for {name}", "Each line: the value, why, and how to change or undo it.")
     keys = "env" if dotenv.get("EMPORIA_KEY_STORAGE") == "env" else "files"
     for line in sc.installed_lines(dotenv, role=role, keys=keys, wallets=wallets, rounds=rounds, chosen=chosen,
                                    name=name, accepts=accepts,
                                    template=__import__("emporia.templates", fromlist=["x"]).current(profile)):
         print(localize(line))
+    if rounds:
+        from emporia import rounds as R
+        print("\n  " + localize(f"Rounds are on: the agent takes a model turn every {rounds}, on your account. "
+                                f"{R.estimate(rounds).split(': ', 1)[1]} Turn them off: emporia rounds off"))
     print(f"\n  Guide: {CREATE_GUIDE}  (giving it a character, how it behaves, safety habits, your first day, fixing problems)")
 
 
@@ -5585,7 +5618,7 @@ def welcome_lines(name: str, agent: str, relay: str, label: str = "", registered
         "",
         f"  Three things to try (start a chat with `{chat}`, or message it where it lives):",
         '      1. "What\'s happening on Emporia?"                 (it reads the relay: topics, challenges, who is here)',
-        '      2. "Play a practice game against the house."       (blotto against the house agent, if this relay runs one)',
+        '      2. "Play a practice game against the house."       (blotto against the house agent, if this relay runs one; on your own relay: emporia house create NAME first)',
         '      3. "Say hello in a topic that exists here."         (it looks at the topics first; a short public post, no links)',
         "  Payments stay inside the limits you set (testnet money only).",
     ]
@@ -5797,9 +5830,30 @@ def _relay_code_behind(h: dict) -> str:
         return f"schema {running}, checkout {SCHEMA_VERSION}"
     from emporia.module_sdk import MODULE_REGISTRY, load_bundled_modules
     load_bundled_modules()
-    missing = sorted(t for t in MODULE_REGISTRY
-                     if t.startswith("emporia:") and t not in (h.get("modules") or []))
+    missing = sorted(t for t in _games_not_listed(h) if t not in _games_switched_off(h))
     return f"missing games: {', '.join(missing)}" if missing else ""
+
+
+def _games_not_listed(h: dict) -> list[str]:
+    from emporia.module_sdk import MODULE_REGISTRY, load_bundled_modules
+    load_bundled_modules()
+    return [t for t in MODULE_REGISTRY if t.startswith("emporia:") and t not in (h.get("modules") or [])]
+
+
+def _games_switched_off(h: dict) -> dict[str, str]:
+    """{game: the command that turns it on} for a game this checkout has that the relay does not list only
+    because its optional module is off. A relay that reports its modules (`relay_modules`) and does not run the
+    game's module is current code with the game off; one that does not report them is older code."""
+    from emporia import relay_modules
+    mods = h.get("relay_modules")
+    if not isinstance(mods, dict):
+        return {}
+    out = {}
+    for t in _games_not_listed(h):
+        gate = relay_modules.GATED_GAMES.get(t)
+        if gate and gate[0] not in mods:
+            out[t] = relay_modules.BY_NAME[gate[0]].change
+    return out
 
 
 def doctor_relay(rep: Report) -> dict | None:
@@ -5813,6 +5867,8 @@ def doctor_relay(rep: Report) -> dict | None:
     if stale:
         rep.fail(f"the relay runs older code than this checkout ({stale})",
                  "emporia relay restart")
+    for game, change in sorted(_games_switched_off(h).items()):
+        rep.warn(f"{game} is not enabled on this relay (optional)", change)
     from emporia.networks import label
     if h.get("x402_enabled"):
         rep.ok(f"USDC (x402) on {', '.join(label(n) for n in h.get('x402_networks') or [])}")
@@ -6405,8 +6461,8 @@ def doctor_relay_toolsets(rep: Report, cfg: dict) -> None:
 
 def doctor_busy_input(rep: Report, cfg: dict, name: str) -> None:
     """Hermes aborts a running turn when a second event arrives in the same conversation, unless the profile's
-    `display.busy_input_mode` is `queue` (or `steer`). Setup writes `queue` for a profile it makes; an existing
-    profile keeps its own choice, so doctor advises the one command."""
+    `display.busy_input_mode` is `queue` (or `steer`). Setup asks (recommended: queue); a profile that already
+    names a mode keeps it, and one set up without a terminal is left, so doctor advises the one command."""
     mode = str(((cfg.get("display") or {}) if isinstance(cfg.get("display"), dict) else {}).get("busy_input_mode")
                or "").strip().lower()
     if mode in ("queue", "steer"):
@@ -7748,6 +7804,7 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     apply_role(profile, role)
     _setup_playbook(profile, name, args.playbook, existing)
     _setup_wake(profile, name, args.wake, existing)
+    _setup_busy_input(profile, existing, fast)
     template_key = _setup_template(profile, name, args, existing)
     rounds_every = _setup_optional(profile, name, args, existing, wallet=bool(wallet))
     if template_key:

@@ -278,6 +278,14 @@ def test_table_talk_wakes_no_one_in_any_mode_and_waits_in_the_inbox(monkeypatch)
     assert got == [False, True] and "get_game_chat" in lines[0]["text"]
 
 
+def test_the_agents_own_game_opening_notice_wakes_no_one_in_any_mode(monkeypatch):
+    own = {"type": "session_created", "session_id": "s9", "module_type": "emporia:blotto:v2"}
+    for mode in wake.MODES:
+        assert not wake.admits(mode, "session_created", RELAY_SENDER, LISTED | {"*"}), mode
+        got, lines = _run_bridge(monkeypatch, [own], {"EMPORIA_WAKE": mode, "EMPORIA_ALLOWED_USERS": "*"})
+        assert got == [False] and lines == [], mode
+
+
 def _reply(post_id, root="p0", author="bob"):
     return {"type": "post_reply", "post_id": post_id, "parent_id": root, "root_id": root, "author_id": author,
             "preview": "ok"}

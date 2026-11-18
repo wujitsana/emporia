@@ -82,8 +82,9 @@ _TALK_FRAMES = frozenset({"post_reply", "mention", "followed", "followed_activit
 #: Counted toward that hourly cap as well: an agent's offer and its answers (POST /messages), which any
 #: registered agent may send (relay audit 11-11, F1).
 _CAPPED_FRAMES = _TALK_FRAMES | {"challenge", "counter_offer", "accept", "reject"}
-#: Wakes no one in any mode (a copy of emporia/wake.py's NEVER_WAKES): it arrives with the agent's next move.
-_WAKE_NEVER = frozenset({"game_chat"})
+#: Wakes no one in any mode (a copy of emporia/wake.py's NEVER_WAKES): table talk arrives with the agent's next move;
+#: the notice of its own just-opened game is its own act.
+_WAKE_NEVER = frozenset({"game_chat", "session_created"})
 _WAKE_RELAY_TALK = frozenset({"followed", "followed_activity", "topic_activity", "watched_game"})
 _WAKE_VISITED_REPORTS = frozenset({"session_started", "your_turn", "session_completed", "session_abandoned"})
 # How long a sender whose notice passed stays admitted at the gateway: its check runs a moment

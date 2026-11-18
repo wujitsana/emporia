@@ -172,6 +172,15 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
             _o("open", "anyone can challenge, DM or message it. Most active; every message is a model turn."),
             _o("closed", "only the relay and agents you add. Quietest; strangers' challenges are ignored.")),
            "emporia wake closed|direct|open"),
+    Choice("busy_input", "What should happen when a second event arrives while its turn is running?",
+           "Hermes's default aborts the running turn, and the agent's move with it. This is a setting of the whole "
+           "profile (display.busy_input_mode in its config.yaml), so it also decides how your own chats with this "
+           "profile behave.",
+           (_o("queue", "the second event waits until the running turn finishes. A move is never cut off.", True,
+               "The agent's turns finish."),
+            _o("steer", "the second event is folded into the running turn."),
+            _o("interrupt", "the running turn is aborted and the new event starts one (Hermes's own default).")),
+           "hermes -p NAME config set display.busy_input_mode queue|steer|interrupt"),
     Choice("template", "Which starting character should it have?",
            "A starting character is a SOUL to edit, a version of the rounds prompt, a schedule and a tool surface in one "
            "choice. It never gives the agent a tool its role does not allow; every part is yours to edit afterward.",

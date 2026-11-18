@@ -256,3 +256,30 @@ def test_declining_the_fast_path_asks_each_question_with_the_recommended_first(p
     assert "EMPORIA_WAKE=direct" in env and "EMPORIA_KEY_STORAGE=env" in env
     assert jobs == [("dan", "4h")]
     assert "(recommended default)" not in out, "the person answered them"
+
+
+def test_the_all_yes_closing_block_tags_rounds_and_says_what_they_cost(monkeypatch, capsys, tmp_path):
+    """Rounds taken from "recommended for everything" are tagged like the other defaults, and the block says
+    they run a model turn every 4h, what that costs, and the off command."""
+    import argparse
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: False, raising=False)
+
+    class _Inst:
+        def harvest_env(self, profile):
+            return {}
+    monkeypatch.setattr(cli, "installer", lambda: _Inst())
+    monkeypatch.setattr(cli, "_agent", lambda name: (tmp_path, "shop", {}))
+    monkeypatch.setattr(cli, "_wallet_address", lambda *a, **k: "")
+    args = argparse.Namespace(role="", keys="", wake="", playbook="", rounds="", wallet=False, solana=False,
+                              about=None, register=False)
+    cli._recommend(args, False)
+    cli._closing_block(tmp_path, "shop", "marketplace", args, False, args.rounds)
+    out = capsys.readouterr().out
+    rounds_line = next(l for l in out.splitlines() if l.strip().startswith("Rounds") and "4h" in l)
+    assert "(recommended default)" in rounds_line
+    assert "model turn every 4h" in out and "6 rounds a day" in out and "emporia rounds off" in out
+    # a person who passed --rounds themselves: no tag
+    args2 = argparse.Namespace(**{**vars(args), "rounds": "8h", "rounds_recommended": False})
+    cli._closing_block(tmp_path, "shop", "marketplace", args2, False, "8h")
+    line2 = next(l for l in capsys.readouterr().out.splitlines() if l.strip().startswith("Rounds") and "8h" in l)
+    assert "(recommended default)" not in line2

@@ -117,6 +117,22 @@ def test_doctor_says_when_the_relay_needs_a_restart():
     assert cli._relay_code_behind({"modules": bundled}) == "it reports no schema version"
 
 
+def test_doctor_a_game_that_is_off_is_a_warning_not_older_code():
+    """Tesseract is an optional module: current code with it off is not a relay to restart."""
+    from emporia.module_sdk import MODULE_REGISTRY
+    from emporia.schema import SCHEMA_VERSION
+    import emporia.relay_server  # noqa: F401
+    bundled = [t for t in MODULE_REGISTRY if t.startswith("emporia:")]
+    listed = [t for t in bundled if "tesseract" not in t]
+    h = {"schema_version": SCHEMA_VERSION, "modules": listed, "relay_modules": {"log": {}}}
+    assert cli._relay_code_behind(h) == ""
+    assert "EMPORIA_TESSERACT 1" in cli._games_switched_off(h)["emporia:tesseract:v1"]
+    # a relay that reports no modules at all, or lacks a game that is not optional, is older code
+    assert "tesseract" in cli._relay_code_behind({"schema_version": SCHEMA_VERSION, "modules": listed})
+    assert "two-thirds" in cli._relay_code_behind(
+        {**h, "modules": [t for t in listed if "two-thirds" not in t]})
+
+
 # --- hardening checks: skill lock, exposed api_server, relay-turn cap -------
 
 def _agent_profile(root, name="zed", env="", cfg=None):
