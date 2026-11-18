@@ -878,6 +878,10 @@ def cmd_status(_args: argparse.Namespace) -> int:
     stale = _stale_notice()
     if stale:
         print(f"Notice  : {stale}")
+    waited = _moves_waited()
+    if waited:
+        print(f"Notice  : {waited} game move{'s' if waited != 1 else ''} waited today because the daily turn cap was "
+              "reached; raise it: emporia agent settings NAME --set daily_turns=...")
     agent, relay = _setting("EMPORIA_AGENT_ID"), _setting("EMPORIA_RELAY_URL")
     if not agent:
         print("Agent   : not set up — run `hermes emporia setup`")
@@ -888,7 +892,24 @@ def cmd_status(_args: argparse.Namespace) -> int:
                            f"{agent}` (or start its gateway)", None: "not answering"}[on_relay])
     print("Tools   : " + _tools_line())
     print("Checks  : hermes emporia doctor")
+    print(f"Remove  : hermes emporia agent delete {agent}, then hermes profile delete {profile_name()} "
+          "(only your person runs these, in their own terminal)")
     return 0 if on_relay else 1
+
+
+def _moves_waited() -> int:
+    """Game moves the turn cap held back today (the plugin's own alert entry); 0 when none or unreadable."""
+    try:
+        try:
+            from . import turn_cap
+        except ImportError:                                   # loaded as a bare file (tests, tools)
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("emporia_turn_cap", HERE / "turn_cap.py")
+            turn_cap = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(turn_cap)
+        return turn_cap.moves_waited(hermes_home())
+    except Exception:                                         # noqa: BLE001 — a notice never breaks `status`
+        return 0
 
 
 def _tools_line() -> str:
@@ -954,13 +975,25 @@ def cmd_update(args: argparse.Namespace) -> int:
         # Found by the end-to-end run: it said "restart the gateway" when nothing had changed.
         print(f"Runtime already at {sha[:12]} (verified): nothing to do.")
         return 0
-    print(f"Runtime at {sha[:12]} (verified). Restart each profile that runs it to use it:")
+    print(f"Runtime at {sha[:12]} (verified). To use it:")
+    if _relay_is_local():
+        print("  1. This machine runs your relay: restart it first (until then `doctor` says it runs older code):")
+        print("       hermes emporia relay restart")
+    else:
+        print("  1. If this machine also runs your relay, restart it first: hermes emporia relay restart")
+    print("  2. Restart the shared gateway once (it interrupts live turns on every profile that uses it):")
+    print("       hermes gateway restart")
+    print("  3. So sessions that are already open load the new skills (history is kept):")
     for name in _profiles_running(rt) or [profile_name()]:
-        print(f"    hermes gateway restart")
-    print("Then, so sessions that are already open load the new skills (history is kept):")
-    for name in _profiles_running(rt) or [profile_name()]:
-        print(f"    hermes {'' if name == 'default' else f'-p {name} '}sessions refresh-prompts")
+        print(f"       hermes {'' if name == 'default' else f'-p {name} '}sessions refresh-prompts")
     return 0
+
+
+def _relay_is_local() -> bool:
+    """Whether this profile's relay URL is on this machine (a relay this machine runs, `emporia relay start`)."""
+    from urllib.parse import urlsplit
+    host = (urlsplit(_setting("EMPORIA_RELAY_URL") or "").hostname or "").lower()
+    return host in ("localhost", "127.0.0.1", "::1", "host.docker.internal")
 
 
 def _state(rt: Path | None) -> tuple[str, str]:

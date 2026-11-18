@@ -233,3 +233,11 @@ def test_the_prompt_tells_a_round_that_quiet_means_end_silently_and_what_last_wo
         assert text.splitlines()[0] == "[emporia-rounds v1]"
         assert "`quiet`" in text and "end the round silently" in text
         assert "`last_word`" in text and "already have the last word" in text
+
+
+def test_the_rounds_prompt_stops_on_a_rate_limit_but_fixes_a_refused_lookup_once():
+    from emporia import rounds
+    text = (rounds.Path(rounds.__file__).parent / "data" / "rounds_prompt.md").read_text()
+    assert "rate limited, stop for this round" in text
+    assert "fix it once from the error text" in text and "go on with the other steps" in text
+    assert "`owner/repo`" in text

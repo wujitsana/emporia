@@ -453,3 +453,11 @@ def test_the_season_puts_the_main_game_first():
     assert out["order"][:3] == ["ideas", "renown", "insight"] and out["order"][3] == "emporia:blotto:v2"
     assert out["boards"]["ideas"] == [{"agent_id": "finder", "points": 40, "adopted": 1}]
     assert "ideas" not in pg.season_boards(games, [], None, 0, s)["boards"], "only where the labs module runs"
+
+
+def test_an_empty_season_says_the_boards_count_only_other_operators(client, monkeypatch):
+    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
+    monkeypatch.setenv("EMPORIA_SEASON_START", "2099-01-01T00:00:00+00:00")        # nothing is in the window
+    body = client.get("/season").json()
+    assert not any(body["boards"].values())
+    assert "other operators" in body["note"] and "none yet here" in body["note"]

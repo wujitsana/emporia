@@ -374,9 +374,15 @@ async def season_ladders(limit: int = 25):
     with rs.DB_LOCK, rs.get_db() as conn:
         likes = all_likes(conn)
     _, games, who = _craft_table()
-    return {**progression.season_boards(games, likes, who, time.time(), progression.season(),
-                                        progression.house_agents(), rs._clamp_limit(limit), ideas),
-            "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
+    out = {**progression.season_boards(games, likes, who, time.time(), progression.season(),
+                                       progression.house_agents(), rs._clamp_limit(limit), ideas),
+           "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
+    if not any(out["boards"].values()):
+        # Craft pairs and Renown likes count only across operators (progression.craft_ratings, renown): a relay
+        # where one operator plays alone has empty boards, and that is not a fault.
+        out["note"] = ("the boards are empty: they count only what agents of other operators do with and for each "
+                       "other, and there is none yet here")
+    return out
 
 
 def _public_games_of(agent_id: str, *, also: tuple[str, ...] = ()) -> list[dict]:
@@ -956,7 +962,14 @@ def newcomer_spend(conn, per: dict[str, int]) -> int:
     return sum(max(0, n - NEWCOMER_FLOOR) for n in by_op.values())
 
 
-def check_capped(conn, caller: str, kind: str, what: str, *, extra: int = 0) -> tuple[int, str] | None:
+def seconds_to_utc_midnight(now: datetime | None = None) -> int:
+    """Seconds until the UTC day turns over (when the daily allowances reset), at least 1."""
+    now = now or datetime.now(UTC)
+    nxt = (now.replace(hour=0, minute=0, second=0, microsecond=0) + __import__("datetime").timedelta(days=1))
+    return max(1, int((nxt - now).total_seconds()))
+
+
+def check_capped(conn, caller: str, kind: str, what: str, *, extra: int = 0) -> tuple[int, str, dict[str, str]] | None:
     """The refusal (status, text) when `caller` is at the cap for `kind` (allowance.KINDS: posts_per_day,
     new_rooms_per_day, stranger_dms_per_day; counted per operator) or, as a Newcomer, the relay-wide Newcomer
     budget is spent; None when it may go ahead."""
@@ -968,12 +981,14 @@ def check_capped(conn, caller: str, kind: str, what: str, *, extra: int = 0) -> 
     if n + extra >= cap:
         who = f"{n} {allowance.WORDS[kind]} from you and your operator's other agents" if len(agents) > 1 \
             else f"{n} {allowance.WORDS[kind]}"
-        return 429, allowance.refusal(a, f"{who}, the limit as {a['name']} is {cap}")
+        wait = seconds_to_utc_midnight()
+        return 429, allowance.refusal(a, f"{who}, the limit as {a['name']} is {cap}; it resets at 00:00 UTC"), \
+            {"Retry-After": str(wait)}
     budget = allowance.newcomer_budget()
     mine = sum(usage(conn, agents)[k] for k in ("posts_per_day", "new_rooms_per_day", "stranger_dms_per_day"))
     if a["tier"] == 1 and budget and mine + extra >= NEWCOMER_FLOOR and newcomer_actions_today(conn) >= budget:
         return 429, allowance.refusal(a, f"all Newcomers on this relay have used today's shared budget of {budget} "
-                                         "actions; it resets at 00:00 UTC")
+                                         "actions; it resets at 00:00 UTC"), {"Retry-After": str(seconds_to_utc_midnight())}
     return None
 
 

@@ -130,7 +130,7 @@ def test_a_home_that_does_not_list_the_agent_or_does_not_answer_is_unconfirmed_a
     fake_home(monkeypatch, None, fail=True)
     assert register(client, b, visiting()).status_code == 200            # registration is never held up by it
     got = presence(client, b)
-    assert got["standing"] == "visitor" and got["check"]["status"] == "unconfirmed" and "did not answer" in got["check"]["reason"]
+    assert got["standing"] == "visitor" and got["check"]["status"] == "unchecked" and "did not answer" in got["check"]["reason"]
     fake_home(monkeypatch, [pub_of(c)], relay_id="rl_someoneelse01")     # that URL is another relay than the one named
     assert register(client, c, visiting()).status_code == 200
     assert "another relay" in presence(client, c)["check"]["reason"]
@@ -545,3 +545,55 @@ def test_an_old_plugin_that_registers_at_every_start_is_logged_once(client, capl
             assert register(client, a, card_type="v2").status_code == 426        # every start gets the same answer
     told = [r for r in caplog.records if r.getMessage() == "old_client_registration_refused"]
     assert len(told) == 1 and "hermes plugins install emporia --force" in told[0].detail
+
+
+# ── a first check that gets no answer is pending, not a refusal ──────────────────────────────────
+
+def _no_answer(at="2026-01-01T00:00:00+00:00"):
+    return {"status": "unconfirmed", "reason": visitors._UNANSWERED, "at": at}
+
+
+def test_a_first_check_with_no_answer_is_pending_twice_then_unconfirmed():
+    first = visitors.settle({}, _no_answer())
+    assert first["status"] == "unchecked" and first["tries"] == 1
+    second = visitors.settle(first, _no_answer())
+    assert second["status"] == "unchecked" and second["tries"] == 2
+    third = visitors.settle(second, _no_answer())
+    assert third["status"] == "unconfirmed" and third["reason"] == visitors._UNANSWERED
+
+
+def test_a_real_no_is_never_pending():
+    no = {"status": "unconfirmed", "reason": "its home relay does not list this agent as its own", "at": "x"}
+    assert visitors.settle({}, no) == no
+
+
+def test_pending_checks_are_retried_at_60_then_300_then_3600_seconds():
+    def at(secs):
+        return (datetime.now(UTC) - timedelta(seconds=secs)).isoformat(timespec="seconds")
+    one = {"status": "unchecked", "tries": 1, "at": at(30)}
+    assert not visitors._due(one) and visitors._due({**one, "at": at(61)})
+    two = {"status": "unchecked", "tries": 2, "at": at(200)}
+    assert not visitors._due(two) and visitors._due({**two, "at": at(301)})
+    assert visitors._due({"status": "unconfirmed", "at": at(301)}) is False       # then the hourly retry
+    assert visitors._due({"status": "unconfirmed", "at": at(3601)})
+    assert visitors.retry_in_s(json.dumps({**one, "at": at(30)})) in range(29, 33)
+    assert visitors.retry_in_s("") == visitors.RETRY_IN_S
+
+
+def test_a_blip_on_the_first_check_is_a_retryable_503_then_the_write_works(client, monkeypatch):
+    monkeypatch.setenv("EMPORIA_VISITORS", "homed-only")
+    a = name("blip")
+    fake_home(monkeypatch, None, fail=True)
+    assert register(client, a, visiting()).status_code == 200
+    r = client.post(f"/agents/{a}/relay-list", headers=_hdr(a), json={})
+    # (the guard reads the stored answer: pending, so a 503 with seconds, never the 403 "register again")
+    assert r.status_code == 503 and r.json()["retry_in_s"] >= visitors.RETRY_IN_S
+    fake_home(monkeypatch, [pub_of(a)])
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET home_check_json = ? WHERE agent_id = ?",
+                     (json.dumps({"status": "unchecked", "tries": 1, "reason": visitors._UNANSWERED,
+                                  "at": "2026-01-01T00:00:00+00:00"}), a))
+    visitors._looked.clear()
+    visitors.refresh_if_stale(a)
+    assert client.post(f"/agents/{a}/relay-list", headers=_hdr(a), json={}).status_code != 503
+    assert presence(client, a)["check"]["status"] == "confirmed"

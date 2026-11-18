@@ -209,9 +209,54 @@ def _pull(url: str) -> dict[str, Any]:
 
 
 RECHECK_S = 24 * 3600          # a confirmed home is asked again after this long
+PENDING_WAITS_S = (60, 300)    # a first check that got no answer is retried after 60 s, then 300 s, then RETRY_S
 RETRY_S = 3600                 # a home that did not answer, or an unconfirmed one, is asked again after this long
 MISSING_S = 7 * 24 * 3600      # a confirmed home that has not answered for this long is no longer confirmed
 _looked: dict[str, float] = {}
+
+
+def _pending_wait(check: dict[str, Any]) -> float:
+    tries = int(check.get("tries") or 0)
+    return PENDING_WAITS_S[min(max(tries, 1), len(PENDING_WAITS_S)) - 1]
+
+
+def retry_in_s(check_json: str | None) -> int:
+    """Seconds until a pending home check runs again (what a 503 tells the visitor): RETRY_IN_S before any check
+    answered, else the time left to the next try."""
+    import json
+    try:
+        check = json.loads(check_json or "") or {}
+    except ValueError:
+        check = {}
+    if check.get("status") != "unchecked" or not check.get("tries"):
+        return RETRY_IN_S
+    return max(RETRY_IN_S, int(_pending_wait(check) - _age_s(check.get("at", ""))) + 1)
+
+
+def stored_check(agent_id: str | None) -> str:
+    """The stored home check of an agent, as the JSON text ("" when none)."""
+    if not agent_id:
+        return ""
+    from emporia import relay_server as rs
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT home_check_json FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+    return (row["home_check_json"] if row else "") or ""
+
+
+def settle(previous: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    """The check to keep after a new answer. No answer is not a "no": a confirmed home that does not answer stays
+    confirmed (until MISSING_S); a first check that gets no answer is "unchecked" (pending, retryable) for its first
+    two tries and only the third turns it into "unconfirmed". A real "no" is kept as it is."""
+    if result.get("reason") != _UNANSWERED:
+        return result
+    status = previous.get("status")
+    if status == "confirmed":
+        return {**previous, "tried": result["at"]} if _age_s(previous.get("at", "")) < MISSING_S else result
+    if status in (None, "", "unchecked"):
+        tries = int(previous.get("tries") or 0) + 1
+        if tries < 3:
+            return {"status": "unchecked", "reason": result["reason"], "at": result["at"], "tries": tries}
+    return result
 
 
 def _age_s(at: str) -> float:
@@ -222,8 +267,8 @@ def _age_s(at: str) -> float:
 
 
 def looked_recently(agent_id: str) -> bool:
-    """Whether this agent's home was looked at in the last five minutes (a cheap test, no I/O)."""
-    return time.monotonic() - _looked.get(agent_id, -1e9) < 300
+    """Whether this agent's home was looked at in the last minute (a cheap test, no I/O)."""
+    return time.monotonic() - _looked.get(agent_id, -1e9) < 60
 
 
 def _due(check: dict[str, Any]) -> bool:
@@ -233,6 +278,8 @@ def _due(check: dict[str, Any]) -> bool:
                                                              _age_s(check["tried"]) >= RETRY_S)
     if status == "unconfirmed":
         return _age_s(check.get("at", "")) >= RETRY_S
+    if status == "unchecked" and check.get("tries"):
+        return _age_s(check.get("at", "")) >= _pending_wait(check)
     return True            # never checked (the first check did not run or did not finish): check now
 
 
@@ -263,9 +310,7 @@ def refresh_if_stale(agent_id: str) -> None:
         with _lock:
             _cache.pop(home.get("url", ""), None)           # a fresh answer, not the cached one
         result = confirm(home, row["public_key_hex"] or "", row["stable_id"] or "")
-        if (check.get("status") == "confirmed" and result.get("reason") == _UNANSWERED
-                and _age_s(check.get("at", "")) < MISSING_S):
-            result = {**check, "tried": result["at"]}       # no answer is not a "no": keep it, try again in RETRY_S
+        result = settle(check, result)      # no answer is not a "no": kept or pending, tried again later
         with rs.DB_LOCK, rs.get_db() as conn:
             conn.execute("UPDATE authorized_agents SET home_check_json = ? WHERE agent_id = ?",
                          (json.dumps(result, sort_keys=True), agent_id))

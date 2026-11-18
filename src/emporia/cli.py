@@ -84,7 +84,15 @@ def profile_dir(name: str) -> Path:
 
 
 def relay_url() -> str:
-    return os.getenv("EMPORIA_RELAY_URL", "http://localhost:8088").rstrip("/")
+    """The relay this command talks to: EMPORIA_RELAY_URL. No silent localhost fallback: with none set the command
+    stops and names the setting (`EMPORIA_DEV_LOCAL_RELAY=1` restores the local default for development)."""
+    from emporia import relay_default
+    url = relay_default.resolve(os.getenv("EMPORIA_RELAY_URL"))
+    if not url:
+        raise SystemExit("No relay is set: EMPORIA_RELAY_URL is empty. Set it to your relay's URL "
+                         "(`emporia setup relay`, or `emporia relay use URL NAME`), or pass the URL the command "
+                         "takes. For a relay under development only: EMPORIA_DEV_LOCAL_RELAY=1.")
+    return url.rstrip("/")
 
 
 def hermes_home() -> Path:
@@ -3805,6 +3813,7 @@ _PEEK_FACTS = ("import json\nfrom emporia import mcp_server as m\n"
                "d = r.json() if r.status_code == 200 else {}\n"
                "ok = r.status_code == 200\n")
 PEEK = {
+    "waiting": _PEEK_FACTS + "print(json.dumps({'success': ok, 'wait_s': (d.get('inbox') or {}).get('oldest_reply_wait_s')}))",
     "next": "import json\nfrom emporia import mcp_server as m\nprint(json.dumps(m.whats_next(8)))",
     "inbox": _PEEK_FACTS + "ib = d.get('inbox') or {}\n"
              "print(json.dumps({'success': ok, 'unread_total': ib.get('unread_total', 0), 'by_type': ib.get('by_type') or {}, "
@@ -6447,7 +6456,31 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
                  "raise EMPORIA_DAILY_TURNS in its .env (0 = no cap) once you know why it is busy")
     else:
         rep.ok(shown)
+    doctor_waiting_replies(rep, profile, rounds_state)
+    from emporia import analytics as _an, limits as _limits
+    if waited := _an.moves_waited(profile):
+        rep.warn(_limits.turn_cap_note(waited).replace("NAME", name),
+                 f"emporia agent settings {name} --set daily_turns=...")
     doctor_autonomous_actions(rep, profile, dotenv)
+
+
+WAITING_REPLY_S = 1800
+
+
+def doctor_waiting_replies(rep: Report, profile: Path, rounds_state: str) -> None:
+    """Replies, mentions and DMs that wait in the inbox for more than 30 minutes while no round is scheduled to
+    pick them up (the default wake leaves them for rounds). Read-only; says nothing when it cannot read."""
+    if not rounds_state.startswith(("off", "paused")):
+        return
+    r = _as_agent(profile, PEEK["waiting"], EMPORIA_NO_ARCHIVE="1", EMPORIA_NO_LOOK_NOTE="1")
+    try:
+        wait = json.loads((r.stdout.strip().splitlines() or [""])[-1]).get("wait_s")
+    except ValueError:
+        return
+    if isinstance(wait, int) and wait > WAITING_REPLY_S:
+        rep.warn(f"a reply or message has waited {wait // 60} minutes in the inbox and no round is scheduled to read it "
+                 "(the default wake leaves replies and DMs for rounds)",
+                 f"emporia rounds on --agent {profile.name}, or widen the wake: emporia wake open --agent {profile.name}")
 
 
 def doctor_relay_toolsets(rep: Report, cfg: dict) -> None:

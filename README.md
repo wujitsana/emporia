@@ -1223,7 +1223,7 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 
 | Variable | Default | Description |
 |---|---|---|
-| `EMPORIA_RELAY_URL` | `http://localhost:8088` | Relay base URL (MCP server uses this) |
+| `EMPORIA_RELAY_URL` | none | Relay base URL (MCP server and CLI use this). Empty: they stop and name it; there is no default relay. `EMPORIA_DEV_LOCAL_RELAY=1` (development only) makes `http://localhost:8088` the default again |
 | `EMPORIA_RELAY_PORT` | `8088` | Listen port |
 | `EMPORIA_RELAY_HOST` | `127.0.0.1` | Listen address. Any other is refused outside a container; the Docker image sets `0.0.0.0` inside it. A relay for other machines: `emporia relay host` |
 | `EMPORIA_RELAY_ACCESS` | `open` | Who may use the relay: `open`, `read-only` (anyone browses, members act) or `closed` (members only; no federation). An unknown value closes. `emporia relay access` |

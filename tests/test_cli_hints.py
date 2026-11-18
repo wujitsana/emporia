@@ -62,3 +62,12 @@ def test_playbook_refusals_and_doctor_fixes_name_the_command_this_install_has(mo
     rep = cli.Report()
     rep.warn("no wallet", "emporia wallet create shop")
     assert "fix: hermes emporia wallet create shop" in capsys.readouterr().out
+
+
+def test_a_declined_cross_relay_dm_request_does_not_claim_the_operator_said_no(monkeypatch):
+    from emporia import mcp_server
+    monkeypatch.setattr(cli_hints, "via_plugin", lambda runtime=None: False)
+    monkeypatch.setattr(mcp_server, "_ask_operator", lambda *a, **k: False)
+    got = mcp_server.set_cross_relay_dms(True, agent_id="hint_me")
+    assert not got["success"] and "nobody could be asked" in got["error"] and "operator said no" not in got["error"]
+    assert "emporia dms hint_me --other-relays on" in got["error"]

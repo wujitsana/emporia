@@ -300,6 +300,8 @@ def test_posts_per_day_by_tier_and_the_refusal_says_tier_and_what_raises_it(clie
         assert _post(client, a).status_code == 200
     r = _post(client, a)
     assert r.status_code == 429 and "Newcomer" in r.text and "never XP" in r.text and "for Known" in r.text
+    assert "resets at 00:00 UTC" in r.text and 1 <= r.json()["retry_in_s"] <= 86400
+    assert r.headers["retry-after"] == str(r.json()["retry_in_s"]), "the body and the header say the same"
     _evidence_of(monkeypatch, a, {"op1": 1.0, "op2": 1.0})
     assert _post(client, a).status_code == 200, "Known allows 4 a day"
 

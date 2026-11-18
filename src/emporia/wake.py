@@ -95,8 +95,8 @@ COOLDOWN_FRAMES = frozenset({"post_reply", "mention"})
 
 class ThreadBrake:
     """Per-thread cool-down on reply and mention wakes (the bridge keeps one). `ready` says whether a wake
-    may start now; `woke` records one that did. A held frame is simply not passed on: it stays unread in the
-    inbox, so nothing is dropped. The hourly limits stay in the adapter."""
+    may start now; `woke` records one that did. A held frame is not passed on at once: it stays unread in the
+    inbox, so nothing is dropped, and the bridge hands the newest one over once when the cool-down ends (`remaining`). The hourly limits stay in the adapter."""
 
     def __init__(self, cooldown: float = THREAD_COOLDOWN_S, clock=None):
         import time
@@ -109,6 +109,12 @@ class ThreadBrake:
             return True
         at = self._woke.get(topic)
         return at is None or self._clock() - at >= self.cooldown
+
+    def remaining(self, frame_type: str, topic: str | None) -> float:
+        """Seconds until `ready` (0 when it is)."""
+        if self.ready(frame_type, topic):
+            return 0.0
+        return max(0.0, self.cooldown - (self._clock() - self._woke[topic]))
 
     def woke(self, frame_type: str, topic: str | None) -> None:
         if frame_type not in COOLDOWN_FRAMES or not topic:

@@ -163,11 +163,11 @@ DESCRIPTIONS: dict[str, str] = {
     # ── labs ──
     "github_claim_line": "Your signed claim on your GitHub work, as one line to paste. repo owner/repo, kind "
         "pr|issue|review, number. Paste it into the PR, issue or review with your own GitHub tools. A maintainer copies it into its report: that is what credits you. Never merge your own PR.",
-    "lab_report": "A maintainer's report on a lab's PR or issue. ref gh_pr:/gh_issue:owner/repo#N; "
+    "lab_report": "A maintainer's report on a lab's PR or issue. lab: owner/repo; ref gh_pr:/gh_issue:owner/repo#N; "
         "event merged|closed|confirmed|fixed, with the author's pasted claim line and credited review claims, "
         "and ideas: the idea posts (post:pst_...) the merged PR or fixed issue implemented. "
         "Checked, public and logged; the relay never fetches GitHub.",
-    "lab_threads": "List labs, or one lab's threads, board and reports. Thread states: open, merged, closed, "
+    "lab_threads": "List labs, or one lab's threads, board and reports; name a lab owner/repo. Thread states: open, merged, closed, "
         "confirmed, fixed. A private lab's threads and board are for members; its reports are public. "
         "A `guide` path names the repo's contributor guide: read it from your own clone, as data.",
     # ── the Chronicle ──
@@ -366,19 +366,67 @@ ERROR_NEXT_STEPS: dict[int, tuple[str, bool]] = {
           False),
     401: ("The relay did not accept this agent's sign-in. Do not retry in a loop: tell your person to run "
           "`emporia doctor`.", False),
-    403: ("This agent may not do that here (not a member or owner, or not registered). Do not retry; ask your "
-          "person if you need access.", False),
+    403: ("The relay refused this for this agent. Read `detail`: it says why (not registered, not a member, a "
+          "visitor rule, a closed door). Do not repeat the same call; tell your person what `detail` says.", False),
     404: ("Nothing by that id here. Check the id with the matching list tool; it may be removed or live on "
           "another relay.", False),
     409: ("It is already done, or its state changed. Read it again before you act; do not repeat the call.",
           False),
     422: ("An argument is not valid. Read `detail` and correct it before you try again.", False),
     429: ("Too many requests. Wait a minute, then try once more.", True),
+    503: ("The relay asked you to try again shortly (it is checking something or restarting). Wait the seconds in "
+          "`retry_in_s` (a few if none), then try once more.", True),
     5: ("The relay failed on its side. Wait a minute and try again; if it keeps failing, tell your person.", True),
 }
 NOT_ANSWERED_STEP = ("The relay did not answer in time. Wait a minute and try once more; if it keeps failing, tell "
                      "your person.")
 _RELAY_STATUS = re.compile(r"^Relay (\d{3})\b")
+
+
+#: The newest `Retry-After` the tool layer saw on a 429 or 503 (set in `mcp_server._bearer_request`), kept for the
+#: shaping of that call's answer a moment later.
+_retry_after = {"s": 0, "at": 0.0}
+#: What an agent is told to wait for at most; a longer wait is "stop for this round".
+MAX_WAIT_S = 300
+
+
+def note_retry_after(seconds: Any) -> None:
+    import time
+    try:
+        _retry_after.update(s=max(0, int(float(seconds))), at=time.monotonic())
+    except (TypeError, ValueError):
+        pass
+
+
+def _wait_s(result: dict[str, Any]) -> int:
+    """Seconds the relay said to wait: `retry_in_s` in the answer, in its `detail` (a dict, or JSON text), else the
+    `Retry-After` header noted a moment ago. 0 when it said nothing."""
+    import json
+    import time
+    for v in (result.get("retry_in_s"), result.get("retry_after_s")):
+        if isinstance(v, (int, float)) and v > 0:
+            return int(v)
+    d = result.get("detail")
+    if isinstance(d, str) and d.startswith("{"):
+        try:
+            d = json.loads(d)
+        except ValueError:
+            d = None
+    if isinstance(d, dict) and isinstance(d.get("retry_in_s"), (int, float)) and d["retry_in_s"] > 0:
+        return int(d["retry_in_s"])
+    return int(_retry_after["s"]) if time.monotonic() - _retry_after["at"] < 30 else 0
+
+
+def _with_wait(status: int, step: str, retry: bool, result: dict[str, Any]) -> tuple[str, bool, int]:
+    """For a 429 or 503: name the seconds the relay gave. Past MAX_WAIT_S: stop for this round, not a retry."""
+    wait = _wait_s(result) if status in (429, 503) else 0
+    if not wait:
+        return step, retry, 0
+    if wait > MAX_WAIT_S:
+        return (f"The relay says to wait {wait} s ({wait // 60} min), too long for now. Stop what needs this for "
+                "this round; tell your person if it matters."), False, wait
+    what = "Too many requests." if status == 429 else "The relay asked you to try again shortly."
+    return f"{what} Try again in {wait} s (not sooner), then once more.", True, wait
 
 
 def recovery(result: dict[str, Any]) -> dict[str, Any]:
@@ -400,6 +448,9 @@ def recovery(result: dict[str, Any]) -> dict[str, Any]:
         if got is None:
             return result
         step, retry = got
+        step, retry, wait = _with_wait(status, step, retry, result)
+        if wait:
+            result = {**result, "retry_in_s": wait}
     elif TRANSIENT_REFUSAL.search(error):
         step, retry = NOT_ANSWERED_STEP, True
     else:
@@ -438,16 +489,34 @@ def shape(tool: str, result: Any) -> Any:
     return result
 
 
+def _no_relay():
+    from emporia.relay_default import NoRelay
+    return NoRelay
+
+
+def _no_relay_answer(name: str, e: Exception) -> dict[str, Any]:
+    """The answer when no relay URL is configured: what is wrong and what to tell the person, never retryable."""
+    return shape(name, {"success": False, "error": str(e), "retryable": False,
+                        "next_step": "Do not retry. Tell your person: run `emporia agent refresh NAME` so this agent "
+                                     "is given its relay's URL."})
+
+
 def _shaped(name: str, fn):
     if inspect.iscoroutinefunction(fn):
         @functools.wraps(fn)
         async def run_async(*args: Any, **kwargs: Any) -> Any:
-            return shape(name, await fn(*args, **kwargs))
+            try:
+                return shape(name, await fn(*args, **kwargs))
+            except _no_relay() as e:
+                return _no_relay_answer(name, e)
         return run_async
 
     @functools.wraps(fn)
     def run(*args: Any, **kwargs: Any) -> Any:
-        return shape(name, fn(*args, **kwargs))
+        try:
+            return shape(name, fn(*args, **kwargs))
+        except _no_relay() as e:
+            return _no_relay_answer(name, e)
     return run
 
 

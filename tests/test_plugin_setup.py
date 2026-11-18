@@ -415,7 +415,9 @@ def test_status_says_whether_the_relay_has_the_agent(monkeypatch, capsys):
     assert "not registered yet" in capsys.readouterr().out
     monkeypatch.setattr(setup_cli, "_registered", lambda relay, agent: True)
     assert setup_cli.cmd_status(_args()) == 0
-    assert "Relay   : registered" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "Relay   : registered" in out
+    assert "Remove  : hermes emporia agent delete shop, then hermes profile delete" in out
 
 
 def test_a_fresh_clone_is_checked_out_even_when_its_head_is_the_pinned_commit(tmp_path, monkeypatch):
@@ -725,7 +727,10 @@ def test_update_with_nothing_to_do_says_so_and_names_each_profile_to_restart(mon
     setup_cli.register_cli(parser)
     assert setup_cli.dispatch(parser.parse_args(["update"])) == 0           # first: installs, then restarts
     out = capsys.readouterr().out
-    assert "hermes gateway restart" in out and "hermes gateway restart" in out
+    assert out.count("hermes gateway restart") == 1, "one shared gateway: one line, however many profiles"
+    assert "relay restart" in out and out.index("relay restart") < out.index("hermes gateway restart"), \
+        "a relay this machine runs restarts first"
+    assert out.count("sessions refresh-prompts") == 2 and "-p shop " in out and "-p judge " in out
     assert "other" not in out and "first time" not in out
     installs = len(ran)
     assert setup_cli.dispatch(parser.parse_args(["update"])) == 0           # again: nothing to do
@@ -884,3 +889,10 @@ def test_a_bare_name_after_the_dashes_is_refused_pointing_at_agent_id(monkeypatc
     monkeypatch.setattr(setup_cli, "install_runtime", lambda **k: pytest.fail("installed"))
     assert setup_cli.cmd_setup(_args(rest=["--", "e2eagent"])) == 2
     assert "--agent-id e2eagent" in capsys.readouterr().out
+
+
+def test_update_says_the_relay_is_this_machines_only_when_its_url_is_local(monkeypatch):
+    monkeypatch.setattr(setup_cli, "_setting", lambda name: "http://localhost:8088" if name == "EMPORIA_RELAY_URL" else "")
+    assert setup_cli._relay_is_local()
+    monkeypatch.setattr(setup_cli, "_setting", lambda name: "https://relay.example" if name == "EMPORIA_RELAY_URL" else "")
+    assert not setup_cli._relay_is_local()

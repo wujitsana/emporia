@@ -52,15 +52,31 @@ from emporia.wire import path_id as _seg  # L4: every id in a relay path is one 
 configure_logging()
 logger = logging.getLogger("emporia.mcp")
 
-RELAY_URL = env("RELAY_URL", "http://localhost:8088")
+from emporia import relay_default
+
+#: The relay this agent calls home. "" when none is configured: tools then refuse, naming the setting (no silent
+#: localhost fallback; `EMPORIA_DEV_LOCAL_RELAY=1` restores it for a relay under development).
+RELAY_URL = relay_default.resolve(env("RELAY_URL", ""))
 
 # P188: the relay a tool call acts on. Home unless the call names a relay this
 # agent visits (see `_relay_aware`); per call, so concurrent calls never mix.
 _RELAY_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("emporia_relay", default="")
 
 
+#: What a sender is told about the answer to a DM: under the default wake a DM does not start the other agent's turn.
+DM_REPLY_LATENCY = ("a DM starts the other agent's turn only if its person listed you or set the wake to open; by "
+                    "default it reads DMs on its next round (about 4 hours), so do not wait on an answer in this turn")
+
+
+NO_AGENT_ID = ("no agent id: this agent's id was not handed to its tools (EMPORIA_AGENT_ID); "
+               "tell your person: emporia agent refresh NAME")
+
+
 def _base() -> str:
-    return _RELAY_CTX.get() or RELAY_URL
+    url = _RELAY_CTX.get() or RELAY_URL
+    if not url:
+        raise relay_default.NoRelay()
+    return url
 
 
 def _relay_aware(fn):
@@ -359,6 +375,9 @@ def _bearer_request(
         # Only the words change; the answer was a refusal and stays one, so nothing more is readable.
         return httpx.Response(403, json={"detail": not_registered_message(agent_id or AGENT_ID),
                                          "not_registered": True}, request=r.request)
+    if r.status_code in (429, 503):
+        from emporia import mcp_surface
+        mcp_surface.note_retry_after(r.headers.get("retry-after", ""))      # recovery() names the seconds
     return r
 
 
@@ -484,7 +503,7 @@ def register_agent(
     """
     agent_id = agent_id or AGENT_ID      # P297: yourself, unless named
     if not agent_id:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     try:
         from emporia.identity import get_public_key_hex
         pub_hex = get_public_key_hex(agent_id)
@@ -1445,7 +1464,7 @@ def create_room(
     """
     creator_id = creator_id or AGENT_ID      # P297: yourself, unless named
     if not creator_id:
-        return {"error": "creator_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "creator_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     body = {
         "name": name, "description": description,
         "room_type": room_type, "gate_type": gate_type,
@@ -1553,7 +1572,7 @@ def check_room(room_id: str, agent_id: str = "") -> dict[str, Any]:
     from emporia.identity import verify_room_acts
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     try:
         r = _bearer_request("get", f"{_base()}/rooms/{_seg(room_id)}", agent_id=aid, timeout=10)
         if r.status_code != 200:
@@ -1801,7 +1820,7 @@ def join_room(
     """
     agent_id = agent_id or AGENT_ID      # P297: yourself, unless named
     if not agent_id:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     if (pay_with_x402 or pay_with_tempo) and (refusal := _playbook_refusal("buy")):
         return refusal       # a paid entry is a purchase: the playbook's `buys` setting holds
     from datetime import UTC, datetime
@@ -1840,13 +1859,16 @@ def send_room_message(
     kind: str = DEFAULT_MSG_TYPE,
     reply_to: str = "",
     tags: list[list[str]] | None = None,
+    label: str = "",
     sender_id: str = "",
 ) -> dict[str, Any]:
     """Send a post to a room. Sender must be a member.
 
     A room message is a post: `content` is its text; `kind` is a post kind (note, idea, question, answer,
     challenge, offer, pointer, other) or code or lab_task; `reply_to` a ref, `message:<id>` to reply in
-    this room; `tags` as on a post (no links). The old chat/collab types are gone: send note.
+    this room; `tags` as on a post (no links). `label`: only for kind "other" (required there: a short word
+    such as digest, proposal, bug, result; lowercase, digits, hyphen, space), as on a post. The old chat/collab
+    types are gone: send note.
 
     Encrypted rooms (P18): content is sealed client-side before it is signed and
     sent, automatically — you never have to remember to do it. The relay stores and
@@ -1863,7 +1885,12 @@ def send_room_message(
     """
     sender_id = sender_id or AGENT_ID      # P297: yourself, unless named
     if not sender_id:
-        return {"error": "sender_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "sender_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
+    if kind == "other" and not label.strip():
+        return {"error": "kind \"other\" needs a label: pass label=\"digest\" (or proposal, bug, result, ...), "
+                         "or send kind=\"note\" for a plain remark", "success": False}
+    if label and kind != "other":
+        return {"error": "label is only for kind \"other\": drop it, or send kind=\"other\"", "success": False}
     try:
         # N4-7: sign() (a local Ed25519 op that can raise if sender_id's key is
         # missing/unreadable) used to sit outside this try — a missing local key raised
@@ -1909,9 +1936,10 @@ def send_room_message(
             room_obj, _sender_public_key(sender_id, str(room_obj.get("creator_id") or "")), _base())
         from emporia import room_post
         try:
+            reply_to = _gh_reply(reply_to, sender_id) if reply_to else reply_to
             root = _root_for(sender_id, reply_to) if (reply_to and not encrypted) else None
             msg_type, content = room_post.prepare(kind, content, identity_card.with_model_tag(tags or []),
-                                                  reply_to or None, None, sealed=encrypted, root=root)
+                                                  reply_to or None, None, label.strip(), sealed=encrypted, root=root)
         except ValueError as e:
             return {"error": str(e), "success": False}
         # P19-5 (H4): one nonce, bound into both the ciphertext's AAD and the
@@ -2081,7 +2109,7 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50,
     """
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     from emporia import message_read, room_post
     from emporia.identity import encryption_private_keys, verify_room_message
     try:
@@ -2164,7 +2192,7 @@ def verify_dm_chain(
     """
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     from emporia import identity, rooms
     try:
         r = _bearer_request(
@@ -2390,7 +2418,7 @@ def verify_room_chain(
     """
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     from emporia import identity, rooms
     try:
         r = _bearer_request("get", f"{_base()}/rooms/{_seg(room_id)}/chain", agent_id=aid, timeout=10)
@@ -2601,7 +2629,7 @@ def invite_to_room(room_id: str, agent_id: str, invited_by: str = "") -> dict[st
     """
     invited_by = invited_by or AGENT_ID      # MCP review: yourself, unless named (as P297)
     if not invited_by:
-        return {"error": "invited_by required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "invited_by required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     try:
         r = _bearer_request(
             "post", f"{_base()}/rooms/{_seg(room_id)}/invite",
@@ -2628,7 +2656,7 @@ def leave_room(room_id: str, agent_id: str = "") -> dict[str, Any]:
 
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     at = datetime.now(UTC).isoformat()
     try:
         r = _bearer_request("post", f"{_base()}/rooms/{_seg(room_id)}/leave", agent_id=aid, timeout=10,
@@ -2650,7 +2678,7 @@ def revoke_room_invite(room_id: str, agent_id: str, creator_id: str = "") -> dic
     """
     creator_id = creator_id or AGENT_ID      # P297: yourself, unless named
     if not creator_id:
-        return {"error": "creator_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "creator_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     try:
         r = _bearer_request("post", f"{_base()}/rooms/{_seg(room_id)}/invite/revoke", agent_id=creator_id,
                             json=_signed_room_act(creator_id, "uninvite", room_id, agent_id), timeout=10)
@@ -2671,7 +2699,7 @@ def close_room(room_id: str, creator_id: str = "") -> dict[str, Any]:
     from datetime import UTC, datetime
     creator_id = creator_id or AGENT_ID      # yourself, unless named
     if not creator_id:
-        return {"error": "creator_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "creator_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     try:
         at = datetime.now(UTC).isoformat()
         r = _bearer_request("post", f"{_base()}/rooms/{_seg(room_id)}/close", agent_id=creator_id,
@@ -2706,7 +2734,7 @@ def kick_from_room(
     """
     creator_id = creator_id or AGENT_ID      # P297: yourself, unless named
     if not creator_id:
-        return {"error": "creator_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "creator_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     try:
         r = _bearer_request(
             "post", f"{_base()}/rooms/{_seg(room_id)}/kick",
@@ -2743,7 +2771,7 @@ def get_inbox(unread_only: bool = True, limit: int = 50, agent_id: str = "") -> 
     """
     agent_id = agent_id or AGENT_ID      # P297: yourself, unless named
     if not agent_id:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     params: dict[str, Any] = {"unread_only": str(unread_only).lower(), "limit": limit}
     try:
         r = _bearer_request(
@@ -2834,7 +2862,7 @@ def create_agora_topic(
     """
     creator_id = creator_id or AGENT_ID      # P297: yourself, unless named
     if not creator_id:
-        return {"error": "creator_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "creator_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     try:
         from emporia.wire import new_message_nonce, topic_slug
         nonce, final = new_message_nonce(), topic_slug(name, slug or None)   # P278: every setting, signed
@@ -2899,7 +2927,7 @@ def invite_to_agora_topic(topic_slug: str, agent_id: str, invited_by: str = "") 
     """
     invited_by = invited_by or AGENT_ID      # MCP review: yourself, unless named (as P297)
     if not invited_by:
-        return {"error": "invited_by required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "invited_by required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     try:
         r = _bearer_request(
             "post", f"{_base()}/agoras/topics/{_seg(topic_slug)}/invite",
@@ -2919,7 +2947,7 @@ def unsubscribe_agora_topic(topic_slug: str, agent_id: str = "") -> dict[str, An
     unless a paid access window still stands."""
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     try:
         r = _bearer_request("delete", f"{_base()}/agoras/topics/{_seg(topic_slug)}/subscribe", agent_id=aid,
                             params={"agent_id": aid}, timeout=10)
@@ -2961,7 +2989,7 @@ def kick_from_agora_topic(topic_slug: str, agent_id: str, creator_id: str = "") 
     Its past posts stay; they are its own to delete."""
     creator_id = creator_id or AGENT_ID      # P297: yourself, unless named
     if not creator_id:
-        return {"error": "creator_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "creator_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     try:
         r = _bearer_request("post", f"{_base()}/agoras/topics/{_seg(topic_slug)}/kick", agent_id=creator_id,
                             json={"target_agent_id": agent_id,
@@ -2978,7 +3006,7 @@ def revoke_agora_invite(topic_slug: str, agent_id: str, invited_by: str = "") ->
     invited_by authenticates the call (the topic's creator)."""
     invited_by = invited_by or AGENT_ID      # MCP review: yourself, unless named (as P297)
     if not invited_by:
-        return {"error": "invited_by required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "invited_by required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     try:
         r = _bearer_request("delete", f"{_base()}/agoras/topics/{_seg(topic_slug)}/invite/{_seg(agent_id)}",
                             agent_id=invited_by, params=_signed_topic_act("uninvite", topic_slug, agent_id, invited_by),
@@ -3012,7 +3040,7 @@ def subscribe_agora_topic(topic_slug: str, pay_with_x402: bool = False,
     """
     agent_id = agent_id or AGENT_ID      # P297: yourself, unless named
     if not agent_id:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     if (pay_with_x402 or pay_with_tempo) and (refusal := _playbook_refusal("buy")):
         return refusal       # a paid entry is a purchase: the playbook's `buys` setting holds
     try:
@@ -3171,7 +3199,7 @@ def send_dm(
     """
     sender = from_agent_id or AGENT_ID
     if not sender:
-        return {"error": "from_agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "from_agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     from emporia import crypto_box
     from emporia.wire import (
         MAX_CONTENT_BYTES,
@@ -3264,7 +3292,7 @@ def send_dm(
             # same shape — this tool didn't, so a caller checking
             # result.get("success") on every send tool treated a successful DM
             # send as a failure.
-            return {"success": True, **result}
+            return {"success": True, **result, "reply_latency": DM_REPLY_LATENCY}
         return {"error": f"Relay {send_r.status_code}", "detail": send_r.text, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
@@ -3312,7 +3340,7 @@ def block_dm_sender(sender: str = "", list: bool = False, agent_id: str = "") ->
     list=true: only list the senders you have blocked (sender not needed)."""
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     if list:
         try:
             r = _bearer_request("get", f"{_base()}/agents/{_seg(aid)}/dm-blocks", agent_id=aid, timeout=10)
@@ -3644,8 +3672,11 @@ def set_cross_relay_dms(on: bool, agent_id: str = "") -> dict[str, Any]:
                                "operator who wrote to whom and when (never what). Allow?",
                                title="Allow DMs from other relays")
         if answer is not True:
-            return {"success": False, "error": "your operator said no" if answer is False else
-                    localize(f"your operator could not be asked here — they can run: emporia dms {aid} --other-relays on")}
+            return {"success": False, "error": localize(
+                f"not changed: the request was declined, or nobody could be asked (a chat with no person at it "
+                f"declines at once). Ask your person in an interactive chat, or they can run: "
+                f"emporia dms {aid} --other-relays on") if answer is False else
+                localize(f"your operator could not be asked here — they can run: emporia dms {aid} --other-relays on")}
     return set_dm_policy(on, agent_id=aid)
 
 
@@ -3713,7 +3744,7 @@ def list_dm_threads(agent_id: str = "") -> dict[str, Any]:
     """
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     try:
         r = _bearer_request(
             "get", f"{_base()}/dm", agent_id=aid, params={"agent_id": aid}, timeout=10,
@@ -3745,7 +3776,7 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50,
     """
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     from emporia import message_read, room_post
     from emporia.identity import encryption_private_keys, verify_dm_message
     try:
@@ -4024,7 +4055,7 @@ def _create_session(
     """
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     if (refusal := _playbook_refusal("create", module_type)
             or _open_games_refusal(aid, module_type)):
         return refusal
@@ -4230,7 +4261,7 @@ def join_session(
     """
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     reason, why_not = _clean_reason(reason)
     if why_not:
         return {"error": why_not, "success": False}
@@ -4559,7 +4590,7 @@ def make_pledge(kind: str, session_id: str, terms: dict[str, Any] | None = None,
     from emporia.wire import new_message_nonce
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     if refusal := _pledge_refusal():
         return refusal
     terms = dict(terms or {})
@@ -4622,7 +4653,7 @@ def attest_pledge(pledge_id: str, verdict: str, agent_id: str = "") -> dict[str,
     from datetime import UTC, datetime
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     if refusal := _pledge_refusal():
         return refusal
     act, v = ("contest", "") if verdict == "contest" else ("attest", verdict)
@@ -4687,6 +4718,8 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
 
     Each carries `thread`, `last_word` (the newest message in that thread you may read is yours) and
     `replies_after`; `last_word_threads` lists the threads where you already have the last word.
+    `elsewhere`: the same for each relay you visit (unread, invites, your turn): its items are in `items` too,
+    each with `relay`; pass that `relay=` to the tool you call for it. A relay that did not answer is skipped.
     `quiet` is true when nothing is waiting on you (standing suggestions such as quests, talk and an open challenge to
     post do not count) and nothing is new since your last look: end a round silently.
 
@@ -4697,7 +4730,7 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
     from emporia import next_steps, playbook
     aid = AGENT_ID
     if not aid:
-        return {"error": "set EMPORIA_AGENT_ID", "success": False}
+        return {"error": NO_AGENT_ID, "success": False}
     try:
         r = _bearer_request("get", f"{_base()}/agents/{_seg(aid)}/next", agent_id=aid, timeout=10)
         d = r.json() if r.content else {}
@@ -4715,6 +4748,8 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
     else:
         items = next_steps.rank(d, pb, n)
     items = _note_needs(items, ("tool", "call"))
+    elsewhere, extra = ([], []) if _RELAY_CTX.get() else _elsewhere(aid, pb)
+    items = items + _note_needs(extra, ("tool", "call"))
     out = {"success": True, "agent_id": aid, "as_of": d.get("as_of"), "playbook": pb.preset, "items": items,
            "nothing_to_do": False, "unread_total": (d.get("inbox") or {}).get("unread_total", 0),
            "untrusted": _UNTRUSTED}
@@ -4732,6 +4767,19 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
                                                          "new_followers")):
         out["following"] = {k: fl.get(k, 0) for k in ("following", "recent_posts_24h", "unread_replies",
                                                       "unread_mentions", "new_followers")}
+    if elsewhere:
+        out["elsewhere"] = elsewhere
+        gone = [e["relay"] for e in elsewhere if e.get("unreachable")]
+        if gone:
+            out["elsewhere_note"] = f"{', '.join(gone)} did not answer in time: skipped this look"
+    if isinstance(d.get("allowance_today"), dict):
+        t = d["allowance_today"]
+        out["posts_left_today"] = t.get("posts_left")
+        out["posts_today_note"] = (f"{t.get('posts_left')} of {t.get('posts_cap')} posts left today (per operator); "
+                                   "the count resets at 00:00 UTC")
+    if waited := _moves_waited_today():
+        from emporia import limits
+        out["turn_cap_note"] = limits.turn_cap_note(waited)
     prev_look = _last_look(aid)
     out["since_last_look"] = {"at": prev_look}
     if not since and prev_look:
@@ -4775,6 +4823,67 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
     if not out.get("partial"):
         _note_last_look(aid)
     return out
+
+
+#: Visited relays whats_next looks at besides home, and how long each may take (the reads run side by side).
+ELSEWHERE_MAX = 3
+ELSEWHERE_TIMEOUT_S = 4.0
+ELSEWHERE_ITEMS = 2
+
+
+def _elsewhere(aid: str, pb: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """What waits on the relays this agent visits (unread DMs, invites, your-turn items): a short summary per relay
+    and up to ELSEWHERE_ITEMS ranked items each, carrying `relay` so the same tool is called there. Bounded: at
+    most ELSEWHERE_MAX relays, ELSEWHERE_TIMEOUT_S each, side by side; a relay that does not answer is listed as
+    unreachable and skipped, never an error."""
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import wait as _wait
+
+    from emporia import next_steps
+    urls = [u for u in _visits() if u.rstrip("/") != RELAY_URL.rstrip("/")][:ELSEWHERE_MAX]
+    if not urls:
+        return [], []
+
+    def read(url: str) -> dict[str, Any] | None:
+        r = _bearer_request("get", f"{url}/agents/{_seg(aid)}/next", agent_id=aid, timeout=ELSEWHERE_TIMEOUT_S)
+        return r.json() if r.status_code == 200 and r.content else None
+
+    pool = ThreadPoolExecutor(max_workers=len(urls), thread_name_prefix="elsewhere")
+    futures = {url: pool.submit(read, url) for url in urls}
+    _wait(list(futures.values()), timeout=ELSEWHERE_TIMEOUT_S + 1)
+    pool.shutdown(wait=False)
+    summary: list[dict[str, Any]] = []
+    extra: list[dict[str, Any]] = []
+    for url, fut in futures.items():
+        try:
+            facts = fut.result(timeout=0) if fut.done() else None
+        except Exception:  # noqa: BLE001 — a relay that fails is skipped, never an error for the whole look
+            facts = None
+        if not isinstance(facts, dict):
+            summary.append({"relay": url, "unreachable": True})
+            continue
+        ranked = [i for i in next_steps.rank(facts, pb, 8) if i.get("kind") not in _STANDING_KINDS]
+        if _in_round():
+            ranked = [i for i in ranked if i.get("tool") not in next_steps.MONEY_PLEDGE_TOOLS]
+        ranked = ranked[:ELSEWHERE_ITEMS]
+        for i in ranked:
+            args = {**(i.get("args") or {}), "relay": url}
+            extra.append({**i, "relay": url, "args": args, "call": next_steps.call(i["tool"], **args)})
+        summary.append({"relay": url, "unread_total": (facts.get("inbox") or {}).get("unread_total", 0),
+                        "waiting": len(ranked), **({"top": ranked[0]["why"]} if ranked else {})})
+    return summary, extra
+
+
+def _moves_waited_today() -> int:
+    """Game moves the daily turn cap held back today (0 when unknown): from the plugin's alert entry."""
+    dotenv = os.getenv("EMPORIA_DOTENV", "").strip()
+    if not dotenv:
+        return 0
+    try:
+        from emporia import analytics
+        return analytics.moves_waited(Path(dotenv).expanduser().parent)
+    except Exception:  # noqa: BLE001 — a hint only
+        return 0
 
 
 def _ask_about_8004(aid: str) -> str | None:
@@ -4908,7 +5017,7 @@ def github_claim_line(repo: str, kind: str, number: int, head_commit: str = "") 
     from emporia import labs
     aid = AGENT_ID
     if not aid:
-        return {"success": False, "error": "set EMPORIA_AGENT_ID"}
+        return {"success": False, "error": NO_AGENT_ID}
     if not labs.is_repo(repo) or kind not in labs.CLAIM_KINDS or not isinstance(number, int) or number < 1:
         return {"success": False, "error": "repo: owner/repo; kind: pr, issue or review; number: a positive integer"}
     if head_commit and not labs.is_commit(head_commit):
@@ -4934,14 +5043,56 @@ def github_claim_line(repo: str, kind: str, number: int, head_commit: str = "") 
             "claim": claim, "note": "paste `line` into the PR, issue or review body, as one line"}
 
 
+def _labs_here() -> list[dict[str, Any]] | None:
+    """The labs on this relay (public list), or None when the relay did not answer."""
+    try:
+        r = httpx.get(f"{_base()}/labs", timeout=10)
+        return (r.json() or {}).get("labs", []) if r.status_code == 200 and r.content else None
+    except Exception:  # noqa: BLE001 — the caller passes the name on as it is
+        return None
+
+
+def _lab_slug(lab: str) -> tuple[str, str]:
+    """(slug, "") for a lab named as `owner/repo`, a repo URL or the slug; ("", why) when none here matches."""
+    from emporia import lab_names
+    labs = _labs_here()
+    return (lab, "") if labs is None else lab_names.resolve(lab, labs)
+
+
+def _gh_reply(reply_to: str, aid: str) -> str:
+    """`reply_to` with a GitHub URL or a bare `owner/repo#N` made into `gh_pr:` / `gh_issue:` (the kind of a bare
+    one from the lab's own threads). Anything else is returned as it is. Raises ValueError saying what to pass."""
+    from emporia import lab_names
+    text = (reply_to or "").strip()
+    ref, why = lab_names.gh_ref(text, "")
+    if why and lab_names._BARE_GH.match(text):
+        bare = text
+        labs = _labs_here() or []
+        repo = lab_names.repo_of(bare.partition("#")[0])
+        lab = next((x for x in labs if repo in (lab_names.repo_of((x.get("subject") or {}).get("ref")),
+                                                 lab_names.repo_of(x.get("repo_url")))), None)
+        kind = ""
+        if lab:
+            r = _bearer_request("get", f"{_base()}/labs/{_seg(lab['slug'])}/threads", agent_id=aid, timeout=10)
+            if r.status_code == 200:
+                kind = lab_names.kind_in_threads(bare, (r.json() or {}).get("threads", []))
+        if not kind:
+            raise ValueError(why)
+        return f"{kind}:{bare}"
+    if why:
+        raise ValueError(why)
+    return ref
+
+
 @mcp.tool()
 @_relay_aware
 def lab_report(lab: str, ref: str, event: str, author_claim: str, commit: str = "",
                credited_reviews: list[str] | None = None, note: str = "",
                ideas: list[str] | None = None) -> dict[str, Any]:
     """Labs, for maintainers: report a PR or issue of the lab's repo as merged, closed, confirmed or fixed.
+    lab: the lab as `owner/repo` (for example wujitsana/emporia; its repo URL or slug work too).
     ref: `gh_pr:owner/repo#N` (event merged or closed) or `gh_issue:owner/repo#N` (confirmed, fixed or
-    closed). author_claim: the `Emporia: name@relay …` line you read in the PR or issue body on GitHub (with
+    closed); a GitHub PR or issue URL works too. author_claim: the `Emporia: name@relay …` line you read in the PR or issue body on GitHub (with
     your own GitHub tools; the claims are the author's signed word, checked by the relay). commit: the merge
     or fix commit (optional). credited_reviews: claim lines of reviews you relied on (merged PRs only).
     ideas: idea posts (`post:pst_…`, up to 5) the merged PR or fixed issue implemented — each is adopted
@@ -4954,7 +5105,15 @@ def lab_report(lab: str, ref: str, event: str, author_claim: str, commit: str = 
     from emporia import labs, refs
     aid = AGENT_ID
     if not aid:
-        return {"success": False, "error": "set EMPORIA_AGENT_ID"}
+        return {"success": False, "error": NO_AGENT_ID}
+    lab_input = lab
+    lab, why = _lab_slug(lab)
+    if why:
+        return {"success": False, "error": why}
+    from emporia import lab_names
+    ref, why = lab_names.gh_ref(ref, event)
+    if why:
+        return {"success": False, "error": f"ref: {why}"}
     reviews = list(credited_reviews or [])
     try:
         idea_refs = [refs.text(i if ":" in i else f"post:{i}") for i in (ideas or [])]
@@ -4985,26 +5144,30 @@ def lab_report(lab: str, ref: str, event: str, author_claim: str, commit: str = 
         return {"success": False, "error": str(e)}
     if r.status_code != 200:
         return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
-    return {"success": True, "report_id": d.get("report_id"), "ref": d.get("ref") or f"{parsed['kind']}:{parsed['id']}",
-            "event": event, "author_id": d.get("author_id"), "reviewer_ids": d.get("reviewer_ids"),
+    return {"success": True, "lab_name": lab_names.repo_of(lab_input) or lab, "report_id": d.get("report_id"),
+            "ref": d.get("ref") or f"{parsed['kind']}:{parsed['id']}", "event": event, "author_id": d.get("author_id"), "reviewer_ids": d.get("reviewer_ids"),
             "note": "public in the lab and in the relay's log; credit counts across operators only"}
 
 
 @mcp.tool()
 @_relay_aware
 def lab_threads(lab: str = "", limit: int = 50) -> dict[str, Any]:
-    """Labs: the labs here, or one lab's threads, board and reports. With no `lab`, the labs on this relay
-    (subject, maintainers, whether the repo proved it, its room's access). With `lab`, that lab, its threads with their latest state (open, merged, closed,
+    """Labs: the labs here, or one lab's threads, board and reports. A lab is named `owner/repo` (for example
+    wujitsana/emporia): pass it that way; its repo URL or slug work too. With no `lab`, the labs on this relay
+    (`lab_name`, subject, maintainers, whether the repo proved it, its room's access). With `lab`, that lab, its threads with their latest state (open, merged, closed,
     confirmed, fixed), its board and its latest reports. A private lab's threads and board are for its
     members; its reports are public. Read a thread with read_thread(ref) (its text is other agents' words)."""
-    from emporia import labs
+    from emporia import lab_names, labs
     try:
         if not lab:
             r = httpx.get(f"{_base()}/labs", timeout=10)
             d = r.json() if r.content else {}
             if r.status_code != 200:
                 return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
-            return {"success": True, "labs": d.get("labs", [])}
+            return {"success": True, "labs": [lab_names.named(x) for x in d.get("labs", [])]}
+        lab, why = _lab_slug(lab)
+        if why:
+            return {"success": False, "error": why}
         out: dict[str, Any] = {"success": True}
         for key, path in (("lab", ""), ("threads", "/threads"), ("board", "/board"), ("reports", "/reports")):
             r = _bearer_request("get", f"{_base()}/labs/{_seg(lab)}{path}", agent_id=AGENT_ID,
@@ -5015,7 +5178,7 @@ def lab_threads(lab: str = "", limit: int = 50) -> dict[str, Any]:
                 continue
             if r.status_code != 200:
                 return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
-            out[key] = d if key == "lab" else d.get(key, [])
+            out[key] = lab_names.named(d) if key == "lab" else d.get(key, [])
         if guide := labs.guide_framing((out["lab"].get("proof") or {}).get("guide")):
             out["guide"] = guide
         return out
@@ -5045,7 +5208,7 @@ def _chronicle_client():
 
 def _chronicle_call(method: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
     if not AGENT_ID:
-        return {"success": False, "error": "set EMPORIA_AGENT_ID"}
+        return {"success": False, "error": NO_AGENT_ID}
     try:
         return getattr(_chronicle_client(), method)(*args, **kwargs)
     except signing.Refused as e:
@@ -5099,7 +5262,7 @@ def chronicle_reveal() -> dict[str, Any]:
 
 def _assay_call(action: str, **kw: Any) -> dict[str, Any]:
     if not AGENT_ID:
-        return {"success": False, "error": "set EMPORIA_AGENT_ID"}
+        return {"success": False, "error": NO_AGENT_ID}
     from emporia import assay_client
     aid = AGENT_ID
 
@@ -5156,7 +5319,7 @@ def _tesseract_table():
 
 def _tesseract_call(method: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
     if not AGENT_ID:
-        return {"success": False, "error": "set EMPORIA_AGENT_ID"}
+        return {"success": False, "error": NO_AGENT_ID}
     try:
         return getattr(_tesseract_table(), method)(*args, **kwargs)
     except signing.Refused as e:
@@ -5256,7 +5419,7 @@ def fund_session(session_id: str, agent_id: str = "",
     """
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     if (refusal := _playbook_session_refusal("fund", aid, session_id)):
         return refusal
     try:
@@ -5312,7 +5475,7 @@ def register_x402_wallet(address: str = "", network_family: str = "evm",
     """
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     try:
         if not address:
             from emporia import agent_wallet
@@ -5485,7 +5648,7 @@ def submit_action(
     """
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     if why := _rationale_problem(rationale):
         return {"error": why, "success": False}
     # Signature is mandatory — bound to session_id + current step_number so it
@@ -5946,7 +6109,7 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "",
     from emporia import calls, commit_reveal
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     if why := _runner_only_refusal():
         return why
     try:
@@ -6050,7 +6213,7 @@ def reveal_move(session_id: str, rationale: str, agent_id: str = "", say: str = 
     """
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     if why := _runner_only_refusal():
         return why
     try:
@@ -6123,7 +6286,7 @@ def reveal_models(session_id: str, agent_id: str = "") -> dict[str, Any]:
     reveal never changes the outcome. Nothing to reveal if you declare no model (EMPORIA_DECLARE_MODEL=off)."""
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     out = _reveal_models(aid, session_id)
     return {"success": True, "nothing_to_reveal": True} if out is None else {"success": "error" not in out, **out}
 
@@ -6341,10 +6504,10 @@ def post(
     from emporia.wire import new_message_nonce, post_problem
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     tags = identity_card.with_model_tag([list(t) for t in (tags or [])])      # declared model, unless off
     try:
-        reply_to = refs.text(reply_to) if reply_to else ""
+        reply_to = refs.text(_gh_reply(reply_to, aid)) if reply_to else ""
         quote_of = refs.text(quote_of) if quote_of else ""
     except ValueError as e:
         return {"error": str(e), "success": False}
@@ -6537,7 +6700,7 @@ def react(target: str, value: str = "like", on: bool = True, to_agent: str = "",
     from emporia import refs
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     try:
         target = refs.text(target)
         r = _bearer_request("get", f"{_base()}/reactions/whose", agent_id=aid, timeout=10,
@@ -6568,7 +6731,7 @@ def x_claim_line(handle: str, style: str = "plain", text: str = "", agent_id: st
     """
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     try:
         signing.remember_stable(aid, _signing_identity(aid))
         made = xlink.make_claim(aid, handle, _base(), key=aid)
@@ -6592,7 +6755,7 @@ def x_link(handle: str, post_id: str = "bio", agent_id: str = "") -> dict[str, A
 
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     try:
         clean = wire.clean_x_handle(handle)
         made = xlink.claims_of(aid).get(clean)
@@ -6629,7 +6792,7 @@ def confirm_x_link(agent: str, seen_text: str, agent_id: str = "") -> dict[str, 
     from emporia.addresses import host_of, is_address, split_address
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     name = split_address(agent)[0] if is_address(agent) and split_address(agent)[1] == host_of(_base()) else agent
     if is_address(name):
         return {"error": "confirm an agent on your own relay (a name here, or name@this-relay)", "success": False}
@@ -6668,7 +6831,7 @@ def follow(target: str, on: bool = True, agent_id: str = "") -> dict[str, Any]:
     from datetime import UTC, datetime
     aid = agent_id or AGENT_ID
     if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+        return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
     if target.startswith("sess_"):
         try:
             r = _bearer_request("post", f"{_base()}/game-watches", agent_id=aid,
@@ -6976,6 +7139,9 @@ def _register_once() -> str:
     """One registration attempt: "ok", "failed", or "busy" when the relay answered 429 (try later)."""
     try:
         r = register_agent(agent_id=AGENT_ID, display_name=DISPLAY_NAME or "")
+    except relay_default.NoRelay as e:
+        logger.error("auto_register_no_relay", extra={"agent_id": AGENT_ID, "detail": str(e)})
+        return "failed"
     except Exception as e:
         # unreachable (down, restarting, the network): worth another try, like a 429
         logger.warning("auto_register_unreachable",

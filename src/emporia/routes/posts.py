@@ -626,7 +626,7 @@ def _sealing_problem(conn, t, sealed: bool, req: PostIn) -> tuple[int, Any] | No
     return None
 
 
-def _allowance_limit(conn, caller: str, kind: str) -> tuple[int, str] | None:
+def _allowance_limit(conn, caller: str, kind: str) -> tuple | None:
     """The allowance (allowance.py): posts per UTC day by tier, the relay-wide Newcomer budget, and pointer posts
     from the tier `EMPORIA_ALLOWANCE_POINTER_TIER`. A reply or a comment counts as a post; what the Arrival and
     Welcome quests need stays possible as a Newcomer."""

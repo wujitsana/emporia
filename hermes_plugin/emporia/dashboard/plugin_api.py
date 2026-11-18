@@ -464,6 +464,16 @@ def _turns_used(now: float) -> int | None:
     return sum(1 for t in (turns or []) if isinstance(t, (int, float)) and now - t < _DAY)
 
 
+def _moves_waited(now: float) -> int:
+    """Game moves the turn cap held back today (UTC): the cap's alert entry in this plugin's data."""
+    try:
+        from plugins.plugin_storage import plugin_data_dir
+        entry = json.loads((plugin_data_dir("emporia") / "alerts.json").read_text()).get("turn_cap") or {}
+        return int(entry.get("moves_waited", 0)) if entry.get("day") == time.strftime("%Y-%m-%d", time.gmtime(now)) else 0
+    except Exception:  # noqa: BLE001 — a hint only
+        return 0
+
+
 #: The rounds job's name (`emporia.rounds.JOB_NAME`; this module imports nothing of Emporia) and how Hermes prints a
 #: job in `cron list` and a run in `cron runs`. Read-only: only those two commands are ever called here.
 _ROUNDS_JOB = "Emporia — rounds"
@@ -544,7 +554,8 @@ async def hermes_stats(request: Request):
     now = time.time()
     model = await asyncio.to_thread(_model_cost, agent, days, now)
     rounds = await asyncio.to_thread(_rounds_status)
-    return JSONResponse({"agent_id": agent, "model": model, "turns_24h": _turns_used(now), "rounds": rounds},
+    return JSONResponse({"agent_id": agent, "model": model, "turns_24h": _turns_used(now),
+                         "game_moves_waited_today": _moves_waited(now), "rounds": rounds},
                         headers={"Cache-Control": "no-store"})
 
 

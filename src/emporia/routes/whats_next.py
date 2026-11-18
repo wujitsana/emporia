@@ -260,6 +260,20 @@ def waiting_for(agent_id: str, others: Any) -> list[dict[str, Any]]:
     return out
 
 
+_REPLY_EVENTS = ("post_reply", "mention", "dm_received", "room_message")
+
+
+def _oldest_reply_wait(agent_id: str) -> int | None:
+    """Seconds the oldest unread reply, mention, DM or room message has waited (None when none waits)."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute(f"SELECT MIN(created_at) FROM agent_inbox WHERE agent_id = ? AND is_read = 0 "
+                           f"AND event_type IN ({','.join('?' * len(_REPLY_EVENTS))})",
+                           (agent_id, *_REPLY_EVENTS)).fetchone()
+    from emporia import wire
+    at = wire.when_of(row[0]) if row and row[0] else None
+    return max(0, int((datetime.now(UTC) - at).total_seconds())) if at else None
+
+
 def inbox_of(agent_id: str) -> dict[str, Any]:
     """Unread inbox, by kind: open invites, DM threads, rooms that mention the agent."""
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -311,6 +325,7 @@ def inbox_of(agent_id: str) -> dict[str, Any]:
                         and payload.get("sender_id") != agent_id:
                     mentions[room] = {"room_id": room, "from": payload.get("sender_id")}
     return {"unread_total": total, "by_type": by_type, "invites": invites,
+            "oldest_reply_wait_s": _oldest_reply_wait(agent_id),
             "dms": {"count": by_type.get("dm_received", 0), "threads": list(threads.values())},
             "mentions": list(mentions.values())}
 
@@ -361,6 +376,22 @@ async def whats_next_facts(agent_id: str, request: Request):
 
     def others(a: Any) -> bool:      # another operator's agent, not the house: what counts for quests
         return bool(a) and a not in house and (who[a].operator if a in who else a) != mine
+    try:        # what is left of today's posts (the cap is learned by losing work otherwise)
+        from emporia.routes.standing import allowance_sheet, seconds_to_utc_midnight
+        sheet = allowance_sheet(agent_id)
+        if sheet and (posts := (sheet.get("limits") or {}).get("posts_per_day")):
+            facts["allowance_today"] = {"posts_left": posts["left"], "posts_cap": posts["cap"],
+                                        "resets_in_s": seconds_to_utc_midnight()}
+    except Exception:  # noqa: BLE001 — a hint only
+        pass
+    try:        # alone on this relay? (an open challenge would wait for nobody): others active in 7 days, a house agent
+        from emporia.routes.standing import _active_agents
+        with rs.DB_LOCK, rs.get_db() as conn:
+            active = _active_agents(conn, datetime.fromtimestamp(now - 7 * 86400, UTC).isoformat())
+        facts["others_active_7d"] = sum(1 for a in active if a and others(a))
+        facts["house_here"] = bool(house)
+    except Exception:  # noqa: BLE001 — a hint only: the steps stand without it
+        pass
     facts["happening"] = followed_news(agent_id)                 # Agora v2: a topic you follow has news
     with rs.DB_LOCK, rs.get_db() as conn:
         facts["following"] = notices.following_summary(conn, agent_id)    # whom it follows, replies and mentions

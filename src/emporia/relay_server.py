@@ -3070,6 +3070,12 @@ def _operator_key(agent_id: str) -> str:
     return who.operator if who else ""
 
 
+def _retry_header(stamps: list[float] | None) -> dict[str, str]:
+    """`Retry-After` for a per-minute limit: when the oldest write in the trailing minute leaves the window."""
+    left = int(60 - (time.time() - min(stamps))) + 1 if stamps else 60
+    return {"Retry-After": str(max(1, min(60, left)))}
+
+
 def _enforce_agent_rate_limit(agent_id: str) -> None:
     """Per-agent write throttle (N11-4). The identity-keyed complement to the global
     IP middleware below — that middleware exempts localhost and the Docker gateway
@@ -3084,14 +3090,16 @@ def _enforce_agent_rate_limit(agent_id: str) -> None:
         RATE_LIMIT_HITS["agent"] += 1
         logger.warning("rate_limited", extra={"limit": "agent", "per_minute": AGENT_REGISTRY.max_per_minute,
                                               "agent_id": agent_id, "path": path})
-        raise HTTPException(429, "Rate limit exceeded — too many requests, slow down")
+        raise HTTPException(429, "Rate limit exceeded — too many requests, slow down",
+                            headers=_retry_header(AGENT_REGISTRY.rate_limits.get(agent_id)))
     # per operator as well: an operator's agents together get a few agents' worth, not a budget each
     operator = _operator_key(agent_id)
     if operator and not AGENT_REGISTRY.check_rate_limit(
             f"operator:{operator}", int(AGENT_REGISTRY.max_per_minute * OPERATOR_RATE_MULTIPLE)):
         RATE_LIMIT_HITS["agent"] += 1
         logger.warning("rate_limited", extra={"limit": "operator", "agent_id": agent_id, "path": path})
-        raise HTTPException(429, "Rate limit exceeded for your operator's agents together — slow down")
+        raise HTTPException(429, "Rate limit exceeded for your operator's agents together — slow down",
+                            headers=_retry_header(AGENT_REGISTRY.rate_limits.get(f"operator:{operator}")))
 
 
 #: Operator section: how often a caller was turned away by a rate limit since this relay
@@ -3625,9 +3633,10 @@ def _check_rate_limit(request: Request) -> JSONResponse | None:
                                    "path": path},
         )
         return JSONResponse(
-            {"detail": f"Rate limit exceeded — {limit} requests per {int(window)}s per IP"},
+            {"detail": f"Rate limit exceeded — {limit} requests per {int(window)}s per IP",
+             "retry_in_s": max(1, int(window - (now - q[0])))},
             status_code=429,
-            headers={"Retry-After": str(int(window - (now - q[0])))},
+            headers={"Retry-After": str(max(1, int(window - (now - q[0]))))},
         )
     q.append(now)
     return None
@@ -4014,6 +4023,20 @@ async def _too_deeply_nested(request: Request, exc: RecursionError):
     """A JSON body nested thousands deep overflows the parser's stack: the sender's mistake, not a crash."""
     return JSONResponse({"detail": "Request body is nested too deeply"}, status_code=400)
 
+from fastapi.exception_handlers import http_exception_handler as _default_http_exception_handler
+from starlette.exceptions import HTTPException as _StarletteHTTPException
+
+
+@app.exception_handler(_StarletteHTTPException)
+async def _http_error(request: Request, exc: _StarletteHTTPException):
+    """The default answer, except that a 429 which sends `Retry-After` also says it in the body as `retry_in_s`
+    (a tool layer that only keeps the body still tells the agent how long to wait)."""
+    wait = (exc.headers or {}).get("Retry-After", "")
+    if exc.status_code == 429 and wait.isdigit():
+        return JSONResponse({"detail": exc.detail, "retry_in_s": int(wait)}, status_code=429, headers=exc.headers)
+    return await _default_http_exception_handler(request, exc)
+
+
 # P271: since P261 nothing reads the relay from a browser (the console and the
 # Hermes tab call it from their own process), so only its own URL by default;
 # a dashboard served elsewhere (or `npm run dev`) is added with EMPORIA_CORS_ORIGINS.
@@ -4110,8 +4133,9 @@ async def relay_access_guard(request: Request, call_next):
     if request.method != "GET" and visitors.mode() != "welcome":     # a visitor's writes, by EMPORIA_VISITORS
         why = visitors.guard(request.method, request.url.path, _dashboard_agent_id(request))
         if why == visitors.CHECK_PENDING:        # retryable, not a refusal: the first home check is still running
-            return JSONResponse({"detail": why, "retry_in_s": visitors.RETRY_IN_S}, status_code=503,
-                                headers={"Retry-After": str(visitors.RETRY_IN_S)})
+            wait = visitors.retry_in_s(visitors.stored_check(_dashboard_agent_id(request)))
+            return JSONResponse({"detail": why, "retry_in_s": wait}, status_code=503,
+                                headers={"Retry-After": str(wait)})
         if why:
             return JSONResponse({"detail": why}, status_code=403)
     return await call_next(request)
@@ -6239,7 +6263,16 @@ def drop_unlinked_federated_rows() -> int:
 
 _FEDERATION_SYNC_INTERVAL_SECONDS = float(os.getenv("EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS", "300"))
 _FEDERATION_SYNC_TASK: asyncio.Task | None = None  # set/cancelled in lifespan(); exposed for tests/ops
+_CARRIED_PULL_INTERVAL_SECONDS = 60.0   # a relay that carries a topic looks at it this often (a cheap cursor read)
 _FEDERATION_EARLY_SYNC_DELAYS = (3.0, 27.0)   # a carrier's first pulls after start (seconds to wait before each)
+
+
+async def _pull_carried_topics() -> None:
+    """Only the shared topics this relay carries, from each host: the short pull between full syncs. Never raises."""
+    from emporia import federation_dm as fd
+    from emporia import shared_topics
+    peers = {p for _slug, host in shared_topics.carry_list() if (p := fd.linked_peer(host))}
+    await asyncio.gather(*(shared_topics.pull_peer(p) for p in peers), return_exceptions=True)
 
 
 async def _federation_sync_loop() -> None:
@@ -6259,10 +6292,24 @@ async def _federation_sync_loop() -> None:
     # was not up yet, not a whole interval later (second playtest: the first pull took about 7 minutes); then
     # on the normal interval.
     early = list(_FEDERATION_EARLY_SYNC_DELAYS) if shared_topics.carry_list() else []
+    since_full = 0.0
     while True:
-        await asyncio.sleep(early.pop(0) if early else _FEDERATION_SYNC_INTERVAL_SECONDS)
+        # A carried topic is pulled every minute (just its cursor read), so a shared topic feels live; the
+        # modules and log checks stay on the normal interval.
+        if early:
+            step, full = early.pop(0), True
+        elif shared_topics.carry_list():
+            step = min(_CARRIED_PULL_INTERVAL_SECONDS, _FEDERATION_SYNC_INTERVAL_SECONDS)
+            full = since_full + step >= _FEDERATION_SYNC_INTERVAL_SECONDS
+        else:
+            step, full = _FEDERATION_SYNC_INTERVAL_SECONDS, True
+        await asyncio.sleep(step)
+        since_full = 0.0 if full else since_full + step
         try:
-            await _sync_all_federated_peers()
+            if full:
+                await _sync_all_federated_peers()
+            else:
+                await _pull_carried_topics()
         except asyncio.CancelledError:
             raise
         except Exception:
