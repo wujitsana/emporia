@@ -18,7 +18,7 @@ class Clock:
         return self.t
 
 
-def witness(tmp_path, results, clock=None):
+def witness(tmp_path, results, clock=None, rng=lambda: 0.5):
     calls = []
 
     def verify(relay):
@@ -29,7 +29,7 @@ def witness(tmp_path, results, clock=None):
         return r
     clock = clock or Clock()
     w = lw.Witness("https://r.example/", tmp_path / "plugin-data" / "emporia" / lw.RECORD, verify=verify,
-                   clock=clock, now=lambda: NOW)
+                   clock=clock, now=lambda: NOW, rng=rng)
     return w, calls, clock
 
 
@@ -42,9 +42,10 @@ BAD = {"ok": False, "status": "fail", "detail": "the log shrank from 12 to 9 ent
 def test_first_check_comes_two_minutes_after_start_then_daily(tmp_path):
     w, calls, clock = witness(tmp_path, [OK])
     assert not w.due()
-    clock.t = lw.FIRST_CHECK_SECONDS - 1
+    first = lw.FIRST_CHECK_SECONDS + 0.5 * lw.FIRST_CHECK_SPREAD
+    clock.t = first - 1
     assert not w.due()
-    clock.t = lw.FIRST_CHECK_SECONDS
+    clock.t = first
     assert w.due()
     rec = w.run()
     assert rec["status"] == "ok" and rec["size"] == 12 and rec["epoch"] == 2 and not rec["notice"]
@@ -91,7 +92,7 @@ def test_an_unreachable_relay_is_quiet_and_tried_again_within_the_hour(tmp_path)
 
 def test_a_problem_is_one_notice_and_not_repeated(tmp_path):
     again = {**BAD, "problems": ["the log shrank from 12 to 7 entries"]}      # same problem, other numbers
-    w, _, clock = witness(tmp_path, [BAD, again, OK, BAD])
+    w, _, clock = witness(tmp_path, [BAD, again, again, BAD])
     clock.t = 1000
     first = w.run()
     assert first["notice"] and not first["ok"]
@@ -99,7 +100,8 @@ def test_a_problem_is_one_notice_and_not_repeated(tmp_path):
         clock.t += lw.CHECK_EVERY_SECONDS
         assert not w.run()["notice"]
     # the record survives a restart: a new Witness on the same file does not tell it again
-    w2 = lw.Witness("https://r.example", w.path, verify=lambda r: BAD, clock=clock, now=lambda: NOW)
+    w2 = lw.Witness("https://r.example", w.path, verify=lambda r: BAD, clock=clock, now=lambda: NOW,
+                    rng=lambda: 0.5)
     clock.t += lw.CHECK_EVERY_SECONDS
     assert not w2.run()["notice"]
 
@@ -158,3 +160,71 @@ def test_the_bridge_builds_no_witness_when_the_person_turned_it_off(monkeypatch,
     monkeypatch.delenv("EMPORIA_RELAY_URL", raising=False)
     w = bridge.build_witness("https://r.example/", str(tmp_path))
     assert w.path == tmp_path / "plugin-data" / "emporia" / lw.RECORD and w.relay == "https://r.example"
+
+
+def _notice(tmp_path, result, name="my_agent"):
+    w, _, clock = witness(tmp_path, [result])
+    clock.t = 1000
+    return json.loads(lw.notice_line(name, w.run()))["text"]
+
+
+def test_the_notice_text_follows_the_kind_of_failure(tmp_path):
+    key = {**BAD, "problems": ["the relay signs with a key you never pinned, and no signed hand-over leads to it"]}
+    stopped = {**BAD, "status": "stopped", "problems": ["this relay no longer serves the transparency log it kept"]}
+    assert "signing key changed without a signed hand-over" in _notice(tmp_path / "a", key)
+    t = _notice(tmp_path / "b", stopped)
+    assert "stopped serving the log it kept" in t and "rewritten" not in t
+    assert "may have rewritten" in _notice(tmp_path / "c", BAD)
+    assert set(json.loads(lw.notice_line("x", {"problems": ["p"]}))) >= {"v", "text", "sender"}
+
+
+def test_unreachable_keeps_an_earlier_problem(tmp_path):
+    down = {"ok": False, "status": "unreachable", "detail": "x", "problems": []}
+    w, _, clock = witness(tmp_path, [BAD, down])
+    clock.t = 1000
+    w.run()
+    clock.t += lw.CHECK_EVERY_SECONDS
+    rec = w.run()
+    assert rec["status"] == "unreachable" and rec["problems"] == BAD["problems"] and not rec["notice"]
+    assert rec["size"] == 12 and rec["epoch"] == 2
+    assert "PROBLEM: the log shrank" in lw.line(rec, NOW)
+
+
+def test_a_problem_that_clears_and_returns_is_noticed_again(tmp_path):
+    w, _, clock = witness(tmp_path, [BAD, BAD, OK, BAD])
+    notices = []
+    for _ in range(4):
+        clock.t += lw.CHECK_EVERY_SECONDS * 2
+        notices.append(w.run()["notice"])
+    assert notices == [True, False, False, True]
+
+
+def test_checks_are_spread_by_a_random_source(tmp_path):
+    w, _, clock = witness(tmp_path, [OK, OK], rng=lambda: 0.0)
+    assert w.next_at == lw.FIRST_CHECK_SECONDS
+    assert witness(tmp_path / "b", [OK], rng=lambda: 1.0)[0].next_at == lw.FIRST_CHECK_SECONDS + lw.FIRST_CHECK_SPREAD
+    clock.t = 1000
+    w.run()
+    assert w.next_at == 1000 + lw.CHECK_EVERY_SECONDS * 0.8
+    w._rng = lambda: 1.0
+    w.run()
+    assert w.next_at == 1000 + lw.CHECK_EVERY_SECONDS * 1.2
+    down = {"ok": False, "status": "unreachable", "detail": "x", "problems": []}
+    w2, _, c2 = witness(tmp_path / "c", [down], rng=lambda: 1.0)
+    w2.run()
+    assert w2.next_at == lw.RETRY_SECONDS * 1.1
+
+
+def test_a_lost_stored_head_is_said_in_the_status_line(tmp_path):
+    first = {"ok": True, "status": "first", "detail": "d", "state": {"size": 12, "epoch": 2}, "problems": []}
+    w, _, clock = witness(tmp_path, [OK, first])
+    clock.t = 1000
+    w.run()
+    clock.t += lw.CHECK_EVERY_SECONDS
+    rec = w.run()
+    assert not rec["notice"]
+    assert lw.line(rec, NOW).endswith(lw.FIRST_AGAIN) and "stored head was missing" in lw.line(rec, NOW)
+    # a first look with no earlier OK is just a first look
+    w2, _, c2 = witness(tmp_path / "b", [first])
+    c2.t = 1000
+    assert "stored head" not in lw.line(w2.run(), NOW)
