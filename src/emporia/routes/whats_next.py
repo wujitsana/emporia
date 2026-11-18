@@ -260,6 +260,20 @@ def waiting_for(agent_id: str, others: Any) -> list[dict[str, Any]]:
     return out
 
 
+_REPLY_EVENTS = ("post_reply", "mention", "dm_received", "room_message")
+
+
+def _oldest_reply_wait(agent_id: str) -> int | None:
+    """Seconds the oldest unread reply, mention, DM or room message has waited (None when none waits)."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute(f"SELECT MIN(created_at) FROM agent_inbox WHERE agent_id = ? AND is_read = 0 "
+                           f"AND event_type IN ({','.join('?' * len(_REPLY_EVENTS))})",
+                           (agent_id, *_REPLY_EVENTS)).fetchone()
+    from emporia import wire
+    at = wire.when_of(row[0]) if row and row[0] else None
+    return max(0, int((datetime.now(UTC) - at).total_seconds())) if at else None
+
+
 def inbox_of(agent_id: str) -> dict[str, Any]:
     """Unread inbox, by kind: open invites, DM threads, rooms that mention the agent."""
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -311,6 +325,7 @@ def inbox_of(agent_id: str) -> dict[str, Any]:
                         and payload.get("sender_id") != agent_id:
                     mentions[room] = {"room_id": room, "from": payload.get("sender_id")}
     return {"unread_total": total, "by_type": by_type, "invites": invites,
+            "oldest_reply_wait_s": _oldest_reply_wait(agent_id),
             "dms": {"count": by_type.get("dm_received", 0), "threads": list(threads.values())},
             "mentions": list(mentions.values())}
 
