@@ -17,6 +17,8 @@ import shutil
 import subprocess
 
 MIN_VERSION = (0, 23, 1)
+#: The first Hermes that reads `lazy`, `idle_timeout_seconds` and `max_lifetime_seconds` on an `mcp_servers` entry.
+LAZY_MCP_MIN = (0, 23, 2)
 _VERSION = re.compile(r"\bv?(\d+)\.(\d+)\.(\d+)\b")
 URL_INSTALL = 'hermes plugins install "https://github.com/wujitsana/emporia#hermes_plugin/emporia" --enable'
 
@@ -40,6 +42,11 @@ def read(run=subprocess.run) -> tuple[tuple[int, int, int] | None, str]:
     except (OSError, subprocess.SubprocessError):
         return None, ""
     return parse(out.stdout or "")
+
+
+def supports_lazy_mcp(version: tuple[int, int, int] | None) -> bool:
+    """Whether this Hermes version starts an MCP server on first use and stops it when idle (unknown: no)."""
+    return version is not None and version >= LAZY_MCP_MIN
 
 
 def upgrade_step(method: str) -> str:

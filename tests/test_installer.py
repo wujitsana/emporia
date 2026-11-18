@@ -652,3 +652,49 @@ def test_a_label_the_person_set_is_honored_and_a_bad_one_stops_setup(tmp_path, c
     with pytest.raises(SystemExit, match="not an operator label"):
         installer.resolve_operator_label(None, third)
     (third / ".env").write_text("")
+
+
+# ── Hermes 0.23.2 lazy start and idle stop on the MCP entry ──────────────────
+
+def _setup_profile(tmp_path, monkeypatch, version, existing=None):
+    import os
+    monkeypatch.setattr(os, "environ", os.environ.copy())
+    monkeypatch.setenv("EMPORIA_NO_DOTENV", "1")
+    monkeypatch.setattr(installer, "_hermes_version", lambda: version)
+    profile = tmp_path / "profiles" / "shop"
+    profile.mkdir(parents=True)
+    (profile / ".env").write_text("")
+    (profile / "config.yaml").write_text(yaml.safe_dump({"mcp_servers": {"emporia": existing}}) if existing else "{}\n")
+    installer.install_into_profile(profile_dir=profile, relay_url="http://127.0.0.1:1", agent_id="shop")
+    return yaml.safe_load((profile / "config.yaml").read_text())["mcp_servers"]["emporia"], profile
+
+
+def test_a_new_entry_is_lazy_with_an_idle_stop_on_hermes_0_23_2(tmp_path, monkeypatch):
+    entry, _ = _setup_profile(tmp_path, monkeypatch, (0, 23, 2))
+    assert entry["lazy"] is True and entry["idle_timeout_seconds"] == installer.MCP_IDLE_SECONDS == 600
+
+
+def test_an_older_or_unknown_hermes_gets_neither_key(tmp_path, monkeypatch):
+    for n, version in enumerate(((0, 23, 1), (0, 22, 9), None)):
+        entry, _ = _setup_profile(tmp_path / str(n), monkeypatch, version)
+        assert "lazy" not in entry and "idle_timeout_seconds" not in entry
+
+
+def test_running_setup_again_adds_the_keys_once_and_keeps_the_persons_own(tmp_path, monkeypatch):
+    old = {"command": "python", "args": ["-m", "emporia.mcp_server"], "env": {}, "tools": {"exclude": ["x"]},
+           "idle_timeout_seconds": 90, "lazy": False}
+    entry, profile = _setup_profile(tmp_path, monkeypatch, (0, 23, 3), existing=old)
+    assert entry["lazy"] is False and entry["idle_timeout_seconds"] == 90 and entry["tools"] == {"exclude": ["x"]}
+    bare = {"command": "python", "args": ["-m", "emporia.mcp_server"], "env": {}, "timeout": 45}
+    entry, profile = _setup_profile(tmp_path / "b", monkeypatch, (0, 23, 3), existing=bare)
+    assert entry["lazy"] is True and entry["idle_timeout_seconds"] == 600 and entry["timeout"] == 45
+    installer.install_into_profile(profile_dir=profile, relay_url="http://127.0.0.1:1", agent_id="shop")
+    again = yaml.safe_load((profile / "config.yaml").read_text())["mcp_servers"]["emporia"]
+    assert again["lazy"] is True and again["idle_timeout_seconds"] == 600
+    assert installer.apply_mcp_lifecycle(entry, (0, 23, 3)) is False
+
+
+def test_the_version_helper():
+    from emporia import hermes_version as hv
+    assert hv.supports_lazy_mcp((0, 23, 2)) and hv.supports_lazy_mcp((1, 0, 0))
+    assert not hv.supports_lazy_mcp((0, 23, 1)) and not hv.supports_lazy_mcp(None)

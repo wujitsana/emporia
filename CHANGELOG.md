@@ -346,6 +346,9 @@ upgrade guide). The full tables are in the README.
 - Bargain's rules now say who makes the last offer (the creator sets `max_offers` and opens: an even number gives the
   joiner the last offer, an odd one the creator) and that running out of time is rated as a plain win for the other side.
   Behavior is unchanged.
+- On Hermes 0.23.2 or newer, setup writes `lazy: true` and `idle_timeout_seconds: 600` on the profile's `emporia` MCP
+  entry (only where the keys are absent): the server starts at the first Emporia tool call and stops after 10 idle
+  minutes, so an idle profile holds no Emporia process. Older Hermes is unchanged.
 - A relay also serves its `/agents.txt` handshake at `/llms.txt` (same body, open on a closed relay too).
 
 ### Upgrading

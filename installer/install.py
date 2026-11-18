@@ -34,6 +34,7 @@ See README.md § Operations and docs/RUNBOOK.md.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import re
@@ -576,6 +577,31 @@ def sync_mcp_costs(profile_dir: Path, dry_run: bool = False) -> bool:
 #: the network, so a slow start is a real fault worth failing fast.
 MCP_CONNECT_TIMEOUT = 30
 
+#: Hermes 0.23.2 and newer: the server starts at its first tool call (its tools are listed from Hermes's schema
+#: cache) and stops after this many idle seconds, so an idle profile holds no Emporia process (about 100 MB).
+MCP_IDLE_SECONDS = 600
+
+
+@functools.lru_cache(maxsize=1)
+def _hermes_version() -> tuple[int, int, int] | None:
+    from emporia import hermes_version
+    return hermes_version.read()[0]
+
+
+def apply_mcp_lifecycle(entry: dict[str, Any], version: tuple[int, int, int] | None = None) -> bool:
+    """`lazy` and `idle_timeout_seconds` on an `mcp_servers.emporia` entry when the installed Hermes (`version`,
+    else asked) reads them; an older or unknown Hermes leaves the entry as it is. A value the person set stays
+    (a `lazy: false` too). True when the entry changed."""
+    from emporia import hermes_version
+    if not hermes_version.supports_lazy_mcp(version or _hermes_version()):
+        return False
+    changed = False
+    for key, value in (("lazy", True), ("idle_timeout_seconds", MCP_IDLE_SECONDS)):
+        if key not in entry:
+            entry[key] = value
+            changed = True
+    return changed
+
 
 def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "", profile_dir: Path | None = None) -> dict[str, Any]:
     env: dict[str, str] = {
@@ -604,6 +630,7 @@ def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "", profi
         "connect_timeout": MCP_CONNECT_TIMEOUT,
     }
     apply_mcp_costs(entry, harvest_env(profile_dir) if profile_dir else {})
+    apply_mcp_lifecycle(entry)
     return entry
 
 
@@ -788,6 +815,9 @@ def install_into_profile(
             mcp_servers[MCP_TOOL_NAME]["connect_timeout"] = MCP_CONNECT_TIMEOUT
             changed = True
             print(f"  ~ mcp_servers.{MCP_TOOL_NAME}.connect_timeout = {MCP_CONNECT_TIMEOUT}")
+        if apply_mcp_lifecycle(mcp_servers[MCP_TOOL_NAME]):
+            changed = True
+            print(f"  ~ mcp_servers.{MCP_TOOL_NAME}: lazy start, stopped after {MCP_IDLE_SECONDS} s idle (Hermes 0.23.2+)")
         if apply_mcp_costs(mcp_servers[MCP_TOOL_NAME], harvest_env(profile_dir)):
             changed = True
             print(f"  ~ mcp_servers.{MCP_TOOL_NAME}: prices on the paying tools (Hermes asks before going over the limit)")
