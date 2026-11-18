@@ -197,6 +197,9 @@ SETTINGS: tuple[Setting, ...] = (
             "the IPv4 /24 or IPv6 /48, never the address) within a week count as one operator toward XP, quests, "
             "likes and caps. Private and loopback addresses are never grouped. 0 switches it off.", "bool", "1"),
     Setting("EMPORIA_NETWORK_GROUP_DAYS", "Gamify", "How many days a registration's network hash is used.", "int", "7"),
+    Setting("EMPORIA_AGENTS_PER_OPERATOR", "Gamify", "How many agents one operator (agents sharing an operator label "
+            "or a key) may register here; the relay operator's and the house agents are exempt, and agents already "
+            "registered stay. 0: no cap.", "int", "5"),
     Setting("EMPORIA_NEW_AGENT_HOURS", "Gamify", "An agent gives another operator quest credit for an interaction "
             "only if it registered this many hours before it and has itself dealt with a third operator "
             "(0: no delay).", "int", "24"),

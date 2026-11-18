@@ -553,6 +553,46 @@ def house_names() -> frozenset[str]:
     return frozenset(r["agent_id"] for r in rows)
 
 
+DEFAULT_AGENTS_PER_OPERATOR = 5
+
+
+class OperatorCapError(ValueError):
+    """A new registration refused because its operator already has the most agents this relay allows."""
+
+
+def agents_per_operator() -> int:
+    """EMPORIA_AGENTS_PER_OPERATOR, read at call time: how many agents one operator may register (0: no cap).
+    Missing, not a whole number or negative: the default (5)."""
+    raw = os.getenv("EMPORIA_AGENTS_PER_OPERATOR", "").strip()
+    try:
+        value = int(raw) if raw else DEFAULT_AGENTS_PER_OPERATOR
+    except ValueError:
+        return DEFAULT_AGENTS_PER_OPERATOR
+    return value if value >= 0 else DEFAULT_AGENTS_PER_OPERATOR
+
+
+def operator_cap_problem(conn: Any, operator_label: str, stable_id: str) -> str:
+    """Why a NEW agent with this label and key may not register, or "". Counts only the declared grouping (the
+    same label, else the same key: `operators.operator_of`), never the network grouping, which can lump strangers
+    together. Exempt by key only: the relay operator's agent and house agents (EMPORIA_OPERATOR_STABLE_ID,
+    EMPORIA_HOUSE_STABLE_IDS). Sharing their label exempts nobody: a label travels on the signed card to other relays,
+    so it can be copied (the relay operator raises the cap for their own other agents). Never names the other agents."""
+    cap = agents_per_operator()
+    if cap <= 0:
+        return ""
+    mine = operators.operator_of(operator_label, stable_id)
+    exempt_ids = {*house_stable_ids(), operator_stable_id()} - {""}
+    if stable_id in exempt_ids:
+        return ""
+    rows = conn.execute("SELECT agent_id, stable_id, operator_label FROM authorized_agents WHERE is_active = 1"
+                        ).fetchall()
+    have = sum(1 for r in rows if operators.operator_of_row(r) == mine)
+    if have < cap:
+        return ""
+    return (f"this relay allows {cap} agents per operator (EMPORIA_AGENTS_PER_OPERATOR); this operator has {have}. "
+            "Use one of your existing agents, or ask the relay operator to raise the limit.")
+
+
 def vouched_stable_ids() -> frozenset[str]:
     """Stable ids the relay's operator vouches for (`EMPORIA_VOUCHED_STABLE_IDS`, comma-separated)."""
     return frozenset(x.strip().lower() for x in os.getenv("EMPORIA_VOUCHED_STABLE_IDS", "").split(",") if x.strip())
@@ -2556,6 +2596,8 @@ class AgentRegistry:
                             f"One key is one identity — rename it rather than "
                             f"registering it twice."
                         )
+                    if why := operator_cap_problem(conn, operator_label, derived_stable_id):
+                        raise OperatorCapError(why)
                 # P16-3: an UPSERT, not INSERT OR REPLACE. SQLite implements
                 # INSERT OR REPLACE as DELETE-then-INSERT, so every column *not*
                 # listed here silently reverted to its schema DEFAULT on a
@@ -4794,6 +4836,7 @@ async def health(request: Request):
         "season": _season_public(),
         "allowance": _allowance_on(),
         "starter_limits": _allowance_on(),      # 2.0.1's name for it: an old doctor reads this one
+        "agents_per_operator": agents_per_operator(),    # 0: no cap
         **_fees_card(),
         # P208: for this machine's doctor — whether its keys guard real money,
         # and whether it runs in a container (who could reach them differs).
