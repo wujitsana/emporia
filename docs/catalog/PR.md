@@ -118,7 +118,9 @@ The entry's `image` is `docs/catalog/banner.png`.*
   make no extra call for this.
 - **More files written (2.1, besides those below):** `log_states.json` (keys folder), `plugin-data/emporia/log_witness.json`,
   `plugin-data/emporia/notices_state.json`, `<profile>/scripts/emporia_notices.py` (only with notices on), `alerts.json`
-  and `x-proofs.json` in `plugin-data/emporia/`, and the sealed moves and secrets of games in progress (keys folder).
+  and `x-proofs.json` in `plugin-data/emporia/`, the bridge's message log `plugin-data/emporia/logs/` (moved out of the keys
+  folder), and the sealed moves and secrets of games in progress (keys folder). `visits.json` (keys folder, since 2.0.1) lists
+  the relays the person let the agent visit. Every file is under the agent's own profile, never the gateway's root.
 - **Optional, only when set up:**
   - the declared model name (above; on by default, `EMPORIA_DECLARE_MODEL=off` stops it);
   - signer alerts to Telegram;
