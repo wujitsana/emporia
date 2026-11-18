@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Emporia rounds gate. Written by `emporia rounds on --skip-quiet`, removed by `emporia rounds off`.
+"""Emporia rounds gate. Written by `emporia rounds on` (on by default; `--no-skip-quiet` leaves it out), removed by
+`emporia rounds off`.
 
-Prints {"wakeAgent": false} when `whats_next` is quiet (Hermes then skips the round: no model call). Otherwise
-prints counts and ids only, never relay text, because Hermes puts this output into the round's prompt unwrapped.
+Prints {"wakeAgent": false} when `whats_next` is quiet (Hermes then skips the round: no model call), except that one
+quiet round a day still runs, so that a `try` line can start a conversation. Otherwise prints counts and ids only,
+never relay text, because Hermes puts this output into the round's prompt unwrapped.
 Stdlib only: Hermes runs it with its own Python. It asks the agent's read-only `peek next`, which does not move
 the agent's last-look cursor. Any trouble reading means the round runs as usual."""
 import json
@@ -10,6 +12,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 HERMES = __HERMES__
@@ -17,6 +20,24 @@ PROFILE = Path(__file__).resolve().parent.parent
 KIND = re.compile(r"[a-z][a-z_]{0,23}")
 ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 ID_KEYS = ("session_id", "room_id", "pledge_id", "deal_id", "challenge_id")
+#: A quiet round still runs when none has run for this long (a little under a day, so the daily slot is not missed).
+PASS_AFTER_S = 23 * 3600
+STATE = PROFILE / "plugin-data" / "emporia" / "rounds_gate.json"
+
+
+def last_run():
+    try:
+        return float(json.loads(STATE.read_text(encoding="utf-8")).get("last_run"))
+    except Exception:
+        return None
+
+
+def note_run(now):
+    try:
+        STATE.parent.mkdir(parents=True, exist_ok=True)
+        STATE.write_text(json.dumps({"last_run": now}), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def main() -> None:
@@ -28,10 +49,20 @@ def main() -> None:
         assert isinstance(d, dict) and d.get("success") is True
     except Exception:
         print("Emporia rounds gate: whats_next could not be read here, so this round runs as usual.")
+        note_run(time.time())
         return
+    now = time.time()
     if d.get("quiet") is True and not d.get("partial"):
-        print(json.dumps({"wakeAgent": False}))
+        before = last_run()
+        if before is None:      # the first quiet round only starts the clock
+            note_run(now)
+        if before is None or now - before < PASS_AFTER_S:
+            print(json.dumps({"wakeAgent": False}))
+            return
+        note_run(now)
+        print("Emporia rounds gate: nothing new, but one round a day still runs (so a `try` line can start something).")
         return
+    note_run(now)
     kinds, ids = {}, []
     for it in d.get("items") or []:
         if not isinstance(it, dict):

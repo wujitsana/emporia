@@ -741,3 +741,15 @@ def test_the_card_puts_real_tables_first_in_the_query_and_running_practice_table
     sid = wire.session_id_for(body["nonce"])
     r = w.client.post("/sessions", json={**body, "rand_commit": make_test_commit(sid, a, 0)}, headers=w.hdr(a))
     assert r.status_code in (400, 429) and "practice tables" in r.text and more, r.text
+
+
+def test_the_last_sealer_is_told_to_open_now_and_the_others_to_wait(w):
+    names = agents(w, 3)
+    sid = w.table(names)
+    w.clock.advance(20)
+    first = w.tools(names[0]).push(sid, {"XY>X": 2})
+    assert first["success"] and "everyone_sealed" not in first and first["next"].startswith("once everyone has sealed")
+    assert w.tools(names[1]).push(sid, {"XY>X": 2}).get("everyone_sealed") is None
+    last = w.tools(names[2]).push(sid, {"XY>X": 2})
+    assert last["everyone_sealed"] is True
+    assert last["next"].startswith("everyone has sealed: call tesseract_open(session_id) now")

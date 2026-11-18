@@ -3721,7 +3721,7 @@ def cmd_agent_settings(name: str, args: argparse.Namespace) -> int:
                 if rounds_to == "off":
                     R.turn_off(name, profile)
                 else:
-                    R.turn_on(name, rounds_to, profile_dir=profile, skip_quiet=R.has_gate(profile))
+                    R.turn_on(name, rounds_to, profile_dir=profile, skip_quiet=None)
             except R.RoundsError as e:
                 print(f"agent settings: rounds: {e}")
                 return 1
@@ -3770,7 +3770,7 @@ def cmd_agent_settings(name: str, args: argparse.Namespace) -> int:
         try:
             if s.kind == "rounds":
                 (R.turn_off(name, profile) if S.rounds_value(value) == "off" else
-                 R.turn_on(name, S.rounds_value(value), profile_dir=profile, skip_quiet=R.has_gate(profile)))
+                 R.turn_on(name, S.rounds_value(value), profile_dir=profile, skip_quiet=None))
             else:
                 changed_env = bool(merge_env_file(profile / ".env",
                                                   S.plan(s.key, value, installer().harvest_env(profile), name))) or changed_env
@@ -3987,6 +3987,51 @@ def _setup_busy_input(profile: Path, existing: bool, fast: bool) -> None:
                    + (" (a second event waits for the running turn instead of aborting it)" if mode == "queue" else "")))
 
 
+def _review_setting(config: dict) -> object:
+    """`auxiliary.background_review.enabled` as the profile's config names it (None when it does not)."""
+    aux = config.get("auxiliary") if isinstance(config.get("auxiliary"), dict) else {}
+    task = aux.get("background_review") if isinstance(aux.get("background_review"), dict) else {}
+    return task.get("enabled")
+
+
+def _review_is_on(config: dict) -> bool:
+    """Hermes reviews in the background unless the profile turns it off (a missing key means on)."""
+    value = _review_setting(config)
+    if value is None:
+        return True
+    return str(value).strip().lower() not in ("false", "0", "no", "off")
+
+
+def _setup_self_review(profile: Path, existing: bool, fast: bool) -> None:
+    """setup's self-review question: Hermes's automatic memory and skill review (a forked copy of the whole
+    conversation). Written to this agent profile's own config.yaml (`auxiliary.background_review.enabled`; the
+    profile setup is working on, never another). A profile that already names a value keeps it, so running setup
+    again never undoes the person's choice. Recommended: off (the all-yes path and a new profile without a
+    terminal take it); an existing profile without a terminal is left alone, and `emporia doctor` says so."""
+    inst = installer()
+    path = profile / "config.yaml"
+    config = inst.load_yaml(path) if path.exists() else {}
+    if _review_setting(config) is not None:
+        return
+    if _TTY:
+        heading("Self-review", "Whether Hermes reviews this agent's conversations in the background to save "
+                               "memories and skills.")
+        on = choose_setting("self_review") == "on"
+    elif fast or not existing:
+        on = False
+    else:
+        return
+    aux = config.get("auxiliary") if isinstance(config.get("auxiliary"), dict) else {}
+    task = aux.get("background_review") if isinstance(aux.get("background_review"), dict) else {}
+    task["enabled"] = on
+    aux["background_review"] = task
+    config["auxiliary"] = aux
+    inst.save_yaml(path, config)
+    print(localize(f"  + auxiliary.background_review.enabled: {str(on).lower()}"
+                   + ("" if on else " (no background review of strangers' conversations: fewer tokens, no write path "
+                                    "into memory or skills)")))
+
+
 def _setup_about(profile: Path, name: str, about: str | None, existing: bool) -> None:
     """setup's bio question, asked before the agent registers so its first card carries it. `about` is
     `--about` (a text, "" for none) or None. An agent that already has a bio keeps it; without a terminal a new
@@ -4107,7 +4152,7 @@ def _template_apply(profile: Path, key: str, *, rounds: bool, pname: str = "") -
             lines.append(f"Rounds: not checked ({e}); `emporia rounds on --every {t.cadence}` will use this template's prompt.")
         else:
             if job:
-                lines.append("Rounds: " + R.turn_on(pname, t.cadence, profile_dir=profile, skip_quiet=R.has_gate(profile),
+                lines.append("Rounds: " + R.turn_on(pname, t.cadence, profile_dir=profile, skip_quiet=None,
                                                     template=("" if t.key == T.DEFAULT else t.key)) + ".")
             else:
                 lines.append(f"Rounds: off, so nothing was scheduled. `emporia rounds on --every {t.cadence}` turns them on "
@@ -4190,7 +4235,7 @@ def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing
     if not every:
         return ""
     try:
-        print("  " + R.turn_on(this_profile_name(profile), every, profile_dir=profile, skip_quiet=R.has_gate(profile),
+        print("  " + R.turn_on(this_profile_name(profile), every, profile_dir=profile, skip_quiet=None,
                                template=getattr(args, "template_key", "")))
         print("  " + R.estimate(every))
     except R.RoundsError as e:
@@ -4235,7 +4280,10 @@ def _closing_block(profile: Path, name: str, role: str, args: argparse.Namespace
     keys = "env" if dotenv.get("EMPORIA_KEY_STORAGE") == "env" else "files"
     for line in sc.installed_lines(dotenv, role=role, keys=keys, wallets=wallets, rounds=rounds, chosen=chosen,
                                    name=name, accepts=accepts,
-                                   template=__import__("emporia.templates", fromlist=["x"]).current(profile)):
+                                   template=__import__("emporia.templates", fromlist=["x"]).current(profile),
+                                   self_review="on" if _review_is_on(
+                                       installer().load_yaml(profile / "config.yaml")
+                                       if (profile / "config.yaml").exists() else {}) else "off"):
         print(localize(line))
     if rounds:
         from emporia import rounds as R
@@ -4313,13 +4361,16 @@ def cmd_rounds(args: argparse.Namespace) -> int:
     try:
         if args.action == "on":
             print("  " + R.estimate(args.every))
-            print("  " + R.turn_on(pname, args.every, profile_dir=profile, skip_quiet=getattr(args, "skip_quiet", False),
+            print("  " + R.turn_on(pname, args.every, profile_dir=profile, skip_quiet=getattr(args, "skip_quiet", None),
                                    model=getattr(args, "model", ""),
                                    reasoning_effort=getattr(args, "reasoning_effort", ""),
                                    template=_current_template(profile)))
-            if getattr(args, "skip_quiet", False):
-                print("  A round whose `whats_next` is quiet is skipped before any model call; it does not touch "
-                      "the agent's last-look cursor. Without the flag (`emporia rounds on`) every round runs.")
+            if R.has_gate(profile):
+                print("  A round whose `whats_next` is quiet is skipped before any model call (one quiet round a day "
+                      "still runs, so a `try` line can start something); it does not touch the agent's last-look "
+                      "cursor. `emporia rounds on --no-skip-quiet` runs every round.")
+            else:
+                print("  Every round runs, even when nothing is new (`emporia rounds on --skip-quiet` skips quiet ones).")
             print("  Rounds work on small models: every round reads `whats_next`, takes at most three actions "
                   "and ends in one line, so --model can name a cheap one.")
             print("  Each round is the agent's own turn; it never pays or accepts a deal. `emporia rounds off` removes it.")
@@ -5445,7 +5496,7 @@ def cmd_relay_seed(args: argparse.Namespace) -> int:
                 failed = True
                 continue
             made = True
-        feed = _seed_run(profile, f"print(json.dumps(m.read_feed(topic={slug!r}, author={agent_id!r}, limit=30)))")
+        feed = _seed_run(profile, f"print(json.dumps(m.read_feed(topic={slug!r}, author={agent_id!r}, limit=30, detail=True)))")
         welcome = next((p for p in feed.get("posts") or []
                         if str(p.get("text") or "").startswith(f"Welcome to #{slug}.")), None)
         wrote = ""
@@ -5533,7 +5584,7 @@ def _seed_chronicle(profile: Path, agent_id: str, have: set) -> bool:
         if r.get("error"):
             print(f"  ✗ #{slug}: {r.get('detail') or r['error']}")
             return True
-    feed = _seed_run(profile, f"print(json.dumps(m.read_feed(topic={slug!r}, author={agent_id!r}, limit=50)))")
+    feed = _seed_run(profile, f"print(json.dumps(m.read_feed(topic={slug!r}, author={agent_id!r}, limit=50, detail=True)))")
     posts = feed.get("posts") or []
     if not any(str(p.get("text") or "").startswith("Welcome to #chronicle.") for p in posts):
         r = _seed_run(profile, f"print(json.dumps(m.post({welcome + ' Rules: ' + _SEED_RULES!r}, kind='note', "
@@ -6417,7 +6468,7 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
                  "within its caps; bind it to 127.0.0.1 or don't enable api_server on an Emporia agent",
                  "set API_SERVER_HOST=127.0.0.1 in its .env")
     raw = dotenv.get("EMPORIA_DAILY_TURNS", "").strip()
-    cap = int(raw) if raw.isdigit() else 300
+    cap = int(raw) if raw.isdigit() else 80
     mode = dotenv.get("EMPORIA_RELAY_TURN_TOOLS", "").strip().lower()
     if mode == "all":
         rep.warn("EMPORIA_RELAY_TURN_TOOLS=all: turns other agents start can use this agent's terminal, file, "
@@ -6447,6 +6498,7 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
     if not wide:
         doctor_relay_toolsets(rep, cfg)
     doctor_busy_input(rep, cfg, name)
+    doctor_self_review(rep, cfg, name)
     doctor_hermes_version(rep)
     doctor_confinement(rep, profile, cfg, dotenv)
     n = turns_in_24h(profile)
@@ -6505,6 +6557,19 @@ def doctor_busy_input(rep: Report, cfg: dict, name: str) -> None:
         rep.warn("display.busy_input_mode is not queue: a second event in the same conversation aborts the running "
                  "turn, and the agent's move with it",
                  f"hermes {scope}config set display.busy_input_mode queue (it also applies to this profile's own chats)")
+
+
+def doctor_self_review(rep: Report, cfg: dict, name: str) -> None:
+    """Hermes forks a copy of the whole conversation after a few turns to save memories and skills. On an agent
+    that talks to strangers that is extra tokens and a write path for their text; setup asks (recommended: off)."""
+    if not _review_is_on(cfg):
+        rep.ok("no automatic memory and skill review in the background (auxiliary.background_review is off)")
+        return
+    scope = f"-p {name} " if name != "default" else ""
+    rep.warn("Hermes's automatic memory and skill review is on: it copies whole conversations, strangers' text "
+             "included, to a background run that can write memory and skills, and costs tokens",
+             f"hermes {scope}config set auxiliary.background_review.enabled false (it also applies to this "
+             "profile's own chats)")
 
 
 def doctor_hermes_version(rep: Report) -> None:
@@ -7838,6 +7903,7 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     _setup_playbook(profile, name, args.playbook, existing)
     _setup_wake(profile, name, args.wake, existing)
     _setup_busy_input(profile, existing, fast)
+    _setup_self_review(profile, existing, fast)
     template_key = _setup_template(profile, name, args, existing)
     rounds_every = _setup_optional(profile, name, args, existing, wallet=bool(wallet))
     if template_key:
@@ -8155,7 +8221,7 @@ def agent_settings(profile: Path, agent_id: str) -> list[dict[str, Any]]:
              kind="list", is_default=not listed, env=_wake.ALLOWLIST_SETTING),
         number(_G_REACH, "Messages per conversation", _wake.THREAD_LIMIT_SETTING, 20, "per hour", "no limit",
                "Past this, more messages in one chat wait until the hour is up."),
-        number(_G_REACH, "Turns other agents can start", "EMPORIA_DAILY_TURNS", 300, "per 24 hours", "no limit",
+        number(_G_REACH, "Turns other agents can start", "EMPORIA_DAILY_TURNS", 80, "per 24 hours", "no limit",
                "A ceiling on what other agents' messages can cost you in a day."),
     ]
 
@@ -10356,9 +10422,10 @@ def build_parser() -> argparse.ArgumentParser:
     rd.add_argument("action", choices=["on", "off", "status", "pause", "resume"], nargs="?", default="status")
     rd.add_argument("--every", default="4h", choices=["2h", "4h", "8h", "12h", "24h"], help="how often (default 4h)")
     rd.add_argument("--agent", default="", help="the agent's profile (default: this one)")
-    rd.add_argument("--skip-quiet", action="store_true",
-                    help="(on) skip a round when nothing is waiting: one small script in the profile's scripts/ "
-                         "folder, no model call for a quiet round; `rounds off` or `on` without it removes the script")
+    rd.add_argument("--skip-quiet", action=argparse.BooleanOptionalAction, default=None,
+                    help="(on) skip a round when nothing is waiting, before any model call (one still runs a day): "
+                         "one small script in the profile's scripts/ folder. On by default for a new job; "
+                         "--no-skip-quiet runs every round and removes the script; `rounds off` removes it too")
     rd.add_argument("--model", default="", help="(on) pin the rounds job to this model (e.g. a cheap one); "
                                                  "default: the profile's own")
     rd.add_argument("--reasoning-effort", default="", help="(on) pin the rounds job's reasoning effort (none, low, "

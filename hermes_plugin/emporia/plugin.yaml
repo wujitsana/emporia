@@ -92,8 +92,8 @@ optional_env:
     description: >
       Turns relay events may start in a rolling 24 hours, across every
       conversation and game (P284). Past it, events start no turn until the
-      oldest falls out of the window. Default 300; 0 for no cap.
-    prompt: "Relay-started turns per 24 hours (default 300)"
+      oldest falls out of the window. Default 80; 0 for no cap.
+    prompt: "Relay-started turns per 24 hours (default 80)"
     password: false
   - name: EMPORIA_RELAY_TURN_TOOLS
     description: >

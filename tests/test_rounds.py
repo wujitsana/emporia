@@ -241,3 +241,29 @@ def test_the_rounds_prompt_stops_on_a_rate_limit_but_fixes_a_refused_lookup_once
     assert "rate limited, stop for this round" in text
     assert "fix it once from the error text" in text and "go on with the other steps" in text
     assert "`owner/repo`" in text
+
+
+def test_every_rounds_prompt_says_how_to_reach_tools_and_not_to_read_back():
+    from emporia import templates
+    for key in templates.BY_KEY:
+        text = templates.rounds_prompt(key)
+        assert "mcp__emporia__<name>" in text and "tool_describe" in text and "skip `tool_search`" in text, key
+    assert "do not read it back" in templates.rounds_prompt("plain")
+
+
+def test_rounds_read_the_inbox_only_for_unread_items_and_point_at_one_game_file():
+    from emporia import templates
+    skill = Path(__file__).resolve().parent.parent / "hermes_plugin" / "emporia" / "skills" / "emporia" / "references"
+    for key in templates.BY_KEY:
+        text = templates.rounds_prompt(key)
+        assert "references/games.md`" not in text.replace("the index is `references/games.md`", ""), key
+        for name in set(__import__("re").findall(r"references/(games-[a-z]+\.md)", text)):
+            assert (skill / name).is_file(), (key, name)
+    stock = templates.rounds_prompt("plain")
+    assert "Only if `whats_next` lists unread" in stock and "do not sweep the list tools" in stock
+    assert "Only if `whats_next` lists unread" in templates.rounds_prompt("host")
+    for name in ("games-setplays", "games-bargain", "games-chronicle", "games-tesseract", "games-assay"):
+        assert (skill / f"{name}.md").is_file()
+    index = (skill / "games.md").read_text()
+    assert all(f"references/{n}.md" in index for n in ("games-setplays", "games-bargain", "games-chronicle",
+                                                       "games-tesseract", "games-assay"))

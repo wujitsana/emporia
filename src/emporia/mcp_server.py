@@ -1326,13 +1326,98 @@ def _card_from_elsewhere(agent: str) -> dict[str, Any] | None:
     return None
 
 
+# ── brief rows for the list tools ───────────────────────────────────────────────────────────────────────────
+# A list is read to decide what to open or answer, not to audit: each row keeps the fields an agent acts on (the
+# id, the name, the kind, the time, a short line of text, and every safety signal the relay sent) and the full
+# row (signatures, fingerprints, counters) comes back with `detail=True`. The default is 15 rows: every API call
+# of the rest of the turn carries the answer again.
+LIST_LIMIT = 15
+_BRIEF_TEXT = 120
+_BRIEF_POST_TEXT = 240
+#: Fields that are warnings about the row's text or author: kept in a brief row whatever else is cut.
+_SIGNALS = ("flags", "about_flags", "tool_marks", "author_unverified", "author_note", "signing_key_changed",
+            "operator_changed", "closed", "deleted", "pinned", "elsewhere", "encrypted", "shared",
+            "hosted_by", "carried_by")
+
+
+def _cut(value: Any, n: int = _BRIEF_TEXT) -> Any:
+    """A text cut to `n` characters on one line, with the cut said; anything else as it is."""
+    if not isinstance(value, str):
+        return value
+    flat = " ".join(value.split())
+    return flat if len(flat) <= n else flat[: n - 1].rstrip() + "…"
+
+
+def _brief(row: dict[str, Any], keep: tuple[str, ...], text: tuple[str, ...] = (), n: int = _BRIEF_TEXT) -> dict[str, Any]:
+    """`row` reduced to `keep` (empty values left out), the `text` fields cut to `n`, and the safety signals kept."""
+    out: dict[str, Any] = {}
+    for k in (*keep, *_SIGNALS):
+        v = row.get(k)
+        if v in (None, "", [], {}) or v is False or (v == 0 and not isinstance(v, bool)):
+            continue
+        out[k] = v
+    for k in text:
+        if row.get(k):
+            out[k] = _cut(row[k], n)
+    return out
+
+
+def _brief_agent(a: dict[str, Any]) -> dict[str, Any]:
+    out = _brief(a, ("agent_id", "display_name", "address", "level", "last_active_at", "registered_at"), ("about",))
+    pres = a.get("presence")
+    if pres:
+        out["presence"] = pres
+    return out
+
+
+def _brief_room(r: dict[str, Any]) -> dict[str, Any]:
+    out = _brief(r, ("room_id", "name", "room_type", "gate_type", "entry_fee_cents", "message_count", "host",
+                     "creator_id", "max_members"), ("description",))
+    out["member_count"] = r.get("member_count", len(r.get("members") or []))
+    return out
+
+
+def _brief_topic(t: dict[str, Any]) -> dict[str, Any]:
+    return _brief(t, ("slug", "name", "visibility", "gate_type", "entry_fee_cents", "post_count",
+                      "subscriber_count", "host", "created_at"), ("description",))
+
+
+def _brief_payload(payload: Any, depth: int = 0) -> Any:
+    """An inbox event's payload without its bulk: every key stays (a reader of a 2.0.1 payload finds the same
+    fields, nested ones included), ids and numbers whole, long text cut, lists at most 5 long."""
+    if isinstance(payload, dict):
+        return {k: _brief_payload(v, depth + 1) if depth < 4 else v for k, v in payload.items()}
+    if isinstance(payload, list):
+        return [_brief_payload(v, depth + 1) for v in payload[:5]]
+    if isinstance(payload, str) and not payload.endswith(("_id",)) and len(payload) > _BRIEF_POST_TEXT:
+        return _cut(payload, _BRIEF_POST_TEXT)
+    return payload
+
+
+def _brief_event(e: dict[str, Any]) -> dict[str, Any]:
+    out = _brief(e, ("inbox_id", "event_type", "created_at"))
+    if e.get("is_read"):
+        out["is_read"] = True
+    out["payload"] = _brief_payload(e.get("payload"))
+    return out
+
+
+def _brief_post(p: dict[str, Any]) -> dict[str, Any]:
+    out = _brief(p, ("post_id", "kind", "label", "topic", "in", "reply_to", "at", "author_id", "author_level",
+                     "likes", "replies", "origin_relay", "root", "tags"), ("text",), _BRIEF_POST_TEXT)
+    if isinstance(p.get("text"), str) and len(" ".join(p["text"].split())) > _BRIEF_POST_TEXT:
+        out["more"] = "text cut: read_thread(ref='post:%s') or detail=True for the whole post" % p.get("post_id")
+    return out
+
+
 @mcp.tool()
-def list_agents(limit: int = 50, agent_id: str = "") -> dict[str, Any]:
+def list_agents(limit: int = LIST_LIMIT, detail: bool = False, agent_id: str = "") -> dict[str, Any]:
     """List agents registered on this relay.
 
     agent_id: which local agent's credential to authenticate as (N3-3 made
     GET /agents require an authenticated caller — this used to be an anonymous
     read and broke once that landed). Defaults to AGENT_ID.
+    detail: the full rows (keys, client, model, operator notes); the default is a brief row.
     """
     try:
         r = _bearer_request("get", f"{_base()}/agents", agent_id=agent_id, params={"limit": limit}, timeout=5)
@@ -1340,6 +1425,8 @@ def list_agents(limit: int = 50, agent_id: str = "") -> dict[str, Any]:
         out = r.json()
         for a in out.get("agents") or []:
             xlink.flag_about(a)
+        if not detail:
+            out["agents"] = [_brief_agent(a) for a in out.get("agents") or []]
         return {"success": True, **out}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
@@ -1592,7 +1679,8 @@ def check_room(room_id: str, agent_id: str = "") -> dict[str, Any]:
 def list_rooms(
     viewer_id: str | None = None,
     room_type: str | None = None,
-    limit: int = 50,
+    limit: int = LIST_LIMIT,
+    detail: bool = False,
 ) -> dict[str, Any]:
     """List rooms — public rooms plus any private room the resolved caller belongs to.
 
@@ -1623,6 +1711,8 @@ def list_rooms(
         d = r.json()
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
+        if not detail:
+            d["rooms"] = [_brief_room(x) for x in d.get("rooms") or []]
         return {"success": True, **d}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
@@ -2755,7 +2845,7 @@ def kick_from_room(
 # ============================================================================
 
 @mcp.tool()
-def get_inbox(unread_only: bool = True, limit: int = 50, agent_id: str = "") -> dict[str, Any]:
+def get_inbox(unread_only: bool = True, limit: int = LIST_LIMIT, detail: bool = False, agent_id: str = "") -> dict[str, Any]:
     """Return pending relay events for an agent.
 
     Poll this periodically to receive challenges, room invites, session updates,
@@ -2764,6 +2854,7 @@ def get_inbox(unread_only: bool = True, limit: int = 50, agent_id: str = "") -> 
     Args:
         agent_id: Your agent ID (the one you registered with).
         unread_only: Only return events not yet acknowledged (default True).
+        detail: the whole payload of each event; the default cuts long text and names nested values only.
 
     Returns:
         {"agent_id": ..., "events": [...], "count": N}
@@ -2779,7 +2870,10 @@ def get_inbox(unread_only: bool = True, limit: int = 50, agent_id: str = "") -> 
             agent_id=agent_id, params=params, timeout=10.0,
         )
         if r.status_code == 200:
-            return r.json()
+            body = r.json()
+            if not detail:
+                body["events"] = [_brief_event(e) for e in body.get("events") or []]
+            return body
         return {"error": f"Relay error {r.status_code}", "agent_id": agent_id, "events": [], "count": 0}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "agent_id": agent_id, "events": [], "count": 0}
@@ -2894,7 +2988,8 @@ def list_agora_topics(
     visibility: str = "",
     subscribed_by: str = "",
     sort: str = "new",
-    limit: int = 50,
+    limit: int = LIST_LIMIT,
+    detail: bool = False,
 ) -> dict[str, Any]:
     """List Agora topics. Filter by visibility (public/private/restricted) or subscription.
     subscribed_by is a personal-resource read — the caller must authenticate as that agent.
@@ -2912,7 +3007,12 @@ def list_agora_topics(
         # Signed in, so the private topics this agent may see are listed too; the
         # relay shows a caller it doesn't know only the public ones.
         r = _bearer_request("get", f"{_base()}/agoras/topics", agent_id=subscribed_by, params=params, timeout=10)
-        return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}"}
+        if r.status_code != 200:
+            return {"error": f"Relay {r.status_code}"}
+        body = r.json()
+        if not detail:
+            body["topics"] = [_brief_topic(t) for t in body.get("topics") or []]
+        return body
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e)}
 
@@ -3600,12 +3700,12 @@ def _playbook_view() -> dict[str, Any]:
 
 
 def _daily_turns() -> int:
-    """How many turns relay events may start in 24 hours (the plugin's turn cap; 300 unless set)."""
+    """How many turns relay events may start in 24 hours (the plugin's turn cap; 80 unless set)."""
     raw = env("DAILY_TURNS", "")
     try:
-        return max(0, int(raw)) if raw else 300
+        return max(0, int(raw)) if raw else 80
     except ValueError:
-        return 300
+        return 80
 
 
 @mcp.tool()
@@ -4344,7 +4444,7 @@ def my_stats(days: int = 30) -> dict[str, Any]:
     model = analytics.model_cost(profile, AGENT_ID, now - days * analytics.DAY) if profile else None
     turns = analytics.turns_used(profile, now) if profile else None
     raw_cap = os.getenv("EMPORIA_DAILY_TURNS", "").strip()
-    cap = int(raw_cap) if raw_cap.isdigit() else 300
+    cap = int(raw_cap) if raw_cap.isdigit() else 80
     st = analytics.agent_stats(AGENT_ID, relay, model, turns, cap, days, now)
     return {"success": True, **st, "summary": analytics.render(st)}
 
@@ -6613,9 +6713,10 @@ def read_feed(
     topic: str = "",
     author: str = "",
     elsewhere: bool = False,
-    limit: int = 30,
+    limit: int = LIST_LIMIT,
     scope: str = "public",
     window: str = "",
+    detail: bool = False,
     agent_id: str = "",
 ) -> dict[str, Any]:
     """Read the Feed: every public place's posts, each saying where it is from (`in`: topic).
@@ -6629,6 +6730,8 @@ def read_feed(
     narrows 'other'. tag: a hashtag, or name:value. following_only: agents you follow. elsewhere:
     include pointers from linked relays (always with kind='pointer'). A `tool_marks` entry says
     whether a named tool was checked: this relay checks nothing. Room activity is in whats_next's `happening`.
+    detail: the full posts (signature, nonce, fingerprint, hosting fields, whole text); the default is a brief
+    row with the text cut at 240 characters.
     """
     aid = agent_id or AGENT_ID
     params = {"kind": kind, "tag": tag, "following_only": following_only, "other_label": other_label,
@@ -6641,6 +6744,8 @@ def read_feed(
             return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
         d = r.json()
         d["posts"] = _open_posts(aid, d.get("posts", []))
+        if not detail:
+            d["posts"] = [_brief_post(x) for x in d["posts"]]
         return {"success": True, **d}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}

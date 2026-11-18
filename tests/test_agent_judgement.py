@@ -320,7 +320,7 @@ def test_limits_reads_the_guards_and_changes_none(monkeypatch):
     assert spend["unattended_allowance_cents"] == 0
     assert snap["games_per_operator_per_day"] == 6 and snap["open_games_cap"] == 3
     assert snap["writes"]["per_unattended_turn"] == autonomy.MAX_WRITES_PER_TURN
-    assert snap["turns"]["daily_cap"] == 300
+    assert snap["turns"]["daily_cap"] == 80
 
 
 def test_limits_says_when_the_wallet_cannot_be_read(monkeypatch):

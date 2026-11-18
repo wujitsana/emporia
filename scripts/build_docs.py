@@ -31,7 +31,7 @@ from emporia import setup_choices as sc
 
 #: Hermes setup's questions, in the order `emporia setup agent` asks them (rounds' interval follows the optional list).
 HERMES_ORDER = ("profile", "sync_model", "relay", "home", "role", "keys", "wallet", "accept", "about", "register", "signer",
-                "playbook", "wake", "busy_input", "template", "optional", "rounds")
+                "playbook", "wake", "busy_input", "self_review", "template", "optional", "rounds")
 #: `emporia agent init`'s questions that are choices; the name, the model and the key directory are free text, and
 #: so is the relay until Emporia's public relay has launched (then it is the relay question above).
 INIT_ORDER = ("init_style", "init_host", "init_operator")

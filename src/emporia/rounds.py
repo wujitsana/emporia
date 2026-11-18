@@ -33,9 +33,10 @@ SKILL = "emporia:emporia"
 #: Hermes 0.23 `--catch-up off`: rounds missed while Hermes was off are skipped, not fired at once on return
 #: (each shows as a "missed" row in `hermes cron runs`). Applied on create and on every re-run of `rounds on`.
 CATCH_UP = ("--catch-up", "off")
-#: The quiet-round gate (`emporia rounds on --skip-quiet`): one small script in the profile's `scripts/` folder, which
-#: Hermes runs before each round (template: `data/rounds_gate.py.txt`). Removed by `rounds off` and by `rounds on`
-#: without the flag. Its output is at most GATE_MAX_LINES lines, which the plugin's marker check allows for.
+#: The quiet-round gate (on by default; `emporia rounds on --no-skip-quiet` leaves it out): one small script in the
+#: profile's `scripts/` folder, which Hermes runs before each round (template: `data/rounds_gate.py.txt`). A round
+#: with nothing new ends before any model call, except one a day. Removed by `rounds off` and by `rounds on
+#: --no-skip-quiet`. Its output is at most GATE_MAX_LINES lines, which the plugin's marker check allows for.
 GATE_SCRIPT = "emporia_rounds_gate.py"
 GATE_TEMPLATE = "rounds_gate.py.txt"
 GATE_MAX_LINES = 4
@@ -133,8 +134,9 @@ def estimate(every: str) -> str:
     """What a person should know before saying yes, in two honest lines."""
     n = 24 // hours(every)
     return (f"Every {every}: about {n} round{'s' if n != 1 else ''} a day. Each round is one model turn "
-            f"of roughly 3,000 to 8,000 tokens on the model this profile is set to (a quiet one is "
-            f"cheaper; at most 3 actions), so about {n * 3}k to {n * 8}k tokens a day.")
+            f"of roughly 3,000 to 8,000 tokens on the model this profile is set to (at most 3 actions; a "
+            f"round with nothing new is skipped before any model call, except one a day), so about {n * 3}k to "
+            f"{n * 8}k tokens a day at most.")
 
 
 def prompt_path(plugin_dir: Path | None = None) -> Path:
@@ -221,16 +223,21 @@ def jobs(profile: str) -> list[Job]:
 
 
 def turn_on(profile: str, every: str = DEFAULT_EVERY, plugin_dir: Path | None = None, *,
-            profile_dir: Path | None = None, skip_quiet: bool = False, model: str = "",
+            profile_dir: Path | None = None, skip_quiet: bool | None = None, model: str = "",
             reasoning_effort: str = "", template: str = "") -> str:
     """Create the job (or bring the existing one to this schedule and prompt, and resume it).
 
-    `skip_quiet` (needs `profile_dir`) writes the gate script and attaches it to the job; without it the script is
-    removed and cleared from the job. `model` and `reasoning_effort` pin the job's model and thinking effort when
+    `skip_quiet` (needs `profile_dir`) writes the gate script and attaches it to the job; False removes the script and
+    clears it from the job. None (the default) is the gate on for a new job whose plugin supports it, and whatever an
+    existing job has for one that is already there: running this again never undoes a person's choice. `model` and `reasoning_effort` pin the job's model and thinking effort when
     given (Hermes validates them); left empty the job keeps what it has, which for a new job is the profile's own."""
     schedule = f"every {hours(every)}h"
     text = prompt_text(plugin_dir, template)
     base = _scope(profile)
+    existing = None
+    if skip_quiet is None:
+        existing = jobs(profile)
+        skip_quiet = has_gate(profile_dir) if existing else (profile_dir is not None and not gate_supported(profile_dir))
     if skip_quiet:
         if profile_dir is None:
             raise RoundsError("--skip-quiet needs the agent's profile folder")
@@ -243,8 +250,9 @@ def turn_on(profile: str, every: str = DEFAULT_EVERY, plugin_dir: Path | None = 
     if reasoning_effort.strip():
         pins += ["--reasoning-effort", reasoning_effort.strip()]
     note = ", skips quiet rounds" if skip_quiet else ""
-    had_gate = has_gate(profile_dir)       # the job carries our script only if we wrote it: clear it with the file
-    existing = jobs(profile)
+    had_gate = has_gate(profile_dir) and not skip_quiet   # the job carries our script only if we wrote it
+    if existing is None:
+        existing = jobs(profile)
     if existing:
         job = existing[0]
         run_hermes([*base, "cron", "edit", job.id, "--schedule", schedule, "--prompt", text, "--name", JOB_NAME,
