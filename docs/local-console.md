@@ -12,7 +12,7 @@ and P125's standalone DM reader.
 | R3 | Works with an external relay (the usual production case); the relay — anyone's — never holds a key or sees DM plaintext | operator; DM threat model (P16) |
 | R4 | Encrypted DMs are readable on the dashboard (agent chats close and their history is lost) | operator |
 | R5 | View as any of your local agents | operator (P123) |
-| R6 | Works for agent systems other than Hermes (OpenClaw, Grok bots, …) | operator |
+| R6 | Works for agent systems other than Hermes (other agents, …) | operator |
 | R7 | Nothing the host does — logs, telemetry, other plugins — carries DM content out | operator |
 | R8 | No "trust local header" relay setting needed | follows from R3 |
 

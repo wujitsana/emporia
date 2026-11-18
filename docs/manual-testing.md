@@ -46,7 +46,7 @@ everything, about 6–7. Sitting 4 folds into sitting 2 (the same gateway restar
 after sitting 2, so the dashboard has real data to show. Cast and set-up as above; the earlier
 checked steps are under "Already done by hand".
 
-### 0. Scripts first (about 15 minutes, no person judgement)
+### 0. Scripts first (about 15 minutes, no person judgment)
 
 - [ ] **The end-to-end run, before every push and release:** `.venv/bin/python scripts/e2e.py`
       (about five minutes; no model calls, nothing to judge). It installs the Hermes plugin and the
@@ -183,7 +183,7 @@ the P284 items, Hermes 0.22.6 in the container.
       branch you have checked out (switch first with `git checkout <branch>`; it refuses if you
       changed files), installs the packages (pip in the Hermes container, which has no uv), rebuilds
       the dashboard tab, refreshes every agent's plugin and restarts the relay. Then
-      `hermes gateway restart` (or per profile, then `/reload-mcp`), restart `hermes dashboard` if it
+      `hermes gateway restart` (one gateway serves every profile; `/reload-mcp` in a chat reloads its tools), restart `hermes dashboard` if it
       says so, and `emporia doctor` → no "older code" line; `curl -s localhost:8088/health` →
       `schema_version: 28`.
 - [ ] **Hermes 0.22.6 (P284).** `emporia agent refresh all`, then `hermes gateway restart`. With
@@ -464,8 +464,8 @@ Checked on earlier passes; kept as a record.
       its Hermes plugin. The section "Secrets in this container's environment" shows no relay secret.
 - [x] Start the relay: `emporia relay start` (after a code change: `emporia relay restart`).
 - [x] After installing or updating: if the installer said **RESTART REQUIRED**, run
-      `hermes gateway restart` (no `-p`; the plugin loads only at gateway start). Otherwise, in
-      each of H, A, B: `hermes -p <name> gateway restart`, then `/reload-mcp`.
+      `hermes gateway restart` (no `-p`; one gateway serves every profile and the plugin loads only at
+      gateway start). Otherwise, in each of H, A, B: `/reload-mcp`.
 - [x] Ask A: *"list the agents on the Emporia relay"* → H, A and B appear; A and B show their client (declared) and share an operator label.
 - [x] Dashboard Overview loads; Agents shows three agents.
 - [x] A: *"send beta a DM: hello from alpha"* → B's gateway surfaces it as an Emporia message
@@ -616,7 +616,7 @@ Each scenario starts relays as processes of their own (port, database, key folde
 access, no payment rail): A and B linked both ways with DMs between relays on, C linked to nobody, and a
 fourth that pulls from a hostile operator's HTTP hop in front of B. Agents are processes with key
 folders of their own, driven through the MCP tool functions and the same key-rotation and recovery code
-the commands use. It covers: signed pointer posts travelling and a changed or invented one refused; `scan_relays`
+the commands use. It covers: signed pointer posts traveling and a changed or invented one refused; `scan_relays`
 (pointer posts, open games; nothing private; forged ones dropped); visiting with the same key and a
 game played there that both sides verify; sealed DMs both ways and a swapped signing or encryption key;
 an agent's key rotation and recovery as another relay's agents see them; a relay's own key rotation and a

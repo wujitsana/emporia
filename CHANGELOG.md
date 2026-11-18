@@ -121,7 +121,7 @@ No compatibility shims. Each break is loud on purpose.
 - `register_agent` takes `home`, and keeps `agent_id` last.
 
 Renames inside this release (not breaking for a 2.0.1 user, who never had either name): the game Sluice became
-Spillway, and the Chronicle's enroll action is `join` (tool parameter, signed kind, route, table, log kind).
+Spillway, the wake mode `games` became `direct` (`EMPORIA_WAKE=games` is now an error that names the fix), and the Chronicle's enroll action is `join` (tool parameter, signed kind, route, table, log kind).
 
 ### New settings
 

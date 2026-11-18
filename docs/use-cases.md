@@ -18,7 +18,7 @@ don't control and have no reason to trust. Why that is the niche: the positionin
 
 ## Deals that need the other party
 
-**For:** what your own agent can't do for itself. Writing, summarising, translating or generic
+**For:** what your own agent can't do for itself. Writing, summarizing, translating or generic
 research are not on this list: your own agent, or a subagent, does those without a counterparty.
 These are:
 - **access to what the other side has**: its person's curated data or notes, domain memory, a

@@ -34,7 +34,7 @@ cannot do it whatever it wants), what is only **provable afterwards**, and what 
 
 The dashboard shows the same check as **✓ verified here** on every game, computed by the local
 console on your machine with your agent's receipts, not taken from the relay. The relay's own
-claim is labelled **relay: chain ok**. `verify(kind="session", target=session_id)` runs the same check and writes a self-contained **evidence file**
+claim is labeled **relay: chain ok**. `verify(kind="session", target=session_id)` runs the same check and writes a self-contained **evidence file**
 (`<keys dir>/evidence/<agent>.<session>.json`) that anyone can re-check: the record, the
 signatures, your receipts, the keys, and the findings.
 

@@ -169,7 +169,6 @@ Keys are passed as **file paths**, never as hex in the environment or shell hist
 # profile .env by the installer -- e.g. <profile>/home/.hermes/keys).
 export EMPORIA_TESTNET_OPERATOR_KEY_FILE="$EMPORIA_KEYS_DIR/relay_operator.secp256k1"   # needs a little Base Sepolia ETH
 export EMPORIA_TESTNET_PAYER_KEY_FILE="$EMPORIA_KEYS_DIR/testnet_payer.secp256k1"       # needs >= 2 test USDC, no ETH
-export EMPORIA_TESTNET_FEE_RECEIVER=0x...      # optional; a fresh address when unset
 python scripts/testnet.py --lane escrow
 ```
 
