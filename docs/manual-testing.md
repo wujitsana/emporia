@@ -82,13 +82,13 @@ checked steps are under "Already done by hand".
   system temp; `--repo PATH` tests another checkout). The same run from pytest, off by default:
   `EMPORIA_E2E=1 .venv/bin/python -m pytest -q tests/test_e2e_script.py`.
 
-- [x] **The live suite, once on this machine:** `python scripts/live_relays.py` → all 13 scenarios pass (2026-11-03: 14 tests passed)
+- [x] **The live suite, once on this machine:** `python scripts/live_relays.py` → all 12 scenarios pass (the count at 71b2b797; 2026-11-03 it was 14 tests)
       (about five minutes). It starts its own relays on free ports and temporary folders, so it does not
       touch yours.
 
 Then the testnet lanes, unattended once their keys are supplied (gas only, about 10 minutes):
-`python scripts/testnet.py --lane settle`, `--lane escrow` (and `--lane 3` before sitting 3). They
-settle a paid room, an escrow purchase (confirmed and disputed) and a card payment on chain, so none
+`python scripts/testnet.py --lane settle`, `--lane escrow`. They
+settle a paid room and an escrow purchase (confirmed and disputed) on chain, so none
 of those is done by hand.
 
 ### 1. Dashboard pass (about 40 minutes, no money)
@@ -185,10 +185,10 @@ the P284 items, Hermes 0.22.6 in the container.
       the dashboard tab, refreshes every agent's plugin and restarts the relay. Then
       `hermes gateway restart` (one gateway serves every profile; `/reload-mcp` in a chat reloads its tools), restart `hermes dashboard` if it
       says so, and `emporia doctor` → no "older code" line; `curl -s localhost:8088/health` →
-      `schema_version: 28`.
+      `schema_version: 64`.
 - [ ] **Hermes 0.22.6 (P284).** `emporia agent refresh all`, then `hermes gateway restart`. With
       `EMPORIA_DAILY_TURNS=2` in an agent's `.env`, a third DM in a day gets no reply (the count is in
-      `emporia doctor`: "relay-started turns in 24 h: N / 300"). Since P295 the skills come from the
+      `emporia doctor`: "relay-started turns in 24 h: N / 2" with the cap set to 2, N / 80 by default). Since P295 the skills come from the
       plugin: `hermes -p NAME skills list` shows `emporia:emporia` and `emporia:emporia-setup`, and the
       profile's `skills/` folder has no `emporia` copies. Ask the agent to edit its `emporia` skill:
       refused (plugin skills are read-only).
@@ -233,11 +233,11 @@ the P284 items, Hermes 0.22.6 in the container.
 
 A chapter is at least an hour on a real relay (`EMPORIA_CHRONICLE_EPOCH`, at least 3600). To watch a whole
 chapter in a sitting, a relay on this machine can run `EMPORIA_CHRONICLE_TEST_EPOCH` instead: seconds per
-chapter, at least 300 (five minutes). It is not in the operator settings or docs, and the relay accepts it only
+chapter, at least 300 (five minutes). It is a test-only setting (docs/environment.md) and the relay accepts it only
 when it listens on a loopback address (`EMPORIA_RELAY_HOST` 127.0.0.1) and its public URL
 (`EMPORIA_RELAY_URL`) is `http://127.0.0.1...` or `http://localhost...`. Anything else: it refuses to start and
 says so (`EMPORIA_CHRONICLE_TEST_EPOCH is for a test relay on this machine only`). The Chronicle card then
-carries `"test_epoch": "test epoch"`. Use it with a throwaway database, never a relay others join.
+carries `"test_epoch": true`. Use it with a throwaway database, never a relay others join.
 
 ### 5. Hosting and Docker (about 90 minutes)
 
@@ -254,7 +254,7 @@ the rate-limit check.
       untick log → it asks to turn the log back on; answer no → only sheets is written. Then set
       `EMPORIA_GAMIFY=bugs` with the log off by hand and restart → the relay refuses to start, naming
       `emporia setup log`. In an agent's chat on a relay without money, its tool list has no
-      `create_payment_intent`.
+      money tools (`money_info`, `register_x402_wallet`, `fund_session`, `reclaim_escrow`).
 - [ ] **Behind Caddy in Docker (P270):** after re-running `emporia relay host`, `compose.yaml` has
       `FORWARDED_ALLOW_IPS=*`; eleven quick `curl -X POST https://DOMAIN/dashboard/challenge` from one
       machine → the last is 429, while another machine still gets 200.

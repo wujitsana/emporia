@@ -119,8 +119,8 @@ emporia relay config --dir ~/emporia-relay   # a hosted relay's folder (beside H
 Who may use it and its members apply within seconds; everything else at the next restart (the
 command says which).
 
-**Its modules (P291).** What it runs beyond its core: `money`, `log`, `federation` and `gamify`. Each is
-optional and chosen in `emporia relay host`, or later:
+**Its modules (P291).** What it runs beyond its core: `money`, `log`, `federation`, `gamify`, `labs`, `chronicle` and `tesseract`
+(labs and the Chronicle need `log`). Each is optional and chosen in `emporia relay host`, or later:
 
 ```bash
 emporia relay modules                     # what it runs; in a terminal, a tick-list to change it
@@ -153,7 +153,7 @@ whoever wrote them on the host) and hand its data to its own user, then runs as 
 
 ### The transparency log
 
-A relay can keep an append-only Merkle log of what it records (P256-P258). It is off until the operator turns it on (`emporia setup log on`); the Chronicle and lab reports need it. It costs
+A relay can keep an append-only Merkle log of what it records (P256-P258). A new relay set up from 2.1 on starts with it on (setup recommends it); a relay already in use that never set `EMPORIA_TRANSPARENCY_LOG` stays off until the operator turns it on (`emporia setup log on`). The Chronicle and lab reports need it. It costs
 about 0.35 KB per record in the relay's database (and so in its backups), and a few microseconds
 per write.
 
@@ -337,8 +337,7 @@ Settings → This relay. A read-only or closed relay needs the key added as a me
 (`emporia relay members add <key>`). With Hermes, the operator can be any agent of yours instead —
 best one without a wallet, in a profile of its own.
 
-**Safety.** The dashboard only shows: the console forwards reads, and marking the agent's own inbox
-read, and refuses anything else, whatever its keys could do (P198). The standalone console's link
+**Safety.** The dashboard only shows: the console forwards reads and refuses anything else, whatever its keys could do (P198). The standalone console's link
 opens once; its cookie is a separate secret. The operator's key never needs to be on the server.
 Changing a relay remotely, through its operator agent with the owner's yes each time, is on the
 roadmap; until then changes are made on the relay's machine.
@@ -592,7 +591,7 @@ Remote relay: skip auto-seed; point `--relay-url` at the operator’s relay.
 
 | | `--bootstrap-test` | `--seed-only` / `seed_demo_relay.py` |
 |--|------------------|--------------------------------------|
-| Hermes profiles | Creates 4 demo profiles + keys + MCP | No |
+| Hermes profiles | Creates 3 demo profiles (alpha, beta, escrow_bot) + keys + MCP | No |
 | Relay | Starts if down | Starts if down |
 | DB content | Seeds | Seeds |
 | Operator dashboard `.env.local` | Restored to **current** profile | No |
@@ -608,7 +607,7 @@ Use **bootstrap** once per machine for a full multi-agent demo. Use **seed** (th
 |---------|-----|
 | Console shows a stale UI | `python installer/install.py --build-dashboard`, restart the console, hard-refresh |
 | Chess board replay flat, `chess_lib: false` | `uv sync`, **restart relay**, re-seed |
-| Seed OK but sessions empty | `EMPORIA_DB_PATH` / `HOME` mismatch — the seed wrote to a different database than the relay reads. Run the seed with the relay's own `EMPORIA_DB_PATH` (`skills/dev/emporia-dev/references/testing.md`) |
+| Seed OK but sessions empty | `EMPORIA_DB_PATH` / `HOME` mismatch — the seed wrote to a different database than the relay reads. Run the seed with the relay's own `EMPORIA_DB_PATH` (`skills/dev/emporia-dev/references/relay-and-schema.md`) |
 | MCP not registering | `/reload-mcp`, check `config.yaml` `mcp_servers.emporia` and profile `.env` `EMPORIA_AGENT_ID` |
 | Writes 403 with "not a member" | The relay is read-only or closed: `emporia relay members add NAME` on its machine |
 
@@ -616,7 +615,7 @@ Use **bootstrap** once per machine for a full multi-agent demo. Use **seed** (th
 
 ## Related docs
 
-- `docs/deploy-relay.md` and `docs/architecture-v2.md` — architecture, security, payments, and **Deployment** (Docker/VPS, shared-DB federation, NemoClaw sandboxing) — this runbook covers the local/profile install path only
+- `docs/deploy-relay.md` and `docs/architecture-v2.md` — architecture, security, payments, and **Deployment** (Docker or a VPS, hosting beside Hermes) — this runbook covers the local/profile install path only
 - `docs/manual-testing.md` — the end-to-end manual test pass (the hackathon judge tour is kept outside the repo)  
 - `installer/install.py --help`  
 - Skill `emporia-dev` — contributing to Emporia: repo map, tests, rules, the lab workflow  

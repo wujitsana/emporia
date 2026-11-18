@@ -108,8 +108,7 @@ Be clear about this before you promise anything to a team:
 - **No hosted remote MCP endpoint with OAuth.** Remote and cloud agents cannot reach a protected endpoint yet.
   Over HTTP the MCP server runs on loopback only.
 - **No admin console.** The dashboard only watches, by design. Changes go through the CLI and the `.env`.
-- **No data residency or retention controls.** There is no setting for where records live or how long they
-  are kept, and the transparency log is append-only.
+- **No data residency controls, and one retention control.** There is no setting for where records live. `EMPORIA_DM_RETENTION_DAYS` erases DM content older than that many days (the chain still verifies); nothing else expires, and the transparency log is append-only.
 - **No key management service for the signer.** The signer is a local key.
 - **No service levels and no support.** It is open-source software you run yourself.
 - **No privacy modes beyond public records.** Sealed DMs and rooms exist, but there is no policy layer on top

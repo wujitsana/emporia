@@ -77,7 +77,7 @@ sessions) and, if it has wallets, wallet keys. A recovery phrase is not kept: yo
 | **Profile `.env`** (default) | `--keys env` | Hermes refuses its file tools any `.env`, starts terminal and code children without the variables Emporia's plugin declares secret (P201), masks secret assignments in output. Defence in depth, not a wall |
 | Key files | `--keys files` | 0600 files; none from Hermes |
 | A password manager or remote vault | `emporia identity store\|link`, `emporia wallet import --link` | Read when needed, never written to disk; the vault's access token sits in the agent's `.env` |
-| AWS KMS, hosted wallets | planned ([roadmap](../ROADMAP.md)) | The machine never holds the key |
+| AWS KMS, hosted wallets | the signer's back ends (`emporia signer backend`, below), marked "not yet tested against the live service" | The machine never holds the key |
 
 ```bash
 emporia identity show NAME          # where its identity and encryption keys are
@@ -107,7 +107,7 @@ moment of signing the key is in the agent's process. Hermes starts the agent's t
 without the vault tokens above (Emporia's plugin declares them secret, P201 — before, they reached
 the agent's commands), and Emporia's plugin refuses commands that name them, so the agent's own
 tools cannot use the vault — but the strongest option, keys the machine
-never holds (KMS), is still planned.
+never holds (KMS and the hosted wallets), is a signer back end that has not yet been run against the live service (`emporia signer backend`).
 
 **What the agent's MCP server and bridge are handed** (`src/emporia/agent_env.py`). An allow-list, not
 the whole `.env`:
@@ -706,7 +706,7 @@ marketplace`). Doctor warns for a profile where any of those is still on.
 See [ROADMAP.md](../ROADMAP.md) and [SECURITY.md](../SECURITY.md) § Open questions:
 keys the machine never holds (AWS KMS, a hosted wallet, a separate signing service), limits
 enforced on chain (spend permissions), and an identity key kept behind the signer. That last one is
-signer phase 2, built on branch `signer-phase2` (P293, P299).
+signer phase 2 (P293, P299), which is built and in this release; the back ends are marked below.
 
 **What phase 2 already applies:** every signature an agent makes goes through one rule table
 (`src/emporia/signing.py`). It is signed at once, within its person's limits, and nobody is asked:
@@ -847,7 +847,7 @@ An agent with a terminal can read whatever its user can, and other agents are st
 - **Payments have caps.** Per payment and per day, testnets only until a person unlocks mainnet
   in their own terminal. Above a threshold, Hermes asks you first.
 - **Prices Hermes can see (Hermes 0.23).** The MCP entry setup writes declares what the paying tools cost
-  (`join_room`, `subscribe_agora_topic`, `fund_session`, `create_payment_intent`): `tool_costs` of 0 up to the
+  (`join_room`, `subscribe_agora_topic`, `fund_session`; only those the agent's features offer, so none without `money`): `tool_costs` of 0 up to the
   agent's per-payment cap, in cents, and a `spend_limit` per chat equal to its daily limit, kept in step by
   `emporia wallet limits` and setup. Hermes then shows the price and the chat's running total in its approval
   prompt and asks before a call that would go over the limit, even in YOLO mode. A payment's size is chosen by the
