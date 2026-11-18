@@ -114,3 +114,95 @@ def test_the_catalog_notice_is_the_command_for_this_profile(monkeypatch, tmp_pat
     assert setup_cli._catalog_notice() == "A newer Emporia plugin is in the catalog: hermes -p shop plugins update emporia"
     assert notices.plugin_update_command(tmp_path) == "hermes plugins update emporia"
     assert notices.runtime_update_command(home) == "hermes -p shop emporia update"
+
+
+# ── item 4: a plugin that moved ahead of its runtime ───────────────────────────────────────────────────────────
+
+def _moved_world(tmp_path, *, head, pinned, plugin_version="2.1.0", checkout=False):
+    """A profile with its plugin files and a runtime clone under plugin-data/emporia/runtime at `head`."""
+    prof = tmp_path / "prof"
+    plugin = prof / "plugins" / "emporia"
+    plugin.mkdir(parents=True)
+    (plugin / "emporia_source.json").write_text(json.dumps({"sha": pinned}))
+    (plugin / "plugin.yaml").write_text(f"name: emporia\nversion: {plugin_version}\n")
+    root = tmp_path / ("checkout" if checkout else "prof/plugin-data/emporia/runtime")
+    (root / ".git").mkdir(parents=True)
+    (root / ".git" / "HEAD").write_text(head + "\n")
+    (prof / ".env").write_text("")
+    return prof, root
+
+
+def test_whats_next_gets_a_notice_when_the_pin_moved_and_the_runtime_did_not(tmp_path):
+    from emporia import plugin_notice
+    prof, root = _moved_world(tmp_path, head="b" * 40, pinned="a" * 40)
+    line = plugin_notice.stale_notice(str(prof / ".env"), root)
+    assert line.startswith("Emporia's plugin moved to 2.1.0 (aaaaaaaaaaaa): run `hermes emporia update`")
+    assert "\n" not in line and "http" not in line
+
+
+def test_no_notice_when_current_a_checkout_a_newer_runtime_or_nothing_readable(tmp_path):
+    from emporia import plugin_notice
+    prof, root = _moved_world(tmp_path, head="a" * 40, pinned="a" * 40)
+    assert plugin_notice.stale_notice(str(prof / ".env"), root) == ""                       # at the pin
+    prof, root = _moved_world(tmp_path / "x", head="b" * 40, pinned="a" * 40, checkout=True)
+    assert plugin_notice.stale_notice(str(prof / ".env"), root) == ""                       # a checkout
+    prof, root = _moved_world(tmp_path / "y", head="b" * 40, pinned="a" * 40, plugin_version="2.0.1")
+    assert plugin_notice.stale_notice(str(prof / ".env"), root) == ""                       # runtime newer than plugin
+    assert plugin_notice.stale_notice("", root) == ""                                       # no profile named
+    assert plugin_notice.stale_notice(str(tmp_path / "none" / ".env"), root) == ""
+
+
+def test_whats_next_carries_the_notice_field(monkeypatch):
+    from emporia import mcp_server, plugin_notice
+    src = Path(mcp_server.__file__).read_text()
+    assert 'out["notice"] = line' in src and "plugin_notice.stale_notice()" in src
+    monkeypatch.delenv("EMPORIA_DOTENV", raising=False)
+    assert plugin_notice.stale_notice() == ""
+
+
+def test_status_and_doctor_say_the_plugin_moved(monkeypatch, tmp_path, capsys):
+    notice = "Emporia's plugin moved to 2.1.0 (aaaaaaaaaaaa): run `hermes emporia update`, then restart the gateway."
+    monkeypatch.setattr(setup_cli, "runtime", lambda: tmp_path)
+    ran = []
+    monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: ran.append(a) or 0)
+    monkeypatch.setattr(setup_cli, "_stale_notice", lambda: notice)
+    monkeypatch.setattr(setup_cli, "_catalog_notice", lambda: "")
+    monkeypatch.setattr(setup_cli, "profile_name", lambda home=None: "default")
+    assert setup_cli.cmd_doctor(types.SimpleNamespace(all=False)) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("Notice: Emporia's plugin moved to") and ran == [("doctor",)]
+    monkeypatch.setattr(setup_cli, "_stale_notice", lambda: "")
+    setup_cli.cmd_doctor(types.SimpleNamespace(all=False))
+    assert capsys.readouterr().out == ""
+
+
+def test_the_gateway_logs_the_notice_once_per_start_from_the_same_check():
+    src = (PLUGIN / "adapter.py").read_text()
+    assert src.count("money_guard.stale_runtime_notice()") == 1 and src.count('logger.warning("Emporia: %s", notice)') == 1
+
+
+def test_a_new_plugin_loads_and_registers_on_the_previous_runtime():
+    """N-1: a plugin update without the runtime update must never crash the gateway. The plugin imports no module
+    of Emporia (it holds no symbol that only a new runtime has), and everything it starts in the runtime was already
+    in 2.0.1: the bridge module and its flags, and the CLI module. Anything else it asks of the runtime is a
+    subprocess whose failure is caught (peek, doctor)."""
+    import ast
+    import subprocess
+    for path in PLUGIN.rglob("*.py"):
+        if "node_modules" in path.parts:
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            names = [a.name for a in node.names] if isinstance(node, ast.Import) else \
+                [node.module or ""] if isinstance(node, ast.ImportFrom) and not node.level else []
+            assert not [n for n in names if n == "emporia" or n.startswith("emporia.")], (path.name, names)
+    prev = "be98e561"          # the 2.0.1 release commit
+    git = ["git", "-C", str(REPO)]
+    if subprocess.run([*git, "cat-file", "-e", prev], capture_output=True).returncode != 0:
+        pytest.skip("the 2.0.1 release commit is not in this clone")
+    adapter = (PLUGIN / "adapter.py").read_text()
+    module = next(line.split('"')[1] for line in adapter.splitlines() if line.startswith("BRIDGE_MODULE ="))
+    bridge = subprocess.run([*git, "show", f"{prev}:src/{module.replace('.', '/')}.py"], capture_output=True, text=True)
+    assert bridge.returncode == 0, f"{module} is not in 2.0.1"
+    for flag in ("--relay-url", "--agent-id", "--profile-id"):
+        assert flag in bridge.stdout, flag
+    assert subprocess.run([*git, "cat-file", "-e", f"{prev}:src/emporia/cli.py"], capture_output=True).returncode == 0

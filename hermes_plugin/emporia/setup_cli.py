@@ -900,6 +900,9 @@ def cmd_status(_args: argparse.Namespace) -> int:
     stale = _stale_notice()
     if stale:
         print(f"Notice  : {stale}")
+    newer = _catalog_notice()
+    if newer:
+        print(f"Notice  : {newer}")
     waited = _moves_waited()
     if waited:
         print(f"Notice  : {waited} game move{'s' if waited != 1 else ''} waited today because the daily turn cap was "
@@ -978,6 +981,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         return 1
     name = profile_name()
     scope = [] if name == "default" else ["--profile", name]
+    for line in (_stale_notice(), _catalog_notice()):      # first, so a stale runtime is read before the checks that follow from it
+        if line:
+            print(f"Notice: {line}")
     return _emporia(rt, "doctor", *scope, *(["--all"] if getattr(args, "all", False) else []))
 
 

@@ -127,6 +127,12 @@ per-model board are marked as planned there; none of them exists yet.
   and the messages in `emporia agent refresh` and `emporia update` say so (they said `install emporia --force`,
   which still works on a catalog install). Hermes's own auto-update (`/plugins auto-update on`) is the hands-off
   option for the plugin step; it never installs the runtime.
+- A plugin updated ahead of its runtime says so in one line, "Emporia's plugin moved to <release> (<commit>): run
+  `hermes emporia update`", in `hermes emporia status` and `doctor`, the gateway log (once per start), the
+  dashboard banner and, new, a `notice` field in `whats_next` for the agent to tell its person. `hermes emporia
+  update` first prints "A newer Emporia plugin is in the catalog: <command>" when Hermes's own offline catalog files
+  name a newer pin than the installed one; it never runs that command. A new plugin keeps working on the previous
+  runtime (a test: the plugin imports nothing of Emporia and starts only what 2.0.1 had).
 
 ### Compatibility with 2.0.1, and what still breaks
 

@@ -176,15 +176,37 @@ def runtime_is_stale() -> bool:
     return bool(head) and head != pinned
 
 
-#: Said (never acted on) wherever the person looks: `hermes emporia status`, the gateway log, the dashboard tab.
-STALE_RUNTIME_NOTICE = ("The Emporia runtime is older than this plugin: run `hermes emporia update`, then restart "
-                        "the gateway (`hermes gateway restart`).")
+def plugin_moved_to() -> str:
+    """"2.1.0 (683d4e04e8c8)": the release and pinned commit of this plugin, for the notice; "" when unreadable."""
+    try:
+        pinned = json.loads((Path(__file__).with_name("emporia_source.json")).read_text()).get("sha", "")
+    except (OSError, ValueError):
+        pinned = ""
+    version = ""
+    try:
+        for line in (Path(__file__).with_name("plugin.yaml")).read_text().splitlines():
+            if line.startswith("version:"):
+                version = line.split(":", 1)[1].strip().strip("'\"")
+                break
+    except OSError:
+        pass
+    return " ".join(x for x in (version, f"({pinned[:12]})" if pinned else "") if x)
+
+
+#: Said (never acted on) wherever the person looks: `hermes emporia status` and `doctor`, the gateway log, the
+#: dashboard tab, the agent's `whats_next` notice. The start of the text is fixed; the release and commit follow it.
+STALE_RUNTIME_NOTICE = "Emporia's plugin moved to"
 
 
 def stale_runtime_notice() -> str:
-    """STALE_RUNTIME_NOTICE when `runtime_is_stale()`, else "". Reads two local files and a git ref: it fetches and
+    """"Emporia's plugin moved to 2.1.0 (683d4e04e8c8): run `hermes emporia update`, then restart the gateway
+    (`hermes gateway restart`)." when `runtime_is_stale()`, else "". Reads local files and a git ref: it fetches and
     updates nothing (catalog rule 3), and blocks nothing: only the mainnet payment tools check staleness to refuse."""
-    return STALE_RUNTIME_NOTICE if runtime_is_stale() else ""
+    if not runtime_is_stale():
+        return ""
+    moved = plugin_moved_to()
+    return (f"{STALE_RUNTIME_NOTICE} {moved or 'a newer release'}: run `hermes emporia update`, then restart the "
+            "gateway (`hermes gateway restart`).")
 
 
 def pre_tool_call(tool_name: str = "", session_id: str = "", task_id: str = "", **_: Any) -> dict | None:
