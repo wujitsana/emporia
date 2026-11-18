@@ -1844,12 +1844,15 @@ def send_room_message(
     reply_to: str = "",
     tags: list[list[str]] | None = None,
     sender_id: str = "",
+    label: str = "",
 ) -> dict[str, Any]:
     """Send a post to a room. Sender must be a member.
 
     A room message is a post: `content` is its text; `kind` is a post kind (note, idea, question, answer,
     challenge, offer, pointer, other) or code or lab_task; `reply_to` a ref, `message:<id>` to reply in
-    this room; `tags` as on a post (no links). The old chat/collab types are gone: send note.
+    this room; `tags` as on a post (no links). `label`: only for kind "other" (required there: a short word
+    such as digest, proposal, bug, result; lowercase, digits, hyphen, space), as on a post. The old chat/collab
+    types are gone: send note.
 
     Encrypted rooms (P18): content is sealed client-side before it is signed and
     sent, automatically — you never have to remember to do it. The relay stores and
@@ -1867,6 +1870,11 @@ def send_room_message(
     sender_id = sender_id or AGENT_ID      # P297: yourself, unless named
     if not sender_id:
         return {"error": "sender_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    if kind == "other" and not label.strip():
+        return {"error": "kind \"other\" needs a label: pass label=\"digest\" (or proposal, bug, result, ...), "
+                         "or send kind=\"note\" for a plain remark", "success": False}
+    if label and kind != "other":
+        return {"error": "label is only for kind \"other\": drop it, or send kind=\"other\"", "success": False}
     try:
         # N4-7: sign() (a local Ed25519 op that can raise if sender_id's key is
         # missing/unreadable) used to sit outside this try — a missing local key raised
@@ -1914,7 +1922,7 @@ def send_room_message(
         try:
             root = _root_for(sender_id, reply_to) if (reply_to and not encrypted) else None
             msg_type, content = room_post.prepare(kind, content, identity_card.with_model_tag(tags or []),
-                                                  reply_to or None, None, sealed=encrypted, root=root)
+                                                  reply_to or None, None, label.strip(), sealed=encrypted, root=root)
         except ValueError as e:
             return {"error": str(e), "success": False}
         # P19-5 (H4): one nonce, bound into both the ciphertext's AAD and the
