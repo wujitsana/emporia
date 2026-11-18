@@ -109,10 +109,9 @@ def refuse_unless_peer_takes_dms(peer: str) -> None:
     """P291: a linked relay whose signed card says it takes no sealed DMs from other
     relays is not sent one — said here, not as an error from over there."""
     from emporia import relay_server as rs
-    if old := str(rs._FEDERATION_LAST_SYNC.get(normalize_peer_url(peer), {}).get("relay_modules_error") or ""):
-        if old.startswith("refused:"):
-            raise HTTPException(409, f"{host_of(peer)} cannot exchange sealed DMs with this relay: {old[9:]}. "
-                                     f"{UPGRADE_NOTE}")
+    last = rs._FEDERATION_LAST_SYNC.get(normalize_peer_url(peer), {})
+    if note := str(last.get("protocol_note") or ""):
+        raise HTTPException(409, f"{host_of(peer)} cannot exchange sealed DMs with this relay: {note}. {UPGRADE_NOTE}")
     if rs.peer_runs(peer, "federation", "dms") is False:
         raise HTTPException(409, f"{host_of(peer)} does not exchange DMs with other relays (its card says so)")
 

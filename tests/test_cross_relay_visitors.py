@@ -188,12 +188,41 @@ def test_the_signed_relay_list_moves_an_agent_to_nowhere_and_it_can_take_a_home_
     assert presence(client, a)["standing"] == "visitor"
 
 
-def test_an_old_card_is_refused_with_the_plugin_to_update(client):
+def test_an_old_card_registers_as_home_here(client):
+    """A 2.0.1 plugin signs `emporia:sign-in:v2` (no home): accepted, and it means what 2.0.1 meant."""
     a = name("old")
     r = register(client, a, card_type="v2")
-    assert r.status_code == 426
-    assert "emporia:sign-in:v2" in r.json()["detail"] and "hermes plugins install emporia --force" in r.json()["detail"]
+    assert r.status_code == 200, r.text
+    assert presence(client, a)["standing"] == "member"
+
+
+def test_an_old_card_never_makes_a_visitor_or_a_nomad(client):
+    """The v2 card signs no home, so a body that names one rides on nothing the agent signed: refused."""
+    a = name("oldvis")
+    _, pub = identity.generate_or_load_keypair(a)
+    ch = client.post("/agents/challenge").json()
+    card = wire.legacy_registration_payload(ch["nonce"], ORIGIN, a, pub.hex(), "", "sdk", "0.2.0", "")
+    for home in ({"kind": "relay", "relay_id": HOME_ID, "url": HOME}, {"kind": "none"}):
+        r = client.post("/agents/register", json={
+            "agent_id": a, "public_key_hex": pub.hex(), "challenge_id": ch["challenge_id"],
+            "challenge_signature": identity.sign(card, a), "relay": ORIGIN, "client_name": "sdk",
+            "client_version": "0.2.0", "home": home})
+        assert r.status_code in (400, 403), r.text
+        ch = client.post("/agents/challenge").json()
+        card = wire.legacy_registration_payload(ch["nonce"], ORIGIN, a, pub.hex(), "", "sdk", "0.2.0", "")
     assert client.get(f"/agents/{a}/available").json().get("available", True)      # nothing was registered
+
+
+def test_an_old_card_for_another_relay_or_name_still_fails(client):
+    a = name("oldlie")
+    _, pub = identity.generate_or_load_keypair(a)
+    ch = client.post("/agents/challenge").json()
+    card = wire.legacy_registration_payload(ch["nonce"], ORIGIN, a + "x", pub.hex(), "", "sdk", "0.2.0", "")
+    r = client.post("/agents/register", json={
+        "agent_id": a, "public_key_hex": pub.hex(), "challenge_id": ch["challenge_id"],
+        "challenge_signature": identity.sign(card, a), "relay": ORIGIN, "client_name": "sdk",
+        "client_version": "0.2.0"})
+    assert r.status_code == 403
 
 
 def test_a_card_that_lies_about_home_does_not_verify(client):
@@ -540,10 +569,10 @@ def test_the_listing_filters_in_sql_so_a_big_relay_does_not_drop_its_home_agents
 def test_an_old_plugin_that_registers_at_every_start_is_logged_once(client, caplog):
     import logging
     a = name("oldrep")
-    with caplog.at_level(logging.WARNING, logger="emporia.relay"):
+    with caplog.at_level(logging.INFO, logger="emporia.relay"):
         for _ in range(3):
-            assert register(client, a, card_type="v2").status_code == 426        # every start gets the same answer
-    told = [r for r in caplog.records if r.getMessage() == "old_client_registration_refused"]
+            assert register(client, a, card_type="v2").status_code == 200        # every start gets the same answer
+    told = [r for r in caplog.records if r.getMessage() == "old_client_registration_accepted"]
     assert len(told) == 1 and "hermes plugins install emporia --force" in told[0].detail
 
 

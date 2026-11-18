@@ -4765,6 +4765,7 @@ async def health(request: Request):
         # whether the allowance binds new agents (allowance.py).
         "season": _season_public(),
         "allowance": _allowance_on(),
+        "starter_limits": _allowance_on(),      # 2.0.1's name for it: an old doctor reads this one
         **_fees_card(),
         # P208: for this machine's doctor — whether its keys guard real money,
         # and whether it runs in a container (who could reach them differs).
@@ -4871,8 +4872,8 @@ def _relay_modules() -> dict[str, dict]:
 
 #: The card's `version` is the federation protocol version. 3 (Feed v2): pointer posts replaced listings and
 #: adverts in the relay-to-relay sync. 4 (shared topics): topics a host shares and carriers carry, peer-signed
-#: replies and mention notices, the relay card v2 and the directory. A linked relay on an older version is
-#: refused by name (see _old_protocol); there is no compatibility shim.
+#: replies and mention notices, the relay card v2 and the directory. A linked relay on protocol 3 stays linked for
+#: posts and open sessions; the protocol 4 parts skip it with a note (see _old_protocol, _pull_peer_modules).
 from emporia.wire import RELAY_PROTOCOL as CARD_VERSION
 
 
@@ -4882,7 +4883,7 @@ def _old_protocol(card: Any) -> str:
     if isinstance(v, int) and v < CARD_VERSION:
         what = "shared listings and adverts" if v < 3 else "has no shared topics, notices or directory"
         return (f"it runs relay protocol {v}, which {what}; this relay speaks protocol {CARD_VERSION} "
-                f"(emporia:post:v2 pointer posts, shared topics, notices). Upgrade it to sync")
+                f"(emporia:post:v2 pointer posts, shared topics, notices). Upgrade it to use those")
     return ""
 
 
@@ -5245,20 +5246,23 @@ def _consume_challenge(challenge_id: str, public_key_hex: str, signature: str, r
                   str(public_key_hex).lower()):
         if verify(legacy_registration_payload(nonce, relay, agent_id, public_key_hex, operator_label, client_name,
                                               client_version, about), signature, str(public_key_hex).lower()):
-            # an old plugin re-registers at every start: say it once per agent (and per process), not each time
+            # The 2.0.1 card (`emporia:sign-in:v2`) has no home. It is still binding for everything it names (nonce,
+            # this relay, name, key, label, client, about), and it means what 2.0.1 meant: the agent lives here.
+            # Nothing the card does not sign may ride along, so a body that names any other home is refused: a
+            # v2 signature never makes an agent a visitor or a nomad.
+            if home not in (None, "", "here"):
+                raise HTTPException(403, "This registration is signed with the old card (emporia:sign-in:v2), "
+                                         "which has no home, so it can only mean the agent lives here. To visit "
+                                         "from another relay or to be a nomad, update the Emporia plugin "
+                                         "(`hermes plugins install emporia --force`) and register again.")
             if len(_OLD_CARD_TOLD) > 10000:
                 _OLD_CARD_TOLD.clear()
             if agent_id not in _OLD_CARD_TOLD:
                 _OLD_CARD_TOLD.add(agent_id)
-                logger.warning("old_client_registration_refused", extra={
-                    "agent_id": str(agent_id)[:64], "detail": "its plugin signs emporia:sign-in:v2; the operator "
-                    "of that agent should run `hermes plugins install emporia --force`"})
-            raise HTTPException(426, "This client signs the old registration card (emporia:sign-in:v2). This relay "
-                                     "asks for emporia:sign-in:v3, which names the agent's home: reinstall the "
-                                     "Emporia plugin from the Hermes catalog: `hermes plugins install emporia --force` (Hermes "
-                                     "v0.23.1 or newer; on an older Hermes: `hermes plugins install "
-                                     "https://github.com/wujitsana/emporia#hermes_plugin/emporia --force`), and "
-                                     "register again.")
+                logger.info("old_client_registration_accepted", extra={
+                    "agent_id": str(agent_id)[:64], "detail": "its plugin signs emporia:sign-in:v2: accepted as "
+                    "home here; the operator can run `hermes plugins install emporia --force` to update"})
+            return
         raise HTTPException(403, "Challenge signature invalid — sign emporia:sign-in:v3 {nonce, relay, "
                                  "agent_id, public_key, operator, client, about, home} with the agent's key")
 
@@ -6105,6 +6109,8 @@ async def _pull_federated_posts(peer_url: str) -> int:
     if refused:
         sync_record["refused"] = sum(refused.values())
         sync_record["refused_why"] = refused
+    if note := (_FEDERATION_LAST_SYNC.get(peer_url) or {}).get("protocol_note"):
+        sync_record["protocol_note"] = note       # kept until the card is read again, so a DM is not sent meanwhile
     _FEDERATION_LAST_SYNC[peer_url] = sync_record
     return imported
 
@@ -6197,14 +6203,18 @@ async def _pull_peer_modules(peer_url: str) -> dict[str, Any] | None:
         sync["relay_modules_error"] = "its card is not signed by the key pinned for it, or names no modules"
         _FEDERATION_PEER_CARDS.pop(peer_url, None)
         return None
-    if old := _old_protocol(card):
-        sync["relay_modules_error"] = f"refused: {old}"
-        _FEDERATION_PEER_CARDS.pop(peer_url, None)
-        return None
     mods = card["relay_modules"]
     _FEDERATION_PEER_MODULES[peer_url] = mods
     _FEDERATION_PEER_CARDS[peer_url] = card
     sync.pop("relay_modules_error", None)
+    if old := _old_protocol(card):
+        # A relay on protocol 3 (Emporia 2.0.1) stays linked for what both speak: pointer posts and open sessions
+        # (the signed public feeds). What needs protocol 4 (shared topics, notices, the directory, and sealed DMs:
+        # relay requests with a nonce) is skipped, and the link status says so in one line.
+        sync["protocol_note"] = (f"linked for posts and open sessions; {old.split(', which')[0]} (Emporia 2.0.1), "
+                                 "so shared topics, notices, the directory and sealed DMs wait until it runs 2.1")
+    else:
+        sync.pop("protocol_note", None)
     sync["relay_modules"] = mods
     back = (mods.get("federation") or {}).get("links") or []
     sync["links_back"] = normalize_peer_url(RELAY_BASE_URL) in {normalize_peer_url(u) for u in back}

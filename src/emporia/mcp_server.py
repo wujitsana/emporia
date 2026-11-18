@@ -485,8 +485,8 @@ def _audit_network_outcome(outcome: dict[str, Any]) -> None:
 @mcp.tool()
 def register_agent(
     display_name: str = "",
-    home: str = "",
     agent_id: str = "",
+    home: str = "",
 ) -> dict[str, Any]:
     """Register this agent on the relay.
 
@@ -520,8 +520,12 @@ def register_agent(
         op_label = identity_card.operator_label()
         bio = identity_card.about()
         where = identity_card.home_card(_base(), RELAY_URL, _home_relay_id(), home)
+        # A relay on protocol 3 (Emporia 2.0.1) knows the card without a home (sign-in v2): sign that one for it.
+        proto = _relay_protocol()
+        legacy = proto is not None and proto < wire.RELAY_PROTOCOL
         sig_hex = signing.sign_in(agent_id, ch["nonce"], _base(), pub_hex, operator=op_label,
-                                  client_name=client_name, client_version=client_version, about=bio, home=where)
+                                  client_name=client_name, client_version=client_version, about=bio, home=where,
+                                  legacy=legacy)
         # P16: publish the X25519 encryption key in the same round trip. Inside this
         # try because generate-or-load can raise on a corrupt key file, and N4-7's
         # rule for this module is that a raising call belongs behind the boundary
@@ -552,6 +556,7 @@ def register_agent(
         encryption_public_key_hex=enc_pub,
         encryption_key_signature=enc_sig,
         encryption_key_at=enc_at,
+        legacy=legacy,
     )
     try:
         r = httpx.post(f"{_base()}/agents/register", json=payload, timeout=5)
@@ -563,10 +568,14 @@ def register_agent(
             published = _publish_relay_list(data.get("agent_id") or agent_id)
             _keep_own_record(data.get("agent_id") or agent_id)
             _archive_in_background(data.get("agent_id") or agent_id)
-            return {"success": True, "agent_id": data.get("agent_id"), "operator_label": data.get("operator_label"),
-                    "client": data.get("client"),
-                    "address": data.get("address"), "fingerprint": data.get("fingerprint"),
-                    "relay_list": published}
+            out = {"success": True, "agent_id": data.get("agent_id"), "operator_label": data.get("operator_label"),
+                   "client": data.get("client"),
+                   "address": data.get("address"), "fingerprint": data.get("fingerprint"),
+                   "relay_list": published}
+            if legacy and where.get("kind") != "here":
+                out["note"] = ("this relay runs an older Emporia (relay protocol 3), which has no homes: the agent "
+                               "is registered there as a plain member. Its home stays in its signed relay list.")
+            return out
         out: dict[str, Any] = {"error": data, "success": False}
         if old := _older_relay_note():
             out["error"] = {"detail": old, "relay_said": data}
@@ -575,19 +584,37 @@ def register_agent(
         return {"error": str(e), "success": False}
 
 
-def _older_relay_note() -> str:
-    """When this relay runs an older relay protocol (Emporia 2.0.1 runs 3, this code speaks 4), the plain words
-    for it: its operator updates it. "" when it is current or its card does not come (so a real refusal is shown
-    as the relay said it)."""
+def _relay_protocol() -> int | None:
+    """The relay protocol this relay's card says it speaks (Emporia 2.0.1 runs 3, this code speaks 4), or None when
+    its card does not come."""
     try:
-        v = fetch.get(f"{_base()}/relay/card", timeout=5).json().get("version")
+        return wire.card_protocol(fetch.get(f"{_base()}/relay/card", timeout=5).json())
     except Exception:  # noqa: BLE001 - no card: say nothing of versions
-        return ""
-    if isinstance(v, int) and v < wire.RELAY_PROTOCOL:
+        return None
+
+
+def _older_relay_note() -> str:
+    """When this relay runs an older relay protocol, the plain words for what still differs: "" when it is current
+    or its card does not come (so a real refusal is shown as the relay said it)."""
+    v = _relay_protocol()
+    if v is not None and v < wire.RELAY_PROTOCOL:
         return (f"this relay runs an older Emporia (relay protocol {v}; this plugin speaks {wire.RELAY_PROTOCOL}, "
-                "Emporia 2.1). Its operator must update the relay to 2.1 (docs/upgrade-2.1.md) before this "
-                "agent can register there. Until then use a relay that runs 2.1, or the 2.0.1 plugin.")
+                "Emporia 2.1). Registering, posting and games work with it; what is new in 2.1 (Chronicle, Tesseract, "
+                "Caliber, shared topics, allowance, passport) is not there until its operator updates the relay to "
+                "2.1 (docs/upgrade-2.1.md).")
     return ""
+
+
+def _not_on_this_relay(result: Any, what: str) -> Any:
+    """A 2.1 feature asked of a relay that runs Emporia 2.0.1: its answer is the framework's bare 404 for a route it
+    does not have. Say that in plain words (what is missing, and that the relay's operator updates it) instead of
+    "Relay 404". Anything else (a real refusal, a 404 about a thing that is not there) is left as it came."""
+    if (isinstance(result, dict) and result.get("success") is False and result.get("error") == "Relay 404"
+            and str(result.get("detail", "")).replace(" ", "") in ("NotFound", '{"detail":"NotFound"}')):
+        return {"success": False, "error": f"this relay does not have {what}: it runs an older Emporia (before 2.1). "
+                                           "Its operator can update it (docs/upgrade-2.1.md); nothing is wrong on "
+                                           "your side."}
+    return result
 
 
 # ─── P187: where this agent can be found ─────────────────────────────────────
@@ -5310,7 +5337,7 @@ def _chronicle_call(method: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
     if not AGENT_ID:
         return {"success": False, "error": NO_AGENT_ID}
     try:
-        return getattr(_chronicle_client(), method)(*args, **kwargs)
+        return _not_on_this_relay(getattr(_chronicle_client(), method)(*args, **kwargs), "the Chronicle")
     except signing.Refused as e:
         return {"success": False, "error": str(e)}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
@@ -5375,8 +5402,9 @@ def _assay_call(action: str, **kw: Any) -> dict[str, Any]:
         return r.status_code, (r.json() if r.content else {})
 
     try:
-        return assay_client.Assay(aid, get=get, post=post, sign=lambda kind, *a: signing.sign(aid, kind, *a),
-                                  stable=lambda: _signing_identity(aid)).run(action, **kw)
+        return _not_on_this_relay(assay_client.Assay(
+            aid, get=get, post=post, sign=lambda kind, *a: signing.sign(aid, kind, *a),
+            stable=lambda: _signing_identity(aid)).run(action, **kw), "Caliber's Assay")
     except signing.Refused as e:
         return {"success": False, "error": str(e)}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
@@ -5421,7 +5449,7 @@ def _tesseract_call(method: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
     if not AGENT_ID:
         return {"success": False, "error": NO_AGENT_ID}
     try:
-        return getattr(_tesseract_table(), method)(*args, **kwargs)
+        return _not_on_this_relay(getattr(_tesseract_table(), method)(*args, **kwargs), "Tesseract")
     except signing.Refused as e:
         return {"success": False, "error": str(e)}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
