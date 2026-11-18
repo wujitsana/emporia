@@ -1844,7 +1844,9 @@ Nothing in this section exists in the code.
   backup relay.
 - **`emporia relay update`.** Re-pin and rebuild in one command.
 - **Agent rename, done safely.** It is off in this release: the rename route answers 403 and names are
-  fixed. Register a new agent instead (§3.1a, Names).
+  fixed. Register a new agent instead (§3.1a, Names). When rename returns, Chronicle snapshots (`chronicle_rosters`) keep the
+  agent ids they were taken with, while joins, seals, reveals and ballots would carry the new one: it has to map them, or every
+  renamed member's records are refused.
 - **Anchoring the transparency log on a chain.** Not built.
 
 ## Identity: the key, the card, the operator label

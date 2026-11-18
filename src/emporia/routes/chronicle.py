@@ -217,6 +217,17 @@ def seconds_to_next_call(at: float | None = None) -> float:
     return min(30.0, max(0.05, nxt - at + 0.2))
 
 
+def tick(at: float | None = None) -> None:
+    """What the relay does on its own, without a read: take the rosters, then let every chapter whose Count window has
+    closed freeze (so a removal after the close can no longer count as inside the windows)."""
+    take_rosters(at)
+    try:
+        _ledger, slots, when = sequence(at)
+    except HTTPException:
+        return
+    freeze_closed(slots, when)
+
+
 def take_rosters(at: float | None = None) -> None:
     """Snapshot the roster of every slot called so far that has none (see `_rosters`). Cheap when nothing is due; the
     relay runs it every few seconds so a slot's roster is taken right after its call, before anyone reads the draw."""
@@ -444,17 +455,27 @@ def build_ledger(at: float | None = None) -> dict[str, Any]:
         seals = [{"chapter": r["chapter"], "agent": r["agent_id"], "what": r["what"], "commitment": r["commitment"],
                   "at": r["received_at"], "seq": r["seq"], "log_index": _log_index(conn, "chronicle_seal", r["seq"])}
                  for r in conn.execute("SELECT * FROM chronicle_seals ORDER BY seq")]
-        reveals = [{"chapter": r["chapter"], "agent": r["agent_id"], "post_id": r["post_id"], "text": r["text"],
-                    "cites": _cites(r["tags_json"]), "nonce": r["nonce"], "at": r["received_at"],
-                    "seq": r["seq"], "log_index": _log_index(conn, "chronicle_reveal", r["seq"])}
-                   for r in conn.execute("SELECT v.*, p.text, p.tags_json FROM chronicle_reveals v JOIN posts p "
-                                         "ON p.post_id = v.post_id ORDER BY v.seq")]
+        # a removed passage (its author's signed removal, a moderator's, the operator's, or its topic's) is served as
+        # "[removed]" with no cites and `removed: true`; its chapter keeps its frozen verdict (`chronicle_ledger.slots`)
+        reveals = [{"chapter": r["chapter"], "agent": r["agent_id"], "post_id": r["post_id"],
+                    "text": "[removed]" if r["is_deleted"] else r["text"],
+                    "cites": [] if r["is_deleted"] else _cites(r["tags_json"]), "nonce": r["nonce"],
+                    "at": r["received_at"], "seq": r["seq"], "log_index": _log_index(conn, "chronicle_reveal", r["seq"]),
+                    **({"removed": True} if r["is_deleted"] else {})}
+                   for r in conn.execute("SELECT v.*, p.text, p.tags_json, p.is_deleted FROM chronicle_reveals v "
+                                         "JOIN posts p ON p.post_id = v.post_id ORDER BY v.seq")]
+        frozen: dict[str, Any] = {}
+        for c in sorted({r["chapter"] for r in reveals if r.get("removed")}):
+            row = conn.execute("SELECT body_json FROM chronicle_verdicts WHERE chapter = ?", (c,)).fetchone()
+            if row:
+                b = json.loads(row["body_json"])
+                frozen[c] = {"call_ts": b["call_ts"], "verdict": b["verdict"]}
         ballots = [{"chapter": r["chapter"], "agent": r["agent_id"], "pick": r["pick"], "reason": r["reason"],
                     "recap": r["recap"], "nonce": r["nonce"], "at": r["received_at"],
                    "seq": r["seq"], "log_index": _log_index(conn, "chronicle_ballot", r["seq"])}
                    for r in conn.execute("SELECT * FROM chronicle_ballots ORDER BY seq")]
     return {"relay_id": rs.relay_id(), "start": st["start"], "epoch_s": st["epoch_s"], "practice": st["practice"],
-            "prologue": prologue, "agents": agents, "rosters": rosters, "removed": removed, "events": events, "beacons": _beacons(st["start"], st["epoch_s"], at),
+            "prologue": prologue, "agents": agents, "rosters": rosters, "removed": removed, "frozen": frozen, "events": events, "beacons": _beacons(st["start"], st["epoch_s"], at),
             "seals": seals, "reveals": reveals, "ballots": ballots, "units": units}
 
 
@@ -953,7 +974,9 @@ def chapter_body(ledger: dict[str, Any], slot: dict[str, Any], at: float, with_i
                                (slot["id"],)).fetchone()
         # `roster`: the receipt binds the chapter's roster (a receipt frozen before rosters were snapshotted does not)
         body["receipt"] = ({"hash": row["body_hash"], "frozen_at": row["frozen_at"],
-                            "roster": '"roster":' in row["body_json"]} if row else None)
+                            "roster": '"roster":' in row["body_json"],
+                            # a chapter with a removed passage keeps this verdict: it cannot be recounted
+                            **({"verdict": v} if slot.get("frozen") else {})} if row else None)
     if with_inputs:
         body["inputs"] = inp
         body["signed"] = _signed_records(slot)
@@ -965,8 +988,13 @@ def _signed_records(slot: dict[str, Any]) -> dict[str, Any]:
     c = slot["id"]
     agents = {m["agent_id"] for m in slot["inputs"]["members"]}
     with rs.DB_LOCK, rs.get_db() as conn:
-        keys = {r["agent_id"]: r["public_key_hex"] for r in conn.execute(
-            "SELECT agent_id, public_key_hex FROM authorized_agents") if r["agent_id"] in agents}
+        old: dict[str, list[str]] = {}          # every key a stable id has held, for records signed before a rotation
+        for r in conn.execute("SELECT stable_id, old_key, new_key FROM agent_key_log ORDER BY step_no"):
+            old.setdefault(r["stable_id"], []).extend(k for k in (r["old_key"], r["new_key"]) if k)
+        keys = {}
+        for r in conn.execute("SELECT agent_id, stable_id, public_key_hex FROM authorized_agents"):
+            if r["agent_id"] in agents:
+                keys[r["agent_id"]] = list(dict.fromkeys(k for k in (r["public_key_hex"], *old.get(r["stable_id"], ())) if k))
         join = [{"agent": r["agent_id"], "stable_id": r["stable_id"], "on": bool(r["on_flag"]), "at": r["signed_at"],
                   "signature": r["signature"]} for r in conn.execute("SELECT * FROM chronicle_join ORDER BY seq")
                  if r["agent_id"] in agents and r["received_at"] < slot["inputs"]["prev_call_ts"]]
@@ -979,7 +1007,7 @@ def _signed_records(slot: dict[str, Any]) -> dict[str, Any]:
                    for r in conn.execute("SELECT * FROM chronicle_ballots WHERE chapter = ? ORDER BY seq", (c,))]
         passages = []
         for r in conn.execute("SELECT v.agent_id, v.stable_id, v.post_id, p.* FROM chronicle_reveals v JOIN posts p "
-                              "ON p.post_id = v.post_id WHERE v.chapter = ? ORDER BY v.seq", (c,)):
+                              "ON p.post_id = v.post_id WHERE v.chapter = ? AND p.is_deleted = 0 ORDER BY v.seq", (c,)):
             passages.append({"agent": r["agent_id"], "stable_id": r["stable_id"], "post_id": r["post_id"],
                              "post": {"nonce": r["nonce"], "kind": r["kind"], "label": r["label"], "text": r["text"],
                                       "tags": json.loads(r["tags_json"]), "topic": r["topic"],

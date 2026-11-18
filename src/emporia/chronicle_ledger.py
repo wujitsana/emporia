@@ -15,6 +15,8 @@ the public routes):
              (below); a slot with none uses `agents` and `events` as they are now
     events   [{ref, line, operators, at}]                the public record, as `chronicle.record_window` reads it
     removed  [ref, ...]                                  refs of snapshotted events whose post, topic or room is gone now
+    frozen   {"<chapter>": {call_ts, verdict}}           the frozen verdict of each chapter that has a removed passage
+             (a reveal with `removed: true`, its text "[removed]" and no cites)
     (each chapter's inputs carry `recent`: the cards of the earlier chapters of its kind that its draw avoids)
     beacons  {"<round>": "<hex signature>"}              every drand round the chapters drew from
     seals, reveals, ballots                              each with its `chapter` id ("7" or "pp-2") and `at`
@@ -33,6 +35,13 @@ the quiet-day test nor the anchors), and every later recomputation of the slot, 
 verifier's, uses that snapshot: it is carried in the chapter's published `inputs["members"]`. A snapshot taken more
 than `SNAPSHOT_GRACE_S` after the call is marked `late` (the draw may already have been public); a slot with no
 snapshot at all (a database from before they existed) uses the present grouping and is marked `current`.
+
+**A removed passage.** The author, a moderator or the operator can remove an opened passage after its chapter froze.
+The count read its text and cites, so recounting would change the chapter. A chapter that has a removed passage and a
+frozen verdict therefore keeps the frozen verdict (`ledger["frozen"]`, from `chronicle_verdicts`) instead of a recount, and
+`slot["frozen"]` says so; the chapter's page serves it as `receipt.verdict`, and a verifier checks it against the receipt
+hash and the log, and says it cannot recount. A removal before the chapter froze (inside its windows) is recomputed: the
+passage is set aside, which is the author's right until the count closes.
 
 **Removed items.** An event's `line` can hold a poster's words (a post's first words, a room's or topic's name). If the
 post, topic or room is gone now (`ledger["removed"]`), the chapter's published event keeps its ref, operators and time
@@ -220,11 +229,18 @@ def slots(ledger: dict[str, Any], now: float) -> list[dict[str, Any]]:
             "recent": recents[mode or "live"]}
         if not sigs["call"]:
             waiting = True        # chapter ids count the called slots before: a gap must not let later ones take its id
-        v = resolve_inputs(inputs) if not waiting else {"mode": None, "reason": "no_beacon", "refused": []}
+        kept = (ledger.get("frozen") or {}).get(cid)
+        keeps_frozen = bool(kept and kept.get("call_ts") == call_ts and not waiting
+                            and any(r.get("removed") for r in inputs["reveals"]))
+        if keeps_frozen:
+            v = {**kept["verdict"], "provisional": False}
+        else:
+            v = resolve_inputs(inputs) if not waiting else {"mode": None, "reason": "no_beacon", "refused": []}
         called = v.get("mode") is not None and v.get("reason") not in ("quiet", "no_roster", "no_beacon")
         slot: dict[str, Any] = {"slot": i, "call_ts": call_ts, "windows": C.windows(call_ts, epoch),
                                 "mode": v.get("mode"), "reason": v.get("reason"), "called": called,
-                                "id": cid if called else None, "inputs": inputs if called else None, "verdict": v}
+                                "id": cid if called else None, "inputs": inputs if called else None, "verdict": v,
+                                "frozen": keeps_frozen and called}
         if called:
             canon = v.get("canon")
             slot["canon_agent"] = handle_of_post.get(canon, "") if canon else ""

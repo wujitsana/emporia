@@ -1479,10 +1479,10 @@ def test_the_snapshot_is_logged_and_the_verifier_reads_the_receipt_from_the_log(
     receipt = chapter(w, "1")["receipt"]
     inp = chapter(w, "1", include="inputs")["inputs"]
     problems, notes = V.check_receipt_in_log(lambda p: w.get(p).json(), "1", receipt, inp)
-    # (the shared test database keeps earlier worlds' chapter-1 verdicts in its log: a note, never a problem)
-    assert problems == [] and all("different frozen verdicts" in n for n in notes), (problems, notes)
+    # (the shared test database keeps earlier worlds' chapter-1 verdicts in its log: other call times, a note only)
+    assert problems == [] and all("another call time" in n for n in notes), (problems, notes)
     bad, _ = V.check_receipt_in_log(lambda p: w.get(p).json(), "1", {**receipt, "hash": "0" * 64}, inp)
-    assert bad and "not the receipt" in bad[0]
+    assert bad and "different frozen verdict" in bad[0], bad          # the log's verdict at this call time differs
     # a relay with its log off: nothing logged, so the receipt is the relay's word, said so, not failed
     unlogged = {**inp, **{k: [{**r, "log_index": None} for r in inp[k]] for k in ("seals", "reveals", "ballots")}}
     bad, notes = V.check_receipt_in_log(lambda p: {}, "1", receipt, unlogged)
@@ -1528,3 +1528,140 @@ def test_relabeling_an_old_agent_under_a_young_label_does_not_age_the_label(mk):
     rs.forget_who()
     b = w.route._base_since()
     assert b[young] == b[old] and b[victim] < b[young], "the label is still as young as it was first declared"
+
+
+def _log_get(w: E.World, extra: list[dict] | None = None, first: bool = False):
+    """The relay's log reads, with extra `chronicle_verdict` entries added (a rewritten verdict filed later or earlier)."""
+    def get(p):
+        j = w.get(p).json()
+        if extra and p.startswith("/log/entries?ref=chronicle_verdict"):
+            j = {**j, "entries": ([*extra, *j.get("entries", [])] if first else [*j.get("entries", []), *extra])}
+        return j
+    return get
+
+
+def test_a_second_different_frozen_verdict_for_the_same_call_time_is_a_problem(mk):
+    w, names = mk(6)
+    day(w, names, 1)
+    verified(w)
+    receipt = chapter(w, "1")["receipt"]
+    inp = chapter(w, "1", include="inputs")["inputs"]
+    body = json.dumps({"chapter": "1", "call_ts": inp["call_ts"], "verdict": {"canon": "x"}})
+    rewritten = {"index": 10**9, "record": {"chapter": "1", "body_json": body, "body_hash": "f" * 64, "frozen_at": "x"}}
+    bad, _ = V.check_receipt_in_log(_log_get(w, [rewritten]), "1", receipt, inp)
+    assert bad and "earlier, different" in bad[0]                  # filed after the receipt: still a problem
+    earlier = {**rewritten, "index": -1}
+    bad, _ = V.check_receipt_in_log(_log_get(w, [earlier], first=True), "1", receipt, inp)
+    assert bad and "earlier, different" in bad[0]                  # filed before the receipt the relay serves
+    # another call time under the same id is an earlier run of the book: a note
+    older = {**rewritten, "record": {**rewritten["record"], "body_json": json.dumps({"call_ts": 1.0})}}
+    bad, notes = V.check_receipt_in_log(_log_get(w, [older]), "1", receipt, inp)
+    assert not bad and all("another call time" in n for n in notes)
+
+
+def _remove_post(post_id: str) -> None:
+    """What a removal does to the row (`deletion.py`): the text goes, the tags go, the post is marked deleted."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE posts SET text = '[removed]', label = '', tags_json = '[]', is_deleted = 1 WHERE post_id = ?",
+                     (post_id,))
+        conn.commit()
+
+
+def _chapters_state(w: E.World, ids=("1", "2")) -> dict:
+    out = {}
+    for c in ids:
+        b = chapter(w, c)
+        out[c] = {"verdict": b["verdict"], "awards": b["awards"],
+                  "receipt": {k: v for k, v in b["receipt"].items() if k != "verdict"},
+                  "numbering": b["numbering"], "card": b["card"], "seats": b["seats"]}
+    return out
+
+
+def test_removing_the_canon_passage_after_the_chapters_froze_changes_nothing_and_the_verifier_agrees(mk):
+    w, names = mk(6)
+    day(w, names, 1)
+    day(w, names, 2)
+    verified(w)                                       # both frozen
+    before, ids = _chapters_state(w), _ids(w)
+    canon = chapter(w, "1")["verdict"]["canon"]
+    assert canon and before["1"]["awards"]
+    _remove_post(canon)
+    w.route._SEQ.update(key=None, value=None)
+    after = _chapters_state(w)
+    assert after == before and _ids(w) == ids, "ids, verdicts, awards and receipts of both chapters are unchanged"
+    shown = {p["post_id"]: p["text"] for p in chapter(w, "1")["passages"]}
+    assert shown[canon] == "[removed]"
+    rep = verified(w)
+    assert any("removed after the freeze" in n for c in rep["chapters"] for n in c["notes"])
+    day(w, names, 3)                                  # the book goes on: chapter 3 replies to the same canon
+    assert _ids(w) == [*ids, "3"]
+    verified(w)
+
+
+def test_removing_a_losing_passage_after_the_freeze_changes_nothing(mk):
+    w, names = mk(6)
+    day(w, names, 1)
+    day(w, names, 2)
+    verified(w)
+    before, ids = _chapters_state(w), _ids(w)
+    inp = chapter(w, "1", include="inputs")["inputs"]
+    canon = chapter(w, "1")["verdict"]["canon"]
+    loser = next(r["post_id"] for r in inp["reveals"] if r["post_id"] != canon)
+    _remove_post(loser)
+    w.route._SEQ.update(key=None, value=None)
+    assert _chapters_state(w) == before and _ids(w) == ids
+    verified(w)
+
+
+def test_a_passage_removed_before_the_chapter_froze_is_recounted_and_set_aside(mk):
+    """No frozen verdict yet (nothing has read or ticked since the Count window closed): withdrawing is the author's right."""
+    w, names = mk(6)
+    day(w, names, 1)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        assert conn.execute("SELECT 1 FROM chronicle_verdicts WHERE chapter = '1'").fetchone() is None
+        pid = conn.execute("SELECT post_id FROM chronicle_reveals WHERE chapter = '1' ORDER BY seq").fetchone()[0]
+    _remove_post(pid)
+    w.route._SEQ.update(key=None, value=None)
+    v = chapter(w, "1")["verdict"]
+    assert pid not in (v.get("candidates") or []) and any(s["post_id"] == pid for s in v["set_aside"])
+    verified(w)
+
+
+def test_the_relays_tick_freezes_a_closed_chapter_without_a_read(mk):
+    w, names = mk(6)
+    day(w, names, 1)                                  # the clock ends past the Count window; nothing has read since
+    with rs.DB_LOCK, rs.get_db() as conn:
+        assert conn.execute("SELECT 1 FROM chronicle_verdicts WHERE chapter = '1'").fetchone() is None
+    w.route.tick()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        assert conn.execute("SELECT 1 FROM chronicle_verdicts WHERE chapter = '1'").fetchone() is not None
+
+
+def test_a_key_rotation_after_the_chapter_does_not_fail_the_verifier(mk):
+    from emporia.identity import get_public_key_hex
+    w, names = mk(6)
+    day(w, names, 1)
+    verified(w)
+    agent = names[0]
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT stable_id, public_key_hex FROM authorized_agents WHERE agent_id = ?", (agent,)).fetchone()
+        new_key = get_public_key_hex("rotated_" + uuid.uuid4().hex[:5])
+        conn.execute("UPDATE authorized_agents SET public_key_hex = ? WHERE agent_id = ?", (new_key, agent))
+        conn.execute("INSERT INTO agent_key_log (stable_id, step_no, old_key, new_key, at, signature, recorded_at) "
+                     "VALUES (?,?,?,?,?,?,?)", (row["stable_id"], 99, row["public_key_hex"], new_key, "x", "x", 1.0))
+        conn.commit()
+    try:
+        w.route._SEQ.update(key=None, value=None)
+        keys = chapter(w, "1", include="inputs")["signed"]["keys"][agent]
+        assert keys[0] == new_key and row["public_key_hex"] in keys
+        verified(w)
+        notes: list[str] = []                         # an agent the relay holds no key for at all: a note, not a problem
+        bad = V.check_signatures({"keys": {}, "join": [{"agent": "ghost", "stable_id": "s", "on": True,
+                                                        "at": "2026-01-01T00:00:00+00:00", "signature": "00"}]},
+                                 "r", "o", notes)
+        assert bad == [] and notes
+    finally:
+        with rs.DB_LOCK, rs.get_db() as conn:
+            conn.execute("UPDATE authorized_agents SET public_key_hex = ? WHERE agent_id = ?", (row["public_key_hex"], agent))
+            conn.execute("DELETE FROM agent_key_log WHERE stable_id = ? AND step_no = 99", (row["stable_id"],))
+            conn.commit()
