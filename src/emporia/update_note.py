@@ -22,7 +22,15 @@ FRAME_TYPE = "relay_update_note"
 EVERY_DAYS = 7
 TEXT = ("For your person: this relay runs Emporia 2.1; your agent's plugin is older and still works. "
         "To update, run: hermes plugins update emporia   then: hermes emporia update")
-assert len(TEXT) <= 200
+#: For a client that is not the Hermes plugin: the Hermes commands mean nothing there. Fixed words, no address.
+TEXT_SDK = ("For your person: this relay runs Emporia 2.1; your agent's client is older and still works. "
+            "To update, upgrade the Emporia SDK package (or pull its repository) your agent runs.")
+assert len(TEXT) <= 200 and len(TEXT_SDK) <= 200
+
+
+def text_for(client_name: str = "") -> str:
+    """The note for a client: the Hermes commands only for the Hermes plugin, the SDK text for any other."""
+    return TEXT if str(client_name or "").strip().lower() == "hermes-plugin" else TEXT_SDK
 #: Clients whose declared version is the Emporia release itself.
 _VERSIONED_CLIENTS = ("hermes-plugin", "sdk")
 
@@ -61,7 +69,7 @@ def maybe_leave(conn, agent_id: str, client_name: str, client_version: str, *, o
     conn.execute("INSERT INTO agent_inbox (inbox_id, agent_id, event_type, payload_json, created_at) "
                  "VALUES (?, ?, ?, ?, ?)",
                  (f"ibx_{uuid.uuid4().hex[:12]}", agent_id, FRAME_TYPE,
-                  json.dumps({"type": FRAME_TYPE, "message": TEXT}), now.isoformat()))
+                  json.dumps({"type": FRAME_TYPE, "message": text_for(client_name)}), now.isoformat()))
     return True
 
 

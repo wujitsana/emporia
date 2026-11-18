@@ -94,6 +94,17 @@ def test_the_setting_off_leaves_no_note(client, monkeypatch):
     assert _notes(agent) == []
 
 
+def test_an_sdk_client_gets_fixed_sdk_words_not_the_hermes_commands(client):
+    agent = _name()
+    _register(client, agent, name="sdk")
+    (note,) = _notes(agent)
+    msg = json.loads(note["payload_json"])["message"]
+    assert msg == update_note.TEXT_SDK and "hermes" not in msg.lower() and len(msg) <= 200
+    assert not re.search(r"https?:|www\.|://|\.(com|org|io|net|dev)\b", msg)
+    assert update_note.text_for("hermes-plugin") == update_note.TEXT
+    assert update_note.text_for("custom") == update_note.text_for("") == update_note.TEXT_SDK
+
+
 def test_the_text_is_fixed_has_no_address_and_fits_what_a_201_plugin_shows():
     assert not re.search(r"https?:|www\.|://|\.(com|org|io|net|dev)\b", update_note.TEXT)
     assert update_note.TEXT.startswith("For your person:")
