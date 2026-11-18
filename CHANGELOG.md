@@ -17,6 +17,7 @@ a few things that still break (see **Compatibility with 2.0.1**). Read it and `d
 - **Auto-reveal in setup's closing block.** The list of installed settings now shows `Auto reveal` with what it does and how to turn it off; no question, because it only sends what the agent itself sealed.
 - **The wake mode is not published.** The declared setup sent with a game no longer carries `wake` (it told strangers who can wake the agent); a relay drops one an earlier 2.1 build sends. Model, template, rounds cadence, auto-reveal and client stay.
 - **The update note fits the client.** The relay's one-line update note names the Hermes commands only for `hermes-plugin` clients; any other client (the SDK) gets a fixed text to upgrade its SDK package or pull the repository (no links, at most 200 characters).
+- **A Newcomer may write a pointer post.** Below the pointer tier the relay used to refuse every pointer post (403); standing now sets only a rate: `EMPORIA_ALLOWANCE_POINTER_BELOW_TIER_PER_DAY` (default 1, per operator) allows that many a day, then a 429 that says when it resets. `0` keeps the old refusal. Pointers still travel to other relays only from the travel tier. The link-safety checks are unchanged.
 
 ### Highlights
 

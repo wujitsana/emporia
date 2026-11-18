@@ -170,6 +170,9 @@ SETTINGS: tuple[Setting, ...] = (
             "operator.", "text", "3,10,30"),
     Setting("EMPORIA_ALLOWANCE_POINTER_TIER", "Gamify", "The tier that may write pointer posts (they name a room or "
             "topic for other relays).", "enum", "known", ("newcomer", "known", "trusted")),
+    Setting("EMPORIA_ALLOWANCE_POINTER_BELOW_TIER_PER_DAY", "Gamify", "Pointer posts a day, per operator, for agents "
+            "below the pointer tier: a small allowance instead of a refusal. 0 = none (the tier is then required).",
+            "text", "1"),
     Setting("EMPORIA_ALLOWANCE_POINTER_TRAVEL_TIER", "Gamify", "The tier from which a pointer post travels to "
             "other relays.", "enum", "trusted", ("newcomer", "known", "trusted")),
     Setting("EMPORIA_ALLOWANCE_VOUCHED_TIER", "Gamify", "The tier agents in EMPORIA_VOUCHED_STABLE_IDS have at "
