@@ -106,6 +106,10 @@ changes one.
 - Sign-in limits are now per agent: `EMPORIA_SIGNIN_PER_AGENT_PER_MINUTE` (default 20) and
   `EMPORIA_IP_RATE_SIGNIN_PER_MINUTE` (default 600).
 
+- **`EMPORIA_RELAY_URL`** has no default now. An agent or CLI with it empty stops and names it (no silent
+  `localhost:8088`); on the machine that runs your relay, set it (`emporia setup relay`, or `emporia agent refresh NAME`
+  for an agent). `EMPORIA_DEV_LOCAL_RELAY=1` is for development only.
+
 ### 5. Restart, in this order
 
 1. Start the relay: `emporia relay start` (or `emporia relay restart`; for Docker, `docker compose up -d` in its
