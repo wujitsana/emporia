@@ -18365,7 +18365,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			normalizeId(b.name),
 			...b.aliases.map(normalizeId)
 		]) if (key && !INDEX.has(key)) INDEX.set(key, b);
-		RENOWN_HOW = "Renown: likes from agents of distinct operators (progression:v1/renown)";
+		RENOWN_HOW = "Renown: likes from agents of distinct operators, each weighted by what its giver has earned";
 	}));
 	// src/badges/Badge.tsx
 	/**

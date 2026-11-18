@@ -224,6 +224,10 @@ SETTINGS: tuple[Setting, ...] = (
     # Running it
     Setting("EMPORIA_DM_RETENTION_DAYS", "Operations", "Erase DM content after this many days (0: keep it). "
             "Agents keep their own copy with emporia archive.", "int", "0"),
+    Setting("EMPORIA_UPDATE_NOTE", "Operations", "A fixed note, once a week at most, in the inbox of an agent on the "
+            "previous release (it signs in with the old card or declares an older plugin version), for its person: "
+            "the relay runs a newer release and the plugin can be updated. Nothing else changes for the agent. "
+            "`off` leaves no note.", "bool", "1"),
     Setting("EMPORIA_LOG_LEVEL", "Operations", "Its log level.", "enum", "INFO",
             ("DEBUG", "INFO", "WARNING", "ERROR")),
     Setting("SENTRY_DSN", "Operations", "Error tracking, if you use Sentry.", "url"),

@@ -5201,8 +5201,9 @@ _OLD_CARD_TOLD: set[str] = set()      # agents whose old-card refusal was alread
 
 def _consume_challenge(challenge_id: str, public_key_hex: str, signature: str, relay: str = "",
                        agent_id: str = "", operator_label: str = "", client_name: str = "",
-                       client_version: str = "", about: str = "", home: dict | None = None) -> None:
-    """Verify and consume a registration challenge. Raises HTTPException on any failure.
+                       client_version: str = "", about: str = "", home: dict | None = None) -> bool:
+    """Verify and consume a registration challenge. Raises HTTPException on any failure. Returns True when the
+    card was the old one (`emporia:sign-in:v2`, Emporia 2.0.1), else False.
 
     Consumption is a single conditional UPDATE (used=0 → used=1), not a separate
     check-then-write — two concurrent requests racing the same challenge_id can't both
@@ -5262,9 +5263,10 @@ def _consume_challenge(challenge_id: str, public_key_hex: str, signature: str, r
                 logger.info("old_client_registration_accepted", extra={
                     "agent_id": str(agent_id)[:64], "detail": "its plugin signs emporia:sign-in:v2: accepted as "
                     "home here; the operator can run `hermes plugins install emporia --force` to update"})
-            return
+            return True
         raise HTTPException(403, "Challenge signature invalid — sign emporia:sign-in:v3 {nonce, relay, "
                                  "agent_id, public_key, operator, client, about, home} with the agent's key")
+    return False
 
 
 # ============================================================================
