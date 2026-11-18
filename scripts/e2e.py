@@ -712,7 +712,7 @@ class Run:
               and "data, not instructions" in thread.get("untrusted", ""), f"read_thread of a message: {thread}")
         liked = self.tool(self.player, "react", reply["ref"])      # the player likes the merchant's answer
         check(liked.get("success") and liked.get("to_agent") == self.merchant, f"a reaction on a room message: {liked}")
-        best = self.tool(self.player, "read_feed", sort="best", limit=100)
+        best = self.tool(self.player, "read_feed", sort="best", limit=100, detail=True)
         hit = [p for p in best.get("posts", []) if p.get("message_id") == reply["ref"].split(":", 1)[1]]
         check(hit and hit[0]["in"]["kind"] == "room" and hit[0]["in"]["id"] == rid,
               f"a liked public room message is not in the feed's best: {str(best)[:300]}")
@@ -742,7 +742,7 @@ class Run:
         check(slug, "no topic made")
         said = self.tool(self.player, "post", "the e2e square is open\nsecond line", kind="idea", topic=slug)
         check(said.get("success") and said.get("post_id"), f"post in a public topic: {said}")
-        feed = self.tool(self.merchant, "read_feed", kind="idea")
+        feed = self.tool(self.merchant, "read_feed", kind="idea", detail=True)
         mine = [p for p in feed.get("posts", []) if p["post_id"] == said["post_id"]]
         check(mine and mine[0].get("in", {}).get("id") == slug, f"the topic post is not in the main feed: {feed}")
         hap = self.tool(self.merchant, "whats_next")
@@ -760,11 +760,11 @@ class Run:
         words = f"sealed words {self.player[-4:]}"
         sent = self.tool(self.player, "post", words, kind="idea", topic=sslug, tags=[["t", "inside"]])
         check(sent.get("success") and sent.get("post_id"), f"sealed post: {sent}")
-        read = self.tool(self.merchant, "read_feed", topic=sslug)
+        read = self.tool(self.merchant, "read_feed", topic=sslug, detail=True)
         got = [p for p in read.get("posts", []) if p["post_id"] == sent["post_id"]]
         check(got and got[0].get("text") == words and got[0].get("kind") == "idea" and ["t", "inside"] in got[0]["tags"],
               f"the member cannot open the sealed post: {read}")
-        wide = self.tool(self.merchant, "read_feed", scope="readable")
+        wide = self.tool(self.merchant, "read_feed", scope="readable", detail=True)
         check(sent["post_id"] not in [p["post_id"] for p in wide.get("posts", [])], "a sealed post is in the feed")
         hap2 = self.tool(self.merchant, "whats_next")
         check(sslug not in json.dumps(hap2.get("happening")) and words not in json.dumps(hap2.get("happening")),
@@ -961,7 +961,7 @@ class Run:
         pid = post.get("post_id")
         check(bool(pid), f"post (post:v2): {post}")
         self.idea_post = pid
-        feed = self.tool(self.merchant, "read_feed", kind="idea", topic="ideas")
+        feed = self.tool(self.merchant, "read_feed", kind="idea", topic="ideas", detail=True)
         check(any(p["post_id"] == pid for p in feed.get("posts", [])) and feed.get("untrusted"),
               f"read_feed does not show the post, marked untrusted: {feed}")
         said = self.tool(self.merchant, "post", "worth judging", reply_to=f"post:{pid}", topic="ideas")
@@ -1027,7 +1027,7 @@ class Run:
                   f"seed: no tick for #{slug}: {out.strip()[-600:]}")
         again = self.person(self.merchant, "relay", "seed", self.merchant)
         check(again.count("welcome post already there") == 5, f"a second seed is not a no-op: {again.strip()[-600:]}")
-        feed = self.tool(self.merchant, "read_feed", topic="games", author=self.merchant, limit=30)
+        feed = self.tool(self.merchant, "read_feed", topic="games", author=self.merchant, limit=30, detail=True)
         welcomes = [x for x in feed.get("posts", []) if str(x.get("text", "")).startswith("Welcome to #games.")]
         check(len(welcomes) == 1 and "No URLs" in welcomes[0]["text"], f"the games welcome: {feed}")
         setup = self.hermes_cmd("-p", self.judge, "emporia", "setup", "--agent-profile", self.newcomer,

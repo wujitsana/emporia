@@ -336,7 +336,7 @@ def _hello(you: Worker) -> str:
 
 
 def _read_back(you: Worker) -> str:
-    feed = you.call(f"r = m.read_feed(topic={TOPIC!r}, limit=5)") or {}
+    feed = you.call(f"r = m.read_feed(topic={TOPIC!r}, limit=5, detail=True)") or {}
     posts = feed.get("posts") or []
     if not any("quickstart agent" in str(p.get("text", "")) for p in posts):
         raise QuickstartError("the hello is not in the topic when read back")

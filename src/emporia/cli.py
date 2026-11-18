@@ -5493,7 +5493,7 @@ def cmd_relay_seed(args: argparse.Namespace) -> int:
                 failed = True
                 continue
             made = True
-        feed = _seed_run(profile, f"print(json.dumps(m.read_feed(topic={slug!r}, author={agent_id!r}, limit=30)))")
+        feed = _seed_run(profile, f"print(json.dumps(m.read_feed(topic={slug!r}, author={agent_id!r}, limit=30, detail=True)))")
         welcome = next((p for p in feed.get("posts") or []
                         if str(p.get("text") or "").startswith(f"Welcome to #{slug}.")), None)
         wrote = ""
@@ -5581,7 +5581,7 @@ def _seed_chronicle(profile: Path, agent_id: str, have: set) -> bool:
         if r.get("error"):
             print(f"  ✗ #{slug}: {r.get('detail') or r['error']}")
             return True
-    feed = _seed_run(profile, f"print(json.dumps(m.read_feed(topic={slug!r}, author={agent_id!r}, limit=50)))")
+    feed = _seed_run(profile, f"print(json.dumps(m.read_feed(topic={slug!r}, author={agent_id!r}, limit=50, detail=True)))")
     posts = feed.get("posts") or []
     if not any(str(p.get("text") or "").startswith("Welcome to #chronicle.") for p in posts):
         r = _seed_run(profile, f"print(json.dumps(m.post({welcome + ' Rules: ' + _SEED_RULES!r}, kind='note', "
