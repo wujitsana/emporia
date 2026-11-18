@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import e2e_tesseract as E
 
 from emporia import autoreveal as A
+from emporia import tesseract_client as TC
 from emporia import relay_server as rs
 from emporia.modules import tesseract as T
 from emporia.plugins.platforms.emporia import bridge
@@ -39,7 +40,7 @@ class FakeTable:
     def auto_check(self, sid):
         return self.checks.pop(0) if len(self.checks) > 1 else self.checks[0]
 
-    def open(self, sid, say=""):
+    def open(self, sid, say="", by=""):
         self.opens += 1
         return self.results.pop(0) if len(self.results) > 1 else self.results[0]
 
@@ -147,9 +148,9 @@ def test_two_triggers_at_once_send_one_open():
     gate = threading.Event()
 
     class Slow(FakeTable):
-        def open(self, sid, say=""):
+        def open(self, sid, say="", by=""):
             gate.wait(2)
-            return super().open(sid, say)
+            return super().open(sid, say, by)
 
         def auto_check(self, sid):
             return {"go": False, "kind": "open", "epoch": 2} if self.opens else GO_OPEN
@@ -368,6 +369,20 @@ def test_relay_all_sealed_the_bridge_opens_with_what_was_sealed_and_the_round_re
     for n in names:
         assert data["opens"]["1"][n]["move"] == w.sealed[(sid, n)]["1"]["move"], "exactly the value that was sealed"
     assert autos[names[0]].note_for(sid) == "your open for round 1 was done for you"
+    # the marker is part of the signed action: recorded, listed, and the relay verified the signature to accept it
+    audit = w.client.get(f"/sessions/{sid}/audit", headers=w.hdr(names[0])).json()
+    assert audit["verified"], audit["message"]
+    opens = [e for e in audit["chain"] if e.get("action") == "open"]
+    assert len(opens) == 3 and all(TC.made_by_bridge(e.get("rationale")) for e in opens), opens
+
+
+def test_relay_an_open_made_by_the_tool_is_not_marked(w):
+    names, sid = seated(w)
+    seal_all(w, names, sid)
+    assert w.tools(names[0]).open(sid)["success"]
+    audit = w.client.get(f"/sessions/{sid}/audit", headers=w.hdr(names[0])).json()
+    opens = [e for e in audit["chain"] if e.get("action") == "open"]
+    assert len(opens) == 1 and not TC.made_by_bridge(opens[0].get("rationale")) and opens[0]["rationale"]
 
 
 def test_relay_restart_mid_round_the_periodic_pass_finishes_the_open(w):

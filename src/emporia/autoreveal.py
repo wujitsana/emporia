@@ -165,7 +165,7 @@ class AutoReveal:
                 if key in self._done:
                     return "done"
                 for attempt in range(RATE_RETRIES + 1):
-                    res = table.open(session_id)
+                    res = table.open(session_id, by="bridge")
                     ok = bool(res.get("success")) and bool(res.get("opened") or res.get("revealed")
                                                            or res.get("done") or res.get("nothing_due"))
                     if not ok and _already(res):
