@@ -115,7 +115,7 @@ def test_the_features_from_the_entrys_argument_is_an_info_line_not_a_warning(mon
     import logging
     import sys
 
-    from emporia import features, mcp_server
+    from emporia import mcp_server
     monkeypatch.setattr(sys, "argv", ["x", "--features=none"])
     monkeypatch.delenv("EMPORIA_FEATURES", raising=False)
     monkeypatch.setattr(mcp_server, "_check_features_arg", lambda: None)

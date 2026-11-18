@@ -3629,7 +3629,7 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
     if updates:
         merge_env_file(profile / ".env", updates)
         print(f"  Saved. {name}'s bridge and tools read it when they next start:")
-        print(f"      hermes gateway restart")
+        print("      hermes gateway restart")
     _show_playbook(name, pb)
     return 0
 
@@ -3892,7 +3892,7 @@ def cmd_features(args: argparse.Namespace) -> int:
         profile, name = found
         held = installer().harvest_env(profile)
         key_dir = Path(held.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
-        restart = (f"restart the gateway: `hermes gateway restart` "
+        restart = ("restart the gateway: `hermes gateway restart` "
                    "(or `/reload-mcp` in its chat)")
 
         def save(value: str) -> None:
@@ -5837,7 +5837,7 @@ def _relay_code_behind(h: dict) -> str:
         return "it reports no schema version"
     if running < SCHEMA_VERSION:
         return f"schema {running}, checkout {SCHEMA_VERSION}"
-    from emporia.module_sdk import MODULE_REGISTRY, load_bundled_modules
+    from emporia.module_sdk import load_bundled_modules
     load_bundled_modules()
     missing = sorted(t for t in _games_not_listed(h) if t not in _games_switched_off(h))
     return f"missing games: {', '.join(missing)}" if missing else ""
@@ -6252,7 +6252,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
             if not profile_json.get("encryption_public_key"):
                 rep.warn("no encryption key published — DMs and private sessions with it stay "
                          "plaintext, readable by the relay",
-                         f"restart its MCP (`hermes gateway restart`); it publishes the key on registering")
+                         "restart its MCP (`hermes gateway restart`); it publishes the key on registering")
             else:
                 rep.ok("encryption key published — its DMs and private sessions are sealed")
             if has["evm"] and not pay_to:

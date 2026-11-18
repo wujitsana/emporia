@@ -235,7 +235,7 @@ _dashboard_token_cache: dict[str, tuple[str, float]] = {}
 # sign-in budget every agent behind one address shares. register_agent success clears it.
 _unregistered_at: dict[str, float] = {}
 UNREGISTERED_RECHECK_SECONDS = 60.0
-from emporia.mcp_surface import NOT_REGISTERED_MESSAGE  # noqa: E402 — one text, also the table's next step
+from emporia.mcp_surface import NOT_REGISTERED_MESSAGE
 
 
 def _is_unregistered(relay_url: str = "", agent_id: str = "") -> bool:
