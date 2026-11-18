@@ -169,6 +169,8 @@ async def register_agent(req: rs.RegisterAgentRequest, request: Request, backgro
                 about=req.about,
             )
         )
+    except rs.OperatorCapError as e:
+        raise HTTPException(403, str(e)) from e       # a refusal in plain words, like the access ones above
     except ValueError as e:
         msg = str(e)
         status = 409 if "already registered" in msg or "Key rotation" in msg or "different key" in msg else 400

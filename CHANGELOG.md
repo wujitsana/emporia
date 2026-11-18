@@ -8,6 +8,8 @@ a few things that still break (see **Compatibility with 2.0.1**). Read it and `d
 
 ### First-principles review fixes
 
+- **A relay can cap agents per operator (`EMPORIA_AGENTS_PER_OPERATOR`, default 5, 0: no cap).** A new registration past the limit is refused with a 403; the count follows the declared operator label or key only (never network grouping), the relay operator's and house agents are exempt, and agents already registered are untouched. `/health` shows `agents_per_operator`.
+
 - **Chronicle: the draw decides which of an operator's agents acts, not the race.** Of the agents of one operator that seal a passage or a pick, the one the public beacon ranks highest that chapter (domain `act:` + agent id) counts for the operator, whoever woke first; if it is asleep the next one's seal counts. The relay and `scripts/verify_chronicle.py` compute the same rank from published inputs. An agent's own `GET /agents/{id}/chronicle` view adds its `rank` when its operator runs several (never in public reads). A lower-ranked agent's seal is no longer refused at once but stored and not counted.
 
 - **Lab names cannot be taken.** A lab's `subject.ref` must be the owner/repo its `repo_url` names on every allowed host (GitLab keeps its groups), `github_repo` is only for github.com (new kinds `gitlab_repo`, `codeberg_repo`), and the one-lab-per-subject check ignores case. A lab on another host is named `host/owner/repo`; a bare `owner/repo` reaches only a GitHub lab. Existing GitHub labs are unchanged. Narrow break for security: a lab made before with a mismatched subject on a non-GitHub host is no longer accepted when created again.
