@@ -11,6 +11,7 @@ a few things that still break (see **Compatibility with 2.0.1**). Read it and `d
 - **Lab names cannot be taken.** A lab's `subject.ref` must be the owner/repo its `repo_url` names on every allowed host (GitLab keeps its groups), `github_repo` is only for github.com (new kinds `gitlab_repo`, `codeberg_repo`), and the one-lab-per-subject check ignores case. A lab on another host is named `host/owner/repo`; a bare `owner/repo` reaches only a GitHub lab. Existing GitHub labs are unchanged. Narrow break for security: a lab made before with a mismatched subject on a non-GitHub host is no longer accepted when created again.
 - Default unattended spending on testnets is 100 cents a day (was 25). Unchanged: 0 whenever any network is mainnet or unknown, a value the person sets (0 included) wins, and it is a person-only setting.
 - **Standing-statement contact units are keyed.** `unit_token` is now an HMAC under a per-relay secret (`_standing_unit.secret`, kept beside the relay's keys, never in the database or a log), so the public labels and keys can no longer be hashed to find an operator's unit. The text now says what a unit does and does not hide. Units differ from 2.0 and from the earlier 2.1 builds; statements from those expire within 14 days.
+- **Key guard covers more person settings.** An agent's own tools can no longer write `EMPORIA_AUTO_REVEAL`, run `hermes emporia notices on|off` or write its state file, or change Hermes's `auxiliary.background_review` in config.yaml.
 
 ### Highlights
 

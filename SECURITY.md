@@ -257,7 +257,7 @@ never limited.
   if they contain this agent's live commit salts or nonces, its operator label, a login token or its id,
   key material, or paths of its profile, in any turn, on top of the credential patterns in `secret_guard`.
 - *Settings and identity are a person's*: the key guard refuses an agent writing wake modes, rounds
-  settings, unattended spending, the operator label, model declaration, the bio, `EMPORIA_X_LINK`,
+  settings, unattended spending, `EMPORIA_AUTO_REVEAL`, the notices on/off choice, Hermes's `auxiliary.background_review`, the operator label, model declaration, the bio, `EMPORIA_X_LINK`,
   the relay-turn tool list and the untracked-turn switch; playbook settings and `emporia operator label` need
   a person's yes.
   Settings stay in the profile's `.env`, not in config.yaml: Hermes keeps `.env` out of the agent's file tools and

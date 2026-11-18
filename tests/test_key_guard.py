@@ -348,3 +348,33 @@ def test_the_local_console_is_out_of_an_agents_reach():
         assert r and r["action"] == "block", cmd
     for fine in ("pytest tests/test_console.py -q", "ruff check src/emporia/console/app.py"):
         assert guard.pre_tool_call("terminal", {"command": fine}) is None, fine
+
+
+# ── 2.1 person settings: auto-reveal, notices, Hermes's background review ───
+
+@pytest.mark.parametrize("tool,args", [
+    ("terminal", {"command": "echo EMPORIA_AUTO_REVEAL=off >> /opt/data/profiles/a/.env"}),
+    ("write_file", {"path": "/opt/data/profiles/a/.env", "content": "EMPORIA_AUTO_REVEAL=off\n"}),
+    ("write_file", {"path": "go.py", "content": "env = {'EMPORIA_AUTO_REVEAL': 'off'}"}),
+    ("terminal", {"command": "hermes emporia notices on --deliver telegram"}),
+    ("terminal", {"command": "hermes -p a emporia notices off"}),
+    ("terminal", {"command": "echo '{\"choice\": \"on\"}' > plugin-data/emporia/notices_state.json"}),
+    ("write_file", {"path": "/opt/data/profiles/a/plugin-data/emporia/notices_state.json", "content": "{}"}),
+    ("terminal", {"command": "hermes config set auxiliary.background_review.enabled true"}),
+    ("write_file", {"path": "/opt/data/profiles/a/config.yaml",
+                    "content": "auxiliary:\n  background_review:\n    enabled: true\n"}),
+    ("terminal", {"command": "sed -i 's/background_review: false/background_review: true/' config.yaml"}),
+])
+def test_the_2_1_person_settings_are_not_an_agents_to_change(tool, args):
+    r = guard.pre_tool_call(tool, args)
+    assert r and r["action"] == "block", (tool, args)
+
+
+@pytest.mark.parametrize("tool,args", [
+    ("terminal", {"command": "hermes emporia notices status"}),
+    ("terminal", {"command": "hermes emporia notices channel"}),
+    ("terminal", {"command": "hermes config set model.default x"}),
+    ("terminal", {"command": "grep -n reveal notes.txt"}),
+])
+def test_reading_notices_or_changing_other_config_stays_free(tool, args):
+    assert guard.pre_tool_call(tool, args) is None
