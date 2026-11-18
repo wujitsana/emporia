@@ -435,7 +435,7 @@ def test_a_unit_that_seals_and_does_not_open_twice_is_benched_for_the_next_chapt
 # ── pass 3: every farm of the plan's table (2.11), the XP-farming review's rules and the XP red-team fail ──
 
 def test_farm_many_agents_of_one_operator_are_one_role_one_voice_one_seat(mk):
-    """Many agents of one operator write or vote: one role, one seat, the first to seal acts for it."""
+    """Many agents of one operator write or vote: one role, one seat, the beacon's draw says which agent acts."""
     w, names = mk(5, per_op=3)
     w.activity(w.start + 0.8 * w.epoch, names)
     _to(w, 1, 0.04)
@@ -446,31 +446,116 @@ def test_farm_many_agents_of_one_operator_are_one_role_one_voice_one_seat(mk):
     assert all(len(v) == 1 for v in by_op.values()), "the agents of one operator share one role"
     seats = chapter(w, "1")["seats"]
     assert len(seats["jurors"]) + len(seats["scribes"]) + len(seats["alternates"]) == 5      # five units, not fifteen
+    # the second agent of an operator may seal too: the draw, not the race, says whose seal counts (tests below)
     op = next(o for o, r in by_op.items() if r == {"scribe"})
     a, b, _c = sorted(n for n in names if n.startswith(op + "_"))
     card = chapter(w, "1")["card"]
     cites = E.pick_cites(w, "1")
-    with w.tools(a) as t:
-        assert t.write(E.scripted_passage(card), cites)["success"]
-    with w.tools(b) as t:
-        r = t.write(E.scripted_passage(card), cites)
-    assert not r["success"] and "409" in r["error"] and "acts first" in str(r["detail"])
-    with rs.DB_LOCK, rs.get_db() as conn:
-        assert conn.execute("SELECT COUNT(DISTINCT agent_id) FROM chronicle_seals WHERE chapter = '1' AND what = "
-                            "'passage' AND agent_id LIKE ?", (op + "_%",)).fetchone()[0] == 1
-    # a juror operator's second agent cannot add a second voice
-    jop = next(o for o, r in by_op.items() if r == {"juror"})
-    ja, jb, _jc = sorted(n for n in names if n.startswith(jop + "_"))
-    _to(w, 1, 0.40)
-    with w.tools(a) as t:
-        t.reveal()
-    _to(w, 1, 0.65)
-    cands = chapter(w, "1")["candidates"]
-    with w.tools(ja) as t:
-        assert t.vote(cands[0])["success"]
-    with w.tools(jb) as t:
-        r = t.vote(cands[0])
-    assert not r["success"] and "acts first" in str(r["detail"])
+    for n in (a, b):
+        with w.tools(n) as t:
+            assert t.write(E.scripted_passage(card), cites)["success"]
+
+
+def _ranked(w: E.World, c: str, agents: list[str]) -> list[str]:
+    """The agents of one operator, highest-ranked first, from the public inputs only."""
+    inp = chapter(w, c, include="inputs")["inputs"]
+    scope = C.chapter_scope(inp["relay_id"], inp["numbering"], "live")
+    return C.act_order(agents, scope, bytes.fromhex(inp["sigs"]["call"]))
+
+
+def _by_op(names: list[str]) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    for n in names:
+        out.setdefault(n.rsplit("_", 1)[0], []).append(n)
+    return out
+
+
+def _called(w: E.World, names: list[str], per_op_pick):
+    """Activity, the call, then the agents in an order chosen from the draw: `per_op_pick(ranked)` gives the agents of
+    one operator that play, lowest-ranked first."""
+    w.activity(w.start + 0.8 * w.epoch, names)
+    _to(w, 1, 0.04)
+    order = []
+    for agents in _by_op(names).values():
+        order += per_op_pick(_ranked(w, "1", agents))
+    return order
+
+
+def test_the_highest_ranked_agent_of_an_operator_acts_even_when_a_lower_one_sealed_first(mk):
+    w, names = mk(5, per_op=3)
+    order = _called(w, names, lambda ranked: list(reversed(ranked)))      # lowest-ranked wakes and seals first
+    E.play_chapter(w, order, 1)
+    inp = chapter(w, "1", include="inputs")["inputs"]
+    v = chapter(w, "1")["verdict"]
+    sealers = {}
+    for sl in inp["seals"]:
+        sealers.setdefault((sl["what"], next(m["operator"] for m in inp["members"] if m["agent_id"] == sl["agent"])),
+                           []).append(sl["agent"])
+    assert sealers and any(len(x) > 1 for x in sealers.values()), "several agents of one operator sealed"
+    first_was_not_top = 0
+    for (_what, _u), agents in sealers.items():
+        top = _ranked(w, "1", agents)[0]
+        first_was_not_top += agents[0] != top
+        # the opened records are the top one's alone: the others' reveals are refused at the route
+        for rec in (*inp["reveals"], *inp["ballots"]):
+            if rec["agent"] in agents:
+                assert rec["agent"] == top
+    assert first_was_not_top
+    assert v["refused"] and all("higher-drawn" in r["why"] for r in v["refused"])
+    assert v["canon"] and v["reason"] == "canon"
+    assert V.independent_count(inp)["canon"] == L.resolve_inputs(inp)["canon"] == v["canon"]
+    for seals in (list(reversed(inp["seals"])), sorted(inp["seals"], key=lambda x: x["agent"])):
+        again = {**inp, "seals": seals}         # the arrival order of the seals changes nothing, for both
+        assert V.independent_count(again) == V.independent_count(inp)
+        assert L.resolve_inputs(again)["canon"] == v["canon"] and L.resolve_inputs(again)["totals"] == v["totals"]
+    verified(w)
+
+
+def test_the_lower_ranked_agent_counts_when_the_higher_one_did_not_seal(mk):
+    w, names = mk(5, per_op=3)
+    tops: set[str] = set()
+
+    def pick(ranked):
+        tops.add(ranked[0])
+        return list(reversed(ranked[1:]))                              # the top one sleeps
+
+    order = _called(w, names, pick)
+    E.play_chapter(w, order, 1)
+    inp = chapter(w, "1", include="inputs")["inputs"]
+    v = chapter(w, "1")["verdict"]
+    assert not tops & {s["agent"] for s in inp["seals"]}
+    for rec in (*inp["reveals"], *inp["ballots"]):
+        agents = next(x for x in _by_op(names).values() if rec["agent"] in x)
+        assert rec["agent"] == _ranked(w, "1", [a for a in agents if a not in tops])[0]
+    assert v["canon"] and V.independent_count(inp)["canon"] == L.resolve_inputs(inp)["canon"] == v["canon"]
+    verified(w)
+
+
+def test_an_agent_sees_its_own_rank_and_no_public_read_shows_one(mk):
+    w, names = mk(5, per_op=3)
+    w.activity(w.start + 0.8 * w.epoch, names)
+    _to(w, 1, 0.04)
+    for agents in _by_op(names).values():
+        ranked = _ranked(w, "1", agents)
+        for place, a in enumerate(ranked, 1):
+            rank = _view(w, a)["rank"]
+            assert rank["place"] == place and rank["of"] == 3
+            assert f"{place}" in rank["note"] and "for your operator this chapter" in rank["note"]
+            if place > 1:
+                assert "do not seal" in rank["note"]
+    scribe_op = next(a for a in _by_op(names).values() if _view(w, a[0])["role"] == "scribe")
+    ranked = _ranked(w, "1", scribe_op)
+    with w.tools(ranked[-1]) as t:
+        assert t.write(E.scripted_passage(chapter(w, "1")["card"]), E.pick_cites(w, "1"))["success"]
+    assert _view(w, ranked[0])["due"] == "write", "a lower-ranked agent sealing first does not take the turn away"
+    assert _view(w, ranked[-1])["due"] != "write"
+    public = [w.get("/chronicle").text, w.get("/chronicle/chapters").text, w.get("/chronicle/chapters/1").text,
+              w.get("/chronicle/chapters/1", include="inputs").text]
+    assert all('"rank"' not in t and "for your operator" not in t for t in public)
+    solo, solo_names = mk(5)
+    solo.activity(solo.start + 0.8 * solo.epoch, solo_names)
+    _to(solo, 1, 0.04)
+    assert "rank" not in _view(solo, solo_names[0])
 
 
 def test_farm_stacking_fresh_labels_a_late_agent_has_no_seat_and_a_new_label_weighs_a_tenth(mk):

@@ -495,8 +495,9 @@ def test_a_quiet_day_calls_no_chapter():
 def test_the_records_the_rules_refuse_are_listed_not_dropped():
     run = Run(mk_members(8, per=2))
     s, j = run.seats.scribes, run.seats.jurors
-    p0 = run.passage(s[0])
-    run.passage(s[0], post="pst_other", agent=run.agent(s[0], 1))                 # the second agent of one operator
+    top, low = C.act_order(run.by_unit[s[0]], run.scope, SIGS["call"])[:2]
+    p0 = run.passage(s[0], agent=top)
+    run.passage(s[0], post="pst_other", agent=low)                                # a lower-drawn agent of one operator
     run.passage(s[1], nonce="a" * 64)
     run.reveals[-1]["nonce"] = "b" * 64                                           # a reveal that is not the commitment
     run.passage(s[2], seal_at=run.w["open"][0] + 1)                               # sealed after the write window
@@ -509,7 +510,7 @@ def test_the_records_the_rules_refuse_are_listed_not_dropped():
     run.pick(j[3], p0, reason="x" * 141)                                          # a reason over 140
     v = run.resolve()
     why = {(r["what"], r["why"]) for r in v["refused"]}
-    assert ("passage", "another agent of this operator acts first") in why
+    assert ("passage", "a higher-drawn agent of this operator acts for it") in why
     assert ("reveal", "does not match the commitment") in why
     assert ("passage", "outside the write window") in why and ("passage", "no seat for this") in why
     assert ("pick", "no seat for this") in why and ("ballot", "does not match the commitment") in why
@@ -526,13 +527,27 @@ def test_an_alternate_that_sealed_a_passage_may_not_pick():
     assert ("pick", "no seat for this") in {(r["what"], r["why"]) for r in v["refused"]}
 
 
-def test_one_voice_per_operator_the_first_agent_to_seal_acts():
+def test_one_voice_per_operator_the_highest_ranked_agent_to_seal_acts_whoever_sealed_first():
     run = Run(mk_members(8, per=3))
     s = run.seats.scribes[0]
-    a1, a2 = run.agent(s, 1), run.agent(s, 0)
-    run.passage(s, post="pst_one", agent=a1)
-    run.passage(s, post="pst_two", agent=a2)
-    assert run.resolve()["candidates"] == ["pst_one"]
+    scope = C.chapter_scope("r", run.numbering, "live")
+    ranked = C.act_order(run.by_unit[s], scope, SIGS["call"])
+    # the lowest-ranked seals first, then the top one: the top one's seal counts
+    run.passage(s, post="pst_low", agent=ranked[-1])
+    run.passage(s, post="pst_top", agent=ranked[0])
+    assert run.resolve()["candidates"] == ["pst_top"]
+    # the top one asleep: of the others, the higher-ranked counts, even when the lower sealed first
+    run = Run(mk_members(8, per=3))
+    run.passage(s, post="pst_low", agent=ranked[2])
+    run.passage(s, post="pst_mid", agent=ranked[1])
+    v = run.resolve()
+    assert v["candidates"] == ["pst_mid"]
+    assert any(r["agent"] == ranked[2] and "higher-drawn" in r["why"] for r in v["refused"])
+    # the same agent re-sealing keeps the last seal
+    run = Run(mk_members(8, per=3))
+    run.passage(s, post="pst_old", agent=ranked[1], reveal=False)
+    run.passage(s, post="pst_new", agent=ranked[1])
+    assert run.resolve()["candidates"] == ["pst_new"]
 
 
 # ---------------------------------------------------------------- teams

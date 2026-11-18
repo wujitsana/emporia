@@ -109,7 +109,7 @@ class Chronicle:
         if status != 200:
             return {"success": False, "error": f"Relay {status}", "detail": d.get("detail", d)}
         out.update({k: d[k] for k in ("joined", "chapter", "label", "mode", "practice", "phase", "role", "due",
-                                      "seconds_left", "thin_jury", "sealed", "opened", "note", "post_form",
+                                      "seconds_left", "thin_jury", "rank", "sealed", "opened", "note", "post_form",
                                       "windows") if k in d})
         if not d.get("joined"):
             out["next"] = "chronicle(join=True) to take part: the beacon then seats you as scribe or juror"

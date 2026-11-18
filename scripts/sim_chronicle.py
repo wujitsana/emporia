@@ -237,6 +237,11 @@ def crit1(chapters: int = 1000, seed: int = 11) -> dict:
             "pass": not bad}
 
 
+def _act(scope, sigs, agent):
+    """The draw that ranks one operator's agents (lowest acts): the beacon on "act:" + agent id."""
+    return (rand.rand(scope, "act:" + agent, sigs["call"]), agent)
+
+
 def _play_and_truth(rng, idx, numbering, mode, roster, window, sigs, call_ts, rec):
     scope = f"chronicle:r:{numbering['n'] if mode == 'live' else 'pp-' + str(numbering['n'])}"
     w = C.windows(call_ts, DAY)
@@ -282,7 +287,11 @@ def _play_and_truth(rng, idx, numbering, mode, roster, window, sigs, call_ts, re
         n = seal_passage(u, agent, post, acts == "bad")
         pseal_units.add(u)
         if len(pool) > 1 and not is_team and rng.random() < 0.4:
-            seal_passage(u, [a for a in pool if a != agent][0], post + "_other", False)    # refused: another agent first
+            # another agent of the operator seals too (later); the one the beacon ranks higher acts for the unit
+            other = [a for a in pool if a != agent][0]
+            n2 = seal_passage(u, other, post + "_other", False)
+            if _act(scope, sigs, other) < _act(scope, sigs, agent):
+                agent, post, n = other, post + "_other", n2
         if acts == "missed":
             continue
         text = valid_passage(card)
@@ -311,6 +320,14 @@ def _play_and_truth(rng, idx, numbering, mode, roster, window, sigs, call_ts, re
         pick = rng.choice(cands + ["none"] * (2 if cands else 1)) if cands else "none"
         n = nonce()
         rec["seals"].append({"agent": agent, "what": "pick", "commitment": C.pick_commitment(pick, "", None, n), "at": w["pick"][0] + 5})
+        is_team = mode == "live" and any(by_agent[a].team for a in agents_of[u])
+        if len(agents_of[u]) > 1 and not is_team and rng.random() < 0.4:
+            other = [a for a in agents_of[u] if a != agent][0]          # a second agent seals a pick; higher rank acts
+            n2 = nonce()
+            rec["seals"].append({"agent": other, "what": "pick", "commitment": C.pick_commitment(pick, "", None, n2),
+                                 "at": w["pick"][0] + 6})
+            if _act(scope, sigs, other) < _act(scope, sigs, agent):
+                agent, n = other, n2
         if acts == "missed":
             continue
         rec["ballots"].append({"agent": agent, "pick": pick, "reason": "", "recap": None,
@@ -532,13 +549,16 @@ def xp_redteam(seed: int = 9, chapters: int = 60, rules: C.XpRules = C.XpRules()
         cites = [anchors[0], next(e["ref"] for e in window if e["ref"] != anchors[0])]
         seals, reveals, ballots = [], [], []
         quality = {}
+        acts_k: dict[str, int] = {}
         for u in seats.scribes:
-            for k, a in enumerate(unit_agents[u]):               # every agent of the unit tries; the first acts
+            acting = min(range(len(unit_agents[u])), key=lambda k: _act(scope, sigs, unit_agents[u][k]))
+            for k, a in enumerate(unit_agents[u]):               # every agent of the unit tries; the top-ranked acts
                 post, n = f"pst{ch}_{u}_{k}", "%064x" % rng.getrandbits(256)
                 seals.append({"agent": a, "what": "passage", "commitment": C.passage_commitment(post, n), "at": w["write"][0] + 1 + k})
                 reveals.append({"agent": a, "post_id": post, "text": valid_passage(card), "cites": cites, "nonce": n, "at": w["open"][0] + 1})
-            quality[f"pst{ch}_{u}_0"] = skill[u] + rng.gauss(0, 1)
-        pid = {u: f"pst{ch}_{u}_0" for u in seats.scribes}
+            quality[f"pst{ch}_{u}_{acting}"] = skill[u] + rng.gauss(0, 1)
+            acts_k[u] = acting
+        pid = {u: f"pst{ch}_{u}_{acts_k[u]}" for u in seats.scribes}
         for u in seats.jurors:
             for k, a in enumerate(unit_agents[u]):
                 perceived = {p: q + rng.gauss(0, SIG) for p, q in quality.items()}

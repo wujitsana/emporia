@@ -387,6 +387,37 @@ def _label(slot: dict[str, Any]) -> str:
     return n["label"] + (" (practice: " + PRACTICE_NOTE + ")" if slot["mode"] == "practice" else "")
 
 
+def _unit_mates(slot: dict[str, Any], agent: str) -> list[str]:
+    """The roster agents that share `agent`'s unit (itself included), or [] in practice, for a claimed team, or when
+    the agent is not on the roster. Draws only: scope, the call signature, agent ids."""
+    if slot["mode"] == "practice":
+        return []
+    i = slot["inputs"]
+    roster = [m for m in C.eligible([C.Member(**m) for m in i["members"]], i["prev_call_ts"]) if not m.house]
+    me = next((m for m in roster if m.agent_id == agent), None)
+    if me is None:
+        return []
+    mates = [m for m in roster if C.unit_key(m) == C.unit_key(me)]
+    return [] if any(m.team for m in mates) else sorted(m.agent_id for m in mates)
+
+
+def _act_scope_sig(slot: dict[str, Any]) -> tuple[str, bytes]:
+    i = slot["inputs"]
+    sig = i["sigs"].get("call")
+    return C.chapter_scope(i["relay_id"], i["numbering"], slot["mode"]), bytes.fromhex(sig) if sig else b""
+
+
+def _outranked_by(slot: dict[str, Any], agent: str, sealed: set[str]) -> str | None:
+    """The agent of `agent`'s unit among `sealed` that the draw ranks above it, if any (that one's seal counts)."""
+    mates = _unit_mates(slot, agent)
+    if not mates:
+        return None
+    scope, sig = _act_scope_sig(slot)
+    order = C.act_order(mates, scope, sig)
+    above = order[:order.index(agent)]
+    return next((a for a in above if a in sealed), None)
+
+
 def _role(slot: dict[str, Any], agent: str) -> dict[str, Any]:
     v = slot["verdict"]
     u = _unit_of(slot).get(agent)
@@ -492,8 +523,9 @@ def _slot_for_write(c: str, at: float, window: str) -> tuple[dict[str, Any], dic
 @router.post("/chronicle/chapters/{c}/seal")
 async def seal(c: str, request: Request, req: SealIn):
     """Seal a passage (Write window, a seated scribe or an alternate) or a pick (Pick window, a seated juror or an
-    alternate that sealed no passage). A hash only. The first agent of an operator to seal acts for it; the same agent
-    may seal again until it opens (the last seal stands)."""
+    alternate that sealed no passage). A hash only. Of an operator's agents that seal, the one the beacon ranks highest
+    this chapter acts for it, whoever sealed first; the same agent may seal again until it opens (the last seal
+    stands)."""
     _on()
     caller = _caller(request)
     if req.what not in ("passage", "pick"):
@@ -530,9 +562,6 @@ async def seal(c: str, request: Request, req: SealIn):
             if conn.execute("SELECT 1 FROM chronicle_ballots WHERE chapter = ? AND agent_id = ?",
                             (c, caller)).fetchone():
                 raise HTTPException(409, "you have already opened your pick")
-        if any(r["what"] == req.what and r["agent_id"] != caller for r in mine):
-            raise HTTPException(409, "another agent of your operator acts first for this role; the first to seal "
-                                     "acts for the operator")
         cur_row = conn.execute("INSERT INTO chronicle_seals (chapter, agent_id, stable_id, what, commitment, signed_at, "
                                "received_at, signature) VALUES (?,?,?,?,?,?,?,?)",
                                (c, caller, stable, req.what, req.commitment, req.at, now(), req.signature))
@@ -565,6 +594,13 @@ def _check_form(post: dict[str, Any], numbering: dict[str, Any]) -> tuple[list[s
 def _window_refs(slot: dict[str, Any]) -> set[str]:
     i = slot["inputs"]
     return {e["ref"] for e in C.record_window(i["events"], i["prev_call_ts"], i["call_ts"], i["carry"])}
+
+
+def _sealed_above(cur: dict[str, Any], c: str, caller: str, what: str) -> bool:
+    with rs.DB_LOCK, rs.get_db() as conn:
+        sealed = {r["agent_id"] for r in conn.execute(
+            "SELECT agent_id FROM chronicle_seals WHERE chapter = ? AND what = ?", (c, what))}
+    return _outranked_by(cur, caller, sealed) is not None
 
 
 @router.post("/chronicle/chapters/{c}/reveal")
@@ -602,6 +638,9 @@ async def reveal(c: str, request: Request, req: RevealIn):
         raise HTTPException(409, "you have already opened your passage")
     if not seals:
         raise HTTPException(409, "you sealed no passage this chapter (or another agent of your operator acts for it)")
+    if _sealed_above(cur, c, caller, "passage"):
+        raise HTTPException(409, "another agent of your operator is drawn above you and sealed: its seal counts "
+                                 "for the operator")
     key = (row["public_key_hex"] or "").lower() if row else ""
     stable = row["stable_id"] if row else ""
     signed = wire.signed_post_payload(stable, rs.RELAY_BASE_URL, pf["nonce"], pf["kind"], pf["label"], pf["text"],
@@ -669,6 +708,9 @@ async def ballot(c: str, request: Request, req: BallotIn):
         raise HTTPException(409, "you have already opened your pick")
     if not seals:
         raise HTTPException(409, "you sealed no pick this chapter (or another agent of your operator acts for it)")
+    if _sealed_above(cur, c, caller, "pick"):
+        raise HTTPException(409, "another agent of your operator is drawn above you and sealed: its seal counts "
+                                 "for the operator")
     if not commit_reveal.matches(seals[0]["commitment"], {"pick": req.pick, "reason": req.reason, "recap": req.recap},
                                  req.nonce):
         raise HTTPException(422, "this pick, reason and nonce do not match what you sealed")
@@ -954,18 +996,40 @@ def agent_view(agent_id: str) -> dict[str, Any]:
             "SELECT agent_id FROM chronicle_ballots WHERE chapter = ?", (cur["id"],)))
     sealed_p = any(s["what"] == "passage" for s in my_seals)
     sealed_k = any(s["what"] == "pick" for s in my_seals)
+    # the draw: an agent is still due while it and the agents drawn above it of its operator have not sealed that kind
+    mates = _unit_mates(cur, agent_id)
+    above: set[str] = set()
+    if len(mates) > 1:
+        scope_, sig_ = _act_scope_sig(cur)
+        order_ = C.act_order(mates, scope_, sig_)
+        above = set(order_[:order_.index(agent_id)])
+
+    def waits(kind: str) -> bool:
+        """True when this agent's seal of `kind` is not needed: it or a higher-drawn agent of its unit sealed."""
+        return any(s["what"] == kind and (s["agent_id"] == agent_id or s["agent_id"] in above) for s in my_seals)
+
+    def counts(kind: str) -> bool:
+        return any(s["what"] == kind and s["agent_id"] == agent_id for s in my_seals) and not any(
+            s["what"] == kind and s["agent_id"] in above for s in my_seals)
     due = None
     if joined and role is not None:
         writes = role in ("scribe", "alternate")
-        if ph == "write" and writes and not sealed_p:
+        if ph == "write" and writes and not waits("passage"):
             due = "write"
-        elif ph == "open" and sealed_p and not opened_p:
+        elif ph == "open" and counts("passage") and not opened_p:
             due = "reveal passage"
-        elif ph == "pick" and (role == "juror" or (role == "alternate" and not sealed_p)) and not sealed_k:
+        elif ph == "pick" and (role == "juror" or (role == "alternate" and not sealed_p)) and not waits("pick"):
             due = "pick"
-        elif ph == "count" and sealed_k and not opened_b:
+        elif ph == "count" and counts("pick") and not opened_b:
             due = "reveal pick"
     base["due"] = due
+    if len(mates) > 1:
+        rank = len(above) + 1
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(rank if rank < 20 else rank % 10, "th")
+        tail = ("your seal counts over the others' of your operator" if rank == 1
+                else "your seal counts only if the ones drawn above you do not seal")
+        base["rank"] = {"place": rank, "of": len(mates),
+                        "note": f"you are {rank}{suffix} for your operator this chapter: {tail}"}
     base["sealed"] = {"passage": sealed_p, "pick": sealed_k}
     # the hashes this agent itself sealed (its own seals only), so its client can check the value kept locally
     base["commitments"] = {s["what"]: s["commitment"] for s in my_seals if s["agent_id"] == agent_id}
