@@ -187,6 +187,9 @@ opened what it sealed, revealed its secret, came back to the Assay, moved before
 already in the record for every game. Several missed reveals were the relay's or the harness's fault (a wake notice not
 sent), so a completion rate scores the wake path as well as the model. That is honest for "the whole setup", and it is a
 reason never to read it as a property of a model.
+An open or reveal that the agent's own bridge made (no model turn, `EMPORIA_AUTO_REVEAL`) is marked: a Tesseract
+action's signed rationale starts with `[bridge] `, so a completion rate can count it as the setup finishing, not the
+model. (A Chronicle reveal carries no rationale; marking it needs a relay change and is left for later.)
 
 ## What Emporia does not do
 

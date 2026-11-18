@@ -36,6 +36,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import uuid
 from typing import Any, TextIO
 
@@ -53,10 +54,11 @@ TOOLS_LINE = ("tools: mcp__emporia__<name>; use tool_describe for one you need (
 logger = logging.getLogger("emporia.bridge")
 
 
-def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "", limits: Any = None) -> str | None:
+def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "", limits: Any = None, note: str = "") -> str | None:
     """The stdout line for one relay frame, or None when there is nothing to say.
     `relay`: the host of a visited relay; "" for home. `limits`: a `limits.LimitsLine`; the agent's own
-    `limits:` line is then the last line of the notice."""
+    `limits:` line is then the last line of the notice. `note`: one line of the bridge's own (constant text built
+    from numbers: what it did for the agent since the last notice, such as an automatic open)."""
     notice = format_frame(frame, agent_id, relay)
     if notice is None:
         return None
@@ -66,6 +68,8 @@ def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "", limits: A
         from emporia.wire import plain_host
         topic = f"{topic}@{plain_host(relay) or 'invalid-host'}"
     text = f"[on {relay}] {notice.text}" if relay else notice.text
+    if note:
+        text += f"\n  done for you: {note}"
     if limits is not None:
         try:
             own = limits.line(frame, notice.frame_type, notice.sender, topic or "", relay)
@@ -90,8 +94,43 @@ def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "", limits: A
     })
 
 
+def build_autoreveal(relay_url: str, agent_id: str):
+    """The agent's automatic opens (`emporia.autoreveal`), over the code its own tools run, or None when the person
+    turned it off. The tools' module (`mcp_server`) is imported on first use, in a thread, and pointed at this agent
+    and its home relay; its key directory is the one this process was handed (the agent's own)."""
+    from emporia import autoreveal
+    if not autoreveal.enabled():
+        logger.info("auto-reveal is off (%s): opens and reveals are model turns", autoreveal.SETTING)
+        return None
+    holder: dict[str, Any] = {}
+    guard = threading.Lock()
+    tools_relay = os.environ.get("EMPORIA_RELAY_URL") or relay_url      # the URL as the agent's tools see it
+
+    def server():
+        with guard:
+            if "m" not in holder:
+                from emporia.identity import KEY_DIR
+                os.environ.setdefault("EMPORIA_LOG_DIR", str(KEY_DIR / "bridge-logs"))   # not a folder in the gateway's cwd
+                from emporia import mcp_server as m
+                m.AGENT_ID = agent_id
+                if not m.RELAY_URL:
+                    m.RELAY_URL = relay_url
+                holder["m"] = m
+            return holder["m"]
+
+    def local() -> tuple[list[str], bool]:
+        """Local files only until something is there: the tables with a sealed push kept here, and whether a
+        Chronicle passage or pick is."""
+        from emporia.identity import KEY_DIR
+        sessions = autoreveal.local_tesseract_sessions(agent_id, KEY_DIR / "commitments", tools_relay)
+        return sessions, autoreveal.local_chronicle_waits(agent_id, KEY_DIR / "commitments", tools_relay)
+
+    return autoreveal.AutoReveal(agent_id, table=lambda: server()._tesseract_table(),
+                                 chronicle=lambda: server()._chronicle_client(), local=local, log=logger.info)
+
+
 async def run(relay_url: str, agent_id: str, profile_id: str | None,
-              out: TextIO = sys.stdout, poll_seconds: float = 30.0, clock=None) -> None:
+              out: TextIO = sys.stdout, poll_seconds: float = 30.0, clock=None, auto: Any = False) -> None:
     from emporia import wake
     from emporia.addresses import host_of
     from emporia.visits import visiting
@@ -99,12 +138,16 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
     wake_mode, listed = wake.current(), wake.allowlist()
     watch = wake.Watch(os.environ.get("EMPORIA_DOTENV", ""))
     limits = LimitsLine(agent_id)
+    if auto is False:           # (a test passes its own, or None)
+        auto = build_autoreveal(relay_url, agent_id)
+    looking: list[asyncio.Task] = []                 # at most one periodic pass at a time
     brake = wake.ThreadBrake(clock=clock)
     held: dict[str, dict[str, Any]] = {}          # per thread: the newest frame the brake held back
     timers: dict[str, asyncio.Task] = {}          # per thread: the one re-delivery timer
 
     async def deliver(frame: dict[str, Any], notice, relay: str, key: str | None) -> bool:
-        line = await asyncio.to_thread(notice_line, frame, agent_id, relay, limits)   # may read the relay once a minute
+        done_for = auto.note_for(str(frame.get("session_id") or "")) if auto is not None and not relay else ""
+        line = await asyncio.to_thread(notice_line, frame, agent_id, relay, limits, done_for)   # may read the relay once a minute
         if line is None:
             return False
         out.write(line + "\n")
@@ -138,6 +181,8 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
         async def on_frame(frame: dict[str, Any]) -> bool:
             """Whether the frame was passed on to the agent (P232: then it is read)."""
             from emporia import playbook
+            if auto is not None and not relay and await asyncio.to_thread(auto.frame, frame):
+                return True        # the step it names was done here, with what the agent sealed: no model turn
             if not playbook.wakes_for(playbook.current(), frame):      # P297: its person's bounds
                 logger.info("playbook: not waking for a %s", frame.get("type"))
                 return False
@@ -178,10 +223,12 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
             if tunnels[home].done():
                 return
             wake_mode, listed = await _reread_wake(watch, wake_mode, listed, out)
+            if auto is not None and not (looking and not looking[0].done()):
+                looking[:] = [asyncio.create_task(asyncio.to_thread(auto.look))]   # finishes what a restart cut off
             await asyncio.to_thread(_check_local_relay, home)      # P285: a relay that crashed comes back
             await asyncio.sleep(poll_seconds)
     finally:
-        for task in [*tunnels.values(), *timers.values()]:
+        for task in [*tunnels.values(), *timers.values(), *looking]:
             task.cancel()
 
 

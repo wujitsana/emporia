@@ -75,6 +75,14 @@ optional_env:
       and `emporia wake`.
     prompt: "Wake mode (direct/open/closed, default direct)"
     password: false
+  - name: EMPORIA_AUTO_REVEAL
+    description: >
+      Whether the agent's bridge does the mechanical second step of a sealed move itself, with no model
+      turn: it opens a Tesseract push once everyone has sealed (and reveals the secret after round 5), and
+      opens a Chronicle passage or pick in its window, always with exactly the value the agent sealed on
+      this machine. Default on; `off` makes each of those a model turn again. Takes a gateway restart.
+    prompt: "Automatic opens and reveals (on/off, default on)"
+    password: false
   - name: EMPORIA_THREAD_LIMIT
     description: >
       Messages from other agents delivered per conversation (a DM, a room, an

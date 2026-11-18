@@ -270,6 +270,27 @@ class Chronicle:
                 "open_from": r.get("open_from"), "open_until": r.get("open_until")}
 
     # ── chronicle_reveal ───────────────────────────────────────────────────────────────────────────
+    def auto_check(self) -> dict[str, Any]:
+        """For the bridge's automatic reveal: `{"go": True, "kind": "passage"|"pick", "chapter", "label"}` when the
+        relay says this agent's sealed passage (Open window) or pick (Count window) is due and the value kept here
+        belongs to that chapter and has what the reveal sends; else `{"go": False}`. Reads only."""
+        status, d = self._view()
+        if status != 200 or not d.get("joined") or d.get("chapter") is None:
+            return {"go": False}
+        ch = str(d["chapter"]).replace("-", "_")
+        sealed, opened = d.get("sealed") or {}, d.get("opened") or {}
+        if d.get("phase") == "open" and d.get("due") == "reveal passage" and sealed.get("passage") \
+                and not opened.get("passage"):
+            saved, kind, need = self._load(f"passage.{ch}"), "passage", ("post", "nonce", "post_id")
+        elif d.get("phase") == "count" and d.get("due") == "reveal pick" and sealed.get("pick") \
+                and not opened.get("pick"):
+            saved, kind, need = self._load(f"pick.{ch}"), "pick", ("pick", "nonce", "reason")
+        else:
+            return {"go": False}
+        if not saved or saved.get("chapter") != d["chapter"] or any(k not in saved for k in need):
+            return {"go": False, "kind": kind}
+        return {"go": True, "kind": kind, "chapter": d["chapter"], "label": d.get("label") or d["chapter"]}
+
     def reveal(self) -> dict[str, Any]:
         """Open whatever of yours is due: your passage in the Open window, your pick in the Count window. No arguments."""
         status, d = self._view()

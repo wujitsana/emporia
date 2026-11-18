@@ -935,3 +935,66 @@ def test_the_book_page_adds_no_dashboard_write():
         for line in [ln for ln in text.splitlines() if "/chronicle" in ln]:
             assert not re.search(r"post|put|delete|patch|method", line, re.I), (p, line)
 
+
+
+# ── the bridge opens what the agent sealed (no model turn): autoreveal over the real client ─────────────
+
+def test_the_bridge_reveals_a_sealed_passage_and_a_sealed_pick_in_their_windows(mk):
+    from emporia import autoreveal
+    w, names = mk(6)
+    w.activity(w.start + 0.8 * w.epoch, names)
+    _to(w, 1, 0.04)
+    rl = roles(w, names)
+    scribes = [n for n, r in rl.items() if r == "scribe"]
+    jurors = [n for n, r in rl.items() if r == "juror"]
+    card = chapter(w, "1")["card"]
+    cites = E.pick_cites(w, "1")
+    for n in scribes:
+        with w.tools(n) as t:
+            assert t.write(E.scripted_passage(card), cites)["success"]
+
+    def auto_for(n: str, logs: list):
+        def book():
+            return t.m._chronicle_client()
+        return autoreveal.AutoReveal(n, table=lambda: None, chronicle=book, local=lambda: ([], True),
+                                     log=lambda msg, *a: logs.append(msg % a))
+
+    logs: list[str] = []
+    _to(w, 1, 0.20)                                   # still the Write window: nothing is due, nothing is sent
+    with w.tools(scribes[0]) as t:
+        assert auto_for(scribes[0], logs).chronicle() == "skipped"
+    _to(w, 1, 0.40)                                   # the Open window
+    for n in scribes:
+        with w.tools(n) as t:
+            a = auto_for(n, logs)
+            assert a.chronicle() == "done"
+            assert a.chronicle() == "skipped"         # a second pass finds nothing due and sends nothing
+            assert _view(w, n)["opened"]["passage"]
+    assert len([line for line in logs if line.startswith("auto-reveal")]) == 3
+    _to(w, 1, 0.65)
+    cands = chapter(w, "1")["candidates"]
+    for n in jurors:
+        with w.tools(n) as t:
+            assert t.vote(cands[0], "it follows")["success"]
+    _to(w, 1, 0.80)                                   # the Count window
+    for n in jurors:
+        with w.tools(n) as t:
+            assert auto_for(n, logs).chronicle() == "done"
+            assert _view(w, n)["opened"]["pick"]
+    w.clock.at(w.start + 1.95 * w.epoch)
+
+
+def test_the_bridge_leaves_a_passage_alone_when_the_value_kept_here_is_gone(mk):
+    from emporia import autoreveal
+    w, names = mk(6)
+    w.activity(w.start + 0.8 * w.epoch, names)
+    _to(w, 1, 0.04)
+    scribe = next(n for n, r in roles(w, names).items() if r == "scribe")
+    with w.tools(scribe) as t:
+        assert t.write(E.scripted_passage(chapter(w, "1")["card"]), E.pick_cites(w, "1"))["success"]
+        t.m._chronicle_client()._path("passage.1").unlink()      # sealed from another install
+        _to(w, 1, 0.40)
+        a = autoreveal.AutoReveal(scribe, table=lambda: None, chronicle=lambda: t.m._chronicle_client(),
+                                  local=lambda: ([], True), log=lambda *x: None)
+        assert a.chronicle() == "skipped"
+        assert not _view(w, scribe)["opened"]["passage"]
