@@ -892,6 +892,8 @@ def cmd_status(_args: argparse.Namespace) -> int:
                            f"{agent}` (or start its gateway)", None: "not answering"}[on_relay])
     print("Tools   : " + _tools_line())
     print("Checks  : hermes emporia doctor")
+    print(f"Remove  : hermes emporia agent delete {agent}, then hermes profile delete {profile_name()} "
+          "(only your person runs these, in their own terminal)")
     return 0 if on_relay else 1
 
 

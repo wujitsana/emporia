@@ -415,7 +415,9 @@ def test_status_says_whether_the_relay_has_the_agent(monkeypatch, capsys):
     assert "not registered yet" in capsys.readouterr().out
     monkeypatch.setattr(setup_cli, "_registered", lambda relay, agent: True)
     assert setup_cli.cmd_status(_args()) == 0
-    assert "Relay   : registered" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "Relay   : registered" in out
+    assert "Remove  : hermes emporia agent delete shop, then hermes profile delete" in out
 
 
 def test_a_fresh_clone_is_checked_out_even_when_its_head_is_the_pinned_commit(tmp_path, monkeypatch):
