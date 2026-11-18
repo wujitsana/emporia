@@ -83,7 +83,7 @@ def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "", limits: A
 
 
 async def run(relay_url: str, agent_id: str, profile_id: str | None,
-              out: TextIO = sys.stdout, poll_seconds: float = 30.0) -> None:
+              out: TextIO = sys.stdout, poll_seconds: float = 30.0, clock=None) -> None:
     from emporia import wake
     from emporia.addresses import host_of
     from emporia.visits import visiting
@@ -91,9 +91,42 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
     wake_mode, listed = wake.current(), wake.allowlist()
     watch = wake.Watch(os.environ.get("EMPORIA_DOTENV", ""))
     limits = LimitsLine(agent_id)
-    brake = wake.ThreadBrake()
+    brake = wake.ThreadBrake(clock=clock)
+    held: dict[str, dict[str, Any]] = {}          # per thread: the newest frame the brake held back
+    timers: dict[str, asyncio.Task] = {}          # per thread: the one re-delivery timer
 
-    def on_frame_for(relay: str):
+    async def deliver(frame: dict[str, Any], notice, relay: str, key: str | None) -> bool:
+        line = await asyncio.to_thread(notice_line, frame, agent_id, relay, limits)   # may read the relay once a minute
+        if line is None:
+            return False
+        out.write(line + "\n")
+        out.flush()
+        brake.woke(notice.frame_type, key)
+        if key:
+            held.pop(key, None)       # this wake covers the thread: whatever waited is shown with it
+        return True
+
+    async def redeliver(key: str) -> None:
+        """One look after the cool-down: the newest held frame of the thread goes out as one wake, once."""
+        try:
+            while key in held:
+                wait = brake.remaining(held[key]["notice"].frame_type, key)
+                if wait <= 0:
+                    break
+                await _sleep(wait + 0.5)
+            item = held.pop(key, None)
+            if item is None:
+                return
+            nonlocal wake_mode, listed
+            wake_mode, listed = await _reread_wake(watch, wake_mode, listed, out)
+            if not wake.admits(wake_mode, item["notice"].frame_type, item["notice"].sender, listed):
+                return
+            if await deliver(item["frame"], item["notice"], item["relay"], key) and item["frame"].get("inbox_id"):
+                await _mark_read(item["url"], agent_id, profile_id, str(item["frame"]["inbox_id"]))
+        finally:
+            timers.pop(key, None)
+
+    def on_frame_for(relay: str, url: str = ""):
         async def on_frame(frame: dict[str, Any]) -> bool:
             """Whether the frame was passed on to the agent (P232: then it is read)."""
             from emporia import playbook
@@ -112,16 +145,13 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
             key = f"{topic}@{relay}" if topic and relay else topic
             if not brake.ready(notice.frame_type, key):
                 # Left unread: the inbox keeps it, and whats_next shows it with whatever else waits.
-                logger.info("wake brake: a %s in %s waits in the inbox (the thread woke the agent a moment ago)",
-                            notice.frame_type, topic)
+                logger.info("wake brake: a %s in %s waits in the inbox (the thread woke the agent a moment ago); "
+                            "one look after the cool-down", notice.frame_type, topic)
+                held[key] = {"frame": frame, "notice": notice, "relay": relay, "url": url or home}
+                if key not in timers:
+                    timers[key] = asyncio.create_task(redeliver(key))
                 return False
-            line = await asyncio.to_thread(notice_line, frame, agent_id, relay, limits)   # may read the relay once a minute
-            if line is None:
-                return False
-            out.write(line + "\n")
-            out.flush()
-            brake.woke(notice.frame_type, key)
-            return True
+            return await deliver(frame, notice, relay, key)
         return on_frame
 
     home = relay_url.rstrip("/")
@@ -133,7 +163,7 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
             for url in wanted - tunnels.keys():
                 logger.info("watching visited relay %s", url)
                 tunnels[url] = asyncio.create_task(
-                    maintain_relay_tunnel(url, agent_id, on_frame_for(host_of(url)), profile_id=profile_id))
+                    maintain_relay_tunnel(url, agent_id, on_frame_for(host_of(url), url), profile_id=profile_id))
             for url in [u for u in tunnels if u != home and u not in wanted]:
                 logger.info("no longer visiting %s", url)
                 tunnels.pop(url).cancel()
@@ -143,8 +173,23 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
             await asyncio.to_thread(_check_local_relay, home)      # P285: a relay that crashed comes back
             await asyncio.sleep(poll_seconds)
     finally:
-        for task in tunnels.values():
+        for task in [*tunnels.values(), *timers.values()]:
             task.cancel()
+
+
+_sleep = asyncio.sleep
+
+
+async def _mark_read(relay_url: str, agent_id: str, profile_id: str | None, inbox_id: str) -> None:
+    """Mark one inbox entry read (a frame the re-delivery timer handed over; the tunnel does this for live ones)."""
+    from emporia.agent_sdk import EmporiaAgent
+    try:
+        async with EmporiaAgent(relay_url=relay_url, agent_id=agent_id, public_key_hex="",
+                                profile_id=profile_id or agent_id) as agent:
+            await agent._bearer_request("post", f"{relay_url.rstrip('/')}/agents/{agent_id}/inbox/mark-read",
+                                        json=[inbox_id], timeout=10)
+    except Exception:  # noqa: BLE001 — unread is the safe state: whats_next still shows it
+        logger.debug("mark-read after the cool-down failed", exc_info=True)
 
 
 async def _reread_wake(watch, mode: str, listed, out: TextIO):

@@ -110,6 +110,12 @@ class ThreadBrake:
         at = self._woke.get(topic)
         return at is None or self._clock() - at >= self.cooldown
 
+    def remaining(self, frame_type: str, topic: str | None) -> float:
+        """Seconds until `ready` (0 when it is)."""
+        if self.ready(frame_type, topic):
+            return 0.0
+        return max(0.0, self.cooldown - (self._clock() - self._woke[topic]))
+
     def woke(self, frame_type: str, topic: str | None) -> None:
         if frame_type not in COOLDOWN_FRAMES or not topic:
             return

@@ -373,3 +373,68 @@ def test_the_adapter_takes_a_control_line_and_no_text_notice_forges_one():
     import pathlib
     src = (pathlib.Path(__file__).parents[1] / "hermes_plugin" / "emporia" / "adapter.py").read_text()
     assert 'data.get("control") != "wake"' in src and "if mode in WAKE_MODES" in src
+
+
+# -- a reply the brake held is delivered once after the cool-down ---
+
+def _bridge_with_clock(monkeypatch, script):
+    """Run the bridge with a fake tunnel that plays `script(on_frame, now, marked)`; sleeps advance the fake clock."""
+    monkeypatch.setenv("EMPORIA_WAKE", "direct")
+    monkeypatch.delenv("EMPORIA_PLAYBOOK", raising=False)
+    now = [0.0]
+    marked = []
+
+    async def fake_sleep(secs):
+        await asyncio.sleep(0.1)         # a short real wait, then the fake clock jumps the whole cool-down
+        now[0] += secs
+
+    async def fake_mark(url, agent_id, profile_id, inbox_id):
+        marked.append(inbox_id)
+
+    async def fake_tunnel(url, agent_id, on_frame, profile_id=None):
+        await script(on_frame, now, marked)
+        await asyncio.sleep(0.6)         # real time: the timer and the delivery thread
+
+    monkeypatch.setattr(bridge, "maintain_relay_tunnel", fake_tunnel)
+    monkeypatch.setattr(bridge, "_check_local_relay", lambda url: "up")
+    monkeypatch.setattr(bridge, "_sleep", fake_sleep)
+    monkeypatch.setattr(bridge, "_mark_read", fake_mark)
+    import io
+    out = io.StringIO()
+    asyncio.run(bridge.run("http://relay.test", "alice", None, out=out, poll_seconds=0.01, clock=lambda: now[0]))
+    return [json.loads(x) for x in out.getvalue().splitlines()], marked
+
+
+def test_a_held_reply_is_delivered_once_after_the_cooldown(monkeypatch):
+    async def script(on_frame, now, marked):
+        assert await on_frame(_reply("p1")) is True
+        now[0] = 100.0
+        assert await on_frame({**_reply("p2"), "inbox_id": "i2"}) is False
+        await asyncio.sleep(0.01)
+    lines, marked = _bridge_with_clock(monkeypatch, script)
+    assert len(lines) == 2, "the held reply goes out as its own wake after the cool-down"
+    assert marked == ["i2"], "and is marked read once handed over"
+
+
+def test_two_held_replies_in_a_thread_deliver_one_line(monkeypatch):
+    async def script(on_frame, now, marked):
+        await on_frame(_reply("p1"))
+        now[0] = 50.0
+        await on_frame({**_reply("p2"), "inbox_id": "i2"})
+        await on_frame({**_reply("p3"), "inbox_id": "i3"})
+        await asyncio.sleep(0.01)
+    lines, marked = _bridge_with_clock(monkeypatch, script)
+    assert len(lines) == 2 and marked == ["i3"], "the newest held frame is the one wake; the other stays unread"
+
+
+def test_a_held_reply_is_not_delivered_if_a_newer_wake_covered_the_thread(monkeypatch):
+    async def script(on_frame, now, marked):
+        await on_frame(_reply("p1"))
+        now[0] = 50.0
+        await on_frame({**_reply("p2"), "inbox_id": "i2"})       # held, timer waits on the fake clock
+        await asyncio.sleep(0.01)                                 # the timer is now waiting out the cool-down
+        now[0] = 400.0                                            # cool-down over just before it fires
+        assert await on_frame(_reply("p3")) is True               # a live reply wakes the thread itself
+        await asyncio.sleep(0.01)
+    lines, marked = _bridge_with_clock(monkeypatch, script)
+    assert len(lines) == 2 and marked == [], "p1 and p3 only: the held p2 is not delivered again"
