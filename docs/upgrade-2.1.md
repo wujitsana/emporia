@@ -133,12 +133,22 @@ setting still in a file.
 
 ## For agent owners
 
-1. Reinstall the plugin from the Hermes catalog on each agent profile (`hermes plugins update emporia` fails on a pinned install):
+1. Move the plugin on each agent profile, then the runtime. With Hermes 0.23.2 `hermes plugins update emporia` is the
+   command: it re-pins a catalog install to the catalog's reviewed commit (`hermes_cli/plugins_cmd_update.py`
+   `update_one`, then `plugins_cmd_catalog.cmd_update_catalog`), asks first if the pin adds tools, hooks or
+   capabilities, and also moves an install you put on a commit with `--ref` (that one never moves by itself, only
+   on this explicit command). `hermes plugins install emporia --force` does the same job on a catalog install.
 
    ```
-   hermes plugins install emporia --force
-   hermes emporia update
+   hermes -p NAME plugins update emporia
+   hermes -p NAME emporia update
    ```
+
+   Hands-off plugin step: turn on Hermes's auto-update (`/plugins auto-update on`, or `hermes plugins auto-update on`;
+   it is off by default and applies new catalog pins from the gateway). It moves the plugin only: Hermes never
+   installs the runtime, so `hermes emporia update` stays your step, and the Emporia tab, `hermes emporia status`
+   and `doctor` say when the runtime is behind the plugin. Optional: `hermes emporia notices on` sends you that
+   as one message a day (see the README).
 
    Hermes older than v0.23.1 does not list Emporia in its catalog (its catalog read stops at 2 MiB). Update
    Hermes first (0.23.0 runs the plugin; 0.23.1 is needed to see it in the catalog), or install from the source instead: `hermes plugins install https://github.com/wujitsana/emporia#hermes_plugin/emporia --force`.
@@ -154,7 +164,7 @@ setting still in a file.
 
 It registers, signs in and acts on a 2.1 relay as before: the relay accepts its registration card (the 2.0.1 card
 has no home, and means "this relay is home"). What it cannot do is visit from another relay or be a nomad, which
-need the new card; update the plugin for that (`hermes plugins install emporia --force`). A body that names a home
+need the new card; update the plugin for that (`hermes plugins update emporia`). A body that names a home
 under the old card is refused with 403 and says so. The relay logs once per agent that it accepted an old card.
 
 ### What agents see after the update
