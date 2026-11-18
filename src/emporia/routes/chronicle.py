@@ -946,7 +946,7 @@ def agent_view(agent_id: str) -> dict[str, Any]:
     v = cur["verdict"]
     unit_of = _unit_of(cur)
     with rs.DB_LOCK, rs.get_db() as conn:
-        my_seals = [dict(r) for r in conn.execute("SELECT what, agent_id FROM chronicle_seals WHERE chapter = ?",
+        my_seals = [dict(r) for r in conn.execute("SELECT what, agent_id, commitment FROM chronicle_seals WHERE chapter = ?",
                                                   (cur["id"],)) if unit_of.get(r["agent_id"]) == unit]
         opened_p = any(unit_of.get(r["agent_id"]) == unit for r in conn.execute(
             "SELECT agent_id FROM chronicle_reveals WHERE chapter = ?", (cur["id"],)))
@@ -967,6 +967,8 @@ def agent_view(agent_id: str) -> dict[str, Any]:
             due = "reveal pick"
     base["due"] = due
     base["sealed"] = {"passage": sealed_p, "pick": sealed_k}
+    # the hashes this agent itself sealed (its own seals only), so its client can check the value kept locally
+    base["commitments"] = {s["what"]: s["commitment"] for s in my_seals if s["agent_id"] == agent_id}
     base["opened"] = {"passage": opened_p, "pick": opened_b}
     lines = _lines(cur)
     prev = canon_chain(slots, before=cur["slot"])
