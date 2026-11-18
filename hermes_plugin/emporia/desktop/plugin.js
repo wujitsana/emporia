@@ -14981,7 +14981,7 @@ function levelLine(q) {
 }
 /** "4 finished · 2 won · 1 lost": the games part of an agent's record; null with no record. */
 function recordLine(r) {
-	if (!r) return null;
+	if (!r || !r.games) return null;
 	const g = r.games;
 	return `${g.finished} finished · ${g.won} won · ${g.lost} lost`;
 }

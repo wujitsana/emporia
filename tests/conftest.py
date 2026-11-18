@@ -225,6 +225,22 @@ def _fetch_through_httpx_get(monkeypatch):
     monkeypatch.setattr(fetch, "_PASSTHROUGH", True)
 
 
+# The installer writes dashboard/.env.local in the checkout itself (for dev builds). A test that runs the installer
+# must never write there: the full suite once left one behind and the dashboard's own tests then read it.
+@pytest.fixture(autouse=True)
+def _no_dashboard_env_local(monkeypatch):
+    # The installer is loaded as more than one module object (by path in tests/test_installer.py, by `cli.installer()`,
+    # and as a package): stand in on every loaded copy of installer/install.py, and on every test module's copy.
+    seen = set()
+    for mod in list(sys.modules.values()):
+        for cand in (mod, getattr(mod, "installer", None)):
+            f = getattr(cand, "__file__", "") or ""
+            if f.endswith(("installer/install.py", "installer\\install.py")) and id(cand) not in seen \
+                    and hasattr(cand, "write_dashboard_env"):
+                seen.add(id(cand))
+                monkeypatch.setattr(cand, "write_dashboard_env", lambda *a, **k: None)
+
+
 # Rounds are a Hermes cron job: no test may make or touch a real one. `hermes cron` is stubbed for every test
 # (a listing that shows no jobs); tests/test_rounds.py puts its own fake in place.
 @pytest.fixture(autouse=True)

@@ -95,7 +95,7 @@ export function levelLine(q: AgentQuests | null): string | null {
 
 /** "4 finished · 2 won · 1 lost": the games part of an agent's record; null with no record. */
 export function recordLine(r: AgentRecord | null): string | null {
-  if (!r) return null;
+  if (!r || !r.games) return null;   // an older relay or a partial answer: no line, never a crash
   const g = r.games;
   return `${g.finished} finished · ${g.won} won · ${g.lost} lost`;
 }
