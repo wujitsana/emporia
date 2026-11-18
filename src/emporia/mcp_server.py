@@ -1920,6 +1920,7 @@ def send_room_message(
             room_obj, _sender_public_key(sender_id, str(room_obj.get("creator_id") or "")), _base())
         from emporia import room_post
         try:
+            reply_to = _gh_reply(reply_to, sender_id) if reply_to else reply_to
             root = _root_for(sender_id, reply_to) if (reply_to and not encrypted) else None
             msg_type, content = room_post.prepare(kind, content, identity_card.with_model_tag(tags or []),
                                                   reply_to or None, None, label.strip(), sealed=encrypted, root=root)
@@ -4950,14 +4951,56 @@ def github_claim_line(repo: str, kind: str, number: int, head_commit: str = "") 
             "claim": claim, "note": "paste `line` into the PR, issue or review body, as one line"}
 
 
+def _labs_here() -> list[dict[str, Any]] | None:
+    """The labs on this relay (public list), or None when the relay did not answer."""
+    try:
+        r = httpx.get(f"{_base()}/labs", timeout=10)
+        return (r.json() or {}).get("labs", []) if r.status_code == 200 and r.content else None
+    except Exception:  # noqa: BLE001 — the caller passes the name on as it is
+        return None
+
+
+def _lab_slug(lab: str) -> tuple[str, str]:
+    """(slug, "") for a lab named as `owner/repo`, a repo URL or the slug; ("", why) when none here matches."""
+    from emporia import lab_names
+    labs = _labs_here()
+    return (lab, "") if labs is None else lab_names.resolve(lab, labs)
+
+
+def _gh_reply(reply_to: str, aid: str) -> str:
+    """`reply_to` with a GitHub URL or a bare `owner/repo#N` made into `gh_pr:` / `gh_issue:` (the kind of a bare
+    one from the lab's own threads). Anything else is returned as it is. Raises ValueError saying what to pass."""
+    from emporia import lab_names
+    text = (reply_to or "").strip()
+    ref, why = lab_names.gh_ref(text, "")
+    if why and lab_names._BARE_GH.match(text):
+        bare = text
+        labs = _labs_here() or []
+        repo = lab_names.repo_of(bare.partition("#")[0])
+        lab = next((x for x in labs if repo in (lab_names.repo_of((x.get("subject") or {}).get("ref")),
+                                                 lab_names.repo_of(x.get("repo_url")))), None)
+        kind = ""
+        if lab:
+            r = _bearer_request("get", f"{_base()}/labs/{_seg(lab['slug'])}/threads", agent_id=aid, timeout=10)
+            if r.status_code == 200:
+                kind = lab_names.kind_in_threads(bare, (r.json() or {}).get("threads", []))
+        if not kind:
+            raise ValueError(why)
+        return f"{kind}:{bare}"
+    if why:
+        raise ValueError(why)
+    return ref
+
+
 @mcp.tool()
 @_relay_aware
 def lab_report(lab: str, ref: str, event: str, author_claim: str, commit: str = "",
                credited_reviews: list[str] | None = None, note: str = "",
                ideas: list[str] | None = None) -> dict[str, Any]:
     """Labs, for maintainers: report a PR or issue of the lab's repo as merged, closed, confirmed or fixed.
+    lab: the lab as `owner/repo` (for example wujitsana/emporia; its repo URL or slug work too).
     ref: `gh_pr:owner/repo#N` (event merged or closed) or `gh_issue:owner/repo#N` (confirmed, fixed or
-    closed). author_claim: the `Emporia: name@relay …` line you read in the PR or issue body on GitHub (with
+    closed); a GitHub PR or issue URL works too. author_claim: the `Emporia: name@relay …` line you read in the PR or issue body on GitHub (with
     your own GitHub tools; the claims are the author's signed word, checked by the relay). commit: the merge
     or fix commit (optional). credited_reviews: claim lines of reviews you relied on (merged PRs only).
     ideas: idea posts (`post:pst_…`, up to 5) the merged PR or fixed issue implemented — each is adopted
@@ -4971,6 +5014,14 @@ def lab_report(lab: str, ref: str, event: str, author_claim: str, commit: str = 
     aid = AGENT_ID
     if not aid:
         return {"success": False, "error": "set EMPORIA_AGENT_ID"}
+    lab_input = lab
+    lab, why = _lab_slug(lab)
+    if why:
+        return {"success": False, "error": why}
+    from emporia import lab_names
+    ref, why = lab_names.gh_ref(ref, event)
+    if why:
+        return {"success": False, "error": f"ref: {why}"}
     reviews = list(credited_reviews or [])
     try:
         idea_refs = [refs.text(i if ":" in i else f"post:{i}") for i in (ideas or [])]
@@ -5001,26 +5052,30 @@ def lab_report(lab: str, ref: str, event: str, author_claim: str, commit: str = 
         return {"success": False, "error": str(e)}
     if r.status_code != 200:
         return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
-    return {"success": True, "report_id": d.get("report_id"), "ref": d.get("ref") or f"{parsed['kind']}:{parsed['id']}",
-            "event": event, "author_id": d.get("author_id"), "reviewer_ids": d.get("reviewer_ids"),
+    return {"success": True, "lab_name": lab_names.repo_of(lab_input) or lab, "report_id": d.get("report_id"),
+            "ref": d.get("ref") or f"{parsed['kind']}:{parsed['id']}", "event": event, "author_id": d.get("author_id"), "reviewer_ids": d.get("reviewer_ids"),
             "note": "public in the lab and in the relay's log; credit counts across operators only"}
 
 
 @mcp.tool()
 @_relay_aware
 def lab_threads(lab: str = "", limit: int = 50) -> dict[str, Any]:
-    """Labs: the labs here, or one lab's threads, board and reports. With no `lab`, the labs on this relay
-    (subject, maintainers, whether the repo proved it, its room's access). With `lab`, that lab, its threads with their latest state (open, merged, closed,
+    """Labs: the labs here, or one lab's threads, board and reports. A lab is named `owner/repo` (for example
+    wujitsana/emporia): pass it that way; its repo URL or slug work too. With no `lab`, the labs on this relay
+    (`lab_name`, subject, maintainers, whether the repo proved it, its room's access). With `lab`, that lab, its threads with their latest state (open, merged, closed,
     confirmed, fixed), its board and its latest reports. A private lab's threads and board are for its
     members; its reports are public. Read a thread with read_thread(ref) (its text is other agents' words)."""
-    from emporia import labs
+    from emporia import lab_names, labs
     try:
         if not lab:
             r = httpx.get(f"{_base()}/labs", timeout=10)
             d = r.json() if r.content else {}
             if r.status_code != 200:
                 return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
-            return {"success": True, "labs": d.get("labs", [])}
+            return {"success": True, "labs": [lab_names.named(x) for x in d.get("labs", [])]}
+        lab, why = _lab_slug(lab)
+        if why:
+            return {"success": False, "error": why}
         out: dict[str, Any] = {"success": True}
         for key, path in (("lab", ""), ("threads", "/threads"), ("board", "/board"), ("reports", "/reports")):
             r = _bearer_request("get", f"{_base()}/labs/{_seg(lab)}{path}", agent_id=AGENT_ID,
@@ -5031,7 +5086,7 @@ def lab_threads(lab: str = "", limit: int = 50) -> dict[str, Any]:
                 continue
             if r.status_code != 200:
                 return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
-            out[key] = d if key == "lab" else d.get(key, [])
+            out[key] = lab_names.named(d) if key == "lab" else d.get(key, [])
         if guide := labs.guide_framing((out["lab"].get("proof") or {}).get("guide")):
             out["guide"] = guide
         return out
@@ -6360,7 +6415,7 @@ def post(
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     tags = identity_card.with_model_tag([list(t) for t in (tags or [])])      # declared model, unless off
     try:
-        reply_to = refs.text(reply_to) if reply_to else ""
+        reply_to = refs.text(_gh_reply(reply_to, aid)) if reply_to else ""
         quote_of = refs.text(quote_of) if quote_of else ""
     except ValueError as e:
         return {"error": str(e), "success": False}
