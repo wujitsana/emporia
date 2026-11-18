@@ -42,6 +42,7 @@ for p in (REPO / "src", REPO / "scripts"):
         sys.path.insert(0, str(p))
 
 from emporia import beacon, commit_reveal, rand_game, wire
+from emporia.rand import rand as rand_game_rand
 from emporia import chronicle_ledger as L
 from emporia.modules import chronicle as C
 from sim_chronicle import _ramp, _truth_seats
@@ -72,12 +73,16 @@ def independent_count(inp: dict[str, Any]) -> dict[str, Any]:
     sigs = {k: bytes.fromhex(v) if v else b"" for k, v in inp["sigs"].items()}
     unit_of = {m["agent_id"]: (m["agent_id"] if mode == "practice" else (m["team"] or m["operator"]))
                for m in roster if mode == "practice" or not m["house"]}
+    team_of = {m["agent_id"]: m["team"] for m in roster if m["team"] and mode == "live" and not m["house"]}
     units = sorted(set(unit_of.values()) - (bench if mode == "live" else set()))
     jurors, scribes, alts = _truth_seats(units, scope, sigs["call"], mode)
     refs = {e["ref"] for e in window}
     anchors = C.draw_anchors(window, scope, sigs["call"])
     card = C.draw_card(scope, sigs["call"], n, inp.get("recent"))
     w_write, w_open, w_pick, w_count = (C.windows(call, E)[k] for k in ("write", "open", "pick", "count"))
+
+    def act(agent: str) -> tuple[bytes, str]:
+        return (rand_game_rand(scope, "act:" + agent, sigs["call"]), agent)
 
     def inside(w, at):
         return w[0] <= at < w[1]
@@ -91,7 +96,10 @@ def independent_count(inp: dict[str, Any]) -> dict[str, Any]:
             if u is None or not inside(w, s["at"]) or not may(u):
                 continue
             if u in out and out[u]["agent"] != s["agent"]:
-                continue
+                # the unit's highest-ranked sealer acts for it, whoever sealed first: the lowest draw on
+                # "act:" + agent id from the call beacon (a claimed team: any teammate, the last seal stands)
+                if not team_of.get(s["agent"]) and act(s["agent"]) > act(out[u]["agent"]):
+                    continue
             out[u] = s
         return out
 

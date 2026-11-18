@@ -333,6 +333,18 @@ def desk_roles(team_agents: list[str], scope: str, sig: bytes) -> dict[str, str]
     return dict(zip(order, ("writer", "researcher", "critic"), strict=False))
 
 
+def act_key(agent: str, scope: str, sig: bytes) -> tuple[bytes, str]:
+    """Who acts for an operator (one unit, several agents): the beacon ranks the unit's agents each chapter, from
+    published inputs only (scope, the call signature, the agent id). Of the agents of one unit that sealed a kind
+    (passage, pick) in its window, the lowest key, the highest-ranked, is the one whose seal counts."""
+    return (rand.rand(scope, "act:" + agent, sig), agent)
+
+
+def act_order(agents: list[str], scope: str, sig: bytes) -> list[str]:
+    """The agents of one unit, highest-ranked first."""
+    return sorted(set(agents), key=lambda a: act_key(a, scope, sig))
+
+
 # ---------------------------------------------------------------- passage checks (4.3)
 
 _CURLY = str.maketrans({"“": '"', "”": '"', "‘": "'", "’": "'"})
@@ -751,8 +763,9 @@ def resolve_chapter(*, relay_id: str, numbering: dict[str, Any], members: list[M
         refused.append({"agent": agent, "what": what, "why": why})
 
     def standing(kind: str, window_name: str, may: Any) -> dict[str, dict[str, Any]]:
-        """{unit: seal}: the first agent of a unit to seal acts for it (a claimed team: any teammate); a unit's last
-        seal by its claimant stands (re-sealing)."""
+        """{unit: seal}: of the agents of a unit that sealed this kind in its window, the highest-ranked by the beacon
+        (`act_key`) acts for it, whoever sealed first (a claimed team: any teammate); that agent's last seal stands
+        (re-sealing)."""
         out: dict[str, dict[str, Any]] = {}
         for s in seals:
             if s["what"] != kind:
@@ -765,7 +778,12 @@ def resolve_chapter(*, relay_id: str, numbering: dict[str, Any], members: list[M
             elif not may(u):
                 refuse(s["agent"], kind, "no seat for this")
             elif u in out and out[u]["agent"] != s["agent"] and not team_of.get(s["agent"]):
-                refuse(s["agent"], kind, "another agent of this operator acts first")
+                held = out[u]["agent"]
+                if act_key(s["agent"], scope, sigs["call"]) < act_key(held, scope, sigs["call"]):
+                    refuse(held, kind, "a higher-drawn agent of this operator sealed")
+                    out[u] = s
+                else:
+                    refuse(s["agent"], kind, "a higher-drawn agent of this operator acts for it")
             else:
                 out[u] = s
         return out
