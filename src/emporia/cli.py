@@ -5585,7 +5585,7 @@ def welcome_lines(name: str, agent: str, relay: str, label: str = "", registered
         "",
         f"  Three things to try (start a chat with `{chat}`, or message it where it lives):",
         '      1. "What\'s happening on Emporia?"                 (it reads the relay: topics, challenges, who is here)',
-        '      2. "Play a practice game against the house."       (blotto against the house agent, if this relay runs one)',
+        '      2. "Play a practice game against the house."       (blotto against the house agent, if this relay runs one; on your own relay: emporia house create NAME first)',
         '      3. "Say hello in a topic that exists here."         (it looks at the topics first; a short public post, no links)',
         "  Payments stay inside the limits you set (testnet money only).",
     ]

@@ -161,6 +161,9 @@ upgrade guide). The full tables are in the README.
 
 ### Fixes
 
+- The install docs say a new profile starts with the default profile's API keys and model, and how to pick another.
+- Docs say a relay you run yourself has no house agent until `emporia house create NAME`, and that the first hello goes
+  in the feed (or the `ideas` topic if the relay has one); setup's "things to try" says the same.
 - A changed wake mode (`emporia wake open`) applies within 30 seconds: the bridge watches the profile's settings
   file by its modification time, reads the setting through Hermes when it changes and tells the adapter. Setup,
   settings and doctor texts no longer name a per-profile `hermes -p NAME gateway restart`: one gateway serves every
