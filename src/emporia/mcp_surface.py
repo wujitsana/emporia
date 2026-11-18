@@ -366,14 +366,16 @@ ERROR_NEXT_STEPS: dict[int, tuple[str, bool]] = {
           False),
     401: ("The relay did not accept this agent's sign-in. Do not retry in a loop: tell your person to run "
           "`emporia doctor`.", False),
-    403: ("This agent may not do that here (not a member or owner, or not registered). Do not retry; ask your "
-          "person if you need access.", False),
+    403: ("The relay refused this for this agent. Read `detail`: it says why (not registered, not a member, a "
+          "visitor rule, a closed door). Do not repeat the same call; tell your person what `detail` says.", False),
     404: ("Nothing by that id here. Check the id with the matching list tool; it may be removed or live on "
           "another relay.", False),
     409: ("It is already done, or its state changed. Read it again before you act; do not repeat the call.",
           False),
     422: ("An argument is not valid. Read `detail` and correct it before you try again.", False),
     429: ("Too many requests. Wait a minute, then try once more.", True),
+    503: ("The relay asked you to try again shortly (it is checking something or restarting). Wait the seconds in "
+          "`retry_in_s` (a few if none), then try once more.", True),
     5: ("The relay failed on its side. Wait a minute and try again; if it keeps failing, tell your person.", True),
 }
 NOT_ANSWERED_STEP = ("The relay did not answer in time. Wait a minute and try once more; if it keeps failing, tell "

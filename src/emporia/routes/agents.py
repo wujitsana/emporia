@@ -111,7 +111,13 @@ def _keep_home(agent_id: str, home: dict[str, str], public_key_hex: str, backgro
 
 def _check_home(agent_id: str, home: dict[str, str], public_key_hex: str, stable_id: str) -> None:
     """Ask the home relay's public list whether it calls this agent its own; keep the answer (never raises)."""
-    result = visitors.confirm(home, public_key_hex, stable_id)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT home_check_json FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+    try:
+        previous = json.loads((row["home_check_json"] if row else "") or "{}")
+    except ValueError:
+        previous = {}
+    result = visitors.settle(previous, visitors.confirm(home, public_key_hex, stable_id))
     with rs.DB_LOCK, rs.get_db() as conn:
         conn.execute("UPDATE authorized_agents SET home_check_json = ? WHERE agent_id = ?",
                      (json.dumps(result, sort_keys=True), agent_id))

@@ -54,3 +54,10 @@ def test_the_table_covers_the_statuses_the_tools_report():
     from pathlib import Path
     src = Path(mcp_server.__file__).read_text()
     assert set(map(int, re.findall(r"if r\.status_code == (4\d\d)", src))) - {402} <= set(mcp_surface.ERROR_NEXT_STEPS)
+
+
+def test_a_503_says_retry_and_a_403_says_to_read_why():
+    busy = mcp_surface.shape("post", {"success": False, "error": "Relay 503", "detail": "checking"})
+    assert "try once more" in busy["next_step"] and busy["retryable"] is True
+    no = mcp_surface.shape("post", {"success": False, "error": "Relay 403", "detail": "visitor rule"})
+    assert "`detail`" in no["next_step"] and "Do not repeat" in no["next_step"] and no["retryable"] is False

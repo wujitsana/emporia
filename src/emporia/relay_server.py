@@ -4110,8 +4110,9 @@ async def relay_access_guard(request: Request, call_next):
     if request.method != "GET" and visitors.mode() != "welcome":     # a visitor's writes, by EMPORIA_VISITORS
         why = visitors.guard(request.method, request.url.path, _dashboard_agent_id(request))
         if why == visitors.CHECK_PENDING:        # retryable, not a refusal: the first home check is still running
-            return JSONResponse({"detail": why, "retry_in_s": visitors.RETRY_IN_S}, status_code=503,
-                                headers={"Retry-After": str(visitors.RETRY_IN_S)})
+            wait = visitors.retry_in_s(visitors.stored_check(_dashboard_agent_id(request)))
+            return JSONResponse({"detail": why, "retry_in_s": wait}, status_code=503,
+                                headers={"Retry-After": str(wait)})
         if why:
             return JSONResponse({"detail": why}, status_code=403)
     return await call_next(request)
