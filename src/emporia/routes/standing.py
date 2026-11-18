@@ -382,6 +382,16 @@ def _ideas_adopted() -> list[dict]:
     return adopted_ideas()
 
 
+def _operator_agents(who: dict) -> set[str]:
+    """The relay operator's agents (the operator's own, and any sharing its operator), kept off the season boards
+    as `season_inputs` keeps them off the season standings. Their own sheet still shows their calls."""
+    op = rs._relay_operator_id()
+    if not op:
+        return set()
+    mine = who[op].operator if op in who else op
+    return {op} | {a for a, w in who.items() if w.operator == mine}
+
+
 @router.get("/season")
 async def season_ladders(limit: int = 25):
     """P297: this relay's season (`season-0` unless the operator names another) and its
@@ -397,7 +407,7 @@ async def season_ladders(limit: int = 25):
     _, games, who = _craft_table()
     out = {**progression.season_boards(games, likes, who, time.time(), progression.season(),
                                        progression.house_agents(), rs._clamp_limit(limit), ideas,
-                                       tiers=_renown_tiers()),
+                                       tiers=_renown_tiers(), off_board=_operator_agents(who)),
            "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
     if not any(out["boards"].values()):
         # Craft pairs and Renown likes count only across operators (progression.craft_ratings, renown): a relay

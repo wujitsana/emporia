@@ -893,3 +893,14 @@ def test_a_thin_jury_of_two_seats_needs_one_pick_and_is_labelled():
     assert tl(["a"], [], J=2)["reason"] == "quorum"                                 # no pick at all
     assert tl(["a"], [P("j1", "a")], J=3)["thin_jury"] is False
     assert tl(["a"], [P("j1", "a")], J=2, mode="practice")["thin_jury"] is False
+
+
+def test_every_drawn_round_is_published_strictly_after_its_boundary():
+    """A round published at or before the boundary is known before it (a poster in the last seconds would know the
+    anchor draw; a juror, the show order and the tie draw), so each draw uses the first round after it."""
+    from emporia import rand
+    w = C.windows(CALL)
+    r = C.call_rounds(CALL)
+    for name, boundary in (("call", CALL), ("show", w["open"][1]), ("count", w["count"][1])):
+        assert rand.round_time(r[name]) > boundary, name
+        assert rand.round_time(r[name] - 1) <= boundary, name

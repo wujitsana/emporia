@@ -1090,3 +1090,41 @@ def test_the_bridge_leaves_a_passage_alone_when_the_value_kept_here_is_gone(mk):
                                   local=lambda: ([], True), log=lambda *x: None)
         assert a.chronicle() == "skipped"
         assert not _view(w, scribe)["opened"]["passage"]
+
+
+def test_verify_checks_that_every_seal_is_in_the_log_before_the_first_reveal_and_receipt_times_do_not_run_back(mk):
+    w, names = mk(6)
+    day(w, names, 1)
+    verified(w)
+    body = w.get("/chronicle/chapters/1?include=inputs").json()["inputs"]
+    assert body["seals"] and all(r["log_index"] is not None and r["seq"] for r in body["seals"] + body["reveals"] + body["ballots"])
+    first_open = min(r["log_index"] for r in body["reveals"])
+    assert all(r["log_index"] < first_open for r in body["seals"] if r["what"] == "passage")
+
+    def tampered(change):
+        def get(path):
+            j = w.get(path).json()
+            return change(path, j)
+        return get
+
+    late = body["seals"][0]
+    ref = f"chronicle_seal:{late['seq']}"
+
+    def seal_after_reveal(path, j):
+        if path.startswith("/chronicle/chapters/1?include=inputs"):
+            for r in j["inputs"]["seals"]:
+                if r["seq"] == late["seq"]:
+                    r["log_index"] = 10**6
+        elif path.startswith("/log/entries") and ref in path:
+            j["entries"][0]["index"] = 10**6
+        return j
+    # a relay that served a seal as logged after the reveals is caught either way: the log disagrees with the row
+    rep = V.verify(tampered(seal_after_reveal), bls=False)
+    assert not rep["ok"] and any("log" in p for c in rep["chapters"] for p in c["problems"])
+
+    def stamped_backwards(path, j):
+        if path.startswith("/chronicle/chapters/1?include=inputs"):
+            j["inputs"]["ballots"][0]["at"] = 1.0
+        return j
+    rep = V.verify(tampered(stamped_backwards), bls=False)
+    assert not rep["ok"]

@@ -141,11 +141,17 @@ def windows(call_ts: float, epoch_s: int = 86_400) -> dict[str, tuple[float, flo
     return out
 
 
+def _after(ts: float) -> int:
+    """The first drand round published strictly after `ts`: `round_at(ts)` is already out at `ts`, so a draw from it
+    would be known before the boundary (a poster in the last seconds, a juror ahead of the show order)."""
+    return rand.round_at(ts) + 1
+
+
 def call_rounds(call_ts: float, epoch_s: int = 86_400) -> dict[str, int]:
-    """The three drand rounds a chapter draws from: its call, the close of Open (show order), the close of Count
-    (tie draw, keeper)."""
+    """The three drand rounds a chapter draws from: the first one published after its call, after the close of Open
+    (show order), after the close of Count (tie draw, keeper). Each is published strictly after its boundary."""
     w = windows(call_ts, epoch_s)
-    return {"call": rand.round_at(call_ts), "show": rand.round_at(w["open"][1]), "count": rand.round_at(w["count"][1])}
+    return {"call": _after(call_ts), "show": _after(w["open"][1]), "count": _after(w["count"][1])}
 
 
 def _in(w: tuple[float, float], at: float) -> bool:

@@ -313,6 +313,9 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
         why = rand_module.commit_round_problem(req.at, (req.config or {}).get("weights_round"))
         if why:
             raise HTTPException(400, "weights_round: " + why)
+        why = rand_module.relay_clock_problem((req.config or {})["weights_round"], datetime.now(UTC).timestamp())
+        if why:
+            raise HTTPException(400, "weights_round: " + why)
         req.config = {**req.config, "rand": {"scope": session_id}}
     if module.USES_RAND:     # emporia:rand:v1: the creator's signed commitment, seat 0
         req.config = {**(req.config or {}), "rand": {"scope": session_id, "commits": {
@@ -1478,7 +1481,8 @@ async def fund_session(session_id: str, request: Request):
     })
 
 
-def _take_rand_commit(session_id: str, agent_id: str, seat: int, commit: dict[str, Any] | None) -> dict[str, Any]:
+def _take_rand_commit(session_id: str, agent_id: str, seat: int, commit: dict[str, Any] | None,
+                      earlier: dict[str, Any] | None = None) -> dict[str, Any]:
     """`emporia:rand:v1`: a player's signed commitment `sha256(s || nonce)` and the drand round it
     names, with its create or join. The relay checks the shape, the signature and the round rule
     (at least 10 rounds after the signing time) and stores it; it never sees the secret."""
@@ -1494,6 +1498,11 @@ def _take_rand_commit(session_id: str, agent_id: str, seat: int, commit: dict[st
         raise HTTPException(400, "rand_commit is {hash: 64 hex, beacon_round: int, at: ISO time, signature}")
     _signed_at(c["at"])
     why = rand.commit_round_problem(c["at"], c["beacon_round"])
+    if why:
+        raise HTTPException(400, why)
+    # The relay's own clock too: a backdated `at` must not let a commitment name a round already published.
+    cur = max((int(e["beacon_round"]) for e in (earlier or {}).values()), default=None)
+    why = rand.relay_clock_problem(c["beacon_round"], datetime.now(UTC).timestamp(), cur)
     if why:
         raise HTTPException(400, why)
     if not rs.AGENT_REGISTRY.verify_signature(agent_id, wire.signed_rand_commit_payload(
@@ -1621,8 +1630,9 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
         if mine and any(ops.get(p) == mine for p in s["participants"]):
             raise HTTPException(409, "this table already seats one of your operator's agents: one seat per operator")
     if module.USES_RAND:     # emporia:rand:v1: the joiner's signed commitment, seat 1
-        rc = _take_rand_commit(session_id, req.agent_id, len(s["participants"]), req.rand_commit)
         r = (s.get("config") or {}).get("rand") or {}
+        rc = _take_rand_commit(session_id, req.agent_id, len(s["participants"]), req.rand_commit,
+                               r.get("commits") or {})
         s["config"] = {**s["config"], "rand": {**r, "commits": {**(r.get("commits") or {}), req.agent_id: rc}}}
 
     # Payment gate. Games take no stakes: nobody pays to join one. A purchase's
