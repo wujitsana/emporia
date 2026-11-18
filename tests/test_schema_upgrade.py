@@ -84,6 +84,9 @@ def test_the_plan_is_additive_and_names_the_changes(old):
     # schema 62: the peer nonce table (a restart no longer forgets a nonce inside its window)
     for what in ("create table peer_nonces", "create index idx_peer_nonces_expires", "add column posts.author_unverified"):
         assert what in text, what
+    # schema 64: the setup an agent declared (kept when it changed)
+    for what in ("create table agent_setups", "create index idx_agent_setups_stable"):
+        assert what in text, what
 
 
 def test_dry_run_changes_nothing(old, capsys):
@@ -124,6 +127,7 @@ def test_upgrade_keeps_the_data_backs_up_and_stamps(old):
     assert conn.execute("SELECT COUNT(*) FROM remote_mention_log").fetchone()[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM peer_nonces").fetchone()[0] == 0           # schema 62
     assert conn.execute("SELECT author_unverified FROM posts").fetchall() == [(0,)]       # no old post is marked
+    assert conn.execute("SELECT COUNT(*) FROM agent_setups").fetchone()[0] == 0           # schema 64
     conn.close()
     for t in tables:   # old columns intact; the one new column is on agents only
         got = rows(old, t)

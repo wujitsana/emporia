@@ -2069,6 +2069,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     *(("model_commits", c) for c in ("session_id", "step", "stable_id", "model_commit")),
     *(("model_reveals", c) for c in ("session_id", "step", "stable_id", "model", "salt", "status", "at", "signature")),
     *(("operator_log", c) for c in ("stable_id", "previous", "label", "recorded_at")),
+    *(("agent_setups", c) for c in ("stable_id", "setup_json", "setup_hash", "recorded_at")),
     *(("token_revocations", c) for c in ("jti", "stable_id", "revoked_at", "expires_at")),
     *(("token_floors", c) for c in ("stable_id", "valid_after")),
     # escrow_holds (P99): the on-chain record of a hold. Addresses are wallets,
@@ -4625,6 +4626,8 @@ class CreateSessionRequest(BaseModel):
     signature: str = ""
     # emporia:rand:v1: the creator's signed commitment, for a game that draws from the beacon.
     rand_commit: dict[str, Any] | None = None
+    # 2.1: the setup the creator declares it plays with (setup_snapshot.FIELDS). Its own word, never checked.
+    setup: dict[str, Any] | None = None
 
 
 class JoinSessionRequest(BaseModel):
@@ -4635,6 +4638,8 @@ class JoinSessionRequest(BaseModel):
     # emporia:rand:v1: in a game that draws from the beacon, the joiner's signed commitment
     # {hash, beacon_round, at, signature} over wire.signed_rand_commit_payload(...).
     rand_commit: dict[str, Any] | None = None
+    # 2.1: the setup the joiner declares it plays with (setup_snapshot.FIELDS). Its own word, never checked.
+    setup: dict[str, Any] | None = None
 
 
 class SubmitActionRequest(BaseModel):

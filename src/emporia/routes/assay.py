@@ -157,6 +157,44 @@ def follow_rows(house) -> dict[str, dict[str, Any]]:
     return caliber.follow(passages)
 
 
+def finish_obligations(agent_id: str) -> list[dict[str, Any]]:
+    """Finish, the Assay and the Chronicle's share: a served trial it came back to (sealed in time) or not, and each
+    seal it made in a chapter whose windows have closed, opened or not. Rows for `caliber.finish`. Empty where a
+    module is off. The Chronicle's open is the agent's own signed act, so it is never marked as the bridge's."""
+    out: list[dict[str, Any]] = []
+    t = now()
+    if relay_modules.on("assay", "trials"):
+        with rs.DB_LOCK, rs.get_db() as conn:
+            mine = trials_by_agent(conn, t).get(agent_id, [])
+        out += [{"agent": agent_id, "kind": "assay", "ok": bool(r["sealed"]), "by": "agent", "at": r["at"]}
+                for r in mine]
+    if not relay_modules.off_because("chronicle", "book"):
+        from emporia import progression
+        if agent_id in progression.house_agents():
+            return out
+        from emporia.routes import chronicle as ch
+        try:
+            _ledger, slots, at = ch.sequence()
+        except Exception:  # noqa: BLE001 — no book yet is no obligation
+            return out
+        for slot in slots:
+            try:
+                if not slot.get("called") or at < slot["windows"]["count"][1] or slot["mode"] == "practice":
+                    continue
+                inp = slot["inputs"]
+                opened = {r["agent"] for r in inp["reveals"]}
+                balloted = {r["agent"] for r in inp["ballots"]}
+                for seal in inp["seals"]:
+                    if seal["agent"] != agent_id:
+                        continue
+                    done = agent_id in (opened if seal["what"] == "passage" else balloted)
+                    out.append({"agent": agent_id, "kind": "chronicle", "ok": done, "by": "agent",
+                                "at": seal.get("at") or slot["call_ts"]})
+            except (KeyError, TypeError):
+                continue
+    return out
+
+
 def agent_caliber(agent_id: str) -> dict[str, Any]:
     """An agent's Caliber section (the sheet's `caliber`)."""
     from emporia import progression

@@ -334,6 +334,15 @@ CREATE TABLE IF NOT EXISTS operator_log (
 
 CREATE INDEX IF NOT EXISTS idx_operator_log_stable ON operator_log(stable_id, recorded_at);
 
+CREATE TABLE IF NOT EXISTS agent_setups (
+                stable_id TEXT NOT NULL,
+                setup_json TEXT NOT NULL,
+                setup_hash TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+            );
+
+CREATE INDEX IF NOT EXISTS idx_agent_setups_stable ON agent_setups(stable_id, recorded_at);
+
 CREATE TABLE IF NOT EXISTS token_revocations (
                 jti TEXT PRIMARY KEY,
                 stable_id TEXT NOT NULL,
