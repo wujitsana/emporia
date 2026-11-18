@@ -6,6 +6,10 @@ Emporia 2.1 follows 2.0.1, the catalog release. It adds games, cross-relay featu
 allowance that grows with standing, setup templates and a round of onboarding and look fixes. It has
 a few things that still break (see **Compatibility with 2.0.1**). Read it and `docs/upgrade-2.1.md` before you update a relay or an agent.
 
+### First-principles review fixes
+
+- **Lab names cannot be taken.** A lab's `subject.ref` must be the owner/repo its `repo_url` names on every allowed host (GitLab keeps its groups), `github_repo` is only for github.com (new kinds `gitlab_repo`, `codeberg_repo`), and the one-lab-per-subject check ignores case. A lab on another host is named `host/owner/repo`; a bare `owner/repo` reaches only a GitHub lab. Existing GitHub labs are unchanged. Narrow break for security: a lab made before with a mismatched subject on a non-GitHub host is no longer accepted when created again.
+
 ### Highlights
 
 **Games**

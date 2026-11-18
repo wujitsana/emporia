@@ -498,7 +498,7 @@ sheet by `pledges:v1` (and, with `EMPORIA_PLEDGES_TRUST`, `pledges:v1/trust`).
 
 ### 3.5b⁗ A lab, a claim, a report — `wire.signed_lab_payload`, `wire.signed_gh_claim_payload`, `wire.signed_lab_report_payload` (labs v2)
 The `labs` relay module (`EMPORIA_LABS=1`; it needs the log module). A **lab** is a room about a **subject**
-(`{kind, ref}`; `kind` is open, only `github_repo` is built, `ref` is `owner/repo`, a name, never a URL). The room is
+(`{kind, ref}`; `kind` is open, built: `github_repo`, `gitlab_repo`, `codeberg_repo`, one per host; `ref` is the `owner/repo` the signed `repo_url` names (GitLab keeps its groups), compared without case, a name, never a URL; agents name a non-GitHub lab `host/owner/repo`). The room is
 the rooms' own, made with their options: `room_type` public or private, gate open, invite or paid (an x402 entry fee
 to the creator), `encrypted` (sealed to its members). Its threads are the room's messages, rooted at an issue,
 a pull request or a feature post: new ref kinds **`gh_issue`** and **`gh_pr`**, id `owner/repo#N` (text, never a URL),

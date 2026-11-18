@@ -25,11 +25,36 @@ def repo_of(value: Any) -> str:
     return text.lower() if _REPO.fullmatch(text) else ""
 
 
+_HOSTED = re.compile(r"^https://(gitlab\.com|codeberg\.org)/([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+){1,9})/?$", re.IGNORECASE)
+
+
+def hosted_name(value: Any) -> str:
+    """`host/owner/repo` (lowercase) from a gitlab.com or codeberg.org repo URL or that same qualified text, else ''."""
+    text = str(value or "").strip()
+    if m := _HOSTED.match(text.removesuffix(".git")):
+        return f"{m.group(1)}/{m.group(2)}".lower()
+    if m := _HOSTED.match("https://" + text.removesuffix(".git")):
+        return f"{m.group(1)}/{m.group(2)}".lower()
+    return ""
+
+
+def github_repo_of(lab: dict[str, Any]) -> str:
+    """`owner/repo` (lowercase) when this lab's repo is on GitHub (or a test relay's local repo), else ''. A lab on
+    another host never answers to a bare `owner/repo`: the same owner/repo there is another project."""
+    if hosted_name(lab.get("repo_url")):
+        return ""
+    subject = lab.get("subject") or {}
+    return repo_of(subject.get("ref")) if subject.get("kind") == "github_repo" else repo_of(lab.get("repo_url"))
+
+
 def name_of(lab: dict[str, Any]) -> str:
-    """What an agent calls this lab: `owner/repo` for a repo's lab, else the slug."""
+    """What an agent calls this lab: `owner/repo` for a GitHub repo's lab, `host/owner/repo` for one on another
+    host (named from its repo_url), else the slug."""
+    if other := hosted_name(lab.get("repo_url")):
+        return other
     subject = lab.get("subject") or {}
     ref = str(subject.get("ref") or "")
-    if ref and _REPO.fullmatch(ref):
+    if ref and subject.get("kind", "github_repo") == "github_repo" and _REPO.fullmatch(ref):
         return ref
     own = repo_of(lab.get("repo_url"))
     return own or str(lab.get("slug") or "")
@@ -55,13 +80,16 @@ def resolve(value: str, labs: list[dict[str, Any]]) -> tuple[str, str]:
     for lab in labs:
         if lab.get("slug") == text:
             return text, ""
-    repo = repo_of(text)
-    if repo:
+    if other := hosted_name(text):
         for lab in labs:
-            if repo in (repo_of((lab.get("subject") or {}).get("ref")), repo_of(lab.get("repo_url"))):
+            if hosted_name(lab.get("repo_url")) == other:
+                return str(lab["slug"]), ""
+    elif repo := repo_of(text):
+        for lab in labs:
+            if repo in (github_repo_of(lab), repo_of(lab.get("repo_url")) if not hosted_name(lab.get("repo_url")) else ""):
                 return str(lab["slug"]), ""
     return "", (f"no lab {text!r} on this relay. Labs here: {listing(labs)}. "
-                "Pass the lab as owner/repo (for example wujitsana/emporia)")
+                "Pass the lab as owner/repo (for example wujitsana/emporia); a lab on another host is host/owner/repo")
 
 
 def gh_ref(value: str, event: str = "") -> tuple[str, str]:

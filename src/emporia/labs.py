@@ -38,7 +38,10 @@ from typing import Any
 PROOF_PATH = ".emporia/lab.json"
 PROOF_TYPE = "emporia:lab-proof:v1"
 MAX_PROOF_BYTES = 16_384
-SUBJECT_KINDS = ("github_repo",)          # open by design; only this one is built
+#: the repo kinds we build, one per host (a repo's kind names where it lives, so `github_repo` never means a
+#: repo on another host). Open by design.
+SUBJECT_KINDS = ("github_repo", "gitlab_repo", "codeberg_repo")
+HOST_KIND = {"github.com": "github_repo", "gitlab.com": "gitlab_repo", "codeberg.org": "codeberg_repo"}
 MAX_NAME = 80
 MAX_NOTE = 500
 MAX_MAINTAINERS = 10
@@ -62,6 +65,7 @@ _BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$")
 _LICENCE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+ -]{0,39}$")
 _STABLE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_:.-]{7,127}$")
 _GH_REPO = re.compile(r"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$")
+_NESTED = re.compile(r"^[A-Za-z0-9_.-]{1,100}(?:/[A-Za-z0-9_.-]{1,100}){1,9}$")
 _GH_REF = re.compile(r"^([A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100})#([1-9][0-9]{0,8})$")
 _BLOB = re.compile(r"^[A-Za-z0-9_-]{16,%d}$" % MAX_BLOB)
 _LINE = re.compile(r"^[ \t]*Emporia:[ \t]+(\S{1,512})[ \t]+([A-Za-z0-9_-]{1,4000})[ \t]*$", re.M)
@@ -149,8 +153,36 @@ def subject_problem(subject: Any) -> str:
         return "subject: {kind, ref}"
     if subject.get("kind") not in SUBJECT_KINDS:
         return f"subject.kind: one of {', '.join(SUBJECT_KINDS)} (others come later)"
-    if not is_repo(subject.get("ref")):
+    ref = subject.get("ref")
+    if subject["kind"] == "gitlab_repo":      # GitLab groups nest: group/sub/repo
+        ok = isinstance(ref, str) and bool(_NESTED.match(ref)) and not any(s in (".", "..") for s in ref.split("/"))
+    else:
+        ok = is_repo(ref)
+    if not ok:
         return "subject.ref: owner/repo (a name, never a URL)"
+    return ""
+
+
+def repo_subject(repo: str) -> tuple[str, str] | None:
+    """(kind, ref) a canonical repo URL names (`https://codeberg.org/a/b` is `codeberg_repo`, `a/b`), or None for a
+    `file://` repo (a test relay's) or a host without a kind."""
+    from urllib.parse import urlsplit
+    parts = urlsplit(repo)
+    kind = HOST_KIND.get((parts.hostname or "").lower()) if parts.scheme == "https" else None
+    return (kind, parts.path.strip("/")) if kind else None
+
+
+def subject_binding_problem(repo: str, subject: dict) -> str:
+    """'' when the subject is the repo the URL names: its kind is that host's kind and its ref the URL's owner/repo
+    (any case; GitLab keeps its groups). A `file://` repo (a test relay's) is not bound."""
+    want = repo_subject(repo)
+    if want is None:
+        return ""
+    kind, ref = want
+    if subject.get("kind") != kind:
+        return f"subject.kind: {kind} for a repo on {repo.split('/')[2]} (github_repo is only for github.com)"
+    if str(subject.get("ref")).lower() != ref.lower():
+        return "subject.ref: the repo's owner/repo, the same as repo_url names"
     return ""
 
 

@@ -5205,8 +5205,7 @@ def _gh_reply(reply_to: str, aid: str) -> str:
         bare = text
         labs = _labs_here() or []
         repo = lab_names.repo_of(bare.partition("#")[0])
-        lab = next((x for x in labs if repo in (lab_names.repo_of((x.get("subject") or {}).get("ref")),
-                                                 lab_names.repo_of(x.get("repo_url")))), None)
+        lab = next((x for x in labs if repo == lab_names.github_repo_of(x)), None)
         kind = ""
         if lab:
             r = _bearer_request("get", f"{_base()}/labs/{_seg(lab['slug'])}/threads", agent_id=aid, timeout=10)

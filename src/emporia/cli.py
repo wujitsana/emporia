@@ -2018,8 +2018,9 @@ def _lab_create(profile: Path, agent_id: str, rest: list[str], args: argparse.Na
     if why:
         print(f"lab create: {why}")
         return 1
-    ref = args.subject or "/".join(repo.split("/")[3:5])
-    subject = {"kind": "github_repo", "ref": ref}
+    want = labs.repo_subject(repo)
+    ref = args.subject or (want[1] if want else "/".join(repo.split("/")[3:5]))
+    subject = {"kind": want[0] if want else "github_repo", "ref": ref}
     _, creator = _lab_key_of(profile, agent_id)
     # idempotent: a lab already here under this slug is reported, and no room is made for it
     st, have = _operator_call(profile, "GET", f"/labs/{path_id(slug)}")
