@@ -1128,3 +1128,21 @@ def test_verify_checks_that_every_seal_is_in_the_log_before_the_first_reveal_and
         return j
     rep = V.verify(tampered(stamped_backwards), bls=False)
     assert not rep["ok"]
+
+
+def test_re_registering_keeps_the_first_registered_at_and_the_member_stays_on_the_roster(mk):
+    from emporia.identity import get_public_key_hex
+    w, names = mk(6)
+
+    def stamp(n):
+        with rs.DB_LOCK, rs.get_db() as conn:
+            return conn.execute("SELECT registered_at FROM authorized_agents WHERE agent_id = ?", (n,)).fetchone()[0]
+    before = {n: stamp(n) for n in names}
+    w.clock.at(w.start + 0.1 * w.epoch)
+    for n in names:                                   # an MCP restart, a respawn, a `hermes mcp test`
+        r = w.client.post("/agents/register", json={"agent_id": n, "public_key_hex": get_public_key_hex(n)})
+        assert r.status_code == 200, r.text
+    rs.forget_who()
+    assert {n: stamp(n) for n in names} == before
+    did = day(w, names, 1)
+    assert len(did["wrote"]) == 3 and len(did["picked"]) == 3
