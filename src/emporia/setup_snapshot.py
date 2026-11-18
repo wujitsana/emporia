@@ -97,12 +97,45 @@ def build(env: Mapping[str, str] | None = None, home: Any = None) -> dict[str, s
             key = templates.current(profile)
             if templates.read_record(profile) and key in templates.BY_KEY:
                 out["template"] = key
-                out.setdefault("rounds", templates.get(key).cadence)
         except Exception:  # noqa: BLE001 — a part that cannot be read is unknown
             pass
-    if (flag := (env.get(AUTO_REVEAL_ENV) or "").strip().lower()) in _FLAG:
-        out["auto_reveal"] = flag
+        if (rounds := _rounds_state(Path(profile))):
+            out["rounds"] = rounds
+    # The effective value: on unless the person's setting says off (autoreveal.enabled, the bridge's own reading).
+    from emporia import autoreveal
+    out["auto_reveal"] = "on" if autoreveal.enabled(dict(env)) else "off"
     return clean(out)
+
+
+_ROUNDS_CACHE: dict[str, tuple[float, str]] = {}
+_ROUNDS_CACHE_S = 600.0
+
+
+def _rounds_state(profile: Any) -> str:
+    """The rounds the agent really has: `off` (no job, or a paused one) or its interval, from the profile's own
+    rounds job (not the template's cadence: setup may have chosen `--rounds off`). "" when it cannot be read
+    (unknown, not guessed). Cached for ten minutes: a create or a join must not wait for Hermes each time."""
+    import time
+
+    from emporia import rounds as R
+    name = profile.name if profile.parent.name == "profiles" else ""
+    if not name:
+        return ""
+    at, value = _ROUNDS_CACHE.get(name, (0.0, ""))
+    if value and time.monotonic() - at < _ROUNDS_CACHE_S:
+        return value
+    try:
+        found = R.jobs(name)
+    except Exception:  # noqa: BLE001 — Hermes did not answer: unknown
+        return ""
+    if not found or "pause" in found[0].state.lower():
+        value = "off"
+    else:
+        sched = found[0].schedule or ""
+        m = re.fullmatch(r"every (\d+)m", sched.strip())
+        value = f"{int(m.group(1)) // 60}h" if m and int(m.group(1)) % 60 == 0 else sched.strip()
+    _ROUNDS_CACHE[name] = (time.monotonic(), value)
+    return value
 
 
 # ── the relay: keep a change, read the story ─────────────────────────────────────────────────────────────

@@ -51,11 +51,29 @@ def test_build_reads_the_setting_names_it_knows_and_leaves_the_rest_out(monkeypa
     assert "model" not in setup_snapshot.build({}, home=tmp_path)                # unknown, not guessed
 
 
-def test_build_declares_a_template_and_its_cadence_when_the_profile_chose_one(tmp_path):
-    from emporia import templates
-    templates.write_record(tmp_path, {"template": "player"})
-    got = setup_snapshot.build({}, home=tmp_path)
-    assert got["template"] == "player" and got["rounds"] == templates.get("player").cadence
+def test_build_declares_the_template_and_the_real_rounds_not_the_template_cadence(monkeypatch, tmp_path):
+    from emporia import rounds, templates
+    prof = tmp_path / "profiles" / "shop"
+    prof.mkdir(parents=True)
+    templates.write_record(prof, {"template": "player"})
+    setup_snapshot._ROUNDS_CACHE.clear()
+    monkeypatch.setattr(rounds, "jobs", lambda name: [])                 # setup chose --rounds off
+    got = setup_snapshot.build({}, home=prof)
+    assert got["template"] == "player" and got["rounds"] == "off"
+    setup_snapshot._ROUNDS_CACHE.clear()
+    monkeypatch.setattr(rounds, "jobs", lambda name: [rounds.Job("abc12345", "scheduled", rounds.JOB_NAME, "every 120m")])
+    assert setup_snapshot.build({}, home=prof)["rounds"] == "2h"
+    setup_snapshot._ROUNDS_CACHE.clear()
+
+    def down(name):
+        raise rounds.RoundsError("no hermes")
+    monkeypatch.setattr(rounds, "jobs", down)
+    assert "rounds" not in setup_snapshot.build({}, home=prof)           # unknown, not guessed
+
+
+def test_build_declares_auto_reveal_on_by_default(tmp_path):
+    assert setup_snapshot.build({}, home=tmp_path)["auto_reveal"] == "on"
+    assert setup_snapshot.build({setup_snapshot.AUTO_REVEAL_ENV: "off"}, home=tmp_path)["auto_reveal"] == "off"
 
 
 # ── the table: kept when it changed ──────────────────────────────────────────────────────────────────────
