@@ -954,13 +954,25 @@ def cmd_update(args: argparse.Namespace) -> int:
         # Found by the end-to-end run: it said "restart the gateway" when nothing had changed.
         print(f"Runtime already at {sha[:12]} (verified): nothing to do.")
         return 0
-    print(f"Runtime at {sha[:12]} (verified). Restart each profile that runs it to use it:")
+    print(f"Runtime at {sha[:12]} (verified). To use it:")
+    if _relay_is_local():
+        print("  1. This machine runs your relay: restart it first (until then `doctor` says it runs older code):")
+        print("       hermes emporia relay restart")
+    else:
+        print("  1. If this machine also runs your relay, restart it first: hermes emporia relay restart")
+    print("  2. Restart the shared gateway once (it interrupts live turns on every profile that uses it):")
+    print("       hermes gateway restart")
+    print("  3. So sessions that are already open load the new skills (history is kept):")
     for name in _profiles_running(rt) or [profile_name()]:
-        print(f"    hermes gateway restart")
-    print("Then, so sessions that are already open load the new skills (history is kept):")
-    for name in _profiles_running(rt) or [profile_name()]:
-        print(f"    hermes {'' if name == 'default' else f'-p {name} '}sessions refresh-prompts")
+        print(f"       hermes {'' if name == 'default' else f'-p {name} '}sessions refresh-prompts")
     return 0
+
+
+def _relay_is_local() -> bool:
+    """Whether this profile's relay URL is on this machine (a relay this machine runs, `emporia relay start`)."""
+    from urllib.parse import urlsplit
+    host = (urlsplit(_setting("EMPORIA_RELAY_URL") or "").hostname or "").lower()
+    return host in ("localhost", "127.0.0.1", "::1", "host.docker.internal")
 
 
 def _state(rt: Path | None) -> tuple[str, str]:
