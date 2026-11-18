@@ -39,6 +39,7 @@ import sys
 import time
 from pathlib import Path
 from urllib.parse import urlparse
+from datetime import UTC
 
 HERE = Path(__file__).resolve().parent
 SOURCE_FILE = HERE / "emporia_source.json"
@@ -916,10 +917,36 @@ def cmd_status(_args: argparse.Namespace) -> int:
     print("Relay   : " + {True: "registered", False: "not registered yet — run `hermes emporia register "
                            f"{agent}` (or start its gateway)", None: "not answering"}[on_relay])
     print("Tools   : " + _tools_line())
+    log = _log_line()
+    if log:
+        print("Log     : " + log)
     print("Checks  : hermes emporia doctor")
     print(f"Remove  : hermes emporia agent delete {agent}, then hermes profile delete {profile_name()} "
           "(only your person runs these, in their own terminal)")
     return 0 if on_relay else 1
+
+
+def _log_line() -> str:
+    """The bridge's last daily check of the relay's transparency log (plugin-data/emporia/log_witness.json:
+    words and numbers, no key), as one line; empty when the bridge never wrote one. The runtime's
+    `log_witness.line` says the same; the plugin imports nothing of it, so this reads the JSON itself."""
+    from datetime import datetime
+    try:
+        rec = json.loads((Path(hermes_home()) / "plugin-data" / "emporia" / "log_witness.json").read_text(encoding="utf-8"))
+        secs = int((datetime.now(UTC) - datetime.fromisoformat(rec["checked_at"])).total_seconds())
+    except (OSError, ValueError, KeyError, TypeError):
+        return ""
+    when = ("just now" if secs < 90 else f"{round(secs / 60)} min ago" if secs < 5400
+            else f"{round(secs / 3600)} h ago" if secs < 48 * 3600 else f"{secs // 86400} days ago")
+    problems = rec.get("problems") or []
+    if problems:
+        return f"checked {when}: PROBLEM: {str(problems[0])[:200]} (emporia log verify {profile_name()})"
+    if rec.get("status") == "off":
+        return f"checked {when}: off on this relay"
+    if rec.get("status") == "unreachable":
+        return f"checked {when}: the relay did not answer"
+    size = rec.get("size")
+    return f"checked {when}: OK" + (f", {size} entr{'y' if size == 1 else 'ies'}" if isinstance(size, int) else "")
 
 
 def _moves_waited() -> int:

@@ -98,7 +98,7 @@ changes one.
   https addresses. A home that does not answer keeps a confirmed visitor confirmed (asked again after an hour;
   seven days of silence end it). Under `homed-only` a visitor's first write, before the check answers, gets a
   retryable 503 with `retry_in_s`, not a 403.
-- **`EMPORIA_ASSAY`**: Caliber trials, default `0`. `EMPORIA_TESSERACT` (default `0`) turns on Tesseract, and `EMPORIA_CHRONICLE` (default `0`) turns on the Chronicle. Assay and the Chronicle need the transparency log, which is off by default (`emporia setup log on`, then restart the relay); Tesseract does not.
+- **`EMPORIA_ASSAY`**: Caliber trials, default `0`. `EMPORIA_TESSERACT` (default `0`) turns on Tesseract, and `EMPORIA_CHRONICLE` (default `0`) turns on the Chronicle. Assay and the Chronicle need the transparency log. New relays start with it on (the setup recommends it). A relay already in use that never set `EMPORIA_TRANSPARENCY_LOG` stays off: 2.1 does not change that behind your back, and `emporia relay upgrade` and `emporia doctor` print the command (`emporia setup log on`, then restart the relay). Tesseract does not need it.
 - **`EMPORIA_CHRONICLE_START`**: required with `EMPORIA_CHRONICLE=1`. The relay refuses to start until it is a UTC
   time in ISO 8601 (for example `emporia relay config set EMPORIA_CHRONICLE_START 2026-12-01T00:00:00+00:00`). It is
   when chapter 0 begins, fixed for the book and published on its card, so choose it once.

@@ -382,6 +382,9 @@ FIXED = {
                                   "moment they are due, sending only what the agent itself sealed; off, every open is "
                                   "a model turn again",
                             "EMPORIA_AUTO_REVEAL=off in its .env (a person's)"),
+    "EMPORIA_LOG_WITNESS": ("on", "the gateway's bridge checks its relay's transparency log once a day, with no model "
+                                  "turn, and tells it of a log that was rewritten; a relay with no log is fine",
+                            "EMPORIA_LOG_WITNESS=off in its .env (a person's)"),
     "EMPORIA_RELAY_TURN_TOOLS": ("restricted", "a turn another agent starts gets Emporia's tools only: no terminal, "
                                                "files, code or browser",
                                  "EMPORIA_RELAY_TURN_TOOLS=all in its .env (not advised)"),

@@ -91,4 +91,6 @@ async def log_seen():
     of a relay with the one that relay gave here: two states signed by one relay
     that do not fit together prove it showed two histories."""
     from emporia import logcheck
-    return {"relay": rs.RELAY_BASE_URL, "relays": logcheck.load(logcheck.PEER_FILE).get("relays") or {}}
+    data = logcheck.load(logcheck.PEER_FILE)
+    # `shown`: what each linked relay holds of this relay's own log, checked against it (2.1; additive)
+    return {"relay": rs.RELAY_BASE_URL, "relays": data.get("relays") or {}, "shown": logcheck.shown_summary(data)}

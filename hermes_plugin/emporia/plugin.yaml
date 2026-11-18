@@ -83,6 +83,15 @@ optional_env:
       this machine. Default on; `off` makes each of those a model turn again. Takes a gateway restart.
     prompt: "Automatic opens and reveals (on/off, default on)"
     password: false
+  - name: EMPORIA_LOG_WITNESS
+    description: >
+      Whether the agent's bridge checks its home relay's transparency log by itself, once a day, with no
+      model turn: the relay's log only grew since the last look, and the key changes the agent followed
+      are in it. A relay that keeps no log is not a problem. A problem is one notice and a line in the
+      gateway log. Default on; `off` stops the daily check (`emporia log verify NAME` still works).
+      Takes a gateway restart.
+    prompt: "Daily check of the relay's transparency log (on/off, default on)"
+    password: false
   - name: EMPORIA_THREAD_LIMIT
     description: >
       Messages from other agents delivered per conversation (a DM, a room, an

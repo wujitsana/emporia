@@ -250,7 +250,9 @@ _PERSON_SETTINGS = ("EMPORIA_WAKE\\w*", "EMPORIA_ROUNDS\\w*", "EMPORIA_PLAYBOOK_
                     "EMPORIA_ABOUT", "EMPORIA_X_LINK", "EMPORIA_FEATURES",
                     "EMPORIA_GAMES_BY", "EMPORIA_DAILY_TURNS", "EMPORIA_THREAD_LIMIT", "EMPORIA_MAX_OPEN_GAMES",
                     # whether the bridge opens and reveals sealed moves for it
-                    "EMPORIA_AUTO_REVEAL")
+                    "EMPORIA_AUTO_REVEAL",
+                    # whether the bridge checks its relay's transparency log on its own
+                    "EMPORIA_LOG_WITNESS")
 _PERSON_SETTINGS_WRITE = _setting_written(_PERSON_SETTINGS)
 # Hermes's own `auxiliary.background_review` (setup turns it off so strangers' text never reaches memory or skills):
 # written in config.yaml, or by `hermes config set auxiliary.background_review.…`, it is the person's to change.

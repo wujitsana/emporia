@@ -6287,6 +6287,36 @@ def _check_peer_log(peer_url: str) -> dict[str, Any] | None:
     out = logcheck.check_and_keep(peer_url, _peer_log_get(peer_url), [pinned], name=logcheck.PEER_FILE)
     if not out["ok"] and out["status"] != "unreachable":
         logger.warning("federation_peer_log_failed", extra={"peer_url": peer_url, "detail": out["detail"]})
+    try:
+        _check_shown_to_peer(peer_url)
+    except Exception:
+        logger.debug("federation_peer_seen_check_failed", extra={"peer_url": peer_url}, exc_info=True)
+    return out
+
+
+def _check_shown_to_peer(peer_url: str) -> dict[str, Any] | None:
+    """2.1: the other direction. A linked relay's `/log/seen` says which state of THIS relay's log it holds.
+    That state, signed by this relay's key, must fit this relay's own log; if not, this relay showed that peer
+    a history it does not have. Recorded in `/log/seen` (`shown`) and the operator's doctor. A peer that does
+    not answer, runs protocol 3 (no such route), or holds none is not a problem. Bounded: one GET."""
+    from emporia import logcheck, translog
+    if not translog.enabled():
+        return None
+    try:
+        code, seen = _peer_log_get(peer_url)("/log/seen", {})
+    except Exception:  # noqa: BLE001
+        return None
+    if code != 200 or not isinstance(seen, dict):
+        return None
+    with DB_LOCK, get_db() as conn:
+        size, epoch = translog.size(conn), translog.epoch(conn)
+        out = logcheck.check_shown(seen, RELAY_BASE_URL, _relay_keys_for_integrity(), size, epoch,
+                                   lambda n: translog.stored_root(conn, n) if 0 < n <= size else None)
+    if out["status"] == "unchecked":
+        return out
+    logcheck.keep_shown(peer_url, out)
+    if out["status"] == "fail":
+        logger.warning("federation_peer_was_shown_another_history", extra={"peer_url": peer_url, "detail": out["detail"]})
     return out
 
 

@@ -1221,7 +1221,7 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
         updates.update(rh.service_settings(folder))
     # P291: what it runs beyond its core — every module optional, each asked its own questions
     existing = installer().harvest_env(folder) if (folder / ".env").exists() else {}
-    asked = _ask_modules(args, existing, ask_money=True)
+    asked = _ask_modules(args, existing, ask_money=True, new_relay=not existing)
     if asked is None:
         return 1
     module_updates, modules = asked
@@ -1427,7 +1427,7 @@ def _module_items(items: list[str]) -> dict[str, set[str]] | None:
 
 
 def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bool,
-                 want: set[str] | None = None,
+                 new_relay: bool = False, want: set[str] | None = None,
                  parts: dict[str, set[str]] | None = None) -> tuple[dict[str, str], set[str]] | None:
     """P291: which modules a relay runs — the tick-list (or `want`, given), then
     each module's own questions. `parts`: parts named on the command line, which
@@ -1449,14 +1449,18 @@ def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bo
         want = set(named)
     else:
         ticked = set(now)
+        if new_relay and "EMPORIA_TRANSPARENCY_LOG" not in env:
+            ticked.add("log")      # 2.1: a new relay recommends the log and starts with it ticked; an existing value stays
         if getattr(args, "transparency_log", "") in ("on", "off"):
             (ticked.add if args.transparency_log == "on" else ticked.discard)("log")
         if getattr(args, "fee_receiver", "") or getattr(args, "escrow", None):
             ticked.add("money")
         heading("Modules", "What this relay runs beyond its core (agents, games, rooms, agoras, DMs). "
                 "Each is optional; change them any time with `emporia relay modules`.")
-        want = set(choose_many("Tick what it runs:", [(m.name, f"{m.name:<10} {m.about}") for m in rm.MODULES],
-                               ticked))
+        want = set(choose_many("Tick what it runs:",
+                               [(m.name, f"{m.name:<10} {m.about}" + (" (recommended)" if m.name == "log" and new_relay
+                                                                      and "log" in ticked else ""))
+                                for m in rm.MODULES], ticked))
     out: dict[str, str] = {}
 
     gamify: set[str] = set()
@@ -5202,8 +5206,24 @@ def cmd_relay_upgrade(args: argparse.Namespace) -> int:
     """`emporia relay upgrade [--db PATH | --dir FOLDER] [--dry-run] [--yes]`: carry a relay database from an
     older schema version to this one, additive changes only, backup first (emporia.schema_upgrade)."""
     from emporia import schema_upgrade
-    return schema_upgrade.cli(_relay_db_path(args), dry=bool(getattr(args, "dry_run", False)),
-                              yes=bool(args.yes), tty=_TTY, ask=ask)
+    rc = schema_upgrade.cli(_relay_db_path(args), dry=bool(getattr(args, "dry_run", False)),
+                            yes=bool(args.yes), tty=_TTY, ask=ask)
+    if rc == 0 and (hint := _log_left_off_hint(_relay_env_path(args), getattr(args, "dir", ""))):
+        print(hint)
+    return rc
+
+
+def _log_left_off_hint(env_path: Path | None, folder: str = "") -> str:
+    """2.1: a new relay starts with its transparency log on. An existing relay that never set it is not changed
+    (its behavior stays as it was), but is told, with the exact command. "" when a value is set."""
+    if env_path is None or not env_path.exists():
+        return ""
+    if "EMPORIA_TRANSPARENCY_LOG" in installer().harvest_env(env_path.parent):
+        return ""
+    cmd = f"emporia relay modules add log --dir {folder}" if folder else "emporia setup log on"
+    return ("  This relay keeps no transparency log: it never set EMPORIA_TRANSPARENCY_LOG, and 2.1 does not change "
+            "that for a relay already in use. New relays start with it on, so agents and linked relays can check "
+            f"that a relay never rewrote what it recorded. Turn it on: {cmd}   (then restart the relay)")
 
 
 def cmd_relay_config(args: argparse.Namespace) -> int:
@@ -6074,6 +6094,10 @@ def doctor_relay(rep: Report) -> dict | None:
     from emporia import allowance
     if old := allowance.retired_settings():
         rep.warn(allowance.retired_notice(old), "delete " + ", ".join(old) + " from the relay's .env")
+    if "relay_modules" in h and "log" not in (h.get("relay_modules") or {}) and os.getenv("EMPORIA_TRANSPARENCY_LOG") is None:
+        rep.warn("no transparency log (EMPORIA_TRANSPARENCY_LOG was never set; new relays start with it on): "
+                 "agents and linked relays cannot check that this relay never rewrote what it recorded",
+                 "emporia setup log on   (then emporia relay restart)")
     doctor_federation(rep, h)
     return h
 
@@ -6177,6 +6201,10 @@ def doctor_federation(rep: Report, h: dict) -> None:
         rep.warn("DMs with other relays are on, but it is linked to none", "emporia relay link URL")
     if links:
         rep.ok("check each link goes both ways: emporia relay links")
+        from emporia import logcheck
+        for problem in logcheck.peer_problems():
+            rep.fail(f"a linked relay's transparency log did not check out: {problem}",
+                     "the evidence is in _peer_log_states.json beside this relay's keys; consider emporia relay unlink URL")
     own = h.get("host", "")
     if own and not same_host(own, host_of(relay_url())):
         rep.warn(f"agents here reach it as {host_of(relay_url())}, it names itself {own} — other relays, "
@@ -6358,6 +6386,12 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
                              f"`emporia signer backup {name} --out PATH` made)")
     else:
         rep.ok(drill_note)
+    from emporia import log_witness
+    witnessed = log_witness.read(log_witness.record_path(profile))
+    if witnessed.get("problems"):
+        rep.fail(log_witness.line(witnessed), f"emporia log verify {name}")
+    elif witnessed:
+        rep.ok(log_witness.line(witnessed))
     # P167/P168: what its own tools can reach. A wallet plus a shell on the
     # keys' disk is the one combination that puts money in reach.
     backend = _backend(profile)
@@ -8747,11 +8781,12 @@ def _log_setting(env: dict[str, str]) -> bool:
     return env.get("EMPORIA_TRANSPARENCY_LOG", "off").strip().lower() not in ("0", "off", "false", "no")
 
 
-def _choose_log(now: bool = False) -> bool:
+def _choose_log(now: bool = False, set_off: bool = False) -> bool:
+    """On is recommended and the default, unless the operator already set it off."""
     return choose("Transparency log:", [
-        ("on", "On — keep it: agents and linked relays check this relay never rewrote what it recorded"),
-        ("off", "Off (default) — no log; turned on later, it logs everything the relay holds by then"),
-    ], 0 if now else 1) == "on"
+        ("on", "On (recommended) — keep it: agents and linked relays check this relay never rewrote what it recorded"),
+        ("off", "Off — no log; turned on later, it logs everything the relay holds by then"),
+    ], 1 if (not now and set_off) else 0) == "on"
 
 
 def cmd_setup_log(args: argparse.Namespace) -> int:
@@ -8767,7 +8802,8 @@ def cmd_setup_log(args: argparse.Namespace) -> int:
     if args.state:
         on = args.state == "on"
     elif _TTY:
-        on = _choose_log(now)
+        on = _choose_log(now, set_off=not now and "EMPORIA_TRANSPARENCY_LOG" in (
+            installer().harvest_env(me) if env_path.exists() else {}))
     else:
         print("setup log: on or off")
         return 1
@@ -10108,7 +10144,7 @@ def setup_overview() -> None:
          "" if "localhost" not in public else "set EMPORIA_RELAY_URL to its public https URL behind a TLS proxy (README § Deployment)")
     tlog = "log" in (h.get("relay_modules") or {}) if h and "relay_modules" in h else _log_setting(relay_env)
     line("✓" if tlog else "·", "Transparency log", "on — public proof of what this relay recorded" if tlog
-         else "off (optional)", "" if tlog else "emporia setup log on")
+         else "off (recommended on)", "" if tlog else "emporia setup log on")
     peers = [x for x in relay_env.get("FEDERATED_RELAYS", "").split(",") if x.strip()]
     line("✓" if peers else "·", "Federation", f"{len(peers)} peer relay(s)" if peers else "none (optional)",
          "" if peers else "FEDERATED_RELAYS in the relay's .env (optional)")

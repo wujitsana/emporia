@@ -330,6 +330,72 @@ def cross_check(get: Get, trusted_keys: list[str] | tuple[str, ...], mine: dict,
     return out
 
 
+def check_shown(seen: Any, my_url: str, trusted_keys: list[str] | tuple[str, ...], size: int, epoch: int,
+                root_at: Callable[[int], bytes | None]) -> dict[str, Any]:
+    """The other direction (2.1): what a linked relay holds of THIS relay's log (its `/log/seen`), against this
+    relay's own log. Only a state signed by this relay's own key counts. The same log (epoch), so its root must
+    be the root of this relay's first `size` leaves (`root_at`); a state larger than the log now is a log that
+    shrank. A relay that tells one peer one history and another a different one fails here, at the peer's
+    next sync, with the state it signed as the evidence."""
+    mine = my_url.rstrip("/")
+    entry = None
+    for url, e in (seen.get("relays") or {}).items() if isinstance(seen, dict) else ():
+        if str(url).rstrip("/") == mine and isinstance(e, dict):
+            entry = e
+            break
+    state = entry.get("state") if entry else None
+    if not state_signed(state, trusted_keys):
+        return _result("unchecked", "that relay holds no state signed by this relay", None)
+    if state.get("epoch", 1) != epoch:
+        return _result("unchecked", "that relay holds a state of another log of this relay", state)
+    evidence = {"states": [state]}
+    if state["size"] > size:
+        return _result("fail", f"that relay holds a state of {state['size']} entries signed by this relay, "
+                               f"but this relay's log has {size}: the log shrank", state, evidence=evidence)
+    root = root_at(state["size"]) if state["size"] > 0 else None
+    if root is None:
+        return _result("unchecked", "this relay could not recompute the log at that size", state)
+    if root.hex() != state["root"]:
+        return _result("fail", f"that relay holds a state of {state['size']} entries signed by this relay whose "
+                               "root is not this relay's: this relay showed two histories", state, evidence=evidence)
+    return _result("ok", f"that relay holds a state of {state['size']} entries that matches this log", state)
+
+
+def keep_shown(peer: str, out: dict[str, Any]) -> None:
+    """Keep what `check_shown` found for `peer`, for `/log/seen` and the operator's doctor: the status and its
+    words always, the evidence (up to 20 failures) only on a failure."""
+    from datetime import UTC, datetime
+    now = datetime.now(UTC).isoformat()
+    with _held(PEER_FILE) as data:
+        entry = (data.setdefault("shown", {}).get(peer) or {})
+        failures = entry.get("failures") or []
+        if out["status"] == "fail":
+            failures = [*failures, {"at": now, "detail": out["detail"], "evidence": out.get("evidence")}][-20:]
+        data["shown"][peer] = {"status": out["status"], "detail": out["detail"], "checked_at": now,
+                               "failures": failures}
+
+
+def shown_summary(data: dict[str, Any]) -> dict[str, Any]:
+    """`keep_shown`'s records without their evidence: what `/log/seen` serves."""
+    return {peer: {"status": e.get("status"), "detail": e.get("detail"), "checked_at": e.get("checked_at"),
+                   "failures": len(e.get("failures") or [])}
+            for peer, e in (data.get("shown") or {}).items() if isinstance(e, dict)}
+
+
+def peer_problems(data: dict[str, Any] | None = None) -> list[str]:
+    """In words: every linked relay whose log did not check out (its own states, or what it was shown of this
+    relay), from the file this relay keeps. For the operator's doctor and status."""
+    data = load(PEER_FILE) if data is None else data
+    out = []
+    for peer, e in (data.get("relays") or {}).items():
+        if isinstance(e, dict) and (e.get("status") in ("fail", "other_log", "stopped") or e.get("failures")):
+            out.append(f"{peer}: {e.get('detail') or 'its log did not check out'}")
+    for peer, e in (data.get("shown") or {}).items():
+        if isinstance(e, dict) and e.get("status") == "fail":
+            out.append(f"{peer} holds a state of this relay's log that does not match it: {e.get('detail')}")
+    return out
+
+
 def fetch_getter(base: str, timeout: float = 15.0) -> Get:
     """A `Get` over HTTP, for a client (emporia.fetch caps what a relay may send)."""
     from emporia import fetch
