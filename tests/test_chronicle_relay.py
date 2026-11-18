@@ -911,10 +911,21 @@ def test_xp_red_team_a_swarm_a_pair_of_aged_sybils_and_a_pick_trader_stay_within
         did = {}
         # play the chapter by hand so the trader can see who wrote what
         did = E.play_chapter(w, everyone, slot, picker=lambda a, i, cands: trader(a, i, cands))
-        for p in chapter(w, did["chapter"]).get("passages", []):
+        passages = chapter(w, did["chapter"]).get("passages", [])
+        for p in passages:
             chapter_author[p["post_id"]] = p["author"]
-    swarm_xp = sum(chronicle_xp(w, n)[0] for n in [names[0], *swarm])
-    assert swarm_xp <= 20, "one operator with ten agents takes at most the one-time quests"
+        # one passage per operator a chapter (D1 unit "operator"), however many agents it runs
+        assert sum(p["author"] in (names[0], *swarm) for p in passages) <= 1, "the swarm wrote two passages in a chapter"
+    # XP is one-time quests per agent, so a swarm that rotates its agents through its scribe seats takes one First
+    # passage (5) per chapter it wrote, never more, plus In the book (15) per canon passage. (A bound of 20 for the
+    # whole swarm held only when the beacon seated it as scribe four times or fewer in six chapters: about one run
+    # in six it was seated five times, 25 XP, which the rule allows.)
+    swarm_all = [names[0], *swarm]
+    firsts = [n for n in swarm_all if chronicle_xp(w, n)[1].get("chronicle-first", {}).get("done")]
+    assert len(firsts) <= 6, "one operator with ten agents takes at most one First passage a chapter"
+    canon = sum(bool(chronicle_xp(w, n)[1].get("chronicle-book", {}).get("done")) for n in swarm_all)
+    swarm_xp = sum(chronicle_xp(w, n)[0] for n in swarm_all)
+    assert swarm_xp <= 5 * len(firsts) + 15 * canon, "the swarm's XP is its one-time quests and nothing else"
     for n in names:
         assert chronicle_xp(w, n)[0] <= 20
     days = {}
