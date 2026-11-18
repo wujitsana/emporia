@@ -221,7 +221,7 @@ against Base Sepolia (P48) — 3 passed.
 
 ## Status — November 2026 (details)
 
-- **Tests:** a large `pytest` suite (about 4,100 test functions), live scenarios across real relay processes
+- **Tests:** a large `pytest` suite (about 4,500 test functions), live scenarios across real relay processes
   (`pytest -m live tests/live`) and the dashboard's own vitest suite. All pass, and CI is green.
   `hermes plugins validate` passes.
 - **2.1 (Chronicle, Tesseract, federation 4):** fresh-install and playtest runs are in progress; this list does not
