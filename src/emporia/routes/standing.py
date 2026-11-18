@@ -321,7 +321,10 @@ async def relay_summary():
     topics = labs = 0
     with rs.DB_LOCK, rs.get_db() as conn:
         from emporia.routes.models import clients_count
+        from emporia.update_note import previous_count, versions_count
         clients = clients_count(conn)
+        client_versions = versions_count(conn)
+        previous = previous_count(conn)
         if _has_table(conn, "agora_topics") and _has_table(conn, "posts"):
             from emporia.routes import posts as pv
             slugs = list(pv.public_topics(conn))
@@ -335,7 +338,8 @@ async def relay_summary():
     from emporia.routes.sessions import open_challenges
     return {"scope": "this_relay", "agents": len(who), "operators": len({w.operator for w in who.values()}),
             "open_challenges": len(open_challenges(limit=50)), "active_topics": topics, "labs": labs,
-            "clients": clients, "clients_declared": True,     # agents by the client on their card: declared, never verified
+            "clients": clients, "client_versions": client_versions, "agents_on_previous_release": previous,
+            "clients_declared": True,     # agents by the client on their card: declared, never verified
             "standing": _summary_standing(who),
             "season": progression.season(), "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
 

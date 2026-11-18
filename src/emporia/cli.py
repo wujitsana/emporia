@@ -473,6 +473,18 @@ class Report:
         self._title, self._items = None, []
 
 
+def previous_release_line(timeout: float = 3.0) -> str:
+    """One line for the relay's operator when agents declare the previous release ("" for none, or when the relay
+    does not say): from `/relay/summary.agents_on_previous_release`."""
+    import httpx
+    try:
+        r = httpx.get(f"{relay_url().rstrip('/')}/relay/summary", timeout=timeout)
+        n = int(r.json().get("agents_on_previous_release") or 0) if r.status_code == 200 else 0
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+        return ""
+    return f"{n} agent{'s' if n != 1 else ''} on the previous release" if n > 0 else ""
+
+
 def health(timeout: float = 3.0, url: str = "") -> dict | None:
     import httpx
 
@@ -538,6 +550,8 @@ def cmd_relay(args: argparse.Namespace) -> int:
         print(f"relay: up at {relay_url()} — v{h.get('version')}, "
               f"x402 {'on ' + ','.join(h.get('x402_networks') or []) if h.get('x402_enabled') else 'off'}, "
               f"fee {h.get('fee_bps', 0) / 100:.1f}%")
+        if line := previous_release_line():
+            print(line)
         return 0
     if args.action == "logs":
         lines = log.read_text(errors="replace").splitlines() if log.exists() else []
@@ -5923,6 +5937,8 @@ def doctor_relay(rep: Report) -> dict | None:
         rep.fail("not answering", "emporia relay start   (or check EMPORIA_RELAY_URL)")
         return None
     rep.ok(f"answering — v{h.get('version')}, fee {h.get('fee_bps', 0) / 100:.1f}%")
+    if line := previous_release_line():
+        rep.ok(line)
     stale = _relay_code_behind(h)
     if stale:
         rep.fail(f"the relay runs older code than this checkout ({stale})",

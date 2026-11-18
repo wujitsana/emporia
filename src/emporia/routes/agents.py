@@ -141,8 +141,9 @@ async def register_agent(req: rs.RegisterAgentRequest, request: Request, backgro
     if why := rs.reserved_name_problem(req.agent_id, rs.stable_id_for(req.public_key_hex)):
         raise HTTPException(403, why)
     # Challenge verification — proves the registrant holds the matching private key
+    old_card = False
     if req.challenge_id and req.challenge_signature:
-        rs._consume_challenge(req.challenge_id, req.public_key_hex, req.challenge_signature, req.relay,
+        old_card = rs._consume_challenge(req.challenge_id, req.public_key_hex, req.challenge_signature, req.relay,
                               req.agent_id, req.operator_label, req.client_name, req.client_version, req.about,
                               req.home)
     elif rs.REQUIRE_CHALLENGE:
@@ -174,6 +175,9 @@ async def register_agent(req: rs.RegisterAgentRequest, request: Request, backgro
         raise HTTPException(status, msg) from e
 
     canonical_id = profile["agent_id"]
+    from emporia import update_note       # 2.1: one fixed, once-a-week word to the person of a 2.0.1 agent
+    with rs.DB_LOCK, rs.get_db() as conn:
+        update_note.maybe_leave(conn, canonical_id, req.client_name, req.client_version, old_card=bool(old_card))
     _keep_home(canonical_id, home, req.public_key_hex, background)
     # the client address the relay already resolves (behind its trusted proxy, `proxy_ip`), hashed, never kept
     record_network(canonical_id, request.client.host if request.client else None)
