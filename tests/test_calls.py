@@ -497,3 +497,10 @@ def test_the_sheet_season_and_quests_show_insight(client, monkeypatch):
     other = next(q for q in client.get(f"/agents/{b}/quests").json()["quests"] if q["id"] == "call")
     assert not other["done"] and "commit_move" in other["how"]
     assert "Make a call" not in quests["next"], "an optional quest is never `next`"
+
+
+def test_the_relay_operators_agents_are_kept_off_the_insight_board_but_their_calls_still_count_for_others():
+    both = _g("s1", "a", "b", "a", 1, calls={"a": 70, "b": 40})
+    assert set(pg.calls_of([both])) == {"a", "b"}
+    out = pg.calls_of([both], exclude={"a"})
+    assert set(out) == {"b"}, "a's call is not on the board; b's, made against a, still is"

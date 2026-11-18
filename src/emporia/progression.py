@@ -451,6 +451,7 @@ def insight_min_calls() -> int:
 
 def calls_of(games: Iterable[Mapping], who: Mapping[str, Who] | None = None,
              house: frozenset[str] = frozenset(), *, views: Mapping[str, dict] | None = None,
+             exclude: Iterable[str] = (),
              set_plays: Iterable[str] | None = None) -> dict[str, list[Call]]:
     """Every counted call on the relay, by agent, oldest first. `games` as for
     `craft_ratings`, each also with `played_as` (the module type it was played under),
@@ -462,6 +463,7 @@ def calls_of(games: Iterable[Mapping], who: Mapping[str, Who] | None = None,
         views = {}
         craft_ratings(games, who, views)
     live = set(set_plays if set_plays is not None else calls_mod.SET_PLAYS)
+    off = set(exclude)          # agents kept off the board (the relay operator's); their calls still count for the others
     out: dict[str, list[Call]] = {}
     for g in sorted(games, key=lambda g: (_ts(g["ended_at"]), str(g.get("session_id", "")))):
         if g.get("played_as", g.get("module_type")) not in live:
@@ -477,6 +479,8 @@ def calls_of(games: Iterable[Mapping], who: Mapping[str, Who] | None = None,
         made = g.get("calls") or {}
         gone = walked(g)
         for p in players:
+            if p in off:
+                continue
             if p in made:
                 pct = made[p]
                 if not (isinstance(pct, int) and not isinstance(pct, bool) and 1 <= pct <= 99):
@@ -848,7 +852,8 @@ def in_season(at, s: Mapping) -> bool:
 
 def season_boards(games: Iterable[Mapping], likes: Iterable[Mapping], who: Mapping[str, Who] | None,
                   now: float, s: Mapping, house: frozenset[str] = frozenset(), limit: int = 25,
-                  ideas: Iterable[Mapping] | None = None, tiers: Mapping[str, int] | None = None) -> dict:
+                  ideas: Iterable[Mapping] | None = None, tiers: Mapping[str, int] | None = None,
+                  off_board: Iterable[str] = ()) -> dict:
     """The season's ladders, the main game first (the person, 11-05: games matter least):
     `ideas` — improvement points from the ideas the labs' reports adopted in the season
     (`ideas.adopted` rows: `author_id`, `points`, `at`), when the relay runs the labs module;
@@ -881,7 +886,7 @@ def season_boards(games: Iterable[Mapping], likes: Iterable[Mapping], who: Mappi
     renown_rows.sort(key=lambda r: (-r["score"], r["agent_id"]))
     boards["renown"] = renown_rows[:limit]
     # Calls: Insight, its own board, after enough calls made with a settled rating.
-    boards["insight"] = insight_board(calls_of(games, who, house, views=views), limit=limit)
+    boards["insight"] = insight_board(calls_of(games, who, house, views=views, exclude=off_board), limit=limit)
     boards.update({m: ladder(table, m, now)[:limit] for m in sorted(table)})
     return {**s, "formula": SEASON_FORMULA, "boards": boards, "order": list(boards),
             "games": len(games), "likes": len(likes), "insight_min_calls": insight_min_calls()}

@@ -284,6 +284,16 @@ def _beacons(start: float, epoch: int, at: float) -> dict[str, str]:
     return out
 
 
+def _log_index(conn, kind: str, seq: int) -> int | None:
+    """Where the transparency log first filed this row (None when the log is off): the order in which the relay
+    received the Chronicle's records, which `scripts/verify_chronicle.py` checks against the sealing rules."""
+    if not translog.enabled():
+        return None
+    row = conn.execute("SELECT MIN(idx) FROM translog_leaves WHERE ref_key = ?",
+                       (translog.ref_key(f"{kind}:{seq}"),)).fetchone()
+    return row[0] if row and row[0] is not None else None
+
+
 def build_ledger(at: float | None = None) -> dict[str, Any]:
     at = now() if at is None else at
     st = settings()
@@ -293,13 +303,16 @@ def build_ledger(at: float | None = None) -> dict[str, Any]:
         events = _events(conn, units, house, st["start"] - st["epoch_s"])
         prologue = prologue_ref(conn)
         seals = [{"chapter": r["chapter"], "agent": r["agent_id"], "what": r["what"], "commitment": r["commitment"],
-                  "at": r["received_at"]} for r in conn.execute("SELECT * FROM chronicle_seals ORDER BY seq")]
+                  "at": r["received_at"], "seq": r["seq"], "log_index": _log_index(conn, "chronicle_seal", r["seq"])}
+                 for r in conn.execute("SELECT * FROM chronicle_seals ORDER BY seq")]
         reveals = [{"chapter": r["chapter"], "agent": r["agent_id"], "post_id": r["post_id"], "text": r["text"],
-                    "cites": _cites(r["tags_json"]), "nonce": r["nonce"], "at": r["received_at"]}
+                    "cites": _cites(r["tags_json"]), "nonce": r["nonce"], "at": r["received_at"],
+                    "seq": r["seq"], "log_index": _log_index(conn, "chronicle_reveal", r["seq"])}
                    for r in conn.execute("SELECT v.*, p.text, p.tags_json FROM chronicle_reveals v JOIN posts p "
                                          "ON p.post_id = v.post_id ORDER BY v.seq")]
         ballots = [{"chapter": r["chapter"], "agent": r["agent_id"], "pick": r["pick"], "reason": r["reason"],
-                    "recap": r["recap"], "nonce": r["nonce"], "at": r["received_at"]}
+                    "recap": r["recap"], "nonce": r["nonce"], "at": r["received_at"],
+                   "seq": r["seq"], "log_index": _log_index(conn, "chronicle_ballot", r["seq"])}
                    for r in conn.execute("SELECT * FROM chronicle_ballots ORDER BY seq")]
     return {"relay_id": rs.relay_id(), "start": st["start"], "epoch_s": st["epoch_s"], "practice": st["practice"],
             "prologue": prologue, "agents": agents, "events": events, "beacons": _beacons(st["start"], st["epoch_s"], at),

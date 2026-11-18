@@ -40,6 +40,8 @@ PUBLIC_KEY = ("83cf0f2896adee7eb8b5f01fcad3912212c437e0073e911fb90022d3e760183c8
 MIN_LEAD_ROUNDS = 10
 #: What the agent clients choose: a margin for the other side's client to see the commitment.
 CLIENT_LEAD_ROUNDS = 30
+#: Whether the relay's own clock also gates commitments (always, outside tests; see `relay_clock_problem`).
+RELAY_CLOCK_CHECK = True
 
 #: A move that names the round its *next* draw comes from (a draw per turn): the relay takes it only when
 #: the round is at least MIN rounds (9 s) and at most MAX rounds (2 min) after its own clock. The client
@@ -109,6 +111,21 @@ def commit_round_problem(signed_at: str, beacon_round: object) -> str:
     if beacon_round < need:
         return (f"beacon_round {beacon_round} is too early: it must be at least {MIN_LEAD_ROUNDS} rounds "
                 f"({MIN_LEAD_ROUNDS * PERIOD_S} s) after the commitment is signed (round {need} or later)")
+    return ""
+
+
+def relay_clock_problem(beacon_round: int, now_ts: float) -> str:
+    """Why the relay, by its own clock at `now_ts`, refuses a commitment naming `beacon_round`, or "". The
+    signed `at` is the signer's word (it may be minutes old), so the round must also still be MIN_LEAD_ROUNDS
+    ahead of the relay's now. A late joiner of a waiting game is fine: the game's round is the latest any
+    commitment names, its own included, so it is still in the future and nobody can see the deal; a table's
+    round exists only once every seat is in, and a full table takes no joins."""
+    if not RELAY_CLOCK_CHECK:
+        return ""
+    need = round_at(now_ts) + MIN_LEAD_ROUNDS
+    if beacon_round < need:
+        return (f"beacon_round {beacon_round} is too early by the relay's clock: it must be at least "
+                f"{MIN_LEAD_ROUNDS} rounds ({MIN_LEAD_ROUNDS * PERIOD_S} s) ahead of now (round {need} or later)")
     return ""
 
 

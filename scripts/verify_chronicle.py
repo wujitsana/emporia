@@ -18,6 +18,10 @@ For every finished chapter (`GET /chronicle/chapters`, then `GET /chronicle/chap
    them, and so are the earlier cards its draw avoided (a shape or voice does not come back within 8 chapters, a word
    within 64); the card is then drawn again from the beacon, the deck version of that chapter and those cards.
 
+7. checks the drawn rounds are the first published after each boundary, and the log order: every seal counted for the
+   chapter entered the transparency log before the first reveal of its kind, and `received_at` does not decrease along
+   the log (each row's `log_index` is confirmed against `/log/entries`).
+
 What it does not check, and says so: the **record window's events and the units' operator grouping** are the relay's
 word (events are public things on the relay, the grouping is private by design: units are opaque tokens). Both are
 inputs; every number computed from them is checked.
@@ -209,6 +213,41 @@ def check_signatures(signed: dict[str, Any], relay_id: str, origin: str) -> list
     return bad
 
 
+def check_log_order(get: Callable[[str], dict], inp: dict[str, Any]) -> list[str]:
+    """The relay stamps `received_at`, so a relay's own agent could be stamped inside a window after it saw others'
+    opens. The log fixes the order the relay took the records in: every seal counted for the chapter must be filed
+    before the first reveal of its kind (passage seals before passage reveals, pick seals before ballots), and
+    `received_at` must not decrease along the log. Each row's log index is confirmed against the log itself."""
+    rows: list[tuple[int, str, dict[str, Any]]] = []
+    bad: list[str] = []
+    for kind, key in (("chronicle_seal", "seals"), ("chronicle_reveal", "reveals"), ("chronicle_ballot", "ballots")):
+        for r in inp.get(key, []):
+            idx = r.get("log_index")
+            if idx is None or r.get("seq") is None:
+                bad.append(f"{kind} {r.get('seq')}: no place in the transparency log")
+                continue
+            got = get(f"/log/entries?ref={kind}:{r['seq']}&limit=1").get("entries") or []     # {} when the log is off
+            rec = got[0]["record"] if got else {}
+            if not got or got[0]["index"] != idx or rec.get("kind") != kind or rec.get("received_at") != r["at"]:
+                bad.append(f"{kind} {r['seq']}: the log does not hold it at index {idx} with that receipt time")
+                continue
+            rows.append((idx, kind, r))
+    if bad:
+        return bad
+    first_reveal = {"passage": min((i for i, k, _ in rows if k == "chronicle_reveal"), default=None),
+                    "pick": min((i for i, k, _ in rows if k == "chronicle_ballot"), default=None)}
+    for idx, kind, r in rows:
+        if kind == "chronicle_seal" and first_reveal.get(r["what"]) is not None and idx > first_reveal[r["what"]]:
+            bad.append(f"seal {r['seq']} ({r['what']}) by {r['agent']} entered the log after the first {r['what']} "
+                       f"reveal: it may have been stamped after others opened")
+    last = None
+    for _idx, kind, r in sorted(rows, key=lambda x: x[0]):
+        if last is not None and r["at"] < last:
+            bad.append(f"{kind} {r['seq']}: received_at {r['at']} is earlier than a record filed before it")
+        last = r["at"] if last is None else max(last, r["at"])
+    return bad
+
+
 def verify(get: Callable[[str], dict], *, bls: bool = True, only: str = "") -> dict[str, Any]:
     """Check every finished chapter. `get(path)` returns the public JSON at `path` (query string included)."""
     state = get("/chronicle")
@@ -233,12 +272,15 @@ def verify(get: Callable[[str], dict], *, bls: bool = True, only: str = "") -> d
                 "none": v.get("none", 0.0)}
         if mode_called(v) and ind != mine:
             problems.append(f"the independent count says {ind!r}; the core says {mine!r}")
+        if inp["rounds"] != C.call_rounds(inp["call_ts"], inp["params"]["epoch_s"]):
+            problems.append("the rounds drawn from are not the first ones published after the call and the window closes")
         if bls:
             for name, rnd in inp["rounds"].items():
                 if not beacon.verify(rnd, inp["sigs"][name]):
                     problems.append(f"beacon round {rnd} ({name}): not drand's signature")
         elif any(not inp["sigs"].get(k) for k in ("call", "show", "count")):
             problems.append("a beacon round the chapter drew from is missing")
+        problems += check_log_order(get, inp)
         problems += check_signatures(body.get("signed", {}), state["relay_id"], state.get("post_origin", ""))
         if body.get("receipt"):
             h = receipt_hash(row["id"], inp["call_ts"], v)
@@ -291,6 +333,8 @@ def main(argv: list[str] | None = None) -> int:
 
     def get(path: str) -> dict:
         r = httpx.get(args.relay.rstrip("/") + path, timeout=30)
+        if r.status_code == 404 and path.startswith("/log/"):
+            return {}                  # a relay with its log off: the check then reports the rows as unlogged
         r.raise_for_status()
         return r.json()
     rep = verify(get, bls=not args.no_bls, only=args.chapter)
